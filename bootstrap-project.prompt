@@ -1,0 +1,75 @@
+# Project
+
+You are building a Visual Studio Code extension called "SwarmForge VC".
+
+It is a visual front-end for SwarmForge (Uncle Bob's tmux-based multi-agent
+coordination tool). The extension lets a developer launch a SwarmForge swarm
+against any target project, watch every agent work in live terminal tiles inside
+VS Code, and get a pull request at the end. The developer never has to leave the
+editor or touch raw tmux.
+
+Important: this extension does NOT replace SwarmForge. It drives and observes an
+unmodified, separately-installed SwarmForge. Think "a window onto what SwarmForge
+already does", not "a reimplementation of it".
+
+# Goals for this swarm run (Milestone 1 - the MVP)
+
+Build the smallest version a developer would actually use daily. Deliver these,
+and only these:
+
+1. Target selection
+   - A command to point the extension at a local target repo (a filesystem path).
+   - An "Initialize Target" command that scaffolds and commits two plain-text
+     files into the target repo: project.prompt and engineering.prompt (so they
+     travel with the repo when the swarm clones it).
+
+2. Tiled agent panel (the core UI)
+   - A webview panel showing one live terminal tile per agent role.
+   - Each tile tails the output of that role's tmux pane in real time.
+   - Each tile is interactive: the developer can click into it and type directly
+     to that agent, exactly like typing into the agent's terminal window.
+   - The tile layout mirrors SwarmForge's window-per-role layout.
+
+3. Run / Stop
+   - A command to launch the swarm against the selected target (use whatever pack
+     SwarmForge is configured with; do not implement pack selection logic yet).
+   - A command to stop the swarm.
+
+4. Pipeline awareness
+   - Show which stage currently holds the work (read this from SwarmForge's state
+     files under .swarmforge/). A simple status line is enough.
+
+5. PR at the end
+   - When the swarm finishes, open a pull request from the swarm's dev branch
+     into the target's main branch. The human reviews and merges it in GitHub.
+
+6. Named runs
+   - Name the branch and PR after the work item. Keep a simple local log of runs.
+
+# Explicitly OUT of scope (do NOT build these yet)
+
+These are planned for later milestones. Do not start them now, even if they seem
+useful - they would over-scope the MVP:
+
+- No watchdog, heartbeat, or chase logic (rely on SwarmForge's own behavior and
+  the human watching the tiles).
+- No hardened message bus (read SwarmForge's existing state; do not redesign it).
+- No completion-percentage "work tree", no backlog sync.
+- No cost tracking or model/backend switching.
+- No dynamic right-sizing of the pack (run whatever is configured).
+- No per-tile respawn or model-switch controls.
+- No remote access, phone app, or chat integration.
+- No Windows support (macOS and Linux only - SwarmForge depends on tmux).
+
+# Definition of done for this milestone
+
+A developer can: select a target repo, run the swarm, watch all agents working in
+live tiles inside VS Code, occasionally type a nudge to an agent, and end up with
+a pull request to review - all without leaving the editor.
+
+# Constraints
+
+- Do not modify SwarmForge itself. Drive it from outside via its ./swarm wrapper,
+  read its state under .swarmforge/, and attach to its tmux sessions/panes.
+- The full product vision (later milestones) is documented in docs/ for reference.
+  Build ONLY Milestone 1 described above. When in doubt, prefer the smaller scope.
