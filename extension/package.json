@@ -1,0 +1,60 @@
+{
+  "name": "swarmforge-vc",
+  "displayName": "SwarmForge VC",
+  "description": "Visual front-end for SwarmForge multi-agent orchestration",
+  "version": "0.1.0",
+  "publisher": "swarmforge",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:swarmforge.testTmux",
+    "onCommand:swarmforge.setTarget",
+    "onCommand:swarmforge.launchSwarm",
+    "onCommand:swarmforge.openPanel"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "swarmforge.testTmux",
+        "title": "SwarmForge: Test Tmux Connection"
+      },
+      {
+        "command": "swarmforge.setTarget",
+        "title": "SwarmForge: Set Target Project"
+      },
+      {
+        "command": "swarmforge.launchSwarm",
+        "title": "SwarmForge: Launch Swarm"
+      },
+      {
+        "command": "swarmforge.openPanel",
+        "title": "SwarmForge: Open Panel"
+      }
+    ],
+    "configuration": {
+      "title": "SwarmForge",
+      "properties": {
+        "swarmforge.targetPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the target project for SwarmForge runs."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.3"
+  }
+}
