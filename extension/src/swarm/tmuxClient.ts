@@ -19,11 +19,11 @@ export interface SwarmRole {
 export function runCommand(
   command: string,
   args: string[],
-  options: cp.SpawnSyncOptionsWithStringEncoding = {}
+  options: cp.SpawnSyncOptionsWithStringEncoding = { encoding: 'utf8' }
 ): TmuxRunResult {
   const result = cp.spawnSync(command, args, {
-    encoding: 'utf8',
     ...options,
+    encoding: 'utf8',
   });
 
   return {
