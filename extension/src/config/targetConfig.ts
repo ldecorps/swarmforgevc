@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as vscode from 'vscode';
 
 export function getTargetPath(): string | undefined {
@@ -51,7 +52,6 @@ export async function setTargetPath(
 
 export function resolveSwarmScript(targetPath: string): string | undefined {
   const localSwarm = `${targetPath}/swarm`;
-  const fs = require('fs') as typeof import('fs');
   if (fs.existsSync(localSwarm)) {
     return localSwarm;
   }

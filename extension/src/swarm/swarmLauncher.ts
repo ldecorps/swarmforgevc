@@ -9,6 +9,12 @@ export interface LaunchResult {
   targetPath: string;
 }
 
+function isSwarmReady(targetPath: string): boolean {
+  const socket = readTmuxSocket(targetPath);
+  const roles = readSwarmRoles(targetPath);
+  return Boolean(socket && roles.length > 0);
+}
+
 export async function launchSwarm(targetPath: string): Promise<LaunchResult> {
   const swarmScript = path.join(targetPath, 'swarm');
   if (!fs.existsSync(swarmScript)) {
@@ -29,44 +35,67 @@ export async function launchSwarm(targetPath: string): Promise<LaunchResult> {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    let stdout = '';
+    let settled = false;
     let stderr = '';
 
-    child.stdout?.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
+    const cleanup = () => {
+      clearTimeout(deadline);
+      clearInterval(poll);
+    };
+
+    const finish = (success: boolean, message: string) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      if (child.pid && !child.killed) {
+        child.kill('SIGTERM');
+      }
+      resolve({ success, message, targetPath });
+    };
+
     child.stderr?.on('data', (chunk: Buffer) => {
       stderr += chunk.toString();
     });
 
-    child.on('close', (code) => {
-      const socket = readTmuxSocket(targetPath);
-      const roles = readSwarmRoles(targetPath);
-
-      if (code === 0 && socket && roles.length > 0) {
-        resolve({
-          success: true,
-          message: `Swarm launched with ${roles.length} agent(s).`,
-          targetPath,
-        });
-        return;
+    child.stdout?.on('data', (chunk: Buffer) => {
+      if (chunk.toString().includes('SwarmForge is ready') && isSwarmReady(targetPath)) {
+        finish(true, 'Swarm launched successfully.');
       }
-
-      const detail = stderr || stdout || `exit code ${code ?? 'unknown'}`;
-      resolve({
-        success: false,
-        message: `Swarm launch failed: ${detail}`,
-        targetPath,
-      });
     });
 
     child.on('error', (err) => {
-      resolve({
-        success: false,
-        message: `Failed to start swarm: ${err.message}`,
-        targetPath,
-      });
+      finish(false, `Failed to start swarm: ${err.message}`);
     });
+
+    child.on('close', (code) => {
+      if (settled) {
+        return;
+      }
+      if (isSwarmReady(targetPath)) {
+        finish(true, 'Swarm launched successfully.');
+        return;
+      }
+      finish(
+        false,
+        `Swarm launch failed: ${stderr || `exit code ${code ?? 'unknown'}`}`
+      );
+    });
+
+    const deadline = setTimeout(() => {
+      if (isSwarmReady(targetPath)) {
+        finish(true, 'Swarm launched successfully.');
+      } else {
+        finish(false, 'Timed out waiting for swarm to become ready.');
+      }
+    }, 120_000);
+
+    const poll = setInterval(() => {
+      if (isSwarmReady(targetPath)) {
+        finish(true, 'Swarm launched successfully.');
+      }
+    }, 500);
   });
 }
 
@@ -75,13 +104,15 @@ export function waitForSwarmReady(
   timeoutMs = 120_000,
   pollMs = 500
 ): Promise<boolean> {
+  if (isSwarmReady(targetPath)) {
+    return Promise.resolve(true);
+  }
+
   const deadline = Date.now() + timeoutMs;
 
   return new Promise((resolve) => {
     const check = () => {
-      const socket = readTmuxSocket(targetPath);
-      const roles = readSwarmRoles(targetPath);
-      if (socket && roles.length > 0) {
+      if (isSwarmReady(targetPath)) {
         resolve(true);
         return;
       }

@@ -6,7 +6,8 @@ import {
   sendKeys,
   SwarmRole,
   getPaneBaseIndex,
-} from './tmuxClient';
+} from '../swarm/tmuxClient';
+import { stripAnsi } from './ansi';
 
 export interface TileOutput {
   role: string;
@@ -17,7 +18,7 @@ export interface TileOutput {
 
 export class PaneTailer {
   private interval: ReturnType<typeof setInterval> | undefined;
-  private lastLineCounts = new Map<string, number>();
+  private lastText = new Map<string, string>();
   private paneBaseIndex = 0;
   private roles: SwarmRole[] = [];
   private socketPath = '';
@@ -47,6 +48,7 @@ export class PaneTailer {
   refreshState(): void {
     this.socketPath = readTmuxSocket(this.targetPath) ?? '';
     this.roles = readSwarmRoles(this.targetPath);
+    this.lastText.clear();
     if (this.socketPath) {
       this.paneBaseIndex = getPaneBaseIndex(this.socketPath);
     }
@@ -72,27 +74,25 @@ export class PaneTailer {
         role.displayName,
         this.paneBaseIndex
       );
-      const lastLines = this.lastLineCounts.get(role.role) ?? -1;
-      const result = capturePane(this.socketPath, target, lastLines + 1);
+      const result = capturePane(this.socketPath, target);
 
       if (result.exitCode !== 0) {
         continue;
       }
 
-      if (result.stdout.length > 0) {
-        updates.push({
-          role: role.role,
-          displayName: role.displayName,
-          text: result.stdout,
-          full: lastLines < 0,
-        });
+      const text = stripAnsi(result.stdout);
+      const previous = this.lastText.get(role.role);
+      if (text === previous) {
+        continue;
       }
 
-      const fullCapture = capturePane(this.socketPath, target);
-      if (fullCapture.exitCode === 0) {
-        const lineCount = fullCapture.stdout.split('\n').length;
-        this.lastLineCounts.set(role.role, lineCount);
-      }
+      this.lastText.set(role.role, text);
+      updates.push({
+        role: role.role,
+        displayName: role.displayName,
+        text,
+        full: true,
+      });
     }
 
     if (updates.length > 0) {
@@ -132,8 +132,8 @@ export class PaneTailer {
     }
 
     if (data.length === 1 && data.charCodeAt(0) < 32) {
-      const ctrl = String.fromCharCode(data.charCodeAt(0) + 64).toLowerCase();
-      sendKeys(this.socketPath, target, `C-${ctrl}`);
+      const letter = String.fromCharCode(data.charCodeAt(0) + 64).toLowerCase();
+      sendKeys(this.socketPath, target, `C-${letter}`);
       return;
     }
 
