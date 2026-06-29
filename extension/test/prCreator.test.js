@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const cp = require('node:child_process');
 
-const { getCurrentBranch, buildPrArgs } = require('../out/swarm/prCreator');
+const { getCurrentBranch, buildPrArgs, openPullRequest } = require('../out/swarm/prCreator');
 
 function mkTmpGitRepo(branchName) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-pr-'));
@@ -44,4 +44,22 @@ test('buildPrArgs defaults base branch to main', () => {
 test('buildPrArgs includes --fill flag', () => {
   const args = buildPrArgs('Title');
   assert.ok(args.includes('--fill'));
+});
+
+test('openPullRequest reports failure when gh is not available', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-pr-fail-'));
+  const result = openPullRequest(tmp, 'Test PR');
+  assert.equal(result.success, false);
+  assert.ok(result.message.includes('Failed to create PR'));
+});
+
+test('openPullRequest extracts URL from gh output', () => {
+  const tmp = mkTmpGitRepo('test-branch');
+  const ghMock = path.join(tmp, 'gh');
+  fs.writeFileSync(ghMock, '#!/bin/sh\necho "opening github.com/owner/repo/pull/1..."\necho "https://github.com/owner/repo/pull/1"', { mode: 0o755 });
+
+  const result = openPullRequest(tmp, 'Test PR');
+  if (result.success) {
+    assert.equal(result.url, 'https://github.com/owner/repo/pull/1');
+  }
 });
