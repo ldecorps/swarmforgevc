@@ -181,6 +181,48 @@ export function getWebviewHtml(nonce: string): string {
     .run-row .run-date { opacity: 0.5; }
     .run-badge-running { color: #4caf50; }
     .run-badge-stopped { color: #888; }
+    #backlog {
+      border-top: 1px solid var(--vscode-panel-border);
+      padding: 6px 12px;
+      flex-shrink: 0;
+      max-height: 200px;
+      overflow: auto;
+    }
+    .backlog-header {
+      font-size: 11px;
+      font-weight: 600;
+      opacity: 0.7;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .backlog-row {
+      display: flex;
+      gap: 8px;
+      font-size: 11px;
+      padding: 2px 0;
+      align-items: center;
+    }
+    .backlog-row .bl-id { font-weight: 500; min-width: 52px; }
+    .backlog-row .bl-title { flex: 1; }
+    .backlog-row .bl-assigned { opacity: 0.6; }
+    .bl-badge {
+      display: inline-block;
+      padding: 0 5px;
+      border-radius: 3px;
+      font-size: 10px;
+      min-width: 42px;
+      text-align: center;
+    }
+    .bl-badge-active { background: #2e7d32; color: #fff; }
+    .bl-badge-todo { background: #555; color: #ccc; }
+    .bl-badge-done { background: #333; color: #888; }
+    .backlog-done-summary {
+      font-size: 11px;
+      cursor: pointer;
+      opacity: 0.7;
+      padding: 2px 0;
+    }
   </style>
 </head>
 <body>
@@ -197,6 +239,10 @@ export function getWebviewHtml(nonce: string): string {
     <div class="runs-header">Recent Runs</div>
     <div id="runs-list"></div>
   </div>
+  <div id="backlog" style="display:none;">
+    <div class="backlog-header">Backlog</div>
+    <div id="backlog-list"></div>
+  </div>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const grid = document.getElementById('grid');
@@ -208,6 +254,8 @@ export function getWebviewHtml(nonce: string): string {
     const openPrBtn = document.getElementById('open-pr-btn');
     const recentRunsEl = document.getElementById('recent-runs');
     const runsListEl = document.getElementById('runs-list');
+    const backlogEl = document.getElementById('backlog');
+    const backlogListEl = document.getElementById('backlog-list');
     const SCROLL_THRESHOLD = 8;
 
     function renderRecentRuns(runs) {
@@ -224,6 +272,36 @@ export function getWebviewHtml(nonce: string): string {
           : '<span class="run-badge-stopped">● stopped</span>';
         return '<div class="run-row"><span class="run-name">' + r.name + '</span><span class="run-target">' + target + '</span><span class="run-date">' + date + '</span>' + badge + '</div>';
       }).join('');
+    }
+
+    function badgeHtml(status) {
+      return '<span class="bl-badge bl-badge-' + status + '">' + status + '</span>';
+    }
+
+    function backlogRowHtml(item) {
+      const assigned = item.assignedTo ? '<span class="bl-assigned">' + item.assignedTo + '</span>' : '';
+      return '<div class="backlog-row">' + badgeHtml(item.status) +
+        '<span class="bl-id">' + item.id + '</span>' +
+        '<span class="bl-title">' + item.title + '</span>' +
+        assigned + '</div>';
+    }
+
+    function renderBacklog(items) {
+      if (!items || items.length === 0) {
+        backlogEl.style.display = 'none';
+        return;
+      }
+      backlogEl.style.display = '';
+      const active = items.filter(i => i.status === 'active');
+      const todo = items.filter(i => i.status === 'todo');
+      const done = items.filter(i => i.status === 'done');
+      const topRows = [...active, ...todo].map(backlogRowHtml).join('');
+      let doneSection = '';
+      if (done.length > 0) {
+        doneSection = '<details><summary class="backlog-done-summary">Done (' + done.length + ')</summary>' +
+          done.map(backlogRowHtml).join('') + '</details>';
+      }
+      backlogListEl.innerHTML = topRows + doneSection;
     }
 
     function isAtBottom(el) {
@@ -383,6 +461,9 @@ export function getWebviewHtml(nonce: string): string {
           if (stageEl) {
             stageEl.textContent = 'Swarm finished';
           }
+          break;
+        case 'backlogUpdate':
+          renderBacklog(message.items);
           break;
       }
     });

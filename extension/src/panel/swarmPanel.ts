@@ -4,6 +4,7 @@ import { PaneTailer } from './paneTailer';
 import { currentStageLabel, readPipelineStages } from '../swarm/swarmState';
 import { loadRuns } from '../runs/runLog';
 import { getNonce, getWebviewHtml } from './webviewHtml';
+import { readBacklog } from './backlogReader';
 
 const STAGE_POLL_INTERVAL_MS = 2000;
 const OUTPUT_CHANNEL_NAME = 'SwarmForge';
@@ -155,6 +156,8 @@ export class SwarmPanel {
         this.panel.webview.postMessage({ type: 'swarmDone' });
       }
       this.panel.webview.postMessage({ type: 'stage', label, recentRuns });
+      const backlogItems = readBacklog(this.targetPath);
+      this.panel.webview.postMessage({ type: 'backlogUpdate', items: backlogItems });
     };
     poll();
     this.stagePoller = setInterval(poll, STAGE_POLL_INTERVAL_MS);
