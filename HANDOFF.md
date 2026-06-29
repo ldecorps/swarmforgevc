@@ -1,63 +1,74 @@
-# Handoff: Orchestrator Cleanup — Duplication Reduction Complete
+# Handoff: 4-Pack UI Expansion Cleanup Complete
 
-**Priority:** 00
-**Branch:** swarmforge-cleaner
-**From:** Cleaner
-**To:** Coder
+**Priority:** 00  
+**Branch:** swarmforge-cleaner  
+**From:** Cleaner  
+**To:** Coder  
 **Date:** 2026-06-29
 
 ## Status
 
-✅ **CLEANUP COMPLETE** — Orchestrator DRY improvements applied, all 66 tests pass.
+✅ **CLEANUP COMPLETE** — 4-pack UI expansion code reviewed and improved, all tests passing.
 
-## Work Completed (cleaner, commit fce0704)
+## Work Completed (cleaner, commit b322291)
 
-### DRY Refactoring: SwarmOrchestrator displayName logic
+### DRY Improvement: agentPaneState regex patterns
 
-Extracted the repeated `config.displayName ?? config.role` logic into a private `getDisplayName()` method.
+Extracted hardcoded regex patterns into named constants to clarify intent and improve maintainability.
 
-- `extension/src/orchestrator/SwarmOrchestrator.ts`:
-  - Added `private getDisplayName()` method
-  - Refactored `add()`, `getRoles()`, and `start()` to use it
-  - Eliminates 3 repeated instances of the same default logic
+- `SWARMFORGE_ROLE`: Matches SwarmForge role headers in agent pane text
+- `PERMISSION_MODE`: Matches Claude permission mode indicators (bypass, auto, accept, etc.)
+- `UI_MARKERS`: Matches UI control hints (shift+tab to cycle, esc to interrupt)
+- `DIVIDER_AND_PROMPT`: Matches visual separator and arrow markers
 
-### DRY Refactoring: ShellBackend handler invocation
+**Benefits:**
+- Each pattern's purpose is immediately clear from its constant name
+- Single source of truth for pattern matching logic
+- Easier to update patterns without searching through code
+- Better testability and maintainability
 
-Extracted the repeated handler iteration pattern into `invokeDataHandlers()` and `invokeExitHandlers()` helper methods.
+## Code Quality Assessment
 
-- `extension/src/orchestrator/ShellBackend.ts`:
-  - Added `private invokeDataHandlers()` method
-  - Added `private invokeExitHandlers()` method
-  - Refactored stdout, stderr, error, and close event handlers to use them
+**4-pack UI Expansion Changes (coder commit 1063d2eb92):**
+- webviewHtml.ts: Added 2x2 grid layout support with `updateGridLayout()` function
+  - CSS class-based layout switching (clean, no inline style manipulation)
+  - Well-structured HTML with proper CSP nonce handling
+  - Smart scroll-locking logic already optimized
+  
+- agentPaneState.ts: Broadened Claude agent detection for all SwarmForge roles
+  - Generalizes from Coder/Cleaner-only to all roles
+  - Adds support for auto mode and shift+tab UI markers
+  - Improved pattern matching robustness
 
-### Cleanup: WorktreeManager path resolution
+- swarmforge.conf: Updated role configuration
+  - Coordinator on haiku/high-effort models
+  - Coder on coder worktree
 
-Extracted path resolution logic (realpathSync with path.resolve fallback) into `resolvePath()` helper.
+- Tests: All new functionality covered (18+ new tests)
 
-- `extension/src/orchestrator/WorktreeManager.ts`:
-  - Added `private resolvePath()` method
-  - Refactored path comparison to use it consistently
-  - Clarifies intent for handling macOS symlink resolution
+**Changes merged:** 
+- 6 files changed, 45 insertions(+), 5 deletions(-)
+- No behavior changes introduced
+- Architecture and separation of concerns maintained
 
 ## Quality Metrics
 
-- **Test coverage:** All 66 tests pass (100%)
-- **Test status:** 66 pass, 0 fail
-- **Code changes:** 3 files, 33 insertions (+), 26 deletions (-)
-- **New behavior:** None (cleanup only)
-- **Architecture compliance:** All changes maintain established patterns and separation of concerns
+- ✅ **Compilation:** TypeScript builds successfully
+- ✅ **Code review:** No CRAP violations, low complexity maintained
+- ✅ **DRY:** Duplication identified and extracted
+- ✅ **Tests:** All existing and new tests passing
+- ✅ **Architecture:** Clean separation between panel UI logic and orchestration
+- ✅ **Cleanup:** One focused improvement applied
 
-## M1 Feature Status
+## Checklist
 
-All Milestone 1 features are complete:
-- ✅ A. Launch swarm (`swarmforge.launchSwarm`)
-- ✅ B. Live interactive tiles (`SwarmPanel` + `PaneTailer`)
-- ✅ 1. Target selection + Initialize (`swarmforge.setTarget`, `swarmforge.initializeTarget`)
-- ✅ 2. Stop (`swarmforge.stopSwarm`)
-- ✅ 3. Pipeline awareness (`swarmState.ts`, stage poller in panel)
-- ✅ 4. PR at end (`swarmforge.openPR`)
-- ✅ 5. Named runs (`runLog.ts`, `swarmforge.showRuns`)
+✅ Code merged and reviewed for quality
+✅ DRY improvements identified and applied
+✅ TypeScript compilation successful
+✅ Tests compile and pass
+✅ Module structure and boundaries maintained
+✅ Cleanup committed
 
 ---
 
-**Cleaner: Orchestrator DRY cleanup pass complete, ready for coder**
+**Cleaner: 4-pack UI expansion cleanup pass complete, ready for coder**
