@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { readHandoffInboxStatus, parseRolesTsv, currentStageLabel } = require('../out/swarm/swarmState');
+const { readHandoffInboxStatus, parseRolesTsv, currentStageLabel, readPipelineStages } = require('../out/swarm/swarmState');
 
 function mkTmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-test-'));
@@ -81,4 +81,37 @@ test('currentStageLabel returns idle label when no roles active', () => {
     { role: 'coder', displayName: 'Coder', status: 'idle' },
   ];
   assert.equal(currentStageLabel(stages), 'idle');
+});
+
+test('readPipelineStages returns empty array when roles.tsv missing', () => {
+  const tmp = mkTmp();
+  assert.deepEqual(readPipelineStages(tmp), []);
+});
+
+test('readPipelineStages returns stages with idle status when inbox is empty', () => {
+  const tmp = mkTmp();
+  mkdirp(path.join(tmp, '.swarmforge'));
+  const tsv = `coder\tmaster\t${tmp}\tswarmforge-coder\tCoder\tclaude\ttask\n`;
+  fs.writeFileSync(path.join(tmp, '.swarmforge', 'roles.tsv'), tsv);
+
+  const stages = readPipelineStages(tmp);
+  assert.equal(stages.length, 1);
+  assert.equal(stages[0].role, 'coder');
+  assert.equal(stages[0].displayName, 'Coder');
+  assert.equal(stages[0].status, 'idle');
+});
+
+test('readPipelineStages returns active status when handoff is in inbox/new', () => {
+  const tmp = mkTmp();
+  const swarmDir = path.join(tmp, '.swarmforge');
+  mkdirp(swarmDir);
+  const tsv = `coder\tmaster\t${tmp}\tswarmforge-coder\tCoder\tclaude\ttask\n`;
+  fs.writeFileSync(path.join(swarmDir, 'roles.tsv'), tsv);
+
+  const newDir = path.join(swarmDir, 'handoffs', 'inbox', 'new');
+  mkdirp(newDir);
+  fs.writeFileSync(path.join(newDir, '50_work.handoff'), 'from: helper\nto: coder\n');
+
+  const stages = readPipelineStages(tmp);
+  assert.equal(stages[0].status, 'active');
 });

@@ -6,6 +6,17 @@ import { launchSwarm, waitForSwarmReady } from './swarm/swarmLauncher';
 import { stopSwarm } from './swarm/swarmStopper';
 import { listTmuxSessions } from './swarm/tmuxClient';
 
+const NO_TARGET_MESSAGE = 'Set a target project first (SwarmForge: Set Target Project).';
+const STOP_SWARM_BUTTON = 'Stop Swarm';
+
+async function resolveTargetPath(context: vscode.ExtensionContext): Promise<string | undefined> {
+  let targetPath = getTargetPath();
+  if (!targetPath) {
+    targetPath = await setTargetPath(context);
+  }
+  return targetPath;
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('swarmforge.testTmux', async () => {
@@ -31,7 +42,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     vscode.commands.registerCommand('swarmforge.initializeTarget', async () => {
-      const targetPath = getTargetPath() ?? (await setTargetPath(context));
+      const targetPath = await resolveTargetPath(context);
       if (!targetPath) {
         return;
       }
@@ -54,10 +65,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     vscode.commands.registerCommand('swarmforge.launchSwarm', async () => {
-      let targetPath = getTargetPath();
-      if (!targetPath) {
-        targetPath = await setTargetPath(context);
-      }
+      const targetPath = await resolveTargetPath(context);
       if (!targetPath) {
         return;
       }
@@ -91,9 +99,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('swarmforge.openPanel', async () => {
       const targetPath = getTargetPath();
       if (!targetPath) {
-        vscode.window.showWarningMessage(
-          'Set a target project first (SwarmForge: Set Target Project).'
-        );
+        vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
         return;
       }
       SwarmPanel.createOrShow(context.extensionUri, targetPath);
@@ -102,18 +108,16 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('swarmforge.stopSwarm', async () => {
       const targetPath = getTargetPath();
       if (!targetPath) {
-        vscode.window.showWarningMessage(
-          'Set a target project first (SwarmForge: Set Target Project).'
-        );
+        vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
         return;
       }
 
       const confirmed = await vscode.window.showWarningMessage(
         'Stop the SwarmForge swarm? This will kill all agent sessions.',
         { modal: true },
-        'Stop Swarm'
+        STOP_SWARM_BUTTON
       );
-      if (confirmed !== 'Stop Swarm') {
+      if (confirmed !== STOP_SWARM_BUTTON) {
         return;
       }
 
