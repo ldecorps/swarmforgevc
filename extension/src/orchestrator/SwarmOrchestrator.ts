@@ -26,17 +26,17 @@ export class SwarmOrchestrator {
   }
 
   add(config: AgentConfig): void {
-    this.configs.push({ ...config, displayName: config.displayName ?? config.role });
+    this.configs.push(config);
   }
 
   getRoles(): AgentConfig[] {
-    return this.configs.map((c) => ({ ...c, displayName: c.displayName ?? c.role }));
+    return this.configs.map((c) => ({ ...c, displayName: this.getDisplayName(c) }));
   }
 
   start(): void {
     for (const cfg of this.configs) {
       const backend = new ShellBackend(cfg.command, cfg.args, { cwd: cfg.cwd });
-      const displayName = cfg.displayName ?? cfg.role;
+      const displayName = this.getDisplayName(cfg);
       backend.onData((chunk) => {
         for (const h of this.outputHandlers) {
           h(cfg.role, chunk, displayName);
@@ -49,6 +49,10 @@ export class SwarmOrchestrator {
       });
       this.backends.set(cfg.role, backend);
     }
+  }
+
+  private getDisplayName(config: AgentConfig): string {
+    return config.displayName ?? config.role;
   }
 
   write(role: string, data: string): void {
