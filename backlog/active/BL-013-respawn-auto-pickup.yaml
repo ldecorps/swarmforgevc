@@ -1,0 +1,36 @@
+id: BL-013
+title: Per-agent respawn with auto-pickup — relaunch one agent, resume its pending messages
+milestone: M2
+priority: 13
+status: todo
+
+description: >
+  Kill and relaunch a single agent in its existing worktree without disturbing the
+  rest of the swarm. A "SwarmForge: Respawn Agent" command and a per-tile ⟳ button
+  kill only that role's backend PID and relaunch it in the same worktree; worktree,
+  branch, and all on-disk state are preserved — only the process is replaced. On
+  relaunch the agent scans .swarmforge/messages/ for messages addressed to it that
+  are still in created, or in received with a stale/absent lease, and resumes them
+  automatically (no re-chase needed). A received message whose lease is still live
+  (owning process running) is left alone so it is never double-claimed. The tile's
+  "model ▾" dropdown swaps the backend and triggers a respawn on that role only.
+  Respawn may be partially implemented from M1 (⟳ button); extend or complete it.
+  Auto-pickup reads the message logs (BL-009 bus) and does not re-read the tmux
+  handoff layer.
+
+acceptance:
+  - Kill an agent mid-work, respawn it, and confirm it picks up its pending message without being re-chased
+  - A message with a live lease is not double-claimed after a respawn
+  - Other agents are unaffected by a single-role respawn
+  - The model ▾ dropdown swaps backend and respawns only that role
+
+constraints:
+  - Respawn lives in the extension host; it kills/relaunches the role's backend PID in the same worktree
+  - Auto-pickup scans .swarmforge/messages/ only; it does not read .swarmforge/handoffs/ (tmux layer)
+  - Lease semantics follow BL-009: stale/absent lease = claimable, live lease = leave alone
+
+depends_on:
+  - BL-009  # message bus + lease semantics
+  - BL-010  # heartbeat (liveness used to decide stale lease)
+
+assigned_to: coder
