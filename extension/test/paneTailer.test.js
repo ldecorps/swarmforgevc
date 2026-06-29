@@ -3,6 +3,12 @@ const test = require('node:test');
 
 const { mapInputToTmuxKey, mapSpecialKeyToTmux } = require('../out/panel/paneTailer');
 const { stripAnsi } = require('../out/panel/ansi');
+const { getPaneCommand } = require('../out/swarm/tmuxClient');
+
+test('getPaneCommand returns empty string for non-existent socket', () => {
+  const result = getPaneCommand('/tmp/nonexistent-sfvc-socket-xyz', 'somesession:0.0');
+  assert.equal(result, '');
+});
 
 test('stripAnsi removes basic SGR sequences', () => {
   assert.equal(stripAnsi('\x1b[31mred\x1b[0m'), 'red');

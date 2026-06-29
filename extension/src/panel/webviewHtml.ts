@@ -132,6 +132,22 @@ export function getWebviewHtml(nonce: string): string {
     const tiles = new Map();
     let activeRole = null;
     const openPrBtn = document.getElementById('open-pr-btn');
+    const SCROLL_THRESHOLD = 8;
+
+    function isAtBottom(el) {
+      return el.scrollTop + el.clientHeight >= el.scrollHeight - SCROLL_THRESHOLD;
+    }
+
+    function scrollToBottom(el) {
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function updateTileOutput(entry) {
+      entry.output.textContent = entry.text;
+      if (entry.tailLocked) {
+        scrollToBottom(entry.output);
+      }
+    }
 
     openPrBtn.addEventListener('click', () => {
       vscode.postMessage({ type: 'openPR' });
@@ -159,9 +175,15 @@ export function getWebviewHtml(nonce: string): string {
       output.tabIndex = 0;
       output.dataset.role = role;
 
+      const entry = { tile, output, text: '', tailLocked: true };
+
       output.addEventListener('focus', () => {
         activeRole = role;
       });
+
+      output.addEventListener('scroll', () => {
+        entry.tailLocked = isAtBottom(output);
+      }, { passive: true });
 
       output.addEventListener('keydown', (e) => {
         e.preventDefault();
@@ -183,7 +205,6 @@ export function getWebviewHtml(nonce: string): string {
       tile.appendChild(output);
       grid.appendChild(tile);
 
-      const entry = { tile, output, text: '' };
       tiles.set(role, entry);
       return entry;
     }
@@ -203,8 +224,7 @@ export function getWebviewHtml(nonce: string): string {
             } else {
               entry.text += u.text;
             }
-            entry.output.textContent = entry.text;
-            entry.output.scrollTop = entry.output.scrollHeight;
+            updateTileOutput(entry);
           });
           break;
         case 'stage':

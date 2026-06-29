@@ -1,7 +1,12 @@
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { readSwarmRoles, readTmuxSocket } from './tmuxClient';
+import {
+  listTmuxSessions,
+  readSwarmRoles,
+  readTmuxSocket,
+  sessionExists,
+} from './tmuxClient';
 
 export interface LaunchResult {
   success: boolean;
@@ -9,10 +14,22 @@ export interface LaunchResult {
   targetPath: string;
 }
 
-function isSwarmReady(targetPath: string): boolean {
+export function isSwarmReady(targetPath: string): boolean {
   const socket = readTmuxSocket(targetPath);
+  if (!socket) {
+    return false;
+  }
+
+  if (listTmuxSessions(socket).exitCode !== 0) {
+    return false;
+  }
+
   const roles = readSwarmRoles(targetPath);
-  return Boolean(socket && roles.length > 0);
+  if (roles.length === 0) {
+    return false;
+  }
+
+  return roles.every((role) => sessionExists(socket, role.session));
 }
 
 export async function launchSwarm(targetPath: string): Promise<LaunchResult> {
@@ -33,10 +50,12 @@ export async function launchSwarm(targetPath: string): Promise<LaunchResult> {
         SWARMFORGE_TERMINAL: 'none',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
+      detached: false,
     });
 
     let settled = false;
     let stderr = '';
+    let stdout = '';
 
     const cleanup = () => {
       clearTimeout(deadline);
@@ -49,9 +68,6 @@ export async function launchSwarm(targetPath: string): Promise<LaunchResult> {
       }
       settled = true;
       cleanup();
-      if (child.pid && !child.killed) {
-        child.kill('SIGTERM');
-      }
       resolve({ success, message, targetPath });
     };
 
@@ -60,7 +76,11 @@ export async function launchSwarm(targetPath: string): Promise<LaunchResult> {
     });
 
     child.stdout?.on('data', (chunk: Buffer) => {
-      if (chunk.toString().includes('SwarmForge is ready') && isSwarmReady(targetPath)) {
+      stdout += chunk.toString();
+      if (
+        stdout.includes('SwarmForge is ready') &&
+        isSwarmReady(targetPath)
+      ) {
         finish(true, 'Swarm launched successfully.');
       }
     });
@@ -79,7 +99,7 @@ export async function launchSwarm(targetPath: string): Promise<LaunchResult> {
       }
       finish(
         false,
-        `Swarm launch failed: ${stderr || `exit code ${code ?? 'unknown'}`}`
+        `Swarm launch failed: ${stderr || stdout || `exit code ${code ?? 'unknown'}`}`
       );
     });
 
