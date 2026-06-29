@@ -57,6 +57,15 @@ export function getWebviewHtml(nonce: string): string {
       overflow: auto;
       align-content: start;
     }
+    #grid.layout-2x2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-rows: repeat(2, minmax(0, 1fr));
+      align-content: stretch;
+      overflow: hidden;
+    }
+    #grid.layout-2x2 .tile {
+      min-height: 0;
+    }
     .tile {
       display: flex;
       flex-direction: column;
@@ -149,6 +158,13 @@ export function getWebviewHtml(nonce: string): string {
       }
     }
 
+    function updateGridLayout(agentCount) {
+      grid.classList.remove('layout-2x2');
+      if (agentCount === 4) {
+        grid.classList.add('layout-2x2');
+      }
+    }
+
     openPrBtn.addEventListener('click', () => {
       vscode.postMessage({ type: 'openPR' });
     });
@@ -215,6 +231,7 @@ export function getWebviewHtml(nonce: string): string {
         case 'roles':
           status.textContent = message.roles.length + ' agent(s)';
           message.roles.forEach((r) => ensureTile(r.role, r.displayName, r.agent));
+          updateGridLayout(message.roles.length);
           break;
         case 'output':
           message.updates.forEach((u) => {

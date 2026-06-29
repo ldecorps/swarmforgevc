@@ -52,6 +52,12 @@ test('getWebviewHtml contains smart auto-scroll tail logic', () => {
   assert(html.includes('updateTileOutput'));
 });
 
+test('getWebviewHtml uses 2x2 grid layout for four agents', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes('layout-2x2'));
+  assert(html.includes('updateGridLayout'));
+});
+
 test('getWebviewHtml contains webview message handling script', () => {
   const html = getWebviewHtml('test');
   assert(html.includes('acquireVsCodeApi'));
