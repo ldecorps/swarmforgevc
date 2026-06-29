@@ -13,18 +13,29 @@ export interface HeartbeatData {
 
 export function writeHeartbeat(dir: string, data: HeartbeatData): void {
   fs.mkdirSync(dir, { recursive: true });
-  const yaml =
-    `role: ${data.role}\n` +
-    `pid: ${data.pid}\n` +
-    `last_beat: "${data.last_beat}"\n` +
-    `last_tool: ${data.last_tool}\n` +
-    `phase: ${data.phase}\n` +
-    `in_flight: ${data.in_flight}\n` +
-    `beat_count: ${data.beat_count}\n`;
+  const yaml = `role: ${data.role}
+pid: ${data.pid}
+last_beat: "${data.last_beat}"
+last_tool: ${data.last_tool}
+phase: ${data.phase}
+in_flight: ${data.in_flight}
+beat_count: ${data.beat_count}
+`;
   const filePath = path.join(dir, `${data.role}.yaml`);
   const tmp = filePath + '.tmp';
   fs.writeFileSync(tmp, yaml, 'utf8');
   fs.renameSync(tmp, filePath);
+}
+
+function parseYamlLine(line: string): [string, unknown] | null {
+  const m = line.match(/^(\w+):\s*(.+)$/);
+  if (!m) return null;
+  const key = m[1];
+  let val: string | boolean | number = m[2].trim().replace(/^"(.*)"$/, '$1');
+  if (val === 'true') val = true;
+  else if (val === 'false') val = false;
+  else if (/^\d+$/.test(val)) val = parseInt(val, 10);
+  return [key, val];
 }
 
 export function readHeartbeat(dir: string, role: string): HeartbeatData | undefined {
@@ -33,14 +44,8 @@ export function readHeartbeat(dir: string, role: string): HeartbeatData | undefi
     const content = fs.readFileSync(filePath, 'utf8');
     const obj: Record<string, unknown> = {};
     for (const line of content.split('\n')) {
-      const m = line.match(/^(\w+):\s*(.+)$/);
-      if (!m) continue;
-      const key = m[1];
-      let val: string | boolean | number = m[2].trim().replace(/^"(.*)"$/, '$1');
-      if (val === 'true') val = true as boolean;
-      else if (val === 'false') val = false as boolean;
-      else if (/^\d+$/.test(val as string)) val = parseInt(val as string, 10);
-      obj[key] = val;
+      const parsed = parseYamlLine(line);
+      if (parsed) obj[parsed[0]] = parsed[1];
     }
     return obj as unknown as HeartbeatData;
   } catch {
