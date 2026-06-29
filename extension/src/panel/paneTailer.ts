@@ -13,6 +13,11 @@ import { agentPaneStatusMessage } from './agentPaneState';
 import { stripAnsi } from './ansi';
 
 const DEFAULT_POLL_INTERVAL_MS = 200;
+export const STALL_THRESHOLD_MS = 120_000;
+
+export function isStalled(lastChangedAt: number, now: number): boolean {
+  return now - lastChangedAt >= STALL_THRESHOLD_MS;
+}
 
 export interface TileOutput {
   role: string;
@@ -21,16 +26,24 @@ export interface TileOutput {
   full: boolean;
 }
 
+export interface StallEvent {
+  role: string;
+  stalled: boolean;
+}
+
 export class PaneTailer {
   private interval: ReturnType<typeof setInterval> | undefined;
   private lastText = new Map<string, string>();
+  private lastChangedAt = new Map<string, number>();
+  private stalledRoles = new Set<string>();
   private paneBaseIndex = 0;
   private roles: SwarmRole[] = [];
   private socketPath = '';
 
   constructor(
     private readonly targetPath: string,
-    private readonly onOutput: (updates: TileOutput[]) => void
+    private readonly onOutput: (updates: TileOutput[]) => void,
+    private readonly onStall?: (events: StallEvent[]) => void
   ) {}
 
   start(pollMs = DEFAULT_POLL_INTERVAL_MS): void {
@@ -54,6 +67,8 @@ export class PaneTailer {
     this.socketPath = readTmuxSocket(this.targetPath) ?? '';
     this.roles = readSwarmRoles(this.targetPath);
     this.lastText.clear();
+    this.lastChangedAt.clear();
+    this.stalledRoles.clear();
     if (this.socketPath) {
       this.paneBaseIndex = getPaneBaseIndex(this.socketPath);
     }
@@ -127,6 +142,7 @@ export class PaneTailer {
       }
 
       this.lastText.set(role.role, text);
+      this.lastChangedAt.set(role.role, Date.now());
       updates.push({
         role: role.role,
         displayName: role.displayName,
@@ -137,6 +153,30 @@ export class PaneTailer {
 
     if (updates.length > 0) {
       this.onOutput(updates);
+    }
+
+    if (this.onStall) {
+      const stallEvents: StallEvent[] = [];
+      const now = Date.now();
+      for (const role of this.roles) {
+        const lastChanged = this.lastChangedAt.get(role.role);
+        if (lastChanged === undefined) {
+          continue;
+        }
+        const stalled = isStalled(lastChanged, now);
+        const wasStalled = this.stalledRoles.has(role.role);
+        if (stalled !== wasStalled) {
+          if (stalled) {
+            this.stalledRoles.add(role.role);
+          } else {
+            this.stalledRoles.delete(role.role);
+          }
+          stallEvents.push({ role: role.role, stalled });
+        }
+      }
+      if (stallEvents.length > 0) {
+        this.onStall(stallEvents);
+      }
     }
   }
 

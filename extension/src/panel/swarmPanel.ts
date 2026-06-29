@@ -100,9 +100,15 @@ export class SwarmPanel {
 
   private setupTailer(): void {
     this.tailer?.stop();
-    this.tailer = new PaneTailer(this.targetPath, (updates) => {
-      this.panel.webview.postMessage({ type: 'output', updates });
-    });
+    this.tailer = new PaneTailer(
+      this.targetPath,
+      (updates) => {
+        this.panel.webview.postMessage({ type: 'output', updates });
+      },
+      (events) => {
+        this.panel.webview.postMessage({ type: 'stall', events });
+      }
+    );
     this.tailer.start();
     this.sendRoles(this.tailer.getRoles());
   }
