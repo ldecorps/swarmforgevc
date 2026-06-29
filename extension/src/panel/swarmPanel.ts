@@ -5,12 +5,14 @@ import { currentStageLabel, readPipelineStages } from '../swarm/swarmState';
 import { getNonce, getWebviewHtml } from './webviewHtml';
 
 const STAGE_POLL_INTERVAL_MS = 2000;
+const OUTPUT_CHANNEL_NAME = 'SwarmForge';
 
 export class SwarmPanel {
   public static currentPanel: SwarmPanel | undefined;
   private static readonly viewType = 'swarmforgePanel';
 
   private readonly panel: vscode.WebviewPanel;
+  private readonly outputChannel: vscode.OutputChannel;
   private tailer: PaneTailer | undefined;
   private stagePoller: ReturnType<typeof setInterval> | undefined;
   private disposables: vscode.Disposable[] = [];
@@ -23,6 +25,7 @@ export class SwarmPanel {
     private targetPath: string
   ) {
     this.panel = panel;
+    this.outputChannel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
     this.panel.webview.html = this.getHtml();
     this.setupTailer();
     this.startStagePoller();
@@ -117,6 +120,9 @@ export class SwarmPanel {
       },
       (events) => {
         this.panel.webview.postMessage({ type: 'dead', events });
+      },
+      (message) => {
+        this.outputChannel.appendLine(message);
       }
     );
     this.tailer.start();
@@ -162,6 +168,7 @@ export class SwarmPanel {
 
   public dispose(): void {
     SwarmPanel.currentPanel = undefined;
+    this.outputChannel.dispose();
     this.tailer?.stop();
     if (this.stagePoller) {
       clearInterval(this.stagePoller);

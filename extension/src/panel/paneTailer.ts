@@ -9,6 +9,7 @@ import {
   SwarmRole,
   getPaneBaseIndex,
 } from '../swarm/tmuxClient';
+import { appendInputEntry } from '../swarm/inputLog';
 import { agentPaneStatusMessage } from './agentPaneState';
 import { stripAnsi } from './ansi';
 
@@ -51,7 +52,8 @@ export class PaneTailer {
     private readonly targetPath: string,
     private readonly onOutput: (updates: TileOutput[]) => void,
     private readonly onStall?: (events: StallEvent[]) => void,
-    private readonly onDead?: (events: DeadEvent[]) => void
+    private readonly onDead?: (events: DeadEvent[]) => void,
+    private readonly onInputLogError?: (message: string) => void
   ) {}
 
   start(pollMs = DEFAULT_POLL_INTERVAL_MS): void {
@@ -227,6 +229,7 @@ export class PaneTailer {
     }
     const mapped = mapInputToTmuxKey(data);
     sendKeys(this.socketPath, target, mapped.key, mapped.literal);
+    this.logInput(roleName, data);
   }
 
   forwardSpecialKey(roleName: string, key: string): void {
@@ -237,6 +240,16 @@ export class PaneTailer {
     const tmuxKey = mapSpecialKeyToTmux(key);
     if (tmuxKey) {
       sendKeys(this.socketPath, target, tmuxKey);
+      this.logInput(roleName, key);
+    }
+  }
+
+  private logInput(role: string, data: string): void {
+    try {
+      appendInputEntry(this.targetPath, role, data);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.onInputLogError?.(`Input log write failed: ${message}`);
     }
   }
 }
