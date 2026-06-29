@@ -12,13 +12,15 @@ export function isClaudeAgentRunning(
     return false;
   }
 
-  if (/SwarmForge (Coder|Cleaner)/i.test(text)) {
+  if (/SwarmForge \w+/i.test(text)) {
     return true;
   }
-  if (/bypass permissions/i.test(text)) {
+  if (
+    /bypass permissions|auto mode|accept edits|dont ask|plan mode/i.test(text)
+  ) {
     return true;
   }
-  if (/esc to interrupt/i.test(text)) {
+  if (/shift\+tab to cycle|esc to interrupt/i.test(text)) {
     return true;
   }
   if (/─{3,}/.test(text) && /❯/.test(text)) {
