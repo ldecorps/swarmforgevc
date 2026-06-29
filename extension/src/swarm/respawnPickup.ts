@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { readLog, MessageEvent } from './messageBus';
+import { readLog, MessageEvent, claimMessage } from './messageBus';
 
 export interface PendingMessage {
   id: string;
@@ -9,7 +9,7 @@ export interface PendingMessage {
   body: string;
 }
 
-function isClaimable(events: MessageEvent[], nowEpoch: number, leaseTtlSeconds: number): boolean {
+function isEligible(events: MessageEvent[], nowEpoch: number, leaseTtlSeconds: number): boolean {
   if (events.length === 0) return false;
   const last = events[events.length - 1];
   const status = last.type;
@@ -21,14 +21,15 @@ function isClaimable(events: MessageEvent[], nowEpoch: number, leaseTtlSeconds: 
     const parts = claimed.split('@');
     if (parts.length !== 2) return true;
     const leaseEpoch = parseInt(parts[1], 10);
+    if (isNaN(leaseEpoch)) return true;
     return nowEpoch - leaseEpoch >= leaseTtlSeconds;
   }
   return false;
 }
 
 /**
- * Scan dir for message logs addressed to role that are claimable:
- * status is 'created'/'chased', or 'received' with a stale/absent lease.
+ * Scan dir for message logs addressed to role that are claimable.
+ * Each returned message has been atomically claimed via claimMessage.
  */
 export function pickupPendingMessages(
   dir: string,
@@ -50,10 +51,12 @@ export function pickupPendingMessages(
     const created = events[0];
     if (created.type !== 'created') continue;
     if (created.to !== role) continue;
-    if (!isClaimable(events, nowEpoch, leaseTtlSeconds)) continue;
+    if (!isEligible(events, nowEpoch, leaseTtlSeconds)) continue;
+    // Atomically claim before including in results
+    const claimed = claimMessage(logPath, role, nowEpoch, leaseTtlSeconds);
+    if (!claimed) continue;
     const id = file.replace(/\.log$/, '');
-    const last = events[events.length - 1];
-    results.push({ id, logPath, status: last.type, body: created.body as string });
+    results.push({ id, logPath, status: 'received', body: created.body as string });
   }
   return results;
 }
