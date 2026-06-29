@@ -72,3 +72,11 @@ test('stopSwarm tolerates a missing daemon pid file', () => {
   const result = stopSwarm(tmp);
   assert.equal(result.success, false);
 });
+
+const { respawnAgent } = require('../out/swarm/tmuxClient');
+
+test('respawnAgent returns failure when launch script missing', () => {
+  const result = respawnAgent('/nonexistent-target', 'coder');
+  assert.equal(result.success, false);
+  assert.ok(result.message.includes('launch script') || result.message.length > 0);
+});
