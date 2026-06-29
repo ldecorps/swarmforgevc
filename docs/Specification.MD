@@ -2,7 +2,7 @@
 
 ## Overview
 
-A VS Code extension that acts as a visual front-end for Uncle Bob's SwarmForge agent orchestration system. The extension lives entirely in the forge codebase. It points at any target project, runs the swarm on it, and brings the work back as a PR. The target project carries only two swarm bootstrap files and otherwise has no knowledge of SwarmForge.
+A VS Code extension that runs a multi-agent coding swarm and brings the work back as a PR. It is a **standalone orchestrator** — inspired by Uncle Bob's SwarmForge agent-orchestration model, but it spawns and manages the agent processes itself rather than driving SwarmForge or tmux. The extension lives entirely in the forge codebase. It points at any target project, runs the swarm on it, and brings the work back as a PR. The target project carries only two swarm bootstrap files and otherwise has no knowledge of the swarm machinery.
 
 ---
 
@@ -18,25 +18,23 @@ A VS Code extension that acts as a visual front-end for Uncle Bob's SwarmForge a
 
 ---
 
-## Relationship to SwarmForge (Integration, Not Fork)
+## Relationship to SwarmForge (Inspired By, Not Dependent On)
 
-The extension is built **around** SwarmForge, not **on a fork of** it. SwarmForge is treated as an unmodified, version-pinned component that the extension *drives and observes* — never a codebase merged into this repo.
+The extension is a **standalone orchestrator** inspired by SwarmForge — it borrows the *model* (a sequential role pipeline, worktree-per-role, filesystem-mediated handoffs) but spawns and manages the agent processes itself. SwarmForge is **not a runtime dependency**: no fork, no vendored source, no `./swarm` wrapper, no tmux, nothing fetched at setup.
 
-**Why not fork.** SwarmForge is young and fast-moving, and the whole point is to keep getting Uncle Bob's new features. A hard fork pulls his source into this tree and forces every upstream change through local modifications — a merge treadmill on someone else's cadence, and the opposite of the separation this spec is built on. Integration avoids all of that: upstream ships a feature → bump the pinned version → done, no merge.
+**Why own orchestration.** The driving constraint is native Windows. tmux — SwarmForge's process substrate — has no native Windows implementation, and WSL/emulation layers were explicitly rejected in favor of a clean cross-platform path. Owning the orchestrator means one process API across Windows, macOS, and Linux. The cost is giving up upstream feature relay; the benefit is a substrate the extension fully controls and can run anywhere VS Code runs.
 
-**The integration surface is files + process, not source.** The extension interacts with SwarmForge exactly where it already exposes seams:
-- launches it via its `./swarm` wrapper,
-- reads its state under `.swarmforge/` (messages, sessions, sockets),
-- attaches to its tmux sessions/panes,
-- configures swarm shape through `swarmforge.conf` and role/constitution prompt files (which are *configuration*, not code).
+**The substrate is process + filesystem, owned in-repo.** The extension runs the swarm through its own thin orchestrator:
+- spawns each agent as an `InteractiveProcess` (a `child_process.spawn` shell backend, or an in-process `vscode.lm` runtime — see Agent Backends),
+- owns each process's output stream directly (`onData`), which is what makes live tiles, message-bus capture, and input forwarding all work from a single handle,
+- reads and writes swarm state under `.swarmforge/` (messages, heartbeats) and `.worktrees/` in the target clone,
+- configures swarm shape through this repo's own role/constitution prompt files and pack config — all *configuration in this repo*, not an external dependency.
 
-Almost everything in this spec — hardened comms, watchdog/heartbeat, work tree, tiles, cost logic — sits *on top of* that surface and needs no change to SwarmForge internals.
+Almost everything in this spec — hardened comms, watchdog/heartbeat, work tree, tiles, cost logic — sits on top of that owned substrate.
 
-**When something genuinely needs an upstream change.** If a feature requires a hook SwarmForge doesn't expose (the tool-call-decorated heartbeat is the most likely candidate, and even it can probably be achieved by wrapping the *backend launch command* rather than patching SwarmForge), the rule is **contribute upstream, don't fork privately**: PR generic improvements back to SwarmForge and keep pulling from its main like any contributor. A private fork is justified only for a philosophical divergence — which this isn't.
+**Reproducibility.** Because the orchestrator, role runtimes, message bus, and all prompts live in this repo and are versioned in git, a given extension version *is* the complete definition of swarm behaviour. Nothing is fetched upstream that could silently change results between two runs of the same version. (The former `dependency-pinning.md` / `swarmforge.lock.json` discipline is therefore retired — there is no upstream artifact to pin.)
 
-**Decision data:** maintain a running list of "things SwarmForge doesn't expose that I need." If it stays short, the integration model holds; if it grows, each entry is a candidate upstream PR — not a reason to fork.
-
-**Repo consequence:** SwarmForge is fetched/pinned at setup (e.g. a runnable-branch tarball, as its own install does), never committed into this repo. The forge repo holds only the extension code plus this project's generic role prompts and constitution.
+**Borrowing from SwarmForge going forward.** Uncle Bob's pipeline shape remains a useful reference; a human may consult it and port ideas deliberately into this repo's prompts or orchestrator. That is a human design act, not an automated fetch — the inspiration never re-enters as a runtime input.
 
 ---
 
@@ -49,7 +47,7 @@ swarmforge-vscode/
 ├── extension/                  # VS Code extension source
 │   ├── src/
 │   │   ├── panel/              # Webview panel — tiled agent UI
-│   │   ├── swarm/              # SwarmForge orchestration bridge
+│   │   ├── orchestrator/       # Agent process orchestrator (spawn, stream, worktrees, lifecycle)
 │   │   ├── git/                # PR creation, branch management
 │   │   ├── config/             # Target project resolution, pack selection
 │   │   └── tools/              # Reusable tools accumulated by the swarm
@@ -78,7 +76,7 @@ The extension clones the target repo and operates via git worktrees — one per 
 
 ## UI: Tiled Agent Panel
 
-The extension opens a VS Code Webview panel that mirrors SwarmForge's tmux layout — one tile per active agent role.
+The extension opens a VS Code Webview panel with one tile per active agent role, one tile per orchestrator-spawned process.
 
 ### Panel Layout
 
@@ -102,21 +100,21 @@ The extension opens a VS Code Webview panel that mirrors SwarmForge's tmux layou
 └─────────────────────────────────────────────────────┘
 ```
 
-### Two layers: tile-as-view, tmux-as-substrate
+### Two layers: tile-as-view, process-as-substrate
 
-A point worth stating plainly, because it's a tempting wrong turn: **the tiles are TypeScript/webview views; tmux is the process substrate underneath.** They are not alternatives — they are different layers.
+A point worth stating plainly, because there's a tempting wrong turn nearby: **the tiles are TypeScript/webview views; the agent processes the orchestrator spawns are the substrate underneath.** They are not alternatives — they are different layers.
 
 - The **tile** is what you see and interact with: a terminal widget the extension renders and fully controls (styling, layout, the per-tile controls, tracked input).
-- **tmux** is what runs the agents: SwarmForge's session-per-role model, its watchdog, its project socket. The extension does not replace this — it reads those sessions and paints them into tiles, and forwards your keystrokes back down.
+- The **process** is what runs the agent: an `InteractiveProcess` the orchestrator spawned (shell backend or `vscode.lm` runtime), in its own worktree, with its output stream owned directly by the host. The tile reads that stream and paints it, and forwards your keystrokes back down via `write()`.
 
-The temptation is to spawn agent processes directly from TypeScript (Node `child_process`) and skip tmux for a "cleaner" UI and free Windows support. Resist it: **SwarmForge *is* tmux.** Spawning your own processes means reimplementing SwarmForge's orchestration, watchdog, and worktree choreography — abandoning the integrate-don't-fork model and forfeiting every upstream feature. The clean TS UI and keeping SwarmForge are not in tension; the tile gives you the former, tmux-underneath keeps the latter. If a step at build time feels like you're rebuilding orchestration, that's the signal you've drifted across this line.
+Spawning agent processes from TypeScript **is** the intended design — that is what the orchestrator is for. The line not to cross is a different one: do not let **coordination logic** (pipeline sequencing, merge, message routing, convergence) leak into the process layer. The orchestrator is a *process manager* only; coordination belongs in the coordinator role and the message bus. If a step at build time feels like you're building pipeline or routing logic inside the process manager, that's the signal you've drifted across this line.
 
 ### Tile Behavior
 
-- Each tile streams stdout of its tmux session in real time (tail via VS Code pseudoterminal or WebSocket to a local bridge process)
+- Each tile streams stdout of its agent's process in real time (subscribe to the `InteractiveProcess` `onData` stream)
 - Tile border color: grey (idle), blue (active), green (done), red (error)
-- Each tile is always a live embedded terminal — you click into any tile and type directly, exactly as you would in the agent's Terminal window in the native tmux setup
-- No expand needed; all tiles are simultaneously interactive, mirroring how SwarmForge opens one Terminal window per role
+- Each tile is always a live embedded terminal — you click into any tile and type directly, exactly as you would in a real terminal attached to that agent
+- No expand needed; all tiles are simultaneously interactive, one live terminal per role
 
 #### Human input is tracked, not a side-channel
 
@@ -124,7 +122,7 @@ Typing directly into a tile is powerful but creates a hazard: a hand-typed instr
 
 To close this, direct typing is **mirrored into the message store** as a human-origin event:
 
-- Keystrokes sent to an agent's pane are also captured as a `human-input` message (`from: human, to: <role>`, with the text), appended to that agent's message log
+- Keystrokes sent to an agent's process are also captured as a `human-input` message (`from: human, to: <role>`, with the text), appended to that agent's message log
 - So the instruction becomes part of the same auditable record as agent-to-agent handoffs — it shows in the message view, survives respawn (the agent's auto-pickup sees it), and is visible to anyone reviewing what shaped the run
 - A small "✎ human" marker on the tile and in the message view distinguishes human nudges from agent traffic
 - This doesn't restrict what you can type — it just ensures nothing you tell an agent is invisible to the rest of the system. The capture is best-effort for raw keystrokes; a dedicated "send instruction" input box per tile (logged cleanly as one message) is the recommended primary path, with raw typing as the fallback
@@ -145,7 +143,7 @@ Each tile has a small control row (hover or always-visible header):
 
 | Control | Behavior |
 |---|---|
-| **⟳ Respawn** | Kills that one agent's process and relaunches it in the same worktree/tmux session, without touching any other agent. The swarm keeps running. |
+| **⟳ Respawn** | Kills that one agent's process and relaunches it in the same worktree, without touching any other agent. The swarm keeps running. |
 | **model ▾** | Dropdown of available backends/models (`claude`, `codex`, `copilot`, `grok`, …). Changing it respawns that single agent on the new backend on the fly. |
 | **⏸ / ▶** | Pause or resume the individual agent (optional, v1.1) |
 
@@ -159,7 +157,7 @@ Respawn preserves the agent's worktree and branch state — only the running pro
 | **target** | Path or GitHub URL of the target project. Persisted per workspace. |
 | **pack selector** | Dropdown: forge analyzes the target and suggests a pack (2 / 4 / 7); user confirms or overrides |
 | **▶ Run** | Triggers the swarm run |
-| **⏹ Stop** | Closes the coordinator tmux window, which cascades shutdown per SwarmForge convention |
+| **⏹ Stop** | Signals the coordinator to stand down, then the orchestrator terminates all agent processes (coordinator last) |
 
 ---
 
@@ -221,7 +219,7 @@ sent ──────► received ──────► done
 
 Agents tend to go idle. The sender (or a lightweight monitor in the extension) watches its outgoing messages:
 
-- If a message stays `sent` past a configurable timeout, the sender **chases**: re-notifies the receiver (via SwarmForge's `notify-agent.sh`), increments `chase_count`, updates `last_chased_at`
+- If a message stays `sent` past a configurable timeout, the sender **chases**: re-notifies the receiver (the orchestrator writes a nudge to the receiver's inbox / re-prompts it), increments `chase_count`, updates `last_chased_at`
 - Escalation: after N chases with no `received`, surface a warning on the receiver's tile (red border + "not responding") so the human can intervene — e.g., respawn that agent
 - The monitor can also flag messages stuck in `received` (picked up but never completed) past a longer timeout
 
@@ -233,7 +231,7 @@ Agents tend to go idle. The sender (or a lightweight monitor in the extension) w
 
 ### Implementation notes
 
-- Reading/writing messages is exposed to agents as helper commands on their PATH (extending SwarmForge's `swarmtools/` helpers): e.g. `send-handoff`, `ack-handoff`, `complete-handoff`
+- Reading/writing messages is exposed to agents as helper commands on their PATH (part of the forge's reusable tool layer, `extension/src/tools/`): e.g. `send-handoff`, `ack-handoff`, `complete-handoff`
 - The chase monitor runs in the extension host, polling the message store on an interval — no dependency added to the target
 
 ### Reliability (making it rock-solid)
@@ -302,7 +300,7 @@ A single monitor loop in the extension host, polling on an interval:
 
 | Check | Trigger | Action |
 |---|---|---|
-| **Heartbeat stale** | No heartbeat from a role past `staleTimeout` and no tool in flight | Mark tile amber ("idle"), attempt a nudge via `notify-agent.sh` |
+| **Heartbeat stale** | No heartbeat from a role past `staleTimeout` and no tool in flight | Mark tile amber ("idle"), attempt a nudge (orchestrator re-prompts / writes to the agent's inbox) |
 | **Tool hung** | A tool in flight (`in_flight: true`) past `inFlightTimeout` | Mark amber → red; surface the stuck tool name on the tile |
 | **Heartbeat dead** | Still stale past `deadTimeout` after nudges | Mark tile red ("not responding"); optionally auto-respawn if enabled |
 | **Process gone** | Backend PID for a role no longer exists | Mark red; auto-respawn if `autoRespawn` is on |
@@ -334,54 +332,56 @@ A core capability: managing individual agents without disrupting the swarm.
 
 ### Respawn a single agent
 
-- Kills only that agent's backend process; its tmux session, worktree, and branch are left intact
+- Kills only that agent's backend process; its worktree and branch are left intact
 - Relaunches the configured backend in the same worktree
 - The rest of the swarm continues uninterrupted
 - Useful when one agent is stuck, looping, or has drifted
 
 **Auto-pickup on launch:** when an agent (re)spawns, it scans the message store for messages addressed to it still in `sent` or `received` and resumes them automatically — so a respawned receiver picks up its pending handoffs without waiting to be chased again.
 
-This is distinct from SwarmForge's window watchdog (which reattaches a *closed window* to the same session). Respawn replaces the *process* itself.
+Respawn replaces the *process* itself — the orchestrator kills the old backend PID and re-issues the launch for that role in the same worktree.
 
 ### Change an agent's backend/model on the fly
 
 - Pick a different backend or model from the tile's `backend ▾` dropdown
 - The extension rewrites that one window's launch command in the in-memory config and respawns the agent
-- No other agent is affected; the swarm-wide `swarmforge.conf` topology is otherwise unchanged
+- No other agent is affected; the swarm-wide pack/role topology is otherwise unchanged
 - Lets you, e.g., drop a struggling agent onto a stronger model for one tricky slice, then switch back (see Agent Backends)
 
 ### Implementation notes
 
-- The extension tracks each role → (tmux session, worktree, current backend) mapping
-- Respawn = send kill to the running backend PID in that session, then re-issue the launch command (the same command SwarmForge's startup uses for that window)
+- The extension tracks each role → (backend process/PID, worktree, current backend) mapping
+- Respawn = send kill to the running backend PID, then re-issue the launch command (the same command the orchestrator uses at startup for that role)
 - Model change = same as respawn, but with the launch command's backend argument swapped
 - Because role prompts and constitution are re-read at launch, mid-run prompt edits in the forge propagate on the next respawn
 
 ---
 
-## Agent Backends (Any CLI-Capable Agent)
+## Agent Backends (Any `InteractiveProcess`)
 
-The extension is **backend-agnostic**. It doesn't integrate with specific AI providers — it integrates with a **launch-command contract**, exactly as SwarmForge already does (each window runs a backend command in a worktree).
+The extension is **backend-agnostic**. It doesn't integrate with specific AI providers — it integrates with the **`InteractiveProcess` contract** (`onData`, `onExit`, `write`, `kill`). The orchestrator spawns each role behind that interface and doesn't care what's underneath.
 
 ### The contract
 
-A backend is any command that:
+A backend is anything that satisfies `InteractiveProcess`:
 - reads a role prompt (and the constitution) as its instructions,
-- runs in a terminal (tmux pane),
+- exposes a streamed output channel (`onData`) and accepts input (`write`),
 - edits files in its working directory (the role's worktree).
 
-Anything satisfying that qualifies: **Copilot CLI, Claude Code, Codex, aider, or a user's own wrapper script.** Each role maps to a configurable command string; the extension never hard-codes a provider.
+Two concrete kinds satisfy this today:
+- **External CLI backend** — a command run as a child process: **Copilot CLI, Claude Code, Codex, aider, or a user's own wrapper script.** A `child_process.spawn` pipe-backed adapter streams its output and forwards input. Each role maps to a configurable command string; the extension never hard-codes a provider.
+- **In-process language-model backend** (`LanguageModelRoleRuntime`) — a self-built agent loop over the VS Code Language Model API (`vscode.lm`), for environments where no agent CLI is available or installable. It selects a model, streams assistant text through the same `onData`, and exposes worktree-scoped tools (`read_file`, `write_file`, `list_dir`, `run_command`) with a per-turn tool-call cap. No external agent process is required; agents run on the developer's model entitlement, in-process.
 
 ### How it threads through the rest of the design
 
-- **Model/backend dropdown** (per tile): picking an option just swaps the role's launch command. "Switch model" and "switch backend" are the same operation — re-issue a different command on respawn.
-- **Respawn:** re-runs the configured command in the existing worktree.
+- **Model/backend dropdown** (per tile): picking an option swaps the role's backend — a different CLI command, or the in-process runtime on a different model. "Switch model" and "switch backend" are the same operation — re-issue on respawn.
+- **Respawn:** re-launches the configured backend in the existing worktree.
 - **Heartbeat decorator:** lives in the reusable tool layer the backend calls, so instrumentation is backend-independent (any backend using the standard tools emits heartbeats for free).
-- **Secrets/auth:** shrinks for any backend that manages its own auth out-of-band. Copilot CLI and Claude Code authenticate themselves; the extension never sees or injects those credentials. Only backends that need raw API keys require the secrets handling noted in Gaps.
+- **Secrets/auth:** shrinks for any backend that manages its own auth out-of-band. Copilot CLI, Claude Code, and the `vscode.lm` runtime authenticate themselves; the extension never sees or injects those credentials. Only backends that need raw API keys require the secrets handling noted in Gaps.
 
 ### Copilot as one backend
 
-Routing through Copilot's CLI is attractive because a single Copilot auth exposes **multiple models (Claude, GPT, others)** behind one login — so the per-tile dropdown can offer several models without separate key setup. But it's just one entry in the backend list, not a special integration. The same caveat as any metered backend applies: a multi-agent swarm running for hours is a heavy usage pattern, so check the chosen backend's rate limits and terms for programmatic/agentic use (ties into the cost/rate-limit gap).
+Copilot is attractive from two angles: its CLI exposes **multiple models (Claude, GPT, others)** behind one login, and the `vscode.lm` API exposes Copilot models in-process without any CLI at all (the bootstrap's primary path in constrained environments). Either way it's one entry in the backend list, not a special integration. The same caveat as any metered backend applies: a multi-agent swarm running for hours is a heavy usage pattern, so check the chosen backend's rate limits and terms for programmatic/agentic use (ties into the cost/rate-limit gap).
 
 ### Mixed backends
 
@@ -389,7 +389,7 @@ Because backend is per-role, a swarm can run **heterogeneously** — e.g. a stro
 
 ### Cost-aware backend selection
 
-The extension can help bring cost down by suggesting the right backend/model/effort *per role* — but honestly scoped. The extension drives CLI backends through tmux panes; it generally **can't see token-level spend** from outside. So this is a **heuristic advisor working from configured price priors and outcome signals**, not a real-time cost meter.
+The extension can help bring cost down by suggesting the right backend/model/effort *per role* — but honestly scoped. The extension drives backends through owned process streams, not a metered API gateway; it generally **can't see token-level spend** from outside. So this is a **heuristic advisor working from configured price priors and outcome signals**, not a real-time cost meter.
 
 ### Measuring agent load (the data under the advice)
 
@@ -445,7 +445,7 @@ Before the user launches a run, the extension analyzes the target to recommend a
 4. Present recommendation with one-line rationale in the UI
 5. User accepts or manually selects a different pack from the dropdown
 
-The pack topology maps to SwarmForge's runnable branches (`two-pack`, `four-pack`, `six-pack`); the 7-pack is this extension's variant (six-pack minus hardener, plus documenter).
+The pack shapes echo SwarmForge's well-known configurations (two-/four-/six-pack); the 7-pack is this extension's own variant (six-pack minus hardener, plus documenter). All packs are defined by this repo's role prompts and pack config — they are not fetched runnable branches.
 
 ---
 
@@ -466,7 +466,7 @@ Built on Uncle Bob's six-pack, with two deviations: **hardener is dropped**, and
 | 5 | **documenter** | Updates docs for humans: high-level docs plus a doc for the piece just developed. |
 | 6 | **QA** | Converts the specifier's QA procedures into executable scripts, runs final UI verification, checks handoff consistency. As the last stage, it's the convergence point and signals completion to the specifier. |
 
-(The coordinator is the 7th window — it owns the master working directory and orchestration, as in SwarmForge's native setup.)
+(The coordinator is the 7th role — it owns the master working directory and orchestration.)
 
 ### The pipeline flow
 
@@ -665,22 +665,22 @@ Extension suggests pack size → user confirms
         │
         ▼
 Extension scaffolds swarm config inside the clone:
-  - Copies forge's role prompts into swarmforge/roles/
+  - Copies forge's role prompts into .swarmforge/roles/
   - Copies forge's constitution articles
-  - Writes swarmforge/swarmforge.conf from selected pack
+  - Writes the pack/role config from selected pack
   - Injects project.prompt + engineering.prompt as context
   - Creates the swarm dev branch (named after the work item: dev/<item-slug>)
   - Creates git worktrees under .worktrees/ (one per role; each worktree is its own branch)
   - Specifier's worktree tracks the dev branch (the integration point)
         │
         ▼
-Developer can type into any agent tile at any time — each tile is a live terminal attached to that role's tmux session
+Developer can type into any agent tile at any time — each tile is a live terminal bound to that role's process stream
         │
         ▼
-SwarmForge launches (./swarm) → tmux sessions created
+Orchestrator spawns one agent process per role (InteractiveProcess in each worktree)
         │
         ▼
-Extension streams each session's output → tiled panel updates
+Extension streams each process's output → tiled panel updates
         │
         ▼
 Agents work in pipeline order on their own branches:
@@ -846,7 +846,7 @@ The Work Tree reads `status` and `completion_pct` straight from the synced backl
 | Constitution articles | Forge repo |
 | Extension source | Forge repo |
 | Reusable tools built by swarm | Forge repo (`extension/src/tools/`) |
-| `swarmforge.conf` (generated) | Clone — not committed to target main |
+| Pack/role config (generated) | Clone — not committed to target main |
 | Worktrees | `.worktrees/` inside clone — not committed to target main |
 | PR branch + commits | Target repo (via PR) |
 
@@ -968,32 +968,32 @@ The `View Last PR` command uses this log to know which PR to open. A future `Swa
 
 ## Remote Access & Phone App (Optional Bridge)
 
-The swarm cannot run on a phone — it's tmux sessions, git worktrees, multiple model-backend processes, and a filesystem clone, none of which exist on mobile. So the phone is a **remote control and observability client**, and the heavy lifting stays on the dev machine. This is the Claude-remote-control pattern: thin client, fat host.
+The swarm cannot run on a phone — it's the orchestrator's agent processes, git worktrees, multiple model backends, and a filesystem clone, none of which exist on mobile. So the phone is a **remote control and observability client**, and the heavy lifting stays on the dev machine. This is the thin-client, fat-host pattern.
 
 ### Avoiding complexity: the filesystem is already the decoupling
 
-Before reaching for a daemon, note what SwarmForge already gives us for free. The swarm runs in **tmux**, independently of any UI — and its state already lives **on disk**: the message store (`.swarmforge/messages/`), heartbeats, worktrees/branches, and the run log. The VS Code extension is, for the most part, *reading those files and attaching to tmux panes*.
+Before reaching for a daemon, note how much the on-disk state already decouples for free. The swarm's *state* lives on disk: the message store (`.swarmforge/messages/`), heartbeats, worktrees/branches, and the run log. The VS Code extension is, for the most part, *reading those files and streaming each agent process's output*. So any client — the extension, a bridge, a phone — can reconstruct the full picture from disk without talking to any other client.
 
-That means **"survives the editor" needs no daemon at all.** Close VS Code, the tmux swarm keeps running; reopen, re-read `.swarmforge/` state and re-attach. This is a property of tmux + on-disk state, not something a separate process grants.
+**One honest caveat the tmux design didn't have.** Because the orchestrator spawns agent processes as children of the extension host, "survives the editor" is **not** free the way it was under tmux (where the swarm lived in a session independent of any UI). If process survival across an editor restart is wanted, it must be explicit: either spawn agents detached from the host process (so they outlive it and the extension re-discovers them from on-disk PID/state on relaunch), or accept that closing VS Code stops the swarm and rely on per-stage checkpoints to resume. This is a real design decision created by owning orchestration — flagged in Gaps (Persistence across VS Code restart). What *is* still free is observational decoupling: whatever is running, every client reads the same on-disk truth.
 
-So decoupling is not a new architecture to build — it's already the shape of the system. The discipline that keeps complexity flat: **the filesystem stays the single source of truth.** No component (extension, daemon, or phone) holds authoritative state; they all read `.swarmforge/` and issue commands as the same helper-script calls the agents already use.
+The discipline that keeps complexity flat: **the filesystem stays the single source of truth.** No component (extension, bridge, or phone) holds authoritative state; they all read `.swarmforge/` and issue commands through the same orchestrator/helper calls the agents already use.
 
 ### Two tiers, one architecture
 
 | Tier | When | What it is | Added complexity |
 |---|---|---|---|
-| **1 — desktop only (v1)** | Default | Extension reads `.swarmforge/` files + attaches to tmux directly. No daemon. | ~none — this is essentially what exists |
+| **1 — desktop only (v1)** | Default | Extension reads `.swarmforge/` files + streams the orchestrator's agent processes directly. No daemon. | ~none — this is essentially what exists |
 | **2 — remote (later)** | Opt-in, for phone | A thin bridge that *projects* the same on-disk state over an authenticated tunnel, plus a few control endpoints | a process + a wire protocol + auth — but no new state model |
 
-The phone case is the *only* thing that actually needs a network service, because a phone can't read your laptop's filesystem or attach to its tmux remotely — something must expose that. The bridge does exactly that and nothing more: it reads the same files the extension reads and forwards commands as the same helper calls. Tier 1 and Tier 2 are therefore the *same* architecture with an optional projection bolted on — not two designs, and crucially **no state-sync problem**, since there's only ever one source of truth on disk.
+The phone case is the *only* thing that actually needs a network service, because a phone can't read your laptop's filesystem or reach the host's orchestrator remotely — something must expose that. The bridge does exactly that and nothing more: it reads the same files the extension reads and forwards commands as the same orchestrator/helper calls. Tier 1 and Tier 2 are therefore the *same* architecture with an optional projection bolted on — not two designs, and crucially **no state-sync problem**, since there's only ever one source of truth on disk.
 
 ### The remote bridge (Tier 2)
 
 ```
         ┌─────────────────────────────────────────┐
-        │   tmux swarm + .swarmforge/  (on disk)   │  ← single source of truth
+        │   agent processes + .swarmforge/  (on disk)   │  ← single source of truth
         └───────┬─────────────────────────┬────────┘
-                │ reads files / attaches   │ reads files
+                │ reads files / streams    │ reads files
                 │                          │
         ┌───────▼──────────┐      ┌────────▼─────────────┐
         │  VS Code extension│      │  Remote bridge (opt) │
@@ -1081,7 +1081,7 @@ A scan of what the spec doesn't yet cover, roughly in priority order. Not all ar
 
 ### Important but can follow
 
-- **Persistence across VS Code restart.** Largely answered by tmux + on-disk state (the swarm lives in tmux, not the editor; state is in `.swarmforge/`) — but the extension's reattach-on-relaunch logic (re-attaching panes, re-reading state) still needs specifying, as does the optional bridge's own restart/recovery.
+- **Persistence across VS Code restart.** This is no longer free. Under the retired tmux design the swarm lived in a session independent of the editor; now the orchestrator spawns agents as children of the extension host, so by default closing VS Code can stop the swarm. Two options need deciding between (see Remote Access caveat): spawn agents **detached** so they outlive the host and the extension re-discovers them from on-disk PID/state on relaunch, or accept editor-bound lifetime and **resume from per-stage checkpoints**. On-disk state still makes re-reading cheap; what needs specifying is the process-survival strategy and the reattach/re-discovery logic, plus the optional bridge's own restart/recovery.
 - **Remote-access security.** The phone tunnel needs a real threat model: token rotation, scope of what a remote client can do (read-only vs control), revoking a lost device, and whether control actions (respawn, model change, stop) require a stronger auth step than viewing. Off-LAN relay choice (self-hosted vs hosted) is a decision with privacy implications, since agent output could traverse it.
 - **Observability / run artifacts.** A durable run log, transcript export, and the ability to inspect a finished run after the fact (what each agent did, decisions made). Useful for debugging a bad PR.
 - **Test/lint command discovery.** Completion tracking assumes the extension can run the target's tests *on the dev branch*. How does it learn the test command — from `engineering.prompt`, auto-detected, or configured? Same for lint.
@@ -1105,4 +1105,4 @@ A scan of what the spec doesn't yet cover, roughly in priority order. Not all ar
 - Multi-target support in a single run
 - Auto-merge on green CI (human reviews all PRs)
 - Extension marketplace publication (internal use first)
-- Windows support (tmux dependency; macOS/Linux only for now)
+- (Windows is now first-class — supporting it natively is why the extension owns orchestration instead of depending on tmux. No longer out of scope.)
