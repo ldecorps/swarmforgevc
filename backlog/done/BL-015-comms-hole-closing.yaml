@@ -2,7 +2,7 @@ id: BL-015
 title: COMMs hole-closing — fix discovered bugs and add tests around uncovered spec corners
 milestone: M2
 priority: 15
-status: active
+status: done
 
 description: >
   Audit of BL-009/010/011/012/013/014 implementations against their specs and
