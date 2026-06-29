@@ -1,48 +1,52 @@
 id: BL-020
-title: Tracing-bullet test — reusable script that fires a test message through the full swarm pipeline
+title: Tracing-bullet test — coordinator command that fires a priority-0 comms health check through the pipeline
 milestone: M3
 priority: 20
 status: active
 
 description: >
-  A self-contained script that sends a synthetic handoff into the swarm,
-  watches it flow through coordinator → specifier → coder → cleaner, and
-  reports pass/fail with timing per hop. Designed to be run at any time
-  to verify comms health without touching real work items.
+  A coordinator-triggered comms health check. The user tells the coordinator
+  to run a tracing bullet; the coordinator immediately drops a priority-0
+  handoff to the specifier (treated as ultra-urgent, ahead of all normal work).
+  The specifier forwards it to the coder, the coder to the cleaner, the cleaner
+  back to the coordinator. Each hop stamps a receipt. The coordinator reports
+  timing and pass/fail to the user.
+
+  The test validates live comms at any moment without touching real work items.
 
 behavior_wanted: >
-  - Running `./swarmforge/scripts/trace_bullet.sh` fires a single test handoff
-    into the coordinator inbox with type "trace" and a unique trace-id.
-  - Each role, on receiving a "trace" handoff, forwards it to the next role
-    in the pipeline and logs a receipt timestamp in
-    .swarmforge/traces/<trace-id>.log.
-  - After the last role (cleaner) receives it, the script detects the
-    completed trace log and prints a per-hop timing report:
-      coordinator received: 0.0s
-      specifier received:   1.2s
-      coder received:       2.4s
-      cleaner received:     3.1s
+  - User tells coordinator: "run a tracing bullet test".
+  - Coordinator sends a priority-0 handoff of type "trace" to specifier, with
+    a unique trace-id and the timestamp of departure.
+  - Specifier receives it, stamps its receipt time, and immediately forwards
+    it (priority 0) to coder, ahead of any queued work.
+  - Coder stamps and forwards to cleaner (priority 0).
+  - Cleaner stamps and sends a "trace-complete" handoff back to coordinator
+    with all hop timestamps.
+  - Coordinator receives the result, computes per-hop latency, and reports
+    to the user:
+      specifier: 1.2s
+      coder:     2.4s
+      cleaner:   3.1s
       PASS  total 3.1s
-  - If any hop does not complete within a configurable timeout (default 60s),
-    the script prints FAIL with the last hop seen and exits non-zero.
-  - Re-entrant: running the script twice concurrently uses separate trace-ids
-    and does not interfere.
+  - If the coordinator does not receive the result within 90s it reports
+    FAIL and names the last hop that stamped a receipt.
+  - Re-entrant: two concurrent traces use separate trace-ids.
 
 acceptance:
-  - With the swarm running, `./swarmforge/scripts/trace_bullet.sh` exits 0
-    and prints a timing report within 90s.
-  - With the cleaner session killed, the script exits non-zero and names the
-    missing hop.
-  - Running the script twice simultaneously produces two separate trace logs
-    with no cross-contamination.
-  - Script is idempotent: re-running after a completed trace starts a fresh
-    trace rather than re-using the old log.
+  - With the swarm healthy, asking coordinator to run a tracing bullet
+    produces a PASS report with hop timings within 90s.
+  - With the coder session killed, the coordinator reports FAIL at the
+    coder hop before the 90s timeout.
+  - Two concurrent traces complete independently with no cross-contamination.
 
 constraints:
-  - The "trace" handoff type must be handled as a no-op by each role's
-    normal task logic (forwarded and logged, not processed as real work).
-  - Do not add dependencies beyond what the swarm already uses (bb, zsh, tmux).
-  - Trace logs land in .swarmforge/traces/ and are not committed to git.
-  - The script must work from any directory (not just the project root).
+  - "trace" handoffs are priority 0 (highest) so they jump the queue.
+  - Each role handles "trace" type as pure pass-through: stamp + forward,
+    no task logic, no git commits, no cleanup.
+  - Trace hop stamps land in .swarmforge/traces/<trace-id>.log (not committed).
+  - No new dependencies beyond bb, zsh, tmux already in the swarm.
+  - The coordinator is the entry point and the reporter — the user never
+    runs a script directly.
 
 assigned_to: specifier
