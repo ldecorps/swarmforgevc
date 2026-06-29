@@ -334,6 +334,23 @@ export function getWebviewHtml(nonce: string): string {
       vscode.postMessage({ type: 'openPR' });
     });
 
+    document.addEventListener('keydown', (e) => {
+      if (!activeRole) { return; }
+      e.preventDefault();
+      if (e.ctrlKey && e.key.length === 1) {
+        const code = e.key.toLowerCase().charCodeAt(0) - 96;
+        if (code >= 1 && code <= 26) {
+          vscode.postMessage({ type: 'input', role: activeRole, data: String.fromCharCode(code) });
+        }
+        return;
+      }
+      if (e.key.length === 1 && !e.metaKey && !e.altKey) {
+        vscode.postMessage({ type: 'input', role: activeRole, data: e.key });
+      } else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        vscode.postMessage({ type: 'specialKey', role: activeRole, key: e.key });
+      }
+    });
+
     function ensureTile(role, displayName, agent) {
       if (tiles.has(role)) {
         return tiles.get(role);
@@ -383,22 +400,6 @@ export function getWebviewHtml(nonce: string): string {
       output.addEventListener('scroll', () => {
         entry.tailLocked = isAtBottom(output);
       }, { passive: true });
-
-      output.addEventListener('keydown', (e) => {
-        e.preventDefault();
-        if (e.ctrlKey && e.key.length === 1) {
-          const code = e.key.toLowerCase().charCodeAt(0) - 96;
-          if (code >= 1 && code <= 26) {
-            vscode.postMessage({ type: 'input', role, data: String.fromCharCode(code) });
-          }
-          return;
-        }
-        if (e.key.length === 1 && !e.metaKey && !e.altKey) {
-          vscode.postMessage({ type: 'input', role, data: e.key });
-        } else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-          vscode.postMessage({ type: 'specialKey', role, key: e.key });
-        }
-      });
 
       tile.appendChild(header);
       tile.appendChild(output);
