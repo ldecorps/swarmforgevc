@@ -34,7 +34,15 @@ export function isSwarmReady(targetPath: string): boolean {
   return roles.every((role) => sessionExists(socket, role.session));
 }
 
-export async function launchSwarm(targetPath: string): Promise<LaunchResult> {
+export function buildLaunchEnv(runName?: string): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    SWARMFORGE_TERMINAL: 'none',
+    ...(runName ? { SWARM_RUN_NAME: `swarm/${runName}` } : {}),
+  };
+}
+
+export async function launchSwarm(targetPath: string, runName?: string): Promise<LaunchResult> {
   const swarmScript = path.join(targetPath, 'swarm');
   if (!fs.existsSync(swarmScript)) {
     return {
@@ -47,10 +55,7 @@ export async function launchSwarm(targetPath: string): Promise<LaunchResult> {
   return new Promise((resolve) => {
     const child = cp.spawn(swarmScript, [targetPath], {
       cwd: targetPath,
-      env: {
-        ...process.env,
-        SWARMFORGE_TERMINAL: 'none',
-      },
+      env: buildLaunchEnv(runName),
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: false,
     });
