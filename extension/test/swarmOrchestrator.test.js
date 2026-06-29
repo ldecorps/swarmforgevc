@@ -72,3 +72,48 @@ test('SwarmOrchestrator streams output from multiple agents', async () => {
   assert.ok(text.includes('from-a'));
   assert.ok(text.includes('from-b'));
 });
+
+test('SwarmOrchestrator spawns agent in specified cwd', async () => {
+  const orch = new SwarmOrchestrator();
+  const outputs = [];
+  orch.onOutput((role, chunk) => outputs.push(chunk));
+  orch.add({ role: 'a', command: 'pwd', args: [], cwd: '/tmp' });
+  orch.start();
+  await orch.waitAll();
+  assert.ok(outputs.join('').trim().endsWith('tmp'));
+});
+
+test('SwarmOrchestrator exposes displayName in onOutput', async () => {
+  const orch = new SwarmOrchestrator();
+  const outputs = [];
+  orch.onOutput((role, chunk, displayName) => outputs.push({ role, displayName }));
+  orch.add({ role: 'coder', displayName: 'Coder', command: 'echo', args: ['x'] });
+  orch.start();
+  await orch.waitAll();
+  assert.ok(outputs.length > 0);
+  assert.equal(outputs[0].displayName, 'Coder');
+});
+
+test('SwarmOrchestrator write sends data to agent stdin', async () => {
+  const orch = new SwarmOrchestrator();
+  const chunks = [];
+  orch.onOutput((role, chunk) => chunks.push(chunk));
+  orch.add({ role: 'r', command: 'cat', args: [] });
+  orch.start();
+  orch.write('r', 'hello\n');
+  orch.write('r', '\x04'); // EOF
+  await orch.waitAll();
+  assert.ok(chunks.join('').includes('hello'));
+});
+
+test('SwarmOrchestrator getRoles returns configured roles', () => {
+  const orch = new SwarmOrchestrator();
+  orch.add({ role: 'coordinator', displayName: 'Coordinator', command: 'echo', args: [] });
+  orch.add({ role: 'coder', command: 'echo', args: [] });
+  const roles = orch.getRoles();
+  assert.equal(roles.length, 2);
+  assert.equal(roles[0].role, 'coordinator');
+  assert.equal(roles[0].displayName, 'Coordinator');
+  assert.equal(roles[1].role, 'coder');
+  assert.equal(roles[1].displayName, 'coder'); // falls back to role name
+});

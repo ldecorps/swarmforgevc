@@ -6,8 +6,8 @@ export class ShellBackend implements InteractiveProcess {
   private dataHandlers: Array<(chunk: string) => void> = [];
   private exitHandlers: Array<(code: number | null) => void> = [];
 
-  constructor(command: string, args: string[]) {
-    this.proc = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+  constructor(command: string, args: string[], options: { cwd?: string } = {}) {
+    this.proc = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], cwd: options.cwd });
 
     this.proc.stdout?.on('data', (buf: Buffer) => {
       const text = buf.toString();

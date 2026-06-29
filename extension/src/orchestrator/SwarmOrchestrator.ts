@@ -2,16 +2,18 @@ import { ShellBackend } from './ShellBackend';
 
 export interface AgentConfig {
   role: string;
+  displayName?: string;
   command: string;
   args: string[];
+  cwd?: string;
 }
 
-type OutputHandler = (role: string, chunk: string) => void;
+type OutputHandler = (role: string, chunk: string, displayName: string) => void;
 type ExitHandler = (role: string, code: number | null) => void;
 
 export class SwarmOrchestrator {
   private configs: AgentConfig[] = [];
-  private backends: ShellBackend[] = [];
+  private backends: Map<string, ShellBackend> = new Map();
   private outputHandlers: OutputHandler[] = [];
   private exitHandlers: ExitHandler[] = [];
 
@@ -24,15 +26,20 @@ export class SwarmOrchestrator {
   }
 
   add(config: AgentConfig): void {
-    this.configs.push(config);
+    this.configs.push({ ...config, displayName: config.displayName ?? config.role });
+  }
+
+  getRoles(): AgentConfig[] {
+    return this.configs.map((c) => ({ ...c, displayName: c.displayName ?? c.role }));
   }
 
   start(): void {
     for (const cfg of this.configs) {
-      const backend = new ShellBackend(cfg.command, cfg.args);
+      const backend = new ShellBackend(cfg.command, cfg.args, { cwd: cfg.cwd });
+      const displayName = cfg.displayName ?? cfg.role;
       backend.onData((chunk) => {
         for (const h of this.outputHandlers) {
-          h(cfg.role, chunk);
+          h(cfg.role, chunk, displayName);
         }
       });
       backend.onExit((code) => {
@@ -40,29 +47,33 @@ export class SwarmOrchestrator {
           h(cfg.role, code);
         }
       });
-      this.backends.push(backend);
+      this.backends.set(cfg.role, backend);
     }
   }
 
+  write(role: string, data: string): void {
+    this.backends.get(role)?.write(data);
+  }
+
   stop(): void {
-    for (const b of this.backends) {
+    for (const b of this.backends.values()) {
       b.kill();
     }
   }
 
   waitAll(): Promise<void> {
-    if (this.backends.length === 0) {
+    if (this.backends.size === 0) {
       return Promise.resolve();
     }
     return new Promise((resolve) => {
-      let remaining = this.backends.length;
+      let remaining = this.backends.size;
       const dec = () => {
         remaining -= 1;
         if (remaining === 0) {
           resolve();
         }
       };
-      for (const b of this.backends) {
+      for (const b of this.backends.values()) {
         b.onExit(dec);
       }
     });
