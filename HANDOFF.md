@@ -1,4 +1,4 @@
-# Handoff: Checkpoint C — AgentRunner wired to launchSwarm
+# Handoff: M1 dogfood checkpoint + dead code removal
 
 **Priority:** 50  
 **Branch:** swarm/coder  
@@ -8,36 +8,37 @@
 
 ## Status
 
-✅ **READY FOR CLEANER** — Launch command wired to AgentRunner, all tests pass.
+✅ **READY FOR CLEANER**
 
 ## Work Completed
 
-### New: roleConfigReader (`extension/src/swarm/roleConfigReader.ts`)
+### Deleted dead standalone-orchestrator code
 
-- `readRoleConfigs(targetPath)` reads `.swarmforge/roles.tsv` (tab-separated: role, displayName, command, args...)
-- Falls back to `BOOTSTRAP_ROLE_CONFIGS` (specifier/coder/cleaner running `claude --role=<role>`) if the file doesn't exist
-- 3 unit tests covering: absent file, valid tsv, blank-line skipping
+Removed all files from the abandoned bootstrap-brief direction:
 
-### Modified: extension.ts
+- `extension/src/orchestrator/AgentRunner.ts`
+- `extension/src/orchestrator/SwarmOrchestrator.ts`
+- `extension/src/orchestrator/InteractiveProcess.ts`
+- `extension/src/orchestrator/MessageBus.ts`
+- `extension/src/orchestrator/WorktreeManager.ts`
+- `extension/src/orchestrator/ShellBackend.ts`
+- `extension/src/orchestrator/headless/` (agentA.js, agentB.js)
+- `extension/src/swarm/roleConfigReader.ts`
+- Tests: agentRunner, swarmOrchestrator, shellBackend, headlessHandoff, messageBus, worktreeManager, roleConfigReader
 
-- Imports `AgentRunner` and `readRoleConfigs`
-- `activeRunner: AgentRunner | undefined` module-level variable tracks the live runner
-- `launchSwarm` command: after `./swarm` launches successfully, reads role configs, creates and starts `AgentRunner`, calls `panel.attachRunner(runner)` — tiles now receive output from the orchestrator
-- `stopSwarm` command: calls `activeRunner?.stop()` before killing tmux sessions
-- `deactivate`: calls `activeRunner?.stop()` on extension shutdown
+`npm run compile` passes. No remaining imports of deleted modules.
+
+### Added dogfood checkpoint notification (SwarmPanel + extension.ts)
+
+- `SwarmPanel.notifyDogfoodCheckpoint()`: shows a one-time VS Code info notification per session using a `dogfoodShown` boolean flag; subsequent calls are no-ops.
+- `extension.ts` `launchSwarm` command calls `panel.notifyDogfoodCheckpoint()` after the panel opens post-launch.
+- Removed the `attachRunner` method and `runner` field from `SwarmPanel` (dead after orchestrator removal).
+- Input forwarding simplified: `input` messages go directly to `tailer?.forwardInput`.
 
 ## Test Results
 
-13 tests pass (agentRunner, roleConfigReader, swarmOrchestrator suites).
-
-## What's Next for Coder
-
-The **DOGFOOD CHECKPOINT** should now be reachable. The next slice depends on what the cleaner finds. Likely candidates:
-
-1. **Verify dogfood checkpoint**: Test the full path (set target → launch → tiles appear → interact) and surface the checkpoint message if not already done.
-2. **Pipeline awareness**: The stage poller in SwarmPanel polls `.swarmforge/` state — verify it works and the status line is visible in the webview.
-3. **PR command**: The `openPR` command exists; verify `gh pr create` works end-to-end.
+89 tests pass; 0 fail.
 
 ---
 
-**Coder: Checkpoint C — launch wired to orchestrator**
+**Coder: M1 dead-code removal and dogfood checkpoint complete**
