@@ -1,56 +1,54 @@
-# Handoff: Checkpoint A Step 5 — Two-Agent Headless Handoff
+# Handoff: Checkpoint B — Orchestrator-backed tiles
 
 **Priority:** 50  
-**Branch:** main  
+**Branch:** swarm/coder  
 **From:** Coder  
 **To:** Cleaner  
 **Date:** 2026-06-29
 
 ## Status
 
-✅ **READY FOR CLEANER** — Checkpoint A step 5 implemented, all new tests pass.
+✅ **READY FOR CLEANER** — Checkpoint B substrate wired, all new tests pass.
 
-## Work Completed
+## Work Completed (commit 46b6dcd)
 
-### New: SwarmOrchestrator (commit 2fc6894)
+### Modified: SwarmOrchestrator
 
-Implemented `extension/src/orchestrator/SwarmOrchestrator.ts`:
-- Takes `AgentConfig[]` (role, command, args)
-- Spawns each as a `ShellBackend`
-- Labels output chunks with role name via `onOutput`
-- Reports exits with role + code via `onAgentExit`
-- `stop()` kills all running agents
-- `waitAll()` resolves when all agents have exited
+- `backends` changed from `ShellBackend[]` to `Map<string, ShellBackend>` (key = role name)
+- Added `writeToAgent(role: string, data: string)` — forwards stdin to named agent
 
-### New: Headless mock agents
+### New: AgentRunner (`extension/src/orchestrator/AgentRunner.ts`)
 
-- `extension/src/orchestrator/headless/agentA.js` — writes a handoff message to agent-b's inbox and exits
-- `extension/src/orchestrator/headless/agentB.js` — polls the MessageBus inbox, acks the first pending message, exits
+- Accepts `RoleConfig[]` (role, displayName, command, args)
+- Creates and owns a `SwarmOrchestrator`; exposes `start()`, `stop()`, `getOrchestrator()`, `getRoles()`
+- Thin mapping layer between role configs and the orchestrator
 
-### New: Tests
+### Modified: SwarmPanel
 
-- `extension/test/swarmOrchestrator.test.js` — 6 unit tests for SwarmOrchestrator
-- `extension/test/headlessHandoff.test.js` — 1 integration test: two agents exchange a real handoff via MessageBus from a terminal
+- Added `runner: AgentRunner | undefined` field
+- Added `attachRunner(runner: AgentRunner)` — stops any existing PaneTailer, subscribes to
+  orchestrator output events, posts `{ type: 'output', updates }` messages to the webview
+- Input forwarding: when a runner is attached, routes `input` messages to
+  `runner.getOrchestrator().writeToAgent(role, data)` instead of tmux
 
-All 7 new tests pass. Prior 78 tests unaffected (no production files modified).
+### Tests
 
-## Checkpoint A Status
-
-Per `docs/bootstrap-brief.md`:
-- ✅ InteractiveProcess seam
-- ✅ ShellBackend
-- ✅ WorktreeManager
-- ✅ MessageBus (atomic write via tmp+rename)
-- ✅ Two-agent handoff, headless (step 5 — done in this commit)
-- ❌ LanguageModelRoleRuntime (step 6 — needs extension host / vscode.lm; out of coder scope for now)
+- `agentRunner.test.js` (new) — 3 tests: streaming, getRoles, stop
+- `swarmOrchestrator.test.js` — 1 new test: writeToAgent via `sh -c 'read line; echo "$line"'`
+- All 10 orchestrator + agentRunner tests pass; prior suite unaffected
 
 ## What's Next for Coder
 
-After cleaner pass, the next M1 behavior slice is wiring the VS Code webview tiles to
-`SwarmOrchestrator`-spawned processes (Checkpoint B) instead of tmux panes. This means:
-1. An `AgentRunner` that maps role configs to `AgentConfig` and starts the orchestrator
-2. The panel subscribing to `SwarmOrchestrator.onOutput` instead of `PaneTailer`
+After cleaner pass, the next slice is **wiring the launch command** (`swarmforge.launchSwarm`
+in `extension.ts`) to use `AgentRunner` instead of `launchSwarm`/tmux:
+
+1. Read role configs from `.swarmforge/roles.tsv` (or a hardcoded bootstrap config) to produce
+   `RoleConfig[]`
+2. Create `AgentRunner`, call `start()`, call `panel.attachRunner(runner)` 
+3. Store the runner on the extension context so `stopSwarm` can call `runner.stop()`
+
+This completes the "tiles on top of the orchestrator" path and reaches the dogfood checkpoint.
 
 ---
 
-**Coder: Checkpoint A step 5 complete**
+**Coder: Checkpoint B substrate complete**
