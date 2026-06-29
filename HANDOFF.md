@@ -1,78 +1,56 @@
-# Handoff: PR-and-Named-Runs Cleanup Complete
+# Handoff: Checkpoint A Step 5 — Two-Agent Headless Handoff
 
-**Priority:** 00  
-**Branch:** swarmforge-cleaner  
-**From:** Cleaner  
-**To:** Coder  
+**Priority:** 50  
+**Branch:** main  
+**From:** Coder  
+**To:** Cleaner  
 **Date:** 2026-06-29
 
 ## Status
 
-✅ **READY FOR CODER** — Cleanup verified, all tests passing, behavior preserved.
+✅ **READY FOR CLEANER** — Checkpoint A step 5 implemented, all new tests pass.
 
 ## Work Completed
 
-### Code Quality Improvements (Commit 93ec218)
+### New: SwarmOrchestrator (commit 2fc6894)
 
-The cleaner pass completed the following quality improvements on the PR-and-named-runs feature:
+Implemented `extension/src/orchestrator/SwarmOrchestrator.ts`:
+- Takes `AgentConfig[]` (role, command, args)
+- Spawns each as a `ShellBackend`
+- Labels output chunks with role name via `onOutput`
+- Reports exits with role + code via `onAgentExit`
+- `stop()` kills all running agents
+- `waitAll()` resolves when all agents have exited
 
-#### 1. Constants Extraction (prCreator.ts)
-- Extracted `EXEC_ENCODING` ('utf8') for consistency
-- Extracted `GIT_DETACHED` ('HEAD') for clarity
-- Extracted `HTTPS_PREFIX` ('https://') for URL parsing
-- Extracted `DEFAULT_BASE_BRANCH` ('main') for consistency
-- Result: Reduced magic strings, improved maintainability
+### New: Headless mock agents
 
-#### 2. CRAP Reduction
-- Extracted URL extraction logic from `openPullRequest` into separate `extractPrUrl()` function
-- Result: Reduced cyclomatic complexity, lowered CRAP score for `openPullRequest`
-- Fixed inefficient array creation and join: `['gh', ...args].join(' ')` → template literal
+- `extension/src/orchestrator/headless/agentA.js` — writes a handoff message to agent-b's inbox and exits
+- `extension/src/orchestrator/headless/agentB.js` — polls the MessageBus inbox, acks the first pending message, exits
 
-#### 3. Test Coverage Enhancement
-- Added test for `openPullRequest` failure case (gh command unavailable)
-- Added test for URL extraction from gh output
-- Result: 78 tests passing (up from 76), covering critical PR creation path
+### New: Tests
 
-#### 4. Architecture Verification
-- Reviewed module structure: prCreator.ts and runLog.ts are properly separated IO adapters
-- Verified separation of concerns: extension.ts orchestrates, adapters handle IO
-- Confirmed narrow interfaces between modules
-- All existing functionality preserved
+- `extension/test/swarmOrchestrator.test.js` — 6 unit tests for SwarmOrchestrator
+- `extension/test/headlessHandoff.test.js` — 1 integration test: two agents exchange a real handoff via MessageBus from a terminal
 
-### Verification Results
+All 7 new tests pass. Prior 78 tests unaffected (no production files modified).
 
-- ✅ All 78 tests pass (npm test)
-- ✅ TypeScript compiles cleanly (npm run compile)
-- ✅ No behavior changes — existing and new functionality verified
-- ✅ Working tree clean — no uncommitted changes
-- ✅ Constants and CRAP violations addressed
-- ✅ Test coverage improved for critical functions
+## Checkpoint A Status
 
-## Architecture Compliance
+Per `docs/bootstrap-brief.md`:
+- ✅ InteractiveProcess seam
+- ✅ ShellBackend
+- ✅ WorktreeManager
+- ✅ MessageBus (atomic write via tmp+rename)
+- ✅ Two-agent handoff, headless (step 5 — done in this commit)
+- ❌ LanguageModelRoleRuntime (step 6 — needs extension host / vscode.lm; out of coder scope for now)
 
-The cleanup maintains and strengthens architecture rules:
-- High-level extension logic independent of PR creation details
-- Low-level PR and runLog adapters have clear dependencies
-- Narrow interfaces: extension uses only public functions from prCreator/runLog
-- Good separation of concerns: orchestration vs. I/O vs. state management
+## What's Next for Coder
 
-## What's Ready for Coder
-
-The codebase is cleaner and more maintainable:
-1. **Reduced magic strings** — named constants make code intent clearer
-2. **Improved complexity metrics** — extracted functions lower CRAP scores
-3. **Better test coverage** — critical PR creation path now tested
-4. **Clear architecture** — strict separation between high-level policy and I/O adapters
-5. **Preserved behavior** — all tests pass; no regressions
-
-## Notes for Coder
-
-- The message types between webview and panel ('output', 'stage', 'swarmDone', 'openPR', etc.) remain as inline strings in webviewHtml.ts. These could be extracted to constants in a future pass if message types need to be shared more broadly.
-- The runLog and prCreator modules are pure I/O adapters with no business logic—good candidates for testing and modification independently.
-- All tests use Node's built-in test module (no external mocking libraries)—keep this pattern for simplicity.
+After cleaner pass, the next M1 behavior slice is wiring the VS Code webview tiles to
+`SwarmOrchestrator`-spawned processes (Checkpoint B) instead of tmux panes. This means:
+1. An `AgentRunner` that maps role configs to `AgentConfig` and starts the orchestrator
+2. The panel subscribing to `SwarmOrchestrator.onOutput` instead of `PaneTailer`
 
 ---
 
-**Cleaner Agent: Cleanup Complete**
-
-Ready for next feature development or further refinement.
+**Coder: Checkpoint A step 5 complete**
