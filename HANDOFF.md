@@ -1,4 +1,4 @@
-# Handoff: BL-005 respawn — Restart button on dead tile
+# Handoff: BL-006 input mirroring
 
 **Priority:** 50  
 **Branch:** swarm/coder  
@@ -12,15 +12,34 @@
 
 ## Work Completed
 
-### BL-005: Respawn — Restart button on dead tile (commit 4e0cb7e)
+### BL-006: Input mirroring — append keystrokes to .swarmforge/input-log.jsonl (commit 5d9f02f)
 
-**Files changed:**
-- `extension/src/swarm/tmuxClient.ts`: `respawnAgent(targetPath, role)` runs `.swarmforge/launch/<role>.sh`
-- `extension/src/panel/swarmPanel.ts`: handles `restartAgent` webview message; shows error on failure
-- `extension/src/panel/webviewHtml.ts`: Restart button in tile header, hidden by CSS, visible on `.tile.dead`; click clears `.dead` optimistically and posts `restartAgent`
+**New file:** `extension/src/swarm/inputLog.ts`
+- `INPUT_LOG_FILENAME = '.swarmforge/input-log.jsonl'` (exported constant)
+- `appendInputEntry(targetPath, role, data)`: appends `{"timestamp","role","data"}` JSON line; creates dir on first write; swallows errors silently (caller handles reporting)
 
-**Tests:** 4 new tests (112 total, 0 fail)
+**Modified:** `extension/src/panel/paneTailer.ts`
+- Imports `appendInputEntry`
+- Added optional `onInputLogError` callback to constructor
+- `forwardInput` and `forwardSpecialKey` call `this.logInput()` after tmux delivery
+- `private logInput()`: calls `appendInputEntry`; on error calls `onInputLogError` if set
+
+**Modified:** `extension/src/panel/swarmPanel.ts`
+- Creates `vscode.OutputChannel('SwarmForge')`
+- Passes `onInputLogError` to `PaneTailer` — appends errors to output channel
+- Disposes channel on panel dispose
+
+**New test file:** `extension/test/inputLog.test.js` — 5 tests:
+- `INPUT_LOG_FILENAME` value
+- Creates file on first write
+- Valid JSON line with timestamp, role, data
+- Appends a new line per call
+- Does not throw on invalid target path
+
+## Test Results
+
+117 tests pass; 0 fail.
 
 ---
 
-**Coder: BL-005 complete**
+**Coder: BL-006 complete**
