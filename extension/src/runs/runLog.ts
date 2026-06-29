@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 
 export interface RunEntry {
   name: string;
@@ -17,6 +18,7 @@ export function loadRuns(logPath: string): RunEntry[] {
 }
 
 export function appendRun(logPath: string, entry: RunEntry): void {
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
   const runs = loadRuns(logPath);
   runs.push(entry);
   fs.writeFileSync(logPath, JSON.stringify(runs, null, 2), 'utf8');

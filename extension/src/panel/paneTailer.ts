@@ -1,12 +1,15 @@
 import {
   capturePane,
-  paneTarget,
+  getPaneCommand,
   readSwarmRoles,
   readTmuxSocket,
+  resolveAgentPaneTarget,
   sendKeys,
+  sessionExists,
   SwarmRole,
   getPaneBaseIndex,
 } from '../swarm/tmuxClient';
+import { agentPaneStatusMessage } from './agentPaneState';
 import { stripAnsi } from './ansi';
 
 const DEFAULT_POLL_INTERVAL_MS = 200;
@@ -61,28 +64,63 @@ export class PaneTailer {
   }
 
   private poll(): void {
-    if (!this.socketPath) {
-      this.refreshState();
-      if (!this.socketPath) {
-        return;
+    const latestSocket = readTmuxSocket(this.targetPath) ?? '';
+    if (latestSocket !== this.socketPath) {
+      this.socketPath = latestSocket;
+      this.roles = readSwarmRoles(this.targetPath);
+      this.lastText.clear();
+      if (this.socketPath) {
+        this.paneBaseIndex = getPaneBaseIndex(this.socketPath);
       }
+    }
+
+    if (!this.socketPath) {
+      return;
     }
 
     const updates: TileOutput[] = [];
 
     for (const role of this.roles) {
-      const target = paneTarget(
+      if (!sessionExists(this.socketPath, role.session)) {
+        const text = `Session "${role.session}" is not running.\n\nUse SwarmForge: Stop Swarm, then Launch Swarm.`;
+        if (this.lastText.get(role.role) !== text) {
+          this.lastText.set(role.role, text);
+          updates.push({
+            role: role.role,
+            displayName: role.displayName,
+            text,
+            full: true,
+          });
+        }
+        continue;
+      }
+
+      const target = resolveAgentPaneTarget(
+        this.socketPath,
         role.session,
-        role.displayName,
         this.paneBaseIndex
       );
       const result = capturePane(this.socketPath, target);
 
       if (result.exitCode !== 0) {
+        const text = `Could not read tmux pane for ${role.displayName}.\n\nTry SwarmForge: Stop Swarm, then Launch Swarm.`;
+        if (this.lastText.get(role.role) !== text) {
+          this.lastText.set(role.role, text);
+          updates.push({
+            role: role.role,
+            displayName: role.displayName,
+            text,
+            full: true,
+          });
+        }
         continue;
       }
 
-      const text = stripAnsi(result.stdout);
+      const rawText = stripAnsi(result.stdout);
+      const paneCommand = getPaneCommand(this.socketPath, target);
+      const statusOverlay = agentPaneStatusMessage(paneCommand, rawText);
+      const text = statusOverlay ?? rawText;
+
       const previous = this.lastText.get(role.role);
       if (text === previous) {
         continue;
@@ -110,7 +148,11 @@ export class PaneTailer {
     if (!role) {
       return undefined;
     }
-    return paneTarget(role.session, role.displayName, this.paneBaseIndex);
+    return resolveAgentPaneTarget(
+      this.socketPath,
+      role.session,
+      this.paneBaseIndex
+    );
   }
 
   forwardInput(roleName: string, data: string): void {

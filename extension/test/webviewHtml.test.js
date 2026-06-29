@@ -45,6 +45,13 @@ test('getWebviewHtml contains CSS styling', () => {
   assert(html.includes('grid-template-columns'));
 });
 
+test('getWebviewHtml contains smart auto-scroll tail logic', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes('tailLocked'));
+  assert(html.includes('isAtBottom'));
+  assert(html.includes('updateTileOutput'));
+});
+
 test('getWebviewHtml contains webview message handling script', () => {
   const html = getWebviewHtml('test');
   assert(html.includes('acquireVsCodeApi'));

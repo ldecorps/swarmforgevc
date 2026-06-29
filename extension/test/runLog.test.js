@@ -30,6 +30,14 @@ test('appendRun writes entry and loadRuns returns it', () => {
   assert.deepEqual(runs[0], entry);
 });
 
+test('appendRun creates parent directories when missing', () => {
+  const logPath = path.join(mkTmp(), 'nested', 'storage', 'runs.json');
+  const entry = { name: 'dogfood-mvp', targetPath: '/proj', startedAt: '2026-01-01T00:00:00Z' };
+  appendRun(logPath, entry);
+  assert.ok(fs.existsSync(logPath));
+  assert.deepEqual(loadRuns(logPath)[0], entry);
+});
+
 test('appendRun accumulates multiple entries in order', () => {
   const logPath = path.join(mkTmp(), 'runs.json');
   appendRun(logPath, { name: 'first', targetPath: '/a', startedAt: '2026-01-01T00:00:00Z' });

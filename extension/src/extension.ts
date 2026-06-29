@@ -114,7 +114,8 @@ export function activate(context: vscode.ExtensionContext): void {
           }
 
           vscode.window.showInformationMessage(result.message);
-          SwarmPanel.createOrShow(context.extensionUri, targetPath!);
+          const panel = SwarmPanel.createOrShow(context.extensionUri, targetPath!);
+          panel.updateTarget(targetPath!);
         }
       );
     }),

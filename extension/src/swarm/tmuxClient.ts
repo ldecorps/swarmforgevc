@@ -66,6 +66,45 @@ export function paneTarget(
   return `${session}:${windowName}.${paneBaseIndex}`;
 }
 
+export function resolveAgentPaneTarget(
+  socketPath: string,
+  session: string,
+  paneBaseIndex: number
+): string {
+  const result = runCommand('tmux', [
+    '-S',
+    socketPath,
+    'list-windows',
+    '-t',
+    session,
+    '-F',
+    '#{window_index}',
+  ]);
+
+  if (result.exitCode !== 0 || !result.stdout.trim()) {
+    return `${session}:0.${paneBaseIndex}`;
+  }
+
+  const windowIndex = result.stdout.trim().split('\n')[0];
+  return `${session}:${windowIndex}.${paneBaseIndex}`;
+}
+
+export function getPaneCommand(socketPath: string, target: string): string {
+  const result = runCommand('tmux', [
+    '-S',
+    socketPath,
+    'display-message',
+    '-p',
+    '-t',
+    target,
+    '#{pane_current_command}',
+  ]);
+  if (result.exitCode !== 0) {
+    return '';
+  }
+  return result.stdout.trim();
+}
+
 export function capturePane(
   socketPath: string,
   target: string,
