@@ -74,6 +74,6 @@ test('returns id, status, and body for each claimable message', () => {
   const id = createMessage(dir, { from: 'coder', to: 'cleaner', subject: 'work', body: 'payload text', seq: 1 });
   const results = pickupPendingMessages(dir, 'cleaner', Math.floor(Date.now() / 1000), 300);
   assert.equal(results[0].id, id);
-  assert.equal(results[0].status, 'created');
+  assert.equal(results[0].status, 'received');
   assert.equal(results[0].body, 'payload text');
 });
