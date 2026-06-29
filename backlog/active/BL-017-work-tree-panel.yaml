@@ -1,0 +1,43 @@
+id: BL-017
+title: Work Tree panel — backlog items with completion status in VS Code
+milestone: M3
+priority: 17
+status: active
+
+description: >
+  Add a "Work Tree" tab to the SwarmForge panel that lists backlog items and
+  shows their completion status, read from the dev branch. This gives the
+  developer visibility into what's done and what's pending without leaving VS Code.
+
+behavior_wanted: >
+  - A "Work Tree" panel tab appears alongside the existing agent tiles.
+  - On load it reads every YAML file in the target repo's backlog/active/ and
+    backlog/done/ directories and renders them as a sorted list.
+  - Each item shows: id, title, milestone, priority, assigned_to, status.
+  - Status is computed from the file's location: backlog/done/ → "done",
+    backlog/active/ → "active".
+  - Items are sorted: active first (by priority ascending), done last.
+  - The panel auto-refreshes when .swarmforge/messages/ changes (reuse the
+    existing file watcher infrastructure).
+  - No write path in this slice — the panel is read-only.
+
+acceptance:
+  - Open the panel against this repo; active backlog items appear with correct
+    status and priority order.
+  - Move a YAML file from active/ to done/ on disk; the panel updates within
+    5 seconds without a manual refresh.
+  - Done items appear visually distinct (greyed out or struck through).
+
+constraints:
+  - Read backlog YAML with a simple key-value parser — do not pull in a YAML
+    library if the extension does not already have one; the files use simple
+    top-level string/integer fields only.
+  - Panel lives in a new WebviewPanel tab, not inside an existing tile.
+  - Do not write to the backlog; this slice is purely read/display.
+  - Works for any target repo path set via the existing target-selection command.
+
+depends_on:
+  - BL-A  # target selection
+  - BL-B  # tiled panel infrastructure
+
+assigned_to: coder
