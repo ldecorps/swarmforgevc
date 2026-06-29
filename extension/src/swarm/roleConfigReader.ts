@@ -19,7 +19,8 @@ export function readRoleConfigs(targetPath: string): RoleConfig[] {
     if (!line.trim()) {
       continue;
     }
-    const [role, displayName, command, ...rest] = line.split('\t');
+    const fields = line.split('\t').map((f) => f.trim());
+    const [role, displayName, command, ...rest] = fields;
     if (!role || !displayName || !command) {
       continue;
     }
