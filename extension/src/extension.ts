@@ -2,20 +2,16 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { getTargetPath, setTargetPath } from './config/targetConfig';
 import { initializeTargetRepo } from './config/targetBootstrap';
-import { AgentRunner } from './orchestrator/AgentRunner';
 import { SwarmPanel } from './panel/swarmPanel';
 import { appendRun, loadRuns } from './runs/runLog';
 import { getCurrentBranch, openPullRequest } from './swarm/prCreator';
 import { launchSwarm, waitForSwarmReady } from './swarm/swarmLauncher';
-import { readRoleConfigs } from './swarm/roleConfigReader';
 import { stopSwarm } from './swarm/swarmStopper';
 import { listTmuxSessions } from './swarm/tmuxClient';
 
 const NO_TARGET_MESSAGE = 'Set a target project first (SwarmForge: Set Target Project).';
 const STOP_SWARM_BUTTON = 'Stop Swarm';
 const LAST_RUN_NAME_KEY = 'swarmforge.lastRunName';
-
-let activeRunner: AgentRunner | undefined;
 
 async function resolveTargetPath(context: vscode.ExtensionContext): Promise<string | undefined> {
   let targetPath = getTargetPath();
@@ -119,11 +115,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
           vscode.window.showInformationMessage(result.message);
           const panel = SwarmPanel.createOrShow(context.extensionUri, targetPath!);
-          const roleConfigs = readRoleConfigs(targetPath!);
-          activeRunner?.stop();
-          activeRunner = new AgentRunner(roleConfigs);
-          activeRunner.start();
-          panel.attachRunner(activeRunner);
+          panel.updateTarget(targetPath!);
+          panel.notifyDogfoodCheckpoint();
         }
       );
     }),
@@ -153,8 +146,6 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
 
-      activeRunner?.stop();
-      activeRunner = undefined;
       const result = stopSwarm(targetPath);
       if (result.success) {
         vscode.window.showInformationMessage(result.message);
@@ -219,7 +210,5 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
-  activeRunner?.stop();
-  activeRunner = undefined;
   SwarmPanel.currentPanel?.dispose();
 }
