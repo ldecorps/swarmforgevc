@@ -14,6 +14,8 @@ export interface LaunchResult {
   targetPath: string;
 }
 
+const SWARM_LAUNCH_SUCCESS_MESSAGE = 'Swarm launched successfully.';
+
 export function isSwarmReady(targetPath: string): boolean {
   const socket = readTmuxSocket(targetPath);
   if (!socket) {
@@ -81,7 +83,7 @@ export async function launchSwarm(targetPath: string): Promise<LaunchResult> {
         stdout.includes('SwarmForge is ready') &&
         isSwarmReady(targetPath)
       ) {
-        finish(true, 'Swarm launched successfully.');
+        finish(true, SWARM_LAUNCH_SUCCESS_MESSAGE);
       }
     });
 
@@ -94,7 +96,7 @@ export async function launchSwarm(targetPath: string): Promise<LaunchResult> {
         return;
       }
       if (isSwarmReady(targetPath)) {
-        finish(true, 'Swarm launched successfully.');
+        finish(true, SWARM_LAUNCH_SUCCESS_MESSAGE);
         return;
       }
       finish(
@@ -105,7 +107,7 @@ export async function launchSwarm(targetPath: string): Promise<LaunchResult> {
 
     const deadline = setTimeout(() => {
       if (isSwarmReady(targetPath)) {
-        finish(true, 'Swarm launched successfully.');
+        finish(true, SWARM_LAUNCH_SUCCESS_MESSAGE);
       } else {
         finish(false, 'Timed out waiting for swarm to become ready.');
       }
@@ -113,7 +115,7 @@ export async function launchSwarm(targetPath: string): Promise<LaunchResult> {
 
     const poll = setInterval(() => {
       if (isSwarmReady(targetPath)) {
-        finish(true, 'Swarm launched successfully.');
+        finish(true, SWARM_LAUNCH_SUCCESS_MESSAGE);
       }
     }, 500);
   });

@@ -63,6 +63,32 @@
           "type": "string",
           "default": "",
           "description": "Path to the target project for SwarmForge runs."
+        },
+        "swarmforge.agentCommand": {
+          "type": "string",
+          "default": "claude",
+          "description": "Reserved for future standalone orchestrator mode. Launch Swarm uses ./swarm and swarmforge/swarmforge.conf."
+        },
+        "swarmforge.agentArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "--dangerously-skip-permissions"
+          ],
+          "description": "Reserved for future standalone orchestrator mode. Agent CLI flags belong in swarmforge/swarmforge.conf."
+        },
+        "swarmforge.roles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "coder",
+            "cleaner"
+          ],
+          "description": "Reserved for future standalone orchestrator mode. Active roles come from swarmforge/swarmforge.conf via ./swarm."
         }
       }
     }
