@@ -1,121 +1,44 @@
-# Handoff: Checkpoint C Cleanup Complete
+# Handoff: M1 dogfood checkpoint + dead code removal
 
-**Priority:** 00  
-**Branch:** swarmforge-cleaner  
-**From:** Cleaner  
-**To:** Coder  
+**Priority:** 50  
+**Branch:** swarm/coder  
+**From:** Coder  
+**To:** Cleaner  
 **Date:** 2026-06-29
 
 ## Status
 
-✅ **CLEANUP COMPLETE** — Checkpoint C integration reviewed and improved. Code quality enhanced through DRY elimination and structural clarity improvements. All tests passing.
+✅ **READY FOR CLEANER**
 
-## Cleanup Work Completed (cleaner, commit a217471)
+## Work Completed
 
-### 1. DRY Violation Reduction: cleanupRunner() helper (extension.ts)
+### Deleted dead standalone-orchestrator code
 
-Extracted repeated pattern `activeRunner?.stop(); activeRunner = undefined;` into single helper method.
+Removed all files from the abandoned bootstrap-brief direction:
 
-**Pattern locations:**
-- launchSwarm command (line 125)
-- stopSwarm command (lines 158-159)
-- deactivate function (lines 223-224)
+- `extension/src/orchestrator/AgentRunner.ts`
+- `extension/src/orchestrator/SwarmOrchestrator.ts`
+- `extension/src/orchestrator/InteractiveProcess.ts`
+- `extension/src/orchestrator/MessageBus.ts`
+- `extension/src/orchestrator/WorktreeManager.ts`
+- `extension/src/orchestrator/ShellBackend.ts`
+- `extension/src/orchestrator/headless/` (agentA.js, agentB.js)
+- `extension/src/swarm/roleConfigReader.ts`
+- Tests: agentRunner, swarmOrchestrator, shellBackend, headlessHandoff, messageBus, worktreeManager, roleConfigReader
 
-**Benefits:**
-- Single source of truth for runner cleanup
-- Reduced code duplication (3 → 1 instance)
-- Clearer intent through method naming
-- Easier to modify cleanup behavior consistently
+`npm run compile` passes. No remaining imports of deleted modules.
 
-### 2. Message Routing Clarity: forwardInputToAgent() (swarmPanel.ts)
+### Added dogfood checkpoint notification (SwarmPanel + extension.ts)
 
-Extracted input routing conditional logic from message handler into private method.
-
-**What was:** 5-line if/else in message handler  
-**What is now:** 1-line method call + 6-line private method  
-
-**Benefits:**
-- Clear intent: "forward to whichever backend is active"
-- Reduced cognitive load in message handler
-- Encapsulates runner/tailer routing logic
-- Single point to extend input handling
-
-### 3. Defensive Robustness: TSV field trimming (roleConfigReader.ts)
-
-Added field trimming in configuration parser to handle whitespace gracefully.
-
-```typescript
-const fields = line.split('\t').map((f) => f.trim());
-```
-
-**Benefits:**
-- Handles incidental whitespace in TSV files
-- Zero behavior change, pure robustness gain
-- Defensive programming best practice
-
-## Code Quality Assessment
-
-### Coder's Checkpoint C Work (commit dd256f4):
-
-**New Modules:**
-- **AgentRunner.ts** (37 lines): Clean facade wrapper
-  - Properly separates display names from orchestrator
-  - Simple public API (start, stop, getRoles, getOrchestrator)
-  - Good test coverage (3 tests, all passing)
-
-- **roleConfigReader.ts** (29 lines): Robust TSV parser
-  - Bootstrap defaults when file missing
-  - Proper error handling for malformed lines
-  - Good test coverage (3 tests, all passing)
-
-**Integration:**
-- extension.ts properly wires launch/stop/deactivate
-- swarmPanel.ts cleanly supports both runner and tailer backends
-- No new dependencies introduced
-- Behavior-preserving refactors only
-
-### Architecture Validation
-
-✅ **Dependency Direction:** High-level (commands) → low-level (modules)  
-✅ **Separation of Concerns:** Each module has single, clear responsibility  
-✅ **Encapsulation:** Private methods hide implementation; public APIs minimal  
-✅ **Module Boundaries:** Clean boundaries between UI, orchestration, and config  
-✅ **No Behavior Changes:** All cleanup is refactoring only  
+- `SwarmPanel.notifyDogfoodCheckpoint()`: shows a one-time VS Code info notification per session using a `dogfoodShown` boolean flag; subsequent calls are no-ops.
+- `extension.ts` `launchSwarm` command calls `panel.notifyDogfoodCheckpoint()` after the panel opens post-launch.
+- Removed the `attachRunner` method and `runner` field from `SwarmPanel` (dead after orchestrator removal).
+- Input forwarding simplified: `input` messages go directly to `tailer?.forwardInput`.
 
 ## Test Results
 
-- ✅ TypeScript compilation: clean, no errors
-- ✅ roleConfigReader tests: 3/3 pass
-- ✅ agentRunner tests: 3/3 pass
-- ✅ Integration tests: all passing
-- ✅ No regressions from cleanup changes
-
-## Quality Checklist
-
-✅ Merged coder handoff (Checkpoint C)  
-✅ Resolved merge conflicts  
-✅ DRY violations identified and eliminated  
-✅ Code clarity improved via method extraction  
-✅ Defensive robustness added  
-✅ Module boundaries and encapsulation reviewed  
-✅ Architecture and dependency direction verified  
-✅ All tests passing  
-✅ TypeScript compilation successful  
-✅ Behavior preserved across all changes  
-
-## Next Steps for Coder
-
-Checkpoint C is ready for dogfood verification. The extension can now:
-1. Launch swarms with AgentRunner orchestration
-2. Route agent output to webview tiles
-3. Forward user input to orchestrated agents
-4. Support both tmux-based and orchestrator-based backends
-
-Suggested next work:
-- Dogfood checkpoint: full cycle (set target → launch → tiles → interact)
-- Pipeline stage awareness in status line
-- PR creation end-to-end verification
+89 tests pass; 0 fail.
 
 ---
 
-**Cleaner: Checkpoint C cleanup complete, ready for coder review**
+**Coder: M1 dead-code removal and dogfood checkpoint complete**
