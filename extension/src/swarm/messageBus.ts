@@ -41,10 +41,19 @@ export function readLog(logPath: string): MessageEvent[] {
   }
 }
 
+/** Return the last event of a given type, or undefined if not found. */
+function findLastEventOfType(events: MessageEvent[], type: MessageStatus): MessageEvent | undefined {
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i].type === type) return events[i];
+  }
+  return undefined;
+}
+
 /** Return the type of the last event (current status). */
 export function currentStatus(logPath: string): MessageStatus | undefined {
   const events = readLog(logPath);
-  return events.length > 0 ? events[events.length - 1].type : undefined;
+  const lastEvent = events.length > 0 ? events[events.length - 1] : undefined;
+  return lastEvent?.type;
 }
 
 /**
@@ -70,15 +79,6 @@ export function createMessage(dir: string, opts: CreateOptions): string {
   return id;
 }
 
-function leaseIsAlive(event: MessageEvent, nowEpoch: number, ttlSeconds: number): boolean {
-  const claimed = event.claimed_by as string | undefined;
-  if (!claimed) return false;
-  const parts = claimed.split('@');
-  if (parts.length !== 2) return false;
-  const leaseEpoch = parseInt(parts[1], 10);
-  return nowEpoch - leaseEpoch < ttlSeconds;
-}
-
 /**
  * Attempt to claim a message for `by`. Returns true if claimed (or already
  * held by `by` with a live lease). Returns false if another claimer holds a
@@ -91,15 +91,20 @@ export function claimMessage(
   leaseTtlSeconds: number
 ): boolean {
   const events = readLog(logPath);
-  // Find most recent received event
-  const lastReceived = [...events].reverse().find((e) => e.type === 'received');
+  const lastReceived = findLastEventOfType(events, 'received');
 
   if (lastReceived) {
-    const alive = leaseIsAlive(lastReceived, nowEpoch, leaseTtlSeconds);
-    if (alive) {
-      const claimer = (lastReceived.claimed_by as string).split('@')[0];
-      if (claimer === by) return true; // idempotent
-      return false; // different claimer holds live lease
+    const claimed = lastReceived.claimed_by as string | undefined;
+    if (claimed) {
+      const parts = claimed.split('@');
+      if (parts.length === 2) {
+        const leaseEpoch = parseInt(parts[1], 10);
+        if (nowEpoch - leaseEpoch < leaseTtlSeconds) {
+          const claimer = parts[0];
+          if (claimer === by) return true; // idempotent
+          return false; // different claimer holds live lease
+        }
+      }
     }
   }
 

@@ -44,19 +44,20 @@ export function evaluateChase(
   return 'chased';
 }
 
-export function appendChaseEvent(logPath: string, chaseCount: number): void {
-  appendEventRaw(logPath, {
-    type: 'chased',
+function appendChaseEventInternal(logPath: string, type: 'chased' | 'dead-letter', chaseCount: number): void {
+  const event: Record<string, unknown> = {
+    type,
     chase_count: chaseCount,
-    chased_by: 'watchdog',
     at: new Date().toISOString(),
-  });
+  };
+  if (type === 'chased') event.chased_by = 'watchdog';
+  appendEventRaw(logPath, event);
+}
+
+export function appendChaseEvent(logPath: string, chaseCount: number): void {
+  appendChaseEventInternal(logPath, 'chased', chaseCount);
 }
 
 export function appendDeadLetterEvent(logPath: string, chaseCount: number): void {
-  appendEventRaw(logPath, {
-    type: 'dead-letter',
-    chase_count: chaseCount,
-    at: new Date().toISOString(),
-  });
+  appendChaseEventInternal(logPath, 'dead-letter', chaseCount);
 }
