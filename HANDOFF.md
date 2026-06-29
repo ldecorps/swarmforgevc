@@ -1,4 +1,4 @@
-# Handoff: M1 dogfood checkpoint + dead code removal
+# Handoff: Run log completion recording
 
 **Priority:** 50  
 **Branch:** swarm/coder  
@@ -12,33 +12,19 @@
 
 ## Work Completed
 
-### Deleted dead standalone-orchestrator code
+### Run log completion recording
 
-Removed all files from the abandoned bootstrap-brief direction:
+Added `prUrl` and `completedAt` optional fields to `RunEntry` and a new `updateLastRunForTarget` function that patches the most-recent run for a given target path.
 
-- `extension/src/orchestrator/AgentRunner.ts`
-- `extension/src/orchestrator/SwarmOrchestrator.ts`
-- `extension/src/orchestrator/InteractiveProcess.ts`
-- `extension/src/orchestrator/MessageBus.ts`
-- `extension/src/orchestrator/WorktreeManager.ts`
-- `extension/src/orchestrator/ShellBackend.ts`
-- `extension/src/orchestrator/headless/` (agentA.js, agentB.js)
-- `extension/src/swarm/roleConfigReader.ts`
-- Tests: agentRunner, swarmOrchestrator, shellBackend, headlessHandoff, messageBus, worktreeManager, roleConfigReader
-
-`npm run compile` passes. No remaining imports of deleted modules.
-
-### Added dogfood checkpoint notification (SwarmPanel + extension.ts)
-
-- `SwarmPanel.notifyDogfoodCheckpoint()`: shows a one-time VS Code info notification per session using a `dogfoodShown` boolean flag; subsequent calls are no-ops.
-- `extension.ts` `launchSwarm` command calls `panel.notifyDogfoodCheckpoint()` after the panel opens post-launch.
-- Removed the `attachRunner` method and `runner` field from `SwarmPanel` (dead after orchestrator removal).
-- Input forwarding simplified: `input` messages go directly to `tailer?.forwardInput`.
+**Files changed:**
+- `extension/src/runs/runLog.ts` — added `completedAt?`, `prUrl?` to `RunEntry`; added `updateLastRunForTarget(logPath, targetPath, update)`
+- `extension/src/extension.ts` — call `updateLastRunForTarget` after successful PR creation; `showRuns` now appends PR URL to each run line
+- `extension/test/runLog.test.js` — 3 new tests covering the happy path, no-match case, and empty-log case
 
 ## Test Results
 
-89 tests pass; 0 fail.
+92 tests pass; 0 fail.
 
 ---
 
-**Coder: M1 dead-code removal and dogfood checkpoint complete**
+**Coder: run-log completion recording complete**
