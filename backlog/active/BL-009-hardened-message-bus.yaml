@@ -1,0 +1,25 @@
+id: BL-009
+title: Hardened message bus — append-only event log per message
+milestone: M2
+status: active
+priority: 9
+
+description: >
+  Replace the current mutable-YAML message bus with an append-only event log.
+  Each message lives as a log file at .swarmforge/messages/<id>.log with one
+  YAML event per line. Events: created, received, done, chased, dead-letter.
+  The created event carries id, seq, from, to, subject, body, schema:1, at.
+  The received event carries by, at, and a WIP lease (claimed_by: <role>@<epoch>).
+  Current status equals the last event type; full history is free. All writes
+  are atomic (temp file + rename). Receivers record handled ids so re-delivered
+  messages are no-ops. A received message with a live lease is not re-claimable;
+  a stale lease is claimable by a respawned process. Expose three helper CLI
+  commands at extension/src/tools/: send-handoff, ack-handoff, complete-handoff.
+
+acceptance:
+  - Unit tests: write a message, append events, read back current status correctly
+  - Two simulated processes pass a handoff through the log; replay shows full history
+  - Atomic write test: interrupt mid-write, verify no corrupt state
+  - CLI helpers send-handoff / ack-handoff / complete-handoff exist and work end-to-end
+
+assigned_to: coder
