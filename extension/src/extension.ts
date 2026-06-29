@@ -1,4 +1,5 @@
 import * as path from 'path';
+import * as os from 'os';
 import * as vscode from 'vscode';
 import { getTargetPath, setTargetPath } from './config/targetConfig';
 import { initializeTargetRepo } from './config/targetBootstrap';
@@ -13,6 +14,16 @@ const NO_TARGET_MESSAGE = 'Set a target project first (SwarmForge: Set Target Pr
 const STOP_SWARM_BUTTON = 'Stop Swarm';
 const LAST_RUN_NAME_KEY = 'swarmforge.lastRunName';
 
+function generateDefaultRunName(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hour = String(now.getHours()).padStart(2, '0');
+  const minute = String(now.getMinutes()).padStart(2, '0');
+  return `run-${year}${month}${day}-${hour}${minute}`;
+}
+
 async function resolveTargetPath(context: vscode.ExtensionContext): Promise<string | undefined> {
   let targetPath = getTargetPath();
   if (!targetPath) {
@@ -22,7 +33,7 @@ async function resolveTargetPath(context: vscode.ExtensionContext): Promise<stri
 }
 
 export function activate(context: vscode.ExtensionContext): void {
-  const runLogPath = path.join(context.globalStorageUri.fsPath, 'runs.json');
+  const runLogPath = path.join(os.homedir(), '.swarmforge', 'runs.jsonl');
 
   context.subscriptions.push(
     vscode.commands.registerCommand('swarmforge.testTmux', async () => {
@@ -76,19 +87,20 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
 
-      const runName = await vscode.window.showInputBox({
+      const inputName = await vscode.window.showInputBox({
         title: 'SwarmForge Run Name',
-        prompt: 'Name this run (used for branch and PR title)',
+        prompt: 'Name this run (used for branch and PR title; leave blank for timestamp default)',
         placeHolder: 'e.g. fix-auth-bug',
-        validateInput: (v) => (v.trim() ? undefined : 'Run name is required'),
+        validateInput: () => undefined,
       });
-      if (!runName) {
+      if (inputName === undefined) {
         return;
       }
+      const runName = inputName.trim() || generateDefaultRunName();
 
-      await context.globalState.update(LAST_RUN_NAME_KEY, runName.trim());
+      await context.globalState.update(LAST_RUN_NAME_KEY, runName);
       appendRun(runLogPath, {
-        name: runName.trim(),
+        name: runName,
         targetPath,
         startedAt: new Date().toISOString(),
       });
@@ -100,7 +112,7 @@ export function activate(context: vscode.ExtensionContext): void {
           cancellable: false,
         },
         async () => {
-          const result = await launchSwarm(targetPath!);
+          const result = await launchSwarm(targetPath!, runName);
           if (!result.success) {
             vscode.window.showErrorMessage(result.message);
             return;
@@ -114,7 +126,7 @@ export function activate(context: vscode.ExtensionContext): void {
           }
 
           vscode.window.showInformationMessage(result.message);
-          const panel = SwarmPanel.createOrShow(context.extensionUri, targetPath!);
+          const panel = SwarmPanel.createOrShow(context.extensionUri, targetPath!, runLogPath);
           panel.updateTarget(targetPath!);
           panel.notifyDogfoodCheckpoint();
         }
@@ -127,7 +139,7 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
         return;
       }
-      SwarmPanel.createOrShow(context.extensionUri, targetPath);
+      SwarmPanel.createOrShow(context.extensionUri, targetPath, runLogPath);
     }),
 
     vscode.commands.registerCommand('swarmforge.stopSwarm', async () => {

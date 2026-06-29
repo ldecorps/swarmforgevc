@@ -120,3 +120,24 @@ test('getWebviewHtml restart posts restartAgent message type', () => {
   const html = getWebviewHtml('test');
   assert(html.includes("restartAgent") || html.includes("'restart'"));
 });
+
+test('getWebviewHtml contains recent-runs section element', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes('id="recent-runs"'));
+});
+
+test('getWebviewHtml handles recentRuns from stage message', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes('recentRuns'));
+  assert(html.includes('renderRecentRuns') || html.includes('recent-runs'));
+});
+
+test('getWebviewHtml recent runs shows running badge in green', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes('run-badge-running'));
+});
+
+test('getWebviewHtml recent runs shows stopped badge', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes('run-badge-stopped'));
+});
