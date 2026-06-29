@@ -186,3 +186,14 @@ test('getWebviewHtml backlog active items appear before todo in sort order', () 
   const html = getWebviewHtml('test');
   assert(html.includes("status === 'active'") || html.includes("filter(i => i.status"));
 });
+
+test('getWebviewHtml keydown handler is on document not on output div', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes("document.addEventListener('keydown'"), 'expected document-level keydown');
+  assert(!html.includes("output.addEventListener('keydown'"), 'must not have per-tile keydown');
+});
+
+test('getWebviewHtml keydown uses activeRole to route to correct tile', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes('activeRole'), 'activeRole must be used in keydown handler');
+});
