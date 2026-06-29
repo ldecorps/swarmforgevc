@@ -1,0 +1,51 @@
+id: BL-016
+title: Fix handoff flow — cleaner→specifier routing was broken
+milestone: M2
+priority: 00
+status: done
+
+description: >
+  Critical bug in pipeline flow: cleaner role prompts were out of sync with
+  pipeline design. Cleaner was instructed to send completed work to coder
+  (wrong) instead of specifier (correct). Specifier prompt had no instructions
+  for receiving completed work from cleaner.
+
+  This broke the entire completion cycle — work would get stuck in cleaner
+  with no path to specifier for merge and integration.
+
+  Fixed by correcting role prompts:
+  - Cleaner now sends git_handoff to specifier + broadcast to all (priority 00)
+  - Specifier now expects to receive completed work and knows to merge
+
+  Cleanup verifies this flow continues working for all future items.
+
+bugs_fixed:
+  - >
+    Cleaner prompt (line 34) said "Send git_handoff to coder" — should be
+    specifier. Cleaner is the FINAL GATE; when they sign off, work is done.
+  - >
+    Specifier prompt had only "Sending Work to Coordinator" section. Missing
+    "Receiving Completed Work from Cleaner" section.
+  - >
+    Pipeline flow diagram showed specifier→coder→cleaner→specifier but
+    implementation was specifier→coder→cleaner→(stuck).
+
+acceptance:
+  - Cleaner.prompt updated: sends to specifier + broadcasts on completion
+  - Specifier.prompt updated: documents receiving and merging completed work
+  - Role prompts all consistent with pipeline flow diagram
+  - BL-015 confirmed flowing cleaner→specifier correctly
+  - BL-007 confirmed flowing cleaner→specifier correctly
+
+constraints:
+  - Do not modify handoff protocol or daemon behavior
+  - Only fix role prompt documentation and routing
+  - Maintain atomic handoff writes to `.swarmforge/handoffs/`
+
+verification:
+  - Cleaner receives BL-015 and BL-007 completion notes
+  - Cleaner sends git_handoff to specifier (not coder)
+  - Specifier receives completion handoffs in inbox
+  - All future work items route correctly through pipeline
+
+assigned_to: coordinator
