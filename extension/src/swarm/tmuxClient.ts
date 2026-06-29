@@ -161,6 +161,23 @@ export function readSwarmRoles(targetPath: string): SwarmRole[] {
   return roles;
 }
 
+export interface RespawnResult {
+  success: boolean;
+  message: string;
+}
+
+export function respawnAgent(targetPath: string, role: string): RespawnResult {
+  const launchScript = path.join(targetPath, '.swarmforge', 'launch', `${role}.sh`);
+  if (!fs.existsSync(launchScript)) {
+    return { success: false, message: `No launch script found for role "${role}" at ${launchScript}` };
+  }
+  const result = runCommand('bash', [launchScript]);
+  if (result.exitCode !== 0) {
+    return { success: false, message: `Failed to respawn "${role}": ${result.stderr || result.stdout || `exit ${result.exitCode}`}` };
+  }
+  return { success: true, message: `Agent "${role}" restarted.` };
+}
+
 export function sessionExists(socketPath: string, session: string): boolean {
   const result = runCommand('tmux', [
     '-S',
