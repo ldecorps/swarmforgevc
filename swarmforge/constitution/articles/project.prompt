@@ -15,7 +15,32 @@ already does", not "a reimplementation of it".
 # Goals for this swarm run (Milestone 1 - the MVP)
 
 Build the smallest version a developer would actually use daily. Deliver these,
-and only these:
+and only these.
+
+## Build order: two capabilities FIRST (the dogfood-critical pair)
+
+Build these two before anything else, because together they let the developer
+start using the extension to watch its own further development:
+
+A. Run (launch) - a command to launch the swarm against a selected target by
+   shelling out to SwarmForge's ./swarm wrapper.
+B. Tiled agent panel - a webview panel showing one live terminal tile per agent
+   role, each tailing that role's tmux pane in real time, each interactive (the
+   developer can click in and type to the agent).
+
+### DOGFOOD CHECKPOINT (important)
+
+As soon as BOTH (A) launch and (B) live interactive tiles are working - even if
+rough - PAUSE and surface a clearly visible message:
+
+   "DOGFOOD CHECKPOINT REACHED - launch and tiles are functional. The developer
+    should verify by pointing the extension at its own repo before continuing."
+
+Do NOT stop the run. After surfacing this message, continue building the remaining
+Milestone 1 items below. The checkpoint is a signal to the human, not a stopping
+point - the human decides whether to take over watching via the extension itself.
+
+## Remaining Milestone 1 items (build after the pair above)
 
 1. Target selection
    - A command to point the extension at a local target repo (a filesystem path).
@@ -23,28 +48,23 @@ and only these:
      files into the target repo: project.prompt and engineering.prompt (so they
      travel with the repo when the swarm clones it).
 
-2. Tiled agent panel (the core UI)
-   - A webview panel showing one live terminal tile per agent role.
-   - Each tile tails the output of that role's tmux pane in real time.
-   - Each tile is interactive: the developer can click into it and type directly
-     to that agent, exactly like typing into the agent's terminal window.
-   - The tile layout mirrors SwarmForge's window-per-role layout.
+2. Stop
+   - A command to stop the swarm cleanly.
 
-3. Run / Stop
-   - A command to launch the swarm against the selected target (use whatever pack
-     SwarmForge is configured with; do not implement pack selection logic yet).
-   - A command to stop the swarm.
-
-4. Pipeline awareness
+3. Pipeline awareness
    - Show which stage currently holds the work (read this from SwarmForge's state
      files under .swarmforge/). A simple status line is enough.
 
-5. PR at the end
+4. PR at the end
    - When the swarm finishes, open a pull request from the swarm's dev branch
      into the target's main branch. The human reviews and merges it in GitHub.
 
-6. Named runs
+5. Named runs
    - Name the branch and PR after the work item. Keep a simple local log of runs.
+
+Note: target selection (item 1) is needed to exercise launch properly, so it is
+fine to build a minimal version of it alongside the dogfood pair if launch needs
+a target to point at. Keep it minimal until the pair works.
 
 # Explicitly OUT of scope (do NOT build these yet)
 
