@@ -252,6 +252,56 @@
         (is (= 2 (:exit done)))
         (is (str/includes? (:err done) "CURRENT_WORK_IS_BATCH"))))))
 
+(deftest handoffd-startup-notifies-roles-with-pending-inbox-items
+  ;; Reproduces bug: when a session restarts after handoff delivery,
+  ;; inbox/new items are stranded because notify! only fires at delivery time.
+  ;; Fix: handoffd --startup-notify-only scans inbox/new at startup and
+  ;; re-notifies any role that has pending items.
+  (let [root       (tmp-dir)
+        coder-wt   (fs/path root ".worktrees" "coder")
+        spec-wt    root
+        fake-sock  (fs/path root "fake.sock")
+        notify-log (fs/path root "tmux-calls.log")
+        fake-bin   (fs/path root "bin")
+        fake-tmux  (fs/path fake-bin "tmux")]
+
+    ;; fake tmux that records every invocation
+    (fs/create-dirs fake-bin)
+    (spit (str fake-tmux)
+          (format "#!/usr/bin/env bash\necho \"$*\" >> '%s'\nexit 0\n" notify-log))
+    (run {:dir root} "chmod" "+x" (str fake-tmux))
+    (spit (str fake-sock) "")
+
+    ;; roles.tsv: coder (has pending item) and specifier (empty inbox)
+    (fs/create-dirs (fs/path root ".swarmforge"))
+    (write-file
+     (fs/path root ".swarmforge" "roles.tsv")
+     (str (format "coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n" coder-wt)
+          (format "specifier\tmaster\t%s\tswarmforge-specifier\tSpecifier\tclaude\ttask\n" spec-wt)))
+    (write-file (fs/path root ".swarmforge" "tmux-socket") (str fake-sock))
+
+    ;; coder has one orphaned item in inbox/new
+    (fs/create-dirs (fs/path coder-wt ".swarmforge" "handoffs" "inbox" "new"))
+    (write-file
+     (fs/path coder-wt ".swarmforge" "handoffs" "inbox" "new" "50_orphaned.handoff")
+     "type: git_handoff\nto: coder\npriority: 50\ntask: BL-020\n")
+
+    ;; specifier inbox/new is absent — no pending items
+
+    ;; run startup-notify-only
+    (run {:dir root :env {"PATH" (str fake-bin ":" (System/getenv "PATH"))}}
+         "bb" (script "handoffd.bb") (str root) "--startup-notify-only")
+
+    (testing "coder with pending inbox item is notified at startup"
+      (is (fs/exists? notify-log) "tmux was never called")
+      (is (str/includes? (read-file notify-log) "swarmforge-coder")
+          "coder session not notified"))
+
+    (testing "specifier with empty inbox is not notified at startup"
+      (is (or (not (fs/exists? notify-log))
+              (not (str/includes? (read-file notify-log) "swarmforge-specifier")))
+          "specifier was spuriously notified"))))
+
 (defn -main [& _]
   (let [{:keys [fail error]} (run-tests 'swarmforge.handoff-test)]
     (doseq [dir @temp-dirs]
