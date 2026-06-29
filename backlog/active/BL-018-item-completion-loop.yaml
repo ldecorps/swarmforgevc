@@ -1,0 +1,50 @@
+id: BL-018
+title: Item completion detection + next-item loop
+milestone: M3
+priority: 18
+status: active
+
+description: >
+  The swarm currently runs one item and stops. This slice adds the machinery
+  to detect when the current item is done (cleaner→specifier handoff received
+  and merged) and automatically pick up the next eligible item from the backlog.
+
+behavior_wanted: >
+  - After specifier merges a completed item, it checks backlog/active/ for the
+    next item in priority order (lowest number first) that has no unresolved
+    depends_on entries still in active/.
+  - If an eligible item exists, specifier writes its spec as a git_handoff to
+    coordinator (same as the current manual flow but automated).
+  - If no eligible item exists (backlog drained or all remaining blocked by
+    dependencies), specifier sends a note to coordinator: "Backlog drained —
+    no eligible next item."
+  - A "Run mode" setting in the extension host controls this:
+      - one-shot: stop after the current item (current behavior, remains default)
+      - drain: keep looping until backlog is empty or all items are blocked
+  - The coordinator passes the elected item to coder as usual.
+  - The work-tree panel (BL-017) reflects the newly active item.
+
+acceptance:
+  - With drain mode enabled, seed two active backlog items (B depends on A).
+    Run the swarm on A; when A is done and merged, the swarm automatically
+    starts B without human input.
+  - With one-shot mode (default), the swarm stops after A is merged and does
+    not auto-start B.
+  - Dependency check: if B's depends_on lists A and A is still in active/,
+    B is not elected even if B has higher priority (lower number) than other
+    eligible items.
+  - "Backlog drained" note appears in the messages view when active/ is empty.
+
+constraints:
+  - Eligibility check is purely filesystem-based: read YAML id fields from
+    backlog/done/ and check depends_on entries against that set.
+  - Do not add a scheduler or timer; the loop is event-driven (triggered by
+    the cleaner→specifier handoff).
+  - Run mode is persisted in VS Code workspace state, not in the target repo.
+  - Keep the existing one-shot behavior as the default so existing swarm runs
+    are unaffected until the user opts in.
+
+depends_on:
+  - BL-017  # work tree panel (for status reads)
+
+assigned_to: coder
