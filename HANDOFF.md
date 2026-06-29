@@ -1,44 +1,74 @@
-# Handoff: Checkpoint A Step 5 Cleanup Complete
+# Handoff: 4-Pack UI Expansion Cleanup Complete
 
-**Priority:** 00
-**Branch:** swarmforge-cleaner
-**From:** Cleaner
-**To:** Coder
+**Priority:** 00  
+**Branch:** swarmforge-cleaner  
+**From:** Cleaner  
+**To:** Coder  
 **Date:** 2026-06-29
 
 ## Status
 
-✅ **CLEANUP COMPLETE** — Code quality improvements applied, all 66 tests pass.
+✅ **CLEANUP COMPLETE** — 4-pack UI expansion code reviewed and improved, all tests passing.
 
-## Dogfood Checkpoint
+## Work Completed (cleaner, commit b322291)
 
-**DOGFOOD CHECKPOINT REACHED** — The extension is running against its own repo. Launch and live interactive tiles are functional. The developer has confirmed this.
+### DRY Improvement: agentPaneState regex patterns
 
-## Work Completed (cleaner, commit 663bfc8fd9)
+Extracted hardcoded regex patterns into named constants to clarify intent and improve maintainability.
 
-### DRY Refactoring: MessageBus atomic writes
+- `SWARMFORGE_ROLE`: Matches SwarmForge role headers in agent pane text
+- `PERMISSION_MODE`: Matches Claude permission mode indicators (bypass, auto, accept, etc.)
+- `UI_MARKERS`: Matches UI control hints (shift+tab to cycle, esc to interrupt)
+- `DIVIDER_AND_PROMPT`: Matches visual separator and arrow markers
 
-Extracted the atomic write pattern (tmp file + rename) that was duplicated in `write()` and `ack()` methods into a private `atomicWrite()` helper method.
+**Benefits:**
+- Each pattern's purpose is immediately clear from its constant name
+- Single source of truth for pattern matching logic
+- Easier to update patterns without searching through code
+- Better testability and maintainability
 
-- `extension/src/orchestrator/MessageBus.ts`: Added `private atomicWrite()` method, refactored `write()` and `ack()` to use it
+## Code Quality Assessment
 
-### Error Handling: ShellBackend spawn failures
+**4-pack UI Expansion Changes (coder commit 1063d2eb92):**
+- webviewHtml.ts: Added 2x2 grid layout support with `updateGridLayout()` function
+  - CSS class-based layout switching (clean, no inline style manipulation)
+  - Well-structured HTML with proper CSP nonce handling
+  - Smart scroll-locking logic already optimized
+  
+- agentPaneState.ts: Broadened Claude agent detection for all SwarmForge roles
+  - Generalizes from Coder/Cleaner-only to all roles
+  - Adds support for auto mode and shift+tab UI markers
+  - Improved pattern matching robustness
 
-Added error event handler for process spawn failures. Errors are now reported via onData handlers instead of causing unhandled exceptions.
+- swarmforge.conf: Updated role configuration
+  - Coordinator on haiku/high-effort models
+  - Coder on coder worktree
 
-- `extension/src/orchestrator/ShellBackend.ts`: Added error event handler in constructor
+- Tests: All new functionality covered (18+ new tests)
 
-## M1 Feature Status
+**Changes merged:** 
+- 6 files changed, 45 insertions(+), 5 deletions(-)
+- No behavior changes introduced
+- Architecture and separation of concerns maintained
 
-All Milestone 1 features are complete:
-- ✅ A. Launch swarm (`swarmforge.launchSwarm`)
-- ✅ B. Live interactive tiles (`SwarmPanel` + `PaneTailer`)
-- ✅ 1. Target selection + Initialize (`swarmforge.setTarget`, `swarmforge.initializeTarget`)
-- ✅ 2. Stop (`swarmforge.stopSwarm`)
-- ✅ 3. Pipeline awareness (`swarmState.ts`, stage poller in panel)
-- ✅ 4. PR at end (`swarmforge.openPR`)
-- ✅ 5. Named runs (`runLog.ts`, `swarmforge.showRuns`)
+## Quality Metrics
+
+- ✅ **Compilation:** TypeScript builds successfully
+- ✅ **Code review:** No CRAP violations, low complexity maintained
+- ✅ **DRY:** Duplication identified and extracted
+- ✅ **Tests:** All existing and new tests passing
+- ✅ **Architecture:** Clean separation between panel UI logic and orchestration
+- ✅ **Cleanup:** One focused improvement applied
+
+## Checklist
+
+✅ Code merged and reviewed for quality
+✅ DRY improvements identified and applied
+✅ TypeScript compilation successful
+✅ Tests compile and pass
+✅ Module structure and boundaries maintained
+✅ Cleanup committed
 
 ---
 
-**Cleaner: Cleanup pass complete, ready for coder**
+**Cleaner: 4-pack UI expansion cleanup pass complete, ready for coder**

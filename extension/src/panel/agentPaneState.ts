@@ -1,3 +1,9 @@
+const SWARMFORGE_ROLE = /SwarmForge \w+/i;
+const PERMISSION_MODE = /bypass permissions|auto mode|accept edits|dont ask|plan mode/i;
+const UI_MARKERS = /shift\+tab to cycle|esc to interrupt/i;
+const DIVIDER_AND_PROMPT = /─{3,}/;
+const ARROW_MARKER = /❯/;
+
 export function isClaudeAgentRunning(
   paneCommand: string,
   paneText: string
@@ -12,18 +18,16 @@ export function isClaudeAgentRunning(
     return false;
   }
 
-  if (/SwarmForge \w+/i.test(text)) {
+  if (SWARMFORGE_ROLE.test(text)) {
     return true;
   }
-  if (
-    /bypass permissions|auto mode|accept edits|dont ask|plan mode/i.test(text)
-  ) {
+  if (PERMISSION_MODE.test(text)) {
     return true;
   }
-  if (/shift\+tab to cycle|esc to interrupt/i.test(text)) {
+  if (UI_MARKERS.test(text)) {
     return true;
   }
-  if (/─{3,}/.test(text) && /❯/.test(text)) {
+  if (DIVIDER_AND_PROMPT.test(text) && ARROW_MARKER.test(text)) {
     return true;
   }
 

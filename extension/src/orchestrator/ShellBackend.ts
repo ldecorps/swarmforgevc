@@ -10,31 +10,32 @@ export class ShellBackend implements InteractiveProcess {
     this.proc = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], cwd: options.cwd });
 
     this.proc.stdout?.on('data', (buf: Buffer) => {
-      const text = buf.toString();
-      for (const h of this.dataHandlers) {
-        h(text);
-      }
+      this.invokeDataHandlers(buf.toString());
     });
 
     this.proc.stderr?.on('data', (buf: Buffer) => {
-      const text = buf.toString();
-      for (const h of this.dataHandlers) {
-        h(text);
-      }
+      this.invokeDataHandlers(buf.toString());
     });
 
     this.proc.on('error', (err) => {
-      const msg = `Error spawning ${command}: ${err.message}`;
-      for (const h of this.dataHandlers) {
-        h(msg);
-      }
+      this.invokeDataHandlers(`Error spawning ${command}: ${err.message}`);
     });
 
     this.proc.on('close', (code) => {
-      for (const h of this.exitHandlers) {
-        h(code);
-      }
+      this.invokeExitHandlers(code);
     });
+  }
+
+  private invokeDataHandlers(data: string): void {
+    for (const h of this.dataHandlers) {
+      h(data);
+    }
+  }
+
+  private invokeExitHandlers(code: number | null): void {
+    for (const h of this.exitHandlers) {
+      h(code);
+    }
   }
 
   onData(handler: (chunk: string) => void): void {
