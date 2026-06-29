@@ -1,11 +1,20 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { execSync } = require('node:child_process');
 
 const {
   buildTargetBootstrapFiles,
   planTargetBootstrapFiles,
+  initializeTargetRepo,
 } = require('../out/config/targetBootstrap');
 const { resolveTargetPath } = require('../out/config/targetPath');
+
+function mkTmpDir() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bootstrap-'));
+}
 
 test('resolveTargetPath prefers configured workspace target', () => {
   const target = resolveTargetPath({
@@ -75,4 +84,45 @@ test('resolveTargetPath returns undefined when no path and no workspace folders'
 test('resolveTargetPath returns undefined when path is whitespace only', () => {
   const target = resolveTargetPath({ configuredTargetPath: '   ' });
   assert.equal(target, undefined);
+});
+
+test('initializeTargetRepo creates both prompt files in a non-git directory', async () => {
+  const tmp = mkTmpDir();
+  const result = await initializeTargetRepo(tmp);
+  assert.deepEqual(result.created.sort(), ['engineering.prompt', 'project.prompt']);
+  assert.deepEqual(result.skipped, []);
+  assert.equal(result.committed, false);
+  assert.ok(fs.existsSync(path.join(tmp, 'project.prompt')));
+  assert.ok(fs.existsSync(path.join(tmp, 'engineering.prompt')));
+});
+
+test('initializeTargetRepo skips files that already exist', async () => {
+  const tmp = mkTmpDir();
+  fs.writeFileSync(path.join(tmp, 'project.prompt'), 'existing content');
+  const result = await initializeTargetRepo(tmp);
+  assert.deepEqual(result.created, ['engineering.prompt']);
+  assert.deepEqual(result.skipped, ['project.prompt']);
+  assert.equal(fs.readFileSync(path.join(tmp, 'project.prompt'), 'utf8'), 'existing content');
+});
+
+test('initializeTargetRepo skips commit when all files already present', async () => {
+  const tmp = mkTmpDir();
+  fs.writeFileSync(path.join(tmp, 'project.prompt'), 'x');
+  fs.writeFileSync(path.join(tmp, 'engineering.prompt'), 'x');
+  const result = await initializeTargetRepo(tmp);
+  assert.equal(result.committed, false);
+  assert.deepEqual(result.created, []);
+  assert.deepEqual(result.skipped.sort(), ['engineering.prompt', 'project.prompt']);
+});
+
+test('initializeTargetRepo commits new files in a git repository', async () => {
+  const tmp = mkTmpDir();
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+  const result = await initializeTargetRepo(tmp);
+  assert.equal(result.committed, true);
+  assert.deepEqual(result.created.sort(), ['engineering.prompt', 'project.prompt']);
+  const log = execSync('git log --oneline', { cwd: tmp }).toString();
+  assert.match(log, /Initialize SwarmForge target prompts/);
 });

@@ -1,6 +1,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+const SWARMFORGE_DIR = '.swarmforge';
+const HANDOFF_EXTENSION = '.handoff';
+const INBOX_SUBDIRS = ['new', 'in_process'];
+const TSV_ROLE_INDEX = 0;
+const TSV_WORKTREE_INDEX = 2;
+const TSV_DISPLAY_NAME_INDEX = 4;
+
 export interface RoleEntry {
   role: string;
   worktreePath: string;
@@ -20,9 +27,9 @@ export function parseRolesTsv(tsv: string): RoleEntry[] {
       continue;
     }
     const parts = line.split('\t');
-    const role = parts[0];
-    const worktreePath = parts[2];
-    const displayName = parts[4];
+    const role = parts[TSV_ROLE_INDEX];
+    const worktreePath = parts[TSV_WORKTREE_INDEX];
+    const displayName = parts[TSV_DISPLAY_NAME_INDEX];
     if (role && worktreePath && displayName) {
       entries.push({ role, worktreePath, displayName });
     }
@@ -31,9 +38,9 @@ export function parseRolesTsv(tsv: string): RoleEntry[] {
 }
 
 export function readHandoffInboxStatus(worktreePath: string): 'active' | 'idle' {
-  const inboxBase = path.join(worktreePath, '.swarmforge', 'handoffs', 'inbox');
+  const inboxBase = path.join(worktreePath, SWARMFORGE_DIR, 'handoffs', 'inbox');
 
-  for (const subdir of ['new', 'in_process']) {
+  for (const subdir of INBOX_SUBDIRS) {
     const dir = path.join(inboxBase, subdir);
     if (!fs.existsSync(dir)) {
       continue;
@@ -49,12 +56,12 @@ export function readHandoffInboxStatus(worktreePath: string): 'active' | 'idle' 
 function hasHandoffFiles(dir: string): boolean {
   try {
     for (const entry of fs.readdirSync(dir)) {
-      if (entry.endsWith('.handoff')) {
+      if (entry.endsWith(HANDOFF_EXTENSION)) {
         return true;
       }
       const fullPath = path.join(dir, entry);
       if (fs.statSync(fullPath).isDirectory()) {
-        if (fs.readdirSync(fullPath).some((f) => f.endsWith('.handoff'))) {
+        if (fs.readdirSync(fullPath).some((f) => f.endsWith(HANDOFF_EXTENSION))) {
           return true;
         }
       }
@@ -66,7 +73,7 @@ function hasHandoffFiles(dir: string): boolean {
 }
 
 export function readPipelineStages(targetPath: string): PipelineStage[] {
-  const rolesFile = path.join(targetPath, '.swarmforge', 'roles.tsv');
+  const rolesFile = path.join(targetPath, SWARMFORGE_DIR, 'roles.tsv');
   if (!fs.existsSync(rolesFile)) {
     return [];
   }
