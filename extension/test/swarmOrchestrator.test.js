@@ -57,6 +57,19 @@ test('SwarmOrchestrator stop kills running agents', async () => {
   assert.equal(exits[0].role, 'sleeper');
 });
 
+test('SwarmOrchestrator writeToAgent sends data to the named agent stdin', async () => {
+  const orch = new SwarmOrchestrator();
+  const outputs = [];
+  orch.onOutput((role, chunk) => outputs.push({ role, chunk }));
+  // read one line from stdin, echo it, then exit
+  orch.add({ role: 'reader', command: 'sh', args: ['-c', 'read line; echo "$line"'] });
+  orch.start();
+  orch.writeToAgent('reader', 'ping\n');
+  await orch.waitAll();
+  const text = outputs.map((o) => o.chunk).join('');
+  assert.ok(text.includes('ping'), `expected "ping" in output, got: ${text}`);
+});
+
 test('SwarmOrchestrator streams output from multiple agents', async () => {
   const orch = new SwarmOrchestrator();
   const outputs = [];
