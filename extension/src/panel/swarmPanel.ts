@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { SwarmRole } from '../swarm/tmuxClient';
 import { PaneTailer } from './paneTailer';
+import { currentStageLabel, readPipelineStages } from '../swarm/swarmState';
 
 export class SwarmPanel {
   public static currentPanel: SwarmPanel | undefined;
@@ -8,6 +9,7 @@ export class SwarmPanel {
 
   private readonly panel: vscode.WebviewPanel;
   private tailer: PaneTailer | undefined;
+  private stagePoller: ReturnType<typeof setInterval> | undefined;
   private disposables: vscode.Disposable[] = [];
 
   private constructor(
@@ -18,6 +20,7 @@ export class SwarmPanel {
     this.panel = panel;
     this.panel.webview.html = this.getHtml();
     this.setupTailer();
+    this.startStagePoller();
 
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
 
@@ -85,6 +88,19 @@ export class SwarmPanel {
     this.sendRoles(this.tailer.getRoles());
   }
 
+  private startStagePoller(): void {
+    if (this.stagePoller) {
+      clearInterval(this.stagePoller);
+    }
+    const poll = () => {
+      const stages = readPipelineStages(this.targetPath);
+      const label = currentStageLabel(stages);
+      this.panel.webview.postMessage({ type: 'stage', label });
+    };
+    poll();
+    this.stagePoller = setInterval(poll, 2000);
+  }
+
   private sendRoles(roles: SwarmRole[]): void {
     this.panel.webview.postMessage({
       type: 'roles',
@@ -131,6 +147,11 @@ export class SwarmPanel {
     header .status {
       font-size: 12px;
       opacity: 0.8;
+    }
+    header .stage {
+      font-size: 12px;
+      margin-left: auto;
+      opacity: 0.7;
     }
     #grid {
       flex: 1;
@@ -188,6 +209,7 @@ export class SwarmPanel {
   <header>
     <h1>SwarmForge</h1>
     <span class="status" id="status">Waiting for swarm...</span>
+    <span class="stage" id="stage"></span>
   </header>
   <div id="grid">
     <div class="empty" id="placeholder">Launch a swarm to see agent tiles.</div>
@@ -196,6 +218,7 @@ export class SwarmPanel {
     const vscode = acquireVsCodeApi();
     const grid = document.getElementById('grid');
     const status = document.getElementById('status');
+    const stageEl = document.getElementById('stage');
     const placeholder = document.getElementById('placeholder');
     const tiles = new Map();
     let activeRole = null;
@@ -270,6 +293,11 @@ export class SwarmPanel {
             entry.output.scrollTop = entry.output.scrollHeight;
           });
           break;
+        case 'stage':
+          if (stageEl) {
+            stageEl.textContent = message.label !== 'idle' ? 'Stage: ' + message.label : '';
+          }
+          break;
       }
     });
 
@@ -282,6 +310,10 @@ export class SwarmPanel {
   public dispose(): void {
     SwarmPanel.currentPanel = undefined;
     this.tailer?.stop();
+    if (this.stagePoller) {
+      clearInterval(this.stagePoller);
+      this.stagePoller = undefined;
+    }
     this.panel.dispose();
     while (this.disposables.length) {
       this.disposables.pop()?.dispose();

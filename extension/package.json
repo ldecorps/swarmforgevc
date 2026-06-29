@@ -15,6 +15,7 @@
     "onCommand:swarmforge.setTarget",
     "onCommand:swarmforge.initializeTarget",
     "onCommand:swarmforge.launchSwarm",
+    "onCommand:swarmforge.stopSwarm",
     "onCommand:swarmforge.openPanel"
   ],
   "main": "./out/extension.js",
@@ -35,6 +36,10 @@
       {
         "command": "swarmforge.launchSwarm",
         "title": "SwarmForge: Launch Swarm"
+      },
+      {
+        "command": "swarmforge.stopSwarm",
+        "title": "SwarmForge: Stop Swarm"
       },
       {
         "command": "swarmforge.openPanel",

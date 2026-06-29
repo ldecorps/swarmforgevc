@@ -3,6 +3,7 @@ import { getTargetPath, setTargetPath } from './config/targetConfig';
 import { initializeTargetRepo } from './config/targetBootstrap';
 import { SwarmPanel } from './panel/swarmPanel';
 import { launchSwarm, waitForSwarmReady } from './swarm/swarmLauncher';
+import { stopSwarm } from './swarm/swarmStopper';
 import { listTmuxSessions } from './swarm/tmuxClient';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -96,6 +97,32 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       SwarmPanel.createOrShow(context.extensionUri, targetPath);
+    }),
+
+    vscode.commands.registerCommand('swarmforge.stopSwarm', async () => {
+      const targetPath = getTargetPath();
+      if (!targetPath) {
+        vscode.window.showWarningMessage(
+          'Set a target project first (SwarmForge: Set Target Project).'
+        );
+        return;
+      }
+
+      const confirmed = await vscode.window.showWarningMessage(
+        'Stop the SwarmForge swarm? This will kill all agent sessions.',
+        { modal: true },
+        'Stop Swarm'
+      );
+      if (confirmed !== 'Stop Swarm') {
+        return;
+      }
+
+      const result = stopSwarm(targetPath);
+      if (result.success) {
+        vscode.window.showInformationMessage(result.message);
+      } else {
+        vscode.window.showWarningMessage(result.message);
+      }
     })
   );
 }
