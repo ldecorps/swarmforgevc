@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { SwarmRole, respawnAgent } from '../swarm/tmuxClient';
 import { PaneTailer } from './paneTailer';
 import { currentStageLabel, readPipelineStages } from '../swarm/swarmState';
+import { loadRuns } from '../runs/runLog';
 import { getNonce, getWebviewHtml } from './webviewHtml';
 
 const STAGE_POLL_INTERVAL_MS = 2000;
@@ -22,7 +23,8 @@ export class SwarmPanel {
   private constructor(
     panel: vscode.WebviewPanel,
     private readonly extensionUri: vscode.Uri,
-    private targetPath: string
+    private targetPath: string,
+    private readonly runLogPath: string
   ) {
     this.panel = panel;
     this.outputChannel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
@@ -64,7 +66,8 @@ export class SwarmPanel {
 
   public static createOrShow(
     extensionUri: vscode.Uri,
-    targetPath: string
+    targetPath: string,
+    runLogPath: string
   ): SwarmPanel {
     const column = vscode.window.activeTextEditor
       ? vscode.window.activeTextEditor.viewColumn
@@ -88,7 +91,7 @@ export class SwarmPanel {
       }
     );
 
-    SwarmPanel.currentPanel = new SwarmPanel(panel, extensionUri, targetPath);
+    SwarmPanel.currentPanel = new SwarmPanel(panel, extensionUri, targetPath, runLogPath);
     return SwarmPanel.currentPanel;
   }
 
@@ -140,12 +143,18 @@ export class SwarmPanel {
       if (!isIdle) {
         this.wasActive = true;
       }
+      const recentRuns = loadRuns(this.runLogPath)
+        .slice(-10)
+        .reverse()
+        .map((r) => ({
+          ...r,
+          status: r.targetPath === this.targetPath && !isIdle ? 'running' : 'stopped',
+        }));
       if (this.wasActive && isIdle) {
         this.wasActive = false;
         this.panel.webview.postMessage({ type: 'swarmDone' });
-      } else {
-        this.panel.webview.postMessage({ type: 'stage', label });
       }
+      this.panel.webview.postMessage({ type: 'stage', label, recentRuns });
     };
     poll();
     this.stagePoller = setInterval(poll, STAGE_POLL_INTERVAL_MS);
