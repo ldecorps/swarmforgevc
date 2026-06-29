@@ -23,14 +23,20 @@ export function appendEventRaw(logPath: string, event: Record<string, unknown>):
   atomicAppend(logPath, JSON.stringify(event) + '\n');
 }
 
-/** Parse all events from a log file. */
+/** Parse all events from a log file, skipping partial or malformed lines. */
 export function readLog(logPath: string): MessageEvent[] {
   try {
     const content = fs.readFileSync(logPath, 'utf8');
-    return content
-      .split('\n')
-      .filter((l) => l.trim())
-      .map((l) => JSON.parse(l) as MessageEvent);
+    const events: MessageEvent[] = [];
+    for (const line of content.split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        events.push(JSON.parse(line) as MessageEvent);
+      } catch {
+        // skip partial/malformed lines
+      }
+    }
+    return events;
   } catch {
     return [];
   }
@@ -94,11 +100,12 @@ export function claimMessage(
       const parts = claimed.split('@');
       if (parts.length === 2) {
         const leaseEpoch = parseInt(parts[1], 10);
-        if (nowEpoch - leaseEpoch < leaseTtlSeconds) {
+        if (!isNaN(leaseEpoch) && nowEpoch - leaseEpoch < leaseTtlSeconds) {
           const claimer = parts[0];
           if (claimer === by) return true; // idempotent
           return false; // different claimer holds live lease
         }
+        // NaN or expired lease — fall through to re-claim
       }
     }
   }
