@@ -49,3 +49,30 @@ test('planTargetBootstrapFiles skips files that already exist', () => {
   ]);
   assert.deepEqual(plan.alreadyPresent, ['engineering.prompt']);
 });
+
+test('planTargetBootstrapFiles creates all files when none exist', () => {
+  const plan = planTargetBootstrapFiles(new Set());
+
+  assert.deepEqual(plan.filesToCreate.map((file) => file.path), [
+    'project.prompt',
+    'engineering.prompt',
+  ]);
+  assert.deepEqual(plan.alreadyPresent, []);
+});
+
+test('planTargetBootstrapFiles skips all files when all exist', () => {
+  const plan = planTargetBootstrapFiles(new Set(['project.prompt', 'engineering.prompt']));
+
+  assert.deepEqual(plan.filesToCreate, []);
+  assert.deepEqual(plan.alreadyPresent, ['project.prompt', 'engineering.prompt']);
+});
+
+test('resolveTargetPath returns undefined when no path and no workspace folders', () => {
+  const target = resolveTargetPath({});
+  assert.equal(target, undefined);
+});
+
+test('resolveTargetPath returns undefined when path is whitespace only', () => {
+  const target = resolveTargetPath({ configuredTargetPath: '   ' });
+  assert.equal(target, undefined);
+});

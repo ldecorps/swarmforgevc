@@ -100,21 +100,22 @@ export class PaneTailer {
     }
   }
 
-  forwardInput(roleName: string, data: string): void {
+  private resolveTarget(roleName: string): string | undefined {
     if (!this.socketPath) {
-      return;
+      return undefined;
     }
-
     const role = this.roles.find((r) => r.role === roleName);
     if (!role) {
+      return undefined;
+    }
+    return paneTarget(role.session, role.displayName, this.paneBaseIndex);
+  }
+
+  forwardInput(roleName: string, data: string): void {
+    const target = this.resolveTarget(roleName);
+    if (!target) {
       return;
     }
-
-    const target = paneTarget(
-      role.session,
-      role.displayName,
-      this.paneBaseIndex
-    );
 
     if (data === '\r' || data === '\n') {
       sendKeys(this.socketPath, target, 'Enter');
@@ -141,20 +142,10 @@ export class PaneTailer {
   }
 
   forwardSpecialKey(roleName: string, key: string): void {
-    if (!this.socketPath) {
+    const target = this.resolveTarget(roleName);
+    if (!target) {
       return;
     }
-
-    const role = this.roles.find((r) => r.role === roleName);
-    if (!role) {
-      return;
-    }
-
-    const target = paneTarget(
-      role.session,
-      role.displayName,
-      this.paneBaseIndex
-    );
 
     const keyMap: Record<string, string> = {
       Enter: 'Enter',

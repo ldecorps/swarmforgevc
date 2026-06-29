@@ -69,17 +69,16 @@ export async function initializeTargetRepo(targetPath: string): Promise<{
   committed: boolean;
 }> {
   const files = buildTargetBootstrapFiles();
-  const existingFiles = new Set(
-    await Promise.all(
-      files.map(async (file) => {
-        try {
-          await fs.access(path.join(targetPath, file.path));
-          return file.path;
-        } catch {
-          return '';
-        }
-      })
-    ).then((results) => results.filter((item): item is string => item.length > 0))
+  const existingFiles = new Set<string>();
+  await Promise.all(
+    files.map(async (file) => {
+      try {
+        await fs.access(path.join(targetPath, file.path));
+        existingFiles.add(file.path);
+      } catch {
+        // file does not exist — will be created
+      }
+    })
   );
 
   const plan = planTargetBootstrapFiles(existingFiles);
@@ -90,14 +89,14 @@ export async function initializeTargetRepo(targetPath: string): Promise<{
 
   let committed = false;
   if (plan.filesToCreate.length > 0 && (await isGitRepository(targetPath))) {
-    await execFileAsync('git', ['-C', targetPath, 'add', 'project.prompt', 'engineering.prompt']);
+    const createdPaths = plan.filesToCreate.map((f) => f.path);
+    await execFileAsync('git', ['-C', targetPath, 'add', ...createdPaths]);
     const commitResult = await execFileAsync('git', [
       '-C',
       targetPath,
       'commit',
       '-m',
       'Initialize SwarmForge target prompts',
-      '--allow-empty',
     ]).catch(async (error: { stdout?: string; stderr?: string }) => {
       const message = `${error.stderr ?? ''}\n${error.stdout ?? ''}`.trim();
       if (!message.includes('nothing to commit')) {
