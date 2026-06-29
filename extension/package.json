@@ -13,6 +13,7 @@
   "activationEvents": [
     "onCommand:swarmforge.testTmux",
     "onCommand:swarmforge.setTarget",
+    "onCommand:swarmforge.initializeTarget",
     "onCommand:swarmforge.launchSwarm",
     "onCommand:swarmforge.openPanel"
   ],
@@ -26,6 +27,10 @@
       {
         "command": "swarmforge.setTarget",
         "title": "SwarmForge: Set Target Project"
+      },
+      {
+        "command": "swarmforge.initializeTarget",
+        "title": "SwarmForge: Initialize Target"
       },
       {
         "command": "swarmforge.launchSwarm",
@@ -50,7 +55,8 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "test": "npm run compile && node --test test/*.test.js"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
