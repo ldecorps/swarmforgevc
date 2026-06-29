@@ -78,3 +78,14 @@ test('getWebviewHtml contains stall message handler', () => {
   assert(html.includes('classList.add(\'stalled\')'));
   assert(html.includes('classList.remove(\'stalled\')'));
 });
+
+test('getWebviewHtml contains dead tile CSS class', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes('.tile.dead'));
+});
+
+test('getWebviewHtml contains dead message handler', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes("case 'dead'"));
+  assert(html.includes("'dead'"));
+});

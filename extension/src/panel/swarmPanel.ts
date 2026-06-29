@@ -107,6 +107,9 @@ export class SwarmPanel {
       },
       (events) => {
         this.panel.webview.postMessage({ type: 'stall', events });
+      },
+      (events) => {
+        this.panel.webview.postMessage({ type: 'dead', events });
       }
     );
     this.tailer.start();

@@ -110,6 +110,9 @@ export function getWebviewHtml(nonce: string): string {
     .tile.stalled {
       border-color: #d4a017;
     }
+    .tile.dead {
+      border-color: #e53935;
+    }
     #open-pr-btn {
       display: none;
       padding: 4px 10px;
@@ -252,6 +255,18 @@ export function getWebviewHtml(nonce: string): string {
           if (stageEl) {
             stageEl.textContent = message.label !== 'idle' ? 'Stage: ' + message.label : '';
           }
+          break;
+        case 'dead':
+          message.events.forEach((e) => {
+            const entry = tiles.get(e.role);
+            if (entry) {
+              if (e.dead) {
+                entry.tile.classList.add('dead');
+              } else {
+                entry.tile.classList.remove('dead');
+              }
+            }
+          });
           break;
         case 'stall':
           message.events.forEach((e) => {
