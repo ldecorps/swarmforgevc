@@ -154,6 +154,33 @@ export function getWebviewHtml(nonce: string): string {
     #open-pr-btn.visible {
       display: inline-block;
     }
+    #recent-runs {
+      border-top: 1px solid var(--vscode-panel-border);
+      padding: 6px 12px;
+      flex-shrink: 0;
+      max-height: 160px;
+      overflow: auto;
+    }
+    .runs-header {
+      font-size: 11px;
+      font-weight: 600;
+      opacity: 0.7;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .run-row {
+      display: flex;
+      gap: 10px;
+      font-size: 11px;
+      padding: 2px 0;
+      align-items: center;
+    }
+    .run-row .run-name { font-weight: 500; }
+    .run-row .run-target { opacity: 0.6; }
+    .run-row .run-date { opacity: 0.5; }
+    .run-badge-running { color: #4caf50; }
+    .run-badge-stopped { color: #888; }
   </style>
 </head>
 <body>
@@ -166,6 +193,10 @@ export function getWebviewHtml(nonce: string): string {
   <div id="grid">
     <div class="empty" id="placeholder">Launch a swarm to see agent tiles.</div>
   </div>
+  <div id="recent-runs" style="display:none;">
+    <div class="runs-header">Recent Runs</div>
+    <div id="runs-list"></div>
+  </div>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const grid = document.getElementById('grid');
@@ -175,7 +206,25 @@ export function getWebviewHtml(nonce: string): string {
     const tiles = new Map();
     let activeRole = null;
     const openPrBtn = document.getElementById('open-pr-btn');
+    const recentRunsEl = document.getElementById('recent-runs');
+    const runsListEl = document.getElementById('runs-list');
     const SCROLL_THRESHOLD = 8;
+
+    function renderRecentRuns(runs) {
+      if (!runs || runs.length === 0) {
+        recentRunsEl.style.display = 'none';
+        return;
+      }
+      recentRunsEl.style.display = '';
+      runsListEl.innerHTML = runs.map(r => {
+        const date = r.startedAt ? r.startedAt.slice(0, 10) : '';
+        const target = (r.targetPath || '').split('/').pop() || r.targetPath || '';
+        const badge = r.status === 'running'
+          ? '<span class="run-badge-running">● running</span>'
+          : '<span class="run-badge-stopped">● stopped</span>';
+        return '<div class="run-row"><span class="run-name">' + r.name + '</span><span class="run-target">' + target + '</span><span class="run-date">' + date + '</span>' + badge + '</div>';
+      }).join('');
+    }
 
     function isAtBottom(el) {
       return el.scrollTop + el.clientHeight >= el.scrollHeight - SCROLL_THRESHOLD;
@@ -300,6 +349,9 @@ export function getWebviewHtml(nonce: string): string {
         case 'stage':
           if (stageEl) {
             stageEl.textContent = message.label !== 'idle' ? 'Stage: ' + message.label : '';
+          }
+          if (message.recentRuns !== undefined) {
+            renderRecentRuns(message.recentRuns);
           }
           break;
         case 'dead':
