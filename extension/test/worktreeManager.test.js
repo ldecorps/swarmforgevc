@@ -58,3 +58,13 @@ test('WorktreeManager getPath returns repo root for coordinator', () => {
   wm.setup(['coder']);
   assert.equal(wm.getPath('coordinator'), repo);
 });
+
+test('WorktreeManager setup reuses an existing registered worktree', () => {
+  const repo = mkGitRepo();
+  const wm1 = new WorktreeManager(repo);
+  wm1.setup(['cleaner']);
+  const wm2 = new WorktreeManager(repo);
+  wm2.setup(['cleaner']);
+  assert.equal(wm2.getPath('cleaner'), path.join(repo, '.worktrees', 'cleaner'));
+  assert.ok(wm2.list().some((w) => w.role === 'cleaner'));
+});

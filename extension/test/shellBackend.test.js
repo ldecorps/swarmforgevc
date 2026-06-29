@@ -26,6 +26,14 @@ test('ShellBackend kill terminates the process', async () => {
   assert.ok(exitCode !== 0 || exitCode === null);
 });
 
+test('ShellBackend runs process in specified cwd', async () => {
+  const chunks = [];
+  const proc = new ShellBackend('pwd', [], { cwd: '/tmp' });
+  proc.onData((chunk) => chunks.push(chunk));
+  await new Promise((resolve) => proc.onExit(resolve));
+  assert.ok(chunks.join('').trim().endsWith('tmp'), `expected /tmp, got: ${chunks.join('')}`);
+});
+
 test('ShellBackend write sends data to stdin', async () => {
   const chunks = [];
   const proc = new ShellBackend('cat', []);
