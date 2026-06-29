@@ -20,6 +20,15 @@ test('isClaudeAgentRunning detects Claude UI markers in pane text', () => {
   assert.equal(isClaudeAgentRunning('bash', pane), true);
 });
 
+test('isClaudeAgentRunning detects Coordinator in auto permission mode', () => {
+  const pane = [
+    '──────────────────────────────── SwarmForge Coordinator ──',
+    '  auto mode on (shift+tab to cycle) · esc to interrupt',
+  ].join('\n');
+
+  assert.equal(isClaudeAgentRunning('bash', pane), true);
+});
+
 test('isShellOnlyPane treats empty bash pane as shell-only', () => {
   assert.equal(isShellOnlyPane('bash', ''), true);
 });
@@ -38,5 +47,11 @@ test('agentPaneStatusMessage returns waiting text for empty bash pane', () => {
 
 test('agentPaneStatusMessage returns undefined when Claude is active', () => {
   const pane = '──────────────── SwarmForge Cleaner ──\n  bypass permissions on';
+  assert.equal(agentPaneStatusMessage('bash', pane), undefined);
+});
+
+test('agentPaneStatusMessage returns undefined for Coordinator in auto mode', () => {
+  const pane =
+    '──────────────── SwarmForge Coordinator ──\n  auto mode on · esc to interrupt';
   assert.equal(agentPaneStatusMessage('bash', pane), undefined);
 });

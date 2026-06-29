@@ -20,5 +20,7 @@ You are the coder.
 
 ## Handoff
 - Run unit tests and relevant local verification.
-- Commit the behavior change.
+- Commit the behavior change to your worktree branch.
 - Send a `git_handoff` to `cleaner` with priority `50`.
+- **Implementation:** Write directly to `.swarmforge/handoffs/inbox/new/` following the format in HANDOFF-PROTOCOL.md. Use atomic writes (temp file + rename).
+- See `swarmforge/HANDOFF-PROTOCOL.md` for the complete protocol specification (note: daemon and helper scripts are documented as aspirational; for now write files directly).
