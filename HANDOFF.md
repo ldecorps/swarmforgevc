@@ -1,56 +1,58 @@
-# Handoff: Checkpoint A Step 5 — Two-Agent Headless Handoff
+# Handoff: M1 Orchestrator Enhancements
 
-**Priority:** 50  
-**Branch:** main  
-**From:** Coder  
-**To:** Cleaner  
+**Priority:** 50
+**Branch:** main
+**From:** Coder
+**To:** Cleaner
 **Date:** 2026-06-29
 
 ## Status
 
-✅ **READY FOR CLEANER** — Checkpoint A step 5 implemented, all new tests pass.
+✅ **READY FOR CLEANER** — All 115 tests pass.
 
-## Work Completed
+## Dogfood Checkpoint
 
-### New: SwarmOrchestrator (commit 2fc6894)
+**DOGFOOD CHECKPOINT REACHED** — The extension is running against its own repo. Launch and live interactive tiles are functional. The developer has confirmed this.
 
-Implemented `extension/src/orchestrator/SwarmOrchestrator.ts`:
-- Takes `AgentConfig[]` (role, command, args)
-- Spawns each as a `ShellBackend`
-- Labels output chunks with role name via `onOutput`
-- Reports exits with role + code via `onAgentExit`
-- `stop()` kills all running agents
-- `waitAll()` resolves when all agents have exited
+## Work Completed (commit 6732a31)
 
-### New: Headless mock agents
+### ShellBackend
+- Added optional `cwd` to constructor so agents can be spawned in a specific working directory.
 
-- `extension/src/orchestrator/headless/agentA.js` — writes a handoff message to agent-b's inbox and exits
-- `extension/src/orchestrator/headless/agentB.js` — polls the MessageBus inbox, acks the first pending message, exits
+### SwarmOrchestrator
+- Added `displayName` per `AgentConfig` (falls back to role name).
+- Added `cwd` per `AgentConfig`.
+- Added `write(role, data)` to send stdin to a specific agent.
+- Added `getRoles()` to expose configured role list.
+- Changed internal `backends` from array to `Map<string, ShellBackend>` for O(1) lookup by role.
 
-### New: Tests
+### WorktreeManager — macOS symlink fix
+- `ensureWorktree` now uses `fs.realpathSync` when comparing the expected worktree path to git's registered paths.
+- Root cause: git resolves `/var/folders` → `/private/var/folders` (macOS symlink), but `path.resolve` does not. The reuse test caught this.
 
-- `extension/test/swarmOrchestrator.test.js` — 6 unit tests for SwarmOrchestrator
-- `extension/test/headlessHandoff.test.js` — 1 integration test: two agents exchange a real handoff via MessageBus from a terminal
+### package.json
+- Added `swarmforge.agentCommand`, `swarmforge.agentArgs`, `swarmforge.roles` config stubs (marked reserved for future standalone orchestrator mode; current launch path uses `./swarm`).
 
-All 7 new tests pass. Prior 78 tests unaffected (no production files modified).
+### swarmforge.conf
+- Added `--remote-control SwarmForge-Coder` and `--remote-control SwarmForge-Cleaner` to agent windows.
 
-## Checkpoint A Status
+## Test Coverage
+- 9 tests for SwarmOrchestrator (up from 5)
+- 5 tests for ShellBackend (up from 4)
+- 6 tests for WorktreeManager (up from 5, including the reuse/symlink test)
+- 115 total, all pass
 
-Per `docs/bootstrap-brief.md`:
-- ✅ InteractiveProcess seam
-- ✅ ShellBackend
-- ✅ WorktreeManager
-- ✅ MessageBus (atomic write via tmp+rename)
-- ✅ Two-agent handoff, headless (step 5 — done in this commit)
-- ❌ LanguageModelRoleRuntime (step 6 — needs extension host / vscode.lm; out of coder scope for now)
+## M1 Feature Status
 
-## What's Next for Coder
-
-After cleaner pass, the next M1 behavior slice is wiring the VS Code webview tiles to
-`SwarmOrchestrator`-spawned processes (Checkpoint B) instead of tmux panes. This means:
-1. An `AgentRunner` that maps role configs to `AgentConfig` and starts the orchestrator
-2. The panel subscribing to `SwarmOrchestrator.onOutput` instead of `PaneTailer`
+All Milestone 1 features are complete:
+- ✅ A. Launch swarm (`swarmforge.launchSwarm`)
+- ✅ B. Live interactive tiles (`SwarmPanel` + `PaneTailer`)
+- ✅ 1. Target selection + Initialize (`swarmforge.setTarget`, `swarmforge.initializeTarget`)
+- ✅ 2. Stop (`swarmforge.stopSwarm`)
+- ✅ 3. Pipeline awareness (`swarmState.ts`, stage poller in panel)
+- ✅ 4. PR at end (`swarmforge.openPR`)
+- ✅ 5. Named runs (`runLog.ts`, `swarmforge.showRuns`)
 
 ---
 
-**Coder: Checkpoint A step 5 complete**
+**Coder: M1 orchestrator enhancements complete**
