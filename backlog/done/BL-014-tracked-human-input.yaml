@@ -2,7 +2,7 @@ id: BL-014
 title: Tracked human input — mirror tile keystrokes into the message store as human-input events
 milestone: M2
 priority: 14
-status: todo
+status: done
 
 description: >
   Make human guidance auditable alongside agent-to-agent traffic. Input directed at

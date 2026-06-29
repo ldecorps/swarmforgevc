@@ -2,7 +2,7 @@ id: BL-013
 title: Per-agent respawn with auto-pickup — relaunch one agent, resume its pending messages
 milestone: M2
 priority: 13
-status: todo
+status: done
 
 description: >
   Kill and relaunch a single agent in its existing worktree without disturbing the
