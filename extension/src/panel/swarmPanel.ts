@@ -14,6 +14,7 @@ export class SwarmPanel {
   private tailer: PaneTailer | undefined;
   private stagePoller: ReturnType<typeof setInterval> | undefined;
   private disposables: vscode.Disposable[] = [];
+  private wasActive = false;
 
   private constructor(
     panel: vscode.WebviewPanel,
@@ -39,6 +40,9 @@ export class SwarmPanel {
           case 'refresh':
             this.tailer?.refreshState();
             this.sendRoles(this.tailer?.getRoles() ?? []);
+            break;
+          case 'openPR':
+            vscode.commands.executeCommand('swarmforge.openPR');
             break;
         }
       },
@@ -98,7 +102,16 @@ export class SwarmPanel {
     const poll = () => {
       const stages = readPipelineStages(this.targetPath);
       const label = currentStageLabel(stages);
-      this.panel.webview.postMessage({ type: 'stage', label });
+      const isIdle = label === 'idle';
+      if (!isIdle) {
+        this.wasActive = true;
+      }
+      if (this.wasActive && isIdle) {
+        this.wasActive = false;
+        this.panel.webview.postMessage({ type: 'swarmDone' });
+      } else {
+        this.panel.webview.postMessage({ type: 'stage', label });
+      }
     };
     poll();
     this.stagePoller = setInterval(poll, STAGE_POLL_INTERVAL_MS);

@@ -98,6 +98,19 @@ export function getWebviewHtml(nonce: string): string {
       text-align: center;
       opacity: 0.7;
     }
+    #open-pr-btn {
+      display: none;
+      padding: 4px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      border: none;
+      border-radius: 3px;
+    }
+    #open-pr-btn.visible {
+      display: inline-block;
+    }
   </style>
 </head>
 <body>
@@ -105,6 +118,7 @@ export function getWebviewHtml(nonce: string): string {
     <h1>SwarmForge</h1>
     <span class="status" id="status">Waiting for swarm...</span>
     <span class="stage" id="stage"></span>
+    <button id="open-pr-btn" title="Open pull request for this swarm run">Open PR</button>
   </header>
   <div id="grid">
     <div class="empty" id="placeholder">Launch a swarm to see agent tiles.</div>
@@ -117,6 +131,11 @@ export function getWebviewHtml(nonce: string): string {
     const placeholder = document.getElementById('placeholder');
     const tiles = new Map();
     let activeRole = null;
+    const openPrBtn = document.getElementById('open-pr-btn');
+
+    openPrBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'openPR' });
+    });
 
     function ensureTile(role, displayName, agent) {
       if (tiles.has(role)) {
@@ -191,6 +210,12 @@ export function getWebviewHtml(nonce: string): string {
         case 'stage':
           if (stageEl) {
             stageEl.textContent = message.label !== 'idle' ? 'Stage: ' + message.label : '';
+          }
+          break;
+        case 'swarmDone':
+          openPrBtn.classList.add('visible');
+          if (stageEl) {
+            stageEl.textContent = 'Swarm finished';
           }
           break;
       }
