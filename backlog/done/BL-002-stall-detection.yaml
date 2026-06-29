@@ -1,0 +1,18 @@
+id: BL-002
+title: Stall detection — amber tile border on silent agent
+milestone: M2
+status: done
+priority: 2
+
+description: >
+  PaneTailer tracks last-changed timestamp per role. If a tile has not changed in
+  120 seconds, post a stall event to the webview. The webview renders that tile's
+  border amber so the developer knows an agent has gone quiet without having to
+  watch every tile.
+
+acceptance:
+  - Amber border appears after ~120s of no output for a role
+  - Border clears automatically on the next output update
+  - Threshold is a constant (not hardcoded inline) so it is easy to adjust
+
+assigned_to: coder

@@ -1,0 +1,18 @@
+id: BL-003
+title: Dead tile detection — red tile border when session disappears
+milestone: M2
+status: done
+priority: 3
+
+description: >
+  If a tmux session that was previously alive disappears mid-run (sessionExists
+  returns false for a role that was running), PaneTailer posts a dead event to
+  the webview. The webview renders that tile's border red so the developer knows
+  immediately which agent crashed.
+
+acceptance:
+  - Red border appears when a session is killed externally while the panel is open
+  - PaneTailer does not crash or throw on a missing session
+  - Existing error message text in the tile is retained alongside the red border
+
+assigned_to: coder
