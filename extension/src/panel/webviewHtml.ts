@@ -113,6 +113,20 @@ export function getWebviewHtml(nonce: string): string {
     .tile.dead {
       border-color: #e53935;
     }
+    .nudge-btn {
+      display: none;
+      margin-left: 6px;
+      padding: 1px 7px;
+      font-size: 11px;
+      cursor: pointer;
+      background: #d4a017;
+      color: #000;
+      border: none;
+      border-radius: 3px;
+    }
+    .tile.stalled .nudge-btn {
+      display: inline-block;
+    }
     #open-pr-btn {
       display: none;
       padding: 4px 10px;
@@ -188,9 +202,18 @@ export function getWebviewHtml(nonce: string): string {
       tile.className = 'tile';
       tile.dataset.role = role;
 
+      const nudgeBtn = document.createElement('button');
+      nudgeBtn.className = 'nudge-btn';
+      nudgeBtn.textContent = 'Nudge';
+      nudgeBtn.addEventListener('click', () => {
+        tile.classList.remove('stalled');
+        vscode.postMessage({ type: 'input', role, data: '\n' });
+      });
+
       const header = document.createElement('div');
       header.className = 'tile-header';
       header.innerHTML = '<span>' + displayName + '</span><span class="tile-agent">' + agent + '</span>';
+      header.appendChild(nudgeBtn);
 
       const output = document.createElement('div');
       output.className = 'tile-output';
