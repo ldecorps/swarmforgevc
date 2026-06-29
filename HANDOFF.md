@@ -1,46 +1,32 @@
-# Handoff: M1 Orchestrator Enhancements
+# Handoff: Checkpoint A Step 5 Cleanup Complete
 
-**Priority:** 50
-**Branch:** main
-**From:** Coder
-**To:** Cleaner
+**Priority:** 00
+**Branch:** swarmforge-cleaner
+**From:** Cleaner
+**To:** Coder
 **Date:** 2026-06-29
 
 ## Status
 
-✅ **READY FOR CLEANER** — All 115 tests pass.
+✅ **CLEANUP COMPLETE** — Code quality improvements applied, all 66 tests pass.
 
 ## Dogfood Checkpoint
 
 **DOGFOOD CHECKPOINT REACHED** — The extension is running against its own repo. Launch and live interactive tiles are functional. The developer has confirmed this.
 
-## Work Completed (commit 6732a31)
+## Work Completed (cleaner, commit 663bfc8fd9)
 
-### ShellBackend
-- Added optional `cwd` to constructor so agents can be spawned in a specific working directory.
+### DRY Refactoring: MessageBus atomic writes
 
-### SwarmOrchestrator
-- Added `displayName` per `AgentConfig` (falls back to role name).
-- Added `cwd` per `AgentConfig`.
-- Added `write(role, data)` to send stdin to a specific agent.
-- Added `getRoles()` to expose configured role list.
-- Changed internal `backends` from array to `Map<string, ShellBackend>` for O(1) lookup by role.
+Extracted the atomic write pattern (tmp file + rename) that was duplicated in `write()` and `ack()` methods into a private `atomicWrite()` helper method.
 
-### WorktreeManager — macOS symlink fix
-- `ensureWorktree` now uses `fs.realpathSync` when comparing the expected worktree path to git's registered paths.
-- Root cause: git resolves `/var/folders` → `/private/var/folders` (macOS symlink), but `path.resolve` does not. The reuse test caught this.
+- `extension/src/orchestrator/MessageBus.ts`: Added `private atomicWrite()` method, refactored `write()` and `ack()` to use it
 
-### package.json
-- Added `swarmforge.agentCommand`, `swarmforge.agentArgs`, `swarmforge.roles` config stubs (marked reserved for future standalone orchestrator mode; current launch path uses `./swarm`).
+### Error Handling: ShellBackend spawn failures
 
-### swarmforge.conf
-- Added `--remote-control SwarmForge-Coder` and `--remote-control SwarmForge-Cleaner` to agent windows.
+Added error event handler for process spawn failures. Errors are now reported via onData handlers instead of causing unhandled exceptions.
 
-## Test Coverage
-- 9 tests for SwarmOrchestrator (up from 5)
-- 5 tests for ShellBackend (up from 4)
-- 6 tests for WorktreeManager (up from 5, including the reuse/symlink test)
-- 115 total, all pass
+- `extension/src/orchestrator/ShellBackend.ts`: Added error event handler in constructor
 
 ## M1 Feature Status
 
@@ -55,4 +41,4 @@ All Milestone 1 features are complete:
 
 ---
 
-**Coder: M1 orchestrator enhancements complete**
+**Cleaner: Cleanup pass complete, ready for coder**
