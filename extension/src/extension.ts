@@ -17,6 +17,11 @@ const LAST_RUN_NAME_KEY = 'swarmforge.lastRunName';
 
 let activeRunner: AgentRunner | undefined;
 
+function cleanupRunner(): void {
+  activeRunner?.stop();
+  activeRunner = undefined;
+}
+
 async function resolveTargetPath(context: vscode.ExtensionContext): Promise<string | undefined> {
   let targetPath = getTargetPath();
   if (!targetPath) {
@@ -120,7 +125,7 @@ export function activate(context: vscode.ExtensionContext): void {
           vscode.window.showInformationMessage(result.message);
           const panel = SwarmPanel.createOrShow(context.extensionUri, targetPath!);
           const roleConfigs = readRoleConfigs(targetPath!);
-          activeRunner?.stop();
+          cleanupRunner();
           activeRunner = new AgentRunner(roleConfigs);
           activeRunner.start();
           panel.attachRunner(activeRunner);
@@ -153,8 +158,7 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
 
-      activeRunner?.stop();
-      activeRunner = undefined;
+      cleanupRunner();
       const result = stopSwarm(targetPath);
       if (result.success) {
         vscode.window.showInformationMessage(result.message);
@@ -219,7 +223,6 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
-  activeRunner?.stop();
-  activeRunner = undefined;
+  cleanupRunner();
   SwarmPanel.currentPanel?.dispose();
 }

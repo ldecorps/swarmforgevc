@@ -34,11 +34,7 @@ export class SwarmPanel {
       (message) => {
         switch (message.type) {
           case 'input':
-            if (this.runner) {
-              this.runner.getOrchestrator().writeToAgent(message.role, message.data);
-            } else {
-              this.tailer?.forwardInput(message.role, message.data);
-            }
+            this.forwardInputToAgent(message.role, message.data);
             break;
           case 'specialKey':
             this.tailer?.forwardSpecialKey(message.role, message.key);
@@ -108,6 +104,14 @@ export class SwarmPanel {
         updates: [{ role, displayName: role, text: chunk, full: false }],
       });
     });
+  }
+
+  private forwardInputToAgent(role: string, data: string): void {
+    if (this.runner) {
+      this.runner.getOrchestrator().writeToAgent(role, data);
+    } else {
+      this.tailer?.forwardInput(role, data);
+    }
   }
 
   private setupTailer(): void {
