@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import { getTargetPath, setTargetPath } from './config/targetConfig';
 import { initializeTargetRepo } from './config/targetBootstrap';
 import { SwarmPanel } from './panel/swarmPanel';
-import { appendRun, loadRuns } from './runs/runLog';
+import { appendRun, loadRuns, updateLastRunForTarget } from './runs/runLog';
 import { getCurrentBranch, openPullRequest } from './swarm/prCreator';
 import { launchSwarm, waitForSwarmReady } from './swarm/swarmLauncher';
 import { stopSwarm } from './swarm/swarmStopper';
@@ -180,6 +180,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
       const result = openPullRequest(targetPath, title.trim());
       if (result.success) {
+        updateLastRunForTarget(runLogPath, targetPath, {
+          prUrl: result.url,
+          completedAt: new Date().toISOString(),
+        });
         const open = 'Open in Browser';
         const choice = await vscode.window.showInformationMessage(result.message, open);
         if (choice === open && result.url) {
@@ -199,7 +203,11 @@ export function activate(context: vscode.ExtensionContext): void {
       const items = runs
         .slice()
         .reverse()
-        .map((r) => `${r.startedAt.slice(0, 10)}  ${r.name}  (${r.targetPath})`);
+        .map((r) => {
+          const date = r.startedAt.slice(0, 10);
+          const pr = r.prUrl ? `  PR: ${r.prUrl}` : '';
+          return `${date}  ${r.name}  (${r.targetPath})${pr}`;
+        });
       const doc = await vscode.workspace.openTextDocument({
         content: `# SwarmForge Runs\n\n${items.join('\n')}\n`,
         language: 'markdown',
