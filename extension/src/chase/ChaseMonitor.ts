@@ -9,7 +9,7 @@ export interface ChaseConfig {
 }
 
 export interface MessageEventRecord {
-  event: string;
+  type: string;
   chase_count?: number;
   at: string;
   [key: string]: unknown;
@@ -19,12 +19,15 @@ export function evaluateChase(
   events: MessageEventRecord[],
   nowMs: number,
   config: ChaseConfig,
-  receiverLiveness: LivenessState
+  receiverLiveness: LivenessState,
+  humanInput?: boolean
 ): ChaseEventResult {
   if (events.length === 0) return 'skipped';
 
+  if (humanInput) return 'skipped';
+
   const last = events[events.length - 1];
-  if (last.event === 'done' || last.event === 'dead-letter' || last.event === 'received') {
+  if (last.type === 'done' || last.type === 'dead-letter' || last.type === 'received') {
     return 'already-done';
   }
 
@@ -32,13 +35,18 @@ export function evaluateChase(
     return 'skipped';
   }
 
-  const createdEvent = events.find((e) => e.event === 'created');
+  const createdEvent = events.find((e) => e.type === 'created');
   if (!createdEvent) return 'skipped';
 
-  const ageSeconds = (nowMs - new Date(createdEvent.at).getTime()) / 1000;
+  const chaseEvents = events.filter((e) => e.type === 'chased');
+  const chaseCount = chaseEvents.length;
+
+  // Gate on time since last chase (or created if no chases yet)
+  const lastChase = chaseEvents[chaseEvents.length - 1];
+  const referenceAt = lastChase ? lastChase.at : createdEvent.at;
+  const ageSeconds = (nowMs - new Date(referenceAt).getTime()) / 1000;
   if (ageSeconds < config.chaseTimeoutSeconds) return 'skipped';
 
-  const chaseCount = events.filter((e) => e.event === 'chased').length;
   if (chaseCount >= config.maxChases) return 'dead-lettered';
 
   return 'chased';

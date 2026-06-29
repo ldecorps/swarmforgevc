@@ -11,11 +11,9 @@ export function atomicWrite(filePath: string, content: string): void {
   fs.renameSync(tmp, filePath);
 }
 
-/** Atomically append content to a file (read current + append + write). */
+/** Append content to a file using O_APPEND — safe for concurrent writers. */
 export function atomicAppend(filePath: string, content: string): void {
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
-  const existing = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : '';
-  const appended = existing + content;
-  atomicWrite(filePath, appended);
+  fs.appendFileSync(filePath, content, { encoding: 'utf8', flag: 'a' });
 }
