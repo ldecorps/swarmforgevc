@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { getTargetPath, setTargetPath } from './config/targetConfig';
+import { initializeTargetRepo } from './config/targetBootstrap';
 import { SwarmPanel } from './panel/swarmPanel';
 import { launchSwarm, waitForSwarmReady } from './swarm/swarmLauncher';
 import { listTmuxSessions } from './swarm/tmuxClient';
@@ -26,6 +27,29 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand('swarmforge.setTarget', async () => {
       await setTargetPath(context);
+    }),
+
+    vscode.commands.registerCommand('swarmforge.initializeTarget', async () => {
+      const targetPath = getTargetPath() ?? (await setTargetPath(context));
+      if (!targetPath) {
+        return;
+      }
+
+      try {
+        const result = await initializeTargetRepo(targetPath);
+        const status = result.committed ? ' and committed' : '';
+        vscode.window.showInformationMessage(
+          `Initialized ${result.created.length} file(s)${status} in ${targetPath}.`
+        );
+        if (result.skipped.length > 0) {
+          vscode.window.showInformationMessage(
+            `Skipped existing prompt file(s): ${result.skipped.join(', ')}`
+          );
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        vscode.window.showErrorMessage(`Failed to initialize target: ${message}`);
+      }
     }),
 
     vscode.commands.registerCommand('swarmforge.launchSwarm', async () => {

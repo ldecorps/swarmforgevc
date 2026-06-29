@@ -1,19 +1,13 @@
-import * as fs from 'fs';
 import * as vscode from 'vscode';
+import { resolveTargetPath, WorkspaceFolderLike } from './targetPath';
 
 export function getTargetPath(): string | undefined {
   const config = vscode.workspace.getConfiguration('swarmforge');
-  const configured = config.get<string>('targetPath')?.trim();
-  if (configured) {
-    return configured;
-  }
-
-  const folders = vscode.workspace.workspaceFolders;
-  if (folders && folders.length > 0) {
-    return folders[0].uri.fsPath;
-  }
-
-  return undefined;
+  return resolveTargetPath({
+    configuredTargetPath: config.get<string>('targetPath'),
+    workspaceFolders:
+      vscode.workspace.workspaceFolders as WorkspaceFolderLike[] | undefined,
+  });
 }
 
 export async function setTargetPath(
@@ -48,12 +42,4 @@ export async function setTargetPath(
 
   vscode.window.showInformationMessage(`SwarmForge target set to: ${resolved}`);
   return resolved;
-}
-
-export function resolveSwarmScript(targetPath: string): string | undefined {
-  const localSwarm = `${targetPath}/swarm`;
-  if (fs.existsSync(localSwarm)) {
-    return localSwarm;
-  }
-  return undefined;
 }
