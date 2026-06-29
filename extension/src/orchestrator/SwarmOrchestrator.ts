@@ -11,7 +11,7 @@ type ExitHandler = (role: string, code: number | null) => void;
 
 export class SwarmOrchestrator {
   private configs: AgentConfig[] = [];
-  private backends: ShellBackend[] = [];
+  private backends: Map<string, ShellBackend> = new Map();
   private outputHandlers: OutputHandler[] = [];
   private exitHandlers: ExitHandler[] = [];
 
@@ -40,29 +40,34 @@ export class SwarmOrchestrator {
           h(cfg.role, code);
         }
       });
-      this.backends.push(backend);
+      this.backends.set(cfg.role, backend);
     }
   }
 
+  writeToAgent(role: string, data: string): void {
+    this.backends.get(role)?.write(data);
+  }
+
   stop(): void {
-    for (const b of this.backends) {
+    for (const b of this.backends.values()) {
       b.kill();
     }
   }
 
   waitAll(): Promise<void> {
-    if (this.backends.length === 0) {
+    const backends = Array.from(this.backends.values());
+    if (backends.length === 0) {
       return Promise.resolve();
     }
     return new Promise((resolve) => {
-      let remaining = this.backends.length;
+      let remaining = backends.length;
       const dec = () => {
         remaining -= 1;
         if (remaining === 0) {
           resolve();
         }
       };
-      for (const b of this.backends) {
+      for (const b of backends) {
         b.onExit(dec);
       }
     });
