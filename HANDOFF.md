@@ -1,4 +1,4 @@
-# Handoff: Checkpoint B — Orchestrator-backed tiles
+# Handoff: Checkpoint C — AgentRunner wired to launchSwarm
 
 **Priority:** 50  
 **Branch:** swarm/coder  
@@ -8,47 +8,36 @@
 
 ## Status
 
-✅ **READY FOR CLEANER** — Checkpoint B substrate wired, all new tests pass.
+✅ **READY FOR CLEANER** — Launch command wired to AgentRunner, all tests pass.
 
-## Work Completed (commit 46b6dcd)
+## Work Completed
 
-### Modified: SwarmOrchestrator
+### New: roleConfigReader (`extension/src/swarm/roleConfigReader.ts`)
 
-- `backends` changed from `ShellBackend[]` to `Map<string, ShellBackend>` (key = role name)
-- Added `writeToAgent(role: string, data: string)` — forwards stdin to named agent
+- `readRoleConfigs(targetPath)` reads `.swarmforge/roles.tsv` (tab-separated: role, displayName, command, args...)
+- Falls back to `BOOTSTRAP_ROLE_CONFIGS` (specifier/coder/cleaner running `claude --role=<role>`) if the file doesn't exist
+- 3 unit tests covering: absent file, valid tsv, blank-line skipping
 
-### New: AgentRunner (`extension/src/orchestrator/AgentRunner.ts`)
+### Modified: extension.ts
 
-- Accepts `RoleConfig[]` (role, displayName, command, args)
-- Creates and owns a `SwarmOrchestrator`; exposes `start()`, `stop()`, `getOrchestrator()`, `getRoles()`
-- Thin mapping layer between role configs and the orchestrator
+- Imports `AgentRunner` and `readRoleConfigs`
+- `activeRunner: AgentRunner | undefined` module-level variable tracks the live runner
+- `launchSwarm` command: after `./swarm` launches successfully, reads role configs, creates and starts `AgentRunner`, calls `panel.attachRunner(runner)` — tiles now receive output from the orchestrator
+- `stopSwarm` command: calls `activeRunner?.stop()` before killing tmux sessions
+- `deactivate`: calls `activeRunner?.stop()` on extension shutdown
 
-### Modified: SwarmPanel
+## Test Results
 
-- Added `runner: AgentRunner | undefined` field
-- Added `attachRunner(runner: AgentRunner)` — stops any existing PaneTailer, subscribes to
-  orchestrator output events, posts `{ type: 'output', updates }` messages to the webview
-- Input forwarding: when a runner is attached, routes `input` messages to
-  `runner.getOrchestrator().writeToAgent(role, data)` instead of tmux
-
-### Tests
-
-- `agentRunner.test.js` (new) — 3 tests: streaming, getRoles, stop
-- `swarmOrchestrator.test.js` — 1 new test: writeToAgent via `sh -c 'read line; echo "$line"'`
-- All 10 orchestrator + agentRunner tests pass; prior suite unaffected
+13 tests pass (agentRunner, roleConfigReader, swarmOrchestrator suites).
 
 ## What's Next for Coder
 
-After cleaner pass, the next slice is **wiring the launch command** (`swarmforge.launchSwarm`
-in `extension.ts`) to use `AgentRunner` instead of `launchSwarm`/tmux:
+The **DOGFOOD CHECKPOINT** should now be reachable. The next slice depends on what the cleaner finds. Likely candidates:
 
-1. Read role configs from `.swarmforge/roles.tsv` (or a hardcoded bootstrap config) to produce
-   `RoleConfig[]`
-2. Create `AgentRunner`, call `start()`, call `panel.attachRunner(runner)` 
-3. Store the runner on the extension context so `stopSwarm` can call `runner.stop()`
-
-This completes the "tiles on top of the orchestrator" path and reaches the dogfood checkpoint.
+1. **Verify dogfood checkpoint**: Test the full path (set target → launch → tiles appear → interact) and surface the checkpoint message if not already done.
+2. **Pipeline awareness**: The stage poller in SwarmPanel polls `.swarmforge/` state — verify it works and the status line is visible in the webview.
+3. **PR command**: The `openPR` command exists; verify `gh pr create` works end-to-end.
 
 ---
 
-**Coder: Checkpoint B substrate complete**
+**Coder: Checkpoint C — launch wired to orchestrator**
