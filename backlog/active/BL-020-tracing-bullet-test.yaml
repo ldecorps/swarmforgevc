@@ -16,37 +16,63 @@ description: >
 
 behavior_wanted: >
   - User tells coordinator: "run a tracing bullet test".
-  - Coordinator sends a priority-0 handoff of type "trace" to specifier, with
-    a unique trace-id and the timestamp of departure.
-  - Specifier receives it, stamps its receipt time, and immediately forwards
-    it (priority 0) to coder, ahead of any queued work.
-  - Coder stamps and forwards to cleaner (priority 0).
-  - Cleaner stamps and sends a "trace-complete" handoff back to coordinator
-    with all hop timestamps.
-  - Coordinator receives the result, computes per-hop latency, and reports
-    to the user:
-      specifier: 1.2s
-      coder:     2.4s
-      cleaner:   3.1s
-      PASS  total 3.1s
-  - If the coordinator does not receive the result within 90s it reports
-    FAIL and names the last hop that stamped a receipt.
-  - Re-entrant: two concurrent traces use separate trace-ids.
+  - Coordinator sends a priority-0 handoff of type "note" to specifier, with
+    body: "TRACE <trace-id> HOP coordinator <iso-timestamp>"
+  - Each role (specifier, coder, cleaner) that receives a TRACE note:
+    1. Appends its own hop line to the body:
+       "HOP <role> <iso-timestamp>"
+    2. Immediately forwards the note at priority 00 to the next role in the
+       pipeline (specifier→coder, coder→cleaner, cleaner→coordinator).
+    3. Does NOT run ready_for_next or treat this as a work item — it is pure
+       pass-through; stamp and forward.
+  - Coordinator receives the returning note, parses all HOP lines, computes
+    per-hop latency, and prints a PASS/FAIL report.
+  - If coordinator does not receive the note back within 90 s it prints FAIL
+    and names the last hop present in the trace log.
+  - Re-entrant: two concurrent traces use distinct trace-ids (e.g. trace-<epoch>).
+
+implementation: >
+  Trace log files:
+  - On coordinator departure: create .swarmforge/traces/<trace-id>.log with
+    the initial body.
+  - Each forwarding role appends its HOP line to the same log file
+    (the log is in this repo's worktree, shared on disk — no git commit needed).
+  - On coordinator receipt of the returning note: read the log, compute timings,
+    print report to stdout, delete the trace log.
+
+  Timeout:
+  - Coordinator polls .swarmforge/traces/<trace-id>.log for a "HOP cleaner"
+    line every 5 s for up to 90 s. If found, compute timings. If not found by
+    90 s, print FAIL with the last HOP line seen.
+
+  Trace-id format: "trace-<YYYYMMDDTHHMMSSz>" (second-granularity, unique enough
+  for manual use; a counter suffix if two traces start the same second).
+
+  No new handoff type needed — use type: note with the TRACE marker in the body.
+  The TRACE marker lets each role distinguish pass-through from real work.
 
 acceptance:
-  - With the swarm healthy, asking coordinator to run a tracing bullet
-    produces a PASS report with hop timings within 90s.
-  - With the coder session killed, the coordinator reports FAIL at the
-    coder hop before the 90s timeout.
-  - Two concurrent traces complete independently with no cross-contamination.
+  - With the swarm healthy, asking coordinator to run a tracing bullet produces
+    a PASS report with hop timings (specifier, coder, cleaner) within 90 s.
+  - With the coder session killed, coordinator reports FAIL at the coder hop
+    before the 90 s timeout (because no "HOP coder" line appears in the log).
+  - Two concurrent traces (started 2 s apart) complete independently — each
+    log contains exactly 4 HOP lines (coordinator, specifier, coder, cleaner)
+    with no lines from the other trace.
+  - TRACE notes do not appear in the work-tree panel (BL-017) or trigger the
+    item-completion loop (BL-018) — they are invisible to normal pipeline logic.
 
 constraints:
-  - "trace" handoffs are priority 0 (highest) so they jump the queue.
-  - Each role handles "trace" type as pure pass-through: stamp + forward,
-    no task logic, no git commits, no cleanup.
-  - Trace hop stamps land in .swarmforge/traces/<trace-id>.log (not committed).
-  - No new dependencies beyond bb, zsh, tmux already in the swarm.
-  - The coordinator is the entry point and the reporter — the user never
-    runs a script directly.
+  - Each role detects TRACE notes by checking if the note body starts with
+    "TRACE ". Any note not starting with "TRACE " is handled normally.
+  - Trace hop stamps go to .swarmforge/traces/<trace-id>.log only; no git
+    commits, no message-bus entries, no backlog changes.
+  - Coordinator is the sole entry point and reporter.
+  - No new runtime dependencies — bash, date, and the existing handoff
+    write path are sufficient.
+  - All four roles need a small TRACE-handling code path added to their
+    "receive note" logic.
 
-assigned_to: specifier
+depends_on: []
+
+assigned_to: coder
