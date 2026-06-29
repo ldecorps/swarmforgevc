@@ -25,9 +25,7 @@ export class MessageBus {
     const id = crypto.randomUUID();
     const full: BusMessage = { id, ...msg };
     const file = path.join(this.dir, `${id}.json`);
-    const tmp = `${file}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(full));
-    fs.renameSync(tmp, file);
+    this.atomicWrite(file, full);
     return id;
   }
 
@@ -44,9 +42,13 @@ export class MessageBus {
     }
     const msg: BusMessage = JSON.parse(fs.readFileSync(file, 'utf8'));
     msg.status = 'done';
-    const tmp = `${file}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(msg));
-    fs.renameSync(tmp, file);
+    this.atomicWrite(file, msg);
+  }
+
+  private atomicWrite(filePath: string, data: BusMessage): void {
+    const tmp = `${filePath}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(data));
+    fs.renameSync(tmp, filePath);
   }
 
   private readAll(): BusMessage[] {
