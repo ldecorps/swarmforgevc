@@ -8,25 +8,28 @@ export interface BacklogItem {
   assignedTo?: string;
 }
 
+const VALID_STATUSES = new Set(['todo', 'active', 'done']);
+const YAML_FIELDS = { id: 'id', title: 'title', status: 'status', assignedTo: 'assigned_to' } as const;
+
 function parseYamlScalar(content: string, field: string): string | undefined {
   const match = content.match(new RegExp(`^${field}:\\s*(.+)$`, 'm'));
   return match ? match[1].trim() : undefined;
 }
 
 export function parseBacklogYaml(content: string): BacklogItem | null {
-  const id = parseYamlScalar(content, 'id');
-  const title = parseYamlScalar(content, 'title');
-  const statusRaw = parseYamlScalar(content, 'status');
+  const id = parseYamlScalar(content, YAML_FIELDS.id);
+  const title = parseYamlScalar(content, YAML_FIELDS.title);
+  const statusRaw = parseYamlScalar(content, YAML_FIELDS.status);
 
   if (!id || !title || !statusRaw) {
     return null;
   }
-  if (statusRaw !== 'todo' && statusRaw !== 'active' && statusRaw !== 'done') {
+  if (!VALID_STATUSES.has(statusRaw)) {
     return null;
   }
 
-  const assignedTo = parseYamlScalar(content, 'assigned_to');
-  const item: BacklogItem = { id, title, status: statusRaw };
+  const assignedTo = parseYamlScalar(content, YAML_FIELDS.assignedTo);
+  const item: BacklogItem = { id, title, status: statusRaw as BacklogItem['status'] };
   if (assignedTo) {
     item.assignedTo = assignedTo;
   }

@@ -131,3 +131,15 @@ test('readBacklog skips malformed yaml files', () => {
   const items = readBacklog(tmp);
   assert.equal(items.length, 1);
 });
+
+test('readBacklog handles read errors gracefully', () => {
+  const tmp = mkTmp();
+  const activeDir = path.join(tmp, 'backlog', 'active');
+  mkdirp(activeDir);
+  const yamlFile = path.join(activeDir, 'BL-007.yaml');
+  fs.writeFileSync(yamlFile, 'id: BL-007\ntitle: Backlog panel\nstatus: active\n');
+  fs.chmodSync(yamlFile, 0o000);
+  const items = readBacklog(tmp);
+  assert.equal(items.length, 0);
+  fs.chmodSync(yamlFile, 0o644);
+});
