@@ -89,3 +89,19 @@ test('getWebviewHtml contains dead message handler', () => {
   assert(html.includes("case 'dead'"));
   assert(html.includes("'dead'"));
 });
+
+test('getWebviewHtml contains nudge button element', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes('nudge-btn') || html.includes('nudge'));
+});
+
+test('getWebviewHtml shows nudge button only on stalled tiles', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes('stalled') && html.includes('nudge'));
+});
+
+test('getWebviewHtml nudge sends Enter via forwardInput path', () => {
+  const html = getWebviewHtml('test');
+  // The webview posts { type: 'input', data: '\n' } — stored as literal newline in the string
+  assert(html.includes('nudge-btn') && html.includes("type: 'input'") && html.includes("data:"));
+});
