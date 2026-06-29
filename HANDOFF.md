@@ -1,4 +1,4 @@
-# Handoff: Cleanup Pass Complete
+# Handoff: Cleanup Complete
 
 **Priority:** 00  
 **Branch:** swarmforge-cleaner  
@@ -8,103 +8,74 @@
 
 ## Status
 
-✅ **READY FOR CODER** — All cleanup work complete, all tests passing, behavior preserved.
+✅ **READY FOR CODER** — Cleanup verified, all tests passing, behavior preserved.
 
-## Work Completed
+## Work Verified
 
-### 1. Code Quality Improvements (CRAP Reduction)
+### Previous Cleanup (Commits dbed699, 7f3b7f6)
 
-**Extracted large methods:**
-- SwarmPanel.getHtml(): 191 lines → 2 lines (moved to webviewHtml.ts)
-- Reduces cyclomatic complexity by extracting inline JavaScript/CSS
+The previous cleaner pass completed the following quality improvements:
 
-**Result:** swarmPanel.ts reduced from 332 lines to 141 lines (57% reduction)
+#### 1. Code Quality Improvements (CRAP Reduction)
+- Extracted large methods from SwarmPanel (191 lines → 2 lines)
+- Moved HTML/CSS/inline JavaScript to dedicated webviewHtml.ts module
+- Result: SwarmPanel reduced from 332 lines to 141 lines (57% reduction)
 
-### 2. DRY Violations Fixed
+#### 2. DRY Violations Fixed
+- Created `resolveTargetPath()` helper to eliminate duplicate "get target or prompt" logic
+- Used consistently across `initializeTarget` and `launchSwarm` commands
 
-**Pattern eliminated:** Repeated "get target path or prompt to set it" across 3 commands
-- Created `resolveTargetPath()` helper function
-- Used in `initializeTarget` and `launchSwarm` commands
-- Eliminates duplicate logic and error handling
+#### 3. Constants Extracted
+- NO_TARGET_MESSAGE, STOP_SWARM_BUTTON (extension.ts)
+- STAGE_POLL_INTERVAL_MS (swarmPanel.ts)
+- DEFAULT_POLL_INTERVAL_MS (paneTailer.ts)
+- NONCE_LENGTH, NONCE_CHARS (webviewHtml.ts)
+- SWARMFORGE_DIR, HANDOFF_EXTENSION, INBOX_SUBDIRS, TSV indices (swarmState.ts)
+- DAEMON_PID_SUBPATH, DECIMAL_RADIX (swarmStopper.ts)
 
-### 3. Constants Extracted
+#### 4. Architecture Improvements
+- New module: `src/panel/webviewHtml.ts` - isolated UI rendering
+- Clear separation of concerns: SwarmPanel manages state, webviewHtml handles presentation
+- Functions extracted: `getNonce()`, `getWebviewHtml(nonce)`
 
-Magic numbers and strings replaced throughout:
+#### 5. Test Coverage
+- New test file: test/webviewHtml.test.js (8 tests for nonce and HTML structure)
+- Total test suite: 67 tests, all passing
 
-| File | Constants Extracted |
-|------|-------------------|
-| extension.ts | NO_TARGET_MESSAGE, STOP_SWARM_BUTTON |
-| swarmPanel.ts | STAGE_POLL_INTERVAL_MS (2000) |
-| paneTailer.ts | DEFAULT_POLL_INTERVAL_MS (200) |
-| webviewHtml.ts | NONCE_LENGTH (32), NONCE_CHARS |
-| swarmState.ts | SWARMFORGE_DIR, HANDOFF_EXTENSION, INBOX_SUBDIRS, TSV_*_INDEX (5 indices) |
-| swarmStopper.ts | DAEMON_PID_SUBPATH, DECIMAL_RADIX (10) |
-
-**Benefit:** Configuration and intent clearer; easier to maintain and modify.
-
-### 4. Architecture Improvements
-
-**New module:** `src/panel/webviewHtml.ts`
-- `getNonce()` - Generates CSP nonce for webview
-- `getWebviewHtml(nonce)` - Returns complete webview HTML/CSS/JS
-- Isolates UI rendering from panel orchestration logic
-
-**Separation of concerns:** SwarmPanel now focuses on state management, webviewHtml on presentation.
-
-### 5. Test Coverage Added
-
-**New test file:** `test/webviewHtml.test.js` — 8 tests
-- getNonce returns 32-char alphanumeric string
-- getNonce returns different values each call
-- getWebviewHtml includes nonce in CSP meta tag
-- getWebviewHtml includes nonce in script tag
-- getWebviewHtml contains required DOM elements, CSS, message handlers
-
-**Test results:** 67 tests passing (59 original + 8 new)
-
-## Changes Summary
-
-```
-13 files changed, 1243 insertions(+), 538 deletions(-)
- - extension/src/extension.ts: +13 lines (extracted helper, constants)
- - extension/src/panel/swarmPanel.ts: -191 lines (extracted to webviewHtml)
- - extension/src/panel/webviewHtml.ts: +208 lines (NEW)
- - extension/src/swarm/swarmState.ts: +8 constants, cleaner indices
- - extension/src/swarm/swarmStopper.ts: +2 constants
- - extension/src/panel/paneTailer.ts: +1 constant
- - extension/test/webviewHtml.test.js: +58 lines (NEW)
-```
-
-## Verification
+### Verification Results
 
 - ✅ All 67 tests pass (npm test)
 - ✅ TypeScript compiles cleanly (npm run compile)
-- ✅ No behavior changes — all tests passing from coder's handoff still pass
-- ✅ Coverage: new webviewHtml module fully tested
+- ✅ No behavior changes — existing functionality preserved
+- ✅ Working tree clean — no uncommitted changes
+- ✅ Constants and DRY violations addressed
+- ✅ Module boundaries clear with high-level policy separated from presentation
+
+## Architecture Compliance
+
+The cleanup maintains compliance with architecture rules:
+- High-level panel orchestration logic (SwarmPanel) independent of presentation details
+- Low-level webview HTML module has clear dependencies
+- Narrow interfaces between modules: `SwarmPanel → (getNonce, getWebviewHtml) ← webviewHtml`
+- Good separation of concerns: state management vs. rendering
 
 ## What's Ready for Coder
 
-1. **Cleaner module structure** — webviewHtml separated for easier testing/maintenance
-2. **Reduced duplication** — resolveTargetPath() helper eliminates copy-paste
-3. **Configuration clarity** — constants instead of magic numbers reduce cognitive load
-4. **Test suite expanded** — webviewHtml functions now have dedicated unit tests
-5. **Same behavior, better quality** — no feature changes, just structural improvements
+The codebase is cleaner and more maintainable:
+1. **Reduced complexity** — SwarmPanel focuses on orchestration, not rendering
+2. **Eliminated duplication** — shared patterns unified in helpers
+3. **Improved clarity** — magic numbers replaced with named constants
+4. **Better testability** — extraction enables focused unit tests
+5. **Preserved behavior** — all tests still pass; no regressions
 
-## Notes
+## Notes for Coder
 
-- The webview inline JavaScript is complex but necessary for browser context. Further extraction would require bundling/eval, which isn't warranted for the current scope.
-- All magic strings in swarmState.ts are intentional (match SwarmForge's directory structure).
-- Nonce generation is correct — uses cryptographically acceptable randomization for CSP context.
-
-## Handoff to Coder
-
-This branch is ready for:
-1. Merge into main (or feature branch)
-2. Next feature development
-3. Further refinement if needed
-
-The codebase is in a better state for future changes — lower duplication, clearer intent, better separated concerns.
+- The webview inline JavaScript is necessary for the browser context (cannot be further extracted without bundling)
+- All magic strings in swarmState.ts match SwarmForge's .swarmforge/ directory structure (intentional)
+- Nonce generation uses acceptable randomization for CSP contexts
 
 ---
 
-**Cleaner Agent Complete**
+**Cleaner Agent: Verification Complete**
+
+Ready for next feature development or further refinement.
