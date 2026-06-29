@@ -1,0 +1,48 @@
+id: BL-020
+title: Tracing-bullet test — reusable script that fires a test message through the full swarm pipeline
+milestone: M3
+priority: 20
+status: active
+
+description: >
+  A self-contained script that sends a synthetic handoff into the swarm,
+  watches it flow through coordinator → specifier → coder → cleaner, and
+  reports pass/fail with timing per hop. Designed to be run at any time
+  to verify comms health without touching real work items.
+
+behavior_wanted: >
+  - Running `./swarmforge/scripts/trace_bullet.sh` fires a single test handoff
+    into the coordinator inbox with type "trace" and a unique trace-id.
+  - Each role, on receiving a "trace" handoff, forwards it to the next role
+    in the pipeline and logs a receipt timestamp in
+    .swarmforge/traces/<trace-id>.log.
+  - After the last role (cleaner) receives it, the script detects the
+    completed trace log and prints a per-hop timing report:
+      coordinator received: 0.0s
+      specifier received:   1.2s
+      coder received:       2.4s
+      cleaner received:     3.1s
+      PASS  total 3.1s
+  - If any hop does not complete within a configurable timeout (default 60s),
+    the script prints FAIL with the last hop seen and exits non-zero.
+  - Re-entrant: running the script twice concurrently uses separate trace-ids
+    and does not interfere.
+
+acceptance:
+  - With the swarm running, `./swarmforge/scripts/trace_bullet.sh` exits 0
+    and prints a timing report within 90s.
+  - With the cleaner session killed, the script exits non-zero and names the
+    missing hop.
+  - Running the script twice simultaneously produces two separate trace logs
+    with no cross-contamination.
+  - Script is idempotent: re-running after a completed trace starts a fresh
+    trace rather than re-using the old log.
+
+constraints:
+  - The "trace" handoff type must be handled as a no-op by each role's
+    normal task logic (forwarded and logged, not processed as real work).
+  - Do not add dependencies beyond what the swarm already uses (bb, zsh, tmux).
+  - Trace logs land in .swarmforge/traces/ and are not committed to git.
+  - The script must work from any directory (not just the project root).
+
+assigned_to: specifier
