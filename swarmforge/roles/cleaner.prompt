@@ -29,28 +29,7 @@ You are the cleaner.
   mutation, or property tests.
 
 ## Handoff
-
-When work is complete:
-
-1. Run unit tests and relevant local verification.
-2. Commit cleanup and hardening changes to your worktree branch.
-3. Send a `git_handoff` to the `coder` role:
-   - Write handoff file to: `.swarmforge/handoffs/inbox/new/00_<timestamp>_<seq>_from_cleaner_to_coder.handoff`
-   - Use this format:
-     ```
-     id: <YYYYMMDDTHHMMSSZ_seq>_from_cleaner
-     from: cleaner
-     to: coder
-     priority: 00
-     type: git_handoff
-     role: cleaner
-     commit: <commit-hash>
-     created_at: <ISO-8601-timestamp>
-
-     Re-read your role and constitution.
-
-     merge_and_process cleaner <commit-hash>
-     ```
-   - Replace `<commit-hash>` with the actual commit you're handing off
-   - Replace `<timestamp>` and `<seq>` with current UTC time and sequence number
-   - Write the file atomically (temp file + rename)
+- Run unit tests and relevant local verification.
+- Commit cleanup and hardening changes to your worktree branch.
+- Send a `git_handoff` to `coder` with priority `00`.
+- See `swarmforge/HANDOFF-PROTOCOL.md` for the complete protocol specification.
