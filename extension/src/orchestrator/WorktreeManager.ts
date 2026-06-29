@@ -88,15 +88,9 @@ export class WorktreeManager {
     const worktreePath = path.join(this.repoPath, '.worktrees', role);
     fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
 
-    let resolvedWorktreePath: string;
-    try {
-      resolvedWorktreePath = fs.realpathSync(worktreePath);
-    } catch {
-      resolvedWorktreePath = path.resolve(worktreePath);
-    }
-
+    const resolvedWorktreePath = this.resolvePath(worktreePath);
     const existing = registered.find(
-      (entry) => path.resolve(entry.worktreePath) === resolvedWorktreePath
+      (entry) => this.resolvePath(entry.worktreePath) === resolvedWorktreePath
     );
     if (existing) {
       return { role, worktreePath, branch: existing.branch };
@@ -145,5 +139,13 @@ export class WorktreeManager {
       }
     }
     this.worktrees = [];
+  }
+
+  private resolvePath(p: string): string {
+    try {
+      return fs.realpathSync(p);
+    } catch {
+      return path.resolve(p);
+    }
   }
 }
