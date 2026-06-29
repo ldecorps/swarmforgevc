@@ -1,0 +1,20 @@
+id: BL-006
+title: Human input mirroring — log developer keystrokes to file
+milestone: M2
+status: done
+priority: 6
+
+description: >
+  Any keystroke the developer sends to an agent tile via forwardInput or
+  forwardSpecialKey is also appended as a JSON line to
+  .swarmforge/input-log.jsonl in the target repo. Each entry records:
+  timestamp (ISO), role, and the raw data string. This creates an audit
+  trail of human interventions during a run.
+
+acceptance:
+  - .swarmforge/input-log.jsonl is created on first keystroke if absent
+  - Each forwarded keystroke appends one JSON line (no batching)
+  - File write errors are logged to the VS Code output channel but do not
+    interrupt the keystroke delivery to tmux
+
+assigned_to: coder

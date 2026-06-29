@@ -1,0 +1,27 @@
+id: BL-012
+title: Chase and dead-letter escalation — re-notify unresponsive receivers
+milestone: M2
+status: todo
+priority: 12
+
+description: >
+  The extension host polls message logs every swarmforge.comms.chaseTimeoutSeconds
+  (default 90s). If a message stays in created (no received event) past timeout:
+  append a chased event with chase_count and at, write a nudge note to the
+  receiver inbox, increment chase count. After swarmforge.comms.maxChases (default 3)
+  chases with no received: append a dead-letter event (terminal) and surface a red
+  tile warning on the receiver. Heartbeat-gated: if the receiver is dead (not just
+  slow) trigger respawn first instead of chasing a corpse; auto-pickup handles the
+  pending message on relaunch. Messages stuck in received past 2× chaseTimeoutSeconds
+  are flagged amber. Each tile shows a small badge "N sent · M received". A messages
+  panel tab lists all messages with status, age, and chase count; stuck messages are
+  highlighted. Done message logs older than the current run are archived to
+  .swarmforge/messages/archive/ on run start.
+
+acceptance:
+  - Write a message to a simulated unresponsive receiver; chases fire at the right intervals; dead-letter fires at max
+  - Heartbeat-gated logic: when receiver is dead, respawn is triggered before chase
+  - Tile badge updates correctly
+  - Messages panel tab shows all messages with correct status and highlights
+
+assigned_to: coder
