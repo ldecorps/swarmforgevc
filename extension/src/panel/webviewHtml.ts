@@ -107,6 +107,9 @@ export function getWebviewHtml(nonce: string): string {
       text-align: center;
       opacity: 0.7;
     }
+    .tile.stalled {
+      border-color: #d4a017;
+    }
     #open-pr-btn {
       display: none;
       padding: 4px 10px;
@@ -241,6 +244,7 @@ export function getWebviewHtml(nonce: string): string {
             } else {
               entry.text += u.text;
             }
+            entry.tile.classList.remove('stalled');
             updateTileOutput(entry);
           });
           break;
@@ -248,6 +252,18 @@ export function getWebviewHtml(nonce: string): string {
           if (stageEl) {
             stageEl.textContent = message.label !== 'idle' ? 'Stage: ' + message.label : '';
           }
+          break;
+        case 'stall':
+          message.events.forEach((e) => {
+            const entry = tiles.get(e.role);
+            if (entry) {
+              if (e.stalled) {
+                entry.tile.classList.add('stalled');
+              } else {
+                entry.tile.classList.remove('stalled');
+              }
+            }
+          });
           break;
         case 'swarmDone':
           openPrBtn.classList.add('visible');

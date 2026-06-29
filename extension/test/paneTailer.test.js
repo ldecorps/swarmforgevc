@@ -125,3 +125,29 @@ test('mapSpecialKeyToTmux returns undefined for unknown key', () => {
 test('mapSpecialKeyToTmux returns undefined for empty string', () => {
   assert.equal(mapSpecialKeyToTmux(''), undefined);
 });
+
+const { isStalled, STALL_THRESHOLD_MS } = require('../out/panel/paneTailer');
+
+test('STALL_THRESHOLD_MS is 120000', () => {
+  assert.equal(STALL_THRESHOLD_MS, 120_000);
+});
+
+test('isStalled returns false when elapsed < threshold', () => {
+  const now = Date.now();
+  assert.equal(isStalled(now - 60_000, now), false);
+});
+
+test('isStalled returns true when elapsed >= threshold', () => {
+  const now = Date.now();
+  assert.equal(isStalled(now - 120_000, now), true);
+});
+
+test('isStalled returns true when elapsed greatly exceeds threshold', () => {
+  const now = Date.now();
+  assert.equal(isStalled(now - 300_000, now), true);
+});
+
+test('isStalled returns false when lastChangedAt equals now', () => {
+  const now = Date.now();
+  assert.equal(isStalled(now, now), false);
+});

@@ -65,3 +65,16 @@ test('getWebviewHtml contains webview message handling script', () => {
   assert(html.includes('case \'output\''));
   assert(html.includes('case \'stage\''));
 });
+
+test('getWebviewHtml contains stall CSS class', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes('.tile.stalled'));
+  assert(html.includes('#d4a017'));
+});
+
+test('getWebviewHtml contains stall message handler', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes("case 'stall'"));
+  assert(html.includes('classList.add(\'stalled\')'));
+  assert(html.includes('classList.remove(\'stalled\')'));
+});
