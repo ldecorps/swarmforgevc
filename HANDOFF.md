@@ -1,4 +1,4 @@
-# Handoff: BL-002 stall detection
+# Handoff: BL-002 + BL-003 stall and dead tile detection
 
 **Priority:** 50  
 **Branch:** swarm/coder  
@@ -12,31 +12,25 @@
 
 ## Work Completed
 
-### BL-002: Stall detection — amber tile border after 120s of no output
+### BL-002: Stall detection (commit 1f9b68a)
+- `STALL_THRESHOLD_MS = 120_000` exported constant
+- `isStalled(lastChangedAt, now)` pure helper
+- `PaneTailer`: tracks `lastChangedAt` per role; emits `StallEvent[]` via `onStall` when state changes
+- `SwarmPanel`: forwards `{ type: 'stall', events }` to webview
+- Webview: `.tile.stalled { border-color: #d4a017 }` (amber); cleared on next output
 
-**Files changed:**
-- `extension/src/panel/paneTailer.ts`
-  - Exported `STALL_THRESHOLD_MS = 120_000` constant
-  - Exported `isStalled(lastChangedAt, now)` pure helper
-  - Added `lastChangedAt` map: updated when a role's text changes
-  - Added `stalledRoles` set: tracks current stall state to emit change-only events
-  - Added optional `onStall` callback to constructor
-  - `poll()` emits `StallEvent[]` when stall state changes per role
-- `extension/src/panel/swarmPanel.ts`
-  - Passes `onStall` callback to `PaneTailer`; forwards `{ type: 'stall', events }` to webview
-- `extension/src/panel/webviewHtml.ts`
-  - CSS: `.tile.stalled { border-color: #d4a017; }` (amber)
-  - `case 'stall'`: toggles `.stalled` class per event
-  - `case 'output'`: clears `.stalled` on any output update (auto-recovery)
-
-**Tests added:**
-- `paneTailer.test.js`: 5 tests for `STALL_THRESHOLD_MS` and `isStalled`
-- `webviewHtml.test.js`: 2 tests for stall CSS and stall message handler
+### BL-003: Dead tile detection (commit ea155eb)
+- `DeadEvent` interface exported from paneTailer
+- `PaneTailer`: tracks `liveRoles` and `deadRoles` sets; emits `DeadEvent[]` via `onDead` when a previously-live session disappears or recovers
+- Does not crash on missing session (existing behaviour preserved)
+- `SwarmPanel`: forwards `{ type: 'dead', events }` to webview
+- Webview: `.tile.dead { border-color: #e53935 }` (red); clears on recovery
+- Existing error message text in tile is retained alongside the red border
 
 ## Test Results
 
-102 tests pass; 0 fail.
+105 tests pass; 0 fail.
 
 ---
 
-**Coder: BL-002 complete**
+**Coder: BL-002 + BL-003 complete**
