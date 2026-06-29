@@ -286,15 +286,19 @@ export function getWebviewHtml(nonce: string): string {
         assigned + '</div>';
     }
 
+    function filterByStatus(items, status) {
+      return items.filter(i => i.status === status);
+    }
+
     function renderBacklog(items) {
       if (!items || items.length === 0) {
         backlogEl.style.display = 'none';
         return;
       }
       backlogEl.style.display = '';
-      const active = items.filter(i => i.status === 'active');
-      const todo = items.filter(i => i.status === 'todo');
-      const done = items.filter(i => i.status === 'done');
+      const active = filterByStatus(items, 'active');
+      const todo = filterByStatus(items, 'todo');
+      const done = filterByStatus(items, 'done');
       const topRows = [...active, ...todo].map(backlogRowHtml).join('');
       let doneSection = '';
       if (done.length > 0) {
