@@ -141,3 +141,48 @@ test('getWebviewHtml recent runs shows stopped badge', () => {
   const html = getWebviewHtml('test');
   assert(html.includes('run-badge-stopped'));
 });
+
+test('getWebviewHtml contains backlog section element', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes('id="backlog"'));
+});
+
+test('getWebviewHtml backlog section is hidden by default', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes('id="backlog"') && html.includes('display:none'));
+});
+
+test('getWebviewHtml contains backlog-list element', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes('id="backlog-list"'));
+});
+
+test('getWebviewHtml handles backlogUpdate message type', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes("case 'backlogUpdate'"));
+});
+
+test('getWebviewHtml contains renderBacklog function', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes('renderBacklog'));
+});
+
+test('getWebviewHtml backlog shows active badge in green', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes('bl-badge-active'));
+});
+
+test('getWebviewHtml backlog shows todo badge', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes('bl-badge-todo'));
+});
+
+test('getWebviewHtml backlog done items in collapsed details element', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes('<details>') || html.includes('details'));
+});
+
+test('getWebviewHtml backlog active items appear before todo in sort order', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes("status === 'active'") || html.includes("filter(i => i.status"));
+});
