@@ -23,6 +23,13 @@ export class ShellBackend implements InteractiveProcess {
       }
     });
 
+    this.proc.on('error', (err) => {
+      const msg = `Error spawning ${command}: ${err.message}`;
+      for (const h of this.dataHandlers) {
+        h(msg);
+      }
+    });
+
     this.proc.on('close', (code) => {
       for (const h of this.exitHandlers) {
         h(code);
