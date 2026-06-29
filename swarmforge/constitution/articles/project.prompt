@@ -91,5 +91,6 @@ a pull request to review - all without leaving the editor.
 
 - Do not modify SwarmForge itself. Drive it from outside via its ./swarm wrapper,
   read its state under .swarmforge/, and attach to its tmux sessions/panes.
-- The full product vision (later milestones) is documented in docs/ for reference.
-  Build ONLY Milestone 1 described above. When in doubt, prefer the smaller scope.
+- The full product vision (later milestones) is in docs/Specification.MD and
+  docs/Milestone Roadmap.MD. Build ONLY Milestone 1 described above. When in doubt,
+  prefer the smaller scope.
