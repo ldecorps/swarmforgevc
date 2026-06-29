@@ -1,0 +1,33 @@
+id: BL-014
+title: Tracked human input — mirror tile keystrokes into the message store as human-input events
+milestone: M2
+priority: 14
+status: todo
+
+description: >
+  Make human guidance auditable alongside agent-to-agent traffic. Input directed at
+  an agent through its tile is mirrored into the message store as a created event with
+  from: human, to: <role>, subject: "human-input", body: "<text>". The primary path is
+  a dedicated "Send instruction" input box per tile (one cleanly-logged message per
+  submission); raw keyboard typing into the tile remains the fallback and is captured
+  best-effort. A "✎ human" marker appears on the tile and in the messages view to
+  distinguish human nudges from agent traffic, and human-input messages appear in the
+  messages panel tab alongside agent-to-agent handoffs. Human input is an audit record
+  only — the chase monitor never automatically acts on it.
+
+acceptance:
+  - Type into the "Send instruction" box on a tile; the message appears in the messages view with from: human
+  - The "✎ human" marker is visible on the tile and in the messages view
+  - A submitted instruction is delivered to the agent's process and logged as one human-input message
+  - Human-input messages are never chased or auto-acted-on by the watchdog/chase monitor
+
+constraints:
+  - The "Send instruction" box is a webview addition to the tile header; host owns delivery to the process
+  - Raw keystroke capture is best-effort; the send-instruction box is the reliable path
+  - Messages are written to the BL-009 message bus under .swarmforge/messages/
+
+depends_on:
+  - BL-009  # message bus
+  - BL-006  # input mirroring (existing tile keystroke forwarding)
+
+assigned_to: coder
