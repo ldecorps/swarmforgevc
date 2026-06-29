@@ -15,6 +15,7 @@ export class SwarmPanel {
   private stagePoller: ReturnType<typeof setInterval> | undefined;
   private disposables: vscode.Disposable[] = [];
   private wasActive = false;
+  private dogfoodShown = false;
 
   private constructor(
     panel: vscode.WebviewPanel,
@@ -84,6 +85,17 @@ export class SwarmPanel {
   public updateTarget(targetPath: string): void {
     this.targetPath = targetPath;
     this.setupTailer();
+  }
+
+  public notifyDogfoodCheckpoint(): void {
+    if (this.dogfoodShown) {
+      return;
+    }
+    this.dogfoodShown = true;
+    vscode.window.showInformationMessage(
+      'DOGFOOD CHECKPOINT REACHED — launch and live tiles are functional. ' +
+        'Point this extension at its own repo to verify before continuing.'
+    );
   }
 
   private setupTailer(): void {
