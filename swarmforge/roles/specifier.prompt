@@ -21,4 +21,5 @@ You are the specifier.
 - For work items, use `git_handoff` type.
 - For non-actionable context updates, use `note` type.
 - Include enough detail for the coordinator and coder to act independently.
-- See `swarmforge/HANDOFF-PROTOCOL.md` for the complete protocol specification.
+- **Implementation:** Write directly to `.swarmforge/handoffs/inbox/new/` following the format in HANDOFF-PROTOCOL.md. Use atomic writes (temp file + rename).
+- See `swarmforge/HANDOFF-PROTOCOL.md` for the complete protocol specification (note: daemon and helper scripts are documented as aspirational; for now write files directly).
