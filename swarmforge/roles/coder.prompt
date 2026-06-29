@@ -19,6 +19,28 @@ You are the coder.
   mutation, property tests, CRAP, DRY, or language mutation.
 
 ## Handoff
-- Run unit tests and relevant local verification.
-- Commit the behavior change.
-- Send a `git_handoff` to `cleaner` with priority `50`.
+
+When work is complete:
+
+1. Run unit tests and relevant local verification.
+2. Commit the behavior change to your worktree branch.
+3. Send a `git_handoff` to the `cleaner` role:
+   - Write handoff file to: `.swarmforge/handoffs/inbox/new/50_<timestamp>_<seq>_from_coder_to_cleaner.handoff`
+   - Use this format:
+     ```
+     id: <YYYYMMDDTHHMMSSZ_seq>_from_coder
+     from: coder
+     to: cleaner
+     priority: 50
+     type: git_handoff
+     role: coder
+     commit: <commit-hash>
+     created_at: <ISO-8601-timestamp>
+
+     Re-read your role and constitution.
+
+     merge_and_process coder <commit-hash>
+     ```
+   - Replace `<commit-hash>` with the actual commit you're handing off
+   - Replace `<timestamp>` and `<seq>` with current UTC time and sequence number
+   - Write the file atomically (temp file + rename)
