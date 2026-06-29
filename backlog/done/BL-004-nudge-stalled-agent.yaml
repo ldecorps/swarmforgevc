@@ -1,0 +1,19 @@
+id: BL-004
+title: Nudge button — wake a stalled agent with a keystroke
+milestone: M2
+status: done
+priority: 4
+
+description: >
+  When a tile is amber (stalled), show a "Nudge" button inside that tile in the
+  webview. Clicking it sends a blank Enter keystroke to that agent's tmux pane via
+  the existing forwardInput path. The button disappears and the amber state clears
+  optimistically on click.
+
+acceptance:
+  - Nudge button visible only on amber (stalled) tiles, not on normal tiles
+  - Click sends Enter to the correct tmux pane
+  - Tile border resets to normal color immediately on click (optimistic)
+  - Depends on BL-002
+
+assigned_to: coder

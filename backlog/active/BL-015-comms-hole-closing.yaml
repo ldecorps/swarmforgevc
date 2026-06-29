@@ -1,0 +1,157 @@
+id: BL-015
+title: COMMs hole-closing — fix discovered bugs and add tests around uncovered spec corners
+milestone: M2
+priority: 15
+status: active
+
+description: >
+  Audit of BL-009/010/011/012/013/014 implementations against their specs and
+  test suites surfaced concrete bugs and uncovered spec corners. This slice
+  fixes the bugs and adds tests for the holes. The fixes are small and local
+  to the existing modules; the tests cover races, malformed inputs, and
+  cross-module integration that the per-slice unit suites missed.
+
+bugs_to_fix:
+  - >
+    BL-012 field-name mismatch (integration bug). evaluateChase reads
+    events[i].event but messageBus.appendEventRaw writes events with field
+    "type". A live message log fed to evaluateChase never matches "done",
+    "dead-letter", "received", "chased", or "created". Pick "type" as the
+    canonical field name (matches messageBus) and update ChaseMonitor +
+    MessageEventRecord + tests.
+  - >
+    BL-010 async tool calls. withHeartbeat treats fn as sync: for an async
+    tool fn() returns an unsettled Promise, withHeartbeat writes the exit
+    heartbeat (in_flight:false) immediately, and the real tool work runs
+    invisible to the watchdog. Make withHeartbeat await Promise results and
+    set in_flight:false only after settlement (both fulfilled and rejected).
+  - >
+    BL-010 beat_count is a module-global. Multiple roles served by the same
+    extension-host process share one counter, so each role's beat_count is
+    wrong and skips. Key beatCount by role (e.g. Map<role, number>).
+  - >
+    BL-009 appendEventRaw is a read-modify-write race. Two concurrent
+    writers to the same message log both read the same "existing", both
+    append one event, and the second rename clobbers the first event.
+    Either (a) open the destination with O_APPEND and write the single new
+    line directly, or (b) take a per-log advisory lock (e.g.
+    <logPath>.lock with O_EXCL) around read+append+rename.
+  - >
+    BL-009 malformed lease string treated as live forever. claimMessage
+    parses claimed_by as "<role>@<epoch>". If the @-split or parseInt fails,
+    leaseEpoch is NaN, nowEpoch - NaN < ttl is false, and the lease is
+    treated as live — permanently unclaimable. Treat any unparseable lease
+    as expired/claimable.
+  - >
+    BL-011 NaN-date false-positive alive. computeLiveness does
+    new Date(hb.last_beat).getTime(); a malformed last_beat returns NaN,
+    age comparisons are all false, and the role is reported "alive".
+    Treat NaN age as "unknown".
+  - >
+    BL-012/014 ChaseMonitor does not skip human-input messages. humanInput
+    exposes isHumanInputMessage but evaluateChase never calls it, so
+    human-input messages get chased and eventually dead-lettered — BL-014
+    acceptance #4 fails. Have evaluateChase (or its caller) consult
+    isHumanInputMessage and return "skipped" for human-input.
+  - >
+    BL-013 pickupPendingMessages lists but does not claim. Two respawned
+    agents (or one respawn racing the chase monitor) can both pick up the
+    same message. Make pickup atomically claim via claimMessage and return
+    only successfully-claimed messages.
+
+test_holes_to_cover:
+  - >
+    Concurrent append race: spawn two processes (or two threads via worker)
+    both calling appendEventRaw on the same log; assert both events end up
+    in the log. Today's tests serialize writes and miss this.
+  - >
+    Malformed lease: claimed_by values "", "alice", "alice@", "alice@foo",
+    "alice@@123" — each must be treated as claimable, not as a live lease.
+  - >
+    Lease idempotency: the current claimer re-acking its own live lease
+    must succeed without appending a duplicate received event.
+  - >
+    Lease takeover after PID death: lease epoch still within TTL but the
+    owning PID is gone. pickupPendingMessages must claim (today only the
+    epoch is checked; spec says "owning process running").
+  - >
+    completeMessage authorization: a non-claimer calling completeMessage
+    should be rejected (or at minimum logged as anomalous). Currently it
+    is silently accepted.
+  - >
+    appendEventRaw partial-line tolerance: hand-craft a log file whose
+    last line is truncated (no trailing newline plus broken JSON); readLog
+    must skip the partial line, not throw.
+  - >
+    Heartbeat async tool: feed withHeartbeat an async fn that resolves
+    after 50ms; assert in_flight:true is observed during the wait and
+    in_flight:false is observed only after settlement. Same for a
+    rejecting async fn.
+  - >
+    Heartbeat per-role beat_count: call withHeartbeat for roles A and B
+    interleaved; each role's beat_count must increase independently
+    (1,2,3 per role, not shared).
+  - >
+    Liveness NaN date: pass a heartbeat with last_beat:"not-a-date";
+    state must be "unknown", not "alive".
+  - >
+    Liveness PID-gone-while-fresh-beat: pidAlive=false but last_beat is
+    1s old; state must be "dead" (already enforced — add explicit test).
+  - >
+    Chase re-interval: after a "chased" event is appended, the next chase
+    must be gated by chaseTimeoutSeconds since the LAST chase, not since
+    "created". Today evaluateChase always measures age from createdEvent.at,
+    so chases fire in a tight loop.
+  - >
+    Chase stuck-received amber: a message in "received" past
+    2× chaseTimeoutSeconds must emit an amber-flag signal (new return value
+    or side channel). Spec calls for it; code has no path.
+  - >
+    Chase skips human-input: createMessage from:"human" subject:"human-input"
+    must never produce a "chased" or "dead-lettered" result from
+    evaluateChase, regardless of age.
+  - >
+    Field-name regression: a tiny integration test that creates a message
+    via messageBus.createMessage, reads the log, and feeds it directly into
+    evaluateChase. Today the field-name mismatch makes this fail; once
+    fixed it must keep passing.
+  - >
+    Respawn pickup claims atomically: two parallel pickupPendingMessages
+    calls for the same role must each receive a disjoint subset of
+    messages — never both the same id.
+  - >
+    Pickup skips dead-letter: a message whose last event is "dead-letter"
+    must never be returned by pickupPendingMessages.
+  - >
+    Archive on run start: a "done" log from a prior run must be moved to
+    .swarmforge/messages/archive/ on launch and not be visible to
+    pickupPendingMessages or evaluateChase. (Spec calls for it; not
+    implemented.)
+
+acceptance:
+  - All listed bugs are fixed; per-bug tests pass.
+  - All listed test holes have new tests that fail before the fix and pass
+    after.
+  - Integration test (messageBus.createMessage → readLog → evaluateChase)
+    proves the field-name contract end-to-end.
+  - Existing 31+12 unit tests in heartbeat/liveness/chase/messageBus suites
+    still pass.
+
+constraints:
+  - Fixes stay inside extension/src/ (swarm/messageBus.ts, tools/heartbeat.ts,
+    tools/toolDecorator.ts, watchdog/liveness.ts, chase/ChaseMonitor.ts,
+    swarm/respawnPickup.ts). No new modules.
+  - Do not introduce a daemon or background process for this slice; the
+    lock for appendEventRaw is per-call advisory only.
+  - Archive logic, if added, lives in the launch path (swarmLauncher or a
+    new tiny module called from it) and runs once at run start.
+
+depends_on:
+  - BL-009
+  - BL-010
+  - BL-011
+  - BL-012
+  - BL-013
+  - BL-014
+
+assigned_to: coder
