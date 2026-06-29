@@ -113,6 +113,20 @@ export function getWebviewHtml(nonce: string): string {
     .tile.dead {
       border-color: #e53935;
     }
+    .restart-btn {
+      display: none;
+      margin-left: 6px;
+      padding: 1px 7px;
+      font-size: 11px;
+      cursor: pointer;
+      background: #e53935;
+      color: #fff;
+      border: none;
+      border-radius: 3px;
+    }
+    .tile.dead .restart-btn {
+      display: inline-block;
+    }
     .nudge-btn {
       display: none;
       margin-left: 6px;
@@ -210,10 +224,19 @@ export function getWebviewHtml(nonce: string): string {
         vscode.postMessage({ type: 'input', role, data: '\n' });
       });
 
+      const restartBtn = document.createElement('button');
+      restartBtn.className = 'restart-btn';
+      restartBtn.textContent = 'Restart';
+      restartBtn.addEventListener('click', () => {
+        tile.classList.remove('dead');
+        vscode.postMessage({ type: 'restartAgent', role });
+      });
+
       const header = document.createElement('div');
       header.className = 'tile-header';
       header.innerHTML = '<span>' + displayName + '</span><span class="tile-agent">' + agent + '</span>';
       header.appendChild(nudgeBtn);
+      header.appendChild(restartBtn);
 
       const output = document.createElement('div');
       output.className = 'tile-output';

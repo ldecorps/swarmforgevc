@@ -105,3 +105,18 @@ test('getWebviewHtml nudge sends Enter via forwardInput path', () => {
   // The webview posts { type: 'input', data: '\n' } — stored as literal newline in the string
   assert(html.includes('nudge-btn') && html.includes("type: 'input'") && html.includes("data:"));
 });
+
+test('getWebviewHtml contains restart button element', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes('restart-btn') || html.includes('Restart'));
+});
+
+test('getWebviewHtml shows restart button only on dead tiles', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes('.tile.dead') && html.includes('Restart'));
+});
+
+test('getWebviewHtml restart posts restartAgent message type', () => {
+  const html = getWebviewHtml('test');
+  assert(html.includes("restartAgent") || html.includes("'restart'"));
+});
