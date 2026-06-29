@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { atomicWrite } from '../util/atomicWrite';
 
 export interface HeartbeatData {
   role: string;
@@ -12,7 +13,6 @@ export interface HeartbeatData {
 }
 
 export function writeHeartbeat(dir: string, data: HeartbeatData): void {
-  fs.mkdirSync(dir, { recursive: true });
   const yaml = `role: ${data.role}
 pid: ${data.pid}
 last_beat: "${data.last_beat}"
@@ -22,9 +22,7 @@ in_flight: ${data.in_flight}
 beat_count: ${data.beat_count}
 `;
   const filePath = path.join(dir, `${data.role}.yaml`);
-  const tmp = filePath + '.tmp';
-  fs.writeFileSync(tmp, yaml, 'utf8');
-  fs.renameSync(tmp, filePath);
+  atomicWrite(filePath, yaml);
 }
 
 function parseYamlLine(line: string): [string, unknown] | null {

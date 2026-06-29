@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { atomicAppend } from '../util/atomicWrite';
 
 export type MessageStatus = 'created' | 'received' | 'done' | 'chased' | 'dead-letter';
 
@@ -17,15 +18,9 @@ export interface CreateOptions {
   seq: number;
 }
 
-/** Atomically append one JSON line to logPath via temp-file + rename. */
+/** Atomically append one JSON line to logPath. */
 export function appendEventRaw(logPath: string, event: Record<string, unknown>): void {
-  const dir = path.dirname(logPath);
-  fs.mkdirSync(dir, { recursive: true });
-  const existing = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : '';
-  const appended = existing + JSON.stringify(event) + '\n';
-  const tmp = logPath + '.' + crypto.randomBytes(6).toString('hex') + '.tmp';
-  fs.writeFileSync(tmp, appended, 'utf8');
-  fs.renameSync(tmp, logPath);
+  atomicAppend(logPath, JSON.stringify(event) + '\n');
 }
 
 /** Parse all events from a log file. */
