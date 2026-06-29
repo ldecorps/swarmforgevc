@@ -1,4 +1,4 @@
-# Handoff: Run log completion recording
+# Handoff: BL-002 stall detection
 
 **Priority:** 50  
 **Branch:** swarm/coder  
@@ -12,19 +12,31 @@
 
 ## Work Completed
 
-### Run log completion recording
-
-Added `prUrl` and `completedAt` optional fields to `RunEntry` and a new `updateLastRunForTarget` function that patches the most-recent run for a given target path.
+### BL-002: Stall detection — amber tile border after 120s of no output
 
 **Files changed:**
-- `extension/src/runs/runLog.ts` — added `completedAt?`, `prUrl?` to `RunEntry`; added `updateLastRunForTarget(logPath, targetPath, update)`
-- `extension/src/extension.ts` — call `updateLastRunForTarget` after successful PR creation; `showRuns` now appends PR URL to each run line
-- `extension/test/runLog.test.js` — 3 new tests covering the happy path, no-match case, and empty-log case
+- `extension/src/panel/paneTailer.ts`
+  - Exported `STALL_THRESHOLD_MS = 120_000` constant
+  - Exported `isStalled(lastChangedAt, now)` pure helper
+  - Added `lastChangedAt` map: updated when a role's text changes
+  - Added `stalledRoles` set: tracks current stall state to emit change-only events
+  - Added optional `onStall` callback to constructor
+  - `poll()` emits `StallEvent[]` when stall state changes per role
+- `extension/src/panel/swarmPanel.ts`
+  - Passes `onStall` callback to `PaneTailer`; forwards `{ type: 'stall', events }` to webview
+- `extension/src/panel/webviewHtml.ts`
+  - CSS: `.tile.stalled { border-color: #d4a017; }` (amber)
+  - `case 'stall'`: toggles `.stalled` class per event
+  - `case 'output'`: clears `.stalled` on any output update (auto-recovery)
+
+**Tests added:**
+- `paneTailer.test.js`: 5 tests for `STALL_THRESHOLD_MS` and `isStalled`
+- `webviewHtml.test.js`: 2 tests for stall CSS and stall message handler
 
 ## Test Results
 
-92 tests pass; 0 fail.
+102 tests pass; 0 fail.
 
 ---
 
-**Coder: run-log completion recording complete**
+**Coder: BL-002 complete**
