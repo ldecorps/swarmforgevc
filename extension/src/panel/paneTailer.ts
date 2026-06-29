@@ -9,6 +9,8 @@ import {
 } from '../swarm/tmuxClient';
 import { stripAnsi } from './ansi';
 
+const DEFAULT_POLL_INTERVAL_MS = 200;
+
 export interface TileOutput {
   role: string;
   displayName: string;
@@ -28,7 +30,7 @@ export class PaneTailer {
     private readonly onOutput: (updates: TileOutput[]) => void
   ) {}
 
-  start(pollMs = 200): void {
+  start(pollMs = DEFAULT_POLL_INTERVAL_MS): void {
     this.stop();
     this.refreshState();
 
@@ -116,29 +118,8 @@ export class PaneTailer {
     if (!target) {
       return;
     }
-
-    if (data === '\r' || data === '\n') {
-      sendKeys(this.socketPath, target, 'Enter');
-      return;
-    }
-
-    if (data === '\x7f' || data === '\b') {
-      sendKeys(this.socketPath, target, 'BSpace');
-      return;
-    }
-
-    if (data === '\t') {
-      sendKeys(this.socketPath, target, 'Tab');
-      return;
-    }
-
-    if (data.length === 1 && data.charCodeAt(0) < 32) {
-      const letter = String.fromCharCode(data.charCodeAt(0) + 64).toLowerCase();
-      sendKeys(this.socketPath, target, `C-${letter}`);
-      return;
-    }
-
-    sendKeys(this.socketPath, target, data, true);
+    const mapped = mapInputToTmuxKey(data);
+    sendKeys(this.socketPath, target, mapped.key, mapped.literal);
   }
 
   forwardSpecialKey(roleName: string, key: string): void {
@@ -146,26 +127,46 @@ export class PaneTailer {
     if (!target) {
       return;
     }
-
-    const keyMap: Record<string, string> = {
-      Enter: 'Enter',
-      Backspace: 'BSpace',
-      Tab: 'Tab',
-      Escape: 'Escape',
-      ArrowUp: 'Up',
-      ArrowDown: 'Down',
-      ArrowLeft: 'Left',
-      ArrowRight: 'Right',
-      Home: 'Home',
-      End: 'End',
-      PageUp: 'PPage',
-      PageDown: 'NPage',
-      Delete: 'DC',
-    };
-
-    const tmuxKey = keyMap[key];
+    const tmuxKey = mapSpecialKeyToTmux(key);
     if (tmuxKey) {
       sendKeys(this.socketPath, target, tmuxKey);
     }
   }
+}
+
+export function mapInputToTmuxKey(data: string): { key: string; literal: boolean } {
+  if (data === '\r' || data === '\n') {
+    return { key: 'Enter', literal: false };
+  }
+  if (data === '\x7f' || data === '\b') {
+    return { key: 'BSpace', literal: false };
+  }
+  if (data === '\t') {
+    return { key: 'Tab', literal: false };
+  }
+  if (data.length === 1 && data.charCodeAt(0) < 32) {
+    const letter = String.fromCharCode(data.charCodeAt(0) + 64).toLowerCase();
+    return { key: `C-${letter}`, literal: false };
+  }
+  return { key: data, literal: true };
+}
+
+const SPECIAL_KEY_MAP: Record<string, string> = {
+  Enter: 'Enter',
+  Backspace: 'BSpace',
+  Tab: 'Tab',
+  Escape: 'Escape',
+  ArrowUp: 'Up',
+  ArrowDown: 'Down',
+  ArrowLeft: 'Left',
+  ArrowRight: 'Right',
+  Home: 'Home',
+  End: 'End',
+  PageUp: 'PPage',
+  PageDown: 'NPage',
+  Delete: 'DC',
+};
+
+export function mapSpecialKeyToTmux(key: string): string | undefined {
+  return SPECIAL_KEY_MAP[key];
 }

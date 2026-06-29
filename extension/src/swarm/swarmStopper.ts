@@ -2,6 +2,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { readSwarmRoles, readTmuxSocket, runCommand } from './tmuxClient';
 
+const DAEMON_PID_SUBPATH = path.join('.swarmforge', 'daemon', 'handoffd.pid');
+const DECIMAL_RADIX = 10;
+
 export interface StopResult {
   success: boolean;
   message: string;
@@ -41,10 +44,10 @@ export function stopSwarm(targetPath: string): StopResult {
     }
   }
 
-  const daemonPidFile = path.join(targetPath, '.swarmforge', 'daemon', 'handoffd.pid');
+  const daemonPidFile = path.join(targetPath, DAEMON_PID_SUBPATH);
   if (fs.existsSync(daemonPidFile)) {
     try {
-      const pid = parseInt(fs.readFileSync(daemonPidFile, 'utf8').trim(), 10);
+      const pid = parseInt(fs.readFileSync(daemonPidFile, 'utf8').trim(), DECIMAL_RADIX);
       if (Number.isFinite(pid) && pid > 0) {
         process.kill(pid, 'SIGTERM');
       }
