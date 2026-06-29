@@ -2,13 +2,11 @@ import { ShellBackend } from './ShellBackend';
 
 export interface AgentConfig {
   role: string;
-  displayName?: string;
   command: string;
   args: string[];
-  cwd?: string;
 }
 
-type OutputHandler = (role: string, chunk: string, displayName: string) => void;
+type OutputHandler = (role: string, chunk: string) => void;
 type ExitHandler = (role: string, code: number | null) => void;
 
 export class SwarmOrchestrator {
@@ -29,17 +27,12 @@ export class SwarmOrchestrator {
     this.configs.push(config);
   }
 
-  getRoles(): AgentConfig[] {
-    return this.configs.map((c) => ({ ...c, displayName: this.getDisplayName(c) }));
-  }
-
   start(): void {
     for (const cfg of this.configs) {
-      const backend = new ShellBackend(cfg.command, cfg.args, { cwd: cfg.cwd });
-      const displayName = this.getDisplayName(cfg);
+      const backend = new ShellBackend(cfg.command, cfg.args);
       backend.onData((chunk) => {
         for (const h of this.outputHandlers) {
-          h(cfg.role, chunk, displayName);
+          h(cfg.role, chunk);
         }
       });
       backend.onExit((code) => {
@@ -51,11 +44,7 @@ export class SwarmOrchestrator {
     }
   }
 
-  private getDisplayName(config: AgentConfig): string {
-    return config.displayName ?? config.role;
-  }
-
-  write(role: string, data: string): void {
+  writeToAgent(role: string, data: string): void {
     this.backends.get(role)?.write(data);
   }
 
@@ -66,18 +55,19 @@ export class SwarmOrchestrator {
   }
 
   waitAll(): Promise<void> {
-    if (this.backends.size === 0) {
+    const backends = Array.from(this.backends.values());
+    if (backends.length === 0) {
       return Promise.resolve();
     }
     return new Promise((resolve) => {
-      let remaining = this.backends.size;
+      let remaining = backends.length;
       const dec = () => {
         remaining -= 1;
         if (remaining === 0) {
           resolve();
         }
       };
-      for (const b of this.backends.values()) {
+      for (const b of backends) {
         b.onExit(dec);
       }
     });

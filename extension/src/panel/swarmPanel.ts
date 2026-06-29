@@ -3,6 +3,7 @@ import { SwarmRole } from '../swarm/tmuxClient';
 import { PaneTailer } from './paneTailer';
 import { currentStageLabel, readPipelineStages } from '../swarm/swarmState';
 import { getNonce, getWebviewHtml } from './webviewHtml';
+import { AgentRunner } from '../orchestrator/AgentRunner';
 
 const STAGE_POLL_INTERVAL_MS = 2000;
 
@@ -12,6 +13,7 @@ export class SwarmPanel {
 
   private readonly panel: vscode.WebviewPanel;
   private tailer: PaneTailer | undefined;
+  private runner: AgentRunner | undefined;
   private stagePoller: ReturnType<typeof setInterval> | undefined;
   private disposables: vscode.Disposable[] = [];
   private wasActive = false;
@@ -32,7 +34,11 @@ export class SwarmPanel {
       (message) => {
         switch (message.type) {
           case 'input':
-            this.tailer?.forwardInput(message.role, message.data);
+            if (this.runner) {
+              this.runner.getOrchestrator().writeToAgent(message.role, message.data);
+            } else {
+              this.tailer?.forwardInput(message.role, message.data);
+            }
             break;
           case 'specialKey':
             this.tailer?.forwardSpecialKey(message.role, message.key);
@@ -86,6 +92,24 @@ export class SwarmPanel {
     this.setupTailer();
   }
 
+  public attachRunner(runner: AgentRunner): void {
+    this.tailer?.stop();
+    this.tailer = undefined;
+    this.runner = runner;
+    const roles = runner.getRoles().map((r) => ({
+      role: r.role,
+      displayName: r.displayName,
+      agent: r.role,
+    }));
+    this.sendRoles(roles as SwarmRole[]);
+    runner.getOrchestrator().onOutput((role, chunk) => {
+      this.panel.webview.postMessage({
+        type: 'output',
+        updates: [{ role, displayName: role, text: chunk, full: false }],
+      });
+    });
+  }
+
   private setupTailer(): void {
     this.tailer?.stop();
     this.tailer = new PaneTailer(this.targetPath, (updates) => {
@@ -135,6 +159,7 @@ export class SwarmPanel {
   public dispose(): void {
     SwarmPanel.currentPanel = undefined;
     this.tailer?.stop();
+    this.runner?.stop();
     if (this.stagePoller) {
       clearInterval(this.stagePoller);
       this.stagePoller = undefined;

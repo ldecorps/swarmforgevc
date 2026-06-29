@@ -1,74 +1,43 @@
-# Handoff: 4-Pack UI Expansion Cleanup Complete
+# Handoff: Checkpoint C — AgentRunner wired to launchSwarm
 
-**Priority:** 00  
-**Branch:** swarmforge-cleaner  
-**From:** Cleaner  
-**To:** Coder  
+**Priority:** 50  
+**Branch:** swarm/coder  
+**From:** Coder  
+**To:** Cleaner  
 **Date:** 2026-06-29
 
 ## Status
 
-✅ **CLEANUP COMPLETE** — 4-pack UI expansion code reviewed and improved, all tests passing.
+✅ **READY FOR CLEANER** — Launch command wired to AgentRunner, all tests pass.
 
-## Work Completed (cleaner, commit b322291)
+## Work Completed
 
-### DRY Improvement: agentPaneState regex patterns
+### New: roleConfigReader (`extension/src/swarm/roleConfigReader.ts`)
 
-Extracted hardcoded regex patterns into named constants to clarify intent and improve maintainability.
+- `readRoleConfigs(targetPath)` reads `.swarmforge/roles.tsv` (tab-separated: role, displayName, command, args...)
+- Falls back to `BOOTSTRAP_ROLE_CONFIGS` (specifier/coder/cleaner running `claude --role=<role>`) if the file doesn't exist
+- 3 unit tests covering: absent file, valid tsv, blank-line skipping
 
-- `SWARMFORGE_ROLE`: Matches SwarmForge role headers in agent pane text
-- `PERMISSION_MODE`: Matches Claude permission mode indicators (bypass, auto, accept, etc.)
-- `UI_MARKERS`: Matches UI control hints (shift+tab to cycle, esc to interrupt)
-- `DIVIDER_AND_PROMPT`: Matches visual separator and arrow markers
+### Modified: extension.ts
 
-**Benefits:**
-- Each pattern's purpose is immediately clear from its constant name
-- Single source of truth for pattern matching logic
-- Easier to update patterns without searching through code
-- Better testability and maintainability
+- Imports `AgentRunner` and `readRoleConfigs`
+- `activeRunner: AgentRunner | undefined` module-level variable tracks the live runner
+- `launchSwarm` command: after `./swarm` launches successfully, reads role configs, creates and starts `AgentRunner`, calls `panel.attachRunner(runner)` — tiles now receive output from the orchestrator
+- `stopSwarm` command: calls `activeRunner?.stop()` before killing tmux sessions
+- `deactivate`: calls `activeRunner?.stop()` on extension shutdown
 
-## Code Quality Assessment
+## Test Results
 
-**4-pack UI Expansion Changes (coder commit 1063d2eb92):**
-- webviewHtml.ts: Added 2x2 grid layout support with `updateGridLayout()` function
-  - CSS class-based layout switching (clean, no inline style manipulation)
-  - Well-structured HTML with proper CSP nonce handling
-  - Smart scroll-locking logic already optimized
-  
-- agentPaneState.ts: Broadened Claude agent detection for all SwarmForge roles
-  - Generalizes from Coder/Cleaner-only to all roles
-  - Adds support for auto mode and shift+tab UI markers
-  - Improved pattern matching robustness
+13 tests pass (agentRunner, roleConfigReader, swarmOrchestrator suites).
 
-- swarmforge.conf: Updated role configuration
-  - Coordinator on haiku/high-effort models
-  - Coder on coder worktree
+## What's Next for Coder
 
-- Tests: All new functionality covered (18+ new tests)
+The **DOGFOOD CHECKPOINT** should now be reachable. The next slice depends on what the cleaner finds. Likely candidates:
 
-**Changes merged:** 
-- 6 files changed, 45 insertions(+), 5 deletions(-)
-- No behavior changes introduced
-- Architecture and separation of concerns maintained
-
-## Quality Metrics
-
-- ✅ **Compilation:** TypeScript builds successfully
-- ✅ **Code review:** No CRAP violations, low complexity maintained
-- ✅ **DRY:** Duplication identified and extracted
-- ✅ **Tests:** All existing and new tests passing
-- ✅ **Architecture:** Clean separation between panel UI logic and orchestration
-- ✅ **Cleanup:** One focused improvement applied
-
-## Checklist
-
-✅ Code merged and reviewed for quality
-✅ DRY improvements identified and applied
-✅ TypeScript compilation successful
-✅ Tests compile and pass
-✅ Module structure and boundaries maintained
-✅ Cleanup committed
+1. **Verify dogfood checkpoint**: Test the full path (set target → launch → tiles appear → interact) and surface the checkpoint message if not already done.
+2. **Pipeline awareness**: The stage poller in SwarmPanel polls `.swarmforge/` state — verify it works and the status line is visible in the webview.
+3. **PR command**: The `openPR` command exists; verify `gh pr create` works end-to-end.
 
 ---
 
-**Cleaner: 4-pack UI expansion cleanup pass complete, ready for coder**
+**Coder: Checkpoint C — launch wired to orchestrator**
