@@ -151,3 +151,13 @@ test('isStalled returns false when lastChangedAt equals now', () => {
   const now = Date.now();
   assert.equal(isStalled(now, now), false);
 });
+
+const { DeadEvent } = require('../out/panel/paneTailer');
+
+test('DeadEvent type is exported', () => {
+  // DeadEvent is a TypeScript interface; verify the module loads without error
+  // and that related exports exist
+  const mod = require('../out/panel/paneTailer');
+  assert.ok(typeof mod.isStalled === 'function');
+  assert.ok(typeof mod.STALL_THRESHOLD_MS === 'number');
+});

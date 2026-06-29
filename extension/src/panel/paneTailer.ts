@@ -31,11 +31,18 @@ export interface StallEvent {
   stalled: boolean;
 }
 
+export interface DeadEvent {
+  role: string;
+  dead: boolean;
+}
+
 export class PaneTailer {
   private interval: ReturnType<typeof setInterval> | undefined;
   private lastText = new Map<string, string>();
   private lastChangedAt = new Map<string, number>();
   private stalledRoles = new Set<string>();
+  private deadRoles = new Set<string>();
+  private liveRoles = new Set<string>();
   private paneBaseIndex = 0;
   private roles: SwarmRole[] = [];
   private socketPath = '';
@@ -43,7 +50,8 @@ export class PaneTailer {
   constructor(
     private readonly targetPath: string,
     private readonly onOutput: (updates: TileOutput[]) => void,
-    private readonly onStall?: (events: StallEvent[]) => void
+    private readonly onStall?: (events: StallEvent[]) => void,
+    private readonly onDead?: (events: DeadEvent[]) => void
   ) {}
 
   start(pollMs = DEFAULT_POLL_INTERVAL_MS): void {
@@ -69,6 +77,8 @@ export class PaneTailer {
     this.lastText.clear();
     this.lastChangedAt.clear();
     this.stalledRoles.clear();
+    this.deadRoles.clear();
+    this.liveRoles.clear();
     if (this.socketPath) {
       this.paneBaseIndex = getPaneBaseIndex(this.socketPath);
     }
@@ -94,6 +104,7 @@ export class PaneTailer {
     }
 
     const updates: TileOutput[] = [];
+    const deadEvents: DeadEvent[] = [];
 
     for (const role of this.roles) {
       if (!sessionExists(this.socketPath, role.session)) {
@@ -107,8 +118,18 @@ export class PaneTailer {
             full: true,
           });
         }
+        if (this.liveRoles.has(role.role) && !this.deadRoles.has(role.role)) {
+          this.deadRoles.add(role.role);
+          deadEvents.push({ role: role.role, dead: true });
+        }
         continue;
       }
+
+      if (this.deadRoles.has(role.role)) {
+        this.deadRoles.delete(role.role);
+        deadEvents.push({ role: role.role, dead: false });
+      }
+      this.liveRoles.add(role.role);
 
       const target = resolveAgentPaneTarget(
         this.socketPath,
@@ -153,6 +174,10 @@ export class PaneTailer {
 
     if (updates.length > 0) {
       this.onOutput(updates);
+    }
+
+    if (this.onDead && deadEvents.length > 0) {
+      this.onDead(deadEvents);
     }
 
     if (this.onStall) {
