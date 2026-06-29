@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { SwarmRole } from '../swarm/tmuxClient';
+import { SwarmRole, respawnAgent } from '../swarm/tmuxClient';
 import { PaneTailer } from './paneTailer';
 import { currentStageLabel, readPipelineStages } from '../swarm/swarmState';
 import { getNonce, getWebviewHtml } from './webviewHtml';
@@ -42,6 +42,13 @@ export class SwarmPanel {
             this.tailer?.refreshState();
             this.sendRoles(this.tailer?.getRoles() ?? []);
             break;
+          case 'restartAgent': {
+            const result = respawnAgent(this.targetPath, message.role);
+            if (!result.success) {
+              vscode.window.showErrorMessage(result.message);
+            }
+            break;
+          }
           case 'openPR':
             vscode.commands.executeCommand('swarmforge.openPR');
             break;
