@@ -1,13 +1,17 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { getTargetPath, setTargetPath } from './config/targetConfig';
 import { initializeTargetRepo } from './config/targetBootstrap';
 import { SwarmPanel } from './panel/swarmPanel';
+import { appendRun, loadRuns } from './runs/runLog';
+import { getCurrentBranch, openPullRequest } from './swarm/prCreator';
 import { launchSwarm, waitForSwarmReady } from './swarm/swarmLauncher';
 import { stopSwarm } from './swarm/swarmStopper';
 import { listTmuxSessions } from './swarm/tmuxClient';
 
 const NO_TARGET_MESSAGE = 'Set a target project first (SwarmForge: Set Target Project).';
 const STOP_SWARM_BUTTON = 'Stop Swarm';
+const LAST_RUN_NAME_KEY = 'swarmforge.lastRunName';
 
 async function resolveTargetPath(context: vscode.ExtensionContext): Promise<string | undefined> {
   let targetPath = getTargetPath();
@@ -18,6 +22,8 @@ async function resolveTargetPath(context: vscode.ExtensionContext): Promise<stri
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  const runLogPath = path.join(context.globalStorageUri.fsPath, 'runs.json');
+
   context.subscriptions.push(
     vscode.commands.registerCommand('swarmforge.testTmux', async () => {
       const result = listTmuxSessions();
@@ -69,6 +75,23 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!targetPath) {
         return;
       }
+
+      const runName = await vscode.window.showInputBox({
+        title: 'SwarmForge Run Name',
+        prompt: 'Name this run (used for branch and PR title)',
+        placeHolder: 'e.g. fix-auth-bug',
+        validateInput: (v) => (v.trim() ? undefined : 'Run name is required'),
+      });
+      if (!runName) {
+        return;
+      }
+
+      await context.globalState.update(LAST_RUN_NAME_KEY, runName.trim());
+      appendRun(runLogPath, {
+        name: runName.trim(),
+        targetPath,
+        startedAt: new Date().toISOString(),
+      });
 
       await vscode.window.withProgress(
         {
@@ -127,6 +150,59 @@ export function activate(context: vscode.ExtensionContext): void {
       } else {
         vscode.window.showWarningMessage(result.message);
       }
+    }),
+
+    vscode.commands.registerCommand('swarmforge.openPR', async () => {
+      const targetPath = getTargetPath();
+      if (!targetPath) {
+        vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
+        return;
+      }
+
+      const branch = getCurrentBranch(targetPath);
+      if (!branch) {
+        vscode.window.showErrorMessage('Could not determine current branch in target repo.');
+        return;
+      }
+
+      const lastRunName = context.globalState.get<string>(LAST_RUN_NAME_KEY) ?? '';
+      const title = await vscode.window.showInputBox({
+        title: 'Open Pull Request',
+        prompt: 'PR title',
+        value: lastRunName,
+        validateInput: (v) => (v.trim() ? undefined : 'PR title is required'),
+      });
+      if (!title) {
+        return;
+      }
+
+      const result = openPullRequest(targetPath, title.trim());
+      if (result.success) {
+        const open = 'Open in Browser';
+        const choice = await vscode.window.showInformationMessage(result.message, open);
+        if (choice === open && result.url) {
+          vscode.env.openExternal(vscode.Uri.parse(result.url));
+        }
+      } else {
+        vscode.window.showErrorMessage(result.message);
+      }
+    }),
+
+    vscode.commands.registerCommand('swarmforge.showRuns', async () => {
+      const runs = loadRuns(runLogPath);
+      if (runs.length === 0) {
+        vscode.window.showInformationMessage('No SwarmForge runs recorded yet.');
+        return;
+      }
+      const items = runs
+        .slice()
+        .reverse()
+        .map((r) => `${r.startedAt.slice(0, 10)}  ${r.name}  (${r.targetPath})`);
+      const doc = await vscode.workspace.openTextDocument({
+        content: `# SwarmForge Runs\n\n${items.join('\n')}\n`,
+        language: 'markdown',
+      });
+      await vscode.window.showTextDocument(doc, { preview: false });
     })
   );
 }

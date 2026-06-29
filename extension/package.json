@@ -16,7 +16,9 @@
     "onCommand:swarmforge.initializeTarget",
     "onCommand:swarmforge.launchSwarm",
     "onCommand:swarmforge.stopSwarm",
-    "onCommand:swarmforge.openPanel"
+    "onCommand:swarmforge.openPanel",
+    "onCommand:swarmforge.openPR",
+    "onCommand:swarmforge.showRuns"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -44,6 +46,14 @@
       {
         "command": "swarmforge.openPanel",
         "title": "SwarmForge: Open Panel"
+      },
+      {
+        "command": "swarmforge.openPR",
+        "title": "SwarmForge: Open Pull Request"
+      },
+      {
+        "command": "swarmforge.showRuns",
+        "title": "SwarmForge: Show Run History"
       }
     ],
     "configuration": {
