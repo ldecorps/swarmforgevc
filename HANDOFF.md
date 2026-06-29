@@ -1,4 +1,4 @@
-# Handoff: BL-004 nudge button
+# Handoff: BL-005 respawn — Restart button on dead tile
 
 **Priority:** 50  
 **Branch:** swarm/coder  
@@ -12,21 +12,15 @@
 
 ## Work Completed
 
-### BL-004: Nudge button — Enter keystroke to stalled pane (commit f13aaaa)
+### BL-005: Respawn — Restart button on dead tile (commit 4e0cb7e)
 
 **Files changed:**
-- `extension/src/panel/webviewHtml.ts`
-  - CSS: `.nudge-btn` hidden by default; `.tile.stalled .nudge-btn { display: inline-block }` — visible only on amber tiles
-  - `ensureTile`: creates a `<button class="nudge-btn">Nudge</button>` appended to each tile header
-  - Click handler: removes `.stalled` class optimistically, posts `{ type: 'input', role, data: '\n' }` (Enter via existing `forwardInput` path — no new message type needed)
+- `extension/src/swarm/tmuxClient.ts`: `respawnAgent(targetPath, role)` runs `.swarmforge/launch/<role>.sh`
+- `extension/src/panel/swarmPanel.ts`: handles `restartAgent` webview message; shows error on failure
+- `extension/src/panel/webviewHtml.ts`: Restart button in tile header, hidden by CSS, visible on `.tile.dead`; click clears `.dead` optimistically and posts `restartAgent`
 
-**Tests added:**
-- `webviewHtml.test.js`: 3 new tests covering nudge button presence, stalled-only visibility, and input message posting
-
-## Test Results
-
-108 tests pass; 0 fail.
+**Tests:** 4 new tests (112 total, 0 fail)
 
 ---
 
-**Coder: BL-004 complete**
+**Coder: BL-005 complete**
