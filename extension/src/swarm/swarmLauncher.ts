@@ -1,3 +1,4 @@
+// pipeline smoke test BL-029
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
