@@ -54,6 +54,18 @@
       {
         "command": "swarmforge.showRuns",
         "title": "SwarmForge: Show Run History"
+      },
+      {
+        "command": "swarmforge.showWorkTree",
+        "title": "SwarmForge: Show Work Tree"
+      },
+      {
+        "command": "swarmforge.setRunMode",
+        "title": "SwarmForge: Set Run Mode"
+      },
+      {
+        "command": "swarmforge.drainCheck",
+        "title": "SwarmForge: Check Drain Mode (Next Item)"
       }
     ],
     "configuration": {

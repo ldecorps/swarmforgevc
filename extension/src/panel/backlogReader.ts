@@ -6,20 +6,34 @@ export interface BacklogItem {
   title: string;
   status: 'todo' | 'active' | 'done';
   assignedTo?: string;
+  milestone?: string;
+  priority?: number;
+  dependsOn?: string[];
 }
 
 const VALID_STATUSES = new Set(['todo', 'active', 'done']);
-const YAML_FIELDS = { id: 'id', title: 'title', status: 'status', assignedTo: 'assigned_to' } as const;
 
 function parseYamlScalar(content: string, field: string): string | undefined {
   const match = content.match(new RegExp(`^${field}:\\s*(.+)$`, 'm'));
   return match ? match[1].trim() : undefined;
 }
 
+function parseYamlList(content: string, field: string): string[] | undefined {
+  const blockMatch = content.match(new RegExp(`^${field}:\\s*\\n((?:[ \\t]+-[^\\n]*\\n?)*)`, 'm'));
+  if (!blockMatch) {
+    return undefined;
+  }
+  const entries = blockMatch[1]
+    .split('\n')
+    .map((line) => line.replace(/^\s*-\s*/, '').replace(/#.*$/, '').trim())
+    .filter((line) => line.length > 0);
+  return entries.length > 0 ? entries : undefined;
+}
+
 export function parseBacklogYaml(content: string): BacklogItem | null {
-  const id = parseYamlScalar(content, YAML_FIELDS.id);
-  const title = parseYamlScalar(content, YAML_FIELDS.title);
-  const statusRaw = parseYamlScalar(content, YAML_FIELDS.status);
+  const id = parseYamlScalar(content, 'id');
+  const title = parseYamlScalar(content, 'title');
+  const statusRaw = parseYamlScalar(content, 'status');
 
   if (!id || !title || !statusRaw) {
     return null;
@@ -28,11 +42,31 @@ export function parseBacklogYaml(content: string): BacklogItem | null {
     return null;
   }
 
-  const assignedTo = parseYamlScalar(content, YAML_FIELDS.assignedTo);
   const item: BacklogItem = { id, title, status: statusRaw as BacklogItem['status'] };
+
+  const assignedTo = parseYamlScalar(content, 'assigned_to');
   if (assignedTo) {
     item.assignedTo = assignedTo;
   }
+
+  const milestone = parseYamlScalar(content, 'milestone');
+  if (milestone) {
+    item.milestone = milestone;
+  }
+
+  const priorityStr = parseYamlScalar(content, 'priority');
+  if (priorityStr !== undefined) {
+    const n = Number(priorityStr);
+    if (!Number.isNaN(n)) {
+      item.priority = n;
+    }
+  }
+
+  const dependsOn = parseYamlList(content, 'depends_on');
+  if (dependsOn) {
+    item.dependsOn = dependsOn;
+  }
+
   return item;
 }
 
@@ -54,8 +88,13 @@ function readYamlFiles(dir: string): BacklogItem[] {
   });
 }
 
+const MAX_PRIORITY = Number.MAX_SAFE_INTEGER;
+
 export function readBacklog(targetPath: string): BacklogItem[] {
   const activeItems = readYamlFiles(path.join(targetPath, 'backlog', 'active'));
   const doneItems = readYamlFiles(path.join(targetPath, 'backlog', 'done'));
+
+  activeItems.sort((a, b) => (a.priority ?? MAX_PRIORITY) - (b.priority ?? MAX_PRIORITY));
+
   return [...activeItems, ...doneItems];
 }
