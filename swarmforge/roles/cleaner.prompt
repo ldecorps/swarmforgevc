@@ -40,7 +40,9 @@ You are the cleaner.
 ## Tracer Bullet Participation
 - If you receive a note whose body starts with `TRACE <id>`, it is a pipeline
   validation bullet — do NOT clean or refactor anything.
-- Append to `.swarmforge/traces/<id>.log`:
-  - `HOP cleaner <ISO> action=receive state=received`
-  - `DECISION cleaner <ISO> decision=verify_and_complete details="..."`
+- Run the CLI (role is inferred from $SWARMFORGE_ROLE):
+  ```
+  node <repo>/extension/out/tools/trace-hop.js <id> receive
+  node <repo>/extension/out/tools/trace-hop.js <id> decide verify_and_complete "verified pipeline reached cleaner"
+  ```
 - You are the terminal hop. The bullet is complete; do not forward it.
