@@ -6,6 +6,7 @@ export interface InboxChaserConfig {
   chaseIntervalSeconds: number;
   chaseTimeoutSeconds: number;
   maxChases: number;
+  stuckInProcessTimeoutSeconds: number;
 }
 
 export type ChaserAction = 'chased' | 'respawned' | 'dead-lettered' | 'skipped';
@@ -76,6 +77,85 @@ export function decideItemAction(
     return 'respawned';
   }
   return 'chased';
+}
+
+// ── in_process reconciler ──────────────────────────────────────────────────
+
+export type StuckAction = 'nudge' | 'alert' | 'skipped';
+
+export interface InProcessItem {
+  filePath: string;
+  mtimeMs: number;
+  nudgeCount: number;
+}
+
+export function nudgePath(itemFilePath: string): string {
+  return `${itemFilePath}.nudge`;
+}
+
+export function readNudgeCount(itemFilePath: string): number {
+  try {
+    const data = JSON.parse(fs.readFileSync(nudgePath(itemFilePath), 'utf-8'));
+    return typeof data.nudgeCount === 'number' ? data.nudgeCount : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function writeNudgeCount(itemFilePath: string, count: number): void {
+  fs.writeFileSync(nudgePath(itemFilePath), JSON.stringify({ nudgeCount: count }), 'utf-8');
+}
+
+export function scanInProcess(inProcessDir: string): InProcessItem[] {
+  if (!fs.existsSync(inProcessDir)) {
+    return [];
+  }
+  const items: InProcessItem[] = [];
+
+  function collectHandoffs(dir: string): void {
+    for (const entry of fs.readdirSync(dir)) {
+      const full = path.join(dir, entry);
+      const stat = fs.statSync(full);
+      if (stat.isDirectory() && entry.startsWith('batch_')) {
+        collectHandoffs(full);
+      } else if (entry.endsWith('.handoff')) {
+        items.push({ filePath: full, mtimeMs: stat.mtimeMs, nudgeCount: readNudgeCount(full) });
+      }
+    }
+  }
+
+  collectHandoffs(inProcessDir);
+  return items;
+}
+
+export function decideStuckAction(
+  itemMtimeMs: number,
+  nudgeCount: number,
+  nowMs: number,
+  config: InboxChaserConfig
+): StuckAction {
+  const ageSeconds = (nowMs - itemMtimeMs) / 1000;
+  if (ageSeconds < config.stuckInProcessTimeoutSeconds) {
+    return 'skipped';
+  }
+  return nudgeCount >= config.maxChases ? 'alert' : 'nudge';
+}
+
+export function isDoneButUndelivered(
+  inProcessItems: InProcessItem[],
+  latestCommitMs: number,
+  lastSentMs: number,
+  nowMs: number,
+  config: InboxChaserConfig
+): boolean {
+  if (inProcessItems.length === 0) {
+    return false;
+  }
+  if (latestCommitMs <= lastSentMs) {
+    return false;
+  }
+  const ageSeconds = (nowMs - latestCommitMs) / 1000;
+  return ageSeconds >= config.stuckInProcessTimeoutSeconds;
 }
 
 export interface ChaserAdapters {

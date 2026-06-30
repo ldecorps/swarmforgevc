@@ -116,6 +116,11 @@
           "type": "number",
           "default": 3,
           "description": "Maximum number of chase wake-ups before a handoff is dead-lettered."
+        },
+        "swarmforge.comms.stuckInProcessTimeoutSeconds": {
+          "type": "number",
+          "default": 180,
+          "description": "How long (seconds) an item may stay in inbox/in_process before the reconciler nudges the owner."
         }
       }
     }
