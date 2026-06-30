@@ -26,9 +26,10 @@ You are the coder.
   `swarm_handoff.sh ./tmp/handoff.txt`
   Never write directly to `inbox/new/` — that path sends no wake-up.
 - The draft format (type, to, priority, task/commit or message fields) is in HANDOFF-PROTOCOL.md.
+- Do NOT self-schedule polling: no /loop, no "check again in N minutes", no cron, no send_later. Idle behavior is: act on a tmux wake-up, or run `ready_for_next.sh` once. Liveness and chasing are the extension host's job. Self-scheduled loops mask stalls and waste turns.
 
 ## Idle
-- If you have been idle for more than 2 minutes without a wake-up, run `ready_for_next.sh` yourself. Do not wait indefinitely.
+- If you have been idle for more than 2 minutes without a wake-up, run `ready_for_next.sh`. It checks in_process FIRST — if you have in_process work it will resume it. Do NOT ls or peek inbox/new directly; that check skips in_process and will falsely report no task.
 
 ## Tracer Bullet Participation
 - If you receive a note whose body starts with `TRACE <id>`, it is a pipeline
