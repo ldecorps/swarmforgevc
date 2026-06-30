@@ -73,7 +73,36 @@ The `./swarm` wrapper keeps the runnable branch small. On first use, if `swarmfo
 
 The windows should open automatically.
 
+## Controlling the Swarm
+
+### From the Editor
+
 To stop the swarm, close the first window listed in `swarmforge/swarmforge.conf`. That cleanup window shuts down the tmux sessions and closes the remaining tracked windows.
+
+You can also use VS Code commands to control a running swarm (via the command palette):
+- `SwarmForge: Stop Swarm` — stops all agents
+- `SwarmForge: Respawn Agent` — respawns a single agent
+- `SwarmForge: Change Agent Model` — switches a role to a different backend model
+
+### From the Command Line (Remote Control)
+
+When you are away from the editor, you can trigger bounce commands remotely using the `remote_bounce.sh` helper script:
+
+```sh
+remote_bounce.sh <target-path> <bounce-type>
+```
+
+Where `<bounce-type>` is one of:
+- `swarm` — stops and restarts all agents
+- `extension` — reloads the VS Code extension (without stopping agents)
+- `all` — stops agents and reloads the extension
+
+Example:
+```sh
+remote_bounce.sh /path/to/target swarm
+```
+
+The script works from any machine that has the target directory mounted or accessible via SSH. It writes a sentinel file to `.swarmforge/bounce`, which the extension watches and processes automatically.
 
 ## What SwarmForge Does
 
