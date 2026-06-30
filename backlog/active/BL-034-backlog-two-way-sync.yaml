@@ -1,0 +1,38 @@
+id: BL-034
+title: backlog sync — two-way field-level sync between panel and YAML files
+milestone: M4
+status: todo
+priority: 34
+assigned_to: coder
+
+description: |
+  Currently the backlog panel is read-only: the extension reads YAML files and
+  displays them, but user edits in the panel are not written back to disk, and
+  changes made on disk (e.g. by agents moving items) are not reflected live in
+  the panel.
+
+  Implement two-way sync:
+  1. **Disk → panel (live)**: watch `backlog/active/` and `backlog/done/` with
+     `fs.watch`; re-read and push a `backlogUpdate` message to the webview
+     whenever any YAML file changes, is added, or is removed.
+  2. **Panel → disk (field-level)**: allow the user to change the `status`
+     field of an item in the panel (e.g. promote a `todo` item to `active`).
+     Write the change back to the appropriate YAML file using atomic
+     temp-file + rename. Moving an item from `active` → `done` must move the
+     file from `active/` to `done/`.
+
+  Field ownership: only the `status` and `assigned_to` fields are writable
+  from the panel. All other fields (`id`, `title`, `milestone`, `priority`,
+  `description`, `acceptance`) are read-only in the UI.
+
+  The sync must also handle the BL-033 invariant: items in `done/` are always
+  `done` regardless of the YAML field.
+
+acceptance: |
+  - Editing a YAML file on disk causes the panel to refresh within 2 seconds
+    with no manual action.
+  - User can change an item's status in the panel; the change is persisted to
+    the YAML file immediately.
+  - Changing status to `done` moves the file from `active/` to `done/`.
+  - No data loss: partial writes are not possible (use atomic write).
+  - Existing tests pass; add tests for the watch trigger and the atomic write.
