@@ -3,7 +3,7 @@ import { SwarmRole, respawnAgent } from '../swarm/tmuxClient';
 import { PaneTailer } from './paneTailer';
 import { currentStageLabel, readPipelineStages } from '../swarm/swarmState';
 import { loadRuns } from '../runs/runLog';
-import { getNonce, getWebviewHtml } from './webviewHtml';
+import { getWebviewHtml } from './webviewHtml';
 import { readBacklog } from './backlogReader';
 
 const STAGE_POLL_INTERVAL_MS = 2000;
@@ -175,7 +175,10 @@ export class SwarmPanel {
   }
 
   private getHtml(): string {
-    return getWebviewHtml(getNonce());
+    const scriptUri = this.panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'media', 'panel.js')
+    ).toString();
+    return getWebviewHtml(scriptUri, this.panel.webview.cspSource);
   }
 
   public dispose(): void {
