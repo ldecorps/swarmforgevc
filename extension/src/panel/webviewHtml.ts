@@ -87,6 +87,23 @@ export function getWebviewHtml(nonce: string): string {
       opacity: 0.7;
       font-weight: 400;
     }
+    .tile-bl-badge {
+      display: none;
+      margin-left: 6px;
+      padding: 1px 6px;
+      font-size: 10px;
+      border-radius: 3px;
+      background: #1565c0;
+      color: #fff;
+      font-weight: 500;
+    }
+    .tile.bl-active .tile-bl-badge {
+      display: inline-block;
+    }
+    .tile.bl-highlighted {
+      border-color: var(--vscode-focusBorder, #007fd4);
+      box-shadow: 0 0 0 2px var(--vscode-focusBorder, #007fd4);
+    }
     .tile-output {
       flex: 1;
       overflow: auto;
@@ -363,9 +380,13 @@ export function getWebviewHtml(nonce: string): string {
         vscode.postMessage({ type: 'restartAgent', role });
       });
 
+      const blBadge = document.createElement('span');
+      blBadge.className = 'tile-bl-badge';
+
       const header = document.createElement('div');
       header.className = 'tile-header';
       header.innerHTML = '<span>' + displayName + '</span><span class="tile-agent">' + agent + '</span>';
+      header.appendChild(blBadge);
       header.appendChild(nudgeBtn);
       header.appendChild(restartBtn);
 
@@ -374,7 +395,7 @@ export function getWebviewHtml(nonce: string): string {
       output.tabIndex = 0;
       output.dataset.role = role;
 
-      const entry = { tile, output, text: '', tailLocked: true };
+      const entry = { tile, output, blBadge, text: '', tailLocked: true };
 
       output.addEventListener('focus', () => {
         activeRole = role;
@@ -468,6 +489,27 @@ export function getWebviewHtml(nonce: string): string {
           break;
         case 'backlogUpdate':
           renderBacklog(message.items);
+          break;
+        case 'highlightTile': {
+          tiles.forEach((entry, role) => {
+            if (role === message.role) {
+              entry.tile.classList.add('bl-highlighted');
+              setTimeout(() => entry.tile.classList.remove('bl-highlighted'), 2000);
+            }
+          });
+          break;
+        }
+        case 'badgeUpdate':
+          tiles.forEach((entry, role) => {
+            const badge = message.badges[role];
+            if (badge) {
+              entry.tile.classList.add('bl-active');
+              entry.blBadge.textContent = badge;
+            } else {
+              entry.tile.classList.remove('bl-active');
+              entry.blBadge.textContent = '';
+            }
+          });
           break;
       }
     });
