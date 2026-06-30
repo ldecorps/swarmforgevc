@@ -70,7 +70,7 @@ export function parseBacklogYaml(content: string): BacklogItem | null {
   return item;
 }
 
-function readYamlFiles(dir: string): BacklogItem[] {
+function readYamlFiles(dir: string, overrideStatus?: BacklogItem['status']): BacklogItem[] {
   let files: string[];
   try {
     files = fs.readdirSync(dir).filter((f) => f.endsWith('.yaml'));
@@ -81,6 +81,9 @@ function readYamlFiles(dir: string): BacklogItem[] {
     try {
       const content = fs.readFileSync(path.join(dir, f), 'utf-8');
       const item = parseBacklogYaml(content);
+      if (item && overrideStatus !== undefined) {
+        item.status = overrideStatus;
+      }
       return item ? [item] : [];
     } catch {
       return [];
@@ -92,7 +95,7 @@ const MAX_PRIORITY = Number.MAX_SAFE_INTEGER;
 
 export function readBacklog(targetPath: string): BacklogItem[] {
   const activeItems = readYamlFiles(path.join(targetPath, 'backlog', 'active'));
-  const doneItems = readYamlFiles(path.join(targetPath, 'backlog', 'done'));
+  const doneItems = readYamlFiles(path.join(targetPath, 'backlog', 'done'), 'done');
 
   activeItems.sort((a, b) => (a.priority ?? MAX_PRIORITY) - (b.priority ?? MAX_PRIORITY));
 
