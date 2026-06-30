@@ -16,6 +16,9 @@
     "onCommand:swarmforge.initializeTarget",
     "onCommand:swarmforge.launchSwarm",
     "onCommand:swarmforge.stopSwarm",
+    "onCommand:swarmforge.bounceSwarm",
+    "onCommand:swarmforge.bounceExtension",
+    "onCommand:swarmforge.bounceAll",
     "onCommand:swarmforge.openPanel",
     "onCommand:swarmforge.openPR",
     "onCommand:swarmforge.showRuns"
@@ -42,6 +45,18 @@
       {
         "command": "swarmforge.stopSwarm",
         "title": "SwarmForge: Stop Swarm"
+      },
+      {
+        "command": "swarmforge.bounceSwarm",
+        "title": "SwarmForge: Bounce Swarm"
+      },
+      {
+        "command": "swarmforge.bounceExtension",
+        "title": "SwarmForge: Bounce Extension"
+      },
+      {
+        "command": "swarmforge.bounceAll",
+        "title": "SwarmForge: Bounce All"
       },
       {
         "command": "swarmforge.openPanel",
