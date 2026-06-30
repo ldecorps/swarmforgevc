@@ -17,9 +17,16 @@ You are the specifier.
 - Do not make routing decisions — that is the coordinator's job.
 
 ## Handoff
+### Sending Work to Coordinator:
 - Send a `git_handoff` or `note` to `coordinator` with priority `00`.
 - For work items, use `git_handoff` type.
 - For non-actionable context updates, use `note` type.
 - Include enough detail for the coordinator and coder to act independently.
-- **Implementation:** Write directly to `.swarmforge/handoffs/inbox/new/` following the format in HANDOFF-PROTOCOL.md. Use atomic writes (temp file + rename).
-- See `swarmforge/HANDOFF-PROTOCOL.md` for the complete protocol specification (note: daemon and helper scripts are documented as aspirational; for now write files directly).
+
+### Receiving Completed Work from Cleaner:
+- Receive `git_handoff` notifications from cleaner when work is verified.
+- Merge verified work into the main branch.
+- Close associated backlog item and track as completed.
+
+**Implementation:** Write directly to `.swarmforge/handoffs/inbox/new/` following the format in HANDOFF-PROTOCOL.md. Use atomic writes (temp file + rename).
+See `swarmforge/HANDOFF-PROTOCOL.md` for the complete protocol specification (note: daemon and helper scripts are documented as aspirational; for now write files directly).
