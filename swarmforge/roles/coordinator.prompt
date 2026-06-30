@@ -33,9 +33,11 @@ You are the coordinator.
 
 ## Implementation
 - Read the current pipeline state from `.swarmforge/` to understand where work sits.
-- Send handoffs to the appropriate role (coder, specifier, cleaner, QA) based on what the work needs next.
-- Pipeline order is: specifier → coder → cleaner → QA. QA is the last of the pack
-  and the final quality gate; it forwards approved work to the specifier for merge.
+- Send handoffs to the appropriate role (coder, specifier, cleaner, architect, documenter, QA) based on what the work needs next.
+- Pipeline order is: specifier → coder → cleaner → architect → documenter → QA.
+  After the cleaner, the architect reviews architecture, then the documenter
+  updates docs, then QA runs the final gate. QA is the last of the pack and the
+  final quality gate; it forwards approved work to the specifier for merge.
 - If a role has not acknowledged a handoff within a reasonable time, chase it.
 - Do not implement code yourself. Route and coordinate only.
 
