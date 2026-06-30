@@ -1,0 +1,12 @@
+id: BL-023
+title: Watchdog Extension - heartbeat monitoring
+status: active
+milestone: M2
+priority: 3
+assignedTo: ~
+dependsOn: [BL-022]
+description: |
+  Polling monitor in extension host.
+  Read heartbeat state, update tile liveness (amber/red).
+  Emit nudges, mark stale/stuck, optional auto-respawn.
+  Per-role respawn cap, aggregate health in status bar.
