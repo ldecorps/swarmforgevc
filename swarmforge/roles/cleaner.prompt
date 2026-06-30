@@ -31,6 +31,8 @@ You are the cleaner.
 ## Handoff
 - Run unit tests and relevant local verification.
 - Commit cleanup and hardening changes to your worktree branch.
-- Send a `git_handoff` to `coder` with priority `00`.
+- When verification complete, send:
+  - `git_handoff` to `specifier` with priority `00` — work verified and ready to merge.
+  - `note` broadcast to `specifier,coder,coordinator` with priority `00` — cleanup complete, item done.
 - **Implementation:** Write directly to `.swarmforge/handoffs/inbox/new/` following the format in HANDOFF-PROTOCOL.md. Use atomic writes (temp file + rename).
 - See `swarmforge/HANDOFF-PROTOCOL.md` for the complete protocol specification (note: daemon and helper scripts are documented as aspirational; for now write files directly).
