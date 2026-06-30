@@ -50,6 +50,7 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
     }
     #grid {
       flex: 1;
+      min-height: 0;
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
       gap: 8px;

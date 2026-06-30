@@ -91,6 +91,17 @@ test('getWebviewHtml uses 2x2 grid layout class', () => {
   assert(html.includes('layout-2x2'));
 });
 
+test('getWebviewHtml grid has min-height:0 so 2x2 fr rows get a computed height', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  // Without min-height:0 on the flex:1 #grid item itself, grid-template-rows
+  // fr units have no reference height and tiles collapse to header-only.
+  // The rule must appear between "#grid {" and its closing "}".
+  const gridRuleMatch = html.match(/#grid\s*\{([^}]+)\}/);
+  assert(gridRuleMatch, '#grid CSS rule not found');
+  assert(gridRuleMatch[1].includes('min-height: 0'),
+    '#grid rule must contain min-height: 0');
+});
+
 // --- panel.js content ---
 
 test('panel.js uses acquireVsCodeApi', () => {
