@@ -5,6 +5,7 @@ const stageEl = document.getElementById('stage');
 const placeholder = document.getElementById('placeholder');
 const tiles = new Map();
 let activeRole = null;
+let selectedRole = null;
 const openPrBtn = document.getElementById('open-pr-btn');
 const bottomRowEl = document.getElementById('bottom-row');
 const recentRunsEl = document.getElementById('recent-runs');
@@ -110,6 +111,23 @@ function updateGridLayout(agentCount) {
   }
 }
 
+function selectTile(role) {
+  tiles.forEach((entry) => {
+    entry.tile.classList.remove('selected');
+  });
+  if (selectedRole === role) {
+    selectedRole = null;
+    vscode.postMessage({ type: 'tileSelected', role: null });
+  } else {
+    selectedRole = role;
+    const entry = tiles.get(role);
+    if (entry) {
+      entry.tile.classList.add('selected');
+    }
+    vscode.postMessage({ type: 'tileSelected', role });
+  }
+}
+
 openPrBtn.addEventListener('click', () => {
   vscode.postMessage({ type: 'openPR' });
 });
@@ -172,6 +190,11 @@ function ensureTile(role, displayName, agent) {
   header.appendChild(blBadge);
   header.appendChild(nudgeBtn);
   header.appendChild(restartBtn);
+  header.addEventListener('click', (e) => {
+    if (e.target !== nudgeBtn && e.target !== restartBtn && !nudgeBtn.contains(e.target) && !restartBtn.contains(e.target)) {
+      selectTile(role);
+    }
+  });
 
   const output = document.createElement('div');
   output.className = 'tile-output';
@@ -276,6 +299,11 @@ window.addEventListener('message', (event) => {
           entry.blBadge.textContent = '';
         }
       });
+      break;
+    case 'restoreSelection':
+      if (message.role) {
+        selectTile(message.role);
+      }
       break;
   }
 });
