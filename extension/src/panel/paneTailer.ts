@@ -15,6 +15,15 @@ import { stripAnsi } from './ansi';
 
 const DEFAULT_POLL_INTERVAL_MS = 200;
 export const STALL_THRESHOLD_MS = 120_000;
+const DEFAULT_HISTORY_LINES = 500;
+const MAX_HISTORY_LINES = 2000;
+
+export function normalizeHistoryLines(value: number | undefined | null): number {
+  if (value === undefined || value === null || value <= 0) {
+    return DEFAULT_HISTORY_LINES;
+  }
+  return Math.min(value, MAX_HISTORY_LINES);
+}
 
 export function isStalled(lastChangedAt: number, now: number): boolean {
   return now - lastChangedAt >= STALL_THRESHOLD_MS;
@@ -47,14 +56,18 @@ export class PaneTailer {
   private paneBaseIndex = 0;
   private roles: SwarmRole[] = [];
   private socketPath = '';
+  private historyLines: number;
 
   constructor(
     private readonly targetPath: string,
     private readonly onOutput: (updates: TileOutput[]) => void,
     private readonly onStall?: (events: StallEvent[]) => void,
     private readonly onDead?: (events: DeadEvent[]) => void,
-    private readonly onInputLogError?: (message: string) => void
-  ) {}
+    private readonly onInputLogError?: (message: string) => void,
+    historyLines?: number
+  ) {
+    this.historyLines = normalizeHistoryLines(historyLines);
+  }
 
   start(pollMs = DEFAULT_POLL_INTERVAL_MS): void {
     this.stop();
@@ -138,7 +151,7 @@ export class PaneTailer {
         role.session,
         this.paneBaseIndex
       );
-      const result = capturePane(this.socketPath, target);
+      const result = capturePane(this.socketPath, target, -this.historyLines);
 
       if (result.exitCode !== 0) {
         const text = `Could not read tmux pane for ${role.displayName}.\n\nTry SwarmForge: Stop Swarm, then Launch Swarm.`;
