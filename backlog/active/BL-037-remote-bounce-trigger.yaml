@@ -1,0 +1,61 @@
+id: BL-037
+title: bounce — trigger bounce commands remotely via sentinel file
+milestone: M4
+status: todo
+priority: 37
+assigned_to: coder
+
+description: |
+  The three bounce commands (bounceSwarm, bounceExtension, bounceAll) are
+  currently only reachable from the VS Code command palette.  When the developer
+  is away from the editor they have no way to trigger a restart.
+
+  Add a file-based remote trigger: the extension watches a sentinel file at a
+  fixed path inside the target's `.swarmforge/` directory:
+
+      .swarmforge/bounce
+
+  When that file appears (or is overwritten), the extension reads its content to
+  decide which bounce to perform, executes it, then deletes the file.
+
+  **Sentinel file format** — a single line, one of:
+      swarm
+      extension
+      all
+
+  **How the developer triggers it remotely:**
+  Any tool that can write a file works: ssh + echo, a shell alias, or the
+  `swarmforge/scripts/remote_bounce.sh` helper script (new; see below).
+
+  **`remote_bounce.sh <target-path> <swarm|extension|all>`**
+  Writes the sentinel file to `<target-path>/.swarmforge/bounce` atomically
+  (temp-file + rename, same pattern as handoffs).  The script is usable from any
+  machine that has the target directory mounted or accessible via ssh.
+
+  **Watch implementation:**
+  Use `fs.watch` on `.swarmforge/bounce` (or the `.swarmforge/` directory if
+  watching a non-existent file is unreliable on Linux).  On detecting the file,
+  read it, delete it, then dispatch to the appropriate existing bounce function:
+  - `swarm`     → `bounceSwarm(targetPath, runName)`
+  - `extension` → `vscode.commands.executeCommand(buildBounceExtensionCommand())`
+  - `all`       → bounceSwarm then auto-relaunch (same as bounceAll)
+
+  Unknown content or a missing bounce type logs a warning and does nothing.
+
+  **Security note:** the sentinel file lives inside `.swarmforge/` which is
+  already within the user-chosen target directory — no new trust surface is
+  opened.  Do not accept arbitrary command strings in the file.
+
+acceptance: |
+  - Writing `swarm\n` to `<target>/.swarmforge/bounce` triggers bounceSwarm
+    within 2 seconds; the file is deleted after.
+  - Writing `extension\n` triggers bounceExtension; file is deleted.
+  - Writing `all\n` triggers bounceAll; file is deleted.
+  - Unknown content logs a warning; file is deleted (no crash, no hang).
+  - `remote_bounce.sh <target> swarm` writes the sentinel atomically and the
+    extension picks it up.
+  - If no swarm is running, a bounce attempt logs a clear message and does not
+    crash the extension.
+  - Existing tests pass; add unit tests for: file-content parsing, unknown
+    content handling, and the dispatch to each bounce variant (inject stub
+    bounce functions).
