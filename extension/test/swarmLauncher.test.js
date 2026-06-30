@@ -44,3 +44,35 @@ test('buildLaunchEnv omits SWARM_RUN_NAME when runName is undefined', () => {
   assert.equal(env['SWARM_RUN_NAME'], undefined);
   assert.equal(env['SWARMFORGE_TERMINAL'], 'none');
 });
+
+test('buildLaunchEnv deletes inherited SWARM_RUN_NAME when runName is undefined', () => {
+  const savedValue = process.env.SWARM_RUN_NAME;
+  process.env.SWARM_RUN_NAME = 'inherited-value';
+  try {
+    const env = buildLaunchEnv();
+    assert.equal(env['SWARM_RUN_NAME'], undefined);
+    assert(!env.hasOwnProperty('SWARM_RUN_NAME'), 'SWARM_RUN_NAME should be deleted, not just undefined');
+  } finally {
+    if (savedValue) {
+      process.env.SWARM_RUN_NAME = savedValue;
+    } else {
+      delete process.env.SWARM_RUN_NAME;
+    }
+  }
+});
+
+test('buildLaunchEnv deletes inherited SWARM_RUN_NAME when runName is empty string', () => {
+  const savedValue = process.env.SWARM_RUN_NAME;
+  process.env.SWARM_RUN_NAME = 'inherited-value';
+  try {
+    const env = buildLaunchEnv('');
+    assert.equal(env['SWARM_RUN_NAME'], undefined);
+    assert(!env.hasOwnProperty('SWARM_RUN_NAME'), 'SWARM_RUN_NAME should be deleted, not just undefined');
+  } finally {
+    if (savedValue) {
+      process.env.SWARM_RUN_NAME = savedValue;
+    } else {
+      delete process.env.SWARM_RUN_NAME;
+    }
+  }
+});
