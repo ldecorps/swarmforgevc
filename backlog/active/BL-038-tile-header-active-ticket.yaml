@@ -1,0 +1,41 @@
+id: BL-038
+title: tile header — show active ticket ID and short summary per agent
+milestone: M3
+status: todo
+priority: 38
+assigned_to: coder
+
+description: |
+  The tile header currently shows the agent role name and a badge with just the
+  backlog item ID (e.g. "BL-032").  The developer cannot tell at a glance what
+  the agent is working on without reading the tile output.
+
+  Change the badge to display both the ID and a short summary derived from the
+  item title:
+
+      BL-038 · tile header active ticket
+
+  Rules for the short summary:
+  - Take the item title and truncate to 40 characters maximum.
+  - Strip any leading section prefix that duplicates the panel context
+    (e.g. "backlog panel — " → omit).  Keep what makes the item distinct.
+  - Use " · " as separator between ID and summary.
+  - If no active item is assigned to the role, show nothing (existing behaviour).
+
+  Implementation:
+  1. Extend `buildBadgeMap` in `swarmPanel.ts` to return an object per role:
+     `{ id: string; summary: string }` instead of just the id string.
+  2. Update the `badgeUpdate` message payload accordingly.
+  3. In `panel.js`, compose the badge text as `id + ' · ' + summary` when
+     a badge is present.
+
+  The title field is already available on `BacklogItem`; no new data fetching
+  is needed.
+
+acceptance: |
+  - When an item is active and assigned to a role, its tile header badge shows
+    "<ID> · <truncated title>" (e.g. "BL-038 · tile header active ticket").
+  - Summary is ≤ 40 characters (truncated with "…" if needed).
+  - Tiles with no active assignment show no badge (unchanged).
+  - Existing tests pass; add a unit test for `buildBadgeMap` asserting that
+    the returned summary is correctly truncated and formatted.
