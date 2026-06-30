@@ -48,10 +48,10 @@ test('parseBacklogYaml returns null for invalid status value', () => {
   assert.equal(parseBacklogYaml(yaml), null);
 });
 
-test('parseBacklogYaml ignores extra fields', () => {
+test('parseBacklogYaml parses known optional fields (milestone, priority)', () => {
   const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: done\nmilestone: M1\npriority: 5\n';
   const item = parseBacklogYaml(yaml);
-  assert.deepEqual(item, { id: 'BL-007', title: 'Backlog panel', status: 'done' });
+  assert.deepEqual(item, { id: 'BL-007', title: 'Backlog panel', status: 'done', milestone: 'M1', priority: 5 });
 });
 
 test('parseBacklogYaml handles title with colons in value', () => {
