@@ -1,0 +1,36 @@
+id: BL-025
+title: bounce-swarm command — restart swarm without reloading extension
+milestone: M3
+status: active
+priority: 25
+assigned_to: coder
+
+description: |
+  Add a VS Code command `swarmforge.bounceSwarm` that stops the running swarm
+  and immediately restarts it against the same target path, without touching
+  the extension host process or the webview panel.
+
+  Stop: call the same logic as `swarmforge.stopSwarm` (kill tmux sessions,
+  kill handoff daemon). The panel tiles should show "Swarm stopped — restarting…"
+  or go blank while the swarm is down.
+
+  Restart: shell out to `./swarm` exactly as `swarmforge.launchSwarm` does,
+  reusing the stored target path and the most-recent run name (do NOT prompt for
+  a new run name — this is a restart, not a new run). After the swarm is up,
+  reconnect the panel tiles to the new tmux panes.
+
+  The extension's in-memory state (target path, run name, panel layout) must
+  survive the restart unchanged.
+
+acceptance: |
+  - Running `swarmforge.bounceSwarm` from the command palette stops the swarm
+    (tmux sessions gone) and relaunches it within ~5 seconds.
+  - The webview panel remains open; tiles reconnect automatically.
+  - No run-name prompt appears.
+  - `swarmforge.stopSwarm` followed by `swarmforge.launchSwarm` achieves the
+    same end state (this command is just a convenience shortcut).
+
+constraints: |
+  - Do not reload the extension host or the webview.
+  - Reuse existing stopSwarm and launchSwarm internals — do not duplicate logic.
+  - Expose the command in package.json under the "SwarmForge" category.
