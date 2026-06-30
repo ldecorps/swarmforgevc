@@ -230,6 +230,9 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
     .tile.dead {
       border-color: #e53935;
     }
+    .tile.selected {
+      grid-column: span 2;
+    }
     .restart-btn {
       display: none;
       margin-left: 6px;
