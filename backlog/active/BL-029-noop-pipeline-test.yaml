@@ -1,0 +1,29 @@
+id: BL-029
+title: add a no-op comment to swarmLauncher.ts (pipeline smoke test)
+milestone: M3
+status: active
+priority: 29
+assigned_to: coder
+
+description: |
+  Pipeline smoke test. Add a single-line comment to the top of
+  `extension/src/swarm/swarmLauncher.ts`:
+
+    // pipeline smoke test BL-029
+
+  This is a trivial, zero-risk change whose only purpose is to exercise
+  the full specifier→coordinator→coder→cleaner→QA→specifier pipeline end
+  to end.
+
+  TDD order:
+  1. No test required — this is a comment only.
+  2. Confirm all existing tests still pass after the change.
+
+acceptance: |
+  - `extension/src/swarm/swarmLauncher.ts` contains the comment
+    `// pipeline smoke test BL-029` near the top of the file.
+  - All existing tests pass (no regressions).
+
+constraints: |
+  - Touch only `extension/src/swarm/swarmLauncher.ts`.
+  - Do not alter any logic, exports, or test files.
