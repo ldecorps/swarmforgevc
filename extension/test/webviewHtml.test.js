@@ -278,3 +278,50 @@ test('panel.js handles restoreSelection message from host', () => {
 test('panel.js applies selected class to selected tile and removes from others', () => {
   assert(panelJs.includes("'selected'"), 'must toggle selected class');
 });
+
+// --- BL-031: visible input bar per tile ---
+
+test('getWebviewHtml CSS has tile-input-bar styles', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  assert(html.includes('.tile-input-bar'), 'missing .tile-input-bar CSS rule');
+  assert(html.includes('flex-shrink: 0'), 'input bar must not shrink');
+});
+
+test('getWebviewHtml CSS has tile-input styles', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  assert(html.includes('.tile-input'), 'missing .tile-input CSS rule');
+  assert(html.includes('background: transparent'), 'input should be transparent');
+  assert(html.includes('border: none'), 'input should have no border');
+});
+
+test('getWebviewHtml CSS has tile-input-prompt styles', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  assert(html.includes('.tile-input-prompt'), 'missing .tile-input-prompt CSS');
+});
+
+test('panel.js creates tile-input-prompt with glyph', () => {
+  assert(panelJs.includes('❯'), 'panel.js should create prompt with ❯ glyph');
+});
+
+test('panel.js creates tile-input-bar in ensureTile', () => {
+  assert(panelJs.includes('tile-input-bar'), 'ensureTile must create input bar');
+  assert(panelJs.includes('tile-input'), 'ensureTile must create input element');
+});
+
+test('panel.js sends input on Enter key from tile-input', () => {
+  assert(panelJs.includes("'input'"), 'must send input message');
+  assert(panelJs.includes('Enter') || panelJs.includes('keydown'), 'must handle Enter key');
+});
+
+test('panel.js sends Ctrl-C from tile-input', () => {
+  assert(panelJs.includes("'\\x03'") || panelJs.includes("'\\u0003'"), 'must send Ctrl-C character');
+});
+
+test('panel.js manages per-tile input history with ArrowUp/Down', () => {
+  assert(panelJs.includes('history') || panelJs.includes('History'), 'must track input history');
+  assert(panelJs.includes('ArrowUp') || panelJs.includes('ArrowDown'), 'must handle arrow keys');
+});
+
+test('panel.js document keydown handler skips when tile-input has focus', () => {
+  assert(panelJs.includes('tile-input') && panelJs.includes('focus'), 'must check if input is focused');
+});
