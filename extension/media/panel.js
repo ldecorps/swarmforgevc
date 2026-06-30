@@ -55,7 +55,7 @@ function renderRecentRuns(runs) {
 }
 
 function backlogRowHtml(item) {
-  const assigned = item.assignedTo ? '<span class="bl-assigned">' + item.assignedTo + '</span>' : '';
+  const assigned = item.assignedTo && item.status !== 'done' ? '<span class="bl-assigned">' + item.assignedTo + '</span>' : '';
   return '<div class="backlog-row">' +
     '<span class="bl-id">' + item.id + '</span>' +
     '<span class="bl-title">' + item.title + '</span>' +
