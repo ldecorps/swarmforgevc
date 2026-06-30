@@ -38,7 +38,7 @@ export function writeChaseCount(handoffFilePath: string, count: number): void {
   fs.writeFileSync(sidecarPath(handoffFilePath), JSON.stringify({ chaseCount: count }), 'utf-8');
 }
 
-export function scanInboxNew(inboxNewDir: string, _nowMs: number): InboxItem[] {
+export function scanInboxNew(inboxNewDir: string): InboxItem[] {
   if (!fs.existsSync(inboxNewDir)) {
     return [];
   }
@@ -97,7 +97,7 @@ export function runSweep(
   adapters: ChaserAdapters
 ): void {
   for (const { role, inboxNewDir } of roleInboxes) {
-    const items = scanInboxNew(inboxNewDir, nowMs);
+    const items = scanInboxNew(inboxNewDir);
     const liveness = adapters.getLiveness(role);
 
     for (const item of items) {
