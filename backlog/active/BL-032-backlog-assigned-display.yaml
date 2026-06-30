@@ -1,0 +1,26 @@
+id: BL-032
+title: backlog panel — hide assignee on done rows
+milestone: M3
+status: active
+priority: 32
+assigned_to: coordinator
+
+description: |
+  In the backlog panel (extension/media/panel.js), the Assigned column currently
+  shows the coder role for almost every row, including done items. This is
+  misleading: once work is complete the assignee is historical noise.
+
+  Expected behaviour:
+  - Active and todo rows: show the assigned_to value as today (the "coder" badge).
+  - Done rows: omit the assigned label entirely (no badge rendered).
+
+  Implementation scope: extension/media/panel.js, function `backlogRowHtml`.
+  The item's status is available on the item object passed in. Suppress the
+  assigned span when `item.status === 'done'`.
+
+acceptance: |
+  - Done rows in the backlog panel show no assigned badge.
+  - Active rows still show their assigned badge.
+  - Todo rows still show their assigned badge.
+  - Existing tests pass; add at least one test asserting that a done item
+    with assignedTo set renders without the assigned span.
