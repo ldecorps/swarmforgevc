@@ -1,7 +1,7 @@
 id: BL-037
 title: bounce — trigger bounce commands remotely via sentinel file
 milestone: M4
-status: todo
+status: done
 priority: 37
 assigned_to: coder
 
