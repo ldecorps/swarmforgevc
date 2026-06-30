@@ -1,0 +1,57 @@
+id: BL-030
+title: double the width of the selected tile
+milestone: M3
+status: active
+priority: 30
+assigned_to: coder
+
+description: |
+  When the user clicks on a tile it becomes "selected". The selected tile
+  should span two columns in the grid (twice as wide as a normal tile),
+  giving more reading room for the agent whose output the developer is
+  watching. Clicking a second tile deselects the first and selects the new
+  one. Clicking the already-selected tile deselects it (back to equal widths).
+
+  Implementation sketch (webview only — no extension-host changes needed):
+
+  1. Track `selectedRole` in webview JS state (null by default).
+  2. On tile header click: toggle — if the clicked tile is already selected,
+     clear `selectedRole`; otherwise set it to the clicked role.
+  3. CSS: add a `.tile.selected { grid-column: span 2; }` rule. The existing
+     `auto-fit minmax(320px, 1fr)` grid already reflows neighbours correctly
+     when one cell spans two columns.
+  4. The `layout-2x2` class on `#grid` forces a fixed 2-column grid, so
+     `span 2` works there too (the selected tile fills the full row).
+  5. Broadcast the selected state back to the extension host as a
+     `{ type: 'tileSelected', role }` message so the host can persist it
+     across webview reloads (store in workspaceState). On panel init, the
+     host sends `{ type: 'restoreSelection', role }` if a selection was saved.
+
+  TDD order:
+  1. Write a unit test (JSDOM or similar) for the toggle logic in isolation:
+     clicking an unselected tile selects it; clicking the selected tile again
+     clears the selection; clicking a different tile moves the selection.
+  2. Wire the CSS class: assert `.selected` is applied to the right tile
+     element and removed from others after each click.
+  3. Assert the `tileSelected` message is posted to the VS Code API mock on
+     each selection change.
+  4. All existing tile tests must remain green.
+
+acceptance: |
+  - Clicking a tile header adds the `.selected` class to that tile and
+    removes it from any previously selected tile.
+  - A selected tile is rendered at `grid-column: span 2` (visually twice as
+    wide in both auto-fit and 2x2 layouts).
+  - Clicking the already-selected tile header deselects it (no tile is wide).
+  - The selection survives a webview reload: host persists the role in
+    workspaceState and restores it on panel init.
+  - No regressions in existing tile tests.
+
+constraints: |
+  - Changes live in the webview HTML/CSS/JS (webviewHtml.ts) and the panel
+    host (swarmPanel.ts for persistence). Do not touch tmuxClient, paneTailer,
+    or any swarm-logic files.
+  - Do not introduce a new framework or bundler. Keep the existing inline
+    script approach in webviewHtml.ts.
+  - The tile output area (`.tile-output`) must not shrink in height when a
+    tile becomes selected — only width changes.
