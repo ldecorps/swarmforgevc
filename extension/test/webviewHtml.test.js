@@ -249,3 +249,32 @@ test('getWebviewHtml CSS has backlog group header style', () => {
   const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
   assert(html.includes('bl-group-header'));
 });
+
+// --- BL-030: selected tile width doubling ---
+
+test('getWebviewHtml CSS has selected tile double-width rule', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  assert(html.includes('.tile.selected'), 'missing .tile.selected CSS rule');
+  assert(html.includes('grid-column: span 2'), 'selected tile must span 2 columns');
+});
+
+test('panel.js tracks selectedRole state', () => {
+  assert(panelJs.includes('selectedRole'));
+});
+
+test('panel.js tile header is clickable to toggle selection', () => {
+  assert(panelJs.includes('tile-header'));
+  assert(panelJs.includes("addEventListener('click'"), 'header must have click handler');
+});
+
+test('panel.js sends tileSelected message on selection change', () => {
+  assert(panelJs.includes("type: 'tileSelected'"));
+});
+
+test('panel.js handles restoreSelection message from host', () => {
+  assert(panelJs.includes("case 'restoreSelection'"));
+});
+
+test('panel.js applies selected class to selected tile and removes from others', () => {
+  assert(panelJs.includes("'selected'"), 'must toggle selected class');
+});

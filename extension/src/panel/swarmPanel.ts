@@ -30,13 +30,16 @@ export class SwarmPanel {
   private disposables: vscode.Disposable[] = [];
   private wasActive = false;
   private dogfoodShown = false;
+  private workspaceState: vscode.Memento | undefined;
 
   private constructor(
     panel: vscode.WebviewPanel,
     private readonly extensionUri: vscode.Uri,
     private targetPath: string,
-    private readonly runLogPath: string
+    private readonly runLogPath: string,
+    workspaceState?: vscode.Memento
   ) {
+    this.workspaceState = workspaceState;
     this.panel = panel;
     this.outputChannel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
     this.panel.webview.html = this.getHtml();
@@ -67,6 +70,11 @@ export class SwarmPanel {
           }
           case 'openPR':
             vscode.commands.executeCommand('swarmforge.openPR');
+            break;
+          case 'tileSelected':
+            if (this.workspaceState) {
+              this.workspaceState.update('swarmforge.selectedRole', message.role);
+            }
             break;
         }
       },
@@ -153,6 +161,12 @@ export class SwarmPanel {
     );
     this.tailer.start();
     this.sendRoles(this.tailer.getRoles());
+    if (this.workspaceState) {
+      const selectedRole = this.workspaceState.get<string>('swarmforge.selectedRole');
+      if (selectedRole) {
+        this.panel.webview.postMessage({ type: 'restoreSelection', role: selectedRole });
+      }
+    }
   }
 
   private startStagePoller(): void {
