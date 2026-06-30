@@ -1,0 +1,66 @@
+id: BL-024
+title: make named-run prompt optional (TDD)
+milestone: M3
+status: todo
+priority: 24
+assigned_to: coder
+
+description: |
+  swarmforge.launchSwarm always shows a run-name input box; pressing ESC aborts
+  the launch. Add a setting to skip the prompt and fall back to a default name
+  silently. TDD: write the failing test first, then implement.
+
+  ## Setting
+  Add to package.json contributes.configuration:
+    swarmforge.run.promptForName  (boolean, default: true)
+  Description: "Show a run-name prompt before launching. When false, launches
+  immediately with a generated default name."
+
+  ## Pure helper (write test first)
+  Extract run-name resolution into a UI-free function in a new file
+  extension/src/run/resolveRunName.ts:
+
+    export function resolveRunName(opts: {
+      promptEnabled: boolean;
+      promptResult: string | undefined;   // undefined = user cancelled
+      defaultName: string;
+    }): string | undefined
+
+  Return rules:
+  - promptEnabled=false → return defaultName immediately (promptResult ignored).
+  - promptEnabled=true + promptResult=undefined → return undefined (abort).
+  - promptEnabled=true + promptResult="" (blank) → return defaultName.
+  - promptEnabled=true + promptResult=non-blank → return promptResult.trim().
+
+  ## Wire-up in extension.ts (swarmforge.launchSwarm, ~lines 90-105)
+  Replace current input-box block with:
+  1. Read setting: const promptEnabled = config.get<boolean>('run.promptForName', true)
+  2. If promptEnabled: call showInputBox; else promptResult = '' (blank → default).
+  3. Pass to resolveRunName; if result undefined, return (abort).
+  4. Use result as runName for appendRun and launchSwarm.
+
+  The vscode UI layer becomes a thin wrapper; all logic lives in resolveRunName.
+
+  ## TDD sequence (mandatory order)
+  1. Write extension/test/resolveRunName.test.js covering all four cases above.
+     Tests must fail before implementation exists.
+  2. Implement resolveRunName.ts to make tests pass.
+  3. Wire up in extension.ts.
+  4. Verify existing tests still pass.
+
+acceptance: |
+  - promptForName=false: resolveRunName returns defaultName; assert showInputBox
+    is never called (mock/spy in test).
+  - promptForName=true + name entered: returns that name.
+  - promptForName=true + blank entry: returns defaultName.
+  - promptForName=true + cancel: returns undefined; launch aborts.
+  - Setting appears in package.json with default true.
+  - Existing test suite remains green.
+  - resolveRunName.test.js was committed BEFORE resolveRunName.ts (verifiable
+    in git log).
+
+constraints: |
+  - Default true preserves today's behavior; no silent UX change for existing users.
+  - All decision logic in resolveRunName.ts — extension.ts only handles the
+    vscode API call and passes results through.
+  - No changes outside extension/src/ and extension/test/ except package.json.
