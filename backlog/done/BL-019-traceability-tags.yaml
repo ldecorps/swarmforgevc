@@ -1,0 +1,44 @@
+id: BL-019
+title: Traceability tags — link commits and code to backlog items
+milestone: M3
+priority: 19
+status: active
+
+description: >
+  Add lightweight traceability so the developer can see which backlog item a
+  commit or code change belongs to, and click through to the responsible tile.
+  This is the "audit trail" face of M3 — no dynamic workflow yet, just tagging.
+
+behavior_wanted: >
+  - Coder includes the backlog item id in every commit message: "BL-NNN: <summary>".
+    The commit message template already uses this pattern; make it explicit in the
+    coder role prompt so it is followed consistently.
+  - The work-tree panel (BL-017) adds a "Last commit" column populated by
+    `git log --oneline --grep="BL-<id>" -1` for each item in the list.
+  - Clicking a backlog item in the work-tree panel highlights the tile for its
+    assigned_to role (if the swarm is running) so the developer can jump
+    directly to the responsible agent.
+  - A small "BL-NNN" badge appears on the tile header for the currently active
+    item assigned to that role.
+
+acceptance:
+  - Run `git log --oneline --grep="BL-017"` against this repo after BL-017 is
+    done; the work-tree panel shows that commit's short hash and message in the
+    "Last commit" column for BL-017.
+  - Clicking BL-017 in the work tree panel visually highlights the coder tile.
+  - The coder tile shows "BL-017" badge while BL-017 is the active item.
+  - Items with no matching commit show "—" in the last-commit column.
+
+constraints:
+  - `git log --grep` is the only git integration needed; do not parse commit
+    objects or build a local index.
+  - Tile highlight is a CSS class toggle (border or background change) — not
+    a focus or selection event; the user still controls keyboard focus.
+  - Badge disappears when the item moves to done/.
+  - Commit message convention ("BL-NNN: …") is documented in the coder role
+    prompt, not enforced by the extension host.
+
+depends_on:
+  - BL-017  # work tree panel
+
+assigned_to: coder

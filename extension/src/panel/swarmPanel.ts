@@ -4,9 +4,19 @@ import { PaneTailer } from './paneTailer';
 import { currentStageLabel, readPipelineStages } from '../swarm/swarmState';
 import { loadRuns } from '../runs/runLog';
 import { getNonce, getWebviewHtml } from './webviewHtml';
-import { readBacklog } from './backlogReader';
+import { readBacklog, BacklogItem } from './backlogReader';
 
 const STAGE_POLL_INTERVAL_MS = 2000;
+
+function buildBadgeMap(items: BacklogItem[]): Record<string, string> {
+  const badges: Record<string, string> = {};
+  for (const item of items) {
+    if (item.status === 'active' && item.assignedTo) {
+      badges[item.assignedTo] = item.id;
+    }
+  }
+  return badges;
+}
 const OUTPUT_CHANNEL_NAME = 'SwarmForge';
 
 export class SwarmPanel {
@@ -96,6 +106,10 @@ export class SwarmPanel {
     return SwarmPanel.currentPanel;
   }
 
+  public highlightTile(role: string): void {
+    this.panel.webview.postMessage({ type: 'highlightTile', role });
+  }
+
   public updateTarget(targetPath: string): void {
     this.targetPath = targetPath;
     this.setupTailer();
@@ -158,6 +172,7 @@ export class SwarmPanel {
       this.panel.webview.postMessage({ type: 'stage', label, recentRuns });
       const backlogItems = readBacklog(this.targetPath);
       this.panel.webview.postMessage({ type: 'backlogUpdate', items: backlogItems });
+      this.panel.webview.postMessage({ type: 'badgeUpdate', badges: buildBadgeMap(backlogItems) });
     };
     poll();
     this.stagePoller = setInterval(poll, STAGE_POLL_INTERVAL_MS);

@@ -1,0 +1,21 @@
+id: BL-010
+title: Heartbeat decorator — per-tool-call liveness timestamps
+milestone: M2
+status: todo
+priority: 10
+
+description: >
+  Wrap every agent tool call in extension/src/tools/ to emit a heartbeat on
+  entry and exit. Each invocation atomically writes to
+  .swarmforge/heartbeats/<role>.yaml with fields: role, last_beat (ISO),
+  last_tool, phase (entry|exit), in_flight (true between entry and exit),
+  beat_count. The decorator wraps the tool layer — agents get heartbeats for
+  free with no per-agent opt-in. No heartbeat code leaks into the target project.
+  Works for both the shell backend and the in-process vscode.lm runtime.
+
+acceptance:
+  - Run a tool call; confirm heartbeat file is written with correct phase and in_flight values
+  - Run a long-running tool (simulated slow operation); confirm in_flight:true is set before it exits
+  - Decorator is in extension/src/tools/ only — not in agent or target code
+
+assigned_to: coder
