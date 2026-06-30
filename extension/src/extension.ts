@@ -11,6 +11,7 @@ import { appendRun, loadRuns, updateLastRunForTarget } from './runs/runLog';
 import { getCurrentBranch, openPullRequest } from './swarm/prCreator';
 import { launchSwarm, waitForSwarmReady } from './swarm/swarmLauncher';
 import { stopSwarm } from './swarm/swarmStopper';
+import { bounceSwarm, buildBounceExtensionCommand } from './swarm/bouncer';
 import { listTmuxSessions } from './swarm/tmuxClient';
 import { resolveRunName } from './run/resolveRunName';
 
@@ -18,6 +19,7 @@ const NO_TARGET_MESSAGE = 'Set a target project first (SwarmForge: Set Target Pr
 const STOP_SWARM_BUTTON = 'Stop Swarm';
 const LAST_RUN_NAME_KEY = 'swarmforge.lastRunName';
 const RUN_MODE_KEY = 'swarmforge.runMode';
+const PENDING_AUTO_LAUNCH_KEY = 'swarmforge.pendingAutoLaunch';
 
 type RunMode = 'one-shot' | 'drain';
 
@@ -41,6 +43,26 @@ async function resolveTargetPath(context: vscode.ExtensionContext): Promise<stri
 
 export function activate(context: vscode.ExtensionContext): void {
   const runLogPath = path.join(os.homedir(), '.swarmforge', 'runs.jsonl');
+
+  // Check for pending auto-launch after extension reload
+  const pendingAutoLaunch = context.workspaceState.get<boolean>(PENDING_AUTO_LAUNCH_KEY);
+  if (pendingAutoLaunch) {
+    context.workspaceState.update(PENDING_AUTO_LAUNCH_KEY, undefined);
+    const targetPath = getTargetPath();
+    const lastRunName = context.globalState.get<string>(LAST_RUN_NAME_KEY);
+    if (targetPath && lastRunName) {
+      vscode.window.showInformationMessage('Auto-launching swarm after reload...');
+      launchSwarm(targetPath, lastRunName).then((result) => {
+        if (result.success) {
+          vscode.window.showInformationMessage(result.message);
+          const panel = SwarmPanel.createOrShow(context.extensionUri, targetPath, runLogPath);
+          panel.updateTarget(targetPath);
+        } else {
+          vscode.window.showErrorMessage(result.message);
+        }
+      });
+    }
+  }
 
   context.subscriptions.push(
     vscode.commands.registerCommand('swarmforge.testTmux', async () => {
@@ -175,6 +197,68 @@ export function activate(context: vscode.ExtensionContext): void {
       } else {
         vscode.window.showWarningMessage(result.message);
       }
+    }),
+
+    vscode.commands.registerCommand('swarmforge.bounceSwarm', async () => {
+      const targetPath = getTargetPath();
+      if (!targetPath) {
+        vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
+        return;
+      }
+
+      const lastRunName = context.globalState.get<string>(LAST_RUN_NAME_KEY);
+      if (!lastRunName) {
+        vscode.window.showWarningMessage(
+          'No previous run name stored. Use SwarmForge: Launch Swarm first.'
+        );
+        return;
+      }
+
+      vscode.window.showInformationMessage('Restarting swarm...');
+      const result = await bounceSwarm(targetPath, lastRunName);
+      if (!result.success) {
+        vscode.window.showErrorMessage(result.message);
+        return;
+      }
+
+      vscode.window.showInformationMessage(result.message);
+      const panel = SwarmPanel.currentPanel;
+      if (panel) {
+        panel.updateTarget(targetPath);
+      }
+    }),
+
+    vscode.commands.registerCommand('swarmforge.bounceExtension', async () => {
+      vscode.window.showInformationMessage('Reloading SwarmForge extension...');
+      const reloadCmd = buildBounceExtensionCommand();
+      await vscode.commands.executeCommand(reloadCmd);
+    }),
+
+    vscode.commands.registerCommand('swarmforge.bounceAll', async () => {
+      const targetPath = getTargetPath();
+      if (!targetPath) {
+        vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
+        return;
+      }
+
+      const lastRunName = context.globalState.get<string>(LAST_RUN_NAME_KEY);
+      if (!lastRunName) {
+        vscode.window.showWarningMessage(
+          'No previous run name stored. Use SwarmForge: Launch Swarm first.'
+        );
+        return;
+      }
+
+      vscode.window.showInformationMessage('Stopping swarm and reloading extension...');
+      const stopResult = stopSwarm(targetPath);
+      if (!stopResult.success) {
+        vscode.window.showErrorMessage(`Failed to stop swarm: ${stopResult.message}`);
+        return;
+      }
+
+      await context.workspaceState.update(PENDING_AUTO_LAUNCH_KEY, true);
+      const reloadCmd = buildBounceExtensionCommand();
+      await vscode.commands.executeCommand(reloadCmd);
     }),
 
     vscode.commands.registerCommand('swarmforge.openPR', async () => {
