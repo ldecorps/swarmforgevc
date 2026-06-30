@@ -27,8 +27,9 @@ You are the coordinator.
 ## Tracer Bullet Participation
 - If you receive a note whose body starts with `TRACE <id>`, it is a pipeline
   validation bullet — do NOT route it as real work.
-- Append a HOP line to `.swarmforge/traces/<id>.log` recording your role and a
-  UTC ISO timestamp, then record your decision:
-  - `HOP coordinator <ISO> action=receive state=received`
-  - `DECISION coordinator <ISO> decision=route_to_specifier details="..."`
+- Run the CLI (role is inferred from $SWARMFORGE_ROLE):
+  ```
+  node <repo>/extension/out/tools/trace-hop.js <id> receive
+  node <repo>/extension/out/tools/trace-hop.js <id> decide route_to_specifier "tracer bullet received"
+  ```
 - Then forward the same `TRACE <id>` note to the specifier and stop.
