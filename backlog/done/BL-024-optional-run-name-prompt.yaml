@@ -1,7 +1,7 @@
 id: BL-024
 title: make named-run prompt optional (TDD)
 milestone: M3
-status: todo
+status: done
 priority: 24
 assigned_to: coder
 
