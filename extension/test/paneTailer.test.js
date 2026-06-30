@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const { mapInputToTmuxKey, mapSpecialKeyToTmux } = require('../out/panel/paneTailer');
+const { mapInputToTmuxKey, mapSpecialKeyToTmux, normalizeHistoryLines } = require('../out/panel/paneTailer');
 const { stripAnsi } = require('../out/panel/ansi');
 const { getPaneCommand } = require('../out/swarm/tmuxClient');
 
@@ -160,4 +160,27 @@ test('DeadEvent type is exported', () => {
   const mod = require('../out/panel/paneTailer');
   assert.ok(typeof mod.isStalled === 'function');
   assert.ok(typeof mod.STALL_THRESHOLD_MS === 'number');
+});
+
+test('normalizeHistoryLines returns 500 when value is undefined', () => {
+  assert.equal(normalizeHistoryLines(undefined), 500);
+});
+
+test('normalizeHistoryLines returns 500 when value is null', () => {
+  assert.equal(normalizeHistoryLines(null), 500);
+});
+
+test('normalizeHistoryLines returns 500 when value is <= 0', () => {
+  assert.equal(normalizeHistoryLines(0), 500);
+  assert.equal(normalizeHistoryLines(-100), 500);
+});
+
+test('normalizeHistoryLines returns input when value is positive', () => {
+  assert.equal(normalizeHistoryLines(200), 200);
+  assert.equal(normalizeHistoryLines(1000), 1000);
+});
+
+test('normalizeHistoryLines caps at 2000', () => {
+  assert.equal(normalizeHistoryLines(5000), 2000);
+  assert.equal(normalizeHistoryLines(2001), 2000);
 });

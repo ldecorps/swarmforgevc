@@ -141,6 +141,11 @@
           "type": "number",
           "default": 180,
           "description": "How long (seconds) an item may stay in inbox/in_process before the reconciler nudges the owner."
+        },
+        "swarmforge.tile.historyLines": {
+          "type": "number",
+          "default": 500,
+          "description": "Number of lines of scrollback history to display in agent tiles (1–2000). Default 500."
         }
       }
     }
