@@ -364,7 +364,8 @@ window.addEventListener('message', (event) => {
         const badge = message.badges[role];
         if (badge) {
           entry.tile.classList.add('bl-active');
-          entry.blBadge.textContent = badge;
+          const badgeText = badge.summary ? `${badge.id} · ${badge.summary}` : badge.id || badge;
+          entry.blBadge.textContent = badgeText;
         } else {
           entry.tile.classList.remove('bl-active');
           entry.blBadge.textContent = '';
