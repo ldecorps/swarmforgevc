@@ -35,11 +35,18 @@ export function isSwarmReady(targetPath: string): boolean {
 }
 
 export function buildLaunchEnv(runName?: string): NodeJS.ProcessEnv {
-  return {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     SWARMFORGE_TERMINAL: 'none',
-    ...(runName ? { SWARM_RUN_NAME: `swarm/${runName}` } : {}),
   };
+
+  if (runName) {
+    env['SWARM_RUN_NAME'] = `swarm/${runName}`;
+  } else {
+    delete env['SWARM_RUN_NAME'];
+  }
+
+  return env;
 }
 
 export async function launchSwarm(targetPath: string, runName?: string): Promise<LaunchResult> {
