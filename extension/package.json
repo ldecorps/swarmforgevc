@@ -109,7 +109,8 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "npm run compile && node --test test/*.test.js"
+    "test": "npm run compile && node --test test/*.test.js",
+    "tracer-bullet": "npm run compile && node out/tools/tracer-bullet-launcher.js"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
