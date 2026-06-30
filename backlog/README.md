@@ -10,9 +10,13 @@ One YAML file per work item. On startup, read the `active/` items to know what t
 
 ## Status values
 
-- `todo` — not started
-- `active` — currently being worked on (only one item active at a time per assignee)
-- `done` — complete and merged
+The status shown in the backlog panel is determined by the folder location, not the YAML `status` field:
+
+- Items in `backlog/done/` always display as `done`, regardless of their `status` field.
+- Items in `backlog/active/` use their YAML `status` field:
+  - `todo` — not started
+  - `active` — currently being worked on
+  - `done` — (not used in active folder; move items to done/ instead)
 
 ## Fields
 
