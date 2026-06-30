@@ -1,7 +1,7 @@
 id: BL-021
 title: trace-hop CLI for agent tracing
 milestone: M3
-status: todo
+status: done
 priority: 21
 assigned_to: coder
 
