@@ -1,0 +1,87 @@
+id: BL-023
+title: reconciler for in_process-stuck and done-but-undelivered handoffs
+milestone: M3
+status: todo
+priority: 23
+assigned_to: coder
+
+description: |
+  BL-022's InboxChaser only watches inbox/new for un-dequeued items. Today's
+  incident showed the real failure class: an agent dequeued work into
+  in_process, completed the commits, then never sent the handoff and never
+  ran done_with_current — while sleeping on a self-scheduled timer. This spec
+  closes three gaps.
+
+  ## Gap 1 — Extend InboxChaser to watch the full lifecycle
+
+  Rename/extend InboxChaser (extension/src/swarm/inboxChaser.ts) to a full
+  Reconciler that also scans on each sweep interval:
+
+  ### in_process-stuck detection
+  For every role, scan inbox/in_process/ (including batch_* subdirectories).
+  If an item has been in_process past swarmforge.comms.stuckInProcessTimeoutSeconds
+  (default 180s) with no heartbeat progress from the owner:
+  - Send a tmux nudge: "You have work in in_process. Run ready_for_next.sh to
+    resume it."
+  - Increment a per-item nudge counter (stored in a sidecar .nudge file).
+  - After swarmforge.comms.maxChases nudges with no progress: mark tile red
+    ("stuck in_process"), surface item name and age. Do not move or modify
+    the queue file — only surface the alert.
+
+  ### done-but-undelivered detection
+  For every role, after each reconciler sweep, check whether the role's
+  worktree branch has commits newer than the last entry in outbox/sent/ for
+  that role AND inbox/in_process/ is non-empty. If both are true for longer
+  than stuckInProcessTimeoutSeconds:
+  - Surface red tile: "Work committed but handoff not sent."
+  - Send a tmux nudge: "You have committed work but no handoff was sent. Run
+    done_with_current.sh and send your handoff via swarm_handoff.sh."
+  - This detection reasons from on-disk truth (git log, outbox/sent, queue
+    state) — never from agent self-report.
+
+  ## Gap 2 — Idle self-poll must resume in_process, not peek inbox/new
+
+  Update the idle self-poll instruction in all four role prompts (added by
+  BL-022 Part C). Replace the current guidance with:
+
+    "If you have been idle for more than 2 minutes without a wake-up, run
+     ready_for_next.sh. It checks in_process FIRST — if you have in_process
+     work it will resume it. Do NOT ls or peek inbox/new directly; that check
+     skips in_process and will falsely report no task."
+
+  This is a prompt-only change; no code change needed for Gap 2.
+
+  ## Gap 3 — Forbid agent self-scheduling
+
+  Add to the Handoff section of all four role prompts:
+
+    "Do NOT self-schedule polling: no /loop, no 'check again in N minutes',
+     no cron, no send_later. Idle behavior is: act on a tmux wake-up, or run
+     ready_for_next.sh once. Liveness and chasing are the extension host's job.
+     Self-scheduled loops mask stalls and waste turns."
+
+  This is a prompt-only change; no code change needed for Gap 3.
+
+acceptance: |
+  - Simulate done-but-undelivered: commit on worktree branch, leave batch in
+    in_process, send no handoff. Reconciler flags red and sends tmux nudge
+    within stuckInProcessTimeoutSeconds. No silent stall.
+  - Simulate in_process-stuck: move item to in_process, stop agent heartbeat.
+    After stuckInProcessTimeoutSeconds, owner is nudged to resume. After
+    maxChases nudges, tile goes red.
+  - grep role prompts: "ready_for_next.sh" is the only sanctioned idle action;
+    no "ls inbox/new", no /loop, no self-scheduling language present.
+  - Reconciler decisions derive from git log + outbox/sent + queue files,
+    not from any agent claim or log message.
+  - Unit tests: in_process-stuck detection, done-but-undelivered detection,
+    nudge cap → red, sidecar .nudge counter, resume-not-nostask path.
+
+constraints: |
+  - Do NOT modify swarmforge/scripts/ (pinned install).
+  - Extend extension/src/swarm/inboxChaser.ts — do not create a second
+    reconciler class. Reuse BL-009 leases, BL-011 watchdog heartbeats,
+    BL-022 InboxChaser sweep infrastructure.
+  - New settings keys: swarmforge.comms.stuckInProcessTimeoutSeconds (default
+    180). Reuse swarmforge.comms.maxChases for the nudge cap.
+  - Sidecar .nudge files live alongside the item: inbox/in_process/<name>.nudge.
+    Delete them when the item is completed or moved.
