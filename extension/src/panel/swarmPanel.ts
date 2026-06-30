@@ -5,18 +5,9 @@ import { currentStageLabel, readPipelineStages } from '../swarm/swarmState';
 import { loadRuns } from '../runs/runLog';
 import { getNonce, getWebviewHtml } from './webviewHtml';
 import { readBacklog, BacklogItem } from './backlogReader';
+import { buildBadgeMap } from './badgeSummary';
 
 const STAGE_POLL_INTERVAL_MS = 2000;
-
-function buildBadgeMap(items: BacklogItem[]): Record<string, string> {
-  const badges: Record<string, string> = {};
-  for (const item of items) {
-    if (item.status === 'active' && item.assignedTo) {
-      badges[item.assignedTo] = item.id;
-    }
-  }
-  return badges;
-}
 const OUTPUT_CHANNEL_NAME = 'SwarmForge';
 
 export class SwarmPanel {
