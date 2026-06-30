@@ -1,0 +1,11 @@
+id: BL-024
+title: Chase & Dead-Letter Escalation
+status: active
+milestone: M2
+priority: 4
+assignedTo: ~
+dependsOn: [BL-023]
+description: |
+  Re-notify unresponsive receivers.
+  Escalate after maxChases to dead-letter.
+  Recipient-specific handling for stalled messages.
