@@ -129,7 +129,8 @@ export class SwarmPanel {
   private setupTailer(): void {
     this.tailer?.stop();
     const config = vscode.workspace.getConfiguration('swarmforge');
-    const historyLines = config.get<number>('tile.historyLines', 500);
+    const historyLines = config.get<number>('tile.historyLines', 5000);
+    const paneRows = config.get<number>('tile.paneRows', 200);
     this.tailer = new PaneTailer(
       this.targetPath,
       (updates) => {
@@ -144,7 +145,11 @@ export class SwarmPanel {
       (message) => {
         this.outputChannel.appendLine(message);
       },
-      historyLines
+      historyLines,
+      (roles) => {
+        this.sendRoles(roles);
+      },
+      paneRows
     );
     this.tailer.start();
     this.sendRoles(this.tailer.getRoles());

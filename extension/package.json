@@ -144,8 +144,13 @@
         },
         "swarmforge.tile.historyLines": {
           "type": "number",
-          "default": 500,
-          "description": "Number of lines of scrollback history to display in agent tiles (1–2000). Default 500."
+          "default": 5000,
+          "description": "Number of lines of scrollback history to display in agent tiles (1–50000). Default 5000."
+        },
+        "swarmforge.tile.paneRows": {
+          "type": "number",
+          "default": 200,
+          "description": "Height in rows of each agent's tmux window, i.e. how many lines a tile can show at once (headless tmux otherwise caps at 24). 1–1000. Default 200."
         }
       }
     }

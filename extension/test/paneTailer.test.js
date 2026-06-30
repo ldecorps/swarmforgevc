@@ -162,25 +162,98 @@ test('DeadEvent type is exported', () => {
   assert.ok(typeof mod.STALL_THRESHOLD_MS === 'number');
 });
 
-test('normalizeHistoryLines returns 500 when value is undefined', () => {
-  assert.equal(normalizeHistoryLines(undefined), 500);
+test('normalizeHistoryLines returns 5000 default when value is undefined', () => {
+  assert.equal(normalizeHistoryLines(undefined), 5000);
 });
 
-test('normalizeHistoryLines returns 500 when value is null', () => {
-  assert.equal(normalizeHistoryLines(null), 500);
+test('normalizeHistoryLines returns 5000 default when value is null', () => {
+  assert.equal(normalizeHistoryLines(null), 5000);
 });
 
-test('normalizeHistoryLines returns 500 when value is <= 0', () => {
-  assert.equal(normalizeHistoryLines(0), 500);
-  assert.equal(normalizeHistoryLines(-100), 500);
+test('normalizeHistoryLines returns 5000 default when value is <= 0', () => {
+  assert.equal(normalizeHistoryLines(0), 5000);
+  assert.equal(normalizeHistoryLines(-100), 5000);
 });
 
-test('normalizeHistoryLines returns input when value is positive', () => {
+test('normalizeHistoryLines returns input when value is positive and below cap', () => {
   assert.equal(normalizeHistoryLines(200), 200);
-  assert.equal(normalizeHistoryLines(1000), 1000);
+  assert.equal(normalizeHistoryLines(10000), 10000);
 });
 
-test('normalizeHistoryLines caps at 2000', () => {
-  assert.equal(normalizeHistoryLines(5000), 2000);
-  assert.equal(normalizeHistoryLines(2001), 2000);
+test('normalizeHistoryLines caps at 50000', () => {
+  assert.equal(normalizeHistoryLines(60000), 50000);
+  assert.equal(normalizeHistoryLines(50001), 50000);
+});
+
+// --- rolesChanged: detect role-set changes (e.g. QA added on respawn) ---
+
+const { rolesChanged } = require('../out/panel/paneTailer');
+
+const r = (name) => ({ role: name, session: `swarmforge-${name}`, displayName: name });
+
+test('rolesChanged returns false for identical role sets', () => {
+  assert.equal(rolesChanged([r('coder'), r('cleaner')], [r('coder'), r('cleaner')]), false);
+});
+
+test('rolesChanged returns false when order differs but set is the same', () => {
+  assert.equal(rolesChanged([r('coder'), r('cleaner')], [r('cleaner'), r('coder')]), false);
+});
+
+test('rolesChanged returns true when a role is added (QA appended)', () => {
+  const before = [r('coordinator'), r('specifier'), r('coder'), r('cleaner')];
+  const after = [...before, r('QA')];
+  assert.equal(rolesChanged(before, after), true);
+});
+
+test('rolesChanged returns true when a role is removed', () => {
+  const before = [r('coder'), r('cleaner'), r('QA')];
+  const after = [r('coder'), r('cleaner')];
+  assert.equal(rolesChanged(before, after), true);
+});
+
+test('rolesChanged returns true going from empty to populated', () => {
+  assert.equal(rolesChanged([], [r('coder')]), true);
+});
+
+// --- setHistoryLimit: raise tmux scrollback so tiles retain more memory ---
+
+const { setHistoryLimit, resizeWindow, setWindowSizeManual } = require('../out/swarm/tmuxClient');
+
+test('setHistoryLimit returns a result and does not throw on a dead socket', () => {
+  const result = setHistoryLimit('/tmp/nonexistent-sfvc-socket-xyz', 5000);
+  assert.ok(typeof result.exitCode === 'number');
+  assert.notEqual(result.exitCode, 0);
+});
+
+// --- pane sizing: tiles are too short (80x24); make windows taller ---
+
+const { normalizePaneRows } = require('../out/panel/paneTailer');
+
+test('normalizePaneRows returns a tall default well above tmux 24', () => {
+  const def = normalizePaneRows(undefined);
+  assert.ok(def >= 200, `expected default >= 200, got ${def}`);
+  assert.equal(normalizePaneRows(null), def);
+  assert.equal(normalizePaneRows(0), def);
+  assert.equal(normalizePaneRows(-5), def);
+});
+
+test('normalizePaneRows returns input when positive and below cap', () => {
+  assert.equal(normalizePaneRows(120), 120);
+  assert.equal(normalizePaneRows(500), 500);
+});
+
+test('normalizePaneRows caps very large values', () => {
+  assert.equal(normalizePaneRows(100000), 1000);
+});
+
+test('resizeWindow returns a result and does not throw on a dead socket', () => {
+  const result = resizeWindow('/tmp/nonexistent-sfvc-socket-xyz', 'swarmforge-coder', 120, 200);
+  assert.ok(typeof result.exitCode === 'number');
+  assert.notEqual(result.exitCode, 0);
+});
+
+test('setWindowSizeManual returns a result and does not throw on a dead socket', () => {
+  const result = setWindowSizeManual('/tmp/nonexistent-sfvc-socket-xyz');
+  assert.ok(typeof result.exitCode === 'number');
+  assert.notEqual(result.exitCode, 0);
 });

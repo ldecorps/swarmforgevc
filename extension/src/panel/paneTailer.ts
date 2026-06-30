@@ -3,9 +3,12 @@ import {
   getPaneCommand,
   readSwarmRoles,
   readTmuxSocket,
+  resizeWindow,
   resolveAgentPaneTarget,
   sendKeys,
   sessionExists,
+  setHistoryLimit,
+  setWindowSizeManual,
   SwarmRole,
   getPaneBaseIndex,
 } from '../swarm/tmuxClient';
@@ -15,14 +18,41 @@ import { stripAnsi } from './ansi';
 
 const DEFAULT_POLL_INTERVAL_MS = 200;
 export const STALL_THRESHOLD_MS = 120_000;
-const DEFAULT_HISTORY_LINES = 500;
-const MAX_HISTORY_LINES = 2000;
+const DEFAULT_HISTORY_LINES = 5000;
+const MAX_HISTORY_LINES = 50000;
+
+// Headless tmux panes default to 80x24, capping each tile at 24 lines. Resize
+// windows taller so the agent TUI re-renders into more rows.
+const TILE_PANE_COLS = 120;
+const DEFAULT_TILE_PANE_ROWS = 200;
+const MAX_TILE_PANE_ROWS = 1000;
 
 export function normalizeHistoryLines(value: number | undefined | null): number {
   if (value === undefined || value === null || value <= 0) {
     return DEFAULT_HISTORY_LINES;
   }
   return Math.min(value, MAX_HISTORY_LINES);
+}
+
+export function normalizePaneRows(value: number | undefined | null): number {
+  if (value === undefined || value === null || value <= 0) {
+    return DEFAULT_TILE_PANE_ROWS;
+  }
+  return Math.min(value, MAX_TILE_PANE_ROWS);
+}
+
+/**
+ * True when the set of role names differs between two role lists (a role was
+ * added or removed). Order-insensitive. Used to detect when a respawn adds a
+ * role — e.g. QA — while reusing the same tmux socket, so the panel can create
+ * the new tile instead of showing stale roles.
+ */
+export function rolesChanged(prev: SwarmRole[], next: SwarmRole[]): boolean {
+  if (prev.length !== next.length) {
+    return true;
+  }
+  const prevNames = new Set(prev.map((r) => r.role));
+  return next.some((r) => !prevNames.has(r.role));
 }
 
 export function isStalled(lastChangedAt: number, now: number): boolean {
@@ -57,6 +87,7 @@ export class PaneTailer {
   private roles: SwarmRole[] = [];
   private socketPath = '';
   private historyLines: number;
+  private paneRows: number;
 
   constructor(
     private readonly targetPath: string,
@@ -64,9 +95,26 @@ export class PaneTailer {
     private readonly onStall?: (events: StallEvent[]) => void,
     private readonly onDead?: (events: DeadEvent[]) => void,
     private readonly onInputLogError?: (message: string) => void,
-    historyLines?: number
+    historyLines?: number,
+    private readonly onRoles?: (roles: SwarmRole[]) => void,
+    paneRows?: number
   ) {
     this.historyLines = normalizeHistoryLines(historyLines);
+    this.paneRows = normalizePaneRows(paneRows);
+  }
+
+  // Grow the scrollback buffer and make each agent window taller so tiles show
+  // far more than the default 24 lines. Re-applied whenever the role set changes
+  // so a newly added window (e.g. QA on respawn) is sized too.
+  private applyPaneSettings(): void {
+    if (!this.socketPath) {
+      return;
+    }
+    setHistoryLimit(this.socketPath, this.historyLines);
+    setWindowSizeManual(this.socketPath);
+    for (const role of this.roles) {
+      resizeWindow(this.socketPath, role.session, TILE_PANE_COLS, this.paneRows);
+    }
   }
 
   start(pollMs = DEFAULT_POLL_INTERVAL_MS): void {
@@ -96,6 +144,7 @@ export class PaneTailer {
     this.liveRoles.clear();
     if (this.socketPath) {
       this.paneBaseIndex = getPaneBaseIndex(this.socketPath);
+      this.applyPaneSettings();
     }
   }
 
@@ -111,6 +160,25 @@ export class PaneTailer {
       this.lastText.clear();
       if (this.socketPath) {
         this.paneBaseIndex = getPaneBaseIndex(this.socketPath);
+        this.applyPaneSettings();
+      }
+      this.onRoles?.(this.roles);
+    } else {
+      // The socket file is reused across respawns, so a socket-path change is
+      // not enough to notice a role being added/removed (e.g. QA appended after
+      // the cleaner). Re-read roles.tsv each poll and refresh the panel when the
+      // role set changes, so the new tile appears without a full relaunch.
+      const latestRoles = readSwarmRoles(this.targetPath);
+      if (rolesChanged(this.roles, latestRoles)) {
+        const liveNames = new Set(latestRoles.map((r) => r.role));
+        for (const name of [...this.lastText.keys()]) {
+          if (!liveNames.has(name)) {
+            this.lastText.delete(name);
+          }
+        }
+        this.roles = latestRoles;
+        this.applyPaneSettings();
+        this.onRoles?.(this.roles);
       }
     }
 
