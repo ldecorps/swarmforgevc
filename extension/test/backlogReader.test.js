@@ -143,3 +143,13 @@ test('readBacklog handles read errors gracefully', () => {
   assert.equal(items.length, 0);
   fs.chmodSync(yamlFile, 0o644);
 });
+
+test('readBacklog overrides done folder items to status done regardless of YAML', () => {
+  const tmp = mkTmp();
+  const doneDir = path.join(tmp, 'backlog', 'done');
+  mkdirp(doneDir);
+  fs.writeFileSync(path.join(doneDir, 'BL-001.yaml'), 'id: BL-001\ntitle: Done item\nstatus: active\n');
+  const items = readBacklog(tmp);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].status, 'done');
+});
