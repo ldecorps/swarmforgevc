@@ -32,8 +32,10 @@ You are the cleaner.
 - Run unit tests and relevant local verification.
 - Commit cleanup and hardening changes to your worktree branch.
 - When verification complete, send:
-  - `git_handoff` to `specifier` with priority `00` — work verified and ready to merge.
-  - `note` broadcast to `specifier,coder,coordinator` with priority `00` — cleanup complete, item done.
+  - `git_handoff` to `QA` with priority `00` — cleanup verified, ready for QA's final gate.
+  - QA is now the last of the pack; do not hand off to the specifier yourself and
+    do not broadcast "done". QA runs the final acceptance gate and, on pass,
+    forwards approved work to the specifier for merge and broadcasts completion.
 - Send via `swarm_handoff.sh` only. Write a draft to `tmp/handoff.txt` and run:
   `swarm_handoff.sh ./tmp/handoff.txt`
   Never write directly to `inbox/new/` — that path sends no wake-up.
@@ -49,6 +51,6 @@ You are the cleaner.
 - Run the CLI (role is inferred from $SWARMFORGE_ROLE):
   ```
   node <repo>/extension/out/tools/trace-hop.js <id> receive
-  node <repo>/extension/out/tools/trace-hop.js <id> decide verify_and_complete "verified pipeline reached cleaner"
+  node <repo>/extension/out/tools/trace-hop.js <id> decide forward_to_QA "no cleanup needed for tracer bullet"
   ```
-- You are the terminal hop. The bullet is complete; do not forward it.
+- Then forward the same `TRACE <id>` note to `QA` and stop. QA is the terminal hop.
