@@ -6,15 +6,35 @@ const placeholder = document.getElementById('placeholder');
 const tiles = new Map();
 let activeRole = null;
 const openPrBtn = document.getElementById('open-pr-btn');
+const bottomRowEl = document.getElementById('bottom-row');
 const recentRunsEl = document.getElementById('recent-runs');
 const runsListEl = document.getElementById('runs-list');
+const runsToggleBtn = document.getElementById('runs-toggle');
 const backlogEl = document.getElementById('backlog');
 const backlogListEl = document.getElementById('backlog-list');
+const backlogToggleBtn = document.getElementById('backlog-toggle');
 const SCROLL_THRESHOLD = 8;
+
+function updateBottomRow() {
+  const hasRuns = recentRunsEl.style.display !== 'none';
+  const hasBacklog = backlogEl.style.display !== 'none';
+  bottomRowEl.style.display = (hasRuns || hasBacklog) ? '' : 'none';
+}
+
+runsToggleBtn.addEventListener('click', () => {
+  recentRunsEl.classList.toggle('collapsed');
+  runsToggleBtn.textContent = recentRunsEl.classList.contains('collapsed') ? '▸' : '▾';
+});
+
+backlogToggleBtn.addEventListener('click', () => {
+  backlogEl.classList.toggle('collapsed');
+  backlogToggleBtn.textContent = backlogEl.classList.contains('collapsed') ? '▸' : '▾';
+});
 
 function renderRecentRuns(runs) {
   if (!runs || runs.length === 0) {
     recentRunsEl.style.display = 'none';
+    updateBottomRow();
     return;
   }
   recentRunsEl.style.display = '';
@@ -24,17 +44,16 @@ function renderRecentRuns(runs) {
     const badge = r.status === 'running'
       ? '<span class="run-badge-running">● running</span>'
       : '<span class="run-badge-stopped">● stopped</span>';
-    return '<div class="run-row"><span class="run-name">' + r.name + '</span><span class="run-target">' + target + '</span><span class="run-date">' + date + '</span>' + badge + '</div>';
+    return '<div class="run-row"><span class="run-name">' + r.name + '</span>' +
+      '<span class="run-target">' + target + '</span>' +
+      '<span class="run-date">' + date + '</span>' + badge + '</div>';
   }).join('');
-}
-
-function badgeHtml(status) {
-  return '<span class="bl-badge bl-badge-' + status + '">' + status + '</span>';
+  updateBottomRow();
 }
 
 function backlogRowHtml(item) {
   const assigned = item.assignedTo ? '<span class="bl-assigned">' + item.assignedTo + '</span>' : '';
-  return '<div class="backlog-row">' + badgeHtml(item.status) +
+  return '<div class="backlog-row">' +
     '<span class="bl-id">' + item.id + '</span>' +
     '<span class="bl-title">' + item.title + '</span>' +
     assigned + '</div>';
@@ -47,19 +66,26 @@ function filterByStatus(items, status) {
 function renderBacklog(items) {
   if (!items || items.length === 0) {
     backlogEl.style.display = 'none';
+    updateBottomRow();
     return;
   }
   backlogEl.style.display = '';
   const active = filterByStatus(items, 'active');
   const todo = filterByStatus(items, 'todo');
   const done = filterByStatus(items, 'done');
-  const topRows = [...active, ...todo].map(backlogRowHtml).join('');
-  let doneSection = '';
+  let html = '';
+  if (active.length > 0) {
+    html += '<div class="bl-group-header">Active</div>' + active.map(backlogRowHtml).join('');
+  }
+  if (todo.length > 0) {
+    html += '<div class="bl-group-header">Todo</div>' + todo.map(backlogRowHtml).join('');
+  }
   if (done.length > 0) {
-    doneSection = '<details><summary class="backlog-done-summary">Done (' + done.length + ')</summary>' +
+    html += '<details><summary class="backlog-done-summary">Done (' + done.length + ')</summary>' +
       done.map(backlogRowHtml).join('') + '</details>';
   }
-  backlogListEl.innerHTML = topRows + doneSection;
+  backlogListEl.innerHTML = html;
+  updateBottomRow();
 }
 
 function isAtBottom(el) {
@@ -90,6 +116,9 @@ openPrBtn.addEventListener('click', () => {
 
 document.addEventListener('keydown', (e) => {
   if (!activeRole) { return; }
+  // Let copy/paste/select shortcuts pass through so text can be selected and copied
+  if (e.ctrlKey && (e.key === 'c' || e.key === 'v' || e.key === 'a' || e.key === 'x')) { return; }
+  if (e.metaKey && (e.key === 'c' || e.key === 'v' || e.key === 'a' || e.key === 'x')) { return; }
   e.preventDefault();
   if (e.ctrlKey && e.key.length === 1) {
     const code = e.key.toLowerCase().charCodeAt(0) - 96;
@@ -134,9 +163,13 @@ function ensureTile(role, displayName, agent) {
     vscode.postMessage({ type: 'restartAgent', role });
   });
 
+  const blBadge = document.createElement('span');
+  blBadge.className = 'tile-bl-badge';
+
   const header = document.createElement('div');
   header.className = 'tile-header';
   header.innerHTML = '<span>' + displayName + '</span><span class="tile-agent">' + agent + '</span>';
+  header.appendChild(blBadge);
   header.appendChild(nudgeBtn);
   header.appendChild(restartBtn);
 
@@ -145,7 +178,7 @@ function ensureTile(role, displayName, agent) {
   output.tabIndex = 0;
   output.dataset.role = role;
 
-  const entry = { tile, output, text: '', tailLocked: true };
+  const entry = { tile, output, blBadge, text: '', tailLocked: true };
 
   output.addEventListener('focus', () => {
     activeRole = role;
@@ -223,6 +256,26 @@ window.addEventListener('message', (event) => {
       break;
     case 'backlogUpdate':
       renderBacklog(message.items);
+      break;
+    case 'highlightTile':
+      tiles.forEach((entry, role) => {
+        if (role === message.role) {
+          entry.tile.classList.add('bl-highlighted');
+          setTimeout(() => entry.tile.classList.remove('bl-highlighted'), 2000);
+        }
+      });
+      break;
+    case 'badgeUpdate':
+      tiles.forEach((entry, role) => {
+        const badge = message.badges[role];
+        if (badge) {
+          entry.tile.classList.add('bl-active');
+          entry.blBadge.textContent = badge;
+        } else {
+          entry.tile.classList.remove('bl-active');
+          entry.blBadge.textContent = '';
+        }
+      });
       break;
   }
 });
