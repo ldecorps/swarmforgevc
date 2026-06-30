@@ -1,0 +1,26 @@
+id: BL-011
+title: Watchdog — extension-host heartbeat monitor with tile liveness states
+milestone: M2
+status: todo
+priority: 11
+
+description: >
+  A polling monitor in the extension host reads heartbeat files and updates tile
+  liveness. Polls every swarmforge.heartbeat.intervalSeconds (default 15s).
+  Rules per role: no heartbeat past staleTimeoutSeconds (60s) with in_flight:false
+  → mark tile amber ("idle") and write a nudge note to the agent's inbox.
+  A tool in_flight:true past inFlightTimeoutSeconds (600s) → mark tile amber→red
+  and surface the stuck tool name on the tile. Still stale past deadTimeoutSeconds
+  (180s) after nudges → mark tile red ("not responding"); auto-respawn if
+  swarmforge.watchdog.autoRespawn is true. Process PID gone → mark red, auto-respawn
+  if enabled. Respawn cap: swarmforge.watchdog.maxRespawnsPerRole (default 3) in a
+  sliding window; once exceeded leave tile red for human intervention. Status bar
+  shows aggregate health, e.g. "4 agents · 3 alive · 1 idle".
+
+acceptance:
+  - Stop a simulated agent heartbeat; confirm tile goes amber at stale timeout then red at dead timeout
+  - Simulate an in-flight tool that never exits; confirm tile shows stuck tool name
+  - Respawn cap prevents crash-loop
+  - Status bar aggregate health string updates correctly
+
+assigned_to: coder

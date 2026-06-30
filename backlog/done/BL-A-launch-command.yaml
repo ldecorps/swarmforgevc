@@ -1,0 +1,20 @@
+id: BL-A
+title: "Dogfood Checkpoint A — Launch command"
+milestone: M1
+status: done
+priority: 1
+
+description: >
+  A VS Code command (swarmforge.run) that launches a SwarmForge swarm against
+  a selected target by shelling out to the ./swarm wrapper. The extension
+  discovers the target path, shells to ./swarm, and monitors the resulting
+  process. This is half of the dogfood-critical pair required before M1
+  can be self-hosted.
+
+acceptance:
+  - swarmforge.run command visible in the command palette
+  - Running it starts a SwarmForge swarm against the configured target path
+  - Process stdout/stderr is captured and visible in the VS Code output channel
+  - Command fails gracefully with a notification if no target is configured
+
+assigned_to: coder

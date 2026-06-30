@@ -29,7 +29,9 @@ export function computeLiveness(
 
   if (!pidAlive) return { state: 'dead', label: 'not responding' };
 
-  const ageSeconds = (nowMs - new Date(hb.last_beat).getTime()) / 1000;
+  const beatMs = new Date(hb.last_beat).getTime();
+  if (isNaN(beatMs)) return { state: 'unknown', label: 'malformed heartbeat timestamp' };
+  const ageSeconds = (nowMs - beatMs) / 1000;
 
   if (hb.in_flight) {
     if (ageSeconds > config.inFlightTimeoutSeconds) {

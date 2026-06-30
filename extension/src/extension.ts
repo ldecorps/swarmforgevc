@@ -4,6 +4,9 @@ import * as vscode from 'vscode';
 import { getTargetPath, setTargetPath } from './config/targetConfig';
 import { initializeTargetRepo } from './config/targetBootstrap';
 import { SwarmPanel } from './panel/swarmPanel';
+import { WorkTreePanel } from './panel/workTreePanel';
+import { nextEligibleItem } from './swarm/backlogLoop';
+import { readBacklog } from './panel/backlogReader';
 import { appendRun, loadRuns, updateLastRunForTarget } from './runs/runLog';
 import { getCurrentBranch, openPullRequest } from './swarm/prCreator';
 import { launchSwarm, waitForSwarmReady } from './swarm/swarmLauncher';
@@ -13,6 +16,9 @@ import { listTmuxSessions } from './swarm/tmuxClient';
 const NO_TARGET_MESSAGE = 'Set a target project first (SwarmForge: Set Target Project).';
 const STOP_SWARM_BUTTON = 'Stop Swarm';
 const LAST_RUN_NAME_KEY = 'swarmforge.lastRunName';
+const RUN_MODE_KEY = 'swarmforge.runMode';
+
+type RunMode = 'one-shot' | 'drain';
 
 function generateDefaultRunName(): string {
   const now = new Date();
@@ -225,6 +231,69 @@ export function activate(context: vscode.ExtensionContext): void {
         language: 'markdown',
       });
       await vscode.window.showTextDocument(doc, { preview: false });
+    }),
+
+    vscode.commands.registerCommand('swarmforge.showWorkTree', () => {
+      const targetPath = getTargetPath();
+      if (!targetPath) {
+        vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
+        return;
+      }
+      WorkTreePanel.createOrShow(targetPath);
+    }),
+
+    vscode.commands.registerCommand('swarmforge.highlightTile', (role: string) => {
+      SwarmPanel.currentPanel?.highlightTile(role);
+    }),
+
+    vscode.commands.registerCommand('swarmforge.setRunMode', async () => {
+      const current = context.workspaceState.get<RunMode>(RUN_MODE_KEY, 'one-shot');
+      const picked = await vscode.window.showQuickPick(
+        [
+          { label: 'one-shot', description: 'Stop after the current backlog item (default)', picked: current === 'one-shot' },
+          { label: 'drain', description: 'Keep running until the backlog is empty or all items are blocked', picked: current === 'drain' },
+        ],
+        { title: 'SwarmForge Run Mode', placeHolder: 'Select run mode' }
+      );
+      if (picked) {
+        await context.workspaceState.update(RUN_MODE_KEY, picked.label as RunMode);
+        vscode.window.showInformationMessage(`SwarmForge run mode set to: ${picked.label}`);
+      }
+    }),
+
+    vscode.commands.registerCommand('swarmforge.drainCheck', async () => {
+      const targetPath = getTargetPath();
+      if (!targetPath) {
+        return;
+      }
+      const runMode = context.workspaceState.get<RunMode>(RUN_MODE_KEY, 'one-shot');
+      if (runMode !== 'drain') {
+        return;
+      }
+      const items = readBacklog(targetPath);
+      const next = nextEligibleItem(items);
+      if (!next) {
+        vscode.window.showInformationMessage('SwarmForge: Backlog drained — no eligible next item.');
+        return;
+      }
+      const go = 'Launch Next Item';
+      const choice = await vscode.window.showInformationMessage(
+        `Drain mode: next eligible item is ${next.id} — "${next.title}". Launch now?`,
+        go
+      );
+      if (choice !== go) {
+        return;
+      }
+      const runName = next.id.toLowerCase();
+      await context.globalState.update(LAST_RUN_NAME_KEY, runName);
+      appendRun(runLogPath, { name: runName, targetPath, startedAt: new Date().toISOString() });
+      const result = await launchSwarm(targetPath, runName);
+      if (!result.success) {
+        vscode.window.showErrorMessage(result.message);
+        return;
+      }
+      const panel = SwarmPanel.createOrShow(context.extensionUri, targetPath, runLogPath);
+      panel.updateTarget(targetPath);
     })
   );
 }

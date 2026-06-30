@@ -1,32 +1,48 @@
 import { writeHeartbeat, HeartbeatData } from './heartbeat';
 
-let beatCount = 0;
+const beatCounts = new Map<string, number>();
 
 export function withHeartbeat<T>(
   heartbeatDir: string,
   role: string,
   pid: number,
   toolName: string,
-  fn: () => T
-): T {
-  beatCount++;
-  const count = beatCount;
+  fn: () => T | Promise<T>
+): T extends Promise<unknown> ? Promise<Awaited<T>> : T {
+  const prev = beatCounts.get(role) ?? 0;
+  const count = prev + 1;
+  beatCounts.set(role, count);
+
   const timestamp = new Date().toISOString();
-  const writeHeartbeatState = (phase: 'entry' | 'exit', in_flight: boolean) => {
+  const writeState = (phase: 'entry' | 'exit', in_flight: boolean) => {
     const data: HeartbeatData = { role, pid, last_beat: timestamp, last_tool: toolName, phase, in_flight, beat_count: count };
     writeHeartbeat(heartbeatDir, data);
   };
-  writeHeartbeatState('entry', true);
+
+  writeState('entry', true);
+  let result: T | Promise<T>;
   try {
-    const result = fn();
-    writeHeartbeatState('exit', false);
-    return result;
+    result = fn();
   } catch (err) {
-    writeHeartbeatState('exit', false);
+    writeState('exit', false);
     throw err;
   }
+
+  if (result instanceof Promise) {
+    return result.then(
+      (v) => { writeState('exit', false); return v; },
+      (err) => { writeState('exit', false); throw err; }
+    ) as ReturnType<typeof withHeartbeat<T>>;
+  }
+
+  writeState('exit', false);
+  return result as ReturnType<typeof withHeartbeat<T>>;
 }
 
-export function resetBeatCount(): void {
-  beatCount = 0;
+export function resetBeatCount(role?: string): void {
+  if (role !== undefined) {
+    beatCounts.delete(role);
+  } else {
+    beatCounts.clear();
+  }
 }

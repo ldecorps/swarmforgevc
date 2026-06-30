@@ -1,0 +1,19 @@
+id: BL-005
+title: Respawn — restart a single dead agent session
+milestone: M2
+status: done
+priority: 5
+
+description: >
+  When a tile is red (dead session), show a "Restart" button inside that tile.
+  Clicking it triggers a command in the extension host that relaunches that role's
+  tmux session against the target. Use the existing swarmforge role/session
+  configuration to reconstruct the session command.
+
+acceptance:
+  - Restart button visible only on red (dead) tiles
+  - Clicking Restart relaunches the session; tile recovers to normal output within a poll cycle
+  - If relaunch fails, show an error notification with the reason
+  - Depends on BL-003
+
+assigned_to: coder
