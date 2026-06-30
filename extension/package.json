@@ -102,6 +102,11 @@
           ],
           "description": "Reserved for future standalone orchestrator mode. Active roles come from swarmforge/swarmforge.conf via ./swarm."
         },
+        "swarmforge.run.promptForName": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a run-name prompt before launching. When false, launches immediately with a generated default name."
+        },
         "swarmforge.comms.chaseIntervalSeconds": {
           "type": "number",
           "default": 30,

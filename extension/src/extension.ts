@@ -12,6 +12,7 @@ import { getCurrentBranch, openPullRequest } from './swarm/prCreator';
 import { launchSwarm, waitForSwarmReady } from './swarm/swarmLauncher';
 import { stopSwarm } from './swarm/swarmStopper';
 import { listTmuxSessions } from './swarm/tmuxClient';
+import { resolveRunName } from './run/resolveRunName';
 
 const NO_TARGET_MESSAGE = 'Set a target project first (SwarmForge: Set Target Project).';
 const STOP_SWARM_BUTTON = 'Stop Swarm';
@@ -93,16 +94,20 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
 
-      const inputName = await vscode.window.showInputBox({
-        title: 'SwarmForge Run Name',
-        prompt: 'Name this run (used for branch and PR title; leave blank for timestamp default)',
-        placeHolder: 'e.g. fix-auth-bug',
-        validateInput: () => undefined,
-      });
-      if (inputName === undefined) {
+      const config = vscode.workspace.getConfiguration('swarmforge');
+      const promptEnabled = config.get<boolean>('run.promptForName', true);
+      const promptResult = promptEnabled
+        ? await vscode.window.showInputBox({
+            title: 'SwarmForge Run Name',
+            prompt: 'Name this run (used for branch and PR title; leave blank for timestamp default)',
+            placeHolder: 'e.g. fix-auth-bug',
+            validateInput: () => undefined,
+          })
+        : '';
+      const runName = resolveRunName({ promptEnabled, promptResult, defaultName: generateDefaultRunName() });
+      if (runName === undefined) {
         return;
       }
-      const runName = inputName.trim() || generateDefaultRunName();
 
       await context.globalState.update(LAST_RUN_NAME_KEY, runName);
       appendRun(runLogPath, {
