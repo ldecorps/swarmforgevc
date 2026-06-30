@@ -1,7 +1,7 @@
 id: BL-023
 title: reconciler for in_process-stuck and done-but-undelivered handoffs
 milestone: M3
-status: todo
+status: done
 priority: 23
 assigned_to: coder
 
