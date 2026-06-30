@@ -20,6 +20,7 @@ export const PHASE_MAP: Record<string, string> = {
   specifier: 'specifying',
   coder: 'coding',
   cleaner: 'verifying',
+  QA: 'qa-verifying',
 };
 
 export function roleToPhase(role: string): string {

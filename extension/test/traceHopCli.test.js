@@ -40,6 +40,10 @@ test('roleToPhase maps cleaner to verifying', () => {
   assert.equal(roleToPhase('cleaner'), 'verifying');
 });
 
+test('roleToPhase maps QA to qa-verifying', () => {
+  assert.equal(roleToPhase('QA'), 'qa-verifying');
+});
+
 test('roleToPhase throws for unknown role', () => {
   assert.throws(() => roleToPhase('unknown'), /unknown role/i);
 });
