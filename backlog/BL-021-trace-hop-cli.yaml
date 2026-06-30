@@ -1,0 +1,59 @@
+id: BL-021
+title: trace-hop CLI for agent tracing
+milestone: M3
+status: todo
+priority: 21
+assigned_to: coder
+
+description: |
+  Replace hand-written trace lines in role prompts with a small CLI every
+  agent calls. Agents currently write HOP/STATE_CHANGE/DECISION lines by
+  hand, causing format drift and missed state changes. The CLI enforces the
+  correct format, handles atomic appends, and routes to one shared log.
+
+  CLI: node <repo>/extension/out/tools/trace-hop.js <traceId> <command> [args...]
+
+  Commands:
+    receive                     — agent received the trace item
+    decide <decision> [detail]  — agent made a routing/processing decision
+    retry "<reason>"            — agent is retrying (n auto-incremented)
+
+  Role is read from $SWARMFORGE_ROLE (error and exit 1 if unset).
+
+  receive appends two lines:
+    HOP <role> <ISO> action=receive state=received
+    STATE_CHANGE <role> <ISO> received-><phase>
+  where phase comes from a fixed map:
+    coordinator→routing, specifier→specifying, coder→coding, cleaner→verifying
+
+  decide appends:
+    DECISION <role> <ISO> decision=<decision> details="<detail>"
+
+  retry appends:
+    RETRY <role> <ISO> attempt=<n> reason="<reason>"
+  n is auto-incremented by counting prior RETRY lines for this role in the log.
+
+  Shared log resolution: read $SWARMFORGE_TRACES_DIR if set; otherwise resolve
+  via `git rev-parse --git-common-dir` to find the main checkout root and use
+  <root>/../.swarmforge/traces/. Fail loudly if neither resolves.
+
+  Implementation:
+  - Lives at extension/src/tools/trace-hop.ts (compiled to out/tools/trace-hop.js).
+  - Reuses appendTraceHop, recordStateChange, recordAgentDecision, recordRetry
+    from extension/src/swarm/tracer.ts — do not re-implement line formatting.
+  - Appends must be atomic: open with O_APPEND | O_CREAT, write one complete
+    line per syscall, or write to a tmp file and rename if multi-line.
+  - After implementing, update the "Tracer Bullet Participation" block in all
+    four role prompts (coordinator, specifier, coder, cleaner) to call the CLI
+    instead of hand-writing lines.
+
+acceptance: |
+  - Each role can run `receive` then `decide` and produce correctly-formatted,
+    parseable lines (parseable by parseTraceLog in tracer.ts).
+  - All agents write to the same trace log regardless of which worktree they
+    run from.
+  - tracer-bullet-launcher.js --watch reads the resulting log and produces the
+    same five-section report.
+  - Unit tests cover: arg parsing, role→phase map, retry auto-increment,
+    shared-root resolution, missing $SWARMFORGE_ROLE error.
+  - Role prompts no longer contain hand-written trace line instructions.
