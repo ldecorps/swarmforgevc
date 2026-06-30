@@ -103,7 +103,7 @@ test('readChaseCount returns 0 for corrupt sidecar', () => {
 
 test('scanInboxNew returns empty array when directory absent', () => {
   const tmp = mkTmp();
-  const items = scanInboxNew(path.join(tmp, 'nonexistent'), NOW);
+  const items = scanInboxNew(path.join(tmp, 'nonexistent'));
   assert.deepEqual(items, []);
 });
 
