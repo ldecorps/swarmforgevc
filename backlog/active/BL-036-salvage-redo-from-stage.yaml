@@ -1,0 +1,36 @@
+id: BL-036
+title: salvage — redo-from-stage for failed or rejected pipeline runs
+milestone: M4
+status: todo
+priority: 36
+assigned_to: coder
+
+description: |
+  When a swarm run fails (e.g. QA rejects a coder commit, or the cleaner finds
+  an unfixable issue) there is currently no clean recovery path. The developer
+  must manually inspect git history, revert commits, and re-route the handoff.
+
+  Add a `redo_from` command that restarts a work item from a named stage:
+  - Accept `redo_from <item-id> <stage>` where stage is one of:
+    `coder | cleaner | architect | documenter | qa`.
+  - Reset the item's in-flight handoff state (mark any in_process or new
+    handoffs for the item as abandoned in `.swarmforge/handoffs/`).
+  - Create a checkpoint: tag the git HEAD at the time of the redo as
+    `redo/<item-id>/<stage>/<timestamp>` so the pre-redo state is recoverable.
+  - Re-inject the item as a fresh `git_handoff` to the named stage using the
+    last known good commit for that stage (or the current HEAD if starting
+    from `coder`).
+  - Record the redo in `.swarmforge/run-log.jsonl` with `event: redo`,
+    `from_stage`, `reason` (captured from the rejection note if available).
+
+  When QA sends a rejection, it must include a `rejection_reason` field in the
+  handoff. The specifier reads this and captures it in the redo log entry.
+
+acceptance: |
+  - `redo_from <item-id> <stage>` creates a git tag and re-injects the item.
+  - Any in_process or new handoffs for the item are marked abandoned before
+    re-injection (no duplicate processing).
+  - The redo event appears in `.swarmforge/run-log.jsonl`.
+  - QA handoffs include a `rejection_reason` field (validated by
+    `swarm_handoff.sh`).
+  - Existing tests pass; add a test for the abandonment + re-injection path.
