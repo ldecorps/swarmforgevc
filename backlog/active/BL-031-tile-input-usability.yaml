@@ -1,0 +1,83 @@
+id: BL-031
+title: make tile input usable — visible input bar per tile
+milestone: M3
+status: active
+priority: 31
+assigned_to: coder
+
+description: |
+  Currently sending text to an agent requires clicking the invisible output div
+  to focus it, then typing. There is no affordance: nothing tells the developer
+  that typing is possible, where the cursor is, or what has been typed so far.
+  Ctrl-C/Enter work but are invisible. The experience is broken.
+
+  Fix: add a real single-line text input at the bottom of each tile. The
+  developer types into it and presses Enter (or Ctrl-C for interrupt) to send.
+
+  Concrete changes (all in media/panel.js and webviewHtml.ts CSS):
+
+  1. Each tile gets a `.tile-input-bar` div appended below `.tile-output`:
+       <div class="tile-input-bar">
+         <span class="tile-input-prompt">❯</span>
+         <input type="text" class="tile-input" placeholder="type a message…" />
+       </div>
+
+  2. On Enter in the input: send the text as `{ type: 'input', role, data: text + '\n' }`,
+     then clear the field.
+
+  3. On Ctrl-C in the input (keydown check): send `{ type: 'input', role, data: '\x03' }`,
+     clear the field (mirrors the existing Ctrl-C logic on the document keydown).
+
+  4. On ArrowUp / ArrowDown in the input: cycle through a per-tile history
+     (last 20 sent messages). This is the single biggest usability win after
+     having a visible field at all.
+
+  5. The existing document-level keydown handler that captures all keypresses
+     when `activeRole` is set must be scoped down: it should only fire when
+     focus is NOT on a `.tile-input` element. Otherwise every character typed
+     in the input fires twice (once in the field, once via the document handler).
+
+  6. Focusing the `.tile-input` sets `activeRole` (same as focusing
+     `.tile-output` today), so Ctrl-C sent from the input bar is still routed
+     to the correct agent.
+
+  CSS additions in webviewHtml.ts:
+  - `.tile-input-bar`: flex row, `flex-shrink: 0`, border-top 1px solid
+    var(--vscode-panel-border), padding 4px 8px, align-items center.
+  - `.tile-input-prompt`: monospace, opacity 0.5, margin-right 6px,
+    user-select: none.
+  - `.tile-input`: flex 1, background: transparent, border: none, outline none,
+    color var(--vscode-foreground), font-family monospace, font-size 12px.
+    On focus: no extra outline (the bar border is enough).
+
+  TDD order:
+  1. Unit test (JSDOM): ensureTile creates a `.tile-input-bar` and `.tile-input`
+     element inside the tile.
+  2. Entering text and pressing Enter posts `{ type: 'input', data: 'hello\n' }`
+     and clears the field.
+  3. Ctrl-C in the input posts `{ type: 'input', data: '\x03' }`.
+  4. ArrowUp recalls last sent message; ArrowDown clears it again.
+  5. The document keydown handler does NOT fire when a `.tile-input` has focus
+     (focus check test).
+  6. All existing tile and input tests remain green.
+
+acceptance: |
+  - Every tile has a visible one-line input bar at its bottom edge with a
+    `❯` prompt glyph and a placeholder "type a message…".
+  - Typing in the bar and pressing Enter sends the text to the agent and
+    clears the field.
+  - Ctrl-C in the input sends the interrupt character to the agent.
+  - ArrowUp/ArrowDown cycle through per-tile send history (up to 20 entries).
+  - Typing in the input does NOT also trigger the document-level keydown
+    handler (no double-send).
+  - Focusing the input sets that tile as the active tile (for Ctrl-C routing).
+  - Existing tile tests remain green.
+
+constraints: |
+  - Changes are in media/panel.js (JS behaviour) and webviewHtml.ts (CSS only).
+    Do not modify the extension host, paneTailer, or swarmPanel message protocol.
+  - Do not use localStorage for history — keep it in a JS Map keyed by role,
+    in memory only.
+  - Keep the existing document-level keydown handler for backward compatibility
+    (it handles focus on the output div), but gate it so it skips when a
+    .tile-input is the active element.
