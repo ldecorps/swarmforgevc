@@ -1,0 +1,33 @@
+id: BL-033
+title: backlog panel — derive item status from folder, not YAML field
+milestone: M3
+status: active
+priority: 33
+assigned_to: coder
+
+description: |
+  `backlogReader.ts` calls `readYamlFiles` on both `backlog/active/` and
+  `backlog/done/`. It then trusts the `status` field inside each YAML file to
+  decide where the item appears in the panel. Several items in `done/` still
+  carry `status: active` or `status: todo` from when they were in flight, so
+  the panel shows them under "Active" instead of "Done".
+
+  The folder is the authoritative signal:
+  - Items read from `backlog/done/` must be shown as `done` regardless of the
+    YAML `status` field.
+  - Items read from `backlog/active/` keep their YAML `status` (either
+    `active` or `todo`); do not override them.
+
+  Change `readBacklog` (and its helpers) in
+  `extension/src/panel/backlogReader.ts` so that the status is determined by
+  folder membership, not by the `status` field in the YAML. The YAML field may
+  still be parsed (it's used when initialising items); just override it after
+  parsing based on which directory the file came from.
+
+acceptance: |
+  - All items in `backlog/done/` render under "Done" in the backlog panel,
+    even if their YAML still says `status: active` or `status: todo`.
+  - Items in `backlog/active/` with `status: active` render under "Active".
+  - Items in `backlog/active/` with `status: todo` render under "Todo".
+  - Existing tests pass; add at least one test: a done-folder item whose YAML
+    says `status: active` must parse with `status: 'done'`.
