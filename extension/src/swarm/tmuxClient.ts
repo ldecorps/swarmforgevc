@@ -117,6 +117,64 @@ export function capturePane(
   return runCommand('tmux', args);
 }
 
+/**
+ * Raise the tmux scrollback buffer (history-limit) so tiles can show more
+ * "memory". Set globally (-g) so panes created after this — e.g. on respawn —
+ * inherit the larger buffer, and on already-running panes the buffer grows
+ * toward the new limit as fresh output arrives.
+ */
+export function setHistoryLimit(socketPath: string, lines: number): TmuxRunResult {
+  return runCommand('tmux', [
+    '-S',
+    socketPath,
+    'set-option',
+    '-g',
+    'history-limit',
+    String(lines),
+  ]);
+}
+
+/**
+ * Switch the tmux server to manual window sizing so resizeWindow sticks even
+ * when no client is attached (headless swarm). Without this, tmux sizes windows
+ * to the latest/attached client and snaps detached windows back to 80x24.
+ */
+export function setWindowSizeManual(socketPath: string): TmuxRunResult {
+  return runCommand('tmux', [
+    '-S',
+    socketPath,
+    'set-option',
+    '-g',
+    'window-size',
+    'manual',
+  ]);
+}
+
+/**
+ * Resize a window so its pane shows more lines. Headless tmux defaults to 80x24,
+ * which caps each tile at 24 lines of a full-screen TUI; a taller pane makes the
+ * agent re-render (SIGWINCH) into more rows and lets capture-pane return them.
+ * Requires setWindowSizeManual to have been applied.
+ */
+export function resizeWindow(
+  socketPath: string,
+  target: string,
+  cols: number,
+  rows: number
+): TmuxRunResult {
+  return runCommand('tmux', [
+    '-S',
+    socketPath,
+    'resize-window',
+    '-t',
+    target,
+    '-x',
+    String(cols),
+    '-y',
+    String(rows),
+  ]);
+}
+
 export function sendKeys(
   socketPath: string,
   target: string,
