@@ -159,7 +159,7 @@ test('panel.js renders recent runs with running badge', () => {
 
 test('panel.js renders backlog', () => {
   assert(panelJs.includes('renderBacklog'));
-  assert(panelJs.includes('bl-badge-'));
+  assert(panelJs.includes('bl-group-header') || panelJs.includes('bl-badge-'));
 });
 
 test('panel.js backlog active items sorted before todo', () => {
@@ -188,4 +188,64 @@ test('panel.js uses activeRole to route keydown', () => {
 
 test('panel.js output element has tabIndex for focus', () => {
   assert(panelJs.includes('tabIndex = 0'));
+});
+
+// --- collapsible side-by-side panels ---
+
+test('getWebviewHtml wraps both panels in bottom-row for side-by-side layout', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  const bottomRowIdx = html.indexOf('id="bottom-row"');
+  assert(bottomRowIdx !== -1, 'missing #bottom-row container');
+  assert(html.indexOf('id="recent-runs"') > bottomRowIdx, 'recent-runs must be inside bottom-row');
+  assert(html.indexOf('id="backlog"') > bottomRowIdx, 'backlog must be inside bottom-row');
+});
+
+test('getWebviewHtml bottom-row CSS uses flex-direction row', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  const match = html.match(/#bottom-row\s*\{([^}]+)\}/);
+  assert(match, '#bottom-row CSS rule not found');
+  assert(match[1].includes('flex-direction: row'), '#bottom-row must have flex-direction: row');
+});
+
+test('getWebviewHtml panels have collapse toggle buttons', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  assert(html.includes('id="runs-toggle"'), 'missing runs-toggle button');
+  assert(html.includes('id="backlog-toggle"'), 'missing backlog-toggle button');
+});
+
+test('panel.js collapses section on toggle button click', () => {
+  assert(panelJs.includes("'collapsed'") || panelJs.includes('"collapsed"'),
+    'panel.js must toggle collapsed class');
+  assert(panelJs.includes('runs-toggle') || panelJs.includes('backlog-toggle'),
+    'panel.js must reference toggle buttons');
+});
+
+test('panel.js manages bottom-row visibility based on content', () => {
+  assert(panelJs.includes('bottom-row') || panelJs.includes('bottomRowEl'),
+    'panel.js must manage bottom-row visibility');
+});
+
+// --- badgeUpdate and highlightTile ---
+
+test('panel.js handles badgeUpdate message', () => {
+  assert(panelJs.includes("case 'badgeUpdate'"));
+});
+
+test('panel.js handles highlightTile message', () => {
+  assert(panelJs.includes("case 'highlightTile'"));
+});
+
+test('panel.js tile includes bl-badge span', () => {
+  assert(panelJs.includes('tile-bl-badge'));
+});
+
+// --- improved backlog readability ---
+
+test('panel.js backlog uses group headers for active/todo', () => {
+  assert(panelJs.includes('bl-group-header'), 'panel.js backlog should use group headers');
+});
+
+test('getWebviewHtml CSS has backlog group header style', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  assert(html.includes('bl-group-header'));
 });

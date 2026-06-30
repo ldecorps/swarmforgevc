@@ -190,7 +190,10 @@ export class SwarmPanel {
   }
 
   private getHtml(): string {
-    return getWebviewHtml(getNonce());
+    const scriptUri = this.panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'media', 'panel.js')
+    ).toString();
+    return getWebviewHtml(scriptUri, this.panel.webview.cspSource);
   }
 
   public dispose(): void {
