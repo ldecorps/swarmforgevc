@@ -1,0 +1,89 @@
+id: BL-022
+title: single rock-solid comms path (realtime + chase)
+milestone: M3
+status: todo
+priority: 22
+assigned_to: coder
+
+description: |
+  There are currently two ways to deliver a handoff: via swarm_handoff.sh →
+  daemon (which sends a tmux wake-up) and by writing directly to inbox/new
+  (which sends no wake-up). This divergence caused BL-021 to stall. Fix it
+  with one canonical path enforced at the prompt layer, plus a background
+  chaser that catches anything that slips through.
+
+  ## Part A — Enforce single send path (prompt edits)
+
+  Remove the "Write directly to .swarmforge/handoffs/inbox/new/" instruction
+  from all four role prompts (coordinator, specifier, coder, cleaner).
+  Replace with:
+
+    "Send via swarm_handoff.sh only. Write a draft to tmp/handoff.txt and
+     run: swarm_handoff.sh ./tmp/handoff.txt
+     Never write directly to inbox/new — that path sends no wake-up."
+
+  The draft format is documented in HANDOFF-PROTOCOL.md (type, to, priority,
+  task/commit or message fields). The script validates, sequences, and queues
+  the file; the daemon delivers it and sends the tmux wake-up.
+
+  ## Part B — Background chaser / reconciler (extension host)
+
+  A new InboxChaser module in the extension host, running on a configurable
+  interval (swarmforge.comms.chaseIntervalSeconds, default 30s), does:
+
+  1. Scan every role's inbox/new/ for items older than
+     swarmforge.comms.chaseTimeoutSeconds (default 90s) that have not been
+     moved to in_process (i.e. the recipient has not dequeued them).
+  2. For each stale item:
+     a. Check watchdog heartbeat for the recipient role.
+     b. If recipient is alive/idle: send a tmux wake-up
+        ("You have new handoff mail. If idle, run ready_for_next.sh."),
+        append a `chased` event to the message log (BL-009 log under
+        .swarmforge/messages/ if the item has a corresponding log; otherwise
+        note in extension host log), increment chase_count in a sidecar.
+     c. If recipient is dead (watchdog says no heartbeat): trigger respawn
+        (BL-011/BL-005 respawn path) instead of chasing.
+  3. After swarmforge.comms.maxChases (default 3) chases with no dequeue:
+     - Mark the item dead-letter: move to inbox/new/ with a .dead suffix or
+       log to extension host; surface a red tile warning for that role.
+  4. A rogue direct-write (inbox item with no corresponding message log) is
+     treated like any stale item: the chaser discovers and re-notifies on
+     its next sweep. No silent stall is possible.
+
+  ## Part C — Idle agent self-poll (role prompt addition)
+
+  Add to each role prompt's idle guidance:
+    "If you have been idle for more than 2 minutes without a wake-up, run
+     ready_for_next.sh yourself. Do not wait indefinitely."
+
+  This is a third belt-and-suspenders so a single missed wake-up is never
+  fatal, independent of the chaser.
+
+  ## Idempotency
+  Reuse BL-009 handled-id tracking. An item already in in_process or
+  completed is never re-chased. A duplicate or redelivered item with the same
+  id is a no-op (already recorded as handled). This preserves at-least-once
+  delivery with exactly-once processing.
+
+acceptance: |
+  - grep the four role prompts: "write directly" and "inbox/new" appear nowhere
+    in send instructions; one documented path (swarm_handoff.sh) remains.
+  - Simulate missed wake-up (deliver item to inbox/new, suppress tmux notify):
+    chaser re-notifies within chaseTimeoutSeconds; recipient picks it up.
+  - Simulate rogue direct-inbox write (bypass swarm_handoff.sh): chaser still
+    causes pickup; no permanent stall.
+  - Simulate dead recipient: chaser triggers respawn, not repeated tmux pings.
+  - After maxChases with no dequeue: item goes dead-letter, red tile appears.
+  - Duplicate/redelivered item is processed exactly once (idempotent).
+  - Unit tests: chaser sweep logic, stale-item detection, chase-count tracking,
+    dead-letter escalation, respawn-vs-chase branching.
+
+constraints: |
+  - Do NOT modify swarmforge/scripts/ — the daemon and swarm_handoff.sh are
+    pinned and used as-is.
+  - InboxChaser lives in extension/src/swarm/ (extension host only, not agents).
+  - Reuse BL-009 MessageBus (message logs, handled-id, leases), BL-011 watchdog
+    heartbeats, and BL-005/BL-012 respawn + dead-letter paths. Do not duplicate.
+  - Settings keys: swarmforge.comms.chaseIntervalSeconds,
+    swarmforge.comms.chaseTimeoutSeconds, swarmforge.comms.maxChases.
+    Re-use existing BL-012 keys if already defined; add only what is missing.
