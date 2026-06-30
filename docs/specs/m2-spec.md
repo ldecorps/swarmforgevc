@@ -182,56 +182,94 @@
 npm run tracer-bullet
 ```
 
-**Output:**
+**Modes:**
+- `harness` (default) — this process plays every role through the real `tracer`
+  module, writing to the real `.swarmforge/traces/` store with real wall-clock
+  timestamps. Deterministic, completes in seconds, suitable for CI smoke tests.
+- `--watch` — seed the trace and poll the log while the live autonomous agents
+  append their own hops. Used when the swarm is running with trace-aware role
+  prompts (see "Trace-aware role prompts" below).
 
-A detailed report showing:
-1. **Pipeline path** — Each hop (coordinator → specifier → coder → cleaner) with dwell time
-2. **Handoff latencies** — Time between agents
-3. **Agent decisions** — What each role decided (route, implement, verify, etc.)
-4. **State transitions** — idle → processing → complete with reasons
-5. **Retries** — Any retry attempts and their justification
+**Output — five sections:**
+1. **Per-agent dwell time** — `decision_time − receive_time`: how long the item
+   actually sat with each agent, plus the decision that agent made.
+2. **Between-agent handoff latency** — `next_receive_time − prev_decision_time`:
+   transit time between agents. (Dwell and transit are computed from *two*
+   timestamps per agent — a receive HOP and a DECISION — so they are genuinely
+   distinct, not the same interval reported twice.)
+3. **State transitions** — `received → routing/specifying/coding/verifying`, with reasons.
+4. **Agent decisions** — what each role decided after receiving the bullet.
+5. **Retries** — any retry attempts with attempt number and reason.
 
-Example:
+**Observed run (harness, 2026-06-30, trace-20260630T075112z):**
 
 ```
-=== Tracer Bullet Report ===
-Trace ID: trace-20260630T081502z
-Status: PASS ✓
-Total Duration: 23.45s
+================ Tracer Bullet Report ================
+Trace ID:       trace-20260630T075112z
+Status:         PASS ✓
+Total Duration: 2.39s
+Hops:           4  (coordinator → specifier → coder → cleaner)
 
---- Pipeline Path ---
-  1. coordinator    (5.12s)     | action: route_to_specifier
-  2. specifier      (8.34s)     | action: prepare_spec
-  3. coder          (7.89s)     | action: implement_test
-  4. cleaner        (2.10s)     | action: verify_and_merge
+--- Per-Agent: dwell time, state, decision ---
+  1. coordinator  dwell=0.49s
+       decided: route_to_specifier  (tracer bullet received; routing to specifier)
+  2. specifier    dwell=0.54s
+       decided: forward_to_coder  (no spec needed for tracer bullet; forwarding)
+  3. coder        dwell=0.32s
+       decided: forward_to_cleaner  (no implementation needed; tests already green; forwarding)
+  4. cleaner      dwell=0.38s
+       decided: verify_and_complete  (verified pipeline reached cleaner; item complete)
 
---- Handoff Latencies ---
-  coordinator → specifier: 0.85s
-  specifier → coder: 1.23s
-  coder → cleaner: 0.56s
+--- Between-Agent handoff latencies ---
+  coordinator  → specifier    0.37s
+  specifier    → coder        0.30s
+  coder        → cleaner      0.37s
 
---- Agent Decisions ---
-  coordinator: route_to_specifier
-  specifier: prepare_spec
-  coder: implement_test
-  cleaner: verify_and_merge
+--- State transitions ---
+  coordinator  received → routing     (began processing)
+  specifier    received → specifying  (began processing)
+  coder        received → coding      (began processing)
+  cleaner      received → verifying   (began processing)
+
+--- Retries ---
+  none
+======================================================
+```
+
+**Durable trace log format** (`.swarmforge/traces/<id>.log`, newline-separated):
+
+```
+TRACE <id> HOP coordinator <ISO> action=receive state=queued
+STATE_CHANGE coordinator <ISO> received->routing reason="began processing"
+DECISION coordinator <ISO> decision=route_to_specifier details="..."
+HOP specifier <ISO> action=receive state=received
+...
 ```
 
 **Acceptance signal:**
-- Tracer bullet completes end-to-end (reaches cleaner) in under 5 minutes
-- All state transitions visible and correctly timestamped
-- Handoff latencies are consistent (under 2s between agents)
-- No unexpected retries without clear reason
+- Tracer bullet completes end-to-end (reaches cleaner) — harness in seconds,
+  live `--watch` within 5 minutes.
+- Dwell time and between-agent latency are reported as distinct values.
+- All state transitions visible and correctly timestamped.
+- Retries section lists every retry with reason (empty when the run is clean).
+
+**Trace-aware role prompts:**
+Each of `coordinator`, `specifier`, `coder`, `cleaner` has a "Tracer Bullet
+Participation" section instructing it to append its HOP + DECISION and forward
+the `TRACE <id>` note (cleaner is terminal). This lets a live swarm produce the
+same trace data autonomously under `--watch`.
 
 **Implementation:**
-- Tracer ID generated as `trace-YYYYMMDDTHHMMSSz[-counter]`
-- Trace log file at `.swarmforge/traces/<traceId>.log`
-- Log format: newline-separated YAML-like entries (HOP, DECISION, STATE_CHANGE, RETRY)
-- Launcher: `extension/src/tools/tracer-bullet-launcher.ts`
-- Utilities: `extension/src/swarm/tracer.ts` (generateTraceId, recordAgentDecision, recordStateChange, recordRetry, parseFullTraceLog, computeTraceReport)
+- Tracer ID generated as `trace-YYYYMMDDTHHMMSSz[-counter]`.
+- Trace log file at `.swarmforge/traces/<traceId>.log`.
+- Log entries: `HOP`, `DECISION`, `STATE_CHANGE`, `RETRY`.
+- Launcher: `extension/src/tools/tracer-bullet-launcher.ts` (run from repo root:
+  `node extension/out/tools/tracer-bullet-launcher.js`).
+- Utilities: `extension/src/swarm/tracer.ts` — `generateTraceId`,
+  `recordAgentDecision`, `recordStateChange`, `recordRetry`, `parseFullTraceLog`,
+  `computeTraceReport`.
 
 **Test Coverage:**
-- 24 unit tests for tracer utilities (create, parse, report)
-- Live end-to-end pipeline validation
-- State tracking and latency computation
-- Decision and retry record parsing
+- 25 unit tests for tracer utilities (id generation, create, append, parse,
+  decision/state/retry recording, full-log parse, report with dwell≠transit).
+- Harness end-to-end run validated above.

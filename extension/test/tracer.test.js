@@ -261,3 +261,31 @@ test('computeTraceReport includes traceId, totalDuration, and hop details', () =
   assert.equal(report.hops[1].duration, 5);
   assert.equal(report.hops[1].action, 'route');
 });
+
+// ── dwell vs transit separation ────────────────────────────────────────────
+
+test('dwell (receive→decision) and transit (decision→next receive) are distinct', () => {
+  // coordinator received at :00, decided at :02 (dwell 2s), specifier received
+  // at :05 (transit 3s). These must NOT collapse to the same number.
+  const content = [
+    'TRACE t HOP coordinator 2026-06-30T00:00:00.000Z action=receive state=received',
+    'DECISION coordinator 2026-06-30T00:00:02.000Z decision=route_to_specifier details="go"',
+    'HOP specifier 2026-06-30T00:00:05.000Z action=receive state=received',
+    'DECISION specifier 2026-06-30T00:00:06.000Z decision=forward_to_coder details="go"',
+  ].join('\n');
+  const { hops, decisions } = parseFullTraceLog(content);
+
+  const decisionByRole = new Map();
+  decisions.forEach((d) => decisionByRole.set(d.role, d));
+
+  // Dwell at coordinator = decision - receive = 2s.
+  const coordDwell =
+    (decisionByRole.get('coordinator').timestamp.getTime() - hops[0].timestamp.getTime()) / 1000;
+  // Transit coordinator→specifier = specifier receive - coordinator decision = 3s.
+  const transit =
+    (hops[1].timestamp.getTime() - decisionByRole.get('coordinator').timestamp.getTime()) / 1000;
+
+  assert.equal(coordDwell, 2);
+  assert.equal(transit, 3);
+  assert.notEqual(coordDwell, transit);
+});

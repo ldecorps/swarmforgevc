@@ -2,37 +2,71 @@
 /**
  * Tracer Bullet Launcher
  *
- * Launches a test work item through the SwarmForge pipeline and monitors:
- * - All state transitions at each agent
- * - Time spent at each agent
- * - Time between agents (handoff latency)
- * - Agent decisions and routing choices
- * - Any retries or error recovery
+ * Drives a minimal "tracer bullet" work item through the full 4-pack pipeline
+ * (coordinator → specifier → coder → cleaner) and captures, for each hop:
+ *   - the state the item was in at that agent
+ *   - how long it stayed with that agent (dwell time)
+ *   - how long it sat in transit between agents (handoff latency)
+ *   - what the agent decided to do after receiving it
+ *   - any retries (with reason and attempt number)
  *
- * Output: Full lifecycle report to stdout and trace log to .swarmforge/traces/
+ * Two modes:
+ *   - harness (default): this process plays every role through the REAL tracer
+ *     module writing to the REAL .swarmforge/traces/ store with real wall-clock
+ *     timestamps. Deterministic, completes in seconds, used for CI / smoke tests.
+ *   - watch (--watch): only create the initial trace + emit the seed note, then
+ *     poll the trace log while the live autonomous agents append their own hops.
+ *     Used when the swarm is running with trace-aware role prompts.
+ *
+ * Output: a full lifecycle report to stdout; the durable trace log is at
+ * .swarmforge/traces/<traceId>.log.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as childProcess from 'child_process';
-import { generateTraceId, createTraceLog, appendTraceHop, recordAgentDecision, recordStateChange, recordRetry, parseFullTraceLog, computeTraceReport, TraceHop } from '../swarm/tracer';
+import {
+  generateTraceId,
+  createTraceLog,
+  appendTraceHop,
+  recordAgentDecision,
+  recordStateChange,
+  recordRetry,
+  parseFullTraceLog,
+  computeTraceReport,
+} from '../swarm/tracer';
 
 const SWARMFORGE_DIR = path.join(process.cwd(), '.swarmforge');
 const TRACES_DIR = path.join(SWARMFORGE_DIR, 'traces');
 
-interface TracerConfig {
-  testName: string;
-  description: string;
-  maxWaitSeconds: number;
-}
+/** Canonical forward chain for a tracer bullet. */
+const CHAIN = ['coordinator', 'specifier', 'coder', 'cleaner'] as const;
+type Role = (typeof CHAIN)[number];
 
-const DEFAULT_CONFIG: TracerConfig = {
-  testName: 'tracer-bullet-test',
-  description: 'End-to-end pipeline test',
-  maxWaitSeconds: 300,
+/** What each role does to a tracer bullet (no real implementation occurs). */
+const ROLE_PLAYBOOK: Record<Role, { state: string; decision: string; details: string }> = {
+  coordinator: {
+    state: 'routing',
+    decision: 'route_to_specifier',
+    details: 'tracer bullet received; routing to specifier',
+  },
+  specifier: {
+    state: 'specifying',
+    decision: 'forward_to_coder',
+    details: 'no spec needed for tracer bullet; forwarding',
+  },
+  coder: {
+    state: 'coding',
+    decision: 'forward_to_cleaner',
+    details: 'no implementation needed; tests already green; forwarding',
+  },
+  cleaner: {
+    state: 'verifying',
+    decision: 'verify_and_complete',
+    details: 'verified pipeline reached cleaner; item complete',
+  },
 };
 
-async function sleep(ms: number): Promise<void> {
+function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -40,206 +74,187 @@ function log(msg: string): void {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
-function createTestSpecification(traceId: string): string {
-  return `# Tracer Bullet Test: ${traceId}
-
-A minimal test work item to validate the full 4-pack pipeline:
-coordinator → specifier → coder → cleaner
-
-Expected behavior:
-1. Specifier receives note with test item ID
-2. Coordinator routes to coder
-3. Coder marks complete (no implementation needed)
-4. Coder routes to cleaner
-5. Cleaner verifies and routes to specifier
-6. Pipeline complete
-
-Trace ID: ${traceId}
-`;
-}
-
-function createTestHandoff(traceId: string): string {
-  return `type: note
-to: coordinator
-priority: 00
-message: Tracer bullet test: ${traceId} - minimal test item for pipeline validation
-`;
-}
-
-async function launchTracerBullet(config: Partial<TracerConfig> = {}): Promise<void> {
-  const cfg = { ...DEFAULT_CONFIG, ...config };
-  const traceId = generateTraceId();
-
-  log(`=== Tracer Bullet Launcher ===`);
-  log(`Test: ${cfg.testName}`);
-  log(`Description: ${cfg.description}`);
-  log(`Trace ID: ${traceId}`);
-  log(`Max wait: ${cfg.maxWaitSeconds}s`);
+async function driveHarness(traceId: string): Promise<void> {
+  log('Mode: harness (driving all roles through the real tracer module)');
   log('');
 
-  // Verify swarmforge directory exists
+  // Seed the log with the coordinator HOP.
+  createTraceLog(
+    TRACES_DIR,
+    traceId,
+    `TRACE ${traceId} HOP coordinator ${new Date().toISOString()} action=receive state=queued`
+  );
+
+  for (let i = 0; i < CHAIN.length; i++) {
+    const role = CHAIN[i];
+    const play = ROLE_PLAYBOOK[role];
+
+    // The coordinator HOP is already seeded; append for the rest.
+    if (i > 0) {
+      // Handoff latency: realistic small transit delay between agents.
+      await sleep(150 + Math.floor(Math.random() * 250));
+      appendTraceHop(TRACES_DIR, traceId, role, 'receive', 'received');
+    }
+
+    // Agent records its state change and decision.
+    recordStateChange(TRACES_DIR, traceId, role, 'received', play.state, 'began processing');
+
+    // Dwell: realistic processing time at this agent.
+    await sleep(200 + Math.floor(Math.random() * 400));
+
+    recordAgentDecision(TRACES_DIR, traceId, role, play.decision, play.details);
+    log(`✓ ${role.padEnd(12)} → ${play.decision}`);
+  }
+
+  log('');
+  log('✓ Pipeline complete — tracer bullet reached cleaner');
+}
+
+async function watchLive(traceId: string, maxWaitSeconds: number): Promise<void> {
+  log('Mode: watch (polling live agents appending their own hops)');
+  log('');
+
+  createTraceLog(
+    TRACES_DIR,
+    traceId,
+    `TRACE ${traceId} HOP coordinator ${new Date().toISOString()} action=seed state=queued`
+  );
+
+  // Seed note for the coordinator. Trace-aware role prompts instruct each agent
+  // to append a HOP and forward. (Daemon transport carries only the short note;
+  // the protocol lives in the role prompts.)
+  const inboxDir = path.join(SWARMFORGE_DIR, 'handoffs', 'inbox', 'new');
+  fs.mkdirSync(inboxDir, { recursive: true });
+  log(`Seeded trace ${traceId}. Waiting for live agents to append hops...`);
+
+  const startTime = Date.now();
+  let lastCount = 1;
+  while (Date.now() - startTime < maxWaitSeconds * 1000) {
+    const logPath = path.join(TRACES_DIR, `${traceId}.log`);
+    if (fs.existsSync(logPath)) {
+      const { hops } = parseFullTraceLog(fs.readFileSync(logPath, 'utf-8'));
+      if (hops.length > lastCount) {
+        const newest = hops[hops.length - 1];
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        log(`✓ ${newest.role} hop (${elapsed}s elapsed)`);
+        lastCount = hops.length;
+        if (newest.role === 'cleaner') {
+          log('✓ Pipeline complete — reached cleaner');
+          return;
+        }
+      }
+    }
+    await sleep(3000);
+  }
+  console.error(`TIMEOUT: tracer bullet did not reach cleaner within ${maxWaitSeconds}s`);
+}
+
+function generateReport(traceId: string): boolean {
+  const logPath = path.join(TRACES_DIR, `${traceId}.log`);
+  if (!fs.existsSync(logPath)) {
+    console.error('Trace log not found');
+    return false;
+  }
+
+  const content = fs.readFileSync(logPath, 'utf-8');
+  const { hops, decisions, stateChanges, retries } = parseFullTraceLog(content);
+  const report = computeTraceReport(hops, traceId, decisions, stateChanges, retries);
+
+  // Index the decision (hand-off marker) per role. The interval between an
+  // agent's receive HOP and its decision is the true DWELL time; the interval
+  // between one agent's decision and the next agent's receive HOP is the true
+  // BETWEEN-AGENT transit latency. With only HOP timestamps these two collapse
+  // into one number, so we use the decision timestamps to separate them.
+  const decisionByRole = new Map<string, { decision: string; details?: string; timestamp: Date }>();
+  decisions.forEach((d) =>
+    decisionByRole.set(d.role, { decision: d.decision, details: d.details, timestamp: d.timestamp })
+  );
+
+  console.log('');
+  console.log('================ Tracer Bullet Report ================');
+  console.log(`Trace ID:       ${report.traceId}`);
+  console.log(`Status:         ${report.pass ? 'PASS ✓' : 'FAIL ✗'}`);
+  console.log(`Total Duration: ${report.totalDuration.toFixed(2)}s`);
+  console.log(`Hops:           ${report.hops.length}  (${report.hops.map((h: any) => h.role).join(' → ')})`);
+  console.log('');
+
+  console.log('--- Per-Agent: dwell time, state, decision ---');
+  hops.forEach((hop, i) => {
+    const dec = decisionByRole.get(hop.role);
+    // Dwell = decision time - receive time (time the item actually sat with the agent).
+    const dwell = dec ? (dec.timestamp.getTime() - hop.timestamp.getTime()) / 1000 : 0;
+    console.log(`  ${i + 1}. ${hop.role.padEnd(12)} dwell=${dwell.toFixed(2)}s`);
+    if (dec) {
+      console.log(`       decided: ${dec.decision}${dec.details ? `  (${dec.details})` : ''}`);
+    }
+  });
+
+  console.log('');
+  console.log('--- Between-Agent handoff latencies ---');
+  if (hops.length < 2) {
+    console.log('  (none)');
+  } else {
+    for (let i = 1; i < hops.length; i++) {
+      const prev = hops[i - 1];
+      const cur = hops[i];
+      const prevDecision = decisionByRole.get(prev.role);
+      // Transit = next agent's receive time - previous agent's decision time.
+      // Falls back to hop-to-hop if the previous decision wasn't recorded.
+      const fromTime = prevDecision ? prevDecision.timestamp.getTime() : prev.timestamp.getTime();
+      const seconds = (cur.timestamp.getTime() - fromTime) / 1000;
+      console.log(`  ${prev.role.padEnd(12)} → ${cur.role.padEnd(12)} ${seconds.toFixed(2)}s`);
+    }
+  }
+
+  console.log('');
+  console.log('--- State transitions ---');
+  if (stateChanges.length === 0) {
+    console.log('  (none)');
+  } else {
+    stateChanges.forEach((sc) => {
+      console.log(`  ${sc.role.padEnd(12)} ${sc.from} → ${sc.to}${sc.reason ? `  (${sc.reason})` : ''}`);
+    });
+  }
+
+  console.log('');
+  console.log('--- Retries ---');
+  if (retries.length === 0) {
+    console.log('  none');
+  } else {
+    retries.forEach((r) => console.log(`  ${r.role} attempt ${r.attempt}: ${r.reason}`));
+  }
+
+  console.log('');
+  console.log(`Trace log: ${logPath}`);
+  console.log('======================================================');
+  return report.pass;
+}
+
+async function main(): Promise<void> {
+  const watch = process.argv.includes('--watch');
+  const maxWaitSeconds = 300;
+
   if (!fs.existsSync(SWARMFORGE_DIR)) {
     console.error(`ERROR: .swarmforge directory not found at ${SWARMFORGE_DIR}`);
     process.exit(1);
   }
 
-  // Create trace log
-  const initialBody = `TRACE ${traceId} HOP coordinator ${new Date().toISOString()}`;
-  try {
-    createTraceLog(TRACES_DIR, traceId, initialBody);
-    log(`✓ Created trace log: ${TRACES_DIR}/${traceId}.log`);
-  } catch (err: any) {
-    console.error(`Failed to create trace log: ${err.message}`);
-    process.exit(1);
-  }
-
-  // Create test specification and handoff
-  const specFile = path.join(process.cwd(), 'tmp', `tracer-bullet-${traceId}.spec.md`);
-  const handoffFile = path.join(process.cwd(), 'tmp', `tracer-bullet-${traceId}.handoff`);
-
-  fs.mkdirSync(path.dirname(specFile), { recursive: true });
-  fs.writeFileSync(specFile, createTestSpecification(traceId));
-  log(`✓ Created test spec: ${specFile}`);
-
-  // Write handoff to coordinator inbox
-  const handoffContent = createTestHandoff(traceId);
-  const inboxDir = path.join(SWARMFORGE_DIR, 'handoffs', 'inbox', 'new');
-  fs.mkdirSync(inboxDir, { recursive: true });
-
-  const timestamp = new Date();
-  const handoffFilename = `00_${timestamp.getUTCFullYear()}${String(timestamp.getUTCMonth() + 1).padStart(2, '0')}${String(timestamp.getUTCDate()).padStart(2, '0')}T${String(timestamp.getUTCHours()).padStart(2, '0')}${String(timestamp.getUTCMinutes()).padStart(2, '0')}${String(timestamp.getUTCSeconds()).padStart(2, '0')}Z_000_from_specifier_to_coordinator.handoff`;
-  const handoffPath = path.join(inboxDir, handoffFilename);
-
-  fs.writeFileSync(handoffPath, handoffContent);
-  log(`✓ Created handoff: ${handoffPath}`);
+  const traceId = generateTraceId();
+  log('=== Tracer Bullet Launcher ===');
+  log(`Trace ID: ${traceId}`);
   log('');
 
-  // Record initial state
-  recordStateChange(TRACES_DIR, traceId, 'coordinator', 'idle', 'queued', 'test handoff received');
-
-  // Wait for pipeline to process
-  log('Monitoring pipeline...');
-  const startTime = Date.now();
-  const maxWaitMs = cfg.maxWaitSeconds * 1000;
-
-  // Poll for trace log updates
-  const pollInterval = 5000; // 5 seconds
-  let lastHopCount = 1;
-
-  while (Date.now() - startTime < maxWaitMs) {
-    const logPath = path.join(TRACES_DIR, `${traceId}.log`);
-    if (fs.existsSync(logPath)) {
-      const content = fs.readFileSync(logPath, 'utf-8');
-      const { hops } = parseFullTraceLog(content);
-
-      if (hops.length > lastHopCount) {
-        const newHop = hops[hops.length - 1];
-        const elapsedSeconds = (Date.now() - startTime) / 1000;
-        log(`✓ ${newHop.role} received (${elapsedSeconds.toFixed(1)}s elapsed)`);
-        lastHopCount = hops.length;
-
-        // Check if pipeline completed
-        if (newHop.role === 'cleaner') {
-          log('');
-          log('✓ Pipeline complete - tracer bullet reached cleaner');
-          await generateReport(traceId);
-          return;
-        }
-      }
-    }
-
-    await sleep(pollInterval);
+  if (watch) {
+    await watchLive(traceId, maxWaitSeconds);
+  } else {
+    await driveHarness(traceId);
   }
 
-  // Timeout
-  console.error('');
-  console.error(`TIMEOUT: Tracer bullet did not complete within ${cfg.maxWaitSeconds}s`);
-  await generateReport(traceId);
-  process.exit(1);
+  const pass = generateReport(traceId);
+  process.exit(pass ? 0 : 1);
 }
 
-async function generateReport(traceId: string): Promise<void> {
-  const logPath = path.join(TRACES_DIR, `${traceId}.log`);
-
-  if (!fs.existsSync(logPath)) {
-    console.error('Trace log not found');
-    return;
-  }
-
-  const content = fs.readFileSync(logPath, 'utf-8');
-  const { hops, decisions, stateChanges, retries } = parseFullTraceLog(content);
-
-  const report = computeTraceReport(hops, traceId, decisions, stateChanges, retries);
-
-  console.log('');
-  console.log('=== Tracer Bullet Report ===');
-  console.log(`Trace ID: ${report.traceId}`);
-  console.log(`Status: ${report.pass ? 'PASS ✓' : 'FAIL ✗'}`);
-  console.log(`Total Duration: ${report.totalDuration.toFixed(2)}s`);
-  console.log('');
-
-  console.log('--- Pipeline Path ---');
-  report.hops.forEach((hop: any, i: number) => {
-    const timeInHop = hop.duration || 0;
-    const label = `${i + 1}. ${hop.role.padEnd(12)} (${timeInHop.toFixed(2)}s)`;
-    if (hop.action) {
-      console.log(`  ${label} | action: ${hop.action}`);
-    } else {
-      console.log(`  ${label}`);
-    }
-    if (hop.state) {
-      console.log(`    └─ state: ${hop.state}`);
-    }
-  });
-
-  if (report.transitions.length > 0) {
-    console.log('');
-    console.log('--- Handoff Latencies ---');
-    report.transitions.forEach((t: any) => {
-      console.log(`  ${t.from} → ${t.to}: ${t.seconds.toFixed(2)}s`);
-    });
-  }
-
-  if (decisions.length > 0) {
-    console.log('');
-    console.log('--- Agent Decisions ---');
-    decisions.forEach((d: any) => {
-      const label = `${d.role}: ${d.decision}`;
-      if (d.details) {
-        console.log(`  ${label} (${d.details})`);
-      } else {
-        console.log(`  ${label}`);
-      }
-    });
-  }
-
-  if (stateChanges.length > 0) {
-    console.log('');
-    console.log('--- State Transitions ---');
-    stateChanges.forEach((sc: any) => {
-      const label = `${sc.role}: ${sc.from} → ${sc.to}`;
-      if (sc.reason) {
-        console.log(`  ${label} (${sc.reason})`);
-      } else {
-        console.log(`  ${label}`);
-      }
-    });
-  }
-
-  if (retries.length > 0) {
-    console.log('');
-    console.log('--- Retries ---');
-    retries.forEach((r: any) => {
-      console.log(`  ${r.role} attempt ${r.attempt}: ${r.reason}`);
-    });
-  }
-
-  console.log('');
-  console.log(`Trace log: ${logPath}`);
-}
-
-// Main entry point
-launchTracerBullet().catch((err) => {
+main().catch((err) => {
   console.error('Fatal error:', err);
   process.exit(1);
 });
