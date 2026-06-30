@@ -101,6 +101,21 @@
             "cleaner"
           ],
           "description": "Reserved for future standalone orchestrator mode. Active roles come from swarmforge/swarmforge.conf via ./swarm."
+        },
+        "swarmforge.comms.chaseIntervalSeconds": {
+          "type": "number",
+          "default": 30,
+          "description": "How often (seconds) the InboxChaser sweeps each role's inbox/new/ for stale handoffs."
+        },
+        "swarmforge.comms.chaseTimeoutSeconds": {
+          "type": "number",
+          "default": 90,
+          "description": "How old (seconds) a handoff must be before the chaser re-notifies the recipient."
+        },
+        "swarmforge.comms.maxChases": {
+          "type": "number",
+          "default": 3,
+          "description": "Maximum number of chase wake-ups before a handoff is dead-lettered."
         }
       }
     }
