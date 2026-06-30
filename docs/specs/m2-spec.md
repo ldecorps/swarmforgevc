@@ -164,3 +164,74 @@
 - The "send instruction" box is a UI addition to the tile header (webview change).
 - Raw keystroke capture is best-effort — some terminal sequences may not be capturable cleanly; the send-instruction box is the reliable path.
 - Human input is never automatically acted on by the chase monitor (it's an audit record, not a handoff).
+
+---
+
+## Tracer Bullet Test
+
+**What:** An end-to-end pipeline validation test that sends a minimal work item through the full 4-pack swarm and captures:
+- All state transitions at each agent
+- Time spent at each agent (dwell time)
+- Time between agents (handoff latencies)
+- Agent decisions and routing choices
+- Retry attempts and reasons
+
+**Usage:**
+
+```bash
+npm run tracer-bullet
+```
+
+**Output:**
+
+A detailed report showing:
+1. **Pipeline path** — Each hop (coordinator → specifier → coder → cleaner) with dwell time
+2. **Handoff latencies** — Time between agents
+3. **Agent decisions** — What each role decided (route, implement, verify, etc.)
+4. **State transitions** — idle → processing → complete with reasons
+5. **Retries** — Any retry attempts and their justification
+
+Example:
+
+```
+=== Tracer Bullet Report ===
+Trace ID: trace-20260630T081502z
+Status: PASS ✓
+Total Duration: 23.45s
+
+--- Pipeline Path ---
+  1. coordinator    (5.12s)     | action: route_to_specifier
+  2. specifier      (8.34s)     | action: prepare_spec
+  3. coder          (7.89s)     | action: implement_test
+  4. cleaner        (2.10s)     | action: verify_and_merge
+
+--- Handoff Latencies ---
+  coordinator → specifier: 0.85s
+  specifier → coder: 1.23s
+  coder → cleaner: 0.56s
+
+--- Agent Decisions ---
+  coordinator: route_to_specifier
+  specifier: prepare_spec
+  coder: implement_test
+  cleaner: verify_and_merge
+```
+
+**Acceptance signal:**
+- Tracer bullet completes end-to-end (reaches cleaner) in under 5 minutes
+- All state transitions visible and correctly timestamped
+- Handoff latencies are consistent (under 2s between agents)
+- No unexpected retries without clear reason
+
+**Implementation:**
+- Tracer ID generated as `trace-YYYYMMDDTHHMMSSz[-counter]`
+- Trace log file at `.swarmforge/traces/<traceId>.log`
+- Log format: newline-separated YAML-like entries (HOP, DECISION, STATE_CHANGE, RETRY)
+- Launcher: `extension/src/tools/tracer-bullet-launcher.ts`
+- Utilities: `extension/src/swarm/tracer.ts` (generateTraceId, recordAgentDecision, recordStateChange, recordRetry, parseFullTraceLog, computeTraceReport)
+
+**Test Coverage:**
+- 24 unit tests for tracer utilities (create, parse, report)
+- Live end-to-end pipeline validation
+- State tracking and latency computation
+- Decision and retry record parsing
