@@ -1,0 +1,41 @@
+id: BL-042
+title: wire the built-but-unwired chaser/watchdog into activate() so stalls self-heal
+milestone: M2
+status: active
+priority: 12
+assigned_to: coder
+
+description: |
+  The reliability layer (BL-009..BL-016: hardened message bus, heartbeat
+  decorator, watchdog, chase/dead-letter, respawn auto-pickup) is implemented
+  and unit-tested but NEVER started. extension/src/watchdog/liveness.ts,
+  chase/ChaseMonitor.ts, swarm/inboxChaser.ts, and tools/heartbeat.ts export
+  only pure functions with no driver, and extension/src/extension.ts's
+  activate() references none of them. So agent stalls, dropped handoffs, and
+  stuck in_process items are never chased and the swarm silently goes idle. This
+  is the same "built but not wired into activate()" bug BL-039 fixed for the
+  bounce watcher.
+
+  Wire the chaser into the extension host, mirroring the BL-039 approach:
+  1. In activate(), after a swarm is launched/discovered, start a periodic
+     chaser loop (setInterval, cadence from InboxChaserConfig.chaseIntervalSeconds)
+     that scans every role's inbox/new and inbox/in_process.
+  2. For each item apply the existing pure logic (scanInboxNew, scanInProcess,
+     decideItemAction / evaluateChase) gated on receiver liveness
+     (watchdog/liveness) and heartbeat age; nudge stale receivers, increment
+     chase_count, and dead-letter after maxChases, per docs/Specification.MD
+     s167-230.
+  3. Dispose the loop cleanly on deactivate().
+
+  Reuse the existing modules; do NOT reimplement the chase logic. If this is too
+  large for one slice, split it (suggested: chaser loop + nudge first; then
+  liveness/heartbeat gating; then dead-letter escalation + tile reddening).
+
+acceptance: |
+  - activate() starts the chaser and deactivate() stops it, with an activation
+    test in the style of BL-039's bounceWatcher wiring test.
+  - A handoff left unpicked past the timeout gets chased (nudge written,
+    chase_count incremented); after maxChases it is dead-lettered.
+  - A stuck in_process item past stuckInProcessTimeoutSeconds is surfaced/chased.
+  - Chase logic is reused, not reimplemented.
+  - Existing tests pass.
