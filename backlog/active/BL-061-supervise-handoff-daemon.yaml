@@ -44,10 +44,25 @@ description: |
     status from `.swarmforge/` state (tile-as-view rule).
   - Do not change the handoff protocol or delivery semantics; after restart
     the existing daemon must deliver stranded outbox files as it does today.
-  - Root cause of the 21:51 death is unknown (log preserved at
-    tmp/handoffd.log.died-20260701T2151Z); the diagnosability work (stderr
-    capture + heartbeat) is the required floor, a root-cause fix is a bonus
-    if the evidence reveals one.
+  - ROOT CAUSE FOUND (specifier, 2026-07-01 ~22:53Z, deterministic repro):
+    handoffd HANGS (does not crash) inside `notify!` — `clojure.java.shell/sh`
+    deadlocks on a later tmux subprocess call (reproduced: 4th call in a
+    multi-recipient delivery; the subprocess itself runs to completion but
+    `sh` never returns; stream-read deadlock in babashka's clojure.java.shell
+    shim). Verified fix direction: switching notify!'s three `sh` calls to
+    `babashka.process/sh` makes the same fixture deliver all copies, drain
+    the outbox, and log `delivered`. This matches the 21:51 incident
+    signature exactly (last log line a normal delivery, then silence;
+    restart cured it). The BL-057 shell test
+    `test_handoffd_per_recipient_delivery.sh` reproduces the hang
+    deterministically on this machine — the earlier "sandbox-only flake"
+    verdict was incorrect.
+  - Therefore this ticket MUST (a) migrate handoffd's subprocess calls off
+    `clojure.java.shell/sh` to `babashka.process`, making the per-recipient
+    shell test pass, AND (b) still build the supervision/rotation/heartbeat/
+    surfacing floor above — a daemon that no longer hangs today can still
+    die tomorrow; supervision is the safety net, the sh migration is the
+    cure for the known death.
 
 acceptance: |
   Feature: handoffd supervision
@@ -91,6 +106,14 @@ acceptance: |
     When the supervisor has retried up to its bounded limit
     Then it stops hot-restarting and backs off
     And the status file records a persistent-failure state
+
+  # BL-061 supervise-handoffd-00
+  Scenario: multi-recipient delivery no longer hangs the daemon
+    Given a broadcast handoff addressed to multiple recipients
+    When the daemon delivers it
+    Then every recipient copy is delivered and the outbox file moves to sent
+    And the daemon keeps polling afterwards
+    And test_handoffd_per_recipient_delivery.sh passes on this machine
 
   # BL-061 supervise-handoffd-06
   Scenario: transport health is visible in the extension panel
