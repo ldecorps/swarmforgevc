@@ -1,0 +1,80 @@
+id: BL-046
+title: remove the custom per-tile input box; type into the native CLI input box
+milestone: M4
+status: todo
+priority: 06
+assigned_to: coder
+
+description: |
+  What: Remove the extension's own per-tile input bar and let the developer type
+  directly into the agent's native Claude CLI input box (which is visible in the
+  captured tmux pane). Today each tile renders a custom HTML input bar
+  (media/panel.js `tile-input-bar`: a "❯" prompt + a "type a message…" text
+  `<input>` with its own command history, added in BL-031) at the bottom of the
+  tile, separate from the native input box already shown in the pane capture. That
+  is a confusing double input.
+
+  Why: One input, not two. The native CLI input box is visible and usable (BL-044
+  keeps the pinned TUI footer — including that input box — visible), so the custom
+  bar is redundant and misleading.
+
+  How: Delete the custom input bar. Typing already routes to the focused agent via
+  the existing document-level keydown handler (panel.js: when a tile is focused /
+  activeRole is set, keystrokes post { type: 'input', role, data } to the host,
+  which forwards them to the tmux pane via PaneTailer.forwardInput/forwardSpecialKey
+  → sendKeys). That direct path — including Enter, Backspace, Ctrl-C, Tab, and the
+  arrow keys — is retained and becomes the sole input path. The custom bar's
+  command history (up/down recall) is dropped on purpose: the native CLI provides
+  its own history (confirmed with the human). This supersedes the BL-031 input-bar
+  approach; update or remove its tests accordingly.
+
+  Guard: only remove the bar if direct-to-native typing stays fully usable. If
+  removing it loses a capability the developer relied on, stop and flag it rather
+  than silently degrading input.
+
+  Reconciliation: BL-044 previously mentioned this removal; it has been re-scoped
+  to footer-aware autoscroll ONLY, and this item (BL-046) is now the single owner
+  of the input-bar removal. Do not ship the removal twice.
+
+  Scope: extension webview only — remove the `tile-input-bar` / `tile-input`
+  construction and its keydown/history handlers in media/panel.js, keep the
+  document-level keydown → activeRole path intact, plus tests. Keep the swarm
+  message protocol and host-side input forwarding unchanged.
+
+acceptance: |
+  Feature: type into the native CLI input box, no custom input bar
+
+  Background:
+    Given the agent panel renders one tile per agent role
+    And each agent's pane capture shows the native Claude CLI input box
+
+  # BL-046 native-input-01
+  Scenario: no custom input bar is rendered in a tile
+    When a tile is rendered for an agent
+    Then no custom input bar (the "❯" prompt + "type a message…" field) is present
+      in the tile
+
+  # BL-046 native-input-02
+  Scenario: typing in a focused tile reaches the agent's native input
+    Given a tile is focused (its output area is the active element)
+    When the developer types a line of text and presses Enter
+    Then the keystrokes are forwarded to that agent's tmux pane
+    And they appear in the native CLI input box and are submitted on Enter
+
+  # BL-046 native-input-03
+  Scenario: control and special keys still route to the focused agent
+    Given a tile is focused
+    When the developer presses Ctrl-C, Backspace, Tab, or an arrow key
+    Then that key is forwarded to the agent's pane as before
+    And tile focus / activeRole handling is unchanged
+
+  # BL-046 native-input-04
+  Scenario: keystrokes are ignored when no tile is focused
+    Given no tile is focused (no active role)
+    When the developer types
+    Then nothing is forwarded to any agent
+
+  # Non-behavioral gate:
+  #  - Webview tests are updated to assert the custom input bar is absent and that
+  #    typing while a tile is focused still routes to the active role (Enter,
+  #    Ctrl-C, special keys). Existing tests stay green.
