@@ -320,3 +320,63 @@ test('onStall fires stalled then unstalled as pane output ages and then changes'
     fake.restore();
   }
 });
+
+test('onNeedsHuman fires true when a pane shows a question, then false once it resumes, with no duplicate events', async () => {
+  const targetPath = mkTmp();
+  writeState(targetPath);
+  const fake = installFakeTmux([
+    { subcommand: 'has-session', exitCode: 0 },
+    { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+    { exitCode: 0, stdout: '' },
+  ]);
+  try {
+    const needsHumanEvents = [];
+    const tailer = new PaneTailer(
+      targetPath,
+      () => {},
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (events) => needsHumanEvents.push(...events)
+    );
+
+    fake.setRules([
+      { subcommand: 'has-session', exitCode: 0 },
+      { subcommand: 'capture-pane', exitCode: 0, stdout: 'working on it...' },
+      { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+      { exitCode: 0, stdout: '' },
+    ]);
+    tailer.start(1_000_000);
+    tailer.stop();
+    assert.equal(needsHumanEvents.length, 0, 'plain output must not fire needsHuman');
+
+    fake.setRules([
+      { subcommand: 'has-session', exitCode: 0 },
+      { subcommand: 'capture-pane', exitCode: 0, stdout: 'Continue? (y/n)' },
+      { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+      { exitCode: 0, stdout: '' },
+    ]);
+    tailer.poll();
+    assert.equal(needsHumanEvents.length, 1);
+    assert.deepEqual(needsHumanEvents[0], { role: 'coder', needsHuman: true });
+
+    // Text unchanged (same question still on screen) must not refire the event.
+    tailer.poll();
+    assert.equal(needsHumanEvents.length, 1, 'unchanged needs-human state must not refire');
+
+    fake.setRules([
+      { subcommand: 'has-session', exitCode: 0 },
+      { subcommand: 'capture-pane', exitCode: 0, stdout: 'resumed working' },
+      { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+      { exitCode: 0, stdout: '' },
+    ]);
+    tailer.poll();
+    assert.equal(needsHumanEvents.length, 2);
+    assert.deepEqual(needsHumanEvents[1], { role: 'coder', needsHuman: false });
+  } finally {
+    fake.restore();
+  }
+});
