@@ -7,5 +7,7 @@ swarmforge/scripts/
 extension/node_modules/
 extension/out/
 extension/coverage/
+extension/.stryker-tmp/
+extension/reports/
 extension/.dev-activation.json
 *.code-workspace
