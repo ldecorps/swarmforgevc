@@ -1,5 +1,19 @@
 # Workflow Rules
 
+## Backlog Intake Order
+- The backlog root (`backlog/` itself, not a subfolder) is the human's raw intake
+  queue: requests the human drops there directly, not yet turned into specs.
+- The specifier must DRAIN the backlog root before looking at any queued items.
+  Root items take precedence over items already in `backlog/paused/` and
+  `backlog/active/`.
+- Draining a root item means: read the raw item, resolve ambiguity with the human
+  if needed, write a proper spec for it (prose `description:` + Gherkin
+  `acceptance:`), place that spec into `backlog/paused/`, and remove the raw item
+  from the root so it is not processed twice.
+- Only once the backlog root is empty may the specifier turn to queued work.
+- This governs the specifier's intake order only. The coordinator's separate
+  promotion order (paused before root) is unchanged.
+
 ## Worktree Discipline
 - At startup, discover and remember the branch or worktree assigned to your role.
 - If your assigned worktree is `master`, work in the main project checkout on its current branch; do not expect or create a `.worktrees/<role>` directory for that role.
