@@ -377,9 +377,24 @@ test('getWebviewHtml CSS applies needs-human blink to tiles', () => {
 // --- BL-054: the pulse is border-only; content never blinks ---
 
 function needsHumanKeyframesBlock(html) {
-  const match = html.match(/@keyframes needs-human-blink\s*{([\s\S]*?\n\s*)}/);
-  assert(match, 'must define needs-human-blink keyframes');
-  return match[1];
+  // Extract the full brace-balanced block, not just up to the first inner
+  // "}" — the keyframes body itself contains nested rule blocks (0%,100% and
+  // 50%), so a non-greedy "up to the first }" regex silently truncates after
+  // the first inner rule and the 50% frame is never actually inspected.
+  const start = html.indexOf('@keyframes needs-human-blink');
+  assert(start !== -1, 'must define needs-human-blink keyframes');
+  const openBrace = html.indexOf('{', start);
+  let depth = 0;
+  for (let i = openBrace; i < html.length; i++) {
+    if (html[i] === '{') depth++;
+    if (html[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        return html.slice(openBrace + 1, i);
+      }
+    }
+  }
+  throw new Error('unbalanced braces in needs-human-blink keyframes');
 }
 
 test('needs-human pulse animates a border property, not whole-tile opacity', () => {
@@ -395,11 +410,25 @@ test('needs-human pulse animates a border property, not whole-tile opacity', () 
   );
 });
 
-test('needs-human pulse keeps the accent color and gentle cadence from BL-045', () => {
+test('needs-human pulse is RED and keeps the gentle cadence (BL-059)', () => {
   const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
   const keyframes = needsHumanKeyframesBlock(html);
-  assert(/00a8e8|0,\s*168,\s*232/.test(keyframes), 'accent blue must remain the pulse color');
+  assert(/e53935|229,\s*57,\s*53/.test(keyframes), 'the pulse color must be red — asking-a-question reads as urgent');
+  assert(!/00a8e8|0,\s*168,\s*232/.test(keyframes), 'the old blue accent must be gone');
   assert(/needs-human-blink 1\.5s ease-in-out infinite/.test(html), 'the 1.5s ease-in-out cadence must remain');
+});
+
+test('the 50% keyframe is visibly dimmed, not just a same-color no-op pulse', () => {
+  // Pinning presence of the color channels alone would let a mutant set the
+  // dimmed alpha to 1 (or drop the rgba() entirely) and still pass — the
+  // blink (cycling to/from red) is what distinguishes "asking a question"
+  // from the SOLID red of a dead tile.
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  const keyframes = needsHumanKeyframesBlock(html);
+  const dimmedMatch = keyframes.match(/rgba\(\s*229,\s*57,\s*53,\s*([\d.]+)\s*\)/);
+  assert(dimmedMatch, 'the 50% frame must dim the red via rgba() alpha');
+  const alpha = Number(dimmedMatch[1]);
+  assert(alpha > 0 && alpha < 0.7, `dimmed alpha ${alpha} must be a visible reduction, not near-full opacity`);
 });
 
 test('the needs-human rule itself does not dim tile content', () => {
