@@ -250,14 +250,14 @@ function getWebviewHtml(scriptUri, cspSource) {
     .tile.dead {
       border-color: #e53935;
     }
+    /* Border-only pulse (BL-054): animating opacity would fade the tile's
+       text along with the border, so only border-color breathes. */
     @keyframes needs-human-blink {
       0%, 100% {
         border-color: #00a8e8;
-        opacity: 1;
       }
       50% {
-        border-color: #00a8e8;
-        opacity: 0.5;
+        border-color: rgba(0, 168, 232, 0.35);
       }
     }
     .tile.needs-human:not(.dead) {
