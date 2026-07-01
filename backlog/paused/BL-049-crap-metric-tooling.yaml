@@ -1,0 +1,66 @@
+id: BL-049
+title: hardener tooling — CRAP metric report (custom, over coverage + complexity)
+milestone: M4
+status: todo
+priority: 30
+assigned_to: coder
+
+description: |
+  Follow-up to BL-048 (which wires mutation + DRY). The hardener role also runs a
+  CRAP tool and must "keep CRAP at or below 6 on changed code" (hardener.prompt),
+  but CRAP has no standard turnkey JS CLI, so it needs a small custom report.
+
+  What: add a CRAP (Change Risk Anti-Patterns) report behind its own npm script.
+  CRAP for a function = comp^2 * (1 - cov)^3 + comp, where comp is the function's
+  cyclomatic complexity and cov is its test-coverage fraction (0..1). Compute it
+  per function over the changed/new source and report each function's CRAP score,
+  flagging any that exceed 6 so the hardener can drive them down.
+
+  How (open to the implementer): reuse the existing c8 coverage (lcov/JSON) for the
+  per-function coverage input, and a JS/TS complexity source for cyclomatic
+  complexity (e.g. an escomplex-family library, ts-morph, or the ESLint complexity
+  rule). Emit a simple per-function table (file, function, complexity, coverage,
+  CRAP) and a non-zero/flagged result when changed code exceeds CRAP 6. Keep it a
+  separate script, not folded into `npm test`.
+
+  Constraints: TypeScript/Node 20, macOS/Linux; devDependencies only. Document the
+  command in engineering.prompt alongside the mutation/DRY commands from BL-048.
+
+  Scope: extension/package.json (devDependency + script), a small CRAP report
+  script, and engineering.prompt. No product behavior change; existing suites stay
+  green. Builds on the coverage plumbing already present (c8).
+
+acceptance: |
+  Feature: CRAP metric report for the hardener
+
+  Background:
+    Given the project produces test coverage via c8
+    And each source function has a cyclomatic-complexity value
+
+  # BL-049 crap-01
+  Scenario: the CRAP script reports a CRAP score per changed function
+    When the hardener runs the CRAP script over the changed source
+    Then it reports, per function, the complexity, coverage, and computed CRAP score
+
+  # BL-049 crap-02
+  Scenario: a high-complexity, low-coverage function is flagged
+    Given a changed function with high complexity and low coverage (CRAP > 6)
+    When the CRAP script runs
+    Then that function is flagged as exceeding the CRAP <= 6 threshold
+
+  # BL-049 crap-03
+  Scenario: a simple, well-covered function is not flagged
+    Given a changed function with low complexity and full coverage (CRAP <= 6)
+    When the CRAP script runs
+    Then that function is not flagged
+
+  # BL-049 crap-04
+  Scenario: the normal suites stay green and separate
+    When a developer runs `npm test`
+    Then the unit/acceptance suites still pass
+    And the CRAP report is invoked only by its own script
+
+  # Non-behavioral gate:
+  #  - A CRAP report script is committed (coverage from c8 + a complexity source),
+  #    with its own npm script; engineering.prompt documents the command. Existing
+  #    tests stay green.
