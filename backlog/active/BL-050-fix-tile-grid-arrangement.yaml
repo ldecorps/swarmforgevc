@@ -1,0 +1,89 @@
+id: BL-050
+title: "fix tile grid: >4 agents must fill panel width, not cram into 2 narrow columns"
+milestone: M4
+status: todo
+priority: 00
+assigned_to: coder
+
+description: |
+  URGENT regression from BL-040/BL-043 ("first row = coordinator + specifier").
+
+  What / why:
+  With more than 4 agents (e.g. 8), the panel renders every tile in only two
+  narrow vertical strips — coordinator + specifier on top, the rest stacked below
+  in the same 2 columns — each tile too thin to read, with large wasted empty
+  space to the right and below. This is the daily-driver panel, so it must lay the
+  tiles out to actually use the available width.
+
+  Root cause:
+  extension/media/panel.js `updateGridLayout(agentCount, roles)` applies the
+  `layout-first-row` class whenever coordinator and specifier are both present and
+  the count is not exactly 4. In webviewHtml.ts, `#grid.layout-first-row`
+  hardcodes `grid-template-columns: 1fr 1fr` for the ENTIRE grid, forcing all N
+  tiles into 2 columns.
+
+  Desired behavior:
+  Tiles fill the available panel width in a sensible, responsive multi-column grid
+  for any agent count (5–8+), readable at both narrow (side panel) and wide
+  (editor column) widths. A dedicated coordinator+specifier first row MAY be
+  retained, but if kept it must NOT constrain the remaining agents to 2 columns —
+  the rest flow in a width-filling multi-column grid. Preserve the existing
+  4-agent 2x2 layout and the selected-tile growth (X and Y) behavior.
+
+  Constraints:
+  - Scope is extension webview UI only (panel.js grid logic + webviewHtml.ts CSS +
+    tests). Do not touch swarm protocol, tmux, or message routing.
+  - Keep single-selection/toggle semantics unchanged.
+
+acceptance: |
+  Feature: Responsive tile grid that fills panel width for any agent count
+
+  Background:
+    Given the SwarmForge panel is open
+    And the roles include coordinator and specifier
+
+  # BL-050 grid-fills-width-for-many-agents-01
+  Scenario Outline: More than 4 agents fill the width instead of 2 narrow strips
+    Given there are <agents> agent tiles
+    When the grid layout is computed
+    Then the tiles are arranged in more than 2 columns
+    And no tile is confined to one of only two narrow vertical strips
+    And there is no large empty region left unused beside or below the tiles
+
+    Examples:
+      | agents |
+      | 5      |
+      | 6      |
+      | 8      |
+
+  # BL-050 first-row-does-not-force-two-columns-02
+  Scenario: A retained coordinator/specifier first row does not cap the rest at 2 columns
+    Given there are 8 agent tiles
+    And a dedicated first row is used for coordinator and specifier
+    When the grid layout is computed
+    Then the remaining agents below the first row are arranged in more than 2 columns
+
+  # BL-050 responsive-across-panel-widths-03
+  Scenario Outline: The grid stays readable across panel widths
+    Given there are 8 agent tiles
+    When the panel width is <width>
+    Then the tiles fill the available width in a multi-column grid
+    And every tile remains wide enough to read
+
+    Examples:
+      | width          |
+      | narrow side    |
+      | wide editor    |
+
+  # BL-050 preserve-four-agent-2x2-04
+  Scenario: The 4-agent 2x2 layout is preserved
+    Given there are exactly 4 agent tiles
+    When the grid layout is computed
+    Then the tiles are arranged in a 2x2 grid
+
+  # BL-050 preserve-selected-tile-growth-05
+  Scenario: Selected-tile growth still works
+    Given there are 8 agent tiles
+    When a tile is selected
+    Then that tile grows in both the X and Y dimensions
+    And selecting another tile deselects the first
