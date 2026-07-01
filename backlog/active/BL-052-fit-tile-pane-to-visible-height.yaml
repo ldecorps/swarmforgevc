@@ -1,0 +1,121 @@
+id: BL-052
+title: fit tile pane to visible height — no empty band between output and CLI footer
+milestone: M4
+status: todo
+priority: 05
+assigned_to: coder
+
+description: |
+  What: A tile with little output should render its transcript and the Claude
+  TUI footer (input box + status/permissions line) together, with the footer at
+  the bottom of the visible tile and NO large empty band between the newest
+  output line and that footer. Today a tile "opens at max height" with output
+  stranded at the top and the CLI input pinned far below, a tall blank gap in
+  between (see coordinator tile in the reported screenshot).
+
+  Why: The extension resizes each headless tmux pane to a FIXED tall size
+  (`DEFAULT_TILE_PANE_ROWS = 200` in extension/src/panel/paneTailer.ts) so the
+  agent TUI re-renders into more rows. The Claude full-screen TUI renders its
+  transcript at the top of that 200-row pane and pins its footer at the bottom
+  row. When the transcript is short, rows in the middle are blank, so the tile
+  shows: output at top, ~180 blank rows, footer at the very bottom. This is a
+  layout problem inside the captured pane itself — it is NOT a scroll-position
+  problem, so BL-044's footer-aware tail-lock anchor (which only helps when
+  content is TALLER than the viewport) does not fix it.
+
+  Product decision (confirmed with the human): "fill — size the pane to the
+  tile." The fix is to size the captured/rendered tmux pane rows to the ACTUAL
+  visible tile height (in text rows) instead of a fixed 200, so the TUI lays its
+  own footer out at the bottom of the tile with the transcript filling upward to
+  it and no interior blank band. The footer STAYS VISIBLE (the human types into
+  that input box) — do not strip or hide it.
+
+  Because tile height changes at runtime (selecting a tile enlarges it to the
+  2x2 span per BL-040/043/051, resizing the VS Code panel, and changing the
+  active agent count all change each tile's pixel height), the pane must be
+  RE-FIT whenever the tile's rendered size changes, not just once at launch. The
+  webview knows the rendered tile pixel size and cell metrics; the extension host
+  owns tmux. Communicate the measured row count from the webview to the host and
+  resize the tmux window from the host (via the existing resizeWindow path) —
+  keep the two-layer split (webview = view/measurement, host = all tmux I/O).
+
+  Constraints:
+    - Derive pane rows from the real visible tile height; replace the fixed
+      DEFAULT_TILE_PANE_ROWS as the resting value. Keep sane bounds: clamp to at
+      least a small minimum (enough to show the footer) and at most the existing
+      MAX_TILE_PANE_ROWS ceiling. normalizePaneRows stays the bound enforcer.
+    - Do NOT modify SwarmForge. Resize only via tmux from the host, exactly as
+      paneTailer already does.
+    - Preserve BL-044: when a transcript IS taller than the tile, tail-lock still
+      anchors the newest live line just above the footer, footer-only animation
+      (spinner/clock) does not re-drive the anchor, and manual scroll-up releases
+      tail-lock with re-engage at the bottom.
+    - Preserve BL-028 history depth: capturePane still receives its negative
+      startLine so scrollback history is available when the user scrolls up.
+    - Debounce refits so a stream of resize events does not thrash tmux with
+      resize commands.
+
+  Scope: extension only — paneTailer.ts pane-row sizing + a webview→host tile
+  size/rows message (media/panel.js / webviewHtml.ts) + the resize call site,
+  plus tests. Keep input routing and the swarm message protocol unchanged.
+
+acceptance: |
+  Feature: fit tile pane to visible height
+
+  Background:
+    Given the tiled agent panel is showing live agent tiles
+    And each agent runs a full-screen TUI whose bottom rows are a pinned footer
+      (the input box and the status/permissions line)
+
+  # BL-052 fit-tile-pane-01
+  Scenario: short transcript shows footer at the tile bottom with no empty band
+    Given a tile whose agent has produced less output than fills the tile
+    When the tile renders at its current visible height
+    Then the pinned footer is visible at the bottom of the tile
+    And the newest transcript line sits close above the footer
+    And there is no large empty band between the transcript and the footer
+
+  # BL-052 fit-tile-pane-02
+  Scenario: enlarging a tile by selecting it re-fits the pane
+    Given a tile is showing footer-at-bottom with no empty band
+    When the tile is enlarged (for example by selecting it into the 2x2 span)
+    Then the pane is re-fit to the new visible height
+    And the footer is still at the bottom of the enlarged tile with no empty band
+
+  # BL-052 fit-tile-pane-03
+  Scenario: resizing the panel re-fits the pane
+    Given a tile is showing footer-at-bottom with no empty band
+    When the VS Code panel is resized so the tile height changes
+    Then the pane is re-fit to the new visible height
+    And repeated resize events are debounced rather than issuing one resize each
+
+  # BL-052 fit-tile-pane-04
+  Scenario: a transcript taller than the tile still tail-locks above the footer
+    Given a tile whose agent has produced more output than fills the tile
+    And the tile is tail-locked
+    When new live output streams in the region above the footer
+    Then the newest live line stays visible just above the pinned footer
+    And scrolling up releases tail-lock and re-engages when scrolled back down
+
+  # BL-052 fit-tile-pane-05
+  Scenario Outline: the fit holds for every agent role
+    Given the tile for <role> at its current visible height
+    When the tile renders
+    Then the footer is at the bottom of the tile with no large empty band above it
+
+    Examples:
+      | role        |
+      | coordinator |
+      | specifier   |
+      | coder       |
+      | cleaner     |
+      | architect   |
+      | hardender   |
+      | documenter  |
+      | QA          |
+
+  # Non-behavioral gate:
+  #  - New/updated tests cover deriving pane rows from the visible tile height
+  #    (replacing the fixed 200-row default as the resting value), the bounds
+  #    clamp via normalizePaneRows (min floor and MAX_TILE_PANE_ROWS ceiling),
+  #    and the debounced re-fit on tile-size change. Existing tests stay green.
