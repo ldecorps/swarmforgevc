@@ -111,8 +111,10 @@ function detectFooterLineCount(text) {
     }
 
     // Input prompt line: starts with ❯ or >
-    // "❯ type a message…" or "> message" or just "❯ " with anything after
-    if (/^[❯>]\s/.test(trimmed)) {
+    // "❯ type a message…", "> message", or a bare "❯ " when the input box is
+    // empty — trim() strips the trailing space real captures leave on an
+    // empty prompt, so the marker must also match at end-of-string.
+    if (/^[❯>](\s|$)/.test(trimmed)) {
       footerStart = i;
       break;
     }

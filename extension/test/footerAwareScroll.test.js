@@ -1,69 +1,20 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const { extractPanelFunction } = require('./helpers/extractPanelFunction');
 
-// Function to detect the Claude footer in captured pane output
-function detectFooterLineCount(text) {
-  if (!text) return 0;
+const detectFooterLineCount = extractPanelFunction('detectFooterLineCount');
+const isAtBottom = extractPanelFunction('isAtBottom');
+const scrollToBottom = extractPanelFunction('scrollToBottom');
 
-  const lines = text.split('\n');
-  let footerStart = -1;
+// scrollToBottom/isAtBottom call detectFooterLineCount and reference
+// SCROLL_THRESHOLD as free variables resolved from panel.js's module scope;
+// since extractPanelFunction lifts each function out independently, those
+// names must be supplied as globals for the extracted bodies to resolve.
+global.detectFooterLineCount = detectFooterLineCount;
+global.SCROLL_THRESHOLD = 8;
 
-  // Scan from the bottom up to find the pinned footer
-  // Strategy: locate the input prompt at the very end, then work up to find
-  // status/permission lines that are part of the footer
-
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i] || '';
-    const trimmed = line.trim();
-
-    // Empty lines at the very end don't count as part of the footer
-    if (i === lines.length - 1 && trimmed === '') {
-      continue;
-    }
-
-    // Input prompt line: starts with ❯ or >
-    // "❯ type a message…" or "> message" or just "❯ " with anything after
-    if (/^[❯>]\s/.test(trimmed)) {
-      footerStart = i;
-      break;
-    }
-  }
-
-  if (footerStart === -1) {
-    return 0;
-  }
-
-  // Now scan up from the prompt to find other footer lines
-  let footerEnd = footerStart;
-  for (let i = footerStart - 1; i >= Math.max(0, footerStart - 5); i--) {
-    const line = lines[i] || '';
-    const trimmed = line.trim();
-
-    // Skip empty lines
-    if (trimmed === '') {
-      continue;
-    }
-
-    // Permission/status line: contains [brackets] or single-word status
-    if (/^\[.+\]|\[auto\]|\[.*permission/.test(trimmed)) {
-      footerEnd = i;
-      continue;
-    }
-
-    // Interrupt/help line: "esc to break" or similar
-    if (/^esc\s+to|^.*interrupt|^.*break/i.test(trimmed)) {
-      footerEnd = i;
-      continue;
-    }
-
-    // If we hit a line that's clearly content (long, not status-like),
-    // we've reached the end of the footer
-    if (trimmed.length > 40 || !/^[[\-*@]/.test(trimmed)) {
-      break;
-    }
-  }
-
-  return lines.length - footerEnd;
+function makeEl(scrollTop, clientHeight, scrollHeight) {
+  return { scrollTop, clientHeight, scrollHeight };
 }
 
 test('detectFooterLineCount returns 0 for empty text', () => {
@@ -84,14 +35,12 @@ test('detectFooterLineCount detects multi-line footer with input + status', () =
 
 test('detectFooterLineCount detects footer with esc interrupt line', () => {
   const text = 'Some output\nesc to break\n[auto]\n❯ type a message…';
-  const count = detectFooterLineCount(text);
-  assert(count >= 2, 'Should detect at least 2 footer lines');
+  assert.equal(detectFooterLineCount(text), 3);
 });
 
 test('detectFooterLineCount ignores footer-like content in live output', () => {
   const text = 'This is > a sample line with > prompt-like text\nReal footer: [status]\n❯ type a message…';
-  const count = detectFooterLineCount(text);
-  assert(count <= 2, 'Should only count actual footer, not content above it');
+  assert.equal(detectFooterLineCount(text), 1);
 });
 
 test('detectFooterLineCount returns 0 for text without recognizable footer', () => {
@@ -99,31 +48,69 @@ test('detectFooterLineCount returns 0 for text without recognizable footer', () 
   assert.equal(detectFooterLineCount(text), 0);
 });
 
-test('detectFooterLineCount handles trailing empty lines', () => {
-  const text = 'Output\n[auto]\n❯ message\n\n';
-  const count = detectFooterLineCount(text);
-  assert(count >= 2, 'Should count footer despite trailing empty lines');
+test('detectFooterLineCount detects a bare empty prompt with nothing typed', () => {
+  // This is the real captured format for an idle Claude Code input box (see
+  // agentPaneState.test.js: '────────────\n❯ ') — no placeholder text is
+  // actually present. trim() strips the trailing space, so the marker must
+  // match end-of-string too, not just a following whitespace character.
+  const text = 'line A\nline B\n[auto] idle\nesc to break\n❯ ';
+  assert.equal(detectFooterLineCount(text), 3);
 });
 
-function getFooterPixelHeight(text, lineHeight) {
-  if (!text || !lineHeight) return 0;
-  const footerLines = detectFooterLineCount(text);
-  return footerLines * lineHeight;
-}
-
-test('getFooterPixelHeight returns 0 for text without footer', () => {
-  const text = 'Just content\nno footer';
-  assert.equal(getFooterPixelHeight(text, 20), 0);
+test('detectFooterLineCount treats footer-status changes as the same footer size', () => {
+  // A spinner or status word changing inside the footer must not change how
+  // many lines are attributed to the footer, so the scroll anchor is stable.
+  const busy = 'line A\nline B\n[auto] busy\nesc to break\n❯ ';
+  const idle = 'line A\nline B\n[auto] idle\nesc to break\n❯ ';
+  assert.equal(detectFooterLineCount(busy), detectFooterLineCount(idle));
 });
 
-test('getFooterPixelHeight calculates pixel height based on line count and line height', () => {
-  const text = '[status]\n❯ prompt';
-  assert.equal(getFooterPixelHeight(text, 20), 40);
+test('isAtBottom falls back to raw scroll-bottom check when no footer is present', () => {
+  const text = 'plain output\nwith no footer';
+  const atBottom = makeEl(300, 100, 400);
+  const scrolledUp = makeEl(0, 100, 400);
+  assert.equal(isAtBottom(atBottom, text), true);
+  assert.equal(isAtBottom(scrolledUp, text), false);
 });
 
-test('getFooterPixelHeight multiplies footer lines by line height', () => {
-  const text = 'Line\nesc to break\n[status]\n❯ prompt';
-  const height1 = getFooterPixelHeight(text, 20);
-  const height2 = getFooterPixelHeight(text, 30);
-  assert(height2 > height1, 'Larger line height should give larger pixel height');
+test('scrollToBottom stops short of raw scrollHeight when a footer is present', () => {
+  const text = 'line 1\nline 2\n[auto]\n❯ type a message…';
+  const el = makeEl(0, 100, 400);
+  scrollToBottom(el, text);
+  assert(el.scrollTop < el.scrollHeight, 'must not scroll to the raw pane bottom when a footer is detected');
+});
+
+test('scrollToBottom scrolls to raw scrollHeight when no footer is present', () => {
+  const text = 'a\nb\nc\nd';
+  const el = makeEl(0, 100, 400);
+  scrollToBottom(el, text);
+  assert.equal(el.scrollTop, el.scrollHeight);
+});
+
+test('isAtBottom is true immediately after scrollToBottom positions the footer-aware anchor', () => {
+  const text = 'line 1\nline 2\n[auto]\n❯ type a message…';
+  const el = makeEl(0, 100, 400);
+  scrollToBottom(el, text);
+  assert.equal(isAtBottom(el, text), true);
+});
+
+test('scrolling away from the footer-aware anchor releases tail-lock', () => {
+  const text = 'line 1\nline 2\n[auto]\n❯ type a message…';
+  const el = makeEl(0, 100, 400);
+  scrollToBottom(el, text);
+  assert.equal(isAtBottom(el, text), true);
+
+  el.scrollTop = 0;
+  assert.equal(isAtBottom(el, text), false, 'scrolling up away from the anchor must release tail-lock');
+});
+
+test('scrolling back down to the footer-aware anchor re-engages tail-lock', () => {
+  const text = 'line 1\nline 2\n[auto]\n❯ type a message…';
+  const el = makeEl(0, 100, 400);
+
+  el.scrollTop = 0;
+  assert.equal(isAtBottom(el, text), false);
+
+  scrollToBottom(el, text);
+  assert.equal(isAtBottom(el, text), true, 'scrolling back to the anchor must re-engage tail-lock');
 });
