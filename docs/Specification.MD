@@ -124,6 +124,15 @@ Spawning agent processes from TypeScript **is** the intended design — that is 
 - Only one tile can be selected at a time; selecting a new tile automatically deselects the previous one
 - Selection persists across webview reloads
 
+#### Tile Scrolling and Autoscroll
+
+Tiles automatically follow the agent's live output ("tail-locked") so you always see the newest transcript line:
+
+- **Autoscroll**: By default, tiles scroll to show the newest output as it streams. The tile anchors to the agent's live content line, positioned just above any pinned TUI footer (the input prompt, status bar, or interrupt indicator)
+- **Manual scroll-up**: Scroll up to read earlier output and the tile releases tail-lock — new output no longer forces the view downward
+- **Re-engage**: Scroll back down to the live region and tail-lock re-engages, resuming autoscroll to follow new output
+- **Footer visibility**: The pinned footer (input box and status line) remains visible while autoscrolling; live content is never hidden behind it
+
 #### Human input is tracked, not a side-channel
 
 Typing directly into a tile is powerful but creates a hazard: a hand-typed instruction ("skip the auth check") lives only in the terminal scrollback — invisible to the pipeline, the Work Tree, the audit trail, and the next agent. That makes human input an *untracked* channel that can silently contradict the tracked message bus.
