@@ -1,7 +1,7 @@
 id: BL-047
 title: backlog "Assigned" + tile badge should show the live parcel holder, not static assigned_to
 milestone: M4
-status: todo
+status: done
 priority: 06
 assigned_to: coder
 
