@@ -1,0 +1,105 @@
+id: BL-061
+title: BUG — handoffd dies silently and the whole swarm stalls; supervise, auto-restart, surface loudly
+milestone: M4
+status: todo
+priority: 02
+assigned_to: coder
+
+description: |
+  USER DIRECTIVE 2026-07-01 ~22:40Z: this is a BUG — prioritize it (prio 02,
+  right behind BL-060; bugs-first applies).
+
+  Incident 2026-07-01: handoffd (the babashka handoff-delivery daemon) died
+  silently between 21:51 and 21:53 with nothing in its log (last line a normal
+  delivery). The ENTIRE swarm silently stalled ~40 minutes: 10 handoffs
+  stranded across outboxes (including a QA approval), every role idle
+  believing it had no work, no error anywhere. Only a manual outbox sweep by
+  the coordinator found it; restarting the daemon delivered everything within
+  seconds. handoffd is a single point of failure with NO supervision, and
+  `swarmforge.sh start_handoff_daemon` TRUNCATES the old log on restart, so
+  crash evidence is destroyed.
+
+  Wanted behavior:
+  1. SUPERVISE — a supervisor in the forge/launcher layer (the same layer that
+     starts handoffd; it must work headless, without the extension running)
+     periodically checks daemon health and declares it dead when EITHER the
+     pid is gone OR delivery is stalled (outbox files pending older than a
+     threshold with no daemon poll activity).
+  2. AUTO-RESTART with bounded backoff — restart a dead daemon so stranded
+     outbox mail flows again; if it keeps dying immediately, back off and
+     surface a persistent-failure state instead of crash-looping.
+  3. PRESERVE EVIDENCE — on any (re)start, rotate the previous log aside
+     (timestamped) instead of truncating; capture the daemon's stderr into its
+     log; have the daemon emit a periodic heartbeat (e.g. poll-cycle log line
+     or heartbeat file) so a post-mortem can see liveness up to the death.
+  4. SURFACE LOUDLY — every death/restart/persistent-failure is recorded in a
+     machine-readable status file under `.swarmforge/daemon/`, and the
+     extension reads that state and shows a clearly visible transport-health
+     marker in the panel (a dead transport must never be silent). Extension is
+     VIEW-only here: it reads state, it does not manage the daemon process.
+
+  Constraints:
+  - Supervision lives in the forge tooling (swarmforge.sh / scripts, babashka
+    or shell), NOT in the extension host; the extension only renders daemon
+    status from `.swarmforge/` state (tile-as-view rule).
+  - Do not change the handoff protocol or delivery semantics; after restart
+    the existing daemon must deliver stranded outbox files as it does today.
+  - Root cause of the 21:51 death is unknown (log preserved at
+    tmp/handoffd.log.died-20260701T2151Z); the diagnosability work (stderr
+    capture + heartbeat) is the required floor, a root-cause fix is a bonus
+    if the evidence reveals one.
+
+acceptance: |
+  Feature: handoffd supervision
+
+  Background:
+    Given a running swarm whose handoffd delivers handoff mail
+
+  # BL-061 supervise-handoffd-01
+  Scenario: silent daemon death is detected and recovered
+    Given handoffd dies without logging an error
+    And handoffs are queued in agent outboxes
+    When the supervisor's next health check runs
+    Then it detects the daemon is dead
+    And restarts it
+    And the stranded outbox handoffs are delivered
+    And the incident is recorded in the daemon status file
+
+  # BL-061 supervise-handoffd-02
+  Scenario: stalled delivery counts as dead even if the pid lingers
+    Given the handoffd process exists but stops polling
+    And outbox files have been pending longer than the stall threshold
+    When the supervisor's health check runs
+    Then the daemon is declared unhealthy and restarted
+
+  # BL-061 supervise-handoffd-03
+  Scenario: restart preserves the previous log
+    Given handoffd is restarted by the supervisor or the launcher
+    Then the previous log is rotated aside with a timestamp
+    And no log content from before the restart is truncated or lost
+
+  # BL-061 supervise-handoffd-04
+  Scenario: daemon death leaves diagnosable evidence
+    Given the daemon has been running under supervision
+    When it dies for any reason
+    Then its log contains heartbeat activity up to near the time of death
+    And anything the daemon wrote to stderr is captured in its log
+
+  # BL-061 supervise-handoffd-05
+  Scenario: crash-looping daemon does not spin and is not silent
+    Given handoffd dies immediately on every restart attempt
+    When the supervisor has retried up to its bounded limit
+    Then it stops hot-restarting and backs off
+    And the status file records a persistent-failure state
+
+  # BL-061 supervise-handoffd-06
+  Scenario: transport health is visible in the extension panel
+    Given the daemon status file records a death, restart, or persistent failure
+    When the extension panel renders
+    Then a clearly visible transport-health marker reflects that state
+    And a healthy transport shows no alarm
+
+  # Non-behavioral gate:
+  #  - Supervisor logic is testable without a live tmux swarm (fake pid/
+  #    heartbeat/outbox fixtures); extension-side rendering covered by tests;
+  #    full suite green.

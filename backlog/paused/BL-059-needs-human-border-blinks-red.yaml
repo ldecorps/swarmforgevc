@@ -1,0 +1,62 @@
+id: BL-059
+title: Needs-human tile border blinks RED (not blue) when an agent asks the human a question
+milestone: M1
+status: todo
+priority: 05
+assigned_to: coder
+
+description: |
+  User request (2026-07-01): "ensure the window border of an agent that is
+  asking human a question should blink red."
+
+  Today a tile whose agent needs the human (question or permission prompt)
+  blinks BLUE (#00a8e8, `needs-human-blink` keyframes in webviewHtml.ts).
+  Change the blink color to red so it reads as urgent. Everything else about
+  the needs-human behavior stays as already specified: detection triggers,
+  border-only pulse (per BL-054, which refines the blink to border-only), the
+  1.5s ease-in-out cadence, and the state precedence
+  dead > needs-human > stalled > normal.
+
+  Constraints:
+  - Dead tiles keep their SOLID red border (#e53935) and still take precedence:
+    a dead tile never blinks. Blinking-vs-solid is the visual distinction
+    between "asking a question" and "dead", so the blink must be clearly
+    animated (border cycling to/from red), never a static red border.
+  - Webview presentation change only (CSS in webviewHtml.ts); no detection or
+    host-side logic changes.
+  - DEPENDS ON / OVERLAPS BL-054 (needs-human border-only pulse), currently in
+    flight — this item edits the same keyframes. Do not run concurrently with
+    BL-054; promote only after BL-054 merges, then apply on top of its
+    border-only implementation.
+
+acceptance: |
+  Feature: needs-human border blinks red
+
+  Background:
+    Given the agent panel is rendering tiles
+
+  # BL-059 needs-human-red-blink-01
+  Scenario: an agent asking the human a question gets a red blinking border
+    Given an agent tile enters the needs-human state
+    Then its border blinks red
+    And the blink animates the border color (not a static red border)
+    And the border-only pulse behavior from BL-054 is preserved
+
+  # BL-059 needs-human-red-blink-02
+  Scenario: dead still beats needs-human and stays solid
+    Given an agent tile is in both the dead and needs-human states
+    Then the tile shows the solid dead red border
+    And it does not blink
+
+  # BL-059 needs-human-red-blink-03
+  Scenario: other states are unchanged
+    Given an agent tile in the <state> state and not needs-human
+    Then its border styling is unchanged from before this item
+
+    Examples:
+      | state   |
+      | stalled |
+      | normal  |
+
+  # Non-behavioral gate:
+  #  - Existing needs-human tests updated for the red color; full suite green.
