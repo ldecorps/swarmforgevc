@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const cp = require('node:child_process');
+const { installExecutable } = require('./helpers/sharedBin');
 
 const { getCurrentBranch, buildPrArgs, openPullRequest } = require('../out/swarm/prCreator');
 
@@ -62,7 +63,7 @@ test('openPullRequest reports failure when gh is not available', () => {
 function withFakeGh(scriptBody, fn) {
   const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-fake-gh-'));
   const ghMock = path.join(binDir, 'gh');
-  fs.writeFileSync(ghMock, `#!/bin/sh\n${scriptBody}\n`, { mode: 0o755 });
+  installExecutable(ghMock, `#!/bin/sh\n${scriptBody}\n`);
   const originalPath = process.env.PATH;
   process.env.PATH = `${binDir}${path.delimiter}${originalPath}`;
   try {

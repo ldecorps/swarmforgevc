@@ -6,6 +6,7 @@ const test = require('node:test');
 
 const { isSwarmReady, buildLaunchEnv, launchSwarm, waitForSwarmReady } = require('../out/swarm/swarmLauncher');
 const { installFakeTmux } = require('./helpers/fakeTmux');
+const { installExecutable } = require('./helpers/sharedBin');
 
 function mkTmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-launch-'));
@@ -19,10 +20,7 @@ function writeReadyState(targetPath, roleLines = '1\tcoder\tswarmforge-coder\tCo
 }
 
 function writeSwarmScript(targetPath, body) {
-  const scriptPath = path.join(targetPath, 'swarm');
-  fs.writeFileSync(scriptPath, `#!/bin/sh\n${body}\n`);
-  fs.chmodSync(scriptPath, 0o755);
-  return scriptPath;
+  return installExecutable(path.join(targetPath, 'swarm'), `#!/bin/sh\n${body}\n`);
 }
 
 test('isSwarmReady returns false when tmux server is not running', () => {

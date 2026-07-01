@@ -159,7 +159,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "npm run compile && node --test test/*.test.js",
+    "test": "npm run compile && node --test --test-concurrency=8 test/*.test.js",
     "tracer-bullet": "npm run compile && node out/tools/tracer-bullet-launcher.js",
     "mutation": "npm run compile && stryker run",
     "dry": "jscpd --config .jscpd.json src"
