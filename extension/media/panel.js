@@ -228,8 +228,10 @@ function isAtBottom(el, contentText) {
   }
 
   // With footer: check if we're showing the live content just above the footer
-  // The "bottom" is now the footer height away from the actual scroll bottom
-  const lineHeight = el.clientHeight / (contentText ? contentText.split('\n').length : 1);
+  // The "bottom" is now the footer height away from the actual scroll bottom.
+  // Line height comes from the rendered content (scrollHeight), not the
+  // viewport (clientHeight), or the band is sized wrong (BL-055).
+  const lineHeight = el.scrollHeight / (contentText ? contentText.split('\n').length : 1);
   const footerPixelHeight = footerLines * lineHeight;
   const liveContentBottom = el.scrollHeight - footerPixelHeight;
   const viewportBottom = el.scrollTop + el.clientHeight;
@@ -247,7 +249,7 @@ function scrollToBottom(el, contentText) {
 
   // With footer: scroll so the last live line is visible just above the footer
   const lines = (contentText || '').split('\n');
-  const lineHeight = el.clientHeight / (lines.length || 1);
+  const lineHeight = el.scrollHeight / (lines.length || 1);
   const footerPixelHeight = footerLines * lineHeight;
   const liveContentBottom = el.scrollHeight - footerPixelHeight;
   const targetScrollTop = Math.max(0, liveContentBottom - el.clientHeight + lineHeight);
@@ -256,10 +258,29 @@ function scrollToBottom(el, contentText) {
 }
 
 function updateTileOutput(entry) {
-  entry.output.textContent = entry.text;
+  const el = entry.output;
+  const priorScrollTop = el.scrollTop;
+  el.textContent = entry.text;
   if (entry.tailLocked) {
-    scrollToBottom(entry.output, entry.text);
+    scrollToBottom(el, entry.text);
+  } else {
+    // The reader scrolled up: keep their place across the repaint (replacing
+    // textContent can reset scrollTop; the browser clamps if content shrank).
+    el.scrollTop = priorScrollTop;
   }
+  // Remember where this update put the view, so the scroll event it fires is
+  // not mistaken for the user scrolling (BL-055).
+  entry.expectedScrollTop = el.scrollTop;
+}
+
+function handleTileScroll(entry, el) {
+  if (entry.expectedScrollTop !== undefined && Math.abs(el.scrollTop - entry.expectedScrollTop) <= 1) {
+    // A scroll event at the position the last output update produced is
+    // content-driven, not the user; it must not toggle tail-lock.
+    return;
+  }
+  entry.expectedScrollTop = undefined;
+  entry.tailLocked = isAtBottom(el, entry.text);
 }
 
 function updateGridLayout(agentCount, roles) {
@@ -372,7 +393,7 @@ function ensureTile(role, displayName, agent) {
   });
 
   output.addEventListener('scroll', () => {
-    entry.tailLocked = isAtBottom(output, entry.text);
+    handleTileScroll(entry, output);
   }, { passive: true });
 
   // Watch for tile resizes and send new pane size to host
