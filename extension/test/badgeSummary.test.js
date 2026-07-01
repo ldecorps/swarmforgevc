@@ -1,7 +1,32 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const { buildBadgeMap, truncateSummary } = require('../out/panel/badgeSummary');
+
+function mkTmp() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-badge-'));
+}
+
+function mkdirp(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+}
+
+function writeRolesTsv(targetPath, roles) {
+  mkdirp(path.join(targetPath, '.swarmforge'));
+  const tsv = roles
+    .map((r) => [r.role, 'session', r.worktreePath, `swarmforge-${r.role}`, r.displayName, 'claude', 'task'].join('\t'))
+    .join('\n');
+  fs.writeFileSync(path.join(targetPath, '.swarmforge', 'roles.tsv'), tsv + '\n');
+}
+
+function dropHandoff(worktreePath, filename, content) {
+  const dir = path.join(worktreePath, '.swarmforge', 'handoffs', 'inbox', 'new');
+  mkdirp(dir);
+  fs.writeFileSync(path.join(dir, filename), content);
+}
 
 // --- truncateSummary ---
 
@@ -110,4 +135,38 @@ test('buildBadgeMap truncates long summaries to 40 chars', () => {
   ];
   const result = buildBadgeMap(items);
   assert.ok(result.coder.summary.length <= 40);
+});
+
+// --- buildBadgeMap live holder (BL-047) ---
+
+test('buildBadgeMap keys the badge on the live holder when the parcel has moved', () => {
+  const target = mkTmp();
+  const cleanerWt = mkTmp();
+  writeRolesTsv(target, [{ role: 'cleaner', worktreePath: cleanerWt, displayName: 'Cleaner' }]);
+  dropHandoff(cleanerWt, '00_test.handoff', 'from: coder\nto: cleaner\ntask: bl-043-tile-layout\ncommit: abc\n');
+
+  const items = [{ id: 'BL-043', title: 'tile layout', status: 'active', assignedTo: 'coder' }];
+  const result = buildBadgeMap(items, target);
+
+  assert.ok(result.cleaner, 'badge should be keyed on the live holder (cleaner), not the static assignee (coder)');
+  assert.equal(result.coder, undefined, 'no badge should remain on the original static assignee');
+  assert.equal(result.cleaner.holder, 'cleaner');
+});
+
+test('buildBadgeMap falls back to the static assignee when no live holder is found', () => {
+  const target = mkTmp();
+  writeRolesTsv(target, []);
+
+  const items = [{ id: 'BL-043', title: 'tile layout', status: 'active', assignedTo: 'coder' }];
+  const result = buildBadgeMap(items, target);
+
+  assert.ok(result.coder, 'badge should fall back to the static assignee when no live holder is found');
+  assert.equal(result.coder.holder, 'coder');
+});
+
+test('buildBadgeMap ignores targetPath for non-active items', () => {
+  const target = mkTmp();
+  const items = [{ id: 'BL-001', title: 'todo item', status: 'todo', assignedTo: 'coder' }];
+  const result = buildBadgeMap(items, target);
+  assert.equal(Object.keys(result).length, 0);
 });

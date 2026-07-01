@@ -1,108 +1,90 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
-// Function to parse handoff file and extract task name
-function parseHandoffTask(content) {
-  if (!content) return null;
-  const taskMatch = content.match(/^task:\s*(.+)$/m);
-  return taskMatch ? taskMatch[1].trim() : null;
+const { findLiveHolder } = require('../out/swarm/swarmState');
+
+function mkTmp() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-holder-'));
 }
 
-// Function to find live holder for an item by matching task name
-function findLiveHolder(itemId, stages, readHandoffFiles) {
-  // For each active stage, check if it has a handoff with the matching task
-  for (const stage of stages) {
-    if (stage.status !== 'active') continue;
-    
-    const handoffs = readHandoffFiles(stage.role) || [];
-    for (const handoff of handoffs) {
-      const taskName = parseHandoffTask(handoff.content);
-      // Task names typically follow pattern: "bl-NNN-xxx" or "task-name"
-      // Match if the task starts with the item ID (case-insensitive)
-      if (taskName && taskName.toLowerCase().startsWith(itemId.toLowerCase())) {
-        return stage.role;
-      }
-    }
-  }
-  return null;
+function mkdirp(dir) {
+  fs.mkdirSync(dir, { recursive: true });
 }
 
-test('parseHandoffTask extracts task name from handoff content', () => {
-  const content = 'id: 123\nfrom: coder\ntask: bl-043-tile-layout\ncommit: abc123';
-  assert.equal(parseHandoffTask(content), 'bl-043-tile-layout');
+function writeRolesTsv(targetPath, roles) {
+  mkdirp(path.join(targetPath, '.swarmforge'));
+  const tsv = roles
+    .map((r) => [r.role, 'session', r.worktreePath, `swarmforge-${r.role}`, r.displayName, 'claude', 'task'].join('\t'))
+    .join('\n');
+  fs.writeFileSync(path.join(targetPath, '.swarmforge', 'roles.tsv'), tsv + '\n');
+}
+
+function dropHandoff(worktreePath, subdir, filename, content) {
+  const dir = path.join(worktreePath, '.swarmforge', 'handoffs', 'inbox', subdir);
+  mkdirp(dir);
+  fs.writeFileSync(path.join(dir, filename), content);
+}
+
+function dropBatchHandoff(worktreePath, batchName, filename, content) {
+  const dir = path.join(worktreePath, '.swarmforge', 'handoffs', 'inbox', 'in_process', batchName);
+  mkdirp(dir);
+  fs.writeFileSync(path.join(dir, filename), content);
+}
+
+test('findLiveHolder returns null when roles.tsv is missing', () => {
+  const target = mkTmp();
+  assert.equal(findLiveHolder(target, 'BL-043'), null);
 });
 
-test('parseHandoffTask returns null when no task field', () => {
-  const content = 'id: 123\nfrom: coder\ncommit: abc123';
-  assert.equal(parseHandoffTask(content), null);
+test('findLiveHolder returns the role holding a matching task in inbox/new', () => {
+  const target = mkTmp();
+  const coderWt = mkTmp();
+  const cleanerWt = mkTmp();
+  writeRolesTsv(target, [
+    { role: 'coder', worktreePath: coderWt, displayName: 'Coder' },
+    { role: 'cleaner', worktreePath: cleanerWt, displayName: 'Cleaner' },
+  ]);
+  dropHandoff(cleanerWt, 'new', '00_test.handoff', 'from: coder\nto: cleaner\ntask: bl-043-tile-layout\ncommit: abc\n');
+
+  assert.equal(findLiveHolder(target, 'BL-043'), 'cleaner');
 });
 
-test('parseHandoffTask handles leading/trailing whitespace', () => {
-  const content = 'task:  bl-043-tile-layout  \nother: field';
-  assert.equal(parseHandoffTask(content), 'bl-043-tile-layout');
-});
+test('findLiveHolder returns the role holding a matching task in a batch subdirectory', () => {
+  const target = mkTmp();
+  const architectWt = mkTmp();
+  writeRolesTsv(target, [{ role: 'architect', worktreePath: architectWt, displayName: 'Architect' }]);
+  dropBatchHandoff(architectWt, 'batch_001', '00_test.handoff', 'from: cleaner\nto: architect\ntask: bl-044-footer-autoscroll\ncommit: abc\n');
 
-test('findLiveHolder returns role holding the item', () => {
-  const itemId = 'BL-043';
-  const stages = [
-    { role: 'coder', status: 'idle' },
-    { role: 'cleaner', status: 'active' },
-    { role: 'architect', status: 'idle' }
-  ];
-  const readHandoffFiles = (role) => {
-    if (role === 'cleaner') {
-      return [{ content: 'task: bl-043-tile-layout\n' }];
-    }
-    return [];
-  };
-  
-  assert.equal(findLiveHolder(itemId, stages, readHandoffFiles), 'cleaner');
-});
-
-test('findLiveHolder returns null when item not in pipeline', () => {
-  const itemId = 'BL-099';
-  const stages = [
-    { role: 'coder', status: 'active' },
-    { role: 'cleaner', status: 'idle' }
-  ];
-  const readHandoffFiles = (role) => {
-    if (role === 'coder') {
-      return [{ content: 'task: bl-043-tile-layout\n' }];
-    }
-    return [];
-  };
-  
-  assert.equal(findLiveHolder(itemId, stages, readHandoffFiles), null);
-});
-
-test('findLiveHolder ignores idle stages', () => {
-  const itemId = 'BL-043';
-  const stages = [
-    { role: 'coder', status: 'idle' },
-    { role: 'cleaner', status: 'idle' }
-  ];
-  const readHandoffFiles = () => [{ content: 'task: bl-043-tile-layout\n' }];
-  
-  assert.equal(findLiveHolder(itemId, stages, readHandoffFiles), null);
+  assert.equal(findLiveHolder(target, 'BL-044'), 'architect');
 });
 
 test('findLiveHolder matches case-insensitively', () => {
-  const itemId = 'BL-044';
-  const stages = [{ role: 'architect', status: 'active' }];
-  const readHandoffFiles = () => [{ content: 'task: BL-044-footer-autoscroll\n' }];
-  
-  assert.equal(findLiveHolder(itemId, stages, readHandoffFiles), 'architect');
+  const target = mkTmp();
+  const architectWt = mkTmp();
+  writeRolesTsv(target, [{ role: 'architect', worktreePath: architectWt, displayName: 'Architect' }]);
+  dropHandoff(architectWt, 'new', '00_test.handoff', 'from: cleaner\nto: architect\ntask: BL-044-footer-autoscroll\ncommit: abc\n');
+
+  assert.equal(findLiveHolder(target, 'bl-044'), 'architect');
 });
 
-test('findLiveHolder returns first matching active stage', () => {
-  const itemId = 'BL-043';
-  const stages = [
-    { role: 'cleaner', status: 'active' },
-    { role: 'architect', status: 'active' }
-  ];
-  const readHandoffFiles = () => [{ content: 'task: bl-043-tile-layout\n' }];
-  
-  // Should return the first active stage that has the handoff
-  const holder = findLiveHolder(itemId, stages, readHandoffFiles);
-  assert(holder === 'cleaner' || holder === 'architect');
+test('findLiveHolder ignores idle stages even if their inbox later gets a matching handoff dropped in completed/', () => {
+  const target = mkTmp();
+  const coderWt = mkTmp();
+  writeRolesTsv(target, [{ role: 'coder', worktreePath: coderWt, displayName: 'Coder' }]);
+  // completed/ is not in INBOX_SUBDIRS, so this must not count as active or match
+  dropHandoff(coderWt, 'completed', '00_test.handoff', 'from: cleaner\nto: coder\ntask: bl-043-tile-layout\ncommit: abc\n');
+
+  assert.equal(findLiveHolder(target, 'BL-043'), null);
+});
+
+test('findLiveHolder returns null when no active stage holds a matching task', () => {
+  const target = mkTmp();
+  const coderWt = mkTmp();
+  writeRolesTsv(target, [{ role: 'coder', worktreePath: coderWt, displayName: 'Coder' }]);
+  dropHandoff(coderWt, 'new', '00_test.handoff', 'from: cleaner\nto: coder\ntask: bl-043-tile-layout\ncommit: abc\n');
+
+  assert.equal(findLiveHolder(target, 'BL-099'), null);
 });
