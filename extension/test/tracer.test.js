@@ -109,7 +109,31 @@ test('appendTraceHop HOP line includes ISO timestamp', () => {
   assert.match(content, /HOP coder \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
 });
 
+test('appendTraceHop includes action and state when provided', () => {
+  const tmp = mkTmp();
+  const tracesDir = path.join(tmp, '.swarmforge', 'traces');
+  const traceId = 'trace-20260630T000002z';
+  createTraceLog(tracesDir, traceId, 'TRACE trace-20260630T000002z HOP coordinator 2026-06-30T00:00:00Z');
+  appendTraceHop(tracesDir, traceId, 'coder', 'receive', 'received');
+  const content = fs.readFileSync(path.join(tracesDir, `${traceId}.log`), 'utf-8');
+  assert.match(content, /HOP coder \S+ action=receive state=received/);
+});
+
 // ── parseTraceLog ──────────────────────────────────────────────────────────
+
+test('parseTraceLog parses action and state from a HOP line', () => {
+  const content = 'HOP coder 2026-06-30T00:00:00.000Z action=receive state=received';
+  const hops = parseTraceLog(content);
+  assert.equal(hops[0].action, 'receive');
+  assert.equal(hops[0].state, 'received');
+});
+
+test('parseTraceLog skips a HOP line with an unparseable timestamp', () => {
+  const content = 'HOP coder not-a-timestamp\nHOP cleaner 2026-06-30T00:00:00.000Z';
+  const hops = parseTraceLog(content);
+  assert.equal(hops.length, 1);
+  assert.equal(hops[0].role, 'cleaner');
+});
 
 test('parseTraceLog extracts all HOP lines', () => {
   const content = [

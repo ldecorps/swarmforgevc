@@ -4,10 +4,25 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
-const { isSwarmReady, buildLaunchEnv } = require('../out/swarm/swarmLauncher');
+const { isSwarmReady, buildLaunchEnv, launchSwarm, waitForSwarmReady } = require('../out/swarm/swarmLauncher');
+const { installFakeTmux } = require('./helpers/fakeTmux');
 
 function mkTmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-launch-'));
+}
+
+function writeReadyState(targetPath, roleLines = '1\tcoder\tswarmforge-coder\tCoder\tclaude\n') {
+  const stateDir = path.join(targetPath, '.swarmforge');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'tmux-socket'), path.join(targetPath, 'fake.sock'));
+  fs.writeFileSync(path.join(stateDir, 'sessions.tsv'), roleLines);
+}
+
+function writeSwarmScript(targetPath, body) {
+  const scriptPath = path.join(targetPath, 'swarm');
+  fs.writeFileSync(scriptPath, `#!/bin/sh\n${body}\n`);
+  fs.chmodSync(scriptPath, 0o755);
+  return scriptPath;
 }
 
 test('isSwarmReady returns false when tmux server is not running', () => {
@@ -58,6 +73,122 @@ test('buildLaunchEnv deletes inherited SWARM_RUN_NAME when runName is undefined'
     } else {
       delete process.env.SWARM_RUN_NAME;
     }
+  }
+});
+
+test('launchSwarm fails fast when no ./swarm wrapper exists', async () => {
+  const targetPath = mkTmp();
+  const result = await launchSwarm(targetPath);
+  assert.equal(result.success, false);
+  assert.match(result.message, /No .\/swarm wrapper found/);
+  assert.equal(result.targetPath, targetPath);
+});
+
+test('launchSwarm resolves success once the process closes and the swarm is ready', async () => {
+  const targetPath = mkTmp();
+  writeReadyState(targetPath);
+  writeSwarmScript(targetPath, 'exit 0');
+  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  try {
+    const result = await launchSwarm(targetPath);
+    assert.equal(result.success, true);
+    assert.match(result.message, /launched successfully/);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('launchSwarm resolves success as soon as stdout announces readiness', async () => {
+  const targetPath = mkTmp();
+  writeReadyState(targetPath);
+  writeSwarmScript(targetPath, 'echo "SwarmForge is ready"');
+  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  try {
+    const result = await launchSwarm(targetPath);
+    assert.equal(result.success, true);
+    assert.match(result.message, /launched successfully/);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('launchSwarm resolves failure with stderr when the process closes and swarm never became ready', async () => {
+  const targetPath = mkTmp();
+  writeSwarmScript(targetPath, 'echo "boom" >&2\nexit 1');
+  const result = await launchSwarm(targetPath);
+  assert.equal(result.success, false);
+  assert.match(result.message, /boom/);
+});
+
+test('launchSwarm reports the exit code when the process closes with no output and swarm never became ready', async () => {
+  const targetPath = mkTmp();
+  writeSwarmScript(targetPath, 'exit 7');
+  const result = await launchSwarm(targetPath);
+  assert.equal(result.success, false);
+  assert.match(result.message, /exit code 7/);
+});
+
+test('launchSwarm resolves failure when the process cannot be spawned', async () => {
+  const targetPath = mkTmp();
+  const scriptPath = writeSwarmScript(targetPath, 'exit 0');
+  fs.chmodSync(scriptPath, 0o000);
+  try {
+    const result = await launchSwarm(targetPath);
+    assert.equal(result.success, false);
+    assert.match(result.message, /Failed to start swarm/);
+  } finally {
+    fs.chmodSync(scriptPath, 0o755);
+  }
+});
+
+test('launchSwarm resolves success via the readiness poll when the process keeps running quietly', async () => {
+  const targetPath = mkTmp();
+  writeReadyState(targetPath);
+  writeSwarmScript(targetPath, 'sleep 2');
+  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  try {
+    const result = await launchSwarm(targetPath);
+    assert.equal(result.success, true);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('launchSwarm times out when the swarm never becomes ready in time', async () => {
+  const targetPath = mkTmp();
+  writeSwarmScript(targetPath, 'sleep 2');
+  const result = await launchSwarm(targetPath, undefined, 200);
+  assert.equal(result.success, false);
+  assert.match(result.message, /Timed out waiting/);
+});
+
+test('waitForSwarmReady resolves true immediately when already ready', async () => {
+  const targetPath = mkTmp();
+  writeReadyState(targetPath);
+  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  try {
+    const ready = await waitForSwarmReady(targetPath, 5000, 50);
+    assert.equal(ready, true);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('waitForSwarmReady resolves false after the timeout elapses', async () => {
+  const targetPath = mkTmp();
+  const ready = await waitForSwarmReady(targetPath, 150, 30);
+  assert.equal(ready, false);
+});
+
+test('waitForSwarmReady resolves true once readiness appears mid-poll', async () => {
+  const targetPath = mkTmp();
+  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  try {
+    setTimeout(() => writeReadyState(targetPath), 100);
+    const ready = await waitForSwarmReady(targetPath, 5000, 30);
+    assert.equal(ready, true);
+  } finally {
+    fake.restore();
   }
 });
 
