@@ -26,6 +26,7 @@ const MAX_HISTORY_LINES = 50000;
 // windows taller so the agent TUI re-renders into more rows.
 const TILE_PANE_COLS = 120;
 const DEFAULT_TILE_PANE_ROWS = 200;
+const MIN_TILE_PANE_ROWS = 6;
 const MAX_TILE_PANE_ROWS = 1000;
 
 export function normalizeHistoryLines(value: number | undefined | null): number {
@@ -39,7 +40,7 @@ export function normalizePaneRows(value: number | undefined | null): number {
   if (value === undefined || value === null || value <= 0) {
     return DEFAULT_TILE_PANE_ROWS;
   }
-  return Math.min(value, MAX_TILE_PANE_ROWS);
+  return Math.max(MIN_TILE_PANE_ROWS, Math.min(value, MAX_TILE_PANE_ROWS));
 }
 
 /**
@@ -95,6 +96,7 @@ export class PaneTailer {
   private socketPath = '';
   private historyLines: number;
   private paneRows: number;
+  private rolePaneRows = new Map<string, number>();
 
   constructor(
     private readonly targetPath: string,
@@ -121,7 +123,8 @@ export class PaneTailer {
     setHistoryLimit(this.socketPath, this.historyLines);
     setWindowSizeManual(this.socketPath);
     for (const role of this.roles) {
-      resizeWindow(this.socketPath, role.session, TILE_PANE_COLS, this.paneRows);
+      const rows = this.rolePaneRows.get(role.role) ?? this.paneRows;
+      resizeWindow(this.socketPath, role.session, TILE_PANE_COLS, rows);
     }
   }
 
@@ -158,6 +161,26 @@ export class PaneTailer {
 
   getRoles(): SwarmRole[] {
     return this.roles;
+  }
+
+  // Each tile measures and reports its OWN visible height (a selected tile is
+  // taller than the rest, per BL-040/043/051), so the fit must be per-role:
+  // resize only the pane that changed rather than re-applying one shared row
+  // count to every role's pane.
+  updatePaneRows(role: string, newPaneRows: number): void {
+    const normalized = normalizePaneRows(newPaneRows);
+    if (this.rolePaneRows.get(role) === normalized) {
+      return;
+    }
+    this.rolePaneRows.set(role, normalized);
+    if (!this.socketPath) {
+      return;
+    }
+    const target = this.roles.find((r) => r.role === role);
+    if (!target) {
+      return;
+    }
+    resizeWindow(this.socketPath, target.session, TILE_PANE_COLS, normalized);
   }
 
   private poll(): void {

@@ -96,6 +96,9 @@ class SwarmPanel {
                         this.workspaceState.update('swarmforge.selectedRole', message.role);
                     }
                     break;
+                case 'fitTilePaneToHeight':
+                    this.tailer?.updatePaneRows(message.role, message.paneRows);
+                    break;
             }
         }, null, this.disposables);
     }

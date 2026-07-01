@@ -17,11 +17,65 @@ const backlogToggleBtn = document.getElementById('backlog-toggle');
 const SCROLL_THRESHOLD = 8;
 const holderMap = {};
 let lastBacklogItems = [];
+let resizeDebounceTimers = new Map();
+const RESIZE_DEBOUNCE_MS = 300;
 
 function updateBottomRow() {
   const hasRuns = recentRunsEl.style.display !== 'none';
   const hasBacklog = backlogEl.style.display !== 'none';
   bottomRowEl.style.display = (hasRuns || hasBacklog) ? '' : 'none';
+}
+
+function measureTilePaneRows(tile, output) {
+  if (!tile || !output) {
+    return null;
+  }
+
+  const rect = output.getBoundingClientRect();
+  const pixelHeight = rect.height;
+
+  if (pixelHeight <= 0) {
+    return null;
+  }
+
+  const style = window.getComputedStyle(output);
+  const lineHeightStr = style.lineHeight;
+  const fontSizeStr = style.fontSize;
+
+  let lineHeight;
+  if (lineHeightStr === 'normal') {
+    const fontSize = parseFloat(fontSizeStr);
+    lineHeight = fontSize * 1.35;
+  } else if (lineHeightStr.endsWith('px')) {
+    lineHeight = parseFloat(lineHeightStr);
+  } else {
+    const fontSize = parseFloat(fontSizeStr);
+    const lineHeightMultiplier = parseFloat(lineHeightStr);
+    lineHeight = fontSize * lineHeightMultiplier;
+  }
+
+  if (lineHeight <= 0) {
+    return null;
+  }
+
+  const paneRows = Math.floor(pixelHeight / lineHeight);
+  return Math.max(1, paneRows);
+}
+
+function debouncedSendTilePaneSize(role, tile, output) {
+  if (resizeDebounceTimers.has(role)) {
+    clearTimeout(resizeDebounceTimers.get(role));
+  }
+
+  const timer = setTimeout(() => {
+    const paneRows = measureTilePaneRows(tile, output);
+    if (paneRows !== null) {
+      vscode.postMessage({ type: 'fitTilePaneToHeight', role, paneRows });
+    }
+    resizeDebounceTimers.delete(role);
+  }, RESIZE_DEBOUNCE_MS);
+
+  resizeDebounceTimers.set(role, timer);
 }
 
 runsToggleBtn.addEventListener('click', () => {
@@ -320,6 +374,17 @@ function ensureTile(role, displayName, agent) {
   output.addEventListener('scroll', () => {
     entry.tailLocked = isAtBottom(output, entry.text);
   }, { passive: true });
+
+  // Watch for tile resizes and send new pane size to host
+  const resizeObserver = new ResizeObserver(() => {
+    debouncedSendTilePaneSize(role, tile, output);
+  });
+  resizeObserver.observe(output);
+
+  // Send initial tile size
+  setTimeout(() => {
+    debouncedSendTilePaneSize(role, tile, output);
+  }, 100);
 
   tile.appendChild(header);
   tile.appendChild(output);
