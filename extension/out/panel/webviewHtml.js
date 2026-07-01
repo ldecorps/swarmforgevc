@@ -167,9 +167,9 @@ function getWebviewHtml(scriptUri, cspSource) {
       min-height: 0;
     }
     #grid.layout-first-row {
-      grid-template-columns: 1fr 1fr;
-      grid-template-rows: auto 1fr;
-      align-content: stretch;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 8px;
+      align-content: start;
       overflow: hidden;
     }
     .tile {
@@ -183,23 +183,13 @@ function getWebviewHtml(scriptUri, cspSource) {
     #grid.layout-first-row .tile {
       min-height: 0;
     }
+    #grid.layout-first-row [data-role="coordinator"],
+    #grid.layout-first-row [data-role="specifier"] {
+      grid-column: span 2;
+    }
     .tile.selected {
       grid-column: span 2;
       grid-row: span 2;
-    }
-    #grid.layout-first-row .tile.first-row {
-      grid-row: 1;
-      grid-column: span 1;
-    }
-    #grid.layout-first-row .tile.first-row.selected {
-      grid-column: span 2;
-    }
-    #grid.layout-first-row .tile.first-row:not(.selected) {
-      grid-column: span 1;
-    }
-    #grid.layout-first-row .tile:not(.first-row) {
-      grid-row: 2;
-      grid-column: span 1;
     }
     .tile-header {
       padding: 4px 8px;
