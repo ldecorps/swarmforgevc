@@ -1,0 +1,82 @@
+id: BL-060
+title: Cut test-gate cost per parcel — fast suite first, tiered stage runs only if still needed
+milestone: M4
+status: todo
+priority: 01
+assigned_to: coder
+
+description: |
+  USER DIRECTIVE 2026-07-01 ("prioritize 60"): top of the queue, slot reserved.
+
+  Measured 2026-07-01: full `npm test` (compile + 622 tests, `node --test
+  test/*.test.js`) takes ~5m53s wall clock but only ~21s user CPU — ~95% of the
+  time is idle waiting (real timers, polling delays, sleeps) run sequentially.
+  Every pipeline stage runs the full gate, so one parcel crossing all 7 stages
+  pays ~40 min of testing; stage cost is now processing-bound on the test gate.
+
+  TRACK 1 (required, do first) — make the suite itself fast:
+  - Run test files concurrently (`node --test` supports a concurrency option;
+    an idle-waiting suite parallelizes almost perfectly).
+  - Replace real sleeps/polling delays in wait-heavy tests with fake/mocked
+    timers.
+  - Target: full suite (compile excluded) well under 1 minute wall clock, with
+    ZERO tests dropped, skipped, or weakened — same assertions, same coverage.
+
+  TRACK 2 (contingent — implement ONLY if, after Track 1 lands, the full suite
+  still takes over ~1 minute) — tiered runs per stage:
+  - Intermediate stages (coder, cleaner, architect, hardender, documenter) may
+    run a fast tier: compile + only tests affected by the changed area (simple
+    path/module mapping is fine, e.g. `npm run test:affected <paths>`); any
+    stage may opt up to the full suite for broad or cross-cutting changes.
+  - QA remains the FULL gate — entire suite, unchanged — and merge still
+    requires the full gate green. Final quality guarantees must not weaken.
+
+  Constraints:
+  - No reduction of final quality guarantees: QA full-suite gate and the merge
+    requirement stay exactly as they are.
+  - Tests must stay deterministic under concurrency (no shared tmp-dir or
+    port collisions introduced by parallelism).
+
+acceptance: |
+  Feature: test-suite throughput
+
+  # BL-060 suite-throughput-01
+  Scenario: full suite runs fast with nothing dropped
+    Given the repository after Track 1 lands
+    When a developer runs the full test suite
+    Then every previously passing test still runs and passes
+    And no test is skipped, deleted, or has assertions weakened
+    And the suite (excluding compile) completes well under 1 minute wall clock
+
+  # BL-060 suite-throughput-02
+  Scenario: suite is deterministic under concurrency
+    Given test files execute concurrently
+    When the full suite is run repeatedly
+    Then results are stable across runs with no cross-test interference
+
+  # BL-060 suite-throughput-03
+  Scenario: wait-heavy tests no longer sleep in real time
+    Given a test that previously waited on real timers or polling delays
+    When it runs after Track 1
+    Then it uses fake or mocked time and completes without real-time sleeps
+    And it still verifies the same behavior
+
+  # BL-060 suite-throughput-04 (Track 2 — only if triggered)
+  Scenario: intermediate stage can run an affected-only fast tier
+    Given Track 1 landed and the full suite still exceeds about 1 minute
+    And a change touching a specific module
+    When an intermediate pipeline stage runs the fast tier for that change
+    Then it compiles and runs the tests mapped to the changed area
+    And the stage may opt up to the full suite for cross-cutting changes
+
+  # BL-060 suite-throughput-05 (Track 2 — only if triggered)
+  Scenario: QA gate is unchanged by tiering
+    Given the fast tier exists for intermediate stages
+    When QA runs its gate
+    Then it runs the entire full suite exactly as before
+    And merge still requires that full gate green
+
+  # Non-behavioral gate:
+  #  - Track 2 is contingent: if Track 1 alone brings the full suite under
+  #    ~1 minute, Track 2 is NOT built (avoid unnecessary complexity) and
+  #    scenarios 04/05 are moot.
