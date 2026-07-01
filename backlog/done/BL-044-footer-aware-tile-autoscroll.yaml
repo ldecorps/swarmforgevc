@@ -1,7 +1,7 @@
 id: BL-044
 title: footer-aware tile autoscroll — follow the live line above the pinned TUI footer
 milestone: M4
-status: todo
+status: done
 priority: 05
 assigned_to: coder
 
