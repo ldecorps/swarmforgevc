@@ -157,7 +157,8 @@ test('getWebviewHtml CSS positions first-row tiles using nth-of-type', () => {
   const html = getWebviewHtml('test.js', 'test');
   assert(html.includes('#grid.layout-first-row .tile.first-row:nth-of-type(1)'));
   assert(html.includes('#grid.layout-first-row .tile.first-row:nth-of-type(2)'));
-  assert(html.includes('grid-column: 1') || html.includes('grid-column: 2'));
+  assert(html.includes('grid-column: 1'));
+  assert(html.includes('grid-column: 2'));
 });
 
 test('getWebviewHtml CSS allows non-first-row tiles to flow naturally', () => {
@@ -189,6 +190,16 @@ test('updateGridLayout applies layout-first-row for 5 agents with coordinator an
   updateGridLayout(5, roles);
 
   assert(mockGrid.classList.classes.includes('layout-first-row'));
+  assert(!mockGrid.classList.classes.includes('layout-2x2'));
+});
+
+test('updateGridLayout does not apply first-row layout when roles is undefined', () => {
+  const mockGrid = makeMockGrid();
+  global.grid = mockGrid;
+
+  updateGridLayout(3, undefined);
+
+  assert(!mockGrid.classList.classes.includes('layout-first-row'));
   assert(!mockGrid.classList.classes.includes('layout-2x2'));
 });
 

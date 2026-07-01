@@ -167,7 +167,7 @@ function getWebviewHtml(scriptUri, cspSource) {
       min-height: 0;
     }
     #grid.layout-first-row {
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       grid-template-rows: auto 1fr;
       align-content: stretch;
       overflow: hidden;
@@ -182,6 +182,7 @@ function getWebviewHtml(scriptUri, cspSource) {
     }
     #grid.layout-first-row .tile {
       min-height: 0;
+      grid-column: span 1;
     }
     .tile.selected {
       grid-column: span 2;
@@ -189,17 +190,23 @@ function getWebviewHtml(scriptUri, cspSource) {
     }
     #grid.layout-first-row .tile.first-row {
       grid-row: 1;
-      grid-column: span 1;
+    }
+    #grid.layout-first-row .tile.first-row:nth-of-type(1) {
+      grid-column: 1;
+    }
+    #grid.layout-first-row .tile.first-row:nth-of-type(2) {
+      grid-column: 2;
     }
     #grid.layout-first-row .tile.first-row.selected {
       grid-column: span 2;
-    }
-    #grid.layout-first-row .tile.first-row:not(.selected) {
-      grid-column: span 1;
+      grid-row: 1;
     }
     #grid.layout-first-row .tile:not(.first-row) {
       grid-row: 2;
-      grid-column: span 1;
+    }
+    #grid.layout-first-row .tile:not(.first-row).selected {
+      grid-column: span 2;
+      grid-row: 2 / span 2;
     }
     .tile-header {
       padding: 4px 8px;
