@@ -1,0 +1,89 @@
+id: BL-057
+title: BUG — per-recipient inbox delivery collides when roles share an inbox dir
+milestone: M4
+status: todo
+priority: 03
+assigned_to: coder
+
+description: |
+  Silent lost handoffs (sibling of BL-056). Roles that SHARE one inbox directory
+  miss handoffs meant for them. Confirmed 2026-07-01: QA's BL-052 "approved"
+  broadcast reached the specifier but the coordinator's copy was clobbered — the
+  coordinator's ready_for_next returned NO_TASK even though the broadcast named
+  it.
+
+  Root cause (verified in handoffd.bb): the daemon delivers a per-recipient COPY
+  of each handoff and stamps a `recipient:` header, but it writes every copy under
+  the ORIGINAL outbox filename, which encodes the full `to:` list rather than the
+  individual recipient:
+    (defn target-path [role-info filename]
+      (fs/path (:worktree-path role-info)
+               ".swarmforge" "handoffs" "inbox" "new" filename))
+  and deliver! calls (target-path role-info filename) with the same `filename` for
+  every recipient. Coordinator and specifier are both on the `master` worktree, so
+  their `:worktree-path` is identical; with an identical filename the two copies
+  resolve to the SAME path and the second `spit` overwrites the first. Only one
+  survivor remains (observed `recipient: specifier`), and the ready/done recipient
+  filter then routes it to just that role. The other shared-inbox role never sees
+  its copy.
+
+  Fix direction (observable behavior is the contract): a broadcast to N recipients
+  that share an inbox dir must leave N independently dequeuable items, one per
+  recipient, none clobbered. Make the delivered filename unique per recipient —
+  e.g. incorporate the specific `recipient` into the delivered filename (and/or
+  key each role's inbox by role name even on a shared worktree). Keep the
+  recipient filter in the ready/done helpers working (it already keys off the
+  `recipient:` header). Preserve the existing correct single-recipient delivery.
+
+  Ordering constraint: the queue helpers select the next item by SORTED filename
+  order (leading `<priority>_<timestamp>_<sequence>`). Any per-recipient suffix
+  must be added so it does NOT disturb that leading priority/timestamp/sequence
+  sort (e.g. append the recipient near the end of the name, before `.handoff`).
+
+  Scope: forge tooling under swarmforge/ — the handoffd daemon delivery
+  (handoffd.bb target-path / deliver!) and, if needed, the ready/done recipient
+  filtering, plus a test. Do NOT change SwarmForge upstream semantics beyond the
+  vendored scripts. Do not alter the swarm message protocol's header contract.
+
+acceptance: |
+  Feature: per-recipient inbox delivery without collision
+
+  Background:
+    Given the coordinator and specifier share one inbox directory on the master
+      worktree
+    And the handoffd daemon is delivering handoffs
+
+  # BL-057 per-recipient-delivery-01
+  Scenario: a broadcast to two shared-inbox roles leaves two dequeuable copies
+    Given a broadcast handoff addressed to both coordinator and specifier
+    When the daemon delivers it
+    Then the shared inbox contains a separately dequeuable copy for the coordinator
+    And a separately dequeuable copy for the specifier
+    And neither copy has overwritten the other
+
+  # BL-057 per-recipient-delivery-02
+  Scenario: each shared role dequeues its own copy
+    Given such a broadcast has been delivered
+    When the coordinator runs ready_for_next.sh
+    Then it receives the copy whose recipient is the coordinator
+    And when the specifier runs ready_for_next.sh it receives the copy whose
+      recipient is the specifier
+
+  # BL-057 per-recipient-delivery-03
+  Scenario: single-recipient delivery is unchanged
+    Given a handoff addressed to a single recipient
+    When the daemon delivers it
+    Then exactly one copy is delivered to that recipient's inbox as before
+
+  # BL-057 per-recipient-delivery-04
+  Scenario: priority ordering is preserved
+    Given several queued handoffs of differing priority in a shared inbox
+    When a role dequeues the next item
+    Then items are still selected in priority-then-timestamp order
+    And the per-recipient uniqueness does not disturb that ordering
+
+  # Non-behavioral gate:
+  #  - A daemon test delivers a broadcast to two roles that share an inbox dir and
+  #    asserts two distinct files exist (one per recipient), each carrying the
+  #    matching recipient header; single-recipient delivery still yields one file.
+  #    Existing tests stay green.
