@@ -109,7 +109,10 @@ function readYamlFiles(dir, overrideStatus) {
 }
 const MAX_PRIORITY = Number.MAX_SAFE_INTEGER;
 function readBacklog(targetPath) {
-    const activeItems = readYamlFiles(path.join(targetPath, 'backlog', 'active'));
+    // The folder is authoritative: the pipeline moves files between backlog
+    // folders without touching the yaml status field, so a promoted item may
+    // still say "status: todo".
+    const activeItems = readYamlFiles(path.join(targetPath, 'backlog', 'active'), 'active');
     const doneItems = readYamlFiles(path.join(targetPath, 'backlog', 'done'), 'done');
     activeItems.sort((a, b) => (a.priority ?? MAX_PRIORITY) - (b.priority ?? MAX_PRIORITY));
     return [...activeItems, ...doneItems];
