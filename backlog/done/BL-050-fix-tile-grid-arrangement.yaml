@@ -1,9 +1,10 @@
 id: BL-050
 title: "fix tile grid: >4 agents must fill panel width, not cram into 2 narrow columns"
 milestone: M4
-status: todo
+status: superseded
 priority: 00
 assigned_to: coder
+superseded_by: BL-051
 
 description: |
   URGENT regression from BL-040/BL-043 ("first row = coordinator + specifier").

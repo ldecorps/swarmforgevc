@@ -1,0 +1,122 @@
+id: BL-051
+title: "URGENT: tile grid must fit the panel (no overlap, no scroll) with weighted coordinator/specifier + doubling selected tile"
+milestone: M4
+status: todo
+priority: 00
+assigned_to: coder
+
+description: |
+  URGENT raw human intake, drained by specifier. This SUPERSEDES BL-050 and its
+  approach. BL-050's fix (`repeat(3, minmax(0,1fr))` + `.first-row:nth-of-type`
+  + `grid-row: 2` on non-first-row tiles) is already on main and made the panel
+  WORSE: with 8 agents the tiles now OVERLAP — headers render stacked/garbled
+  ("Specifier"/"Coordinator" drawn on top of each other) because 6 non-first-row
+  tiles are forced into ONE row of 3 columns.
+
+  What / why:
+  The tiled agent panel is the daily-driver surface. It must always show every
+  agent tile as a distinct, non-overlapping rectangle that fills the panel and
+  fits without scrolling, at any agent count (5–8) and any panel width (narrow
+  side panel or wide editor column).
+
+  Desired behavior (as clarified with the human — note this DIFFERS from the
+  earlier BL-051 sketch that proposed a uniform auto-fill grid):
+  1. Fit-to-panel, shrink: all N tiles are always visible with NO scrolling. The
+     grid fills both the width and the height of the panel; tiles shrink as
+     needed so the whole pack fits. No overlap and no large wasted empty region.
+  2. Weighted coordinator + specifier: the coordinator and specifier tiles carry
+     MORE visual weight (larger area) than each ordinary role tile in the base
+     (nothing-selected) state.
+  3. Doubling selected tile: selecting a tile makes it roughly double the size of
+     an ordinary tile, and the remaining tiles shrink to accommodate it. Only one
+     tile is selected at a time; selecting another deselects the first; selecting
+     the selected tile again clears the selection (unchanged single-select /
+     toggle semantics).
+  4. Preserve the exactly-4-agent 2x2 layout.
+
+  Fix direction (STOP patching the fragile fixed-row / nth-of-type / hardcoded-
+  column scheme):
+  - Remove `#grid.layout-first-row`'s hardcoded column count and the
+    `.first-row:nth-of-type(n)` / `.tile:not(.first-row){grid-row:2}` rules. Do
+    NOT rely on `nth-of-type` for role placement (it counts across all tiles and
+    mis-targets).
+  - Use a fill-the-container grid model (e.g. fractional `fr` tracks sized to the
+    tile count so N tiles tile the viewport with no overflow), and express the
+    coordinator/specifier weight and the selected-tile doubling as column/row
+    SPANS (bigger area), not as a separate constrained row.
+  - Target roles by a stable role identifier (data attribute / class), never by
+    positional `nth-of-type`.
+
+  Constraints:
+  - Scope is the extension webview UI only: panel.js grid logic + webviewHtml.ts
+    CSS + the webview layout tests. Do NOT touch swarm protocol, tmux, message
+    routing, or pane tailing.
+  - Keep single-selection / toggle semantics unchanged.
+  - This corrects code already on main; verify the 4-agent 2x2 and selected-tile
+    growth still work after the layout-first-row rules are removed.
+
+acceptance: |
+  Feature: Tile grid fits the panel with weighted and selected tiles
+
+  Background:
+    Given the SwarmForge panel is open
+    And the roles include coordinator and specifier
+
+  # BL-051 no-overlap-at-any-count-01
+  Scenario Outline: Every tile is a distinct non-overlapping rectangle
+    Given there are <agents> agent tiles
+    When the grid layout is computed
+    Then each tile occupies its own grid area with no two tiles sharing a cell
+    And no tile's header is drawn on top of another tile
+    And every tile shows its own readable header
+
+    Examples:
+      | agents |
+      | 5      |
+      | 6      |
+      | 7      |
+      | 8      |
+
+  # BL-051 fits-panel-without-scroll-02
+  Scenario Outline: All tiles fit the panel without scrolling, filling width and height
+    Given there are 8 agent tiles
+    When the panel width is <width>
+    Then all 8 tiles are visible without vertical scrolling
+    And the tiles fill the available panel width and height
+    And there is no large empty region left unused beside or below the tiles
+
+    Examples:
+      | width       |
+      | narrow side |
+      | wide editor |
+
+  # BL-051 coordinator-specifier-weighted-03
+  Scenario: Coordinator and specifier tiles are larger than ordinary tiles
+    Given there are 8 agent tiles
+    And no tile is selected
+    When the grid layout is computed
+    Then the coordinator tile is larger in area than any ordinary role tile
+    And the specifier tile is larger in area than any ordinary role tile
+
+  # BL-051 selected-tile-doubles-04
+  Scenario: Selecting a tile doubles it and shrinks the rest
+    Given there are 8 agent tiles
+    When an ordinary tile is selected
+    Then the selected tile is about double the area of an ordinary unselected tile
+    And the remaining tiles shrink so the whole pack still fits without scrolling
+    And selecting another tile deselects the first
+    And selecting the already-selected tile clears the selection
+
+  # BL-051 preserve-four-agent-2x2-05
+  Scenario: The 4-agent 2x2 layout is preserved
+    Given there are exactly 4 agent tiles
+    When the grid layout is computed
+    Then the tiles are arranged in a 2x2 grid
+
+  # BL-051 no-nth-of-type-role-placement-06
+  Scenario: Role placement does not rely on positional nth-of-type
+    Given there are 8 agent tiles
+    When the grid layout is computed
+    Then coordinator and specifier are targeted by a stable role identifier
+    And the removed layout-first-row nth-of-type and grid-row rules no longer
+        force any tile to overlap another
