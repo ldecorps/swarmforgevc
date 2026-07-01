@@ -215,6 +215,14 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
     .tile.bl-active .tile-bl-badge {
       display: inline-block;
     }
+    .bl-milestone {
+      margin-left: 6px;
+      padding: 0 5px;
+      font-size: 10px;
+      border-radius: 3px;
+      background: var(--vscode-badge-background, #4d4d4d);
+      color: var(--vscode-badge-foreground, #fff);
+    }
     .tile.bl-highlighted {
       border-color: var(--vscode-focusBorder, #007fd4);
       box-shadow: 0 0 0 2px var(--vscode-focusBorder, #007fd4);
