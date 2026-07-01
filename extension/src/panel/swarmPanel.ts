@@ -67,6 +67,9 @@ export class SwarmPanel {
               this.workspaceState.update('swarmforge.selectedRole', message.role);
             }
             break;
+          case 'fitTilePaneToHeight':
+            this.tailer?.updatePaneRows(message.paneRows);
+            break;
         }
       },
       null,

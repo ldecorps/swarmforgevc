@@ -26,6 +26,7 @@ const MAX_HISTORY_LINES = 50000;
 // windows taller so the agent TUI re-renders into more rows.
 const TILE_PANE_COLS = 120;
 const DEFAULT_TILE_PANE_ROWS = 200;
+const MIN_TILE_PANE_ROWS = 6;
 const MAX_TILE_PANE_ROWS = 1000;
 
 export function normalizeHistoryLines(value: number | undefined | null): number {
@@ -39,7 +40,7 @@ export function normalizePaneRows(value: number | undefined | null): number {
   if (value === undefined || value === null || value <= 0) {
     return DEFAULT_TILE_PANE_ROWS;
   }
-  return Math.min(value, MAX_TILE_PANE_ROWS);
+  return Math.max(MIN_TILE_PANE_ROWS, Math.min(value, MAX_TILE_PANE_ROWS));
 }
 
 /**
@@ -158,6 +159,15 @@ export class PaneTailer {
 
   getRoles(): SwarmRole[] {
     return this.roles;
+  }
+
+  updatePaneRows(newPaneRows: number): void {
+    const normalized = normalizePaneRows(newPaneRows);
+    if (normalized === this.paneRows) {
+      return;
+    }
+    this.paneRows = normalized;
+    this.applyPaneSettings();
   }
 
   private poll(): void {

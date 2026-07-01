@@ -20,6 +20,7 @@ const MAX_HISTORY_LINES = 50000;
 // windows taller so the agent TUI re-renders into more rows.
 const TILE_PANE_COLS = 120;
 const DEFAULT_TILE_PANE_ROWS = 200;
+const MIN_TILE_PANE_ROWS = 6;
 const MAX_TILE_PANE_ROWS = 1000;
 function normalizeHistoryLines(value) {
     if (value === undefined || value === null || value <= 0) {
@@ -31,7 +32,7 @@ function normalizePaneRows(value) {
     if (value === undefined || value === null || value <= 0) {
         return DEFAULT_TILE_PANE_ROWS;
     }
-    return Math.min(value, MAX_TILE_PANE_ROWS);
+    return Math.max(MIN_TILE_PANE_ROWS, Math.min(value, MAX_TILE_PANE_ROWS));
 }
 /**
  * True when the set of role names differs between two role lists (a role was
@@ -122,6 +123,14 @@ class PaneTailer {
     }
     getRoles() {
         return this.roles;
+    }
+    updatePaneRows(newPaneRows) {
+        const normalized = normalizePaneRows(newPaneRows);
+        if (normalized === this.paneRows) {
+            return;
+        }
+        this.paneRows = normalized;
+        this.applyPaneSettings();
     }
     poll() {
         const latestSocket = (0, tmuxClient_1.readTmuxSocket)(this.targetPath) ?? '';
