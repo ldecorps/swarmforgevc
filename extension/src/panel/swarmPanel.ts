@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { SwarmRole, respawnAgent } from '../swarm/tmuxClient';
 import { PaneTailer } from './paneTailer';
-import { currentStageLabel, readPipelineStages } from '../swarm/swarmState';
+import { currentStageLabel, readPipelineStages, findLiveHolder } from '../swarm/swarmState';
 import { loadRuns } from '../runs/runLog';
 import { getNonce, getWebviewHtml } from './webviewHtml';
 import { readBacklog, BacklogItem } from './backlogReader';
@@ -184,8 +184,19 @@ export class SwarmPanel {
       }
       this.panel.webview.postMessage({ type: 'stage', label, recentRuns });
       const backlogItems = readBacklog(this.targetPath);
+      // Build a map of active item IDs to their live holders
+      const holderMap: Record<string, string> = {};
+      for (const item of backlogItems) {
+        if (item.status === 'active') {
+          const holder = findLiveHolder(this.targetPath, item.id);
+          if (holder) {
+            holderMap[item.id] = holder;
+          }
+        }
+      }
       this.panel.webview.postMessage({ type: 'backlogUpdate', items: backlogItems });
-      this.panel.webview.postMessage({ type: 'badgeUpdate', badges: buildBadgeMap(backlogItems) });
+      this.panel.webview.postMessage({ type: 'holderUpdate', holders: holderMap });
+      this.panel.webview.postMessage({ type: 'badgeUpdate', badges: buildBadgeMap(backlogItems, this.targetPath) });
     };
     poll();
     this.stagePoller = setInterval(poll, STAGE_POLL_INTERVAL_MS);
