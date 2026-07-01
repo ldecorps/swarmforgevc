@@ -56,6 +56,7 @@ const bounceWatcher_1 = require("./swarm/bounceWatcher");
 const chaserMonitor_1 = require("./watchdog/chaserMonitor");
 const tmuxClient_2 = require("./swarm/tmuxClient");
 const heartbeat_1 = require("./tools/heartbeat");
+const devActivationMarker_1 = require("./devActivationMarker");
 const liveness_1 = require("./watchdog/liveness");
 const NO_TARGET_MESSAGE = 'Set a target project first (SwarmForge: Set Target Project).';
 const STOP_SWARM_BUTTON = 'Stop Swarm';
@@ -201,6 +202,9 @@ async function resolveTargetPath(context) {
     return targetPath;
 }
 function activate(context) {
+    // Lets the dev-host bounce script verify a fresh activation (BL-058);
+    // written only in Development extension mode.
+    (0, devActivationMarker_1.maybeWriteActivationMarker)(context.extensionMode === vscode.ExtensionMode.Development, context.extensionPath);
     const runLogPath = path.join(os.homedir(), '.swarmforge', 'runs.jsonl');
     // Start bounce watcher and chaser if target is already set
     const targetPath = (0, targetConfig_1.getTargetPath)();
