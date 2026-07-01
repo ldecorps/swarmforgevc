@@ -1,7 +1,7 @@
 id: BL-045
 title: blink the tile border when an agent is asking the human a question
 milestone: M4
-status: todo
+status: done
 priority: 06
 assigned_to: coder
 
