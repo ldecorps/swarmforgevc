@@ -129,6 +129,33 @@ test('once released by a user scroll, later user scrolls keep re-evaluating', ()
   assert.equal(entry.tailLocked, false, 'scrolling within scrollback must stay released');
 });
 
+// --- handleTileScroll boundary and default-state behavior ---
+
+test('a scroll event exactly 1px from the expected position is still treated as content-driven', () => {
+  // Positioned far from the at-bottom band, so if the guard failed to skip
+  // evaluation, isAtBottom would flip tailLocked to false — pinning that the
+  // 1px case is genuinely skipped, not coincidentally still "at bottom".
+  const el = makeOutputEl(101, 300, 800);
+  const entry = { output: el, text: FOOTER_TEXT, tailLocked: true, expectedScrollTop: 100 };
+  handleTileScroll(entry, el);
+  assert.equal(entry.tailLocked, true, 'a 1px drift from the expected position must be ignored as content-driven, leaving tail-lock untouched');
+});
+
+test('a scroll event 2px from the expected position is treated as a real user scroll', () => {
+  const el = makeOutputEl(102, 300, 800);
+  const entry = { output: el, text: FOOTER_TEXT, tailLocked: true, expectedScrollTop: 100 };
+  handleTileScroll(entry, el);
+  assert.equal(entry.tailLocked, false, 'drift beyond the 1px tolerance must be evaluated as a genuine user scroll, not silently ignored');
+});
+
+test('a scroll event before any output update is evaluated directly, not skipped', () => {
+  const el = makeOutputEl(0, 300, 800);
+  const entry = makeEntry(el, FOOTER_TEXT, true); // expectedScrollTop was never set
+  el.scrollTop = 440; // the footer-aware at-bottom band
+  handleTileScroll(entry, el);
+  assert.equal(entry.tailLocked, true, 'with no expectedScrollTop recorded yet, the scroll must be judged on its own position');
+});
+
 // --- footer-aware band derives line height from content, not viewport ---
 
 test('isAtBottom counts a viewport ending at the top of the footer as at-bottom', () => {
