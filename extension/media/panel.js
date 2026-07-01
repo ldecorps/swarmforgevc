@@ -381,6 +381,19 @@ window.addEventListener('message', (event) => {
         }
       });
       break;
+    case 'needsHuman':
+      message.events.forEach((e) => {
+        const entry = tiles.get(e.role);
+        if (entry) {
+          if (e.needsHuman) {
+            entry.tile.classList.add('needs-human');
+            entry.tile.classList.remove('stalled');
+          } else {
+            entry.tile.classList.remove('needs-human');
+          }
+        }
+      });
+      break;
     case 'swarmDone':
       openPrBtn.classList.add('visible');
       if (stageEl) {

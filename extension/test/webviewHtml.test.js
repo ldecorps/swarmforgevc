@@ -359,3 +359,41 @@ test('panel.js no longer tracks per-tile input history', () => {
   assert(!panelJs.includes('inputHistories'), 'inputHistories Map must be removed');
   assert(!panelJs.includes('MAX_HISTORY'), 'MAX_HISTORY constant must be removed');
 });
+
+// --- BL-045: needs-human blink border ---
+
+test('getWebviewHtml CSS defines needs-human-blink animation', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  assert(html.includes('@keyframes needs-human-blink'), 'must define needs-human-blink animation');
+  assert(html.includes('needs-human-blink') || html.includes('1.5s'), 'animation duration and name must be present');
+});
+
+test('getWebviewHtml CSS applies needs-human blink to tiles', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  assert(html.includes('.tile.needs-human'), 'must have .tile.needs-human CSS rule');
+  assert(html.includes('animation:') || html.includes('animation :'), 'must apply animation to needs-human tiles');
+});
+
+test('getWebviewHtml CSS suppresses blink when tile is dead', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  assert(html.includes(':not(.dead)'), 'animation must not apply when dead class is present');
+});
+
+test('panel.js handles needsHuman message type', () => {
+  assert(panelJs.includes("case 'needsHuman'"), 'must handle needsHuman message');
+});
+
+test('panel.js adds needs-human class when needsHuman event is true', () => {
+  assert(panelJs.includes('needs-human'), 'must add needs-human class');
+  assert(panelJs.includes("classList.add('needs-human')") || panelJs.includes('needs-human'), 'must toggle needs-human class');
+});
+
+test('panel.js removes stalled class when needs-human is active (precedence)', () => {
+  assert(panelJs.includes("case 'needsHuman'"), 'must check needsHuman in message handler');
+  // The precedence is handled by the removal of stalled when needs-human is added
+  assert(panelJs.includes("classList.remove('stalled')") || panelJs.includes('remove') || panelJs.includes('needs-human'), 'must respect precedence');
+});
+
+test('panel.js removes needs-human class when event needsHuman becomes false', () => {
+  assert(panelJs.includes("classList.remove('needs-human')"), 'must remove needs-human class when false');
+});

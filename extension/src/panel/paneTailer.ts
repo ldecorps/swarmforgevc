@@ -15,6 +15,7 @@ import {
 import { appendInputEntry } from '../swarm/inputLog';
 import { agentPaneStatusMessage } from './agentPaneState';
 import { stripAnsi } from './ansi';
+import { detectNeedsHuman } from './needsHumanDetection';
 
 const DEFAULT_POLL_INTERVAL_MS = 200;
 export const STALL_THRESHOLD_MS = 120_000;
@@ -76,12 +77,18 @@ export interface DeadEvent {
   dead: boolean;
 }
 
+export interface NeedsHumanEvent {
+  role: string;
+  needsHuman: boolean;
+}
+
 export class PaneTailer {
   private interval: ReturnType<typeof setInterval> | undefined;
   private lastText = new Map<string, string>();
   private lastChangedAt = new Map<string, number>();
   private stalledRoles = new Set<string>();
   private deadRoles = new Set<string>();
+  private needsHumanRoles = new Set<string>();
   private liveRoles = new Set<string>();
   private paneBaseIndex = 0;
   private roles: SwarmRole[] = [];
@@ -97,7 +104,8 @@ export class PaneTailer {
     private readonly onInputLogError?: (message: string) => void,
     historyLines?: number,
     private readonly onRoles?: (roles: SwarmRole[]) => void,
-    paneRows?: number
+    paneRows?: number,
+    private readonly onNeedsHuman?: (events: NeedsHumanEvent[]) => void
   ) {
     this.historyLines = normalizeHistoryLines(historyLines);
     this.paneRows = normalizePaneRows(paneRows);
@@ -284,6 +292,26 @@ export class PaneTailer {
       }
       if (stallEvents.length > 0) {
         this.onStall(stallEvents);
+      }
+    }
+
+    if (this.onNeedsHuman) {
+      const needsHumanEvents: NeedsHumanEvent[] = [];
+      for (const role of this.roles) {
+        const text = this.lastText.get(role.role);
+        const needsHuman = detectNeedsHuman(text);
+        const wasNeedsHuman = this.needsHumanRoles.has(role.role);
+        if (needsHuman !== wasNeedsHuman) {
+          if (needsHuman) {
+            this.needsHumanRoles.add(role.role);
+          } else {
+            this.needsHumanRoles.delete(role.role);
+          }
+          needsHumanEvents.push({ role: role.role, needsHuman });
+        }
+      }
+      if (needsHumanEvents.length > 0) {
+        this.onNeedsHuman(needsHumanEvents);
       }
     }
   }
