@@ -22,6 +22,12 @@ test('getCurrentBranch returns current branch name', () => {
   assert.equal(getCurrentBranch(tmp), 'my-feature');
 });
 
+test('getCurrentBranch returns undefined for a detached HEAD', () => {
+  const tmp = mkTmpGitRepo();
+  cp.execSync('git checkout --detach', { cwd: tmp, stdio: 'ignore' });
+  assert.equal(getCurrentBranch(tmp), undefined);
+});
+
 test('getCurrentBranch returns undefined for non-git directory', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-nogit-'));
   assert.equal(getCurrentBranch(tmp), undefined);
@@ -53,13 +59,39 @@ test('openPullRequest reports failure when gh is not available', () => {
   assert.ok(result.message.includes('Failed to create PR'));
 });
 
+function withFakeGh(scriptBody, fn) {
+  const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-fake-gh-'));
+  const ghMock = path.join(binDir, 'gh');
+  fs.writeFileSync(ghMock, `#!/bin/sh\n${scriptBody}\n`, { mode: 0o755 });
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${binDir}${path.delimiter}${originalPath}`;
+  try {
+    return fn();
+  } finally {
+    process.env.PATH = originalPath;
+    fs.rmSync(binDir, { recursive: true, force: true });
+  }
+}
+
 test('openPullRequest extracts URL from gh output', () => {
   const tmp = mkTmpGitRepo('test-branch');
-  const ghMock = path.join(tmp, 'gh');
-  fs.writeFileSync(ghMock, '#!/bin/sh\necho "opening github.com/owner/repo/pull/1..."\necho "https://github.com/owner/repo/pull/1"', { mode: 0o755 });
+  withFakeGh(
+    'echo "opening github.com/owner/repo/pull/1..."\necho "https://github.com/owner/repo/pull/1"',
+    () => {
+      const result = openPullRequest(tmp, 'Test PR');
+      assert.equal(result.success, true);
+      assert.equal(result.url, 'https://github.com/owner/repo/pull/1');
+      assert.equal(result.message, 'PR created: https://github.com/owner/repo/pull/1');
+    }
+  );
+});
 
-  const result = openPullRequest(tmp, 'Test PR');
-  if (result.success) {
-    assert.equal(result.url, 'https://github.com/owner/repo/pull/1');
-  }
+test('openPullRequest succeeds with a generic message when gh prints no URL', () => {
+  const tmp = mkTmpGitRepo('test-branch');
+  withFakeGh('echo "pull request created"', () => {
+    const result = openPullRequest(tmp, 'Test PR');
+    assert.equal(result.success, true);
+    assert.equal(result.url, undefined);
+    assert.equal(result.message, 'PR created.');
+  });
 });
