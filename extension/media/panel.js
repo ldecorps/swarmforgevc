@@ -17,6 +17,8 @@ const backlogEl = document.getElementById('backlog');
 const backlogListEl = document.getElementById('backlog-list');
 const backlogToggleBtn = document.getElementById('backlog-toggle');
 const SCROLL_THRESHOLD = 8;
+const holderMap = {};
+let lastBacklogItems = [];
 
 function updateBottomRow() {
   const hasRuns = recentRunsEl.style.display !== 'none';
@@ -55,11 +57,20 @@ function renderRecentRuns(runs) {
 }
 
 function backlogRowHtml(item) {
-  const assigned = item.assignedTo && item.status !== 'done' ? '<span class="bl-assigned">' + item.assignedTo + '</span>' : '';
+  let assignedDisplay = '';
+  if (item.status === 'done') {
+    assignedDisplay = '';
+  } else if (item.status === 'active' && holderMap[item.id]) {
+    // For active items, show the live holder (current role holding the parcel)
+    assignedDisplay = '<span class="bl-assigned">' + holderMap[item.id] + '</span>';
+  } else if (item.assignedTo) {
+    // For todo items, show the intended assignee
+    assignedDisplay = '<span class="bl-assigned">' + item.assignedTo + '</span>';
+  }
   return '<div class="backlog-row">' +
     '<span class="bl-id">' + item.id + '</span>' +
     '<span class="bl-title">' + item.title + '</span>' +
-    assigned + '</div>';
+    assignedDisplay + '</div>';
 }
 
 function filterByStatus(items, status) {
@@ -448,7 +459,15 @@ window.addEventListener('message', (event) => {
       }
       break;
     case 'backlogUpdate':
+      lastBacklogItems = message.items;
       renderBacklog(message.items);
+      break;
+    case 'holderUpdate':
+      Object.assign(holderMap, message.holders);
+      // Re-render backlog to update "Assigned" labels with live holders
+      if (backlogEl.style.display !== 'none') {
+        renderBacklog(lastBacklogItems);
+      }
       break;
     case 'highlightTile':
       tiles.forEach((entry, role) => {

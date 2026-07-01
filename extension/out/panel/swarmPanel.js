@@ -181,8 +181,19 @@ class SwarmPanel {
             }
             this.panel.webview.postMessage({ type: 'stage', label, recentRuns });
             const backlogItems = (0, backlogReader_1.readBacklog)(this.targetPath);
+            // Build a map of active item IDs to their live holders
+            const holderMap = {};
+            for (const item of backlogItems) {
+                if (item.status === 'active') {
+                    const holder = (0, swarmState_1.findLiveHolder)(this.targetPath, item.id);
+                    if (holder) {
+                        holderMap[item.id] = holder;
+                    }
+                }
+            }
             this.panel.webview.postMessage({ type: 'backlogUpdate', items: backlogItems });
-            this.panel.webview.postMessage({ type: 'badgeUpdate', badges: (0, badgeSummary_1.buildBadgeMap)(backlogItems) });
+            this.panel.webview.postMessage({ type: 'holderUpdate', holders: holderMap });
+            this.panel.webview.postMessage({ type: 'badgeUpdate', badges: (0, badgeSummary_1.buildBadgeMap)(backlogItems, this.targetPath) });
         };
         poll();
         this.stagePoller = setInterval(poll, STAGE_POLL_INTERVAL_MS);
