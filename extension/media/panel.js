@@ -112,7 +112,8 @@ function renderRecentRuns(runs) {
 function backlogRowHtml(item) {
   let assignedDisplay = '';
   if (item.status === 'done') {
-    assignedDisplay = '';
+    // Done rows show their milestone (the done/ subfolder they live in).
+    assignedDisplay = item.milestone ? '<span class="bl-milestone">' + item.milestone + '</span>' : '';
   } else if (item.status === 'active' && holderMap[item.id]) {
     // For active items, show the live holder (current role holding the parcel)
     assignedDisplay = '<span class="bl-assigned">' + holderMap[item.id] + '</span>';

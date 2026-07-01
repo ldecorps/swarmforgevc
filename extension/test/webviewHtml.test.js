@@ -207,6 +207,20 @@ test('panel.js handles backlogUpdate message', () => {
   assert(panelJs.includes("case 'backlogUpdate'"));
 });
 
+// --- BL-062: done rows surface their milestone (the done/ subfolder name) ---
+
+test('panel.js surfaces the milestone on done backlog rows', () => {
+  assert(
+    /status === 'done'[\s\S]{0,200}bl-milestone/.test(panelJs),
+    'done rows must render a bl-milestone badge from item.milestone'
+  );
+});
+
+test('webview CSS styles the milestone badge', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  assert(html.includes('.bl-milestone'), 'must style the milestone badge');
+});
+
 test('panel.js sends refresh on load', () => {
   assert(panelJs.includes("type: 'refresh'"));
 });
