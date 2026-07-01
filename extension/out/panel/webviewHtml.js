@@ -166,6 +166,12 @@ function getWebviewHtml(scriptUri, cspSource) {
     #grid.layout-2x2 .tile {
       min-height: 0;
     }
+    #grid.layout-first-row {
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: auto 1fr;
+      align-content: stretch;
+      overflow: hidden;
+    }
     .tile {
       display: flex;
       flex-direction: column;
@@ -173,6 +179,27 @@ function getWebviewHtml(scriptUri, cspSource) {
       border-radius: 4px;
       min-height: 240px;
       background: var(--vscode-terminal-background, #1e1e1e);
+    }
+    #grid.layout-first-row .tile {
+      min-height: 0;
+    }
+    .tile.selected {
+      grid-column: span 2;
+      grid-row: span 2;
+    }
+    #grid.layout-first-row .tile.first-row {
+      grid-row: 1;
+      grid-column: span 1;
+    }
+    #grid.layout-first-row .tile.first-row.selected {
+      grid-column: span 2;
+    }
+    #grid.layout-first-row .tile.first-row:not(.selected) {
+      grid-column: span 1;
+    }
+    #grid.layout-first-row .tile:not(.first-row) {
+      grid-row: 2;
+      grid-column: span 1;
     }
     .tile-header {
       padding: 4px 8px;
@@ -206,6 +233,7 @@ function getWebviewHtml(scriptUri, cspSource) {
     }
     .tile-output {
       flex: 1;
+      min-height: 0;
       overflow: auto;
       padding: 6px 8px;
       font-family: var(--vscode-editor-font-family, monospace);
@@ -257,10 +285,6 @@ function getWebviewHtml(scriptUri, cspSource) {
     }
     .tile.dead {
       border-color: #e53935;
-    }
-    .tile.selected {
-      grid-column: span 2;
-      grid-row: span 2;
     }
     .restart-btn {
       display: none;

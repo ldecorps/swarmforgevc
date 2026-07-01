@@ -49,6 +49,41 @@ test('buildLaunchEnv sets SWARM_RUN_NAME when runName provided', () => {
   assert.equal(env['SWARMFORGE_TERMINAL'], 'none');
 });
 
+// --- PATH augmentation: GUI-launched VS Code lacks Homebrew paths where
+//     tmux/bb/claude live, so the swarm launch fails. buildLaunchEnv must
+//     ensure those dirs are on PATH. ---
+
+const { augmentPath } = require('../out/swarm/swarmLauncher');
+
+test('augmentPath prepends Homebrew and /usr/local/bin when missing', () => {
+  const result = augmentPath('/usr/bin:/bin');
+  const parts = result.split(':');
+  assert(parts.includes('/opt/homebrew/bin'), 'missing /opt/homebrew/bin');
+  assert(parts.includes('/usr/local/bin'), 'missing /usr/local/bin');
+  assert(parts.includes('/usr/bin'), 'must preserve original PATH entries');
+  // Tool dirs take precedence (come before the inherited PATH).
+  assert(parts.indexOf('/opt/homebrew/bin') < parts.indexOf('/usr/bin'));
+});
+
+test('augmentPath does not duplicate an already-present tool dir', () => {
+  const result = augmentPath('/opt/homebrew/bin:/usr/bin');
+  const occurrences = result.split(':').filter((p) => p === '/opt/homebrew/bin');
+  assert.equal(occurrences.length, 1);
+});
+
+test('augmentPath handles undefined PATH', () => {
+  const result = augmentPath(undefined);
+  const parts = result.split(':');
+  assert(parts.includes('/opt/homebrew/bin'));
+  assert(parts.includes('/usr/local/bin'));
+});
+
+test('buildLaunchEnv PATH includes Homebrew bin so tmux/bb/claude resolve', () => {
+  const env = buildLaunchEnv();
+  assert(env['PATH'].split(':').includes('/opt/homebrew/bin'));
+  assert(env['PATH'].split(':').includes('/usr/local/bin'));
+});
+
 test('buildLaunchEnv omits SWARM_RUN_NAME when runName is empty string', () => {
   const env = buildLaunchEnv('');
   assert.equal(env['SWARM_RUN_NAME'], undefined);

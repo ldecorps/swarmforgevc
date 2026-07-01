@@ -106,11 +106,17 @@ function updateTileOutput(entry) {
   }
 }
 
-function updateGridLayout(agentCount) {
-  grid.classList.remove('layout-2x2');
+function updateGridLayout(agentCount, roles) {
+  grid.classList.remove('layout-2x2', 'layout-first-row');
   if (agentCount === 4) {
     grid.classList.add('layout-2x2');
+  } else if (roles && roles.some(r => r.role === 'coordinator') && roles.some(r => r.role === 'specifier')) {
+    grid.classList.add('layout-first-row');
   }
+}
+
+function isFirstRowRole(role) {
+  return role === 'coordinator' || role === 'specifier';
 }
 
 function selectTile(role) {
@@ -166,7 +172,7 @@ function ensureTile(role, displayName, agent) {
   }
 
   const tile = document.createElement('div');
-  tile.className = 'tile';
+  tile.className = 'tile' + (isFirstRowRole(role) ? ' first-row' : '');
   tile.dataset.role = role;
 
   const nudgeBtn = document.createElement('button');
@@ -296,7 +302,7 @@ window.addEventListener('message', (event) => {
     case 'roles':
       status.textContent = message.roles.length + ' agent(s)';
       message.roles.forEach((r) => ensureTile(r.role, r.displayName, r.agent));
-      updateGridLayout(message.roles.length);
+      updateGridLayout(message.roles.length, message.roles);
       break;
     case 'output':
       message.updates.forEach((u) => {
