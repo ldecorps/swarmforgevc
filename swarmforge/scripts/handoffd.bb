@@ -87,9 +87,19 @@
       (assoc-in [:headers "recipient"] recipient)
       (assoc-in [:headers "enqueued_at"] (now))))
 
-(defn target-path [role-info filename]
+(defn delivered-filename
+  "Per-recipient copy name. Recipients that share an inbox directory (e.g.
+   coordinator and specifier on master) would otherwise collide on the original
+   outbox filename and clobber each other's copy (BL-057). The recipient is
+   appended just before the extension so the leading
+   <priority>_<timestamp>_<sequence> sort order is untouched."
+  [filename recipient]
+  (str/replace filename #"\.handoff$" (str "_for_" recipient ".handoff")))
+
+(defn target-path [role-info filename recipient]
   (fs/path (:worktree-path role-info)
-           ".swarmforge" "handoffs" "inbox" "new" filename))
+           ".swarmforge" "handoffs" "inbox" "new"
+           (delivered-filename filename recipient)))
 
 (defn notify! [socket session]
   (let [send-text (sh "tmux" "-S" socket "send-keys" "-t" session "-l" wake-message)
@@ -132,7 +142,7 @@
           (let [role-info (get roles recipient)]
             (when-not role-info
               (throw (ex-info (str "unknown recipient " recipient) {:recipient recipient})))
-            (let [target (target-path role-info filename)
+            (let [target (target-path role-info filename recipient)
                   delivered (add-delivery-headers message recipient)]
               (fs/create-dirs (fs/parent target))
               (when-not (fs/exists? target)
