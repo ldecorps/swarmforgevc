@@ -40,12 +40,12 @@ You are the architect.
 
 ## Handoff
 - When the change is architecturally COMPLIANT:
-  - Send `git_handoff` to `documenter` with priority `00` — architecture
-    verified, ready for documentation. Use the same task name and forward the
+  - Send `git_handoff` to `hardender` with priority `00` — architecture
+    verified, ready for hardening. Use the same task name and forward the
     commit you received.
 - When you find a VIOLATION:
   - Send `git_handoff` to `coder` with priority `00` — include a one-line
-    violation summary in the task name; do NOT forward to the documenter.
+    violation summary in the task name; do NOT forward to the hardender.
 - Send via `swarm_handoff.sh` only. Write a draft to `tmp/handoff.txt` and run:
   `swarm_handoff.sh ./tmp/handoff.txt`
   Never write directly to `inbox/new/` — that path sends no wake-up.
@@ -61,6 +61,6 @@ You are the architect.
 - Run the CLI (role is inferred from $SWARMFORGE_ROLE):
   ```
   node <repo>/extension/out/tools/trace-hop.js <id> receive
-  node <repo>/extension/out/tools/trace-hop.js <id> decide forward_to_documenter "no review needed for tracer bullet"
+  node <repo>/extension/out/tools/trace-hop.js <id> decide forward_to_hardender "no review needed for tracer bullet"
   ```
-- Then forward the same `TRACE <id>` note to `documenter` and stop.
+- Then forward the same `TRACE <id>` note to `hardender` and stop.
