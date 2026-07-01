@@ -117,6 +117,13 @@ Spawning agent processes from TypeScript **is** the intended design — that is 
 - Each tile is always a live embedded terminal — you click into any tile and type directly, exactly as you would in a real terminal attached to that agent
 - No expand needed; all tiles are simultaneously interactive, one live terminal per role
 
+#### Tile Selection
+
+- Click a tile header to select it; the selected tile expands to fill 2×2 grid cells (double width and height) for easier reading and interaction
+- Click the selected tile header again to deselect it and return to equal-sized tiles
+- Only one tile can be selected at a time; selecting a new tile automatically deselects the previous one
+- Selection persists across webview reloads
+
 #### Human input is tracked, not a side-channel
 
 Typing directly into a tile is powerful but creates a hazard: a hand-typed instruction ("skip the auth check") lives only in the terminal scrollback — invisible to the pipeline, the Work Tree, the audit trail, and the next agent. That makes human input an *untracked* channel that can silently contradict the tracked message bus.
