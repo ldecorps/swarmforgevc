@@ -112,7 +112,13 @@ Spawning agent processes from TypeScript **is** the intended design — that is 
 ### Tile Behavior
 
 - Each tile streams stdout of its agent's process in real time (subscribe to the `InteractiveProcess` `onData` stream)
-- Tile border color: grey (idle), blue (active), green (done), red (error)
+- **Tile border states** (with precedence rules applied):
+  - **Dead** (steady red) — agent process terminated abnormally
+  - **Needs Human** (blue pulse, 1.5s cycle) — agent awaiting human input (permission prompts, yes/no questions, multiple-choice selections)
+  - **Stalled** (steady yellow) — agent idle with no output for >2 minutes
+  - **Normal** (grey) — agent idle with recent output
+  - **Active** (blue) — agent currently producing output
+  - *Precedence: dead > needs-human > stalled > normal. A needs-human border suppresses the stalled color, so you can see when an agent is waiting for you to respond.*
 - Tile header shows the role name and (when active) a badge with the backlog item ID and short summary (e.g., "BL-038 · tile header active ticket"), so you can see at a glance what each agent is working on
 - Each tile is always a live embedded terminal — you click into any tile and type directly, exactly as you would in a real terminal attached to that agent
 - No expand needed; all tiles are simultaneously interactive, one live terminal per role
