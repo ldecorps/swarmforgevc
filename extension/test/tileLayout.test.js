@@ -1,24 +1,9 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const fs = require('node:fs');
-const path = require('node:path');
+const { extractPanelFunction } = require('./helpers/extractPanelFunction');
 
-const panelJs = fs.readFileSync(path.join(__dirname, '../media/panel.js'), 'utf8');
-
-// Extract functions from panel.js for testing
-function extractFunctionFromCode(code, functionName) {
-  const regex = new RegExp(`function ${functionName}\\(([^)]*)\\)[^{]*{([^]*?)\\n}`, 'm');
-  const match = code.match(regex);
-  if (!match) {
-    throw new Error(`Function ${functionName} not found`);
-  }
-  const params = match[1];
-  const body = match[2];
-  return new Function(...params.split(',').map(p => p.trim()), body);
-}
-
-const isFirstRowRole = extractFunctionFromCode(panelJs, 'isFirstRowRole');
-const updateGridLayout = extractFunctionFromCode(panelJs, 'updateGridLayout');
+const isFirstRowRole = extractPanelFunction('isFirstRowRole');
+const updateGridLayout = extractPanelFunction('updateGridLayout');
 
 function makeMockGrid() {
   return {

@@ -91,18 +91,111 @@ function renderBacklog(items) {
   updateBottomRow();
 }
 
-function isAtBottom(el) {
-  return el.scrollTop + el.clientHeight >= el.scrollHeight - SCROLL_THRESHOLD;
+function detectFooterLineCount(text) {
+  if (!text) return 0;
+
+  const lines = text.split('\n');
+  let footerStart = -1;
+
+  // Scan from the bottom up to find the pinned footer
+  // Strategy: locate the input prompt at the very end, then work up to find
+  // status/permission lines that are part of the footer
+
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i] || '';
+    const trimmed = line.trim();
+
+    // Empty lines at the very end don't count as part of the footer
+    if (i === lines.length - 1 && trimmed === '') {
+      continue;
+    }
+
+    // Input prompt line: starts with ❯ or >
+    // "❯ type a message…", "> message", or a bare "❯ " when the input box is
+    // empty — trim() strips the trailing space real captures leave on an
+    // empty prompt, so the marker must also match at end-of-string.
+    if (/^[❯>](\s|$)/.test(trimmed)) {
+      footerStart = i;
+      break;
+    }
+  }
+
+  if (footerStart === -1) {
+    return 0;
+  }
+
+  // Now scan up from the prompt to find other footer lines
+  let footerEnd = footerStart;
+  for (let i = footerStart - 1; i >= Math.max(0, footerStart - 5); i--) {
+    const line = lines[i] || '';
+    const trimmed = line.trim();
+
+    // Skip empty lines
+    if (trimmed === '') {
+      continue;
+    }
+
+    // Permission/status line: contains [brackets] or single-word status
+    if (/^\[.+\]|\[auto\]|\[.*permission/.test(trimmed)) {
+      footerEnd = i;
+      continue;
+    }
+
+    // Interrupt/help line: "esc to break" or similar
+    if (/^esc\s+to|^.*interrupt|^.*break/i.test(trimmed)) {
+      footerEnd = i;
+      continue;
+    }
+
+    // If we hit a line that's clearly content (long, not status-like),
+    // we've reached the end of the footer
+    if (trimmed.length > 40 || !/^[[\-*@]/.test(trimmed)) {
+      break;
+    }
+  }
+
+  return lines.length - footerEnd;
 }
 
-function scrollToBottom(el) {
-  el.scrollTop = el.scrollHeight;
+function isAtBottom(el, contentText) {
+  const footerLines = detectFooterLineCount(contentText || '');
+  if (footerLines === 0) {
+    // No footer detected, use original behavior
+    return el.scrollTop + el.clientHeight >= el.scrollHeight - SCROLL_THRESHOLD;
+  }
+
+  // With footer: check if we're showing the live content just above the footer
+  // The "bottom" is now the footer height away from the actual scroll bottom
+  const lineHeight = el.clientHeight / (contentText ? contentText.split('\n').length : 1);
+  const footerPixelHeight = footerLines * lineHeight;
+  const liveContentBottom = el.scrollHeight - footerPixelHeight;
+  const viewportBottom = el.scrollTop + el.clientHeight;
+
+  return viewportBottom >= liveContentBottom - SCROLL_THRESHOLD;
+}
+
+function scrollToBottom(el, contentText) {
+  const footerLines = detectFooterLineCount(contentText || '');
+  if (footerLines === 0) {
+    // No footer detected, use original behavior
+    el.scrollTop = el.scrollHeight;
+    return;
+  }
+
+  // With footer: scroll so the last live line is visible just above the footer
+  const lines = (contentText || '').split('\n');
+  const lineHeight = el.clientHeight / (lines.length || 1);
+  const footerPixelHeight = footerLines * lineHeight;
+  const liveContentBottom = el.scrollHeight - footerPixelHeight;
+  const targetScrollTop = Math.max(0, liveContentBottom - el.clientHeight + lineHeight);
+
+  el.scrollTop = targetScrollTop;
 }
 
 function updateTileOutput(entry) {
   entry.output.textContent = entry.text;
   if (entry.tailLocked) {
-    scrollToBottom(entry.output);
+    scrollToBottom(entry.output, entry.text);
   }
 }
 
@@ -218,7 +311,7 @@ function ensureTile(role, displayName, agent) {
   });
 
   output.addEventListener('scroll', () => {
-    entry.tailLocked = isAtBottom(output);
+    entry.tailLocked = isAtBottom(output, entry.text);
   }, { passive: true });
 
   const inputBar = document.createElement('div');

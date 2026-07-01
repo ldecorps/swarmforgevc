@@ -1,0 +1,93 @@
+id: BL-047
+title: backlog "Assigned" + tile badge should show the live parcel holder, not static assigned_to
+milestone: M4
+status: todo
+priority: 06
+assigned_to: coder
+
+description: |
+  Bug (reported by the coordinator): the backlog panel's "Assigned" label and the
+  per-tile ticket badge both display the static `assigned_to` YAML field, so they
+  misattribute an in-flight item to its ORIGINAL assignee instead of the role that
+  currently holds the parcel.
+
+  Root cause: buildBadgeMap (extension/src/panel/badgeSummary.ts) keys the badge by
+  `item.assignedTo`, and the backlog row (media/panel.js backlogRowHtml) shows
+  `item.assignedTo`. As a parcel moves down the chain
+  (coder → cleaner → architect → hardender → documenter → QA), `assigned_to` never
+  changes, so both surfaces keep pointing at the initial assignee. Live example:
+  BL-043 has `assigned_to: coder` but has already been handed to the cleaner — yet
+  the badge still sits on the coder tile and the backlog shows "coder".
+
+  Fix (architecture-aligned): derive the LIVE holder from SwarmForge state, per the
+  project's pipeline-awareness rule ("show which stage currently holds the work,
+  read from .swarmforge/ state"). The host already reads this: swarmState.ts
+  readPipelineStages / readHandoffInboxStatus marks each role active/idle from its
+  handoff inbox (new + in_process). Correlate the active backlog item to the role
+  currently holding its parcel and use that live holder for BOTH the tile badge
+  (the badge appears on the current holder's tile) and the backlog "Assigned" label.
+
+  Behavior by item state:
+  - active item: show the live holder (the role whose inbox currently holds the
+    parcel); the badge follows the parcel from tile to tile as it advances.
+  - todo item (not yet in the pipeline): keep showing the intended assignee from
+    the item (static `assigned_to`) — it has no live holder yet.
+  - done item: keep hiding the assignee (unchanged, BL-032).
+
+  Correlation is open to the implementer. Match the handoff `task` header in a
+  role's inbox to the backlog item; with `active_backlog_max_depth: 1` the single
+  active item maps to the currently-active role, so a simple mapping is acceptable.
+  Avoid flicker during a hop: while the parcel is momentarily in transit between
+  inboxes, keep showing the last known holder rather than blanking.
+
+  Do NOT mutate the YAML `assigned_to` as the parcel moves (that would make the
+  coordinator rewrite files each hop); the live holder is a derived, display-only
+  value. Scope: extension host (badgeSummary.ts / swarmPanel.ts / swarmState.ts)
+  and the webview display (panel.js badge + backlog "Assigned"), plus tests. Keep
+  the swarm protocol unchanged.
+
+acceptance: |
+  Feature: assigned/badge reflect the live parcel holder
+
+  Background:
+    Given the pipeline chain is coder → cleaner → architect → hardender →
+      documenter → QA
+    And an active backlog item was initially assigned_to the coder
+
+  # BL-047 live-holder-01
+  Scenario: the tile badge sits on the live holder, not the initial assignee
+    Given the item's parcel is currently held by the cleaner
+    When the panel renders
+    Then the item's ticket badge appears on the cleaner's tile
+    And no badge for that item appears on the coder's tile
+
+  # BL-047 live-holder-02
+  Scenario: the backlog "Assigned" shows the live holder
+    Given the item's parcel is currently held by the architect
+    When the backlog panel renders
+    Then that item's "Assigned" shows the architect
+    And it does not show the static initial assignee
+
+  # BL-047 live-holder-03
+  Scenario: holder updates as the parcel advances, without a reload
+    Given the item is currently held by the coder
+    When the parcel is handed off and the cleaner now holds it
+    Then the badge and the "Assigned" both update from coder to cleaner
+
+  # BL-047 live-holder-04
+  Scenario: a todo item not yet in the pipeline shows its intended assignee
+    Given a todo item that has not entered the pipeline
+    When the panel renders
+    Then its "Assigned" shows the intended assignee from the item
+
+  # BL-047 live-holder-05
+  Scenario: a done item shows no assignee
+    Given a done item
+    When the backlog panel renders
+    Then no assignee is shown for it
+
+  # Non-behavioral gate:
+  #  - Host tests cover deriving the live holder from pipeline/inbox state and
+  #    correlating it to the active item; webview tests cover badge placement on
+  #    the holder tile and the backlog "Assigned" value across active/todo/done.
+  #    Existing tests stay green.

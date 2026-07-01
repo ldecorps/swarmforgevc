@@ -1,0 +1,105 @@
+id: BL-045
+title: blink the tile border when an agent is asking the human a question
+milestone: M4
+status: todo
+priority: 06
+assigned_to: coder
+
+description: |
+  What: Add a new "needs human attention" tile state. When an agent is waiting on
+  the human — asking a clarifying question, or showing a prompt that needs a human
+  decision (a permission/approval prompt, a yes/no, or a "❯" multiple-choice
+  selection) — the agent's tile border blinks/pulses to draw the human's attention
+  across the 8-tile panel. The pulse stops as soon as the human responds and the
+  agent resumes working.
+
+  Why: With eight tiles, an agent silently waiting for a human answer is easy to
+  miss; a gentle pulse makes "this one needs you" unmistakable.
+
+  Style: a gentle pulse (not obnoxious) in a color DISTINCT from the two existing
+  steady border states — stalled = steady yellow, dead = steady red. Use a
+  clearly different accent (e.g. an accent-blue/cyan) so the three states are
+  never confused. Exact color/animation is the coder's to tune within "gentle and
+  distinct."
+
+  Precedence (confirmed with the human) when several states apply to one tile,
+  highest wins:
+    1. dead (steady red) — you cannot answer a crashed agent, so red wins and the
+       tile does NOT blink.
+    2. needs-human (blink) — overrides the stalled state; a waiting agent is not a
+       bad stall.
+    3. stalled (steady yellow).
+    4. normal.
+  The selected-tile highlight COMPOSES with any of the above (a selected tile that
+  needs the human shows both its selection highlight and the blink) — no flicker
+  war between styles.
+
+  Detection (the crux — left open to the coder): the coder decides HOW to detect
+  "awaiting a human answer" from the tmux pane capture — e.g. recognizing the
+  Claude TUI permission dialog / question prompt / "❯" selection state, as opposed
+  to a normal idle-at-empty-input-box. The observable contract is only that a pane
+  awaiting a human answer triggers the blink and a pane merely idle at its input
+  box does not. The host produces a per-role "needs human" signal (sibling to the
+  existing stall/dead signals in paneTailer/agentPaneState); the webview maps it to
+  a border class.
+
+  Scope: extension only — the host detection signal (paneTailer.ts /
+  agentPaneState.ts) and the webview border class + CSS (media/panel.js), plus
+  tests. Keep input routing and the swarm message protocol unchanged. Border blink
+  is the core deliverable; a header badge or other surfacing is out of scope for
+  this item.
+
+acceptance: |
+  Feature: blink tile border when an agent needs the human
+
+  Background:
+    Given an 8-tile agent panel
+    And tiles show state via their border: stalled = steady yellow,
+      dead = steady red, and a selected tile also carries a selection highlight
+
+  # BL-045 needs-human-blink-01
+  Scenario: an agent awaiting a human answer blinks its tile border
+    Given an agent's pane is awaiting a human answer
+      (a permission/approval prompt, a yes/no, or a "❯" multiple-choice selection)
+    When the panel renders that tile
+    Then the tile border blinks in a distinct style
+    And that style is visibly different from the steady stalled-yellow and dead-red
+
+  # BL-045 needs-human-blink-02
+  Scenario: an idle empty input box does not blink
+    Given an agent is idle at its normal empty input box and is not asking anything
+    When the panel renders that tile
+    Then the tile border does not blink
+
+  # BL-045 needs-human-blink-03
+  Scenario: blinking stops once the human responds and the agent resumes
+    Given a tile is blinking because its agent is awaiting a human answer
+    When the human responds and the agent resumes producing output
+    Then the blinking stops
+    And the border returns to its normal (non-blinking) state
+
+  # BL-045 needs-human-blink-04
+  Scenario Outline: precedence when several states apply to one tile
+    Given an agent tile is awaiting a human answer
+    And the tile is also <other_state>
+    When the panel renders that tile
+    Then the tile shows <shown> and does not show <suppressed>
+
+    Examples:
+      | other_state         | shown                          | suppressed         |
+      | dead (not running)  | steady dead-red border         | the needs-human blink |
+      | stalled             | the needs-human blink          | the steady stalled-yellow border |
+
+  # BL-045 needs-human-blink-05
+  Scenario: the selected highlight composes with the blink
+    Given an agent tile is awaiting a human answer
+    And that tile is the selected tile
+    When the panel renders that tile
+    Then the tile shows both its selection highlight and the needs-human blink
+    And the two styles do not fight (no flicker war)
+
+  # Non-behavioral gate:
+  #  - New webview tests cover the question-state border class and its precedence
+  #    over stalled / under dead, and composition with selection. A host test
+  #    covers the "needs human" detection signal that drives the class. Existing
+  #    tests stay green.
