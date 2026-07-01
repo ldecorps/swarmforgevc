@@ -1,7 +1,7 @@
 id: BL-052
 title: fit tile pane to visible height — no empty band between output and CLI footer
 milestone: M4
-status: todo
+status: done
 priority: 05
 assigned_to: coder
 

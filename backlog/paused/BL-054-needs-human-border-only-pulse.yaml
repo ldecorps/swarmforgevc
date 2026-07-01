@@ -1,0 +1,67 @@
+id: BL-054
+title: refine BL-045 — needs-human pulse on the tile border only, not the text
+milestone: M4
+status: todo
+priority: 06
+assigned_to: coder
+
+description: |
+  Refinement of shipped BL-045 (needs-human blink). Today the needs-human state
+  fades the ENTIRE tile in and out: the pulse animation animates the tile's
+  `opacity` (webviewHtml.ts `@keyframes needs-human-blink` steps opacity 1 → 0.5,
+  applied via `.tile.needs-human:not(.dead)`). Because opacity applies to the
+  whole element, the tile's TEXT/CONTENT blinks along with the border.
+
+  The human wants ONLY the tile border to pulse. The tile's text/content must stay
+  at full, steady opacity and not blink or fade. Blinking the content is
+  distracting and hurts readability; the border pulse alone is enough to signal
+  "this agent needs you."
+
+  Fix direction (webview CSS/animation only): drive the pulse from a border
+  property (e.g. animate border-color and/or a box-shadow glow) instead of the
+  whole-tile `opacity`, so the content opacity is never touched. Keep everything
+  else from BL-045 unchanged: the distinct accent-blue color, the gentle ~1.5s
+  ease-in-out cadence, the precedence order (dead > needs-human > stalled >
+  normal), the `:not(.dead)` guard, composition with the selection highlight, and
+  the entire host-side detection signal / wiring. Do not blink the header text or
+  the badge either.
+
+  Scope: extension only — the webview animation/CSS in
+  extension/src/panel/webviewHtml.ts (and media/panel.js only if a class change is
+  needed), plus tests. Do NOT change the needs-human detection signal
+  (paneTailer.ts / agentPaneState.ts), input routing, or the swarm message
+  protocol. Do not modify SwarmForge.
+
+acceptance: |
+  Feature: needs-human pulse affects the tile border only
+
+  Background:
+    Given an 8-tile agent panel
+    And an agent tile is in the needs-human state (its agent is awaiting a human answer)
+
+  # BL-054 border-only-pulse-01
+  Scenario: only the border pulses, the content stays steady
+    When the panel renders the needs-human tile
+    Then the tile border pulses in the distinct needs-human accent
+    And the tile's text/content stays at full, steady opacity
+    And the text/content does not blink or fade with the pulse
+
+  # BL-054 border-only-pulse-02
+  Scenario: BL-045 precedence and guards are preserved
+    Given the needs-human tile is also dead
+    When the panel renders that tile
+    Then it shows the steady dead-red border and does not pulse
+    And when the tile is instead stalled, the needs-human pulse overrides stalled
+    And when the tile is also selected, the selection highlight composes with the
+      border pulse without fighting
+
+  # BL-054 border-only-pulse-03
+  Scenario: the pulse stops when the human responds
+    Given a tile whose border is pulsing for needs-human
+    When the human responds and the agent resumes producing output
+    Then the border pulse stops and the border returns to its normal state
+
+  # Non-behavioral gate:
+  #  - A webview test asserts the needs-human animation does not animate
+  #    whole-tile opacity (the content remains at full opacity) and that the
+  #    pulse is carried by a border property. Existing BL-045 tests stay green.

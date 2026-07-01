@@ -1,0 +1,111 @@
+id: BL-056
+title: BUG — anchor handoff outbox/inbox at the worktree root (nested-outbox stall)
+milestone: M4
+status: todo
+priority: 03
+assigned_to: coder
+
+description: |
+  Recurring swarm stall (verified on BL-039 and BL-052). The swarm silently
+  stalls at a role→role seam: work is committed and a git_handoff is generated,
+  but the recipient's inbox stays empty and the parcel sits in backlog/active/
+  going nowhere. The coordinator currently unsticks these by hand (moving the
+  file to the correct outbox), which is a band-aid.
+
+  Root cause (verified in code): the handoff helpers resolve the state directory
+  from the INVOCATION cwd, not the worktree root. swarm_handoff.bb has
+    (defn state-dir [] (fs/path (System/getProperty "user.dir")
+                                ".swarmforge" "handoffs"))
+  so when an agent runs swarm_handoff.sh from a SUBDIRECTORY of its worktree
+  (e.g. the coder's cwd is .worktrees/coder/extension/), the outbox is created
+  nested at .worktrees/coder/extension/.swarmforge/handoffs/outbox/. The handoffd
+  daemon only watches each worktree-ROOT outbox
+  (.worktrees/<role>/.swarmforge/handoffs/outbox/), so the file is never
+  delivered.
+
+  Same latent bug on the RECEIVE side: ready_for_next_task.bb,
+  ready_for_next_batch.bb, done_with_current_task.bb, and done_with_current_batch.bb
+  all compute their inbox from `user.dir` too. An idle agent that runs
+  ready_for_next.sh from a subdir reads an empty nested inbox and prints NO_TASK,
+  masking a genuinely queued task. Both directions must be fixed.
+
+  A robust worktree-root resolver ALREADY EXISTS in this codebase: the
+  dispatchers ready_for_next.bb / done_with_current.bb find the root via
+  `git rev-parse --show-toplevel` (with `--git-common-dir` and a roles.tsv
+  walk-up fallback). Reuse that same approach so `state-dir` anchors at the
+  worktree root regardless of the cwd the script is invoked from. (A worktree is
+  its own git worktree, so --show-toplevel returns .worktrees/<role>.)
+
+  Constraints:
+    - After the fix, no handoff outbox or inbox path may ever resolve to a nested
+      `*/extension/.swarmforge/...` tree.
+    - Invocation from the worktree ROOT must behave exactly as today (unchanged
+      output and paths).
+    - Preserve the shared-master-inbox behavior: coordinator and specifier share
+      one physical inbox on master and rely on recipient filtering — do not
+      regress that isolation.
+    - Do NOT retroactively re-deliver the STALE nested files already sitting under
+      various */extension/.swarmforge/.../outbox/ dirs (coder 000001-3, cleaner
+      000002-3, QA broadcasts, the defunct `tester`). They are handoffs for
+      already-merged tickets; delivering them would re-fire duplicate work.
+      Quarantining or cleaning them up is fine; re-delivery is not.
+    - This is FORGE tooling (swarmforge/scripts/*.bb), which the user has opted to
+      treat as in-scope. Operational note (not a code change): agents invoke the
+      copy on PATH, so the fix only takes effect after this merges and the env is
+      re-provisioned.
+
+  Scope: swarmforge/scripts/swarm_handoff.bb plus the four inbox worker helpers
+  (ready_for_next_task.bb, ready_for_next_batch.bb, done_with_current_task.bb,
+  done_with_current_batch.bb) and any shared resolver, plus a test/check that
+  exercises invocation from a subdirectory. Do not change the swarm message
+  protocol semantics or the VS Code extension deliverable.
+
+acceptance: |
+  Feature: handoff outbox/inbox anchored at the worktree root
+
+  Background:
+    Given an agent worktree that has the standard .swarmforge/handoffs tree at
+      its root
+    And SWARMFORGE_ROLE is set for that agent
+    And a subdirectory (for example extension/) exists inside the worktree
+
+  # BL-056 anchor-state-dir-01
+  Scenario: a handoff created from a worktree subdirectory lands in the root outbox
+    Given the current working directory is a subdirectory of the worktree
+    When the agent creates a git_handoff via swarm_handoff.sh
+    Then the handoff file is written under the worktree-root outbox
+      (.swarmforge/handoffs/outbox)
+    And no file is written under any nested */extension/.swarmforge/... path
+    And the daemon delivers it so the recipient's inbox receives it
+
+  # BL-056 anchor-state-dir-02
+  Scenario: a handoff created from the worktree root is unchanged
+    Given the current working directory is the worktree root
+    When the agent creates a handoff
+    Then it is written to the same worktree-root outbox as before
+
+  # BL-056 anchor-state-dir-03
+  Scenario: receiving from a worktree subdirectory reads the root inbox
+    Given a task is queued in the worktree-root inbox
+    And the current working directory is a subdirectory of the worktree
+    When the agent runs ready_for_next.sh
+    Then it reads the worktree-root inbox and reports the queued TASK, not NO_TASK
+
+  # BL-056 anchor-state-dir-04
+  Scenario: stale nested files are not re-delivered
+    Given stale handoff files already exist under nested
+      */extension/.swarmforge/.../outbox/ dirs for already-merged tickets
+    When the fix is in place and the daemon runs
+    Then those stale nested files are not delivered to any inbox
+
+  # BL-056 anchor-state-dir-05
+  Scenario: the shared master inbox keeps recipient isolation
+    Given coordinator and specifier share one physical inbox on master
+    When each runs ready_for_next.sh
+    Then each receives only handoffs addressed to it
+
+  # Non-behavioral gate:
+  #  - A test/check invokes handoff creation and an inbox read from a worktree
+  #    subdirectory and asserts the resolved outbox/inbox path is the worktree
+  #    root (not user.dir). Existing helper behavior when run from the root stays
+  #    green.

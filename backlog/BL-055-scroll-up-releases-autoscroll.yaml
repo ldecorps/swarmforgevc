@@ -1,0 +1,92 @@
+id: BL-055
+title: scroll-up must release autoscroll — output updates must not snap the view back down
+milestone: M4
+status: todo
+priority: 05
+assigned_to: coder
+
+description: |
+  Bug in tile autoscroll (follow-on to BL-044). When the user scrolls a tile UP
+  to read earlier output, the tile must NOT keep auto-scrolling back to the live
+  bottom as new output streams in. Today the view snaps back down (or the scroll
+  position is lost) when new output arrives, so the human cannot read scrollback
+  while an agent is producing output.
+
+  Expected: scrolling up releases tail-lock and the view STAYS where the user put
+  it; subsequent output updates do not move the scroll position. Tail-lock
+  re-engages only when the user scrolls back down to the live region, after which
+  autoscroll resumes (keeping the newest line above the pinned footer, per
+  BL-044).
+
+  Likely causes (verified by reading media/panel.js — the coder confirms and
+  fixes the real one):
+    1. updateTileOutput replaces the whole `output.textContent` every frame
+       (full-screen TUI captures arrive as full replacements, u.full). Replacing
+       textContent can reset scrollTop and fire spurious 'scroll' events, which
+       re-run isAtBottom and can silently re-lock tail even though the user is
+       scrolled up. The user's scroll offset must be preserved across a full-frame
+       update while tail-lock is released.
+    2. isAtBottom()/scrollToBottom() compute lineHeight as
+       `el.clientHeight / totalLines` instead of `el.scrollHeight / totalLines`
+       (panel.js ~178 and ~196). That makes the footer-aware "bottom" band the
+       wrong size, so a normal scroll-up may still read as "at bottom" and never
+       release tail-lock.
+
+  Fix direction (observable behavior is the contract; keep the footer-aware
+  anchor from BL-044): once the user scrolls up away from the live bottom,
+  tailLocked stays false and no output update repositions the scroll; distinguish
+  a genuine USER scroll from programmatic/content-driven scroll changes so a
+  full-frame repaint does not get mistaken for the user reaching the bottom.
+  Re-engage tail-lock only on a real user scroll back down into the live region.
+
+  Scope: extension only — media/panel.js scroll/tail-lock handling
+  (updateTileOutput, isAtBottom, scrollToBottom, the 'scroll' listener), plus
+  tests. Do not change input routing or the swarm message protocol. Do not modify
+  SwarmForge.
+
+  Overlap note: this touches the SAME tail-lock code region as BL-052 (fit tile
+  pane to visible height) and BL-044. Whichever of BL-052 / BL-055 lands second
+  should rebase onto the first rather than assume a clean tree; the coordinator
+  should sequence them (ideally stack, not run in parallel).
+
+acceptance: |
+  Feature: scrolling up releases tile autoscroll
+
+  Background:
+    Given a tile is following an agent's live output (tail-locked)
+    And the agent is actively producing new output
+
+  # BL-055 scroll-up-release-01
+  Scenario: scrolling up stops the view from auto-scrolling back down
+    Given the user scrolls the tile up to read earlier output
+    When new output arrives from the agent
+    Then the tile does not scroll back down to the live bottom
+    And the content the user is reading stays in place
+
+  # BL-055 scroll-up-release-02
+  Scenario: a full-frame repaint does not re-lock tail-lock
+    Given the user has scrolled up and tail-lock is released
+    When the agent's full-screen TUI repaints (a full-frame output update)
+    Then tail-lock stays released
+    And the user's scroll position is preserved (the view does not jump)
+
+  # BL-055 scroll-up-release-03
+  Scenario: scrolling back down to the live region re-engages autoscroll
+    Given tail-lock was released by scrolling up
+    When the user scrolls back down to the live region at the bottom
+    Then tail-lock re-engages
+    And new output again keeps the newest live line visible above the pinned footer
+
+  # BL-055 scroll-up-release-04
+  Scenario: a small scroll-up still counts as released
+    Given the user scrolls up by a modest amount away from the live bottom
+    When new output arrives
+    Then tail-lock is released and the view does not snap back down
+      (the footer-aware bottom band must not be so large that a normal
+       scroll-up still reads as "at bottom")
+
+  # Non-behavioral gate:
+  #  - Tests cover: an output update while scrolled-up does not change scrollTop
+  #    and does not re-lock tail; a user scroll back to bottom re-engages tail;
+  #    the at-bottom test distinguishes a user scroll from a content/full-frame
+  #    driven scroll change. Existing BL-044 tests stay green.

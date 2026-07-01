@@ -1,0 +1,114 @@
+id: BL-053
+title: redo BL-038 — show active ticket ID + summary in the holding agent's tile header
+milestone: M3
+status: todo
+priority: 05
+assigned_to: coder
+
+description: |
+  Regression / redo of BL-038. The tile header badge that should show the active
+  ticket ("<ID> · <short summary>") on the tile of the agent currently working on
+  it does NOT render at all today — every tile header shows only the role name
+  (confirmed in the reported screenshot). The developer cannot tell which agent
+  holds which ticket at a glance, which is the whole point of BL-038.
+
+  Root cause (verified): the backlog reader treats the FOLDER as the source of
+  truth for done items but NOT for active items.
+  extension/src/panel/backlogReader.ts readBacklog() calls
+  readYamlFiles(active) with NO overrideStatus, while readYamlFiles(done) passes
+  overrideStatus='done'. The pipeline moves ticket files between backlog folders
+  and leaves the yaml `status:` field alone (e.g. a promoted item in
+  backlog/active/ still has `status: todo` in its yaml; several done items still
+  say `status: todo`). So items read from backlog/active/ arrive with
+  status='todo'. buildBadgeMap (extension/src/panel/badgeSummary.ts) gates on
+  `item.status === 'active'`, which is therefore never true, so no badge is ever
+  built or posted. The render path (media/panel.js badgeUpdate →
+  blBadge.textContent = `${id} · ${summary}`) and the live-holder logic
+  (findLiveHolder in swarm/swarmState.ts) are already correct — they are simply
+  never fed.
+
+  Fix direction (observable behavior is what matters; keep it minimal):
+    1. Make the backlog/active/ FOLDER authoritative for active status: items
+       read from backlog/active/ must have status 'active' regardless of their
+       yaml `status:` field — mirroring the existing done-folder override. This
+       alone makes badges render again.
+    2. The badge must appear in the tile header of the agent CURRENTLY HOLDING
+       the parcel (the live holder), and move with the parcel as it advances down
+       the pipeline (coder → cleaner → architect → …). This is what "the agent
+       working on it" means. The findLiveHolder mechanism (matches a stage inbox
+       handoff whose task name starts with the item ID) already provides this;
+       ensure it drives which tile shows the badge.
+    3. When the live holder cannot be resolved from handoff inboxes (e.g. briefly
+       between hops), fall back to the item's intended assignee so the badge still
+       shows on some tile rather than disappearing entirely.
+
+  Preserve BL-038's summary rules: badge text is `<ID> · <summary>`, summary is
+  the item title truncated to ≤ 40 characters (with "…" if truncated), and tiles
+  with no active item assigned show no badge.
+
+  Scope: extension only — backlogReader.ts (active-folder status override),
+  badgeSummary.ts / swarmPanel.ts (holder-keyed badge map), and tests. Do not
+  change the handoff/task-name protocol or the swarm message protocol. Do not
+  modify SwarmForge. Note: this relies on handoff task names starting with the
+  ticket ID (e.g. "BL-053-...") for live-holder resolution — that convention is
+  already in use and must be kept, not redesigned.
+
+acceptance: |
+  Feature: active ticket badge in the holding agent's tile header
+
+  Background:
+    Given the swarm is running with live agent tiles
+    And a ticket file has been promoted into the backlog/active/ folder
+
+  # BL-053 header-active-ticket-01
+  Scenario: badge renders even when the yaml status field is not "active"
+    Given the active ticket's yaml `status:` field is "todo" (folder is authoritative)
+    When the panel refreshes its badges
+    Then the tile header of the agent holding the ticket shows "<ID> · <summary>"
+    And it is not blank / role-name-only
+
+  # BL-053 header-active-ticket-02
+  Scenario: badge appears on the live holder's tile, not others
+    Given the parcel for the active ticket is held by a specific role
+      (that role's inbox has a handoff whose task name starts with the ticket ID)
+    When the panel refreshes its badges
+    Then that role's tile header shows the ticket badge
+    And tiles for roles not holding the parcel show no badge for that ticket
+
+  # BL-053 header-active-ticket-03
+  Scenario: badge moves as the parcel advances down the pipeline
+    Given the badge is showing on the current holder's tile
+    When the parcel is handed to the next role in the pipeline
+    Then the badge appears on the next role's tile
+    And it is cleared from the previous holder's tile
+
+  # BL-053 header-active-ticket-04
+  Scenario: unresolved live holder falls back to the intended assignee
+    Given an active ticket whose live holder cannot be resolved from any inbox
+    When the panel refreshes its badges
+    Then the badge is shown on the tile of the ticket's intended assignee
+    And the badge does not disappear entirely
+
+  # BL-053 header-active-ticket-05
+  Scenario Outline: summary is formatted and truncated per BL-038 rules
+    Given an active ticket with title <title>
+    When its badge text is composed
+    Then the badge reads "<ID> · <expected>"
+    And the summary portion is at most 40 characters
+
+    Examples:
+      | title                                              | expected                                 |
+      | redo BL-038 tile header active ticket              | redo BL-038 tile header active ticket    |
+      | tile header — show active ticket ID and summary    | show active ticket ID and summary        |
+
+  # BL-053 header-active-ticket-06
+  Scenario: no active ticket means no badge
+    Given a role has no active ticket assigned or held
+    When the panel refreshes its badges
+    Then that role's tile header shows no ticket badge
+
+  # Non-behavioral gate:
+  #  - Unit test asserts readBacklog marks backlog/active/ items as status
+  #    'active' (mirroring the done-folder override), so a folder-active item
+  #    whose yaml says "todo" still produces a badge via buildBadgeMap.
+  #  - Existing tests stay green.
