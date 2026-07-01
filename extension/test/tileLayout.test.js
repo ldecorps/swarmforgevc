@@ -144,3 +144,71 @@ test('getWebviewHtml CSS has first-row selected tile asymmetric spanning', () =>
   assert(html.includes('#grid.layout-first-row .tile.first-row.selected'));
   assert(html.includes('grid-column: span 2'));
 });
+
+test('getWebviewHtml CSS has 3-column grid for layout-first-row', () => {
+  const { getWebviewHtml } = require('../out/panel/webviewHtml');
+  const html = getWebviewHtml('test.js', 'test');
+  assert(html.includes('#grid.layout-first-row'));
+  assert(html.includes('grid-template-columns: repeat(3, minmax(0, 1fr))'));
+});
+
+test('getWebviewHtml CSS positions first-row tiles using nth-of-type', () => {
+  const { getWebviewHtml } = require('../out/panel/webviewHtml');
+  const html = getWebviewHtml('test.js', 'test');
+  assert(html.includes('#grid.layout-first-row .tile.first-row:nth-of-type(1)'));
+  assert(html.includes('#grid.layout-first-row .tile.first-row:nth-of-type(2)'));
+  assert(html.includes('grid-column: 1') || html.includes('grid-column: 2'));
+});
+
+test('getWebviewHtml CSS allows non-first-row tiles to flow naturally', () => {
+  const { getWebviewHtml } = require('../out/panel/webviewHtml');
+  const html = getWebviewHtml('test.js', 'test');
+  assert(html.includes('#grid.layout-first-row .tile:not(.first-row)'));
+  assert(html.includes('grid-row: 2'));
+});
+
+test('getWebviewHtml CSS allows non-first-row selected tiles to grow 2x2', () => {
+  const { getWebviewHtml } = require('../out/panel/webviewHtml');
+  const html = getWebviewHtml('test.js', 'test');
+  assert(html.includes('#grid.layout-first-row .tile:not(.first-row).selected'));
+  assert(html.includes('grid-row: 2 / span 2'));
+});
+
+test('updateGridLayout applies layout-first-row for 5 agents with coordinator and specifier', () => {
+  const mockGrid = makeMockGrid();
+  global.grid = mockGrid;
+
+  const roles = [
+    { role: 'coordinator', displayName: 'Coordinator', agent: 'coordinator' },
+    { role: 'specifier', displayName: 'Specifier', agent: 'specifier' },
+    { role: 'coder', displayName: 'Coder', agent: 'coder' },
+    { role: 'cleaner', displayName: 'Cleaner', agent: 'cleaner' },
+    { role: 'architect', displayName: 'Architect', agent: 'architect' }
+  ];
+
+  updateGridLayout(5, roles);
+
+  assert(mockGrid.classList.classes.includes('layout-first-row'));
+  assert(!mockGrid.classList.classes.includes('layout-2x2'));
+});
+
+test('updateGridLayout applies layout-first-row for 8 agents with coordinator and specifier', () => {
+  const mockGrid = makeMockGrid();
+  global.grid = mockGrid;
+
+  const roles = [
+    { role: 'coordinator', displayName: 'Coordinator', agent: 'coordinator' },
+    { role: 'specifier', displayName: 'Specifier', agent: 'specifier' },
+    { role: 'coder', displayName: 'Coder', agent: 'coder' },
+    { role: 'cleaner', displayName: 'Cleaner', agent: 'cleaner' },
+    { role: 'architect', displayName: 'Architect', agent: 'architect' },
+    { role: 'hardender', displayName: 'Hardender', agent: 'hardender' },
+    { role: 'documenter', displayName: 'Documenter', agent: 'documenter' },
+    { role: 'QA', displayName: 'QA', agent: 'QA' }
+  ];
+
+  updateGridLayout(8, roles);
+
+  assert(mockGrid.classList.classes.includes('layout-first-row'));
+  assert(!mockGrid.classList.classes.includes('layout-2x2'));
+});
