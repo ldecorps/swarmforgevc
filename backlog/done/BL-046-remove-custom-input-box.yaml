@@ -1,7 +1,7 @@
 id: BL-046
 title: remove the custom per-tile input box; type into the native CLI input box
 milestone: M4
-status: todo
+status: done
 priority: 06
 assigned_to: coder
 
