@@ -1,0 +1,47 @@
+id: BL-040
+title: selected pane grows to 2x2 (double both dimensions)
+milestone: M4
+status: active
+priority: 40
+assigned_to: coder
+
+description: |
+  Selecting a tile currently doubles only its width. In
+  `extension/src/panel/webviewHtml.ts` the rule is:
+
+      .tile.selected {
+        grid-column: span 2;
+      }
+
+  so the selected tile spans two columns but stays one row tall (2x1).
+
+  Refine this so the selected pane doubles the OTHER dimension too, becoming a
+  2x2 block (twice as wide AND twice as tall, ~4x the area of an unselected
+  tile). The change is to also span two grid rows:
+
+      .tile.selected {
+        grid-column: span 2;
+        grid-row: span 2;
+      }
+
+  Scope: this is the default auto-fit grid (`#grid`). Only the CSS rule for
+  `.tile.selected` changes; selection state, toggling, single-selection, and
+  persistence behavior are unchanged.
+
+  Note the `#grid.layout-2x2` fixed 2-column-by-2-row mode: a 2x2 selected tile
+  there fills the entire grid and hides the other three tiles (overflow is
+  already hidden in that mode). That is acceptable for this item — the selected
+  agent takes the whole panel in 2x2 layout — but confirm it does not break the
+  layout or error; do not add new layout logic to special-case it.
+
+acceptance: |
+  - Selecting a tile makes it span 2 columns AND 2 rows in the default grid,
+    rendering roughly 4x the area of an unselected tile (2x wide, 2x tall).
+  - Deselecting returns the tile to a normal 1x1 cell.
+  - Existing selection behavior is unchanged: at most one tile selected,
+    toggle on re-click, selection persists across refresh.
+  - The `.tile.selected` CSS rule in `getWebviewHtml` contains both
+    `grid-column: span 2` and `grid-row: span 2`.
+  - Update the BL-030 CSS test in `extension/test/webviewHtml.test.js` (the
+    'selected tile double-width rule' test) to also assert
+    `grid-row: span 2`; full suite stays green.

@@ -260,6 +260,7 @@ function getWebviewHtml(scriptUri, cspSource) {
     }
     .tile.selected {
       grid-column: span 2;
+      grid-row: span 2;
     }
     .restart-btn {
       display: none;

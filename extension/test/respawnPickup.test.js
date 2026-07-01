@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { createMessage, claimMessage, completeMessage } = require('../out/swarm/messageBus');
+const { createMessage, claimMessage, completeMessage, appendEventRaw } = require('../out/swarm/messageBus');
 const { pickupPendingMessages } = require('../out/swarm/respawnPickup');
 
 function mkTmp() {
@@ -76,4 +76,19 @@ test('returns id, status, and body for each claimable message', () => {
   assert.equal(results[0].id, id);
   assert.equal(results[0].status, 'received');
   assert.equal(results[0].body, 'payload text');
+});
+
+test('returns an empty array when the directory does not exist', () => {
+  const dir = path.join(mkTmp(), 'does-not-exist');
+  const results = pickupPendingMessages(dir, 'cleaner', Math.floor(Date.now() / 1000), 300);
+  assert.deepEqual(results, []);
+});
+
+test('does NOT return dead-lettered messages', () => {
+  const dir = mkTmp();
+  const id = createMessage(dir, { from: 'coder', to: 'cleaner', subject: 'work', body: 'do it', seq: 1 });
+  const logPath = path.join(dir, `${id}.log`);
+  appendEventRaw(logPath, { type: 'dead-letter', by: 'chaser' });
+  const results = pickupPendingMessages(dir, 'cleaner', Math.floor(Date.now() / 1000), 300);
+  assert.equal(results.length, 0);
 });

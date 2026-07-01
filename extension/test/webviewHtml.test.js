@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const fs = require('node:fs');
 const path = require('node:path');
-const { getNonce, getWebviewHtml } = require('../out/panel/webviewHtml');
+const { getNonce, getWebviewHtml, getWorkTreeHtml } = require('../out/panel/webviewHtml');
 
 const SCRIPT_URI = 'vscode-webview://test/media/panel.js';
 const CSP_SOURCE = 'vscode-webview:';
@@ -20,6 +20,39 @@ test('getNonce returns different values on each call', () => {
 
 test('getNonce contains only alphanumeric characters', () => {
   assert.match(getNonce(), /^[A-Za-z0-9]{32}$/);
+});
+
+// --- getWorkTreeHtml ---
+
+test('getWorkTreeHtml embeds the nonce in CSP and the inline script tag', () => {
+  const html = getWorkTreeHtml('test-nonce-123');
+  assert(html.includes("script-src 'nonce-test-nonce-123'"), 'CSP must reference the nonce');
+  assert(html.includes('<script nonce="test-nonce-123">'), 'script tag must carry the nonce');
+});
+
+test('getWorkTreeHtml contains the work tree DOM scaffold', () => {
+  const html = getWorkTreeHtml('n');
+  assert(html.includes('<h1>Work Tree</h1>'));
+  assert(html.includes('id="content"'));
+});
+
+test('getWorkTreeHtml inline script renders backlog rows with escaped fields', () => {
+  const html = getWorkTreeHtml('n');
+  assert(html.includes('function renderItems('));
+  assert(html.includes('function escapeHtml('));
+  assert(html.includes("No backlog items found."));
+});
+
+test('getWorkTreeHtml inline script wires highlightTile postMessage', () => {
+  const html = getWorkTreeHtml('n');
+  assert(html.includes("type: 'highlightTile'"));
+  assert(html.includes('function highlight(role)'));
+});
+
+test('getWorkTreeHtml inline script listens for update messages', () => {
+  const html = getWorkTreeHtml('n');
+  assert(html.includes("msg.type === 'update'"));
+  assert(html.includes("getElementById('content').innerHTML"));
 });
 
 // --- getWebviewHtml: external script (VS Code 1.126 blocks inline scripts) ---
@@ -252,10 +285,11 @@ test('getWebviewHtml CSS has backlog group header style', () => {
 
 // --- BL-030: selected tile width doubling ---
 
-test('getWebviewHtml CSS has selected tile double-width rule', () => {
+test('getWebviewHtml CSS has selected tile 2x2 rule', () => {
   const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
   assert(html.includes('.tile.selected'), 'missing .tile.selected CSS rule');
   assert(html.includes('grid-column: span 2'), 'selected tile must span 2 columns');
+  assert(html.includes('grid-row: span 2'), 'selected tile must span 2 rows');
 });
 
 test('panel.js tracks selectedRole state', () => {
