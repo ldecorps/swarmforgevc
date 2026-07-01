@@ -7,4 +7,5 @@ swarmforge/scripts/
 extension/node_modules/
 extension/out/
 extension/coverage/
+extension/.dev-activation.json
 *.code-workspace
