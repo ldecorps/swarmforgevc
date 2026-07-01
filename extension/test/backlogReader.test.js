@@ -128,14 +128,24 @@ test('readBacklog reads done items one level deep in milestone subfolders', () =
   assert.equal(items[0].status, 'done');
 });
 
-test('readBacklog surfaces the subfolder name as the done item milestone', () => {
+test('readBacklog surfaces the subfolder slug as the done item milestone', () => {
   const tmp = mkTmp();
-  const m4 = path.join(tmp, 'backlog', 'done', 'M4');
+  // subfolder names are opaque slugs, not bare M-numbers; the folder is
+  // canonical even when the yaml disagrees
+  const m4 = path.join(tmp, 'backlog', 'done', 'M4-governance-backlog-sync');
   mkdirp(m4);
-  // the folder is canonical, even when the yaml disagrees
   fs.writeFileSync(path.join(m4, 'BL-011.yaml'), 'id: BL-011\ntitle: Moved item\nstatus: done\nmilestone: M1\n');
   const items = readBacklog(tmp);
-  assert.equal(items[0].milestone, 'M4');
+  assert.equal(items[0].milestone, 'M4-governance-backlog-sync');
+});
+
+test('flat done files keep their yaml milestone field', () => {
+  const tmp = mkTmp();
+  const doneDir = path.join(tmp, 'backlog', 'done');
+  mkdirp(doneDir);
+  fs.writeFileSync(path.join(doneDir, 'BL-015.yaml'), 'id: BL-015\ntitle: Flat\nstatus: done\nmilestone: M2\n');
+  const items = readBacklog(tmp);
+  assert.equal(items[0].milestone, 'M2');
 });
 
 test('readBacklog still reads flat done files during the transition', () => {
