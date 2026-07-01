@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as os from 'os';
+import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { getTargetPath, setTargetPath } from './config/targetConfig';
 import { initializeTargetRepo } from './config/targetBootstrap';
@@ -14,6 +15,7 @@ import { stopSwarm } from './swarm/swarmStopper';
 import { bounceSwarm, buildBounceExtensionCommand } from './swarm/bouncer';
 import { listTmuxSessions } from './swarm/tmuxClient';
 import { resolveRunName } from './run/resolveRunName';
+import { startBounceWatcher, BounceType } from './swarm/bounceWatcher';
 
 const NO_TARGET_MESSAGE = 'Set a target project first (SwarmForge: Set Target Project).';
 const STOP_SWARM_BUTTON = 'Stop Swarm';
@@ -23,6 +25,8 @@ const PENDING_AUTO_LAUNCH_KEY = 'swarmforge.pendingAutoLaunch';
 
 type RunMode = 'one-shot' | 'drain';
 
+let currentBounceWatcher: fs.FSWatcher | null = null;
+
 function generateDefaultRunName(): string {
   const now = new Date();
   const year = now.getFullYear();
@@ -31,6 +35,57 @@ function generateDefaultRunName(): string {
   const hour = String(now.getHours()).padStart(2, '0');
   const minute = String(now.getMinutes()).padStart(2, '0');
   return `run-${year}${month}${day}-${hour}${minute}`;
+}
+
+function startOrRestartBounceWatcher(
+  context: vscode.ExtensionContext,
+  targetPath: string
+): void {
+  // Dispose old watcher if it exists
+  if (currentBounceWatcher) {
+    currentBounceWatcher.close();
+    currentBounceWatcher = null;
+  }
+
+  // Check if .swarmforge directory exists
+  const swarmforgeDir = path.join(targetPath, '.swarmforge');
+  if (!fs.existsSync(swarmforgeDir)) {
+    return;
+  }
+
+  // Create handler that dispatches to appropriate command
+  const handleBounce = (bounceType: BounceType) => {
+    switch (bounceType) {
+      case 'swarm':
+        vscode.commands.executeCommand('swarmforge.bounceSwarm');
+        break;
+      case 'extension':
+        vscode.commands.executeCommand('swarmforge.bounceExtension');
+        break;
+      case 'all':
+        vscode.commands.executeCommand('swarmforge.bounceAll');
+        break;
+    }
+  };
+
+  const handleError = (error: string) => {
+    vscode.window.showWarningMessage(`Bounce watcher error: ${error}`);
+  };
+
+  // Start the watcher
+  currentBounceWatcher = startBounceWatcher(targetPath, handleBounce, handleError);
+
+  // Add to subscriptions for cleanup
+  if (currentBounceWatcher) {
+    context.subscriptions.push({
+      dispose: () => {
+        if (currentBounceWatcher) {
+          currentBounceWatcher.close();
+          currentBounceWatcher = null;
+        }
+      },
+    });
+  }
 }
 
 async function resolveTargetPath(context: vscode.ExtensionContext): Promise<string | undefined> {
@@ -43,6 +98,12 @@ async function resolveTargetPath(context: vscode.ExtensionContext): Promise<stri
 
 export function activate(context: vscode.ExtensionContext): void {
   const runLogPath = path.join(os.homedir(), '.swarmforge', 'runs.jsonl');
+
+  // Start bounce watcher if target is already set
+  const targetPath = getTargetPath();
+  if (targetPath) {
+    startOrRestartBounceWatcher(context, targetPath);
+  }
 
   // Check for pending auto-launch after extension reload
   const pendingAutoLaunch = context.workspaceState.get<boolean>(PENDING_AUTO_LAUNCH_KEY);
@@ -85,6 +146,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand('swarmforge.setTarget', async () => {
       await setTargetPath(context);
+      const newTargetPath = getTargetPath();
+      if (newTargetPath) {
+        startOrRestartBounceWatcher(context, newTargetPath);
+      }
     }),
 
     vscode.commands.registerCommand('swarmforge.initializeTarget', async () => {
@@ -389,4 +454,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {
   SwarmPanel.currentPanel?.dispose();
+  if (currentBounceWatcher) {
+    currentBounceWatcher.close();
+    currentBounceWatcher = null;
+  }
 }
