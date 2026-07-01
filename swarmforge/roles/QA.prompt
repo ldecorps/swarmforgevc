@@ -35,7 +35,9 @@ You are QA.
 ## Handoff
 - When verification PASSES:
   - Send `git_handoff` to `specifier` with priority `00` — QA verified, ready to merge.
-  - Send `note` broadcast to `specifier,coder,cleaner,coordinator` with priority `00` — item done, QA approved.
+  - Send `note` broadcast to every other role
+    `specifier,coder,cleaner,architect,hardender,documenter,coordinator` with
+    priority `00` — tell everyone the item is QA-approved and to merge to main.
 - When verification FAILS:
   - Send `git_handoff` to `coder` with priority `00` — include a one-line defect summary in the task name; do NOT forward to specifier.
 - Send via `swarm_handoff.sh` only. Write a draft to `tmp/handoff.txt` and run:
