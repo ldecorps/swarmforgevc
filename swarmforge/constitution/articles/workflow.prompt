@@ -14,6 +14,28 @@
 - This governs the specifier's intake order only. The coordinator's separate
   promotion order (paused before root) is unchanged.
 
+## Concurrent Work Orthogonality
+- Applies to the coordinator when `active_backlog_max_depth` > 1, so more than one
+  parcel can be in flight at once.
+- Before promoting the next item into `backlog/active/`, compare its scope (the
+  files, modules, and areas named in the ticket's `description:`/`Scope:`) against
+  the scope of every item already active or in flight.
+- Prefer a concurrently-active set that is ORTHOGONAL — items that touch different
+  files/modules/areas. Do not run two items that edit the same file or a tightly
+  coupled area at the same time; overlapping concurrent edits cause merge
+  conflicts and rework.
+- If the next item by priority would overlap something already in flight, skip
+  past it to the next orthogonal candidate, keeping priority and bugs-first order
+  among the orthogonal candidates. If no orthogonal candidate exists, leave the
+  slot empty and let the overlapping in-flight item finish before promoting the
+  overlapping one — never force two overlapping items to run concurrently.
+- This is a "where possible" preference, not an absolute bar: a lone high-priority
+  item with no orthogonal companion still runs alone, and nothing is starved — the
+  moment its overlapping sibling merges, promote it next.
+- Orthogonality never overrides the hard caps: stay at or below
+  `active_backlog_max_depth`, and keep bugs-first ordering among equally-orthogonal
+  candidates.
+
 ## Worktree Discipline
 - At startup, discover and remember the branch or worktree assigned to your role.
 - If your assigned worktree is `master`, work in the main project checkout on its current branch; do not expect or create a `.worktrees/<role>` directory for that role.

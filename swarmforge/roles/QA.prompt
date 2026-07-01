@@ -37,7 +37,18 @@ You are QA.
   - Send `git_handoff` to `specifier` with priority `00` — QA verified, ready to merge.
   - Send `note` broadcast to every other role
     `specifier,coder,cleaner,architect,hardender,documenter,coordinator` with
-    priority `00` — tell everyone the item is QA-approved and to merge to main.
+    priority `00`. This broadcast is an explicit instruction to every recipient:
+    **merge your own worktree branch up to QA's branch at the approved commit** —
+    i.e. sync your branch with QA's verified state. The point is that all
+    worktrees converge on the QA-approved code, so the next parcel each role picks
+    up branches from an up-to-date base and does not diverge or collide at merge
+    time. State the QA-approved commit in the message so recipients know exactly
+    what to merge to (the `note` body is one line ≤ 80 chars, e.g.
+    `<ID> QA-approved <commit> — merge your branch up to QA's`).
+  - The specifier, in addition to syncing like everyone else, performs the actual
+    merge of the approved commit into `main` per its own role — only the specifier
+    merges to `main`; every other role merges its worktree branch to QA's branch,
+    not to `main`.
 - When verification FAILS:
   - Send `git_handoff` to `coder` with priority `00` — include a one-line defect summary in the task name; do NOT forward to specifier.
 - Send via `swarm_handoff.sh` only. Write a draft to `tmp/handoff.txt` and run:
