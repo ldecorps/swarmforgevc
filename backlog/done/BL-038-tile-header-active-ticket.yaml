@@ -1,7 +1,7 @@
 id: BL-038
 title: tile header — show active ticket ID and short summary per agent
 milestone: M3
-status: todo
+status: done
 priority: 38
 assigned_to: coder
 
