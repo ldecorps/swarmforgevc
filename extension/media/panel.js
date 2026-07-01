@@ -3,6 +3,7 @@ const grid = document.getElementById('grid');
 const status = document.getElementById('status');
 const stageEl = document.getElementById('stage');
 const placeholder = document.getElementById('placeholder');
+const transportHealthEl = document.getElementById('transport-health');
 const tiles = new Map();
 let activeRole = null;
 let selectedRole = null;
@@ -504,6 +505,23 @@ window.addEventListener('message', (event) => {
           setTimeout(() => entry.tile.classList.remove('bl-highlighted'), 2000);
         }
       });
+      break;
+    case 'transportHealth':
+      if (transportHealthEl) {
+        const health = message.health || {};
+        const detail = health.detail ? ' (' + health.detail + ')' : '';
+        transportHealthEl.classList.remove('warn', 'down');
+        if (health.state === 'persistent-failure') {
+          transportHealthEl.classList.add('down');
+          transportHealthEl.textContent = '✖ handoff transport DOWN' + detail;
+        } else if (health.state === 'restarting') {
+          transportHealthEl.classList.add('warn');
+          transportHealthEl.textContent = '⚠ handoff transport restarting' + detail;
+        } else {
+          // healthy or unknown: no alarm
+          transportHealthEl.textContent = '';
+        }
+      }
       break;
     case 'badgeUpdate':
       tiles.forEach((entry, role) => {
