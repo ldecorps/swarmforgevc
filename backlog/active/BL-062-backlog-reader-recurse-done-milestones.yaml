@@ -6,8 +6,12 @@ priority: 03
 assigned_to: coder
 
 description: |
-  Done tickets are now grouped into per-milestone subfolders
-  `backlog/done/M1/..M4/` (b843ac2, canonical going forward), but
+  Done tickets are now grouped into per-milestone subfolders with descriptive
+  slugs — `backlog/done/M1-mvp-observable-swarm/`, `M2-reliability-layer/`,
+  `M3-traceability-right-sizing/`, `M4-governance-backlog-sync/` (b843ac2 +
+  rename 20eda56, canonical going forward). The reader must treat the
+  subfolder name as an opaque one-level directory — do NOT assume bare `M1`
+  names. But
   `extension/src/panel/backlogReader.ts` scans `backlog/done/` FLAT
   (readdirSync + .yaml filter, ~line 76). The panel therefore shows ZERO done
   items, and `backlogLoop.ts` builds `doneIds` from that same list for
@@ -20,8 +24,9 @@ description: |
     `backlog/done/*.yaml` files (transition tolerance).
   - Done items keep working everywhere they're consumed: the panel's done
     list and `doneIds` dependency gating.
-  - Nicety (in scope, small): surface the milestone — the subfolder name —
-    on done rows in the panel.
+  - Nicety (in scope, small): surface the milestone on done rows in the
+    panel — the containing subfolder slug (e.g. "M4-governance-backlog-sync")
+    for subfoldered items, or the yaml `milestone:` field for flat files.
   - Audit other consumers of the done/ path (messageBus, respawnPickup,
     ChaseMonitor reference backlog paths) and give any flat-scanning
     consumer the same one-level treatment.
@@ -39,7 +44,7 @@ acceptance: |
 
   # BL-062 done-recurse-01
   Scenario: done items in milestone subfolders appear in the panel
-    Given a ticket yaml at backlog/done/M2/BL-0xx.yaml
+    Given a ticket yaml at backlog/done/M2-reliability-layer/BL-0xx.yaml
     When the backlog is read
     Then that ticket is included among done items
     And the panel's done list shows it
@@ -53,15 +58,15 @@ acceptance: |
   # BL-062 done-recurse-03
   Scenario: dependency gating sees subfoldered done ids
     Given a pending ticket that dependsOn a ticket whose yaml lives in
-      backlog/done/M3/
+      backlog/done/M3-traceability-right-sizing/
     When dependency gating evaluates it
     Then the dependency counts as satisfied
 
   # BL-062 done-recurse-04
   Scenario: done rows show their milestone
-    Given a done ticket read from backlog/done/M4/
+    Given a done ticket read from backlog/done/M4-governance-backlog-sync/
     When the panel renders its row
-    Then the row surfaces "M4" as its milestone
+    Then the row surfaces "M4-governance-backlog-sync" as its milestone
 
   # BL-062 done-recurse-05
   Scenario: junk entries are ignored
