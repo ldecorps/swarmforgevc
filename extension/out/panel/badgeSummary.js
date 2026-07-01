@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.truncateSummary = truncateSummary;
 exports.buildBadgeMap = buildBadgeMap;
+const swarmState_1 = require("../swarm/swarmState");
 const SUMMARY_MAX_LENGTH = 40;
 function truncateSummary(title) {
     let summary = title;
@@ -16,13 +17,24 @@ function truncateSummary(title) {
     }
     return summary;
 }
-function buildBadgeMap(items) {
+function buildBadgeMap(items, targetPath) {
     const badges = {};
     for (const item of items) {
         if (item.status === 'active' && item.assignedTo) {
-            badges[item.assignedTo] = {
+            // For active items, find the live holder (current role holding the parcel)
+            // For todo items, use the intended assignee
+            let holder = item.assignedTo;
+            let liveHolder = null;
+            if (targetPath && item.status === 'active') {
+                liveHolder = (0, swarmState_1.findLiveHolder)(targetPath, item.id);
+                if (liveHolder) {
+                    holder = liveHolder;
+                }
+            }
+            badges[holder] = {
                 id: item.id,
                 summary: truncateSummary(item.title),
+                holder: liveHolder || item.assignedTo,
             };
         }
     }

@@ -1,4 +1,5 @@
 import { BacklogItem } from './backlogReader';
+import { findLiveHolder } from '../swarm/swarmState';
 
 const SUMMARY_MAX_LENGTH = 40;
 
@@ -24,13 +25,32 @@ export interface Badge {
   summary: string;
 }
 
-export function buildBadgeMap(items: BacklogItem[]): Record<string, Badge> {
-  const badges: Record<string, Badge> = {};
+export interface BadgeWithHolder extends Badge {
+  holder?: string;
+}
+
+export function buildBadgeMap(
+  items: BacklogItem[],
+  targetPath?: string
+): Record<string, BadgeWithHolder> {
+  const badges: Record<string, BadgeWithHolder> = {};
   for (const item of items) {
     if (item.status === 'active' && item.assignedTo) {
-      badges[item.assignedTo] = {
+      // For active items, find the live holder (current role holding the parcel)
+      // For todo items, use the intended assignee
+      let holder = item.assignedTo;
+      let liveHolder: string | null = null;
+      if (targetPath && item.status === 'active') {
+        liveHolder = findLiveHolder(targetPath, item.id);
+        if (liveHolder) {
+          holder = liveHolder;
+        }
+      }
+
+      badges[holder] = {
         id: item.id,
         summary: truncateSummary(item.title),
+        holder: liveHolder || item.assignedTo,
       };
     }
   }

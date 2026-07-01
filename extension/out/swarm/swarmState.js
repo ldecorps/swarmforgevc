@@ -37,6 +37,7 @@ exports.parseRolesTsv = parseRolesTsv;
 exports.readHandoffInboxStatus = readHandoffInboxStatus;
 exports.readPipelineStages = readPipelineStages;
 exports.currentStageLabel = currentStageLabel;
+exports.findLiveHolder = findLiveHolder;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const SWARMFORGE_DIR = '.swarmforge';
@@ -111,5 +112,88 @@ function currentStageLabel(stages) {
         return 'idle';
     }
     return active.map((s) => s.displayName).join(', ');
+}
+function parseHandoffTask(content) {
+    const match = content.match(/^task:\s*(.+)$/m);
+    return match ? match[1].trim() : null;
+}
+function readHandoffFilesFromInbox(inboxPath) {
+    const handoffs = [];
+    for (const subdir of INBOX_SUBDIRS) {
+        const dir = path.join(inboxPath, subdir);
+        if (!fs.existsSync(dir)) {
+            continue;
+        }
+        try {
+            for (const entry of fs.readdirSync(dir)) {
+                if (entry.endsWith(HANDOFF_EXTENSION)) {
+                    const filePath = path.join(dir, entry);
+                    try {
+                        const content = fs.readFileSync(filePath, 'utf8');
+                        const task = parseHandoffTask(content);
+                        handoffs.push({ task });
+                    }
+                    catch {
+                        // ignore unreadable handoff files
+                    }
+                }
+                else {
+                    // Check batch directories
+                    const fullPath = path.join(dir, entry);
+                    if (fs.statSync(fullPath).isDirectory()) {
+                        try {
+                            for (const batchFile of fs.readdirSync(fullPath)) {
+                                if (batchFile.endsWith(HANDOFF_EXTENSION)) {
+                                    const filePath = path.join(fullPath, batchFile);
+                                    try {
+                                        const content = fs.readFileSync(filePath, 'utf8');
+                                        const task = parseHandoffTask(content);
+                                        handoffs.push({ task });
+                                    }
+                                    catch {
+                                        // ignore unreadable handoff files
+                                    }
+                                }
+                            }
+                        }
+                        catch {
+                            // ignore unreadable batch directories
+                        }
+                    }
+                }
+            }
+        }
+        catch {
+            // ignore unreadable inbox directories
+        }
+    }
+    return handoffs;
+}
+function findLiveHolder(targetPath, itemId) {
+    const stages = readPipelineStages(targetPath);
+    const rolesFile = path.join(targetPath, SWARMFORGE_DIR, 'roles.tsv');
+    if (!fs.existsSync(rolesFile)) {
+        return null;
+    }
+    const tsv = fs.readFileSync(rolesFile, 'utf8');
+    const roles = parseRolesTsv(tsv);
+    // For each active stage, check if it has a handoff with the matching task
+    for (const stage of stages) {
+        if (stage.status !== 'active') {
+            continue;
+        }
+        const role = roles.find((r) => r.role === stage.role);
+        if (!role) {
+            continue;
+        }
+        const inboxPath = path.join(role.worktreePath, SWARMFORGE_DIR, 'handoffs', 'inbox');
+        const handoffs = readHandoffFilesFromInbox(inboxPath);
+        for (const handoff of handoffs) {
+            if (handoff.task && handoff.task.toLowerCase().startsWith(itemId.toLowerCase())) {
+                return stage.role;
+            }
+        }
+    }
+    return null;
 }
 //# sourceMappingURL=swarmState.js.map
