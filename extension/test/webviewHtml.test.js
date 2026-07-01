@@ -374,6 +374,41 @@ test('getWebviewHtml CSS applies needs-human blink to tiles', () => {
   assert(html.includes('animation:') || html.includes('animation :'), 'must apply animation to needs-human tiles');
 });
 
+// --- BL-054: the pulse is border-only; content never blinks ---
+
+function needsHumanKeyframesBlock(html) {
+  const match = html.match(/@keyframes needs-human-blink\s*{([\s\S]*?\n\s*)}/);
+  assert(match, 'must define needs-human-blink keyframes');
+  return match[1];
+}
+
+test('needs-human pulse animates a border property, not whole-tile opacity', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  const keyframes = needsHumanKeyframesBlock(html);
+  assert(
+    !/opacity/.test(keyframes),
+    'the pulse must not animate opacity — that fades the tile TEXT along with the border'
+  );
+  assert(
+    /border/.test(keyframes),
+    'the pulse must be carried by a border property'
+  );
+});
+
+test('needs-human pulse keeps the accent color and gentle cadence from BL-045', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  const keyframes = needsHumanKeyframesBlock(html);
+  assert(/00a8e8|0,\s*168,\s*232/.test(keyframes), 'accent blue must remain the pulse color');
+  assert(/needs-human-blink 1\.5s ease-in-out infinite/.test(html), 'the 1.5s ease-in-out cadence must remain');
+});
+
+test('the needs-human rule itself does not dim tile content', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  const rule = html.match(/\.tile\.needs-human:not\(\.dead\)\s*{([\s\S]*?)}/);
+  assert(rule, 'must keep the .tile.needs-human:not(.dead) rule with the dead guard');
+  assert(!/opacity/.test(rule[1]), 'the needs-human rule must not touch opacity');
+});
+
 test('getWebviewHtml CSS suppresses blink when tile is dead', () => {
   const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
   assert(html.includes(':not(.dead)'), 'animation must not apply when dead class is present');
