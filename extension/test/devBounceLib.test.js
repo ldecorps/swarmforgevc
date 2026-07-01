@@ -71,6 +71,17 @@ test('filterDevHostPids does not match a different extension path or a prefix co
   assert.deepEqual(filterDevHostPids(ps, EXT), []);
 });
 
+test('filterDevHostPids escapes regex metacharacters in the extension path', () => {
+  // "+" is a regex quantifier; if the path were used unescaped, "proj+beta"
+  // would mean "one or more j", incorrectly matching a path with repeated
+  // "j"s instead of requiring the literal "+".
+  const ext = '/Users/dev/proj+beta/extension';
+  const exactMatch = `  101 Electron --extensionDevelopmentPath=${ext}`;
+  const wouldMatchIfUnescaped = '  102 Electron --extensionDevelopmentPath=/Users/dev/projjjbeta/extension';
+  assert.deepEqual(filterDevHostPids(exactMatch, ext), [101]);
+  assert.deepEqual(filterDevHostPids(wouldMatchIfUnescaped, ext), []);
+});
+
 test('filterDevHostPids returns every matching main process (pile-up detection)', () => {
   const ps = [
     `  101 Electron --extensionDevelopmentPath=${EXT}`,
