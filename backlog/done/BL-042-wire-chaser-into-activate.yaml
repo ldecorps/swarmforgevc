@@ -1,7 +1,7 @@
 id: BL-042
 title: wire the built-but-unwired chaser/watchdog into activate() so stalls self-heal
 milestone: M2
-status: active
+status: done
 priority: 12
 assigned_to: coder
 
