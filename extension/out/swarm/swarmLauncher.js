@@ -70,7 +70,7 @@ function buildLaunchEnv(runName) {
     }
     return env;
 }
-async function launchSwarm(targetPath, runName) {
+async function launchSwarm(targetPath, runName, readyTimeoutMs = 120_000) {
     const swarmScript = path.join(targetPath, 'swarm');
     if (!fs.existsSync(swarmScript)) {
         return {
@@ -131,7 +131,7 @@ async function launchSwarm(targetPath, runName) {
             else {
                 finish(false, 'Timed out waiting for swarm to become ready.');
             }
-        }, 120_000);
+        }, readyTimeoutMs);
         const poll = setInterval(() => {
             if (isSwarmReady(targetPath)) {
                 finish(true, SWARM_LAUNCH_SUCCESS_MESSAGE);

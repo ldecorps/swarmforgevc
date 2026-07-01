@@ -285,10 +285,11 @@ test('getWebviewHtml CSS has backlog group header style', () => {
 
 // --- BL-030: selected tile width doubling ---
 
-test('getWebviewHtml CSS has selected tile double-width rule', () => {
+test('getWebviewHtml CSS has selected tile 2x2 rule', () => {
   const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
   assert(html.includes('.tile.selected'), 'missing .tile.selected CSS rule');
   assert(html.includes('grid-column: span 2'), 'selected tile must span 2 columns');
+  assert(html.includes('grid-row: span 2'), 'selected tile must span 2 rows');
 });
 
 test('panel.js tracks selectedRole state', () => {
