@@ -53,12 +53,24 @@ const bouncer_1 = require("./swarm/bouncer");
 const tmuxClient_1 = require("./swarm/tmuxClient");
 const resolveRunName_1 = require("./run/resolveRunName");
 const bounceWatcher_1 = require("./swarm/bounceWatcher");
+const chaserMonitor_1 = require("./watchdog/chaserMonitor");
+const tmuxClient_2 = require("./swarm/tmuxClient");
+const heartbeat_1 = require("./tools/heartbeat");
+const liveness_1 = require("./watchdog/liveness");
 const NO_TARGET_MESSAGE = 'Set a target project first (SwarmForge: Set Target Project).';
 const STOP_SWARM_BUTTON = 'Stop Swarm';
 const LAST_RUN_NAME_KEY = 'swarmforge.lastRunName';
 const RUN_MODE_KEY = 'swarmforge.runMode';
 const PENDING_AUTO_LAUNCH_KEY = 'swarmforge.pendingAutoLaunch';
+const WATCHDOG_STALE_TIMEOUT_SECONDS = 30;
+const WATCHDOG_IN_FLIGHT_TIMEOUT_SECONDS = 60;
+const WATCHDOG_DEAD_TIMEOUT_SECONDS = 120;
+const CHASER_INTERVAL_SECONDS = 5;
+const CHASER_TIMEOUT_SECONDS = 30;
+const CHASER_MAX_CHASES = 3;
+const CHASER_STUCK_IN_PROCESS_TIMEOUT_SECONDS = 60;
 let currentBounceWatcher = null;
+let currentChaserMonitor = null;
 function generateDefaultRunName() {
     const now = new Date();
     const year = now.getFullYear();
@@ -110,6 +122,77 @@ function startOrRestartBounceWatcher(context, targetPath) {
         });
     }
 }
+function startOrRestartChaserMonitor(targetPath, context) {
+    // Stop old chaser if it exists
+    if (currentChaserMonitor) {
+        (0, chaserMonitor_1.stopChaserMonitor)(currentChaserMonitor);
+        currentChaserMonitor = null;
+    }
+    // Check if .swarmforge directory exists
+    const swarmforgeDir = path.join(targetPath, '.swarmforge');
+    if (!fs.existsSync(swarmforgeDir)) {
+        return;
+    }
+    // Read tmux socket for sending wake-ups
+    const socketPath = (0, tmuxClient_2.readTmuxSocket)(targetPath);
+    if (!socketPath) {
+        return;
+    }
+    // Read swarm roles to know which inboxes to monitor
+    const roles = (0, tmuxClient_2.readSwarmRoles)(targetPath);
+    const rolesList = roles.map((r) => r.role);
+    // Default watchdog and chaser config
+    const watchdogConfig = {
+        staleTimeoutSeconds: WATCHDOG_STALE_TIMEOUT_SECONDS,
+        inFlightTimeoutSeconds: WATCHDOG_IN_FLIGHT_TIMEOUT_SECONDS,
+        deadTimeoutSeconds: WATCHDOG_DEAD_TIMEOUT_SECONDS,
+    };
+    const chaserConfig = {
+        targetPath,
+        rolesList,
+        chaseIntervalSeconds: CHASER_INTERVAL_SECONDS,
+        chaseTimeoutSeconds: CHASER_TIMEOUT_SECONDS,
+        maxChases: CHASER_MAX_CHASES,
+        stuckInProcessTimeoutSeconds: CHASER_STUCK_IN_PROCESS_TIMEOUT_SECONDS,
+    };
+    // Implement adapters for the chaser
+    const callbacks = {
+        getLiveness: (role) => {
+            const heartbeatDir = path.join(swarmforgeDir, 'heartbeat');
+            const hb = (0, heartbeat_1.readHeartbeat)(heartbeatDir, role);
+            const result = (0, liveness_1.computeLiveness)(hb, Date.now(), watchdogConfig, hb ? true : false);
+            return result.state;
+        },
+        sendWakeUp: (role) => {
+            const roleInfo = roles.find((r) => r.role === role);
+            if (!roleInfo)
+                return;
+            const baseIndex = (0, tmuxClient_2.getPaneBaseIndex)(socketPath);
+            const target = (0, tmuxClient_2.paneTarget)(roleInfo.session, roleInfo.displayName, baseIndex);
+            // Send a generic wake-up message (empty line followed by Enter)
+            (0, tmuxClient_2.sendKeys)(socketPath, target, 'Enter');
+        },
+        triggerRespawn: (role) => {
+            (0, tmuxClient_2.respawnAgent)(targetPath, role);
+        },
+        logDeadLetter: (_role, _filePath) => {
+            // Dead letter logging can be extended in future iterations
+        },
+    };
+    // Start the chaser monitor
+    currentChaserMonitor = (0, chaserMonitor_1.startChaserMonitor)(chaserConfig, callbacks);
+    // Add to subscriptions for cleanup
+    if (currentChaserMonitor) {
+        context.subscriptions.push({
+            dispose: () => {
+                if (currentChaserMonitor) {
+                    (0, chaserMonitor_1.stopChaserMonitor)(currentChaserMonitor);
+                    currentChaserMonitor = null;
+                }
+            },
+        });
+    }
+}
 async function resolveTargetPath(context) {
     let targetPath = (0, targetConfig_1.getTargetPath)();
     if (!targetPath) {
@@ -119,10 +202,11 @@ async function resolveTargetPath(context) {
 }
 function activate(context) {
     const runLogPath = path.join(os.homedir(), '.swarmforge', 'runs.jsonl');
-    // Start bounce watcher if target is already set
+    // Start bounce watcher and chaser if target is already set
     const targetPath = (0, targetConfig_1.getTargetPath)();
     if (targetPath) {
         startOrRestartBounceWatcher(context, targetPath);
+        startOrRestartChaserMonitor(targetPath, context);
     }
     // Check for pending auto-launch after extension reload
     const pendingAutoLaunch = context.workspaceState.get(PENDING_AUTO_LAUNCH_KEY);
@@ -137,6 +221,8 @@ function activate(context) {
                     vscode.window.showInformationMessage(result.message);
                     const panel = swarmPanel_1.SwarmPanel.createOrShow(context.extensionUri, targetPath, runLogPath);
                     panel.updateTarget(targetPath);
+                    // Start chaser monitor after swarm is launched
+                    startOrRestartChaserMonitor(targetPath, context);
                 }
                 else {
                     vscode.window.showErrorMessage(result.message);
@@ -162,6 +248,7 @@ function activate(context) {
         const newTargetPath = (0, targetConfig_1.getTargetPath)();
         if (newTargetPath) {
             startOrRestartBounceWatcher(context, newTargetPath);
+            startOrRestartChaserMonitor(newTargetPath, context);
         }
     }), vscode.commands.registerCommand('swarmforge.initializeTarget', async () => {
         const targetPath = await resolveTargetPath(context);
@@ -223,6 +310,8 @@ function activate(context) {
             const panel = swarmPanel_1.SwarmPanel.createOrShow(context.extensionUri, targetPath, runLogPath);
             panel.updateTarget(targetPath);
             panel.notifyDogfoodCheckpoint();
+            // Start chaser monitor after swarm is launched
+            startOrRestartChaserMonitor(targetPath, context);
         });
     }), vscode.commands.registerCommand('swarmforge.openPanel', async () => {
         const targetPath = (0, targetConfig_1.getTargetPath)();
@@ -244,6 +333,11 @@ function activate(context) {
         const result = (0, swarmStopper_1.stopSwarm)(targetPath);
         if (result.success) {
             vscode.window.showInformationMessage(result.message);
+            // Stop chaser monitor when swarm is stopped
+            if (currentChaserMonitor) {
+                (0, chaserMonitor_1.stopChaserMonitor)(currentChaserMonitor);
+                currentChaserMonitor = null;
+            }
         }
         else {
             vscode.window.showWarningMessage(result.message);
@@ -270,6 +364,8 @@ function activate(context) {
         if (panel) {
             panel.updateTarget(targetPath);
         }
+        // Restart chaser monitor after swarm bounce
+        startOrRestartChaserMonitor(targetPath, context);
     }), vscode.commands.registerCommand('swarmforge.bounceExtension', async () => {
         vscode.window.showInformationMessage('Reloading SwarmForge extension...');
         const reloadCmd = (0, bouncer_1.buildBounceExtensionCommand)();
