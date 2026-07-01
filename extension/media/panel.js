@@ -6,8 +6,6 @@ const placeholder = document.getElementById('placeholder');
 const tiles = new Map();
 let activeRole = null;
 let selectedRole = null;
-const inputHistories = new Map();
-const MAX_HISTORY = 20;
 const openPrBtn = document.getElementById('open-pr-btn');
 const bottomRowEl = document.getElementById('bottom-row');
 const recentRunsEl = document.getElementById('recent-runs');
@@ -246,8 +244,6 @@ openPrBtn.addEventListener('click', () => {
 
 document.addEventListener('keydown', (e) => {
   if (!activeRole) { return; }
-  const focusedElement = document.activeElement;
-  if (focusedElement && focusedElement.classList.contains('tile-input')) { return; }
   // Let copy/paste/select shortcuts pass through so text can be selected and copied
   if (e.ctrlKey && (e.key === 'c' || e.key === 'v' || e.key === 'a' || e.key === 'x')) { return; }
   if (e.metaKey && (e.key === 'c' || e.key === 'v' || e.key === 'a' || e.key === 'x')) { return; }
@@ -325,75 +321,8 @@ function ensureTile(role, displayName, agent) {
     entry.tailLocked = isAtBottom(output, entry.text);
   }, { passive: true });
 
-  const inputBar = document.createElement('div');
-  inputBar.className = 'tile-input-bar';
-
-  const prompt = document.createElement('span');
-  prompt.className = 'tile-input-prompt';
-  prompt.textContent = '❯';
-
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.className = 'tile-input';
-  input.placeholder = 'type a message…';
-  input.dataset.role = role;
-
-  let historyIndex = -1;
-  const history = [];
-  inputHistories.set(role, history);
-
-  input.addEventListener('focus', () => {
-    activeRole = role;
-    historyIndex = -1;
-  });
-
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      const text = input.value + '\n';
-      vscode.postMessage({ type: 'input', role, data: text });
-      if (input.value) {
-        history.unshift(input.value);
-        if (history.length > MAX_HISTORY) {
-          history.pop();
-        }
-      }
-      input.value = '';
-      historyIndex = -1;
-    } else if (e.ctrlKey && e.key.toLowerCase() === 'c') {
-      e.preventDefault();
-      vscode.postMessage({ type: 'input', role, data: '\x03' });
-      input.value = '';
-      historyIndex = -1;
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      historyIndex++;
-      if (historyIndex >= history.length) {
-        historyIndex = history.length - 1;
-      }
-      if (historyIndex >= 0 && historyIndex < history.length) {
-        input.value = history[historyIndex];
-      }
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      historyIndex--;
-      if (historyIndex < -1) {
-        historyIndex = -1;
-      }
-      if (historyIndex >= 0 && historyIndex < history.length) {
-        input.value = history[historyIndex];
-      } else if (historyIndex === -1) {
-        input.value = '';
-      }
-    }
-  });
-
-  inputBar.appendChild(prompt);
-  inputBar.appendChild(input);
-
   tile.appendChild(header);
   tile.appendChild(output);
-  tile.appendChild(inputBar);
   grid.appendChild(tile);
 
   tiles.set(role, entry);

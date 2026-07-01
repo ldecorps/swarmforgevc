@@ -313,49 +313,49 @@ test('panel.js applies selected class to selected tile and removes from others',
   assert(panelJs.includes("'selected'"), 'must toggle selected class');
 });
 
-// --- BL-031: visible input bar per tile ---
+// --- BL-046: native input only, no custom input bar ---
 
-test('getWebviewHtml CSS has tile-input-bar styles', () => {
+test('getWebviewHtml CSS does not have tile-input-bar styles', () => {
   const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
-  assert(html.includes('.tile-input-bar'), 'missing .tile-input-bar CSS rule');
-  assert(html.includes('flex-shrink: 0'), 'input bar must not shrink');
+  assert(!html.includes('.tile-input-bar'), 'custom input bar CSS must be removed');
 });
 
-test('getWebviewHtml CSS has tile-input styles', () => {
+test('getWebviewHtml CSS does not have tile-input styles', () => {
   const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
-  assert(html.includes('.tile-input'), 'missing .tile-input CSS rule');
-  assert(html.includes('background: transparent'), 'input should be transparent');
-  assert(html.includes('border: none'), 'input should have no border');
+  assert(!html.includes('.tile-input {'), 'custom input CSS must be removed');
 });
 
-test('getWebviewHtml CSS has tile-input-prompt styles', () => {
+test('getWebviewHtml CSS does not have tile-input-prompt styles', () => {
   const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
-  assert(html.includes('.tile-input-prompt'), 'missing .tile-input-prompt CSS');
+  assert(!html.includes('.tile-input-prompt'), 'tile-input-prompt CSS must be removed');
 });
 
-test('panel.js creates tile-input-prompt with glyph', () => {
-  assert(panelJs.includes('❯'), 'panel.js should create prompt with ❯ glyph');
+test('panel.js does not create custom input bar in ensureTile', () => {
+  assert(!panelJs.includes('tile-input-bar'), 'custom input bar code must be removed');
+  assert(!panelJs.match(/tile-input[^R]/), 'custom input element must be removed');
 });
 
-test('panel.js creates tile-input-bar in ensureTile', () => {
-  assert(panelJs.includes('tile-input-bar'), 'ensureTile must create input bar');
-  assert(panelJs.includes('tile-input'), 'ensureTile must create input element');
-});
-
-test('panel.js sends input on Enter key from tile-input', () => {
+test('panel.js document keydown handler routes input to activeRole directly', () => {
   assert(panelJs.includes("'input'"), 'must send input message');
-  assert(panelJs.includes('Enter') || panelJs.includes('keydown'), 'must handle Enter key');
+  assert(panelJs.includes('activeRole'), 'must check activeRole is set');
+  assert(panelJs.includes('postMessage'), 'must forward to host');
 });
 
-test('panel.js sends Ctrl-C from tile-input', () => {
-  assert(panelJs.includes("'\\x03'") || panelJs.includes("'\\u0003'"), 'must send Ctrl-C character');
+test('panel.js document keydown handler handles Enter key', () => {
+  assert(panelJs.includes("case 'Enter'") || panelJs.includes("key === 'Enter'") || panelJs.includes('specialKey'),
+    'must handle Enter key to forward to native input');
 });
 
-test('panel.js manages per-tile input history with ArrowUp/Down', () => {
-  assert(panelJs.includes('history') || panelJs.includes('History'), 'must track input history');
-  assert(panelJs.includes('ArrowUp') || panelJs.includes('ArrowDown'), 'must handle arrow keys');
+test('panel.js document keydown handler handles control keys', () => {
+  assert(panelJs.includes('ctrlKey'), 'must check for Ctrl modifer');
+  assert(panelJs.includes('specialKey') || panelJs.includes("key.length === 1"), 'must forward control sequences');
 });
 
-test('panel.js document keydown handler skips when tile-input has focus', () => {
-  assert(panelJs.includes('tile-input') && panelJs.includes('focus'), 'must check if input is focused');
+test('panel.js document keydown handler skips when no activeRole', () => {
+  assert(panelJs.includes('if (!activeRole)'), 'must check if any tile is focused');
+});
+
+test('panel.js no longer tracks per-tile input history', () => {
+  assert(!panelJs.includes('inputHistories'), 'inputHistories Map must be removed');
+  assert(!panelJs.includes('MAX_HISTORY'), 'MAX_HISTORY constant must be removed');
 });
