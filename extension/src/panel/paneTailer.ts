@@ -96,6 +96,7 @@ export class PaneTailer {
   private socketPath = '';
   private historyLines: number;
   private paneRows: number;
+  private rolePaneRows = new Map<string, number>();
 
   constructor(
     private readonly targetPath: string,
@@ -122,7 +123,8 @@ export class PaneTailer {
     setHistoryLimit(this.socketPath, this.historyLines);
     setWindowSizeManual(this.socketPath);
     for (const role of this.roles) {
-      resizeWindow(this.socketPath, role.session, TILE_PANE_COLS, this.paneRows);
+      const rows = this.rolePaneRows.get(role.role) ?? this.paneRows;
+      resizeWindow(this.socketPath, role.session, TILE_PANE_COLS, rows);
     }
   }
 
@@ -161,13 +163,24 @@ export class PaneTailer {
     return this.roles;
   }
 
-  updatePaneRows(newPaneRows: number): void {
+  // Each tile measures and reports its OWN visible height (a selected tile is
+  // taller than the rest, per BL-040/043/051), so the fit must be per-role:
+  // resize only the pane that changed rather than re-applying one shared row
+  // count to every role's pane.
+  updatePaneRows(role: string, newPaneRows: number): void {
     const normalized = normalizePaneRows(newPaneRows);
-    if (normalized === this.paneRows) {
+    if (this.rolePaneRows.get(role) === normalized) {
       return;
     }
-    this.paneRows = normalized;
-    this.applyPaneSettings();
+    this.rolePaneRows.set(role, normalized);
+    if (!this.socketPath) {
+      return;
+    }
+    const target = this.roles.find((r) => r.role === role);
+    if (!target) {
+      return;
+    }
+    resizeWindow(this.socketPath, target.session, TILE_PANE_COLS, normalized);
   }
 
   private poll(): void {

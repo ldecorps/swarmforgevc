@@ -70,6 +70,7 @@ class PaneTailer {
     socketPath = '';
     historyLines;
     paneRows;
+    rolePaneRows = new Map();
     constructor(targetPath, onOutput, onStall, onDead, onInputLogError, historyLines, onRoles, paneRows, onNeedsHuman) {
         this.targetPath = targetPath;
         this.onOutput = onOutput;
@@ -91,7 +92,8 @@ class PaneTailer {
         (0, tmuxClient_1.setHistoryLimit)(this.socketPath, this.historyLines);
         (0, tmuxClient_1.setWindowSizeManual)(this.socketPath);
         for (const role of this.roles) {
-            (0, tmuxClient_1.resizeWindow)(this.socketPath, role.session, TILE_PANE_COLS, this.paneRows);
+            const rows = this.rolePaneRows.get(role.role) ?? this.paneRows;
+            (0, tmuxClient_1.resizeWindow)(this.socketPath, role.session, TILE_PANE_COLS, rows);
         }
     }
     start(pollMs = DEFAULT_POLL_INTERVAL_MS) {
@@ -124,13 +126,24 @@ class PaneTailer {
     getRoles() {
         return this.roles;
     }
-    updatePaneRows(newPaneRows) {
+    // Each tile measures and reports its OWN visible height (a selected tile is
+    // taller than the rest, per BL-040/043/051), so the fit must be per-role:
+    // resize only the pane that changed rather than re-applying one shared row
+    // count to every role's pane.
+    updatePaneRows(role, newPaneRows) {
         const normalized = normalizePaneRows(newPaneRows);
-        if (normalized === this.paneRows) {
+        if (this.rolePaneRows.get(role) === normalized) {
             return;
         }
-        this.paneRows = normalized;
-        this.applyPaneSettings();
+        this.rolePaneRows.set(role, normalized);
+        if (!this.socketPath) {
+            return;
+        }
+        const target = this.roles.find((r) => r.role === role);
+        if (!target) {
+            return;
+        }
+        (0, tmuxClient_1.resizeWindow)(this.socketPath, target.session, TILE_PANE_COLS, normalized);
     }
     poll() {
         const latestSocket = (0, tmuxClient_1.readTmuxSocket)(this.targetPath) ?? '';

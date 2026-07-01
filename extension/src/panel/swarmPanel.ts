@@ -68,7 +68,7 @@ export class SwarmPanel {
             }
             break;
           case 'fitTilePaneToHeight':
-            this.tailer?.updatePaneRows(message.paneRows);
+            this.tailer?.updatePaneRows(message.role, message.paneRows);
             break;
         }
       },

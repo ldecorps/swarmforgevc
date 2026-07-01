@@ -42,7 +42,7 @@ test('normalizePaneRows defaults to DEFAULT_TILE_PANE_ROWS (200) for null/undefi
   assert.equal(normalizePaneRows(undefined), 200);
 });
 
-test('PaneTailer.updatePaneRows applies new pane rows via applyPaneSettings', () => {
+test('PaneTailer.updatePaneRows resizes only the reporting role\'s pane', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
   const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
@@ -57,9 +57,10 @@ test('PaneTailer.updatePaneRows applies new pane rows via applyPaneSettings', ()
     tailer.refreshState();
     resizeWindowCalls = [];
 
-    tailer.updatePaneRows(42);
+    tailer.updatePaneRows('coder', 42);
 
     assert.equal(resizeWindowCalls.length, 1);
+    assert.equal(resizeWindowCalls[0].session, 'swarmforge-coder');
     assert.equal(resizeWindowCalls[0].rows, 42);
 
     require('../out/swarm/tmuxClient').resizeWindow = origResizeWindow;
@@ -83,7 +84,7 @@ test('PaneTailer.updatePaneRows normalizes the value via normalizePaneRows', () 
     tailer.refreshState();
     resizeWindowCalls = [];
 
-    tailer.updatePaneRows(3);
+    tailer.updatePaneRows('coder', 3);
 
     assert.equal(resizeWindowCalls.length, 1);
     assert.equal(resizeWindowCalls[0].rows, 6);
@@ -94,7 +95,7 @@ test('PaneTailer.updatePaneRows normalizes the value via normalizePaneRows', () 
   }
 });
 
-test('PaneTailer.updatePaneRows skips applyPaneSettings if value unchanged', () => {
+test('PaneTailer.updatePaneRows skips resizing if value unchanged for that role', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
   const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
@@ -105,13 +106,115 @@ test('PaneTailer.updatePaneRows skips applyPaneSettings if value unchanged', () 
       resizeWindowCalls.push({ socket, session, cols, rows });
     };
 
-    const tailer = new PaneTailer(targetPath, () => {}, undefined, undefined, undefined, undefined, undefined, 50);
+    const tailer = new PaneTailer(targetPath, () => {});
     tailer.refreshState();
     resizeWindowCalls = [];
 
-    tailer.updatePaneRows(50);
+    tailer.updatePaneRows('coder', 50);
+    assert.equal(resizeWindowCalls.length, 1);
+    resizeWindowCalls = [];
 
-    assert.equal(resizeWindowCalls.length, 0, 'should skip if paneRows unchanged');
+    tailer.updatePaneRows('coder', 50);
+    assert.equal(resizeWindowCalls.length, 0, 'should skip if that role\'s paneRows unchanged');
+
+    require('../out/swarm/tmuxClient').resizeWindow = origResizeWindow;
+  } finally {
+    fake.restore();
+  }
+});
+
+test('PaneTailer.updatePaneRows is per-role: sizing one role does not resize others', () => {
+  const targetPath = mkTmp();
+  writeState(
+    targetPath,
+    '1\tcoder\tswarmforge-coder\tCoder\tclaude\n2\tcleaner\tswarmforge-cleaner\tCleaner\tclaude\n'
+  );
+  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  try {
+    let resizeWindowCalls = [];
+    const origResizeWindow = require('../out/swarm/tmuxClient').resizeWindow;
+    require('../out/swarm/tmuxClient').resizeWindow = (socket, session, cols, rows) => {
+      resizeWindowCalls.push({ socket, session, cols, rows });
+    };
+
+    const tailer = new PaneTailer(targetPath, () => {});
+    tailer.refreshState();
+    resizeWindowCalls = [];
+
+    // The selected tile (coder) measures much taller than the unselected one
+    // (cleaner) -- each must be resized to its OWN measured height, not a
+    // shared value overwriting both panes.
+    tailer.updatePaneRows('coder', 80);
+    tailer.updatePaneRows('cleaner', 20);
+
+    assert.equal(resizeWindowCalls.length, 2);
+    assert.deepEqual(
+      resizeWindowCalls.map((c) => ({ session: c.session, rows: c.rows })),
+      [
+        { session: 'swarmforge-coder', rows: 80 },
+        { session: 'swarmforge-cleaner', rows: 20 },
+      ]
+    );
+
+    require('../out/swarm/tmuxClient').resizeWindow = origResizeWindow;
+  } finally {
+    fake.restore();
+  }
+});
+
+test('PaneTailer.applyPaneSettings preserves each role\'s own reported pane rows on refresh', () => {
+  const targetPath = mkTmp();
+  writeState(
+    targetPath,
+    '1\tcoder\tswarmforge-coder\tCoder\tclaude\n2\tcleaner\tswarmforge-cleaner\tCleaner\tclaude\n'
+  );
+  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  try {
+    let resizeWindowCalls = [];
+    const origResizeWindow = require('../out/swarm/tmuxClient').resizeWindow;
+    require('../out/swarm/tmuxClient').resizeWindow = (socket, session, cols, rows) => {
+      resizeWindowCalls.push({ socket, session, cols, rows });
+    };
+
+    const tailer = new PaneTailer(targetPath, () => {});
+    tailer.refreshState();
+    tailer.updatePaneRows('coder', 80);
+    tailer.updatePaneRows('cleaner', 20);
+    resizeWindowCalls = [];
+
+    // Simulate a role-set refresh (e.g. respawn) re-applying pane settings.
+    tailer.refreshState();
+
+    const rowsBySession = Object.fromEntries(
+      resizeWindowCalls.map((c) => [c.session, c.rows])
+    );
+    assert.equal(rowsBySession['swarmforge-coder'], 80);
+    assert.equal(rowsBySession['swarmforge-cleaner'], 20);
+
+    require('../out/swarm/tmuxClient').resizeWindow = origResizeWindow;
+  } finally {
+    fake.restore();
+  }
+});
+
+test('PaneTailer.updatePaneRows is a no-op when the role is unknown', () => {
+  const targetPath = mkTmp();
+  writeState(targetPath);
+  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  try {
+    let resizeWindowCalls = [];
+    const origResizeWindow = require('../out/swarm/tmuxClient').resizeWindow;
+    require('../out/swarm/tmuxClient').resizeWindow = (socket, session, cols, rows) => {
+      resizeWindowCalls.push({ socket, session, cols, rows });
+    };
+
+    const tailer = new PaneTailer(targetPath, () => {});
+    tailer.refreshState();
+    resizeWindowCalls = [];
+
+    tailer.updatePaneRows('nonexistent-role', 42);
+
+    assert.equal(resizeWindowCalls.length, 0);
 
     require('../out/swarm/tmuxClient').resizeWindow = origResizeWindow;
   } finally {
