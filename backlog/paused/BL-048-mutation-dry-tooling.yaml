@@ -1,0 +1,74 @@
+id: BL-048
+title: hardener tooling — wire mutation testing (Stryker) + DRY duplication (jscpd)
+milestone: M4
+status: todo
+priority: 20
+assigned_to: coder
+
+description: |
+  Requested by the architect: the hardener role is defined to run a mutation tool
+  and a DRY tool (hardener.prompt "Hardening Order": run the mutation tool → kill
+  survivors → run the CRAP tool → run the DRY tool), but the project has no such
+  tooling, so the hardener can only do best-effort coverage passes and "note the
+  missing tooling". Wire the two turnkey tools now; CRAP (no standard JS CLI) is a
+  separate follow-up (BL-049).
+
+  What: add two developer/hardener tools, each behind its own npm script, without
+  folding them into the normal `npm test`:
+  1. Mutation testing via Stryker (@stryker-mutator/core). The suite currently runs
+     as `npm test` = `npm run compile && node --test test/*.test.js` (tests execute
+     against the compiled out/ JS). Configure Stryker to mutate the TypeScript
+     source under extension/src and run the project's test command per mutant.
+     Exact wiring is open to the coder, but it must account for the TS→JS compile
+     step (mutating src/*.ts requires a recompile before node --test, or an
+     equivalent scheme that mutates the built output) and should support running on
+     the changed/new files (differential mutation) with a worker/concurrency limit.
+  2. DRY duplication via jscpd, run over extension/src, reporting duplicated blocks
+     (count and percentage) so the hardener can reduce duplication.
+
+  Constraints (engineering.prompt): TypeScript, Node 20, macOS/Linux only; add
+  these as devDependencies only. Keep mutation/hardening runs SEPARATE from the
+  unit and acceptance suites (hardener.prompt), i.e. their own scripts, not part of
+  `npm test`. Preserve any mutation manifest the tool produces (do not gitignore it
+  away if the hardener relies on it). Document the new commands in
+  engineering.prompt (specifier-owned) so every role knows how to invoke them.
+
+  Scope: extension/package.json (devDependencies + scripts), tool config files
+  (e.g. a Stryker config + a jscpd config), and engineering.prompt. No product
+  behavior change; existing suites must stay green.
+
+acceptance: |
+  Feature: mutation + DRY tooling for the hardener
+
+  Background:
+    Given the project's unit/acceptance suites run via `npm test`
+      (compile, then node --test over the compiled output)
+
+  # BL-048 mutation-dry-01
+  Scenario: a mutation command runs the suite against generated mutants
+    When the hardener runs the project's mutation script
+    Then the source is mutated and the test suite runs against each mutant
+    And the run reports how many mutants were killed and how many survived
+
+  # BL-048 mutation-dry-02
+  Scenario: an unasserted behavior surfaces as a surviving mutant
+    Given a piece of source whose behavior no test asserts
+    When the mutation script runs over it
+    Then that mutation is reported as a surviving mutant for the hardener to target
+
+  # BL-048 mutation-dry-03
+  Scenario: a DRY command reports duplication
+    When the hardener runs the project's DRY script
+    Then jscpd scans the source and reports duplicated blocks with a count/percentage
+
+  # BL-048 mutation-dry-04
+  Scenario: the normal suites stay green and separate
+    When a developer runs `npm test`
+    Then the unit/acceptance suites still pass
+    And the mutation and DRY tools are invoked only by their own scripts,
+      not as part of `npm test`
+
+  # Non-behavioral gate:
+  #  - Stryker (mutation) and jscpd (DRY) added as devDependencies with committed
+  #    config and dedicated npm scripts; engineering.prompt documents both commands.
+  #    Existing tests stay green. CRAP tooling is out of scope here (see BL-049).
