@@ -50,7 +50,11 @@ export function buildLaunchEnv(runName?: string): NodeJS.ProcessEnv {
   return env;
 }
 
-export async function launchSwarm(targetPath: string, runName?: string): Promise<LaunchResult> {
+export async function launchSwarm(
+  targetPath: string,
+  runName?: string,
+  readyTimeoutMs = 120_000
+): Promise<LaunchResult> {
   const swarmScript = path.join(targetPath, 'swarm');
   if (!fs.existsSync(swarmScript)) {
     return {
@@ -124,7 +128,7 @@ export async function launchSwarm(targetPath: string, runName?: string): Promise
       } else {
         finish(false, 'Timed out waiting for swarm to become ready.');
       }
-    }, 120_000);
+    }, readyTimeoutMs);
 
     const poll = setInterval(() => {
       if (isSwarmReady(targetPath)) {
