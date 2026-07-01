@@ -1,0 +1,38 @@
+id: BL-046
+title: remove the custom per-tile input box; type into the native CLI input box
+milestone: M4
+status: todo
+priority: 06
+assigned_to: specifier
+
+description: |
+  Raw human intake — specifier to drain and spec.
+
+  Each tile currently renders its own custom HTML input bar (`tile-input-bar`: a
+  "❯" prompt + a "type a message…" text `<input>` with its own command history)
+  at the bottom, separate from the agent's native Claude CLI input box that is
+  already visible in the captured tmux pane. This is a confusing double input.
+
+  Remove the custom input bar entirely and rely on the native CLI input box.
+  Keystrokes typed while a tile is focused already route straight to the tmux
+  pane via the document-level keydown handler, and the native input box renders
+  in the pane capture — so the custom bar is redundant.
+
+  Notes for the specifier:
+  - Reconcile with BL-044: its spec already mentions removing the extra per-tile
+    input bar. Fold this in or keep it as the focused item, but don't ship two
+    conflicting changes.
+  - Decide what happens to the custom bar's extras (command history via up/down):
+    the native CLI provides its own history, so dropping the custom one is
+    expected — confirm with the human if unsure.
+  - Ensure the tile still routes typing to the focused agent after the bar is
+    gone (keep the document-level keydown / activeRole path working).
+
+acceptance: |
+  (Specifier to express as Gherkin. Sketch of the observable behavior:)
+  - No custom `tile-input-bar` / `tile-input` element is rendered in tiles.
+  - Typing while a tile is focused reaches that agent and shows up in the native
+    CLI input box visible in the pane.
+  - No regression in keystroke/special-key routing or tile focus.
+  - Webview tests updated to assert the custom input bar is gone and typing still
+    routes to the active role.
