@@ -1,0 +1,106 @@
+id: BL-058
+title: Harden the extension dev-host bounce script (verify, retry, report — no silent failure)
+milestone: M4
+status: todo
+priority: 02
+assigned_to: coder
+
+description: |
+  THIRD TIME REQUESTED by the human — the two previous asks were dropped. Do not
+  lose it again. User request, verbatim: "make the script that bounces the
+  extension more robust (third time in a row that I am telling you this)."
+
+  Today `extension/scripts/start-extension-dev.sh` compiles, runs
+  `open -na "Visual Studio Code" <workspace>`, then fires a blind AppleScript
+  keystroke (`key code 96` after `delay 2`) and exits 0 unconditionally. If VS
+  Code is slow, or focus is stolen, the keystroke lands nowhere and the bounce
+  silently fails; repeated runs also pile up dev-host instances because nothing
+  ever stops the old one.
+
+  Wanted behavior (confirmed with the human 2026-07-01):
+  1. TRUE BOUNCE — if an Extension Development Host for this workspace is
+     already running, the script terminates it before launching, so a successful
+     run always ends with exactly one dev host running the freshly compiled
+     build.
+  2. VERIFIED SUCCESS via activation sentinel — the extension, when running in
+     Development extension mode ONLY, writes a small activation marker file
+     (activation timestamp + pid) to a well-known gitignored path inside the
+     extension repo. The script records the pre-launch marker state, triggers
+     the launch, and polls for a FRESH marker with a bounded timeout, retrying
+     the launch trigger a limited number of times. It reports success (exit 0)
+     only after observing a fresh marker — never on a blind delay.
+  3. FAILURE IS LOUD — any failed stage (compile failure, VS Code not found,
+     no fresh activation marker within the overall timeout after retries)
+     exits non-zero with a message naming the stage that failed. The script
+     must never exit 0 without a verified fresh activation.
+
+  Constraints:
+  - macOS is the target platform (per constitution; the script may stay
+    AppleScript-based or not — mechanism is the coder's choice, the contract is
+    the verified outcome).
+  - The activation marker is written only in Development extension mode, so
+    normal (production) activation never drops marker files into users' repos.
+    The marker path is a single well-known location agreed between the script
+    and the extension, and is gitignored.
+  - Scope: `extension/scripts/start-extension-dev.sh`, the small dev-mode
+    activation-marker write in the extension, and tests for the testable logic.
+    OUT of scope: `remote_bounce.sh` / bounceWatcher sentinel path (separate
+    ticket if needed).
+
+acceptance: |
+  Feature: robust extension dev-host bounce
+
+  Background:
+    Given a developer on macOS with VS Code installed
+    And the extension repo with the bounce script
+
+  # BL-058 robust-bounce-01
+  Scenario: clean bounce with no prior dev host
+    Given no Extension Development Host is running
+    When the developer runs the bounce script
+    Then the extension is compiled
+    And a dev host is launched
+    And the script waits until a fresh activation marker appears
+    And the script exits 0 reporting a verified successful bounce
+
+  # BL-058 robust-bounce-02
+  Scenario: bounce replaces an already-running dev host
+    Given an Extension Development Host is already running
+    When the developer runs the bounce script
+    Then the old dev host is terminated before the new launch
+    And after success exactly one dev host is running the fresh build
+    And the script exits 0 only after a fresh activation marker appears
+
+  # BL-058 robust-bounce-03
+  Scenario: launch trigger that lands nowhere is retried, then reported
+    Given the launch trigger fails to start a dev host (e.g. focus was stolen)
+    When the script's bounded wait for a fresh activation marker elapses
+    Then the script retries the launch trigger a limited number of times
+    And if no fresh marker appears within the overall timeout it exits non-zero
+    And the failure message names the stage that failed
+
+  # BL-058 robust-bounce-04
+  Scenario Outline: early-stage failures exit non-zero without claiming success
+    Given the <stage> step fails
+    When the developer runs the bounce script
+    Then the script exits non-zero
+    And the message names the <stage> stage
+    And no success line is printed
+
+    Examples:
+      | stage    |
+      | compile  |
+      | vscode-not-found |
+
+  # BL-058 robust-bounce-05
+  Scenario: activation marker is written only in development mode
+    Given the extension activates in Development extension mode
+    Then it writes an activation marker (timestamp and pid) to the well-known path
+    Given the extension activates in normal (production) mode
+    Then no activation marker file is written
+
+  # Non-behavioral gate:
+  #  - The marker path is gitignored; no marker or tmp artifact is committed.
+  #  - Testable logic (marker freshness check, dev-host detection/termination
+  #    decision, retry/timeout policy) is extracted into unit-testable modules;
+  #    existing tests stay green.
