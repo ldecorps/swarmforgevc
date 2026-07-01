@@ -120,14 +120,14 @@ test('getWebviewHtml CSS has layout-first-row styles', () => {
   const { getWebviewHtml } = require('../out/panel/webviewHtml');
   const html = getWebviewHtml('test.js', 'test');
   assert(html.includes('#grid.layout-first-row'));
-  assert(html.includes('grid-template-rows: auto 1fr'));
+  assert(html.includes('align-content: start'));
 });
 
-test('getWebviewHtml CSS has first-row grid positioning', () => {
+test('getWebviewHtml CSS has auto-fit flexible grid for layout-first-row', () => {
   const { getWebviewHtml } = require('../out/panel/webviewHtml');
   const html = getWebviewHtml('test.js', 'test');
-  assert(html.includes('#grid.layout-first-row .tile.first-row'));
-  assert(html.includes('grid-row: 1'));
+  assert(html.includes('#grid.layout-first-row'));
+  assert(html.includes('grid-template-columns: repeat(auto-fit'));
 });
 
 test('getWebviewHtml CSS has tile-output min-height for output retention', () => {
@@ -138,40 +138,41 @@ test('getWebviewHtml CSS has tile-output min-height for output retention', () =>
   assert(html.includes('flex: 1'));
 });
 
-test('getWebviewHtml CSS has first-row selected tile asymmetric spanning', () => {
+test('getWebviewHtml CSS uses data-role selectors for coordinator and specifier sizing', () => {
   const { getWebviewHtml } = require('../out/panel/webviewHtml');
   const html = getWebviewHtml('test.js', 'test');
-  assert(html.includes('#grid.layout-first-row .tile.first-row.selected'));
+  assert(html.includes('[data-role="coordinator"]'));
+  assert(html.includes('[data-role="specifier"]'));
   assert(html.includes('grid-column: span 2'));
 });
 
-test('getWebviewHtml CSS has 3-column grid for layout-first-row', () => {
+test('getWebviewHtml CSS has flexible auto-fit grid for layout-first-row', () => {
   const { getWebviewHtml } = require('../out/panel/webviewHtml');
   const html = getWebviewHtml('test.js', 'test');
   assert(html.includes('#grid.layout-first-row'));
-  assert(html.includes('grid-template-columns: repeat(3, minmax(0, 1fr))'));
+  assert(html.includes('repeat(auto-fit, minmax('));
 });
 
-test('getWebviewHtml CSS positions first-row tiles using nth-of-type', () => {
+test('getWebviewHtml CSS uses role-based positioning instead of nth-of-type', () => {
   const { getWebviewHtml } = require('../out/panel/webviewHtml');
   const html = getWebviewHtml('test.js', 'test');
-  assert(html.includes('#grid.layout-first-row .tile.first-row:nth-of-type(1)'));
-  assert(html.includes('#grid.layout-first-row .tile.first-row:nth-of-type(2)'));
-  assert(html.includes('grid-column: 1') || html.includes('grid-column: 2'));
+  assert(html.includes('[data-role="coordinator"]'));
+  assert(!html.includes('#grid.layout-first-row .tile.first-row:nth-of-type(1)'));
 });
 
-test('getWebviewHtml CSS allows non-first-row tiles to flow naturally', () => {
+test('getWebviewHtml CSS allows tiles to fit without scroll', () => {
   const { getWebviewHtml } = require('../out/panel/webviewHtml');
   const html = getWebviewHtml('test.js', 'test');
-  assert(html.includes('#grid.layout-first-row .tile:not(.first-row)'));
-  assert(html.includes('grid-row: 2'));
+  assert(html.includes('#grid.layout-first-row'));
+  assert(html.includes('overflow: hidden'));
 });
 
-test('getWebviewHtml CSS allows non-first-row selected tiles to grow 2x2', () => {
+test('getWebviewHtml CSS allows selected tiles to double in size', () => {
   const { getWebviewHtml } = require('../out/panel/webviewHtml');
   const html = getWebviewHtml('test.js', 'test');
-  assert(html.includes('#grid.layout-first-row .tile:not(.first-row).selected'));
-  assert(html.includes('grid-row: 2 / span 2'));
+  assert(html.includes('.tile.selected'));
+  assert(html.includes('grid-column: span 2'));
+  assert(html.includes('grid-row: span 2'));
 });
 
 test('updateGridLayout applies layout-first-row for 5 agents with coordinator and specifier', () => {
@@ -211,4 +212,30 @@ test('updateGridLayout applies layout-first-row for 8 agents with coordinator an
 
   assert(mockGrid.classList.classes.includes('layout-first-row'));
   assert(!mockGrid.classList.classes.includes('layout-2x2'));
+});
+
+test('getWebviewHtml CSS uses role-based positioning instead of nth-of-type for layout-first-row', () => {
+  const { getWebviewHtml } = require('../out/panel/webviewHtml');
+  const html = getWebviewHtml('test.js', 'test');
+  assert(html.includes('[data-role="coordinator"]'));
+  assert(html.includes('[data-role="specifier"]'));
+});
+
+test('getWebviewHtml CSS fits layout-first-row to panel without scroll', () => {
+  const { getWebviewHtml } = require('../out/panel/webviewHtml');
+  const html = getWebviewHtml('test.js', 'test');
+  assert(html.includes('#grid.layout-first-row'));
+  assert(!html.includes('overflow: auto') || html.includes('overflow: hidden'));
+});
+
+test('getWebviewHtml CSS weights coordinator and specifier larger in layout-first-row', () => {
+  const { getWebviewHtml } = require('../out/panel/webviewHtml');
+  const html = getWebviewHtml('test.js', 'test');
+  assert(html.includes('[data-role="coordinator"]') || html.includes('.tile[data-role="coordinator"]'));
+});
+
+test('isFirstRowRole returns true for coordinator and specifier', () => {
+  assert(isFirstRowRole('coordinator') === true);
+  assert(isFirstRowRole('specifier') === true);
+  assert(isFirstRowRole('coder') === false);
 });
