@@ -1,0 +1,75 @@
+id: BL-062
+title: BUG — panel shows zero done items since done/ was grouped by milestone; reader must recurse
+milestone: M1
+status: todo
+priority: 03
+assigned_to: coder
+
+description: |
+  Done tickets are now grouped into per-milestone subfolders
+  `backlog/done/M1/..M4/` (b843ac2, canonical going forward), but
+  `extension/src/panel/backlogReader.ts` scans `backlog/done/` FLAT
+  (readdirSync + .yaml filter, ~line 76). The panel therefore shows ZERO done
+  items, and `backlogLoop.ts` builds `doneIds` from that same list for
+  `dependsOn` gating — no pending ticket uses dependsOn today, so nothing is
+  blocked yet, but the seam is live and silently wrong.
+
+  Wanted:
+  - backlogReader picks up done items one level deep in
+    `backlog/done/<subfolder>/*.yaml` AND still accepts flat
+    `backlog/done/*.yaml` files (transition tolerance).
+  - Done items keep working everywhere they're consumed: the panel's done
+    list and `doneIds` dependency gating.
+  - Nicety (in scope, small): surface the milestone — the subfolder name —
+    on done rows in the panel.
+  - Audit other consumers of the done/ path (messageBus, respawnPickup,
+    ChaseMonitor reference backlog paths) and give any flat-scanning
+    consumer the same one-level treatment.
+
+  Constraints:
+  - Reader/presentation change only; do not move or rename ticket files.
+  - Non-yaml entries and deeper nesting are ignored as before (one level of
+    subfolders is the contract).
+
+acceptance: |
+  Feature: done items readable from milestone subfolders
+
+  Background:
+    Given backlog/done/ contains milestone subfolders with ticket yamls
+
+  # BL-062 done-recurse-01
+  Scenario: done items in milestone subfolders appear in the panel
+    Given a ticket yaml at backlog/done/M2/BL-0xx.yaml
+    When the backlog is read
+    Then that ticket is included among done items
+    And the panel's done list shows it
+
+  # BL-062 done-recurse-02
+  Scenario: flat done files still work during transition
+    Given a ticket yaml directly at backlog/done/BL-0yy.yaml
+    When the backlog is read
+    Then that ticket is also included among done items
+
+  # BL-062 done-recurse-03
+  Scenario: dependency gating sees subfoldered done ids
+    Given a pending ticket that dependsOn a ticket whose yaml lives in
+      backlog/done/M3/
+    When dependency gating evaluates it
+    Then the dependency counts as satisfied
+
+  # BL-062 done-recurse-04
+  Scenario: done rows show their milestone
+    Given a done ticket read from backlog/done/M4/
+    When the panel renders its row
+    Then the row surfaces "M4" as its milestone
+
+  # BL-062 done-recurse-05
+  Scenario: junk entries are ignored
+    Given a non-yaml file and a two-level-deep yaml under backlog/done/
+    When the backlog is read
+    Then neither is treated as a done ticket
+    And reading does not error
+
+  # Non-behavioral gate:
+  #  - Any other flat consumer of done/ found in the audit gets the same
+  #    one-level scan + a test; full suite green.
