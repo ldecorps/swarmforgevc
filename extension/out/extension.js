@@ -62,6 +62,13 @@ const STOP_SWARM_BUTTON = 'Stop Swarm';
 const LAST_RUN_NAME_KEY = 'swarmforge.lastRunName';
 const RUN_MODE_KEY = 'swarmforge.runMode';
 const PENDING_AUTO_LAUNCH_KEY = 'swarmforge.pendingAutoLaunch';
+const WATCHDOG_STALE_TIMEOUT_SECONDS = 30;
+const WATCHDOG_IN_FLIGHT_TIMEOUT_SECONDS = 60;
+const WATCHDOG_DEAD_TIMEOUT_SECONDS = 120;
+const CHASER_INTERVAL_SECONDS = 5;
+const CHASER_TIMEOUT_SECONDS = 30;
+const CHASER_MAX_CHASES = 3;
+const CHASER_STUCK_IN_PROCESS_TIMEOUT_SECONDS = 60;
 let currentBounceWatcher = null;
 let currentChaserMonitor = null;
 function generateDefaultRunName() {
@@ -136,17 +143,17 @@ function startOrRestartChaserMonitor(targetPath, context) {
     const rolesList = roles.map((r) => r.role);
     // Default watchdog and chaser config
     const watchdogConfig = {
-        staleTimeoutSeconds: 30,
-        inFlightTimeoutSeconds: 60,
-        deadTimeoutSeconds: 120,
+        staleTimeoutSeconds: WATCHDOG_STALE_TIMEOUT_SECONDS,
+        inFlightTimeoutSeconds: WATCHDOG_IN_FLIGHT_TIMEOUT_SECONDS,
+        deadTimeoutSeconds: WATCHDOG_DEAD_TIMEOUT_SECONDS,
     };
     const chaserConfig = {
         targetPath,
         rolesList,
-        chaseIntervalSeconds: 5,
-        chaseTimeoutSeconds: 30,
-        maxChases: 3,
-        stuckInProcessTimeoutSeconds: 60,
+        chaseIntervalSeconds: CHASER_INTERVAL_SECONDS,
+        chaseTimeoutSeconds: CHASER_TIMEOUT_SECONDS,
+        maxChases: CHASER_MAX_CHASES,
+        stuckInProcessTimeoutSeconds: CHASER_STUCK_IN_PROCESS_TIMEOUT_SECONDS,
     };
     // Implement adapters for the chaser
     const callbacks = {
