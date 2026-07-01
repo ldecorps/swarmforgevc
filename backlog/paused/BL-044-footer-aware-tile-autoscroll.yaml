@@ -24,6 +24,21 @@ description: |
   "esc to interrupt" bar. The fix is to correct WHERE "the bottom" is: anchor the
   scroll so the newest live content line sits just above the still-visible footer.
 
+  Second change (confirmed with the human): remove the extension's OWN extra
+  per-tile input bar. Now that the native TUI input box ("> type a message…")
+  stays visible and is usable, our added input bar (the media/panel.js
+  `tile-input-bar` / `tile-input` line editor with its own history, added in
+  BL-031) needlessly supersedes it. Remove that added input bar and let the
+  developer type directly into the native TUI: click/focus the tile to make it
+  active, then keystrokes route straight to the pane. The existing direct
+  keystroke path (panel.js document-level keydown → { type: 'input' } →
+  PaneTailer.forwardInput/sendKeys, including Enter, Backspace, Ctrl-C, arrows)
+  is retained and becomes the sole input path. Line editing and command history
+  are then provided by the native TUI itself, not by our bar. This supersedes the
+  BL-031 input-bar approach; update/remove its tests accordingly. Only remove our
+  bar if direct-to-native typing is confirmed usable; if some capability is lost,
+  stop and flag it rather than silently degrading input.
+
   Do NOT switch agents to a flat-output CLI mode to sidestep this. The Claude CLI
   `--ax-screen-reader` flag linearizes output but strips the decorative borders
   and animations the human wants to keep; `-p/--print` is one-shot and cannot host
@@ -43,9 +58,10 @@ description: |
 
   Scope: extension only — PaneTailer capture handling (paneTailer.ts) and/or the
   webview autoscroll/tail-lock logic (media/panel.js updateTileOutput + the
-  scroll/isAtBottom handlers), plus tests. Preserve manual scroll-up (tail-lock
-  release) and re-engage-at-bottom behavior. Keep input routing and the swarm
-  message protocol unchanged. Reference the configured enlarged pane size from the
+  scroll/isAtBottom handlers), removal of the panel.js `tile-input-bar`, plus
+  tests. Preserve manual scroll-up (tail-lock release) and re-engage-at-bottom
+  behavior. Keep the direct keystroke-forwarding path and the swarm message
+  protocol unchanged. Reference the configured enlarged pane size from the
   PaneTailer constants (TILE_PANE_COLS × the applied pane rows), not a hardcoded
   literal, so the acceptance tracks the real configuration.
 
@@ -109,7 +125,17 @@ acceptance: |
       | documenter  |
       | QA          |
 
+  # BL-044 footer-aware-autoscroll-06
+  Scenario: the extension's extra input bar is gone; typing goes to the native TUI
+    Given a tile for an agent is rendered
+    Then the extension's own per-tile input bar is not present in the tile
+    When the developer focuses the tile and types a message
+    Then the keystrokes are delivered to the agent's native TUI input box
+    And pressing Enter submits that message to the agent
+    And Ctrl-C and editing keys still reach the agent's native input
+
   # Non-behavioral gate:
   #  - New/updated tests cover the footer-aware anchor logic (autoscroll targets
   #    the live/cursor region, not the raw last row) and the tail-lock release /
-  #    re-engage transitions. Existing tests stay green.
+  #    re-engage transitions. Tests for the removed input bar are updated/removed.
+  #    Existing tests stay green.
