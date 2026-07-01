@@ -258,6 +258,7 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
     }
     .tile.selected {
       grid-column: span 2;
+      grid-row: span 2;
     }
     .restart-btn {
       display: none;
