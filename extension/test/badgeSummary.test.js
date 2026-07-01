@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { buildBadgeMap, truncateSummary } = require('../out/panel/badgeSummary');
+const { readBacklog } = require('../out/panel/backlogReader');
 
 function mkTmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-badge-'));
@@ -169,4 +170,42 @@ test('buildBadgeMap ignores targetPath for non-active items', () => {
   const items = [{ id: 'BL-001', title: 'todo item', status: 'todo', assignedTo: 'coder' }];
   const result = buildBadgeMap(items, target);
   assert.equal(Object.keys(result).length, 0);
+});
+
+// --- BL-053: the active FOLDER is authoritative, yaml status may lag ---
+
+test('folder-active item whose yaml still says todo produces a badge (BL-053)', () => {
+  const target = mkTmp();
+  writeRolesTsv(target, []);
+  const activeDir = path.join(target, 'backlog', 'active');
+  mkdirp(activeDir);
+  fs.writeFileSync(
+    path.join(activeDir, 'BL-053.yaml'),
+    'id: BL-053\ntitle: redo BL-038 tile header active ticket\nstatus: todo\nassigned_to: coder\n'
+  );
+
+  const items = readBacklog(target);
+  const result = buildBadgeMap(items, target);
+
+  assert.ok(result.coder, 'badge must render for a promoted item even when its yaml status was left as todo');
+  assert.equal(result.coder.id, 'BL-053');
+  assert.equal(result.coder.summary, 'redo BL-038 tile header active ticket');
+});
+
+test('folder-active item with lagging yaml status is badged on the live holder (BL-053)', () => {
+  const target = mkTmp();
+  const cleanerWt = mkTmp();
+  writeRolesTsv(target, [{ role: 'cleaner', worktreePath: cleanerWt, displayName: 'Cleaner' }]);
+  dropHandoff(cleanerWt, '00_test.handoff', 'from: coder\nto: cleaner\ntask: BL-053-redo-tile-header\ncommit: abc\n');
+  const activeDir = path.join(target, 'backlog', 'active');
+  mkdirp(activeDir);
+  fs.writeFileSync(
+    path.join(activeDir, 'BL-053.yaml'),
+    'id: BL-053\ntitle: redo BL-038 tile header active ticket\nstatus: todo\nassigned_to: coder\n'
+  );
+
+  const result = buildBadgeMap(readBacklog(target), target);
+
+  assert.ok(result.cleaner, 'badge must follow the live holder for a folder-active item');
+  assert.equal(result.coder, undefined, 'no badge should remain on the static assignee');
 });
