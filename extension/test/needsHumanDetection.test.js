@@ -70,3 +70,34 @@ test('detectNeedsHuman distinguishes permission from normal [status]', () => {
   const permText = 'output\n[Permission required]';
   assert.equal(detectNeedsHuman(permText), true);
 });
+
+test('detectNeedsHuman skips standard input prompts with "type"', () => {
+  // Input prompts with "type", "message", or empty prompt should not trigger
+  const texts = [
+    'output\nSome text\n❯ type',
+    'output\nSome text\n❯ message',
+    'output\nSome text\n❯   ',
+    'output\nSome text\n> type'
+  ];
+  texts.forEach(text => {
+    assert.equal(detectNeedsHuman(text), false, `Should skip standard input in: ${text.split('\n').pop()}`);
+  });
+});
+
+test('detectNeedsHuman returns false for normal output without patterns', () => {
+  // Output that doesn't match any human-interaction pattern should return false
+  const texts = [
+    'Some normal output\nProcessing...',
+    'Line 1\nLine 2\nLine 3',
+    'output\nSome command\nCompleted',
+    'normal text without prompts or questions'
+  ];
+  texts.forEach(text => {
+    assert.equal(detectNeedsHuman(text), false, `Should return false for: ${text.split('\n').pop()}`);
+  });
+});
+
+test('detectNeedsHuman handles multi-line prompts with special characters', () => {
+  const text = 'Processing...\n❯ [a] Accept\n  [r] Reject\n  [s] Skip';
+  assert.equal(detectNeedsHuman(text), true);
+});
