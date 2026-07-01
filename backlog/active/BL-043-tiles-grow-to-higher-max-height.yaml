@@ -1,33 +1,43 @@
 id: BL-043
-title: tiles grow taller as agents output, up to an increased max height
+title: tile output retention + selected growth + coordinator/specifier first-row layout
 milestone: M4
-status: active
+status: todo
 priority: 06
 assigned_to: coder
 
 description: |
-  The developer can't follow the agents because tiles are too short. Each agent
-  tile should GROW in height as its agent produces output, up to a maximum. The
-  tile does NOT start at the max height: it starts shorter and expands toward the
-  max as content accumulates, then caps there and scrolls.
+  Implement the full tile-layout/visibility behavior requested by the human:
 
-  Increase that maximum so a busy agent shows substantially more lines than today.
-  Likely layers involved:
-  - Webview tile CSS (extension/src/panel/webviewHtml.ts): the tile has
-    min-height ~240px and a capped output area (~max-height 220px). Raise the cap
-    and let tile height track content up to the new max.
-  - tmux pane rows (extension/src/panel/paneTailer.ts): DEFAULT_TILE_PANE_ROWS
-    (500) / MAX_TILE_PANE_ROWS (1000) govern how many rows the agent TUI renders
-    into; raise the max if it limits visible content.
+  1) Output retention up to tile max height
+  - Keep/restore autoscroll behavior so output remains visible while tail-locked.
+  - Tiles should retain agent output up to their visible maximum height before
+    relying on internal scrolling.
+  - A tile should not collapse to a tiny viewport when content grows.
 
-  Keep the growth behavior (start short, grow with output to the max) — do NOT
-  pin every tile at max height, which wastes space for quiet agents. Make the max
-  configurable via a VS Code setting where practical, consistent with
-  swarmforge.tile.historyLines (BL-028).
+  2) Selected tile grows in Y as well
+  - When a tile is selected, it must become taller (double Y occupancy), not just
+    wider.
+  - Keep single-selection/toggle behavior unchanged.
+
+  3) First row dedicated to coordinator + specifier
+  - In the panel layout, the first row should be occupied by coordinator and
+    specifier only.
+  - When selecting either coordinator or specifier, selected one should become
+    2x the X dimension of the other in that first-row context.
+  - Remaining agents continue below in normal grid flow.
+
+  Scope is extension UI only (webview JS/CSS + tests). Preserve existing message
+  routing and swarm protocol behavior.
 
 acceptance: |
-  - A tile starts shorter than the max and grows taller as its agent outputs more
-    content, up to the (increased) maximum, then scrolls.
-  - The maximum visible height is meaningfully larger than today.
-  - Quiet agents do not occupy max height; only content growth expands them.
-  - Existing paneTailer / webview tests stay green; add a test for the new max.
+  - Tile output remains readable during ongoing agent output up to the configured
+    visual max height; no regression where recent lines disappear from view while
+    tail-locked.
+  - Selected tile expands vertically (Y) as well as horizontally where applicable.
+  - Coordinator and specifier occupy the first row in the panel layout.
+  - Selecting coordinator/specifier makes the selected tile twice the X dimension
+    of the other first-row tile.
+  - Existing tests stay green and new/updated webview tests cover:
+    (a) output retention/tail-lock behavior,
+    (b) selected tile Y growth,
+    (c) first-row coordinator/specifier layout + asymmetric X growth on selection.
