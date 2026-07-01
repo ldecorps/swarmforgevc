@@ -247,32 +247,6 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
     .tile-output:focus {
       box-shadow: inset 0 0 0 1px var(--vscode-focusBorder);
     }
-    .tile-input-bar {
-      display: flex;
-      align-items: center;
-      padding: 4px 8px;
-      border-top: 1px solid var(--vscode-panel-border);
-      flex-shrink: 0;
-      background: var(--vscode-terminal-background, #1e1e1e);
-    }
-    .tile-input-prompt {
-      font-family: monospace;
-      opacity: 0.5;
-      margin-right: 6px;
-      user-select: none;
-    }
-    .tile-input {
-      flex: 1;
-      background: transparent;
-      border: none;
-      outline: none;
-      color: var(--vscode-foreground);
-      font-family: monospace;
-      font-size: 12px;
-    }
-    .tile-input:focus {
-      outline: none;
-    }
     .empty {
       padding: 24px;
       text-align: center;
