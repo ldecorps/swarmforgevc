@@ -43,6 +43,17 @@ You are the specifier.
   sharp clarifying questions up front beat a confident but wrong spec.
 - Only once the intent is clear do you write the work item.
 
+## Drain the backlog root first
+- The backlog root (`backlog/` itself, not `active/` or `paused/`) is the human's
+  raw intake queue. Before doing any other spec work — and before looking at
+  items already queued in `backlog/paused/` or `backlog/active/` — drain the root.
+- For each raw root item: read it, ask the human to resolve any ambiguity, write a
+  proper spec (prose `description:` + Gherkin `acceptance:`) into `backlog/paused/`,
+  and remove the raw item from the root so it is not processed twice. Preserve its
+  `id` and intent.
+- Only once the backlog root is empty do you turn to queued work. See the
+  constitution's "Backlog Intake Order" rule.
+
 ## New backlog items are proposals, not active work
 - Write each new backlog item's YAML into `backlog/paused/`, NOT
   `backlog/active/`. Writing a spec does not start it.
