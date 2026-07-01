@@ -1,0 +1,48 @@
+id: BL-044
+title: footer-aware tile autoscroll — follow live output above the pinned TUI footer
+milestone: M4
+status: todo
+priority: 05
+assigned_to: coder
+
+description: |
+  The agent tiles autoscroll to the raw bottom of the captured tmux pane, but the
+  Claude Code TUI pins a footer region at the bottom of the pane — the input box
+  ("> type a message…"), the status/permissions line, and the "esc to interrupt"
+  bar. Live streaming output renders in the scrolling region ABOVE that pinned
+  footer, not at the very bottom.
+
+  Result (visible in the panel): the tile's tail-lock scrolls to the static
+  footer, so the newest live output — which is mid-pane — is never followed and
+  scrolls out of view. Autoscroll effectively does not work for a full-screen TUI
+  agent, even though it works fine for a plain scrolling process.
+
+  Refine the autoscroll so it follows the LIVE output region instead of the raw
+  pane bottom. The tile should keep the most recent transcript line visible while
+  tail-locked, ignoring the fixed footer.
+
+  Implementation is open to the implementer; candidate approaches:
+  - Anchor autoscroll to the tmux cursor row (capture-pane / display-message can
+    report cursor_y), which sits on the active render line, rather than to the
+    last text row.
+  - Detect the pinned footer (input-box prompt / status bar / "esc to interrupt")
+    and scroll so the last content line just above it is visible.
+  - Strip or visually de-emphasize the repeated static footer from the rendered
+    tile text so the tile bottom coincides with the newest live line.
+
+  Scope is the extension only: PaneTailer capture handling (paneTailer.ts) and/or
+  the webview autoscroll/tail logic (media/panel.js updateTileOutput + tail-lock),
+  plus tests. Preserve manual scroll-up (tail-lock release) and re-engage-at-bottom
+  behavior, and keep input routing/protocol unchanged. Builds on the autoscroll
+  retention work in BL-043.
+
+acceptance: |
+  - During ongoing agent output, each tile keeps the newest live transcript line
+    visible while tail-locked; the pinned input/status footer no longer causes
+    recent output to be hidden above it.
+  - Scrolling up still releases tail-lock; returning to the live region re-engages
+    it.
+  - Behavior holds at the enlarged pane size (120x200) and for all agent roles.
+  - New/updated tests cover the footer-aware anchor logic (e.g. autoscroll targets
+    the live/cursor region, not the raw last row) and the tail-lock release/
+    re-engage transitions. Existing tests stay green.
