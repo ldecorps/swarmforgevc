@@ -374,6 +374,68 @@ test('getWebviewHtml CSS applies needs-human blink to tiles', () => {
   assert(html.includes('animation:') || html.includes('animation :'), 'must apply animation to needs-human tiles');
 });
 
+// --- BL-054: the pulse is border-only; content never blinks ---
+
+function needsHumanKeyframesBlock(html) {
+  // Extract the full brace-balanced block, not just up to the first inner
+  // "}" — the keyframes body itself contains nested rule blocks (0%,100% and
+  // 50%), so a non-greedy "up to the first }" regex silently truncates after
+  // the first inner rule and the 50% frame is never actually inspected.
+  const start = html.indexOf('@keyframes needs-human-blink');
+  assert(start !== -1, 'must define needs-human-blink keyframes');
+  const openBrace = html.indexOf('{', start);
+  let depth = 0;
+  for (let i = openBrace; i < html.length; i++) {
+    if (html[i] === '{') depth++;
+    if (html[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        return html.slice(openBrace + 1, i);
+      }
+    }
+  }
+  throw new Error('unbalanced braces in needs-human-blink keyframes');
+}
+
+test('needs-human pulse animates a border property, not whole-tile opacity', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  const keyframes = needsHumanKeyframesBlock(html);
+  assert(
+    !/opacity/.test(keyframes),
+    'the pulse must not animate opacity — that fades the tile TEXT along with the border'
+  );
+  assert(
+    /border/.test(keyframes),
+    'the pulse must be carried by a border property'
+  );
+});
+
+test('needs-human pulse keeps the accent color and gentle cadence from BL-045', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  const keyframes = needsHumanKeyframesBlock(html);
+  assert(/00a8e8|0,\s*168,\s*232/.test(keyframes), 'accent blue must remain the pulse color');
+  assert(/needs-human-blink 1\.5s ease-in-out infinite/.test(html), 'the 1.5s ease-in-out cadence must remain');
+});
+
+test('the 50% keyframe is visibly dimmed, not just a same-color no-op pulse', () => {
+  // Pinning presence of the color channels alone would let a mutant set the
+  // dimmed alpha to 1 (or drop the rgba() entirely) and still pass — the
+  // whole point of the border-only pulse is that it visibly breathes.
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  const keyframes = needsHumanKeyframesBlock(html);
+  const dimmedMatch = keyframes.match(/rgba\(\s*0,\s*168,\s*232,\s*([\d.]+)\s*\)/);
+  assert(dimmedMatch, 'the 50% frame must dim the accent color via rgba() alpha');
+  const alpha = Number(dimmedMatch[1]);
+  assert(alpha > 0 && alpha < 0.7, `dimmed alpha ${alpha} must be a visible reduction, not near-full opacity`);
+});
+
+test('the needs-human rule itself does not dim tile content', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  const rule = html.match(/\.tile\.needs-human:not\(\.dead\)\s*{([\s\S]*?)}/);
+  assert(rule, 'must keep the .tile.needs-human:not(.dead) rule with the dead guard');
+  assert(!/opacity/.test(rule[1]), 'the needs-human rule must not touch opacity');
+});
+
 test('getWebviewHtml CSS suppresses blink when tile is dead', () => {
   const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
   assert(html.includes(':not(.dead)'), 'animation must not apply when dead class is present');
