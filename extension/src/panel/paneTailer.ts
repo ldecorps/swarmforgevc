@@ -223,15 +223,7 @@ export class PaneTailer {
     for (const role of this.roles) {
       if (!sessionExists(this.socketPath, role.session)) {
         const text = `Session "${role.session}" is not running.\n\nUse SwarmForge: Stop Swarm, then Launch Swarm.`;
-        if (this.lastText.get(role.role) !== text) {
-          this.lastText.set(role.role, text);
-          updates.push({
-            role: role.role,
-            displayName: role.displayName,
-            text,
-            full: true,
-          });
-        }
+        this.pushFullTextIfChanged(role, updates, text);
         if (this.liveRoles.has(role.role) && !this.deadRoles.has(role.role)) {
           this.deadRoles.add(role.role);
           deadEvents.push({ role: role.role, dead: true });
@@ -254,15 +246,7 @@ export class PaneTailer {
 
       if (result.exitCode !== 0) {
         const text = `Could not read tmux pane for ${role.displayName}.\n\nTry SwarmForge: Stop Swarm, then Launch Swarm.`;
-        if (this.lastText.get(role.role) !== text) {
-          this.lastText.set(role.role, text);
-          updates.push({
-            role: role.role,
-            displayName: role.displayName,
-            text,
-            full: true,
-          });
-        }
+        this.pushFullTextIfChanged(role, updates, text);
         continue;
       }
 
@@ -336,6 +320,18 @@ export class PaneTailer {
       if (needsHumanEvents.length > 0) {
         this.onNeedsHuman(needsHumanEvents);
       }
+    }
+  }
+
+  private pushFullTextIfChanged(role: SwarmRole, updates: TileOutput[], text: string): void {
+    if (this.lastText.get(role.role) !== text) {
+      this.lastText.set(role.role, text);
+      updates.push({
+        role: role.role,
+        displayName: role.displayName,
+        text,
+        full: true,
+      });
     }
   }
 
