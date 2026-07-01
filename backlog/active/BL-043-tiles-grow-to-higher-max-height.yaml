@@ -1,0 +1,43 @@
+id: BL-043
+title: tile output retention + selected growth + coordinator/specifier first-row layout
+milestone: M4
+status: todo
+priority: 06
+assigned_to: coder
+
+description: |
+  Implement the full tile-layout/visibility behavior requested by the human:
+
+  1) Output retention up to tile max height
+  - Keep/restore autoscroll behavior so output remains visible while tail-locked.
+  - Tiles should retain agent output up to their visible maximum height before
+    relying on internal scrolling.
+  - A tile should not collapse to a tiny viewport when content grows.
+
+  2) Selected tile grows in Y as well
+  - When a tile is selected, it must become taller (double Y occupancy), not just
+    wider.
+  - Keep single-selection/toggle behavior unchanged.
+
+  3) First row dedicated to coordinator + specifier
+  - In the panel layout, the first row should be occupied by coordinator and
+    specifier only.
+  - When selecting either coordinator or specifier, selected one should become
+    2x the X dimension of the other in that first-row context.
+  - Remaining agents continue below in normal grid flow.
+
+  Scope is extension UI only (webview JS/CSS + tests). Preserve existing message
+  routing and swarm protocol behavior.
+
+acceptance: |
+  - Tile output remains readable during ongoing agent output up to the configured
+    visual max height; no regression where recent lines disappear from view while
+    tail-locked.
+  - Selected tile expands vertically (Y) as well as horizontally where applicable.
+  - Coordinator and specifier occupy the first row in the panel layout.
+  - Selecting coordinator/specifier makes the selected tile twice the X dimension
+    of the other first-row tile.
+  - Existing tests stay green and new/updated webview tests cover:
+    (a) output retention/tail-lock behavior,
+    (b) selected tile Y growth,
+    (c) first-row coordinator/specifier layout + asymmetric X growth on selection.

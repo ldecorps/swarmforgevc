@@ -5,8 +5,10 @@ One YAML file per work item. On startup, read the `active/` items to know what t
 ## Directory layout
 
 - `active/` — items currently queued for implementation (M2+)
+- `paused/` — staged items waiting for coordinator promotion
 - `done/` — items that are complete and merged
-- Root — (empty; all M1 items are in done/)
+- Root — the human's raw intake queue. The specifier drains root items first
+  (turning each into a spec in `paused/`) before looking at queued work.
 
 ## Status values
 
@@ -33,3 +35,12 @@ The status shown in the backlog panel is determined by the folder location, not 
 
 The coordinator owns status transitions. The human owns all other fields.
 Items are processed in priority order within each milestone.
+
+Intake vs. promotion are two separate steps with opposite root/paused priority:
+- Specifier intake: drain the human's raw items at the backlog **root first**,
+  writing a spec for each into `paused/`, before touching queued work.
+- Coordinator promotion: promote from `paused/` first, then the backlog root only
+  when `paused/` is empty.
+
+Active queue depth is bounded by `swarmforge.conf` `config
+active_backlog_max_depth`.

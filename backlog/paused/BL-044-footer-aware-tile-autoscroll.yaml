@@ -1,0 +1,141 @@
+id: BL-044
+title: footer-aware tile autoscroll — follow the live line above the pinned TUI footer
+milestone: M4
+status: todo
+priority: 05
+assigned_to: coder
+
+description: |
+  What: When a tile is tail-locked, autoscroll must keep the newest LIVE
+  transcript line visible, positioned just above the Claude Code TUI's pinned
+  footer — not scroll to the raw last row of the captured pane.
+
+  Why: The agent tiles run a full-screen TUI that pins a footer at the bottom of
+  the pane (the input box "> type a message…", the status/permissions line, and
+  the "esc to interrupt" bar). Live streaming output renders in the scrolling
+  region ABOVE that pinned footer. Today the webview tail-lock scrolls to the raw
+  pane bottom (panel.js updateTileOutput → scrollToBottom sets scrollTop =
+  scrollHeight), so it lands on the static footer and the newest live line —
+  which sits mid-pane — is hidden above it. Autoscroll therefore appears broken
+  for a full-screen TUI agent even though it works for a plain scrolling process.
+
+  Product decision (confirmed with the human): the pinned footer STAYS VISIBLE.
+  Do not strip or hide it — the human types into that input box and relies on the
+  "esc to interrupt" bar. The fix is to correct WHERE "the bottom" is: anchor the
+  scroll so the newest live content line sits just above the still-visible footer.
+
+  Second change (confirmed with the human): remove the extension's OWN extra
+  per-tile input bar. Now that the native TUI input box ("> type a message…")
+  stays visible and is usable, our added input bar (the media/panel.js
+  `tile-input-bar` / `tile-input` line editor with its own history, added in
+  BL-031) needlessly supersedes it. Remove that added input bar and let the
+  developer type directly into the native TUI: click/focus the tile to make it
+  active, then keystrokes route straight to the pane. The existing direct
+  keystroke path (panel.js document-level keydown → { type: 'input' } →
+  PaneTailer.forwardInput/sendKeys, including Enter, Backspace, Ctrl-C, arrows)
+  is retained and becomes the sole input path. Line editing and command history
+  are then provided by the native TUI itself, not by our bar. This supersedes the
+  BL-031 input-bar approach; update/remove its tests accordingly. Only remove our
+  bar if direct-to-native typing is confirmed usable; if some capability is lost,
+  stop and flag it rather than silently degrading input.
+
+  Do NOT switch agents to a flat-output CLI mode to sidestep this. The Claude CLI
+  `--ax-screen-reader` flag linearizes output but strips the decorative borders
+  and animations the human wants to keep; `-p/--print` is one-shot and cannot host
+  a persistent interactive agent. The animated full-screen TUI stays; the tile
+  must be smart about the anchor.
+
+  Implementation is open to the implementer. Candidate approaches (any is fine as
+  long as the observable behavior below holds):
+    - Anchor autoscroll to the tmux cursor row (capture-pane / display-message can
+      report cursor_y), which sits on the active render line, rather than to the
+      last text row.
+    - Detect the pinned footer (input-box prompt / status bar / "esc to interrupt")
+      in the captured text and scroll so the last content line just above it is the
+      anchor.
+  Static footer churn (e.g. a spinner or clock animating inside the footer) must
+  NOT be treated as new live output that re-drives the anchor.
+
+  Scope: extension only — PaneTailer capture handling (paneTailer.ts) and/or the
+  webview autoscroll/tail-lock logic (media/panel.js updateTileOutput + the
+  scroll/isAtBottom handlers), removal of the panel.js `tile-input-bar`, plus
+  tests. Preserve manual scroll-up (tail-lock release) and re-engage-at-bottom
+  behavior. Keep the direct keystroke-forwarding path and the swarm message
+  protocol unchanged. Reference the configured enlarged pane size from the
+  PaneTailer constants (TILE_PANE_COLS × the applied pane rows), not a hardcoded
+  literal, so the acceptance tracks the real configuration.
+
+  Dependency note: BL-044 is specified to stand ALONE — it fixes the footer-aware
+  anchor regardless of BL-043's state. It does, however, touch the same tail-lock
+  code region as BL-043 (output retention / tail-lock); whichever of BL-043/BL-044
+  lands second should rebase onto the first rather than assume a clean tree.
+
+acceptance: |
+  Feature: footer-aware tile autoscroll
+
+  Background:
+    Given a tile is tail-locked and following an agent's live output
+    And the agent runs a full-screen TUI whose bottom rows are a pinned footer
+      (the input box, the status/permissions line, and the "esc to interrupt" bar)
+
+  # BL-044 footer-aware-autoscroll-01
+  Scenario: newest live line stays visible just above the pinned footer
+    Given the agent emits a new transcript line in the live region above the footer
+    When the tile updates while tail-locked
+    Then the newest live transcript line is visible in the tile
+    And it is positioned just above the pinned footer, not scrolled out of view
+    And the pinned footer remains visible in the tile
+
+  # BL-044 footer-aware-autoscroll-02
+  Scenario: footer-only animation does not move the anchor off the live line
+    Given the live output region is unchanged
+    And only the pinned footer changes (for example a spinner or status animates)
+    When the tile updates while tail-locked
+    Then the anchor stays on the last live content line
+    And the view does not jump so that the newest live line is hidden
+
+  # BL-044 footer-aware-autoscroll-03
+  Scenario: scrolling up releases tail-lock
+    Given the tile is tail-locked on the live region
+    When the user scrolls up away from the live region to read earlier output
+    Then tail-lock is released
+    And subsequent output does not force the view back down
+
+  # BL-044 footer-aware-autoscroll-04
+  Scenario: returning to the live region re-engages tail-lock
+    Given tail-lock was released by scrolling up
+    When the user scrolls back down to the live region
+    Then tail-lock re-engages
+    And new output again keeps the newest live line visible above the footer
+
+  # BL-044 footer-aware-autoscroll-05
+  Scenario Outline: behavior holds for every agent role at the enlarged pane size
+    Given the tile for <role> at the configured enlarged pane size
+    When live output streams in the region above the pinned footer
+    Then the newest live line stays visible just above the footer while tail-locked
+
+    Examples:
+      | role        |
+      | coordinator |
+      | specifier   |
+      | coder       |
+      | cleaner     |
+      | architect   |
+      | hardender   |
+      | documenter  |
+      | QA          |
+
+  # BL-044 footer-aware-autoscroll-06
+  Scenario: the extension's extra input bar is gone; typing goes to the native TUI
+    Given a tile for an agent is rendered
+    Then the extension's own per-tile input bar is not present in the tile
+    When the developer focuses the tile and types a message
+    Then the keystrokes are delivered to the agent's native TUI input box
+    And pressing Enter submits that message to the agent
+    And Ctrl-C and editing keys still reach the agent's native input
+
+  # Non-behavioral gate:
+  #  - New/updated tests cover the footer-aware anchor logic (autoscroll targets
+  #    the live/cursor region, not the raw last row) and the tail-lock release /
+  #    re-engage transitions. Tests for the removed input bar are updated/removed.
+  #    Existing tests stay green.

@@ -1,8 +1,8 @@
 id: BL-040
 title: selected pane grows to 2x2 (double both dimensions)
 milestone: M4
-status: active
-priority: 40
+status: done
+priority: 05
 assigned_to: coder
 
 description: |
