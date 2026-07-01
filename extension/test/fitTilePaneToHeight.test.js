@@ -197,6 +197,31 @@ test('PaneTailer.applyPaneSettings preserves each role\'s own reported pane rows
   }
 });
 
+test('PaneTailer.updatePaneRows records the value but skips resizing before the socket is known', () => {
+  const targetPath = mkTmp();
+  writeState(targetPath);
+  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  try {
+    let resizeWindowCalls = [];
+    const origResizeWindow = require('../out/swarm/tmuxClient').resizeWindow;
+    require('../out/swarm/tmuxClient').resizeWindow = (socket, session, cols, rows) => {
+      resizeWindowCalls.push({ socket, session, cols, rows });
+    };
+
+    // No refreshState() call yet -- the webview can report a tile size before
+    // the tmux socket has been discovered.
+    const tailer = new PaneTailer(targetPath, () => {});
+
+    tailer.updatePaneRows('coder', 42);
+
+    assert.equal(resizeWindowCalls.length, 0, 'should not resize before a socket is known');
+
+    require('../out/swarm/tmuxClient').resizeWindow = origResizeWindow;
+  } finally {
+    fake.restore();
+  }
+});
+
 test('PaneTailer.updatePaneRows is a no-op when the role is unknown', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
