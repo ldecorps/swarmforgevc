@@ -1,0 +1,40 @@
+id: BL-039
+title: wire bounceWatcher into activate() and rebuild out/
+milestone: M4
+status: active
+priority: 39
+assigned_to: coder
+
+description: |
+  BL-037 delivered `startBounceWatcher` in
+  `extension/src/swarm/bounceWatcher.ts` but the function is never called.
+  `extension/src/extension.ts` does not import or invoke it, so writing a
+  sentinel file to `.swarmforge/bounce` has no effect at runtime.
+
+  Two things are needed:
+
+  1. **Wire the watcher in `activate()`.**
+     In `extension.ts`, after a target path is set and the `.swarmforge/`
+     directory exists, call `startBounceWatcher(targetPath, handler)` where
+     `handler` dispatches to the appropriate existing command:
+     - `'swarm'`     → execute `swarmforge.bounceSwarm`
+     - `'extension'` → execute `swarmforge.bounceExtension`
+     - `'all'`       → execute `swarmforge.bounceAll`
+     Push the returned `FSWatcher` into the extension's `context.subscriptions`
+     (or dispose it manually) so it is torn down on deactivation.
+     Re-start the watcher whenever the target path changes.
+
+  2. **Rebuild `out/`.**
+     Run `npm run compile` (or equivalent) inside `extension/` so the compiled
+     JS in `out/` reflects the wired-up source. Commit the updated `out/` files
+     alongside the source change.
+
+acceptance: |
+  - Writing `swarm\n` to `<target>/.swarmforge/bounce` triggers `bounceSwarm`
+    within 2 seconds when the extension is active with that target set.
+  - Writing `extension\n` triggers `bounceExtension`; `all\n` triggers
+    `bounceAll`.
+  - The watcher is disposed cleanly when the extension deactivates.
+  - `out/` is up to date with the source (compile passes with no errors).
+  - Existing tests pass; no new tests required (behaviour is already covered by
+    `bounceWatcher.test.js` from BL-037).
