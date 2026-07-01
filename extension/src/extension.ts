@@ -20,6 +20,7 @@ import { startChaserMonitor, stopChaserMonitor } from './watchdog/chaserMonitor'
 import type { ChaserMonitorConfig, ChaserCallbacks } from './watchdog/chaserMonitor';
 import { readTmuxSocket, paneTarget, getPaneBaseIndex, sendKeys, readSwarmRoles, respawnAgent } from './swarm/tmuxClient';
 import { readHeartbeat } from './tools/heartbeat';
+import { maybeWriteActivationMarker } from './devActivationMarker';
 import { computeLiveness } from './watchdog/liveness';
 import type { LivenessState, WatchdogConfig } from './watchdog/liveness';
 
@@ -195,6 +196,13 @@ async function resolveTargetPath(context: vscode.ExtensionContext): Promise<stri
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  // Lets the dev-host bounce script verify a fresh activation (BL-058);
+  // written only in Development extension mode.
+  maybeWriteActivationMarker(
+    context.extensionMode === vscode.ExtensionMode.Development,
+    context.extensionPath
+  );
+
   const runLogPath = path.join(os.homedir(), '.swarmforge', 'runs.jsonl');
 
   // Start bounce watcher and chaser if target is already set
