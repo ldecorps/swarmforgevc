@@ -3,7 +3,7 @@ title: footer-aware tile autoscroll — follow live output above the pinned TUI 
 milestone: M4
 status: todo
 priority: 05
-assigned_to: coder
+assigned_to: specifier
 
 description: |
   The agent tiles autoscroll to the raw bottom of the captured tmux pane, but the
@@ -16,6 +16,13 @@ description: |
   footer, so the newest live output — which is mid-pane — is never followed and
   scrolls out of view. Autoscroll effectively does not work for a full-screen TUI
   agent, even though it works fine for a plain scrolling process.
+
+  Fix this on the tile side. Do NOT switch the agents to a flat-output CLI mode:
+  the Claude CLI's `--ax-screen-reader` flag would linearize output and remove the
+  pinned footer, but it also strips the decorative borders and animations, which
+  the human wants to keep. `-p/--print` is one-shot/non-interactive and cannot host
+  a persistent agent. So the animated full-screen TUI stays, and the tile must be
+  smart about where "the bottom" is.
 
   Refine the autoscroll so it follows the LIVE output region instead of the raw
   pane bottom. The tile should keep the most recent transcript line visible while
