@@ -410,21 +410,23 @@ test('needs-human pulse animates a border property, not whole-tile opacity', () 
   );
 });
 
-test('needs-human pulse keeps the accent color and gentle cadence from BL-045', () => {
+test('needs-human pulse is RED and keeps the gentle cadence (BL-059)', () => {
   const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
   const keyframes = needsHumanKeyframesBlock(html);
-  assert(/00a8e8|0,\s*168,\s*232/.test(keyframes), 'accent blue must remain the pulse color');
+  assert(/e53935|229,\s*57,\s*53/.test(keyframes), 'the pulse color must be red — asking-a-question reads as urgent');
+  assert(!/00a8e8|0,\s*168,\s*232/.test(keyframes), 'the old blue accent must be gone');
   assert(/needs-human-blink 1\.5s ease-in-out infinite/.test(html), 'the 1.5s ease-in-out cadence must remain');
 });
 
 test('the 50% keyframe is visibly dimmed, not just a same-color no-op pulse', () => {
   // Pinning presence of the color channels alone would let a mutant set the
   // dimmed alpha to 1 (or drop the rgba() entirely) and still pass — the
-  // whole point of the border-only pulse is that it visibly breathes.
+  // blink (cycling to/from red) is what distinguishes "asking a question"
+  // from the SOLID red of a dead tile.
   const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
   const keyframes = needsHumanKeyframesBlock(html);
-  const dimmedMatch = keyframes.match(/rgba\(\s*0,\s*168,\s*232,\s*([\d.]+)\s*\)/);
-  assert(dimmedMatch, 'the 50% frame must dim the accent color via rgba() alpha');
+  const dimmedMatch = keyframes.match(/rgba\(\s*229,\s*57,\s*53,\s*([\d.]+)\s*\)/);
+  assert(dimmedMatch, 'the 50% frame must dim the red via rgba() alpha');
   const alpha = Number(dimmedMatch[1]);
   assert(alpha > 0 && alpha < 0.7, `dimmed alpha ${alpha} must be a visible reduction, not near-full opacity`);
 });
