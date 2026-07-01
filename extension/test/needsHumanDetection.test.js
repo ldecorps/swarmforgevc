@@ -1,52 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-
-// Detect if pane output shows agent is awaiting a human answer
-// vs just idle at the normal input box
-function detectNeedsHuman(paneText) {
-  if (!paneText) return false;
-
-  const lines = paneText.split('\n');
-  const lastLines = lines.slice(-10).join('\n').toLowerCase();
-
-  // Yes/no questions (higher confidence)
-  if (/\(y\/n\)|yes\s*\/\s*no|yes\s*or\s*no/.test(lastLines)) {
-    return true;
-  }
-
-  // Permission prompts (but exclude normal [auto] idle status)
-  if (/permission\s*(required|mode|denied)|approve|allow|deny/.test(lastLines)) {
-    return true;
-  }
-
-  // Exclude normal [auto] status at idle
-  if (/\[auto\]\s*(idle|busy)/.test(lastLines)) {
-    return false;
-  }
-
-  // Multiple choice or questions
-  const lines_trimmed = lines.map(l => l.trim());
-  for (let i = lines_trimmed.length - 1; i >= Math.max(0, lines_trimmed.length - 5); i--) {
-    const line = lines_trimmed[i];
-
-    // Skip empty lines and the standard input box
-    if (!line || /^[❯>]\s*(type|message|\s*)$/.test(line)) {
-      continue;
-    }
-
-    // Look for choice prompts with numbers, letters, or symbols
-    if (/^[❯>]\s+[0-9a-z\(\)\[\]]/.test(line)) {
-      return true;
-    }
-
-    // Question mark indicates a question (but be careful about exclamation marks in output)
-    if (/[?!]$/.test(line) && !/^❯\s*/.test(line)) {
-      return true;
-    }
-  }
-
-  return false;
-}
+const { detectNeedsHuman } = require('../out/panel/needsHumanDetection');
 
 test('detectNeedsHuman returns false for empty text', () => {
   assert.equal(detectNeedsHuman(''), false);

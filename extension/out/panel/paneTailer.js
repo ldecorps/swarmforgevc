@@ -11,6 +11,7 @@ const tmuxClient_1 = require("../swarm/tmuxClient");
 const inputLog_1 = require("../swarm/inputLog");
 const agentPaneState_1 = require("./agentPaneState");
 const ansi_1 = require("./ansi");
+const needsHumanDetection_1 = require("./needsHumanDetection");
 const DEFAULT_POLL_INTERVAL_MS = 200;
 exports.STALL_THRESHOLD_MS = 120_000;
 const DEFAULT_HISTORY_LINES = 5000;
@@ -55,24 +56,27 @@ class PaneTailer {
     onDead;
     onInputLogError;
     onRoles;
+    onNeedsHuman;
     interval;
     lastText = new Map();
     lastChangedAt = new Map();
     stalledRoles = new Set();
     deadRoles = new Set();
+    needsHumanRoles = new Set();
     liveRoles = new Set();
     paneBaseIndex = 0;
     roles = [];
     socketPath = '';
     historyLines;
     paneRows;
-    constructor(targetPath, onOutput, onStall, onDead, onInputLogError, historyLines, onRoles, paneRows) {
+    constructor(targetPath, onOutput, onStall, onDead, onInputLogError, historyLines, onRoles, paneRows, onNeedsHuman) {
         this.targetPath = targetPath;
         this.onOutput = onOutput;
         this.onStall = onStall;
         this.onDead = onDead;
         this.onInputLogError = onInputLogError;
         this.onRoles = onRoles;
+        this.onNeedsHuman = onNeedsHuman;
         this.historyLines = normalizeHistoryLines(historyLines);
         this.paneRows = normalizePaneRows(paneRows);
     }
@@ -237,6 +241,26 @@ class PaneTailer {
             }
             if (stallEvents.length > 0) {
                 this.onStall(stallEvents);
+            }
+        }
+        if (this.onNeedsHuman) {
+            const needsHumanEvents = [];
+            for (const role of this.roles) {
+                const text = this.lastText.get(role.role);
+                const needsHuman = (0, needsHumanDetection_1.detectNeedsHuman)(text);
+                const wasNeedsHuman = this.needsHumanRoles.has(role.role);
+                if (needsHuman !== wasNeedsHuman) {
+                    if (needsHuman) {
+                        this.needsHumanRoles.add(role.role);
+                    }
+                    else {
+                        this.needsHumanRoles.delete(role.role);
+                    }
+                    needsHumanEvents.push({ role: role.role, needsHuman });
+                }
+            }
+            if (needsHumanEvents.length > 0) {
+                this.onNeedsHuman(needsHumanEvents);
             }
         }
     }

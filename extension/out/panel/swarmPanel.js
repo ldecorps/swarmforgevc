@@ -147,7 +147,9 @@ class SwarmPanel {
             this.outputChannel.appendLine(message);
         }, historyLines, (roles) => {
             this.sendRoles(roles);
-        }, paneRows);
+        }, paneRows, (events) => {
+            this.panel.webview.postMessage({ type: 'needsHuman', events });
+        });
         this.tailer.start();
         this.sendRoles(this.tailer.getRoles());
         if (this.workspaceState) {

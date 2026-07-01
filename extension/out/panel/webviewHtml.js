@@ -260,6 +260,19 @@ function getWebviewHtml(scriptUri, cspSource) {
     .tile.dead {
       border-color: #e53935;
     }
+    @keyframes needs-human-blink {
+      0%, 100% {
+        border-color: #00a8e8;
+        opacity: 1;
+      }
+      50% {
+        border-color: #00a8e8;
+        opacity: 0.5;
+      }
+    }
+    .tile.needs-human:not(.dead) {
+      animation: needs-human-blink 1.5s ease-in-out infinite;
+    }
     .restart-btn {
       display: none;
       margin-left: 6px;
