@@ -1,0 +1,33 @@
+id: BL-043
+title: tiles grow taller as agents output, up to an increased max height
+milestone: M4
+status: active
+priority: 06
+assigned_to: coder
+
+description: |
+  The developer can't follow the agents because tiles are too short. Each agent
+  tile should GROW in height as its agent produces output, up to a maximum. The
+  tile does NOT start at the max height: it starts shorter and expands toward the
+  max as content accumulates, then caps there and scrolls.
+
+  Increase that maximum so a busy agent shows substantially more lines than today.
+  Likely layers involved:
+  - Webview tile CSS (extension/src/panel/webviewHtml.ts): the tile has
+    min-height ~240px and a capped output area (~max-height 220px). Raise the cap
+    and let tile height track content up to the new max.
+  - tmux pane rows (extension/src/panel/paneTailer.ts): DEFAULT_TILE_PANE_ROWS
+    (500) / MAX_TILE_PANE_ROWS (1000) govern how many rows the agent TUI renders
+    into; raise the max if it limits visible content.
+
+  Keep the growth behavior (start short, grow with output to the max) — do NOT
+  pin every tile at max height, which wastes space for quiet agents. Make the max
+  configurable via a VS Code setting where practical, consistent with
+  swarmforge.tile.historyLines (BL-028).
+
+acceptance: |
+  - A tile starts shorter than the max and grows taller as its agent outputs more
+    content, up to the (increased) maximum, then scrolls.
+  - The maximum visible height is meaningfully larger than today.
+  - Quiet agents do not occupy max height; only content growth expands them.
+  - Existing paneTailer / webview tests stay green; add a test for the new max.
