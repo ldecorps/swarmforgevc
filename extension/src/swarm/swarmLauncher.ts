@@ -35,10 +35,22 @@ export function isSwarmReady(targetPath: string): boolean {
   return roles.every((role) => sessionExists(socket, role.session));
 }
 
+// Dirs where tmux, bb (babashka), and claude are commonly installed. A
+// Dock/Finder-launched VS Code inherits a minimal PATH without these, so the
+// spawned ./swarm cannot find its tools and the launch silently fails.
+const COMMON_TOOL_PATHS = ['/opt/homebrew/bin', '/usr/local/bin'];
+
+export function augmentPath(currentPath: string | undefined): string {
+  const existing = (currentPath ?? '').split(':').filter((p) => p.length > 0);
+  const missing = COMMON_TOOL_PATHS.filter((dir) => !existing.includes(dir));
+  return [...missing, ...existing].join(':');
+}
+
 export function buildLaunchEnv(runName?: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     SWARMFORGE_TERMINAL: 'none',
+    PATH: augmentPath(process.env.PATH),
   };
 
   if (runName) {
