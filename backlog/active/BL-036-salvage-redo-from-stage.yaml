@@ -1,0 +1,83 @@
+id: BL-036
+title: salvage — redo-from-stage for failed or rejected pipeline runs
+milestone: M4
+status: todo
+priority: 36
+assigned_to: coder
+
+description: |
+  When a swarm run fails (e.g. QA rejects a coder commit, or the cleaner finds
+  an unfixable issue) there is currently no clean recovery path. The developer
+  must manually inspect git history, revert commits, and re-route the handoff.
+
+  Add a `redo_from` command that restarts a work item from a named stage:
+  - Accept `redo_from <item-id> <stage>` where stage is one of:
+    `coder | cleaner | architect | hardender | documenter | qa`
+    (the full current pipeline chain).
+  - Entry point: invokable by the developer; forge script and/or extension
+    command is the implementer's choice — but all I/O stays in the extension
+    host or forge scripts per the architecture rules (never the webview).
+  - Reset the item's in-flight handoff state (mark any in_process or new
+    handoffs for the item as abandoned in `.swarmforge/handoffs/`).
+  - Create a checkpoint: tag the git HEAD at the time of the redo as
+    `redo/<item-id>/<stage>/<timestamp>` so the pre-redo state is recoverable.
+  - Re-inject the item as a fresh `git_handoff` to the named stage using the
+    last known good commit for that stage (or the current HEAD if starting
+    from `coder`).
+  - Record the redo in `.swarmforge/run-log.jsonl` with `event: redo`,
+    `from_stage`, `reason` (captured from the rejection note if available).
+
+  When QA sends a rejection, it must include a `rejection_reason` field in the
+  handoff. The specifier reads this and captures it in the redo log entry.
+
+acceptance: |
+  Feature: redo-from-stage salvage
+
+  Background:
+    Given a work item that has already produced pipeline handoffs
+
+  # BL-036 redo-from-stage-01
+  Scenario Outline: redo re-injects the item at the named stage
+    When the developer runs redo_from for the item and <stage>
+    Then a git tag redo/<item-id>/<stage>/<timestamp> is created at HEAD
+    And a fresh git_handoff for the item is queued to <stage>
+    And the handoff uses the last known good commit for that stage
+      (current HEAD when the stage is coder)
+
+    Examples:
+      | stage      |
+      | coder      |
+      | cleaner    |
+      | architect  |
+      | hardender  |
+      | documenter |
+      | qa         |
+
+  # BL-036 redo-from-stage-02
+  Scenario: stale handoffs are abandoned before re-injection
+    Given the item has handoffs sitting in inbox new or in_process
+    When the developer runs redo_from for the item
+    Then those handoffs are marked abandoned before the new handoff is queued
+    And no role processes the abandoned copies (no duplicate processing)
+
+  # BL-036 redo-from-stage-03
+  Scenario: the redo is recorded in the run log
+    When a redo completes
+    Then .swarmforge/run-log.jsonl gains an entry with event redo,
+      the from_stage, and the reason
+
+  # BL-036 redo-from-stage-04
+  Scenario: QA rejections carry a reason that the redo log captures
+    Given QA rejects the item with a rejection_reason field in its handoff
+      (validated by swarm_handoff.sh)
+    When the developer redoes the item
+    Then the redo log entry's reason is the captured rejection_reason
+
+  # BL-036 redo-from-stage-05
+  Scenario: invalid stage names are rejected
+    When the developer runs redo_from with a stage outside the pipeline chain
+    Then the command fails with a message listing the valid stages
+    And no tag, abandonment, or handoff is produced
+
+  # Non-behavioral gate:
+  #  - Existing tests pass; abandonment + re-injection path covered by tests.
