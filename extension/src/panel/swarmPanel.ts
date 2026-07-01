@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { SwarmRole, respawnAgent } from '../swarm/tmuxClient';
 import { PaneTailer } from './paneTailer';
 import { currentStageLabel, readPipelineStages, findLiveHolder } from '../swarm/swarmState';
+import { readDaemonHealth } from '../swarm/daemonHealth';
 import { loadRuns } from '../runs/runLog';
 import { getNonce, getWebviewHtml } from './webviewHtml';
 import { readBacklog, BacklogItem } from './backlogReader';
@@ -203,6 +204,7 @@ export class SwarmPanel {
       this.panel.webview.postMessage({ type: 'backlogUpdate', items: backlogItems });
       this.panel.webview.postMessage({ type: 'holderUpdate', holders: holderMap });
       this.panel.webview.postMessage({ type: 'badgeUpdate', badges: buildBadgeMap(backlogItems, this.targetPath) });
+      this.panel.webview.postMessage({ type: 'transportHealth', health: readDaemonHealth(this.targetPath) });
     };
     poll();
     this.stagePoller = setInterval(poll, STAGE_POLL_INTERVAL_MS);
