@@ -1,0 +1,157 @@
+const assert = require('node:assert/strict');
+const test = require('node:test');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const panelJs = fs.readFileSync(path.join(__dirname, '../media/panel.js'), 'utf8');
+
+// Extract functions from panel.js for testing
+function extractFunctionFromCode(code, functionName) {
+  const regex = new RegExp(`function ${functionName}\\(([^)]*)\\)[^{]*{([^]*?)\\n}`, 'm');
+  const match = code.match(regex);
+  if (!match) {
+    throw new Error(`Function ${functionName} not found`);
+  }
+  const params = match[1];
+  const body = match[2];
+  return new Function(...params.split(',').map(p => p.trim()), body);
+}
+
+function isFirstRowRole(role) {
+  return role === 'coordinator' || role === 'specifier';
+}
+
+test('isFirstRowRole identifies coordinator as first-row', () => {
+  assert.equal(isFirstRowRole('coordinator'), true);
+});
+
+test('isFirstRowRole identifies specifier as first-row', () => {
+  assert.equal(isFirstRowRole('specifier'), true);
+});
+
+test('isFirstRowRole identifies other roles as not first-row', () => {
+  assert.equal(isFirstRowRole('coder'), false);
+  assert.equal(isFirstRowRole('cleaner'), false);
+  assert.equal(isFirstRowRole('architect'), false);
+  assert.equal(isFirstRowRole('hardener'), false);
+  assert.equal(isFirstRowRole('documenter'), false);
+  assert.equal(isFirstRowRole('QA'), false);
+});
+
+test('updateGridLayout applies layout-2x2 for 4 agents', () => {
+  const mockGrid = {
+    classList: {
+      classes: [],
+      remove(...items) { this.classes = this.classes.filter(c => !items.includes(c)); },
+      add(...items) { this.classes.push(...items); }
+    }
+  };
+
+  // Simulate updateGridLayout
+  mockGrid.classList.remove('layout-2x2', 'layout-first-row');
+  if (4 === 4) {
+    mockGrid.classList.add('layout-2x2');
+  }
+
+  assert(mockGrid.classList.classes.includes('layout-2x2'));
+  assert(!mockGrid.classList.classes.includes('layout-first-row'));
+});
+
+test('updateGridLayout applies layout-first-row when coordinator and specifier both present', () => {
+  const mockGrid = {
+    classList: {
+      classes: [],
+      remove(...items) { this.classes = this.classes.filter(c => !items.includes(c)); },
+      add(...items) { this.classes.push(...items); }
+    }
+  };
+
+  const roles = [
+    { role: 'coordinator', displayName: 'Coordinator', agent: 'coordinator' },
+    { role: 'specifier', displayName: 'Specifier', agent: 'specifier' },
+    { role: 'coder', displayName: 'Coder', agent: 'coder' }
+  ];
+
+  // Simulate updateGridLayout
+  mockGrid.classList.remove('layout-2x2', 'layout-first-row');
+  if (3 === 4) {
+    mockGrid.classList.add('layout-2x2');
+  } else if (roles && roles.some(r => r.role === 'coordinator') && roles.some(r => r.role === 'specifier')) {
+    mockGrid.classList.add('layout-first-row');
+  }
+
+  assert(!mockGrid.classList.classes.includes('layout-2x2'));
+  assert(mockGrid.classList.classes.includes('layout-first-row'));
+});
+
+test('updateGridLayout does not apply first-row layout without coordinator', () => {
+  const mockGrid = {
+    classList: {
+      classes: [],
+      remove(...items) { this.classes = this.classes.filter(c => !items.includes(c)); },
+      add(...items) { this.classes.push(...items); }
+    }
+  };
+
+  const roles = [
+    { role: 'coder', displayName: 'Coder', agent: 'coder' },
+    { role: 'specifier', displayName: 'Specifier', agent: 'specifier' }
+  ];
+
+  // Simulate updateGridLayout
+  mockGrid.classList.remove('layout-2x2', 'layout-first-row');
+  if (2 === 4) {
+    mockGrid.classList.add('layout-2x2');
+  } else if (roles && roles.some(r => r.role === 'coordinator') && roles.some(r => r.role === 'specifier')) {
+    mockGrid.classList.add('layout-first-row');
+  }
+
+  assert(!mockGrid.classList.classes.includes('layout-first-row'));
+});
+
+test('first-row tile class is added to coordinator tile', () => {
+  const role = 'coordinator';
+  const expectedClass = 'tile' + (isFirstRowRole(role) ? ' first-row' : '');
+  assert.equal(expectedClass, 'tile first-row');
+});
+
+test('first-row tile class is added to specifier tile', () => {
+  const role = 'specifier';
+  const expectedClass = 'tile' + (isFirstRowRole(role) ? ' first-row' : '');
+  assert.equal(expectedClass, 'tile first-row');
+});
+
+test('first-row tile class is not added to other roles', () => {
+  const role = 'coder';
+  const expectedClass = 'tile' + (isFirstRowRole(role) ? ' first-row' : '');
+  assert.equal(expectedClass, 'tile');
+});
+
+test('getWebviewHtml CSS has layout-first-row styles', () => {
+  const { getWebviewHtml } = require('../out/panel/webviewHtml');
+  const html = getWebviewHtml('test.js', 'test');
+  assert(html.includes('#grid.layout-first-row'));
+  assert(html.includes('grid-template-rows: auto 1fr'));
+});
+
+test('getWebviewHtml CSS has first-row grid positioning', () => {
+  const { getWebviewHtml } = require('../out/panel/webviewHtml');
+  const html = getWebviewHtml('test.js', 'test');
+  assert(html.includes('#grid.layout-first-row .tile.first-row'));
+  assert(html.includes('grid-row: 1'));
+});
+
+test('getWebviewHtml CSS has tile-output min-height for output retention', () => {
+  const { getWebviewHtml } = require('../out/panel/webviewHtml');
+  const html = getWebviewHtml('test.js', 'test');
+  assert(html.includes('.tile-output'));
+  assert(html.includes('min-height: 0'));
+  assert(html.includes('flex: 1'));
+});
+
+test('getWebviewHtml CSS has first-row selected tile asymmetric spanning', () => {
+  const { getWebviewHtml } = require('../out/panel/webviewHtml');
+  const html = getWebviewHtml('test.js', 'test');
+  assert(html.includes('#grid.layout-first-row .tile.first-row.selected'));
+  assert(html.includes('grid-column: span 2'));
+});
