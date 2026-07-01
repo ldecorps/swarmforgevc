@@ -271,13 +271,15 @@ function getWebviewHtml(scriptUri, cspSource) {
       border-color: #e53935;
     }
     /* Border-only pulse (BL-054): animating opacity would fade the tile's
-       text along with the border, so only border-color breathes. */
+       text along with the border, so only border-color breathes.
+       RED per BL-059 — asking-a-question is urgent. The BLINK is what
+       distinguishes it from the solid red border of a dead tile. */
     @keyframes needs-human-blink {
       0%, 100% {
-        border-color: #00a8e8;
+        border-color: #e53935;
       }
       50% {
-        border-color: rgba(0, 168, 232, 0.35);
+        border-color: rgba(229, 57, 53, 0.25);
       }
     }
     .tile.needs-human:not(.dead) {
