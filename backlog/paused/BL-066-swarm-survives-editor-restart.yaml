@@ -1,0 +1,74 @@
+id: BL-066
+title: A running swarm survives an editor restart — detach, re-discover, re-attach
+milestone: M3
+status: todo
+priority: 08
+assigned_to: coder
+
+description: |
+  Known design gap (Specification.MD "Persistence across VS Code restart"):
+  agent processes spawned as children of the extension host die when VS Code
+  closes or reloads. Real dogfooding pain: every extension bounce (the very
+  thing BL-058 exists for) kills the coder mid-parcel and in-flight work
+  restarts from scratch.
+
+  Behaviors:
+  - Agent processes run detached from (or re-parentable away from) the
+    extension host so closing/reloading the editor leaves them running.
+  - PID/state for every spawned process is kept on disk under `.swarmforge/`
+    so a relaunched extension re-discovers the live swarm.
+  - On relaunch with a live swarm: the extension re-attaches — tiles
+    reconnect to the live output streams, status/pipeline views resume —
+    without restarting any agent.
+  - On relaunch with no live processes: the extension offers resume from
+    per-stage on-disk state instead of a cold start.
+  - Pairs with BL-061 (daemon supervision): the handoff daemon must equally
+    survive the editor restart and be re-discovered — parcels in the
+    transport must not be lost by a bounce.
+
+  Constraints:
+  - OVERLAPS BL-061 (daemon lifecycle) — promote after BL-061 merges.
+  - No behavior change for stop: an explicit stop-swarm still terminates
+    everything cleanly.
+
+acceptance: |
+  Feature: swarm survives editor restart
+
+  # BL-066 survive-restart-01
+  Scenario: editor reload leaves the swarm running
+    Given a swarm with agents mid-parcel
+    When the developer reloads or closes the editor window
+    Then every agent process keeps running
+    And the handoff transport keeps delivering
+
+  # BL-066 survive-restart-02
+  Scenario: relaunched extension re-attaches to the live swarm
+    Given a live swarm and a freshly relaunched extension
+    When the panel opens
+    Then tiles reconnect to the live agents' output streams
+    And pipeline/status views reflect the in-flight parcels
+    And no agent restarts
+
+  # BL-066 survive-restart-03
+  Scenario: in-flight work is not restarted by a bounce
+    Given the coder is mid-parcel
+    When the extension is bounced (BL-058 script)
+    Then after the bounce the coder continues the same parcel
+    And no in-flight work restarts from scratch
+
+  # BL-066 survive-restart-04
+  Scenario: cold relaunch offers resume from state
+    Given no live swarm processes but per-stage state on disk
+    When the extension relaunches
+    Then it offers resuming the run from that state
+    And does not silently cold-start a new run
+
+  # BL-066 survive-restart-05
+  Scenario: explicit stop still stops everything
+    Given a live detached swarm
+    When the developer runs the stop command
+    Then all agent processes and the daemon terminate cleanly
+
+  # Non-behavioral gate:
+  #  - Discovery/re-attach logic unit-tested with fixture PID/state files;
+  #    suite green.

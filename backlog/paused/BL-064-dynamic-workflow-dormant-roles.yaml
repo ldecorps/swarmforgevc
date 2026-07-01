@@ -1,0 +1,67 @@
+id: BL-064
+title: Dynamic workflow — per-item role packs with dormant roles; QA always gates
+milestone: M3
+status: todo
+priority: 12
+assigned_to: coder
+
+description: |
+  M3 roadmap item (Milestone Roadmap "Dynamic workflow", Specification.MD
+  dormant-roles): stop paying the full 7-role pipeline on trivial parcels.
+  Stage-time analysis (2026-07-02) shows small UI refinements pay the full
+  7-stage cost while several stages are pure no-op forwards.
+
+  Behaviors:
+  - A ticket can pin the roles it needs (a per-item active pack), e.g. a
+    CSS-only refinement that skips architect and hardender; absent a pin the
+    coordinator may infer a lean pack from the ticket's scope.
+  - Skipped (dormant) roles do not receive the parcel at all for that item;
+    the chain flows directly between adjacent active stages.
+  - Dormant roles' worktrees rebase-on-wake: when a dormant role next
+    receives work, its worktree is first brought up to date so dormant
+    branches don't go stale.
+  - QA is the MANDATORY final gate on every parcel regardless of pack; the
+    specifier merge step is likewise never skipped.
+
+  Constraints:
+  - The full chain remains the default; right-sizing is opt-in per ticket
+    (pin) or coordinator-inferred, never silently global.
+  - Compounds with BL-060 (fast suite) — do not couple to it.
+
+acceptance: |
+  Feature: per-item role packs
+
+  # BL-064 role-pack-01
+  Scenario: a ticket with a pinned pack skips dormant roles
+    Given a ticket pinning the pack coder, cleaner, documenter
+    When the parcel flows through the pipeline
+    Then architect and hardender never receive it
+    And it flows coder -> cleaner -> documenter -> QA
+
+  # BL-064 role-pack-02
+  Scenario: QA gates every parcel regardless of pack
+    Given a ticket pinning a minimal pack
+    When the last pinned stage completes
+    Then the parcel still goes to QA for the full final gate
+    And merge still requires QA approval
+
+  # BL-064 role-pack-03
+  Scenario: unpinned tickets run the full default chain
+    Given a ticket with no pack pin and no coordinator inference
+    When the parcel flows
+    Then every pipeline role receives it in the normal order
+
+  # BL-064 role-pack-04
+  Scenario: dormant worktrees rebase on wake
+    Given a role was dormant while main advanced
+    When that role next receives a parcel
+    Then its worktree is brought up to date with main before work starts
+
+  # BL-064 role-pack-05
+  Scenario: pack routing is visible
+    Given a parcel running a lean pack
+    When the panel or run log is inspected
+    Then the active pack for that parcel is discoverable
+
+  # Non-behavioral gate:
+  #  - Full suite green; routing logic unit-tested without a live swarm.

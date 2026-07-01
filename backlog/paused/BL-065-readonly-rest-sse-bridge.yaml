@@ -1,0 +1,74 @@
+id: BL-065
+title: Read-only REST + SSE bridge (phase 1) — localhost projection of swarm state
+milestone: M6
+status: todo
+priority: 14
+assigned_to: coder
+
+description: |
+  Pulled forward from M6 at the user's interest ("expose a web page, maybe a
+  REST API first, then a web UI on top"). Phase 1 builds ONLY the read-only
+  projection layer (Specification.MD "Remote Access & Phone App", Tier-2
+  bridge); the user's eventual goal is answering to-human gates remotely,
+  which later phases build on this.
+
+  Behaviors:
+  - An opt-in command (e.g. `swarmforge.startBridge`) starts a small local
+    HTTP server; a stop counterpart shuts it down.
+  - JSON endpoints expose the same on-disk truth the extension reads:
+    pipeline stage per parcel, per-agent status/heartbeat, backlog folders
+    (active/paused/done), and the run log.
+  - An SSE event stream emits change events so a client needn't poll.
+  - Bearer-token auth from day one: a token generated per run, held by the
+    extension host, required on every request; never written into the target
+    repo or any commit.
+  - The bridge holds NO state: it is a pure projection of `.swarmforge/` and
+    `backlog/`; killing it leaves the swarm unaffected.
+
+  Explicitly OUT of phase 1 (separate later tickets): control endpoints
+  (answer gates, respawn, stop-swarm), the web UI itself, any tunneling or
+  non-localhost exposure. Localhost binding only.
+
+acceptance: |
+  Feature: read-only swarm bridge
+
+  Background:
+    Given a running swarm and the bridge started via its opt-in command
+
+  # BL-065 bridge-01
+  Scenario: state endpoints project on-disk truth
+    When an authorized client requests the pipeline, agents, backlog, or
+      run-log endpoint
+    Then the JSON response matches the current on-disk state
+
+  # BL-065 bridge-02
+  Scenario: SSE stream announces changes
+    Given an authorized client subscribed to the event stream
+    When a parcel changes stage or an agent's status changes
+    Then the client receives a corresponding SSE event
+
+  # BL-065 bridge-03
+  Scenario: requests without the bearer token are rejected
+    When a client calls any endpoint without the current run's token
+    Then the request is rejected with an auth error
+    And no state is disclosed
+
+  # BL-065 bridge-04
+  Scenario: the token never lands in the target repo
+    When a run generates its bridge token
+    Then the token exists only in the extension host environment
+    And no file in the target repo or its commits contains it
+
+  # BL-065 bridge-05
+  Scenario: the bridge is stateless and expendable
+    Given the bridge process dies or is stopped
+    Then the swarm continues unaffected
+    And restarting the bridge serves current state again
+
+  # BL-065 bridge-06
+  Scenario: localhost only
+    Then the server listens on a localhost interface only
+    And no control (write) endpoint exists in this phase
+
+  # Non-behavioral gate:
+  #  - Endpoint handlers unit-tested against fixture state dirs; suite green.

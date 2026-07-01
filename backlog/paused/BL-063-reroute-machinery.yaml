@@ -1,0 +1,75 @@
+id: BL-063
+title: Reroute machinery — point-to-point pipeline detours with budget and livelock gate
+milestone: M3
+status: todo
+priority: 10
+assigned_to: coder
+
+description: |
+  M3 roadmap item (Specification.MD "Reroute"): let a parcel take a detour —
+  be sent from any stage to any other stage with a note — instead of only
+  flowing down the fixed chain. A reroute is an interruption, not a
+  reordering: when the detour resolves, the parcel resumes the normal chain
+  from where it left off.
+
+  Behaviors:
+  - Any stage can request a reroute of the current parcel to another stage,
+    attaching a short reason note that the target stage sees.
+  - Detour budget: each parcel has a bounded number of reroutes; exceeding it
+    stops further automatic detours.
+  - Cycle detection: a repeating stage-to-stage pattern for the same parcel
+    (livelock) is detected and escalates to a `to: human` gate rather than
+    looping.
+  - Resume: after the detour target completes, the parcel re-enters the
+    normal chain at the point it was interrupted.
+
+  ORDERING / OVERLAP (specifier decision 2026-07-02): BL-036 (salvage
+  redo-from-stage) is IN FLIGHT and builds the minimal human-initiated
+  redo path (tag + abandon + re-inject). This ticket lands AFTER BL-036
+  merges and GENERALIZES that mechanism — reuse its abandonment/re-injection
+  plumbing; do not build a second parallel reroute mechanism. Coordinator:
+  do not run BL-063 concurrently with BL-036.
+
+acceptance: |
+  Feature: pipeline reroute detours
+
+  Background:
+    Given a parcel moving through the pipeline chain
+
+  # BL-063 reroute-01
+  Scenario: a stage detours the parcel to an earlier stage with a note
+    Given the parcel is at a stage that requests a reroute to an earlier stage
+    When the reroute is sent
+    Then the target stage receives the parcel with the reroute reason note
+    And the parcel's reroute count increments
+
+  # BL-063 reroute-02
+  Scenario: the pipeline resumes normal order after the detour
+    Given a parcel was rerouted from stage S back to an earlier stage
+    When the detour work completes
+    Then the parcel re-enters the normal chain where it was interrupted
+    And continues in normal order from S onward
+
+  # BL-063 reroute-03
+  Scenario: detour budget bounds automatic reroutes
+    Given the parcel has used its full detour budget
+    When a stage requests another reroute
+    Then the reroute is refused
+    And the parcel escalates to a to-human gate
+
+  # BL-063 reroute-04
+  Scenario: livelock cycles escalate to the human
+    Given the same parcel repeats a stage-to-stage reroute pattern
+    When cycle detection recognizes the repetition
+    Then automatic rerouting stops for that parcel
+    And a to-human gate is raised naming the detected cycle
+
+  # BL-063 reroute-05
+  Scenario: reroutes reuse the salvage plumbing
+    Given BL-036's redo path is in place
+    When a reroute abandons in-flight handoffs and re-injects the parcel
+    Then it uses the same abandonment and re-injection mechanism as redo_from
+    And no duplicate parallel mechanism exists
+
+  # Non-behavioral gate:
+  #  - Reroute events recorded in the run log; full suite green.
