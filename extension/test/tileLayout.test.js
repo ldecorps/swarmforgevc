@@ -150,7 +150,7 @@ test('getWebviewHtml CSS has flexible auto-fit grid for layout-first-row', () =>
   const { getWebviewHtml } = require('../out/panel/webviewHtml');
   const html = getWebviewHtml('test.js', 'test');
   assert(html.includes('#grid.layout-first-row'));
-  assert(html.includes('repeat(auto-fit, minmax('));
+  assert(html.includes('repeat(auto-fit, minmax(280px, 1fr))'));
 });
 
 test('getWebviewHtml CSS uses role-based positioning instead of nth-of-type', () => {
@@ -234,8 +234,11 @@ test('getWebviewHtml CSS uses role-based positioning instead of nth-of-type for 
 test('getWebviewHtml CSS fits layout-first-row to panel without scroll', () => {
   const { getWebviewHtml } = require('../out/panel/webviewHtml');
   const html = getWebviewHtml('test.js', 'test');
-  assert(html.includes('#grid.layout-first-row'));
-  assert(!html.includes('overflow: auto') || html.includes('overflow: hidden'));
+  const ruleStart = html.indexOf('#grid.layout-first-row {');
+  assert(ruleStart !== -1);
+  const rule = html.slice(ruleStart, html.indexOf('}', ruleStart));
+  assert(!rule.includes('overflow: auto'));
+  assert(rule.includes('overflow: hidden'));
 });
 
 test('getWebviewHtml CSS weights coordinator and specifier larger in layout-first-row', () => {
