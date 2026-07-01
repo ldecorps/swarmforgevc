@@ -1,5 +1,15 @@
 # Workflow Rules
 
+## Active Backlog Cap (read with the constitution)
+- The maximum number of items allowed in `backlog/active/` at once is defined in
+  `swarmforge/swarmforge.conf` by the line `config active_backlog_max_depth <N>`.
+- Reading that config line is part of reading this constitution: any role whose
+  behavior depends on the cap (the coordinator's promotion decisions, the
+  specifier's routing awareness, orthogonality checks below) must read the
+  CURRENT value from `swarmforge.conf` at startup and before each promotion
+  decision — never assume a remembered or default value; the conf is the single
+  source of truth and may change between sessions.
+
 ## Backlog Intake Order
 - The backlog root (`backlog/` itself, not a subfolder) is the human's raw intake
   queue: requests the human drops there directly, not yet turned into specs.

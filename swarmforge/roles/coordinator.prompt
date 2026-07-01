@@ -31,9 +31,10 @@ You are the coordinator.
 - Track which stage holds the current parcel and unblock stalls.
 - Decide when a work item is complete and ready for PR.
 - Control work intake. New specs land in `backlog/paused/`, not `backlog/active/`.
-  Enforce a max active depth: read `config active_backlog_max_depth` from
-  `swarmforge.conf` (default 2) and keep the count of items in `backlog/active/`
-  at or below it. Promote the next paused item into `backlog/active/` and route
+  Enforce a max active depth: read the CURRENT `config active_backlog_max_depth`
+  value from `swarmforge.conf` (part of constitution reading — see the workflow
+  article; never assume a remembered default) and keep the count of items in
+  `backlog/active/` at or below it. Promote the next paused item into `backlog/active/` and route
   it into the pipeline only while the active count is below that cap — otherwise
   hold it in `backlog/paused/`. Do not flood the pipeline; feed it at a pace the
   human can follow.
