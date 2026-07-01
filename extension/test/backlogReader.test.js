@@ -92,6 +92,19 @@ test('readBacklog reads items from active directory', () => {
   assert.equal(items[0].id, 'BL-007');
 });
 
+test('readBacklog marks active-folder items as active even when yaml status says todo', () => {
+  const tmp = mkTmp();
+  const activeDir = path.join(tmp, 'backlog', 'active');
+  mkdirp(activeDir);
+  fs.writeFileSync(
+    path.join(activeDir, 'BL-053.yaml'),
+    'id: BL-053\ntitle: Promoted item\nstatus: todo\nassigned_to: coder\n'
+  );
+  const items = readBacklog(tmp);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].status, 'active');
+});
+
 test('readBacklog reads items from done directory', () => {
   const tmp = mkTmp();
   const doneDir = path.join(tmp, 'backlog', 'done');
