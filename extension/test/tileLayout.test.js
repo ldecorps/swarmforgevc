@@ -17,8 +17,17 @@ function extractFunctionFromCode(code, functionName) {
   return new Function(...params.split(',').map(p => p.trim()), body);
 }
 
-function isFirstRowRole(role) {
-  return role === 'coordinator' || role === 'specifier';
+const isFirstRowRole = extractFunctionFromCode(panelJs, 'isFirstRowRole');
+const updateGridLayout = extractFunctionFromCode(panelJs, 'updateGridLayout');
+
+function makeMockGrid() {
+  return {
+    classList: {
+      classes: [],
+      remove(...items) { this.classes = this.classes.filter(c => !items.includes(c)); },
+      add(...items) { this.classes.push(...items); }
+    }
+  };
 }
 
 test('isFirstRowRole identifies coordinator as first-row', () => {
@@ -39,32 +48,18 @@ test('isFirstRowRole identifies other roles as not first-row', () => {
 });
 
 test('updateGridLayout applies layout-2x2 for 4 agents', () => {
-  const mockGrid = {
-    classList: {
-      classes: [],
-      remove(...items) { this.classes = this.classes.filter(c => !items.includes(c)); },
-      add(...items) { this.classes.push(...items); }
-    }
-  };
+  const mockGrid = makeMockGrid();
+  global.grid = mockGrid;
 
-  // Simulate updateGridLayout
-  mockGrid.classList.remove('layout-2x2', 'layout-first-row');
-  if (4 === 4) {
-    mockGrid.classList.add('layout-2x2');
-  }
+  updateGridLayout(4, []);
 
   assert(mockGrid.classList.classes.includes('layout-2x2'));
   assert(!mockGrid.classList.classes.includes('layout-first-row'));
 });
 
 test('updateGridLayout applies layout-first-row when coordinator and specifier both present', () => {
-  const mockGrid = {
-    classList: {
-      classes: [],
-      remove(...items) { this.classes = this.classes.filter(c => !items.includes(c)); },
-      add(...items) { this.classes.push(...items); }
-    }
-  };
+  const mockGrid = makeMockGrid();
+  global.grid = mockGrid;
 
   const roles = [
     { role: 'coordinator', displayName: 'Coordinator', agent: 'coordinator' },
@@ -72,40 +67,49 @@ test('updateGridLayout applies layout-first-row when coordinator and specifier b
     { role: 'coder', displayName: 'Coder', agent: 'coder' }
   ];
 
-  // Simulate updateGridLayout
-  mockGrid.classList.remove('layout-2x2', 'layout-first-row');
-  if (3 === 4) {
-    mockGrid.classList.add('layout-2x2');
-  } else if (roles && roles.some(r => r.role === 'coordinator') && roles.some(r => r.role === 'specifier')) {
-    mockGrid.classList.add('layout-first-row');
-  }
+  updateGridLayout(3, roles);
 
   assert(!mockGrid.classList.classes.includes('layout-2x2'));
   assert(mockGrid.classList.classes.includes('layout-first-row'));
 });
 
 test('updateGridLayout does not apply first-row layout without coordinator', () => {
-  const mockGrid = {
-    classList: {
-      classes: [],
-      remove(...items) { this.classes = this.classes.filter(c => !items.includes(c)); },
-      add(...items) { this.classes.push(...items); }
-    }
-  };
+  const mockGrid = makeMockGrid();
+  global.grid = mockGrid;
 
   const roles = [
     { role: 'coder', displayName: 'Coder', agent: 'coder' },
     { role: 'specifier', displayName: 'Specifier', agent: 'specifier' }
   ];
 
-  // Simulate updateGridLayout
-  mockGrid.classList.remove('layout-2x2', 'layout-first-row');
-  if (2 === 4) {
-    mockGrid.classList.add('layout-2x2');
-  } else if (roles && roles.some(r => r.role === 'coordinator') && roles.some(r => r.role === 'specifier')) {
-    mockGrid.classList.add('layout-first-row');
-  }
+  updateGridLayout(2, roles);
 
+  assert(!mockGrid.classList.classes.includes('layout-first-row'));
+});
+
+test('updateGridLayout does not apply first-row layout without specifier', () => {
+  const mockGrid = makeMockGrid();
+  global.grid = mockGrid;
+
+  const roles = [
+    { role: 'coordinator', displayName: 'Coordinator', agent: 'coordinator' },
+    { role: 'coder', displayName: 'Coder', agent: 'coder' }
+  ];
+
+  updateGridLayout(2, roles);
+
+  assert(!mockGrid.classList.classes.includes('layout-first-row'));
+});
+
+test('updateGridLayout clears a previously applied layout class when it no longer applies', () => {
+  const mockGrid = makeMockGrid();
+  global.grid = mockGrid;
+
+  updateGridLayout(4, []);
+  assert(mockGrid.classList.classes.includes('layout-2x2'));
+
+  updateGridLayout(2, [{ role: 'coder' }]);
+  assert(!mockGrid.classList.classes.includes('layout-2x2'));
   assert(!mockGrid.classList.classes.includes('layout-first-row'));
 });
 
