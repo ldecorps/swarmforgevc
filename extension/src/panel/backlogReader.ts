@@ -128,3 +128,20 @@ export function readBacklog(targetPath: string): BacklogItem[] {
 
   return [...activeItems, ...doneItems];
 }
+
+export interface BacklogFolders {
+  active: BacklogItem[];
+  paused: BacklogItem[];
+  done: BacklogItem[];
+}
+
+// Unlike readBacklog (which normalizes for the panel's own display), this
+// projects the three backlog folders as-is for consumers, such as the read
+// bridge, that need to know which folder a ticket currently sits in.
+export function readBacklogFolders(targetPath: string): BacklogFolders {
+  return {
+    active: readYamlFiles(path.join(targetPath, 'backlog', 'active')),
+    paused: readYamlFiles(path.join(targetPath, 'backlog', 'paused')),
+    done: readDoneItems(path.join(targetPath, 'backlog', 'done')),
+  };
+}

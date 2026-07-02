@@ -46,6 +46,8 @@ const workTreePanel_1 = require("./panel/workTreePanel");
 const backlogLoop_1 = require("./swarm/backlogLoop");
 const backlogReader_1 = require("./panel/backlogReader");
 const runLog_1 = require("./runs/runLog");
+const bridgeServer_1 = require("./bridge/bridgeServer");
+const bridgeToken_1 = require("./bridge/bridgeToken");
 const prCreator_1 = require("./swarm/prCreator");
 const swarmLauncher_1 = require("./swarm/swarmLauncher");
 const swarmDiscovery_1 = require("./swarm/swarmDiscovery");
@@ -88,6 +90,7 @@ let currentBounceDrainWatcher = null;
 let currentGracefulBounceFileWatcher = null;
 let currentIdleClearMonitor = null;
 let idleClearOutputChannel;
+let currentBridge = null;
 function generateDefaultRunName() {
     const now = new Date();
     const year = now.getFullYear();
@@ -622,6 +625,29 @@ function activate(context) {
         else {
             vscode.window.showWarningMessage(result.message);
         }
+    }), vscode.commands.registerCommand('swarmforge.startBridge', async () => {
+        const targetPath = (0, targetConfig_1.getTargetPath)();
+        if (!targetPath) {
+            vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
+            return;
+        }
+        if (currentBridge) {
+            vscode.window.showInformationMessage(`SwarmForge bridge already running on port ${currentBridge.port}.`);
+            return;
+        }
+        // The token lives only in this extension host process and is shown
+        // once to the user; it is never written into the target repo.
+        const token = (0, bridgeToken_1.generateBridgeToken)();
+        currentBridge = await (0, bridgeServer_1.startBridge)(targetPath, runLogPath, token);
+        vscode.window.showInformationMessage(`SwarmForge bridge listening on http://127.0.0.1:${currentBridge.port} — token: ${token}`);
+    }), vscode.commands.registerCommand('swarmforge.stopBridge', async () => {
+        if (!currentBridge) {
+            vscode.window.showInformationMessage('SwarmForge bridge is not running.');
+            return;
+        }
+        currentBridge.stop();
+        currentBridge = null;
+        vscode.window.showInformationMessage('SwarmForge bridge stopped.');
     }), vscode.commands.registerCommand('swarmforge.bounceSwarm', async () => {
         const validated = validateTargetAndLastRun((0, targetConfig_1.getTargetPath)(), context);
         if (!validated) {
@@ -790,6 +816,10 @@ function deactivate() {
     if (currentBounceWatcher) {
         currentBounceWatcher.close();
         currentBounceWatcher = null;
+    }
+    if (currentBridge) {
+        currentBridge.stop();
+        currentBridge = null;
     }
 }
 //# sourceMappingURL=extension.js.map

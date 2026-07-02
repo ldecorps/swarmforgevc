@@ -92,6 +92,32 @@
       (assoc-in [:headers "recipient"] recipient)
       (assoc-in [:headers "enqueued_at"] (now))))
 
+(defn rule-proposals-file []
+  (fs/path state-dir "rule_proposals"
+           (str (.format (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM")
+                         (.atZone (java.time.Instant/now) java.time.ZoneOffset/UTC))
+                ".jsonl")))
+
+(defn json-escape [s]
+  (-> (or s "")
+      (str/replace "\\" "\\\\")
+      (str/replace "\"" "\\\"")
+      (str/replace "\n" "\\n")))
+
+;; Durable audit trail for BL-035 rule_proposal handoffs: one line per
+;; delivered proposal, appended at delivery time (not the eventual
+;; accept/reject outcome — the specifier's review is prompt/agent behavior,
+;; not scriptable code here).
+(defn append-rule-proposal! [headers]
+  (let [file (rule-proposals-file)
+        line (str "{\"scope\":\"" (json-escape (get headers "scope")) "\","
+                  "\"body\":\"" (json-escape (get headers "body")) "\","
+                  "\"rationale\":\"" (json-escape (get headers "rationale")) "\","
+                  "\"proposer\":\"" (json-escape (get headers "from")) "\","
+                  "\"timestamp\":\"" (now) "\"}")]
+    (fs/create-dirs (fs/parent file))
+    (spit (str file) (str line "\n") :append true)))
+
 (defn delivered-filename
   "Per-recipient copy name. Recipients that share an inbox directory (e.g.
    coordinator and specifier on master) would otherwise collide on the original
@@ -156,6 +182,8 @@
               (when-not (fs/exists? target)
                 (spit (str target) (render-message (:headers delivered) (:body delivered))))
               (notify! socket (:session role-info)))))
+        (when (= "rule_proposal" (get headers "type"))
+          (append-rule-proposal! headers))
         (move-with-collision path
                              (fs/path (get-in roles [sender-role :worktree-path])
                                       ".swarmforge" "handoffs" "sent"))

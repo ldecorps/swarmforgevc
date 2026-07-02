@@ -1,0 +1,84 @@
+id: BL-035
+title: governance — emergent rule-proposal messages from agents to specifier
+milestone: M4
+status: todo
+priority: 35
+assigned_to: coder
+
+description: |
+  Agents (coordinator, cleaner, coder) sometimes discover a pattern that should
+  be written into the constitution or a role prompt — but currently have no
+  structured way to surface it. They either write an ad-hoc note or silently
+  discard the insight.
+
+  Add a `rule_proposal` handoff type to the swarm message bus. Any agent can
+  send a `rule_proposal` to the specifier with:
+  - `scope`: `constitution` | `role:<rolename>` | `engineering` | `project`
+  - `body`: the proposed rule text (≤ 200 chars, one crisp sentence)
+  - `rationale`: why the rule was observed as necessary (≤ 200 chars)
+
+  The specifier is the sole writer of constitution/prompts. On receiving a
+  `rule_proposal`, the specifier reviews it and either:
+  - Accepts it: appends the rule to the relevant file and commits.
+  - Rejects it: sends a `note` back to the proposer with the reason.
+
+  Wire the new type into `swarm_handoff.sh` validation (new valid type). Add a
+  `rule_proposals/` directory under `.swarmforge/` for durable audit: every
+  proposal (accepted or rejected) is appended to
+  `.swarmforge/rule_proposals/YYYY-MM.jsonl` with outcome and timestamp.
+
+  Scope (modernized 2026-07-02 at routing): swarm_handoff.sh validation +
+  handoffd delivery + handoff-protocol.md (document the new type), plus a
+  shell test beside the existing swarmforge/scripts/test/ suites. The
+  specifier's review flow is prompt/agent behavior, not scriptable code —
+  update specifier.prompt wording; do not build machinery for the
+  accept/reject decision itself. No extension/src changes expected.
+  Note: BL-064 (role packs) is in flight and also touches routing scripts —
+  coordinate merges through the normal chain; rebase on main before starting.
+
+acceptance: |
+  Feature: rule_proposal handoff type
+
+  # BL-035 rule-proposal-01
+  Scenario: a valid proposal is accepted and delivered to the specifier
+    Given a draft with type rule_proposal, scope constitution, a body of at
+      most 200 characters, and a rationale of at most 200 characters
+    When the agent runs swarm_handoff.sh on the draft
+    Then the handoff is queued without error
+    And the daemon delivers it to the specifier's inbox/new/
+
+  # BL-035 rule-proposal-02
+  Scenario Outline: invalid proposals are rejected at the validation gate
+    Given a rule_proposal draft that <defect>
+    When the agent runs swarm_handoff.sh on the draft
+    Then the draft is rejected with an error naming the offending field
+    And nothing is queued
+
+    Examples:
+      | defect                            |
+      | omits the scope header            |
+      | omits the body header             |
+      | omits the rationale header        |
+      | has a body over 200 characters    |
+      | has a scope not in the valid set  |
+
+  # BL-035 rule-proposal-03
+  Scenario: every proposal lands in the durable audit log
+    Given a valid rule_proposal is delivered
+    When .swarmforge/rule_proposals/YYYY-MM.jsonl for the current month is
+      read
+    Then it contains one appended JSON line for the proposal with its scope,
+      body, rationale, proposer, and timestamp
+
+  # BL-035 rule-proposal-04
+  Scenario: existing message types are unaffected
+    Given drafts of type awake, git_handoff, and note
+    When each is sent through swarm_handoff.sh
+    Then each validates and delivers exactly as before
+
+  # Non-behavioral gate:
+  #  - Shell test for the new type's validation beside the existing
+  #    swarmforge/scripts/test/ suites; all existing suites stay green.
+  #  - handoff-protocol.md documents the new type (it currently says agents
+  #    may use only three types — update that).
+  #  - Full extension suite green (no extension/src changes expected).
