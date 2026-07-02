@@ -48,6 +48,7 @@ const backlogReader_1 = require("./panel/backlogReader");
 const runLog_1 = require("./runs/runLog");
 const prCreator_1 = require("./swarm/prCreator");
 const swarmLauncher_1 = require("./swarm/swarmLauncher");
+const swarmDiscovery_1 = require("./swarm/swarmDiscovery");
 const swarmStopper_1 = require("./swarm/swarmStopper");
 const bouncer_1 = require("./swarm/bouncer");
 const tmuxClient_1 = require("./swarm/tmuxClient");
@@ -366,6 +367,7 @@ function activate(context) {
     const runLogPath = path.join(os.homedir(), '.swarmforge', 'runs.jsonl');
     // Start bounce watcher and chaser if target is already set
     const targetPath = (0, targetConfig_1.getTargetPath)();
+    const pendingAutoLaunch = context.workspaceState.get(PENDING_AUTO_LAUNCH_KEY);
     if (targetPath) {
         // BL-069 crash safety: a drain sentinel can only be stale here — a live
         // watcher would already be running to complete it — so any sentinel
@@ -374,9 +376,32 @@ function activate(context) {
         startOrRestartBounceWatcher(context, targetPath);
         startOrRestartChaserMonitor(targetPath, context);
         startOrRestartGracefulBounceFileWatcher(targetPath, context);
+        // BL-066: a live swarm runs under tmux, independent of the extension
+        // host — an editor reload never touches it. Skip when a deliberate
+        // auto-launch is already pending below (BL-057's bounceAll flow), so
+        // the two paths never race each other.
+        if (!pendingAutoLaunch) {
+            if ((0, swarmLauncher_1.isSwarmReady)(targetPath)) {
+                // Re-attach automatically: tiles reconnect to the live output
+                // streams without restarting any agent.
+                const panel = swarmPanel_1.SwarmPanel.createOrShow(context.extensionUri, targetPath, runLogPath, undefined, context.secrets);
+                panel.updateTarget(targetPath);
+            }
+            else if ((0, swarmDiscovery_1.hasPriorRunState)(targetPath)) {
+                // Cold relaunch with no live processes: offer resume from the
+                // target's prior run rather than a silent no-op or a surprise
+                // cold start.
+                vscode.window
+                    .showInformationMessage('A previous SwarmForge run was found for this target but is not currently live. Resume it?', 'Resume', 'Not Now')
+                    .then((choice) => {
+                    if (choice === 'Resume') {
+                        vscode.commands.executeCommand('swarmforge.launchSwarm');
+                    }
+                });
+            }
+        }
     }
     // Check for pending auto-launch after extension reload
-    const pendingAutoLaunch = context.workspaceState.get(PENDING_AUTO_LAUNCH_KEY);
     if (pendingAutoLaunch) {
         context.workspaceState.update(PENDING_AUTO_LAUNCH_KEY, undefined);
         const targetPath = (0, targetConfig_1.getTargetPath)();
