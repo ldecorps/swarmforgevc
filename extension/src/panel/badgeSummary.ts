@@ -54,11 +54,10 @@ export function buildBadgeMap(
       if (targetPath) {
         liveHolder = findLiveHolder(targetPath, item.id);
       }
-      const tileRole = liveHolder || item.assignedTo;
-      const holder = liveHolder || item.assignedTo;
-      const bucket = byHolder.get(tileRole) ?? [];
-      bucket.push({ item, holder });
-      byHolder.set(tileRole, bucket);
+      const resolvedHolder = liveHolder || item.assignedTo;
+      const bucket = byHolder.get(resolvedHolder) ?? [];
+      bucket.push({ item, holder: resolvedHolder });
+      byHolder.set(resolvedHolder, bucket);
     }
   }
 
