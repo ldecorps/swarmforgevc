@@ -1,7 +1,7 @@
 id: BL-069
 title: Graceful bounce — drain all agents to idle, then perform the verified bounce
 milestone: M4
-status: todo
+status: done
 priority: 06
 assigned_to: coder
 
