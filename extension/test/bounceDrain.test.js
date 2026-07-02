@@ -168,6 +168,33 @@ test('startBounceDrainWatcher bounces once all roles report drained', async () =
   }
 });
 
+test('startBounceDrainWatcher fires onBounce only once per drain session even if the caller does not stop it or clear the sentinel promptly', async () => {
+  // In production the caller (extension.ts) stops the watcher and clears the
+  // sentinel synchronously inside onBounce, so a real second tick never
+  // happens -- but the watcher must not rely solely on that contract, since
+  // a slow/misbehaving adapter would otherwise re-trigger the actual bounce
+  // (killing/relaunching panes) on every subsequent poll.
+  const target = mkTarget();
+  startBounceDrain(target, 'swarm', 900);
+  const bounces = [];
+  const timer = startBounceDrainWatcher(
+    { targetPath: target, pollIntervalSeconds: 0.02 },
+    {
+      getRoleStatuses: () => [{ role: 'coder', hasInProcessWork: false, idle: true }],
+      onBounce: (type) => bounces.push(type), // deliberately does not stop the watcher or clear state
+      onTimeout: () => {},
+    }
+  );
+  try {
+    await waitUntil(() => bounces.length > 0);
+    // let several more poll cycles elapse with the sentinel still present
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    assert.deepEqual(bounces, ['swarm'], 'onBounce must fire at most once per drain session');
+  } finally {
+    stopBounceDrainWatcher(timer);
+  }
+});
+
 test('startBounceDrainWatcher never bounces while a role still holds in_process work', async () => {
   const target = mkTarget();
   startBounceDrain(target, 'swarm', 900);
