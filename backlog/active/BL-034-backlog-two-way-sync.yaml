@@ -1,0 +1,88 @@
+id: BL-034
+title: backlog sync — two-way field-level sync between panel and YAML files
+milestone: M4
+status: todo
+priority: 34
+assigned_to: coder
+
+description: |
+  The backlog pane in the swarm panel is read-only today: the host polls the
+  backlog folders every 2 s (STAGE_POLL_INTERVAL_MS in swarmPanel.ts) and
+  pushes `backlogUpdate` to the webview, but the user cannot change anything
+  from the panel. Make the sync two-way.
+
+  Directions:
+  1. **Disk -> panel (live)**: already behaviorally present via the 2 s poll —
+     keep it working and pin it with tests. Any add, remove, edit, or move of
+     a YAML file under `backlog/active/` or `backlog/done/<milestone>/` must
+     be visible in the rendered panel within 2 s with no user action. The
+     poll-vs-fs.watch choice is the coder's; the 2 s behavior is the contract.
+  2. **Panel -> disk (field-level)**: the user can (a) mark an active item
+     done, and (b) edit `assigned_to` on an active item. Writes go through
+     the extension host (webview posts a message; host does all I/O) using
+     atomic temp-file + rename — a partial/truncated YAML must never be
+     observable. Marking done MOVES the file from `backlog/active/` into
+     `backlog/done/<milestone>/` (subfolder from the item's `milestone`
+     field; flat `backlog/done/` when the item has none), matching the
+     close-into-done/<Mx> convention.
+
+  Field ownership: only `status` (active -> done transition) and
+  `assigned_to` are writable from the panel; `id`, `title`, `milestone`,
+  `priority`, `description`, `acceptance` stay read-only in the UI. Folder
+  stays authoritative for status (BL-033 invariant): items under `done/`
+  always render done regardless of their YAML `status` field, and the
+  mark-done write must not need to edit the `status` field for the panel to
+  agree.
+
+  Out of scope: rendering `backlog/paused/` or the backlog root in the panel,
+  and promoting items from the panel — promotion stays with the coordinator.
+  Constraint: webview stays presentation-only (no fs access, no browser
+  storage); all writes and moves happen in the extension host.
+
+acceptance: |
+  Background:
+    Given the swarm panel is open on a target repo with a backlog/ tree
+
+  # BL-034 backlog-two-way-sync-01
+  Scenario: disk edit reflects in the rendered panel within 2 seconds
+    Given an item BL-X is rendered from backlog/active/BL-X.yaml
+    When its title field is edited on disk by an external process
+    Then the rendered backlog row for BL-X shows the new title within 2 seconds
+    And no user action was required
+
+  # BL-034 backlog-two-way-sync-02
+  Scenario: disk move active -> done reflects in the rendered panel
+    Given an item BL-X is rendered as active
+    When its file is moved on disk from backlog/active/ to backlog/done/M4/
+    Then within 2 seconds the rendered row for BL-X shows done
+
+  # BL-034 backlog-two-way-sync-03
+  Scenario Outline: marking an item done from the panel moves its file
+    Given an active item <id> whose YAML milestone field is <milestone>
+    When the user marks <id> done in the backlog pane
+    Then the file moves from backlog/active/ to <destination>
+    And the rendered row for <id> shows done on the next refresh
+    Examples:
+      | id   | milestone | destination        |
+      | BL-X | M4        | backlog/done/M4/   |
+      | BL-Y | (none)    | backlog/done/      |
+
+  # BL-034 backlog-two-way-sync-04
+  Scenario: assigned_to edited from the panel persists to the YAML file
+    Given an active item BL-X with assigned_to coder
+    When the user changes assigned_to to cleaner in the backlog pane
+    Then backlog/active/BL-X.yaml on disk has assigned_to cleaner
+    And every other field of the file is byte-identical to before
+
+  # BL-034 backlog-two-way-sync-05
+  Scenario: panel writes are atomic
+    Given a panel -> disk write of an item's YAML is in progress
+    When any reader opens the item's path at any moment during the write
+    Then it sees either the complete old content or the complete new content
+    And never a partial or truncated file
+
+  # BL-034 backlog-two-way-sync-06
+  Scenario: done folder stays authoritative over the YAML status field
+    Given a file under backlog/done/M4/ whose YAML status field says todo
+    When the panel refreshes
+    Then the rendered row shows done
