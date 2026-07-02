@@ -15,8 +15,9 @@ function renderPanel() {
   const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
   const { window } = dom;
 
+  const sentMessages = [];
   window.acquireVsCodeApi = () => ({
-    postMessage: () => {},
+    postMessage: (message) => { sentMessages.push(message); },
     getState: () => undefined,
     setState: () => {},
   });
@@ -35,7 +36,7 @@ function renderPanel() {
     window.dispatchEvent(new window.MessageEvent('message', { data: message }));
   }
 
-  return { window, document: window.document, dispatch };
+  return { window, document: window.document, dispatch, sentMessages };
 }
 
 module.exports = { renderPanel };
