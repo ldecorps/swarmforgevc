@@ -1,0 +1,102 @@
+id: BL-067
+title: BUG — stuck-detection missed a 4h overnight stall (in_process held while pane idle)
+milestone: M4
+status: todo
+priority: 02
+assigned_to: coder
+
+description: |
+  BUG (human-reported, 2026-07-02). The stuck-detection/chase machinery
+  (BL-023 reconciler, BL-042 chaser wiring, watchdog/liveness family) failed to
+  detect or nudge a 4-hour whole-pipeline stall overnight ~02:30–06:20Z.
+  Evidence: handoffd was healthy the whole time (transport half is BL-061, in
+  flight — this ticket is the AGENT half). The specifier held QA handoff 000047
+  in inbox/in_process from 01:42 and idled at its prompt (~246k context); the
+  hardender held a 5-parcel BATCH DIRECTORY in in_process from 01:29 and idled
+  (~343k context). Both panes showed the idle marker for ~4 hours. No chase, no
+  amber/red tile, no needs-human escalation fired; a human found it by
+  comparing timestamps.
+
+  What: first DIAGNOSE why the live extension missed this, then fix so the
+  observed failure mode is covered. Diagnosis candidates (verify, don't
+  assume): the stuck rule only ages unacked inbox/new deliveries and ignores
+  "in_process held while pane idle"; the in_process check sees only single
+  task files and not batch directories; the chaser is heartbeat/liveness-gated
+  in a way that never fires for a mid-conversation stall; or the chase loop is
+  not actually running in the live extension host. Record the root cause in
+  the ticket close / commit message and add a regression test reproducing the
+  observed miss.
+
+  Then cover the failure mode: a role that HOLDS in_process work (single file
+  OR batch directory) while its pane shows no activity (no tool output, no
+  commits, no outbox writes) for a configurable threshold must be chased
+  (nudge its pane); after repeated chases with no recovery it must escalate
+  visibly on the tile (needs-human red surface), consistent with the existing
+  precedence dead > needs-human > stalled > normal. Context exhaustion is the
+  recurring root cause (3rd occurrence); treat "idle at prompt while holding
+  in_process work" as the reliable proxy — surfacing exact per-agent context
+  usage is OUT of scope for this ticket.
+
+  Constraints: two-layer rule — detection and nudging live in the extension
+  host (tmux is the substrate; nudge via the existing tmux client, e.g. the
+  BL-004 nudge path); webview changes are presentation only. Do not modify
+  SwarmForge itself. Threshold and chase caps must be configurable with sane
+  defaults (reuse the existing chaser config shape where it fits, e.g.
+  stuckInProcessTimeoutSeconds/maxChases). No false positives: an agent
+  actively working (recent tool output/commits/outbox writes) is never chased
+  even while holding in_process work.
+
+  Scope: extension host stuck-detection (extension/src/swarm/inboxChaser.ts,
+  extension/src/chase/ChaseMonitor.ts, extension/src/watchdog/*), activation
+  wiring, tile status surface (presentation only), plus tests. Related:
+  BL-061 (transport half, in flight) — touches the babashka daemon, not this
+  machinery; together they cover the M2 "leave a run unattended" promise.
+
+acceptance: |
+  Feature: chase in_process work held by an idle agent
+
+  Background:
+    Given a running swarm attached to the extension host
+    And the handoff daemon is healthy and delivering
+
+  # BL-067 stuck-inprocess-chase-01
+  Scenario Outline: idle agent holding in_process work gets chased
+    Given role <role> holds <in_process_shape> in its inbox/in_process
+    And that role's pane has shown no activity for longer than the stuck threshold
+    When the stuck monitor evaluates
+    Then a chase nudge is sent to <role>'s pane
+
+    Examples:
+      | role      | in_process_shape   |
+      | specifier | a single task file |
+      | hardender | a batch directory  |
+
+  # BL-067 stuck-inprocess-chase-02
+  Scenario: repeated failed chases escalate visibly
+    Given a role holding in_process work has already been chased the maximum number of times
+    And its pane still shows no activity
+    When the stuck monitor evaluates again
+    Then no further chase is sent
+    And that role's tile escalates to the needs-human red surface
+
+  # BL-067 stuck-inprocess-chase-03
+  Scenario: an actively working agent is never chased
+    Given a role holds in_process work
+    And its pane has shown activity within the stuck threshold
+    When the stuck monitor evaluates
+    Then no chase is sent
+    And the tile keeps its normal status
+
+  # BL-067 stuck-inprocess-chase-04
+  Scenario: the overnight stall pattern is caught without human help
+    Given the recorded 2026-07-02 stall state is reproduced in a test
+      (in_process held, pane idle, daemon healthy)
+    When the stuck threshold elapses
+    Then the chase fires and, absent recovery, the visible escalation follows
+      with no human involvement
+
+  # Non-behavioral gate:
+  #  - Root cause of the original miss is diagnosed and recorded (ticket close /
+  #    commit message), with a regression test reproducing the miss.
+  #  - Threshold and max-chase values configurable with sane defaults; existing
+  #    suites stay green; SwarmForge itself unmodified.
