@@ -3,7 +3,7 @@ title: BUG — activation re-attach 3s budget too short for concurrent host+swar
 milestone: M2
 status: todo
 priority: 02
-assigned_to: unassigned
+assigned_to: coder
 
 description: |
   DEFECT (operator report + live diagnosis, 2026-07-02): after starting the
