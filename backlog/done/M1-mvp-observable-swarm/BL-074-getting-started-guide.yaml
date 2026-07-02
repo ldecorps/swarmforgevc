@@ -1,7 +1,7 @@
 id: BL-074
 title: Getting Started guide — install, init target, run, PR (documenter-owned)
-milestone: M5
-status: todo
+milestone: M1
+status: done
 priority: 20
 assigned_to: coder
 
