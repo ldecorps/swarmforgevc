@@ -1,0 +1,78 @@
+id: BL-075
+title: BUG — "no functional change" no-forward rule drops docs-only parcels (hardener orphaned BL-074)
+milestone: M4
+status: todo
+priority: 05
+assigned_to: coder
+
+description: |
+  DEFECT (coordinator-observed, 2026-07-02). BL-074 (docs-only Getting
+  Started guide) flowed coder -> cleaner -> architect -> hardener; the
+  hardener completed its batch item in 33s WITHOUT forwarding to documenter,
+  while forwarding its three batch siblings (BL-073/069/063) normally in the
+  same window. The parcel went holder-less: content had merged to main via a
+  sibling's stacked branch, but the ticket sat in backlog/active/ with
+  nobody holding it — a SILENT stall. BL-067's stuck-detection cannot see
+  this class (nothing was in_process anywhere); the coordinator unstuck it
+  manually via the specifier.
+
+  Root cause candidate (verify): handoff-protocol.md's rule "a role must not
+  forward a git_handoff when the received commit produces no functional
+  project change" enumerates manifest-only/audit-only/generated-metadata/
+  formatting-only churn — but the hardener read "nothing of MY OWN to add
+  (nothing to mutation-test)" as equivalent to "no functional change" and
+  stopped. A docs-only deliverable that satisfies its ticket's acceptance
+  criteria is a REAL project change and must keep moving.
+
+  What: (1) Clarify the rule in swarmforge/handoff-protocol.md: the
+  no-forward exemption applies ONLY to meta/manifest/audit/formatting churn
+  — never to a real deliverable a stage merely has nothing further to add
+  to; docs-only and config-only parcels MUST be forwarded to the next stage
+  with the received commit. (2) Check swarmforge/roles/hardender.prompt (and
+  the other role prompts) for duplicated/paraphrased versions of the rule
+  and align them. (3) Add a regression scenario at the hardener-batch level:
+  a docs-only commit inside a batch must still produce a forward to
+  documenter (shell-test if practical alongside the existing script suites,
+  else a documented manual scenario in the protocol doc).
+
+  Related: BL-072 (paused) makes holder-less active tickets VISIBLE in the
+  backlog pane as "queued" — complementary detection; this ticket fixes the
+  drop itself.
+
+  Scope: swarmforge/handoff-protocol.md wording, role prompt(s) if they
+  duplicate the rule, plus regression test coverage where practical. No
+  extension/src changes expected. Orthogonal to the webview-surface tickets.
+
+acceptance: |
+  Feature: docs-only parcels keep flowing through every stage
+
+  # BL-075 no-forward-rule-01
+  Scenario: the protocol rule exempts only meta churn
+    When handoff-protocol.md's no-forward rule is read
+    Then it states the exemption covers only manifest/audit/generated/
+      formatting churn
+    And it states that a deliverable satisfying the ticket's acceptance
+      criteria is a functional change even when docs-only or config-only
+    And it states a stage with nothing of its own to add still forwards the
+      received commit to the next stage
+
+  # BL-075 no-forward-rule-02
+  Scenario: role prompts do not contradict the clarified rule
+    When the role prompts under swarmforge/roles/ are checked
+    Then none of them tells a role to stop forwarding a real deliverable it
+      has nothing further to add to
+
+  # BL-075 no-forward-rule-03
+  Scenario: the BL-074 incident shape now forwards
+    Given a hardener batch containing one docs-only parcel and other code
+      parcels
+    When the hardener completes the batch
+    Then every parcel in the batch produces a forward to documenter
+    And the docs-only parcel's forward carries the received commit
+
+  # Non-behavioral gate:
+  #  - Regression coverage for scenario 03 at the batch level where
+  #    practical (script test beside the existing swarmforge/scripts/test/
+  #    suites); if impractical, the scenario is documented in the protocol
+  #    doc and the impracticality noted in the close.
+  #  - Existing handoff script suites stay green; no extension/src changes.
