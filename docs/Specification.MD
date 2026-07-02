@@ -1079,7 +1079,12 @@ The swarm cannot run on a phone — it's the orchestrator's agent processes, git
 
 Before reaching for a daemon, note how much the on-disk state already decouples for free. The swarm's *state* lives on disk: the message store (`.swarmforge/messages/`), heartbeats, worktrees/branches, and the run log. The VS Code extension is, for the most part, *reading those files and streaming each agent process's output*. So any client — the extension, a bridge, a phone — can reconstruct the full picture from disk without talking to any other client.
 
-**One honest caveat the tmux design didn't have.** Because the orchestrator spawns agent processes as children of the extension host, "survives the editor" is **not** free the way it was under tmux (where the swarm lived in a session independent of any UI). If process survival across an editor restart is wanted, it must be explicit: either spawn agents detached from the host process (so they outlive it and the extension re-discovers them from on-disk PID/state on relaunch), or accept that closing VS Code stops the swarm and rely on per-stage checkpoints to resume. This is a real design decision created by owning orchestration — flagged in Gaps (Persistence across VS Code restart). What *is* still free is observational decoupling: whatever is running, every client reads the same on-disk truth.
+**Persistence across restarts: implemented via detached processes and re-discovery.** Agent processes run under the SwarmForge tmux server, detached from the VS Code extension host. When you close or reload the editor:
+- The swarm and its agents keep running in tmux, unaffected by the extension's lifecycle
+- On relaunch with a live swarm: the extension re-discovers it via `isSwarmReady()` and tiles automatically reconnect to the agents' output streams — no agent restarts, no in-flight work lost
+- On cold relaunch (no live tmux session but prior `.swarmforge/` state on disk): the extension offers "Resume?" — resume from the last per-stage checkpoint rather than starting over
+
+This is **no different from the tmux design** — the swarm lives independently of any UI frontend. The extension is purely an observer and control surface reading the same on-disk state. What's always free is observational decoupling: any client reads the same `.swarmforge/` files without coordination overhead.
 
 The discipline that keeps complexity flat: **the filesystem stays the single source of truth.** No component (extension, bridge, or phone) holds authoritative state; they all read `.swarmforge/` and issue commands through the same orchestrator/helper calls the agents already use.
 
@@ -1185,7 +1190,6 @@ A scan of what the spec doesn't yet cover, roughly in priority order. Not all ar
 
 ### Important but can follow
 
-- **Persistence across VS Code restart.** This is no longer free. Under the retired tmux design the swarm lived in a session independent of the editor; now the orchestrator spawns agents as children of the extension host, so by default closing VS Code can stop the swarm. Two options need deciding between (see Remote Access caveat): spawn agents **detached** so they outlive the host and the extension re-discovers them from on-disk PID/state on relaunch, or accept editor-bound lifetime and **resume from per-stage checkpoints**. On-disk state still makes re-reading cheap; what needs specifying is the process-survival strategy and the reattach/re-discovery logic, plus the optional bridge's own restart/recovery.
 - **Remote-access security.** The phone tunnel needs a real threat model: token rotation, scope of what a remote client can do (read-only vs control), revoking a lost device, and whether control actions (respawn, model change, stop) require a stronger auth step than viewing. Off-LAN relay choice (self-hosted vs hosted) is a decision with privacy implications, since agent output could traverse it.
 - **Observability / run artifacts.** A durable run log, transcript export, and the ability to inspect a finished run after the fact (what each agent did, decisions made). Useful for debugging a bad PR.
 - **Test/lint command discovery.** Completion tracking assumes the extension can run the target's tests *on the dev branch*. How does it learn the test command — from `engineering.prompt`, auto-detected, or configured? Same for lint.
