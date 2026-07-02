@@ -1,7 +1,7 @@
 id: BL-070
 title: BUG — tiles retain no memory; scrollback capped at visible rows (BL-028 symptom back, BL-052 side effect)
 milestone: M3
-status: todo
+status: done
 priority: 03
 assigned_to: coder
 
