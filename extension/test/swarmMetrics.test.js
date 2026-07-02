@@ -177,6 +177,80 @@ test('computeRetries counts only backward git_handoffs, not forward handoffs or 
 
 // --- computeSwarmMetrics (BL-071 swarm-metrics-05: fresh run placeholders) ---
 
+test('computeRetries counts multiple backward recipients per file', () => {
+  const target = mkTmp();
+  const qaWt = path.join(target, 'qa-wt');
+
+  writeHandoff(path.join(qaWt, '.swarmforge', 'handoffs', 'sent'), '00_multi.handoff', {
+    type: 'git_handoff',
+    from: 'QA',
+    to: 'coder, cleaner, specifier',
+    task: 'BL-102-multi',
+  });
+
+  const { total, perTicket } = computeRetries([{ role: 'QA', worktreePath: qaWt }]);
+
+  assert.equal(total, 3, 'should count 3 backward recipients');
+  assert.equal(perTicket['BL-102'], 3);
+});
+
+test('computeRetries handles malformed handoff files gracefully', () => {
+  const target = mkTmp();
+  const specifierWt = path.join(target, 'specifier-wt');
+  const sentDir = path.join(specifierWt, '.swarmforge', 'handoffs', 'sent');
+
+  mkdirp(sentDir);
+  fs.writeFileSync(path.join(sentDir, '00_broken.handoff'), 'garbage data');
+
+  const { total, perTicket } = computeRetries([{ role: 'specifier', worktreePath: specifierWt }]);
+
+  assert.equal(total, 0);
+  assert.deepEqual(perTicket, {});
+});
+
+test('computeRetries ignores unknown role names', () => {
+  const target = mkTmp();
+  const unknownWt = path.join(target, 'unknown-wt');
+
+  writeHandoff(path.join(unknownWt, '.swarmforge', 'handoffs', 'sent'), '00_bad.handoff', {
+    type: 'git_handoff',
+    from: 'unknown_role',
+    to: 'coder',
+    task: 'BL-103',
+  });
+
+  const { total } = computeRetries([{ role: 'unknown_role', worktreePath: unknownWt }]);
+
+  assert.equal(total, 0);
+});
+
+test('computeBusyness handles missing directories gracefully', () => {
+  const target = mkTmp();
+  const missingWt = path.join(target, 'missing-wt');
+
+  const runStart = Date.now() - 6 * 60 * 60 * 1000;
+  const busyness = computeBusyness([{ role: 'missing', worktreePath: missingWt }], runStart, Date.now());
+
+  assert.equal(busyness.missing, 0);
+});
+
+test('computeBusyness handles in_process batch directories', () => {
+  const target = mkTmp();
+  const coderWt = path.join(target, 'coder-wt');
+  const batchDir = path.join(coderWt, '.swarmforge', 'handoffs', 'inbox', 'in_process', 'batch_20260702T000000Z_000001');
+
+  mkdirp(batchDir);
+  writeHandoff(batchDir, '00_batch.handoff', {
+    dequeued_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+  });
+
+  const now = Date.now();
+  const runStart = now - 60 * 60 * 1000;
+  const busyness = computeBusyness([{ role: 'coder', worktreePath: coderWt }], runStart, now);
+
+  assert.ok(busyness.coder > 0, 'should account for batch interval');
+});
+
 test('computeSwarmMetrics returns placeholders on a fresh run, never NaN/Infinity', () => {
   const target = mkTmp();
   initRepo(target);

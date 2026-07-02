@@ -24,6 +24,17 @@ function pipelineIndex(role: string): number {
   return PIPELINE_ORDER.indexOf(role);
 }
 
+function listFilesInDoneDir(doneDir: string, subdir: string): string[] {
+  const fullPath = path.join(doneDir, subdir);
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(fullPath).filter((f) => f.endsWith('.yaml'));
+  } catch {
+    return [];
+  }
+  return entries.map((f) => path.join('backlog', 'done', subdir, f));
+}
+
 function listDoneBacklogPaths(targetPath: string): string[] {
   const doneDir = path.join(targetPath, 'backlog', 'done');
   let entries: fs.Dirent[];
@@ -38,15 +49,7 @@ function listDoneBacklogPaths(targetPath: string): string[] {
     if (entry.isFile() && entry.name.endsWith('.yaml')) {
       paths.push(path.join('backlog', 'done', entry.name));
     } else if (entry.isDirectory()) {
-      let subEntries: string[];
-      try {
-        subEntries = fs.readdirSync(path.join(doneDir, entry.name)).filter((f) => f.endsWith('.yaml'));
-      } catch {
-        continue;
-      }
-      for (const file of subEntries) {
-        paths.push(path.join('backlog', 'done', entry.name, file));
-      }
+      paths.push(...listFilesInDoneDir(doneDir, entry.name));
     }
   }
   return paths;
@@ -55,6 +58,20 @@ function listDoneBacklogPaths(targetPath: string): string[] {
 interface GitLogBlock {
   dateIso: string;
   statusLines: string[];
+}
+
+function parseGitBlocks(output: string): GitLogBlock[] {
+  const blocks: GitLogBlock[] = [];
+  let current: GitLogBlock | null = null;
+  for (const line of output.split('\n')) {
+    if (line.startsWith('COMMIT\t')) {
+      current = { dateIso: line.split('\t')[1], statusLines: [] };
+      blocks.push(current);
+    } else if (current && line.trim()) {
+      current.statusLines.push(line);
+    }
+  }
+  return blocks;
 }
 
 function gitFollowHistory(targetPath: string, relativePath: string): GitLogBlock[] {
@@ -68,18 +85,7 @@ function gitFollowHistory(targetPath: string, relativePath: string): GitLogBlock
   } catch {
     return [];
   }
-
-  const blocks: GitLogBlock[] = [];
-  let current: GitLogBlock | null = null;
-  for (const line of output.split('\n')) {
-    if (line.startsWith('COMMIT\t')) {
-      current = { dateIso: line.split('\t')[1], statusLines: [] };
-      blocks.push(current);
-    } else if (current && line.trim()) {
-      current.statusLines.push(line);
-    }
-  }
-  return blocks;
+  return parseGitBlocks(output);
 }
 
 function findArrivalDate(blocks: GitLogBlock[], matchesPath: (newPath: string) => boolean): Date | null {
@@ -97,6 +103,17 @@ function findArrivalDate(blocks: GitLogBlock[], matchesPath: (newPath: string) =
   return null;
 }
 
+function getTicketDuration(blocks: GitLogBlock[], donePath: string): number | null {
+  const posixDonePath = donePath.split(path.sep).join('/');
+  const closedAt = findArrivalDate(blocks, (p) => p === posixDonePath);
+  const activatedAt = findArrivalDate(blocks, (p) => p.startsWith('backlog/active/'));
+  if (!closedAt || !activatedAt) {
+    return null;
+  }
+  const durationMs = closedAt.getTime() - activatedAt.getTime();
+  return durationMs > 0 ? durationMs : null;
+}
+
 // Derives a ticket's active -> done duration purely from git's own rename
 // tracking on the backlog file's path history, rather than parsing commit
 // message wording (which is a convention, not a protocol contract).
@@ -109,15 +126,9 @@ export function computeMeanTicketTime(targetPath: string): MeanTicketTime {
     if (blocks.length === 0) {
       continue;
     }
-    const posixDonePath = donePath.split(path.sep).join('/');
-    const closedAt = findArrivalDate(blocks, (p) => p === posixDonePath);
-    const activatedAt = findArrivalDate(blocks, (p) => p.startsWith('backlog/active/'));
-    if (!closedAt || !activatedAt) {
-      continue;
-    }
-    const durationMs = closedAt.getTime() - activatedAt.getTime();
-    if (durationMs > 0) {
-      durationsMs.push(durationMs);
+    const duration = getTicketDuration(blocks, donePath);
+    if (duration !== null) {
+      durationsMs.push(duration);
     }
   }
 
@@ -148,6 +159,10 @@ function readHandoffFiles(dir: string): string[] {
   }
 }
 
+function intervalMs(start: number, end: number): number {
+  return !Number.isNaN(start) && !Number.isNaN(end) && end > start ? end - start : 0;
+}
+
 function sumCompletedIntervalsMs(completedDir: string): number {
   let totalMs = 0;
   for (const file of readHandoffFiles(completedDir)) {
@@ -159,25 +174,34 @@ function sumCompletedIntervalsMs(completedDir: string): number {
     }
     const start = headers.dequeued_at ? Date.parse(headers.dequeued_at) : NaN;
     const end = headers.completed_at ? Date.parse(headers.completed_at) : NaN;
-    if (!Number.isNaN(start) && !Number.isNaN(end) && end > start) {
-      totalMs += end - start;
-    }
+    totalMs += intervalMs(start, end);
   }
   return totalMs;
 }
 
-// A batch in_process directory holds several handoff files dequeued
-// together; the earliest dequeued_at among them marks the start of the
-// still-open interval.
-function openIntervalMs(inProcessDir: string, nowMs: number): number {
+function findEarliestDequeueInFile(filePath: string, current: number | null): number | null {
+  let headers: Record<string, string>;
+  try {
+    headers = parseHandoffHeaders(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return current;
+  }
+  const dequeuedMs = headers.dequeued_at ? Date.parse(headers.dequeued_at) : NaN;
+  if (Number.isNaN(dequeuedMs)) {
+    return current;
+  }
+  return current === null || dequeuedMs < current ? dequeuedMs : current;
+}
+
+function findEarliestDequeueInDir(inProcessDir: string): number | null {
   let entries: string[];
   try {
     entries = fs.readdirSync(inProcessDir);
   } catch {
-    return 0;
+    return null;
   }
 
-  let earliestDequeueMs: number | null = null;
+  let earliest: number | null = null;
   for (const entry of entries) {
     const fullPath = path.join(inProcessDir, entry);
     let stat: fs.Stats;
@@ -188,19 +212,14 @@ function openIntervalMs(inProcessDir: string, nowMs: number): number {
     }
     const files = stat.isDirectory() ? readHandoffFiles(fullPath).map((f) => path.join(fullPath, f)) : entry.endsWith('.handoff') ? [fullPath] : [];
     for (const filePath of files) {
-      let headers: Record<string, string>;
-      try {
-        headers = parseHandoffHeaders(fs.readFileSync(filePath, 'utf8'));
-      } catch {
-        continue;
-      }
-      const dequeuedMs = headers.dequeued_at ? Date.parse(headers.dequeued_at) : NaN;
-      if (!Number.isNaN(dequeuedMs) && (earliestDequeueMs === null || dequeuedMs < earliestDequeueMs)) {
-        earliestDequeueMs = dequeuedMs;
-      }
+      earliest = findEarliestDequeueInFile(filePath, earliest);
     }
   }
+  return earliest;
+}
 
+function openIntervalMs(inProcessDir: string, nowMs: number): number {
+  const earliestDequeueMs = findEarliestDequeueInDir(inProcessDir);
   return earliestDequeueMs === null ? 0 : Math.max(0, nowMs - earliestDequeueMs);
 }
 
@@ -229,6 +248,33 @@ function extractTicketId(task: string): string | null {
   return match ? match[1] : null;
 }
 
+function isGitHandoff(headers: Record<string, string>): boolean {
+  return headers.type === 'git_handoff';
+}
+
+function getRecipients(toField: string): string[] {
+  return (toField ?? '').split(',').map((r) => r.trim()).filter(Boolean);
+}
+
+function countBackwardHandoffs(headers: Record<string, string>): Array<{ ticket: string | null }> {
+  if (!isGitHandoff(headers)) {
+    return [];
+  }
+  const fromIdx = pipelineIndex(headers.from ?? '');
+  if (fromIdx === -1) {
+    return [];
+  }
+  const recipients = getRecipients(headers.to);
+  const result: Array<{ ticket: string | null }> = [];
+  for (const recipient of recipients) {
+    const toIdx = pipelineIndex(recipient);
+    if (toIdx !== -1 && fromIdx > toIdx) {
+      result.push({ ticket: headers.task ? extractTicketId(headers.task) : null });
+    }
+  }
+  return result;
+}
+
 // Counts git_handoff files whose sender sits later in the pipeline chain
 // than the recipient. Scans each role's sent/ (the delivered original, one
 // copy regardless of recipient count) rather than inbox/completed copies,
@@ -246,23 +292,11 @@ export function computeRetries(roles: RoleWorktree[]): RetryCounts {
       } catch {
         continue;
       }
-      if (headers.type !== 'git_handoff') {
-        continue;
-      }
-      const fromIdx = pipelineIndex(headers.from ?? '');
-      if (fromIdx === -1) {
-        continue;
-      }
-      const recipients = (headers.to ?? '').split(',').map((r) => r.trim()).filter(Boolean);
-      for (const recipient of recipients) {
-        const toIdx = pipelineIndex(recipient);
-        if (toIdx === -1 || fromIdx <= toIdx) {
-          continue;
-        }
-        total += 1;
-        const ticketId = headers.task ? extractTicketId(headers.task) : null;
-        if (ticketId) {
-          perTicket[ticketId] = (perTicket[ticketId] ?? 0) + 1;
+      const backwardHandoffs = countBackwardHandoffs(headers);
+      total += backwardHandoffs.length;
+      for (const handoff of backwardHandoffs) {
+        if (handoff.ticket) {
+          perTicket[handoff.ticket] = (perTicket[handoff.ticket] ?? 0) + 1;
         }
       }
     }

@@ -20,25 +20,33 @@ import { parseRolesTsv, RoleEntry } from '../swarm/swarmState';
 import { loadRuns } from '../runs/runLog';
 import { computeSwarmMetrics, formatDurationMs, NO_SAMPLE_PLACEHOLDER, SwarmMetrics } from '../metrics/swarmMetrics';
 
-export function resolveProjectRoot(cwd: string): string {
-  const hasRolesTsv = (dir: string) => fs.existsSync(path.join(dir, '.swarmforge', 'roles.tsv'));
+export function hasRolesTsv(dir: string): boolean {
+  return fs.existsSync(path.join(dir, '.swarmforge', 'roles.tsv'));
+}
 
-  let gitRoot: string | null = null;
+function getGitRoot(cwd: string): string | null {
   try {
-    gitRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8' }).trim();
+    return execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8' }).trim();
   } catch {
-    gitRoot = null;
+    return null;
   }
+}
+
+function getGitCommonDir(cwd: string): string | null {
+  try {
+    return execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd, encoding: 'utf8' }).trim();
+  } catch {
+    return null;
+  }
+}
+
+export function resolveProjectRoot(cwd: string): string {
+  const gitRoot = getGitRoot(cwd);
   if (gitRoot && hasRolesTsv(gitRoot)) {
     return gitRoot;
   }
 
-  let commonDir: string | null = null;
-  try {
-    commonDir = execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd, encoding: 'utf8' }).trim();
-  } catch {
-    commonDir = null;
-  }
+  const commonDir = getGitCommonDir(cwd);
   if (commonDir) {
     const candidate = path.dirname(path.resolve(cwd, commonDir));
     if (hasRolesTsv(candidate)) {
