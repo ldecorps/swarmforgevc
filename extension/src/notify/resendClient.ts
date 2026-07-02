@@ -57,6 +57,13 @@ export async function sendResendEmail(
     return { success: true };
   } catch (err) {
     const detail = err instanceof Error ? err.message : 'unknown error';
-    return { success: false, error: `Resend request failed: ${detail}` };
+    // The thrown error's message is outside this function's control (a
+    // custom postFn, a proxy, or a future http client could echo request
+    // details back in a thrown message) and this result flows straight into
+    // a log line in swarmPanel.ts — redact the key defensively so it can
+    // never reach logs or error text (constitution + BL-073 non-behavioral
+    // gate).
+    const safeDetail = detail.split(apiKey).join('[redacted]');
+    return { success: false, error: `Resend request failed: ${safeDetail}` };
   }
 }

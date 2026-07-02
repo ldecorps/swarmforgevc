@@ -218,6 +218,19 @@ function startOrRestartChaserMonitor(targetPath, context) {
         });
     }
 }
+function handleBounceResult(result, targetPath, context) {
+    if (!result.success) {
+        vscode.window.showErrorMessage(result.message);
+        return false;
+    }
+    vscode.window.showInformationMessage(result.message);
+    const panel = swarmPanel_1.SwarmPanel.currentPanel;
+    if (panel) {
+        panel.updateTarget(targetPath);
+    }
+    startOrRestartChaserMonitor(targetPath, context);
+    return true;
+}
 // BL-069: performs the real verified bounce (BL-058 path) for a graceful
 // drain that just reached all-idle, or for a human-forced immediate bounce
 // that skips the rest of the drain. Always stops the drain watcher and
@@ -247,16 +260,7 @@ async function performGracefulBounceNow(targetPath, bounceType, context) {
         return;
     }
     const result = await (0, bouncer_1.bounceSwarm)(validated.targetPath, validated.lastRunName);
-    if (!result.success) {
-        vscode.window.showErrorMessage(result.message);
-        return;
-    }
-    vscode.window.showInformationMessage(result.message);
-    const panel = swarmPanel_1.SwarmPanel.currentPanel;
-    if (panel) {
-        panel.updateTarget(targetPath);
-    }
-    startOrRestartChaserMonitor(targetPath, context);
+    handleBounceResult(result, targetPath, context);
 }
 // BL-069: watches the durable drain sentinel and waits until every role
 // simultaneously holds no in_process work (single file OR batch directory,
@@ -515,17 +519,7 @@ function activate(context) {
         const { targetPath, lastRunName } = validated;
         vscode.window.showInformationMessage('Restarting swarm...');
         const result = await (0, bouncer_1.bounceSwarm)(targetPath, lastRunName);
-        if (!result.success) {
-            vscode.window.showErrorMessage(result.message);
-            return;
-        }
-        vscode.window.showInformationMessage(result.message);
-        const panel = swarmPanel_1.SwarmPanel.currentPanel;
-        if (panel) {
-            panel.updateTarget(targetPath);
-        }
-        // Restart chaser monitor after swarm bounce
-        startOrRestartChaserMonitor(targetPath, context);
+        handleBounceResult(result, targetPath, context);
     }), vscode.commands.registerCommand('swarmforge.bounceExtension', async () => {
         vscode.window.showInformationMessage('Reloading SwarmForge extension...');
         const reloadCmd = (0, bouncer_1.buildBounceExtensionCommand)();

@@ -10,6 +10,7 @@ import { readBacklog, BacklogItem } from './backlogReader';
 import { buildBadgeMap } from './badgeSummary';
 import { NeedsHumanReconciler } from './needsHumanReconciler';
 import { extractQuestionSnippet } from './needsHumanDetection';
+import { NeedsHumanEvent } from './paneTailer';
 import { recordSessionUrl, getSessionUrl } from '../notify/sessionUrlCapture';
 import {
   NeedsHumanEmailNotifier,
@@ -202,21 +203,8 @@ export class SwarmPanel {
         const deltas = this.needsHumanReconciler.applyQuestionEvents(events);
         if (deltas.length > 0) {
           this.panel.webview.postMessage({ type: 'needsHuman', events: deltas });
-          if (this.emailNotifier) {
-            // Snippets only come from the question detector's raw events (a
-            // stuck-escalation delta has no literal prompt to quote), so look
-            // the quote up per delta rather than carrying it on the deltas
-            // themselves.
-            const updates: NeedsHumanUpdate[] = deltas.map((event) => ({
-              role: event.role,
-              needsHuman: event.needsHuman,
-              snippet: event.needsHuman
-                ? extractQuestionSnippet(this.latestPaneText.get(event.role))
-                : undefined,
-            }));
-            this.emailNotifier.recordUpdates(updates, Date.now());
-          }
         }
+        this.recordEmailUpdates(deltas);
       }
     );
     this.tailer.start();
@@ -334,6 +322,28 @@ export class SwarmPanel {
       this.panel.webview.postMessage({ type: 'needsHuman', events: deltas });
       this.emailNotifier?.recordUpdates(deltas, Date.now());
     }
+    this.recordEmailUpdates(deltas);
+  }
+
+  // Feeds the BL-073 email notifier from the RECONCILED needs-human deltas
+  // (the same ones posted to the webview), not from either raw source
+  // directly. Both the question detector and the stuck-in-process chaser
+  // reach this: a stuck-escalated role now emails too (the silent-overnight
+  // -stall case BL-067/BL-073 both exist for), and — same reasoning as the
+  // webview reconciler — one source's "false" can never prematurely clear
+  // the grace-period clock while the other source still holds true.
+  private recordEmailUpdates(deltas: NeedsHumanEvent[]): void {
+    if (!this.emailNotifier || deltas.length === 0) {
+      return;
+    }
+    const updates: NeedsHumanUpdate[] = deltas.map((event) => ({
+      role: event.role,
+      needsHuman: event.needsHuman,
+      snippet: event.needsHuman
+        ? extractQuestionSnippet(this.latestPaneText.get(event.role))
+        : undefined,
+    }));
+    this.emailNotifier.recordUpdates(updates, Date.now());
   }
 
   // BL-069: surfaces the graceful bounce drain state (banner + per-tile
