@@ -1,7 +1,7 @@
 id: BL-075
 title: BUG — "no functional change" no-forward rule drops docs-only parcels (hardener orphaned BL-074)
 milestone: M4
-status: todo
+status: done
 priority: 05
 assigned_to: coder
 
