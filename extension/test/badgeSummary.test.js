@@ -238,6 +238,22 @@ test('multiple parcels resolve the lowest ID numerically, not lexicographically'
   assert.equal(result.coder.id, 'BL-9', 'BL-9 sorts before BL-100 numerically even though "1" < "9" lexicographically');
 });
 
+test('multiple roles each holding multiple parcels get independent primary badges and counts', () => {
+  const items = [
+    { id: 'BL-061', title: 'handoffd deadlock', status: 'active', assignedTo: 'hardender' },
+    { id: 'BL-036', title: 'redo_from tool', status: 'active', assignedTo: 'hardender' },
+    { id: 'BL-045', title: 'needs-human detection', status: 'active', assignedTo: 'coder' },
+    { id: 'BL-050', title: 'tile-grid fix', status: 'active', assignedTo: 'coder' },
+    { id: 'BL-058', title: 'dev-host bounce', status: 'active', assignedTo: 'coder' },
+  ];
+  const result = buildBadgeMap(items);
+
+  assert.equal(result.hardender.id, 'BL-036', "hardender's own lowest ID must not be affected by coder's items");
+  assert.equal(result.hardender.extraCount, 1);
+  assert.equal(result.coder.id, 'BL-045', "coder's own lowest ID must not be affected by hardender's items");
+  assert.equal(result.coder.extraCount, 2, 'coder holds 3 parcels total, so 2 must be counted as extra');
+});
+
 test('a live-holder tie between two items for the same role also gets counted, not overwritten', () => {
   const target = mkTmp();
   const hardenerWt = mkTmp();
