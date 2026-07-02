@@ -129,13 +129,16 @@ export function scanInProcess(inProcessDir: string): InProcessItem[] {
 }
 
 export function decideStuckAction(
-  itemMtimeMs: number,
+  lastActivityMs: number,
   nudgeCount: number,
   nowMs: number,
   config: InboxChaserConfig
 ): StuckAction {
-  const ageSeconds = (nowMs - itemMtimeMs) / 1000;
-  if (ageSeconds < config.stuckInProcessTimeoutSeconds) {
+  // Stuck is judged by AGENT INACTIVITY while holding work, not by how long
+  // the item has been held: an agent legitimately working a parcel for hours
+  // shows pane/outbox activity and must never be chased (BL-067).
+  const idleSeconds = (nowMs - lastActivityMs) / 1000;
+  if (idleSeconds < config.stuckInProcessTimeoutSeconds) {
     return 'skipped';
   }
   return nudgeCount >= config.maxChases ? 'alert' : 'nudge';
@@ -163,11 +166,56 @@ export interface ChaserAdapters {
   sendWakeUp: (role: string) => void;
   triggerRespawn: (role: string) => void;
   logDeadLetter: (role: string, filePath: string) => void;
+  /** Timestamp of the role's last observed activity (pane output changing,
+   * outbox writes). Drives the in_process stuck decision (BL-067). */
+  getLastActivityMs: (role: string) => number;
+  /** Surfaces (or clears) the visible needs-human escalation for a role whose
+   * chases were exhausted without recovery. */
+  onStuckEscalation: (role: string, escalated: boolean) => void;
 }
 
 export interface RoleInbox {
   role: string;
   inboxNewDir: string;
+  inProcessDir: string;
+}
+
+// A role that HOLDS in_process work (single task file or batch directory)
+// while showing no activity gets chased; after maxChases without recovery it
+// escalates visibly instead of being chased forever (BL-067).
+function sweepInProcess(
+  role: string,
+  inProcessDir: string,
+  nowMs: number,
+  config: InboxChaserConfig,
+  adapters: ChaserAdapters
+): void {
+  const held = scanInProcess(inProcessDir);
+  if (held.length === 0) {
+    adapters.onStuckEscalation(role, false);
+    return;
+  }
+
+  const nudgeCount = Math.max(...held.map((item) => item.nudgeCount));
+  const action = decideStuckAction(adapters.getLastActivityMs(role), nudgeCount, nowMs, config);
+
+  if (action === 'nudge') {
+    adapters.sendWakeUp(role);
+    for (const item of held) {
+      writeNudgeCount(item.filePath, item.nudgeCount + 1);
+    }
+    adapters.onStuckEscalation(role, false);
+  } else if (action === 'alert') {
+    adapters.onStuckEscalation(role, true);
+  } else {
+    // active again: clear stale counts so a future stall re-chases from zero
+    for (const item of held) {
+      if (item.nudgeCount > 0) {
+        writeNudgeCount(item.filePath, 0);
+      }
+    }
+    adapters.onStuckEscalation(role, false);
+  }
 }
 
 export function runSweep(
@@ -176,7 +224,9 @@ export function runSweep(
   config: InboxChaserConfig,
   adapters: ChaserAdapters
 ): void {
-  for (const { role, inboxNewDir } of roleInboxes) {
+  for (const { role, inboxNewDir, inProcessDir } of roleInboxes) {
+    sweepInProcess(role, inProcessDir, nowMs, config, adapters);
+
     const items = scanInboxNew(inboxNewDir);
     const liveness = adapters.getLiveness(role);
 

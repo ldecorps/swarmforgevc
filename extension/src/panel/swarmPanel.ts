@@ -3,10 +3,12 @@ import { SwarmRole, respawnAgent } from '../swarm/tmuxClient';
 import { PaneTailer } from './paneTailer';
 import { currentStageLabel, readPipelineStages, findLiveHolder } from '../swarm/swarmState';
 import { readDaemonHealth } from '../swarm/daemonHealth';
+import { escalatedStuckRoles } from '../watchdog/stuckEscalations';
 import { loadRuns } from '../runs/runLog';
 import { getNonce, getWebviewHtml } from './webviewHtml';
 import { readBacklog, BacklogItem } from './backlogReader';
 import { buildBadgeMap } from './badgeSummary';
+import { NeedsHumanReconciler } from './needsHumanReconciler';
 
 const STAGE_POLL_INTERVAL_MS = 2000;
 const OUTPUT_CHANNEL_NAME = 'SwarmForge';
@@ -21,6 +23,7 @@ export class SwarmPanel {
   private stagePoller: ReturnType<typeof setInterval> | undefined;
   private disposables: vscode.Disposable[] = [];
   private wasActive = false;
+  private readonly needsHumanReconciler = new NeedsHumanReconciler();
   private dogfoodShown = false;
   private workspaceState: vscode.Memento | undefined;
 
@@ -154,7 +157,10 @@ export class SwarmPanel {
       },
       paneRows,
       (events) => {
-        this.panel.webview.postMessage({ type: 'needsHuman', events });
+        const deltas = this.needsHumanReconciler.applyQuestionEvents(events);
+        if (deltas.length > 0) {
+          this.panel.webview.postMessage({ type: 'needsHuman', events: deltas });
+        }
       }
     );
     this.tailer.start();
@@ -205,9 +211,22 @@ export class SwarmPanel {
       this.panel.webview.postMessage({ type: 'holderUpdate', holders: holderMap });
       this.panel.webview.postMessage({ type: 'badgeUpdate', badges: buildBadgeMap(backlogItems, this.targetPath) });
       this.panel.webview.postMessage({ type: 'transportHealth', health: readDaemonHealth(this.targetPath) });
+      this.postStuckEscalations();
     };
     poll();
     this.stagePoller = setInterval(poll, STAGE_POLL_INTERVAL_MS);
+  }
+
+  // Roles the stuck-in-process chaser escalated (chases exhausted, no
+  // recovery) surface with the same needs-human red border the question
+  // detector uses. Routed through needsHumanReconciler so this source's
+  // "false" never clears a tile the question detector still holds true (and
+  // vice versa) — see needsHumanReconciler.ts (BL-067).
+  private postStuckEscalations(): void {
+    const deltas = this.needsHumanReconciler.applyStuckRoles(escalatedStuckRoles());
+    if (deltas.length > 0) {
+      this.panel.webview.postMessage({ type: 'needsHuman', events: deltas });
+    }
   }
 
   private sendRoles(roles: SwarmRole[]): void {

@@ -151,8 +151,9 @@ const SWEEP_CFG = { chaseIntervalSeconds: 30, chaseTimeoutSeconds: 90, maxChases
 function mkRoleInbox(role) {
   const tmp = mkTmp();
   const inboxNewDir = path.join(tmp, 'inbox', 'new');
+  const inProcessDir = path.join(tmp, 'inbox', 'in_process');
   fs.mkdirSync(inboxNewDir, { recursive: true });
-  return { role, inboxNewDir };
+  return { role, inboxNewDir, inProcessDir };
 }
 
 function writeAgedHandoff(inboxNewDir, name, ageSeconds, nowMs) {
@@ -172,16 +173,18 @@ function mkAdapters(liveness) {
       sendWakeUp: (role) => calls.wakeUps.push(role),
       triggerRespawn: (role) => calls.respawns.push(role),
       logDeadLetter: (role, filePath) => calls.deadLetters.push({ role, filePath }),
+      getLastActivityMs: () => NOW,
+      onStuckEscalation: () => {},
     },
   };
 }
 
 test('runSweep chases a stale item for an alive recipient and bumps its chase count', () => {
-  const { role, inboxNewDir } = mkRoleInbox('coder');
+  const { role, inboxNewDir, inProcessDir } = mkRoleInbox('coder');
   const filePath = writeAgedHandoff(inboxNewDir, 'a.handoff', 120, NOW);
   const { calls, adapters } = mkAdapters('alive');
 
-  runSweep([{ role, inboxNewDir }], NOW, SWEEP_CFG, adapters);
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters);
 
   assert.deepEqual(calls.wakeUps, ['coder']);
   assert.equal(calls.respawns.length, 0);
@@ -190,11 +193,11 @@ test('runSweep chases a stale item for an alive recipient and bumps its chase co
 });
 
 test('runSweep triggers a respawn for a stale item when the recipient is dead', () => {
-  const { role, inboxNewDir } = mkRoleInbox('coder');
+  const { role, inboxNewDir, inProcessDir } = mkRoleInbox('coder');
   writeAgedHandoff(inboxNewDir, 'a.handoff', 120, NOW);
   const { calls, adapters } = mkAdapters('dead');
 
-  runSweep([{ role, inboxNewDir }], NOW, SWEEP_CFG, adapters);
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters);
 
   assert.deepEqual(calls.respawns, ['coder']);
   assert.equal(calls.wakeUps.length, 0);
@@ -202,12 +205,12 @@ test('runSweep triggers a respawn for a stale item when the recipient is dead', 
 });
 
 test('runSweep dead-letters an item at maxChases, renaming both the handoff and its sidecar', () => {
-  const { role, inboxNewDir } = mkRoleInbox('coder');
+  const { role, inboxNewDir, inProcessDir } = mkRoleInbox('coder');
   const filePath = writeAgedHandoff(inboxNewDir, 'a.handoff', 120, NOW);
   writeChaseCount(filePath, 3); // == maxChases
   const { calls, adapters } = mkAdapters('alive');
 
-  runSweep([{ role, inboxNewDir }], NOW, SWEEP_CFG, adapters);
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters);
 
   assert.equal(calls.deadLetters.length, 1);
   assert.deepEqual(calls.deadLetters[0], { role: 'coder', filePath });
@@ -218,23 +221,23 @@ test('runSweep dead-letters an item at maxChases, renaming both the handoff and 
 });
 
 test('runSweep dead-letters an item with no sidecar without throwing', () => {
-  const { role, inboxNewDir } = mkRoleInbox('coder');
+  const { role, inboxNewDir, inProcessDir } = mkRoleInbox('coder');
   const filePath = writeAgedHandoff(inboxNewDir, 'a.handoff', 120, NOW);
   // Force dead-lettering without ever calling writeChaseCount, so no sidecar exists.
   const cfgZeroMaxChases = { ...SWEEP_CFG, maxChases: 0 };
   const { calls, adapters } = mkAdapters('alive');
 
-  assert.doesNotThrow(() => runSweep([{ role, inboxNewDir }], NOW, cfgZeroMaxChases, adapters));
+  assert.doesNotThrow(() => runSweep([{ role, inboxNewDir, inProcessDir }], NOW, cfgZeroMaxChases, adapters));
   assert.equal(calls.deadLetters.length, 1);
   assert.equal(fs.existsSync(deadLetterPath(filePath)), true);
 });
 
 test('runSweep skips a fresh item and makes no adapter calls', () => {
-  const { role, inboxNewDir } = mkRoleInbox('coder');
+  const { role, inboxNewDir, inProcessDir } = mkRoleInbox('coder');
   const filePath = writeAgedHandoff(inboxNewDir, 'a.handoff', 10, NOW);
   const { calls, adapters } = mkAdapters('dead');
 
-  runSweep([{ role, inboxNewDir }], NOW, SWEEP_CFG, adapters);
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters);
 
   assert.equal(calls.wakeUps.length, 0);
   assert.equal(calls.respawns.length, 0);
@@ -255,12 +258,14 @@ test('runSweep processes multiple roles independently in one pass', () => {
     sendWakeUp: (role) => calls.wakeUps.push(role),
     triggerRespawn: (role) => calls.respawns.push(role),
     logDeadLetter: () => {},
+    getLastActivityMs: () => NOW,
+    onStuckEscalation: () => {},
   };
 
   runSweep(
     [
-      { role: 'coder', inboxNewDir: coderInbox.inboxNewDir },
-      { role: 'cleaner', inboxNewDir: cleanerInbox.inboxNewDir },
+      { role: 'coder', inboxNewDir: coderInbox.inboxNewDir, inProcessDir: coderInbox.inProcessDir },
+      { role: 'cleaner', inboxNewDir: cleanerInbox.inboxNewDir, inProcessDir: cleanerInbox.inProcessDir },
     ],
     NOW,
     SWEEP_CFG,

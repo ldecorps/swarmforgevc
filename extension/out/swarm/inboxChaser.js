@@ -134,9 +134,12 @@ function scanInProcess(inProcessDir) {
     collectHandoffs(inProcessDir);
     return items;
 }
-function decideStuckAction(itemMtimeMs, nudgeCount, nowMs, config) {
-    const ageSeconds = (nowMs - itemMtimeMs) / 1000;
-    if (ageSeconds < config.stuckInProcessTimeoutSeconds) {
+function decideStuckAction(lastActivityMs, nudgeCount, nowMs, config) {
+    // Stuck is judged by AGENT INACTIVITY while holding work, not by how long
+    // the item has been held: an agent legitimately working a parcel for hours
+    // shows pane/outbox activity and must never be chased (BL-067).
+    const idleSeconds = (nowMs - lastActivityMs) / 1000;
+    if (idleSeconds < config.stuckInProcessTimeoutSeconds) {
         return 'skipped';
     }
     return nudgeCount >= config.maxChases ? 'alert' : 'nudge';
@@ -151,8 +154,40 @@ function isDoneButUndelivered(inProcessItems, latestCommitMs, lastSentMs, nowMs,
     const ageSeconds = (nowMs - latestCommitMs) / 1000;
     return ageSeconds >= config.stuckInProcessTimeoutSeconds;
 }
+// A role that HOLDS in_process work (single task file or batch directory)
+// while showing no activity gets chased; after maxChases without recovery it
+// escalates visibly instead of being chased forever (BL-067).
+function sweepInProcess(role, inProcessDir, nowMs, config, adapters) {
+    const held = scanInProcess(inProcessDir);
+    if (held.length === 0) {
+        adapters.onStuckEscalation(role, false);
+        return;
+    }
+    const nudgeCount = Math.max(...held.map((item) => item.nudgeCount));
+    const action = decideStuckAction(adapters.getLastActivityMs(role), nudgeCount, nowMs, config);
+    if (action === 'nudge') {
+        adapters.sendWakeUp(role);
+        for (const item of held) {
+            writeNudgeCount(item.filePath, item.nudgeCount + 1);
+        }
+        adapters.onStuckEscalation(role, false);
+    }
+    else if (action === 'alert') {
+        adapters.onStuckEscalation(role, true);
+    }
+    else {
+        // active again: clear stale counts so a future stall re-chases from zero
+        for (const item of held) {
+            if (item.nudgeCount > 0) {
+                writeNudgeCount(item.filePath, 0);
+            }
+        }
+        adapters.onStuckEscalation(role, false);
+    }
+}
 function runSweep(roleInboxes, nowMs, config, adapters) {
-    for (const { role, inboxNewDir } of roleInboxes) {
+    for (const { role, inboxNewDir, inProcessDir } of roleInboxes) {
+        sweepInProcess(role, inProcessDir, nowMs, config, adapters);
         const items = scanInboxNew(inboxNewDir);
         const liveness = adapters.getLiveness(role);
         for (const item of items) {

@@ -39,10 +39,12 @@ const tmuxClient_1 = require("../swarm/tmuxClient");
 const paneTailer_1 = require("./paneTailer");
 const swarmState_1 = require("../swarm/swarmState");
 const daemonHealth_1 = require("../swarm/daemonHealth");
+const stuckEscalations_1 = require("../watchdog/stuckEscalations");
 const runLog_1 = require("../runs/runLog");
 const webviewHtml_1 = require("./webviewHtml");
 const backlogReader_1 = require("./backlogReader");
 const badgeSummary_1 = require("./badgeSummary");
+const needsHumanReconciler_1 = require("./needsHumanReconciler");
 const STAGE_POLL_INTERVAL_MS = 2000;
 const OUTPUT_CHANNEL_NAME = 'SwarmForge';
 class SwarmPanel {
@@ -57,6 +59,7 @@ class SwarmPanel {
     stagePoller;
     disposables = [];
     wasActive = false;
+    needsHumanReconciler = new needsHumanReconciler_1.NeedsHumanReconciler();
     dogfoodShown = false;
     workspaceState;
     constructor(panel, extensionUri, targetPath, runLogPath, workspaceState) {
@@ -152,7 +155,10 @@ class SwarmPanel {
         }, historyLines, (roles) => {
             this.sendRoles(roles);
         }, paneRows, (events) => {
-            this.panel.webview.postMessage({ type: 'needsHuman', events });
+            const deltas = this.needsHumanReconciler.applyQuestionEvents(events);
+            if (deltas.length > 0) {
+                this.panel.webview.postMessage({ type: 'needsHuman', events: deltas });
+            }
         });
         this.tailer.start();
         this.sendRoles(this.tailer.getRoles());
@@ -201,9 +207,21 @@ class SwarmPanel {
             this.panel.webview.postMessage({ type: 'holderUpdate', holders: holderMap });
             this.panel.webview.postMessage({ type: 'badgeUpdate', badges: (0, badgeSummary_1.buildBadgeMap)(backlogItems, this.targetPath) });
             this.panel.webview.postMessage({ type: 'transportHealth', health: (0, daemonHealth_1.readDaemonHealth)(this.targetPath) });
+            this.postStuckEscalations();
         };
         poll();
         this.stagePoller = setInterval(poll, STAGE_POLL_INTERVAL_MS);
+    }
+    // Roles the stuck-in-process chaser escalated (chases exhausted, no
+    // recovery) surface with the same needs-human red border the question
+    // detector uses. Routed through needsHumanReconciler so this source's
+    // "false" never clears a tile the question detector still holds true (and
+    // vice versa) — see needsHumanReconciler.ts (BL-067).
+    postStuckEscalations() {
+        const deltas = this.needsHumanReconciler.applyStuckRoles((0, stuckEscalations_1.escalatedStuckRoles)());
+        if (deltas.length > 0) {
+            this.panel.webview.postMessage({ type: 'needsHuman', events: deltas });
+        }
     }
     sendRoles(roles) {
         this.panel.webview.postMessage({

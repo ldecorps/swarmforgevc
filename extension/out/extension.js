@@ -55,6 +55,8 @@ const resolveRunName_1 = require("./run/resolveRunName");
 const bounceWatcher_1 = require("./swarm/bounceWatcher");
 const chaserMonitor_1 = require("./watchdog/chaserMonitor");
 const tmuxClient_2 = require("./swarm/tmuxClient");
+const paneActivity_1 = require("./watchdog/paneActivity");
+const stuckEscalations_1 = require("./watchdog/stuckEscalations");
 const heartbeat_1 = require("./tools/heartbeat");
 const devActivationMarker_1 = require("./devActivationMarker");
 const liveness_1 = require("./watchdog/liveness");
@@ -179,6 +181,22 @@ function startOrRestartChaserMonitor(targetPath, context) {
         logDeadLetter: (_role, _filePath) => {
             // Dead letter logging can be extended in future iterations
         },
+        // Activity = the pane's captured content changing (tool output, prompts)
+        // or the role's outbox being written. Judged per sweep; a role showing
+        // any of these within the stuck threshold is never chased (BL-067).
+        getLastActivityMs: (role) => {
+            const roleInfo = roles.find((r) => r.role === role);
+            if (!roleInfo)
+                return Date.now();
+            const baseIndex = (0, tmuxClient_2.getPaneBaseIndex)(socketPath);
+            const target = (0, tmuxClient_2.paneTarget)(roleInfo.session, roleInfo.displayName, baseIndex);
+            const capture = (0, tmuxClient_2.capturePane)(socketPath, target, -50);
+            const pane = capture.exitCode === 0 ? capture.stdout : '';
+            return (0, paneActivity_1.trackPaneActivity)(role, pane, (0, paneActivity_1.outboxNewestMtimeMs)(targetPath, role), Date.now());
+        },
+        onStuckEscalation: (role, escalated) => {
+            (0, stuckEscalations_1.setStuckEscalation)(role, escalated);
+        },
     };
     // Start the chaser monitor
     currentChaserMonitor = (0, chaserMonitor_1.startChaserMonitor)(chaserConfig, callbacks);
@@ -200,6 +218,18 @@ async function resolveTargetPath(context) {
         targetPath = await (0, targetConfig_1.setTargetPath)(context);
     }
     return targetPath;
+}
+function validateTargetAndLastRun(targetPath, context) {
+    if (!targetPath) {
+        vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
+        return null;
+    }
+    const lastRunName = context.globalState.get(LAST_RUN_NAME_KEY);
+    if (!lastRunName) {
+        vscode.window.showWarningMessage('No previous run name stored. Use SwarmForge: Launch Swarm first.');
+        return null;
+    }
+    return { targetPath, lastRunName };
 }
 function activate(context) {
     // Lets the dev-host bounce script verify a fresh activation (BL-058);
@@ -347,16 +377,11 @@ function activate(context) {
             vscode.window.showWarningMessage(result.message);
         }
     }), vscode.commands.registerCommand('swarmforge.bounceSwarm', async () => {
-        const targetPath = (0, targetConfig_1.getTargetPath)();
-        if (!targetPath) {
-            vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
+        const validated = validateTargetAndLastRun((0, targetConfig_1.getTargetPath)(), context);
+        if (!validated) {
             return;
         }
-        const lastRunName = context.globalState.get(LAST_RUN_NAME_KEY);
-        if (!lastRunName) {
-            vscode.window.showWarningMessage('No previous run name stored. Use SwarmForge: Launch Swarm first.');
-            return;
-        }
+        const { targetPath, lastRunName } = validated;
         vscode.window.showInformationMessage('Restarting swarm...');
         const result = await (0, bouncer_1.bounceSwarm)(targetPath, lastRunName);
         if (!result.success) {
@@ -375,16 +400,11 @@ function activate(context) {
         const reloadCmd = (0, bouncer_1.buildBounceExtensionCommand)();
         await vscode.commands.executeCommand(reloadCmd);
     }), vscode.commands.registerCommand('swarmforge.bounceAll', async () => {
-        const targetPath = (0, targetConfig_1.getTargetPath)();
-        if (!targetPath) {
-            vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
+        const validated = validateTargetAndLastRun((0, targetConfig_1.getTargetPath)(), context);
+        if (!validated) {
             return;
         }
-        const lastRunName = context.globalState.get(LAST_RUN_NAME_KEY);
-        if (!lastRunName) {
-            vscode.window.showWarningMessage('No previous run name stored. Use SwarmForge: Launch Swarm first.');
-            return;
-        }
+        const { targetPath } = validated;
         vscode.window.showInformationMessage('Stopping swarm and reloading extension...');
         const stopResult = (0, swarmStopper_1.stopSwarm)(targetPath);
         if (!stopResult.success) {
