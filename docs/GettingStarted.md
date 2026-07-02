@@ -56,6 +56,8 @@ In the Extension Development Host window:
    pane in real time.
 3. Click into any tile and type to nudge that agent directly.
 
+**Persistence across restarts:** If you reload or close VS Code while the swarm is running, the agents keep working in tmux. When you relaunch, the extension automatically reconnects to the live swarm — no work is lost. If the swarm is no longer running but you have prior state on disk, the extension offers to resume from the last checkpoint.
+
 To stop the swarm cleanly at any point, run **SwarmForge: Stop Swarm**
 (`swarmforge.stopSwarm`).
 
