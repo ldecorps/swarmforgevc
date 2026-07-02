@@ -16,6 +16,8 @@
     "onCommand:swarmforge.initializeTarget",
     "onCommand:swarmforge.launchSwarm",
     "onCommand:swarmforge.stopSwarm",
+    "onCommand:swarmforge.startBridge",
+    "onCommand:swarmforge.stopBridge",
     "onCommand:swarmforge.bounceSwarm",
     "onCommand:swarmforge.bounceExtension",
     "onCommand:swarmforge.bounceAll",
@@ -48,6 +50,14 @@
       {
         "command": "swarmforge.stopSwarm",
         "title": "SwarmForge: Stop Swarm"
+      },
+      {
+        "command": "swarmforge.startBridge",
+        "title": "SwarmForge: Start Read-Only Bridge"
+      },
+      {
+        "command": "swarmforge.stopBridge",
+        "title": "SwarmForge: Stop Read-Only Bridge"
       },
       {
         "command": "swarmforge.bounceSwarm",
