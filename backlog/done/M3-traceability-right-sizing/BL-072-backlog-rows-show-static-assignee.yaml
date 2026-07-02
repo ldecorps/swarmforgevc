@@ -1,7 +1,7 @@
 id: BL-072
 title: BUG — backlog rows show static assigned_to, not the live holder; held tickets mislabeled
 milestone: M3
-status: todo
+status: done
 priority: 04
 assigned_to: coder
 

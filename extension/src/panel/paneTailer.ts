@@ -17,6 +17,7 @@ import { recordHumanInput } from '../swarm/humanInputTracker';
 import { agentPaneStatusMessage } from './agentPaneState';
 import { stripAnsi } from './ansi';
 import { detectNeedsHuman } from './needsHumanDetection';
+import { accumulatePaneHistory } from './paneHistory';
 
 const DEFAULT_POLL_INTERVAL_MS = 200;
 export const STALL_THRESHOLD_MS = 120_000;
@@ -87,6 +88,11 @@ export interface NeedsHumanEvent {
 export class PaneTailer {
   private interval: ReturnType<typeof setInterval> | undefined;
   private lastText = new Map<string, string>();
+  // The current capture's own text (or status overlay), distinct from
+  // lastText once lastText starts holding the BL-070 accumulated transcript
+  // — detectors that reason about "what's on screen right now" must read
+  // this, not the growing history.
+  private lastRawText = new Map<string, string>();
   private lastChangedAt = new Map<string, number>();
   private stalledRoles = new Set<string>();
   private deadRoles = new Set<string>();
@@ -98,6 +104,10 @@ export class PaneTailer {
   private historyLines: number;
   private paneRows: number;
   private rolePaneRows = new Map<string, number>();
+  // BL-070: retained transcript per role, reconstructed on the host since
+  // tmux keeps no scrollback for the Claude CLI's alternate-screen TUI.
+  private paneHistory = new Map<string, string[]>();
+  private paneHistoryContentLines = new Map<string, string[] | null>();
 
   constructor(
     private readonly targetPath: string,
@@ -150,10 +160,13 @@ export class PaneTailer {
     this.socketPath = readTmuxSocket(this.targetPath) ?? '';
     this.roles = readSwarmRoles(this.targetPath);
     this.lastText.clear();
+    this.lastRawText.clear();
     this.lastChangedAt.clear();
     this.stalledRoles.clear();
     this.deadRoles.clear();
     this.liveRoles.clear();
+    this.paneHistory.clear();
+    this.paneHistoryContentLines.clear();
     if (this.socketPath) {
       this.paneBaseIndex = getPaneBaseIndex(this.socketPath);
       this.applyPaneSettings();
@@ -190,6 +203,9 @@ export class PaneTailer {
       this.socketPath = latestSocket;
       this.roles = readSwarmRoles(this.targetPath);
       this.lastText.clear();
+      this.lastRawText.clear();
+      this.paneHistory.clear();
+      this.paneHistoryContentLines.clear();
       if (this.socketPath) {
         this.paneBaseIndex = getPaneBaseIndex(this.socketPath);
         this.applyPaneSettings();
@@ -228,6 +244,10 @@ export class PaneTailer {
         if (this.liveRoles.has(role.role) && !this.deadRoles.has(role.role)) {
           this.deadRoles.add(role.role);
           deadEvents.push({ role: role.role, dead: true });
+          // A dead session's retained transcript is now stale; a respawn
+          // reseeds fresh rather than diffing against unrelated content.
+          this.paneHistory.delete(role.role);
+          this.paneHistoryContentLines.delete(role.role);
         }
         continue;
       }
@@ -254,7 +274,8 @@ export class PaneTailer {
       const rawText = stripAnsi(result.stdout);
       const paneCommand = getPaneCommand(this.socketPath, target);
       const statusOverlay = agentPaneStatusMessage(paneCommand, rawText);
-      const text = statusOverlay ?? rawText;
+      this.lastRawText.set(role.role, statusOverlay ?? rawText);
+      const text = statusOverlay ?? this.accumulateHistory(role.role, rawText);
 
       const previous = this.lastText.get(role.role);
       if (text === previous) {
@@ -306,7 +327,11 @@ export class PaneTailer {
     if (this.onNeedsHuman) {
       const needsHumanEvents: NeedsHumanEvent[] = [];
       for (const role of this.roles) {
-        const text = this.lastText.get(role.role);
+        // BL-070: detect against the CURRENT capture, not the accumulated
+        // retained transcript in lastText — a resolved question from
+        // earlier in the (now much longer) history must not keep matching
+        // just because it hasn't scrolled out of an arbitrary line window.
+        const text = this.lastRawText.get(role.role);
         const needsHuman = detectNeedsHuman(text);
         const wasNeedsHuman = this.needsHumanRoles.has(role.role);
         if (needsHuman !== wasNeedsHuman) {
@@ -322,6 +347,18 @@ export class PaneTailer {
         this.onNeedsHuman(needsHumanEvents);
       }
     }
+  }
+
+  // BL-070: diffs this capture against the role's previous one and merges
+  // any genuinely new content lines into its bounded retained transcript —
+  // see paneHistory.ts for the full root-cause writeup and algorithm.
+  private accumulateHistory(role: string, rawText: string): string {
+    const previousContentLines = this.paneHistoryContentLines.get(role) ?? null;
+    const history = this.paneHistory.get(role) ?? [];
+    const result = accumulatePaneHistory(previousContentLines, history, rawText, this.historyLines);
+    this.paneHistory.set(role, result.history);
+    this.paneHistoryContentLines.set(role, result.contentLines);
+    return result.displayText;
   }
 
   private pushFullTextIfChanged(role: SwarmRole, updates: TileOutput[], text: string): void {
