@@ -363,6 +363,18 @@ Heartbeat and watchdog timeouts are configured in the main settings block (see E
 
 Agents are unreliable pollers — that's the whole problem. A single watchdog in the extension host (not in the agents) is the dependable observer: it sees heartbeats, PIDs, and message status together, and it's the one component guaranteed to stay awake.
 
+### Automatic context clearing for idle agents
+
+To prevent context window exhaustion between parcels, the extension automatically sends a `/clear` command to agents that are drained-idle. This clears the agent's session context, giving the next parcel a fresh window:
+
+- **Trigger:** an agent with no in-process work, empty inbox, no pending needs-human state, no recent human keystrokes, and no pane output for the settle window (default 120s)
+- **Action:** the extension sends `/clear` + Enter through the existing tmux input path, logged to the "SwarmForge: Context Clear" output channel
+- **Once per idle cycle:** cleared agents are marked and re-arm only after accepting new work; while idle they are not cleared again
+- **Safety gates:** the feature respects all conditions above and stands down during a graceful bounce drain — clearing never interferes with in-flight work or pending human input
+- **Configurable:** enabled by default via `swarmforge.contextClear.enabled` setting, with the settle window tunable via `swarmforge.contextClear.settleWindowSeconds`
+
+This is safe because the protocol is already context-free between parcels — every handoff body says "re-read your role and constitution," and durable state (backlog, handoffs, messages) lives on disk. Clearing at an idle moment costs nothing and buys headroom.
+
 ## Per-Agent Lifecycle Control
 
 A core capability: managing individual agents without disrupting the swarm.
