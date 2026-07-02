@@ -1,0 +1,61 @@
+id: BL-080
+title: BUG — forge does not re-attach the live swarm on startup
+milestone: M2
+status: todo
+priority: 01
+assigned_to: coder
+
+description: |
+  DEFECT (user report, 2026-07-02): with a swarm already live in tmux,
+  reloading or restarting the extension does not re-attach the Forge UI to
+  the running swarm. The user is left with a detached control surface while
+  the swarm keeps working underneath.
+
+  The activation path (extension.ts activate(), BL-066's re-attach branch)
+  gates re-attachment on isSwarmReady(targetPath) — a four-condition probe
+  (tmux socket file, `tmux ls` exit 0, roles.tsv non-empty, every role
+  session present). When any of those conditions fails spuriously against a
+  genuinely live swarm (the defect the user observed), activation falls
+  through to the resume prompt or a silent no-op instead of attaching.
+
+  Fix: investigate why the activation-time probe disagrees with the live
+  tmux state, and align activation with the same live-state source the
+  panel and swarm launcher rely on, so a live swarm always re-attaches.
+  Root-cause the actual failure mode (do not just widen the probe blindly);
+  document the root cause in the close.
+
+  Scope: extension host activation/attach path (extension.ts,
+  swarmLauncher.ts isSwarmReady, swarm/tmuxClient readiness inputs) plus
+  tests. No changes to SwarmForge itself; no webview logic changes expected.
+
+acceptance: |
+  Feature: Forge re-attaches to an already-live swarm on activation
+
+  Background:
+    Given a target is set for the workspace
+
+  # BL-080 reattach-live-swarm-01
+  Scenario: activation re-attaches to a live swarm
+    Given a swarm is live in tmux for the current target
+    When the extension reloads or activates
+    Then the SwarmForge panel opens attached to the live swarm's panes
+    And no agent process is restarted
+
+  # BL-080 reattach-live-swarm-02
+  Scenario: a live swarm never produces the resume prompt or a no-op
+    Given a swarm is live in tmux for the current target
+    When the extension activates
+    Then the UI does not show the "Resume it?" prompt
+    And activation is not a silent no-op
+
+  # BL-080 reattach-live-swarm-03
+  Scenario: cold start with no live swarm is unchanged
+    Given no swarm is live for the current target
+    And prior run state exists for the target
+    When the extension activates
+    Then the resume-from-prior-run prompt is offered as today
+
+  # Non-behavioral gates:
+  #  - Root cause of the false-negative readiness check is documented in
+  #    the close.
+  #  - Existing launch and discovery tests continue to pass.
