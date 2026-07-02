@@ -84,6 +84,10 @@ function parseBacklogYaml(content) {
     if (dependsOn) {
         item.dependsOn = dependsOn;
     }
+    const pack = parseYamlList(content, 'pack');
+    if (pack) {
+        item.pack = pack;
+    }
     return item;
 }
 function readYamlFiles(dir, overrideStatus) {

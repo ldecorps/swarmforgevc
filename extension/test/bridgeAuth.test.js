@@ -16,6 +16,13 @@ test('isAuthorizedRequest rejects a mismatched token', () => {
   assert.equal(isAuthorizedRequest('Bearer wrong-token', TOKEN), false);
 });
 
+test('isAuthorizedRequest rejects a same-length but different token', () => {
+  // Same length as TOKEN so the length-mismatch shortcut cannot short-circuit
+  // this — it must fail via the actual crypto.timingSafeEqual comparison.
+  assert.equal(TOKEN.length, 'xyz789uvw012'.length);
+  assert.equal(isAuthorizedRequest('Bearer xyz789uvw012', TOKEN), false);
+});
+
 test('isAuthorizedRequest rejects a header missing the Bearer prefix', () => {
   assert.equal(isAuthorizedRequest(TOKEN, TOKEN), false);
 });
