@@ -11,6 +11,16 @@ const path = require('node:path');
 const GUIDE_PATH = path.join(__dirname, '..', '..', 'docs', 'GettingStarted.md');
 const PACKAGE_JSON_PATH = path.join(__dirname, '..', 'package.json');
 
+// Stryker (extension/stryker.config.json) sandboxes only the extension/
+// subtree it mutates; docs/ lives one level up at the repo root and is not
+// copied in, so GUIDE_PATH genuinely does not exist there. Without this
+// guard, every hardener mutation run — on ANY file, not just this one —
+// fails at Stryker's dry-run step before a single mutant is tested, since
+// the dry run executes the full `node --test test/*.test.js` glob. Skipping
+// only when the file is truly absent (never in a normal checkout or CI)
+// keeps the real drift check loud everywhere it can actually run.
+const guideAvailable = fs.existsSync(GUIDE_PATH);
+
 function extractCommandIds(markdown) {
   const matches = markdown.match(/swarmforge\.[a-zA-Z][a-zA-Z0-9]*/g) || [];
   return [...new Set(matches)];
@@ -21,7 +31,11 @@ function contributedCommandIds() {
   return new Set((pkg.contributes?.commands || []).map((c) => c.command));
 }
 
-test('every swarmforge.* command mentioned in GettingStarted.md is a contributed command', () => {
+test('every swarmforge.* command mentioned in GettingStarted.md is a contributed command', (t) => {
+  if (!guideAvailable) {
+    t.skip('docs/GettingStarted.md not present outside extension/ in this sandbox');
+    return;
+  }
   const guide = fs.readFileSync(GUIDE_PATH, 'utf8');
   const mentioned = extractCommandIds(guide);
   const contributed = contributedCommandIds();
@@ -32,7 +46,11 @@ test('every swarmforge.* command mentioned in GettingStarted.md is a contributed
   assert.deepEqual(stale, [], `stale/invented command IDs in the guide: ${stale.join(', ')}`);
 });
 
-test('GettingStarted.md declares its documenter ownership', () => {
+test('GettingStarted.md declares its documenter ownership', (t) => {
+  if (!guideAvailable) {
+    t.skip('docs/GettingStarted.md not present outside extension/ in this sandbox');
+    return;
+  }
   const guide = fs.readFileSync(GUIDE_PATH, 'utf8');
   assert.match(guide, /documenter/i);
 });
