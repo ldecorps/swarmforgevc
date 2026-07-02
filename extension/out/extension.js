@@ -84,6 +84,12 @@ const BOUNCE_DRAIN_POLL_INTERVAL_SECONDS = 5;
 const BOUNCE_DRAIN_TIMEOUT_SECONDS_DEFAULT = 900;
 const CONTEXT_CLEAR_POLL_INTERVAL_SECONDS = 15;
 const CONTEXT_CLEAR_SETTLE_WINDOW_SECONDS_DEFAULT = 120;
+// BL-080: short retry window for the activation re-attach check. A live
+// swarm is already up, so this only smooths a transient probe flake at
+// cold-start - unlike the launcher's own 120s timeout, which waits out an
+// actual swarm boot.
+const REATTACH_READY_TIMEOUT_MS = 3000;
+const REATTACH_READY_POLL_MS = 200;
 let currentBounceWatcher = null;
 let currentChaserMonitor = null;
 let currentBounceDrainWatcher = null;
@@ -467,24 +473,40 @@ function activate(context) {
         // auto-launch is already pending below (BL-057's bounceAll flow), so
         // the two paths never race each other.
         if (!pendingAutoLaunch) {
-            if ((0, swarmLauncher_1.isSwarmReady)(targetPath)) {
-                // Re-attach automatically: tiles reconnect to the live output
-                // streams without restarting any agent.
-                const panel = swarmPanel_1.SwarmPanel.createOrShow(context.extensionUri, targetPath, runLogPath, undefined, context.secrets);
-                panel.updateTarget(targetPath);
-            }
-            else if ((0, swarmDiscovery_1.hasPriorRunState)(targetPath)) {
-                // Cold relaunch with no live processes: offer resume from the
-                // target's prior run rather than a silent no-op or a surprise
-                // cold start.
-                vscode.window
-                    .showInformationMessage('A previous SwarmForge run was found for this target but is not currently live. Resume it?', 'Resume', 'Not Now')
-                    .then((choice) => {
-                    if (choice === 'Resume') {
-                        vscode.commands.executeCommand('swarmforge.launchSwarm');
-                    }
-                });
-            }
+            // BL-080: a bare isSwarmReady() call here is a single, un-retried
+            // check of a four-condition probe (socket file, `tmux ls`, roles.tsv,
+            // every role session) run at the exact instant the extension host
+            // cold-starts - the moment on this machine most prone to transient
+            // subprocess/resource contention. The swarm launcher never trusts a
+            // single isSwarmReady() call either (waitForSwarmReady polls it for
+            // up to 120s during an actual launch); activation had no equivalent
+            // tolerance, so one flaked check against a genuinely live swarm fell
+            // through to the "previous run found, resume?" prompt instead of
+            // re-attaching - the reported defect. A short bounded retry (well
+            // under launch's own timeout, since a live swarm is already up and
+            // this is only smoothing a transient check, not waiting for a cold
+            // boot) fixes the false negative without meaningfully delaying the
+            // genuine cold-start case, where every retry still finds no socket.
+            (0, swarmLauncher_1.waitForSwarmReady)(targetPath, REATTACH_READY_TIMEOUT_MS, REATTACH_READY_POLL_MS).then((ready) => {
+                if (ready) {
+                    // Re-attach automatically: tiles reconnect to the live output
+                    // streams without restarting any agent.
+                    const panel = swarmPanel_1.SwarmPanel.createOrShow(context.extensionUri, targetPath, runLogPath, undefined, context.secrets);
+                    panel.updateTarget(targetPath);
+                }
+                else if ((0, swarmDiscovery_1.hasPriorRunState)(targetPath)) {
+                    // Cold relaunch with no live processes: offer resume from the
+                    // target's prior run rather than a silent no-op or a surprise
+                    // cold start.
+                    vscode.window
+                        .showInformationMessage('A previous SwarmForge run was found for this target but is not currently live. Resume it?', 'Resume', 'Not Now')
+                        .then((choice) => {
+                        if (choice === 'Resume') {
+                            vscode.commands.executeCommand('swarmforge.launchSwarm');
+                        }
+                    });
+                }
+            });
         }
     }
     // Check for pending auto-launch after extension reload
