@@ -219,6 +219,18 @@ async function resolveTargetPath(context) {
     }
     return targetPath;
 }
+function validateTargetAndLastRun(targetPath, context) {
+    if (!targetPath) {
+        vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
+        return null;
+    }
+    const lastRunName = context.globalState.get(LAST_RUN_NAME_KEY);
+    if (!lastRunName) {
+        vscode.window.showWarningMessage('No previous run name stored. Use SwarmForge: Launch Swarm first.');
+        return null;
+    }
+    return { targetPath, lastRunName };
+}
 function activate(context) {
     // Lets the dev-host bounce script verify a fresh activation (BL-058);
     // written only in Development extension mode.
@@ -365,16 +377,11 @@ function activate(context) {
             vscode.window.showWarningMessage(result.message);
         }
     }), vscode.commands.registerCommand('swarmforge.bounceSwarm', async () => {
-        const targetPath = (0, targetConfig_1.getTargetPath)();
-        if (!targetPath) {
-            vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
+        const validated = validateTargetAndLastRun((0, targetConfig_1.getTargetPath)(), context);
+        if (!validated) {
             return;
         }
-        const lastRunName = context.globalState.get(LAST_RUN_NAME_KEY);
-        if (!lastRunName) {
-            vscode.window.showWarningMessage('No previous run name stored. Use SwarmForge: Launch Swarm first.');
-            return;
-        }
+        const { targetPath, lastRunName } = validated;
         vscode.window.showInformationMessage('Restarting swarm...');
         const result = await (0, bouncer_1.bounceSwarm)(targetPath, lastRunName);
         if (!result.success) {
@@ -393,16 +400,11 @@ function activate(context) {
         const reloadCmd = (0, bouncer_1.buildBounceExtensionCommand)();
         await vscode.commands.executeCommand(reloadCmd);
     }), vscode.commands.registerCommand('swarmforge.bounceAll', async () => {
-        const targetPath = (0, targetConfig_1.getTargetPath)();
-        if (!targetPath) {
-            vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
+        const validated = validateTargetAndLastRun((0, targetConfig_1.getTargetPath)(), context);
+        if (!validated) {
             return;
         }
-        const lastRunName = context.globalState.get(LAST_RUN_NAME_KEY);
-        if (!lastRunName) {
-            vscode.window.showWarningMessage('No previous run name stored. Use SwarmForge: Launch Swarm first.');
-            return;
-        }
+        const { targetPath } = validated;
         vscode.window.showInformationMessage('Stopping swarm and reloading extension...');
         const stopResult = (0, swarmStopper_1.stopSwarm)(targetPath);
         if (!stopResult.success) {

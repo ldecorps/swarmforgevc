@@ -1,7 +1,7 @@
 id: BL-067
 title: BUG — stuck-detection missed a 4h overnight stall (in_process held while pane idle)
 milestone: M4
-status: todo
+status: done
 priority: 02
 assigned_to: coder
 
