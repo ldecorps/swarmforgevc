@@ -44,6 +44,7 @@ const runLog_1 = require("../runs/runLog");
 const webviewHtml_1 = require("./webviewHtml");
 const backlogReader_1 = require("./backlogReader");
 const badgeSummary_1 = require("./badgeSummary");
+const needsHumanReconciler_1 = require("./needsHumanReconciler");
 const STAGE_POLL_INTERVAL_MS = 2000;
 const OUTPUT_CHANNEL_NAME = 'SwarmForge';
 class SwarmPanel {
@@ -58,7 +59,7 @@ class SwarmPanel {
     stagePoller;
     disposables = [];
     wasActive = false;
-    escalatedRoles = new Set();
+    needsHumanReconciler = new needsHumanReconciler_1.NeedsHumanReconciler();
     dogfoodShown = false;
     workspaceState;
     constructor(panel, extensionUri, targetPath, runLogPath, workspaceState) {
@@ -154,7 +155,10 @@ class SwarmPanel {
         }, historyLines, (roles) => {
             this.sendRoles(roles);
         }, paneRows, (events) => {
-            this.panel.webview.postMessage({ type: 'needsHuman', events });
+            const deltas = this.needsHumanReconciler.applyQuestionEvents(events);
+            if (deltas.length > 0) {
+                this.panel.webview.postMessage({ type: 'needsHuman', events: deltas });
+            }
         });
         this.tailer.start();
         this.sendRoles(this.tailer.getRoles());
@@ -210,24 +214,13 @@ class SwarmPanel {
     }
     // Roles the stuck-in-process chaser escalated (chases exhausted, no
     // recovery) surface with the same needs-human red border the question
-    // detector uses; only state CHANGES are posted so the two signals do not
-    // fight each other every poll (BL-067).
+    // detector uses. Routed through needsHumanReconciler so this source's
+    // "false" never clears a tile the question detector still holds true (and
+    // vice versa) — see needsHumanReconciler.ts (BL-067).
     postStuckEscalations() {
-        const escalated = new Set((0, stuckEscalations_1.escalatedStuckRoles)());
-        const events = [];
-        for (const role of escalated) {
-            if (!this.escalatedRoles.has(role)) {
-                events.push({ role, needsHuman: true });
-            }
-        }
-        for (const role of this.escalatedRoles) {
-            if (!escalated.has(role)) {
-                events.push({ role, needsHuman: false });
-            }
-        }
-        this.escalatedRoles = escalated;
-        if (events.length > 0) {
-            this.panel.webview.postMessage({ type: 'needsHuman', events });
+        const deltas = this.needsHumanReconciler.applyStuckRoles((0, stuckEscalations_1.escalatedStuckRoles)());
+        if (deltas.length > 0) {
+            this.panel.webview.postMessage({ type: 'needsHuman', events: deltas });
         }
     }
     sendRoles(roles) {
