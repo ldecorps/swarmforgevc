@@ -64,6 +64,20 @@ test('truncateSummary truncates after stripping prefix if still too long', () =>
   assert.ok(result.endsWith('…'));
 });
 
+test('truncateSummary leaves an exactly-40-char title untouched (boundary)', () => {
+  const title = 'x'.repeat(40);
+  const result = truncateSummary(title);
+  assert.equal(result, title);
+  assert.equal(result.length, 40);
+});
+
+test('truncateSummary truncates a 41-char title (boundary)', () => {
+  const title = 'x'.repeat(41);
+  const result = truncateSummary(title);
+  assert.equal(result.length, 40);
+  assert.ok(result.endsWith('…'));
+});
+
 test('truncateSummary handles empty title', () => {
   const result = truncateSummary('');
   assert.equal(result, '');
@@ -154,15 +168,41 @@ test('buildBadgeMap keys the badge on the live holder when the parcel has moved'
   assert.equal(result.cleaner.holder, 'cleaner');
 });
 
-test('buildBadgeMap falls back to the static assignee when no live holder is found', () => {
+// Superseded by BL-079: when a targetPath is given (live routing active),
+// no live holder must mean no badge at all, not a fallback to the static
+// assignee — that fallback was exactly the phantom-holder disagreement
+// reported between the backlog row (already "queued", per BL-072) and the
+// tile badge for a dropped-parcel ticket.
+test('buildBadgeMap shows no badge when no live holder is found, even with a targetPath (BL-079)', () => {
   const target = mkTmp();
   writeRolesTsv(target, []);
 
   const items = [{ id: 'BL-043', title: 'tile layout', status: 'active', assignedTo: 'coder' }];
   const result = buildBadgeMap(items, target);
 
-  assert.ok(result.coder, 'badge should fall back to the static assignee when no live holder is found');
-  assert.equal(result.coder.holder, 'coder');
+  assert.equal(result.coder, undefined, 'no phantom badge should resurface on the static assignee when no live holder resolves');
+  assert.equal(Object.keys(result).length, 0);
+});
+
+// BL-079: the reported incident — a stage completed the parcel but never
+// forwarded it onward, so its only trace anywhere is inbox/completed/.
+test('buildBadgeMap shows no badge for a ticket whose only handoff sits in completed/ (BL-079)', () => {
+  const target = mkTmp();
+  const cleanerWt = mkTmp();
+  writeRolesTsv(target, [{ role: 'cleaner', worktreePath: cleanerWt, displayName: 'Cleaner' }]);
+  const dir = path.join(cleanerWt, '.swarmforge', 'handoffs', 'inbox', 'completed');
+  mkdirp(dir);
+  fs.writeFileSync(
+    path.join(dir, '00_test.handoff'),
+    'from: coder\nto: cleaner\ntask: bl-079-holderless\ncommit: abc\n'
+  );
+
+  const items = [{ id: 'BL-079', title: 'holderless ticket', status: 'active', assignedTo: 'coder' }];
+  const result = buildBadgeMap(items, target);
+
+  assert.equal(result.cleaner, undefined, 'a completed-only handoff must not resolve cleaner as the current holder');
+  assert.equal(result.coder, undefined, 'the assignee fallback must not resurface a phantom holder either');
+  assert.equal(Object.keys(result).length, 0);
 });
 
 test('buildBadgeMap ignores targetPath for non-active items', () => {
@@ -176,7 +216,11 @@ test('buildBadgeMap ignores targetPath for non-active items', () => {
 
 test('folder-active item whose yaml still says todo produces a badge (BL-053)', () => {
   const target = mkTmp();
-  writeRolesTsv(target, []);
+  const coderWt = mkTmp();
+  // BL-079: buildBadgeMap no longer falls back to the static assignee, so a
+  // live holder must actually resolve for a badge to render.
+  writeRolesTsv(target, [{ role: 'coder', worktreePath: coderWt, displayName: 'Coder' }]);
+  dropHandoff(coderWt, '00_test.handoff', 'from: specifier\nto: coder\ntask: bl-053-redo-tile-header\ncommit: abc\n');
   const activeDir = path.join(target, 'backlog', 'active');
   mkdirp(activeDir);
   fs.writeFileSync(
