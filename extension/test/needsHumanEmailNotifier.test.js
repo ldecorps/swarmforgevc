@@ -190,3 +190,31 @@ test('a rejected sendEmail promise is caught and reported via onSendResult', asy
   assert.equal(results[0].result.success, false);
   assert.match(results[0].result.error, /network down/);
 });
+
+test('a repeated true update does not push the grace clock back out', async () => {
+  const { sent, adapters } = mkAdapters();
+  const notifier = new NeedsHumanEmailNotifier(mkConfig(), adapters);
+
+  notifier.recordUpdates([{ role: 'coder', needsHuman: true, snippet: 'Continue?' }], NOW);
+  // A second true update 50s later (e.g. the reconciled signal re-asserting
+  // itself from a poll) must not reset the clock back to "just started".
+  notifier.recordUpdates([{ role: 'coder', needsHuman: true, snippet: 'Still there?' }], NOW + 50 * 1000);
+  notifier.sweep(NOW + 61 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(sent.length, 1, 'grace period must be measured from the FIRST true, not the latest');
+});
+
+test('a true update with no snippet does not clear a previously captured one', async () => {
+  const { sent, adapters } = mkAdapters();
+  const notifier = new NeedsHumanEmailNotifier(mkConfig(), adapters);
+
+  notifier.recordUpdates([{ role: 'coder', needsHuman: true, snippet: 'Allow this action? (y/n)' }], NOW);
+  // A later true update with no snippet (e.g. a stuck-escalation delta,
+  // which carries no prompt text) must not blank out the one already seen.
+  notifier.recordUpdates([{ role: 'coder', needsHuman: true }], NOW + 10 * 1000);
+  notifier.sweep(NOW + 61 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.match(sent[0].text, /Allow this action\? \(y\/n\)/);
+});
