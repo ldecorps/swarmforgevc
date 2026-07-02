@@ -139,7 +139,8 @@ Spawning agent processes from TypeScript **is** the intended design — that is 
 Tiles automatically follow the agent's live output ("tail-locked") so you always see the newest transcript line:
 
 - **Autoscroll**: By default, tiles scroll to show the newest output as it streams. The tile anchors to the agent's live content line, positioned just above any pinned TUI footer (the input prompt, status bar, or interrupt indicator)
-- **Manual scroll-up**: Scroll up to read earlier output and the tile releases tail-lock — new output no longer forces the view downward
+- **Scrollback history**: Each tile retains a history of earlier output, bounded by `swarmforge.tile.historyLines` (default 500 lines). The extension accumulates this host-side since agents running in tmux's alternate screen have no tmux scrollback to retrieve
+- **Manual scroll-up**: Scroll up to read earlier output beyond the visible rows and the tile releases tail-lock — new output no longer forces the view downward. Scroll up to reach the retained history, not just the immediate scrollback
 - **Re-engage**: Scroll back down to the live region and tail-lock re-engages, resuming autoscroll to follow new output
 - **Footer visibility**: The pinned footer (input box and status line) remains visible while autoscrolling; live content is never hidden behind it
 
