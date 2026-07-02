@@ -57,6 +57,8 @@ const chaserMonitor_1 = require("./watchdog/chaserMonitor");
 const tmuxClient_2 = require("./swarm/tmuxClient");
 const paneActivity_1 = require("./watchdog/paneActivity");
 const stuckEscalations_1 = require("./watchdog/stuckEscalations");
+const inboxChaser_1 = require("./swarm/inboxChaser");
+const bounceDrain_1 = require("./swarm/bounceDrain");
 const heartbeat_1 = require("./tools/heartbeat");
 const devActivationMarker_1 = require("./devActivationMarker");
 const liveness_1 = require("./watchdog/liveness");
@@ -72,8 +74,12 @@ const CHASER_INTERVAL_SECONDS = 5;
 const CHASER_TIMEOUT_SECONDS = 30;
 const CHASER_MAX_CHASES = 3;
 const CHASER_STUCK_IN_PROCESS_TIMEOUT_SECONDS = 60;
+const BOUNCE_DRAIN_POLL_INTERVAL_SECONDS = 5;
+const BOUNCE_DRAIN_TIMEOUT_SECONDS_DEFAULT = 900;
 let currentBounceWatcher = null;
 let currentChaserMonitor = null;
+let currentBounceDrainWatcher = null;
+let currentGracefulBounceFileWatcher = null;
 function generateDefaultRunName() {
     const now = new Date();
     const year = now.getFullYear();
@@ -212,6 +218,124 @@ function startOrRestartChaserMonitor(targetPath, context) {
         });
     }
 }
+// BL-069: performs the real verified bounce (BL-058 path) for a graceful
+// drain that just reached all-idle, or for a human-forced immediate bounce
+// that skips the rest of the drain. Always stops the drain watcher and
+// clears the sentinel first so neither path can double-fire.
+async function performGracefulBounceNow(targetPath, bounceType, context) {
+    if (currentBounceDrainWatcher) {
+        (0, bounceDrain_1.stopBounceDrainWatcher)(currentBounceDrainWatcher);
+        currentBounceDrainWatcher = null;
+    }
+    (0, bounceDrain_1.clearBounceDrainState)(targetPath);
+    if (bounceType === 'extension') {
+        await vscode.commands.executeCommand((0, bouncer_1.buildBounceExtensionCommand)());
+        return;
+    }
+    if (bounceType === 'all') {
+        const stopResult = (0, swarmStopper_1.stopSwarm)(targetPath);
+        if (!stopResult.success) {
+            vscode.window.showErrorMessage(`Failed to stop swarm: ${stopResult.message}`);
+            return;
+        }
+        await context.workspaceState.update(PENDING_AUTO_LAUNCH_KEY, true);
+        await vscode.commands.executeCommand((0, bouncer_1.buildBounceExtensionCommand)());
+        return;
+    }
+    const validated = validateTargetAndLastRun(targetPath, context);
+    if (!validated) {
+        return;
+    }
+    const result = await (0, bouncer_1.bounceSwarm)(validated.targetPath, validated.lastRunName);
+    if (!result.success) {
+        vscode.window.showErrorMessage(result.message);
+        return;
+    }
+    vscode.window.showInformationMessage(result.message);
+    const panel = swarmPanel_1.SwarmPanel.currentPanel;
+    if (panel) {
+        panel.updateTarget(targetPath);
+    }
+    startOrRestartChaserMonitor(targetPath, context);
+}
+// BL-069: watches the durable drain sentinel and waits until every role
+// simultaneously holds no in_process work (single file OR batch directory,
+// reusing BL-067's scanInProcess) AND its pane is not actively working
+// (reusing the watchdog liveness primitives), then performs the real bounce.
+// Past the configured timeout with no all-idle, prompts the human once
+// instead of waiting forever.
+function startOrRestartBounceDrainWatcher(targetPath, context) {
+    if (currentBounceDrainWatcher) {
+        (0, bounceDrain_1.stopBounceDrainWatcher)(currentBounceDrainWatcher);
+        currentBounceDrainWatcher = null;
+    }
+    const swarmforgeDir = path.join(targetPath, '.swarmforge');
+    if (!fs.existsSync(swarmforgeDir)) {
+        return;
+    }
+    const roles = (0, tmuxClient_2.readSwarmRoles)(targetPath);
+    const roleInboxes = (0, chaserMonitor_1.buildRoleInboxes)(targetPath, roles.map((r) => r.role));
+    const watchdogConfig = {
+        staleTimeoutSeconds: WATCHDOG_STALE_TIMEOUT_SECONDS,
+        inFlightTimeoutSeconds: WATCHDOG_IN_FLIGHT_TIMEOUT_SECONDS,
+        deadTimeoutSeconds: WATCHDOG_DEAD_TIMEOUT_SECONDS,
+    };
+    const getRoleStatuses = () => roleInboxes.map(({ role, inProcessDir }) => {
+        const hasInProcessWork = (0, inboxChaser_1.scanInProcess)(inProcessDir).length > 0;
+        const hb = (0, heartbeat_1.readHeartbeat)(path.join(swarmforgeDir, 'heartbeat'), role);
+        const liveness = (0, liveness_1.computeLiveness)(hb, Date.now(), watchdogConfig, hb ? true : false);
+        const idle = liveness.state !== 'alive' && liveness.state !== 'stuck';
+        return { role, hasInProcessWork, idle };
+    });
+    currentBounceDrainWatcher = (0, bounceDrain_1.startBounceDrainWatcher)({ targetPath, pollIntervalSeconds: BOUNCE_DRAIN_POLL_INTERVAL_SECONDS }, {
+        getRoleStatuses,
+        onBounce: (bounceType) => {
+            void performGracefulBounceNow(targetPath, bounceType, context);
+        },
+        onTimeout: (bounceType, busyRoles) => {
+            vscode.window
+                .showWarningMessage(`Graceful bounce is still draining (busy: ${busyRoles.join(', ') || 'none'}). Keep waiting or bounce now?`, 'Keep Waiting', 'Bounce Now')
+                .then((choice) => {
+                if (choice === 'Bounce Now') {
+                    void performGracefulBounceNow(targetPath, bounceType, context);
+                }
+            });
+        },
+    });
+    context.subscriptions.push({
+        dispose: () => {
+            if (currentBounceDrainWatcher) {
+                (0, bounceDrain_1.stopBounceDrainWatcher)(currentBounceDrainWatcher);
+                currentBounceDrainWatcher = null;
+            }
+        },
+    });
+}
+function beginGracefulBounce(targetPath, bounceType, context) {
+    const config = vscode.workspace.getConfiguration('swarmforge');
+    const timeoutSeconds = config.get('bounce.drainTimeoutSeconds', BOUNCE_DRAIN_TIMEOUT_SECONDS_DEFAULT);
+    (0, bounceDrain_1.startBounceDrain)(targetPath, bounceType, timeoutSeconds);
+    startOrRestartBounceDrainWatcher(targetPath, context);
+    vscode.window.showInformationMessage('Graceful bounce: draining agents to idle before bouncing…');
+}
+// BL-069 "plus a variant of the existing remote-bounce sentinel": a
+// .swarmforge/bounce-graceful file (same swarm|extension|all content as the
+// existing immediate-bounce sentinel) starts a drain instead of bouncing now.
+function startOrRestartGracefulBounceFileWatcher(targetPath, context) {
+    if (currentGracefulBounceFileWatcher) {
+        currentGracefulBounceFileWatcher.close();
+        currentGracefulBounceFileWatcher = null;
+    }
+    currentGracefulBounceFileWatcher = (0, bounceDrain_1.startGracefulBounceFileWatcher)(targetPath, (bounceType) => beginGracefulBounce(targetPath, bounceType, context), (error) => vscode.window.showWarningMessage(`Graceful bounce trigger error: ${error}`));
+    if (currentGracefulBounceFileWatcher) {
+        context.subscriptions.push({
+            dispose: () => {
+                currentGracefulBounceFileWatcher?.close();
+                currentGracefulBounceFileWatcher = null;
+            },
+        });
+    }
+}
 async function resolveTargetPath(context) {
     let targetPath = (0, targetConfig_1.getTargetPath)();
     if (!targetPath) {
@@ -239,8 +363,13 @@ function activate(context) {
     // Start bounce watcher and chaser if target is already set
     const targetPath = (0, targetConfig_1.getTargetPath)();
     if (targetPath) {
+        // BL-069 crash safety: a drain sentinel can only be stale here — a live
+        // watcher would already be running to complete it — so any sentinel
+        // found at extension startup is left over from a crashed session.
+        (0, bounceDrain_1.clearBounceDrainState)(targetPath);
         startOrRestartBounceWatcher(context, targetPath);
         startOrRestartChaserMonitor(targetPath, context);
+        startOrRestartGracefulBounceFileWatcher(targetPath, context);
     }
     // Check for pending auto-launch after extension reload
     const pendingAutoLaunch = context.workspaceState.get(PENDING_AUTO_LAUNCH_KEY);
@@ -281,8 +410,10 @@ function activate(context) {
         await (0, targetConfig_1.setTargetPath)(context);
         const newTargetPath = (0, targetConfig_1.getTargetPath)();
         if (newTargetPath) {
+            (0, bounceDrain_1.clearBounceDrainState)(newTargetPath);
             startOrRestartBounceWatcher(context, newTargetPath);
             startOrRestartChaserMonitor(newTargetPath, context);
+            startOrRestartGracefulBounceFileWatcher(newTargetPath, context);
         }
     }), vscode.commands.registerCommand('swarmforge.initializeTarget', async () => {
         const targetPath = await resolveTargetPath(context);
@@ -414,6 +545,35 @@ function activate(context) {
         await context.workspaceState.update(PENDING_AUTO_LAUNCH_KEY, true);
         const reloadCmd = (0, bouncer_1.buildBounceExtensionCommand)();
         await vscode.commands.executeCommand(reloadCmd);
+    }), 
+    // BL-069: instruct all agents to finish their current work and refuse
+    // new work, then bounce automatically once every role is idle.
+    vscode.commands.registerCommand('swarmforge.bounceGraceful', async () => {
+        const targetPath = (0, targetConfig_1.getTargetPath)();
+        if (!targetPath) {
+            vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
+            return;
+        }
+        beginGracefulBounce(targetPath, 'swarm', context);
+    }), vscode.commands.registerCommand('swarmforge.cancelBounceDrain', async () => {
+        const targetPath = (0, targetConfig_1.getTargetPath)();
+        if (!targetPath) {
+            return;
+        }
+        if (currentBounceDrainWatcher) {
+            (0, bounceDrain_1.stopBounceDrainWatcher)(currentBounceDrainWatcher);
+            currentBounceDrainWatcher = null;
+        }
+        (0, bounceDrain_1.clearBounceDrainState)(targetPath);
+        vscode.window.showInformationMessage('Graceful bounce drain cancelled — agents accept work again.');
+    }), vscode.commands.registerCommand('swarmforge.forceBounceNow', async () => {
+        const targetPath = (0, targetConfig_1.getTargetPath)();
+        if (!targetPath) {
+            vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
+            return;
+        }
+        const drainState = (0, bounceDrain_1.readBounceDrainState)(targetPath);
+        await performGracefulBounceNow(targetPath, drainState?.bounceType ?? 'swarm', context);
     }), vscode.commands.registerCommand('swarmforge.openPR', async () => {
         const targetPath = (0, targetConfig_1.getTargetPath)();
         if (!targetPath) {
