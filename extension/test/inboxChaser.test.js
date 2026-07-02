@@ -245,6 +245,92 @@ test('runSweep skips a fresh item and makes no adapter calls', () => {
   assert.equal(fs.existsSync(filePath), true);
 });
 
+// ── runSweep cooldown gating (BL-082) ────────────────────────────────────────
+
+test('runSweep suppresses wake/chase for a role cooling down', () => {
+  const { role, inboxNewDir, inProcessDir } = mkRoleInbox('coder');
+  writeAgedHandoff(inboxNewDir, 'a.handoff', 120, NOW);
+  const { calls, adapters } = mkAdapters('alive');
+  adapters.getCooldownUntilMs = () => NOW + 60_000;
+
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters);
+
+  assert.equal(calls.wakeUps.length, 0);
+  assert.equal(calls.respawns.length, 0);
+  assert.equal(calls.deadLetters.length, 0);
+});
+
+test('runSweep suppresses in_process nudges for a role cooling down', () => {
+  const tmp = mkTmp();
+  const inboxNewDir = path.join(tmp, 'inbox', 'new');
+  const inProcessDir = path.join(tmp, 'inbox', 'in_process');
+  fs.mkdirSync(inboxNewDir, { recursive: true });
+  fs.mkdirSync(inProcessDir, { recursive: true });
+  fs.writeFileSync(path.join(inProcessDir, 'a.handoff'), '', 'utf-8');
+  const { calls, adapters } = mkAdapters('alive');
+  adapters.getLastActivityMs = () => NOW - 10_000_000; // long idle, would normally nudge
+  adapters.getCooldownUntilMs = () => NOW + 60_000;
+
+  runSweep([{ role: 'coder', inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters);
+
+  assert.equal(calls.wakeUps.length, 0);
+});
+
+test('runSweep sends exactly one wake when a role\'s cooldown just expired', () => {
+  const { role, inboxNewDir, inProcessDir } = mkRoleInbox('coder');
+  const { calls, adapters } = mkAdapters('alive');
+  adapters.getCooldownUntilMs = () => NOW - 1000; // already expired
+  adapters.getCooldownWokenMarker = () => null; // not yet woken for this window
+  const expiredNotifications = [];
+  adapters.onCooldownExpired = (r, untilMs) => expiredNotifications.push({ r, untilMs });
+
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters);
+
+  assert.deepEqual(calls.wakeUps, ['coder']);
+  assert.deepEqual(expiredNotifications, [{ r: 'coder', untilMs: NOW - 1000 }]);
+});
+
+test('runSweep does not re-wake once already woken for the same cooldown window', () => {
+  const { role, inboxNewDir, inProcessDir } = mkRoleInbox('coder');
+  const { calls, adapters } = mkAdapters('alive');
+  adapters.getCooldownUntilMs = () => NOW - 1000;
+  adapters.getCooldownWokenMarker = () => NOW - 1000; // already woken for this exact window
+
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters);
+
+  assert.equal(calls.wakeUps.length, 0);
+});
+
+test('runSweep leaves non-cooldown roles unaffected while another role cools down', () => {
+  const coderInbox = mkRoleInbox('coder');
+  const cleanerInbox = mkRoleInbox('cleaner');
+  writeAgedHandoff(coderInbox.inboxNewDir, 'a.handoff', 120, NOW);
+  writeAgedHandoff(cleanerInbox.inboxNewDir, 'b.handoff', 120, NOW);
+
+  const calls = { wakeUps: [], respawns: [] };
+  const adapters = {
+    getLiveness: () => 'alive',
+    sendWakeUp: (r) => calls.wakeUps.push(r),
+    triggerRespawn: (r) => calls.respawns.push(r),
+    logDeadLetter: () => {},
+    getLastActivityMs: () => NOW,
+    onStuckEscalation: () => {},
+    getCooldownUntilMs: (r) => (r === 'coder' ? NOW + 60_000 : null),
+  };
+
+  runSweep(
+    [
+      { role: 'coder', inboxNewDir: coderInbox.inboxNewDir, inProcessDir: coderInbox.inProcessDir },
+      { role: 'cleaner', inboxNewDir: cleanerInbox.inboxNewDir, inProcessDir: cleanerInbox.inProcessDir },
+    ],
+    NOW,
+    SWEEP_CFG,
+    adapters
+  );
+
+  assert.deepEqual(calls.wakeUps, ['cleaner']);
+});
+
 test('runSweep processes multiple roles independently in one pass', () => {
   const coderInbox = mkRoleInbox('coder');
   const cleanerInbox = mkRoleInbox('cleaner');

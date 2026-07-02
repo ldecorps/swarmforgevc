@@ -34,10 +34,13 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SwarmPanel = void 0;
+const fs = __importStar(require("fs"));
+const path = __importStar(require("path"));
 const vscode = __importStar(require("vscode"));
 const tmuxClient_1 = require("../swarm/tmuxClient");
 const paneTailer_1 = require("./paneTailer");
 const swarmState_1 = require("../swarm/swarmState");
+const swarmMetrics_1 = require("../metrics/swarmMetrics");
 const daemonHealth_1 = require("../swarm/daemonHealth");
 const stuckEscalations_1 = require("../watchdog/stuckEscalations");
 const runLog_1 = require("../runs/runLog");
@@ -289,12 +292,37 @@ class SwarmPanel {
             this.panel.webview.postMessage({ type: 'holderUpdate', holders: holderMap });
             this.panel.webview.postMessage({ type: 'badgeUpdate', badges: (0, badgeSummary_1.buildBadgeMap)(backlogItems, this.targetPath) });
             this.panel.webview.postMessage({ type: 'transportHealth', health: (0, daemonHealth_1.readDaemonHealth)(this.targetPath) });
+            // BL-071: reuses this existing poll tick - no new polling loop, no
+            // per-second git invocations.
+            this.postMetrics();
             this.postStuckEscalations();
             this.emailNotifier?.sweep(Date.now());
             this.postBounceDrainStatus();
         };
         poll();
         this.stagePoller = setInterval(poll, STAGE_POLL_INTERVAL_MS);
+    }
+    // BL-071: host computes, webview presents. Fed by the SAME vscode-free
+    // metrics/swarmMetrics.ts module the swarm-metrics CLI calls, so the two
+    // never disagree (swarm-metrics-08).
+    postMetrics() {
+        let roles = [];
+        try {
+            roles = (0, swarmState_1.parseRolesTsv)(fs.readFileSync(path.join(this.targetPath, '.swarmforge', 'roles.tsv'), 'utf8'));
+        }
+        catch {
+            roles = [];
+        }
+        const latestRun = (0, runLog_1.loadRuns)(this.runLogPath)
+            .filter((r) => r.targetPath === this.targetPath)
+            .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))[0];
+        const runStartMs = latestRun ? Date.parse(latestRun.startedAt) : null;
+        const metrics = (0, swarmMetrics_1.computeSwarmMetrics)(this.targetPath, roles, runStartMs);
+        this.panel.webview.postMessage({
+            type: 'metricsUpdate',
+            metrics,
+            roles: roles.map((r) => r.role),
+        });
     }
     // Roles the stuck-in-process chaser escalated (chases exhausted, no
     // recovery) surface with the same needs-human red border the question

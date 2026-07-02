@@ -48,6 +48,7 @@ exports.isDoneButUndelivered = isDoneButUndelivered;
 exports.runSweep = runSweep;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const cooldownScheduler_1 = require("./cooldownScheduler");
 function sidecarPath(handoffFilePath) {
     return `${handoffFilePath}.chase.json`;
 }
@@ -187,6 +188,17 @@ function sweepInProcess(role, inProcessDir, nowMs, config, adapters) {
 }
 function runSweep(roleInboxes, nowMs, config, adapters) {
     for (const { role, inboxNewDir, inProcessDir } of roleInboxes) {
+        const cooldownUntilMs = adapters.getCooldownUntilMs?.(role) ?? null;
+        // While cooling down, suppress all wake/chase/respawn/nudge activity for
+        // this role only; other roles in the same pass proceed normally (BL-082).
+        if ((0, cooldownScheduler_1.isCoolingDown)(cooldownUntilMs, nowMs)) {
+            continue;
+        }
+        if (cooldownUntilMs != null &&
+            (0, cooldownScheduler_1.shouldWakeOnExpiry)(cooldownUntilMs, nowMs, adapters.getCooldownWokenMarker?.(role) ?? null)) {
+            adapters.sendWakeUp(role);
+            adapters.onCooldownExpired?.(role, cooldownUntilMs);
+        }
         sweepInProcess(role, inProcessDir, nowMs, config, adapters);
         const items = scanInboxNew(inboxNewDir);
         const liveness = adapters.getLiveness(role);

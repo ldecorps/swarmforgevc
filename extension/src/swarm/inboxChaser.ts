@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { LivenessState } from '../watchdog/liveness';
+import { isCoolingDown, shouldWakeOnExpiry } from './cooldownScheduler';
 
 export interface InboxChaserConfig {
   chaseIntervalSeconds: number;
@@ -172,6 +173,16 @@ export interface ChaserAdapters {
   /** Surfaces (or clears) the visible needs-human escalation for a role whose
    * chases were exhausted without recovery. */
   onStuckEscalation: (role: string, escalated: boolean) => void;
+  /** Absolute epoch ms until which the role is cooling down (token exhaustion
+   * reset time), or null/undefined when the role has no active cooldown
+   * (BL-082). Optional so callers without cooldown scheduling are unaffected. */
+  getCooldownUntilMs?: (role: string) => number | null | undefined;
+  /** Epoch ms of the cooldown window this role was last woken for, or
+   * null/undefined if no wake has been recorded yet (BL-082). */
+  getCooldownWokenMarker?: (role: string) => number | null | undefined;
+  /** Records that a wake was sent for this cooldown expiry, so the next
+   * sweep does not re-wake for the same window (BL-082). */
+  onCooldownExpired?: (role: string, cooldownUntilMs: number) => void;
 }
 
 export interface RoleInbox {
@@ -225,6 +236,22 @@ export function runSweep(
   adapters: ChaserAdapters
 ): void {
   for (const { role, inboxNewDir, inProcessDir } of roleInboxes) {
+    const cooldownUntilMs = adapters.getCooldownUntilMs?.(role) ?? null;
+
+    // While cooling down, suppress all wake/chase/respawn/nudge activity for
+    // this role only; other roles in the same pass proceed normally (BL-082).
+    if (isCoolingDown(cooldownUntilMs, nowMs)) {
+      continue;
+    }
+
+    if (
+      cooldownUntilMs != null &&
+      shouldWakeOnExpiry(cooldownUntilMs, nowMs, adapters.getCooldownWokenMarker?.(role) ?? null)
+    ) {
+      adapters.sendWakeUp(role);
+      adapters.onCooldownExpired?.(role, cooldownUntilMs);
+    }
+
     sweepInProcess(role, inProcessDir, nowMs, config, adapters);
 
     const items = scanInboxNew(inboxNewDir);
