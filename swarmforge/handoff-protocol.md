@@ -124,7 +124,7 @@ identifies the specific recipient copy.
 
 ## Message Types
 
-Agents may request only three message types.
+Agents may request only four message types.
 
 ### `awake`
 
@@ -218,6 +218,51 @@ Waiting on QA result before merging cleanup branch.
 
 The `message` value must be a single line no longer than 80 characters.
 
+### `rule_proposal`
+
+Used when an agent (coordinator, cleaner, coder, or any other role) observes
+a pattern that should be written into the constitution or a role prompt, but
+has no other structured way to surface it (BL-035). The specifier is the
+sole writer of constitution/prompt files: on receiving a `rule_proposal` it
+reviews the proposal and either accepts it (appends the rule to the
+relevant file and commits) or rejects it (sends a `note` back to the
+proposer with the reason). That review is prompt/agent behavior, not
+scriptable machinery.
+
+Draft:
+
+```text
+type: rule_proposal
+to: specifier
+priority: 50
+scope: constitution
+body: Batch roles must forward every parcel in a batch, not just their own step.
+rationale: BL-075 — a hardener batch completed its step but never forwarded a docs-only parcel.
+```
+
+Generated body:
+
+```text
+Re-read your role and constitution.
+
+Rule proposal (constitution) from cleaner: Batch roles must forward every parcel in a batch, not just their own step.
+Rationale: BL-075 — a hardener batch completed its step but never forwarded a docs-only parcel.
+```
+
+Fields:
+
+- `scope` must be one of `constitution`, `engineering`, `project`, or
+  `role:<rolename>` (proposing a change to one specific role's prompt).
+- `body` is the proposed rule text: one crisp sentence, at most 200
+  characters.
+- `rationale` is why the rule was observed as necessary, at most 200
+  characters.
+
+Every delivered `rule_proposal` is appended as one JSON line to
+`.swarmforge/rule_proposals/YYYY-MM.jsonl` (scope, body, rationale,
+proposer, and delivery timestamp) for durable audit, regardless of the
+specifier's eventual accept/reject decision.
+
 ## `swarm_handoff.sh`
 
 `swarm_handoff.sh` should be the strict outbound protocol gate.
@@ -239,7 +284,7 @@ Responsibilities:
 - Serialize sequence updates with an atomic lock so concurrent handoff creation
   in one worktree cannot reuse the same sequence.
 - Validate `priority` as `00` through `99`.
-- Validate `type` as `awake`, `git_handoff`, or `note`.
+- Validate `type` as `awake`, `git_handoff`, `note`, or `rule_proposal`.
 - Validate `git_handoff` commits as real, unambiguous commits.
 - Canonicalize valid commit abbreviations.
 - Generate `role` from the current sender role for `git_handoff`.
