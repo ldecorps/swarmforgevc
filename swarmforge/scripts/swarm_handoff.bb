@@ -19,11 +19,18 @@
        "type: note\n"
        "to: <role>[,<role>...]\n"
        "priority: NN\n"
-       "message: <one line, max 80 chars>"))
+       "message: <one line, max 80 chars>\n\n"
+       "type: rule_proposal\n"
+       "to: <role>[,<role>...]\n"
+       "priority: NN\n"
+       "scope: constitution | role:<rolename> | engineering | project\n"
+       "body: <proposed rule text, max 200 chars>\n"
+       "rationale: <why the rule is needed, max 200 chars>"))
 
 (def reserved-fields #{"id" "from" "role" "recipient" "created_at" "enqueued_at" "dequeued_at" "completed_at"})
-(def allowed-fields #{"type" "to" "priority" "task" "commit" "message" "rejection_reason" "reroute_reason"})
-(def allowed-types #{"awake" "git_handoff" "note"})
+(def allowed-fields #{"type" "to" "priority" "task" "commit" "message" "rejection_reason" "reroute_reason" "scope" "body" "rationale"})
+(def allowed-types #{"awake" "git_handoff" "note" "rule_proposal"})
+(def valid-scope-pattern #"constitution|engineering|project|role:[a-zA-Z][a-zA-Z0-9]*")
 
 (defn usage []
   (binding [*out* *err*]
@@ -208,6 +215,12 @@
                                           ["note" "message"] true
                                           ["note" "rejection_reason"] true
                                           ["note" "reroute_reason"] true
+                                          ["rule_proposal" "type"] true
+                                          ["rule_proposal" "to"] true
+                                          ["rule_proposal" "priority"] true
+                                          ["rule_proposal" "scope"] true
+                                          ["rule_proposal" "body"] true
+                                          ["rule_proposal" "rationale"] true
                                           false)]
                            :when (and type (not valid?))]
                        (format "Header '%s' is not allowed for type '%s'." field type))
@@ -216,7 +229,7 @@
                       (str/blank? to) (conj "Missing required header 'to'.")
                       (str/blank? priority) (conj "Missing required header 'priority'.")
                       (and (not (str/blank? type)) (not (allowed-types type)))
-                      (conj (format "Header 'type' must be one of awake, git_handoff, or note; got '%s'." type))
+                      (conj (format "Header 'type' must be one of awake, git_handoff, note, or rule_proposal; got '%s'." type))
                       (and (not (str/blank? priority)) (not (valid-priority? priority)))
                       (conj (format "Header 'priority' must be two digits from 00 to 99; got '%s'." priority)))
         [canonical commit-error]
@@ -248,10 +261,34 @@
                               (> (count (or note-message "")) 80)
                               (conj (format "Header 'message' must be no longer than 80 characters; got %d." (count note-message)))))
                       (and (not= "note" type) (not (str/blank? note-message)))
-                      (conj "Header 'message' is only allowed for note."))]
+                      (conj "Header 'message' is only allowed for note."))
+        scope (get headers "scope")
+        proposal-body (get headers "body")
+        rationale (get headers "rationale")
+        rule-proposal-errors (cond-> []
+                               (= "rule_proposal" type)
+                               (into (cond-> []
+                                       (str/blank? scope)
+                                       (conj "Missing required header 'scope' for rule_proposal.")
+                                       (and (not (str/blank? scope)) (not (re-matches valid-scope-pattern scope)))
+                                       (conj (format "Header 'scope' must be one of constitution, engineering, project, or role:<rolename>; got '%s'." scope))
+                                       (str/blank? proposal-body)
+                                       (conj "Missing required header 'body' for rule_proposal.")
+                                       (> (count (or proposal-body "")) 200)
+                                       (conj (format "Header 'body' must be no longer than 200 characters; got %d." (count proposal-body)))
+                                       (str/blank? rationale)
+                                       (conj "Missing required header 'rationale' for rule_proposal.")
+                                       (> (count (or rationale "")) 200)
+                                       (conj (format "Header 'rationale' must be no longer than 200 characters; got %d." (count rationale)))))
+                               (and (not= "rule_proposal" type) (not (str/blank? scope)))
+                               (conj "Header 'scope' is only allowed for rule_proposal.")
+                               (and (not= "rule_proposal" type) (not (str/blank? proposal-body)))
+                               (conj "Header 'body' is only allowed for rule_proposal.")
+                               (and (not= "rule_proposal" type) (not (str/blank? rationale)))
+                               (conj "Header 'rationale' is only allowed for rule_proposal."))]
     {:recipients recipients
      :canonical-commit canonical
-     :errors (vec (concat base-errors recipient-errors field-errors git-errors note-errors))}))
+     :errors (vec (concat base-errors recipient-errors field-errors git-errors note-errors rule-proposal-errors))}))
 
 (defn next-sequence []
   (let [dir (state-dir)
@@ -281,11 +318,14 @@
       (finally
         (fs/delete lock-dir)))))
 
-(defn body [type sender canonical-commit note-message]
+(defn body [type sender canonical-commit note-message scope proposal-body rationale]
   (case type
     "awake" "awake"
     "git_handoff" (str "Re-read your role and constitution.\n\nmerge_and_process " sender " " canonical-commit)
-    "note" (str "Re-read your role and constitution.\n\n" note-message)))
+    "note" (str "Re-read your role and constitution.\n\n" note-message)
+    "rule_proposal" (str "Re-read your role and constitution.\n\n"
+                         "Rule proposal (" scope ") from " sender ": " proposal-body
+                         "\nRationale: " rationale)))
 
 (defn write-handoff! [{:keys [headers recipients canonical-commit sender]}]
   (let [timestamp-id (id-timestamp)
@@ -300,7 +340,8 @@
         tmp-dir (fs/path outbox-dir "tmp")
         tmp-file (fs/path tmp-dir (str filename ".tmp"))
         outbox-file (fs/path outbox-dir filename)
-        handoff-body (body type sender canonical-commit (get headers "message"))
+        handoff-body (body type sender canonical-commit (get headers "message")
+                           (get headers "scope") (get headers "body") (get headers "rationale"))
         lines (cond-> [(str "id: " id)
                        (str "from: " sender)
                        (str "to: " (str/join "," recipients))
@@ -312,6 +353,10 @@
                       (str "commit: " canonical-commit))
                 (= "note" type)
                 (conj (str "message: " (get headers "message")))
+                (= "rule_proposal" type)
+                (conj (str "scope: " (get headers "scope"))
+                      (str "body: " (get headers "body"))
+                      (str "rationale: " (get headers "rationale")))
                 (get headers "rejection_reason")
                 (conj (str "rejection_reason: " (get headers "rejection_reason")))
                 (get headers "reroute_reason")

@@ -1,0 +1,128 @@
+id: BL-081
+title: BUG — supervisor restart leaks duplicate handoffd daemons (no reap, dup-pid race)
+milestone: M2
+status: todo
+priority: 02
+assigned_to: coder
+
+description: |
+  DEFECT (coordinator report, 2026-07-02): handoffd_supervisor restarts the
+  delivery daemon without reaping the old one, so multiple handoffd
+  processes end up racing the same outboxes. Confirmed live at spec time:
+  THREE `handoffd.bb` processes for this project root (two started within
+  the same minute, one orphan from an earlier session) while
+  `handoffd.pid` named only one — and the supervisor reported "healthy"
+  because it only ever checks the pid-file pid.
+
+  Mechanism (swarmforge/scripts/handoffd_supervisor.bb): `kill-daemon!`
+  sends destroy, sleeps a fixed 300ms, sends destroyForcibly — and never
+  confirms the old process actually exited before `start-daemon!` launches
+  the replacement. Daemons NOT referenced by the pid file (orphans from a
+  prior supervisor/launcher, or a pid file overwritten by a newer start)
+  are never discovered or reaped at all. The same-minute pair also
+  suggests a start-time race between the launcher's daemon start and the
+  supervisor's first "dead" verdict — root-cause and close whichever
+  double-start paths are real, and document them in the close.
+
+  Wanted invariant: at most ONE handoffd process per project root at any
+  time. A restart must confirm the old daemon's exit (bounded wait, then
+  forcible kill, then confirm again) before starting the new one, and must
+  reap ALL handoffd processes serving this project root — not just the
+  pid-file pid. Duplicate wake-ups are noise, but duplicate delivery races
+  (two daemons moving the same outbox file to sent/) corrupt the swarm's
+  single transport, so this is urgent.
+
+  Scope: swarmforge/scripts/handoffd_supervisor.bb (and the launcher's
+  daemon-start path only if the double-start race proves real), plus shell
+  tests (extend scripts/test/test_handoffd_supervisor.sh). Dev/infra
+  tooling — no extension product code expected.
+
+  Operator addendum (2026-07-02, direct diagnosis of the live triple-daemon
+  state): two further root causes the supervisor-only fix MUST account for,
+  or the leak returns. Scope grows to include handoffd.bb itself.
+
+    1. handoffd.bb has NO singleton guard. `-main` unconditionally spits its
+       own pid over handoffd.pid and starts polling (handoffd.bb ~L219); it
+       never checks whether a live daemon already owns the pid file. This is
+       the actual mechanism by which every duplicate start orphans its
+       predecessor — ANY second launch (launcher, supervisor, or a manual
+       run) silently clobbers the pid file and abandons the still-running
+       daemon. Fixing the supervisor's reap is necessary but NOT sufficient:
+       add a startup guard so a second handoffd aborts when the recorded pid
+       is a live handoffd for this root (or atomically takes over). That
+       holds the one-daemon invariant even when the launcher — not the
+       supervisor — is the second starter (the observed same-minute pair).
+
+    2. The pid-file delete on exit is NOT pid-aware — a reap trap. handoffd's
+       shutdown hook + finally call `(fs/delete-if-exists pid-file)`
+       unconditionally (handoffd.bb ~L220 and ~L236). So reaping an orphan
+       with SIGTERM makes the ORPHAN delete the SURVIVOR's pid file on its
+       way out; the supervisor then reads an empty pid file, votes :dead, and
+       starts yet another daemon — the reap itself reintroduces the leak. The
+       fix must make the daemon delete the pid file only when it still names
+       its own pid, AND/OR reap orphans with SIGKILL (which skips the JVM
+       shutdown hook). Confirmed empirically: the interim manual cleanup used
+       `kill -9` on the two non-pid-file daemons precisely to avoid the
+       orphan finally-block nuking the live pid file.
+
+  Interim mitigation already applied (NOT a fix): the live triple-daemon
+  state was converged to one by `kill -9` of the two daemons not named in
+  handoffd.pid; a single daemon + supervisor have held steady since. The
+  leak will recur on the next spurious restart until this ticket lands.
+
+acceptance: |
+  Feature: supervisor keeps exactly one handoffd per project root
+
+  # BL-081 singleton-handoffd-01
+  Scenario: restart confirms old-daemon exit before starting the new one
+    Given a live handoffd whose pid is recorded in handoffd.pid
+    When the supervisor restarts it on a dead or stalled verdict
+    Then the replacement daemon is started only after the old pid is
+      confirmed exited
+    And exactly one handoffd process exists for the project root afterwards
+
+  # BL-081 singleton-handoffd-02
+  Scenario: orphan daemons outside the pid file are reaped on restart
+    Given two handoffd processes serving the project root
+    And handoffd.pid names only one of them
+    When the supervisor performs a restart
+    Then every old handoffd process for the project root is terminated
+    And exactly one handoffd process remains
+
+  # BL-081 singleton-handoffd-03
+  Scenario: a daemon that ignores TERM is force-killed and confirmed
+    Given a handoffd process that does not exit on TERM
+    When the supervisor restarts it
+    Then the old process is forcibly killed and its exit is confirmed
+      before the replacement daemon starts
+
+  # BL-081 singleton-handoffd-04
+  Scenario: swarm startup yields a single daemon
+    Given the swarm launcher and the supervisor both start
+    When startup completes
+    Then exactly one handoffd process serves the project root
+
+  # BL-081 singleton-handoffd-05
+  Scenario: reaping an orphan does not delete the survivor's pid file
+    Given two handoffd processes serve the project root
+    And handoffd.pid names the survivor
+    When the supervisor reaps the orphan
+    Then handoffd.pid still names the surviving daemon
+    And the supervisor does not subsequently start an additional daemon
+
+  # BL-081 singleton-handoffd-06
+  Scenario: a second daemon start does not orphan the running one
+    Given a live handoffd owns handoffd.pid
+    When a second handoffd is launched for the same project root
+    Then it does not silently replace the pid file leaving two daemons
+    And exactly one handoffd process serves the project root
+
+  # Non-behavioral gates:
+  #  - Root cause(s) of the observed triple-daemon state are documented in
+  #    the close.
+  #  - Reaping matches only handoffd processes for THIS project root; other
+  #    projects' daemons are untouched.
+  #  - handoffd.bb deletes handoffd.pid on exit only when it still names its
+  #    own pid (no cross-daemon pid-file clobber), and refuses/absorbs a
+  #    second start when a live daemon already owns the pid file.
+  #  - Existing supervisor shell tests continue to pass.

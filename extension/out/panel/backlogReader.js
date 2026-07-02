@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parseBacklogYaml = parseBacklogYaml;
 exports.readBacklog = readBacklog;
+exports.readBacklogFolders = readBacklogFolders;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const VALID_STATUSES = new Set(['todo', 'active', 'done']);
@@ -138,5 +139,15 @@ function readBacklog(targetPath) {
     const doneItems = readDoneItems(path.join(targetPath, 'backlog', 'done'));
     activeItems.sort((a, b) => (a.priority ?? MAX_PRIORITY) - (b.priority ?? MAX_PRIORITY));
     return [...activeItems, ...doneItems];
+}
+// Unlike readBacklog (which normalizes for the panel's own display), this
+// projects the three backlog folders as-is for consumers, such as the read
+// bridge, that need to know which folder a ticket currently sits in.
+function readBacklogFolders(targetPath) {
+    return {
+        active: readYamlFiles(path.join(targetPath, 'backlog', 'active')),
+        paused: readYamlFiles(path.join(targetPath, 'backlog', 'paused')),
+        done: readDoneItems(path.join(targetPath, 'backlog', 'done')),
+    };
 }
 //# sourceMappingURL=backlogReader.js.map
