@@ -258,6 +258,7 @@ test('getWebviewHtml panels have collapse toggle buttons', () => {
   const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
   assert(html.includes('id="runs-toggle"'), 'missing runs-toggle button');
   assert(html.includes('id="backlog-toggle"'), 'missing backlog-toggle button');
+  assert(html.includes('id="metrics-toggle"'), 'missing metrics-toggle button (BL-071)');
 });
 
 test('panel.js collapses section on toggle button click', () => {
