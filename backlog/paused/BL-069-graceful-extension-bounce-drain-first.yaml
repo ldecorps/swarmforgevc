@@ -1,0 +1,128 @@
+id: BL-069
+title: Graceful bounce — drain all agents to idle, then perform the verified bounce
+milestone: M4
+status: todo
+priority: 06
+assigned_to: coder
+
+description: |
+  User request (verbatim, 2026-07-02): "gracefully bounce the extension:
+  instruct all agents to finish their work and not take on new work, when
+  they are all idle, bounce." Today's bounce (BL-058 verified path and the
+  respawn wave) kills panes immediately; every bounce so far has interrupted
+  someone mid-parcel and forced redo-from-scratch. Until restart-persistence
+  (BL-066, paused) lands — and even after, for clean model/config rollovers —
+  a DRAIN-THEN-BOUNCE mode is wanted.
+
+  What:
+  1. DRAIN SIGNAL — a command `swarmforge.bounceGraceful` (plus a variant of
+     the existing remote-bounce sentinel) that puts the swarm into drain
+     mode. The drain flag is a DURABLE on-disk sentinel under .swarmforge/
+     (not in-memory). While it exists, agents finish their current
+     in_process task/batch through to its normal handoff, and the ready
+     helpers (ready_for_next*.sh) refuse to accept NEW inbox items —
+     printing a distinct DRAINING marker, not a lying NO_TASK — while queued
+     items stay untouched and durable in inbox/new for after the bounce.
+  2. IDLE DETECTION — the extension host watches until every role is
+     simultaneously drained: no in_process work (single file OR batch
+     directory) in any role and all panes idle. Reuse the watchdog-family
+     liveness/idle signals; BL-067 (in flight) is building the
+     idle-while-holding-in_process detection on the same primitives.
+  3. THEN BOUNCE — on observed all-idle, run the existing BL-058 verified
+     bounce (kill, relaunch, verify activation sentinel), clear the drain
+     flag on completion, and let respawned agents run ready_for_next.sh to
+     pick up the work that queued during the drain.
+  4. VISIBILITY + ESCAPE HATCHES — while draining, the panel shows a banner
+     ("draining: N agents still busy") with per-tile busy/idle; the human
+     can cancel drain (agents resume accepting work) or force an immediate
+     bounce. If not all-idle within a configurable timeout (sane default,
+     e.g. 15 min), prompt the human: keep waiting / bounce now.
+  5. CRASH SAFETY — a stale drain flag must never leave agents permanently
+     refusing work: clear it on bounce completion and on extension startup
+     when no bounce is in progress.
+
+  Constraints: two-layer rule — orchestration and idle-watching live in the
+  extension host (next to the BL-037/BL-039 bounce watcher); webview is
+  presentation + button events only; no browser storage. The drain refusal
+  lives in this repo's swarm helper scripts (swarmforge/scripts/
+  ready_for_next*.sh) gated on the sentinel file — that is our own tooling,
+  already modified by BL-056/057/061; the external SwarmForge stays
+  unmodified. Timeout configurable with a sane default.
+
+  Scope: extension host bounce/watchdog area (BL-037/039/058 modules,
+  activation wiring), swarmforge/scripts ready helpers + a shell test,
+  panel presentation, tests. Orthogonality: overlaps the bounce/watchdog
+  family AND BL-067's idle primitives — sequence AFTER BL-067 merges.
+
+acceptance: |
+  Feature: graceful bounce drains the swarm to idle before bouncing
+
+  Background:
+    Given a running swarm attached to the extension host
+
+  # BL-069 graceful-bounce-01
+  Scenario: drain mode lets current work finish but refuses new work
+    Given a role is mid-task with items queued in its inbox/new
+    When the graceful bounce command is invoked
+    Then a durable drain sentinel exists under .swarmforge/
+    And the role completes its current task through to its normal handoff
+    And its ready helper then reports a DRAINING state instead of accepting
+    And the queued items remain untouched in inbox/new
+
+  # BL-069 graceful-bounce-02
+  Scenario Outline: all-idle detection waits for every in_process shape
+    Given drain mode is on
+    And one role still holds <in_process_shape> in inbox/in_process
+    When the drain watcher evaluates
+    Then the bounce is not yet triggered
+
+    Examples:
+      | in_process_shape   |
+      | a single task file |
+      | a batch directory  |
+
+  # BL-069 graceful-bounce-03
+  Scenario: bounce fires only at all-idle and work resumes after
+    Given drain mode is on and every role has no in_process work and an idle pane
+    When the drain watcher evaluates
+    Then the verified bounce (BL-058 path) is performed
+    And the drain sentinel is cleared
+    And respawned agents accept the items that queued during the drain
+
+  # BL-069 graceful-bounce-04
+  Scenario: panel surfaces drain progress
+    Given drain mode is on with some roles still busy
+    When the panel renders
+    Then it shows a draining banner with the count of busy agents
+    And each tile indicates busy or drained/idle
+
+  # BL-069 graceful-bounce-05
+  Scenario Outline: human escape hatches
+    Given drain mode is on with at least one role still busy
+    When the human chooses <action>
+    Then <outcome>
+
+    Examples:
+      | action              | outcome                                                    |
+      | cancel drain        | the sentinel is removed and agents accept new work again   |
+      | force bounce now    | the verified bounce runs immediately, sentinel cleared     |
+
+  # BL-069 graceful-bounce-06
+  Scenario: drain timeout prompts the human instead of waiting forever
+    Given drain mode is on and a role stays busy past the configured timeout
+    When the timeout elapses
+    Then the human is prompted to keep waiting or bounce now
+    And no bounce happens without that choice
+
+  # BL-069 graceful-bounce-07
+  Scenario: stale drain flag cannot brick the swarm
+    Given a drain sentinel left over from a crashed extension session
+    When the extension starts with no bounce in progress
+    Then the stale sentinel is cleared
+    And ready helpers accept work normally
+
+  # Non-behavioral gate:
+  #  - Drain refusal covered by a shell test alongside the existing
+  #    ready-helper test suites; extension side covered by unit tests.
+  #  - Timeout configurable with a sane default; existing suites stay green;
+  #    external SwarmForge unmodified.
