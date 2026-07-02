@@ -53,6 +53,16 @@ test('readDaemonHealth is unknown for malformed status content', () => {
   assert.equal(readDaemonHealth(target).state, 'unknown');
 });
 
+test('readDaemonHealth is unknown for a well-formed but unrecognized state value', () => {
+  const target = mkTarget('{"state":"booting"}');
+  assert.deepEqual(readDaemonHealth(target), { state: 'unknown' });
+});
+
+test('readDaemonHealth omits detail when a non-healthy state has no incident reason', () => {
+  const target = mkTarget('{"state":"restarting"}');
+  assert.deepEqual(readDaemonHealth(target), { state: 'restarting' });
+});
+
 // --- webview side ---
 
 test('webview HTML has a transport-health marker with alarm styling', () => {
