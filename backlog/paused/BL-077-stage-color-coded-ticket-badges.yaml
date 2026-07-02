@@ -1,0 +1,103 @@
+id: BL-077
+title: color-code ticket badges by pipeline stage — see where each parcel is at a glance
+milestone: M3
+status: todo
+priority: 07
+assigned_to: coder
+
+description: |
+  What (user request, 2026-07-02): when several tickets are in flight, the
+  GUI should show WHERE each one is in the pipeline by color, not just by
+  reading role names — today every ticket badge renders the same blue. Give
+  each pipeline stage a stable, distinct color and tint every surface that
+  shows a ticket with the color of the stage that CURRENTLY holds it: the
+  tile-header badge (BL-068) and the BACKLOG pane row chip (BL-072). Both
+  surfaces read the same live holder from the shared resolver those tickets
+  wired — this ticket is presentation only on top of it.
+
+  Color design constraints (behavior-level; exact palette is the coder's
+  presentation choice within these):
+    - one stable color per stage (specifier, coder, cleaner, architect,
+      hardender, documenter, QA), ordered as a visible progression along the
+      pipeline so "further along" is glanceable without memorizing;
+    - "queued" (promoted, no holder — BL-072's label) and closed/done get
+      neutral colors distinct from every stage;
+    - colors must be distinguishable in both light and dark VS Code themes
+      and must NOT be the only carrier — the role/status text stays (the
+      color is additive; color-vision users still get the text);
+    - the same stage always gets the same color on every surface and every
+      refresh (tile badge and backlog chip for one ticket can never show
+      two different colors — same-refresh agreement extends BL-072's gate).
+
+  Constraints: two-layer rule — host already supplies holder state; only the
+  webview render path changes (webviewHtml.ts / media/panel.js CSS+markup).
+  No localStorage/sessionStorage; no SwarmForge changes. Do not alter badge
+  text, truncation, holder resolution, or the needs-human border colors
+  (red pulse stays red — pick stage colors that do not collide with the
+  dead/needs-human border semantics).
+
+  Scope: extension webview only — webviewHtml.ts, media/panel.js, CSS, plus
+  rendered-HTML tests. HARD DEPENDENCY / OVERLAP: builds directly on BL-068
+  and BL-072 (in flight at coder) — coordinator must promote this only
+  AFTER both merge; it touches the exact same badge/row markup.
+
+acceptance: |
+  Feature: ticket badges are tinted by the stage that holds them
+
+  Background:
+    Given the panel shows tile-header badges and BACKLOG rows for tickets
+    And each pipeline stage has one stable badge color
+
+  # BL-077 stage-colors-01
+  Scenario: two in-flight tickets at different stages show different colors
+    Given ticket A's parcel is held by the coder
+    And ticket B's parcel is held by QA
+    When the panel renders
+    Then A's badge and row chip use the coder stage color
+    And B's badge and row chip use the QA stage color
+    And the two colors are visibly distinct
+
+  # BL-077 stage-colors-02
+  Scenario: the color follows the parcel down the pipeline
+    Given a ticket's badge shows the coder stage color
+    When the parcel is handed to the cleaner and the panel refreshes
+    Then that ticket's badge and row chip show the cleaner stage color
+
+  # BL-077 stage-colors-03
+  Scenario Outline: non-stage states use neutral colors
+    Given a ticket in state <state>
+    When the panel renders
+    Then its chip uses the <state> neutral color
+    And that color differs from every stage color
+
+    Examples:
+      | state  |
+      | queued |
+      | done   |
+
+  # BL-077 stage-colors-04
+  Scenario: color is additive, never the only signal
+    When any ticket badge or row chip renders
+    Then the holder/status text is still present and readable
+    And the rendered markup carries the stage as text or a data attribute,
+      not only as a color value
+
+  # BL-077 stage-colors-05
+  Scenario: tile badge and backlog chip never disagree on color
+    Given a ticket whose parcel resolves to one holder
+    When tiles and the BACKLOG pane render in the same refresh
+    Then both surfaces show the same stage color for that ticket
+
+  # BL-077 stage-colors-06
+  Scenario: stage colors respect existing border semantics
+    Given a tile with a needs-human red pulsing border holding a ticket
+    When the tile renders with its stage-colored badge
+    Then the border pulse remains red and visually distinct from the badge
+
+  # Non-behavioral gate:
+  #  - Rendered-HTML tests assert the stage color/class per holder on BOTH
+  #    surfaces (the BL-053/068 lesson: state-only tests stay green while
+  #    the rendered surface breaks).
+  #  - Verified once in a live Extension Development Host with 2+ parcels at
+  #    different stages, light and dark theme (note it in the close).
+  #  - BL-068/BL-072 suites stay green; badge text behavior unchanged.
