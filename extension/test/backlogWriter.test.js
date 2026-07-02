@@ -43,6 +43,70 @@ test('setAssignedTo returns false when the item id does not exist in backlog/act
   assert.equal(setAssignedTo(target, 'BL-404', 'cleaner'), false);
 });
 
+test('setAssignedTo does not match a file whose parsed id differs from the requested id', () => {
+  const target = mkTmp();
+  writeActiveItem(target, 'BL-105-other.yaml', 'id: BL-105\ntitle: other\nstatus: active\nassigned_to: coder\n');
+
+  assert.equal(setAssignedTo(target, 'BL-404', 'cleaner'), false);
+  const untouched = fs.readFileSync(path.join(target, 'backlog', 'active', 'BL-105-other.yaml'), 'utf8');
+  assert.match(untouched, /assigned_to: coder/);
+});
+
+test('setAssignedTo returns false without throwing when backlog/active does not exist', () => {
+  const target = mkTmp();
+
+  assert.equal(setAssignedTo(target, 'BL-404', 'cleaner'), false);
+});
+
+test('setAssignedTo returns false and leaves the file untouched when it has no assigned_to line', () => {
+  const target = mkTmp();
+  const yaml = 'id: BL-106\ntitle: no assignee\nstatus: active\n';
+  const filePath = writeActiveItem(target, 'BL-106-no-assignee.yaml', yaml);
+
+  const ok = setAssignedTo(target, 'BL-106', 'cleaner');
+
+  assert.equal(ok, false);
+  assert.equal(fs.readFileSync(filePath, 'utf8'), yaml);
+});
+
+test('setAssignedTo replaces only the line that begins with assigned_to, not an occurrence embedded in another key', () => {
+  const target = mkTmp();
+  const yaml = 'id: BL-107\ntitle: t\nstatus: active\nprevious_assigned_to: ghost\nassigned_to: coder\n';
+  const filePath = writeActiveItem(target, 'BL-107-anchor.yaml', yaml);
+
+  const ok = setAssignedTo(target, 'BL-107', 'cleaner');
+
+  assert.equal(ok, true);
+  const updated = fs.readFileSync(filePath, 'utf8');
+  assert.match(updated, /^previous_assigned_to: ghost$/m);
+  assert.match(updated, /^assigned_to: cleaner$/m);
+});
+
+test('setAssignedTo updates the field even when there is no space after the colon', () => {
+  const target = mkTmp();
+  const filePath = writeActiveItem(target, 'BL-108-nospace.yaml', 'id: BL-108\ntitle: t\nstatus: active\nassigned_to:coder\n');
+
+  const ok = setAssignedTo(target, 'BL-108', 'cleaner');
+
+  assert.equal(ok, true);
+  assert.match(fs.readFileSync(filePath, 'utf8'), /^assigned_to: cleaner$/m);
+});
+
+test('setAssignedTo ignores non-.yaml files in backlog/active even when one parses and matches first alphabetically', () => {
+  const target = mkTmp();
+  const activeDir = path.join(target, 'backlog', 'active');
+  mkdirp(activeDir);
+  const decoyPath = path.join(activeDir, '0-decoy.txt');
+  fs.writeFileSync(decoyPath, 'id: BL-109\ntitle: decoy\nstatus: active\nassigned_to: ghost\n');
+  const filePath = writeActiveItem(target, 'BL-109-real.yaml', 'id: BL-109\ntitle: real\nstatus: active\nassigned_to: coder\n');
+
+  const ok = setAssignedTo(target, 'BL-109', 'cleaner');
+
+  assert.equal(ok, true);
+  assert.equal(fs.readFileSync(filePath, 'utf8'), 'id: BL-109\ntitle: real\nstatus: active\nassigned_to: cleaner\n');
+  assert.equal(fs.readFileSync(decoyPath, 'utf8'), 'id: BL-109\ntitle: decoy\nstatus: active\nassigned_to: ghost\n');
+});
+
 // --- markDone (BL-034 backlog-two-way-sync-03) ---
 
 test('markDone moves the file to backlog/done/<milestone>/ when the item has a milestone', () => {
