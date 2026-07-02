@@ -1,7 +1,7 @@
 id: BL-073
 title: email notification when an agent needs the human — Resend + claude.ai/code deep link
 milestone: M6
-status: todo
+status: done
 priority: 15
 assigned_to: coder
 
