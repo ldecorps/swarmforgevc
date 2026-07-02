@@ -193,7 +193,7 @@ Below the tiled agent panel, the extension shows a collapsible Backlog section l
 
 - Each backlog row shows: ticket ID, title, and the role currently **holding** that parcel (the stage with the active handoff for that ticket)
 - The holder column updates live as the parcel moves down the pipeline — tiles and backlog rows always show the same holder (same resolution source)
-- For promoted-but-unrouted tickets (active but not yet handed to a stage), the row shows **"queued"** instead of the static assigned_to field
+- For active tickets with no live holder — whether promoted-but-unrouted or whose parcel was already completed and dropped by a stage — the row shows **"queued"** instead of the static assigned_to field. Tile badges also do not appear for holder-less tickets, keeping both surfaces consistent
 - Done items show their milestone; todo items show the intended assignee
 - This live traceability helps you spot bottlenecks and know at a glance which stage is responsible for each ticket
 
