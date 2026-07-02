@@ -40,6 +40,16 @@ test('buildEmailBody omits the ticket line when no ticket badge resolves', () =>
   assert.doesNotMatch(body, /Ticket:/);
 });
 
+test('buildEmailBody omits the prompt line when no snippet was captured', () => {
+  const body = buildEmailBody({
+    role: 'coder',
+    snippet: '',
+    sessionUrl: 'https://claude.ai/code/session_abc',
+    ticketBadge: null,
+  });
+  assert.doesNotMatch(body, /Prompt:/);
+});
+
 test('buildEmailBody falls back to a tile-answer note when no session URL was captured', () => {
   const body = buildEmailBody({
     role: 'architect',
