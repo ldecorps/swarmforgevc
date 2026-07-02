@@ -9,6 +9,10 @@
   CURRENT value from `swarmforge.conf` at startup and before each promotion
   decision — never assume a remembered or default value; the conf is the single
   source of truth and may change between sessions.
+- A value of `-1` means the depth cap is disabled: the coordinator promotes
+  every eligible paused item regardless of how many are already active.
+  Disabling the cap does not disable Concurrent Work Orthogonality below —
+  overlapping-scope items are still sequenced, never run concurrently.
 
 ## Backlog Intake Order
 - The backlog root (`backlog/` itself, not a subfolder) is the human's raw intake
