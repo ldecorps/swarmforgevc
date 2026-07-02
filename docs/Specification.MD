@@ -123,7 +123,7 @@ Spawning agent processes from TypeScript **is** the intended design — that is 
   - **Normal** (grey) — agent idle with recent output
   - **Active** (blue) — agent currently producing output
   - *Precedence: dead > needs-human > stalled > normal. A needs-human border suppresses the stalled color, so you can see when an agent is waiting for you to respond.*
-- Tile header shows the role name and (when active) a badge with the backlog item ID and short summary (e.g., "BL-038 · tile header active ticket"), so you can see at a glance what each agent is working on
+- Tile header shows the role name and (when active) a badge with the backlog item ID and short summary (e.g., "BL-038 · tile header active ticket"); when a role holds multiple parcels, the badge shows the lowest ticket ID plus a "+N" count for the others (e.g., "BL-036 · redo_from tool +1"), so you can see at a glance what each agent is working on
 - Each tile is always a live embedded terminal — you click into any tile and type directly, exactly as you would in a real terminal attached to that agent
 - No expand needed; all tiles are simultaneously interactive, one live terminal per role
 
@@ -185,6 +185,16 @@ Respawn preserves the agent's worktree and branch state — only the running pro
 | **pack selector** | Dropdown: forge analyzes the target and suggests a pack (2 / 4 / 7); user confirms or overrides |
 | **▶ Run** | Triggers the swarm run |
 | **⏹ Stop** | Signals the coordinator to stand down, then the orchestrator terminates all agent processes (coordinator last) |
+
+### Backlog Pane
+
+Below the tiled agent panel, the extension shows a collapsible Backlog section listing all active work items with live traceability:
+
+- Each backlog row shows: ticket ID, title, and the role currently **holding** that parcel (the stage with the active handoff for that ticket)
+- The holder column updates live as the parcel moves down the pipeline — tiles and backlog rows always show the same holder (same resolution source)
+- For promoted-but-unrouted tickets (active but not yet handed to a stage), the row shows **"queued"** instead of the static assigned_to field
+- Done items show their milestone; todo items show the intended assignee
+- This live traceability helps you spot bottlenecks and know at a glance which stage is responsible for each ticket
 
 ---
 
