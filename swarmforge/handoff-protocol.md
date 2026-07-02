@@ -173,9 +173,21 @@ before queuing the handoff. The task name is a short, stable human-readable
 name that follows the work through downstream git handoffs for the same task.
 
 A role must not send or forward a `git_handoff` when the received commit
-produces no functional project change. Manifest-only, audit-only, generated
-metadata, formatting-only, and other non-functional churn is no forwardable
-change; the role should complete the inbound task instead.
+produces no functional project change. This exemption is narrow and covers
+only meta churn: manifest-only, audit-only, generated metadata,
+formatting-only, and other non-functional changes. It does NOT cover a real
+deliverable that satisfies its ticket's acceptance criteria — docs-only and
+config-only parcels are functional changes and must keep moving down the
+chain like any other parcel, even when the current stage has nothing of its
+own to add to them (nothing to mutation-test, nothing to restructure,
+nothing to document further). "Nothing of MY OWN to add" is not the same
+test as "no functional project change"; a stage with nothing to add still
+forwards the received commit to the next stage. (BL-075: a hardener batch
+silently dropped a docs-only parcel this way — completed its own step but
+never forwarded, leaving the ticket holder-less with nothing in
+`inbox/in_process` anywhere, so BL-067's stuck-detection could not see the
+stall either. Batch roles: apply this per-item — every parcel in the batch
+gets its own forward decision.)
 
 ### `note`
 

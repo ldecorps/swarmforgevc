@@ -1,0 +1,92 @@
+id: BL-078
+title: track test-suite duration over time — surface creep before it throttles the swarm
+milestone: M5
+status: todo
+priority: 17
+assigned_to: coder
+
+description: |
+  What (user request, 2026-07-02): record how long the test suite takes on
+  every run and surface the trend, so duration creep is caught early — a
+  slow suite multiplies through every pipeline stage and cuts swarm
+  throughput (it happened: the suite crept to 299s and throttled everything
+  until BL-060 fixed it back to ~33s; nothing today would notice a repeat
+  until it hurts).
+
+  Record: hook the existing `npm test` run (reporter hook or a thin wrapper
+  — implementation the coder's choice) to append one line per completed run
+  {finished_at, test_count, pass/fail, duration_ms} to a local
+  machine-generated log (e.g. extension/.test-durations.jsonl, gitignored —
+  it must NOT create commit churn per test run and must NOT write under
+  .swarmforge/). Each worktree accumulates its own log since every role runs
+  the suite in its own checkout. Recording must never fail the suite: a
+  write error is swallowed (the tests' verdict is untouched), and `npm test`
+  output/exit codes stay byte-compatible for every existing consumer.
+
+  Surface: the swarm-metrics module from BL-071 (panel METRICS pane + CLI)
+  gains a "suite duration" entry that aggregates the logs across the main
+  checkout and all .worktrees/<role>/ checkouts: latest duration, mean over
+  the last N runs (default 20), and total runs sampled. When the latest
+  duration exceeds a warning threshold (setting
+  swarmforge.metrics.suiteWarnSeconds, default 120) OR exceeds twice the
+  rolling mean, the entry renders in a warning style in the pane and the
+  CLI prefixes the line with "WARN". Display + warn only — no hard gate
+  that blocks a pipeline stage (explicitly out of scope).
+
+  Scope: extension only — test-runner hook in extension/ (package.json
+  script wiring + small recorder), an extension to the shared metrics
+  module, pane + CLI rendering, plus tests. COMPANION to BL-071 (paused):
+  same metrics module and surfaces — coordinator should promote it together
+  with / stacked on BL-071, or after it; do not run it concurrently with
+  BL-071 in separate parcels.
+
+acceptance: |
+  Feature: test-suite duration is recorded and its creep is visible
+
+  # BL-078 suite-duration-01
+  Scenario: every completed test run appends one record
+    Given the recorder is wired into npm test
+    When the suite runs to completion (pass or fail)
+    Then exactly one record with finished_at, test_count, result, and
+      duration_ms is appended to the local duration log
+    And the suite's own output and exit code are unchanged
+
+  # BL-078 suite-duration-02
+  Scenario: recording failure never breaks the suite
+    Given the duration log is unwritable
+    When the suite runs
+    Then the tests' verdict and exit code are exactly as without recording
+
+  # BL-078 suite-duration-03
+  Scenario: the metrics surfaces show latest, mean, and sample count
+    Given duration logs exist across the main checkout and role worktrees
+    When the METRICS pane and the swarm-metrics CLI render
+    Then both show the latest duration, the rolling mean, and runs sampled
+    And both report the same values for the same logs
+
+  # BL-078 suite-duration-04
+  Scenario Outline: creep triggers the warning style
+    Given a rolling mean of <mean> seconds and a warn threshold of 120
+    When the latest run took <latest> seconds
+    Then the suite-duration entry renders <style>
+
+    Examples:
+      | mean | latest | style   |
+      | 35   | 33     | normal  |
+      | 35   | 80     | WARN    |
+      | 100  | 130    | WARN    |
+
+  # BL-078 suite-duration-05
+  Scenario: no logs yet shows a placeholder
+    Given no duration log exists anywhere
+    When the metrics surfaces render
+    Then the suite-duration entry shows a placeholder, never NaN or an error
+
+  # Non-behavioral gate:
+  #  - The duration log is gitignored; no commit churn from test runs; no
+  #    writes under .swarmforge/.
+  #  - npm test remains byte-compatible for existing consumers (verified by
+  #    the existing suites passing unmodified).
+  #  - Warn logic unit-tested at the boundary (threshold and 2x-mean).
+  #  - Rendered-HTML test for the pane entry; CLI covered by the BL-071
+  #    CLI/panel agreement gate extended to this entry.
