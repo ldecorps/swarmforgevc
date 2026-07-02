@@ -123,7 +123,7 @@ Spawning agent processes from TypeScript **is** the intended design — that is 
   - **Normal** (grey) — agent idle with recent output
   - **Active** (blue) — agent currently producing output
   - *Precedence: dead > needs-human > stalled > normal. A needs-human border suppresses the stalled color, so you can see when an agent is waiting for you to respond.*
-- Tile header shows the role name and (when active) a badge with the backlog item ID and short summary (e.g., "BL-038 · tile header active ticket"), so you can see at a glance what each agent is working on
+- Tile header shows the role name and (when active) a badge with the backlog item ID and short summary (e.g., "BL-038 · tile header active ticket"); when a role holds multiple parcels, the badge shows the lowest ticket ID plus a "+N" count for the others (e.g., "BL-036 · redo_from tool +1"), so you can see at a glance what each agent is working on
 - Each tile is always a live embedded terminal — you click into any tile and type directly, exactly as you would in a real terminal attached to that agent
 - No expand needed; all tiles are simultaneously interactive, one live terminal per role
 
