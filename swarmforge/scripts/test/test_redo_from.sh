@@ -117,6 +117,14 @@ grep -q '"reason":"acceptance scenario 3 fails on empty input"' "$ROOT/.swarmfor
   || fail "04: redo log did not capture the rejection_reason"
 pass "04: rejection_reason validated, preserved, and captured in the redo log"
 
+# ── DEFECT (QA): two redos in the same second must not collide on the tag ────
+rm -f "$OUTBOX"/*.handoff
+(cd "$ROOT" && bb "$REDO" "$ITEM" cleaner > /dev/null) || fail "tag-collision: first rapid redo failed"
+(cd "$ROOT" && bb "$REDO" "$ITEM" cleaner > /dev/null) || fail "tag-collision: second same-second redo failed"
+RAPID_TAGS="$(git -C "$ROOT" tag -l "redo/$ITEM/cleaner/*" | wc -l | tr -d ' ')"
+[[ "$RAPID_TAGS" -ge 3 ]] || fail "tag-collision: expected distinct tags per redo, found $RAPID_TAGS"
+pass "tag-collision: same-second redos produce distinct checkpoint tags"
+
 # ── 01 (outline sweep): every stage maps to a queueable recipient ────────────
 for stage in architect hardender documenter qa; do
   rm -f "$OUTBOX"/*.handoff

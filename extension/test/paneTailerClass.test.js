@@ -134,6 +134,62 @@ test('poll reports a capture failure with a readable-pane error message', async 
   }
 });
 
+// --- BL-048: pushFullTextIfChanged dedup guard, shared by both error branches ---
+
+test('a session that stays not-running across repeated polls only pushes the message once', async () => {
+  const targetPath = mkTmp();
+  writeState(targetPath);
+  const fake = installFakeTmux([{ subcommand: 'has-session', exitCode: 1 }]);
+  try {
+    const updates = [];
+    const tailer = new PaneTailer(targetPath, (u) => updates.push(...u));
+    tailer.start(1_000_000);
+    assert.equal(updates.length, 1, 'first poll must report the not-running message');
+
+    fake.setRules([{ subcommand: 'has-session', exitCode: 1 }]);
+    tailer.poll();
+    fake.setRules([{ subcommand: 'has-session', exitCode: 1 }]);
+    tailer.poll();
+
+    tailer.stop();
+    assert.equal(updates.length, 1, 'polling again with the same not-running state must not re-push identical text');
+  } finally {
+    fake.restore();
+  }
+});
+
+test('a pane that keeps failing to capture across repeated polls only pushes the message once', async () => {
+  const targetPath = mkTmp();
+  writeState(targetPath);
+  const fake = installFakeTmux([
+    { subcommand: 'has-session', exitCode: 0 },
+    { subcommand: 'capture-pane', exitCode: 1 },
+    { exitCode: 0, stdout: '' },
+  ]);
+  try {
+    const updates = [];
+    const tailer = new PaneTailer(targetPath, (u) => updates.push(...u));
+    tailer.start(1_000_000);
+    assert.equal(updates.length, 1, 'first poll must report the capture-failure message');
+
+    fake.setRules([
+      { subcommand: 'has-session', exitCode: 0 },
+      { subcommand: 'capture-pane', exitCode: 1 },
+    ]);
+    tailer.poll();
+    fake.setRules([
+      { subcommand: 'has-session', exitCode: 0 },
+      { subcommand: 'capture-pane', exitCode: 1 },
+    ]);
+    tailer.poll();
+
+    tailer.stop();
+    assert.equal(updates.length, 1, 'polling again with the same capture failure must not re-push identical text');
+  } finally {
+    fake.restore();
+  }
+});
+
 test('poll notifies onRoles when a role is added between polls', async () => {
   const targetPath = mkTmp();
   writeState(targetPath);
