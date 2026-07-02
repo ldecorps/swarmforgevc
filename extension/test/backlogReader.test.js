@@ -237,3 +237,36 @@ test('readBacklog overrides done folder items to status done regardless of YAML'
   assert.equal(items.length, 1);
   assert.equal(items[0].status, 'done');
 });
+
+// --- BL-034: disk -> panel direction. readBacklog re-parses fresh from disk
+// on every call with no caching, so any external edit or move is visible on
+// the very next call - the same call the host's 2s poll makes every tick.
+// These pin that contract directly against this ticket's scenarios. ---
+
+test('BL-034: an external title edit on disk is reflected on the next read', () => {
+  const tmp = mkTmp();
+  const activeDir = path.join(tmp, 'backlog', 'active');
+  mkdirp(activeDir);
+  const filePath = path.join(activeDir, 'BL-200.yaml');
+  fs.writeFileSync(filePath, 'id: BL-200\ntitle: old title\nstatus: active\n');
+  assert.equal(readBacklog(tmp).find((i) => i.id === 'BL-200').title, 'old title');
+
+  fs.writeFileSync(filePath, 'id: BL-200\ntitle: new title\nstatus: active\n');
+
+  assert.equal(readBacklog(tmp).find((i) => i.id === 'BL-200').title, 'new title');
+});
+
+test('BL-034: an external move from active/ to done/<milestone>/ is reflected on the next read', () => {
+  const tmp = mkTmp();
+  const activeDir = path.join(tmp, 'backlog', 'active');
+  mkdirp(activeDir);
+  const filePath = path.join(activeDir, 'BL-201.yaml');
+  fs.writeFileSync(filePath, 'id: BL-201\ntitle: moving item\nstatus: active\nmilestone: M4\n');
+  assert.equal(readBacklog(tmp).find((i) => i.id === 'BL-201').status, 'active');
+
+  const doneDir = path.join(tmp, 'backlog', 'done', 'M4');
+  mkdirp(doneDir);
+  fs.renameSync(filePath, path.join(doneDir, 'BL-201.yaml'));
+
+  assert.equal(readBacklog(tmp).find((i) => i.id === 'BL-201').status, 'done');
+});

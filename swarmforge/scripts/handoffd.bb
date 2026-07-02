@@ -27,11 +27,13 @@
 (def roles-file (fs/path state-dir "roles.tsv"))
 (def socket-file (fs/path state-dir "tmux-socket"))
 (def pid-file (fs/path daemon-dir "handoffd.pid"))
+(def pid-lock-dir (fs/path daemon-dir "pid.lock"))
 (def stop-file (fs/path daemon-dir "stop"))
 (def log-file (fs/path daemon-dir "handoffd.log"))
 (def heartbeat-file (fs/path daemon-dir "handoffd.heartbeat"))
 (def heartbeat-log-every-cycles 60)
 (def stopping? (atom false))
+(def main-thread (atom nil))
 
 (defn now []
   (.format (java.time.format.DateTimeFormatter/ISO_INSTANT)
@@ -227,11 +229,100 @@
             (catch Exception nested
               (log! "failed-to-archive" (str path) (.getMessage nested)))))))))
 
+;; The JVM only waits for registered shutdown-hook THREADS to finish before
+;; halting - it does not wait for arbitrary other threads. A hook that only
+;; flips an atom returns in microseconds, so the poll loop (running on the
+;; main thread) was being halted mid-cycle before it ever reached its own
+;; `finally`, and pid-file cleanup on TERM silently never ran (BL-081: this
+;; is why root cause #2's pid-aware delete was unreachable via the TERM
+;; path - confirmed empirically, not from the ticket's own description).
+;; Joining the main thread here makes the hook thread - which the JVM does
+;; wait for - block until the poll loop actually finishes its `finally`.
 (defn shutdown! []
-  (reset! stopping? true))
+  (reset! stopping? true)
+  (when-let [t @main-thread]
+    (.join t 5000)))
 
 (def startup-notify-only?
   (some #{"--startup-notify-only"} *command-line-args*))
+
+(defn own-pid [] (.pid (java.lang.ProcessHandle/current)))
+
+(defn pid-alive? [pid]
+  (when pid
+    (some-> (java.lang.ProcessHandle/of pid) (.orElse nil) (.isAlive))))
+
+(defn process-command-line [pid]
+  (let [{:keys [out exit]} (process/sh "ps" "-o" "command=" "-p" (str pid))]
+    (when (zero? exit) (str/trim out))))
+
+(defn handoffd-for-this-root?
+  "True when pid's command line is a handoffd.bb process started for THIS
+   project-root, not merely a pid number that happens to be alive again
+   after reuse, and not a handoffd.bb serving a different project (BL-081:
+   reaping/guarding must never touch another project's daemon)."
+  [pid]
+  (when-let [cmd (process-command-line pid)]
+    (and (str/includes? cmd "handoffd.bb")
+         (str/includes? cmd project-root))))
+
+(defn read-pid-file []
+  (when (fs/exists? pid-file)
+    (some-> (slurp (str pid-file)) str/trim not-empty parse-long)))
+
+(defn live-conflicting-pid
+  "The pid recorded in handoffd.pid, if it names a still-alive handoffd.bb
+   process for this project-root other than ourselves. nil means it is safe
+   to take ownership of the pid file (BL-081 root cause #1: a second start
+   must not silently clobber a live daemon's pid file)."
+  []
+  (let [recorded (read-pid-file)]
+    (when (and recorded (not= recorded (own-pid))
+               (pid-alive? recorded)
+               (handoffd-for-this-root? recorded))
+      recorded)))
+
+(defn with-pid-lock
+  "Runs f while holding an exclusive lock on the pid file, using the same
+   atomic mkdir-based lock pattern as swarm_handoff.bb's next-sequence, so
+   two handoffd.bb processes racing to start at the same instant (e.g. the
+   launcher and the supervisor) cannot both observe an empty pid file and
+   both proceed (BL-081: the observed same-minute duplicate-start race)."
+  [f]
+  (fs/create-dirs daemon-dir)
+  (loop []
+    (when-not (try
+                (fs/create-dir pid-lock-dir)
+                true
+                (catch java.nio.file.FileAlreadyExistsException _ false))
+      (Thread/sleep 50)
+      (recur)))
+  (try
+    (f)
+    (finally
+      (fs/delete pid-lock-dir))))
+
+(defn claim-pid-file!
+  "Attempts to take ownership of the pid file under the lock. Returns
+   :claimed on success (pid file now names this process), or
+   [:conflict pid] when a live handoffd.bb for this root already owns it."
+  []
+  (with-pid-lock
+    (fn []
+      (if-let [conflicting (live-conflicting-pid)]
+        [:conflict conflicting]
+        (do
+          (fs/delete-if-exists stop-file)
+          (spit (str pid-file) (str (own-pid) "\n"))
+          :claimed)))))
+
+(defn delete-own-pid-file!
+  "Deletes the pid file only when it still names this process (BL-081 root
+   cause #2: an orphan reaped by SIGTERM must not delete the SURVIVOR's pid
+   file on its way out via this same shutdown path)."
+  []
+  (when (= (read-pid-file) (own-pid))
+    (fs/delete-if-exists pid-file)))
 
 (defn -main []
   (let [roles  (load-roles)
@@ -240,27 +331,33 @@
       (do
         (startup-notify-pending! roles socket)
         (log! "startup-notify-only done"))
-      (do
-        (fs/create-dirs daemon-dir)
-        (fs/delete-if-exists stop-file)
-        (spit (str pid-file) (str (.pid (java.lang.ProcessHandle/current)) "\n"))
-        (.addShutdownHook (Runtime/getRuntime) (Thread. shutdown!))
-        (log! "started")
-        (try
-          (startup-notify-pending! roles socket)
-          ;; The heartbeat file (every cycle) and log line (periodic) let the
-          ;; supervisor detect a hung daemon and a post-mortem see liveness up
-          ;; to the moment of death (BL-061).
-          (loop [cycle 0]
-            (when (and (not @stopping?) (not (fs/exists? stop-file)))
-              (poll-once!)
-              (spit (str heartbeat-file) (str (now) "\n"))
-              (when (zero? (mod cycle heartbeat-log-every-cycles))
-                (log! "heartbeat" (str "cycle=" cycle)))
-              (Thread/sleep poll-ms)
-              (recur (inc cycle))))
-          (finally
-            (fs/delete-if-exists pid-file)
-            (log! "stopped")))))))
+      (let [claim (claim-pid-file!)]
+        (if-let [conflicting (and (vector? claim) (second claim))]
+          (do
+            (log! "abort-second-start" (str "live handoffd pid=" conflicting "already owns" (str pid-file)))
+            (binding [*out* *err*]
+              (println (str "handoffd.bb: refusing to start; live handoffd (pid " conflicting
+                            ") already owns " (str pid-file))))
+            (System/exit 1))
+          (do
+            (reset! main-thread (Thread/currentThread))
+            (.addShutdownHook (Runtime/getRuntime) (Thread. shutdown!))
+            (log! "started")
+            (try
+              (startup-notify-pending! roles socket)
+              ;; The heartbeat file (every cycle) and log line (periodic) let the
+              ;; supervisor detect a hung daemon and a post-mortem see liveness up
+              ;; to the moment of death (BL-061).
+              (loop [cycle 0]
+                (when (and (not @stopping?) (not (fs/exists? stop-file)))
+                  (poll-once!)
+                  (spit (str heartbeat-file) (str (now) "\n"))
+                  (when (zero? (mod cycle heartbeat-log-every-cycles))
+                    (log! "heartbeat" (str "cycle=" cycle)))
+                  (Thread/sleep poll-ms)
+                  (recur (inc cycle))))
+              (finally
+                (delete-own-pid-file!)
+                (log! "stopped")))))))))
 
 (-main)
