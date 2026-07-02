@@ -1,7 +1,7 @@
 id: BL-063
 title: Reroute machinery — point-to-point pipeline detours with budget and livelock gate
 milestone: M3
-status: todo
+status: done
 priority: 10
 assigned_to: coder
 
