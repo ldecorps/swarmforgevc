@@ -15,6 +15,7 @@ const {
   extractFunctions,
   parseSource,
   statementCoverageFraction,
+  nestedRangesOf,
 } = require('./crapLib');
 
 const CRAP_THRESHOLD = 6;
@@ -54,8 +55,14 @@ function reportFor(absFile, coverage) {
   const sourceText = fs.readFileSync(absFile, 'utf8');
   const sourceFile = parseSource(absFile, sourceText);
   const fileCoverage = coverage[absFile];
-  return extractFunctions(sourceFile).map((fn) => {
-    const cov = statementCoverageFraction(fileCoverage, fn.startLine, fn.endLine);
+  const functions = extractFunctions(sourceFile);
+  return functions.map((fn) => {
+    const cov = statementCoverageFraction(
+      fileCoverage,
+      fn.startLine,
+      fn.endLine,
+      nestedRangesOf(fn, functions)
+    );
     const crap = computeCrap(fn.complexity, cov);
     return {
       file: path.relative(ROOT_DIR, absFile),
