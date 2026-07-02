@@ -1,5 +1,5 @@
 id: BL-071
-title: swarm metrics — panel section showing ticket turnaround, agent busyness, retry count
+title: swarm metrics — foldable panel pane + agent-callable CLI overview (turnaround, busyness, retries)
 milestone: M5
 status: todo
 priority: 16
@@ -44,11 +44,26 @@ description: |
   with no closed tickets shows a placeholder (never NaN/Infinity). Keep it
   LITTLE: text/bars in the panel, no charting library, no new webview panel.
 
-  Scope: extension only — a metrics computation module in extension/src
-  (host side), wiring in swarmPanel.ts, rendering in webviewHtml.ts /
-  media/panel.js, plus tests. OVERLAP WARNING for coordinator: touches the
-  same webview panel surface as BL-067/BL-068/BL-070 — sequence, don't
-  parallelize.
+  Agent-callable CLI overview (user addition, 2026-07-02): besides the panel
+  pane, ship a CLI that prints a SHORT plain-text overview of the SAME
+  observables, so any agent can run it and paste the answer when the human
+  asks "how is the swarm doing" (e.g. from the coordinator pane). Follow the
+  existing compiled-tool pattern (extension/out/tools/, like trace-hop.js):
+  `node extension/out/tools/swarm-metrics.js` runnable from the repo root OR
+  from any .worktrees/<role>/ checkout (anchor path resolution at the
+  worktree/repo root — BL-056 lesson; it must find the main repo's backlog
+  git history and every role's handoff dirs). Output: a handful of lines —
+  mean ticket time + sample count, one busyness line per role, retry total
+  with worst tickets. Read-only, headless (no VS Code running), and exits 0
+  with placeholders on a fresh run. SINGLE SOURCE OF TRUTH: the CLI and the
+  panel consume the SAME metrics computation module — do not implement the
+  metrics twice; that module therefore must not import the vscode API.
+
+  Scope: extension only — a vscode-free metrics computation module in
+  extension/src, wiring in swarmPanel.ts, rendering in webviewHtml.ts /
+  media/panel.js, a thin CLI presenter in extension/src/tools/, plus tests.
+  OVERLAP WARNING for coordinator: touches the same webview panel surface
+  as BL-067/BL-068/BL-070 — sequence, don't parallelize.
 
 acceptance: |
   Feature: METRICS section in the SwarmForge panel
@@ -122,9 +137,35 @@ acceptance: |
     Then the mean ticket time and sample count update
     And no additional polling loop or per-second git invocation is introduced
 
+  # BL-071 swarm-metrics-07
+  Scenario: an agent gets a short text overview from the CLI
+    Given a role worktree under .worktrees/ of a repo with swarm history
+    When the agent runs the swarm-metrics CLI from that worktree
+    Then it prints a short plain-text overview within a handful of lines
+    And it includes mean ticket time with its sample count
+    And it includes one busyness line per configured role
+    And it includes the retry total
+    And it exits 0 without VS Code running
+
+  # BL-071 swarm-metrics-08
+  Scenario: CLI and panel never disagree
+    Given the same repo state
+    When the panel METRICS pane and the CLI both render
+    Then they report the same mean ticket time, busyness, and retry values
+    And both are fed by the same computation module
+
+  # BL-071 swarm-metrics-09
+  Scenario: CLI on a fresh run prints placeholders and exits cleanly
+    Given a repo with no closed tickets and no completed handoffs
+    When the CLI runs
+    Then it prints placeholder values with no "NaN", "Infinity", or stack trace
+    And it exits 0
+
   # Non-behavioral gate:
   #  - Host computes, webview presents (two-layer rule); no browser storage.
   #  - Read-only: no writes under .swarmforge/, SwarmForge unmodified.
   #  - At least one test asserts on the rendered panel HTML for the METRICS
   #    section (not only on the computation module).
+  #  - One shared, vscode-free metrics module feeds panel and CLI; the CLI is
+  #    a thin presenter (no second metrics implementation).
   #  - Existing suites stay green.

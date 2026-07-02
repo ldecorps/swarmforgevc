@@ -46,21 +46,23 @@
                (str/join "\n" (map #(str "- " %) in-process-batches))))
       (if (= 1 (count in-process-batches))
         (print-batch (first in-process-batches))
-        (let [new-files (handoff-lib/handoff-files new-dir)]
-          (if (empty? new-files)
-            (println "NO_TASK")
-            (let [batch-priority (handoff-lib/header-value (first new-files) "priority" "50")
-                  batch-dir (new-batch-dir in-process-dir)
-                  selected-files (filter #(= batch-priority (handoff-lib/header-value % "priority" "50")) new-files)]
-              (fs/create-dir batch-dir)
-              (doseq [source-file selected-files]
-                (let [target-file (fs/path batch-dir (fs/file-name source-file))]
-                  (when (fs/exists? target-file)
-                    (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: target batch file already exists: " target-file)))
-                  (fs/move source-file target-file)
-                  (handoff-lib/set-header! target-file "dequeued_at" (handoff-lib/timestamp))))
-              (when (empty? selected-files)
-                (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: no tasks selected for batch priority " batch-priority ".")))
-              (print-batch batch-dir))))))))
+        (if (handoff-lib/draining?)
+          (println "DRAINING")
+          (let [new-files (handoff-lib/handoff-files new-dir)]
+            (if (empty? new-files)
+              (println "NO_TASK")
+              (let [batch-priority (handoff-lib/header-value (first new-files) "priority" "50")
+                    batch-dir (new-batch-dir in-process-dir)
+                    selected-files (filter #(= batch-priority (handoff-lib/header-value % "priority" "50")) new-files)]
+                (fs/create-dir batch-dir)
+                (doseq [source-file selected-files]
+                  (let [target-file (fs/path batch-dir (fs/file-name source-file))]
+                    (when (fs/exists? target-file)
+                      (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: target batch file already exists: " target-file)))
+                    (fs/move source-file target-file)
+                    (handoff-lib/set-header! target-file "dequeued_at" (handoff-lib/timestamp))))
+                (when (empty? selected-files)
+                  (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: no tasks selected for batch priority " batch-priority ".")))
+                (print-batch batch-dir)))))))))
 
 (-main)
