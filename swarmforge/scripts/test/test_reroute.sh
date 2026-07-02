@@ -57,6 +57,26 @@ OUTBOX="$ROOT/.swarmforge/handoffs/outbox"
 printf 'id: seed\nfrom: specifier\nto: coder\nrecipient: coder\npriority: 00\ntype: git_handoff\ntask: %s\ncommit: %s\n\nbody\n' \
   "$TASK" "$HEAD10" > "$CODER_WT/.swarmforge/handoffs/inbox/completed/00_seed.handoff"
 
+# ── invalid to-stage rejected before anything is touched (mirrors ──────────
+# ── test_redo_from.sh's "05: invalid stage" coverage for the sibling tool) ──
+printf 'id: pre-invalid\nfrom: specifier\nto: coder\nrecipient: coder\npriority: 00\ntype: git_handoff\ntask: %s\ncommit: %s\n\nbody\n' \
+  "$TASK" "$HEAD10" > "$CODER_WT/.swarmforge/handoffs/inbox/new/00_pre_invalid.handoff"
+set +e
+OUT="$(cd "$CODER_WT" && SWARMFORGE_ROLE=coder bb "$REROUTE" "$ITEM" "not-a-real-stage" "typo" 2>&1)"
+RC=$?
+set -e
+[[ $RC -ne 0 ]] || fail "00: an invalid to-stage did not fail"
+grep -q "coder | cleaner | architect | hardender | documenter | qa" <<< "$OUT" \
+  || fail "00: error does not list valid stages; got: $OUT"
+[[ -z "$(git -C "$ROOT" tag -l 'redo/*')" ]] || fail "00: checkpoint tag created on invalid to-stage"
+[[ -f "$CODER_WT/.swarmforge/handoffs/inbox/new/00_pre_invalid.handoff" ]] \
+  || fail "00: unrelated inbox/new item abandoned on an invalid to-stage"
+[[ ! -d "$OUTBOX" || -z "$(ls "$OUTBOX" 2>/dev/null | grep -v tmp || true)" ]] \
+  || fail "00: handoff queued on invalid to-stage"
+[[ ! -f "$ROOT/.swarmforge/reroute-state/$ITEM.json" ]] \
+  || fail "00: reroute-state written for an invalid to-stage"
+pass "00: an invalid to-stage is rejected with the valid-stage list, nothing touched"
+
 # ── 01: a stage detours the parcel with a reason note; count increments ─────
 OUT="$(cd "$CODER_WT" && SWARMFORGE_ROLE=coder bb "$REROUTE" "$ITEM" cleaner "needs cleaner's opinion")"
 grep -q "^REROUTE: $ITEM from coder to cleaner" <<< "$OUT" || fail "01: unexpected reroute output: $OUT"
