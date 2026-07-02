@@ -192,6 +192,70 @@ test('folder-active item whose yaml still says todo produces a badge (BL-053)', 
   assert.equal(result.coder.summary, 'redo BL-038 tile header active ticket');
 });
 
+// --- BL-068: a role holding multiple parcels shows the lowest ID + count ---
+// (regression: the previous last-write-wins loop silently dropped every
+// badge but the last one processed when several active items resolved to
+// the same holder — verified live against this repo's own backlog, which
+// currently has 5 active items all assigned to "coder" and produced exactly
+// one surviving badge instead of one-badge-plus-a-count.)
+
+test('a role holding multiple parcels shows the lowest ticket ID plus a +N count', () => {
+  const items = [
+    { id: 'BL-061', title: 'handoffd deadlock', status: 'active', assignedTo: 'hardender' },
+    { id: 'BL-036', title: 'redo_from tool', status: 'active', assignedTo: 'hardender' },
+  ];
+  const result = buildBadgeMap(items);
+  assert.ok(result.hardender, 'the holder must still get a badge, not be silently dropped');
+  assert.equal(result.hardender.id, 'BL-036', 'the lowest ticket ID must be the primary badge');
+  assert.equal(result.hardender.extraCount, 1, 'the remaining parcel must be counted, not dropped');
+});
+
+test('a role holding three parcels counts the two not shown', () => {
+  const items = [
+    { id: 'BL-062', title: 'done milestone reader', status: 'active', assignedTo: 'hardender' },
+    { id: 'BL-059', title: 'needs-human blink red', status: 'active', assignedTo: 'hardender' },
+    { id: 'BL-060', title: 'suite speed fix', status: 'active', assignedTo: 'hardender' },
+  ];
+  const result = buildBadgeMap(items);
+  assert.equal(result.hardender.id, 'BL-059');
+  assert.equal(result.hardender.extraCount, 2);
+});
+
+test('a role holding a single parcel has no extraCount', () => {
+  const items = [
+    { id: 'BL-038', title: 'tile header', status: 'active', assignedTo: 'coder' },
+  ];
+  const result = buildBadgeMap(items);
+  assert.equal(result.coder.extraCount, undefined);
+});
+
+test('multiple parcels resolve the lowest ID numerically, not lexicographically', () => {
+  const items = [
+    { id: 'BL-100', title: 'later item', status: 'active', assignedTo: 'coder' },
+    { id: 'BL-9', title: 'earlier item', status: 'active', assignedTo: 'coder' },
+  ];
+  const result = buildBadgeMap(items);
+  assert.equal(result.coder.id, 'BL-9', 'BL-9 sorts before BL-100 numerically even though "1" < "9" lexicographically');
+});
+
+test('a live-holder tie between two items for the same role also gets counted, not overwritten', () => {
+  const target = mkTmp();
+  const hardenerWt = mkTmp();
+  writeRolesTsv(target, [{ role: 'hardender', worktreePath: hardenerWt, displayName: 'Hardender' }]);
+  dropHandoff(hardenerWt, '00_a.handoff', 'from: architect\nto: hardender\ntask: bl-061-handoffd-deadlock\ncommit: abc\n');
+  dropHandoff(hardenerWt, '00_b.handoff', 'from: architect\nto: hardender\ntask: bl-036-redo-from\ncommit: abc\n');
+
+  const items = [
+    { id: 'BL-061', title: 'handoffd deadlock', status: 'active', assignedTo: 'hardender' },
+    { id: 'BL-036', title: 'redo_from tool', status: 'active', assignedTo: 'hardender' },
+  ];
+  const result = buildBadgeMap(items, target);
+
+  assert.ok(result.hardender, 'both live-held parcels must resolve to one counted badge, not silently overwrite each other');
+  assert.equal(result.hardender.id, 'BL-036');
+  assert.equal(result.hardender.extraCount, 1);
+});
+
 test('folder-active item with lagging yaml status is badged on the live holder (BL-053)', () => {
   const target = mkTmp();
   const cleanerWt = mkTmp();

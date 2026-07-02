@@ -555,8 +555,11 @@ window.addEventListener('message', (event) => {
         const badge = message.badges[role];
         if (badge) {
           entry.tile.classList.add('bl-active');
-          const badgeText = badge.summary ? `${badge.id} · ${badge.summary}` : badge.id || badge;
-          entry.blBadge.textContent = badgeText;
+          const idSummary = badge.summary ? `${badge.id} · ${badge.summary}` : badge.id || badge;
+          // A role holding more than one active parcel (e.g. a hardender
+          // batch) shows the lowest ticket ID plus a +N count for the rest
+          // instead of silently dropping them (BL-068).
+          entry.blBadge.textContent = badge.extraCount ? `${idSummary} +${badge.extraCount}` : idSummary;
         } else {
           entry.tile.classList.remove('bl-active');
           entry.blBadge.textContent = '';
