@@ -60,6 +60,35 @@ test('the row follows the parcel when it is handed to the next role and the pane
   assert.equal(backlogRowAssignee(document, 'BL-067'), 'cleaner');
 });
 
+// The second, compounding bug this commit fixed: holderMap must be REPLACED
+// each poll, not merged, or a ticket that loses its live holder (e.g. its
+// parcel lands and the item briefly has no routed inbox holder before the
+// next stage picks it up) keeps showing whoever held it last instead of
+// "queued". None of the other scenarios exercise a holder disappearing.
+test('a row reverts to "queued" when its ticket drops out of the holders payload entirely', () => {
+  const { document, dispatch } = renderPanel();
+  const items = [
+    { id: 'BL-067', title: 'stuck-in-process chase', status: 'active', assignedTo: 'coder' },
+    { id: 'BL-069', title: 'graceful bounce', status: 'active', assignedTo: 'coder' },
+  ];
+
+  dispatchBacklogState(dispatch, items, { 'BL-067': 'cleaner', 'BL-069': 'architect' });
+  assert.equal(backlogRowAssignee(document, 'BL-067'), 'cleaner');
+  assert.equal(backlogRowAssignee(document, 'BL-069'), 'architect');
+
+  // Next poll: BL-067 is no longer held by anyone (its stage inbox is
+  // empty); BL-069 is unaffected. The payload omits BL-067 entirely rather
+  // than sending an explicit null.
+  dispatchBacklogState(dispatch, items, { 'BL-069': 'architect' });
+
+  assert.equal(
+    backlogRowAssignee(document, 'BL-067'),
+    'queued',
+    'a ticket dropped from the holders payload must revert to queued, not keep showing the stale prior holder'
+  );
+  assert.equal(backlogRowAssignee(document, 'BL-069'), 'architect', 'an unaffected ticket keeps its holder');
+});
+
 // BL-072 live-backlog-holder-03
 test('a promoted but unrouted ticket shows "queued", not the assignee', () => {
   const { document, dispatch } = renderPanel();
