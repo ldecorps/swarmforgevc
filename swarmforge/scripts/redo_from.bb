@@ -128,13 +128,24 @@
       item-id))
 
 (defn tag-checkpoint! [root item-id stage]
-  (let [stamp (.format (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd'T'HHmmss'Z'")
+  ;; Millisecond resolution plus a bounded uniquifier: rapid successive redos
+  ;; of the same item+stage must each get their own checkpoint tag (QA defect:
+  ;; same-second redos collided and the second redo aborted).
+  (let [stamp (.format (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd'T'HHmmss.SSS'Z'")
                        (.atZone (java.time.Instant/now) java.time.ZoneOffset/UTC))
-        tag (str "redo/" item-id "/" stage "/" stamp)
-        result (process/sh {:dir root} "git" "tag" tag)]
-    (when-not (zero? (:exit result))
-      (exit! 1 (str "Failed to create checkpoint tag " tag ": " (:err result))))
-    tag))
+        base (str "redo/" item-id "/" stage "/" stamp)]
+    (loop [attempt 0]
+      (let [tag (if (zero? attempt) base (str base "-" (inc attempt)))
+            result (process/sh {:dir root} "git" "tag" tag)]
+        (cond
+          (zero? (:exit result)) tag
+
+          (and (< attempt 10)
+               (str/includes? (str (:err result)) "already exists"))
+          (recur (inc attempt))
+
+          :else
+          (exit! 1 (str "Failed to create checkpoint tag " tag ": " (:err result))))))))
 
 (defn queue-handoff! [root role task commit]
   (let [tmp-dir (fs/path root "tmp")
