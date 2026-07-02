@@ -34,12 +34,13 @@ test('backlogRowHtml shows the live holder for active items, not the static assi
   assert.doesNotMatch(html, /architect/);
 });
 
-test('backlogRowHtml falls back to the static assignedTo for active items with no live holder', () => {
+test('backlogRowHtml shows "queued" for active items with no live holder, never the static assignedTo (BL-072)', () => {
   global.holderMap = {};
   const item = { id: 'BL-001', title: 'Test item', status: 'active', assignedTo: 'architect' };
   const html = backlogRowHtml(item);
   assert.match(html, /bl-assigned/);
-  assert.match(html, /architect/);
+  assert.match(html, /queued/);
+  assert.doesNotMatch(html, /architect/);
 });
 
 test('backlogRowHtml renders the milestone badge for done items, not the assignedTo', () => {
