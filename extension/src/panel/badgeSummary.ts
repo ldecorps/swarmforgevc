@@ -37,6 +37,59 @@ function compareTicketIds(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true });
 }
 
+function resolveItemHolder(item: BacklogItem, targetPath?: string): string | null {
+  if (!item.assignedTo) {
+    return null;
+  }
+  // When live routing is requested (targetPath given), findLiveHolder is
+  // the sole source of truth — the same resolver the backlog row's
+  // holderMap uses. Falling back to the static assignedTo YAML field
+  // when it resolves to null resurfaced a phantom tile badge for a
+  // ticket whose parcel already left every stage inbox (dropped after
+  // completion, or never routed at all), disagreeing with the backlog
+  // row's "queued" state for the same ticket (BL-079). Only skip live
+  // resolution entirely — and fall back to assignedTo — when no
+  // targetPath is given at all.
+  if (!targetPath) {
+    return item.assignedTo;
+  }
+  const liveHolder = findLiveHolder(targetPath, item.id);
+  return liveHolder || null;
+}
+
+function groupItemsByHolder(
+  items: BacklogItem[],
+  targetPath?: string
+): Map<string, { item: BacklogItem; holder: string }[]> {
+  const byHolder = new Map<string, { item: BacklogItem; holder: string }[]>();
+  for (const item of items) {
+    if (item.status !== 'active') {
+      continue;
+    }
+    const holder = resolveItemHolder(item, targetPath);
+    if (!holder) {
+      continue;
+    }
+    const bucket = byHolder.get(holder) ?? [];
+    bucket.push({ item, holder });
+    byHolder.set(holder, bucket);
+  }
+  return byHolder;
+}
+
+function formatBadgeEntry(
+  entries: { item: BacklogItem; holder: string }[]
+): BadgeWithHolder {
+  entries.sort((a, b) => compareTicketIds(a.item.id, b.item.id));
+  const [primary, ...rest] = entries;
+  return {
+    id: primary.item.id,
+    summary: truncateSummary(primary.item.title),
+    holder: primary.holder,
+    ...(rest.length > 0 ? { extraCount: rest.length } : {}),
+  };
+}
+
 export function buildBadgeMap(
   items: BacklogItem[],
   targetPath?: string
@@ -46,39 +99,11 @@ export function buildBadgeMap(
   // the result map — avoids each item silently overwriting the previous
   // one for the same holder (BL-068 regression: only the last item
   // processed ever survived, and the rest just vanished from the tile).
-  const byHolder = new Map<string, { item: BacklogItem; holder: string }[]>();
-
-  for (const item of items) {
-    if (item.status === 'active' && item.assignedTo) {
-      // When live routing is requested (targetPath given), findLiveHolder is
-      // the sole source of truth — the same resolver the backlog row's
-      // holderMap uses. Falling back to the static assignedTo YAML field
-      // when it resolves to null resurfaced a phantom tile badge for a
-      // ticket whose parcel already left every stage inbox (dropped after
-      // completion, or never routed at all), disagreeing with the backlog
-      // row's "queued" state for the same ticket (BL-079). Only skip live
-      // resolution entirely — and fall back to assignedTo — when no
-      // targetPath is given at all.
-      const resolvedHolder = targetPath ? findLiveHolder(targetPath, item.id) : item.assignedTo;
-      if (!resolvedHolder) {
-        continue;
-      }
-      const bucket = byHolder.get(resolvedHolder) ?? [];
-      bucket.push({ item, holder: resolvedHolder });
-      byHolder.set(resolvedHolder, bucket);
-    }
-  }
+  const byHolder = groupItemsByHolder(items, targetPath);
 
   const badges: Record<string, BadgeWithHolder> = {};
   for (const [tileRole, entries] of byHolder) {
-    entries.sort((a, b) => compareTicketIds(a.item.id, b.item.id));
-    const [primary, ...rest] = entries;
-    badges[tileRole] = {
-      id: primary.item.id,
-      summary: truncateSummary(primary.item.title),
-      holder: primary.holder,
-      ...(rest.length > 0 ? { extraCount: rest.length } : {}),
-    };
+    badges[tileRole] = formatBadgeEntry(entries);
   }
   return badges;
 }
