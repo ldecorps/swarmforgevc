@@ -248,6 +248,15 @@ Below the tiled agent panel, the extension shows a collapsible Backlog section l
 - Done items show their milestone; todo items show the intended assignee
 - This live traceability helps you spot bottlenecks and know at a glance which stage is responsible for each ticket
 
+#### Interactive Backlog Operations
+
+You can interact with active backlog items directly from the panel:
+
+- **Assign an item**: Click the assignee field for any active item and select a team member to assign or reassign it. The assignment is written immediately back to the target repo's backlog YAML file.
+- **Mark done**: Click the action button on any active item to move it from the active backlog to the done folder, reflecting completion. The item is moved to `backlog/done/` (or `backlog/done/<milestone>/` if the item specifies a milestone), and the backlog view updates immediately.
+
+These writes are atomic — the extension uses a temporary file + rename mechanism to ensure no partial writes occur if the process is interrupted.
+
 ---
 
 ## Inter-Agent Communication
