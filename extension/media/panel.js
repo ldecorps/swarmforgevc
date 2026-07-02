@@ -8,6 +8,10 @@ const tiles = new Map();
 let activeRole = null;
 let selectedRole = null;
 const openPrBtn = document.getElementById('open-pr-btn');
+const bounceDrainBanner = document.getElementById('bounce-drain-banner');
+const bounceDrainText = document.getElementById('bounce-drain-text');
+const drainCancelBtn = document.getElementById('drain-cancel-btn');
+const drainForceBtn = document.getElementById('drain-force-btn');
 const bottomRowEl = document.getElementById('bottom-row');
 const recentRunsEl = document.getElementById('recent-runs');
 const runsListEl = document.getElementById('runs-list');
@@ -319,6 +323,14 @@ openPrBtn.addEventListener('click', () => {
   vscode.postMessage({ type: 'openPR' });
 });
 
+drainCancelBtn.addEventListener('click', () => {
+  vscode.postMessage({ type: 'cancelBounceDrain' });
+});
+
+drainForceBtn.addEventListener('click', () => {
+  vscode.postMessage({ type: 'forceBounceNow' });
+});
+
 document.addEventListener('keydown', (e) => {
   if (!activeRole) { return; }
   // Let copy/paste/select shortcuts pass through so text can be selected and copied
@@ -522,6 +534,20 @@ window.addEventListener('message', (event) => {
           // healthy or unknown: no alarm
           transportHealthEl.textContent = '';
         }
+      }
+      break;
+    case 'bounceDrain':
+      if (message.draining) {
+        const busy = message.busyRoles || [];
+        bounceDrainBanner.classList.add('visible');
+        bounceDrainText.textContent =
+          'Draining: ' + busy.length + ' of ' + (message.totalRoles || 0) + ' agent(s) still busy';
+        tiles.forEach((entry, role) => {
+          entry.tile.classList.toggle('drain-idle', !busy.includes(role));
+        });
+      } else {
+        bounceDrainBanner.classList.remove('visible');
+        tiles.forEach((entry) => entry.tile.classList.remove('drain-idle'));
       }
       break;
     case 'badgeUpdate':
