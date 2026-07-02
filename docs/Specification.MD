@@ -186,6 +186,16 @@ Respawn preserves the agent's worktree and branch state — only the running pro
 | **▶ Run** | Triggers the swarm run |
 | **⏹ Stop** | Signals the coordinator to stand down, then the orchestrator terminates all agent processes (coordinator last) |
 
+### Backlog Pane
+
+Below the tiled agent panel, the extension shows a collapsible Backlog section listing all active work items with live traceability:
+
+- Each backlog row shows: ticket ID, title, and the role currently **holding** that parcel (the stage with the active handoff for that ticket)
+- The holder column updates live as the parcel moves down the pipeline — tiles and backlog rows always show the same holder (same resolution source)
+- For promoted-but-unrouted tickets (active but not yet handed to a stage), the row shows **"queued"** instead of the static assigned_to field
+- Done items show their milestone; todo items show the intended assignee
+- This live traceability helps you spot bottlenecks and know at a glance which stage is responsible for each ticket
+
 ---
 
 ## Inter-Agent Communication
