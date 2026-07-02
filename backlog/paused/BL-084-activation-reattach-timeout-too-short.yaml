@@ -1,0 +1,97 @@
+id: BL-084
+title: BUG — activation re-attach 3s budget too short for concurrent host+swarm cold-start (BL-080 follow-up)
+milestone: M2
+status: todo
+priority: 02
+assigned_to: unassigned
+
+description: |
+  DEFECT (operator report + live diagnosis, 2026-07-02): after starting the
+  swarm, the agents come up (8 tmux sessions, claude running in each) but the
+  panel does not attach — tiles never reconnect to the live output. Recurs
+  across restarts. Manual workaround that reliably re-attaches:
+  `SwarmForge: Open Panel` (command swarmforge.openPanel), which calls
+  SwarmPanel.createOrShow against the current target with no relaunch.
+
+  Root cause (confirmed live, NOT a stale build): the running dev host is the
+  main checkout, built AFTER the swarm started, and it DOES contain the
+  BL-080 re-attach poller. The problem is the poller's budget. BL-080's
+  activation re-attach (extension/src/extension.ts ~L559-603) waits with
+  waitForSwarmReady(targetPath, REATTACH_READY_TIMEOUT_MS,
+  REATTACH_READY_POLL_MS) where those constants are 3000ms / 200ms
+  (extension/src/extension.ts:71-72). Three seconds is enough to smooth a
+  transient flake against an already-up swarm — the case BL-080 was scoped to
+  — but a genuine cold start has to bring up 8 tmux sessions each spawning a
+  fresh `claude`, which routinely takes well over 3s. When the extension host
+  and the swarm start close together, the poll times out and falls through to
+  the "previous run found, resume?" branch instead of attaching. So BL-080
+  fixed the transient-flake case but not the concurrent-cold-start case, which
+  is why it recurs.
+
+  Evidence at diagnosis time: isSwarmReady() reproduced TRUE for the live
+  swarm (tmux-socket present; `tmux ls` exit 0; sessions.tsv lists all 8
+  roles; every role session has-session OK), a single healthy handoffd daemon,
+  and the running build (extension/out on main) contains the poller — yet the
+  panel was not attached. The only variable that fits is the 3s timeout losing
+  the race against an 8-agent cold start.
+
+  Wanted behavior: make the activation readiness wait ADAPTIVE instead of a
+  flat 3s.
+    - If .swarmforge/tmux-socket already exists at activation, the swarm is
+      mid-startup — wait much longer (or fs.watch sessions.tsv / poll until a
+      generous bound like the launcher's own budget) so a slow-but-real
+      cold-start still attaches automatically.
+    - If there is NO tmux-socket at all, treat it as genuine no-swarm and keep
+      the current fast fall-through so the "no prior run" / resume path is not
+      delayed by a long timeout.
+  Net: never fall through to "resume?" while a live swarm is actually coming
+  up, without penalizing the truly-empty case.
+
+  Scope: extension/src/extension.ts activation re-attach branch (~L559-603);
+  optionally a shared adaptive-wait helper alongside waitForSwarmReady in
+  extension/src/swarm/swarmLauncher.ts. Extension product code — unit-testable
+  through the existing isSwarmReady/waitForSwarmReady seams. Reference BL-080
+  (closed into done/M2-reliability-layer, commit 241c3cd) and preserve its
+  "don't widen the probe / root-cause not probe-widen" intent — this widens
+  the WAIT budget for the socket-present case only, not the readiness probe.
+
+  Interim mitigation (NOT a fix): run `SwarmForge: Open Panel` after each start
+  to attach manually. The auto-attach stays broken for concurrent cold-starts
+  until this lands.
+
+  Heads-up for the coder (2026-07-02, specifier): the main-checkout dev host
+  currently carries UNCOMMITTED local edits (extension.ts auto-relaunch
+  re-attach, swarmLauncher.ts launch lock, targetPath.ts folder heuristics,
+  webviewHtml/panel input routing, rebuilt out/) that exist in no commit.
+  Do NOT treat them as landed; implement this ticket in your own worktree
+  from committed main. They may indicate the operator's live experiments.
+
+acceptance: |
+  Feature: activation re-attaches to a swarm that is still cold-starting
+
+  # BL-084 reattach-adaptive-01
+  Scenario: host activates while the swarm is still bringing up its sessions
+    Given .swarmforge/tmux-socket exists but not all role sessions are ready yet
+    When the swarm finishes bringing up all role sessions within the launcher's
+      readiness budget
+    Then the panel attaches automatically
+    And no "previous run found, resume?" prompt is shown
+
+  # BL-084 reattach-adaptive-02
+  Scenario: genuine cold start with no live swarm is not delayed
+    Given no .swarmforge/tmux-socket exists at activation
+    When activation runs
+    Then it does not block for the long readiness budget before offering resume
+      (or doing nothing)
+
+  # BL-084 reattach-adaptive-03
+  Scenario: manual re-attach remains available
+    Given a live swarm and a detached panel
+    When the operator runs "SwarmForge: Open Panel"
+    Then the panel attaches to the live swarm without relaunching it
+
+  # Non-behavioral gates:
+  #  - The readiness PROBE (isSwarmReady's four checks) is unchanged; only the
+  #    activation WAIT budget becomes adaptive on socket presence.
+  #  - Close documents the concurrent-cold-start root cause and why BL-080's
+  #    flat 3s was insufficient.
