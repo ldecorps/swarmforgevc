@@ -1,0 +1,62 @@
+id: BL-083
+title: BUG — handoffd archive step not idempotent; leaves .error stubs for already-archived outbox files
+milestone: M2
+status: todo
+priority: 10
+assigned_to: coder
+
+description: |
+  Recurring live failure (11x on 2026-07-02, reported by coordinator): handoffd
+  writes `<name>.handoff.error` stubs into an agent's outbox even though the
+  handoff was delivered successfully and the original file sits in `sent/`.
+  Root cause observed live: duplicate handoffd daemons (BL-081 leak) race on
+  the same outbox file — the loser of the archive rename finds the file gone
+  and records a failure. BL-081 stops the daemon leak, but the archive step
+  itself must be idempotent regardless: the protocol already requires
+  "avoid duplicate delivery when retrying after interruption"
+  (handoff-protocol.md, Daemon Shutdown), and a crash-restart retry can hit
+  the same already-archived state with a single daemon.
+
+  Wanted behavior, in handoffd's delivery transaction (scripts-only change,
+  swarmforge/scripts/handoffd.bb):
+  - Before treating a missing/failed outbox archive as an error, check whether
+    the same file already exists in `sent/`; if so, treat the delivery as
+    complete (someone finished it) and write no `.error` stub.
+  - Only a genuinely unarchivable file (present in outbox, rename fails, not
+    in sent/) produces a `.error` stub, and the stub body must say WHY
+    (diagnostic text), not just echo the file path — today's stubs contain
+    only the path, which gives the operator nothing to act on.
+  - On startup, handoffd removes stale `.error` stubs whose original file is
+    found in `sent/` (self-heals debris from past races).
+
+  Constraints:
+  - Do not modify BL-081's supervisor/lock work; this is the archive step only.
+  - No behavior change for genuinely failed deliveries (still go to failed/).
+
+acceptance: |
+  Feature: idempotent outbox archive in handoffd
+
+  # BL-083 idempotent-archive-01
+  Scenario: already-archived file is not an error
+    Given a delivered handoff whose original file is in sent/ but no longer in outbox/
+    When handoffd's archive step runs for that file
+    Then it treats the delivery as complete
+    And no .error stub is written
+
+  # BL-083 idempotent-archive-02
+  Scenario: genuine archive failure produces a diagnostic stub
+    Given an outbox file whose archive rename fails
+    And the file is not present in sent/
+    When handoffd handles the failure
+    Then a .error stub is written
+    And the stub body includes a human-readable reason, not only the file path
+
+  # BL-083 idempotent-archive-03
+  Scenario: startup self-heal of stale stubs
+    Given an outbox containing a .error stub whose original handoff is in sent/
+    When handoffd starts
+    Then the stale stub is removed
+    And a log line records the cleanup
+
+  # Non-behavioral gate:
+  #  - Full suite green; archive logic covered by unit tests without a live swarm.
