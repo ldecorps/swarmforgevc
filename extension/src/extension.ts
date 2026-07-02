@@ -9,6 +9,9 @@ import { WorkTreePanel } from './panel/workTreePanel';
 import { nextEligibleItem } from './swarm/backlogLoop';
 import { readBacklog } from './panel/backlogReader';
 import { appendRun, loadRuns, updateLastRunForTarget } from './runs/runLog';
+import { startBridge } from './bridge/bridgeServer';
+import type { BridgeHandle } from './bridge/bridgeServer';
+import { generateBridgeToken } from './bridge/bridgeToken';
 import { getCurrentBranch, openPullRequest } from './swarm/prCreator';
 import { launchSwarm, waitForSwarmReady, isSwarmReady } from './swarm/swarmLauncher';
 import { hasPriorRunState } from './swarm/swarmDiscovery';
@@ -70,6 +73,7 @@ let currentBounceDrainWatcher: NodeJS.Timeout | null = null;
 let currentGracefulBounceFileWatcher: fs.FSWatcher | null = null;
 let currentIdleClearMonitor: NodeJS.Timeout | null = null;
 let idleClearOutputChannel: vscode.OutputChannel | undefined;
+let currentBridge: BridgeHandle | null = null;
 
 function generateDefaultRunName(): string {
   const now = new Date();
@@ -768,6 +772,36 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
 
+    vscode.commands.registerCommand('swarmforge.startBridge', async () => {
+      const targetPath = getTargetPath();
+      if (!targetPath) {
+        vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
+        return;
+      }
+      if (currentBridge) {
+        vscode.window.showInformationMessage(`SwarmForge bridge already running on port ${currentBridge.port}.`);
+        return;
+      }
+
+      // The token lives only in this extension host process and is shown
+      // once to the user; it is never written into the target repo.
+      const token = generateBridgeToken();
+      currentBridge = await startBridge(targetPath, runLogPath, token);
+      vscode.window.showInformationMessage(
+        `SwarmForge bridge listening on http://127.0.0.1:${currentBridge.port} — token: ${token}`
+      );
+    }),
+
+    vscode.commands.registerCommand('swarmforge.stopBridge', async () => {
+      if (!currentBridge) {
+        vscode.window.showInformationMessage('SwarmForge bridge is not running.');
+        return;
+      }
+      currentBridge.stop();
+      currentBridge = null;
+      vscode.window.showInformationMessage('SwarmForge bridge stopped.');
+    }),
+
     vscode.commands.registerCommand('swarmforge.bounceSwarm', async () => {
       const validated = validateTargetAndLastRun(getTargetPath(), context);
       if (!validated) {
@@ -976,5 +1010,9 @@ export function deactivate(): void {
   if (currentBounceWatcher) {
     currentBounceWatcher.close();
     currentBounceWatcher = null;
+  }
+  if (currentBridge) {
+    currentBridge.stop();
+    currentBridge = null;
   }
 }
