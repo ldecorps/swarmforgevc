@@ -385,6 +385,33 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
     #backlog.collapsed {
       flex: 0 0 auto;
     }
+    #metrics {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      border-left: 1px solid var(--vscode-panel-border);
+      overflow: hidden;
+    }
+    #metrics.collapsed {
+      flex: 0 0 auto;
+    }
+    #metrics-list {
+      overflow-y: auto;
+      flex: 1;
+      padding: 4px 12px 6px;
+      font-size: 11px;
+    }
+    #metrics.collapsed #metrics-list { display: none; }
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 3px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .metric-label { opacity: 0.6; }
+    .metric-value { font-weight: 500; }
     .section-header {
       display: flex;
       align-items: center;
@@ -509,6 +536,13 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
         <button class="collapse-btn" id="backlog-toggle" title="Toggle">▾</button>
       </div>
       <div id="backlog-list"></div>
+    </div>
+    <div id="metrics" style="display:none;">
+      <div class="section-header">
+        <span class="section-title">Metrics</span>
+        <button class="collapse-btn" id="metrics-toggle" title="Toggle">▾</button>
+      </div>
+      <div id="metrics-list"></div>
     </div>
   </div>
   <script src="${scriptUri}"></script>
