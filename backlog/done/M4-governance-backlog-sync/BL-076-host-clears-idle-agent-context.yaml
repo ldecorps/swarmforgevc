@@ -1,7 +1,7 @@
 id: BL-076
 title: host sends /clear to drained-idle agents — prevent context exhaustion between parcels
 milestone: M4
-status: todo
+status: done
 priority: 08
 assigned_to: coder
 
