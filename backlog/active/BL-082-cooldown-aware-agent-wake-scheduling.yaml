@@ -1,0 +1,59 @@
+id: BL-082
+title: FEATURE — cooldown-aware wake scheduling after token reset windows
+milestone: M3
+status: todo
+priority: 05
+assigned_to: coder
+
+description: |
+  When an agent reports token exhaustion and provides a reset time (for example,
+  "tokens return at 6pm"), the swarm should avoid pointless wake/chase noise
+  during cooldown and resume automatically at or after that time.
+
+  Today, cooldown windows can leave agents repeatedly nudged while they cannot
+  act, which creates noise and wastes cycles. Add a scheduler mechanism that
+  records the reported reset timestamp, suppresses wake attempts until that
+  timestamp, and then issues a wake when cooldown ends.
+
+  Scope:
+  - parse and persist cooldown-until timestamps from agent-visible status/events
+    (or explicit coordinator action);
+  - suppress automatic wake/chase attempts for that role while cooldown is active;
+  - wake the role automatically once cooldown expires;
+  - surface cooldown state in diagnostics/UI so humans can see why a role is
+    intentionally not being chased.
+
+acceptance: |
+  Feature: Wake roles automatically after cooldown expiry
+
+    Background:
+      Given a running swarm with watchdog/chaser enabled
+
+    Scenario: suppress wake attempts during cooldown
+      Given role "coder" reports token exhaustion with reset time "18:00"
+      When the chaser runs before 18:00
+      Then it does not send wake nudges to "coder"
+      And diagnostics show "cooldown until 18:00" for "coder"
+
+    Scenario: wake exactly after cooldown ends
+      Given role "coder" has cooldown until "18:00"
+      When time passes 18:00
+      Then the system sends a wake to "coder"
+      And normal chase behavior resumes for "coder"
+
+    Scenario: other roles are unaffected
+      Given role "coder" is cooling down
+      When the chaser runs
+      Then non-cooldown roles still receive normal wake/chase handling
+
+    Scenario: restart resilience
+      Given a persisted cooldown-until timestamp for "coder"
+      When the extension or swarm process restarts before cooldown expiry
+      Then cooldown suppression still applies until expiry
+      And wake is sent once expiry is reached
+
+    Scenario: malformed or missing reset time
+      Given a token-exhaustion signal without a parseable reset time
+      When the system evaluates cooldown scheduling
+      Then it does not enter permanent suppression
+      And logs an actionable warning for operator review
