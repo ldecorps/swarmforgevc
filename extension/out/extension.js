@@ -241,7 +241,7 @@ function activate(context) {
             (0, swarmLauncher_1.launchSwarm)(targetPath, lastRunName).then((result) => {
                 if (result.success) {
                     vscode.window.showInformationMessage(result.message);
-                    const panel = swarmPanel_1.SwarmPanel.createOrShow(context.extensionUri, targetPath, runLogPath);
+                    const panel = swarmPanel_1.SwarmPanel.createOrShow(context.extensionUri, targetPath, runLogPath, undefined, context.secrets);
                     panel.updateTarget(targetPath);
                     // Start chaser monitor after swarm is launched
                     startOrRestartChaserMonitor(targetPath, context);
@@ -329,7 +329,7 @@ function activate(context) {
                 vscode.window.showWarningMessage('Swarm process finished but state files were not detected yet.');
             }
             vscode.window.showInformationMessage(result.message);
-            const panel = swarmPanel_1.SwarmPanel.createOrShow(context.extensionUri, targetPath, runLogPath);
+            const panel = swarmPanel_1.SwarmPanel.createOrShow(context.extensionUri, targetPath, runLogPath, undefined, context.secrets);
             panel.updateTarget(targetPath);
             panel.notifyDogfoodCheckpoint();
             // Start chaser monitor after swarm is launched
@@ -341,7 +341,7 @@ function activate(context) {
             vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
             return;
         }
-        swarmPanel_1.SwarmPanel.createOrShow(context.extensionUri, targetPath, runLogPath);
+        swarmPanel_1.SwarmPanel.createOrShow(context.extensionUri, targetPath, runLogPath, undefined, context.secrets);
     }), vscode.commands.registerCommand('swarmforge.stopSwarm', async () => {
         const targetPath = (0, targetConfig_1.getTargetPath)();
         if (!targetPath) {
@@ -514,7 +514,7 @@ function activate(context) {
             vscode.window.showErrorMessage(result.message);
             return;
         }
-        const panel = swarmPanel_1.SwarmPanel.createOrShow(context.extensionUri, targetPath, runLogPath);
+        const panel = swarmPanel_1.SwarmPanel.createOrShow(context.extensionUri, targetPath, runLogPath, undefined, context.secrets);
         panel.updateTarget(targetPath);
     }));
 }

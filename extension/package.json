@@ -151,6 +151,26 @@
           "type": "number",
           "default": 200,
           "description": "Height in rows of each agent's tmux window, i.e. how many lines a tile can show at once (headless tmux otherwise caps at 24). 1\u20131000. Default 200."
+        },
+        "swarmforge.notify.email.to": {
+          "type": "string",
+          "default": "",
+          "description": "Recipient address for needs-human email notifications (Resend). The feature is off until this and a Resend API key (RESEND_API_KEY env var, or the swarmforge.resendApiKey secret) are both configured."
+        },
+        "swarmforge.notify.email.from": {
+          "type": "string",
+          "default": "onboarding@resend.dev",
+          "description": "Sender address for needs-human email notifications. The Resend onboarding sender only delivers to the account owner; set a verified domain address here once you have one."
+        },
+        "swarmforge.notify.email.graceSeconds": {
+          "type": "number",
+          "default": 60,
+          "description": "How long (seconds) a role's needs-human state must persist unanswered before an email notification is sent."
+        },
+        "swarmforge.notify.email.cooldownSeconds": {
+          "type": "number",
+          "default": 600,
+          "description": "Minimum time (seconds) between two email notifications for the same role."
         }
       }
     }

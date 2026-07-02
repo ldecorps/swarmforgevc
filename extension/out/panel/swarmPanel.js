@@ -44,12 +44,18 @@ const runLog_1 = require("../runs/runLog");
 const webviewHtml_1 = require("./webviewHtml");
 const backlogReader_1 = require("./backlogReader");
 const badgeSummary_1 = require("./badgeSummary");
+const needsHumanDetection_1 = require("./needsHumanDetection");
+const sessionUrlCapture_1 = require("../notify/sessionUrlCapture");
+const needsHumanEmailNotifier_1 = require("../notify/needsHumanEmailNotifier");
+const resendClient_1 = require("../notify/resendClient");
+const secrets_1 = require("../notify/secrets");
 const STAGE_POLL_INTERVAL_MS = 2000;
 const OUTPUT_CHANNEL_NAME = 'SwarmForge';
 class SwarmPanel {
     extensionUri;
     targetPath;
     runLogPath;
+    secrets;
     static currentPanel;
     static viewType = 'swarmforgePanel';
     panel;
@@ -61,10 +67,14 @@ class SwarmPanel {
     escalatedRoles = new Set();
     dogfoodShown = false;
     workspaceState;
-    constructor(panel, extensionUri, targetPath, runLogPath, workspaceState) {
+    emailNotifier;
+    latestPaneText = new Map();
+    resendApiKey;
+    constructor(panel, extensionUri, targetPath, runLogPath, workspaceState, secrets) {
         this.extensionUri = extensionUri;
         this.targetPath = targetPath;
         this.runLogPath = runLogPath;
+        this.secrets = secrets;
         this.workspaceState = workspaceState;
         this.panel = panel;
         this.outputChannel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
@@ -105,7 +115,7 @@ class SwarmPanel {
             }
         }, null, this.disposables);
     }
-    static createOrShow(extensionUri, targetPath, runLogPath) {
+    static createOrShow(extensionUri, targetPath, runLogPath, workspaceState, secrets) {
         const column = vscode.window.activeTextEditor
             ? vscode.window.activeTextEditor.viewColumn
             : undefined;
@@ -120,7 +130,7 @@ class SwarmPanel {
             retainContextWhenHidden: true,
             localResourceRoots: [extensionUri],
         });
-        SwarmPanel.currentPanel = new SwarmPanel(panel, extensionUri, targetPath, runLogPath);
+        SwarmPanel.currentPanel = new SwarmPanel(panel, extensionUri, targetPath, runLogPath, workspaceState, secrets);
         return SwarmPanel.currentPanel;
     }
     highlightTile(role) {
@@ -143,8 +153,17 @@ class SwarmPanel {
         const config = vscode.workspace.getConfiguration('swarmforge');
         const historyLines = config.get('tile.historyLines', 5000);
         const paneRows = config.get('tile.paneRows', 200);
+        this.setupEmailNotifier(config);
         this.tailer = new paneTailer_1.PaneTailer(this.targetPath, (updates) => {
             this.panel.webview.postMessage({ type: 'output', updates });
+            // Pane text already captured for the tile is reused here rather than
+            // re-reading tmux, both to find the claude.ai/code session deep link
+            // (BL-073) as it streams and to quote the prompt when a needs-human
+            // event fires below.
+            for (const update of updates) {
+                this.latestPaneText.set(update.role, update.text);
+                (0, sessionUrlCapture_1.recordSessionUrl)(update.role, update.text);
+            }
         }, (events) => {
             this.panel.webview.postMessage({ type: 'stall', events });
         }, (events) => {
@@ -155,6 +174,16 @@ class SwarmPanel {
             this.sendRoles(roles);
         }, paneRows, (events) => {
             this.panel.webview.postMessage({ type: 'needsHuman', events });
+            if (this.emailNotifier) {
+                const updates = events.map((event) => ({
+                    role: event.role,
+                    needsHuman: event.needsHuman,
+                    snippet: event.needsHuman
+                        ? (0, needsHumanDetection_1.extractQuestionSnippet)(this.latestPaneText.get(event.role))
+                        : undefined,
+                }));
+                this.emailNotifier.recordUpdates(updates, Date.now());
+            }
         });
         this.tailer.start();
         this.sendRoles(this.tailer.getRoles());
@@ -164,6 +193,47 @@ class SwarmPanel {
                 this.panel.webview.postMessage({ type: 'restoreSelection', role: selectedRole });
             }
         }
+    }
+    // BL-073: email the human when a needs-human state persists past a grace
+    // period. Off until both a recipient (setting) and a Resend API key (host
+    // env RESEND_API_KEY, or the swarmforge.resendApiKey secret) resolve — the
+    // key is never read from a workspace setting, so it can never end up in a
+    // committed settings.json.
+    setupEmailNotifier(config) {
+        const to = config.get('notify.email.to', '');
+        const from = config.get('notify.email.from', 'onboarding@resend.dev');
+        const graceSeconds = config.get('notify.email.graceSeconds', 60);
+        const cooldownSeconds = config.get('notify.email.cooldownSeconds', 600);
+        const notifyConfig = {
+            enabled: false,
+            graceSeconds,
+            cooldownSeconds,
+            to,
+            from,
+        };
+        const adapters = {
+            getSessionUrl: (role) => (0, sessionUrlCapture_1.getSessionUrl)(role),
+            getTicketBadge: (role) => {
+                const badge = (0, badgeSummary_1.buildBadgeMap)((0, backlogReader_1.readBacklog)(this.targetPath), this.targetPath)[role];
+                return badge ? { id: badge.id, summary: badge.summary } : null;
+            },
+            sendEmail: (message) => {
+                if (!this.resendApiKey) {
+                    return Promise.resolve({ success: false, error: 'Resend API key not configured' });
+                }
+                return (0, resendClient_1.sendResendEmail)(this.resendApiKey, message);
+            },
+            onSendResult: (role, result) => {
+                this.outputChannel.appendLine(result.success
+                    ? `Needs-human email sent for ${role}.`
+                    : `Needs-human email for ${role} failed: ${result.error}`);
+            },
+        };
+        this.emailNotifier = new needsHumanEmailNotifier_1.NeedsHumanEmailNotifier(notifyConfig, adapters);
+        (0, secrets_1.resolveResendApiKey)(this.secrets).then((key) => {
+            this.resendApiKey = key;
+            notifyConfig.enabled = Boolean(key && to);
+        });
     }
     startStagePoller() {
         if (this.stagePoller) {
@@ -204,6 +274,7 @@ class SwarmPanel {
             this.panel.webview.postMessage({ type: 'badgeUpdate', badges: (0, badgeSummary_1.buildBadgeMap)(backlogItems, this.targetPath) });
             this.panel.webview.postMessage({ type: 'transportHealth', health: (0, daemonHealth_1.readDaemonHealth)(this.targetPath) });
             this.postStuckEscalations();
+            this.emailNotifier?.sweep(Date.now());
         };
         poll();
         this.stagePoller = setInterval(poll, STAGE_POLL_INTERVAL_MS);

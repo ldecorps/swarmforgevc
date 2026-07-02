@@ -1,3 +1,21 @@
+const SNIPPET_MAX_LENGTH = 200;
+
+// Short quote of the detected prompt for the BL-073 email body: the last few
+// non-empty lines, trimmed and capped, so the human can recognize the
+// question without opening the tile.
+export function extractQuestionSnippet(paneText: string | null | undefined): string {
+  if (!paneText) return '';
+  const lines = paneText
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+  const snippet = lines.slice(-3).join(' ').trim();
+  if (snippet.length <= SNIPPET_MAX_LENGTH) {
+    return snippet;
+  }
+  return `${snippet.slice(0, SNIPPET_MAX_LENGTH - 1)}…`;
+}
+
 export function detectNeedsHuman(paneText: string | null | undefined): boolean {
   if (!paneText) return false;
 
