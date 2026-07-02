@@ -1,0 +1,92 @@
+id: BL-079
+title: BUG — dropped/holder-less ticket shows different holders on backlog row vs tile badge
+milestone: M3
+status: todo
+priority: 03
+assigned_to: coder
+
+description: |
+  DEFECT (human-reported, 2026-07-02): with BL-075's parcel dropped by the
+  cleaner (its handoff completed at 11:11 with no onward forward — no stage
+  held it anywhere), the BACKLOG row showed "cleaner" while the tile badge
+  showed the ticket on the CODER tile. Two surfaces, two different wrong
+  answers for the same ticket — violating the spirit of BL-072's
+  same-refresh agreement gate, which only pinned the holder-present and
+  holder-never-routed cases, not the "parcel vanished after a stage
+  completed it" case.
+
+  Likely mechanics (DIAGNOSE, don't assume): the backlog row's live-holder
+  resolution appears to treat a handoff found in a stage's
+  inbox/completed/ as evidence of holding (so the last stage to finish —
+  cleaner — still resolves as holder), while the tile badge path falls back
+  to the ticket's assigned_to (coder) when no live holder resolves
+  (BL-068/BL-053 assignee fallback). Verify at the resolver level and
+  record the actual root cause in the close.
+
+  What: define ONE semantics for a ticket whose parcel is in no stage's
+  inbox/new/ or inbox/in_process/, and apply it to BOTH surfaces from the
+  SAME resolver result:
+  - completed/ handoffs must NOT resolve as a current holder (completed
+    means the stage is done with it);
+  - an active ticket with no live holder shows BL-072's "queued" state on
+    the backlog row and NO role badge on any tile (assignee fallback must
+    not resurface a phantom holder on either surface);
+  - nice-to-have within scope: since "queued but previously in flight"
+    usually means a dropped parcel (this incident, and BL-074 before it),
+    style that state distinctly (e.g. the queued chip with a warning tint)
+    so a drop is visible within minutes instead of via user confusion.
+
+  Constraints: extend the shared resolver — do not fork per-surface logic
+  (BL-072's single-source gate stands); two-layer rule; no SwarmForge
+  changes. Preserve all shipped BL-068/BL-072 behavior for held and
+  never-routed tickets.
+
+  Scope: extension only — the shared holder resolver (badgeSummary.ts /
+  its BL-072 successor), swarmPanel wiring, webview render, plus tests.
+  Overlaps the badge/backlog surface: sequence after anything else touching
+  it (nothing in flight at spec time).
+
+acceptance: |
+  Feature: one truth for holder-less tickets on every surface
+
+  Background:
+    Given an active ticket whose YAML says assigned_to coder
+    And no stage inbox/new/ or inbox/in_process/ holds a parcel for it
+
+  # BL-079 holderless-agreement-01
+  Scenario: completed handoffs do not make a stage the holder
+    Given the cleaner's inbox/completed/ contains that ticket's handoff
+    When the panel renders
+    Then the backlog row does not show "cleaner"
+    And the row shows the queued state
+
+  # BL-079 holderless-agreement-02
+  Scenario: the assignee fallback does not resurface on tiles
+    When the panel renders tiles
+    Then no tile badge names that ticket
+    And the coder tile in particular shows no badge for it
+
+  # BL-079 holderless-agreement-03
+  Scenario: the reported incident state renders consistently
+    Given the recorded 2026-07-02 state (parcel completed at cleaner with
+      no onward forward, ticket active, assigned_to coder)
+    When the backlog row and tiles render in the same refresh
+    Then both surfaces derive from one resolver result
+    And the row shows queued and no tile shows a badge for the ticket
+
+  # BL-079 holderless-agreement-04
+  Scenario: held and never-routed tickets keep shipped behavior
+    Given one ticket whose parcel sits in a stage inbox
+    And one active ticket never routed anywhere
+    When the panel renders
+    Then the held ticket shows its holder on both surfaces (BL-068/072)
+    And the never-routed ticket shows queued (BL-072)
+
+  # Non-behavioral gate:
+  #  - Root cause of each surface's wrong answer diagnosed at the resolver
+  #    level and recorded in the close.
+  #  - Rendered-HTML assertions for BOTH surfaces in the incident-state test
+  #    (the BL-053/068 lesson).
+  #  - One shared resolver feeds both surfaces (extends BL-072's gate to the
+  #    holder-less case).
+  #  - BL-068/BL-072 suites stay green.
