@@ -84,12 +84,18 @@ const BOUNCE_DRAIN_POLL_INTERVAL_SECONDS = 5;
 const BOUNCE_DRAIN_TIMEOUT_SECONDS_DEFAULT = 900;
 const CONTEXT_CLEAR_POLL_INTERVAL_SECONDS = 15;
 const CONTEXT_CLEAR_SETTLE_WINDOW_SECONDS_DEFAULT = 120;
-// BL-080: short retry window for the activation re-attach check. A live
-// swarm is already up, so this only smooths a transient probe flake at
-// cold-start - unlike the launcher's own 120s timeout, which waits out an
-// actual swarm boot.
+// BL-080: short retry window for the activation re-attach check when no
+// swarm socket is on disk yet - this only smooths a transient probe flake,
+// not a real boot.
 const REATTACH_READY_TIMEOUT_MS = 3000;
 const REATTACH_READY_POLL_MS = 200;
+// BL-084: when a swarm socket already exists at activation, a genuine cold
+// start is under way (N tmux sessions each spawning a fresh `claude`), which
+// routinely exceeds the 3s flake-smoothing budget above. Match the
+// launcher's own readiness budget (launchSwarm's default readyTimeoutMs) so
+// a slow-but-real cold start still attaches automatically instead of
+// falling through to "previous run found, resume?".
+const REATTACH_COLD_START_TIMEOUT_MS = 120_000;
 let currentBounceWatcher = null;
 let currentChaserMonitor = null;
 let currentBounceDrainWatcher = null;
@@ -487,7 +493,15 @@ function activate(context) {
             // this is only smoothing a transient check, not waiting for a cold
             // boot) fixes the false negative without meaningfully delaying the
             // genuine cold-start case, where every retry still finds no socket.
-            (0, swarmLauncher_1.waitForSwarmReady)(targetPath, REATTACH_READY_TIMEOUT_MS, REATTACH_READY_POLL_MS).then((ready) => {
+            //
+            // BL-084: BL-080's flat 3s only covers that transient-flake case. A
+            // socket already present at activation means a real swarm cold start
+            // is in progress (8 tmux sessions each spawning a fresh `claude`),
+            // which routinely takes longer than 3s - so widen the wait budget to
+            // the launcher's own budget in that case, without penalizing the
+            // truly-empty (no socket) case.
+            const reattachTimeoutMs = (0, swarmLauncher_1.chooseReattachTimeoutMs)((0, tmuxClient_2.readTmuxSocket)(targetPath) !== undefined, REATTACH_COLD_START_TIMEOUT_MS, REATTACH_READY_TIMEOUT_MS);
+            (0, swarmLauncher_1.waitForSwarmReady)(targetPath, reattachTimeoutMs, REATTACH_READY_POLL_MS).then((ready) => {
                 if (ready) {
                     // Re-attach automatically: tiles reconnect to the live output
                     // streams without restarting any agent.
