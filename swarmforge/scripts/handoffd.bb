@@ -6,6 +6,7 @@
 (ns handoffd
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
+            [cheshire.core :as json]
             [clojure.java.io :as io]
             [clojure.string :as str]))
 
@@ -100,23 +101,21 @@
                          (.atZone (java.time.Instant/now) java.time.ZoneOffset/UTC))
                 ".jsonl")))
 
-(defn json-escape [s]
-  (-> (or s "")
-      (str/replace "\\" "\\\\")
-      (str/replace "\"" "\\\"")
-      (str/replace "\n" "\\n")))
-
 ;; Durable audit trail for BL-035 rule_proposal handoffs: one line per
 ;; delivered proposal, appended at delivery time (not the eventual
 ;; accept/reject outcome — the specifier's review is prompt/agent behavior,
-;; not scriptable code here).
+;; not scriptable code here). Uses cheshire (already a project dependency
+;; for this identical jsonl-audit-log pattern in salvage_lib.bb's
+;; log-event!) rather than hand-rolled escaping, which only escaped
+;; backslash/quote/newline and produced invalid JSON for any other control
+;; character (e.g. a literal tab) in a proposal's body or rationale.
 (defn append-rule-proposal! [headers]
   (let [file (rule-proposals-file)
-        line (str "{\"scope\":\"" (json-escape (get headers "scope")) "\","
-                  "\"body\":\"" (json-escape (get headers "body")) "\","
-                  "\"rationale\":\"" (json-escape (get headers "rationale")) "\","
-                  "\"proposer\":\"" (json-escape (get headers "from")) "\","
-                  "\"timestamp\":\"" (now) "\"}")]
+        line (json/generate-string {:scope (get headers "scope")
+                                     :body (get headers "body")
+                                     :rationale (get headers "rationale")
+                                     :proposer (get headers "from")
+                                     :timestamp (now)})]
     (fs/create-dirs (fs/parent file))
     (spit (str file) (str line "\n") :append true)))
 
