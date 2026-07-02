@@ -7,9 +7,12 @@ assigned_to: coder
 
 description: |
   What (user request, 2026-07-02): a little UI to monitor how the swarm works.
-  Add a collapsible METRICS section to the existing SwarmForge panel, alongside
-  RECENT RUNS and BACKLOG, showing three things (product decisions confirmed
-  with the human, recommended options accepted):
+  Add a METRICS pane to the existing SwarmForge panel as a THIRD FOLDABLE PANE
+  in the bottom row, sitting side by side with RECENT RUNS and BACKLOG (the
+  three share the row's width; METRICS folds/unfolds exactly like the other
+  two, and folding one must not break the layout of the others). It shows
+  three things (product decisions confirmed with the human, recommended
+  options accepted):
 
   1. Mean time to process a ticket — measured ACTIVE -> CLOSED: from the
      commit that moves a ticket file into backlog/active/ to the commit that
@@ -56,12 +59,22 @@ acceptance: |
     And agent worktrees contain completed and in-process handoff files
 
   # BL-071 swarm-metrics-01
-  Scenario: the panel shows a METRICS section with the three metric groups
+  Scenario: the panel shows a METRICS pane beside RECENT RUNS and BACKLOG
     When the panel renders
-    Then a collapsible METRICS section appears alongside RECENT RUNS and BACKLOG
+    Then a foldable METRICS pane appears in the bottom row
+    And the bottom row lays out RECENT RUNS, BACKLOG, and METRICS side by side
     And it shows mean ticket time with its sample count
     And it shows one busyness entry per configured role
     And it shows a total retry count
+
+  # BL-071 swarm-metrics-01b
+  Scenario: the METRICS pane folds like its siblings
+    Given the bottom row shows RECENT RUNS, BACKLOG, and METRICS
+    When the user folds the METRICS pane
+    Then its body collapses leaving only its header
+    And RECENT RUNS and BACKLOG keep their layout and remain usable
+    When the user unfolds it
+    Then the metrics content is shown again
 
   # BL-071 swarm-metrics-02
   Scenario: mean ticket time is derived from active -> done backlog history
