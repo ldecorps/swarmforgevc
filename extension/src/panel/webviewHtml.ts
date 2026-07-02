@@ -215,6 +215,14 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
     .tile.bl-active .tile-bl-badge {
       display: inline-block;
     }
+    .bl-milestone {
+      margin-left: 6px;
+      padding: 0 5px;
+      font-size: 10px;
+      border-radius: 3px;
+      background: var(--vscode-badge-background, #4d4d4d);
+      color: var(--vscode-badge-foreground, #fff);
+    }
     .tile.bl-highlighted {
       border-color: var(--vscode-focusBorder, #007fd4);
       box-shadow: 0 0 0 2px var(--vscode-focusBorder, #007fd4);
@@ -242,6 +250,26 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
       text-align: center;
       opacity: 0.7;
     }
+    /* Transport (handoffd) health marker: hidden while healthy, loud when
+       the delivery daemon is down (BL-061 — a dead transport must never be
+       silent). */
+    .transport-health {
+      display: none;
+      margin-left: 10px;
+      padding: 1px 8px;
+      border-radius: 3px;
+      font-weight: 600;
+    }
+    .transport-health.warn {
+      display: inline-block;
+      background: #d4a017;
+      color: #1e1e1e;
+    }
+    .transport-health.down {
+      display: inline-block;
+      background: #e53935;
+      color: #fff;
+    }
     .tile.stalled {
       border-color: #d4a017;
     }
@@ -249,13 +277,15 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
       border-color: #e53935;
     }
     /* Border-only pulse (BL-054): animating opacity would fade the tile's
-       text along with the border, so only border-color breathes. */
+       text along with the border, so only border-color breathes.
+       RED per BL-059 — asking-a-question is urgent. The BLINK is what
+       distinguishes it from the solid red border of a dead tile. */
     @keyframes needs-human-blink {
       0%, 100% {
-        border-color: #00a8e8;
+        border-color: #e53935;
       }
       50% {
-        border-color: rgba(0, 168, 232, 0.35);
+        border-color: rgba(229, 57, 53, 0.25);
       }
     }
     .tile.needs-human:not(.dead) {
@@ -429,6 +459,7 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
     <h1>SwarmForge</h1>
     <span class="status" id="status">Waiting for swarm...</span>
     <span class="stage" id="stage"></span>
+    <span class="transport-health" id="transport-health"></span>
     <button id="open-pr-btn" title="Open pull request for this swarm run">Open PR</button>
   </header>
   <div id="grid">

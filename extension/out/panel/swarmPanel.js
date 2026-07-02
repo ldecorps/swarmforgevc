@@ -38,6 +38,7 @@ const vscode = __importStar(require("vscode"));
 const tmuxClient_1 = require("../swarm/tmuxClient");
 const paneTailer_1 = require("./paneTailer");
 const swarmState_1 = require("../swarm/swarmState");
+const daemonHealth_1 = require("../swarm/daemonHealth");
 const runLog_1 = require("../runs/runLog");
 const webviewHtml_1 = require("./webviewHtml");
 const backlogReader_1 = require("./backlogReader");
@@ -199,6 +200,7 @@ class SwarmPanel {
             this.panel.webview.postMessage({ type: 'backlogUpdate', items: backlogItems });
             this.panel.webview.postMessage({ type: 'holderUpdate', holders: holderMap });
             this.panel.webview.postMessage({ type: 'badgeUpdate', badges: (0, badgeSummary_1.buildBadgeMap)(backlogItems, this.targetPath) });
+            this.panel.webview.postMessage({ type: 'transportHealth', health: (0, daemonHealth_1.readDaemonHealth)(this.targetPath) });
         };
         poll();
         this.stagePoller = setInterval(poll, STAGE_POLL_INTERVAL_MS);
