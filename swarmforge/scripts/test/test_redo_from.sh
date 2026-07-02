@@ -125,6 +125,39 @@ RAPID_TAGS="$(git -C "$ROOT" tag -l "redo/$ITEM/cleaner/*" | wc -l | tr -d ' ')"
 [[ "$RAPID_TAGS" -ge 3 ]] || fail "tag-collision: expected distinct tags per redo, found $RAPID_TAGS"
 pass "tag-collision: same-second redos produce distinct checkpoint tags"
 
+# ── HARDENING: force an actual `git tag` collision deterministically ────────
+# Millisecond-resolution timestamps make a real collision astronomically rare
+# in practice (verified: 20 truly parallel redo_from invocations never
+# produced two identical millisecond stamps), so the scenario above never
+# exercises the retry-with-suffix branch of tag-checkpoint! at all — it only
+# proves the happy path still works. A fake `git` that reports "already
+# exists" for the first tag attempt forces that branch to actually run.
+FAKE_BIN="$ROOT/fakebin"
+mkdir -p "$FAKE_BIN"
+COLLIDE_MARKER="$ROOT/tmp/collide-once"
+mkdir -p "$ROOT/tmp"
+REAL_GIT="$(command -v git)"
+cat > "$FAKE_BIN/git" <<EOF
+#!/usr/bin/env bash
+if [[ "\$1" == "tag" && ! -e "$COLLIDE_MARKER" ]]; then
+  touch "$COLLIDE_MARKER"
+  echo "fatal: tag '\$2' already exists" >&2
+  exit 128
+fi
+exec "$REAL_GIT" "\$@"
+EOF
+chmod +x "$FAKE_BIN/git"
+
+rm -f "$OUTBOX"/*.handoff
+OUT="$(cd "$ROOT" && PATH="$FAKE_BIN:$PATH" bb "$REDO" "$ITEM" cleaner)" \
+  || fail "tag-collision-forced: redo aborted instead of retrying past the collision"
+CHECKPOINT_TAG="$(grep '^CHECKPOINT: ' <<< "$OUT" | sed 's/^CHECKPOINT: //')"
+[[ -n "$(git -C "$ROOT" tag -l "$CHECKPOINT_TAG")" ]] \
+  || fail "tag-collision-forced: reported checkpoint tag was never actually created"
+[[ "$CHECKPOINT_TAG" == *-2 ]] \
+  || fail "tag-collision-forced: expected a -2 suffixed retry tag, got $CHECKPOINT_TAG"
+pass "tag-collision-forced: a real git-tag collision is retried with a suffix, not aborted"
+
 # ── 01 (outline sweep): every stage maps to a queueable recipient ────────────
 for stage in architect hardender documenter qa; do
   rm -f "$OUTBOX"/*.handoff
