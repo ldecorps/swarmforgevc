@@ -59,6 +59,9 @@ const tmuxClient_2 = require("./swarm/tmuxClient");
 const paneActivity_1 = require("./watchdog/paneActivity");
 const stuckEscalations_1 = require("./watchdog/stuckEscalations");
 const inboxChaser_1 = require("./swarm/inboxChaser");
+const needsHumanDetection_1 = require("./panel/needsHumanDetection");
+const humanInputTracker_1 = require("./swarm/humanInputTracker");
+const idleClear_1 = require("./swarm/idleClear");
 const bounceDrain_1 = require("./swarm/bounceDrain");
 const heartbeat_1 = require("./tools/heartbeat");
 const devActivationMarker_1 = require("./devActivationMarker");
@@ -77,10 +80,14 @@ const CHASER_MAX_CHASES = 3;
 const CHASER_STUCK_IN_PROCESS_TIMEOUT_SECONDS = 60;
 const BOUNCE_DRAIN_POLL_INTERVAL_SECONDS = 5;
 const BOUNCE_DRAIN_TIMEOUT_SECONDS_DEFAULT = 900;
+const CONTEXT_CLEAR_POLL_INTERVAL_SECONDS = 15;
+const CONTEXT_CLEAR_SETTLE_WINDOW_SECONDS_DEFAULT = 120;
 let currentBounceWatcher = null;
 let currentChaserMonitor = null;
 let currentBounceDrainWatcher = null;
 let currentGracefulBounceFileWatcher = null;
+let currentIdleClearMonitor = null;
+let idleClearOutputChannel;
 function generateDefaultRunName() {
     const now = new Date();
     const year = now.getFullYear();
@@ -230,6 +237,7 @@ function handleBounceResult(result, targetPath, context) {
         panel.updateTarget(targetPath);
     }
     startOrRestartChaserMonitor(targetPath, context);
+    startOrRestartIdleClearMonitor(targetPath, context);
     return true;
 }
 // BL-069: performs the real verified bounce (BL-058 path) for a graceful
@@ -341,6 +349,80 @@ function startOrRestartGracefulBounceFileWatcher(targetPath, context) {
         });
     }
 }
+// BL-076: sends "/clear" to a role's pane once it has been drained-idle
+// through a settle window (no work held or queued, no pending question, no
+// recent human keystroke, no output change), so the next parcel starts with
+// a fresh context window. Reuses BL-069's drain-idle primitives
+// (scanInProcess/scanInboxNew, buildRoleInboxes) and BL-067's pane-activity
+// tracking wherever they already fit, rather than re-deriving them.
+function startOrRestartIdleClearMonitor(targetPath, context) {
+    if (currentIdleClearMonitor) {
+        (0, idleClear_1.stopIdleClearMonitor)(currentIdleClearMonitor);
+        currentIdleClearMonitor = null;
+    }
+    const swarmforgeDir = path.join(targetPath, '.swarmforge');
+    if (!fs.existsSync(swarmforgeDir)) {
+        return;
+    }
+    const socketPath = (0, tmuxClient_2.readTmuxSocket)(targetPath);
+    if (!socketPath) {
+        return;
+    }
+    if (!idleClearOutputChannel) {
+        idleClearOutputChannel = vscode.window.createOutputChannel('SwarmForge: Context Clear');
+        context.subscriptions.push(idleClearOutputChannel);
+    }
+    const outputChannel = idleClearOutputChannel;
+    const config = vscode.workspace.getConfiguration('swarmforge');
+    const monitorConfig = {
+        enabled: config.get('contextClear.enabled', true),
+        settleWindowSeconds: config.get('contextClear.settleWindowSeconds', CONTEXT_CLEAR_SETTLE_WINDOW_SECONDS_DEFAULT),
+        pollIntervalSeconds: CONTEXT_CLEAR_POLL_INTERVAL_SECONDS,
+    };
+    const roles = (0, tmuxClient_2.readSwarmRoles)(targetPath);
+    const roleInboxes = (0, chaserMonitor_1.buildRoleInboxes)(targetPath, roles.map((r) => r.role));
+    const baseIndex = (0, tmuxClient_2.getPaneBaseIndex)(socketPath);
+    const paneTargetFor = (role) => {
+        const roleInfo = roles.find((r) => r.role === role);
+        return roleInfo ? (0, tmuxClient_2.paneTarget)(roleInfo.session, roleInfo.displayName, baseIndex) : null;
+    };
+    const getRoleStatuses = () => roleInboxes.map(({ role, inboxNewDir, inProcessDir }) => {
+        const target = paneTargetFor(role);
+        const capture = target ? (0, tmuxClient_2.capturePane)(socketPath, target, -50) : null;
+        const paneText = capture && capture.exitCode === 0 ? capture.stdout : '';
+        return {
+            role,
+            hasInProcessWork: (0, inboxChaser_1.scanInProcess)(inProcessDir).length > 0,
+            hasQueuedNew: (0, inboxChaser_1.scanInboxNew)(inboxNewDir).length > 0,
+            needsHumanPending: (0, needsHumanDetection_1.detectNeedsHuman)(paneText) || (0, stuckEscalations_1.escalatedStuckRoles)().includes(role),
+            drainInProgress: (0, bounceDrain_1.readBounceDrainState)(targetPath) !== null,
+            lastHumanInputMs: (0, humanInputTracker_1.lastHumanInputMs)(role),
+            lastActivityMs: (0, paneActivity_1.trackPaneActivity)(role, paneText, (0, paneActivity_1.outboxNewestMtimeMs)(targetPath, role), Date.now()),
+        };
+    });
+    currentIdleClearMonitor = (0, idleClear_1.startIdleClearMonitor)(monitorConfig, {
+        getRoleStatuses,
+        sendClear: (role) => {
+            const target = paneTargetFor(role);
+            if (!target) {
+                return;
+            }
+            (0, tmuxClient_2.sendKeys)(socketPath, target, '/clear', true);
+            (0, tmuxClient_2.sendKeys)(socketPath, target, 'Enter');
+        },
+        log: (message) => {
+            outputChannel.appendLine(message);
+        },
+    });
+    context.subscriptions.push({
+        dispose: () => {
+            if (currentIdleClearMonitor) {
+                (0, idleClear_1.stopIdleClearMonitor)(currentIdleClearMonitor);
+                currentIdleClearMonitor = null;
+            }
+        },
+    });
+}
 async function resolveTargetPath(context) {
     let targetPath = (0, targetConfig_1.getTargetPath)();
     if (!targetPath) {
@@ -376,6 +458,7 @@ function activate(context) {
         startOrRestartBounceWatcher(context, targetPath);
         startOrRestartChaserMonitor(targetPath, context);
         startOrRestartGracefulBounceFileWatcher(targetPath, context);
+        startOrRestartIdleClearMonitor(targetPath, context);
         // BL-066: a live swarm runs under tmux, independent of the extension
         // host — an editor reload never touches it. Skip when a deliberate
         // auto-launch is already pending below (BL-057's bounceAll flow), so
@@ -415,6 +498,7 @@ function activate(context) {
                     panel.updateTarget(targetPath);
                     // Start chaser monitor after swarm is launched
                     startOrRestartChaserMonitor(targetPath, context);
+                    startOrRestartIdleClearMonitor(targetPath, context);
                 }
                 else {
                     vscode.window.showErrorMessage(result.message);
@@ -443,6 +527,7 @@ function activate(context) {
             startOrRestartBounceWatcher(context, newTargetPath);
             startOrRestartChaserMonitor(newTargetPath, context);
             startOrRestartGracefulBounceFileWatcher(newTargetPath, context);
+            startOrRestartIdleClearMonitor(newTargetPath, context);
         }
     }), vscode.commands.registerCommand('swarmforge.initializeTarget', async () => {
         const targetPath = await resolveTargetPath(context);
@@ -506,6 +591,7 @@ function activate(context) {
             panel.notifyDogfoodCheckpoint();
             // Start chaser monitor after swarm is launched
             startOrRestartChaserMonitor(targetPath, context);
+            startOrRestartIdleClearMonitor(targetPath, context);
         });
     }), vscode.commands.registerCommand('swarmforge.openPanel', async () => {
         const targetPath = (0, targetConfig_1.getTargetPath)();

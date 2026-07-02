@@ -21,8 +21,15 @@ import { startChaserMonitor, stopChaserMonitor, buildRoleInboxes } from './watch
 import type { ChaserMonitorConfig, ChaserCallbacks } from './watchdog/chaserMonitor';
 import { readTmuxSocket, paneTarget, getPaneBaseIndex, sendKeys, capturePane, readSwarmRoles, respawnAgent } from './swarm/tmuxClient';
 import { trackPaneActivity, outboxNewestMtimeMs } from './watchdog/paneActivity';
-import { setStuckEscalation } from './watchdog/stuckEscalations';
-import { scanInProcess } from './swarm/inboxChaser';
+import { setStuckEscalation, escalatedStuckRoles } from './watchdog/stuckEscalations';
+import { scanInProcess, scanInboxNew } from './swarm/inboxChaser';
+import { detectNeedsHuman } from './panel/needsHumanDetection';
+import { lastHumanInputMs } from './swarm/humanInputTracker';
+import {
+  startIdleClearMonitor,
+  stopIdleClearMonitor,
+} from './swarm/idleClear';
+import type { IdleClearMonitorConfig, RoleIdleStatus } from './swarm/idleClear';
 import {
   startBounceDrain,
   readBounceDrainState,
@@ -52,6 +59,8 @@ const CHASER_MAX_CHASES = 3;
 const CHASER_STUCK_IN_PROCESS_TIMEOUT_SECONDS = 60;
 const BOUNCE_DRAIN_POLL_INTERVAL_SECONDS = 5;
 const BOUNCE_DRAIN_TIMEOUT_SECONDS_DEFAULT = 900;
+const CONTEXT_CLEAR_POLL_INTERVAL_SECONDS = 15;
+const CONTEXT_CLEAR_SETTLE_WINDOW_SECONDS_DEFAULT = 120;
 
 type RunMode = 'one-shot' | 'drain';
 
@@ -59,6 +68,8 @@ let currentBounceWatcher: fs.FSWatcher | null = null;
 let currentChaserMonitor: NodeJS.Timeout | null = null;
 let currentBounceDrainWatcher: NodeJS.Timeout | null = null;
 let currentGracefulBounceFileWatcher: fs.FSWatcher | null = null;
+let currentIdleClearMonitor: NodeJS.Timeout | null = null;
+let idleClearOutputChannel: vscode.OutputChannel | undefined;
 
 function generateDefaultRunName(): string {
   const now = new Date();
@@ -236,6 +247,7 @@ function handleBounceResult(
     panel.updateTarget(targetPath);
   }
   startOrRestartChaserMonitor(targetPath, context);
+  startOrRestartIdleClearMonitor(targetPath, context);
   return true;
 }
 
@@ -391,6 +403,94 @@ function startOrRestartGracefulBounceFileWatcher(
   }
 }
 
+// BL-076: sends "/clear" to a role's pane once it has been drained-idle
+// through a settle window (no work held or queued, no pending question, no
+// recent human keystroke, no output change), so the next parcel starts with
+// a fresh context window. Reuses BL-069's drain-idle primitives
+// (scanInProcess/scanInboxNew, buildRoleInboxes) and BL-067's pane-activity
+// tracking wherever they already fit, rather than re-deriving them.
+function startOrRestartIdleClearMonitor(targetPath: string, context: vscode.ExtensionContext): void {
+  if (currentIdleClearMonitor) {
+    stopIdleClearMonitor(currentIdleClearMonitor);
+    currentIdleClearMonitor = null;
+  }
+
+  const swarmforgeDir = path.join(targetPath, '.swarmforge');
+  if (!fs.existsSync(swarmforgeDir)) {
+    return;
+  }
+
+  const socketPath = readTmuxSocket(targetPath);
+  if (!socketPath) {
+    return;
+  }
+
+  if (!idleClearOutputChannel) {
+    idleClearOutputChannel = vscode.window.createOutputChannel('SwarmForge: Context Clear');
+    context.subscriptions.push(idleClearOutputChannel);
+  }
+  const outputChannel = idleClearOutputChannel;
+
+  const config = vscode.workspace.getConfiguration('swarmforge');
+  const monitorConfig: IdleClearMonitorConfig = {
+    enabled: config.get<boolean>('contextClear.enabled', true),
+    settleWindowSeconds: config.get<number>(
+      'contextClear.settleWindowSeconds',
+      CONTEXT_CLEAR_SETTLE_WINDOW_SECONDS_DEFAULT
+    ),
+    pollIntervalSeconds: CONTEXT_CLEAR_POLL_INTERVAL_SECONDS,
+  };
+
+  const roles = readSwarmRoles(targetPath);
+  const roleInboxes = buildRoleInboxes(targetPath, roles.map((r) => r.role));
+  const baseIndex = getPaneBaseIndex(socketPath);
+
+  const paneTargetFor = (role: string): string | null => {
+    const roleInfo = roles.find((r) => r.role === role);
+    return roleInfo ? paneTarget(roleInfo.session, roleInfo.displayName, baseIndex) : null;
+  };
+
+  const getRoleStatuses = (): RoleIdleStatus[] =>
+    roleInboxes.map(({ role, inboxNewDir, inProcessDir }) => {
+      const target = paneTargetFor(role);
+      const capture = target ? capturePane(socketPath, target, -50) : null;
+      const paneText = capture && capture.exitCode === 0 ? capture.stdout : '';
+      return {
+        role,
+        hasInProcessWork: scanInProcess(inProcessDir).length > 0,
+        hasQueuedNew: scanInboxNew(inboxNewDir).length > 0,
+        needsHumanPending: detectNeedsHuman(paneText) || escalatedStuckRoles().includes(role),
+        drainInProgress: readBounceDrainState(targetPath) !== null,
+        lastHumanInputMs: lastHumanInputMs(role),
+        lastActivityMs: trackPaneActivity(role, paneText, outboxNewestMtimeMs(targetPath, role), Date.now()),
+      };
+    });
+
+  currentIdleClearMonitor = startIdleClearMonitor(monitorConfig, {
+    getRoleStatuses,
+    sendClear: (role: string): void => {
+      const target = paneTargetFor(role);
+      if (!target) {
+        return;
+      }
+      sendKeys(socketPath, target, '/clear', true);
+      sendKeys(socketPath, target, 'Enter');
+    },
+    log: (message: string): void => {
+      outputChannel.appendLine(message);
+    },
+  });
+
+  context.subscriptions.push({
+    dispose: () => {
+      if (currentIdleClearMonitor) {
+        stopIdleClearMonitor(currentIdleClearMonitor);
+        currentIdleClearMonitor = null;
+      }
+    },
+  });
+}
+
 async function resolveTargetPath(context: vscode.ExtensionContext): Promise<string | undefined> {
   let targetPath = getTargetPath();
   if (!targetPath) {
@@ -440,6 +540,7 @@ export function activate(context: vscode.ExtensionContext): void {
     startOrRestartBounceWatcher(context, targetPath);
     startOrRestartChaserMonitor(targetPath, context);
     startOrRestartGracefulBounceFileWatcher(targetPath, context);
+    startOrRestartIdleClearMonitor(targetPath, context);
 
     // BL-066: a live swarm runs under tmux, independent of the extension
     // host — an editor reload never touches it. Skip when a deliberate
@@ -496,6 +597,7 @@ export function activate(context: vscode.ExtensionContext): void {
           panel.updateTarget(targetPath);
           // Start chaser monitor after swarm is launched
           startOrRestartChaserMonitor(targetPath, context);
+          startOrRestartIdleClearMonitor(targetPath, context);
         } else {
           vscode.window.showErrorMessage(result.message);
         }
@@ -530,6 +632,7 @@ export function activate(context: vscode.ExtensionContext): void {
         startOrRestartBounceWatcher(context, newTargetPath);
         startOrRestartChaserMonitor(newTargetPath, context);
         startOrRestartGracefulBounceFileWatcher(newTargetPath, context);
+        startOrRestartIdleClearMonitor(newTargetPath, context);
       }
     }),
 
@@ -616,6 +719,7 @@ export function activate(context: vscode.ExtensionContext): void {
           panel.notifyDogfoodCheckpoint();
           // Start chaser monitor after swarm is launched
           startOrRestartChaserMonitor(targetPath!, context);
+          startOrRestartIdleClearMonitor(targetPath!, context);
         }
       );
     }),
