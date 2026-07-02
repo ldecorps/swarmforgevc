@@ -93,6 +93,22 @@ backlogToggleBtn.addEventListener('click', () => {
   backlogToggleBtn.textContent = backlogEl.classList.contains('collapsed') ? '▸' : '▾';
 });
 
+// BL-034: delegated on the stable list container, not per-row, since
+// renderBacklog replaces backlogListEl's innerHTML on every poll.
+backlogListEl.addEventListener('click', (event) => {
+  const button = event.target.closest('.bl-mark-done');
+  if (button) {
+    vscode.postMessage({ type: 'markBacklogDone', id: button.dataset.id });
+  }
+});
+
+backlogListEl.addEventListener('change', (event) => {
+  const select = event.target.closest('.bl-assignee-select');
+  if (select) {
+    vscode.postMessage({ type: 'setBacklogAssignee', id: select.dataset.id, assignedTo: select.value });
+  }
+});
+
 function renderRecentRuns(runs) {
   if (!runs || runs.length === 0) {
     recentRunsEl.style.display = 'none';
@@ -115,6 +131,7 @@ function renderRecentRuns(runs) {
 
 function backlogRowHtml(item) {
   let assignedDisplay = '';
+  let controls = '';
   if (item.status === 'done') {
     // Done rows show their milestone (the done/ subfolder they live in).
     assignedDisplay = item.milestone ? '<span class="bl-milestone">' + item.milestone + '</span>' : '';
@@ -127,6 +144,15 @@ function backlogRowHtml(item) {
     // the parcel.
     const holder = holderMap[item.id] || 'queued';
     assignedDisplay = '<span class="bl-assigned">' + holder + '</span>';
+    // BL-034: field-level panel -> disk writes. assigned_to here is the
+    // static YAML field (separate from the live holder above), and marking
+    // done is a folder move the host performs; both go through the
+    // extension host, never touching the filesystem from the webview.
+    const assigneeOptions = [...tiles.keys()].map((role) =>
+      '<option value="' + role + '"' + (role === item.assignedTo ? ' selected' : '') + '>' + role + '</option>'
+    ).join('');
+    controls = '<select class="bl-assignee-select" data-id="' + item.id + '">' + assigneeOptions + '</select>' +
+      '<button class="bl-mark-done" data-id="' + item.id + '">Done</button>';
   } else if (item.assignedTo) {
     // For todo items, show the intended assignee
     assignedDisplay = '<span class="bl-assigned">' + item.assignedTo + '</span>';
@@ -134,7 +160,7 @@ function backlogRowHtml(item) {
   return '<div class="backlog-row">' +
     '<span class="bl-id">' + item.id + '</span>' +
     '<span class="bl-title">' + item.title + '</span>' +
-    assignedDisplay + '</div>';
+    assignedDisplay + controls + '</div>';
 }
 
 function filterByStatus(items, status) {
