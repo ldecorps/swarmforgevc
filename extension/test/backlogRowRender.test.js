@@ -4,12 +4,14 @@ const { extractFunctionFromCode, loadPanelSource } = require('./helpers/extractP
 
 // Exercises the real panel.js backlogRowHtml (not a hand-copied restatement
 // of its logic — see extractPanelFunction.js for why that drifts silently).
-// backlogRowHtml reads the module-level `holderMap` as a free variable; the
-// Function constructor closes over the global scope, so we stub it there.
+// backlogRowHtml reads the module-level `holderMap` and (for active items,
+// BL-034's assignee select) `tiles` as free variables; the Function
+// constructor closes over the global scope, so we stub them there.
 const backlogRowHtml = extractFunctionFromCode(loadPanelSource(), 'backlogRowHtml');
 
 test('backlogRowHtml includes id, title, and assigned for todo items', () => {
   global.holderMap = {};
+  global.tiles = new Map();
   const item = { id: 'BL-001', title: 'Test item', status: 'todo', assignedTo: 'coder' };
   const html = backlogRowHtml(item);
   assert.match(html, /bl-id/);
@@ -27,6 +29,7 @@ test('backlogRowHtml omits assigned span when assignedTo is missing', () => {
 
 test('backlogRowHtml shows the live holder for active items, not the static assignedTo', () => {
   global.holderMap = { 'BL-001': 'coder' };
+  global.tiles = new Map([['coder', {}], ['cleaner', {}]]);
   const item = { id: 'BL-001', title: 'Test item', status: 'active', assignedTo: 'architect' };
   const html = backlogRowHtml(item);
   assert.match(html, /bl-assigned/);
@@ -36,6 +39,7 @@ test('backlogRowHtml shows the live holder for active items, not the static assi
 
 test('backlogRowHtml shows "queued" for active items with no live holder, never the static assignedTo (BL-072)', () => {
   global.holderMap = {};
+  global.tiles = new Map([['coder', {}]]);
   const item = { id: 'BL-001', title: 'Test item', status: 'active', assignedTo: 'architect' };
   const html = backlogRowHtml(item);
   assert.match(html, /bl-assigned/);
