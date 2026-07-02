@@ -186,6 +186,57 @@ Respawn preserves the agent's worktree and branch state — only the running pro
 | **pack selector** | Dropdown: forge analyzes the target and suggests a pack (2 / 4 / 7); user confirms or overrides |
 | **▶ Run** | Triggers the swarm run |
 | **⏹ Stop** | Signals the coordinator to stand down, then the orchestrator terminates all agent processes (coordinator last) |
+| **Start Bridge** | Starts a local read-only HTTP server that projects swarm state via JSON endpoints and a real-time SSE event stream (opt-in; requires a running swarm) |
+| **Stop Bridge** | Stops the bridge server |
+
+### Read-Only Bridge (Phase 1)
+
+The bridge is an **opt-in local HTTP server** that exposes the same on-disk swarm state the extension reads, via JSON endpoints and a real-time event stream. It is read-only, stateless, and localhost-only in this phase.
+
+**When to use it:** Expose swarm state to a monitoring tool, script, or browser client running on your development machine. Later phases will add remote (off-LAN) access and control endpoints.
+
+**Starting the bridge:**
+- Run the VS Code command **SwarmForge: Start Bridge** (`swarmforge.startBridge`)
+- The extension generates a one-time bearer token and starts the server on a localhost port (e.g. `http://127.0.0.1:9999`)
+- The token is shown in an info message; save it for API requests
+
+**Stopping the bridge:**
+- Run the VS Code command **SwarmForge: Stop Bridge** (`swarmforge.stopBridge`)
+- Or terminate the extension; the bridge shuts down automatically
+
+**Security:**
+- Every request requires a valid bearer token in the `Authorization` header: `Authorization: Bearer <token>`
+- The token is generated per run and held only in the extension host environment — it never appears in the target repo or any commit
+- Requests without a valid token receive a 401 Unauthorized response with no state disclosed
+- The bridge listens on 127.0.0.1 only; it is not accessible over the network
+
+**Available endpoints (Phase 1):**
+
+| Endpoint | Response | Purpose |
+|---|---|---|
+| `GET /api/pipeline` | JSON: current stage per active parcel | Which role holds each ticket |
+| `GET /api/agents` | JSON: per-agent status + heartbeat | Liveness, stall detection, "needs human" states |
+| `GET /api/backlog` | JSON: active/paused/done items | Backlog folders and ticket metadata |
+| `GET /api/runlog` | JSON: timeline of stage transitions and key events | Run history and audit trail |
+| `GET /events` | Server-Sent Events (SSE) stream | Real-time updates when stage or agent state changes |
+
+**Example usage (cURL):**
+
+```bash
+# Start the bridge and save the token
+TOKEN=$(grep "token:" ~/.swarmforge/current_run.env | cut -d' ' -f2)
+
+# Query pipeline state
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9999/api/pipeline
+
+# Subscribe to the event stream
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9999/events
+```
+
+**Stateless design:**
+- The bridge holds no state; it is a pure projection of `.swarmforge/` and `backlog/` directories
+- If the bridge dies or you stop it, the swarm continues unaffected
+- Restarting the bridge serves current state again; no data is lost
 
 ### Backlog Pane
 
