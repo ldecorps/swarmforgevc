@@ -1,5 +1,7 @@
 # SwarmForge VS Code Extension — Milestone Roadmap
 
+**Last Updated:** July 2, 2026
+
 A phased plan from a true MVP to the full spec. The guiding principle: **each milestone is independently useful and shippable** — you could stop after any one and have something worth running. Later milestones add reach, reliability, and intelligence, but the core value (drive a disciplined swarm from VS Code, get a reviewable PR) lands in the MVP.
 
 The slicing follows the spec's own seams: the filesystem is the source of truth, the swarm runs as orchestrator-spawned agent processes (the extension is a **standalone orchestrator**, not a driver of SwarmForge or tmux), and everything else is a projection or a control surface over that. So the MVP is "a good window onto a swarm the extension itself runs," and each later milestone is an additive layer that doesn't re-architect what came before.
