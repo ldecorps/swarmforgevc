@@ -1,7 +1,7 @@
 id: BL-068
 title: BUG — tile headers show no ticket IDs in the live dev host (BL-053 regressed again)
 milestone: M3
-status: todo
+status: done
 priority: 02
 assigned_to: coder
 
