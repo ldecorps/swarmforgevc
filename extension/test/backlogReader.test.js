@@ -115,6 +115,77 @@ test('readBacklog reads items from done directory', () => {
   assert.equal(items[0].status, 'done');
 });
 
+// --- BL-062: done/ is grouped into per-milestone subfolders ---
+
+test('readBacklog reads done items one level deep in milestone subfolders', () => {
+  const tmp = mkTmp();
+  const m2 = path.join(tmp, 'backlog', 'done', 'M2');
+  mkdirp(m2);
+  fs.writeFileSync(path.join(m2, 'BL-010.yaml'), 'id: BL-010\ntitle: Old item\nstatus: todo\n');
+  const items = readBacklog(tmp);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].id, 'BL-010');
+  assert.equal(items[0].status, 'done');
+});
+
+test('readBacklog surfaces the subfolder slug as the done item milestone', () => {
+  const tmp = mkTmp();
+  // subfolder names are opaque slugs, not bare M-numbers; the folder is
+  // canonical even when the yaml disagrees
+  const m4 = path.join(tmp, 'backlog', 'done', 'M4-governance-backlog-sync');
+  mkdirp(m4);
+  fs.writeFileSync(path.join(m4, 'BL-011.yaml'), 'id: BL-011\ntitle: Moved item\nstatus: done\nmilestone: M1\n');
+  const items = readBacklog(tmp);
+  assert.equal(items[0].milestone, 'M4-governance-backlog-sync');
+});
+
+test('flat done files keep their yaml milestone field', () => {
+  const tmp = mkTmp();
+  const doneDir = path.join(tmp, 'backlog', 'done');
+  mkdirp(doneDir);
+  fs.writeFileSync(path.join(doneDir, 'BL-015.yaml'), 'id: BL-015\ntitle: Flat\nstatus: done\nmilestone: M2\n');
+  const items = readBacklog(tmp);
+  assert.equal(items[0].milestone, 'M2');
+});
+
+test('readBacklog still reads flat done files during the transition', () => {
+  const tmp = mkTmp();
+  const doneDir = path.join(tmp, 'backlog', 'done');
+  mkdirp(path.join(doneDir, 'M1'));
+  fs.writeFileSync(path.join(doneDir, 'BL-012.yaml'), 'id: BL-012\ntitle: Flat done\nstatus: done\n');
+  fs.writeFileSync(path.join(doneDir, 'M1', 'BL-013.yaml'), 'id: BL-013\ntitle: Grouped done\nstatus: done\n');
+  const items = readBacklog(tmp);
+  assert.deepEqual(items.map((i) => i.id).sort(), ['BL-012', 'BL-013']);
+  assert.ok(items.every((i) => i.status === 'done'));
+});
+
+test('readBacklog ignores non-yaml entries and two-level-deep yamls under done/', () => {
+  const tmp = mkTmp();
+  const m3 = path.join(tmp, 'backlog', 'done', 'M3');
+  mkdirp(path.join(m3, 'nested'));
+  fs.writeFileSync(path.join(m3, 'README.md'), '# notes');
+  fs.writeFileSync(path.join(m3, 'nested', 'BL-014.yaml'), 'id: BL-014\ntitle: Too deep\nstatus: done\n');
+  const items = readBacklog(tmp);
+  assert.equal(items.length, 0);
+});
+
+test('dependency gating counts a subfoldered done ticket as satisfied', () => {
+  const { nextEligibleItem } = require('../out/swarm/backlogLoop');
+  const tmp = mkTmp();
+  const m3 = path.join(tmp, 'backlog', 'done', 'M3');
+  const activeDir = path.join(tmp, 'backlog', 'active');
+  mkdirp(m3);
+  mkdirp(activeDir);
+  fs.writeFileSync(path.join(m3, 'BL-020.yaml'), 'id: BL-020\ntitle: Done dep\nstatus: done\n');
+  fs.writeFileSync(
+    path.join(activeDir, 'BL-021.yaml'),
+    'id: BL-021\ntitle: Blocked until dep done\nstatus: active\ndepends_on:\n  - BL-020\n'
+  );
+  const next = nextEligibleItem(readBacklog(tmp));
+  assert.ok(next, 'the dependent item must be eligible once its dep is done in a subfolder');
+  assert.equal(next.id, 'BL-021');
+});
+
 test('readBacklog reads items from both active and done directories', () => {
   const tmp = mkTmp();
   mkdirp(path.join(tmp, 'backlog', 'active'));

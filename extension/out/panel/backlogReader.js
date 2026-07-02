@@ -108,12 +108,34 @@ function readYamlFiles(dir, overrideStatus) {
     });
 }
 const MAX_PRIORITY = Number.MAX_SAFE_INTEGER;
+// Done tickets are grouped into per-milestone subfolders
+// (backlog/done/<milestone>/*.yaml); flat files are still accepted during the
+// transition. One level of subfolders is the contract — deeper nesting is
+// ignored. The subfolder name is canonical for the item's milestone.
+function readDoneItems(doneDir) {
+    const flatItems = readYamlFiles(doneDir, 'done');
+    let subdirs;
+    try {
+        subdirs = fs
+            .readdirSync(doneDir, { withFileTypes: true })
+            .filter((entry) => entry.isDirectory())
+            .map((entry) => entry.name);
+    }
+    catch {
+        return flatItems;
+    }
+    const groupedItems = subdirs.flatMap((milestone) => readYamlFiles(path.join(doneDir, milestone), 'done').map((item) => ({
+        ...item,
+        milestone,
+    })));
+    return [...flatItems, ...groupedItems];
+}
 function readBacklog(targetPath) {
     // The folder is authoritative: the pipeline moves files between backlog
     // folders without touching the yaml status field, so a promoted item may
     // still say "status: todo".
     const activeItems = readYamlFiles(path.join(targetPath, 'backlog', 'active'), 'active');
-    const doneItems = readYamlFiles(path.join(targetPath, 'backlog', 'done'), 'done');
+    const doneItems = readDoneItems(path.join(targetPath, 'backlog', 'done'));
     activeItems.sort((a, b) => (a.priority ?? MAX_PRIORITY) - (b.priority ?? MAX_PRIORITY));
     return [...activeItems, ...doneItems];
 }

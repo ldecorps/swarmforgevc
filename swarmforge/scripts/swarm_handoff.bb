@@ -22,7 +22,7 @@
        "message: <one line, max 80 chars>"))
 
 (def reserved-fields #{"id" "from" "role" "recipient" "created_at" "enqueued_at" "dequeued_at" "completed_at"})
-(def allowed-fields #{"type" "to" "priority" "task" "commit" "message"})
+(def allowed-fields #{"type" "to" "priority" "task" "commit" "message" "rejection_reason"})
 (def allowed-types #{"awake" "git_handoff" "note"})
 
 (defn usage []
@@ -196,10 +196,14 @@
                                           ["git_handoff" "priority"] true
                                           ["git_handoff" "task"] true
                                           ["git_handoff" "commit"] true
+                                          ;; rejection handoffs (e.g. QA bouncing a parcel) carry the
+                                          ;; reason so redo_from can capture it in the redo log (BL-036)
+                                          ["git_handoff" "rejection_reason"] true
                                           ["note" "type"] true
                                           ["note" "to"] true
                                           ["note" "priority"] true
                                           ["note" "message"] true
+                                          ["note" "rejection_reason"] true
                                           false)]
                            :when (and type (not valid?))]
                        (format "Header '%s' is not allowed for type '%s'." field type))
@@ -304,6 +308,8 @@
                       (str "commit: " canonical-commit))
                 (= "note" type)
                 (conj (str "message: " (get headers "message")))
+                (get headers "rejection_reason")
+                (conj (str "rejection_reason: " (get headers "rejection_reason")))
                 true
                 (conj (str "created_at: " created-at)
                       ""

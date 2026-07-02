@@ -1,9 +1,12 @@
 #!/usr/bin/env bb
 
+;; Subprocess calls use babashka.process, NOT clojure.java.shell: bb's
+;; clojure.java.shell shim can deadlock reading subprocess streams (observed
+;; hanging notify! mid-delivery and silently stalling the whole swarm, BL-061).
 (ns handoffd
   (:require [babashka.fs :as fs]
+            [babashka.process :as process]
             [clojure.java.io :as io]
-            [clojure.java.shell :refer [sh]]
             [clojure.string :as str]))
 
 (def poll-ms 1000)
@@ -25,6 +28,8 @@
 (def pid-file (fs/path daemon-dir "handoffd.pid"))
 (def stop-file (fs/path daemon-dir "stop"))
 (def log-file (fs/path daemon-dir "handoffd.log"))
+(def heartbeat-file (fs/path daemon-dir "handoffd.heartbeat"))
+(def heartbeat-log-every-cycles 60)
 (def stopping? (atom false))
 
 (defn now []
@@ -101,12 +106,15 @@
            ".swarmforge" "handoffs" "inbox" "new"
            (delivered-filename filename recipient)))
 
+(defn tmux! [& args]
+  (apply process/sh "tmux" args))
+
 (defn notify! [socket session]
-  (let [send-text (sh "tmux" "-S" socket "send-keys" "-t" session "-l" wake-message)
+  (let [send-text (tmux! "-S" socket "send-keys" "-t" session "-l" wake-message)
         _ (Thread/sleep 150)
-        send-carriage-return (sh "tmux" "-S" socket "send-keys" "-t" session "C-m")
+        send-carriage-return (tmux! "-S" socket "send-keys" "-t" session "C-m")
         _ (Thread/sleep 50)
-        send-line-feed (sh "tmux" "-S" socket "send-keys" "-t" session "C-j")]
+        send-line-feed (tmux! "-S" socket "send-keys" "-t" session "C-j")]
     (when-not (zero? (:exit send-text))
       (throw (ex-info "tmux send text failed" send-text)))
     (when-not (zero? (:exit send-carriage-return))
@@ -213,9 +221,17 @@
         (log! "started")
         (try
           (startup-notify-pending! roles socket)
-          (while (and (not @stopping?) (not (fs/exists? stop-file)))
-            (poll-once!)
-            (Thread/sleep poll-ms))
+          ;; The heartbeat file (every cycle) and log line (periodic) let the
+          ;; supervisor detect a hung daemon and a post-mortem see liveness up
+          ;; to the moment of death (BL-061).
+          (loop [cycle 0]
+            (when (and (not @stopping?) (not (fs/exists? stop-file)))
+              (poll-once!)
+              (spit (str heartbeat-file) (str (now) "\n"))
+              (when (zero? (mod cycle heartbeat-log-every-cycles))
+                (log! "heartbeat" (str "cycle=" cycle)))
+              (Thread/sleep poll-ms)
+              (recur (inc cycle))))
           (finally
             (fs/delete-if-exists pid-file)
             (log! "stopped")))))))

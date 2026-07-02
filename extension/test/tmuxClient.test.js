@@ -15,6 +15,7 @@ const {
   readSwarmRoles,
   respawnAgent,
 } = require('../out/swarm/tmuxClient');
+const { installExecutable } = require('./helpers/sharedBin');
 
 const { installFakeTmux } = require('./helpers/fakeTmux');
 
@@ -226,8 +227,7 @@ test('respawnAgent returns success when the launch script exits 0', () => {
   const launchDir = path.join(tmp, '.swarmforge', 'launch');
   fs.mkdirSync(launchDir, { recursive: true });
   const script = path.join(launchDir, 'coder.sh');
-  fs.writeFileSync(script, '#!/bin/bash\nexit 0\n');
-  fs.chmodSync(script, 0o755);
+  installExecutable(script, '#!/bin/bash\nexit 0\n');
 
   const result = respawnAgent(tmp, 'coder');
   assert.equal(result.success, true);
@@ -239,8 +239,7 @@ test('respawnAgent returns failure with stderr when the launch script exits non-
   const launchDir = path.join(tmp, '.swarmforge', 'launch');
   fs.mkdirSync(launchDir, { recursive: true });
   const script = path.join(launchDir, 'coder.sh');
-  fs.writeFileSync(script, '#!/bin/bash\necho "boom" >&2\nexit 1\n');
-  fs.chmodSync(script, 0o755);
+  installExecutable(script, '#!/bin/bash\necho "boom" >&2\nexit 1\n');
 
   const result = respawnAgent(tmp, 'coder');
   assert.equal(result.success, false);
