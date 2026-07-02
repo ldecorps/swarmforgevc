@@ -1,0 +1,111 @@
+id: BL-076
+title: host sends /clear to drained-idle agents — prevent context exhaustion between parcels
+milestone: M4
+status: todo
+priority: 08
+assigned_to: coder
+
+description: |
+  What (user request, 2026-07-02): when an agent is truly idle between
+  parcels, the extension host types "/clear" into its pane so the next parcel
+  starts with a fresh context window. Context exhaustion is a recurring real
+  failure (coder hit 97% and forced a whole-swarm respawn; bloat implicated
+  in the BL-067 overnight stall). The protocol is already context-free
+  between parcels (every handoff says re-read role+constitution; durable
+  state lives in backlog/handoff/memory files), so clearing at the right
+  moment costs nothing and buys headroom.
+
+  Trigger — IDLE, not per-handoff (design decision agreed with the human):
+  clearing after each handoff would sever batches mid-stream, pay the
+  role/constitution re-read cost on every parcel, and drop live human
+  conversations. Clear only when ALL hold, reusing BL-069's drain-idle
+  detection where it fits:
+    - no in_process task or batch in that agent's inbox,
+    - inbox/new is empty (nothing about to start),
+    - no needs-human state pending on that tile (an unanswered question must
+      never be wiped),
+    - no human keystrokes were sent to that pane within the settle window,
+    - the pane has been output-quiet for the settle window (setting,
+      default 120s).
+  Then send "/clear" + Enter once via the existing host->tmux input path.
+  Do NOT re-clear while the agent stays idle: mark cleared and re-arm only
+  after the agent does work again. All roles are eligible, coordinator and
+  specifier included.
+
+  Optional stretch (coder verifies feasibility, may descope with a note):
+  a context-usage threshold trigger (e.g. >70% parsed from the TUI footer)
+  that requests a clear at the NEXT safe idle moment — still gated by every
+  safety check above; never mid-task.
+
+  Constraints: host-only (host owns tmux I/O; no webview changes required —
+  log clears to the extension output channel). Do not modify SwarmForge.
+  Feature behind a setting (default ON is fine given the safety gates, with
+  swarmforge.contextClear.enabled to disable). Do not interfere with a
+  pending graceful bounce drain (BL-069): while a drain is in progress the
+  clearer stands down. Settle window and enablement are settings.
+
+  Scope: extension only — a small host-side idle-clear module beside
+  bounceDrain.ts, wired to existing pane tailing/input and needs-human
+  state, settings in package.json, plus tests. Touches paneTailer/swarmPanel
+  wiring lightly — coordinator: mild overlap with BL-068/072 (in flight at
+  coder); fine to queue behind them at the same stage.
+
+acceptance: |
+  Feature: idle agents get a fresh context window
+
+  Background:
+    Given the swarm is running with live agent panes
+    And the idle-clear feature is enabled with a settle window
+
+  # BL-076 idle-clear-01
+  Scenario: a drained-idle agent is cleared exactly once
+    Given an agent with no in_process work and an empty inbox/new
+    And no needs-human state and no recent human keystrokes on its pane
+    When the pane stays output-quiet through the settle window
+    Then the host sends "/clear" to that pane once
+    And it does not send another "/clear" while the agent remains idle
+
+  # BL-076 idle-clear-02
+  Scenario Outline: unsafe states are never cleared
+    Given an agent whose state is <state>
+    When settle windows elapse
+    Then the host sends no "/clear" to that pane
+
+    Examples:
+      | state                                        |
+      | holding an in_process task                   |
+      | holding an in_process batch                  |
+      | inbox/new contains a queued handoff          |
+      | needs-human state pending on its tile        |
+      | human typed into the pane inside the window  |
+      | a graceful bounce drain is in progress       |
+
+  # BL-076 idle-clear-03
+  Scenario: the clearer re-arms after the agent works again
+    Given an agent was cleared while idle
+    When it later accepts and completes a new task and goes idle again
+    Then the host clears it once more after the settle window
+
+  # BL-076 idle-clear-04
+  Scenario: a cleared agent handles its next handoff normally
+    Given an agent that was cleared while idle
+    When a new handoff arrives and wakes it
+    Then the agent re-reads its role and constitution per the handoff body
+    And processes the parcel normally
+
+  # BL-076 idle-clear-05
+  Scenario: disabling the setting stops all clears
+    Given the idle-clear setting is disabled
+    When agents sit drained-idle past many settle windows
+    Then the host sends no "/clear" to any pane
+
+  # Non-behavioral gate:
+  #  - Safety-gate logic unit-tested per scenario table; the tmux send path
+  #    is exercised with the existing test doubles (no live clears in the
+  #    suite).
+  #  - Verified once in a live Extension Development Host: an idle agent is
+  #    cleared and then correctly processes its next real handoff (note it
+  #    in the close).
+  #  - Context-threshold stretch either implemented with tests or descoped
+  #    with a written feasibility note in the close.
+  #  - Existing BL-069 drain/bounce suites stay green; SwarmForge unmodified.
