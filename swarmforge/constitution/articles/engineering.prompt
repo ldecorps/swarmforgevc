@@ -25,6 +25,21 @@
 - Use clear command IDs namespaced under "swarmforge." (e.g. swarmforge.run,
   swarmforge.stop, swarmforge.setTarget, swarmforge.initTarget).
 
+# Hardening tools (run from extension/, separate from `npm test`)
+
+- Mutation testing (Stryker): `npm run mutation` compiles, then mutates the
+  built output under out/ and runs the unit suite against each mutant,
+  reporting killed vs surviving mutants. A whole-codebase run is SLOW (the
+  full suite runs per mutant); the intended mode is differential, on the
+  files you changed: `npm run mutation -- --mutate "out/<path>.js"`. The run
+  maintains `stryker-incremental.json` (committed; do not delete or gitignore
+  it) so later runs only re-test what changed. Mutants in TypeScript's emitted
+  module boilerplate (e.g. __createBinding) are noise — target survivors in
+  code you own.
+- DRY duplication (jscpd): `npm run dry` scans extension/src and reports
+  duplicated blocks with counts and percentages.
+- Neither tool is part of `npm test`; they are hardener/developer commands.
+
 # Architecture rules (important - these prevent the project going off the rails)
 
 1. Two layers: tile-as-view, tmux-as-substrate.

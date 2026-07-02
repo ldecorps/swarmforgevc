@@ -183,15 +183,7 @@ class PaneTailer {
         for (const role of this.roles) {
             if (!(0, tmuxClient_1.sessionExists)(this.socketPath, role.session)) {
                 const text = `Session "${role.session}" is not running.\n\nUse SwarmForge: Stop Swarm, then Launch Swarm.`;
-                if (this.lastText.get(role.role) !== text) {
-                    this.lastText.set(role.role, text);
-                    updates.push({
-                        role: role.role,
-                        displayName: role.displayName,
-                        text,
-                        full: true,
-                    });
-                }
+                this.pushFullTextIfChanged(role, updates, text);
                 if (this.liveRoles.has(role.role) && !this.deadRoles.has(role.role)) {
                     this.deadRoles.add(role.role);
                     deadEvents.push({ role: role.role, dead: true });
@@ -207,15 +199,7 @@ class PaneTailer {
             const result = (0, tmuxClient_1.capturePane)(this.socketPath, target, -this.historyLines);
             if (result.exitCode !== 0) {
                 const text = `Could not read tmux pane for ${role.displayName}.\n\nTry SwarmForge: Stop Swarm, then Launch Swarm.`;
-                if (this.lastText.get(role.role) !== text) {
-                    this.lastText.set(role.role, text);
-                    updates.push({
-                        role: role.role,
-                        displayName: role.displayName,
-                        text,
-                        full: true,
-                    });
-                }
+                this.pushFullTextIfChanged(role, updates, text);
                 continue;
             }
             const rawText = (0, ansi_1.stripAnsi)(result.stdout);
@@ -284,6 +268,17 @@ class PaneTailer {
             if (needsHumanEvents.length > 0) {
                 this.onNeedsHuman(needsHumanEvents);
             }
+        }
+    }
+    pushFullTextIfChanged(role, updates, text) {
+        if (this.lastText.get(role.role) !== text) {
+            this.lastText.set(role.role, text);
+            updates.push({
+                role: role.role,
+                displayName: role.displayName,
+                text,
+                full: true,
+            });
         }
     }
     resolveTarget(roleName) {

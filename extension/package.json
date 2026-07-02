@@ -145,12 +145,12 @@
         "swarmforge.tile.historyLines": {
           "type": "number",
           "default": 5000,
-          "description": "Number of lines of scrollback history to display in agent tiles (1–50000). Default 5000."
+          "description": "Number of lines of scrollback history to display in agent tiles (1\u201350000). Default 5000."
         },
         "swarmforge.tile.paneRows": {
           "type": "number",
           "default": 200,
-          "description": "Height in rows of each agent's tmux window, i.e. how many lines a tile can show at once (headless tmux otherwise caps at 24). 1–1000. Default 200."
+          "description": "Height in rows of each agent's tmux window, i.e. how many lines a tile can show at once (headless tmux otherwise caps at 24). 1\u20131000. Default 200."
         }
       }
     }
@@ -160,12 +160,16 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "test": "npm run compile && node --test test/*.test.js",
-    "tracer-bullet": "npm run compile && node out/tools/tracer-bullet-launcher.js"
+    "tracer-bullet": "npm run compile && node out/tools/tracer-bullet-launcher.js",
+    "mutation": "npm run compile && stryker run",
+    "dry": "jscpd --config .jscpd.json src"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "^9.6.1",
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
     "c8": "^11.0.0",
+    "jscpd": "^5.0.11",
     "typescript": "^5.3.3"
   }
 }
