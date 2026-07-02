@@ -272,6 +272,31 @@ function getWebviewHtml(scriptUri, cspSource) {
       background: #e53935;
       color: #fff;
     }
+    /* BL-069 graceful bounce: draining banner + per-tile busy/idle hint. */
+    .bounce-drain-banner {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 12px;
+      background: #d4a017;
+      color: #1e1e1e;
+      font-size: 12px;
+    }
+    .bounce-drain-banner.visible {
+      display: flex;
+    }
+    .bounce-drain-banner button {
+      padding: 2px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      border: none;
+      border-radius: 3px;
+      background: #1e1e1e;
+      color: #fff;
+    }
+    .tile.drain-idle {
+      border-color: #4caf50;
+    }
     .tile.stalled {
       border-color: #d4a017;
     }
@@ -464,6 +489,11 @@ function getWebviewHtml(scriptUri, cspSource) {
     <span class="transport-health" id="transport-health"></span>
     <button id="open-pr-btn" title="Open pull request for this swarm run">Open PR</button>
   </header>
+  <div class="bounce-drain-banner" id="bounce-drain-banner">
+    <span id="bounce-drain-text"></span>
+    <button id="drain-cancel-btn">Cancel Drain</button>
+    <button id="drain-force-btn">Bounce Now</button>
+  </div>
   <div id="grid">
     <div class="empty" id="placeholder">Launch a swarm to see agent tiles.</div>
   </div>

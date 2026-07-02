@@ -25,15 +25,17 @@
                (str/join "\n" (map #(str "- " %) in-process-files))))
       (if (= 1 (count in-process-files))
         (handoff-lib/print-task (first in-process-files))
-        (let [new-files (handoff-lib/my-handoff-files new-dir)]
-          (if (empty? new-files)
-            (println "NO_TASK")
-            (let [source-file (first new-files)
-                  target-file (fs/path in-process-dir (fs/file-name source-file))]
-              (when (fs/exists? target-file)
-                (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: target in-process file already exists: " target-file)))
-              (fs/move source-file target-file)
-              (handoff-lib/set-header! target-file "dequeued_at" (handoff-lib/timestamp))
-              (handoff-lib/print-task target-file))))))))
+        (if (handoff-lib/draining?)
+          (println "DRAINING")
+          (let [new-files (handoff-lib/my-handoff-files new-dir)]
+            (if (empty? new-files)
+              (println "NO_TASK")
+              (let [source-file (first new-files)
+                    target-file (fs/path in-process-dir (fs/file-name source-file))]
+                (when (fs/exists? target-file)
+                  (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: target in-process file already exists: " target-file)))
+                (fs/move source-file target-file)
+                (handoff-lib/set-header! target-file "dequeued_at" (handoff-lib/timestamp))
+                (handoff-lib/print-task target-file)))))))))
 
 (-main)

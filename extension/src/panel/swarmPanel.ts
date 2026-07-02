@@ -19,6 +19,9 @@ import {
 } from '../notify/needsHumanEmailNotifier';
 import { sendResendEmail } from '../notify/resendClient';
 import { resolveResendApiKey } from '../notify/secrets';
+import { readBounceDrainState } from '../swarm/bounceDrain';
+import { buildRoleInboxes } from '../watchdog/chaserMonitor';
+import { scanInProcess } from '../swarm/inboxChaser';
 
 const STAGE_POLL_INTERVAL_MS = 2000;
 const OUTPUT_CHANNEL_NAME = 'SwarmForge';
@@ -39,6 +42,7 @@ export class SwarmPanel {
   private emailNotifier: NeedsHumanEmailNotifier | undefined;
   private latestPaneText = new Map<string, string>();
   private resendApiKey: string | undefined;
+  private wasDraining = false;
 
   private constructor(
     panel: vscode.WebviewPanel,
@@ -87,6 +91,12 @@ export class SwarmPanel {
             break;
           case 'fitTilePaneToHeight':
             this.tailer?.updatePaneRows(message.role, message.paneRows);
+            break;
+          case 'cancelBounceDrain':
+            vscode.commands.executeCommand('swarmforge.cancelBounceDrain');
+            break;
+          case 'forceBounceNow':
+            vscode.commands.executeCommand('swarmforge.forceBounceNow');
             break;
         }
       },
@@ -307,6 +317,7 @@ export class SwarmPanel {
       this.panel.webview.postMessage({ type: 'transportHealth', health: readDaemonHealth(this.targetPath) });
       this.postStuckEscalations();
       this.emailNotifier?.sweep(Date.now());
+      this.postBounceDrainStatus();
     };
     poll();
     this.stagePoller = setInterval(poll, STAGE_POLL_INTERVAL_MS);
@@ -323,6 +334,33 @@ export class SwarmPanel {
       this.panel.webview.postMessage({ type: 'needsHuman', events: deltas });
       this.emailNotifier?.recordUpdates(deltas, Date.now());
     }
+  }
+
+  // BL-069: surfaces the graceful bounce drain state (banner + per-tile
+  // busy/idle) purely by reading the durable sentinel and each role's
+  // in_process holds — presentation only, no orchestration decision lives
+  // here; that belongs to the extension-host drain watcher.
+  private postBounceDrainStatus(): void {
+    const state = readBounceDrainState(this.targetPath);
+    if (!state) {
+      if (this.wasDraining) {
+        this.wasDraining = false;
+        this.panel.webview.postMessage({ type: 'bounceDrain', draining: false });
+      }
+      return;
+    }
+    this.wasDraining = true;
+    const roles = this.tailer?.getRoles() ?? [];
+    const roleInboxes = buildRoleInboxes(this.targetPath, roles.map((r) => r.role));
+    const busyRoles = roleInboxes
+      .filter((inbox) => scanInProcess(inbox.inProcessDir).length > 0)
+      .map((inbox) => inbox.role);
+    this.panel.webview.postMessage({
+      type: 'bounceDrain',
+      draining: true,
+      busyRoles,
+      totalRoles: roles.length,
+    });
   }
 
   private sendRoles(roles: SwarmRole[]): void {
