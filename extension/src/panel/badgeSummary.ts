@@ -27,32 +27,51 @@ export interface Badge {
 
 export interface BadgeWithHolder extends Badge {
   holder?: string;
+  // Set when this tile's role holds more than one active parcel (e.g. a
+  // hardender batch): the count of parcels NOT shown as the primary badge
+  // (BL-068). Omitted (not zero) for a single-parcel holder.
+  extraCount?: number;
+}
+
+function compareTicketIds(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true });
 }
 
 export function buildBadgeMap(
   items: BacklogItem[],
   targetPath?: string
 ): Record<string, BadgeWithHolder> {
-  const badges: Record<string, BadgeWithHolder> = {};
+  // A tile's role can hold more than one active parcel at once (e.g. a
+  // hardender batch); grouping first — rather than writing straight into
+  // the result map — avoids each item silently overwriting the previous
+  // one for the same holder (BL-068 regression: only the last item
+  // processed ever survived, and the rest just vanished from the tile).
+  const byHolder = new Map<string, { item: BacklogItem; holder: string }[]>();
+
   for (const item of items) {
     if (item.status === 'active' && item.assignedTo) {
-      // For active items, find the live holder (current role holding the parcel)
-      // For todo items, use the intended assignee
-      let holder = item.assignedTo;
       let liveHolder: string | null = null;
-      if (targetPath && item.status === 'active') {
+      if (targetPath) {
         liveHolder = findLiveHolder(targetPath, item.id);
-        if (liveHolder) {
-          holder = liveHolder;
-        }
       }
-
-      badges[holder] = {
-        id: item.id,
-        summary: truncateSummary(item.title),
-        holder: liveHolder || item.assignedTo,
-      };
+      const tileRole = liveHolder || item.assignedTo;
+      const holder = liveHolder || item.assignedTo;
+      const bucket = byHolder.get(tileRole) ?? [];
+      bucket.push({ item, holder });
+      byHolder.set(tileRole, bucket);
     }
+  }
+
+  const badges: Record<string, BadgeWithHolder> = {};
+  for (const [tileRole, entries] of byHolder) {
+    entries.sort((a, b) => compareTicketIds(a.item.id, b.item.id));
+    const [primary, ...rest] = entries;
+    badges[tileRole] = {
+      id: primary.item.id,
+      summary: truncateSummary(primary.item.title),
+      holder: primary.holder,
+      ...(rest.length > 0 ? { extraCount: rest.length } : {}),
+    };
   }
   return badges;
 }

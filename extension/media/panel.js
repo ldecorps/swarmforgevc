@@ -118,9 +118,15 @@ function backlogRowHtml(item) {
   if (item.status === 'done') {
     // Done rows show their milestone (the done/ subfolder they live in).
     assignedDisplay = item.milestone ? '<span class="bl-milestone">' + item.milestone + '</span>' : '';
-  } else if (item.status === 'active' && holderMap[item.id]) {
-    // For active items, show the live holder (current role holding the parcel)
-    assignedDisplay = '<span class="bl-assigned">' + holderMap[item.id] + '</span>';
+  } else if (item.status === 'active') {
+    // Active rows show LIVE traceability only: the role actually holding the
+    // parcel, or "queued" when it is promoted but not yet routed. Never fall
+    // back to the static assignedTo YAML field here — that fallback was
+    // exactly the misleading display reported (BL-072): a promoted-but-
+    // unrouted ticket showed its intake-time assignee as if it were holding
+    // the parcel.
+    const holder = holderMap[item.id] || 'queued';
+    assignedDisplay = '<span class="bl-assigned">' + holder + '</span>';
   } else if (item.assignedTo) {
     // For todo items, show the intended assignee
     assignedDisplay = '<span class="bl-assigned">' + item.assignedTo + '</span>';
@@ -505,6 +511,13 @@ window.addEventListener('message', (event) => {
       renderBacklog(message.items);
       break;
     case 'holderUpdate':
+      // Replace, not merge: the host recomputes the full live-holder set
+      // every poll and only includes an id when a holder actually resolves,
+      // so a ticket that becomes unrouted again must lose its stale entry
+      // here too, not keep showing whoever held it last (BL-072).
+      for (const key of Object.keys(holderMap)) {
+        delete holderMap[key];
+      }
       Object.assign(holderMap, message.holders);
       // Re-render backlog to update "Assigned" labels with live holders
       if (backlogEl.style.display !== 'none') {
@@ -555,8 +568,11 @@ window.addEventListener('message', (event) => {
         const badge = message.badges[role];
         if (badge) {
           entry.tile.classList.add('bl-active');
-          const badgeText = badge.summary ? `${badge.id} · ${badge.summary}` : badge.id || badge;
-          entry.blBadge.textContent = badgeText;
+          const idSummary = badge.summary ? `${badge.id} · ${badge.summary}` : badge.id || badge;
+          // A role holding more than one active parcel (e.g. a hardender
+          // batch) shows the lowest ticket ID plus a +N count for the rest
+          // instead of silently dropping them (BL-068).
+          entry.blBadge.textContent = badge.extraCount ? `${idSummary} +${badge.extraCount}` : idSummary;
         } else {
           entry.tile.classList.remove('bl-active');
           entry.blBadge.textContent = '';
