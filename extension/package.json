@@ -212,7 +212,9 @@
     "test": "npm run compile && node --test --test-concurrency=8 test/*.test.js",
     "tracer-bullet": "npm run compile && node out/tools/tracer-bullet-launcher.js",
     "mutation": "npm run compile && stryker run",
-    "dry": "jscpd --config .jscpd.json src"
+    "dry": "jscpd --config .jscpd.json src",
+    "coverage": "npm run compile && c8 --reporter=json --report-dir=coverage node --test --test-concurrency=8 test/*.test.js",
+    "crap": "npm run coverage && node scripts/crapReport.js"
   },
   "devDependencies": {
     "@stryker-mutator/core": "^9.6.1",

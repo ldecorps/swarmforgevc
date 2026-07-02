@@ -38,7 +38,16 @@
   code you own.
 - DRY duplication (jscpd): `npm run dry` scans extension/src and reports
   duplicated blocks with counts and percentages.
-- Neither tool is part of `npm test`; they are hardener/developer commands.
+- CRAP metric (custom, no turnkey JS CLI exists): `npm run crap` regenerates
+  coverage (`npm run coverage`, c8 JSON reporter mapped back to TS source via
+  source maps) then reports each function's cyclomatic complexity, coverage
+  fraction, and CRAP = comp^2 * (1-cov)^3 + comp, flagging any function over
+  6 and exiting non-zero when it finds one. Differential mode takes explicit
+  files, mirroring Stryker's own `--mutate` pattern:
+  `node scripts/crapReport.js src/panel/badgeSummary.ts`. Keep CRAP at or
+  below 6 on changed code (hardender.prompt).
+- None of these tools are part of `npm test`; they are hardener/developer
+  commands.
 
 # Architecture rules (important - these prevent the project going off the rails)
 
