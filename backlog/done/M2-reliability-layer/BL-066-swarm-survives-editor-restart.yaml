@@ -1,7 +1,7 @@
 id: BL-066
 title: A running swarm survives an editor restart — detach, re-discover, re-attach
 milestone: M3
-status: todo
+status: done
 priority: 08
 assigned_to: coder
 
