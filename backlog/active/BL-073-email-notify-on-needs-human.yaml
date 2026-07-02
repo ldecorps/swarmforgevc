@@ -1,0 +1,116 @@
+id: BL-073
+title: email notification when an agent needs the human — Resend + claude.ai/code deep link
+milestone: M6
+status: todo
+priority: 15
+assigned_to: coder
+
+description: |
+  What (user request, 2026-07-02; product decisions confirmed with the human):
+  when an agent raises a question or permission prompt and the human does not
+  answer it promptly, send the human an EMAIL so they can respond from their
+  phone. The email carries a deep link to that agent's Claude remote session
+  (https://claude.ai/code/session_...), which opens the Claude phone app where
+  the question can be answered. NOTIFY-ONLY: answering happens in the Claude
+  app or the tile — reply-via-email (Resend Inbound: own domain + MX + public
+  webhook) is explicitly OUT of scope, a possible later phase on top of
+  BL-065's bridge.
+
+  Trigger — persistent + cooldown (confirmed): reuse the existing needs-human
+  detection (BL-045 onNeedsHuman, the same signal that drives the red border
+  pulse). An email fires only when a role's needs-human state persists
+  unanswered for a grace period (setting, default 60s), and at most one email
+  per role per cooldown window (setting, default 10 min). A state that clears
+  within the grace period sends nothing.
+
+  Delivery — Resend REST API from the extension host (host owns all I/O).
+  Sender: Resend's onboarding sender (onboarding@resend.dev) by default,
+  which delivers only to the Resend account owner's email — acceptable, this
+  is a personal notifier; a from-address setting allows a verified domain
+  later. Recipient: setting swarmforge.notify.email.to. The API key comes
+  from the extension host environment (RESEND_API_KEY) or VS Code
+  SecretStorage — per the constitution's secrets rule it must NEVER be
+  written into the target working directory, any commit, any log line, or
+  any error message. Feature is OFF unless a key and recipient are present.
+
+  Email content: role name, the held ticket badge when one resolves (reuse
+  BL-053 holder machinery), a short snippet of the detected question or
+  permission prompt, and the deep link. The session URL is captured
+  BEST-EFFORT: the claude CLI prints its remote-control URL at session start
+  and it can scroll out of the alternate screen (see BL-070) — the host
+  parses pane frames for claude.ai/code/session_ URLs as they stream and
+  remembers the latest per role. If no URL is known for that role, the email
+  still goes out with a "no session link captured — answer in the tile" line.
+
+  Failure tolerance: a failed Resend call is logged (sans key) and dropped —
+  bounded, no retry storm, never breaks the panel or detection. Two-layer
+  rule: all of this is host-side; the webview is untouched.
+
+  Scope: extension only — a small host-side notifier module (grace/cooldown
+  state machine + Resend HTTP call + session-URL capture), wired to the
+  existing needs-human events, settings in package.json, plus tests (HTTP
+  mocked; no real emails in the suite). Does not touch the webview panel
+  surface, so it is ORTHOGONAL to BL-068/070/071/072.
+
+acceptance: |
+  Feature: email the human when an agent's question goes unanswered
+
+  Background:
+    Given needs-human detection is active for every agent tile
+    And a Resend API key and recipient address are configured
+
+  # BL-073 email-needs-human-01
+  Scenario: a persistent question sends one email with the deep link
+    Given the coder raises a permission prompt
+    And a claude.ai/code session URL was previously captured for the coder
+    When the needs-human state is still present after the grace period
+    Then exactly one email is sent via the Resend API
+    And its body names the coder role and quotes the prompt snippet
+    And its body contains that coder session URL
+    And its body shows the held ticket badge when one resolves
+
+  # BL-073 email-needs-human-02
+  Scenario: a question answered within the grace period sends nothing
+    Given the QA agent raises a question
+    When the needs-human state clears before the grace period elapses
+    Then no email is sent
+
+  # BL-073 email-needs-human-03
+  Scenario: the cooldown bounds repeat emails from one role
+    Given an email was just sent for the coder
+    When the coder raises further needs-human states within the cooldown window
+    Then no additional email is sent for the coder during that window
+    And a persistent needs-human state from the cleaner still emails normally
+
+  # BL-073 email-needs-human-04
+  Scenario: no captured session URL still notifies
+    Given no claude.ai/code URL has ever been captured for the architect
+    When the architect's needs-human state outlasts the grace period
+    Then the email is sent
+    And its body says no session link was captured and points to the tile
+
+  # BL-073 email-needs-human-05
+  Scenario: unconfigured or failing delivery never harms the panel
+    Given no Resend API key is configured
+    When needs-human states persist past the grace period
+    Then no email attempt is made and the tiles keep working
+    Given a key is configured but the Resend API returns an error
+    When an email attempt fails
+    Then the failure is logged without the key or recipient leaking
+    And detection, tiles, and later email attempts keep working
+
+  # BL-073 email-needs-human-06
+  Scenario: the session URL capture follows the freshest session
+    Given the coder pane printed session URL <old> and later <new>
+    When a notification email is composed for the coder
+    Then it links <new>
+
+  # Non-behavioral gate:
+  #  - Secrets rule audited: RESEND_API_KEY read only from host env /
+  #    SecretStorage; never in the repo, commits, settings defaults, logs,
+  #    or error text. No secret-bearing fixture in tests.
+  #  - Tests mock the HTTP layer; the suite sends no real email.
+  #  - Grace period and cooldown are settings with the confirmed defaults
+  #    (60s / 10 min); feature is off when unconfigured.
+  #  - Existing needs-human suites (BL-045/054/059) stay green;
+  #    SwarmForge unmodified.
