@@ -43,6 +43,7 @@ const stuckEscalations_1 = require("../watchdog/stuckEscalations");
 const runLog_1 = require("../runs/runLog");
 const webviewHtml_1 = require("./webviewHtml");
 const backlogReader_1 = require("./backlogReader");
+const backlogWriter_1 = require("./backlogWriter");
 const badgeSummary_1 = require("./badgeSummary");
 const needsHumanReconciler_1 = require("./needsHumanReconciler");
 const needsHumanDetection_1 = require("./needsHumanDetection");
@@ -122,6 +123,16 @@ class SwarmPanel {
                     break;
                 case 'forceBounceNow':
                     vscode.commands.executeCommand('swarmforge.forceBounceNow');
+                    break;
+                case 'markBacklogDone':
+                    // BL-034: folder move only, no status-field rewrite - the
+                    // done/ folder is the authoritative signal (BL-033), same as
+                    // the read side already assumes. The next stage poll re-reads
+                    // and reflects it, exactly like an external disk edit would.
+                    (0, backlogWriter_1.markDone)(this.targetPath, message.id);
+                    break;
+                case 'setBacklogAssignee':
+                    (0, backlogWriter_1.setAssignedTo)(this.targetPath, message.id, message.assignedTo);
                     break;
             }
         }, null, this.disposables);
