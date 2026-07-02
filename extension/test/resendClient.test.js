@@ -43,6 +43,10 @@ test('sendResendEmail reports failure on a non-2xx response without leaking the 
 });
 
 test('sendResendEmail catches a network/throw failure and reports it without leaking the key', async () => {
+  // Deliberately simulates a thrown error whose message happens to contain
+  // the key (a custom postFn, proxy, or future http client could echo
+  // request details into a thrown message) — the result must still redact
+  // it, since this flows straight into a logged output-channel line.
   const postFn = async () => {
     throw new Error('ECONNREFUSED for key re_super_secret');
   };
@@ -51,6 +55,8 @@ test('sendResendEmail catches a network/throw failure and reports it without lea
 
   assert.equal(result.success, false);
   assert.match(result.error, /ECONNREFUSED/);
+  assert.doesNotMatch(result.error, /re_super_secret/, 'the key must be redacted even out of an arbitrary thrown error message');
+  assert.match(result.error, /\[redacted\]/);
 });
 
 test('sendResendEmail never puts the API key in the request body', async () => {
