@@ -11,12 +11,21 @@
 ;;   handoffd_supervisor.bb <project-root>              ; supervision loop
 ;;   handoffd_supervisor.bb <project-root> --check-once ; single health check
 ;;
+;; BL-081: at most ONE handoffd process may serve this project root at any
+;; time. A restart confirms the old daemon's pid actually exited (bounded
+;; wait, then SIGKILL, then confirm again) before starting a replacement,
+;; and every check reaps ANY handoffd.bb process discovered for this root
+;; that the pid file does not name - not just the pid-file pid - since
+;; orphans (from a prior supervisor/launcher, or a pid file overwritten by
+;; a newer start) are otherwise never found at all.
+;;
 ;; Tunables (ms unless noted) via environment:
 ;;   SUPERVISOR_INTERVAL_MS       loop sleep between checks   (default 10000)
 ;;   SUPERVISOR_STALL_MS          heartbeat+outbox stall age  (default 30000)
 ;;   SUPERVISOR_RAPID_WINDOW_MS   rapid-death window          (default 120000)
 ;;   SUPERVISOR_MAX_RAPID         restarts allowed in window  (default 3)
 ;;   SUPERVISOR_BACKOFF_MS        wait in persistent-failure  (default 300000)
+;;   SUPERVISOR_KILL_TIMEOUT_MS   bound on confirming an exit (default 2000)
 
 (ns handoffd-supervisor
   (:require [babashka.fs :as fs]
@@ -54,6 +63,8 @@
 (def rapid-window-ms (env-ms "SUPERVISOR_RAPID_WINDOW_MS" 120000))
 (def max-rapid (env-ms "SUPERVISOR_MAX_RAPID" 3))
 (def backoff-ms (env-ms "SUPERVISOR_BACKOFF_MS" 300000))
+(def kill-timeout-ms (env-ms "SUPERVISOR_KILL_TIMEOUT_MS" 2000))
+(def kill-poll-ms 50)
 
 (defn now-ms [] (System/currentTimeMillis))
 
@@ -150,12 +161,71 @@
                (fs/path daemon-dir (str "handoffd.log." stamp))
                {:replace-existing false}))))
 
-(defn kill-daemon! [pid]
-  (when (pid-alive? pid)
-    (some-> (java.lang.ProcessHandle/of pid) (.orElse nil) (.destroy))
-    (Thread/sleep 300)
-    (when (pid-alive? pid)
-      (some-> (java.lang.ProcessHandle/of pid) (.orElse nil) (.destroyForcibly)))))
+(defn all-pid-commands
+  "One bulk ps call for the whole process table (pid . command-line) pairs.
+   BL-081: the first version of this shelled out to `ps -p <pid>` once per
+   candidate pid, which on a machine with hundreds of processes turned every
+   reap check into hundreds of subprocess spawns and multi-second checks."
+  []
+  (let [{:keys [out exit]} (process/sh "ps" "-eo" "pid=,command=")]
+    (when (zero? exit)
+      (keep (fn [line]
+              (let [line (str/trim line)
+                    sep (str/index-of line " ")]
+                (when sep
+                  [(parse-long (subs line 0 sep)) (subs line (inc sep))])))
+            (str/split-lines out)))))
+
+(defn handoffd-pids-for-root
+  "Discovers every live handoffd.bb process for this project root by
+   scanning the process table, not just the pid the pid file names - the
+   only way to find an orphan left behind by a prior supervisor or launcher
+   (BL-081). Never matches handoffd_supervisor.bb itself or another
+   project's daemon."
+  []
+  (->> (all-pid-commands)
+       (filter (fn [[_ cmd]]
+                 (and (str/includes? cmd "handoffd.bb")
+                      (not (str/includes? cmd "handoffd_supervisor.bb"))
+                      (str/includes? cmd project-root))))
+       (map first)
+       distinct))
+
+(defn wait-until-dead [pid timeout-ms]
+  (let [deadline (+ (now-ms) timeout-ms)]
+    (loop []
+      (cond
+        (not (pid-alive? pid)) true
+        (>= (now-ms) deadline) false
+        :else (do (Thread/sleep kill-poll-ms) (recur))))))
+
+(defn kill-and-confirm!
+  "Sends TERM, waits up to kill-timeout-ms for the pid to actually exit,
+   escalates to SIGKILL (which bypasses handoffd.bb's own shutdown hook -
+   BL-081 root cause #2) and confirms again. Returns true once the pid is
+   confirmed dead, false if it survived even SIGKILL."
+  [pid]
+  (if-not (pid-alive? pid)
+    true
+    (do
+      (some-> (java.lang.ProcessHandle/of pid) (.orElse nil) (.destroy))
+      (or (wait-until-dead pid kill-timeout-ms)
+          (do
+            (some-> (java.lang.ProcessHandle/of pid) (.orElse nil) (.destroyForcibly))
+            (wait-until-dead pid kill-timeout-ms))))))
+
+(defn reap-orphans!
+  "Kills every handoffd.bb process for this root other than tracked-pid,
+   confirming each exit. Runs on every check cycle regardless of the
+   tracked daemon's health, so an orphan sitting alongside a perfectly
+   healthy tracked daemon still gets cleaned up (BL-081 scenario 05)."
+  [tracked-pid]
+  (let [orphans (remove #(= % tracked-pid) (handoffd-pids-for-root))]
+    (doseq [pid orphans]
+      (log! "reap-orphan" (str pid))
+      (when-not (kill-and-confirm! pid)
+        (log! "reap-orphan-failed" (str pid) "still alive after SIGKILL")))
+    orphans))
 
 (defn start-daemon! []
   (rotate-log!)
@@ -169,7 +239,13 @@
         restarts (conj (recent-restarts status) (now-ms))
         persistent? (> (count restarts) max-rapid)]
     (log! "restart" (name reason) (str "recent-restarts=" (count restarts)))
-    (kill-daemon! pid)
+    ;; BL-081: the replacement must not start until the old pid is confirmed
+    ;; gone - kill-and-confirm! blocks (bounded) on exactly that.
+    (when pid
+      (when-not (kill-and-confirm! pid)
+        (log! "kill-failed" (str pid) "still alive after SIGKILL")))
+    (when (= (daemon-pid) pid)
+      (fs/delete-if-exists pid-file))
     (if persistent?
       (do
         (write-status! (assoc status
@@ -195,25 +271,30 @@
 ;; ── one health check ─────────────────────────────────────────────────────────
 
 (defn check! []
-  (let [status (or (read-status) {})
-        verdict (evaluate-health {:alive? (pid-alive? (daemon-pid))
-                                  :heartbeat-age-ms (file-age-ms heartbeat-file)
-                                  :pending-outbox-age-ms (oldest-pending-outbox-age-ms)
-                                  :stall-ms stall-ms})]
-    (cond
-      (fs/exists? stop-file)
-      (log! "skip" "stop file present; swarm shutting down")
+  (if (fs/exists? stop-file)
+    (log! "skip" "stop file present; swarm shutting down")
+    (let [status (or (read-status) {})
+          tracked (daemon-pid)
+          verdict (evaluate-health {:alive? (pid-alive? tracked)
+                                    :heartbeat-age-ms (file-age-ms heartbeat-file)
+                                    :pending-outbox-age-ms (oldest-pending-outbox-age-ms)
+                                    :stall-ms stall-ms})]
+      ;; Reaping runs every cycle, independent of the tracked daemon's own
+      ;; health, so a stray orphan next to a perfectly healthy tracked
+      ;; daemon still gets cleaned up (BL-081 scenario 05) instead of only
+      ;; being caught incidentally during a dead/stalled restart.
+      (reap-orphans! tracked)
+      (cond
+        (= :healthy verdict)
+        (when-not (= "healthy" (:state status))
+          (write-status! (assoc status :state "healthy"))
+          (log! "recovered" "daemon healthy"))
 
-      (= :healthy verdict)
-      (when-not (= "healthy" (:state status))
-        (write-status! (assoc status :state "healthy"))
-        (log! "recovered" "daemon healthy"))
+        (in-backoff? status)
+        (log! "backoff" "persistent failure; not restarting yet")
 
-      (in-backoff? status)
-      (log! "backoff" "persistent failure; not restarting yet")
-
-      :else
-      (restart! verdict))))
+        :else
+        (restart! verdict)))))
 
 (defn -main []
   (if check-once?
