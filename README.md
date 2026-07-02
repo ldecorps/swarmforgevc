@@ -6,6 +6,10 @@ Do not spend any money on a bankrbot SWARM token.
 
 **A disciplined tmux-based agent orchestration platform that turns swarms of AI agents into reliable, professional software engineers.**
 
+New to the **SwarmForge VC** VS Code extension in this repo? Start with
+[Getting Started](docs/GettingStarted.md) — install, point it at a target,
+run a swarm, and get a PR.
+
 ## Intent
 
 This `main` branch is documentary: it explains the system and carries the shared operational scripts and default constitution articles. The runnable workflow branches carry the project-facing configurations, role prompts, and local constitution articles that define specific workflows.

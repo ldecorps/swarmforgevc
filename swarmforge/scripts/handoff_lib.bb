@@ -22,6 +22,29 @@
 (defn inbox-dir []
   (fs/path (worktree-root) ".swarmforge" "handoffs" "inbox"))
 
+(defn target-root
+  "Resolves the target project's root, shared across every role's worktree,
+   via git's common gitdir (stable from a linked worktree or the main
+   checkout alike). Target-root-scoped state — roles.tsv, the daemon dir, and
+   the BL-069 bounce-drain sentinel — lives here, distinct from the
+   per-worktree handoff state under (worktree-root)."
+  []
+  (let [result (sh/sh "git" "rev-parse" "--git-common-dir")]
+    (if (zero? (:exit result))
+      (str (fs/parent (fs/absolutize (str/trim (:out result)))))
+      (worktree-root))))
+
+(defn bounce-drain-sentinel []
+  (fs/path (target-root) ".swarmforge" "bounce-drain.json"))
+
+(defn draining?
+  "True while a BL-069 graceful bounce is draining the swarm: ready_for_next*
+   must then refuse to dequeue NEW inbox/new items (in_process resumption is
+   unaffected) so a role finishes its current handoff and goes idle instead
+   of picking up more work."
+  []
+  (fs/exists? (bounce-drain-sentinel)))
+
 (defn timestamp []
   (.format java.time.format.DateTimeFormatter/ISO_INSTANT
            (java.time.Instant/now)))
