@@ -50,11 +50,19 @@ export function buildBadgeMap(
 
   for (const item of items) {
     if (item.status === 'active' && item.assignedTo) {
-      let liveHolder: string | null = null;
-      if (targetPath) {
-        liveHolder = findLiveHolder(targetPath, item.id);
+      // When live routing is requested (targetPath given), findLiveHolder is
+      // the sole source of truth — the same resolver the backlog row's
+      // holderMap uses. Falling back to the static assignedTo YAML field
+      // when it resolves to null resurfaced a phantom tile badge for a
+      // ticket whose parcel already left every stage inbox (dropped after
+      // completion, or never routed at all), disagreeing with the backlog
+      // row's "queued" state for the same ticket (BL-079). Only skip live
+      // resolution entirely — and fall back to assignedTo — when no
+      // targetPath is given at all.
+      const resolvedHolder = targetPath ? findLiveHolder(targetPath, item.id) : item.assignedTo;
+      if (!resolvedHolder) {
+        continue;
       }
-      const resolvedHolder = liveHolder || item.assignedTo;
       const bucket = byHolder.get(resolvedHolder) ?? [];
       bucket.push({ item, holder: resolvedHolder });
       byHolder.set(resolvedHolder, bucket);
