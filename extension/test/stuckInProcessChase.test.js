@@ -198,3 +198,22 @@ test('REGRESSION: buildRoleInboxes resolves per-worktree inbox paths from roles.
     'master roles use the project root worktree, never a per-role handoffs/<role>/ layout'
   );
 });
+
+test('buildRoleInboxes returns an empty list when roles.tsv is missing, instead of throwing', () => {
+  const target = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-target-'));
+  assert.deepEqual(buildRoleInboxes(target, ['specifier', 'coder']), []);
+});
+
+test('buildRoleInboxes only includes roles present in rolesList, even if roles.tsv has more', () => {
+  const target = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-target-'));
+  fs.mkdirSync(path.join(target, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(
+    path.join(target, '.swarmforge', 'roles.tsv'),
+    `specifier\tmaster\t${target}\tswarmforge-specifier\tSpecifier\tclaude\ttask\n` +
+      `coder\tcoder\t${target}\tswarmforge-coder\tCoder\tclaude\ttask\n`
+  );
+
+  const inboxes = buildRoleInboxes(target, ['coder']);
+
+  assert.deepEqual(inboxes.map((i) => i.role), ['coder']);
+});

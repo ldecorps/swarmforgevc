@@ -8,6 +8,7 @@ import { loadRuns } from '../runs/runLog';
 import { getNonce, getWebviewHtml } from './webviewHtml';
 import { readBacklog, BacklogItem } from './backlogReader';
 import { buildBadgeMap } from './badgeSummary';
+import { NeedsHumanReconciler } from './needsHumanReconciler';
 import { extractQuestionSnippet } from './needsHumanDetection';
 import { recordSessionUrl, getSessionUrl } from '../notify/sessionUrlCapture';
 import {
@@ -32,7 +33,7 @@ export class SwarmPanel {
   private stagePoller: ReturnType<typeof setInterval> | undefined;
   private disposables: vscode.Disposable[] = [];
   private wasActive = false;
-  private escalatedRoles = new Set<string>();
+  private readonly needsHumanReconciler = new NeedsHumanReconciler();
   private dogfoodShown = false;
   private workspaceState: vscode.Memento | undefined;
   private emailNotifier: NeedsHumanEmailNotifier | undefined;
@@ -188,16 +189,23 @@ export class SwarmPanel {
       },
       paneRows,
       (events) => {
-        this.panel.webview.postMessage({ type: 'needsHuman', events });
-        if (this.emailNotifier) {
-          const updates: NeedsHumanUpdate[] = events.map((event) => ({
-            role: event.role,
-            needsHuman: event.needsHuman,
-            snippet: event.needsHuman
-              ? extractQuestionSnippet(this.latestPaneText.get(event.role))
-              : undefined,
-          }));
-          this.emailNotifier.recordUpdates(updates, Date.now());
+        const deltas = this.needsHumanReconciler.applyQuestionEvents(events);
+        if (deltas.length > 0) {
+          this.panel.webview.postMessage({ type: 'needsHuman', events: deltas });
+          if (this.emailNotifier) {
+            // Snippets only come from the question detector's raw events (a
+            // stuck-escalation delta has no literal prompt to quote), so look
+            // the quote up per delta rather than carrying it on the deltas
+            // themselves.
+            const updates: NeedsHumanUpdate[] = deltas.map((event) => ({
+              role: event.role,
+              needsHuman: event.needsHuman,
+              snippet: event.needsHuman
+                ? extractQuestionSnippet(this.latestPaneText.get(event.role))
+                : undefined,
+            }));
+            this.emailNotifier.recordUpdates(updates, Date.now());
+          }
         }
       }
     );
@@ -306,24 +314,14 @@ export class SwarmPanel {
 
   // Roles the stuck-in-process chaser escalated (chases exhausted, no
   // recovery) surface with the same needs-human red border the question
-  // detector uses; only state CHANGES are posted so the two signals do not
-  // fight each other every poll (BL-067).
+  // detector uses. Routed through needsHumanReconciler so this source's
+  // "false" never clears a tile the question detector still holds true (and
+  // vice versa) — see needsHumanReconciler.ts (BL-067).
   private postStuckEscalations(): void {
-    const escalated = new Set(escalatedStuckRoles());
-    const events: { role: string; needsHuman: boolean }[] = [];
-    for (const role of escalated) {
-      if (!this.escalatedRoles.has(role)) {
-        events.push({ role, needsHuman: true });
-      }
-    }
-    for (const role of this.escalatedRoles) {
-      if (!escalated.has(role)) {
-        events.push({ role, needsHuman: false });
-      }
-    }
-    this.escalatedRoles = escalated;
-    if (events.length > 0) {
-      this.panel.webview.postMessage({ type: 'needsHuman', events });
+    const deltas = this.needsHumanReconciler.applyStuckRoles(escalatedStuckRoles());
+    if (deltas.length > 0) {
+      this.panel.webview.postMessage({ type: 'needsHuman', events: deltas });
+      this.emailNotifier?.recordUpdates(deltas, Date.now());
     }
   }
 

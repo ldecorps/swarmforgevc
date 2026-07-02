@@ -214,6 +214,26 @@ async function resolveTargetPath(context: vscode.ExtensionContext): Promise<stri
   return targetPath;
 }
 
+function validateTargetAndLastRun(
+  targetPath: string | undefined,
+  context: vscode.ExtensionContext
+): { targetPath: string; lastRunName: string } | null {
+  if (!targetPath) {
+    vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
+    return null;
+  }
+
+  const lastRunName = context.globalState.get<string>(LAST_RUN_NAME_KEY);
+  if (!lastRunName) {
+    vscode.window.showWarningMessage(
+      'No previous run name stored. Use SwarmForge: Launch Swarm first.'
+    );
+    return null;
+  }
+
+  return { targetPath, lastRunName };
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   // Lets the dev-host bounce script verify a fresh activation (BL-058);
   // written only in Development extension mode.
@@ -419,19 +439,11 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     vscode.commands.registerCommand('swarmforge.bounceSwarm', async () => {
-      const targetPath = getTargetPath();
-      if (!targetPath) {
-        vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
+      const validated = validateTargetAndLastRun(getTargetPath(), context);
+      if (!validated) {
         return;
       }
-
-      const lastRunName = context.globalState.get<string>(LAST_RUN_NAME_KEY);
-      if (!lastRunName) {
-        vscode.window.showWarningMessage(
-          'No previous run name stored. Use SwarmForge: Launch Swarm first.'
-        );
-        return;
-      }
+      const { targetPath, lastRunName } = validated;
 
       vscode.window.showInformationMessage('Restarting swarm...');
       const result = await bounceSwarm(targetPath, lastRunName);
@@ -456,19 +468,11 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     vscode.commands.registerCommand('swarmforge.bounceAll', async () => {
-      const targetPath = getTargetPath();
-      if (!targetPath) {
-        vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
+      const validated = validateTargetAndLastRun(getTargetPath(), context);
+      if (!validated) {
         return;
       }
-
-      const lastRunName = context.globalState.get<string>(LAST_RUN_NAME_KEY);
-      if (!lastRunName) {
-        vscode.window.showWarningMessage(
-          'No previous run name stored. Use SwarmForge: Launch Swarm first.'
-        );
-        return;
-      }
+      const { targetPath } = validated;
 
       vscode.window.showInformationMessage('Stopping swarm and reloading extension...');
       const stopResult = stopSwarm(targetPath);
