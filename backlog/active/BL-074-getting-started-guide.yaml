@@ -1,0 +1,73 @@
+id: BL-074
+title: Getting Started guide — install, init target, run, PR (documenter-owned)
+milestone: M5
+status: todo
+priority: 20
+assigned_to: coder
+
+description: |
+  What (documenter proposal, 2026-07-02, accepted by specifier): a single
+  Getting Started guide at docs/GettingStarted.md that walks a new developer
+  from zero to a reviewed PR using SwarmForge VC: (1) INSTALL — build the
+  extension and load it (dev host and/or vsix), plus prerequisites (tmux, a
+  SwarmForge install, node); (2) INIT — point the extension at a target repo
+  and run Initialize Target (project.prompt / engineering.prompt scaffold);
+  (3) RUN — launch the swarm, watch the tiles, interact with an agent; (4)
+  PR — how a finished run becomes a pull request to review. Short and
+  task-ordered; link it from the README. The documenter OWNS this guide
+  going forward: keeping it current is part of the documenter's normal docs
+  pass whenever a parcel changes commands, settings, or flow (this ownership
+  lives in the guide's header note and this ticket — no role-prompt change).
+
+  Why: the project's definition of done is a developer using this daily, but
+  the only onboarding path today is reading specs and source.
+
+  Constraints: docs only — no production code changes. Every command ID,
+  setting, and script named in the guide must exist in the current manifest
+  and repo (no invented or stale commands — verify against
+  extension/package.json contributions). Keep it one page; deep details
+  belong in docs/Specification.MD, link instead of duplicating (DRY).
+
+  Scope: docs/GettingStarted.md + a README link, plus a small drift test if
+  practical (see gate). Orthogonal to all in-flight code tickets.
+
+acceptance: |
+  Feature: Getting Started guide takes a newcomer from install to PR
+
+  # BL-074 getting-started-01
+  Scenario: the guide exists and covers the full path
+    When docs/GettingStarted.md is read
+    Then it has sections covering install, target init, run/watch, and PR
+    And each section gives concrete, copy-pasteable steps
+    And it fits roughly one page, linking to Specification.MD for depth
+
+  # BL-074 getting-started-02
+  Scenario Outline: referenced commands exist in the manifest
+    Given the guide references command <command>
+    When extension/package.json contributions are checked
+    Then <command> is a contributed command ID
+
+    Examples:
+      | command               |
+      | swarmforge.setTarget  |
+      | swarmforge.initTarget |
+      | swarmforge.run        |
+      | swarmforge.stop       |
+
+  # BL-074 getting-started-03
+  Scenario: the README points newcomers at the guide
+    When the repo README is read
+    Then it links to docs/GettingStarted.md near the top
+
+  # BL-074 getting-started-04
+  Scenario: the guide declares its owner
+    When docs/GettingStarted.md is read
+    Then a header note states the documenter maintains it
+
+  # Non-behavioral gate:
+  #  - Docs-only parcel: no extension/src changes (stages with nothing to do
+  #    complete without forwarding per handoff-protocol).
+  #  - Where practical, a cheap drift test asserts every swarmforge.* command
+  #    ID mentioned in the guide exists in package.json contributions.
+  #  - Steps verified once by actually following them in a clean dev host
+  #    before QA sign-off (note it in the close).
