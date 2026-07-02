@@ -3,6 +3,7 @@ import { SwarmRole, respawnAgent } from '../swarm/tmuxClient';
 import { PaneTailer } from './paneTailer';
 import { currentStageLabel, readPipelineStages, findLiveHolder } from '../swarm/swarmState';
 import { readDaemonHealth } from '../swarm/daemonHealth';
+import { escalatedStuckRoles } from '../watchdog/stuckEscalations';
 import { loadRuns } from '../runs/runLog';
 import { getNonce, getWebviewHtml } from './webviewHtml';
 import { readBacklog, BacklogItem } from './backlogReader';
@@ -21,6 +22,7 @@ export class SwarmPanel {
   private stagePoller: ReturnType<typeof setInterval> | undefined;
   private disposables: vscode.Disposable[] = [];
   private wasActive = false;
+  private escalatedRoles = new Set<string>();
   private dogfoodShown = false;
   private workspaceState: vscode.Memento | undefined;
 
@@ -205,9 +207,33 @@ export class SwarmPanel {
       this.panel.webview.postMessage({ type: 'holderUpdate', holders: holderMap });
       this.panel.webview.postMessage({ type: 'badgeUpdate', badges: buildBadgeMap(backlogItems, this.targetPath) });
       this.panel.webview.postMessage({ type: 'transportHealth', health: readDaemonHealth(this.targetPath) });
+      this.postStuckEscalations();
     };
     poll();
     this.stagePoller = setInterval(poll, STAGE_POLL_INTERVAL_MS);
+  }
+
+  // Roles the stuck-in-process chaser escalated (chases exhausted, no
+  // recovery) surface with the same needs-human red border the question
+  // detector uses; only state CHANGES are posted so the two signals do not
+  // fight each other every poll (BL-067).
+  private postStuckEscalations(): void {
+    const escalated = new Set(escalatedStuckRoles());
+    const events: { role: string; needsHuman: boolean }[] = [];
+    for (const role of escalated) {
+      if (!this.escalatedRoles.has(role)) {
+        events.push({ role, needsHuman: true });
+      }
+    }
+    for (const role of this.escalatedRoles) {
+      if (!escalated.has(role)) {
+        events.push({ role, needsHuman: false });
+      }
+    }
+    this.escalatedRoles = escalated;
+    if (events.length > 0) {
+      this.panel.webview.postMessage({ type: 'needsHuman', events });
+    }
   }
 
   private sendRoles(roles: SwarmRole[]): void {

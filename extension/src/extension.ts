@@ -18,7 +18,9 @@ import { resolveRunName } from './run/resolveRunName';
 import { startBounceWatcher, BounceType } from './swarm/bounceWatcher';
 import { startChaserMonitor, stopChaserMonitor } from './watchdog/chaserMonitor';
 import type { ChaserMonitorConfig, ChaserCallbacks } from './watchdog/chaserMonitor';
-import { readTmuxSocket, paneTarget, getPaneBaseIndex, sendKeys, readSwarmRoles, respawnAgent } from './swarm/tmuxClient';
+import { readTmuxSocket, paneTarget, getPaneBaseIndex, sendKeys, capturePane, readSwarmRoles, respawnAgent } from './swarm/tmuxClient';
+import { trackPaneActivity, outboxNewestMtimeMs } from './watchdog/paneActivity';
+import { setStuckEscalation } from './watchdog/stuckEscalations';
 import { readHeartbeat } from './tools/heartbeat';
 import { maybeWriteActivationMarker } from './devActivationMarker';
 import { computeLiveness } from './watchdog/liveness';
@@ -168,6 +170,23 @@ function startOrRestartChaserMonitor(targetPath: string, context: vscode.Extensi
 
     logDeadLetter: (_role: string, _filePath: string): void => {
       // Dead letter logging can be extended in future iterations
+    },
+
+    // Activity = the pane's captured content changing (tool output, prompts)
+    // or the role's outbox being written. Judged per sweep; a role showing
+    // any of these within the stuck threshold is never chased (BL-067).
+    getLastActivityMs: (role: string): number => {
+      const roleInfo = roles.find((r) => r.role === role);
+      if (!roleInfo) return Date.now();
+      const baseIndex = getPaneBaseIndex(socketPath);
+      const target = paneTarget(roleInfo.session, roleInfo.displayName, baseIndex);
+      const capture = capturePane(socketPath, target, -50);
+      const pane = capture.exitCode === 0 ? capture.stdout : '';
+      return trackPaneActivity(role, pane, outboxNewestMtimeMs(targetPath, role), Date.now());
+    },
+
+    onStuckEscalation: (role: string, escalated: boolean): void => {
+      setStuckEscalation(role, escalated);
     },
   };
 

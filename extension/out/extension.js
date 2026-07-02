@@ -55,6 +55,8 @@ const resolveRunName_1 = require("./run/resolveRunName");
 const bounceWatcher_1 = require("./swarm/bounceWatcher");
 const chaserMonitor_1 = require("./watchdog/chaserMonitor");
 const tmuxClient_2 = require("./swarm/tmuxClient");
+const paneActivity_1 = require("./watchdog/paneActivity");
+const stuckEscalations_1 = require("./watchdog/stuckEscalations");
 const heartbeat_1 = require("./tools/heartbeat");
 const devActivationMarker_1 = require("./devActivationMarker");
 const liveness_1 = require("./watchdog/liveness");
@@ -178,6 +180,22 @@ function startOrRestartChaserMonitor(targetPath, context) {
         },
         logDeadLetter: (_role, _filePath) => {
             // Dead letter logging can be extended in future iterations
+        },
+        // Activity = the pane's captured content changing (tool output, prompts)
+        // or the role's outbox being written. Judged per sweep; a role showing
+        // any of these within the stuck threshold is never chased (BL-067).
+        getLastActivityMs: (role) => {
+            const roleInfo = roles.find((r) => r.role === role);
+            if (!roleInfo)
+                return Date.now();
+            const baseIndex = (0, tmuxClient_2.getPaneBaseIndex)(socketPath);
+            const target = (0, tmuxClient_2.paneTarget)(roleInfo.session, roleInfo.displayName, baseIndex);
+            const capture = (0, tmuxClient_2.capturePane)(socketPath, target, -50);
+            const pane = capture.exitCode === 0 ? capture.stdout : '';
+            return (0, paneActivity_1.trackPaneActivity)(role, pane, (0, paneActivity_1.outboxNewestMtimeMs)(targetPath, role), Date.now());
+        },
+        onStuckEscalation: (role, escalated) => {
+            (0, stuckEscalations_1.setStuckEscalation)(role, escalated);
         },
     };
     // Start the chaser monitor

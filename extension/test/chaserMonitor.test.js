@@ -10,6 +10,20 @@ function mkTmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-chaser-monitor-'));
 }
 
+// Handoff inboxes are resolved from roles.tsv (per-worktree layout), not a
+// <target>/.swarmforge/handoffs/<role>/ shape (BL-067 root cause 2).
+function writeRolesTsv(targetPath, role, worktreePath) {
+  fs.mkdirSync(path.join(targetPath, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(
+    path.join(targetPath, '.swarmforge', 'roles.tsv'),
+    `${role}\tbranch\t${worktreePath}\tswarmforge-${role}\t${role}\tclaude\ttask\n`
+  );
+}
+
+function inboxNewDir(worktreePath) {
+  return path.join(worktreePath, '.swarmforge', 'handoffs', 'inbox', 'new');
+}
+
 function baseConfig(targetPath, overrides = {}) {
   return {
     targetPath,
@@ -28,6 +42,8 @@ function noopCallbacks(overrides = {}) {
     sendWakeUp: () => {},
     triggerRespawn: () => {},
     logDeadLetter: () => {},
+    getLastActivityMs: () => Date.now(),
+    onStuckEscalation: () => {},
     ...overrides,
   };
 }
@@ -50,10 +66,10 @@ test('startChaserMonitor returns a timer when .swarmforge exists', () => {
 
 test('periodic sweep chases a stale handoff and reports via callback', (t, done) => {
   const tmpDir = mkTmp();
-  const swarmforgeDir = path.join(tmpDir, '.swarmforge');
-  const inboxNewDir = path.join(swarmforgeDir, 'handoffs', 'coder', 'inbox', 'new');
-  fs.mkdirSync(inboxNewDir, { recursive: true });
-  fs.writeFileSync(path.join(inboxNewDir, '00_test.handoff'), 'test\n');
+  writeRolesTsv(tmpDir, 'coder', tmpDir);
+  const newDir = inboxNewDir(tmpDir);
+  fs.mkdirSync(newDir, { recursive: true });
+  fs.writeFileSync(path.join(newDir, '00_test.handoff'), 'test\n');
 
   let chasedRole = null;
   const timer = startChaserMonitor(
@@ -66,19 +82,23 @@ test('periodic sweep chases a stale handoff and reports via callback', (t, done)
   );
 
   setTimeout(() => {
-    assert.equal(chasedRole, 'coder');
     stopChaserMonitor(timer);
-    fs.rmSync(tmpDir, { recursive: true });
-    done();
+    try {
+      assert.equal(chasedRole, 'coder');
+      fs.rmSync(tmpDir, { recursive: true });
+      done();
+    } catch (err) {
+      done(err);
+    }
   }, 200);
 });
 
 test('stopChaserMonitor stops further sweeps', (t, done) => {
   const tmpDir = mkTmp();
-  const swarmforgeDir = path.join(tmpDir, '.swarmforge');
-  const inboxNewDir = path.join(swarmforgeDir, 'handoffs', 'coder', 'inbox', 'new');
-  fs.mkdirSync(inboxNewDir, { recursive: true });
-  fs.writeFileSync(path.join(inboxNewDir, '00_test.handoff'), 'test\n');
+  writeRolesTsv(tmpDir, 'coder', tmpDir);
+  const newDir = inboxNewDir(tmpDir);
+  fs.mkdirSync(newDir, { recursive: true });
+  fs.writeFileSync(path.join(newDir, '00_test.handoff'), 'test\n');
 
   let sweepCount = 0;
   const timer = startChaserMonitor(
@@ -94,9 +114,13 @@ test('stopChaserMonitor stops further sweeps', (t, done) => {
     stopChaserMonitor(timer);
     const countAtStop = sweepCount;
     setTimeout(() => {
-      assert.equal(sweepCount, countAtStop);
-      fs.rmSync(tmpDir, { recursive: true });
-      done();
+      try {
+        assert.equal(sweepCount, countAtStop);
+        fs.rmSync(tmpDir, { recursive: true });
+        done();
+      } catch (err) {
+        done(err);
+      }
     }, 150);
   }, 60);
 });
