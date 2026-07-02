@@ -9,6 +9,7 @@ export interface BacklogItem {
   milestone?: string;
   priority?: number;
   dependsOn?: string[];
+  pack?: string[];
 }
 
 const VALID_STATUSES = new Set(['todo', 'active', 'done']);
@@ -65,6 +66,11 @@ export function parseBacklogYaml(content: string): BacklogItem | null {
   const dependsOn = parseYamlList(content, 'depends_on');
   if (dependsOn) {
     item.dependsOn = dependsOn;
+  }
+
+  const pack = parseYamlList(content, 'pack');
+  if (pack) {
+    item.pack = pack;
   }
 
   return item;
