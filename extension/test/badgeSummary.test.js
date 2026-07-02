@@ -64,6 +64,20 @@ test('truncateSummary truncates after stripping prefix if still too long', () =>
   assert.ok(result.endsWith('…'));
 });
 
+test('truncateSummary leaves an exactly-40-char title untouched (boundary)', () => {
+  const title = 'x'.repeat(40);
+  const result = truncateSummary(title);
+  assert.equal(result, title);
+  assert.equal(result.length, 40);
+});
+
+test('truncateSummary truncates a 41-char title (boundary)', () => {
+  const title = 'x'.repeat(41);
+  const result = truncateSummary(title);
+  assert.equal(result.length, 40);
+  assert.ok(result.endsWith('…'));
+});
+
 test('truncateSummary handles empty title', () => {
   const result = truncateSummary('');
   assert.equal(result, '');
