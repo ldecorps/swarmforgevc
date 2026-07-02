@@ -56,10 +56,10 @@ swarmforge-vscode/
 │   │   ├── config/             # Target project resolution, pack selection
 │   │   └── tools/              # Reusable tools accumulated by the swarm
 │   └── package.json
-├── roles/                      # Generic role prompts (coordinator, coder, refactorer…)
+├── roles/                      # Generic role prompts (coordinator, coder, cleaner…)
 │   ├── coordinator.prompt
 │   ├── coder.prompt
-│   ├── refactorer.prompt
+│   ├── cleaner.prompt
 │   └── architect.prompt
 └── constitution/               # Shared constitution articles
     └── articles/
@@ -94,7 +94,7 @@ The extension opens a VS Code Webview panel with one tile per active agent role,
 │                  │                                  │
 │                  │                                  │
 ├──────────────────┼──────────────────────────────────┤
-│  refactorer      │  architect                       │
+│  cleaner      │  architect                       │
 │  ─────────────── │  ──────────────────────────────  │
 │  [live output]   │  [live output]                   │
 │                  │                                  │
@@ -470,7 +470,7 @@ Copilot is attractive from two angles: its CLI exposes **multiple models (Claude
 
 ### Mixed backends
 
-Because backend is per-role, a swarm can run **heterogeneously** — e.g. a strong model for the architect, a cheaper/faster one for the refactorer — tuned per role or changed on the fly. The pipeline doesn't care which backend produced a handoff; it only sees branches and messages.
+Because backend is per-role, a swarm can run **heterogeneously** — e.g. a strong model for the architect, a cheaper/faster one for the cleaner — tuned per role or changed on the fly. The pipeline doesn't care which backend produced a handoff; it only sees branches and messages.
 
 ### Cost-aware backend selection
 
@@ -497,7 +497,7 @@ This load profile is shown in the run artifacts / Work Tree (a simple per-role b
 
 
 - A configured **price/capability table** per backend+model (cost tier, relative strength) — user-maintained, since only the user knows their plan/rates
-- **Role demands:** which roles need reasoning muscle (architect, specifier) vs. which are more mechanical (refactorer, documenter)
+- **Role demands:** which roles need reasoning muscle (architect, specifier) vs. which are more mechanical (cleaner, documenter)
 - **Outcome signals it already collects:** the per-role load profile above (active time, time-in-stage, rework load) plus chase counts and respawns. A cheap model that keeps getting rerouted or fails QA is a *false economy* — the bounces cost more than a stronger model would have. This is the key insight: cost-effectiveness is measured by **work that passes the gates**, not per-call price.
 - **Maturity of the solution** (the angle you raised): early/greenfield work with sparse tests benefits from stronger models (mistakes are expensive and uncaught); a mature codebase with dense tests and tight specs can lean on cheaper models, because the gates catch errors cheaply. So the recommended tier can *shift down* as the project hardens.
 
@@ -513,7 +513,7 @@ This load profile is shown in the run artifacts / Work Tree (a simple per-role b
 
 **Guardrails:** ties into the cost/rate-limit gap — a per-run budget cap that pauses the swarm is the hard backstop, independent of any suggestion logic. And because price data is user-configured, the extension never *assumes* it knows current rates; it presents its recommendation as advisory and points the user to verify.
 
-A pragmatic default that needs no tuning: **start each role at a sensible tier (strong for architect/specifier, mid for coder, cheap for refactorer/documenter), then let outcome signals nudge suggestions over time.** Most of the savings come from not running everything on the top model, which this captures immediately.
+A pragmatic default that needs no tuning: **start each role at a sensible tier (strong for architect/specifier, mid for coder, cheap for cleaner/documenter), then let outcome signals nudge suggestions over time.** Most of the savings come from not running everything on the top model, which this captures immediately.
 
 ---
 
@@ -524,9 +524,9 @@ Before the user launches a run, the extension analyzes the target to recommend a
 1. Count open backlog items / feature files in the target (if present)
 2. Estimate codebase size and complexity (file count, language mix)
 3. Apply heuristic (all packs preserve pipeline order; smaller packs omit middle stages):
-   - Trivial / single-file fix → **2-pack** (coder, refactorer) — Uncle Bob's quick backend flow
-   - Moderate, needs specs → **4-pack** (specifier, coder, refactorer, architect)
-   - Major work, full quality gates → **7-pack** (specifier, coder, refactorer, architect, documenter, QA + coordinator) — this extension's default
+   - Trivial / single-file fix → **2-pack** (coder, cleaner) — Uncle Bob's quick backend flow
+   - Moderate, needs specs → **4-pack** (specifier, coder, cleaner, architect)
+   - Major work, full quality gates → **7-pack** (specifier, coder, cleaner, architect, documenter, QA + coordinator) — this extension's default
 4. Present recommendation with one-line rationale in the UI
 5. User accepts or manually selects a different pack from the dropdown
 
@@ -546,7 +546,7 @@ Built on Uncle Bob's six-pack, with two deviations: **hardener is dropped**, and
 |---|---|---|
 | 1 | **specifier** | Turns user intent into accepted Gherkin specs + end-to-end QA procedures. Owns the dev branch. Sole writer of governance text (constitution, role prompts, project/engineering prompts) — see Governance. |
 | 2 | **coder** | Implements approved behavior slices with TDD, unit tests, generated acceptance tests. |
-| 3 | **refactorer** | Behavior-preserving cleanup, coverage improvement, CRAP & DRY review, mutation-site scans. (Uncle Bob's "cleaner".) |
+| 3 | **cleaner** | Behavior-preserving cleanup, coverage improvement, CRAP & DRY review, mutation-site scans. |
 | 4 | **architect** | Reviews module structure, boundaries, dependency direction, property-test coverage. |
 | 5 | **documenter** | Updates docs for humans: high-level docs plus a doc for the piece just developed. |
 | 6 | **QA** | Converts the specifier's QA procedures into executable scripts, runs final UI verification, checks handoff consistency. As the last stage, it's the convergence point and signals completion to the specifier. |
@@ -556,14 +556,14 @@ Built on Uncle Bob's six-pack, with two deviations: **hardener is dropped**, and
 ### The pipeline flow
 
 ```
-specifier ──► coder ──► refactorer ──► architect ──► documenter ──► QA ──► specifier (done)
+specifier ──► coder ──► cleaner ──► architect ──► documenter ──► QA ──► specifier (done)
 ```
 
 Stage by stage:
 
 1. **Specifier** writes the Gherkin and hands the parcel to the coder.
-2. **Coder** merges the dev branch ("main" of the swarm) into its own branch, does TDD-style development, then hands to the refactorer when done.
-3. **Refactorer** cleans up, then hands to the architect.
+2. **Coder** merges the dev branch ("main" of the swarm) into its own branch, does TDD-style development, then hands to the cleaner when done.
+3. **Cleaner** cleans up, then hands to the architect.
 4. **Architect** reviews structure, then hands to the documenter.
 5. **Documenter** updates the human-facing docs (high-level + the just-developed piece), then hands to QA.
 6. **QA**, when done, **forces everyone to merge their own branch with QA's** — this is the integration convergence point (see below) — then notifies the specifier that everything is complete.
@@ -682,7 +682,7 @@ A full 7-pack swarm shouldn't run all seven agents on a trivial backlog item. Ra
 - Roles outside that set go **dormant** for the duration of that item: idle, not assigned work, tile dimmed
 - When the next item needs them, they wake — no respawn, no window churn
 
-So a 7-pack physically running can behave as a 2-pack for a simple item (e.g. just `coder` + `refactorer`), then expand for the next — but the active roles always run in pipeline order.
+So a 7-pack physically running can behave as a 2-pack for a simple item (e.g. just `coder` + `cleaner`), then expand for the next — but the active roles always run in pipeline order.
 
 ### Declaring the active pack
 
@@ -701,8 +701,8 @@ workflow: auto                        # coordinator infers from complexity
 ```
 
 **Auto inference heuristic** (coordinator) — selected roles always run in pipeline order:
-- Trivial / single-file / no new behavior → `coder, refactorer, documenter`
-- New behavior with acceptance criteria → `specifier, coder, refactorer, documenter, QA`
+- Trivial / single-file / no new behavior → `coder, cleaner, documenter`
+- New behavior with acceptance criteria → `specifier, coder, cleaner, documenter, QA`
 - Architectural change / cross-cutting → full 7-pack (add `architect`)
 
 ### Tile states under dynamic workflow
@@ -769,7 +769,7 @@ Extension streams each process's output → tiled panel updates
         │
         ▼
 Agents work in pipeline order on their own branches:
-  specifier → coder → refactorer → architect → documenter → QA
+  specifier → coder → cleaner → architect → documenter → QA
   Coder pulls dev branch first; documenter updates docs before verification;
   QA convergence forces all branches to merge QA's and notifies specifier
   → integrated state on the dev branch
@@ -924,7 +924,7 @@ To avoid clobbering, human and swarm own different fields of the same item:
 | Field | Owner | Notes |
 |---|---|---|
 | `title`, `description`, `priority`, `acceptance` | **Human** | The swarm reads but never overwrites these |
-| `workflow_pin` | **Human** | Optional. If set (e.g. `[coder, refactorer]` or `full`), it's an authoritative override the coordinator must honor. Empty = defer to the coordinator. |
+| `workflow_pin` | **Human** | Optional. If set (e.g. `[coder, cleaner]` or `full`), it's an authoritative override the coordinator must honor. Empty = defer to the coordinator. |
 | `workflow_resolved` | **Swarm** (coordinator) | The active pack the coordinator actually chose for this item. Written by the swarm, read by the human. |
 | `status` (`todo / in-progress / review / done`) | **Swarm** | Driven by actual work + test state |
 | `linked_commits`, `linked_pr`, `completion_pct` | **Swarm** | Derived, never hand-edited |
