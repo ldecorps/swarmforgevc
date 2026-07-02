@@ -3,7 +3,7 @@ title: FEATURE — cooldown-aware wake scheduling after token reset windows
 milestone: M3
 status: todo
 priority: 05
-assigned_to: coordinator
+assigned_to: coder
 
 description: |
   When an agent reports token exhaustion and provides a reset time (for example,
