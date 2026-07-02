@@ -220,6 +220,24 @@ function startOrRestartChaserMonitor(targetPath: string, context: vscode.Extensi
   }
 }
 
+function handleBounceResult(
+  result: { success: boolean; message: string },
+  targetPath: string,
+  context: vscode.ExtensionContext
+): boolean {
+  if (!result.success) {
+    vscode.window.showErrorMessage(result.message);
+    return false;
+  }
+  vscode.window.showInformationMessage(result.message);
+  const panel = SwarmPanel.currentPanel;
+  if (panel) {
+    panel.updateTarget(targetPath);
+  }
+  startOrRestartChaserMonitor(targetPath, context);
+  return true;
+}
+
 // BL-069: performs the real verified bounce (BL-058 path) for a graceful
 // drain that just reached all-idle, or for a human-forced immediate bounce
 // that skips the rest of the drain. Always stops the drain watcher and
@@ -256,16 +274,7 @@ async function performGracefulBounceNow(
     return;
   }
   const result = await bounceSwarm(validated.targetPath, validated.lastRunName);
-  if (!result.success) {
-    vscode.window.showErrorMessage(result.message);
-    return;
-  }
-  vscode.window.showInformationMessage(result.message);
-  const panel = SwarmPanel.currentPanel;
-  if (panel) {
-    panel.updateTarget(targetPath);
-  }
-  startOrRestartChaserMonitor(targetPath, context);
+  handleBounceResult(result, targetPath, context);
 }
 
 // BL-069: watches the durable drain sentinel and waits until every role
@@ -629,18 +638,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
       vscode.window.showInformationMessage('Restarting swarm...');
       const result = await bounceSwarm(targetPath, lastRunName);
-      if (!result.success) {
-        vscode.window.showErrorMessage(result.message);
-        return;
-      }
-
-      vscode.window.showInformationMessage(result.message);
-      const panel = SwarmPanel.currentPanel;
-      if (panel) {
-        panel.updateTarget(targetPath);
-      }
-      // Restart chaser monitor after swarm bounce
-      startOrRestartChaserMonitor(targetPath, context);
+      handleBounceResult(result, targetPath, context);
     }),
 
     vscode.commands.registerCommand('swarmforge.bounceExtension', async () => {
