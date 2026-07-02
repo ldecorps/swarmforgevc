@@ -1,7 +1,7 @@
 id: BL-049
 title: hardener tooling — CRAP metric report (custom, over coverage + complexity)
 milestone: M4
-status: todo
+status: done
 priority: 30
 assigned_to: coder
 
