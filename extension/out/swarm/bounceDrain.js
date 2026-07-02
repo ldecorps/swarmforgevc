@@ -100,18 +100,26 @@ function decideDrainAction(roles, startedAtMs, nowMs, timeoutSeconds) {
 }
 function startBounceDrainWatcher(config, adapters) {
     // Prompt the human once per drain session, not once per poll: the sentinel
-    // itself only carries the state a role script needs, not UI state.
+    // itself only carries the state a role script needs, not UI state. `bounced`
+    // guards the same way: the caller (extension.ts) stops this watcher and
+    // clears the sentinel synchronously inside onBounce, so in practice a
+    // second tick never reaches here — but that is an implicit contract with
+    // the one current caller, not something this primitive enforces on its
+    // own, so it is guarded directly rather than relying on it.
     let timeoutPrompted = false;
+    let bounced = false;
     const intervalId = setInterval(() => {
         const state = readBounceDrainState(config.targetPath);
         if (!state) {
             timeoutPrompted = false;
+            bounced = false;
             return;
         }
         const startedAtMs = Date.parse(state.startedAt);
         const roles = adapters.getRoleStatuses();
         const decision = decideDrainAction(roles, startedAtMs, Date.now(), state.timeoutSeconds);
-        if (decision === 'bounce') {
+        if (decision === 'bounce' && !bounced) {
+            bounced = true;
             adapters.onBounce(state.bounceType);
         }
         else if (decision === 'timeout' && !timeoutPrompted) {
