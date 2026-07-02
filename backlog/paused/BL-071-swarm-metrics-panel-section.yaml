@@ -1,0 +1,130 @@
+id: BL-071
+title: swarm metrics — panel section showing ticket turnaround, agent busyness, retry count
+milestone: M5
+status: todo
+priority: 16
+assigned_to: coder
+
+description: |
+  What (user request, 2026-07-02): a little UI to monitor how the swarm works.
+  Add a METRICS pane to the existing SwarmForge panel as a THIRD FOLDABLE PANE
+  in the bottom row, sitting side by side with RECENT RUNS and BACKLOG (the
+  three share the row's width; METRICS folds/unfolds exactly like the other
+  two, and folding one must not break the layout of the others). It shows
+  three things (product decisions confirmed with the human, recommended
+  options accepted):
+
+  1. Mean time to process a ticket — measured ACTIVE -> CLOSED: from the
+     commit that moves a ticket file into backlog/active/ to the commit that
+     moves it into backlog/done/<milestone>/. Derived from the backlog's git
+     history in the target repo. Show the mean plus the sample count it is
+     computed over (e.g. "mean 4h 12m over 23 tickets").
+  2. Per-agent busyness — INBOX OCCUPANCY: for each role, the fraction of
+     elapsed run time covered by [dequeued_at, completed_at] intervals from
+     that worktree's .swarmforge/handoffs/inbox/completed/ handoff headers,
+     plus the currently open interval when a task/batch sits in
+     inbox/in_process/ (dequeued_at -> now). One row or bar per role.
+  3. Retry count — BACKWARD HANDOFFS: count of git_handoff files whose sender
+     sits LATER in the pipeline chain than the recipient (e.g. QA -> coder
+     rejection). Forward handoffs and notes do not count. Show a total and,
+     where the task name starts with a ticket ID, a per-ticket count for the
+     worst offenders.
+
+  Why: the human currently reconstructs swarm health from memory files and
+  git archaeology; the panel already shows WHERE parcels are but nothing
+  about how FAST or how much REWORK.
+
+  Constraints: two-layer rule — the extension host reads git/backlog/handoff
+  files and computes all metrics; the webview only renders what it is sent
+  (no localStorage/sessionStorage). Strictly read-only: no new writes under
+  .swarmforge/, no SwarmForge modification, no handoff-protocol change.
+  Reuse the panel's existing refresh cadence — no new fast polling loop, no
+  per-second git invocations (cache/derive incrementally as needed). Be
+  tolerant of missing data: handoffs lacking headers are skipped, a fresh run
+  with no closed tickets shows a placeholder (never NaN/Infinity). Keep it
+  LITTLE: text/bars in the panel, no charting library, no new webview panel.
+
+  Scope: extension only — a metrics computation module in extension/src
+  (host side), wiring in swarmPanel.ts, rendering in webviewHtml.ts /
+  media/panel.js, plus tests. OVERLAP WARNING for coordinator: touches the
+  same webview panel surface as BL-067/BL-068/BL-070 — sequence, don't
+  parallelize.
+
+acceptance: |
+  Feature: METRICS section in the SwarmForge panel
+
+  Background:
+    Given the SwarmForge panel is open against a running swarm
+    And the target repo's backlog history contains promoted and closed tickets
+    And agent worktrees contain completed and in-process handoff files
+
+  # BL-071 swarm-metrics-01
+  Scenario: the panel shows a METRICS pane beside RECENT RUNS and BACKLOG
+    When the panel renders
+    Then a foldable METRICS pane appears in the bottom row
+    And the bottom row lays out RECENT RUNS, BACKLOG, and METRICS side by side
+    And it shows mean ticket time with its sample count
+    And it shows one busyness entry per configured role
+    And it shows a total retry count
+
+  # BL-071 swarm-metrics-01b
+  Scenario: the METRICS pane folds like its siblings
+    Given the bottom row shows RECENT RUNS, BACKLOG, and METRICS
+    When the user folds the METRICS pane
+    Then its body collapses leaving only its header
+    And RECENT RUNS and BACKLOG keep their layout and remain usable
+    When the user unfolds it
+    Then the metrics content is shown again
+
+  # BL-071 swarm-metrics-02
+  Scenario: mean ticket time is derived from active -> done backlog history
+    Given ticket <id> entered backlog/active/ at <activated> and reached
+      backlog/done/ at <closed>
+    When metrics are computed
+    Then that ticket contributes <closed> minus <activated> to the mean
+    And tickets still in backlog/active/ contribute nothing
+
+    Examples:
+      | id     | activated        | closed           |
+      | BL-101 | 2026-07-02T08:00 | 2026-07-02T12:00 |
+      | BL-102 | 2026-07-02T09:00 | 2026-07-02T10:30 |
+
+  # BL-071 swarm-metrics-03
+  Scenario: busyness reflects inbox occupancy including the open interval
+    Given role coder has completed handoffs covering 3h of a 6h run
+    And role coder has held an in_process task for the last 1h
+    When metrics are computed
+    Then coder's busyness is about 66%
+    And a role with an empty completed/ and in_process/ shows 0%
+
+  # BL-071 swarm-metrics-04
+  Scenario: only backward handoffs count as retries
+    Given a git_handoff from QA to coder for task "BL-101-fix"
+    And a git_handoff from coder to cleaner for task "BL-101-fix"
+    And a note from specifier to coordinator
+    When metrics are computed
+    Then the retry count is 1
+    And ticket BL-101 shows 1 retry
+
+  # BL-071 swarm-metrics-05
+  Scenario: fresh run shows placeholders, never NaN
+    Given no ticket has ever been closed and no handoff completed
+    When the panel renders the METRICS section
+    Then mean ticket time shows a placeholder (e.g. "—")
+    And every busyness entry shows 0%
+    And the retry count shows 0
+    And no "NaN", "Infinity", or "undefined" text appears in the section
+
+  # BL-071 swarm-metrics-06
+  Scenario: metrics refresh on the existing cadence
+    Given the METRICS section is rendered
+    When a new ticket close lands and the panel's normal refresh tick fires
+    Then the mean ticket time and sample count update
+    And no additional polling loop or per-second git invocation is introduced
+
+  # Non-behavioral gate:
+  #  - Host computes, webview presents (two-layer rule); no browser storage.
+  #  - Read-only: no writes under .swarmforge/, SwarmForge unmodified.
+  #  - At least one test asserts on the rendered panel HTML for the METRICS
+  #    section (not only on the computation module).
+  #  - Existing suites stay green.

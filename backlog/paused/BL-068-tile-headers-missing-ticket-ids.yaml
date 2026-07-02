@@ -1,0 +1,114 @@
+id: BL-068
+title: BUG — tile headers show no ticket IDs in the live dev host (BL-053 regressed again)
+milestone: M3
+status: todo
+priority: 02
+assigned_to: coder
+
+description: |
+  DEFECT (human-reported, 2026-07-02, screenshot docs/img/unnamed.jpg). Every
+  tile header in a live Extension Development Host shows only the role name
+  ("Hardender hardender", "Qa QA", …) — no "BL-xxx · summary" badge anywhere —
+  while 5+ parcels were demonstrably in flight (hardener on BL-036/BL-061,
+  documenter on the redo-tag defect, QA on the BL-060 batch). The toolbar
+  Stage indicator and the bottom backlog bar (BL-067 + coder badge) DO render,
+  so the state is available; the tile headers just never surface it. This is
+  the SECOND regression of this feature (BL-038 → BL-053, merged 2026-07-01 as
+  46d45bc, folder-authoritative status fix).
+
+  What: first REPRODUCE in a live dev host against a swarm with parcels in
+  flight and confirm headers stay bare. Then DIAGNOSE — verify, don't assume;
+  candidates: later tile-grid/header rework (BL-051/BL-052 pane sizing,
+  BL-059/BL-054 border work) rebuilt or re-rendered headers without the badge
+  element; BL-062's backlogReader changes altered what buildBadgeMap receives;
+  or BL-053's wiring never actually fed the RENDERED header in the dev host
+  (its acceptance tested the state-mapping modules, not the rendered HTML).
+  Record the root cause in the commit message / ticket close, with a
+  regression test that reproduces the observed miss at the level where it
+  actually broke.
+
+  Then fix: each agent tile holding a parcel shows "<ID> · <summary>" in its
+  header, live-updating as parcels move down the pipeline. Preserve all
+  shipped BL-053/BL-038 behavior verbatim: badge text `<ID> · <summary>`,
+  summary = title truncated to ≤ 40 chars with "…", live holder resolved from
+  stage inbox handoffs (task name starts with the ticket ID), fallback to the
+  intended assignee when no holder resolves, idle tiles show role name only.
+  New (seen in the screenshot, cap is 6): when one role holds MULTIPLE parcels
+  (e.g. a hardender batch), its header shows the badge for the lowest ticket
+  ID plus a "+N" count for the others (deterministic; presentation-only
+  default — do not redesign holder resolution for it).
+
+  Hard requirement (why this ticket exists twice over): acceptance must pin
+  the RENDERED surface, not just the state mapping — a test that renders the
+  real webview HTML / panel.js badge path and asserts the badge text appears
+  in the tile-header markup a browser would show. A state-only unit test is
+  not sufficient to close this ticket.
+
+  Constraints: two-layer rule — host computes state, webview only presents;
+  no localStorage/sessionStorage; do not modify SwarmForge; do not change the
+  handoff/task-name protocol (holder resolution keeps relying on task names
+  starting with the ticket ID).
+
+  Scope: extension only — likely extension/src/panel/backlogReader.ts,
+  badgeSummary.ts, swarmPanel.ts, webviewHtml.ts, media/panel.js, plus tests.
+  OVERLAP WARNING for coordinator: BL-067 (in flight at coder) touches the
+  same tile status surface (swarmPanel/webviewHtml/panel.js) — do not run
+  both concurrently; promote this after BL-067 merges or re-check scope then.
+
+acceptance: |
+  Feature: tile header shows the held ticket badge in the rendered webview
+
+  Background:
+    Given the swarm is running with live agent tiles
+    And at least one ticket file is in the backlog/active/ folder
+    And a stage inbox holds a handoff whose task name starts with that ticket ID
+
+  # BL-068 rendered-header-badge-01
+  Scenario: holding agent's rendered header shows the badge
+    When the webview HTML for the panel is rendered
+    Then the holding role's tile-header markup contains "<ID> · <summary>"
+    And a non-holding role's tile-header markup contains only its role name
+
+  # BL-068 rendered-header-badge-02
+  Scenario: badge in the rendered header moves with the parcel
+    Given the rendered header of the current holder shows the badge
+    When the parcel is handed to the next role in the pipeline
+    And the panel re-renders
+    Then the next role's rendered header shows the badge
+    And the previous holder's rendered header no longer shows it
+
+  # BL-068 rendered-header-badge-03
+  Scenario: the reported screenshot state renders badges, not bare headers
+    Given the recorded 2026-07-02 state is reproduced in a test
+      (multiple active tickets, parcels held at several stages, dev host live)
+    When the webview HTML is rendered
+    Then every tile whose role holds a parcel shows that parcel's badge
+    And no parcel-holding tile shows a role-name-only header
+
+  # BL-068 rendered-header-badge-04
+  Scenario: a role holding multiple parcels shows lowest ID plus count
+    Given one role holds parcels for tickets <held>
+    When the webview HTML is rendered
+    Then that role's rendered header shows "<badge>" and "<count>"
+
+    Examples:
+      | held                   | badge                | count |
+      | BL-036, BL-061         | BL-036 · <summary36> | +1    |
+      | BL-059, BL-060, BL-062 | BL-059 · <summary59> | +2    |
+
+  # BL-068 rendered-header-badge-05
+  Scenario: shipped BL-053 behavior is preserved
+    Given the BL-053 acceptance scenarios (folder-authoritative status,
+      live-holder placement, assignee fallback, 40-char truncation, no badge
+      when idle)
+    When they are exercised against the fixed code
+    Then they all still pass
+
+  # Non-behavioral gate:
+  #  - Root cause of the regression diagnosed and recorded (commit message /
+  #    ticket close), with a regression test at the layer that actually broke.
+  #  - At least one acceptance test asserts on rendered webview HTML /
+  #    panel.js output (browser-visible markup), not only on state maps.
+  #  - Reproduced once in a live Extension Development Host before fixing and
+  #    verified fixed there after (note it in the close).
+  #  - Existing suites stay green; SwarmForge unmodified.

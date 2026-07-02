@@ -1,0 +1,102 @@
+id: BL-072
+title: BUG — backlog rows show static assigned_to, not the live holder; held tickets mislabeled
+milestone: M3
+status: todo
+priority: 04
+assigned_to: coder
+
+description: |
+  DEFECT (human-reported, 2026-07-02). The BACKLOG pane showed "coder" against
+  all 3 active tickets while the truth was: BL-067's parcel at the CLEANER
+  (live tiles tracked the coder->cleaner move correctly in real time), and
+  BL-069/BL-063 promoted but NOT YET ROUTED (deliberately held by the
+  specifier for sequencing — no stage inbox holds any parcel for them).
+
+  Root cause (verified in source, confirm before fixing): the backlog row
+  renders the static YAML field directly — webviewHtml.ts:84 emits
+  item.assignedTo into the row's role cell — while the live-holder resolution
+  that the tiles use (badgeSummary.ts: liveHolder from stage inbox handoffs,
+  fallback to assignedTo) never feeds the BACKLOG pane. So the pane always
+  shows the intake-time assignee, which is wrong the moment a parcel moves
+  and misleading for promoted-but-unrouted tickets.
+
+  What: the BACKLOG pane's role column shows LIVE traceability:
+  - If a stage inbox holds a parcel for the ticket (task name starts with the
+    ticket ID — the existing BL-053 resolution), show THAT role, updating as
+    the parcel moves down the pipeline.
+  - If the ticket is active but NO parcel resolves (promoted, awaiting
+    routing), show "queued" — do NOT fall back to assigned_to; that fallback
+    is exactly the misleading display reported. (Label choice "queued" is the
+    specifier's default; presentation-only.)
+  - Tile-header badges and backlog rows must AGREE: same resolution source,
+    never two different holders for the same ticket at the same refresh.
+
+  Constraints: reuse the existing holder-resolution machinery (badgeSummary);
+  do not fork a second resolver for the backlog pane. Two-layer rule: host
+  resolves, webview presents. No SwarmForge modification, no protocol change.
+
+  Scope: extension only — extension/src/panel/webviewHtml.ts,
+  badgeSummary.ts wiring in swarmPanel.ts, media/panel.js if the row is
+  repainted client-side, plus tests. OVERLAP WARNING for coordinator: same
+  holder machinery and webview surface as BL-068 (tile headers show no
+  badges, paused prio 02) — strong candidate to run as a stacked pair with
+  BL-068, one coder pass; also overlaps BL-070/BL-071 surfaces — sequence.
+
+acceptance: |
+  Feature: backlog rows show the live holder, not the intake assignee
+
+  Background:
+    Given the SwarmForge panel is open with the BACKLOG pane visible
+    And active tickets exist whose YAML says assigned_to coder
+
+  # BL-072 live-backlog-holder-01
+  Scenario: a routed parcel's row shows the role that actually holds it
+    Given a stage inbox of <holder> holds a handoff whose task name starts
+      with ticket <id>
+    When the BACKLOG pane renders
+    Then the row for <id> shows <holder>
+    And it does not show the YAML assigned_to when that differs
+
+    Examples:
+      | id     | holder  |
+      | BL-201 | cleaner |
+      | BL-202 | QA      |
+
+  # BL-072 live-backlog-holder-02
+  Scenario: the row follows the parcel down the pipeline
+    Given the row for a ticket shows coder
+    When the parcel is handed to cleaner and the panel refreshes
+    Then that row shows cleaner
+
+  # BL-072 live-backlog-holder-03
+  Scenario: a promoted but unrouted ticket shows queued, not the assignee
+    Given an active ticket with assigned_to coder
+    And no stage inbox holds any parcel for that ticket
+    When the BACKLOG pane renders
+    Then the row shows "queued"
+    And it does not show "coder"
+
+  # BL-072 live-backlog-holder-04
+  Scenario: the reported 2026-07-02 state renders truthfully
+    Given three active tickets all with assigned_to coder
+    And a cleaner inbox holds the parcel for exactly one of them
+    And the other two have no routed parcel
+    When the BACKLOG pane renders
+    Then exactly one row shows cleaner
+    And the other two rows show "queued"
+    And no row shows coder
+
+  # BL-072 live-backlog-holder-05
+  Scenario: tile badge and backlog row never disagree
+    Given a ticket whose parcel resolves to holder <role>
+    When the panel renders tiles and the BACKLOG pane in the same refresh
+    Then the tile badge holder and the backlog row role are both <role>
+
+  # Non-behavioral gate:
+  #  - Root cause confirmed (webviewHtml.ts static assignedTo cell) and
+  #    recorded in the commit message / ticket close.
+  #  - At least one test asserts on the rendered BACKLOG row HTML (the
+  #    browser-visible markup), not only on resolver state.
+  #  - One shared holder-resolution path feeds tiles and backlog rows.
+  #  - Existing suites (BL-053/BL-062 backlog behavior) stay green;
+  #    SwarmForge unmodified.

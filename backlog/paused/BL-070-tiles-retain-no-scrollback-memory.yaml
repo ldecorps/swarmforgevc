@@ -1,0 +1,124 @@
+id: BL-070
+title: BUG — tiles retain no memory; scrollback capped at visible rows (BL-028 symptom back, BL-052 side effect)
+milestone: M3
+status: todo
+priority: 03
+assigned_to: coder
+
+description: |
+  DEFECT (human-reported, 2026-07-02, screenshot). In the live dev host every
+  tile shows only the last few lines of its pane — a wrapped fragment of the
+  latest tip line and the prompt — and scrolling up reveals nothing. The tiles
+  hold no transcript history at all. This is the SECOND time the "tiles have
+  no memory" symptom has been reported (BL-028 fixed it the first time by
+  passing `-S -500` to capture-pane).
+
+  Diagnosis evidence (recorded live 2026-07-02 08:2x, verify before fixing):
+  every pane on the swarm socket reports `alternate_on=1`, `history_size=0`,
+  and `pane_height` 6–7. The Claude CLI TUI runs in tmux's ALTERNATE screen,
+  and tmux keeps NO scrollback history for the alternate screen — so
+  `capture-pane -S -N` can only ever return the visible rows. The BL-028 fix
+  (still wired, paneTailer.ts:245) is therefore a no-op against this TUI.
+  Tiles used to have memory only because the pane rested at 200 rows
+  (DEFAULT_TILE_PANE_ROWS): the visible alt screen itself held ~200 transcript
+  lines. BL-052 (fit pane to visible tile height) shrank panes to ~7 rows,
+  silently capping each tile's entire retrievable transcript at the visible
+  band. BL-052's "preserve BL-028 history depth" constraint was satisfied at
+  the argument level while the behavior died — which is why this ticket
+  demands a behavioral gate, not an args-level one.
+
+  What: tiles retain transcript history again. After an agent has produced a
+  few hundred lines, the user can scroll up inside the tile and read earlier
+  output, up to `swarmforge.tile.historyLines` (default 500) lines. This must
+  hold WHILE keeping BL-052's fit: short transcripts still render footer at
+  the tile bottom with no interior empty band, and the pane still fits the
+  visible tile height. It must also preserve BL-044/BL-055 tail-lock: newest
+  line anchored above the footer, scroll-up releases tail-lock (and now lands
+  in real history), scroll-back-down re-engages.
+
+  How is the coder's choice, but the constraint is structural: the history
+  CANNOT come from tmux scrollback (alternate screen keeps none) and CANNOT
+  come from re-growing the pane to 200 rows (that reintroduces the BL-052
+  empty band). The retained transcript has to be accumulated across captures
+  on the extension-host side (host owns all tmux I/O and state; webview only
+  presents what it is sent — two-layer rule, no localStorage/sessionStorage).
+  Verify the diagnosis first; record the confirmed root cause in the commit
+  message / ticket close with a regression test at the layer that broke.
+
+  Constraints: do not modify SwarmForge; do not change input routing (BL-046
+  native keys) or the handoff protocol; memory per tile is bounded by
+  historyLines (no unbounded growth on long runs); duplicate-frame folding —
+  repeated captures of an unchanged screen must not multiply history.
+
+  Scope: extension only — extension/src/panel/paneTailer.ts and the webview
+  render/scroll path (media/panel.js, webviewHtml.ts, swarmPanel.ts), plus
+  tests. OVERLAP WARNING for coordinator: BL-067 (in flight at coder) and
+  BL-068 (paused) touch the same webview panel surface — sequence, don't
+  parallelize.
+
+acceptance: |
+  Feature: tiles retain scrollback memory beyond the visible pane rows
+
+  Background:
+    Given the tiled agent panel is showing live agent tiles
+    And each agent runs a full-screen TUI in the tmux ALTERNATE screen
+    And tmux reports history_size 0 for every such pane
+
+  # BL-070 tile-memory-01
+  Scenario: scrolling up reveals earlier transcript in a small tile
+    Given a tile whose pane fits the visible tile height (about 7 rows)
+    And the agent has produced 300 lines of output since the tile attached
+    When the user scrolls up inside the tile
+    Then earlier transcript lines beyond the visible pane rows are shown
+    And the earliest reachable line is about 300 lines back
+
+  # BL-070 tile-memory-02
+  Scenario Outline: retained history is bounded by the historyLines setting
+    Given swarmforge.tile.historyLines is <setting>
+    And the agent has produced <produced> lines since the tile attached
+    When the user scrolls to the top of the tile's history
+    Then the retained transcript holds at most <retained> lines
+
+    Examples:
+      | setting | produced | retained |
+      | 500     | 2000     | 500      |
+      | 200     | 2000     | 200      |
+
+  # BL-070 tile-memory-03
+  Scenario: BL-052 fit is preserved — no empty band returns
+    Given a tile whose agent has produced less output than fills the tile
+    When the tile renders at its current visible height
+    Then the pinned footer is at the bottom of the tile
+    And there is no large empty band between the transcript and the footer
+    And the pane is not re-grown to a fixed tall row count
+
+  # BL-070 tile-memory-04
+  Scenario: tail-lock still works and scroll-up lands in history
+    Given a tile with retained history taller than the visible tile
+    And the tile is tail-locked
+    When new live output streams in
+    Then the newest line stays anchored just above the pinned footer
+    When the user scrolls up
+    Then tail-lock releases and the view stays on the earlier lines
+    When the user scrolls back to the bottom
+    Then tail-lock re-engages
+
+  # BL-070 tile-memory-05
+  Scenario: an unchanged screen does not multiply history
+    Given a tile whose agent prints nothing for many capture cycles
+    When the tile repaints across those cycles
+    Then the retained transcript does not grow
+    And no line appears in history more times than the agent printed it
+
+  # Non-behavioral gate:
+  #  - Root cause verified against a live-shaped fixture (alternate-screen
+  #    pane, history_size stays 0, pane_height ~7) and recorded in the commit
+  #    message / ticket close.
+  #  - At least one acceptance test exercises the REAL capture->retain->render
+  #    path and asserts lines beyond the visible pane rows are reachable in
+  #    the tile — an args-level assertion (e.g. "-S -500 was passed") does NOT
+  #    satisfy this gate; that gate stayed green while the behavior was dead.
+  #  - Reproduced once in a live Extension Development Host before fixing and
+  #    verified fixed there after (note it in the close).
+  #  - Existing suites stay green; SwarmForge unmodified; BL-052/BL-044/BL-055
+  #    suites in particular.
