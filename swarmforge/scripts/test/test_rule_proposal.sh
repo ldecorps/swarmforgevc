@@ -100,6 +100,33 @@ grep -q '"proposer":"coder"' "$AUDIT_FILE" || fail "03: audit line missing propo
 grep -q '"timestamp":"' "$AUDIT_FILE" || fail "03: audit line missing timestamp"
 pass "03: every delivered proposal lands in the durable audit log with scope/body/rationale/proposer/timestamp"
 
+# ── 03b: a control character (tab) in body/rationale still audits as valid JSON ──
+TABBED_BODY=$'contains a tab\tcharacter'
+DRAFT="$(make_draft "$CODER_WT" \
+  'type: rule_proposal' 'to: specifier' 'priority: 50' \
+  'scope: engineering' \
+  "body: $TABBED_BODY" \
+  'rationale: regression for the hand-rolled json-escape bug')"
+OUT="$(cd "$CODER_WT" && SWARMFORGE_ROLE=coder bb "$SWARM_HANDOFF" "$DRAFT")"
+grep -q "^HANDOFF QUEUED:" <<< "$OUT" || fail "03b: tab-bearing rule_proposal was not queued; got: $OUT"
+
+PATH="$FAKE_BIN:$PATH" bb "$HANDOFFD" "$ROOT" &
+DAEMON_PID=$!
+for _ in $(seq 1 40); do
+  remaining="$(find "$CODER_OUTBOX" -maxdepth 1 -name '*.handoff' 2>/dev/null | wc -l | tr -d ' ')"
+  [[ "$remaining" == "0" ]] && break
+  sleep 0.25
+done
+touch "$ROOT/.swarmforge/daemon/stop"
+wait "$DAEMON_PID" 2>/dev/null || true
+[[ "$remaining" == "0" ]] || fail "03b: daemon did not drain the outbox"
+
+[[ "$(wc -l < "$AUDIT_FILE" | tr -d ' ')" == "2" ]] || fail "03b: expected a second audit line to be appended"
+LAST_LINE="$(tail -n1 "$AUDIT_FILE")"
+python3 -c "import json, sys; json.loads(sys.argv[1])" "$LAST_LINE" \
+  || fail "03b: audit line with a control character in body is not valid JSON: $LAST_LINE"
+pass "03b: a body/rationale containing a raw control character still audits as valid JSON"
+
 # ── 02: invalid proposals are rejected at the validation gate ───────────────
 assert_rejected() {
   local label="$1"; shift
