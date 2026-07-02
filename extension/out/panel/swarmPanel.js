@@ -177,16 +177,20 @@ class SwarmPanel {
             const deltas = this.needsHumanReconciler.applyQuestionEvents(events);
             if (deltas.length > 0) {
                 this.panel.webview.postMessage({ type: 'needsHuman', events: deltas });
-            }
-            if (this.emailNotifier) {
-                const updates = events.map((event) => ({
-                    role: event.role,
-                    needsHuman: event.needsHuman,
-                    snippet: event.needsHuman
-                        ? (0, needsHumanDetection_1.extractQuestionSnippet)(this.latestPaneText.get(event.role))
-                        : undefined,
-                }));
-                this.emailNotifier.recordUpdates(updates, Date.now());
+                if (this.emailNotifier) {
+                    // Snippets only come from the question detector's raw events (a
+                    // stuck-escalation delta has no literal prompt to quote), so look
+                    // the quote up per delta rather than carrying it on the deltas
+                    // themselves.
+                    const updates = deltas.map((event) => ({
+                        role: event.role,
+                        needsHuman: event.needsHuman,
+                        snippet: event.needsHuman
+                            ? (0, needsHumanDetection_1.extractQuestionSnippet)(this.latestPaneText.get(event.role))
+                            : undefined,
+                    }));
+                    this.emailNotifier.recordUpdates(updates, Date.now());
+                }
             }
         });
         this.tailer.start();
@@ -292,6 +296,7 @@ class SwarmPanel {
         const deltas = this.needsHumanReconciler.applyStuckRoles((0, stuckEscalations_1.escalatedStuckRoles)());
         if (deltas.length > 0) {
             this.panel.webview.postMessage({ type: 'needsHuman', events: deltas });
+            this.emailNotifier?.recordUpdates(deltas, Date.now());
         }
     }
     sendRoles(roles) {
