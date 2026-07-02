@@ -7,6 +7,7 @@ const {
   extractFunctions,
   parseSource,
   statementCoverageFraction,
+  nestedRangesOf,
 } = require('../scripts/crapLib');
 
 // ── computeCrap / isFlagged (pure math) ──────────────────────────────────
@@ -154,4 +155,76 @@ test('statementCoverageFraction is 0 for a completely uncovered function', () =>
     [11, 0],
   ]);
   assert.equal(statementCoverageFraction(coverage, 10, 12), 0);
+});
+
+test('statementCoverageFraction excludes lines in excludeRanges (nested function statements)', () => {
+  const coverage = fakeCoverage([
+    [10, 5], // outer's own statement, covered
+    [12, 0], // nested function's statement, uncovered — must not count against outer
+  ]);
+  assert.equal(
+    statementCoverageFraction(coverage, 10, 15, [[12, 12]]),
+    1,
+    "the nested function's uncovered statement must not drag down the outer function's own score"
+  );
+});
+
+// ── nestedRangesOf / coverage isolation between nested functions ─────────
+
+test("nestedRangesOf returns the line range of a function nested within another, excluding itself", () => {
+  const fns = extract(`
+    export function outer(items) {
+      function inner(x) {
+        if (x > 0) {
+          return true;
+        }
+        return false;
+      }
+      return items.filter(inner);
+    }
+  `);
+  const outer = fns.find((f) => f.name === 'outer');
+  const inner = fns.find((f) => f.name === 'inner');
+  assert.deepEqual(nestedRangesOf(outer, fns), [[inner.startLine, inner.endLine]]);
+  assert.deepEqual(nestedRangesOf(inner, fns), [], 'inner has no functions nested within it');
+});
+
+test("a nested function's coverage does not bleed into its enclosing function's own coverage fraction", () => {
+  const fns = extract(`
+    export function outer(x) {
+      function inner(y) {
+        if (y > 0) {
+          return 1;
+        }
+        return 0;
+      }
+      return inner(x);
+    }
+  `);
+  const outer = fns.find((f) => f.name === 'outer');
+  const inner = fns.find((f) => f.name === 'inner');
+
+  // inner's if-branch body is uncovered; outer's own statement (the return
+  // call) is fully covered. Without excluding inner's range, outer's
+  // coverage fraction would be dragged down by inner's uncovered statement.
+  const coverage = fakeCoverage([
+    [inner.startLine + 2, 0], // inner's uncovered `return 1;` line
+    [outer.endLine - 1, 5], // outer's own `return inner(x);` line
+  ]);
+
+  const outerCoverage = statementCoverageFraction(
+    coverage,
+    outer.startLine,
+    outer.endLine,
+    nestedRangesOf(outer, fns)
+  );
+  assert.equal(outerCoverage, 1, "outer's own fully-covered statement must not be diluted by inner's uncovered one");
+
+  const innerCoverage = statementCoverageFraction(
+    coverage,
+    inner.startLine,
+    inner.endLine,
+    nestedRangesOf(inner, fns)
+  );
+  assert.equal(innerCoverage, 0, "inner's own uncovered statement must still count against inner itself");
 });
