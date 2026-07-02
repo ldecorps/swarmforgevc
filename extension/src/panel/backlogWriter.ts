@@ -5,16 +5,8 @@ import { atomicWrite } from '../util/atomicWrite';
 
 const ASSIGNED_TO_LINE = /^assigned_to:\s*.+$/m;
 
-function findActiveBacklogFilePath(targetPath: string, itemId: string): string | null {
-  const dir = path.join(targetPath, 'backlog', 'active');
-  let files: string[];
-  try {
-    files = fs.readdirSync(dir).filter((f) => f.endsWith('.yaml'));
-  } catch {
-    return null;
-  }
-
-  for (const file of files) {
+function findMatchingBacklogFile(dir: string, itemId: string): string | null {
+  for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.yaml'))) {
     const filePath = path.join(dir, file);
     try {
       const item = parseBacklogYaml(fs.readFileSync(filePath, 'utf8'));
@@ -26,6 +18,15 @@ function findActiveBacklogFilePath(targetPath: string, itemId: string): string |
     }
   }
   return null;
+}
+
+function findActiveBacklogFilePath(targetPath: string, itemId: string): string | null {
+  const dir = path.join(targetPath, 'backlog', 'active');
+  try {
+    return findMatchingBacklogFile(dir, itemId);
+  } catch {
+    return null;
+  }
 }
 
 // Only the assigned_to field is writable from the panel (BL-034); every
