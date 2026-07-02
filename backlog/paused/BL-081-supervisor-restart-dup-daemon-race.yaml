@@ -1,0 +1,77 @@
+id: BL-081
+title: BUG — supervisor restart leaks duplicate handoffd daemons (no reap, dup-pid race)
+milestone: M2
+status: todo
+priority: 02
+assigned_to: coder
+
+description: |
+  DEFECT (coordinator report, 2026-07-02): handoffd_supervisor restarts the
+  delivery daemon without reaping the old one, so multiple handoffd
+  processes end up racing the same outboxes. Confirmed live at spec time:
+  THREE `handoffd.bb` processes for this project root (two started within
+  the same minute, one orphan from an earlier session) while
+  `handoffd.pid` named only one — and the supervisor reported "healthy"
+  because it only ever checks the pid-file pid.
+
+  Mechanism (swarmforge/scripts/handoffd_supervisor.bb): `kill-daemon!`
+  sends destroy, sleeps a fixed 300ms, sends destroyForcibly — and never
+  confirms the old process actually exited before `start-daemon!` launches
+  the replacement. Daemons NOT referenced by the pid file (orphans from a
+  prior supervisor/launcher, or a pid file overwritten by a newer start)
+  are never discovered or reaped at all. The same-minute pair also
+  suggests a start-time race between the launcher's daemon start and the
+  supervisor's first "dead" verdict — root-cause and close whichever
+  double-start paths are real, and document them in the close.
+
+  Wanted invariant: at most ONE handoffd process per project root at any
+  time. A restart must confirm the old daemon's exit (bounded wait, then
+  forcible kill, then confirm again) before starting the new one, and must
+  reap ALL handoffd processes serving this project root — not just the
+  pid-file pid. Duplicate wake-ups are noise, but duplicate delivery races
+  (two daemons moving the same outbox file to sent/) corrupt the swarm's
+  single transport, so this is urgent.
+
+  Scope: swarmforge/scripts/handoffd_supervisor.bb (and the launcher's
+  daemon-start path only if the double-start race proves real), plus shell
+  tests (extend scripts/test/test_handoffd_supervisor.sh). Dev/infra
+  tooling — no extension product code expected.
+
+acceptance: |
+  Feature: supervisor keeps exactly one handoffd per project root
+
+  # BL-081 singleton-handoffd-01
+  Scenario: restart confirms old-daemon exit before starting the new one
+    Given a live handoffd whose pid is recorded in handoffd.pid
+    When the supervisor restarts it on a dead or stalled verdict
+    Then the replacement daemon is started only after the old pid is
+      confirmed exited
+    And exactly one handoffd process exists for the project root afterwards
+
+  # BL-081 singleton-handoffd-02
+  Scenario: orphan daemons outside the pid file are reaped on restart
+    Given two handoffd processes serving the project root
+    And handoffd.pid names only one of them
+    When the supervisor performs a restart
+    Then every old handoffd process for the project root is terminated
+    And exactly one handoffd process remains
+
+  # BL-081 singleton-handoffd-03
+  Scenario: a daemon that ignores TERM is force-killed and confirmed
+    Given a handoffd process that does not exit on TERM
+    When the supervisor restarts it
+    Then the old process is forcibly killed and its exit is confirmed
+      before the replacement daemon starts
+
+  # BL-081 singleton-handoffd-04
+  Scenario: swarm startup yields a single daemon
+    Given the swarm launcher and the supervisor both start
+    When startup completes
+    Then exactly one handoffd process serves the project root
+
+  # Non-behavioral gates:
+  #  - Root cause(s) of the observed triple-daemon state are documented in
+  #    the close.
+  #  - Reaping matches only handoffd processes for THIS project root; other
+  #    projects' daemons are untouched.
+  #  - Existing supervisor shell tests continue to pass.
