@@ -110,10 +110,15 @@ function parseSource(filePath, sourceText) {
 // fileCoverage is one entry from c8/istanbul's coverage-final.json:
 // { statementMap: { id: {start:{line},end:{line}} }, s: { id: hitCount } }.
 // Coverage fraction = covered statements / total statements whose start line
-// falls within [startLine, endLine]. A function with no statements of its
-// own (e.g. a one-line arrow) counts as fully covered — there is nothing to
-// miss.
-function statementCoverageFraction(fileCoverage, startLine, endLine) {
+// falls within [startLine, endLine], excluding any line that belongs to a
+// nested function (excludeRanges) — mirrors countDecisionPoints's own
+// exclusion of nested function bodies from complexity, so a nested
+// function's coverage never bleeds into its enclosing function's score (or
+// vice versa; each function is scored on only its own statements). A
+// function with no statements of its own (e.g. a one-line arrow, or an
+// outer function whose entire body is one nested function call) counts as
+// fully covered — there is nothing to miss.
+function statementCoverageFraction(fileCoverage, startLine, endLine, excludeRanges = []) {
   if (!fileCoverage || !fileCoverage.statementMap) {
     return 0;
   }
@@ -122,17 +127,32 @@ function statementCoverageFraction(fileCoverage, startLine, endLine) {
   let covered = 0;
   for (const key of Object.keys(statementMap)) {
     const line = statementMap[key].start.line;
-    if (line >= startLine && line <= endLine) {
-      total++;
-      if ((s[key] || 0) > 0) {
-        covered++;
-      }
+    if (line < startLine || line > endLine) {
+      continue;
+    }
+    if (excludeRanges.some(([exStart, exEnd]) => line >= exStart && line <= exEnd)) {
+      continue;
+    }
+    total++;
+    if ((s[key] || 0) > 0) {
+      covered++;
     }
   }
   if (total === 0) {
     return 1;
   }
   return covered / total;
+}
+
+// The line ranges of every OTHER extracted function whose span lies inside
+// fn's own span — passed to statementCoverageFraction as excludeRanges.
+// A transitively-nested function (C inside B inside A) is still correctly
+// excluded from A: C's range is a subset of B's range, which is already
+// excluded in full.
+function nestedRangesOf(fn, allFunctions) {
+  return allFunctions
+    .filter((other) => other !== fn && other.startLine >= fn.startLine && other.endLine <= fn.endLine)
+    .map((other) => [other.startLine, other.endLine]);
 }
 
 module.exports = {
@@ -142,4 +162,5 @@ module.exports = {
   extractFunctions,
   parseSource,
   statementCoverageFraction,
+  nestedRangesOf,
 };
