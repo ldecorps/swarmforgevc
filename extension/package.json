@@ -191,6 +191,16 @@
           "type": "number",
           "default": 900,
           "description": "How long (seconds) a graceful bounce (SwarmForge: Bounce Gracefully) waits for every role to go idle before prompting the human to keep waiting or bounce now."
+        },
+        "swarmforge.contextClear.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Send /clear to a role's pane once it has been drained-idle (no work held or queued, no pending question, no recent human input) through the settle window, so the next parcel starts with a fresh context window."
+        },
+        "swarmforge.contextClear.settleWindowSeconds": {
+          "type": "number",
+          "default": 120,
+          "description": "How long (seconds) a role must stay drained-idle and output-quiet, with no recent human keystrokes, before its pane is cleared."
         }
       }
     }

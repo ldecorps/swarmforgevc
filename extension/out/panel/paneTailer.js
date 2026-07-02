@@ -9,6 +9,7 @@ exports.mapInputToTmuxKey = mapInputToTmuxKey;
 exports.mapSpecialKeyToTmux = mapSpecialKeyToTmux;
 const tmuxClient_1 = require("../swarm/tmuxClient");
 const inputLog_1 = require("../swarm/inputLog");
+const humanInputTracker_1 = require("../swarm/humanInputTracker");
 const agentPaneState_1 = require("./agentPaneState");
 const ansi_1 = require("./ansi");
 const needsHumanDetection_1 = require("./needsHumanDetection");
@@ -298,6 +299,7 @@ class PaneTailer {
         }
         const mapped = mapInputToTmuxKey(data);
         (0, tmuxClient_1.sendKeys)(this.socketPath, target, mapped.key, mapped.literal);
+        (0, humanInputTracker_1.recordHumanInput)(roleName);
         this.logInput(roleName, data);
     }
     forwardSpecialKey(roleName, key) {
@@ -308,6 +310,7 @@ class PaneTailer {
         const tmuxKey = mapSpecialKeyToTmux(key);
         if (tmuxKey) {
             (0, tmuxClient_1.sendKeys)(this.socketPath, target, tmuxKey);
+            (0, humanInputTracker_1.recordHumanInput)(roleName);
             this.logInput(roleName, key);
         }
     }
