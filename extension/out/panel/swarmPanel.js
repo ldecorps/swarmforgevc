@@ -178,16 +178,7 @@ class SwarmPanel {
             if (deltas.length > 0) {
                 this.panel.webview.postMessage({ type: 'needsHuman', events: deltas });
             }
-            if (this.emailNotifier) {
-                const updates = events.map((event) => ({
-                    role: event.role,
-                    needsHuman: event.needsHuman,
-                    snippet: event.needsHuman
-                        ? (0, needsHumanDetection_1.extractQuestionSnippet)(this.latestPaneText.get(event.role))
-                        : undefined,
-                }));
-                this.emailNotifier.recordUpdates(updates, Date.now());
-            }
+            this.recordEmailUpdates(deltas);
         });
         this.tailer.start();
         this.sendRoles(this.tailer.getRoles());
@@ -293,6 +284,27 @@ class SwarmPanel {
         if (deltas.length > 0) {
             this.panel.webview.postMessage({ type: 'needsHuman', events: deltas });
         }
+        this.recordEmailUpdates(deltas);
+    }
+    // Feeds the BL-073 email notifier from the RECONCILED needs-human deltas
+    // (the same ones posted to the webview), not from either raw source
+    // directly. Both the question detector and the stuck-in-process chaser
+    // reach this: a stuck-escalated role now emails too (the silent-overnight
+    // -stall case BL-067/BL-073 both exist for), and — same reasoning as the
+    // webview reconciler — one source's "false" can never prematurely clear
+    // the grace-period clock while the other source still holds true.
+    recordEmailUpdates(deltas) {
+        if (!this.emailNotifier || deltas.length === 0) {
+            return;
+        }
+        const updates = deltas.map((event) => ({
+            role: event.role,
+            needsHuman: event.needsHuman,
+            snippet: event.needsHuman
+                ? (0, needsHumanDetection_1.extractQuestionSnippet)(this.latestPaneText.get(event.role))
+                : undefined,
+        }));
+        this.emailNotifier.recordUpdates(updates, Date.now());
     }
     sendRoles(roles) {
         this.panel.webview.postMessage({
