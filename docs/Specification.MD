@@ -6,6 +6,8 @@
 
 A VS Code extension that runs a multi-agent coding swarm and brings the work back as a PR. It is a **standalone orchestrator** — inspired by Uncle Bob's SwarmForge agent-orchestration model, but it spawns and manages the agent processes itself rather than driving SwarmForge or tmux. The extension lives entirely in the forge codebase. It points at any target project, runs the swarm on it, and brings the work back as a PR. The target project carries only two swarm bootstrap files and otherwise has no knowledge of the swarm machinery.
 
+**Getting started?** See [Getting Started with SwarmForge VC](GettingStarted.md) for install, setup, and first run. This specification is the detailed reference.
+
 ---
 
 ## Core Design Principles
@@ -764,6 +766,33 @@ Human reviews and merges (or rejects)
 
 ---
 
+## Graceful Bounce and Restart
+
+When you need to restart the extension (e.g., to reload code changes, respawn agents, or fix a frozen UI), the extension performs a **graceful bounce** — it drains current work items first, so no in-flight work is lost.
+
+### What happens during a graceful bounce
+
+1. **Drain phase** — The extension signals all active agents to finish their current work item (reach a checkpoint) before shutting down
+2. **Bounce phase** — Once all agents have completed their work items (or timeout after a configurable grace period), the extension restarts
+3. **Resume phase** — On restart, agents automatically pick up any pending work from the message store and resume where they left off
+
+### How to trigger a bounce
+
+You can restart the extension in several ways:
+
+- **Close the extension panel** — gracefully shuts down (drain-first)
+- **Run `SwarmForge: Stop Swarm`** — signals a clean stop with drain
+- **Close VS Code** — triggers graceful shutdown of all running work
+- **Extension host crash** — extension recovers from on-disk state and resumes
+
+Because work state lives on disk (.swarmforge/) rather than only in memory, restarting is safe: agents will pick up their pending work items and continue without losing progress. No manual recovery needed.
+
+### Timeouts and hard kill
+
+If the graceful drain phase takes longer than expected (e.g., an agent is hung), the extension will eventually force-stop it after a timeout. This is safe because of the per-stage checkpoints — no committed work is lost, and agents resume from their last successful handoff on restart.
+
+---
+
 ## Traceability & Completion ("Work Tree")
 
 A panel view that lets you follow one piece of work from the top-level requirement all the way down to the swarm's commits — and shows a rolled-up % completion at every level. Think of it as a Jira board collapsed into a single traceable tree.
@@ -1142,7 +1171,6 @@ A scan of what the spec doesn't yet cover, roughly in priority order. Not all ar
 
 - **Secrets & auth.** Backends that manage their own auth (Copilot CLI, Claude Code) need nothing from the extension — it never sees those credentials. The open question is narrower: backends that need raw API keys, plus the GitHub token for pushing branches / opening PRs. Where do those live and how are they kept out of the clone and out of commits? (Likely: extension-host environment, never written into the worktree.)
 - **Cost & rate-limit controls.** Multiple agents on paid models running for hours. Need per-run token/cost tracking, a budget cap that pauses the swarm, and backoff handling when a backend rate-limits. Surfaced per-tile and as a run total. (The reroute budget and `to: human` escalation in Correctness are the per-item backstop; this is the per-run/$ backstop.)
-- **Stopping safely.** What happens to in-flight work on Stop? Graceful drain (let agents reach a checkpoint) vs hard kill. Branch-per-worktree + per-stage checkpoints (see Failure & salvage) mean nothing is lost — but the drain-vs-kill convention on an explicit Stop still needs defining.
 - **`to: human` gate UX.** The mechanism is specced (a message type, surfaced on desktop + mobile, blocks the item). What's left is the interaction detail: how a gate is presented, how options are offered, timeout behavior if the human never answers, and whether a gate can be delegated/snoozed.
 
 ### Important but can follow
