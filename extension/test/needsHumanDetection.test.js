@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { detectNeedsHuman } = require('../out/panel/needsHumanDetection');
+const { detectNeedsHuman, extractQuestionSnippet } = require('../out/panel/needsHumanDetection');
 
 test('detectNeedsHuman returns false for empty text', () => {
   assert.equal(detectNeedsHuman(''), false);
@@ -100,4 +100,29 @@ test('detectNeedsHuman returns false for normal output without patterns', () => 
 test('detectNeedsHuman handles multi-line prompts with special characters', () => {
   const text = 'Processing...\n❯ [a] Accept\n  [r] Reject\n  [s] Skip';
   assert.equal(detectNeedsHuman(text), true);
+});
+
+// ── extractQuestionSnippet (BL-073) ──────────────────────────────────────
+
+test('extractQuestionSnippet returns empty string for empty/null text', () => {
+  assert.equal(extractQuestionSnippet(''), '');
+  assert.equal(extractQuestionSnippet(null), '');
+  assert.equal(extractQuestionSnippet(undefined), '');
+});
+
+test('extractQuestionSnippet joins the last 3 non-empty lines', () => {
+  const text = 'first\nsecond\n\nthird\nfourth\nAllow this action? (y/n)';
+  assert.equal(extractQuestionSnippet(text), 'third fourth Allow this action? (y/n)');
+});
+
+test('extractQuestionSnippet trims each line and skips blank lines', () => {
+  const text = '  padded line  \n\n\n   Approve? [y/n]   ';
+  assert.equal(extractQuestionSnippet(text), 'padded line Approve? [y/n]');
+});
+
+test('extractQuestionSnippet truncates very long snippets with an ellipsis', () => {
+  const longLine = 'x'.repeat(250);
+  const snippet = extractQuestionSnippet(longLine);
+  assert.equal(snippet.length, 200);
+  assert.ok(snippet.endsWith('…'));
 });
