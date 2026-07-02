@@ -13,6 +13,7 @@ import {
   getPaneBaseIndex,
 } from '../swarm/tmuxClient';
 import { appendInputEntry } from '../swarm/inputLog';
+import { recordHumanInput } from '../swarm/humanInputTracker';
 import { agentPaneStatusMessage } from './agentPaneState';
 import { stripAnsi } from './ansi';
 import { detectNeedsHuman } from './needsHumanDetection';
@@ -357,6 +358,7 @@ export class PaneTailer {
     }
     const mapped = mapInputToTmuxKey(data);
     sendKeys(this.socketPath, target, mapped.key, mapped.literal);
+    recordHumanInput(roleName);
     this.logInput(roleName, data);
   }
 
@@ -368,6 +370,7 @@ export class PaneTailer {
     const tmuxKey = mapSpecialKeyToTmux(key);
     if (tmuxKey) {
       sendKeys(this.socketPath, target, tmuxKey);
+      recordHumanInput(roleName);
       this.logInput(roleName, key);
     }
   }

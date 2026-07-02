@@ -1,0 +1,85 @@
+"use strict";
+// BL-076: sends "/clear" to a role's pane once it has been drained-idle
+// (no work held or queued, no pending question, no recent human keystroke,
+// no output change) through a settle window, so the next parcel starts with
+// a fresh context window. Context exhaustion is a recurring real failure
+// (implicated in the BL-067 overnight stall); the pipeline protocol is
+// already context-free between parcels (every handoff says re-read role +
+// constitution), so clearing at the right moment costs nothing.
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.IdleClearTracker = void 0;
+exports.decideIdleClear = decideIdleClear;
+exports.startIdleClearMonitor = startIdleClearMonitor;
+exports.stopIdleClearMonitor = stopIdleClearMonitor;
+// Pure: every safety gate from the ticket's scenario table in one place, so
+// each unsafe state is independently testable.
+function decideIdleClear(status, alreadyCleared, nowMs, config) {
+    if (!config.enabled) {
+        return 'skip';
+    }
+    if (alreadyCleared) {
+        return 'skip';
+    }
+    if (status.hasInProcessWork || status.hasQueuedNew) {
+        return 'skip';
+    }
+    if (status.needsHumanPending) {
+        return 'skip';
+    }
+    if (status.drainInProgress) {
+        return 'skip';
+    }
+    if (status.lastHumanInputMs !== null) {
+        const sinceInputSeconds = (nowMs - status.lastHumanInputMs) / 1000;
+        if (sinceInputSeconds < config.settleWindowSeconds) {
+            return 'skip';
+        }
+    }
+    const quietSeconds = (nowMs - status.lastActivityMs) / 1000;
+    if (quietSeconds < config.settleWindowSeconds) {
+        return 'skip';
+    }
+    return 'clear';
+}
+// Tracks the "already cleared while idle" state per role so a drained-idle
+// agent is cleared exactly once, and re-arms the moment it holds work again
+// (in_process or a freshly queued item) so the NEXT idle period clears again.
+class IdleClearTracker {
+    cleared = new Set();
+    evaluate(status, nowMs, config) {
+        if (status.hasInProcessWork || status.hasQueuedNew) {
+            this.cleared.delete(status.role);
+            return 'skip';
+        }
+        const alreadyCleared = this.cleared.has(status.role);
+        const decision = decideIdleClear(status, alreadyCleared, nowMs, config);
+        if (decision === 'clear') {
+            this.cleared.add(status.role);
+        }
+        return decision;
+    }
+    reset() {
+        this.cleared.clear();
+    }
+}
+exports.IdleClearTracker = IdleClearTracker;
+function startIdleClearMonitor(config, adapters) {
+    const tracker = new IdleClearTracker();
+    const intervalId = setInterval(() => {
+        const nowMs = Date.now();
+        for (const status of adapters.getRoleStatuses()) {
+            const decision = tracker.evaluate(status, nowMs, config);
+            if (decision === 'clear') {
+                adapters.sendClear(status.role);
+                adapters.log(`Cleared idle context for ${status.role}.`);
+            }
+        }
+    }, config.pollIntervalSeconds * 1000);
+    return intervalId;
+}
+function stopIdleClearMonitor(intervalId) {
+    if (intervalId) {
+        clearInterval(intervalId);
+    }
+}
+//# sourceMappingURL=idleClear.js.map
