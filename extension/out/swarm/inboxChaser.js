@@ -48,6 +48,7 @@ exports.isDoneButUndelivered = isDoneButUndelivered;
 exports.runSweep = runSweep;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const cooldownScheduler_1 = require("./cooldownScheduler");
 function sidecarPath(handoffFilePath) {
     return `${handoffFilePath}.chase.json`;
 }
@@ -157,6 +158,20 @@ function isDoneButUndelivered(inProcessItems, latestCommitMs, lastSentMs, nowMs,
 // A role that HOLDS in_process work (single task file or batch directory)
 // while showing no activity gets chased; after maxChases without recovery it
 // escalates visibly instead of being chased forever (BL-067).
+function applyStuckNudge(role, held, adapters) {
+    adapters.sendWakeUp(role);
+    for (const item of held) {
+        writeNudgeCount(item.filePath, item.nudgeCount + 1);
+    }
+    adapters.onStuckEscalation(role, false);
+}
+function clearStaleNudgeCounts(held) {
+    for (const item of held) {
+        if (item.nudgeCount > 0) {
+            writeNudgeCount(item.filePath, 0);
+        }
+    }
+}
 function sweepInProcess(role, inProcessDir, nowMs, config, adapters) {
     const held = scanInProcess(inProcessDir);
     if (held.length === 0) {
@@ -166,50 +181,65 @@ function sweepInProcess(role, inProcessDir, nowMs, config, adapters) {
     const nudgeCount = Math.max(...held.map((item) => item.nudgeCount));
     const action = decideStuckAction(adapters.getLastActivityMs(role), nudgeCount, nowMs, config);
     if (action === 'nudge') {
-        adapters.sendWakeUp(role);
-        for (const item of held) {
-            writeNudgeCount(item.filePath, item.nudgeCount + 1);
-        }
-        adapters.onStuckEscalation(role, false);
+        applyStuckNudge(role, held, adapters);
     }
     else if (action === 'alert') {
         adapters.onStuckEscalation(role, true);
     }
     else {
         // active again: clear stale counts so a future stall re-chases from zero
-        for (const item of held) {
-            if (item.nudgeCount > 0) {
-                writeNudgeCount(item.filePath, 0);
-            }
-        }
+        clearStaleNudgeCounts(held);
         adapters.onStuckEscalation(role, false);
+    }
+}
+function maybeWakeOnCooldownExpiry(role, cooldownUntilMs, nowMs, adapters) {
+    if (cooldownUntilMs == null) {
+        return;
+    }
+    if (!(0, cooldownScheduler_1.shouldWakeOnExpiry)(cooldownUntilMs, nowMs, adapters.getCooldownWokenMarker?.(role) ?? null)) {
+        return;
+    }
+    adapters.sendWakeUp(role);
+    adapters.onCooldownExpired?.(role, cooldownUntilMs);
+}
+function applyInboxItemAction(role, item, action, adapters) {
+    if (action === 'chased') {
+        adapters.sendWakeUp(role);
+        writeChaseCount(item.filePath, item.chaseCount + 1);
+    }
+    else if (action === 'respawned') {
+        adapters.triggerRespawn(role);
+    }
+    else if (action === 'dead-lettered') {
+        const dead = deadLetterPath(item.filePath);
+        fs.renameSync(item.filePath, dead);
+        const sc = sidecarPath(item.filePath);
+        if (fs.existsSync(sc)) {
+            fs.renameSync(sc, sidecarPath(dead));
+        }
+        adapters.logDeadLetter(role, item.filePath);
+    }
+    // 'skipped' → no-op
+}
+function sweepRoleInbox(role, inboxNewDir, nowMs, config, adapters) {
+    const items = scanInboxNew(inboxNewDir);
+    const liveness = adapters.getLiveness(role);
+    for (const item of items) {
+        const action = decideItemAction(item.mtimeMs, item.chaseCount, nowMs, config, liveness);
+        applyInboxItemAction(role, item, action, adapters);
     }
 }
 function runSweep(roleInboxes, nowMs, config, adapters) {
     for (const { role, inboxNewDir, inProcessDir } of roleInboxes) {
-        sweepInProcess(role, inProcessDir, nowMs, config, adapters);
-        const items = scanInboxNew(inboxNewDir);
-        const liveness = adapters.getLiveness(role);
-        for (const item of items) {
-            const action = decideItemAction(item.mtimeMs, item.chaseCount, nowMs, config, liveness);
-            if (action === 'chased') {
-                adapters.sendWakeUp(role);
-                writeChaseCount(item.filePath, item.chaseCount + 1);
-            }
-            else if (action === 'respawned') {
-                adapters.triggerRespawn(role);
-            }
-            else if (action === 'dead-lettered') {
-                const dead = deadLetterPath(item.filePath);
-                fs.renameSync(item.filePath, dead);
-                const sc = sidecarPath(item.filePath);
-                if (fs.existsSync(sc)) {
-                    fs.renameSync(sc, sidecarPath(dead));
-                }
-                adapters.logDeadLetter(role, item.filePath);
-            }
-            // 'skipped' → no-op
+        const cooldownUntilMs = adapters.getCooldownUntilMs?.(role) ?? null;
+        // While cooling down, suppress all wake/chase/respawn/nudge activity for
+        // this role only; other roles in the same pass proceed normally (BL-082).
+        if ((0, cooldownScheduler_1.isCoolingDown)(cooldownUntilMs, nowMs)) {
+            continue;
         }
+        maybeWakeOnCooldownExpiry(role, cooldownUntilMs, nowMs, adapters);
+        sweepInProcess(role, inProcessDir, nowMs, config, adapters);
+        sweepRoleInbox(role, inboxNewDir, nowMs, config, adapters);
     }
 }
 //# sourceMappingURL=inboxChaser.js.map

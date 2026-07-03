@@ -61,6 +61,18 @@ test('parseBacklogYaml handles title with colons in value', () => {
   assert.equal(item.title, 'Named runs — branch and PR named after work item');
 });
 
+test('parseBacklogYaml parses a pinned pack list (BL-064)', () => {
+  const yaml = 'id: BL-064\ntitle: Lean pack\nstatus: active\npack:\n  - coder\n  - cleaner\n  - documenter\n';
+  const item = parseBacklogYaml(yaml);
+  assert.deepEqual(item.pack, ['coder', 'cleaner', 'documenter']);
+});
+
+test('parseBacklogYaml omits pack when the ticket has no pin (BL-064)', () => {
+  const yaml = 'id: BL-064\ntitle: Unpinned\nstatus: active\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'pack'), false);
+});
+
 test('parseBacklogYaml handles done status', () => {
   const yaml = 'id: BL-001\ntitle: Done item\nstatus: done\n';
   const item = parseBacklogYaml(yaml);
