@@ -477,6 +477,15 @@ function ensureTile(role, displayName, agent) {
     activeRole = role;
   });
 
+  // Clicking the output area is the operator's only way to target a tile
+  // for keyboard input since BL-046 removed the per-tile input bar. Do not
+  // rely solely on the browser's default click-to-focus behavior for a
+  // tabIndex div (BL-085) - focus explicitly so a click always activates
+  // the tile, which also fires the 'focus' listener above.
+  output.addEventListener('click', () => {
+    output.focus();
+  });
+
   output.addEventListener('scroll', () => {
     handleTileScroll(entry, output);
   }, { passive: true });
