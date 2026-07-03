@@ -14,6 +14,8 @@ const {
   sessionExists,
   readSwarmRoles,
   respawnAgent,
+  runCommand,
+  DEFAULT_RUN_COMMAND_TIMEOUT_MS,
 } = require('../out/swarm/tmuxClient');
 const { installExecutable } = require('./helpers/sharedBin');
 
@@ -222,26 +224,130 @@ test('readSwarmRoles skips malformed rows missing required fields', () => {
   );
 });
 
-test('respawnAgent returns success when the launch script exits 0', () => {
-  const tmp = mkTmp();
-  const launchDir = path.join(tmp, '.swarmforge', 'launch');
-  fs.mkdirSync(launchDir, { recursive: true });
-  const script = path.join(launchDir, 'coder.sh');
-  installExecutable(script, '#!/bin/bash\nexit 0\n');
+// --- respawnAgent: the launch script runs `claude` in the foreground and
+//     does not exit until the agent does. Running it in the extension host
+//     (the old behavior) blocked the host's single JS thread indefinitely and
+//     froze the whole extension. Respawn must go INTO the role's tmux pane
+//     via send-keys, so the agent lives where the tiles expect it. ---
 
-  const result = respawnAgent(tmp, 'coder');
-  assert.equal(result.success, true);
-  assert.match(result.message, /restarted/);
+function writeRespawnState(tmp, role = 'coder') {
+  const stateDir = path.join(tmp, '.swarmforge');
+  const launchDir = path.join(stateDir, 'launch');
+  fs.mkdirSync(launchDir, { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'tmux-socket'), '/tmp/fake.sock');
+  fs.writeFileSync(
+    path.join(stateDir, 'sessions.tsv'),
+    `1\t${role}\tswarmforge-${role}\tCoder\tclaude\n`
+  );
+  const script = path.join(launchDir, `${role}.sh`);
+  const marker = path.join(tmp, 'executed-in-host');
+  installExecutable(script, `#!/bin/bash\ntouch "${marker}"\n`);
+  return { script, marker };
+}
+
+test('respawnAgent sends the launch script into the role pane, never running it in-host', () => {
+  const tmp = mkTmp();
+  const { script, marker } = writeRespawnState(tmp);
+  const fake = installFakeTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
+    { subcommand: 'send-keys', exitCode: 0, stdout: '' },
+  ]);
+  try {
+    const result = respawnAgent(tmp, 'coder');
+    assert.equal(result.success, true);
+    assert.match(result.message, /restart/);
+    assert.ok(
+      !fs.existsSync(marker),
+      'launch script must not execute inside the extension host'
+    );
+    const sendCalls = fake.calls().filter((args) => args.includes('send-keys'));
+    assert.ok(
+      sendCalls.some((args) => args.join(' ').includes(`bash ${script}`)),
+      'must type the launch command into the pane'
+    );
+    assert.ok(
+      sendCalls.some((args) => args[args.length - 1] === 'Enter'),
+      'must submit the typed command with Enter'
+    );
+    assert.ok(
+      sendCalls.every((args) => args[args.indexOf('-t') + 1] === 'swarmforge-coder:2.1'),
+      'must target the role session pane'
+    );
+  } finally {
+    fake.restore();
+  }
 });
 
-test('respawnAgent returns failure with stderr when the launch script exits non-zero', () => {
+test('respawnAgent fails without touching tmux when the launch script is missing', () => {
+  const tmp = mkTmp();
+  const result = respawnAgent(tmp, 'coder');
+  assert.equal(result.success, false);
+  assert.match(result.message, /No launch script found/);
+});
+
+test('respawnAgent fails when no tmux socket is recorded', () => {
   const tmp = mkTmp();
   const launchDir = path.join(tmp, '.swarmforge', 'launch');
   fs.mkdirSync(launchDir, { recursive: true });
-  const script = path.join(launchDir, 'coder.sh');
-  installExecutable(script, '#!/bin/bash\necho "boom" >&2\nexit 1\n');
+  installExecutable(path.join(launchDir, 'coder.sh'), '#!/bin/bash\nexit 0\n');
 
   const result = respawnAgent(tmp, 'coder');
   assert.equal(result.success, false);
-  assert.match(result.message, /boom/);
+  assert.match(result.message, /no tmux socket/i);
+});
+
+test('respawnAgent fails when the role has no session in sessions.tsv', () => {
+  const tmp = mkTmp();
+  writeRespawnState(tmp, 'coder');
+  const fake = installFakeTmux([]);
+  try {
+    const result = respawnAgent(tmp, 'cleaner');
+    assert.equal(result.success, false);
+    assert.match(result.message, /No launch script found/);
+
+    const launchDir = path.join(tmp, '.swarmforge', 'launch');
+    installExecutable(path.join(launchDir, 'cleaner.sh'), '#!/bin/bash\nexit 0\n');
+    const withScript = respawnAgent(tmp, 'cleaner');
+    assert.equal(withScript.success, false);
+    assert.match(withScript.message, /not found in sessions\.tsv/);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('respawnAgent reports failure when tmux send-keys fails', () => {
+  const tmp = mkTmp();
+  writeRespawnState(tmp);
+  const fake = installFakeTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
+    { subcommand: 'send-keys', exitCode: 1, stderr: 'no such session' },
+  ]);
+  try {
+    const result = respawnAgent(tmp, 'coder');
+    assert.equal(result.success, false);
+    assert.match(result.message, /no such session/);
+  } finally {
+    fake.restore();
+  }
+});
+
+// --- runCommand timeout: cp.spawnSync with no timeout lets any hung child
+//     wedge the extension host's event loop forever (the respawn freeze).
+//     Every runCommand call must carry a timeout so a stuck command surfaces
+//     as a failed TmuxRunResult instead of a hang. ---
+
+test('runCommand kills a hung child at the timeout and reports failure instead of wedging', () => {
+  const start = Date.now();
+  const result = runCommand('sleep', ['5'], { encoding: 'utf8', timeout: 150 });
+  assert.ok(Date.now() - start < 3000, 'must return well before the child would exit');
+  assert.notEqual(result.exitCode, 0);
+  assert.match(result.stderr, /timed out/i);
+});
+
+test('runCommand applies a bounded default timeout', () => {
+  assert.ok(Number.isFinite(DEFAULT_RUN_COMMAND_TIMEOUT_MS));
+  assert.ok(DEFAULT_RUN_COMMAND_TIMEOUT_MS >= 1_000, 'must not starve slow-but-fine tmux calls');
+  assert.ok(DEFAULT_RUN_COMMAND_TIMEOUT_MS <= 15_000, 'must be far below "forever"');
 });
