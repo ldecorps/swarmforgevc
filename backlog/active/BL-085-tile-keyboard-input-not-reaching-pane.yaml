@@ -1,0 +1,99 @@
+id: BL-085
+title: BUG — typing into an agent tile no longer reaches the tmux pane (all tiles)
+milestone: M2
+status: todo
+priority: 01
+assigned_to: unassigned
+
+description: |
+  REGRESSION (operator report, 2026-07-03): clicking into an agent tile's
+  terminal area and typing sends NOTHING to the agent's pane. The tile appears
+  focused/selected, but typed characters never show up in the pane. Affects
+  ALL tiles. The operator cannot say when it last worked ("a while ago"), so
+  no clean bisect point — but interactive tiles are dogfood-critical
+  (Milestone 1 capability B), so this outranks feature work.
+
+  Known-good reference for the intended path (all committed, none of it
+  changed in git recently):
+  - extension/media/panel.js: `output.addEventListener('focus', ...)` sets
+    `activeRole`; document-level keydown forwards printable keys as
+    `postMessage({type:'input', role: activeRole, data})` and non-printables
+    as `specialKey`. Note the split: header clicks call `selectTile(role)`
+    (visual selection + tileSelected persistence) but do NOT set
+    `activeRole`; only focusing the `.tile-output` element (tabIndex=0) does.
+  - extension/src/panel/swarmPanel.ts: `case 'input'` →
+    `tailer.forwardInput(role, data)`; `case 'specialKey'` →
+    `forwardSpecialKey`.
+  - From there paneTailer/tmuxClient issue `tmux send-keys` on the swarm
+    socket.
+
+  Diagnosis is part of this ticket — likely layers to check, in order:
+  1. Webview side: does keydown fire and is `activeRole` set after a tile
+     click? Recent panel additions (BL-034 backlog section with its own
+     click/keyboard handling, BL-068 header badges changing header hit
+     areas, new metrics section markup) may steal focus, capture the click,
+     or leave `activeRole` null while still rendering the selection border.
+  2. Host side: does the 'input' message arrive and does forwardInput run?
+  3. tmux side: does send-keys execute against the right socket/session?
+     (Tailing/output works, so the read path and socket discovery are fine —
+     if send-keys also works when invoked manually, the break is upstream.)
+
+  Constraints / cautions:
+  - The main-checkout dev host currently runs with UNCOMMITTED off-grid WIP
+    (extension.ts, swarmLauncher.ts, targetPath.ts, webviewHtml.ts metrics
+    markup + rebuilt out/). Reproduce against committed main in your own
+    worktree FIRST: if the regression does not reproduce there, the defect
+    lives in the operator's uncommitted WIP — report that finding and stop
+    rather than fixing code that exists in no commit.
+  - Root-cause, don't shotgun: fix the one broken link in the chain, and add
+    a regression test at that link's seam (message dispatch and forwardInput
+    are unit-testable; webview DOM focus logic is coverable via the existing
+    webviewHtml/panel.js test patterns).
+  - Do not redesign the input model (no new input box UI); restore the
+    click-tile-and-type behavior.
+
+acceptance: |
+  Feature: keystrokes typed into a focused agent tile reach that agent's pane
+
+  Background:
+    Given a live swarm with agent tiles rendered in the panel
+
+  # BL-085 tile-input-restored-01
+  Scenario: printable character reaches the clicked tile's pane
+    Given the operator clicks inside the <role> tile's terminal output area
+    When the operator types the character "x"
+    Then the webview posts an input message for <role> with data "x"
+    And the host forwards it so tmux send-keys delivers "x" to the <role> pane
+
+    Examples:
+      | role      |
+      | coder     |
+      | specifier |
+
+  # BL-085 tile-input-restored-02
+  Scenario: special keys still forward
+    Given the operator has focused a tile's terminal output area
+    When the operator presses Enter
+    Then the host receives a specialKey (or input newline) message for that role
+    And the pane receives the keystroke
+
+  # BL-085 tile-input-restored-03
+  Scenario: copy/paste shortcuts are not swallowed
+    Given the operator has focused a tile's terminal output area
+    When the operator presses the platform copy shortcut over selected text
+    Then the shortcut is not forwarded to the pane
+    And the selected text can be copied
+
+  # BL-085 tile-input-restored-04
+  Scenario: clicking panel chrome does not silently eat subsequent typing
+    Given the operator clicks a non-tile panel section (backlog, metrics, runs)
+    When the operator then clicks back inside a tile's terminal output area and types
+    Then typing reaches that tile's pane again
+
+  # Non-behavioral gates:
+  #  - Close states the root-caused broken link in the
+  #    keydown→postMessage→forwardInput→send-keys chain and carries a
+  #    regression test at that seam.
+  #  - If the regression only reproduces with the operator's uncommitted WIP
+  #    (not on committed main), the deliverable is that finding, reported
+  #    back — not a code change.
