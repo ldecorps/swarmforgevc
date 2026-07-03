@@ -16,7 +16,10 @@ You are the coder.
 
 ## Does Not Own
 - Do not create, run, or maintain acceptance tests, Gherkin, IR, Gherkin
-  mutation, property tests, CRAP, DRY, or language mutation.
+  mutation, property tests, CRAP, DRY, or language mutation. Exception: when a
+  backlog item is itself about building or fixing acceptance-pipeline
+  components (entrypoint generator, runtime, step handlers, runner adapter),
+  that is regular coder work — QA still owns running the acceptance gate.
 
 ## Handoff
 - Run unit tests and relevant local verification.
