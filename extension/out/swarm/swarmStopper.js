@@ -34,6 +34,8 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildKillSessionArgs = buildKillSessionArgs;
+exports.clearSwarmStateFiles = clearSwarmStateFiles;
+exports.clearStaleSwarmState = clearStaleSwarmState;
 exports.stopSwarm = stopSwarm;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
@@ -43,23 +45,71 @@ const DECIMAL_RADIX = 10;
 function buildKillSessionArgs(socketPath, sessions) {
     return sessions.map((session) => ['-S', socketPath, 'kill-session', '-t', session]);
 }
+/**
+ * Remove the swarm's state marker files so a stale previous run can never
+ * satisfy isSwarmReady for a new launch. Safe to call when files are absent.
+ */
+function clearSwarmStateFiles(targetPath) {
+    for (const rel of [
+        path.join('.swarmforge', 'tmux-socket'),
+        path.join('.swarmforge', 'sessions.tsv'),
+    ]) {
+        const file = path.join(targetPath, rel);
+        try {
+            if (fs.existsSync(file)) {
+                fs.unlinkSync(file);
+            }
+        }
+        catch {
+            // best-effort cleanup; never block stop/launch on it
+        }
+    }
+}
+/**
+ * Best-effort teardown of a swarm that is not (fully) alive: kill whatever
+ * tmux server answers on the recorded socket, then remove the state marker
+ * files. Used before a fresh launch so readiness can only be satisfied by
+ * the NEW run's state.
+ */
+function clearStaleSwarmState(targetPath) {
+    const socketPath = (0, tmuxClient_1.readTmuxSocket)(targetPath);
+    if (socketPath) {
+        (0, tmuxClient_1.runCommand)('tmux', ['-S', socketPath, 'kill-server']);
+    }
+    clearSwarmStateFiles(targetPath);
+}
+function stopHandoffDaemon(targetPath) {
+    const daemonPidFile = path.join(targetPath, DAEMON_PID_SUBPATH);
+    if (!fs.existsSync(daemonPidFile)) {
+        return;
+    }
+    try {
+        const pid = parseInt(fs.readFileSync(daemonPidFile, 'utf8').trim(), DECIMAL_RADIX);
+        if (Number.isFinite(pid) && pid > 0) {
+            process.kill(pid, 'SIGTERM');
+        }
+    }
+    catch {
+        // pid already gone or unreadable
+    }
+}
+/**
+ * Idempotent stop: stopping an already-stopped (or crashed) swarm is a
+ * success, and always leaves the state files cleared so the next launch
+ * starts from a clean slate.
+ */
 function stopSwarm(targetPath) {
     const socketPath = (0, tmuxClient_1.readTmuxSocket)(targetPath);
     if (!socketPath) {
+        clearSwarmStateFiles(targetPath);
+        stopHandoffDaemon(targetPath);
         return {
-            success: false,
-            message: 'No tmux socket found — is the swarm running?',
+            success: true,
+            message: 'Swarm already stopped (no tmux socket); state cleared.',
             sessionsKilled: [],
         };
     }
     const roles = (0, tmuxClient_1.readSwarmRoles)(targetPath);
-    if (roles.length === 0) {
-        return {
-            success: false,
-            message: 'No sessions found — is the swarm running?',
-            sessionsKilled: [],
-        };
-    }
     const killed = [];
     const sessions = roles.map((r) => r.session);
     for (const args of buildKillSessionArgs(socketPath, sessions)) {
@@ -68,22 +118,15 @@ function stopSwarm(targetPath) {
             killed.push(args[args.length - 1]);
         }
     }
-    const daemonPidFile = path.join(targetPath, DAEMON_PID_SUBPATH);
-    if (fs.existsSync(daemonPidFile)) {
-        try {
-            const pid = parseInt(fs.readFileSync(daemonPidFile, 'utf8').trim(), DECIMAL_RADIX);
-            if (Number.isFinite(pid) && pid > 0) {
-                process.kill(pid, 'SIGTERM');
-            }
-        }
-        catch {
-            // pid already gone or unreadable
-        }
-    }
+    // Kill the server itself so orphan sessions (e.g. from a run whose
+    // sessions.tsv went stale) cannot survive into the next launch.
+    (0, tmuxClient_1.runCommand)('tmux', ['-S', socketPath, 'kill-server']);
+    stopHandoffDaemon(targetPath);
+    clearSwarmStateFiles(targetPath);
     if (killed.length === 0) {
         return {
-            success: false,
-            message: 'No sessions could be stopped (already stopped?).',
+            success: true,
+            message: 'No live sessions found (already stopped); stale swarm state cleared.',
             sessionsKilled: [],
         };
     }
