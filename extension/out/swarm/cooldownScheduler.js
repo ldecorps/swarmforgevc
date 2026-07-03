@@ -52,29 +52,32 @@ const fs = __importStar(require("fs"));
  * as "do not enter cooldown", never as permanent suppression (BL-082
  * malformed/missing scenario).
  */
+function parseIsoResetTime(signalText) {
+    const isoMatch = signalText.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:\d{2})?/);
+    if (!isoMatch)
+        return null;
+    const raw = isoMatch[0];
+    const hasZone = /(Z|[+-]\d{2}:\d{2})$/.test(raw);
+    const parsedMs = new Date(hasZone ? raw : `${raw}Z`).getTime();
+    return isNaN(parsedMs) ? null : parsedMs;
+}
+function parseHhmmResetTime(signalText, nowMs) {
+    const hhmmMatch = signalText.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+    if (!hhmmMatch)
+        return null;
+    const hours = parseInt(hhmmMatch[1], 10);
+    const minutes = parseInt(hhmmMatch[2], 10);
+    const now = new Date(nowMs);
+    const candidate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hours, minutes, 0, 0));
+    if (candidate.getTime() <= nowMs) {
+        candidate.setUTCDate(candidate.getUTCDate() + 1);
+    }
+    return candidate.getTime();
+}
 function parseResetTime(signalText, nowMs) {
     if (!signalText)
         return null;
-    const isoMatch = signalText.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:\d{2})?/);
-    if (isoMatch) {
-        const raw = isoMatch[0];
-        const hasZone = /(Z|[+-]\d{2}:\d{2})$/.test(raw);
-        const parsedMs = new Date(hasZone ? raw : `${raw}Z`).getTime();
-        if (!isNaN(parsedMs))
-            return parsedMs;
-    }
-    const hhmmMatch = signalText.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
-    if (hhmmMatch) {
-        const hours = parseInt(hhmmMatch[1], 10);
-        const minutes = parseInt(hhmmMatch[2], 10);
-        const now = new Date(nowMs);
-        const candidate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hours, minutes, 0, 0));
-        if (candidate.getTime() <= nowMs) {
-            candidate.setUTCDate(candidate.getUTCDate() + 1);
-        }
-        return candidate.getTime();
-    }
-    return null;
+    return parseIsoResetTime(signalText) ?? parseHhmmResetTime(signalText, nowMs);
 }
 /** True while nowMs is still before the recorded cooldown expiry. */
 function isCoolingDown(cooldownUntilMs, nowMs) {

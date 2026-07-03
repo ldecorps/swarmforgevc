@@ -92,6 +92,24 @@ test('computeMeanTicketTime returns null mean and zero sample count on a fresh r
   assert.equal(result.meanMs, null);
 });
 
+test('computeMeanTicketTime includes a done ticket closed flat in backlog/done/ with no milestone', () => {
+  const repo = mkTmp();
+  initRepo(repo);
+
+  mkdirp(path.join(repo, 'backlog', 'active'));
+  fs.writeFileSync(path.join(repo, 'backlog', 'active', 'BL-103.yaml'), 'id: BL-103\ntitle: t\nstatus: active\n');
+  git(repo, ['add', '.']);
+  git(repo, ['commit', '-q', '-m', 'promote BL-103'], '2026-07-02T08:00:00');
+
+  mkdirp(path.join(repo, 'backlog', 'done'));
+  git(repo, ['mv', 'backlog/active/BL-103.yaml', 'backlog/done/BL-103.yaml']);
+  git(repo, ['commit', '-q', '-m', 'close BL-103'], '2026-07-02T10:00:00');
+
+  const result = computeMeanTicketTime(repo);
+  assert.equal(result.sampleCount, 1);
+  assert.equal(result.meanMs, 2 * 60 * 60 * 1000);
+});
+
 // --- computeBusyness (BL-071 swarm-metrics-03) ---
 
 function writeHandoff(dir, filename, headers) {
@@ -176,6 +194,152 @@ test('computeRetries counts only backward git_handoffs, not forward handoffs or 
 });
 
 // --- computeSwarmMetrics (BL-071 swarm-metrics-05: fresh run placeholders) ---
+
+test('computeRetries counts multiple backward recipients per file', () => {
+  const target = mkTmp();
+  const qaWt = path.join(target, 'qa-wt');
+
+  writeHandoff(path.join(qaWt, '.swarmforge', 'handoffs', 'sent'), '00_multi.handoff', {
+    type: 'git_handoff',
+    from: 'QA',
+    to: 'coder, cleaner, specifier',
+    task: 'BL-102-multi',
+  });
+
+  const { total, perTicket } = computeRetries([{ role: 'QA', worktreePath: qaWt }]);
+
+  assert.equal(total, 3, 'should count 3 backward recipients');
+  assert.equal(perTicket['BL-102'], 3);
+});
+
+test('computeRetries handles malformed handoff files gracefully', () => {
+  const target = mkTmp();
+  const specifierWt = path.join(target, 'specifier-wt');
+  const sentDir = path.join(specifierWt, '.swarmforge', 'handoffs', 'sent');
+
+  mkdirp(sentDir);
+  fs.writeFileSync(path.join(sentDir, '00_broken.handoff'), 'garbage data');
+
+  const { total, perTicket } = computeRetries([{ role: 'specifier', worktreePath: specifierWt }]);
+
+  assert.equal(total, 0);
+  assert.deepEqual(perTicket, {});
+});
+
+test('computeRetries ignores unknown role names', () => {
+  const target = mkTmp();
+  const unknownWt = path.join(target, 'unknown-wt');
+
+  writeHandoff(path.join(unknownWt, '.swarmforge', 'handoffs', 'sent'), '00_bad.handoff', {
+    type: 'git_handoff',
+    from: 'unknown_role',
+    to: 'coder',
+    task: 'BL-103',
+  });
+
+  const { total } = computeRetries([{ role: 'unknown_role', worktreePath: unknownWt }]);
+
+  assert.equal(total, 0);
+});
+
+test('computeBusyness handles missing directories gracefully', () => {
+  const target = mkTmp();
+  const missingWt = path.join(target, 'missing-wt');
+
+  const runStart = Date.now() - 6 * 60 * 60 * 1000;
+  const busyness = computeBusyness([{ role: 'missing', worktreePath: missingWt }], runStart, Date.now());
+
+  assert.equal(busyness.missing, 0);
+});
+
+test('computeBusyness handles in_process batch directories', () => {
+  const target = mkTmp();
+  const coderWt = path.join(target, 'coder-wt');
+  const batchDir = path.join(coderWt, '.swarmforge', 'handoffs', 'inbox', 'in_process', 'batch_20260702T000000Z_000001');
+
+  mkdirp(batchDir);
+  writeHandoff(batchDir, '00_batch.handoff', {
+    dequeued_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+  });
+
+  const now = Date.now();
+  const runStart = now - 60 * 60 * 1000;
+  const busyness = computeBusyness([{ role: 'coder', worktreePath: coderWt }], runStart, now);
+
+  assert.ok(busyness.coder > 0, 'should account for batch interval');
+});
+
+test('computeBusyness ignores an in_process handoff missing a dequeued_at header', () => {
+  const target = mkTmp();
+  const coderWt = path.join(target, 'coder-wt');
+  const inProcessDir = path.join(coderWt, '.swarmforge', 'handoffs', 'inbox', 'in_process');
+
+  // No dequeued_at header at all - should be skipped, not crash or NaN the interval.
+  writeHandoff(inProcessDir, '00_a.handoff', { from: 'architect', to: 'coder' });
+
+  const now = Date.now();
+  const runStart = now - 60 * 60 * 1000;
+  const busyness = computeBusyness([{ role: 'coder', worktreePath: coderWt }], runStart, now);
+
+  assert.equal(busyness.coder, 0);
+});
+
+test('computeBusyness skips an unreadable in_process entry without throwing', () => {
+  const target = mkTmp();
+  const coderWt = path.join(target, 'coder-wt');
+  const inProcessDir = path.join(coderWt, '.swarmforge', 'handoffs', 'inbox', 'in_process');
+  mkdirp(inProcessDir);
+  // A directory entry that is neither a real batch dir nor a readable file by
+  // the time it's statted a second time is simulated by a broken symlink.
+  fs.symlinkSync(path.join(inProcessDir, 'does-not-exist'), path.join(inProcessDir, 'broken.handoff'));
+
+  const now = Date.now();
+  const runStart = now - 60 * 60 * 1000;
+
+  assert.doesNotThrow(() => computeBusyness([{ role: 'coder', worktreePath: coderWt }], runStart, now));
+});
+
+test('computeBusyness skips an in_process handoff it cannot read (permission denied)', () => {
+  const target = mkTmp();
+  const coderWt = path.join(target, 'coder-wt');
+  const inProcessDir = path.join(coderWt, '.swarmforge', 'handoffs', 'inbox', 'in_process');
+  const filePath = path.join(inProcessDir, '00_unreadable.handoff');
+  writeHandoff(inProcessDir, '00_unreadable.handoff', {
+    dequeued_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+  });
+  fs.chmodSync(filePath, 0o000);
+
+  const now = Date.now();
+  const runStart = now - 60 * 60 * 1000;
+
+  try {
+    assert.doesNotThrow(() => computeBusyness([{ role: 'coder', worktreePath: coderWt }], runStart, now));
+  } finally {
+    fs.chmodSync(filePath, 0o644); // restore so the tmp dir can be cleaned up
+  }
+});
+
+test('computeBusyness takes the earliest dequeued_at across multiple open in_process entries', () => {
+  const target = mkTmp();
+  const coderWt = path.join(target, 'coder-wt');
+  const inProcessDir = path.join(coderWt, '.swarmforge', 'handoffs', 'inbox', 'in_process');
+  const now = Date.now();
+  const runStart = now - 6 * 60 * 60 * 1000;
+
+  // Later-dequeued entry first, earlier-dequeued entry second - the earlier
+  // one must win so the open interval is measured from it, not whichever
+  // file happened to sort first.
+  writeHandoff(inProcessDir, '00_later.handoff', {
+    dequeued_at: new Date(now - 1 * 60 * 60 * 1000).toISOString(),
+  });
+  writeHandoff(inProcessDir, '00_earlier.handoff', {
+    dequeued_at: new Date(now - 3 * 60 * 60 * 1000).toISOString(),
+  });
+
+  const busyness = computeBusyness([{ role: 'coder', worktreePath: coderWt }], runStart, now);
+
+  assert.ok(Math.abs(busyness.coder - (3 / 6)) < 0.01, `expected ~50%, got ${busyness.coder}`);
+});
 
 test('computeSwarmMetrics returns placeholders on a fresh run, never NaN/Infinity', () => {
   const target = mkTmp();
