@@ -1,0 +1,63 @@
+name: Swarm intake from issues
+
+# An issue labeled `swarm-intake` becomes a raw backlog-root item. The swarm's
+# specifier drains it on next restart per the Backlog Intake Order rules.
+# The issue is the human-facing handle: the workflow comments with the created
+# path, and closing the loop (comment + close when spec'd) is BL-056 follow-up
+# for the specifier role.
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  intake:
+    if: github.event.label.name == 'swarm-intake'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Write backlog root item
+        env:
+          TITLE: ${{ github.event.issue.title }}
+          BODY: ${{ github.event.issue.body }}
+          NUM: ${{ github.event.issue.number }}
+          URL: ${{ github.event.issue.html_url }}
+        run: |
+          slug=$(echo "$TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]\+/-/g; s/^-\|-$//g' | cut -c1-50)
+          file="backlog/GH-${NUM}-${slug}.yaml"
+          {
+            echo "id: GH-${NUM}"
+            echo "title: $(printf '%s' "$TITLE" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
+            echo "source: ${URL}"
+            echo "description: |"
+            printf '%s\n' "$BODY" | sed 's/^/  /'
+          } > "$file"
+          echo "file=$file" >> "$GITHUB_ENV"
+
+      - name: Commit
+        run: |
+          git config user.name "swarm-intake[bot]"
+          git config user.email "swarm-intake@users.noreply.github.com"
+          git add "$file"
+          git commit -m "Intake GH-${{ github.event.issue.number }} to backlog root
+
+          From issue: ${{ github.event.issue.html_url }}"
+          git push
+
+      - name: Acknowledge on issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `Queued for the swarm: \`${process.env.file}\` on \`main\`. The specifier drains backlog-root items first at next restart.`
+            });

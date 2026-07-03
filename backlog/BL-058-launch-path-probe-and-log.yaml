@@ -1,0 +1,15 @@
+id: BL-058
+title: "launch robustness: login-shell PATH probe + persist launch output"
+description: |
+  extension/src/swarm/swarmLauncher.ts.
+  - augmentPath() hardcodes macOS dirs (/opt/homebrew/bin, /usr/local/bin).
+    A desktop-launched editor on Linux with tmux/bb/claude in ~/.local/bin or
+    linuxbrew fails with command-not-found depending on how VS Code was opened.
+    Fix: probe once per activation via the user's login shell
+    ($SHELL -lc 'echo $PATH', short timeout, cached; fall back to the current
+    hardcoded list on probe failure) and merge with process.env.PATH.
+  - Launch failures are currently ephemeral toast messages. Persist the spawned
+    ./swarm stdout+stderr and the final LaunchResult to
+    .swarmforge/last-launch.log on every attempt, success or failure.
+    Complements BL-052 (extension swarm state dumps) — the launch log is the
+    first artifact a state dump should include.

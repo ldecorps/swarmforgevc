@@ -43,6 +43,7 @@ const cp = __importStar(require("child_process"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const tmuxClient_1 = require("./tmuxClient");
+const swarmStopper_1 = require("./swarmStopper");
 const SWARM_LAUNCH_SUCCESS_MESSAGE = 'Swarm launched successfully.';
 function isSwarmReady(targetPath) {
     const socket = (0, tmuxClient_1.readTmuxSocket)(targetPath);
@@ -89,6 +90,14 @@ async function launchSwarm(targetPath, runName, readyTimeoutMs = 120_000) {
             message: `No ./swarm wrapper found at ${swarmScript}`,
             targetPath,
         };
+    }
+    // A previous run's tmux-socket/sessions.tsv can satisfy isSwarmReady and
+    // make this launch report success against a dead or dying swarm. If the
+    // swarm is not currently ready, tear down whatever answers on the old
+    // socket and remove the marker files, so readiness below can only be
+    // satisfied by the state the NEW ./swarm run writes.
+    if (!isSwarmReady(targetPath)) {
+        (0, swarmStopper_1.clearStaleSwarmState)(targetPath);
     }
     return new Promise((resolve) => {
         const child = cp.spawn(swarmScript, [targetPath], {
