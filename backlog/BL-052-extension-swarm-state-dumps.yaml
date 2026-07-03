@@ -1,5 +1,5 @@
 id: BL-052
-title: "extension/swarm stability — dump last known state on shutdown/failure"
+title: "extension/swarm stability - dump last known state on shutdown/failure"
 milestone: M4
 status: todo
 priority: 01
