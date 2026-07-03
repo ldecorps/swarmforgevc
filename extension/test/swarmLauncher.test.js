@@ -195,6 +195,63 @@ test('launchSwarm times out when the swarm never becomes ready in time', async (
   assert.match(result.message, /Timed out waiting/);
 });
 
+// --- Launch log (BL-058): launch failures were ephemeral toast messages —
+//     the 2026-07-03 18:12 failed launch left zero diagnosable output. Every
+//     attempt, success or failure, must persist the spawned ./swarm
+//     stdout+stderr and the final LaunchResult to .swarmforge/last-launch.log. ---
+
+function readLaunchLog(targetPath) {
+  return fs.readFileSync(path.join(targetPath, '.swarmforge', 'last-launch.log'), 'utf8');
+}
+
+test('launchSwarm persists stderr and the failure outcome to last-launch.log', async () => {
+  const targetPath = mkTmp();
+  writeSwarmScript(targetPath, 'echo "boom" >&2\nexit 1');
+  const result = await launchSwarm(targetPath);
+  assert.equal(result.success, false);
+  const log = readLaunchLog(targetPath);
+  assert.match(log, /boom/);
+  assert.match(log, /success: false/);
+  assert.match(log, /Swarm launch failed/);
+});
+
+test('launchSwarm persists stdout and the success outcome to last-launch.log', async () => {
+  const targetPath = mkTmp();
+  writeReadyState(targetPath);
+  writeSwarmScript(targetPath, 'echo "SwarmForge is ready"');
+  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  try {
+    const result = await launchSwarm(targetPath, 'fix-auth-bug');
+    assert.equal(result.success, true);
+    const log = readLaunchLog(targetPath);
+    assert.match(log, /success: true/);
+    assert.match(log, /SwarmForge is ready/);
+    assert.match(log, /fix-auth-bug/);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('launchSwarm writes the launch log even when no ./swarm wrapper exists', async () => {
+  const targetPath = mkTmp();
+  const result = await launchSwarm(targetPath);
+  assert.equal(result.success, false);
+  const log = readLaunchLog(targetPath);
+  assert.match(log, /No .\/swarm wrapper found/);
+  assert.match(log, /success: false/);
+});
+
+test('launchSwarm overwrites the launch log on each attempt', async () => {
+  const targetPath = mkTmp();
+  writeSwarmScript(targetPath, 'echo "FIRST-ATTEMPT" >&2\nexit 1');
+  await launchSwarm(targetPath);
+  writeSwarmScript(targetPath, 'echo "SECOND-ATTEMPT" >&2\nexit 1');
+  await launchSwarm(targetPath);
+  const log = readLaunchLog(targetPath);
+  assert.match(log, /SECOND-ATTEMPT/);
+  assert.doesNotMatch(log, /FIRST-ATTEMPT/);
+});
+
 test('waitForSwarmReady resolves true immediately when already ready', async () => {
   const targetPath = mkTmp();
   writeReadyState(targetPath);
