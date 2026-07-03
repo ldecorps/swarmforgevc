@@ -8,6 +8,7 @@ import {
   readTmuxSocket,
   sessionExists,
 } from './tmuxClient';
+import { clearStaleSwarmState } from './swarmStopper';
 
 export interface LaunchResult {
   success: boolean;
@@ -74,6 +75,15 @@ export async function launchSwarm(
       message: `No ./swarm wrapper found at ${swarmScript}`,
       targetPath,
     };
+  }
+
+  // A previous run's tmux-socket/sessions.tsv can satisfy isSwarmReady and
+  // make this launch report success against a dead or dying swarm. If the
+  // swarm is not currently ready, tear down whatever answers on the old
+  // socket and remove the marker files, so readiness below can only be
+  // satisfied by the state the NEW ./swarm run writes.
+  if (!isSwarmReady(targetPath)) {
+    clearStaleSwarmState(targetPath);
   }
 
   return new Promise((resolve) => {
