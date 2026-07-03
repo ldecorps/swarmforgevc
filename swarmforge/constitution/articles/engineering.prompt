@@ -1,75 +1,69 @@
-# Tech Stack
+# Engineering Rules
 
-- Language: TypeScript.
-- Platform: Visual Studio Code extension (the standard VS Code Extension API).
-  The extension must also work in Cursor, which is a VS Code fork - targeting the
-  standard API covers both, so do not use anything Cursor-specific.
-- Scaffold with the standard tooling (yo code / generator-code) producing a normal
-  package.json extension manifest with activation events and contributed commands.
-- UI tiles are rendered in a VS Code Webview.
-- Node.js APIs (child_process, etc.) are available in the extension host for
-  shelling out to tmux and git.
-- Target OS: macOS and Linux only. Do not write Windows-specific code; SwarmForge
-  depends on tmux.
+## Startup Tools
+- Required quality tools are **pinned**, not floating. Install each tool at the
+  exact ref recorded below; never resolve "latest". Bumping a pin is a human
+  commit, not an agent action.
+- Language tool table:
+  - TypeScript: mutation `stryker-mutator` (StrykerJS, version pinned in
+    package.json); DRY `jscpd` (pinned in package.json); CRAP computed as
+    coverage x cyclomatic complexity from the coverage reporter + complexity
+    scripts in `scripts/quality/`.
+  - Babashka/Clojure (swarm scripts): mutation `github.com/unclebob/clj-mutate`,
+    CRAP `github.com/unclebob/crap4clj`, DRY `github.com/unclebob/dry4clj` — each
+    at the SHA recorded in `swarmforge.lock.json`.
+- APS tools (`gherkin-parser`, `gherkin-mutator`, IR-DRY checker) come from
+  `github.com/unclebob/Acceptance-Pipeline-Specification` pinned at
+  `accaa33d503340c56513ef387258f8da929ba902`. Prefer the Babashka APS tools;
+  use the Go tools only if the Babashka ones fail in this environment. Do not
+  reimplement APS commands in the project.
 
-# Conventions
+## Design And Testability
+- Work in small, reviewable increments.
+- Prefer the simplest design that supports the current behavior and leaves clear
+  options for the next step.
+- Keep tests close to the behavior being changed.
+- Separate testable modules from environmentally unsuitable modules. In this
+  project the unsuitable boundary is: the VS Code Extension API surface, the
+  webview execution context, and live tmux/PTY interaction. Everything else —
+  socket discovery, `.swarmforge/` state parsing, handoff protocol, grid layout
+  logic, backlog parsing — must be a testable module reachable without booting
+  VS Code.
+- Only testable modules participate in tools that run tests: unit tests,
+  acceptance tests, coverage, mutation testing, CRAP analysis, DRY analysis that
+  invokes tests, and property tests.
+- Keep property tests separate from normal verification. Do not include
+  property-test tags in normal unit coverage, Gherkin acceptance mutation,
+  language mutation, CRAP, or coverage commands unless the role owns
+  property-test verification or the user explicitly asks.
 
-- Keep the extension-host code and the webview code clearly separated. They are
-  different execution contexts that communicate only by message passing
-  (postMessage). Do not attempt to share state directly between them.
-- The extension host owns all I/O: shelling to tmux, reading .swarmforge/ files,
-  running git. The webview is purely presentation plus user input forwarded back
-  to the host.
-- Prefer small, testable modules. The cleaner agent will improve coverage and
-  structure, so write code that is easy to refactor.
-- Use clear command IDs namespaced under "swarmforge." (e.g. swarmforge.run,
-  swarmforge.stop, swarmforge.setTarget, swarmforge.initTarget).
+## Acceptance Pipeline
+- Use github.com/unclebob/Acceptance-Pipeline-Specification (pinned, see above)
+  for Gherkin acceptance tests.
+- Feature files live in `specs/features/`, separated by behavior and technology.
+  Backlog items reference their feature files; the feature files are the durable
+  acceptance contract and outlive the backlog item.
+- Project-specific acceptance components live in `specs/pipeline/`: the
+  acceptance entrypoint generator, acceptance runtime, project step handlers,
+  runner adapter, and convenience scripts. Step handlers drive the testable
+  host-side core through its CLI/module surface, never through the VS Code UI.
+- Gherkin acceptance mutation means running `gherkin-mutator` to mutate Gherkin
+  example values in the JSON IR. It is distinct from language mutation of source.
+- Gherkin acceptance mutation runs must report periodic progress/status so agents
+  can distinguish normal long-running work from a hang.
 
-# Architecture rules (important - these prevent the project going off the rails)
+## Verification
+- Before running language, build, or test commands, prefer project-local
+  cache/configuration paths inside the assigned worktree.
+- Run acceptance generation and acceptance tests sequentially. Avoid running
+  whole-suite test commands concurrently with acceptance generation.
+- Run the relevant local verification command before handoff whenever the
+  project has one.
 
-1. Two layers: tile-as-view, tmux-as-substrate.
-   - The tiles are TypeScript/webview VIEWS. tmux is the process SUBSTRATE that
-     actually runs the agents (SwarmForge's model).
-   - These are NOT alternatives - they are different layers. The tile renders and
-     forwards input; tmux runs the agents underneath.
-   - DO NOT spawn agent processes directly from TypeScript to avoid tmux. That
-     would mean reimplementing SwarmForge's orchestration and is explicitly wrong.
-     If a task starts to feel like rebuilding process orchestration, stop - that is
-     the signal you have crossed this line.
-
-2. Integrate, do not fork.
-   - SwarmForge is a pinned, unmodified, separately-installed dependency. Do not
-     copy its source into this repo. Interact with it only through:
-       - launching its ./swarm wrapper,
-       - reading its state under .swarmforge/ (including .swarmforge/tmux-socket),
-       - attaching to its tmux sessions/panes,
-       - reading its swarmforge.conf to learn the role/window topology.
-
-3. Webview storage restriction.
-   - Do NOT use localStorage, sessionStorage, or any browser storage in the webview.
-     Keep UI state in memory or persist via the extension host (VS Code workspace
-     state / files). Browser storage is not reliable in this context.
-
-4. Secrets.
-   - Any tokens or keys (e.g. a GitHub token for opening PRs) live in the extension
-     host environment only. Never write them into the target's working directory or
-     into any commit.
-
-# Key integration surface to get working first
-
-Before building UI polish, prove these against a real SwarmForge install, in this
-order (this is the riskiest part):
-
-1. Launch a swarm against a target path by shelling to ./swarm.
-2. Discover SwarmForge's tmux socket (.swarmforge/tmux-socket) and enumerate its
-   sessions/windows/panes.
-3. Tail one pane's output into a webview tile, live.
-4. Send keystrokes INTO a pane (needed for interactive tiles) - this is the
-   fiddliest cross-platform piece, so tackle it early.
-5. Read .swarmforge/ state to know which stage holds the work.
-6. Open a PR from the dev branch into the target's main using git + the GitHub CLI
-   or API.
-
-If any of these cannot be done by driving SwarmForge from outside, note it clearly
-rather than working around it by modifying SwarmForge - it may be something to
-request upstream.
+## Guardrails
+- Do not edit mutation testing or Gherkin acceptance mutation manifests by hand;
+  approved mutation tools update those manifests in their normal runs.
+- Do not commit unrelated local changes or generated artifacts unless required
+  for the task.
+- Before relying on an unfamiliar command, inspect local help or project
+  documentation.

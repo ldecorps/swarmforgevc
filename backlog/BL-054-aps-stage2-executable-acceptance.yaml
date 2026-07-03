@@ -1,0 +1,20 @@
+id: BL-054
+title: "APS realignment stage 2: executable acceptance pipeline for the host-side core"
+description: |
+  Build the project-specific APS components in specs/pipeline/ per the pinned
+  Acceptance-Pipeline-Specification:
+
+  - Acceptance entrypoint generator + acceptance runtime + runner adapter wired
+    to the project test runner.
+  - Step handlers that drive the TESTABLE host-side core only (tmux socket
+    discovery, .swarmforge state parsing, handoff protocol, backlog parsing,
+    grid layout logic) through CLI/module surfaces. The VS Code API and the
+    webview stay behind the unsuitable-module boundary; no booting VS Code in
+    acceptance runs.
+  - Pipeline: feature file -> gherkin-parser -> JSON IR -> entrypoint generator
+    -> generated entry points -> runner. Acceptance generation and acceptance
+    runs are sequential; never concurrent with whole-suite unit runs.
+  - Role prompt updates: coder's acceptance-test prohibition is lifted to the
+    upstream model (implements approved slices with TDD, unit tests, and
+    GENERATED acceptance tests); QA converts the specifier's e2e QA procedures
+    into executable scripts and runs them as the final gate.
