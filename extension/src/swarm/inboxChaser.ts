@@ -194,6 +194,22 @@ export interface RoleInbox {
 // A role that HOLDS in_process work (single task file or batch directory)
 // while showing no activity gets chased; after maxChases without recovery it
 // escalates visibly instead of being chased forever (BL-067).
+function applyStuckNudge(role: string, held: InProcessItem[], adapters: ChaserAdapters): void {
+  adapters.sendWakeUp(role);
+  for (const item of held) {
+    writeNudgeCount(item.filePath, item.nudgeCount + 1);
+  }
+  adapters.onStuckEscalation(role, false);
+}
+
+function clearStaleNudgeCounts(held: InProcessItem[]): void {
+  for (const item of held) {
+    if (item.nudgeCount > 0) {
+      writeNudgeCount(item.filePath, 0);
+    }
+  }
+}
+
 function sweepInProcess(
   role: string,
   inProcessDir: string,
@@ -211,21 +227,68 @@ function sweepInProcess(
   const action = decideStuckAction(adapters.getLastActivityMs(role), nudgeCount, nowMs, config);
 
   if (action === 'nudge') {
-    adapters.sendWakeUp(role);
-    for (const item of held) {
-      writeNudgeCount(item.filePath, item.nudgeCount + 1);
-    }
-    adapters.onStuckEscalation(role, false);
+    applyStuckNudge(role, held, adapters);
   } else if (action === 'alert') {
     adapters.onStuckEscalation(role, true);
   } else {
     // active again: clear stale counts so a future stall re-chases from zero
-    for (const item of held) {
-      if (item.nudgeCount > 0) {
-        writeNudgeCount(item.filePath, 0);
-      }
-    }
+    clearStaleNudgeCounts(held);
     adapters.onStuckEscalation(role, false);
+  }
+}
+
+function maybeWakeOnCooldownExpiry(
+  role: string,
+  cooldownUntilMs: number | null,
+  nowMs: number,
+  adapters: ChaserAdapters
+): void {
+  if (cooldownUntilMs == null) {
+    return;
+  }
+  if (!shouldWakeOnExpiry(cooldownUntilMs, nowMs, adapters.getCooldownWokenMarker?.(role) ?? null)) {
+    return;
+  }
+  adapters.sendWakeUp(role);
+  adapters.onCooldownExpired?.(role, cooldownUntilMs);
+}
+
+function applyInboxItemAction(
+  role: string,
+  item: InboxItem,
+  action: ChaserAction,
+  adapters: ChaserAdapters
+): void {
+  if (action === 'chased') {
+    adapters.sendWakeUp(role);
+    writeChaseCount(item.filePath, item.chaseCount + 1);
+  } else if (action === 'respawned') {
+    adapters.triggerRespawn(role);
+  } else if (action === 'dead-lettered') {
+    const dead = deadLetterPath(item.filePath);
+    fs.renameSync(item.filePath, dead);
+    const sc = sidecarPath(item.filePath);
+    if (fs.existsSync(sc)) {
+      fs.renameSync(sc, sidecarPath(dead));
+    }
+    adapters.logDeadLetter(role, item.filePath);
+  }
+  // 'skipped' → no-op
+}
+
+function sweepRoleInbox(
+  role: string,
+  inboxNewDir: string,
+  nowMs: number,
+  config: InboxChaserConfig,
+  adapters: ChaserAdapters
+): void {
+  const items = scanInboxNew(inboxNewDir);
+  const liveness = adapters.getLiveness(role);
+
+  for (const item of items) {
+    const action = decideItemAction(item.mtimeMs, item.chaseCount, nowMs, config, liveness);
+    applyInboxItemAction(role, item, action, adapters);
   }
 }
 
@@ -244,37 +307,8 @@ export function runSweep(
       continue;
     }
 
-    if (
-      cooldownUntilMs != null &&
-      shouldWakeOnExpiry(cooldownUntilMs, nowMs, adapters.getCooldownWokenMarker?.(role) ?? null)
-    ) {
-      adapters.sendWakeUp(role);
-      adapters.onCooldownExpired?.(role, cooldownUntilMs);
-    }
-
+    maybeWakeOnCooldownExpiry(role, cooldownUntilMs, nowMs, adapters);
     sweepInProcess(role, inProcessDir, nowMs, config, adapters);
-
-    const items = scanInboxNew(inboxNewDir);
-    const liveness = adapters.getLiveness(role);
-
-    for (const item of items) {
-      const action = decideItemAction(item.mtimeMs, item.chaseCount, nowMs, config, liveness);
-
-      if (action === 'chased') {
-        adapters.sendWakeUp(role);
-        writeChaseCount(item.filePath, item.chaseCount + 1);
-      } else if (action === 'respawned') {
-        adapters.triggerRespawn(role);
-      } else if (action === 'dead-lettered') {
-        const dead = deadLetterPath(item.filePath);
-        fs.renameSync(item.filePath, dead);
-        const sc = sidecarPath(item.filePath);
-        if (fs.existsSync(sc)) {
-          fs.renameSync(sc, sidecarPath(dead));
-        }
-        adapters.logDeadLetter(role, item.filePath);
-      }
-      // 'skipped' → no-op
-    }
+    sweepRoleInbox(role, inboxNewDir, nowMs, config, adapters);
   }
 }
