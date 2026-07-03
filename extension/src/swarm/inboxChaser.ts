@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { LivenessState } from '../watchdog/liveness';
+import { isCoolingDown, shouldWakeOnExpiry } from './cooldownScheduler';
 
 export interface InboxChaserConfig {
   chaseIntervalSeconds: number;
@@ -172,6 +173,16 @@ export interface ChaserAdapters {
   /** Surfaces (or clears) the visible needs-human escalation for a role whose
    * chases were exhausted without recovery. */
   onStuckEscalation: (role: string, escalated: boolean) => void;
+  /** Absolute epoch ms until which the role is cooling down (token exhaustion
+   * reset time), or null/undefined when the role has no active cooldown
+   * (BL-082). Optional so callers without cooldown scheduling are unaffected. */
+  getCooldownUntilMs?: (role: string) => number | null | undefined;
+  /** Epoch ms of the cooldown window this role was last woken for, or
+   * null/undefined if no wake has been recorded yet (BL-082). */
+  getCooldownWokenMarker?: (role: string) => number | null | undefined;
+  /** Records that a wake was sent for this cooldown expiry, so the next
+   * sweep does not re-wake for the same window (BL-082). */
+  onCooldownExpired?: (role: string, cooldownUntilMs: number) => void;
 }
 
 export interface RoleInbox {
@@ -183,6 +194,22 @@ export interface RoleInbox {
 // A role that HOLDS in_process work (single task file or batch directory)
 // while showing no activity gets chased; after maxChases without recovery it
 // escalates visibly instead of being chased forever (BL-067).
+function applyStuckNudge(role: string, held: InProcessItem[], adapters: ChaserAdapters): void {
+  adapters.sendWakeUp(role);
+  for (const item of held) {
+    writeNudgeCount(item.filePath, item.nudgeCount + 1);
+  }
+  adapters.onStuckEscalation(role, false);
+}
+
+function clearStaleNudgeCounts(held: InProcessItem[]): void {
+  for (const item of held) {
+    if (item.nudgeCount > 0) {
+      writeNudgeCount(item.filePath, 0);
+    }
+  }
+}
+
 function sweepInProcess(
   role: string,
   inProcessDir: string,
@@ -200,21 +227,68 @@ function sweepInProcess(
   const action = decideStuckAction(adapters.getLastActivityMs(role), nudgeCount, nowMs, config);
 
   if (action === 'nudge') {
-    adapters.sendWakeUp(role);
-    for (const item of held) {
-      writeNudgeCount(item.filePath, item.nudgeCount + 1);
-    }
-    adapters.onStuckEscalation(role, false);
+    applyStuckNudge(role, held, adapters);
   } else if (action === 'alert') {
     adapters.onStuckEscalation(role, true);
   } else {
     // active again: clear stale counts so a future stall re-chases from zero
-    for (const item of held) {
-      if (item.nudgeCount > 0) {
-        writeNudgeCount(item.filePath, 0);
-      }
-    }
+    clearStaleNudgeCounts(held);
     adapters.onStuckEscalation(role, false);
+  }
+}
+
+function maybeWakeOnCooldownExpiry(
+  role: string,
+  cooldownUntilMs: number | null,
+  nowMs: number,
+  adapters: ChaserAdapters
+): void {
+  if (cooldownUntilMs == null) {
+    return;
+  }
+  if (!shouldWakeOnExpiry(cooldownUntilMs, nowMs, adapters.getCooldownWokenMarker?.(role) ?? null)) {
+    return;
+  }
+  adapters.sendWakeUp(role);
+  adapters.onCooldownExpired?.(role, cooldownUntilMs);
+}
+
+function applyInboxItemAction(
+  role: string,
+  item: InboxItem,
+  action: ChaserAction,
+  adapters: ChaserAdapters
+): void {
+  if (action === 'chased') {
+    adapters.sendWakeUp(role);
+    writeChaseCount(item.filePath, item.chaseCount + 1);
+  } else if (action === 'respawned') {
+    adapters.triggerRespawn(role);
+  } else if (action === 'dead-lettered') {
+    const dead = deadLetterPath(item.filePath);
+    fs.renameSync(item.filePath, dead);
+    const sc = sidecarPath(item.filePath);
+    if (fs.existsSync(sc)) {
+      fs.renameSync(sc, sidecarPath(dead));
+    }
+    adapters.logDeadLetter(role, item.filePath);
+  }
+  // 'skipped' → no-op
+}
+
+function sweepRoleInbox(
+  role: string,
+  inboxNewDir: string,
+  nowMs: number,
+  config: InboxChaserConfig,
+  adapters: ChaserAdapters
+): void {
+  const items = scanInboxNew(inboxNewDir);
+  const liveness = adapters.getLiveness(role);
+
+  for (const item of items) {
+    const action = decideItemAction(item.mtimeMs, item.chaseCount, nowMs, config, liveness);
+    applyInboxItemAction(role, item, action, adapters);
   }
 }
 
@@ -225,29 +299,16 @@ export function runSweep(
   adapters: ChaserAdapters
 ): void {
   for (const { role, inboxNewDir, inProcessDir } of roleInboxes) {
-    sweepInProcess(role, inProcessDir, nowMs, config, adapters);
+    const cooldownUntilMs = adapters.getCooldownUntilMs?.(role) ?? null;
 
-    const items = scanInboxNew(inboxNewDir);
-    const liveness = adapters.getLiveness(role);
-
-    for (const item of items) {
-      const action = decideItemAction(item.mtimeMs, item.chaseCount, nowMs, config, liveness);
-
-      if (action === 'chased') {
-        adapters.sendWakeUp(role);
-        writeChaseCount(item.filePath, item.chaseCount + 1);
-      } else if (action === 'respawned') {
-        adapters.triggerRespawn(role);
-      } else if (action === 'dead-lettered') {
-        const dead = deadLetterPath(item.filePath);
-        fs.renameSync(item.filePath, dead);
-        const sc = sidecarPath(item.filePath);
-        if (fs.existsSync(sc)) {
-          fs.renameSync(sc, sidecarPath(dead));
-        }
-        adapters.logDeadLetter(role, item.filePath);
-      }
-      // 'skipped' → no-op
+    // While cooling down, suppress all wake/chase/respawn/nudge activity for
+    // this role only; other roles in the same pass proceed normally (BL-082).
+    if (isCoolingDown(cooldownUntilMs, nowMs)) {
+      continue;
     }
+
+    maybeWakeOnCooldownExpiry(role, cooldownUntilMs, nowMs, adapters);
+    sweepInProcess(role, inProcessDir, nowMs, config, adapters);
+    sweepRoleInbox(role, inboxNewDir, nowMs, config, adapters);
   }
 }

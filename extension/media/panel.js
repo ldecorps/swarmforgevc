@@ -19,6 +19,9 @@ const runsToggleBtn = document.getElementById('runs-toggle');
 const backlogEl = document.getElementById('backlog');
 const backlogListEl = document.getElementById('backlog-list');
 const backlogToggleBtn = document.getElementById('backlog-toggle');
+const metricsEl = document.getElementById('metrics');
+const metricsListEl = document.getElementById('metrics-list');
+const metricsToggleBtn = document.getElementById('metrics-toggle');
 const SCROLL_THRESHOLD = 8;
 const holderMap = {};
 let lastBacklogItems = [];
@@ -28,7 +31,8 @@ const RESIZE_DEBOUNCE_MS = 300;
 function updateBottomRow() {
   const hasRuns = recentRunsEl.style.display !== 'none';
   const hasBacklog = backlogEl.style.display !== 'none';
-  bottomRowEl.style.display = (hasRuns || hasBacklog) ? '' : 'none';
+  const hasMetrics = metricsEl.style.display !== 'none';
+  bottomRowEl.style.display = (hasRuns || hasBacklog || hasMetrics) ? '' : 'none';
 }
 
 function measureTilePaneRows(tile, output) {
@@ -93,6 +97,11 @@ backlogToggleBtn.addEventListener('click', () => {
   backlogToggleBtn.textContent = backlogEl.classList.contains('collapsed') ? '▸' : '▾';
 });
 
+metricsToggleBtn.addEventListener('click', () => {
+  metricsEl.classList.toggle('collapsed');
+  metricsToggleBtn.textContent = metricsEl.classList.contains('collapsed') ? '▸' : '▾';
+});
+
 // BL-034: delegated on the stable list container, not per-row, since
 // renderBacklog replaces backlogListEl's innerHTML on every poll.
 backlogListEl.addEventListener('click', (event) => {
@@ -126,6 +135,36 @@ function renderRecentRuns(runs) {
       '<span class="run-target">' + target + '</span>' +
       '<span class="run-date">' + date + '</span>' + badge + '</div>';
   }).join('');
+  updateBottomRow();
+}
+
+// BL-071: mirrors metrics/swarmMetrics.ts's formatDurationMs. The webview
+// cannot import the host's TS module (two-layer rule — host and webview
+// communicate only by message passing), so the tiny formatting helper is
+// duplicated here; the VALUES themselves always come from that one module.
+function formatDurationMs(ms) {
+  const totalMinutes = Math.round(ms / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours === 0 ? minutes + 'm' : hours + 'h ' + minutes + 'm';
+}
+
+function renderMetrics(metrics, roles) {
+  metricsEl.style.display = '';
+  const meanLine = metrics.meanTicketTimeMs === null
+    ? '<div class="metric-row"><span class="metric-label">Mean ticket time</span><span class="metric-value">—</span></div>'
+    : '<div class="metric-row"><span class="metric-label">Mean ticket time</span><span class="metric-value">' +
+      formatDurationMs(metrics.meanTicketTimeMs) + ' / ' + metrics.ticketSampleCount + ' tickets</span></div>';
+
+  const busynessLines = (roles || []).map((role) => {
+    const pct = Math.round((metrics.busyness[role] || 0) * 100);
+    return '<div class="metric-row"><span class="metric-label">' + role + '</span><span class="metric-value">' + pct + '%</span></div>';
+  }).join('');
+
+  const retryLine = '<div class="metric-row"><span class="metric-label">Retries</span><span class="metric-value">' +
+    metrics.retryTotal + '</span></div>';
+
+  metricsListEl.innerHTML = meanLine + busynessLines + retryLine;
   updateBottomRow();
 }
 
@@ -535,6 +574,9 @@ window.addEventListener('message', (event) => {
     case 'backlogUpdate':
       lastBacklogItems = message.items;
       renderBacklog(message.items);
+      break;
+    case 'metricsUpdate':
+      renderMetrics(message.metrics, message.roles);
       break;
     case 'holderUpdate':
       // Replace, not merge: the host recomputes the full live-holder set

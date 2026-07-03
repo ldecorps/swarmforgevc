@@ -54,36 +54,38 @@ function parseYamlList(content, field) {
         .filter((line) => line.length > 0);
     return entries.length > 0 ? entries : undefined;
 }
+function parsePriority(priorityStr) {
+    if (priorityStr === undefined)
+        return undefined;
+    const n = Number(priorityStr);
+    return !Number.isNaN(n) ? n : undefined;
+}
+function assignOptionalFields(item, content) {
+    const assignedTo = parseYamlScalar(content, 'assigned_to');
+    if (assignedTo)
+        item.assignedTo = assignedTo;
+    const milestone = parseYamlScalar(content, 'milestone');
+    if (milestone)
+        item.milestone = milestone;
+    const priority = parsePriority(parseYamlScalar(content, 'priority'));
+    if (priority !== undefined)
+        item.priority = priority;
+    const dependsOn = parseYamlList(content, 'depends_on');
+    if (dependsOn)
+        item.dependsOn = dependsOn;
+    const pack = parseYamlList(content, 'pack');
+    if (pack)
+        item.pack = pack;
+}
 function parseBacklogYaml(content) {
     const id = parseYamlScalar(content, 'id');
     const title = parseYamlScalar(content, 'title');
     const statusRaw = parseYamlScalar(content, 'status');
-    if (!id || !title || !statusRaw) {
-        return null;
-    }
-    if (!VALID_STATUSES.has(statusRaw)) {
+    if (!id || !title || !statusRaw || !VALID_STATUSES.has(statusRaw)) {
         return null;
     }
     const item = { id, title, status: statusRaw };
-    const assignedTo = parseYamlScalar(content, 'assigned_to');
-    if (assignedTo) {
-        item.assignedTo = assignedTo;
-    }
-    const milestone = parseYamlScalar(content, 'milestone');
-    if (milestone) {
-        item.milestone = milestone;
-    }
-    const priorityStr = parseYamlScalar(content, 'priority');
-    if (priorityStr !== undefined) {
-        const n = Number(priorityStr);
-        if (!Number.isNaN(n)) {
-            item.priority = n;
-        }
-    }
-    const dependsOn = parseYamlList(content, 'depends_on');
-    if (dependsOn) {
-        item.dependsOn = dependsOn;
-    }
+    assignOptionalFields(item, content);
     return item;
 }
 function readYamlFiles(dir, overrideStatus) {
