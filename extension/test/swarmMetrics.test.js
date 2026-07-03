@@ -359,7 +359,27 @@ test('computeSwarmMetrics returns placeholders on a fresh run, never NaN/Infinit
   assert.equal(result.busyness.coder, 0);
   assert.equal(result.retryTotal, 0);
   assert.deepEqual(result.retryByTicket, {});
+  assert.deepEqual(result.suiteDuration, { latestMs: null, meanMs: null, sampleCount: 0, warn: false });
 
   const serialized = JSON.stringify(result);
   assert.doesNotMatch(serialized, /NaN|Infinity/);
+});
+
+// BL-078: computeSwarmMetrics plumbs its suiteWarnSeconds param straight
+// through to computeSuiteDuration's warn threshold.
+test('computeSwarmMetrics honors a custom suiteWarnSeconds threshold', () => {
+  const target = mkTmp();
+  initRepo(target);
+  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  mkdirp(path.join(target, 'extension'));
+  fs.writeFileSync(
+    path.join(target, 'extension', '.test-durations.jsonl'),
+    JSON.stringify({ finished_at: '2026-07-03T10:00:00Z', test_count: 1, result: 'pass', duration_ms: 50000 }) + '\n'
+  );
+
+  const lenient = computeSwarmMetrics(target, [], null, Date.now(), 60);
+  assert.equal(lenient.suiteDuration.warn, false, '50s is under a 60s threshold');
+
+  const strict = computeSwarmMetrics(target, [], null, Date.now(), 10);
+  assert.equal(strict.suiteDuration.warn, true, '50s exceeds a 10s threshold');
 });

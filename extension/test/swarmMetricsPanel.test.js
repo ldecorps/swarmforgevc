@@ -16,6 +16,7 @@ test('the METRICS pane appears beside RECENT RUNS and BACKLOG and shows mean tim
       busyness: { coder: 0.45, cleaner: 0.02 },
       retryTotal: 3,
       retryByTicket: { 'BL-101': 2 },
+      suiteDuration: { latestMs: 33000, meanMs: 33000, sampleCount: 5, warn: false },
     },
     roles: ['coder', 'cleaner'],
   });
@@ -40,7 +41,14 @@ test('folding METRICS collapses only its own body, leaving RECENT RUNS and BACKL
   dispatch({ type: 'backlogUpdate', items: [{ id: 'BL-001', title: 't', status: 'todo' }] });
   dispatch({
     type: 'metricsUpdate',
-    metrics: { meanTicketTimeMs: null, ticketSampleCount: 0, busyness: {}, retryTotal: 0, retryByTicket: {} },
+    metrics: {
+      meanTicketTimeMs: null,
+      ticketSampleCount: 0,
+      busyness: {},
+      retryTotal: 0,
+      retryByTicket: {},
+      suiteDuration: { latestMs: null, meanMs: null, sampleCount: 0, warn: false },
+    },
     roles: [],
   });
 
@@ -65,6 +73,7 @@ test('a fresh run with no closed tickets renders placeholders, never NaN/Infinit
       busyness: { coder: 0 },
       retryTotal: 0,
       retryByTicket: {},
+      suiteDuration: { latestMs: null, meanMs: null, sampleCount: 0, warn: false },
     },
     roles: ['coder'],
   });
@@ -74,4 +83,67 @@ test('a fresh run with no closed tickets renders placeholders, never NaN/Infinit
   assert.match(text, /coder/);
   assert.match(text, /0%/);
   assert.doesNotMatch(text, /NaN|Infinity|undefined/);
+});
+
+// BL-078 suite-duration-03
+test('the METRICS pane shows suite duration latest, mean, and sample count', () => {
+  const { document, dispatch } = renderPanel();
+  dispatch({
+    type: 'metricsUpdate',
+    metrics: {
+      meanTicketTimeMs: null,
+      ticketSampleCount: 0,
+      busyness: {},
+      retryTotal: 0,
+      retryByTicket: {},
+      suiteDuration: { latestMs: 33000, meanMs: 35000, sampleCount: 12, warn: false },
+    },
+    roles: [],
+  });
+
+  const text = document.getElementById('metrics-list').textContent;
+  assert.match(text, /Suite duration/);
+  assert.match(text, /33s/);
+  assert.match(text, /35s/);
+  assert.match(text, /12/);
+});
+
+// BL-078 suite-duration-04
+test('a suite-duration entry flagged warn renders in the warning style', () => {
+  const { document, dispatch } = renderPanel();
+  dispatch({
+    type: 'metricsUpdate',
+    metrics: {
+      meanTicketTimeMs: null,
+      ticketSampleCount: 0,
+      busyness: {},
+      retryTotal: 0,
+      retryByTicket: {},
+      suiteDuration: { latestMs: 130000, meanMs: 35000, sampleCount: 5, warn: true },
+    },
+    roles: [],
+  });
+
+  const warnValue = document.querySelector('.metric-value-warn');
+  assert.ok(warnValue, 'a warn-flagged suite duration must render with the warning style class');
+  assert.match(warnValue.textContent, /2m 10s/);
+  assert.match(document.getElementById('metrics-list').textContent, /WARN/);
+});
+
+test('a normal (not warn) suite-duration entry never renders the warning style', () => {
+  const { document, dispatch } = renderPanel();
+  dispatch({
+    type: 'metricsUpdate',
+    metrics: {
+      meanTicketTimeMs: null,
+      ticketSampleCount: 0,
+      busyness: {},
+      retryTotal: 0,
+      retryByTicket: {},
+      suiteDuration: { latestMs: 33000, meanMs: 35000, sampleCount: 5, warn: false },
+    },
+    roles: [],
+  });
+
+  assert.equal(document.querySelector('.metric-value-warn'), null);
 });
