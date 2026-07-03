@@ -319,12 +319,20 @@ export function computeRetries(roles: RoleWorktree[]): RetryCounts {
   return { total, perTicket };
 }
 
+export interface SuiteDurationStats {
+  latestMs: number | null;
+  meanMs: number | null;
+  sampleCount: number;
+  warn: boolean;
+}
+
 export interface SwarmMetrics {
   meanTicketTimeMs: number | null;
   ticketSampleCount: number;
   busyness: Record<string, number>;
   retryTotal: number;
   retryByTicket: Record<string, number>;
+  suiteDuration: SuiteDurationStats;
 }
 
 export const NO_SAMPLE_PLACEHOLDER = '—';
@@ -336,11 +344,97 @@ export function formatDurationMs(ms: number): string {
   return hours === 0 ? `${minutes}m` : `${hours}h ${minutes}m`;
 }
 
+// BL-078: distinct from formatDurationMs above - suite runs are seconds-scale
+// (tens to low hundreds of seconds), not hours-scale, so this reports
+// minutes+seconds rather than hours+minutes.
+export function formatSuiteDurationMs(ms: number): string {
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes === 0 ? `${seconds}s` : `${minutes}m ${seconds}s`;
+}
+
+export const DEFAULT_SUITE_WARN_SECONDS = 120;
+
+interface TestDurationRecord {
+  finishedAtMs: number;
+  durationMs: number;
+}
+
+function suiteDurationLogPath(worktreePath: string): string {
+  return path.join(worktreePath, 'extension', '.test-durations.jsonl');
+}
+
+function readTestDurationRecords(worktreePath: string): TestDurationRecord[] {
+  let content: string;
+  try {
+    content = fs.readFileSync(suiteDurationLogPath(worktreePath), 'utf8');
+  } catch {
+    return [];
+  }
+
+  const records: TestDurationRecord[] = [];
+  for (const line of content.split('\n')) {
+    if (!line.trim()) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(line);
+      const finishedAtMs = Date.parse(parsed.finished_at);
+      const durationMs = Number(parsed.duration_ms);
+      if (!Number.isNaN(finishedAtMs) && Number.isFinite(durationMs)) {
+        records.push({ finishedAtMs, durationMs });
+      }
+    } catch {
+      // Malformed line: skip it, never let a bad record break the metrics
+      // surface (BL-078's "recording failure never breaks" spirit extends
+      // to reading too).
+    }
+  }
+  return records;
+}
+
+// Aggregates the test-suite duration log across the main checkout and every
+// role worktree (each role runs the suite in its own checkout, so each has
+// its own log) into one latest/mean/sampleCount view, flagging creep
+// (BL-078). warnThresholdMs is the absolute floor; the 2x-rolling-mean check
+// catches relative creep even under a generous absolute threshold.
+export function computeSuiteDuration(
+  targetPath: string,
+  roles: RoleWorktree[],
+  warnThresholdMs: number = DEFAULT_SUITE_WARN_SECONDS * 1000,
+  sampleWindow: number = 20
+): SuiteDurationStats {
+  const worktreePaths = new Set<string>([targetPath, ...roles.map((r) => r.worktreePath)]);
+  const allRecords = [...worktreePaths].flatMap(readTestDurationRecords);
+
+  if (allRecords.length === 0) {
+    return { latestMs: null, meanMs: null, sampleCount: 0, warn: false };
+  }
+
+  allRecords.sort((a, b) => b.finishedAtMs - a.finishedAtMs);
+  const windowed = allRecords.slice(0, sampleWindow);
+  const meanMs = windowed.reduce((sum, r) => sum + r.durationMs, 0) / windowed.length;
+  const latestMs = allRecords[0].durationMs;
+
+  // The relative-creep check compares the latest run against the mean of the
+  // PRIOR runs only - including the latest in its own baseline would dilute
+  // a genuine spike (e.g. one bad run among 20 barely moves an including
+  // mean, silently defeating the 2x check that exists to catch it).
+  const priorRecords = windowed.slice(1);
+  const baselineMeanMs =
+    priorRecords.length > 0 ? priorRecords.reduce((sum, r) => sum + r.durationMs, 0) / priorRecords.length : null;
+  const warn = latestMs > warnThresholdMs || (baselineMeanMs !== null && latestMs > 2 * baselineMeanMs);
+
+  return { latestMs, meanMs, sampleCount: windowed.length, warn };
+}
+
 export function computeSwarmMetrics(
   targetPath: string,
   roles: RoleWorktree[],
   runStartMs: number | null,
-  nowMs: number = Date.now()
+  nowMs: number = Date.now(),
+  suiteWarnSeconds: number = DEFAULT_SUITE_WARN_SECONDS
 ): SwarmMetrics {
   const { meanMs, sampleCount } = computeMeanTicketTime(targetPath);
   const busyness =
@@ -348,6 +442,7 @@ export function computeSwarmMetrics(
       ? computeBusyness(roles, runStartMs, nowMs)
       : Object.fromEntries(roles.map((r) => [r.role, 0]));
   const { total, perTicket } = computeRetries(roles);
+  const suiteDuration = computeSuiteDuration(targetPath, roles, suiteWarnSeconds * 1000);
 
   return {
     meanTicketTimeMs: meanMs,
@@ -355,5 +450,6 @@ export function computeSwarmMetrics(
     busyness,
     retryTotal: total,
     retryByTicket: perTicket,
+    suiteDuration,
   };
 }

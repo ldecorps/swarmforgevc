@@ -149,6 +149,26 @@ function formatDurationMs(ms) {
   return hours === 0 ? minutes + 'm' : hours + 'h ' + minutes + 'm';
 }
 
+// BL-078: mirrors metrics/swarmMetrics.ts's formatSuiteDurationMs, same
+// reason formatDurationMs above is duplicated here (two-layer rule).
+function formatSuiteDurationMs(ms) {
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes === 0 ? seconds + 's' : minutes + 'm ' + seconds + 's';
+}
+
+function suiteDurationLineHtml(suite) {
+  if (suite.latestMs === null) {
+    return '<div class="metric-row"><span class="metric-label">Suite duration</span><span class="metric-value">—</span></div>';
+  }
+  const valueClass = suite.warn ? 'metric-value metric-value-warn' : 'metric-value';
+  const label = suite.warn ? 'Suite duration (WARN)' : 'Suite duration';
+  return '<div class="metric-row"><span class="metric-label">' + label + '</span><span class="' + valueClass + '">' +
+    formatSuiteDurationMs(suite.latestMs) + ' / mean ' + formatSuiteDurationMs(suite.meanMs) +
+    ' over ' + suite.sampleCount + ' run(s)</span></div>';
+}
+
 function renderMetrics(metrics, roles) {
   metricsEl.style.display = '';
   const meanLine = metrics.meanTicketTimeMs === null
@@ -164,7 +184,9 @@ function renderMetrics(metrics, roles) {
   const retryLine = '<div class="metric-row"><span class="metric-label">Retries</span><span class="metric-value">' +
     metrics.retryTotal + '</span></div>';
 
-  metricsListEl.innerHTML = meanLine + busynessLines + retryLine;
+  const suiteLine = suiteDurationLineHtml(metrics.suiteDuration);
+
+  metricsListEl.innerHTML = meanLine + busynessLines + retryLine + suiteLine;
   updateBottomRow();
 }
 
