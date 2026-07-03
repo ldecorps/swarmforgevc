@@ -37,6 +37,7 @@ exports.isSwarmReady = isSwarmReady;
 exports.augmentPath = augmentPath;
 exports.buildLaunchEnv = buildLaunchEnv;
 exports.launchSwarm = launchSwarm;
+exports.chooseReattachTimeoutMs = chooseReattachTimeoutMs;
 exports.waitForSwarmReady = waitForSwarmReady;
 // pipeline smoke test BL-029
 const cp = __importStar(require("child_process"));
@@ -149,6 +150,14 @@ async function launchSwarm(targetPath, runName, readyTimeoutMs = 120_000) {
             }
         }, 500);
     });
+}
+// BL-084: a socket already on disk at activation means a swarm is mid
+// cold-start (bringing up N tmux sessions, each spawning a fresh `claude`),
+// which can take far longer than the transient-flake budget BL-080 used for
+// an already-up swarm. No socket at all means there is no swarm to wait for,
+// so activation should keep falling through to the resume prompt quickly.
+function chooseReattachTimeoutMs(swarmSocketPresent, coldStartTimeoutMs, fastTimeoutMs) {
+    return swarmSocketPresent ? coldStartTimeoutMs : fastTimeoutMs;
 }
 function waitForSwarmReady(targetPath, timeoutMs = 120_000, pollMs = 500) {
     if (isSwarmReady(targetPath)) {
