@@ -193,6 +193,19 @@ function findEarliestDequeueInFile(filePath: string, current: number | null): nu
   return current === null || dequeuedMs < current ? dequeuedMs : current;
 }
 
+function collectHandoffFilesAt(fullPath: string, entry: string): string[] {
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(fullPath);
+  } catch {
+    return [];
+  }
+  if (stat.isDirectory()) {
+    return readHandoffFiles(fullPath).map((f) => path.join(fullPath, f));
+  }
+  return entry.endsWith('.handoff') ? [fullPath] : [];
+}
+
 function findEarliestDequeueInDir(inProcessDir: string): number | null {
   let entries: string[];
   try {
@@ -204,14 +217,7 @@ function findEarliestDequeueInDir(inProcessDir: string): number | null {
   let earliest: number | null = null;
   for (const entry of entries) {
     const fullPath = path.join(inProcessDir, entry);
-    let stat: fs.Stats;
-    try {
-      stat = fs.statSync(fullPath);
-    } catch {
-      continue;
-    }
-    const files = stat.isDirectory() ? readHandoffFiles(fullPath).map((f) => path.join(fullPath, f)) : entry.endsWith('.handoff') ? [fullPath] : [];
-    for (const filePath of files) {
+    for (const filePath of collectHandoffFilesAt(fullPath, entry)) {
       earliest = findEarliestDequeueInFile(filePath, earliest);
     }
   }
@@ -256,6 +262,15 @@ function getRecipients(toField: string): string[] {
   return (toField ?? '').split(',').map((r) => r.trim()).filter(Boolean);
 }
 
+function isBackwardRecipient(fromIdx: number, recipient: string): boolean {
+  const toIdx = pipelineIndex(recipient);
+  return toIdx !== -1 && fromIdx > toIdx;
+}
+
+function ticketFromHeaders(headers: Record<string, string>): string | null {
+  return headers.task ? extractTicketId(headers.task) : null;
+}
+
 function countBackwardHandoffs(headers: Record<string, string>): Array<{ ticket: string | null }> {
   if (!isGitHandoff(headers)) {
     return [];
@@ -264,21 +279,32 @@ function countBackwardHandoffs(headers: Record<string, string>): Array<{ ticket:
   if (fromIdx === -1) {
     return [];
   }
-  const recipients = getRecipients(headers.to);
-  const result: Array<{ ticket: string | null }> = [];
-  for (const recipient of recipients) {
-    const toIdx = pipelineIndex(recipient);
-    if (toIdx !== -1 && fromIdx > toIdx) {
-      result.push({ ticket: headers.task ? extractTicketId(headers.task) : null });
-    }
-  }
-  return result;
+  const ticket = ticketFromHeaders(headers);
+  return getRecipients(headers.to)
+    .filter((recipient) => isBackwardRecipient(fromIdx, recipient))
+    .map(() => ({ ticket }));
 }
 
 // Counts git_handoff files whose sender sits later in the pipeline chain
 // than the recipient. Scans each role's sent/ (the delivered original, one
 // copy regardless of recipient count) rather than inbox/completed copies,
 // so a broadcast is not double-counted per recipient.
+function processSentFile(sentDir: string, file: string, perTicket: Record<string, number>): number {
+  let headers: Record<string, string>;
+  try {
+    headers = parseHandoffHeaders(fs.readFileSync(path.join(sentDir, file), 'utf8'));
+  } catch {
+    return 0;
+  }
+  const backwardHandoffs = countBackwardHandoffs(headers);
+  for (const handoff of backwardHandoffs) {
+    if (handoff.ticket) {
+      perTicket[handoff.ticket] = (perTicket[handoff.ticket] ?? 0) + 1;
+    }
+  }
+  return backwardHandoffs.length;
+}
+
 export function computeRetries(roles: RoleWorktree[]): RetryCounts {
   let total = 0;
   const perTicket: Record<string, number> = {};
@@ -286,19 +312,7 @@ export function computeRetries(roles: RoleWorktree[]): RetryCounts {
   for (const role of roles) {
     const sentDir = path.join(role.worktreePath, '.swarmforge', 'handoffs', 'sent');
     for (const file of readHandoffFiles(sentDir)) {
-      let headers: Record<string, string>;
-      try {
-        headers = parseHandoffHeaders(fs.readFileSync(path.join(sentDir, file), 'utf8'));
-      } catch {
-        continue;
-      }
-      const backwardHandoffs = countBackwardHandoffs(headers);
-      total += backwardHandoffs.length;
-      for (const handoff of backwardHandoffs) {
-        if (handoff.ticket) {
-          perTicket[handoff.ticket] = (perTicket[handoff.ticket] ?? 0) + 1;
-        }
-      }
+      total += processSentFile(sentDir, file, perTicket);
     }
   }
 
