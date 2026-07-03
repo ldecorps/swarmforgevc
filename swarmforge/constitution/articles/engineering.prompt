@@ -25,6 +25,21 @@
 - Use clear command IDs namespaced under "swarmforge." (e.g. swarmforge.run,
   swarmforge.stop, swarmforge.setTarget, swarmforge.initTarget).
 
+# Design and testability
+
+- Work in small, reviewable increments.
+- Prefer the simplest design that supports the current behavior and leaves clear
+  options for the next step.
+- Keep tests close to the behavior being changed.
+- Separate testable modules (pure TypeScript logic) from environmentally
+  unsuitable modules — code that needs the live VS Code API, a webview DOM, a
+  real tmux server, or the network. Maximize the testable core and keep the
+  unsuitable boundary thin (small adapters over vscode.*, child_process, tmux).
+- Only testable modules participate in tools that run tests: unit tests,
+  acceptance tests, coverage, mutation, CRAP, and DRY analysis that invokes
+  tests. Never point those tools at boundary modules that would open UI, spawn
+  tmux, or hang under automation.
+
 # Hardening tools (run from extension/, separate from `npm test`)
 
 - Mutation testing (Stryker): `npm run mutation` compiles, then mutates the
@@ -48,6 +63,57 @@
   below 6 on changed code (hardender.prompt).
 - None of these tools are part of `npm test`; they are hardener/developer
   commands.
+
+# Acceptance pipeline (Gherkin)
+
+- Use github.com/unclebob/Acceptance-Pipeline-Specification (APS) for Gherkin
+  acceptance tests.
+- The specifier's Gherkin scenarios in each backlog item's `acceptance:` field
+  are where scenarios are born; the acceptance pipeline is what turns them into
+  executable acceptance tests. Accepted scenarios accumulate as feature files
+  under test/acceptance/ and become the permanent regression acceptance suite.
+- APS supplies `gherkin-parser` and `gherkin-mutator`; install or build those
+  commands from that repository instead of reimplementing them in this repo.
+  Resolve the repo at its latest upstream version; do not rely on stale cached
+  copies when a fresh install is possible.
+- Prefer the Babashka APS tools (bb is already a SwarmForge dependency, so it is
+  on PATH). Use the Go-based APS tools only if the Babashka ones do not work in
+  the current environment.
+- The project-specific pipeline components live in this repo, in TypeScript:
+  the acceptance entrypoint generator, acceptance runtime, project step
+  handlers, runner adapter, and convenience scripts (e.g. `npm run acceptance`,
+  `npm run acceptance:mutate`). Step handlers drive the testable modules only —
+  never a live VS Code window or a real tmux server.
+- Gherkin acceptance mutation means running `gherkin-mutator` to mutate the
+  Gherkin example values (not the source code) and confirming the acceptance
+  tests fail on the mutated examples — proof the examples are actually wired to
+  behavior rather than decorative.
+- Gherkin acceptance mutation runs must report periodic progress/status so
+  agents can distinguish normal long-running work from a hang.
+- Acceptance tools are not part of `npm test`. QA owns running the acceptance
+  gate; building and fixing the pipeline components themselves is regular
+  development work scheduled through the backlog like any other item.
+
+# Verification
+
+- Before running build or test commands, prefer project-local cache and
+  configuration paths inside your assigned worktree (npm cache, c8/Stryker temp
+  dirs) over default locations that write outside the project and can trip
+  sandbox or permission restrictions.
+- Run acceptance generation and acceptance tests sequentially; avoid running
+  the whole unit suite concurrently with acceptance generation.
+
+# Guardrails
+
+- Do not edit tool-maintained manifests by hand (`stryker-incremental.json`,
+  any Gherkin acceptance mutation manifest); let the approved tools update them
+  as part of their normal runs.
+- Do not commit unrelated local changes. Generated output this repo
+  deliberately tracks (out/, `stryker-incremental.json`) is committed with the
+  change that regenerates it; do not add new kinds of generated artifacts
+  unless the task requires it.
+- Before relying on an unfamiliar command, inspect its local help or the
+  project documentation.
 
 # Architecture rules (important - these prevent the project going off the rails)
 
