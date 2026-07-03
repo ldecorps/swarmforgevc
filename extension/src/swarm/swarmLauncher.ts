@@ -203,6 +203,19 @@ export async function launchSwarm(
   });
 }
 
+// BL-084: a socket already on disk at activation means a swarm is mid
+// cold-start (bringing up N tmux sessions, each spawning a fresh `claude`),
+// which can take far longer than the transient-flake budget BL-080 used for
+// an already-up swarm. No socket at all means there is no swarm to wait for,
+// so activation should keep falling through to the resume prompt quickly.
+export function chooseReattachTimeoutMs(
+  swarmSocketPresent: boolean,
+  coldStartTimeoutMs: number,
+  fastTimeoutMs: number
+): number {
+  return swarmSocketPresent ? coldStartTimeoutMs : fastTimeoutMs;
+}
+
 export function waitForSwarmReady(
   targetPath: string,
   timeoutMs = 120_000,

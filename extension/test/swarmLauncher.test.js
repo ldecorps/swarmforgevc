@@ -4,7 +4,13 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
-const { isSwarmReady, buildLaunchEnv, launchSwarm, waitForSwarmReady } = require('../out/swarm/swarmLauncher');
+const {
+  isSwarmReady,
+  buildLaunchEnv,
+  launchSwarm,
+  waitForSwarmReady,
+  chooseReattachTimeoutMs,
+} = require('../out/swarm/swarmLauncher');
 const { installFakeTmux } = require('./helpers/fakeTmux');
 const { installExecutable } = require('./helpers/sharedBin');
 
@@ -268,6 +274,14 @@ test('waitForSwarmReady resolves false after the timeout elapses', async () => {
   const targetPath = mkTmp();
   const ready = await waitForSwarmReady(targetPath, 150, 30);
   assert.equal(ready, false);
+});
+
+test('chooseReattachTimeoutMs returns the cold-start budget when a swarm socket is present', () => {
+  assert.equal(chooseReattachTimeoutMs(true, 120000, 3000), 120000);
+});
+
+test('chooseReattachTimeoutMs returns the fast budget when no swarm socket is present', () => {
+  assert.equal(chooseReattachTimeoutMs(false, 120000, 3000), 3000);
 });
 
 test('waitForSwarmReady resolves true once readiness appears mid-poll', async () => {
