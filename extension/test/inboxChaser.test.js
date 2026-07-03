@@ -15,6 +15,12 @@ const {
   deadLetterPath,
   scanInboxNew,
   runSweep,
+  decideStuckAction,
+  isDoneButUndelivered,
+  nudgePath,
+  readNudgeCount,
+  writeNudgeCount,
+  scanInProcess,
 } = require('../out/swarm/inboxChaser');
 
 const CFG = { chaseIntervalSeconds: 30, chaseTimeoutSeconds: 90, maxChases: 3 };
@@ -38,6 +44,11 @@ test('stale item with idle recipient and 0 chases → chased', () => {
 
 test('fresh item (not yet stale) → skipped regardless of liveness', () => {
   assert.equal(decideItemAction(FRESH_MS, 0, NOW, CFG, 'alive'), 'skipped');
+});
+
+test('item exactly at the chaseTimeoutSeconds boundary is already stale, not skipped', () => {
+  const boundaryMs = NOW - CFG.chaseTimeoutSeconds * 1000;
+  assert.equal(decideItemAction(boundaryMs, 0, NOW, CFG, 'alive'), 'chased');
 });
 
 test('stale item with dead recipient → respawned', () => {
@@ -93,6 +104,13 @@ test('writeChaseCount then readChaseCount round-trips', () => {
   assert.equal(readChaseCount(handoffPath), 2);
 });
 
+test('readChaseCount returns 0 when the sidecar holds valid JSON with a non-number chaseCount', () => {
+  const tmp = mkTmp();
+  const handoffPath = path.join(tmp, 'test.handoff');
+  fs.writeFileSync(sidecarPath(handoffPath), JSON.stringify({ chaseCount: 'two' }), 'utf-8');
+  assert.equal(readChaseCount(handoffPath), 0);
+});
+
 test('readChaseCount returns 0 for corrupt sidecar', () => {
   const tmp = mkTmp();
   const handoffPath = path.join(tmp, 'test.handoff');
@@ -142,6 +160,165 @@ test('scanInboxNew returns mtimeMs for each item', () => {
 
   const items = scanInboxNew(inboxNew, NOW);
   assert.ok(items[0].mtimeMs > 0);
+});
+
+// ── decideStuckAction (pure) ──────────────────────────────────────────────────
+
+const STUCK_CFG = { chaseIntervalSeconds: 30, chaseTimeoutSeconds: 90, maxChases: 3, stuckInProcessTimeoutSeconds: 300 };
+
+test('decideStuckAction skips when idle time is below the stuck timeout', () => {
+  assert.equal(decideStuckAction(NOW - 100_000, 0, NOW, STUCK_CFG), 'skipped');
+});
+
+test('decideStuckAction skips exactly at the stuck timeout boundary minus one', () => {
+  assert.equal(decideStuckAction(NOW - 299_000, 0, NOW, STUCK_CFG), 'skipped');
+});
+
+test('decideStuckAction nudges once idle time reaches the stuck timeout', () => {
+  assert.equal(decideStuckAction(NOW - 300_000, 0, NOW, STUCK_CFG), 'nudge');
+});
+
+test('decideStuckAction nudges when nudgeCount is below maxChases', () => {
+  assert.equal(decideStuckAction(NOW - 400_000, 2, NOW, STUCK_CFG), 'nudge');
+});
+
+test('decideStuckAction alerts once nudgeCount reaches maxChases', () => {
+  assert.equal(decideStuckAction(NOW - 400_000, 3, NOW, STUCK_CFG), 'alert');
+});
+
+test('decideStuckAction alerts when nudgeCount exceeds maxChases', () => {
+  assert.equal(decideStuckAction(NOW - 400_000, 10, NOW, STUCK_CFG), 'alert');
+});
+
+// ── isDoneButUndelivered (pure) ───────────────────────────────────────────────
+
+test('isDoneButUndelivered false when there are no in_process items', () => {
+  assert.equal(isDoneButUndelivered([], NOW, NOW - 1000, NOW, STUCK_CFG), false);
+});
+
+test('isDoneButUndelivered false when the latest commit is not after the last sent handoff', () => {
+  const items = [{ filePath: 'a', mtimeMs: NOW, nudgeCount: 0 }];
+  assert.equal(isDoneButUndelivered(items, NOW - 1000, NOW, NOW, STUCK_CFG), false);
+});
+
+test('isDoneButUndelivered false when the commit is after lastSentMs but still fresh', () => {
+  const items = [{ filePath: 'a', mtimeMs: NOW, nudgeCount: 0 }];
+  assert.equal(isDoneButUndelivered(items, NOW - 10_000, NOW - 20_000, NOW, STUCK_CFG), false);
+});
+
+test('isDoneButUndelivered true once the undelivered commit is older than the stuck timeout', () => {
+  const items = [{ filePath: 'a', mtimeMs: NOW, nudgeCount: 0 }];
+  const latestCommitMs = NOW - 300_000;
+  assert.equal(isDoneButUndelivered(items, latestCommitMs, latestCommitMs - 1000, NOW, STUCK_CFG), true);
+});
+
+test('isDoneButUndelivered false with no items even when the commit age alone would otherwise qualify', () => {
+  // Distinguishes the real inProcessItems.length === 0 short-circuit from a
+  // mutant that always skips it: with items=[] the commit/age math below
+  // would independently evaluate to true if reached.
+  const latestCommitMs = NOW - 400_000;
+  assert.equal(isDoneButUndelivered([], latestCommitMs, latestCommitMs - 1000, NOW, STUCK_CFG), false);
+});
+
+test('isDoneButUndelivered false when the commit exactly equals lastSentMs (not strictly after)', () => {
+  const items = [{ filePath: 'a', mtimeMs: NOW, nudgeCount: 0 }];
+  const commitMs = NOW - 400_000;
+  assert.equal(isDoneButUndelivered(items, commitMs, commitMs, NOW, STUCK_CFG), false);
+});
+
+test('isDoneButUndelivered false for an old, already-delivered commit even though its age alone would qualify', () => {
+  // Distinguishes the real latestCommitMs <= lastSentMs short-circuit from a
+  // mutant that always skips it: the commit here is old enough (400s) that
+  // the age check below would independently evaluate to true if reached.
+  const items = [{ filePath: 'a', mtimeMs: NOW, nudgeCount: 0 }];
+  const latestCommitMs = NOW - 400_000;
+  const lastSentMs = NOW - 100_000; // sent AFTER the commit → already delivered
+  assert.equal(isDoneButUndelivered(items, latestCommitMs, lastSentMs, NOW, STUCK_CFG), false);
+});
+
+// ── nudgePath / readNudgeCount / writeNudgeCount ──────────────────────────────
+
+test('nudgePath appends .nudge to the item path', () => {
+  assert.equal(nudgePath('/path/to/a.handoff'), '/path/to/a.handoff.nudge');
+});
+
+test('readNudgeCount returns 0 when no nudge sidecar exists', () => {
+  const tmp = mkTmp();
+  assert.equal(readNudgeCount(path.join(tmp, 'a.handoff')), 0);
+});
+
+test('readNudgeCount returns 0 for a corrupt nudge sidecar', () => {
+  const tmp = mkTmp();
+  const itemPath = path.join(tmp, 'a.handoff');
+  fs.writeFileSync(nudgePath(itemPath), 'not-json', 'utf-8');
+  assert.equal(readNudgeCount(itemPath), 0);
+});
+
+test('writeNudgeCount then readNudgeCount round-trips', () => {
+  const tmp = mkTmp();
+  const itemPath = path.join(tmp, 'a.handoff');
+  writeNudgeCount(itemPath, 4);
+  assert.equal(readNudgeCount(itemPath), 4);
+});
+
+test('readNudgeCount returns 0 when the sidecar holds valid JSON with a non-number nudgeCount', () => {
+  const tmp = mkTmp();
+  const itemPath = path.join(tmp, 'a.handoff');
+  fs.writeFileSync(nudgePath(itemPath), JSON.stringify({ nudgeCount: 'four' }), 'utf-8');
+  assert.equal(readNudgeCount(itemPath), 0);
+});
+
+// ── scanInProcess ─────────────────────────────────────────────────────────────
+
+test('scanInProcess returns empty array when directory absent', () => {
+  const tmp = mkTmp();
+  assert.deepEqual(scanInProcess(path.join(tmp, 'nonexistent')), []);
+});
+
+test('scanInProcess finds a flat .handoff file directly in the directory', () => {
+  const tmp = mkTmp();
+  const inProcessDir = path.join(tmp, 'inbox', 'in_process');
+  fs.mkdirSync(inProcessDir, { recursive: true });
+  fs.writeFileSync(path.join(inProcessDir, 'a.handoff'), '', 'utf-8');
+
+  const items = scanInProcess(inProcessDir);
+  assert.equal(items.length, 1);
+  assert.ok(items[0].filePath.endsWith('a.handoff'));
+});
+
+test('scanInProcess descends into a batch_ directory to find nested handoffs', () => {
+  const tmp = mkTmp();
+  const inProcessDir = path.join(tmp, 'inbox', 'in_process');
+  const batchDir = path.join(inProcessDir, 'batch_20260630T000000Z_000001');
+  fs.mkdirSync(batchDir, { recursive: true });
+  fs.writeFileSync(path.join(batchDir, 'a.handoff'), '', 'utf-8');
+  fs.writeFileSync(path.join(batchDir, 'b.handoff'), '', 'utf-8');
+
+  const items = scanInProcess(inProcessDir);
+  assert.equal(items.length, 2);
+});
+
+test('scanInProcess ignores non-.handoff files and non-batch_ directories', () => {
+  const tmp = mkTmp();
+  const inProcessDir = path.join(tmp, 'inbox', 'in_process');
+  fs.mkdirSync(inProcessDir, { recursive: true });
+  fs.writeFileSync(path.join(inProcessDir, 'a.handoff.nudge'), '', 'utf-8');
+  fs.mkdirSync(path.join(inProcessDir, 'not_a_batch'), { recursive: true });
+  fs.writeFileSync(path.join(inProcessDir, 'not_a_batch', 'c.handoff'), '', 'utf-8');
+
+  assert.deepEqual(scanInProcess(inProcessDir), []);
+});
+
+test('scanInProcess reads nudgeCount from each item\'s sidecar', () => {
+  const tmp = mkTmp();
+  const inProcessDir = path.join(tmp, 'inbox', 'in_process');
+  fs.mkdirSync(inProcessDir, { recursive: true });
+  const itemPath = path.join(inProcessDir, 'a.handoff');
+  fs.writeFileSync(itemPath, '', 'utf-8');
+  writeNudgeCount(itemPath, 2);
+
+  const items = scanInProcess(inProcessDir);
+  assert.equal(items[0].nudgeCount, 2);
 });
 
 // ── runSweep ──────────────────────────────────────────────────────────────────
@@ -360,4 +537,177 @@ test('runSweep processes multiple roles independently in one pass', () => {
 
   assert.deepEqual(calls.wakeUps, ['coder']);
   assert.deepEqual(calls.respawns, ['cleaner']);
+});
+
+test('runSweep wakes on cooldown expiry without throwing when getCooldownWokenMarker is not implemented', () => {
+  const { role, inboxNewDir, inProcessDir } = mkRoleInbox('coder');
+  const { calls, adapters } = mkAdapters('alive');
+  adapters.getCooldownUntilMs = () => NOW - 1000; // already expired
+  // getCooldownWokenMarker deliberately omitted - adapter is optional (BL-082)
+
+  assert.doesNotThrow(() => runSweep([{ role, inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters));
+  assert.deepEqual(calls.wakeUps, ['coder']);
+});
+
+test('runSweep wakes on cooldown expiry without throwing when onCooldownExpired is not implemented', () => {
+  const { role, inboxNewDir, inProcessDir } = mkRoleInbox('coder');
+  const { calls, adapters } = mkAdapters('alive');
+  adapters.getCooldownUntilMs = () => NOW - 1000; // already expired
+  adapters.getCooldownWokenMarker = () => null;
+  // onCooldownExpired deliberately omitted - adapter is optional (BL-082)
+
+  assert.doesNotThrow(() => runSweep([{ role, inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters));
+  assert.deepEqual(calls.wakeUps, ['coder']);
+});
+
+// ── runSweep in_process reconciler (BL-067) ──────────────────────────────────
+
+function mkRoleInboxWithInProcess(role) {
+  const tmp = mkTmp();
+  const inboxNewDir = path.join(tmp, 'inbox', 'new');
+  const inProcessDir = path.join(tmp, 'inbox', 'in_process');
+  fs.mkdirSync(inboxNewDir, { recursive: true });
+  fs.mkdirSync(inProcessDir, { recursive: true });
+  return { role, inboxNewDir, inProcessDir };
+}
+
+test('runSweep does nothing for a role with no in_process work', () => {
+  const { role, inboxNewDir, inProcessDir } = mkRoleInboxWithInProcess('coder');
+  const { calls, adapters } = mkAdapters('alive');
+  const escalations = [];
+  adapters.onStuckEscalation = (r, escalated) => escalations.push({ r, escalated });
+
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters);
+
+  assert.equal(calls.wakeUps.length, 0);
+  assert.deepEqual(escalations, [{ r: 'coder', escalated: false }]);
+});
+
+test('runSweep never nudges an empty in_process dir even when getLastActivityMs looks long-idle', () => {
+  // Distinguishes the real held.length === 0 short-circuit from a mutant
+  // that always skips it: with no held items, Math.max() over an empty
+  // array plus a long-idle activity timestamp would independently drive
+  // decideStuckAction to 'nudge' (and a wake) if the short-circuit were
+  // skipped.
+  const { role, inboxNewDir, inProcessDir } = mkRoleInboxWithInProcess('coder');
+  const { calls, adapters } = mkAdapters('alive');
+  adapters.getLastActivityMs = () => NOW - 400_000;
+
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters);
+
+  assert.equal(calls.wakeUps.length, 0);
+});
+
+test('runSweep never queries the cooldown-woken marker when the role has no cooldown at all', () => {
+  // Distinguishes the real cooldownUntilMs == null short-circuit from a
+  // mutant that always skips it: getCooldownWokenMarker must not be
+  // invoked when there is no cooldown to check expiry against.
+  const { role, inboxNewDir, inProcessDir } = mkRoleInboxWithInProcess('coder');
+  const { adapters } = mkAdapters('alive');
+  adapters.getCooldownUntilMs = () => null;
+  let markerQueried = false;
+  adapters.getCooldownWokenMarker = () => {
+    markerQueried = true;
+    return null;
+  };
+
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters);
+
+  assert.equal(markerQueried, false);
+});
+
+test('runSweep leaves an active in_process item alone (idle time below stuck timeout)', () => {
+  const { role, inboxNewDir, inProcessDir } = mkRoleInboxWithInProcess('coder');
+  fs.writeFileSync(path.join(inProcessDir, 'a.handoff'), '', 'utf-8');
+  const { calls, adapters } = mkAdapters('alive');
+  adapters.getLastActivityMs = () => NOW; // active just now
+
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters);
+
+  assert.equal(calls.wakeUps.length, 0);
+});
+
+test('runSweep nudges a stuck in_process role: wakes it and bumps every held item\'s nudge count', () => {
+  const { role, inboxNewDir, inProcessDir } = mkRoleInboxWithInProcess('coder');
+  const itemPath = path.join(inProcessDir, 'a.handoff');
+  fs.writeFileSync(itemPath, '', 'utf-8');
+  const { calls, adapters } = mkAdapters('alive');
+  adapters.getLastActivityMs = () => NOW - 400_000; // idle past stuckInProcessTimeoutSeconds
+  const escalations = [];
+  adapters.onStuckEscalation = (r, escalated) => escalations.push({ r, escalated });
+
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters);
+
+  assert.deepEqual(calls.wakeUps, ['coder']);
+  assert.equal(readNudgeCount(itemPath), 1);
+  assert.deepEqual(escalations, [{ r: 'coder', escalated: false }]);
+});
+
+test('runSweep escalates (alerts, does not wake) once a stuck role\'s nudges reach maxChases', () => {
+  const { role, inboxNewDir, inProcessDir } = mkRoleInboxWithInProcess('coder');
+  const itemPath = path.join(inProcessDir, 'a.handoff');
+  fs.writeFileSync(itemPath, '', 'utf-8');
+  writeNudgeCount(itemPath, 3); // == maxChases
+  const { calls, adapters } = mkAdapters('alive');
+  adapters.getLastActivityMs = () => NOW - 400_000;
+  const escalations = [];
+  adapters.onStuckEscalation = (r, escalated) => escalations.push({ r, escalated });
+
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters);
+
+  assert.equal(calls.wakeUps.length, 0);
+  assert.equal(readNudgeCount(itemPath), 3); // unchanged - alert does not bump nudges
+  assert.deepEqual(escalations, [{ r: 'coder', escalated: true }]);
+});
+
+test('runSweep clears stale nudge counts once a previously-stuck role becomes active again', () => {
+  const { role, inboxNewDir, inProcessDir } = mkRoleInboxWithInProcess('coder');
+  const itemPath = path.join(inProcessDir, 'a.handoff');
+  fs.writeFileSync(itemPath, '', 'utf-8');
+  writeNudgeCount(itemPath, 2);
+  const { calls, adapters } = mkAdapters('alive');
+  adapters.getLastActivityMs = () => NOW; // active again
+  const escalations = [];
+  adapters.onStuckEscalation = (r, escalated) => escalations.push({ r, escalated });
+
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters);
+
+  assert.equal(calls.wakeUps.length, 0);
+  assert.equal(readNudgeCount(itemPath), 0);
+  assert.deepEqual(escalations, [{ r: 'coder', escalated: false }]);
+});
+
+test('runSweep does not rewrite a nudge count that is already zero when clearing stale counts', () => {
+  const { role, inboxNewDir, inProcessDir } = mkRoleInboxWithInProcess('coder');
+  const itemPath = path.join(inProcessDir, 'a.handoff');
+  fs.writeFileSync(itemPath, '', 'utf-8');
+  const { adapters } = mkAdapters('alive');
+  adapters.getLastActivityMs = () => NOW;
+
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters);
+
+  // No nudge sidecar should have been created for an item that was never nudged.
+  assert.equal(fs.existsSync(nudgePath(itemPath)), false);
+});
+
+test('runSweep uses the highest nudge count among multiple held in_process items', () => {
+  const { role, inboxNewDir, inProcessDir } = mkRoleInboxWithInProcess('coder');
+  const batchDir = path.join(inProcessDir, 'batch_20260630T000000Z_000001');
+  fs.mkdirSync(batchDir, { recursive: true });
+  const itemA = path.join(batchDir, 'a.handoff');
+  const itemB = path.join(batchDir, 'b.handoff');
+  fs.writeFileSync(itemA, '', 'utf-8');
+  fs.writeFileSync(itemB, '', 'utf-8');
+  writeNudgeCount(itemA, 3); // already at maxChases
+  writeNudgeCount(itemB, 0);
+  const { calls, adapters } = mkAdapters('alive');
+  adapters.getLastActivityMs = () => NOW - 400_000;
+  const escalations = [];
+  adapters.onStuckEscalation = (r, escalated) => escalations.push({ r, escalated });
+
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters);
+
+  // Max of (3, 0) is 3 → alerts, not a fresh nudge.
+  assert.equal(calls.wakeUps.length, 0);
+  assert.deepEqual(escalations, [{ r: 'coder', escalated: true }]);
 });
