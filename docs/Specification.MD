@@ -456,17 +456,18 @@ Heartbeat and watchdog timeouts are configured in the main settings block (see E
 
 Agents are unreliable pollers — that's the whole problem. A single watchdog in the extension host (not in the agents) is the dependable observer: it sees heartbeats, PIDs, and message status together, and it's the one component guaranteed to stay awake.
 
-### Automatic context clearing for idle agents
+### Per-role idle context clearing
 
-To prevent context window exhaustion between parcels, the extension automatically sends a `/clear` command to agents that are drained-idle. This clears the agent's session context, giving the next parcel a fresh window:
+To prevent context window exhaustion during long swarm runs, individual roles can be configured to clear their session context at idle boundaries. This is useful for roles that don't need cross-parcel context (e.g., hardener, documenter) to reduce token accumulation:
 
-- **Trigger:** an agent with no in-process work, empty inbox, no pending needs-human state, no recent human keystrokes, and no pane output for the settle window (default 120s)
-- **Action:** the extension sends `/clear` + Enter through the existing tmux input path, logged to the "SwarmForge: Context Clear" output channel
-- **Once per idle cycle:** cleared agents are marked and re-arm only after accepting new work; while idle they are not cleared again
-- **Safety gates:** the feature respects all conditions above and stands down during a graceful bounce drain — clearing never interferes with in-flight work or pending human input
-- **Configurable:** enabled by default via `swarmforge.contextClear.enabled` setting, with the settle window tunable via `swarmforge.contextClear.settleWindowSeconds`
+- **Per-role opt-in flag:** configured via an optional token on the `window` line in `swarmforge.conf` (e.g., `window hardener claude hardender idle-clear`). Absent means OFF; default for every role is disabled.
+- **Trigger:** clearing occurs only after a role completes its current task/batch AND its queue returns NO_TASK (i.e., at the idle boundary, never mid-task or mid-batch)
+- **Action:** the launcher sends `/clear` + Enter, causing the role's session to reset. The fresh session receives the full role re-bootstrap (constitution, pipeline, role prompt) exactly as if it had just been respawned.
+- **State preservation:** only session context is cleared; durable inbox/outbox state, in-process audit trails, and handoffs are completely unaffected
+- **Safety:** clearing never interrupts in-flight work, pending human input, or graceful bounces. Roles with the flag disabled (most roles, including specifier and coordinator) continue as before with accumulating context.
+- **Cost tradeoff:** enabled roles lose in-session short-term coherence between parcels, trading that for reduced token cost. Roles that need cross-parcel recall should keep the flag disabled.
 
-This is safe because the protocol is already context-free between parcels — every handoff body says "re-read your role and constitution," and durable state (backlog, handoffs, messages) lives on disk. Clearing at an idle moment costs nothing and buys headroom.
+This is safe because the protocol is already context-free between parcels — every handoff body says "re-read your role and constitution," and durable state (backlog, handoffs, messages) lives on disk.
 
 ### Cooldown-aware wake scheduling (rate-limit backoff)
 

@@ -120,3 +120,39 @@ test('a single sampled run never self-triggers the 2x-mean warn', () => {
   const result = computeSuiteDuration(targetPath, [], DEFAULT_SUITE_WARN_SECONDS * 1000);
   assert.equal(result.warn, false, '90s is under the 120s absolute threshold and mean==latest for one sample');
 });
+
+// warnThresholdMs's own default relies on DEFAULT_SUITE_WARN_SECONDS * 1000
+// (seconds -> ms); every other test above passes the threshold explicitly,
+// so this is the only coverage of the default parameter itself.
+test('omitting warnThresholdMs falls back to DEFAULT_SUITE_WARN_SECONDS seconds, not some other unit', () => {
+  const targetPath = mkTmp();
+  writeLog(targetPath, [
+    record('2026-07-03T10:00:00Z', 100000),
+    record('2026-07-03T10:01:00Z', 100000),
+    record('2026-07-03T10:02:00Z', (DEFAULT_SUITE_WARN_SECONDS - 20) * 1000),
+  ]);
+  const result = computeSuiteDuration(targetPath, []);
+  assert.equal(result.warn, false, `latest is under the default ${DEFAULT_SUITE_WARN_SECONDS}s threshold`);
+});
+
+test('latest run exactly at the absolute threshold does not warn (strictly greater-than)', () => {
+  const targetPath = mkTmp();
+  writeLog(targetPath, [
+    record('2026-07-03T10:00:00Z', 60000),
+    record('2026-07-03T10:01:00Z', 60000),
+    record('2026-07-03T10:02:00Z', 60000),
+  ]);
+  const result = computeSuiteDuration(targetPath, [], 60000);
+  assert.equal(result.warn, false, 'latest equal to the threshold must not warn');
+});
+
+test('latest run exactly 2x the prior mean does not warn (strictly greater-than)', () => {
+  const targetPath = mkTmp();
+  writeLog(targetPath, [
+    record('2026-07-03T10:00:00Z', 50000),
+    record('2026-07-03T10:01:00Z', 50000),
+    record('2026-07-03T10:02:00Z', 100000),
+  ]);
+  const result = computeSuiteDuration(targetPath, [], 1000 * 1000 /* generous absolute threshold */);
+  assert.equal(result.warn, false, 'latest exactly equal to 2x the prior mean must not warn');
+});

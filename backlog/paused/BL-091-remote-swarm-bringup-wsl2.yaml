@@ -14,9 +14,12 @@ description: |
       means: the operator sits at the Windows box and the swarm runs there
       — delivered via WSL2 (a real Linux userland).
     - The remote swarm is a FULL pipeline (its own specifier, coder,
-      cleaner, architect, hardender, documenter, QA) with NO coordinator
-      pane; triage/promotion stays with the primary machine's coordinator
-      (BL-090 assignment).
+      cleaner, architect, hardender, documenter, QA) launched in BL-090
+      `secondary` mode (no coordinator pane; triage/promotion stays with
+      the primary machine's autonomous coordinator). Per BL-090 the mode
+      is a per-launch choice — the remote box can later be relaunched
+      autonomous with a deliberate primacy transfer, but this bring-up
+      item covers secondary mode only.
     - All cross-machine coordination is git (clone of the same repo,
       push/pull to the shared main). Nothing in the handoff daemon or tmux
       layer crosses machines.

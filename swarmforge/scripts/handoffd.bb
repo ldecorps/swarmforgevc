@@ -136,18 +136,82 @@
 (defn tmux! [& args]
   (apply process/sh "tmux" args))
 
-(defn notify! [socket session]
-  (let [send-text (tmux! "-S" socket "send-keys" "-t" session "-l" wake-message)
-        _ (Thread/sleep 150)
-        send-carriage-return (tmux! "-S" socket "send-keys" "-t" session "C-m")
-        _ (Thread/sleep 50)
-        send-line-feed (tmux! "-S" socket "send-keys" "-t" session "C-j")]
-    (when-not (zero? (:exit send-text))
-      (throw (ex-info "tmux send text failed" send-text)))
-    (when-not (zero? (:exit send-carriage-return))
-      (throw (ex-info "tmux send carriage return failed" send-carriage-return)))
-    (when-not (zero? (:exit send-line-feed))
-      (throw (ex-info "tmux send line feed failed" send-line-feed)))))
+;; BL-093: send-keys was fire-and-forget - a lost Enter left the wake message
+;; typed-but-unsubmitted, and repeated notify! calls (chaser respawns, retried
+;; deliveries) stacked further unconsumed copies in the same pane. The
+;; heuristic mirrors extension/src/swarm/verifiedInject.ts: the pane's input
+;; line is whatever trails the last recognizable prompt marker ($/#/❯/>) on
+;; the last non-blank captured line; a marker with nothing after it is an
+;; empty (not pending) prompt.
+(def notify-max-retries 3)
+(def notify-retry-delay-ms 200)
+
+(defn capture-pane-text [socket session]
+  (:out (tmux! "-S" socket "capture-pane" "-p" "-t" session)))
+
+(defn last-non-blank-line [pane-text]
+  (last (remove str/blank? (str/split-lines (or pane-text "")))))
+
+(defn pending-input-line [pane-text]
+  (let [line (last-non-blank-line pane-text)]
+    (if (nil? line)
+      ""
+      (if-let [[_ tail] (re-find #"[$#❯>]\s*(\S.*)?$" line)]
+        (str/trim (or tail ""))
+        (str/trim line)))))
+
+(defn pending-input? [pane-text]
+  (not (str/blank? (pending-input-line pane-text))))
+
+(defn text-still-pending? [pane-text text]
+  (let [pending (pending-input-line pane-text)]
+    (and (not (str/blank? pending)) (str/includes? pending (str/trim text)))))
+
+(defn send-submit!
+  "Sends the C-m/C-j submit sequence. Returns true when both tmux
+   invocations themselves succeeded (transport-level) - false means the
+   pane/session/socket is gone, which the retry loop must not paper over by
+   quietly re-capturing and backing off."
+  [socket session]
+  (let [cr (tmux! "-S" socket "send-keys" "-t" session "C-m")]
+    (Thread/sleep 50)
+    (let [lf (tmux! "-S" socket "send-keys" "-t" session "C-j")]
+      (and (zero? (:exit cr)) (zero? (:exit lf))))))
+
+(defn notify!
+  "Delivers the wake message to session's pane, verifying the submit actually
+   registered (retrying Enter with backoff) instead of trusting a zero tmux
+   exit code alone. Never stacks a new copy onto already-pending input - it
+   retries submitting whatever is already sitting there instead. Logs (does
+   not throw) when delivery cannot be confirmed after retrying, so a wedged
+   pane cannot silently swallow every future notify! for that role."
+  [socket session]
+  (let [before (capture-pane-text socket session)
+        stacked? (pending-input? before)
+        pending-text (if stacked? (pending-input-line before) wake-message)]
+    (when-not stacked?
+      (let [send-text (tmux! "-S" socket "send-keys" "-t" session "-l" wake-message)]
+        (when-not (zero? (:exit send-text))
+          (throw (ex-info "tmux send text failed" send-text)))
+        (Thread/sleep 150)))
+    (loop [attempt 1]
+      (when-not (send-submit! socket session)
+        (throw (ex-info "tmux send submit failed" {:session session})))
+      (let [capture (capture-pane-text socket session)]
+        (cond
+          (not (text-still-pending? capture pending-text))
+          nil
+
+          (>= attempt notify-max-retries)
+          (log! "notify-delivery-failed" session
+                (if stacked?
+                  "pane already held undelivered input and it still would not submit"
+                  (str "submit not confirmed after " attempt " attempt(s)")))
+
+          :else
+          (do
+            (Thread/sleep (* notify-retry-delay-ms attempt))
+            (recur (inc attempt))))))))
 
 (defn move-with-collision
   "Moves source into target-dir, uniquifying on a name collision. Returns

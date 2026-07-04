@@ -176,6 +176,20 @@ class PaneTailer {
         if (!this.socketPath) {
             return;
         }
+        const { updates, deadEvents } = this.pollAllRoles();
+        if (updates.length > 0) {
+            this.onOutput(updates);
+        }
+        if (this.onDead && deadEvents.length > 0) {
+            this.onDead(deadEvents);
+        }
+        this.emitStallEvents();
+        this.emitNeedsHumanEvents();
+    }
+    // Captures every role's pane for this tick, isolating one role's thrown
+    // error from the rest (see BL-088's poll() comment above) so the loop
+    // itself stays out of poll()'s own CRAP/complexity.
+    pollAllRoles() {
         const updates = [];
         const deadEvents = [];
         for (const role of this.roles) {
@@ -183,67 +197,70 @@ class PaneTailer {
                 this.pollRole(role, updates, deadEvents);
             }
             catch (err) {
-                // Isolate one role's failure from the rest of the tick: the other
-                // roles must keep updating, and this role's own existing
-                // stalled/dead affordance (driven by lastChangedAt, untouched here)
-                // will surface the ongoing failure instead of a silently frozen
-                // frame — see BL-088.
                 this.reportPollError(err, role.role);
             }
         }
-        if (updates.length > 0) {
-            this.onOutput(updates);
+        return { updates, deadEvents };
+    }
+    emitStallEvents() {
+        if (!this.onStall) {
+            return;
         }
-        if (this.onDead && deadEvents.length > 0) {
-            this.onDead(deadEvents);
-        }
-        if (this.onStall) {
-            const stallEvents = [];
-            const now = Date.now();
-            for (const role of this.roles) {
-                const lastChanged = this.lastChangedAt.get(role.role);
-                if (lastChanged === undefined) {
-                    continue;
-                }
-                const stalled = isStalled(lastChanged, now);
-                const wasStalled = this.stalledRoles.has(role.role);
-                if (stalled !== wasStalled) {
-                    if (stalled) {
-                        this.stalledRoles.add(role.role);
-                    }
-                    else {
-                        this.stalledRoles.delete(role.role);
-                    }
-                    stallEvents.push({ role: role.role, stalled });
-                }
-            }
-            if (stallEvents.length > 0) {
-                this.onStall(stallEvents);
+        const now = Date.now();
+        const stallEvents = [];
+        for (const role of this.roles) {
+            const event = this.checkRoleStall(role, now);
+            if (event) {
+                stallEvents.push(event);
             }
         }
-        if (this.onNeedsHuman) {
-            const needsHumanEvents = [];
-            for (const role of this.roles) {
-                // BL-070: detect against the CURRENT capture, not the accumulated
-                // retained transcript in lastText — a resolved question from
-                // earlier in the (now much longer) history must not keep matching
-                // just because it hasn't scrolled out of an arbitrary line window.
-                const text = this.lastRawText.get(role.role);
-                const needsHuman = (0, needsHumanDetection_1.detectNeedsHuman)(text);
-                const wasNeedsHuman = this.needsHumanRoles.has(role.role);
-                if (needsHuman !== wasNeedsHuman) {
-                    if (needsHuman) {
-                        this.needsHumanRoles.add(role.role);
-                    }
-                    else {
-                        this.needsHumanRoles.delete(role.role);
-                    }
-                    needsHumanEvents.push({ role: role.role, needsHuman });
+        if (stallEvents.length > 0) {
+            this.onStall(stallEvents);
+        }
+    }
+    checkRoleStall(role, now) {
+        const lastChanged = this.lastChangedAt.get(role.role);
+        if (lastChanged === undefined) {
+            return null;
+        }
+        const stalled = isStalled(lastChanged, now);
+        const wasStalled = this.stalledRoles.has(role.role);
+        if (stalled === wasStalled) {
+            return null;
+        }
+        if (stalled) {
+            this.stalledRoles.add(role.role);
+        }
+        else {
+            this.stalledRoles.delete(role.role);
+        }
+        return { role: role.role, stalled };
+    }
+    emitNeedsHumanEvents() {
+        if (!this.onNeedsHuman) {
+            return;
+        }
+        const needsHumanEvents = [];
+        for (const role of this.roles) {
+            // BL-070: detect against the CURRENT capture, not the accumulated
+            // retained transcript in lastText — a resolved question from
+            // earlier in the (now much longer) history must not keep matching
+            // just because it hasn't scrolled out of an arbitrary line window.
+            const text = this.lastRawText.get(role.role);
+            const needsHuman = (0, needsHumanDetection_1.detectNeedsHuman)(text);
+            const wasNeedsHuman = this.needsHumanRoles.has(role.role);
+            if (needsHuman !== wasNeedsHuman) {
+                if (needsHuman) {
+                    this.needsHumanRoles.add(role.role);
                 }
+                else {
+                    this.needsHumanRoles.delete(role.role);
+                }
+                needsHumanEvents.push({ role: role.role, needsHuman });
             }
-            if (needsHumanEvents.length > 0) {
-                this.onNeedsHuman(needsHumanEvents);
-            }
+        }
+        if (needsHumanEvents.length > 0) {
+            this.onNeedsHuman(needsHumanEvents);
         }
     }
     // Re-reads the socket path and role list for this tick, resetting retained
@@ -253,69 +270,98 @@ class PaneTailer {
     refreshRolesForTick() {
         const latestSocket = (0, tmuxClient_1.readTmuxSocket)(this.targetPath) ?? '';
         if (latestSocket !== this.socketPath) {
-            this.socketPath = latestSocket;
-            this.roles = (0, tmuxClient_1.readSwarmRoles)(this.targetPath);
-            this.lastText.clear();
-            this.lastRawText.clear();
-            this.paneHistory.clear();
-            this.paneHistoryContentLines.clear();
-            if (this.socketPath) {
-                this.paneBaseIndex = (0, tmuxClient_1.getPaneBaseIndex)(this.socketPath);
-                this.applyPaneSettings();
-            }
-            this.onRoles?.(this.roles);
+            this.applySocketChange(latestSocket);
             return;
         }
-        // The socket file is reused across respawns, so a socket-path change is
-        // not enough to notice a role being added/removed (e.g. QA appended after
-        // the cleaner). Re-read roles.tsv each poll and refresh the panel when the
-        // role set changes, so the new tile appears without a full relaunch.
-        const latestRoles = (0, tmuxClient_1.readSwarmRoles)(this.targetPath);
-        if (rolesChanged(this.roles, latestRoles)) {
-            const liveNames = new Set(latestRoles.map((r) => r.role));
-            for (const name of [...this.lastText.keys()]) {
-                if (!liveNames.has(name)) {
-                    this.lastText.delete(name);
-                }
-            }
-            this.roles = latestRoles;
+        this.refreshRolesOnUnchangedSocket();
+    }
+    applySocketChange(latestSocket) {
+        this.socketPath = latestSocket;
+        this.roles = (0, tmuxClient_1.readSwarmRoles)(this.targetPath);
+        this.lastText.clear();
+        this.lastRawText.clear();
+        this.paneHistory.clear();
+        this.paneHistoryContentLines.clear();
+        if (this.socketPath) {
+            this.paneBaseIndex = (0, tmuxClient_1.getPaneBaseIndex)(this.socketPath);
             this.applyPaneSettings();
-            this.onRoles?.(this.roles);
         }
+        this.onRoles?.(this.roles);
+    }
+    // The socket file is reused across respawns, so a socket-path change is
+    // not enough to notice a role being added/removed (e.g. QA appended after
+    // the cleaner). Re-read roles.tsv each poll and refresh the panel when the
+    // role set changes, so the new tile appears without a full relaunch.
+    refreshRolesOnUnchangedSocket() {
+        const latestRoles = (0, tmuxClient_1.readSwarmRoles)(this.targetPath);
+        if (!rolesChanged(this.roles, latestRoles)) {
+            return;
+        }
+        const liveNames = new Set(latestRoles.map((r) => r.role));
+        for (const name of [...this.lastText.keys()]) {
+            if (!liveNames.has(name)) {
+                this.lastText.delete(name);
+            }
+        }
+        this.roles = latestRoles;
+        this.applyPaneSettings();
+        this.onRoles?.(this.roles);
     }
     // Captures and processes a single role's pane for this tick. Thrown errors
     // propagate to the caller, which isolates them per role (see poll()).
     pollRole(role, updates, deadEvents) {
-        if (!(0, tmuxClient_1.sessionExists)(this.socketPath, role.session)) {
-            const text = `Session "${role.session}" is not running.\n\nUse SwarmForge: Stop Swarm, then Launch Swarm.`;
-            this.pushFullTextIfChanged(role, updates, text);
-            if (this.liveRoles.has(role.role) && !this.deadRoles.has(role.role)) {
-                this.deadRoles.add(role.role);
-                deadEvents.push({ role: role.role, dead: true });
-                // A dead session's retained transcript is now stale; a respawn
-                // reseeds fresh rather than diffing against unrelated content.
-                this.paneHistory.delete(role.role);
-                this.paneHistoryContentLines.delete(role.role);
-            }
+        if (this.handleDeadSession(role, updates, deadEvents)) {
             return;
         }
+        this.markRoleLive(role, deadEvents);
+        const text = this.captureRoleOutput(role, updates);
+        if (text === null) {
+            return;
+        }
+        this.pushIfTextChanged(role, updates, text);
+    }
+    // Returns true when the session is dead and the caller should stop -
+    // updates/deadEvents are already populated for that case.
+    handleDeadSession(role, updates, deadEvents) {
+        if ((0, tmuxClient_1.sessionExists)(this.socketPath, role.session)) {
+            return false;
+        }
+        const text = `Session "${role.session}" is not running.\n\nUse SwarmForge: Stop Swarm, then Launch Swarm.`;
+        this.pushFullTextIfChanged(role, updates, text);
+        if (this.liveRoles.has(role.role) && !this.deadRoles.has(role.role)) {
+            this.deadRoles.add(role.role);
+            deadEvents.push({ role: role.role, dead: true });
+            // A dead session's retained transcript is now stale; a respawn
+            // reseeds fresh rather than diffing against unrelated content.
+            this.paneHistory.delete(role.role);
+            this.paneHistoryContentLines.delete(role.role);
+        }
+        return true;
+    }
+    markRoleLive(role, deadEvents) {
         if (this.deadRoles.has(role.role)) {
             this.deadRoles.delete(role.role);
             deadEvents.push({ role: role.role, dead: false });
         }
         this.liveRoles.add(role.role);
+    }
+    // Captures this role's pane and returns the text to diff, or null when the
+    // capture itself failed (a message was already pushed for that case).
+    captureRoleOutput(role, updates) {
         const target = (0, tmuxClient_1.resolveAgentPaneTarget)(this.socketPath, role.session, this.paneBaseIndex);
         const result = (0, tmuxClient_1.capturePane)(this.socketPath, target, -this.historyLines);
         if (result.exitCode !== 0) {
             const text = `Could not read tmux pane for ${role.displayName}.\n\nTry SwarmForge: Stop Swarm, then Launch Swarm.`;
             this.pushFullTextIfChanged(role, updates, text);
-            return;
+            return null;
         }
         const rawText = (0, ansi_1.stripAnsi)(result.stdout);
         const paneCommand = (0, tmuxClient_1.getPaneCommand)(this.socketPath, target);
         const statusOverlay = (0, agentPaneState_1.agentPaneStatusMessage)(paneCommand, rawText);
         this.lastRawText.set(role.role, statusOverlay ?? rawText);
-        const text = statusOverlay ?? this.accumulateHistory(role.role, rawText);
+        return statusOverlay ?? this.accumulateHistory(role.role, rawText);
+    }
+    pushIfTextChanged(role, updates, text) {
         const previous = this.lastText.get(role.role);
         if (text === previous) {
             return;

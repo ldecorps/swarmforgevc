@@ -332,10 +332,10 @@ exports.DEFAULT_SUITE_WARN_SECONDS = 120;
 function suiteDurationLogPath(worktreePath) {
     return path.join(worktreePath, 'extension', '.test-durations.jsonl');
 }
+// No separate blank-line guard: JSON.parse on an empty or whitespace-only
+// line throws, which the catch below already turns into the same null
+// result - a dedicated check would be a redundant, unkillable branch.
 function parseTestDurationLine(line) {
-    if (!line.trim()) {
-        return null;
-    }
     try {
         const parsed = JSON.parse(line);
         const finishedAtMs = Date.parse(parsed.finished_at);
@@ -386,6 +386,11 @@ function computeSuiteDuration(targetPath, roles, warnThresholdMs = exports.DEFAU
     // PRIOR runs only - including the latest in its own baseline would dilute
     // a genuine spike (e.g. one bad run among 20 barely moves an including
     // mean, silently defeating the 2x check that exists to catch it).
+    // The `priorRecords.length > 0` guard is unkillable by design when
+    // mutated to an always-true condition: with zero prior records the
+    // reduce/length division is 0/0 = NaN, and every NaN comparison below is
+    // false either way, so the guard's only real job is readability (an
+    // explicit null beats a silent NaN propagating into the stats).
     const priorRecords = windowed.slice(1);
     const baselineMeanMs = priorRecords.length > 0 ? priorRecords.reduce((sum, r) => sum + r.durationMs, 0) / priorRecords.length : null;
     const warn = latestMs > warnThresholdMs || (baselineMeanMs !== null && latestMs > 2 * baselineMeanMs);
