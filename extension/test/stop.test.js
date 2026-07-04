@@ -29,26 +29,29 @@ test('buildKillSessionArgs returns empty array when no sessions given', () => {
   assert.deepEqual(args, []);
 });
 
-test('stopSwarm returns failure when no tmux socket file exists', () => {
+test('stopSwarm is an idempotent success when no tmux socket file exists', () => {
   const tmp = mkTmp();
   const result = stopSwarm(tmp);
-  assert.equal(result.success, false);
-  assert.match(result.message, /No tmux socket found/);
+  assert.equal(result.success, true);
+  assert.match(result.message, /already stopped/);
   assert.deepEqual(result.sessionsKilled, []);
 });
 
-test('stopSwarm returns failure when sessions.tsv is empty', () => {
+test('stopSwarm succeeds and clears state when sessions.tsv is empty', () => {
   const tmp = mkTmp();
   mkdirp(path.join(tmp, '.swarmforge'));
   fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), '/nonexistent/swarm.sock');
   fs.writeFileSync(path.join(tmp, '.swarmforge', 'sessions.tsv'), '');
   const result = stopSwarm(tmp);
-  assert.equal(result.success, false);
-  assert.match(result.message, /No sessions found/);
+  assert.equal(result.success, true);
+  assert.match(result.message, /already stopped/);
   assert.deepEqual(result.sessionsKilled, []);
+  // stale state must be cleared so the next launch starts clean
+  assert.equal(fs.existsSync(path.join(tmp, '.swarmforge', 'tmux-socket')), false);
+  assert.equal(fs.existsSync(path.join(tmp, '.swarmforge', 'sessions.tsv')), false);
 });
 
-test('stopSwarm returns failure when tmux socket is invalid and no sessions can be killed', () => {
+test('stopSwarm succeeds and clears stale state when the socket is dead (crashed swarm)', () => {
   const tmp = mkTmp();
   mkdirp(path.join(tmp, '.swarmforge'));
   fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), '/nonexistent/swarm.sock');
@@ -57,9 +60,11 @@ test('stopSwarm returns failure when tmux socket is invalid and no sessions can 
     '1\tcoder\tswarmforge-coder\tCoder\tclaude\n'
   );
   const result = stopSwarm(tmp);
-  assert.equal(result.success, false);
-  assert.match(result.message, /No sessions could be stopped/);
+  assert.equal(result.success, true);
+  assert.match(result.message, /stale swarm state cleared/);
   assert.deepEqual(result.sessionsKilled, []);
+  assert.equal(fs.existsSync(path.join(tmp, '.swarmforge', 'tmux-socket')), false);
+  assert.equal(fs.existsSync(path.join(tmp, '.swarmforge', 'sessions.tsv')), false);
 });
 
 test('stopSwarm tolerates a missing daemon pid file', () => {
@@ -72,7 +77,7 @@ test('stopSwarm tolerates a missing daemon pid file', () => {
   );
   // no daemon/handoffd.pid — code must not throw
   const result = stopSwarm(tmp);
-  assert.equal(result.success, false);
+  assert.equal(result.success, true);
 });
 
 test('stopSwarm reports success and the killed session list when tmux kills succeed', () => {

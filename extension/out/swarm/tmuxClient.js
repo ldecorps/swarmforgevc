@@ -33,6 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.DEFAULT_RUN_COMMAND_TIMEOUT_MS = void 0;
 exports.runCommand = runCommand;
 exports.readTmuxSocket = readTmuxSocket;
 exports.listTmuxSessions = listTmuxSessions;
@@ -51,15 +52,28 @@ exports.sessionExists = sessionExists;
 const cp = __importStar(require("child_process"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+// runCommand is synchronous and runs on the extension host's only JS thread:
+// a child that never exits wedges the entire extension (tiles, webview
+// messages, every timer). All callers are sub-second tmux commands, so a
+// bounded default timeout turns any hang into a failed result instead.
+exports.DEFAULT_RUN_COMMAND_TIMEOUT_MS = 10_000;
 function runCommand(command, args, options = { encoding: 'utf8' }) {
     const result = cp.spawnSync(command, args, {
+        timeout: exports.DEFAULT_RUN_COMMAND_TIMEOUT_MS,
         ...options,
         encoding: 'utf8',
     });
+    const timedOut = result.error !== undefined &&
+        result.error.code === 'ETIMEDOUT';
+    const stderr = (result.stderr ?? '').trimEnd();
     return {
         stdout: (result.stdout ?? '').trimEnd(),
-        stderr: (result.stderr ?? '').trimEnd(),
-        exitCode: result.status ?? 1,
+        stderr: timedOut
+            ? [stderr, `${command} timed out after ${options.timeout ?? exports.DEFAULT_RUN_COMMAND_TIMEOUT_MS}ms`]
+                .filter(Boolean)
+                .join('\n')
+            : stderr,
+        exitCode: timedOut ? 1 : result.status ?? 1,
     };
 }
 function readTmuxSocket(targetPath) {
@@ -215,11 +229,29 @@ function respawnAgent(targetPath, role) {
     if (!fs.existsSync(launchScript)) {
         return { success: false, message: `No launch script found for role "${role}" at ${launchScript}` };
     }
-    const result = runCommand('bash', [launchScript]);
-    if (result.exitCode !== 0) {
-        return { success: false, message: `Failed to respawn "${role}": ${result.stderr || result.stdout || `exit ${result.exitCode}`}` };
+    const socketPath = readTmuxSocket(targetPath);
+    if (!socketPath) {
+        return { success: false, message: `Cannot respawn "${role}": no tmux socket recorded (is the swarm running?)` };
     }
-    return { success: true, message: `Agent "${role}" restarted.` };
+    const roleEntry = readSwarmRoles(targetPath).find((entry) => entry.role === role);
+    if (!roleEntry) {
+        return { success: false, message: `Cannot respawn "${role}": role not found in sessions.tsv` };
+    }
+    // The launch script runs `claude` in the foreground and only exits when the
+    // agent does. It must run INSIDE the role's tmux pane — executing it here
+    // would block the extension host's single JS thread until the agent exits,
+    // freezing the whole extension, and leave the agent outside tmux where no
+    // tile can see it.
+    const target = resolveAgentPaneTarget(socketPath, roleEntry.session, getPaneBaseIndex(socketPath));
+    const typed = sendKeys(socketPath, target, `bash ${launchScript}`, true);
+    if (typed.exitCode !== 0) {
+        return { success: false, message: `Failed to respawn "${role}": ${typed.stderr || typed.stdout || `exit ${typed.exitCode}`}` };
+    }
+    const submitted = sendKeys(socketPath, target, 'Enter');
+    if (submitted.exitCode !== 0) {
+        return { success: false, message: `Failed to respawn "${role}": ${submitted.stderr || submitted.stdout || `exit ${submitted.exitCode}`}` };
+    }
+    return { success: true, message: `Agent "${role}" restarted in pane ${target}.` };
 }
 function sessionExists(socketPath, session) {
     const result = runCommand('tmux', [
