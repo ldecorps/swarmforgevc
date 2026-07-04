@@ -10,4 +10,5 @@ extension/coverage/
 extension/.stryker-tmp/
 extension/reports/
 extension/.dev-activation.json
+extension/.test-durations.jsonl
 *.code-workspace

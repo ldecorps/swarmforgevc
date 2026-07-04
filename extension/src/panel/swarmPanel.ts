@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 import { SwarmRole, respawnAgent } from '../swarm/tmuxClient';
 import { PaneTailer } from './paneTailer';
 import { currentStageLabel, readPipelineStages, findLiveHolder, parseRolesTsv } from '../swarm/swarmState';
-import { computeSwarmMetrics } from '../metrics/swarmMetrics';
+import { computeSwarmMetrics, DEFAULT_SUITE_WARN_SECONDS } from '../metrics/swarmMetrics';
 import { readDaemonHealth } from '../swarm/daemonHealth';
 import { escalatedStuckRoles } from '../watchdog/stuckEscalations';
 import { loadRuns } from '../runs/runLog';
@@ -342,7 +342,10 @@ export class SwarmPanel {
       .filter((r) => r.targetPath === this.targetPath)
       .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))[0];
     const runStartMs = latestRun ? Date.parse(latestRun.startedAt) : null;
-    const metrics = computeSwarmMetrics(this.targetPath, roles, runStartMs);
+    const suiteWarnSeconds = vscode.workspace
+      .getConfiguration('swarmforge')
+      .get<number>('metrics.suiteWarnSeconds', DEFAULT_SUITE_WARN_SECONDS);
+    const metrics = computeSwarmMetrics(this.targetPath, roles, runStartMs, Date.now(), suiteWarnSeconds);
     this.panel.webview.postMessage({
       type: 'metricsUpdate',
       metrics,
