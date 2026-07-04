@@ -17,7 +17,7 @@ trap 'rm -rf "$ROOT"' EXIT
 
 mkdir -p "$ROOT/swarmforge/roles" "$ROOT/.swarmforge"
 touch "$ROOT/swarmforge/constitution.prompt"
-for role in coder cleaner specifier; do
+for role in coder cleaner specifier hardener; do
   echo "role prompt" > "$ROOT/swarmforge/roles/$role.prompt"
 done
 
@@ -26,6 +26,7 @@ config active_backlog_max_depth -1
 window specifier claude master --model x
 window coder claude coder task idle-clear --model x --effort medium
 window cleaner claude cleaner batch --model x
+window hardener claude hardener batch idle-clear --model x --effort medium
 CONF
 
 # ── run parse_config + write_roles_file against the fixture conf, without
@@ -62,5 +63,16 @@ pass "03: existing receive-mode field is unaffected by the new token"
 [[ "$cleaner_idle_clear" == "off" ]] || fail "04: cleaner (batch, no idle-clear token) should be off, got '$cleaner_idle_clear'"
 [[ "$cleaner_receive_mode" == "batch" ]] || fail "04: cleaner receive-mode should still be batch, got '$cleaner_receive_mode'"
 pass "04: batch receive-mode role without the token normalizes to off, batch mode intact"
+
+# The batch + idle-clear combination exercises the trickiest part of the
+# field-shift arithmetic (next_field advances once for "batch" AND again for
+# "idle-clear"), so it deserves its own coverage rather than relying on the
+# task+idle-clear and batch+no-token cases to imply it works.
+hardener_line="$(grep '^hardener' "$ROLES_TSV")"
+hardener_idle_clear="$(printf '%s' "$hardener_line" | cut -f8)"
+hardener_receive_mode="$(printf '%s' "$hardener_line" | cut -f7)"
+[[ "$hardener_idle_clear" == "on" ]] || fail "05: hardener (batch + idle-clear) should be on, got '$hardener_idle_clear'"
+[[ "$hardener_receive_mode" == "batch" ]] || fail "05: hardener receive-mode should still be batch, got '$hardener_receive_mode'"
+pass "05: batch receive-mode role WITH the idle-clear token normalizes both fields correctly"
 
 echo "ALL PASS"
