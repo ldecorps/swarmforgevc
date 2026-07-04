@@ -333,6 +333,83 @@ test('respawnAgent reports failure when tmux send-keys fails', () => {
   }
 });
 
+// --- BL-093: a wedged TUI (process alive, all input ignored) cannot be
+//     recovered by typing into it - capture-pane keeps showing the typed
+//     command sitting unsubmitted no matter how many times Enter is sent.
+//     respawnAgent must escalate to a forced pane kill+relaunch instead of
+//     reporting a bare failure. ---
+
+test('respawnAgent wedged-respawn-04: escalates to a forced pane respawn when the pane never confirms submission', () => {
+  const tmp = mkTmp();
+  const { script } = writeRespawnState(tmp);
+  const fake = installFakeTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
+    { subcommand: 'send-keys', exitCode: 0, stdout: '' },
+    // The pane is wedged: every capture-pane still shows the typed command
+    // sitting on the input line, so verification can never confirm submit.
+    { subcommand: 'capture-pane', exitCode: 0, stdout: `❯ bash ${script}` },
+    { subcommand: 'respawn-pane', exitCode: 0, stdout: '' },
+  ]);
+  try {
+    const result = respawnAgent(tmp, 'coder');
+    assert.equal(result.success, true);
+    assert.match(result.message, /wedged/i);
+    const respawnCalls = fake.calls().filter((args) => args.includes('respawn-pane'));
+    assert.equal(respawnCalls.length, 1, 'must force exactly one pane respawn after verification is exhausted');
+    assert.ok(
+      respawnCalls[0].includes('-k'),
+      'forced respawn must kill the wedged process, not just type into it'
+    );
+    assert.ok(
+      respawnCalls[0].some((arg) => arg.includes(`bash ${script}`)),
+      'forced respawn must relaunch the same role launch script'
+    );
+  } finally {
+    fake.restore();
+  }
+});
+
+test('respawnAgent wedged-respawn-05: never forces a pane respawn when send-keys is confirmed delivered', () => {
+  const tmp = mkTmp();
+  writeRespawnState(tmp);
+  const fake = installFakeTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
+    { subcommand: 'send-keys', exitCode: 0, stdout: '' },
+    // A healthy pane: the input line is empty once Enter is sent.
+    { subcommand: 'capture-pane', exitCode: 0, stdout: '❯ ' },
+  ]);
+  try {
+    const result = respawnAgent(tmp, 'coder');
+    assert.equal(result.success, true);
+    assert.doesNotMatch(result.message, /wedged/i);
+    const respawnCalls = fake.calls().filter((args) => args.includes('respawn-pane'));
+    assert.equal(respawnCalls.length, 0, 'a healthy agent must never trigger a forced pane respawn');
+  } finally {
+    fake.restore();
+  }
+});
+
+test('respawnAgent reports failure when both verified send-keys and the forced pane respawn fail', () => {
+  const tmp = mkTmp();
+  const { script } = writeRespawnState(tmp);
+  const fake = installFakeTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
+    { subcommand: 'send-keys', exitCode: 0, stdout: '' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: `❯ bash ${script}` },
+    { subcommand: 'respawn-pane', exitCode: 1, stderr: 'no such pane' },
+  ]);
+  try {
+    const result = respawnAgent(tmp, 'coder');
+    assert.equal(result.success, false);
+    assert.match(result.message, /no such pane/);
+  } finally {
+    fake.restore();
+  }
+});
+
 // --- runCommand timeout: cp.spawnSync with no timeout lets any hung child
 //     wedge the extension host's event loop forever (the respawn freeze).
 //     Every runCommand call must carry a timeout so a stuck command surfaces
