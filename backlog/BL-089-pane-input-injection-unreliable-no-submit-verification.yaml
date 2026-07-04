@@ -1,4 +1,4 @@
-id: BL-088
+id: BL-089
 title: BUG — pane input injection is unreliable: instructions sit typed-but-unsubmitted, no seam verifies delivery, and a wedged TUI is unrecoverable by send-keys
 milestone: M2
 status: todo
@@ -57,7 +57,7 @@ description: |
 acceptance: |
   Feature: instructions typed into agent panes are verifiably delivered
 
-  # BL-088 verified-submit-01
+  # BL-089 verified-submit-01
   Scenario: a lost Enter is retried until the instruction submits
     Given an agent pane whose input box swallows the first Enter
     When the daemon or extension injects an instruction
@@ -65,28 +65,28 @@ acceptance: |
     And retries the submit until the input line is empty
     And the instruction is executed exactly once
 
-  # BL-088 verified-submit-02
+  # BL-089 verified-submit-02
   Scenario: delivery failure is reported, never silent
     Given an agent pane that accepts no input at all
     When an injection exhausts its retries
     Then the failure is logged/reported with role and pane target
     And no further copies of the instruction are typed into the pane
 
-  # BL-088 no-stacking-03
+  # BL-089 no-stacking-03
   Scenario: undelivered input is never stacked
     Given an agent pane already holding an undelivered instruction
     When a second injection targets that pane
     Then the injector does not append a second copy
     And the pane input holds at most one pending instruction afterwards
 
-  # BL-088 wedged-respawn-04
+  # BL-089 wedged-respawn-04
   Scenario: a wedged TUI is recovered by pane respawn
     Given an agent process that is alive but ignores all pane input
     When respawn escalation triggers for that role
     Then the pane process is killed and relaunched via its launch script
     And the fresh agent appears in the same tmux pane the tiles watch
 
-  # BL-088 wedged-respawn-05
+  # BL-089 wedged-respawn-05
   Scenario: pane respawn never fires at a healthy agent
     Given an agent that is processing input normally
     When the chaser or an operator triggers a respawn for it

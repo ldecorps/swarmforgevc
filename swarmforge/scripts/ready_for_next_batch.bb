@@ -6,6 +6,17 @@
 
 (load-file (str (fs/path (fs/parent *file*) "handoff_lib.bb")))
 
+(def idle-boundary?
+  "Set only when invoked from done_with_current_batch.bb, right after it
+   completed the current batch (BL-089): a plain standalone ready_for_next.sh
+   run while already idle must never trigger a clear."
+  (some #{"--idle-boundary"} *command-line-args*))
+
+(defn maybe-clear-at-idle-boundary! []
+  (when (and idle-boundary?
+             (handoff-lib/idle-clear-enabled? (handoff-lib/current-role)))
+    (handoff-lib/respawn-self! (handoff-lib/current-role))))
+
 (defn print-batch [batch-dir]
   (let [files (handoff-lib/handoff-files batch-dir)]
     (when (empty? files)
@@ -50,7 +61,9 @@
           (println "DRAINING")
           (let [new-files (handoff-lib/handoff-files new-dir)]
             (if (empty? new-files)
-              (println "NO_TASK")
+              (do
+                (println "NO_TASK")
+                (maybe-clear-at-idle-boundary!))
               (let [batch-priority (handoff-lib/header-value (first new-files) "priority" "50")
                     batch-dir (new-batch-dir in-process-dir)
                     selected-files (filter #(= batch-priority (handoff-lib/header-value % "priority" "50")) new-files)]

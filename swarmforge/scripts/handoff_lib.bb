@@ -132,6 +132,44 @@
 (defn my-handoff-files [dir]
   (vec (filter mine? (handoff-files dir))))
 
+(defn roles-tsv-path []
+  (fs/path (target-root) ".swarmforge" "roles.tsv"))
+
+(defn idle-clear-enabled?
+  "True when role-name's roles.tsv row carries the BL-089 idle-clear token
+   ('on') in the 8th (optional) column. Absent column, absent row, or any
+   other value means off — matches the ticket's opt-in, default-off design."
+  [role-name]
+  (boolean
+    (when (and role-name (fs/exists? (roles-tsv-path)))
+      (some (fn [line]
+              (let [fields (str/split line #"\t" -1)]
+                (when (= role-name (first fields))
+                  (= "on" (get fields 7)))))
+            (str/split-lines (slurp (str (roles-tsv-path))))))))
+
+(defn tmux-socket []
+  (str/trim (slurp (str (fs/path (target-root) ".swarmforge" "tmux-socket")))))
+
+(defn launch-script-path [role-name]
+  (str (fs/path (target-root) ".swarmforge" "launch" (str role-name ".sh"))))
+
+(defn pane-id [socket]
+  (let [result (sh/sh "tmux" "-S" socket "display-message" "-p" "#{pane_id}")]
+    (str/trim (:out result))))
+
+(defn respawn-self!
+  "Respawns this role's own tmux pane at the idle boundary (BL-089), running
+   the same launch script a fresh pane launch would run so the new session
+   gets the full role re-bootstrap. Mirrors the coordinator's manual
+   respawn-pane procedure, but self-triggered from inside the pane being
+   replaced instead of from an operator pane."
+  [role-name]
+  (let [socket (tmux-socket)
+        pane (pane-id socket)
+        script (launch-script-path role-name)]
+    (sh/sh "tmux" "-S" socket "respawn-pane" "-k" "-t" pane (str "zsh '" script "'"))))
+
 (defn print-task [file]
   (let [task-name (header-field file "task")]
     (println "TASK:" (str file))

@@ -10,7 +10,7 @@
 (load-file (str (fs/path script-dir "handoff_lib.bb")))
 
 (defn run-ready! []
-  (process/exec (str (fs/path script-dir "ready_for_next_task.sh"))))
+  (process/exec (str (fs/path script-dir "ready_for_next_task.sh")) "--idle-boundary"))
 
 (defn -main []
   (let [inbox (handoff-lib/inbox-dir)

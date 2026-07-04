@@ -264,6 +264,7 @@ Beside the Backlog pane, the extension shows a collapsible Metrics section that 
 - **Mean ticket time**: How long on average a ticket takes to move from backlog/active/ to backlog/done/. Displayed with the sample count (e.g., "mean 4h 12m over 23 tickets"). Derived from the target repo's backlog git history — no new data collection needed.
 - **Per-agent busyness**: For each role, the fraction of elapsed run time spent processing handoffs. Computed from `dequeued_at` and `completed_at` headers in `.swarmforge/handoffs/inbox/completed/` handoff files, plus any open interval from an in-process task. Shows 0% for idle agents and agents with no history.
 - **Retry count**: Total backward handoffs (messages where the sender sits later in the pipeline than the recipient — e.g., QA rejecting work back to coder). Displayed with per-ticket breakdown for tickets with retries, sorted by worst offenders.
+- **Suite duration**: How long the test suite takes to run (averaged over recent runs). Displayed with the latest duration, rolling mean, and sample count. Warns when the latest duration exceeds either the configured threshold (default 120 seconds, configurable via `swarmforge.metrics.suiteWarnSeconds`) or 2x the rolling mean, flagging potential performance creep. Tracks durations from all test runs across the main checkout and every role worktree.
 
 The metrics pane folds and unfolds like the Backlog pane and refreshes on the panel's normal cadence — no additional polling loop is introduced.
 
@@ -275,7 +276,7 @@ Every role can also run a headless command-line version of the same metrics:
 node extension/out/tools/swarm-metrics.js
 ```
 
-Runnable from the repo root or from any `.worktrees/<role>/` checkout. Prints a short plain-text summary — mean ticket time, one busyness line per role, retry total — and exits 0 with placeholder values on a fresh run. The CLI and panel are fed by the same underlying metrics computation module, so they always report the same values.
+Runnable from the repo root or from any `.worktrees/<role>/` checkout. Prints a short plain-text summary — mean ticket time, one busyness line per role, retry total, and suite duration with warnings — and exits 0 with placeholder values on a fresh run. The CLI and panel are fed by the same underlying metrics computation module, so they always report the same values.
 
 ---
 
