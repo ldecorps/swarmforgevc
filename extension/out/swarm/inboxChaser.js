@@ -37,6 +37,9 @@ exports.sidecarPath = sidecarPath;
 exports.deadLetterPath = deadLetterPath;
 exports.readChaseCount = readChaseCount;
 exports.writeChaseCount = writeChaseCount;
+exports.respawnCooldownPath = respawnCooldownPath;
+exports.readRespawnCooldownUntilMs = readRespawnCooldownUntilMs;
+exports.writeRespawnCooldownUntilMs = writeRespawnCooldownUntilMs;
 exports.scanInboxNew = scanInboxNew;
 exports.decideItemAction = decideItemAction;
 exports.nudgePath = nudgePath;
@@ -68,6 +71,24 @@ function readChaseCount(handoffFilePath) {
 function writeChaseCount(handoffFilePath, count) {
     fs.writeFileSync(sidecarPath(handoffFilePath), JSON.stringify({ chaseCount: count }), 'utf-8');
 }
+// BL-087: rate-limits respawns per role so a repeated misjudgment cannot
+// loop. Stored one level up from inbox/new, sibling to inbox/in_process,
+// since a respawn cooldown is a per-ROLE fact, not tied to any one item file.
+function respawnCooldownPath(inboxNewDir) {
+    return path.join(path.dirname(inboxNewDir), 'respawn-cooldown.json');
+}
+function readRespawnCooldownUntilMs(inboxNewDir) {
+    try {
+        const data = JSON.parse(fs.readFileSync(respawnCooldownPath(inboxNewDir), 'utf-8'));
+        return typeof data.untilMs === 'number' ? data.untilMs : null;
+    }
+    catch {
+        return null;
+    }
+}
+function writeRespawnCooldownUntilMs(inboxNewDir, untilMs) {
+    fs.writeFileSync(respawnCooldownPath(inboxNewDir), JSON.stringify({ untilMs }), 'utf-8');
+}
 function scanInboxNew(inboxNewDir) {
     if (!fs.existsSync(inboxNewDir)) {
         return [];
@@ -87,16 +108,27 @@ function scanInboxNew(inboxNewDir) {
     }
     return items;
 }
-function decideItemAction(itemMtimeMs, chaseCount, nowMs, config, liveness) {
+// BL-087: absence of heartbeat evidence must never, by itself, justify a
+// respawn — the heartbeat file this reads from routinely does not exist, so
+// liveness alone reported 'unknown' for every role and respawned it on the
+// FIRST stale sweep, with no chase ever attempted first. Recent pane/outbox
+// activity is positive proof of life and overrides liveness entirely; absent
+// that, a role is chased across successive sweeps and only escalates to a
+// respawn once chase attempts are exhausted (maxChases) AND liveness itself
+// is not the explicit 'alive' state (which, like fresh activity, is treated
+// as positive evidence and dead-letters instead of respawning).
+function decideItemAction(itemMtimeMs, chaseCount, nowMs, config, liveness, lastActivityMs) {
     const ageSeconds = (nowMs - itemMtimeMs) / 1000;
     if (ageSeconds < config.chaseTimeoutSeconds) {
         return 'skipped';
     }
-    if (chaseCount >= config.maxChases) {
-        return 'dead-lettered';
+    const idleSeconds = (nowMs - lastActivityMs) / 1000;
+    const hasRecentActivity = idleSeconds < config.stuckInProcessTimeoutSeconds;
+    if (hasRecentActivity) {
+        return chaseCount >= config.maxChases ? 'dead-lettered' : 'chased';
     }
-    if (liveness === 'dead' || liveness === 'unknown' || liveness === 'stuck') {
-        return 'respawned';
+    if (chaseCount >= config.maxChases) {
+        return liveness === 'dead' || liveness === 'unknown' || liveness === 'stuck' ? 'respawned' : 'dead-lettered';
     }
     return 'chased';
 }
@@ -224,9 +256,21 @@ function applyInboxItemAction(role, item, action, adapters) {
 function sweepRoleInbox(role, inboxNewDir, nowMs, config, adapters) {
     const items = scanInboxNew(inboxNewDir);
     const liveness = adapters.getLiveness(role);
+    const lastActivityMs = adapters.getLastActivityMs(role);
+    const respawnCooldownUntilMs = readRespawnCooldownUntilMs(inboxNewDir);
     for (const item of items) {
-        const action = decideItemAction(item.mtimeMs, item.chaseCount, nowMs, config, liveness);
+        let action = decideItemAction(item.mtimeMs, item.chaseCount, nowMs, config, liveness, lastActivityMs);
+        // BL-087: a respawn decision made while still cooling down from the
+        // last respawn of this role is downgraded to a chase instead - never
+        // silently dropped, so a genuinely still-unresponsive role keeps
+        // getting wake-up attempts rather than going quiet.
+        if (action === 'respawned' && (0, cooldownScheduler_1.isCoolingDown)(respawnCooldownUntilMs, nowMs)) {
+            action = 'chased';
+        }
         applyInboxItemAction(role, item, action, adapters);
+        if (action === 'respawned') {
+            writeRespawnCooldownUntilMs(inboxNewDir, nowMs + config.respawnCooldownSeconds * 1000);
+        }
     }
 }
 function runSweep(roleInboxes, nowMs, config, adapters) {
