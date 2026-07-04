@@ -365,6 +365,24 @@ function suiteDurationLogPath(worktreePath: string): string {
   return path.join(worktreePath, 'extension', '.test-durations.jsonl');
 }
 
+function parseTestDurationLine(line: string): TestDurationRecord | null {
+  if (!line.trim()) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(line);
+    const finishedAtMs = Date.parse(parsed.finished_at);
+    const durationMs = Number(parsed.duration_ms);
+    if (!Number.isNaN(finishedAtMs) && Number.isFinite(durationMs)) {
+      return { finishedAtMs, durationMs };
+    }
+  } catch {
+    // Malformed line: skip it, never let a bad record break the metrics
+    // surface (BL-078's "recording failure never breaks" spirit extends to reading too).
+  }
+  return null;
+}
+
 function readTestDurationRecords(worktreePath: string): TestDurationRecord[] {
   let content: string;
   try {
@@ -375,20 +393,9 @@ function readTestDurationRecords(worktreePath: string): TestDurationRecord[] {
 
   const records: TestDurationRecord[] = [];
   for (const line of content.split('\n')) {
-    if (!line.trim()) {
-      continue;
-    }
-    try {
-      const parsed = JSON.parse(line);
-      const finishedAtMs = Date.parse(parsed.finished_at);
-      const durationMs = Number(parsed.duration_ms);
-      if (!Number.isNaN(finishedAtMs) && Number.isFinite(durationMs)) {
-        records.push({ finishedAtMs, durationMs });
-      }
-    } catch {
-      // Malformed line: skip it, never let a bad record break the metrics
-      // surface (BL-078's "recording failure never breaks" spirit extends
-      // to reading too).
+    const record = parseTestDurationLine(line);
+    if (record) {
+      records.push(record);
     }
   }
   return records;
