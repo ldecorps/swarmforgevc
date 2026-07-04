@@ -1,0 +1,82 @@
+id: BL-088
+title: BUG — tile output freezes at a stale frame while the extension host and swarm are both alive
+milestone: M2
+status: todo
+priority: 01
+source: operator report 2026-07-04 ("panes are very static, no animation whatsoever")
+
+description: |
+  DEFECT (operator report + live triage, 2026-07-04): every agent tile shows
+  real captured agent output but frozen at an old frame — no updates at all.
+  This is NOT the old frozen-host wedge (fixed in a16e4d8) and NOT BL-085
+  (input focus, since merged). Triage facts that bound the fault:
+    - The build is current main, freshly reloaded (includes a16e4d8, BL-084,
+      pre-BL-085-merge).
+    - The panel was opened AFTER the swarm launch; tiles initially rendered
+      real output, then stopped updating (frozen frame, not
+      "Waiting for swarm..." and not blank).
+    - The extension host event loop was demonstrably ALIVE the whole time:
+      its chaser setInterval fired repeatedly during the freeze (observed
+      respawn send-keys arriving in the specifier pane).
+    - The tmux side was demonstrably alive: agents were streaming output in
+      their panes throughout.
+  Conclusion: the fault is inside the PaneTailer poll -> onOutput ->
+  webview postMessage path (extension/src/panel/paneTailer.ts poll loop,
+  swarmPanel.ts wiring), which stalled silently while sibling timers kept
+  running. Candidate mechanisms for the coder to root-cause (not a
+  prescription): a per-tick exception thrown before onOutput (poll() work
+  such as capture/resize/history reconstruction failing every tick), the
+  change-detection/lastText path concluding "no change" forever, the tailer's
+  interval being stopped by a code path that never restarts it, or the
+  webview side ceasing to process update messages. Root-cause empirically;
+  do not probe-widen.
+
+  Wanted behavior:
+    - While a live swarm's panes produce output, tiles update continuously at
+      the poll cadence — indefinitely, for a panel opened after launch.
+    - A transient per-tick failure (capture error, socket hiccup, resize
+      failure) must never permanently stop tile updates: the next successful
+      poll resumes updates. Silent freeze is the failure mode being
+      eliminated — if polling cannot proceed, the tile must say so visibly
+      (existing stalled/dead affordances) rather than hold a stale frame that
+      looks live.
+
+  Scope: extension/src/panel/paneTailer.ts (poll loop and its error
+  handling), extension/src/panel/swarmPanel.ts (tailer wiring, webview update
+  path), webview media/panel.js only if the receiving side is implicated.
+  Testable through the existing fake-tmux/fake-capture seams; no SwarmForge
+  changes; two-layer rule unchanged.
+
+acceptance: |
+  Feature: agent tiles keep updating for as long as the swarm runs
+
+  Background:
+    Given a live swarm whose tmux panes are producing new output
+    And the panel was opened after the swarm launched
+
+  # BL-088 tile-freeze-01
+  Scenario: tiles track pane output continuously
+    When pane content changes across many successive poll intervals
+    Then every poll that observes changed pane content pushes a tile update
+    And no stale-frame period longer than one poll interval occurs
+
+  # BL-088 tile-freeze-02
+  Scenario: one failing poll tick does not kill the tailer
+    Given a poll tick fails partway through (pane capture or resize errors)
+    When the underlying failure clears on a later tick
+    Then tile updates resume without any user action
+    And the failing period is surfaced via the existing stalled/dead tile
+      status rather than a silently frozen live-looking frame
+
+  # BL-088 tile-freeze-03
+  Scenario: unchanged captures never latch the tailer shut
+    Given several polls in a row observe identical pane content
+    When the pane content changes again afterwards
+    Then the next poll pushes the new content to the tiles
+
+  # Non-behavioral gates:
+  #  - Reproduced/covered through the fake-tmux seams as unit tests (no VS
+  #    Code, no live tmux); the specific root-cause mechanism found gets its
+  #    own regression test.
+  #  - BL-070 transcript accumulation and BL-084/BL-080 attach suites stay
+  #    green.
