@@ -1,7 +1,13 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const { resolveResendApiKey, RESEND_SECRET_KEY } = require('../out/notify/secrets');
+const {
+  resolveResendApiKey,
+  RESEND_SECRET_KEY,
+  trimmedResendKeyInput,
+  describeSetResult,
+  describeClearResult,
+} = require('../out/notify/secrets');
 
 // Per the constitution's secrets rule: RESEND_API_KEY must resolve only from
 // the host env var or VS Code SecretStorage, never a workspace setting.
@@ -63,4 +69,43 @@ test('resolveResendApiKey returns undefined when SecretStorage has no value stor
   const result = await resolveResendApiKey(storage);
 
   assert.equal(result, undefined);
+});
+
+// --- BL-103: pure helpers behind the Set/Clear Resend API Key commands.
+//     The input-box UI is the untestable boundary; the resolution-order
+//     message and empty-input handling are pure and tested directly. ---
+
+test('trimmedResendKeyInput returns undefined for empty input (a safe no-op)', () => {
+  assert.equal(trimmedResendKeyInput(''), undefined);
+  assert.equal(trimmedResendKeyInput(undefined), undefined);
+});
+
+test('trimmedResendKeyInput returns undefined for whitespace-only input', () => {
+  assert.equal(trimmedResendKeyInput('   '), undefined);
+});
+
+test('trimmedResendKeyInput trims and returns non-empty input', () => {
+  assert.equal(trimmedResendKeyInput('  a-real-key  '), 'a-real-key');
+});
+
+test('describeSetResult states precedence when the env var is set', () => {
+  const message = describeSetResult(true);
+  assert.match(message, /RESEND_API_KEY/);
+  assert.match(message, /env/i);
+});
+
+test('describeSetResult has no precedence caveat when no env var is set', () => {
+  const message = describeSetResult(false);
+  assert.doesNotMatch(message, /RESEND_API_KEY/);
+});
+
+test('describeClearResult never echoes anything sensitive and states precedence when the env var is set', () => {
+  const message = describeClearResult(true);
+  assert.match(message, /RESEND_API_KEY/);
+  assert.match(message, /env/i);
+});
+
+test('describeClearResult has no precedence caveat when no env var is set', () => {
+  const message = describeClearResult(false);
+  assert.doesNotMatch(message, /RESEND_API_KEY/);
 });
