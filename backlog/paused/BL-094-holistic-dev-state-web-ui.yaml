@@ -1,0 +1,111 @@
+id: BL-094
+title: holistic dev-state web UI on the BL-065 bridge (phase 2) — one view of swarms, parcels, backlog, agents
+milestone: M6
+status: todo
+priority: 05
+source: operator requirement 2026-07-04 ("expose a webui showing a holistic view of the dev state"; revises the web-UI phase deferred by BL-065)
+
+description: |
+  Phase 2 of the remote-visibility track. BL-065 (merged) built the
+  read-only localhost REST+SSE bridge and explicitly deferred "the web UI
+  itself" to a later ticket — this is that ticket, revised per the
+  operator's 2026-07-04 requirement: the extension serves a browser web UI
+  giving a HOLISTIC view of development state, and the multi-swarm bring-up
+  (BL-091) is gated on it so a second swarm is never run without this view.
+
+  Operator-confirmed decisions (2026-07-04):
+    - Transport/security posture unchanged from BL-065: the UI is served by
+      the same opt-in localhost bridge (bearer token, no LAN exposure, no
+      tunneling). Every extension instance (each machine) can serve it.
+    - Cross-swarm state is GIT-DERIVED: backlog board, ticket assignments
+      (BL-090 swarm: field), parcel/stage positions, and run/merge history
+      come from the repo, which is already the multi-swarm transport — so
+      the holistic picture is visible from EITHER machine without opening
+      ports. Live pane-level agent detail (tails, liveness) remains
+      local-swarm-only, clearly labeled as such in the UI.
+
+  Behaviors:
+    - Serving: the bridge serves the UI at its root URL when started;
+      stopping the bridge stops the UI. No always-on server.
+    - Holistic view, one page: (a) backlog board — root intake count,
+      paused, active (with swarm assignment + stage position per parcel),
+      done-by-milestone; (b) per-swarm panel — each known swarm's roles
+      with local liveness/last-activity where local, git-derived last-known
+      state where remote; (c) pipeline flow — where every in-flight parcel
+      sits in the specifier..QA chain; (d) recent activity — merges to
+      main, closed tickets, current run identity.
+    - Read-only in phase 2: no control actions (no respawn, no gate
+      answers, no stop). Control endpoints remain a later phase, as
+      BL-065 already scoped.
+    - Live updates via the existing SSE stream — no page reload to see a
+      parcel advance; degraded gracefully to manual refresh if SSE drops.
+    - The UI is a static asset bundle served by the bridge (no build-time
+      network fetch, no CDN — self-contained, matching webview asset
+      practice). Browser-side code holds no secrets beyond the
+      user-supplied bearer token.
+
+  Architecture guardrails: the bridge stays a pure projection of
+  `.swarmforge/` + `backlog/` + git metadata (stateless, killable); UI code
+  is presentation only — every fact it shows must come from a bridge
+  endpoint, never from browser-side scraping or storage
+  (no localStorage/sessionStorage, consistent with webview rules).
+
+  Scope: extension/src (bridge endpoints extended for the git-derived
+  holistic projection: assignments, per-swarm state, done-by-milestone),
+  static UI assets under the extension, tests for every new projection
+  endpoint through the existing testable-module seams. The UI rendering
+  layer itself is presentation (unsuitable-boundary); its data contracts
+  are what get tested.
+
+  Sequencing: needs BL-090's swarm: assignment field to exist to show
+  multi-swarm assignment (single-swarm view works before that with
+  everything implicitly primary). BL-091 (second-swarm bring-up) DEPENDS ON
+  this ticket per operator decision.
+
+acceptance: |
+  Feature: one web page shows the holistic development state
+
+  Background:
+    Given a running swarm and the bridge started via its opt-in command
+
+  # BL-094 holistic-ui-01
+  Scenario: the bridge serves the UI
+    When a browser with the bearer token opens the bridge root URL
+    Then a single page renders the backlog board, per-swarm panel,
+      pipeline flow, and recent activity sections
+
+  # BL-094 holistic-ui-02
+  Scenario: every in-flight parcel is visible with stage and swarm
+    Given active tickets exist, some carrying a swarm assignment field
+    When the holistic view renders
+    Then each active ticket shows its assigned swarm and current pipeline
+      stage
+    And tickets without an assignment display as the primary swarm's
+
+  # BL-094 holistic-ui-03
+  Scenario: remote swarm state is git-derived and labeled
+    Given an active ticket assigned to another machine's swarm
+    When the holistic view renders on this machine
+    Then that parcel's state reflects the latest git-synced information
+    And it is visibly labeled as remote/last-synced rather than live
+
+  # BL-094 holistic-ui-04
+  Scenario: the view updates without reload
+    Given the holistic view is open in a browser
+    When a parcel advances a stage or a ticket closes into done/
+    Then the page reflects the change via the SSE stream without a reload
+
+  # BL-094 holistic-ui-05
+  Scenario: read-only and token-gated
+    When any request lacks the bearer token
+    Then it is rejected
+    And the UI offers no control action of any kind
+
+  # Non-behavioral gates:
+  #  - New projection endpoints (assignments, per-swarm, done-by-milestone)
+  #    unit-tested through the bridge's existing testable seams; UI is
+  #    presentation-only on top of them.
+  #  - Localhost-only binding and stateless-projection properties of BL-065
+  #    preserved (its suite stays green).
+  #  - No browser storage APIs; no external network fetches in the UI
+  #    bundle.

@@ -47,6 +47,20 @@ shared article remains in force.
    extension host environment only. Never written into the target working
    directory or any commit.
 
+## Diagrams (this project)
+Per the shared Diagrams rule, the diagrams this project maintains are:
+1. **Architecture diagram** — the two-layer system: extension host,
+   webview(s), the tmux substrate, `.swarmforge/` state, handoffd and the
+   queue helpers, and the boundaries between them (what talks to what, and
+   over which channel: postMessage, files, tmux socket, git).
+2. **Swarm workflow flow diagram** — the CURRENT parcel flow: intake at the
+   backlog root, specifier speccing to paused/, coordinator promotion and
+   assignment, the specifier→coder→cleaner→architect→hardender→documenter→QA
+   chain, and the QA-approved merge back to main. When the pipeline
+   topology or backlog flow changes, this diagram changes in the same
+   parcel.
+Both live under `docs/diagrams/` as Mermaid sources.
+
 ## Key Integration Surface
 Prove these against a real swarm install, in order, before UI polish:
 1. Launch a swarm against a target path by shelling to ./swarm.
