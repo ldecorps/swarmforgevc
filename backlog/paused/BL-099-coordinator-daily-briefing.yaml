@@ -44,6 +44,13 @@ description: |
        recommendation needing the human (capacity, model/effort, flags,
        hardware) each backed by its motivating number and expected
        effect. Nothing to recommend -> one line saying so.
+       PHONE CARRIER (operator, 2026-07-04): alongside the markdown, the
+       briefing flow emits a committed docs/briefings/<date>.json sidecar
+       carrying the structured data: the optimizer section (bottleneck
+       stage + dwell figures + each recommendation with its motivating
+       number), the metrics trends, and the cost/health figures — this
+       sidecar is what the BL-097 Action folds into backlog.json, so the
+       phone renders the optimizer's view as data, not scraped prose.
 
   Mechanism:
     - Extension host: a daily scheduler (configurable hour, default

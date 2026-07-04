@@ -64,6 +64,12 @@ description: |
       charts + a per-ticket history view from backlog.json; installable;
       serves last-cached data offline with a clear "as of <time>" banner;
       Mermaid used where a flow rendering is needed. Mobile-first layout.
+    - Optimizer card (operator, 2026-07-04): when backlog.json carries the
+      latest briefing sidecar (BL-099/BL-100 carrier), the app renders an
+      "optimizer" card: current bottleneck stage with its dwell numbers,
+      the coordinator's recommendations each with motivating figure, and
+      the briefing date it came from. Absent sidecar -> card hidden, no
+      error.
     - Read-only, no auth, no server state. The write path (reassign,
       close, queue actions offline as swarm-intake issues) is explicitly
       OUT of scope — noted as the intended later direction.
