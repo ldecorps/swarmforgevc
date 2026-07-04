@@ -2,7 +2,7 @@ id: BL-097
 title: backlog dashboard PWA — serverless read-only projection of backlog/ via Action-rendered backlog.json on Pages
 milestone: M6
 status: todo
-priority: 05
+priority: 02
 source: operator spec request 2026-07-04 ("Backlog dashboard app: read-only projection of backlog/ from git")
 depends_on: BL-096 (the Action reuses its metrics CLI so numbers agree everywhere)
 

@@ -2,7 +2,7 @@ id: BL-098
 title: durable chaser telemetry — count chases and nudges per role (found idle with work waiting)
 milestone: M5
 status: todo
-priority: 04
+priority: 02
 source: operator request 2026-07-04 ("can we count the number of nudges? when they are found idle whilst they had stuff to do")
 
 description: |

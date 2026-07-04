@@ -2,7 +2,7 @@ id: BL-096
 title: delivery metrics — ticket-count velocity, per-milestone burndown, cycle time; charted in the holistic web UI
 milestone: M5
 status: todo
-priority: 05
+priority: 02
 source: operator request 2026-07-04 ("introduce new metrics like velocity, so we can have burndown charts and things like that")
 depends_on: BL-094 (chart rendering; the metric computation layer itself may land first)
 
