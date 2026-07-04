@@ -53,7 +53,13 @@ description: |
     - backlog.json contains: generation timestamp + source SHA, the state
       board, per-ticket summary (id, title, milestone, priority, swarm
       assignment, status, spec/close dates where known), and the M1 metric
-      series (velocity, burndown per milestone, cycle-time stats).
+      series WITH TRENDS (operator requirement 2026-07-04): velocity,
+      burndown per milestone, and cycle-time stats each as a series plus
+      the BL-096 windowed trend (delta + direction), so the phone renders
+      direction, not just a number. Test-suite duration is EXCLUDED here:
+      its records are gitignored/machine-local (BL-078), so no git-derived
+      projection can see them — a CI duration publisher would be a
+      separate future ticket if wanted on the phone.
     - PWA client (static, hosted on the same Pages site): renders board +
       charts + a per-ticket history view from backlog.json; installable;
       serves last-cached data offline with a clear "as of <time>" banner;

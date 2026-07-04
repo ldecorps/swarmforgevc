@@ -21,6 +21,17 @@ description: |
       curve from day one.
     - Cycle time: per closed ticket, duration from spec creation to close;
       reported as recent median/percentiles alongside velocity.
+    - Test-suite duration trend: a time series + trend over the BL-078
+      duration records (extension/.test-durations.jsonl). LOCAL-ONLY
+      surface (briefing, bridge/web UI): the file is gitignored by design,
+      so this metric is absent from git-derived projections; report
+      "no local data" gracefully where the file is missing.
+    - TRENDS EVERYWHERE (operator requirement 2026-07-04): every metric
+      above is exposed not just as a current value but as a time SERIES
+      plus a windowed trend (delta and direction vs the prior window,
+      e.g. "velocity 4/wk, up from 3"; "median cycle time 9h, down 20%";
+      "suite 3.4 min, up 12% this week"). The trend computation is one
+      shared pure function applied uniformly to every series.
 
   Constraints:
     - Single source of truth: git history + backlog/ folder state ARE the
@@ -79,6 +90,20 @@ acceptance: |
     Then a burndown chart per milestone and a velocity chart render from
       the endpoint's JSON
     And the endpoint rejects requests without the bearer token
+
+  # BL-096 metrics-06
+  Scenario: every metric carries a trend
+    Given at least two windows of history exist for a metric
+    When the metrics surface is queried
+    Then each metric reports its series, current-window value, and the
+      delta and direction versus the prior window
+
+  # BL-096 metrics-07
+  Scenario: suite-duration trend from local records
+    Given an extension/.test-durations.jsonl with runs across several days
+    When the metrics surface is queried locally
+    Then a test-suite duration series and trend are reported
+    And a machine without the file reports "no local data" without error
 
   # BL-096 metrics-05
   Scenario: no new bookkeeping state

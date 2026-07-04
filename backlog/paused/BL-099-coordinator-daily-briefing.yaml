@@ -25,11 +25,15 @@ description: |
        documenter just wrote rather than re-explaining). Internal-only
        work (refactors, hardening, meta) is summarized in one line, never
        the headline.
-    2. Delivery metrics snapshot: velocity, per-milestone burndown
-       movement, cycle time (from the BL-096 metrics CLI when merged) and
-       a link to the dashboard / holistic UI story (BL-097 Pages URL and,
-       where relevant, BL-094). Metrics not yet available -> section says
-       so briefly; the briefing never blocks on them.
+    2. Delivery metrics as TRENDS, not snapshots (operator requirement
+       2026-07-04): velocity, time-to-ticket-completion (cycle time),
+       per-milestone burndown movement, and unit-test-suite duration —
+       each stated with its direction and delta vs the prior window from
+       the BL-096 trend surface (e.g. "velocity 4/wk, up from 3; median
+       completion 9h, down 20%; suite 3.4 min, up 12% — worth watching").
+       Plus a link to the dashboard / holistic UI story (BL-097 Pages URL
+       and, where relevant, BL-094). Metrics not yet available -> section
+       says so briefly; the briefing never blocks on them.
     3. Agent business: what each swarm/role is currently working, notable
        chase/nudge or stall counts (BL-098 telemetry when merged),
        anything needing the human (open needs-human gates, held tickets).
