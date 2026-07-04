@@ -44,6 +44,13 @@ typeset -a WORKTREE_NAMES=()
 typeset -a WORKTREE_PATHS=()
 typeset -a RECEIVE_MODES=()
 typeset -a IDLE_CLEAR_FLAGS=()
+# BL-090: multi-swarm identity. SWARM_NAME defaults to "primary" so an
+# existing single-swarm swarmforge.conf (no swarm_name/swarm_mode lines) is
+# untouched - it is, by definition, THE primary swarm. SWARM_MODE_PRIMARY is
+# only meaningful when SWARM_MODE=secondary (names the primary it defers to).
+SWARM_NAME="primary"
+SWARM_MODE="autonomous"
+SWARM_MODE_PRIMARY=""
 typeset -a EXTRA_CLI_ARGS=()
 typeset -A ROLE_INDEX=()
 typeset -A WORKTREE_INDEX=()
@@ -229,6 +236,35 @@ parse_config() {
         echo -e "${RED}Error:${RESET} Invalid config line $line_no: $line"
         exit 1
       fi
+      case "${fields[2]}" in
+        swarm_name)
+          if [[ -z "${fields[3]:-}" ]]; then
+            echo -e "${RED}Error:${RESET} Invalid config line $line_no: swarm_name requires a name"
+            exit 1
+          fi
+          SWARM_NAME="${fields[3]}"
+          ;;
+        swarm_mode)
+          case "${fields[3]:-}" in
+            autonomous)
+              SWARM_MODE="autonomous"
+              SWARM_MODE_PRIMARY=""
+              ;;
+            secondary)
+              if [[ -z "${fields[4]:-}" ]]; then
+                echo -e "${RED}Error:${RESET} Invalid config line $line_no: swarm_mode secondary requires a primary swarm name"
+                exit 1
+              fi
+              SWARM_MODE="secondary"
+              SWARM_MODE_PRIMARY="${fields[4]}"
+              ;;
+            *)
+              echo -e "${RED}Error:${RESET} Invalid config line $line_no: swarm_mode must be 'autonomous' or 'secondary <primary-name>'"
+              exit 1
+              ;;
+          esac
+          ;;
+      esac
       continue
     fi
 
@@ -324,6 +360,47 @@ parse_config() {
     echo -e "${RED}Error:${RESET} No windows defined in $CONFIG_FILE"
     exit 1
   fi
+
+  if [[ "$SWARM_MODE" == "secondary" && -n "${ROLE_INDEX[coordinator]:-}" ]]; then
+    echo -e "${RED}Error:${RESET} swarm_mode secondary must not declare a coordinator window (role '$SWARM_NAME' would both triage and be enslaved to '$SWARM_MODE_PRIMARY')"
+    exit 1
+  fi
+}
+
+# BL-090: single-triage invariant. The committed primacy marker
+# (swarmforge/primary, a plain-text file naming the current autonomous
+# swarm) is the cross-machine, git-transported source of truth for which
+# swarm is allowed to triage/promote. An autonomous launch whose OWN name
+# does not match an EXISTING marker fails fast rather than risk two
+# coordinators promoting/assigning concurrently. A missing marker means no
+# swarm has claimed primacy yet - the first autonomous launch is allowed
+# through (the operator commits the marker deliberately to make a transfer,
+# per the ticket's design; launch does not auto-commit one).
+check_primacy() {
+  if [[ "$SWARM_MODE" != "autonomous" ]]; then
+    return
+  fi
+
+  local marker_file="$SWARM_FORGE_DIR/primary"
+  if [[ ! -f "$marker_file" ]]; then
+    return
+  fi
+
+  local current_primary
+  current_primary="$(<"$marker_file")"
+  current_primary="${current_primary//$'\n'/}"
+  current_primary="${current_primary## }"
+  current_primary="${current_primary%% }"
+
+  if [[ -n "$current_primary" && "$current_primary" != "$SWARM_NAME" ]]; then
+    echo -e "${RED}Error:${RESET} swarm '$SWARM_NAME' cannot launch autonomous: the committed primacy marker names '$current_primary' as the current primary. Launch as 'config swarm_mode secondary $current_primary', or have the operator deliberately transfer primacy by committing a new $marker_file."
+    exit 1
+  fi
+}
+
+write_swarm_identity_file() {
+  printf 'swarm_name\t%s\nswarm_mode\t%s\nswarm_mode_primary\t%s\n' \
+    "$SWARM_NAME" "$SWARM_MODE" "$SWARM_MODE_PRIMARY" > "$STATE_DIR/swarm-identity"
 }
 
 write_sessions_file() {
@@ -378,6 +455,7 @@ prepare_workspace() {
   check_helper_scripts
   write_sessions_file
   write_roles_file
+  write_swarm_identity_file
 }
 
 write_tmux_env_file() {
@@ -725,6 +803,7 @@ detect_tmux_base_indexes
 initialize_git_repo
 ensure_runtime_git_excludes
 parse_config
+check_primacy
 check_backend_dependencies
 prepare_workspace
 prepare_worktrees
