@@ -1,12 +1,23 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 2, 2026
+**Last Updated:** July 4, 2026
 
 ## Overview
 
 A VS Code extension that runs a multi-agent coding swarm and brings the work back as a PR. It is a **standalone orchestrator** — inspired by Uncle Bob's SwarmForge agent-orchestration model, but it spawns and manages the agent processes itself rather than driving SwarmForge or tmux. The extension lives entirely in the forge codebase. It points at any target project, runs the swarm on it, and brings the work back as a PR. The target project carries only two swarm bootstrap files and otherwise has no knowledge of the swarm machinery.
 
 **Getting started?** See [Getting Started with SwarmForge VC](GettingStarted.md) for install, setup, and first run. This specification is the detailed reference.
+
+**Diagrams:** [Architecture diagram](diagrams/architecture.mmd) and
+[Swarm workflow flow diagram](diagrams/swarm-flow.mmd) (Mermaid sources)
+depict the system as actually built. Flagging a doc/code disagreement here
+per BL-095: the Overview paragraph above describes a "standalone
+orchestrator" that spawns and manages agent processes itself — the code
+does not do this. The extension drives an unmodified, separately-installed
+SwarmForge over tmux and reads its `.swarmforge/` state files (see
+`swarmforge/constitution/articles/local-engineering.prompt` and
+`swarmDiscovery.ts`'s own BL-066 note); it never spawns agent processes
+directly. The diagrams reflect the tmux-driving architecture.
 
 ---
 
@@ -264,6 +275,7 @@ Beside the Backlog pane, the extension shows a collapsible Metrics section that 
 - **Mean ticket time**: How long on average a ticket takes to move from backlog/active/ to backlog/done/. Displayed with the sample count (e.g., "mean 4h 12m over 23 tickets"). Derived from the target repo's backlog git history — no new data collection needed.
 - **Per-agent busyness**: For each role, the fraction of elapsed run time spent processing handoffs. Computed from `dequeued_at` and `completed_at` headers in `.swarmforge/handoffs/inbox/completed/` handoff files, plus any open interval from an in-process task. Shows 0% for idle agents and agents with no history.
 - **Retry count**: Total backward handoffs (messages where the sender sits later in the pipeline than the recipient — e.g., QA rejecting work back to coder). Displayed with per-ticket breakdown for tickets with retries, sorted by worst offenders.
+- **Suite duration**: How long the test suite takes to run (averaged over recent runs). Displayed with the latest duration, rolling mean, and sample count. Warns when the latest duration exceeds either the configured threshold (default 120 seconds, configurable via `swarmforge.metrics.suiteWarnSeconds`) or 2x the rolling mean, flagging potential performance creep. Tracks durations from all test runs across the main checkout and every role worktree.
 
 The metrics pane folds and unfolds like the Backlog pane and refreshes on the panel's normal cadence — no additional polling loop is introduced.
 
@@ -275,7 +287,7 @@ Every role can also run a headless command-line version of the same metrics:
 node extension/out/tools/swarm-metrics.js
 ```
 
-Runnable from the repo root or from any `.worktrees/<role>/` checkout. Prints a short plain-text summary — mean ticket time, one busyness line per role, retry total — and exits 0 with placeholder values on a fresh run. The CLI and panel are fed by the same underlying metrics computation module, so they always report the same values.
+Runnable from the repo root or from any `.worktrees/<role>/` checkout. Prints a short plain-text summary — mean ticket time, one busyness line per role, retry total, and suite duration with warnings — and exits 0 with placeholder values on a fresh run. The CLI and panel are fed by the same underlying metrics computation module, so they always report the same values.
 
 ---
 
@@ -455,6 +467,19 @@ To prevent context window exhaustion between parcels, the extension automaticall
 - **Configurable:** enabled by default via `swarmforge.contextClear.enabled` setting, with the settle window tunable via `swarmforge.contextClear.settleWindowSeconds`
 
 This is safe because the protocol is already context-free between parcels — every handoff body says "re-read your role and constitution," and durable state (backlog, handoffs, messages) lives on disk. Clearing at an idle moment costs nothing and buys headroom.
+
+### Cooldown-aware wake scheduling (rate-limit backoff)
+
+When an agent reports hitting a rate limit and provides a reset time (e.g., "tokens available again at 2pm"), the extension automatically avoids waking that agent during the cooldown window and resumes normal operation once the cooldown expires:
+
+- **Detection:** the extension listens for rate-limit signals from agents (reported through the monitoring/logging interface) that include a reset timestamp
+- **Suppression:** while a role has an active cooldown window, the watchdog's chase/wake nudges for that role are suppressed — no pointless retry attempts during the quiet period
+- **Automatic resume:** once the cooldown timestamp passes, normal chase and wake behavior resumes automatically
+- **Visibility:** the tile's liveness indicator and diagnostics surface which roles are cooling down and when they'll resume, so the human understands why a seemingly-idle agent is intentionally quiet
+- **Resilience:** cooldown state persists across extension restarts — if the extension reloads before cooldown expires, wake suppression still applies until the deadline
+- **Isolation:** cooldown affects only the role that hit the limit; other agents continue normal chase/wake behavior uninterrupted
+
+This prevents the "retry storm" where a rate-limited agent gets nudged repeatedly while unable to act, saving tokens and clearing the notification noise during the windowed recovery period.
 
 ## Per-Agent Lifecycle Control
 

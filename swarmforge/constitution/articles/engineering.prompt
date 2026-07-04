@@ -60,6 +60,16 @@
 - Run the relevant local verification command before handoff whenever the
   project has one.
 
+## Diagrams
+- The project's documentation must include an up-to-date architecture
+  diagram, plus any other diagram relevant to understanding the system (the
+  project-specific engineering article names which). The documenter owns
+  keeping them current: whenever a parcel changes what a diagram depicts,
+  the diagram is updated in that documentation pass.
+- Diagrams live under `docs/` in a text-based source format (e.g. Mermaid)
+  so changes diff, review, and merge like code; no binary-only diagram
+  sources.
+
 ## Guardrails
 - Do not edit mutation testing or Gherkin acceptance mutation manifests by hand;
   approved mutation tools update those manifests in their normal runs.
