@@ -31,6 +31,10 @@ description: |
        each stated with its direction and delta vs the prior window from
        the BL-096 trend surface (e.g. "velocity 4/wk, up from 3; median
        completion 9h, down 20%; suite 3.4 min, up 12% — worth watching").
+       Plus delivery forecasts (BL-096): estimated dates (p50/p85) for
+       in-flight and next-up tickets and each active milestone, WITH a
+       "changed since yesterday" call-out when an ETA moved materially —
+       slipping dates are said plainly, never silently re-baselined.
        Plus a link to the dashboard / holistic UI story (BL-097 Pages URL
        and, where relevant, BL-094). Metrics not yet available -> section
        says so briefly; the briefing never blocks on them.

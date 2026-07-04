@@ -56,7 +56,10 @@ description: |
       series WITH TRENDS (operator requirement 2026-07-04): velocity,
       burndown per milestone, and cycle-time stats each as a series plus
       the BL-096 windowed trend (delta + direction), so the phone renders
-      direction, not just a number. Test-suite duration is EXCLUDED here:
+      direction, not just a number. Also the BL-096 delivery forecasts:
+      every open ticket shows its p50/p85 estimated delivery date on the
+      board, and each milestone shows its projected completion date on
+      the burndown chart (labeled as count-based estimates). Test-suite duration is EXCLUDED here:
       its records are gitignored/machine-local (BL-078), so no git-derived
       projection can see them — a CI duration publisher would be a
       separate future ticket if wanted on the phone.
