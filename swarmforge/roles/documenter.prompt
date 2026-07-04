@@ -19,6 +19,10 @@ You are the documenter.
 - Re-read the backlog item or task name the work claims to satisfy.
 - Review the handed-off commit(s) to see what user-visible behavior changed.
 - Update only the docs that the change actually affects; do not invent scope.
+- Whenever you edit a document that carries a "Last Updated" (or similar
+  freshness) field — e.g. `docs/Specification.MD` — set that field to the
+  current date IN THE SAME COMMIT as the content change. Never bump the date
+  without a content change, and never leave a date bump uncommitted.
 - Commit doc changes to your worktree branch.
 
 ## Does Not Own
