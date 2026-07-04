@@ -1,0 +1,96 @@
+id: BL-101
+title: headless secondary swarms on small Linux hosts — Raspberry Pi and VPS bring-up (systemd, headless auth, throughput-aware assignment)
+milestone: M6
+status: todo
+priority: 05
+source: operator request 2026-07-04 (Pi feasibility confirmed; operator also has an idle VPS)
+depends_on: BL-090, BL-091, BL-092 (mode + assignment, remote bring-up learnings, wake-up bridge)
+
+description: |
+  Turn any always-on headless Linux box into a fire-and-forget secondary
+  swarm ("throughput brick"). Two concrete reference targets, one recipe:
+    - Raspberry Pi 5 (ARM64; 8GB minimum, NVMe/USB-SSD storage REQUIRED —
+      SD cards are excluded for durability and speed).
+    - The operator's existing VPS (x86_64; 4GB+ RAM for a full 7-role
+      pack, fewer roles on smaller instances).
+
+  Behaviors:
+    - Bring-up doc + a small provisioning script: install pinned substrate
+      (tmux, babashka aarch64/x86_64, Node + claude CLI, git, gh, the
+      GitHub Actions self-hosted runner for that arch), clone the repo,
+      write the secondary-mode conf (BL-090: swarm_mode secondary
+      <primary>, swarm_name unique per box), register the runner with a
+      per-host label so BL-092 workflows target the right box.
+    - systemd units: one for the swarm (launch at boot, clean stop on
+      shutdown via the existing stop path), one for the Actions runner.
+      A crashed/rebooted box resumes as a working secondary with no human
+      attention; durable queue state (git + inboxes) makes reboot loss-free.
+    - Headless auth: the claude CLI authenticates via environment/config
+      on the box (no interactive browser login required after initial
+      provisioning); git push auth via a credential scoped to THIS repo
+      only (fine-grained PAT or deploy key) — never a broad account token.
+    - Security posture (VPS especially, it is internet-facing): the swarm
+      needs OUTBOUND connections only (Claude API, git/GitHub, runner
+      long-poll). The provisioning script must not open any inbound port;
+      document that SSH is the only inbound service and key-only. Secrets
+      (API key, PAT) live in the unit environment/root-owned files, never
+      in the repo clone.
+    - Throughput-aware assignment guidance (coordinator prompt note, this
+      parcel): small hosts run CPU-bound gates (full suite, mutation) 2-4x
+      slower, while API-bound stages run at full speed — so the
+      coordinator SHOULD prefer assigning mutation-heavy/hardener-long
+      tickets to the fastest swarm and ordinary tickets to the bricks.
+      Guidance, not a hard rule; assignment stays the coordinator's call.
+    - Verified on both reference targets before close: one parcel worked
+      end-to-end (assignment -> pipeline -> QA -> push) on the Pi and one
+      on the VPS.
+
+  Scope: docs (bring-up guide extending BL-091's), provisioning script +
+  systemd unit files under swarmforge/deploy/ (new, script-tested where
+  logic exists), coordinator prompt guidance line, no extension changes.
+
+acceptance: |
+  Feature: an always-on headless Linux box runs a secondary swarm unattended
+
+  Background:
+    Given BL-090 modes, BL-091 bring-up, and BL-092 wake-ups are merged
+
+  # BL-101 headless-01
+  Scenario: provisioning yields a working secondary
+    Given a fresh supported host (Pi 5 8GB+SSD, or x86_64 VPS 4GB+)
+    When the documented provisioning steps run
+    Then the swarm and runner systemd units are enabled and running
+    And the box appears as a registered secondary with its own swarm_name
+
+  # BL-101 headless-02
+  Scenario: reboot is loss-free and unattended
+    Given the box is mid-parcel when power is lost
+    When the box boots again
+    Then the swarm relaunches via systemd without human action
+    And the in-flight parcel resumes from durable queue state
+
+  # BL-101 headless-03
+  Scenario: outbound-only network posture
+    When the provisioned box's listening sockets are inspected
+    Then no service beyond SSH accepts inbound connections
+    And swarm operation proceeds normally
+
+  # BL-101 headless-04
+  Scenario: repo-scoped credentials only
+    When the box's git credential is inspected
+    Then it grants access to this repository only
+    And no secret exists inside the repo clone
+
+  # BL-101 headless-05
+  Scenario: end-to-end parcel on each reference target
+    Given a ticket assigned to the box's swarm
+    When the parcel completes its pipeline on that box
+    Then the QA-approved merge reaches the shared main from that box
+    And this is demonstrated once on ARM64 (Pi) and once on x86_64 (VPS)
+
+  # Non-behavioral gates:
+  #  - Provisioning script logic covered by the swarm-scripts test
+  #    pattern where testable (conf writing, unit generation); the
+  #    hardware walkthroughs are documented manual steps.
+  #  - All substrate installs pinned per the engineering article (no
+  #    "latest").
