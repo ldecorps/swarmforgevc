@@ -1,0 +1,106 @@
+id: BL-086
+title: BUG — extension never activates on editor startup, so a running swarm is not attached until a manual command
+milestone: M2
+status: todo
+priority: 03
+assigned_to: coder
+
+description: |
+  DEFECT (user report, 2026-07-03): when the extension starts (VS Code /
+  Cursor opens), it should attach to the running agents if any — today it
+  does not. Tiles stay dark until the operator manually runs a SwarmForge
+  command.
+
+  Root cause (confirmed in source, distinct from BL-080/BL-084): every
+  entry in extension/package.json `activationEvents` is `onCommand:...`.
+  The extension is never activated by editor startup at all, so the
+  activation re-attach branch (extension/src/extension.ts ~L559-603, the
+  BL-080 poller that BL-084 makes adaptive) cannot run until the user
+  happens to invoke some SwarmForge command. BL-080/BL-084 fix what happens
+  AFTER activation; nothing today causes activation on startup.
+
+  Wanted behavior (user-confirmed decisions, 2026-07-03):
+    - Activate on editor startup (the standard `onStartupFinished` event —
+      standard VS Code API, works in Cursor) in addition to the existing
+      command events.
+    - Startup activation is ATTACH-ONLY: if a target is set and a live swarm
+      is detected (reusing the existing readiness wait — BL-084's adaptive
+      budget once merged), attach the panel automatically; otherwise do
+      NOTHING visible. In particular the "previous run found, resume?"
+      prompt must NOT fire on startup activation — otherwise every editor
+      start for a target with prior runs nags with a popup. The resume
+      offer stays available on the explicit command-driven paths exactly as
+      today.
+    - The startup auto-attach opens the panel WITHOUT stealing focus
+      (preserveFocus-style background reveal): tiles are live when the
+      operator switches to the panel, but the editor they opened into keeps
+      focus. Explicit commands (e.g. swarmforge.openPanel) keep their
+      current foreground reveal.
+    - Attaching is read-only with respect to the swarm: it must never
+      launch, restart, or signal any agent process.
+
+  Scope: extension only — extension/package.json activationEvents, the
+  activation branch in extension/src/extension.ts, SwarmPanel reveal-focus
+  plumbing if needed, plus tests through the existing seams. No SwarmForge
+  changes; two-layer rule unchanged (host detects/attaches, webview just
+  renders).
+
+  OVERLAP / SEQUENCING: BL-084 (in flight) edits the exact same activation
+  re-attach branch and its wait budget — coordinator must promote this only
+  AFTER BL-084 merges, and the coder should build on BL-084's adaptive
+  wait rather than the flat 3s constants.
+
+  Interim mitigation (NOT a fix): run `SwarmForge: Open Panel` after opening
+  the editor.
+
+acceptance: |
+  Feature: a running swarm is attached automatically when the editor starts
+
+  Background:
+    Given a target repo is configured for the extension
+
+  # BL-086 startup-attach-01
+  Scenario: editor starts while a swarm is live
+    Given a live swarm is running for the target
+    When the editor finishes starting up
+    Then the extension activates without any user command
+    And the panel attaches with live tiles for the running agents
+    And no agent process is launched, restarted, or signalled
+
+  # BL-086 startup-attach-02
+  Scenario: startup attach does not steal focus
+    Given a live swarm is running for the target
+    When the startup auto-attach opens the panel
+    Then the editor/view the operator opened into keeps focus
+    And the panel tiles are already live when the operator switches to it
+
+  # BL-086 startup-attach-03
+  Scenario: no live swarm at startup stays silent
+    Given no live swarm is running for the target
+    And prior run state exists for the target
+    When the editor finishes starting up
+    Then no resume prompt and no other popup is shown
+    And no panel is opened
+
+  # BL-086 startup-attach-04
+  Scenario: no target configured stays inert
+    Given no target repo is configured
+    When the editor finishes starting up
+    Then activation completes without errors, prompts, or panels
+
+  # BL-086 startup-attach-05
+  Scenario: explicit command paths are unchanged
+    Given no live swarm is running and prior run state exists
+    When the operator invokes an explicit SwarmForge command entry path
+    Then the existing behavior (including the resume offer and foreground
+      panel reveal) is exactly as before this change
+
+  # Non-behavioral gates:
+  #  - `onStartupFinished` is added alongside (not replacing) the existing
+  #    onCommand activation events; standard VS Code API only (Cursor-safe).
+  #  - Startup activation must not block editor startup: readiness waiting
+  #    stays asynchronous, reusing the BL-084 adaptive wait (no new flat
+  #    timeouts).
+  #  - Unit tests cover the startup-vs-command gating of the resume prompt
+  #    through the existing isSwarmReady/waitForSwarmReady seams.
+  #  - BL-080/BL-084 suites stay green.

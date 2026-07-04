@@ -1,0 +1,104 @@
+id: BL-087
+title: BUG — chaser respawns a live, actively-working agent (liveness false positive)
+milestone: M2
+status: todo
+priority: 01
+source: backlog root intake respawn-runs-launch-script-in-host-freezes-extension.md (operator diagnosis, 2026-07-03)
+
+description: |
+  DEFECT (operator + live process-level diagnosis, 2026-07-03): the chaser
+  monitor auto-fired respawnAgent('coder') twice against a coder whose pane
+  demonstrably had a live, actively-working agent (spinner advancing, tokens
+  streaming). The first fire happened on a healthy, unfrozen host, so this is
+  a genuine liveness misjudgment, not just post-freeze stale state.
+
+  Context: the respawn EXECUTION defect from the same incident (respawnAgent
+  ran the launch script in-host via spawnSync with no timeout, wedging the
+  extension host and spawning a duplicate out-of-tmux agent) is ALREADY FIXED
+  on main in a16e4d8 with regression tests: respawnAgent now send-keys the
+  launch command into the role's tmux pane, and runCommand has a bounded
+  spawnSync timeout. This item covers the remaining defect: the chaser's
+  DECISION to respawn was wrong in the first place.
+
+  Root cause (confirmed in source):
+    - getLiveness (extension/src/extension.ts ~L186) reads
+      .swarmforge/heartbeat/<role>; that directory does not exist on this
+      machine, so computeLiveness always returns 'unknown'.
+    - decideItemAction (extension/src/swarm/inboxChaser.ts) treats liveness
+      'dead' | 'unknown' | 'stuck' as respawn-worthy for any inbox/new item
+      older than chaseTimeoutSeconds. It never consults getLastActivityMs —
+      the BL-067 pane-capture/outbox activity check guards only the
+      in_process reconciler (decideStuckAction), not the inbox-new path.
+    - The 'respawned' branch writes no chase count and has no cooldown, so
+      the same stale item re-triggers respawn on every sweep (the observed
+      respawn loop).
+  Net effect: absent heartbeats (the normal state today), ANY role with a
+  queued inbox item older than the chase timeout gets respawned repeatedly,
+  no matter how alive it visibly is.
+
+  Wanted behavior:
+    - Absence of heartbeat evidence must never, by itself, justify a respawn.
+      Respawn requires positive evidence of death/stuckness AND no recent
+      activity: a role whose pane capture changed or whose outbox was written
+      within the stuck threshold is never respawned (extends BL-067's rule
+      from "never chased" to "never respawned").
+    - A role not showing recent activity gets escalating treatment (wake-up
+      chase first, respawn only as a later resort), and a respawn for a given
+      role is rate-limited (cooldown) so a misjudgment can never loop.
+    - The decision seam stays pure/testable (decideItemAction-style function
+      taking activity + liveness + history), per the testable-module rule.
+
+  Scope: extension/src/swarm/inboxChaser.ts (decideItemAction and the
+  inbox-new sweep path), extension/src/extension.ts (chaser callbacks/config
+  wiring), extension/src/watchdog/chaserMonitor.ts if the adapter surface
+  changes. Fake-adapter test pattern already exists. No SwarmForge changes.
+
+  Links: the in-host-freeze symptom cluster this misjudgment kept re-triggering
+  was reported as parts of BL-085 (tile typing dead) and BL-084 (not
+  re-attaching); their fixes stand on their own, but this item removes the
+  recurring trigger. Overlap note for the coordinator: touches the same
+  extension.ts activation/wiring area as in-flight BL-084 and paused BL-086 —
+  sequence accordingly.
+
+acceptance: |
+  Feature: chaser never respawns a live agent
+
+  Background:
+    Given a role has a queued inbox/new handoff older than the chase timeout
+
+  # BL-087 no-false-respawn-01
+  Scenario: recent pane or outbox activity blocks respawn
+    Given the role's last observed activity is within the stuck threshold
+    And no heartbeat file exists for the role
+    When the chaser sweep evaluates the role's queued item
+    Then the role is not respawned
+    And at most a wake-up chase is sent
+
+  # BL-087 no-false-respawn-02
+  Scenario: missing heartbeat alone is not evidence of death
+    Given no heartbeat file exists for the role
+    And the role's last observed activity is within the stuck threshold
+    When the chaser sweep runs
+    Then no respawn is triggered for the role
+
+  # BL-087 no-false-respawn-03
+  Scenario: a genuinely unresponsive role is chased before it is respawned
+    Given the role shows no pane or outbox activity beyond the stuck threshold
+    When successive chaser sweeps evaluate the role's queued item
+    Then the role first receives wake-up chases
+    And a respawn is triggered only after the chase escalation is exhausted
+
+  # BL-087 no-false-respawn-04
+  Scenario: respawn cannot loop
+    Given a respawn was just triggered for the role
+    When the next chaser sweeps evaluate the same still-stale queued item
+    Then no further respawn fires for that role until the respawn cooldown
+      has elapsed
+
+  # Non-behavioral gates:
+  #  - decideItemAction (or its successor) remains a pure function; all four
+  #    scenarios are covered by unit tests through the existing fake-adapter
+  #    seams (no VS Code, no live tmux).
+  #  - a16e4d8's respawnAgent/runCommand regression tests stay green.
+  #  - BL-067 chase-suppression behavior (active roles never chased) is
+  #    preserved and now also covered against respawn.
