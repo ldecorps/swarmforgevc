@@ -37,6 +37,13 @@ description: |
     3. Agent business: what each swarm/role is currently working, notable
        chase/nudge or stall counts (BL-098 telemetry when merged),
        anything needing the human (open needs-human gates, held tickets).
+    4. Optimizer recommendations (coordinator's swarm-optimizer duty,
+       role prompt 2026-07-04): bottleneck stage with its dwell numbers
+       (BL-102 report when merged), what the coordinator already adjusted
+       within its powers (assignment, promotion order), and any
+       recommendation needing the human (capacity, model/effort, flags,
+       hardware) each backed by its motivating number and expected
+       effect. Nothing to recommend -> one line saying so.
 
   Mechanism:
     - Extension host: a daily scheduler (configurable hour, default
