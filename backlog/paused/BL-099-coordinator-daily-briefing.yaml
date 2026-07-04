@@ -7,11 +7,14 @@ source: operator request 2026-07-04 ("coordinator to write and send human a dail
 
 description: |
   Once a day the coordinator writes the human a short briefing and sends
-  it. Operator-confirmed decisions (2026-07-04): delivery = email (reusing
-  the merged BL-073 notification mechanism) PLUS a durable archive
-  committed under docs/briefings/; trigger = the extension host's timer
-  (roles must not self-schedule), which delivers a "briefing due" prompt
-  to the coordinator pane once per day.
+  it. Operator-confirmed decisions (2026-07-04): delivery = email via
+  RESEND, reusing the merged BL-073 client as-is
+  (extension/src/notify/resendClient.ts; API key stays in extension-host
+  secrets per the constitution — never in the repo, never visible to the
+  coordinator agent, which asks the HOST to send rather than holding the
+  key) PLUS a durable archive committed under docs/briefings/; trigger =
+  the extension host's timer (roles must not self-schedule), which
+  delivers a "briefing due" prompt to the coordinator pane once per day.
 
   Content contract — ordered by importance:
     1. BUSINESS FEATURES DELIVERED (the headline): user-visible behavior
@@ -44,12 +47,16 @@ description: |
       docs/briefings/YYYY-MM-DD.md, commit and push. This is an explicit
       NARROW exception to "the coordinator never commits target code":
       the coordinator may commit ONLY under docs/briefings/, using the
-      BL-090 push-retry discipline. Then send the email via the BL-073
-      mechanism (subject carries the date + headline feature) and resume
-      normal duties.
+      BL-090 push-retry discipline. The coordinator's job ends at the
+      committed file; it never holds email credentials.
+    - Extension host sends: after firing briefing-due, the host watches
+      for the new docs/briefings/<date>.md and, once present, sends its
+      content via the existing Resend client (subject carries the date +
+      the headline feature). Exactly one send per briefing file,
+      idempotent across host restarts.
     - Email failure never loses the briefing: the committed file is the
-      source of truth; a failed send is retried on the next briefing-due
-      or surfaced as needs-human.
+      source of truth; a failed Resend send is retried on the next host
+      activation or surfaced as needs-human.
 
   Dependencies: none hard. BL-096/097/098 enrich sections 2-3 as they
   merge; the briefing ships with graceful gaps before then. BL-097's
@@ -81,11 +88,17 @@ acceptance: |
     And internal-only work appears only as a single summary line
 
   # BL-099 briefing-03
-  Scenario: briefing is archived then emailed
-    When the coordinator completes a briefing
-    Then docs/briefings/<date>.md is committed and pushed
-    And an email is sent via the existing notification mechanism
+  Scenario: briefing is archived then emailed by the host
+    When the coordinator commits docs/briefings/<date>.md
+    Then the extension host sends its content via the Resend client
     And the email subject contains the date and the headline feature
+    And the coordinator process never accesses the Resend API key
+
+  # BL-099 briefing-07
+  Scenario: one email per briefing file
+    Given a briefing file that was already sent
+    When the host restarts or re-scans
+    Then no duplicate email is sent for that file
 
   # BL-099 briefing-04
   Scenario: metrics gaps do not block
