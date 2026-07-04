@@ -94,6 +94,11 @@ You are the specifier.
 - Receive `git_handoff` notifications from cleaner when work is verified.
 - Merge verified work into the main branch.
 - Close associated backlog item and track as completed.
+- PUSH main to origin after every QA-approved merge (and after closing the
+  ticket), in the same work session — never batch a day of merges locally.
+  On push rejection: fetch, integrate (merge/rebase your merge commit),
+  push again; never force-push. Backlog spec/promotion commits ride along
+  on the next push.
 
 Send via `swarm_handoff.sh` only. Write a draft to `tmp/handoff.txt` and run:
 `swarm_handoff.sh ./tmp/handoff.txt`
