@@ -1,0 +1,92 @@
+id: BL-098
+title: durable chaser telemetry — count chases and nudges per role (found idle with work waiting)
+milestone: M5
+status: todo
+priority: 04
+source: operator request 2026-07-04 ("can we count the number of nudges? when they are found idle whilst they had stuff to do")
+
+description: |
+  The chaser already detects both flavors of "idle with stuff to do":
+    - CHASE: an inbox/new handoff sat unread past the chase timeout and the
+      role got a wake-up (chaseCount in a .chase sidecar).
+    - NUDGE: an in_process item sat without pane/outbox activity past the
+      stuck threshold and the role got nudged (nudgeCount in a .nudge
+      sidecar) — this also covers "finished but never sent the handoff",
+      since such a parcel is exactly a stale in_process with no outbox
+      write.
+  But the counts are EPHEMERAL: sidecars live next to the queue item and
+  are abandoned or lost when the item completes (orphaned .nudge files in
+  emptied in_process dirs are visible today — harmless, scanners filter on
+  .handoff, but the data dies there). Nothing can answer "how many nudges
+  did each role need this week?"
+
+  Wanted behavior:
+    - Every chase, nudge, dead-letter, and respawn decision the chaser
+      makes is appended as one JSON line to a durable local log under the
+      target's .swarmforge/telemetry/ (e.g. chaser-YYYY-MM.jsonl): role,
+      event type, handoff id, count-so-far, timestamp. Append-only, never
+      rewritten; not committed to git.
+    - Sidecar lifecycle closes cleanly: when an item completes, its final
+      chase/nudge counts are already in the log, and the sidecar is
+      removed with (or moved alongside) its item — no more orphans.
+    - Counting surface: the metrics module (BL-071/BL-096 family) gains
+      per-role totals and recent-window rates (chases/nudges per role per
+      day) read from the telemetry log; exposed via the existing metrics
+      CLI and the bridge JSON (BL-065 posture), and rendered as a small
+      per-role table/sparkline in the BL-094 UI's swarm panel when
+      present. Absent/empty telemetry renders as zeros, not errors.
+    - This log is deliberately the seed of the event stream BL-097
+      deferred (holder dwell / bounce metrics): design the JSONL record
+      shape so stage-transition events can be added later without
+      breaking readers (a type field, additive schema).
+
+  Scope: extension/src/swarm/inboxChaser.ts (emit events at the decision
+  points — pure decision functions stay pure; the append is adapter-side),
+  chaserMonitor/extension.ts wiring (log adapter), queue-helper or chaser
+  sidecar cleanup, metrics module + bridge + CLI additions, BL-094 UI
+  table. All new logic unit-tested through fake adapters (fake fs/clock);
+  no live tmux in tests.
+
+acceptance: |
+  Feature: chases and nudges are durably counted per role
+
+  # BL-098 telemetry-01
+  Scenario: a chase is logged when a role ignores queued mail
+    Given a role's inbox/new handoff older than the chase timeout
+    When the chaser sweep sends that role a wake-up chase
+    Then one chase event line for that role and handoff is appended to the
+      telemetry log
+
+  # BL-098 telemetry-02
+  Scenario: a nudge is logged when held work shows no activity
+    Given a role's in_process item stale past the stuck threshold
+    When the chaser nudges the role
+    Then one nudge event line for that role and item is appended
+
+  # BL-098 telemetry-03
+  Scenario: completing an item leaves no orphaned sidecars
+    Given an in_process item that accumulated nudge counts
+    When the role completes it via its done helper
+    Then no .nudge or .chase sidecar for that item remains in the inbox
+      tree
+    And the item's final counts remain available in the telemetry log
+
+  # BL-098 telemetry-04
+  Scenario: per-role counts are queryable
+    Given telemetry logs containing chases and nudges across several roles
+    When the metrics CLI or bridge endpoint is asked for chaser telemetry
+    Then it reports, per role, total chases, total nudges, and a
+      recent-window daily rate matching the logged events
+
+  # BL-098 telemetry-05
+  Scenario: no telemetry yet reads as zero
+    Given a target with no telemetry directory
+    When the metrics surface is queried
+    Then all chase/nudge counts report zero without error
+
+  # Non-behavioral gates:
+  #  - JSONL records carry a type field; readers ignore unknown types
+  #    (forward-compatible with later stage-transition events for BL-097
+  #    dwell/bounce).
+  #  - Chaser decision functions remain pure; logging happens in adapters.
+  #  - Existing chaser suites (BL-067, BL-087, BL-088) stay green.
