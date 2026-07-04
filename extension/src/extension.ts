@@ -22,7 +22,8 @@ import { resolveRunName } from './run/resolveRunName';
 import { startBounceWatcher, BounceType } from './swarm/bounceWatcher';
 import { startChaserMonitor, stopChaserMonitor, buildRoleInboxes } from './watchdog/chaserMonitor';
 import type { ChaserMonitorConfig, ChaserCallbacks } from './watchdog/chaserMonitor';
-import { readTmuxSocket, paneTarget, getPaneBaseIndex, sendKeys, capturePane, readSwarmRoles, respawnAgent } from './swarm/tmuxClient';
+import { readTmuxSocket, paneTarget, getPaneBaseIndex, sendKeys, capturePane, readSwarmRoles, respawnAgent, sleepSync } from './swarm/tmuxClient';
+import { sendInstructionVerified } from './swarm/verifiedInject';
 import { trackPaneActivity, outboxNewestMtimeMs } from './watchdog/paneActivity';
 import { setStuckEscalation, escalatedStuckRoles } from './watchdog/stuckEscalations';
 import { scanInProcess, scanInboxNew } from './swarm/inboxChaser';
@@ -491,8 +492,21 @@ function startOrRestartIdleClearMonitor(targetPath: string, context: vscode.Exte
       if (!target) {
         return;
       }
-      sendKeys(socketPath, target, '/clear', true);
-      sendKeys(socketPath, target, 'Enter');
+      // BL-093: verify /clear actually submits instead of fire-and-forget -
+      // a lost Enter here would leave "/clear" sitting typed-but-unsubmitted
+      // in the role's input box.
+      sendInstructionVerified(
+        {
+          capturePane: () => {
+            const captured = capturePane(socketPath, target);
+            return captured.exitCode === 0 ? captured.stdout : '';
+          },
+          sendLiteral: (text: string) => sendKeys(socketPath, target, text, true).exitCode === 0,
+          sendEnter: () => sendKeys(socketPath, target, 'Enter'),
+          wait: sleepSync,
+        },
+        '/clear'
+      );
     },
     log: (message: string): void => {
       outputChannel.appendLine(message);

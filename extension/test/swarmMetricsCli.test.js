@@ -83,13 +83,48 @@ test('formatOverview prints a short plain-text overview with mean time, busyness
   };
   const text = formatOverview(metrics, ['coder', 'cleaner']);
 
-  assert.match(text, /Mean ticket time: 4h 12m over 23 ticket/);
-  assert.match(text, /coder 45%/);
-  assert.match(text, /cleaner 2%/);
-  assert.match(text, /Retries: 3 total/);
-  assert.match(text, /BL-101 x2/);
-  assert.match(text, /Suite duration: 33s \(mean 33s over 5 run/);
-  assert.equal(text.split('\n').length <= 6, true, 'expected a handful of lines, got more');
+  // Exact-equality (not just substring match) so the busyness ", " join,
+  // the "(worst: ...)" suffix join, and the line-join separators are all
+  // pinned down - a substring-only regex can't tell '', ' ' apart.
+  assert.equal(
+    text,
+    [
+      'Mean ticket time: 4h 12m over 23 ticket(s)',
+      'Busyness: coder 45%, cleaner 2%',
+      'Retries: 3 total (worst: BL-101 x2, BL-102 x1)',
+      'Suite duration: 33s (mean 33s over 5 run(s))',
+    ].join('\n')
+  );
+});
+
+test('formatOverview lists only the top 3 tickets by retry count, sorted descending', () => {
+  const metrics = {
+    meanTicketTimeMs: null,
+    ticketSampleCount: 0,
+    busyness: {},
+    retryTotal: 10,
+    retryByTicket: { 'BL-1': 1, 'BL-2': 5, 'BL-3': 3, 'BL-4': 2, 'BL-5': 4 },
+    suiteDuration: { latestMs: null, meanMs: null, sampleCount: 0, warn: false },
+  };
+  const text = formatOverview(metrics, []);
+  const retryLine = text.split('\n')[2];
+
+  assert.equal(retryLine, 'Retries: 10 total (worst: BL-2 x5, BL-5 x4, BL-3 x3)');
+});
+
+test('formatOverview omits the "(worst: ...)" suffix entirely when there are no retries', () => {
+  const metrics = {
+    meanTicketTimeMs: null,
+    ticketSampleCount: 0,
+    busyness: {},
+    retryTotal: 0,
+    retryByTicket: {},
+    suiteDuration: { latestMs: null, meanMs: null, sampleCount: 0, warn: false },
+  };
+  const text = formatOverview(metrics, []);
+  const retryLine = text.split('\n')[2];
+
+  assert.equal(retryLine, 'Retries: 0 total');
 });
 
 test('formatOverview on a fresh run prints placeholders, never NaN/Infinity/undefined', () => {
@@ -106,7 +141,8 @@ test('formatOverview on a fresh run prints placeholders, never NaN/Infinity/unde
   assert.match(text, /Mean ticket time: —/);
   assert.match(text, /coder 0%/);
   assert.match(text, /Retries: 0 total/);
-  assert.match(text, /Suite duration: — \(0 runs\)/);
+  const suiteLine = text.split('\n')[3];
+  assert.equal(suiteLine, 'Suite duration: — (0 runs)', 'no WARN prefix and no stray text before "Suite duration"');
   assert.doesNotMatch(text, /NaN|Infinity|undefined/);
 });
 

@@ -77,6 +77,12 @@ function writeChaseCount(handoffFilePath, count) {
 function respawnCooldownPath(inboxNewDir) {
     return path.join(path.dirname(inboxNewDir), 'respawn-cooldown.json');
 }
+// The explicit 'utf-8' encoding argument on the read/write pair below is
+// unkillable by mutation to '' for this JSON-of-a-number payload: Node's
+// Buffer-to-string coercion (which JSON.parse and the writeFileSync string
+// path both fall back to) already defaults to utf8, so both encodings
+// produce byte-identical results here. Kept for explicitness, not
+// testability.
 function readRespawnCooldownUntilMs(inboxNewDir) {
     try {
         const data = JSON.parse(fs.readFileSync(respawnCooldownPath(inboxNewDir), 'utf-8'));
@@ -117,6 +123,18 @@ function scanInboxNew(inboxNewDir) {
 // respawn once chase attempts are exhausted (maxChases) AND liveness itself
 // is not the explicit 'alive' state (which, like fresh activity, is treated
 // as positive evidence and dead-letters instead of respawning).
+function isUnresponsiveLiveness(liveness) {
+    return liveness === 'dead' || liveness === 'unknown' || liveness === 'stuck';
+}
+// Split out of decideItemAction (CRAP): the chase-exhausted decision once a
+// role shows no recent activity - respawn only for a liveness reading that
+// is itself evidence of unresponsiveness, dead-letter otherwise.
+function decideStaleItemAction(chaseCount, config, liveness) {
+    if (chaseCount < config.maxChases) {
+        return 'chased';
+    }
+    return isUnresponsiveLiveness(liveness) ? 'respawned' : 'dead-lettered';
+}
 function decideItemAction(itemMtimeMs, chaseCount, nowMs, config, liveness, lastActivityMs) {
     const ageSeconds = (nowMs - itemMtimeMs) / 1000;
     if (ageSeconds < config.chaseTimeoutSeconds) {
@@ -127,10 +145,7 @@ function decideItemAction(itemMtimeMs, chaseCount, nowMs, config, liveness, last
     if (hasRecentActivity) {
         return chaseCount >= config.maxChases ? 'dead-lettered' : 'chased';
     }
-    if (chaseCount >= config.maxChases) {
-        return liveness === 'dead' || liveness === 'unknown' || liveness === 'stuck' ? 'respawned' : 'dead-lettered';
-    }
-    return 'chased';
+    return decideStaleItemAction(chaseCount, config, liveness);
 }
 function nudgePath(itemFilePath) {
     return `${itemFilePath}.nudge`;

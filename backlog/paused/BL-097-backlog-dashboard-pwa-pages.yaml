@@ -1,0 +1,147 @@
+id: BL-097
+title: backlog dashboard PWA — serverless read-only projection of backlog/ via Action-rendered backlog.json on Pages
+milestone: M6
+status: todo
+priority: 02
+source: operator spec request 2026-07-04 ("Backlog dashboard app: read-only projection of backlog/ from git")
+depends_on: BL-096 (the Action reuses its metrics CLI so numbers agree everywhere)
+
+description: |
+  Mobile-friendly, serverless dashboard of backlog state and history:
+  "repo is the API". A GitHub Action renders backlog/ into one versioned
+  backlog.json (state + computed metrics) published to GitHub Pages; a PWA
+  client fetches that single file, caches it, and works offline. Pure
+  read-only projection — the filesystem-as-decoupling-layer principle
+  extended over git as transport.
+
+  Specifier rulings on the three delegated questions (2026-07-04):
+
+  1. M1 metric set: the backlog STATE BOARD (root/paused/active with swarm
+     assignment + done-by-milestone) plus CYCLE TIME, VELOCITY, and
+     BURNDOWN — exactly the BL-096 definitions, because those derive
+     cleanly from the git history of backlog/ file moves. HOLDER DWELL and
+     BOUNCE/REROUTE COUNTS are explicitly M2/later: stage-transition
+     events live only in per-worktree handoff files today and are not
+     pushed to the shared repo, so no serverless projection can see them.
+     A later ticket must first publish stage-transition events into git;
+     do not fake these metrics from partial data.
+
+  2. Delivery: OPTION A (Action -> backlog.json -> Pages). Rationale: the
+     client stays a pure renderer — no YAML parsing, git semantics, or
+     metric re-derivation in browser JS, so the single-source-of-truth
+     metrics implementation (BL-071/BL-096 CLI) remains the only place
+     numbers are computed; one cacheable fetch makes offline trivial; no
+     API rate limits or auth in the client. Option B (codeload
+     tarball-by-SHA parsed client-side) is rejected for M1: it duplicates
+     derivation logic in a second language. Its "diff two SHAs" idea is
+     deferred alongside dwell/bounce.
+     Exposure note: the repo is public, so Pages publication adds no new
+     exposure. If the repo ever goes private, the Pages site must be torn
+     down as part of that change (recorded as a constraint here).
+
+  3. backlog.json IS a stable contract: schema_version field from day one,
+     schema documented in docs/ next to the generator, additive evolution
+     only within a major version. Other tools (including, later, the
+     BL-094 holistic UI) may consume it; the PWA is its first client, not
+     its owner.
+
+  Behaviors:
+    - Action: on push to main touching backlog/ (or the metrics code), run
+      the metrics CLI + a backlog-state renderer to emit backlog.json;
+      publish to Pages. Idempotent; failure of the Action never blocks the
+      push or the pipeline.
+    - backlog.json contains: generation timestamp + source SHA, the state
+      board, per-ticket summary (id, title, milestone, priority, swarm
+      assignment, status, spec/close dates where known), and the M1 metric
+      series WITH TRENDS (operator requirement 2026-07-04): velocity,
+      burndown per milestone, and cycle-time stats each as a series plus
+      the BL-096 windowed trend (delta + direction), so the phone renders
+      direction, not just a number. Test-suite duration is EXCLUDED here:
+      its records are gitignored/machine-local (BL-078), so no git-derived
+      projection can see them — a CI duration publisher would be a
+      separate future ticket if wanted on the phone.
+    - PWA client (static, hosted on the same Pages site): renders board +
+      charts + a per-ticket history view from backlog.json; installable;
+      serves last-cached data offline with a clear "as of <time>" banner;
+      Mermaid used where a flow rendering is needed. Mobile-first layout.
+    - Read-only, no auth, no server state. The write path (reassign,
+      close, queue actions offline as swarm-intake issues) is explicitly
+      OUT of scope — noted as the intended later direction.
+    - PHASE 2 (same ticket, after the basic PWA works): background
+      freshness via the Periodic Background Sync API (operator decision
+      2026-07-04; target device is Android/Chrome — the operator does not
+      need iOS, where this API does not exist). The installed PWA
+      registers a periodic sync (requested minimum interval 2 hours) that
+      silently re-fetches backlog.json into the cache, so opening the app
+      after an offline gap (train) shows recent data, not last-open data.
+      Accepted limitation, stated in the ticket so nobody fights it: the
+      browser owns the actual cadence (site-engagement heuristics) — the
+      2h figure is a request, not a guarantee; the "as of <time>" banner
+      remains the honest indicator. On browsers without the API the app
+      degrades silently to open-time fetch (no errors, no prompts).
+
+  Scope: .github/workflows/ + a generator entry point that shells the
+  existing metrics CLI (no new derivation logic), PWA static assets in
+  their own directory, schema doc in docs/. The generator's
+  state-rendering additions land in the shared metrics/backlog parsing
+  modules (extension/src testable modules) so BL-094/BL-096 and this
+  ticket keep one truth. No swarm-scripts changes.
+
+acceptance: |
+  Feature: a serverless dashboard projects backlog state and history
+
+  # BL-097 dashboard-01
+  Scenario: push produces a fresh published projection
+    Given a push to main that closes a ticket into done/
+    When the Action completes
+    Then the published backlog.json carries that push's SHA
+    And its state board and metrics reflect the close
+
+  # BL-097 dashboard-02
+  Scenario: metrics agree with the metrics CLI
+    Given a backlog.json generated at a SHA
+    When the BL-096 metrics CLI runs at the same SHA
+    Then velocity, burndown, and cycle-time figures are identical
+
+  # BL-097 dashboard-03
+  Scenario: client renders board and charts from one fetch
+    Given a browser (mobile viewport) loading the Pages site
+    When backlog.json is fetched
+    Then the state board, burndown, velocity, and cycle-time views render
+    And no other network resource outside the Pages origin is required
+
+  # BL-097 dashboard-04
+  Scenario: offline shows last-known state honestly
+    Given the PWA has previously loaded and cached backlog.json
+    When the device is offline and the app is opened
+    Then the last-cached board and charts render
+    And an "as of <generation time>" indicator is visible
+
+  # BL-097 dashboard-06
+  Scenario: background sync keeps the cache recent on Android
+    Given the PWA is installed on Android Chrome with periodic sync
+      granted
+    When the browser fires the registered periodic sync event
+    Then the service worker re-fetches backlog.json into the cache
+    And a later offline open renders that refreshed data with its
+      "as of" time
+
+  # BL-097 dashboard-07
+  Scenario: platforms without periodic sync degrade silently
+    Given a browser that does not support the Periodic Background Sync API
+    When the PWA loads and runs
+    Then no error or prompt is shown
+    And freshness behaves as open-time fetch plus cache
+
+  # BL-097 dashboard-05
+  Scenario: schema is versioned and documented
+    When backlog.json is generated
+    Then it contains a schema_version
+    And every field appears in the documented schema
+
+  # Non-behavioral gates:
+  #  - Generator logic (state rendering, JSON assembly) is pure/unit-tested
+  #    in the shared modules; the workflow YAML holds no logic beyond
+  #    invoking it and publishing.
+  #  - No metric derivation exists in client JS (renderer only).
+  #  - Action failures are visible in CI but never gate the pipeline.

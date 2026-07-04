@@ -24,11 +24,23 @@ paneHistory.accumulatePaneHistory = (previousContentLines, history, rawCaptureTe
   return originalAccumulate(previousContentLines, history, rawCaptureText, maxHistoryLines);
 };
 
+const tmuxClient = require('../out/swarm/tmuxClient');
+const originalReadSwarmRoles = tmuxClient.readSwarmRoles;
+
+let faultRolesRead = false;
+tmuxClient.readSwarmRoles = (targetPath) => {
+  if (faultRolesRead) {
+    throw new Error('simulated state-file race');
+  }
+  return originalReadSwarmRoles(targetPath);
+};
+
 const { PaneTailer } = require('../out/panel/paneTailer');
 const { installFakeTmux } = require('./helpers/fakeTmux');
 
 test.after(() => {
   paneHistory.accumulatePaneHistory = originalAccumulate;
+  tmuxClient.readSwarmRoles = originalReadSwarmRoles;
 });
 
 function mkTmp() {
@@ -168,4 +180,93 @@ test('BL-088: several identical polls in a row do not prevent the next real chan
   } finally {
     fake.restore();
   }
+});
+
+// BL-088 tile-freeze-02: a fault in the role/socket refresh step itself (not
+// just per-role capture) must be reported and must not stop per-role
+// polling that tick.
+test('BL-088: a refreshRolesForTick failure (state-file race) is reported and does not block per-role polling', () => {
+  const targetPath = mkTmp();
+  writeState(targetPath, '1\tcoder\tswarmforge-coder\tCoder\tclaude\n');
+  faultRawText = null;
+  faultRolesRead = false;
+  const fake = installFakeTmux([
+    { subcommand: 'has-session', exitCode: 0 },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: 'tick0\n❯ ' },
+    { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+    { exitCode: 0, stdout: '' },
+  ]);
+  try {
+    const updates = [];
+    const errors = [];
+    const tailer = new PaneTailer(
+      targetPath,
+      (u) => updates.push(...u),
+      undefined,
+      undefined,
+      undefined,
+      500,
+      undefined,
+      undefined,
+      undefined,
+      (message) => errors.push(message)
+    );
+    tailer.start(1_000_000);
+    tailer.stop();
+
+    faultRolesRead = true;
+    fake.setRules([
+      { subcommand: 'has-session', exitCode: 0 },
+      { subcommand: 'capture-pane', exitCode: 0, stdout: 'tick1\n❯ ' },
+      { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+      { exitCode: 0, stdout: '' },
+    ]);
+    tailer.poll();
+
+    assert.ok(
+      errors.some((m) => m.includes('Poll failed') && !m.includes('for ')),
+      'a refreshRolesForTick fault must be reported (no per-role prefix, since it precedes the per-role loop)'
+    );
+    const coderUpdate = updates.find((u) => u.role === 'coder' && u.text.includes('tick1'));
+    assert.ok(coderUpdate, 'the per-role capture loop must still run this tick despite the refresh step faulting');
+  } finally {
+    faultRolesRead = false;
+    fake.restore();
+  }
+});
+
+// BL-088: poll() must return early (skip the per-role loop entirely) when
+// there is still no tmux socket. Roles are populated (sessions.tsv exists)
+// but tmux-socket does not, so a version that skipped the early return would
+// still enter the per-role loop and visibly try (and fail) to poll them -
+// this is the only way to observe the guard's effect, since an empty roles
+// list would make both the early-return and no-early-return paths look the
+// same from the outside.
+test('BL-088: poll() with no socket path never enters the per-role loop, even with known roles', () => {
+  const targetPath = mkTmp();
+  const stateDir = path.join(targetPath, '.swarmforge');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'sessions.tsv'), '1\tcoder\tswarmforge-coder\tCoder\tclaude\n');
+  faultRawText = null;
+  faultRolesRead = false;
+  const updates = [];
+  const deadEvents = [];
+  const errors = [];
+  const tailer = new PaneTailer(
+    targetPath,
+    (u) => updates.push(...u),
+    undefined,
+    (d) => deadEvents.push(...d),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    (message) => errors.push(message)
+  );
+  tailer.poll();
+
+  assert.equal(updates.length, 0, 'no socket means nothing to capture yet, even though a role is known');
+  assert.equal(deadEvents.length, 0);
+  assert.equal(errors.length, 0, 'the per-role loop must never run at all, so it cannot even fail');
 });

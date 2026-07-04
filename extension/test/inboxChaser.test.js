@@ -114,6 +114,22 @@ test('recent activity blocks respawn even with unknown liveness (missing heartbe
   assert.equal(decideItemAction(STALE_MS, 0, NOW, CFG, 'unknown', ACTIVE_MS), 'chased');
 });
 
+// idleSeconds must be computed as milliseconds / 1000 (not * 1000) - 30s of
+// real elapsed time is well within the 60s stuckInProcessTimeoutSeconds and
+// so must still count as "recent" and block a respawn.
+test('idle seconds are computed from real elapsed milliseconds, not inflated', () => {
+  const recentlyActiveMs = NOW - 30_000; // 30s ago, real seconds - within the 60s window
+  assert.equal(decideItemAction(STALE_MS, 3, NOW, CFG, 'dead', recentlyActiveMs), 'dead-lettered');
+});
+
+// hasRecentActivity uses a strict "<" against stuckInProcessTimeoutSeconds:
+// idle time exactly AT the threshold is no longer "recent" and must allow a
+// respawn once chases are exhausted.
+test('idle time exactly at the stuck threshold no longer counts as recent activity', () => {
+  const exactlyAtThresholdMs = NOW - CFG.stuckInProcessTimeoutSeconds * 1000;
+  assert.equal(decideItemAction(STALE_MS, 3, NOW, CFG, 'dead', exactlyAtThresholdMs), 'respawned');
+});
+
 // ── sidecarPath ───────────────────────────────────────────────────────────────
 
 test('sidecarPath appends .chase.json to handoff path', () => {
@@ -390,6 +406,14 @@ test('readRespawnCooldownUntilMs returns null for a corrupt marker file', () => 
   const inboxNewDir = path.join(tmp, 'inbox', 'new');
   fs.mkdirSync(inboxNewDir, { recursive: true });
   fs.writeFileSync(respawnCooldownPath(inboxNewDir), 'not-json', 'utf-8');
+  assert.equal(readRespawnCooldownUntilMs(inboxNewDir), null);
+});
+
+test('readRespawnCooldownUntilMs returns null when untilMs is valid JSON but not a number', () => {
+  const tmp = mkTmp();
+  const inboxNewDir = path.join(tmp, 'inbox', 'new');
+  fs.mkdirSync(inboxNewDir, { recursive: true });
+  fs.writeFileSync(respawnCooldownPath(inboxNewDir), JSON.stringify({ untilMs: 'soon' }), 'utf-8');
   assert.equal(readRespawnCooldownUntilMs(inboxNewDir), null);
 });
 

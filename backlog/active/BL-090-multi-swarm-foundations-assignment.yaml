@@ -19,6 +19,27 @@ description: |
       swarmforge.conf (e.g. `config swarm_name <name>`), defaulting to a
       stable primary name when absent so existing single-swarm setups are
       untouched.
+    - Swarm MODE is an explicit launch-time choice (operator refinement,
+      2026-07-04: "keep the choice for a swarm to be autonomous or
+      secondary, enslaved to another"):
+        * `config swarm_mode autonomous` — the swarm runs its own
+          coordinator and triages/promotes/assigns for the shared backlog.
+          Absent mode defaults to autonomous (today's behavior).
+        * `config swarm_mode secondary <primary-swarm-name>` — enslaved to
+          the named primary: launches with NO coordinator window, never
+          promotes or assigns, and works only tickets the primary's
+          coordinator assigned to its swarm_name.
+      Launch validation rejects a secondary conf that names no primary, or
+      a conf that declares a coordinator window under secondary mode.
+    - Single-triage invariant: exactly ONE autonomous swarm per shared
+      backlog at a time. The autonomous swarm records its claim in a
+      committed primacy marker (e.g. `swarmforge/primary`); a swarm
+      launching in autonomous mode against a repo whose marker names a
+      DIFFERENT live swarm fails fast with a clear message (the operator
+      can edit/commit the marker to transfer primacy deliberately — a
+      secondary can thus be promoted to autonomous later, and vice versa,
+      by conf + marker change and relaunch; mode is per-launch, not
+      baked in).
     - Assignment at promotion: when the coordinator promotes a ticket
       paused->active it also assigns it to exactly one swarm, recorded
       IN THE TICKET FILE (a `swarm:` field) so assignment travels through
@@ -75,6 +96,27 @@ acceptance: |
       | a       | b       |
       | primary | second  |
       | second  | primary |
+
+  # BL-090 multi-swarm-06
+  Scenario: secondary mode launches enslaved
+    Given a swarmforge.conf with swarm_mode secondary naming a primary
+    When the swarm launches
+    Then no coordinator window is started
+    And the swarm never promotes or assigns backlog items
+
+  # BL-090 multi-swarm-07
+  Scenario: second autonomous claim is refused
+    Given the committed primacy marker names a different swarm
+    When a swarm launches in autonomous mode
+    Then the launch fails fast with a message naming the current primary
+    And no coordinator starts
+
+  # BL-090 multi-swarm-08
+  Scenario: primacy transfer by deliberate marker change
+    Given the operator commits the primacy marker naming swarm B
+    When swarm B relaunches in autonomous mode
+    Then swarm B's coordinator starts and triages
+    And swarm A, relaunched as secondary to B, takes assignments only
 
   # BL-090 multi-swarm-05
   Scenario: merge push race resolves without losing work

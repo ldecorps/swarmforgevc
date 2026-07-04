@@ -2,7 +2,7 @@ id: BL-094
 title: holistic dev-state web UI on the BL-065 bridge (phase 2) — one view of swarms, parcels, backlog, agents
 milestone: M6
 status: todo
-priority: 05
+priority: 02
 source: operator requirement 2026-07-04 ("expose a webui showing a holistic view of the dev state"; revises the web-UI phase deferred by BL-065)
 
 description: |
