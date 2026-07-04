@@ -106,6 +106,14 @@
       {
         "command": "swarmforge.drainCheck",
         "title": "SwarmForge: Check Drain Mode (Next Item)"
+      },
+      {
+        "command": "swarmforge.setResendApiKey",
+        "title": "SwarmForge: Set Resend API Key"
+      },
+      {
+        "command": "swarmforge.clearResendApiKey",
+        "title": "SwarmForge: Clear Resend API Key"
       }
     ],
     "configuration": {

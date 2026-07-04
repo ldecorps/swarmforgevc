@@ -18,3 +18,28 @@ export async function resolveResendApiKey(
   }
   return undefined;
 }
+
+// BL-103: pure helpers behind the Set/Clear Resend API Key commands. The
+// input box itself is the untestable VS Code UI boundary; everything with
+// actual logic - trimming/empty-input handling and the resolution-order
+// message - is factored out here so it is unit-testable without vscode.
+
+/** Empty or whitespace-only input is a safe no-op: undefined, never "". */
+export function trimmedResendKeyInput(input: string | undefined): string | undefined {
+  const trimmed = input?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function precedenceNote(envVarSet: boolean): string {
+  return envVarSet
+    ? ' Note: the RESEND_API_KEY environment variable is currently set and takes precedence over this value until it is unset.'
+    : '';
+}
+
+export function describeSetResult(envVarSet: boolean): string {
+  return `Resend API key stored in SecretStorage.${precedenceNote(envVarSet)}`;
+}
+
+export function describeClearResult(envVarSet: boolean): string {
+  return `Resend API key cleared from SecretStorage.${precedenceNote(envVarSet)}`;
+}
