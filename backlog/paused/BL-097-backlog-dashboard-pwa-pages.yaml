@@ -56,7 +56,10 @@ description: |
       series WITH TRENDS (operator requirement 2026-07-04): velocity,
       burndown per milestone, and cycle-time stats each as a series plus
       the BL-096 windowed trend (delta + direction), so the phone renders
-      direction, not just a number. Test-suite duration is EXCLUDED here:
+      direction, not just a number. Also the BL-096 delivery forecasts:
+      every open ticket shows its p50/p85 estimated delivery date on the
+      board, and each milestone shows its projected completion date on
+      the burndown chart (labeled as count-based estimates). Test-suite duration is EXCLUDED here:
       its records are gitignored/machine-local (BL-078), so no git-derived
       projection can see them — a CI duration publisher would be a
       separate future ticket if wanted on the phone.
@@ -64,6 +67,12 @@ description: |
       charts + a per-ticket history view from backlog.json; installable;
       serves last-cached data offline with a clear "as of <time>" banner;
       Mermaid used where a flow rendering is needed. Mobile-first layout.
+    - Optimizer card (operator, 2026-07-04): when backlog.json carries the
+      latest briefing sidecar (BL-099/BL-100 carrier), the app renders an
+      "optimizer" card: current bottleneck stage with its dwell numbers,
+      the coordinator's recommendations each with motivating figure, and
+      the briefing date it came from. Absent sidecar -> card hidden, no
+      error.
     - Read-only, no auth, no server state. The write path (reassign,
       close, queue actions offline as swarm-intake issues) is explicitly
       OUT of scope — noted as the intended later direction.

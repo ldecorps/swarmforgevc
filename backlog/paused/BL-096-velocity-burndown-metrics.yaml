@@ -26,6 +26,16 @@ description: |
       surface (briefing, bridge/web UI): the file is gitignored by design,
       so this metric is absent from git-derived projections; report
       "no local data" gracefully where the file is missing.
+    - DELIVERY FORECASTS (operator requirement 2026-07-04): an estimated
+      delivery date per open ticket and per milestone, recomputed on each
+      metrics run. Method: trailing-window ticket-count throughput plus
+      the historical cycle-time distribution, applied to the current
+      queue order (priority, bugs-first, declared depends_on chains —
+      a ticket's ETA is never earlier than its dependencies'). Report
+      p50 and p85 dates, not a single false-precision date. Milestone
+      ETA = its last ticket's p50/p85. Explicitly label forecasts as
+      count-based estimates; when throughput shifts, the dates shift —
+      the daily briefing calls out ETA changes since yesterday.
     - TRENDS EVERYWHERE (operator requirement 2026-07-04): every metric
       above is exposed not just as a current value but as a time SERIES
       plus a windowed trend (delta and direction vs the prior window,
@@ -90,6 +100,14 @@ acceptance: |
     Then a burndown chart per milestone and a velocity chart render from
       the endpoint's JSON
     And the endpoint rejects requests without the bearer token
+
+  # BL-096 metrics-08
+  Scenario: every open ticket and milestone carries a forecast
+    Given historical closes and a current open queue with dependencies
+    When forecasts are computed
+    Then each open ticket reports p50 and p85 estimated delivery dates
+    And no ticket's dates precede those of its depends_on tickets
+    And each milestone reports the dates of its last-forecast ticket
 
   # BL-096 metrics-06
   Scenario: every metric carries a trend
