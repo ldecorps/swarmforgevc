@@ -1,0 +1,78 @@
+id: BL-092
+title: remote wake-up bridge — self-hosted GitHub Actions runner nudges the WSL2 swarm on relevant pushes
+milestone: M6
+status: todo
+priority: 05
+source: operator requirement refinement 2026-07-04 ("could we leverage some git action?")
+depends_on: BL-091
+
+description: |
+  Third slice: replace the remote swarm's manual/periodic `git pull` with an
+  event-driven wake-up, using GitHub as the notification bus. Design chosen
+  by the operator (2026-07-04): a self-hosted GitHub Actions runner
+  registered from inside the WSL2 environment on the Windows box. Runners
+  hold an outbound long-poll connection to GitHub, so no inbound ports,
+  tunnels, or firewall changes are needed on either machine.
+
+  Behavior wanted:
+    - A workflow triggers on pushes to main that touch backlog/active/ (and
+      any path the parcel flow needs the remote swarm to react to). It runs
+      ONLY on the self-hosted runner labeled for the second swarm.
+    - The workflow job is a thin nudge: sync the remote swarm's checkout
+      (fetch/pull) and deliver a wake-up to the local specifier pane (the
+      same "You have new handoff mail / run ready_for_next.sh"-class nudge
+      handoffd sends locally), via the swarm's own tmux socket. No business
+      logic in the workflow — routing decisions stay with the roles.
+    - Idempotent and lossy-tolerant like tmux wake-ups: duplicate or missed
+      nudges must be harmless because the durable state is git + the
+      backlog files; a fallback periodic pull (slow timer) keeps the remote
+      swarm live through GitHub/Actions outages.
+    - Wake-ups are filtered: pushes that only concern the OTHER swarm's
+      assignments do not nudge (cheap filter, e.g. on the changed paths /
+      assignment field), to avoid waking the remote specifier for work it
+      must ignore.
+    - No secrets in the target repo per constitution: runner registration
+      tokens live on the remote machine only.
+
+  Scope: .github/workflows/ + a small nudge script under swarmforge/scripts
+  (testable pure part: push-event -> nudge/no-nudge decision) + bring-up
+  doc addition (registering the runner in WSL2). No extension changes.
+
+acceptance: |
+  Feature: the remote swarm wakes on relevant pushes without open ports
+
+  Background:
+    Given the second swarm runs under WSL2 with a registered self-hosted
+      runner (BL-091 merged)
+
+  # BL-092 wakeup-bridge-01
+  Scenario: assignment push wakes the remote specifier
+    Given the primary coordinator pushes a promotion assigning a ticket to
+      the second swarm
+    When the workflow run for that push completes
+    Then the remote checkout contains the assignment commit
+    And the remote specifier pane received a wake-up nudge
+
+  # BL-092 wakeup-bridge-02
+  Scenario: other-swarm pushes do not nudge
+    Given a push whose backlog changes concern only the primary swarm
+    When the workflow evaluates the push
+    Then no wake-up is delivered to the remote specifier
+
+  # BL-092 wakeup-bridge-03
+  Scenario: duplicate nudges are harmless
+    Given the remote specifier already processed the latest assignment
+    When a duplicate or repeated nudge arrives
+    Then ready_for_next.sh reports no new work and nothing is disturbed
+
+  # BL-092 wakeup-bridge-04
+  Scenario: bridge outage degrades to the poll fallback
+    Given GitHub Actions is unavailable
+    When new work is assigned to the second swarm
+    Then the fallback periodic pull picks it up within its timer interval
+
+  # Non-behavioral gates:
+  #  - The nudge/no-nudge decision is a pure, unit-tested function fed with
+  #    changed paths / ticket fields (no live GitHub in tests).
+  #  - Workflow YAML contains no repo secrets and no business logic beyond
+  #    sync + nudge.

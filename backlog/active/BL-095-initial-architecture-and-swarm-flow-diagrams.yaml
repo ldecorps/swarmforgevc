@@ -1,0 +1,63 @@
+id: BL-095
+title: docs — create the initial architecture diagram and swarm workflow flow diagram
+milestone: M4
+status: todo
+priority: 04
+source: operator request 2026-07-04 (constitution now requires maintained diagrams; none exist yet)
+
+description: |
+  The constitution's engineering articles (updated 2026-07-04) now require
+  an up-to-date architecture diagram and a swarm-workflow flow diagram,
+  maintained by the documenter under docs/diagrams/ as Mermaid sources.
+  Nothing exists yet — this parcel creates the initial pair so the
+  keep-current rule has something to keep current.
+
+  Wanted:
+    - docs/diagrams/architecture.mmd (+ a short surrounding page or README
+      section embedding/linking it): the two-layer system as built TODAY —
+      extension host (tmuxClient, swarmLauncher, paneTailer, chaser/watchdog,
+      bridge), webview panels, the tmux substrate and its socket, the
+      .swarmforge/ state files, handoffd + queue helpers, git/GitHub — with
+      the channel between each pair labeled (postMessage, files, tmux
+      socket, HTTP/SSE, git).
+    - docs/diagrams/swarm-flow.mmd: the CURRENT parcel flow — backlog root
+      intake -> specifier spec to paused/ -> coordinator promotion ->
+      routing to coder -> cleaner -> architect -> hardender -> documenter ->
+      QA -> specifier merge to main, including where batch roles batch and
+      where the coordinator sits outside the chain.
+    - Accuracy over beauty: diagrams must match the code and
+      PIPELINE.md/roles as merged at the time of this parcel; where docs
+      and code disagree, depict the code and flag the doc.
+    - This is a docs-only parcel: it is a functional project change and
+      flows through the full pipeline like any other work item.
+
+  Scope: docs/ only. No production code, no swarm scripts.
+
+acceptance: |
+  Feature: the required diagrams exist, are accurate, and render
+
+  # BL-095 diagrams-01
+  Scenario: architecture diagram depicts the system as built
+    When docs/diagrams/architecture.mmd is compared against the merged code
+    Then every depicted component exists in the codebase
+    And every inter-component channel is labeled with its real mechanism
+    And no major runtime component of the extension or swarm machinery is
+      missing
+
+  # BL-095 diagrams-02
+  Scenario: flow diagram matches the pipeline as configured
+    When docs/diagrams/swarm-flow.mmd is compared against PIPELINE.md and
+      swarmforge.conf
+    Then the role order, batch stages, coordinator position, and merge-back
+      edge all match
+
+  # BL-095 diagrams-03
+  Scenario: diagrams are valid text-based sources
+    When the Mermaid sources are parsed by a Mermaid renderer
+    Then both parse without errors
+    And both files are plain text that diffs line-by-line
+
+  # Non-behavioral gates:
+  #  - Linked/embedded from the docs so a reader can find them (e.g. from
+  #    README or docs/Specification.MD, with Last Updated bumped in the
+  #    same commit per the documenter rule).

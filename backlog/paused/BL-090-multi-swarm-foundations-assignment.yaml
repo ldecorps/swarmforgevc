@@ -1,0 +1,89 @@
+id: BL-090
+title: multi-swarm foundations — swarm identity, coordinator ticket assignment, cross-swarm orthogonality
+milestone: M6
+status: todo
+priority: 05
+source: operator requirement refinement 2026-07-04 (second swarm on another machine, same codebase, single coordinator)
+
+description: |
+  First slice of multi-concurrent-swarm support. Operator-confirmed design
+  (2026-07-04): git is the cross-machine transport; ONE coordinator (on the
+  primary machine) remains the single triage/promotion authority for all
+  swarms; each swarm runs the full pipeline (specifier..QA) and merges to
+  the shared main. This item delivers the coordination substrate only — no
+  remote machine involved yet; it must be fully exercisable with a single
+  swarm.
+
+  Behavior wanted:
+    - Swarm identity: each swarm instance has a name, declared in
+      swarmforge.conf (e.g. `config swarm_name <name>`), defaulting to a
+      stable primary name when absent so existing single-swarm setups are
+      untouched.
+    - Assignment at promotion: when the coordinator promotes a ticket
+      paused->active it also assigns it to exactly one swarm, recorded
+      IN THE TICKET FILE (a `swarm:` field) so assignment travels through
+      git. Tickets without a `swarm:` field are treated as assigned to the
+      primary swarm (backward compatible with every existing active item).
+    - Routing gate: a specifier only routes/merges tickets assigned to its
+      own swarm_name; it ignores (leaves untouched) active tickets assigned
+      elsewhere.
+    - Cross-swarm orthogonality: the coordinator's existing
+      Concurrent Work Orthogonality rule extends across swarms — two
+      tickets with overlapping scope must never be concurrently active on
+      DIFFERENT swarms; overlap is held back exactly as within one swarm.
+      Bugs-first priority stays global across swarms.
+    - Merge-to-main discipline: a specifier pushing its merge to the shared
+      main retries on push rejection (fetch, re-merge/rebase its merge
+      commit, push again) instead of failing; QA-approved content is never
+      silently dropped or force-pushed.
+
+  Scope: swarmforge.conf parsing + coordinator promotion behavior +
+  specifier routing/merge behavior (constitution/role-prompt updates by the
+  specifier as part of the parcel) + any swarm-scripts touched. No
+  extension/src changes required; if ticket badges later want to show the
+  swarm assignment, that is a separate item.
+
+acceptance: |
+  Feature: tickets are assigned to one swarm and coordinated through git
+
+  # BL-090 multi-swarm-01
+  Scenario: promotion records an assignment
+    Given the coordinator promotes a paused ticket
+    When the promotion commit is inspected
+    Then the active ticket carries a swarm field naming exactly one swarm
+
+  # BL-090 multi-swarm-02
+  Scenario: unassigned active tickets belong to the primary swarm
+    Given an active ticket with no swarm field
+    When the primary swarm's specifier evaluates its routing duties
+    Then it treats the ticket as its own
+
+  # BL-090 multi-swarm-03
+  Scenario: a specifier ignores another swarm's ticket
+    Given an active ticket assigned to a different swarm_name
+    When the specifier processes routing or merge work
+    Then it does not route, modify, or close that ticket
+
+  # BL-090 multi-swarm-04
+  Scenario Outline: overlapping scopes never run on two swarms at once
+    Given an in-flight ticket on swarm <a> touching a scope
+    And the next eligible paused ticket touches an overlapping scope
+    When the coordinator considers assigning it to swarm <b>
+    Then the overlapping ticket is held until the in-flight one merges
+
+    Examples:
+      | a       | b       |
+      | primary | second  |
+      | second  | primary |
+
+  # BL-090 multi-swarm-05
+  Scenario: merge push race resolves without losing work
+    Given a specifier's push to main is rejected because the remote advanced
+    When the specifier retries per the merge discipline
+    Then the QA-approved merge lands on main
+    And no force-push occurs
+
+  # Non-behavioral gates:
+  #  - swarm_name parsing + assignment-field handling covered by unit tests
+  #    in the swarm-scripts test pattern; single-swarm default path proven
+  #    unchanged (existing suites stay green).
