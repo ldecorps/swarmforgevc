@@ -203,6 +203,8 @@ class SwarmPanel {
                 this.panel.webview.postMessage({ type: 'needsHuman', events: deltas });
             }
             this.recordEmailUpdates(deltas);
+        }, (message) => {
+            this.outputChannel.appendLine(message);
         });
         this.tailer.start();
         this.sendRoles(this.tailer.getRoles());
