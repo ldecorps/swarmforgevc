@@ -111,7 +111,12 @@ function formatOverview(metrics, roleNames) {
         .slice(0, 3);
     const worstText = worst.length > 0 ? ` (worst: ${worst.map(([id, count]) => `${id} x${count}`).join(', ')})` : '';
     const retryLine = `Retries: ${metrics.retryTotal} total${worstText}`;
-    return [meanLine, busynessLine, retryLine].join('\n');
+    const suite = metrics.suiteDuration;
+    const suiteLine = suite.latestMs === null
+        ? `Suite duration: ${swarmMetrics_1.NO_SAMPLE_PLACEHOLDER} (0 runs)`
+        : `${suite.warn ? 'WARN ' : ''}Suite duration: ${(0, swarmMetrics_1.formatSuiteDurationMs)(suite.latestMs)}` +
+            ` (mean ${(0, swarmMetrics_1.formatSuiteDurationMs)(suite.meanMs)} over ${suite.sampleCount} run(s))`;
+    return [meanLine, busynessLine, retryLine, suiteLine].join('\n');
 }
 function main() {
     const projectRoot = resolveProjectRoot(process.cwd());

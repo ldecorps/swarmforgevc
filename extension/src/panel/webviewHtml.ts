@@ -435,6 +435,10 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
     }
     .metric-label { opacity: 0.6; }
     .metric-value { font-weight: 500; }
+    /* BL-078: suite-duration creep warning - reuses the amber "warn" hue
+       already meaning "needs attention" elsewhere in this panel
+       (.transport-health.warn, .tile.stalled). */
+    .metric-value-warn { font-weight: 700; color: #d4a017; }
     .section-header {
       display: flex;
       align-items: center;
