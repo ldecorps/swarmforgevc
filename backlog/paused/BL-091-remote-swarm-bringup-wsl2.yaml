@@ -4,7 +4,7 @@ milestone: M6
 status: todo
 priority: 05
 source: operator requirement refinement 2026-07-04
-depends_on: BL-090
+depends_on: BL-090, BL-094
 
 description: |
   Second slice: actually run swarm number two on the operator's Windows
@@ -20,6 +20,9 @@ description: |
     - All cross-machine coordination is git (clone of the same repo,
       push/pull to the shared main). Nothing in the handoff daemon or tmux
       layer crosses machines.
+    - GATED ON BL-094 (operator decision 2026-07-04): the holistic
+      dev-state web UI must exist before a second swarm is brought up, so
+      the operator is never running two swarms without one view of both.
 
   Behavior wanted:
     - The swarm substrate (./swarm launcher, tmux session, handoffd,
