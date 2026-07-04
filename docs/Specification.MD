@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 2, 2026
+**Last Updated:** July 4, 2026
 
 ## Overview
 
@@ -456,6 +456,19 @@ To prevent context window exhaustion between parcels, the extension automaticall
 - **Configurable:** enabled by default via `swarmforge.contextClear.enabled` setting, with the settle window tunable via `swarmforge.contextClear.settleWindowSeconds`
 
 This is safe because the protocol is already context-free between parcels — every handoff body says "re-read your role and constitution," and durable state (backlog, handoffs, messages) lives on disk. Clearing at an idle moment costs nothing and buys headroom.
+
+### Cooldown-aware wake scheduling (rate-limit backoff)
+
+When an agent reports hitting a rate limit and provides a reset time (e.g., "tokens available again at 2pm"), the extension automatically avoids waking that agent during the cooldown window and resumes normal operation once the cooldown expires:
+
+- **Detection:** the extension listens for rate-limit signals from agents (reported through the monitoring/logging interface) that include a reset timestamp
+- **Suppression:** while a role has an active cooldown window, the watchdog's chase/wake nudges for that role are suppressed — no pointless retry attempts during the quiet period
+- **Automatic resume:** once the cooldown timestamp passes, normal chase and wake behavior resumes automatically
+- **Visibility:** the tile's liveness indicator and diagnostics surface which roles are cooling down and when they'll resume, so the human understands why a seemingly-idle agent is intentionally quiet
+- **Resilience:** cooldown state persists across extension restarts — if the extension reloads before cooldown expires, wake suppression still applies until the deadline
+- **Isolation:** cooldown affects only the role that hit the limit; other agents continue normal chase/wake behavior uninterrupted
+
+This prevents the "retry storm" where a rate-limited agent gets nudged repeatedly while unable to act, saving tokens and clearing the notification noise during the windowed recovery period.
 
 ## Per-Agent Lifecycle Control
 
