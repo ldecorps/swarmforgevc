@@ -47,6 +47,22 @@ description: |
   Testable through the existing fake-tmux/fake-capture seams; no SwarmForge
   changes; two-layer rule unchanged.
 
+  TRIAGE ADDENDUM (operator-side process sampling, 2026-07-04 ~02:00,
+  during a live freeze): an 8-second watch of host child processes found
+  ZERO `tmux ... capture-pane` invocations against the live socket
+  (/private/tmp/swarmforge-501/*.sock) while the tiles were frozen — the
+  only capture-pane processes on the machine were fake-tmux from agent
+  test runs. A healthy tailer polls 8 roles every ~1-2s, so the poll loop
+  itself is not executing (timer dead or never rescheduled), while sibling
+  host timers demonstrably kept firing (chaser respawn send-keys observed
+  during the same freeze). This narrows the fault to the tailer's own
+  interval/rescheduling rather than capture output handling or webview
+  postMessage delivery. Also note: a coder pane respawn
+  (tmux respawn-pane -k, same pane id) occurred during the freeze and the
+  tile kept showing the PREVIOUS agent's frame — consistent with no
+  polling at all; the fix must also survive pane respawns (history reset,
+  new pane process, same pane id).
+
 acceptance: |
   Feature: agent tiles keep updating for as long as the swarm runs
 
