@@ -8,6 +8,7 @@ import {
   readTmuxSocket,
   sessionExists,
 } from './tmuxClient';
+import { clearStaleSwarmState } from './swarmStopper';
 
 export interface LaunchResult {
   success: boolean;
@@ -16,6 +17,43 @@ export interface LaunchResult {
 }
 
 const SWARM_LAUNCH_SUCCESS_MESSAGE = 'Swarm launched successfully.';
+
+// BL-058: launch failures used to surface only as ephemeral toasts, so a
+// failed launch left nothing to diagnose. Every attempt persists the spawned
+// ./swarm output and outcome here, overwritten per attempt.
+const LAUNCH_LOG_SUBPATH = path.join('.swarmforge', 'last-launch.log');
+
+interface LaunchAttemptRecord {
+  runName?: string;
+  swarmScript: string;
+  success: boolean;
+  message: string;
+  stdout: string;
+  stderr: string;
+}
+
+function persistLaunchLog(targetPath: string, record: LaunchAttemptRecord): void {
+  try {
+    fs.mkdirSync(path.join(targetPath, '.swarmforge'), { recursive: true });
+    fs.writeFileSync(
+      path.join(targetPath, LAUNCH_LOG_SUBPATH),
+      [
+        `SwarmForge launch attempt ${new Date().toISOString()}`,
+        `script: ${record.swarmScript}`,
+        `runName: ${record.runName ?? '(none)'}`,
+        `success: ${record.success}`,
+        `message: ${record.message}`,
+        '--- stdout ---',
+        record.stdout,
+        '--- stderr ---',
+        record.stderr,
+        '',
+      ].join('\n')
+    );
+  } catch {
+    // diagnostics only; never let logging break a launch
+  }
+}
 
 export function isSwarmReady(targetPath: string): boolean {
   const socket = readTmuxSocket(targetPath);
@@ -69,11 +107,25 @@ export async function launchSwarm(
 ): Promise<LaunchResult> {
   const swarmScript = path.join(targetPath, 'swarm');
   if (!fs.existsSync(swarmScript)) {
-    return {
+    const message = `No ./swarm wrapper found at ${swarmScript}`;
+    persistLaunchLog(targetPath, {
+      runName,
+      swarmScript,
       success: false,
-      message: `No ./swarm wrapper found at ${swarmScript}`,
-      targetPath,
-    };
+      message,
+      stdout: '',
+      stderr: '',
+    });
+    return { success: false, message, targetPath };
+  }
+
+  // A previous run's tmux-socket/sessions.tsv can satisfy isSwarmReady and
+  // make this launch report success against a dead or dying swarm. If the
+  // swarm is not currently ready, tear down whatever answers on the old
+  // socket and remove the marker files, so readiness below can only be
+  // satisfied by the state the NEW ./swarm run writes.
+  if (!isSwarmReady(targetPath)) {
+    clearStaleSwarmState(targetPath);
   }
 
   return new Promise((resolve) => {
@@ -99,6 +151,7 @@ export async function launchSwarm(
       }
       settled = true;
       cleanup();
+      persistLaunchLog(targetPath, { runName, swarmScript, success, message, stdout, stderr });
       resolve({ success, message, targetPath });
     };
 
