@@ -12,9 +12,20 @@ Requested behavior: make context-clearing after a handoff OPTIONAL and
 config-controlled (a feature flag, on/off), not mandatory or automatic.
 When enabled, a role should clear its own session context at a natural idle
 boundary — after done_with_current.sh completes a task/batch and the queue
-comes back NO_TASK — not mid-task and not mid-batch. When disabled
-(presumably the default unless the specifier judges otherwise), behavior is
-exactly as today: no clearing.
+comes back NO_TASK — not mid-task and not mid-batch.
+
+Default (on vs off): left to the specifier's judgment — pick whichever
+default the spec's own reasoning supports, no operator preference either
+way.
+
+Granularity: consider a two-level config shape rather than one global
+switch — a swarm-wide default (on/off) plus an optional per-role override
+(e.g. per `window <role> ...` line in swarmforge.conf, or a parallel
+per-role key), so an individual role can be flipped against the swarm-wide
+default without changing it for everyone. Follow the existing
+swarmforge.conf convention (see how `active_backlog_max_depth` and the
+per-role `window` lines already work) rather than inventing a new config
+mechanism.
 
 Motivation raised in discussion: long-running batch roles (hardener,
 documenter) accumulate context/cost over many parcels with no clear benefit,
