@@ -8,6 +8,17 @@ A VS Code extension that runs a multi-agent coding swarm and brings the work bac
 
 **Getting started?** See [Getting Started with SwarmForge VC](GettingStarted.md) for install, setup, and first run. This specification is the detailed reference.
 
+**Diagrams:** [Architecture diagram](diagrams/architecture.mmd) and
+[Swarm workflow flow diagram](diagrams/swarm-flow.mmd) (Mermaid sources)
+depict the system as actually built. Flagging a doc/code disagreement here
+per BL-095: the Overview paragraph above describes a "standalone
+orchestrator" that spawns and manages agent processes itself — the code
+does not do this. The extension drives an unmodified, separately-installed
+SwarmForge over tmux and reads its `.swarmforge/` state files (see
+`swarmforge/constitution/articles/local-engineering.prompt` and
+`swarmDiscovery.ts`'s own BL-066 note); it never spawns agent processes
+directly. The diagrams reflect the tmux-driving architecture.
+
 ---
 
 ## Core Design Principles
