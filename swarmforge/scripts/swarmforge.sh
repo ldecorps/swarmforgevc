@@ -43,6 +43,7 @@ typeset -a DISPLAY_NAMES=()
 typeset -a WORKTREE_NAMES=()
 typeset -a WORKTREE_PATHS=()
 typeset -a RECEIVE_MODES=()
+typeset -a IDLE_CLEAR_FLAGS=()
 typeset -a EXTRA_CLI_ARGS=()
 typeset -A ROLE_INDEX=()
 typeset -A WORKTREE_INDEX=()
@@ -239,13 +240,19 @@ parse_config() {
     role="${fields[2]}"
     agent="${fields[3]:l}"
     worktree="${fields[4]}"
+    local next_field=5
     if [[ "${fields[5]:-}" == (task|batch) ]]; then
       receive_mode="${fields[5]}"
-      extra_args=(${fields[6,$#fields]})
+      next_field=6
     else
       receive_mode="task"
-      extra_args=(${fields[5,$#fields]})
     fi
+    local idle_clear="off"
+    if [[ "${fields[$next_field]:-}" == "idle-clear" ]]; then
+      idle_clear="on"
+      next_field=$((next_field + 1))
+    fi
+    extra_args=(${fields[$next_field,$#fields]})
     local extra_cli="${(j: :)extra_args}"
 
     if [[ "$keyword" != "window" ]]; then
@@ -304,6 +311,7 @@ parse_config() {
     DISPLAY_NAMES+=("$(display_name_for_role "$role")")
     WORKTREE_NAMES+=("$worktree")
     RECEIVE_MODES+=("$receive_mode")
+    IDLE_CLEAR_FLAGS+=("$idle_clear")
     EXTRA_CLI_ARGS+=("$extra_cli")
     if [[ "$worktree" == "none" || "$worktree" == "master" ]]; then
       WORKTREE_PATHS+=("$WORKING_DIR")
@@ -335,14 +343,15 @@ write_roles_file() {
   : > "$ROLES_FILE"
   local i
   for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
       "${ROLES[$i]}" \
       "${WORKTREE_NAMES[$i]}" \
       "${WORKTREE_PATHS[$i]}" \
       "${SESSIONS[$i]}" \
       "${DISPLAY_NAMES[$i]}" \
       "${AGENTS[$i]}" \
-      "${RECEIVE_MODES[$i]}" >> "$ROLES_FILE"
+      "${RECEIVE_MODES[$i]}" \
+      "${IDLE_CLEAR_FLAGS[$i]}" >> "$ROLES_FILE"
   done
 }
 
@@ -701,6 +710,14 @@ start_handoff_daemon() {
   echo -e "${GREEN}Started handoff daemon supervisor.${RESET}"
 }
 
+# BL-089: guarded so a test can `source` this file (e.g. to exercise
+# parse_config/write_roles_file against a fixture conf) without launching a
+# real swarm. Direct execution (the normal `./swarmforge.sh` launch path)
+# still runs this unconditionally, since ZSH_EVAL_CONTEXT is exactly
+# "toplevel" only when the file is the top-level script being run, not when
+# it is sourced from another script.
+if [[ "$ZSH_EVAL_CONTEXT" == "toplevel" ]]; then
+
 check_dependency tmux
 check_dependency git
 check_dependency bb
@@ -796,3 +813,5 @@ else
     tmux -S "$TMUX_SOCKET" attach-session -t "${SESSIONS[$CLEANUP_OWNER_INDEX]}"
   fi
 fi
+
+fi # ZSH_EVAL_CONTEXT toplevel guard (BL-089)

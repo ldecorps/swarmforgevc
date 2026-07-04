@@ -6,6 +6,17 @@
 
 (load-file (str (fs/path (fs/parent *file*) "handoff_lib.bb")))
 
+(def idle-boundary?
+  "Set only when invoked from done_with_current_task.bb, right after it
+   completed the current task (BL-089): a plain standalone ready_for_next.sh
+   run while already idle must never trigger a clear."
+  (some #{"--idle-boundary"} *command-line-args*))
+
+(defn maybe-clear-at-idle-boundary! []
+  (when (and idle-boundary?
+             (handoff-lib/idle-clear-enabled? (handoff-lib/current-role)))
+    (handoff-lib/respawn-self! (handoff-lib/current-role))))
+
 (defn -main []
   (let [inbox (handoff-lib/inbox-dir)
         new-dir (fs/path inbox "new")
@@ -29,7 +40,9 @@
           (println "DRAINING")
           (let [new-files (handoff-lib/my-handoff-files new-dir)]
             (if (empty? new-files)
-              (println "NO_TASK")
+              (do
+                (println "NO_TASK")
+                (maybe-clear-at-idle-boundary!))
               (let [source-file (first new-files)
                     target-file (fs/path in-process-dir (fs/file-name source-file))]
                 (when (fs/exists? target-file)

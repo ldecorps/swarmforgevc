@@ -1,0 +1,50 @@
+%% BL-095: current swarm parcel flow (2026-07-04), matching
+%% swarmforge/PIPELINE.md and swarmforge/swarmforge.conf's window lines.
+%% cleaner and hardender are batch-mode roles (consume all queued
+%% equal-priority handoffs as one batch); every other pipeline role is
+%% task-mode (one handoff at a time). The coordinator sits outside the
+%% forward chain: it only controls intake/promotion, never commits code.
+flowchart LR
+  ROOT["backlog/ root\n(human raw intake)"]
+  COORD(("coordinator\n(master, intake/routing only,\nnever commits code)"))
+  SPEC["specifier\n(master, task)"]
+  PAUSED["backlog/paused/"]
+  ACTIVE["backlog/active/"]
+
+  CODER["coder\n(.worktrees/coder, task)"]
+  CLEANER["cleaner\n(.worktrees/cleaner, BATCH)"]
+  ARCHITECT["architect\n(.worktrees/architect, task)"]
+  HARDENER["hardender\n(.worktrees/hardender, BATCH)"]
+  DOCUMENTER["documenter\n(.worktrees/documenter, task)"]
+  QA["QA\n(.worktrees/QA, task)"]
+
+  MAIN["main branch\n(target repo)"]
+
+  ROOT -->|drain: spec ambiguous items,\nwrite prose+Gherkin spec| SPEC
+  SPEC -->|places spec| PAUSED
+  PAUSED -->|promote (respecting\nactive_backlog_max_depth\nand orthogonality)| COORD
+  COORD -->|promotes into| ACTIVE
+  COORD -->|routes first parcel| SPEC
+  SPEC -->|git_handoff\npriority 50| CODER
+
+  CODER -->|git_handoff\npriority 50| CLEANER
+  CLEANER -->|git_handoff\n(batch of queued items)| ARCHITECT
+  ARCHITECT -->|git_handoff| HARDENER
+  HARDENER -->|git_handoff\n(batch)| DOCUMENTER
+  DOCUMENTER -->|git_handoff| QA
+  QA -->|final gate: pass ->\ngit_handoff to specifier| SPEC
+  SPEC -->|merge QA-approved work| MAIN
+
+  COORD -.->|unblocks stalls,\ndecides PR-ready| SPEC
+  COORD -.->|reads state, promotes/holds| ACTIVE
+
+  classDef coordinator fill:#8250df,color:#fff,stroke:#4c2889;
+  classDef chain fill:#1f6feb,color:#fff,stroke:#0b3d91;
+  classDef batch fill:#9a6700,color:#fff,stroke:#5c4200;
+  classDef backlog fill:#57606a,color:#fff,stroke:#32383f;
+  classDef target fill:#2ea043,color:#fff,stroke:#116329;
+  class COORD coordinator;
+  class SPEC,CODER,ARCHITECT,DOCUMENTER,QA chain;
+  class CLEANER,HARDENER batch;
+  class ROOT,PAUSED,ACTIVE backlog;
+  class MAIN target;
