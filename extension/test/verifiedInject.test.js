@@ -21,8 +21,22 @@ test('hasPendingInput is true when unsubmitted text trails the prompt marker', (
   assert.equal(hasPendingInput('$ commit and hand off to cleaner'), true);
 });
 
-test('hasPendingInput is true for a bare input line with no marker', () => {
-  assert.equal(hasPendingInput('commit and hand off to cleaner'), true);
+// BL-109: a line with no recognizable prompt marker at all is standing UI
+// chrome (e.g. Claude Code's idle status footer), never unsubmitted input.
+// The pre-BL-109 fallback ("no marker -> treat the whole line as pending")
+// permanently misread that footer as forever-pending text, so
+// beginInjection took the "recover pending text" branch and never actually
+// typed the wake-up message into a genuinely IDLE pane - reproduced live
+// against the real captured footer text below.
+test('hasPendingInput is false for a bare line with no marker at all', () => {
+  assert.equal(hasPendingInput('commit and hand off to cleaner'), false);
+});
+
+test('hasPendingInput is false for the real idle Claude Code status footer (BL-109 root cause)', () => {
+  assert.equal(
+    hasPendingInput('some history\n  ⏵⏵ bypass permissions on (shift+tab to cycle)                    /rc'),
+    false
+  );
 });
 
 test('isTextStillPending matches the injected text sitting on the input line', () => {
