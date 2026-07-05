@@ -1,0 +1,98 @@
+id: BL-109
+title: BUG — chaser dead-letters unread mail sent while the recipient is legitimately busy, not stuck; the recipient never sees it even after going idle
+milestone: M2
+status: todo
+priority: 02
+assigned_to: coder
+
+description: |
+  DEFECT (coordinator forensics, 2026-07-05): three routine `note` handoffs
+  sent this session were silently lost. Evidence in the shared master
+  worktree inbox (coordinator and specifier share one inbox --
+  .swarmforge/handoffs/inbox/new/, see the Mailbox Recipient Isolation
+  fix):
+    - 00_20260705T084531Z_000292_..._from_specifier_to_coordinator (specifier's
+      "BL-107/108 ready for promotion" note)
+    - 00_20260705T084621Z_000293_..._from_coordinator_to_specifier (promotion
+      routing note)
+    - 00_20260705T084720Z_000294_..._from_coordinator_to_specifier (a chase
+      note)
+  All three now sit as `<name>.handoff.dead` with a `.dead.chase.json`
+  sidecar reading `{"chaseCount":3}`. None were ever collected into
+  in_process by either recipient's ready_for_next.sh -- the recipients
+  never knew the mail existed.
+
+  Root cause: the notifier (extension/src/swarm/verifiedInject.ts
+  sendInstructionVerified, called from the chaser's nudge path) captures
+  the pane, sees no distinct "pending input" signature, types the wake-up
+  text, presses Enter, and if the text is still visible after
+  DEFAULT_MAX_RETRIES (3) attempts at DEFAULT_RETRY_DELAY_MS (200ms,
+  linear backoff -- ~1.2s total) it gives up. A pane belonging to an
+  actively-generating Claude session does not accept input at all, so
+  typed text sits visibly unconfirmed for the ENTIRE remaining duration of
+  that turn -- indistinguishable, to this heuristic, from a truly stuck
+  pane. The daemon log shows exactly this: the specifier was mid-turn
+  ("Worked for 3m 2s" per its own transcript) while chase attempts at
+  08:46 and 08:47 both logged
+  "pane already held undelivered input and it still would not submit",
+  and inboxChaser.ts's chaseCount reached maxChases (3) and dead-lettered
+  all three notes -- well inside a single normal-length agent turn.
+
+  Compounding defect: once dead-lettered (renamed to `<name>.handoff.dead`),
+  the item is invisible to ready_for_next.sh/ready_for_next_task.sh (they
+  only scan `inbox/new/*.handoff`). So even the recipient's own idle-time
+  self-check ("if idle more than 2 minutes, run ready_for_next.sh") never
+  recovers it -- a dead-lettered note is not a chased-then-eventually-seen
+  note, it is a permanently silently dropped one, indistinguishable from
+  success to the sender (swarm_handoff.sh reports HANDOFF QUEUED and never
+  hears otherwise).
+
+  Two defects, ordered by how directly they broke this:
+
+  1. The chase-to-dead-letter budget (~1.2s x a few sweep cycles) is far
+     shorter than a normal agent turn, so busy-but-alive is misclassified
+     as stuck. Distinguish "recipient is actively generating" (a normal,
+     expected, self-resolving state -- keep the mail in inbox/new/ and
+     keep chasing on the existing interval, never dead-letter) from
+     "recipient's pane truly cannot accept input" (unresponsive: use the
+     existing liveness check -- dead/unknown/stuck -- as the actual
+     dead-letter/respawn trigger, per isUnresponsiveLiveness, rather than
+     retry-count alone).
+  2. Dead-lettering with no recipient-visible recovery path is a silent
+     mail loss. At minimum, a dead-lettered `note`/`git_handoff` should be
+     surfaced somewhere a human or the coordinator can find it (a
+     dead-letter listing/command, or the item, protocol allowing) rather
+     than becoming invisible debris next to (functionally) a `.chase.json`
+     sidecar that nothing reads back.
+
+acceptance: |
+  Feature: mail is not lost while the recipient is legitimately busy
+
+  # BL-109 busy-not-stuck-01
+  Scenario: a long agent turn does not dead-letter its own queued mail
+    Given a recipient pane is actively generating a response for several
+      minutes
+    And a chase-eligible handoff is queued for that recipient
+    When the chaser sweeps during that turn
+    Then the handoff remains in inbox/new (never dead-lettered)
+    And once the turn ends and the recipient goes idle, the recipient's
+      next ready_for_next.sh sees the handoff
+
+  # BL-109 unresponsive-dead-letter-02
+  Scenario: a truly unresponsive pane still dead-letters or respawns
+    Given a recipient pane whose liveness state is dead, unknown, or stuck
+    And a chase-eligible handoff is queued for that recipient
+    When the chaser sweeps past maxChases
+    Then the handoff is dead-lettered or the role is respawned, as today
+
+  # BL-109 dead-letter-visible-03
+  Scenario: a dead-lettered item is discoverable, not silently gone
+    Given a handoff was dead-lettered
+    When a human or the coordinator inspects dead-letter state
+    Then the item, its original recipient, and its content are easy to find
+
+  # Non-behavioral gates:
+  #  - Tested through existing seams (inboxChaser, verifiedInject fakes);
+  #    no live tmux in tests.
+  #  - BL-087/BL-088 (chaser false-positive respawn, tile-freeze isolation)
+  #    are the adjacent tickets; this ticket must not duplicate their scope.
