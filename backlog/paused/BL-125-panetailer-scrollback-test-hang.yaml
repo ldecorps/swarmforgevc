@@ -1,0 +1,69 @@
+id: BL-125
+title: "BUG: paneTailerScrollback.test.js can run 30s+ per test and appear hung — load-sensitive, blocks hardening runs"
+milestone: M2
+status: todo
+priority: 06
+assigned_to: coder
+source: "hardender note 000068 (2026-07-05): 'test/paneTailerScrollback.test.js hangs forever (pre-existing bug)'"
+
+description: |
+  The hardender reports test/paneTailerScrollback.test.js hanging forever.
+  Specifier reproduction (2026-07-05, main tip after BL-086 merge) confirms a
+  severe, load-sensitive slowness rather than a deterministic infinite loop:
+
+  - Standalone run #1 (`node --test --test-timeout=30000`): the FIRST test
+    was still unfinished at 30s and got cancelled; the file's other two
+    tests never even ran.
+  - Standalone run #2 (suite-style `--test-concurrency=8`, same file): all
+    3 tests pass, ~10-12s EACH, 36s total.
+  - Inside the full `npm test` suite the file currently passes (1148/1148
+    in ~109s), so the cost hides in suite concurrency — but any extra load
+    (a hardening/mutation run, syspolicyd first-run assessment of a fresh
+    fake-tmux binary, CI contention) pushes a single test past any sane
+    wait and it presents as a forever-hang.
+
+  Mechanism to investigate (not prescribed): each of the 3 tests drives
+  PaneTailer.poll() 15-25 times, and every poll spawns multiple fake-tmux
+  processes (a Node script installed by test/helpers/fakeTmux.js), i.e.
+  hundreds of synchronous process spawns per test at ~hundreds of ms each.
+  The fix may make the test exercise the same retained-transcript behavior
+  with far fewer/faster spawns (e.g. rule-driven multi-call fake, in-process
+  capture stub at the module seam) — but the BL-070 gate must be preserved:
+  the assertion stays on the actual retained/rendered text reaching
+  onOutput, never on tmux argv.
+
+  Constraints:
+  - Do not weaken or delete the BL-070 regression assertions (scrolled-off
+    content reachable, historyLines bound honored, unchanged repaint adds
+    no updates).
+  - No change to production PaneTailer behavior is expected; if the
+    investigation finds a genuine production-side hang (e.g. unbounded
+    synchronous wait in poll()), fix it and say so in the handoff.
+  - Whatever the fix, the file must complete well under the suite's normal
+    per-file budget even when run standalone on a cold machine.
+
+acceptance: |
+  Feature: paneTailerScrollback tests complete quickly and deterministically
+
+  # BL-125 panetailer-test-hang-01
+  Scenario: the file completes standalone within a strict budget
+    Given a compiled extension tree
+    When test/paneTailerScrollback.test.js is run standalone via node --test
+    Then all of its tests pass
+    And the whole file completes in under 10 seconds
+
+  # BL-125 panetailer-test-hang-02
+  Scenario: the BL-070 retained-transcript gate still holds
+    Given the reworked test file
+    When its tests run
+    Then a test still asserts that content scrolled off the visible window
+      is reachable in the text delivered to onOutput
+    And a test still asserts the historyLines bound is enforced
+    And a test still asserts an unchanged repaint produces no new updates
+    And no assertion is made against the tmux argv used for capture
+
+  # BL-125 panetailer-test-hang-03
+  Scenario: the full suite stays green
+    Given the reworked test file
+    When npm test runs
+    Then the suite passes with no cancelled tests
