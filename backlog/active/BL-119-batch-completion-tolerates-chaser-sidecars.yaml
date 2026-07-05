@@ -1,0 +1,55 @@
+id: BL-119
+title: "BUG: inbox completion helpers choke on chaser sidecars left in the dir"
+milestone: M2
+status: todo
+priority: 02
+assigned_to: coder
+source: "hardender rule_proposal 000064 (2026-07-05), rerouted to backlog by specifier"
+
+description: |
+  The chaser writes sidecar files (`.nudge`, `.chase.json`) next to queued
+  handoffs. When the handoff itself is completed/moved, an orphaned sidecar
+  can remain. done_with_current_batch.bb then fails to delete the completed
+  batch directory with DirectoryNotEmptyException, wedging the role until a
+  human removes the sidecar by hand (hit by the hardender 2026-07-05; the
+  specifier also had to hand-clean orphaned `.nudge`/`.chase.json` sidecars
+  from its master inbox the same day).
+
+  Wanted behavior: completion helpers (batch AND task variants) treat chaser
+  sidecars as disposable metadata. On completing a handoff or batch, any
+  sidecar belonging to a handoff that is no longer pending in that directory
+  is removed as part of completion; completion never fails because only
+  sidecars remain.
+
+  Constraint: only chaser sidecar suffixes (`.nudge`, `.chase.json`) may be
+  auto-removed — never a `.handoff` payload or unknown file; those still
+  abort with a clear error.
+
+acceptance: |
+  Feature: inbox completion tolerates chaser sidecars
+
+  # BL-119 sidecar-tolerant-completion-01
+  Scenario: batch completion cleans an orphaned nudge sidecar
+    Given a completed batch directory containing only a .nudge sidecar for
+      an already-moved handoff
+    When done_with_current_batch completes the batch
+    Then the sidecar is removed and the batch directory is deleted
+    And the helper exits successfully
+
+  # BL-119 sidecar-tolerant-completion-02
+  Scenario: task completion cleans sidecars of the completed handoff
+    Given an in_process handoff with a .nudge and a .chase.json sidecar
+    When done_with_current completes the handoff
+    Then the handoff moves to completed and neither sidecar remains behind
+
+  # BL-119 sidecar-tolerant-completion-03
+  Scenario Outline: unknown files still abort completion
+    Given a completed batch directory containing an unexpected file <file>
+    When done_with_current_batch completes the batch
+    Then the helper aborts with an error naming <file>
+    And <file> is not deleted
+
+    Examples:
+      | file             |
+      | stray.handoff    |
+      | notes.txt        |

@@ -1,0 +1,99 @@
+id: BL-122
+title: RELIABILITY (top priority, 2 of 2) — automatic agent-driven handoff RECOVERY — re-deliver dead-lettered/stuck parcels, self-heal the daemon, escalate to a human only after retries are exhausted
+milestone: M2
+status: todo
+priority: 00
+notes: |
+  Second half of the raw root ticket filed as "BL-118" (operator directive
+  2026-07-05); renumbered/split by the specifier — see BL-121 for the
+  DETECTION half and the shared forensics. DEPENDS ON BL-121: recovery acts
+  on BL-121's delivery-level health signals; promote only after (or with)
+  BL-121, never before it.
+  OPERATOR DIRECTIVE: "We have to have a way to detect when it breaks, and
+  agents have to fix it. This auto-fixing behaviour has to be there."
+
+description: |
+  The RECOVERY half of the systemic handoff fix (detection is BL-121). When
+  delivery-level breakage is detected, the swarm must self-heal WITHOUT a
+  human:
+  - Re-deliver dead-lettered (failed/) and stalled (over-age new/in_process)
+    parcels to the correct CURRENT live holder — idempotently, so a retry
+    after partial delivery cannot duplicate work (prefer at-least-once
+    delivery with idempotent, acked handoffs over best-effort).
+  - Restart or de-duplicate the daemon when process-level breakage is the
+    cause (reusing, not re-implementing, the BL-061 supervisor and BL-081
+    de-dup machinery).
+  - Re-route when the intended recipient is no longer the live holder, and
+    re-attach consumers after a daemon/swarm bounce.
+  - Log every remediation, and VERIFY recovery (the BL-121 canary/health
+    returns to green) rather than assuming it worked.
+  - Escalate to a human (a distinct needs-human state) if, and only if,
+    auto-recovery exhausts its bounded retries. Silent loss is never
+    acceptable: every detected parcel ends re-delivered, or explicitly
+    surfaced — never rotting in failed/ indefinitely. The 3 parcels
+    dead-lettered since 2026-07-02/03 (see BL-121 forensics) are the live
+    acceptance fixture, if still present when this lands.
+
+  Design decision the coder/architect must settle EXPLICITLY (not by
+  accident): the OWNER of the recovery loop — the daemon supervisor, the
+  extension watchdog (chaserMonitor/inboxChaser), a dedicated healer, or the
+  coordinator — chosen so the owner is not itself a single point of failure
+  (BL-107 showed coordinator exit tears the whole swarm down). The chosen
+  owner and the reasoning go into the parcel's docs pass.
+
+  Constraints:
+  - Build on the existing supervisor/health/chaser seams; do NOT re-litigate
+    BL-061/081/083 scope — this is a recovery layer on top.
+  - Recovery must be conservative with live work: never re-deliver a parcel a
+    live holder is actively processing (cf. BL-109's busy-recipient
+    dead-letter bug); idempotency keys / dedup guard against double delivery.
+  - Bounded retries with backoff; remediation actions and outcomes are
+    durably logged.
+
+  Code seams: same as BL-121 (handoffd.bb, handoffd_supervisor.bb,
+  handoff-lib.sh, daemonHealth.ts, chaserMonitor.ts, inboxChaser.ts,
+  respawnPickup.ts, .swarmforge/handoffs/*). Adjacent: BL-121 (detection —
+  hard dependency), BL-107 (SPOF teardown), BL-109 (busy-recipient
+  dead-letters), BL-119 (chaser sidecar orphans blocking completion helpers).
+
+acceptance: |
+  Feature: the swarm self-heals handoff breakage without a human
+
+  # BL-122 auto-recovery-01
+  Scenario: a dead-lettered or stalled parcel is re-delivered without a human
+    Given a parcel is dead-lettered or has stalled past its age threshold
+    When the recovery owner runs
+    Then the parcel is re-delivered to the correct live holder
+    And the remediation is logged
+    And the canary/health returns to green after recovery
+
+  # BL-122 idempotent-redelivery-02
+  Scenario: retrying a partially-delivered parcel cannot duplicate work
+    Given a parcel whose earlier delivery attempt partially succeeded
+    When recovery re-delivers it
+    Then the recipient sees exactly one actionable copy of the parcel
+
+  # BL-122 busy-holder-guard-03
+  Scenario: recovery never clobbers a live holder's in-flight work
+    Given the intended recipient is actively processing the same parcel
+    When the recovery owner evaluates it
+    Then no re-delivery occurs and the parcel is not treated as lost
+
+  # BL-122 escalation-04
+  Scenario: exhausted retries escalate instead of looping or going silent
+    Given auto-recovery has retried a parcel up to its bounded limit
+    When the last retry fails
+    Then the parcel is surfaced in a needs-human state with its history
+    And it never sits unresolved in failed/ indefinitely
+
+  # BL-122 recovery-owner-05
+  Scenario: the recovery owner is not a single point of failure
+    Given the daemon or an agent that owns recovery has itself died/exited
+    Then recovery still occurs (supervised/redundant owner)
+    And the swarm is not torn down as a side effect (cf. BL-107)
+
+  # Non-behavioral gates:
+  #  - Tested through the messageBus/handoff and daemonHealth fakes (injected
+  #    queue state, injected canary/health results); NO live babashka daemon
+  #    or tmux in tests.
+  #  - Depends on BL-121's health signals; do not promote ahead of it.

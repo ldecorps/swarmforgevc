@@ -1,0 +1,96 @@
+id: BL-120
+title: BUG — swarm panel drifts out of sync with the live swarm; tile CONTENT (and the title ticket badge) show stale frames with little relation to what agents are actually doing
+milestone: M2
+status: todo
+priority: 03
+notes: |
+  Filed at the backlog root as "BL-117" (raw intake, 2026-07-05); renumbered to
+  BL-120 by the specifier because BL-117 was already taken by the PWA docs
+  drill-down explorer in paused/. Intent and content preserved.
+  SEQUENCING: do not promote until BL-086 (startup attach) has merged — the fix
+  may be subsumed by it; if so, fold this ticket in as BL-086's observable
+  acceptance instead of shipping a parallel attach path.
+
+description: |
+  DEFECT (operator report, 2026-07-05): the SwarmForge panel is no longer a
+  trustworthy view of the swarm. The operator has the Claude mobile remote on
+  and can see the agents' REAL activity from their phone; it "has little to do
+  with what the pane is showing". This is a core-observability regression (the
+  whole point of the panel, M1), not a cosmetic glitch.
+
+  Two out-of-sync surfaces, kept as ONE spec (specifier decision): both stale
+  surfaces are most plausibly the same failure — the panel remaining attached
+  to a pre-relaunch swarm — and both are verified through the same
+  injected-session fakes. If the coder finds the badge staleness is a separate
+  root cause, finish the content fix here and file the badge remainder as a
+  follow-up ticket rather than widening this one.
+
+  1. Tile CONTENT is stale (primary, functional). The per-agent tiles show
+     frozen/old terminal frames that do not track the live tmux panes. Example
+     from this session: the Cleaner tile body read "Ready for next parcel"
+     (idle) while the coordinator narrative and the mobile remote showed active
+     work; other tiles showed fragments ("ork", bare prompts) unrelated to the
+     agents' true state.
+
+  2. Title ticket BADGE is stale (secondary, cosmetic-ish). The ticket chip in
+     a tile's header does not refresh: the Cleaner tile was pinned to
+     "BL-086 · extension never activates on editor sta…" even though that
+     tile's body showed it idle/ready, i.e. it was not actively holding BL-086.
+
+  Likely root cause / timeline. Earlier on 2026-07-05 the extension was
+  stopped, its spawned QA subtrees were reaped (see BL-108), and the swarm was
+  relaunched — the live tmux sessions were (re)created 2026-07-05 09:42:53. A
+  panel/tailer that attached to a prior run (or never re-attached after the
+  relaunch) would show exactly this: frozen content + a badge stuck at the
+  pre-relaunch holder. This smells like a manifestation/superset of BL-086
+  (extension never activates on editor startup, so a running swarm is not
+  attached until a manual command). Confirm before fixing; do NOT duplicate
+  BL-086's scope — sequence with it (see notes).
+
+  Code seams for the debugger (READ-ONLY findings, no changes made):
+    - Tile content: PaneTailer (src/panel/paneTailer.ts) capture loop; its
+      tmux source is derived from targetPath (.swarmforge/tmux-socket). Note
+      the socket file DID point at the live 09:42:53 sessions when checked, so
+      the on-disk source of truth is correct — suspect the tailer attaching
+      once and not re-attaching when the sessions are replaced, and
+      swarmPanel.setupTailer()/refreshState() (src/panel/swarmPanel.ts:183-228,
+      :79) as the re-attach seam.
+    - Title badge: pushed every stage-poll tick via 'badgeUpdate'
+      (swarmPanel.ts:321) from buildBadgeMap()/findLiveHolder
+      (src/panel/badgeSummary.ts); rendered in the webview 'badgeUpdate'
+      handler (media/panel.js:693-712). If the poll tick or the live-holder
+      resolution goes stale (e.g. a dead-lettered parcel left in an inbox —
+      see BL-109), the chip never clears.
+
+  Adjacent tickets: BL-086 (activation/attach), BL-109 (pending-input
+  heuristic / dead-letter), BL-088 (frozen tile ≠ dead agent). This ticket is
+  the observable "panel lies about live state" symptom.
+
+acceptance: |
+  Feature: the panel reflects the live swarm's real state
+
+  # BL-120 content-reattach-01
+  Scenario: tile content tracks the currently-live tmux sessions
+    Given the panel is open against a target swarm
+    When the swarm's tmux sessions are replaced by a relaunch
+    Then the tailer re-attaches to the new sessions
+    And each tile's content reflects the live pane, not a pre-relaunch frame
+
+  # BL-120 content-freshness-02
+  Scenario: a tile that has gone idle stops showing old activity
+    Given an agent that has finished its work and returned to an idle prompt
+    Then its tile content shows the idle state, not a stale mid-task frame
+
+  # BL-120 badge-liveness-03
+  Scenario: the title ticket badge tracks the live holder
+    Given a role's active parcel changes holder or the role goes idle
+    When the next panel refresh occurs
+    Then the tile's ticket chip updates to the new holder's ticket
+    And clears when the role no longer holds an active parcel
+
+  # Non-behavioral gates:
+  #  - Tested through the existing tailer/capture and badge/backlog fakes
+  #    (injected sessions + capture output); NO live tmux in tests.
+  #  - Must not duplicate BL-086 (activation/attach) scope — if the fix is
+  #    subsumed by BL-086, fold this in as its observable acceptance instead
+  #    of shipping a parallel attach path.
