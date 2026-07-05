@@ -1,0 +1,63 @@
+id: BL-104
+title: complexity debt — bring readSwarmRoles and runCommand back under the threshold (no behavior change)
+milestone: M2
+status: todo
+priority: 04
+source: hardener finding during BL-093 hardening 2026-07-04 (root intake, coordinator relay)
+
+description: |
+  During BL-093 hardening, every touched function landed at or under the
+  complexity threshold (6) except two pre-existing ones that BL-093
+  correctly did not touch: `runCommand` (extension/src/swarm/tmuxClient.ts
+  ~L25) and `readSwarmRoles` (same file, ~L209). Specifier decision-point
+  count puts them at roughly 8 and 9 respectively — the coder confirms
+  exact complexity/CRAP figures with the project quality tooling as the
+  FIRST step (before) and again after (both functions <= 6).
+
+  Refactor for complexity ONLY — behavior-preserving:
+    - runCommand: the timeout-detection + stderr-composition + exit-code
+      fallback chains are the drivers; extracting small pure helpers
+      (e.g. timed-out detection, result shaping) is the expected shape.
+    - readSwarmRoles: the per-line parse with guard continues and
+      per-field fallbacks is the driver; a pure parse-one-line helper
+      (raw line -> SwarmRole | undefined) is the expected shape and
+      becomes directly unit-testable.
+  Expected shapes are suggestions, not prescriptions — any structure that
+  lands both at <= 6 with identical behavior is acceptable.
+
+  Hard constraints:
+    - NO behavior change: identical outputs for identical inputs,
+      including every edge already covered (timeout stderr message text,
+      exit-code fallbacks, malformed/blank sessions.tsv lines, missing
+      files). Existing suites (tmuxClient tests incl. the a16e4d8
+      respawn/timeout regressions and BL-084/BL-087 suites) must pass
+      unmodified — if a test has to change, that is a behavior change and
+      out of scope.
+    - New helpers get their own focused unit tests through existing
+      seams; no new public API surface beyond what extraction requires.
+    - Touch only tmuxClient.ts (+ its test file). No drive-by cleanups.
+
+acceptance: |
+  Feature: two over-threshold functions are brought under it unchanged
+
+  # BL-104 complexity-01
+  Scenario: complexity is measured before and after
+    When the quality tooling runs on tmuxClient.ts before the refactor
+    Then runCommand and readSwarmRoles are recorded over the threshold
+    And after the refactor both measure at or under 6
+
+  # BL-104 complexity-02
+  Scenario: behavior is bit-identical
+    Given the pre-existing tmuxClient test suites
+    When they run against the refactored code without modification
+    Then every test passes
+
+  # BL-104 complexity-03
+  Scenario: extracted helpers are tested
+    When the refactor extracts helper functions
+    Then each helper has focused unit tests covering its edge cases
+      (timeout detection, malformed sessions.tsv lines, field fallbacks)
+
+  # Non-behavioral gates:
+  #  - Diff confined to tmuxClient.ts and tests; no unrelated changes.
+  #  - CRAP report shows no regression elsewhere in the file.

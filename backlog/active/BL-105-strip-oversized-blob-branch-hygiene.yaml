@@ -1,0 +1,74 @@
+id: BL-105
+title: repo hygiene — strip the oversized mutation-cache blob from role-branch history and guard against >100MB files forever
+milestone: M2
+status: todo
+priority: 01
+source: push failure 2026-07-05 — BL-093 lineage carries a 113.69 MB stryker-incremental.json, over GitHub's 100 MB hard limit
+
+description: |
+  Incident: the BL-093 hardening commit grew extension/stryker-incremental.json
+  to 113.69 MB. GitHub rejects any push whose reachable objects include a
+  file over 100 MB, so a true merge of that lineage makes main unpushable.
+  Containment applied by the specifier (2026-07-05): BL-093 was
+  SQUASH-merged into main (content identical, ancestry excluded), the
+  cache is now untracked + gitignored on main, and until this ticket
+  completes the specifier must squash-merge every QA approval, since all
+  role branches still carry the blob commit in their ancestry.
+  Squashing is a lineage break the pipeline should not live with long.
+
+  Wanted:
+    1. History strip: remove every version of the oversized blob from all
+       LOCAL refs (role branches + any tags), e.g. git-filter-repo
+       targeting the path. Origin never received it, so no remote rewrite
+       is needed. Must run in a MAINTENANCE WINDOW: all roles idle, no
+       parcels in flight; coordinator schedules it; worktrees reset to
+       their rewritten branches afterward.
+    2. Untrack everywhere: extension/stryker-incremental.json gitignored
+       on every branch (propagates with the rewrite); stryker keeps using
+       the on-disk file (verify incremental mode still works untracked;
+       if stryker needs the file seeded, document the local-only flow).
+    3. Size guard so this class of failure is impossible: the outbound
+       commit path used by roles (or a pre-push check in the swarm
+       scripts) rejects any commit introducing a file over a configured
+       threshold (default 50 MB) with a clear message naming the file.
+       Guard covers all roles including the specifier's merge pushes.
+    4. Resume full merges: once role branches are rewritten, the
+       specifier returns to --no-ff merges (temporary squash policy ends;
+       this ticket's completion note must say so explicitly).
+
+  Scope: swarm-scripts (guard + maintenance procedure script), a
+  documented runbook for the maintenance window (docs/), .gitignore
+  propagation. Engineering-article note: mutation caches/manifests are
+  local state, never tracked. No extension/src changes.
+
+acceptance: |
+  Feature: no ref carries an over-limit blob and none ever can again
+
+  # BL-105 hygiene-01
+  Scenario: history strip removes the blob from every ref
+    When the maintenance procedure completes
+    Then no object reachable from any local ref exceeds 100 MB
+    And every role worktree is on its rewritten branch with a clean status
+
+  # BL-105 hygiene-02
+  Scenario: full merge of a post-strip parcel pushes cleanly
+    Given a parcel completed on the rewritten branches
+    When the specifier merges it --no-ff and pushes
+    Then the push succeeds
+
+  # BL-105 hygiene-03
+  Scenario: the size guard blocks oversized files
+    Given a commit attempt introducing a file over the threshold
+    When the guarded commit/push path runs
+    Then it is rejected with a message naming the file and its size
+
+  # BL-105 hygiene-04
+  Scenario: stryker still runs incrementally untracked
+    Given the gitignored on-disk incremental cache
+    When a mutation run executes
+    Then incremental mode functions and the cache never appears in git
+      status
+
+  # Non-behavioral gates:
+  #  - Guard logic script-tested in swarmforge/scripts/test/.
+  #  - Runbook rehearsed once end-to-end before the real window.
