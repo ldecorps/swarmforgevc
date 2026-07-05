@@ -1,0 +1,72 @@
+id: BL-110
+title: "extension/swarm stability — dump last known state on shutdown/failure"
+milestone: M4
+status: todo
+priority: 01
+assigned_to: coder
+source: "root intake BL-052-extension-swarm-state-dumps (renumbered: id BL-052 already used by done/M4 fit-tile-pane ticket)"
+
+description: |
+  The extension is not yet stable. When it goes down (close, crash, reload,
+  host kill) there is today no durable record of what it knew, so recovery
+  and debugging start blind. Same for the swarm side: when the swarm goes
+  down there is no last-known-state artifact.
+
+  Wanted behavior:
+  - Extension side: maintain a durable last-known-state dump under
+    .swarmforge/ (e.g. .swarmforge/dumps/extension-state.json) containing
+    its last known internal state (target, attach/panel state, launch
+    state), what it knows about the swarm (liveness, stage holder, roles),
+    and the known cause/reason of shutdown when one is available.
+    Because an abrupt host kill runs no shutdown code (see BL-108), the
+    dump must be maintained as a periodically-updated durable snapshot
+    plus a best-effort final write on clean deactivate — not only a
+    written-at-exit artifact.
+  - Swarm side: on swarm shutdown/teardown (swarm-cleanup, handoffd stop),
+    emit a dump with last known swarm state (sessions/panes, daemon state,
+    in-flight handoffs) and known cause if available.
+  - Include the launch log (BL-116's .swarmforge/last-launch.log) by
+    reference or content — it is the first artifact a dump should carry.
+  - Dumps survive restart and are never overwritten by the next clean
+    startup before being rotated (keep at least the previous one).
+  - Dump writing must never block or delay shutdown, and failures to write
+    are logged, never thrown.
+
+  Scope: extension host side plus swarmforge/scripts teardown paths.
+  Host owns all I/O (two-layer rule); webview untouched.
+
+acceptance: |
+  Feature: last known state survives extension and swarm shutdown
+
+  # BL-110 state-dump-01
+  Scenario: clean extension deactivate writes a final dump
+    Given the extension is running with a target configured
+    When the extension deactivates cleanly
+    Then a durable dump exists under .swarmforge/ containing the last
+      known extension state, known swarm info, and the shutdown reason
+
+  # BL-110 state-dump-02
+  Scenario: an abrupt host kill still leaves a recent snapshot
+    Given the extension has been running for at least one snapshot interval
+    When the extension host is killed without running deactivate
+    Then a durable snapshot from the running period exists under
+      .swarmforge/ and is readable after restart
+
+  # BL-110 state-dump-03
+  Scenario: swarm teardown writes a swarm-side dump
+    Given a running swarm
+    When the swarm is torn down
+    Then a dump exists recording last known swarm state and, when known,
+      the cause of the teardown
+
+  # BL-110 state-dump-04
+  Scenario: dumps survive restart for diagnosis
+    Given dumps were written by a previous session
+    When the extension next activates
+    Then the previous dumps remain available (rotated, not clobbered)
+
+  # Non-behavioral gates:
+  #  - Snapshot/dump logic lives in a testable host-side module (fake
+  #    clock + fake fs seams); no live tmux or VS Code boot in tests.
+  #  - Dump writes are best-effort: a write failure never surfaces as an
+  #    activation/deactivation error.
