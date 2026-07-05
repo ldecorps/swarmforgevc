@@ -520,14 +520,24 @@ function activate(context) {
             // the launcher's own budget in that case, without penalizing the
             // truly-empty (no socket) case.
             const reattachTimeoutMs = (0, swarmLauncher_1.chooseReattachTimeoutMs)((0, tmuxClient_2.readTmuxSocket)(targetPath) !== undefined, REATTACH_COLD_START_TIMEOUT_MS, REATTACH_READY_TIMEOUT_MS);
+            // BL-086: this block now runs unprompted on every editor start (via
+            // the added onStartupFinished activation event), not just after the
+            // user happens to invoke a command. Treat it as startup-triggered:
+            // attach silently in the background (preserveFocus) when a swarm is
+            // live, and do nothing visible otherwise. shouldOfferResumePrompt's
+            // non-startup branch stays reachable (and tested) for the case where
+            // a command wins the activation race before onStartupFinished fires,
+            // preserving today's resume-offer behavior on that path.
+            const isStartupTriggeredActivation = true;
             (0, swarmLauncher_1.waitForSwarmReady)(targetPath, reattachTimeoutMs, REATTACH_READY_POLL_MS).then((ready) => {
                 if (ready) {
                     // Re-attach automatically: tiles reconnect to the live output
-                    // streams without restarting any agent.
-                    const panel = swarmPanel_1.SwarmPanel.createOrShow(context.extensionUri, targetPath, runLogPath, undefined, context.secrets);
+                    // streams without restarting any agent. preserveFocus keeps the
+                    // editor the operator opened into in the foreground.
+                    const panel = swarmPanel_1.SwarmPanel.createOrShow(context.extensionUri, targetPath, runLogPath, undefined, context.secrets, isStartupTriggeredActivation);
                     panel.updateTarget(targetPath);
                 }
-                else if ((0, swarmDiscovery_1.hasPriorRunState)(targetPath)) {
+                else if ((0, swarmDiscovery_1.shouldOfferResumePrompt)(isStartupTriggeredActivation, (0, swarmDiscovery_1.hasPriorRunState)(targetPath))) {
                     // Cold relaunch with no live processes: offer resume from the
                     // target's prior run rather than a silent no-op or a surprise
                     // cold start.

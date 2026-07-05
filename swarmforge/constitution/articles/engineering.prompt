@@ -77,3 +77,8 @@
   for the task.
 - Before relying on an unfamiliar command, inspect local help or project
   documentation.
+- Mutation-testing caches and incremental-run manifests (e.g. StrykerJS's
+  incremental cache file) are local state, not source: gitignore them,
+  never commit them. A tracked mutation cache is exactly how BL-105's
+  113 MB blob entered history and made a branch unpushable — the tool
+  reads/writes it locally regardless of whether git tracks it.

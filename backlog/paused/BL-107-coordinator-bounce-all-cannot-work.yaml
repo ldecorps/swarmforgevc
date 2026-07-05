@@ -1,0 +1,94 @@
+id: BL-107
+title: BUG — coordinator-initiated bounce-all cannot work end to end (no agent procedure, no ack, relaunch leg depends on unmerged BL-086, coordinator exit nukes the swarm)
+milestone: M2
+status: todo
+priority: 02
+assigned_to: coder
+
+description: |
+  DEFECT (operator report + forensics, 2026-07-05): the coordinator "tried
+  to bounce all"; the swarm went DOWN at 07:22:07Z and never came back. The
+  extension never received or acted on any bounce: no .swarmforge/bounce
+  was consumed into a drain (no bounce-drain.json trace), stopSwarm never
+  ran (tmux-socket/sessions.tsv markers from the 20260704T0035 launch were
+  left intact), the window was never reloaded (exthost log: no reload since
+  2026-07-04 00:35), and last-launch.log proves launchSwarm was never
+  invoked. What actually killed the swarm: the coordinator EXITED, and the
+  coordinator is the swarm-forge cleanup owner (CLEANUP_OWNER_INDEX=1) —
+  its pane exit runs swarm-cleanup.sh, which SIGTERMs handoffd (clean
+  "stopped" at 07:22:07Z) and kills every session. The handoffd supervisor
+  then restarted a daemon that heartbeats into a swarmless void.
+
+  Four defects, ordered by how directly they broke this:
+
+  1. No agent-facing bounce procedure. Nothing in the constitution or role
+     prompts tells the coordinator HOW to request a bounce
+     (swarmforge/scripts/remote_bounce.sh writes the .swarmforge/bounce
+     sentinel, but no prompt mentions it). The coordinator improvised;
+     whatever it did, exiting was the outcome, and exit == teardown.
+  2. No acknowledgement. Even used correctly, remote_bounce.sh is
+     fire-and-forget: the requester cannot distinguish "extension draining,
+     be patient" from "nobody is listening" (this host has had dead-timer
+     episodes — BL-088). The bounce watcher must write a durable ack (e.g.
+     .swarmforge/bounce-ack.json with phase: draining/stopping/relaunching)
+     that agents and humans can poll, and log every phase.
+  3. bounce-all's relaunch leg cannot fire until BL-086 merges. The 'all'
+     path is stopSwarm -> set pendingAutoLaunch (workspaceState) ->
+     workbench.action.reloadWindow; after reload the extension only
+     activates onCommand, so the pending auto-launch code is never reached.
+     Re-sequence so 'all' does not depend on startup activation: bounce the
+     swarm FIRST (stop + relaunch + verify ready, the existing 'swarm'
+     path), THEN reload the window — a reloaded extension re-attaching to a
+     live swarm needs no activation-time launch. Or block 'all' on BL-086.
+  4. Coordinator exit == swarm teardown is a loaded gun. Upstream design
+     (cleanup owner) means any coordinator crash/exit kills all 8 agents.
+     At minimum the constitution must tell the coordinator it must never
+     exit; consider moving cleanup ownership off the coordinator or gating
+     cleanup on an explicit shutdown marker so a crashed coordinator can be
+     respawned (BL-089 machinery) instead of vaporizing the swarm.
+
+  Evidence for the next debugger: .swarmforge/daemon/handoffd.log.20260705T072209.683Z
+  (deliveries until 06:33:46Z, "stopped" 07:22:07Z), supervisor log
+  ("restart dead" 07:22:09Z), untouched marker files mtime 20260704T0035,
+  exthost log window4 (no reload, no activation after 2026-07-04 00:35),
+  .swarmforge/last-launch.log (still the 20260704T0035 attempt).
+
+acceptance: |
+  Feature: a coordinator-requested bounce restarts the swarm end to end
+
+  # BL-107 bounce-ack-01
+  Scenario: bounce requests are acknowledged durably
+    Given a running swarm and a healthy extension host
+    When remote_bounce.sh writes the bounce sentinel
+    Then the extension writes a bounce-ack with the current phase
+    And each phase transition (draining, stopping, relaunching, done)
+      updates the ack file and the output channel log
+
+  # BL-107 bounce-all-02
+  Scenario: bounce-all restarts the swarm without relying on startup activation
+    Given a running swarm and a healthy extension host
+    When a bounce of type "all" is processed
+    Then the swarm is stopped and relaunched and readiness is verified
+    And only then is the extension window reloaded
+    And after the reload the tiles re-attach to the already-live swarm
+
+  # BL-107 no-listener-03
+  Scenario: an unheeded bounce request is detectable
+    Given no extension host is processing bounce sentinels
+    When a bounce sentinel is written
+    Then the sentinel (or a stale-request marker) remains on disk
+    And the requester can detect the request was not picked up
+
+  # BL-107 coordinator-exit-04
+  Scenario: coordinator role prompt forbids exiting
+    Given the constitution and coordinator role prompt
+    Then they state the coordinator must never exit its claude session
+    And they document the supported bounce request procedure
+      (remote_bounce.sh path and sentinel semantics)
+
+  # Non-behavioral gates:
+  #  - Tested through existing seams (bounceWatcher, bounceDrain, stopper,
+  #    launcher fakes); no live tmux in tests.
+  #  - BL-057 (bounce-watcher resilience) and BL-086 (startup activation)
+  #    are the adjacent tickets; this ticket must not duplicate their scope
+  #    — sequence with the coordinator.
