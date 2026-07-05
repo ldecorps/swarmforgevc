@@ -270,13 +270,17 @@ function respawnAgent(targetPath, role) {
     // freezing the whole extension, and leave the agent outside tmux where no
     // tile can see it.
     const target = resolveAgentPaneTarget(socketPath, roleEntry.session, getPaneBaseIndex(socketPath));
+    return performVerifiedRespawn(socketPath, target, launchScript, role);
+}
+// BL-093: split out of respawnAgent (CRAP) - type-and-verify first (works
+// for the common case: an idle/dead shell pane waiting to reattach). Only
+// escalate to a forced pane kill+relaunch when verification exhausts its
+// retries - i.e. the pane is a WEDGED live TUI that send-keys cannot reach -
+// never on a healthy pane (a healthy pane confirms delivery on the first
+// attempt).
+function performVerifiedRespawn(socketPath, target, launchScript, role) {
     const command = `bash ${launchScript}`;
     let typeFailure;
-    // BL-093: type-and-verify first (works for the common case: an idle/dead
-    // shell pane waiting to reattach). Only escalate to a forced pane
-    // kill+relaunch when verification exhausts its retries — i.e. the pane is
-    // a WEDGED live TUI that send-keys cannot reach — never on a healthy pane
-    // (a healthy pane confirms delivery on the first attempt).
     const result = (0, verifiedInject_1.sendInstructionVerified)({
         capturePane: () => {
             const captured = capturePane(socketPath, target);
@@ -301,6 +305,9 @@ function respawnAgent(targetPath, role) {
     if (result.status === 'delivered') {
         return { success: true, message: `Agent "${role}" restarted in pane ${target}.` };
     }
+    return escalateToForcedRespawn(socketPath, target, launchScript, role, result);
+}
+function escalateToForcedRespawn(socketPath, target, launchScript, role, result) {
     const forced = respawnPaneForced(socketPath, target, launchScript);
     if (forced.exitCode !== 0) {
         return {

@@ -293,14 +293,19 @@ export function respawnAgent(targetPath: string, role: string): RespawnResult {
   // freezing the whole extension, and leave the agent outside tmux where no
   // tile can see it.
   const target = resolveAgentPaneTarget(socketPath, roleEntry.session, getPaneBaseIndex(socketPath));
-  const command = `bash ${launchScript}`;
+  return performVerifiedRespawn(socketPath, target, launchScript, role);
+}
 
+// BL-093: split out of respawnAgent (CRAP) - type-and-verify first (works
+// for the common case: an idle/dead shell pane waiting to reattach). Only
+// escalate to a forced pane kill+relaunch when verification exhausts its
+// retries - i.e. the pane is a WEDGED live TUI that send-keys cannot reach -
+// never on a healthy pane (a healthy pane confirms delivery on the first
+// attempt).
+function performVerifiedRespawn(socketPath: string, target: string, launchScript: string, role: string): RespawnResult {
+  const command = `bash ${launchScript}`;
   let typeFailure: TmuxRunResult | undefined;
-  // BL-093: type-and-verify first (works for the common case: an idle/dead
-  // shell pane waiting to reattach). Only escalate to a forced pane
-  // kill+relaunch when verification exhausts its retries — i.e. the pane is
-  // a WEDGED live TUI that send-keys cannot reach — never on a healthy pane
-  // (a healthy pane confirms delivery on the first attempt).
+
   const result = sendInstructionVerified(
     {
       capturePane: () => {
@@ -331,6 +336,16 @@ export function respawnAgent(targetPath: string, role: string): RespawnResult {
     return { success: true, message: `Agent "${role}" restarted in pane ${target}.` };
   }
 
+  return escalateToForcedRespawn(socketPath, target, launchScript, role, result);
+}
+
+function escalateToForcedRespawn(
+  socketPath: string,
+  target: string,
+  launchScript: string,
+  role: string,
+  result: VerifiedInjectResult
+): RespawnResult {
   const forced = respawnPaneForced(socketPath, target, launchScript);
   if (forced.exitCode !== 0) {
     return {
