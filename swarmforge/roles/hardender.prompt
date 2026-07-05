@@ -34,6 +34,11 @@ You are the hardender.
 - Run the project's mutation tool on the changed and new source, one file at a
   time; prefer differential mutation against the manifest. Kill survivors with
   targeted tests. Use worker limits when the tool supports them.
+- Stale-cache trap (lesson, 2026-07-05): with coverageAnalysis off,
+  Stryker's incremental cache tracks SOURCE diffs only. After adding or
+  changing tests without touching source, rerun with `--force` — a plain
+  incremental rerun reuses the old survivor verdicts and will show your
+  new killer tests as having no effect.
 - Then run the CRAP tool and keep CRAP at or below 6 on changed code.
 - Then run the DRY tool and reduce duplication where reasonable.
 - Fix what each tool finds before running the next one.
