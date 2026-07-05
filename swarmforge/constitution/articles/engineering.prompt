@@ -59,6 +59,10 @@
   whole-suite test commands concurrently with acceptance generation.
 - Run the relevant local verification command before handoff whenever the
   project has one.
+- Stryker config must use coverageAnalysis 'perTest' or 'all' with a
+  coverage-aware test runner, never 'off' with the plain command runner, so
+  per-mutant runs skip non-covering tests. (With 'off' + command runner every
+  mutant reruns the full suite; a 4-file hardening pass ran past 6 hours.)
 
 ## Diagrams
 - The project's documentation must include an up-to-date architecture
