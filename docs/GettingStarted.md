@@ -51,12 +51,13 @@ In the Extension Development Host window:
 
 1. Run **SwarmForge: Launch Swarm** (`swarmforge.launchSwarm`) to shell out
    to the target's `./swarm` wrapper and start the agents.
-2. Run **SwarmForge: Open Panel** (`swarmforge.openPanel`) to open the tiled
-   agent view — one live terminal tile per role, tailing that role's tmux
-   pane in real time.
+2. The extension automatically opens the tiled agent panel when the swarm
+   launches. If you close the panel, run **SwarmForge: Open Panel**
+   (`swarmforge.openPanel`) to reopen it — one live terminal tile per role,
+   tailing that role's tmux pane in real time.
 3. Click into any tile and type to nudge that agent directly.
 
-**Persistence across restarts:** If you reload or close VS Code while the swarm is running, the agents keep working in tmux. When you relaunch, the extension automatically reconnects to the live swarm — no work is lost. If the swarm is no longer running but you have prior state on disk, the extension offers to resume from the last checkpoint.
+**Persistence across restarts:** If you reload or close VS Code while the swarm is running, the agents keep working in tmux. When you relaunch, the extension automatically reconnects to the live swarm without prompting — no work is lost. If the swarm is no longer running but you have prior state on disk, the extension offers to resume from the last checkpoint.
 
 To stop the swarm cleanly at any point, run **SwarmForge: Stop Swarm**
 (`swarmforge.stopSwarm`).
