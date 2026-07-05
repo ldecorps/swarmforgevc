@@ -14,18 +14,22 @@ description: |
   Operator-confirmed decisions (2026-07-05):
     - Depth: full — UI chrome bilingual AND documentation/ticket content
       machine-translated. Human-maintained parallel docs rejected (drift).
-    - Gherkin: scenarios display in French in FR mode with a one-tap
-      reveal of the canonical English text; the English scenario remains
-      the binding acceptance contract, the French is a courtesy rendering.
+    - Default: ENGLISH by default, French on tap (operator revision
+      2026-07-05). The app opens in English regardless of browser locale;
+      the FR/EN toggle switches to French.
+    - Gherkin: scenarios always display the canonical English text, even
+      in FR mode, with a one-tap reveal of the French rendering; the
+      English scenario remains the binding acceptance contract, the
+      French is a courtesy rendering.
 
   Two tiers:
 
   1. Chrome (client): every UI string (nav, labels, buttons, status and
      stage names, offline/error notices) comes from a locale catalog with
-     en + fr entries. First launch follows the browser locale (fr* ->
-     French, else English); a visible FR/EN toggle switches instantly
-     without reload, and the choice persists across app restarts via the
-     PWA's existing cache mechanism (no other browser storage).
+     en + fr entries. First launch is English regardless of browser
+     locale; a visible FR/EN toggle switches instantly without reload,
+     and the choice persists across app restarts via the PWA's existing
+     cache mechanism (no other browser storage).
 
   2. Content (Action-side): the BL-097/117 Action renderer publishes each
      translatable text (doc sections, ticket titles/descriptions, Gherkin
@@ -59,10 +63,11 @@ acceptance: |
   Feature: the app is fully usable in French and English
 
   # BL-118 bilingual-01
-  Scenario: first launch follows the browser locale
+  Scenario: first launch is English regardless of browser locale
     Given a device whose browser locale is fr or fr-*
     When the app is opened for the first time
-    Then all UI chrome renders in French
+    Then all UI chrome renders in English
+    And the FR/EN toggle is visible
 
   # BL-118 bilingual-02
   Scenario: the language toggle is instant and durable
@@ -80,10 +85,10 @@ acceptance: |
       from the translation cache, not re-translated
 
   # BL-118 bilingual-04
-  Scenario: Gherkin shows French with the canonical English on tap
+  Scenario: Gherkin shows canonical English with French on tap
     Given a ticket's scenarios viewed in FR mode
-    Then the scenario text displays in French
-    And one tap reveals the canonical English text of that scenario
+    Then the scenario text displays in canonical English
+    And one tap reveals the French rendering of that scenario
 
   # BL-118 bilingual-05
   Scenario: missing translations degrade to flagged English
