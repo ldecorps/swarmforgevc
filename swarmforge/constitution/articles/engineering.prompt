@@ -87,6 +87,12 @@
   for the task.
 - Before relying on an unfamiliar command, inspect local help or project
   documentation.
+- On an unexplained revert of a previously-fixed bug at session start, run
+  `git restore --source=HEAD --staged --worktree -- <paths>` first and log it
+  as a recurrence, not new work. (Recurring phantom-revert diffs at session
+  start have hit multiple roles — BL-081, BL-109; root-cause investigation is
+  BL-126. Never re-fix from scratch, and never use `git stash` for this — see
+  the tracked-but-gitignored `scripts/` failure mode.)
 - Mutation-testing caches and incremental-run manifests (e.g. StrykerJS's
   incremental cache file) are local state, not source: gitignore them,
   never commit them. A tracked mutation cache is exactly how BL-105's
