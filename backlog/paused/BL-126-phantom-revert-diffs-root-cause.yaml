@@ -1,0 +1,47 @@
+id: BL-126
+title: "BUG: recurring phantom-revert diffs at session start — root-cause the second live mechanism"
+milestone: M2
+status: todo
+priority: 10
+source: "hardender rule_proposal 000070 (2026-07-05); rule accepted into engineering article, investigation split out by specifier"
+
+description: |
+  Roles keep finding an unexplained working-tree diff at session start that
+  reverts a previously-fixed bug (8th occurrence as of 2026-07-05, seen across
+  roles; examples: the BL-081 fix, then the BL-109 fix). One cause was already
+  found and fixed — the tracked-but-gitignored `scripts/` mismatch that made
+  `git stash` restore stale content — yet the phantom reverts recurred after
+  that fix, so a second live mechanism is likely.
+
+  The mitigation (restore from HEAD, log as recurrence) is now an engineering
+  guardrail. This ticket is the investigation: find and fix the remaining
+  mechanism that rewrites or resurrects stale file content in role worktrees
+  at session boundaries.
+
+  Scope hints (verify, do not assume): worktree refresh/launch scripts under
+  `.swarmforge/launch/`, respawn procedures, any helper that copies or
+  restores files across worktrees, editor/extension file writes on attach,
+  and gitignore/tracking mismatches beyond `scripts/`.
+
+  Deliverable: a written root-cause (in the ticket or docs) plus a fix or
+  guard that stops the recurrence; if genuinely unreproducible, add
+  instrumentation that captures the next occurrence (who wrote the file,
+  when, from what source) so the cause is caught in the act.
+
+acceptance: |
+  Feature: phantom revert diffs stop recurring
+
+  # BL-126 phantom-revert-root-cause-01
+  Scenario: session start on a clean worktree produces no unexplained diff
+    Given a role worktree whose HEAD contains a previously-fixed bug's fix
+    And no agent or human has edited the worktree since the fix commit
+    When a role session starts (respawn, /clear re-read, or fresh attach)
+    Then `git status --porcelain` in that worktree reports no modification
+      to the previously-fixed files
+
+  # BL-126 phantom-revert-root-cause-02
+  Scenario: the write path of any recurrence is attributable
+    Given the instrumentation or fix from this ticket is in place
+    When a file in a role worktree is rewritten outside a role's own edit
+    Then the event is captured with timestamp, writing process, and source
+      content, sufficient to name the mechanism
