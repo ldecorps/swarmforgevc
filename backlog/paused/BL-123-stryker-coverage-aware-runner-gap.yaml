@@ -4,6 +4,25 @@ milestone: M2
 status: todo
 priority: 02
 assigned_to: coder
+notes: |
+  Drained from the backlog root by the specifier 2026-07-05; arrived fully
+  specced (coordinator forensics), content preserved. Specifier additions:
+  - The constitution rule (engineering.prompt Stryker clause) has been amended
+    on main with an INTERIM clause acknowledging this gap, so hardeners are no
+    longer misled into flipping perTest against the command runner while this
+    ticket is open. Scenario coverage-aware-02 is therefore partially satisfied
+    already; the ticket's job is to close the gap for real (runner path) or
+    make the interim state the accepted permanent one.
+  - Constitution ownership: only the specifier writes constitution/prompt
+    files. If the chosen path requires further rule wording changes, the coder
+    reports the needed wording (via the parcel or a rule_proposal) and the
+    specifier commits it — the coder must not edit engineering.prompt.
+  - Specifier recommendation (not binding): evaluate the Vitest migration
+    first — it is the only officially supported path to true perTest coverage;
+    a custom node --test runner plugin is likely more effort than the
+    migration. If migration cost is high, make the interim mitigation
+    (mutate-scope discipline + coverageAnalysis off) the accepted standing
+    rule and close the gap that way.
 
 description: |
   DEFECT (coordinator forensics, 2026-07-05, live during BL-109/BL-104
@@ -37,8 +56,8 @@ description: |
   `out/**/*.js` tree -- keeps individual hardening passes tolerable in the
   meantime, but that is a per-invocation workaround, not a fix.
 
-  Wanted outcome (coder/specifier to choose the concrete path -- this
-  ticket is the gap, not a prescribed solution):
+  Wanted outcome (coder to choose the concrete path with the architect --
+  this ticket is the gap, not a prescribed solution):
     - EITHER adopt a Stryker-supported test runner for the extension's
       tests (e.g. migrate from `node --test` to Vitest, which Stryker
       officially supports with perTest coverage), reasoned against the
@@ -51,7 +70,8 @@ description: |
     - OR, if neither is accepted, the constitution rule itself needs
       correcting to reflect the real, currently-achievable mitigation
       (mutate-scope discipline + coverageAnalysis off is accepted as a
-      standing tradeoff) rather than stating an unimplementable target.
+      standing tradeoff) rather than stating an unimplementable target --
+      via the specifier, who owns constitution files (see notes).
   Whichever path, the fix must not regress the existing hardening suites
   or require project-wide test rewrites as a side effect of adopting a new
   runner (isolate the runner swap from unrelated test changes).

@@ -63,6 +63,14 @@
   coverage-aware test runner, never 'off' with the plain command runner, so
   per-mutant runs skip non-covering tests. (With 'off' + command runner every
   mutant reruns the full suite; a 4-file hardening pass ran past 6 hours.)
+  - INTERIM (BL-123, 2026-07-05): the rule above is a TARGET, not yet
+    achievable — no coverage-aware Stryker runner plugin exists for this
+    repo's `node --test` suite, so the config legitimately remains
+    coverageAnalysis 'off' + command runner until BL-123 lands. Do NOT set
+    perTest/all against the command runner (it cannot report per-test
+    coverage; the combination must not ship even transiently). Until then,
+    hardeners MUST scope `--mutate` to the parcel's changed files, never the
+    whole `out/**/*.js` tree. This clause is removed when BL-123 closes.
 
 ## Diagrams
 - The project's documentation must include an up-to-date architecture
