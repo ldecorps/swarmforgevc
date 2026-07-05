@@ -39,6 +39,12 @@ function lastNonBlankLine(paneText: string): string | undefined {
 
 function pendingInputLine(paneText: string): string {
   const line = lastNonBlankLine(paneText);
+  // This guard's `||` (vs `&&`) and its early `return ''` are both
+  // unkillable here for the same reason as MARKER_TAIL below: whenever the
+  // guard is true, MARKER_TAIL.exec on that same line is guaranteed to
+  // return null (no marker char means no match), so the fallback chain
+  // below produces '' anyway even if this early return were removed or
+  // the operator swapped to `&&`.
   if (line === undefined || !HAS_MARKER.test(line)) {
     return '';
   }
