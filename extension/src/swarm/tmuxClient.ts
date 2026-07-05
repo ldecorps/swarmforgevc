@@ -23,6 +23,32 @@ export interface SwarmRole {
 // bounded default timeout turns any hang into a failed result instead.
 export const DEFAULT_RUN_COMMAND_TIMEOUT_MS = 10_000;
 
+// BL-104: split out of runCommand (complexity 8 -> under threshold). Pure
+// and unit-tested directly, independent of an actual spawnSync call.
+export function isTimedOut(error: NodeJS.ErrnoException | undefined): boolean {
+  return error !== undefined && error.code === 'ETIMEDOUT';
+}
+
+// BL-104: split out of runCommand alongside isTimedOut. Shapes a raw
+// spawnSync-like result into the TmuxRunResult the rest of the codebase
+// depends on (timeout stderr message, exit-code fallback).
+export function shapeRunResult(
+  raw: { error?: NodeJS.ErrnoException; stdout: string | null; stderr: string | null; status: number | null },
+  command: string,
+  timeoutMs: number
+): TmuxRunResult {
+  const timedOut = isTimedOut(raw.error);
+  const stderr = (raw.stderr ?? '').trimEnd();
+
+  return {
+    stdout: (raw.stdout ?? '').trimEnd(),
+    stderr: timedOut
+      ? [stderr, `${command} timed out after ${timeoutMs}ms`].filter(Boolean).join('\n')
+      : stderr,
+    exitCode: timedOut ? 1 : raw.status ?? 1,
+  };
+}
+
 export function runCommand(
   command: string,
   args: string[],
@@ -34,20 +60,7 @@ export function runCommand(
     encoding: 'utf8',
   });
 
-  const timedOut =
-    result.error !== undefined &&
-    (result.error as NodeJS.ErrnoException).code === 'ETIMEDOUT';
-  const stderr = (result.stderr ?? '').trimEnd();
-
-  return {
-    stdout: (result.stdout ?? '').trimEnd(),
-    stderr: timedOut
-      ? [stderr, `${command} timed out after ${options.timeout ?? DEFAULT_RUN_COMMAND_TIMEOUT_MS}ms`]
-          .filter(Boolean)
-          .join('\n')
-      : stderr,
-    exitCode: timedOut ? 1 : result.status ?? 1,
-  };
+  return shapeRunResult(result, command, options.timeout ?? DEFAULT_RUN_COMMAND_TIMEOUT_MS);
 }
 
 export function readTmuxSocket(targetPath: string): string | undefined {
@@ -207,6 +220,33 @@ export function sendKeys(
   return runCommand('tmux', args);
 }
 
+// BL-104: split out of readSwarmRoles (complexity 9 -> under threshold).
+// Pure and unit-tested directly, independent of the file-reading loop.
+export function hasRequiredRoleFields(role?: string, session?: string, displayName?: string): boolean {
+  return Boolean(role) && Boolean(session) && Boolean(displayName);
+}
+
+// BL-104: split out alongside hasRequiredRoleFields — parses one
+// sessions.tsv line into a SwarmRole, or undefined for a blank/malformed
+// line. fallbackIndex mirrors the original's `roles.length + 1` (computed
+// by the caller before the push, since a skipped line never increments it).
+export function parseRoleLine(line: string, fallbackIndex: number): SwarmRole | undefined {
+  if (!line.trim()) {
+    return undefined;
+  }
+  const [indexStr, role, session, displayName, agent] = line.split('\t');
+  if (!hasRequiredRoleFields(role, session, displayName)) {
+    return undefined;
+  }
+  return {
+    index: parseInt(indexStr, 10) || fallbackIndex,
+    role,
+    session,
+    displayName,
+    agent: agent ?? 'unknown',
+  };
+}
+
 export function readSwarmRoles(targetPath: string): SwarmRole[] {
   const sessionsFile = path.join(targetPath, '.swarmforge', 'sessions.tsv');
   if (!fs.existsSync(sessionsFile)) {
@@ -217,20 +257,10 @@ export function readSwarmRoles(targetPath: string): SwarmRole[] {
   const roles: SwarmRole[] = [];
 
   for (const line of lines) {
-    if (!line.trim()) {
-      continue;
+    const parsed = parseRoleLine(line, roles.length + 1);
+    if (parsed) {
+      roles.push(parsed);
     }
-    const [indexStr, role, session, displayName, agent] = line.split('\t');
-    if (!role || !session || !displayName) {
-      continue;
-    }
-    roles.push({
-      index: parseInt(indexStr, 10) || roles.length + 1,
-      role,
-      session,
-      displayName,
-      agent: agent ?? 'unknown',
-    });
   }
 
   return roles;

@@ -9,20 +9,21 @@
 
 // Heuristic: the input line is whatever trails the last recognizable prompt
 // marker (a shell '$'/'#' or a TUI arrow '>'/'❯') on the last non-blank line
-// of the capture. Absent any marker, the whole last non-blank line counts
-// (covers panes rendering a bare input box with no visible marker). A marker
-// with nothing after it (e.g. a lone "❯ ") is an empty, not pending, prompt -
-// distinct from "no marker at all", which is treated as unstructured pending
-// text (e.g. a plain human line with no rendered prompt yet).
-// Several structural variations of MARKER_TAIL (dropping the trailing `$`
-// anchor, making the capture group non-optional, or the leading `\s*` vs
-// `\s`) are unkillable by any input this module ever sees: paneText is
-// pre-split into single lines with no embedded newlines, so a greedy `.*`
-// always reaches the true end of the string with or without the anchor, and
-// the `.trim()` applied in pendingInputLine already absorbs any leading-
-// whitespace variant the capture group might produce. Verified empirically
-// against representative pane lines, not asserted here to avoid a brittle
-// test pinned to regex internals rather than behavior.
+// of the capture. A marker with nothing after it (e.g. a lone "❯ ") is an
+// empty, not pending, prompt.
+//
+// BL-109: a line with NO recognizable marker at all is standing UI chrome,
+// not pending input - e.g. Claude Code's idle status footer ("  ⏵⏵ bypass
+// permissions on (shift+tab to cycle)  /rc"), which contains none of
+// `$#❯>` and rendered as the pane's last non-blank line while genuinely
+// idle. An earlier version of this heuristic treated "no marker" as
+// unstructured pending text (to cover a hypothetical bare input box with no
+// visible marker); in practice that meant a Claude Code pane's idle footer
+// read as forever-pending, unsubmitted text, so beginInjection took the
+// "recover pending text" branch and never typed the real wake-up message at
+// all - a deterministic, 100%-reproducible failure specifically when the
+// target was IDLE. The marker is the only reliable signal that a line IS
+// the input row; absent one, there is nothing pending.
 const HAS_MARKER = /[$#❯>]/;
 const MARKER_TAIL = /[$#❯>]\s*(\S.*)?$/;
 
@@ -38,23 +39,14 @@ function lastNonBlankLine(paneText: string): string | undefined {
 
 function pendingInputLine(paneText: string): string {
   const line = lastNonBlankLine(paneText);
-  if (line === undefined) {
+  if (line === undefined || !HAS_MARKER.test(line)) {
     return '';
   }
-  if (!HAS_MARKER.test(line)) {
-    // The .trim() here is unkillable in practice: lastNonBlankLine already
-    // guarantees `line` has some non-whitespace content, so the untrimmed
-    // and trimmed forms only ever differ by edge padding - invisible to
-    // every downstream check, which is length>0 or .includes(), not an
-    // exact-match comparison. Kept for a clean returned value, not for
-    // observable correctness.
-    return line.trim();
-  }
-  // Both optional-chaining links here are unkillable in this module's usage:
+  // The optional-chaining link here is unkillable in this module's usage:
   // MARKER_TAIL shares HAS_MARKER's exact character class, so once the guard
-  // above passes, MARKER_TAIL is guaranteed to match (its trailing groups are
-  // all optional and can absorb any suffix) - `match` is never null in
-  // practice, and the `.trim()` equivalence is the same as above.
+  // above passes, MARKER_TAIL is guaranteed to match (its trailing groups
+  // are all optional and can absorb any suffix) - `match` is never null in
+  // practice.
   const match = MARKER_TAIL.exec(line);
   return match?.[1]?.trim() ?? '';
 }
