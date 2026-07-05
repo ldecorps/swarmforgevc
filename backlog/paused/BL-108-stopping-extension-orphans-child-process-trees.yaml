@@ -1,0 +1,96 @@
+id: BL-108
+title: BUG — stopping the extension orphans spawned test/mutation-test process trees; they reparent to launchd and pin every core indefinitely
+milestone: M2
+status: todo
+priority: 03
+assigned_to: coder
+
+description: |
+  DEFECT (operator report + forensics, 2026-07-05): the operator stopped the
+  extension in VS Code, but "the agents were still up (the cores were super
+  busy)". The Claude agent binaries were in fact already gone — the CPU was
+  being burned by long-running QA jobs the extension had spawned in the swarm
+  worktrees (Stryker mutation runs and `node --test` batches). When the
+  extension host went away, those child process TREES were NOT terminated:
+  their roots reparented to launchd (PPID 1) and kept running — and the
+  Stryker root kept RESPAWNING fresh sandbox workers, so killing individual
+  workers was whack-a-mole. They had to be reaped by hand, per process group.
+
+  Forensics (three distinct orphaned process groups, all PPID 1):
+    - PGID 9270 — `stryker` root (pid 10939) in .worktrees/cleaner, alive
+      1d 8h, actively respawning sandbox workers under
+      .stryker-tmp/sandbox-HDJ9IB (each worker 15-40% CPU).
+    - PGID 9140 — orphaned `node --test` batch (pid 44675), alive 1d 7h.
+    - PGID 65245 — orphaned `node --test` batch (pid 87659) in
+      .worktrees/hardender/.stryker-tmp/sandbox-rtXS4t, alive 23h.
+  Cleared with `kill -TERM -- -9270 -9140 -65245` (whole-group kill so the
+  respawner could not outrun us). Some had been maxing cores for over a day.
+
+  Root cause: child processes spawned by the extension are not owned by any
+  teardown path that survives an abrupt host stop. Node's child_process does
+  not kill descendants when the parent dies; VS Code's "Stop Extension Host"
+  can SIGKILL the host without awaiting (or ever running) deactivate(); and
+  the jobs are not spawned into a tracked, reap-able process group. So a
+  normal "stop the extension" leaks the entire spawned subtree.
+
+  Three defects, ordered by how directly they broke this:
+
+  1. No process-group ownership at spawn. Long-running jobs (mutation runs,
+     `node --test` batches, and any tmux/agent helpers) are spawned without
+     `detached:true` + a recorded pgid, so there is no single handle to reap
+     the tree. Spawn each long-running job as its own group leader and record
+     {pgid, worktree, kind, started_at, owner_host_pid} to a durable registry
+     under .swarmforge (e.g. child-jobs.json), removed on clean exit.
+
+  2. deactivate() does not reap tracked jobs. On extension deactivate, kill
+     every tracked group (`process.kill(-pgid, 'SIGTERM')`, escalate to
+     SIGKILL after a grace window) and clear the registry. Must be robust to
+     a partially-written registry.
+
+  3. No startup reaper for the SIGKILL-the-host case. Because "Stop Extension
+     Host" may terminate the host without running deactivate at all, defence
+     (2) alone is not enough. On activation, sweep the registry: for any
+     recorded group whose owner_host_pid is no longer alive, terminate the
+     group and drop the entry. Optionally have spawned jobs self-terminate on
+     owner death (parent-death / owner-liveness heartbeat) as belt-and-braces
+     for entries the registry missed.
+
+  Note the interaction with the cleanup-owner design (coordinator pane exit
+  runs swarm-cleanup.sh — see BL-107): that path tears down tmux/handoffd but
+  does NOT cover mutation/test subtrees running inside the worktrees, which is
+  exactly what leaked here. Scope this to extension-spawned child jobs;
+  sequence with the coordinator against BL-107.
+
+acceptance: |
+  Feature: extension-spawned child jobs never outlive a stopped extension
+
+  # BL-108 spawn-registry-01
+  Scenario: long-running jobs are spawned as tracked process groups
+    Given the extension spawns a mutation run or a node --test batch
+    Then the child is created as its own process-group leader
+    And a durable registry entry records its pgid, worktree, kind,
+      start time, and the owning host pid
+    And a clean exit of the job removes its registry entry
+
+  # BL-108 deactivate-reap-02
+  Scenario: deactivate terminates every tracked job
+    Given tracked child jobs recorded in the registry
+    When the extension deactivates
+    Then each recorded process group is signalled to terminate
+      (SIGTERM, then SIGKILL after a grace window)
+    And the registry is left empty
+
+  # BL-108 startup-reaper-03
+  Scenario: a host killed without deactivate leaves no live orphans
+    Given a registry entry whose owning host pid is no longer alive
+    When the extension next activates
+    Then the recorded process group is terminated
+    And the stale registry entry is removed
+    And no swarmforgevc worktree/stryker process remains reparented to launchd
+
+  # Non-behavioral gates:
+  #  - Tested through a spawn/kill seam with fakes (no live Stryker/tmux in
+  #    tests): assert group-leader spawn, registry writes, and reaper logic
+  #    against injected pids/liveness, not real processes.
+  #  - Do not duplicate BL-107 (coordinator-exit teardown) scope; this ticket
+  #    is about extension-spawned test/mutation subtrees specifically.
