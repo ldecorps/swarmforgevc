@@ -58,6 +58,7 @@ const resolveRunName_1 = require("./run/resolveRunName");
 const bounceWatcher_1 = require("./swarm/bounceWatcher");
 const chaserMonitor_1 = require("./watchdog/chaserMonitor");
 const tmuxClient_2 = require("./swarm/tmuxClient");
+const verifiedInject_1 = require("./swarm/verifiedInject");
 const paneActivity_1 = require("./watchdog/paneActivity");
 const stuckEscalations_1 = require("./watchdog/stuckEscalations");
 const inboxChaser_1 = require("./swarm/inboxChaser");
@@ -424,8 +425,23 @@ function startOrRestartIdleClearMonitor(targetPath, context) {
             if (!target) {
                 return;
             }
-            (0, tmuxClient_2.sendKeys)(socketPath, target, '/clear', true);
-            (0, tmuxClient_2.sendKeys)(socketPath, target, 'Enter');
+            // BL-093: verify /clear actually submits instead of fire-and-forget -
+            // a lost Enter here would leave "/clear" sitting typed-but-unsubmitted
+            // in the role's input box.
+            const result = (0, verifiedInject_1.sendInstructionVerified)({
+                capturePane: () => {
+                    const captured = (0, tmuxClient_2.capturePane)(socketPath, target);
+                    return captured.exitCode === 0 ? captured.stdout : '';
+                },
+                sendLiteral: (text) => (0, tmuxClient_2.sendKeys)(socketPath, target, text, true).exitCode === 0,
+                sendEnter: () => (0, tmuxClient_2.sendKeys)(socketPath, target, 'Enter'),
+                wait: tmuxClient_2.sleepSync,
+            }, '/clear');
+            if (result.status !== 'delivered') {
+                // Report, never silently drop (BL-093 verified-submit-02): this is
+                // the one call site that previously discarded the result entirely.
+                outputChannel.appendLine(`/clear delivery ${result.status} for "${role}" in pane ${target} after ${result.attempts} attempt(s)${result.reason ? `: ${result.reason}` : ''}`);
+            }
         },
         log: (message) => {
             outputChannel.appendLine(message);
