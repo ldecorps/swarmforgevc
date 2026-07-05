@@ -1,0 +1,119 @@
+id: BL-118
+title: "PWA bilingual FR/EN — French chrome plus machine-translated documentation content"
+milestone: M6
+status: todo
+priority: 04
+assigned_to: coder
+depends_on: BL-097 (PWA + Action pipeline), BL-117 (docs explorer whose content this translates)
+source: "operator request 2026-07-05 (phone): make the phone app bilingual (French)"
+
+description: |
+  Make the backlog dashboard PWA (BL-097, incl. the BL-117 documentation
+  explorer) bilingual English/French.
+
+  Operator-confirmed decisions (2026-07-05):
+    - Depth: full — UI chrome bilingual AND documentation/ticket content
+      machine-translated. Human-maintained parallel docs rejected (drift).
+    - Default: ENGLISH by default, French on tap (operator revision
+      2026-07-05). The app opens in English regardless of browser locale;
+      the FR/EN toggle switches to French.
+    - Gherkin: scenarios always display the canonical English text, even
+      in FR mode, with a one-tap reveal of the French rendering; the
+      English scenario remains the binding acceptance contract, the
+      French is a courtesy rendering.
+
+  Two tiers:
+
+  1. Chrome (client): every UI string (nav, labels, buttons, status and
+     stage names, offline/error notices) comes from a locale catalog with
+     en + fr entries. First launch is English regardless of browser
+     locale; a visible FR/EN toggle switches instantly without reload,
+     and the choice persists across app restarts via the PWA's existing
+     cache mechanism (no other browser storage).
+
+  2. Content (Action-side): the BL-097/117 Action renderer publishes each
+     translatable text (doc sections, ticket titles/descriptions, Gherkin
+     scenario text) in BOTH languages inside the published artifact, so
+     offline works fully in either language. French is produced by
+     machine translation AT RENDER TIME with a content-hash cache: each
+     source string's translation is stored keyed by the hash of its
+     English source, only new/changed strings are sent for translation on
+     a push, unchanged ones are reused — keeping publishes fast, cheap,
+     and deterministic. The cache lives in the repo so builds are
+     reproducible. Engine choice is the coder's (any MT API); its key is
+     a GitHub Actions secret, never present in the client or the repo
+     (Secrets rule). If translation of a string is unavailable (new
+     string mid-publish, API failure), the artifact carries the English
+     text for it flagged as untranslated — publishing NEVER fails or
+     blocks on translation.
+
+  Never translated: ticket ids (BL-xxx), file paths, commit hashes, code
+  blocks, and Mermaid diagram sources — preserved verbatim in both modes.
+
+  The client stays a pure renderer (BL-097 ruling): it picks the fr or en
+  field from the artifact; it never calls a translation API and holds no
+  translation logic or keys.
+
+  Scope: locale catalog + toggle in the PWA client, translation pass +
+  cache in the Action renderer, artifact schema gaining per-language
+  fields, tests for the renderer's translation pass through its existing
+  testable seams (fake MT engine — no live API in tests).
+
+acceptance: |
+  Feature: the app is fully usable in French and English
+
+  # BL-118 bilingual-01
+  Scenario: first launch is English regardless of browser locale
+    Given a device whose browser locale is fr or fr-*
+    When the app is opened for the first time
+    Then all UI chrome renders in English
+    And the FR/EN toggle is visible
+
+  # BL-118 bilingual-02
+  Scenario: the language toggle is instant and durable
+    Given the app is displaying in English
+    When the user switches the toggle to FR
+    Then chrome and content re-render in French without a reload
+    And after closing and reopening the app, French is still active
+
+  # BL-118 bilingual-03
+  Scenario: documentation content is translated and stays live
+    Given a published artifact rendered after a docs/backlog change
+    When the user browses the documentation explorer in FR mode
+    Then doc sections, ticket titles, and descriptions display in French
+    And a source string unchanged since the previous publish was served
+      from the translation cache, not re-translated
+
+  # BL-118 bilingual-04
+  Scenario: Gherkin shows canonical English with French on tap
+    Given a ticket's scenarios viewed in FR mode
+    Then the scenario text displays in canonical English
+    And one tap reveals the French rendering of that scenario
+
+  # BL-118 bilingual-05
+  Scenario: missing translations degrade to flagged English
+    Given a string whose translation is unavailable at publish time
+    When the artifact is published and viewed in FR mode
+    Then the publish succeeded
+    And that string displays in English with an untranslated marker
+
+  # BL-118 bilingual-06
+  Scenario: identifiers and code are never translated
+    Given FR mode
+    Then ticket ids, file paths, commit hashes, code blocks, and diagram
+      sources render verbatim as authored
+
+  # BL-118 bilingual-07
+  Scenario: offline works in both languages
+    Given the app previously fetched the artifact
+    When the device is offline
+    Then switching between FR and EN still renders both fully
+
+  # Non-behavioral gates:
+  #  - Translation pass tested with a fake MT engine (records calls):
+  #    assert hash-cache hits/misses, fallback flagging, and that only
+  #    changed strings are sent. No live translation API in tests.
+  #  - MT API key only ever a GitHub Actions secret; grep-able absence
+  #    from client bundle and repo.
+  #  - English remains the binding acceptance contract; nothing in the
+  #    pipeline (BL-111..113 APS tooling) consumes the French text.
