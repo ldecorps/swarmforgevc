@@ -3,6 +3,7 @@ title: RELIABILITY (top priority, 1 of 2) — delivery-level handoff breakage DE
 milestone: M2
 status: todo
 priority: 00
+evidence: backlog/evidence/BL-109-BL-121-BL-122-handoff-halt-20260706.md  # 2026-07-06 live halt: daemon "healthy" (heartbeat 1s) while 13 parcels dead-lettered over 11h go undetected; failed/ empty, deaths hidden in inbox/new as *.dead
 notes: |
   Filed at the backlog root as "BL-118" (raw intake, operator directive
   2026-07-05); renumbered because BL-118 was already taken by the PWA

@@ -13,11 +13,9 @@
  * across every role, with who it was for and what it was.
  */
 
-import * as fs from 'fs';
 import * as path from 'path';
-import { parseRolesTsv } from '../swarm/swarmState';
 import { listDeadLetters, DeadLetterInfo } from '../swarm/inboxChaser';
-import { resolveProjectRoot } from './swarm-metrics';
+import { resolveProjectRoot, loadRoles, runCliMain } from './swarm-metrics';
 
 export function formatDeadLetterListing(deadLetters: DeadLetterInfo[]): string {
   if (deadLetters.length === 0) {
@@ -35,8 +33,7 @@ export function formatDeadLetterListing(deadLetters: DeadLetterInfo[]): string {
 
 export function main(): void {
   const projectRoot = resolveProjectRoot(process.cwd());
-  const rolesTsv = fs.readFileSync(path.join(projectRoot, '.swarmforge', 'roles.tsv'), 'utf8');
-  const roles = parseRolesTsv(rolesTsv);
+  const roles = loadRoles(projectRoot);
 
   const roleInboxes = roles.map((r) => ({
     role: r.role,
@@ -47,10 +44,5 @@ export function main(): void {
 }
 
 if (require.main === module) {
-  try {
-    main();
-  } catch (error) {
-    console.error(`Fatal error: ${error instanceof Error ? error.message : String(error)}`);
-    process.exit(1);
-  }
+  runCliMain(main);
 }
