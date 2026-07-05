@@ -16,3 +16,13 @@ import * as path from 'path';
 export function hasPriorRunState(targetPath: string): boolean {
   return fs.existsSync(path.join(targetPath, '.swarmforge', 'sessions.tsv'));
 }
+
+// BL-086: startup activation (onStartupFinished) must attach silently or do
+// nothing — a "previous run found, resume?" popup on every editor open would
+// nag any target with prior run state. The prompt remains available when
+// activation was not triggered by startup (e.g. a command wins the
+// activation race before onStartupFinished fires), matching pre-BL-086
+// behavior on that path.
+export function shouldOfferResumePrompt(triggeredByStartup: boolean, hasPriorRun: boolean): boolean {
+  return !triggeredByStartup && hasPriorRun;
+}

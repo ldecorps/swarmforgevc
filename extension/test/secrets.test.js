@@ -21,6 +21,10 @@ test.afterEach(() => {
   }
 });
 
+test('RESEND_SECRET_KEY is the stable SecretStorage key (a mismatch here would silently split reads/writes across two different storage slots)', () => {
+  assert.equal(RESEND_SECRET_KEY, 'swarmforge.resendApiKey');
+});
+
 function fakeSecrets(stored) {
   const calls = [];
   return {
@@ -89,23 +93,27 @@ test('trimmedResendKeyInput trims and returns non-empty input', () => {
 });
 
 test('describeSetResult states precedence when the env var is set', () => {
-  const message = describeSetResult(true);
-  assert.match(message, /RESEND_API_KEY/);
-  assert.match(message, /env/i);
+  assert.equal(
+    describeSetResult(true),
+    'Resend API key stored in SecretStorage. Note: the RESEND_API_KEY environment variable is currently set and takes precedence over this value until it is unset.'
+  );
 });
 
 test('describeSetResult has no precedence caveat when no env var is set', () => {
-  const message = describeSetResult(false);
-  assert.doesNotMatch(message, /RESEND_API_KEY/);
+  // Exact equality, not just doesNotMatch(/RESEND_API_KEY/): a doesNotMatch
+  // check alone can't tell an empty caveat from a non-empty one that simply
+  // never mentions RESEND_API_KEY, so it can't catch precedenceNote's empty
+  // branch being replaced with other non-matching text.
+  assert.equal(describeSetResult(false), 'Resend API key stored in SecretStorage.');
 });
 
 test('describeClearResult never echoes anything sensitive and states precedence when the env var is set', () => {
-  const message = describeClearResult(true);
-  assert.match(message, /RESEND_API_KEY/);
-  assert.match(message, /env/i);
+  assert.equal(
+    describeClearResult(true),
+    'Resend API key cleared from SecretStorage. Note: the RESEND_API_KEY environment variable is currently set and takes precedence over this value until it is unset.'
+  );
 });
 
 test('describeClearResult has no precedence caveat when no env var is set', () => {
-  const message = describeClearResult(false);
-  assert.doesNotMatch(message, /RESEND_API_KEY/);
+  assert.equal(describeClearResult(false), 'Resend API key cleared from SecretStorage.');
 });
