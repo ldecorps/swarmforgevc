@@ -1,0 +1,74 @@
+id: BL-124
+title: Migrate extension tests from `node --test` to Vitest so Stryker can run coverage-aware (perTest) mutation analysis
+milestone: M2
+status: todo
+priority: 30
+assigned_to: coder
+
+description: |
+  Follow-up to BL-123 (closed 2026-07-05). The constitution's original
+  "coverageAnalysis must be perTest/all" rule was unimplementable because the
+  extension's tests run via Node's built-in `node --test`, for which no
+  Stryker coverage-aware runner plugin exists; the rule has been amended to
+  accept coverageAnalysis 'off' + mutate-scope discipline as a standing
+  tradeoff UNTIL a supported runner lands. This ticket is that runner
+  landing: migrate the extension's test execution from `node --test` to
+  Vitest, pinned, with @stryker-mutator/vitest-runner, and flip
+  stryker.config.json to coverageAnalysis 'perTest'. Operator decision
+  2026-07-05: rule amendment now, deliberate migration later (this item),
+  scheduled when the coordinator judges capacity allows.
+
+  Constraints:
+  - This is a pinned Startup Tools change (Engineering Rules): pin exact
+    versions of vitest and @stryker-mutator/vitest-runner in package.json;
+    never resolve "latest".
+  - Isolate the runner swap from test-content changes: existing tests keep
+    their current behavior and assertions; only the execution harness,
+    imports/shims required by the runner, and config files change. No
+    project-wide test rewrites riding along.
+  - Do not ship coverageAnalysis 'perTest' against the command runner at any
+    intermediate commit — the config flip lands in the same commit as (or
+    after) the working Vitest runner.
+  - When perTest is live, remove the standing-tradeoff clause from
+    swarmforge/constitution/articles/engineering.prompt via a rule_proposal
+    to the specifier (the specifier is the sole writer of that file).
+  - Mutation caches/incremental manifests remain gitignored (BL-105 lesson).
+
+acceptance: |
+  Feature: coverage-aware mutation runs under a Stryker-supported test runner
+
+  Background:
+    Given the extension's tests execute under a pinned Vitest toolchain
+
+  # BL-124 vitest-migration-01
+  Scenario: full test suite passes unchanged under the new runner
+    When the full extension test suite runs under Vitest
+    Then every test that passed under `node --test` still passes
+    And no test's assertions or observable behavior were modified to make it pass
+
+  # BL-124 vitest-migration-02
+  Scenario: Stryker runs coverage-aware with per-mutant test scoping
+    Given stryker.config.json uses the vitest runner with coverageAnalysis "perTest"
+    When a mutation run executes against a small set of changed files
+    Then only the tests covering each mutant are executed for that mutant
+    And the run completes in a small multiple of the covering tests' runtime,
+      not the full suite's runtime
+
+  # BL-124 vitest-migration-03
+  Scenario: toolchain versions are pinned
+    Given package.json after this ticket lands
+    Then vitest and the Stryker vitest runner plugin are pinned to exact versions
+    And no dependency added by this ticket resolves a floating version range
+
+  # BL-124 vitest-migration-04
+  Scenario: no transient perTest-against-command-runner configuration
+    Given the commit history of this parcel
+    Then no commit configures coverageAnalysis "perTest" or "all" while the
+      Stryker test runner is still the command runner
+
+  # Non-behavioral gates:
+  #  - After perTest is verified live, send the specifier a rule_proposal to
+  #    retire the engineering-article standing-tradeoff clause (do not edit
+  #    the constitution yourself).
+  #  - Cross-reference, don't duplicate, the hardener's 2026-07-05
+  #    rule_proposals (runner gap; dry-run quality tools at spin-up).

@@ -1,0 +1,104 @@
+id: BL-117
+title: "PWA documentation drill-down — explore live docs from vision level down to Gherkin scenario level"
+milestone: M6
+status: todo
+priority: 03
+assigned_to: coder
+depends_on: BL-097 (extends its Action->json->Pages pipeline and PWA client)
+source: "operator request 2026-07-05 (phone): app user can explore the documentation, from high level down to Gherkin scenario level"
+
+description: |
+  Add a read-only documentation explorer to the backlog dashboard PWA
+  (BL-097). The app user can drill down through the project's living
+  documentation, level by level:
+
+    vision -> milestone -> ticket -> Gherkin scenarios
+
+  Operator-confirmed decisions (2026-07-05): surface is the BL-097 PWA
+  (mobile-friendly, serverless, offline-capable); hierarchy is
+  vision->milestone->ticket->Gherkin; interaction is READ-ONLY (no ticket
+  filing, no doc editing).
+
+  Levels, all derived from the repo ("repo is the API", BL-097 principle):
+    - Vision (top): the product documentation — Specification.MD, the
+      Milestone Roadmap, GettingStarted, and the two maintained Mermaid
+      diagrams (docs/diagrams/architecture.mmd, swarm-flow.mmd), viewable
+      in the app.
+    - Milestone: every milestone from the roadmap and the backlog
+      (done/<Mx>/ folders plus milestone: fields), each listing its
+      tickets with folder-authoritative status.
+    - Ticket: one backlog item — id, title, status, priority, and its
+      prose description.
+    - Gherkin (leaf): that ticket's acceptance scenarios, readable as
+      scenario text. Source is the YAML acceptance: field today; once
+      BL-111 migrates acceptance to specs/features/ references, the
+      renderer follows the reference and shows the feature file's
+      scenarios — the drill-down must not break on either form.
+
+  "Live" means: the BL-097 GitHub Action renders the documentation tree
+  into the published json artifact(s) on every push to main, so the
+  explorer always shows the current repo state after a normal fetch — no
+  app update or manual export step. All parsing/derivation (YAML,
+  markdown structure, folder-status rules, feature-file resolution) stays
+  in the Action per BL-097's single-source-of-truth ruling; the PWA client
+  remains a pure renderer of the fetched artifact. Offline behavior
+  matches BL-097: the cached snapshot stays browsable and is labeled with
+  the commit/timestamp it was rendered from.
+
+  Scope: the Action's renderer (documentation tree projection), the PWA
+  client's explorer views, and tests for the projection through the
+  existing testable seams (the renderer is host-side/CI code — fully
+  testable; client rendering is presentation). No extension changes.
+
+acceptance: |
+  Feature: documentation is explorable from vision level down to scenarios
+
+  # BL-117 docs-drilldown-01
+  Scenario: full drill path from vision to a Gherkin scenario
+    Given the published documentation artifact for the current main
+    When the app user opens the documentation explorer
+    Then the vision level lists the product docs and both diagrams
+    And drilling into a milestone lists that milestone's tickets with
+      folder-authoritative status
+    And drilling into a ticket shows its prose description
+    And drilling into the ticket's acceptance shows its Gherkin scenarios
+      as readable scenario text
+
+  # BL-117 docs-drilldown-02
+  Scenario: the documentation is live against main
+    Given a backlog or docs change has been merged to main
+    When the Action publishes and the app next fetches
+    Then the explorer reflects the change at every affected level
+    And no app update or manual export was required
+
+  # BL-117 docs-drilldown-03
+  Scenario Outline: both acceptance forms render
+    Given a ticket whose acceptance is <form>
+    When the user drills to its Gherkin level
+    Then the scenarios are shown as readable scenario text
+
+    Examples:
+      | form                                      |
+      | an inline YAML acceptance block           |
+      | a reference to a specs/features/ file     |
+
+  # BL-117 docs-drilldown-04
+  Scenario: offline exploration of the cached snapshot
+    Given the app previously fetched the documentation artifact
+    When the device is offline
+    Then the explorer remains browsable at every level
+    And the view is labeled with the commit/timestamp it was rendered from
+
+  # BL-117 docs-drilldown-05
+  Scenario: exploration is read-only
+    Given any level of the documentation explorer
+    Then no affordance exists to edit documentation or create/modify
+      tickets
+
+  # Non-behavioral gates:
+  #  - All derivation lives in the Action renderer (tested); the PWA
+  #    client renders fetched data only — no YAML/markdown parsing or
+  #    status re-derivation in browser JS.
+  #  - Self-contained client assets (no CDN fetches), consistent with
+  #    BL-097; no browser storage beyond the PWA cache of the artifact.
+  #  - Public-repo exposure note from BL-097 applies unchanged.
