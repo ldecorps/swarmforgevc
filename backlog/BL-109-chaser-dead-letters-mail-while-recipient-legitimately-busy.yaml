@@ -1,5 +1,5 @@
 id: BL-109
-title: BUG — chaser dead-letters unread mail sent while the recipient is legitimately busy, not stuck; the recipient never sees it even after going idle
+title: BUG — pane-injection "pending input" heuristic misreads the idle Claude Code footer as unsubmitted text, so nudges to an IDLE recipient reliably fail and dead-letter mail
 milestone: M2
 status: todo
 priority: 02
@@ -22,21 +22,41 @@ description: |
   in_process by either recipient's ready_for_next.sh -- the recipients
   never knew the mail existed.
 
-  Root cause: the notifier (extension/src/swarm/verifiedInject.ts
-  sendInstructionVerified, called from the chaser's nudge path) captures
-  the pane, sees no distinct "pending input" signature, types the wake-up
-  text, presses Enter, and if the text is still visible after
-  DEFAULT_MAX_RETRIES (3) attempts at DEFAULT_RETRY_DELAY_MS (200ms,
-  linear backoff -- ~1.2s total) it gives up. A pane belonging to an
-  actively-generating Claude session does not accept input at all, so
-  typed text sits visibly unconfirmed for the ENTIRE remaining duration of
-  that turn -- indistinguishable, to this heuristic, from a truly stuck
-  pane. The daemon log shows exactly this: the specifier was mid-turn
-  ("Worked for 3m 2s" per its own transcript) while chase attempts at
-  08:46 and 08:47 both logged
-  "pane already held undelivered input and it still would not submit",
-  and inboxChaser.ts's chaseCount reached maxChases (3) and dead-lettered
-  all three notes -- well inside a single normal-length agent turn.
+  Root cause CONFIRMED WITH REPRODUCTION (2026-07-05, coordinator): both
+  copies of the "pending input" heuristic --
+  extension/src/swarm/verifiedInject.ts (pendingInputLine/hasPendingInput)
+  and its duplicated Babashka mirror in
+  swarmforge/scripts/handoffd.bb (pending-input-line/pending-input?,
+  explicitly commented as mirroring the TS version) -- decide "does this
+  pane already hold unsubmitted input?" by taking the LAST NON-BLANK LINE
+  of a `tmux capture-pane -p` and checking it for a prompt marker
+  (regex `[$#❯>]`). When a Claude Code pane is genuinely IDLE (not busy,
+  not stuck), its last rendered line is the standing footer/status hint,
+  e.g.:
+    "  ⏵⏵ bypass permissions on (shift+tab to cycle)                    /rc"
+  This line contains NONE of `$ # ❯ >` (verified: `grep -oE '[$#❯>]'`
+  against the literal captured specifier footer returns no match, exit 1).
+  Because HAS_MARKER fails to match, pendingInputLine falls through to
+  "no marker at all -> treat the whole line as pending text" and returns
+  the footer text trimmed (non-empty) -- so hasPendingInput/pending-input?
+  answers TRUE, forever, for an idle pane. beginInjection then takes the
+  "recover already-pending text" branch and NEVER TYPES THE ACTUAL WAKE-UP
+  MESSAGE AT ALL; it only presses Enter a few times against the footer,
+  which never disappears, and gives up after 3 attempts logging exactly
+  "pane already held undelivered input and it still would not submit".
+  This is the opposite of a busy/stuck confusion: it is a deterministic,
+  100%-reproducible failure mode that fires specifically WHEN THE TARGET
+  IS IDLE -- precisely the state a nudge exists to interrupt. Confirmed
+  live 2026-07-05T08:57Z: handoffd's own notify! against the idle
+  specifier pane hit this path and dead-lettered handoff 000295 within
+  one delivery cycle; a direct raw `tmux send-keys -l <msg>` + `C-m`/`C-j`
+  bypassing this heuristic entirely delivered the same message to the
+  same idle pane immediately and the specifier began processing it.
+  (A secondary, likely real but unconfirmed contributor: a pane captured
+  mid-generation may show yet other transient footer/spinner chrome that
+  could independently trip the same last-line-has-no-marker path -- worth
+  checking, but the idle-footer case above is the confirmed, dominant
+  cause and is sufficient on its own to explain all three lost notes.)
 
   Compounding defect: once dead-lettered (renamed to `<name>.handoff.dead`),
   the item is invisible to ready_for_next.sh/ready_for_next_task.sh (they
@@ -47,18 +67,25 @@ description: |
   success to the sender (swarm_handoff.sh reports HANDOFF QUEUED and never
   hears otherwise).
 
-  Two defects, ordered by how directly they broke this:
+  Three defects, ordered by how directly they broke this:
 
-  1. The chase-to-dead-letter budget (~1.2s x a few sweep cycles) is far
-     shorter than a normal agent turn, so busy-but-alive is misclassified
-     as stuck. Distinguish "recipient is actively generating" (a normal,
-     expected, self-resolving state -- keep the mail in inbox/new/ and
-     keep chasing on the existing interval, never dead-letter) from
+  1. The marker regex misclassifies the idle-footer line as pending input.
+     Fix the detection so it targets the actual input row (e.g. the
+     rendered `❯` prompt line specifically, or the cursor position
+     `tmux display-message -p '#{cursor_y}'` to locate the true input
+     line) rather than "whichever line is last and non-blank" -- the
+     latter is wrong whenever a TUI renders persistent chrome below the
+     input box. Fix BOTH copies (verifiedInject.ts and handoffd.bb's
+     mirror) or, better, stop duplicating the heuristic in two languages
+     (DRY) and give handoffd.bb a way to reuse one definition.
+  2. Once fixed, still distinguish "recipient is actively generating"
+     (expected, self-resolving -- keep the mail in inbox/new/ and keep
+     chasing on the existing interval, never dead-letter) from
      "recipient's pane truly cannot accept input" (unresponsive: use the
      existing liveness check -- dead/unknown/stuck -- as the actual
      dead-letter/respawn trigger, per isUnresponsiveLiveness, rather than
      retry-count alone).
-  2. Dead-lettering with no recipient-visible recovery path is a silent
+  3. Dead-lettering with no recipient-visible recovery path is a silent
      mail loss. At minimum, a dead-lettered `note`/`git_handoff` should be
      surfaced somewhere a human or the coordinator can find it (a
      dead-letter listing/command, or the item, protocol allowing) rather
@@ -66,7 +93,15 @@ description: |
      sidecar that nothing reads back.
 
 acceptance: |
-  Feature: mail is not lost while the recipient is legitimately busy
+  Feature: mail is not lost while the recipient is legitimately busy or idle
+
+  # BL-109 idle-footer-not-pending-00
+  Scenario: an idle pane's standing footer is never mistaken for pending input
+    Given a pane capture whose last non-blank line is the idle status
+      footer (no $/#/❯/> marker present)
+    When the pending-input check runs against that capture
+    Then it reports no pending input
+    And the wake-up message is actually typed into the pane
 
   # BL-109 busy-not-stuck-01
   Scenario: a long agent turn does not dead-letter its own queued mail
