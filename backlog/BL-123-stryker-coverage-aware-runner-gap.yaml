@@ -1,0 +1,88 @@
+id: BL-123
+title: BUG/GAP — the accepted "coverageAnalysis must be perTest/all" rule cannot be satisfied today; no Stryker-supported test runner is installed for node --test
+milestone: M2
+status: todo
+priority: 02
+assigned_to: coder
+
+description: |
+  DEFECT (coordinator forensics, 2026-07-05, live during BL-109/BL-104
+  hardening): a hardener rule_proposal was accepted into the constitution
+  (swarmforge/constitution/articles/engineering.prompt, commit 733b1f9):
+  "Stryker config must use coverageAnalysis 'perTest' or 'all' with a
+  coverage-aware runner, not 'off' with the plain command runner." The
+  rationale was sound -- coverageAnalysis off + the command runner reruns
+  the ENTIRE test suite (1148 tests) for every single mutant, and a 4-file
+  hardening pass ran past 6h45m as a direct result.
+
+  However the rule as accepted is currently UNIMPLEMENTABLE: Stryker's
+  perTest/all coverage analysis requires a coverage-aware test-runner
+  PLUGIN (officially: @stryker-mutator/{jest,mocha,jasmine2,karma,vitest}-
+  runner). Checked live: extension/node_modules/@stryker-mutator/ contains
+  only `core` -- no runner plugin is installed. The project's tests run via
+  Node's built-in `node --test`, which has no official Stryker runner
+  plugin; extension/stryker.config.json therefore uses the generic
+  "command" runner (`node --test test/*.test.js`), which can only report a
+  process exit code -- it has no mechanism to report PER-TEST coverage, so
+  flipping coverageAnalysis to perTest against the command runner would
+  either error or silently be ignored (no per-mutant test filtering would
+  actually occur).
+
+  Confirmed live 2026-07-05 ~19:40Z: mid-incident, the hardener re-ran
+  Stryker after aborting the slow run, but stryker.config.json still read
+  coverageAnalysis: "off" (the constitution rule updated the RULE text, not
+  the config file, and the config file cannot be fixed to perTest without
+  first solving this runner gap). The hardener's own practical mitigation
+  --scoping `--mutate` to just the changed files instead of the whole
+  `out/**/*.js` tree -- keeps individual hardening passes tolerable in the
+  meantime, but that is a per-invocation workaround, not a fix.
+
+  Wanted outcome (coder/specifier to choose the concrete path -- this
+  ticket is the gap, not a prescribed solution):
+    - EITHER adopt a Stryker-supported test runner for the extension's
+      tests (e.g. migrate from `node --test` to Vitest, which Stryker
+      officially supports with perTest coverage), reasoned against the
+      Engineering Rules' Startup Tools pinning discipline (a runner/
+      framework swap is a pinned-tool change, needs a deliberate version
+      pin, not a "resolve latest").
+    - OR write/adopt a custom Stryker test-runner plugin capable of
+      coverage-aware execution against `node --test` (higher effort, only
+      worth it if a framework migration is rejected).
+    - OR, if neither is accepted, the constitution rule itself needs
+      correcting to reflect the real, currently-achievable mitigation
+      (mutate-scope discipline + coverageAnalysis off is accepted as a
+      standing tradeoff) rather than stating an unimplementable target.
+  Whichever path, the fix must not regress the existing hardening suites
+  or require project-wide test rewrites as a side effect of adopting a new
+  runner (isolate the runner swap from unrelated test changes).
+
+acceptance: |
+  Feature: mutation runs use per-mutant test scoping without full-suite reruns
+
+  # BL-123 coverage-aware-01
+  Scenario: a mutation run does not rerun the full suite for every mutant
+    Given the extension's Stryker configuration after this ticket lands
+    When a mutation run executes against a small set of changed files
+    Then only the tests covering each mutant run for that mutant
+    And a comparable hardening pass completes in a small multiple of the
+      covering tests' own runtime, not the full suite's runtime
+
+  # BL-123 coverage-aware-02
+  Scenario: the constitution rule matches what is actually achievable
+    Given swarmforge/constitution/articles/engineering.prompt
+    Then its Stryker coverage-analysis rule describes a configuration that
+      is actually installed and functional in this repository
+
+  # BL-123 no-regression-03
+  Scenario: existing hardening suites still pass under the new runner/config
+    When the existing test suite runs under the corrected configuration
+    Then all tests that passed before still pass, unmodified in behavior
+
+  # Non-behavioral gates:
+  #  - Any test-runner/framework change is a pinned Startup Tools change
+  #    (Engineering Rules) -- pin the exact version, do not resolve latest.
+  #  - Do not silently leave coverageAnalysis: perTest configured against
+  #    the command runner (that combination must not ship even transiently).
+  #  - Adjacent: the hardener's own rule_proposals 2026-07-05 (this gap and
+  #    the "dry-run quality tools at swarm spin-up" proposal) -- do not
+  #    duplicate, cross-reference instead.
