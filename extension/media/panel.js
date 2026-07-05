@@ -661,15 +661,22 @@ window.addEventListener('message', (event) => {
       break;
     case 'transportHealth':
       if (transportHealthEl) {
+        // BL-121: health.state now reflects DELIVERY, not just daemon
+        // process liveness — 'broken'/'delivery-degraded' can fire even
+        // while the daemon heartbeats healthy (a dead-lettered or stalled
+        // parcel, or a missed canary).
         const health = message.health || {};
-        const detail = health.detail ? ' (' + health.detail + ')' : '';
+        const offending = health.offending || [];
+        const detail = offending.length
+          ? ' (' + offending.map((o) => o.route + ': ' + o.reason).join(', ') + ')'
+          : '';
         transportHealthEl.classList.remove('warn', 'down');
-        if (health.state === 'persistent-failure') {
+        if (health.state === 'broken') {
           transportHealthEl.classList.add('down');
           transportHealthEl.textContent = '✖ handoff transport DOWN' + detail;
-        } else if (health.state === 'restarting') {
+        } else if (health.state === 'delivery-degraded') {
           transportHealthEl.classList.add('warn');
-          transportHealthEl.textContent = '⚠ handoff transport restarting' + detail;
+          transportHealthEl.textContent = '⚠ handoff transport degraded' + detail;
         } else {
           // healthy or unknown: no alarm
           transportHealthEl.textContent = '';
