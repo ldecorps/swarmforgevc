@@ -14,7 +14,7 @@ import type { BridgeHandle } from './bridge/bridgeServer';
 import { generateBridgeToken } from './bridge/bridgeToken';
 import { getCurrentBranch, openPullRequest } from './swarm/prCreator';
 import { launchSwarm, waitForSwarmReady, chooseReattachTimeoutMs } from './swarm/swarmLauncher';
-import { hasPriorRunState } from './swarm/swarmDiscovery';
+import { hasPriorRunState, shouldOfferResumePrompt } from './swarm/swarmDiscovery';
 import { stopSwarm } from './swarm/swarmStopper';
 import { bounceSwarm, buildBounceExtensionCommand } from './swarm/bouncer';
 import { listTmuxSessions } from './swarm/tmuxClient';
@@ -618,19 +618,32 @@ export function activate(context: vscode.ExtensionContext): void {
         REATTACH_COLD_START_TIMEOUT_MS,
         REATTACH_READY_TIMEOUT_MS
       );
+      // BL-086: this block now runs unprompted on every editor start (via
+      // the added onStartupFinished activation event), not just after the
+      // user happens to invoke a command. Treat it as startup-triggered:
+      // attach silently in the background (preserveFocus) when a swarm is
+      // live, and do nothing visible otherwise. shouldOfferResumePrompt's
+      // non-startup branch stays reachable (and tested) for the case where
+      // a command wins the activation race before onStartupFinished fires,
+      // preserving today's resume-offer behavior on that path.
+      const isStartupTriggeredActivation = true;
       waitForSwarmReady(targetPath, reattachTimeoutMs, REATTACH_READY_POLL_MS).then((ready) => {
         if (ready) {
           // Re-attach automatically: tiles reconnect to the live output
-          // streams without restarting any agent.
+          // streams without restarting any agent. preserveFocus keeps the
+          // editor the operator opened into in the foreground.
           const panel = SwarmPanel.createOrShow(
             context.extensionUri,
             targetPath,
             runLogPath,
             undefined,
-            context.secrets
+            context.secrets,
+            isStartupTriggeredActivation
           );
           panel.updateTarget(targetPath);
-        } else if (hasPriorRunState(targetPath)) {
+        } else if (
+          shouldOfferResumePrompt(isStartupTriggeredActivation, hasPriorRunState(targetPath))
+        ) {
           // Cold relaunch with no live processes: offer resume from the
           // target's prior run rather than a silent no-op or a surprise
           // cold start.
