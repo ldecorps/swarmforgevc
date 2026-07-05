@@ -501,7 +501,7 @@ function startOrRestartIdleClearMonitor(targetPath: string, context: vscode.Exte
       // BL-093: verify /clear actually submits instead of fire-and-forget -
       // a lost Enter here would leave "/clear" sitting typed-but-unsubmitted
       // in the role's input box.
-      sendInstructionVerified(
+      const result = sendInstructionVerified(
         {
           capturePane: () => {
             const captured = capturePane(socketPath, target);
@@ -513,6 +513,13 @@ function startOrRestartIdleClearMonitor(targetPath: string, context: vscode.Exte
         },
         '/clear'
       );
+      if (result.status !== 'delivered') {
+        // Report, never silently drop (BL-093 verified-submit-02): this is
+        // the one call site that previously discarded the result entirely.
+        outputChannel.appendLine(
+          `/clear delivery ${result.status} for "${role}" in pane ${target} after ${result.attempts} attempt(s)${result.reason ? `: ${result.reason}` : ''}`
+        );
+      }
     },
     log: (message: string): void => {
       outputChannel.appendLine(message);
