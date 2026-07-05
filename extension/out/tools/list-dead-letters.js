@@ -49,9 +49,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.formatDeadLetterListing = formatDeadLetterListing;
 exports.main = main;
-const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
-const swarmState_1 = require("../swarm/swarmState");
 const inboxChaser_1 = require("../swarm/inboxChaser");
 const swarm_metrics_1 = require("./swarm-metrics");
 function formatDeadLetterListing(deadLetters) {
@@ -69,8 +67,7 @@ function formatDeadLetterListing(deadLetters) {
 }
 function main() {
     const projectRoot = (0, swarm_metrics_1.resolveProjectRoot)(process.cwd());
-    const rolesTsv = fs.readFileSync(path.join(projectRoot, '.swarmforge', 'roles.tsv'), 'utf8');
-    const roles = (0, swarmState_1.parseRolesTsv)(rolesTsv);
+    const roles = (0, swarm_metrics_1.loadRoles)(projectRoot);
     const roleInboxes = roles.map((r) => ({
         role: r.role,
         inboxNewDir: path.join(r.worktreePath, '.swarmforge', 'handoffs', 'inbox', 'new'),
@@ -78,12 +75,6 @@ function main() {
     console.log(formatDeadLetterListing((0, inboxChaser_1.listDeadLetters)(roleInboxes)));
 }
 if (require.main === module) {
-    try {
-        main();
-    }
-    catch (error) {
-        console.error(`Fatal error: ${error instanceof Error ? error.message : String(error)}`);
-        process.exit(1);
-    }
+    (0, swarm_metrics_1.runCliMain)(main);
 }
 //# sourceMappingURL=list-dead-letters.js.map

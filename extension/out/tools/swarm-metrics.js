@@ -50,6 +50,8 @@ exports.hasRolesTsv = hasRolesTsv;
 exports.resolveProjectRoot = resolveProjectRoot;
 exports.resolveMainWorktreePath = resolveMainWorktreePath;
 exports.formatOverview = formatOverview;
+exports.loadRoles = loadRoles;
+exports.runCliMain = runCliMain;
 exports.main = main;
 const fs = __importStar(require("fs"));
 const os = __importStar(require("os"));
@@ -118,10 +120,28 @@ function formatOverview(metrics, roleNames) {
             ` (mean ${(0, swarmMetrics_1.formatSuiteDurationMs)(suite.meanMs)} over ${suite.sampleCount} run(s))`;
     return [meanLine, busynessLine, retryLine, suiteLine].join('\n');
 }
+// Shared by every headless CLI tool under tools/ that keys off roles.tsv
+// (swarm-metrics.ts, list-dead-letters.ts): read and parse the current
+// project's roles.tsv from its resolved root.
+function loadRoles(projectRoot) {
+    const rolesTsv = fs.readFileSync(path.join(projectRoot, '.swarmforge', 'roles.tsv'), 'utf8');
+    return (0, swarmState_1.parseRolesTsv)(rolesTsv);
+}
+// Shared `require.main === module` entrypoint boilerplate for tools/ CLIs:
+// run main(), and on any thrown error report it and exit non-zero rather
+// than dumping a raw stack trace.
+function runCliMain(main) {
+    try {
+        main();
+    }
+    catch (error) {
+        console.error(`Fatal error: ${error instanceof Error ? error.message : String(error)}`);
+        process.exit(1);
+    }
+}
 function main() {
     const projectRoot = resolveProjectRoot(process.cwd());
-    const rolesTsv = fs.readFileSync(path.join(projectRoot, '.swarmforge', 'roles.tsv'), 'utf8');
-    const roles = (0, swarmState_1.parseRolesTsv)(rolesTsv);
+    const roles = loadRoles(projectRoot);
     const mainWorktreePath = resolveMainWorktreePath(projectRoot, roles);
     const runLogPath = path.join(os.homedir(), '.swarmforge', 'runs.jsonl');
     const runs = (0, runLog_1.loadRuns)(runLogPath).filter((r) => r.targetPath === mainWorktreePath);
@@ -131,12 +151,6 @@ function main() {
     console.log(formatOverview(metrics, roles.map((r) => r.role)));
 }
 if (require.main === module) {
-    try {
-        main();
-    }
-    catch (error) {
-        console.error(`Fatal error: ${error instanceof Error ? error.message : String(error)}`);
-        process.exit(1);
-    }
+    runCliMain(main);
 }
 //# sourceMappingURL=swarm-metrics.js.map
