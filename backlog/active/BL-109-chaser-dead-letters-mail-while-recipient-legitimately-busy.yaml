@@ -4,6 +4,7 @@ milestone: M2
 status: todo
 priority: 02
 assigned_to: coder
+evidence: backlog/evidence/BL-109-BL-121-BL-122-handoff-halt-20260706.md  # 2026-07-06 live halt: 13 dead-letters over 11h, all to idle roles (coordinator/specifier); nudge-to-idle dead-letter confirmed
 
 description: |
   DEFECT (coordinator forensics, 2026-07-05): three routine `note` handoffs
