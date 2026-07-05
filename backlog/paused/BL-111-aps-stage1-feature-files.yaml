@@ -1,0 +1,68 @@
+id: BL-111
+title: "APS realignment stage 1: living feature files + gherkin-parser lint gate"
+milestone: M5
+status: todo
+priority: 10
+assigned_to: coder
+source: "root intake BL-053-aps-stage1-feature-files (renumbered: id BL-053 already used by done/M3 redo-tile-header ticket)"
+
+description: |
+  Adopt the constitution realignment (the new engineering.prompt +
+  local-engineering.prompt already describe the APS pipeline) and make
+  Gherkin durable. First of the three-stage APS chain (BL-111 -> BL-112 ->
+  BL-113); stages are strictly sequential.
+
+  - Create specs/features/ ; migrate the Gherkin acceptance blocks of
+    ACTIVE and PAUSED backlog items into .feature files (one per behavior,
+    APS naming: scenario name = feature name + stable index in a comment
+    before each scenario). Each backlog YAML acceptance: field becomes a
+    reference to its feature file(s). done/ items are NOT migrated.
+  - Install the Babashka APS tools (gherkin-parser, IR-DRY checker) from
+    unclebob/Acceptance-Pipeline-Specification PINNED at
+    accaa33d503340c56513ef387258f8da929ba902; record the pin in
+    swarmforge.lock.json (create the lock file; it is also where the
+    engineering article expects clj-mutate/crap4clj/dry4clj pins).
+  - Specifier gains the APS phases: write -> prune parameters/example
+    columns -> IR-DRY normalize -> extract Background where
+    meaning-preserving -> write e2e QA procedure -> human approval.
+    Update swarmforge/roles/specifier.prompt accordingly and drop its
+    "do not create feature files or invoke the APS tools yourself" clause.
+  - gherkin-parser runs as a lint gate: the specifier must have a clean
+    parse of the item's feature file(s) before handoff to coder. Provide
+    the gate as a runnable script so it is checkable, not aspirational.
+
+acceptance: |
+  Feature: backlog Gherkin becomes durable feature files with a lint gate
+
+  # BL-111 feature-migration-01
+  Scenario: active and paused Gherkin lives in feature files
+    Given the backlog items in active/ and paused/ at migration time
+    When the migration completes
+    Then each item's scenarios exist in specs/features/ with APS naming
+    And each item's YAML acceptance field references its feature file(s)
+    And no done/ item was migrated
+
+  # BL-111 pinned-tools-02
+  Scenario: APS tools are installed at the pinned ref
+    When the APS tool installation runs
+    Then gherkin-parser and the IR-DRY checker come from the APS repo at
+      accaa33d503340c56513ef387258f8da929ba902
+    And swarmforge.lock.json records that pin
+
+  # BL-111 lint-gate-03
+  Scenario: a malformed feature file fails the lint gate
+    Given a feature file that gherkin-parser cannot parse
+    When the lint gate script runs against it
+    Then the gate exits nonzero and reports the parse error
+
+  # BL-111 lint-gate-04
+  Scenario: a well-formed feature file passes the lint gate
+    Given a feature file that parses cleanly
+    When the lint gate script runs against it
+    Then the gate exits zero
+
+  # Non-behavioral gates:
+  #  - specifier.prompt updated with the APS phases; the no-APS-tooling
+  #    clause removed.
+  #  - Tools installed under a project-local path, never resolved as
+  #    "latest"; bumping the pin stays a human commit.

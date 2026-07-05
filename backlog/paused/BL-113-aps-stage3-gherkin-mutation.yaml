@@ -1,0 +1,55 @@
+id: BL-113
+title: "APS realignment stage 3: Gherkin acceptance mutation for the hardender"
+milestone: M5
+status: todo
+priority: 12
+assigned_to: coder
+source: "root intake BL-055-aps-stage3-gherkin-mutation (renumbered: id BL-055 already used by done/M4 scroll-up-autoscroll ticket). Depends on BL-112."
+
+description: |
+  Depends on BL-112 (executable acceptance pipeline must exist first).
+
+  - Install gherkin-mutator from the pinned APS ref (same pin as BL-111,
+    recorded in swarmforge.lock.json); wire it into the pipeline
+    (feature -> parser -> base IR -> mutator -> mutated IRs -> runs).
+  - hardender.prompt gains soft Gherkin mutation: mutate Examples values
+    in the IR and verify mutants are caught (proving example data is
+    actually connected to the system under test). Distinct from language
+    mutation (Stryker), which the hardender keeps.
+  - Mutation runs must emit periodic progress/status so the extension's
+    stall detection can tell long work from a hang (aligns with the tile
+    heartbeat last_tool display).
+  - Mutation manifests are tool-owned: never hand-edited (shared
+    Guardrails rule).
+  - This satisfies the hardender's standing "no tooling configured -> do
+    not improvise" guard for the acceptance side; revisit the cleaner's
+    language-mutation duties once Stryker duties settle, per the
+    model-tier decision.
+
+acceptance: |
+  Feature: mutated Gherkin examples prove acceptance data is load-bearing
+
+  # BL-113 gherkin-mutation-01
+  Scenario: a caught mutant passes the check
+    Given a feature file whose example values drive the system under test
+    When gherkin-mutator produces mutated IRs and the runs execute
+    Then each mutant that changes observable behavior is reported caught
+
+  # BL-113 gherkin-mutation-02
+  Scenario: a surviving mutant is reported
+    Given a scenario whose example value is not actually asserted anywhere
+    When its mutated IR run executes
+    Then the run reports that mutant as surviving, naming the scenario
+      and the mutated value
+
+  # BL-113 gherkin-mutation-03
+  Scenario: long mutation runs are distinguishable from hangs
+    Given a Gherkin mutation run over multiple mutants
+    While the run is in progress
+    Then periodic progress/status output is emitted
+
+  # Non-behavioral gates:
+  #  - gherkin-mutator installed from the pinned APS ref recorded in
+  #    swarmforge.lock.json.
+  #  - Mutation manifests only ever written by the tools.
+  #  - hardender.prompt updated with the soft-Gherkin-mutation duty.

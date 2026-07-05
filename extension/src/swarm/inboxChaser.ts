@@ -30,6 +30,57 @@ export function deadLetterPath(handoffFilePath: string): string {
   return `${handoffFilePath}.dead`;
 }
 
+// BL-109 dead-letter-visible-03: a dead-lettered handoff was previously
+// invisible debris - renamed to `<name>.handoff.dead` next to a
+// `.chase.json` sidecar nothing read back, indistinguishable from success to
+// the sender. Parses the header block any handoff file carries (see
+// handoff-protocol.md) so a listing can show who it was for and what it was.
+export function parseHandoffHeaderField(content: string, field: string): string | undefined {
+  const match = content.match(new RegExp(`^${field}:\\s*(.+)$`, 'm'));
+  return match ? match[1].trim() : undefined;
+}
+
+export interface DeadLetterInfo {
+  role: string;
+  filePath: string;
+  from?: string;
+  recipient?: string;
+  type?: string;
+  task?: string;
+  chaseCount: number;
+}
+
+// The recipient a dead-lettered file was originally destined for is the
+// role whose inbox/new it was found in - deadLetterPath renames it in place,
+// it never moves out of that role's own directory tree.
+export function listDeadLettersForRole(role: string, inboxNewDir: string): DeadLetterInfo[] {
+  if (!fs.existsSync(inboxNewDir)) {
+    return [];
+  }
+  const found: DeadLetterInfo[] = [];
+  for (const entry of fs.readdirSync(inboxNewDir)) {
+    if (!entry.endsWith('.handoff.dead')) {
+      continue;
+    }
+    const filePath = path.join(inboxNewDir, entry);
+    const content = fs.readFileSync(filePath, 'utf-8');
+    found.push({
+      role,
+      filePath,
+      from: parseHandoffHeaderField(content, 'from'),
+      recipient: parseHandoffHeaderField(content, 'recipient'),
+      type: parseHandoffHeaderField(content, 'type'),
+      task: parseHandoffHeaderField(content, 'task'),
+      chaseCount: readChaseCount(filePath),
+    });
+  }
+  return found;
+}
+
+export function listDeadLetters(roleInboxes: Pick<RoleInbox, 'role' | 'inboxNewDir'>[]): DeadLetterInfo[] {
+  return roleInboxes.flatMap(({ role, inboxNewDir }) => listDeadLettersForRole(role, inboxNewDir));
+}
+
 export function readChaseCount(handoffFilePath: string): number {
   const sc = sidecarPath(handoffFilePath);
   try {
@@ -129,8 +180,14 @@ export function decideItemAction(
   const idleSeconds = (nowMs - lastActivityMs) / 1000;
   const hasRecentActivity = idleSeconds < config.stuckInProcessTimeoutSeconds;
 
+  // BL-109: a recipient actively generating for a long turn must never have
+  // its own queued mail dead-lettered out from under it - that previously
+  // happened once chaseCount reached maxChases even while genuinely busy,
+  // which is exactly self-resolving activity, not unresponsiveness. Keep
+  // chasing on the existing interval indefinitely; the recipient's own
+  // idle-time ready_for_next.sh sees the mail once the turn actually ends.
   if (hasRecentActivity) {
-    return chaseCount >= config.maxChases ? 'dead-lettered' : 'chased';
+    return 'chased';
   }
 
   return decideStaleItemAction(chaseCount, config, liveness);

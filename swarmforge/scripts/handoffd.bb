@@ -143,6 +143,15 @@
 ;; line is whatever trails the last recognizable prompt marker ($/#/❯/>) on
 ;; the last non-blank captured line; a marker with nothing after it is an
 ;; empty (not pending) prompt.
+;;
+;; BL-109: a line with NO recognizable marker at all is standing UI chrome,
+;; not pending input - e.g. Claude Code's idle status footer ("  ⏵⏵ bypass
+;; permissions on (shift+tab to cycle)  /rc"), which contains none of
+;; `$#❯>` and rendered as the pane's last non-blank line while genuinely
+;; idle. The previous "no marker -> treat the whole line as pending"
+;; fallback read that footer as forever-pending text, so notify! took the
+;; "recover pending text" branch and never typed the real wake-up message at
+;; all - a deterministic failure specifically when the target was IDLE.
 (def notify-max-retries 3)
 (def notify-retry-delay-ms 200)
 
@@ -158,7 +167,7 @@
       ""
       (if-let [[_ tail] (re-find #"[$#❯>]\s*(\S.*)?$" line)]
         (str/trim (or tail ""))
-        (str/trim line)))))
+        ""))))
 
 (defn pending-input? [pane-text]
   (not (str/blank? (pending-input-line pane-text))))
