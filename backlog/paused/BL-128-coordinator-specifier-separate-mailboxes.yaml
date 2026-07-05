@@ -4,6 +4,14 @@ milestone: M3
 status: todo
 priority: 01
 
+held (coordinator, 2026-07-05): not promoted yet despite priority 01 — Concurrent
+Work Orthogonality. BL-121/122 (handoff transport detection/recovery, top
+priority) are mid-pipeline right now (hardener stage) and touch the same
+handoff plumbing (handoff_lib.bb, inboxChaser.ts notify/delivery paths) that
+BL-128's mailbox split would also need to change. Promote as soon as BL-121/122
+land (QA-approved + merged) to avoid two concurrent edits to the same
+delivery/notify code paths.
+
 description: |
   BUG-class plumbing fix (operator intake 2026-07-05; coordinator bumped to
   prio 01 as the root cause of recurring dead letters). The coordinator and
