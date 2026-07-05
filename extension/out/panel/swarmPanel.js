@@ -140,17 +140,17 @@ class SwarmPanel {
             }
         }, null, this.disposables);
     }
-    static createOrShow(extensionUri, targetPath, runLogPath, workspaceState, secrets) {
+    static createOrShow(extensionUri, targetPath, runLogPath, workspaceState, secrets, preserveFocus = false) {
         const column = vscode.window.activeTextEditor
             ? vscode.window.activeTextEditor.viewColumn
             : undefined;
         if (SwarmPanel.currentPanel) {
             SwarmPanel.currentPanel.targetPath = targetPath;
-            SwarmPanel.currentPanel.panel.reveal(column);
+            SwarmPanel.currentPanel.panel.reveal(column, preserveFocus);
             SwarmPanel.currentPanel.setupTailer();
             return SwarmPanel.currentPanel;
         }
-        const panel = vscode.window.createWebviewPanel(SwarmPanel.viewType, 'SwarmForge', column ?? vscode.ViewColumn.One, {
+        const panel = vscode.window.createWebviewPanel(SwarmPanel.viewType, 'SwarmForge', { viewColumn: column ?? vscode.ViewColumn.One, preserveFocus }, {
             enableScripts: true,
             retainContextWhenHidden: true,
             localResourceRoots: [extensionUri],

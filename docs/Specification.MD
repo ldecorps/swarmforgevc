@@ -1100,6 +1100,8 @@ Domain-specific code generated for a target stays in the target's PR branch and 
 | `SwarmForge: Answer Gate` | Respond to a pending `to: human` gate (also actionable from a notification / mobile) |
 | `SwarmForge: Redo Item From Stage` | Send the current item back to a chosen stage with a note (human-initiated reroute) |
 | `SwarmForge: Initialize Target` | Scaffolds `project.prompt` + `engineering.prompt` in the target repo and commits them, so they travel with the repo when the swarm clones it |
+| `SwarmForge: Set Resend API Key` | Store your Resend API key in VS Code's encrypted SecretStorage (for email notifications). Uses masked input and never echoes the key. |
+| `SwarmForge: Clear Resend API Key` | Remove the stored Resend API key from VS Code's encrypted storage. |
 
 ---
 
