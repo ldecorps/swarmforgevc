@@ -13,7 +13,10 @@ resolution: |
   perTest/all against the command runner. The runner migration itself is
   filed as BL-124 (paused): pinned Vitest + @stryker-mutator/vitest-runner,
   flipping to coverageAnalysis perTest, after which the tradeoff clause is
-  retired. No code change was needed for this ticket.
+  retired. No code change was needed for this ticket. Supersedes a parallel
+  2026-07-05 drain (f8eb525) that had parked BL-123 open in paused/ with an
+  INTERIM constitution clause; that clause and the paused copy were removed
+  in the reconciling merge — BL-124 carries the migration forward.
 
 description: |
   DEFECT (coordinator forensics, 2026-07-05, live during BL-109/BL-104
