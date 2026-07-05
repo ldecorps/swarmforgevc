@@ -1,0 +1,96 @@
+%% BL-095: SwarmForge VC architecture as built (2026-07-04).
+%% Two layers: the VS Code extension host (view/control) and the tmux
+%% substrate (the actual SwarmForge agent processes). The extension never
+%% spawns agent processes directly; it shells out to tmux/git and reads
+%% .swarmforge/ state files. See swarmforge/constitution/articles/
+%% local-engineering.prompt Architecture Rule 1 and swarmDiscovery.ts's
+%% BL-066 note: the extension drives real SwarmForge over tmux, not the
+%% "standalone orchestrator" model docs/Specification.MD's overview once
+%% described.
+flowchart TB
+  subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
+    EXT["extension.ts\n(command registration)"]
+    LAUNCHER["swarmLauncher.ts\n(./swarm wrapper)"]
+    TMUXCLIENT["tmuxClient.ts\n(tmux CLI wrapper)"]
+    TAILER["paneTailer.ts\n(per-tick pane poll)"]
+    DISCOVERY["swarmDiscovery.ts"]
+    STATE["swarmState.ts\n(roles.tsv, pipeline stage)"]
+    DAEMONHEALTH["daemonHealth.ts\n(handoffd status, read-only)"]
+    METRICS["swarmMetrics.ts"]
+    BACKLOGRW["backlogReader.ts / backlogWriter.ts"]
+    CHASER["ChaseMonitor.ts + inboxChaser.ts\n+ watchdog/liveness.ts + paneActivity.ts"]
+    BOUNCE["bounceWatcher.ts / bouncer.ts / bounceDrain.ts"]
+    MSGBUS["messageBus.ts\n(append-only audit log)"]
+    PRCREATOR["prCreator.ts"]
+    BRIDGE["bridgeServer.ts\n(localhost REST+SSE, read-only,\nin-memory token)"]
+    PANEL["swarmPanel.ts / workTreePanel.ts\n(webview controller)"]
+  end
+
+  subgraph WEBVIEW["Webview (browser context, presentation only)"]
+    TILES["Tile grid UI\n(panel.js + webviewHtml.ts template)"]
+  end
+
+  subgraph SUBSTRATE["tmux Substrate"]
+    SOCKET[".swarmforge/tmux-socket"]
+    PANES["One tmux pane per pipeline role\n(coordinator, specifier, coder, cleaner,\narchitect, hardender, documenter, QA)"]
+  end
+
+  subgraph SWARMSTATE[".swarmforge/ State (files, shared)"]
+    ROLESTSV["roles.tsv, sessions.tsv"]
+    HANDOFFS["handoffs/{inbox,outbox,sent,failed}/"]
+    DAEMONDIR["daemon/ (handoffd pid, heartbeat, log)"]
+    BACKLOGDIR["../backlog/{root,paused,active,done}/"]
+  end
+
+  subgraph GITHUB["git / GitHub"]
+    TARGETREPO["target repo: dev branch + main"]
+    GH["GitHub PR via git + gh CLI"]
+  end
+
+  EXT -->|registers commands| LAUNCHER
+  EXT -->|registers commands| PANEL
+  LAUNCHER -->|shells out: ./swarm| SUBSTRATE
+  LAUNCHER -->|reads| SOCKET
+
+  TMUXCLIENT -->|tmux CLI over socket:\nsend-keys, capture-pane,\nrespawn-pane| SOCKET
+  TAILER --> TMUXCLIENT
+  PANEL --> TAILER
+  PANEL --> STATE
+  PANEL --> DISCOVERY
+  PANEL --> DAEMONHEALTH
+  PANEL --> METRICS
+  PANEL --> BACKLOGRW
+  PANEL --> CHASER
+  PANEL --> BOUNCE
+  CHASER --> MSGBUS
+  PANEL --> PRCREATOR
+  BRIDGE --> STATE
+  BRIDGE --> DAEMONHEALTH
+
+  STATE -->|reads| ROLESTSV
+  DISCOVERY -->|reads| SOCKET
+  DAEMONHEALTH -->|reads| DAEMONDIR
+  CHASER -->|reads/writes| HANDOFFS
+  BOUNCE -->|reads/writes| HANDOFFS
+  BACKLOGRW -->|reads/writes\n(atomicWrite)| BACKLOGDIR
+
+  PANES -->|read/write| HANDOFFS
+  PANES -->|handoffd.bb polls outbox,\nnotifies via tmux send-keys| SOCKET
+  PANES -->|git commit/merge| TARGETREPO
+
+  PANEL -->|postMessage: output, stage,\nbadgeUpdate, backlogUpdate, ...| TILES
+  TILES -->|postMessage: keystroke,\nclick, command| PANEL
+
+  PRCREATOR -->|git push + gh pr create| GH
+  GH --> TARGETREPO
+
+  classDef host fill:#1f6feb,color:#fff,stroke:#0b3d91;
+  classDef webview fill:#2ea043,color:#fff,stroke:#116329;
+  classDef substrate fill:#8250df,color:#fff,stroke:#4c2889;
+  classDef state fill:#9a6700,color:#fff,stroke:#5c4200;
+  classDef gh fill:#57606a,color:#fff,stroke:#32383f;
+  class EXT,LAUNCHER,TMUXCLIENT,TAILER,DISCOVERY,STATE,DAEMONHEALTH,METRICS,BACKLOGRW,CHASER,BOUNCE,MSGBUS,PRCREATOR,BRIDGE,PANEL host;
+  class TILES webview;
+  class SOCKET,PANES substrate;
+  class ROLESTSV,HANDOFFS,DAEMONDIR,BACKLOGDIR state;
+  class TARGETREPO,GH gh;

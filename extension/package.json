@@ -106,6 +106,14 @@
       {
         "command": "swarmforge.drainCheck",
         "title": "SwarmForge: Check Drain Mode (Next Item)"
+      },
+      {
+        "command": "swarmforge.setResendApiKey",
+        "title": "SwarmForge: Set Resend API Key"
+      },
+      {
+        "command": "swarmforge.clearResendApiKey",
+        "title": "SwarmForge: Clear Resend API Key"
       }
     ],
     "configuration": {
@@ -211,6 +219,11 @@
           "type": "number",
           "default": 120,
           "description": "How long (seconds) a role must stay drained-idle and output-quiet, with no recent human keystrokes, before its pane is cleared."
+        },
+        "swarmforge.metrics.suiteWarnSeconds": {
+          "type": "number",
+          "default": 120,
+          "description": "The METRICS pane and swarm-metrics CLI flag the suite-duration entry as WARN when the latest test run exceeds this many seconds (or twice the rolling mean, whichever is stricter)."
         }
       }
     }
@@ -219,7 +232,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "npm run compile && node --test --test-concurrency=8 test/*.test.js",
+    "test": "npm run compile && node scripts/recordTestDuration.js",
     "tracer-bullet": "npm run compile && node out/tools/tracer-bullet-launcher.js",
     "mutation": "npm run compile && stryker run",
     "dry": "jscpd --config .jscpd.json src",

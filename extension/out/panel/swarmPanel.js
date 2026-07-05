@@ -203,6 +203,8 @@ class SwarmPanel {
                 this.panel.webview.postMessage({ type: 'needsHuman', events: deltas });
             }
             this.recordEmailUpdates(deltas);
+        }, (message) => {
+            this.outputChannel.appendLine(message);
         });
         this.tailer.start();
         this.sendRoles(this.tailer.getRoles());
@@ -317,7 +319,10 @@ class SwarmPanel {
             .filter((r) => r.targetPath === this.targetPath)
             .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))[0];
         const runStartMs = latestRun ? Date.parse(latestRun.startedAt) : null;
-        const metrics = (0, swarmMetrics_1.computeSwarmMetrics)(this.targetPath, roles, runStartMs);
+        const suiteWarnSeconds = vscode.workspace
+            .getConfiguration('swarmforge')
+            .get('metrics.suiteWarnSeconds', swarmMetrics_1.DEFAULT_SUITE_WARN_SECONDS);
+        const metrics = (0, swarmMetrics_1.computeSwarmMetrics)(this.targetPath, roles, runStartMs, Date.now(), suiteWarnSeconds);
         this.panel.webview.postMessage({
             type: 'metricsUpdate',
             metrics,

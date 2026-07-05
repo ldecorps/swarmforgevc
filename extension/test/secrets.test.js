@@ -1,7 +1,13 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const { resolveResendApiKey, RESEND_SECRET_KEY } = require('../out/notify/secrets');
+const {
+  resolveResendApiKey,
+  RESEND_SECRET_KEY,
+  trimmedResendKeyInput,
+  describeSetResult,
+  describeClearResult,
+} = require('../out/notify/secrets');
 
 // Per the constitution's secrets rule: RESEND_API_KEY must resolve only from
 // the host env var or VS Code SecretStorage, never a workspace setting.
@@ -13,6 +19,10 @@ test.afterEach(() => {
   } else {
     process.env.RESEND_API_KEY = ORIGINAL_ENV;
   }
+});
+
+test('RESEND_SECRET_KEY is the stable SecretStorage key (a mismatch here would silently split reads/writes across two different storage slots)', () => {
+  assert.equal(RESEND_SECRET_KEY, 'swarmforge.resendApiKey');
 });
 
 function fakeSecrets(stored) {
@@ -63,4 +73,47 @@ test('resolveResendApiKey returns undefined when SecretStorage has no value stor
   const result = await resolveResendApiKey(storage);
 
   assert.equal(result, undefined);
+});
+
+// --- BL-103: pure helpers behind the Set/Clear Resend API Key commands.
+//     The input-box UI is the untestable boundary; the resolution-order
+//     message and empty-input handling are pure and tested directly. ---
+
+test('trimmedResendKeyInput returns undefined for empty input (a safe no-op)', () => {
+  assert.equal(trimmedResendKeyInput(''), undefined);
+  assert.equal(trimmedResendKeyInput(undefined), undefined);
+});
+
+test('trimmedResendKeyInput returns undefined for whitespace-only input', () => {
+  assert.equal(trimmedResendKeyInput('   '), undefined);
+});
+
+test('trimmedResendKeyInput trims and returns non-empty input', () => {
+  assert.equal(trimmedResendKeyInput('  a-real-key  '), 'a-real-key');
+});
+
+test('describeSetResult states precedence when the env var is set', () => {
+  assert.equal(
+    describeSetResult(true),
+    'Resend API key stored in SecretStorage. Note: the RESEND_API_KEY environment variable is currently set and takes precedence over this value until it is unset.'
+  );
+});
+
+test('describeSetResult has no precedence caveat when no env var is set', () => {
+  // Exact equality, not just doesNotMatch(/RESEND_API_KEY/): a doesNotMatch
+  // check alone can't tell an empty caveat from a non-empty one that simply
+  // never mentions RESEND_API_KEY, so it can't catch precedenceNote's empty
+  // branch being replaced with other non-matching text.
+  assert.equal(describeSetResult(false), 'Resend API key stored in SecretStorage.');
+});
+
+test('describeClearResult never echoes anything sensitive and states precedence when the env var is set', () => {
+  assert.equal(
+    describeClearResult(true),
+    'Resend API key cleared from SecretStorage. Note: the RESEND_API_KEY environment variable is currently set and takes precedence over this value until it is unset.'
+  );
+});
+
+test('describeClearResult has no precedence caveat when no env var is set', () => {
+  assert.equal(describeClearResult(false), 'Resend API key cleared from SecretStorage.');
 });

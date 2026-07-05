@@ -1,0 +1,89 @@
+id: BL-091
+title: second swarm bring-up on a Windows box via WSL2 (full pipeline, git-synced)
+milestone: M6
+status: todo
+priority: 05
+source: operator requirement refinement 2026-07-04
+depends_on: BL-090, BL-094
+
+description: |
+  Second slice: actually run swarm number two on the operator's Windows
+  machine, inside WSL2. Operator-confirmed constraints (2026-07-04):
+    - Native Windows is OUT of scope: tmux is the process substrate by
+      architecture rule and has no native Windows port. "Windows support"
+      means: the operator sits at the Windows box and the swarm runs there
+      — delivered via WSL2 (a real Linux userland).
+    - The remote swarm is a FULL pipeline (its own specifier, coder,
+      cleaner, architect, hardender, documenter, QA) launched in BL-090
+      `secondary` mode (no coordinator pane; triage/promotion stays with
+      the primary machine's autonomous coordinator). Per BL-090 the mode
+      is a per-launch choice — the remote box can later be relaunched
+      autonomous with a deliberate primacy transfer, but this bring-up
+      item covers secondary mode only.
+    - All cross-machine coordination is git (clone of the same repo,
+      push/pull to the shared main). Nothing in the handoff daemon or tmux
+      layer crosses machines.
+    - GATED ON BL-094 (operator decision 2026-07-04): the holistic
+      dev-state web UI must exist before a second swarm is brought up, so
+      the operator is never running two swarms without one view of both.
+
+  Behavior wanted:
+    - The swarm substrate (./swarm launcher, tmux session, handoffd,
+      queue helpers, worktrees) runs unmodified inside WSL2; anything found
+      genuinely broken under WSL2 is fixed in the fork via normal tickets,
+      not worked around ad hoc.
+    - A conf for the second swarm: swarm_name set per BL-090, full role set
+      minus coordinator; launching with no coordinator window is supported
+      and does not degrade the pipeline roles.
+    - The remote specifier picks up work by syncing git: after a pull it
+      can see newly assigned active tickets for its swarm_name and routes
+      them to its coder exactly as the primary specifier does (wake-up
+      automation is BL-092; manual/periodic pull is acceptable here).
+    - Remote merges land on the shared main per BL-090's push-retry
+      discipline.
+    - Bring-up is documented (docs/): WSL2 prerequisites (tmux, babashka,
+      git, gh, claude CLI), clone location on the WSL filesystem (not
+      /mnt/c, for fs-watcher and performance correctness), conf setup, and
+      launch/stop.
+
+  Scope: swarmforge conf/scripts + docs. The VS Code extension is NOT part
+  of this item (macOS/Linux extension rules unchanged; watching the remote
+  swarm happens in the remote box's editor or plain tmux).
+
+acceptance: |
+  Feature: a full second swarm runs under WSL2 and works the shared backlog
+
+  Background:
+    Given BL-090 assignment and merge discipline are merged
+
+  # BL-091 wsl2-swarm-01
+  Scenario: launch without a coordinator window
+    Given a swarmforge.conf naming swarm_name second with all roles except
+      coordinator
+    When ./swarm launches inside WSL2
+    Then all configured role panes come up with live agents
+    And handoffd delivers local handoffs between them normally
+
+  # BL-091 wsl2-swarm-02
+  Scenario: remote specifier works an assigned ticket end to end
+    Given the primary coordinator has assigned an active ticket to second
+    When the remote swarm's specifier syncs git and processes the ticket
+    Then the parcel flows through the remote pipeline stages
+    And the QA-approved merge is pushed to the shared main
+
+  # BL-091 wsl2-swarm-03
+  Scenario: remote swarm never touches the other swarm's parcels
+    Given active tickets assigned to the primary swarm exist
+    When the remote swarm operates over many sync cycles
+    Then those tickets show no routing, commits, or closes from remote roles
+
+  # BL-091 wsl2-swarm-04
+  Scenario: bring-up doc is sufficient
+    Given a WSL2 environment with only the documented prerequisites
+    When the documented bring-up steps are followed
+    Then the swarm launches successfully on the first attempt
+
+  # Non-behavioral gates:
+  #  - Any substrate incompatibility found under WSL2 is filed as its own
+  #    ticket with root cause, not patched inline without a test.
+  #  - Existing single-swarm launch behavior unchanged (suites green).

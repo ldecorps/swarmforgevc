@@ -1,0 +1,95 @@
+id: BL-089
+title: per-role feature flag — clear a role's session context at the idle boundary
+milestone: M2
+status: todo
+priority: 03
+source: operator request 2026-07-04 (root intake idle-context-clear-feature-flag.md, coordinator relay)
+
+description: |
+  Today each pipeline role is one continuous long-lived `claude` session for
+  the life of its tmux pane; context accumulates across every task/batch it
+  processes, and only a human /clear or a pane respawn resets it. For
+  long-running roles (hardener, documenter) that accumulation is cost with
+  no benefit — durable knowledge already lives in git history,
+  backlog/done/, and the memory system.
+
+  Wanted behavior (operator-confirmed decisions, 2026-07-04):
+    - Per-role opt-in flag in swarmforge.conf, expressed as an optional
+      token on the `window` line (alongside the existing task/batch receive
+      mode field). Absent means OFF. Default for every role: off — a conf
+      without the token behaves exactly as today, no clearing ever.
+    - When enabled for a role, its session context is cleared ONLY at the
+      idle boundary: after its done-with-current helper completes a
+      task/batch AND the queue comes back NO_TASK. Never mid-task, never
+      mid-batch, never while queued work remains (a done helper that hands
+      out the next TASK/BATCH continues without clearing).
+    - After a clear, the fresh session receives the same full role
+      re-bootstrap as a brand-new pane launch (read constitution, PIPELINE,
+      role prompt, then ready_for_next.sh), so post-clear behavior is
+      indistinguishable from a fresh respawn.
+    - Clearing is context-only: the durable inbox/outbox state, in_process
+      audit trail, and any handoff that arrives during or after the clear
+      must be unaffected — the next wake-up or ready_for_next.sh run picks
+      up work exactly as normal.
+    - The launcher normalizes the flag into .swarmforge/roles.tsv (like
+      receive mode) so runtime helpers read the runtime file, not
+      swarmforge.conf.
+
+  This is swarm machinery territory: swarmforge/swarmforge.conf parsing,
+  launcher/roles.tsv normalization, queue helper scripts and/or launch
+  scripts under swarmforge/scripts + .swarmforge/launch. NOT extension code.
+  The chosen trigger mechanism must not violate the two-layer rule and must
+  not require the agent itself to self-monitor (no self-scheduled loops).
+
+  Tradeoff acknowledged in the spec: an enabled role loses in-session
+  short-term coherence between parcels. That is the accepted cost; roles
+  needing cross-parcel recall keep the flag off (coordinator, specifier).
+
+acceptance: |
+  Feature: per-role idle-boundary context clear
+
+  Background:
+    Given a swarm launched from a swarmforge.conf with the idle-clear token
+      present on some window lines and absent on others
+
+  # BL-089 idle-clear-01
+  Scenario: enabled role clears at the idle boundary
+    Given a role with the idle-clear flag enabled
+    And it completes its current task or batch
+    And its queue returns NO_TASK
+    Then its session context is cleared
+    And the fresh session is given the full role re-bootstrap instructions
+
+  # BL-089 idle-clear-02
+  Scenario: no clear while queued work remains
+    Given a role with the idle-clear flag enabled
+    And more handoffs wait in its inbox
+    When its done helper completes the current item and hands out the next
+    Then no context clear occurs before the next item is processed
+
+  # BL-089 idle-clear-03
+  Scenario: never mid-task or mid-batch
+    Given a role with the idle-clear flag enabled
+    And it is partway through a task or a multi-item batch
+    Then no context clear occurs until the whole task or batch is completed
+      and the queue is empty
+
+  # BL-089 idle-clear-04
+  Scenario: disabled role is untouched
+    Given a role without the idle-clear token on its window line
+    When it completes work and its queue returns NO_TASK
+    Then no context clear occurs and its session continues as today
+
+  # BL-089 idle-clear-05
+  Scenario: handoffs survive a clear
+    Given a role with the idle-clear flag enabled whose context was just
+      cleared
+    When a new handoff is delivered to its inbox
+    Then the wake-up and ready_for_next.sh flow accept the handoff normally
+    And no inbox, outbox, or audit state was lost by the clear
+
+  # Non-behavioral gates:
+  #  - Conf parsing + roles.tsv normalization of the new token covered by
+  #    the existing swarm-scripts test pattern; unknown/misspelled tokens
+  #    rejected at startup validation like other window-line fields.
+  #  - Existing receive-mode (task/batch) parsing behavior unchanged.

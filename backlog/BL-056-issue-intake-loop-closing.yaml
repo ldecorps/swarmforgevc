@@ -1,0 +1,15 @@
+id: BL-056
+title: "close the loop on GitHub issue intake (specifier comments + closes issues)"
+description: |
+  Depends on .github/workflows/swarm-intake.yml (issue -> backlog root item,
+  id GH-<n>, source: field carries the issue URL).
+
+  When the specifier drains a GH-<n> root item into a spec in backlog/paused/,
+  it should also close the loop on GitHub via `gh` (available in the worktree,
+  auth from the host environment per the Secrets rule):
+  - comment on the source issue with the spec summary and the paused item path
+  - apply label `swarm-specced`
+  When the item completes (moved to done/), whichever role sends the completion
+  notification comments the merge commit on the issue and closes it.
+  If `gh` auth is unavailable, skip silently and note it in the run log; issue
+  loop-closing must never block the pipeline.

@@ -33,6 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.DEFAULT_RUN_COMMAND_TIMEOUT_MS = void 0;
 exports.runCommand = runCommand;
 exports.readTmuxSocket = readTmuxSocket;
 exports.listTmuxSessions = listTmuxSessions;
@@ -46,20 +47,36 @@ exports.setWindowSizeManual = setWindowSizeManual;
 exports.resizeWindow = resizeWindow;
 exports.sendKeys = sendKeys;
 exports.readSwarmRoles = readSwarmRoles;
+exports.sleepSync = sleepSync;
+exports.respawnPaneForced = respawnPaneForced;
 exports.respawnAgent = respawnAgent;
 exports.sessionExists = sessionExists;
 const cp = __importStar(require("child_process"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const verifiedInject_1 = require("./verifiedInject");
+// runCommand is synchronous and runs on the extension host's only JS thread:
+// a child that never exits wedges the entire extension (tiles, webview
+// messages, every timer). All callers are sub-second tmux commands, so a
+// bounded default timeout turns any hang into a failed result instead.
+exports.DEFAULT_RUN_COMMAND_TIMEOUT_MS = 10_000;
 function runCommand(command, args, options = { encoding: 'utf8' }) {
     const result = cp.spawnSync(command, args, {
+        timeout: exports.DEFAULT_RUN_COMMAND_TIMEOUT_MS,
         ...options,
         encoding: 'utf8',
     });
+    const timedOut = result.error !== undefined &&
+        result.error.code === 'ETIMEDOUT';
+    const stderr = (result.stderr ?? '').trimEnd();
     return {
         stdout: (result.stdout ?? '').trimEnd(),
-        stderr: (result.stderr ?? '').trimEnd(),
-        exitCode: result.status ?? 1,
+        stderr: timedOut
+            ? [stderr, `${command} timed out after ${options.timeout ?? exports.DEFAULT_RUN_COMMAND_TIMEOUT_MS}ms`]
+                .filter(Boolean)
+                .join('\n')
+            : stderr,
+        exitCode: timedOut ? 1 : result.status ?? 1,
     };
 }
 function readTmuxSocket(targetPath) {
@@ -210,16 +227,98 @@ function readSwarmRoles(targetPath) {
     }
     return roles;
 }
+// Synchronous backoff wait for the retry loop below. The extension host is
+// single-threaded and blocking here is deliberate and bounded (a few hundred
+// ms, only on a verification retry) - the same tradeoff runCommand already
+// makes with its blocking spawnSync calls.
+function sleepSync(ms) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+/**
+ * Kills whatever is running in the pane and relaunches the role's launch
+ * script directly in place, bypassing send-keys entirely. This is the only
+ * recovery that works on a WEDGED TUI (process alive, all input ignored):
+ * send-keys types into a dead input box and can never submit there.
+ */
+function respawnPaneForced(socketPath, target, launchScript) {
+    return runCommand('tmux', [
+        '-S',
+        socketPath,
+        'respawn-pane',
+        '-k',
+        '-t',
+        target,
+        `bash ${launchScript}`,
+    ]);
+}
 function respawnAgent(targetPath, role) {
     const launchScript = path.join(targetPath, '.swarmforge', 'launch', `${role}.sh`);
     if (!fs.existsSync(launchScript)) {
         return { success: false, message: `No launch script found for role "${role}" at ${launchScript}` };
     }
-    const result = runCommand('bash', [launchScript]);
-    if (result.exitCode !== 0) {
-        return { success: false, message: `Failed to respawn "${role}": ${result.stderr || result.stdout || `exit ${result.exitCode}`}` };
+    const socketPath = readTmuxSocket(targetPath);
+    if (!socketPath) {
+        return { success: false, message: `Cannot respawn "${role}": no tmux socket recorded (is the swarm running?)` };
     }
-    return { success: true, message: `Agent "${role}" restarted.` };
+    const roleEntry = readSwarmRoles(targetPath).find((entry) => entry.role === role);
+    if (!roleEntry) {
+        return { success: false, message: `Cannot respawn "${role}": role not found in sessions.tsv` };
+    }
+    // The launch script runs `claude` in the foreground and only exits when the
+    // agent does. It must run INSIDE the role's tmux pane — executing it here
+    // would block the extension host's single JS thread until the agent exits,
+    // freezing the whole extension, and leave the agent outside tmux where no
+    // tile can see it.
+    const target = resolveAgentPaneTarget(socketPath, roleEntry.session, getPaneBaseIndex(socketPath));
+    return performVerifiedRespawn(socketPath, target, launchScript, role);
+}
+// BL-093: split out of respawnAgent (CRAP) - type-and-verify first (works
+// for the common case: an idle/dead shell pane waiting to reattach). Only
+// escalate to a forced pane kill+relaunch when verification exhausts its
+// retries - i.e. the pane is a WEDGED live TUI that send-keys cannot reach -
+// never on a healthy pane (a healthy pane confirms delivery on the first
+// attempt).
+function performVerifiedRespawn(socketPath, target, launchScript, role) {
+    const command = `bash ${launchScript}`;
+    let typeFailure;
+    const result = (0, verifiedInject_1.sendInstructionVerified)({
+        capturePane: () => {
+            const captured = capturePane(socketPath, target);
+            return captured.exitCode === 0 ? captured.stdout : '';
+        },
+        sendLiteral: (text) => {
+            const typed = sendKeys(socketPath, target, text, true);
+            if (typed.exitCode !== 0) {
+                typeFailure = typed;
+                return false;
+            }
+            return true;
+        },
+        sendEnter: () => {
+            sendKeys(socketPath, target, 'Enter');
+        },
+        wait: sleepSync,
+    }, command);
+    if (typeFailure) {
+        return { success: false, message: `Failed to respawn "${role}": ${typeFailure.stderr || typeFailure.stdout || `exit ${typeFailure.exitCode}`}` };
+    }
+    if (result.status === 'delivered') {
+        return { success: true, message: `Agent "${role}" restarted in pane ${target}.` };
+    }
+    return escalateToForcedRespawn(socketPath, target, launchScript, role, result);
+}
+function escalateToForcedRespawn(socketPath, target, launchScript, role, result) {
+    const forced = respawnPaneForced(socketPath, target, launchScript);
+    if (forced.exitCode !== 0) {
+        return {
+            success: false,
+            message: `Failed to respawn "${role}": send-keys did not submit (${result.reason}), and forced pane respawn also failed: ${forced.stderr || forced.stdout || `exit ${forced.exitCode}`}`,
+        };
+    }
+    return {
+        success: true,
+        message: `Agent "${role}" was wedged (send-keys did not submit); forced a pane respawn in ${target}.`,
+    };
 }
 function sessionExists(socketPath, session) {
     const result = runCommand('tmux', [

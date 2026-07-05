@@ -149,6 +149,26 @@ function formatDurationMs(ms) {
   return hours === 0 ? minutes + 'm' : hours + 'h ' + minutes + 'm';
 }
 
+// BL-078: mirrors metrics/swarmMetrics.ts's formatSuiteDurationMs, same
+// reason formatDurationMs above is duplicated here (two-layer rule).
+function formatSuiteDurationMs(ms) {
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes === 0 ? seconds + 's' : minutes + 'm ' + seconds + 's';
+}
+
+function suiteDurationLineHtml(suite) {
+  if (suite.latestMs === null) {
+    return '<div class="metric-row"><span class="metric-label">Suite duration</span><span class="metric-value">—</span></div>';
+  }
+  const valueClass = suite.warn ? 'metric-value metric-value-warn' : 'metric-value';
+  const label = suite.warn ? 'Suite duration (WARN)' : 'Suite duration';
+  return '<div class="metric-row"><span class="metric-label">' + label + '</span><span class="' + valueClass + '">' +
+    formatSuiteDurationMs(suite.latestMs) + ' / mean ' + formatSuiteDurationMs(suite.meanMs) +
+    ' over ' + suite.sampleCount + ' run(s)</span></div>';
+}
+
 function renderMetrics(metrics, roles) {
   metricsEl.style.display = '';
   const meanLine = metrics.meanTicketTimeMs === null
@@ -164,16 +184,43 @@ function renderMetrics(metrics, roles) {
   const retryLine = '<div class="metric-row"><span class="metric-label">Retries</span><span class="metric-value">' +
     metrics.retryTotal + '</span></div>';
 
-  metricsListEl.innerHTML = meanLine + busynessLines + retryLine;
+  const suiteLine = suiteDurationLineHtml(metrics.suiteDuration);
+
+  metricsListEl.innerHTML = meanLine + busynessLines + retryLine + suiteLine;
   updateBottomRow();
+}
+
+// BL-077: one stable color class per pipeline stage, plus neutral classes
+// for "queued" (promoted, unrouted) and "done", so the tile-header badge and
+// the BACKLOG row chip always agree on the color for a given holder. Keyed
+// lowercase so 'QA' and 'qa' (and any other holder-string casing) resolve to
+// the same class. The map is inlined (not a module-level const) so the
+// function is self-contained for extractPanelFunction-based unit tests.
+function stageColorClass(holder) {
+  const STAGE_COLOR_CLASSES = {
+    specifier: 'stage-color-specifier',
+    coder: 'stage-color-coder',
+    cleaner: 'stage-color-cleaner',
+    architect: 'stage-color-architect',
+    hardender: 'stage-color-hardender',
+    documenter: 'stage-color-documenter',
+    qa: 'stage-color-qa',
+    coordinator: 'stage-color-coordinator',
+    queued: 'stage-color-queued',
+    done: 'stage-color-done',
+  };
+  const key = (holder || 'queued').toLowerCase();
+  return STAGE_COLOR_CLASSES[key] || STAGE_COLOR_CLASSES.queued;
 }
 
 function backlogRowHtml(item) {
   let assignedDisplay = '';
   let controls = '';
   if (item.status === 'done') {
-    // Done rows show their milestone (the done/ subfolder they live in).
-    assignedDisplay = item.milestone ? '<span class="bl-milestone">' + item.milestone + '</span>' : '';
+    // Done rows show their milestone, tinted "done"-neutral (BL-077).
+    assignedDisplay = item.milestone
+      ? '<span class="bl-milestone ' + stageColorClass('done') + '">' + item.milestone + '</span>'
+      : '';
   } else if (item.status === 'active') {
     // Active rows show LIVE traceability only: the role actually holding the
     // parcel, or "queued" when it is promoted but not yet routed. Never fall
@@ -182,7 +229,10 @@ function backlogRowHtml(item) {
     // unrouted ticket showed its intake-time assignee as if it were holding
     // the parcel.
     const holder = holderMap[item.id] || 'queued';
-    assignedDisplay = '<span class="bl-assigned">' + holder + '</span>';
+    // BL-077: tint the chip with the holder's stage color (or the neutral
+    // "queued" color when unrouted) — the same resolver-driven holder value
+    // the tile badge below uses, so the two surfaces never disagree.
+    assignedDisplay = '<span class="bl-assigned ' + stageColorClass(holder) + '">' + holder + '</span>';
     // BL-034: field-level panel -> disk writes. assigned_to here is the
     // static YAML field (separate from the live holder above), and marking
     // done is a folder move the host performs; both go through the
@@ -477,6 +527,15 @@ function ensureTile(role, displayName, agent) {
     activeRole = role;
   });
 
+  // Clicking the output area is the operator's only way to target a tile
+  // for keyboard input since BL-046 removed the per-tile input bar. Do not
+  // rely solely on the browser's default click-to-focus behavior for a
+  // tabIndex div (BL-085) - focus explicitly so a click always activates
+  // the tile, which also fires the 'focus' listener above.
+  output.addEventListener('click', () => {
+    output.focus();
+  });
+
   output.addEventListener('scroll', () => {
     handleTileScroll(entry, output);
   }, { passive: true });
@@ -641,9 +700,13 @@ window.addEventListener('message', (event) => {
           // batch) shows the lowest ticket ID plus a +N count for the rest
           // instead of silently dropping them (BL-068).
           entry.blBadge.textContent = badge.extraCount ? `${idSummary} +${badge.extraCount}` : idSummary;
+          // BL-077: the badge is only ever shown on the tile whose role IS
+          // the live holder, so that role is the stage color to apply.
+          entry.blBadge.className = 'tile-bl-badge ' + stageColorClass(role);
         } else {
           entry.tile.classList.remove('bl-active');
           entry.blBadge.textContent = '';
+          entry.blBadge.className = 'tile-bl-badge';
         }
       });
       break;

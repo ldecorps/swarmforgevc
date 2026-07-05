@@ -58,6 +58,7 @@ const resolveRunName_1 = require("./run/resolveRunName");
 const bounceWatcher_1 = require("./swarm/bounceWatcher");
 const chaserMonitor_1 = require("./watchdog/chaserMonitor");
 const tmuxClient_2 = require("./swarm/tmuxClient");
+const verifiedInject_1 = require("./swarm/verifiedInject");
 const paneActivity_1 = require("./watchdog/paneActivity");
 const stuckEscalations_1 = require("./watchdog/stuckEscalations");
 const inboxChaser_1 = require("./swarm/inboxChaser");
@@ -68,6 +69,7 @@ const bounceDrain_1 = require("./swarm/bounceDrain");
 const heartbeat_1 = require("./tools/heartbeat");
 const devActivationMarker_1 = require("./devActivationMarker");
 const liveness_1 = require("./watchdog/liveness");
+const secrets_1 = require("./notify/secrets");
 const NO_TARGET_MESSAGE = 'Set a target project first (SwarmForge: Set Target Project).';
 const STOP_SWARM_BUTTON = 'Stop Swarm';
 const LAST_RUN_NAME_KEY = 'swarmforge.lastRunName';
@@ -80,16 +82,23 @@ const CHASER_INTERVAL_SECONDS = 5;
 const CHASER_TIMEOUT_SECONDS = 30;
 const CHASER_MAX_CHASES = 3;
 const CHASER_STUCK_IN_PROCESS_TIMEOUT_SECONDS = 60;
+const CHASER_RESPAWN_COOLDOWN_SECONDS = 300;
 const BOUNCE_DRAIN_POLL_INTERVAL_SECONDS = 5;
 const BOUNCE_DRAIN_TIMEOUT_SECONDS_DEFAULT = 900;
 const CONTEXT_CLEAR_POLL_INTERVAL_SECONDS = 15;
 const CONTEXT_CLEAR_SETTLE_WINDOW_SECONDS_DEFAULT = 120;
-// BL-080: short retry window for the activation re-attach check. A live
-// swarm is already up, so this only smooths a transient probe flake at
-// cold-start - unlike the launcher's own 120s timeout, which waits out an
-// actual swarm boot.
+// BL-080: short retry window for the activation re-attach check when no
+// swarm socket is on disk yet - this only smooths a transient probe flake,
+// not a real boot.
 const REATTACH_READY_TIMEOUT_MS = 3000;
 const REATTACH_READY_POLL_MS = 200;
+// BL-084: when a swarm socket already exists at activation, a genuine cold
+// start is under way (N tmux sessions each spawning a fresh `claude`), which
+// routinely exceeds the 3s flake-smoothing budget above. Match the
+// launcher's own readiness budget (launchSwarm's default readyTimeoutMs) so
+// a slow-but-real cold start still attaches automatically instead of
+// falling through to "previous run found, resume?".
+const REATTACH_COLD_START_TIMEOUT_MS = 120_000;
 let currentBounceWatcher = null;
 let currentChaserMonitor = null;
 let currentBounceDrainWatcher = null;
@@ -180,6 +189,7 @@ function startOrRestartChaserMonitor(targetPath, context) {
         chaseTimeoutSeconds: CHASER_TIMEOUT_SECONDS,
         maxChases: CHASER_MAX_CHASES,
         stuckInProcessTimeoutSeconds: CHASER_STUCK_IN_PROCESS_TIMEOUT_SECONDS,
+        respawnCooldownSeconds: CHASER_RESPAWN_COOLDOWN_SECONDS,
     };
     // Implement adapters for the chaser
     const callbacks = {
@@ -416,8 +426,23 @@ function startOrRestartIdleClearMonitor(targetPath, context) {
             if (!target) {
                 return;
             }
-            (0, tmuxClient_2.sendKeys)(socketPath, target, '/clear', true);
-            (0, tmuxClient_2.sendKeys)(socketPath, target, 'Enter');
+            // BL-093: verify /clear actually submits instead of fire-and-forget -
+            // a lost Enter here would leave "/clear" sitting typed-but-unsubmitted
+            // in the role's input box.
+            const result = (0, verifiedInject_1.sendInstructionVerified)({
+                capturePane: () => {
+                    const captured = (0, tmuxClient_2.capturePane)(socketPath, target);
+                    return captured.exitCode === 0 ? captured.stdout : '';
+                },
+                sendLiteral: (text) => (0, tmuxClient_2.sendKeys)(socketPath, target, text, true).exitCode === 0,
+                sendEnter: () => (0, tmuxClient_2.sendKeys)(socketPath, target, 'Enter'),
+                wait: tmuxClient_2.sleepSync,
+            }, '/clear');
+            if (result.status !== 'delivered') {
+                // Report, never silently drop (BL-093 verified-submit-02): this is
+                // the one call site that previously discarded the result entirely.
+                outputChannel.appendLine(`/clear delivery ${result.status} for "${role}" in pane ${target} after ${result.attempts} attempt(s)${result.reason ? `: ${result.reason}` : ''}`);
+            }
         },
         log: (message) => {
             outputChannel.appendLine(message);
@@ -487,7 +512,15 @@ function activate(context) {
             // this is only smoothing a transient check, not waiting for a cold
             // boot) fixes the false negative without meaningfully delaying the
             // genuine cold-start case, where every retry still finds no socket.
-            (0, swarmLauncher_1.waitForSwarmReady)(targetPath, REATTACH_READY_TIMEOUT_MS, REATTACH_READY_POLL_MS).then((ready) => {
+            //
+            // BL-084: BL-080's flat 3s only covers that transient-flake case. A
+            // socket already present at activation means a real swarm cold start
+            // is in progress (8 tmux sessions each spawning a fresh `claude`),
+            // which routinely takes longer than 3s - so widen the wait budget to
+            // the launcher's own budget in that case, without penalizing the
+            // truly-empty (no socket) case.
+            const reattachTimeoutMs = (0, swarmLauncher_1.chooseReattachTimeoutMs)((0, tmuxClient_2.readTmuxSocket)(targetPath) !== undefined, REATTACH_COLD_START_TIMEOUT_MS, REATTACH_READY_TIMEOUT_MS);
+            (0, swarmLauncher_1.waitForSwarmReady)(targetPath, reattachTimeoutMs, REATTACH_READY_POLL_MS).then((ready) => {
                 if (ready) {
                     // Re-attach automatically: tiles reconnect to the live output
                     // streams without restarting any agent.
@@ -831,6 +864,22 @@ function activate(context) {
         }
         const panel = swarmPanel_1.SwarmPanel.createOrShow(context.extensionUri, targetPath, runLogPath, undefined, context.secrets);
         panel.updateTarget(targetPath);
+    }), vscode.commands.registerCommand('swarmforge.setResendApiKey', async () => {
+        const input = await vscode.window.showInputBox({
+            title: 'SwarmForge: Set Resend API Key',
+            prompt: 'Enter the Resend API key to store in SecretStorage',
+            password: true,
+            ignoreFocusOut: true,
+        });
+        const key = (0, secrets_1.trimmedResendKeyInput)(input);
+        if (!key) {
+            return;
+        }
+        await context.secrets.store(secrets_1.RESEND_SECRET_KEY, key);
+        vscode.window.showInformationMessage((0, secrets_1.describeSetResult)(Boolean(process.env.RESEND_API_KEY)));
+    }), vscode.commands.registerCommand('swarmforge.clearResendApiKey', async () => {
+        await context.secrets.delete(secrets_1.RESEND_SECRET_KEY);
+        vscode.window.showInformationMessage((0, secrets_1.describeClearResult)(Boolean(process.env.RESEND_API_KEY)));
     }));
 }
 function deactivate() {

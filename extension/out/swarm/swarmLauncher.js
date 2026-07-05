@@ -37,13 +37,39 @@ exports.isSwarmReady = isSwarmReady;
 exports.augmentPath = augmentPath;
 exports.buildLaunchEnv = buildLaunchEnv;
 exports.launchSwarm = launchSwarm;
+exports.chooseReattachTimeoutMs = chooseReattachTimeoutMs;
 exports.waitForSwarmReady = waitForSwarmReady;
 // pipeline smoke test BL-029
 const cp = __importStar(require("child_process"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const tmuxClient_1 = require("./tmuxClient");
+const swarmStopper_1 = require("./swarmStopper");
 const SWARM_LAUNCH_SUCCESS_MESSAGE = 'Swarm launched successfully.';
+// BL-058: launch failures used to surface only as ephemeral toasts, so a
+// failed launch left nothing to diagnose. Every attempt persists the spawned
+// ./swarm output and outcome here, overwritten per attempt.
+const LAUNCH_LOG_SUBPATH = path.join('.swarmforge', 'last-launch.log');
+function persistLaunchLog(targetPath, record) {
+    try {
+        fs.mkdirSync(path.join(targetPath, '.swarmforge'), { recursive: true });
+        fs.writeFileSync(path.join(targetPath, LAUNCH_LOG_SUBPATH), [
+            `SwarmForge launch attempt ${new Date().toISOString()}`,
+            `script: ${record.swarmScript}`,
+            `runName: ${record.runName ?? '(none)'}`,
+            `success: ${record.success}`,
+            `message: ${record.message}`,
+            '--- stdout ---',
+            record.stdout,
+            '--- stderr ---',
+            record.stderr,
+            '',
+        ].join('\n'));
+    }
+    catch {
+        // diagnostics only; never let logging break a launch
+    }
+}
 function isSwarmReady(targetPath) {
     const socket = (0, tmuxClient_1.readTmuxSocket)(targetPath);
     if (!socket) {
@@ -84,11 +110,24 @@ function buildLaunchEnv(runName) {
 async function launchSwarm(targetPath, runName, readyTimeoutMs = 120_000) {
     const swarmScript = path.join(targetPath, 'swarm');
     if (!fs.existsSync(swarmScript)) {
-        return {
+        const message = `No ./swarm wrapper found at ${swarmScript}`;
+        persistLaunchLog(targetPath, {
+            runName,
+            swarmScript,
             success: false,
-            message: `No ./swarm wrapper found at ${swarmScript}`,
-            targetPath,
-        };
+            message,
+            stdout: '',
+            stderr: '',
+        });
+        return { success: false, message, targetPath };
+    }
+    // A previous run's tmux-socket/sessions.tsv can satisfy isSwarmReady and
+    // make this launch report success against a dead or dying swarm. If the
+    // swarm is not currently ready, tear down whatever answers on the old
+    // socket and remove the marker files, so readiness below can only be
+    // satisfied by the state the NEW ./swarm run writes.
+    if (!isSwarmReady(targetPath)) {
+        (0, swarmStopper_1.clearStaleSwarmState)(targetPath);
     }
     return new Promise((resolve) => {
         const child = cp.spawn(swarmScript, [targetPath], {
@@ -110,6 +149,7 @@ async function launchSwarm(targetPath, runName, readyTimeoutMs = 120_000) {
             }
             settled = true;
             cleanup();
+            persistLaunchLog(targetPath, { runName, swarmScript, success, message, stdout, stderr });
             resolve({ success, message, targetPath });
         };
         child.stderr?.on('data', (chunk) => {
@@ -149,6 +189,14 @@ async function launchSwarm(targetPath, runName, readyTimeoutMs = 120_000) {
             }
         }, 500);
     });
+}
+// BL-084: a socket already on disk at activation means a swarm is mid
+// cold-start (bringing up N tmux sessions, each spawning a fresh `claude`),
+// which can take far longer than the transient-flake budget BL-080 used for
+// an already-up swarm. No socket at all means there is no swarm to wait for,
+// so activation should keep falling through to the resume prompt quickly.
+function chooseReattachTimeoutMs(swarmSocketPresent, coldStartTimeoutMs, fastTimeoutMs) {
+    return swarmSocketPresent ? coldStartTimeoutMs : fastTimeoutMs;
 }
 function waitForSwarmReady(targetPath, timeoutMs = 120_000, pollMs = 500) {
     if (isSwarmReady(targetPath)) {

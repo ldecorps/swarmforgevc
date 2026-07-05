@@ -13,7 +13,7 @@ import { startBridge } from './bridge/bridgeServer';
 import type { BridgeHandle } from './bridge/bridgeServer';
 import { generateBridgeToken } from './bridge/bridgeToken';
 import { getCurrentBranch, openPullRequest } from './swarm/prCreator';
-import { launchSwarm, waitForSwarmReady } from './swarm/swarmLauncher';
+import { launchSwarm, waitForSwarmReady, chooseReattachTimeoutMs } from './swarm/swarmLauncher';
 import { hasPriorRunState } from './swarm/swarmDiscovery';
 import { stopSwarm } from './swarm/swarmStopper';
 import { bounceSwarm, buildBounceExtensionCommand } from './swarm/bouncer';
@@ -22,7 +22,8 @@ import { resolveRunName } from './run/resolveRunName';
 import { startBounceWatcher, BounceType } from './swarm/bounceWatcher';
 import { startChaserMonitor, stopChaserMonitor, buildRoleInboxes } from './watchdog/chaserMonitor';
 import type { ChaserMonitorConfig, ChaserCallbacks } from './watchdog/chaserMonitor';
-import { readTmuxSocket, paneTarget, getPaneBaseIndex, sendKeys, capturePane, readSwarmRoles, respawnAgent } from './swarm/tmuxClient';
+import { readTmuxSocket, paneTarget, getPaneBaseIndex, sendKeys, capturePane, readSwarmRoles, respawnAgent, sleepSync } from './swarm/tmuxClient';
+import { sendInstructionVerified } from './swarm/verifiedInject';
 import { trackPaneActivity, outboxNewestMtimeMs } from './watchdog/paneActivity';
 import { setStuckEscalation, escalatedStuckRoles } from './watchdog/stuckEscalations';
 import { scanInProcess, scanInboxNew } from './swarm/inboxChaser';
@@ -46,6 +47,12 @@ import { readHeartbeat } from './tools/heartbeat';
 import { maybeWriteActivationMarker } from './devActivationMarker';
 import { computeLiveness } from './watchdog/liveness';
 import type { LivenessState, WatchdogConfig } from './watchdog/liveness';
+import {
+  RESEND_SECRET_KEY,
+  trimmedResendKeyInput,
+  describeSetResult,
+  describeClearResult,
+} from './notify/secrets';
 
 const NO_TARGET_MESSAGE = 'Set a target project first (SwarmForge: Set Target Project).';
 const STOP_SWARM_BUTTON = 'Stop Swarm';
@@ -60,16 +67,23 @@ const CHASER_INTERVAL_SECONDS = 5;
 const CHASER_TIMEOUT_SECONDS = 30;
 const CHASER_MAX_CHASES = 3;
 const CHASER_STUCK_IN_PROCESS_TIMEOUT_SECONDS = 60;
+const CHASER_RESPAWN_COOLDOWN_SECONDS = 300;
 const BOUNCE_DRAIN_POLL_INTERVAL_SECONDS = 5;
 const BOUNCE_DRAIN_TIMEOUT_SECONDS_DEFAULT = 900;
 const CONTEXT_CLEAR_POLL_INTERVAL_SECONDS = 15;
 const CONTEXT_CLEAR_SETTLE_WINDOW_SECONDS_DEFAULT = 120;
-// BL-080: short retry window for the activation re-attach check. A live
-// swarm is already up, so this only smooths a transient probe flake at
-// cold-start - unlike the launcher's own 120s timeout, which waits out an
-// actual swarm boot.
+// BL-080: short retry window for the activation re-attach check when no
+// swarm socket is on disk yet - this only smooths a transient probe flake,
+// not a real boot.
 const REATTACH_READY_TIMEOUT_MS = 3000;
 const REATTACH_READY_POLL_MS = 200;
+// BL-084: when a swarm socket already exists at activation, a genuine cold
+// start is under way (N tmux sessions each spawning a fresh `claude`), which
+// routinely exceeds the 3s flake-smoothing budget above. Match the
+// launcher's own readiness budget (launchSwarm's default readyTimeoutMs) so
+// a slow-but-real cold start still attaches automatically instead of
+// falling through to "previous run found, resume?".
+const REATTACH_COLD_START_TIMEOUT_MS = 120_000;
 
 type RunMode = 'one-shot' | 'drain';
 
@@ -179,6 +193,7 @@ function startOrRestartChaserMonitor(targetPath: string, context: vscode.Extensi
     chaseTimeoutSeconds: CHASER_TIMEOUT_SECONDS,
     maxChases: CHASER_MAX_CHASES,
     stuckInProcessTimeoutSeconds: CHASER_STUCK_IN_PROCESS_TIMEOUT_SECONDS,
+    respawnCooldownSeconds: CHASER_RESPAWN_COOLDOWN_SECONDS,
   };
 
   // Implement adapters for the chaser
@@ -483,8 +498,28 @@ function startOrRestartIdleClearMonitor(targetPath: string, context: vscode.Exte
       if (!target) {
         return;
       }
-      sendKeys(socketPath, target, '/clear', true);
-      sendKeys(socketPath, target, 'Enter');
+      // BL-093: verify /clear actually submits instead of fire-and-forget -
+      // a lost Enter here would leave "/clear" sitting typed-but-unsubmitted
+      // in the role's input box.
+      const result = sendInstructionVerified(
+        {
+          capturePane: () => {
+            const captured = capturePane(socketPath, target);
+            return captured.exitCode === 0 ? captured.stdout : '';
+          },
+          sendLiteral: (text: string) => sendKeys(socketPath, target, text, true).exitCode === 0,
+          sendEnter: () => sendKeys(socketPath, target, 'Enter'),
+          wait: sleepSync,
+        },
+        '/clear'
+      );
+      if (result.status !== 'delivered') {
+        // Report, never silently drop (BL-093 verified-submit-02): this is
+        // the one call site that previously discarded the result entirely.
+        outputChannel.appendLine(
+          `/clear delivery ${result.status} for "${role}" in pane ${target} after ${result.attempts} attempt(s)${result.reason ? `: ${result.reason}` : ''}`
+        );
+      }
     },
     log: (message: string): void => {
       outputChannel.appendLine(message);
@@ -571,7 +606,19 @@ export function activate(context: vscode.ExtensionContext): void {
       // this is only smoothing a transient check, not waiting for a cold
       // boot) fixes the false negative without meaningfully delaying the
       // genuine cold-start case, where every retry still finds no socket.
-      waitForSwarmReady(targetPath, REATTACH_READY_TIMEOUT_MS, REATTACH_READY_POLL_MS).then((ready) => {
+      //
+      // BL-084: BL-080's flat 3s only covers that transient-flake case. A
+      // socket already present at activation means a real swarm cold start
+      // is in progress (8 tmux sessions each spawning a fresh `claude`),
+      // which routinely takes longer than 3s - so widen the wait budget to
+      // the launcher's own budget in that case, without penalizing the
+      // truly-empty (no socket) case.
+      const reattachTimeoutMs = chooseReattachTimeoutMs(
+        readTmuxSocket(targetPath) !== undefined,
+        REATTACH_COLD_START_TIMEOUT_MS,
+        REATTACH_READY_TIMEOUT_MS
+      );
+      waitForSwarmReady(targetPath, reattachTimeoutMs, REATTACH_READY_POLL_MS).then((ready) => {
         if (ready) {
           // Re-attach automatically: tiles reconnect to the live output
           // streams without restarting any agent.
@@ -1023,6 +1070,26 @@ export function activate(context: vscode.ExtensionContext): void {
         context.secrets
       );
       panel.updateTarget(targetPath);
+    }),
+
+    vscode.commands.registerCommand('swarmforge.setResendApiKey', async () => {
+      const input = await vscode.window.showInputBox({
+        title: 'SwarmForge: Set Resend API Key',
+        prompt: 'Enter the Resend API key to store in SecretStorage',
+        password: true,
+        ignoreFocusOut: true,
+      });
+      const key = trimmedResendKeyInput(input);
+      if (!key) {
+        return;
+      }
+      await context.secrets.store(RESEND_SECRET_KEY, key);
+      vscode.window.showInformationMessage(describeSetResult(Boolean(process.env.RESEND_API_KEY)));
+    }),
+
+    vscode.commands.registerCommand('swarmforge.clearResendApiKey', async () => {
+      await context.secrets.delete(RESEND_SECRET_KEY);
+      vscode.window.showInformationMessage(describeClearResult(Boolean(process.env.RESEND_API_KEY)));
     })
   );
 }

@@ -136,34 +136,123 @@
 (defn tmux! [& args]
   (apply process/sh "tmux" args))
 
-(defn notify! [socket session]
-  (let [send-text (tmux! "-S" socket "send-keys" "-t" session "-l" wake-message)
-        _ (Thread/sleep 150)
-        send-carriage-return (tmux! "-S" socket "send-keys" "-t" session "C-m")
-        _ (Thread/sleep 50)
-        send-line-feed (tmux! "-S" socket "send-keys" "-t" session "C-j")]
-    (when-not (zero? (:exit send-text))
-      (throw (ex-info "tmux send text failed" send-text)))
-    (when-not (zero? (:exit send-carriage-return))
-      (throw (ex-info "tmux send carriage return failed" send-carriage-return)))
-    (when-not (zero? (:exit send-line-feed))
-      (throw (ex-info "tmux send line feed failed" send-line-feed)))))
+;; BL-093: send-keys was fire-and-forget - a lost Enter left the wake message
+;; typed-but-unsubmitted, and repeated notify! calls (chaser respawns, retried
+;; deliveries) stacked further unconsumed copies in the same pane. The
+;; heuristic mirrors extension/src/swarm/verifiedInject.ts: the pane's input
+;; line is whatever trails the last recognizable prompt marker ($/#/❯/>) on
+;; the last non-blank captured line; a marker with nothing after it is an
+;; empty (not pending) prompt.
+(def notify-max-retries 3)
+(def notify-retry-delay-ms 200)
 
-(defn move-with-collision [source target-dir]
+(defn capture-pane-text [socket session]
+  (:out (tmux! "-S" socket "capture-pane" "-p" "-t" session)))
+
+(defn last-non-blank-line [pane-text]
+  (last (remove str/blank? (str/split-lines (or pane-text "")))))
+
+(defn pending-input-line [pane-text]
+  (let [line (last-non-blank-line pane-text)]
+    (if (nil? line)
+      ""
+      (if-let [[_ tail] (re-find #"[$#❯>]\s*(\S.*)?$" line)]
+        (str/trim (or tail ""))
+        (str/trim line)))))
+
+(defn pending-input? [pane-text]
+  (not (str/blank? (pending-input-line pane-text))))
+
+(defn text-still-pending? [pane-text text]
+  (let [pending (pending-input-line pane-text)]
+    (and (not (str/blank? pending)) (str/includes? pending (str/trim text)))))
+
+(defn send-submit!
+  "Sends the C-m/C-j submit sequence. Returns true when both tmux
+   invocations themselves succeeded (transport-level) - false means the
+   pane/session/socket is gone, which the retry loop must not paper over by
+   quietly re-capturing and backing off."
+  [socket session]
+  (let [cr (tmux! "-S" socket "send-keys" "-t" session "C-m")]
+    (Thread/sleep 50)
+    (let [lf (tmux! "-S" socket "send-keys" "-t" session "C-j")]
+      (and (zero? (:exit cr)) (zero? (:exit lf))))))
+
+(defn notify!
+  "Delivers the wake message to session's pane, verifying the submit actually
+   registered (retrying Enter with backoff) instead of trusting a zero tmux
+   exit code alone. Never stacks a new copy onto already-pending input - it
+   retries submitting whatever is already sitting there instead. Logs (does
+   not throw) when delivery cannot be confirmed after retrying, so a wedged
+   pane cannot silently swallow every future notify! for that role."
+  [socket session]
+  (let [before (capture-pane-text socket session)
+        stacked? (pending-input? before)
+        pending-text (if stacked? (pending-input-line before) wake-message)]
+    (when-not stacked?
+      (let [send-text (tmux! "-S" socket "send-keys" "-t" session "-l" wake-message)]
+        (when-not (zero? (:exit send-text))
+          (throw (ex-info "tmux send text failed" send-text)))
+        (Thread/sleep 150)))
+    (loop [attempt 1]
+      (when-not (send-submit! socket session)
+        (throw (ex-info "tmux send submit failed" {:session session})))
+      (let [capture (capture-pane-text socket session)]
+        (cond
+          (not (text-still-pending? capture pending-text))
+          nil
+
+          (>= attempt notify-max-retries)
+          (log! "notify-delivery-failed" session
+                (if stacked?
+                  "pane already held undelivered input and it still would not submit"
+                  (str "submit not confirmed after " attempt " attempt(s)")))
+
+          :else
+          (do
+            (Thread/sleep (* notify-retry-delay-ms attempt))
+            (recur (inc attempt))))))))
+
+(defn move-with-collision
+  "Moves source into target-dir, uniquifying on a name collision. Returns
+   the path source was actually moved to, so callers can act on the final
+   location (BL-083: a .error stub must sit next to wherever the file
+   actually landed, not next to a path that may no longer exist)."
+  [source target-dir]
   (fs/create-dirs target-dir)
   (let [base (fs/file-name source)
         target (fs/path target-dir base)]
     (if (fs/exists? target)
-      (fs/move source
-               (fs/path target-dir (str (now) "_" base))
-               {:replace-existing false})
-      (fs/move source target {:replace-existing false}))))
+      (let [uniq (fs/path target-dir (str (now) "_" base))]
+        (fs/move source uniq {:replace-existing false})
+        uniq)
+      (do
+        (fs/move source target {:replace-existing false})
+        target))))
+
+(defn sent-dir [role-info]
+  (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "sent"))
+
+(defn already-archived?
+  "True when a file of this name already sits in the sender's sent/ dir -
+   meaning some delivery attempt (this daemon or a duplicate/prior one)
+   already completed the archive, so a failure processing THIS attempt is
+   not a real error (BL-083: duplicate handoffd daemons, or a crash-restart
+   retry, can both reach the same already-archived outbox file)."
+  [role-info filename]
+  (fs/exists? (fs/path (sent-dir role-info) filename)))
 
 (defn fail! [path reason]
   (let [failed-dir (fs/path (fs/parent (fs/parent path)) "failed")]
     (log! "failed" (str path) reason)
-    (spit (str path ".error") (str reason "\n"))
-    (move-with-collision path failed-dir)))
+    (try
+      (let [moved (move-with-collision path failed-dir)]
+        (spit (str moved ".error") (str reason "\n")))
+      (catch Exception move-ex
+        ;; The rename itself failed (path is still in outbox): the stub has
+        ;; to live next to the file where it actually is.
+        (log! "failed-to-archive" (str path) (.getMessage move-ex))
+        (spit (str path ".error") (str reason "\n"))))))
 
 (defn deliver! [roles socket sender-role path]
   (let [filename (fs/file-name path)
@@ -185,9 +274,7 @@
               (notify! socket (:session role-info)))))
         (when (= "rule_proposal" (get headers "type"))
           (append-rule-proposal! headers))
-        (move-with-collision path
-                             (fs/path (get-in roles [sender-role :worktree-path])
-                                      ".swarmforge" "handoffs" "sent"))
+        (move-with-collision path (sent-dir (get roles sender-role)))
         (log! "delivered" (str path))))))
 
 (defn inbox-new-files [role-info]
@@ -205,6 +292,25 @@
            (filter #(and (fs/regular-file? %)
                          (str/ends-with? (fs/file-name %) ".handoff")))
            (sort-by #(fs/file-name %))))))
+
+(defn outbox-error-stubs [role-info]
+  (let [outbox (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "outbox")]
+    (when (fs/exists? outbox)
+      (->> (fs/list-dir outbox)
+           (filter #(and (fs/regular-file? %)
+                         (str/ends-with? (fs/file-name %) ".handoff.error")))))))
+
+(defn self-heal-stale-stubs!
+  "Removes debris .error stubs left in outbox/ by past races (BL-083): if
+   the stub's original handoff already made it into sent/, the delivery
+   was never actually lost, so the stub is stale rather than a live issue."
+  [roles]
+  (doseq [[_ role-info] roles
+          stub (or (outbox-error-stubs role-info) [])
+          :let [original-name (str/replace (fs/file-name stub) #"\.error$" "")]
+          :when (already-archived? role-info original-name)]
+    (fs/delete stub)
+    (log! "stale-stub-cleanup" (str stub) "original-in-sent" original-name)))
 
 (defn startup-notify-pending! [roles socket]
   (doseq [[_ role-info] roles
@@ -224,10 +330,16 @@
         (deliver! roles socket role path)
         (catch Exception e
           (log! "error" (str path) (.getMessage e))
-          (try
-            (fail! path (.getMessage e))
-            (catch Exception nested
-              (log! "failed-to-archive" (str path) (.getMessage nested)))))))))
+          (if (already-archived? role-info (fs/file-name path))
+            (do
+              (log! "already-archived" (str path))
+              ;; The duplicate outbox copy is confirmed delivered (its
+              ;; twin already landed in sent/); archive it too instead of
+              ;; leaving it to be reprocessed and re-fail every poll cycle.
+              (try
+                (move-with-collision path (sent-dir role-info))
+                (catch Exception _ignored nil)))
+            (fail! path (.getMessage e))))))))
 
 ;; The JVM only waits for registered shutdown-hook THREADS to finish before
 ;; halting - it does not wait for arbitrary other threads. A hook that only
@@ -327,6 +439,7 @@
 (defn -main []
   (let [roles  (load-roles)
         socket (str/trim (slurp (str socket-file)))]
+    (self-heal-stale-stubs! roles)
     (if startup-notify-only?
       (do
         (startup-notify-pending! roles socket)

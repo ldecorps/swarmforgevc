@@ -1,0 +1,84 @@
+id: BL-102
+title: stage-dwell & bottleneck report — the swarm optimizer's instrument in the metrics CLI
+milestone: M5
+status: todo
+priority: 02
+source: operator direction 2026-07-04 ("give the coordinator a first-class responsibility of being a swarm optimizer")
+depends_on: BL-096 (trend framework; series conventions)
+
+description: |
+  The coordinator now owns swarm optimization as a first-class duty (role
+  prompt updated 2026-07-04). Its core instrument does not exist yet as a
+  tool: today the analysis (per-stage queue-wait and processing time) must
+  be hand-rolled from handoff audit headers. This item makes it one
+  command.
+
+  Wanted behavior:
+    - A metrics CLI subcommand (stage-dwell / bottleneck report) that
+      scans every role's handoff audit trail (inbox completed/ headers:
+      enqueued_at, dequeued_at, completed_at — including batch
+      subdirectories) and reports, per stage, over a selectable window
+      (default 24h) and per swarm where assignments exist:
+        * parcels processed
+        * queue wait: enqueued->dequeued median/p90/max
+        * processing: dequeued->completed median/p90/max
+        * trend vs the prior window (BL-096 shared trend function)
+        * an explicit bottleneck line: the stage whose total dwell
+          dominates, with its multiple over the next slowest
+    - Outlier honesty: flag single-parcel outliers (like a 17h wedged
+      incident) separately from the median story so one incident does not
+      masquerade as a capacity problem.
+    - Output: human-readable table AND --json for the bridge/UI/briefing
+      to consume. Exposed via the bridge endpoint like other metrics.
+    - Same numbers everywhere: the BL-099 briefing's new "optimizer
+      recommendations" section and the BL-094 UI read this report, never
+      recompute their own.
+    - Missing/partial audit headers degrade per-item (skip with a count
+      of unparseable items), never crash the report.
+
+  Scope: metrics module + CLI subcommand + bridge endpoint
+  (extension/src testable modules; audit-header parsing is a pure
+  function over provided file contents with a thin fs adapter), BL-099
+  briefing contract addition ("optimizer recommendations" section
+  sourcing this report). No swarm-scripts changes.
+
+acceptance: |
+  Feature: one command reports where the pipeline's time goes
+
+  # BL-102 dwell-01
+  Scenario: per-stage dwell from audit headers
+    Given completed handoffs across roles with known audit timestamps
+    When the stage-dwell report runs for a window covering them
+    Then each stage reports parcel count, wait median/p90/max, and
+      processing median/p90/max matching the headers
+
+  # BL-102 dwell-02
+  Scenario: bottleneck is named with its multiple
+    Given one stage's median dwell dominates the others
+    When the report runs
+    Then that stage is named as the bottleneck
+    And its multiple over the next slowest stage is stated
+
+  # BL-102 dwell-03
+  Scenario: outliers do not distort the story
+    Given a stage with one extreme parcel and otherwise normal times
+    When the report runs
+    Then the outlier is listed separately
+    And the stage's median reflects the normal parcels
+
+  # BL-102 dwell-04
+  Scenario: batch directories are included
+    Given a batch role whose completed items live in batch_* directories
+    When the report runs
+    Then those parcels are counted with correct dwell times
+
+  # BL-102 dwell-05
+  Scenario: json output feeds other surfaces
+    When the report runs with --json
+    Then the same figures are emitted as structured data
+    And the bridge endpoint serves them token-gated
+
+  # Non-behavioral gates:
+  #  - Header parsing pure + unit-tested with fabricated handoff texts;
+  #    unparseable items counted, not fatal.
+  #  - Trend deltas reuse the BL-096 shared trend function.

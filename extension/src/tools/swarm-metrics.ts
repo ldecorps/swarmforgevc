@@ -18,7 +18,13 @@ import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { parseRolesTsv, RoleEntry } from '../swarm/swarmState';
 import { loadRuns } from '../runs/runLog';
-import { computeSwarmMetrics, formatDurationMs, NO_SAMPLE_PLACEHOLDER, SwarmMetrics } from '../metrics/swarmMetrics';
+import {
+  computeSwarmMetrics,
+  formatDurationMs,
+  formatSuiteDurationMs,
+  NO_SAMPLE_PLACEHOLDER,
+  SwarmMetrics,
+} from '../metrics/swarmMetrics';
 
 export function hasRolesTsv(dir: string): boolean {
   return fs.existsSync(path.join(dir, '.swarmforge', 'roles.tsv'));
@@ -83,7 +89,14 @@ export function formatOverview(metrics: SwarmMetrics, roleNames: string[]): stri
   const worstText = worst.length > 0 ? ` (worst: ${worst.map(([id, count]) => `${id} x${count}`).join(', ')})` : '';
   const retryLine = `Retries: ${metrics.retryTotal} total${worstText}`;
 
-  return [meanLine, busynessLine, retryLine].join('\n');
+  const suite = metrics.suiteDuration;
+  const suiteLine =
+    suite.latestMs === null
+      ? `Suite duration: ${NO_SAMPLE_PLACEHOLDER} (0 runs)`
+      : `${suite.warn ? 'WARN ' : ''}Suite duration: ${formatSuiteDurationMs(suite.latestMs)}` +
+        ` (mean ${formatSuiteDurationMs(suite.meanMs as number)} over ${suite.sampleCount} run(s))`;
+
+  return [meanLine, busynessLine, retryLine, suiteLine].join('\n');
 }
 
 export function main(): void {

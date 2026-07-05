@@ -1,0 +1,76 @@
+# Local Engineering — SwarmForge VC (VS Code Extension)
+
+Specializes the shared Engineering Rules for this project. Additive only; the
+shared article remains in force.
+
+## Tech Stack
+- Language: TypeScript.
+- Platform: Visual Studio Code extension (standard VS Code Extension API). Must
+  also work in Cursor (a VS Code fork) — target the standard API only; nothing
+  Cursor-specific.
+- Standard scaffold (yo code / generator-code): normal package.json manifest,
+  activation events, contributed commands.
+- UI tiles render in a VS Code Webview.
+- Node.js APIs (child_process, etc.) are available in the extension host for
+  shelling out to tmux and git.
+- Target OS: macOS and Linux only. Do not write Windows-specific code; the swarm
+  substrate depends on tmux.
+
+## Conventions
+- Extension-host code and webview code stay clearly separated: different
+  execution contexts, communicating only via postMessage. Never share state
+  directly.
+- The extension host owns all I/O: tmux, `.swarmforge/` files, git. The webview
+  is presentation plus forwarded user input.
+- Prefer small, testable modules (see shared Design And Testability — the
+  webview and VS Code API surface are the unsuitable boundary).
+- Command IDs namespaced under `swarmforge.` (swarmforge.run, swarmforge.stop,
+  swarmforge.setTarget, swarmforge.initTarget).
+
+## Architecture Rules
+1. Two layers: tile-as-view, tmux-as-substrate. Tiles are TypeScript/webview
+   VIEWS; tmux is the process SUBSTRATE running the agents. These are layers,
+   not alternatives. Do NOT spawn agent processes directly from TypeScript to
+   bypass tmux — if a task starts to feel like rebuilding process orchestration,
+   stop: that is the signal the line was crossed.
+2. Swarm machinery relationship. The swarm machinery under `swarmforge/` in this
+   repo is a **maintained fork** of unclebob/swarm-forge, not an unmodified
+   dependency. Local modifications are deliberate and tracked; upstream changes
+   enter only through the drift-watch review (`upstream-watch.json`,
+   `docs/upstream-deviations.md`), never by automatic fetch. The bootstrap
+   wrapper must fetch helper scripts from a pinned by-SHA tarball, not a
+   floating branch head.
+3. Webview storage restriction. No localStorage, sessionStorage, or any browser
+   storage in the webview. UI state lives in memory or persists via the
+   extension host (workspace state / files).
+4. Secrets. Tokens and keys (e.g. a GitHub token for opening PRs) live in the
+   extension host environment only. Never written into the target working
+   directory or any commit.
+
+## Diagrams (this project)
+Per the shared Diagrams rule, the diagrams this project maintains are:
+1. **Architecture diagram** — the two-layer system: extension host,
+   webview(s), the tmux substrate, `.swarmforge/` state, handoffd and the
+   queue helpers, and the boundaries between them (what talks to what, and
+   over which channel: postMessage, files, tmux socket, git).
+2. **Swarm workflow flow diagram** — the CURRENT parcel flow: intake at the
+   backlog root, specifier speccing to paused/, coordinator promotion and
+   assignment, the specifier→coder→cleaner→architect→hardender→documenter→QA
+   chain, and the QA-approved merge back to main. When the pipeline
+   topology or backlog flow changes, this diagram changes in the same
+   parcel.
+Both live under `docs/diagrams/` as Mermaid sources.
+
+## Key Integration Surface
+Prove these against a real swarm install, in order, before UI polish:
+1. Launch a swarm against a target path by shelling to ./swarm.
+2. Discover the tmux socket (.swarmforge/tmux-socket) and enumerate
+   sessions/windows/panes.
+3. Tail one pane's output into a webview tile, live.
+4. Send keystrokes INTO a pane (fiddliest cross-platform piece — tackle early).
+5. Read .swarmforge/ state to know which stage holds the work.
+6. Open a PR from the dev branch into the target's main via git + GitHub CLI/API.
+
+If any of these cannot be done from outside the swarm machinery, note it clearly
+as a candidate change to the fork (via the normal backlog), rather than working
+around it ad hoc.

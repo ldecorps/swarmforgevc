@@ -1,0 +1,149 @@
+id: BL-099
+title: coordinator daily briefing — business features first, emailed to the human and archived in the repo
+milestone: M6
+status: todo
+priority: 02
+source: operator request 2026-07-04 ("coordinator to write and send human a daily briefing... most importantly business features added")
+
+description: |
+  Once a day the coordinator writes the human a short briefing and sends
+  it. Operator-confirmed decisions (2026-07-04): delivery = email via
+  RESEND, reusing the merged BL-073 client as-is
+  (extension/src/notify/resendClient.ts; API key stays in extension-host
+  secrets per the constitution — never in the repo, never visible to the
+  coordinator agent, which asks the HOST to send rather than holding the
+  key) PLUS a durable archive committed under docs/briefings/; trigger =
+  the extension host's timer (roles must not self-schedule), which
+  delivers a "briefing due" prompt to the coordinator pane once per day.
+
+  Content contract — ordered by importance:
+    1. BUSINESS FEATURES DELIVERED (the headline): user-visible behavior
+       merged since the last briefing, in plain product language — what
+       the developer/user can now do that they could not yesterday.
+       Sourced from tickets closed into done/ and the documenter's doc
+       updates for them (piggyback: the briefing links/quotes the docs the
+       documenter just wrote rather than re-explaining). Internal-only
+       work (refactors, hardening, meta) is summarized in one line, never
+       the headline.
+    2. Delivery metrics as TRENDS, not snapshots (operator requirement
+       2026-07-04): velocity, time-to-ticket-completion (cycle time),
+       per-milestone burndown movement, and unit-test-suite duration —
+       each stated with its direction and delta vs the prior window from
+       the BL-096 trend surface (e.g. "velocity 4/wk, up from 3; median
+       completion 9h, down 20%; suite 3.4 min, up 12% — worth watching").
+       Plus delivery forecasts (BL-096): estimated dates (p50/p85) for
+       in-flight and next-up tickets and each active milestone, WITH a
+       "changed since yesterday" call-out when an ETA moved materially —
+       slipping dates are said plainly, never silently re-baselined.
+       Plus a link to the dashboard / holistic UI story (BL-097 Pages URL
+       and, where relevant, BL-094). Metrics not yet available -> section
+       says so briefly; the briefing never blocks on them.
+    3. Agent business: what each swarm/role is currently working, notable
+       chase/nudge or stall counts (BL-098 telemetry when merged),
+       anything needing the human (open needs-human gates, held tickets).
+    4. Optimizer recommendations (coordinator's swarm-optimizer duty,
+       role prompt 2026-07-04): bottleneck stage with its dwell numbers
+       (BL-102 report when merged), what the coordinator already adjusted
+       within its powers (assignment, promotion order), and any
+       recommendation needing the human (capacity, model/effort, flags,
+       hardware) each backed by its motivating number and expected
+       effect. Nothing to recommend -> one line saying so.
+       PHONE CARRIER (operator, 2026-07-04): alongside the markdown, the
+       briefing flow emits a committed docs/briefings/<date>.json sidecar
+       carrying the structured data: the optimizer section (bottleneck
+       stage + dwell figures + each recommendation with its motivating
+       number), the metrics trends, and the cost/health figures — this
+       sidecar is what the BL-097 Action folds into backlog.json, so the
+       phone renders the optimizer's view as data, not scraped prose.
+
+  Mechanism:
+    - Extension host: a daily scheduler (configurable hour, default
+      morning) delivers a briefing-due prompt into the coordinator's pane
+      via the existing host->pane nudge path. At most one per calendar
+      day; if the editor/host was down at the scheduled time, the next
+      activation triggers a catch-up briefing for the missed day(s) —
+      collapsed into one.
+    - Coordinator (role prompt update, by the specifier as part of this
+      parcel): on briefing-due, compose the briefing (agent-authored
+      prose following the content contract), write it to
+      docs/briefings/YYYY-MM-DD.md, commit and push. This is an explicit
+      NARROW exception to "the coordinator never commits target code":
+      the coordinator may commit ONLY under docs/briefings/, using the
+      BL-090 push-retry discipline. The coordinator's job ends at the
+      committed file; it never holds email credentials.
+    - Extension host sends: after firing briefing-due, the host watches
+      for the new docs/briefings/<date>.md and, once present, sends its
+      content via the existing Resend client (subject carries the date +
+      the headline feature). Exactly one send per briefing file,
+      idempotent across host restarts.
+    - Email failure never loses the briefing: the committed file is the
+      source of truth; a failed Resend send is retried on the next host
+      activation or surfaced as needs-human.
+
+  Dependencies: none hard. BL-096/097/098 enrich sections 2-3 as they
+  merge; the briefing ships with graceful gaps before then. BL-097's
+  backlog.json may later include the latest briefing (additive field,
+  separate ticket if wanted).
+
+  Scope: extension host scheduler + nudge wiring (extension/src, testable
+  seam for the schedule/dedup/catch-up logic), coordinator role prompt
+  update, briefing file convention under docs/briefings/, reuse of BL-073
+  email path. No changes to pipeline roles.
+
+acceptance: |
+  Feature: the human gets one business-first briefing per day
+
+  # BL-099 briefing-01
+  Scenario: briefing due fires once per day
+    Given the extension host is running across a scheduled briefing hour
+    When the day's schedule time passes
+    Then exactly one briefing-due prompt reaches the coordinator that day
+    And no second prompt fires the same day
+
+  # BL-099 briefing-02
+  Scenario: briefing leads with business features
+    Given tickets with user-visible behavior were closed since the last
+      briefing
+    When the coordinator composes the briefing
+    Then the first section describes those features in product language
+    And references the documenter's updated docs for them
+    And internal-only work appears only as a single summary line
+
+  # BL-099 briefing-03
+  Scenario: briefing is archived then emailed by the host
+    When the coordinator commits docs/briefings/<date>.md
+    Then the extension host sends its content via the Resend client
+    And the email subject contains the date and the headline feature
+    And the coordinator process never accesses the Resend API key
+
+  # BL-099 briefing-07
+  Scenario: one email per briefing file
+    Given a briefing file that was already sent
+    When the host restarts or re-scans
+    Then no duplicate email is sent for that file
+
+  # BL-099 briefing-04
+  Scenario: metrics gaps do not block
+    Given the metrics CLI or telemetry is not yet available
+    When the briefing is composed
+    Then the metrics/agent sections state the data is not yet available
+    And the briefing is still archived and sent
+
+  # BL-099 briefing-05
+  Scenario: downtime produces one catch-up, not a burst
+    Given the host was not running for two scheduled briefing times
+    When the host next activates
+    Then one catch-up briefing covering the gap is triggered
+    And only one email is sent for it
+
+  # BL-099 briefing-06
+  Scenario: coordinator commit surface stays narrow
+    When briefing commits are inspected
+    Then every coordinator-authored commit touches only docs/briefings/
+
+  # Non-behavioral gates:
+  #  - Scheduler/dedup/catch-up logic is a pure, unit-tested module
+  #    (fake clock); host wiring thin.
+  #  - Coordinator role prompt + constitution exception text updated in
+  #    this parcel (specifier-owned files, via the normal flow).
+  #  - BL-073 email path reused, not duplicated.
