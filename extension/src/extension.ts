@@ -47,6 +47,12 @@ import { readHeartbeat } from './tools/heartbeat';
 import { maybeWriteActivationMarker } from './devActivationMarker';
 import { computeLiveness } from './watchdog/liveness';
 import type { LivenessState, WatchdogConfig } from './watchdog/liveness';
+import {
+  RESEND_SECRET_KEY,
+  trimmedResendKeyInput,
+  describeSetResult,
+  describeClearResult,
+} from './notify/secrets';
 
 const NO_TARGET_MESSAGE = 'Set a target project first (SwarmForge: Set Target Project).';
 const STOP_SWARM_BUTTON = 'Stop Swarm';
@@ -1064,6 +1070,26 @@ export function activate(context: vscode.ExtensionContext): void {
         context.secrets
       );
       panel.updateTarget(targetPath);
+    }),
+
+    vscode.commands.registerCommand('swarmforge.setResendApiKey', async () => {
+      const input = await vscode.window.showInputBox({
+        title: 'SwarmForge: Set Resend API Key',
+        prompt: 'Enter the Resend API key to store in SecretStorage',
+        password: true,
+        ignoreFocusOut: true,
+      });
+      const key = trimmedResendKeyInput(input);
+      if (!key) {
+        return;
+      }
+      await context.secrets.store(RESEND_SECRET_KEY, key);
+      vscode.window.showInformationMessage(describeSetResult(Boolean(process.env.RESEND_API_KEY)));
+    }),
+
+    vscode.commands.registerCommand('swarmforge.clearResendApiKey', async () => {
+      await context.secrets.delete(RESEND_SECRET_KEY);
+      vscode.window.showInformationMessage(describeClearResult(Boolean(process.env.RESEND_API_KEY)));
     })
   );
 }

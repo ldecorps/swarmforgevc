@@ -31,12 +31,30 @@ description: |
        each stated with its direction and delta vs the prior window from
        the BL-096 trend surface (e.g. "velocity 4/wk, up from 3; median
        completion 9h, down 20%; suite 3.4 min, up 12% — worth watching").
+       Plus delivery forecasts (BL-096): estimated dates (p50/p85) for
+       in-flight and next-up tickets and each active milestone, WITH a
+       "changed since yesterday" call-out when an ETA moved materially —
+       slipping dates are said plainly, never silently re-baselined.
        Plus a link to the dashboard / holistic UI story (BL-097 Pages URL
        and, where relevant, BL-094). Metrics not yet available -> section
        says so briefly; the briefing never blocks on them.
     3. Agent business: what each swarm/role is currently working, notable
        chase/nudge or stall counts (BL-098 telemetry when merged),
        anything needing the human (open needs-human gates, held tickets).
+    4. Optimizer recommendations (coordinator's swarm-optimizer duty,
+       role prompt 2026-07-04): bottleneck stage with its dwell numbers
+       (BL-102 report when merged), what the coordinator already adjusted
+       within its powers (assignment, promotion order), and any
+       recommendation needing the human (capacity, model/effort, flags,
+       hardware) each backed by its motivating number and expected
+       effect. Nothing to recommend -> one line saying so.
+       PHONE CARRIER (operator, 2026-07-04): alongside the markdown, the
+       briefing flow emits a committed docs/briefings/<date>.json sidecar
+       carrying the structured data: the optimizer section (bottleneck
+       stage + dwell figures + each recommendation with its motivating
+       number), the metrics trends, and the cost/health figures — this
+       sidecar is what the BL-097 Action folds into backlog.json, so the
+       phone renders the optimizer's view as data, not scraped prose.
 
   Mechanism:
     - Extension host: a daily scheduler (configurable hour, default
