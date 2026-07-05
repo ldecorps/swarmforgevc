@@ -159,6 +159,15 @@ ensure_runtime_git_excludes() {
   done
 }
 
+# BL-105: installs the shared commit-size guard (swarmforge/git-hooks/
+# pre-commit) repo-wide via core.hooksPath. core.hooksPath lives in the
+# single physical .git/config shared by every linked worktree, so setting
+# it once here covers every role's commits, including the specifier's
+# merge/push. Idempotent - safe to re-run on every launch.
+ensure_commit_size_guard() {
+  git -C "$WORKING_DIR" config core.hooksPath swarmforge/git-hooks
+}
+
 initialize_git_repo() {
   if [[ -d "$WORKING_DIR/.git" ]]; then
     return
@@ -802,6 +811,7 @@ check_dependency bb
 detect_tmux_base_indexes
 initialize_git_repo
 ensure_runtime_git_excludes
+ensure_commit_size_guard
 parse_config
 check_primacy
 check_backend_dependencies
