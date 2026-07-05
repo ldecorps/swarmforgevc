@@ -99,10 +99,29 @@ export function formatOverview(metrics: SwarmMetrics, roleNames: string[]): stri
   return [meanLine, busynessLine, retryLine, suiteLine].join('\n');
 }
 
+// Shared by every headless CLI tool under tools/ that keys off roles.tsv
+// (swarm-metrics.ts, list-dead-letters.ts): read and parse the current
+// project's roles.tsv from its resolved root.
+export function loadRoles(projectRoot: string): RoleEntry[] {
+  const rolesTsv = fs.readFileSync(path.join(projectRoot, '.swarmforge', 'roles.tsv'), 'utf8');
+  return parseRolesTsv(rolesTsv);
+}
+
+// Shared `require.main === module` entrypoint boilerplate for tools/ CLIs:
+// run main(), and on any thrown error report it and exit non-zero rather
+// than dumping a raw stack trace.
+export function runCliMain(main: () => void): void {
+  try {
+    main();
+  } catch (error) {
+    console.error(`Fatal error: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
+}
+
 export function main(): void {
   const projectRoot = resolveProjectRoot(process.cwd());
-  const rolesTsv = fs.readFileSync(path.join(projectRoot, '.swarmforge', 'roles.tsv'), 'utf8');
-  const roles = parseRolesTsv(rolesTsv);
+  const roles = loadRoles(projectRoot);
   const mainWorktreePath = resolveMainWorktreePath(projectRoot, roles);
 
   const runLogPath = path.join(os.homedir(), '.swarmforge', 'runs.jsonl');
@@ -115,10 +134,5 @@ export function main(): void {
 }
 
 if (require.main === module) {
-  try {
-    main();
-  } catch (error) {
-    console.error(`Fatal error: ${error instanceof Error ? error.message : String(error)}`);
-    process.exit(1);
-  }
+  runCliMain(main);
 }

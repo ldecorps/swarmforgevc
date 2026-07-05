@@ -881,6 +881,11 @@ test('parseHandoffHeaderField extracts a named header value', () => {
   assert.equal(parseHandoffHeaderField(content, 'task'), 'BL-109');
 });
 
+test('parseHandoffHeaderField trims trailing whitespace off the captured value', () => {
+  const content = 'task: BL-109   \n';
+  assert.equal(parseHandoffHeaderField(content, 'task'), 'BL-109');
+});
+
 test('parseHandoffHeaderField returns undefined for a missing header', () => {
   assert.equal(parseHandoffHeaderField('type: note\n', 'task'), undefined);
 });
