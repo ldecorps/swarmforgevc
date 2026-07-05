@@ -410,6 +410,112 @@ test('respawnAgent reports failure when both verified send-keys and the forced p
   }
 });
 
+test('respawnAgent types the launch command in literal mode, not tmux key-name mode', () => {
+  const tmp = mkTmp();
+  const { script } = writeRespawnState(tmp);
+  const fake = installFakeTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
+    { subcommand: 'send-keys', exitCode: 0, stdout: '' },
+  ]);
+  try {
+    respawnAgent(tmp, 'coder');
+    const sendCalls = fake.calls().filter((args) => args.includes('send-keys'));
+    const literalCall = sendCalls.find((args) => args.some((a) => a.includes(`bash ${script}`)));
+    assert.ok(
+      literalCall.includes('-l'),
+      'the launch command must be typed literally (-l), not interpreted as tmux key names'
+    );
+  } finally {
+    fake.restore();
+  }
+});
+
+test('respawnAgent never sends a follow-up Enter after send-keys itself fails at the transport level', () => {
+  // respawnAgent's own typeFailure tracking already reports the right
+  // result even if the sendLiteral closure's return value were wrong (it is
+  // set as a side effect before returning), so this specifically pins down
+  // the closure's return value by checking the retry loop was never
+  // entered at all - no second send-keys ("Enter") call after the failed
+  // literal-text one.
+  const tmp = mkTmp();
+  writeRespawnState(tmp);
+  const fake = installFakeTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
+    { subcommand: 'send-keys', exitCode: 1, stderr: 'no such session' },
+  ]);
+  try {
+    respawnAgent(tmp, 'coder');
+    const sendKeysCalls = fake.calls().filter((args) => args.includes('send-keys'));
+    assert.equal(sendKeysCalls.length, 1, 'a transport-level send failure must abort before any Enter/retry is attempted');
+  } finally {
+    fake.restore();
+  }
+});
+
+test('respawnAgent falls back to reporting the exit code when send-keys fails with no stderr/stdout', () => {
+  const tmp = mkTmp();
+  writeRespawnState(tmp);
+  const fake = installFakeTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
+    { subcommand: 'send-keys', exitCode: 17 },
+  ]);
+  try {
+    const result = respawnAgent(tmp, 'coder');
+    assert.equal(result.success, false);
+    assert.match(result.message, /exit 17/);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('respawnAgent discards capture-pane output when the capture itself failed, never mistaking it for real pending text', () => {
+  // A failed capture-pane call can still write stray text to stdout (e.g.
+  // tmux error banners). If that text were used anyway, it could be
+  // misread as an already-pending instruction, and respawnAgent would skip
+  // typing the launch command entirely, believing it just needs to recover
+  // something already there.
+  const tmp = mkTmp();
+  const { script } = writeRespawnState(tmp);
+  const fake = installFakeTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
+    { subcommand: 'send-keys', exitCode: 0, stdout: '' },
+    { subcommand: 'capture-pane', exitCode: 1, stdout: `❯ bash ${script}`, stderr: 'no such pane' },
+  ]);
+  try {
+    respawnAgent(tmp, 'coder');
+    const sendCalls = fake.calls().filter((args) => args.includes('send-keys'));
+    assert.ok(
+      sendCalls.some((args) => args.join(' ').includes(`bash ${script}`)),
+      'must still type the launch command - a failed capture must never be read as already-pending text'
+    );
+  } finally {
+    fake.restore();
+  }
+});
+
+test('respawnAgent falls back to reporting the exit code when the forced pane respawn fails with no stderr/stdout', () => {
+  const tmp = mkTmp();
+  const { script } = writeRespawnState(tmp);
+  const fake = installFakeTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
+    { subcommand: 'send-keys', exitCode: 0, stdout: '' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: `❯ bash ${script}` },
+    { subcommand: 'respawn-pane', exitCode: 23 },
+  ]);
+  try {
+    const result = respawnAgent(tmp, 'coder');
+    assert.equal(result.success, false);
+    assert.match(result.message, /exit 23/);
+  } finally {
+    fake.restore();
+  }
+});
+
 // --- runCommand timeout: cp.spawnSync with no timeout lets any hung child
 //     wedge the extension host's event loop forever (the respawn freeze).
 //     Every runCommand call must carry a timeout so a stuck command surfaces

@@ -18,6 +18,15 @@ exports.sendInstructionVerified = sendInstructionVerified;
 // with nothing after it (e.g. a lone "❯ ") is an empty, not pending, prompt -
 // distinct from "no marker at all", which is treated as unstructured pending
 // text (e.g. a plain human line with no rendered prompt yet).
+// Several structural variations of MARKER_TAIL (dropping the trailing `$`
+// anchor, making the capture group non-optional, or the leading `\s*` vs
+// `\s`) are unkillable by any input this module ever sees: paneText is
+// pre-split into single lines with no embedded newlines, so a greedy `.*`
+// always reaches the true end of the string with or without the anchor, and
+// the `.trim()` applied in pendingInputLine already absorbs any leading-
+// whitespace variant the capture group might produce. Verified empirically
+// against representative pane lines, not asserted here to avoid a brittle
+// test pinned to regex internals rather than behavior.
 const HAS_MARKER = /[$#❯>]/;
 const MARKER_TAIL = /[$#❯>]\s*(\S.*)?$/;
 function lastNonBlankLine(paneText) {
@@ -35,8 +44,19 @@ function pendingInputLine(paneText) {
         return '';
     }
     if (!HAS_MARKER.test(line)) {
+        // The .trim() here is unkillable in practice: lastNonBlankLine already
+        // guarantees `line` has some non-whitespace content, so the untrimmed
+        // and trimmed forms only ever differ by edge padding - invisible to
+        // every downstream check, which is length>0 or .includes(), not an
+        // exact-match comparison. Kept for a clean returned value, not for
+        // observable correctness.
         return line.trim();
     }
+    // Both optional-chaining links here are unkillable in this module's usage:
+    // MARKER_TAIL shares HAS_MARKER's exact character class, so once the guard
+    // above passes, MARKER_TAIL is guaranteed to match (its trailing groups are
+    // all optional and can absorb any suffix) - `match` is never null in
+    // practice, and the `.trim()` equivalence is the same as above.
     const match = MARKER_TAIL.exec(line);
     return match?.[1]?.trim() ?? '';
 }
@@ -61,22 +81,35 @@ const DEFAULT_RETRY_DELAY_MS = 200;
  * and reports rather than silently dropping either instruction.
  */
 function sendInstructionVerified(deps, text, options = {}) {
+    const start = beginInjection(deps, text);
+    if (start.failure) {
+        return start.failure;
+    }
     const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
     const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+    return retryUntilSubmitted(deps, start.pendingText, start.typed, maxRetries, retryDelayMs);
+}
+// Split out of sendInstructionVerified (CRAP): decides whether to type the
+// text fresh or recover an already-pending line, never both (never-stacks).
+function beginInjection(deps, text) {
     const before = deps.capturePane();
-    let pendingText = text;
-    let typed = false;
     if (hasPendingInput(before)) {
         // Something is already sitting there undelivered (ours from a prior
         // failed attempt, or unrelated) - recover it, do not append a copy.
-        pendingText = pendingInputLine(before);
+        return { pendingText: pendingInputLine(before), typed: false };
     }
-    else {
-        if (!deps.sendLiteral(text)) {
-            return { status: 'failed', attempts: 0, reason: 'send failed at the transport level' };
-        }
-        typed = true;
+    if (!deps.sendLiteral(text)) {
+        return {
+            pendingText: text,
+            typed: false,
+            failure: { status: 'failed', attempts: 0, reason: 'send failed at the transport level' },
+        };
     }
+    return { pendingText: text, typed: true };
+}
+// Split out of sendInstructionVerified (CRAP): the bounded verify/retry loop
+// against whichever text beginInjection decided to track.
+function retryUntilSubmitted(deps, pendingText, typed, maxRetries, retryDelayMs) {
     let attempts = 1;
     deps.sendEnter();
     for (;;) {

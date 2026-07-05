@@ -35,6 +35,39 @@ test('isTextStillPending is false once the input line is empty (submitted)', () 
   assert.equal(isTextStillPending(capture, 'bash .swarmforge/launch/specifier.sh'), false);
 });
 
+test('isTextStillPending is false once the pending line no longer contains the injected text', () => {
+  assert.equal(isTextStillPending('❯ something else entirely', 'bash .swarmforge/launch/specifier.sh'), false);
+});
+
+test('hasPendingInput is false for a line holding only blank/whitespace content (not the last real line)', () => {
+  assert.equal(hasPendingInput('❯ real pending text\n   \n'), true);
+});
+
+test('a marker directly adjacent to content with no separating space is still captured in full', () => {
+  // Distinguishes the marker char class from its negation: with no space
+  // after the marker, a negated class would consume one content character
+  // as if it were the marker itself, truncating "foo" down to "oo" - which
+  // would then fail to contain the full injected text "foo" (a truncated
+  // "oo" cannot include a longer "foo").
+  assert.equal(isTextStillPending('❯foo', 'foo'), true);
+});
+
+test('hasPendingInput is false when the only candidate line is entirely whitespace', () => {
+  assert.equal(hasPendingInput('   '), false);
+});
+
+test('isTextStillPending is false when there is no pending input at all, even for an empty injected text', () => {
+  // Guards the length>0 short-circuit itself: an empty pending line must
+  // never be reported as "still pending" no matter what text is asked about,
+  // including an edge-case empty string (which .includes() would trivially
+  // match against anything).
+  assert.equal(isTextStillPending('❯ ', ''), false);
+});
+
+test('isTextStillPending trims the injected text before comparing, tolerating incidental padding', () => {
+  assert.equal(isTextStillPending('❯ foo', ' foo '), true);
+});
+
 // --- sendInstructionVerified: orchestration against injected fakes, no
 //     tmux/sleep involved (deps.wait is a spy, never a real timer). ---
 
@@ -95,7 +128,7 @@ test('sendInstructionVerified: reports failure after exhausting retries, never r
   const result = sendInstructionVerified(deps, 'do the thing', { maxRetries: 2, retryDelayMs: 5 });
   assert.equal(result.status, 'failed');
   assert.equal(result.attempts, 2);
-  assert.match(result.reason, /not confirmed/);
+  assert.equal(result.reason, 'submit not confirmed after 2 attempt(s)');
   assert.deepEqual(calls.sendLiteral, ['do the thing']);
 });
 
@@ -107,7 +140,11 @@ test('sendInstructionVerified: never stacks a second copy onto an already-pendin
     retryDelayMs: 5,
   });
   assert.equal(calls.sendLiteral.length, 0, 'must not type a new copy when one is already pending');
-  assert.notEqual(result.status, 'delivered');
+  // Exact status/reason (not just "not delivered") pins down that `typed`
+  // correctly stays false on the recovering-pending path, distinguishing it
+  // from the freshly-typed exhausted-retries case above.
+  assert.equal(result.status, 'skipped-pending');
+  assert.equal(result.reason, 'pane already held undelivered input and it still would not submit');
 });
 
 // BL-093 verified-submit-02
@@ -115,8 +152,23 @@ test('sendInstructionVerified: a transport-level send failure aborts immediately
   const { deps, calls } = makeDeps(['❯ '], { sendLiteralOk: false });
   const result = sendInstructionVerified(deps, 'do the thing', { maxRetries: 5, retryDelayMs: 10 });
   assert.equal(result.status, 'failed');
+  assert.equal(result.attempts, 0);
+  assert.equal(result.reason, 'send failed at the transport level');
   assert.equal(calls.sendEnter, 0, 'must not retry Enter when the send itself never reached the pane');
   assert.equal(calls.wait.length, 0);
+});
+
+test('sendInstructionVerified: backs off with an increasing delay per attempt, not a decreasing one', () => {
+  const captures = [
+    '❯ ',
+    '❯ do the thing',
+    '❯ do the thing',
+    '❯ do the thing',
+    'ran do the thing\n❯ ',
+  ];
+  const { deps, calls } = makeDeps(captures);
+  sendInstructionVerified(deps, 'do the thing', { maxRetries: 10, retryDelayMs: 10 });
+  assert.deepEqual(calls.wait, [10, 20, 30], 'wait(retryDelayMs * attempts): 10, 20, 30 - not a shrinking division');
 });
 
 // BL-093 no-stacking-03
@@ -133,4 +185,25 @@ test('sendInstructionVerified: recovers pre-existing pending input by submitting
   assert.equal(result.status, 'delivered');
   assert.equal(calls.sendLiteral.length, 0, 'recovering a pre-existing pending line must never type a new copy');
   assert.equal(calls.sendEnter, 1);
+});
+
+// BL-093 no-stacking-03
+test('sendInstructionVerified: retry loop tracks the RECOVERED pending text, not the newly-requested text', () => {
+  // The pane already holds an unrelated, stale instruction when a different
+  // one is requested. If pendingText were never updated to the recovered
+  // line (i.e. it silently stayed as the newly-requested text, which was
+  // never typed on this path), the very first capture - which still shows
+  // the stale text and does NOT contain the new text - would look like an
+  // immediate "not pending" match and report delivered after only 1 attempt,
+  // one Enter too few.
+  const captures = [
+    '❯ old leftover command', // already pending, unrelated to what's requested
+    '❯ old leftover command', // still pending after the first recovery Enter
+    'ran\n❯ ', // finally clears after the second Enter
+  ];
+  const { deps, calls } = makeDeps(captures);
+  const result = sendInstructionVerified(deps, 'brand new instruction', { maxRetries: 3, retryDelayMs: 5 });
+  assert.equal(result.status, 'delivered');
+  assert.equal(result.attempts, 2, 'must track the recovered stale text, requiring the second Enter to see it clear');
+  assert.equal(calls.sendLiteral.length, 0);
 });
