@@ -24,6 +24,9 @@ const {
   respawnCooldownPath,
   readRespawnCooldownUntilMs,
   writeRespawnCooldownUntilMs,
+  parseHandoffHeaderField,
+  listDeadLettersForRole,
+  listDeadLetters,
 } = require('../out/swarm/inboxChaser');
 
 const CFG = {
@@ -103,11 +106,18 @@ test('stale item beyond maxChases with alive recipient → dead-lettered', () =>
   assert.equal(decideItemAction(STALE_MS, 5, NOW, CFG, 'alive', IDLE_MS), 'dead-lettered');
 });
 
-// BL-087 no-false-respawn-01/02: recent pane/outbox activity is positive
-// proof of life and overrides a bad liveness reading entirely, even once
-// chase attempts are exhausted — the role is dead-lettered (never respawned).
-test('recent activity blocks respawn even with dead liveness and chases exhausted → dead-lettered', () => {
-  assert.equal(decideItemAction(STALE_MS, 3, NOW, CFG, 'dead', ACTIVE_MS), 'dead-lettered');
+// BL-109: a recipient showing recent activity (actively generating a long
+// turn) must never have its own queued mail dead-lettered, no matter how
+// many chases have already been sent or what liveness reports — this is
+// exactly the "busy, not stuck" case the sweep must keep chasing forever,
+// letting the recipient's own idle-time ready_for_next.sh eventually see it.
+test('recent activity keeps chasing even with dead liveness and chases exhausted → chased, never dead-lettered', () => {
+  assert.equal(decideItemAction(STALE_MS, 3, NOW, CFG, 'dead', ACTIVE_MS), 'chased');
+});
+
+test('recent activity keeps chasing well past maxChases regardless of liveness → chased, never dead-lettered', () => {
+  assert.equal(decideItemAction(STALE_MS, 50, NOW, CFG, 'alive', ACTIVE_MS), 'chased');
+  assert.equal(decideItemAction(STALE_MS, 50, NOW, CFG, 'unknown', ACTIVE_MS), 'chased');
 });
 
 test('recent activity blocks respawn even with unknown liveness (missing heartbeat) below maxChases → chased', () => {
@@ -116,10 +126,10 @@ test('recent activity blocks respawn even with unknown liveness (missing heartbe
 
 // idleSeconds must be computed as milliseconds / 1000 (not * 1000) - 30s of
 // real elapsed time is well within the 60s stuckInProcessTimeoutSeconds and
-// so must still count as "recent" and block a respawn.
+// so must still count as "recent" and keep chasing rather than dead-letter.
 test('idle seconds are computed from real elapsed milliseconds, not inflated', () => {
   const recentlyActiveMs = NOW - 30_000; // 30s ago, real seconds - within the 60s window
-  assert.equal(decideItemAction(STALE_MS, 3, NOW, CFG, 'dead', recentlyActiveMs), 'dead-lettered');
+  assert.equal(decideItemAction(STALE_MS, 3, NOW, CFG, 'dead', recentlyActiveMs), 'chased');
 });
 
 // hasRecentActivity uses a strict "<" against stuckInProcessTimeoutSeconds:
@@ -527,7 +537,9 @@ test('runSweep dead-letters an item at maxChases, renaming both the handoff and 
   const { role, inboxNewDir, inProcessDir } = mkRoleInbox('coder');
   const filePath = writeAgedHandoff(inboxNewDir, 'a.handoff', 120, NOW);
   writeChaseCount(filePath, 3); // == maxChases
-  const { calls, adapters } = mkAdapters('alive');
+  // BL-109: dead-lettering requires NO recent activity - a busy recipient
+  // must never be dead-lettered regardless of chase count or liveness.
+  const { calls, adapters } = mkAdapters('alive', NOW - 400_000);
 
   runSweep([{ role, inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters);
 
@@ -544,7 +556,7 @@ test('runSweep dead-letters an item with no sidecar without throwing', () => {
   const filePath = writeAgedHandoff(inboxNewDir, 'a.handoff', 120, NOW);
   // Force dead-lettering without ever calling writeChaseCount, so no sidecar exists.
   const cfgZeroMaxChases = { ...SWEEP_CFG, maxChases: 0 };
-  const { calls, adapters } = mkAdapters('alive');
+  const { calls, adapters } = mkAdapters('alive', NOW - 400_000);
 
   assert.doesNotThrow(() => runSweep([{ role, inboxNewDir, inProcessDir }], NOW, cfgZeroMaxChases, adapters));
   assert.equal(calls.deadLetters.length, 1);
@@ -856,4 +868,72 @@ test('runSweep uses the highest nudge count among multiple held in_process items
   // Max of (3, 0) is 3 → alerts, not a fresh nudge.
   assert.equal(calls.wakeUps.length, 0);
   assert.deepEqual(escalations, [{ r: 'coder', escalated: true }]);
+});
+
+// ── dead-letter visibility (BL-109 dead-letter-visible-03) ──────────────────
+// A dead-lettered handoff was previously invisible debris: renamed to
+// <name>.handoff.dead next to a .chase.json sidecar nothing ever read back.
+// listDeadLetters makes it discoverable — who it was for, what it was.
+
+test('parseHandoffHeaderField extracts a named header value', () => {
+  const content = 'type: git_handoff\nto: coder\nrecipient: coder\ntask: BL-109\n';
+  assert.equal(parseHandoffHeaderField(content, 'type'), 'git_handoff');
+  assert.equal(parseHandoffHeaderField(content, 'task'), 'BL-109');
+});
+
+test('parseHandoffHeaderField returns undefined for a missing header', () => {
+  assert.equal(parseHandoffHeaderField('type: note\n', 'task'), undefined);
+});
+
+test('listDeadLettersForRole returns empty array when the inbox does not exist', () => {
+  assert.deepEqual(listDeadLettersForRole('coder', path.join(mkTmp(), 'inbox', 'new')), []);
+});
+
+test('listDeadLettersForRole ignores live (non-dead) handoffs', () => {
+  const { inboxNewDir } = mkRoleInbox('coder');
+  writeAgedHandoff(inboxNewDir, 'a.handoff', 10, NOW);
+  assert.deepEqual(listDeadLettersForRole('coder', inboxNewDir), []);
+});
+
+test('listDeadLettersForRole surfaces a dead-lettered handoff with its header fields and chase count', () => {
+  const { inboxNewDir } = mkRoleInbox('coder');
+  const deadPath = path.join(inboxNewDir, 'a.handoff.dead');
+  fs.writeFileSync(
+    deadPath,
+    'type: git_handoff\nfrom: specifier\nto: coder\nrecipient: coder\ntask: BL-109\n',
+    'utf-8'
+  );
+  writeChaseCount(deadPath, 3);
+
+  const found = listDeadLettersForRole('coder', inboxNewDir);
+  assert.equal(found.length, 1);
+  assert.equal(found[0].role, 'coder');
+  assert.equal(found[0].filePath, deadPath);
+  assert.equal(found[0].from, 'specifier');
+  assert.equal(found[0].recipient, 'coder');
+  assert.equal(found[0].type, 'git_handoff');
+  assert.equal(found[0].task, 'BL-109');
+  assert.equal(found[0].chaseCount, 3);
+});
+
+test('listDeadLettersForRole defaults chaseCount to 0 when there is no sidecar', () => {
+  const { inboxNewDir } = mkRoleInbox('coder');
+  const deadPath = path.join(inboxNewDir, 'a.handoff.dead');
+  fs.writeFileSync(deadPath, 'type: note\nrecipient: coder\n', 'utf-8');
+
+  const found = listDeadLettersForRole('coder', inboxNewDir);
+  assert.equal(found[0].chaseCount, 0);
+});
+
+test('listDeadLetters aggregates dead letters across every role inbox', () => {
+  const coderInbox = mkRoleInbox('coder');
+  const cleanerInbox = mkRoleInbox('cleaner');
+  fs.writeFileSync(path.join(coderInbox.inboxNewDir, 'a.handoff.dead'), 'type: note\nrecipient: coder\n', 'utf-8');
+  fs.writeFileSync(path.join(cleanerInbox.inboxNewDir, 'b.handoff.dead'), 'type: note\nrecipient: cleaner\n', 'utf-8');
+
+  const found = listDeadLetters([coderInbox, cleanerInbox]);
+  assert.deepEqual(
+    found.map((d) => d.role).sort(),
+    ['cleaner', 'coder']
+  );
 });
