@@ -125,7 +125,8 @@ export class SwarmPanel {
     targetPath: string,
     runLogPath: string,
     workspaceState?: vscode.Memento,
-    secrets?: vscode.SecretStorage
+    secrets?: vscode.SecretStorage,
+    preserveFocus = false
   ): SwarmPanel {
     const column = vscode.window.activeTextEditor
       ? vscode.window.activeTextEditor.viewColumn
@@ -133,7 +134,7 @@ export class SwarmPanel {
 
     if (SwarmPanel.currentPanel) {
       SwarmPanel.currentPanel.targetPath = targetPath;
-      SwarmPanel.currentPanel.panel.reveal(column);
+      SwarmPanel.currentPanel.panel.reveal(column, preserveFocus);
       SwarmPanel.currentPanel.setupTailer();
       return SwarmPanel.currentPanel;
     }
@@ -141,7 +142,7 @@ export class SwarmPanel {
     const panel = vscode.window.createWebviewPanel(
       SwarmPanel.viewType,
       'SwarmForge',
-      column ?? vscode.ViewColumn.One,
+      { viewColumn: column ?? vscode.ViewColumn.One, preserveFocus },
       {
         enableScripts: true,
         retainContextWhenHidden: true,

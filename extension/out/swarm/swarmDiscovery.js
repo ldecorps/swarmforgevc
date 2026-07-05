@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.hasPriorRunState = hasPriorRunState;
+exports.shouldOfferResumePrompt = shouldOfferResumePrompt;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 // BL-066: reinterpreted for the actual built architecture (drives real
@@ -49,5 +50,14 @@ const path = __importStar(require("path"));
 // nothing is live right now.
 function hasPriorRunState(targetPath) {
     return fs.existsSync(path.join(targetPath, '.swarmforge', 'sessions.tsv'));
+}
+// BL-086: startup activation (onStartupFinished) must attach silently or do
+// nothing — a "previous run found, resume?" popup on every editor open would
+// nag any target with prior run state. The prompt remains available when
+// activation was not triggered by startup (e.g. a command wins the
+// activation race before onStartupFinished fires), matching pre-BL-086
+// behavior on that path.
+function shouldOfferResumePrompt(triggeredByStartup, hasPriorRun) {
+    return !triggeredByStartup && hasPriorRun;
 }
 //# sourceMappingURL=swarmDiscovery.js.map
