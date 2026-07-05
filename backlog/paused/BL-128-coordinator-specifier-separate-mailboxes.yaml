@@ -1,0 +1,95 @@
+id: BL-128
+title: give coordinator and specifier their own physical mailbox instead of sharing the master-worktree inbox
+milestone: M3
+status: todo
+priority: 01
+
+description: |
+  BUG-class plumbing fix (operator intake 2026-07-05; coordinator bumped to
+  prio 01 as the root cause of recurring dead letters). The coordinator and
+  specifier both run on the `master` worktree (swarmforge.conf `window`
+  lines), so the daemon — which resolves every mailbox as
+  `<worktree-path>/.swarmforge/handoffs/...` (handoffd.bb) — delivers both
+  roles' mail into ONE physical inbox at the repo root. The only separation
+  today is the logical `recipient:`-header filter in handoff_lib.bb
+  (recipient-matches-role?), a patch over a genuinely shared physical
+  resource; it has already produced cross-role dequeue incidents and
+  false-positive dead-letters.
+
+  DECISION (settling the intake's open question): take option (a) — give
+  each master-resident role its own per-role mailbox directory inside the
+  shared worktree (e.g. `.swarmforge/handoffs/<role>/{outbox,sent,failed,
+  inbox/{new,in_process,completed}}` for roles that share a worktree). Do
+  NOT create a dedicated coordinator worktree (option b): the coordinator
+  never commits target code and needs its own mailbox, not its own git
+  checkout. Roles with a unique worktree may keep their current layout or
+  move to the same per-role layout — implementer's choice, but ALL mailbox
+  path construction (handoffd.bb delivery/outbox scan, handoff_lib.bb,
+  queue helpers, inbox chaser, dead-letter tooling, reroute/salvage/redo
+  scripts) must resolve through one shared path function keyed by role, not
+  by worktree path alone. No duplicated path logic.
+
+  Migration: any mail already queued in the shared inbox at upgrade time
+  (new/, in_process/, completed/, sent/, failed/) must be moved to the
+  correct role's new mailbox using the `recipient:` header (untagged files
+  go to the specifier's mailbox with a logged warning), so no in-flight
+  parcel is lost or duplicated.
+
+  Once physical isolation exists, the recipient-header filter in
+  handoff_lib.bb may be simplified or removed — but only after confirming
+  no other role or tool depends on its current behavior (the header itself
+  stays, for audit).
+
+  Must preserve: the specifier's existing responsibilities on `master`
+  (spec authoring, merging QA-approved work) and the coordinator's existing
+  responsibilities (intake, routing). This is delivery plumbing only, not a
+  responsibility change.
+
+acceptance: |
+  Feature: coordinator and specifier no longer share one physical inbox
+
+  # BL-128 mailbox-isolation-01
+  Scenario: a handoff addressed to the coordinator is never visible to the specifier's queue helpers
+    Given a handoff is queued with recipient coordinator
+    When the specifier runs its ready-for-next helper
+    Then the specifier's helper does not see or dequeue the coordinator's handoff
+
+  # BL-128 mailbox-isolation-02
+  Scenario: a handoff addressed to the specifier is never visible to the coordinator's queue helpers
+    Given a handoff is queued with recipient specifier
+    When the coordinator runs its ready-for-next helper
+    Then the coordinator's helper does not see or dequeue the specifier's handoff
+
+  # BL-128 mailbox-isolation-04
+  Scenario: the daemon delivers to physically distinct directories for the two master-resident roles
+    Given the coordinator and specifier both run on the master worktree
+    When the daemon delivers one handoff to the coordinator and one to the specifier
+    Then the two delivered files land in two different inbox directories
+
+  # BL-128 mailbox-isolation-05
+  Scenario Outline: mail queued before the upgrade is migrated to the right role's mailbox
+    Given a pre-upgrade shared inbox contains a <state> handoff with recipient <role>
+    When the mailbox migration runs
+    Then that handoff exists in the <role> mailbox in state <state>
+    And it exists nowhere else
+
+    Examples:
+      | role        | state      |
+      | coordinator | new        |
+      | specifier   | new        |
+      | specifier   | in_process |
+
+  # BL-128 mailbox-isolation-03
+  Scenario: existing specifier and coordinator duties are unaffected
+    Given the mailbox split is in place
+    Then the specifier still authors specs and merges QA-approved work on master
+    And the coordinator still routes intake without its own git worktree
+
+  # Non-behavioral gate:
+  #  - Option (a) per-role mailbox subdirectory is the decided approach; no
+  #    coordinator worktree.
+  #  - One shared role-keyed mailbox-path resolver used by daemon, helpers,
+  #    chaser, dead-letter CLI, and reroute/salvage/redo scripts alike.
+  #  - Recipient-header filter may be simplified/removed only after
+  #    confirming nothing else depends on it; the recipient: header itself
+  #    remains for audit.
