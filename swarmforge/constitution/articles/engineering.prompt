@@ -59,10 +59,16 @@
   whole-suite test commands concurrently with acceptance generation.
 - Run the relevant local verification command before handoff whenever the
   project has one.
-- Stryker config must use coverageAnalysis 'perTest' or 'all' with a
-  coverage-aware test runner, never 'off' with the plain command runner, so
-  per-mutant runs skip non-covering tests. (With 'off' + command runner every
-  mutant reruns the full suite; a 4-file hardening pass ran past 6 hours.)
+- Stryker coverage analysis: 'perTest'/'all' requires a coverage-aware
+  test-runner plugin, and none exists for the project's current `node --test`
+  runner — so until a Stryker-supported runner is adopted (BL-124), the
+  accepted standing tradeoff is coverageAnalysis 'off' with the command
+  runner PLUS mandatory mutate-scope discipline: scope `--mutate` to the
+  files changed by the parcel, never the whole `out/**/*.js` tree. (An
+  unscoped 'off'+command run reruns all ~1150 tests per mutant; a 4-file
+  hardening pass ran past 6 hours.) Never configure 'perTest'/'all' against
+  the command runner, even transiently. Once a coverage-aware runner lands,
+  'perTest'/'all' becomes mandatory and this tradeoff clause is removed.
 
 ## Diagrams
 - The project's documentation must include an up-to-date architecture
