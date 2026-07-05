@@ -16,6 +16,10 @@ const {
   respawnAgent,
   runCommand,
   DEFAULT_RUN_COMMAND_TIMEOUT_MS,
+  isTimedOut,
+  shapeRunResult,
+  hasRequiredRoleFields,
+  parseRoleLine,
 } = require('../out/swarm/tmuxClient');
 const { installExecutable } = require('./helpers/sharedBin');
 
@@ -222,6 +226,48 @@ test('readSwarmRoles skips malformed rows missing required fields', () => {
     roles.map((r) => r.role),
     ['coder', 'cleaner']
   );
+});
+
+// --- BL-104: readSwarmRoles complexity extraction. parseRoleLine and
+//     hasRequiredRoleFields are pure and unit-tested directly through this
+//     seam, independent of the file-reading loop. ---
+
+test('hasRequiredRoleFields is true only when role, session, and displayName are all present', () => {
+  assert.equal(hasRequiredRoleFields('coder', 'swarmforge-coder', 'Coder'), true);
+  assert.equal(hasRequiredRoleFields('', 'swarmforge-coder', 'Coder'), false);
+  assert.equal(hasRequiredRoleFields('coder', '', 'Coder'), false);
+  assert.equal(hasRequiredRoleFields('coder', 'swarmforge-coder', ''), false);
+  assert.equal(hasRequiredRoleFields(undefined, undefined, undefined), false);
+});
+
+test('parseRoleLine returns undefined for a blank line', () => {
+  assert.equal(parseRoleLine('', 1), undefined);
+  assert.equal(parseRoleLine('   ', 1), undefined);
+});
+
+test('parseRoleLine returns undefined when required fields are missing', () => {
+  assert.equal(parseRoleLine('2\t\t\t\t\n', 1), undefined);
+});
+
+test('parseRoleLine parses a well-formed line', () => {
+  const role = parseRoleLine('1\tcoder\tswarmforge-coder\tCoder\tclaude', 99);
+  assert.deepEqual(role, {
+    index: 1,
+    role: 'coder',
+    session: 'swarmforge-coder',
+    displayName: 'Coder',
+    agent: 'claude',
+  });
+});
+
+test('parseRoleLine falls back to the given index when indexStr does not parse', () => {
+  const role = parseRoleLine('not-a-number\tcoder\tswarmforge-coder\tCoder\tclaude', 42);
+  assert.equal(role.index, 42);
+});
+
+test('parseRoleLine defaults agent to "unknown" when the field is missing', () => {
+  const role = parseRoleLine('1\tcoder\tswarmforge-coder\tCoder', 1);
+  assert.equal(role.agent, 'unknown');
 });
 
 // --- respawnAgent: the launch script runs `claude` in the foreground and
@@ -527,10 +573,73 @@ test('runCommand kills a hung child at the timeout and reports failure instead o
   assert.ok(Date.now() - start < 3000, 'must return well before the child would exit');
   assert.notEqual(result.exitCode, 0);
   assert.match(result.stderr, /timed out/i);
+  assert.match(result.stderr, /150ms/, 'must report the timeout actually given to runCommand, not the default');
 });
 
 test('runCommand applies a bounded default timeout', () => {
   assert.ok(Number.isFinite(DEFAULT_RUN_COMMAND_TIMEOUT_MS));
   assert.ok(DEFAULT_RUN_COMMAND_TIMEOUT_MS >= 1_000, 'must not starve slow-but-fine tmux calls');
   assert.ok(DEFAULT_RUN_COMMAND_TIMEOUT_MS <= 15_000, 'must be far below "forever"');
+});
+
+// --- BL-104: runCommand complexity extraction. isTimedOut and
+//     shapeRunResult are pure and unit-tested directly through this seam,
+//     independent of an actual spawnSync call. ---
+
+test('isTimedOut is false when there is no spawn error', () => {
+  assert.equal(isTimedOut(undefined), false);
+});
+
+test('isTimedOut is true only for an ETIMEDOUT error code', () => {
+  assert.equal(isTimedOut({ code: 'ETIMEDOUT' }), true);
+  assert.equal(isTimedOut({ code: 'ENOENT' }), false);
+});
+
+test('shapeRunResult appends the timeout message and forces exitCode 1 when timed out', () => {
+  const shaped = shapeRunResult(
+    { error: { code: 'ETIMEDOUT' }, stdout: '', stderr: 'partial output', status: null },
+    'sleep',
+    150
+  );
+  assert.match(shaped.stderr, /partial output/);
+  assert.match(shaped.stderr, /sleep timed out after 150ms/);
+  assert.equal(shaped.exitCode, 1);
+});
+
+test('shapeRunResult trims stdout/stderr and passes through the exit code when not timed out', () => {
+  const shaped = shapeRunResult(
+    { error: undefined, stdout: 'ok\n', stderr: '  \n', status: 3 },
+    'tmux',
+    5000
+  );
+  assert.equal(shaped.stdout, 'ok');
+  assert.equal(shaped.stderr, '');
+  assert.equal(shaped.exitCode, 3);
+});
+
+test('shapeRunResult defaults exitCode to 1 when status is null and not timed out', () => {
+  const shaped = shapeRunResult({ error: undefined, stdout: '', stderr: '', status: null }, 'tmux', 5000);
+  assert.equal(shaped.exitCode, 1);
+});
+
+test('shapeRunResult trims only trailing whitespace, not leading', () => {
+  const shaped = shapeRunResult({ error: undefined, stdout: '  ok  ', stderr: '  oops  ', status: 0 }, 'tmux', 5000);
+  assert.equal(shaped.stdout, '  ok');
+  assert.equal(shaped.stderr, '  oops');
+});
+
+test('shapeRunResult treats a null stdout/stderr as empty, not a placeholder string', () => {
+  const shaped = shapeRunResult({ error: undefined, stdout: null, stderr: null, status: 0 }, 'tmux', 5000);
+  assert.equal(shaped.stdout, '');
+  assert.equal(shaped.stderr, '');
+});
+
+test('shapeRunResult appends the timeout message with no leading separator when stderr was empty', () => {
+  const shaped = shapeRunResult({ error: { code: 'ETIMEDOUT' }, stdout: '', stderr: '', status: null }, 'sleep', 150);
+  assert.equal(shaped.stderr, 'sleep timed out after 150ms');
+});
+
+test('shapeRunResult joins pre-existing stderr and the timeout message with a newline', () => {
+  const shaped = shapeRunResult({ error: { code: 'ETIMEDOUT' }, stdout: '', stderr: 'partial output', status: null }, 'sleep', 150);
+  assert.equal(shaped.stderr, 'partial output\nsleep timed out after 150ms');
 });

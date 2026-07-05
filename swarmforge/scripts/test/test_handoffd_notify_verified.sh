@@ -116,4 +116,15 @@ run_notify
   || fail "04: successfully recovering the pending line must not be reported as a failure"
 pass "04: pre-existing pending input that clears on Enter is recovered, not retyped, not reported as a failure"
 
+# ── 5: BL-109 - idle pane whose last rendered line is the standing Claude
+#       Code status footer (no $/#/❯/> marker present). Must be typed into,
+#       not misread as forever-pending text ─────────────────────────────────
+echo '  ⏵⏵ bypass permissions on (shift+tab to cycle)                    /rc' > "$BEFORE_STDOUT_FILE"
+echo '❯ ' > "$AFTER_STDOUT_FILE"
+run_notify
+[[ "$(literal_send_count)" == "1" ]] || fail "05: idle footer must not block the real wake message from being typed, got $(literal_send_count)"
+! grep -q "notify-delivery-failed" "$ROOT/.swarmforge/daemon/handoffd.log" 2>/dev/null \
+  || fail "05: a successful delivery past the idle footer must not be reported as a failure"
+pass "05: idle status footer with no marker is never mistaken for pending input"
+
 echo "ALL PASS"
