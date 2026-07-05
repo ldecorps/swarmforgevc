@@ -40,7 +40,7 @@ test('formatDeadLetterListing includes the task when present, omits it when abse
   const withoutTask = formatDeadLetterListing([
     { role: 'coder', filePath: '/a.handoff.dead', from: 'specifier', recipient: 'coder', type: 'note', task: undefined, chaseCount: 1 },
   ]);
-  assert.doesNotMatch(withoutTask, /task=/);
+  assert.equal(withoutTask, '[coder] a.handoff.dead - from=specifier type=note chases=1');
 });
 
 test('formatDeadLetterListing falls back to "unknown" for a missing from/type header', () => {

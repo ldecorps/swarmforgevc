@@ -573,6 +573,7 @@ test('runCommand kills a hung child at the timeout and reports failure instead o
   assert.ok(Date.now() - start < 3000, 'must return well before the child would exit');
   assert.notEqual(result.exitCode, 0);
   assert.match(result.stderr, /timed out/i);
+  assert.match(result.stderr, /150ms/, 'must report the timeout actually given to runCommand, not the default');
 });
 
 test('runCommand applies a bounded default timeout', () => {
@@ -619,4 +620,26 @@ test('shapeRunResult trims stdout/stderr and passes through the exit code when n
 test('shapeRunResult defaults exitCode to 1 when status is null and not timed out', () => {
   const shaped = shapeRunResult({ error: undefined, stdout: '', stderr: '', status: null }, 'tmux', 5000);
   assert.equal(shaped.exitCode, 1);
+});
+
+test('shapeRunResult trims only trailing whitespace, not leading', () => {
+  const shaped = shapeRunResult({ error: undefined, stdout: '  ok  ', stderr: '  oops  ', status: 0 }, 'tmux', 5000);
+  assert.equal(shaped.stdout, '  ok');
+  assert.equal(shaped.stderr, '  oops');
+});
+
+test('shapeRunResult treats a null stdout/stderr as empty, not a placeholder string', () => {
+  const shaped = shapeRunResult({ error: undefined, stdout: null, stderr: null, status: 0 }, 'tmux', 5000);
+  assert.equal(shaped.stdout, '');
+  assert.equal(shaped.stderr, '');
+});
+
+test('shapeRunResult appends the timeout message with no leading separator when stderr was empty', () => {
+  const shaped = shapeRunResult({ error: { code: 'ETIMEDOUT' }, stdout: '', stderr: '', status: null }, 'sleep', 150);
+  assert.equal(shaped.stderr, 'sleep timed out after 150ms');
+});
+
+test('shapeRunResult joins pre-existing stderr and the timeout message with a newline', () => {
+  const shaped = shapeRunResult({ error: { code: 'ETIMEDOUT' }, stdout: '', stderr: 'partial output', status: null }, 'sleep', 150);
+  assert.equal(shaped.stderr, 'partial output\nsleep timed out after 150ms');
 });
