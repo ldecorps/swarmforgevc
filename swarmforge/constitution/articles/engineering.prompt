@@ -73,20 +73,25 @@
 ## Verification
 - Before running language, build, or test commands, prefer project-local
   cache/configuration paths inside the assigned worktree.
+- After syncing main (merging up) or in a freshly-created worktree, run
+  `npm install` before any build/test/mutation command whenever package.json
+  changed — new devDeps are NOT in node_modules until installed. (BL-124's
+  Vitest migration added vitest, @stryker-mutator/vitest-runner, and
+  @vitest/coverage-v8; a synced-but-not-installed worktree fails with
+  `vitest: command not found`.) A newly bootstrapped extension worktree also
+  needs `npm install` before its first run.
 - Run acceptance generation and acceptance tests sequentially. Avoid running
   whole-suite test commands concurrently with acceptance generation.
 - Run the relevant local verification command before handoff whenever the
   project has one.
-- Stryker coverage analysis: 'perTest'/'all' requires a coverage-aware
-  test-runner plugin, and none exists for the project's current `node --test`
-  runner — so until a Stryker-supported runner is adopted (BL-124), the
-  accepted standing tradeoff is coverageAnalysis 'off' with the command
-  runner PLUS mandatory mutate-scope discipline: scope `--mutate` to the
-  files changed by the parcel, never the whole `out/**/*.js` tree. (An
-  unscoped 'off'+command run reruns all ~1150 tests per mutant; a 4-file
-  hardening pass ran past 6 hours.) Never configure 'perTest'/'all' against
-  the command runner, even transiently. Once a coverage-aware runner lands,
-  'perTest'/'all' becomes mandatory and this tradeoff clause is removed.
+- Stryker runs coverage-aware `perTest` via the Vitest runner (BL-124, merged
+  to main): testRunner "vitest", coverageAnalysis "perTest", and
+  vitest.related=false (the tests `require('../out/..')` in CommonJS, which
+  Vitest's `related` module-graph cannot map). perTest runs only the tests
+  that cover each mutant (~28 vs the whole ~1150-test suite before). Still
+  scope `--mutate` to the parcel's changed files. The old 'off' + command-
+  runner, full-suite-per-mutant tradeoff (which pushed a 4-file pass past 6
+  hours) is RETIRED — do not reintroduce the command runner.
 
 ## Diagrams
 - The project's documentation must include an up-to-date architecture
