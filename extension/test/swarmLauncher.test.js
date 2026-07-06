@@ -169,8 +169,13 @@ test('spawn-registry-01: launchSwarm records a tracked child-job entry keyed on 
 
     // detached:true makes the child's pid its process group's leader -
     // killing the negated pid tears down the whole group so the test
-    // leaves no process behind.
-    process.kill(-entries[0].pgid, 'SIGKILL');
+    // leaves no process behind. If the process group is already gone or
+    // becomes inaccessible, swallow the error (ESRCH or EPERM).
+    try {
+      process.kill(-entries[0].pgid, 'SIGKILL');
+    } catch (e) {
+      if (e.code !== 'ESRCH' && e.code !== 'EPERM') throw e;
+    }
   } finally {
     fake.restore();
   }
