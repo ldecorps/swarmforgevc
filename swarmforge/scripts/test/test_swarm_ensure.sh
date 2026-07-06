@@ -182,4 +182,17 @@ echo "$OUT" | grep -q "^daemon: FIXED" || fail "03: daemon check did not still r
 cleanup_daemon
 pass "03: one failed repair (extension) does not abort the remaining checks (daemon still repaired); exit status is non-zero"
 
+# ── 04: no tmux socket at all - every configured agent pane is reported
+#        FAILED (not silently skipped), and the other components still run ──
+make_fixture
+rm -f "$ROOT/.swarmforge/tmux-socket"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^agent:coder: FAILED (no tmux socket found for this project root)$" \
+  || fail "04: missing tmux socket did not report agent:coder as FAILED naming the reason"
+echo "$OUT" | grep -q "^extension: HEALTHY$" || fail "04: extension check did not still run without a tmux socket"
+echo "$OUT" | grep -q "^daemon: HEALTHY$" || fail "04: daemon check did not still run without a tmux socket"
+[[ "$RC" -ne 0 ]] || fail "04: exit status was 0, expected non-zero when an agent pane could not be checked"
+cleanup_daemon
+pass "04: no tmux socket found reports every configured agent pane as FAILED naming the reason, other checks still run"
+
 echo "ALL PASS"
