@@ -19,6 +19,8 @@ const {
   writeRecoveryAttempts,
   recoverDeadLettersForRole,
   recoverDeadLetters,
+  recoveryLogPath,
+  appendRecoveryLog,
 } = require('../out/swarm/handoffRecovery');
 const { readDaemonHealth } = require('../out/swarm/daemonHealth');
 const { computeLiveTransportHealth } = require('../out/swarm/transportHealth');
@@ -212,4 +214,29 @@ test('recoverDeadLetters sweeps every role inbox, not just one', () => {
 
   assert.equal(outcomes.length, 2);
   assert.deepEqual(outcomes.map((o) => o.action).sort(), ['redelivered', 'redelivered']);
+});
+
+// ── durable remediation log ────────────────────────────────────────────────
+
+test('recoveryLogPath points at .swarmforge/daemon/recovery.log under the target', () => {
+  const target = mkTmp();
+  assert.equal(recoveryLogPath(target), path.join(target, '.swarmforge', 'daemon', 'recovery.log'));
+});
+
+test('appendRecoveryLog creates the daemon dir and appends one JSON line per call, each with a timestamp', () => {
+  const target = mkTmp();
+  const outcome = { role: 'coder', filePath: '/x/00_a.handoff', action: 'redelivered', attempts: 1 };
+
+  appendRecoveryLog(target, outcome);
+  appendRecoveryLog(target, { ...outcome, action: 'escalated', attempts: 3 });
+
+  const lines = fs.readFileSync(recoveryLogPath(target), 'utf-8').trim().split('\n');
+  assert.equal(lines.length, 2);
+  const first = JSON.parse(lines[0]);
+  assert.equal(first.role, 'coder');
+  assert.equal(first.action, 'redelivered');
+  assert.equal(typeof first.at, 'string');
+  const second = JSON.parse(lines[1]);
+  assert.equal(second.action, 'escalated');
+  assert.equal(second.attempts, 3);
 });

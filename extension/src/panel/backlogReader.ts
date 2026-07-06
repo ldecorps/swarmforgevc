@@ -74,7 +74,10 @@ function toOptionalStringList(value: unknown): string[] | undefined {
 // the known BacklogItem fields off the parsed object so extra keys elsewhere
 // in the document (e.g. `evidence:`, `notes:`) never leak into the contract
 // pinned by backlogReader.test.js.
-function buildItemFromParsedObject(obj: Record<string, unknown>): BacklogItem | null {
+// Split out of buildItemFromParsedObject (hardening pass, BL-129): isolates
+// the required-field validation from optional-field assignment so each half
+// stays independently low-complexity/testable.
+function extractRequiredFields(obj: Record<string, unknown>): Pick<BacklogItem, 'id' | 'title' | 'status'> | null {
   const id = typeof obj.id === 'string' ? obj.id : undefined;
   const title = typeof obj.title === 'string' ? obj.title : undefined;
   const statusRaw = typeof obj.status === 'string' ? obj.status : undefined;
@@ -82,9 +85,10 @@ function buildItemFromParsedObject(obj: Record<string, unknown>): BacklogItem | 
   if (!id || !title || !statusRaw || !VALID_STATUSES.has(statusRaw)) {
     return null;
   }
+  return { id, title, status: statusRaw as BacklogItem['status'] };
+}
 
-  const item: BacklogItem = { id, title, status: statusRaw as BacklogItem['status'] };
-
+function assignOptionalFieldsFromObject(item: BacklogItem, obj: Record<string, unknown>): void {
   if (typeof obj.assigned_to === 'string' && obj.assigned_to) item.assignedTo = obj.assigned_to;
   if (typeof obj.milestone === 'string' && obj.milestone) item.milestone = obj.milestone;
   const priority = toOptionalNumber(obj.priority);
@@ -93,7 +97,15 @@ function buildItemFromParsedObject(obj: Record<string, unknown>): BacklogItem | 
   if (dependsOn) item.dependsOn = dependsOn;
   const pack = toOptionalStringList(obj.pack);
   if (pack) item.pack = pack;
+}
 
+function buildItemFromParsedObject(obj: Record<string, unknown>): BacklogItem | null {
+  const required = extractRequiredFields(obj);
+  if (!required) {
+    return null;
+  }
+  const item: BacklogItem = { ...required };
+  assignOptionalFieldsFromObject(item, obj);
   return item;
 }
 
