@@ -121,4 +121,32 @@ DOC_SCRIPT4="$ROOT4/.swarmforge/launch/documenter.sh"
 grep -q "test-secret-do-not-leak" "$DOC_SCRIPT4" && fail "04: provider API key leaked into the launch script file despite the -e fix"
 pass "04: provider key reaches the pane via respawn-pane -e, never written to the launch script file"
 
+# ── 5: a claude role never gets a provider-key -e flag, even when a
+#      provider key happens to be set in the environment ──────────────────
+ROOT5="$(mk_root)"
+cat > "$ROOT5/swarmforge/swarmforge.conf" <<'CONF'
+config active_backlog_max_depth -1
+window documenter claude master
+CONF
+
+FAKE_BIN5="$(mktemp -d)"
+TMUX_LOG5="$FAKE_BIN5/tmux-calls.log"
+cat > "$FAKE_BIN5/tmux" <<'FAKETMUX'
+#!/usr/bin/env bash
+echo "$@" >> "$TMUX_LOG"
+exit 0
+FAKETMUX
+chmod +x "$FAKE_BIN5/tmux"
+
+MISTRAL_API_KEY=test-secret-do-not-leak OPENAI_API_KEY=another-secret PATH="$FAKE_BIN5:$PATH" TMUX_LOG="$TMUX_LOG5" zsh -c "
+  source '$SWARMFORGE_SH' '$ROOT5'
+  parse_config
+  $index_of_role_snippet
+  choose_cleanup_owner
+  launch_role \"\$(index_of_role documenter)\"
+"
+grep -q -- "-e " "$TMUX_LOG5" \
+  && fail "05: a claude role's respawn-pane must never receive a provider-key -e flag; got: $(cat "$TMUX_LOG5")"
+pass "05: a claude role's respawn-pane never receives a provider-key -e flag, even with provider keys set in env"
+
 echo "ALL PASS"
