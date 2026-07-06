@@ -33,11 +33,15 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.isBounceType = isBounceType;
 exports.parseBounceFile = parseBounceFile;
 exports.processBounceFile = processBounceFile;
 exports.startBounceWatcher = startBounceWatcher;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+function isBounceType(value) {
+    return value === 'swarm' || value === 'extension' || value === 'all';
+}
 function parseBounceFile(content) {
     const trimmed = content.trim();
     if (trimmed === 'swarm') {

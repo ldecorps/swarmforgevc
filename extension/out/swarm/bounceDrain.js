@@ -44,21 +44,19 @@ exports.stopBounceDrainWatcher = stopBounceDrainWatcher;
 exports.startGracefulBounceFileWatcher = startGracefulBounceFileWatcher;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const atomicWrite_1 = require("../util/atomicWrite");
 const bounceWatcher_1 = require("./bounceWatcher");
 const SENTINEL_RELATIVE_PATH = ['.swarmforge', 'bounce-drain.json'];
 const GRACEFUL_TRIGGER_FILENAME = 'bounce-graceful';
 function drainSentinelPath(targetPath) {
     return path.join(targetPath, ...SENTINEL_RELATIVE_PATH);
 }
-function isBounceType(value) {
-    return value === 'swarm' || value === 'extension' || value === 'all';
-}
 function readBounceDrainState(targetPath) {
     try {
         const raw = fs.readFileSync(drainSentinelPath(targetPath), 'utf8');
         const parsed = JSON.parse(raw);
         if (parsed &&
-            isBounceType(parsed.bounceType) &&
+            (0, bounceWatcher_1.isBounceType)(parsed.bounceType) &&
             typeof parsed.startedAt === 'string' &&
             typeof parsed.timeoutSeconds === 'number') {
             return parsed;
@@ -69,14 +67,10 @@ function readBounceDrainState(targetPath) {
         return null;
     }
 }
-// Atomic temp+rename, matching remote_bounce.sh's existing sentinel-write
-// pattern, so a reader never observes a partially-written file.
+// Write bounce drain state atomically (via temp+rename) so a reader never
+// observes a partially-written file.
 function writeBounceDrainState(targetPath, state) {
-    const target = drainSentinelPath(targetPath);
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    const tmp = `${target}.tmp.${process.pid}`;
-    fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
-    fs.renameSync(tmp, target);
+    (0, atomicWrite_1.atomicWrite)(drainSentinelPath(targetPath), JSON.stringify(state, null, 2));
 }
 function clearBounceDrainState(targetPath) {
     const target = drainSentinelPath(targetPath);

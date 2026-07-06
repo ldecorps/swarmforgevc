@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { BounceType, processBounceFile } from './bounceWatcher';
+import { atomicWrite } from '../util/atomicWrite';
+import { BounceType, isBounceType, processBounceFile } from './bounceWatcher';
 
 // BL-069: graceful bounce. Before the existing verified bounce (BL-058) kills
 // panes, the swarm enters a DRAIN mode: agents finish their current
@@ -22,10 +23,6 @@ export function drainSentinelPath(targetPath: string): string {
   return path.join(targetPath, ...SENTINEL_RELATIVE_PATH);
 }
 
-function isBounceType(value: unknown): value is BounceType {
-  return value === 'swarm' || value === 'extension' || value === 'all';
-}
-
 export function readBounceDrainState(targetPath: string): BounceDrainState | null {
   try {
     const raw = fs.readFileSync(drainSentinelPath(targetPath), 'utf8');
@@ -44,14 +41,10 @@ export function readBounceDrainState(targetPath: string): BounceDrainState | nul
   }
 }
 
-// Atomic temp+rename, matching remote_bounce.sh's existing sentinel-write
-// pattern, so a reader never observes a partially-written file.
+// Write bounce drain state atomically (via temp+rename) so a reader never
+// observes a partially-written file.
 export function writeBounceDrainState(targetPath: string, state: BounceDrainState): void {
-  const target = drainSentinelPath(targetPath);
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  const tmp = `${target}.tmp.${process.pid}`;
-  fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
-  fs.renameSync(tmp, target);
+  atomicWrite(drainSentinelPath(targetPath), JSON.stringify(state, null, 2));
 }
 
 export function clearBounceDrainState(targetPath: string): void {

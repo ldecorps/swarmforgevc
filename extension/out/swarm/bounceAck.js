@@ -40,6 +40,8 @@ exports.clearBounceAck = clearBounceAck;
 exports.isBounceRequestStale = isBounceRequestStale;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const atomicWrite_1 = require("../util/atomicWrite");
+const bounceWatcher_1 = require("./bounceWatcher");
 const ACK_RELATIVE_PATH = ['.swarmforge', 'bounce-ack.json'];
 function bounceAckPath(targetPath) {
     return path.join(targetPath, ...ACK_RELATIVE_PATH);
@@ -51,24 +53,17 @@ function isBouncePhase(value) {
         value === 'done' ||
         value === 'failed');
 }
-function isBounceType(value) {
-    return value === 'swarm' || value === 'extension' || value === 'all';
-}
-// Atomic temp+rename, matching bounceDrain.ts's and remote_bounce.sh's
-// sentinel-write pattern, so a reader never observes a partially-written file.
+// Write bounce ack state atomically (via temp+rename) so a reader never
+// observes a partially-written file.
 function writeBounceAck(targetPath, state) {
-    const target = bounceAckPath(targetPath);
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    const tmp = `${target}.tmp.${process.pid}`;
-    fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
-    fs.renameSync(tmp, target);
+    (0, atomicWrite_1.atomicWrite)(bounceAckPath(targetPath), JSON.stringify(state, null, 2));
 }
 function readBounceAck(targetPath) {
     try {
         const raw = fs.readFileSync(bounceAckPath(targetPath), 'utf8');
         const parsed = JSON.parse(raw);
         if (parsed &&
-            isBounceType(parsed.bounceType) &&
+            (0, bounceWatcher_1.isBounceType)(parsed.bounceType) &&
             isBouncePhase(parsed.phase) &&
             typeof parsed.updatedAt === 'string') {
             return parsed;
