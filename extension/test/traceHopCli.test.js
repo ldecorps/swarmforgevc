@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { execSync } = require('node:child_process');
 
 // We test the CLI logic by requiring its exported helpers directly.
 // The CLI entry point (main) is exercised indirectly via those helpers.
@@ -41,6 +42,18 @@ test('roleToPhase maps cleaner to verifying', () => {
 
 test('roleToPhase maps QA to qa-verifying', () => {
   assert.equal(roleToPhase('QA'), 'qa-verifying');
+});
+
+test('roleToPhase maps architect to architecting', () => {
+  assert.equal(roleToPhase('architect'), 'architecting');
+});
+
+test('roleToPhase maps hardender to hardening', () => {
+  assert.equal(roleToPhase('hardender'), 'hardening');
+});
+
+test('roleToPhase maps documenter to documenting', () => {
+  assert.equal(roleToPhase('documenter'), 'documenting');
 });
 
 test('roleToPhase throws for unknown role', () => {
@@ -114,6 +127,38 @@ test('resolveTracesDir uses SWARMFORGE_TRACES_DIR when set', () => {
 test('resolveTracesDir throws when env unset and git common dir fails', () => {
   // Pass null to simulate no env var and no git available.
   assert.throws(() => resolveTracesDir(null, '/nonexistent/not-a-repo'), /cannot resolve/i);
+});
+
+// Regression coverage for the off-by-one repo-root fix (`resolveTracesDir`
+// used to go up TWO levels from git-common-dir instead of one, landing one
+// directory above the real repo root - this passed on a non-worktree repo
+// where the extra ".." happened to be harmless-looking but broke every
+// linked worktree, i.e. every actual pipeline role's working directory).
+
+test('resolveTracesDir resolves to <repoRoot>/.swarmforge/traces in a plain (non-worktree) repo', () => {
+  const repoRoot = fs.realpathSync(mkTmp());
+  execSync('git init -q', { cwd: repoRoot });
+
+  const tracesDir = resolveTracesDir(null, repoRoot);
+
+  assert.equal(tracesDir, path.join(repoRoot, '.swarmforge', 'traces'));
+});
+
+test('resolveTracesDir resolves to the MAIN repo root from inside a linked worktree', () => {
+  const mainRepo = fs.realpathSync(mkTmp());
+  execSync('git init -q', { cwd: mainRepo });
+  execSync('git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init', { cwd: mainRepo });
+  const worktreesParent = fs.realpathSync(mkTmp());
+  const worktreePath = path.join(worktreesParent, 'linked-worktree');
+  execSync(`git worktree add -q -b sfvc-test-worktree "${worktreePath}"`, { cwd: mainRepo });
+
+  const tracesDir = resolveTracesDir(null, worktreePath);
+
+  assert.equal(
+    tracesDir,
+    path.join(mainRepo, '.swarmforge', 'traces'),
+    'a linked worktree must resolve traces under the MAIN repo root, not one level above it'
+  );
 });
 
 // ── countPriorRetries: error handling ──────────────────────────────────────

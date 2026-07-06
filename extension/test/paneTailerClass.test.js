@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { PaneTailer, STALL_THRESHOLD_MS } = require('../out/panel/paneTailer');
+const { PaneTailer, STALL_THRESHOLD_MS, didPaneRespawn } = require('../out/panel/paneTailer');
 const { installFakeTmux } = require('./helpers/fakeTmux');
 
 function mkTmp() {
@@ -127,6 +127,94 @@ test('poll reports a capture failure with a readable-pane error message', async 
     tailer.stop();
     assert.equal(updates.length, 1);
     assert.match(updates[0].text, /Could not read tmux pane/);
+  } finally {
+    fake.restore();
+  }
+});
+
+// --- BL-120: a respawned pane (same session/socket, new process) must not
+//     keep merging fresh content against retained state from the process
+//     that used to be there ---
+
+test('didPaneRespawn is false on a role’s first-ever capture (no previous pid yet)', () => {
+  assert.equal(didPaneRespawn(undefined, '111'), false);
+});
+
+test('didPaneRespawn is false when the pid is unchanged', () => {
+  assert.equal(didPaneRespawn('111', '111'), false);
+});
+
+test('didPaneRespawn is true when a previously known pid changes', () => {
+  assert.equal(didPaneRespawn('111', '222'), true);
+});
+
+test('didPaneRespawn is false when the current pid could not be resolved (capture failure, not a respawn)', () => {
+  assert.equal(didPaneRespawn('111', ''), false);
+});
+
+test('a pane respawn (pid change, same session) resets retained history instead of merging old content into the new capture', async () => {
+  const targetPath = mkTmp();
+  writeState(targetPath);
+  const fake = installFakeTmux([
+    { subcommand: 'has-session', exitCode: 0 },
+    { argsInclude: 'pane_pid', exitCode: 0, stdout: '111\n' },
+    { argsInclude: 'pane_current_command', exitCode: 0, stdout: 'claude\n' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: 'OLD LINE 1\nOLD LINE 2' },
+  ]);
+  try {
+    const updates = [];
+    const tailer = new PaneTailer(targetPath, (u) => updates.push(...u));
+    tailer.start(1_000_000);
+    assert.match(updates[updates.length - 1].text, /OLD LINE 1/);
+
+    // Same session, same socket - only the pane's pid changes, as a real
+    // `tmux respawn-pane` produces - and the capture now reflects an
+    // entirely unrelated fresh process.
+    fake.setRules([
+      { subcommand: 'has-session', exitCode: 0 },
+      { argsInclude: 'pane_pid', exitCode: 0, stdout: '222\n' },
+      { argsInclude: 'pane_current_command', exitCode: 0, stdout: 'claude\n' },
+      { subcommand: 'capture-pane', exitCode: 0, stdout: 'NEW LINE 1\nNEW LINE 2' },
+    ]);
+    tailer.poll();
+
+    const latest = updates[updates.length - 1].text;
+    assert.match(latest, /NEW LINE 1/);
+    assert.doesNotMatch(
+      latest,
+      /OLD LINE/,
+      'retained history from before the respawn leaked into the post-respawn tile content'
+    );
+  } finally {
+    fake.restore();
+  }
+});
+
+test('an unchanged pid across polls keeps accumulating history normally (no false respawn reset)', async () => {
+  const targetPath = mkTmp();
+  writeState(targetPath);
+  const fake = installFakeTmux([
+    { subcommand: 'has-session', exitCode: 0 },
+    { argsInclude: 'pane_pid', exitCode: 0, stdout: '111\n' },
+    { argsInclude: 'pane_current_command', exitCode: 0, stdout: 'claude\n' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: 'LINE A' },
+  ]);
+  try {
+    const updates = [];
+    const tailer = new PaneTailer(targetPath, (u) => updates.push(...u));
+    tailer.start(1_000_000);
+
+    fake.setRules([
+      { subcommand: 'has-session', exitCode: 0 },
+      { argsInclude: 'pane_pid', exitCode: 0, stdout: '111\n' },
+      { argsInclude: 'pane_current_command', exitCode: 0, stdout: 'claude\n' },
+      { subcommand: 'capture-pane', exitCode: 0, stdout: 'LINE B' },
+    ]);
+    tailer.poll();
+
+    const latest = updates[updates.length - 1].text;
+    assert.match(latest, /LINE A/, 'same-pid history should still retain earlier content');
+    assert.match(latest, /LINE B/);
   } finally {
     fake.restore();
   }

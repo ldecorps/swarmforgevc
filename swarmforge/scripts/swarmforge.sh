@@ -326,7 +326,7 @@ parse_config() {
     fi
 
     case "$agent" in
-      claude|codex|copilot|grok) ;;
+      claude|codex|copilot|grok|aider) ;;
       *)
         echo -e "${RED}Error:${RESET} Unsupported agent '$agent' for role '$role'"
         exit 1
@@ -540,6 +540,7 @@ check_backend_dependencies() {
       codex) check_dependency codex ;;
       copilot) check_dependency copilot ;;
       grok) check_dependency grok ;;
+      aider) check_dependency aider ;;
     esac
   done
 }
@@ -698,6 +699,9 @@ write_role_launch_script() {
     grok)
       launch_body="grok${extra_cli:+ $extra_cli} --cwd '$role_worktree' --permission-mode acceptEdits --rules \"\$(cat '$prompt_file')\""
       ;;
+    aider)
+      launch_body="aider${extra_cli:+ $extra_cli} --yes-always --message-file '$prompt_file'"
+      ;;
     *)
       echo -e "${RED}Error:${RESET} Unsupported agent '$agent' for role '$role'"
       exit 1
@@ -708,6 +712,15 @@ write_role_launch_script() {
   if [[ "$agent" == "claude" ]]; then
     billing_guard=$'unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN\n'
   fi
+  # BL-130-VIOLATION fix: a provider API key (OPENAI_API_KEY/MISTRAL_API_KEY,
+  # for an alternate-runtime role like aider on Mistral/OpenAI) must NEVER be
+  # written into this launch script - the constitution's secrets rule bars
+  # any key from landing in a file under the target working directory, not
+  # just from being committed, and .swarmforge/launch/<role>.sh is exactly
+  # such a file (previously written here as a plaintext `export KEY=value`
+  # line - a real violation, caught by architect review). The key is instead
+  # passed at respawn-pane time via `-e`, ephemeral to that tmux command, in
+  # launch_role below - never persisted to disk.
 
   cat > "$launch_script" <<LAUNCH
 #!/usr/bin/env zsh
@@ -764,8 +777,21 @@ launch_role() {
   write_agent_instruction_file "$role" "$PROMPTS_DIR/${role}.md"
   launch_script="$(write_role_launch_script "$index")"
 
+  # BL-130-VIOLATION fix: pass a non-claude role's provider API key as a
+  # respawn-pane `-e` flag - ephemeral to this tmux invocation - rather than
+  # writing it into the launch script file (see write_role_launch_script).
+  local -a provider_env_flags=()
+  if [[ "$agent" != "claude" ]]; then
+    local provider_key
+    for provider_key in OPENAI_API_KEY MISTRAL_API_KEY; do
+      if [[ -n "${(P)provider_key:-}" ]]; then
+        provider_env_flags+=(-e "${provider_key}=${(P)provider_key}")
+      fi
+    done
+  fi
+
   wait_for_session_pane "$session"
-  tmux -S "$TMUX_SOCKET" respawn-pane -k -t "$(tmux_agent_target_for_session "$session")" "zsh '$launch_script'"
+  tmux -S "$TMUX_SOCKET" respawn-pane -k "${provider_env_flags[@]}" -t "$(tmux_agent_target_for_session "$session")" "zsh '$launch_script'"
   sleep 0.25
   if [[ "$agent" == "grok" ]]; then
     send_initial_grok_prompt "$session" "$display" "$prompt_file"
