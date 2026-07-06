@@ -3,7 +3,7 @@ title: multi-provider swarm — per-role ALTERNATE AGENT RUNTIME (option 2) so c
 milestone: M2
 status: todo
 priority: 00
-assigned_to: specifier
+assigned_to: coder
 depends_on:
   - BL-121
   - BL-122
