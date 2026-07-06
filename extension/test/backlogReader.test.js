@@ -297,6 +297,27 @@ test('BL-129 no-regression-03: every real gnarly ticket the lenient parser alrea
   }
 });
 
+test('BL-129: a strict-parseable object missing a required field yields null (no lenient retry within the strict branch)', () => {
+  const item = parseBacklogYaml('id: BL-999\ntitle: missing status\n');
+  assert.equal(item, null);
+});
+
+test('BL-129: a strict-parseable object with an invalid status enum value yields null', () => {
+  const item = parseBacklogYaml('id: BL-999\ntitle: bad status\nstatus: cancelled\n');
+  assert.equal(item, null);
+});
+
+test('BL-129: a quoted numeric priority string is coerced to a number via the strict path', () => {
+  const item = parseBacklogYaml('id: BL-007\ntitle: quoted priority\nstatus: todo\npriority: "5"\n');
+  assert.equal(item.priority, 5);
+});
+
+test('BL-129: an empty assigned_to/milestone string is omitted, not kept as ""', () => {
+  const item = parseBacklogYaml('id: BL-007\ntitle: empty optional fields\nstatus: todo\nassigned_to: ""\nmilestone: ""\n');
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'assignedTo'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'milestone'), false);
+});
+
 test('readBacklog handles read errors gracefully', () => {
   const tmp = mkTmp();
   const activeDir = path.join(tmp, 'backlog', 'active');
