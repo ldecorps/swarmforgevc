@@ -235,7 +235,10 @@ const TICKET_COLOR_PALETTE = [
   { background: '#bcf60c', color: '#000' },
   { background: '#008080', color: '#fff' },
   { background: '#9a6324', color: '#fff' },
-  { background: '#808000', color: '#fff' },
+  // Mirrors ticketColors.ts's fix: '#fff' text here fails WCAG AA contrast
+  // for normal-size badge/chip text (4.20:1, needs 4.5:1); '#000' clears it
+  // at 5.01:1 (hardener finding, 2026-07-06).
+  { background: '#808000', color: '#000' },
 ];
 
 function ticketColorFor(ticketId) {
