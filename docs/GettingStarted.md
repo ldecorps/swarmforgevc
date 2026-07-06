@@ -68,6 +68,33 @@ When the swarm finishes, run **SwarmForge: Open Pull Request**
 (`swarmforge.openPR`) to open a pull request from the swarm's dev branch into
 the target's main branch. Review and merge it in GitHub like any other PR.
 
+## Troubleshooting: Bring the swarm to a known-good state
+
+If the swarm is stuck, unresponsive, or you need to restart a component (the
+extension host, individual agents, or the daemon), use the recovery command:
+
+```sh
+./swarm ensure
+```
+
+This idempotent command checks and repairs:
+1. **Extension host** — Is VS Code with the SwarmForge extension running?
+2. **Agent panes** — Is each configured agent pane present in tmux with a live process?
+3. **Daemon** — Is the handoff daemon running?
+
+For each component, it reports one of:
+- **HEALTHY** — No repair needed.
+- **FIXED** — It repaired the component and names what it did (e.g., "started
+  extension", "respawned coder pane", "restarted daemon").
+- **FAILED** — It attempted repair but failed; check the error details.
+
+On an already-healthy swarm, `./swarm ensure` is a fast no-op that changes
+nothing. A failed repair of one component does not stop the remaining checks —
+they all run and are reported together.
+
+Exit with status 0 if all components are healthy; non-zero if anything could
+not be brought to health.
+
 ---
 
 For pipeline stages, watchdogs, hardening tooling, the full command and
