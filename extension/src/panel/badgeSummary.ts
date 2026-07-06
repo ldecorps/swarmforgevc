@@ -31,6 +31,12 @@ export interface BadgeWithHolder extends Badge {
   // hardender batch): the count of parcels NOT shown as the primary badge
   // (BL-068). Omitted (not zero) for a single-parcel holder.
   extraCount?: number;
+  // BL-139: every ticket id this holder currently has, numerically sorted —
+  // the full set the tile's multi-ticket rainbow indicator renders one
+  // color segment per entry for. Always present, even for a single-parcel
+  // holder (a one-element array), so callers don't need a separate
+  // single-vs-multi branch to find the held set.
+  heldTicketIds: string[];
 }
 
 function compareTicketIds(a: string, b: string): number {
@@ -86,6 +92,7 @@ function formatBadgeEntry(
     id: primary.item.id,
     summary: truncateSummary(primary.item.title),
     holder: primary.holder,
+    heldTicketIds: entries.map((e) => e.item.id),
     ...(rest.length > 0 ? { extraCount: rest.length } : {}),
   };
 }

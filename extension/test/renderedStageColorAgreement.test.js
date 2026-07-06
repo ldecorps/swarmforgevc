@@ -2,11 +2,11 @@ const assert = require('node:assert/strict');
 const { renderPanel } = require('./helpers/renderPanel');
 const { buildBadgeMap } = require('../out/panel/badgeSummary');
 
-// BL-077: the tile-header badge (.tile-bl-badge) and the BACKLOG row chip
-// (.bl-assigned) must render the SAME stage-color-* class for a given
-// holder, on the same refresh, and that class must differ across stages and
-// for the neutral queued/done states. These render the REAL webview shell +
-// REAL media/panel.js in jsdom (BL-068/BL-072's lesson: a state-only test of
+// BL-139 supersedes BL-077's stage-identity color contract: color now means
+// TICKET identity, not which stage holds a parcel, so the same ticket must
+// render with the same color everywhere regardless of which stage moves it.
+// These tests render the REAL webview shell (getWebviewHtml) and evaluate the
+// REAL media/panel.js source in jsdom (BL-068's lesson: a state-only test of
 // the color-mapping function alone does not prove the rendered surfaces
 // agree).
 
@@ -27,12 +27,12 @@ function tileBadgeEl(document, role) {
   return tile && tile.querySelector('.tile-bl-badge');
 }
 
-function stageColorClassOf(el) {
-  return el && [...el.classList].find((c) => c.startsWith('stage-color-'));
+function backgroundOf(el) {
+  return el && el.style.background;
 }
 
-// BL-077 stage-colors-01 / stage-colors-05
-test('two in-flight tickets at different stages get visibly distinct, cross-surface-agreeing colors', () => {
+// BL-139 ticket-color-02
+test('two different in-flight tickets get visibly distinct, cross-surface-agreeing colors', () => {
   const { document, dispatch } = renderPanel();
   dispatch({ type: 'roles', roles: ALL_ROLES });
 
@@ -44,24 +44,24 @@ test('two in-flight tickets at different stages get visibly distinct, cross-surf
   dispatch({ type: 'holderUpdate', holders: { 'BL-201': 'coder', 'BL-202': 'QA' } });
   dispatch({ type: 'badgeUpdate', badges: buildBadgeMap(items) });
 
-  const rowAColor = stageColorClassOf(backlogRowAssignedEl(document, 'BL-201'));
-  const rowBColor = stageColorClassOf(backlogRowAssignedEl(document, 'BL-202'));
-  const badgeAColor = stageColorClassOf(tileBadgeEl(document, 'coder'));
-  const badgeBColor = stageColorClassOf(tileBadgeEl(document, 'QA'));
+  const rowAColor = backgroundOf(backlogRowAssignedEl(document, 'BL-201'));
+  const rowBColor = backgroundOf(backlogRowAssignedEl(document, 'BL-202'));
+  const badgeAColor = backgroundOf(tileBadgeEl(document, 'coder'));
+  const badgeBColor = backgroundOf(tileBadgeEl(document, 'QA'));
 
-  assert.ok(rowAColor, 'BL-201 row chip must carry a stage color class');
-  assert.ok(badgeAColor, 'coder tile badge must carry a stage color class');
+  assert.ok(rowAColor, 'BL-201 row chip must carry a ticket color');
+  assert.ok(badgeAColor, 'coder tile badge must carry a ticket color');
   assert.equal(rowAColor, badgeAColor, 'row chip and tile badge must agree on BL-201 color');
 
-  assert.ok(rowBColor, 'BL-202 row chip must carry a stage color class');
-  assert.ok(badgeBColor, 'QA tile badge must carry a stage color class');
+  assert.ok(rowBColor, 'BL-202 row chip must carry a ticket color');
+  assert.ok(badgeBColor, 'QA tile badge must carry a ticket color');
   assert.equal(rowBColor, badgeBColor, 'row chip and tile badge must agree on BL-202 color');
 
-  assert.notEqual(rowAColor, rowBColor, 'coder and QA stages must be visibly distinct colors');
+  assert.notEqual(rowAColor, rowBColor, 'BL-201 and BL-202 must be visibly distinct colors');
 });
 
-// BL-077 stage-colors-02
-test('the color follows the parcel down the pipeline on both surfaces', () => {
+// BL-139 ticket-color-01
+test('the SAME ticket keeps its color as it moves down the pipeline on both surfaces', () => {
   const { document, dispatch } = renderPanel();
   dispatch({ type: 'roles', roles: ALL_ROLES });
 
@@ -70,43 +70,27 @@ test('the color follows the parcel down the pipeline on both surfaces', () => {
   dispatch({ type: 'holderUpdate', holders: { 'BL-203': 'coder' } });
   dispatch({ type: 'badgeUpdate', badges: buildBadgeMap(items) });
 
-  const coderRowColor = stageColorClassOf(backlogRowAssignedEl(document, 'BL-203'));
-  const coderBadgeColor = stageColorClassOf(tileBadgeEl(document, 'coder'));
-  assert.equal(coderRowColor, 'stage-color-coder');
-  assert.equal(coderBadgeColor, 'stage-color-coder');
+  const coderRowColor = backgroundOf(backlogRowAssignedEl(document, 'BL-203'));
+  const coderBadgeColor = backgroundOf(tileBadgeEl(document, 'coder'));
+  assert.ok(coderRowColor);
+  assert.equal(coderRowColor, coderBadgeColor);
 
   dispatch({ type: 'holderUpdate', holders: { 'BL-203': 'cleaner' } });
   dispatch({
     type: 'badgeUpdate',
-    badges: { cleaner: { id: 'BL-203', summary: 'handed off', holder: 'cleaner' } },
+    badges: { cleaner: { id: 'BL-203', summary: 'handed off', holder: 'cleaner', heldTicketIds: ['BL-203'] } },
   });
 
-  const cleanerRowColor = stageColorClassOf(backlogRowAssignedEl(document, 'BL-203'));
-  const cleanerBadgeColor = stageColorClassOf(tileBadgeEl(document, 'cleaner'));
-  assert.equal(cleanerRowColor, 'stage-color-cleaner');
-  assert.equal(cleanerBadgeColor, 'stage-color-cleaner');
+  const cleanerRowColor = backgroundOf(backlogRowAssignedEl(document, 'BL-203'));
+  const cleanerBadgeColor = backgroundOf(tileBadgeEl(document, 'cleaner'));
+  // BL-139: color is ticket identity, so BL-203 must render the same color
+  // after moving from coder to cleaner, on both surfaces.
+  assert.equal(cleanerRowColor, coderRowColor, 'BL-203 must keep its color after moving stages (row chip)');
+  assert.equal(cleanerBadgeColor, coderRowColor, 'BL-203 must keep its color after moving stages (tile badge)');
 });
 
-// BL-077 stage-colors-03
-test('queued and done tickets get neutral colors distinct from every stage', () => {
-  const { document, dispatch } = renderPanel();
-  dispatch({ type: 'roles', roles: ALL_ROLES });
-
-  const items = [
-    { id: 'BL-204', title: 'promoted, not yet routed', status: 'active', assignedTo: 'coder' },
-    { id: 'BL-205', title: 'closed', status: 'done', milestone: 'M3' },
-  ];
-  dispatch({ type: 'backlogUpdate', items });
-  dispatch({ type: 'holderUpdate', holders: {} });
-  dispatch({ type: 'badgeUpdate', badges: {} });
-
-  assert.equal(stageColorClassOf(backlogRowAssignedEl(document, 'BL-204')), 'stage-color-queued');
-  const doneEl = document.querySelector('.bl-milestone');
-  assert.equal(stageColorClassOf(doneEl), 'stage-color-done');
-});
-
-// BL-077 stage-colors-04
-test('color is additive: the row chip and badge still carry the holder as text, not only as color', () => {
+// BL-139 ticket-color-06
+test('color is additive: the row chip and badge still carry the holder/ticket as text, not only as color', () => {
   const { document, dispatch } = renderPanel();
   dispatch({ type: 'roles', roles: ALL_ROLES });
 
@@ -120,8 +104,7 @@ test('color is additive: the row chip and badge still carry the holder as text, 
   assert.match(tileBadgeEl(document, 'coder').textContent, /BL-206/);
 });
 
-// BL-077 stage-colors-06
-test('the needs-human red border pulse stays independent of the stage-color badge class', () => {
+test('the needs-human red border pulse stays independent of the ticket-color badge', () => {
   const { document, dispatch } = renderPanel();
   dispatch({ type: 'roles', roles: ALL_ROLES });
 
@@ -134,5 +117,28 @@ test('the needs-human red border pulse stays independent of the stage-color badg
   tile.classList.add('needs-human');
 
   assert.ok(tile.classList.contains('needs-human'), 'the border-pulse class is untouched by badge coloring');
-  assert.equal(stageColorClassOf(tileBadgeEl(document, 'coder')), 'stage-color-coder');
+  assert.ok(backgroundOf(tileBadgeEl(document, 'coder')), 'the ticket color badge is still present');
+});
+
+// BL-139 ticket-color-04/05
+test('an agent holding multiple tickets renders a segmented rainbow indicator, deterministically', () => {
+  const { document, dispatch } = renderPanel();
+  dispatch({ type: 'roles', roles: ALL_ROLES });
+
+  const items = [
+    { id: 'BL-061', title: 'a', status: 'active', assignedTo: 'coder' },
+    { id: 'BL-036', title: 'b', status: 'active', assignedTo: 'coder' },
+    { id: 'BL-045', title: 'c', status: 'active', assignedTo: 'coder' },
+  ];
+  dispatch({ type: 'badgeUpdate', badges: buildBadgeMap(items) });
+
+  const firstBackground = backgroundOf(tileBadgeEl(document, 'coder'));
+  assert.match(firstBackground, /linear-gradient/, 'a multi-ticket holder must render a segmented gradient');
+
+  // Re-dispatch the identical badge state and confirm the rendered gradient
+  // is byte-for-byte identical (ticket-color-05: deterministic across
+  // repeated renders of the same held set).
+  dispatch({ type: 'badgeUpdate', badges: buildBadgeMap(items) });
+  const secondBackground = backgroundOf(tileBadgeEl(document, 'coder'));
+  assert.equal(secondBackground, firstBackground);
 });

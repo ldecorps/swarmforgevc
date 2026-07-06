@@ -332,3 +332,36 @@ test('folder-active item with lagging yaml status is badged on the live holder (
   assert.ok(result.cleaner, 'badge must follow the live holder for a folder-active item');
   assert.equal(result.coder, undefined, 'no badge should remain on the static assignee');
 });
+
+// --- BL-139: heldTicketIds exposes every ticket a holder currently has, not
+// just the primary + a count, so the tile can render a rainbow segment per
+// held ticket instead of only naming the count. ---
+
+test('a single-parcel holder has heldTicketIds with exactly that one id', () => {
+  const items = [
+    { id: 'BL-038', title: 'tile header', status: 'active', assignedTo: 'coder' },
+  ];
+  const result = buildBadgeMap(items);
+  assert.deepEqual(result.coder.heldTicketIds, ['BL-038']);
+});
+
+test('a multi-parcel holder has heldTicketIds listing every held ticket, numerically sorted', () => {
+  const items = [
+    { id: 'BL-100', title: 'later item', status: 'active', assignedTo: 'coder' },
+    { id: 'BL-9', title: 'earlier item', status: 'active', assignedTo: 'coder' },
+    { id: 'BL-30', title: 'middle item', status: 'active', assignedTo: 'coder' },
+  ];
+  const result = buildBadgeMap(items);
+  assert.deepEqual(result.coder.heldTicketIds, ['BL-9', 'BL-30', 'BL-100']);
+});
+
+test('heldTicketIds is independent per holder', () => {
+  const items = [
+    { id: 'BL-061', title: 'handoffd deadlock', status: 'active', assignedTo: 'hardender' },
+    { id: 'BL-036', title: 'redo_from tool', status: 'active', assignedTo: 'hardender' },
+    { id: 'BL-045', title: 'needs-human detection', status: 'active', assignedTo: 'coder' },
+  ];
+  const result = buildBadgeMap(items);
+  assert.deepEqual(result.hardender.heldTicketIds, ['BL-036', 'BL-061']);
+  assert.deepEqual(result.coder.heldTicketIds, ['BL-045']);
+});

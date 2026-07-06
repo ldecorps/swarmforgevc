@@ -62,6 +62,7 @@ function formatBadgeEntry(entries) {
         id: primary.item.id,
         summary: truncateSummary(primary.item.title),
         holder: primary.holder,
+        heldTicketIds: entries.map((e) => e.item.id),
         ...(rest.length > 0 ? { extraCount: rest.length } : {}),
     };
 }

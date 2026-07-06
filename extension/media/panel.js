@@ -191,11 +191,14 @@ function renderMetrics(metrics, roles) {
 }
 
 // BL-077: one stable color class per pipeline stage, plus neutral classes
-// for "queued" (promoted, unrouted) and "done", so the tile-header badge and
-// the BACKLOG row chip always agree on the color for a given holder. Keyed
-// lowercase so 'QA' and 'qa' (and any other holder-string casing) resolve to
-// the same class. The map is inlined (not a module-level const) so the
-// function is self-contained for extractPanelFunction-based unit tests.
+// for "queued" (promoted, unrouted) and "done". Kept for the surfaces that
+// still mean STAGE, not ticket identity: the done-row milestone chip below.
+// BL-139 deprecates this for ticket identity surfaces (the active backlog
+// row chip and the tile badge) in favor of ticketColorFor/ticketColorSegments
+// — see the comment there for why. Keyed lowercase so 'QA' and 'qa' (and any
+// other holder-string casing) resolve to the same class. The map is inlined
+// (not a module-level const) so the function is self-contained for
+// extractPanelFunction-based unit tests.
 function stageColorClass(holder) {
   const STAGE_COLOR_CLASSES = {
     specifier: 'stage-color-specifier',
@@ -211,6 +214,66 @@ function stageColorClass(holder) {
   };
   const key = (holder || 'queued').toLowerCase();
   return STAGE_COLOR_CLASSES[key] || STAGE_COLOR_CLASSES.queued;
+}
+
+// BL-139: mirrors src/panel/ticketColors.ts's ticketColorFor/ticketColorSegments.
+// The webview cannot import the host's TS module (two-layer rule — host and
+// webview communicate only by message passing), so this tiny pure color
+// assignment is duplicated here, same reason formatDurationMs/
+// formatSuiteDurationMs above are duplicated (BL-071/BL-078). Color is a
+// function of the ticket id ALONE so a ticket keeps the same color across
+// every stage transition and in both the backlog row and the tile badge.
+const TICKET_COLOR_PALETTE = [
+  { background: '#e6194b', color: '#fff' },
+  { background: '#3cb44b', color: '#000' },
+  { background: '#ffe119', color: '#000' },
+  { background: '#4363d8', color: '#fff' },
+  { background: '#f58231', color: '#000' },
+  { background: '#911eb4', color: '#fff' },
+  { background: '#46f0f0', color: '#000' },
+  { background: '#f032e6', color: '#000' },
+  { background: '#bcf60c', color: '#000' },
+  { background: '#008080', color: '#fff' },
+  { background: '#9a6324', color: '#fff' },
+  // Mirrors ticketColors.ts's fix: '#fff' text here fails WCAG AA contrast
+  // for normal-size badge/chip text (4.20:1, needs 4.5:1); '#000' clears it
+  // at 5.01:1 (hardener finding, 2026-07-06).
+  { background: '#808000', color: '#000' },
+];
+
+function ticketColorFor(ticketId) {
+  let hash = 0;
+  for (let i = 0; i < ticketId.length; i++) {
+    hash = (hash * 31 + ticketId.charCodeAt(i)) >>> 0;
+  }
+  return TICKET_COLOR_PALETTE[hash % TICKET_COLOR_PALETTE.length];
+}
+
+function ticketColorSegments(ticketIds) {
+  const uniqueIds = [...new Set(ticketIds)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  return uniqueIds.map((id) => ({ id, color: ticketColorFor(id) }));
+}
+
+// A single ticket renders as a flat swatch; two or more (a role holding
+// multiple parcels at once) render as a left-to-right rainbow of equal-width
+// segments, one per held ticket, in the same deterministic order every
+// render (BL-139 ticket-color-04/05). White text with a dark shadow stays
+// legible regardless of which hues land in the mix, so ticket id/holder text
+// (added by the caller) is never lost against the background (ticket-color-06).
+function ticketChipStyle(ticketIds) {
+  const segments = ticketColorSegments(ticketIds);
+  if (segments.length <= 1) {
+    const bg = segments[0] ? segments[0].color.background : TICKET_COLOR_PALETTE[0].background;
+    const fg = segments[0] ? segments[0].color.color : TICKET_COLOR_PALETTE[0].color;
+    return 'background:' + bg + ';color:' + fg + ';';
+  }
+  const stepPct = 100 / segments.length;
+  const stops = segments.map((seg, i) => {
+    const start = (i * stepPct).toFixed(2) + '%';
+    const end = ((i + 1) * stepPct).toFixed(2) + '%';
+    return seg.color.background + ' ' + start + ', ' + seg.color.background + ' ' + end;
+  }).join(', ');
+  return 'background:linear-gradient(to right, ' + stops + ');color:#fff;text-shadow:0 1px 2px rgba(0,0,0,0.8);';
 }
 
 function backlogRowHtml(item) {
@@ -229,10 +292,11 @@ function backlogRowHtml(item) {
     // unrouted ticket showed its intake-time assignee as if it were holding
     // the parcel.
     const holder = holderMap[item.id] || 'queued';
-    // BL-077: tint the chip with the holder's stage color (or the neutral
-    // "queued" color when unrouted) — the same resolver-driven holder value
-    // the tile badge below uses, so the two surfaces never disagree.
-    assignedDisplay = '<span class="bl-assigned ' + stageColorClass(holder) + '">' + holder + '</span>';
+    // BL-139: tint the chip with the TICKET's identity color, not the
+    // holder's stage color — color now means "which ticket", so it must
+    // match the tile badge for this same ticket id regardless of which
+    // stage currently holds it (ticket-color-02).
+    assignedDisplay = '<span class="bl-assigned" style="' + ticketChipStyle([item.id]) + '">' + holder + '</span>';
     // BL-034: field-level panel -> disk writes. assigned_to here is the
     // static YAML field (separate from the live holder above), and marking
     // done is a folder move the host performs; both go through the
@@ -707,13 +771,18 @@ window.addEventListener('message', (event) => {
           // batch) shows the lowest ticket ID plus a +N count for the rest
           // instead of silently dropping them (BL-068).
           entry.blBadge.textContent = badge.extraCount ? `${idSummary} +${badge.extraCount}` : idSummary;
-          // BL-077: the badge is only ever shown on the tile whose role IS
-          // the live holder, so that role is the stage color to apply.
-          entry.blBadge.className = 'tile-bl-badge ' + stageColorClass(role);
+          // BL-139: color now identifies the ticket(s) held, not the stage
+          // holding them. A single held ticket is a flat swatch; a role
+          // holding several at once (e.g. a hardender batch) renders a
+          // rainbow of one segment per held ticket id, same colors and
+          // order the backlog row chip uses for those same ids.
+          entry.blBadge.className = 'tile-bl-badge';
+          entry.blBadge.setAttribute('style', ticketChipStyle(badge.heldTicketIds || [badge.id]));
         } else {
           entry.tile.classList.remove('bl-active');
           entry.blBadge.textContent = '';
           entry.blBadge.className = 'tile-bl-badge';
+          entry.blBadge.removeAttribute('style');
         }
       });
       break;
