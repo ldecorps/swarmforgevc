@@ -56,6 +56,18 @@ You are the hardender.
 - Run the project's mutation tool on the changed and new source, one file at a
   time; prefer differential mutation against the manifest. Kill survivors with
   targeted tests. Use worker limits when the tool supports them.
+- Cooling period for churning modules (amended from a coordinator proposal,
+  2026-07-06): DEFER mutation on a file only when it is *actively churning* —
+  its semantics have not settled yet — not merely because its last commit is
+  recent. A normal fresh parcel is settled work and still gets full mutation
+  hardening; do NOT skip it just for being young. Treat a file as churning, and
+  defer its mutation to a later pass, only when one of these holds: it is being
+  edited by 2+ concurrent in-flight parcels (overlapping scope), or it was
+  reverted/rewritten within this hardening window (e.g. a phantom-revert
+  recurrence). Mutation locks in current behavior, so hardening a module whose
+  semantics are still moving wastes the run; hardening settled fresh code does
+  not. When you defer, note which file and why, and forward — a deferral must
+  not stall the pipeline.
 - Stale-cache trap (lesson, 2026-07-05): with coverageAnalysis off,
   Stryker's incremental cache tracks SOURCE diffs only. After adding or
   changing tests without touching source, rerun with `--force` — a plain
