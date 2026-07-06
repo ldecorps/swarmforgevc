@@ -2,21 +2,40 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const test = require('node:test');
-
+const tmuxClient = require('../out/swarm/tmuxClient');
 const { PaneTailer } = require('../out/panel/paneTailer');
-const { installFakeTmux } = require('./helpers/fakeTmux');
 
 // BL-070: tiles retain scrollback memory beyond the visible pane rows.
 //
-// This drives the REAL PaneTailer through a sequence of REAL (faked) tmux
-// capture-pane calls shaped exactly like the diagnosed regression — a small
+// This drives the REAL PaneTailer through a sequence of tmux capture-pane
+// results shaped exactly like the diagnosed regression — a small
 // alternate-screen window (a handful of visible rows, tmux history_size
 // permanently 0) that only ever shows the CURRENT tail of a much longer
 // transcript. It asserts on the actual retained/rendered text reaching
-// onOutput, not on the tmux argv used to request the capture — an
-// args-level assertion (e.g. "-S -500 was passed") is exactly what stayed
-// green while BL-052 silently broke this, per the ticket's own gate.
+// onOutput, not on the tmux argv used to request the capture.
+//
+// BL-124/BL-125: the tmux double is now IN-PROCESS. The previous helper
+// installed a fake `tmux` executable on PATH, so every PaneTailer.poll()
+// spawned a node subprocess (has-session + capture-pane + display-message);
+// at 15-25 polls per test that was 30s+ and made the suite time out. Here we
+// spy the spawn-backed tmuxClient functions (PaneTailer calls them as
+// tmuxClient_1.fn(...), so a spy on the module object intercepts them) and
+// feed the captured window via a shared mutable — identical behavior, in
+// milliseconds, with no real timers and no subprocesses.
+let capturedWindow = '';
+beforeEach(() => {
+  vi.spyOn(tmuxClient, 'sessionExists').mockReturnValue(true);
+  vi.spyOn(tmuxClient, 'getPaneBaseIndex').mockReturnValue(0);
+  vi.spyOn(tmuxClient, 'getPaneCommand').mockReturnValue('claude');
+  vi.spyOn(tmuxClient, 'capturePane').mockImplementation(() => ({ stdout: capturedWindow, exitCode: 0, stderr: '' }));
+  vi.spyOn(tmuxClient, 'resizeWindow').mockImplementation(() => {});
+  vi.spyOn(tmuxClient, 'setHistoryLimit').mockImplementation(() => {});
+  vi.spyOn(tmuxClient, 'setWindowSizeManual').mockImplementation(() => {});
+  vi.spyOn(tmuxClient, 'sendKeys').mockImplementation(() => ({ exitCode: 0, stdout: '', stderr: '' }));
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 function mkTmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-panetailer-scrollback-'));
@@ -37,100 +56,81 @@ function windowAt(n) {
   return [...contentLines, '❯ '].join('\n');
 }
 
-function captureRule(stdout) {
-  return [
-    { subcommand: 'has-session', exitCode: 0 },
-    { subcommand: 'capture-pane', exitCode: 0, stdout },
-    { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
-    { exitCode: 0, stdout: '' },
-  ];
-}
-
 test('BL-070: content that has scrolled off the visible window is still reachable in the retained transcript', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux(captureRule(windowAt(0)));
-  try {
-    const updates = [];
-    const tailer = new PaneTailer(targetPath, (u) => updates.push(...u), undefined, undefined, undefined, 500);
-    tailer.start(1_000_000); // one synchronous poll only; we drive the rest by hand
-    tailer.stop();
+  capturedWindow = windowAt(0);
 
-    // Simulate the pane scrolling forward one line at a time, as a real TUI
-    // would as the agent prints output — each capture only ever shows the
-    // CURRENT 3-line window plus the footer, exactly like the diagnosed
-    // 7-row alternate-screen pane.
-    for (let n = 1; n <= 15; n++) {
-      fake.setRules(captureRule(windowAt(n)));
-      tailer.poll();
-    }
+  const updates = [];
+  const tailer = new PaneTailer(targetPath, (u) => updates.push(...u), undefined, undefined, undefined, 500);
+  tailer.start(1_000_000); // one synchronous poll only; we drive the rest by hand
+  tailer.stop();
 
-    const latest = updates[updates.length - 1].text;
-
-    // The most recent capture alone would only ever show line13/14/15 plus
-    // the footer — that's the exact symptom reported (only the last few
-    // lines, scrolling up reveals nothing). The retained transcript must
-    // reach much further back than that.
-    assert.match(latest, /line0\b/, 'the earliest line must still be reachable — this is the actual regression test');
-    assert.match(latest, /line8\b/, 'a middle line, long since scrolled off the visible window, must also be reachable');
-    assert.match(latest, /line15\b/, 'the current live line must still be present');
-    assert.ok(latest.trimEnd().endsWith('❯'), 'the footer stays pinned at the end of the retained transcript');
-  } finally {
-    fake.restore();
+  // Simulate the pane scrolling forward one line at a time, as a real TUI
+  // would as the agent prints output — each capture only ever shows the
+  // CURRENT 3-line window plus the footer, exactly like the diagnosed
+  // 7-row alternate-screen pane.
+  for (let n = 1; n <= 15; n++) {
+    capturedWindow = windowAt(n);
+    tailer.poll();
   }
+
+  const latest = updates[updates.length - 1].text;
+
+  // The most recent capture alone would only ever show line13/14/15 plus
+  // the footer — that's the exact symptom reported (only the last few
+  // lines, scrolling up reveals nothing). The retained transcript must
+  // reach much further back than that.
+  assert.match(latest, /line0\b/, 'the earliest line must still be reachable — this is the actual regression test');
+  assert.match(latest, /line8\b/, 'a middle line, long since scrolled off the visible window, must also be reachable');
+  assert.match(latest, /line15\b/, 'the current live line must still be present');
+  assert.ok(latest.trimEnd().endsWith('❯'), 'the footer stays pinned at the end of the retained transcript');
 });
 
 // BL-070 tile-memory-02: retained history is bounded by the historyLines setting
 test('BL-070: retained history is bounded by historyLines even across many scroll steps', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux(captureRule(windowAt(0)));
-  try {
-    const updates = [];
-    // A small cap (10 lines) so the boundary is reachable in a short test.
-    const tailer = new PaneTailer(targetPath, (u) => updates.push(...u), undefined, undefined, undefined, 10);
-    tailer.start(1_000_000);
-    tailer.stop();
+  capturedWindow = windowAt(0);
 
-    for (let n = 1; n <= 25; n++) {
-      fake.setRules(captureRule(windowAt(n)));
-      tailer.poll();
-    }
+  const updates = [];
+  // A small cap (10 lines) so the boundary is reachable in a short test.
+  const tailer = new PaneTailer(targetPath, (u) => updates.push(...u), undefined, undefined, undefined, 10);
+  tailer.start(1_000_000);
+  tailer.stop();
 
-    const latest = updates[updates.length - 1].text;
-    const lineCount = latest.split('\n').length;
-
-    assert.ok(lineCount <= 11, `retained transcript (+footer) must stay near the 10-line cap, got ${lineCount} lines`);
-    assert.doesNotMatch(latest, /line0\b/, 'content far older than the cap must have been trimmed');
-    assert.match(latest, /line25\b/, 'the current live line is always retained');
-  } finally {
-    fake.restore();
+  for (let n = 1; n <= 25; n++) {
+    capturedWindow = windowAt(n);
+    tailer.poll();
   }
+
+  const latest = updates[updates.length - 1].text;
+  const lineCount = latest.split('\n').length;
+
+  assert.ok(lineCount <= 11, `retained transcript (+footer) must stay near the 10-line cap, got ${lineCount} lines`);
+  assert.doesNotMatch(latest, /line0\b/, 'content far older than the cap must have been trimmed');
+  assert.match(latest, /line25\b/, 'the current live line is always retained');
 });
 
 // BL-070 tile-memory-05: an unchanged screen does not multiply history, end to end
 test('BL-070: a pane that repaints the same content across many polls does not grow the retained transcript', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const steadyWindow = windowAt(5);
-  const fake = installFakeTmux(captureRule(steadyWindow));
-  try {
-    const updates = [];
-    const tailer = new PaneTailer(targetPath, (u) => updates.push(...u), undefined, undefined, undefined, 500);
-    tailer.start(1_000_000);
-    tailer.stop();
-    const afterFirstPoll = updates.length;
+  capturedWindow = windowAt(5);
 
-    for (let i = 0; i < 20; i++) {
-      tailer.poll(); // identical capture-pane output every time
-    }
+  const updates = [];
+  const tailer = new PaneTailer(targetPath, (u) => updates.push(...u), undefined, undefined, undefined, 500);
+  tailer.start(1_000_000);
+  tailer.stop();
+  const afterFirstPoll = updates.length;
 
-    assert.equal(
-      updates.length,
-      afterFirstPoll,
-      'an unchanged capture must not produce further onOutput updates at all'
-    );
-  } finally {
-    fake.restore();
+  for (let i = 0; i < 20; i++) {
+    tailer.poll(); // identical capture-pane output every time
   }
+
+  assert.equal(
+    updates.length,
+    afterFirstPoll,
+    'an unchanged capture must not produce further onOutput updates at all'
+  );
 });

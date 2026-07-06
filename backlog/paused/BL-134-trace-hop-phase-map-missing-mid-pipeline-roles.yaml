@@ -1,0 +1,50 @@
+id: BL-134
+title: trace-hop.js PHASE_MAP missing architect/hardender/documenter roles
+milestone: M3
+status: todo
+priority: 08
+assigned_to: coder
+
+description: |
+  BUG (hardener, 2026-07-06): PHASE_MAP in extension/src/tools/trace-hop.ts
+  maps only coordinator/specifier/coder/cleaner/QA to phases. The three
+  mid-pipeline roles — architect, hardender, documenter — are absent, so
+  roleToPhase() throws `Unknown role` and every trace-hop invocation from
+  those roles fails. A pipeline-validation tracer bullet (BL-020/BL-021)
+  therefore cannot record hops through the middle of the chain; the live
+  bullet trace-20260706T080349z is blocked at the hardener right now.
+
+  Wanted: PHASE_MAP covers every role in the pipeline chain
+  (specifier, coder, cleaner, architect, hardender, documenter, QA) plus
+  coordinator, each with a sensible phase name (e.g. architect ->
+  'architecture-review', hardender -> 'hardening', documenter ->
+  'documenting'; exact names are the coder's choice, but they must be
+  distinct and stable). Constraint: keep the existing five mappings
+  unchanged — logs already written with those phase names must stay
+  consistent. The unknown-role error stays for genuinely unknown roles.
+
+acceptance: |
+  Feature: trace-hop maps every pipeline role to a phase
+
+  # BL-134 mid-pipeline-roles-mapped-01
+  Scenario Outline: a mid-pipeline role records a receive hop without error
+    Given a trace id already seeded at .swarmforge/traces/<id>.log
+    When trace-hop.js <id> receive is run with SWARMFORGE_ROLE=<role>
+    Then the command exits 0
+    And the log gains a STATE_CHANGE line "received-><phase>" for <role>
+
+    Examples:
+      | role       |
+      | architect  |
+      | hardender  |
+      | documenter |
+
+  # BL-134 existing-mappings-unchanged-02
+  Scenario: existing role mappings keep their current phase names
+    When roleToPhase is called for coordinator, specifier, coder, cleaner, QA
+    Then it returns routing, specifying, coding, verifying, qa-verifying respectively
+
+  # BL-134 unknown-role-still-rejected-03
+  Scenario: an unknown role still fails loudly
+    When trace-hop.js <id> receive is run with SWARMFORGE_ROLE=intruder
+    Then the command exits non-zero naming the unknown role

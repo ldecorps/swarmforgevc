@@ -1,6 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
-
 const { renderPanel } = require('./helpers/renderPanel');
 
 // BL-072's hard requirement: at least one test must assert on the rendered

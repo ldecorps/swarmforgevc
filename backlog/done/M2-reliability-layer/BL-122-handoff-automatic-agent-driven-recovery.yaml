@@ -12,6 +12,15 @@ notes: |
   BL-121, never before it.
   OPERATOR DIRECTIVE: "We have to have a way to detect when it breaks, and
   agents have to fix it. This auto-fixing behaviour has to be there."
+  INTERIM STOPGAP (operator, 2026-07-06): a standalone
+  `.swarmforge/dead-letter-sweep.sh --loop 300` is running NOW purely for
+  urgency (archives superseded notes, re-delivers real parcels + nudges idle
+  recipients). It is a bridge, NOT the design — the operator's intent is that
+  this recovery lives IN the swarm/extension, and the standalone is RETIRED
+  once BL-122 lands. Part of BL-122's definition of done: decommission the
+  stopgap — stop its daemon (`kill $(cat .swarmforge/dead-letter-sweep.pid)`)
+  and remove the script, so there is exactly ONE owner of recovery (no two
+  mechanisms re-delivering the same parcel).
 
 description: |
   The RECOVERY half of the systemic handoff fix (detection is BL-121). When

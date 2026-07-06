@@ -1,0 +1,83 @@
+id: BL-131
+title: cut unit test suite runtime drastically by eliminating real wall-clock timers — replace with fake/injected clocks
+milestone: M2
+status: todo
+priority: 05
+assigned_to: specifier
+
+# held (coordinator, 2026-07-06): not promoted yet despite drain. BL-131's
+# scope includes extension/src/watchdog/chaserMonitor.ts and
+# extension/test/chaserMonitor.test.js - BL-122 (currently at the hardener
+# stage, unmerged) just changed both of those exact files. Promote once
+# BL-121/122 land (QA-approved + merged) to avoid concurrent edits to the
+# same chase/recovery-timer plumbing (same reasoning as BL-128's hold).
+
+description: |
+  OPERATOR DIRECTIVE (2026-07-06): the unit suite is measurably slow, and the
+  measured cause is real timers. `.test-durations.jsonl` (repo root) shows
+  recent runs at 47-91 seconds for only 88 tests
+  ({"test_count":88,"duration_ms":91465} etc.) — far from the "seconds" the
+  engineering article already mandates (Test Speed And Isolation).
+
+  Evidence of the violation, found in the extension test suite (grep for
+  `setTimeout|setInterval|await new Promise.*setTimeout` under
+  extension/test/): real waits currently exist in at least
+  paneTailerClass.test.js, activateBounceWatcher.test.js, idleClear.test.js,
+  bounceWatcher.test.js, bounceDrain.test.js, chaserMonitor.test.js, and
+  swarmLauncher.test.js — several waiting 100-150ms each, polling with
+  `setTimeout(check, intervalMs)` loops instead of driving time explicitly.
+  This directly contradicts the standing rule (constitution engineering
+  article, "Test Speed And Isolation"): real timers and wall-clock waits in
+  tests are banned; time must be driven by an injected/fake clock instead.
+
+  This ticket is the enforcement pass: an existing rule is being violated by
+  existing tests, not a new rule. Scope is test-only — replace real
+  setTimeout/setInterval waits and poll loops in the affected test files with
+  a fake/injectable clock (e.g. a shared test clock double, or the project's
+  existing timer-injection pattern if one already exists in production code)
+  so every test advances time synchronously and completes without a real
+  delay. Where the production code under test itself owns the timer
+  (setInterval/setTimeout call sites in src/), the timer must be injectable
+  (constructor/param clock, not a bare global timer call) so the test can
+  drive it without waiting — extend the production code's testability only
+  as far as necessary to make that possible; do not change its runtime
+  behavior.
+
+  Do not touch property tests or Gherkin acceptance timing (out of scope,
+  per the shared engineering article's existing separation of concerns).
+
+acceptance: |
+  Feature: unit test suite runs without real wall-clock waits
+
+  # BL-131 no-real-timers-01
+  Scenario: no test file under extension/test waits on the real clock
+    Given the full extension unit test suite
+    When it runs
+    Then no test contains a bare `setTimeout`/`setInterval` call or an
+      `await new Promise(resolve => setTimeout(resolve, <ms>))` wait on the
+      real clock
+    And every timer-dependent behavior is driven by an injected/fake clock
+      advanced explicitly within the test
+
+  # BL-131 suite-speed-02
+  Scenario: the suite runtime drops drastically
+    Given the current recorded baseline in .test-durations.jsonl
+      (88 tests, ~47000-91000 ms)
+    When the real-timer removal lands
+    Then a full unit test run completes in on the order of a few seconds,
+      not tens of seconds, for the same or larger test count
+
+  # BL-131 behavior-preserved-03
+  Scenario: timer-dependent production behavior is unchanged
+    Given a module whose timer call site is made injectable to satisfy
+      no-real-timers-01
+    Then its production (non-test) runtime behavior and default interval/
+      timeout values are identical to before the change
+
+  # Non-behavioral gates:
+  #  - Test-only change in intent; production code may only change to make
+  #    an existing timer injectable, never to alter runtime timing behavior.
+  #  - Does not apply to property tests or Gherkin acceptance timing (already
+  #    excluded by the shared engineering article).
+  #  - This enforces the existing "Test Speed And Isolation" rule already in
+  #    the engineering article; it does not add a new rule.

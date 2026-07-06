@@ -326,7 +326,7 @@ parse_config() {
     fi
 
     case "$agent" in
-      claude|codex|copilot|grok) ;;
+      claude|codex|copilot|grok|aider) ;;
       *)
         echo -e "${RED}Error:${RESET} Unsupported agent '$agent' for role '$role'"
         exit 1
@@ -532,6 +532,7 @@ check_backend_dependencies() {
       codex) check_dependency codex ;;
       copilot) check_dependency copilot ;;
       grok) check_dependency grok ;;
+      aider) check_dependency aider ;;
     esac
   done
 }
@@ -690,6 +691,9 @@ write_role_launch_script() {
     grok)
       launch_body="grok${extra_cli:+ $extra_cli} --cwd '$role_worktree' --permission-mode acceptEdits --rules \"\$(cat '$prompt_file')\""
       ;;
+    aider)
+      launch_body="aider${extra_cli:+ $extra_cli} --yes-always --message-file '$prompt_file'"
+      ;;
     *)
       echo -e "${RED}Error:${RESET} Unsupported agent '$agent' for role '$role'"
       exit 1
@@ -699,6 +703,18 @@ write_role_launch_script() {
   local billing_guard=""
   if [[ "$agent" == "claude" ]]; then
     billing_guard=$'unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN\n'
+  else
+    # BL-130: an alternate-runtime role (e.g. aider on Mistral/OpenAI) needs a
+    # provider API key to authenticate. Forward it only if already present in
+    # this process's own environment (resolved upstream from VS Code
+    # SecretStorage/Keychain, per src/notify/secrets.ts) - never written to a
+    # dotfile, settings file, launch script default, or the repo.
+    local provider_key
+    for provider_key in OPENAI_API_KEY MISTRAL_API_KEY; do
+      if [[ -n "${(P)provider_key:-}" ]]; then
+        billing_guard+="export $provider_key='${(P)provider_key}'"$'\n'
+      fi
+    done
   fi
 
   cat > "$launch_script" <<LAUNCH

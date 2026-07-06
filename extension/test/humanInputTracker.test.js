@@ -1,13 +1,11 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
-
 const {
   recordHumanInput,
   lastHumanInputMs,
   resetHumanInputTracker,
 } = require('../out/swarm/humanInputTracker');
 
-test.beforeEach(() => {
+beforeEach(() => {
   resetHumanInputTracker();
 });
 
