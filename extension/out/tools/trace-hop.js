@@ -117,12 +117,17 @@ function resolveTracesDir(envDir, cwd) {
         return envDir;
     }
     try {
+        const resolvedCwd = cwd ?? process.cwd();
         const gitCommonDir = (0, child_process_1.execSync)('git rev-parse --git-common-dir', {
-            cwd: cwd ?? process.cwd(),
+            cwd: resolvedCwd,
             encoding: 'utf-8',
         }).trim();
-        // git-common-dir is .git; go up one level to reach repo root
-        const repoRoot = path.resolve(gitCommonDir, '..');
+        // git-common-dir is relative (".git") in a plain repo but absolute in a
+        // linked worktree (it points at the main repo's .git) - resolve it
+        // against resolvedCwd (not process.cwd()) so a relative result lands in
+        // the right place; path.resolve discards the leading segment when a
+        // later one is already absolute, so this handles both cases.
+        const repoRoot = path.resolve(resolvedCwd, gitCommonDir, '..');
         return path.join(repoRoot, '.swarmforge', 'traces');
     }
     catch (error) {

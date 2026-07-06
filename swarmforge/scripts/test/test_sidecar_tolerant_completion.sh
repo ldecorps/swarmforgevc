@@ -61,6 +61,20 @@ fi
 [[ ! -d "$BATCH_DIR" ]] || fail "01: batch directory was not deleted"
 pass "01: batch completion tolerates and removes an orphaned nudge sidecar, deletes the batch dir"
 
+# ── 01c: batch completion tolerates and removes an orphaned .chase.json-only
+#         sidecar too, not just .nudge ───────────────────────────────────────
+ROOT1C="$(mk_root)"
+BATCH_DIR_C="$ROOT1C/.swarmforge/handoffs/inbox/in_process/batch_20260706T000003Z"
+HANDOFF1C="$(make_handoff "$BATCH_DIR_C" "batch-d")"
+touch "${HANDOFF1C}.chase.json"
+rm -f "$HANDOFF1C"
+mkdir -p "$ROOT1C/.swarmforge/handoffs/inbox/completed"
+
+OUT="$(cd "$ROOT1C" && SWARMFORGE_ROLE=coder bb "$DONE_BATCH" 2>&1)" && RC=0 || RC=$?
+[[ "$RC" == 0 ]] || fail "01c: batch completion aborted on an orphaned .chase.json-only batch; got: $OUT"
+[[ ! -d "$BATCH_DIR_C" ]] || fail "01c: batch directory was not deleted"
+pass "01c: batch completion tolerates and removes an orphaned .chase.json sidecar, deletes the batch dir"
+
 # ── 01b: batch completion also cleans a sidecar left behind after moving the
 #         real handoff out (the more common ordering) ──────────────────────
 ROOT1B="$(mk_root)"
