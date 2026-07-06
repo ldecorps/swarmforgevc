@@ -1,0 +1,62 @@
+id: BL-136
+title: BUG — tracer-bullet hops stop being logged after the specifier; the pipeline succeeds but the tracer test is blind and falsely reports timeout
+milestone: M2
+status: todo
+priority: 03
+assigned_to: coder
+
+description: |
+  From the 2026-07-06 tracer exercise. A tracer bullet
+  (trace-20260706T080349z) flowed the FULL pipeline end to end and reached QA
+  (verified by following the real per-worktree handoff notes: coordinator ->
+  specifier -> coder -> cleaner -> architect -> hardener -> documenter -> QA,
+  completed ~09:19). The handoff worked. BUT the trace log
+  (.swarmforge/traces/<id>.log) only recorded TWO hops — coordinator (seed) and
+  specifier (receive/decide). The worker roles (coder onward) forwarded the note
+  but NEVER appended a trace hop (neither the main traces dir nor their own
+  worktree traces dirs got a hop). So `tracer-bullet-launcher.js --watch`
+  reported TIMEOUT / "did not reach cleaner" even though the pipeline PASSED.
+
+  Net: the tracer test cannot observe a successful run past the specifier — it
+  falsely reports failure. Likely causes to check:
+  - The `TRACE <id>` recognition is lost downstream: the specifier's forwarded
+    note may not preserve the `TRACE <id>` body prefix, so the coder+ treat it
+    as normal work (which is exactly what happened — they ran the note through
+    the real pipeline), skipping `trace-hop.js` entirely.
+  - Worker roles run trace-hop from their worktree; hops must aggregate to ONE
+    observable log the launcher reads (they wrote to neither).
+  - Format drift: the log mixes the old `TRACE <id> HOP <role> …` line (seed)
+    with the newer `HOP <role> … / STATE_CHANGE / DECISION` lines (specifier).
+
+  Also fix two launcher gaps found the same session:
+  - `--watch` mode does NOT inject the seed note (had to be injected by hand);
+    it should send the `TRACE <id>` note to the coordinator itself.
+  - The launcher parser must read whatever trace-hop actually writes now.
+
+  Seams: extension/out/tools/trace-hop.js, tracer-bullet-launcher.ts, the
+  per-role "Tracer Bullet Participation" prompt blocks.
+
+acceptance: |
+  Feature: a tracer bullet is observable end to end
+
+  # BL-136 all-hops-01
+  Scenario: every role appends an observable hop
+    Given a tracer bullet seeded to the coordinator
+    When it flows the full pipeline to QA
+    Then one trace log the launcher reads contains a hop for EACH role
+      (coordinator, specifier, coder, cleaner, architect, hardender, documenter, QA)
+
+  # BL-136 recognition-02
+  Scenario: downstream roles still recognize the bullet as a tracer
+    Given the specifier forwards the bullet to the coder
+    Then the forwarded note still starts with `TRACE <id>` so the coder runs
+      trace-hop (does NOT process it as real work)
+
+  # BL-136 launcher-seeds-03
+  Scenario: --watch seeds and reports a full pass
+    Given `tracer-bullet-launcher.js --watch`
+    Then it injects the seed note itself
+    And it reports PASS when the bullet reaches QA (not a false TIMEOUT)
+
+  # Non-behavioral: this is test/observability tooling; does not change the
+  # handoff transport, which is confirmed working.
