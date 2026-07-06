@@ -39,11 +39,13 @@ exports.parseHandoffHeaderField = parseHandoffHeaderField;
 exports.listDeadLettersForRole = listDeadLettersForRole;
 exports.listDeadLetters = listDeadLetters;
 exports.readChaseCount = readChaseCount;
+exports.readLastChasedAtMs = readLastChasedAtMs;
 exports.writeChaseCount = writeChaseCount;
 exports.respawnCooldownPath = respawnCooldownPath;
 exports.readRespawnCooldownUntilMs = readRespawnCooldownUntilMs;
 exports.writeRespawnCooldownUntilMs = writeRespawnCooldownUntilMs;
 exports.scanInboxNew = scanInboxNew;
+exports.computeChaseBackoffSeconds = computeChaseBackoffSeconds;
 exports.decideItemAction = decideItemAction;
 exports.nudgePath = nudgePath;
 exports.readNudgeCount = readNudgeCount;
@@ -109,8 +111,27 @@ function readChaseCount(handoffFilePath) {
         return 0;
     }
 }
-function writeChaseCount(handoffFilePath, count) {
-    fs.writeFileSync(sidecarPath(handoffFilePath), JSON.stringify({ chaseCount: count }), 'utf-8');
+function readLastChasedAtMs(handoffFilePath) {
+    const sc = sidecarPath(handoffFilePath);
+    try {
+        const data = JSON.parse(fs.readFileSync(sc, 'utf-8'));
+        return typeof data.lastChasedAtMs === 'number' ? data.lastChasedAtMs : null;
+    }
+    catch {
+        return null;
+    }
+}
+// BL-135: writeChaseCount also carries the wall-clock time of the chase it
+// records, so the next sweep can compute a backoff interval. lastChasedAtMs
+// is optional so existing chaseCount-only callers keep working; when
+// omitted, any previously-recorded timestamp is preserved rather than lost.
+function writeChaseCount(handoffFilePath, count, lastChasedAtMs) {
+    const resolvedLastChasedAtMs = lastChasedAtMs ?? readLastChasedAtMs(handoffFilePath);
+    const state = { chaseCount: count };
+    if (resolvedLastChasedAtMs !== null) {
+        state.lastChasedAtMs = resolvedLastChasedAtMs;
+    }
+    fs.writeFileSync(sidecarPath(handoffFilePath), JSON.stringify(state), 'utf-8');
 }
 // BL-087: rate-limits respawns per role so a repeated misjudgment cannot
 // loop. Stored one level up from inbox/new, sibling to inbox/in_process,
@@ -151,9 +172,18 @@ function scanInboxNew(inboxNewDir) {
             filePath,
             mtimeMs: stat.mtimeMs,
             chaseCount: readChaseCount(filePath),
+            lastChasedAtMs: readLastChasedAtMs(filePath),
         });
     }
     return items;
+}
+// BL-135: how long to wait before re-chasing a recipient that is showing
+// recent activity (busy, not stuck) — doubles per chase already sent so a
+// long-running turn is nudged with growing gaps instead of every sweep tick.
+function computeChaseBackoffSeconds(chaseCount, config) {
+    const base = config.chaseBackoffBaseSeconds ?? config.chaseIntervalSeconds;
+    const max = config.chaseBackoffMaxSeconds ?? config.stuckInProcessTimeoutSeconds;
+    return Math.min(base * Math.pow(2, chaseCount), max);
 }
 // BL-087: absence of heartbeat evidence must never, by itself, justify a
 // respawn — the heartbeat file this reads from routinely does not exist, so
@@ -176,7 +206,7 @@ function decideStaleItemAction(chaseCount, config, liveness) {
     }
     return isUnresponsiveLiveness(liveness) ? 'respawned' : 'dead-lettered';
 }
-function decideItemAction(itemMtimeMs, chaseCount, nowMs, config, liveness, lastActivityMs) {
+function decideItemAction(itemMtimeMs, chaseCount, nowMs, config, liveness, lastActivityMs, lastChasedAtMs = null) {
     const ageSeconds = (nowMs - itemMtimeMs) / 1000;
     if (ageSeconds < config.chaseTimeoutSeconds) {
         return 'skipped';
@@ -184,13 +214,19 @@ function decideItemAction(itemMtimeMs, chaseCount, nowMs, config, liveness, last
     const idleSeconds = (nowMs - lastActivityMs) / 1000;
     const hasRecentActivity = idleSeconds < config.stuckInProcessTimeoutSeconds;
     // BL-109: a recipient actively generating for a long turn must never have
-    // its own queued mail dead-lettered out from under it - that previously
-    // happened once chaseCount reached maxChases even while genuinely busy,
-    // which is exactly self-resolving activity, not unresponsiveness. Keep
-    // chasing on the existing interval indefinitely; the recipient's own
-    // idle-time ready_for_next.sh sees the mail once the turn actually ends.
+    // its own queued mail dead-lettered out from under it - the recipient's
+    // own idle-time ready_for_next.sh sees the mail once the turn actually
+    // ends. BL-135: but that must not mean hammering the pane with a wake-up
+    // on every sweep tick either (98 nudges in ~16min while genuinely busy) -
+    // once a chase has already been sent, back off with a growing interval
+    // instead of re-chasing on the raw sweep tick.
     if (hasRecentActivity) {
-        return 'chased';
+        if (lastChasedAtMs === null) {
+            return 'chased';
+        }
+        const secondsSinceLastChase = (nowMs - lastChasedAtMs) / 1000;
+        const backoffSeconds = computeChaseBackoffSeconds(chaseCount, config);
+        return secondsSinceLastChase >= backoffSeconds ? 'chased' : 'skipped';
     }
     return decideStaleItemAction(chaseCount, config, liveness);
 }
@@ -296,10 +332,10 @@ function maybeWakeOnCooldownExpiry(role, cooldownUntilMs, nowMs, adapters) {
     adapters.sendWakeUp(role);
     adapters.onCooldownExpired?.(role, cooldownUntilMs);
 }
-function applyInboxItemAction(role, item, action, adapters) {
+function applyInboxItemAction(role, item, action, adapters, nowMs) {
     if (action === 'chased') {
         adapters.sendWakeUp(role);
-        writeChaseCount(item.filePath, item.chaseCount + 1);
+        writeChaseCount(item.filePath, item.chaseCount + 1, nowMs);
     }
     else if (action === 'respawned') {
         adapters.triggerRespawn(role);
@@ -321,7 +357,7 @@ function sweepRoleInbox(role, inboxNewDir, nowMs, config, adapters) {
     const lastActivityMs = adapters.getLastActivityMs(role);
     const respawnCooldownUntilMs = readRespawnCooldownUntilMs(inboxNewDir);
     for (const item of items) {
-        let action = decideItemAction(item.mtimeMs, item.chaseCount, nowMs, config, liveness, lastActivityMs);
+        let action = decideItemAction(item.mtimeMs, item.chaseCount, nowMs, config, liveness, lastActivityMs, item.lastChasedAtMs);
         // BL-087: a respawn decision made while still cooling down from the
         // last respawn of this role is downgraded to a chase instead - never
         // silently dropped, so a genuinely still-unresponsive role keeps
@@ -329,7 +365,7 @@ function sweepRoleInbox(role, inboxNewDir, nowMs, config, adapters) {
         if (action === 'respawned' && (0, cooldownScheduler_1.isCoolingDown)(respawnCooldownUntilMs, nowMs)) {
             action = 'chased';
         }
-        applyInboxItemAction(role, item, action, adapters);
+        applyInboxItemAction(role, item, action, adapters, nowMs);
         if (action === 'respawned') {
             writeRespawnCooldownUntilMs(inboxNewDir, nowMs + config.respawnCooldownSeconds * 1000);
         }
