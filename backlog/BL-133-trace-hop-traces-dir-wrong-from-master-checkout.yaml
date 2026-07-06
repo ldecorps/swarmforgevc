@@ -1,0 +1,53 @@
+id: BL-133
+title: trace-hop.js resolves traces dir wrong when run from the master checkout (coordinator/specifier)
+milestone: M3
+status: todo
+priority: 10
+assigned_to: specifier
+
+description: |
+  OPERATOR (2026-07-06): running the tracer-bullet CLI as coordinator
+  (`node extension/out/tools/trace-hop.js <id> receive` /
+  `decide route_to_specifier ...`) wrote its log entries to
+  /Users/ldecorps/projects/.swarmforge/traces/ — one directory ABOVE the repo
+  root — instead of /Users/ldecorps/projects/swarmforgevc/.swarmforge/traces/
+  where the trace's seed entry actually lives.
+
+  Root cause: `resolveTracesDir()` in extension/src/tools/trace-hop.ts does
+  `path.resolve(gitCommonDir, '..', '..')` where gitCommonDir comes from
+  `git rev-parse --git-common-dir`. In a role WORKTREE (coder, cleaner,
+  architect, hardender, documenter, QA) that command returns an absolute
+  path, so the resolve is correct. But in the MAIN checkout (`master`, used
+  by coordinator and specifier) it returns the relative string `.git`, so
+  path.resolve anchors it against process.cwd() and walks one level too far
+  up, landing outside the repo entirely.
+
+  Effect: every tracer-bullet hop recorded by the coordinator or specifier
+  silently lands in a stray directory instead of the shared
+  .swarmforge/traces/<id>.log, so those two roles' hops never actually
+  appear next to hops recorded by worktree roles for the same trace id —
+  breaking the pipeline-validation bullet's whole purpose (BL-020/BL-021).
+
+  Wanted: resolveTracesDir must produce the same repo-root-relative
+  .swarmforge/traces/ path regardless of whether `git rev-parse
+  --git-common-dir` returns an absolute path (worktree) or the relative
+  `.git` (main checkout) — e.g. resolve gitCommonDir against the repo's
+  actual working directory (`git rev-parse --show-toplevel`, or
+  path.resolve(cwd, gitCommonDir) before appending '..') rather than
+  assuming it is already absolute.
+
+acceptance: |
+  Feature: trace-hop resolves one shared traces directory regardless of checkout type
+
+  # BL-133 master-checkout-01
+  Scenario: a hop recorded from the master checkout lands in the same trace log as a hop from a worktree
+    Given a trace id already seeded at .swarmforge/traces/<id>.log
+    When trace-hop.js <id> receive is run with SWARMFORGE_ROLE=coordinator from the main (master) checkout
+    Then the HOP/STATE_CHANGE lines are appended to that same repo-rooted .swarmforge/traces/<id>.log
+    And no file is created outside the repository
+
+  # BL-133 worktree-still-works-02
+  Scenario: existing worktree-role behavior is unchanged
+    Given a trace id already seeded at .swarmforge/traces/<id>.log
+    When trace-hop.js <id> receive is run with SWARMFORGE_ROLE=coder from a role worktree
+    Then the hop lands in the same repo-rooted .swarmforge/traces/<id>.log as before
