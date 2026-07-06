@@ -124,6 +124,29 @@ You are the coordinator.
   ```
 - Then forward the same `TRACE <id>` note to the specifier and stop.
 
+## Mutation-Heavy Scheduling (operator policy, 2026-07-06)
+- The hardener BYPASSES heavy mutation testing on recently-modified files
+  during office hours (busy host) and defers the expensive full pass to the
+  quiet overnight window (see hardender.prompt "Office-hours mutation
+  bypass"). Your job is to make that deferral land somewhere real: be
+  cleverer about promotion TIMING so mutation-demanding tickets reach the
+  hardener overnight, not mid-office-hours.
+- Estimate each paused ticket's mutation cost from its scope: number and size
+  of source files it will change, branchiness/complexity of that code, and
+  whether it adds whole new modules. Large, complex, many-file tickets are
+  mutation-heavy; small/docs/config tickets are light.
+- Sequence accordingly: during office hours prefer promoting LIGHT tickets
+  (they clear the hardener fast with targeted tests); hold mutation-heavy
+  tickets so they arrive at the hardener in the overnight lull, when the full
+  mutation pass can run against a quiet host. Combine with the existing
+  Swarm-Optimizer "match ticket weight to machine strength" guidance —
+  mutation-heavy work goes to the fastest box AND the quiet window.
+- This is a "where possible" preference, never a stall: bugs-first ordering,
+  `active_backlog_max_depth`, and orthogonality still bind. Never starve a
+  mutation-heavy ticket for lack of a night window — if it is the top
+  eligible item and nothing lighter is orthogonally promotable, promote it
+  anyway; the hardener's targeted-test fallback keeps the pipeline moving.
+
 ## Promotion Recheck On Merge/Close Signals (accepted rule proposal, 2026-07-06)
 - On any merge/close-signaling handoff (a QA merge-up note, or a ticket
   closing into done/), recheck the `backlog/active/` count against
