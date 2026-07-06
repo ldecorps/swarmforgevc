@@ -1,7 +1,7 @@
 id: BL-126
 title: "BUG: recurring phantom-revert diffs at session start — root-cause the second live mechanism"
 milestone: M2
-status: todo
+status: done
 priority: 10
 direction: expedite
 source: "hardender rule_proposal 000070 (2026-07-05); rule accepted into engineering article, investigation split out by specifier"

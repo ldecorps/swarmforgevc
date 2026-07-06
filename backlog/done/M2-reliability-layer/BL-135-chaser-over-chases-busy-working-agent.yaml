@@ -1,7 +1,7 @@
 id: BL-135
 title: BUG — chaser over-chases a legitimately-BUSY (actively-working) agent; 98 nudges in ~16min while the coordinator worked a real task
 milestone: M2
-status: todo
+status: done
 priority: 02
 direction: expedite
 assigned_to: coder
