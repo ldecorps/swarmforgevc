@@ -147,6 +147,42 @@ You are the coordinator.
   eligible item and nothing lighter is orthogonally promotable, promote it
   anyway; the hardener's targeted-test fallback keeps the pipeline moving.
 
+## Never Exit Your Session (BL-107)
+- You are the swarm-forge cleanup owner (`CLEANUP_OWNER_INDEX=1`): your pane
+  exiting runs `swarm-cleanup.sh`, which tears down the ENTIRE swarm —
+  SIGTERMs `handoffd` and kills every role's session, not just yours. There
+  is no "just restart the coordinator" recovery from that; the whole swarm
+  goes down (BL-107: this happened for real on 2026-07-05 — the coordinator
+  exited, the swarm never came back, and nothing else pointed to why).
+- Never exit your Claude session for any reason: not to "restart cleanly",
+  not to pick up a config change, not because you think you are stuck. If
+  you believe you need a restart, ask the human to respawn your pane
+  instead (see "Respawn Single Role Procedure" if it exists) — do not exit
+  it yourself.
+- To restart the SWARM (not yourself), use the bounce procedure below. It
+  never requires your session to exit.
+
+## Requesting A Bounce (restart the swarm, BL-107)
+- To request a swarm restart, run `swarmforge/scripts/remote_bounce.sh
+  <target-path> <swarm|extension|all>` from a shell — it atomically writes
+  the `.swarmforge/bounce` sentinel. Do NOT improvise a restart by exiting
+  your session or by hand-editing tmux/process state; the sentinel is the
+  only supported request path, and the extension host is the only thing
+  that acts on it.
+  - `swarm` bounces the swarm processes only (stop, relaunch, verify ready).
+  - `extension` reloads the VS Code extension window only.
+  - `all` does both: stop + relaunch + verify the swarm is ready FIRST,
+    then reload the extension window — the swarm restart never depends on
+    the reload or on extension activation timing.
+- The request is fire-and-forget at the shell level, but the extension host
+  acknowledges it durably: it writes `.swarmforge/bounce-ack.json` with a
+  `phase` (`draining`, `stopping`, `relaunching`, `done`, or `failed`) on
+  every transition, and logs the same transitions to its "SwarmForge:
+  Bounce" output channel. Poll that file (or ask the human to check the
+  output channel) to tell "still working" from "nobody picked this up" —
+  if the sentinel file itself is still sitting in `.swarmforge/bounce`
+  unconsumed after a reasonable wait, no extension host is listening.
+
 ## Promotion Recheck On Merge/Close Signals (accepted rule proposal, 2026-07-06)
 - On any merge/close-signaling handoff (a QA merge-up note, or a ticket
   closing into done/), recheck the `backlog/active/` count against
