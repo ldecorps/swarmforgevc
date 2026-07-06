@@ -1,0 +1,97 @@
+id: BL-147
+title: "BUG — BL-137 escalation-of-last-resort regressed: genuinely-wedged pane has no automatic recovery after 5ef8dd9 disabled chaser respawn"
+milestone: M2
+status: todo
+priority: 02
+direction: reliability
+assigned_to: coder
+source: "coordinator live observation 2026-07-06 ~19:05 (raw intake backlog/handoffd-notify-regression-bl137.txt): BL-137 failure signature recurred — 4 roles (QA/specifier/coder/documenter) sat idle ~0% CPU with work waiting, handoffd logged notify-delivery-failed 'pane already held undelivered input and it still would not submit', handoff still marked delivered; coordinator manually unstuck each pane. Design fork resolved with operator 2026-07-06: gated auto-respawn only (bounded, precheck-guarded); notification-effectiveness audit split to BL-148."
+
+description: |
+  Regression:
+  BL-137's accepted design had two recovery layers: (1) handoffd's harder
+  clear-input + retry-and-confirm, and (2) an escalation of last resort
+  (acceptance scenario escalate-02): if a pane still will not submit, treat
+  the agent as wedged and respawn its pane. Commit 5ef8dd9 "Disable automatic
+  chaser pane respawn" changed ChaserMonitor's triggerRespawn callback
+  (extension/src/extension.ts:276) from `respawnAgent(targetPath, role)` to
+  only `setStuckEscalation(role, true)`. That was done for a real reason —
+  triggerRespawn had once typed `bash .../coordinator.sh` into a LIVE busy
+  pane mid-turn — but it removed the ONLY automatic recovery for the
+  genuinely-wedged case. Transient stuck-input still recovers via handoffd's
+  own retries; the wedged case (notify-delivery-failed after those retries)
+  now has NO automatic recovery — same as pre-BL-137.
+
+  Note on surfacing (correcting the raw report): the escalation state is NOT
+  unread. `escalatedStuckRoles()` already feeds `needsHumanPending`
+  (extension.ts:615), the panel's needsHumanReconciler, and the BL-073 email
+  notifier (swarmPanel.ts). What 5ef8dd9 removed is specifically the
+  automatic RESPAWN, not the needs-human surfacing. (Whether that surfacing
+  actually alerted anyone is BL-148, split out deliberately.)
+
+  Wanted behavior (operator-confirmed 2026-07-06 — "auto-respawn, gated"):
+  Reinstate automatic pane respawn as the escalation of last resort, but
+  route every respawn through the busy-vs-wedged precheck that already exists
+  in tmuxClient.performVerifiedRespawn (extension/src/swarm/tmuxClient.ts:366):
+  it captures the pane and, if isPaneActivelyProcessing sees Claude Code's
+  "esc to interrupt" busy footer, SKIPS the respawn. So a genuinely wedged
+  (idle) pane is respawned; a busy/mid-turn pane is never touched — closing
+  the mid-turn-injection incident that motivated 5ef8dd9. The respawn is
+  bounded by the existing ChaserMonitorConfig limits (maxRecoveryAttempts +
+  respawnCooldownSeconds): no hammering, and on exhaustion the role falls back
+  to the existing needs-human escalation (email + panel), staying flagged in
+  escalatedStuckRoles() rather than being silently abandoned.
+
+  Constraints:
+  - Do NOT reintroduce an ungated respawn path. Every automatic respawn goes
+    through performVerifiedRespawn's not-actively-processing precheck; a pane
+    showing the busy footer is skipped, not respawned.
+  - Reuse the existing bound/cooldown config constants; do not add new ones.
+  - Keep the existing needs-human surfacing intact as the terminal fallback.
+  - Decision/gating logic stays a testable module driven through the
+    ChaserMonitor / performVerifiedRespawn / stuckEscalations seams with
+    fakes (fake clock, fake pane-capture, fake respawn); no live tmux and no
+    real timers in tests.
+
+acceptance: |
+  Feature: a genuinely-wedged pane is automatically respawned, but only when idle
+
+  Background:
+    Given a running swarm with the chaser monitoring each role's pane
+    And the escalation-of-last-resort recovery is enabled
+
+  # BL-147 wedged-respawn-01
+  Scenario: a genuinely wedged (idle) pane is respawned
+    Given a role's pane is flagged wedged after handoffd's own retries are exhausted
+    And a pane capture shows it is NOT actively processing a turn
+    When the escalation of last resort runs
+    Then the pane is respawned via the verified-respawn path
+
+  # BL-147 wedged-respawn-02
+  Scenario: a busy mid-turn pane is never respawned
+    Given a role's pane is flagged as a respawn candidate
+    And a pane capture shows the "esc to interrupt" busy footer
+    When the escalation of last resort runs
+    Then no respawn is injected into the pane
+    And a skip is recorded explaining the pane was actively processing
+
+  # BL-147 wedged-respawn-03
+  Scenario: automatic respawns are bounded and fall back to needs-human
+    Given a role's pane stays wedged across every recovery attempt
+    When the number of automatic respawns reaches maxRecoveryAttempts
+    Then no further automatic respawn is attempted for that role
+    And the role remains flagged in escalatedStuckRoles for needs-human handling
+
+  # BL-147 wedged-respawn-04
+  Scenario: respawns respect the cooldown between attempts
+    Given a role's pane was just respawned as a wedged-recovery attempt
+    When the cooldown window has not yet elapsed
+    Then no further respawn is attempted for that role until it elapses
+
+  # Non-behavioral gates:
+  #  - Gating/bound/cooldown logic unit-tested through test doubles (fake
+  #    clock, fake pane-capture, fake respawn); no live tmux, no real timers.
+  #  - Reuses existing ChaserMonitorConfig maxRecoveryAttempts +
+  #    respawnCooldownSeconds; no new config constants.
+  #  - BL-148 (whether the needs-human alert actually fires/delivers) is the
+  #    adjacent ticket; this ticket must not duplicate its scope.

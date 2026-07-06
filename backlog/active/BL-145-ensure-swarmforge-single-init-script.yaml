@@ -4,7 +4,7 @@ milestone: M2
 status: todo
 priority: 01
 direction: reliability
-assigned_to: specifier
+assigned_to: coder
 source: "operator request 2026-07-06 (chat with coordinator): 'we have to have 1 script that will initialise the swarmforge... if there is no extension up, start it; if there are agents missing, start them; if the daemon is not running, start it.' Ambiguities resolved with operator 2026-07-06: entry point is a ./swarm ensure subcommand; BL-144 relationship is recovery-step (independent tickets)."
 depends_on: []
 
