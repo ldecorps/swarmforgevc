@@ -3,6 +3,7 @@
 .claude/
 .swarmforge/
 .worktrees/
+/tmp/
 extension/node_modules/
 extension/out/
 extension/coverage/
