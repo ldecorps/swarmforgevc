@@ -1,7 +1,7 @@
 id: BL-104
 title: complexity debt — bring readSwarmRoles and runCommand back under the threshold (no behavior change)
 milestone: M2
-status: todo
+status: done
 priority: 04
 source: hardener finding during BL-093 hardening 2026-07-04 (root intake, coordinator relay)
 

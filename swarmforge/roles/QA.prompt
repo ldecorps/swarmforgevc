@@ -19,6 +19,12 @@ You are QA.
 
 ## Verification Order
 - Re-read the backlog item or task name that the work claims to satisfy.
+- Make sure no orphaned test processes are running before AND after you verify —
+  check `pgrep -fl 'node --test|stryker'`. Do not run your suite on top of a
+  leftover run (it skews results and pins cores), and as the final gate do not
+  approve work that leaves test or mutation processes alive after the run. Reap
+  any straggler by its process group (`kill -- -<pgid>`) first; an orphaned run
+  reparents to the OS and burns cores for hours.
 - Run the full unit test suite; it must be green.
 - Run any acceptance/integration/end-to-end tests relevant to the change.
 - Exercise the changed behavior against its stated intent; look for gaps,

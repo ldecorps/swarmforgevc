@@ -1,0 +1,59 @@
+id: BL-127
+title: BUG — backlog list row chip is not colored by stage; only the tile-header badge is (BL-077 regression/gap)
+milestone: M3
+status: todo
+priority: 05
+
+description: |
+  BUG (operator intake 2026-07-05, screenshot): in the QA tile the ticket
+  chip "BL-109 · pane-injection 'pending input' heuristi..." renders with a
+  pink background, but the same BL-109 row in the BACKLOG pane at the bottom
+  is plain/uncolored text.
+
+  BL-077 ("color-code ticket badges by pipeline stage", closed in
+  done/M3-traceability-right-sizing/) explicitly required BOTH surfaces to
+  share one color per stage (scenario stage-colors-05: "tile badge and
+  backlog chip never disagree on color"). First determine whether that
+  criterion regressed after merge or was never wired for the backlog row,
+  and note which in the parcel; then fix.
+
+  Ask: give the BACKLOG row for a ticket the same stage color as its
+  tile-header badge (here: pink for QA), reusing the existing BL-077
+  stage-color mapping — do not introduce a second palette.
+
+acceptance: |
+  Feature: the backlog row chip matches its tile-header badge color
+
+  # BL-127 backlog-chip-color-01
+  Scenario: a ticket held by a stage shows the same color in both places
+    Given a ticket's parcel is currently held by a pipeline stage (e.g. QA)
+    When the panel renders both the tile-header badge and the BACKLOG row
+    Then both show the same stage color for that ticket
+
+  # BL-127 backlog-chip-color-02
+  Scenario: a ticket held by no stage stays uncolored in the backlog row
+    Given a ticket's parcel is not currently held by any pipeline stage
+    When the panel renders the BACKLOG row
+    Then the row shows no stage color
+
+  # Non-behavioral gate:
+  #  - Reuse BL-077's stage-color mapping; do not introduce a second palette.
+  #  - Record whether this was a regression or a never-wired gap.
+  #  - Verified live in Extension Development Host with a ticket attached
+  #    (BL-109 example), light and dark theme.
+
+investigation: |
+  Coder investigation (2026-07-06): neither a regression nor a never-wired
+  gap. `git log -S"stageColorClass" extension/media/panel.js` shows the
+  backlog row (`backlogRowHtml`, extension/media/panel.js) has called
+  `stageColorClass(holder)` on `.bl-assigned` since BL-077's original commit
+  786dc8e, the same commit that colored the tile-header badge. Both surfaces
+  read the same `holderMap`/`stageColorClass` and are covered end-to-end by
+  `extension/test/renderedStageColorAgreement.test.js` (scenario
+  stage-colors-05, badge/chip agreement across stages) and
+  `extension/test/renderedHolderlessAgreement.test.js` (unrouted tickets
+  render "queued" neutral, not a stage color, on both surfaces) — 26/26
+  green. No code change made; the reported screenshot most likely predates
+  the BL-077 merge landing in the operator's running build. Forwarding
+  unchanged for QA to re-verify live in Extension Development Host per the
+  ticket's non-behavioral gate.
