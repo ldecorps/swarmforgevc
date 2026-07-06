@@ -51,6 +51,7 @@ const bridgeToken_1 = require("./bridge/bridgeToken");
 const prCreator_1 = require("./swarm/prCreator");
 const swarmLauncher_1 = require("./swarm/swarmLauncher");
 const childJobRegistry_1 = require("./swarm/childJobRegistry");
+const stateDump_1 = require("./swarm/stateDump");
 const swarmDiscovery_1 = require("./swarm/swarmDiscovery");
 const swarmStopper_1 = require("./swarm/swarmStopper");
 const bouncer_1 = require("./swarm/bouncer");
@@ -116,6 +117,22 @@ let currentBridge = null;
 // child-job registry can be reaped on the way out, same pattern as the
 // other current* singletons above.
 let currentSwarmforgeDir = null;
+let currentTargetPath = null;
+let stopPeriodicStateDump = null;
+// BL-110: how often the durable extension-state snapshot is refreshed so an
+// abrupt host kill (no deactivate()) still leaves a recent dump.
+const STATE_DUMP_INTERVAL_MS = 60_000;
+function buildExtensionStateSnapshot(targetPath, reason) {
+    const roles = targetPath ? (0, tmuxClient_2.readSwarmRoles)(targetPath) : [];
+    return {
+        timestamp: new Date().toISOString(),
+        target: targetPath ?? undefined,
+        attachState: targetPath && (0, swarmLauncher_1.isSwarmReady)(targetPath) ? 'attached' : 'not-attached',
+        launchState: targetPath && (0, swarmLauncher_1.isSwarmReady)(targetPath) ? 'ready' : 'unknown',
+        swarmInfo: { roles: roles.map((r) => r.role) },
+        reason,
+    };
+}
 function isPidAlive(pid) {
     try {
         process.kill(pid, 0);
@@ -506,6 +523,11 @@ function activate(context) {
     const pendingAutoLaunch = context.workspaceState.get(PENDING_AUTO_LAUNCH_KEY);
     if (targetPath) {
         currentSwarmforgeDir = path.join(targetPath, '.swarmforge');
+        currentTargetPath = targetPath;
+        // BL-110 state-dump-02: a periodically-refreshed durable snapshot, so an
+        // abrupt host kill (no deactivate()) still leaves a recent one to
+        // recover/debug from.
+        stopPeriodicStateDump = (0, stateDump_1.startPeriodicStateDump)(currentSwarmforgeDir, () => buildExtensionStateSnapshot(currentTargetPath, null), STATE_DUMP_INTERVAL_MS, setInterval, clearInterval);
         // BL-108 startup-reaper-03: a host killed without deactivate() (VS
         // Code's "Stop Extension Host" can SIGKILL without awaiting it) leaves
         // registry entries whose owner_host_pid died with it. Reap those
@@ -943,6 +965,15 @@ function deactivate() {
         (0, childJobRegistry_1.reapAllTrackedJobs)(currentSwarmforgeDir, (pgid, signal) => {
             process.kill(-pgid, signal);
         }, DEACTIVATE_REAP_GRACE_MS);
+    }
+    // BL-110 state-dump-01: a final, best-effort dump with the known shutdown
+    // reason, on top of the periodic snapshot above.
+    if (stopPeriodicStateDump) {
+        stopPeriodicStateDump();
+        stopPeriodicStateDump = null;
+    }
+    if (currentSwarmforgeDir) {
+        (0, stateDump_1.writeStateDump)(currentSwarmforgeDir, buildExtensionStateSnapshot(currentTargetPath, 'extension-deactivate'));
     }
 }
 //# sourceMappingURL=extension.js.map

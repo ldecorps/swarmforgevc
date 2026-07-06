@@ -36,6 +36,7 @@
         (when (fs/exists? target-file)
           (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: completed file already exists: " target-file)))
         (fs/move source-file target-file)
+        (handoff-lib/remove-sidecars-of! source-file)
         (println "COMPLETED:" (str target-file))
         (run-ready!)))))
 

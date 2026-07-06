@@ -34,18 +34,26 @@
             batch-files (handoff-lib/handoff-files source-dir)
             target-dir (fs/path completed-dir (fs/file-name source-dir))
             completed-at (handoff-lib/timestamp)]
-        (when (empty? batch-files)
+        ;; BL-119: a batch dir holding only leftover chaser sidecars (its
+        ;; real .handoff payloads already moved by an earlier, interrupted
+        ;; completion) is a recoverable cleanup, not "no tasks" - only a
+        ;; dir with nothing in it at all (no payload ever, no sidecar
+        ;; either) is the genuinely malformed/empty batch that still fails.
+        (when (and (empty? batch-files) (empty? (fs/list-dir source-dir)))
           (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: batch contains no tasks: " source-dir)))
-        (when (fs/exists? target-dir)
-          (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: completed batch already exists: " target-dir)))
-        (fs/create-dir target-dir)
-        (doseq [source-file batch-files]
-          (handoff-lib/set-header! source-file "completed_at" completed-at)
-          (let [target-file (fs/path target-dir (fs/file-name source-file))]
-            (when (fs/exists? target-file)
-              (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: completed batch file already exists: " target-file)))
-            (fs/move source-file target-file)
-            (println "COMPLETED:" (str target-file))))
+        (when (seq batch-files)
+          (when (fs/exists? target-dir)
+            (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: completed batch already exists: " target-dir)))
+          (fs/create-dir target-dir)
+          (doseq [source-file batch-files]
+            (handoff-lib/set-header! source-file "completed_at" completed-at)
+            (let [target-file (fs/path target-dir (fs/file-name source-file))]
+              (when (fs/exists? target-file)
+                (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: completed batch file already exists: " target-file)))
+              (fs/move source-file target-file)
+              (handoff-lib/remove-sidecars-of! source-file)
+              (println "COMPLETED:" (str target-file)))))
+        (handoff-lib/clean-dir-sidecars-or-fail! source-dir)
         (fs/delete source-dir)
         (println "COMPLETED_BATCH:" (str target-dir))
         (run-ready!)))))
