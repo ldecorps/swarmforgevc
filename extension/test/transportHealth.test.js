@@ -64,6 +64,17 @@ test('evaluateCanary reports missed once the round trip exceeds its budget', () 
   assert.equal(result.ageSeconds, 600);
 });
 
+test('evaluateCanary treats a round trip exactly at the budget boundary as healthy (inclusive <=)', () => {
+  const result = evaluateCanary(NOW - 300_000, NOW, 300);
+  assert.equal(result.state, 'healthy');
+  assert.equal(result.ageSeconds, 300);
+});
+
+test('evaluateCanary treats one second past the budget boundary as missed', () => {
+  const result = evaluateCanary(NOW - 301_000, NOW, 300);
+  assert.equal(result.state, 'missed');
+});
+
 // ── scanStalledParcels ──────────────────────────────────────────────────────
 
 test('scanStalledParcels ignores an item younger than the stall threshold', () => {
@@ -84,6 +95,39 @@ test('scanStalledParcels reports an item older than the stall threshold with its
   assert.equal(offending[0].route, 'specifier->coder');
   assert.equal(offending[0].reason, 'stalled');
   assert.equal(offending[0].ageSeconds, 600);
+});
+
+test('scanStalledParcels treats an item exactly at the stall threshold as stalled (exclusive < boundary)', () => {
+  const target = mkTmp();
+  const inboxNewDir = path.join(target, 'inbox', 'new');
+  writeHandoff(inboxNewDir, '00_x_from_specifier_to_coder.handoff', { from: 'specifier', recipient: 'coder' }, NOW - 300_000);
+  const roleInboxes = [{ role: 'coder', inboxNewDir, inProcessDir: path.join(target, 'inbox', 'in_process') }];
+  const offending = scanStalledParcels(roleInboxes, NOW, 300);
+  assert.equal(offending.length, 1);
+  assert.equal(offending[0].ageSeconds, 300);
+});
+
+test('scanStalledParcels falls back to "unknown" in the route when from/recipient headers are missing', () => {
+  const target = mkTmp();
+  const inboxNewDir = path.join(target, 'inbox', 'new');
+  writeHandoff(inboxNewDir, '00_x_no_headers.handoff', {}, NOW - 600_000);
+  const roleInboxes = [{ role: 'coder', inboxNewDir, inProcessDir: path.join(target, 'inbox', 'in_process') }];
+  const offending = scanStalledParcels(roleInboxes, NOW, 300);
+  assert.equal(offending.length, 1);
+  assert.equal(offending[0].route, 'unknown->unknown');
+});
+
+test('scanStalledParcels combines results across inbox/new and inbox/in_process for the same role', () => {
+  const target = mkTmp();
+  const inboxNewDir = path.join(target, 'inbox', 'new');
+  const inProcessDir = path.join(target, 'inbox', 'in_process');
+  writeHandoff(inboxNewDir, '00_x_from_a_to_b.handoff', { from: 'a', recipient: 'b' }, NOW - 600_000);
+  writeHandoff(inProcessDir, '00_y_from_c_to_d.handoff', { from: 'c', recipient: 'd' }, NOW - 700_000);
+  const roleInboxes = [{ role: 'coder', inboxNewDir, inProcessDir }];
+  const offending = scanStalledParcels(roleInboxes, NOW, 300);
+  assert.equal(offending.length, 2);
+  const routes = offending.map((o) => o.route).sort();
+  assert.deepEqual(routes, ['a->b', 'c->d']);
 });
 
 test('scanStalledParcels also inspects in_process (a stuck-in-process parcel is still undelivered work)', () => {
@@ -130,7 +174,32 @@ test('deadLettersToOffending converts a dead-lettered parcel into an offending e
   assert.equal(offending[0].ageSeconds, 3600);
 });
 
+test('deadLettersToOffending falls back to "unknown" in the route when from/recipient are absent', () => {
+  const target = mkTmp();
+  const inboxNewDir = path.join(target, 'inbox', 'new');
+  const filePath = writeHandoff(inboxNewDir, '00_x_no_headers.handoff.dead', {}, NOW - 3600_000);
+  const offending = deadLettersToOffending(
+    [{ role: 'coder', filePath, from: undefined, recipient: undefined, chaseCount: 1 }],
+    NOW
+  );
+  assert.equal(offending[0].route, 'unknown->unknown');
+});
+
 // ── computeTransportHealth (the state machine) ───────────────────────────
+
+test('delivery-detection-01 + stall-detection-02: dead-letters and stalled parcels both surface together, in order, with no canary miss', () => {
+  const health = computeTransportHealth({
+    daemonHealth: { state: 'healthy' },
+    deadLetters: [{ route: 'specifier->coder', ageSeconds: 300, reason: 'dead-letter' }],
+    stalledParcels: [{ route: 'architect->hardener', ageSeconds: 900, reason: 'stalled' }],
+    canary: { state: 'no-data', ageSeconds: 0 },
+  });
+  assert.equal(health.state, 'delivery-degraded');
+  assert.deepEqual(health.offending, [
+    { route: 'specifier->coder', ageSeconds: 300, reason: 'dead-letter' },
+    { route: 'architect->hardener', ageSeconds: 900, reason: 'stalled' },
+  ]);
+});
 
 test('delivery-detection-01: a dead-lettered parcel is reported even while the daemon heartbeats healthy', () => {
   const health = computeTransportHealth({
