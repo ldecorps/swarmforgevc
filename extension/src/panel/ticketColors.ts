@@ -25,7 +25,11 @@ export const PALETTE: TicketColor[] = [
   { background: '#bcf60c', color: '#000' },
   { background: '#008080', color: '#fff' },
   { background: '#9a6324', color: '#fff' },
-  { background: '#808000', color: '#fff' },
+  // '#fff' text on this background fails WCAG AA contrast for normal-size
+  // text (4.20:1, needs 4.5:1) — the badge/chip text this palette serves is
+  // 10-11px, squarely normal-size, not the 18px+/14px-bold "large text"
+  // exception. '#000' clears AA at 5.01:1 (hardener finding, 2026-07-06).
+  { background: '#808000', color: '#000' },
 ];
 
 function hashTicketId(id: string): number {
