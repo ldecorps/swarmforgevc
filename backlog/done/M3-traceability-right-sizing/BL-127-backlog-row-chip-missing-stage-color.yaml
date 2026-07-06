@@ -1,7 +1,7 @@
 id: BL-127
 title: BUG — backlog list row chip is not colored by stage; only the tile-header badge is (BL-077 regression/gap)
 milestone: M3
-status: todo
+status: done
 priority: 05
 direction: expedite
 

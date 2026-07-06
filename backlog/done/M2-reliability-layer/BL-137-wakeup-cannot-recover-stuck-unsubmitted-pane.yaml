@@ -1,7 +1,7 @@
 id: BL-137
 title: BUG — wake-up injection cannot recover a pane stuck with unsubmitted input ("already held … still would not submit" after 3 retries); idle agents stall until a manual kick
 milestone: M2
-status: todo
+status: done
 priority: 01
 direction: expedite
 assigned_to: coder

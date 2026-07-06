@@ -1,7 +1,7 @@
 id: BL-125
 title: "BUG: paneTailerScrollback.test.js can run 30s+ per test and appear hung — load-sensitive, blocks hardening runs"
 milestone: M2
-status: todo
+status: done
 priority: 06
 direction: expedite
 assigned_to: coder
