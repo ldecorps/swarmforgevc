@@ -1,7 +1,7 @@
 id: BL-107
 title: BUG — coordinator-initiated bounce-all cannot work end to end (no agent procedure, no ack, relaunch leg depends on unmerged BL-086, coordinator exit nukes the swarm)
 milestone: M2
-status: todo
+status: done
 priority: 02
 direction: expedite
 assigned_to: coder

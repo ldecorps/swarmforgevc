@@ -67,6 +67,26 @@ test('readBounceAck returns null for an unknown phase value', () => {
   assert.equal(readBounceAck(target), null);
 });
 
+test('readBounceAck returns null for an unknown bounceType value', () => {
+  const target = mkTarget();
+  fs.mkdirSync(path.join(target, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(
+    bounceAckPath(target),
+    JSON.stringify({ bounceType: 'unknown', phase: 'done', updatedAt: '2026-07-06T09:00:00Z' })
+  );
+  assert.equal(readBounceAck(target), null);
+});
+
+test('readBounceAck returns null when updatedAt is not a string', () => {
+  const target = mkTarget();
+  fs.mkdirSync(path.join(target, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(
+    bounceAckPath(target),
+    JSON.stringify({ bounceType: 'swarm', phase: 'done', updatedAt: 12345 })
+  );
+  assert.equal(readBounceAck(target), null);
+});
+
 test('clearBounceAck removes the ack file and tolerates it already being absent', () => {
   const target = mkTarget();
   writeBounceAck(target, { bounceType: 'swarm', phase: 'done', updatedAt: '2026-07-06T09:00:00Z' });
