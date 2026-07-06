@@ -44,6 +44,18 @@ test('roleToPhase maps QA to qa-verifying', () => {
   assert.equal(roleToPhase('QA'), 'qa-verifying');
 });
 
+test('roleToPhase maps architect to architecting', () => {
+  assert.equal(roleToPhase('architect'), 'architecting');
+});
+
+test('roleToPhase maps hardender to hardening', () => {
+  assert.equal(roleToPhase('hardender'), 'hardening');
+});
+
+test('roleToPhase maps documenter to documenting', () => {
+  assert.equal(roleToPhase('documenter'), 'documenting');
+});
+
 test('roleToPhase throws for unknown role', () => {
   assert.throws(() => roleToPhase('unknown'), /unknown role/i);
 });
