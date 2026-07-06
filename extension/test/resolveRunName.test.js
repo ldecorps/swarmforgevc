@@ -2,8 +2,6 @@
  * BL-024: resolveRunName — unit tests (written before implementation).
  */
 const assert = require('node:assert/strict');
-const test = require('node:test');
-
 const { resolveRunName } = require('../out/run/resolveRunName');
 
 const DEFAULT = 'swarm-20260630T120000z';

@@ -1,0 +1,73 @@
+id: BL-132
+title: surface Stryker mutation progress/ETA to a durable file (and the tile) so a long hardening run shows "% done, ~ETA" instead of a mystery spinner
+milestone: M2
+status: todo
+priority: 02
+assigned_to: coder
+
+description: |
+  OPERATOR (2026-07-06): a mutation run can take hours (a live BL-121 pass on
+  ONE file is ~3h with coverageAnalysis off), and from the outside it looks
+  like an opaque spinner — no way to tell "progressing" from "hung", and no
+  ETA. This is the exact thing the constitution already demands for long runs
+  ("Gherkin acceptance mutation runs must report periodic progress/status so
+  agents can distinguish normal long-running work from a hang") but it is not
+  realised for Stryker mutation.
+
+  The capability ALREADY exists but is buried: Stryker's `progress` reporter is
+  configured (reporters: ["clear-text","progress"]) and emits live lines like
+    Mutation testing 2% (elapsed: ~4m, remaining: ~3h 20m) 4/189 tested (1 survived)
+  — but only into an ad-hoc per-run file the hardener happens to redirect to
+  (.worktrees/hardender/tmp/stryker_transportHealth.log). Neither a human nor
+  the extension can find it. So this is a SURFACING gap, not a measurement gap.
+
+  Wanted:
+  1. Every mutation run writes structured progress to a DURABLE, standard path,
+     e.g. .swarmforge/mutation-progress/<role>.json with
+     {file, tested, total, percent, survived, timedOut, elapsed_s, eta_s,
+      updated_at}, refreshed as the run advances and cleared/closed on finish.
+     A human or agent can `cat` it at any time — works even when the tile is
+     broken (the tile is currently buggy — see BL-120 — so DO NOT make this
+     depend on the webview).
+  2. The extension reads that file and shows "mutation: 45% · ~1h10m left" on
+     the running role's tile (nice-to-have layered on top of 1; the file is the
+     source of truth).
+
+  Parse/emit source: prefer a small Stryker reporter or a wrapper that tails
+  the existing `progress` output into the JSON (do not re-implement Stryker's
+  ETA math). Config: extension/stryker.config.json; the hardener's run
+  invocation lives in the swarm scripts / role tooling.
+
+  Note: BL-124 (Vitest/perTest) will shrink runs from hours to minutes, so the
+  ETA number matters less afterward — but the "progressing vs hung" signal
+  still matters for ANY long run (big file, a hang, acceptance mutation), so
+  this is worth doing independent of BL-124.
+
+acceptance: |
+  Feature: mutation runs report progress and ETA durably
+
+  # BL-132 durable-progress-01
+  Scenario: a running mutation pass exposes machine-readable progress
+    Given the hardener is running a Stryker mutation pass
+    When it is partway through
+    Then a durable file reports tested/total, percent, survived, and an ETA
+    And the file updates as the run advances and is finalized on completion
+    And it is readable without the extension/webview (plain file)
+
+  # BL-132 hang-vs-progress-02
+  Scenario: a stalled run is distinguishable from a progressing one
+    Given the progress file's updated_at timestamp
+    Then a consumer can tell a live-advancing run from one that has stopped
+      updating (a hang), per the constitution's long-run progress rule
+
+  # BL-132 tile-03 (layered, non-blocking)
+  Scenario: the tile shows mutation progress when the webview is healthy
+    Given a durable progress file for a role
+    Then the extension surfaces "% done · ~ETA" on that role's tile
+    And absence/malformed file degrades gracefully (no crash, no false hang)
+
+  # Non-behavioral gates:
+  #  - Do not re-implement Stryker's progress/ETA; reuse its `progress`
+  #    reporter output (small reporter plugin or a tail-to-json wrapper).
+  #  - The durable file is the contract; the tile is a view — this must not
+  #    depend on the (currently buggy) webview.

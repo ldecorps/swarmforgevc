@@ -1,5 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
 const { isAuthorizedRequest } = require('../out/bridge/bridgeAuth');
 
 const TOKEN = 'abc123def456';

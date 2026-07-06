@@ -1,6 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
-
 const { buildEmailSubject, buildEmailBody } = require('../out/notify/emailContent');
 
 test('buildEmailSubject names the role', () => {

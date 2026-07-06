@@ -1,6 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
-
 const { extractPanelFunction } = require('./helpers/extractPanelFunction');
 const { detectFooterLineCount: detectFooterLineCountTs } = require('../out/panel/paneHistory');
 

@@ -1,5 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
 const { generateBridgeToken } = require('../out/bridge/bridgeToken');
 
 test('generateBridgeToken returns a non-empty hex string', () => {

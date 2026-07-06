@@ -2,7 +2,7 @@ id: BL-108
 title: BUG — stopping the extension orphans spawned test/mutation-test process trees; they reparent to launchd and pin every core indefinitely
 milestone: M2
 status: todo
-priority: 03
+priority: 01
 assigned_to: coder
 
 description: |
@@ -58,8 +58,27 @@ description: |
   Note the interaction with the cleanup-owner design (coordinator pane exit
   runs swarm-cleanup.sh — see BL-107): that path tears down tmux/handoffd but
   does NOT cover mutation/test subtrees running inside the worktrees, which is
-  exactly what leaked here. Scope this to extension-spawned child jobs;
-  sequence with the coordinator against BL-107.
+  exactly what leaked here. Sequence with the coordinator against BL-107.
+
+  SUPERVISOR-LEVEL REAPER (added 2026-07-06, operator directive — broadens this
+  ticket beyond extension-spawned jobs). Defences 1-3 above only cover jobs the
+  EXTENSION spawns. They do NOT cover a job an AGENT spawns that then
+  crash-orphans: a hardener mutation run whose owning agent (or the whole
+  swarm) dies mid-run reparents its `stryker`/`node --test` tree to launchd
+  (PPID 1), with no owning process left to clean it up — observed repeatedly
+  this session (a 27-min orphaned stryker tree; earlier a 4h+ one; multiple
+  reaps by hand). The agent prompt-hygiene rules just added (hardener/QA reap
+  "their own leftovers before a run / before handoff") are a backstop but
+  STRUCTURALLY cannot catch a crash orphan — the agent that would run the
+  cleanup is the one that died. So an always-on swarm daemon must own it: the
+  handoffd supervisor (handoffd_supervisor.bb) is the natural home — it already
+  outlives both the agents and the extension. On a periodic tick it reaps
+  PPID-1 `stryker`/`node --test` processes rooted under the swarm's worktrees
+  that no live agent owns. Same lesson as BL-122/dead-letter recovery: the
+  reaper must not be a thing that dies with what it cleans up. It must be
+  idempotent, logged, and MUST NEVER kill a live agent's in-progress run —
+  only true orphans (PPID 1 / not descended from a live swarmforge-<role>
+  pane).
 
 acceptance: |
   Feature: extension-spawned child jobs never outlive a stopped extension
@@ -88,9 +107,26 @@ acceptance: |
     And the stale registry entry is removed
     And no swarmforgevc worktree/stryker process remains reparented to launchd
 
+  # BL-108 supervisor-reaper-04
+  Scenario: a crash-orphaned agent mutation/test run is reaped by the supervisor
+    Given a stryker/node --test process reparented to launchd (PPID 1), rooted
+      under a swarm worktree, owned by no live agent
+    When the swarm supervisor's periodic reap tick runs
+    Then the orphaned process group is terminated and the reap is logged
+  # BL-108 supervisor-reaper-05
+  Scenario: a live agent's in-progress run is never killed
+    Given a stryker/node --test run that descends from a live swarmforge-<role>
+      pane (owned, not orphaned)
+    When the supervisor's periodic reap tick runs
+    Then that run is left untouched
+
   # Non-behavioral gates:
   #  - Tested through a spawn/kill seam with fakes (no live Stryker/tmux in
-  #    tests): assert group-leader spawn, registry writes, and reaper logic
-  #    against injected pids/liveness, not real processes.
-  #  - Do not duplicate BL-107 (coordinator-exit teardown) scope; this ticket
-  #    is about extension-spawned test/mutation subtrees specifically.
+  #    tests): assert group-leader spawn, registry writes, and both reaper
+  #    paths (extension-registry AND supervisor orphan-scan) against injected
+  #    pids/liveness, not real processes.
+  #  - Do not duplicate BL-107 (coordinator-exit teardown) scope.
+  #  - This ticket now covers BOTH extension-spawned child jobs (defences 1-3)
+  #    AND agent-spawned crash-orphans reaped at the supervisor level (4-5);
+  #    the specifier may split these into two parcels if that keeps each within
+  #    the complexity threshold.

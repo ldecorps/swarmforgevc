@@ -1,5 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
 const { detectNeedsHuman, extractQuestionSnippet } = require('../out/panel/needsHumanDetection');
 
 test('detectNeedsHuman returns false for empty text', () => {

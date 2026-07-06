@@ -1,0 +1,49 @@
+id: BL-135
+title: BUG — chaser over-chases a legitimately-BUSY (actively-working) agent; 98 nudges in ~16min while the coordinator worked a real task
+milestone: M2
+status: todo
+priority: 02
+assigned_to: coder
+
+description: |
+  Surfaced by the 2026-07-06 tracer-bullet exercise. The coordinator was
+  mid-turn on a real task (git archaeology on BL-132, "Whirring 16m+", actively
+  generating tokens) when a queued note arrived. The chaser treated it as
+  stuck/idle and nudged it 98 times (the note's .chase.json reached
+  chaseCount:98) with "You have new handoff mail. If idle, run
+  ready_for_next.sh" — hammering a working agent, piling unsubmitted nudges
+  into its pane, inflating latency (the coordinator hop took ~50min, most of
+  it while being chased). The handoff still completed (the bullet reached QA),
+  so this is a LATENCY/NOISE bug, not a loss.
+
+  BL-087 (done) fixed the chaser RESPAWNING a live working agent. This is the
+  same false-idle misread on the NUDGE/CHASE path: the chaser must distinguish
+  an agent that is actively working a turn (present-tense spinner / token
+  output / R+ process state) from one genuinely idle at an empty prompt. Only
+  the latter needs a nudge; the former must be left alone (or chased with a
+  long backoff), never hammered ~6x/min.
+
+  Seams: the chaser lives in the extension host (src/watchdog/chaserMonitor.ts,
+  src/swarm/inboxChaser.ts) and uses the pane-liveness read that BL-087/BL-109
+  touched. Reuse BL-098's chaser telemetry (chase/nudge counts per role) to
+  detect and cap over-chase.
+
+acceptance: |
+  Feature: the chaser does not hammer an actively-working agent
+
+  # BL-135 no-chase-while-working-01
+  Scenario: an agent mid-turn is not chased as if idle
+    Given an agent that is actively working a turn (not idle at its prompt)
+    When it has undelivered/queued mail
+    Then the chaser does NOT nudge it on every tick
+    And the per-note chase count stays bounded (nowhere near ~98/16min)
+
+  # BL-135 backoff-02
+  Scenario: chasing backs off rather than hammering
+    Given a recipient that has not consumed a delivered note yet
+    Then successive chases use increasing backoff, not a fixed ~10s hammer
+
+  # Non-behavioral gates:
+  #  - Do not regress BL-087 (respawn of a working agent) or BL-109.
+  #  - Test through the chaser's liveness-read seam with injected pane/proc
+  #    state; no live tmux.
