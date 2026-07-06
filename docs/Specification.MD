@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 5, 2026
+**Last Updated:** July 6, 2026
 
 ## Overview
 
@@ -461,7 +461,8 @@ Agents are unreliable pollers — that's the whole problem. A single watchdog in
 To prevent context window exhaustion during long swarm runs, individual roles can be configured to clear their session context at idle boundaries. This is useful for roles that don't need cross-parcel context (e.g., hardener, documenter) to reduce token accumulation:
 
 - **Per-role opt-in flag:** configured via an optional token on the `window` line in `swarmforge.conf` (e.g., `window hardener claude hardender idle-clear`). Absent means OFF; default for every role is disabled.
-- **Trigger:** clearing occurs only after a role completes its current task/batch AND its queue returns NO_TASK (i.e., at the idle boundary, never mid-task or mid-batch)
+- **Trigger:** clearing occurs only after a role completes its current task/batch AND its queue returns NO_TASK (i.e., at the idle boundary, never mid-task or mid-batch) AND the role's context window reaches a minimum fullness threshold. The window fullness is measured by the backend's telemetry if available (exact token usage), or a deterministic proxy metric (pane history line count) otherwise. This prevents unnecessary clearing of roles that go idle with mostly-empty windows — saving context resets for moments when they matter cost-wise.
+- **Fullness threshold:** `swarmforge.contextClear.fullnessThresholdPercent` (default 75%). Set to 0 to skip the fullness check and clear as soon as drained-idle boundaries are reached. When the backend does not report real context usage, the fullness indicator shows "proxy" in the Context Clear output channel so you know the gate ran on line-count estimation rather than exact tokens.
 - **Action:** the launcher sends `/clear` + Enter, causing the role's session to reset. The fresh session receives the full role re-bootstrap (constitution, pipeline, role prompt) exactly as if it had just been respawned.
 - **State preservation:** only session context is cleared; durable inbox/outbox state, in-process audit trails, and handoffs are completely unaffected
 - **Safety:** clearing never interrupts in-flight work, pending human input, or graceful bounces. Roles with the flag disabled (most roles, including specifier and coordinator) continue as before with accumulating context.
