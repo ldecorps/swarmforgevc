@@ -3,7 +3,7 @@ title: trace-hop.js resolves traces dir wrong when run from the master checkout 
 milestone: M3
 status: todo
 priority: 10
-assigned_to: specifier
+assigned_to: coder
 
 description: |
   OPERATOR (2026-07-06): running the tracer-bullet CLI as coordinator
