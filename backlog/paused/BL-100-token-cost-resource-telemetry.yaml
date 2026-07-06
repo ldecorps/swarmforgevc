@@ -3,6 +3,7 @@ title: cost & resource telemetry — tokens per agent and per ticket, CPU/RAM pe
 milestone: M5
 status: todo
 priority: 02
+direction: non-aligned
 source: operator request 2026-07-04 ("token consumption per agent, per ticket; cpu/ram; anything useful — rather too much than not enough")
 depends_on: BL-096 (trend framework), BL-098 (telemetry log family + holding periods)
 

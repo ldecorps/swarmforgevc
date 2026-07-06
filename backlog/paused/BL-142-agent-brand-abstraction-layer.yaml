@@ -3,6 +3,7 @@ title: "Agent brand abstraction layer: one Forge contract across providers"
 milestone: M6
 status: todo
 priority: 05
+direction: non-aligned
 assigned_to: specifier
 source: "operator request (2026-07-06): with multi-agent support, Forge must interact uniformly regardless of agent brand"
 

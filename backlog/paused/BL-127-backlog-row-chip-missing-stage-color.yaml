@@ -3,6 +3,7 @@ title: BUG — backlog list row chip is not colored by stage; only the tile-head
 milestone: M3
 status: todo
 priority: 05
+direction: expedite
 
 notes: |
   Scope clarification (2026-07-06): BL-139 refines coloring semantics to

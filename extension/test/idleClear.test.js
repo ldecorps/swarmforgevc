@@ -7,7 +7,8 @@ const {
 } = require('../out/swarm/idleClear');
 
 const NOW = Date.parse('2026-07-02T12:00:00Z');
-const CONFIG = { enabled: true, settleWindowSeconds: 120 };
+const CONFIG = { enabled: true, settleWindowSeconds: 120, fullnessThresholdPercent: 75 };
+const FULL = { percent: 100, source: 'telemetry' };
 
 function idleStatus(overrides = {}) {
   return {
@@ -18,6 +19,7 @@ function idleStatus(overrides = {}) {
     drainInProgress: false,
     lastHumanInputMs: null,
     lastActivityMs: NOW - 121_000, // just past the settle window
+    contextFullness: FULL,
     ...overrides,
   };
 }
@@ -50,6 +52,9 @@ const unsafeStates = [
   ['needs-human state pending on its tile', { needsHumanPending: true }],
   ['human typed into the pane inside the window', { lastHumanInputMs: NOW - 10_000 }],
   ['a graceful bounce drain is in progress', { drainInProgress: true }],
+  // BL-141 context-clear-75-01: below the fullness threshold blocks a clear
+  // just like any other unsafe state, even though every other gate passes.
+  ['context fullness below the threshold', { contextFullness: { percent: 74, source: 'telemetry' } }],
 ];
 
 for (const [label, overrides] of unsafeStates) {
@@ -58,6 +63,31 @@ for (const [label, overrides] of unsafeStates) {
     assert.equal(decideIdleClear(status, false, NOW, CONFIG), 'skip');
   });
 }
+
+// ── BL-141: fullness gate ────────────────────────────────────────────────
+
+test('drained-idle but below the fullness threshold does not clear (context-clear-75-01)', () => {
+  const status = idleStatus({ contextFullness: { percent: 50, source: 'telemetry' } });
+  assert.equal(decideIdleClear(status, false, NOW, CONFIG), 'skip');
+});
+
+test('drained-idle and at or above the fullness threshold clears (context-clear-75-02)', () => {
+  const status = idleStatus({ contextFullness: { percent: 75, source: 'telemetry' } });
+  assert.equal(decideIdleClear(status, false, NOW, CONFIG), 'clear');
+});
+
+test('proxy-sourced fullness at or above the threshold clears the same as telemetry (context-clear-75-03)', () => {
+  const status = idleStatus({ contextFullness: { percent: 90, source: 'proxy' } });
+  assert.equal(decideIdleClear(status, false, NOW, CONFIG), 'clear');
+});
+
+test('human input within the settle window blocks a clear even at 100% fullness (context-clear-75-04)', () => {
+  const status = idleStatus({
+    contextFullness: { percent: 100, source: 'telemetry' },
+    lastHumanInputMs: NOW - 10_000,
+  });
+  assert.equal(decideIdleClear(status, false, NOW, CONFIG), 'skip');
+});
 
 test('a human keystroke that already predates the settle window no longer blocks a clear', () => {
   const status = idleStatus({ lastHumanInputMs: NOW - 121_000 });
@@ -119,7 +149,7 @@ test('startIdleClearMonitor sends a clear for a drained-idle role and logs it', 
   const cleared = [];
   const logs = [];
   const timer = startIdleClearMonitor(
-    { enabled: true, settleWindowSeconds: 0, pollIntervalSeconds: 0.02 },
+    { enabled: true, settleWindowSeconds: 0, fullnessThresholdPercent: 75, pollIntervalSeconds: 0.02 },
     {
       getRoleStatuses: () => [
         {
@@ -130,6 +160,7 @@ test('startIdleClearMonitor sends a clear for a drained-idle role and logs it', 
           drainInProgress: false,
           lastHumanInputMs: null,
           lastActivityMs: Date.now() - 1000,
+          contextFullness: { percent: 100, source: 'telemetry' },
         },
       ],
       sendClear: (role) => cleared.push(role),
@@ -145,10 +176,68 @@ test('startIdleClearMonitor sends a clear for a drained-idle role and logs it', 
   }
 });
 
+// BL-141 context-clear-75-03: the log line must say when the decision used
+// the proxy metric, not exact telemetry.
+test('startIdleClearMonitor logs that proxy mode was used when the fullness came from the proxy', async () => {
+  const cleared = [];
+  const logs = [];
+  const timer = startIdleClearMonitor(
+    { enabled: true, settleWindowSeconds: 0, fullnessThresholdPercent: 75, pollIntervalSeconds: 0.02 },
+    {
+      getRoleStatuses: () => [
+        {
+          role: 'coder',
+          hasInProcessWork: false,
+          hasQueuedNew: false,
+          needsHumanPending: false,
+          drainInProgress: false,
+          lastHumanInputMs: null,
+          lastActivityMs: Date.now() - 1000,
+          contextFullness: { percent: 80, source: 'proxy' },
+        },
+      ],
+      sendClear: (role) => cleared.push(role),
+      log: (message) => logs.push(message),
+    }
+  );
+  try {
+    await waitUntil(() => cleared.length > 0);
+    assert.match(logs[0], /proxy/i);
+  } finally {
+    stopIdleClearMonitor(timer);
+  }
+});
+
+test('startIdleClearMonitor never clears a role whose fullness stays below the threshold', async () => {
+  const cleared = [];
+  const timer = startIdleClearMonitor(
+    { enabled: true, settleWindowSeconds: 0, fullnessThresholdPercent: 75, pollIntervalSeconds: 0.02 },
+    {
+      getRoleStatuses: () => [
+        {
+          role: 'coder',
+          hasInProcessWork: false,
+          hasQueuedNew: false,
+          needsHumanPending: false,
+          drainInProgress: false,
+          lastHumanInputMs: null,
+          lastActivityMs: Date.now() - 1000,
+          contextFullness: { percent: 10, source: 'telemetry' },
+        },
+      ],
+      sendClear: (role) => cleared.push(role),
+      log: () => {},
+    }
+  );
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  stopIdleClearMonitor(timer);
+  assert.deepEqual(cleared, []);
+});
+
 test('startIdleClearMonitor never sends a clear for a role holding in_process work', async () => {
   const cleared = [];
   const timer = startIdleClearMonitor(
-    { enabled: true, settleWindowSeconds: 0, pollIntervalSeconds: 0.02 },
+    { enabled: true, settleWindowSeconds: 0, fullnessThresholdPercent: 75, pollIntervalSeconds: 0.02 },
     {
       getRoleStatuses: () => [
         {
@@ -159,6 +248,7 @@ test('startIdleClearMonitor never sends a clear for a role holding in_process wo
           drainInProgress: false,
           lastHumanInputMs: null,
           lastActivityMs: Date.now() - 1000,
+          contextFullness: { percent: 100, source: 'telemetry' },
         },
       ],
       sendClear: (role) => cleared.push(role),
@@ -173,7 +263,7 @@ test('startIdleClearMonitor never sends a clear for a role holding in_process wo
 test('startIdleClearMonitor disabled sends no clears even past many settle windows', async () => {
   const cleared = [];
   const timer = startIdleClearMonitor(
-    { enabled: false, settleWindowSeconds: 0, pollIntervalSeconds: 0.02 },
+    { enabled: false, settleWindowSeconds: 0, fullnessThresholdPercent: 75, pollIntervalSeconds: 0.02 },
     {
       getRoleStatuses: () => [
         {
@@ -184,6 +274,7 @@ test('startIdleClearMonitor disabled sends no clears even past many settle windo
           drainInProgress: false,
           lastHumanInputMs: null,
           lastActivityMs: Date.now() - 1000,
+          contextFullness: { percent: 100, source: 'telemetry' },
         },
       ],
       sendClear: (role) => cleared.push(role),

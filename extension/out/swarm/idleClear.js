@@ -6,6 +6,13 @@
 // (implicated in the BL-067 overnight stall); the pipeline protocol is
 // already context-free between parcels (every handoff says re-read role +
 // constitution), so clearing at the right moment costs nothing.
+//
+// BL-141: drained-idle alone is no longer sufficient — clearing also
+// requires the context window to be at least fullnessThresholdPercent full,
+// so a role that goes idle early with a mostly-empty window is not cleared
+// needlessly. See contextFullness.ts for how the percent itself is derived
+// (exact telemetry when a backend reports it, a deterministic proxy metric
+// otherwise).
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.IdleClearTracker = void 0;
 exports.decideIdleClear = decideIdleClear;
@@ -27,6 +34,11 @@ function decideIdleClear(status, alreadyCleared, nowMs, config) {
         return 'skip';
     }
     if (status.drainInProgress) {
+        return 'skip';
+    }
+    // BL-141: below the fullness threshold, skip regardless of how long the
+    // role has been drained-idle — that safety gate alone was too aggressive.
+    if (status.contextFullness.percent < config.fullnessThresholdPercent) {
         return 'skip';
     }
     if (status.lastHumanInputMs !== null) {
@@ -71,7 +83,11 @@ function startIdleClearMonitor(config, adapters) {
             const decision = tracker.evaluate(status, nowMs, config);
             if (decision === 'clear') {
                 adapters.sendClear(status.role);
-                adapters.log(`Cleared idle context for ${status.role}.`);
+                // BL-141 context-clear-75-03: explicitly label when the decision
+                // was made on the proxy metric, never leaving that implicit.
+                const fullnessNote = `${status.contextFullness.percent}% full` +
+                    (status.contextFullness.source === 'proxy' ? ' (proxy mode)' : '');
+                adapters.log(`Cleared idle context for ${status.role} (${fullnessNote}).`);
             }
         }
     }, config.pollIntervalSeconds * 1000);

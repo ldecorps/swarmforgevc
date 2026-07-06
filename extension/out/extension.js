@@ -67,6 +67,7 @@ const inboxChaser_1 = require("./swarm/inboxChaser");
 const needsHumanDetection_1 = require("./panel/needsHumanDetection");
 const humanInputTracker_1 = require("./swarm/humanInputTracker");
 const idleClear_1 = require("./swarm/idleClear");
+const contextFullness_1 = require("./swarm/contextFullness");
 const bounceDrain_1 = require("./swarm/bounceDrain");
 const heartbeat_1 = require("./tools/heartbeat");
 const devActivationMarker_1 = require("./devActivationMarker");
@@ -90,6 +91,15 @@ const BOUNCE_DRAIN_POLL_INTERVAL_SECONDS = 5;
 const BOUNCE_DRAIN_TIMEOUT_SECONDS_DEFAULT = 900;
 const CONTEXT_CLEAR_POLL_INTERVAL_SECONDS = 15;
 const CONTEXT_CLEAR_SETTLE_WINDOW_SECONDS_DEFAULT = 120;
+// BL-141: no backend this extension drives currently reports real context-
+// token usage, so the fullness gate always runs on the proxy tier for now
+// (resolveContextFullness still takes a telemetryPercent parameter so a
+// backend that starts reporting it plugs straight in without a redesign).
+const CONTEXT_CLEAR_FULLNESS_THRESHOLD_PERCENT_DEFAULT = 75;
+// Proxy: pane-history line count treated as "full" for contextFullness's
+// deterministic proxy metric. capturePane below reads the last 400 lines of
+// scrollback, so that count is "100% full" on this proxy's scale.
+const CONTEXT_CLEAR_PROXY_FULL_AT_LINE_COUNT = 400;
 // BL-080: short retry window for the activation re-attach check when no
 // swarm socket is on disk yet - this only smooths a transient probe flake,
 // not a real boot.
@@ -433,6 +443,7 @@ function startOrRestartIdleClearMonitor(targetPath, context) {
     const monitorConfig = {
         enabled: config.get('contextClear.enabled', true),
         settleWindowSeconds: config.get('contextClear.settleWindowSeconds', CONTEXT_CLEAR_SETTLE_WINDOW_SECONDS_DEFAULT),
+        fullnessThresholdPercent: config.get('contextClear.fullnessThresholdPercent', CONTEXT_CLEAR_FULLNESS_THRESHOLD_PERCENT_DEFAULT),
         pollIntervalSeconds: CONTEXT_CLEAR_POLL_INTERVAL_SECONDS,
     };
     const roles = (0, tmuxClient_2.readSwarmRoles)(targetPath);
@@ -446,6 +457,17 @@ function startOrRestartIdleClearMonitor(targetPath, context) {
         const target = paneTargetFor(role);
         const capture = target ? (0, tmuxClient_2.capturePane)(socketPath, target, -50) : null;
         const paneText = capture && capture.exitCode === 0 ? capture.stdout : '';
+        // BL-141: no backend here reports real context-token usage, so
+        // telemetryPercent is always null for now and the proxy metric always
+        // decides — see resolveContextFullness/contextFullness.ts. The proxy
+        // reads a longer scrollback capture than the 50-line needs-human
+        // check above, since fullness needs the whole accumulated history.
+        const fullnessCapture = target
+            ? (0, tmuxClient_2.capturePane)(socketPath, target, -CONTEXT_CLEAR_PROXY_FULL_AT_LINE_COUNT)
+            : null;
+        const fullnessLineCount = fullnessCapture && fullnessCapture.exitCode === 0
+            ? fullnessCapture.stdout.split('\n').length
+            : 0;
         return {
             role,
             hasInProcessWork: (0, inboxChaser_1.scanInProcess)(inProcessDir).length > 0,
@@ -454,6 +476,7 @@ function startOrRestartIdleClearMonitor(targetPath, context) {
             drainInProgress: (0, bounceDrain_1.readBounceDrainState)(targetPath) !== null,
             lastHumanInputMs: (0, humanInputTracker_1.lastHumanInputMs)(role),
             lastActivityMs: (0, paneActivity_1.trackPaneActivity)(role, paneText, (0, paneActivity_1.outboxNewestMtimeMs)(targetPath, role), Date.now()),
+            contextFullness: (0, contextFullness_1.resolveContextFullness)(null, (0, contextFullness_1.estimateProxyFullnessPercent)(fullnessLineCount, CONTEXT_CLEAR_PROXY_FULL_AT_LINE_COUNT)),
         };
     });
     currentIdleClearMonitor = (0, idleClear_1.startIdleClearMonitor)(monitorConfig, {

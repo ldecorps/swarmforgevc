@@ -3,6 +3,7 @@ title: "PWA bilingual FR/EN — French chrome plus machine-translated documentat
 milestone: M6
 status: todo
 priority: 04
+direction: non-aligned
 assigned_to: coder
 depends_on: BL-097 (PWA + Action pipeline), BL-117 (docs explorer whose content this translates)
 source: "operator request 2026-07-05 (phone): make the phone app bilingual (French)"

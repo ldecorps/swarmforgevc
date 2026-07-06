@@ -3,6 +3,7 @@ title: BUG — tracer-bullet hops stop being logged after the specifier; the pip
 milestone: M2
 status: todo
 priority: 03
+direction: expedite
 assigned_to: coder
 
 description: |

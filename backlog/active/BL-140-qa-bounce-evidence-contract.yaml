@@ -3,6 +3,7 @@ title: "QA bounce evidence contract: every return to coder must include reproduc
 milestone: M4
 status: todo
 priority: 04
+direction: aligned
 assigned_to: specifier
 source: "operator follow-up (2026-07-06): QA returns are ambiguous (compile vs behavior); require concrete evidence in bounce handoffs"
 

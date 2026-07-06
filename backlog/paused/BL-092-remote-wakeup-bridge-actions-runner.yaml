@@ -3,6 +3,7 @@ title: remote wake-up bridge — self-hosted GitHub Actions runner nudges the WS
 milestone: M6
 status: todo
 priority: 05
+direction: non-aligned
 source: operator requirement refinement 2026-07-04 ("could we leverage some git action?")
 depends_on: BL-091
 
