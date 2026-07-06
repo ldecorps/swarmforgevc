@@ -7,6 +7,7 @@ const {
   paneTarget,
   resolveAgentPaneTarget,
   getPaneCommand,
+  getPanePid,
   capturePane,
   sendKeys,
   sessionExists,
@@ -112,6 +113,28 @@ test('getPaneCommand returns empty string when tmux call fails', () => {
   ]);
   try {
     assert.equal(getPaneCommand('/tmp/fake.sock', 'sess:0.1'), '');
+  } finally {
+    fake.restore();
+  }
+});
+
+test('getPanePid returns trimmed pane pid on success', () => {
+  const fake = installFakeTmux([
+    { subcommand: 'display-message', exitCode: 0, stdout: '54321\n' },
+  ]);
+  try {
+    assert.equal(getPanePid('/tmp/fake.sock', 'sess:0.1'), '54321');
+  } finally {
+    fake.restore();
+  }
+});
+
+test('getPanePid returns empty string when tmux call fails', () => {
+  const fake = installFakeTmux([
+    { subcommand: 'display-message', exitCode: 1, stdout: '' },
+  ]);
+  try {
+    assert.equal(getPanePid('/tmp/fake.sock', 'sess:0.1'), '');
   } finally {
     fake.restore();
   }
