@@ -254,7 +254,9 @@ export function computeTraceReport(
   }
 
   const lastHop = hops[hops.length - 1].role;
-  const pass = lastHop === 'cleaner';
+  // BL-136: the pipeline's terminal role is QA (coordinator -> ... -> QA),
+  // not cleaner — cleaner is now a mid-chain hop that forwards to architect.
+  const pass = lastHop === 'QA';
 
   const firstTimestamp = hops[0].timestamp;
   const lastTimestamp = hops[hops.length - 1].timestamp;
