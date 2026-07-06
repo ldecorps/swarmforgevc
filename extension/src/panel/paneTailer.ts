@@ -1,6 +1,7 @@
 import {
   capturePane,
   getPaneCommand,
+  getPanePid,
   readSwarmRoles,
   readTmuxSocket,
   resizeWindow,
@@ -63,6 +64,21 @@ export function isStalled(lastChangedAt: number, now: number): boolean {
   return now - lastChangedAt >= STALL_THRESHOLD_MS;
 }
 
+/**
+ * BL-120: `tmux respawn-pane` (e.g. a relaunch that reuses the existing
+ * session rather than killing it) swaps the process running in a pane
+ * without changing the session name or the socket path - the two signals
+ * the tailer otherwise uses to decide "something changed, reset retained
+ * state". A changed pane pid is the respawn signal that survives that:
+ * true only when a PREVIOUS pid was already known (so first-ever capture
+ * of a role is not misread as a respawn) and it differs from a genuinely
+ * resolved current pid (an empty string means the capture itself failed,
+ * not a respawn).
+ */
+export function didPaneRespawn(previousPid: string | undefined, currentPid: string): boolean {
+  return previousPid !== undefined && currentPid !== '' && currentPid !== previousPid;
+}
+
 export interface TileOutput {
   role: string;
   displayName: string;
@@ -108,6 +124,9 @@ export class PaneTailer {
   // tmux keeps no scrollback for the Claude CLI's alternate-screen TUI.
   private paneHistory = new Map<string, string[]>();
   private paneHistoryContentLines = new Map<string, string[] | null>();
+  // BL-120: last-seen pane pid per role, to detect a respawn that reuses
+  // the same session/socket (see didPaneRespawn).
+  private panePids = new Map<string, string>();
 
   constructor(
     private readonly targetPath: string,
@@ -168,6 +187,7 @@ export class PaneTailer {
     this.liveRoles.clear();
     this.paneHistory.clear();
     this.paneHistoryContentLines.clear();
+    this.panePids.clear();
     if (this.socketPath) {
       this.paneBaseIndex = getPaneBaseIndex(this.socketPath);
       this.applyPaneSettings();
@@ -396,10 +416,31 @@ export class PaneTailer {
     this.liveRoles.add(role.role);
   }
 
+  // BL-120: a respawned pane (same session/socket, new process) must not
+  // keep diffing/merging fresh content against retained state built from
+  // the process that used to be there - reset this role's history so the
+  // next capture is treated as a clean first read.
+  private resetRoleRetainedState(role: string): void {
+    this.lastText.delete(role);
+    this.lastRawText.delete(role);
+    this.lastChangedAt.delete(role);
+    this.paneHistory.delete(role);
+    this.paneHistoryContentLines.delete(role);
+  }
+
   // Captures this role's pane and returns the text to diff, or null when the
   // capture itself failed (a message was already pushed for that case).
   private captureRoleOutput(role: SwarmRole, updates: TileOutput[]): string | null {
     const target = resolveAgentPaneTarget(this.socketPath, role.session, this.paneBaseIndex);
+
+    const currentPid = getPanePid(this.socketPath, target);
+    if (didPaneRespawn(this.panePids.get(role.role), currentPid)) {
+      this.resetRoleRetainedState(role.role);
+    }
+    if (currentPid !== '') {
+      this.panePids.set(role.role, currentPid);
+    }
+
     const result = capturePane(this.socketPath, target, -this.historyLines);
 
     if (result.exitCode !== 0) {
