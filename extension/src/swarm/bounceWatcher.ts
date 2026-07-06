@@ -3,6 +3,10 @@ import * as path from 'path';
 
 export type BounceType = 'swarm' | 'extension' | 'all';
 
+export function isBounceType(value: unknown): value is BounceType {
+  return value === 'swarm' || value === 'extension' || value === 'all';
+}
+
 export interface BounceParsed {
   valid: boolean;
   bounceType?: BounceType;
