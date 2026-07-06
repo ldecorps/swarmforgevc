@@ -1,6 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
-
 const { computeLiveness } = require('../out/watchdog/liveness');
 
 const CFG = { staleTimeoutSeconds: 60, inFlightTimeoutSeconds: 600, deadTimeoutSeconds: 180 };

@@ -1,5 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
@@ -65,7 +64,7 @@ test('startChaserMonitor returns a timer when .swarmforge exists', () => {
   fs.rmSync(tmpDir, { recursive: true });
 });
 
-test('periodic sweep chases a stale handoff and reports via callback', (t, done) => {
+test('periodic sweep chases a stale handoff and reports via callback', () => new Promise((resolve, reject) => {
   const tmpDir = mkTmp();
   writeRolesTsv(tmpDir, 'coder', tmpDir);
   const newDir = inboxNewDir(tmpDir);
@@ -87,14 +86,14 @@ test('periodic sweep chases a stale handoff and reports via callback', (t, done)
     try {
       assert.equal(chasedRole, 'coder');
       fs.rmSync(tmpDir, { recursive: true });
-      done();
+      resolve();
     } catch (err) {
-      done(err);
+      reject(err);
     }
   }, 200);
-});
+}));
 
-test('stopChaserMonitor stops further sweeps', (t, done) => {
+test('stopChaserMonitor stops further sweeps', () => new Promise((resolve, reject) => {
   const tmpDir = mkTmp();
   writeRolesTsv(tmpDir, 'coder', tmpDir);
   const newDir = inboxNewDir(tmpDir);
@@ -118,13 +117,13 @@ test('stopChaserMonitor stops further sweeps', (t, done) => {
       try {
         assert.equal(sweepCount, countAtStop);
         fs.rmSync(tmpDir, { recursive: true });
-        done();
+        resolve();
       } catch (err) {
-        done(err);
+        reject(err);
       }
     }, 150);
   }, 60);
-});
+}));
 
 test('stopChaserMonitor tolerates a null timer', () => {
   assert.doesNotThrow(() => stopChaserMonitor(null));
