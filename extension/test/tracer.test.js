@@ -168,7 +168,23 @@ test('parseTraceLog ignores non-HOP lines', () => {
 
 // ── computeTraceReport ─────────────────────────────────────────────────────
 
-test('computeTraceReport returns PASS when cleaner hop present', () => {
+test('computeTraceReport returns PASS when QA hop present', () => {
+  const hops = [
+    { role: 'coordinator', timestamp: new Date('2026-06-30T00:00:00.000Z') },
+    { role: 'specifier',   timestamp: new Date('2026-06-30T00:00:01.000Z') },
+    { role: 'coder',       timestamp: new Date('2026-06-30T00:00:03.000Z') },
+    { role: 'cleaner',     timestamp: new Date('2026-06-30T00:00:06.000Z') },
+    { role: 'architect',   timestamp: new Date('2026-06-30T00:00:08.000Z') },
+    { role: 'hardender',   timestamp: new Date('2026-06-30T00:00:10.000Z') },
+    { role: 'documenter',  timestamp: new Date('2026-06-30T00:00:12.000Z') },
+    { role: 'QA',          timestamp: new Date('2026-06-30T00:00:14.000Z') },
+  ];
+  const report = computeTraceReport(hops);
+  assert.equal(report.pass, true);
+  assert.equal(report.lastHop, 'QA');
+});
+
+test('computeTraceReport returns FAIL when the bullet stalls at cleaner (does not yet reach QA)', () => {
   const hops = [
     { role: 'coordinator', timestamp: new Date('2026-06-30T00:00:00.000Z') },
     { role: 'specifier',   timestamp: new Date('2026-06-30T00:00:01.000Z') },
@@ -176,7 +192,7 @@ test('computeTraceReport returns PASS when cleaner hop present', () => {
     { role: 'cleaner',     timestamp: new Date('2026-06-30T00:00:06.000Z') },
   ];
   const report = computeTraceReport(hops);
-  assert.equal(report.pass, true);
+  assert.equal(report.pass, false, 'cleaner is a mid-chain hop now, not the terminal role');
   assert.equal(report.lastHop, 'cleaner');
 });
 

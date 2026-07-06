@@ -48,6 +48,11 @@ You are the hardender.
   that crash as the load signal, not a code defect; retry later or fall back
   to targeted tests. (Lesson, 2026-07-06: BL-108 pass at load avg 150–170 on
   4 cores from other worktrees' live vitest/stryker runs.)
+- Under the load-avg-over-2x-cores condition, do not even attempt a
+  concurrency=1 differential Stryker run; it still times out on the dry run.
+  (Lesson, 2026-07-06: BL-139 hardening at load 100–250 on 4 cores — a
+  concurrency=1, 2-file --mutate dry run still timed out after 5 min, not
+  just full-suite runs.)
 - Run the project's mutation tool on the changed and new source, one file at a
   time; prefer differential mutation against the manifest. Kill survivors with
   targeted tests. Use worker limits when the tool supports them.
