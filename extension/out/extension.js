@@ -256,7 +256,10 @@ function startOrRestartChaserMonitor(targetPath, context) {
             (0, tmuxClient_2.sendKeys)(socketPath, target, 'Enter');
         },
         triggerRespawn: (role) => {
-            (0, tmuxClient_2.respawnAgent)(targetPath, role);
+            // BL-137 follow-up: the extension chaser may still conclude a role
+            // needs intervention, but it must not automatically respawn panes.
+            // Manual panel restarts continue to use respawnAgent deliberately.
+            (0, stuckEscalations_1.setStuckEscalation)(role, true);
         },
         logDeadLetter: (_role, _filePath) => {
             // Dead letter logging can be extended in future iterations

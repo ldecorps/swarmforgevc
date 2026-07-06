@@ -24,7 +24,7 @@ import { resolveRunName } from './run/resolveRunName';
 import { startBounceWatcher, BounceType } from './swarm/bounceWatcher';
 import { startChaserMonitor, stopChaserMonitor, buildRoleInboxes } from './watchdog/chaserMonitor';
 import type { ChaserMonitorConfig, ChaserCallbacks } from './watchdog/chaserMonitor';
-import { readTmuxSocket, paneTarget, getPaneBaseIndex, sendKeys, capturePane, readSwarmRoles, respawnAgent, sleepSync } from './swarm/tmuxClient';
+import { readTmuxSocket, paneTarget, getPaneBaseIndex, sendKeys, capturePane, readSwarmRoles, sleepSync } from './swarm/tmuxClient';
 import { sendInstructionVerified } from './swarm/verifiedInject';
 import { trackPaneActivity, outboxNewestMtimeMs } from './watchdog/paneActivity';
 import { setStuckEscalation, escalatedStuckRoles } from './watchdog/stuckEscalations';
@@ -264,7 +264,10 @@ function startOrRestartChaserMonitor(targetPath: string, context: vscode.Extensi
     },
 
     triggerRespawn: (role: string): void => {
-      respawnAgent(targetPath, role);
+      // BL-137 follow-up: the extension chaser may still conclude a role
+      // needs intervention, but it must not automatically respawn panes.
+      // Manual panel restarts continue to use respawnAgent deliberately.
+      setStuckEscalation(role, true);
     },
 
     logDeadLetter: (_role: string, _filePath: string): void => {
