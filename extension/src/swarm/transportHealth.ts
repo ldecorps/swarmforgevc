@@ -126,6 +126,23 @@ export interface TransportHealthInput {
   canary: CanaryStatus;
 }
 
+// Only reached when there is no offending parcel and no canary data: fall
+// back to the daemon's own process-level health. Split out of
+// computeTransportHealth to keep that function's branch count low (BL-121
+// hardening: behavior-preserving split, CRAP was 7 on the merged version).
+function daemonHealthFallback(daemonHealth: DaemonHealth): TransportHealth {
+  switch (daemonHealth.state) {
+    case 'healthy':
+      return { state: 'healthy', offending: [] };
+    case 'restarting':
+      return { state: 'delivery-degraded', offending: [] };
+    case 'persistent-failure':
+      return { state: 'broken', offending: [] };
+    default:
+      return { state: 'unknown', offending: [] };
+  }
+}
+
 // The state machine: a missed canary is the definitive "broken" signal
 // (overrides mere process liveness, per BL-121 canary-03); any dead-letter
 // or stall is at least "delivery-degraded" even while the daemon heartbeats
@@ -147,19 +164,7 @@ export function computeTransportHealth(input: TransportHealthInput): TransportHe
   if (input.canary.state === 'healthy') {
     return { state: 'healthy', offending: [] };
   }
-
-  // canary.state === 'no-data': no canary signal yet, fall back to the
-  // daemon's own process-level health.
-  switch (input.daemonHealth.state) {
-    case 'healthy':
-      return { state: 'healthy', offending: [] };
-    case 'restarting':
-      return { state: 'delivery-degraded', offending: [] };
-    case 'persistent-failure':
-      return { state: 'broken', offending: [] };
-    default:
-      return { state: 'unknown', offending: [] };
-  }
+  return daemonHealthFallback(input.daemonHealth);
 }
 
 export interface TransportHealthConfig {
