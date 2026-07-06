@@ -2,7 +2,7 @@ id: BL-108
 title: BUG — stopping the extension orphans spawned test/mutation-test process trees; they reparent to launchd and pin every core indefinitely
 milestone: M2
 status: todo
-priority: 02
+priority: 01
 assigned_to: coder
 
 description: |
