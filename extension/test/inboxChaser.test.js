@@ -613,6 +613,32 @@ test('runSweep never respawns a dead-liveness role that is still showing recent 
   assert.equal(calls.deadLetters.length, 0);
 });
 
+// BL-135: the runSweep wiring (sweepRoleInbox -> decideItemAction ->
+// applyInboxItemAction) must actually carry lastChasedAtMs through two real
+// sweeps, not just the pure decideItemAction unit above. A second sweep run
+// moments after the first, against a recipient still showing activity, must
+// be suppressed by the backoff rather than re-chasing on every tick.
+test('runSweep suppresses a second chase of a busy recipient within the backoff window, then chases again once it elapses', () => {
+  const { role, inboxNewDir, inProcessDir } = mkRoleInbox('coder');
+  const filePath = writeAgedHandoff(inboxNewDir, 'a.handoff', 120, NOW);
+  const { calls, adapters } = mkAdapters('alive', NOW);
+
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters);
+  assert.deepEqual(calls.wakeUps, ['coder']);
+  assert.equal(readChaseCount(filePath), 1);
+
+  // 5s later - well inside the backoff window for chaseCount=1
+  // (min(30*2^1, 300) = 60s) - must be skipped, not re-chased.
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW + 5_000, SWEEP_CFG, adapters);
+  assert.deepEqual(calls.wakeUps, ['coder']);
+  assert.equal(readChaseCount(filePath), 1);
+
+  // 61s after the first chase - backoff has elapsed, so the sweep chases again.
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW + 61_000, SWEEP_CFG, adapters);
+  assert.deepEqual(calls.wakeUps, ['coder', 'coder']);
+  assert.equal(readChaseCount(filePath), 2);
+});
+
 // BL-087 no-false-respawn-03: only once chase attempts are exhausted for a
 // role that has ALSO shown no recent pane/outbox activity does the chaser
 // escalate to an actual respawn.
