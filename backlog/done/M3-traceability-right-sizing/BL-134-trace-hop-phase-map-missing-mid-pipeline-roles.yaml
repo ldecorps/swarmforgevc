@@ -1,7 +1,15 @@
 id: BL-134
 title: trace-hop.js PHASE_MAP missing architect/hardender/documenter roles
 milestone: M3
-status: todo
+status: done
+resolution: |
+  Satisfied by the BL-136 merge. An earlier architect pass folded into BL-136
+  already extended PHASE_MAP in extension/src/tools/trace-hop.ts to cover all
+  eight roles (architect->architecting, hardender->hardening,
+  documenter->documenting) while leaving the five existing mappings unchanged
+  and keeping the unknown-role error. All three BL-134 acceptance scenarios are
+  met by code already on main; no further work required. Closed on coordinator's
+  note (2026-07-06).
 priority: 08
 direction: aligned
 assigned_to: coder
