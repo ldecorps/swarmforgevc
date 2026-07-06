@@ -3,7 +3,7 @@ title: surface Stryker mutation progress/ETA to a durable file (and the tile) so
 milestone: M2
 status: todo
 priority: 02
-assigned_to: specifier
+assigned_to: coder
 
 description: |
   OPERATOR (2026-07-06): a mutation run can take hours (a live BL-121 pass on
