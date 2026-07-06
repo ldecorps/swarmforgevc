@@ -1,0 +1,65 @@
+id: BL-148
+title: "Audit: does a genuinely-wedged role actually fire and deliver a needs-human alert? (4 roles idle, 'no one told' despite surfacing existing)"
+milestone: M2
+status: todo
+priority: 04
+direction: reliability
+assigned_to: coder
+source: "Split from BL-147 per operator 2026-07-06. During the BL-137 regression, 4 roles sat idle with work waiting and 'no one told', yet escalatedStuckRoles() already feeds needsHumanPending, the panel needsHumanReconciler, and the BL-073 email notifier. So the surfacing code exists but apparently did not alert the operator — this ticket finds out why."
+
+description: |
+  Problem:
+  When the swarm went wedged on 2026-07-06 (~18:44-18:47Z), four roles sat
+  genuinely idle with real work queued and the operator was not alerted; the
+  coordinator only noticed by reading handoffd.log directly. Yet the needs-
+  human surfacing path already exists in code: setStuckEscalation ->
+  escalatedStuckRoles() -> needsHumanReconciler.applyStuckRoles (panel) and
+  needsHumanPending (extension.ts:615), and the panel wires the BL-073
+  NeedsHumanEmailNotifier. So the code to notify exists but the notification
+  did not reach a human.
+
+  This is an audit/investigation ticket: determine WHY the wedge did not
+  produce an effective alert, then fix the specific gap found. Candidate
+  gaps to check (not a prescribed fix):
+  - Does a stuck-escalation (as opposed to a detectNeedsHuman text match)
+    actually reach the email notifier, or does the reconciler only update a
+    passive panel badge?
+  - Is the email notifier only constructed/active while the panel webview is
+    open, so a headless/observing-only run never emits?
+  - Is the escalation flag set at all in the wedged case once 5ef8dd9 routed
+    triggerRespawn to setStuckEscalation — i.e. does the chaser reach that
+    callback for a notify-delivery-failed pane?
+  - De-dup/reconciler semantics swallowing the first transition.
+
+  Deliverable: a root-caused finding plus the minimal fix that makes a
+  confirmed genuine wedge emit exactly one active needs-human alert through
+  the existing BL-073 mechanism, asserted through the notifier seam. Depends
+  on BL-147 only for shared understanding, not code; can proceed independently.
+
+acceptance: |
+  Feature: a genuinely-wedged role reliably raises one active needs-human alert
+
+  # BL-148 wedge-alert-01
+  Scenario: a confirmed wedge emits exactly one needs-human alert
+    Given a role is confirmed genuinely wedged (idle, delivery-failed after retries)
+    When the escalation marks the role as needing a human
+    Then exactly one needs-human notification is emitted through the BL-073
+      email mechanism for that role
+
+  # BL-148 wedge-alert-02
+  Scenario: the alert does not depend on the panel webview being open
+    Given the swarm is running without the tile panel webview focused/open
+    When a role becomes genuinely wedged
+    Then the needs-human alert is still emitted through the notifier
+
+  # BL-148 wedge-alert-03
+  Scenario: a transient stuck state that self-recovers does not alert
+    Given a role's input is briefly stuck but handoffd's own retry submits it
+    When the pane recovers before the wedged threshold
+    Then no needs-human alert is emitted
+
+  # Non-behavioral gates:
+  #  - Asserted through the email-notifier seam with test doubles; no live
+  #    email send and no real timers in tests.
+  #  - Ships the root-cause finding in the commit message / ticket notes.
+  #  - Does not re-implement BL-147's respawn recovery.
