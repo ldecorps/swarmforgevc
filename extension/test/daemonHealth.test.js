@@ -70,9 +70,13 @@ test('webview HTML has a transport-health marker with alarm styling', () => {
   assert(html.includes('.transport-health.down'), 'must style the persistent-failure state');
 });
 
+// BL-121: the panel now renders delivery-level transport health (see
+// transportHealth.test.js) rather than the daemon's process-only states —
+// 'broken'/'delivery-degraded' can fire on a dead-lettered or stalled
+// parcel, or a missed canary, even while the daemon process itself is alive.
 test('panel.js renders transport health states and clears the alarm when healthy', () => {
   const panelJs = loadPanelSource();
   assert(panelJs.includes("case 'transportHealth':"), 'must handle the transportHealth message');
-  assert(/persistent-failure/.test(panelJs), 'must recognize the persistent-failure state');
-  assert(/restarting/.test(panelJs), 'must recognize the restarting state');
+  assert(/broken/.test(panelJs), 'must recognize the broken delivery state');
+  assert(/delivery-degraded/.test(panelJs), 'must recognize the delivery-degraded state');
 });

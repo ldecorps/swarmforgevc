@@ -5,7 +5,7 @@ import { SwarmRole, respawnAgent } from '../swarm/tmuxClient';
 import { PaneTailer } from './paneTailer';
 import { currentStageLabel, readPipelineStages, findLiveHolder, parseRolesTsv } from '../swarm/swarmState';
 import { computeSwarmMetrics, DEFAULT_SUITE_WARN_SECONDS } from '../metrics/swarmMetrics';
-import { readDaemonHealth } from '../swarm/daemonHealth';
+import { computeLiveTransportHealth } from '../swarm/transportHealth';
 import { escalatedStuckRoles } from '../watchdog/stuckEscalations';
 import { loadRuns } from '../runs/runLog';
 import { getNonce, getWebviewHtml } from './webviewHtml';
@@ -30,6 +30,12 @@ import { scanInProcess } from '../swarm/inboxChaser';
 
 const STAGE_POLL_INTERVAL_MS = 2000;
 const OUTPUT_CHANNEL_NAME = 'SwarmForge';
+// BL-121: a parcel sitting undelivered this long is a detected stall, not a
+// role legitimately still working (cf. BL-067's stuckInProcessTimeoutSeconds,
+// which governs agent-inactivity chasing at a much shorter horizon — this is
+// the coarser "is anything actually moving" alarm for the panel).
+const TRANSPORT_STALL_THRESHOLD_SECONDS = 1800;
+const TRANSPORT_CANARY_BUDGET_SECONDS = 600;
 
 export class SwarmPanel {
   public static currentPanel: SwarmPanel | undefined;
@@ -320,7 +326,13 @@ export class SwarmPanel {
       this.panel.webview.postMessage({ type: 'backlogUpdate', items: backlogItems });
       this.panel.webview.postMessage({ type: 'holderUpdate', holders: holderMap });
       this.panel.webview.postMessage({ type: 'badgeUpdate', badges: buildBadgeMap(backlogItems, this.targetPath) });
-      this.panel.webview.postMessage({ type: 'transportHealth', health: readDaemonHealth(this.targetPath) });
+      const transportRoles = this.tailer?.getRoles() ?? [];
+      const transportRoleInboxes = buildRoleInboxes(this.targetPath, transportRoles.map((r) => r.role));
+      const transportHealth = computeLiveTransportHealth(this.targetPath, transportRoleInboxes, Date.now(), {
+        stallThresholdSeconds: TRANSPORT_STALL_THRESHOLD_SECONDS,
+        canaryBudgetSeconds: TRANSPORT_CANARY_BUDGET_SECONDS,
+      });
+      this.panel.webview.postMessage({ type: 'transportHealth', health: transportHealth });
       // BL-071: reuses this existing poll tick - no new polling loop, no
       // per-second git invocations.
       this.postMetrics();
