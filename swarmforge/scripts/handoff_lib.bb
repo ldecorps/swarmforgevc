@@ -115,6 +115,38 @@
       (println line)))
   (System/exit status))
 
+;; BL-119: the chaser writes sidecar files (.nudge, .chase.json) next to a
+;; queued handoff. Once the handoff itself completes/moves, an orphaned
+;; sidecar can remain - these are the ONLY file kinds completion may ever
+;; delete on its own; anything else still aborts with a clear error.
+(def sidecar-suffixes [".nudge" ".chase.json"])
+
+(defn sidecar-file? [path]
+  (let [filename (fs/file-name path)]
+    (boolean (some #(str/ends-with? filename %) sidecar-suffixes))))
+
+(defn remove-sidecars-of!
+  "Deletes <handoff-file>.nudge and <handoff-file>.chase.json if present -
+   called right after a handoff moves to completed/, so its now-orphaned
+   sidecars never linger in in_process/ to wedge later stuck-parcel checks."
+  [handoff-file]
+  (doseq [suffix sidecar-suffixes]
+    (let [sidecar (fs/path (str (str handoff-file) suffix))]
+      (when (fs/exists? sidecar)
+        (fs/delete sidecar)))))
+
+(defn clean-dir-sidecars-or-fail!
+  "Called on whatever remains in a batch directory once every real .handoff
+   payload has already been moved out. Any leftover chaser sidecar is
+   disposable metadata and is deleted; any other unexpected file aborts
+   completion, naming it, without deleting anything."
+  [dir]
+  (when (fs/exists? dir)
+    (doseq [entry (fs/list-dir dir)]
+      (if (and (fs/regular-file? entry) (sidecar-file? entry))
+        (fs/delete entry)
+        (fail! 2 (str "AMBIGUOUS_TASK_STATE: unexpected file in batch directory: " entry))))))
+
 (defn current-role []
   (let [r (System/getenv "SWARMFORGE_ROLE")]
     (when-not (str/blank? r) r)))
