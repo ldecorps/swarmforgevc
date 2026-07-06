@@ -486,6 +486,14 @@ prepare_worktrees() {
 
     if [[ ! -e "$worktree_path/.git" && ! -d "$worktree_path/.git" ]]; then
       git -C "$WORKING_DIR" worktree add --force -B "$branch_name" "$worktree_path" HEAD >/dev/null
+      # Bootstrap deps: a fresh worktree has no node_modules, so build/test/
+      # mutation would fail (devDeps like vitest, @stryker-mutator/vitest-runner,
+      # @vitest/coverage-v8 are not in git). Install once at creation. Existing
+      # worktrees skip this (guarded above); they re-install on sync per the
+      # constitution's npm-install rule when package.json changes.
+      if [[ -f "$worktree_path/extension/package.json" ]]; then
+        ( cd "$worktree_path/extension" && npm install --no-audit --no-fund >/dev/null 2>&1 ) || true
+      fi
     fi
   done
 }
