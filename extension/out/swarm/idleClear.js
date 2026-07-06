@@ -6,37 +6,54 @@
 // (implicated in the BL-067 overnight stall); the pipeline protocol is
 // already context-free between parcels (every handoff says re-read role +
 // constitution), so clearing at the right moment costs nothing.
+//
+// BL-141: drained-idle alone is no longer sufficient — clearing also
+// requires the context window to be at least fullnessThresholdPercent full,
+// so a role that goes idle early with a mostly-empty window is not cleared
+// needlessly. See contextFullness.ts for how the percent itself is derived
+// (exact telemetry when a backend reports it, a deterministic proxy metric
+// otherwise).
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.IdleClearTracker = void 0;
 exports.decideIdleClear = decideIdleClear;
 exports.startIdleClearMonitor = startIdleClearMonitor;
 exports.stopIdleClearMonitor = stopIdleClearMonitor;
-// Pure: every safety gate from the ticket's scenario table in one place, so
-// each unsafe state is independently testable.
-function decideIdleClear(status, alreadyCleared, nowMs, config) {
-    if (!config.enabled) {
-        return 'skip';
-    }
-    if (alreadyCleared) {
-        return 'skip';
-    }
-    if (status.hasInProcessWork || status.hasQueuedNew) {
-        return 'skip';
-    }
-    if (status.needsHumanPending) {
-        return 'skip';
-    }
-    if (status.drainInProgress) {
-        return 'skip';
-    }
+function hasPendingWork(status) {
+    return status.hasInProcessWork || status.hasQueuedNew;
+}
+// BL-141: below the fullness threshold, skip regardless of how long the role
+// has been drained-idle — that safety gate alone was too aggressive.
+function isBelowFullnessThreshold(status, config) {
+    return status.contextFullness.percent < config.fullnessThresholdPercent;
+}
+// The gates that never depend on elapsed time: any one of these blocks a
+// clear regardless of how long the role has sat idle (hardener split, kept
+// under CRAP 6 — see decideIdleClear below for the settle-window half).
+function isBlockedByStaticGates(status, alreadyCleared, config) {
+    return (!config.enabled ||
+        alreadyCleared ||
+        hasPendingWork(status) ||
+        status.needsHumanPending ||
+        status.drainInProgress ||
+        isBelowFullnessThreshold(status, config));
+}
+function isWithinSettleWindow(status, nowMs, config) {
     if (status.lastHumanInputMs !== null) {
         const sinceInputSeconds = (nowMs - status.lastHumanInputMs) / 1000;
         if (sinceInputSeconds < config.settleWindowSeconds) {
-            return 'skip';
+            return true;
         }
     }
     const quietSeconds = (nowMs - status.lastActivityMs) / 1000;
-    if (quietSeconds < config.settleWindowSeconds) {
+    return quietSeconds < config.settleWindowSeconds;
+}
+// Pure: every safety gate from the ticket's scenario table, split across the
+// two helpers above so each stays independently testable and low-complexity.
+function decideIdleClear(status, alreadyCleared, nowMs, config) {
+    if (isBlockedByStaticGates(status, alreadyCleared, config)) {
+        return 'skip';
+    }
+    if (isWithinSettleWindow(status, nowMs, config)) {
         return 'skip';
     }
     return 'clear';
@@ -71,7 +88,11 @@ function startIdleClearMonitor(config, adapters) {
             const decision = tracker.evaluate(status, nowMs, config);
             if (decision === 'clear') {
                 adapters.sendClear(status.role);
-                adapters.log(`Cleared idle context for ${status.role}.`);
+                // BL-141 context-clear-75-03: explicitly label when the decision
+                // was made on the proxy metric, never leaving that implicit.
+                const fullnessNote = `${status.contextFullness.percent}% full` +
+                    (status.contextFullness.source === 'proxy' ? ' (proxy mode)' : '');
+                adapters.log(`Cleared idle context for ${status.role} (${fullnessNote}).`);
             }
         }
     }, config.pollIntervalSeconds * 1000);
