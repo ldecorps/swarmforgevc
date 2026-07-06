@@ -5,6 +5,13 @@ status: todo
 priority: 05
 assigned_to: specifier
 
+# held (coordinator, 2026-07-06): not promoted yet despite drain. BL-131's
+# scope includes extension/src/watchdog/chaserMonitor.ts and
+# extension/test/chaserMonitor.test.js - BL-122 (currently at the hardener
+# stage, unmerged) just changed both of those exact files. Promote once
+# BL-121/122 land (QA-approved + merged) to avoid concurrent edits to the
+# same chase/recovery-timer plumbing (same reasoning as BL-128's hold).
+
 description: |
   OPERATOR DIRECTIVE (2026-07-06): the unit suite is measurably slow, and the
   measured cause is real timers. `.test-durations.jsonl` (repo root) shows
