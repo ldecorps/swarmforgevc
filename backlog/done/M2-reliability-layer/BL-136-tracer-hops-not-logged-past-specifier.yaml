@@ -1,7 +1,7 @@
 id: BL-136
 title: BUG — tracer-bullet hops stop being logged after the specifier; the pipeline succeeds but the tracer test is blind and falsely reports timeout
 milestone: M2
-status: todo
+status: done
 priority: 03
 direction: expedite
 assigned_to: coder
