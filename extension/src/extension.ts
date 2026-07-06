@@ -68,6 +68,7 @@ const CHASER_TIMEOUT_SECONDS = 30;
 const CHASER_MAX_CHASES = 3;
 const CHASER_STUCK_IN_PROCESS_TIMEOUT_SECONDS = 60;
 const CHASER_RESPAWN_COOLDOWN_SECONDS = 300;
+const CHASER_MAX_RECOVERY_ATTEMPTS = 3;
 const BOUNCE_DRAIN_POLL_INTERVAL_SECONDS = 5;
 const BOUNCE_DRAIN_TIMEOUT_SECONDS_DEFAULT = 900;
 const CONTEXT_CLEAR_POLL_INTERVAL_SECONDS = 15;
@@ -194,6 +195,7 @@ function startOrRestartChaserMonitor(targetPath: string, context: vscode.Extensi
     maxChases: CHASER_MAX_CHASES,
     stuckInProcessTimeoutSeconds: CHASER_STUCK_IN_PROCESS_TIMEOUT_SECONDS,
     respawnCooldownSeconds: CHASER_RESPAWN_COOLDOWN_SECONDS,
+    maxRecoveryAttempts: CHASER_MAX_RECOVERY_ATTEMPTS,
   };
 
   // Implement adapters for the chaser

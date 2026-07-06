@@ -41,3 +41,19 @@ acceptance: |
   #  - Record whether this was a regression or a never-wired gap.
   #  - Verified live in Extension Development Host with a ticket attached
   #    (BL-109 example), light and dark theme.
+
+investigation: |
+  Coder investigation (2026-07-06): neither a regression nor a never-wired
+  gap. `git log -S"stageColorClass" extension/media/panel.js` shows the
+  backlog row (`backlogRowHtml`, extension/media/panel.js) has called
+  `stageColorClass(holder)` on `.bl-assigned` since BL-077's original commit
+  786dc8e, the same commit that colored the tile-header badge. Both surfaces
+  read the same `holderMap`/`stageColorClass` and are covered end-to-end by
+  `extension/test/renderedStageColorAgreement.test.js` (scenario
+  stage-colors-05, badge/chip agreement across stages) and
+  `extension/test/renderedHolderlessAgreement.test.js` (unrouted tickets
+  render "queued" neutral, not a stage color, on both surfaces) — 26/26
+  green. No code change made; the reported screenshot most likely predates
+  the BL-077 merge landing in the operator's running build. Forwarding
+  unchanged for QA to re-verify live in Extension Development Host per the
+  ticket's non-behavioral gate.

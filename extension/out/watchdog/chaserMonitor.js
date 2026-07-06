@@ -39,6 +39,7 @@ exports.stopChaserMonitor = stopChaserMonitor;
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 const inboxChaser_1 = require("../swarm/inboxChaser");
+const handoffRecovery_1 = require("../swarm/handoffRecovery");
 const swarmState_1 = require("../swarm/swarmState");
 // Handoff inboxes live per WORKTREE (from roles.tsv), not under a per-role
 // <target>/.swarmforge/handoffs/<role>/ layout — the monitor previously built
@@ -78,10 +79,26 @@ function startChaserMonitor(config, callbacks) {
         onStuckEscalation: callbacks.onStuckEscalation,
     };
     const roleInboxes = buildRoleInboxes(config.targetPath, config.rolesList);
+    // BL-122: the recovery owner is this SAME extension-host timer, not any
+    // one pipeline agent — an agent process exiting can tear the swarm down
+    // around it (BL-107), but this watchdog is already the supervised owner
+    // of the chase/respawn seams recovery builds on.
+    const runRecoverySweep = () => {
+        (0, handoffRecovery_1.recoverDeadLetters)(roleInboxes, { maxRecoveryAttempts: config.maxRecoveryAttempts }, {
+            isRecipientBusy: (role) => {
+                const inbox = roleInboxes.find((r) => r.role === role);
+                return inbox ? (0, inboxChaser_1.scanInProcess)(inbox.inProcessDir).length > 0 : false;
+            },
+            sendWakeUp: callbacks.sendWakeUp,
+            logRemediation: (outcome) => (0, handoffRecovery_1.appendRecoveryLog)(config.targetPath, outcome),
+            setNeedsHuman: callbacks.onStuckEscalation,
+        });
+    };
     // Start periodic sweep
     const intervalId = setInterval(() => {
         const nowMs = Date.now();
         (0, inboxChaser_1.runSweep)(roleInboxes, nowMs, config, adapters);
+        runRecoverySweep();
     }, config.chaseIntervalSeconds * 1000);
     return intervalId;
 }
