@@ -1,7 +1,7 @@
 id: BL-120
 title: BUG — swarm panel drifts out of sync with the live swarm; tile CONTENT (and the title ticket badge) show stale frames with little relation to what agents are actually doing
 milestone: M2
-status: todo
+status: done
 priority: 03
 assigned_to: coder
 notes: |

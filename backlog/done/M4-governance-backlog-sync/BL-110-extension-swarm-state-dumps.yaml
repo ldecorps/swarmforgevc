@@ -1,7 +1,7 @@
 id: BL-110
 title: "extension/swarm stability — dump last known state on shutdown/failure"
 milestone: M4
-status: todo
+status: done
 priority: 01
 assigned_to: coder
 source: "root intake BL-052-extension-swarm-state-dumps (renumbered: id BL-052 already used by done/M4 fit-tile-pane ticket)"
