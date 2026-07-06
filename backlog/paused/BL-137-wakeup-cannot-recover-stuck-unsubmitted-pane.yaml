@@ -3,6 +3,7 @@ title: BUG — wake-up injection cannot recover a pane stuck with unsubmitted in
 milestone: M2
 status: todo
 priority: 01
+direction: expedite
 assigned_to: coder
 
 description: |

@@ -3,6 +3,7 @@ title: "APS realignment stage 1: living feature files + gherkin-parser lint gate
 milestone: M5
 status: todo
 priority: 10
+direction: aligned
 assigned_to: coder
 source: "root intake BL-053-aps-stage1-feature-files (renumbered: id BL-053 already used by done/M3 redo-tile-header ticket)"
 

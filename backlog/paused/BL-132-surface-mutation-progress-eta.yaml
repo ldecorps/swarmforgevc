@@ -3,6 +3,7 @@ title: surface Stryker mutation progress/ETA to a durable file (and the tile) so
 milestone: M2
 status: todo
 priority: 02
+direction: aligned
 assigned_to: coder
 
 description: |

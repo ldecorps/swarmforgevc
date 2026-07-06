@@ -3,6 +3,7 @@ title: second swarm bring-up on a Windows box via WSL2 (full pipeline, git-synce
 milestone: M6
 status: todo
 priority: 05
+direction: non-aligned
 source: operator requirement refinement 2026-07-04
 depends_on: BL-090, BL-094
 

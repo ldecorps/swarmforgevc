@@ -3,6 +3,7 @@ title: unify worktree branch naming to <swarm_name>/<role> so one repo hosts mul
 milestone: M6
 status: todo
 priority: 04
+direction: non-aligned
 source: operator observation 2026-07-04/05 ("worktree branches have the project prefix — so one extension can work the same repo for multiple projects")
 depends_on: BL-090 (swarm_name exists; merged)
 

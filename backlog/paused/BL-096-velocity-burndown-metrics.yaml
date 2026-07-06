@@ -3,6 +3,7 @@ title: delivery metrics — ticket-count velocity, per-milestone burndown, cycle
 milestone: M5
 status: todo
 priority: 02
+direction: non-aligned
 source: operator request 2026-07-04 ("introduce new metrics like velocity, so we can have burndown charts and things like that")
 depends_on: BL-094 (chart rendering; the metric computation layer itself may land first)
 

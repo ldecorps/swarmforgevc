@@ -3,6 +3,7 @@ title: BUG — stopping the extension orphans spawned test/mutation-test process
 milestone: M2
 status: todo
 priority: 01
+direction: expedite
 assigned_to: coder
 
 description: |

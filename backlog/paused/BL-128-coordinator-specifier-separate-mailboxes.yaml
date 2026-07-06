@@ -3,6 +3,7 @@ title: give coordinator and specifier their own physical mailbox instead of shar
 milestone: M3
 status: todo
 priority: 01
+direction: aligned
 
 held (coordinator, 2026-07-05): not promoted yet despite priority 01 — Concurrent
 Work Orthogonality. BL-121/122 (handoff transport detection/recovery, top

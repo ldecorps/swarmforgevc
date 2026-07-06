@@ -3,6 +3,7 @@ title: "launch robustness: login-shell PATH probe + persist launch output"
 milestone: M2
 status: todo
 priority: 07
+direction: aligned
 assigned_to: coder
 source: "root intake BL-058-launch-path-probe-and-log (renumbered: id BL-058 already used by done/M4 robust-extension-bounce ticket)"
 

@@ -3,6 +3,7 @@ title: "Kanban steering policy - pick one direction and align the swarm"
 milestone: M4
 status: todo
 priority: 04
+direction: aligned
 assigned_to: specifier
 source: "operator request (2026-07-06): steer the swarm toward one direction (reliability, phone app, multi-agent, concurrent swarm)"
 
