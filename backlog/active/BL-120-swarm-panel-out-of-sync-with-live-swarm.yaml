@@ -3,6 +3,7 @@ title: BUG — swarm panel drifts out of sync with the live swarm; tile CONTENT 
 milestone: M2
 status: todo
 priority: 03
+assigned_to: coder
 notes: |
   Filed at the backlog root as "BL-117" (raw intake, 2026-07-05); renumbered to
   BL-120 by the specifier because BL-117 was already taken by the PWA docs
