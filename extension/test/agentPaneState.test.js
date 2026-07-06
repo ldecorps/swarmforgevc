@@ -3,6 +3,7 @@ const {
   agentPaneStatusMessage,
   isClaudeAgentRunning,
   isShellOnlyPane,
+  isPaneActivelyProcessing,
 } = require('../out/panel/agentPaneState');
 
 test('isClaudeAgentRunning detects claude process name', () => {
@@ -87,4 +88,16 @@ test('agentPaneStatusMessage returns undefined for Coordinator in auto mode', ()
 test('agentPaneStatusMessage reports the agent is not running for a non-empty shell-only pane', () => {
   const message = agentPaneStatusMessage('bash', 'Laurents-Air:swarmforgevc ldecorps$ ');
   assert.match(message, /Agent is not running in this pane \(shell only\)/);
+});
+
+test('isPaneActivelyProcessing detects the busy "esc to interrupt" footer', () => {
+  assert.equal(isPaneActivelyProcessing('  auto mode on · esc to interrupt'), true);
+});
+
+test('isPaneActivelyProcessing returns false for the idle "shift+tab to cycle" footer alone', () => {
+  assert.equal(isPaneActivelyProcessing('  bypass permissions on (shift+tab to cycle)  /rc'), false);
+});
+
+test('isPaneActivelyProcessing returns false for plain shell text', () => {
+  assert.equal(isPaneActivelyProcessing('ls -la\ntotal 0'), false);
 });

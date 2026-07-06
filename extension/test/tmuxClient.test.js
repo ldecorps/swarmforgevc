@@ -477,6 +477,35 @@ test('respawnAgent reports failure when both verified send-keys and the forced p
   }
 });
 
+// --- BL-137 live repro: a chaser that misjudges a genuinely busy agent as
+//     stuck must never have its forced-respawn command typed into that
+//     agent's live pane. "esc to interrupt" is Claude Code's own busy/
+//     generating footer - a reliable positive signal the agent is mid-turn,
+//     as distinct from its idle "shift+tab to cycle" footer. A fresh capture
+//     showing it means the pane is not stuck, no matter what the caller's
+//     (possibly stale) liveness signal claimed. ---
+
+test('respawnAgent refuses to type into a pane that is actively processing a turn (BL-137 misfire guard)', () => {
+  const tmp = mkTmp();
+  writeRespawnState(tmp);
+  const fake = installFakeTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: '  auto mode on · esc to interrupt' },
+  ]);
+  try {
+    const result = respawnAgent(tmp, 'coder');
+    assert.equal(result.success, false);
+    assert.match(result.message, /actively processing|esc to interrupt/i);
+    const sendCalls = fake.calls().filter((args) => args.includes('send-keys'));
+    assert.equal(sendCalls.length, 0, 'must never type into a pane that is actively processing a turn');
+    const respawnCalls = fake.calls().filter((args) => args.includes('respawn-pane'));
+    assert.equal(respawnCalls.length, 0, 'must never force-kill a pane that is actively processing a turn');
+  } finally {
+    fake.restore();
+  }
+});
+
 test('respawnAgent types the launch command in literal mode, not tmux key-name mode', () => {
   const tmp = mkTmp();
   const { script } = writeRespawnState(tmp);
