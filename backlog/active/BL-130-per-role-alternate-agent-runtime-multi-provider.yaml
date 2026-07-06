@@ -1,0 +1,112 @@
+id: BL-130
+title: multi-provider swarm — per-role ALTERNATE AGENT RUNTIME (option 2) so chosen roles run on GPT/Mistral instead of Claude, to spread cost off the Claude allowance
+milestone: M2
+status: todo
+priority: 00
+assigned_to: coder
+depends_on:
+  - BL-121
+  - BL-122
+# Operator (2026-07-06): sequence BL-130 RIGHT AFTER the handoff tickets.
+# Milestone bumped M7->M2 and priority ->00 to co-locate with BL-121/122, and
+# depends_on gates it until they land (also correct: BL-130's runtime-agnostic
+# liveness signal reuses BL-121's delivery-level detection, not the TUI).
+
+description: |
+  OPERATOR DIRECTIVE (2026-07-06): the swarm is on track to outspend the weekly
+  Claude allowance. Let selected roles run on a NON-Claude model (GPT and/or
+  Mistral) so the load spreads across providers. Operator picked OPTION 2 —
+  a per-role alternate agent RUNTIME — over the Anthropic-compat proxy (option 1).
+
+  Today every role launches identically: `.swarmforge/launch/<role>.sh` runs
+  `claude --settings … --append-system-prompt-file <role prompt> "<prompt>"`
+  (Anthropic-native, using the logged-in allowance; the scripts even
+  `unset ANTHROPIC_API_KEY`). The M5 "cost-intelligence-backend-flexibility"
+  milestone shipped only cost METRICS (BL-071/078), NOT provider switching —
+  so this is a build. Launch scripts are templated by
+  `swarmforge/scripts/swarmforge.sh`.
+
+  Option 2 = for an offloaded role, the launch script runs a DIFFERENT agent CLI
+  (a GPT/Mistral-native coding agent — e.g. aider / Codex CLI / OpenHands /
+  Cline-class; coder+architect to evaluate, do not over-prescribe) instead of
+  `claude`, pointed at the provider's API, fed the SAME constitution + role
+  prompt. The runtime must satisfy the swarm contract or it cannot participate:
+    - Ingest the constitution + role prompt + PIPELINE.md as system context.
+    - Drive the full agentic loop: read files recursively, edit code, run bash,
+      run tests.
+    - Obey the handoff protocol: write tmp/handoff.txt and run
+      `swarm_handoff.sh` (never write inbox/new directly), run
+      `ready_for_next.sh` when idle, NEVER self-schedule polling.
+    - Run inside a tmux pane so it launches/stops like the other roles.
+
+  HARDEST PART — pane observability (scope this explicitly). The extension's
+  liveness/chasing/idle/needs-human/session-URL detection is tuned to the
+  Claude Code TUI footer (see the pane-tailer and BL-093/109). A different
+  runtime has a different TUI, so scraping breaks for that pane — the extension
+  would think the agent is stalled/idle when it isn't (and vice versa). Prefer
+  a RUNTIME-AGNOSTIC liveness signal: have each agent write a heartbeat/state
+  file the extension reads, instead of scraping the TUI (aligns with BL-121's
+  "delivery-level, not screen-scraped" direction). Without this, non-Claude
+  panes will churn the chaser and dead-letter — which is exactly the instability
+  we are already fighting.
+
+  Per-role config: declare, per role, {runtime, model, provider} in
+  `swarmforge.conf`; default stays `claude`. `swarmforge.sh` templates the
+  launch command from that config. Provider API keys must NOT land in a
+  dotfile/settings/repo — reuse the existing secret path (extension
+  SecretStorage / `src/notify/secrets.ts`, and the `swarmforge-key` macOS
+  Keychain pattern) for OPENAI_API_KEY / MISTRAL_API_KEY.
+
+  Role placement (operator guidance — offload high-volume, bounded,
+  downstream-verified, low-blast-radius roles; keep Claude on judgment/safety/
+  swarm-critical):
+    - PILOT first: documenter on Mistral (a stall there costs nothing).
+    - Then good candidates: cleaner, hardener (hardener = biggest token win;
+      mutation loops are huge and have an objective kill/no-kill signal + QA
+      after).
+    - KEEP on Claude for now: coder (only a top-tier model if ever offloaded),
+      architect (design judgment), specifier (spec quality + only merger to
+      main), QA (last gate before merge), coordinator (owns liveness; BL-107).
+
+  Fallback: if runtime-agnostic pane observability proves too heavy, option 1
+  (LiteLLM-style Anthropic-compat proxy so the existing `claude` launch points
+  at a per-role base URL) is the retreat — but option 2 is the chosen path.
+
+acceptance: |
+  Feature: a role can run on a non-Claude runtime and still play in the pipeline
+
+  # BL-130 config-01
+  Scenario: a role's runtime/model/provider is configurable
+    Given swarmforge.conf assigns the documenter runtime=<alt> model=<mistral>
+    When the swarm launches
+    Then the documenter pane runs the alternate agent CLI (not claude)
+      pointed at Mistral, fed the documenter role prompt + constitution
+    And every unconfigured role still launches on claude by default
+
+  # BL-130 pipeline-participation-02
+  Scenario: the alternate-runtime role completes a real hop end to end
+    Given a parcel routed to the documenter (on Mistral)
+    When it processes the parcel
+    Then it does the role's work and forwards via swarm_handoff.sh
+    And the parcel reaches the next stage (QA) like any Claude-run role
+
+  # BL-130 observability-03
+  Scenario: the extension can tell whether the non-Claude agent is live or idle
+    Given a role running on a non-Claude runtime
+    Then the extension detects its idle/working/needs-human state without
+      relying on the Claude Code TUI footer (e.g. a heartbeat/state file)
+    And the chaser does not falsely dead-letter or respawn it
+
+  # BL-130 secrets-04
+  Scenario: provider keys never touch the repo
+    Given OPENAI_API_KEY / MISTRAL_API_KEY are needed
+    Then they are read from the existing secret store (SecretStorage/Keychain)
+    And never written to a dotfile, settings.json, launch script, or the repo
+
+  # Non-behavioral gates / non-goals:
+  #  - Pilot scope is documenter-on-Mistral ONLY; do not offload coder,
+  #    architect, specifier, QA, or coordinator in this ticket.
+  #  - Do not fork the role prompts per provider — same constitution/role text
+  #    drives every runtime; provider-specific quirks go in the runtime adapter.
+  #  - Sequence with BL-121 (delivery-level detection) — the runtime-agnostic
+  #    liveness signal should reuse, not duplicate, that direction.

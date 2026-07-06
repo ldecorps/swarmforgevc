@@ -2,8 +2,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const test = require('node:test');
-
 // BL-088: a per-tick exception thrown before onOutput silently froze every
 // tile while the rest of the extension host stayed alive (no crash, no
 // stalled/dead marker, just a stale frame forever). These tests drive the
@@ -35,12 +33,47 @@ tmuxClient.readSwarmRoles = (targetPath) => {
   return originalReadSwarmRoles(targetPath);
 };
 
-const { PaneTailer } = require('../out/panel/paneTailer');
-const { installFakeTmux } = require('./helpers/fakeTmux');
+// BL-124/BL-125: in-process tmux capture double. The prior helper installed a
+// fake `tmux` executable on PATH, so every PaneTailer.poll() spawned a node
+// subprocess (has-session + capture-pane + display-message); under load that
+// timed out. We patch the spawn-backed tmuxClient functions on the module
+// object (PaneTailer calls them as tmuxClient_1.fn(...), so this intercepts)
+// and route capture output per role target via a shared mutable.
+const capture = { coder: '', qa: '' };
+const originals = {
+  capturePane: tmuxClient.capturePane,
+  sessionExists: tmuxClient.sessionExists,
+  getPaneCommand: tmuxClient.getPaneCommand,
+  getPaneBaseIndex: tmuxClient.getPaneBaseIndex,
+  resizeWindow: tmuxClient.resizeWindow,
+  setHistoryLimit: tmuxClient.setHistoryLimit,
+  setWindowSizeManual: tmuxClient.setWindowSizeManual,
+  sendKeys: tmuxClient.sendKeys,
+};
+tmuxClient.capturePane = (_sock, target) => ({
+  stdout: String(target).includes('swarmforge-qa') ? capture.qa : capture.coder,
+  exitCode: 0,
+  stderr: '',
+});
+tmuxClient.sessionExists = () => true;
+tmuxClient.getPaneCommand = () => 'claude';
+tmuxClient.getPaneBaseIndex = () => 0;
+tmuxClient.resizeWindow = () => {};
+tmuxClient.setHistoryLimit = () => {};
+tmuxClient.setWindowSizeManual = () => {};
+tmuxClient.sendKeys = () => ({ exitCode: 0, stdout: '', stderr: '' });
 
-test.after(() => {
+function setWindows(coder, qa) {
+  capture.coder = coder;
+  capture.qa = qa;
+}
+
+const { PaneTailer } = require('../out/panel/paneTailer');
+
+afterAll(() => {
   paneHistory.accumulatePaneHistory = originalAccumulate;
   tmuxClient.readSwarmRoles = originalReadSwarmRoles;
+  Object.assign(tmuxClient, originals);
 });
 
 function mkTmp() {
@@ -54,65 +87,50 @@ function writeState(targetPath, roleLines) {
   fs.writeFileSync(path.join(stateDir, 'sessions.tsv'), roleLines);
 }
 
-// Two roles share one fake tmux, so capture-pane must be routed per target.
-function twoRoleCaptureRule(coderStdout, qaStdout) {
-  return [
-    { subcommand: 'has-session', exitCode: 0 },
-    { subcommand: 'capture-pane', argsInclude: 'swarmforge-coder', exitCode: 0, stdout: coderStdout },
-    { subcommand: 'capture-pane', argsInclude: 'swarmforge-qa', exitCode: 0, stdout: qaStdout },
-    { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
-    { exitCode: 0, stdout: '' },
-  ];
-}
-
 // BL-088 tile-freeze-02: one failing poll tick does not kill the tailer
 test('BL-088: a poll-tick failure for one role does not block onOutput for sibling roles', () => {
   const targetPath = mkTmp();
   writeState(targetPath, '1\tcoder\tswarmforge-coder\tCoder\tclaude\n2\tqa\tswarmforge-qa\tQA\tclaude\n');
   faultRawText = null;
-  const fake = installFakeTmux(twoRoleCaptureRule('coder tick0\n❯ ', 'qa tick0\n❯ '));
-  try {
-    const updates = [];
-    const errors = [];
-    const tailer = new PaneTailer(
-      targetPath,
-      (u) => updates.push(...u),
-      undefined,
-      undefined,
-      undefined,
-      500,
-      undefined,
-      undefined,
-      undefined,
-      (message) => errors.push(message)
-    );
-    tailer.start(1_000_000);
-    tailer.stop();
+  setWindows('coder tick0\n❯ ', 'qa tick0\n❯ ');
 
-    // Make the coder role's own capture explode on the NEXT poll, while QA's
-    // capture changes normally.
-    faultRawText = 'coder tick1';
-    fake.setRules(twoRoleCaptureRule('coder tick1\n❯ ', 'qa tick1\n❯ '));
-    tailer.poll();
+  const updates = [];
+  const errors = [];
+  const tailer = new PaneTailer(
+    targetPath,
+    (u) => updates.push(...u),
+    undefined,
+    undefined,
+    undefined,
+    500,
+    undefined,
+    undefined,
+    undefined,
+    (message) => errors.push(message)
+  );
+  tailer.start(1_000_000);
+  tailer.stop();
 
-    const qaUpdate = updates.find((u) => u.role === 'qa' && u.text.includes('qa tick1'));
-    assert.ok(qaUpdate, 'qa must still receive its update even though coder blew up this tick');
-    assert.ok(
-      errors.some((m) => m.includes('coder')),
-      'the failure must be reported, not silently swallowed'
-    );
+  // Make the coder role's own capture explode on the NEXT poll, while QA's
+  // capture changes normally.
+  faultRawText = 'coder tick1';
+  setWindows('coder tick1\n❯ ', 'qa tick1\n❯ ');
+  tailer.poll();
 
-    // Next tick, the fault clears — coder must resume updating too.
-    faultRawText = null;
-    fake.setRules(twoRoleCaptureRule('coder tick2\n❯ ', 'qa tick2\n❯ '));
-    tailer.poll();
+  const qaUpdate = updates.find((u) => u.role === 'qa' && u.text.includes('qa tick1'));
+  assert.ok(qaUpdate, 'qa must still receive its update even though coder blew up this tick');
+  assert.ok(
+    errors.some((m) => m.includes('coder')),
+    'the failure must be reported, not silently swallowed'
+  );
 
-    const coderUpdate = updates.find((u) => u.role === 'coder' && u.text.includes('coder tick2'));
-    assert.ok(coderUpdate, 'coder must resume updating on the next successful poll, not stay frozen forever');
-  } finally {
-    faultRawText = null;
-    fake.restore();
-  }
+  // Next tick, the fault clears — coder must resume updating too.
+  faultRawText = null;
+  setWindows('coder tick2\n❯ ', 'qa tick2\n❯ ');
+  tailer.poll();
+
+  const coderUpdate = updates.find((u) => u.role === 'coder' && u.text.includes('coder tick2'));
+  assert.ok(coderUpdate, 'coder must resume updating on the next successful poll, not stay frozen forever');
 });
 
 // BL-088 tile-freeze-02: a persistently-failing role must not stop the whole
@@ -121,26 +139,22 @@ test('BL-088: a role that keeps failing every tick still lets other roles update
   const targetPath = mkTmp();
   writeState(targetPath, '1\tcoder\tswarmforge-coder\tCoder\tclaude\n2\tqa\tswarmforge-qa\tQA\tclaude\n');
   faultRawText = null;
-  const fake = installFakeTmux(twoRoleCaptureRule('coder tick0\n❯ ', 'qa tick0\n❯ '));
-  try {
-    const updates = [];
-    const tailer = new PaneTailer(targetPath, (u) => updates.push(...u), undefined, undefined, undefined, 500);
-    tailer.start(1_000_000);
-    tailer.stop();
+  setWindows('coder tick0\n❯ ', 'qa tick0\n❯ ');
 
-    faultRawText = 'coder';
-    for (let n = 1; n <= 5; n++) {
-      fake.setRules(twoRoleCaptureRule(`coder tick${n}\n❯ `, `qa tick${n}\n❯ `));
-      tailer.poll();
-    }
+  const updates = [];
+  const tailer = new PaneTailer(targetPath, (u) => updates.push(...u), undefined, undefined, undefined, 500);
+  tailer.start(1_000_000);
+  tailer.stop();
 
-    const qaUpdates = updates.filter((u) => u.role === 'qa');
-    // start() fires one initial poll (tick0) plus the 5 explicit polls above.
-    assert.equal(qaUpdates.length, 6, 'qa must receive an update on every one of the 6 polls despite coder failing every tick');
-  } finally {
-    faultRawText = null;
-    fake.restore();
+  faultRawText = 'coder';
+  for (let n = 1; n <= 5; n++) {
+    setWindows(`coder tick${n}\n❯ `, `qa tick${n}\n❯ `);
+    tailer.poll();
   }
+
+  const qaUpdates = updates.filter((u) => u.role === 'qa');
+  // start() fires one initial poll (tick0) plus the 5 explicit polls above.
+  assert.equal(qaUpdates.length, 6, 'qa must receive an update on every one of the 6 polls despite coder failing every tick');
 });
 
 // BL-088 tile-freeze-03: unchanged captures never latch the tailer shut
@@ -148,38 +162,24 @@ test('BL-088: several identical polls in a row do not prevent the next real chan
   const targetPath = mkTmp();
   writeState(targetPath, '1\tcoder\tswarmforge-coder\tCoder\tclaude\n');
   faultRawText = null;
-  const steady = [
-    { subcommand: 'has-session', exitCode: 0 },
-    { subcommand: 'capture-pane', exitCode: 0, stdout: 'steady output\n❯ ' },
-    { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
-    { exitCode: 0, stdout: '' },
-  ];
-  const fake = installFakeTmux(steady);
-  try {
-    const updates = [];
-    const tailer = new PaneTailer(targetPath, (u) => updates.push(...u), undefined, undefined, undefined, 500);
-    tailer.start(1_000_000);
-    tailer.stop();
-    const afterFirst = updates.length;
+  setWindows('steady output\n❯ ', '');
 
-    for (let i = 0; i < 10; i++) {
-      tailer.poll();
-    }
-    assert.equal(updates.length, afterFirst, 'identical captures must not push further updates');
+  const updates = [];
+  const tailer = new PaneTailer(targetPath, (u) => updates.push(...u), undefined, undefined, undefined, 500);
+  tailer.start(1_000_000);
+  tailer.stop();
+  const afterFirst = updates.length;
 
-    fake.setRules([
-      { subcommand: 'has-session', exitCode: 0 },
-      { subcommand: 'capture-pane', exitCode: 0, stdout: 'changed output\n❯ ' },
-      { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
-      { exitCode: 0, stdout: '' },
-    ]);
+  for (let i = 0; i < 10; i++) {
     tailer.poll();
-
-    const latest = updates[updates.length - 1];
-    assert.ok(latest.text.includes('changed output'), 'a genuine change after a long steady run must still be pushed');
-  } finally {
-    fake.restore();
   }
+  assert.equal(updates.length, afterFirst, 'identical captures must not push further updates');
+
+  setWindows('changed output\n❯ ', '');
+  tailer.poll();
+
+  const latest = updates[updates.length - 1];
+  assert.ok(latest.text.includes('changed output'), 'a genuine change after a long steady run must still be pushed');
 });
 
 // BL-088 tile-freeze-02: a fault in the role/socket refresh step itself (not
@@ -190,49 +190,36 @@ test('BL-088: a refreshRolesForTick failure (state-file race) is reported and do
   writeState(targetPath, '1\tcoder\tswarmforge-coder\tCoder\tclaude\n');
   faultRawText = null;
   faultRolesRead = false;
-  const fake = installFakeTmux([
-    { subcommand: 'has-session', exitCode: 0 },
-    { subcommand: 'capture-pane', exitCode: 0, stdout: 'tick0\n❯ ' },
-    { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
-    { exitCode: 0, stdout: '' },
-  ]);
-  try {
-    const updates = [];
-    const errors = [];
-    const tailer = new PaneTailer(
-      targetPath,
-      (u) => updates.push(...u),
-      undefined,
-      undefined,
-      undefined,
-      500,
-      undefined,
-      undefined,
-      undefined,
-      (message) => errors.push(message)
-    );
-    tailer.start(1_000_000);
-    tailer.stop();
+  setWindows('tick0\n❯ ', '');
 
-    faultRolesRead = true;
-    fake.setRules([
-      { subcommand: 'has-session', exitCode: 0 },
-      { subcommand: 'capture-pane', exitCode: 0, stdout: 'tick1\n❯ ' },
-      { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
-      { exitCode: 0, stdout: '' },
-    ]);
-    tailer.poll();
+  const updates = [];
+  const errors = [];
+  const tailer = new PaneTailer(
+    targetPath,
+    (u) => updates.push(...u),
+    undefined,
+    undefined,
+    undefined,
+    500,
+    undefined,
+    undefined,
+    undefined,
+    (message) => errors.push(message)
+  );
+  tailer.start(1_000_000);
+  tailer.stop();
 
-    assert.ok(
-      errors.some((m) => m.includes('Poll failed') && !m.includes('for ')),
-      'a refreshRolesForTick fault must be reported (no per-role prefix, since it precedes the per-role loop)'
-    );
-    const coderUpdate = updates.find((u) => u.role === 'coder' && u.text.includes('tick1'));
-    assert.ok(coderUpdate, 'the per-role capture loop must still run this tick despite the refresh step faulting');
-  } finally {
-    faultRolesRead = false;
-    fake.restore();
-  }
+  faultRolesRead = true;
+  setWindows('tick1\n❯ ', '');
+  tailer.poll();
+
+  assert.ok(
+    errors.some((m) => m.includes('Poll failed') && !m.includes('for ')),
+    'a refreshRolesForTick fault must be reported (no per-role prefix, since it precedes the per-role loop)'
+  );
+  const coderUpdate = updates.find((u) => u.role === 'coder' && u.text.includes('tick1'));
+  assert.ok(coderUpdate, 'the per-role capture loop must still run this tick despite the refresh step faulting');
+  faultRolesRead = false;
 });
 
 // BL-088: poll() must return early (skip the per-role loop entirely) when

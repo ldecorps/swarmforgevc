@@ -1,4 +1,3 @@
-import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import * as fs from 'fs';
 import * as path from 'path';

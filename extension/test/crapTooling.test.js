@@ -1,5 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -16,7 +15,7 @@ test('crap tooling adds no new devDependency (reuses c8 + typescript already pre
 
 test('coverage and crap run via their own scripts, not npm test', () => {
   assert.ok(pkg.scripts.coverage, 'must define a coverage script');
-  assert.match(pkg.scripts.coverage, /c8/, 'coverage script must invoke c8');
+  assert.match(pkg.scripts.coverage, /vitest run --coverage/, 'coverage script runs Vitest with coverage (BL-124: replaced c8 + node --test)');
   assert.ok(pkg.scripts.crap, 'must define a crap script');
   assert.match(pkg.scripts.crap, /crapReport\.js/, 'crap script must invoke the CRAP report');
   assert.ok(

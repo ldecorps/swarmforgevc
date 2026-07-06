@@ -1,6 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
-
 const { renderPanel } = require('./helpers/renderPanel');
 
 // BL-034: panel -> disk field-level writes. The webview posts a message and

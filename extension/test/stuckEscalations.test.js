@@ -1,13 +1,11 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
-
 const {
   setStuckEscalation,
   escalatedStuckRoles,
   clearStuckEscalations,
 } = require('../out/watchdog/stuckEscalations');
 
-test.beforeEach(() => {
+beforeEach(() => {
   clearStuckEscalations();
 });
 
