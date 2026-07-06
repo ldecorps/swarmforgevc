@@ -58,6 +58,7 @@ const bouncer_1 = require("./swarm/bouncer");
 const tmuxClient_1 = require("./swarm/tmuxClient");
 const resolveRunName_1 = require("./run/resolveRunName");
 const bounceWatcher_1 = require("./swarm/bounceWatcher");
+const bounceAck_1 = require("./swarm/bounceAck");
 const chaserMonitor_1 = require("./watchdog/chaserMonitor");
 const tmuxClient_2 = require("./swarm/tmuxClient");
 const verifiedInject_1 = require("./swarm/verifiedInject");
@@ -121,6 +122,7 @@ let currentBounceDrainWatcher = null;
 let currentGracefulBounceFileWatcher = null;
 let currentIdleClearMonitor = null;
 let idleClearOutputChannel;
+let bounceOutputChannel;
 let currentBridge = null;
 // BL-108: deactivate() has no other route to the target's .swarmforge dir
 // (activate's targetPath is function-scoped) - remembered here so a spawned
@@ -295,6 +297,20 @@ function startOrRestartChaserMonitor(targetPath, context) {
         });
     }
 }
+// BL-107: durable acknowledgement for bounce requests. remote_bounce.sh's
+// sentinel write is fire-and-forget; this records each phase transition to
+// .swarmforge/bounce-ack.json (pollable by a human or an agent script) and
+// to a dedicated output channel, so a requester can tell "still working"
+// from "nobody picked this up".
+function logBouncePhase(targetPath, context, bounceType, phase, message) {
+    const updatedAt = new Date().toISOString();
+    (0, bounceAck_1.writeBounceAck)(targetPath, { bounceType, phase, updatedAt, message });
+    if (!bounceOutputChannel) {
+        bounceOutputChannel = vscode.window.createOutputChannel('SwarmForge: Bounce');
+        context.subscriptions.push(bounceOutputChannel);
+    }
+    bounceOutputChannel.appendLine(`[${updatedAt}] bounce ${bounceType}: ${phase}${message ? ` — ${message}` : ''}`);
+}
 function handleBounceResult(result, targetPath, context) {
     if (!result.success) {
         vscode.window.showErrorMessage(result.message);
@@ -320,24 +336,46 @@ async function performGracefulBounceNow(targetPath, bounceType, context) {
     }
     (0, bounceDrain_1.clearBounceDrainState)(targetPath);
     if (bounceType === 'extension') {
+        logBouncePhase(targetPath, context, bounceType, 'relaunching', 'Reloading extension window');
         await vscode.commands.executeCommand((0, bouncer_1.buildBounceExtensionCommand)());
         return;
     }
     if (bounceType === 'all') {
-        const stopResult = (0, swarmStopper_1.stopSwarm)(targetPath);
-        if (!stopResult.success) {
-            vscode.window.showErrorMessage(`Failed to stop swarm: ${stopResult.message}`);
+        // BL-107: the relaunch leg must complete (stop + relaunch + verify
+        // ready — the existing 'swarm' bounce path) BEFORE the window reload.
+        // Reloading first and relying on a pendingAutoLaunch flag consumed at
+        // activation left the auto-launch unreachable when the reload only
+        // fired onCommand activation; bouncing first removes that dependency
+        // entirely, since a reloaded extension re-attaches to an already-live
+        // swarm.
+        const validated = validateTargetAndLastRun(targetPath, context);
+        if (!validated) {
             return;
         }
-        await context.workspaceState.update(PENDING_AUTO_LAUNCH_KEY, true);
+        logBouncePhase(targetPath, context, bounceType, 'stopping', 'Stopping swarm before relaunch');
+        const bounceResult = await (0, bouncer_1.bounceSwarm)(validated.targetPath, validated.lastRunName);
+        if (!bounceResult.success) {
+            logBouncePhase(targetPath, context, bounceType, 'failed', bounceResult.message);
+            vscode.window.showErrorMessage(bounceResult.message);
+            return;
+        }
+        logBouncePhase(targetPath, context, bounceType, 'relaunching', 'Swarm relaunched and verified ready; reloading extension window');
         await vscode.commands.executeCommand((0, bouncer_1.buildBounceExtensionCommand)());
+        logBouncePhase(targetPath, context, bounceType, 'done', 'Extension window reload triggered');
         return;
     }
     const validated = validateTargetAndLastRun(targetPath, context);
     if (!validated) {
         return;
     }
+    logBouncePhase(targetPath, context, bounceType, 'stopping', 'Stopping swarm before relaunch');
     const result = await (0, bouncer_1.bounceSwarm)(validated.targetPath, validated.lastRunName);
+    if (!result.success) {
+        logBouncePhase(targetPath, context, bounceType, 'failed', result.message);
+    }
+    else {
+        logBouncePhase(targetPath, context, bounceType, 'done', result.message);
+    }
     handleBounceResult(result, targetPath, context);
 }
 // BL-069: watches the durable drain sentinel and waits until every role
@@ -398,6 +436,7 @@ function beginGracefulBounce(targetPath, bounceType, context) {
     const timeoutSeconds = config.get('bounce.drainTimeoutSeconds', BOUNCE_DRAIN_TIMEOUT_SECONDS_DEFAULT);
     (0, bounceDrain_1.startBounceDrain)(targetPath, bounceType, timeoutSeconds);
     startOrRestartBounceDrainWatcher(targetPath, context);
+    logBouncePhase(targetPath, context, bounceType, 'draining', 'Waiting for all roles to go idle');
     vscode.window.showInformationMessage('Graceful bounce: draining agents to idle before bouncing…');
 }
 // BL-069 "plus a variant of the existing remote-bounce sentinel": a
@@ -802,10 +841,16 @@ function activate(context) {
         }
         const { targetPath, lastRunName } = validated;
         vscode.window.showInformationMessage('Restarting swarm...');
+        logBouncePhase(targetPath, context, 'swarm', 'stopping', 'Stopping swarm before relaunch');
         const result = await (0, bouncer_1.bounceSwarm)(targetPath, lastRunName);
+        logBouncePhase(targetPath, context, 'swarm', result.success ? 'done' : 'failed', result.message);
         handleBounceResult(result, targetPath, context);
     }), vscode.commands.registerCommand('swarmforge.bounceExtension', async () => {
+        const targetPath = (0, targetConfig_1.getTargetPath)();
         vscode.window.showInformationMessage('Reloading SwarmForge extension...');
+        if (targetPath) {
+            logBouncePhase(targetPath, context, 'extension', 'relaunching', 'Reloading extension window');
+        }
         const reloadCmd = (0, bouncer_1.buildBounceExtensionCommand)();
         await vscode.commands.executeCommand(reloadCmd);
     }), vscode.commands.registerCommand('swarmforge.bounceAll', async () => {
@@ -813,16 +858,22 @@ function activate(context) {
         if (!validated) {
             return;
         }
-        const { targetPath } = validated;
-        vscode.window.showInformationMessage('Stopping swarm and reloading extension...');
-        const stopResult = (0, swarmStopper_1.stopSwarm)(targetPath);
-        if (!stopResult.success) {
-            vscode.window.showErrorMessage(`Failed to stop swarm: ${stopResult.message}`);
+        const { targetPath, lastRunName } = validated;
+        // BL-107: bounce (stop + relaunch + verify ready) FIRST, then reload
+        // the window — see the matching fix in performGracefulBounceNow for
+        // why the old stop -> pendingAutoLaunch -> reload order was unsafe.
+        vscode.window.showInformationMessage('Restarting swarm before reloading extension...');
+        logBouncePhase(targetPath, context, 'all', 'stopping', 'Stopping swarm before relaunch');
+        const bounceResult = await (0, bouncer_1.bounceSwarm)(targetPath, lastRunName);
+        if (!bounceResult.success) {
+            logBouncePhase(targetPath, context, 'all', 'failed', bounceResult.message);
+            vscode.window.showErrorMessage(bounceResult.message);
             return;
         }
-        await context.workspaceState.update(PENDING_AUTO_LAUNCH_KEY, true);
+        logBouncePhase(targetPath, context, 'all', 'relaunching', 'Swarm relaunched and verified ready; reloading extension window');
         const reloadCmd = (0, bouncer_1.buildBounceExtensionCommand)();
         await vscode.commands.executeCommand(reloadCmd);
+        logBouncePhase(targetPath, context, 'all', 'done', 'Extension window reload triggered');
     }), 
     // BL-069: instruct all agents to finish their current work and refuse
     // new work, then bounce automatically once every role is idle.
@@ -843,6 +894,7 @@ function activate(context) {
             currentBounceDrainWatcher = null;
         }
         (0, bounceDrain_1.clearBounceDrainState)(targetPath);
+        (0, bounceAck_1.clearBounceAck)(targetPath);
         vscode.window.showInformationMessage('Graceful bounce drain cancelled — agents accept work again.');
     }), vscode.commands.registerCommand('swarmforge.forceBounceNow', async () => {
         const targetPath = (0, targetConfig_1.getTargetPath)();
