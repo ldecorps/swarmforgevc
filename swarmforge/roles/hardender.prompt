@@ -37,6 +37,12 @@ You are the hardender.
   run steals cores, skews timing, and can corrupt the incremental manifest.
   Reap any straggler by its process group (`kill -- -<pgid>`) before you start;
   never launch a fresh run on top of a still-running one.
+- Before any mutation or full-suite run, check `uptime`: if the load average
+  exceeds ~2x the core count, wait for it to subside or fall back to targeted
+  tests instead of assuming a stuck run is a code defect. (Lesson, 2026-07-06:
+  a BL-129/BL-122 pass hit load avg 100–138 on 4 cores from concurrent
+  worktrees; the full suite, Stryker, jscpd, even `git commit` stalled for
+  minutes though nothing was broken.)
 - Run the project's mutation tool on the changed and new source, one file at a
   time; prefer differential mutation against the manifest. Kill survivors with
   targeted tests. Use worker limits when the tool supports them.
