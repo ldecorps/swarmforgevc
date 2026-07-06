@@ -49,6 +49,28 @@ description: |
        recommendation needing the human (capacity, model/effort, flags,
        hardware) each backed by its motivating number and expected
        effect. Nothing to recommend -> one line saying so.
+    5. PROCESS HICCUPS (operator request 2026-07-06): what went wrong in
+       the pipeline since the last briefing and how it was recovered —
+       agent-raised friction that today never reaches the human. Sourced
+       from:
+         - .swarmforge/rule_proposals/*.jsonl — new proposals delivered
+           since the last briefing (scope, body, rationale, proposer),
+           each with the specifier's accept/reject outcome when already
+           decided;
+         - QA bounce evidence (BL-140): each ticket QA bounced since the
+           last briefing, with a one-line failure summary and a pointer
+           to its committed evidence;
+         - chase/nudge/stall counts (BL-098): notable chase, nudge, and
+           stall figures for the window (this is the durable rolled-up
+           home for those numbers; section 3 may reference them but this
+           section owns them).
+       Tone: recovery-oriented — what failed, what caught it, what
+       changed so it does not recur. Nothing to report -> one line saying
+       so. Any source not yet available (BL-098/BL-140 not merged, no
+       proposals this window) -> the section says so briefly and never
+       blocks the briefing. The docs/briefings/<date>.json sidecar
+       carries this section's structured data too (proposals, bounces,
+       counts) for the phone carrier.
        PHONE CARRIER (operator, 2026-07-04): alongside the markdown, the
        briefing flow emits a committed docs/briefings/<date>.json sidecar
        carrying the structured data: the optimizer section (bottleneck
@@ -82,7 +104,9 @@ description: |
       activation or surfaced as needs-human.
 
   Dependencies: none hard. BL-096/097/098 enrich sections 2-3 as they
-  merge; the briefing ships with graceful gaps before then. BL-097's
+  merge; BL-098 and BL-140 are the sourcing dependencies for section 5's
+  counts and bounce evidence respectively; the briefing ships with
+  graceful gaps before then. BL-097's
   backlog.json may later include the latest briefing (additive field,
   separate ticket if wanted).
 
@@ -136,6 +160,27 @@ acceptance: |
     When the host next activates
     Then one catch-up briefing covering the gap is triggered
     And only one email is sent for it
+
+  # BL-099 briefing-08
+  Scenario: briefing surfaces process hiccups with their recovery
+    Given a rule proposal was delivered and a ticket was QA-bounced with
+      committed evidence since the last briefing
+    When the coordinator composes the briefing
+    Then the process-hiccups section lists the rule proposal with its
+      proposer and rationale
+    And lists the bounced ticket with a failure summary and a pointer to
+      its committed evidence
+    And the briefing sidecar JSON carries the same items as structured
+      data
+
+  # BL-099 briefing-09
+  Scenario: missing hiccup sources do not block
+    Given BL-098 telemetry and BL-140 bounce evidence are not yet merged
+    And no rule proposals were delivered since the last briefing
+    When the briefing is composed
+    Then the process-hiccups section states there is nothing to report
+      or that a source is not yet available
+    And the briefing is still archived and sent
 
   # BL-099 briefing-06
   Scenario: coordinator commit surface stays narrow
