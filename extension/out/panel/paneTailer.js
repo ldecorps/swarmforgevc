@@ -5,6 +5,7 @@ exports.normalizeHistoryLines = normalizeHistoryLines;
 exports.normalizePaneRows = normalizePaneRows;
 exports.rolesChanged = rolesChanged;
 exports.isStalled = isStalled;
+exports.didPaneRespawn = didPaneRespawn;
 exports.mapInputToTmuxKey = mapInputToTmuxKey;
 exports.mapSpecialKeyToTmux = mapSpecialKeyToTmux;
 const tmuxClient_1 = require("../swarm/tmuxClient");
@@ -52,6 +53,20 @@ function rolesChanged(prev, next) {
 function isStalled(lastChangedAt, now) {
     return now - lastChangedAt >= exports.STALL_THRESHOLD_MS;
 }
+/**
+ * BL-120: `tmux respawn-pane` (e.g. a relaunch that reuses the existing
+ * session rather than killing it) swaps the process running in a pane
+ * without changing the session name or the socket path - the two signals
+ * the tailer otherwise uses to decide "something changed, reset retained
+ * state". A changed pane pid is the respawn signal that survives that:
+ * true only when a PREVIOUS pid was already known (so first-ever capture
+ * of a role is not misread as a respawn) and it differs from a genuinely
+ * resolved current pid (an empty string means the capture itself failed,
+ * not a respawn).
+ */
+function didPaneRespawn(previousPid, currentPid) {
+    return previousPid !== undefined && currentPid !== '' && currentPid !== previousPid;
+}
 class PaneTailer {
     targetPath;
     onOutput;
@@ -83,6 +98,9 @@ class PaneTailer {
     // tmux keeps no scrollback for the Claude CLI's alternate-screen TUI.
     paneHistory = new Map();
     paneHistoryContentLines = new Map();
+    // BL-120: last-seen pane pid per role, to detect a respawn that reuses
+    // the same session/socket (see didPaneRespawn).
+    panePids = new Map();
     constructor(targetPath, onOutput, onStall, onDead, onInputLogError, historyLines, onRoles, paneRows, onNeedsHuman, onPollError) {
         this.targetPath = targetPath;
         this.onOutput = onOutput;
@@ -134,6 +152,7 @@ class PaneTailer {
         this.liveRoles.clear();
         this.paneHistory.clear();
         this.paneHistoryContentLines.clear();
+        this.panePids.clear();
         if (this.socketPath) {
             this.paneBaseIndex = (0, tmuxClient_1.getPaneBaseIndex)(this.socketPath);
             this.applyPaneSettings();
@@ -345,10 +364,28 @@ class PaneTailer {
         }
         this.liveRoles.add(role.role);
     }
+    // BL-120: a respawned pane (same session/socket, new process) must not
+    // keep diffing/merging fresh content against retained state built from
+    // the process that used to be there - reset this role's history so the
+    // next capture is treated as a clean first read.
+    resetRoleRetainedState(role) {
+        this.lastText.delete(role);
+        this.lastRawText.delete(role);
+        this.lastChangedAt.delete(role);
+        this.paneHistory.delete(role);
+        this.paneHistoryContentLines.delete(role);
+    }
     // Captures this role's pane and returns the text to diff, or null when the
     // capture itself failed (a message was already pushed for that case).
     captureRoleOutput(role, updates) {
         const target = (0, tmuxClient_1.resolveAgentPaneTarget)(this.socketPath, role.session, this.paneBaseIndex);
+        const currentPid = (0, tmuxClient_1.getPanePid)(this.socketPath, target);
+        if (didPaneRespawn(this.panePids.get(role.role), currentPid)) {
+            this.resetRoleRetainedState(role.role);
+        }
+        if (currentPid !== '') {
+            this.panePids.set(role.role, currentPid);
+        }
         const result = (0, tmuxClient_1.capturePane)(this.socketPath, target, -this.historyLines);
         if (result.exitCode !== 0) {
             const text = `Could not read tmux pane for ${role.displayName}.\n\nTry SwarmForge: Stop Swarm, then Launch Swarm.`;

@@ -135,6 +135,27 @@ export function getPaneCommand(socketPath: string, target: string): string {
   return result.stdout.trim();
 }
 
+// BL-120: a `tmux respawn-pane` reuses the same socket and session name, so
+// neither changes when a pane's agent process is relaunched - the pane's
+// PID does, though, since respawn replaces the process running in it. Used
+// to detect a respawn the tailer would otherwise treat as "nothing changed"
+// and keep diffing fresh post-respawn content against stale retained state.
+export function getPanePid(socketPath: string, target: string): string {
+  const result = runCommand('tmux', [
+    '-S',
+    socketPath,
+    'display-message',
+    '-p',
+    '-t',
+    target,
+    '#{pane_pid}',
+  ]);
+  if (result.exitCode !== 0) {
+    return '';
+  }
+  return result.stdout.trim();
+}
+
 export function capturePane(
   socketPath: string,
   target: string,

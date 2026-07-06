@@ -61,6 +61,9 @@ exports.PHASE_MAP = {
     specifier: 'specifying',
     coder: 'coding',
     cleaner: 'verifying',
+    architect: 'architecting',
+    hardender: 'hardening',
+    documenter: 'documenting',
     QA: 'qa-verifying',
 };
 function roleToPhase(role) {
@@ -94,8 +97,7 @@ function countPriorRetries(logPath, role) {
     try {
         const content = fs.readFileSync(logPath, 'utf-8');
         let count = 0;
-        // Escape role for regex: role is a fixed constant (coordinator/specifier/coder/cleaner)
-        // but defensive escaping prevents logic errors if that changes.
+        // Escape role for regex to prevent injection in subsequent operations.
         const escapedRole = role.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const pattern = new RegExp(`^RETRY ${escapedRole} `);
         for (const line of content.split('\n')) {
@@ -119,8 +121,8 @@ function resolveTracesDir(envDir, cwd) {
             cwd: cwd ?? process.cwd(),
             encoding: 'utf-8',
         }).trim();
-        // git-common-dir is inside the worktree; go up to the repo root
-        const repoRoot = path.resolve(gitCommonDir, '..', '..');
+        // git-common-dir is .git; go up one level to reach repo root
+        const repoRoot = path.resolve(gitCommonDir, '..');
         return path.join(repoRoot, '.swarmforge', 'traces');
     }
     catch (error) {
