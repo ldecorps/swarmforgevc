@@ -1,13 +1,17 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import type { InboxChaserConfig, RoleInbox, ChaserAdapters } from '../swarm/inboxChaser';
-import { runSweep } from '../swarm/inboxChaser';
+import { runSweep, scanInProcess } from '../swarm/inboxChaser';
+import { recoverDeadLetters, appendRecoveryLog } from '../swarm/handoffRecovery';
 import { parseRolesTsv } from '../swarm/swarmState';
 import type { LivenessState } from './liveness';
 
 export interface ChaserMonitorConfig extends InboxChaserConfig {
   targetPath: string;
   rolesList: string[]; // ['specifier', 'coder', 'cleaner', ...]
+  /** BL-122: bounded retries before a dead letter escalates to needs-human
+   * instead of being redelivered forever. */
+  maxRecoveryAttempts: number;
 }
 
 export interface ChaserCallbacks {
@@ -63,10 +67,27 @@ export function startChaserMonitor(
 
   const roleInboxes: RoleInbox[] = buildRoleInboxes(config.targetPath, config.rolesList);
 
+  // BL-122: the recovery owner is this SAME extension-host timer, not any
+  // one pipeline agent — an agent process exiting can tear the swarm down
+  // around it (BL-107), but this watchdog is already the supervised owner
+  // of the chase/respawn seams recovery builds on.
+  const runRecoverySweep = (): void => {
+    recoverDeadLetters(roleInboxes, { maxRecoveryAttempts: config.maxRecoveryAttempts }, {
+      isRecipientBusy: (role) => {
+        const inbox = roleInboxes.find((r) => r.role === role);
+        return inbox ? scanInProcess(inbox.inProcessDir).length > 0 : false;
+      },
+      sendWakeUp: callbacks.sendWakeUp,
+      logRemediation: (outcome) => appendRecoveryLog(config.targetPath, outcome),
+      setNeedsHuman: callbacks.onStuckEscalation,
+    });
+  };
+
   // Start periodic sweep
   const intervalId = setInterval(() => {
     const nowMs = Date.now();
     runSweep(roleInboxes, nowMs, config, adapters);
+    runRecoverySweep();
   }, config.chaseIntervalSeconds * 1000);
 
   return intervalId;

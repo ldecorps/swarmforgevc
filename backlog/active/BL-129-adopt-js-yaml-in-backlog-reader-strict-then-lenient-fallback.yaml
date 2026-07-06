@@ -1,0 +1,80 @@
+id: BL-129
+title: adopt js-yaml in backlogReader via strict-then-lenient fallback (no regression on free-form titles)
+milestone: M2
+status: todo
+priority: 03
+
+description: |
+  OPERATOR DIRECTIVE (2026-07-06): replace the hand-rolled backlog YAML parsing
+  with a real library. js-yaml ^5.2.1 is ALREADY installed as an extension
+  dependency (`extension/package.json`); do not add another YAML lib.
+
+  SPECIFIER DECISION (2026-07-06): adopt strategy 1 — strict-then-lenient
+  fallback. Per ticket file: first attempt strict `js-yaml` `load()`; if it
+  throws OR yields a non-object, fall back to the existing lenient line-based
+  extraction (`parseYamlScalar` / `parseYamlList`) for that file. The strict
+  path serves well-formed tickets; the lenient path preserves the measured
+  gnarly ones. Strategy 2 (quote-on-write + migration + standing authoring
+  rule) was rejected: it depends on every future agent/human quoting free-form
+  titles forever, and the first violation silently drops an active ticket —
+  the exact failure this ticket exists to prevent.
+
+  Context: `extension/src/panel/backlogReader.ts` currently parses tickets with
+  a lenient regex extractor (CRAP-reduced in BL-082). Measured 2026-07-06:
+  strict `js-yaml` over all ~130 real tickets DROPS 5 (BL-018, BL-019, BL-093,
+  BL-097, BL-128 — the latter three ACTIVE) with "bad indentation of a mapping
+  entry" / "a multiline key may not be an implicit key"; a synthetic
+  `title: BUG: it broke` also throws. A parser that hides active tickets is
+  worse than the lenient one it replaces.
+
+  Constraints:
+  - The mapping must preserve the exact BacklogItem contract pinned by
+    backlogReader.test.js: only known fields present (no stray keys from extra
+    YAML like `evidence:`/`notes:`), optional fields omitted (not undefined)
+    when absent, `priority` a number, invalid/missing id|title|status → null,
+    malformed file → skipped not thrown. The strict path must NOT start
+    surfacing extra keys just because js-yaml parses the whole document.
+  - Keep backlogReader.ts CRAP at or below its BL-082 level; if carrying both
+    paths pushes it over, extract helpers.
+  - Scope: extension/src/panel/backlogReader.ts and its tests only.
+
+acceptance: |
+  Feature: robust backlog parsing with a real YAML library
+
+  # BL-129 strict-path-01
+  Scenario: a well-formed ticket is parsed by the strict YAML path
+    Given a backlog ticket file that is valid strict YAML
+    When backlogReader parses it
+    Then the resulting BacklogItem matches the lenient parser's result exactly
+
+  # BL-129 fallback-02
+  Scenario Outline: tickets the strict parser rejects still surface via fallback
+    Given a backlog ticket whose content makes strict js-yaml load() <failure>
+    And the lenient extractor can read its id, title, and status
+    When backlogReader parses it
+    Then the ticket is returned, not dropped
+    Examples:
+      | failure                                        |
+      | throw on an unquoted colon-space in the title  |
+      | throw on bad indentation of a mapping entry    |
+      | yield a non-object result                      |
+
+  # BL-129 no-regression-03
+  Scenario: every ticket the lenient parser reads today still parses
+    Given the full current backlog (~130 tickets), including BL-018, BL-019,
+      BL-093, BL-097, BL-128 whose titles/fields are not strict YAML
+    When backlogReader parses them after adopting js-yaml
+    Then no ticket that the lenient parser surfaced is dropped
+
+  # BL-129 contract-04
+  Scenario: the BacklogItem contract is unchanged
+    Given the existing backlogReader.test.js cases
+    Then all pass unchanged: only known fields (no stray keys such as
+      evidence or notes), optional fields omitted when absent, numeric
+      priority, null on missing/invalid required fields, malformed files
+      skipped rather than throwing
+
+  # Non-behavioral gates:
+  #  - js-yaml ^5.2.1 is already a dependency; do not add another YAML lib.
+  #  - Keep backlogReader.ts CRAP at or below the BL-082 level; extract
+  #    helpers if the dual path pushes it over.
