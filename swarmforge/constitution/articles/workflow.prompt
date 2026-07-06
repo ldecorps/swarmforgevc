@@ -103,3 +103,12 @@ By coder.
 
 ## Failure Conditions
 - If the expected git layout or assigned worktree is missing, stop and report instead of silently working in the wrong place.
+
+## Coordinator Session Must Never Exit (BL-107)
+- The coordinator is the swarm-forge cleanup owner: its pane exiting tears
+  down the entire swarm (kills `handoffd` and every role's session), not
+  just the coordinator's own process. The coordinator must never exit its
+  session for any reason — a swarm restart is requested through the bounce
+  procedure (`swarmforge/scripts/remote_bounce.sh`), never by exiting.
+  See `swarmforge/roles/coordinator.prompt` for the full bounce procedure
+  and its durable acknowledgement (`.swarmforge/bounce-ack.json`).
