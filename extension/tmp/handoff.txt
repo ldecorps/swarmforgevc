@@ -1,5 +1,0 @@
-type: git_handoff
-to: architect
-priority: 00
-task: BL-137-respawn-misfire-guard
-commit: 4f3aced9f2

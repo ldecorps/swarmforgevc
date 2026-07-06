@@ -4,6 +4,7 @@
 .swarmforge/
 .worktrees/
 /tmp/
+extension/tmp/
 extension/node_modules/
 extension/out/
 extension/coverage/
