@@ -97,14 +97,19 @@ function toOptionalStringList(value) {
 // the known BacklogItem fields off the parsed object so extra keys elsewhere
 // in the document (e.g. `evidence:`, `notes:`) never leak into the contract
 // pinned by backlogReader.test.js.
-function buildItemFromParsedObject(obj) {
+// Split out of buildItemFromParsedObject (hardening pass, BL-129): isolates
+// the required-field validation from optional-field assignment so each half
+// stays independently low-complexity/testable.
+function extractRequiredFields(obj) {
     const id = typeof obj.id === 'string' ? obj.id : undefined;
     const title = typeof obj.title === 'string' ? obj.title : undefined;
     const statusRaw = typeof obj.status === 'string' ? obj.status : undefined;
     if (!id || !title || !statusRaw || !VALID_STATUSES.has(statusRaw)) {
         return null;
     }
-    const item = { id, title, status: statusRaw };
+    return { id, title, status: statusRaw };
+}
+function assignOptionalFieldsFromObject(item, obj) {
     if (typeof obj.assigned_to === 'string' && obj.assigned_to)
         item.assignedTo = obj.assigned_to;
     if (typeof obj.milestone === 'string' && obj.milestone)
@@ -118,6 +123,14 @@ function buildItemFromParsedObject(obj) {
     const pack = toOptionalStringList(obj.pack);
     if (pack)
         item.pack = pack;
+}
+function buildItemFromParsedObject(obj) {
+    const required = extractRequiredFields(obj);
+    if (!required) {
+        return null;
+    }
+    const item = { ...required };
+    assignOptionalFieldsFromObject(item, obj);
     return item;
 }
 function parseBacklogYamlLenient(content) {
