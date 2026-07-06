@@ -7,10 +7,18 @@ const { extractFunctionFromCode, loadPanelSource } = require('./helpers/extractP
 // BL-034's assignee select) `tiles` as free variables; the Function
 // constructor closes over the global scope, so we stub them there.
 const backlogRowHtml = extractFunctionFromCode(loadPanelSource(), 'backlogRowHtml');
-// backlogRowHtml calls the module-level stageColorClass (BL-077) as a free
-// variable too; stub it on global alongside holderMap/tiles for the same
-// reason (see comment above).
-global.stageColorClass = extractFunctionFromCode(loadPanelSource(), 'stageColorClass');
+// backlogRowHtml calls the module-level stageColorClass (BL-077) and
+// ticketChipStyle (BL-139) as free variables too; stub both on global
+// alongside holderMap/tiles for the same reason (see comment above).
+// ticketChipStyle in turn closes over TICKET_COLOR_PALETTE and
+// ticketColorSegments, so those need stubbing too.
+const panelSource = loadPanelSource();
+global.stageColorClass = extractFunctionFromCode(panelSource, 'stageColorClass');
+const paletteMatch = panelSource.match(/const TICKET_COLOR_PALETTE = (\[[^\]]*\]);/s);
+global.TICKET_COLOR_PALETTE = new Function(`return ${paletteMatch[1]};`)();
+global.ticketColorFor = extractFunctionFromCode(panelSource, 'ticketColorFor');
+global.ticketColorSegments = extractFunctionFromCode(panelSource, 'ticketColorSegments');
+global.ticketChipStyle = extractFunctionFromCode(panelSource, 'ticketChipStyle');
 
 test('backlogRowHtml includes id, title, and assigned for todo items', () => {
   global.holderMap = {};
