@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { BounceType } from './bounceWatcher';
+import { atomicWrite } from '../util/atomicWrite';
+import { BounceType, isBounceType } from './bounceWatcher';
 
 // BL-107: a durable acknowledgement for bounce requests. remote_bounce.sh's
 // sentinel write is fire-and-forget; the requester (a human or an agent
@@ -32,18 +33,10 @@ function isBouncePhase(value: unknown): value is BouncePhase {
   );
 }
 
-function isBounceType(value: unknown): value is BounceType {
-  return value === 'swarm' || value === 'extension' || value === 'all';
-}
-
-// Atomic temp+rename, matching bounceDrain.ts's and remote_bounce.sh's
-// sentinel-write pattern, so a reader never observes a partially-written file.
+// Write bounce ack state atomically (via temp+rename) so a reader never
+// observes a partially-written file.
 export function writeBounceAck(targetPath: string, state: BounceAckState): void {
-  const target = bounceAckPath(targetPath);
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  const tmp = `${target}.tmp.${process.pid}`;
-  fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
-  fs.renameSync(tmp, target);
+  atomicWrite(bounceAckPath(targetPath), JSON.stringify(state, null, 2));
 }
 
 export function readBounceAck(targetPath: string): BounceAckState | null {

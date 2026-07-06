@@ -10,6 +10,8 @@ const {
   decideItemAction,
   readChaseCount,
   writeChaseCount,
+  readLastChasedAtMs,
+  computeChaseBackoffSeconds,
   sidecarPath,
   deadLetterPath,
   scanInboxNew,
@@ -139,6 +141,60 @@ test('idle time exactly at the stuck threshold no longer counts as recent activi
   assert.equal(decideItemAction(STALE_MS, 3, NOW, CFG, 'dead', exactlyAtThresholdMs), 'respawned');
 });
 
+// BL-135: a busy recipient's queued mail must be chased with a GROWING
+// backoff, not on every sweep tick (98 nudges in ~16min at a 5s tick was the
+// real-world bug). Once a chase has already been sent (lastChasedAtMs is
+// known), decideItemAction must consult computeChaseBackoffSeconds instead
+// of unconditionally re-chasing.
+test('recent activity with a very recent prior chase is skipped, not re-chased', () => {
+  const justChasedMs = NOW - 1_000; // 1s ago — nowhere near any backoff window
+  assert.equal(decideItemAction(STALE_MS, 1, NOW, CFG, 'alive', ACTIVE_MS, justChasedMs), 'skipped');
+});
+
+test('recent activity re-chases once the backoff interval for that chaseCount has elapsed', () => {
+  // computeChaseBackoffSeconds(1, CFG) = min(CFG.chaseIntervalSeconds * 2^1, CFG.stuckInProcessTimeoutSeconds)
+  //                                    = min(60, 60) = 60
+  const longAgoMs = NOW - 60_000;
+  assert.equal(decideItemAction(STALE_MS, 1, NOW, CFG, 'alive', ACTIVE_MS, longAgoMs), 'chased');
+});
+
+test('recent activity with no prior recorded chase (lastChasedAtMs null) chases immediately', () => {
+  assert.equal(decideItemAction(STALE_MS, 0, NOW, CFG, 'alive', ACTIVE_MS, null), 'chased');
+});
+
+test('backoff bounds a hammered note to far fewer chases than a fixed-interval hammer would produce', () => {
+  // Simulate ~16 minutes of 5s-tick sweeps (the BL-135 incident's cadence)
+  // against a recipient that stays busy the whole time, using the real
+  // sidecar read/write path so chaseCount and lastChasedAtMs accumulate
+  // exactly as production does.
+  const tmp = mkTmp();
+  const handoffPath = path.join(tmp, 'note.handoff');
+  fs.writeFileSync(handoffPath, 'irrelevant body');
+
+  const startMs = NOW;
+  const totalTicks = (16 * 60) / 5; // 192 ticks at a 5s cadence
+  let chaseTimes = 0;
+  for (let tick = 0; tick < totalTicks; tick++) {
+    const tickNowMs = startMs + tick * 5_000;
+    const chaseCount = readChaseCount(handoffPath);
+    const lastChasedAtMs = readLastChasedAtMs(handoffPath);
+    const action = decideItemAction(STALE_MS, chaseCount, tickNowMs, CFG, 'alive', tickNowMs, lastChasedAtMs);
+    if (action === 'chased') {
+      chaseTimes++;
+      writeChaseCount(handoffPath, chaseCount + 1, tickNowMs);
+    }
+  }
+
+  // CFG's default backoff cap (stuckInProcessTimeoutSeconds = 60s) bounds
+  // the steady-state rate to roughly one chase per 60s once the doubling
+  // interval saturates, i.e. ~16 over 16 minutes — night and day versus the
+  // fixed-5s-tick hammer that produced the real ~98/16min incident.
+  assert.ok(
+    chaseTimes <= 20,
+    `expected far fewer than the ~98 hammer chases over 16min, got ${chaseTimes}`
+  );
+});
+
 // ── sidecarPath ───────────────────────────────────────────────────────────────
 
 test('sidecarPath appends .chase.json to handoff path', () => {
@@ -180,6 +236,48 @@ test('readChaseCount returns 0 for corrupt sidecar', () => {
   const handoffPath = path.join(tmp, 'test.handoff');
   fs.writeFileSync(sidecarPath(handoffPath), 'not-json', 'utf-8');
   assert.equal(readChaseCount(handoffPath), 0);
+});
+
+// ── readLastChasedAtMs / writeChaseCount(..., lastChasedAtMs) — BL-135 ─────────
+
+test('readLastChasedAtMs returns null when sidecar absent', () => {
+  const tmp = mkTmp();
+  const handoffPath = path.join(tmp, 'test.handoff');
+  assert.equal(readLastChasedAtMs(handoffPath), null);
+});
+
+test('writeChaseCount with a lastChasedAtMs round-trips both fields', () => {
+  const tmp = mkTmp();
+  const handoffPath = path.join(tmp, 'test.handoff');
+  writeChaseCount(handoffPath, 3, 1_700_000_000_000);
+  assert.equal(readChaseCount(handoffPath), 3);
+  assert.equal(readLastChasedAtMs(handoffPath), 1_700_000_000_000);
+});
+
+test('writeChaseCount without lastChasedAtMs preserves a previously recorded one', () => {
+  const tmp = mkTmp();
+  const handoffPath = path.join(tmp, 'test.handoff');
+  writeChaseCount(handoffPath, 1, 1_700_000_000_000);
+  writeChaseCount(handoffPath, 2); // no lastChasedAtMs passed this time
+  assert.equal(readChaseCount(handoffPath), 2);
+  assert.equal(readLastChasedAtMs(handoffPath), 1_700_000_000_000);
+});
+
+// ── computeChaseBackoffSeconds (pure) — BL-135 ─────────────────────────────────
+
+test('computeChaseBackoffSeconds doubles per chase, capped at chaseBackoffMaxSeconds default', () => {
+  // base defaults to chaseIntervalSeconds (30), max defaults to
+  // stuckInProcessTimeoutSeconds (60) when the optional fields are omitted.
+  assert.equal(computeChaseBackoffSeconds(0, CFG), 30);
+  assert.equal(computeChaseBackoffSeconds(1, CFG), 60);
+  assert.equal(computeChaseBackoffSeconds(5, CFG), 60); // capped
+});
+
+test('computeChaseBackoffSeconds honors explicit base/max overrides', () => {
+  const cfg = { ...CFG, chaseBackoffBaseSeconds: 10, chaseBackoffMaxSeconds: 200 };
+  assert.equal(computeChaseBackoffSeconds(0, cfg), 10);
+  assert.equal(computeChaseBackoffSeconds(2, cfg), 40);
+  assert.equal(computeChaseBackoffSeconds(10, cfg), 200); // capped
 });
 
 // ── scanInboxNew ──────────────────────────────────────────────────────────────
@@ -224,6 +322,23 @@ test('scanInboxNew returns mtimeMs for each item', () => {
 
   const items = scanInboxNew(inboxNew, NOW);
   assert.ok(items[0].mtimeMs > 0);
+});
+
+test('scanInboxNew reads lastChasedAtMs from sidecar, null when never chased', () => {
+  const tmp = mkTmp();
+  const inboxNew = path.join(tmp, 'inbox', 'new');
+  fs.mkdirSync(inboxNew, { recursive: true });
+  const neverChased = path.join(inboxNew, 'never.handoff');
+  const chased = path.join(inboxNew, 'chased.handoff');
+  fs.writeFileSync(neverChased, '', 'utf-8');
+  fs.writeFileSync(chased, '', 'utf-8');
+  writeChaseCount(chased, 1, 1_700_000_000_000);
+
+  const items = scanInboxNew(inboxNew, NOW);
+  const neverItem = items.find((i) => i.filePath === neverChased);
+  const chasedItem = items.find((i) => i.filePath === chased);
+  assert.equal(neverItem.lastChasedAtMs, null);
+  assert.equal(chasedItem.lastChasedAtMs, 1_700_000_000_000);
 });
 
 // ── decideStuckAction (pure) ──────────────────────────────────────────────────
@@ -496,6 +611,32 @@ test('runSweep never respawns a dead-liveness role that is still showing recent 
   assert.deepEqual(calls.wakeUps, ['coder']);
   assert.equal(calls.respawns.length, 0);
   assert.equal(calls.deadLetters.length, 0);
+});
+
+// BL-135: the runSweep wiring (sweepRoleInbox -> decideItemAction ->
+// applyInboxItemAction) must actually carry lastChasedAtMs through two real
+// sweeps, not just the pure decideItemAction unit above. A second sweep run
+// moments after the first, against a recipient still showing activity, must
+// be suppressed by the backoff rather than re-chasing on every tick.
+test('runSweep suppresses a second chase of a busy recipient within the backoff window, then chases again once it elapses', () => {
+  const { role, inboxNewDir, inProcessDir } = mkRoleInbox('coder');
+  const filePath = writeAgedHandoff(inboxNewDir, 'a.handoff', 120, NOW);
+  const { calls, adapters } = mkAdapters('alive', NOW);
+
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW, SWEEP_CFG, adapters);
+  assert.deepEqual(calls.wakeUps, ['coder']);
+  assert.equal(readChaseCount(filePath), 1);
+
+  // 5s later - well inside the backoff window for chaseCount=1
+  // (min(30*2^1, 300) = 60s) - must be skipped, not re-chased.
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW + 5_000, SWEEP_CFG, adapters);
+  assert.deepEqual(calls.wakeUps, ['coder']);
+  assert.equal(readChaseCount(filePath), 1);
+
+  // 61s after the first chase - backoff has elapsed, so the sweep chases again.
+  runSweep([{ role, inboxNewDir, inProcessDir }], NOW + 61_000, SWEEP_CFG, adapters);
+  assert.deepEqual(calls.wakeUps, ['coder', 'coder']);
+  assert.equal(readChaseCount(filePath), 2);
 });
 
 // BL-087 no-false-respawn-03: only once chase attempts are exhausted for a
