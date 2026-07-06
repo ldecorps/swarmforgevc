@@ -31,6 +31,19 @@ test('recordTrackedJob persists an entry that readTrackedJobs returns', () => {
   assert.equal(entries[0].worktree, 'hardener');
 });
 
+test('recordTrackedJob replaces an existing entry for the same pgid rather than duplicating it', () => {
+  const dir = mkTmpSwarmforgeDir();
+  recordTrackedJob(dir, { pgid: 4242, worktree: 'a', kind: 'stryker', started_at: 't1', owner_host_pid: 1 });
+
+  recordTrackedJob(dir, { pgid: 4242, worktree: 'b', kind: 'vitest', started_at: 't2', owner_host_pid: 2 });
+
+  const entries = readTrackedJobs(dir);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].worktree, 'b');
+  assert.equal(entries[0].kind, 'vitest');
+  assert.equal(entries[0].owner_host_pid, 2);
+});
+
 test('removeTrackedJob drops only the matching pgid entry', () => {
   const dir = mkTmpSwarmforgeDir();
   recordTrackedJob(dir, { pgid: 1, worktree: 'a', kind: 'x', started_at: 't', owner_host_pid: 1 });
@@ -192,6 +205,15 @@ test('startup-reaper-03: an entry whose owner host pid is still alive is left un
   const entries = readTrackedJobs(dir);
   assert.equal(entries.length, 1);
   assert.equal(entries[0].pgid, 70);
+});
+
+test('startup-reaper-03: a stale entry whose kill throws (already gone) is still dropped from the registry', () => {
+  const dir = mkTmpSwarmforgeDir();
+  recordTrackedJob(dir, { pgid: 65, worktree: 'a', kind: 'stryker', started_at: 't', owner_host_pid: 999 });
+
+  reapStaleTrackedJobs(dir, () => false, () => { throw new Error('ESRCH'); });
+
+  assert.deepEqual(readTrackedJobs(dir), []);
 });
 
 test('startup-reaper-03: mixed stale and live entries only reap the stale one', () => {
