@@ -68,3 +68,28 @@ acceptance: |
     Given the reworked test file
     When npm test runs
     Then the suite passes with no cancelled tests
+
+investigation: |
+  Coder investigation (2026-07-06): already fixed, as a side effect of
+  BL-124's Vitest migration (aae2523), before this ticket was picked up.
+  The test file's own header comment documents it: "BL-124/BL-125: the tmux
+  double is now IN-PROCESS. The previous helper installed a fake `tmux`
+  executable on PATH, so every PaneTailer.poll() spawned a node subprocess
+  ... at 15-25 polls per test that was 30s+." The rework replaced the
+  fake-tmux-on-PATH subprocess double with `vi.spyOn(tmuxClient, ...)`
+  in-process mocks (capturePane, sessionExists, etc.), eliminating the
+  hundreds of synchronous process spawns per test while driving the exact
+  same PaneTailer.poll() sequence.
+
+  Re-verified against the current tree (acceptance criteria adapted from
+  `node --test` to the project's current runner, Vitest, per BL-124):
+  - `npx vitest run test/paneTailerScrollback.test.js` standalone: all 3
+    tests pass in 2.69s total (well under the 10s budget).
+  - All three BL-070 gate assertions are intact and unchanged in kind: line0
+    (scrolled-off content) reachable, historyLines cap enforced, unchanged
+    repaint produces no further updates — no assertion anywhere on tmux
+    argv.
+  - Full `npm test`: 94 files / 1305 tests, all green, no cancellations,
+    161s total.
+
+  No code change needed. Forwarding for QA to close out re-verification.

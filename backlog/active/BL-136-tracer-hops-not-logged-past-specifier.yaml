@@ -61,3 +61,54 @@ acceptance: |
 
   # Non-behavioral: this is test/observability tooling; does not change the
   # handoff transport, which is confirmed working.
+
+investigation: |
+  Coder investigation and fix (2026-07-06):
+
+  - trace-hop.js's PHASE_MAP (all 8 roles) and resolveTracesDir's
+    git-common-dir aggregation, and every role's "Tracer Bullet
+    Participation" prompt block (forward the SAME `TRACE <id>` note down
+    the chain, QA terminal) were already correct going into this session —
+    an earlier architect pass had already fixed the PHASE_MAP gap and the
+    off-by-one in resolveTracesDir. That covers recognition-02 and the
+    "aggregate to one log" part of all-hops-01; no change needed there.
+
+  - Remaining bugs, both in extension/src/tools/tracer-bullet-launcher.ts,
+    now fixed:
+    1. The harness (non-watch) CHAIN/ROLE_PLAYBOOK only simulated
+       coordinator->specifier->coder->cleaner, four hops short of the real
+       8-role pipeline, so the harness could never actually exercise
+       architect/hardener/documenter/QA wiring. Extended CHAIN and
+       ROLE_PLAYBOOK to the full chain, decision strings mirrored exactly
+       from each role's prompt block, state values mirrored from
+       trace-hop.ts's PHASE_MAP.
+    2. computeTraceReport (extension/src/swarm/tracer.ts) computed
+       `pass = lastHop === 'cleaner'` — cleaner is a mid-chain hop now, not
+       terminal. Changed to `lastHop === 'QA'`.
+    3. watchLive's seed injection was a no-op: it called
+       `fs.mkdirSync(inboxDir)` and logged "Seeded trace..." but never
+       actually wrote a note anywhere, so `--watch` could never start a
+       live run without a human injecting the note by hand — exactly the
+       gap this ticket reported. Fixed by building a real note draft
+       (`buildSeedDraft`, addressed to coordinator, `message: TRACE <id>`)
+       and sending it through the sanctioned transport, swarm_handoff.sh
+       (never inbox/new directly, per constitution). Also changed the
+       watch loop's termination/timeout role from 'cleaner' to 'QA'.
+    4. Found and fixed in passing: the launcher had no
+       `require.main === module` guard (trace-hop.ts has one), so simply
+       requiring the module for its exports ran the whole CLI, including
+       `process.exit()` and leaking a real `.swarmforge/traces/*.log` file
+       into whatever the caller's cwd happened to be — caught when my own
+       new unit test for `buildSeedDraft` did exactly that. Added the
+       guard.
+
+  Verified: `node out/tools/tracer-bullet-launcher.js` (harness) now
+  produces PASS with all 8 hops, coordinator through QA, in its printed
+  report. `--watch` was verified live to enqueue a real
+  `type: note / to: coordinator / message: TRACE <id>` handoff via
+  swarm_handoff.sh (confirmed reaching the real coordinator inbox, then
+  removed before any live agent processed it, to avoid disturbing the
+  running swarm). Added extension/test/tracerBulletLauncher.test.js for
+  the new pure `buildSeedDraft` builder and updated tracer.test.js's
+  pass/fail terminal-role expectations. Full suite: 95 files / 1310 tests
+  green.

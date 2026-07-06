@@ -65,3 +65,21 @@ investigation: |
   the BL-077 merge landing in the operator's running build. Forwarding
   unchanged for QA to re-verify live in Extension Development Host per the
   ticket's non-behavioral gate.
+
+  Coder re-check after BL-139 merge (2026-07-06): re-ran the acceptance
+  scenarios against the current tree, which now implements coloring per
+  BL-139 (ticket identity, not stage) rather than the stageColorClass
+  mechanism the note above describes. `backlogRowHtml` colors `.bl-assigned`
+  with `ticketChipStyle([item.id])`, and the tile-header badge (panel.js's
+  `badgeUpdate` handler) colors with `ticketChipStyle(badge.heldTicketIds ||
+  [badge.id])` — both call the same `ticketColorFor`, so a given ticket id
+  still renders identically in both places, now for the whole ticket's
+  lifetime rather than only per-stage. `renderedStageColorAgreement.test.js`
+  and `renderedHolderlessAgreement.test.js` (26/26) still pass unmodified
+  against this mechanism and directly exercise BL-127's two acceptance
+  scenarios (held ticket: same color both places; unheld ticket: no stage
+  color, "queued" neutral). Still no code change required — BL-127's
+  acceptance criteria are satisfied by BL-139's already-merged
+  implementation. Forwarding for QA to close out the re-verification live
+  in Extension Development Host (light + dark) per the ticket's
+  non-behavioral gate.
