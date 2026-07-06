@@ -1,5 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
 const { extractFunctionFromCode, loadPanelSource } = require('./helpers/extractPanelFunction');
 
 // Exercises the real panel.js backlogRowHtml (not a hand-copied restatement

@@ -1,5 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
 const { renderPanel } = require('./helpers/renderPanel');
 
 // BL-071: drives the REAL webview shell + REAL media/panel.js in jsdom, not

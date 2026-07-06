@@ -2,8 +2,19 @@ id: BL-124
 title: Migrate extension tests from `node --test` to Vitest so Stryker can run coverage-aware (perTest) mutation analysis
 milestone: M2
 status: todo
-priority: 30
+priority: 00
 assigned_to: coder
+notes: |
+  FAST-TRACK (operator, 2026-07-06). This is the bootstrap that makes ALL
+  future mutation runs fast (perTest instead of full-suite-per-mutant — a live
+  BL-121 pass is currently ~3h for ONE file). It is a TEST-INFRA change: its
+  changed files are test/config/build (vitest.config, package.json, test
+  files), not product source. So the hardener MUST NOT gate it on a full
+  mutation pass — scope `--mutate` to changed PRODUCT files (expected ~none →
+  a near no-op hardening pass, NOT another 3h run). Correctness of this ticket
+  is proven by its own acceptance (suite green on Vitest + Stryker running
+  perTest), not by mutating unchanged product code. Do not let the thing that
+  removes the 3h runs itself sit behind a 3h run.
 
 description: |
   Follow-up to BL-123 (closed 2026-07-05). The constitution's original

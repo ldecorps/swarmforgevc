@@ -237,18 +237,21 @@
     "tracer-bullet": "npm run compile && node out/tools/tracer-bullet-launcher.js",
     "mutation": "npm run compile && stryker run",
     "dry": "jscpd --config .jscpd.json src",
-    "coverage": "npm run compile && c8 --reporter=json --report-dir=coverage node --test --test-concurrency=8 test/*.test.js",
+    "coverage": "npm run compile && vitest run --coverage",
     "crap": "npm run coverage && node scripts/crapReport.js"
   },
   "devDependencies": {
     "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
+    "@vitest/coverage-v8": "^3.2.6",
     "c8": "^11.0.0",
     "jscpd": "^5.0.11",
     "jsdom": "^29.1.1",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^3.2.6"
   },
   "dependencies": {
     "js-yaml": "^5.2.1"

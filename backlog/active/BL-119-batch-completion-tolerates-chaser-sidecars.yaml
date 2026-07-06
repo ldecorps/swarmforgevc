@@ -25,6 +25,14 @@ description: |
   auto-removed — never a `.handoff` payload or unknown file; those still
   abort with a clear error.
 
+  Further evidence (2026-07-06): stale sidecars also poison MONITORING —
+  the operator was alerted to "11 parcels stuck in in_process" when the
+  swarm was in fact fully drained; all 11 were orphaned `.nudge` markers
+  in the master in_process/ whose handoffs sat in completed/ (plus 19
+  stale `.chase.json` in new/; role worktrees carry more). Any
+  stuck-parcel detector must count only `.handoff` payloads, never
+  sidecars; sidecar cleanup at completion removes the false-alarm source.
+
 acceptance: |
   Feature: inbox completion tolerates chaser sidecars
 

@@ -10,6 +10,10 @@ notes: |
   SEQUENCING: do not promote until BL-086 (startup attach) has merged — the fix
   may be subsumed by it; if so, fold this ticket in as BL-086's observable
   acceptance instead of shipping a parallel attach path.
+  OPERATOR CONFIRMATION (2026-07-06): the frozen-tiles symptom PERSISTS after
+  BL-086 (startup attach) merged — so this defect is NOT subsumed by BL-086
+  and needs its own fix per this spec. Operator marked it not urgent;
+  priority unchanged.
 
 description: |
   DEFECT (operator report, 2026-07-05): the SwarmForge panel is no longer a
