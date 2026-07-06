@@ -123,3 +123,10 @@ You are the coordinator.
   node <repo>/extension/out/tools/trace-hop.js <id> decide route_to_specifier "tracer bullet received"
   ```
 - Then forward the same `TRACE <id>` note to the specifier and stop.
+
+## Promotion Recheck On Merge/Close Signals (accepted rule proposal, 2026-07-06)
+- On any merge/close-signaling handoff (a QA merge-up note, or a ticket
+  closing into done/), recheck the `backlog/active/` count against
+  `active_backlog_max_depth` and promote the next eligible paused item
+  before going idle. (Rationale: BL-139 closed to done/M3 dropping active
+  5->4, but the slot sat open unfed until caught manually.)
