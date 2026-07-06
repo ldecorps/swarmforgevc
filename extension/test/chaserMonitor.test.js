@@ -32,6 +32,7 @@ function baseConfig(targetPath, overrides = {}) {
     maxChases: 3,
     stuckInProcessTimeoutSeconds: 60,
     respawnCooldownSeconds: 300,
+    maxRecoveryAttempts: 3,
     ...overrides,
   };
 }

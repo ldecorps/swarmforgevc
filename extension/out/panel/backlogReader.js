@@ -38,6 +38,7 @@ exports.readBacklog = readBacklog;
 exports.readBacklogFolders = readBacklogFolders;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const yaml = __importStar(require("js-yaml"));
 const VALID_STATUSES = new Set(['todo', 'active', 'done']);
 function parseYamlScalar(content, field) {
     const match = content.match(new RegExp(`^${field}:\\s*(.+)$`, 'm'));
@@ -77,7 +78,62 @@ function assignOptionalFields(item, content) {
     if (pack)
         item.pack = pack;
 }
-function parseBacklogYaml(content) {
+function toOptionalNumber(value) {
+    if (typeof value === 'number' && !Number.isNaN(value))
+        return value;
+    if (typeof value === 'string') {
+        const n = Number(value);
+        return !Number.isNaN(n) ? n : undefined;
+    }
+    return undefined;
+}
+function toOptionalStringList(value) {
+    if (!Array.isArray(value))
+        return undefined;
+    const entries = value.map(String).filter((s) => s.length > 0);
+    return entries.length > 0 ? entries : undefined;
+}
+// Builds a BacklogItem from a strictly-parsed js-yaml document. Reads only
+// the known BacklogItem fields off the parsed object so extra keys elsewhere
+// in the document (e.g. `evidence:`, `notes:`) never leak into the contract
+// pinned by backlogReader.test.js.
+// Split out of buildItemFromParsedObject (hardening pass, BL-129): isolates
+// the required-field validation from optional-field assignment so each half
+// stays independently low-complexity/testable.
+function extractRequiredFields(obj) {
+    const id = typeof obj.id === 'string' ? obj.id : undefined;
+    const title = typeof obj.title === 'string' ? obj.title : undefined;
+    const statusRaw = typeof obj.status === 'string' ? obj.status : undefined;
+    if (!id || !title || !statusRaw || !VALID_STATUSES.has(statusRaw)) {
+        return null;
+    }
+    return { id, title, status: statusRaw };
+}
+function assignOptionalFieldsFromObject(item, obj) {
+    if (typeof obj.assigned_to === 'string' && obj.assigned_to)
+        item.assignedTo = obj.assigned_to;
+    if (typeof obj.milestone === 'string' && obj.milestone)
+        item.milestone = obj.milestone;
+    const priority = toOptionalNumber(obj.priority);
+    if (priority !== undefined)
+        item.priority = priority;
+    const dependsOn = toOptionalStringList(obj.depends_on);
+    if (dependsOn)
+        item.dependsOn = dependsOn;
+    const pack = toOptionalStringList(obj.pack);
+    if (pack)
+        item.pack = pack;
+}
+function buildItemFromParsedObject(obj) {
+    const required = extractRequiredFields(obj);
+    if (!required) {
+        return null;
+    }
+    const item = { ...required };
+    assignOptionalFieldsFromObject(item, obj);
+    return item;
+}
+function parseBacklogYamlLenient(content) {
     const id = parseYamlScalar(content, 'id');
     const title = parseYamlScalar(content, 'title');
     const statusRaw = parseYamlScalar(content, 'status');
@@ -87,6 +143,24 @@ function parseBacklogYaml(content) {
     const item = { id, title, status: statusRaw };
     assignOptionalFields(item, content);
     return item;
+}
+// BL-129: try a real YAML parser first; a well-formed ticket gets a real
+// parse instead of regex extraction. Some real tickets have free-form titles
+// or notes that are not valid strict YAML (unquoted "key: value"-shaped
+// text, multiline implicit keys) — js-yaml throws or returns a non-object
+// for those, and this falls back to the lenient extractor rather than
+// dropping the ticket.
+function parseBacklogYaml(content) {
+    try {
+        const parsed = yaml.load(content);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            return buildItemFromParsedObject(parsed);
+        }
+    }
+    catch {
+        // fall through to the lenient extractor below
+    }
+    return parseBacklogYamlLenient(content);
 }
 function readYamlFiles(dir, overrideStatus) {
     let files;
