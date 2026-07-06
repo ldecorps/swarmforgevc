@@ -56,14 +56,36 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.buildSeedDraft = buildSeedDraft;
 const fs = __importStar(require("fs"));
+const os = __importStar(require("os"));
 const path = __importStar(require("path"));
+const child_process_1 = require("child_process");
 const tracer_1 = require("../swarm/tracer");
 const SWARMFORGE_DIR = path.join(process.cwd(), '.swarmforge');
 const TRACES_DIR = path.join(SWARMFORGE_DIR, 'traces');
-/** Canonical forward chain for a tracer bullet. */
-const CHAIN = ['coordinator', 'specifier', 'coder', 'cleaner'];
-/** What each role does to a tracer bullet (no real implementation occurs). */
+/**
+ * Canonical forward chain for a tracer bullet — the full pipeline
+ * (BL-136: the harness previously stopped at cleaner, four hops short of
+ * the real chain, which made the harness pass regardless of whether the
+ * remaining four roles' trace-hop wiring worked at all).
+ */
+const CHAIN = [
+    'coordinator',
+    'specifier',
+    'coder',
+    'cleaner',
+    'architect',
+    'hardender',
+    'documenter',
+    'QA',
+];
+/**
+ * What each role does to a tracer bullet (no real implementation occurs).
+ * `state` mirrors trace-hop.ts's PHASE_MAP and `decision` mirrors the exact
+ * decision string each role's "Tracer Bullet Participation" prompt block
+ * uses, so the harness models the same forward chain the live prompts do.
+ */
 const ROLE_PLAYBOOK = {
     coordinator: {
         state: 'routing',
@@ -82,8 +104,28 @@ const ROLE_PLAYBOOK = {
     },
     cleaner: {
         state: 'verifying',
+        decision: 'forward_to_architect',
+        details: 'no cleanup needed for tracer bullet; forwarding',
+    },
+    architect: {
+        state: 'architecting',
+        decision: 'forward_to_hardender',
+        details: 'no review needed for tracer bullet; forwarding',
+    },
+    hardender: {
+        state: 'hardening',
+        decision: 'forward_to_documenter',
+        details: 'no hardening needed for tracer bullet; forwarding',
+    },
+    documenter: {
+        state: 'documenting',
+        decision: 'forward_to_QA',
+        details: 'no docs needed for tracer bullet; forwarding',
+    },
+    QA: {
+        state: 'qa-verifying',
         decision: 'verify_and_complete',
-        details: 'verified pipeline reached cleaner; item complete',
+        details: 'verified pipeline reached QA; item complete',
     },
 };
 function sleep(ms) {
@@ -114,17 +156,42 @@ async function driveHarness(traceId) {
         log(`✓ ${role.padEnd(12)} → ${play.decision}`);
     }
     log('');
-    log('✓ Pipeline complete — tracer bullet reached cleaner');
+    log('✓ Pipeline complete — tracer bullet reached QA');
+}
+/** The terminal role of the real pipeline (see CHAIN above). */
+const TERMINAL_ROLE = 'QA';
+/**
+ * The seed draft handed to swarm_handoff.sh to kick off a live tracer bullet.
+ * Pure and exported for unit testing — the actual send (sendSeedNote) is the
+ * I/O boundary around it.
+ */
+function buildSeedDraft(traceId) {
+    return `type: note\nto: coordinator\npriority: 00\nmessage: TRACE ${traceId}\n`;
+}
+/**
+ * Sends the seed note through the REAL handoff transport (swarm_handoff.sh)
+ * — never write directly into inbox/new (constitution: "Send only via
+ * swarm_handoff.sh"). BL-136: this used to only mkdir the inbox directory
+ * and never actually enqueue anything, so `--watch` silently never started
+ * the live pipeline; a human had to inject the note by hand.
+ */
+function sendSeedNote(traceId, repoRoot) {
+    const draftPath = path.join(os.tmpdir(), `tracer-bullet-seed-${traceId}.txt`);
+    fs.writeFileSync(draftPath, buildSeedDraft(traceId), 'utf-8');
+    const handoffScript = path.join(repoRoot, 'swarmforge', 'scripts', 'swarm_handoff.sh');
+    (0, child_process_1.execFileSync)(handoffScript, [draftPath], {
+        cwd: repoRoot,
+        env: { ...process.env, SWARMFORGE_ROLE: process.env.SWARMFORGE_ROLE || 'coordinator' },
+        stdio: 'pipe',
+    });
 }
 async function watchLive(traceId, maxWaitSeconds) {
     log('Mode: watch (polling live agents appending their own hops)');
     log('');
     (0, tracer_1.createTraceLog)(TRACES_DIR, traceId, `TRACE ${traceId} HOP coordinator ${new Date().toISOString()} action=seed state=queued`);
-    // Seed note for the coordinator. Trace-aware role prompts instruct each agent
-    // to append a HOP and forward. (Daemon transport carries only the short note;
-    // the protocol lives in the role prompts.)
-    const inboxDir = path.join(SWARMFORGE_DIR, 'handoffs', 'inbox', 'new');
-    fs.mkdirSync(inboxDir, { recursive: true });
+    // Trace-aware role prompts instruct each agent to append a HOP and forward
+    // the same TRACE note down the chain once the coordinator receives this.
+    sendSeedNote(traceId, process.cwd());
     log(`Seeded trace ${traceId}. Waiting for live agents to append hops...`);
     const startTime = Date.now();
     let lastCount = 1;
@@ -137,15 +204,15 @@ async function watchLive(traceId, maxWaitSeconds) {
                 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
                 log(`✓ ${newest.role} hop (${elapsed}s elapsed)`);
                 lastCount = hops.length;
-                if (newest.role === 'cleaner') {
-                    log('✓ Pipeline complete — reached cleaner');
+                if (newest.role === TERMINAL_ROLE) {
+                    log(`✓ Pipeline complete — reached ${TERMINAL_ROLE}`);
                     return;
                 }
             }
         }
         await sleep(3000);
     }
-    console.error(`TIMEOUT: tracer bullet did not reach cleaner within ${maxWaitSeconds}s`);
+    console.error(`TIMEOUT: tracer bullet did not reach ${TERMINAL_ROLE} within ${maxWaitSeconds}s`);
 }
 function generateReport(traceId) {
     const logPath = path.join(TRACES_DIR, `${traceId}.log`);
@@ -240,8 +307,10 @@ async function main() {
     const pass = generateReport(traceId);
     process.exit(pass ? 0 : 1);
 }
-main().catch((err) => {
-    console.error('Fatal error:', err);
-    process.exit(1);
-});
+if (require.main === module) {
+    main().catch((err) => {
+        console.error('Fatal error:', err);
+        process.exit(1);
+    });
+}
 //# sourceMappingURL=tracer-bullet-launcher.js.map
