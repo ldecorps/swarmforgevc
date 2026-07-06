@@ -25,10 +25,11 @@ import { startBounceWatcher, BounceType } from './swarm/bounceWatcher';
 import { writeBounceAck, clearBounceAck, BouncePhase } from './swarm/bounceAck';
 import { startChaserMonitor, stopChaserMonitor, buildRoleInboxes } from './watchdog/chaserMonitor';
 import type { ChaserMonitorConfig, ChaserCallbacks } from './watchdog/chaserMonitor';
-import { readTmuxSocket, paneTarget, getPaneBaseIndex, sendKeys, capturePane, readSwarmRoles, sleepSync } from './swarm/tmuxClient';
+import { readTmuxSocket, paneTarget, getPaneBaseIndex, sendKeys, capturePane, readSwarmRoles, sleepSync, respawnAgent } from './swarm/tmuxClient';
 import { sendInstructionVerified } from './swarm/verifiedInject';
 import { trackPaneActivity, outboxNewestMtimeMs } from './watchdog/paneActivity';
 import { setStuckEscalation, escalatedStuckRoles } from './watchdog/stuckEscalations';
+import { handleWedgedRespawnTrigger } from './watchdog/wedgedRespawn';
 import { scanInProcess, scanInboxNew } from './swarm/inboxChaser';
 import { detectNeedsHuman } from './panel/needsHumanDetection';
 import { lastHumanInputMs } from './swarm/humanInputTracker';
@@ -274,10 +275,25 @@ function startOrRestartChaserMonitor(targetPath: string, context: vscode.Extensi
     },
 
     triggerRespawn: (role: string): void => {
-      // BL-137 follow-up: the extension chaser may still conclude a role
-      // needs intervention, but it must not automatically respawn panes.
-      // Manual panel restarts continue to use respawnAgent deliberately.
-      setStuckEscalation(role, true);
+      // BL-147: reinstate automatic respawn as the escalation of last
+      // resort, gated through respawnAgent's own busy-vs-wedged precheck
+      // (a pane showing Claude Code's "esc to interrupt" busy footer is
+      // never touched - the incident that motivated 5ef8dd9's blanket
+      // disable) and bounded by the same maxRecoveryAttempts/
+      // respawnCooldownSeconds config already used elsewhere, falling back
+      // to the existing needs-human escalation on exhaustion.
+      handleWedgedRespawnTrigger(
+        role,
+        Date.now(),
+        {
+          maxRecoveryAttempts: chaserConfig.maxRecoveryAttempts,
+          respawnCooldownSeconds: chaserConfig.respawnCooldownSeconds,
+        },
+        {
+          respawnAgent: (r: string) => respawnAgent(targetPath, r),
+          setStuckEscalation,
+        }
+      );
     },
 
     logDeadLetter: (_role: string, _filePath: string): void => {
