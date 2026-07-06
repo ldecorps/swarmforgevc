@@ -1,0 +1,66 @@
+id: BL-140
+title: "QA bounce evidence contract: every return to coder must include reproducible failure proof"
+milestone: M4
+status: todo
+priority: 04
+assigned_to: specifier
+source: "operator follow-up (2026-07-06): QA returns are ambiguous (compile vs behavior); require concrete evidence in bounce handoffs"
+
+description: |
+  Problem:
+  QA currently sends one-line bounce summaries (for example "missing X
+  constants") that may describe a compile failure, a runtime failure, or a
+  policy/expectation mismatch. The coder and coordinator cannot reliably
+  determine what failed, on which command, and on which exact commit state.
+
+  Wanted behavior:
+  Any QA -> coder bounce handoff must carry a minimal reproducibility
+  contract so the recipient can reproduce and fix quickly without guesswork.
+
+  Required evidence fields in the bounce payload:
+  1) failing command exactly as run (for example: npm run compile)
+  2) failing commit hash checked by QA
+  3) first error excerpt (for example first 10-30 lines of stderr)
+  4) failure class label (compile|unit|integration|acceptance|behavior)
+  5) one-line expected vs observed statement
+
+  Scope:
+  - Update role/process guidance and any helper conventions used by QA for
+    bounce handoffs.
+  - Keep message concise, but make it reproducible.
+  - No product behavior changes in this ticket.
+
+acceptance: |
+  Feature: QA bounce handoffs are reproducible and unambiguous
+
+  # BL-140 qa-bounce-evidence-01
+  Scenario: compile failure bounce includes command and compiler output
+    Given QA bounces a ticket due to compile failure
+    When coder reads the handoff
+    Then the handoff includes the exact failing compile command
+    And includes the commit hash QA tested
+    And includes a compiler error excerpt sufficient to locate the failure
+
+  # BL-140 qa-bounce-evidence-02
+  Scenario: behavior failure bounce is not mislabeled as compile failure
+    Given QA bounces a ticket due to intent/behavior mismatch
+    When coder reads the handoff
+    Then failure class is behavior
+    And the handoff includes expected vs observed behavior in one line
+
+  # BL-140 qa-bounce-evidence-03
+  Scenario: multiple tickets sharing one failing commit remain distinguishable
+    Given QA receives multiple tasks that reference the same commit
+    When QA bounces them
+    Then each bounce includes task-specific failure context
+    And does not rely on a generic summary alone
+
+  # BL-140 qa-bounce-evidence-04
+  Scenario: evidence contract is documented and followed
+    Given QA role instructions and handoff protocol guidance
+    When QA prepares a bounce handoff
+    Then the evidence fields are explicitly required by the documented process
+
+  # Non-behavioral gates:
+  #  - Keep bounce payload concise but reproducible.
+  #  - Include at least one concrete good/bad example in docs or prompt text.

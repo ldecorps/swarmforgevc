@@ -1,0 +1,67 @@
+id: BL-142
+title: "Agent brand abstraction layer: one Forge contract across providers"
+milestone: M6
+status: todo
+priority: 05
+assigned_to: specifier
+source: "operator request (2026-07-06): with multi-agent support, Forge must interact uniformly regardless of agent brand"
+
+description: |
+  Problem:
+  Multi-agent support is expanding across providers/brands. If provider-specific
+  behavior leaks into orchestration, every new brand multiplies integration
+  complexity and weakens reliability.
+
+  Wanted behavior:
+  Introduce a top-layer abstraction contract between Forge orchestration and
+  agent backends so the orchestration flow is provider-neutral.
+
+  Core contract goals:
+  - Uniform lifecycle: launch, attach, health, stop, respawn.
+  - Uniform I/O primitives: send input, capture output, detect idle/needs-human.
+  - Uniform capability model: features declared as capabilities, not implicit by
+    provider name.
+  - Uniform error taxonomy: normalize backend failures into stable Forge-level
+    categories.
+  - Uniform observability: comparable metrics/log fields across providers.
+
+  Scope:
+  - Define interface boundaries and adapter responsibilities.
+  - Map existing providers onto adapters behind the contract.
+  - Keep orchestration logic ignorant of provider-specific command syntax.
+  - No visual redesign required in this ticket; architecture and integration
+    contract first.
+
+acceptance: |
+  Feature: provider-neutral orchestration contract
+
+  # BL-142 brand-agnostic-01
+  Scenario: orchestration uses one interface for all providers
+    Given at least two different agent providers are configured
+    When Forge launches and orchestrates agents
+    Then orchestration calls a single abstract contract
+    And provider-specific commands are confined to adapters
+
+  # BL-142 brand-agnostic-02
+  Scenario: capability checks replace provider-name branching
+    Given a provider lacks a capability supported by another provider
+    When Forge requests that capability
+    Then behavior is decided by capability flags, not hardcoded provider names
+
+  # BL-142 brand-agnostic-03
+  Scenario: normalized errors are actionable and consistent
+    Given provider-specific failures occur during launch or interaction
+    When errors surface to orchestration and operator views
+    Then they are mapped to a stable Forge error taxonomy
+    And include backend-specific detail as attached context
+
+  # BL-142 brand-agnostic-04
+  Scenario: adding a new provider requires only a new adapter
+    Given a new provider integration is introduced
+    When it is wired into Forge
+    Then core orchestration modules do not require provider-specific edits
+
+  # Non-behavioral gates:
+  #  - Document the contract and adapter template.
+  #  - Add tests proving orchestration behavior parity across at least two providers.
+  #  - Include migration plan for existing provider paths.

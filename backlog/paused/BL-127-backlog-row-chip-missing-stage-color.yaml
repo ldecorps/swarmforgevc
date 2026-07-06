@@ -4,6 +4,13 @@ milestone: M3
 status: todo
 priority: 05
 
+notes: |
+  Scope clarification (2026-07-06): BL-139 refines coloring semantics to
+  ticket identity color (persistent per ticket across surfaces), including
+  rainbow/segmented indicators when a role holds multiple tickets. Treat
+  BL-127's stage-color framing as historical context; implement new behavior
+  per BL-139.
+
 description: |
   BUG (operator intake 2026-07-05, screenshot): in the QA tile the ticket
   chip "BL-109 · pane-injection 'pending input' heuristi..." renders with a

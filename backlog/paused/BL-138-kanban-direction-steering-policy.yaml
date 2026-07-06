@@ -1,0 +1,64 @@
+id: BL-138
+title: "Kanban steering policy - pick one direction and align the swarm"
+milestone: M4
+status: todo
+priority: 04
+assigned_to: specifier
+source: "operator request (2026-07-06): steer the swarm toward one direction (reliability, phone app, multi-agent, concurrent swarm)"
+
+description: |
+  Today the backlog is healthy but strategy can drift: multiple valid themes
+  (reliability, phone app UX, multi-agent architecture, concurrent swarms)
+  compete at once, so the swarm risks context switching and partial progress.
+
+  We need a lightweight Kanban-level steering mechanism owned by the
+  specifier so each planning cycle has one explicit strategic direction,
+  visible WIP policy, and clear pull criteria.
+
+  Wanted behavior:
+  1) Direction choice: the specifier proposes and documents one active
+     direction for the cycle (for example: reliability-first), with a short
+     rationale and a measurable outcome.
+  2) Backlog classification: active/paused tickets carry a direction tag,
+      and tickets not aligned with the current direction are paused unless
+      they are defects or operational blockers.
+  3) Flow policy: define Kanban pull rules (WIP limit by direction, expedite
+     rules, and Definition of Ready) so coder/cleaner/hardener pull from a
+     coherent lane, not from mixed priorities.
+  4) Review cadence: direction is reviewed on a fixed cadence (for example,
+     weekly) with explicit keep/change decision and evidence.
+
+  Scope is process and backlog governance only (no product feature coding in
+  this ticket). Output is a policy artifact plus the first prioritized slice
+  of tickets aligned to the chosen direction.
+
+acceptance: |
+  Feature: directional steering in Kanban mode
+
+  # BL-138 steering-policy-01
+  Scenario: one direction is explicitly chosen for the cycle
+    Given the backlog includes tickets across multiple themes
+    When the specifier runs the steering pass
+    Then exactly one current direction is declared
+    And the declaration includes a rationale, target metric, and horizon
+
+  # BL-138 steering-policy-02
+  Scenario: tickets are classified by direction and pull eligibility
+    Given active and paused tickets
+    When the specifier applies the steering policy
+    Then each ticket is tagged as aligned, non-aligned, or expedite
+    And non-aligned tickets are paused unless they are blockers/defects
+
+  # BL-138 steering-policy-03
+  Scenario: WIP limits enforce focus
+    Given a declared direction and available agent capacity
+    When new work is pulled
+    Then pulls that exceed the direction WIP limit are blocked
+    And the next pull comes from the highest-priority aligned ticket
+
+  # BL-138 steering-policy-04
+  Scenario: direction can change only through explicit review
+    Given one completed review interval
+    When the review is run
+    Then the decision is recorded as keep or change
+    And if changed, affected tickets are reclassified in the same pass

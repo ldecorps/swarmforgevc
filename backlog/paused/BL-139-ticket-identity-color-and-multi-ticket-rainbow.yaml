@@ -1,0 +1,85 @@
+id: BL-139
+title: "Ticket identity colors: one persistent color per ticket across tiles and backlog; rainbow indicator for multi-ticket holders"
+milestone: M3
+status: todo
+priority: 05
+assigned_to: specifier
+source: "operator clarification (2026-07-06): color is ticket identity, not stage identity"
+
+description: |
+  Requirement refinement: ticket coloring must represent ticket identity
+  (which ticket), not only stage identity (where it is).
+
+  Core intent:
+  - Each ticket gets one unique visual color in the extension.
+  - That ticket keeps the same color as it moves across coordinator,
+    specifier, coder, cleaner, architect, documenter, QA.
+  - The BACKLOG row reuses that exact ticket color.
+  - Operators can identify a ticket by text+color in backlog, then find the
+    same color in the swarm tiles to see where it currently is.
+
+  Multi-ticket holder behavior:
+  - If one agent currently holds multiple tickets, the tile must show a
+    rainbow/segmented indicator that includes all held ticket colors.
+  - The indicator must be deterministic and stable (same ticket set,
+    same ordering, same rendered segments).
+
+  Scope:
+  - Define and implement the ticket-color identity model and rendering
+    contract for tile badge/chip and backlog row chip.
+  - Keep existing stage-holder text semantics (role labels, queued state,
+    etc.).
+  - If stage-color classes already exist, either deprecate them for ticket
+    identity surfaces or clearly layer them without ambiguity.
+
+  Accessibility and operability constraints:
+  - Colors must remain readable in dark and light theme (contrast-safe text).
+  - Color is supportive, never the sole signal: ticket id/title and holder
+    text remain visible.
+  - Avoid visually-near duplicates among currently visible active tickets.
+
+acceptance: |
+  Feature: ticket identity color is stable across swarm and backlog
+
+  # BL-139 ticket-color-01
+  Scenario: a ticket keeps one color through stage transitions
+    Given ticket BL-XYZ has an assigned identity color C
+    And the ticket moves from specifier to coder to cleaner
+    When the panel refreshes during each transition
+    Then BL-XYZ renders with color C in every ticket badge/chip surface
+
+  # BL-139 ticket-color-02
+  Scenario: backlog and tile surfaces agree on ticket color
+    Given ticket BL-XYZ is present in the BACKLOG list and held by a stage
+    When the panel renders the backlog row chip and the stage tile badge/chip
+    Then both surfaces use the same ticket identity color for BL-XYZ
+
+  # BL-139 ticket-color-03
+  Scenario: operator can track a ticket by color and text
+    Given multiple active tickets are visible
+    When an operator scans BACKLOG and then the swarm tiles
+    Then ticket BL-XYZ is discoverable by matching id/title plus color
+
+  # BL-139 ticket-color-04
+  Scenario: an agent holding multiple tickets shows all ticket colors
+    Given an agent currently holds tickets BL-A, BL-B, BL-C
+    When the tile header/badge area is rendered
+    Then a rainbow/segmented indicator appears with 3 segments
+    And segment colors correspond to BL-A, BL-B, BL-C ticket identity colors
+
+  # BL-139 ticket-color-05
+  Scenario: multi-ticket indicator is deterministic
+    Given the same set of held tickets in repeated refresh cycles
+    When rendering occurs multiple times
+    Then segment order and colors remain stable across renders
+
+  # BL-139 ticket-color-06
+  Scenario: color is not the sole signal
+    Given any rendered ticket chip/badge
+    Then the ticket id remains visible
+    And holder/status text remains visible regardless of color perception
+
+  # Non-behavioral gates:
+  #  - Unit tests cover color assignment determinism and cross-surface parity.
+  #  - Render tests cover multi-ticket rainbow indicator with 2+ tickets.
+  #  - Verify dark and light theme readability.

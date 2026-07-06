@@ -1,0 +1,56 @@
+id: BL-143
+title: "Coordinator inbox visibility: show real .handoff payloads by default, hide sidecars unless debug"
+milestone: M4
+status: todo
+priority: 05
+assigned_to: specifier
+source: "operator request (2026-07-06): sidecar files are distracting coordinator flow"
+
+description: |
+  Problem:
+  Operational sidecar files (`.chase.json`, `.nudge`) appear in inbox
+  listings and can visually dominate queue views. They are metadata, not work
+  parcels, but they make the coordinator experience noisy and can create false
+  impressions that work is pending or stuck.
+
+  Wanted behavior:
+  Coordinator-facing queue/intake visibility should default to real handoff
+  payloads only (`*.handoff`). Sidecars should be hidden by default and only
+  shown in explicit debug/diagnostic mode.
+
+  Scope:
+  - Coordinator-relevant views/commands/log summaries that report inbox state.
+  - Keep sidecar files intact for chaser logic; this ticket is observability
+    filtering, not sidecar deletion policy.
+  - Ensure docs and runbook examples use payload-only queue checks by default.
+
+acceptance: |
+  Feature: coordinator views are payload-first and sidecar-safe
+
+  # BL-143 inbox-visibility-01
+  Scenario: default queue view excludes sidecars
+    Given inbox directories contain .handoff payloads and sidecar files
+    When coordinator queue state is rendered in default mode
+    Then only .handoff payload files are counted and listed
+
+  # BL-143 inbox-visibility-02
+  Scenario: debug mode can reveal sidecars intentionally
+    Given inbox directories contain sidecar files
+    When coordinator enables debug/diagnostic mode
+    Then sidecar files are visible with explicit metadata labeling
+
+  # BL-143 inbox-visibility-03
+  Scenario: no false busy signal from sidecar-only inbox
+    Given an inbox has sidecars but no .handoff payload
+    When coordinator evaluates whether work is pending
+    Then result is no pending payload work
+
+  # BL-143 inbox-visibility-04
+  Scenario: chaser behavior remains unchanged
+    Given sidecar files are hidden from default coordinator views
+    When chaser sweep runs
+    Then chase/nudge logic still reads and writes sidecars as before
+
+  # Non-behavioral gates:
+  #  - Add tests for listing/counting behavior with mixed payload+sidecar sets.
+  #  - Update docs/runbooks with payload-first queue inspection examples.
