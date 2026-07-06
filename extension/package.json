@@ -221,6 +221,11 @@
           "default": 120,
           "description": "How long (seconds) a role must stay drained-idle and output-quiet, with no recent human keystrokes, before its pane is cleared."
         },
+        "swarmforge.contextClear.fullnessThresholdPercent": {
+          "type": "number",
+          "default": 75,
+          "description": "Minimum context-window fullness (0-100) required, in addition to the drained-idle settle window, before a role's pane is cleared. When the backend does not report real context usage, a deterministic pane-history proxy metric is used instead, and the Context Clear output channel labels each clear it drives as proxy mode."
+        },
         "swarmforge.metrics.suiteWarnSeconds": {
           "type": "number",
           "default": 120,

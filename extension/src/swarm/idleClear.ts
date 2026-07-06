@@ -5,10 +5,22 @@
 // (implicated in the BL-067 overnight stall); the pipeline protocol is
 // already context-free between parcels (every handoff says re-read role +
 // constitution), so clearing at the right moment costs nothing.
+//
+// BL-141: drained-idle alone is no longer sufficient — clearing also
+// requires the context window to be at least fullnessThresholdPercent full,
+// so a role that goes idle early with a mostly-empty window is not cleared
+// needlessly. See contextFullness.ts for how the percent itself is derived
+// (exact telemetry when a backend reports it, a deterministic proxy metric
+// otherwise).
+
+import type { ContextFullness } from './contextFullness';
 
 export interface IdleClearConfig {
   enabled: boolean;
   settleWindowSeconds: number;
+  // BL-141: minimum context-window fullness (0-100) required before an
+  // otherwise-eligible drained-idle role is actually cleared.
+  fullnessThresholdPercent: number;
 }
 
 export interface RoleIdleStatus {
@@ -23,6 +35,9 @@ export interface RoleIdleStatus {
   // ms since epoch of the most recent pane/outbox activity (BL-067's
   // paneActivity tracking) — the pane has been "output-quiet" since this.
   lastActivityMs: number;
+  // BL-141: how full the role's context window currently is, and which
+  // tier (telemetry vs proxy) produced that reading.
+  contextFullness: ContextFullness;
 }
 
 export type IdleClearDecision = 'clear' | 'skip';
@@ -48,6 +63,11 @@ export function decideIdleClear(
     return 'skip';
   }
   if (status.drainInProgress) {
+    return 'skip';
+  }
+  // BL-141: below the fullness threshold, skip regardless of how long the
+  // role has been drained-idle — that safety gate alone was too aggressive.
+  if (status.contextFullness.percent < config.fullnessThresholdPercent) {
     return 'skip';
   }
   if (status.lastHumanInputMs !== null) {
@@ -108,7 +128,11 @@ export function startIdleClearMonitor(
       const decision = tracker.evaluate(status, nowMs, config);
       if (decision === 'clear') {
         adapters.sendClear(status.role);
-        adapters.log(`Cleared idle context for ${status.role}.`);
+        // BL-141 context-clear-75-03: explicitly label when the decision
+        // was made on the proxy metric, never leaving that implicit.
+        const fullnessNote = `${status.contextFullness.percent}% full` +
+          (status.contextFullness.source === 'proxy' ? ' (proxy mode)' : '');
+        adapters.log(`Cleared idle context for ${status.role} (${fullnessNote}).`);
       }
     }
   }, config.pollIntervalSeconds * 1000);
