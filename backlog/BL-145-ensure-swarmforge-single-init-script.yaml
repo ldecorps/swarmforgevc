@@ -1,0 +1,60 @@
+id: BL-145
+title: "ensureSwarmForge — one idempotent script that brings the whole swarm to a known-good state (extension, agents, daemon)"
+milestone: TBD
+status: todo
+priority: 01
+source: "operator request 2026-07-06 (chat with coordinator): 'we have to have 1 script that will initialise the swarmforge. ensureSwarmForge or similar: if there is no extension up, start it; if there are agents missing, start them; if the daemon is not running, start it.'"
+
+description: |
+  Raw operator ask, not yet specced. Today, bringing a swarm to a fully
+  healthy state is three separate, manually-triggered mechanisms that
+  nobody runs together as one check:
+  - Extension Development Host up/down: `extension/scripts/start-extension-dev.sh`
+    (BL-058, done) already does a verified bounce — kill any existing dev
+    host, relaunch, poll for a fresh activation marker, fail loudly. It does
+    NOT get invoked automatically; a human runs it.
+  - Agents (tmux panes) missing/dead: launch/respawn today goes through
+    `extension/src/swarm/swarmLauncher.ts` and per-role
+    `.swarmforge/launch/<role>.sh` scripts (see this session's earlier
+    "Respawn Single Role Procedure" pattern) — again, human- or
+    chaser-triggered, not part of a single idempotent check.
+  - handoffd itself: `swarmforge/scripts/handoffd_supervisor.bb` already
+    detects handoffd death and silently auto-restarts it (see
+    `.swarmforge/daemon/handoffd.status.json` restart_history/last_incident)
+    — this part is already an "ensure" loop, just scoped to one process and
+    with no visible signal when it fires (this session found a restart had
+    already happened without anyone noticing at the time).
+
+  Wanted: ONE script/command, run once (by a human, or as a documented
+  startup step), that checks and repairs all three in order — extension
+  host running, every configured agent pane present and alive, handoffd
+  running — and reports what it found/fixed. This is directly related to
+  BL-144 (daemon-death alarm) and this session's "single daemon" direction:
+  whatever ensureSwarmForge becomes should not silently paper over a dead
+  daemon the way handoffd_supervisor.bb does today; it should surface what
+  it had to restart, not just restart it quietly.
+
+  Needs specifier follow-up before writing the real spec + Gherkin
+  acceptance, e.g.:
+  - Entry point: a new top-level script (`./swarm ensure` subcommand?), or
+    a standalone `ensureSwarmForge.sh`/`.bb`? Where does it live —
+    alongside `./swarm`, or under `swarmforge/scripts/`?
+  - Order and dependency between the three checks — does a missing
+    extension host block the agent/daemon checks, or are all three
+    independent?
+  - "Start the extension if not up" reuses BL-058's verified-bounce script;
+    should NOT reimplement activation-marker polling from scratch.
+  - "Start missing agents" — reuse the existing per-role launch scripts and
+    swarmLauncher.ts; define what "missing" means (pane absent vs. pane
+    present but the agent process inside it dead vs. genuinely stuck).
+  - "Start the daemon if not running" — reuse/extend
+    handoffd_supervisor.bb's existing detection, but per this session's
+    BL-144 direction, do not silently restart without a visible report; how
+    does that interact with BL-144's harder "alarm + halt" behavior when
+    restarts keep failing?
+  - Idempotency contract: running ensureSwarmForge on an already-healthy
+    swarm should be a fast no-op that changes nothing and reports "all
+    healthy", not a disruptive re-launch every time.
+  - Relationship to BL-144: should ensureSwarmForge be the thing BL-144's
+    alarm tells the human to re-run after a fix, or should the two merge
+    into one consolidated-daemon design?
