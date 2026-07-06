@@ -50,6 +50,7 @@ const bridgeServer_1 = require("./bridge/bridgeServer");
 const bridgeToken_1 = require("./bridge/bridgeToken");
 const prCreator_1 = require("./swarm/prCreator");
 const swarmLauncher_1 = require("./swarm/swarmLauncher");
+const childJobRegistry_1 = require("./swarm/childJobRegistry");
 const swarmDiscovery_1 = require("./swarm/swarmDiscovery");
 const swarmStopper_1 = require("./swarm/swarmStopper");
 const bouncer_1 = require("./swarm/bouncer");
@@ -100,6 +101,9 @@ const REATTACH_READY_POLL_MS = 200;
 // a slow-but-real cold start still attaches automatically instead of
 // falling through to "previous run found, resume?".
 const REATTACH_COLD_START_TIMEOUT_MS = 120_000;
+// BL-108: grace window between SIGTERM and SIGKILL when deactivate() reaps
+// a tracked child-job process group.
+const DEACTIVATE_REAP_GRACE_MS = 5_000;
 let currentBounceWatcher = null;
 let currentChaserMonitor = null;
 let currentBounceDrainWatcher = null;
@@ -107,6 +111,20 @@ let currentGracefulBounceFileWatcher = null;
 let currentIdleClearMonitor = null;
 let idleClearOutputChannel;
 let currentBridge = null;
+// BL-108: deactivate() has no other route to the target's .swarmforge dir
+// (activate's targetPath is function-scoped) - remembered here so a spawned
+// child-job registry can be reaped on the way out, same pattern as the
+// other current* singletons above.
+let currentSwarmforgeDir = null;
+function isPidAlive(pid) {
+    try {
+        process.kill(pid, 0);
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
 function generateDefaultRunName() {
     const now = new Date();
     const year = now.getFullYear();
@@ -487,6 +505,20 @@ function activate(context) {
     const targetPath = (0, targetConfig_1.getTargetPath)();
     const pendingAutoLaunch = context.workspaceState.get(PENDING_AUTO_LAUNCH_KEY);
     if (targetPath) {
+        currentSwarmforgeDir = path.join(targetPath, '.swarmforge');
+        // BL-108 startup-reaper-03: a host killed without deactivate() (VS
+        // Code's "Stop Extension Host" can SIGKILL without awaiting it) leaves
+        // registry entries whose owner_host_pid died with it. Reap those
+        // groups now, before anything else starts, so a fresh activation never
+        // inherits a previous session's orphaned process tree.
+        (0, childJobRegistry_1.reapStaleTrackedJobs)(currentSwarmforgeDir, isPidAlive, (pgid, signal) => {
+            try {
+                process.kill(-pgid, signal);
+            }
+            catch {
+                // already gone
+            }
+        });
         // BL-069 crash safety: a drain sentinel can only be stale here — a live
         // watcher would already be running to complete it — so any sentinel
         // found at extension startup is left over from a crashed session.
@@ -903,6 +935,14 @@ function deactivate() {
     if (currentBridge) {
         currentBridge.stop();
         currentBridge = null;
+    }
+    // BL-108 deactivate-reap-02: a normal "stop the extension" must not leak
+    // any process group this host spawned and tracked. Best-effort - a
+    // partially-torn-down group must not block the rest of deactivate().
+    if (currentSwarmforgeDir) {
+        (0, childJobRegistry_1.reapAllTrackedJobs)(currentSwarmforgeDir, (pgid, signal) => {
+            process.kill(-pgid, signal);
+        }, DEACTIVATE_REAP_GRACE_MS);
     }
 }
 //# sourceMappingURL=extension.js.map
