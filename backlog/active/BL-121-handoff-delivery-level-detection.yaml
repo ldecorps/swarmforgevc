@@ -1,0 +1,104 @@
+id: BL-121
+title: RELIABILITY (top priority, 1 of 2) — delivery-level handoff breakage DETECTION — parcel-age/failed-dir alarms + synthetic canary; "healthy" must mean "parcels are delivered", not "process is alive"
+milestone: M2
+status: todo
+priority: 00
+notes: |
+  Filed at the backlog root as "BL-118" (raw intake, operator directive
+  2026-07-05); renumbered because BL-118 was already taken by the PWA
+  bilingual ticket in paused/. Split by the specifier — per the raw ticket's
+  own instruction — into DETECTION (this ticket) and RECOVERY (BL-122, depends
+  on this one). Intent preserved.
+  OPERATOR DIRECTIVE: "Absolute current priority is to fix the handoff
+  mechanism." Coordinator: this pair goes to the top of the queue.
+
+description: |
+  The handoff mechanism keeps breaking despite repeated point fixes: BL-016
+  (fix handoff flow, DONE), BL-056 (anchor state dir), BL-061 (supervise the
+  daemon), BL-081 (dup-daemon restart race), BL-083 (idempotent outbox
+  archive). Each closed one failure mode; the mechanism as a whole is still
+  not trustworthy. This ticket is the DETECTION half of the systemic fix:
+  make breakage visible at the DELIVERY level, authoritatively and
+  continuously, so recovery (BL-122) has a trustworthy signal to act on.
+
+  LIVE FORENSICS (captured 2026-07-05 ~10:49Z, read-only):
+    - `.swarmforge/daemon/handoffd.status.json` reported {"state":"healthy"}
+      with a current heartbeat, AND a recent incident: daemon "dead" at
+      08:30:33Z, supervisor restart at 08:30:43Z. The supervisor keeps the
+      PROCESS alive — good — but that is the ONLY thing "healthy" means today.
+    - `.swarmforge/handoffs/failed/` held 3 dead-lettered parcels from
+      2026-07-02/03, still there days later, never retried or surfaced:
+      specifier->coordinator, coordinator->specifier, specifier->coder. Real
+      coordination messages that silently vanished — the same loss class as
+      BL-107 ("coder's completed work sitting invisible in the cleaner's
+      inbox").
+  The gap in one line: health = "daemon process is alive", NOT "parcels are
+  actually being delivered." A parcel can dead-letter into failed/ and rot
+  forever while every dashboard shows green.
+
+  Wanted behavior (detection only; remediation is BL-122):
+  - Enumerate the known breakage modes as detectable conditions: dead-letters
+    in failed/, parcels stuck past an age threshold in inbox/new or
+    inbox/in_process (cf. BL-067's 4h overnight miss), daemon dead or
+    heartbeating into a swarmless void (BL-107), duplicate daemons (BL-081),
+    parcels routed to a role that is not the live holder.
+  - Treat ANY file in failed/ as an alarm condition, immediately.
+  - Run a periodic synthetic CANARY handoff that must round-trip end to end
+    through the real transport; a canary that misses its budget is the
+    definitive "handoff broken" signal, independent of process liveness.
+  - Surface all of this as a real transport-health state machine (extend
+    src/swarm/daemonHealth.ts), richer than today's
+    healthy/restarting/persistent-failure — delivery-degraded/broken states
+    must exist and must name the offending parcels (age + route).
+
+  Constraints:
+  - Build on the existing supervisor/health/chaser seams; do NOT re-litigate
+    BL-061/081/083 scope — this is a detection layer on top.
+  - Detection must not itself perturb real traffic (canary parcels are
+    clearly marked and excluded from normal work accounting).
+
+  Code seams (READ-ONLY findings): daemon swarmforge/scripts/handoffd.bb +
+  handoffd_supervisor.bb + handoff-lib.sh; protocol
+  swarmforge/handoff-protocol.md; extension health src/swarm/daemonHealth.ts;
+  watchdogs src/watchdog/chaserMonitor.ts, src/swarm/inboxChaser.ts,
+  src/swarm/respawnPickup.ts; queue dirs
+  .swarmforge/handoffs/{new,in_process,completed,failed,outbox,sent}.
+  Adjacent: BL-061/081/083 (daemon supervision), BL-107 (teardown on
+  coordinator exit), BL-109 (dead-letter from pending-input heuristic),
+  BL-119 (chaser sidecar orphans), BL-067 (stall detection), BL-122 (the
+  recovery half — consumes this ticket's health signals).
+
+acceptance: |
+  Feature: handoff breakage is detected at the delivery level
+
+  # BL-121 delivery-detection-01
+  Scenario: a failed delivery is detected, not masked by a live heartbeat
+    Given the handoff daemon process is alive and heartbeating
+    When a parcel fails to deliver and lands in failed/
+    Then transport health reports a delivery-level failure (not "healthy")
+    And the dead-lettered parcel is reported with its age and route
+
+  # BL-121 stall-detection-02
+  Scenario: a parcel stuck past its age threshold is a detected stall
+    Given a parcel sitting in inbox/new or inbox/in_process
+    When its age exceeds the stall threshold
+    Then transport health reports the stall with the parcel's age and route
+
+  # BL-121 canary-03
+  Scenario: a periodic synthetic handoff is the authoritative liveness signal
+    Given the swarm is running
+    When the canary handoff is injected on a schedule
+    Then a successful round-trip marks the transport healthy
+    And a canary that does not arrive within its budget marks it broken
+    And the canary result overrides mere process-liveness in the health state
+
+  # BL-121 canary-isolation-04
+  Scenario: canary traffic does not pollute real work accounting
+    Given canary handoffs are flowing on their schedule
+    Then they are distinguishable from real parcels
+    And they never appear as work items to any pipeline role
+
+  # Non-behavioral gates:
+  #  - Tested through the messageBus/handoff and daemonHealth fakes (injected
+  #    queue state, injected canary results); NO live babashka daemon or tmux
+  #    in tests.

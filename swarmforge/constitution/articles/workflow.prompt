@@ -1,6 +1,18 @@
 # Workflow Rules
 
-## Active Backlog Cap (read with the constitution)
+## Context Clear Requires Startup Re-Read
+- Whenever an agent's context is cleared (a `/clear`, an idle-boundary context
+  clear, a respawn, or any other event that empties the conversation), the very
+  next thing the agent does is re-run its full startup instructions: re-read
+  `swarmforge/constitution.prompt` (and every file it refers to, recursively),
+  `swarmforge/PIPELINE.md`, and its own `swarmforge/roles/<role>.prompt`, then
+  resume its role loop (for most roles: `ready_for_next.sh`).
+- Never continue working after a clear on remembered or summarized instructions
+  alone — the governing files are the source of truth and may have changed
+  since they were last read.
+- Whoever issues a `/clear` to an agent pane must follow it with the startup
+  instruction message; an agent left cleared without one must still perform the
+  re-read on its next wake-up before touching any work.
 - The maximum number of items allowed in `backlog/active/` at once is defined in
   `swarmforge/swarmforge.conf` by the line `config active_backlog_max_depth <N>`.
 - Reading that config line is part of reading this constitution: any role whose
