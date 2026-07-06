@@ -176,6 +176,24 @@
                   [(parse-long (subs line 0 sep)) (subs line (inc sep))])))
             (str/split-lines out)))))
 
+(defn all-pid-ppid-commands
+  "One bulk ps call for the whole process table as (pid, ppid, pgid,
+   command-line) tuples. BL-108 supervisor-reaper: PPID 1 is the
+   reparent-to-launchd signal for a crash-orphaned job process, and pgid is
+   read alongside it because a signal must target the process's ACTUAL
+   group (looked up, never assumed equal to its pid) so a respawning
+   Stryker root's workers die with it instead of surviving as fresh
+   orphans."
+  []
+  (let [{:keys [out exit]} (process/sh "ps" "-eo" "pid=,ppid=,pgid=,command=")]
+    (when (zero? exit)
+      (keep (fn [line]
+              (let [fields (str/split (str/triml line) #"\s+" 4)]
+                (when (= 4 (count fields))
+                  (let [[pid ppid pgid cmd] fields]
+                    [(parse-long pid) (parse-long ppid) (parse-long pgid) cmd]))))
+            (str/split-lines out)))))
+
 (defn handoffd-pids-for-root
   "Discovers every live handoffd.bb process for this project root by
    scanning the process table, not just the pid the pid file names - the
@@ -226,6 +244,45 @@
       (when-not (kill-and-confirm! pid)
         (log! "reap-orphan-failed" (str pid) "still alive after SIGKILL")))
     orphans))
+
+(def job-process-pattern
+  "Command-line signature of the long-running job processes this reaper
+   targets: Stryker mutation roots and `node --test` batches (BL-108). Kept
+   narrow and case-insensitive so it never matches an unrelated process."
+  #"(?i)stryker|node --test")
+
+(defn orphaned-job-groups
+  "Every (pid, pgid, cmd) whose command line matches job-process-pattern, is
+   rooted under one of this project's swarm worktrees, and has already
+   reparented to launchd/init (ppid 1) - the crash-orphan signal (BL-108
+   supervisor-reaper). A process still parented to anything else is still
+   owned by a live agent run and must never be matched here, however long
+   it runs."
+  []
+  (let [worktrees (worktree-paths)]
+    (->> (all-pid-ppid-commands)
+         (filter (fn [[_ ppid _ cmd]]
+                   (and (= 1 ppid)
+                        (re-find job-process-pattern cmd)
+                        (some #(str/includes? cmd %) worktrees))))
+         (map (fn [[pid _ pgid cmd]] [pid pgid cmd])))))
+
+(defn reap-orphaned-job-processes!
+  "Reaps crash-orphaned mutation/test-batch process groups (BL-108 defenses
+   4-5). Runs every check tick, independent of the tracked handoffd daemon's
+   own health, same as reap-orphans! above. Sends the signal to the
+   process's ACTUAL group (looked up via ps, never assumed equal to its
+   pid), since Stryker keeps respawning sandbox workers under its own root
+   and killing only the root pid leaves the respawned workers running (the
+   original BL-108 incident)."
+  []
+  (doseq [[pid pgid cmd] (orphaned-job-groups)]
+    (log! "reap-job-orphan" (str pid) cmd)
+    (process/sh {:continue true} "kill" "-TERM" "--" (str "-" pgid))
+    (when-not (wait-until-dead pid kill-timeout-ms)
+      (process/sh {:continue true} "kill" "-KILL" "--" (str "-" pgid))
+      (when-not (wait-until-dead pid kill-timeout-ms)
+        (log! "reap-job-orphan-failed" (str pid) "still alive after SIGKILL")))))
 
 (defn start-daemon! []
   (rotate-log!)
@@ -284,6 +341,7 @@
       ;; daemon still gets cleaned up (BL-081 scenario 05) instead of only
       ;; being caught incidentally during a dead/stalled restart.
       (reap-orphans! tracked)
+      (reap-orphaned-job-processes!)
       (cond
         (= :healthy verdict)
         (when-not (= "healthy" (:state status))
