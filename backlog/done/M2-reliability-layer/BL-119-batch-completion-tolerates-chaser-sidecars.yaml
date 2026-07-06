@@ -1,7 +1,7 @@
 id: BL-119
 title: "BUG: inbox completion helpers choke on chaser sidecars left in the dir"
 milestone: M2
-status: todo
+status: done
 priority: 02
 assigned_to: coder
 source: "hardender rule_proposal 000064 (2026-07-05), rerouted to backlog by specifier"

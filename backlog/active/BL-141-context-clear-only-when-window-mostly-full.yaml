@@ -1,0 +1,68 @@
+id: BL-141
+title: "Context clear policy: clear only when drained-idle and context window is at least 75% full"
+milestone: M4
+status: todo
+priority: 05
+assigned_to: specifier
+source: "operator request (2026-07-06): clear only at NO_TASK when context window is over 75% full"
+
+description: |
+  Problem:
+  The current idle-clear behavior sends /clear whenever a role is drained-idle
+  through the settle window. This is safe, but can clear too aggressively when
+  context capacity is still low, creating unnecessary churn.
+
+  Wanted behavior:
+  Keep the existing safety gates (NO_TASK/drained-idle, no pending human input,
+  settle window) and add a fullness gate: clear only when context usage is at
+  least 75%.
+
+  Practical constraint:
+  Backend models may not expose true context-token usage to the extension.
+  The design must therefore support two tiers:
+  1) Exact gate when a backend exposes context usage telemetry.
+  2) Deterministic proxy gate when telemetry is unavailable (for example,
+     pane-history growth or message-volume heuristics), with explicit labeling
+     that the decision used a proxy.
+
+  Scope:
+  - Extend idle-clear policy/config to include fullness threshold and metric
+    source selection.
+  - Preserve current drained-idle safety semantics.
+  - Avoid role-specific behavior drift: policy applies uniformly to all roles.
+
+acceptance: |
+  Feature: idle clear requires both drained-idle and fullness threshold
+
+  # BL-141 context-clear-75-01
+  Scenario: drained-idle but below threshold does not clear
+    Given a role is drained-idle and settle window has elapsed
+    And context fullness is below 75%
+    When idle-clear evaluation runs
+    Then decision is skip
+
+  # BL-141 context-clear-75-02
+  Scenario: drained-idle and above threshold clears once
+    Given a role is drained-idle and settle window has elapsed
+    And context fullness is at least 75%
+    When idle-clear evaluation runs
+    Then decision is clear
+    And the role is not cleared again until work resumes and drains again
+
+  # BL-141 context-clear-75-03
+  Scenario: telemetry unavailable uses declared proxy metric
+    Given backend context usage telemetry is unavailable
+    When idle-clear evaluation runs
+    Then policy uses the configured proxy fullness metric
+    And logs that proxy mode was used for the decision
+
+  # BL-141 context-clear-75-04
+  Scenario: human input still blocks clear regardless of fullness
+    Given context fullness is at least 75%
+    And recent human input is within settle window
+    When idle-clear evaluation runs
+    Then decision is skip
+
+  # Non-behavioral gates:
+  #  - Add focused unit tests for threshold behavior and proxy mode.
+  #  - Add settings/docs for threshold and metric source.

@@ -1,7 +1,7 @@
 id: BL-130
 title: multi-provider swarm — per-role ALTERNATE AGENT RUNTIME (option 2) so chosen roles run on GPT/Mistral instead of Claude, to spread cost off the Claude allowance
 milestone: M2
-status: todo
+status: done
 priority: 00
 assigned_to: coder
 depends_on:
