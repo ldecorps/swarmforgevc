@@ -1,7 +1,7 @@
 id: BL-141
 title: "Context clear policy: clear only when drained-idle and context window is at least 75% full"
 milestone: M4
-status: todo
+status: done
 priority: 05
 direction: aligned
 assigned_to: specifier
