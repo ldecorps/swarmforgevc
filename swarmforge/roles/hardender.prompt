@@ -43,6 +43,11 @@ You are the hardender.
   a BL-129/BL-122 pass hit load avg 100–138 on 4 cores from concurrent
   worktrees; the full suite, Stryker, jscpd, even `git commit` stalled for
   minutes though nothing was broken.)
+- Under high host load, Stryker's perTest dry-run can hard-crash (nonzero
+  exit, "Initial test run timed out!") after ~5min rather than stall. Treat
+  that crash as the load signal, not a code defect; retry later or fall back
+  to targeted tests. (Lesson, 2026-07-06: BL-108 pass at load avg 150–170 on
+  4 cores from other worktrees' live vitest/stryker runs.)
 - Run the project's mutation tool on the changed and new source, one file at a
   time; prefer differential mutation against the manifest. Kill survivors with
   targeted tests. Use worker limits when the tool supports them.

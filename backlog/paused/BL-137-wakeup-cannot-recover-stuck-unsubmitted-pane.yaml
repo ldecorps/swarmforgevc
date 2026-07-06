@@ -1,0 +1,65 @@
+id: BL-137
+title: BUG — wake-up injection cannot recover a pane stuck with unsubmitted input ("already held … still would not submit" after 3 retries); idle agents stall until a manual kick
+milestone: M2
+status: todo
+priority: 01
+assigned_to: coder
+
+description: |
+  The single biggest blocker to UNATTENDED smooth operation. Diagnosed live
+  2026-07-06: the swarm periodically goes fully idle with parcels stranded in
+  in_process (observed 11 at once), all 8 agents parked at their prompts, no
+  handoffs flowing — and only a manual operator nudge restarts it (that kick
+  drained in_process 11 -> 1 immediately, so the WORK is fine; the WAKE-UP is
+  the flaw).
+
+  What is NOT the bug (already handled):
+  - Handoff transport/delivery works (a tracer bullet completed the full
+    pipeline coordinator->...->QA; per-worktree inboxes deliver with correct
+    `_for_<role>` names).
+  - The chaser DOES detect an idle agent with stuck in_process work and nudges
+    it (chaserMonitor.ts scanInProcess -> sendWakeUp).
+  - Both the daemon's notify! (handoffd.bb) and the extension's
+    verifiedInject.ts already implement the BL-093 verified send (pending-input
+    heuristic + up to 3 retries).
+
+  The residual: a pane can reach a state where its input line holds text that
+  will NOT submit even after the 3 verified retries. handoffd logs
+  `notify-delivery-failed swarmforge-<role> pane already held undelivered input
+  and it still would not submit`. The "recover pending text" branch cannot
+  clear it, so that agent is wedged until a human clears the input by hand.
+  This is the recurring stall the whole 2026-07-06 session kept hitting.
+
+  Direction (needs LIVE iteration against a real stuck pane — keystrokes that
+  reliably clear + submit a Claude Code input cannot be guessed):
+  - Add a harder clear-input recovery before re-injecting: empty the input line
+    (e.g. Escape, or Ctrl-C to cancel, or Ctrl-U / repeated backspace) and
+    CONFIRM it is empty from a fresh capture, then type the wake message and
+    Enter, and CONFIRM the pane transitioned to processing (not still holding
+    text). Apply the SAME recovery in both handoffd.bb and verifiedInject.ts so
+    the daemon and the extension chaser behave identically.
+  - Escalate after exhausting recovery: if a pane still will not submit, treat
+    the agent as wedged and respawn its pane (tmux respawn-pane) rather than
+    leaving it silently stalled.
+
+acceptance: |
+  Feature: a wake-up always lands or the agent is respawned, never silently stalls
+
+  # BL-137 clear-and-submit-01
+  Scenario: a pane holding un-submittable text is recovered
+    Given a pane whose input line holds text that will not submit
+    When a wake-up is injected
+    Then the input is cleared, the wake message is typed and submitted,
+      and the pane is confirmed to have started processing
+
+  # BL-137 escalate-02
+  Scenario: an unrecoverable pane is respawned, not left wedged
+    Given clear+submit recovery has been exhausted for a pane
+    Then the agent's pane is respawned and re-bootstrapped
+    And the stall is logged (not silent)
+
+  # BL-137 parity-03
+  Scenario: daemon and extension use the same recovery
+    Then handoffd.bb notify! and verifiedInject.ts share the clear+verify+
+      escalate contract (tested through their injectable send/capture seams;
+      no live tmux in unit tests)
