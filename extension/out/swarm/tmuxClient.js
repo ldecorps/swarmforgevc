@@ -60,6 +60,7 @@ const cp = __importStar(require("child_process"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const verifiedInject_1 = require("./verifiedInject");
+const agentPaneState_1 = require("../panel/agentPaneState");
 // runCommand is synchronous and runs on the extension host's only JS thread:
 // a child that never exits wedges the entire extension (tiles, webview
 // messages, every timer). All callers are sub-second tmux commands, so a
@@ -327,6 +328,21 @@ function respawnAgent(targetPath, role) {
 // never on a healthy pane (a healthy pane confirms delivery on the first
 // attempt).
 function performVerifiedRespawn(socketPath, target, launchScript, role) {
+    // BL-137 live repro: a chaser's liveness/activity signal can be stale and
+    // misjudge a genuinely busy agent as stuck, escalating to a forced
+    // respawn - which then typed a shell command into a coordinator pane that
+    // was actually mid-turn. A fresh capture right before injecting anything
+    // is the only way this function can independently confirm the caller's
+    // assumption; "esc to interrupt" is Claude Code's own busy footer, so its
+    // presence overrides the caller and refuses the respawn outright, without
+    // typing or force-killing the pane.
+    const precheck = capturePane(socketPath, target);
+    if (precheck.exitCode === 0 && (0, agentPaneState_1.isPaneActivelyProcessing)(precheck.stdout)) {
+        return {
+            success: false,
+            message: `Skipped respawn for "${role}": pane is actively processing a turn (esc to interrupt) - not stuck.`,
+        };
+    }
     const command = `bash ${launchScript}`;
     let typeFailure;
     const result = (0, verifiedInject_1.sendInstructionVerified)({

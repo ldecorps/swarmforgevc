@@ -2,6 +2,7 @@ import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { sendInstructionVerified, VerifiedInjectResult } from './verifiedInject';
+import { isPaneActivelyProcessing } from '../panel/agentPaneState';
 
 export interface TmuxRunResult {
   stdout: string;
@@ -354,6 +355,22 @@ export function respawnAgent(targetPath: string, role: string): RespawnResult {
 // never on a healthy pane (a healthy pane confirms delivery on the first
 // attempt).
 function performVerifiedRespawn(socketPath: string, target: string, launchScript: string, role: string): RespawnResult {
+  // BL-137 live repro: a chaser's liveness/activity signal can be stale and
+  // misjudge a genuinely busy agent as stuck, escalating to a forced
+  // respawn - which then typed a shell command into a coordinator pane that
+  // was actually mid-turn. A fresh capture right before injecting anything
+  // is the only way this function can independently confirm the caller's
+  // assumption; "esc to interrupt" is Claude Code's own busy footer, so its
+  // presence overrides the caller and refuses the respawn outright, without
+  // typing or force-killing the pane.
+  const precheck = capturePane(socketPath, target);
+  if (precheck.exitCode === 0 && isPaneActivelyProcessing(precheck.stdout)) {
+    return {
+      success: false,
+      message: `Skipped respawn for "${role}": pane is actively processing a turn (esc to interrupt) - not stuck.`,
+    };
+  }
+
   const command = `bash ${launchScript}`;
   let typeFailure: TmuxRunResult | undefined;
 
