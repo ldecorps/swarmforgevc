@@ -1,0 +1,87 @@
+id: BL-144
+title: "Daemon-death alarm: when the daemon dies, email the operator, capture a failure log, and hard-stop the swarm (no silent auto-restart)"
+milestone: M2
+status: todo
+priority: 01
+direction: reliability
+assigned_to: specifier
+source: "operator request 2026-07-06 (chat with coordinator): 'some serious alarm has to ring when the daemon falls... stop everything, produce a log of why the daemon stopped, and then stop everything so we can fix the daemon.' Ambiguities resolved with operator 2026-07-06: email-only alarm v1; immediate hard stop; replaces silent auto-restart entirely; consolidation split into BL-146."
+depends_on: [BL-146]
+
+description: |
+  Problem:
+  handoffd_supervisor.bb silently auto-restarts a dead daemon (see
+  .swarmforge/daemon/handoffd.status.json restart_history). A daemon death is
+  a serious failure the operator wants to KNOW about and fix, not have
+  papered over.
+
+  Wanted behavior (operator-confirmed):
+  When the consolidated daemon (BL-146) dies, the supervisor must — instead
+  of restarting it — (1) write a failure log capturing why it stopped,
+  (2) send an alarm email, and (3) immediately hard-stop the whole swarm
+  (kill all agent panes/sessions). Durable inboxes preserve state for resume.
+  The silent auto-restart behavior is REMOVED entirely: the first death
+  triggers alarm+halt. Recovery is human: fix the daemon, then run
+  BL-145's ensureSwarmForge.
+
+  Alarm channel v1 is email only, routed as a new notification TYPE through
+  the generalized notification mechanism BL-073 built (Resend API,
+  swarmforge.notify.email.to) — not a third independent email integration.
+  The email names the failure log path and instructs the operator to run the
+  ensure command after fixing.
+
+  Failure log (default content, one file under .swarmforge/daemon/):
+  timestamp of death, daemon exit status/signal if known, last 200 lines of
+  the daemon log, restart_history/last_incident, and a snapshot of outbox/
+  and inbox/new/ counts per role at time of death.
+
+  Constraints:
+  - Halt must not destroy queue state: inbox/outbox files are untouched.
+  - Halt and log-capture must succeed even when the daemon died messily
+    (missing pid file, partial status.json).
+  - Detection/decision logic is a testable module (fake clock, fake process
+    table); only the thin layer touches tmux/kill.
+
+acceptance: |
+  Feature: daemon death rings an alarm and halts the swarm
+
+  Background:
+    Given a running swarm with the consolidated daemon supervised
+
+  # BL-144 daemon-death-alarm-01
+  Scenario: death produces a failure log
+    When the daemon process dies
+    Then a failure log file is created under .swarmforge/daemon/
+    And it contains the death timestamp, the last daemon log lines, the
+      restart history, and per-role inbox/outbox counts
+
+  # BL-144 daemon-death-alarm-02
+  Scenario: death sends one alarm email via the shared notification mechanism
+    When the daemon process dies
+    Then exactly one notification of type daemon-death is emitted through the
+      BL-073 email mechanism
+    And the message names the failure log path and the ensure command
+
+  # BL-144 daemon-death-alarm-03
+  Scenario: death hard-stops the swarm immediately
+    When the daemon process dies
+    Then all swarm agent panes and sessions are stopped without waiting for
+      in-flight work
+    And all inbox and outbox files remain unmodified
+
+  # BL-144 daemon-death-alarm-04
+  Scenario: no silent auto-restart remains
+    When the daemon process dies
+    Then no supervisor restarts the daemon automatically
+    And the daemon stays down until a human intervenes
+
+  # BL-144 daemon-death-alarm-05
+  Scenario: messy death still alarms and halts
+    Given the daemon's pid file is missing and its status file is truncated
+    When the daemon process dies
+    Then the failure log, the alarm email, and the hard stop all still occur
+
+  # Non-behavioral gates:
+  #  - Detection/decision logic unit-tested with test doubles (no real
+  #    timers, no real process kills in unit tests).
+  #  - docs runbook page: what the alarm email means and the recovery steps.

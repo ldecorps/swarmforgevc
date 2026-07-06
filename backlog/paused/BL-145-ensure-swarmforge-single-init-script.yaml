@@ -1,0 +1,91 @@
+id: BL-145
+title: "./swarm ensure — one idempotent command that brings the whole swarm to a known-good state (extension, agents, daemon) and reports what it fixed"
+milestone: M2
+status: todo
+priority: 01
+direction: reliability
+assigned_to: specifier
+source: "operator request 2026-07-06 (chat with coordinator): 'we have to have 1 script that will initialise the swarmforge... if there is no extension up, start it; if there are agents missing, start them; if the daemon is not running, start it.' Ambiguities resolved with operator 2026-07-06: entry point is a ./swarm ensure subcommand; BL-144 relationship is recovery-step (independent tickets)."
+depends_on: []
+
+description: |
+  Problem:
+  Bringing a swarm to full health is three separate manual mechanisms nobody
+  runs together: the BL-058 verified-bounce script for the extension dev
+  host, per-role .swarmforge/launch/<role>.sh + swarmLauncher.ts for agent
+  panes, and handoffd supervision for the daemon.
+
+  Wanted behavior (operator-confirmed):
+  A `./swarm ensure` subcommand on the existing wrapper. Run by a human (or
+  as a documented startup step), it checks and repairs, in order: (1) the
+  extension host is running, (2) every configured agent pane is present with
+  a live agent process, (3) the daemon is running. For each check it reports
+  HEALTHY or FIXED (with what it did); it never repairs silently. On an
+  already-healthy swarm it is a fast no-op that changes nothing and reports
+  all-healthy. Checks are independent: a failed repair of one is reported
+  and the remaining checks still run; exit status is non-zero if anything
+  could not be brought to health.
+
+  Reuse, don't reimplement:
+  - Extension check reuses BL-058's start-extension-dev.sh verified bounce
+    (activation-marker polling stays there).
+  - Agent repair reuses the existing per-role launch scripts / respawn-pane
+    procedure. "Missing" means: pane absent, OR pane present but the agent
+    process inside it is dead.
+  - Daemon check reuses the supervisor's existing detection. Starting a dead
+    daemon here is legitimate (a human invoked ensure deliberately) and is
+    loudly reported — this does not conflict with BL-144's removal of
+    AUTOMATIC silent restarts.
+
+  Relationship to BL-144: independent ticket; ensure is the recovery command
+  BL-144's alarm email tells the operator to run after fixing the daemon.
+
+  Constraints:
+  - Decision logic (what is healthy, what repair to order) is a testable
+    module driven by injected probes; only the thin layer shells out.
+  - No Windows support; macOS/Linux as everywhere else.
+
+acceptance: |
+  Feature: swarm ensure brings the swarm to a known-good state
+
+  # BL-145 swarm-ensure-01
+  Scenario: healthy swarm is a fast no-op
+    Given the extension host, all agent panes, and the daemon are healthy
+    When ./swarm ensure runs
+    Then it changes nothing
+    And it reports HEALTHY for extension, agents, and daemon
+    And it exits with status 0
+
+  # BL-145 swarm-ensure-02
+  Scenario Outline: an unhealthy component is repaired and reported
+    Given the <component> is <fault>
+    When ./swarm ensure runs
+    Then the <component> is brought to a healthy state
+    And the report marks the <component> as FIXED naming the repair action
+    Examples:
+      | component      | fault                                  |
+      | extension host | not running                            |
+      | agent pane     | absent from the tmux session           |
+      | agent pane     | present but its agent process is dead  |
+      | daemon         | not running                            |
+
+  # BL-145 swarm-ensure-03
+  Scenario: one failed repair does not abort the remaining checks
+    Given the extension host repair will fail
+    And the daemon is not running
+    When ./swarm ensure runs
+    Then the daemon check still runs and repairs the daemon
+    And the report marks the extension host as FAILED
+    And the exit status is non-zero
+
+  # BL-145 swarm-ensure-04
+  Scenario: repairs are never silent
+    Given any component required repair
+    When ./swarm ensure finishes
+    Then every repair performed is named in the report output
+
+  # Non-behavioral gates:
+  #  - Decision logic unit-tested with injected fake probes (no live tmux,
+  #    no real timers).
+  #  - Runbook/docs updated: ensure is the documented recovery step after a
+  #    BL-144 alarm, and the standard bring-up command.
