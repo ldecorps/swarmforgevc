@@ -116,9 +116,18 @@
 - On an unexplained revert of a previously-fixed bug at session start, run
   `git restore --source=HEAD --staged --worktree -- <paths>` first and log it
   as a recurrence, not new work. (Recurring phantom-revert diffs at session
-  start have hit multiple roles — BL-081, BL-109; root-cause investigation is
-  BL-126. Never re-fix from scratch, and never use `git stash` for this — see
-  the tracked-but-gitignored `scripts/` failure mode.)
+  start have hit multiple roles — BL-081, BL-109. Never re-fix from scratch,
+  and never use `git stash` for this — see the tracked-but-gitignored
+  `scripts/` failure mode.)
+- `extension/out/` (compiled TypeScript output) is gitignored and MUST NOT be
+  committed. It was previously tracked-but-gitignored — the exact same class
+  of defect as the `scripts/` mismatch above: a `git stash`/`checkout -- .`/
+  branch-switch touching that directory could silently restore a stale
+  compiled `.js` file whose source fix was never recompiled, since tests and
+  the running extension execute `out/*.js`, not `src/*.ts` (BL-126
+  root-cause). Fixed by `git rm -r --cached extension/out`; always run
+  `npm run compile` (or `npm test`, which compiles first) before relying on
+  `out/` — a fresh worktree/clone has no `out/` until it does.
 - Mutation-testing caches and incremental-run manifests (e.g. StrykerJS's
   incremental cache file) are local state, not source: gitignore them,
   never commit them. A tracked mutation cache is exactly how BL-105's
