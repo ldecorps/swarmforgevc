@@ -74,6 +74,32 @@ time.sleep(100)
 PYEOF
 }
 
+# job-process-pattern matches "stryker" OR "node --test" (BL-108's other
+# targeted job class: a node --test batch, not a Stryker root). This writer
+# execs into a real `node --test <file>` after the same fork+reparent dance,
+# so its ps command line is the literal "node --test ..." the pattern must
+# also catch - the stryker-only fixture above never exercises this half of
+# job-process-pattern's alternation.
+write_fake_node_test_script() {
+  local name="$1"
+  cat > "$CODER_WT/$name" <<'PYEOF'
+import os, sys
+pid_file = sys.argv[1]
+daemonize = sys.argv[2] == "orphan"
+sleepy_js = sys.argv[3]
+if daemonize:
+    if os.fork() > 0:
+        sys.exit(0)  # parent exits immediately: child reparents to launchd/init
+    os.setpgrp()
+with open(pid_file, "w") as f:
+    f.write(str(os.getpid()))
+os.execvp("node", ["node", "--test", sleepy_js])
+PYEOF
+  cat > "$CODER_WT/sleepy.test.js" <<'JSEOF'
+setTimeout(() => {}, 100000);
+JSEOF
+}
+
 trap 'jobs -p | xargs -r kill -9 2>/dev/null || true; rm -rf "$ROOT"' EXIT
 
 # ── 04: a crash-orphaned stryker root (PPID 1) under a swarm worktree is reaped ─
@@ -121,5 +147,31 @@ check_once
 pid_alive "$OWNED_PID" || fail "05: a live (non-orphaned) agent job process was killed"
 kill -9 "$OWNED_PID" 2>/dev/null || true
 pass "05: a live agent's in-progress mutation/test run (not PPID 1) is never touched"
+
+# ── 06: a crash-orphaned `node --test` batch (the pattern's other alternative) ─
+make_fixture
+write_fake_node_test_script "run_node_test.py"
+python3 "$CODER_WT/run_node_test.py" "$ROOT/orphan_node.pid" orphan "$CODER_WT/sleepy.test.js" >/dev/null 2>&1 &
+for _ in $(seq 1 40); do
+  [[ -s "$ROOT/orphan_node.pid" ]] && break
+  sleep 0.1
+done
+[[ -s "$ROOT/orphan_node.pid" ]] || fail "06 setup: fake node --test process never wrote its pid file"
+ORPHAN_NODE_PID="$(cat "$ROOT/orphan_node.pid")"
+PPID_NOW=""
+for _ in $(seq 1 40); do
+  PPID_NOW="$(ps -o ppid= -p "$ORPHAN_NODE_PID" 2>/dev/null | tr -d ' ' || true)"
+  if [[ "$PPID_NOW" == "1" ]]; then break; fi
+  sleep 0.1
+done
+[[ "$PPID_NOW" == "1" ]] || fail "06 setup: process did not reparent to PPID 1 (got $PPID_NOW)"
+
+check_once
+
+if pid_alive "$ORPHAN_NODE_PID"; then
+  kill -9 "$ORPHAN_NODE_PID"
+  fail "06: crash-orphaned node --test process was not reaped"
+fi
+pass "06: crash-orphaned node --test batch (PPID 1) rooted under a swarm worktree is reaped"
 
 echo "ALL PASS"
