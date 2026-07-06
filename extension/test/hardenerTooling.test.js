@@ -1,5 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -27,11 +26,16 @@ test('mutation and dry run via their own scripts, not npm test', () => {
   );
 });
 
-test('stryker config mutates the built output and runs the suite per mutant', () => {
+test('stryker config mutates the built output and runs coverage-aware (perTest)', () => {
   const config = JSON.parse(
     fs.readFileSync(path.join(__dirname, '../stryker.config.json'), 'utf8')
   );
-  assert.equal(config.testRunner, 'command', 'suite runs via the command runner');
+  assert.equal(config.testRunner, 'vitest', 'suite runs via the Vitest runner (BL-124)');
+  assert.equal(
+    config.coverageAnalysis,
+    'perTest',
+    'coverage-aware perTest — only the tests covering a mutant run — is the whole point of the Vitest migration'
+  );
   assert.ok(
     config.mutate.some((p) => p.startsWith('out/')),
     'mutants are generated in the compiled output the tests actually execute'

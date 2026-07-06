@@ -1,6 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
-
 const {
   resolveResendApiKey,
   RESEND_SECRET_KEY,
@@ -13,7 +11,7 @@ const {
 // the host env var or VS Code SecretStorage, never a workspace setting.
 const ORIGINAL_ENV = process.env.RESEND_API_KEY;
 
-test.afterEach(() => {
+afterEach(() => {
   if (ORIGINAL_ENV === undefined) {
     delete process.env.RESEND_API_KEY;
   } else {

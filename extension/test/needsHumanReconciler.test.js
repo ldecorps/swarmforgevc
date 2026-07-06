@@ -1,5 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
 const { NeedsHumanReconciler } = require('../out/panel/needsHumanReconciler');
 
 test('question source alone: emits true then false as it changes', () => {

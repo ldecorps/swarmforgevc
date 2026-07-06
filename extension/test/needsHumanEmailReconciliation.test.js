@@ -1,6 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
-
 const { NeedsHumanReconciler } = require('../out/panel/needsHumanReconciler');
 const { NeedsHumanEmailNotifier } = require('../out/notify/needsHumanEmailNotifier');
 

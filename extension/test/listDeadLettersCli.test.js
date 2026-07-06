@@ -1,6 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
-
 const { formatDeadLetterListing } = require('../out/tools/list-dead-letters');
 
 // BL-109 dead-letter-visible-03: the presenter for listDeadLetters -

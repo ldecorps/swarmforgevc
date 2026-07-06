@@ -1,6 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
-
 const { renderPanel } = require('./helpers/renderPanel');
 
 // BL-085: typing into an agent tile's terminal output area must forward

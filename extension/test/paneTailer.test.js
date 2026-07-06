@@ -1,6 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
-
 const { mapInputToTmuxKey, mapSpecialKeyToTmux, normalizeHistoryLines } = require('../out/panel/paneTailer');
 const { stripAnsi } = require('../out/panel/ansi');
 const { getPaneCommand } = require('../out/swarm/tmuxClient');

@@ -1,5 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
 const { extractPanelFunction } = require('./helpers/extractPanelFunction');
 
 // BL-077: one stable CSS class per pipeline stage, plus neutral classes for
