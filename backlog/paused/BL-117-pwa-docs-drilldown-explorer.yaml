@@ -3,6 +3,7 @@ title: "PWA documentation drill-down — explore live docs from vision level dow
 milestone: M6
 status: todo
 priority: 03
+direction: non-aligned
 assigned_to: coder
 depends_on: BL-097 (extends its Action->json->Pages pipeline and PWA client)
 source: "operator request 2026-07-05 (phone): app user can explore the documentation, from high level down to Gherkin scenario level"

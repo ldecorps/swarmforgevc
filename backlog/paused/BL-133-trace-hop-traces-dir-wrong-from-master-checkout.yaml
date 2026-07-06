@@ -3,6 +3,7 @@ title: trace-hop.js resolves traces dir wrong when run from the master checkout 
 milestone: M3
 status: todo
 priority: 10
+direction: aligned
 assigned_to: coder
 
 description: |

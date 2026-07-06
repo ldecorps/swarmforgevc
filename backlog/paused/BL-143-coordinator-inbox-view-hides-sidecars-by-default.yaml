@@ -3,6 +3,7 @@ title: "Coordinator inbox visibility: show real .handoff payloads by default, hi
 milestone: M4
 status: todo
 priority: 05
+direction: aligned
 assigned_to: specifier
 source: "operator request (2026-07-06): sidecar files are distracting coordinator flow"
 

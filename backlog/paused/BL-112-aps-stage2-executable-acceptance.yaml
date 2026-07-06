@@ -3,6 +3,7 @@ title: "APS realignment stage 2: executable acceptance pipeline for the host-sid
 milestone: M5
 status: todo
 priority: 11
+direction: aligned
 assigned_to: coder
 source: "root intake BL-054-aps-stage2-executable-acceptance (renumbered: id BL-054 already used by done/M4 needs-human-border ticket). Depends on BL-111."
 

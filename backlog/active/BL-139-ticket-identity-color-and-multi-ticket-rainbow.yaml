@@ -3,6 +3,7 @@ title: "Ticket identity colors: one persistent color per ticket across tiles and
 milestone: M3
 status: todo
 priority: 05
+direction: non-aligned
 assigned_to: specifier
 source: "operator clarification (2026-07-06): color is ticket identity, not stage identity"
 

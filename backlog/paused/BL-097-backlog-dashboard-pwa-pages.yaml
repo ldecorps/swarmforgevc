@@ -3,6 +3,7 @@ title: backlog dashboard PWA — serverless read-only projection of backlog/ via
 milestone: M6
 status: todo
 priority: 02
+direction: non-aligned
 source: operator spec request 2026-07-04 ("Backlog dashboard app: read-only projection of backlog/ from git")
 depends_on: BL-096 (the Action reuses its metrics CLI so numbers agree everywhere)
 

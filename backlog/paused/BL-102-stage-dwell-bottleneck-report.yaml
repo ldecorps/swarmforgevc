@@ -3,6 +3,7 @@ title: stage-dwell & bottleneck report — the swarm optimizer's instrument in t
 milestone: M5
 status: todo
 priority: 02
+direction: non-aligned
 source: operator direction 2026-07-04 ("give the coordinator a first-class responsibility of being a swarm optimizer")
 depends_on: BL-096 (trend framework; series conventions)
 

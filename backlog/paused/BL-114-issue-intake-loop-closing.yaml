@@ -3,6 +3,7 @@ title: "close the loop on GitHub issue intake (specifier comments + closes issue
 milestone: M4
 status: todo
 priority: 15
+direction: non-aligned
 assigned_to: coder
 source: "root intake BL-056-issue-intake-loop-closing (renumbered: id BL-056 already used by done/M4 anchor-handoff-state-dir ticket)"
 

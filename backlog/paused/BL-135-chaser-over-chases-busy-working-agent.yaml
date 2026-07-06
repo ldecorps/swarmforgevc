@@ -3,6 +3,7 @@ title: BUG — chaser over-chases a legitimately-BUSY (actively-working) agent; 
 milestone: M2
 status: todo
 priority: 02
+direction: expedite
 assigned_to: coder
 
 description: |

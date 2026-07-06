@@ -3,6 +3,7 @@ title: "BUG: paneTailerScrollback.test.js can run 30s+ per test and appear hung 
 milestone: M2
 status: todo
 priority: 06
+direction: expedite
 assigned_to: coder
 source: "hardender note 000068 (2026-07-05): 'test/paneTailerScrollback.test.js hangs forever (pre-existing bug)'"
 

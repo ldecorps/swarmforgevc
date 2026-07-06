@@ -3,6 +3,7 @@ title: headless secondary swarms on small Linux hosts — Raspberry Pi and VPS b
 milestone: M6
 status: todo
 priority: 05
+direction: non-aligned
 source: operator request 2026-07-04 (Pi feasibility confirmed; operator also has an idle VPS)
 depends_on: BL-090, BL-091, BL-092 (mode + assignment, remote bring-up learnings, wake-up bridge)
 

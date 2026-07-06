@@ -3,6 +3,7 @@ title: BUG — coordinator-initiated bounce-all cannot work end to end (no agent
 milestone: M2
 status: todo
 priority: 02
+direction: expedite
 assigned_to: coder
 
 description: |

@@ -3,6 +3,7 @@ title: cut unit test suite runtime drastically by eliminating real wall-clock ti
 milestone: M2
 status: todo
 priority: 05
+direction: aligned
 assigned_to: specifier
 
 # held (coordinator, 2026-07-06): not promoted yet despite drain. BL-131's

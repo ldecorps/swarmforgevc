@@ -3,6 +3,7 @@ title: "APS realignment stage 3: Gherkin acceptance mutation for the hardender"
 milestone: M5
 status: todo
 priority: 12
+direction: aligned
 assigned_to: coder
 source: "root intake BL-055-aps-stage3-gherkin-mutation (renumbered: id BL-055 already used by done/M4 scroll-up-autoscroll ticket). Depends on BL-112."
 
