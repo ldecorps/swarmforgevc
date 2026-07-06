@@ -291,6 +291,10 @@ export function readSwarmRoles(targetPath: string): SwarmRole[] {
 export interface RespawnResult {
   success: boolean;
   message: string;
+  // Set when performVerifiedRespawn's busy-pane precheck refused the
+  // respawn outright (BL-147): the pane was never touched, so callers that
+  // bound automatic respawn attempts must not count this as a used attempt.
+  skippedBusy?: boolean;
 }
 
 // Synchronous backoff wait for the retry loop below. The extension host is
@@ -367,6 +371,7 @@ function performVerifiedRespawn(socketPath: string, target: string, launchScript
   if (precheck.exitCode === 0 && isPaneActivelyProcessing(precheck.stdout)) {
     return {
       success: false,
+      skippedBusy: true,
       message: `Skipped respawn for "${role}": pane is actively processing a turn (esc to interrupt) - not stuck.`,
     };
   }
