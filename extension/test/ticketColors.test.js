@@ -78,3 +78,47 @@ test('ticketColorSegments handles an empty list', () => {
   const segments = ticketColorSegments([]);
   assert.deepEqual(segments, []);
 });
+
+// --- WCAG AA contrast (BL-139 accessibility constraint: "contrast-safe
+// text", "readable in dark and light theme") ---
+// The badge/chip text this palette serves renders at 10-11px (see
+// .tile-bl-badge / .bl-assigned in webviewHtml.ts) — normal-size text, not
+// the 18px+/14px-bold "large text" exception, so the WCAG AA threshold is
+// 4.5:1, not the relaxed 3.0:1. This was unverified: entry #808000/'#fff'
+// hardener-found at 4.20:1 and fixed to '#808000'/'#000' (5.01:1).
+
+function hexToRgb(hex) {
+  const stripped = hex.replace('#', '');
+  // The PALETTE's text colors are 3-digit shorthand ('#fff', '#000'); expand
+  // to 6 digits first or '#fff' misparses as rgb(0,15,255) instead of white.
+  const full = stripped.length === 3 ? stripped.split('').map((c) => c + c).join('') : stripped;
+  const n = parseInt(full, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function relativeLuminance([r, g, b]) {
+  const channel = (c) => {
+    const x = c / 255;
+    return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+  };
+  const [rl, gl, bl] = [channel(r), channel(g), channel(b)];
+  return 0.2126 * rl + 0.7152 * gl + 0.0722 * bl;
+}
+
+function contrastRatio(hexA, hexB) {
+  const [lumA, lumB] = [relativeLuminance(hexToRgb(hexA)), relativeLuminance(hexToRgb(hexB))];
+  const [hi, lo] = lumA > lumB ? [lumA, lumB] : [lumB, lumA];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+const WCAG_AA_NORMAL_TEXT_RATIO = 4.5;
+
+test('every palette entry meets WCAG AA contrast (4.5:1) for normal-size badge/chip text', () => {
+  for (const entry of PALETTE) {
+    const ratio = contrastRatio(entry.background, entry.color);
+    assert.ok(
+      ratio >= WCAG_AA_NORMAL_TEXT_RATIO,
+      `${entry.background}/${entry.color} contrast is ${ratio.toFixed(2)}:1, below the 4.5:1 AA floor`
+    );
+  }
+});
