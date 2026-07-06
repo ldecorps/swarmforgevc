@@ -10,9 +10,21 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# BL-145: `./swarm ensure <path>` checks/repairs the extension host, every
+# configured agent pane, and the daemon in one idempotent command, then
+# exits - it never falls into the full (destructive, always-relaunch) launch
+# flow below.
+if [[ "${1:-}" == "ensure" ]]; then
+  shift
+  ENSURE_WORKING_DIR="${1:-$PWD}"
+  ENSURE_WORKING_DIR="$(cd "$ENSURE_WORKING_DIR" && pwd)"
+  exec bb "$SCRIPT_DIR/swarm_ensure.bb" "$ENSURE_WORKING_DIR"
+fi
+
 WORKING_DIR="${1:-$PWD}"
 WORKING_DIR="$(cd "$WORKING_DIR" && pwd)"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SWARM_FORGE_DIR="$WORKING_DIR/swarmforge"
 WORKTREES_DIR="$WORKING_DIR/.worktrees"
 CONFIG_FILE="$SWARM_FORGE_DIR/swarmforge.conf"
