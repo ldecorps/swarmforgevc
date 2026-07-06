@@ -2,7 +2,7 @@ id: BL-124
 title: Migrate extension tests from `node --test` to Vitest so Stryker can run coverage-aware (perTest) mutation analysis
 milestone: M2
 status: todo
-priority: 30
+priority: 01
 assigned_to: coder
 
 description: |
