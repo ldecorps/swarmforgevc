@@ -11,6 +11,7 @@ const {
 } = require('../out/swarm/swarmLauncher');
 const { installFakeTmux } = require('./helpers/fakeTmux');
 const { installExecutable } = require('./helpers/sharedBin');
+const { readTrackedJobs } = require('../out/swarm/childJobRegistry');
 
 function mkTmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-launch-'));
@@ -144,6 +145,32 @@ test('launchSwarm resolves success as soon as stdout announces readiness', async
     const result = await launchSwarm(targetPath);
     assert.equal(result.success, true);
     assert.match(result.message, /launched successfully/);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('spawn-registry-01: launchSwarm records a tracked child-job entry keyed on the spawned process group', async () => {
+  const targetPath = mkTmp();
+  writeReadyState(targetPath);
+  // Announce readiness but keep the child alive (blocked on stdin) so the
+  // registry entry can be observed before the process exits and removes it.
+  writeSwarmScript(targetPath, 'echo "SwarmForge is ready"\nread _line\nexit 0');
+  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  try {
+    const result = await launchSwarm(targetPath);
+    assert.equal(result.success, true);
+
+    const entries = readTrackedJobs(path.join(targetPath, '.swarmforge'));
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].kind, 'swarm-launch');
+    assert.equal(entries[0].worktree, targetPath);
+    assert.equal(typeof entries[0].pgid, 'number');
+
+    // detached:true makes the child's pid its process group's leader -
+    // killing the negated pid tears down the whole group so the test
+    // leaves no process behind.
+    process.kill(-entries[0].pgid, 'SIGKILL');
   } finally {
     fake.restore();
   }
