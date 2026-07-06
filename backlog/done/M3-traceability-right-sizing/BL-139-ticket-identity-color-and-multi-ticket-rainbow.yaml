@@ -1,7 +1,7 @@
 id: BL-139
 title: "Ticket identity colors: one persistent color per ticket across tiles and backlog; rainbow indicator for multi-ticket holders"
 milestone: M3
-status: todo
+status: done
 priority: 05
 direction: non-aligned
 assigned_to: specifier

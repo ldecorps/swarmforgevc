@@ -1,0 +1,76 @@
+id: BL-146
+title: "Single-daemon consolidation: one process owns handoff delivery AND chase/watchdog liveness"
+milestone: M2
+status: todo
+priority: 01
+direction: reliability
+assigned_to: specifier
+source: "operator direction 2026-07-06 (chat with coordinator, split out of raw BL-144 per specifier review): 'The daemon should help with handoff and other things. I suppose there should only be one.'"
+depends_on: []
+
+description: |
+  Problem:
+  Liveness duties are split across two half-alive mechanisms. handoffd.bb
+  (babashka, confirmed running) owns handoff delivery. Chase/watchdog logic
+  (extension-host ChaseMonitor + swarm/inboxChaser, TypeScript) exists but is
+  NOT running as a live process. No single process watches swarm liveness
+  end-to-end, so daemon-level alarms (BL-144) have no reliable place to live.
+
+  Wanted behavior:
+  ONE daemon process owns both handoff delivery and the chase/watchdog
+  duties. The existing babashka handoffd is the survivor: extend it (or a
+  sibling loop inside the same supervised process) to perform the chase/nudge
+  sweeps the TypeScript chaser was designed for. The extension host becomes a
+  pure observer of daemon state — it renders, it does not watch liveness.
+
+  Constraints:
+  - Do not change the handoff protocol surface (swarm_handoff.sh,
+    ready_for_next.sh, inbox layout) — this is a consolidation of who runs
+    the sweeps, not a protocol redesign.
+  - Chase/nudge sidecar semantics (.chase.json, .nudge) stay as-is so BL-143
+    and existing chaser telemetry remain valid.
+  - The consolidated daemon's status file (.swarmforge/daemon/) must expose
+    enough state (pid, last sweep timestamps, duties list) for BL-144's
+    death-detection and BL-145's ensure check to consume.
+  - Testable-module rule applies: sweep decision logic must be reachable
+    without a live tmux session; only the thin dispatch layer touches tmux.
+
+acceptance: |
+  Feature: one daemon owns delivery and liveness
+
+  # BL-146 single-daemon-01
+  Scenario: consolidated daemon performs chase sweeps
+    Given the swarm is launched and the consolidated daemon is running
+    And a role inbox holds an undelivered handoff past the chase threshold
+    When the daemon's next sweep runs
+    Then the chase/nudge action is taken by the daemon process itself
+    And no extension-host process performed the sweep
+
+  # BL-146 single-daemon-02
+  Scenario: daemon status file advertises both duties
+    Given the consolidated daemon is running
+    When .swarmforge/daemon/ status is read
+    Then it reports the daemon pid and a last-activity timestamp for each duty
+      | duty     |
+      | delivery |
+      | chase    |
+
+  # BL-146 single-daemon-03
+  Scenario: handoff delivery unchanged by consolidation
+    Given the consolidated daemon is running
+    When an agent queues a valid outbound handoff via swarm_handoff.sh
+    Then the handoff is delivered to each recipient inbox/new/ as before
+    And the recipient receives the standard tmux wake-up
+
+  # BL-146 single-daemon-04
+  Scenario: exactly one liveness-owning process
+    Given the swarm is launched
+    When running processes are enumerated
+    Then exactly one daemon process owns delivery and chase duties
+    And no second chaser/watchdog process is running
+
+  # Non-behavioral gates:
+  #  - Sweep decision logic covered by unit tests with fake clock/filesystem
+  #    (no real timers, no live tmux).
+  #  - docs/diagrams architecture diagram updated: chaser moves from the
+  #    extension host into the daemon box.

@@ -43,17 +43,20 @@
   real time is exactly how runs hang and orphan processes (this has cost the
   swarm multi-hour hung runs). A single test that takes more than a moment on
   its own is a defect to fix, not tolerate.
-- Real timers and wall-clock waits in tests are banned. No `setTimeout` /
-  `setInterval` delays, no `sleep`, no polling loops that burn wall-clock, no
-  assertion that waits for real time to pass. Time must be driven explicitly:
-  inject a clock or fake timer and advance it, so every test is deterministic
-  and instant. (Fake/injected time is the sanctioned substitute — the ban is
-  on waiting for the real clock, not on exercising time-dependent logic.)
+- **Never use real timers in tests.** No `setTimeout` / `setInterval` delays,
+  no `sleep`, no polling loops that burn wall-clock, no assertion that waits
+  for real time to pass. Time must be driven explicitly: inject a test double
+  (fake timer, mock clock) and advance it programmatically, so every test is
+  deterministic and instant. (Fake/injected time is the only acceptable
+  substitute — the ban is absolute on waiting for the real clock, not on
+  exercising time-dependent logic.)
 - Prefer mock objects and test doubles over real collaborators. Isolate the
   unit under test behind fakes/stubs/spies for its dependencies — filesystem,
-  network, tmux/PTY, the handoff daemon, the VS Code API. Do not stand up real
-  services or daemons in a unit test, and never sleep waiting for one to be
-  ready; that is what the testable-module boundary above exists to enable.
+  network, tmux/PTY, the handoff daemon, the VS Code API, timers, and any
+  external service. Do not stand up real services or daemons in a unit test,
+  and never wait on one to be ready; that is what the testable-module boundary
+  above exists to enable. Test doubles are the standard practice — use them
+  always, not as a fallback.
 
 ## Acceptance Pipeline
 - Use github.com/unclebob/Acceptance-Pipeline-Specification (pinned, see above)

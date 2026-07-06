@@ -1,7 +1,7 @@
 id: BL-138
 title: "Kanban steering policy - pick one direction and align the swarm"
 milestone: M4
-status: todo
+status: done
 priority: 04
 direction: aligned
 assigned_to: specifier
