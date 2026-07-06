@@ -74,6 +74,17 @@
   work, the commit you forward MUST have the received commit as an
   ancestor (`git merge-base --is-ancestor <received> <yours>` must hold).
   `merge_and_process` means merge FIRST, then work, then forward.
+- The merge step is a plain `git merge <received-commit>` (or `git merge
+  --no-ff <received-commit>` to keep a visible merge commit) into your
+  current worktree branch — never `git reset --hard`, never `git checkout
+  <commit> -- .`, never any operation that replaces your tree instead of
+  combining it with the received one. A reset/checkout-style "sync" silently
+  discards local work not yet present in the received commit, which reads
+  exactly like a reverted bug at the next session start (BL-126: this
+  ambiguity — `merge_and_process` naming an outcome, not a command — was one
+  of two suspected mechanisms behind recurring phantom-revert diffs; the
+  other, confirmed one was `extension/out/` being tracked-but-gitignored,
+  see the engineering article).
 - Before sending any forward, run that ancestry check; if it fails, you
   are about to forward a parcel that silently drops upstream work — stop
   and merge the received commit properly.
