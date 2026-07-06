@@ -1,0 +1,32 @@
+id: BL-144
+title: "Daemon-death alarm: when handoffd dies, halt the swarm and capture why (no silent auto-restart)"
+milestone: TBD
+status: todo
+priority: 01
+source: "operator request 2026-07-06 (chat with coordinator): 'some serious alarm has to ring when the daemon falls. a good one would be to stop everything, produce a log of why the daemon stopped, and then stop everything so we can fix the daemon.'"
+
+description: |
+  Raw operator ask, not yet specced. Observed context: handoffd_supervisor.bb
+  already detects handoffd death and silently restarts it (see
+  .swarmforge/daemon/handoffd.status.json restart_history / last_incident
+  today). The operator wants the OPPOSITE failure posture for this
+  condition: instead of a silent auto-restart, a loud, unmissable signal
+  (an "alarm") should fire, a log capturing why the daemon stopped should
+  be produced, and the whole swarm should be stopped so a human can fix
+  the daemon before anything resumes.
+
+  Needs specifier follow-up to settle ambiguity before writing the real
+  spec + Gherkin acceptance, e.g.:
+  - What counts as "the daemon falls" — handoffd only, or also the
+    extension-host chaser/watchdog (which today isn't even confirmed
+    running as a live process)?
+  - What is "the alarm" concretely, given this is a local tmux/VS Code
+    setup — a PushNotification to the operator, a blocking tmux banner, a
+    desktop notification, all of the above?
+  - "Stop everything" — kill all tmux panes/sessions immediately, or quiesce
+    (let in-flight work finish/checkpoint) before stopping?
+  - Where does the failure log live, and what must it contain (last N
+    daemon.log lines, restart_history, last known outbox/inbox state,
+    timestamp) so a human can diagnose without reconstructing state by hand?
+  - Should this replace the current silent-restart behavior entirely, or
+    only escalate to alarm+halt after N silent restarts fail to keep it up?
