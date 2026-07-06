@@ -45,6 +45,7 @@ const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const tmuxClient_1 = require("./tmuxClient");
 const swarmStopper_1 = require("./swarmStopper");
+const childJobRegistry_1 = require("./childJobRegistry");
 const SWARM_LAUNCH_SUCCESS_MESSAGE = 'Swarm launched successfully.';
 // BL-058: launch failures used to surface only as ephemeral toasts, so a
 // failed launch left nothing to diagnose. Every attempt persists the spawned
@@ -130,12 +131,16 @@ async function launchSwarm(targetPath, runName, readyTimeoutMs = 120_000) {
         (0, swarmStopper_1.clearStaleSwarmState)(targetPath);
     }
     return new Promise((resolve) => {
-        const child = cp.spawn(swarmScript, [targetPath], {
+        // BL-108 spawn-registry-01: detached:true makes child.pid the new
+        // process GROUP's leader, so a registry entry keyed on it can reap the
+        // whole tree (this bootstrap child plus anything it forks) even if the
+        // extension host is killed before it can await this child's own exit.
+        const child = (0, childJobRegistry_1.spawnTrackedJob)(path.join(targetPath, '.swarmforge'), () => cp.spawn(swarmScript, [targetPath], {
             cwd: targetPath,
             env: buildLaunchEnv(runName),
             stdio: ['ignore', 'pipe', 'pipe'],
-            detached: false,
-        });
+            detached: true,
+        }), { worktree: targetPath, kind: 'swarm-launch', ownerHostPid: process.pid });
         let settled = false;
         let stderr = '';
         let stdout = '';
