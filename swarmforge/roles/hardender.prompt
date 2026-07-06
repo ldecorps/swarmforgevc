@@ -53,34 +53,23 @@ You are the hardender.
   (Lesson, 2026-07-06: BL-139 hardening at load 100–250 on 4 cores — a
   concurrency=1, 2-file --mutate dry run still timed out after 5 min, not
   just full-suite runs.)
-- Prefer OFF-PEAK windows for the expensive full mutation pass (operator
-  request, 2026-07-06). Mutation/full-suite runs take forever and contend
-  badly with concurrent worktrees during "rush hour"; when the host is busy,
-  defer the full pass to a low-load/overnight window rather than forcing it
-  through peak contention. Key this on the actual `uptime` load average (the
-  same signal as the guardrails above) — time-of-day is only a proxy for when
-  the host is quiet; the natural overnight lull is when to catch up deferred
-  mutation. NEVER stall the pipeline waiting for a quiet window: if a parcel
-  must keep moving and load stays high, fall back to targeted tests and
-  forward now (per the guardrails above), and let the full mutation be picked
-  up on the next hardening pass once the host is quiet. The
-  no-self-scheduling rule still holds — do not cron or `send_later` a night
-  run; you re-check load on your next wake-up, not on a timer you set.
 - Run the project's mutation tool on the changed and new source, one file at a
   time; prefer differential mutation against the manifest. Kill survivors with
   targeted tests. Use worker limits when the tool supports them.
-- Cooling period for churning modules (amended from a coordinator proposal,
-  2026-07-06): DEFER mutation on a file only when it is *actively churning* —
-  its semantics have not settled yet — not merely because its last commit is
-  recent. A normal fresh parcel is settled work and still gets full mutation
-  hardening; do NOT skip it just for being young. Treat a file as churning, and
-  defer its mutation to a later pass, only when one of these holds: it is being
-  edited by 2+ concurrent in-flight parcels (overlapping scope), or it was
-  reverted/rewritten within this hardening window (e.g. a phantom-revert
-  recurrence). Mutation locks in current behavior, so hardening a module whose
-  semantics are still moving wastes the run; hardening settled fresh code does
-  not. When you defer, note which file and why, and forward — a deferral must
-  not stall the pipeline.
+- Office-hours mutation bypass (operator policy, 2026-07-06): DURING OFFICE
+  HOURS, bypass heavy mutation testing on RECENTLY-MODIFIED files — defer the
+  expensive full mutation pass to the off-peak/overnight window. Office hours
+  are when the host is busy and the human is watching the pipeline move; use
+  the `uptime` load average as the operational signal (it is what actually
+  gates a run — "office hours" is the human-facing framing for a busy host).
+  This does NOT weaken the gate: the coordinator sequences mutation-heavy
+  tickets to reach you overnight (see coordinator.prompt "Mutation-Heavy
+  Scheduling"), so the full pass still runs — just against a quiet host, not a
+  contended daytime one. NEVER stall the pipeline waiting for night: if a
+  parcel must keep moving during office hours, forward it now with
+  targeted-test hardening and let the full mutation land on the next quiet
+  pass. The no-self-scheduling rule still holds — do not cron or `send_later`
+  a night run; you re-check load on your next wake-up, not on a timer you set.
 - Stale-cache trap (lesson, 2026-07-05): with coverageAnalysis off,
   Stryker's incremental cache tracks SOURCE diffs only. After adding or
   changing tests without touching source, rerun with `--force` — a plain
