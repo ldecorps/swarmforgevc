@@ -6,7 +6,6 @@
  * injected daemon-health/canary values) — no live babashka daemon or tmux.
  */
 const assert = require('node:assert/strict');
-const test = require('node:test');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
