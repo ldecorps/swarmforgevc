@@ -1,9 +1,16 @@
 id: BL-130
 title: multi-provider swarm — per-role ALTERNATE AGENT RUNTIME (option 2) so chosen roles run on GPT/Mistral instead of Claude, to spread cost off the Claude allowance
-milestone: M7
+milestone: M2
 status: todo
-priority: 01
+priority: 00
 assigned_to: specifier
+depends_on:
+  - BL-121
+  - BL-122
+# Operator (2026-07-06): sequence BL-130 RIGHT AFTER the handoff tickets.
+# Milestone bumped M7->M2 and priority ->00 to co-locate with BL-121/122, and
+# depends_on gates it until they land (also correct: BL-130's runtime-agnostic
+# liveness signal reuses BL-121's delivery-level detection, not the TUI).
 
 description: |
   OPERATOR DIRECTIVE (2026-07-06): the swarm is on track to outspend the weekly
