@@ -1,6 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
-
 const { detectFooterLineCount, findOverlap, accumulatePaneHistory } = require('../out/panel/paneHistory');
 
 // ── detectFooterLineCount (TS port of media/panel.js's own detector) ────

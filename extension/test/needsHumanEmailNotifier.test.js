@@ -1,6 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
-
 const { decideNotifyAction, NeedsHumanEmailNotifier } = require('../out/notify/needsHumanEmailNotifier');
 
 const GRACE_COOLDOWN = { graceSeconds: 60, cooldownSeconds: 600 };

@@ -22,7 +22,11 @@ const LOG_PATH = path.join(ROOT_DIR, '.test-durations.jsonl');
 function main() {
   const testFiles = listTestFiles(TEST_DIR).map((f) => path.join('test', f));
   const startedAt = Date.now();
-  const result = spawnSync(process.execPath, ['--test', '--test-concurrency=8', ...testFiles], {
+  // BL-124: the suite now runs under Vitest (node --test can no longer run the
+  // files — they use Vitest globals). Vitest discovers files from its config
+  // include, so no file list is passed; testCount below still counts files.
+  const vitestBin = path.join(ROOT_DIR, 'node_modules', '.bin', 'vitest');
+  const result = spawnSync(vitestBin, ['run'], {
     stdio: 'inherit',
     cwd: ROOT_DIR,
   });

@@ -43,3 +43,36 @@ export function describeSetResult(envVarSet: boolean): string {
 export function describeClearResult(envVarSet: boolean): string {
   return `Resend API key cleared from SecretStorage.${precedenceNote(envVarSet)}`;
 }
+
+// BL-130: per-role alternate agent runtime (e.g. aider on Mistral/OpenAI for
+// an offloaded role). Same secrets rule as Resend above: these must resolve
+// only from the host env var or SecretStorage, never a workspace setting,
+// dotfile, launch script default, or the repo.
+export const OPENAI_SECRET_KEY = 'swarmforge.openaiApiKey';
+export const MISTRAL_SECRET_KEY = 'swarmforge.mistralApiKey';
+
+export async function resolveOpenAIApiKey(
+  secrets?: vscode.SecretStorage
+): Promise<string | undefined> {
+  const envKey = process.env.OPENAI_API_KEY;
+  if (envKey) {
+    return envKey;
+  }
+  if (secrets) {
+    return await secrets.get(OPENAI_SECRET_KEY);
+  }
+  return undefined;
+}
+
+export async function resolveMistralApiKey(
+  secrets?: vscode.SecretStorage
+): Promise<string | undefined> {
+  const envKey = process.env.MISTRAL_API_KEY;
+  if (envKey) {
+    return envKey;
+  }
+  if (secrets) {
+    return await secrets.get(MISTRAL_SECRET_KEY);
+  }
+  return undefined;
+}
