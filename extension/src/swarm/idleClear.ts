@@ -42,42 +42,57 @@ export interface RoleIdleStatus {
 
 export type IdleClearDecision = 'clear' | 'skip';
 
-// Pure: every safety gate from the ticket's scenario table in one place, so
-// each unsafe state is independently testable.
+function hasPendingWork(status: RoleIdleStatus): boolean {
+  return status.hasInProcessWork || status.hasQueuedNew;
+}
+
+// BL-141: below the fullness threshold, skip regardless of how long the role
+// has been drained-idle — that safety gate alone was too aggressive.
+function isBelowFullnessThreshold(status: RoleIdleStatus, config: IdleClearConfig): boolean {
+  return status.contextFullness.percent < config.fullnessThresholdPercent;
+}
+
+// The gates that never depend on elapsed time: any one of these blocks a
+// clear regardless of how long the role has sat idle (hardener split, kept
+// under CRAP 6 — see decideIdleClear below for the settle-window half).
+function isBlockedByStaticGates(
+  status: RoleIdleStatus,
+  alreadyCleared: boolean,
+  config: IdleClearConfig
+): boolean {
+  return (
+    !config.enabled ||
+    alreadyCleared ||
+    hasPendingWork(status) ||
+    status.needsHumanPending ||
+    status.drainInProgress ||
+    isBelowFullnessThreshold(status, config)
+  );
+}
+
+function isWithinSettleWindow(status: RoleIdleStatus, nowMs: number, config: IdleClearConfig): boolean {
+  if (status.lastHumanInputMs !== null) {
+    const sinceInputSeconds = (nowMs - status.lastHumanInputMs) / 1000;
+    if (sinceInputSeconds < config.settleWindowSeconds) {
+      return true;
+    }
+  }
+  const quietSeconds = (nowMs - status.lastActivityMs) / 1000;
+  return quietSeconds < config.settleWindowSeconds;
+}
+
+// Pure: every safety gate from the ticket's scenario table, split across the
+// two helpers above so each stays independently testable and low-complexity.
 export function decideIdleClear(
   status: RoleIdleStatus,
   alreadyCleared: boolean,
   nowMs: number,
   config: IdleClearConfig
 ): IdleClearDecision {
-  if (!config.enabled) {
+  if (isBlockedByStaticGates(status, alreadyCleared, config)) {
     return 'skip';
   }
-  if (alreadyCleared) {
-    return 'skip';
-  }
-  if (status.hasInProcessWork || status.hasQueuedNew) {
-    return 'skip';
-  }
-  if (status.needsHumanPending) {
-    return 'skip';
-  }
-  if (status.drainInProgress) {
-    return 'skip';
-  }
-  // BL-141: below the fullness threshold, skip regardless of how long the
-  // role has been drained-idle — that safety gate alone was too aggressive.
-  if (status.contextFullness.percent < config.fullnessThresholdPercent) {
-    return 'skip';
-  }
-  if (status.lastHumanInputMs !== null) {
-    const sinceInputSeconds = (nowMs - status.lastHumanInputMs) / 1000;
-    if (sinceInputSeconds < config.settleWindowSeconds) {
-      return 'skip';
-    }
-  }
-  const quietSeconds = (nowMs - status.lastActivityMs) / 1000;
-  if (quietSeconds < config.settleWindowSeconds) {
+  if (isWithinSettleWindow(status, nowMs, config)) {
     return 'skip';
   }
   return 'clear';
