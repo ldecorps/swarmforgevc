@@ -10,9 +10,26 @@
             [clojure.java.io :as io]
             [clojure.string :as str]))
 
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
+
 (def poll-ms 1000)
 (def wake-message
   "You have new handoff mail. If idle, run ready_for_next.sh.")
+
+;; BL-146: single-daemon consolidation. Chase/nudge sweeps run every
+;; chase-sweep-every-cycles poll cycles (poll-ms apart) - the same babashka
+;; process that already owns delivery now also owns liveness, so the
+;; extension host becomes a pure observer instead of running its own
+;; setInterval sweep.
+(def chase-sweep-every-cycles 5)
+(def chase-sweep-config
+  {:chaseIntervalSeconds 5
+   :chaseTimeoutSeconds 30
+   :maxChases 3
+   :stuckInProcessTimeoutSeconds 60
+   :respawnCooldownSeconds 300
+   :chaseBackoffBaseSeconds 30
+   :chaseBackoffMaxSeconds 300})
 
 (defn usage []
   (binding [*out* *err*]
@@ -32,6 +49,8 @@
 (def log-file (fs/path daemon-dir "handoffd.log"))
 (def heartbeat-file (fs/path daemon-dir "handoffd.heartbeat"))
 (def heartbeat-log-every-cycles 60)
+(def heartbeat-dir (fs/path state-dir "heartbeat"))
+(def status-file (fs/path daemon-dir "handoffd.status.json"))
 (def stopping? (atom false))
 (def main-thread (atom nil))
 
@@ -445,6 +464,99 @@
   (when (= (read-pid-file) (own-pid))
     (fs/delete-if-exists pid-file)))
 
+;; ── BL-146: chase/nudge sweep - the daemon's second duty ────────────────────
+;; Adapters wire chase-sweep-lib's pure decisions to real tmux/heartbeat
+;; state, the same way `deliver!` above is the thin dispatch layer for
+;; delivery. Decision logic itself stays reachable without live tmux (see
+;; chase_sweep_lib.bb and its test_chase_sweep.sh coverage).
+
+(defn parse-heartbeat
+  "Parses a role's `.swarmforge/heartbeat/<role>.yaml` (written by
+   extension/src/tools/heartbeat.ts's writeHeartbeat - a simple
+   key: value format, not real YAML). Returns nil when absent/malformed,
+   matching readHeartbeat's own contract."
+  [role]
+  (try
+    (let [content (slurp (str (fs/path heartbeat-dir (str role ".yaml"))))
+          fields (into {}
+                       (for [line (str/split-lines content)
+                             :let [m (re-matches #"(\w+):\s*(.+)" (str/trim line))]
+                             :when m]
+                         [(keyword (nth m 1)) (str/replace (nth m 2) #"^\"(.*)\"$" "$1")]))]
+      (when (contains? fields :last_beat)
+        {:last_beat (:last_beat fields)
+         :in_flight (= "true" (:in_flight fields))
+         :pid (some-> (:pid fields) parse-long)}))
+    (catch Exception _ nil)))
+
+(defn get-liveness [role]
+  (let [hb (parse-heartbeat role)
+        pid-live? (boolean (and hb (:pid hb) (pid-alive? (:pid hb))))]
+    (chase-sweep-lib/compute-liveness
+     hb (System/currentTimeMillis)
+     {:staleTimeoutSeconds 30 :inFlightTimeoutSeconds 60 :deadTimeoutSeconds 120}
+     pid-live?)))
+
+(defn capture-pane-lines
+  "Same as capture-pane-text but limited to the last n lines, mirroring
+   tmuxClient.ts's capturePane(socket, target, -50) used for activity
+   tracking."
+  [socket session n]
+  (:out (tmux! "-S" socket "capture-pane" "-p" "-t" session "-S" (str "-" n))))
+
+(defn get-last-activity-ms [role-info socket now-ms]
+  (let [pane (try (capture-pane-lines socket (:session role-info) 50) (catch Exception _ ""))
+        outbox-dir (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "outbox")
+        sent-dir* (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "sent")
+        outbox-activity-ms (apply max 0
+                                   (for [d [outbox-dir sent-dir*] :when (fs/exists? d)]
+                                     (.toMillis (fs/last-modified-time d))))]
+    (chase-sweep-lib/track-pane-activity! (:role role-info) pane outbox-activity-ms now-ms)))
+
+(defn do-respawn!
+  "Busy-vs-wedged precheck (BL-137/BL-147 parity): never types/respawns into
+   a pane showing Claude Code's busy footer. Otherwise force-relaunches the
+   role's persisted launch script in place, the same tmux respawn-pane -k
+   invocation launch_role/swarm_ensure.bb already use."
+  [role-info socket]
+  (let [session (:session role-info)
+        pane (try (capture-pane-text socket session) (catch Exception _ ""))]
+    (if (chase-sweep-lib/actively-processing? pane)
+      (log! "chase-respawn-skip-busy" (:role role-info))
+      (let [launch-script (fs/path (:worktree-path role-info) ".swarmforge" "launch" (str (:role role-info) ".sh"))]
+        (log! "chase-respawn" (:role role-info))
+        (tmux! "-S" socket "respawn-pane" "-k" "-t" session (str "zsh '" launch-script "'"))))))
+
+(defn write-chase-status! [now-ms]
+  (fs/create-dirs daemon-dir)
+  (let [existing (try (json/parse-string (slurp (str status-file)) true) (catch Exception _ {}))
+        updated (assoc existing
+                       :pid (own-pid)
+                       :delivery {:last_sweep_at (now)}
+                       :chase {:last_sweep_at (now)})]
+    (spit (str status-file) (json/generate-string updated))))
+
+(defn role-inboxes-for-chase [roles]
+  (for [[role role-info] roles]
+    {:role role
+     :inbox-new-dir (str (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "inbox" "new"))
+     :in-process-dir (str (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "inbox" "in_process"))}))
+
+(defn chase-sweep! [roles socket]
+  (let [now-ms (System/currentTimeMillis)
+        adapters {:get-liveness get-liveness
+                  :send-wake-up! (fn [role]
+                                    (try (notify! socket (:session (get roles role)))
+                                         (catch Exception e (log! "chase-wake-error" role (.getMessage e)))))
+                  :trigger-respawn! (fn [role]
+                                       (try (do-respawn! (get roles role) socket)
+                                            (catch Exception e (log! "chase-respawn-error" role (.getMessage e)))))
+                  :log-dead-letter! (fn [role path] (log! "dead-letter" role (fs/file-name path)))
+                  :get-last-activity-ms (fn [role] (get-last-activity-ms (get roles role) socket now-ms))
+                  :on-stuck-escalation! (fn [role escalated?] (chase-sweep-lib/write-escalation! (str daemon-dir) role escalated?))}]
+    (chase-sweep-lib/run-sweep! (role-inboxes-for-chase roles) now-ms chase-sweep-config adapters)
+    (write-chase-status! now-ms)))
+
 (defn -main []
   (let [roles  (load-roles)
         socket (str/trim (slurp (str socket-file)))]
@@ -473,6 +585,14 @@
               (loop [cycle 0]
                 (when (and (not @stopping?) (not (fs/exists? stop-file)))
                   (poll-once!)
+                  ;; BL-146: chase/nudge sweep runs on its own cadence,
+                  ;; sharing this single process/thread with delivery -
+                  ;; exactly one process now owns both duties.
+                  (when (zero? (mod cycle chase-sweep-every-cycles))
+                    (try
+                      (chase-sweep! (load-roles) socket)
+                      (catch Exception e
+                        (log! "chase-sweep-error" (.getMessage e)))))
                   (spit (str heartbeat-file) (str (now) "\n"))
                   (when (zero? (mod cycle heartbeat-log-every-cycles))
                     (log! "heartbeat" (str "cycle=" cycle)))
