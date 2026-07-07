@@ -26,7 +26,7 @@ import { writeBounceAck, clearBounceAck, BouncePhase } from './swarm/bounceAck';
 import { startChaserMonitor, stopChaserMonitor, buildRoleInboxes } from './watchdog/chaserMonitor';
 import type { ChaserMonitorConfig, ChaserCallbacks } from './watchdog/chaserMonitor';
 import { readTmuxSocket, paneTarget, getPaneBaseIndex, sendKeys, capturePane, readSwarmRoles, sleepSync, respawnAgent } from './swarm/tmuxClient';
-import { sendInstructionVerified } from './swarm/verifiedInject';
+import { sendInstructionVerified, sendHandoffWakeUp } from './swarm/verifiedInject';
 import { trackPaneActivity, outboxNewestMtimeMs } from './watchdog/paneActivity';
 import { setStuckEscalation, escalatedStuckRoles } from './watchdog/stuckEscalations';
 import { handleWedgedRespawnTrigger } from './watchdog/wedgedRespawn';
@@ -122,6 +122,7 @@ let currentGracefulBounceFileWatcher: fs.FSWatcher | null = null;
 let currentIdleClearMonitor: NodeJS.Timeout | null = null;
 let idleClearOutputChannel: vscode.OutputChannel | undefined;
 let bounceOutputChannel: vscode.OutputChannel | undefined;
+let chaserOutputChannel: vscode.OutputChannel | undefined;
 let currentBridge: BridgeHandle | null = null;
 // BL-108: deactivate() has no other route to the target's .swarmforge dir
 // (activate's targetPath is function-scoped) - remembered here so a spawned
@@ -233,6 +234,12 @@ function startOrRestartChaserMonitor(targetPath: string, context: vscode.Extensi
     currentChaserMonitor = null;
   }
 
+  if (!chaserOutputChannel) {
+    chaserOutputChannel = vscode.window.createOutputChannel('SwarmForge: Chaser');
+    context.subscriptions.push(chaserOutputChannel);
+  }
+  const outputChannel = chaserOutputChannel;
+
   // Check if .swarmforge directory exists
   const swarmforgeDir = path.join(targetPath, '.swarmforge');
   if (!fs.existsSync(swarmforgeDir)) {
@@ -284,8 +291,24 @@ function startOrRestartChaserMonitor(targetPath: string, context: vscode.Extensi
 
       const baseIndex = getPaneBaseIndex(socketPath);
       const target = paneTarget(roleInfo.session, roleInfo.displayName, baseIndex);
-      // Send a generic wake-up message (empty line followed by Enter)
-      sendKeys(socketPath, target, 'Enter');
+      // BL-152: verified submit of the same wake message handoffd.bb's
+      // notify! sends, instead of a bare unconfirmed Enter - this callback
+      // is shared by both the chaser nudge and the BL-122 recovery
+      // redelivery (see chaserMonitor.ts/handoffRecovery.ts).
+      const result = sendHandoffWakeUp({
+        capturePane: () => {
+          const captured = capturePane(socketPath, target);
+          return captured.exitCode === 0 ? captured.stdout : '';
+        },
+        sendLiteral: (text: string) => sendKeys(socketPath, target, text, true).exitCode === 0,
+        sendEnter: () => sendKeys(socketPath, target, 'Enter'),
+        wait: sleepSync,
+      });
+      if (result.status !== 'delivered') {
+        outputChannel.appendLine(
+          `handoff wake ${result.status} for "${role}" in pane ${target} after ${result.attempts} attempt(s)${result.reason ? `: ${result.reason}` : ''}`
+        );
+      }
     },
 
     triggerRespawn: (role: string): void => {

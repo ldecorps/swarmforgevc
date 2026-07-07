@@ -1,0 +1,103 @@
+id: BL-152
+title: "RELIABILITY (quick-win, 1 of the BL-151 sequence) — chaser + BL-122 recovery wake must use handoffd's VERIFIED notify, not a bare Enter"
+milestone: M2
+status: todo
+priority: 00
+depends_on: []
+evidence: backlog/evidence/BL-109-BL-121-BL-122-handoff-halt-20260706.md  # parcels dead-letter at chaseCount:3 while recipients sit idle; recovery renames .dead->.handoff but the follow-up wake cannot get idle agents to run ready_for_next.sh
+source: "BL-151 gap #1 (operator investigation 2026-07-07) — NEW, previously unticketed"
+notes: |
+  First slice of the BL-151 handoff-reliability sequence (see the BL-151
+  umbrella). Chosen as the quick win because it is small, independently
+  shippable, and unblocks nothing else it depends on. Land this BEFORE
+  reopening BL-121/BL-122 so their canary/recovery work builds on a wake path
+  that actually reaches idle panes.
+
+description: |
+  After BL-109 fixed handoffd's OWN delivery to idle panes (daemon wake uses a
+  verified literal submit via handoffd.bb notify! -> the canonical string), two
+  OTHER wake paths were left on the old fire-and-forget mechanism:
+
+    1. The extension chaser nudge (extension.ts sendWakeUp callback), and
+    2. The BL-122 recovery redelivery (handoffRecovery.ts adapters.sendWakeUp,
+       wired through chaserMonitor.ts),
+
+  both send a bare `Enter` keystroke (sendKeys(socketPath, target, 'Enter')) —
+  no verified literal, no protocol message. Forensics (2026-07-06 halt) show
+  parcels dead-letter at chaseCount:3 while recipients sit idle: recovery may
+  rename `.dead` -> `.handoff`, but the follow-up wake cannot reliably get an
+  idle agent to run ready_for_next.sh, so the loop repeats and the swarm halts
+  with green dashboards.
+
+  Wanted behavior: the chaser nudge and the recovery redelivery wake use the
+  SAME verified path handoffd uses. Extract the canonical wake string into ONE
+  shared constant (single source of truth) and have both extension wake paths
+  submit it via sendInstructionVerified, exactly as handoffd.bb notify! does.
+
+  Constraints / seams (READ-ONLY findings):
+  - Canonical wake string lives today in swarmforge/scripts/handoffd.bb (the
+    notify! literal) and swarmforge/handoff-protocol.md:
+      "You have new handoff mail. If idle, run ready_for_next.sh."
+    Introduce a single shared constant (e.g. HANDOFF_WAKE_MESSAGE) that both
+    the daemon path and the extension paths reference; do not duplicate the
+    literal in a third place.
+  - Extension seams: extension.ts sendWakeUp callback; watchdog/chaserMonitor.ts
+    (passes sendWakeUp to both the chase sweep and recoverDeadLetters);
+    swarm/handoffRecovery.ts (adapters.sendWakeUp at the redelivery point);
+    swarm/verifiedInject.ts (sendInstructionVerified — already exists, already
+    used elsewhere in extension.ts for /clear and instruction injection).
+  - Replace `sendKeys(..., 'Enter')` in the wake path with
+    sendInstructionVerified submitting the shared constant. Preserve the
+    existing verified-inject fallback/failure handling used by the other
+    callers; do NOT add real timers (inject a clock/fakes per the engineering
+    article).
+  - Update or delete swarmforge/HANDOFF-IMPLEMENTATION.md as part of this slice:
+    it still describes v1 direct inbox writes (superseded by the outbox ->
+    handoffd -> inbox/new path) and repeats the wake string — an agent reading
+    it may bypass the outbox path. Reconcile it with handoff-protocol.md or
+    delete it if fully redundant.
+  - Do NOT touch the mailbox-split (BL-128), single-daemon consolidation
+    (BL-146), canary (BL-121), or full-recovery (BL-122) surfaces here — this
+    slice is only the wake-parity + stale-doc reconciliation. Those follow in
+    sequence and edit overlapping notify paths, so they must not run
+    concurrently with this one.
+
+  Tests: mirror swarmforge/scripts/test/test_handoffd_notify_verified.sh for
+  the extension wake paths — assert the verified literal is submitted for both
+  the chaser nudge and the recovery redelivery, and that a bare Enter-only wake
+  is never used for handoff nudges. Test through the verifiedInject fake /
+  injected sendKeys spy; NO live tmux.
+
+acceptance: |
+  Feature: every handoff wake uses the same verified notify
+
+  # BL-152 wake-parity-01
+  Scenario: the chaser nudge submits the verified handoff wake, never a bare Enter
+    Given a role inbox holds an undelivered handoff and the recipient pane is idle
+    When the chaser sweep nudges that role
+    Then the verified literal "You have new handoff mail. If idle, run ready_for_next.sh." is submitted
+    And a bare Enter-only wake is never used for the nudge
+
+  # BL-152 wake-parity-02
+  Scenario: BL-122 recovery redelivery submits the same verified handoff wake
+    Given a dead-lettered handoff is renamed back to an actionable .handoff for an idle recipient
+    When the recovery sweep wakes that recipient
+    Then the same verified handoff wake message is submitted
+    And a bare Enter-only wake is never used for the redelivery
+
+  # BL-152 single-source-03
+  Scenario: the wake string has one shared definition
+    Given the daemon wake and the extension wake both send the handoff wake message
+    Then both reference a single shared constant for that string
+    And the string is not duplicated as a separate literal in the extension wake path
+
+  # BL-152 stale-doc-04
+  Scenario: the implementation doc no longer describes the superseded v1 path
+    Given swarmforge/HANDOFF-IMPLEMENTATION.md described direct inbox/new writes
+    When this slice lands
+    Then that document is reconciled with the outbox -> handoffd -> inbox/new path or removed
+    And no in-repo doc instructs an agent to write inbox/new/ directly
+
+  # Non-behavioral gates:
+  #  - Tested through the verifiedInject fake / injected sendKeys spy; NO live
+  #    tmux or babashka daemon in tests. No real timers.

@@ -1,0 +1,75 @@
+id: BL-151
+title: "EPIC — handoff transport trustworthy end-to-end; sequence the remaining reliability gaps (do not promote directly; tracks its children)"
+milestone: M2
+status: todo
+type: epic
+priority: 00
+depends_on: []
+decomposes_into: [BL-152, BL-121, BL-122, BL-128, BL-146]
+evidence: backlog/evidence/BL-109-BL-121-BL-122-handoff-halt-20260706.md
+source: "operator investigation 2026-07-07 — handoff mechanism unreliable since day one; partial fixes landed, swarm still halts with green dashboards"
+
+notes: |
+  Drained from the backlog root by the specifier (2026-07-07). This is an
+  UMBRELLA/tracking item, not a directly-promotable slice — the actionable work
+  is its children. The coordinator promotes the children in the sequence below;
+  this epic closes only when all children close and the end-to-end acceptance
+  below holds.
+
+  SEQUENCE (each edits overlapping notify/transport paths — run STRICTLY in
+  order, never concurrently; enforced by depends_on edges):
+    1. BL-152 (paused, NEW) — chaser + recovery wake use handoffd's VERIFIED
+       notify, not a bare Enter; single shared HANDOFF_WAKE_MESSAGE constant;
+       reconcile/delete stale HANDOFF-IMPLEMENTATION.md. Quick win, no deps.
+    2. BL-121 (paused, re-scoped) — complete the DETECTION scaffold: canary
+       injector writing canary-status.json + dead-letters flip health off
+       "healthy". depends_on BL-152.
+    3. BL-122 (paused, re-scoped) — complete the RECOVERY scaffold: reach idle
+       recipients (via BL-152), bounded-retry -> needs-human escalation in the
+       panel, chase/recover race guard, RETIRE dead-letter-sweep.sh stopgap.
+       depends_on BL-121.
+    4. BL-128 (active, prio 01) — coordinator/specifier separate physical
+       mailboxes. depends_on BL-122.
+    5. BL-146 (active, prio 01) — single-daemon consolidation (one owner of
+       delivery AND chase/recovery). depends_on BL-128. (BL-144 depends on
+       BL-146.)
+
+  COORDINATOR RECOMMENDATION (specifier, 2026-07-07): BL-128 and BL-146 are
+  currently ACTIVE but are blocked behind BL-121/BL-122 and edit the same
+  notify paths — recommend de-activating both back to paused/ so the reliability
+  sequence (BL-152 -> BL-121 -> BL-122) runs first without concurrent edits,
+  freeing 2 active slots. The depends_on edges enforce ordering even if they
+  stay active. Coordinator owns the routing decision.
+
+  ALREADY LANDED (do NOT re-litigate): outbox -> handoffd.bb -> inbox/new
+  delivery; BL-109 idle-footer misread fix + verified daemon wake; BL-057
+  per-recipient filenames; BL-083 idempotent archive; BL-067 chaser inbox path
+  fix; handoffRecovery.ts + transportHealth.ts SCAFFOLDS (BL-122/BL-121, still
+  incomplete — see children); role prompts mandate swarm_handoff.sh only.
+
+description: |
+  The handoff mechanism has stalled the swarm repeatedly since day one. This is
+  not one bug but a chain of partial fixes that each closed a single failure
+  mode while end-to-end delivery stayed untrustworthy — the swarm halts with
+  every dashboard showing green. This epic sequences the remaining gaps into
+  orthogonally-ordered child slices (see notes) so no two of them edit the
+  shared notify/transport paths concurrently. See each child ticket for its own
+  scoped description, seams, and acceptance.
+
+acceptance: |
+  Feature: handoff transport is trustworthy end-to-end (verified by the children)
+
+  # BL-151 epic-done-01
+  Scenario: the epic is complete when every child slice has landed
+    Given BL-152, BL-121, BL-122, BL-128, and BL-146 are each merged and closed
+    Then handoff wakes reach idle recipients (BL-152)
+    And dead-letters/canary-miss flip transport health off "healthy" (BL-121)
+    And dead-lettered parcels are auto-recovered or escalated to a human, never
+      left rotting silently (BL-122)
+    And the coordinator/specifier no longer share one physical inbox (BL-128)
+    And exactly one process owns delivery and chase/recovery (BL-146)
+
+  # Non-behavioral gate:
+  #  - This umbrella carries no code; its acceptance is the union of its
+  #    children's acceptance. Do NOT promote BL-151 as a work slice — promote
+  #    the children in sequence.
