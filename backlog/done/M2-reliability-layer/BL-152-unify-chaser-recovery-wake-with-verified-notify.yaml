@@ -1,7 +1,7 @@
 id: BL-152
 title: "RELIABILITY (quick-win, 1 of the BL-151 sequence) — chaser + BL-122 recovery wake must use handoffd's VERIFIED notify, not a bare Enter"
 milestone: M2
-status: todo
+status: done
 priority: 00
 depends_on: []
 evidence: backlog/evidence/BL-109-BL-121-BL-122-handoff-halt-20260706.md  # parcels dead-letter at chaseCount:3 while recipients sit idle; recovery renames .dead->.handoff but the follow-up wake cannot get idle agents to run ready_for_next.sh
