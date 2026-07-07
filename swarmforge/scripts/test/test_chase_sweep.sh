@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# BL-146: chase/nudge sweep decision logic, ported from
+# extension/src/swarm/inboxChaser.ts into chase_sweep_lib.bb so the SAME
+# babashka process that already owns handoff delivery also owns this duty.
+# Exercised here through chase_sweep_test_runner.bb with an explicit fake
+# now-ms and fake adapters (no live tmux, no real timers) - the sidecar
+# files (.chase.json, .nudge) and the fake adapters' call log are the
+# observable state asserted on.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+RUNNER="$SCRIPT_DIR/chase_sweep_test_runner.bb"
+
+fail() { echo "FAIL: $*" >&2; exit 1; }
+pass() { echo "PASS: $*"; }
+
+make_fixture() {
+  ROOT="$(mktemp -d)"
+  mkdir -p "$ROOT/inbox/new" "$ROOT/inbox/in_process"
+}
+
+set_mtime() {
+  # $1 = file, $2 = epoch seconds
+  python3 -c "import os,sys; os.utime(sys.argv[1], (int(sys.argv[2]), int(sys.argv[2])))" "$1" "$2"
+}
+
+write_handoff() {
+  local path="$1"
+  printf 'id: t\nfrom: specifier\nto: coder\npriority: 50\ntype: note\nmessage: hi\ncreated_at: 2026-07-01T00:00:00Z\n\nhi\n' > "$path"
+}
+
+trap 'rm -rf "${ROOT:-}"' EXIT
+
+NOW_MS=$((1751500000 * 1000))
+CHASE_TIMEOUT_S=30
+STUCK_TIMEOUT_S=60
+MAX_CHASES=3
+
+run_sweep() {
+  CHASE_TIMEOUT_SECONDS="$CHASE_TIMEOUT_S" STUCK_TIMEOUT_SECONDS="$STUCK_TIMEOUT_S" MAX_CHASES="$MAX_CHASES" \
+    bb "$RUNNER" "$ROOT" "$NOW_MS" "$1" "$2"
+}
+
+# ── 01: a stale item (no recent activity, liveness alive, under maxChases) is chased ─
+make_fixture
+write_handoff "$ROOT/inbox/new/00_item.handoff"
+set_mtime "$ROOT/inbox/new/00_item.handoff" $(( (NOW_MS / 1000) - CHASE_TIMEOUT_S - 5 ))
+# no recent activity: lastActivityMs far in the past
+run_sweep "alive" $(( NOW_MS - (STUCK_TIMEOUT_S + 100) * 1000 ))
+
+grep -q "^wake-up coder$" "$ROOT/calls.log" || fail "01: stale item under maxChases was not chased (no wake-up)"
+CHASE_COUNT="$(python3 -c "import json; print(json.load(open('$ROOT/inbox/new/00_item.handoff.chase.json'))['chaseCount'])")"
+[[ "$CHASE_COUNT" == "1" ]] || fail "01: chaseCount not incremented to 1 (got $CHASE_COUNT)"
+pass "01: a stale item under maxChases is chased and its chaseCount incremented"
+
+# ── 02: an exhausted item (chaseCount >= maxChases) with unresponsive liveness is respawned ─
+make_fixture
+write_handoff "$ROOT/inbox/new/00_item.handoff"
+set_mtime "$ROOT/inbox/new/00_item.handoff" $(( (NOW_MS / 1000) - CHASE_TIMEOUT_S - 5 ))
+python3 -c "import json; json.dump({'chaseCount': 3}, open('$ROOT/inbox/new/00_item.handoff.chase.json','w'))"
+run_sweep "unknown" $(( NOW_MS - (STUCK_TIMEOUT_S + 100) * 1000 ))
+
+grep -q "^respawn coder$" "$ROOT/calls.log" || fail "02: exhausted item with unresponsive liveness was not respawned"
+pass "02: an exhausted item with unresponsive (unknown) liveness is respawned"
+
+# ── 03: an exhausted item with ALIVE liveness is dead-lettered, never respawned ─
+make_fixture
+write_handoff "$ROOT/inbox/new/00_item.handoff"
+set_mtime "$ROOT/inbox/new/00_item.handoff" $(( (NOW_MS / 1000) - CHASE_TIMEOUT_S - 5 ))
+python3 -c "import json; json.dump({'chaseCount': 3}, open('$ROOT/inbox/new/00_item.handoff.chase.json','w'))"
+run_sweep "alive" $(( NOW_MS - (STUCK_TIMEOUT_S + 100) * 1000 ))
+
+grep -q "respawn" "$ROOT/calls.log" && fail "03: an exhausted item with alive liveness must never be respawned"
+grep -q "^dead-letter coder 00_item.handoff$" "$ROOT/calls.log" || fail "03: exhausted alive-liveness item was not dead-lettered"
+[[ -f "$ROOT/inbox/new/00_item.handoff.dead" ]] || fail "03: item file was not renamed to .dead"
+pass "03: an exhausted item with alive liveness is dead-lettered, never respawned"
+
+# ── 04: an item younger than chaseTimeoutSeconds is skipped entirely ────────
+make_fixture
+write_handoff "$ROOT/inbox/new/00_item.handoff"
+set_mtime "$ROOT/inbox/new/00_item.handoff" $(( NOW_MS / 1000 ))
+run_sweep "alive" $(( NOW_MS - (STUCK_TIMEOUT_S + 100) * 1000 ))
+
+grep -qE "^(wake-up|respawn|dead-letter)" "$ROOT/calls.log" 2>/dev/null && fail "04: a fresh item (younger than chaseTimeoutSeconds) must not be touched"
+[[ -f "$ROOT/inbox/new/00_item.handoff.chase.json" ]] && fail "04: a fresh item must not have its chase sidecar written"
+pass "04: a fresh item younger than chaseTimeoutSeconds is left alone"
+
+# ── 05: in_process work with no activity for stuckInProcessTimeoutSeconds is nudged ─
+make_fixture
+write_handoff "$ROOT/inbox/in_process/00_item.handoff"
+run_sweep "alive" $(( NOW_MS - (STUCK_TIMEOUT_S + 100) * 1000 ))
+
+grep -q "^wake-up coder$" "$ROOT/calls.log" || fail "05: a stuck in_process item was not nudged"
+NUDGE_COUNT="$(python3 -c "import json; print(json.load(open('$ROOT/inbox/in_process/00_item.handoff.nudge'))['nudgeCount'])")"
+[[ "$NUDGE_COUNT" == "1" ]] || fail "05: nudgeCount not incremented (got $NUDGE_COUNT)"
+pass "05: a stuck in_process item is nudged and its nudgeCount incremented"
+
+# ── 06: in_process work stuck across maxChases nudges escalates to alert, never nudges again ─
+make_fixture
+write_handoff "$ROOT/inbox/in_process/00_item.handoff"
+python3 -c "import json; json.dump({'nudgeCount': 3}, open('$ROOT/inbox/in_process/00_item.handoff.nudge','w'))"
+run_sweep "alive" $(( NOW_MS - (STUCK_TIMEOUT_S + 100) * 1000 ))
+
+grep -q "wake-up" "$ROOT/calls.log" && fail "06: an alert-exhausted in_process item must not be nudged again"
+grep -q "^escalation coder true$" "$ROOT/calls.log" || fail "06: exhausted in_process work did not escalate"
+pass "06: in_process work exhausted across maxChases nudges escalates (no further nudge)"
+
+# ── 07: an item with recent activity is chased once, then backed off (not re-chased immediately) ─
+make_fixture
+write_handoff "$ROOT/inbox/new/00_item.handoff"
+set_mtime "$ROOT/inbox/new/00_item.handoff" $(( (NOW_MS / 1000) - CHASE_TIMEOUT_S - 5 ))
+python3 -c "import json; json.dump({'chaseCount': 1, 'lastChasedAtMs': $NOW_MS - 5000}, open('$ROOT/inbox/new/00_item.handoff.chase.json','w'))"
+# recent activity: lastActivityMs just now
+run_sweep "alive" "$NOW_MS"
+
+grep -qE "^(wake-up|respawn|dead-letter)" "$ROOT/calls.log" 2>/dev/null && fail "07: a just-chased, still-busy item must be backed off, not re-chased immediately"
+pass "07: a recently-chased item with recent activity is backed off (skipped), not hammered"
+
+echo "ALL PASS"

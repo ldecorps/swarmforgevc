@@ -282,6 +282,17 @@ test('with no offending parcels and no canary data, transport health falls back 
     }),
     { state: 'delivery-degraded', offending: [] }
   );
+  // BL-144: a halted daemon (alarmed + hard-stopped, no auto-restart) must
+  // read as 'broken', not fall through to 'unknown' and hide the alarm.
+  assert.deepEqual(
+    computeTransportHealth({
+      daemonHealth: { state: 'halted' },
+      deadLetters: [],
+      stalledParcels: [],
+      canary: { state: 'no-data', ageSeconds: 0 },
+    }),
+    { state: 'broken', offending: [] }
+  );
   assert.deepEqual(
     computeTransportHealth({
       daemonHealth: { state: 'unknown' },
