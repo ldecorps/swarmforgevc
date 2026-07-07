@@ -3,6 +3,7 @@ title: give coordinator and specifier their own physical mailbox instead of shar
 milestone: M3
 status: todo
 priority: 01
+depends_on: [BL-122]  # BL-151 sequencing: edits the same notify/transport paths; must land after wake-parity + detection + recovery, never concurrently
 direction: aligned
 
 held (coordinator, 2026-07-05): not promoted yet despite priority 01 — Concurrent
