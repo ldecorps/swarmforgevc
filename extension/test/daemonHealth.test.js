@@ -42,6 +42,18 @@ test('readDaemonHealth reports persistent-failure', () => {
   assert.equal(readDaemonHealth(target).state, 'persistent-failure');
 });
 
+// BL-144: a daemon death now alarms and hard-stops instead of restarting -
+// 'halted' is the terminal state the supervisor writes for that, and it
+// must not be swallowed as 'unknown' the way a truly unrecognized state is.
+test('readDaemonHealth reports halted with the incident reason', () => {
+  const target = mkTarget(
+    '{"state":"halted","last_incident":{"reason":"dead","at":"2026-07-01T23:00:00Z"},"failure_log":"/tmp/x.log"}'
+  );
+  const health = readDaemonHealth(target);
+  assert.equal(health.state, 'halted');
+  assert.equal(health.detail, 'dead');
+});
+
 test('readDaemonHealth is unknown (no alarm) when no status file exists', () => {
   const target = mkTarget(undefined);
   assert.equal(readDaemonHealth(target).state, 'unknown');
