@@ -8,7 +8,7 @@ import {
   readTmuxSocket,
   sessionExists,
 } from './tmuxClient';
-import { clearStaleSwarmState } from './swarmStopper';
+import { stopSwarm } from './swarmStopper';
 import { spawnTrackedJob } from './childJobRegistry';
 
 export interface LaunchResult {
@@ -27,6 +27,7 @@ const LAUNCH_LOG_SUBPATH = path.join('.swarmforge', 'last-launch.log');
 interface LaunchAttemptRecord {
   runName?: string;
   swarmScript: string;
+  configPath?: string;
   success: boolean;
   message: string;
   stdout: string;
@@ -42,6 +43,7 @@ function persistLaunchLog(targetPath: string, record: LaunchAttemptRecord): void
         `SwarmForge launch attempt ${new Date().toISOString()}`,
         `script: ${record.swarmScript}`,
         `runName: ${record.runName ?? '(none)'}`,
+        `config: ${record.configPath ?? '(default)'}`,
         `success: ${record.success}`,
         `message: ${record.message}`,
         '--- stdout ---',
@@ -85,7 +87,29 @@ export function augmentPath(currentPath: string | undefined): string {
   return [...missing, ...existing].join(':');
 }
 
-export function buildLaunchEnv(runName?: string): NodeJS.ProcessEnv {
+export function resolveSwarmConfigPath(): string | undefined {
+  const fromEnv = process.env['SWARMFORGE_CONFIG'];
+  if (fromEnv !== undefined && fromEnv.trim() !== '') {
+    return fromEnv.trim();
+  }
+
+  try {
+    // Lazy load: unit tests run outside the extension host.
+    const vscode = require('vscode') as typeof import('vscode');
+    const fromSettings = vscode.workspace
+      .getConfiguration('swarmforge')
+      .get<string>('configPath');
+    if (fromSettings !== undefined && fromSettings.trim() !== '') {
+      return fromSettings.trim();
+    }
+  } catch {
+    // vscode unavailable outside the extension host
+  }
+
+  return undefined;
+}
+
+export function buildLaunchEnv(runName?: string, configPath?: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     SWARMFORGE_TERMINAL: 'none',
@@ -96,6 +120,22 @@ export function buildLaunchEnv(runName?: string): NodeJS.ProcessEnv {
     env['SWARM_RUN_NAME'] = `swarm/${runName}`;
   } else {
     delete env['SWARM_RUN_NAME'];
+  }
+
+  // BL-154 phase 1: handoff via tmux injection only unless explicitly disabled.
+  if (process.env['SWARMFORGE_SKIP_DAEMON'] !== undefined) {
+    env['SWARMFORGE_SKIP_DAEMON'] = process.env['SWARMFORGE_SKIP_DAEMON'];
+  }
+
+  const resolvedConfig = configPath ?? resolveSwarmConfigPath();
+  if (resolvedConfig !== undefined) {
+    env['SWARMFORGE_CONFIG'] = resolvedConfig;
+  } else {
+    delete env['SWARMFORGE_CONFIG'];
+  }
+
+  if (process.env['SWARMFORGE_MAILBOX_ONLY'] !== undefined) {
+    env['SWARMFORGE_MAILBOX_ONLY'] = process.env['SWARMFORGE_MAILBOX_ONLY'];
   }
 
   return env;
@@ -120,14 +160,12 @@ export async function launchSwarm(
     return { success: false, message, targetPath };
   }
 
-  // A previous run's tmux-socket/sessions.tsv can satisfy isSwarmReady and
-  // make this launch report success against a dead or dying swarm. If the
-  // swarm is not currently ready, tear down whatever answers on the old
-  // socket and remove the marker files, so readiness below can only be
-  // satisfied by the state the NEW ./swarm run writes.
-  if (!isSwarmReady(targetPath)) {
-    clearStaleSwarmState(targetPath);
-  }
+  const configPath = resolveSwarmConfigPath();
+
+  // Explicit cold launch: always tear down a live or stale swarm first so
+  // readiness polling cannot report success against a previous pack (e.g.
+  // three-role resilience-min while seven-pack is configured).
+  stopSwarm(targetPath);
 
   return new Promise((resolve) => {
     // BL-108 spawn-registry-01: detached:true makes child.pid the new
@@ -139,7 +177,7 @@ export async function launchSwarm(
       () =>
         cp.spawn(swarmScript, [targetPath], {
           cwd: targetPath,
-          env: buildLaunchEnv(runName),
+          env: buildLaunchEnv(runName, configPath),
           stdio: ['ignore', 'pipe', 'pipe'],
           detached: true,
         }),
@@ -161,7 +199,15 @@ export async function launchSwarm(
       }
       settled = true;
       cleanup();
-      persistLaunchLog(targetPath, { runName, swarmScript, success, message, stdout, stderr });
+      persistLaunchLog(targetPath, {
+        runName,
+        swarmScript,
+        configPath,
+        success,
+        message,
+        stdout,
+        stderr,
+      });
       resolve({ success, message, targetPath });
     };
 
