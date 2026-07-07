@@ -50,7 +50,13 @@
 (def heartbeat-file (fs/path daemon-dir "handoffd.heartbeat"))
 (def heartbeat-log-every-cycles 60)
 (def heartbeat-dir (fs/path state-dir "heartbeat"))
-(def status-file (fs/path daemon-dir "handoffd.status.json"))
+;; A dedicated file, deliberately NOT handoffd.status.json: that file is
+;; exclusively owned by handoffd_supervisor.bb, which runs CONCURRENTLY
+;; with this process against the same project root (swarmforge.sh launches
+;; both). Two processes read-modify-writing the same JSON file with no
+;; locking on either side is a lost-update race - whichever writes last
+;; would silently clobber the other's fields (BL-146 integration failure).
+(def duties-file (fs/path daemon-dir "handoffd-duties.json"))
 (def stopping? (atom false))
 (def main-thread (atom nil))
 
@@ -529,12 +535,12 @@
 
 (defn write-chase-status! [now-ms]
   (fs/create-dirs daemon-dir)
-  (let [existing (try (json/parse-string (slurp (str status-file)) true) (catch Exception _ {}))
+  (let [existing (try (json/parse-string (slurp (str duties-file)) true) (catch Exception _ {}))
         updated (assoc existing
                        :pid (own-pid)
                        :delivery {:last_sweep_at (now)}
                        :chase {:last_sweep_at (now)})]
-    (spit (str status-file) (json/generate-string updated))))
+    (spit (str duties-file) (json/generate-string updated))))
 
 (defn role-inboxes-for-chase [roles]
   (for [[role role-info] roles]

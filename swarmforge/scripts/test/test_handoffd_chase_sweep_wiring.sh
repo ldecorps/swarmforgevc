@@ -13,6 +13,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HANDOFFD="$SCRIPT_DIR/../handoffd.bb"
+SUPERVISOR="$SCRIPT_DIR/../handoffd_supervisor.bb"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -65,16 +66,56 @@ CHASE_COUNT="$(python3 -c "import json; print(json.load(open('$HANDOFF_FILE.chas
 grep -q "send-keys" "$TMUX_LOG" || fail "01: no wake-up (send-keys) was sent for the chased item"
 pass "01: the consolidated daemon itself performed the chase sweep"
 
-# ── 02: status file advertises both duties with a pid and per-duty timestamp ─
-STATUS_FILE="$ROOT/.swarmforge/daemon/handoffd.status.json"
-[[ -f "$STATUS_FILE" ]] || fail "02: handoffd.status.json was never written"
-python3 - "$STATUS_FILE" <<'PY'
+# ── 02: duties file advertises both duties with a pid and per-duty timestamp ─
+# A dedicated file, not handoffd.status.json - that file is exclusively
+# owned by handoffd_supervisor.bb, which runs CONCURRENTLY with handoffd.bb
+# in a real launched swarm; a second read-modify-write onto the same file
+# would race it (whichever process wrote last would silently clobber the
+# other's fields, since neither locks the file).
+DUTIES_FILE="$ROOT/.swarmforge/daemon/handoffd-duties.json"
+[[ -f "$DUTIES_FILE" ]] || fail "02: handoffd-duties.json was never written"
+python3 - "$DUTIES_FILE" <<'PY'
 import json, sys
 data = json.load(open(sys.argv[1]))
 assert isinstance(data.get("pid"), int), f"pid missing/not int: {data.get('pid')!r}"
 assert data.get("delivery", {}).get("last_sweep_at"), "delivery.last_sweep_at missing"
 assert data.get("chase", {}).get("last_sweep_at"), "chase.last_sweep_at missing"
 PY
-pass "02: status file reports the daemon pid and a last-sweep timestamp for delivery and chase"
+pass "02: duties file reports the daemon pid and a last-sweep timestamp for delivery and chase, without touching the supervisor's own handoffd.status.json"
+
+# ── 03: handoffd.bb and handoffd_supervisor.bb writing concurrently never clobber each other ─
+# This is exactly the real launched-swarm shape (swarmforge.sh starts both
+# against the same project root) - the bug this dedicated duties file
+# fixes was a lost-update race when both processes read-modify-wrote the
+# SAME handoffd.status.json with no locking on either side.
+rm -f "$ROOT/.swarmforge/daemon/stop"
+PATH="$FAKE_BIN:$PATH" bb "$HANDOFFD" "$ROOT" &
+DAEMON_PID2=$!
+for _ in $(seq 1 40); do
+  [[ -s "$ROOT/.swarmforge/daemon/handoffd.pid" ]] && break
+  sleep 0.25
+done
+
+for _ in $(seq 1 20); do
+  SUPERVISOR_STALL_MS=60000 SUPERVISOR_RAPID_WINDOW_MS=60000 SUPERVISOR_MAX_RAPID=3 \
+  SUPERVISOR_BACKOFF_MS=60000 PATH="$FAKE_BIN:$PATH" bb "$SUPERVISOR" "$ROOT" --check-once
+  [[ -f "$DUTIES_FILE" ]] && grep -q '"chase"' "$DUTIES_FILE" 2>/dev/null && break
+  sleep 0.25
+done
+
+touch "$ROOT/.swarmforge/daemon/stop"
+wait "$DAEMON_PID2" 2>/dev/null || true
+
+STATUS_FILE="$ROOT/.swarmforge/daemon/handoffd.status.json"
+[[ -f "$STATUS_FILE" ]] || fail "03: supervisor's handoffd.status.json was never written"
+python3 - "$STATUS_FILE" "$DUTIES_FILE" <<'PY'
+import json, sys
+status = json.load(open(sys.argv[1]))
+duties = json.load(open(sys.argv[2]))
+assert status.get("state") == "healthy", f"03: supervisor status not healthy: {status!r}"
+assert isinstance(duties.get("pid"), int), f"03: duties file lost its pid field: {duties!r}"
+assert duties.get("chase", {}).get("last_sweep_at"), f"03: duties file lost its chase timestamp: {duties!r}"
+PY
+pass "03: handoffd.bb and handoffd_supervisor.bb write concurrently without clobbering each other's status file"
 
 echo "ALL PASS"
