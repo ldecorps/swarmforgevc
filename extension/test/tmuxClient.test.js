@@ -496,6 +496,11 @@ test('respawnAgent refuses to type into a pane that is actively processing a tur
   try {
     const result = respawnAgent(tmp, 'coder');
     assert.equal(result.success, false);
+    // BL-147: callers that bound automatic respawn attempts (wedgedRespawn's
+    // maxRecoveryAttempts) key off this flag to tell "never touched, not
+    // stuck" apart from a real failed attempt - without it a busy pane would
+    // wrongly consume the bound and could escalate to needs-human.
+    assert.equal(result.skippedBusy, true);
     assert.match(result.message, /actively processing|esc to interrupt/i);
     const sendCalls = fake.calls().filter((args) => args.includes('send-keys'));
     assert.equal(sendCalls.length, 0, 'must never type into a pane that is actively processing a turn');
