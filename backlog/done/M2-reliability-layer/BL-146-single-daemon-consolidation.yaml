@@ -6,7 +6,7 @@ priority: 01
 direction: reliability
 assigned_to: specifier
 source: "operator direction 2026-07-06 (chat with coordinator, split out of raw BL-144 per specifier review): 'The daemon should help with handoff and other things. I suppose there should only be one.'"
-depends_on: []
+depends_on: [BL-128]  # BL-151 sequencing: consolidation is the LAST reliability slice; must land after BL-152/121/122/128, never concurrently on the shared notify paths
 
 description: |
   Problem:

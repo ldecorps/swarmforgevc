@@ -3,8 +3,27 @@ title: RELIABILITY (top priority, 2 of 2) — automatic agent-driven handoff REC
 milestone: M2
 status: todo
 priority: 00
+depends_on: [BL-121]
 evidence: backlog/evidence/BL-109-BL-121-BL-122-handoff-halt-20260706.md  # 2026-07-06 live halt: chase gives up at chaseCount:3 with no re-route/escalation; 13 dead parcels never re-delivered, swarm stalled
 notes: |
+  RE-SCOPE (2026-07-07, specifier, per BL-151 reconciliation): the RECOVERY
+  SCAFFOLD already landed — handoffRecovery.ts (recoverDeadLetters renames
+  *.dead -> actionable .handoff, wired into chaserMonitor's sweep). This file
+  was misfiled under backlog/done/M2-reliability-layer/ while status stayed
+  todo; moved back to paused/. REMAINING WORK the scaffold does NOT yet do:
+    (a) after re-actionizing a parcel, the follow-up WAKE must actually reach
+        the idle recipient — this is BL-152 (verified-wake parity), a hard
+        dependency (recovery + weak wake was gap #1 in BL-151);
+    (b) bounded-retry -> needs-human ESCALATION surfaced in the swarm panel
+        when retries are exhausted (today chase just gives up at chaseCount:3);
+    (c) guard the chase-then-recover race on the same sweep (dead-letter before
+        recovery can clobber);
+    (d) RETIRE the interim stopgap `.swarmforge/dead-letter-sweep.sh` (see
+        below) so exactly ONE owner re-delivers — the stopgap script is NOT in
+        the repo and must be decommissioned, not preserved.
+  Depends on BL-121 (detection health signals) — never promote ahead of it,
+  which in turn depends on BL-152. Do NOT re-litigate the scaffold; complete it.
+
   Second half of the raw root ticket filed as "BL-118" (operator directive
   2026-07-05); renumbered/split by the specifier — see BL-121 for the
   DETECTION half and the shared forensics. DEPENDS ON BL-121: recovery acts
