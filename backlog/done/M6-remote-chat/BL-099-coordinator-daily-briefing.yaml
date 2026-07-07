@@ -1,10 +1,10 @@
 id: BL-099
 title: coordinator daily briefing — business features first, emailed to the human and archived in the repo
 milestone: M6
-status: todo
-priority: 02
+status: done
+priority: 01
 direction: non-aligned
-source: operator request 2026-07-04 ("coordinator to write and send human a daily briefing... most importantly business features added")
+source: operator request 2026-07-04 ("coordinator to write and send human a daily briefing... most importantly business features added"). Priority raised 2026-07-06 per operator: bring forward once current in-flight merge/conflict work is stable; BL-096/097/098/102/140 remain optional enrichments, not blockers — ship the core archived+emailed briefing path with graceful missing-data gaps.
 
 description: |
   Once a day the coordinator writes the human a short briefing and sends

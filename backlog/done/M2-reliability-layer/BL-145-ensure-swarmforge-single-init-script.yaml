@@ -1,7 +1,7 @@
 id: BL-145
 title: "./swarm ensure — one idempotent command that brings the whole swarm to a known-good state (extension, agents, daemon) and reports what it fixed"
 milestone: M2
-status: todo
+status: done
 priority: 01
 direction: reliability
 assigned_to: coder

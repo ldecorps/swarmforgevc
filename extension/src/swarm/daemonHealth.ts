@@ -7,11 +7,14 @@ import * as path from 'path';
  * only: it renders this state and never manages the daemon process.
  */
 export interface DaemonHealth {
-  state: 'healthy' | 'restarting' | 'persistent-failure' | 'unknown';
+  state: 'healthy' | 'restarting' | 'persistent-failure' | 'halted' | 'unknown';
   detail?: string;
 }
 
-const KNOWN_STATES = new Set(['healthy', 'restarting', 'persistent-failure']);
+// 'halted' (BL-144): the daemon died and the supervisor alarmed + hard-
+// stopped the swarm instead of restarting it - a terminal state until a
+// human intervenes, distinct from the (now unused) transient restart states.
+const KNOWN_STATES = new Set(['healthy', 'restarting', 'persistent-failure', 'halted']);
 
 export function readDaemonHealth(targetPath: string): DaemonHealth {
   const statusFile = path.join(

@@ -1,0 +1,83 @@
+id: BL-149
+title: "Mutation testing gated by file-change cooldown ahead of office-hours bypass"
+milestone: M2
+status: todo
+priority: 05
+direction: reliability
+assigned_to: coder
+source: "Raw intake from operator via coordinator 2026-07-06, drained from backlog root by specifier."
+
+description: |
+  Today (swarmforge/roles/hardender.prompt "Office-hours mutation bypass"),
+  mutation testing is bypassed on recently-modified files only when the host
+  is busy (uptime load average is the live signal). There is no separate
+  check based on how long ago a file was last substantively modified.
+
+  Add a new first-stage gate, ahead of the existing load check:
+  - If the production file under test was last modified (ignoring the
+    change at hand — i.e. its last committed touch before this pass) within
+    a configurable cooldown period (default 3 days), mutation testing is
+    skipped unconditionally, regardless of time of day or host load. A file
+    still actively churning should not be prematurely stabilized by
+    mutation testing.
+  - Only once a file is past the cooldown period does the existing
+    load-average/office-hours bypass get consulted, exactly as it works
+    today: skip while the host is busy, run once the host is quiet.
+  - Net effect: mutation testing only ever runs when the file is both past
+    cooldown AND the host is quiet.
+
+  Both the cooldown period and the office-hours/load-average configuration
+  must be configurable (not hardcoded) — likely new keys in
+  swarmforge.conf alongside active_backlog_max_depth, read fresh at
+  decision time, never assumed from a remembered default.
+
+acceptance: |
+  Feature: Mutation testing eligibility gated by file-change cooldown, then by host business
+
+    Background:
+      Given the cooldown period is configurable (default: 3 days)
+      And the office-hours / host-busy window is configurable (existing load-average signal, per hardender's current bypass rule)
+
+    # BL-149 cooldown-gate-01
+    Scenario: a file within the cooldown window is never mutation-tested, regardless of time of day
+      Given the production file under test was last modified, ignoring the change at hand, within the cooldown period
+      When the agent considers whether to run mutation testing
+      Then mutation testing is skipped
+      And this holds whether the host is currently busy (office hours) or quiet
+
+    # BL-149 cooldown-gate-02
+    Scenario: a file past the cooldown window during office hours defers to the busy-host bypass
+      Given the production file under test was last modified, ignoring the change at hand, further back than the cooldown period
+      And the host is currently busy (office hours, per the existing load-average signal)
+      When the agent considers whether to run mutation testing
+      Then mutation testing is skipped for now
+      And the file remains due, to be picked up on the next quiet-host pass
+
+    # BL-149 cooldown-gate-03
+    Scenario: a file past the cooldown window on a quiet host runs
+      Given the production file under test was last modified, ignoring the change at hand, further back than the cooldown period
+      And the host is currently quiet (not office hours, per the existing load-average signal)
+      When the agent considers whether to run mutation testing
+      Then mutation testing runs
+
+    # BL-149 cooldown-gate-04
+    Scenario Outline: the cooldown period is configurable
+      Given the cooldown period is configured to <days> days
+      And the production file was last modified <age> ago, ignoring the change at hand
+      And the host is currently quiet
+      When the agent considers whether to run mutation testing
+      Then mutation testing is <outcome>
+
+      Examples:
+        | days | age    | outcome |
+        | 3    | 2 days | skipped |
+        | 3    | 4 days | run     |
+        | 7    | 5 days | skipped |
+        | 7    | 8 days | run     |
+
+  # Non-behavioral notes:
+  #  - "Last modified, ignoring the change at hand" means git history
+  #    excluding the current uncommitted/in-flight diff.
+  #  - The cooldown check is a hard skip with no exceptions; it is not
+  #    overridden by a quiet host.
+  #  - New config keys live in swarmforge.conf, read fresh at decision time.

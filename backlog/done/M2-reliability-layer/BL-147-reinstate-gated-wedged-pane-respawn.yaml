@@ -1,7 +1,7 @@
 id: BL-147
 title: "BUG — BL-137 escalation-of-last-resort regressed: genuinely-wedged pane has no automatic recovery after 5ef8dd9 disabled chaser respawn"
 milestone: M2
-status: todo
+status: done
 priority: 02
 direction: reliability
 assigned_to: coder
