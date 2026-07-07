@@ -138,6 +138,11 @@ function daemonHealthFallback(daemonHealth: DaemonHealth): TransportHealth {
       return { state: 'delivery-degraded', offending: [] };
     case 'persistent-failure':
       return { state: 'broken', offending: [] };
+    case 'halted':
+      // BL-144: the supervisor alarmed and hard-stopped the swarm - this is
+      // at least as severe as 'persistent-failure', not an unrecognized
+      // state to be silently swallowed as 'unknown'.
+      return { state: 'broken', offending: [] };
     default:
       return { state: 'unknown', offending: [] };
   }

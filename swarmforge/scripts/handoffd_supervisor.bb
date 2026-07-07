@@ -2,29 +2,31 @@
 
 ;; Supervises the handoffd delivery daemon (BL-061). handoffd is the swarm's
 ;; single transport; when it dies or hangs silently every role idles believing
-;; it has no work. The supervisor periodically evaluates daemon health,
-;; restarts a dead/stalled daemon (rotating its log aside so crash evidence
-;; survives), backs off instead of crash-looping, and records every state
-;; change in a machine-readable status file the extension renders.
+;; it has no work. The supervisor periodically evaluates daemon health and
+;; records every state change in a machine-readable status file the extension
+;; renders.
+;;
+;; BL-144: a dead/stalled daemon is no longer silently auto-restarted. The
+;; operator asked for the opposite - a loud alarm and a full stop, not a
+;; papered-over restart loop. On death the supervisor writes a failure log
+;; (daemon_alarm_lib.bb), sends one alarm email, and hard-stops the whole
+;; swarm (kills every tmux session, via the same swarm-cleanup.sh a graceful
+;; shutdown already uses). Recovery is human: fix the daemon, then relaunch.
 ;;
 ;; Usage:
 ;;   handoffd_supervisor.bb <project-root>              ; supervision loop
 ;;   handoffd_supervisor.bb <project-root> --check-once ; single health check
 ;;
 ;; BL-081: at most ONE handoffd process may serve this project root at any
-;; time. A restart confirms the old daemon's pid actually exited (bounded
-;; wait, then SIGKILL, then confirm again) before starting a replacement,
-;; and every check reaps ANY handoffd.bb process discovered for this root
+;; time. Every check reaps ANY handoffd.bb process discovered for this root
 ;; that the pid file does not name - not just the pid-file pid - since
 ;; orphans (from a prior supervisor/launcher, or a pid file overwritten by
-;; a newer start) are otherwise never found at all.
+;; a newer start) are otherwise never found at all. This orphan reaping is
+;; independent of BL-144's alarm-and-halt and still runs every cycle.
 ;;
 ;; Tunables (ms unless noted) via environment:
 ;;   SUPERVISOR_INTERVAL_MS       loop sleep between checks   (default 10000)
 ;;   SUPERVISOR_STALL_MS          heartbeat+outbox stall age  (default 30000)
-;;   SUPERVISOR_RAPID_WINDOW_MS   rapid-death window          (default 120000)
-;;   SUPERVISOR_MAX_RAPID         restarts allowed in window  (default 3)
-;;   SUPERVISOR_BACKOFF_MS        wait in persistent-failure  (default 300000)
 ;;   SUPERVISOR_KILL_TIMEOUT_MS   bound on confirming an exit (default 2000)
 
 (ns handoffd-supervisor
@@ -32,6 +34,8 @@
             [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.string :as str]))
+
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -54,15 +58,15 @@
 (def supervisor-pid-file (fs/path daemon-dir "handoffd-supervisor.pid"))
 (def supervisor-log (fs/path daemon-dir "handoffd-supervisor.log"))
 (def roles-file (fs/path state-dir "roles.tsv"))
+(def tmux-socket-file (fs/path state-dir "tmux-socket"))
+(def window-ids-file (fs/path state-dir "window-ids"))
+(def conf-file (fs/path script-dir ".." "swarmforge.conf"))
 
 (defn env-ms [name default]
   (or (some-> (System/getenv name) parse-long) default))
 
 (def interval-ms (env-ms "SUPERVISOR_INTERVAL_MS" 10000))
 (def stall-ms (env-ms "SUPERVISOR_STALL_MS" 30000))
-(def rapid-window-ms (env-ms "SUPERVISOR_RAPID_WINDOW_MS" 120000))
-(def max-rapid (env-ms "SUPERVISOR_MAX_RAPID" 3))
-(def backoff-ms (env-ms "SUPERVISOR_BACKOFF_MS" 300000))
 (def kill-timeout-ms (env-ms "SUPERVISOR_KILL_TIMEOUT_MS" 2000))
 (def kill-poll-ms 50)
 
@@ -142,24 +146,6 @@
   (fs/create-dirs daemon-dir)
   (spit (str status-file)
         (str (json/generate-string (assoc status :updated_at (now-iso))) "\n")))
-
-(defn recent-restarts [status]
-  (let [cutoff (- (now-ms) rapid-window-ms)]
-    (->> (:restart_history status)
-         (filter #(> % cutoff))
-         vec)))
-
-;; ── restart machinery ────────────────────────────────────────────────────────
-
-(defn rotate-log! []
-  (when (and (fs/exists? log-file) (pos? (fs/size log-file)))
-    ;; Millisecond suffix keeps rapid successive rotations (crash loops) from
-    ;; colliding on a same-second filename.
-    (let [stamp (.format (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd'T'HHmmss.SSS'Z'")
-                         (.atZone (java.time.Instant/now) java.time.ZoneOffset/UTC))]
-      (fs/move log-file
-               (fs/path daemon-dir (str "handoffd.log." stamp))
-               {:replace-existing false}))))
 
 (defn all-pid-commands
   "One bulk ps call for the whole process table (pid . command-line) pairs.
@@ -284,46 +270,87 @@
       (when-not (wait-until-dead pid kill-timeout-ms)
         (log! "reap-job-orphan-failed" (str pid) "still alive after SIGKILL")))))
 
-(defn start-daemon! []
-  (rotate-log!)
-  (process/process ["bb" (str (fs/path script-dir "handoffd.bb")) project-root]
-                   {:out :append :out-file (fs/file log-file)
-                    :err :append :err-file (fs/file log-file)}))
+;; ── BL-144: daemon-death alarm+halt (adapters for daemon_alarm_lib.bb) ──────
 
-(defn restart! [reason]
-  (let [pid (daemon-pid)
-        status (or (read-status) {})
-        restarts (conj (recent-restarts status) (now-ms))
-        persistent? (> (count restarts) max-rapid)]
-    (log! "restart" (name reason) (str "recent-restarts=" (count restarts)))
-    ;; BL-081: the replacement must not start until the old pid is confirmed
-    ;; gone - kill-and-confirm! blocks (bounded) on exactly that.
-    (when pid
-      (when-not (kill-and-confirm! pid)
-        (log! "kill-failed" (str pid) "still alive after SIGKILL")))
-    (when (= (daemon-pid) pid)
-      (fs/delete-if-exists pid-file))
-    (if persistent?
-      (do
-        (write-status! (assoc status
-                              :state "persistent-failure"
-                              :restart_history restarts
-                              :last_incident {:reason (name reason)
-                                              :at (now-iso)
-                                              :detail "daemon keeps dying; backing off"}))
-        (log! "persistent-failure" "backing off"))
-      (do
-        (start-daemon!)
-        (write-status! (assoc status
-                              :state "restarting"
-                              :restart_history restarts
-                              :last_incident {:reason (name reason)
-                                              :at (now-iso)}))))))
+(defn read-log-tail [n]
+  (if (fs/exists? log-file)
+    (vec (take-last n (str/split-lines (slurp (str log-file)))))
+    []))
 
-(defn in-backoff? [status]
-  (and (= "persistent-failure" (:state status))
-       (let [last-restart (reduce max 0 (:restart_history status))]
-         (< (- (now-ms) last-restart) backoff-ms))))
+(defn roles-with-worktrees []
+  (if (fs/exists? roles-file)
+    (->> (str/split-lines (slurp (str roles-file)))
+         (remove str/blank?)
+         (map #(let [fields (str/split % #"\t")]
+                 {:role (nth fields 0 nil) :worktree-path (nth fields 2 nil)}))
+         (remove #(nil? (:worktree-path %))))
+    []))
+
+(defn count-handoff-files [dir]
+  (if (fs/exists? dir)
+    (count (filter #(and (fs/regular-file? %) (str/ends-with? (fs/file-name %) ".handoff"))
+                   (fs/list-dir dir)))
+    0))
+
+(defn snapshot-role-counts []
+  (vec (for [{:keys [role worktree-path]} (roles-with-worktrees)]
+         {:role role
+          :inbox-new (count-handoff-files (fs/path worktree-path ".swarmforge" "handoffs" "inbox" "new"))
+          :outbox (count-handoff-files (fs/path worktree-path ".swarmforge" "handoffs" "outbox"))})))
+
+(defn write-failure-log-file! [content]
+  (fs/create-dirs daemon-dir)
+  (let [stamp (.format (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd'T'HHmmss'Z'")
+                       (.atZone (java.time.Instant/now) java.time.ZoneOffset/UTC))
+        path (fs/path daemon-dir (str "handoffd-failure-" stamp ".log"))]
+    (spit (str path) content)
+    (str path)))
+
+(defn send-configured-alarm-email! [subject text]
+  (let [conf (daemon-alarm-lib/parse-conf (when (fs/exists? conf-file) (slurp (str conf-file))))
+        to (get conf "notify_email_to")
+        from (or (get conf "notify_email_from") "onboarding@resend.dev")
+        api-key (System/getenv "RESEND_API_KEY")]
+    (daemon-alarm-lib/send-alarm-email! api-key to from subject text)))
+
+(defn distinct-sessions []
+  (if (fs/exists? roles-file)
+    (->> (str/split-lines (slurp (str roles-file)))
+         (remove str/blank?)
+         (keep #(nth (str/split % #"\t") 3 nil))
+         distinct)
+    []))
+
+(defn halt-swarm!
+  "Hard-stops the whole swarm: TERMs the daemon if it is still lingering,
+   kills every agent's tmux session, and touches stop-file so this
+   supervisor's own loop (and any surviving daemon) also sees shutdown -
+   reusing swarm-cleanup.sh, the same script a graceful exit already uses,
+   rather than a second kill-the-swarm implementation."
+  []
+  (fs/create-dirs daemon-dir)
+  (spit (str stop-file) "")
+  (when-let [pid (daemon-pid)]
+    (kill-and-confirm! pid))
+  (when (fs/exists? tmux-socket-file)
+    (let [socket (str/trim (slurp (str tmux-socket-file)))
+          sessions (distinct-sessions)
+          cleanup-script (str (fs/path script-dir "swarm-cleanup.sh"))]
+      (try
+        (apply process/sh cleanup-script socket (str window-ids-file) sessions)
+        (catch Exception e (log! "halt-swarm-error" (.getMessage e)))))))
+
+(defn alarm-and-halt! [reason status]
+  (daemon-alarm-lib/alarm-and-halt!
+   {:reason reason
+    :status status
+    :now-iso! now-iso
+    :log-tail! #(read-log-tail 200)
+    :role-counts! snapshot-role-counts
+    :write-failure-log! write-failure-log-file!
+    :send-email! send-configured-alarm-email!
+    :halt-swarm! halt-swarm!
+    :write-status! write-status!}))
 
 ;; ── one health check ─────────────────────────────────────────────────────────
 
@@ -348,11 +375,13 @@
           (write-status! (assoc status :state "healthy"))
           (log! "recovered" "daemon healthy"))
 
-        (in-backoff? status)
-        (log! "backoff" "persistent failure; not restarting yet")
+        (= "halted" (:state status))
+        (log! "skip" "already halted; awaiting human recovery")
 
         :else
-        (restart! verdict)))))
+        (do
+          (log! "alarm-and-halt" (name verdict))
+          (alarm-and-halt! verdict status))))))
 
 (defn -main []
   (if check-once?
