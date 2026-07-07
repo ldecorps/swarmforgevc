@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import type { InboxChaserConfig, RoleInbox, ChaserAdapters } from '../swarm/inboxChaser';
-import { runSweep, scanInProcess } from '../swarm/inboxChaser';
+import type { InboxChaserConfig, RoleInbox } from '../swarm/inboxChaser';
+import { scanInProcess } from '../swarm/inboxChaser';
 import { recoverDeadLetters, appendRecoveryLog } from '../swarm/handoffRecovery';
 import { parseRolesTsv } from '../swarm/swarmState';
 import type { LivenessState } from './liveness';
@@ -56,21 +56,20 @@ export function startChaserMonitor(
     return null;
   }
 
-  const adapters: ChaserAdapters = {
-    getLiveness: callbacks.getLiveness,
-    sendWakeUp: callbacks.sendWakeUp,
-    triggerRespawn: callbacks.triggerRespawn,
-    logDeadLetter: callbacks.logDeadLetter,
-    getLastActivityMs: callbacks.getLastActivityMs,
-    onStuckEscalation: callbacks.onStuckEscalation,
-  };
-
   const roleInboxes: RoleInbox[] = buildRoleInboxes(config.targetPath, config.rolesList);
 
   // BL-122: the recovery owner is this SAME extension-host timer, not any
   // one pipeline agent — an agent process exiting can tear the swarm down
   // around it (BL-107), but this watchdog is already the supervised owner
   // of the chase/respawn seams recovery builds on.
+  //
+  // BL-146: the chase/nudge sweep itself (runSweep) moved into handoffd.bb -
+  // the single daemon process that now owns both delivery and liveness, so
+  // the extension host must never also run it (two processes independently
+  // chasing/respawning the same inbox would race each other, double-chase,
+  // and corrupt the shared .chase.json/.nudge sidecars). This interval is
+  // now solely the dead-letter recovery sweep, still TS-owned pending its
+  // own port to a follow-up ticket.
   const runRecoverySweep = (): void => {
     recoverDeadLetters(roleInboxes, { maxRecoveryAttempts: config.maxRecoveryAttempts }, {
       isRecipientBusy: (role) => {
@@ -83,10 +82,7 @@ export function startChaserMonitor(
     });
   };
 
-  // Start periodic sweep
   const intervalId = setInterval(() => {
-    const nowMs = Date.now();
-    runSweep(roleInboxes, nowMs, config, adapters);
     runRecoverySweep();
   }, config.chaseIntervalSeconds * 1000);
 

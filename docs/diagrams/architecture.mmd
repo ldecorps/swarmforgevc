@@ -6,8 +6,8 @@
 %% local-engineering.prompt Architecture Rule 1 and swarmDiscovery.ts's
 %% BL-066 note: the extension drives real SwarmForge over tmux, not the
 %% "standalone orchestrator" model docs/Specification.MD's overview once
-%% described. BL-146 moved chase/watchdog liveness from extension host
-%% (ChaseMonitor) into the daemon (handoffd.bb).
+%% described. BL-146 consolidated chase/watchdog liveness into the daemon
+%% (handoffd.bb now owns both delivery and chase sweeps).
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
