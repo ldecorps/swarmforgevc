@@ -26,8 +26,17 @@ fi
 WORKING_DIR="${1:-$PWD}"
 WORKING_DIR="$(cd "$WORKING_DIR" && pwd)"
 SWARM_FORGE_DIR="$WORKING_DIR/swarmforge"
+CONFIG_FILE="${SWARMFORGE_CONFIG:-$SWARM_FORGE_DIR/swarmforge.conf}"
+for (( idx = 2; idx <= $#; idx++ )); do
+  if [[ "${!idx}" == "--pack" ]]; then
+    next=$((idx + 1))
+    if [[ $next -le $# ]]; then
+      CONFIG_FILE="$SWARM_FORGE_DIR/packs/${!next}.conf"
+    fi
+    break
+  fi
+done
 WORKTREES_DIR="$WORKING_DIR/.worktrees"
-CONFIG_FILE="$SWARM_FORGE_DIR/swarmforge.conf"
 ROLES_DIR="$SWARM_FORGE_DIR/roles"
 CONSTITUTION_FILE="$SWARM_FORGE_DIR/constitution.prompt"
 STATE_DIR="$WORKING_DIR/.swarmforge"
@@ -63,6 +72,10 @@ typeset -a IDLE_CLEAR_FLAGS=()
 SWARM_NAME="primary"
 SWARM_MODE="autonomous"
 SWARM_MODE_PRIMARY=""
+REMOTE_CONTROL_DEFAULT=1
+if [[ "${SWARMFORGE_REMOTE_CONTROL:-}" == "0" ]]; then
+  REMOTE_CONTROL_DEFAULT=0
+fi
 typeset -a EXTRA_CLI_ARGS=()
 typeset -A ROLE_INDEX=()
 typeset -A WORKTREE_INDEX=()
@@ -217,6 +230,15 @@ display_name_for_role() {
   echo "$label"
 }
 
+remote_control_session_name_for_role() {
+  local role="$1"
+  if [[ "$role" == "QA" ]]; then
+    echo "SwarmForge-QA"
+  else
+    echo "SwarmForge-$(display_name_for_role "$role")"
+  fi
+}
+
 session_name_for_role() {
   echo "${SESSION_PREFIX}-$1"
 }
@@ -285,6 +307,20 @@ parse_config() {
               ;;
           esac
           ;;
+        remote_control)
+          case "${fields[3]:-}" in
+            on|yes|true|1)
+              REMOTE_CONTROL_DEFAULT=1
+              ;;
+            off|no|false|0)
+              REMOTE_CONTROL_DEFAULT=0
+              ;;
+            *)
+              echo -e "${RED}Error:${RESET} Invalid config line $line_no: remote_control must be 'on' or 'off'"
+              exit 1
+              ;;
+          esac
+          ;;
       esac
       continue
     fi
@@ -311,6 +347,10 @@ parse_config() {
     fi
     extra_args=(${fields[$next_field,$#fields]})
     local extra_cli="${(j: :)extra_args}"
+
+    if [[ "$agent" == "claude" && "$REMOTE_CONTROL_DEFAULT" == 1 && "$extra_cli" != *"--remote-control"* ]]; then
+      extra_cli+=" --remote-control $(remote_control_session_name_for_role "$role")"
+    fi
 
     if [[ "$keyword" != "window" ]]; then
       echo -e "${RED}Error:${RESET} Unknown config directive on line $line_no: $keyword"
@@ -622,6 +662,15 @@ claude_settings_and_flags_from_extra_cli() {
       --allow-dangerously-skip-permissions)
         (( i++ ))
         ;;
+      --remote-control)
+        if [[ -n "${parts[i+1]:-}" && "${parts[i+1]}" != --* ]]; then
+          cli_flags+=("${parts[i]}" "${parts[i+1]}")
+          (( i += 2 ))
+        else
+          cli_flags+=("${parts[i]}")
+          (( i++ ))
+        fi
+        ;;
       *)
         cli_flags+=("${parts[i]}")
         (( i++ ))
@@ -831,6 +880,13 @@ stop_handoff_daemon() {
 }
 
 start_handoff_daemon() {
+  if [[ "${SWARMFORGE_SKIP_DAEMON:-}" == "1" ]]; then
+    echo -e "${YELLOW}Skipping handoff daemon (SWARMFORGE_SKIP_DAEMON=1).${RESET}"
+    return 0
+  fi
+  if [[ "${SWARMFORGE_MAILBOX_ONLY:-}" == "1" ]]; then
+    echo -e "${CYAN}Mailbox-only mode: handoffd delivers files without tmux wake (SWARMFORGE_MAILBOX_ONLY=1).${RESET}"
+  fi
   rm -f "$DAEMON_DIR/stop"
   # Rotate the previous log aside instead of truncating it, so evidence of a
   # crash or hang survives the restart (BL-061).

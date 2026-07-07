@@ -1,5 +1,15 @@
 # Workflow Rules
 
+## Handoff transport (tmux primary, mailbox backup)
+- Agents send work via `swarm_handoff.sh` only — never direct tmux commands.
+- A successful handoff delivers a parcel to `inbox/new/` and injects a generic
+  tmux wake. The agent then runs `ready_for_next.sh` and works the task.
+- On the happy path, do not narrate mailbox files, daemon delivery, or operator
+  email alerts in the pane — process the handoff content silently.
+- Only when `ready_for_next.sh` returns a task you were not woken for (backup
+  mailbox delivery) may you briefly note that unseen mail was picked up from
+  inbox before proceeding.
+
 ## Context Clear Requires Startup Re-Read
 - Whenever an agent's context is cleared (a `/clear`, an idle-boundary context
   clear, a respawn, or any other event that empties the conversation), the very

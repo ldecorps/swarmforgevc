@@ -1,0 +1,44 @@
+id: BL-155
+title: "Phase 2 — re-enable handoffd + mailbox; extension owns daemon supervision"
+milestone: M2
+status: todo
+priority: 02
+direction: reliability
+assigned_to: coder
+depends_on: [BL-154]
+parent: BL-153
+source: "BL-153 phase 2 — operator: add daemon and mailbox after tmux-only path is green"
+
+description: |
+  After BL-154 proves tmux injection, restore the daemon as **mailbox backup**:
+
+  - Default launch starts handoffd + supervisor (SWARMFORGE_SKIP_DAEMON unset).
+  - Every swarm_handoff.sh tries sync tmux inject first (primary path).
+  - Sync success → sent/; daemon is a no-op for that parcel.
+  - Sync failure → outbox stays; daemon delivers to inbox/new/ + wake (backup).
+  - Agents do not narrate mailbox/email on happy path; only mention mail when
+    ready_for_next discovers unseen work without a preceding tmux wake
+    (see docs/specs/handoff-dual-path.md).
+  - Extension supervises daemon: death alarm (BL-144), transport health (BL-121),
+    ensure/recovery (./swarm ensure).
+  - BL-128 (mailbox split) and BL-146 resume only after this phase lands.
+
+acceptance: |
+  Feature: daemon-backed handoff on resilience-min pack
+
+  Scenario: default launch starts daemon
+    Given SWARMFORGE_SKIP_DAEMON is not set
+    When ./swarm starts the resilience-min pack
+    Then handoffd and its supervisor are running
+    And handoff delivery does not require swarm_handoff.sh to inject directly
+
+  Scenario: daemon death halts swarm and surfaces alarm
+    Given a running swarm with daemon enabled
+    When handoffd exits unexpectedly
+    Then the swarm is halted per BL-144
+    And a failure log is written under .swarmforge/daemon/
+
+  Scenario: extension reattaches with daemon healthy
+    Given a live swarm with a healthy daemon
+    When the extension host activates
+    Then tiles reattach and transport health reads healthy

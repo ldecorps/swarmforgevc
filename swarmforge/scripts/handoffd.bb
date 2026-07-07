@@ -212,6 +212,10 @@
     (let [lf (tmux! "-S" socket "send-keys" "-t" session "C-j")]
       (and (zero? (:exit cr)) (zero? (:exit lf))))))
 
+(defn tmux-inject-disabled? []
+  (or (= "1" (System/getenv "SWARMFORGE_MAILBOX_ONLY"))
+      (= "1" (System/getenv "SWARMFORGE_SKIP_TMUX_INJECT"))))
+
 (defn notify!
   "Delivers the wake message to session's pane, verifying the submit actually
    registered (retrying Enter with backoff) instead of trusting a zero tmux
@@ -246,6 +250,13 @@
           (do
             (Thread/sleep (* notify-retry-delay-ms attempt))
             (recur (inc attempt))))))))
+
+(defn maybe-notify!
+  "Tmux wake after mailbox delivery. Skipped when SWARMFORGE_MAILBOX_ONLY=1."
+  [socket session role recipient-path]
+  (if (tmux-inject-disabled?)
+    (log! "delivered-mailbox-only" role (str recipient-path))
+    (notify! socket session)))
 
 (defn move-with-collision
   "Moves source into target-dir, uniquifying on a name collision. Returns
@@ -305,7 +316,7 @@
               (fs/create-dirs (fs/parent target))
               (when-not (fs/exists? target)
                 (spit (str target) (render-message (:headers delivered) (:body delivered))))
-              (notify! socket (:session role-info)))))
+              (maybe-notify! socket (:session role-info) recipient (str target)))))
         (when (= "rule_proposal" (get headers "type"))
           (append-rule-proposal! headers))
         (move-with-collision path (sent-dir (get roles sender-role)))
@@ -347,13 +358,14 @@
     (log! "stale-stub-cleanup" (str stub) "original-in-sent" original-name)))
 
 (defn startup-notify-pending! [roles socket]
-  (doseq [[_ role-info] roles
-          :when (seq (inbox-new-files role-info))]
-    (log! "startup-notify" (:role role-info))
-    (try
-      (notify! socket (:session role-info))
-      (catch Exception e
-        (log! "startup-notify-error" (:role role-info) (.getMessage e))))))
+  (when-not (tmux-inject-disabled?)
+    (doseq [[_ role-info] roles
+            :when (seq (inbox-new-files role-info))]
+      (log! "startup-notify" (:role role-info))
+      (try
+        (notify! socket (:session role-info))
+        (catch Exception e
+          (log! "startup-notify-error" (:role role-info) (.getMessage e)))))))
 
 (defn poll-once! []
   (let [roles (load-roles)
@@ -391,6 +403,9 @@
 
 (def startup-notify-only?
   (some #{"--startup-notify-only"} *command-line-args*))
+
+(def poll-once-only?
+  (some #{"--poll-once"} *command-line-args*))
 
 (defn own-pid [] (.pid (java.lang.ProcessHandle/current)))
 
@@ -552,8 +567,9 @@
   (let [now-ms (System/currentTimeMillis)
         adapters {:get-liveness get-liveness
                   :send-wake-up! (fn [role]
-                                    (try (notify! socket (:session (get roles role)))
-                                         (catch Exception e (log! "chase-wake-error" role (.getMessage e)))))
+                                    (when-not (tmux-inject-disabled?)
+                                      (try (notify! socket (:session (get roles role)))
+                                           (catch Exception e (log! "chase-wake-error" role (.getMessage e))))))
                   :trigger-respawn! (fn [role]
                                        (try (do-respawn! (get roles role) socket)
                                             (catch Exception e (log! "chase-respawn-error" role (.getMessage e)))))
@@ -567,10 +583,18 @@
   (let [roles  (load-roles)
         socket (str/trim (slurp (str socket-file)))]
     (self-heal-stale-stubs! roles)
-    (if startup-notify-only?
+    (cond
+      poll-once-only?
+      (do
+        (poll-once!)
+        (log! "poll-once done"))
+
+      startup-notify-only?
       (do
         (startup-notify-pending! roles socket)
         (log! "startup-notify-only done"))
+
+      :else
       (let [claim (claim-pid-file!)]
         (if-let [conflicting (and (vector? claim) (second claim))]
           (do

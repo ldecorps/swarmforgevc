@@ -5,6 +5,8 @@
             [clojure.java.shell :refer [sh]]
             [clojure.string :as str]))
 
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_inject_lib.bb")))
+
 (def usage-text
   (str "Usage: swarm_handoff.sh <draft-file>\n\n"
        "Draft formats:\n\n"
@@ -381,6 +383,32 @@
     (println)
     (println usage-text)))
 
+(defn skip-daemon? []
+  (= "1" (System/getenv "SWARMFORGE_SKIP_DAEMON")))
+
+(defn mailbox-only? []
+  (= "1" (System/getenv "SWARMFORGE_MAILBOX_ONLY")))
+
+(defn skip-sync-inject? []
+  (or (mailbox-only?)
+      (= "1" (System/getenv "SWARMFORGE_SKIP_SYNC_INJECT"))))
+
+(defn deliver-sync! [outbox-file sender]
+  (let [root (project-root)]
+    (handoff-inject-lib/deliver-parcel! root outbox-file sender
+                                        :log-fn (fn [& parts]
+                                                  (binding [*out* *err*]
+                                                    (apply println "HANDOFF DELIVER:" parts))))))
+
+(defn try-sync-deliver! [outbox-file sender]
+  (try
+    (deliver-sync! outbox-file sender)
+    :delivered
+    (catch Exception e
+      (binding [*out* *err*]
+        (println "HANDOFF SYNC INJECT FAILED:" (.getMessage e)))
+      :failed)))
+
 (defn -main [& args]
   (when (not= 1 (count args))
     (usage)
@@ -400,8 +428,27 @@
         (let [outbox-file (write-handoff! {:headers headers
                                            :recipients (:recipients validation)
                                            :canonical-commit (:canonical-commit validation)
-                                           :sender sender})]
+                                           :sender sender})
+              sync-result (if (skip-sync-inject?)
+                            :skipped
+                            (try-sync-deliver! outbox-file sender))]
           (fs/delete draft)
-          (println "HANDOFF QUEUED:" (str outbox-file)))))))
+          (cond
+            (= sync-result :delivered)
+            (println (str "HANDOFF DELIVERED:" (str outbox-file)))
+
+            (= sync-result :skipped)
+            (if (skip-daemon?)
+              (exit! 1 (str "Handoff queued for mailbox delivery but handoffd is disabled "
+                            "(SWARMFORGE_SKIP_DAEMON=1). Unset SKIP_DAEMON for mailbox-only mode. File: "
+                            outbox-file))
+              (println (str "HANDOFF QUEUED (mailbox only, no tmux inject):" (str outbox-file))))
+
+            (skip-daemon?)
+            (exit! 1 (str "Handoff queued but sync tmux injection failed; daemon disabled. "
+                          "See inject-traffic.log. File: " outbox-file))
+
+            :else
+            (println (str "HANDOFF QUEUED (daemon backup will deliver):" (str outbox-file)))))))))
 
 (apply -main *command-line-args*)
