@@ -3,8 +3,24 @@ title: RELIABILITY (top priority, 1 of 2) — delivery-level handoff breakage DE
 milestone: M2
 status: todo
 priority: 00
+depends_on: [BL-152]
 evidence: backlog/evidence/BL-109-BL-121-BL-122-handoff-halt-20260706.md  # 2026-07-06 live halt: daemon "healthy" (heartbeat 1s) while 13 parcels dead-lettered over 11h go undetected; failed/ empty, deaths hidden in inbox/new as *.dead
 notes: |
+  RE-SCOPE (2026-07-07, specifier, per BL-151 reconciliation): the DETECTION
+  SCAFFOLD already landed — transportHealth.ts (state machine reading
+  dead-letters/stalled/canary-status). This file was misfiled under
+  backlog/done/M2-reliability-layer/ while status stayed todo; moved back to
+  paused/. REMAINING WORK is only what the scaffold does NOT yet do:
+    (a) a CANARY INJECTOR that actually writes canary-status.json and runs
+        periodic synthetic round-trips through the real transport (nothing
+        writes that file today), and
+    (b) make dead-letters (*.handoff.dead in inbox/new / anything in failed/)
+        flip transport health OFF "healthy" — process-liveness alone must NOT
+        read healthy while parcels rot (2026-07-06: 13 parcels dead while
+        health showed green).
+  Depends on BL-152 (verified-wake parity) so detection is not built on a wake
+  path that cannot reach idle panes. Do NOT re-litigate the scaffold; extend it.
+
   Filed at the backlog root as "BL-118" (raw intake, operator directive
   2026-07-05); renumbered because BL-118 was already taken by the PWA
   bilingual ticket in paused/. Split by the specifier — per the raw ticket's
