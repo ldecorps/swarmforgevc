@@ -57,7 +57,11 @@ import {
   trimmedResendKeyInput,
   describeSetResult,
   describeClearResult,
+  resolveResendApiKey,
 } from './notify/secrets';
+import { startBriefingScheduler } from './notify/briefingScheduler';
+import { startBriefingEmailWatcher } from './notify/briefingEmailWatcher';
+import { sendResendEmail } from './notify/resendClient';
 
 const NO_TARGET_MESSAGE = 'Set a target project first (SwarmForge: Set Target Project).';
 const STOP_SWARM_BUTTON = 'Stop Swarm';
@@ -129,6 +133,16 @@ let stopPeriodicStateDump: (() => void) | null = null;
 // BL-110: how often the durable extension-state snapshot is refreshed so an
 // abrupt host kill (no deactivate()) still leaves a recent dump.
 const STATE_DUMP_INTERVAL_MS = 60_000;
+
+// BL-099: the coder's slice of the daily briefing - scheduling the once-a-
+// day "briefing due" nudge and sending each committed briefing exactly once.
+// Composing the briefing's content is the coordinator role prompt's job
+// (specifier-owned), not this extension code.
+let stopBriefingScheduler: (() => void) | null = null;
+let stopBriefingEmailWatcher: (() => void) | null = null;
+const BRIEFING_HOUR_UTC = 8;
+const BRIEFING_SCHEDULE_CHECK_INTERVAL_MS = 5 * 60_000;
+const BRIEFING_EMAIL_CHECK_INTERVAL_MS = 2 * 60_000;
 
 function buildExtensionStateSnapshot(targetPath: string | null, reason: string | null): ExtensionStateSnapshot {
   const roles = targetPath ? readSwarmRoles(targetPath) : [];
@@ -334,6 +348,100 @@ function startOrRestartChaserMonitor(targetPath: string, context: vscode.Extensi
   }
 }
 
+// BL-099: daily briefing - once-a-day nudge into the coordinator's pane
+// (the coordinator's own role prompt composes and commits the briefing
+// content, per the ticket's role-prompt-owned scope) plus a watcher that
+// emails each committed docs/briefings/<date>.md exactly once. Reuses the
+// existing BL-073 Resend client and secret storage; this extension code
+// never holds the API key beyond the single resolveResendApiKey() call.
+function startOrRestartDailyBriefing(targetPath: string, context: vscode.ExtensionContext): void {
+  if (stopBriefingScheduler) {
+    stopBriefingScheduler();
+    stopBriefingScheduler = null;
+  }
+  if (stopBriefingEmailWatcher) {
+    stopBriefingEmailWatcher();
+    stopBriefingEmailWatcher = null;
+  }
+
+  const swarmforgeDir = path.join(targetPath, '.swarmforge');
+  if (!fs.existsSync(swarmforgeDir)) {
+    return;
+  }
+
+  const socketPath = readTmuxSocket(targetPath);
+  const briefingsDir = path.join(targetPath, 'docs', 'briefings');
+
+  stopBriefingScheduler = startBriefingScheduler(
+    {
+      briefingHourUtc: BRIEFING_HOUR_UTC,
+      scheduleStatePath: path.join(swarmforgeDir, 'briefing-schedule.json'),
+    },
+    {
+      getNowMs: () => Date.now(),
+      onBriefingDue: (): void => {
+        if (!socketPath) return;
+        const roleEntry = readSwarmRoles(targetPath).find((r) => r.role === 'coordinator');
+        if (!roleEntry) return;
+        const target = paneTarget(roleEntry.session, roleEntry.displayName, getPaneBaseIndex(socketPath));
+        sendInstructionVerified(
+          {
+            capturePane: () => {
+              const captured = capturePane(socketPath, target);
+              return captured.exitCode === 0 ? captured.stdout : '';
+            },
+            sendLiteral: (text: string) => sendKeys(socketPath, target, text, true).exitCode === 0,
+            sendEnter: () => {
+              sendKeys(socketPath, target, 'Enter');
+            },
+            wait: sleepSync,
+          },
+          'Daily briefing due: compose today\'s briefing per your role and commit it to docs/briefings/<date>.md.'
+        );
+      },
+    },
+    BRIEFING_SCHEDULE_CHECK_INTERVAL_MS,
+    setInterval,
+    clearInterval
+  );
+
+  let resendApiKey: string | undefined;
+  resolveResendApiKey(context.secrets).then((key) => {
+    resendApiKey = key ?? undefined;
+  });
+  const config = vscode.workspace.getConfiguration('swarmforge');
+  const to = config.get<string>('notify.email.to', '');
+  const from = config.get<string>('notify.email.from', 'onboarding@resend.dev');
+
+  stopBriefingEmailWatcher = startBriefingEmailWatcher(
+    briefingsDir,
+    {
+      readBriefingContent: (fileName: string) => fs.readFileSync(path.join(briefingsDir, fileName), 'utf-8'),
+      sendEmail: async (subject: string, text: string) => {
+        if (!resendApiKey || !to) return false;
+        const result = await sendResendEmail(resendApiKey, { to, from, subject, text });
+        return result.success;
+      },
+    },
+    BRIEFING_EMAIL_CHECK_INTERVAL_MS,
+    setInterval,
+    clearInterval
+  );
+
+  context.subscriptions.push({
+    dispose: () => {
+      if (stopBriefingScheduler) {
+        stopBriefingScheduler();
+        stopBriefingScheduler = null;
+      }
+      if (stopBriefingEmailWatcher) {
+        stopBriefingEmailWatcher();
+        stopBriefingEmailWatcher = null;
+      }
+    },
+  });
+}
+
 // BL-107: durable acknowledgement for bounce requests. remote_bounce.sh's
 // sentinel write is fire-and-forget; this records each phase transition to
 // .swarmforge/bounce-ack.json (pollable by a human or an agent script) and
@@ -372,6 +480,7 @@ function handleBounceResult(
     panel.updateTarget(targetPath);
   }
   startOrRestartChaserMonitor(targetPath, context);
+  startOrRestartDailyBriefing(targetPath, context);
   startOrRestartIdleClearMonitor(targetPath, context);
   return true;
 }
@@ -758,6 +867,7 @@ export function activate(context: vscode.ExtensionContext): void {
     clearBounceDrainState(targetPath);
     startOrRestartBounceWatcher(context, targetPath);
     startOrRestartChaserMonitor(targetPath, context);
+    startOrRestartDailyBriefing(targetPath, context);
     startOrRestartGracefulBounceFileWatcher(targetPath, context);
     startOrRestartIdleClearMonitor(targetPath, context);
 
@@ -857,6 +967,7 @@ export function activate(context: vscode.ExtensionContext): void {
           panel.updateTarget(targetPath);
           // Start chaser monitor after swarm is launched
           startOrRestartChaserMonitor(targetPath, context);
+          startOrRestartDailyBriefing(targetPath, context);
           startOrRestartIdleClearMonitor(targetPath, context);
         } else {
           vscode.window.showErrorMessage(result.message);
@@ -891,6 +1002,7 @@ export function activate(context: vscode.ExtensionContext): void {
         clearBounceDrainState(newTargetPath);
         startOrRestartBounceWatcher(context, newTargetPath);
         startOrRestartChaserMonitor(newTargetPath, context);
+        startOrRestartDailyBriefing(newTargetPath, context);
         startOrRestartGracefulBounceFileWatcher(newTargetPath, context);
         startOrRestartIdleClearMonitor(newTargetPath, context);
       }
@@ -979,6 +1091,7 @@ export function activate(context: vscode.ExtensionContext): void {
           panel.notifyDogfoodCheckpoint();
           // Start chaser monitor after swarm is launched
           startOrRestartChaserMonitor(targetPath!, context);
+          startOrRestartDailyBriefing(targetPath!, context);
           startOrRestartIdleClearMonitor(targetPath!, context);
         }
       );
