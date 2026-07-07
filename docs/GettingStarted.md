@@ -57,7 +57,9 @@ In the Extension Development Host window:
    tailing that role's tmux pane in real time.
 3. Click into any tile and type to nudge that agent directly.
 
-**Persistence across restarts:** If you reload or close VS Code while the swarm is running, the agents keep working in tmux. When you relaunch, the extension automatically reconnects to the live swarm without prompting — no work is lost. If the swarm is no longer running but you have prior state on disk, the extension offers to resume from the last checkpoint.
+**Persistence across restarts:** If you reload or close VS Code while the swarm is running, the agents keep working in tmux. When you relaunch, the extension automatically reconnects to the live swarm without restarting agents — no work is lost. F5 / Extension Development Host does **not** cold-launch a swarm; use **Launch Swarm** explicitly for a new run. If the swarm is no longer running but you have prior state on disk, the extension offers to resume from the last checkpoint.
+
+See `docs/specs/headless-reattach-doctrine.md` for the full reattach vs launch decision table.
 
 To stop the swarm cleanly at any point, run **SwarmForge: Stop Swarm**
 (`swarmforge.stopSwarm`).

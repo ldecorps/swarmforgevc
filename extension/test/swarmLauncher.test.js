@@ -24,6 +24,18 @@ function writeReadyState(targetPath, roleLines = '1\tcoder\tswarmforge-coder\tCo
   fs.writeFileSync(path.join(stateDir, 'sessions.tsv'), roleLines);
 }
 
+function writeSwarmScriptThatBecomesReady(targetPath, body = 'exit 0') {
+  const sock = path.join(targetPath, 'fake.sock');
+  const sessions = '1\tcoder\tswarmforge-coder\tCoder\tclaude\n';
+  return writeSwarmScript(
+    targetPath,
+    `mkdir -p .swarmforge
+echo "${sock}" > .swarmforge/tmux-socket
+printf '%s' '${sessions}' > .swarmforge/sessions.tsv
+${body}`
+  );
+}
+
 function writeSwarmScript(targetPath, body) {
   return installExecutable(path.join(targetPath, 'swarm'), `#!/bin/sh\n${body}\n`);
 }
@@ -98,6 +110,11 @@ test('buildLaunchEnv omits SWARM_RUN_NAME when runName is undefined', () => {
   assert.equal(env['SWARMFORGE_TERMINAL'], 'none');
 });
 
+test('buildLaunchEnv forwards SWARMFORGE_CONFIG when set explicitly', () => {
+  const env = buildLaunchEnv(undefined, '/tmp/seven-pack.conf');
+  assert.equal(env['SWARMFORGE_CONFIG'], '/tmp/seven-pack.conf');
+});
+
 test('buildLaunchEnv deletes inherited SWARM_RUN_NAME when runName is undefined', () => {
   const savedValue = process.env.SWARM_RUN_NAME;
   process.env.SWARM_RUN_NAME = 'inherited-value';
@@ -124,8 +141,7 @@ test('launchSwarm fails fast when no ./swarm wrapper exists', async () => {
 
 test('launchSwarm resolves success once the process closes and the swarm is ready', async () => {
   const targetPath = mkTmp();
-  writeReadyState(targetPath);
-  writeSwarmScript(targetPath, 'exit 0');
+  writeSwarmScriptThatBecomesReady(targetPath);
   const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
   try {
     const result = await launchSwarm(targetPath);
@@ -138,8 +154,7 @@ test('launchSwarm resolves success once the process closes and the swarm is read
 
 test('launchSwarm resolves success as soon as stdout announces readiness', async () => {
   const targetPath = mkTmp();
-  writeReadyState(targetPath);
-  writeSwarmScript(targetPath, 'echo "SwarmForge is ready"');
+  writeSwarmScriptThatBecomesReady(targetPath, 'echo "SwarmForge is ready"');
   const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
   try {
     const result = await launchSwarm(targetPath);
@@ -152,10 +167,12 @@ test('launchSwarm resolves success as soon as stdout announces readiness', async
 
 test('spawn-registry-01: launchSwarm records a tracked child-job entry keyed on the spawned process group', async () => {
   const targetPath = mkTmp();
-  writeReadyState(targetPath);
   // Announce readiness but keep the child alive (blocked on stdin) so the
   // registry entry can be observed before the process exits and removes it.
-  writeSwarmScript(targetPath, 'echo "SwarmForge is ready"\nread _line\nexit 0');
+  writeSwarmScriptThatBecomesReady(
+    targetPath,
+    'echo "SwarmForge is ready"\nread _line\nexit 0'
+  );
   const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
   try {
     const result = await launchSwarm(targetPath);
@@ -212,12 +229,25 @@ test('launchSwarm resolves failure when the process cannot be spawned', async ()
 
 test('launchSwarm resolves success via the readiness poll when the process keeps running quietly', async () => {
   const targetPath = mkTmp();
-  writeReadyState(targetPath);
-  writeSwarmScript(targetPath, 'sleep 2');
+  writeSwarmScriptThatBecomesReady(targetPath, 'sleep 2');
   const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
   try {
     const result = await launchSwarm(targetPath);
     assert.equal(result.success, true);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('launchSwarm does not report success against a pre-existing smaller swarm', async () => {
+  const targetPath = mkTmp();
+  writeReadyState(targetPath);
+  writeSwarmScript(targetPath, 'sleep 5');
+  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  try {
+    const result = await launchSwarm(targetPath, undefined, 300);
+    assert.equal(result.success, false);
+    assert.match(result.message, /Timed out waiting/);
   } finally {
     fake.restore();
   }
@@ -253,8 +283,7 @@ test('launchSwarm persists stderr and the failure outcome to last-launch.log', a
 
 test('launchSwarm persists stdout and the success outcome to last-launch.log', async () => {
   const targetPath = mkTmp();
-  writeReadyState(targetPath);
-  writeSwarmScript(targetPath, 'echo "SwarmForge is ready"');
+  writeSwarmScriptThatBecomesReady(targetPath, 'echo "SwarmForge is ready"');
   const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
   try {
     const result = await launchSwarm(targetPath, 'fix-auth-bug');
