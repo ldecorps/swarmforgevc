@@ -65,7 +65,13 @@ test('startChaserMonitor returns a timer when .swarmforge exists', () => {
   fs.rmSync(tmpDir, { recursive: true });
 });
 
-test('periodic sweep chases a stale handoff and reports via callback', () => new Promise((resolve, reject) => {
+// BL-146: chase/nudge sweep decision (runSweep) moved into handoffd.bb - the
+// single daemon process that now owns delivery AND liveness. The extension
+// host's own interval must never also chase the same inbox item; two
+// processes independently chasing would race and double-count against the
+// shared .chase.json sidecar (BL-146 single-daemon-04: exactly one process
+// owns the sweep).
+test('periodic interval never chases a stale handoff - that duty moved to handoffd.bb', () => new Promise((resolve, reject) => {
   const tmpDir = mkTmp();
   writeRolesTsv(tmpDir, 'coder', tmpDir);
   const newDir = inboxNewDir(tmpDir);
@@ -85,7 +91,7 @@ test('periodic sweep chases a stale handoff and reports via callback', () => new
   setTimeout(() => {
     stopChaserMonitor(timer);
     try {
-      assert.equal(chasedRole, 'coder');
+      assert.equal(chasedRole, null);
       fs.rmSync(tmpDir, { recursive: true });
       resolve();
     } catch (err) {
