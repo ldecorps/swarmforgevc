@@ -9,18 +9,36 @@
 //
 // Stages: compile → vscode-not-found → workspace-not-found →
 //         terminate-old-dev-host → launch-trigger / activation-timeout
+//         [--autostart] autostart → autostart-timeout
+//
+// With --autostart, after the F5-equivalent launch activates the extension host
+// the script writes the remote bounce sentinel (swarm) so agents launch through
+// the SwarmForge tmux socket — never via a standalone tmux session.
 'use strict';
 
 const { spawnSync, execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { isMarkerFresh, filterDevHostPids, decideNextStep } = require('./bounceLib');
+const {
+  isMarkerFresh,
+  filterDevHostPids,
+  decideNextStep,
+  resolveAutostartTarget,
+  parseRoleSessionsFromTsv,
+  parseTmuxSessionNames,
+  isSwarmReady,
+} = require('./bounceLib');
 
 const EXT_DIR = path.resolve(__dirname, '..');
 const WORKSPACE_PATH = path.join(EXT_DIR, 'swarmforge-vc.code-workspace');
 const MARKER_PATH = path.join(EXT_DIR, '.dev-activation.json');
+const SETTINGS_PATH = path.join(EXT_DIR, '.vscode', 'settings.json');
+const REMOTE_BOUNCE = path.join(EXT_DIR, '..', 'swarmforge', 'scripts', 'remote_bounce.sh');
 const VSCODE_APP = process.env.VSCODE_APP || '/Applications/Visual Studio Code.app';
+const AUTOSTART_SETTLE_MS = Number(process.env.SWARM_AUTOSTART_SETTLE_MS || 1000);
+const AUTOSTART_TIMEOUT_MS = Number(process.env.SWARM_AUTOSTART_TIMEOUT_MS || 120000);
+const AUTOSTART_POLL_MS = Number(process.env.SWARM_AUTOSTART_POLL_MS || 2000);
 
 const POLL_INTERVAL_MS = 500;
 const ATTEMPT_TIMEOUT_MS = Number(process.env.BOUNCE_ATTEMPT_TIMEOUT_MS || 15000);
@@ -171,7 +189,89 @@ function launchAndVerify() {
   }
 }
 
+function readSettingsContent() {
+  try {
+    return fs.readFileSync(SETTINGS_PATH, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+function readSocketPath(targetPath) {
+  const socketFile = path.join(targetPath, '.swarmforge', 'tmux-socket');
+  try {
+    return fs.readFileSync(socketFile, 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
+
+function probeSwarmReady(targetPath) {
+  const socketPath = readSocketPath(targetPath);
+  const socketExists = socketPath.length > 0;
+  let rolesContent = '';
+  try {
+    rolesContent = fs.readFileSync(path.join(targetPath, '.swarmforge', 'roles.tsv'), 'utf8');
+  } catch {
+    // no roles file yet
+  }
+  const tmux = socketExists
+    ? spawnSync('tmux', ['-S', socketPath, 'list-sessions', '-F', '#{session_name}'], {
+        encoding: 'utf8',
+      })
+    : { status: 1, stdout: '' };
+  return isSwarmReady({
+    socketExists,
+    tmuxListExitCode: tmux.status ?? 1,
+    roleSessions: parseRoleSessionsFromTsv(rolesContent),
+    listedSessionNames: parseTmuxSessionNames(tmux.stdout),
+  });
+}
+
+function triggerSwarmAutostart(targetPath) {
+  if (!fs.existsSync(REMOTE_BOUNCE)) {
+    fail('autostart', `remote_bounce.sh not found at: ${REMOTE_BOUNCE}`);
+  }
+  const swarmforgeDir = path.join(targetPath, '.swarmforge');
+  if (!fs.existsSync(swarmforgeDir)) {
+    fail('autostart', `target has no .swarmforge directory: ${targetPath}`);
+  }
+
+  console.log(`bounce: autostart — triggering swarm via remote_bounce.sh for ${targetPath}`);
+  console.log(
+    'bounce: autostart — agents must run on the SwarmForge tmux socket, not a standalone tmux session.'
+  );
+
+  const result = spawnSync('bash', [REMOTE_BOUNCE, targetPath, 'swarm'], { encoding: 'utf8' });
+  if (result.status !== 0) {
+    const detail = (result.stderr || result.stdout || 'unknown error').trim();
+    fail('autostart', `remote_bounce.sh swarm failed: ${detail}`);
+  }
+}
+
+function waitForSwarmAutostart(targetPath) {
+  const deadline = Date.now() + AUTOSTART_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (probeSwarmReady(targetPath)) {
+      console.log('bounce: autostart — swarm is ready on the SwarmForge tmux socket.');
+      return;
+    }
+    sleep(AUTOSTART_POLL_MS);
+  }
+  const launchLog = path.join(targetPath, '.swarmforge', 'last-launch.log');
+  fail(
+    'autostart-timeout',
+    `Swarm did not become ready within ${AUTOSTART_TIMEOUT_MS}ms. Check ${launchLog} and the extension host output.`
+  );
+}
+
 function main() {
+  const autostartTarget = resolveAutostartTarget({
+    argv: process.argv,
+    env: process.env,
+    settingsContent: readSettingsContent(),
+  });
+
   compile();
   checkPrerequisites();
   terminateOldDevHosts();
@@ -185,6 +285,15 @@ function main() {
     );
   }
   console.log(`bounce: SUCCESS — verified fresh activation, dev host pid ${pids[0]}.`);
+
+  if (!autostartTarget) {
+    return;
+  }
+
+  sleep(AUTOSTART_SETTLE_MS);
+  triggerSwarmAutostart(autostartTarget);
+  waitForSwarmAutostart(autostartTarget);
+  console.log('bounce: AUTOSTART SUCCESS — extension host and swarm are up.');
 }
 
 main();

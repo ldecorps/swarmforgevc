@@ -4,6 +4,11 @@ const {
   isMarkerFresh,
   filterDevHostPids,
   decideNextStep,
+  parseRoleSessionsFromTsv,
+  parseTmuxSessionNames,
+  isSwarmReady,
+  readTargetPathFromSettings,
+  resolveAutostartTarget,
 } = require('../scripts/bounceLib');
 
 // --- parseMarker ---
@@ -145,4 +150,80 @@ test('the overall timeout fails at the activation stage even if a host is runnin
 test('a fresh marker wins even at the edge of the overall timeout', () => {
   const step = decideNextStep(state({ markerFresh: true, totalElapsedMs: 60000 }));
   assert.equal(step.action, 'success');
+});
+
+// --- autostart helpers ---
+
+test('parseRoleSessionsFromTsv reads the session column from roles.tsv', () => {
+  const tsv = [
+    'coordinator\tmaster\t/path\tswarmforge-coordinator\tCoord\tclaude\ttask',
+    'coder\tcoder\t/path2\tswarmforge-coder\tCoder\tclaude\ttask',
+  ].join('\n');
+  assert.deepEqual(parseRoleSessionsFromTsv(tsv), [
+    'swarmforge-coordinator',
+    'swarmforge-coder',
+  ]);
+});
+
+test('parseTmuxSessionNames splits tmux list-sessions output', () => {
+  assert.deepEqual(parseTmuxSessionNames('swarmforge-coder\nswarmforge-coordinator\n'), [
+    'swarmforge-coder',
+    'swarmforge-coordinator',
+  ]);
+});
+
+test('isSwarmReady is true only when every configured session is listed', () => {
+  const base = {
+    socketExists: true,
+    tmuxListExitCode: 0,
+    roleSessions: ['swarmforge-coder', 'swarmforge-coordinator'],
+    listedSessionNames: ['swarmforge-coder', 'swarmforge-coordinator'],
+  };
+  assert.equal(isSwarmReady(base), true);
+  assert.equal(
+    isSwarmReady({ ...base, listedSessionNames: ['swarmforge-coder'] }),
+    false
+  );
+  assert.equal(isSwarmReady({ ...base, socketExists: false }), false);
+});
+
+test('readTargetPathFromSettings reads swarmforge.targetPath', () => {
+  const content = JSON.stringify({ 'swarmforge.targetPath': '/Users/dev/target' });
+  assert.equal(readTargetPathFromSettings(content), '/Users/dev/target');
+});
+
+test('resolveAutostartTarget prefers explicit path, then env, then settings', () => {
+  const settings = JSON.stringify({ 'swarmforge.targetPath': '/from/settings' });
+  assert.equal(
+    resolveAutostartTarget({
+      argv: ['node', 'start-extension-dev.js', '--autostart', '/explicit'],
+      env: { SWARMFORGE_TARGET_PATH: '/from/env' },
+      settingsContent: settings,
+    }),
+    '/explicit'
+  );
+  assert.equal(
+    resolveAutostartTarget({
+      argv: ['node', 'start-extension-dev.js', '--autostart'],
+      env: { SWARMFORGE_TARGET_PATH: '/from/env' },
+      settingsContent: settings,
+    }),
+    '/from/env'
+  );
+  assert.equal(
+    resolveAutostartTarget({
+      argv: ['node', 'start-extension-dev.js', '--autostart'],
+      env: {},
+      settingsContent: settings,
+    }),
+    '/from/settings'
+  );
+  assert.equal(
+    resolveAutostartTarget({
+      argv: ['node', 'start-extension-dev.js'],
+      env: {},
+      settingsContent: settings,
+    }),
+    null
+  );
 });
