@@ -22,7 +22,7 @@ fi
 
 # Check for stalled handoffs (older than role-specific thresholds)
 AUDIT_DIR="$SCRIPT_DIR/../.swarmforge/audit"
-STALLED=$(find "$AUDIT_DIR" -name '*.json' -mmin +1 -exec jq -r --argjson thresholds "$(jq -n '$STALL_THRESHOLDS' --argjson STALL_THRESHOLDS "$(declare -p STALL_THRESHOLDS | jq -R 'fromjson? | .STALL_THRESHOLDS')") '{
+STALLED=$(find "$AUDIT_DIR" -name '*.json' -mmin +1 -exec jq -r --argjson thresholds "$(jq -n '$STALL_THRESHOLDS' --argjson STALL_THRESHOLDS "$(declare -p STALL_THRESHOLDS | jq -R 'fromjson? | .STALL_THRESHOLDS')")' '{
   handoff_id: .handoff_id,
   role: .role,
   event: .event,

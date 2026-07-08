@@ -20,7 +20,7 @@ done < "$CONF_FILE"
 event="$1"
 handoff_id="$2"
 role="$3"
-extra="${4:-{}}"
+extra="${4:-"{}"}"
 
 timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 role_lower=$(echo "$role" | tr '[:upper:]' '[:lower:]')
