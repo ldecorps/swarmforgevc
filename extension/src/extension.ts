@@ -1126,13 +1126,14 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
         return;
       }
-      SwarmPanel.createOrShow(
+      const panel = SwarmPanel.createOrShow(
         context.extensionUri,
         targetPath,
         runLogPath,
         undefined,
         context.secrets
       );
+      panel.updateTarget(targetPath);
     }),
 
     vscode.commands.registerCommand('swarmforge.stopSwarm', async () => {

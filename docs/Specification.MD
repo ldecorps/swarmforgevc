@@ -1214,7 +1214,7 @@ The discipline that keeps complexity flat: **the filesystem stays the single sou
 
 | Tier | When | What it is | Added complexity |
 |---|---|---|---|
-| **1 — desktop only (v1)** | Default | Extension reads `.swarmforge/` files + streams the orchestrator's agent processes directly. No daemon. | ~none — this is essentially what exists |
+| **1 — desktop only (v1)** | Default | Extension reads `.swarmforge/` files + streams tmux panes headlessly (`SWARMFORGE_TERMINAL=none`). Handoff phase 1 uses direct tmux injection (`SWARMFORGE_SKIP_DAEMON=1`); phase 2 adds `handoffd`. | ~none — filesystem is source of truth |
 | **2 — remote (later)** | Opt-in, for phone | A thin bridge that *projects* the same on-disk state over an authenticated tunnel, plus a few control endpoints | a process + a wire protocol + auth — but no new state model |
 
 The phone case is the *only* thing that actually needs a network service, because a phone can't read your laptop's filesystem or reach the host's orchestrator remotely — something must expose that. The bridge does exactly that and nothing more: it reads the same files the extension reads and forwards commands as the same orchestrator/helper calls. Tier 1 and Tier 2 are therefore the *same* architecture with an optional projection bolted on — not two designs, and crucially **no state-sync problem**, since there's only ever one source of truth on disk.
