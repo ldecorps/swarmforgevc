@@ -11,9 +11,12 @@
 3. **Orthogonality** – Avoid promoting items that conflict with active work.
 
 ## 3.3 Coordinator Duties
-1. **Intake Control** – New items land in `backlog/paused/`.
+1. **Intake Control** – New specs land in `backlog/paused/` (written by specifier).
 2. **Promotion** – Move items to `backlog/active/` when slots are available.
-3. **Recheck on Merge/Close** – After a merge or close, recheck `active_backlog_max_depth` and promote if possible.
+3. **QA integration** – After QA approval: merge to `main`, close active ticket
+   to `backlog/done/`, push `main`.
+4. **Recheck on Close** – After closing a ticket, recheck `active_backlog_max_depth`
+   and promote the next paused item if possible.
 
 ## 3.4 Mutation-Heavy Scheduling
 - Prefer promoting **light** tickets (docs, config) during office hours.

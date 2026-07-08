@@ -18,7 +18,7 @@ All handoffs use the following JSON format, written to `swarmforge/runtime/hando
 }
 ```
 
-- **`type`**: `task` (code work), `note` (coordination), or `merge_up` (QA-approved work).
+- **`type`**: `task` (code work), `note` (coordination), or `merge_up` (QA-approved integration signal to the coordinator).
 - **`priority`**: `00` (blocking), `10-49` (normal), `50` (batch mode).
 - **`task`**: Stable name for the parcel (e.g., `feat/add-login-button`).
 - **`commit`**: Git hash of the work to be reviewed/continued.
@@ -34,5 +34,11 @@ All handoffs use the following JSON format, written to `swarmforge/runtime/hando
 3. **Stuck Detection** – If a parcel sits in `inbox/new/` for >10 minutes, the coordinator must chase it.
 
 ## 2.5 Merge-Up Protocol
-- **QA** sends a `merge_up` handoff to the **specifier** after approval.
-- The **specifier** merges the commit into `main` and notifies the coordinator.
+- **QA** sends approval to the **coordinator** (approved commit + task id).
+- **QA** broadcasts a `note` to pipeline worktree roles (`coder`, `cleaner`,
+  `architect`, `hardender`, `documenter`) instructing each to merge its branch up
+  to QA's approved commit.
+- The **coordinator** merges the approved commit into `main`, moves the ticket
+  from `backlog/active/` to `backlog/done/`, promotes the next paused item if a
+  slot is open, and pushes `main`.
+- The **specifier** does not perform integration merges — it specifies only.

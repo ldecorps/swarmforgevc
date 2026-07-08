@@ -26,6 +26,10 @@ swarmforge/scripts/route_backlog_to_coder.sh [BL-id]
 
 ## Coordinator on this pack
 - Orchestrate only: backlog intake, handoffs, stall chasing.
+- When **cleaner** completes a parcel (two-pack has no QA): merge the approved
+  commit to `main`, move the ticket from `backlog/active/` to `backlog/done/`,
+  promote the next paused item if below `active_backlog_max_depth`, and push
+  `main` — same mechanical integration as after QA in the full pack.
 - Never edit production code, tests, or `swarmforge/scripts/` yourself.
 
 ## Coder / cleaner on this pack
