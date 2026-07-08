@@ -26,4 +26,19 @@ if [[ ! -d "$SCRIPT_DIR/swarmforge/scripts" || ! -d "$SCRIPT_DIR/swarmforge/scri
   fi
 fi
 
+# Estimate mutation_cost for paused backlog items if not set
+if [[ -d "$SCRIPT_DIR/backlog/paused" ]]; then
+  for item in "$SCRIPT_DIR/backlog/paused"/*.yaml; do
+    if ! grep -q "mutation_cost:" "$item"; then
+      if grep -qiE "auth|login|payment|migration|refactor|large|complex" "$item"; then
+        echo "mutation_cost: high" >> "$item"
+      elif grep -qiE "fix|typo|docs|config|small" "$item"; then
+        echo "mutation_cost: low" >> "$item"
+      else
+        echo "mutation_cost: medium" >> "$item"
+      fi
+    fi
+  done
+fi
+
 exec "$SCRIPT_DIR/swarmforge/scripts/swarmforge.sh" "$@"
