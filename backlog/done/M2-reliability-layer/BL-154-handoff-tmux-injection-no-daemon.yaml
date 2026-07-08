@@ -1,7 +1,7 @@
 id: BL-154
 title: "Phase 1 — handoff delivery via tmux injection only (SWARMFORGE_SKIP_DAEMON=1)"
 milestone: M2
-status: todo
+status: done
 priority: 01
 direction: reliability
 assigned_to: coder

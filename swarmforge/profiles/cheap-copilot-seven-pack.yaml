@@ -1,0 +1,14 @@
+# Swarm profile: cheap Copilot on the full seven-pack pipeline.
+# A profile = pack topology + backend + per-role model/effort tier (see docs/Specification.MD §Cost-aware backend selection).
+id: cheap-copilot-seven-pack
+name: Cheap Copilot (7-pack)
+description: >
+  Full seven-pack on GitHub Copilot CLI with mini/flash models. Executes
+  pre-specced backlog only — coordinator routes paused/active items to coder,
+  not specifier. Optimized for cost; upgrade profile if QA bounce rate climbs.
+pack: seven-pack
+backend: copilot
+tier: cheap
+config: cheap-copilot-seven-pack.conf
+prerequisites:
+  - copilot CLI installed and authenticated (github.com login)

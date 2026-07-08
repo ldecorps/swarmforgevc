@@ -20,11 +20,13 @@
     (if (contains? supported-agents a) a "claude")))
 
 (defn context-files
-  [role & {:keys [two-pack?]}]
+  [role & {:keys [two-pack? overlay-prompt]}]
   (into ["swarmforge/constitution.prompt"
          "swarmforge/PIPELINE.md"
          (str "swarmforge/roles/" role ".prompt")]
-        (when two-pack? ["swarmforge/packs/two-pack.prompt"])))
+        (concat (when two-pack? ["swarmforge/packs/two-pack.prompt"])
+                (when (and overlay-prompt (not (str/blank? overlay-prompt)))
+                  [overlay-prompt]))))
 
 (defn handoff-draft-path
   "Writable by all runtimes (not under .swarmforge/ or repo-root tmp/)."
@@ -76,11 +78,13 @@
 
 (defn bootstrap-steps
   "Post-launch tmux steps. Claude embeds prompt in launch script — no steps."
-  [agent role & {:keys [two-pack? prompt-file startup-delay-ms]}]
+  [agent role & {:keys [two-pack? overlay-prompt prompt-file startup-delay-ms]}]
   (case (normalize-agent agent)
     "aider" (concat [{:op :sleep :ms (or startup-delay-ms 5000)}]
                     [{:op :send-literal
-                      :text (str "/add " (str/join " " (context-files role :two-pack? two-pack?)))}
+                      :text (str "/add " (str/join " " (context-files role
+                                                           :two-pack? two-pack?
+                                                           :overlay-prompt overlay-prompt)))}
                      {:op :submit}
                      {:op :sleep :ms 2000}
                      {:op :paste-file :path prompt-file}
@@ -96,9 +100,10 @@
   (str "MOCK_BOOTSTRAP_TEXT role=" role))
 
 (defn bootstrap-text
-  [agent role & {:keys [two-pack? coordinator-two-pack-note]}]
+  [agent role & {:keys [two-pack? overlay-prompt coordinator-two-pack-note]}]
   (let [draft (handoff-draft-path agent)
         two-pack? (boolean two-pack?)
+        overlay (not (str/blank? overlay-prompt))
         coord-note (or coordinator-two-pack-note
                        (when two-pack?
                          " This pack has no specifier: promote items from backlog/paused into backlog/active (respect active_backlog_max_depth), then send task handoffs directly to coder."))]
@@ -130,7 +135,11 @@
            (when two-pack?
              (str "Read swarmforge/packs/two-pack.prompt and follow it for this pack.\n"
                   "Handoff drafts: write to " draft " then run swarmforge/scripts/swarm_handoff.sh on that file. Never use repo-root tmp/ for drafts (gitignored).\n"))
-           (when (= role "coordinator")
+           (when overlay
+             (str "Read " overlay-prompt " and follow it for this swarm profile.\n"
+                  (when (not two-pack?)
+                    (str "Handoff drafts: write to " draft " then run swarmforge/scripts/swarm_handoff.sh on that file. Never use repo-root tmp/ for drafts (gitignored).\n"))))
+           (when (and (= role "coordinator") (or two-pack? overlay))
              "To route the top active backlog item to coder mechanically: swarmforge/scripts/route_backlog_to_coder.sh\n")))))
 
 (defn needs-tmux-bootstrap?

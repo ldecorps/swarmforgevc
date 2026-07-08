@@ -623,6 +623,16 @@ This load profile is shown in the run artifacts / Work Tree (a simple per-role b
 
 A pragmatic default that needs no tuning: **start each role at a sensible tier (strong for architect/specifier, mid for coder, cheap for cleaner/documenter), then let outcome signals nudge suggestions over time.** Most of the savings come from not running everything on the top model, which this captures immediately.
 
+### Swarm profiles
+
+A **pack** defines pipeline topology (which roles exist). A **swarm profile** is a named, reusable launch preset: pack + backend + per-role model and effort tier. Profiles live under `swarmforge/profiles/` as a pair:
+
+- `<id>.yaml` — metadata (`id`, `name`, `pack`, `backend`, `tier`, description)
+- `<id>.conf` — the `swarmforge.conf` window lines passed to `./swarm`
+- `<id>.prompt` *(optional)* — profile overlay read at agent startup (intake/routing rules for this tier)
+
+Example: `cheap-copilot-seven-pack` runs the full seven-pack on GitHub Copilot CLI with mini/flash models. Its overlay tells the coordinator to **route pre-specced `backlog/paused/` and `backlog/active/` items directly to coder** — not the specifier — because spec work is too costly on cheap models. Select a profile via `SWARMFORGE_CONFIG=swarmforge/profiles/<id>.conf` or the matching VS Code launch configuration. The cost advisor (above) can suggest upgrading or downgrading profiles from outcome signals (QA bounces, reroutes).
+
 ---
 
 ## Pack Suggestion Logic

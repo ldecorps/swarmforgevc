@@ -128,6 +128,33 @@ export function resolveSwarmConfigPath(): string | undefined {
   return undefined;
 }
 
+/** Count `window` lines in a swarmforge pack/profile config file. */
+export function countRolesInConfig(configPath: string): number {
+  try {
+    const content = fs.readFileSync(configPath, 'utf8');
+    return content.split('\n').filter((line) => line.trimStart().startsWith('window ')).length;
+  } catch {
+    return 0;
+  }
+}
+
+/** True when roles.tsv matches the configured pack/profile role count. */
+export function runningSwarmMatchesConfig(targetPath: string, configPath?: string): boolean {
+  const resolved = configPath?.trim() || resolveSwarmConfigPath();
+  if (!resolved) {
+    return true;
+  }
+  const expected = countRolesInConfig(resolved);
+  if (expected === 0) {
+    return true;
+  }
+  const roles = readSwarmRoles(targetPath);
+  if (roles.length === 0) {
+    return false;
+  }
+  return roles.length === expected;
+}
+
 export function buildLaunchEnv(runName?: string, configPath?: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     ...process.env,

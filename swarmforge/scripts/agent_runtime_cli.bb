@@ -19,8 +19,8 @@
   (println "Commands:")
   (println "  handoff-draft-path <agent>")
   (println "  wake-text <agent>")
-  (println "  bootstrap-text <agent> <role> [two-pack:0|1]")
-  (println "  run-bootstrap <socket> <session> <agent> <role> <prompt-file> [two-pack:0|1]")
+  (println "  bootstrap-text <agent> <role> [two-pack:0|1] [overlay-prompt-rel-path]")
+  (println "  run-bootstrap <socket> <session> <agent> <role> <prompt-file> [two-pack:0|1] [overlay-prompt-rel-path]")
   (System/exit 1))
 
 (let [args (cli-args)
@@ -35,8 +35,11 @@
     "bootstrap-text"
     (let [agent (nth args 1)
           role (nth args 2)
-          two-pack? (= "1" (get args 3 "0"))]
-      (print (agent-runtime-lib/bootstrap-text agent role :two-pack? two-pack?)))
+          two-pack? (= "1" (get args 3 "0"))
+          overlay (get args 4 "")]
+      (print (agent-runtime-lib/bootstrap-text agent role
+                                               :two-pack? two-pack?
+                                               :overlay-prompt overlay)))
 
     "run-bootstrap"
     (let [socket (nth args 1)
@@ -44,7 +47,9 @@
           agent (nth args 3)
           role (nth args 4)
           prompt-file (nth args 5)
-          two-pack? (= "1" (get args 6 "0"))]
-      (agent-runtime-inject/run-bootstrap! socket session agent role prompt-file two-pack?))
+          two-pack? (= "1" (get args 6 "0"))
+          overlay (get args 7 "")]
+      (agent-runtime-inject/run-bootstrap! socket session agent role prompt-file
+                                           two-pack? overlay))
 
     (usage)))

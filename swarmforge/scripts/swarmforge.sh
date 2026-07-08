@@ -581,6 +581,10 @@ sync_worktree_scripts() {
     role_state_dir="$worktree_path/.swarmforge"
     mkdir -p "$role_scripts_dir"
     cp -R "$SCRIPT_DIR/." "$role_scripts_dir/"
+    if [[ -d "$SWARM_FORGE_DIR/profiles" ]]; then
+      mkdir -p "$worktree_path/swarmforge/profiles"
+      cp -R "$SWARM_FORGE_DIR/profiles/." "$worktree_path/swarmforge/profiles/"
+    fi
     mkdir -p "$role_state_dir/notify"
     cp "$SESSIONS_FILE" "$role_state_dir/sessions.tsv"
     cp "$ROLES_FILE" "$role_state_dir/roles.tsv"
@@ -615,6 +619,24 @@ is_two_pack_config() {
   [[ "$CONFIG_FILE" == *two-pack* ]]
 }
 
+config_overlay_prompt() {
+  local base prompt
+  if [[ "$CONFIG_FILE" = /* ]]; then
+    base="$CONFIG_FILE"
+  else
+    base="$WORKING_DIR/$CONFIG_FILE"
+  fi
+  base="${base%.conf}"
+  prompt="${base}.prompt"
+  if [[ -f "$prompt" ]]; then
+    if [[ "$prompt" == "$WORKING_DIR"/* ]]; then
+      echo "${prompt#"$WORKING_DIR"/}"
+    else
+      echo "$prompt"
+    fi
+  fi
+}
+
 handoff_draft_rel_path() {
   bb "$SCRIPT_DIR/agent_runtime_cli.bb" handoff-draft-path claude 2>/dev/null \
     || echo "swarmforge/runtime/handoff-draft.txt"
@@ -634,9 +656,11 @@ write_agent_instruction_file() {
   local prompt_file="$2"
   local agent="${3:-claude}"
   local two_pack_flag=0
+  local overlay=""
 
   is_two_pack_config && two_pack_flag=1
-  bb "$SCRIPT_DIR/agent_runtime_cli.bb" bootstrap-text "$agent" "$role" "$two_pack_flag" > "$prompt_file"
+  overlay="$(config_overlay_prompt)"
+  bb "$SCRIPT_DIR/agent_runtime_cli.bb" bootstrap-text "$agent" "$role" "$two_pack_flag" "$overlay" > "$prompt_file"
 }
 
 agent-runtime-needs-bootstrap() {
@@ -654,15 +678,17 @@ run_agent_bootstrap() {
   local agent="$4"
   local prompt_file="$5"
   local target two_pack_flag=0
+  local overlay=""
 
   agent-runtime-needs-bootstrap "$agent" || return 0
 
   target="$(tmux_agent_target "$session" "$display")"
   is_two_pack_config && two_pack_flag=1
+  overlay="$(config_overlay_prompt)"
 
   (
     bb "$SCRIPT_DIR/agent_runtime_cli.bb" run-bootstrap \
-      "$TMUX_SOCKET" "$target" "$agent" "$role" "$prompt_file" "$two_pack_flag"
+      "$TMUX_SOCKET" "$target" "$agent" "$role" "$prompt_file" "$two_pack_flag" "$overlay"
   ) &!
 }
 
@@ -789,7 +815,11 @@ write_role_launch_script() {
       launch_body="codex${extra_cli:+ $extra_cli} -C '$role_worktree' \"\$(cat '$prompt_file')\""
       ;;
     copilot)
-      launch_body="copilot${extra_cli:+ $extra_cli} -C '$role_worktree' --name 'SwarmForge ${display}' -i \"\$(cat '$prompt_file')\""
+      local copilot_dirs=""
+      if [[ "$role_worktree" != "$WORKING_DIR" ]]; then
+        copilot_dirs=" --add-dir '$WORKING_DIR'"
+      fi
+      launch_body="copilot${extra_cli:+ $extra_cli} --yolo --allow-all-paths${copilot_dirs} -C '$role_worktree' --name 'SwarmForge ${display}' -i \"\$(cat '$prompt_file')\""
       ;;
     grok)
       launch_body="grok${extra_cli:+ $extra_cli} --cwd '$role_worktree' --permission-mode acceptEdits --rules \"\$(cat '$prompt_file')\""
@@ -804,8 +834,11 @@ write_role_launch_script() {
   esac
 
   local billing_guard=""
+  local copilot_guard=""
   if [[ "$agent" == "claude" ]]; then
     billing_guard=$'unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN\n'
+  elif [[ "$agent" == "copilot" ]]; then
+    copilot_guard=$'export COPILOT_ALLOW_ALL=1\n'
   fi
   # BL-130-VIOLATION fix: a provider API key (OPENAI_API_KEY/MISTRAL_API_KEY,
   # for an alternate-runtime role like aider on Mistral/OpenAI) must NEVER be
@@ -823,7 +856,7 @@ set -euo pipefail
 export SWARMFORGE_ROLE='$role'
 export PATH='$role_script_dir':\$PATH
 cd '$role_worktree'
-${billing_guard}${launch_body}
+${billing_guard}${copilot_guard}${launch_body}
 LAUNCH
 
   # Only wire cleanup when a GUI terminal backend owns windows to close.
@@ -847,6 +880,44 @@ LAUNCH
 
   chmod +x "$launch_script"
   echo "$launch_script"
+}
+
+copilot_trust_swarm_paths() {
+  local i agent any=0
+  local -a paths=("$WORKING_DIR")
+
+  for agent in "${AGENTS[@]}"; do
+    [[ "$agent" == "copilot" ]] && any=1 && break
+  done
+  (( any )) || return 0
+
+  for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
+    local wt="${WORKTREE_PATHS[$i]}"
+    if [[ "$wt" != "$WORKING_DIR" ]]; then
+      paths+=("$wt")
+    fi
+  done
+
+  bash "$SCRIPT_DIR/copilot_trust_folders.sh" "${paths[@]}"
+}
+
+dismiss_copilot_folder_trust() {
+  local session="$1"
+  local target attempt pane
+
+  target="$(tmux_agent_target_for_session "$session")"
+  for attempt in {1..40}; do
+    pane="$(tmux -S "$TMUX_SOCKET" capture-pane -t "$target" -p 2>/dev/null || true)"
+    if [[ "$pane" == *"remember this folder"* ]]; then
+      tmux -S "$TMUX_SOCKET" send-keys -t "$target" Down Enter
+      sleep 0.5
+      return 0
+    fi
+    if [[ "$pane" == *"ready_for_next"* || "$pane" == *"TASK:"* || "$pane" == *"NO_TASK"* ]]; then
+      return 0
+    fi
+    sleep 0.25
+  done
 }
 
 wait_for_session_pane() {
@@ -893,6 +964,8 @@ launch_role() {
   sleep 0.25
   if agent-runtime-needs-bootstrap "$agent"; then
     run_agent_bootstrap "$session" "$display" "$role" "$agent" "$PROMPTS_DIR/${role}.md"
+  elif [[ "$agent" == "copilot" ]]; then
+    dismiss_copilot_folder_trust "$session"
   fi
   echo -e "  ${CYAN}[${display}]${RESET} started in session ${session}"
 }
@@ -985,6 +1058,8 @@ done
 write_tmux_env_file
 sync_worktree_scripts
 start_handoff_daemon
+
+copilot_trust_swarm_paths
 
 echo -e "${GREEN}Starting agents...${RESET}"
 for (( i = 1; i <= ${#ROLES[@]}; i++ )); do

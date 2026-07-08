@@ -1,9 +1,0 @@
-type: git_handoff
-to: cleaner
-priority: 50
-task: BL-154-handoff-tmux-injection-no-daemon
-commit: pending
-message: |
-  BL-154: Handoff for tmux injection without daemon.
-  Coder has not forwarded this parcel. Please verify if work is in progress or stalled.
-  If stalled, reassign or escalate.

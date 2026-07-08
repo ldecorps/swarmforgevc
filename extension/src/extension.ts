@@ -13,7 +13,7 @@ import { startBridge } from './bridge/bridgeServer';
 import type { BridgeHandle } from './bridge/bridgeServer';
 import { generateBridgeToken } from './bridge/bridgeToken';
 import { getCurrentBranch, openPullRequest } from './swarm/prCreator';
-import { launchSwarm, waitForSwarmReady, chooseReattachTimeoutMs, isSwarmReady } from './swarm/swarmLauncher';
+import { launchSwarm, waitForSwarmReady, chooseReattachTimeoutMs, isSwarmReady, runningSwarmMatchesConfig, resolveSwarmConfigPath } from './swarm/swarmLauncher';
 import { reapAllTrackedJobs, reapStaleTrackedJobs } from './swarm/childJobRegistry';
 import { writeStateDump, startPeriodicStateDump, ExtensionStateSnapshot } from './swarm/stateDump';
 import { hasPriorRunState, shouldOfferResumePrompt } from './swarm/swarmDiscovery';
@@ -176,6 +176,44 @@ function generateDefaultRunName(): string {
   const hour = String(now.getHours()).padStart(2, '0');
   const minute = String(now.getMinutes()).padStart(2, '0');
   return `run-${year}${month}${day}-${hour}${minute}`;
+}
+
+function shouldAutoLaunchOnActivation(context: vscode.ExtensionContext): boolean {
+  if (context.extensionMode !== vscode.ExtensionMode.Development) {
+    return false;
+  }
+  if (process.env['SWARMFORGE_AUTO_LAUNCH'] === '0') {
+    return false;
+  }
+  const config = vscode.workspace.getConfiguration('swarmforge');
+  return config.get<boolean>('run.promptForName', true) === false;
+}
+
+async function autoLaunchSwarmOnActivation(
+  context: vscode.ExtensionContext,
+  targetPath: string,
+  runLogPath: string
+): Promise<void> {
+  const runName = generateDefaultRunName();
+  await context.globalState.update(LAST_RUN_NAME_KEY, runName);
+  appendRun(runLogPath, { name: runName, targetPath, startedAt: new Date().toISOString() });
+  const result = await launchSwarm(targetPath, runName, 120_000, context.secrets);
+  if (!result.success) {
+    vscode.window.showErrorMessage(result.message);
+    return;
+  }
+  const panel = SwarmPanel.createOrShow(
+    context.extensionUri,
+    targetPath,
+    runLogPath,
+    undefined,
+    context.secrets,
+    true
+  );
+  panel.updateTarget(targetPath);
+  startOrRestartChaserMonitor(targetPath, context);
+  startOrRestartDailyBriefing(targetPath, context);
+  startOrRestartIdleClearMonitor(targetPath, context);
 }
 
 function startOrRestartBounceWatcher(
@@ -936,8 +974,14 @@ export function activate(context: vscode.ExtensionContext): void {
       // a command wins the activation race before onStartupFinished fires,
       // preserving today's resume-offer behavior on that path.
       const isStartupTriggeredActivation = true;
-      waitForSwarmReady(targetPath, reattachTimeoutMs, REATTACH_READY_POLL_MS).then((ready) => {
-        if (ready) {
+      waitForSwarmReady(targetPath, reattachTimeoutMs, REATTACH_READY_POLL_MS).then(async (ready) => {
+        const configPath = resolveSwarmConfigPath();
+        let matchesConfig = runningSwarmMatchesConfig(targetPath, configPath);
+        if (ready && !matchesConfig) {
+          stopSwarm(targetPath);
+          ready = false;
+        }
+        if (ready && matchesConfig) {
           // Re-attach automatically: tiles reconnect to the live output
           // streams without restarting any agent. preserveFocus keeps the
           // editor the operator opened into in the foreground.
@@ -950,6 +994,8 @@ export function activate(context: vscode.ExtensionContext): void {
             isStartupTriggeredActivation
           );
           panel.updateTarget(targetPath);
+        } else if (shouldAutoLaunchOnActivation(context)) {
+          await autoLaunchSwarmOnActivation(context, targetPath, runLogPath);
         } else if (
           shouldOfferResumePrompt(isStartupTriggeredActivation, hasPriorRunState(targetPath))
         ) {

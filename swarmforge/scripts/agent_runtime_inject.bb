@@ -112,8 +112,9 @@
             (Thread/sleep (notify-retry-delay-ms-for agent attempt))
             (recur (inc attempt))))))))
 
-(defn run-bootstrap! [socket session agent role prompt-file two-pack?]
+(defn run-bootstrap! [socket session agent role prompt-file two-pack? & [overlay-prompt]]
   (let [steps (agent-runtime-lib/bootstrap-steps agent role
                                                  :two-pack? two-pack?
+                                                 :overlay-prompt overlay-prompt
                                                  :prompt-file prompt-file)]
     (execute-steps! socket session steps)))
