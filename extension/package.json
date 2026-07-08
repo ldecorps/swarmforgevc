@@ -125,6 +125,11 @@
           "default": "",
           "description": "Path to the target project for SwarmForge runs."
         },
+        "swarmforge.configPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the swarm config file (e.g. swarmforge/packs/seven-pack.conf). Overrides swarmforge/swarmforge.conf when launching. SWARMFORGE_CONFIG env var takes precedence."
+        },
         "swarmforge.agentCommand": {
           "type": "string",
           "default": "claude",

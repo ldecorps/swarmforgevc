@@ -1,0 +1,43 @@
+id: BL-153
+title: "EPIC — handoff resilience: phase 1 tmux-injection (no daemon), then phase 2 daemon+mailbox"
+milestone: M2
+status: todo
+type: epic
+priority: 00
+direction: reliability
+depends_on: []
+decomposes_into: [BL-154, BL-155]
+source: "operator direction 2026-07-07 — headless swarm, extension reattach, min coordinator+coder+QA pack, hold other tickets; prove handoff without daemon first"
+
+notes: |
+  OPERATOR HOLD (2026-07-07): all other active/promotable tickets are paused
+  until BL-154 lands. BL-151/121/122/128/146 sequence is superseded by this
+  phased plan — do not promote BL-128 or BL-146 until BL-155.
+
+  Doctrine: docs/specs/headless-reattach-doctrine.md
+  Pack: swarmforge/packs/two-pack.conf (coordinator + Uncle Bob coder/cleaner; max depth 1)
+
+  SEQUENCE:
+    1. BL-154 — handoff works with SWARMFORGE_SKIP_DAEMON=1 via direct tmux
+       injection after swarm_handoff.sh enqueue (no handoffd).
+    2. BL-155 — re-enable handoffd + mailbox; extension supervises daemon;
+       transport health gates on daemon + parcel delivery.
+
+description: |
+  The swarm must run headless; the extension reattaches to live tmux panes on
+  start instead of restarting agents or opening Terminal surfaces. Handoff
+  reliability is rebuilt in two explicit phases so we can tell whether failures
+  are in tmux injection or in the daemon/mailbox layer.
+
+acceptance: |
+  Feature: phased handoff resilience (umbrella — promote children, not this epic)
+
+  Scenario: phase 1 complete
+    Given BL-154 is merged and closed
+    Then a resilience-min swarm delivers handoffs with daemon disabled
+    And extension tiles reattach to live tmux without spawning Terminal windows
+
+  Scenario: phase 2 complete
+    Given BL-155 is merged and closed
+    Then handoffd delivers outbox to inbox/new with verified tmux wake
+    And extension reads daemon status for transport health

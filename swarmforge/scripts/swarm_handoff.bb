@@ -5,6 +5,8 @@
             [clojure.java.shell :refer [sh]]
             [clojure.string :as str]))
 
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_inject_lib.bb")))
+
 (def usage-text
   (str "Usage: swarm_handoff.sh <draft-file>\n\n"
        "Draft formats:\n\n"
@@ -85,11 +87,7 @@
     role
     (exit! 1 "Set SWARMFORGE_ROLE.")))
 
-(defn state-dir
-  "Handoff state lives at the worktree root even when invoked from a
-   subdirectory; the daemon only watches worktree-root outboxes (BL-056).
-   Falls back to the invocation cwd outside any git worktree."
-  []
+(defn state-dir []
   (fs/path (or (git-root) (System/getProperty "user.dir"))
            ".swarmforge" "handoffs"))
 
@@ -185,6 +183,24 @@
           [(str/trim (:out (command "." "git" "rev-parse" "--short=10" object))) nil]
           [nil (format "Header 'commit' must resolve to a commit; '%s' resolves to '%s'." commit object-type)])))))
 
+(defn- check-backlog-depth []
+  (let [project-root (project-root)
+        conf-file (fs/path project-root ".swarmforge" "swarmforge.conf")
+        active-dir (fs/path project-root "backlog" "active")
+        max-depth (try
+                    (->> (slurp (str conf-file))
+                         str/split-lines
+                         (filter #(str/starts-with? % "config active_backlog_max_depth"))
+                         first
+                         (re-find #"\d+")
+                         parse-long)
+                    (catch Exception _ 5))] ; Default to 5 if config is missing
+    (when (fs/exists? active-dir)
+      (let [active-count (count (fs/list-dir active-dir))]
+        (when (> active-count max-depth)
+          (binding [*out* *err*]
+            (println (format "WARNING: Active backlog depth exceeded (active=%d, max=%d). Coordinator should promote paused items." active-count max-depth))))))))
+
 (defn validate [headers ordered]
   (let [type (get headers "type")
         to (get headers "to")
@@ -203,11 +219,7 @@
                                           ["git_handoff" "priority"] true
                                           ["git_handoff" "task"] true
                                           ["git_handoff" "commit"] true
-                                          ;; rejection handoffs (e.g. QA bouncing a parcel) carry the
-                                          ;; reason so redo_from can capture it in the redo log (BL-036)
                                           ["git_handoff" "rejection_reason"] true
-                                          ;; reroute handoffs (BL-063) carry the detour reason so the
-                                          ;; target stage sees why the parcel was sent to it
                                           ["git_handoff" "reroute_reason"] true
                                           ["note" "type"] true
                                           ["note" "to"] true
@@ -369,6 +381,7 @@
       (fs/create-dirs dir))
     (spit (str tmp-file) (str (str/join "\n" lines) "\n"))
     (fs/move tmp-file outbox-file)
+    (check-backlog-depth) ; Add backlog depth check after writing handoff
     outbox-file))
 
 (defn error-report [draft errors]
@@ -380,6 +393,32 @@
       (println "-" error))
     (println)
     (println usage-text)))
+
+(defn skip-daemon? []
+  (= "1" (System/getenv "SWARMFORGE_SKIP_DAEMON")))
+
+(defn mailbox-only? []
+  (= "1" (System/getenv "SWARMFORGE_MAILBOX_ONLY")))
+
+(defn skip-sync-inject? []
+  (or (mailbox-only?)
+      (= "1" (System/getenv "SWARMFORGE_SKIP_SYNC_INJECT"))))
+
+(defn deliver-sync! [outbox-file sender]
+  (let [root (project-root)]
+    (handoff-inject-lib/deliver-parcel! root outbox-file sender
+                                        :log-fn (fn [& parts]
+                                                  (binding [*out* *err*]
+                                                    (apply println "HANDOFF DELIVER:" parts))))))
+
+(defn try-sync-deliver! [outbox-file sender]
+  (try
+    (deliver-sync! outbox-file sender)
+    :delivered
+    (catch Exception e
+      (binding [*out* *err*]
+        (println "HANDOFF SYNC INJECT FAILED:" (.getMessage e)))
+      :failed)))
 
 (defn -main [& args]
   (when (not= 1 (count args))
@@ -400,8 +439,27 @@
         (let [outbox-file (write-handoff! {:headers headers
                                            :recipients (:recipients validation)
                                            :canonical-commit (:canonical-commit validation)
-                                           :sender sender})]
+                                           :sender sender})
+              sync-result (if (skip-sync-inject?)
+                            :skipped
+                            (try-sync-deliver! outbox-file sender))]
           (fs/delete draft)
-          (println "HANDOFF QUEUED:" (str outbox-file)))))))
+          (cond
+            (= sync-result :delivered)
+            (println (str "HANDOFF DELIVERED:" (str outbox-file)))
+
+            (= sync-result :skipped)
+            (if (skip-daemon?)
+              (exit! 1 (str "Handoff queued for mailbox delivery but handoffd is disabled "
+                            "(SWARMFORGE_SKIP_DAEMON=1). Unset SKIP_DAEMON for mailbox-only mode. File: "
+                            outbox-file))
+              (println (str "HANDOFF QUEUED (mailbox only, no tmux inject):" (str outbox-file))))
+
+            (skip-daemon?)
+            (exit! 1 (str "Handoff queued but sync tmux injection failed; daemon disabled. "
+                          "See inject-traffic.log. File: " outbox-file))
+
+            :else
+            (println (str "HANDOFF QUEUED (daemon backup will deliver):" (str outbox-file)))))))))
 
 (apply -main *command-line-args*)

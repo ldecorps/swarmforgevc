@@ -6,6 +6,9 @@ priority: 00
 depends_on: [BL-152]
 evidence: backlog/evidence/BL-109-BL-121-BL-122-handoff-halt-20260706.md  # 2026-07-06 live halt: daemon "healthy" (heartbeat 1s) while 13 parcels dead-lettered over 11h go undetected; failed/ empty, deaths hidden in inbox/new as *.dead
 notes: |
+  **HOLD (BL-153):** paused while BL-154 phase-1 handoff resilience (tmux
+  injection, no daemon) is in flight. Do not promote until phase 1 is green.
+
   RE-SCOPE (2026-07-07, specifier, per BL-151 reconciliation): the DETECTION
   SCAFFOLD already landed — transportHealth.ts (state machine reading
   dead-letters/stalled/canary-status). This file was misfiled under

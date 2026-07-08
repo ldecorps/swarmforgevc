@@ -7,6 +7,8 @@ direction: non-aligned
 source: operator requirement 2026-07-04 ("expose a webui showing a holistic view of the dev state"; revises the web-UI phase deferred by BL-065)
 
 description: |
+  **HOLD (BL-153):** paused while BL-154 handoff resilience work is in flight.
+
   Phase 2 of the remote-visibility track. BL-065 (merged) built the
   read-only localhost REST+SSE bridge and explicitly deferred "the web UI
   itself" to a later ticket — this is that ticket, revised per the

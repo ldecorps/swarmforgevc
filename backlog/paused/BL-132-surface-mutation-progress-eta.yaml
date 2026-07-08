@@ -7,6 +7,8 @@ direction: aligned
 assigned_to: coder
 
 description: |
+  **HOLD (BL-153):** paused while BL-154 handoff resilience work is in flight.
+
   OPERATOR (2026-07-06): a mutation run can take hours (a live BL-121 pass on
   ONE file is ~3h with coverageAnalysis off), and from the outside it looks
   like an opaque spinner — no way to tell "progressing" from "hung", and no
