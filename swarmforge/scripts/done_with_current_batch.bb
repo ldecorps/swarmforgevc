@@ -9,8 +9,11 @@
 
 (load-file (str (fs/path script-dir "handoff_lib.bb")))
 
+(defn ready-script []
+  (str (fs/path script-dir "ready_for_next_batch.sh")))
+
 (defn run-ready! []
-  (process/exec (str (fs/path script-dir "ready_for_next_batch.sh")) "--idle-boundary"))
+  (process/exec (ready-script) "--idle-boundary"))
 
 (defn -main []
   (let [inbox (handoff-lib/inbox-dir)
