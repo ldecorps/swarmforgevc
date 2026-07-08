@@ -1,0 +1,29 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+AUDIT_DIR="$SCRIPT_DIR/../.swarmforge/audit"
+INBOX_DIR="$SCRIPT_DIR/../inbox/new"
+
+while true; do
+  # Chase handoffs older than 5 minutes
+  find "$AUDIT_DIR" -name '*.json' -mmin +5 | while read -r audit_file; do
+    handoff_id=$(basename "$audit_file" .json)
+    status=$(jq -r '.event' "$audit_file")
+
+    if [[ "$status" != "completed" ]]; then
+      role=$(jq -r '.role' "$audit_file")
+      echo "Chasing stalled handoff $handoff_id (role: $role, status: $status)"
+
+      # Resend the handoff (if not already in inbox)
+      if [[ ! -f "$INBOX_DIR/$handoff_id" ]]; then
+        "$SCRIPT_DIR/swarm_handoff.sh" "$INBOX_DIR/$handoff_id" || true
+      fi
+
+      # Log the chase
+      "$SCRIPT_DIR/handoff_audit.sh" "chased" "$handoff_id" "$role" "{}"
+    fi
+  done
+
+  sleep 60
+done

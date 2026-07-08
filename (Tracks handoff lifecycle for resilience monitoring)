@@ -1,0 +1,24 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+AUDIT_DIR="$SCRIPT_DIR/../.swarmforge/audit"
+mkdir -p "$AUDIT_DIR"
+
+# Usage: handoff_audit.sh <event> <handoff_id> <role> [extra_json]
+# Events: created, received, completed, chased, dead-letter
+event="$1"
+handoff_id="$2"
+role="$3"
+extra="${4:-{}}"
+
+timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+entry=$(jq -n \
+  --arg event "$event" \
+  --arg handoff_id "$handoff_id" \
+  --arg role "$role" \
+  --arg timestamp "$timestamp" \
+  --argjson extra "$extra" \
+  '{event: $event, handoff_id: $handoff_id, role: $role, timestamp: $timestamp, extra: $extra}')
+
+echo "$entry" >> "$AUDIT_DIR/$handoff_id.json"

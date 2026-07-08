@@ -1,0 +1,23 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Resilience check: verify background chaser is running
+CHASER_PID=$(pgrep -f "swarmforge/scripts/inbox_chaser.sh" || true)
+if [[ -z "$CHASER_PID" ]]; then
+  echo "CRITICAL: Background inbox chaser is NOT running. Handoffs will stall." >&2
+  echo "Start it with: swarmforge/scripts/inbox_chaser.sh &" >&2
+fi
+
+# Check for stalled handoffs (older than 10 minutes)
+AUDIT_DIR="$SCRIPT_DIR/../.swarmforge/audit"
+STALLED=$(find "$AUDIT_DIR" -name '*.json' -mmin +10 -exec jq -r 'select(.event != "completed") | "\(.handoff_id) \(.role) \(.event)"' {} \; 2>/dev/null || true)
+if [[ -n "$STALLED" ]]; then
+  echo "WARNING: Stalled handoffs detected:" >&2
+  echo "$STALLED" | while read -r line; do
+    echo "  - $line" >&2
+  done
+fi
+
+exec bb "$SCRIPT_DIR/ready_for_next.bb" "$@"
