@@ -67,10 +67,10 @@
       (and (zero? (:exit cr)) (zero? (:exit lf))))))
 
 (defn notify!
-  "Delivers agent-specific wake to session's pane with verified submit."
+  "Delivers agent-specific wake to session's pane with verified submit.
+   Throws on wake failure (sync deliver path)."
   [socket session & {:keys [log-fn traffic agent]}]
-  (let [log! (or log-fn (fn [& _] nil))
-        on-outcome (fn [outcome detail attempts stacked?]
+  (let [on-outcome (fn [outcome detail attempts stacked?]
                      (when traffic
                        (record-inject-traffic! (:project-root traffic)
                                                (cond-> {:source (or (:source traffic) "inject")
@@ -80,11 +80,14 @@
                                                         :parcel (:parcel traffic)}
                                                  detail (assoc :detail detail)
                                                  attempts (assoc :attempts attempts)
-                                                 stacked? (assoc :stacked stacked?)))))]
-    (agent-runtime-inject/notify-agent! socket session (or agent "claude")
-                                        :log-fn log-fn
-                                        :on-outcome on-outcome
-                                        :script-rel-path agent-runtime-lib/ready-script-rel-path)))
+                                                 stacked? (assoc :stacked stacked?)))))
+        result (agent-runtime-inject/notify-agent! socket session (or agent "claude")
+                                                   :log-fn log-fn
+                                                   :on-outcome on-outcome
+                                                   :script-rel-path agent-runtime-lib/ready-script-rel-path)]
+    (when (= :failed result)
+      (throw (ex-info "tmux wake delivery failed" {:session session :agent agent})))
+    result))
 
 (defn read-lines [path]
   (when (fs/exists? path)
