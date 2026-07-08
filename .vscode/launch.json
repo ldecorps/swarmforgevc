@@ -1,0 +1,85 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "debugWebWorkerExtensions": false,
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/extension",
+        "--disable-extensions",
+        "${workspaceFolder}"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/extension/out/**/*.js"
+      ],
+      "preLaunchTask": "npm: compile - extension",
+      "env": {
+        "SWARMFORGE_TARGET_PATH": "${workspaceFolder}",
+        "SWARMFORGE_RUN_NAME": "",
+        "SWARMFORGE_PROMPT_FOR_NAME": "0",
+        "SWARMFORGE_CONFIG": "${workspaceFolder}/swarmforge/packs/seven-pack.conf"
+      },
+      "settings": {
+        "swarmforge.targetPath": "${workspaceFolder}",
+        "swarmforge.configPath": "${workspaceFolder}/swarmforge/packs/seven-pack.conf",
+        "swarmforge.run.promptForName": false
+      }
+    },
+    {
+      "name": "Run Extension (two-pack exercise)",
+      "type": "extensionHost",
+      "request": "launch",
+      "debugWebWorkerExtensions": false,
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/extension",
+        "--disable-extensions",
+        "${workspaceFolder}"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/extension/out/**/*.js"
+      ],
+      "preLaunchTask": "npm: compile - extension",
+      "env": {
+        "SWARMFORGE_TARGET_PATH": "${workspaceFolder}",
+        "SWARMFORGE_RUN_NAME": "",
+        "SWARMFORGE_PROMPT_FOR_NAME": "0",
+        "SWARMFORGE_SKIP_DAEMON": "1",
+        "SWARMFORGE_CONFIG": "${workspaceFolder}/swarmforge/packs/two-pack.conf"
+      },
+      "settings": {
+        "swarmforge.targetPath": "${workspaceFolder}",
+        "swarmforge.configPath": "${workspaceFolder}/swarmforge/packs/two-pack.conf",
+        "swarmforge.run.promptForName": false
+      }
+    },
+    {
+      "name": "Run Extension (mailbox-only exercise)",
+      "type": "extensionHost",
+      "request": "launch",
+      "debugWebWorkerExtensions": false,
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/extension",
+        "--disable-extensions",
+        "${workspaceFolder}"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/extension/out/**/*.js"
+      ],
+      "preLaunchTask": "npm: compile - extension",
+      "env": {
+        "SWARMFORGE_TARGET_PATH": "${workspaceFolder}",
+        "SWARMFORGE_RUN_NAME": "",
+        "SWARMFORGE_PROMPT_FOR_NAME": "0",
+        "SWARMFORGE_MAILBOX_ONLY": "1",
+        "SWARMFORGE_CONFIG": "${workspaceFolder}/swarmforge/packs/two-pack.conf"
+      },
+      "settings": {
+        "swarmforge.targetPath": "${workspaceFolder}",
+        "swarmforge.configPath": "${workspaceFolder}/swarmforge/packs/two-pack.conf",
+        "swarmforge.run.promptForName": false
+      }
+    }
+  ]
+}

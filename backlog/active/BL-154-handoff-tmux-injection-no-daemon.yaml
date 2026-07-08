@@ -1,0 +1,54 @@
+id: BL-154
+title: "Phase 1 — handoff delivery via tmux injection only (SWARMFORGE_SKIP_DAEMON=1)"
+milestone: M2
+status: todo
+priority: 01
+direction: reliability
+assigned_to: coder
+depends_on: []
+parent: BL-153
+source: "BL-153 phase 1 — operator: try handoff without daemon, native swarmforge tmux injection"
+
+description: |
+  Prove end-to-end handoff on Uncle Bob's two-pack (coordinator, coder, cleaner;
+  active_backlog_max_depth 1) with NO handoffd process.
+
+  Launch contract:
+    SWARMFORGE_TERMINAL=none SWARMFORGE_SKIP_DAEMON=1 ./swarm <target> --pack two-pack
+
+  Wanted:
+  - swarmforge.sh skips start_handoff_daemon when SWARMFORGE_SKIP_DAEMON=1.
+  - swarm_handoff.sh, after atomic outbox write, delivers each recipient parcel
+    to inbox/new/ and performs the same verified tmux wake as handoffd.bb notify!
+    (literal send + submit), without requiring a running daemon.
+  - Extension Launch Swarm passes SWARMFORGE_SKIP_DAEMON=1 during this phase
+    (launch.json env until BL-155).
+  - Extension activation reattaches tiles when isSwarmReady(); never cold-launches
+    on F5 alone.
+
+  Hold: do not promote BL-121, BL-122, BL-128, BL-146, BL-132, BL-094 while
+  this slice is open.
+
+acceptance: |
+  Feature: handoff without daemon on resilience-min pack
+
+  Scenario: launch skips daemon
+    Given SWARMFORGE_SKIP_DAEMON=1
+    When ./swarm starts the resilience-min pack
+    Then no handoffd or handoffd_supervisor process is running
+
+  Scenario: note handoff reaches recipient via tmux injection
+    Given a running resilience-min swarm with daemon disabled
+    When coordinator sends a note handoff to coder via swarm_handoff.sh
+    Then the parcel appears in coder inbox/new/
+    And coder pane receives the verified wake string without handoffd running
+
+  Scenario: extension reattaches without restarting agents
+    Given a live resilience-min swarm
+    When the extension host activates
+    Then the SwarmForge panel shows live tiles for coordinator, coder, and QA
+    And no tmux sessions were killed or respawned
+
+  # Non-behavioral:
+  #  - Tests use fake tmux logs mirroring test_handoffd_notify_verified.sh.
+  #  - No real timers in unit tests.
