@@ -87,11 +87,7 @@
     role
     (exit! 1 "Set SWARMFORGE_ROLE.")))
 
-(defn state-dir
-  "Handoff state lives at the worktree root even when invoked from a
-   subdirectory; the daemon only watches worktree-root outboxes (BL-056).
-   Falls back to the invocation cwd outside any git worktree."
-  []
+(defn state-dir []
   (fs/path (or (git-root) (System/getProperty "user.dir"))
            ".swarmforge" "handoffs"))
 
@@ -187,6 +183,24 @@
           [(str/trim (:out (command "." "git" "rev-parse" "--short=10" object))) nil]
           [nil (format "Header 'commit' must resolve to a commit; '%s' resolves to '%s'." commit object-type)])))))
 
+(defn- check-backlog-depth []
+  (let [project-root (project-root)
+        conf-file (fs/path project-root ".swarmforge" "swarmforge.conf")
+        active-dir (fs/path project-root "backlog" "active")
+        max-depth (try
+                    (->> (slurp (str conf-file))
+                         str/split-lines
+                         (filter #(str/starts-with? % "config active_backlog_max_depth"))
+                         first
+                         (re-find #"\d+")
+                         parse-long)
+                    (catch Exception _ 5))] ; Default to 5 if config is missing
+    (when (fs/exists? active-dir)
+      (let [active-count (count (fs/list-dir active-dir))]
+        (when (> active-count max-depth)
+          (binding [*out* *err*]
+            (println (format "WARNING: Active backlog depth exceeded (active=%d, max=%d). Coordinator should promote paused items." active-count max-depth))))))))
+
 (defn validate [headers ordered]
   (let [type (get headers "type")
         to (get headers "to")
@@ -205,11 +219,7 @@
                                           ["git_handoff" "priority"] true
                                           ["git_handoff" "task"] true
                                           ["git_handoff" "commit"] true
-                                          ;; rejection handoffs (e.g. QA bouncing a parcel) carry the
-                                          ;; reason so redo_from can capture it in the redo log (BL-036)
                                           ["git_handoff" "rejection_reason"] true
-                                          ;; reroute handoffs (BL-063) carry the detour reason so the
-                                          ;; target stage sees why the parcel was sent to it
                                           ["git_handoff" "reroute_reason"] true
                                           ["note" "type"] true
                                           ["note" "to"] true
@@ -371,6 +381,7 @@
       (fs/create-dirs dir))
     (spit (str tmp-file) (str (str/join "\n" lines) "\n"))
     (fs/move tmp-file outbox-file)
+    (check-backlog-depth) ; Add backlog depth check after writing handoff
     outbox-file))
 
 (defn error-report [draft errors]

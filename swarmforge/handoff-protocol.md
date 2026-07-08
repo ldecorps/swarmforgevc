@@ -376,7 +376,12 @@ Responsibilities:
 The tmux message should not name the delivered file. It should avoid biasing the
 recipient toward one file and should force queue-order processing.
 
-Example tmux wake-up:
+This message is a shared constant (`HANDOFF_WAKE_MESSAGE`) defined once in the
+extension's `extension/src/swarm/verifiedInject.ts` and referenced by both
+`handoffd.bb` (daemon wake path) and the extension's chaser/recovery wake paths.
+Never duplicate the literal; both implementations reference the single shared source.
+
+Example tmux wake-up (from the shared constant):
 
 ```text
 You have new handoff mail. If idle, run ready_for_next.sh.

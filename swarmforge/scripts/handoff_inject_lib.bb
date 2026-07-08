@@ -5,8 +5,11 @@
             [babashka.process :as process]
             [clojure.string :as str]))
 
-(def wake-message
-  "You have new handoff mail. If idle, run ready_for_next.sh.")
+(def scripts-dir (fs/path (fs/parent (fs/canonicalize *file*))))
+(load-file (str (fs/path scripts-dir "agent_runtime_lib.bb")))
+(load-file (str (fs/path scripts-dir "agent_runtime_inject.bb")))
+
+(def wake-message agent-runtime-lib/default-wake-chat-message)
 
 (def notify-max-retries 3)
 (def notify-retry-delay-ms 200)
@@ -64,50 +67,24 @@
       (and (zero? (:exit cr)) (zero? (:exit lf))))))
 
 (defn notify!
-  "Delivers wake-message to session's pane with verified submit (BL-093/109)."
-  [socket session & {:keys [log-fn traffic]}]
+  "Delivers agent-specific wake to session's pane with verified submit."
+  [socket session & {:keys [log-fn traffic agent]}]
   (let [log! (or log-fn (fn [& _] nil))
-        record! (fn [outcome detail attempts stacked?]
-                  (when traffic
-                    (record-inject-traffic! (:project-root traffic)
-                                            (cond-> {:source (or (:source traffic) "inject")
-                                                     :outcome outcome
-                                                     :role (:role traffic)
-                                                     :session session
-                                                     :parcel (:parcel traffic)}
-                                              detail (assoc :detail detail)
-                                              attempts (assoc :attempts attempts)
-                                              stacked? (assoc :stacked stacked?)))))
-        before (capture-pane-text socket session)
-        stacked? (pending-input? before)
-        pending-text (if stacked? (pending-input-line before) wake-message)]
-    (when-not stacked?
-      (let [send-text (tmux! "-S" socket "send-keys" "-t" session "-l" wake-message)]
-        (when-not (zero? (:exit send-text))
-          (record! "error" "tmux send text failed" nil stacked?)
-          (throw (ex-info "tmux send text failed" send-text)))
-        (Thread/sleep 150)))
-    (loop [attempt 1]
-      (when-not (send-submit! socket session)
-        (record! "error" "tmux send submit failed" attempt stacked?)
-        (throw (ex-info "tmux send submit failed" {:session session})))
-      (let [capture (capture-pane-text socket session)]
-        (cond
-          (not (text-still-pending? capture pending-text))
-          (do (record! "ok" nil attempt stacked?) nil)
-
-          (>= attempt notify-max-retries)
-          (let [detail (if stacked?
-                         "pane already held undelivered input and it still would not submit"
-                         (str "submit not confirmed after " attempt " attempt(s)"))]
-            (log! "notify-delivery-failed" session detail)
-            (record! "failed" detail attempt stacked?)
-            nil)
-
-          :else
-          (do
-            (Thread/sleep (* notify-retry-delay-ms attempt))
-            (recur (inc attempt))))))))
+        on-outcome (fn [outcome detail attempts stacked?]
+                     (when traffic
+                       (record-inject-traffic! (:project-root traffic)
+                                               (cond-> {:source (or (:source traffic) "inject")
+                                                        :outcome outcome
+                                                        :role (:role traffic)
+                                                        :session session
+                                                        :parcel (:parcel traffic)}
+                                                 detail (assoc :detail detail)
+                                                 attempts (assoc :attempts attempts)
+                                                 stacked? (assoc :stacked stacked?)))))]
+    (agent-runtime-inject/notify-agent! socket session (or agent "claude")
+                                        :log-fn log-fn
+                                        :on-outcome on-outcome
+                                        :script-rel-path agent-runtime-lib/ready-script-rel-path)))
 
 (defn read-lines [path]
   (when (fs/exists? path)
@@ -210,6 +187,7 @@
             (spit (str target) (render-message (:headers delivered) (:body delivered))))
           (notify! socket (:session role-info)
                    :log-fn log-fn
+                   :agent (:agent role-info)
                    :traffic {:project-root project-root
                              :source "sync-deliver"
                              :role recipient
