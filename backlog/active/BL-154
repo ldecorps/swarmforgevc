@@ -1,8 +1,0 @@
-{
-  "task_id": "BL-154",
-  "title": "Implement feature X",
-  "description": "Add support for feature X in the codebase.",
-  "priority": 10,
-  "created_at": "2026-07-10T00:00:00Z",
-  "status": "active"
-}
