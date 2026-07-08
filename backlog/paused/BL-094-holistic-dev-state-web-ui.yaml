@@ -112,3 +112,4 @@ acceptance: |
   #    preserved (its suite stays green).
   #  - No browser storage APIs; no external network fetches in the UI
   #    bundle.
+mutation_cost: medium

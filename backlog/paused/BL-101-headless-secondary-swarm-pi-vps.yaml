@@ -95,3 +95,4 @@ acceptance: |
   #    hardware walkthroughs are documented manual steps.
   #  - All substrate installs pinned per the engineering article (no
   #    "latest").
+mutation_cost: high

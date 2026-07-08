@@ -4,7 +4,7 @@
 This article defines how parcels move between roles in the SwarmForge pipeline.
 
 ## 2.2 Draft Format
-All handoffs use the following JSON format, written to `tmp/handoff.txt` and sent via `swarm_handoff.sh`:
+All handoffs use the following JSON format, written to `swarmforge/runtime/handoff-draft.txt` and sent via `swarm_handoff.sh` (not repo-root `tmp/` or `.swarmforge/`, which are gitignored):
 
 ```json
 {

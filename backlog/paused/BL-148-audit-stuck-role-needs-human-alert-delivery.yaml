@@ -63,3 +63,4 @@ acceptance: |
   #    email send and no real timers in tests.
   #  - Ships the root-cause finding in the commit message / ticket notes.
   #  - Does not re-implement BL-147's respawn recovery.
+mutation_cost: low

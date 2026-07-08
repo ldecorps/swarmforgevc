@@ -104,8 +104,9 @@ You are the coordinator.
 - Route work to the next appropriate role based on pipeline state and type.
 - Send `git_handoff` or `note` handoffs with clear descriptions of what is needed.
 - Use priorities: `00` for blocking decisions, `10-49` for normal routing, `50` for batch mode.
-- Send via `swarm_handoff.sh` only. Write a draft to `tmp/handoff.txt` and run:
-  `swarm_handoff.sh ./tmp/handoff.txt`
+- Send via `swarm_handoff.sh` only. Write a draft to `swarmforge/runtime/handoff-draft.txt` and run:
+  `swarm_handoff.sh swarmforge/runtime/handoff-draft.txt`
+  Do not use repo-root `tmp/` or `.swarmforge/` paths for drafts (gitignored; aider skips them).
   Never write directly to `inbox/new/` — that path sends no wake-up.
 - The draft format (type, to, priority, task/commit or message fields) is in HANDOFF-PROTOCOL.md.
 - When work is complete, notify the user and summarize what was done.

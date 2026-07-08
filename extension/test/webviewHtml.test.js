@@ -475,3 +475,14 @@ test('panel.js removes stalled class when needs-human is active (precedence)', (
 test('panel.js removes needs-human class when event needsHuman becomes false', () => {
   assert(panelJs.includes("classList.remove('needs-human')"), 'must remove needs-human class when false');
 });
+
+test('getWebviewHtml CSS defines working-beam animation for active agents', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  assert(html.includes('@keyframes working-beam'), 'must define working-beam animation');
+  assert(html.includes('.tile.working:not(.needs-human):not(.dead):not(.stalled)'), 'working pulse must defer to alarm states');
+});
+
+test('panel.js handles activity message type for working border pulse', () => {
+  assert(panelJs.includes("case 'activity'"), 'must handle activity message');
+  assert(panelJs.includes("classList.toggle('working'"), 'must toggle working class');
+});

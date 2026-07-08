@@ -66,3 +66,4 @@ acceptance: |
   #  - Document the contract and adapter template.
   #  - Add tests proving orchestration behavior parity across at least two providers.
   #  - Include migration plan for existing provider paths.
+mutation_cost: high

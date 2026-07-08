@@ -323,6 +323,20 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
     .tile.stalled {
       border-color: #d4a017;
     }
+    /* Soft teal border pulse while a pane is actively producing output. */
+    @keyframes working-beam {
+      0%, 100% {
+        border-color: #26a69a;
+        box-shadow: 0 0 0 1px rgba(38, 166, 154, 0.35);
+      }
+      50% {
+        border-color: rgba(38, 166, 154, 0.35);
+        box-shadow: 0 0 10px 2px rgba(38, 166, 154, 0.55);
+      }
+    }
+    .tile.working:not(.needs-human):not(.dead):not(.stalled) {
+      animation: working-beam 1.2s ease-in-out infinite;
+    }
     .tile.dead {
       border-color: #e53935;
     }

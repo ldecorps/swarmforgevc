@@ -74,3 +74,4 @@ acceptance: |
   #    reporter output (small reporter plugin or a tail-to-json wrapper).
   #  - The durable file is the contract; the tile is a view — this must not
   #    depend on the (currently buggy) webview.
+mutation_cost: low

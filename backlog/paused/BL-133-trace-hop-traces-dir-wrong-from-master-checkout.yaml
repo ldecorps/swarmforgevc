@@ -52,3 +52,4 @@ acceptance: |
     Given a trace id already seeded at .swarmforge/traces/<id>.log
     When trace-hop.js <id> receive is run with SWARMFORGE_ROLE=coder from a role worktree
     Then the hop lands in the same repo-rooted .swarmforge/traces/<id>.log as before
+mutation_cost: medium

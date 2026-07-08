@@ -61,3 +61,4 @@ acceptance: |
   #  - Helpers testable with an injected/fake gh; no live GitHub in tests.
   #  - specifier.prompt (and the closing role's prompt) gain the
   #    invocation points.
+mutation_cost: high

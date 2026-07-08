@@ -1,0 +1,32 @@
+# Two-pack overlay (coordinator + coder + cleaner)
+
+Read this when your swarm was launched with a `two-pack` pack config.
+
+## Pipeline shape
+- **No specifier** in this pack. Coordinator promotes backlog and routes **directly to coder**.
+- Chain: **coordinator → coder → cleaner → coordinator** (for completion/PR signals).
+- Do not wait for a specifier or invent a seven-stage chain.
+
+## Backlog items
+- Active work lives as **`backlog/active/*.yaml`** (e.g. `BL-154-handoff-tmux-injection-no-daemon.yaml`).
+- Never create parallel JSON or stub files under `backlog/active/`.
+- Promote from `backlog/paused/` only when active count is below `active_backlog_max_depth` in config.
+
+## Sending handoffs (critical)
+- Draft path: **`swarmforge/runtime/handoff-draft.txt`** (writable by all agents — not gitignored)
+- **Do not** write handoff drafts under repo-root `tmp/` or `.swarmforge/` — gitignored; aider refuses those paths
+- After writing the draft, run: `swarmforge/scripts/swarm_handoff.sh swarmforge/runtime/handoff-draft.txt`
+- With `SWARMFORGE_SKIP_DAEMON=1`, delivery is synchronous (inbox + tmux wake).
+
+## Quick mechanical route (human or coordinator)
+To route the top active backlog item to coder without drafting by hand:
+```sh
+swarmforge/scripts/route_backlog_to_coder.sh [BL-id]
+```
+
+## Coordinator on this pack
+- Orchestrate only: backlog intake, handoffs, stall chasing.
+- Never edit production code, tests, or `swarmforge/scripts/` yourself.
+
+## Coder / cleaner on this pack
+- Implement and verify; hand off with `git_handoff` per `swarmforge/roles/<role>.prompt`.

@@ -58,3 +58,4 @@ acceptance: |
   #  - Tested through the existing bounceWatcher seams with fake fs/watch;
   #    no live tmux in tests.
   #  - Host-side only; two-layer rule unchanged.
+mutation_cost: low

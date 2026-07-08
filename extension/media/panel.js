@@ -669,9 +669,18 @@ window.addEventListener('message', (event) => {
         if (entry) {
           if (e.stalled) {
             entry.tile.classList.add('stalled');
+            entry.tile.classList.remove('working');
           } else {
             entry.tile.classList.remove('stalled');
           }
+        }
+      });
+      break;
+    case 'activity':
+      message.events.forEach((e) => {
+        const entry = tiles.get(e.role);
+        if (entry) {
+          entry.tile.classList.toggle('working', e.working);
         }
       });
       break;
@@ -682,6 +691,7 @@ window.addEventListener('message', (event) => {
           if (e.needsHuman) {
             entry.tile.classList.add('needs-human');
             entry.tile.classList.remove('stalled');
+            entry.tile.classList.remove('working');
           } else {
             entry.tile.classList.remove('needs-human');
           }

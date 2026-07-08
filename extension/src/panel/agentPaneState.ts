@@ -3,6 +3,8 @@ const PERMISSION_MODE = /bypass permissions|auto mode|accept edits|dont ask|plan
 const UI_MARKERS = /shift\+tab to cycle|esc to interrupt/i;
 const DIVIDER_AND_PROMPT = /─{3,}/;
 const ARROW_MARKER = /❯/;
+const AGENT_CLI_NAMES = /(?:^|\/)claude$|(?:^|\/)aider$|(?:^|\/)codex$|(?:^|\/)copilot$|(?:^|\/)grok$/;
+const AIDER_BUSY = /(?:Applying edits|Searching|Summariz|Generating|Tokens:\s*\d)/i;
 
 // "esc to interrupt" is Claude Code's own busy/generating footer, shown only
 // while a turn is actively in flight - unlike "shift+tab to cycle", which
@@ -17,12 +19,30 @@ export function isPaneActivelyProcessing(paneText: string): boolean {
   return ACTIVELY_PROCESSING.test(paneText);
 }
 
+export function isAgentActivelyWorking(paneCommand: string, paneText: string): boolean {
+  if (isPaneActivelyProcessing(paneText)) {
+    return true;
+  }
+  const cmd = paneCommand.toLowerCase();
+  if (cmd.includes('aider') && AIDER_BUSY.test(paneText)) {
+    return true;
+  }
+  return false;
+}
+
 export function isClaudeAgentRunning(
   paneCommand: string,
   paneText: string
 ): boolean {
-  const cmd = paneCommand.toLowerCase();
-  if (cmd.includes('claude')) {
+  return isAgentCliRunning(paneCommand, paneText);
+}
+
+export function isAgentCliRunning(
+  paneCommand: string,
+  paneText: string
+): boolean {
+  const cmd = paneCommand.trim();
+  if (AGENT_CLI_NAMES.test(cmd) || cmd.toLowerCase().includes('aider')) {
     return true;
   }
 
@@ -43,6 +63,12 @@ export function isClaudeAgentRunning(
   if (DIVIDER_AND_PROMPT.test(text) && ARROW_MARKER.test(text)) {
     return true;
   }
+  if (/^Aider v\d/m.test(text) || /\bAider v\d/.test(text)) {
+    return true;
+  }
+  if (AIDER_BUSY.test(text)) {
+    return true;
+  }
 
   return false;
 }
@@ -51,7 +77,7 @@ export function isShellOnlyPane(
   paneCommand: string,
   paneText: string
 ): boolean {
-  if (isClaudeAgentRunning(paneCommand, paneText)) {
+  if (isAgentCliRunning(paneCommand, paneText)) {
     return false;
   }
 
@@ -85,7 +111,7 @@ export function agentPaneStatusMessage(
   paneCommand: string,
   paneText: string
 ): string | undefined {
-  if (isClaudeAgentRunning(paneCommand, paneText)) {
+  if (isAgentCliRunning(paneCommand, paneText)) {
     return undefined;
   }
 

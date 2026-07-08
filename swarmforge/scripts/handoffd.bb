@@ -11,10 +11,11 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_inject.bb")))
 
 (def poll-ms 1000)
-(def wake-message
-  "You have new handoff mail. If idle, run ready_for_next.sh.")
+(def wake-message agent-runtime-lib/default-wake-chat-message)
 
 ;; BL-146: single-daemon consolidation. Chase/nudge sweeps run every
 ;; chase-sweep-every-cycles poll cycles (poll-ms apart) - the same babashka
@@ -217,46 +218,17 @@
       (= "1" (System/getenv "SWARMFORGE_SKIP_TMUX_INJECT"))))
 
 (defn notify!
-  "Delivers the wake message to session's pane, verifying the submit actually
-   registered (retrying Enter with backoff) instead of trusting a zero tmux
-   exit code alone. Never stacks a new copy onto already-pending input - it
-   retries submitting whatever is already sitting there instead. Logs (does
-   not throw) when delivery cannot be confirmed after retrying, so a wedged
-   pane cannot silently swallow every future notify! for that role."
-  [socket session]
-  (let [before (capture-pane-text socket session)
-        stacked? (pending-input? before)
-        pending-text (if stacked? (pending-input-line before) wake-message)]
-    (when-not stacked?
-      (let [send-text (tmux! "-S" socket "send-keys" "-t" session "-l" wake-message)]
-        (when-not (zero? (:exit send-text))
-          (throw (ex-info "tmux send text failed" send-text)))
-        (Thread/sleep 150)))
-    (loop [attempt 1]
-      (when-not (send-submit! socket session)
-        (throw (ex-info "tmux send submit failed" {:session session})))
-      (let [capture (capture-pane-text socket session)]
-        (cond
-          (not (text-still-pending? capture pending-text))
-          nil
-
-          (>= attempt notify-max-retries)
-          (log! "notify-delivery-failed" session
-                (if stacked?
-                  "pane already held undelivered input and it still would not submit"
-                  (str "submit not confirmed after " attempt " attempt(s)")))
-
-          :else
-          (do
-            (Thread/sleep (* notify-retry-delay-ms attempt))
-            (recur (inc attempt))))))))
+  [socket session agent]
+  (agent-runtime-inject/notify-agent! socket session (or agent "claude")
+                                        :log-fn (fn [tag sess detail] (log! tag sess detail))
+                                        :script-rel-path agent-runtime-lib/ready-script-rel-path))
 
 (defn maybe-notify!
   "Tmux wake after mailbox delivery. Skipped when SWARMFORGE_MAILBOX_ONLY=1."
-  [socket session role recipient-path]
+  [socket session role recipient-path agent]
   (if (tmux-inject-disabled?)
     (log! "delivered-mailbox-only" role (str recipient-path))
-    (notify! socket session)))
+    (notify! socket session agent)))
 
 (defn move-with-collision
   "Moves source into target-dir, uniquifying on a name collision. Returns
@@ -316,7 +288,7 @@
               (fs/create-dirs (fs/parent target))
               (when-not (fs/exists? target)
                 (spit (str target) (render-message (:headers delivered) (:body delivered))))
-              (maybe-notify! socket (:session role-info) recipient (str target)))))
+              (maybe-notify! socket (:session role-info) recipient (str target) (:agent role-info)))))
         (when (= "rule_proposal" (get headers "type"))
           (append-rule-proposal! headers))
         (move-with-collision path (sent-dir (get roles sender-role)))
@@ -363,7 +335,7 @@
             :when (seq (inbox-new-files role-info))]
       (log! "startup-notify" (:role role-info))
       (try
-        (notify! socket (:session role-info))
+        (notify! socket (:session role-info) (:agent role-info))
         (catch Exception e
           (log! "startup-notify-error" (:role role-info) (.getMessage e)))))))
 
@@ -568,7 +540,7 @@
         adapters {:get-liveness get-liveness
                   :send-wake-up! (fn [role]
                                     (when-not (tmux-inject-disabled?)
-                                      (try (notify! socket (:session (get roles role)))
+                                      (try (notify! socket (:session (get roles role)) (:agent (get roles role)))
                                            (catch Exception e (log! "chase-wake-error" role (.getMessage e))))))
                   :trigger-respawn! (fn [role]
                                        (try (do-respawn! (get roles role) socket)

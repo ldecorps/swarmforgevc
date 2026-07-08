@@ -83,3 +83,4 @@ acceptance: |
   #  - Header parsing pure + unit-tested with fabricated handoff texts;
   #    unparseable items counted, not fatal.
   #  - Trend deltas reuse the BL-096 shared trend function.
+mutation_cost: medium

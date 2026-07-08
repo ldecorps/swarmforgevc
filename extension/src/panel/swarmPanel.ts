@@ -229,6 +229,9 @@ export class SwarmPanel {
       },
       (message) => {
         this.outputChannel.appendLine(message);
+      },
+      (events) => {
+        this.panel.webview.postMessage({ type: 'activity', events });
       }
     );
     this.tailer.start();

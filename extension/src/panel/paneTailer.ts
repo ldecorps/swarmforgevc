@@ -15,13 +15,15 @@ import {
 } from '../swarm/tmuxClient';
 import { appendInputEntry } from '../swarm/inputLog';
 import { recordHumanInput } from '../swarm/humanInputTracker';
-import { agentPaneStatusMessage } from './agentPaneState';
+import { agentPaneStatusMessage, isAgentActivelyWorking } from './agentPaneState';
 import { stripAnsi } from './ansi';
 import { detectNeedsHuman } from './needsHumanDetection';
 import { accumulatePaneHistory } from './paneHistory';
 
 const DEFAULT_POLL_INTERVAL_MS = 200;
 export const STALL_THRESHOLD_MS = 120_000;
+// Recent pane/output motion keeps the tile border in a soft "working" pulse.
+export const WORKING_INDICATOR_MS = 30_000;
 const DEFAULT_HISTORY_LINES = 5000;
 const MAX_HISTORY_LINES = 50000;
 
@@ -101,6 +103,11 @@ export interface NeedsHumanEvent {
   needsHuman: boolean;
 }
 
+export interface ActivityEvent {
+  role: string;
+  working: boolean;
+}
+
 export class PaneTailer {
   private interval: ReturnType<typeof setInterval> | undefined;
   private lastText = new Map<string, string>();
@@ -110,7 +117,9 @@ export class PaneTailer {
   // this, not the growing history.
   private lastRawText = new Map<string, string>();
   private lastChangedAt = new Map<string, number>();
+  private lastPaneCommand = new Map<string, string>();
   private stalledRoles = new Set<string>();
+  private workingRoles = new Set<string>();
   private deadRoles = new Set<string>();
   private needsHumanRoles = new Set<string>();
   private liveRoles = new Set<string>();
@@ -138,7 +147,8 @@ export class PaneTailer {
     private readonly onRoles?: (roles: SwarmRole[]) => void,
     paneRows?: number,
     private readonly onNeedsHuman?: (events: NeedsHumanEvent[]) => void,
-    private readonly onPollError?: (message: string) => void
+    private readonly onPollError?: (message: string) => void,
+    private readonly onActivity?: (events: ActivityEvent[]) => void
   ) {
     this.historyLines = normalizeHistoryLines(historyLines);
     this.paneRows = normalizePaneRows(paneRows);
@@ -182,7 +192,9 @@ export class PaneTailer {
     this.lastText.clear();
     this.lastRawText.clear();
     this.lastChangedAt.clear();
+    this.lastPaneCommand.clear();
     this.stalledRoles.clear();
+    this.workingRoles.clear();
     this.deadRoles.clear();
     this.liveRoles.clear();
     this.paneHistory.clear();
@@ -244,6 +256,7 @@ export class PaneTailer {
     }
 
     this.emitStallEvents();
+    this.emitActivityEvents();
     this.emitNeedsHumanEvents();
   }
 
@@ -296,6 +309,42 @@ export class PaneTailer {
       this.stalledRoles.delete(role.role);
     }
     return { role: role.role, stalled };
+  }
+
+  private emitActivityEvents(): void {
+    if (!this.onActivity) {
+      return;
+    }
+    const now = Date.now();
+    const events: ActivityEvent[] = [];
+    for (const role of this.roles) {
+      if (this.deadRoles.has(role.role)) {
+        if (this.workingRoles.has(role.role)) {
+          this.workingRoles.delete(role.role);
+          events.push({ role: role.role, working: false });
+        }
+        continue;
+      }
+      const lastChanged = this.lastChangedAt.get(role.role);
+      const raw = this.lastRawText.get(role.role) ?? '';
+      const cmd = this.lastPaneCommand.get(role.role) ?? '';
+      const working =
+        isAgentActivelyWorking(cmd, raw) ||
+        (lastChanged !== undefined && now - lastChanged < WORKING_INDICATOR_MS);
+      const wasWorking = this.workingRoles.has(role.role);
+      if (working === wasWorking) {
+        continue;
+      }
+      if (working) {
+        this.workingRoles.add(role.role);
+      } else {
+        this.workingRoles.delete(role.role);
+      }
+      events.push({ role: role.role, working });
+    }
+    if (events.length > 0) {
+      this.onActivity(events);
+    }
   }
 
   private emitNeedsHumanEvents(): void {
@@ -424,6 +473,7 @@ export class PaneTailer {
     this.lastText.delete(role);
     this.lastRawText.delete(role);
     this.lastChangedAt.delete(role);
+    this.lastPaneCommand.delete(role);
     this.paneHistory.delete(role);
     this.paneHistoryContentLines.delete(role);
   }
@@ -451,8 +501,14 @@ export class PaneTailer {
 
     const rawText = stripAnsi(result.stdout);
     const paneCommand = getPaneCommand(this.socketPath, target);
+    this.lastPaneCommand.set(role.role, paneCommand);
     const statusOverlay = agentPaneStatusMessage(paneCommand, rawText);
-    this.lastRawText.set(role.role, statusOverlay ?? rawText);
+    const effectiveRaw = statusOverlay ?? rawText;
+    const previousRaw = this.lastRawText.get(role.role);
+    this.lastRawText.set(role.role, effectiveRaw);
+    if (previousRaw === undefined || previousRaw !== effectiveRaw) {
+      this.lastChangedAt.set(role.role, Date.now());
+    }
     return statusOverlay ?? this.accumulateHistory(role.role, rawText);
   }
 

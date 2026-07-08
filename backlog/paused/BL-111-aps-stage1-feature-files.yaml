@@ -67,3 +67,4 @@ acceptance: |
   #    clause removed.
   #  - Tools installed under a project-local path, never resolved as
   #    "latest"; bumping the pin stays a human commit.
+mutation_cost: high

@@ -55,3 +55,4 @@ acceptance: |
   #    handlers, runner adapter, convenience scripts).
   #  - Step handlers touch no VS Code API and no webview context.
   #  - coder.prompt and QA.prompt updated as described.
+mutation_cost: medium
