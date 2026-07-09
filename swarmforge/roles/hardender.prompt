@@ -37,6 +37,24 @@ You are the hardender.
   run steals cores, skews timing, and can corrupt the incremental manifest.
   Reap any straggler by its process group (`kill -- -<pgid>`) before you start;
   never launch a fresh run on top of a still-running one.
+- BL-149 file-change cooldown gate (first stage, ahead of the load check
+  below): for each changed production file, run
+  `bb swarmforge/scripts/mutation_cooldown_gate.bb <project-root> <file>`
+  and read its `DECISION:` line before deciding whether to mutation-test
+  that file this pass:
+  - `skip-cooldown` — the file was last committed-touched within the
+    configured cooldown window (default 3 days, `swarmforge.conf`'s
+    `mutation_cooldown_days`). Skip it unconditionally: do not
+    mutation-test it this pass, regardless of host load or time of day. A
+    file still actively churning should not be prematurely stabilized.
+  - `skip-busy` — past cooldown, but the host is currently busy (the same
+    load-average signal as the office-hours bypass below, now read from
+    `mutation_busy_load_multiplier`). Deferred to the next quiet pass, same
+    handling as the existing bypass.
+  - `run` — past cooldown and the host is quiet. Proceed to the `uptime`
+    check below (it will also read quiet, since both draw on the same
+    signal) and then the mutation run itself.
+  Only files the gate reports `run` for reach the steps below.
 - Before any mutation or full-suite run, check `uptime`: if the load average
   exceeds ~2x the core count, wait for it to subside or fall back to targeted
   tests instead of assuming a stuck run is a code defect. (Lesson, 2026-07-06:
