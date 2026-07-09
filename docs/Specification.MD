@@ -238,7 +238,7 @@ The bridge is an **opt-in local HTTP server** that exposes the same on-disk swar
 
 `GET /metrics`, `GET /cost-telemetry`, and `GET /holistic` are all computed fresh on each request rather than folded into the ~1s SSE poll loop the other endpoints share — the underlying git-history walk and handoff-state/transcript reads are too expensive to recompute every tick.
 
-**Holistic dev-state web UI:** Opening the bridge's root URL (`http://127.0.0.1:<port>/?token=<token>`) in any browser — desktop or phone, as long as it can reach the dev machine — serves a single self-contained page (inline CSS/JS, no external fetch or CDN, no localStorage/sessionStorage) showing the backlog board, per-swarm panel, pipeline flow, and recent activity, live-updated over the same `/events` SSE stream the rest of the bridge uses. It is read-only, exactly like every other bridge surface. A ticket's `swarm:` field (defaulting to `primary` when absent, per BL-090) determines whether it's shown as a live-tracked local ticket or labeled remote/last-synced.
+**Holistic dev-state web UI:** Opening the bridge's root URL (`http://127.0.0.1:<port>/?token=<token>`) in any browser — desktop or phone, as long as it can reach the dev machine — serves a single self-contained page (inline CSS/JS, no external fetch or CDN, no localStorage/sessionStorage) showing the backlog board, per-swarm panel, pipeline flow, and recent activity, live-updated over the same `/events` SSE stream the rest of the bridge uses. It is read-only, exactly like every other bridge surface. A ticket's `swarm:` field (defaulting to `primary` when absent, per BL-090) determines whether it's shown as a live-tracked local ticket or labeled remote/last-synced. The page also has a **Metrics section** charting the delivery metrics above — a dependency-free inline SVG bar chart for velocity and for each milestone's burndown, plus text readouts for cycle time and forecasts — fetched once per page load/reconnect from `GET /metrics` (presentation only; no metric computation happens client-side) and re-rendered from the already-fetched data on each live update rather than re-fetching every tick.
 
 **Example usage (cURL):**
 
@@ -299,7 +299,7 @@ A second metrics layer, derived purely from git history and the current `backlog
 - **Forecasts**: p50/p85 completion date per open milestone, projected from trailing throughput and historical cycle-time distribution — dependency-aware, so a ticket's forecast date never precedes its `depends_on` tickets'
 - **Suite duration trend**: the existing per-run suite duration (BL-078) expressed as a trend line; reports "no local data" gracefully rather than erroring
 
-Available today via the `GET /metrics` bridge endpoint (see Remote Access & Phone App below) and the CLI (below) — both are fed by the same computation, so they always report the same numbers. Charting these trends in the panel's web UI is tracked separately (BL-211); this layer is computation/trend only for now.
+Available via the `GET /metrics` bridge endpoint (see Remote Access & Phone App below), the CLI (below), and charted directly in the holistic dev-state web UI's Metrics section (below) — all three are fed by the same computation, so they always report the same numbers.
 
 #### Cost & Resource Telemetry
 
