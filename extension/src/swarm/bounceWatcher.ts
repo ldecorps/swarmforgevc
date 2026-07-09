@@ -64,10 +64,7 @@ export function startBounceWatcher(
   const swarmforgeDir = path.join(targetPath, '.swarmforge');
   const bounceFilePath = path.join(swarmforgeDir, 'bounce');
 
-  // Check if directory exists
-  if (!fs.existsSync(swarmforgeDir)) {
-    return null;
-  }
+  fs.mkdirSync(swarmforgeDir, { recursive: true });
 
   // Watch the directory since watching a non-existent file may not work reliably
   const watcher = fs.watch(swarmforgeDir, (eventType, filename) => {

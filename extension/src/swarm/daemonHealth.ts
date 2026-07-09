@@ -16,6 +16,44 @@ export interface DaemonHealth {
 // human intervenes, distinct from the (now unused) transient restart states.
 const KNOWN_STATES = new Set(['healthy', 'restarting', 'persistent-failure', 'halted']);
 
+function readDaemonPid(targetPath: string): number | null {
+  const pidFile = path.join(targetPath, '.swarmforge', 'daemon', 'handoffd.pid');
+  try {
+    const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+    return Number.isFinite(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function shouldSkipHandoffDaemon(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env['SWARMFORGE_SKIP_DAEMON'] === '1' || env['SWARMFORGE_MAILBOX_ONLY'] === '1';
+}
+
+/** True when handoffd is expected and its tracked pid is alive and not halted. */
+export function isDaemonReady(targetPath: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  if (shouldSkipHandoffDaemon(env)) {
+    return true;
+  }
+
+  const health = readDaemonHealth(targetPath);
+  if (health.state === 'halted') {
+    return false;
+  }
+
+  const pid = readDaemonPid(targetPath);
+  return pid !== null && isPidAlive(pid);
+}
+
 export function readDaemonHealth(targetPath: string): DaemonHealth {
   const statusFile = path.join(
     targetPath,
