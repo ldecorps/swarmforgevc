@@ -92,10 +92,13 @@ function readHeartbeatAgeMs(targetPath: string, nowMs: number): number | null {
   }
 }
 
-function labelForPhase(phase: DaemonProcessPhase, detail?: string): string {
+function labelForPhase(phase: DaemonProcessPhase, detail?: string, env?: NodeJS.ProcessEnv): string {
   switch (phase) {
     case 'skipped':
-      return 'handoffd off (sync inject)';
+      if (env?.['SWARMFORGE_MAILBOX_ONLY'] === '1') {
+        return 'handoffd mailbox-only';
+      }
+      return 'handoffd off (SKIP_DAEMON)';
     case 'halted':
       return detail ? `handoffd HALTED (${detail})` : 'handoffd HALTED';
     case 'dead':
@@ -124,7 +127,7 @@ export function computeDaemonProcessStatus(
   probe: DaemonProcessProbe = {}
 ): DaemonProcessStatus {
   if (shouldSkipHandoffDaemon(env)) {
-    return { phase: 'skipped', label: labelForPhase('skipped') };
+    return { phase: 'skipped', label: labelForPhase('skipped', undefined, env) };
   }
 
   const health = readDaemonHealth(targetPath);

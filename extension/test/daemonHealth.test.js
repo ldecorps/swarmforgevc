@@ -78,7 +78,7 @@ test('computeDaemonProcessStatus reports skipped when daemon is disabled', () =>
   const target = mkTarget(undefined);
   const status = computeDaemonProcessStatus(target, { SWARMFORGE_SKIP_DAEMON: '1' });
   assert.equal(status.phase, 'skipped');
-  assert.match(status.label, /off/);
+  assert.match(status.label, /SKIP_DAEMON/);
 });
 
 test('computeDaemonProcessStatus reports halted from the status file', () => {
