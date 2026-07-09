@@ -1,12 +1,12 @@
 id: BL-223
-title: "Provision a real inbound recert domain and flip the phone address off the .invalid placeholder"
+title: "Wire phone recert to a real deliverable inbound address (Resend-managed domain), off the .invalid placeholder"
 milestone: M3
 status: todo
 priority: 06
 direction: feature
 assigned_to: coder
 depends_on: [BL-217, BL-150]
-source: "operator 2026-07-09: a live phone recert email to recert@swarmforge.invalid bounced (NXDOMAIN). Cause: pwa/app.js hardcodes a reserved-TLD placeholder; no real inbound domain is provisioned. Operator domain: musicalsifu.com (a dedicated swarmforge domain may replace it later)."
+source: "operator 2026-07-09: a live phone recert email to recert@swarmforge.invalid bounced (NXDOMAIN). Cause: pwa/app.js hardcodes a reserved-TLD placeholder; no real inbound address was wired. Operator has a Resend-managed receiving domain: tolokarooo.resend.app (no DNS needed). Custom domain musicalsifu.com remains a later branding option."
 
 description: |
   OPERATOR (2026-07-09): sending a recertification email from the phone bounced
@@ -22,40 +22,48 @@ description: |
       receiver (BL-217). BL-150 (recert UI) was only tested against the
       inbound-webhook seam with doubles; no real address was ever wired.
     - Outbound email works only because it defaults to Resend's shared
-      onboarding@resend.dev sender (swarmPanel.ts ~line 255). There is NO shared
-      address for RECEIVING — inbound requires a domain we control with MX
-      records, which does not exist yet.
+      onboarding@resend.dev sender (swarmPanel.ts ~line 255). Receiving needs a
+      real inbound address, which did not exist.
     - A test asserts the placeholder value:
       extension/test/pwaRecertification.test.js references swarmforge.invalid, so
       it must be updated in lockstep with the address change.
 
-  Wanted outcome:
-  - The phone recert mailto is addressed to a REAL, deliverable inbound address
-    on a domain the operator controls — recert@inbound.musicalsifu.com (the
-    operator's domain musicalsifu.com; a dedicated swarmforge domain may replace
-    it later, which is exactly why the address should be config-injected rather
-    than re-hardcoded) — never the reserved .invalid placeholder.
-  - A recertification email sent from the phone to that address is received and
-    reaches the BL-217 serverless receiver, which queues a proposal for specifier
-    review (the end-to-end path BL-150's seam + BL-217 already define).
+  Transport decision (operator 2026-07-09):
+  - Use the operator's RESEND-MANAGED receiving domain, tolokarooo.resend.app.
+    Any address on it (recert@tolokarooo.resend.app) is received by Resend and
+    POSTed to a webhook — with NO DNS/MX setup on the operator's side (Resend
+    owns the MX). This is simpler than a custom domain and is sufficient for an
+    internal machine-composed recert write-path address (branding is irrelevant
+    here). A branded custom domain (e.g. inbound.musicalsifu.com) is a possible
+    LATER swap; keeping the address config-injected (below) makes that a config
+    change, not a code change.
 
-  Provisioning (operator + ops; documented as a runbook in this ticket / docs):
-  1. Choose an inbound subdomain of the operator's domain (e.g.
-     inbound.musicalsifu.com).
-  2. Add an MX record on that subdomain pointing at Resend Inbound, and verify
-     the domain in the Resend account.
-  3. Configure a Resend Inbound route so mail to recert@inbound.musicalsifu.com is
-     POSTed to BL-217's serverless function HTTPS endpoint (Vercel Functions,
+  Wanted outcome:
+  - The phone recert mailto is addressed to recert@tolokarooo.resend.app (never
+    the reserved .invalid placeholder).
+  - A recertification email sent from the phone to that address is received by
+    Resend Inbound and POSTed to the BL-217 serverless receiver, which queues a
+    proposal for specifier review (the end-to-end path BL-150's seam + BL-217
+    already define).
+
+  Go-live wiring (operator + ops; documented as a short runbook in this ticket):
+  1. In the Resend dashboard, confirm the managed receiving domain
+     (tolokarooo.resend.app) under Receiving. No DNS/MX records to add.
+  2. Configure the Resend Inbound webhook/route so incoming mail for that domain
+     is POSTed to BL-217's serverless function HTTPS endpoint (Vercel Functions,
      Node runtime — see BL-217).
-  - These are DNS/registrar + Resend-dashboard actions only the operator can
-    perform; the ticket documents the exact steps, it does not automate them.
+  - Optional/later (branding, NOT required for go-live): add a custom receiving
+    domain such as inbound.musicalsifu.com (subdomain + MX -> Resend Inbound +
+    domain verification) and re-point the config to recert@inbound.musicalsifu.com.
+    Resend recommends a subdomain so it never conflicts with musicalsifu.com's
+    existing mail.
 
   Code change (coder):
   - Replace the hardcoded pwa/app.js RECERT_EMAIL_TO `.invalid` placeholder with
-    the real address. Prefer sourcing it from generated/injected config the PWA
-    already consumes (alongside backlog.json / recert-batch.json) over a second
-    hardcode, so it cannot silently regress to .invalid; a plain constant with
-    the real value is acceptable if config injection is disproportionate.
+    recert@tolokarooo.resend.app. Source it from generated/injected config the
+    PWA already consumes (alongside backlog.json / recert-batch.json), NOT a
+    second hardcode — so it cannot silently regress to .invalid and so a future
+    custom-domain swap is a config change only.
   - Update the mirrored host-side recert content path (extension/src/docs/
     recertification.ts / emailContent.ts) and
     extension/test/pwaRecertification.test.js to the new address in lockstep.
@@ -69,9 +77,9 @@ description: |
   - Do not weaken BL-217's signature verification: a real address does not change
     that unsigned inbound requests must never create a proposal.
 
-  QA e2e procedure (live swarm, after provisioning):
+  QA e2e procedure (live swarm, after wiring):
   - From the phone, tap a recert update; confirm the mail client composes to
-    recert@inbound.musicalsifu.com (not .invalid) and the email sends without
+    recert@tolokarooo.resend.app (not .invalid) and the email sends without
     bouncing.
   - Confirm the signed inbound email reaches the BL-217 receiver and queues
     exactly one proposal for specifier review; confirm an unsigned POST creates
