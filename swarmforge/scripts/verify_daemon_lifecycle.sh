@@ -9,6 +9,8 @@ DAEMON_DIR="$ROOT/.swarmforge/daemon"
 AUDIT="$DAEMON_DIR/daemon-start-audit.log"
 MAX_ATTEMPTS="${DAEMON_VERIFY_ATTEMPTS:-60}"
 
+source "$SCRIPT_DIR/portable_stat_lib.sh"
+
 log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$AUDIT"
 }
@@ -16,6 +18,10 @@ log() {
 pid_alive() {
   local pid="$1"
   [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null
+}
+
+heartbeat_mtime() {
+  portable_stat '%m' '%Y' "$1"
 }
 
 probe_state() {
@@ -27,7 +33,7 @@ probe_state() {
   pid_alive "$handoffd_pid" && handoffd_alive="yes"
   pid_alive "$supervisor_pid" && supervisor_alive="yes"
   [[ -f "$DAEMON_DIR/handoffd.status.json" ]] && status="$(cat "$DAEMON_DIR/handoffd.status.json")"
-  [[ -f "$DAEMON_DIR/handoffd.heartbeat" ]] && heartbeat="$(stat -f '%m' "$DAEMON_DIR/handoffd.heartbeat" 2>/dev/null || echo missing)"
+  [[ -f "$DAEMON_DIR/handoffd.heartbeat" ]] && heartbeat="$(heartbeat_mtime "$DAEMON_DIR/handoffd.heartbeat" 2>/dev/null || echo missing)"
 
   log "probe handoffd=$handoffd_pid alive=$handoffd_alive supervisor=$supervisor_pid alive=$supervisor_alive heartbeat_mtime=$heartbeat status=$status"
   [[ "$handoffd_alive" == "yes" && "$supervisor_alive" == "yes" ]]

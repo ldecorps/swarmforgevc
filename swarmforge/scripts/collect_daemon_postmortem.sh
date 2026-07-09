@@ -4,9 +4,16 @@ set -euo pipefail
 
 ROOT="${1:-$(pwd)}"
 ROOT="$(cd "$ROOT" && pwd -P)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DAEMON_DIR="$ROOT/.swarmforge/daemon"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 OUT="$DAEMON_DIR/postmortem-$STAMP.log"
+
+source "$SCRIPT_DIR/portable_stat_lib.sh"
+
+heartbeat_stat_line() {
+  portable_stat "heartbeat mtime=%Sm size=%z" "heartbeat mtime=%y size=%s" "$1"
+}
 
 mkdir -p "$DAEMON_DIR"
 
@@ -40,7 +47,7 @@ mkdir -p "$DAEMON_DIR"
   echo "=== status / stop / heartbeat ==="
   [[ -f "$DAEMON_DIR/handoffd.status.json" ]] && cat "$DAEMON_DIR/handoffd.status.json" || echo "status: (missing)"
   [[ -f "$DAEMON_DIR/stop" ]] && echo "stop file: PRESENT" || echo "stop file: absent"
-  [[ -f "$DAEMON_DIR/handoffd.heartbeat" ]] && stat -f "heartbeat mtime=%Sm size=%z" "$DAEMON_DIR/handoffd.heartbeat" || echo "heartbeat: (missing)"
+  [[ -f "$DAEMON_DIR/handoffd.heartbeat" ]] && heartbeat_stat_line "$DAEMON_DIR/handoffd.heartbeat" || echo "heartbeat: (missing)"
   echo
 
   echo "=== tmux ==="
