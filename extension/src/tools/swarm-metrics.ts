@@ -96,7 +96,19 @@ export function formatOverview(metrics: SwarmMetrics, roleNames: string[]): stri
       : `${suite.warn ? 'WARN ' : ''}Suite duration: ${formatSuiteDurationMs(suite.latestMs)}` +
         ` (mean ${formatSuiteDurationMs(suite.meanMs as number)} over ${suite.sampleCount} run(s))`;
 
-  return [meanLine, busynessLine, retryLine, suiteLine].join('\n');
+  // BL-098: per-role chase/nudge counts, durably logged by the daemon's
+  // chase-sweep (absent telemetry - e.g. these older fixtures, or a fresh
+  // target - reads as an empty per-role bucket, never a crash).
+  const chaserLine =
+    'Chaser telemetry: ' +
+    roleNames
+      .map((role) => {
+        const t = metrics.chaserTelemetry?.[role] ?? { chases: 0, nudges: 0, recentDailyRate: 0 };
+        return `${role} ${t.chases} chases/${t.nudges} nudges (${t.recentDailyRate.toFixed(2)}/day)`;
+      })
+      .join(', ');
+
+  return [meanLine, busynessLine, retryLine, suiteLine, chaserLine].join('\n');
 }
 
 // Shared by every headless CLI tool under tools/ that keys off roles.tsv
