@@ -1,0 +1,63 @@
+id: BL-224
+title: "./swarm mutation_cost pre-pass creates a junk '*.yaml' ticket when backlog/paused is empty"
+direction: reliability
+source: "operator+claude live diagnosis 2026-07-10: observed during a two-pack launch with an isolated (single-active, empty-paused) backlog. The launch printed 'grep: .../backlog/paused/*.yaml: No such file or directory' three times and left a stray file literally named '*.yaml' (22 bytes, content 'mutation_cost: medium') inside backlog/paused/. Removed by hand at the time."
+
+description: |
+  The repo-root, git-tracked ./swarm launcher has a pre-pass (lines 29-42) that
+  estimates mutation_cost for paused backlog items:
+
+      # Estimate mutation_cost for paused backlog items if not set
+      if [[ -d "$SCRIPT_DIR/backlog/paused" ]]; then
+        for item in "$SCRIPT_DIR/backlog/paused"/*.yaml; do
+          if ! grep -q "mutation_cost:" "$item"; then
+            if   grep -qiE "auth|login|..." "$item"; then echo "mutation_cost: high"   >> "$item"
+            elif grep -qiE "fix|typo|..."   "$item"; then echo "mutation_cost: low"    >> "$item"
+            else                                          echo "mutation_cost: medium" >> "$item"
+            fi
+          fi
+        done
+      fi
+
+  BUG: the glob is unguarded. Bash has nullglob OFF by default, so when
+  backlog/paused/ contains no *.yaml files the pattern does NOT expand and the
+  literal string "$SCRIPT_DIR/backlog/paused/*.yaml" is used as $item. Then:
+    - `grep -q ... "$item"` fails ("No such file or directory") -> non-zero ->
+      `! grep` is true -> the block runs (this also prints the visible
+      'grep: .../*.yaml: No such file' noise at every launch).
+    - none of the content greps match a nonexistent file, so the else branch
+      runs: `echo "mutation_cost: medium" >> "$SCRIPT_DIR/backlog/paused/*.yaml"`
+      which CREATES a real file literally named `*.yaml` (22 bytes).
+
+  Why it matters (not just cosmetic):
+    - That junk `*.yaml` sits in backlog/paused/ and is picked up by the
+      coordinator's backlog scan as if it were a real ticket named "*.yaml".
+    - It recurs on EVERY launch whenever backlog/paused is empty. That is not a
+      rare state: it is exactly what the stabilize-two-pack profile instructs
+      (isolate one ticket to active, park the rest in backlog/_held), so the
+      2-pack workflow triggers this bug every time.
+
+  Repro:
+    1. Empty backlog/paused/ of *.yaml (e.g. isolate to a single active ticket).
+    2. Run ./swarm <target>.
+    3. Observe the 'grep: ...*.yaml: No such file' lines and a new file named
+       '*.yaml' in backlog/paused/ containing "mutation_cost: medium".
+
+  Wanted behavior:
+    - No file is ever created when backlog/paused/ has no *.yaml.
+    - No spurious grep/stderr noise at launch for an empty paused dir.
+    - The mutation_cost estimation still works correctly when paused DOES
+      contain yaml files (behavior unchanged in the non-empty case).
+
+  Suggested fix (implementer's call): guard the loop against the non-expanding
+  glob - e.g. `shopt -s nullglob` scoped around the loop, or `[[ -e "$item" ]] ||
+  continue` as the first line of the loop body. Prefer the smallest change that
+  keeps the existing estimation logic intact.
+
+  Notes:
+    - File is git-tracked (repo-root `swarm`), single occurrence; grep found the
+      same pattern nowhere else.
+    - Guard against a regression: a test/check should assert that launching with
+      an empty backlog/paused creates no file named '*.yaml' and exits cleanly.
+
+mutation_cost: low
