@@ -41,12 +41,21 @@ description: |
       shape so stage-transition events can be added later without
       breaking readers (a type field, additive schema).
 
-  Scope: extension/src/swarm/inboxChaser.ts (emit events at the decision
-  points — pure decision functions stay pure; the append is adapter-side),
-  chaserMonitor/extension.ts wiring (log adapter), queue-helper or chaser
-  sidecar cleanup, metrics module + bridge + CLI additions, BL-094 UI
-  table. All new logic unit-tested through fake adapters (fake fs/clock);
-  no live tmux in tests.
+  Scope (integration point corrected 2026-07-09 — see below): the LIVE
+  chase/nudge/dead-letter/respawn sweep runs in the Babashka daemon since
+  BL-146, so emit each event to the durable JSONL at the daemon's decision
+  points in swarmforge/scripts/chase_sweep_lib.bb (driven by handoffd.bb).
+  The TypeScript extension/src/swarm/inboxChaser.ts decision functions
+  (runSweep/decideItemAction/decideStuckAction) are NO LONGER the production
+  chase engine (BL-146; see chaserMonitor.ts's own note) — do NOT instrument
+  them expecting live events, or the telemetry will be dead in a real swarm.
+  inboxChaser.ts still owns scanning/parsing helpers used by the UI, and its
+  sidecar shapes are mirrored in chase_sweep_lib.bb; keep the two shapes in
+  sync. Read-side stays in the TS metrics module + bridge + CLI
+  (BL-071/BL-096) and the BL-094 UI table, all reading the JSONL. Sidecar
+  cleanup happens where the sidecars are owned (queue helpers / daemon
+  sweep). All new logic unit-tested through fakes (fake fs/clock); no live
+  tmux or live daemon in tests.
 
 acceptance: |
   Feature: chases and nudges are durably counted per role
@@ -89,6 +98,7 @@ acceptance: |
   #  - JSONL records carry a type field; readers ignore unknown types
   #    (forward-compatible with later stage-transition events for BL-097
   #    dwell/bounce).
-  #  - Chaser decision functions remain pure; logging happens in adapters.
+  #  - Chaser decision logic (now in chase_sweep_lib.bb) stays pure where
+  #    practical; the JSONL append is the side-effecting edge.
   #  - Existing chaser suites (BL-067, BL-087, BL-088) stay green.
 mutation_cost: low
