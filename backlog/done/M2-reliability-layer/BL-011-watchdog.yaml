@@ -1,7 +1,7 @@
 id: BL-011
 title: Watchdog — extension-host heartbeat monitor with tile liveness states
 milestone: M2
-status: todo
+status: done
 priority: 11
 
 description: >

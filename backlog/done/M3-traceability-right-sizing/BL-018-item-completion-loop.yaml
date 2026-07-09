@@ -2,7 +2,7 @@ id: BL-018
 title: Item completion detection + next-item loop
 milestone: M3
 priority: 18
-status: active
+status: done
 
 description: >
   The swarm currently runs one item and stops. This slice adds the machinery

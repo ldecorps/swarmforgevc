@@ -1,7 +1,7 @@
 id: BL-079
 title: BUG — dropped/holder-less ticket shows different holders on backlog row vs tile badge
 milestone: M3
-status: todo
+status: done
 priority: 03
 assigned_to: coder
 

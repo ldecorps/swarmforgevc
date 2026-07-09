@@ -1,7 +1,7 @@
 id: BL-129
 title: adopt js-yaml in backlogReader via strict-then-lenient fallback (no regression on free-form titles)
 milestone: M2
-status: todo
+status: done
 priority: 03
 
 description: |

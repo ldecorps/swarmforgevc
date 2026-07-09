@@ -1,7 +1,7 @@
 id: BL-148
 title: "Audit: does a genuinely-wedged role actually fire and deliver a needs-human alert? (4 roles idle, 'no one told' despite surfacing existing)"
 milestone: M2
-status: todo
+status: done
 priority: 04
 direction: reliability
 assigned_to: coder
