@@ -70,10 +70,11 @@ interface JsonRoute {
   compute: (url: string) => unknown;
 }
 
-// Every route below except /events follows the same "match, compute JSON,
-// respond 200" shape. A data-driven table instead of one `if` per route
-// keeps the request handler's own complexity flat as routes are added -
-// BL-096's /metrics and BL-100's /cost-telemetry each pushed the handler's
+// Every route below except /events (and the root HTML shell, a different
+// content-type entirely) follows the same "match, compute JSON, respond
+// 200" shape. A data-driven table instead of one `if` per route keeps the
+// request handler's own complexity flat as routes are added - BL-096's
+// /metrics and BL-100's /cost-telemetry each pushed the handler's
 // per-branch version back over the CRAP<=6 gate in turn; a future route
 // only ever adds a table entry here, never another handler branch.
 function buildJsonRoutes(targetPath: string, runLogPath: string): JsonRoute[] {
