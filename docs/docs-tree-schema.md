@@ -29,6 +29,8 @@ Additive evolution only within `schemaVersion` 1, same rule as
 | `title` | string | Display title. |
 | `kind` | `"markdown" \| "mermaid"` | How the PWA should render `content`. |
 | `content` | string | Raw file content, unmodified. |
+| `contentFr` | string (optional) | BL-118: machine-translated French rendering of `content`. Absent if translation hasn't run for this content yet. |
+| `contentFrUntranslated` | boolean (optional) | BL-118: `true` if `contentFr` is untranslated English (the MT engine was unavailable or failed) rather than an actual French translation. Absent (not `false`) when translation succeeded. |
 
 A document whose source file doesn't exist at the generated SHA is simply
 absent from the array (not a null placeholder).
@@ -50,6 +52,8 @@ absent from the array (not a null placeholder).
 | `priority` | number (optional) | |
 | `milestone` | string (optional) | Absent if the ticket has no milestone (it still appears under `milestones`' `"unspecified"` entry). |
 | `description` | string (optional) | The ticket's prose `description:` field, trimmed. Absent if the ticket has none. |
+| `titleFr` / `titleFrUntranslated` | string / boolean (optional) | BL-118, same additive-sibling shape as `contentFr`/`contentFrUntranslated` above. |
+| `descriptionFr` / `descriptionFrUntranslated` | string / boolean (optional) | BL-118, present only when `description` is present. |
 | `scenarios` | `GherkinScenario[]` | Resolved acceptance scenarios, readable as scenario text. Empty array if the ticket has no acceptance field, or its `specs/features/*.feature` reference doesn't resolve. |
 
 ### GherkinScenario
@@ -58,6 +62,7 @@ absent from the array (not a null placeholder).
 |---|---|---|
 | `name` | string | The text after `Scenario:` / `Scenario Outline:`. |
 | `text` | string | The full scenario block (including its own `Scenario:` line and every step/Examples line), trimmed. |
+| `textFr` / `textFrUntranslated` | string / boolean (optional) | BL-118, a courtesy French rendering. The English `text` remains the binding acceptance contract regardless of locale — the PWA shows `text` by default even in French, with `textFr` a one-tap reveal. |
 
 ## Acceptance resolution (both forms)
 
