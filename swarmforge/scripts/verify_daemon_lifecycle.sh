@@ -9,6 +9,8 @@ DAEMON_DIR="$ROOT/.swarmforge/daemon"
 AUDIT="$DAEMON_DIR/daemon-start-audit.log"
 MAX_ATTEMPTS="${DAEMON_VERIFY_ATTEMPTS:-60}"
 
+source "$SCRIPT_DIR/portable_stat_lib.sh"
+
 log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$AUDIT"
 }
@@ -18,18 +20,8 @@ pid_alive() {
   [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null
 }
 
-# BL-203: BSD/macOS `stat -f FORMAT` and GNU/Linux `stat -c FORMAT` are not
-# interchangeable - on GNU coreutils, `-f` means "filesystem status" instead,
-# so it fails (and can dump multi-line filesystem info to stdout) rather than
-# returning the mtime. Try the BSD form first, fall back to GNU, matching the
-# existing file_size_bytes pattern in check_commit_size.sh.
 heartbeat_mtime() {
-  local file="$1"
-  if stat -f '%m' "$file" >/dev/null 2>&1; then
-    stat -f '%m' "$file"
-  else
-    stat -c '%Y' "$file"
-  fi
+  portable_stat '%m' '%Y' "$1"
 }
 
 probe_state() {
