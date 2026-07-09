@@ -29,6 +29,40 @@ notes: |
   BL-146) clears too — same reasoning as before, now extended: do not
   isolate/bounce while reliability-epic work is in flight at the coder.
 
+  UPDATE (coordinator, 2026-07-09, later): the guarding chain is now fully
+  clear — BL-122, BL-128, and BL-146 have all merged and closed to
+  done/M2-reliability-layer/. The dependency hold is stale. Not auto-acting:
+  promoting this ticket still requires isolating the paused queue (setting
+  every other paused item aside) and requesting a profile bounce to
+  stabilize-two-pack via remote_bounce.sh — a swarm-topology change with
+  real disruption to the other paused work, not a normal promotion. Flagged
+  to the operator for a go/no-go before isolating+bouncing.
+
+  UPDATE (coordinator, 2026-07-09, later still): operator approved bouncing
+  in principle, but BL-112-aps-stage2 was found actively in flight at the
+  architect stage on the current 7-pack at ask time — stabilize-two-pack has
+  no architect/hardener/documenter/QA roles, so bouncing immediately would
+  strand that parcel with no role able to pick it up. Operator decision:
+  wait for BL-112 to clear the 7-pack (finish architect->hardener->
+  documenter->QA->merge) before isolating the queue and bouncing. Same
+  precedent as the earlier BL-121/122 hold. Re-evaluate this hold at the next
+  merge/close recheck once BL-112 closes to done/ (and re-check BL-132/BL-217
+  too, which were freshly active/routed at ask time and may also be in
+  flight by then).
+
+  UPDATE (coordinator, 2026-07-09, even later): BL-112 closed (4731482).
+  Also found BL-132 active with real uncommitted coder WIP and BL-217 active
+  unstarted — asked the operator again; decision: wait for both to also
+  close before isolating/bouncing (not just BL-112). Since then BL-132
+  closed too (664195c). Intake is being deliberately held (no new promotion
+  into the 2 freed active/ slots) so active drains toward empty/BL-217-only
+  instead of refilling — this is a temporary, operator-directed exception to
+  the normal "fill every open slot" recheck rule, not a standing change.
+  Remaining condition: BL-217 (backlog/active/, not yet started by coder)
+  closes to done/. Once active/ is empty, isolate paused/ down to BL-203
+  (mv everything else to backlog/_held/), request `remote_bounce.sh
+  <target> swarm`, then promote BL-203 solo.
+
 description: |
   Problem:
   The VS Code extension launch path has been unreliable for hundreds of

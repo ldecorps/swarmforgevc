@@ -151,7 +151,7 @@ export interface RecertProposal {
 // extension host (unlike a live swarm role) has no SWARMFORGE_ROLE identity
 // to shell out through swarm_handoff.bb with. Never called for a confirm -
 // handleInboundRecertEmail below is the only caller and gates on outcome.
-function toRecertProposal(parsed: { scenarioId: string; outcome: ReviewOutcome; newText?: string }, receivedAtIso: string): RecertProposal {
+export function toRecertProposal(parsed: { scenarioId: string; outcome: ReviewOutcome; newText?: string }, receivedAtIso: string): RecertProposal {
   const proposal: RecertProposal = { scenarioId: parsed.scenarioId, outcome: parsed.outcome, receivedAtIso };
   if (parsed.outcome === 'update') {
     proposal.newText = parsed.newText;
