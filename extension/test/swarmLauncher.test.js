@@ -251,34 +251,64 @@ test('launchSwarm resolves success as soon as stdout announces readiness', async
   }
 });
 
+// BL-212: a fake spawned child, injected via launchSwarm's spawnFn seam -
+// no real OS process, no process group left to kill, deterministic under
+// parallel load. Registering a 'data' listener on .stdout schedules the
+// "ready" announcement on the next microtask: by the time launchSwarm's
+// synchronous Promise executor has registered that listener, spawnFn (and
+// so spawnTrackedJob's registry write) has already run, so there is no
+// timing race to observe the entry - it exists deterministically, not
+// "usually by the time we check."
+function fakeSwarmChild(pid) {
+  const listeners = {};
+  const stdoutListeners = {};
+  return {
+    pid,
+    stdout: {
+      on(event, listener) {
+        stdoutListeners[event] = listener;
+        if (event === 'data') {
+          queueMicrotask(() => listener(Buffer.from('SwarmForge is ready\n')));
+        }
+      },
+    },
+    stderr: { on() {} },
+    on(event, listener) {
+      listeners[event] = listener;
+    },
+    emitExit() {
+      listeners.exit?.();
+    },
+  };
+}
+
 test('spawn-registry-01: launchSwarm records a tracked child-job entry keyed on the spawned process group', async () => {
   const targetPath = mkTmp();
-  // Announce readiness but keep the child alive (blocked on stdin) so the
-  // registry entry can be observed before the process exits and removes it.
-  writeSwarmScriptThatBecomesReady(
-    targetPath,
-    'echo "SwarmForge is ready"\nread _line\nexit 0'
-  );
+  writeSwarmScript(targetPath, 'exit 0'); // only fs.existsSync(swarmScript) needs this - never actually run
   const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  const child = fakeSwarmChild(54321);
   try {
-    const result = await launchSwarm(targetPath);
+    const result = await launchSwarm(targetPath, undefined, 120_000, undefined, () => {
+      // stopSwarm (called at the top of launchSwarm, before spawnFn) tears
+      // down any pre-existing ready-state on purpose - a real ./swarm
+      // script's first action recreates it (writeSwarmScriptThatBecomesReady's
+      // own body), so the fake spawn must too, right when "launched".
+      writeReadyState(targetPath);
+      return child;
+    });
     assert.equal(result.success, true);
 
     const entries = readTrackedJobs(path.join(targetPath, '.swarmforge'));
     assert.equal(entries.length, 1);
     assert.equal(entries[0].kind, 'swarm-launch');
     assert.equal(entries[0].worktree, targetPath);
-    assert.equal(typeof entries[0].pgid, 'number');
+    assert.equal(entries[0].pgid, 54321);
 
-    // detached:true makes the child's pid its process group's leader -
-    // killing the negated pid tears down the whole group so the test
-    // leaves no process behind. If the process group is already gone or
-    // becomes inaccessible, swallow the error (ESRCH or EPERM).
-    try {
-      process.kill(-entries[0].pgid, 'SIGKILL');
-    } catch (e) {
-      if (e.code !== 'ESRCH' && e.code !== 'EPERM') throw e;
-    }
+    // spawn-registry-01 (childJobRegistry.test.js) already covers the
+    // generic remove-on-exit mechanism deterministically; this only
+    // confirms launchSwarm's own entry is the one that reacts to it.
+    child.emitExit();
+    assert.deepEqual(readTrackedJobs(path.join(targetPath, '.swarmforge')), []);
   } finally {
     fake.restore();
   }
