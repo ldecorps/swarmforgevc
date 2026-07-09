@@ -37,9 +37,8 @@ Feature: Webhook-signature test fixtures carry no scanner-tripping secret litera
 #  - Behavior-preserving: the HMAC secret still base64-decodes to real bytes, so
 #    verifySvixSignature accept/reject and the replay/timestamp tests are unchanged;
 #    tests stay instant, no real timers.
-#  - Operator prerequisite (NOT pipeline work): if the operator confirms the value
-#    was ever a real Svix/Resend/Stripe endpoint secret, they rotate it at the
-#    provider dashboard and mark the GitGuardian incident resolved. If no live
-#    endpoint exists (none was provisioned per BL-223), it is a false positive and
-#    only this neutralization is needed. History rewrite is out of scope unless the
-#    operator explicitly requests it (rotation makes the old value worthless).
+#  - Operator action (NOT pipeline work): mark the GitGuardian incident resolved /
+#    false positive. NO rotation needed — the value is confirmed to be Svix's
+#    public docs example (whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw), never a live
+#    credential. History rewrite is out of scope (no real secret to purge); this
+#    neutralization is the whole fix.
