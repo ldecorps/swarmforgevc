@@ -109,6 +109,36 @@ test('parseBacklogYaml omits description/acceptance when absent', () => {
   assert.equal(Object.prototype.hasOwnProperty.call(item, 'acceptance'), false);
 });
 
+// ── parseYamlBlockScalar via the LENIENT regex fallback (strict js-yaml
+// throws on a gnarly title first, matching the real BL-093-shaped fixture
+// already covered by BL-129's no-regression test) ──────────────────────────
+
+test('parseBacklogYaml extracts a description block scalar via the lenient fallback on a strict-unparsable ticket', () => {
+  const yaml = 'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\ndescription: |\n  Root cause: something.\n  Second line.\n';
+  const item = parseBacklogYaml(yaml);
+  assert.ok(item, 'expected the lenient parser to still surface a ticket');
+  assert.equal(item.description, 'Root cause: something.\nSecond line.');
+});
+
+test('parseBacklogYaml lenient fallback returns undefined for a missing block-scalar field', () => {
+  const yaml = 'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'description'), false);
+});
+
+test('parseBacklogYaml lenient fallback dedents a block scalar to its own minimum indentation, including a deeper-indented paragraph', () => {
+  const yaml =
+    'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\ndescription: |\n  Top level.\n    More indented.\n  Back to top.\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.description, 'Top level.\n  More indented.\nBack to top.');
+});
+
+test('parseBacklogYaml lenient fallback treats an all-blank block scalar as absent', () => {
+  const yaml = 'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\ndescription: |\n\n\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'description'), false);
+});
+
 test('parseBacklogYaml handles title with colons in value', () => {
   const yaml = 'id: BL-007\ntitle: Named runs — branch and PR named after work item\nstatus: active\n';
   const item = parseBacklogYaml(yaml);

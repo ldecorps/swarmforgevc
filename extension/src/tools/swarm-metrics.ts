@@ -24,6 +24,7 @@ import {
   formatSuiteDurationMs,
   NO_SAMPLE_PLACEHOLDER,
   SwarmMetrics,
+  RoleWorktree,
 } from '../metrics/swarmMetrics';
 import {
   computeDeliveryMetrics,
@@ -231,6 +232,35 @@ export function formatResourceTrendsLine(resourceTrends: Record<string, RoleReso
 export function loadRoles(projectRoot: string): RoleEntry[] {
   const rolesTsv = fs.readFileSync(path.join(projectRoot, '.swarmforge', 'roles.tsv'), 'utf8');
   return parseRolesTsv(rolesTsv);
+}
+
+export interface CliMainWorktreeContext {
+  projectRoot: string;
+  roles: RoleEntry[];
+  roleWorktrees: RoleWorktree[];
+  mainWorktreePath: string;
+}
+
+// Shared by every headless "generate <thing>.json from repo state" CLI
+// under tools/ (swarm-metrics.ts, generate-backlog-dashboard.ts,
+// generate-docs-tree.ts): resolve the project root, its roles, and the
+// main (specifier/coordinator) worktree that git-derived data should be
+// read from - the same three calls each of those tools' own main() would
+// otherwise repeat inline (jscpd flagged that exact repetition once a
+// second generator existed).
+export function resolveCliMainWorktreeContext(): CliMainWorktreeContext {
+  const projectRoot = resolveProjectRoot(process.cwd());
+  const roles = loadRoles(projectRoot);
+  const roleWorktrees = roles.map((r) => ({ role: r.role, worktreePath: r.worktreePath }));
+  const mainWorktreePath = resolveMainWorktreePath(projectRoot, roles);
+  return { projectRoot, roles, roleWorktrees, mainWorktreePath };
+}
+
+// Shared by the same "generate <thing>.json" CLIs: the payload is always
+// printed as pretty-printed JSON, and ONLY the payload, so a GitHub Action
+// can redirect stdout straight to a file.
+export function printJsonToStdout(data: unknown): void {
+  process.stdout.write(JSON.stringify(data, null, 2) + '\n');
 }
 
 // Shared `require.main === module` entrypoint boilerplate for tools/ CLIs:
