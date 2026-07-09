@@ -8,13 +8,14 @@ depends_on: [BL-142]
 source: "Decomposed from BL-142 provider-neutral contract epic (operator request 2026-07-06) by specifier 2026-07-09."
 
 notes: |
-  HOLD (operator, 2026-07-09): postpone the remaining provider-abstraction
-  slices (BL-206/207/208) until after the phone app (BL-097/BL-117/BL-211)
-  and daily-briefing enrichment (BL-100) land. Operator is running
-  Claude-only for now and doesn't need multi-provider abstraction urgency.
-  depends_on BL-142 is satisfied (merged) so this would otherwise be
-  eligible - do not promote on eligibility alone; wait for the phone/
-  briefing chain to close first.
+  HOLD RELEASED (coordinator, 2026-07-09): phone app (BL-094/096/097/211/117)
+  and daily-briefing enrichment (BL-100/BL-213) all merged. Condition met -
+  eligible for normal priority-ordered promotion now.
+
+  Prior hold (kept for audit): postpone the remaining provider-abstraction
+  slices (BL-206/207/208) until after the phone app and daily-briefing
+  enrichment land - operator was running Claude-only for now and didn't
+  need multi-provider abstraction urgency.
 
 description: |
   Slice 2 of the provider-neutral contract epic. The fork's

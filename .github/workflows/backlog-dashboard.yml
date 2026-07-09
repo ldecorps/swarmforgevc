@@ -11,6 +11,9 @@ name: Backlog dashboard
 # explorer's artifact) on the same trigger, published alongside
 # backlog.json - both are pure git-derived projections rebuilt together.
 #
+# BL-150: also regenerates recert-batch.json (the recertification view's
+# already oldest-first-selected batch), same trigger, same posture.
+#
 # Runs AFTER a push has already landed, and is not configured as a required
 # status check, so a failure here is visible in the Actions tab but never
 # blocks the push or the pipeline that produced it.
@@ -28,6 +31,7 @@ on:
       - 'extension/src/docs/**'
       - 'extension/src/tools/generate-backlog-dashboard.ts'
       - 'extension/src/tools/generate-docs-tree.ts'
+      - 'extension/src/tools/generate-recert-batch.ts'
       - 'extension/src/notify/costHealthSidecar.ts'
       - 'pwa/**'
       - '.github/workflows/backlog-dashboard.yml'
@@ -77,11 +81,12 @@ jobs:
           mkdir -p .swarmforge
           printf 'coordinator\tnone\t%s\tswarmforge-coordinator\tCoordinator\tnone\ttask\n' "$(pwd)" > .swarmforge/roles.tsv
 
-      - name: Generate backlog.json and docs-tree.json
+      - name: Generate backlog.json, docs-tree.json, and recert-batch.json
         run: |
           mkdir -p _site
           node extension/out/tools/generate-backlog-dashboard.js > _site/backlog.json
           node extension/out/tools/generate-docs-tree.js > _site/docs-tree.json
+          node extension/out/tools/generate-recert-batch.js > _site/recert-batch.json
 
       - name: Copy PWA static assets
         run: cp -r pwa/. _site/
