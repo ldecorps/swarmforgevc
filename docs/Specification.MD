@@ -1274,6 +1274,10 @@ The discipline that keeps complexity flat: **the filesystem stays the single sou
 
 The phone case is the *only* thing that actually needs a network service, because a phone can't read your laptop's filesystem or reach the host's orchestrator remotely — something must expose that. The bridge does exactly that and nothing more: it reads the same files the extension reads and forwards commands as the same orchestrator/helper calls. Tier 1 and Tier 2 are therefore the *same* architecture with an optional projection bolted on — not two designs, and crucially **no state-sync problem**, since there's only ever one source of truth on disk.
 
+### Backlog Dashboard PWA (implemented — no dev machine, bridge, or tunnel needed)
+
+A third, already-built option sidesteps Tier 2's tunnel/auth requirement entirely for read-only backlog visibility: `.github/workflows/backlog-dashboard.yml` runs on every push to `main` that touches `backlog/` or the metrics/backlog-parsing code, generates a versioned `backlog.json` (schema: `docs/backlog-dashboard-schema.md`) via `node out/tools/generate-backlog-dashboard.js`, and publishes it to GitHub Pages alongside a small installable PWA (`pwa/`). Because it's static and served from Pages, it's reachable from any browser — including a phone, from anywhere — with **no dev machine running, no bridge started, no tunnel or token**. The dashboard shows the active/paused backlog board, done tickets grouped by milestone, and the same velocity/burndown/cycle-time/forecast numbers the `swarm-metrics` CLI and the bridge's `GET /metrics` report at that commit (never re-derived, so the three surfaces always agree). It's offline-capable (a service worker caches the static shell cache-first and `backlog.json` network-first-with-cache-fallback, so an offline open still renders the last-fetched data with its own "as of `<generatedAtIso>`" honesty indicator) and installable as a home-screen PWA. The generating Action is not a required check — a failure is visible in GitHub Actions but never gates the pipeline.
+
 ### The remote bridge (Tier 2)
 
 ```
