@@ -35,6 +35,13 @@ function isStateRoute(url: string): url is StateRoute {
   return url === '/pipeline' || url === '/agents' || url === '/backlog' || url === '/runlog';
 }
 
+// Split out of the request handler below so its own complexity stays under
+// the CRAP<=6 gate (BL-096's added /metrics branch pushed it to 7) - the
+// cached-snapshot-or-compute-fresh choice for a new SSE subscriber.
+function resolveEventsSnapshot(lastSnapshot: string | undefined, targetPath: string, runLogPath: string): string {
+  return lastSnapshot ?? JSON.stringify(buildBridgeState(targetPath, runLogPath));
+}
+
 export function startBridge(
   targetPath: string,
   runLogPath: string,
@@ -63,7 +70,7 @@ export function startBridge(
           'cache-control': 'no-cache',
           connection: 'keep-alive',
         });
-        const snapshot = lastSnapshot ?? JSON.stringify(buildBridgeState(targetPath, runLogPath));
+        const snapshot = resolveEventsSnapshot(lastSnapshot, targetPath, runLogPath);
         res.write(`data: ${snapshot}\n\n`);
         sseClients.add(res);
         req.on('close', () => sseClients.delete(res));

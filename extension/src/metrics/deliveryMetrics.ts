@@ -1,7 +1,7 @@
 import { runGitLog, deriveTicketLifecycles, TicketLifecycleEvent } from './gitHistoryAdapter';
 import { computeTrend, TrendResult, TrendSeriesPoint } from './trend';
 import { readBacklogFolders, BacklogFolders, BacklogItem } from '../panel/backlogReader';
-import { RoleWorktree, readTestDurationRecords } from './swarmMetrics';
+import { RoleWorktree, readAllTestDurationRecords } from './swarmMetrics';
 
 // BL-096: delivery-flow metrics (velocity, burndown, cycle time, forecasts)
 // derived purely from git history + the current backlog/ folder state - see
@@ -425,8 +425,7 @@ export interface SuiteDurationTrendResult {
 }
 
 export function computeSuiteDurationTrend(targetPath: string, roles: RoleWorktree[], nowMs: number): SuiteDurationTrendResult {
-  const worktreePaths = new Set<string>([targetPath, ...roles.map((r) => r.worktreePath)]);
-  const allRecords = [...worktreePaths].flatMap(readTestDurationRecords);
+  const allRecords = readAllTestDurationRecords(targetPath, roles);
 
   if (allRecords.length === 0) {
     return { hasLocalData: false, dailySeries: [], trend: computeTrend([]) };

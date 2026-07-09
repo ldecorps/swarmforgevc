@@ -7,6 +7,7 @@ const {
   resolveProjectRoot,
   resolveMainWorktreePath,
   formatOverview,
+  formatDeliveryOverview,
   runCliMain,
 } = require('../out/tools/swarm-metrics');
 
@@ -167,6 +168,104 @@ test('formatOverview prefixes WARN when the suite-duration entry is flagged', ()
   };
   const text = formatOverview(metrics, []);
   assert.match(text, /WARN Suite duration: 2m 10s/);
+});
+
+// --- formatDeliveryOverview / formatTrend (BL-096) ---
+// formatTrend itself is private, but every direction/null-delta branch it
+// has is reachable through formatDeliveryOverview's velocity line, so
+// exercising it there covers formatTrend without widening the module's
+// public surface just for a test seam.
+
+function noSampleTrend() {
+  return { series: [], currentValue: null, priorValue: null, delta: null, direction: 'unknown' };
+}
+
+function baseDeliveryMetrics(velocityTrend) {
+  return {
+    velocity: { weeklySeries: [], trend: velocityTrend, rollingWindowCount: 4, rollingWindowDays: 7 },
+    burndown: [],
+    cycleTime: { medianMs: null, p85Ms: null, sampleCount: 0, weeklySeries: [], trend: noSampleTrend() },
+    forecasts: { tickets: [], milestones: [], throughputPerDay: 0 },
+    suiteDurationTrend: { hasLocalData: false, dailySeries: [], trend: noSampleTrend() },
+  };
+}
+
+test('formatDeliveryOverview on a fresh repo prints "no data" placeholders for every section, never NaN/Infinity/undefined', () => {
+  const text = formatDeliveryOverview(baseDeliveryMetrics(noSampleTrend()));
+  assert.match(text, /Velocity: 4 closed in trailing 7d/);
+  assert.match(text, /Burndown: — \(no milestones\)/);
+  assert.match(text, /Cycle time: — \(0 closed\)/);
+  assert.match(text, /Forecasts: — \(no open milestone tickets\)/);
+  assert.match(text, /Suite duration trend: no local data/);
+  assert.doesNotMatch(text, /NaN|Infinity|undefined/);
+});
+
+test('formatDeliveryOverview omits the trend suffix when direction is unknown (empty or single-point series)', () => {
+  const text = formatDeliveryOverview(baseDeliveryMetrics(noSampleTrend()));
+  assert.doesNotMatch(text, /vs prior/);
+});
+
+test('formatDeliveryOverview marks an upward trend with a + sign and the delta magnitude', () => {
+  const trend = { series: [], currentValue: 4, priorValue: 3, delta: 1, direction: 'up' };
+  const text = formatDeliveryOverview(baseDeliveryMetrics(trend));
+  assert.match(text, /Velocity: 4 closed in trailing 7d \(\+1 vs prior\)/);
+});
+
+test('formatDeliveryOverview marks a downward trend with a - sign and the absolute delta magnitude', () => {
+  const trend = { series: [], currentValue: 2, priorValue: 5, delta: -3, direction: 'down' };
+  const text = formatDeliveryOverview(baseDeliveryMetrics(trend));
+  assert.match(text, /Velocity: 4 closed in trailing 7d \(-3 vs prior\)/);
+});
+
+test('formatDeliveryOverview marks a flat trend with a ± sign', () => {
+  const trend = { series: [], currentValue: 4, priorValue: 4, delta: 0, direction: 'flat' };
+  const text = formatDeliveryOverview(baseDeliveryMetrics(trend));
+  assert.match(text, /Velocity: 4 closed in trailing 7d \(±0 vs prior\)/);
+});
+
+test('formatDeliveryOverview renders populated burndown, cycle time, and forecast sections', () => {
+  const metrics = baseDeliveryMetrics(noSampleTrend());
+  metrics.burndown = [
+    { milestone: 'M1', dailySeries: [], trend: noSampleTrend(), currentRemaining: 3 },
+    { milestone: 'M2', dailySeries: [], trend: noSampleTrend(), currentRemaining: 0 },
+  ];
+  metrics.cycleTime = { medianMs: 32_400_000, p85Ms: 90_000_000, sampleCount: 12, weeklySeries: [], trend: noSampleTrend() };
+  metrics.forecasts = {
+    tickets: [],
+    milestones: [{ milestone: 'M1', p50Iso: '2026-07-15T00:00:00.000Z', p85Iso: '2026-07-20T00:00:00.000Z' }],
+    throughputPerDay: 0.5,
+  };
+
+  const text = formatDeliveryOverview(metrics);
+  assert.match(text, /Burndown: M1 3 remaining, M2 0 remaining/);
+  assert.match(text, /Cycle time: median 9h/);
+  assert.match(text, /p85/);
+  assert.match(text, /over 12 ticket\(s\)/);
+  assert.match(text, /Forecasts: M1 p50 2026-07-15 \/ p85 2026-07-20/);
+  assert.doesNotMatch(text, /NaN|Infinity|undefined/);
+});
+
+test('formatDeliveryOverview forecast line falls back to the placeholder when a milestone has no p50/p85 date yet', () => {
+  const metrics = baseDeliveryMetrics(noSampleTrend());
+  metrics.forecasts = {
+    tickets: [],
+    milestones: [{ milestone: 'M1', p50Iso: null, p85Iso: null }],
+    throughputPerDay: 0,
+  };
+  const text = formatDeliveryOverview(metrics);
+  assert.match(text, /Forecasts: M1 p50 — \/ p85 —/);
+});
+
+test('formatDeliveryOverview reports the latest suite-duration sample and its trend when local data exists', () => {
+  const metrics = baseDeliveryMetrics(noSampleTrend());
+  const trend = { series: [], currentValue: 5000, priorValue: 4000, delta: 1000, direction: 'up' };
+  metrics.suiteDurationTrend = {
+    hasLocalData: true,
+    dailySeries: [{ periodStart: '2026-07-08', value: 4000 }, { periodStart: '2026-07-09', value: 5000 }],
+    trend,
+  };
+  const text = formatDeliveryOverview(metrics);
+  assert.match(text, /Suite duration trend: 5s latest \(\+1s vs prior\)/);
 });
 
 // --- end-to-end: the compiled CLI actually runs headless and exits 0 ---
