@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { MutationProgressReporter } = require('../out/mutation/mutationProgressReporter');
+const { MutationProgressReporter, resolveReporterConfig } = require('../out/mutation/mutationProgressReporter');
 
 const START = new Date('2026-07-09T12:00:00Z').getTime();
 
@@ -90,4 +90,41 @@ test('defaults role from SWARMFORGE_ROLE and resolves the standard path when not
       process.env.SWARMFORGE_ROLE = previous;
     }
   }
+});
+
+// ── resolveReporterConfig (pure, BL-132 cleanup) ──────────────────────────
+// Extracted from the constructor (CRAP 7.00 at 100% coverage - five
+// independent fallbacks concentrated in one function). Directly testable
+// without instantiating the Reporter class or touching process.env.
+
+test('resolveReporterConfig uses every explicit dep override as-is, ignoring env', () => {
+  const write = () => {};
+  const now = () => START;
+  const config = resolveReporterConfig(
+    { now, role: 'coder', filePath: '/fake/coder.json', write, mutateFile: 'src/foo.ts' },
+    { SWARMFORGE_ROLE: 'hardender', STRYKER_MUTATE_FILE: 'src/bar.ts' },
+    '/repo'
+  );
+  assert.equal(config.now, now);
+  assert.equal(config.filePath, '/fake/coder.json');
+  assert.equal(config.write, write);
+  assert.equal(config.mutateFile, 'src/foo.ts');
+});
+
+test('resolveReporterConfig falls back to env SWARMFORGE_ROLE/STRYKER_MUTATE_FILE when deps omit them', () => {
+  const config = resolveReporterConfig({}, { SWARMFORGE_ROLE: 'hardender', STRYKER_MUTATE_FILE: 'src/bar.ts' }, '/repo');
+  assert.match(config.filePath, /hardender\.json$/);
+  assert.equal(config.mutateFile, 'src/bar.ts');
+});
+
+test('resolveReporterConfig falls back to role "unknown" and mutateFile undefined when neither deps nor env supply them', () => {
+  const config = resolveReporterConfig({}, {}, '/repo');
+  assert.match(config.filePath, /unknown\.json$/);
+  assert.equal(config.mutateFile, undefined);
+});
+
+test('resolveReporterConfig defaults now to Date.now and write to writeProgressRecord when omitted', () => {
+  const config = resolveReporterConfig({}, {}, '/repo');
+  assert.equal(config.now, Date.now);
+  assert.equal(typeof config.write, 'function');
 });
