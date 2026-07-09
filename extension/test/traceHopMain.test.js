@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawnSync, execSync } = require('node:child_process');
 
 const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'trace-hop.js');
 
@@ -106,6 +106,57 @@ test('main writes an incrementing attempt number across repeated retries', () =>
   const content = fs.readFileSync(path.join(tracesDir, 'trace-3.log'), 'utf8');
   assert.match(content, /^RETRY coder .+ attempt=1 reason="flaky test"$/m);
   assert.match(content, /^RETRY coder .+ attempt=2 reason="flaky test again"$/m);
+});
+
+// ── BL-133: resolveTracesDir over a real git checkout, end to end ──────────
+// Every test above pins SWARMFORGE_TRACES_DIR, which bypasses the exact git
+// resolution path production runs with the env var unset - none of them
+// would have caught BL-133 (the master/coordinator checkout landing traces
+// one directory ABOVE the real repo root).
+
+test('BL-133 master-checkout-01: a hop from the master checkout lands in the pre-seeded repo-rooted trace log, not one level above the repo', () => {
+  const repoRoot = fs.realpathSync(mkTmp());
+  execSync('git init -q', { cwd: repoRoot });
+  execSync('git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init', { cwd: repoRoot });
+
+  const tracesDir = path.join(repoRoot, '.swarmforge', 'traces');
+  fs.mkdirSync(tracesDir, { recursive: true });
+  const logPath = path.join(tracesDir, 'trace-133.log');
+  fs.writeFileSync(logPath, 'SEED trace-133\n');
+
+  const env = { ...process.env, SWARMFORGE_ROLE: 'coordinator' };
+  delete env.SWARMFORGE_TRACES_DIR;
+  const result = spawnSync('node', [CLI_PATH, 'trace-133', 'receive'], { encoding: 'utf8', env, cwd: repoRoot });
+
+  assert.equal(result.status, 0, result.stderr);
+  const content = fs.readFileSync(logPath, 'utf8');
+  assert.match(content, /^HOP coordinator .+ action=receive state=received$/m);
+
+  // The literal historical symptom (BL-133): a stray .swarmforge one level
+  // above the repo root instead of inside it.
+  const strayDir = path.join(path.dirname(repoRoot), '.swarmforge');
+  assert.equal(fs.existsSync(strayDir), false, 'no .swarmforge directory must be created outside the repository');
+});
+
+test('BL-133 worktree-still-works-02: a hop from a linked worktree still lands in the main repo-rooted trace log', () => {
+  const mainRepo = fs.realpathSync(mkTmp());
+  execSync('git init -q', { cwd: mainRepo });
+  execSync('git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init', { cwd: mainRepo });
+  const worktreePath = path.join(fs.realpathSync(mkTmp()), 'linked-worktree');
+  execSync(`git worktree add -q -b sfvc-test-bl133 "${worktreePath}"`, { cwd: mainRepo });
+
+  const tracesDir = path.join(mainRepo, '.swarmforge', 'traces');
+  fs.mkdirSync(tracesDir, { recursive: true });
+  const logPath = path.join(tracesDir, 'trace-133b.log');
+  fs.writeFileSync(logPath, 'SEED trace-133b\n');
+
+  const env = { ...process.env, SWARMFORGE_ROLE: 'coder' };
+  delete env.SWARMFORGE_TRACES_DIR;
+  const result = spawnSync('node', [CLI_PATH, 'trace-133b', 'receive'], { encoding: 'utf8', env, cwd: worktreePath });
+
+  assert.equal(result.status, 0, result.stderr);
+  const content = fs.readFileSync(logPath, 'utf8');
+  assert.match(content, /^HOP coder .+ action=receive state=received$/m);
 });
 
 test('main reports a fatal error when the trace log cannot be written', () => {
