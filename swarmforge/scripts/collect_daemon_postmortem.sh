@@ -8,6 +8,20 @@ DAEMON_DIR="$ROOT/.swarmforge/daemon"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 OUT="$DAEMON_DIR/postmortem-$STAMP.log"
 
+# BL-203: BSD/macOS `stat -f FORMAT` and GNU/Linux `stat -c FORMAT` are not
+# interchangeable - on GNU coreutils, `-f` means "filesystem status" instead,
+# so it fails (and can dump multi-line filesystem info to stdout) rather than
+# reporting the heartbeat's mtime/size. Try the BSD form first, fall back to
+# GNU, matching the existing file_size_bytes pattern in check_commit_size.sh.
+heartbeat_stat_line() {
+  local file="$1"
+  if stat -f "heartbeat mtime=%Sm size=%z" "$file" >/dev/null 2>&1; then
+    stat -f "heartbeat mtime=%Sm size=%z" "$file"
+  else
+    stat -c "heartbeat mtime=%y size=%s" "$file"
+  fi
+}
+
 mkdir -p "$DAEMON_DIR"
 
 {
@@ -40,7 +54,7 @@ mkdir -p "$DAEMON_DIR"
   echo "=== status / stop / heartbeat ==="
   [[ -f "$DAEMON_DIR/handoffd.status.json" ]] && cat "$DAEMON_DIR/handoffd.status.json" || echo "status: (missing)"
   [[ -f "$DAEMON_DIR/stop" ]] && echo "stop file: PRESENT" || echo "stop file: absent"
-  [[ -f "$DAEMON_DIR/handoffd.heartbeat" ]] && stat -f "heartbeat mtime=%Sm size=%z" "$DAEMON_DIR/handoffd.heartbeat" || echo "heartbeat: (missing)"
+  [[ -f "$DAEMON_DIR/handoffd.heartbeat" ]] && heartbeat_stat_line "$DAEMON_DIR/handoffd.heartbeat" || echo "heartbeat: (missing)"
   echo
 
   echo "=== tmux ==="
