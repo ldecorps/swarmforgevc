@@ -5,6 +5,19 @@
 
 set -euo pipefail
 
+# BL-128: every bb "$REDO" invocation below relies on queue-handoff!'s
+# SWARMFORGE_ROLE-unset fallback to "coordinator" (salvage_lib.bb) to land
+# its freshly-queued handoff in $OUTBOX (coordinator's own per-role
+# mailbox). Before the mailbox split this didn't matter - every role's
+# outbox was the same shared flat directory - but now an ambient
+# SWARMFORGE_ROLE inherited from the invoking shell (e.g. run interactively
+# inside one of the pipeline agents' own role-scoped sessions, which already
+# export it) silently redirects the queued handoff into THAT role's own
+# mailbox instead, failing every assertion against $OUTBOX. Unset it here so
+# this test's outcome depends only on its own fixture, never on the caller's
+# environment.
+unset SWARMFORGE_ROLE
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REDO="$SCRIPT_DIR/../redo_from.bb"
 SWARM_HANDOFF="$SCRIPT_DIR/../swarm_handoff.bb"
