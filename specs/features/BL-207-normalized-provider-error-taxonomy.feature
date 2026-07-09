@@ -19,3 +19,6 @@ Scenario: unmapped errors fall back to unknown, not a crash
   When it is normalized
   Then it is categorized as "unknown" with its raw detail attached
 
+# Non-behavioral gates:
+#  - Taxonomy is a closed, enumerable set with an explicit "unknown" fallback.
+#  - Same categorization across fork orchestration and extension surfacing.
