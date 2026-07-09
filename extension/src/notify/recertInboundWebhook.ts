@@ -8,7 +8,7 @@
 // receiver in front of that existing pure core, not re-implementing it.
 
 import { parseRecertEmail, toRecertProposal, RecertProposal, ReviewOutcome } from '../docs/recertification';
-import { verifySvixSignature, SvixHeaders } from './svixSignature';
+import { verifySvixSignature, isTimestampFresh, SvixHeaders } from './svixSignature';
 
 export interface InboundWebhookRequest {
   headers: SvixHeaders;
@@ -73,6 +73,13 @@ function resolveProposal(
 ): ResolvedProposal {
   if (!verifySvixSignature(request.headers, request.rawBody, deps.secret)) {
     return { earlyResponse: { status: 401, body: 'signature verification failed' } };
+  }
+
+  // QA bounce (BL-217): a valid HMAC over an old svix-timestamp is not the
+  // same as a fresh delivery - without this, a captured, validly-signed
+  // request could be replayed indefinitely to create unwanted proposals.
+  if (!isTimestampFresh(request.headers.svixTimestamp, Date.parse(deps.nowIso))) {
+    return { earlyResponse: { status: 401, body: 'stale or replayed request' } };
   }
 
   let payload: unknown;
