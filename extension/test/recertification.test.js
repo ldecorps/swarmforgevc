@@ -122,6 +122,11 @@ test('parseRecertEmail is the exact inverse of buildRecertEmailSubject/Body for 
   assert.deepEqual(parsed, params);
 });
 
+test('parseRecertEmail treats a malformed update (subject says update, body has no "---" marker) as an empty newText rather than throwing or slicing the wrong text', () => {
+  const parsed = parseRecertEmail('SwarmForge recert: update BL-1/x', 'scenario: BL-1/x\noutcome: update');
+  assert.deepEqual(parsed, { scenarioId: 'BL-1/x', outcome: 'update', newText: '' });
+});
+
 test('parseRecertEmail returns null for mail that is not a recognized recert email (a real inbox sees other mail too)', () => {
   assert.equal(parseRecertEmail('Re: your invoice', 'unrelated body'), null);
   assert.equal(parseRecertEmail('SwarmForge recert: bogus-outcome BL-1/x', 'body'), null);
