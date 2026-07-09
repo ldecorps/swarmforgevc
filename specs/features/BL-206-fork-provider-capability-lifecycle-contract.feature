@@ -1,4 +1,4 @@
-Feature: Fork orchestration branches on provider capabilities, uniform lifecycle
+Feature: Fork orchestration branches on provider capabilities with a uniform lifecycle
 
 # BL-206 capability-branching-01
 Scenario: capability flags replace provider-name branching
@@ -24,3 +24,6 @@ Scenario Outline: every lifecycle verb is available uniformly
     | stop    |
     | respawn |
 
+# Non-behavioral gates:
+#  - Extend agent_runtime_lib.bb; keep agent_runtime_test_runner.bb green.
+#  - No real timers/sleeps in tests; drive time explicitly.

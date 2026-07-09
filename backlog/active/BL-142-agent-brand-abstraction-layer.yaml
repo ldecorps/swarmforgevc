@@ -50,5 +50,13 @@ description: |
   - Do NOT reimplement or duplicate the fork's agent_runtime_lib.bb abstraction;
     this slice is the extension's pane-state detection only.
 
+  QA e2e procedure (verify in a live swarm, not just unit tests):
+  - Launch the default claude pack and confirm each tile still resolves
+    busy/running/startup state exactly as before (parity).
+  - Launch an aider-based pack (swarmforge/packs/two-pack-mistral.conf) and
+    confirm aider panes resolve busy/running/startup via their descriptor.
+  - Grep the built detection code to confirm no brand name is hardcoded in the
+    detection functions (the check that caught BL-149-style gaps).
+
 acceptance: specs/features/BL-142-agent-brand-abstraction-layer.feature
 mutation_cost: medium
