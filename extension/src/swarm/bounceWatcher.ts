@@ -187,5 +187,9 @@ export function startBounceWatcher(
   onBounce: (bounceType: BounceType) => void,
   onError?: (error: string) => void,
 ): BounceWatcher | null {
+  const swarmforgeDir = path.join(targetPath, '.swarmforge');
+  if (!fs.existsSync(swarmforgeDir)) {
+    return null;
+  }
   return new BounceFSWatcher(targetPath, onBounce, onError) as unknown as BounceWatcher;
 }
