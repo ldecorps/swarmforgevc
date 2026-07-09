@@ -96,4 +96,32 @@ pass "05: an unmerged stale duplicate branch survives the prune and is reported"
   || fail "06: the master checkout's own branch must never be touched by this migration"
 pass "06: the master row (coordinator/specifier) is skipped, not treated as a worktree to rename"
 
+# ── 07: two non-master roles sharing one physical worktree are processed once ─
+# roles.tsv can list the same worktree_path under two role rows (mirrors how
+# coordinator+specifier share master, but for a non-master worktree_name).
+# Without the seen_worktrees guard, the second row would re-run the rename/
+# prune steps against the same physical worktree, printing the RENAME line
+# for that role again.
+ROOT2="$(cd "$(mktemp -d)" && pwd -P)"
+trap 'rm -rf "$ROOT" "$ROOT2"' EXIT
+git -C "$ROOT2" init -q
+git -C "$ROOT2" config user.email "test@test"
+git -C "$ROOT2" config user.name "test"
+git -C "$ROOT2" commit -q --allow-empty -m init
+mkdir -p "$ROOT2/.worktrees"
+git -C "$ROOT2" worktree add -q -b "swarmforge-shared" "$ROOT2/.worktrees/shared" >/dev/null
+
+mkdir -p "$ROOT2/.swarmforge"
+{
+  printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT2"
+  printf 'shared\tshared\t%s\tswarmforge-shared\tShared\tclaude\ttask\n' "$ROOT2/.worktrees/shared"
+  printf 'shared2\tshared\t%s\tswarmforge-shared2\tShared2\tclaude\ttask\n' "$ROOT2/.worktrees/shared"
+} > "$ROOT2/.swarmforge/roles.tsv"
+
+OUT2="$(bash "$MIGRATE" "$ROOT2" "primary")"
+RENAME_LINES="$(grep -c '^RENAME: ' <<< "$OUT2" || true)"
+[[ "$RENAME_LINES" -eq 1 ]] \
+  || fail "07: expected exactly one RENAME line for a worktree shared by two role rows; got $RENAME_LINES: $OUT2"
+pass "07: two role rows pointing at the same physical worktree are migrated once, not twice"
+
 echo "ALL PASS"
