@@ -1,7 +1,7 @@
 id: BL-093
 title: BUG — pane input injection is unreliable: instructions sit typed-but-unsubmitted, no seam verifies delivery, and a wedged TUI is unrecoverable by send-keys
 milestone: M2
-status: todo
+status: done
 priority: 01
 assigned_to: coder
 

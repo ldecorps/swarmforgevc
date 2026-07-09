@@ -214,3 +214,18 @@ work only; do not route integration merges to the specifier.
   `active_backlog_max_depth` and promote the next eligible paused item
   before going idle. (Rationale: BL-139 closed to done/M3 dropping active
   5->4, but the slot sat open unfed until caught manually.)
+- Fill EVERY open slot on that recheck, not just one: promote and route as
+  many eligible orthogonal paused items as fit up to
+  `active_backlog_max_depth` — coder- AND specifier-assigned alike — rather
+  than a single item per close. A specifier-assigned ticket (a spec to
+  refine/slice, a tracer) is routable work; do not leave it unrouted while
+  slots sit open. Filling up to the cap is using configured capacity, not
+  flooding — the cap remains the human-pace ceiling. (Rationale: active
+  repeatedly sat well below cap this session and specifier-assigned tickets
+  went unrouted for cycles.)
+- Re-evaluate holds on every recheck: a ticket parked on a hold
+  (mutation-cost timing, or an overlap/dependency wait) is held only while
+  its guarding risk is live. Once the overlapping/blocking item has merged or
+  the risk window has passed, the hold is stale — promote the held item
+  instead of leaving it parked. (Rationale: BL-149's mutation-cost hold
+  outlived the risk it guarded until asked twice.)

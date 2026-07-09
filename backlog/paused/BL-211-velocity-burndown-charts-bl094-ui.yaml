@@ -1,0 +1,32 @@
+id: BL-211
+title: "Chart BL-096 delivery metrics in the BL-094 web UI (burndown per milestone, velocity series)"
+milestone: M5
+status: todo
+priority: 02
+direction: non-aligned
+depends_on: [BL-094, BL-096]
+source: "Sliced out of BL-096 by specifier 2026-07-09 (coordinator direction): chart-rendering layer, deferred behind BL-094's UI."
+
+description: |
+  The chart-rendering half of BL-096, split out so BL-096's computation/trend
+  framework can land first (and unblock BL-100) without waiting on BL-094's
+  large UI build.
+
+  Wanted behavior:
+  - Render the BL-096 metrics in the BL-094 holistic web UI as a metrics
+    section: a burndown chart per milestone and a velocity series chart,
+    plus (where space allows) cycle-time and forecast readouts.
+  - Presentation-only: the charts read the BL-096 bridge endpoint's JSON; no
+    metric computation happens in the UI. Consistent with BL-094's guardrails
+    (no browser storage, extension-host owns I/O, token-gated bridge).
+  - Absent/empty metrics (e.g. no local suite-duration data) render as an
+    empty/"no data" state, not an error.
+
+  Constraints:
+  - Depends on BL-094 (the web UI surface) and BL-096 (the endpoint) being
+    merged; do not start until both are on main.
+  - No changes to metric computation — if a chart needs a value the endpoint
+    does not expose, that is a BL-096 change, not this ticket.
+
+acceptance: specs/features/BL-211-velocity-burndown-charts-bl094-ui.feature
+mutation_cost: low
