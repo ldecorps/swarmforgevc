@@ -1,7 +1,7 @@
 id: BL-095
 title: docs — create the initial architecture diagram and swarm workflow flow diagram
 milestone: M4
-status: todo
+status: done
 priority: 04
 source: operator request 2026-07-04 (constitution now requires maintained diagrams; none exist yet)
 

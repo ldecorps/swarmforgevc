@@ -1,23 +1,28 @@
 id: BL-096
-title: delivery metrics — ticket-count velocity, per-milestone burndown, cycle time; charted in the holistic web UI
+title: delivery metrics (computation + trend framework + bridge/CLI) — velocity, per-milestone burndown, cycle time, forecasts, trends
 milestone: M5
 status: todo
 priority: 01
 direction: non-aligned
 source: operator request 2026-07-04 ("introduce new metrics like velocity, so we can have burndown charts and things like that")
-depends_on: BL-094 (chart rendering; the metric computation layer itself may land first)
 notes: |
-  Priority raised 02->01 (coordinator, 2026-07-09): operator wants the phone
-  monitoring chain (BL-094->096->097->117) ahead of same-tier siblings
-  (BL-098, BL-100, BL-132) once BL-094's BL-153 hold lifts. Still blocked on
-  BL-094 until then — see that ticket's note.
+  Sliced by specifier 2026-07-09 (coordinator direction, operator wants BL-100
+  ASAP): this ticket is now the COMPUTATION/TREND-FRAMEWORK layer only — no
+  BL-094 dependency, so it can land first and unblock BL-100 (which depends_on
+  BL-096's trend framework) without waiting on BL-094's large UI build. Chart
+  rendering of these metrics in the BL-094 web UI moved to BL-211
+  (depends_on BL-094 + this ticket).
+
+  Priority 01 (coordinator, 2026-07-09): operator's phone-monitoring chain and
+  the BL-100 fast path both ride on this computation layer landing quickly.
 
 description: |
-  Add delivery-flow metrics derived from data the repo already records, and
-  chart them in the BL-094 holistic web UI. Operator-confirmed decisions
-  (2026-07-04): TICKET-COUNT based (no size estimates introduced — if
-  count-based proves misleading, sizing becomes a separate future ticket);
-  rendered in the BL-094 web UI as the single charting surface.
+  Add delivery-flow metrics derived from data the repo already records, exposed
+  as JSON (bridge endpoint) and CLI numbers. Charting these metrics in the
+  BL-094 web UI is BL-211 (a presentation layer on top of this endpoint).
+  Operator-confirmed decisions (2026-07-04): TICKET-COUNT based (no size
+  estimates introduced — if count-based proves misleading, sizing becomes a
+  separate future ticket).
 
   Metrics (the deliverable set — nothing speculative beyond these):
     - Velocity: tickets closed per time window — a daily/weekly closed-count
@@ -60,9 +65,8 @@ description: |
       module (BL-071) as pure, unit-testable functions; exposed as JSON
       via a bridge endpoint (BL-065 posture: read-only, token-gated,
       localhost) and via the existing metrics CLI as numbers.
-    - Charts render in the BL-094 web UI (a metrics section: burndown per
-      milestone, velocity series); presentation-only on top of the
-      endpoint, consistent with BL-094's guardrails.
+    - Charting is OUT of scope here (moved to BL-211): this ticket ends at the
+      JSON endpoint + CLI numbers; BL-211 renders them in the BL-094 web UI.
     - Multi-swarm ready but not blocked on it: series derive from the
       shared git history, so both swarms' closes count automatically once
       BL-090 lands; a per-swarm split of velocity is included only if the
@@ -70,8 +74,8 @@ description: |
       whole-project.
 
   Scope: metrics module + bridge endpoint + CLI output (extension/src
-  testable modules), BL-094 UI metrics section, unit tests for every
-  derivation. No swarm-scripts changes.
+  testable modules), unit tests for every derivation. NO BL-094 UI work
+  (that is BL-211). No swarm-scripts changes.
 
 acceptance: specs/features/BL-096-velocity-burndown-metrics.feature
 mutation_cost: medium
