@@ -179,6 +179,18 @@ test('the cost & health card is shown and populated when backlog.json carries a 
   assert.match(text, /1 chases/);
 });
 
+test('the cost & health card\'s trend arrows match each field\'s own direction, not just its number', async () => {
+  const dom = renderDashboard(fakeDashboard({ costHealth: fakeCostHealth() }));
+  await flush();
+  const text = dom.window.document.getElementById('costHealth').textContent;
+  // agents[0].tokens.trend.direction: 'up'
+  assert.match(text, /500 tokens ▲/);
+  // flowBalance.closedPerDay.trend.direction: 'down'
+  assert.match(text, /closed 2\/day ▼/);
+  // reliability.nudges.trend.direction: 'flat'
+  assert.match(text, /0 nudges ▬/);
+});
+
 test('the cost & health card is hidden entirely when backlog.json carries no costHealth field (cost-06b, absent)', async () => {
   const dom = renderDashboard(fakeDashboard());
   await flush();
