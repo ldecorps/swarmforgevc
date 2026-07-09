@@ -2,8 +2,18 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { buildBridgeState } = require('../out/bridge/bridgeState');
+const { execFileSync } = require('node:child_process');
+const { buildBridgeState, buildHolisticState } = require('../out/bridge/bridgeState');
 const { appendRun } = require('../out/runs/runLog');
+
+function git(cwd, args, dateIso) {
+  const env = { ...process.env };
+  if (dateIso) {
+    env.GIT_AUTHOR_DATE = dateIso;
+    env.GIT_COMMITTER_DATE = dateIso;
+  }
+  execFileSync('git', args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+}
 
 function mkTmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bridge-state-'));
@@ -116,4 +126,46 @@ test('buildBridgeState returns empty agents when roles.tsv is missing', () => {
   const state = buildBridgeState(target, path.join(target, 'runs.jsonl'));
 
   assert.deepEqual(state.agents, []);
+});
+
+// ── buildHolisticState (BL-094) ──────────────────────────────────────────
+
+test('buildHolisticState wires swarm-name, assignments, done-by-milestone, and recent activity together', () => {
+  const target = mkTmp();
+  git(target, ['init', '-q']);
+  git(target, ['config', 'user.email', 't@t']);
+  git(target, ['config', 'user.name', 't']);
+
+  mkdirp(path.join(target, 'backlog', 'active'));
+  fs.writeFileSync(
+    path.join(target, 'backlog', 'active', 'BL-101.yaml'),
+    'id: BL-101\ntitle: t\nstatus: active\nmilestone: M4\n'
+  );
+  fs.writeFileSync(
+    path.join(target, 'backlog', 'active', 'BL-102.yaml'),
+    'id: BL-102\ntitle: t\nstatus: active\nmilestone: M4\nswarm: secondary-1\n'
+  );
+  git(target, ['add', '.']);
+  git(target, ['commit', '-q', '-m', 'spec BL-101/102'], '2026-06-01T08:00:00');
+
+  mkdirp(path.join(target, 'backlog', 'done', 'M4'));
+  git(target, ['mv', 'backlog/active/BL-101.yaml', 'backlog/done/M4/BL-101.yaml']);
+  git(target, ['commit', '-q', '-m', 'close BL-101'], '2026-06-05T08:00:00');
+
+  writeRolesTsv(target, [{ role: 'coder', worktreePath: target, displayName: 'Coder' }]);
+  dropHandoff(target, 'in_process', '00_test.handoff', 'task: BL-102-t\ndequeued_at: 2026-06-06T08:00:00Z\n');
+
+  const state = buildHolisticState(target, path.join(target, 'runs.jsonl'));
+
+  assert.equal(state.swarms.length, 1);
+  assert.equal(state.swarms[0].isLocal, true);
+  assert.equal(state.swarms[0].name, 'primary');
+
+  const bl102 = state.assignments.find((a) => a.ticketId === 'BL-102');
+  assert.equal(bl102.swarm, 'secondary-1');
+  assert.equal(bl102.isLocal, false);
+  assert.equal(bl102.stageRole, null, 'remote ticket never reports a live stage');
+
+  assert.deepEqual(state.doneByMilestone.M4.map((i) => i.id), ['BL-101']);
+  assert.equal(state.recentActivity.recentCloses[0].ticketId, 'BL-101');
 });

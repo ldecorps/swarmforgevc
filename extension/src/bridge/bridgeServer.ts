@@ -1,6 +1,7 @@
 import * as http from 'http';
-import { buildBridgeState, buildDeliveryMetricsState, buildCostTelemetryState, BridgeState } from './bridgeState';
-import { isAuthorizedRequest } from './bridgeAuth';
+import { buildBridgeState, buildDeliveryMetricsState, buildCostTelemetryState, buildHolisticState, BridgeState } from './bridgeState';
+import { isAuthorizedRequest, isAuthorizedByQueryToken } from './bridgeAuth';
+import { getHolisticUiHtml } from './holisticUiHtml';
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const LOCALHOST = '127.0.0.1';
@@ -40,6 +41,28 @@ function isStateRoute(url: string): url is StateRoute {
 // cached-snapshot-or-compute-fresh choice for a new SSE subscriber.
 function resolveEventsSnapshot(lastSnapshot: string | undefined, targetPath: string, runLogPath: string): string {
   return lastSnapshot ?? JSON.stringify(buildBridgeState(targetPath, runLogPath));
+}
+
+function isRootPath(url: string): boolean {
+  return url === '/' || url.startsWith('/?');
+}
+
+function queryToken(url: string): string | undefined {
+  const queryIndex = url.indexOf('?');
+  if (queryIndex === -1) {
+    return undefined;
+  }
+  return new URLSearchParams(url.slice(queryIndex + 1)).get('token') ?? undefined;
+}
+
+// BL-094: every route stays header-only EXCEPT the root HTML shell, which a
+// plain browser navigation cannot attach a header to - it additionally
+// accepts the token via query string (see bridgeAuth.ts's own comment).
+function isAuthorizedForUrl(authHeader: string | undefined, url: string, token: string): boolean {
+  if (isAuthorizedRequest(authHeader, token)) {
+    return true;
+  }
+  return isRootPath(url) && isAuthorizedByQueryToken(queryToken(url), token);
 }
 
 interface JsonRoute {
@@ -91,9 +114,20 @@ export function startBridge(
     const server = http.createServer((req, res) => {
       const url = req.url ?? '/';
 
-      if (!isAuthorizedRequest(req.headers.authorization, token)) {
+      if (!isAuthorizedForUrl(req.headers.authorization, url, token)) {
         res.writeHead(401, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ error: 'unauthorized' }));
+        return;
+      }
+
+      if (isRootPath(url)) {
+        res.writeHead(200, {
+          'content-type': 'text/html; charset=utf-8',
+          // Inline style/script only, matching the page's own "self-contained,
+          // no external fetch" scope note - no external origin needs allowing.
+          'content-security-policy': "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
+        });
+        res.end(getHolisticUiHtml());
         return;
       }
 
@@ -114,6 +148,15 @@ export function startBridge(
       if (jsonRoute) {
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify(jsonRoute.compute(url)));
+        return;
+      }
+
+      // BL-094: same posture as /metrics/cost-telemetry - git-history +
+      // handoff-state reads, too expensive for the SSE poll loop.
+      if (url === '/holistic') {
+        const state = buildHolisticState(targetPath, runLogPath);
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(state));
         return;
       }
 
