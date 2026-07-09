@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { atomicWrite } from '../util/atomicWrite';
-import { BounceType, isBounceType, handleFileWatchEvent } from './bounceWatcher';
+import { BounceType, isBounceType, handleFileWatchEvent, ScheduleTick, defaultScheduleTick } from './bounceWatcher';
 
 // BL-069: graceful bounce. Before the existing verified bounce (BL-058) kills
 // panes, the swarm enters a DRAIN mode: agents finish their current
@@ -160,7 +160,7 @@ export function handleGracefulWatchEvent(
   triggerFilePath: string,
   onGracefulBounce: (bounceType: BounceType) => void,
   onError: ((error: string) => void) | undefined,
-  scheduleTick: (fn: () => void, ms: number) => void = (fn, ms) => { setTimeout(fn, ms); },
+  scheduleTick: ScheduleTick = defaultScheduleTick,
 ): void {
   handleFileWatchEvent(filename, GRACEFUL_TRIGGER_FILENAME, triggerFilePath, onGracefulBounce, onError, scheduleTick);
 }
@@ -169,7 +169,7 @@ export function startGracefulBounceFileWatcher(
   targetPath: string,
   onGracefulBounce: (bounceType: BounceType) => void,
   onError?: (error: string) => void,
-  scheduleTick: (fn: () => void, ms: number) => void = (fn, ms) => { setTimeout(fn, ms); },
+  scheduleTick: ScheduleTick = defaultScheduleTick,
 ): fs.FSWatcher | null {
   const swarmforgeDir = path.join(targetPath, '.swarmforge');
   const triggerFilePath = path.join(swarmforgeDir, GRACEFUL_TRIGGER_FILENAME);
