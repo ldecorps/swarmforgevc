@@ -155,6 +155,69 @@ test('a blank line inside a Scenario Outline\'s own Examples table is preserved,
   assert.match(scenarios[0].text, /\| 1\s+\| a\s+\|/);
 });
 
+// BL-150 recert-01: recertification needs a stable per-scenario id that
+// survives reordering - the BL-111 `# <TICKET-ID> <slug>` tag comment
+// directly above a Scenario: line.
+
+test('captures the stable id from a `# TICKET-ID slug` tag comment directly above the scenario', () => {
+  const text = ['# BL-096 metrics-01', 'Scenario: velocity series matches git-recorded closes', '  Given a', '  Then b', ''].join('\n');
+  const scenarios = extractScenarios(text);
+  assert.equal(scenarios[0].id, 'BL-096/metrics-01');
+});
+
+test('captures only the ticket-id and slug when the tag comment has trailing descriptive words', () => {
+  const text = ['  # BL-150 recert-01 oldest-first-selection', 'Scenario: the human is shown the least-recently-reviewed scenario first', '  Given a', ''].join('\n');
+  const scenarios = extractScenarios(text);
+  assert.equal(scenarios[0].id, 'BL-150/recert-01');
+});
+
+test('a scenario with no tag comment above it has no id (pre-BL-111 inline acceptance blocks)', () => {
+  const text = ['Scenario: untagged', '  Given a', ''].join('\n');
+  const scenarios = extractScenarios(text);
+  assert.equal(scenarios[0].id, undefined);
+});
+
+test('each scenario gets only its OWN directly-preceding tag, never a neighbor\'s', () => {
+  const text = [
+    '# BL-106 branch-ns-01',
+    'Scenario: first',
+    '  Given a',
+    '',
+    '# BL-106 branch-ns-02',
+    'Scenario: second',
+    '  Given b',
+    '',
+  ].join('\n');
+  const scenarios = extractScenarios(text);
+  assert.equal(scenarios[0].id, 'BL-106/branch-ns-01');
+  assert.equal(scenarios[1].id, 'BL-106/branch-ns-02');
+});
+
+test('a trailing "Non-behavioral gates" comment block after the last scenario is never mistaken for a tag', () => {
+  const text = [
+    'Scenario: migration preserves everything',
+    '  Given a',
+    '',
+    '# Non-behavioral gates:',
+    '#  - some gate',
+  ].join('\n');
+  const scenarios = extractScenarios(text);
+  assert.equal(scenarios.length, 1);
+  assert.equal(scenarios[0].id, undefined);
+});
+
+test('a blank line between the tag comment and its Scenario: line does not clear the pending tag', () => {
+  const text = ['# BL-106 branch-ns-01', '', 'Scenario: still tagged across the blank line', '  Given a', ''].join('\n');
+  const scenarios = extractScenarios(text);
+  assert.equal(scenarios[0].id, 'BL-106/branch-ns-01');
+});
+
+test('any non-blank, non-tag line between a tag comment and the next Scenario: clears the pending tag', () => {
+  const text = ['# BL-106 branch-ns-01', 'Some unrelated prose line', 'Scenario: no longer tagged', '  Given a', ''].join('\n');
+  const scenarios = extractScenarios(text);
+  assert.equal(scenarios[0].id, undefined);
+});
+
 test('works identically for a .feature-file-shaped source and an inline acceptance: | block (both forms)', () => {
   const featureFileStyle = 'Feature: x\n\nScenario: shared behavior\n  Given a\n  Then b\n';
   const inlineBlockStyle = 'Feature: x\n\n# BL-149 cooldown-gate-01\nScenario: shared behavior\n  Given a\n  Then b\n';
