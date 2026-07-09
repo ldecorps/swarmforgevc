@@ -272,7 +272,7 @@ function startOrRestartBounceWatcher(
 function startOrRestartChaserMonitor(targetPath: string, context: vscode.ExtensionContext): void {
   // Stop old chaser if it exists
   if (currentChaserMonitor) {
-    stopChaserMonitor(currentChaserMonitor);
+    stopChaserMonitor(currentChaserMonitor, clearInterval);
     currentChaserMonitor = null;
   }
 
@@ -449,14 +449,14 @@ function startOrRestartChaserMonitor(targetPath: string, context: vscode.Extensi
   };
 
   // Start the chaser monitor
-  currentChaserMonitor = startChaserMonitor(chaserConfig, callbacks);
+  currentChaserMonitor = startChaserMonitor(chaserConfig, callbacks, setInterval);
 
   // Add to subscriptions for cleanup
   if (currentChaserMonitor) {
     context.subscriptions.push({
       dispose: () => {
         if (currentChaserMonitor) {
-          stopChaserMonitor(currentChaserMonitor);
+          stopChaserMonitor(currentChaserMonitor, clearInterval);
           currentChaserMonitor = null;
         }
       },
@@ -1289,7 +1289,7 @@ export function activate(context: vscode.ExtensionContext): void {
         console.log(`SwarmForge stop completed: ${result.phases.map((p) => `${p.name}(${p.success ? 'ok' : 'err'})`).join(' → ')}`);
         // Stop chaser monitor when swarm is stopped
         if (currentChaserMonitor) {
-          stopChaserMonitor(currentChaserMonitor);
+          stopChaserMonitor(currentChaserMonitor, clearInterval);
           currentChaserMonitor = null;
         }
       } else {
