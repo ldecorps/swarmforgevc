@@ -9,12 +9,15 @@ Scenario: every provider emits the same core observability fields
 # BL-208 brand-agnostic-read-02
 Scenario: a reader compares providers without brand-specific handling
   Given telemetry from multiple providers
-  When a metrics/operator reader aggregates it
+  When a metrics or operator reader aggregates it
   Then it compares providers using the common fields, with no per-brand branch
 
 # BL-208 empty-reads-zero-03
 Scenario: a provider with no telemetry reads as empty, not an error
   Given a provider that has emitted no telemetry yet
   When the observability surface is queried
-  Then its metrics read as zero/empty without error
+  Then its metrics read as zero or empty without error
 
+# Non-behavioral gates:
+#  - Additive to existing telemetry surfaces; do not break current readers.
+#  - Reuse the existing JSONL/metrics surfaces, not a parallel one.

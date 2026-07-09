@@ -9,8 +9,8 @@ Scenario: detection reads a provider registry, not inline brand names
 
 # BL-142 new-provider-is-data-02
 Scenario: adding a provider requires only a new descriptor
-  Given a new provider descriptor (name, cli pattern, busy pattern, banner,
-    startup copy) is added to the registry
+  Given a new provider descriptor with name, cli pattern, busy pattern,
+    banner, and startup copy is added to the registry
   When a pane runs that provider's CLI
   Then the provider is recognized and its busy, running, and startup states
     are detected from the descriptor
@@ -20,7 +20,12 @@ Scenario: adding a provider requires only a new descriptor
 Scenario: startup guidance comes from the descriptor, not a hardcoded brand
   Given a pane whose provider has not started yet
   When the startup guidance message is produced
-  Then it names the provider from its descriptor (e.g. "Waiting for <provider>
-    to start…")
+  Then it names the provider from its descriptor
   And it is not a hardcoded "Claude" literal
 
+# Non-behavioral gates:
+#  - Refactor only: parity preserved for claude/aider/codex/copilot/grok;
+#    existing agentPaneState tests stay green.
+#  - agentPaneState is a testable host-side module: synchronous tests, no
+#    real timers, no VS Code UI.
+#  - Does not touch the fork's agent_runtime_lib.bb abstraction.
