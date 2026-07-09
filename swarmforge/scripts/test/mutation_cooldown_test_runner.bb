@@ -31,6 +31,7 @@
 
 (assert= "busy-load-multiplier reads the configured value" 1.5 (mutation-cooldown-lib/busy-load-multiplier {"mutation_busy_load_multiplier" "1.5"}))
 (assert= "busy-load-multiplier defaults to 2 when absent" 2 (mutation-cooldown-lib/busy-load-multiplier {}))
+(assert= "busy-load-multiplier defaults to 2 when unparsable" 2 (mutation-cooldown-lib/busy-load-multiplier {"mutation_busy_load_multiplier" "nope"}))
 
 ;; ── host-busy? ─────────────────────────────────────────────────────────────────
 (assert= "host-busy? true once load avg exceeds multiplier x cores" true (mutation-cooldown-lib/host-busy? 9.0 4 2))
