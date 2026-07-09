@@ -45,6 +45,43 @@ export interface BacklogDashboardData {
 
 const UNSPECIFIED_MILESTONE = 'unspecified';
 
+// The three field groups below are set only when present so the JSON
+// payload never carries an explicit `undefined`. Split out of
+// toDashboardSummary so each function stays under the CRAP<=6 gate.
+function applyItemFields(summary: DashboardTicketSummary, item: BacklogItem): void {
+  if (item.milestone !== undefined) {
+    summary.milestone = item.milestone;
+  }
+  if (item.priority !== undefined) {
+    summary.priority = item.priority;
+  }
+}
+
+function applyLifecycleFields(summary: DashboardTicketSummary, lifecycle: TicketLifecycleEvent | undefined): void {
+  if (lifecycle?.specDateIso) {
+    summary.specDateIso = lifecycle.specDateIso;
+  }
+  if (lifecycle?.closeDateIso) {
+    summary.closeDateIso = lifecycle.closeDateIso;
+  }
+}
+
+function applyForecastFields(
+  summary: DashboardTicketSummary,
+  ticketId: string,
+  p50ByTicketId: Map<string, string>,
+  p85ByTicketId: Map<string, string>
+): void {
+  const p50 = p50ByTicketId.get(ticketId);
+  if (p50) {
+    summary.p50Iso = p50;
+  }
+  const p85 = p85ByTicketId.get(ticketId);
+  if (p85) {
+    summary.p85Iso = p85;
+  }
+}
+
 function toDashboardSummary(
   item: BacklogItem,
   status: DashboardTicketSummary['status'],
@@ -59,27 +96,9 @@ function toDashboardSummary(
     status,
     swarm: item.swarm ?? localSwarmName,
   };
-  if (item.milestone !== undefined) {
-    summary.milestone = item.milestone;
-  }
-  if (item.priority !== undefined) {
-    summary.priority = item.priority;
-  }
-  const lifecycle = lifecycleByTicketId.get(item.id);
-  if (lifecycle?.specDateIso) {
-    summary.specDateIso = lifecycle.specDateIso;
-  }
-  if (lifecycle?.closeDateIso) {
-    summary.closeDateIso = lifecycle.closeDateIso;
-  }
-  const p50 = p50ByTicketId.get(item.id);
-  if (p50) {
-    summary.p50Iso = p50;
-  }
-  const p85 = p85ByTicketId.get(item.id);
-  if (p85) {
-    summary.p85Iso = p85;
-  }
+  applyItemFields(summary, item);
+  applyLifecycleFields(summary, lifecycleByTicketId.get(item.id));
+  applyForecastFields(summary, item.id, p50ByTicketId, p85ByTicketId);
   return summary;
 }
 
