@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { isAuthorizedRequest } = require('../out/bridge/bridgeAuth');
+const { isAuthorizedRequest, isAuthorizedByQueryToken } = require('../out/bridge/bridgeAuth');
 
 const TOKEN = 'abc123def456';
 
@@ -28,4 +28,22 @@ test('isAuthorizedRequest rejects a header missing the Bearer prefix', () => {
 
 test('isAuthorizedRequest rejects an empty token value', () => {
   assert.equal(isAuthorizedRequest('Bearer ', TOKEN), false);
+});
+
+// BL-094: query-token fallback for the root HTML shell route only.
+
+test('isAuthorizedByQueryToken accepts the matching token', () => {
+  assert.equal(isAuthorizedByQueryToken(TOKEN, TOKEN), true);
+});
+
+test('isAuthorizedByQueryToken rejects a missing query token', () => {
+  assert.equal(isAuthorizedByQueryToken(undefined, TOKEN), false);
+});
+
+test('isAuthorizedByQueryToken rejects a mismatched token', () => {
+  assert.equal(isAuthorizedByQueryToken('wrong-token', TOKEN), false);
+});
+
+test('isAuthorizedByQueryToken rejects an empty string token', () => {
+  assert.equal(isAuthorizedByQueryToken('', TOKEN), false);
 });

@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const {
   parseGitLog,
   deriveTicketLifecycles,
+  parseMergeLog,
 } = require('../out/metrics/gitHistoryAdapter');
 
 // BL-096: parseGitLog is a pure text parser over `git log
@@ -210,4 +211,41 @@ test('deriveTicketLifecycles ignores a plain content edit (M status) - it is not
     '2026-01-01T00:00:00Z',
     'a later content edit must not be mistaken for a new arrival'
   );
+});
+
+// ── parseMergeLog (pure) — BL-094 recent-activity's "merges to main" ────
+
+function mergeLine(commit, dateIso, subject) {
+  return `${commit}\t${dateIso}\t${subject}`;
+}
+
+test('parseMergeLog parses a single merge line into commit/date/subject', () => {
+  const output = mergeLine('abc1234567', '2026-07-09T10:00:00Z', 'Merge QA-approved BL-096-metrics-computation');
+  const entries = parseMergeLog(output);
+  assert.deepEqual(entries, [
+    { commit: 'abc1234567', dateIso: '2026-07-09T10:00:00Z', subject: 'Merge QA-approved BL-096-metrics-computation' },
+  ]);
+});
+
+test('parseMergeLog parses multiple lines in order', () => {
+  const output = [mergeLine('aaa', '2026-07-09T10:00:00Z', 'first'), mergeLine('bbb', '2026-07-09T11:00:00Z', 'second')].join('\n');
+  const entries = parseMergeLog(output);
+  assert.equal(entries.length, 2);
+  assert.equal(entries[0].commit, 'aaa');
+  assert.equal(entries[1].commit, 'bbb');
+});
+
+test('parseMergeLog preserves a subject that itself contains tab-adjacent punctuation without truncating', () => {
+  const output = mergeLine('aaa', '2026-07-09T10:00:00Z', 'Merge commit x: y - z (details)');
+  const entries = parseMergeLog(output);
+  assert.equal(entries[0].subject, 'Merge commit x: y - z (details)');
+});
+
+test('parseMergeLog ignores blank lines', () => {
+  const output = ['', mergeLine('aaa', '2026-07-09T10:00:00Z', 'first'), ''].join('\n');
+  assert.equal(parseMergeLog(output).length, 1);
+});
+
+test('parseMergeLog returns an empty array for empty output', () => {
+  assert.deepEqual(parseMergeLog(''), []);
 });
