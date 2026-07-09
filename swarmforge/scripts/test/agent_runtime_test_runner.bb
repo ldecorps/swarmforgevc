@@ -96,6 +96,17 @@
          [:sleep :paste-file :submit]
          (step-ops (agent-runtime-lib/bootstrap-steps "grok" "coder" :prompt-file "/p.md")))
 
+;; BL-206: an explicit :startup-delay-ms argument overrides the provider's
+;; own capability-map default (grok's is 3000) - a caller-supplied delay
+;; must win, not silently be discarded in favor of the capability flag.
+(assert= "grok bootstrap honors an explicit startup-delay-ms override over its capability default"
+         {:op :sleep :ms 9999}
+         (first (agent-runtime-lib/bootstrap-steps "grok" "coder" :prompt-file "/p.md" :startup-delay-ms 9999)))
+
+(assert= "grok bootstrap falls back to its capability-map default (3000ms) when no override is given"
+         {:op :sleep :ms 3000}
+         (first (agent-runtime-lib/bootstrap-steps "grok" "coder" :prompt-file "/p.md")))
+
 ;; ── bootstrap-text ────────────────────────────────────────────────────────────
 (assert-true "aider coordinator text forbids coding"
              (str/includes? (agent-runtime-lib/bootstrap-text "aider" "coordinator" :two-pack? true)
