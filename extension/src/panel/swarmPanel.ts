@@ -5,7 +5,8 @@ import { SwarmRole, respawnAgent } from '../swarm/tmuxClient';
 import { PaneTailer } from './paneTailer';
 import { currentStageLabel, readPipelineStages, findLiveHolder, parseRolesTsv } from '../swarm/swarmState';
 import { computeSwarmMetrics, DEFAULT_SUITE_WARN_SECONDS } from '../metrics/swarmMetrics';
-import { computeLiveTransportHealth } from '../swarm/transportHealth';
+import { computeLiveTransportHealth, TRANSPORT_CANARY_BUDGET_SECONDS } from '../swarm/transportHealth';
+import { runCanaryCycle, canaryQueueCompletedDir } from '../swarm/canaryInjector';
 import { computeDaemonProcessStatus } from '../swarm/daemonHealth';
 import { escalatedStuckRoles } from '../watchdog/stuckEscalations';
 import { loadRuns } from '../runs/runLog';
@@ -36,7 +37,6 @@ const OUTPUT_CHANNEL_NAME = 'SwarmForge';
 // which governs agent-inactivity chasing at a much shorter horizon — this is
 // the coarser "is anything actually moving" alarm for the panel).
 const TRANSPORT_STALL_THRESHOLD_SECONDS = 1800;
-const TRANSPORT_CANARY_BUDGET_SECONDS = 600;
 
 export class SwarmPanel {
   public static currentPanel: SwarmPanel | undefined;
@@ -332,6 +332,15 @@ export class SwarmPanel {
       this.panel.webview.postMessage({ type: 'badgeUpdate', badges: buildBadgeMap(backlogItems, this.targetPath) });
       const transportRoles = this.tailer?.getRoles() ?? [];
       const transportRoleInboxes = buildRoleInboxes(this.targetPath, transportRoles.map((r) => r.role));
+      // BL-121: drives the canary on this same poll tick - inject when due,
+      // reconcile any round trip handoffd.bb's canary-sweep! completed since
+      // the last tick - before reading transport health below.
+      runCanaryCycle(
+        this.targetPath,
+        canaryQueueCompletedDir(this.targetPath),
+        Date.now(),
+        TRANSPORT_CANARY_BUDGET_SECONDS
+      );
       const transportHealth = computeLiveTransportHealth(this.targetPath, transportRoleInboxes, Date.now(), {
         stallThresholdSeconds: TRANSPORT_STALL_THRESHOLD_SECONDS,
         canaryBudgetSeconds: TRANSPORT_CANARY_BUDGET_SECONDS,
