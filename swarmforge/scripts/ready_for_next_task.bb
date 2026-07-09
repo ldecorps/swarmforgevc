@@ -18,10 +18,9 @@
     (handoff-lib/respawn-self! (handoff-lib/current-role))))
 
 (defn -main []
-  (let [inbox (handoff-lib/inbox-dir)
-        new-dir (fs/path inbox "new")
-        in-process-dir (fs/path inbox "in_process")
-        completed-dir (fs/path inbox "completed")]
+  (let [new-dir (handoff-lib/my-mailbox-dir :new)
+        in-process-dir (handoff-lib/my-mailbox-dir :in_process)
+        completed-dir (handoff-lib/my-mailbox-dir :completed)]
     (doseq [dir [new-dir in-process-dir completed-dir]]
       (fs/create-dirs dir))
     (let [in-process-batches (handoff-lib/batch-dirs in-process-dir)
