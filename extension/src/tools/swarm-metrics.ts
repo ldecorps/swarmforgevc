@@ -263,15 +263,26 @@ export function printJsonToStdout(data: unknown): void {
   process.stdout.write(JSON.stringify(data, null, 2) + '\n');
 }
 
+function reportFatalAndExit(error: unknown): void {
+  console.error(`Fatal error: ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
+}
+
 // Shared `require.main === module` entrypoint boilerplate for tools/ CLIs:
-// run main(), and on any thrown error report it and exit non-zero rather
-// than dumping a raw stack trace.
-export function runCliMain(main: () => void): void {
+// run main(), and on any thrown error (or, BL-118, a rejected promise for
+// an async main - e.g. generate-docs-tree.js's translation pass) report it
+// and exit non-zero rather than dumping a raw stack trace or an unhandled
+// rejection. A synchronous main's own callers/tests are unaffected: main()
+// still runs and any synchronous throw is still caught in the same tick,
+// exactly as before this ticket.
+export function runCliMain(main: () => void | Promise<void>): void {
   try {
-    main();
+    const result = main();
+    if (result && typeof result.then === 'function') {
+      result.catch(reportFatalAndExit);
+    }
   } catch (error) {
-    console.error(`Fatal error: ${error instanceof Error ? error.message : String(error)}`);
-    process.exit(1);
+    reportFatalAndExit(error);
   }
 }
 

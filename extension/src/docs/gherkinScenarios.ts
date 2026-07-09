@@ -8,6 +8,12 @@ export interface GherkinScenario {
   id?: string;
   name: string;
   text: string;
+  // BL-118 bilingual-04: text itself always stays canonical English (the
+  // binding acceptance contract); textFr is an additive courtesy rendering
+  // populated only by docsTree.ts's translateDocsTree, never by
+  // extractScenarios itself.
+  textFr?: string;
+  textFrUntranslated?: boolean;
 }
 
 const SCENARIO_LINE = /^\s*(Scenario(?: Outline)?):\s*(.*)$/;

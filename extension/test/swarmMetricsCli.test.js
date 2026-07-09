@@ -408,3 +408,37 @@ test('runCliMain reports a non-Error throw via String() and exits 1', () => {
   exitSpy.mockRestore();
   errorSpy.mockRestore();
 });
+
+// BL-118: an async main (generate-docs-tree.js's translation pass) must
+// still be supported without breaking the synchronous tests above.
+
+test('runCliMain awaits an async main() and does not exit when it succeeds', async () => {
+  const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined);
+  let ran = false;
+
+  runCliMain(async () => {
+    await Promise.resolve();
+    ran = true;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(ran, true);
+  assert.equal(exitSpy.mock.calls.length, 0);
+  exitSpy.mockRestore();
+});
+
+test('runCliMain reports a rejected async main() and exits 1 instead of an unhandled rejection', async () => {
+  const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined);
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+  runCliMain(async () => {
+    await Promise.resolve();
+    throw new Error('async boom');
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(errorSpy.mock.calls[0][0], 'Fatal error: async boom');
+  assert.deepEqual(exitSpy.mock.calls[0], [1]);
+  exitSpy.mockRestore();
+  errorSpy.mockRestore();
+});
