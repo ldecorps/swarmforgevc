@@ -11,15 +11,12 @@
  */
 
 import { computeDocsTree } from '../docs/docsTree';
-import { resolveProjectRoot, resolveMainWorktreePath, loadRoles, runCliMain } from './swarm-metrics';
+import { resolveCliMainWorktreeContext, printJsonToStdout, runCliMain } from './swarm-metrics';
 
 export function main(): void {
-  const projectRoot = resolveProjectRoot(process.cwd());
-  const roles = loadRoles(projectRoot);
-  const mainWorktreePath = resolveMainWorktreePath(projectRoot, roles);
-
+  const { mainWorktreePath } = resolveCliMainWorktreeContext();
   const tree = computeDocsTree(mainWorktreePath);
-  process.stdout.write(JSON.stringify(tree, null, 2) + '\n');
+  printJsonToStdout(tree);
 }
 
 if (require.main === module) {
