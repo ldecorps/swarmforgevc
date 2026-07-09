@@ -7,6 +7,7 @@ const {
   resolveProjectRoot,
   resolveMainWorktreePath,
   formatOverview,
+  runCliMain,
 } = require('../out/tools/swarm-metrics');
 
 // realpath: macOS resolves /var -> /private/var, and git rev-parse
@@ -190,4 +191,49 @@ test('the compiled swarm-metrics CLI runs from a worktree and exits 0 on a fresh
 
   assert.match(output, /Mean ticket time: —/);
   assert.doesNotMatch(output, /NaN|Infinity|undefined/);
+});
+
+// --- runCliMain: the shared require.main === module bootstrap ---
+
+test('runCliMain runs the given main() and does not exit when it succeeds', () => {
+  const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined);
+  let ran = false;
+
+  runCliMain(() => {
+    ran = true;
+  });
+
+  assert.equal(ran, true);
+  assert.equal(exitSpy.mock.calls.length, 0);
+  exitSpy.mockRestore();
+});
+
+test('runCliMain reports a thrown Error and exits 1 instead of letting it propagate', () => {
+  const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined);
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+  assert.doesNotThrow(() => {
+    runCliMain(() => {
+      throw new Error('boom');
+    });
+  });
+
+  assert.equal(errorSpy.mock.calls[0][0], 'Fatal error: boom');
+  assert.deepEqual(exitSpy.mock.calls[0], [1]);
+  exitSpy.mockRestore();
+  errorSpy.mockRestore();
+});
+
+test('runCliMain reports a non-Error throw via String() and exits 1', () => {
+  const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined);
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+  runCliMain(() => {
+    throw 'plain string failure';
+  });
+
+  assert.equal(errorSpy.mock.calls[0][0], 'Fatal error: plain string failure');
+  assert.deepEqual(exitSpy.mock.calls[0], [1]);
+  exitSpy.mockRestore();
+  errorSpy.mockRestore();
 });
