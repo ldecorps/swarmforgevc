@@ -14,7 +14,8 @@
   "timeoutMS": 60000,
   "timeoutFactor": 3,
   "coverageAnalysis": "perTest",
-  "reporters": ["clear-text", "progress"],
+  "appendPlugins": ["./out/mutation/stryker-plugin.js"],
+  "reporters": ["clear-text", "progress", "mutation-progress"],
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true
 }
