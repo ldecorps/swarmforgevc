@@ -184,6 +184,20 @@ test('detectCompletedCanaries does not fail when completed dir does not exist', 
   assert.equal(tracked.length, 1);
 });
 
+test('detectCompletedCanaries ignores a completed-path that is not a directory', () => {
+  const target = mkTmp();
+  const roles = ['coordinator', 'specifier', 'coder'];
+
+  tryInjectCanary(target, NOW, { injectionIntervalSeconds: 600, budgetSeconds: 300 }, roles);
+  const filePath = path.join(mkTmp(), 'completed-path');
+  fs.writeFileSync(filePath, 'not a directory', 'utf-8');
+
+  assert.doesNotThrow(() => detectCompletedCanaries(target, NOW + 10_000, filePath));
+
+  const tracked = readTrackedCanaries(target);
+  assert.equal(tracked.length, 1);
+});
+
 test('detectCompletedCanaries cleans up old undelivered canaries (age > 1h)', () => {
   const target = mkTmp();
   const roles = ['coordinator', 'specifier', 'coder'];
