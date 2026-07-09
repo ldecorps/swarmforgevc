@@ -32,6 +32,10 @@ export interface EmailFields {
   body: string;
 }
 
+function asObject(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+}
+
 // BEST-EFFORT extraction from Resend's documented {type, data} webhook
 // envelope shape. Resend's INBOUND payload's exact field names were not
 // independently confirmed against live docs while building this (no network
@@ -39,15 +43,12 @@ export interface EmailFields {
 // names, this is the only function that needs to change; verify/parse/commit
 // below are independent of this shape.
 export function extractEmailFields(payload: unknown): EmailFields | null {
-  if (!payload || typeof payload !== 'object') {
+  const envelope = asObject(payload);
+  const data = envelope ? asObject(envelope.data) : null;
+  if (!data) {
     return null;
   }
-  const data = (payload as { data?: unknown }).data;
-  if (!data || typeof data !== 'object') {
-    return null;
-  }
-  const subject = (data as { subject?: unknown }).subject;
-  const body = (data as { text?: unknown }).text;
+  const { subject, text: body } = data;
   if (typeof subject !== 'string' || typeof body !== 'string') {
     return null;
   }
@@ -58,12 +59,20 @@ function isReviewOutcome(outcome: string): outcome is ReviewOutcome {
   return outcome === 'update' || outcome === 'delete';
 }
 
-export async function handleInboundEmailWebhook(
+type ResolvedProposal =
+  | { proposal: RecertProposal; earlyResponse?: undefined }
+  | { proposal?: undefined; earlyResponse: InboundWebhookResponse };
+
+// The verify -> parse -> validate guard chain, isolated from the
+// commit/response-formatting concern below. Every early exit here is a
+// "not a proposal we can build" outcome (bad signature, bad JSON, unmatched
+// shape, out-of-scope outcome) - none of them touch deps.commitProposal.
+function resolveProposal(
   request: InboundWebhookRequest,
-  deps: HandleInboundEmailWebhookDeps
-): Promise<InboundWebhookResponse> {
+  deps: Pick<HandleInboundEmailWebhookDeps, 'secret' | 'nowIso' | 'log'>
+): ResolvedProposal {
   if (!verifySvixSignature(request.headers, request.rawBody, deps.secret)) {
-    return { status: 401, body: 'signature verification failed' };
+    return { earlyResponse: { status: 401, body: 'signature verification failed' } };
   }
 
   let payload: unknown;
@@ -71,35 +80,46 @@ export async function handleInboundEmailWebhook(
     payload = JSON.parse(request.rawBody);
   } catch {
     deps.log('recert webhook: request body was not valid JSON');
-    return { status: 200, body: 'ignored' };
+    return { earlyResponse: { status: 200, body: 'ignored' } };
   }
 
   const fields = extractEmailFields(payload);
   if (!fields) {
     deps.log('recert webhook: payload carried no recognizable email subject/body');
-    return { status: 200, body: 'ignored' };
+    return { earlyResponse: { status: 200, body: 'ignored' } };
   }
 
   const parsed = parseRecertEmail(fields.subject, fields.body);
   if (!parsed) {
     deps.log(`recert webhook: could not parse a recertification email from subject "${fields.subject}"`);
-    return { status: 200, body: 'ignored' };
+    return { earlyResponse: { status: 200, body: 'ignored' } };
   }
 
   // confirm is local-only per BL-150 recert-02 and does not use this path
   // (BL-217 scope note) - RecertProposal only models update/delete anyway.
   if (!isReviewOutcome(parsed.outcome)) {
     deps.log(`recert webhook: outcome "${parsed.outcome}" is out of this webhook's scope, ignoring`);
-    return { status: 200, body: 'ignored' };
+    return { earlyResponse: { status: 200, body: 'ignored' } };
   }
 
   const proposal = toRecertProposal({ scenarioId: parsed.scenarioId, outcome: parsed.outcome, newText: parsed.newText }, deps.nowIso);
+  return { proposal };
+}
+
+export async function handleInboundEmailWebhook(
+  request: InboundWebhookRequest,
+  deps: HandleInboundEmailWebhookDeps
+): Promise<InboundWebhookResponse> {
+  const resolved = resolveProposal(request, deps);
+  if (resolved.earlyResponse) {
+    return resolved.earlyResponse;
+  }
 
   try {
-    await deps.commitProposal(proposal);
+    await deps.commitProposal(resolved.proposal);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    deps.log(`recert webhook: failed to commit proposal for "${parsed.scenarioId}": ${detail}`);
+    deps.log(`recert webhook: failed to commit proposal for "${resolved.proposal.scenarioId}": ${detail}`);
     return { status: 500, body: 'failed to commit proposal' };
   }
 

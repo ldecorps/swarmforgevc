@@ -11,14 +11,17 @@ function sign(id, timestamp, rawBody, secret = SECRET) {
   return `v1,${sig}`;
 }
 
-function requestFor(payloadObj, secret = SECRET) {
-  const rawBody = JSON.stringify(payloadObj);
+function requestForRawBody(rawBody, secret = SECRET) {
   const svixId = 'msg_1';
   const svixTimestamp = '1614265330';
   return {
     headers: { svixId, svixTimestamp, svixSignature: sign(svixId, svixTimestamp, rawBody, secret) },
     rawBody,
   };
+}
+
+function requestFor(payloadObj, secret = SECRET) {
+  return requestForRawBody(JSON.stringify(payloadObj), secret);
 }
 
 function updateEmailPayload(scenarioId, newText) {
@@ -76,6 +79,22 @@ test('webhook-01: a validly signed update email commits exactly one proposal car
     receivedAtIso: '2026-07-09T12:00:00Z',
   });
   assert.deepEqual(logged, []);
+});
+
+test('a validly signed but non-JSON request body produces no proposal and logs without crashing', async () => {
+  const request = requestForRawBody('not json at all');
+  const logged = [];
+  const result = await handleInboundEmailWebhook(request, {
+    secret: SECRET,
+    nowIso: '2026-07-09T12:00:00Z',
+    commitProposal: async () => {
+      throw new Error('must not be called');
+    },
+    log: (message) => logged.push(message),
+  });
+  assert.equal(result.status, 200);
+  assert.equal(logged.length, 1);
+  assert.match(logged[0], /not valid JSON/);
 });
 
 test('webhook-02: an unsigned/forged request is rejected with no proposal committed', async () => {
