@@ -50,6 +50,19 @@ notes: |
   too, which were freshly active/routed at ask time and may also be in
   flight by then).
 
+  UPDATE (coordinator, 2026-07-09, even later): BL-112 closed (4731482).
+  Also found BL-132 active with real uncommitted coder WIP and BL-217 active
+  unstarted — asked the operator again; decision: wait for both to also
+  close before isolating/bouncing (not just BL-112). Since then BL-132
+  closed too (664195c). Intake is being deliberately held (no new promotion
+  into the 2 freed active/ slots) so active drains toward empty/BL-217-only
+  instead of refilling — this is a temporary, operator-directed exception to
+  the normal "fill every open slot" recheck rule, not a standing change.
+  Remaining condition: BL-217 (backlog/active/, not yet started by coder)
+  closes to done/. Once active/ is empty, isolate paused/ down to BL-203
+  (mv everything else to backlog/_held/), request `remote_bounce.sh
+  <target> swarm`, then promote BL-203 solo.
+
 description: |
   Problem:
   The VS Code extension launch path has been unreliable for hundreds of
