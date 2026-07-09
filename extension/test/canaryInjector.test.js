@@ -98,6 +98,34 @@ test('trackCanaryCompletion returns null when canary has not completed yet', () 
   assert(result === null);
 });
 
+test('trackCanaryCompletion returns null when the completed inbox dir does not exist', () => {
+  const target = mkTmp();
+  const coordinatorCompleted = path.join(target, '.swarmforge', 'handoffs', 'inbox', 'completed');
+
+  const result = trackCanaryCompletion(target, 'canary-20260705T220000Z', coordinatorCompleted);
+  assert(result === null);
+});
+
+test('trackCanaryCompletion ignores non-.handoff entries in the completed dir', () => {
+  const target = mkTmp();
+  const coordinatorCompleted = path.join(target, '.swarmforge', 'handoffs', 'inbox', 'completed');
+  fs.mkdirSync(coordinatorCompleted, { recursive: true });
+  fs.writeFileSync(path.join(coordinatorCompleted, 'README.md'), 'task: canary-20260705T220000Z\n');
+
+  const result = trackCanaryCompletion(target, 'canary-20260705T220000Z', coordinatorCompleted);
+  assert(result === null);
+});
+
+test('trackCanaryCompletion skips an unreadable .handoff entry instead of throwing', () => {
+  const target = mkTmp();
+  const coordinatorCompleted = path.join(target, '.swarmforge', 'handoffs', 'inbox', 'completed');
+  // A directory named `*.handoff` fails fs.readFileSync (EISDIR) — exercises the catch/skip path.
+  fs.mkdirSync(path.join(coordinatorCompleted, 'broken.handoff'), { recursive: true });
+
+  const result = trackCanaryCompletion(target, 'canary-20260705T220000Z', coordinatorCompleted);
+  assert(result === null);
+});
+
 // ── recordCanaryRoundTrip ──────────────────────────────────────────────────
 
 test('recordCanaryRoundTrip updates the canary status file with the round-trip time', () => {
@@ -245,6 +273,49 @@ test('reconcileCanary leaves a pending canary in place when it has not completed
   const remaining = fs.readdirSync(pendingDirFor(target));
   assert.equal(remaining.length, 1);
   assert(remaining[0].includes(taskName));
+});
+
+test('reconcileCanary ignores non-.handoff entries sitting in the pending queue', () => {
+  const target = mkTmp();
+  const completedDir = path.join(target, '.swarmforge', 'handoffs', 'inbox', 'completed');
+  fs.mkdirSync(pendingDirFor(target), { recursive: true });
+  fs.writeFileSync(path.join(pendingDirFor(target), 'notes.txt'), 'not a canary');
+
+  const result = reconcileCanary(target, completedDir);
+
+  assert.deepEqual(result.reconciledTaskNames, []);
+  assert.equal(fs.readdirSync(pendingDirFor(target)).length, 1);
+});
+
+test('reconcileCanary skips a pending entry with no task field instead of throwing', () => {
+  const target = mkTmp();
+  const completedDir = path.join(target, '.swarmforge', 'handoffs', 'inbox', 'completed');
+  fs.mkdirSync(pendingDirFor(target), { recursive: true });
+  fs.writeFileSync(path.join(pendingDirFor(target), 'malformed.handoff'), 'not: a-task-field\n');
+
+  const result = reconcileCanary(target, completedDir);
+
+  assert.deepEqual(result.reconciledTaskNames, []);
+  assert.equal(fs.readdirSync(pendingDirFor(target)).length, 1);
+});
+
+test('reconcileCanary falls back to file mtime when a completed canary has no sent_at field', () => {
+  const target = mkTmp();
+  const completedDir = path.join(target, '.swarmforge', 'handoffs', 'inbox', 'completed');
+  fs.mkdirSync(completedDir, { recursive: true });
+  fs.mkdirSync(pendingDirFor(target), { recursive: true });
+
+  const taskName = 'canary-20260705T220000Z';
+  // Pending entry deliberately has no `sent_at:` header.
+  fs.writeFileSync(path.join(pendingDirFor(target), `${taskName}.handoff`), `task: ${taskName}\n`);
+  fs.writeFileSync(path.join(completedDir, '00_x_canary.handoff'), `task: ${taskName}\n\nbody`);
+
+  const result = reconcileCanary(target, completedDir);
+
+  assert.deepEqual(result.reconciledTaskNames, [taskName]);
+  const status = readCanaryStatusFile(target);
+  assert(status !== null);
+  assert(Number.isFinite(status.lastRoundTripMs));
 });
 
 // ── runCanaryCycle ─────────────────────────────────────────────────────────

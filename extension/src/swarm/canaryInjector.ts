@@ -166,6 +166,32 @@ export interface ReconcileResult {
 }
 
 /**
+ * Reconciles a single pending canary file against the completed inbox.
+ * Returns its task name once its round trip is recorded and the pending
+ * file is cleared, or null if it has not completed yet (or is malformed).
+ */
+function reconcileOnePendingCanary(
+  targetPath: string,
+  filePath: string,
+  completedInboxDir: string
+): string | null {
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const taskName = parseHandoffHeaderField(content, 'task');
+  if (!taskName) {
+    return null;
+  }
+  const completion = trackCanaryCompletion(targetPath, taskName, completedInboxDir);
+  if (!completion?.found) {
+    return null;
+  }
+  const sentAtField = parseHandoffHeaderField(content, 'sent_at');
+  const sentAtMs = sentAtField ? Date.parse(sentAtField) : fs.statSync(filePath).mtimeMs;
+  recordCanaryRoundTrip(targetPath, sentAtMs, completion.completedAtMs);
+  fs.rmSync(filePath);
+  return taskName;
+}
+
+/**
  * Checks every canary still sitting in the pending queue against the real
  * transport's completed inbox. Any that have round-tripped get their
  * completion recorded via recordCanaryRoundTrip and are cleared from
@@ -184,20 +210,10 @@ export function reconcileCanary(targetPath: string, completedInboxDir: string): 
       continue;
     }
     const filePath = path.join(pendingDir, entry);
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const taskName = parseHandoffHeaderField(content, 'task');
-    if (!taskName) {
-      continue;
+    const taskName = reconcileOnePendingCanary(targetPath, filePath, completedInboxDir);
+    if (taskName) {
+      reconciledTaskNames.push(taskName);
     }
-    const completion = trackCanaryCompletion(targetPath, taskName, completedInboxDir);
-    if (!completion?.found) {
-      continue;
-    }
-    const sentAtField = parseHandoffHeaderField(content, 'sent_at');
-    const sentAtMs = sentAtField ? Date.parse(sentAtField) : fs.statSync(filePath).mtimeMs;
-    recordCanaryRoundTrip(targetPath, sentAtMs, completion.completedAtMs);
-    fs.rmSync(filePath);
-    reconciledTaskNames.push(taskName);
   }
 
   return { reconciledTaskNames };
