@@ -45,6 +45,14 @@ test('listSidecars classifies .chase.json and .nudge sidecars by kind', () => {
   ]);
 });
 
+test('listSidecars classifies an unrecognized non-.handoff file as "other" rather than misreporting it', () => {
+  const dir = mkTmp();
+  writeHandoff(dir, '00_a.handoff');
+  writeSidecar(dir, 'notes.txt');
+
+  assert.deepEqual(listSidecars(dir), [{ name: 'notes.txt', kind: 'other' }]);
+});
+
 test('listSidecars returns [] for a missing directory rather than throwing', () => {
   assert.deepEqual(listSidecars(path.join(mkTmp(), 'does-not-exist')), []);
 });
