@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
-const { startChaserMonitor, stopChaserMonitor } = require('../out/watchdog/chaserMonitor');
+const { startChaserMonitor, stopChaserMonitor, readChaseEscalations, syncStuckEscalations } = require('../out/watchdog/chaserMonitor');
 
 function mkTmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-chaser-monitor-'));
@@ -135,3 +135,110 @@ test('stopChaserMonitor stops further sweeps', () => new Promise((resolve, rejec
 test('stopChaserMonitor tolerates a null timer', () => {
   assert.doesNotThrow(() => stopChaserMonitor(null));
 });
+
+// ── BL-148: bridging the daemon's chase-escalations.json ────────────────────
+
+test('readChaseEscalations returns an empty set when the file is missing', () => {
+  const tmpDir = mkTmp();
+  assert.deepEqual(readChaseEscalations(path.join(tmpDir, '.swarmforge', 'daemon')), new Set());
+});
+
+test('readChaseEscalations returns an empty set for malformed JSON', () => {
+  const tmpDir = mkTmp();
+  const daemonDir = path.join(tmpDir, '.swarmforge', 'daemon');
+  fs.mkdirSync(daemonDir, { recursive: true });
+  fs.writeFileSync(path.join(daemonDir, 'chase-escalations.json'), 'not json');
+  assert.deepEqual(readChaseEscalations(daemonDir), new Set());
+});
+
+test('readChaseEscalations reads the roles the daemon marked escalated, matching chase_sweep_lib.bb write-escalation! shape', () => {
+  const tmpDir = mkTmp();
+  const daemonDir = path.join(tmpDir, '.swarmforge', 'daemon');
+  fs.mkdirSync(daemonDir, { recursive: true });
+  fs.writeFileSync(path.join(daemonDir, 'chase-escalations.json'), JSON.stringify({ coder: true, cleaner: true }));
+  assert.deepEqual(readChaseEscalations(daemonDir), new Set(['coder', 'cleaner']));
+});
+
+test('readChaseEscalations excludes roles the daemon cleared back to false', () => {
+  const tmpDir = mkTmp();
+  const daemonDir = path.join(tmpDir, '.swarmforge', 'daemon');
+  fs.mkdirSync(daemonDir, { recursive: true });
+  // write-escalation! actually dissoc's a cleared role rather than writing
+  // false, but tolerate an explicit false too, matching decideRecoveryAction's
+  // own defensive style.
+  fs.writeFileSync(path.join(daemonDir, 'chase-escalations.json'), JSON.stringify({ coder: true, cleaner: false }));
+  assert.deepEqual(readChaseEscalations(daemonDir), new Set(['coder']));
+});
+
+test('syncStuckEscalations(BL-148 wedge-alert-01): a role the daemon marked escalated fires onStuckEscalation(role, true)', () => {
+  const tmpDir = mkTmp();
+  const daemonDir = path.join(tmpDir, '.swarmforge', 'daemon');
+  fs.mkdirSync(daemonDir, { recursive: true });
+  fs.writeFileSync(path.join(daemonDir, 'chase-escalations.json'), JSON.stringify({ coder: true }));
+
+  const calls = [];
+  syncStuckEscalations(tmpDir, ['coder', 'cleaner'], (role, escalated) => calls.push({ role, escalated }));
+
+  assert.deepEqual(calls, [
+    { role: 'coder', escalated: true },
+    { role: 'cleaner', escalated: false },
+  ]);
+});
+
+test('syncStuckEscalations(BL-148 wedge-alert-03): a role no longer in the daemon file clears its escalation', () => {
+  const tmpDir = mkTmp();
+  const daemonDir = path.join(tmpDir, '.swarmforge', 'daemon');
+  fs.mkdirSync(daemonDir, { recursive: true });
+  // The role was previously escalated but the daemon's own dissoc removed it
+  // (self-recovered before the wedged threshold, or was redelivered).
+  fs.writeFileSync(path.join(daemonDir, 'chase-escalations.json'), JSON.stringify({}));
+
+  const calls = [];
+  syncStuckEscalations(tmpDir, ['coder'], (role, escalated) => calls.push({ role, escalated }));
+
+  assert.deepEqual(calls, [{ role: 'coder', escalated: false }]);
+});
+
+test('syncStuckEscalations with no daemon dir at all clears every role (never crashes)', () => {
+  const tmpDir = mkTmp();
+  const calls = [];
+  assert.doesNotThrow(() => syncStuckEscalations(tmpDir, ['coder', 'cleaner'], (role, escalated) => calls.push({ role, escalated })));
+  assert.deepEqual(calls, [
+    { role: 'coder', escalated: false },
+    { role: 'cleaner', escalated: false },
+  ]);
+});
+
+// BL-148 wedge-alert-01/02: the interval itself (not just the pure sync
+// function) reaches onStuckEscalation for a daemon-marked wedge - proves the
+// wiring is live on chaserMonitor's own panel-independent timer, not merely
+// callable in isolation.
+test('BL-148: startChaserMonitor\'s own interval calls onStuckEscalation for a daemon-marked wedge', () => new Promise((resolve, reject) => {
+  const tmpDir = mkTmp();
+  writeRolesTsv(tmpDir, 'coder', tmpDir);
+  const daemonDir = path.join(tmpDir, '.swarmforge', 'daemon');
+  fs.mkdirSync(daemonDir, { recursive: true });
+  fs.writeFileSync(path.join(daemonDir, 'chase-escalations.json'), JSON.stringify({ coder: true }));
+
+  const escalations = [];
+  const timer = startChaserMonitor(
+    baseConfig(tmpDir),
+    noopCallbacks({
+      onStuckEscalation: (role, escalated) => escalations.push({ role, escalated }),
+    })
+  );
+
+  setTimeout(() => {
+    stopChaserMonitor(timer);
+    try {
+      assert.ok(
+        escalations.some((e) => e.role === 'coder' && e.escalated === true),
+        `expected an escalated=true call for coder; got: ${JSON.stringify(escalations)}`
+      );
+      fs.rmSync(tmpDir, { recursive: true });
+      resolve();
+    } catch (err) {
+      reject(err);
+    }
+  }, 200);
+}));

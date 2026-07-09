@@ -65,6 +65,13 @@ import {
 import { startBriefingScheduler } from './notify/briefingScheduler';
 import { startBriefingEmailWatcher } from './notify/briefingEmailWatcher';
 import { sendResendEmail } from './notify/resendClient';
+import {
+  NeedsHumanEmailNotifier,
+  EmailNotifyConfig,
+  EmailNotifierAdapters,
+} from './notify/needsHumanEmailNotifier';
+import { getSessionUrl } from './notify/sessionUrlCapture';
+import { buildBadgeMap } from './panel/badgeSummary';
 
 const NO_TARGET_MESSAGE = 'Set a target project first (SwarmForge: Set Target Project).';
 const STOP_SWARM_BUTTON = 'Stop Swarm';
@@ -311,6 +318,52 @@ function startOrRestartChaserMonitor(targetPath: string, context: vscode.Extensi
     chaseBackoffMaxSeconds: CHASER_BACKOFF_MAX_SECONDS,
   };
 
+  // BL-148: a genuine BL-067 stuck-in-process wedge must raise a needs-human
+  // email even when the tile panel webview is closed - SwarmPanel's own
+  // NeedsHumanEmailNotifier only ever sweeps from its own poll loop, which
+  // stops the moment the webview is disposed (BL-148 root cause). This is a
+  // SEPARATE instance, rebuilt fresh on every (re)start of this monitor -
+  // same lifecycle as chaserConfig/callbacks above, so it can never hold a
+  // stale targetPath closure across a target switch - driven by this
+  // function's own panel-independent interval. It only ever receives
+  // stuck-escalation deltas, so it can never double-send with the panel's
+  // instance, which keeps owning question-detection deltas exclusively.
+  const emailConfig = vscode.workspace.getConfiguration('swarmforge');
+  const notifyTo = emailConfig.get<string>('notify.email.to', '');
+  const notifyFrom = emailConfig.get<string>('notify.email.from', 'onboarding@resend.dev');
+  const notifyGraceSeconds = emailConfig.get<number>('notify.email.graceSeconds', 60);
+  const notifyCooldownSeconds = emailConfig.get<number>('notify.email.cooldownSeconds', 600);
+  const stuckEscalationNotifyConfig: EmailNotifyConfig = {
+    enabled: false,
+    graceSeconds: notifyGraceSeconds,
+    cooldownSeconds: notifyCooldownSeconds,
+    to: notifyTo,
+    from: notifyFrom,
+  };
+  let stuckEscalationResendApiKey: string | undefined;
+  const stuckEscalationNotifier = new NeedsHumanEmailNotifier(stuckEscalationNotifyConfig, {
+    getSessionUrl: (role) => getSessionUrl(role),
+    getTicketBadge: (role) => {
+      const badge = buildBadgeMap(readBacklog(targetPath), targetPath)[role];
+      return badge ? { id: badge.id, summary: badge.summary } : null;
+    },
+    sendEmail: (message) => {
+      if (!stuckEscalationResendApiKey) {
+        return Promise.resolve({ success: false, error: 'Resend API key not configured' });
+      }
+      return sendResendEmail(stuckEscalationResendApiKey, message);
+    },
+    onSendResult: (role, result) => {
+      if (!result.success) {
+        outputChannel.appendLine(`Needs-human email for ${role} (stuck escalation) failed: ${result.error}`);
+      }
+    },
+  });
+  resolveResendApiKey(context.secrets).then((key) => {
+    stuckEscalationResendApiKey = key;
+    stuckEscalationNotifyConfig.enabled = Boolean(key && notifyTo);
+  });
+
   // Implement adapters for the chaser
   const callbacks: ChaserCallbacks = {
     getLiveness: (role: string): LivenessState => {
@@ -387,6 +440,11 @@ function startOrRestartChaserMonitor(targetPath: string, context: vscode.Extensi
 
     onStuckEscalation: (role: string, escalated: boolean): void => {
       setStuckEscalation(role, escalated);
+      // BL-148: feed and sweep the panel-independent notifier on this SAME
+      // chaser-interval tick, so a genuine wedge alerts whether or not the
+      // tile panel webview is open.
+      stuckEscalationNotifier.recordUpdates([{ role, needsHuman: escalated }], Date.now());
+      stuckEscalationNotifier.sweep(Date.now());
     },
   };
 
