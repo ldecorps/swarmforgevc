@@ -1,0 +1,33 @@
+id: BL-206
+title: "Provider contract slice 2: fork capability model + lifecycle verbs in agent_runtime_lib.bb"
+milestone: M6
+status: todo
+priority: 05
+direction: non-aligned
+depends_on: [BL-142]
+source: "Decomposed from BL-142 provider-neutral contract epic (operator request 2026-07-06) by specifier 2026-07-09."
+
+description: |
+  Slice 2 of the provider-neutral contract epic. The fork's
+  swarmforge/scripts/agent_runtime_lib.bb already normalizes agents and builds
+  wake/bootstrap steps for claude/aider/grok/codex/copilot/mock, but it (a) still
+  branches on brand NAME in places rather than on declared capabilities, and (b)
+  covers only part of the lifecycle — there are no uniform step builders for the
+  remaining verbs (health, stop, respawn) that orchestration needs.
+
+  Wanted behavior:
+  - Represent each agent's features as CAPABILITY flags (data), and have
+    orchestration decide behavior by capability, not by hardcoded provider name.
+  - Add uniform step builders for the missing lifecycle verbs (health, stop,
+    respawn) alongside the existing wake/bootstrap, so orchestration drives every
+    provider through one lifecycle surface.
+  - Preserve behavior parity for every currently-supported agent.
+
+  Constraints:
+  - Extend agent_runtime_lib.bb; do not fork a parallel abstraction. Keep the
+    existing Babashka test suite (agent_runtime_test_runner.bb) green and add
+    capability/lifecycle coverage.
+  - No real timers/sleeps in tests; drive time explicitly.
+
+acceptance: specs/features/BL-206-fork-provider-capability-lifecycle-contract.feature
+mutation_cost: high
