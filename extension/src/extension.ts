@@ -21,7 +21,7 @@ import { stopSwarm } from './swarm/swarmStopper';
 import { bounceSwarm, buildBounceExtensionCommand } from './swarm/bouncer';
 import { listTmuxSessions } from './swarm/tmuxClient';
 import { resolveRunName } from './run/resolveRunName';
-import { startBounceWatcher, BounceType } from './swarm/bounceWatcher';
+import { startBounceWatcher, BounceType, type BounceWatcher } from './swarm/bounceWatcher';
 import { writeBounceAck, clearBounceAck, BouncePhase } from './swarm/bounceAck';
 import { startChaserMonitor, stopChaserMonitor, buildRoleInboxes } from './watchdog/chaserMonitor';
 import type { ChaserMonitorConfig, ChaserCallbacks } from './watchdog/chaserMonitor';
@@ -115,7 +115,7 @@ const DEACTIVATE_REAP_GRACE_MS = 5_000;
 
 type RunMode = 'one-shot' | 'drain';
 
-let currentBounceWatcher: fs.FSWatcher | null = null;
+let currentBounceWatcher: BounceWatcher | null = null;
 let currentChaserMonitor: NodeJS.Timeout | null = null;
 let currentBounceDrainWatcher: NodeJS.Timeout | null = null;
 let currentGracefulBounceFileWatcher: fs.FSWatcher | null = null;
@@ -182,15 +182,13 @@ function startOrRestartBounceWatcher(
 ): void {
   // Dispose old watcher if it exists
   if (currentBounceWatcher) {
-    currentBounceWatcher.close();
+    currentBounceWatcher.dispose();
     currentBounceWatcher = null;
   }
 
-  // Check if .swarmforge directory exists
+  // Ensure .swarmforge exists before watching so fresh targets are covered
   const swarmforgeDir = path.join(targetPath, '.swarmforge');
-  if (!fs.existsSync(swarmforgeDir)) {
-    return;
-  }
+  fs.mkdirSync(swarmforgeDir, { recursive: true });
 
   // Create handler that dispatches to appropriate command
   const handleBounce = (bounceType: BounceType) => {
@@ -219,7 +217,7 @@ function startOrRestartBounceWatcher(
     context.subscriptions.push({
       dispose: () => {
         if (currentBounceWatcher) {
-          currentBounceWatcher.close();
+          currentBounceWatcher.dispose();
           currentBounceWatcher = null;
         }
       },
@@ -502,6 +500,7 @@ function handleBounceResult(
   if (panel) {
     panel.updateTarget(targetPath);
   }
+  startOrRestartBounceWatcher(context, targetPath);
   startOrRestartChaserMonitor(targetPath, context);
   startOrRestartDailyBriefing(targetPath, context);
   startOrRestartIdleClearMonitor(targetPath, context);
@@ -988,7 +987,8 @@ export function activate(context: vscode.ExtensionContext): void {
             context.secrets
           );
           panel.updateTarget(targetPath);
-          // Start chaser monitor after swarm is launched
+          // Start bounce/chaser monitors after swarm is launched
+          startOrRestartBounceWatcher(context, targetPath);
           startOrRestartChaserMonitor(targetPath, context);
           startOrRestartDailyBriefing(targetPath, context);
           startOrRestartIdleClearMonitor(targetPath, context);
@@ -1445,7 +1445,7 @@ export function activate(context: vscode.ExtensionContext): void {
 export function deactivate(): void {
   SwarmPanel.currentPanel?.dispose();
   if (currentBounceWatcher) {
-    currentBounceWatcher.close();
+    currentBounceWatcher.dispose();
     currentBounceWatcher = null;
   }
   if (currentBridge) {

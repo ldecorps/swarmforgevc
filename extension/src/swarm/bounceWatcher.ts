@@ -1,7 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { EventEmitter } from 'events';
 
 export type BounceType = 'swarm' | 'extension' | 'all';
+
+export interface BounceWatcher extends fs.FSWatcher {
+  dispose(): void;
+}
 
 export function isBounceType(value: unknown): value is BounceType {
   return value === 'swarm' || value === 'extension' || value === 'all';
@@ -56,32 +61,115 @@ export function processBounceFile(
   }
 }
 
+class BounceFSWatcher extends EventEmitter {
+  private currentWatcher: fs.FSWatcher | null = null;
+  private permanentlyClosed = false;
+  private restartScheduled = false;
+  private suppressReconnect = false;
+  private watcherGeneration = 0;
+
+  constructor(
+    private readonly targetPath: string,
+    private readonly onBounce: (bounceType: BounceType) => void,
+    private readonly onError?: (error: string) => void,
+  ) {
+    super();
+    this.attachWatcher();
+  }
+
+  private attachWatcher(): void {
+    if (this.permanentlyClosed || this.restartScheduled) {
+      return;
+    }
+
+    const generation = ++this.watcherGeneration;
+    const swarmforgeDir = path.join(this.targetPath, '.swarmforge');
+    fs.mkdirSync(swarmforgeDir, { recursive: true });
+    const bounceFilePath = path.join(swarmforgeDir, 'bounce');
+
+    const watcher = fs.watch(swarmforgeDir, (_eventType, filename) => {
+      if (filename !== 'bounce') {
+        return;
+      }
+
+      setTimeout(() => {
+        if (fs.existsSync(bounceFilePath)) {
+          processBounceFile(bounceFilePath, this.onBounce, this.onError);
+        }
+      }, 50);
+    });
+
+    const handleError = (error: Error) => {
+      if (this.watcherGeneration !== generation) {
+        return;
+      }
+      if (this.onError) {
+        this.onError(`Bounce watcher error: ${error.message}`);
+      }
+      this.reconnect();
+    };
+
+    const handleClose = () => {
+      if (this.suppressReconnect || this.watcherGeneration !== generation) {
+        return;
+      }
+      this.reconnect();
+    };
+
+    watcher.on('error', handleError);
+    watcher.on('close', handleClose);
+    this.currentWatcher = watcher;
+  }
+
+  private reconnect(): void {
+    if (this.permanentlyClosed || this.suppressReconnect) {
+      return;
+    }
+
+    if (this.currentWatcher) {
+      this.currentWatcher.close();
+      this.currentWatcher = null;
+    }
+
+    if (this.restartScheduled) {
+      return;
+    }
+
+    this.restartScheduled = true;
+    setTimeout(() => {
+      this.restartScheduled = false;
+      this.attachWatcher();
+    }, 100);
+  }
+
+  close(): void {
+    this.suppressReconnect = true;
+    this.closeCurrentWatcher();
+    this.suppressReconnect = false;
+    if (!this.permanentlyClosed) {
+      this.attachWatcher();
+    }
+  }
+
+  dispose(): void {
+    this.permanentlyClosed = true;
+    this.suppressReconnect = true;
+    this.closeCurrentWatcher();
+    this.removeAllListeners();
+  }
+
+  private closeCurrentWatcher(): void {
+    if (this.currentWatcher) {
+      this.currentWatcher.close();
+      this.currentWatcher = null;
+    }
+  }
+}
+
 export function startBounceWatcher(
   targetPath: string,
   onBounce: (bounceType: BounceType) => void,
   onError?: (error: string) => void,
-): fs.FSWatcher | null {
-  const swarmforgeDir = path.join(targetPath, '.swarmforge');
-  const bounceFilePath = path.join(swarmforgeDir, 'bounce');
-
-  // Check if directory exists
-  if (!fs.existsSync(swarmforgeDir)) {
-    return null;
-  }
-
-  // Watch the directory since watching a non-existent file may not work reliably
-  const watcher = fs.watch(swarmforgeDir, (eventType, filename) => {
-    if (filename !== 'bounce') {
-      return;
-    }
-
-    // Small delay to ensure file is fully written
-    setTimeout(() => {
-      if (fs.existsSync(bounceFilePath)) {
-        processBounceFile(bounceFilePath, onBounce, onError);
-      }
-    }, 50);
-  });
-
-  return watcher;
+): BounceWatcher | null {
+  return new BounceFSWatcher(targetPath, onBounce, onError) as unknown as BounceWatcher;
 }
