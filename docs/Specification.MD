@@ -290,6 +290,16 @@ node extension/out/tools/swarm-metrics.js
 
 Runnable from the repo root or from any `.worktrees/<role>/` checkout. Prints a short plain-text summary — mean ticket time, one busyness line per role, retry total, suite duration with warnings, and a chaser telemetry line per role — and exits 0 with placeholder values on a fresh run. The CLI and panel are fed by the same underlying metrics computation module, so they always report the same values.
 
+#### Queue status CLI
+
+A second headless, read-only CLI answers "is there actually pending work?" without mixing in the chaser's own operational sidecar files (`.chase.json`, `.nudge`), which used to dominate a raw directory listing and give a false impression of a busy queue:
+
+```sh
+node extension/out/tools/queue-status.js [--debug]
+```
+
+Runnable from the repo root or any `.worktrees/<role>/` checkout, same project-root resolution as `swarm-metrics.js`. By default, prints one line per role with only its real `.handoff` payload count (`inbox/new` + `inbox/in_process`) — sidecar files are not even listed, not just hidden. Pass `--debug` to additionally list each role's sidecar files, labeled by kind (`chase-sidecar`, `nudge-sidecar`, `other`).
+
 ---
 
 ## Inter-Agent Communication
