@@ -64,6 +64,8 @@ import {
 } from './notify/secrets';
 import { startBriefingScheduler } from './notify/briefingScheduler';
 import { startBriefingEmailWatcher } from './notify/briefingEmailWatcher';
+import { computeCostHealthSidecar, writeCostHealthSidecar, commitCostHealthSidecar } from './notify/costHealthSidecar';
+import { parseRolesTsv } from './swarm/swarmState';
 import { sendResendEmail } from './notify/resendClient';
 import {
   NeedsHumanEmailNotifier,
@@ -496,6 +498,20 @@ function startOrRestartDailyBriefing(targetPath: string, context: vscode.Extensi
     {
       getNowMs: () => Date.now(),
       onBriefingDue: (): void => {
+        // BL-213: emit + commit the deterministic cost/health sidecar before
+        // the nudge below - it's a best-effort addition to the briefing
+        // flow, so a failure here must never block the nudge that actually
+        // gets the human-authored briefing written.
+        try {
+          const rolesTsvPath = path.join(swarmforgeDir, 'roles.tsv');
+          const roles = fs.existsSync(rolesTsvPath) ? parseRolesTsv(fs.readFileSync(rolesTsvPath, 'utf8')) : [];
+          const sidecar = computeCostHealthSidecar(targetPath, roles.map((r) => ({ role: r.role, worktreePath: r.worktreePath })));
+          const sidecarFilePath = writeCostHealthSidecar(targetPath, sidecar);
+          commitCostHealthSidecar(targetPath, sidecarFilePath, sidecar.dateIso);
+        } catch {
+          // best-effort - see comment above
+        }
+
         if (!socketPath) return;
         const roleEntry = readSwarmRoles(targetPath).find((r) => r.role === 'coordinator');
         if (!roleEntry) return;
