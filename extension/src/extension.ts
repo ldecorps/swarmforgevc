@@ -227,12 +227,6 @@ function startOrRestartBounceWatcher(
     currentBounceWatcher = null;
   }
 
-  // Check if .swarmforge directory exists
-  const swarmforgeDir = path.join(targetPath, '.swarmforge');
-  if (!fs.existsSync(swarmforgeDir)) {
-    return;
-  }
-
   // Create handler that dispatches to appropriate command
   const handleBounce = (bounceType: BounceType) => {
     switch (bounceType) {
