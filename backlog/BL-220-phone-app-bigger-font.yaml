@@ -1,0 +1,13 @@
+id: BL-220
+title: "PWA phone app: make the font way bigger"
+source: "operator chat request 2026-07-09 (relayed by coordinator)"
+description: |
+  Operator asked directly (in chat with the coordinator) to make the font in
+  the phone app "way bigger". "Phone app" is the PWA under ./pwa/ (dashboard,
+  docs explorer, cost/health briefing, gherkin recertification pages — see
+  BL-097, BL-117, BL-118, BL-150, BL-213).
+
+  Raw request only — scope, target page(s)/component(s), and target size are
+  unresolved. Specifier: please confirm with the operator which PWA
+  surface(s) this applies to (all pages vs. a specific one) and a concrete
+  size target before writing acceptance criteria.
