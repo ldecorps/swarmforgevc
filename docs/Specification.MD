@@ -526,6 +526,25 @@ When an agent reports hitting a rate limit and provides a reset time (e.g., "tok
 
 This prevents the "retry storm" where a rate-limited agent gets nudged repeatedly while unable to act, saving tokens and clearing the notification noise during the windowed recovery period.
 
+### Mutation-run progress (long hardening passes)
+
+A Stryker mutation pass can run for hours with no visible signal beyond an
+opaque spinner. A durable, structured progress file closes that gap
+independently of the heartbeat mechanism above:
+
+- Every mutation run writes `.swarmforge/mutation-progress/<role>.json`,
+  refreshed as mutants are tested and finalized (`status: "done"`) when the
+  run completes: `{file, tested, total, percent, survived, timedOut,
+  elapsed_s, eta_s, updated_at, status}`.
+- The file is plain JSON — readable with `cat` at any time, with no
+  dependency on the extension or webview being healthy.
+- `updated_at` staying fresh distinguishes a progressing run from a hung
+  one, the same distinction the heartbeat makes for agents in general.
+- Written via a Stryker reporter plugin (`mutation-progress`, alongside the
+  built-in `clear-text`/`progress` reporters in
+  `extension/stryker.config.json`) that taps Stryker's own reporter
+  lifecycle rather than re-implementing its progress/ETA math.
+
 ## Per-Agent Lifecycle Control
 
 A core capability: managing individual agents without disrupting the swarm.
@@ -1124,6 +1143,7 @@ The Work Tree reads `status` and `completion_pct` straight from the synced backl
 | Pack/role config (generated) | Clone — not committed to target main |
 | Worktrees | `.worktrees/` inside clone — not committed to target main |
 | PR branch + commits | Target repo (via PR) |
+| Mutation-run progress (`.swarmforge/mutation-progress/<role>.json`) | Clone — not committed, not target main |
 
 ---
 
