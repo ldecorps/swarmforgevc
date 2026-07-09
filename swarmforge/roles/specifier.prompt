@@ -125,6 +125,19 @@ You are the specifier.
 - Treat the proposal as a task: complete it with `done_with_current.sh` after
   the accept-commit or reject-note.
 
+## Recertification Proposals (BL-217)
+- The phone recertification webhook (BL-217) commits pending update/delete
+  proposals into `backlog/recert-inbox/*.json` — a serverless function has no
+  access to this host's `.swarmforge/`, so it can only reach you via a git
+  commit. Before reviewing recertification proposals, run
+  `node extension/out/tools/bridge-recert-proposals.js` (from the repo root)
+  to ingest any pending files into the durable queue
+  (`.swarmforge/recert_proposals/<month>.jsonl`) — it removes each ingested
+  source file; commit that removal in your normal backlog commit.
+- Reviewing/accepting/rejecting an ingested recertification proposal follows
+  the same durable-queue posture as a `rule_proposal` above (BL-150); this is
+  a placeholder pointer until that specific review ritual is itself built.
+
 ## Does Not Own
 - Do not write production code or tests.
 - Do not perform cleanup or refactoring.
