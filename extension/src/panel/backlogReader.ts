@@ -11,6 +11,10 @@ export interface BacklogItem {
   priority?: number;
   dependsOn?: string[];
   pack?: string[];
+  // BL-090/BL-094: which swarm this ticket is assigned to. Absent means the
+  // primary swarm (BL-090's own default) - callers must apply that fallback
+  // themselves, since no swarm: field exists in live ticket YAML yet.
+  swarm?: string;
 }
 
 const VALID_STATUSES = new Set(['todo', 'active', 'done']);
@@ -53,6 +57,9 @@ function assignOptionalFields(item: BacklogItem, content: string): void {
 
   const pack = parseYamlList(content, 'pack');
   if (pack) item.pack = pack;
+
+  const swarm = parseYamlScalar(content, 'swarm');
+  if (swarm) item.swarm = swarm;
 }
 
 function toOptionalNumber(value: unknown): number | undefined {
@@ -97,6 +104,7 @@ function assignOptionalFieldsFromObject(item: BacklogItem, obj: Record<string, u
   if (dependsOn) item.dependsOn = dependsOn;
   const pack = toOptionalStringList(obj.pack);
   if (pack) item.pack = pack;
+  if (typeof obj.swarm === 'string' && obj.swarm) item.swarm = obj.swarm;
 }
 
 function buildItemFromParsedObject(obj: Record<string, unknown>): BacklogItem | null {
