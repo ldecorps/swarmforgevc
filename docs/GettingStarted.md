@@ -56,6 +56,12 @@ In the Extension Development Host window:
    (`swarmforge.openPanel`) to reopen it — one live terminal tile per role,
    tailing that role's tmux pane in real time.
 3. Click into any tile and type to nudge that agent directly.
+4. The panel shows a **handoff transport health** banner ("⚠ handoff
+   transport degraded" / "✖ handoff transport DOWN") when parcels are not
+   actually being delivered — a dead-lettered or stalled parcel, or a missed
+   periodic canary round-trip. This reflects DELIVERY health, not just
+   whether the daemon process is alive: it can fire even while the daemon
+   itself heartbeats healthy. No banner means transport is healthy.
 
 **Persistence across restarts:** If you reload or close VS Code while the swarm is running, the agents keep working in tmux. When you relaunch, the extension automatically reconnects to the live swarm without restarting agents — no work is lost. F5 / Extension Development Host does **not** cold-launch a swarm; use **Launch Swarm** explicitly for a new run. If the swarm is no longer running but you have prior state on disk, the extension offers to resume from the last checkpoint.
 
