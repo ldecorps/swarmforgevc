@@ -6,6 +6,7 @@
             [clojure.string :as str]))
 
 (def scripts-dir (fs/path (fs/parent (fs/canonicalize *file*))))
+(load-file (str (fs/path scripts-dir "handoff_lib.bb")))
 (load-file (str (fs/path scripts-dir "agent_runtime_lib.bb")))
 (load-file (str (fs/path scripts-dir "agent_runtime_inject.bb")))
 
@@ -143,12 +144,11 @@
   (str/replace filename #"\.handoff$" (str "_for_" recipient ".handoff")))
 
 (defn target-path [role-info filename recipient]
-  (fs/path (:worktree-path role-info)
-           ".swarmforge" "handoffs" "inbox" "new"
+  (fs/path (handoff-lib/mailbox-dir role-info :new)
            (delivered-filename filename recipient)))
 
 (defn sent-dir [role-info]
-  (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "sent"))
+  (handoff-lib/mailbox-dir role-info :sent))
 
 (defn move-with-collision [source target-dir]
   (fs/create-dirs target-dir)
