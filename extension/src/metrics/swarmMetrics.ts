@@ -489,37 +489,101 @@ function parseChaserTelemetryLine(line: string): ChaserTelemetryEvent | null {
   return null;
 }
 
-function readChaserTelemetryEvents(targetPath: string): ChaserTelemetryEvent[] {
-  let files: string[];
+// A single telemetry file's lines, parsed. Split out of
+// readChaserTelemetryEvents so each function stays under the CRAP<=6 gate:
+// an unreadable file (deleted/permission-denied between readdir and read)
+// contributes nothing rather than aborting the whole read.
+function readChaserTelemetryFile(dir: string, file: string): ChaserTelemetryEvent[] {
+  let content: string;
   try {
-    files = fs.readdirSync(chaserTelemetryDir(targetPath)).filter((f) => f.startsWith('chaser-') && f.endsWith('.jsonl'));
+    content = fs.readFileSync(path.join(dir, file), 'utf8');
   } catch {
     return [];
   }
-
   const events: ChaserTelemetryEvent[] = [];
-  for (const file of files) {
-    let content: string;
-    try {
-      content = fs.readFileSync(path.join(chaserTelemetryDir(targetPath), file), 'utf8');
-    } catch {
+  for (const line of content.split('\n')) {
+    if (!line.trim()) {
       continue;
     }
-    for (const line of content.split('\n')) {
-      if (!line.trim()) {
-        continue;
-      }
-      const event = parseChaserTelemetryLine(line);
-      if (event) {
-        events.push(event);
-      }
+    const event = parseChaserTelemetryLine(line);
+    if (event) {
+      events.push(event);
     }
   }
   return events;
 }
 
+function readChaserTelemetryEvents(targetPath: string): ChaserTelemetryEvent[] {
+  const dir = chaserTelemetryDir(targetPath);
+  let files: string[];
+  try {
+    files = fs.readdirSync(dir).filter((f) => f.startsWith('chaser-') && f.endsWith('.jsonl'));
+  } catch {
+    return [];
+  }
+  return files.flatMap((file) => readChaserTelemetryFile(dir, file));
+}
+
 function emptyRoleTelemetry(): RoleChaserTelemetry {
   return { chases: 0, nudges: 0, deadLetters: 0, respawns: 0, recentDailyRate: 0 };
+}
+
+type ChaserCountField = 'chases' | 'nudges' | 'deadLetters' | 'respawns';
+
+// Maps a telemetry event's `type` to the bucket field it increments; an
+// unrecognized type has no field, which is how an event whose type this
+// reader does not know is ignored rather than rejected (forward-compatible
+// schema for BL-097's later stage-transition events).
+function chaserCountField(eventType: string): ChaserCountField | null {
+  switch (eventType) {
+    case 'chase':
+      return 'chases';
+    case 'nudge':
+      return 'nudges';
+    case 'dead-letter':
+      return 'deadLetters';
+    case 'respawn':
+      return 'respawns';
+    default:
+      return null;
+  }
+}
+
+// Only chase/nudge events count toward the recent-window daily rate;
+// dead-letters and respawns are lifetime totals only.
+function countsTowardRecentRate(eventType: string): boolean {
+  return eventType === 'chase' || eventType === 'nudge';
+}
+
+// Counts one event's timestamp toward its role's recent-window tally when
+// the timestamp parses and falls inside the window; split out of
+// applyChaserEvent so both functions stay under the CRAP<=6 gate.
+function tallyRecentRate(recentCounts: Record<string, number>, role: string, atIso: string, windowStartMs: number): void {
+  const atMs = Date.parse(atIso);
+  if (!Number.isNaN(atMs) && atMs >= windowStartMs) {
+    recentCounts[role] = (recentCounts[role] ?? 0) + 1;
+  }
+}
+
+// Applies one telemetry event to its role's bucket (lifetime total) and,
+// for chase/nudge events within the window, to the recent-rate tally. Split
+// out of computeChaserTelemetry so each function stays under the CRAP<=6
+// gate.
+function applyChaserEvent(
+  result: ChaserTelemetry,
+  recentCounts: Record<string, number>,
+  event: ChaserTelemetryEvent,
+  windowStartMs: number
+): void {
+  const bucket = result[event.role];
+  const field = chaserCountField(event.type);
+  if (!bucket || !field) {
+    return; // unknown role (not in roles.tsv) or unrecognized event type
+  }
+  bucket[field] += 1;
+  if (countsTowardRecentRate(event.type)) {
+    tallyRecentRate(recentCounts, event.role, event.at, windowStartMs);
+  }
 }
 
 // Absent/empty telemetry (no directory yet, or a target with no chases ever
@@ -539,29 +603,8 @@ export function computeChaserTelemetry(
 
   const windowStartMs = nowMs - windowDays * 24 * 60 * 60 * 1000;
   const recentCounts: Record<string, number> = {};
-
   for (const event of readChaserTelemetryEvents(targetPath)) {
-    const bucket = result[event.role];
-    if (!bucket) {
-      continue; // event for a role no longer in roles.tsv - not this view's concern
-    }
-    if (event.type === 'chase') {
-      bucket.chases += 1;
-    } else if (event.type === 'nudge') {
-      bucket.nudges += 1;
-    } else if (event.type === 'dead-letter') {
-      bucket.deadLetters += 1;
-    } else if (event.type === 'respawn') {
-      bucket.respawns += 1;
-    } else {
-      continue; // forward-compatible: unknown event types are ignored, not errors
-    }
-    if (event.type === 'chase' || event.type === 'nudge') {
-      const atMs = Date.parse(event.at);
-      if (!Number.isNaN(atMs) && atMs >= windowStartMs) {
-        recentCounts[event.role] = (recentCounts[event.role] ?? 0) + 1;
-      }
-    }
+    applyChaserEvent(result, recentCounts, event, windowStartMs);
   }
 
   for (const role of roleNames) {

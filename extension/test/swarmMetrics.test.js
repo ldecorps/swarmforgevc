@@ -461,6 +461,19 @@ test('telemetry: a malformed JSON line is skipped, never a crash', () => {
   assert.equal(telemetry.coder.chases, 1);
 });
 
+test('telemetry: an unreadable telemetry file is skipped, not a crash (other files still read)', () => {
+  const target = mkTmp();
+  const dir = path.join(target, '.swarmforge', 'telemetry');
+  mkdirp(dir);
+  // A directory named `chaser-*.jsonl` fails fs.readFileSync (EISDIR) - exercises
+  // the per-file catch/skip path without depending on real permission bits.
+  mkdirp(path.join(dir, 'chaser-2026-06.jsonl'));
+  writeTelemetryLine(target, '2026-07', { type: 'chase', role: 'coder', handoffId: 'a.handoff', at: '2026-07-09T10:00:00Z' });
+
+  const telemetry = computeChaserTelemetry(target, ['coder'], Date.parse('2026-07-09T12:00:00Z'));
+  assert.equal(telemetry.coder.chases, 1);
+});
+
 test('telemetry: an event for a role not in the current roleNames list is ignored', () => {
   const target = mkTmp();
   writeTelemetryLine(target, '2026-07', { type: 'chase', role: 'retired-role', handoffId: 'a.handoff', at: '2026-07-09T10:00:00Z' });
