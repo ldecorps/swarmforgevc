@@ -482,3 +482,69 @@ test('telemetry: an event for a role not in the current roleNames list is ignore
   assert.equal(telemetry.coder.chases, 0);
   assert.equal(Object.keys(telemetry).includes('retired-role'), false);
 });
+
+test('telemetry: an event with a missing "at" field is rejected outright, not merely excluded from the recent rate', () => {
+  const target = mkTmp();
+  // type and role are valid; `at` is absent. Unlike a bad type/role (masked
+  // downstream by chaserCountField's default case and the missing-bucket
+  // guard), a missing `at` alone would still increment the lifetime count
+  // if this line's own validation didn't reject the whole event first.
+  writeTelemetryLine(target, '2026-07', { type: 'chase', role: 'coder', handoffId: 'a.handoff' });
+
+  const telemetry = computeChaserTelemetry(target, ['coder'], Date.parse('2026-07-09T12:00:00Z'));
+  assert.equal(telemetry.coder.chases, 0, 'an event missing `at` must not count, even toward the lifetime total');
+});
+
+test('telemetry: only files matching the chaser-*.jsonl name pattern are read', () => {
+  const target = mkTmp();
+  const dir = path.join(target, '.swarmforge', 'telemetry');
+  mkdirp(dir);
+  const event = JSON.stringify({ type: 'chase', role: 'coder', at: '2026-07-09T10:00:00Z' }) + '\n';
+  // Otherwise-valid event JSON sitting in files that satisfy neither, or
+  // only one, of the prefix/suffix halves of the chaser-*.jsonl pattern -
+  // both halves must independently gate, so a file passing only one is
+  // still excluded (proves it's a real AND, not an OR, and that neither
+  // half is silently ignored).
+  fs.writeFileSync(path.join(dir, 'notes.txt'), event); // matches neither half
+  fs.writeFileSync(path.join(dir, 'archive-2026-07.jsonl'), event); // right suffix, wrong prefix
+  fs.writeFileSync(path.join(dir, 'chaser-2026-07.txt'), event); // right prefix, wrong suffix
+
+  const telemetry = computeChaserTelemetry(target, ['coder'], Date.parse('2026-07-09T12:00:00Z'));
+  assert.equal(telemetry.coder.chases, 0);
+});
+
+test('telemetry: dead-letter and respawn events count toward the lifetime total but never the recent daily rate', () => {
+  const target = mkTmp();
+  const now = Date.parse('2026-07-09T12:00:00Z');
+  writeTelemetryLine(target, '2026-07', { type: 'dead-letter', role: 'coder', at: '2026-07-09T11:00:00Z' });
+  writeTelemetryLine(target, '2026-07', { type: 'respawn', role: 'coder', at: '2026-07-09T11:30:00Z' });
+
+  const telemetry = computeChaserTelemetry(target, ['coder'], now, 7);
+  assert.equal(telemetry.coder.deadLetters, 1);
+  assert.equal(telemetry.coder.respawns, 1);
+  assert.equal(telemetry.coder.recentDailyRate, 0, 'only chase/nudge events feed the recent-window rate');
+});
+
+test('telemetry: an event exactly at the recent-window boundary still counts (inclusive)', () => {
+  const target = mkTmp();
+  const windowDays = 1;
+  const now = Date.parse('2026-07-09T12:00:00Z');
+  const windowStartIso = new Date(now - windowDays * 24 * 60 * 60 * 1000).toISOString();
+  writeTelemetryLine(target, '2026-07', { type: 'chase', role: 'coder', at: windowStartIso });
+
+  const telemetry = computeChaserTelemetry(target, ['coder'], now, windowDays);
+  assert.equal(telemetry.coder.recentDailyRate, 1, 'an event exactly at windowStartMs is inside the window, not excluded by a strict >');
+});
+
+test('telemetry: recentDailyRate divides the recent count by windowDays, not multiplies', () => {
+  const target = mkTmp();
+  const windowDays = 7;
+  const now = Date.parse('2026-07-09T12:00:00Z');
+  for (let i = 0; i < 3; i++) {
+    writeTelemetryLine(target, '2026-07', { type: 'chase', role: 'coder', at: new Date(now - i * 1000).toISOString() });
+  }
+
+  const telemetry = computeChaserTelemetry(target, ['coder'], now, windowDays);
+  assert.equal(telemetry.coder.chases, 3);
+  assert.equal(telemetry.coder.recentDailyRate, 3 / 7, '3 events over a 7-day window is a rate below 1/day, not 21');
+});
