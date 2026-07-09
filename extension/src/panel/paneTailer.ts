@@ -502,7 +502,7 @@ export class PaneTailer {
     const rawText = stripAnsi(result.stdout);
     const paneCommand = getPaneCommand(this.socketPath, target);
     this.lastPaneCommand.set(role.role, paneCommand);
-    const statusOverlay = agentPaneStatusMessage(paneCommand, rawText);
+    const statusOverlay = agentPaneStatusMessage(paneCommand, rawText, role.agent);
     const effectiveRaw = statusOverlay ?? rawText;
     const previousRaw = this.lastRawText.get(role.role);
     this.lastRawText.set(role.role, effectiveRaw);
