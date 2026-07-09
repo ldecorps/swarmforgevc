@@ -21,6 +21,35 @@ export interface LaunchResult {
 
 const SWARM_LAUNCH_SUCCESS_MESSAGE = 'Swarm launched successfully.';
 
+// BL-212: the only piece of launchSwarm that touches a real subprocess -
+// structurally a subset of cp.ChildProcess (a real spawn result satisfies
+// this automatically), narrow enough that a test double can satisfy it
+// without faking the whole Node ChildProcess API. Same injectable-seam
+// pattern as ShellRunFn/spawnAndCaptureShellOutput below.
+export interface SwarmLaunchChild {
+  pid?: number;
+  stdout: { on(event: 'data', listener: (chunk: Buffer) => void): unknown } | null;
+  stderr: { on(event: 'data', listener: (chunk: Buffer) => void): unknown } | null;
+  on(event: 'error', listener: (err: Error) => void): unknown;
+  on(event: 'close', listener: (code: number | null) => void): unknown;
+  on(event: 'exit', listener: () => void): unknown;
+}
+
+export type SwarmSpawnFn = (
+  swarmScript: string,
+  targetPath: string,
+  launchEnv: NodeJS.ProcessEnv
+) => SwarmLaunchChild;
+
+function defaultSwarmSpawn(swarmScript: string, targetPath: string, launchEnv: NodeJS.ProcessEnv): SwarmLaunchChild {
+  return cp.spawn(swarmScript, [targetPath], {
+    cwd: targetPath,
+    env: launchEnv,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
+  });
+}
+
 // BL-058: launch failures used to surface only as ephemeral toasts, so a
 // failed launch left nothing to diagnose. Every attempt persists the spawned
 // ./swarm output and outcome here, overwritten per attempt.
@@ -340,7 +369,8 @@ export async function launchSwarm(
   targetPath: string,
   runName?: string,
   readyTimeoutMs = 120_000,
-  secrets?: SecretStorage
+  secrets?: SecretStorage,
+  spawnFn: SwarmSpawnFn = defaultSwarmSpawn
 ): Promise<LaunchResult> {
   const swarmScript = path.join(targetPath, 'swarm');
   if (!fs.existsSync(swarmScript)) {
@@ -375,13 +405,7 @@ export async function launchSwarm(
     // extension host is killed before it can await this child's own exit.
     const child = spawnTrackedJob(
       path.join(targetPath, '.swarmforge'),
-      () =>
-        cp.spawn(swarmScript, [targetPath], {
-          cwd: targetPath,
-          env: launchEnv,
-          stdio: ['ignore', 'pipe', 'pipe'],
-          detached: true,
-        }),
+      () => spawnFn(swarmScript, targetPath, launchEnv),
       { worktree: targetPath, kind: 'swarm-launch', ownerHostPid: process.pid }
     );
 
