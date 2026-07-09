@@ -1,0 +1,9 @@
+{
+  "_comment": "Pinned refs for third-party tooling used by the swarm. Bumping a pin is a human commit, not an agent action (engineering.prompt). Never resolve a floating branch head - always pin to an exact commit SHA.",
+  "aps": {
+    "repo": "https://github.com/unclebob/Acceptance-Pipeline-Specification.git",
+    "commit": "accaa33d503340c56513ef387258f8da929ba902",
+    "vendored_at": "swarmforge/vendor/aps/",
+    "installed_by": "swarmforge/scripts/install_aps_tools.sh"
+  }
+}
