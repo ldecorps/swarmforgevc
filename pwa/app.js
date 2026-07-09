@@ -136,6 +136,61 @@
     );
   }
 
+  // BL-213 cost-06b: the card is hidden entirely (not rendered empty) when
+  // backlog.json carries no costHealth field - the field's own presence is
+  // the signal, nothing here guesses at "no data yet" vs "not shipped yet".
+  function renderCostHealth(costHealth) {
+    var section = document.getElementById('costHealthSection');
+    var container = document.getElementById('costHealth');
+    if (!costHealth) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = '';
+    container.innerHTML = '';
+
+    var agentsList = el('ul', {});
+    (costHealth.agents || []).forEach(function (a) {
+      var costText = a.costUsd !== null ? '$' + a.costUsd.value.toFixed(2) + trendArrow(a.costUsd.trend) : 'no priced usage';
+      agentsList.appendChild(el('li', {}, [a.role + ': ' + a.tokens.value + ' tokens' + trendArrow(a.tokens.trend) + ', ' + costText]));
+    });
+    container.appendChild(el('h4', {}, ['Per-agent tokens/cost']));
+    container.appendChild(agentsList);
+
+    if (costHealth.topExpensiveTickets && costHealth.topExpensiveTickets.length > 0) {
+      container.appendChild(el('h4', {}, ['Top expensive tickets']));
+      var ticketsList = el('ul', {});
+      costHealth.topExpensiveTickets.forEach(function (t) {
+        ticketsList.appendChild(el('li', {}, [t.ticketId + ': $' + t.costUsd.toFixed(2)]));
+      });
+      container.appendChild(ticketsList);
+    }
+
+    var flow = costHealth.flowBalance;
+    container.appendChild(el('p', {}, [
+      'Flow balance: specced ' + flow.speccedPerDay.value + '/day' + trendArrow(flow.speccedPerDay.trend) +
+      ', closed ' + flow.closedPerDay.value + '/day' + trendArrow(flow.closedPerDay.trend),
+    ]));
+
+    var rel = costHealth.reliability;
+    container.appendChild(el('p', {}, [
+      'Reliability: ' + rel.chases.value + ' chases' + trendArrow(rel.chases.trend) +
+      ', ' + rel.nudges.value + ' nudges' + trendArrow(rel.nudges.trend) +
+      ', ' + rel.respawns.value + ' respawns' + trendArrow(rel.respawns.trend) +
+      ', ' + rel.failedDeliveries.value + ' failed deliveries' + trendArrow(rel.failedDeliveries.trend),
+    ]));
+
+    if (costHealth.resourceAnomalies && costHealth.resourceAnomalies.length > 0) {
+      container.appendChild(el('h4', {}, ['Resource anomalies']));
+      var anomaliesList = el('ul', {});
+      costHealth.resourceAnomalies.forEach(function (a) {
+        var mb = Math.round(a.rssBytes / (1024 * 1024));
+        anomaliesList.appendChild(el('li', {}, [a.role + ': ' + mb + 'MB' + trendArrow(a.rssTrend) + ', ' + a.cpuPercent.toFixed(1) + '% cpu' + trendArrow(a.cpuTrend)]));
+      });
+      container.appendChild(anomaliesList);
+    }
+  }
+
   function renderAll(data) {
     var asOf = document.getElementById('asOf');
     var shaText = data.sourceSha ? ' (' + data.sourceSha.slice(0, 10) + ')' : '';
@@ -144,6 +199,7 @@
     renderVelocity(data.metrics.velocity);
     renderBurndown(data.metrics.burndown);
     renderCycleTime(data.metrics.cycleTime);
+    renderCostHealth(data.costHealth || null);
   }
 
   // BL-117: read-only documentation drill-down (vision -> milestone ->

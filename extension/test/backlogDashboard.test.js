@@ -115,6 +115,20 @@ test('an empty backlog produces an empty, valid, non-throwing dashboard', () => 
   assert.equal(data.sourceSha, null);
 });
 
+// ── BL-213 cost-06a/06b: costHealth fold-in ──────────────────────────────
+
+test('costHealth is folded in verbatim when a sidecar is provided (cost-06a)', () => {
+  const sidecar = { schemaVersion: 1, dateIso: '2026-07-09', agents: [], topExpensiveTickets: [], flowBalance: {}, reliability: {}, resourceAnomalies: [] };
+  const data = buildBacklogDashboard({ active: [], paused: [], done: [] }, [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z', sidecar);
+  assert.deepEqual(data.costHealth, sidecar);
+  assert.equal(data.schemaVersion, BACKLOG_DASHBOARD_SCHEMA_VERSION, 'schemaVersion is unchanged - costHealth is additive');
+});
+
+test('costHealth is omitted entirely (not null) when no sidecar is provided (cost-06b: hidden when absent)', () => {
+  const data = buildBacklogDashboard({ active: [], paused: [], done: [] }, [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z');
+  assert.equal(Object.prototype.hasOwnProperty.call(data, 'costHealth'), false);
+});
+
 // ── computeBacklogDashboard (impure orchestrator, real git repo) ────────
 
 function mkTmp() {
@@ -158,4 +172,29 @@ test('computeBacklogDashboard wires git history + current backlog state into one
   assert.equal(dashboard.board.doneByMilestone.M4[0].id, 'BL-101');
   assert.ok(dashboard.sourceSha, 'a real repo must resolve a source SHA');
   assert.equal(dashboard.schemaVersion, BACKLOG_DASHBOARD_SCHEMA_VERSION);
+});
+
+test('computeBacklogDashboard folds in the most recently committed sidecar (cost-06a)', () => {
+  const repo = mkTmp();
+  mkdirp(path.join(repo, 'backlog', 'active'));
+  mkdirp(path.join(repo, 'docs', 'briefings'));
+  fs.writeFileSync(
+    path.join(repo, 'docs', 'briefings', '2026-07-08.json'),
+    JSON.stringify({ schemaVersion: 1, dateIso: '2026-07-08', agents: [], topExpensiveTickets: [], flowBalance: {}, reliability: {}, resourceAnomalies: [] })
+  );
+  fs.writeFileSync(
+    path.join(repo, 'docs', 'briefings', '2026-07-09.json'),
+    JSON.stringify({ schemaVersion: 1, dateIso: '2026-07-09', agents: [], topExpensiveTickets: [], flowBalance: {}, reliability: {}, resourceAnomalies: [] })
+  );
+
+  const dashboard = computeBacklogDashboard(repo, [], Date.parse('2026-07-09T12:00:00Z'));
+  assert.equal(dashboard.costHealth.dateIso, '2026-07-09', 'the latest sidecar by date must win, not just directory order');
+});
+
+test('computeBacklogDashboard omits costHealth when no sidecar has ever been committed (cost-06b)', () => {
+  const repo = mkTmp();
+  mkdirp(path.join(repo, 'backlog', 'active'));
+
+  const dashboard = computeBacklogDashboard(repo, [], Date.parse('2026-07-09T12:00:00Z'));
+  assert.equal(Object.prototype.hasOwnProperty.call(dashboard, 'costHealth'), false);
 });
