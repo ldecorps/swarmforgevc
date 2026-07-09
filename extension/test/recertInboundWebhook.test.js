@@ -152,3 +152,19 @@ test('a commitProposal failure is caught, logged, and still returns a response r
   assert.equal(logged.length, 1);
   assert.match(logged[0], /repo write failed/);
 });
+
+test('a commitProposal failure that rejects with a non-Error value is stringified, not crashed on', async () => {
+  const request = requestFor(updateEmailPayload('BL-042-demo-05', 'text'));
+  const logged = [];
+  const result = await handleInboundEmailWebhook(request, {
+    secret: SECRET,
+    nowIso: '2026-07-09T12:00:00Z',
+    commitProposal: async () => {
+      throw 'not-an-error-object';
+    },
+    log: (message) => logged.push(message),
+  });
+  assert.equal(result.status, 500);
+  assert.equal(logged.length, 1);
+  assert.match(logged[0], /not-an-error-object/);
+});
