@@ -535,7 +535,14 @@ prepare_worktrees() {
   for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
     worktree_name="${WORKTREE_NAMES[$i]}"
     worktree_path="${WORKTREE_PATHS[$i]}"
-    branch_name="swarmforge-${worktree_name}"
+    # BL-106: derived from this swarm's identity (git-idiomatic slash
+    # namespace), not a hardcoded prefix - lets two swarms with different
+    # swarm_names hold worktrees against the same repo with zero branch-ref
+    # collisions. Only reached for a worktree being CREATED for the first
+    # time (guarded below), so this never renames an already-existing,
+    # already-running worktree's branch - that is the separate, deliberate
+    # migrate_branch_names.sh script's job.
+    branch_name="${SWARM_NAME}/${worktree_name}"
 
     if [[ "$worktree_name" == "none" || "$worktree_name" == "master" ]]; then
       continue
