@@ -120,6 +120,17 @@
   scope `--mutate` to the parcel's changed files. The old 'off' + command-
   runner, full-suite-per-mutant tradeoff (which pushed a 4-file pass past 6
   hours) is RETIRED — do not reintroduce the command runner.
+- The Stryker sandbox copies only the mutated project directory (`extension/`);
+  it does NOT include sibling assets that live outside that root. When a test
+  loads a runtime asset by path from a sibling directory — e.g. the repo-root
+  `pwa/` (`pwa/index.html`, `pwa/app.js`) — the mutation dry run fails ENOENT
+  inside the sandbox and blocks the hardener's no-surviving-mutants gate for
+  EVERY ticket, not just the one that touched the asset. Runtime-loaded sibling
+  assets must be made available inside the sandbox (Stryker's `files`/sandbox
+  configuration or an equivalent copy/symlink mechanism). A green local test run
+  that reads the asset in place is NOT proof the sandboxed dry run can — verify
+  against the sandbox. (Confirmed 2026-07-09 during BL-132 QA; systemic, the
+  config fix is tracked by BL-221.)
 
 ## Diagrams
 - The project's documentation must include an up-to-date architecture
