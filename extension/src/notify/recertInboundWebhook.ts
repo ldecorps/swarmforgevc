@@ -63,54 +63,71 @@ type ResolvedProposal =
   | { proposal: RecertProposal; earlyResponse?: undefined }
   | { proposal?: undefined; earlyResponse: InboundWebhookResponse };
 
-// The verify -> parse -> validate guard chain, isolated from the
-// commit/response-formatting concern below. Every early exit here is a
-// "not a proposal we can build" outcome (bad signature, bad JSON, unmatched
-// shape, out-of-scope outcome) - none of them touch deps.commitProposal.
-function resolveProposal(
+// Signature + freshness only, split from the parse/validate chain below so
+// the two independent concerns don't compound into one function's CRAP.
+function authenticateRequest(
   request: InboundWebhookRequest,
-  deps: Pick<HandleInboundEmailWebhookDeps, 'secret' | 'nowIso' | 'log'>
-): ResolvedProposal {
+  deps: Pick<HandleInboundEmailWebhookDeps, 'secret' | 'nowIso'>
+): InboundWebhookResponse | null {
   if (!verifySvixSignature(request.headers, request.rawBody, deps.secret)) {
-    return { earlyResponse: { status: 401, body: 'signature verification failed' } };
+    return { status: 401, body: 'signature verification failed' };
   }
 
   // QA bounce (BL-217): a valid HMAC over an old svix-timestamp is not the
   // same as a fresh delivery - without this, a captured, validly-signed
   // request could be replayed indefinitely to create unwanted proposals.
   if (!isTimestampFresh(request.headers.svixTimestamp, Date.parse(deps.nowIso))) {
-    return { earlyResponse: { status: 401, body: 'stale or replayed request' } };
+    return { status: 401, body: 'stale or replayed request' };
   }
 
+  return null;
+}
+
+// The parse -> validate guard chain, run only once the request has already
+// authenticated. Every early exit here is a "not a proposal we can build"
+// outcome (bad JSON, unmatched shape, out-of-scope outcome) - none of them
+// touch deps.commitProposal.
+function parseProposal(rawBody: string, nowIso: string, log: (message: string) => void): ResolvedProposal {
   let payload: unknown;
   try {
-    payload = JSON.parse(request.rawBody);
+    payload = JSON.parse(rawBody);
   } catch {
-    deps.log('recert webhook: request body was not valid JSON');
+    log('recert webhook: request body was not valid JSON');
     return { earlyResponse: { status: 200, body: 'ignored' } };
   }
 
   const fields = extractEmailFields(payload);
   if (!fields) {
-    deps.log('recert webhook: payload carried no recognizable email subject/body');
+    log('recert webhook: payload carried no recognizable email subject/body');
     return { earlyResponse: { status: 200, body: 'ignored' } };
   }
 
   const parsed = parseRecertEmail(fields.subject, fields.body);
   if (!parsed) {
-    deps.log(`recert webhook: could not parse a recertification email from subject "${fields.subject}"`);
+    log(`recert webhook: could not parse a recertification email from subject "${fields.subject}"`);
     return { earlyResponse: { status: 200, body: 'ignored' } };
   }
 
   // confirm is local-only per BL-150 recert-02 and does not use this path
   // (BL-217 scope note) - RecertProposal only models update/delete anyway.
   if (!isReviewOutcome(parsed.outcome)) {
-    deps.log(`recert webhook: outcome "${parsed.outcome}" is out of this webhook's scope, ignoring`);
+    log(`recert webhook: outcome "${parsed.outcome}" is out of this webhook's scope, ignoring`);
     return { earlyResponse: { status: 200, body: 'ignored' } };
   }
 
-  const proposal = toRecertProposal({ scenarioId: parsed.scenarioId, outcome: parsed.outcome, newText: parsed.newText }, deps.nowIso);
+  const proposal = toRecertProposal({ scenarioId: parsed.scenarioId, outcome: parsed.outcome, newText: parsed.newText }, nowIso);
   return { proposal };
+}
+
+function resolveProposal(
+  request: InboundWebhookRequest,
+  deps: Pick<HandleInboundEmailWebhookDeps, 'secret' | 'nowIso' | 'log'>
+): ResolvedProposal {
+  const authFailure = authenticateRequest(request, deps);
+  if (authFailure) {
+    return { earlyResponse: authFailure };
+  }
+  return parseProposal(request.rawBody, deps.nowIso, deps.log);
 }
 
 export async function handleInboundEmailWebhook(
