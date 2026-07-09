@@ -542,6 +542,8 @@ An email is sent when:
 - An agent's needs-human state first persists for `graceSeconds` without being answered
 - OR the agent remains needs-human for another `cooldownSeconds` after the previous email
 
+A genuinely **stuck/wedged agent** (no progress despite chasing — see Heartbeat & Watchdog) is alerted independently of whether the tiled agent panel is open: this notifier runs on its own extension-host interval, not the panel's poll loop, so closing the panel while the swarm keeps running does not silence stuck-agent alerts. A **question or permission prompt** (the agent is waiting on live pane content) still requires the panel to have been open to be captured, since the panel's pane tailer is the only reader of that content. In the rare case where a role is a captured question AND later escalates to stuck in the same window, you may receive two separate emails instead of one merged one — a redundant alert, never a missed one.
+
 ### What the email contains
 
 - **The agent's role** — which role is asking
