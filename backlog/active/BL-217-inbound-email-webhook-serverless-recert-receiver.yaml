@@ -56,9 +56,11 @@ description: |
   Constraints:
   - Signature-verify and email-parse are pure functions over provided inputs
     (fixtures in tests) — no live email, no network, no real timers in tests.
-  - Reuse BL-097's serverless posture; the specific function platform
-    (Worker/Vercel/Netlify/Lambda) is an architect/operator implementation
-    choice — capture it at architecture review, not by coder fiat.
+  - Reuse BL-097's serverless posture. PLATFORM (architect decision
+    2026-07-09): Vercel Functions on the Node runtime, no rewrite — the existing
+    Node signature-verify/parse code runs as-is; do NOT port it to an edge/Worker
+    runtime. This resolves the previously-open Worker/Vercel/Netlify/Lambda
+    choice, made at architecture review (not by coder fiat).
   - Out of scope: the specifier's review/accept/reject of a recertification
     proposal (that is BL-150 + the existing rule_proposal flow); this ticket
     ends at a correctly-queued proposal.
