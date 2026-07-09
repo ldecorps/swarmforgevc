@@ -125,29 +125,38 @@ test('IdleClearTracker re-arms once the role holds in_process work again, then c
 // already says "re-read your role and constitution" regardless of context
 // state — see handoff-protocol.md), not new host behavior to unit test here.
 
-// ── startIdleClearMonitor / stopIdleClearMonitor (real short interval) ──
-
-function waitUntil(predicate, timeoutMs = 2000, intervalMs = 10) {
-  return new Promise((resolve, reject) => {
-    const deadline = Date.now() + timeoutMs;
-    const check = () => {
-      if (predicate()) {
-        resolve();
-        return;
+// ── startIdleClearMonitor / stopIdleClearMonitor ────────────────────────
+// BL-131: captures the interval callback instead of scheduling it for real
+// (same injection point chaserMonitor.test.js uses) - fire() simulates one
+// poll tick synchronously, with getNowMs also injected so "past the settle
+// window" needs no real elapsed wall-clock time either.
+function fakeMonitorClock(startMs) {
+  let tick = null;
+  let nowMs = startMs;
+  return {
+    scheduleTick: (fn) => {
+      tick = fn;
+      return {};
+    },
+    clearTick: () => {
+      tick = null;
+    },
+    getNowMs: () => nowMs,
+    fire: () => {
+      if (tick) {
+        tick();
       }
-      if (Date.now() >= deadline) {
-        reject(new Error('waitUntil timed out'));
-        return;
-      }
-      setTimeout(check, intervalMs);
-    };
-    check();
-  });
+    },
+    advance: (ms) => {
+      nowMs += ms;
+    },
+  };
 }
 
-test('startIdleClearMonitor sends a clear for a drained-idle role and logs it', async () => {
+test('startIdleClearMonitor sends a clear for a drained-idle role and logs it', () => {
   const cleared = [];
   const logs = [];
+  const clock = fakeMonitorClock(NOW);
   const timer = startIdleClearMonitor(
     { enabled: true, settleWindowSeconds: 0, fullnessThresholdPercent: 75, pollIntervalSeconds: 0.02 },
     {
@@ -159,28 +168,28 @@ test('startIdleClearMonitor sends a clear for a drained-idle role and logs it', 
           needsHumanPending: false,
           drainInProgress: false,
           lastHumanInputMs: null,
-          lastActivityMs: Date.now() - 1000,
+          lastActivityMs: NOW - 1000,
           contextFullness: { percent: 100, source: 'telemetry' },
         },
       ],
       sendClear: (role) => cleared.push(role),
       log: (message) => logs.push(message),
-    }
+    },
+    clock.scheduleTick,
+    clock.getNowMs
   );
-  try {
-    await waitUntil(() => cleared.length > 0);
-    assert.deepEqual(cleared, ['coder']);
-    assert.match(logs[0], /coder/);
-  } finally {
-    stopIdleClearMonitor(timer);
-  }
+  clock.fire();
+  stopIdleClearMonitor(timer, clock.clearTick);
+  assert.deepEqual(cleared, ['coder']);
+  assert.match(logs[0], /coder/);
 });
 
 // BL-141 context-clear-75-03: the log line must say when the decision used
 // the proxy metric, not exact telemetry.
-test('startIdleClearMonitor logs that proxy mode was used when the fullness came from the proxy', async () => {
+test('startIdleClearMonitor logs that proxy mode was used when the fullness came from the proxy', () => {
   const cleared = [];
   const logs = [];
+  const clock = fakeMonitorClock(NOW);
   const timer = startIdleClearMonitor(
     { enabled: true, settleWindowSeconds: 0, fullnessThresholdPercent: 75, pollIntervalSeconds: 0.02 },
     {
@@ -192,24 +201,24 @@ test('startIdleClearMonitor logs that proxy mode was used when the fullness came
           needsHumanPending: false,
           drainInProgress: false,
           lastHumanInputMs: null,
-          lastActivityMs: Date.now() - 1000,
+          lastActivityMs: NOW - 1000,
           contextFullness: { percent: 80, source: 'proxy' },
         },
       ],
       sendClear: (role) => cleared.push(role),
       log: (message) => logs.push(message),
-    }
+    },
+    clock.scheduleTick,
+    clock.getNowMs
   );
-  try {
-    await waitUntil(() => cleared.length > 0);
-    assert.match(logs[0], /proxy/i);
-  } finally {
-    stopIdleClearMonitor(timer);
-  }
+  clock.fire();
+  stopIdleClearMonitor(timer, clock.clearTick);
+  assert.match(logs[0], /proxy/i);
 });
 
-test('startIdleClearMonitor never clears a role whose fullness stays below the threshold', async () => {
+test('startIdleClearMonitor never clears a role whose fullness stays below the threshold', () => {
   const cleared = [];
+  const clock = fakeMonitorClock(NOW);
   const timer = startIdleClearMonitor(
     { enabled: true, settleWindowSeconds: 0, fullnessThresholdPercent: 75, pollIntervalSeconds: 0.02 },
     {
@@ -221,21 +230,24 @@ test('startIdleClearMonitor never clears a role whose fullness stays below the t
           needsHumanPending: false,
           drainInProgress: false,
           lastHumanInputMs: null,
-          lastActivityMs: Date.now() - 1000,
+          lastActivityMs: NOW - 1000,
           contextFullness: { percent: 10, source: 'telemetry' },
         },
       ],
       sendClear: (role) => cleared.push(role),
       log: () => {},
-    }
+    },
+    clock.scheduleTick,
+    clock.getNowMs
   );
-  await new Promise((resolve) => setTimeout(resolve, 120));
-  stopIdleClearMonitor(timer);
+  clock.fire();
+  stopIdleClearMonitor(timer, clock.clearTick);
   assert.deepEqual(cleared, []);
 });
 
-test('startIdleClearMonitor never sends a clear for a role holding in_process work', async () => {
+test('startIdleClearMonitor never sends a clear for a role holding in_process work', () => {
   const cleared = [];
+  const clock = fakeMonitorClock(NOW);
   const timer = startIdleClearMonitor(
     { enabled: true, settleWindowSeconds: 0, fullnessThresholdPercent: 75, pollIntervalSeconds: 0.02 },
     {
@@ -247,21 +259,24 @@ test('startIdleClearMonitor never sends a clear for a role holding in_process wo
           needsHumanPending: false,
           drainInProgress: false,
           lastHumanInputMs: null,
-          lastActivityMs: Date.now() - 1000,
+          lastActivityMs: NOW - 1000,
           contextFullness: { percent: 100, source: 'telemetry' },
         },
       ],
       sendClear: (role) => cleared.push(role),
       log: () => {},
-    }
+    },
+    clock.scheduleTick,
+    clock.getNowMs
   );
-  await new Promise((resolve) => setTimeout(resolve, 120));
-  stopIdleClearMonitor(timer);
+  clock.fire();
+  stopIdleClearMonitor(timer, clock.clearTick);
   assert.deepEqual(cleared, []);
 });
 
-test('startIdleClearMonitor disabled sends no clears even past many settle windows', async () => {
+test('startIdleClearMonitor disabled sends no clears even past many settle windows', () => {
   const cleared = [];
+  const clock = fakeMonitorClock(NOW);
   const timer = startIdleClearMonitor(
     { enabled: false, settleWindowSeconds: 0, fullnessThresholdPercent: 75, pollIntervalSeconds: 0.02 },
     {
@@ -273,15 +288,18 @@ test('startIdleClearMonitor disabled sends no clears even past many settle windo
           needsHumanPending: false,
           drainInProgress: false,
           lastHumanInputMs: null,
-          lastActivityMs: Date.now() - 1000,
+          lastActivityMs: NOW - 1000,
           contextFullness: { percent: 100, source: 'telemetry' },
         },
       ],
       sendClear: (role) => cleared.push(role),
       log: () => {},
-    }
+    },
+    clock.scheduleTick,
+    clock.getNowMs
   );
-  await new Promise((resolve) => setTimeout(resolve, 150));
-  stopIdleClearMonitor(timer);
+  clock.advance(300_000);
+  clock.fire();
+  stopIdleClearMonitor(timer, clock.clearTick);
   assert.deepEqual(cleared, []);
 });
