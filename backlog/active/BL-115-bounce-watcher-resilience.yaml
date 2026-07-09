@@ -4,7 +4,7 @@ milestone: M2
 status: todo
 priority: 06
 direction: aligned
-assigned_to: coder
+assigned_to: cleaner
 source: "root intake BL-057-bounce-watcher-resilience (renumbered: id BL-057 already used by done/M4 per-recipient-inbox ticket)"
 
 description: |
