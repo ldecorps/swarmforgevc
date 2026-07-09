@@ -7,6 +7,10 @@ name: Backlog dashboard
 # static assets to GitHub Pages. This workflow holds no derivation logic
 # beyond invoking the generator and publishing its output.
 #
+# BL-117: also regenerates docs-tree.json (the documentation drill-down
+# explorer's artifact) on the same trigger, published alongside
+# backlog.json - both are pure git-derived projections rebuilt together.
+#
 # Runs AFTER a push has already landed, and is not configured as a required
 # status check, so a failure here is visible in the Actions tab but never
 # blocks the push or the pipeline that produced it.
@@ -16,10 +20,15 @@ on:
     branches: [main]
     paths:
       - 'backlog/**'
+      - 'docs/**'
+      - 'specs/features/**'
       - 'extension/src/metrics/**'
       - 'extension/src/panel/backlogReader.ts'
       - 'extension/src/bridge/holisticProjections.ts'
+      - 'extension/src/docs/**'
       - 'extension/src/tools/generate-backlog-dashboard.ts'
+      - 'extension/src/tools/generate-docs-tree.ts'
+      - 'extension/src/notify/costHealthSidecar.ts'
       - 'pwa/**'
       - '.github/workflows/backlog-dashboard.yml'
   workflow_dispatch: {}
@@ -68,10 +77,11 @@ jobs:
           mkdir -p .swarmforge
           printf 'coordinator\tnone\t%s\tswarmforge-coordinator\tCoordinator\tnone\ttask\n' "$(pwd)" > .swarmforge/roles.tsv
 
-      - name: Generate backlog.json
+      - name: Generate backlog.json and docs-tree.json
         run: |
           mkdir -p _site
           node extension/out/tools/generate-backlog-dashboard.js > _site/backlog.json
+          node extension/out/tools/generate-docs-tree.js > _site/docs-tree.json
 
       - name: Copy PWA static assets
         run: cp -r pwa/. _site/

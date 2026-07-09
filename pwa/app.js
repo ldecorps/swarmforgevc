@@ -6,6 +6,7 @@
   'use strict';
 
   var DASHBOARD_URL = './backlog.json';
+  var DOCS_TREE_URL = './docs-tree.json';
   var SVG_NS = 'http://www.w3.org/2000/svg';
 
   function el(tag, attrs, children) {
@@ -135,6 +136,61 @@
     );
   }
 
+  // BL-213 cost-06b: the card is hidden entirely (not rendered empty) when
+  // backlog.json carries no costHealth field - the field's own presence is
+  // the signal, nothing here guesses at "no data yet" vs "not shipped yet".
+  function renderCostHealth(costHealth) {
+    var section = document.getElementById('costHealthSection');
+    var container = document.getElementById('costHealth');
+    if (!costHealth) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = '';
+    container.innerHTML = '';
+
+    var agentsList = el('ul', {});
+    (costHealth.agents || []).forEach(function (a) {
+      var costText = a.costUsd !== null ? '$' + a.costUsd.value.toFixed(2) + trendArrow(a.costUsd.trend) : 'no priced usage';
+      agentsList.appendChild(el('li', {}, [a.role + ': ' + a.tokens.value + ' tokens' + trendArrow(a.tokens.trend) + ', ' + costText]));
+    });
+    container.appendChild(el('h4', {}, ['Per-agent tokens/cost']));
+    container.appendChild(agentsList);
+
+    if (costHealth.topExpensiveTickets && costHealth.topExpensiveTickets.length > 0) {
+      container.appendChild(el('h4', {}, ['Top expensive tickets']));
+      var ticketsList = el('ul', {});
+      costHealth.topExpensiveTickets.forEach(function (t) {
+        ticketsList.appendChild(el('li', {}, [t.ticketId + ': $' + t.costUsd.toFixed(2)]));
+      });
+      container.appendChild(ticketsList);
+    }
+
+    var flow = costHealth.flowBalance;
+    container.appendChild(el('p', {}, [
+      'Flow balance: specced ' + flow.speccedPerDay.value + '/day' + trendArrow(flow.speccedPerDay.trend) +
+      ', closed ' + flow.closedPerDay.value + '/day' + trendArrow(flow.closedPerDay.trend),
+    ]));
+
+    var rel = costHealth.reliability;
+    container.appendChild(el('p', {}, [
+      'Reliability: ' + rel.chases.value + ' chases' + trendArrow(rel.chases.trend) +
+      ', ' + rel.nudges.value + ' nudges' + trendArrow(rel.nudges.trend) +
+      ', ' + rel.respawns.value + ' respawns' + trendArrow(rel.respawns.trend) +
+      ', ' + rel.failedDeliveries.value + ' failed deliveries' + trendArrow(rel.failedDeliveries.trend),
+    ]));
+
+    if (costHealth.resourceAnomalies && costHealth.resourceAnomalies.length > 0) {
+      container.appendChild(el('h4', {}, ['Resource anomalies']));
+      var anomaliesList = el('ul', {});
+      costHealth.resourceAnomalies.forEach(function (a) {
+        var mb = Math.round(a.rssBytes / (1024 * 1024));
+        anomaliesList.appendChild(el('li', {}, [a.role + ': ' + mb + 'MB' + trendArrow(a.rssTrend) + ', ' + a.cpuPercent.toFixed(1) + '% cpu' + trendArrow(a.cpuTrend)]));
+      });
+      container.appendChild(anomaliesList);
+    }
+  }
+
   function renderAll(data) {
     var asOf = document.getElementById('asOf');
     var shaText = data.sourceSha ? ' (' + data.sourceSha.slice(0, 10) + ')' : '';
@@ -143,6 +199,168 @@
     renderVelocity(data.metrics.velocity);
     renderBurndown(data.metrics.burndown);
     renderCycleTime(data.metrics.cycleTime);
+    renderCostHealth(data.costHealth || null);
+  }
+
+  // BL-117: read-only documentation drill-down (vision -> milestone ->
+  // ticket -> Gherkin). No affordance anywhere in this explorer edits
+  // documentation or creates/modifies tickets (docs-drilldown-05) - every
+  // control below only ever navigates docsView and re-renders from the
+  // already-fetched docsTree, never writes anything back to the network.
+  var docsTree = null;
+  var docsView = { level: 'root' };
+
+  function findMilestone(name) {
+    return (docsTree.milestones || []).find(function (m) { return m.milestone === name; });
+  }
+
+  function findTicket(id) {
+    return (docsTree.tickets || []).find(function (t) { return t.id === id; });
+  }
+
+  function findVisionDoc(id) {
+    return (docsTree.vision || []).find(function (v) { return v.id === id; });
+  }
+
+  function navButton(label, view) {
+    var btn = el('button', { type: 'button', class: 'docs-list-item' }, [label]);
+    btn.addEventListener('click', function () {
+      docsView = view;
+      renderDocsExplorer();
+    });
+    return btn;
+  }
+
+  function renderDocsCrumbs() {
+    var container = document.getElementById('docsCrumbs');
+    container.innerHTML = '';
+    var crumbs = [{ label: 'Documentation', view: { level: 'root' } }];
+    if (docsView.level === 'vision') {
+      var doc = findVisionDoc(docsView.docId);
+      crumbs.push({ label: doc ? doc.title : docsView.docId, view: docsView });
+    } else if (docsView.level === 'milestone' || docsView.level === 'ticket' || docsView.level === 'scenario') {
+      crumbs.push({ label: docsView.milestone, view: { level: 'milestone', milestone: docsView.milestone } });
+    }
+    if (docsView.level === 'ticket' || docsView.level === 'scenario') {
+      crumbs.push({ label: docsView.ticketId, view: { level: 'ticket', milestone: docsView.milestone, ticketId: docsView.ticketId } });
+    }
+    if (docsView.level === 'scenario') {
+      var ticket = findTicket(docsView.ticketId);
+      var scenario = ticket && ticket.scenarios[docsView.scenarioIndex];
+      crumbs.push({ label: scenario ? scenario.name : 'scenario', view: docsView });
+    }
+    crumbs.forEach(function (crumb, i) {
+      if (i > 0) {
+        container.appendChild(document.createTextNode(' › '));
+      }
+      var isCurrent = i === crumbs.length - 1;
+      if (isCurrent) {
+        container.appendChild(el('strong', {}, [crumb.label]));
+        return;
+      }
+      var link = el('button', { type: 'button' }, [crumb.label]);
+      link.addEventListener('click', function () {
+        docsView = crumb.view;
+        renderDocsExplorer();
+      });
+      container.appendChild(link);
+    });
+  }
+
+  function renderDocsRoot(container) {
+    container.appendChild(el('h3', {}, ['Vision']));
+    (docsTree.vision || []).forEach(function (doc) {
+      container.appendChild(navButton(doc.title, { level: 'vision', docId: doc.id }));
+    });
+    container.appendChild(el('h3', {}, ['Milestones']));
+    (docsTree.milestones || []).forEach(function (m) {
+      container.appendChild(navButton(m.milestone + ' (' + m.tickets.length + ')', { level: 'milestone', milestone: m.milestone }));
+    });
+  }
+
+  function renderDocsVision(container) {
+    var doc = findVisionDoc(docsView.docId);
+    if (!doc) {
+      container.appendChild(noDataParagraph('document not found'));
+      return;
+    }
+    container.appendChild(el('pre', { class: 'doc-content' }, [doc.content]));
+  }
+
+  function renderDocsMilestone(container) {
+    var milestone = findMilestone(docsView.milestone);
+    if (!milestone) {
+      container.appendChild(noDataParagraph('milestone not found'));
+      return;
+    }
+    milestone.tickets.forEach(function (t) {
+      container.appendChild(navButton(t.id + ' — ' + t.title + ' [' + t.status + ']', {
+        level: 'ticket', milestone: docsView.milestone, ticketId: t.id,
+      }));
+    });
+  }
+
+  function renderDocsTicket(container) {
+    var ticket = findTicket(docsView.ticketId);
+    if (!ticket) {
+      container.appendChild(noDataParagraph('ticket not found'));
+      return;
+    }
+    container.appendChild(el('p', {}, [ticket.title + ' [' + ticket.status + ']' + (ticket.priority !== undefined ? ' priority ' + ticket.priority : '')]));
+    container.appendChild(el('p', {}, [ticket.description || 'No description.']));
+    container.appendChild(el('h4', {}, ['Acceptance scenarios']));
+    if (!ticket.scenarios || ticket.scenarios.length === 0) {
+      container.appendChild(noDataParagraph('no scenarios resolved for this ticket'));
+      return;
+    }
+    ticket.scenarios.forEach(function (s, i) {
+      container.appendChild(navButton(s.name, { level: 'scenario', milestone: docsView.milestone, ticketId: docsView.ticketId, scenarioIndex: i }));
+    });
+  }
+
+  function renderDocsScenario(container) {
+    var ticket = findTicket(docsView.ticketId);
+    var scenario = ticket && ticket.scenarios[docsView.scenarioIndex];
+    if (!scenario) {
+      container.appendChild(noDataParagraph('scenario not found'));
+      return;
+    }
+    container.appendChild(el('pre', { class: 'gherkin' }, [scenario.text]));
+  }
+
+  function renderDocsExplorer() {
+    var container = document.getElementById('docsExplorer');
+    container.innerHTML = '';
+    if (!docsTree) {
+      container.appendChild(noDataParagraph('documentation not available'));
+      return;
+    }
+    renderDocsCrumbs();
+    if (docsView.level === 'vision') {
+      renderDocsVision(container);
+    } else if (docsView.level === 'milestone') {
+      renderDocsMilestone(container);
+    } else if (docsView.level === 'ticket') {
+      renderDocsTicket(container);
+    } else if (docsView.level === 'scenario') {
+      renderDocsScenario(container);
+    } else {
+      renderDocsRoot(container);
+    }
+  }
+
+  function noDataParagraph(text) {
+    return el('p', {}, [text || 'no data']);
+  }
+
+  function renderDocsTree(data) {
+    docsTree = data;
+    var asOf = document.getElementById('docsAsOf');
+    var shaText = data.sourceSha ? ' (' + data.sourceSha.slice(0, 10) + ')' : '';
+    // BL-117 docs-drilldown-04: labeled with the commit/timestamp it was
+    // rendered from, same honesty requirement as the backlog board.
+    asOf.textContent = 'As of ' + new Date(data.generatedAtIso).toLocaleString() + shaText;
+    renderDocsExplorer();
   }
 
   function registerServiceWorker() {
@@ -186,6 +404,15 @@
     .then(renderAll)
     .catch(function () {
       document.getElementById('asOf').textContent = 'Could not load backlog.json (offline and nothing cached yet).';
+    });
+
+  fetch(DOCS_TREE_URL)
+    .then(function (res) {
+      return res.json();
+    })
+    .then(renderDocsTree)
+    .catch(function () {
+      document.getElementById('docsAsOf').textContent = 'Could not load docs-tree.json (offline and nothing cached yet).';
     });
 
   registerServiceWorker().then(registerPeriodicSync);
