@@ -54,6 +54,20 @@ test('parseBacklogYaml parses known optional fields (milestone, priority)', () =
   assert.deepEqual(item, { id: 'BL-007', title: 'Backlog panel', status: 'done', milestone: 'M1', priority: 5 });
 });
 
+// BL-094: swarm assignment field (BL-090's own convention) - absent by
+// default in live ticket YAML, callers apply the "primary" fallback.
+test('parseBacklogYaml parses the swarm field when present', () => {
+  const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: active\nswarm: secondary-1\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.swarm, 'secondary-1');
+});
+
+test('parseBacklogYaml omits swarm when absent, never defaulting it itself', () => {
+  const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: active\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'swarm'), false);
+});
+
 test('parseBacklogYaml handles title with colons in value', () => {
   const yaml = 'id: BL-007\ntitle: Named runs — branch and PR named after work item\nstatus: active\n';
   const item = parseBacklogYaml(yaml);
