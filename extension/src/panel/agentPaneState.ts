@@ -1,10 +1,53 @@
+// BL-142 slice 1: pane-state detection driven by a provider-descriptor
+// registry instead of inline brand names/patterns. Behavior is unchanged
+// for every currently-supported provider (claude/aider/codex/copilot/grok);
+// adding a provider means adding a descriptor here, with no edits to the
+// detection functions below.
+export interface ProviderDescriptor {
+  name: string;
+  /** Matches the pane's running command (basename or full path) for this provider. */
+  cliPattern: RegExp;
+  /** Matches pane text indicating this provider is actively busy/working (not every provider has one). */
+  busyPattern?: RegExp;
+  /** Matches this provider's own startup banner text (not every provider has one). */
+  bannerPattern?: RegExp;
+  /** Human-facing name for the "waiting to start" / "agent not running" messages. */
+  startupCopy: string;
+}
+
+export const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
+  { name: 'claude', cliPattern: /(?:^|\/)claude$/, startupCopy: 'Claude' },
+  {
+    name: 'aider',
+    // Looser than the other providers' exact-basename match, preserved
+    // from the pre-refactor behavior: a command containing "aider"
+    // anywhere (e.g. a wrapper script name) still counts.
+    cliPattern: /aider/i,
+    busyPattern: /(?:Applying edits|Searching|Summariz|Generating|Tokens:\s*\d)/i,
+    bannerPattern: /\bAider v\d/,
+    startupCopy: 'Aider',
+  },
+  { name: 'codex', cliPattern: /(?:^|\/)codex$/, startupCopy: 'Codex' },
+  { name: 'copilot', cliPattern: /(?:^|\/)copilot$/, startupCopy: 'Copilot' },
+  { name: 'grok', cliPattern: /(?:^|\/)grok$/, startupCopy: 'Grok' },
+];
+
+const DEFAULT_PROVIDER_NAME = 'claude';
+
+export function findProviderDescriptor(name: string | undefined): ProviderDescriptor | undefined {
+  if (!name) {
+    return undefined;
+  }
+  return PROVIDER_DESCRIPTORS.find((d) => d.name === name.toLowerCase());
+}
+
+// Generic interactive-agent UI chrome - not tied to any one provider brand,
+// so these stay as-is (no descriptor needed).
 const SWARMFORGE_ROLE = /SwarmForge \w+/i;
 const PERMISSION_MODE = /bypass permissions|auto mode|accept edits|dont ask|plan mode/i;
 const UI_MARKERS = /shift\+tab to cycle|esc to interrupt/i;
 const DIVIDER_AND_PROMPT = /─{3,}/;
 const ARROW_MARKER = /❯/;
-const AGENT_CLI_NAMES = /(?:^|\/)claude$|(?:^|\/)aider$|(?:^|\/)codex$|(?:^|\/)copilot$|(?:^|\/)grok$/;
-const AIDER_BUSY = /(?:Applying edits|Searching|Summariz|Generating|Tokens:\s*\d)/i;
 
 // "esc to interrupt" is Claude Code's own busy/generating footer, shown only
 // while a turn is actively in flight - unlike "shift+tab to cycle", which
@@ -24,7 +67,8 @@ export function isAgentActivelyWorking(paneCommand: string, paneText: string): b
     return true;
   }
   const cmd = paneCommand.toLowerCase();
-  if (cmd.includes('aider') && AIDER_BUSY.test(paneText)) {
+  const descriptor = PROVIDER_DESCRIPTORS.find((d) => d.cliPattern.test(cmd));
+  if (descriptor?.busyPattern?.test(paneText)) {
     return true;
   }
   return false;
@@ -42,7 +86,7 @@ export function isAgentCliRunning(
   paneText: string
 ): boolean {
   const cmd = paneCommand.trim();
-  if (AGENT_CLI_NAMES.test(cmd) || cmd.toLowerCase().includes('aider')) {
+  if (PROVIDER_DESCRIPTORS.some((d) => d.cliPattern.test(cmd))) {
     return true;
   }
 
@@ -63,10 +107,10 @@ export function isAgentCliRunning(
   if (DIVIDER_AND_PROMPT.test(text) && ARROW_MARKER.test(text)) {
     return true;
   }
-  if (/^Aider v\d/m.test(text) || /\bAider v\d/.test(text)) {
+  if (PROVIDER_DESCRIPTORS.some((d) => d.bannerPattern?.test(text))) {
     return true;
   }
-  if (AIDER_BUSY.test(text)) {
+  if (PROVIDER_DESCRIPTORS.some((d) => d.busyPattern?.test(text))) {
     return true;
   }
 
@@ -107,9 +151,15 @@ export function isShellOnlyPane(
   return /[$#]\s*$/.test(lastLine.trim());
 }
 
+// expectedProviderName names the provider this pane is CONFIGURED to run
+// (e.g. roles.tsv's agent column, SwarmRole.agent) - the only way to know
+// which provider's startup copy to show for an EMPTY pane, since there is
+// no CLI/text to detect from yet. Defaults to the pre-refactor hardcoded
+// "Claude" behavior when omitted, so existing callers are unaffected.
 export function agentPaneStatusMessage(
   paneCommand: string,
-  paneText: string
+  paneText: string,
+  expectedProviderName: string = DEFAULT_PROVIDER_NAME
 ): string | undefined {
   if (isAgentCliRunning(paneCommand, paneText)) {
     return undefined;
@@ -119,9 +169,13 @@ export function agentPaneStatusMessage(
     return undefined;
   }
 
+  const providerLabel =
+    findProviderDescriptor(expectedProviderName)?.startupCopy ??
+    findProviderDescriptor(DEFAULT_PROVIDER_NAME)!.startupCopy;
+
   if (!paneText.trim()) {
-    return 'Waiting for Claude to start…\n\nIf this persists, use SwarmForge: Stop Swarm then Launch Swarm.';
+    return `Waiting for ${providerLabel} to start…\n\nIf this persists, use SwarmForge: Stop Swarm then Launch Swarm.`;
   }
 
-  return 'Agent is not running in this pane (shell only).\n\nUse SwarmForge: Launch Swarm to start Claude agents.';
+  return `Agent is not running in this pane (shell only).\n\nUse SwarmForge: Launch Swarm to start ${providerLabel} agents.`;
 }
