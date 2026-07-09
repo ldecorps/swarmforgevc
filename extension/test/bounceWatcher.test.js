@@ -174,10 +174,12 @@ test('processBounceFile with whitespace content reports error', () => {
 
 // --- startBounceWatcher ---
 
-test('startBounceWatcher returns null when .swarmforge does not exist', () => {
+test('startBounceWatcher creates .swarmforge and watches it when missing', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
   const watcher = startBounceWatcher(tmpDir, () => {});
-  assert.equal(watcher, null);
+  assert.ok(watcher);
+  assert.equal(fs.existsSync(path.join(tmpDir, '.swarmforge')), true);
+  watcher.close();
 });
 
 test('startBounceWatcher detects a bounce file written after watching starts', async () => {
