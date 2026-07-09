@@ -259,3 +259,122 @@ test('setWindowSizeManual returns a result and does not throw on a dead socket',
   assert.ok(typeof result.exitCode === 'number');
   assert.notEqual(result.exitCode, 0);
 });
+
+// ── decideRoleActivity (pure, BL-210) ─────────────────────────────────────
+// Extracted from PaneTailer's private emitActivityEvents (CRAP 93.91,
+// ~17% covered - unreachable except through a full timer-driven instance).
+// No class, no real clock: a fixed NOW plus a plain RoleActivityStatus
+// object per test, mirroring inboxChaser.ts/idleClear.ts's own decideX
+// convention.
+
+const { decideRoleActivity } = require('../out/panel/paneTailer');
+
+const ACTIVITY_NOW = new Date('2026-07-09T12:00:00Z').getTime();
+
+function roleActivityStatus(overrides = {}) {
+  return {
+    command: '',
+    rawText: '',
+    lastChangedMs: undefined,
+    wasWorking: false,
+    isDead: false,
+    ...overrides,
+  };
+}
+
+test('pure-decision-01: reads no class instance state and takes nowMs as an explicit parameter', () => {
+  assert.equal(decideRoleActivity.length, 2);
+});
+
+test('recently-changed pane (within WORKING_INDICATOR_MS) is working', () => {
+  const status = roleActivityStatus({ lastChangedMs: ACTIVITY_NOW - (WORKING_INDICATOR_MS - 1) });
+  const decision = decideRoleActivity(status, ACTIVITY_NOW);
+  assert.equal(decision.working, true);
+});
+
+test('a pane unchanged for longer than WORKING_INDICATOR_MS, with no active-work command, is not working', () => {
+  const status = roleActivityStatus({ lastChangedMs: ACTIVITY_NOW - (WORKING_INDICATOR_MS + 1) });
+  const decision = decideRoleActivity(status, ACTIVITY_NOW);
+  assert.equal(decision.working, false);
+});
+
+test('lastChangedMs undefined (never observed) is not working from recency alone', () => {
+  const status = roleActivityStatus({ lastChangedMs: undefined });
+  const decision = decideRoleActivity(status, ACTIVITY_NOW);
+  assert.equal(decision.working, false);
+});
+
+test('an active-work command/pane text makes a role working regardless of recency', () => {
+  // "esc to interrupt" is isAgentActivelyWorking's own busy-footer
+  // pattern (agentPaneState.ts's ACTIVELY_PROCESSING) - reusing its real
+  // detection, not re-deriving it here.
+  const status = roleActivityStatus({
+    command: 'node',
+    rawText: 'Thinking… (esc to interrupt)',
+    lastChangedMs: ACTIVITY_NOW - (WORKING_INDICATOR_MS + 100_000),
+  });
+  const decision = decideRoleActivity(status, ACTIVITY_NOW);
+  assert.equal(decision.working, true);
+});
+
+test('changed is true only when working differs from wasWorking', () => {
+  const becameWorking = roleActivityStatus({ wasWorking: false, lastChangedMs: ACTIVITY_NOW });
+  assert.equal(decideRoleActivity(becameWorking, ACTIVITY_NOW).changed, true);
+
+  const staysWorking = roleActivityStatus({ wasWorking: true, lastChangedMs: ACTIVITY_NOW });
+  assert.equal(decideRoleActivity(staysWorking, ACTIVITY_NOW).changed, false);
+
+  const staysIdle = roleActivityStatus({ wasWorking: false, lastChangedMs: ACTIVITY_NOW - (WORKING_INDICATOR_MS + 1) });
+  assert.equal(decideRoleActivity(staysIdle, ACTIVITY_NOW).changed, false);
+});
+
+// dead-role-clears-working-03
+test('a role that becomes dead while working emits a not-working, changed decision', () => {
+  const status = roleActivityStatus({ isDead: true, wasWorking: true, lastChangedMs: ACTIVITY_NOW });
+  const decision = decideRoleActivity(status, ACTIVITY_NOW);
+  assert.equal(decision.working, false);
+  assert.equal(decision.changed, true);
+});
+
+test('a role that is dead and was already not working produces no change (no redundant event)', () => {
+  const status = roleActivityStatus({ isDead: true, wasWorking: false, lastChangedMs: ACTIVITY_NOW });
+  const decision = decideRoleActivity(status, ACTIVITY_NOW);
+  assert.equal(decision.working, false);
+  assert.equal(decision.changed, false);
+});
+
+test('a dead role is never working even with an active-work command/recent change (isDead forces false)', () => {
+  const status = roleActivityStatus({ isDead: true, command: 'node', rawText: 'Thinking… (esc to interrupt)', lastChangedMs: ACTIVITY_NOW });
+  const decision = decideRoleActivity(status, ACTIVITY_NOW);
+  assert.equal(decision.working, false);
+});
+
+// ── buildRoleActivityStatus (pure, BL-210 cleanup) ────────────────────────
+// Builds decideRoleActivity's input from the raw Map.get() lookups
+// emitActivityEvents holds - a role not yet observed reads back undefined
+// for command/rawText, which must default to '' rather than reach
+// isAgentActivelyWorking as undefined.
+
+const { buildRoleActivityStatus } = require('../out/panel/paneTailer');
+
+test('buildRoleActivityStatus defaults an unobserved command/rawText to empty strings', () => {
+  const status = buildRoleActivityStatus(undefined, undefined, undefined, false, false);
+  assert.deepEqual(status, {
+    command: '',
+    rawText: '',
+    lastChangedMs: undefined,
+    wasWorking: false,
+    isDead: false,
+  });
+});
+
+test('buildRoleActivityStatus passes through an observed command/rawText unchanged', () => {
+  const status = buildRoleActivityStatus('node', 'Thinking… (esc to interrupt)', ACTIVITY_NOW, true, false);
+  assert.deepEqual(status, {
+    command: 'node',
+    rawText: 'Thinking… (esc to interrupt)',
+    lastChangedMs: ACTIVITY_NOW,
+    wasWorking: true,
+    isDead: false,
+  });
+});
