@@ -65,6 +65,46 @@ function isAuthorizedForUrl(authHeader: string | undefined, url: string, token: 
   return isRootPath(url) && isAuthorizedByQueryToken(queryToken(url), token);
 }
 
+interface JsonRoute {
+  matches: (url: string) => boolean;
+  compute: (url: string) => unknown;
+}
+
+// Every route below except /events (and the root HTML shell, a different
+// content-type entirely) follows the same "match, compute JSON, respond
+// 200" shape. A data-driven table instead of one `if` per route keeps the
+// request handler's own complexity flat as routes are added - BL-096's
+// /metrics and BL-100's /cost-telemetry each pushed the handler's
+// per-branch version back over the CRAP<=6 gate in turn; a future route
+// only ever adds a table entry here, never another handler branch.
+function buildJsonRoutes(targetPath: string, runLogPath: string): JsonRoute[] {
+  return [
+    {
+      matches: isStateRoute,
+      compute: (url) => stateForRoute(buildBridgeState(targetPath, runLogPath), url as StateRoute),
+    },
+    {
+      // BL-096: computed fresh per-request only, deliberately outside
+      // buildBridgeState/the SSE poll loop above (git-history-walk cost -
+      // see buildDeliveryMetricsState's own comment).
+      matches: (url) => url === '/metrics',
+      compute: () => buildDeliveryMetricsState(targetPath),
+    },
+    {
+      // BL-100: same posture as /metrics - transcript + telemetry reads are
+      // too expensive for the SSE poll loop, computed only on direct request.
+      matches: (url) => url === '/cost-telemetry',
+      compute: () => buildCostTelemetryState(targetPath),
+    },
+    {
+      // BL-094: same posture as /metrics/cost-telemetry - git-history +
+      // handoff-state reads, too expensive for the SSE poll loop.
+      matches: (url) => url === '/holistic',
+      compute: () => buildHolisticState(targetPath, runLogPath),
+    },
+  ];
+}
+
 export function startBridge(
   targetPath: string,
   runLogPath: string,
@@ -111,38 +151,10 @@ export function startBridge(
         return;
       }
 
-      if (isStateRoute(url)) {
-        const state = buildBridgeState(targetPath, runLogPath);
+      const jsonRoute = buildJsonRoutes(targetPath, runLogPath).find((route) => route.matches(url));
+      if (jsonRoute) {
         res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify(stateForRoute(state, url)));
-        return;
-      }
-
-      // BL-096: computed fresh per-request only, deliberately outside
-      // buildBridgeState/the SSE poll loop above (git-history-walk cost -
-      // see buildDeliveryMetricsState's own comment).
-      if (url === '/metrics') {
-        const metrics = buildDeliveryMetricsState(targetPath);
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify(metrics));
-        return;
-      }
-
-      // BL-100: same posture as /metrics - transcript + telemetry reads are
-      // too expensive for the SSE poll loop, computed only on direct request.
-      if (url === '/cost-telemetry') {
-        const state = buildCostTelemetryState(targetPath);
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify(state));
-        return;
-      }
-
-      // BL-094: same posture as /metrics/cost-telemetry - git-history +
-      // handoff-state reads, too expensive for the SSE poll loop.
-      if (url === '/holistic') {
-        const state = buildHolisticState(targetPath, runLogPath);
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify(state));
+        res.end(JSON.stringify(jsonRoute.compute(url)));
         return;
       }
 

@@ -84,6 +84,21 @@ test('parseTranscriptLines skips an assistant line missing usage or message.id',
   assert.deepEqual(parseTranscriptLines(lines), []);
 });
 
+test('parseTranscriptLines skips an assistant line with a missing or unparsable timestamp', () => {
+  const lines = [
+    JSON.stringify({
+      type: 'assistant',
+      message: { id: 'msg_1', usage: { input_tokens: 1 } },
+    }), // no timestamp field at all
+    JSON.stringify({
+      type: 'assistant',
+      timestamp: 'not-a-date',
+      message: { id: 'msg_2', usage: { input_tokens: 1 } },
+    }), // unparsable timestamp
+  ];
+  assert.deepEqual(parseTranscriptLines(lines), []);
+});
+
 test('parseTranscriptLines treats missing token fields as zero rather than NaN', () => {
   const records = parseTranscriptLines([
     JSON.stringify({
@@ -134,4 +149,18 @@ test('readTranscriptUsage reads and concatenates every .jsonl file under the wor
 test('readTranscriptUsage returns an empty array when the role never ran here (no slug directory)', () => {
   const projectsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-claude-projects-'));
   assert.deepEqual(readTranscriptUsage('/never/ran/here', projectsDir), []);
+});
+
+test('readTranscriptUsage dedups a message.id that recurs across two different files, not just within one', () => {
+  const projectsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-claude-projects-'));
+  const worktreePath = '/fake/worktree/coder';
+  const slugDir = path.join(projectsDir, projectSlug(worktreePath));
+  fs.mkdirSync(slugDir, { recursive: true });
+  // Same message.id written into two separate session files (e.g. a resume
+  // rewriting an earlier turn) - must count once, not twice.
+  fs.writeFileSync(path.join(slugDir, 'session1.jsonl'), assistantLine({ message: { id: 'shared' } }) + '\n');
+  fs.writeFileSync(path.join(slugDir, 'session2.jsonl'), assistantLine({ message: { id: 'shared' } }) + '\n');
+
+  const records = readTranscriptUsage(worktreePath, projectsDir);
+  assert.equal(records.length, 1, 'a message.id repeated across files must not be double-counted');
 });

@@ -20,24 +20,38 @@ function extractTicketId(task: string): string | null {
   return match ? match[1] : null;
 }
 
-export function deriveHoldingWindows(headerRecords: Array<Record<string, string>>): TicketHoldingWindow[] {
-  const windows: TicketHoldingWindow[] = [];
-  for (const headers of headerRecords) {
-    if (!headers.task) {
-      continue;
-    }
-    const ticketId = extractTicketId(headers.task);
-    if (!ticketId) {
-      continue;
-    }
-    const startMs = headers.dequeued_at ? Date.parse(headers.dequeued_at) : NaN;
-    if (Number.isNaN(startMs)) {
-      continue;
-    }
-    const endMs = headers.completed_at ? Date.parse(headers.completed_at) : NaN;
-    windows.push({ ticketId, startMs, endMs: Number.isNaN(endMs) ? null : endMs });
+// Parses an ISO timestamp header, or null if absent/unparsable - the one
+// shared shape both startMs (required) and endMs (optional) need.
+function parseMsOrNull(iso: string | undefined): number | null {
+  if (!iso) {
+    return null;
   }
-  return windows;
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+// Derives one holding window from a header record, or null if it names no
+// ticket or has no valid start time. Split out of deriveHoldingWindows so
+// each function stays under the CRAP<=6 gate.
+function deriveOneHoldingWindow(headers: Record<string, string>): TicketHoldingWindow | null {
+  if (!headers.task) {
+    return null;
+  }
+  const ticketId = extractTicketId(headers.task);
+  if (!ticketId) {
+    return null;
+  }
+  const startMs = parseMsOrNull(headers.dequeued_at);
+  if (startMs === null) {
+    return null;
+  }
+  return { ticketId, startMs, endMs: parseMsOrNull(headers.completed_at) };
+}
+
+export function deriveHoldingWindows(headerRecords: Array<Record<string, string>>): TicketHoldingWindow[] {
+  return headerRecords
+    .map(deriveOneHoldingWindow)
+    .filter((w): w is TicketHoldingWindow => w !== null);
 }
 
 function readHandoffHeaderRecordsIn(dir: string): Array<Record<string, string>> {
@@ -58,6 +72,30 @@ function readHandoffHeaderRecordsIn(dir: string): Array<Record<string, string>> 
   return records;
 }
 
+// Reads the header record(s) at one in_process entry: recurses into a batch
+// subdirectory, reads a direct .handoff file, or yields nothing for
+// anything else/unreadable. Split out of readInProcessHeaderRecords so each
+// function stays under the CRAP<=6 gate.
+function readEntryHeaderRecords(fullPath: string, isHandoffFile: boolean): Array<Record<string, string>> {
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(fullPath);
+  } catch {
+    return [];
+  }
+  if (stat.isDirectory()) {
+    return readHandoffHeaderRecordsIn(fullPath);
+  }
+  if (!isHandoffFile) {
+    return [];
+  }
+  try {
+    return [parseHandoffHeaders(fs.readFileSync(fullPath, 'utf8'))];
+  } catch {
+    return [];
+  }
+}
+
 // in_process may hold direct .handoff files or batch subdirectories
 // containing them (mirrors swarmMetrics.ts's own in_process walk).
 function readInProcessHeaderRecords(inProcessDir: string): Array<Record<string, string>> {
@@ -67,27 +105,9 @@ function readInProcessHeaderRecords(inProcessDir: string): Array<Record<string, 
   } catch {
     return [];
   }
-
-  const records: Array<Record<string, string>> = [];
-  for (const entry of entries) {
-    const fullPath = path.join(inProcessDir, entry);
-    let stat: fs.Stats;
-    try {
-      stat = fs.statSync(fullPath);
-    } catch {
-      continue;
-    }
-    if (stat.isDirectory()) {
-      records.push(...readHandoffHeaderRecordsIn(fullPath));
-    } else if (entry.endsWith('.handoff')) {
-      try {
-        records.push(parseHandoffHeaders(fs.readFileSync(fullPath, 'utf8')));
-      } catch {
-        continue;
-      }
-    }
-  }
-  return records;
+  return entries.flatMap((entry) =>
+    readEntryHeaderRecords(path.join(inProcessDir, entry), entry.endsWith('.handoff'))
+  );
 }
 
 // Absent handoff directories (role never ran here) read as zero windows,

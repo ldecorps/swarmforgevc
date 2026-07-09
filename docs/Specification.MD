@@ -231,8 +231,9 @@ The bridge is an **opt-in local HTTP server** that exposes the same on-disk swar
 | `GET /api/runlog` | JSON: timeline of stage transitions and key events | Run history and audit trail |
 | `GET /events` | Server-Sent Events (SSE) stream | Real-time updates when stage or agent state changes |
 | `GET /metrics` | JSON: delivery-flow metrics (velocity, burndown, cycle time, forecasts, suite duration trend) | Trend/forecast data for monitoring dashboards or scripts |
+| `GET /cost-telemetry` | JSON: per-role token/cost usage by day, cost attributed per ticket, and resource (RSS/CPU) trends | Token spend and resource usage for monitoring dashboards or scripts |
 
-`GET /metrics` is computed fresh on each request rather than folded into the ~1s SSE poll loop the other endpoints share — the underlying git-history walk is too expensive to recompute every tick.
+`GET /metrics` and `GET /cost-telemetry` are both computed fresh on each request rather than folded into the ~1s SSE poll loop the other endpoints share — the underlying git-history walk (`/metrics`) and transcript/telemetry reads (`/cost-telemetry`) are too expensive to recompute every tick.
 
 **Example usage (cURL):**
 
@@ -295,6 +296,15 @@ A second metrics layer, derived purely from git history and the current `backlog
 
 Available today via the `GET /metrics` bridge endpoint (see Remote Access & Phone App below) and the CLI (below) — both are fed by the same computation, so they always report the same numbers. Charting these trends in the panel's web UI is tracked separately (BL-211); this layer is computation/trend only for now.
 
+#### Cost & Resource Telemetry
+
+A third telemetry layer tracks token spend and per-role resource usage:
+
+- **Cost telemetry**: per-role token usage (input/output, plus cache-read and cache-creation tokens at their own rates) parsed from the Claude Code transcript files under `~/.claude/projects/`, priced against a versioned per-model USD/MTok table, and rolled up by day. Usage is also attributed per ticket (from the role's handoff holding windows), with an explicit "unattributed" bucket for usage that falls outside every known holding window — never silently dropped.
+- **Resource usage**: per-role RSS and CPU trends, sampled periodically and bucketed hourly.
+
+Both are available via the `GET /cost-telemetry` bridge endpoint and the CLI (below). Two scenarios from the ticket's own scope — a rolled-up cost briefing paragraph, and surfacing cost telemetry through the phone/Action bridge — are deferred pending infrastructure (BL-099/BL-097) that doesn't exist yet. The resource-usage sampler itself is complete and tested, but is not yet wired into the extension's real activation path, so the CLI's "Resource usage" line reads as no-samples-yet on an otherwise-live swarm until that wiring lands.
+
 #### Agent CLI
 
 Every role can also run a headless command-line version of the same metrics:
@@ -303,7 +313,7 @@ Every role can also run a headless command-line version of the same metrics:
 node extension/out/tools/swarm-metrics.js
 ```
 
-Runnable from the repo root or from any `.worktrees/<role>/` checkout. Prints a short plain-text summary — mean ticket time, one busyness line per role, retry total, suite duration with warnings, and a chaser telemetry line per role — followed by one line per delivery metric (velocity, burndown, cycle time, forecasts, suite duration trend) — and exits 0 with placeholder values on a fresh run. The CLI and panel/bridge are fed by the same underlying metrics computation modules, so they always report the same values.
+Runnable from the repo root or from any `.worktrees/<role>/` checkout. Prints a short plain-text summary — mean ticket time, one busyness line per role, retry total, suite duration with warnings, and a chaser telemetry line per role — followed by one line per delivery metric (velocity, burndown, cycle time, forecasts, suite duration trend), then a cost telemetry line and a resource usage line, each one role-summary per role — and exits 0 with placeholder values on a fresh run. The CLI and panel/bridge are fed by the same underlying metrics computation modules, so they always report the same values.
 
 #### Queue status CLI
 
