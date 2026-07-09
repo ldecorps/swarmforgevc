@@ -19,9 +19,6 @@
       (str/trim (:out result))
       (System/getProperty "user.dir"))))
 
-(defn inbox-dir []
-  (fs/path (worktree-root) ".swarmforge" "handoffs" "inbox"))
-
 (defn target-root
   "Resolves the target project's root, shared across every role's worktree,
    via git's common gitdir (stable from a linked worktree or the main
@@ -150,6 +147,111 @@
 (defn current-role []
   (let [r (System/getenv "SWARMFORGE_ROLE")]
     (when-not (str/blank? r) r)))
+
+;; ── BL-128: the one shared, role-keyed mailbox path resolver ────────────────
+;; Coordinator and specifier both run on the shared `master` worktree
+;; (roles.tsv worktree-name "master" for both), so they used to share one
+;; physical .swarmforge/handoffs/ directory - separated only by the logical
+;; `recipient:` header filter (mine? below), a patch over a genuinely shared
+;; resource that produced real cross-role dequeue/dead-letter incidents.
+;;
+;; Every mailbox-path caller (the daemon, the queue helpers, the chaser via
+;; handoffd.bb, dead-letter tooling, salvage/reroute/redo scripts) must go
+;; through mailbox-dir/mailbox-base-dir - no duplicated path-construction
+;; logic anywhere. Roles with their own dedicated worktree already have
+;; physical separation and keep their existing flat layout; only
+;; worktree-name "master" gets the extra <role> subdirectory.
+
+(defn- mailbox-state->relative-segments
+  "The inbox/... vs top-level segment path for one mailbox state. :abandoned
+   is salvage_lib.bb's own fifth inbox state (redo/reroute's stale-item
+   parking dir), alongside new/in_process/completed."
+  [state]
+  (case state
+    :outbox     ["outbox"]
+    :sent       ["sent"]
+    :failed     ["failed"]
+    :new        ["inbox" "new"]
+    :in_process ["inbox" "in_process"]
+    :completed  ["inbox" "completed"]
+    :abandoned  ["inbox" "abandoned"]))
+
+(defn mailbox-base-dir
+  "The <worktree-path>/.swarmforge/handoffs[/<role>] base a role's mailbox
+   lives under - the <role> subdirectory only for master-resident roles
+   (worktree-name \"master\"), since only they share one physical checkout;
+   every other role's own dedicated worktree already provides physical
+   separation, so it keeps the pre-BL-128 flat layout unchanged."
+  [role-info]
+  (if (= (:worktree-name role-info) "master")
+    (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" (:role role-info))
+    (fs/path (:worktree-path role-info) ".swarmforge" "handoffs")))
+
+(defn mailbox-dir
+  "The physical mailbox directory for role-info in a given state
+   (:outbox :sent :failed :new :in_process :completed :abandoned) - the ONE
+   shared resolver every mailbox-path caller must go through (BL-128)."
+  [role-info state]
+  (apply fs/path (mailbox-base-dir role-info) (mailbox-state->relative-segments state)))
+
+(defn load-role-info
+  "Reads role-name's own roles.tsv row into the same {:role :worktree-name
+   :worktree-path :session :display :agent :receive-mode} shape
+   handoffd.bb's load-roles produces, so every script shares one role-info
+   shape. nil when roles.tsv or the row is absent. The 2-arity form takes an
+   explicit project root (salvage_lib.bb/handoffd_supervisor.bb's callers
+   already receive one from their own caller) instead of re-deriving it via
+   git-common-dir."
+  ([role-name] (load-role-info role-name (target-root)))
+  ([role-name root]
+   (let [tsv (fs/path root ".swarmforge" "roles.tsv")]
+     (when (and role-name (fs/exists? tsv))
+       (some (fn [line]
+               (let [[role worktree-name worktree-path session display agent receive-mode]
+                     (str/split line #"\t")]
+                 (when (= role role-name)
+                   {:role role :worktree-name worktree-name :worktree-path worktree-path
+                    :session session :display display :agent agent
+                    :receive-mode (or receive-mode "task")})))
+             (remove str/blank? (str/split-lines (slurp (str tsv)))))))))
+
+(defn load-all-roles
+  "Every role's role-info, in roles.tsv order - for callers (salvage_lib.bb,
+   handoffd_supervisor.bb) that need to iterate every role's own mailbox
+   rather than look up a single one. Iterating per ROLE (not deduped
+   worktree path) is what correctly visits master-resident roles' now-
+   distinct per-role subdirectories instead of double-scanning (or
+   under-scanning) one shared directory. The 1-arity form takes an explicit
+   project root, same rationale as load-role-info above."
+  ([] (load-all-roles (target-root)))
+  ([root]
+   (let [tsv (fs/path root ".swarmforge" "roles.tsv")]
+     (if (fs/exists? tsv)
+       (vec (for [line (remove str/blank? (str/split-lines (slurp (str tsv))))
+                  :let [[role worktree-name worktree-path session display agent receive-mode]
+                        (str/split line #"\t")]]
+              {:role role :worktree-name worktree-name :worktree-path worktree-path
+               :session session :display display :agent agent
+               :receive-mode (or receive-mode "task")}))
+       []))))
+
+(defn my-mailbox-base-dir
+  "This process's own mailbox base dir, resolved via SWARMFORGE_ROLE +
+   roles.tsv when both are available; falls back to the pre-BL-128 flat
+   worktree-root layout otherwise (e.g. invoked outside a live swarm),
+   preserving prior behavior for that case."
+  []
+  (if-let [role-info (load-role-info (current-role))]
+    (mailbox-base-dir role-info)
+    (fs/path (worktree-root) ".swarmforge" "handoffs")))
+
+(defn my-mailbox-dir
+  "This process's own mailbox directory in the given state - the queue
+   helpers' (ready_for_next*/done_with_current*) single point of entry,
+   replacing the old inbox-dir + manual \"new\"/\"in_process\"/\"completed\"
+   joins at each call site."
+  [state]
+  (apply fs/path (my-mailbox-base-dir) (mailbox-state->relative-segments state)))
 
 (defn mine?
   "True when this handoff's recipient matches the current role. Roles that share
