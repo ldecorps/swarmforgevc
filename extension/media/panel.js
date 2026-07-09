@@ -4,6 +4,7 @@ const status = document.getElementById('status');
 const stageEl = document.getElementById('stage');
 const placeholder = document.getElementById('placeholder');
 const transportHealthEl = document.getElementById('transport-health');
+const daemonStatusEl = document.getElementById('daemon-status');
 const tiles = new Map();
 let activeRole = null;
 let selectedRole = null;
@@ -732,6 +733,19 @@ window.addEventListener('message', (event) => {
           setTimeout(() => entry.tile.classList.remove('bl-highlighted'), 2000);
         }
       });
+      break;
+    case 'daemonProcessStatus':
+      if (daemonStatusEl) {
+        const daemon = message.status || {};
+        const phase = daemon.phase || 'dead';
+        daemonStatusEl.className = 'daemon-status ' + phase;
+        daemonStatusEl.textContent = daemon.label || 'handoffd unknown';
+        daemonStatusEl.title = daemon.detail
+          ? String(daemon.detail)
+          : daemon.heartbeatAgeMs != null
+            ? 'heartbeat age: ' + daemon.heartbeatAgeMs + 'ms'
+            : '';
+      }
       break;
     case 'transportHealth':
       if (transportHealthEl) {

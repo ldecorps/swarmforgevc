@@ -11,6 +11,34 @@ export interface DaemonHealth {
   detail?: string;
 }
 
+export type DaemonProcessPhase =
+  | 'skipped'
+  | 'halted'
+  | 'dead'
+  | 'starting'
+  | 'polling'
+  | 'up'
+  | 'stale';
+
+export interface DaemonProcessStatus {
+  phase: DaemonProcessPhase;
+  label: string;
+  detail?: string;
+  pid?: number;
+  heartbeatAgeMs?: number;
+}
+
+/** Heartbeat younger than this is shown as actively polling. */
+export const DAEMON_HEARTBEAT_POLLING_MS = 15_000;
+
+/** Matches handoffd_supervisor.bb default SUPERVISOR_STALL_MS. */
+export const DAEMON_HEARTBEAT_STALL_MS = 30_000;
+
+export interface DaemonProcessProbe {
+  isPidAlive?: (pid: number) => boolean;
+  heartbeatAgeMs?: number | null;
+}
+
 // 'halted' (BL-144): the daemon died and the supervisor alarmed + hard-
 // stopped the swarm instead of restarting it - a terminal state until a
 // human intervenes, distinct from the (now unused) transient restart states.
@@ -52,6 +80,117 @@ export function isDaemonReady(targetPath: string, env: NodeJS.ProcessEnv = proce
 
   const pid = readDaemonPid(targetPath);
   return pid !== null && isPidAlive(pid);
+}
+
+function readHeartbeatAgeMs(targetPath: string, nowMs: number): number | null {
+  const heartbeatFile = path.join(targetPath, '.swarmforge', 'daemon', 'handoffd.heartbeat');
+  try {
+    const mtimeMs = fs.statSync(heartbeatFile).mtimeMs;
+    return Math.max(0, nowMs - mtimeMs);
+  } catch {
+    return null;
+  }
+}
+
+function labelForPhase(phase: DaemonProcessPhase, detail?: string): string {
+  switch (phase) {
+    case 'skipped':
+      return 'handoffd off (sync inject)';
+    case 'halted':
+      return detail ? `handoffd HALTED (${detail})` : 'handoffd HALTED';
+    case 'dead':
+      return 'handoffd dead';
+    case 'starting':
+      return 'handoffd starting…';
+    case 'polling':
+      return 'handoffd polling';
+    case 'stale':
+      return 'handoffd stale';
+    case 'up':
+      return 'handoffd up';
+    default:
+      return 'handoffd unknown';
+  }
+}
+
+/**
+ * Process-level handoffd status for the panel header. Distinct from
+ * transportHealth's delivery-level view (dead letters, canary misses).
+ */
+export function computeDaemonProcessStatus(
+  targetPath: string,
+  env: NodeJS.ProcessEnv = process.env,
+  nowMs: number = Date.now(),
+  probe: DaemonProcessProbe = {}
+): DaemonProcessStatus {
+  if (shouldSkipHandoffDaemon(env)) {
+    return { phase: 'skipped', label: labelForPhase('skipped') };
+  }
+
+  const health = readDaemonHealth(targetPath);
+  if (health.state === 'halted') {
+    return {
+      phase: 'halted',
+      label: labelForPhase('halted', health.detail),
+      detail: health.detail,
+    };
+  }
+
+  const pid = readDaemonPid(targetPath);
+  const alive = pid !== null && (probe.isPidAlive ?? isPidAlive)(pid);
+  if (!alive) {
+    return { phase: 'dead', label: labelForPhase('dead'), pid: pid ?? undefined };
+  }
+
+  const heartbeatAgeMs =
+    probe.heartbeatAgeMs !== undefined
+      ? probe.heartbeatAgeMs
+      : readHeartbeatAgeMs(targetPath, nowMs);
+
+  if (health.state === 'unknown' || heartbeatAgeMs === null) {
+    return {
+      phase: 'starting',
+      label: labelForPhase('starting'),
+      pid,
+      heartbeatAgeMs: heartbeatAgeMs ?? undefined,
+    };
+  }
+
+  if (health.state === 'restarting' || health.state === 'persistent-failure') {
+    return {
+      phase: 'stale',
+      label: labelForPhase('stale'),
+      pid,
+      heartbeatAgeMs,
+      detail: health.detail ?? health.state,
+    };
+  }
+
+  if (heartbeatAgeMs <= DAEMON_HEARTBEAT_POLLING_MS) {
+    return {
+      phase: 'polling',
+      label: labelForPhase('polling'),
+      pid,
+      heartbeatAgeMs,
+    };
+  }
+
+  if (heartbeatAgeMs <= DAEMON_HEARTBEAT_STALL_MS) {
+    return {
+      phase: 'up',
+      label: labelForPhase('up'),
+      pid,
+      heartbeatAgeMs,
+    };
+  }
+
+  return {
+    phase: 'stale',
+    label: labelForPhase('stale'),
+    pid,
+    heartbeatAgeMs,
+    detail: health.detail,
+  };
 }
 
 export function readDaemonHealth(targetPath: string): DaemonHealth {

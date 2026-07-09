@@ -6,6 +6,7 @@ import { PaneTailer } from './paneTailer';
 import { currentStageLabel, readPipelineStages, findLiveHolder, parseRolesTsv } from '../swarm/swarmState';
 import { computeSwarmMetrics, DEFAULT_SUITE_WARN_SECONDS } from '../metrics/swarmMetrics';
 import { computeLiveTransportHealth } from '../swarm/transportHealth';
+import { computeDaemonProcessStatus } from '../swarm/daemonHealth';
 import { escalatedStuckRoles } from '../watchdog/stuckEscalations';
 import { loadRuns } from '../runs/runLog';
 import { getNonce, getWebviewHtml } from './webviewHtml';
@@ -336,6 +337,10 @@ export class SwarmPanel {
         canaryBudgetSeconds: TRANSPORT_CANARY_BUDGET_SECONDS,
       });
       this.panel.webview.postMessage({ type: 'transportHealth', health: transportHealth });
+      this.panel.webview.postMessage({
+        type: 'daemonProcessStatus',
+        status: computeDaemonProcessStatus(this.targetPath, process.env, Date.now()),
+      });
       // BL-071: reuses this existing poll tick - no new polling loop, no
       // per-second git invocations.
       this.postMetrics();
