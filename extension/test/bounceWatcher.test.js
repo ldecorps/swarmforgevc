@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
-const { parseBounceFile, processBounceFile, startBounceWatcher } = require('../out/swarm/bounceWatcher');
+const { isBounceType, parseBounceFile, processBounceFile, startBounceWatcher } = require('../out/swarm/bounceWatcher');
 
 function waitUntil(predicate, timeoutMs = 2000, intervalMs = 10) {
   return new Promise((resolve, reject) => {
@@ -22,6 +22,18 @@ function waitUntil(predicate, timeoutMs = 2000, intervalMs = 10) {
     check();
   });
 }
+
+// --- isBounceType ---
+
+test('isBounceType accepts "swarm", "extension", and "all"', () => {
+  assert.equal(isBounceType('swarm'), true);
+  assert.equal(isBounceType('extension'), true);
+  assert.equal(isBounceType('all'), true);
+});
+
+test('isBounceType rejects an unknown value', () => {
+  assert.equal(isBounceType('nope'), false);
+});
 
 // --- parseBounceFile ---
 
@@ -172,6 +184,19 @@ test('processBounceFile with whitespace content reports error', () => {
   assert.equal(fs.existsSync(bounceFile), false);
 });
 
+test('processBounceFile with invalid content and no onError does not throw', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bounce-'));
+  const bounceFile = path.join(tmpDir, 'bounce');
+  fs.writeFileSync(bounceFile, 'invalid\n');
+
+  assert.doesNotThrow(() => processBounceFile(bounceFile, () => {}));
+  assert.equal(fs.existsSync(bounceFile), false);
+});
+
+test('processBounceFile with a read error and no onError does not throw', () => {
+  assert.doesNotThrow(() => processBounceFile('/nonexistent/path/bounce', () => {}));
+});
+
 // --- startBounceWatcher ---
 
 test('BL-204: startBounceWatcher returns null and creates nothing when .swarmforge is missing', () => {
@@ -210,6 +235,54 @@ test('startBounceWatcher ignores filesystem events for unrelated files', async (
     // give the watcher a chance to (incorrectly) react before asserting it didn't
     await new Promise((resolve) => setTimeout(resolve, 150));
     assert.deepEqual(bounces, []);
+  } finally {
+    watcher.close();
+  }
+});
+
+test('startBounceWatcher ignores an unrelated file even when a real bounce file is already sitting on disk', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
+  const swarmforgeDir = path.join(tmpDir, '.swarmforge');
+  fs.mkdirSync(swarmforgeDir, { recursive: true });
+  // Written BEFORE the watcher starts, so its own creation never fires a
+  // watch event - only the later unrelated-file write below does. If the
+  // `filename !== 'bounce'` guard were ever bypassed, that unrelated event
+  // would still find this pre-existing bounce file on its delayed
+  // existsSync check and wrongly consume it.
+  fs.writeFileSync(path.join(swarmforgeDir, 'bounce'), 'swarm\n');
+
+  const bounces = [];
+  const watcher = startBounceWatcher(tmpDir, (type) => bounces.push(type));
+  try {
+    fs.writeFileSync(path.join(swarmforgeDir, 'not-bounce.txt'), 'swarm\n');
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.deepEqual(bounces, []);
+    assert.equal(fs.existsSync(path.join(swarmforgeDir, 'bounce')), true, 'the untouched bounce file must not be consumed by an unrelated event');
+  } finally {
+    watcher.close();
+  }
+});
+
+test('startBounceWatcher does not process a bounce file that is gone by the time its delayed check runs', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
+  const swarmforgeDir = path.join(tmpDir, '.swarmforge');
+  fs.mkdirSync(swarmforgeDir, { recursive: true });
+
+  const errors = [];
+  const watcher = startBounceWatcher(
+    tmpDir,
+    () => {},
+    (err) => errors.push(err)
+  );
+  try {
+    const bounceFilePath = path.join(swarmforgeDir, 'bounce');
+    // The watch event fires for this create, but the file is gone again
+    // (synchronously, well before the watcher's own 50ms settle delay)
+    // by the time the delayed existsSync check runs.
+    fs.writeFileSync(bounceFilePath, 'swarm\n');
+    fs.unlinkSync(bounceFilePath);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.deepEqual(errors, [], 'a bounce file gone before the delayed check must be skipped, not treated as a read error');
   } finally {
     watcher.close();
   }
