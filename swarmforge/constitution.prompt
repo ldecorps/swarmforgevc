@@ -12,9 +12,13 @@ The constitution is organized into **articles**, each stored in `swarmforge/cons
 4. **Quality Gates** – Criteria for merging into `main`.
 5. **Amendments** – Process for updating the constitution itself.
 
+The directory also carries project-wide prompt articles (not numbered) that apply
+alongside the numbered articles: `engineering.prompt`, `workflow.prompt`,
+`local-engineering.prompt`, and `project.prompt`.
+
 ## Key Rules
-1. **Pipeline Flow**: Parcels move through the chain `specifier → coder → cleaner → architect → hardener → documenter → QA → specifier (merge)`.
-2. **Worktrees**: Each role works in its own branch (e.g., `.worktrees/coder`). The **specifier** merges approved work into `main`.
+1. **Pipeline Flow**: Parcels move through the chain `specifier → coder → cleaner → architect → hardener → documenter → QA → coordinator (integrate)`.
+2. **Worktrees**: Each role works in its own branch (e.g., `.worktrees/coder`). The **coordinator** merges QA-approved work into `main`; the specifier never performs integration merges.
 3. **Handoffs**: Use `swarm_handoff.sh` to send parcels; never write directly to `inbox/new/`.
 4. **No-Op Rule**: A role must **not** forward a `git_handoff` if the received commit produces no functional change.
 
@@ -22,4 +26,4 @@ The constitution is organized into **articles**, each stored in `swarmforge/cons
 To propose a change to the constitution:
 1. Create a new article in `swarmforge/constitution/articles/` (e.g., `99_proposed_change.md`).
 2. Route it to the **specifier** via `git_handoff` with priority `00`.
-3. The **specifier** will merge it into `main` after QA approval.
+3. The **specifier** incorporates approved constitution changes into spec/prompt files; the **coordinator** merges to `main` after QA approval.
