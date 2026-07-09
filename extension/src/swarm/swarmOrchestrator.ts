@@ -88,6 +88,28 @@ export function decideActivationPath(context: ActivationContext): ActivationPath
   return 'reattach-after-daemon';
 }
 
+// A killed shell script's own forked/exec'd commands (e.g. a `sleep` inside
+// `#!/bin/sh\nsleep 10`) are grandchildren proc.kill() alone never reaches -
+// the shell dies but the grandchild is reparented and keeps running. Node's
+// 'close' event (unlike 'exit') waits for the shared stdio pipe to actually
+// EOF, which the orphaned grandchild's still-open inherited fd blocks until
+// it finishes for real - so a "timed out" launch would previously still
+// block spawnAndCapture's promise for the grandchild's full real duration
+// (BL-131 QA bounce finding). detached:true (below) makes the direct child
+// the leader of its own process group, so killing the negative pid signals
+// the whole group - shell and any of its own children - at once.
+function killProcessTree(proc: cp.ChildProcess): void {
+  if (proc.pid) {
+    try {
+      process.kill(-proc.pid, 'SIGTERM');
+      return;
+    } catch {
+      // Process group kill failed (e.g. already exited) - fall through.
+    }
+  }
+  proc.kill();
+}
+
 async function spawnAndCapture(
   command: string,
   args: string[],
@@ -101,9 +123,10 @@ async function spawnAndCapture(
       cwd: options.cwd,
       env: options.env,
       stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
     });
 
-    const timeout = options.timeout ? setTimeout(() => proc.kill(), options.timeout) : null;
+    const timeout = options.timeout ? setTimeout(() => killProcessTree(proc), options.timeout) : null;
 
     proc.stdout?.on('data', (chunk: Buffer) => {
       stdout += chunk.toString();
