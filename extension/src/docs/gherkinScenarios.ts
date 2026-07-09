@@ -5,13 +5,22 @@
 // time this pure function sees them (docs-drilldown-03's "both forms").
 
 export interface GherkinScenario {
+  id?: string;
   name: string;
   text: string;
 }
 
 const SCENARIO_LINE = /^\s*(Scenario(?: Outline)?):\s*(.*)$/;
 
+// BL-111's stable-index convention: a `# <TICKET-ID> <slug> [description...]`
+// comment directly precedes each Scenario: line (e.g. `# BL-096 metrics-01`
+// or `# BL-150 recert-01 oldest-first-selection`) - the first two
+// whitespace-separated tokens after `#` are always the ticket id and the
+// short stable slug; anything after that is optional descriptive text.
+const TAG_LINE = /^\s*#\s*(\S+)\s+(\S+)/;
+
 interface ScenarioBlock {
+  id?: string;
   name: string;
   lines: string[];
 }
@@ -22,13 +31,31 @@ interface ScenarioBlock {
 // text). Each new block is already in the returned array from the moment
 // it starts, so there is no separate "flush the last one" step - split out
 // of extractScenarios so each function stays under the CRAP<=6 gate.
+//
+// BL-150: also tracks the tag comment immediately preceding a Scenario:
+// line as that scenario's stable id (recertification needs an id that
+// survives scenario reordering/insertion, unlike a positional index). Any
+// non-blank line that isn't itself a tag comment clears the pending tag, so
+// only a comment DIRECTLY above a Scenario: line is ever attributed to it -
+// a trailing comment block after the last scenario, or a comment before an
+// invalid/malformed line, is never mistaken for the next scenario's id.
 function groupIntoScenarioBlocks(lines: string[]): ScenarioBlock[] {
   const blocks: ScenarioBlock[] = [];
+  let pendingTagId: string | undefined;
   for (const line of lines) {
     const match = line.match(SCENARIO_LINE);
     if (match) {
-      blocks.push({ name: match[2].trim(), lines: [line.trim()] });
-    } else if (blocks.length > 0) {
+      blocks.push({ id: pendingTagId, name: match[2].trim(), lines: [line.trim()] });
+      pendingTagId = undefined;
+      continue;
+    }
+    const tagMatch = line.match(TAG_LINE);
+    if (tagMatch) {
+      pendingTagId = `${tagMatch[1]}/${tagMatch[2]}`;
+    } else if (line.trim() !== '') {
+      pendingTagId = undefined;
+    }
+    if (blocks.length > 0) {
       blocks[blocks.length - 1].lines.push(line);
     }
   }
@@ -57,7 +84,11 @@ function stripTrailingCommentLines(lines: string[]): string[] {
 }
 
 function toScenario(block: ScenarioBlock): GherkinScenario {
-  return { name: block.name, text: stripTrailingCommentLines(block.lines).join('\n').trim() };
+  const scenario: GherkinScenario = { name: block.name, text: stripTrailingCommentLines(block.lines).join('\n').trim() };
+  if (block.id !== undefined) {
+    scenario.id = block.id;
+  }
+  return scenario;
 }
 
 export function extractScenarios(gherkinText: string | null | undefined): GherkinScenario[] {
