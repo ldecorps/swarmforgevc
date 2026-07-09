@@ -1,0 +1,54 @@
+id: BL-207
+title: "Provider contract slice 3: normalized provider error taxonomy"
+milestone: M6
+status: todo
+priority: 10
+direction: non-aligned
+depends_on: [BL-142]
+source: "Decomposed from BL-142 provider-neutral contract epic (operator request 2026-07-06) by specifier 2026-07-09."
+
+description: |
+  Slice 3 of the provider-neutral contract epic. Backend failures during launch
+  or interaction currently surface as raw, provider-specific errors, so
+  orchestration and operator views cannot reason about failures uniformly across
+  brands.
+
+  Wanted behavior:
+  - Define a stable, closed Forge-level error taxonomy (a small enumerable set of
+    categories, e.g. launch-failed, auth/credentials, unavailable/rate-limited,
+    protocol/parse, timeout, unknown).
+  - Map provider-specific failures onto those categories at the adapter/descriptor
+    boundary, keeping the original backend detail attached as context (never
+    discarded).
+  - The same failure from different providers maps to the same category, so
+    orchestration and operator surfaces branch on category, not brand.
+
+  Constraints:
+  - Taxonomy is a closed set with an explicit "unknown" fallback; unmapped
+    backend errors become "unknown" with detail attached, never a crash.
+  - Consistent categorization across the fork orchestration and the extension's
+    surfacing of errors.
+
+acceptance: |
+  Feature: Backend failures normalize to a stable Forge error taxonomy
+
+  # BL-207 normalize-01
+  Scenario: provider-specific failures map to stable categories
+    Given a provider-specific failure occurs during launch or interaction
+    When it surfaces to orchestration and operator views
+    Then it is reported as one of the enumerated Forge error categories
+    And the original backend detail is attached as context
+
+  # BL-207 cross-provider-parity-02
+  Scenario: the same failure class from different providers maps to one category
+    Given two different providers each hit an authentication failure
+    When those failures are normalized
+    Then both map to the same Forge error category
+
+  # BL-207 unknown-fallback-03
+  Scenario: unmapped errors fall back to unknown, not a crash
+    Given a backend error not covered by any mapping
+    When it is normalized
+    Then it is categorized as "unknown" with its raw detail attached
+
+mutation_cost: medium

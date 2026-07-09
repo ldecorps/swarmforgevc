@@ -1,0 +1,49 @@
+id: BL-208
+title: "Provider contract slice 4: observability parity across providers"
+milestone: M6
+status: todo
+priority: 10
+direction: non-aligned
+depends_on: [BL-142]
+source: "Decomposed from BL-142 provider-neutral contract epic (operator request 2026-07-06) by specifier 2026-07-09."
+
+description: |
+  Slice 4 (final) of the provider-neutral contract epic. Metrics and log fields
+  differ across providers, so cross-provider comparison (which brand is slower,
+  failing, idling) requires brand-specific handling in every reader.
+
+  Wanted behavior:
+  - Define a common set of observability fields (comparable metric/log keys) that
+    every provider adapter/descriptor emits — e.g. provider name, lifecycle-state
+    transitions, error category (from BL-207), and the timing signals already
+    tracked — using the same key names and shapes regardless of brand.
+  - Existing per-provider readers (metrics module, bridge JSON, operator views)
+    read those common fields without brand-specific branches.
+
+  Constraints:
+  - Additive to existing telemetry (do not break current readers); reuse the
+    JSONL/metrics surfaces already in place rather than inventing a parallel one.
+  - Absent/empty telemetry for a provider reads as zeros/empty, never an error.
+
+acceptance: |
+  Feature: Observability fields are comparable across providers
+
+  # BL-208 common-fields-01
+  Scenario: every provider emits the same core observability fields
+    Given at least two different providers are active
+    When their telemetry is recorded
+    Then each provider's records carry the same core field keys with the same shapes
+
+  # BL-208 brand-agnostic-read-02
+  Scenario: a reader compares providers without brand-specific handling
+    Given telemetry from multiple providers
+    When a metrics/operator reader aggregates it
+    Then it compares providers using the common fields, with no per-brand branch
+
+  # BL-208 empty-reads-zero-03
+  Scenario: a provider with no telemetry reads as empty, not an error
+    Given a provider that has emitted no telemetry yet
+    When the observability surface is queried
+    Then its metrics read as zero/empty without error
+
+mutation_cost: medium

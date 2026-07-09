@@ -1,0 +1,80 @@
+id: BL-142
+title: "Provider contract slice 1: extension pane-state detection driven by provider descriptors, not hardcoded brand names"
+milestone: M6
+status: todo
+priority: 05
+direction: non-aligned
+assigned_to: coder
+source: "operator request (2026-07-06): with multi-agent support, Forge must interact uniformly regardless of agent brand. Sliced by specifier 2026-07-09 (operator chose extension-first); remaining slices tracked as BL-206/BL-207/BL-208."
+
+description: |
+  Slice 1 of the provider-neutral contract epic (original operator request:
+  "Forge must interact uniformly regardless of agent brand").
+
+  Reality check (why this is a slice, not a greenfield abstraction): provider
+  logic already exists but is scattered. The fork's
+  swarmforge/scripts/agent_runtime_lib.bb already normalizes agents and builds
+  wake/bootstrap steps for claude/aider/grok/codex/copilot/mock (BL-130 shipped
+  the multi-provider runtime). The remaining leak this slice closes is in the
+  EXTENSION (the product): extension/src/panel/agentPaneState.ts HARDCODES brand
+  names and provider-specific patterns — AGENT_CLI_NAMES
+  (/claude|aider|codex|copilot|grok/), an AIDER_BUSY regex, an `/^Aider v\d/`
+  banner check, and a literal "Waiting for Claude to start…" startup string.
+  Adding a provider today means editing detection code in several places.
+
+  Wanted behavior (this slice only):
+  - Introduce a provider-descriptor data structure, e.g.
+    ProviderDescriptor { name, cliPattern, busyPattern, bannerPattern,
+    startupCopy }, and a registry of one descriptor per supported provider.
+  - Rewrite agentPaneState.ts's detection to READ the registry — recognizing the
+    provider CLI, its busy/running state, its startup banner, and its "waiting
+    to start" copy from descriptor fields — instead of inline brand names.
+  - Behavior for every currently-supported provider stays identical; this is a
+    data-driven refactor, not a behavior change.
+  - Net observable value: adding a provider becomes adding a descriptor, with NO
+    edits to the detection functions.
+
+  Explicitly OUT of this slice (tracked as depends_on children — do NOT do here;
+  see the specifier scoping rule about verifying the live layer):
+  - Fork-side capability model + lifecycle verbs (health/stop/respawn) in
+    agent_runtime_lib.bb -> BL-206.
+  - Normalized provider error taxonomy -> BL-207.
+  - Provider observability parity (comparable metrics/log fields) -> BL-208.
+
+  Constraints:
+  - Preserve pre-refactor detection behavior for all currently-supported
+    providers (claude/aider/codex/copilot/grok); existing agentPaneState tests
+    must stay green.
+  - agentPaneState is a testable host-side module: test synchronously, no real
+    timers (engineering rule), no VS Code UI in tests.
+  - Do NOT reimplement or duplicate the fork's agent_runtime_lib.bb abstraction;
+    this slice is the extension's pane-state detection only.
+
+acceptance: |
+  Feature: Extension pane-state detection is driven by provider descriptors
+
+  # BL-142 descriptor-parity-01
+  Scenario: detection reads a provider registry, not inline brand names
+    Given the supported providers are expressed as descriptors in a registry
+    When pane state is computed for a pane running any supported provider CLI
+    Then the result matches the pre-refactor behavior for that provider
+    And no provider brand name is hardcoded in the detection functions
+
+  # BL-142 new-provider-is-data-02
+  Scenario: adding a provider requires only a new descriptor
+    Given a new provider descriptor (name, cli pattern, busy pattern, banner,
+      startup copy) is added to the registry
+    When a pane runs that provider's CLI
+    Then the provider is recognized and its busy, running, and startup states
+      are detected from the descriptor
+    And no detection function is edited to add it
+
+  # BL-142 startup-copy-03
+  Scenario: startup guidance comes from the descriptor, not a hardcoded brand
+    Given a pane whose provider has not started yet
+    When the startup guidance message is produced
+    Then it names the provider from its descriptor (e.g. "Waiting for <provider>
+      to start…")
+    And it is not a hardcoded "Claude" literal
+
+mutation_cost: medium
