@@ -17,7 +17,7 @@ The coordinator reads these to route work.
 |-------|------|-------------|
 | `workflow_pin` | list[string] | Override the default pack for this item (e.g., `[coder, cleaner]`). |
 | `depends_on` | list[string] | IDs of items that must complete first. |
-| `acceptance` | string | Gherkin-style acceptance criteria. |
+| `acceptance` | string | A path to the item's Gherkin feature file under `specs/features/` (e.g. `specs/features/BL-042-add-oauth-login.feature`) — the feature file is the durable acceptance contract and outlives the backlog item. Older items may still carry the criteria inline (`acceptance: \|` followed by a Gherkin block) until migrated; both forms are read. |
 
 ## Example
 ```yaml
