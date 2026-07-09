@@ -2,10 +2,15 @@ id: BL-096
 title: delivery metrics — ticket-count velocity, per-milestone burndown, cycle time; charted in the holistic web UI
 milestone: M5
 status: todo
-priority: 02
+priority: 01
 direction: non-aligned
 source: operator request 2026-07-04 ("introduce new metrics like velocity, so we can have burndown charts and things like that")
 depends_on: BL-094 (chart rendering; the metric computation layer itself may land first)
+notes: |
+  Priority raised 02->01 (coordinator, 2026-07-09): operator wants the phone
+  monitoring chain (BL-094->096->097->117) ahead of same-tier siblings
+  (BL-098, BL-100, BL-132) once BL-094's BL-153 hold lifts. Still blocked on
+  BL-094 until then — see that ticket's note.
 
 description: |
   Add delivery-flow metrics derived from data the repo already records, and

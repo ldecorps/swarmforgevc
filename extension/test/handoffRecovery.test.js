@@ -130,6 +130,38 @@ test('auto-recovery-01: recovery restores the canary/health signal to green', ()
   assert.deepEqual(after, { state: 'healthy', offending: [] });
 });
 
+// ── RE-SCOPE (c): chase-then-recover race guard ──────────────────────────
+
+test('RE-SCOPE(c): redelivery resets the daemon chase sidecar and mtime so the next chase sweep cannot immediately re-dead-letter it', () => {
+  const target = mkTmp();
+  const inboxNewDir = path.join(target, 'inbox', 'new');
+  const filePath = writeDeadLetter(inboxNewDir, '00_x_from_specifier_to_coder.handoff.dead', {
+    from: 'specifier',
+    recipient: 'coder',
+  });
+  const restoredPath = filePath.replace(/\.dead$/, '');
+
+  // The daemon's own chase sidecar, carried over from before dead-lettering:
+  // chase-count already at the dead-letter threshold (that's WHY the daemon
+  // dead-lettered it), and a stale mtime from the original delivery.
+  fs.writeFileSync(`${filePath}.chase.json`, JSON.stringify({ chaseCount: 3, lastChasedAtMs: Date.now() - 60_000 }));
+  const staleSeconds = (Date.now() - 60 * 60 * 1000) / 1000;
+  fs.utimesSync(filePath, staleSeconds, staleSeconds);
+
+  recoverDeadLettersForRole('coder', inboxNewDir, CFG, noopAdapters());
+
+  assert.equal(
+    fs.existsSync(`${restoredPath}.chase.json`),
+    false,
+    'an exhausted chase-count must not carry onto the restored parcel - the daemon would dead-letter it again on its very next sweep'
+  );
+  const mtimeMs = fs.statSync(restoredPath).mtimeMs;
+  assert(
+    Date.now() - mtimeMs < 5000,
+    'the restored parcel must look freshly delivered, not still aged past the dead-letter threshold'
+  );
+});
+
 // ── idempotent-redelivery-02 ──────────────────────────────────────────────
 
 test('idempotent-redelivery-02: sweeping twice after redelivery cannot duplicate the parcel', () => {

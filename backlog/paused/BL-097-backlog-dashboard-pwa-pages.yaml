@@ -2,10 +2,16 @@ id: BL-097
 title: backlog dashboard PWA — serverless read-only projection of backlog/ via Action-rendered backlog.json on Pages
 milestone: M6
 status: todo
-priority: 02
+priority: 01
 direction: non-aligned
 source: operator spec request 2026-07-04 ("Backlog dashboard app: read-only projection of backlog/ from git")
 depends_on: BL-096 (the Action reuses its metrics CLI so numbers agree everywhere)
+notes: |
+  Priority raised 02->01 (coordinator, 2026-07-09): operator explicitly
+  wants the phone dashboard prioritized over other M5/M6 enrichment work
+  (the daily-briefing email, BL-099, already shipped) — this is the
+  monitoring path for running the swarm headless. Still gated on BL-094's
+  BL-153 hold; see that ticket's note for the sequencing decision.
 
 description: |
   Mobile-friendly, serverless dashboard of backlog state and history:
