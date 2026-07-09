@@ -1,0 +1,64 @@
+id: BL-205
+title: Wire hardender.prompt to invoke the BL-149 mutation cooldown gate before mutation testing
+milestone: M2
+status: todo
+priority: 05
+direction: reliability
+depends_on: [BL-149]
+assigned_to: specifier
+source: "coder rule_proposal (role:hardender) 2026-07-09, deferred: gate not yet on main."
+
+description: |
+  BL-149 builds `mutation_cooldown_gate.bb` (a standalone cooldown+load gate
+  that decides whether a file is eligible for mutation testing). But
+  swarmforge/roles/hardender.prompt still only describes MANUAL uptime /
+  load-average checking prose (its "Office-hours mutation bypass" section) — it
+  does not tell the hardener to actually invoke the gate. A gate nothing calls
+  is dead code.
+
+  This item wires the hardener to use the gate: update hardender.prompt so that,
+  before mutation-testing a file, the hardener runs BL-149's gate for that file
+  and proceeds only when the gate's decision is "run" (skipping otherwise). The
+  now-superseded manual uptime prose is replaced by "consult the gate," keeping
+  only whatever load-average context the gate itself still depends on.
+
+  Why this is separate from BL-149 and gated on it:
+  - The gate tool and its exact invocation interface (command name, argument
+    order, and the decision sentinel it prints) do not exist on `main` until
+    BL-149 is merged. Writing the prompt against a guessed interface would point
+    the hardener at a nonexistent or wrong command.
+  - Prompt/role files are written ONLY by the specifier, so this cannot land
+    inside BL-149's coder-driven delivery; it is a specifier follow-up.
+  Hence depends_on BL-149 — do not start until BL-149's gate is on `main`.
+
+  Constraints:
+  - Match the gate's ACTUAL merged interface as shipped by BL-149 (read its real
+    usage on `main`); do not hardcode an assumed CLI shape.
+  - This is a prompt-file edit only; do not change the gate's own behavior
+    (that is BL-149's contract).
+
+acceptance: |
+  Feature: The hardener consults the cooldown/load gate before mutation testing
+
+    Background:
+      Given BL-149's mutation cooldown gate is merged and available on main
+
+    # BL-205 gate-consulted-01
+    Scenario: the hardener runs the gate before mutation-testing a file
+      Given the hardener is about to mutation-test a production file
+      When it follows hardender.prompt
+      Then it first runs BL-149's cooldown/load gate for that file
+      And it uses the gate's decision, not the old manual uptime prose, to decide
+
+    # BL-205 decision-honored-02
+    Scenario Outline: the hardener proceeds only when the gate says run
+      Given the gate's decision for the file under test is <decision>
+      When the hardener follows hardender.prompt
+      Then mutation testing is <outcome>
+
+      Examples:
+        | decision | outcome |
+        | run      | run     |
+        | skip     | skipped |
+
+mutation_cost: low
