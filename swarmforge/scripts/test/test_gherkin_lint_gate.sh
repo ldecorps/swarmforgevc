@@ -52,4 +52,24 @@ pass "03: a malformed feature file fails the lint gate and reports the parse err
   || fail "the gate must resolve a relative feature-file path correctly"
 pass "the gate resolves a relative feature-file path"
 
+# ── a missing feature file fails fast with a clear error, not a bb crash ───
+set +e
+OUT="$(bash "$GATE" "$TMP/does-not-exist.feature" "$ROOT" 2>&1)"
+RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || fail "expected a nonzero exit for a missing feature file; got 0"
+echo "$OUT" | grep -q "^Error: feature file not found:" \
+  || fail "expected a clear 'feature file not found' error; got: $OUT"
+pass "a missing feature file fails fast with a clear error"
+
+# ── an un-vendored APS toolchain fails fast, naming the fix ────────────────
+set +e
+OUT="$(bash "$GATE" "$GOOD" "$TMP" 2>&1)"
+RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || fail "expected a nonzero exit when swarmforge/vendor/aps is missing under the given root; got 0"
+echo "$OUT" | grep -q "^Error: APS tools not vendored - run install_aps_tools.sh first$" \
+  || fail "expected the not-vendored error naming the fix; got: $OUT"
+pass "an un-vendored APS toolchain fails fast, naming install_aps_tools.sh as the fix"
+
 echo "ALL PASS"
