@@ -139,3 +139,12 @@
   never commit them. A tracked mutation cache is exactly how BL-105's
   113 MB blob entered history and made a branch unpushable — the tool
   reads/writes it locally regardless of whether git tracks it.
+- Mailbox intake is idempotent: never promote a handoff into `in_process/`
+  (stamping a fresh `dequeued_at`) when a handoff with the same id already sits
+  in `completed/` or `abandoned/` — completion is final. Dedup against the
+  completed/abandoned set before dequeuing a `new/` file. A stale copy lingering
+  in `new/` — from a mailbox-layout migration, or a base-dir fallback that flips
+  between the flat and per-role layouts — must never resurrect done work.
+  (BL-128's post-merge/pre-migration window resurrected an already-completed QA
+  handoff as fresh in_process mail: a redelivery loop that masked live work.
+  Fix: BL-218.)
