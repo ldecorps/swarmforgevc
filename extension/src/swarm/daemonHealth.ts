@@ -126,7 +126,12 @@ export function computeDaemonProcessStatus(
   nowMs: number = Date.now(),
   probe: DaemonProcessProbe = {}
 ): DaemonProcessStatus {
-  if (shouldSkipHandoffDaemon(env)) {
+  const pid = readDaemonPid(targetPath);
+  const alive = pid !== null && (probe.isPidAlive ?? isPidAlive)(pid);
+
+  // Extension launch profiles may set SKIP_DAEMON while an operator still
+  // starts handoffd manually — prefer live process state when we have it.
+  if (shouldSkipHandoffDaemon(env) && !alive) {
     return { phase: 'skipped', label: labelForPhase('skipped', undefined, env) };
   }
 
@@ -139,11 +144,11 @@ export function computeDaemonProcessStatus(
     };
   }
 
-  const pid = readDaemonPid(targetPath);
-  const alive = pid !== null && (probe.isPidAlive ?? isPidAlive)(pid);
   if (!alive) {
     return { phase: 'dead', label: labelForPhase('dead'), pid: pid ?? undefined };
   }
+
+  const skipNote = shouldSkipHandoffDaemon(env) ? 'extension env expects no daemon' : undefined;
 
   const heartbeatAgeMs =
     probe.heartbeatAgeMs !== undefined
@@ -156,6 +161,7 @@ export function computeDaemonProcessStatus(
       label: labelForPhase('starting'),
       pid,
       heartbeatAgeMs: heartbeatAgeMs ?? undefined,
+      detail: skipNote,
     };
   }
 
@@ -165,7 +171,7 @@ export function computeDaemonProcessStatus(
       label: labelForPhase('stale'),
       pid,
       heartbeatAgeMs,
-      detail: health.detail ?? health.state,
+      detail: health.detail ?? health.state ?? skipNote,
     };
   }
 
@@ -175,6 +181,7 @@ export function computeDaemonProcessStatus(
       label: labelForPhase('polling'),
       pid,
       heartbeatAgeMs,
+      detail: skipNote,
     };
   }
 
@@ -184,6 +191,7 @@ export function computeDaemonProcessStatus(
       label: labelForPhase('up'),
       pid,
       heartbeatAgeMs,
+      detail: skipNote,
     };
   }
 
@@ -192,7 +200,7 @@ export function computeDaemonProcessStatus(
     label: labelForPhase('stale'),
     pid,
     heartbeatAgeMs,
-    detail: health.detail,
+    detail: health.detail ?? skipNote,
   };
 }
 

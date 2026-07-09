@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Run Extension",
+      "name": "Run Extension (Claude 7-pack)",
       "type": "extensionHost",
       "request": "launch",
       "debugWebWorkerExtensions": false,
@@ -19,6 +19,8 @@
         "SWARMFORGE_TARGET_PATH": "${workspaceFolder}",
         "SWARMFORGE_RUN_NAME": "",
         "SWARMFORGE_PROMPT_FOR_NAME": "0",
+        "SWARMFORGE_TERMINAL": "none",
+        "SWARMFORGE_SKIP_DAEMON": "0",
         "SWARMFORGE_CONFIG": "${workspaceFolder}/swarmforge/packs/seven-pack.conf"
       },
       "settings": {

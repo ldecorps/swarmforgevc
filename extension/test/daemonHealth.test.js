@@ -74,11 +74,22 @@ test('readDaemonHealth omits detail when a non-healthy state has no incident rea
   assert.deepEqual(readDaemonHealth(target), { state: 'restarting' });
 });
 
-test('computeDaemonProcessStatus reports skipped when daemon is disabled', () => {
+test('computeDaemonProcessStatus reports skipped when daemon is disabled and not running', () => {
   const target = mkTarget(undefined);
   const status = computeDaemonProcessStatus(target, { SWARMFORGE_SKIP_DAEMON: '1' });
   assert.equal(status.phase, 'skipped');
   assert.match(status.label, /SKIP_DAEMON/);
+});
+
+test('computeDaemonProcessStatus reports live daemon even when extension env has SKIP_DAEMON', () => {
+  const target = mkTarget('{"state":"healthy"}');
+  fs.writeFileSync(path.join(target, '.swarmforge', 'daemon', 'handoffd.pid'), '4242');
+  const status = computeDaemonProcessStatus(target, { SWARMFORGE_SKIP_DAEMON: '1' }, 20_000, {
+    isPidAlive: () => true,
+    heartbeatAgeMs: 5_000,
+  });
+  assert.equal(status.phase, 'polling');
+  assert.match(status.detail, /extension env expects no daemon/);
 });
 
 test('computeDaemonProcessStatus reports halted from the status file', () => {
