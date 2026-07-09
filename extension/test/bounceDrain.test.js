@@ -13,28 +13,55 @@ const {
   startBounceDrainWatcher,
   stopBounceDrainWatcher,
   startGracefulBounceFileWatcher,
+  handleGracefulWatchEvent,
 } = require('../out/swarm/bounceDrain');
 
 function mkTarget() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bounce-drain-'));
 }
 
-function waitUntil(predicate, timeoutMs = 2000, intervalMs = 10) {
-  return new Promise((resolve, reject) => {
-    const deadline = Date.now() + timeoutMs;
-    const check = () => {
-      if (predicate()) {
-        resolve();
-        return;
+// BL-131: captures the interval callback instead of scheduling it for real -
+// fire() simulates one poll tick synchronously, with getNowMs also injected
+// so "past the timeout window" needs no real elapsed wall-clock time either
+// (same pattern as idleClear.test.js's fakeMonitorClock).
+function fakeMonitorClock(startMs) {
+  let tick = null;
+  let nowMs = startMs;
+  return {
+    scheduleTick: (fn) => {
+      tick = fn;
+      return {};
+    },
+    clearTick: () => {
+      tick = null;
+    },
+    getNowMs: () => nowMs,
+    fire: () => {
+      if (tick) {
+        tick();
       }
-      if (Date.now() >= deadline) {
-        reject(new Error('waitUntil timed out'));
-        return;
+    },
+    advance: (ms) => {
+      nowMs += ms;
+    },
+  };
+}
+
+// BL-131: captures the debounce callback instead of scheduling it for real -
+// fire() simulates the 50ms settle delay elapsing synchronously (same
+// pattern as bounceWatcher.test.js's fakeScheduler).
+function fakeScheduler() {
+  let tick = null;
+  return {
+    scheduleTick: (fn) => {
+      tick = fn;
+    },
+    fire: () => {
+      if (tick) {
+        tick();
       }
-      setTimeout(check, intervalMs);
-    };
-    check();
-  });
+    },
+  };
 }
 
 // ── sentinel read/write/clear ────────────────────────────────────────────
@@ -129,45 +156,48 @@ test('decideDrainAction with zero roles bounces immediately', () => {
   assert.equal(decideDrainAction([], NOW - 1000, NOW, 900), 'bounce');
 });
 
-// ── startBounceDrainWatcher (real short interval) ────────────────────────
+// ── startBounceDrainWatcher ───────────────────────────────────────────────
 
-test('startBounceDrainWatcher does nothing while no sentinel exists', async () => {
+test('startBounceDrainWatcher does nothing while no sentinel exists', () => {
   const target = mkTarget();
   const bounces = [];
+  const clock = fakeMonitorClock(Date.now());
   const timer = startBounceDrainWatcher(
     { targetPath: target, pollIntervalSeconds: 0.02 },
     {
       getRoleStatuses: () => [],
       onBounce: (type) => bounces.push(type),
       onTimeout: () => {},
-    }
+    },
+    clock.scheduleTick,
+    clock.getNowMs
   );
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  stopBounceDrainWatcher(timer);
+  clock.fire();
+  stopBounceDrainWatcher(timer, clock.clearTick);
   assert.deepEqual(bounces, []);
 });
 
-test('startBounceDrainWatcher bounces once all roles report drained', async () => {
+test('startBounceDrainWatcher bounces once all roles report drained', () => {
   const target = mkTarget();
   startBounceDrain(target, 'swarm', 900);
   const bounces = [];
+  const clock = fakeMonitorClock(Date.now());
   const timer = startBounceDrainWatcher(
     { targetPath: target, pollIntervalSeconds: 0.02 },
     {
       getRoleStatuses: () => [{ role: 'coder', hasInProcessWork: false, idle: true }],
       onBounce: (type) => bounces.push(type),
       onTimeout: () => {},
-    }
+    },
+    clock.scheduleTick,
+    clock.getNowMs
   );
-  try {
-    await waitUntil(() => bounces.length > 0);
-    assert.deepEqual(bounces, ['swarm']);
-  } finally {
-    stopBounceDrainWatcher(timer);
-  }
+  clock.fire();
+  stopBounceDrainWatcher(timer, clock.clearTick);
+  assert.deepEqual(bounces, ['swarm']);
 });
 
-test('startBounceDrainWatcher fires onBounce only once per drain session even if the caller does not stop it or clear the sentinel promptly', async () => {
+test('startBounceDrainWatcher fires onBounce only once per drain session even if the caller does not stop it or clear the sentinel promptly', () => {
   // In production the caller (extension.ts) stops the watcher and clears the
   // sentinel synchronously inside onBounce, so a real second tick never
   // happens -- but the watcher must not rely solely on that contract, since
@@ -176,56 +206,64 @@ test('startBounceDrainWatcher fires onBounce only once per drain session even if
   const target = mkTarget();
   startBounceDrain(target, 'swarm', 900);
   const bounces = [];
+  const clock = fakeMonitorClock(Date.now());
   const timer = startBounceDrainWatcher(
     { targetPath: target, pollIntervalSeconds: 0.02 },
     {
       getRoleStatuses: () => [{ role: 'coder', hasInProcessWork: false, idle: true }],
       onBounce: (type) => bounces.push(type), // deliberately does not stop the watcher or clear state
       onTimeout: () => {},
-    }
+    },
+    clock.scheduleTick,
+    clock.getNowMs
   );
-  try {
-    await waitUntil(() => bounces.length > 0);
-    // let several more poll cycles elapse with the sentinel still present
-    await new Promise((resolve) => setTimeout(resolve, 120));
-    assert.deepEqual(bounces, ['swarm'], 'onBounce must fire at most once per drain session');
-  } finally {
-    stopBounceDrainWatcher(timer);
-  }
+  clock.fire();
+  // several more poll cycles with the sentinel still present
+  clock.fire();
+  clock.fire();
+  stopBounceDrainWatcher(timer, clock.clearTick);
+  assert.deepEqual(bounces, ['swarm'], 'onBounce must fire at most once per drain session');
 });
 
-test('startBounceDrainWatcher never bounces while a role still holds in_process work', async () => {
+test('startBounceDrainWatcher never bounces while a role still holds in_process work', () => {
   const target = mkTarget();
   startBounceDrain(target, 'swarm', 900);
   const bounces = [];
+  const clock = fakeMonitorClock(Date.now());
   const timer = startBounceDrainWatcher(
     { targetPath: target, pollIntervalSeconds: 0.02 },
     {
       getRoleStatuses: () => [{ role: 'coder', hasInProcessWork: true, idle: false }],
       onBounce: (type) => bounces.push(type),
       onTimeout: () => {},
-    }
+    },
+    clock.scheduleTick,
+    clock.getNowMs
   );
-  await new Promise((resolve) => setTimeout(resolve, 120));
-  stopBounceDrainWatcher(timer);
+  clock.fire();
+  stopBounceDrainWatcher(timer, clock.clearTick);
   assert.deepEqual(bounces, []);
 });
 
-test('startBounceDrainWatcher prompts on timeout exactly once with the busy role list', async () => {
+test('startBounceDrainWatcher prompts on timeout exactly once with the busy role list', () => {
   const target = mkTarget();
   startBounceDrain(target, 'swarm', 0); // already-elapsed timeout
   const prompts = [];
+  const clock = fakeMonitorClock(Date.now());
   const timer = startBounceDrainWatcher(
     { targetPath: target, pollIntervalSeconds: 0.02 },
     {
       getRoleStatuses: () => [{ role: 'coder', hasInProcessWork: true, idle: false }],
       onBounce: () => {},
       onTimeout: (type, busyRoles) => prompts.push({ type, busyRoles }),
-    }
+    },
+    clock.scheduleTick,
+    clock.getNowMs
   );
-  await waitUntil(() => prompts.length > 0);
-  await new Promise((resolve) => setTimeout(resolve, 100)); // let a few more sweeps run
-  stopBounceDrainWatcher(timer);
+  clock.fire();
+  clock.fire(); // a few more sweeps
+  clock.fire();
+  stopBounceDrainWatcher(timer, clock.clearTick);
   assert.equal(prompts.length, 1, 'the human is prompted once per drain session, not every poll');
   assert.deepEqual(prompts[0], { type: 'swarm', busyRoles: ['coder'] });
 });
@@ -238,16 +276,30 @@ test('startGracefulBounceFileWatcher returns null when .swarmforge does not exis
   assert.equal(watcher, null);
 });
 
+// BL-131: fs.watch's own event delivery is the only genuinely OS-async part
+// here - awaits a promise that an injected scheduleTick resolves the instant
+// the real watch event arrives (event-driven, not a real-clock wait), then
+// fires the debounce synchronously.
 test('startGracefulBounceFileWatcher detects a bounce-graceful file and deletes it', async () => {
   const target = mkTarget();
   fs.mkdirSync(path.join(target, '.swarmforge'), { recursive: true });
 
   const triggered = [];
-  const watcher = startGracefulBounceFileWatcher(target, (type) => triggered.push(type));
+  let capturedTick = null;
+  let resolveCaptured;
+  const captured = new Promise((resolve) => {
+    resolveCaptured = resolve;
+  });
+  const scheduleTick = (fn) => {
+    capturedTick = fn;
+    resolveCaptured();
+  };
+  const watcher = startGracefulBounceFileWatcher(target, (type) => triggered.push(type), undefined, scheduleTick);
   assert.ok(watcher);
   try {
     fs.writeFileSync(path.join(target, '.swarmforge', 'bounce-graceful'), 'swarm\n');
-    await waitUntil(() => triggered.length > 0);
+    await captured;
+    capturedTick();
     assert.deepEqual(triggered, ['swarm']);
     assert.equal(fs.existsSync(path.join(target, '.swarmforge', 'bounce-graceful')), false);
   } finally {
@@ -255,17 +307,12 @@ test('startGracefulBounceFileWatcher detects a bounce-graceful file and deletes 
   }
 });
 
-test('startGracefulBounceFileWatcher ignores the plain (non-graceful) bounce file', async () => {
-  const target = mkTarget();
-  fs.mkdirSync(path.join(target, '.swarmforge'), { recursive: true });
-
+// BL-131: no real fs.watch event needed - the guard that ignores the
+// non-graceful filename is exercised directly, synchronously.
+test('handleGracefulWatchEvent ignores the plain (non-graceful) bounce file', () => {
   const triggered = [];
-  const watcher = startGracefulBounceFileWatcher(target, (type) => triggered.push(type));
-  try {
-    fs.writeFileSync(path.join(target, '.swarmforge', 'bounce'), 'swarm\n');
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    assert.deepEqual(triggered, []);
-  } finally {
-    watcher.close();
-  }
+  const { scheduleTick, fire } = fakeScheduler();
+  handleGracefulWatchEvent('bounce', '/irrelevant/bounce-graceful', (type) => triggered.push(type), undefined, scheduleTick);
+  fire();
+  assert.deepEqual(triggered, []);
 });

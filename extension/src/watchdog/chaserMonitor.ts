@@ -79,10 +79,18 @@ export function syncStuckEscalations(
   }
 }
 
-export function startChaserMonitor(
+// BL-131: scheduleTick/clearTick are injected (same pattern as
+// briefingScheduler.ts's startBriefingScheduler) rather than calling the
+// global setInterval/clearInterval directly, so tests can capture and fire
+// the tick callback synchronously instead of waiting on the real clock.
+// Production callers (extension.ts) pass the real setInterval/clearInterval
+// explicitly - no default value here, matching that same precedent, so
+// runtime behavior is completely unchanged.
+export function startChaserMonitor<H>(
   config: ChaserMonitorConfig,
-  callbacks: ChaserCallbacks
-): NodeJS.Timeout | null {
+  callbacks: ChaserCallbacks,
+  scheduleTick: (fn: () => void, ms: number) => H
+): H | null {
   const swarmforgeDir = path.join(config.targetPath, '.swarmforge');
   if (!fs.existsSync(swarmforgeDir)) {
     return null;
@@ -114,7 +122,7 @@ export function startChaserMonitor(
     });
   };
 
-  const intervalId = setInterval(() => {
+  const intervalId = scheduleTick(() => {
     // BL-148: sync the daemon's real stuck-in-process escalation state first,
     // so a genuine wedge reaches callbacks.onStuckEscalation (and whatever
     // it drives - the panel badge, the BL-073 email notifier) on this SAME
@@ -126,8 +134,8 @@ export function startChaserMonitor(
   return intervalId;
 }
 
-export function stopChaserMonitor(intervalId: NodeJS.Timeout | null): void {
+export function stopChaserMonitor<H>(intervalId: H | null, clearTick: (handle: H) => void): void {
   if (intervalId) {
-    clearInterval(intervalId);
+    clearTick(intervalId);
   }
 }

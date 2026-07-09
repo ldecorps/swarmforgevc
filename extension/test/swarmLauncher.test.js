@@ -417,7 +417,13 @@ test('waitForSwarmReady resolves true immediately when already ready', async () 
 
 test('waitForSwarmReady resolves false after the timeout elapses', async () => {
   const targetPath = mkTmp();
-  const ready = await waitForSwarmReady(targetPath, 150, 30);
+  let now = 0;
+  const getNowMs = () => now;
+  const scheduleTick = (fn) => {
+    now += 30; // advance the fake clock by exactly one poll interval
+    fn();
+  };
+  const ready = await waitForSwarmReady(targetPath, 150, 30, getNowMs, scheduleTick);
   assert.equal(ready, false);
 });
 
@@ -433,8 +439,20 @@ test('waitForSwarmReady resolves true once readiness appears mid-poll', async ()
   const targetPath = mkTmp();
   const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
   try {
-    setTimeout(() => writeReadyState(targetPath), 100);
-    const ready = await waitForSwarmReady(targetPath, 5000, 30);
+    let now = 0;
+    const getNowMs = () => now;
+    let tickCount = 0;
+    const scheduleTick = (fn) => {
+      now += 30;
+      tickCount += 1;
+      if (tickCount === 2) {
+        // Readiness appears only after a couple of polls - proves the loop
+        // genuinely re-checks rather than only succeeding on the first try.
+        writeReadyState(targetPath);
+      }
+      fn();
+    };
+    const ready = await waitForSwarmReady(targetPath, 5000, 30, getNowMs, scheduleTick);
     assert.equal(ready, true);
   } finally {
     fake.restore();
