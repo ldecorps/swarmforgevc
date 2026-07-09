@@ -7,14 +7,17 @@ direction: non-aligned
 source: operator requirement 2026-07-04 ("expose a webui showing a holistic view of the dev state"; revises the web-UI phase deferred by BL-065)
 
 description: |
-  **HOLD (BL-153):** paused while BL-154 handoff resilience work is in flight.
-  Reaffirmed by the operator 2026-07-09 (running headless, needs a phone-
-  monitoring path): hold stays in force until BL-121's chain merges — do not
-  promote concurrently, extension/src overlaps BL-121/BL-122's live files —
-  but priority raised 02->01 so this ticket (and its BL-096/BL-097/BL-117
-  chain) promotes ahead of same-tier siblings (BL-098, BL-100, BL-132) the
-  moment the hold lifts. Stopgap in the meantime: Claude Remote Control is
-  already wired per-role in swarmforge.conf (claude.ai/code / mobile app).
+  **HOLD RELEASED (operator, 2026-07-09 16:xx local):** the stated condition
+  (extension/src overlap with BL-121/BL-122's live files) resolved when both
+  merged. Operator directive: phone app comes right behind daily briefing
+  (BL-100) - promoting now so it queues behind BL-100 in the coder's task
+  queue, not blocked on it finishing. This is a scoped exception to the
+  general promotion hold (Claude availability pressure) in effect since
+  2026-07-09 15:13 - same mechanism as the earlier BL-100 exception.
+
+  Prior hold history (BL-153, superseded above): paused while BL-154 handoff
+  resilience work was in flight; reaffirmed 2026-07-09 pending BL-121's
+  chain, priority raised 02->01 ahead of same-tier siblings. Kept for audit.
 
   Phase 2 of the remote-visibility track. BL-065 (merged) built the
   read-only localhost REST+SSE bridge and explicitly deferred "the web UI

@@ -1,0 +1,84 @@
+name: Backlog dashboard
+
+# BL-097: on push to main touching backlog/ (or the metrics/backlog-parsing
+# code that derives it), regenerate backlog.json - reusing the same
+# computeDeliveryMetrics the swarm-metrics CLI and the bridge's /metrics
+# endpoint use, never re-deriving numbers here - and publish it plus the PWA
+# static assets to GitHub Pages. This workflow holds no derivation logic
+# beyond invoking the generator and publishing its output.
+#
+# Runs AFTER a push has already landed, and is not configured as a required
+# status check, so a failure here is visible in the Actions tab but never
+# blocks the push or the pipeline that produced it.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backlog/**'
+      - 'extension/src/metrics/**'
+      - 'extension/src/panel/backlogReader.ts'
+      - 'extension/src/bridge/holisticProjections.ts'
+      - 'extension/src/tools/generate-backlog-dashboard.ts'
+      - 'pwa/**'
+      - '.github/workflows/backlog-dashboard.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: backlog.json's velocity/burndown/cycle-time series
+          # are reconstructed from the full git log of backlog/ file moves -
+          # a shallow clone would only see the latest commit.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install and compile
+        working-directory: extension
+        run: |
+          npm ci
+          npm run compile
+
+      - name: Write a placeholder roles.tsv
+        # The generator's project-root resolution (shared with the
+        # swarm-metrics CLI) requires .swarmforge/roles.tsv to exist - it is
+        # runtime swarm state, gitignored, and genuinely absent on a fresh CI
+        # checkout. A single placeholder entry satisfies that resolution;
+        # none of backlog.json's fields (velocity/burndown/cycle-time/
+        # forecasts/board) depend on roles beyond this.
+        run: |
+          mkdir -p .swarmforge
+          printf 'coordinator\tnone\t%s\tswarmforge-coordinator\tCoordinator\tnone\ttask\n' "$(pwd)" > .swarmforge/roles.tsv
+
+      - name: Generate backlog.json
+        run: |
+          mkdir -p _site
+          node extension/out/tools/generate-backlog-dashboard.js > _site/backlog.json
+
+      - name: Copy PWA static assets
+        run: cp -r pwa/. _site/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

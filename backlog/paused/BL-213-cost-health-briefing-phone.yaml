@@ -1,0 +1,45 @@
+id: BL-213
+title: "Cost & health in the daily briefing and on the phone (BL-100 cost-05/06)"
+milestone: M5
+status: todo
+priority: 10
+direction: non-aligned
+depends_on: [BL-097, BL-100]
+source: "Sliced out of BL-100 by specifier 2026-07-09 (coder scope-gap evidence): cost-05/06 need infrastructure that isn't built yet."
+
+description: |
+  The briefing + phone surfacing half of BL-100, split out so BL-100's
+  computation/telemetry layer can land now. These two behaviors reach into
+  infrastructure that does not yet exist:
+
+  - cost-05 (briefing carries the cost & health paragraph): BL-099's daily
+    briefing is "done" as a ticket but is composed by the coordinator LLM from
+    a tmux nudge — there is no deterministic content path or committed
+    docs/briefings/<date>.json sidecar to extend. Making the briefing carry a
+    structured cost/health paragraph therefore needs the briefing's content
+    contract concretized first (either a coordinator.prompt briefing-writing
+    instruction that names the required cost/health lines, or a deterministic
+    briefing+sidecar emitter). That design choice is specifier/architect work,
+    NOT something the coder should invent unilaterally — resolve it before
+    implementing cost-05.
+  - cost-06 (phone sees daily figures via the committed briefing): needs
+    BL-097's GitHub Action + backlog.json generator + PWA, none of which exist
+    yet (no workflow touches backlog.json, no schema_version, no example).
+
+  Wanted behavior (unchanged from BL-100's original cost-05/06):
+  - When the coordinator composes a briefing with BL-100 telemetry available,
+    it includes per-agent cost one-liners, top expensive tickets, flow
+    balance, and reliability counts, each with a trend direction.
+  - The committed briefing (or its json sidecar) is parsed by BL-097's Action
+    into backlog.json so the phone shows the daily cost/health figures, with
+    no runtime telemetry file committed to git.
+
+  Constraints:
+  - Do not start until BL-100 (telemetry) and BL-097 (Action/backlog.json)
+    are on main, and the briefing content path is decided.
+  - backlog.json changes are additive (schema_version respected).
+  - No runtime telemetry file is committed to git — the committed briefing /
+    sidecar is the only carrier.
+
+acceptance: specs/features/BL-213-cost-health-briefing-phone.feature
+mutation_cost: low
