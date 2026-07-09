@@ -1,0 +1,16 @@
+# Swarm profile: stabilize two-pack with daemon on.
+# A profile = pack topology + backend + per-role model/effort tier (see docs/Specification.MD §Cost-aware backend selection).
+id: stabilize-two-pack
+name: Stabilize (two-pack · daemon on)
+description: >
+  Minimal two-pack (coordinator + coder + cleaner) tuned for extension
+  stabilization: Opus + high effort on coord/coder (diagnose and fix),
+  Sonnet on cleaner (above Haiku for verification). Daemon ON — full
+  handoffd routing. Goal ticket: BL-203.
+pack: two-pack
+backend: claude
+tier: stabilize
+config: stabilize-two-pack.conf
+prerequisites:
+  - claude CLI installed and authenticated
+  - handoffd functional (SWARMFORGE_SKIP_DAEMON=0)
