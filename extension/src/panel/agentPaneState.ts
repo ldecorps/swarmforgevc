@@ -112,6 +112,13 @@ export function isAgentCliRunning(
   return TEXT_RUNNING_SIGNALS.some((matches) => matches(text));
 }
 
+// Split out of isShellOnlyPane so its own complexity stays under the
+// CRAP<=6 gate (mirrors TEXT_RUNNING_SIGNALS' extraction above) - no
+// behavior change, same four command shapes recognized as a bare shell.
+function isShellCommandName(cmd: string): boolean {
+  return cmd === 'bash' || cmd === 'zsh' || cmd === '-zsh' || cmd.endsWith('/bash') || cmd.endsWith('/zsh');
+}
+
 export function isShellOnlyPane(
   paneCommand: string,
   paneText: string
@@ -120,15 +127,7 @@ export function isShellOnlyPane(
     return false;
   }
 
-  const cmd = paneCommand.toLowerCase();
-  const isShell =
-    cmd === 'bash' ||
-    cmd === 'zsh' ||
-    cmd === '-zsh' ||
-    cmd.endsWith('/bash') ||
-    cmd.endsWith('/zsh');
-
-  if (!isShell) {
+  if (!isShellCommandName(paneCommand.toLowerCase())) {
     return false;
   }
 
