@@ -184,12 +184,23 @@
 
 ;; ── impure sweep application (adapters map, mirrors ChaserAdapters) ─────────
 ;; adapters keys: :get-liveness :send-wake-up! :trigger-respawn! :log-dead-letter!
-;;                :get-last-activity-ms :on-stuck-escalation!
+;;                :get-last-activity-ms :on-stuck-escalation! :log-telemetry!
 
-(defn- apply-stuck-nudge! [role held adapters]
+;; BL-098: durable per-role chase/nudge/dead-letter/respawn counts. The
+;; existing sidecars (.chase.json/.nudge) are ephemeral - abandoned once an
+;; item completes - so nothing could answer "how many nudges did a role
+;; need this week?" Every decision point below appends one event through
+;; :log-telemetry! (role, event type, handoff id, count-so-far); the
+;; adapter owns the timestamp and the durable file, keeping this file pure.
+(defn- handoff-id [file-path]
+  (fs/file-name file-path))
+
+(defn- apply-stuck-nudge! [role held adapters now-ms]
   ((:send-wake-up! adapters) role)
   (doseq [item held]
-    (write-nudge-count! (:filePath item) (inc (:nudgeCount item))))
+    (let [count (inc (:nudgeCount item))]
+      (write-nudge-count! (:filePath item) count)
+      ((:log-telemetry! adapters) {:type "nudge" :role role :handoffId (handoff-id (:filePath item)) :count count} now-ms)))
   ((:on-stuck-escalation! adapters) role false))
 
 (defn- clear-stale-nudge-counts! [held]
@@ -203,22 +214,26 @@
       (let [nudge-count (apply max (map :nudgeCount held))
             action (decide-stuck-action ((:get-last-activity-ms adapters) role) nudge-count now-ms config)]
         (case action
-          "nudge" (apply-stuck-nudge! role held adapters)
+          "nudge" (apply-stuck-nudge! role held adapters now-ms)
           "alert" ((:on-stuck-escalation! adapters) role true)
           (do (clear-stale-nudge-counts! held)
               ((:on-stuck-escalation! adapters) role false)))))))
 
 (defn- apply-inbox-item-action! [role item action adapters now-ms]
   (case action
-    "chased" (do ((:send-wake-up! adapters) role)
-                 (write-chase-count! (:filePath item) (inc (:chaseCount item)) now-ms))
-    "respawned" ((:trigger-respawn! adapters) role)
+    "chased" (let [count (inc (:chaseCount item))]
+               ((:send-wake-up! adapters) role)
+               (write-chase-count! (:filePath item) count now-ms)
+               ((:log-telemetry! adapters) {:type "chase" :role role :handoffId (handoff-id (:filePath item)) :count count} now-ms))
+    "respawned" (do ((:trigger-respawn! adapters) role)
+                     ((:log-telemetry! adapters) {:type "respawn" :role role :handoffId (handoff-id (:filePath item)) :count (:chaseCount item)} now-ms))
     "dead-lettered" (let [dead (dead-letter-path (:filePath item))
                           sc (sidecar-path (:filePath item))]
                       (fs/move (:filePath item) dead {:replace-existing false})
                       (when (fs/exists? sc)
                         (fs/move sc (sidecar-path dead) {:replace-existing false}))
-                      ((:log-dead-letter! adapters) role (:filePath item)))
+                      ((:log-dead-letter! adapters) role (:filePath item))
+                      ((:log-telemetry! adapters) {:type "dead-letter" :role role :handoffId (handoff-id (:filePath item)) :count (:chaseCount item)} now-ms))
     nil))
 
 (defn sweep-role-inbox! [role inbox-new-dir now-ms config adapters]
