@@ -18,6 +18,20 @@ pid_alive() {
   [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null
 }
 
+# BL-203: BSD/macOS `stat -f FORMAT` and GNU/Linux `stat -c FORMAT` are not
+# interchangeable - on GNU coreutils, `-f` means "filesystem status" instead,
+# so it fails (and can dump multi-line filesystem info to stdout) rather than
+# returning the mtime. Try the BSD form first, fall back to GNU, matching the
+# existing file_size_bytes pattern in check_commit_size.sh.
+heartbeat_mtime() {
+  local file="$1"
+  if stat -f '%m' "$file" >/dev/null 2>&1; then
+    stat -f '%m' "$file"
+  else
+    stat -c '%Y' "$file"
+  fi
+}
+
 probe_state() {
   local handoffd_pid="" supervisor_pid="" handoffd_alive="no" supervisor_alive="no"
   local status="(missing)" heartbeat="(missing)"
@@ -27,7 +41,7 @@ probe_state() {
   pid_alive "$handoffd_pid" && handoffd_alive="yes"
   pid_alive "$supervisor_pid" && supervisor_alive="yes"
   [[ -f "$DAEMON_DIR/handoffd.status.json" ]] && status="$(cat "$DAEMON_DIR/handoffd.status.json")"
-  [[ -f "$DAEMON_DIR/handoffd.heartbeat" ]] && heartbeat="$(stat -f '%m' "$DAEMON_DIR/handoffd.heartbeat" 2>/dev/null || echo missing)"
+  [[ -f "$DAEMON_DIR/handoffd.heartbeat" ]] && heartbeat="$(heartbeat_mtime "$DAEMON_DIR/handoffd.heartbeat" 2>/dev/null || echo missing)"
 
   log "probe handoffd=$handoffd_pid alive=$handoffd_alive supervisor=$supervisor_pid alive=$supervisor_alive heartbeat_mtime=$heartbeat status=$status"
   [[ "$handoffd_alive" == "yes" && "$supervisor_alive" == "yes" ]]
