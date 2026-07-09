@@ -117,6 +117,29 @@ test('serves the metrics endpoint with the full delivery-metrics surface for an 
   });
 });
 
+// BL-100 cost-04/cost-07: cost telemetry endpoint is token-gated like every
+// other route, and degrades to empty/zero for a target with no transcripts
+// or resource telemetry rather than erroring.
+test('rejects an unauthorized request to the cost-telemetry endpoint', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/cost-telemetry`);
+    assert.equal(res.status, 401);
+  });
+});
+
+test('serves the cost-telemetry endpoint for an authorized request', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/cost-telemetry`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(body, { costTelemetry: {}, resourceTrends: {} });
+  });
+});
+
 test('returns 404 for an unknown route, even when authorized', async () => {
   const target = mkTmp();
   await withBridge(target, {}, async (handle) => {
