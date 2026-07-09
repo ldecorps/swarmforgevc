@@ -14,6 +14,102 @@
   // Inbound endpoint exists yet) - placeholder until that's stood up.
   var RECERT_EMAIL_TO = 'recert@swarmforge.invalid';
 
+  // BL-118: bilingual chrome + content. English is always the first-launch
+  // default (bilingual-01) regardless of browser locale - currentLocale
+  // only ever changes via the visible toggle, never navigator.language.
+  // Persistence goes through the same Cache Storage instance sw.js already
+  // owns (bilingual-02's "no other browser storage"), not localStorage.
+  var currentLocale = 'en';
+  var LOCALE_CACHE_NAME = 'swarmforge-dashboard-v2'; // must match sw.js's CACHE_NAME
+  var LOCALE_PREF_KEY = './__locale-preference__';
+  var lastBacklogData = null;
+
+  function tr(key) {
+    var dict = (window.LOCALES && window.LOCALES[currentLocale]) || {};
+    var fallback = (window.LOCALES && window.LOCALES.en) || {};
+    return dict[key] || fallback[key] || key;
+  }
+
+  // bilingual-01/02: every static UI-chrome string in index.html carries
+  // data-i18n="<catalog key>" - this is the one pass that ever reads it,
+  // applied on load and again on every toggle. Dynamic content (ticket
+  // titles, doc content, "As of ..." timestamps) is handled by each
+  // section's own render function re-running with the new locale instead,
+  // never by this pass - it only ever touches static chrome nodes.
+  function applyChromeLocale() {
+    document.title = tr('pageTitle');
+    var toggle = document.getElementById('localeToggle');
+    if (toggle) {
+      toggle.textContent = tr('localeToggleLabel');
+    }
+    var nodes = document.querySelectorAll('[data-i18n]');
+    for (var i = 0; i < nodes.length; i++) {
+      nodes[i].textContent = tr(nodes[i].getAttribute('data-i18n'));
+    }
+  }
+
+  function loadPersistedLocale() {
+    if (!('caches' in window)) {
+      return Promise.resolve(null);
+    }
+    return caches
+      .open(LOCALE_CACHE_NAME)
+      .then(function (cache) {
+        return cache.match(LOCALE_PREF_KEY);
+      })
+      .then(function (res) {
+        return res ? res.json() : null;
+      })
+      .then(function (data) {
+        return data && (data.locale === 'fr' || data.locale === 'en') ? data.locale : null;
+      })
+      .catch(function () {
+        return null;
+      });
+  }
+
+  function persistLocale(locale) {
+    if (!('caches' in window)) {
+      return;
+    }
+    caches
+      .open(LOCALE_CACHE_NAME)
+      .then(function (cache) {
+        return cache.put(LOCALE_PREF_KEY, new Response(JSON.stringify({ locale: locale })));
+      })
+      .catch(function () {
+        // Cache Storage unavailable/quota'd - the toggle still works for
+        // this session, it just won't survive a reopen (bilingual-02 is a
+        // best-effort persistence, not a hard requirement to function).
+      });
+  }
+
+  // bilingual-02: re-renders chrome + every already-fetched section from
+  // its own cached data, instantly, with no reload and no re-fetch.
+  function rerenderForLocale() {
+    applyChromeLocale();
+    if (lastBacklogData) {
+      renderAll(lastBacklogData);
+    }
+    if (docsTree) {
+      setDocsAsOfText(docsTree);
+      renderDocsExplorer();
+    }
+    if (recertBatch) {
+      setRecertAsOfText(recertBatch);
+      renderRecertContent();
+    }
+  }
+
+  function setLocale(locale) {
+    if (locale === currentLocale) {
+      return;
+    }
+    currentLocale = locale;
+    persistLocale(locale);
+    rerenderForLocale();
+  }
+
   function el(tag, attrs, children) {
     var node = document.createElement(tag);
     if (attrs) {
@@ -79,13 +175,25 @@
     return ' ▬';
   }
 
-  function renderTicketList(container, title, tickets) {
-    container.appendChild(el('h3', {}, [title + ' (' + tickets.length + ')']));
+  // bilingual-05: a ticket whose title translation is unavailable falls
+  // back to its own English title (never blank/undefined) - titleFr is
+  // only ever absent when the artifact predates BL-118 or the translation
+  // pass hasn't run yet, which must degrade the same way as a flagged
+  // failure, not throw.
+  function ticketTitle(ticket) {
+    if (currentLocale === 'fr' && ticket.titleFr) {
+      return ticket.titleFr;
+    }
+    return ticket.title;
+  }
+
+  function renderTicketList(container, titleKey, tickets) {
+    container.appendChild(el('h3', {}, [tr(titleKey) + ' (' + tickets.length + ')']));
     var list = el('ul', {});
     tickets.forEach(function (t) {
       var badge = t.swarm && t.swarm !== 'primary' ? ' [' + t.swarm + ']' : '';
       var eta = t.p50Iso ? ' — ETA ' + t.p50Iso.slice(0, 10) : '';
-      list.appendChild(el('li', {}, [t.id + ' — ' + t.title + badge + eta]));
+      list.appendChild(el('li', {}, [t.id + ' — ' + ticketTitle(t) + badge + eta]));
     });
     container.appendChild(list);
   }
@@ -93,10 +201,10 @@
   function renderBoard(board) {
     var container = document.getElementById('board');
     container.innerHTML = '';
-    renderTicketList(container, 'Active', board.active);
-    renderTicketList(container, 'Paused', board.paused);
+    renderTicketList(container, 'boardActive', board.active);
+    renderTicketList(container, 'boardPaused', board.paused);
 
-    container.appendChild(el('h3', {}, ['Done by milestone']));
+    container.appendChild(el('h3', {}, [tr('boardDoneByMilestone')]));
     var milestones = Object.keys(board.doneByMilestone).sort();
     var doneList = el('ul', {});
     milestones.forEach(function (m) {
@@ -118,7 +226,7 @@
     var container = document.getElementById('burndown');
     container.innerHTML = '';
     if (!burndown || burndown.length === 0) {
-      container.appendChild(el('p', {}, ['No milestones yet.']));
+      container.appendChild(el('p', {}, [tr('burndownNoMilestones')]));
       return;
     }
     burndown.forEach(function (m) {
@@ -131,7 +239,7 @@
     var container = document.getElementById('cycleTime');
     container.innerHTML = '';
     if (cycleTime.medianMs === null) {
-      container.appendChild(el('p', {}, ['No closed tickets yet.']));
+      container.appendChild(el('p', {}, [tr('cycleTimeNoTickets')]));
       return;
     }
     var medianH = Math.round(cycleTime.medianMs / 3600000);
@@ -159,11 +267,11 @@
       var costText = a.costUsd !== null ? '$' + a.costUsd.value.toFixed(2) + trendArrow(a.costUsd.trend) : 'no priced usage';
       agentsList.appendChild(el('li', {}, [a.role + ': ' + a.tokens.value + ' tokens' + trendArrow(a.tokens.trend) + ', ' + costText]));
     });
-    container.appendChild(el('h4', {}, ['Per-agent tokens/cost']));
+    container.appendChild(el('h4', {}, [tr('costHealthAgentTokens')]));
     container.appendChild(agentsList);
 
     if (costHealth.topExpensiveTickets && costHealth.topExpensiveTickets.length > 0) {
-      container.appendChild(el('h4', {}, ['Top expensive tickets']));
+      container.appendChild(el('h4', {}, [tr('costHealthTopExpensive')]));
       var ticketsList = el('ul', {});
       costHealth.topExpensiveTickets.forEach(function (t) {
         ticketsList.appendChild(el('li', {}, [t.ticketId + ': $' + t.costUsd.toFixed(2)]));
@@ -186,7 +294,7 @@
     ]));
 
     if (costHealth.resourceAnomalies && costHealth.resourceAnomalies.length > 0) {
-      container.appendChild(el('h4', {}, ['Resource anomalies']));
+      container.appendChild(el('h4', {}, [tr('costHealthResourceAnomalies')]));
       var anomaliesList = el('ul', {});
       costHealth.resourceAnomalies.forEach(function (a) {
         var mb = Math.round(a.rssBytes / (1024 * 1024));
@@ -197,9 +305,10 @@
   }
 
   function renderAll(data) {
+    lastBacklogData = data;
     var asOf = document.getElementById('asOf');
     var shaText = data.sourceSha ? ' (' + data.sourceSha.slice(0, 10) + ')' : '';
-    asOf.textContent = 'As of ' + new Date(data.generatedAtIso).toLocaleString() + shaText;
+    asOf.textContent = tr('asOfPrefix') + new Date(data.generatedAtIso).toLocaleString() + shaText;
     renderBoard(data.board);
     renderVelocity(data.metrics.velocity);
     renderBurndown(data.metrics.burndown);
@@ -239,7 +348,7 @@
   function renderDocsCrumbs() {
     var container = document.getElementById('docsCrumbs');
     container.innerHTML = '';
-    var crumbs = [{ label: 'Documentation', view: { level: 'root' } }];
+    var crumbs = [{ label: tr('documentationRoot'), view: { level: 'root' } }];
     if (docsView.level === 'vision') {
       var doc = findVisionDoc(docsView.docId);
       crumbs.push({ label: doc ? doc.title : docsView.docId, view: docsView });
@@ -273,33 +382,39 @@
   }
 
   function renderDocsRoot(container) {
-    container.appendChild(el('h3', {}, ['Vision']));
+    container.appendChild(el('h3', {}, [tr('documentationVision')]));
     (docsTree.vision || []).forEach(function (doc) {
       container.appendChild(navButton(doc.title, { level: 'vision', docId: doc.id }));
     });
-    container.appendChild(el('h3', {}, ['Milestones']));
+    container.appendChild(el('h3', {}, [tr('documentationMilestones')]));
     (docsTree.milestones || []).forEach(function (m) {
       container.appendChild(navButton(m.milestone + ' (' + m.tickets.length + ')', { level: 'milestone', milestone: m.milestone }));
     });
   }
 
+  // bilingual-03: a markdown vision doc renders contentFr in FR mode,
+  // falling back to English content when no translation is available yet
+  // (bilingual-05) - a mermaid doc's content is a diagram source and never
+  // gains a contentFr field at all (bilingual-06), so it always renders
+  // its one and only content value regardless of locale.
   function renderDocsVision(container) {
     var doc = findVisionDoc(docsView.docId);
     if (!doc) {
-      container.appendChild(noDataParagraph('document not found'));
+      container.appendChild(noDataParagraph(tr('documentationNotFound')));
       return;
     }
-    container.appendChild(el('pre', { class: 'doc-content' }, [doc.content]));
+    var text = currentLocale === 'fr' && doc.contentFr ? doc.contentFr : doc.content;
+    container.appendChild(el('pre', { class: 'doc-content' }, [text]));
   }
 
   function renderDocsMilestone(container) {
     var milestone = findMilestone(docsView.milestone);
     if (!milestone) {
-      container.appendChild(noDataParagraph('milestone not found'));
+      container.appendChild(noDataParagraph(tr('milestoneNotFound')));
       return;
     }
     milestone.tickets.forEach(function (t) {
-      container.appendChild(navButton(t.id + ' — ' + t.title + ' [' + t.status + ']', {
+      container.appendChild(navButton(t.id + ' — ' + ticketTitle(t) + ' [' + t.status + ']', {
         level: 'ticket', milestone: docsView.milestone, ticketId: t.id,
       }));
     });
@@ -308,14 +423,15 @@
   function renderDocsTicket(container) {
     var ticket = findTicket(docsView.ticketId);
     if (!ticket) {
-      container.appendChild(noDataParagraph('ticket not found'));
+      container.appendChild(noDataParagraph(tr('ticketNotFound')));
       return;
     }
-    container.appendChild(el('p', {}, [ticket.title + ' [' + ticket.status + ']' + (ticket.priority !== undefined ? ' priority ' + ticket.priority : '')]));
-    container.appendChild(el('p', {}, [ticket.description || 'No description.']));
-    container.appendChild(el('h4', {}, ['Acceptance scenarios']));
+    var description = currentLocale === 'fr' && ticket.descriptionFr ? ticket.descriptionFr : ticket.description;
+    container.appendChild(el('p', {}, [ticketTitle(ticket) + ' [' + ticket.status + ']' + (ticket.priority !== undefined ? ' priority ' + ticket.priority : '')]));
+    container.appendChild(el('p', {}, [description || tr('noDescription')]));
+    container.appendChild(el('h4', {}, [tr('documentationAcceptance')]));
     if (!ticket.scenarios || ticket.scenarios.length === 0) {
-      container.appendChild(noDataParagraph('no scenarios resolved for this ticket'));
+      container.appendChild(noDataParagraph(tr('noScenariosResolved')));
       return;
     }
     ticket.scenarios.forEach(function (s, i) {
@@ -323,21 +439,39 @@
     });
   }
 
+  // bilingual-04: the scenario text itself is ALWAYS canonical English,
+  // regardless of currentLocale - it is the binding acceptance contract,
+  // never swapped for textFr. A French rendering is available only via an
+  // explicit one-tap reveal, hidden until tapped, and never presented as
+  // if it were the contract itself.
   function renderDocsScenario(container) {
     var ticket = findTicket(docsView.ticketId);
     var scenario = ticket && ticket.scenarios[docsView.scenarioIndex];
     if (!scenario) {
-      container.appendChild(noDataParagraph('scenario not found'));
+      container.appendChild(noDataParagraph(tr('scenarioNotFound')));
       return;
     }
     container.appendChild(el('pre', { class: 'gherkin' }, [scenario.text]));
+    if (scenario.textFr) {
+      var revealed = false;
+      var frBlock = el('pre', { class: 'gherkin french-reveal' }, [scenario.textFr]);
+      frBlock.style.display = 'none';
+      var revealBtn = el('button', { type: 'button' }, [tr('showFrenchScenario')]);
+      revealBtn.addEventListener('click', function () {
+        revealed = !revealed;
+        frBlock.style.display = revealed ? '' : 'none';
+        revealBtn.textContent = tr(revealed ? 'hideFrenchScenario' : 'showFrenchScenario');
+      });
+      container.appendChild(revealBtn);
+      container.appendChild(frBlock);
+    }
   }
 
   function renderDocsExplorer() {
     var container = document.getElementById('docsExplorer');
     container.innerHTML = '';
     if (!docsTree) {
-      container.appendChild(noDataParagraph('documentation not available'));
+      container.appendChild(noDataParagraph(tr('docsNotAvailable')));
       return;
     }
     renderDocsCrumbs();
@@ -358,13 +492,19 @@
     return el('p', {}, [text || 'no data']);
   }
 
-  function renderDocsTree(data) {
-    docsTree = data;
+  // BL-117 docs-drilldown-04: labeled with the commit/timestamp it was
+  // rendered from, same honesty requirement as the backlog board. Split
+  // out of renderDocsTree so a locale toggle can re-set it (via
+  // rerenderForLocale) without re-fetching/re-assigning docsTree itself.
+  function setDocsAsOfText(data) {
     var asOf = document.getElementById('docsAsOf');
     var shaText = data.sourceSha ? ' (' + data.sourceSha.slice(0, 10) + ')' : '';
-    // BL-117 docs-drilldown-04: labeled with the commit/timestamp it was
-    // rendered from, same honesty requirement as the backlog board.
-    asOf.textContent = 'As of ' + new Date(data.generatedAtIso).toLocaleString() + shaText;
+    asOf.textContent = tr('asOfPrefix') + new Date(data.generatedAtIso).toLocaleString() + shaText;
+  }
+
+  function renderDocsTree(data) {
+    docsTree = data;
+    setDocsAsOfText(data);
     renderDocsExplorer();
   }
 
@@ -408,14 +548,14 @@
     container.appendChild(textarea);
 
     var actions = el('div', { class: 'recert-actions' }, []);
-    var sendLink = mailtoLink('Send update', recertMailtoHref(scenario.id, 'update', textarea.value));
+    var sendLink = mailtoLink(tr('recertSendUpdate'), recertMailtoHref(scenario.id, 'update', textarea.value));
     // the mailto: href must reflect whatever the human has actually typed
     // by the time they tap it, not just the text the form opened with.
     textarea.addEventListener('input', function () {
       sendLink.setAttribute('href', recertMailtoHref(scenario.id, 'update', textarea.value));
     });
     actions.appendChild(sendLink);
-    var cancelBtn = el('button', { type: 'button' }, ['Cancel']);
+    var cancelBtn = el('button', { type: 'button' }, [tr('recertCancel')]);
     cancelBtn.addEventListener('click', renderRecertContent);
     actions.appendChild(cancelBtn);
     container.appendChild(actions);
@@ -430,13 +570,11 @@
   function renderRecertDeleteConfirm(container, scenario) {
     container.innerHTML = '';
     container.appendChild(el('h4', {}, [scenario.name]));
-    container.appendChild(el('p', { class: 'recert-delete-warning' }, [
-      'This removes the scenario from the acceptance contract once the specifier accepts it. This cannot be undone. Are you sure?',
-    ]));
+    container.appendChild(el('p', { class: 'recert-delete-warning' }, [tr('recertDeleteWarning')]));
 
     var actions = el('div', { class: 'recert-actions' }, []);
-    actions.appendChild(mailtoLink('Yes, delete', recertMailtoHref(scenario.id, 'delete')));
-    var cancelBtn = el('button', { type: 'button' }, ['Cancel']);
+    actions.appendChild(mailtoLink(tr('recertYesDelete'), recertMailtoHref(scenario.id, 'delete')));
+    var cancelBtn = el('button', { type: 'button' }, [tr('recertCancel')]);
     cancelBtn.addEventListener('click', renderRecertContent);
     actions.appendChild(cancelBtn);
     container.appendChild(actions);
@@ -446,7 +584,7 @@
     var container = document.getElementById('recertContent');
     container.innerHTML = '';
     if (!recertBatch || !recertBatch.batch || recertBatch.batch.length === 0) {
-      container.appendChild(noDataParagraph('No scenarios need recertification right now.'));
+      container.appendChild(noDataParagraph(tr('recertNoneNeeded')));
       return;
     }
     var scenario = recertBatch.batch[0];
@@ -454,15 +592,15 @@
     container.appendChild(el('pre', { class: 'gherkin' }, [scenario.text]));
 
     var actions = el('div', { class: 'recert-actions' }, []);
-    actions.appendChild(mailtoLink('Confirm — still accurate', recertMailtoHref(scenario.id, 'confirm')));
+    actions.appendChild(mailtoLink(tr('recertConfirm'), recertMailtoHref(scenario.id, 'confirm')));
 
-    var updateBtn = el('button', { type: 'button' }, ['Update text']);
+    var updateBtn = el('button', { type: 'button' }, [tr('recertUpdate')]);
     updateBtn.addEventListener('click', function () {
       renderRecertUpdateForm(container, scenario);
     });
     actions.appendChild(updateBtn);
 
-    var deleteBtn = el('button', { type: 'button' }, ['Delete — obsolete']);
+    var deleteBtn = el('button', { type: 'button' }, [tr('recertDelete')]);
     deleteBtn.addEventListener('click', function () {
       renderRecertDeleteConfirm(container, scenario);
     });
@@ -471,10 +609,14 @@
     container.appendChild(actions);
   }
 
+  function setRecertAsOfText(data) {
+    var asOf = document.getElementById('recertAsOf');
+    asOf.textContent = tr('asOfPrefix') + new Date(data.generatedAtIso).toLocaleString();
+  }
+
   function renderRecertBatch(data) {
     recertBatch = data;
-    var asOf = document.getElementById('recertAsOf');
-    asOf.textContent = 'As of ' + new Date(data.generatedAtIso).toLocaleString();
+    setRecertAsOfText(data);
     renderRecertContent();
   }
 
@@ -512,13 +654,36 @@
       });
   }
 
+  // bilingual-01: applied immediately, before the persisted-locale lookup
+  // below resolves, so the very first paint is always English chrome -
+  // never derived from navigator.language.
+  applyChromeLocale();
+
+  var localeToggleButton = document.getElementById('localeToggle');
+  if (localeToggleButton) {
+    localeToggleButton.addEventListener('click', function () {
+      setLocale(currentLocale === 'en' ? 'fr' : 'en');
+    });
+  }
+
+  // bilingual-02: a previously-toggled locale (persisted via Cache Storage,
+  // not localStorage) is restored on reopen. A fresh device/first launch
+  // resolves to null here and simply stays on the English default applied
+  // above.
+  loadPersistedLocale().then(function (persisted) {
+    if (persisted) {
+      currentLocale = persisted;
+      rerenderForLocale();
+    }
+  });
+
   fetch(DASHBOARD_URL)
     .then(function (res) {
       return res.json();
     })
     .then(renderAll)
     .catch(function () {
-      document.getElementById('asOf').textContent = 'Could not load backlog.json (offline and nothing cached yet).';
+      document.getElementById('asOf').textContent = tr('couldNotLoadBacklog');
     });
 
   fetch(DOCS_TREE_URL)
@@ -527,7 +692,7 @@
     })
     .then(renderDocsTree)
     .catch(function () {
-      document.getElementById('docsAsOf').textContent = 'Could not load docs-tree.json (offline and nothing cached yet).';
+      document.getElementById('docsAsOf').textContent = tr('couldNotLoadDocsTree');
     });
 
   fetch(RECERT_BATCH_URL)
@@ -536,7 +701,7 @@
     })
     .then(renderRecertBatch)
     .catch(function () {
-      document.getElementById('recertAsOf').textContent = 'Could not load recert-batch.json (offline and nothing cached yet).';
+      document.getElementById('recertAsOf').textContent = tr('couldNotLoadRecertBatch');
     });
 
   registerServiceWorker().then(registerPeriodicSync);

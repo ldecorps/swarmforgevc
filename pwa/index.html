@@ -26,50 +26,57 @@
   .recert-actions button { margin: 0.25rem 0.4rem 0 0; }
   .recert-update-text { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 0.8rem; min-height: 6rem; }
   .recert-delete-warning { color: #c0392b; }
+  .locale-toggle { position: absolute; top: 1rem; right: 1rem; }
+  .locale-toggle button { font-size: 0.8rem; padding: 0.3rem 0.6rem; cursor: pointer; }
+  body { position: relative; }
 </style>
 </head>
 <body>
-<h1>SwarmForge — backlog dashboard</h1>
-<p id="asOf">Loading…</p>
+<div class="locale-toggle">
+  <button type="button" id="localeToggle"></button>
+</div>
+<h1 id="pageHeading" data-i18n="pageHeading">SwarmForge — backlog dashboard</h1>
+<p id="asOf" data-i18n="loading">Loading…</p>
 
 <section>
-  <h2>Backlog board</h2>
+  <h2 data-i18n="boardHeading">Backlog board</h2>
   <div id="board"></div>
 </section>
 
 <section>
-  <h2>Velocity</h2>
+  <h2 data-i18n="velocityHeading">Velocity</h2>
   <div id="velocity"></div>
 </section>
 
 <section>
-  <h2>Burndown</h2>
+  <h2 data-i18n="burndownHeading">Burndown</h2>
   <div id="burndown"></div>
 </section>
 
 <section>
-  <h2>Cycle time</h2>
+  <h2 data-i18n="cycleTimeHeading">Cycle time</h2>
   <div id="cycleTime"></div>
 </section>
 
 <section id="costHealthSection" style="display: none;">
-  <h2>Cost &amp; Health</h2>
+  <h2 data-i18n="costHealthHeading">Cost &amp; Health</h2>
   <div id="costHealth"></div>
 </section>
 
 <section>
-  <h2>Documentation</h2>
+  <h2 data-i18n="documentationHeading">Documentation</h2>
   <p id="docsAsOf" style="font-size: 0.8rem; opacity: 0.7;"></p>
   <div class="crumbs" id="docsCrumbs"></div>
   <div id="docsExplorer"></div>
 </section>
 
 <section id="recertSection">
-  <h2>Recertify a scenario</h2>
+  <h2 data-i18n="recertHeading">Recertify a scenario</h2>
   <p id="recertAsOf" style="font-size: 0.8rem; opacity: 0.7;"></p>
   <div id="recertContent"></div>
 </section>
 
+<script src="locales.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -7,8 +7,11 @@ const {
   BACKLOG_DASHBOARD_SCHEMA_VERSION,
   buildBacklogDashboard,
   computeBacklogDashboard,
+  translateBacklogDashboard,
 } = require('../out/metrics/backlogDashboard');
 const { computeDeliveryMetrics } = require('../out/metrics/deliveryMetrics');
+const { createTranslationSession } = require('../out/i18n/translate');
+const { emptyTranslationCache } = require('../out/i18n/translationCache');
 
 function item(overrides = {}) {
   return { id: 'BL-100', title: 't', status: 'active', ...overrides };
@@ -197,4 +200,58 @@ test('computeBacklogDashboard omits costHealth when no sidecar has ever been com
 
   const dashboard = computeBacklogDashboard(repo, [], Date.parse('2026-07-09T12:00:00Z'));
   assert.equal(Object.prototype.hasOwnProperty.call(dashboard, 'costHealth'), false);
+});
+
+// ── translateBacklogDashboard (BL-118) ───────────────────────────────────
+
+function fakeEngine(translations = {}) {
+  return {
+    async translate(text) {
+      if (text in translations) {
+        return { success: true, text: translations[text] };
+      }
+      return { success: false, error: 'no fake translation' };
+    },
+  };
+}
+
+test('translateBacklogDashboard adds titleFr to every active/paused/done ticket, leaving English titles unchanged', async () => {
+  const data = buildBacklogDashboard(
+    {
+      active: [item({ id: 'BL-1', title: 'active ticket' })],
+      paused: [item({ id: 'BL-2', title: 'paused ticket' })],
+      done: [item({ id: 'BL-3', title: 'done ticket', milestone: 'M1' })],
+    },
+    [],
+    emptyDeliveryMetrics(),
+    'primary',
+    'abc',
+    '2026-07-09T00:00:00Z'
+  );
+  const engine = fakeEngine({ 'active ticket': 'ticket actif', 'paused ticket': 'ticket en pause', 'done ticket': 'ticket terminé' });
+  const session = createTranslationSession(emptyTranslationCache(), engine);
+
+  const translated = await translateBacklogDashboard(data, session);
+
+  assert.equal(translated.board.active[0].title, 'active ticket');
+  assert.equal(translated.board.active[0].titleFr, 'ticket actif');
+  assert.equal(translated.board.paused[0].titleFr, 'ticket en pause');
+  assert.equal(translated.board.doneByMilestone.M1[0].titleFr, 'ticket terminé');
+});
+
+test('bilingual-05: an unavailable translation flags titleFrUntranslated rather than failing', async () => {
+  const data = buildBacklogDashboard(
+    { active: [item({ id: 'BL-1', title: 'no translation' })], paused: [], done: [] },
+    [],
+    emptyDeliveryMetrics(),
+    'primary',
+    'abc',
+    '2026-07-09T00:00:00Z'
+  );
+  const session = createTranslationSession(emptyTranslationCache(), fakeEngine({}));
+
+  const translated = await translateBacklogDashboard(data, session);
+
+  assert.equal(translated.board.active[0].titleFr, 'no translation');
+  assert.equal(translated.board.active[0].titleFrUntranslated, true);
 });
