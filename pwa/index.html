@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SwarmForge — backlog dashboard</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0d10">
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; padding: 1rem; background: Canvas; color: CanvasText; }
+  h1 { font-size: 1.1rem; margin: 0 0 0.25rem; }
+  #asOf { font-size: 0.8rem; opacity: 0.7; margin: 0 0 1rem; }
+  section { border: 1px solid color-mix(in srgb, CanvasText 20%, transparent); border-radius: 6px; padding: 0.75rem; margin-bottom: 0.75rem; }
+  h2 { font-size: 0.95rem; margin: 0 0 0.5rem; }
+  h3, h4 { font-size: 0.85rem; margin: 0.5rem 0 0.25rem; }
+  ul { margin: 0.25rem 0; padding-left: 1.25rem; font-size: 0.85rem; }
+  li { margin-bottom: 0.15rem; }
+  svg rect { transition: height 0.2s; }
+</style>
+</head>
+<body>
+<h1>SwarmForge — backlog dashboard</h1>
+<p id="asOf">Loading…</p>
+
+<section>
+  <h2>Backlog board</h2>
+  <div id="board"></div>
+</section>
+
+<section>
+  <h2>Velocity</h2>
+  <div id="velocity"></div>
+</section>
+
+<section>
+  <h2>Burndown</h2>
+  <div id="burndown"></div>
+</section>
+
+<section>
+  <h2>Cycle time</h2>
+  <div id="cycleTime"></div>
+</section>
+
+<script src="app.js"></script>
+</body>
+</html>

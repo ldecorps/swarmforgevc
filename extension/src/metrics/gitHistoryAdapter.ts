@@ -169,3 +169,17 @@ export function runMergeLog(targetPath: string, limit: number = 20): MergeLogEnt
   }
   return parseMergeLog(output);
 }
+
+// BL-097: backlog.json's "generated at this source SHA" field - a thin
+// adapter with no pure half to split out (a single rev-parse has no
+// text-parsing logic worth testing separately).
+export function getCurrentSha(targetPath: string): string | null {
+  try {
+    return execFileSync('git', ['-C', targetPath, 'rev-parse', 'HEAD'], {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
