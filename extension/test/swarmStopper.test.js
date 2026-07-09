@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const cp = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -12,6 +13,27 @@ const {
 
 function mkTmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-stop-'));
+}
+
+// A disposable child process to use as "a real running process" in tests.
+// Using `process.pid` here would be a live grenade: stopAllDaemonProcesses
+// really calls `process.kill(pid, 'SIGTERM')`, so passing this test's own
+// pid SIGTERMs the vitest worker running the test itself mid-run, which
+// crashes the whole test-runner IPC channel rather than just failing one
+// assertion (BL-121 hardening lesson — this reliably killed the worker
+// pool on every invocation that included this file, isolated or not).
+function spawnDisposableProcess() {
+  return cp.spawn('sleep', ['30'], { stdio: 'ignore' });
+}
+
+function reapDisposableProcess(child) {
+  try {
+    if (child.pid && child.exitCode === null && child.signalCode === null) {
+      process.kill(child.pid, 'SIGKILL');
+    }
+  } catch {
+    // already gone
+  }
 }
 
 function writeSwarmState(targetPath, roleCount = 2) {
@@ -47,13 +69,18 @@ function writeDaemonPids(targetPath, daemonPid = 99999, supervisorPid = 99998) {
 }
 
 function writeBounceState(targetPath) {
-  const bounceFile = path.join(targetPath, '.swarmforge', 'bounce-graceful');
-  fs.writeFileSync(bounceFile, 'swarm');
+  const swarmforgeDir = path.join(targetPath, '.swarmforge');
+  fs.mkdirSync(swarmforgeDir, { recursive: true });
+  fs.writeFileSync(path.join(swarmforgeDir, 'bounce-graceful'), 'swarm');
 }
 
 function writeBounceDrainState(targetPath) {
-  const drainFile = path.join(targetPath, '.swarmforge', 'bounce-drain.json');
-  fs.writeFileSync(drainFile, JSON.stringify({ bounceType: 'swarm', startedAt: Date.now() }));
+  const swarmforgeDir = path.join(targetPath, '.swarmforge');
+  fs.mkdirSync(swarmforgeDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(swarmforgeDir, 'bounce-drain.json'),
+    JSON.stringify({ bounceType: 'swarm', startedAt: Date.now() })
+  );
 }
 
 // --- clearAllSwarmState: comprehensive state cleanup ---
@@ -146,13 +173,20 @@ test('stopAllDaemonProcesses reports when daemon pid file present', () => {
 
 test('stopAllDaemonProcesses reports success when killing real process', () => {
   const targetPath = mkTmp();
-  writeDaemonPids(targetPath, process.pid, process.pid);
+  const daemon = spawnDisposableProcess();
+  const supervisor = spawnDisposableProcess();
+  try {
+    writeDaemonPids(targetPath, daemon.pid, supervisor.pid);
 
-  const result = stopAllDaemonProcesses(targetPath);
+    const result = stopAllDaemonProcesses(targetPath);
 
-  // At least one should be attempted
-  assert('daemonStopped' in result);
-  assert('supervisorStopped' in result);
+    // At least one should be attempted
+    assert('daemonStopped' in result);
+    assert('supervisorStopped' in result);
+  } finally {
+    reapDisposableProcess(daemon);
+    reapDisposableProcess(supervisor);
+  }
 });
 
 test('stopAllDaemonProcesses removes pid files after stopping', () => {
@@ -299,13 +333,22 @@ test('stopSwarmCompletely timeout never blocks cleanup', () => {
 
 test('stopSwarmCompletely with graceful flag attempts SIGTERM before SIGKILL', () => {
   const targetPath = mkTmp();
-  writeDaemonPids(targetPath, process.pid, process.pid);
+  const daemon = spawnDisposableProcess();
+  const supervisor = spawnDisposableProcess();
+  try {
+    writeDaemonPids(targetPath, daemon.pid, supervisor.pid);
 
-  const result = stopSwarmCompletely(targetPath, 100, true);
+    const result = stopSwarmCompletely(targetPath, 100, true);
 
-  // Should have attempted graceful shutdown
-  assert('phases' in result);
-  assert(result.phases.some(p => p.name.includes('graceful') || p.name.includes('term')));
+    // Should have attempted graceful shutdown. Phase names are fixed
+    // ('daemon-stop', etc.) and never contain "graceful"/"term" themselves —
+    // the SIGTERM attempt shows up in that phase's `detail` string instead.
+    assert('phases' in result);
+    assert(result.phases.some((p) => p.name === 'daemon-stop' && /sigterm/i.test(p.detail)));
+  } finally {
+    reapDisposableProcess(daemon);
+    reapDisposableProcess(supervisor);
+  }
 });
 
 test('stopSwarmCompletely result includes timing info', () => {

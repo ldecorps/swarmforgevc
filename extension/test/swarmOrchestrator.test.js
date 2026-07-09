@@ -337,11 +337,18 @@ test('orchestrateFullLaunch orders daemon startup after agents', async () => {
 test('orchestrateFullLaunch times out if agents never become ready', async () => {
   const targetPath = mkTmp();
   const swarmScript = path.join(targetPath, 'swarm');
-  // Script that creates socket but never completes initialization
+  // Script that creates socket but never completes initialization. 5s is
+  // long enough to still be running well past the orchestrator's 50ms
+  // deadline below, but short enough to stay under the vitest test timeout:
+  // the orchestrator's kill() only signals this direct shell child, not a
+  // forked `sleep` grandchild, so a longer sleep here (previously 100s)
+  // orphans past the parent's death and hangs this test for the full real
+  // duration (BL-121 hardening lesson — this blocked Stryker's dry run for
+  // every parcel).
   const content = `#!/bin/sh
 mkdir -p .swarmforge
 echo "/tmp/fake.sock" > .swarmforge/tmux-socket
-sleep 100`;
+sleep 5`;
   fs.writeFileSync(swarmScript, content);
   fs.chmodSync(swarmScript, 0o755);
 
