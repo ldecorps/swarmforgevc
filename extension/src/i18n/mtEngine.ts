@@ -3,6 +3,7 @@
 // API key - same posture as notify/resendClient.ts. Engine choice is
 // DeepL (simple single-key REST API); MtEngine is the abstract seam a
 // different provider could implement without touching translate.ts.
+import { authenticatedPost } from '../util/authenticatedPost';
 
 export interface TranslateResult {
   success: boolean;
@@ -37,14 +38,7 @@ export interface PostResponse {
 export type PostFn = (url: string, body: string, apiKey: string) => Promise<PostResponse>;
 
 async function defaultPost(url: string, body: string, apiKey: string): Promise<PostResponse> {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `DeepL-Auth-Key ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body,
-  });
+  const res = await authenticatedPost(url, body, `DeepL-Auth-Key ${apiKey}`);
   return { ok: res.ok, status: res.status, json: () => res.json() };
 }
 

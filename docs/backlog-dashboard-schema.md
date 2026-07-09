@@ -37,6 +37,7 @@ bumping `schemaVersion` and documenting the change here.
 |---|---|---|
 | `id` | string | e.g. `"BL-097"`. |
 | `title` | string | |
+| `titleFr` / `titleFrUntranslated` | string / boolean (optional) | BL-118: machine-translated French title. `titleFrUntranslated: true` means `titleFr` is untranslated English (MT engine unavailable/failed), not an actual translation; absent (not `false`) when translation succeeded. |
 | `status` | `"active" \| "paused" \| "done"` | The folder this ticket currently sits in (authoritative over any `status:` field inside the ticket YAML). |
 | `swarm` | string | The ticket's `swarm:` field (BL-090), defaulting to `"primary"` when absent. |
 | `milestone` | string (optional) | Absent if the ticket has no milestone. |
