@@ -28,6 +28,7 @@ on:
       - 'extension/src/docs/**'
       - 'extension/src/tools/generate-backlog-dashboard.ts'
       - 'extension/src/tools/generate-docs-tree.ts'
+      - 'extension/src/notify/costHealthSidecar.ts'
       - 'pwa/**'
       - '.github/workflows/backlog-dashboard.yml'
   workflow_dispatch: {}
