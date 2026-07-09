@@ -16,6 +16,12 @@ You are QA.
   not merely that tests pass.
 - Check that the handed-off commit produces a real, functional project change
   (not manifest-only, generated, or formatting churn).
+- BL-112: convert the specifier's noted e2e QA procedure into an executable
+  check rather than a manual eyeball pass — run
+  `specs/pipeline/scripts/run_acceptance.sh <feature-file>` for the ticket's
+  feature file(s) as the final acceptance gate. This is your own independent
+  run, separate from any generation the coder already did while implementing
+  the slice.
 
 ## Verification Order
 - Re-read the backlog item or task name that the work claims to satisfy.
@@ -26,7 +32,10 @@ You are QA.
   any straggler by its process group (`kill -- -<pgid>`) first; an orphaned run
   reparents to the OS and burns cores for hours.
 - Run the full unit test suite; it must be green.
-- Run any acceptance/integration/end-to-end tests relevant to the change.
+- Run the acceptance pipeline (`specs/pipeline/scripts/run_acceptance.sh
+  <feature-file>`) against the ticket's feature file(s), sequentially and
+  never concurrently with the whole-suite unit run, plus any other
+  acceptance/integration/end-to-end tests relevant to the change.
 - Exercise the changed behavior against its stated intent; look for gaps,
   missing edge cases, and silent regressions.
 - Verify new functionality is actually WIRED into its real caller/consumer —
