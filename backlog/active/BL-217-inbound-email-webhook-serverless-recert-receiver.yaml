@@ -1,0 +1,67 @@
+id: BL-217
+title: "Inbound-email webhook: serverless receiver for phone recertification write-back (BL-150)"
+milestone: M3
+status: todo
+priority: 06
+direction: feature
+assigned_to: coder
+depends_on: [BL-150, BL-097]
+source: "coder note 2026-07-09: BL-150 built+tested against the inbound-webhook seam with doubles; the live inbound-email webhook is unbuilt infra (deferred from BL-073) and needs its own ticket."
+
+description: |
+  CODER (2026-07-09): BL-150 (Gherkin recertification via the phone) is built
+  and tested, but only against the inbound-webhook SEAM with test doubles
+  (BL-150 feature notes: "Write-path emails are asserted through the
+  inbound-webhook seam with test doubles; no live email send in tests"). The
+  live receiver that actually accepts the phone's email and feeds that seam is
+  unbuilt infrastructure — originally BL-073's deferred inbound-email phase —
+  and needs its own ticket. Verified: no inbound/webhook receiver exists under
+  extension/src/ or swarmforge/scripts/ today.
+
+  OPERATOR DECISION (2026-07-09): transport is a SERVERLESS receiver, reusing
+  BL-097's serverless posture — NOT a local host endpoint (the swarm runs
+  headless, so an on-host port isn't publicly reachable) and NOT a tunnel. This
+  keeps no inbound port open on the local host.
+
+  Wanted behavior:
+  - A serverless inbound receiver (a hosted function with an HTTPS endpoint
+    Resend Inbound can POST to) that:
+    1. VERIFIES the Resend/Svix webhook signature and REJECTS any request whose
+       signature does not verify — this is a write path into the
+       acceptance-contract review queue, so an unauthenticated request must
+       never create a proposal.
+    2. PARSES the phone-composed email into {scenarioId, outcome
+       (update|delete), newText?}. (confirm is local-only per BL-150 recert-02
+       and does not use this path.)
+    3. COMMITS exactly one recertification proposal into a durable, committed
+       repo review-queue location (one-per-change), which the specifier reviews
+       and accepts/rejects — the SAME durable review mechanism BL-150's seam
+       already feeds. Proposals are NEVER auto-applied.
+  - The bridge from the committed proposal to BL-150's existing host-side
+    enqueue seam must be wired, so a committed proposal actually reaches the
+    specifier's recertification review (do not leave the serverless commit
+    dangling with nothing picking it up — the built-but-unwired trap).
+  - Malformed / unparseable (but validly signed) emails create NO proposal and
+    are logged without crashing.
+
+  Secrets & security (constitution secrets rule):
+  - The Resend signing secret and the repo-write credential live only in the
+    function/host environment (or SecretStorage) — never in the repo, workspace
+    settings, dotfiles, or launch-script defaults.
+  - The repo-write credential is MINIMALLY scoped (e.g. limited to the
+    proposal-queue path/branch, or the function opens a PR rather than pushing
+    to main). Specifier review remains the gate, so even a malformed proposal
+    is caught before it touches the acceptance contract.
+
+  Constraints:
+  - Signature-verify and email-parse are pure functions over provided inputs
+    (fixtures in tests) — no live email, no network, no real timers in tests.
+  - Reuse BL-097's serverless posture; the specific function platform
+    (Worker/Vercel/Netlify/Lambda) is an architect/operator implementation
+    choice — capture it at architecture review, not by coder fiat.
+  - Out of scope: the specifier's review/accept/reject of a recertification
+    proposal (that is BL-150 + the existing rule_proposal flow); this ticket
+    ends at a correctly-queued proposal.
+
+acceptance: specs/features/BL-217-inbound-email-webhook-serverless-recert-receiver.feature
+mutation_cost: low
