@@ -96,4 +96,25 @@ set -e
 [[ "$RC" -ne 0 ]] || fail "expected issue_specced.sh to fail fast when the paused-path argument is missing"
 pass "issue_specced.sh requires both arguments"
 
+set +e
+bash "$SPECCED" >/dev/null 2>&1
+RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || fail "expected issue_specced.sh to fail fast with no arguments at all"
+pass "issue_specced.sh requires the issue-ref argument"
+
+set +e
+bash "$DONE" "https://github.com/acme/repo/issues/42" >/dev/null 2>&1
+RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || fail "expected issue_done.sh to fail fast when the merge-commit argument is missing"
+pass "issue_done.sh requires both arguments"
+
+set +e
+bash "$DONE" >/dev/null 2>&1
+RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || fail "expected issue_done.sh to fail fast with no arguments at all"
+pass "issue_done.sh requires the issue-ref argument"
+
 echo "ALL PASS"
