@@ -57,6 +57,12 @@
   and never wait on one to be ready; that is what the testable-module boundary
   above exists to enable. Test doubles are the standard practice — use them
   always, not as a fallback.
+- **Never target the test's own process from code under test.** Never pass a
+  test's own `process.pid` (or the test runner's PID) to `kill()`-style code
+  under test; spawn a disposable child process and target that instead, so a
+  real signal can never crash the test worker or its IPC channel. (BL-121:
+  `swarmStopper.test.js` SIGTERM'd its own Vitest worker via `process.pid`,
+  nondeterministically crashing the whole suite's IPC channel.)
 
 ## Acceptance Pipeline
 - Use github.com/unclebob/Acceptance-Pipeline-Specification (pinned, see above)
