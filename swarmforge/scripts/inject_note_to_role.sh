@@ -55,10 +55,7 @@ EOF
 echo "Injecting note from ${SENDER} → ${RECIPIENT} (SWARMFORGE_SKIP_DAEMON=${SWARMFORGE_SKIP_DAEMON})"
 "$SCRIPT_DIR/swarm_handoff.sh" "$DRAFT"
 
-INBOX_DIR="$ROOT/.worktrees/${RECIPIENT}/.swarmforge/handoffs/inbox/new"
-if [[ "$RECIPIENT" == "coordinator" || "$RECIPIENT" == "coder" ]] && [[ -d "$ROOT/.swarmforge/handoffs/inbox/new" ]]; then
-  INBOX_DIR="$ROOT/.swarmforge/handoffs/inbox/new"
-fi
+INBOX_DIR="$(bb "$SCRIPT_DIR/mailbox_dir.bb" "$ROOT" "$RECIPIENT" new)"
 
 if compgen -G "${INBOX_DIR}"/*"_for_${RECIPIENT}.handoff" >/dev/null 2>&1; then
   echo "Parcel in inbox: $(ls -1t "${INBOX_DIR}"/*"_for_${RECIPIENT}.handoff" 2>/dev/null | head -1)"

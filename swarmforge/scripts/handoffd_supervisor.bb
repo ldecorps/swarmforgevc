@@ -35,6 +35,7 @@
             [cheshire.core :as json]
             [clojure.string :as str]))
 
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
 
 (defn usage []
@@ -109,9 +110,9 @@
     []))
 
 (defn oldest-pending-outbox-age-ms []
-  (->> (worktree-paths)
-       (mapcat (fn [wt]
-                 (let [outbox (fs/path wt ".swarmforge" "handoffs" "outbox")]
+  (->> (handoff-lib/load-all-roles project-root)
+       (mapcat (fn [role-info]
+                 (let [outbox (handoff-lib/mailbox-dir role-info :outbox)]
                    (when (fs/exists? outbox)
                      (filter #(and (fs/regular-file? %)
                                    (str/ends-with? (fs/file-name %) ".handoff"))
@@ -278,13 +279,7 @@
     []))
 
 (defn roles-with-worktrees []
-  (if (fs/exists? roles-file)
-    (->> (str/split-lines (slurp (str roles-file)))
-         (remove str/blank?)
-         (map #(let [fields (str/split % #"\t")]
-                 {:role (nth fields 0 nil) :worktree-path (nth fields 2 nil)}))
-         (remove #(nil? (:worktree-path %))))
-    []))
+  (remove #(nil? (:worktree-path %)) (handoff-lib/load-all-roles project-root)))
 
 (defn count-handoff-files [dir]
   (if (fs/exists? dir)
@@ -293,10 +288,10 @@
     0))
 
 (defn snapshot-role-counts []
-  (vec (for [{:keys [role worktree-path]} (roles-with-worktrees)]
-         {:role role
-          :inbox-new (count-handoff-files (fs/path worktree-path ".swarmforge" "handoffs" "inbox" "new"))
-          :outbox (count-handoff-files (fs/path worktree-path ".swarmforge" "handoffs" "outbox"))})))
+  (vec (for [role-info (roles-with-worktrees)]
+         {:role (:role role-info)
+          :inbox-new (count-handoff-files (handoff-lib/mailbox-dir role-info :new))
+          :outbox (count-handoff-files (handoff-lib/mailbox-dir role-info :outbox))})))
 
 (defn write-failure-log-file! [content]
   (fs/create-dirs daemon-dir)

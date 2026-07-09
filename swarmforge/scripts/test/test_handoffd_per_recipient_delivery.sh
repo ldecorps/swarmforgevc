@@ -5,6 +5,11 @@
 # and specifier share the master worktree, so the copies resolved to the same
 # path and one silently clobbered/skipped the other.
 #
+# BL-128: coordinator and specifier now additionally get PHYSICALLY DISTINCT
+# mailbox subdirectories (not just distinct filenames in one shared dir) - the
+# delivered-filename suffix from BL-057 remains a harmless second safety net,
+# but the two roles' own inbox/new dirs are now different paths entirely.
+#
 # Covers acceptance scenarios BL-057 per-recipient-delivery-01..04.
 
 set -euo pipefail
@@ -34,7 +39,8 @@ printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$CODER_WT" \
   >> "$ROOT/.swarmforge/roles.tsv"
 
 CODER_OUTBOX="$CODER_WT/.swarmforge/handoffs/outbox"
-SHARED_INBOX_NEW="$ROOT/.swarmforge/handoffs/inbox/new"
+COORDINATOR_INBOX_NEW="$ROOT/.swarmforge/handoffs/coordinator/inbox/new"
+SPECIFIER_INBOX_NEW="$ROOT/.swarmforge/handoffs/specifier/inbox/new"
 CODER_INBOX_NEW="$CODER_WT/.swarmforge/handoffs/inbox/new"
 mkdir -p "$CODER_OUTBOX"
 
@@ -81,15 +87,20 @@ touch "$ROOT/.swarmforge/daemon/stop"
 wait "$DAEMON_PID" 2>/dev/null || true
 [[ "$remaining" == "0" ]] || fail "daemon did not drain the outbox (remaining: $remaining)"
 
-# ── 01: two distinct, unclobbered copies in the shared inbox ─────────────────
-BROADCAST_COPIES="$(grep -l "broadcast-to-both" "$SHARED_INBOX_NEW"/*.handoff | wc -l | tr -d ' ')"
-[[ "$BROADCAST_COPIES" == "2" ]] \
-  || fail "01: expected 2 broadcast copies in the shared inbox, found $BROADCAST_COPIES"
-grep -q "^recipient: coordinator$" "$SHARED_INBOX_NEW"/*.handoff \
-  || fail "01: no delivered copy carries recipient: coordinator"
-grep -q "^recipient: specifier$" "$SHARED_INBOX_NEW"/*.handoff \
-  || fail "01: no delivered copy carries recipient: specifier"
-pass "01: broadcast to shared-inbox roles leaves one unclobbered copy per recipient"
+# ── 01: one copy per recipient, in that recipient's OWN physical mailbox ────
+COORDINATOR_COPIES="$(find "$COORDINATOR_INBOX_NEW" -maxdepth 1 -name '*.handoff' | wc -l | tr -d ' ')"
+SPECIFIER_COPIES="$(find "$SPECIFIER_INBOX_NEW" -maxdepth 1 -name '*.handoff' | wc -l | tr -d ' ')"
+[[ "$COORDINATOR_COPIES" -ge "1" ]] \
+  || fail "01: expected a broadcast copy in coordinator's own mailbox ($COORDINATOR_INBOX_NEW)"
+[[ "$SPECIFIER_COPIES" -ge "1" ]] \
+  || fail "01: expected a broadcast copy in specifier's own mailbox ($SPECIFIER_INBOX_NEW)"
+grep -q "^recipient: coordinator$" "$COORDINATOR_INBOX_NEW"/*.handoff \
+  || fail "01: coordinator's own copy missing recipient: coordinator header"
+grep -q "^recipient: specifier$" "$SPECIFIER_INBOX_NEW"/*.handoff \
+  || fail "01: specifier's own copy missing recipient: specifier header"
+[[ "$COORDINATOR_INBOX_NEW" != "$SPECIFIER_INBOX_NEW" ]] \
+  || fail "01: coordinator and specifier resolved to the SAME mailbox directory"
+pass "01: broadcast to master-resident roles delivers into two physically distinct mailboxes"
 
 # ── 02 + 04: each role dequeues its own copy, in priority order ──────────────
 OUT="$(cd "$ROOT" && SWARMFORGE_ROLE=coordinator bb "$READY_TASK")"
