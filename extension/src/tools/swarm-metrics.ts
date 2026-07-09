@@ -25,6 +25,16 @@ import {
   NO_SAMPLE_PLACEHOLDER,
   SwarmMetrics,
 } from '../metrics/swarmMetrics';
+import {
+  computeDeliveryMetrics,
+  DeliveryMetrics,
+  VelocityResult,
+  MilestoneBurndownResult,
+  CycleTimeResult,
+  ForecastResult,
+  SuiteDurationTrendResult,
+} from '../metrics/deliveryMetrics';
+import { TrendResult } from '../metrics/trend';
 
 export function hasRolesTsv(dir: string): boolean {
   return fs.existsSync(path.join(dir, '.swarmforge', 'roles.tsv'));
@@ -111,6 +121,78 @@ export function formatOverview(metrics: SwarmMetrics, roleNames: string[]): stri
   return [meanLine, busynessLine, retryLine, suiteLine, chaserLine].join('\n');
 }
 
+// BL-096: delivery metrics (velocity/burndown/cycle-time/forecasts) formatted
+// the same "one line per metric" way formatOverview above already
+// established, fed by the same computeDeliveryMetrics the bridge's /metrics
+// endpoint calls (metrics-09: CLI and bridge report the same numbers).
+function formatTrend(trend: TrendResult, unit: (v: number) => string): string {
+  if (trend.direction === 'unknown' || trend.delta === null) {
+    return '';
+  }
+  const sign = trend.direction === 'up' ? '+' : trend.direction === 'down' ? '-' : '±';
+  return ` (${sign}${unit(Math.abs(trend.delta))} vs prior)`;
+}
+
+function formatVelocityLine(velocity: VelocityResult): string {
+  const trendText = formatTrend(velocity.trend, (v) => `${v}`);
+  return `Velocity: ${velocity.rollingWindowCount} closed in trailing ${velocity.rollingWindowDays}d${trendText}`;
+}
+
+function formatBurndownLine(burndown: MilestoneBurndownResult[]): string {
+  if (burndown.length === 0) {
+    return `Burndown: ${NO_SAMPLE_PLACEHOLDER} (no milestones)`;
+  }
+  return 'Burndown: ' + burndown.map((b) => `${b.milestone} ${b.currentRemaining} remaining`).join(', ');
+}
+
+function formatCycleTimeLine(cycleTime: CycleTimeResult): string {
+  if (cycleTime.medianMs === null) {
+    return `Cycle time: ${NO_SAMPLE_PLACEHOLDER} (0 closed)`;
+  }
+  return (
+    `Cycle time: median ${formatDurationMs(cycleTime.medianMs)}, ` +
+    `p85 ${formatDurationMs(cycleTime.p85Ms as number)} over ${cycleTime.sampleCount} ticket(s)`
+  );
+}
+
+function formatDateOnly(iso: string): string {
+  return iso.slice(0, 10);
+}
+
+function formatForecastsLine(forecasts: ForecastResult): string {
+  if (forecasts.milestones.length === 0) {
+    return `Forecasts: ${NO_SAMPLE_PLACEHOLDER} (no open milestone tickets)`;
+  }
+  return (
+    'Forecasts: ' +
+    forecasts.milestones
+      .map(
+        (m) =>
+          `${m.milestone} p50 ${m.p50Iso ? formatDateOnly(m.p50Iso) : NO_SAMPLE_PLACEHOLDER} / ` +
+          `p85 ${m.p85Iso ? formatDateOnly(m.p85Iso) : NO_SAMPLE_PLACEHOLDER}`
+      )
+      .join(', ')
+  );
+}
+
+function formatSuiteDurationTrendLine(trend: SuiteDurationTrendResult): string {
+  if (!trend.hasLocalData) {
+    return 'Suite duration trend: no local data';
+  }
+  const latest = trend.dailySeries[trend.dailySeries.length - 1];
+  return `Suite duration trend: ${formatSuiteDurationMs(latest.value)} latest${formatTrend(trend.trend, formatSuiteDurationMs)}`;
+}
+
+export function formatDeliveryOverview(metrics: DeliveryMetrics): string {
+  return [
+    formatVelocityLine(metrics.velocity),
+    formatBurndownLine(metrics.burndown),
+    formatCycleTimeLine(metrics.cycleTime),
+    formatForecastsLine(metrics.forecasts),
+    formatSuiteDurationTrendLine(metrics.suiteDurationTrend),
+  ].join('\n');
+}
+
 // Shared by every headless CLI tool under tools/ that keys off roles.tsv
 // (swarm-metrics.ts, list-dead-letters.ts): read and parse the current
 // project's roles.tsv from its resolved root.
@@ -143,6 +225,12 @@ export function main(): void {
 
   const metrics = computeSwarmMetrics(mainWorktreePath, roles, runStartMs);
   console.log(formatOverview(metrics, roles.map((r) => r.role)));
+
+  const deliveryMetrics = computeDeliveryMetrics(
+    mainWorktreePath,
+    roles.map((r) => ({ role: r.role, worktreePath: r.worktreePath }))
+  );
+  console.log(formatDeliveryOverview(deliveryMetrics));
 }
 
 if (require.main === module) {
