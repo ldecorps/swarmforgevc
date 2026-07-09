@@ -13,9 +13,10 @@ import { startBridge } from './bridge/bridgeServer';
 import type { BridgeHandle } from './bridge/bridgeServer';
 import { generateBridgeToken } from './bridge/bridgeToken';
 import { getCurrentBranch, openPullRequest } from './swarm/prCreator';
-import { launchSwarm, waitForSwarmReady, chooseReattachTimeoutMs, isSwarmReady, runningSwarmMatchesConfig, resolveSwarmConfigPath } from './swarm/swarmLauncher';
+import { launchSwarm, waitForSwarmReady, chooseReattachTimeoutMs, isSwarmReady, runningSwarmMatchesConfig, resolveSwarmConfigPath, buildLaunchEnv, augmentPath } from './swarm/swarmLauncher';
 import { reapAllTrackedJobs, reapStaleTrackedJobs } from './swarm/childJobRegistry';
 import { writeStateDump, startPeriodicStateDump, ExtensionStateSnapshot } from './swarm/stateDump';
+import { orchestrateFullLaunch } from './swarm/swarmOrchestrator';
 import { hasPriorRunState, shouldOfferResumePrompt } from './swarm/swarmDiscovery';
 import { stopSwarm, stopSwarmOnExtensionShutdown } from './swarm/swarmStopper';
 import { bounceSwarm, buildBounceExtensionCommand } from './swarm/bouncer';
@@ -1137,17 +1138,22 @@ export function activate(context: vscode.ExtensionContext): void {
           cancellable: false,
         },
         async () => {
-          const result = await launchSwarm(targetPath!, runName, 120_000, context.secrets);
+          // Prepare launch environment with API keys
+          const launchEnv = buildLaunchEnv(runName, resolveSwarmConfigPath());
+          const enrichedEnv = await import('./notify/secrets').then(async (m) => {
+            const e = { ...launchEnv };
+            const mistral = await m.resolveMistralApiKey(context.secrets);
+            if (mistral) e['MISTRAL_API_KEY'] = mistral;
+            const openai = await m.resolveOpenAIApiKey(context.secrets);
+            if (openai) e['OPENAI_API_KEY'] = openai;
+            return e;
+          });
+
+          // Orchestrate full launch: agents → daemon → verify ready
+          const result = await orchestrateFullLaunch(targetPath!, enrichedEnv, 120_000);
           if (!result.success) {
             vscode.window.showErrorMessage(result.message);
             return;
-          }
-
-          const ready = await waitForSwarmReady(targetPath!);
-          if (!ready) {
-            vscode.window.showWarningMessage(
-              'Swarm process finished but state files were not detected yet.'
-            );
           }
 
           vscode.window.showInformationMessage(result.message);

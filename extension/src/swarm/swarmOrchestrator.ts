@@ -1,11 +1,17 @@
-export type ActivationPath =
-  | 'reattach'
-  | 'reattach-after-daemon'
-  | 'cold-launch'
-  | 'resume-prompt'
-  | 'none';
+import * as cp from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
+import { isSwarmReady } from './swarmLauncher';
 
-export interface ActivationDecisionInput {
+export interface LaunchResult {
+  success: boolean;
+  message: string;
+  skipDaemon?: boolean;
+  agentStarted?: boolean;
+  daemonStarted?: boolean;
+}
+
+export interface ActivationContext {
   tmuxReady: boolean;
   daemonReady: boolean;
   configMatches: boolean;
@@ -15,33 +21,314 @@ export interface ActivationDecisionInput {
   isStartupTriggered: boolean;
 }
 
-import { shouldSkipHandoffDaemon } from './daemonHealth';
+export type ActivationPath =
+  | 'reattach'
+  | 'reattach-after-daemon'
+  | 'cold-launch'
+  | 'offer-resume'
+  | 'idle';
 
-export { shouldSkipHandoffDaemon };
+export function shouldSkipHandoffDaemon(env: NodeJS.ProcessEnv): boolean {
+  if (env['SWARMFORGE_SKIP_DAEMON'] === '1') {
+    return true;
+  }
+  if (env['SWARMFORGE_MAILBOX_ONLY'] === '1') {
+    return true;
+  }
+  return false;
+}
 
-/**
- * Pure activation routing for Stop → F5 and startup reattach. Keeps tmux
- * reattach separate from daemon repair so a live swarm with a dead handoffd
- * is healed without tearing down agent panes.
- */
-export function decideActivationPath(input: ActivationDecisionInput): ActivationPath {
-  const transportReady = input.tmuxReady && (input.daemonReady || input.skipDaemon);
-
-  if (input.tmuxReady && input.configMatches && transportReady) {
-    return 'reattach';
+export function daemonHealthCheck(targetPath: string): boolean {
+  const pidFile = path.join(targetPath, '.swarmforge', 'daemon', 'handoffd.pid');
+  if (!fs.existsSync(pidFile)) {
+    return false;
   }
 
-  if (input.tmuxReady && input.configMatches && !input.skipDaemon && !input.daemonReady) {
-    return 'reattach-after-daemon';
+  try {
+    const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+    if (!Number.isInteger(pid) || pid <= 0) {
+      return false;
+    }
+    // Check if process exists by sending signal 0
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
   }
+}
 
-  if (input.autoLaunch) {
+export function decideActivationPath(context: ActivationContext): ActivationPath {
+  const { tmuxReady, daemonReady, configMatches, autoLaunch, skipDaemon, hasPriorRun, isStartupTriggered } = context;
+
+  // Config mismatch: always cold-launch to get the right pack
+  if (configMatches === false) {
     return 'cold-launch';
   }
 
-  if (input.isStartupTriggered && input.hasPriorRun) {
-    return 'resume-prompt';
+  // Tmux not ready at all
+  if (!tmuxReady) {
+    if (autoLaunch) {
+      return 'cold-launch';
+    }
+    if (isStartupTriggered) {
+      return 'idle';
+    }
+    if (hasPriorRun) {
+      return 'offer-resume';
+    }
+    return 'idle';
   }
 
-  return 'none';
+  // Tmux ready: check daemon
+  if (skipDaemon || daemonReady) {
+    return 'reattach';
+  }
+
+  // Tmux ready but daemon down (daemon required)
+  return 'reattach-after-daemon';
+}
+
+async function spawnAndCapture(
+  command: string,
+  args: string[],
+  options: { cwd?: string; env?: NodeJS.ProcessEnv; timeout?: number } = {}
+): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    let stdout = '';
+    let stderr = '';
+
+    const proc = cp.spawn(command, args, {
+      cwd: options.cwd,
+      env: options.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    const timeout = options.timeout ? setTimeout(() => proc.kill(), options.timeout) : null;
+
+    proc.stdout?.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
+    proc.on('close', (code) => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      resolve({ exitCode: code, stdout, stderr });
+    });
+
+    proc.on('error', (err) => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      resolve({ exitCode: 1, stdout, stderr: err.message });
+    });
+  });
+}
+
+export async function startSwarmAgents(
+  targetPath: string,
+  env: NodeJS.ProcessEnv,
+  timeoutMs = 120_000
+): Promise<LaunchResult> {
+  const swarmScript = path.join(targetPath, 'swarm');
+  if (!fs.existsSync(swarmScript)) {
+    return {
+      success: false,
+      message: `No ./swarm script found at ${swarmScript}`,
+      agentStarted: false,
+    };
+  }
+
+  const launchEnv = {
+    ...process.env,
+    ...env,
+    SWARMFORGE_TERMINAL: 'none',
+  };
+
+  const result = await spawnAndCapture(swarmScript, [targetPath], {
+    cwd: targetPath,
+    env: launchEnv,
+    timeout: timeoutMs,
+  });
+
+  if (result.exitCode === 0 && isSwarmReady(targetPath)) {
+    return {
+      success: true,
+      message: 'SwarmForge agents launched successfully.',
+      agentStarted: true,
+    };
+  }
+
+  return {
+    success: false,
+    message: `Agents failed to start: ${result.stderr || result.stdout || `exit code ${result.exitCode}`}`,
+    agentStarted: false,
+  };
+}
+
+export async function startHandoffDaemon(
+  targetPath: string,
+  env: NodeJS.ProcessEnv,
+  timeoutMs = 30_000
+): Promise<LaunchResult> {
+  if (shouldSkipHandoffDaemon(env)) {
+    return {
+      success: true,
+      message: 'Skipping handoff daemon (flag set).',
+      daemonStarted: false,
+    };
+  }
+
+  // Look for start_handoff_daemon.sh in common locations
+  const possibleScripts = [
+    path.join(targetPath, 'swarmforge', 'scripts', 'start_handoff_daemon.sh'),
+    path.join(targetPath, '..', 'swarmforge', 'scripts', 'start_handoff_daemon.sh'),
+  ];
+
+  let scriptPath = '';
+  for (const candidate of possibleScripts) {
+    if (fs.existsSync(candidate)) {
+      scriptPath = candidate;
+      break;
+    }
+  }
+
+  if (!scriptPath) {
+    return {
+      success: false,
+      message: 'start_handoff_daemon.sh script not found in expected locations',
+      daemonStarted: false,
+    };
+  }
+
+  const daemonDir = path.join(targetPath, '.swarmforge', 'daemon');
+  fs.mkdirSync(daemonDir, { recursive: true });
+
+  const launchEnv = {
+    ...process.env,
+    ...env,
+    SWARMFORGE_DAEMON_START_CALLER: 'extension',
+  };
+
+  const result = await spawnAndCapture('bash', [scriptPath, targetPath], {
+    cwd: targetPath,
+    env: launchEnv,
+    timeout: timeoutMs,
+  });
+
+  if (result.exitCode === 0 && daemonHealthCheck(targetPath)) {
+    return {
+      success: true,
+      message: 'Handoff daemon started successfully.',
+      daemonStarted: true,
+    };
+  }
+
+  return {
+    success: false,
+    message: `Daemon failed to start: ${result.stderr || result.stdout || `exit code ${result.exitCode}`}`,
+    daemonStarted: false,
+  };
+}
+
+export async function waitForAllReady(
+  targetPath: string,
+  env: NodeJS.ProcessEnv,
+  timeoutMs = 120_000,
+  isReady: (tp: string) => boolean = isSwarmReady
+): Promise<boolean> {
+  const skipDaemon = shouldSkipHandoffDaemon(env);
+  const deadline = Date.now() + timeoutMs;
+
+  const check = (): Promise<boolean> => {
+    if (!isReady(targetPath)) {
+      return Promise.resolve(false);
+    }
+
+    if (!skipDaemon && !daemonHealthCheck(targetPath)) {
+      return Promise.resolve(false);
+    }
+
+    return Promise.resolve(true);
+  };
+
+  const poll = async (): Promise<boolean> => {
+    if (Date.now() >= deadline) {
+      return false;
+    }
+
+    const ready = await check();
+    if (ready) {
+      return true;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return poll();
+  };
+
+  return poll();
+}
+
+export async function orchestrateFullLaunch(
+  targetPath: string,
+  env: NodeJS.ProcessEnv,
+  timeoutMs = 120_000
+): Promise<LaunchResult> {
+  if (!fs.existsSync(targetPath)) {
+    return {
+      success: false,
+      message: `Target path does not exist: ${targetPath}`,
+    };
+  }
+
+  const skipDaemon = shouldSkipHandoffDaemon(env);
+
+  // Phase 1: Start agents (creates tmux sessions)
+  const agentsResult = await startSwarmAgents(targetPath, env, timeoutMs);
+  if (!agentsResult.success) {
+    return {
+      ...agentsResult,
+      skipDaemon,
+    };
+  }
+
+  // Phase 2: Start daemon (after agents exist to receive handoffs)
+  let daemonResult: LaunchResult;
+  if (skipDaemon) {
+    daemonResult = {
+      success: true,
+      message: 'Daemon skipped.',
+      daemonStarted: false,
+    };
+  } else {
+    daemonResult = await startHandoffDaemon(targetPath, env, timeoutMs);
+    // Daemon failure is non-fatal if agents are running; log but continue
+    if (!daemonResult.success) {
+      console.warn(`Warning: ${daemonResult.message}`);
+    }
+  }
+
+  // Phase 3: Verify everything is ready
+  const ready = await waitForAllReady(targetPath, env, timeoutMs);
+  if (!ready) {
+    return {
+      success: false,
+      message: 'Swarm did not become ready within timeout.',
+      skipDaemon,
+      agentStarted: agentsResult.agentStarted,
+      daemonStarted: daemonResult.daemonStarted,
+    };
+  }
+
+  return {
+    success: true,
+    message: 'SwarmForge launched and ready.',
+    skipDaemon,
+    agentStarted: agentsResult.agentStarted,
+    daemonStarted: daemonResult.daemonStarted,
+  };
 }
