@@ -88,6 +88,35 @@ test('serves the agents, backlog, and runlog endpoints', async () => {
   });
 });
 
+// BL-096 metrics-09: the metrics endpoint is token-gated like every other
+// route, and returns the full delivery-metrics surface as JSON even over a
+// plain (non-git) tmp dir - computeDeliveryMetrics degrades to empty/null
+// series rather than erroring when git history can't be read.
+test('rejects an unauthorized request to the metrics endpoint', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/metrics`);
+    assert.equal(res.status, 401);
+  });
+});
+
+test('serves the metrics endpoint with the full delivery-metrics surface for an authorized request', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/metrics`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.ok(body.velocity);
+    assert.ok(Array.isArray(body.burndown));
+    assert.ok(body.cycleTime);
+    assert.ok(body.forecasts);
+    assert.ok(body.suiteDurationTrend);
+    assert.equal(body.suiteDurationTrend.hasLocalData, false);
+  });
+});
+
 test('returns 404 for an unknown route, even when authorized', async () => {
   const target = mkTmp();
   await withBridge(target, {}, async (handle) => {

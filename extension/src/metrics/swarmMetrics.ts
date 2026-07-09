@@ -357,7 +357,7 @@ export function formatSuiteDurationMs(ms: number): string {
 
 export const DEFAULT_SUITE_WARN_SECONDS = 120;
 
-interface TestDurationRecord {
+export interface TestDurationRecord {
   finishedAtMs: number;
   durationMs: number;
 }
@@ -384,7 +384,10 @@ function parseTestDurationLine(line: string): TestDurationRecord | null {
   return null;
 }
 
-function readTestDurationRecords(worktreePath: string): TestDurationRecord[] {
+// BL-096: exported so deliveryMetrics.ts's suite-duration-trend metric can
+// reuse this same reader (and its "malformed line skipped, never a crash"
+// behavior) instead of re-implementing the .test-durations.jsonl parse.
+export function readTestDurationRecords(worktreePath: string): TestDurationRecord[] {
   let content: string;
   try {
     content = fs.readFileSync(suiteDurationLogPath(worktreePath), 'utf8');
@@ -402,9 +405,18 @@ function readTestDurationRecords(worktreePath: string): TestDurationRecord[] {
   return records;
 }
 
+// Every role worktree runs the test suite in its own checkout, so each has
+// its own .test-durations.jsonl - shared by computeSuiteDuration below and
+// deliveryMetrics.ts's computeSuiteDurationTrend, which both need the same
+// "every worktree's records, deduped by path" aggregation (jscpd flagged
+// the inline duplication once BL-096 added the second caller).
+export function readAllTestDurationRecords(targetPath: string, roles: RoleWorktree[]): TestDurationRecord[] {
+  const worktreePaths = new Set<string>([targetPath, ...roles.map((r) => r.worktreePath)]);
+  return [...worktreePaths].flatMap(readTestDurationRecords);
+}
+
 // Aggregates the test-suite duration log across the main checkout and every
-// role worktree (each role runs the suite in its own checkout, so each has
-// its own log) into one latest/mean/sampleCount view, flagging creep
+// role worktree into one latest/mean/sampleCount view, flagging creep
 // (BL-078). warnThresholdMs is the absolute floor; the 2x-rolling-mean check
 // catches relative creep even under a generous absolute threshold.
 export function computeSuiteDuration(
@@ -413,8 +425,7 @@ export function computeSuiteDuration(
   warnThresholdMs: number = DEFAULT_SUITE_WARN_SECONDS * 1000,
   sampleWindow: number = 20
 ): SuiteDurationStats {
-  const worktreePaths = new Set<string>([targetPath, ...roles.map((r) => r.worktreePath)]);
-  const allRecords = [...worktreePaths].flatMap(readTestDurationRecords);
+  const allRecords = readAllTestDurationRecords(targetPath, roles);
 
   if (allRecords.length === 0) {
     return { latestMs: null, meanMs: null, sampleCount: 0, warn: false };

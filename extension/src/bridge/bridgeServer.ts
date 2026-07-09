@@ -1,5 +1,5 @@
 import * as http from 'http';
-import { buildBridgeState, BridgeState } from './bridgeState';
+import { buildBridgeState, buildDeliveryMetricsState, BridgeState } from './bridgeState';
 import { isAuthorizedRequest } from './bridgeAuth';
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
@@ -35,6 +35,13 @@ function isStateRoute(url: string): url is StateRoute {
   return url === '/pipeline' || url === '/agents' || url === '/backlog' || url === '/runlog';
 }
 
+// Split out of the request handler below so its own complexity stays under
+// the CRAP<=6 gate (BL-096's added /metrics branch pushed it to 7) - the
+// cached-snapshot-or-compute-fresh choice for a new SSE subscriber.
+function resolveEventsSnapshot(lastSnapshot: string | undefined, targetPath: string, runLogPath: string): string {
+  return lastSnapshot ?? JSON.stringify(buildBridgeState(targetPath, runLogPath));
+}
+
 export function startBridge(
   targetPath: string,
   runLogPath: string,
@@ -63,7 +70,7 @@ export function startBridge(
           'cache-control': 'no-cache',
           connection: 'keep-alive',
         });
-        const snapshot = lastSnapshot ?? JSON.stringify(buildBridgeState(targetPath, runLogPath));
+        const snapshot = resolveEventsSnapshot(lastSnapshot, targetPath, runLogPath);
         res.write(`data: ${snapshot}\n\n`);
         sseClients.add(res);
         req.on('close', () => sseClients.delete(res));
@@ -74,6 +81,16 @@ export function startBridge(
         const state = buildBridgeState(targetPath, runLogPath);
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify(stateForRoute(state, url)));
+        return;
+      }
+
+      // BL-096: computed fresh per-request only, deliberately outside
+      // buildBridgeState/the SSE poll loop above (git-history-walk cost -
+      // see buildDeliveryMetricsState's own comment).
+      if (url === '/metrics') {
+        const metrics = buildDeliveryMetricsState(targetPath);
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(metrics));
         return;
       }
 
