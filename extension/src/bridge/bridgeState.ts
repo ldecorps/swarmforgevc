@@ -4,6 +4,7 @@ import { readPipelineStages, parseRolesTsv, PipelineStage } from '../swarm/swarm
 import { readBacklogFolders, BacklogFolders } from '../panel/backlogReader';
 import { readHeartbeat, HeartbeatData } from '../tools/heartbeat';
 import { loadRuns, RunEntry } from '../runs/runLog';
+import { computeDeliveryMetrics, DeliveryMetrics } from '../metrics/deliveryMetrics';
 
 export interface AgentStatus {
   role: string;
@@ -52,4 +53,24 @@ export function buildBridgeState(targetPath: string, runLogPath: string): Bridge
     backlog: readBacklogFolders(targetPath),
     runLog: loadRuns(runLogPath),
   };
+}
+
+// BL-096: kept separate from BridgeState/buildBridgeState deliberately -
+// this shells out to git (via computeDeliveryMetrics's history walk), which
+// is too expensive to recompute on every ~1s SSE poll tick the way the rest
+// of BridgeState is. bridgeServer.ts calls this only for a direct /metrics
+// request, never as part of the polled snapshot.
+export function buildDeliveryMetricsState(targetPath: string, nowMs?: number): DeliveryMetrics {
+  const rolesFile = path.join(targetPath, '.swarmforge', 'roles.tsv');
+  let roles: ReturnType<typeof parseRolesTsv> = [];
+  try {
+    roles = parseRolesTsv(fs.readFileSync(rolesFile, 'utf8'));
+  } catch {
+    roles = [];
+  }
+  return computeDeliveryMetrics(
+    targetPath,
+    roles.map((r) => ({ role: r.role, worktreePath: r.worktreePath })),
+    nowMs
+  );
 }

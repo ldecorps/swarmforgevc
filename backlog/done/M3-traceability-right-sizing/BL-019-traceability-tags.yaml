@@ -2,7 +2,7 @@ id: BL-019
 title: Traceability tags — link commits and code to backlog items
 milestone: M3
 priority: 19
-status: active
+status: done
 
 description: >
   Add lightweight traceability so the developer can see which backlog item a

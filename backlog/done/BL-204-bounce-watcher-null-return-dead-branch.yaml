@@ -1,7 +1,7 @@
 id: BL-204
 title: startBounceWatcher never returns null, making extension.ts's null-check an uncoverable branch that blocks mutation testing
 milestone: M3
-status: todo
+status: done
 priority: 5
 direction: aligned
 assigned_to: coder
