@@ -51,6 +51,13 @@ export function isCanaryTask(taskName: string | undefined): boolean {
   return !!taskName && taskName.startsWith(CANARY_TASK_PREFIX);
 }
 
+// Single source of truth for the canary round-trip budget (BL-152 "single
+// shared constant" convention): the injector that writes canary-status.json
+// and the health reader that evaluates its age against a miss threshold must
+// agree on this window, or the injector could re-inject on a cadence the
+// reader's own budget never expects.
+export const TRANSPORT_CANARY_BUDGET_SECONDS = 600;
+
 export function evaluateCanary(
   lastRoundTripMs: number | null,
   nowMs: number,
