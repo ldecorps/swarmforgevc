@@ -96,5 +96,23 @@ description: |
   - Seven-pack or specifier stages
   - Unrelated feature work
 
+  UPDATE (coordinator, 2026-07-09, final): active/ drained to empty (BL-112,
+  BL-132, BL-217 all closed). Isolated backlog/paused/ into backlog/_held/
+  (18 items moved aside) leaving only BL-203, then promoted BL-203 solo into
+  active/ (fd4fd35). Mechanism note: no VS Code extension host is running in
+  this environment (this swarm was launched via raw shell scripts, not the
+  extension), so remote_bounce.sh's sentinel has nothing to consume it —
+  confirmed by an unconsumed bounce sentinel from 20:40 with no
+  bounce-ack.json ever written. Operator chose manual relaunch instead:
+  kill_all_swarm.sh, then relaunch with
+  SWARMFORGE_CONFIG=swarmforge/profiles/stabilize-two-pack.conf. The
+  coordinator handed off these exact commands rather than running them
+  itself (BL-107: the coordinator is the swarm's cleanup owner and must
+  never exit its own session or trigger swarm teardown from inside it).
+  Once the two-pack comes up, its coordinator should route this ticket to
+  the coder immediately (it is already the sole active item). When done,
+  restore backlog/_held/ back into backlog/paused/ and bounce/relaunch back
+  to the normal profile.
+
 acceptance: specs/features/BL-203-stabilize-extension-two-pack-daemon-workflow.feature
 mutation_cost: medium
