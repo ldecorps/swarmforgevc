@@ -37,6 +37,29 @@ function baseConfig(targetPath, overrides = {}) {
   };
 }
 
+// BL-131: captures the interval callback instead of scheduling it for real
+// (same injection point briefingScheduler.ts's tests already use) - fire()
+// simulates one tick synchronously, with no real wall-clock wait anywhere.
+// clearTick nulls the captured callback, so a fire() after stop is
+// correctly a no-op, proving stopChaserMonitor's clearTick call took effect.
+function fakeScheduler() {
+  let tick = null;
+  return {
+    scheduleTick: (fn) => {
+      tick = fn;
+      return {};
+    },
+    clearTick: () => {
+      tick = null;
+    },
+    fire: () => {
+      if (tick) {
+        tick();
+      }
+    },
+  };
+}
+
 function noopCallbacks(overrides = {}) {
   return {
     getLiveness: () => 'alive',
@@ -59,9 +82,10 @@ test('startChaserMonitor returns null when .swarmforge does not exist', () => {
 test('startChaserMonitor returns a timer when .swarmforge exists', () => {
   const tmpDir = mkTmp();
   fs.mkdirSync(path.join(tmpDir, '.swarmforge'));
-  const timer = startChaserMonitor(baseConfig(tmpDir), noopCallbacks());
+  const { scheduleTick, clearTick } = fakeScheduler();
+  const timer = startChaserMonitor(baseConfig(tmpDir), noopCallbacks(), scheduleTick);
   assert.ok(timer !== null);
-  stopChaserMonitor(timer);
+  stopChaserMonitor(timer, clearTick);
   fs.rmSync(tmpDir, { recursive: true });
 });
 
@@ -71,7 +95,7 @@ test('startChaserMonitor returns a timer when .swarmforge exists', () => {
 // processes independently chasing would race and double-count against the
 // shared .chase.json sidecar (BL-146 single-daemon-04: exactly one process
 // owns the sweep).
-test('periodic interval never chases a stale handoff - that duty moved to handoffd.bb', () => new Promise((resolve, reject) => {
+test('periodic interval never chases a stale handoff - that duty moved to handoffd.bb', () => {
   const tmpDir = mkTmp();
   writeRolesTsv(tmpDir, 'coder', tmpDir);
   const newDir = inboxNewDir(tmpDir);
@@ -79,28 +103,24 @@ test('periodic interval never chases a stale handoff - that duty moved to handof
   fs.writeFileSync(path.join(newDir, '00_test.handoff'), 'test\n');
 
   let chasedRole = null;
+  const { scheduleTick, clearTick, fire } = fakeScheduler();
   const timer = startChaserMonitor(
     baseConfig(tmpDir),
     noopCallbacks({
       sendWakeUp: (role) => {
         chasedRole = role;
       },
-    })
+    }),
+    scheduleTick
   );
 
-  setTimeout(() => {
-    stopChaserMonitor(timer);
-    try {
-      assert.equal(chasedRole, null);
-      fs.rmSync(tmpDir, { recursive: true });
-      resolve();
-    } catch (err) {
-      reject(err);
-    }
-  }, 200);
-}));
+  fire(); // simulate one interval tick firing, synchronously
+  stopChaserMonitor(timer, clearTick);
+  assert.equal(chasedRole, null);
+  fs.rmSync(tmpDir, { recursive: true });
+});
 
-test('stopChaserMonitor stops further sweeps', () => new Promise((resolve, reject) => {
+test('stopChaserMonitor stops further sweeps', () => {
   const tmpDir = mkTmp();
   writeRolesTsv(tmpDir, 'coder', tmpDir);
   const newDir = inboxNewDir(tmpDir);
@@ -108,32 +128,27 @@ test('stopChaserMonitor stops further sweeps', () => new Promise((resolve, rejec
   fs.writeFileSync(path.join(newDir, '00_test.handoff'), 'test\n');
 
   let sweepCount = 0;
+  const { scheduleTick, clearTick, fire } = fakeScheduler();
   const timer = startChaserMonitor(
     baseConfig(tmpDir),
     noopCallbacks({
       sendWakeUp: () => {
         sweepCount += 1;
       },
-    })
+    }),
+    scheduleTick
   );
 
-  setTimeout(() => {
-    stopChaserMonitor(timer);
-    const countAtStop = sweepCount;
-    setTimeout(() => {
-      try {
-        assert.equal(sweepCount, countAtStop);
-        fs.rmSync(tmpDir, { recursive: true });
-        resolve();
-      } catch (err) {
-        reject(err);
-      }
-    }, 150);
-  }, 60);
-}));
+  fire();
+  const countAtStop = sweepCount;
+  stopChaserMonitor(timer, clearTick);
+  fire(); // a tick "firing" after stop must be a no-op (clearTick took effect)
+  assert.equal(sweepCount, countAtStop);
+  fs.rmSync(tmpDir, { recursive: true });
+});
 
 test('stopChaserMonitor tolerates a null timer', () => {
-  assert.doesNotThrow(() => stopChaserMonitor(null));
+  assert.doesNotThrow(() => stopChaserMonitor(null, fakeScheduler().clearTick));
 });
 
 // ── BL-148: bridging the daemon's chase-escalations.json ────────────────────
@@ -213,7 +228,7 @@ test('syncStuckEscalations with no daemon dir at all clears every role (never cr
 // function) reaches onStuckEscalation for a daemon-marked wedge - proves the
 // wiring is live on chaserMonitor's own panel-independent timer, not merely
 // callable in isolation.
-test('BL-148: startChaserMonitor\'s own interval calls onStuckEscalation for a daemon-marked wedge', () => new Promise((resolve, reject) => {
+test('BL-148: startChaserMonitor\'s own interval calls onStuckEscalation for a daemon-marked wedge', () => {
   const tmpDir = mkTmp();
   writeRolesTsv(tmpDir, 'coder', tmpDir);
   const daemonDir = path.join(tmpDir, '.swarmforge', 'daemon');
@@ -221,24 +236,21 @@ test('BL-148: startChaserMonitor\'s own interval calls onStuckEscalation for a d
   fs.writeFileSync(path.join(daemonDir, 'chase-escalations.json'), JSON.stringify({ coder: true }));
 
   const escalations = [];
+  const { scheduleTick, clearTick, fire } = fakeScheduler();
   const timer = startChaserMonitor(
     baseConfig(tmpDir),
     noopCallbacks({
       onStuckEscalation: (role, escalated) => escalations.push({ role, escalated }),
-    })
+    }),
+    scheduleTick
   );
 
-  setTimeout(() => {
-    stopChaserMonitor(timer);
-    try {
-      assert.ok(
-        escalations.some((e) => e.role === 'coder' && e.escalated === true),
-        `expected an escalated=true call for coder; got: ${JSON.stringify(escalations)}`
-      );
-      fs.rmSync(tmpDir, { recursive: true });
-      resolve();
-    } catch (err) {
-      reject(err);
-    }
-  }, 200);
-}));
+  fire();
+  stopChaserMonitor(timer, clearTick);
+
+  assert.ok(
+    escalations.some((e) => e.role === 'coder' && e.escalated === true),
+    `expected an escalated=true call for coder; got: ${JSON.stringify(escalations)}`
+  );
+  fs.rmSync(tmpDir, { recursive: true });
+});

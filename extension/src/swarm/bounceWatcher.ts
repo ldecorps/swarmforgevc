@@ -58,10 +58,48 @@ export function processBounceFile(
   }
 }
 
+// BL-131: the filename guard + debounce is the only substantive logic behind
+// fs.watch's callback, and is fully testable without a real OS watch event -
+// pulled out so tests can drive it directly with an injected scheduleTick
+// instead of writing real files and waiting on real fs.watch timing. Shared
+// by handleWatchEvent below and bounceDrain.ts's handleGracefulWatchEvent,
+// which mirrors this exact fs.watch pattern for its own trigger file - only
+// the expected filename and target path differ.
+export function handleFileWatchEvent(
+  filename: string | null,
+  expectedFilename: string,
+  filePath: string,
+  onBounce: (bounceType: BounceType) => void,
+  onError: ((error: string) => void) | undefined,
+  scheduleTick: (fn: () => void, ms: number) => void = (fn, ms) => { setTimeout(fn, ms); },
+): void {
+  if (filename !== expectedFilename) {
+    return;
+  }
+
+  // Small delay to ensure file is fully written
+  scheduleTick(() => {
+    if (fs.existsSync(filePath)) {
+      processBounceFile(filePath, onBounce, onError);
+    }
+  }, 50);
+}
+
+export function handleWatchEvent(
+  filename: string | null,
+  bounceFilePath: string,
+  onBounce: (bounceType: BounceType) => void,
+  onError: ((error: string) => void) | undefined,
+  scheduleTick: (fn: () => void, ms: number) => void = (fn, ms) => { setTimeout(fn, ms); },
+): void {
+  handleFileWatchEvent(filename, 'bounce', bounceFilePath, onBounce, onError, scheduleTick);
+}
+
 export function startBounceWatcher(
   targetPath: string,
   onBounce: (bounceType: BounceType) => void,
   onError?: (error: string) => void,
+  scheduleTick: (fn: () => void, ms: number) => void = (fn, ms) => { setTimeout(fn, ms); },
 ): fs.FSWatcher | null {
   const swarmforgeDir = path.join(targetPath, '.swarmforge');
   const bounceFilePath = path.join(swarmforgeDir, 'bounce');
@@ -78,16 +116,7 @@ export function startBounceWatcher(
 
   // Watch the directory since watching a non-existent file may not work reliably
   const watcher = fs.watch(swarmforgeDir, (eventType, filename) => {
-    if (filename !== 'bounce') {
-      return;
-    }
-
-    // Small delay to ensure file is fully written
-    setTimeout(() => {
-      if (fs.existsSync(bounceFilePath)) {
-        processBounceFile(bounceFilePath, onBounce, onError);
-      }
-    }, 50);
+    handleWatchEvent(filename, bounceFilePath, onBounce, onError, scheduleTick);
   });
 
   return watcher;

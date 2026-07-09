@@ -169,19 +169,28 @@ export class PaneTailer {
     }
   }
 
-  start(pollMs = DEFAULT_POLL_INTERVAL_MS): void {
-    this.stop();
+  // BL-131: scheduleTick/clearTick default to the real setInterval/
+  // clearInterval, so every existing production caller is byte-for-byte
+  // unaffected; tests inject a tick-capturing fake (same pattern as
+  // chaserMonitor.ts/waitForSwarmReady) to drive poll() synchronously
+  // instead of waiting on the real clock.
+  start(
+    pollMs = DEFAULT_POLL_INTERVAL_MS,
+    scheduleTick: (fn: () => void, ms: number) => ReturnType<typeof setInterval> = setInterval,
+    clearTick: (handle: ReturnType<typeof setInterval>) => void = clearInterval
+  ): void {
+    this.stop(clearTick);
     this.refreshState();
 
-    this.interval = setInterval(() => {
+    this.interval = scheduleTick(() => {
       this.poll();
     }, pollMs);
     this.poll();
   }
 
-  stop(): void {
+  stop(clearTick: (handle: ReturnType<typeof setInterval>) => void = clearInterval): void {
     if (this.interval) {
-      clearInterval(this.interval);
+      clearTick(this.interval);
       this.interval = undefined;
     }
   }
