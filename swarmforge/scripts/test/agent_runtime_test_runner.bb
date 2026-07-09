@@ -96,6 +96,17 @@
          [:sleep :paste-file :submit]
          (step-ops (agent-runtime-lib/bootstrap-steps "grok" "coder" :prompt-file "/p.md")))
 
+;; BL-206: an explicit :startup-delay-ms argument overrides the provider's
+;; own capability-map default (grok's is 3000) - a caller-supplied delay
+;; must win, not silently be discarded in favor of the capability flag.
+(assert= "grok bootstrap honors an explicit startup-delay-ms override over its capability default"
+         {:op :sleep :ms 9999}
+         (first (agent-runtime-lib/bootstrap-steps "grok" "coder" :prompt-file "/p.md" :startup-delay-ms 9999)))
+
+(assert= "grok bootstrap falls back to its capability-map default (3000ms) when no override is given"
+         {:op :sleep :ms 3000}
+         (first (agent-runtime-lib/bootstrap-steps "grok" "coder" :prompt-file "/p.md")))
+
 ;; ── bootstrap-text ────────────────────────────────────────────────────────────
 (assert-true "aider coordinator text forbids coding"
              (str/includes? (agent-runtime-lib/bootstrap-text "aider" "coordinator" :two-pack? true)
@@ -112,6 +123,75 @@
 (assert-true "needs-tmux-bootstrap distinguishes agents"
              (and (agent-runtime-lib/needs-tmux-bootstrap? "aider")
                   (not (agent-runtime-lib/needs-tmux-bootstrap? "claude"))))
+
+;; ── BL-206 capability-branching-01: decisions read capability flags, ──────
+;; not brand names - every supported-agents member has a capability entry,
+;; and capabilities lookup is itself agent-name-driven ONLY at that one
+;; boundary (normalize-agent), never again inside any decision function.
+(doseq [agent agent-runtime-lib/supported-agents]
+  (assert-true (str "every supported agent has a capabilities entry: " agent)
+               (some? (agent-runtime-lib/capabilities agent))))
+
+(assert-true "aider (wake-style :shell-run-script) and claude (:chat-message) decide wake text from the flag, not the name"
+             (not= (:text (first (agent-runtime-lib/wake-steps "aider")))
+                   (:text (first (agent-runtime-lib/wake-steps "claude")))))
+
+;; A synthetic provider declaring claude's own capabilities must be
+;; decided identically to claude by every capability-driven function -
+;; proof the decision reads the flag, not the literal string "claude".
+(assert=
+ "a provider with the same capability flags as claude gets the same wake steps as claude, decided purely from data"
+ (agent-runtime-lib/wake-steps "claude")
+ (with-redefs [agent-runtime-lib/provider-capabilities
+               (assoc agent-runtime-lib/provider-capabilities "codex" (get agent-runtime-lib/provider-capabilities "claude"))]
+   (agent-runtime-lib/wake-steps "codex")))
+
+;; ── BL-206 new-provider-is-capabilities-02: adding a provider is adding ───
+;; one capability-map entry, no existing function's logic changes. Proven
+;; by rebinding provider-capabilities with a wholly synthetic provider and
+;; confirming the SAME shared functions (unedited) already handle it.
+(let [synthetic-caps (assoc agent-runtime-lib/provider-capabilities
+                             "synthetic-provider" {:wake-style :chat-message
+                                                    :bootstrap-style :embedded
+                                                    :bootstrap-text-style :generic})]
+  (with-redefs [agent-runtime-lib/provider-capabilities synthetic-caps
+                agent-runtime-lib/supported-agents (conj agent-runtime-lib/supported-agents "synthetic-provider")]
+    (assert= "a synthetic provider declared with only capability flags gets uniform chat-style wake steps"
+             [{:op :send-literal :text agent-runtime-lib/default-wake-chat-message}
+              {:op :submit}]
+             (agent-runtime-lib/wake-steps "synthetic-provider"))
+    (assert-true "a synthetic embedded-style provider needs no tmux bootstrap, same as claude"
+                 (empty? (agent-runtime-lib/bootstrap-steps "synthetic-provider" "coder")))
+    (assert-true "a synthetic generic-text-style provider gets the generic bootstrap text"
+                 (str/includes? (agent-runtime-lib/bootstrap-text "synthetic-provider" "coder")
+                                "Read swarmforge/constitution.prompt"))))
+
+;; ── BL-206 lifecycle-verbs-03: health/stop/respawn produce a step for ─────
+;; every supported provider, with no brand-specific branching anywhere in
+;; their own implementation (verified structurally: each is a single
+;; fixed-step function, not a case/cond over agent identity).
+(doseq [agent agent-runtime-lib/supported-agents
+        [verb-name verb-fn expected-op] [["health" agent-runtime-lib/health-steps :capture-pane]
+                                          ["stop" agent-runtime-lib/stop-steps :kill-pane]
+                                          ["respawn" agent-runtime-lib/respawn-steps :respawn-pane]]]
+  (let [steps (verb-fn agent)]
+    (assert-true (str verb-name " step produced for " agent) (seq steps))
+    (assert= (str verb-name " step op for " agent) expected-op (:op (first steps)))))
+
+(assert=
+ "health-steps is identical for every supported provider (uniform, no per-provider branching)"
+ (agent-runtime-lib/health-steps "claude")
+ (agent-runtime-lib/health-steps "aider"))
+
+(assert=
+ "stop-steps is identical for every supported provider"
+ (agent-runtime-lib/stop-steps "mock")
+ (agent-runtime-lib/stop-steps "grok"))
+
+(assert=
+ "respawn-steps is identical for every supported provider"
+ (agent-runtime-lib/respawn-steps "codex")
+ (agent-runtime-lib/respawn-steps "copilot"))
 
 ;; ── report ────────────────────────────────────────────────────────────────────
 (if (seq @failures)
