@@ -1,0 +1,63 @@
+id: BL-220
+title: "PWA phone app: large default font (~28px root) + persistent A-/A+ size control"
+priority: 30
+mutation_cost: low
+source: "operator chat request 2026-07-09 (relayed by coordinator); scope + size confirmed with operator 2026-07-10"
+
+description: |
+  The operator asked (in chat) to make the phone app's font "way bigger". The
+  phone app is the PWA under ./pwa/ (index.html + app.js): dashboard, cost/health
+  briefing, docs explorer, and gherkin recert pages. Every view sizes its text in
+  rem relative to the root (html) font-size, so that root is the single knob that
+  scales the whole app. Today body sets no explicit size, so the app inherits the
+  ~16px browser default and reads small on a phone.
+
+  Confirmed with the operator (2026-07-10):
+    - SCOPE: global — scale the whole app via the root font-size (one knob), not
+      per-view or body-only.
+    - DEFAULT: large — root font-size 28px (~1.75x the 16px browser default) on
+      first launch when no preference is saved.
+    - CONTROL: add an A-/A+ text-size control the operator can adjust, remembered
+      across reloads.
+
+  Sizing (specifier's call; implementer may tune within this spirit): default
+  28px, step 2px, min 16px, max 40px.
+
+  Constraints:
+    - Persist the chosen size through the SAME Cache Storage instance the PWA
+      already uses for the locale preference (cache "swarmforge-dashboard-v2",
+      a new key), mirroring loadPersistedLocale/persistLocale in pwa/app.js. Do
+      NOT use localStorage/sessionStorage or any other browser storage — barred
+      by the project's webview/PWA storage restriction. Persistence is
+      best-effort like the locale: if Cache Storage is unavailable the control
+      still works for the session; a missing/corrupt saved value falls back to
+      28px.
+    - Scale by setting the root (html) font-size only; do not hand-edit per-view
+      or per-rule font sizes, so the single knob keeps all views proportional.
+    - The A-/A+ buttons live in the page chrome alongside the existing locale
+      toggle without overlapping it, and carry accessible labels following the
+      existing data-i18n chrome-localization convention (add catalog keys to
+      pwa/locales.js for both en and fr).
+
+  Scope (verified live 2026-07-10): pwa/index.html (root font-size default +
+  A-/A+ control markup), pwa/app.js (control wiring + Cache-Storage load/persist
+  mirroring the locale functions), pwa/locales.js (accessible-label catalog keys).
+  Do not touch the VS Code extension host or webview — this is the standalone PWA.
+
+acceptance: specs/features/BL-220-pwa-bigger-font-with-size-control.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs to verify the scenarios hold in the live PWA:
+  1. Open the PWA with no saved preference (fresh Cache Storage). Assert the root
+     (html) computed font-size is 28px and headings/body/gherkin all scale up.
+  2. Tap A+ once; assert root font-size is 30px and the change is instant (no
+     reload). Tap A- twice; assert it returns to 28px then 26px.
+  3. Tap A+ until clamped; assert it never exceeds 40px. Tap A- until clamped;
+     assert it never drops below 16px.
+  4. Set a non-default size (e.g. 34px), close and reopen the PWA; assert it loads
+     at 34px, not 28px. Confirm (dev tools) the preference lives in Cache Storage
+     and that no localStorage/sessionStorage entry was written.
+
+# HUMAN APPROVAL: feature file specs/features/BL-220-...feature is a new draft
+# authored by the specifier and is pending human review before it is treated as
+# the authoritative acceptance contract.
