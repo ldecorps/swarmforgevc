@@ -1,32 +1,26 @@
-Feature: provider-neutral orchestration contract
+Feature: Extension pane-state detection is driven by provider descriptors
 
-# BL-142 brand-agnostic-01
-Scenario: orchestration uses one interface for all providers
-  Given at least two different agent providers are configured
-  When Forge launches and orchestrates agents
-  Then orchestration calls a single abstract contract
-  And provider-specific commands are confined to adapters
+# BL-142 descriptor-parity-01
+Scenario: detection reads a provider registry, not inline brand names
+  Given the supported providers are expressed as descriptors in a registry
+  When pane state is computed for a pane running any supported provider CLI
+  Then the result matches the pre-refactor behavior for that provider
+  And no provider brand name is hardcoded in the detection functions
 
-# BL-142 brand-agnostic-02
-Scenario: capability checks replace provider-name branching
-  Given a provider lacks a capability supported by another provider
-  When Forge requests that capability
-  Then behavior is decided by capability flags, not hardcoded provider names
+# BL-142 new-provider-is-data-02
+Scenario: adding a provider requires only a new descriptor
+  Given a new provider descriptor (name, cli pattern, busy pattern, banner,
+    startup copy) is added to the registry
+  When a pane runs that provider's CLI
+  Then the provider is recognized and its busy, running, and startup states
+    are detected from the descriptor
+  And no detection function is edited to add it
 
-# BL-142 brand-agnostic-03
-Scenario: normalized errors are actionable and consistent
-  Given provider-specific failures occur during launch or interaction
-  When errors surface to orchestration and operator views
-  Then they are mapped to a stable Forge error taxonomy
-  And include backend-specific detail as attached context
+# BL-142 startup-copy-03
+Scenario: startup guidance comes from the descriptor, not a hardcoded brand
+  Given a pane whose provider has not started yet
+  When the startup guidance message is produced
+  Then it names the provider from its descriptor (e.g. "Waiting for <provider>
+    to start…")
+  And it is not a hardcoded "Claude" literal
 
-# BL-142 brand-agnostic-04
-Scenario: adding a new provider requires only a new adapter
-  Given a new provider integration is introduced
-  When it is wired into Forge
-  Then core orchestration modules do not require provider-specific edits
-
-# Non-behavioral gates:
-#  - Document the contract and adapter template.
-#  - Add tests proving orchestration behavior parity across at least two providers.
-#  - Include migration plan for existing provider paths.
