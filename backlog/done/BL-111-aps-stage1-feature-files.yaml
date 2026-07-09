@@ -1,7 +1,7 @@
 id: BL-111
 title: "APS realignment stage 1: living feature files + gherkin-parser lint gate"
 milestone: M5
-status: todo
+status: done
 priority: 10
 direction: aligned
 assigned_to: coder

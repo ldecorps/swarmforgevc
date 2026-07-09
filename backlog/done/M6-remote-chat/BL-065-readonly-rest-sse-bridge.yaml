@@ -1,7 +1,7 @@
 id: BL-065
 title: Read-only REST + SSE bridge (phase 1) — localhost projection of swarm state
 milestone: M6
-status: todo
+status: done
 priority: 14
 assigned_to: coder
 

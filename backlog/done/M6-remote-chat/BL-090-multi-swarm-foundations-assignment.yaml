@@ -1,7 +1,7 @@
 id: BL-090
 title: multi-swarm foundations — swarm identity, coordinator ticket assignment, cross-swarm orthogonality
 milestone: M6
-status: todo
+status: done
 priority: 05
 source: operator requirement refinement 2026-07-04 (second swarm on another machine, same codebase, single coordinator)
 

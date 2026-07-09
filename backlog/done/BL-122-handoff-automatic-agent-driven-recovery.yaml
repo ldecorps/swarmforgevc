@@ -1,7 +1,7 @@
 id: BL-122
 title: RELIABILITY (top priority, 2 of 2) — automatic agent-driven handoff RECOVERY — re-deliver dead-lettered/stuck parcels, self-heal the daemon, escalate to a human only after retries are exhausted
 milestone: M2
-status: todo
+status: done
 priority: 00
 depends_on: [BL-121]
 evidence: backlog/evidence/BL-109-BL-121-BL-122-handoff-halt-20260706.md  # 2026-07-06 live halt: chase gives up at chaseCount:3 with no re-route/escalation; 13 dead parcels never re-delivered, swarm stalled

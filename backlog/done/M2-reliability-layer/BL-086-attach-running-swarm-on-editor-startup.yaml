@@ -1,7 +1,7 @@
 id: BL-086
 title: BUG — extension never activates on editor startup, so a running swarm is not attached until a manual command
 milestone: M2
-status: todo
+status: done
 priority: 03
 assigned_to: coder
 
