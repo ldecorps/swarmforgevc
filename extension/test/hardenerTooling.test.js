@@ -53,3 +53,21 @@ test('jscpd config scans the TypeScript source', () => {
   );
   assert.ok(config.reporters.includes('console'), 'duplication must be reported to the console');
 });
+
+// BL-221: the Stryker sandbox never copies the sibling repo-root pwa/
+// directory, so every mutation dry run ENOENTs on any pwa/ asset a test
+// resolves at runtime, aborting the whole gate before any mutant is
+// evaluated. The mutation script must ensure the sandbox-shared pwa/ link
+// exists before stryker runs, every time - not a manual one-off step a
+// human has to remember.
+test('mutation script ensures the Stryker pwa/ sandbox link before running stryker', () => {
+  assert.match(
+    pkg.scripts.mutation,
+    /ensureStrykerPwaSandbox\.js.*&&.*stryker run/,
+    'mutation script must ensure the pwa/ sandbox link exists, before invoking stryker run'
+  );
+  assert.ok(
+    fs.existsSync(path.join(__dirname, '../scripts/ensureStrykerPwaSandbox.js')),
+    'ensureStrykerPwaSandbox.js must be committed alongside the other hardener scripts'
+  );
+});
