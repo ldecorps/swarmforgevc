@@ -139,7 +139,9 @@ export function computeMeanTicketTime(targetPath: string): MeanTicketTime {
   return { meanMs: total / durationsMs.length, sampleCount: durationsMs.length };
 }
 
-function parseHandoffHeaders(content: string): Record<string, string> {
+// BL-100: exported so ticketHoldingWindows.ts's per-ticket attribution join
+// reuses this same header parser instead of re-implementing it.
+export function parseHandoffHeaders(content: string): Record<string, string> {
   const header = content.split('\n\n')[0];
   const headers: Record<string, string> = {};
   for (const line of header.split('\n')) {
@@ -479,7 +481,10 @@ export type ChaserTelemetry = Record<string, RoleChaserTelemetry>;
 
 export const CHASER_TELEMETRY_WINDOW_DAYS = 7;
 
-function chaserTelemetryDir(targetPath: string): string {
+// BL-100: exported - resourceTelemetry.ts's resource_sample events join this
+// same monthly chaser-*.jsonl family (the reader below already tolerates
+// unknown `type` values), rather than inventing a second file convention.
+export function chaserTelemetryDir(targetPath: string): string {
   return path.join(targetPath, '.swarmforge', 'telemetry');
 }
 
@@ -524,7 +529,9 @@ function readChaserTelemetryFile(dir: string, file: string): ChaserTelemetryEven
   return events;
 }
 
-function readChaserTelemetryEvents(targetPath: string): ChaserTelemetryEvent[] {
+// BL-100: exported so resourceTelemetry.ts's resource_sample reader reuses
+// this same forgiving JSONL reader instead of re-implementing it.
+export function readChaserTelemetryEvents(targetPath: string): ChaserTelemetryEvent[] {
   const dir = chaserTelemetryDir(targetPath);
   let files: string[];
   try {

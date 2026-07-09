@@ -35,6 +35,8 @@ import {
   SuiteDurationTrendResult,
 } from '../metrics/deliveryMetrics';
 import { TrendResult } from '../metrics/trend';
+import { computeCostTelemetry, RoleCostTelemetry } from '../metrics/costTelemetry';
+import { readResourceSampleEvents, computeResourceTrends, RoleResourceTrend } from '../metrics/resourceTelemetry';
 
 export function hasRolesTsv(dir: string): boolean {
   return fs.existsSync(path.join(dir, '.swarmforge', 'roles.tsv'));
@@ -193,6 +195,36 @@ export function formatDeliveryOverview(metrics: DeliveryMetrics): string {
   ].join('\n');
 }
 
+// BL-100 cost-01/02/03/04/07: cost & resource telemetry, one summarized
+// line per role (per-day/per-ticket detail is available via the bridge's
+// /cost-telemetry endpoint - the CLI stays a compact overview, matching
+// formatOverview's own "one line per role" busyness convention).
+function formatCostTelemetryLine(costTelemetry: Record<string, RoleCostTelemetry>, roleNames: string[]): string {
+  const parts = roleNames.map((role) => {
+    const roleTelemetry = costTelemetry[role];
+    const days = roleTelemetry ? Object.values(roleTelemetry.byDay) : [];
+    if (days.length === 0) {
+      return `${role} ${NO_SAMPLE_PLACEHOLDER}`;
+    }
+    const totalTokens = days.reduce((sum, d) => sum + d.usage.inputTokens + d.usage.outputTokens, 0);
+    const totalCost = days.reduce((sum, d) => sum + (d.costUsd ?? 0), 0);
+    return `${role} ${totalTokens} tok / $${totalCost.toFixed(2)}`;
+  });
+  return 'Cost telemetry: ' + parts.join(', ');
+}
+
+function formatResourceTrendsLine(resourceTrends: Record<string, RoleResourceTrend>, roleNames: string[]): string {
+  const parts = roleNames.map((role) => {
+    const trend = resourceTrends[role];
+    if (!trend || trend.currentRssBytes === null || trend.currentCpuPercent === null) {
+      return `${role} ${NO_SAMPLE_PLACEHOLDER}`;
+    }
+    const rssMb = Math.round(trend.currentRssBytes / (1024 * 1024));
+    return `${role} ${rssMb}MB / ${trend.currentCpuPercent.toFixed(1)}% cpu`;
+  });
+  return 'Resource usage: ' + parts.join(', ');
+}
+
 // Shared by every headless CLI tool under tools/ that keys off roles.tsv
 // (swarm-metrics.ts, list-dead-letters.ts): read and parse the current
 // project's roles.tsv from its resolved root.
@@ -226,11 +258,14 @@ export function main(): void {
   const metrics = computeSwarmMetrics(mainWorktreePath, roles, runStartMs);
   console.log(formatOverview(metrics, roles.map((r) => r.role)));
 
-  const deliveryMetrics = computeDeliveryMetrics(
-    mainWorktreePath,
-    roles.map((r) => ({ role: r.role, worktreePath: r.worktreePath }))
-  );
+  const roleWorktrees = roles.map((r) => ({ role: r.role, worktreePath: r.worktreePath }));
+  const deliveryMetrics = computeDeliveryMetrics(mainWorktreePath, roleWorktrees);
   console.log(formatDeliveryOverview(deliveryMetrics));
+
+  const costTelemetry = computeCostTelemetry(mainWorktreePath, roleWorktrees);
+  const resourceTrends = computeResourceTrends(readResourceSampleEvents(mainWorktreePath), roles.map((r) => r.role), Date.now());
+  console.log(formatCostTelemetryLine(costTelemetry, roles.map((r) => r.role)));
+  console.log(formatResourceTrendsLine(resourceTrends, roles.map((r) => r.role)));
 }
 
 if (require.main === module) {
