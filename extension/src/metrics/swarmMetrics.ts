@@ -18,7 +18,9 @@ export interface MeanTicketTime {
 
 // The forward pipeline chain (PIPELINE.md). The coordinator sits outside it
 // and is never a retry participant.
-const PIPELINE_ORDER = ['specifier', 'coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA'];
+// BL-102: exported so stageDwell.ts's per-stage report iterates the same
+// pipeline roster (and excludes the coordinator) instead of redeclaring it.
+export const PIPELINE_ORDER = ['specifier', 'coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA'];
 
 function pipelineIndex(role: string): number {
   return PIPELINE_ORDER.indexOf(role);
@@ -161,6 +163,62 @@ function readHandoffFiles(dir: string): string[] {
   }
 }
 
+// BL-102: shared flat (non-recursing) "list + parse every .handoff file
+// directly in this dir" reader - ticketHoldingWindows.ts's completed-dir
+// read and the batch-aware walker below both need this exact leaf
+// operation (jscpd flagged the inline duplication once stageDwell.ts added
+// a second, structurally identical copy).
+export function readHandoffHeaderRecordsFlat(dir: string): Array<Record<string, string>> {
+  const records: Array<Record<string, string>> = [];
+  for (const file of readHandoffFiles(dir)) {
+    try {
+      records.push(parseHandoffHeaders(fs.readFileSync(path.join(dir, file), 'utf8')));
+    } catch {
+      continue;
+    }
+  }
+  return records;
+}
+
+// One entry of a dir being walked with batch support: either a direct
+// .handoff file, or a batch_* subdirectory a batch role's
+// done_with_current_batch.sh moved a whole completed/in_process batch into
+// - never nested deeper than that one level. Split out of
+// readHandoffHeaderRecordsWithBatches so each function stays under the
+// CRAP<=6 gate.
+function readHandoffHeaderRecordAt(fullPath: string, isHandoffFile: boolean): Array<Record<string, string>> {
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(fullPath);
+  } catch {
+    return [];
+  }
+  if (stat.isDirectory()) {
+    return readHandoffHeaderRecordsFlat(fullPath);
+  }
+  if (!isHandoffFile) {
+    return [];
+  }
+  try {
+    return [parseHandoffHeaders(fs.readFileSync(fullPath, 'utf8'))];
+  } catch {
+    return [];
+  }
+}
+
+// BL-102: shared by ticketHoldingWindows.ts's in_process read and
+// stageDwell.ts's completed read - both need batch_* subdirectories
+// included, one level deep (see readHandoffHeaderRecordAt above).
+export function readHandoffHeaderRecordsWithBatches(dir: string): Array<Record<string, string>> {
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
+  return entries.flatMap((entry) => readHandoffHeaderRecordAt(path.join(dir, entry), entry.endsWith('.handoff')));
+}
+
 function intervalMs(start: number, end: number): number {
   return !Number.isNaN(start) && !Number.isNaN(end) && end > start ? end - start : 0;
 }
@@ -251,7 +309,10 @@ export interface RetryCounts {
   perTicket: Record<string, number>;
 }
 
-function extractTicketId(task: string): string | null {
+// BL-102: exported so stageDwell.ts's dwell-record derivation reuses this
+// same ticket-id extraction instead of a third copy (ticketHoldingWindows.ts
+// already has its own private duplicate of this exact regex).
+export function extractTicketId(task: string): string | null {
   const match = task.match(/^([A-Za-z]+-\d+)/);
   return match ? match[1] : null;
 }

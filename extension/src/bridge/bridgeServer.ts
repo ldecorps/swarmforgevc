@@ -1,5 +1,12 @@
 import * as http from 'http';
-import { buildBridgeState, buildDeliveryMetricsState, buildCostTelemetryState, buildHolisticState, BridgeState } from './bridgeState';
+import {
+  buildBridgeState,
+  buildDeliveryMetricsState,
+  buildCostTelemetryState,
+  buildHolisticState,
+  buildStageDwellState,
+  BridgeState,
+} from './bridgeState';
 import { isAuthorizedRequest, isAuthorizedByQueryToken } from './bridgeAuth';
 import { getHolisticUiHtml } from './holisticUiHtml';
 
@@ -101,6 +108,13 @@ function buildJsonRoutes(targetPath: string, runLogPath: string): JsonRoute[] {
       // handoff-state reads, too expensive for the SSE poll loop.
       matches: (url) => url === '/holistic',
       compute: () => buildHolisticState(targetPath, runLogPath),
+    },
+    {
+      // BL-102: same posture as /metrics/cost-telemetry/holistic - scans
+      // every role's completed-handoff audit trail, too expensive for the
+      // SSE poll loop.
+      matches: (url) => url === '/stage-dwell',
+      compute: () => buildStageDwellState(targetPath),
     },
   ];
 }
