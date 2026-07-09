@@ -27,3 +27,18 @@ test('cli.js exits nonzero with usage guidance when no feature file is given', (
   assert.equal(result.status, 2);
   assert.match(result.stderr, /usage:/);
 });
+
+test('cli.js exits 1 and prints the error stack when the pipeline itself throws', () => {
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-cli-throw-'));
+  try {
+    const result = spawnSync(
+      process.execPath,
+      [CLI, path.join(outDir, 'does-not-exist.feature'), outDir, STEPS_MODULE],
+      { encoding: 'utf8' }
+    );
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Error/);
+  } finally {
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
+});
