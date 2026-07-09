@@ -391,22 +391,29 @@ export class SwarmPanel {
   // detector uses. Routed through needsHumanReconciler so this source's
   // "false" never clears a tile the question detector still holds true (and
   // vice versa) — see needsHumanReconciler.ts (BL-067).
+  //
+  // BL-148: this used to ALSO feed this.emailNotifier directly (both here
+  // and, redundantly, again via recordEmailUpdates below) - but that made
+  // the stuck-escalation email depend on this panel's own poll loop, which
+  // stops the moment the webview is closed (the root cause of a confirmed
+  // wedge never alerting a human). Stuck-escalation emailing now lives at
+  // the extension-host level, driven by chaserMonitor's own
+  // panel-independent interval (see extension.ts's
+  // ensureStuckEscalationNotifier) - this method only owns the webview
+  // badge now.
   private postStuckEscalations(): void {
     const deltas = this.needsHumanReconciler.applyStuckRoles(escalatedStuckRoles());
     if (deltas.length > 0) {
       this.panel.webview.postMessage({ type: 'needsHuman', events: deltas });
-      this.emailNotifier?.recordUpdates(deltas, Date.now());
     }
-    this.recordEmailUpdates(deltas);
   }
 
-  // Feeds the BL-073 email notifier from the RECONCILED needs-human deltas
-  // (the same ones posted to the webview), not from either raw source
-  // directly. Both the question detector and the stuck-in-process chaser
-  // reach this: a stuck-escalated role now emails too (the silent-overnight
-  // -stall case BL-067/BL-073 both exist for), and — same reasoning as the
-  // webview reconciler — one source's "false" can never prematurely clear
-  // the grace-period clock while the other source still holds true.
+  // Feeds the BL-073 email notifier from question-detection deltas (BL-045)
+  // only now (BL-148 moved stuck-escalation emailing off this panel-scoped
+  // instance, see postStuckEscalations above) - a role asking a question in
+  // its pane, PaneTailer's exclusive signal, needs the panel open to read it
+  // by construction, so this remaining panel-dependency is unavoidable and
+  // correctly scoped, unlike the stuck-escalation path.
   private recordEmailUpdates(deltas: NeedsHumanEvent[]): void {
     if (!this.emailNotifier || deltas.length === 0) {
       return;
