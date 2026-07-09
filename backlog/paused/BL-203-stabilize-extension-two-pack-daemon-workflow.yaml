@@ -29,6 +29,15 @@ notes: |
   BL-146) clears too — same reasoning as before, now extended: do not
   isolate/bounce while reliability-epic work is in flight at the coder.
 
+  UPDATE (coordinator, 2026-07-09, later): the guarding chain is now fully
+  clear — BL-122, BL-128, and BL-146 have all merged and closed to
+  done/M2-reliability-layer/. The dependency hold is stale. Not auto-acting:
+  promoting this ticket still requires isolating the paused queue (setting
+  every other paused item aside) and requesting a profile bounce to
+  stabilize-two-pack via remote_bounce.sh — a swarm-topology change with
+  real disruption to the other paused work, not a normal promotion. Flagged
+  to the operator for a go/no-go before isolating+bouncing.
+
 description: |
   Problem:
   The VS Code extension launch path has been unreliable for hundreds of
