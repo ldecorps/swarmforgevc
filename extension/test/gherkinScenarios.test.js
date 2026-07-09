@@ -206,6 +206,18 @@ test('a trailing "Non-behavioral gates" comment block after the last scenario is
   assert.equal(scenarios[0].id, undefined);
 });
 
+test('a blank line between the tag comment and its Scenario: line does not clear the pending tag', () => {
+  const text = ['# BL-106 branch-ns-01', '', 'Scenario: still tagged across the blank line', '  Given a', ''].join('\n');
+  const scenarios = extractScenarios(text);
+  assert.equal(scenarios[0].id, 'BL-106/branch-ns-01');
+});
+
+test('any non-blank, non-tag line between a tag comment and the next Scenario: clears the pending tag', () => {
+  const text = ['# BL-106 branch-ns-01', 'Some unrelated prose line', 'Scenario: no longer tagged', '  Given a', ''].join('\n');
+  const scenarios = extractScenarios(text);
+  assert.equal(scenarios[0].id, undefined);
+});
+
 test('works identically for a .feature-file-shaped source and an inline acceptance: | block (both forms)', () => {
   const featureFileStyle = 'Feature: x\n\nScenario: shared behavior\n  Given a\n  Then b\n';
   const inlineBlockStyle = 'Feature: x\n\n# BL-149 cooldown-gate-01\nScenario: shared behavior\n  Given a\n  Then b\n';
