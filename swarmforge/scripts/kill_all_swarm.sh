@@ -42,7 +42,7 @@ done
 ROOT="$(cd "${1:-.}" && pwd)"
 DAEMON_DIR="$ROOT/.swarmforge/daemon"
 AUDIT="$DAEMON_DIR/kill-all-audit.log"
-SOCKET_GLOB="/private/tmp/swarmforge-"*/*.sock
+SOCKET_GLOB="/tmp/swarmforge-"*/*.sock
 
 log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$AUDIT"
