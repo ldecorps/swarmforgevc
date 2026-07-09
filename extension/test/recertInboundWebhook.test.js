@@ -3,6 +3,8 @@ const crypto = require('node:crypto');
 const { extractEmailFields, handleInboundEmailWebhook } = require('../out/notify/recertInboundWebhook');
 
 const SECRET = 'whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw';
+const NOW_ISO = '2026-07-09T12:00:00Z';
+const FRESH_TIMESTAMP = String(Math.floor(Date.parse(NOW_ISO) / 1000));
 
 function sign(id, timestamp, rawBody, secret = SECRET) {
   const secretBytes = Buffer.from(secret.replace(/^whsec_/, ''), 'base64');
@@ -11,9 +13,8 @@ function sign(id, timestamp, rawBody, secret = SECRET) {
   return `v1,${sig}`;
 }
 
-function requestForRawBody(rawBody, secret = SECRET) {
+function requestForRawBody(rawBody, secret = SECRET, svixTimestamp = FRESH_TIMESTAMP) {
   const svixId = 'msg_1';
-  const svixTimestamp = '1614265330';
   return {
     headers: { svixId, svixTimestamp, svixSignature: sign(svixId, svixTimestamp, rawBody, secret) },
     rawBody,
@@ -58,7 +59,7 @@ async function run(payloadObj, deps = {}) {
   const logged = [];
   const result = await handleInboundEmailWebhook(request, {
     secret: SECRET,
-    nowIso: '2026-07-09T12:00:00Z',
+    nowIso: NOW_ISO,
     commitProposal: async (proposal) => {
       committed.push(proposal);
     },
@@ -86,7 +87,7 @@ test('a validly signed but non-JSON request body produces no proposal and logs w
   const logged = [];
   const result = await handleInboundEmailWebhook(request, {
     secret: SECRET,
-    nowIso: '2026-07-09T12:00:00Z',
+    nowIso: NOW_ISO,
     commitProposal: async () => {
       throw new Error('must not be called');
     },
@@ -99,6 +100,27 @@ test('a validly signed but non-JSON request body produces no proposal and logs w
 
 test('webhook-02: an unsigned/forged request is rejected with no proposal committed', async () => {
   const { result, committed } = await run(updateEmailPayload('BL-042-demo-01', 'x'), { secretForSigning: 'whsec_' + Buffer.from('wrong').toString('base64') });
+  assert.equal(result.status, 401);
+  assert.equal(committed.length, 0);
+});
+
+// QA bounce (BL-217): a valid signature over a stale svix-timestamp is a
+// replay, not a fresh delivery - reproduces QA's exact repro (a 2021-dated
+// signed request) to prove it is now rejected, matching webhook-02's own
+// "reject before ever reaching parse/commit" intent for an unauthenticated
+// write.
+test('a validly signed but stale/replayed request is rejected with no proposal committed', async () => {
+  const rawBody = JSON.stringify(updateEmailPayload('BL-042-demo-01', 'x'));
+  const request = requestForRawBody(rawBody, SECRET, '1614265330');
+  const committed = [];
+  const result = await handleInboundEmailWebhook(request, {
+    secret: SECRET,
+    nowIso: NOW_ISO,
+    commitProposal: async (proposal) => {
+      committed.push(proposal);
+    },
+    log: () => {},
+  });
   assert.equal(result.status, 401);
   assert.equal(committed.length, 0);
 });
@@ -142,7 +164,7 @@ test('a commitProposal failure is caught, logged, and still returns a response r
   const logged = [];
   const result = await handleInboundEmailWebhook(request, {
     secret: SECRET,
-    nowIso: '2026-07-09T12:00:00Z',
+    nowIso: NOW_ISO,
     commitProposal: async () => {
       throw new Error('repo write failed');
     },
@@ -151,4 +173,20 @@ test('a commitProposal failure is caught, logged, and still returns a response r
   assert.equal(result.status, 500);
   assert.equal(logged.length, 1);
   assert.match(logged[0], /repo write failed/);
+});
+
+test('a commitProposal failure that rejects with a non-Error value is stringified, not crashed on', async () => {
+  const request = requestFor(updateEmailPayload('BL-042-demo-05', 'text'));
+  const logged = [];
+  const result = await handleInboundEmailWebhook(request, {
+    secret: SECRET,
+    nowIso: NOW_ISO,
+    commitProposal: async () => {
+      throw 'not-an-error-object';
+    },
+    log: (message) => logged.push(message),
+  });
+  assert.equal(result.status, 500);
+  assert.equal(logged.length, 1);
+  assert.match(logged[0], /not-an-error-object/);
 });

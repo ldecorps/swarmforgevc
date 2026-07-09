@@ -77,6 +77,19 @@ test('bridgeRecertProposals skips a malformed (non-JSON) file, logs it, and does
   });
 });
 
+test('bridgeRecertProposals skips a file that is valid JSON but not an object (e.g. a bare number)', () => {
+  withTempDir((dir) => {
+    writeInboxFile(dir, 'not-an-object.json', '42');
+
+    const result = bridgeRecertProposals(dir, NOW);
+
+    assert.deepEqual(result.ingested, []);
+    assert.equal(result.skipped.length, 1);
+    assert.equal(result.skipped[0].file, 'not-an-object.json');
+    assert.equal(fs.existsSync(path.join(inboxDir(dir), 'not-an-object.json')), true);
+  });
+});
+
 test('bridgeRecertProposals skips a well-formed-JSON file that is not a valid recert proposal shape', () => {
   withTempDir((dir) => {
     writeInboxFile(dir, 'wrong-shape.json', JSON.stringify({ scenarioId: 'BL-1', outcome: 'confirm', receivedAtIso: '2026-07-09T11:00:00Z' }));
