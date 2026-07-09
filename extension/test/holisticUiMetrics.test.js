@@ -64,6 +64,17 @@ test('the metrics section renders a burndown chart per milestone and a velocity 
   assert.ok(section.querySelectorAll('svg').length >= 2, 'a velocity chart and at least one burndown chart must render as SVG');
 });
 
+test('trend arrows match each section\'s own direction (up/down) - the fixture varies them precisely so a swapped or dropped arrow is caught', async () => {
+  const dom = renderWithToken(fakeMetrics());
+  await flush();
+  await flush();
+  const text = dom.window.document.getElementById('metricsSection').textContent;
+  // velocity.trend.direction: 'up'
+  assert.match(text, /5 closed ▲/);
+  // burndown[0].trend.direction: 'down'
+  assert.match(text, /M4: 2 remaining ▼/);
+});
+
 test('every rendered metric value traces directly to the fetched JSON, not a UI-side computation (presentation-only-02)', async () => {
   const metrics = fakeMetrics();
   metrics.cycleTime.medianMs = 7 * 3600000;
