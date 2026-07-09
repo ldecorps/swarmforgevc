@@ -1,7 +1,7 @@
 import { runGitLog, deriveTicketLifecycles, TicketLifecycleEvent } from './gitHistoryAdapter';
 import { computeTrend, TrendResult, TrendSeriesPoint } from './trend';
 import { readBacklogFolders, BacklogFolders, BacklogItem } from '../panel/backlogReader';
-import { RoleWorktree, readTestDurationRecords } from './swarmMetrics';
+import { RoleWorktree, readAllTestDurationRecords } from './swarmMetrics';
 
 // BL-096: delivery-flow metrics (velocity, burndown, cycle time, forecasts)
 // derived purely from git history + the current backlog/ folder state - see
@@ -307,6 +307,28 @@ function naiveForecast(position: number, throughputPerDay: number, cycleTimeP50M
   return { p50: nowMs + queueDelayMs + cycleTimeP50Ms, p85: nowMs + queueDelayMs + cycleTimeP85Ms };
 }
 
+// Relaxes one ticket's forecast to the max of its own current dates and its
+// dependencies' current dates; returns whether it changed. Split out of
+// applyDependencyConstraints so each function stays under the CRAP<=6 gate.
+function relaxTicketForecast(ticketId: string, dependsOnIds: string[], finalById: Map<string, ForecastMs>): boolean {
+  const current = finalById.get(ticketId)!;
+  let maxP50 = current.p50;
+  let maxP85 = current.p85;
+  for (const depId of dependsOnIds) {
+    const dep = finalById.get(depId);
+    if (!dep) {
+      continue; // already closed, or an unknown id - no constraint
+    }
+    maxP50 = Math.max(maxP50, dep.p50);
+    maxP85 = Math.max(maxP85, dep.p85);
+  }
+  if (maxP50 === current.p50 && maxP85 === current.p85) {
+    return false;
+  }
+  finalById.set(ticketId, { p50: maxP50, p85: maxP85 });
+  return true;
+}
+
 // A ticket's forecast must never precede any of its own depends_on tickets'
 // forecasts. Resolved via bounded relaxation (repeatedly taking the max of
 // each ticket's own naive date and its dependencies' current dates) rather
@@ -322,19 +344,7 @@ function applyDependencyConstraints(
   for (let pass = 0; pass < queue.length + 1; pass++) {
     let changed = false;
     for (const t of queue) {
-      const current = finalById.get(t.ticketId)!;
-      let maxP50 = current.p50;
-      let maxP85 = current.p85;
-      for (const depId of dependsOnById.get(t.ticketId) ?? []) {
-        const dep = finalById.get(depId);
-        if (!dep) {
-          continue; // already closed, or an unknown id - no constraint
-        }
-        maxP50 = Math.max(maxP50, dep.p50);
-        maxP85 = Math.max(maxP85, dep.p85);
-      }
-      if (maxP50 !== current.p50 || maxP85 !== current.p85) {
-        finalById.set(t.ticketId, { p50: maxP50, p85: maxP85 });
+      if (relaxTicketForecast(t.ticketId, dependsOnById.get(t.ticketId) ?? [], finalById)) {
         changed = true;
       }
     }
@@ -415,8 +425,7 @@ export interface SuiteDurationTrendResult {
 }
 
 export function computeSuiteDurationTrend(targetPath: string, roles: RoleWorktree[], nowMs: number): SuiteDurationTrendResult {
-  const worktreePaths = new Set<string>([targetPath, ...roles.map((r) => r.worktreePath)]);
-  const allRecords = [...worktreePaths].flatMap(readTestDurationRecords);
+  const allRecords = readAllTestDurationRecords(targetPath, roles);
 
   if (allRecords.length === 0) {
     return { hasLocalData: false, dailySeries: [], trend: computeTrend([]) };

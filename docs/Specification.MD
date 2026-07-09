@@ -230,6 +230,9 @@ The bridge is an **opt-in local HTTP server** that exposes the same on-disk swar
 | `GET /api/backlog` | JSON: active/paused/done items | Backlog folders and ticket metadata |
 | `GET /api/runlog` | JSON: timeline of stage transitions and key events | Run history and audit trail |
 | `GET /events` | Server-Sent Events (SSE) stream | Real-time updates when stage or agent state changes |
+| `GET /metrics` | JSON: delivery-flow metrics (velocity, burndown, cycle time, forecasts, suite duration trend) | Trend/forecast data for monitoring dashboards or scripts |
+
+`GET /metrics` is computed fresh on each request rather than folded into the ~1s SSE poll loop the other endpoints share — the underlying git-history walk is too expensive to recompute every tick.
 
 **Example usage (cURL):**
 
@@ -280,6 +283,18 @@ Beside the Backlog pane, the extension shows a collapsible Metrics section that 
 
 The metrics pane folds and unfolds like the Backlog pane and refreshes on the panel's normal cadence — no additional polling loop is introduced.
 
+#### Delivery Metrics (velocity, burndown, cycle time, forecasts)
+
+A second metrics layer, derived purely from git history and the current `backlog/` folder state, computes delivery-flow trends:
+
+- **Velocity**: closed-ticket count over a trailing window, with a trend vs. the prior window (e.g. "12 closed in trailing 7d (+3 vs prior)")
+- **Burndown**: remaining-ticket count per milestone, reconstructed so the final point always matches the current backlog state
+- **Cycle time**: median and p85 spec-to-close duration over the recent closed set
+- **Forecasts**: p50/p85 completion date per open milestone, projected from trailing throughput and historical cycle-time distribution — dependency-aware, so a ticket's forecast date never precedes its `depends_on` tickets'
+- **Suite duration trend**: the existing per-run suite duration (BL-078) expressed as a trend line; reports "no local data" gracefully rather than erroring
+
+Available today via the `GET /metrics` bridge endpoint (see Remote Access & Phone App below) and the CLI (below) — both are fed by the same computation, so they always report the same numbers. Charting these trends in the panel's web UI is tracked separately (BL-211); this layer is computation/trend only for now.
+
 #### Agent CLI
 
 Every role can also run a headless command-line version of the same metrics:
@@ -288,7 +303,7 @@ Every role can also run a headless command-line version of the same metrics:
 node extension/out/tools/swarm-metrics.js
 ```
 
-Runnable from the repo root or from any `.worktrees/<role>/` checkout. Prints a short plain-text summary — mean ticket time, one busyness line per role, retry total, suite duration with warnings, and a chaser telemetry line per role — and exits 0 with placeholder values on a fresh run. The CLI and panel are fed by the same underlying metrics computation module, so they always report the same values.
+Runnable from the repo root or from any `.worktrees/<role>/` checkout. Prints a short plain-text summary — mean ticket time, one busyness line per role, retry total, suite duration with warnings, and a chaser telemetry line per role — followed by one line per delivery metric (velocity, burndown, cycle time, forecasts, suite duration trend) — and exits 0 with placeholder values on a fresh run. The CLI and panel/bridge are fed by the same underlying metrics computation modules, so they always report the same values.
 
 #### Queue status CLI
 
