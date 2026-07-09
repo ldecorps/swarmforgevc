@@ -81,6 +81,20 @@ export function isClaudeAgentRunning(
   return isAgentCliRunning(paneCommand, paneText);
 }
 
+// Independent pane-text signals that each, alone, indicate an agent CLI is
+// running: any one matching is sufficient. A data-driven list rather than a
+// cascade of if-statements keeps isAgentCliRunning itself at a single
+// decision point per signal source (CRAP<=6 gate), matching the same
+// registry-driven spirit as PROVIDER_DESCRIPTORS above.
+const TEXT_RUNNING_SIGNALS: Array<(text: string) => boolean> = [
+  (text) => SWARMFORGE_ROLE.test(text),
+  (text) => PERMISSION_MODE.test(text),
+  (text) => UI_MARKERS.test(text),
+  (text) => DIVIDER_AND_PROMPT.test(text) && ARROW_MARKER.test(text),
+  (text) => PROVIDER_DESCRIPTORS.some((d) => d.bannerPattern?.test(text)),
+  (text) => PROVIDER_DESCRIPTORS.some((d) => d.busyPattern?.test(text)),
+];
+
 export function isAgentCliRunning(
   paneCommand: string,
   paneText: string
@@ -95,26 +109,14 @@ export function isAgentCliRunning(
     return false;
   }
 
-  if (SWARMFORGE_ROLE.test(text)) {
-    return true;
-  }
-  if (PERMISSION_MODE.test(text)) {
-    return true;
-  }
-  if (UI_MARKERS.test(text)) {
-    return true;
-  }
-  if (DIVIDER_AND_PROMPT.test(text) && ARROW_MARKER.test(text)) {
-    return true;
-  }
-  if (PROVIDER_DESCRIPTORS.some((d) => d.bannerPattern?.test(text))) {
-    return true;
-  }
-  if (PROVIDER_DESCRIPTORS.some((d) => d.busyPattern?.test(text))) {
-    return true;
-  }
+  return TEXT_RUNNING_SIGNALS.some((matches) => matches(text));
+}
 
-  return false;
+// Split out of isShellOnlyPane so its own complexity stays under the
+// CRAP<=6 gate (mirrors TEXT_RUNNING_SIGNALS' extraction above) - no
+// behavior change, same four command shapes recognized as a bare shell.
+function isShellCommandName(cmd: string): boolean {
+  return cmd === 'bash' || cmd === 'zsh' || cmd === '-zsh' || cmd.endsWith('/bash') || cmd.endsWith('/zsh');
 }
 
 export function isShellOnlyPane(
@@ -125,15 +127,7 @@ export function isShellOnlyPane(
     return false;
   }
 
-  const cmd = paneCommand.toLowerCase();
-  const isShell =
-    cmd === 'bash' ||
-    cmd === 'zsh' ||
-    cmd === '-zsh' ||
-    cmd.endsWith('/bash') ||
-    cmd.endsWith('/zsh');
-
-  if (!isShell) {
+  if (!isShellCommandName(paneCommand.toLowerCase())) {
     return false;
   }
 

@@ -119,6 +119,14 @@ test('isAgentCliRunning detects aider in the pane command', () => {
   assert.equal(isAgentActivelyWorking('aider', 'Repo-map: using 4096 tokens'), false);
 });
 
+test('isAgentActivelyWorking is false for a recognized provider with no busyPattern configured (claude/codex/copilot/grok)', () => {
+  // claude has a descriptor but no busyPattern (isPaneActivelyProcessing's
+  // own text signals are its only busy check) - the optional-chained
+  // descriptor?.busyPattern?.test(...) must not throw or false-positive
+  // when busyPattern is simply absent.
+  assert.equal(isAgentActivelyWorking('claude', 'some ordinary output, not a busy footer'), false);
+});
+
 // ── BL-142 slice 1: provider-descriptor-driven detection ───────────────────
 
 test('BL-142 descriptor-parity-01: registry has one descriptor per currently-supported provider', () => {
