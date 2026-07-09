@@ -4,6 +4,7 @@
 # moves under inbox/completed/stale-sweep-<timestamp>/.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "${1:-.}" && pwd)"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 MOVED=0
@@ -77,7 +78,17 @@ sweep_inbox() {
   esac
 }
 
-sweep_inbox "$ROOT/.swarmforge/handoffs/inbox" master
+# BL-128: coordinator and specifier each now have their own physical
+# mailbox on the shared master worktree (no longer one shared inbox), so
+# each master-resident role's own subdirectory is swept individually -
+# resolved via mailbox_dir.bb, the one shared path resolver, rather than
+# re-deriving the <role> subdirectory join here.
+if [[ -f "$ROOT/.swarmforge/roles.tsv" ]]; then
+  while IFS= read -r role; do
+    [[ -n "$role" ]] || continue
+    sweep_inbox "$(bb "$SCRIPT_DIR/mailbox_dir.bb" "$ROOT" "$role" new | xargs dirname)" master
+  done < <(awk -F'\t' '$2 == "master" { print $1 }' "$ROOT/.swarmforge/roles.tsv")
+fi
 
 shopt -s nullglob
 for wt in "$ROOT/.worktrees"/*; do
