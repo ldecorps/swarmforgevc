@@ -26,6 +26,7 @@ flowchart TB
     METRICS["swarmMetrics.ts"]
     DELIVERYMETRICS["deliveryMetrics.ts\n(velocity/burndown/cycle-time/\nforecasts, git-history-derived)"]
     COSTMETRICS["costTelemetry.ts / resourceTelemetry.ts\n(token cost from transcripts,\nRSS/CPU trends)"]
+    HOLISTICUI["holisticProjections.ts / holisticUiHtml.ts\n(self-contained dev-state page,\nserved at bridge root)"]
     BACKLOGRW["backlogReader.ts / backlogWriter.ts"]
     BOUNCE["bounceWatcher.ts / bouncer.ts / bounceDrain.ts"]
     MSGBUS["messageBus.ts\n(append-only audit log)"]
@@ -76,10 +77,13 @@ flowchart TB
   BRIDGE --> DAEMONHEALTH
   BRIDGE --> DELIVERYMETRICS
   BRIDGE --> COSTMETRICS
+  BRIDGE --> HOLISTICUI
 
   STATE -->|reads| ROLESTSV
   DELIVERYMETRICS -->|git log,\nreads| BACKLOGDIR
   COSTMETRICS -->|reads ~/.claude/projects/\ntranscripts, HANDOFFS,\nchaser-*.jsonl| DAEMONDIR
+  HOLISTICUI -->|reads| BACKLOGDIR
+  HOLISTICUI -->|reads| HANDOFFS
   DISCOVERY -->|reads| SOCKET
   DAEMONHEALTH -->|reads| DAEMONDIR
   TRANSPORTHEALTH -->|reads| HANDOFFS
@@ -103,7 +107,7 @@ flowchart TB
   classDef substrate fill:#8250df,color:#fff,stroke:#4c2889;
   classDef state fill:#9a6700,color:#fff,stroke:#5c4200;
   classDef gh fill:#57606a,color:#fff,stroke:#32383f;
-  class EXT,LAUNCHER,TMUXCLIENT,TAILER,DISCOVERY,STATE,DAEMONHEALTH,TRANSPORTHEALTH,CANARY,METRICS,DELIVERYMETRICS,COSTMETRICS,BACKLOGRW,BOUNCE,MSGBUS,PRCREATOR,BRIDGE,PANEL host;
+  class EXT,LAUNCHER,TMUXCLIENT,TAILER,DISCOVERY,STATE,DAEMONHEALTH,TRANSPORTHEALTH,CANARY,METRICS,DELIVERYMETRICS,COSTMETRICS,HOLISTICUI,BACKLOGRW,BOUNCE,MSGBUS,PRCREATOR,BRIDGE,PANEL host;
   class TILES webview;
   class SOCKET,PANES substrate;
   class ROLESTSV,HANDOFFS,DAEMONDIR,BACKLOGDIR state;
