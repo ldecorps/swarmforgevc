@@ -77,6 +77,12 @@ function fireInstall(listeners) {
   return waited;
 }
 
+function fireActivate(listeners) {
+  let waited;
+  listeners.activate({ waitUntil: (p) => { waited = p; } });
+  return waited;
+}
+
 // Real browsers always resolve Request.url to an absolute URL before a fetch
 // handler ever sees it - sw.js's `new URL(event.request.url)` relies on
 // that, so these fixtures use absolute URLs rather than the relative ones
@@ -97,6 +103,20 @@ test('install pre-caches the static shell', async () => {
   const cache = await sandbox.caches.open('swarmforge-dashboard-v1');
   const shell = await cache.match('./index.html');
   assert.ok(shell, 'index.html must be pre-cached on install');
+});
+
+test('activate deletes stale cache versions from a prior deploy, keeping only the current CACHE_NAME', async () => {
+  const { listeners, sandbox } = loadServiceWorker(() => Promise.reject(new Error('no network in this test')));
+  // A cache left behind by a prior service-worker version (a bumped
+  // CACHE_NAME on redeploy) - activate's own job is to clean these up so
+  // storage doesn't leak and a stale shell can never be served.
+  await sandbox.caches.open('swarmforge-dashboard-v0');
+  await sandbox.caches.open('swarmforge-dashboard-v1');
+
+  await fireActivate(listeners);
+
+  const remaining = await sandbox.caches.keys();
+  assert.deepEqual(remaining, ['swarmforge-dashboard-v1']);
 });
 
 test('backlog.json fetch is network-first: a successful network response is served and cached', async () => {
