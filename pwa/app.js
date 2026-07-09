@@ -7,7 +7,12 @@
 
   var DASHBOARD_URL = './backlog.json';
   var DOCS_TREE_URL = './docs-tree.json';
+  var RECERT_BATCH_URL = './recert-batch.json';
   var SVG_NS = 'http://www.w3.org/2000/svg';
+  // BL-150: the inbound-webhook seam that would receive this address' mail
+  // is deployment/ops work outside this ticket's scope (no public Resend
+  // Inbound endpoint exists yet) - placeholder until that's stood up.
+  var RECERT_EMAIL_TO = 'recert@swarmforge.invalid';
 
   function el(tag, attrs, children) {
     var node = document.createElement(tag);
@@ -363,6 +368,116 @@
     renderDocsExplorer();
   }
 
+  // BL-150: recertification - a separate section from the read-only docs
+  // explorer above (which keeps its own docs-drilldown-05 "no edit
+  // affordance anywhere" guarantee unchanged). The PWA is fully static
+  // (published to GitHub Pages, no live backend it can reach), so every
+  // outcome (confirm/update/delete) leaves the phone the same way: a
+  // mailto: link the human taps, matching extension/src/docs/recertification.ts's
+  // buildRecertEmailSubject/buildRecertEmailBody exactly so the extension
+  // host's inbound parser understands it.
+  var recertBatch = null;
+
+  function recertEmailSubject(scenarioId, outcome) {
+    return 'SwarmForge recert: ' + outcome + ' ' + scenarioId;
+  }
+
+  function recertEmailBody(scenarioId, outcome, newText) {
+    var lines = ['scenario: ' + scenarioId, 'outcome: ' + outcome];
+    if (outcome === 'update') {
+      lines.push('---', newText || '');
+    }
+    return lines.join('\n');
+  }
+
+  function recertMailtoHref(scenarioId, outcome, newText) {
+    var subject = recertEmailSubject(scenarioId, outcome);
+    var body = recertEmailBody(scenarioId, outcome, newText);
+    return 'mailto:' + encodeURIComponent(RECERT_EMAIL_TO) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+  }
+
+  function mailtoLink(label, href) {
+    return el('a', { href: href, class: 'recert-send-link', role: 'button' }, [label]);
+  }
+
+  function renderRecertUpdateForm(container, scenario) {
+    container.innerHTML = '';
+    container.appendChild(el('h4', {}, [scenario.name]));
+    var textarea = el('textarea', { class: 'recert-update-text' }, []);
+    textarea.value = scenario.text;
+    container.appendChild(textarea);
+
+    var actions = el('div', { class: 'recert-actions' }, []);
+    var sendLink = mailtoLink('Send update', recertMailtoHref(scenario.id, 'update', textarea.value));
+    // the mailto: href must reflect whatever the human has actually typed
+    // by the time they tap it, not just the text the form opened with.
+    textarea.addEventListener('input', function () {
+      sendLink.setAttribute('href', recertMailtoHref(scenario.id, 'update', textarea.value));
+    });
+    actions.appendChild(sendLink);
+    var cancelBtn = el('button', { type: 'button' }, ['Cancel']);
+    cancelBtn.addEventListener('click', renderRecertContent);
+    actions.appendChild(cancelBtn);
+    container.appendChild(actions);
+  }
+
+  // recert-04: delete is a double gate on top of the specifier's own
+  // proposal review - this in-app confirmation step is separate from, and
+  // must precede, the mailto: compose itself. The "Yes, delete" link's
+  // href (and so its ability to actually send anything) only exists once
+  // this confirmation screen is showing; cancelling returns to the normal
+  // confirm/update/delete choice with nothing sent.
+  function renderRecertDeleteConfirm(container, scenario) {
+    container.innerHTML = '';
+    container.appendChild(el('h4', {}, [scenario.name]));
+    container.appendChild(el('p', { class: 'recert-delete-warning' }, [
+      'This removes the scenario from the acceptance contract once the specifier accepts it. This cannot be undone. Are you sure?',
+    ]));
+
+    var actions = el('div', { class: 'recert-actions' }, []);
+    actions.appendChild(mailtoLink('Yes, delete', recertMailtoHref(scenario.id, 'delete')));
+    var cancelBtn = el('button', { type: 'button' }, ['Cancel']);
+    cancelBtn.addEventListener('click', renderRecertContent);
+    actions.appendChild(cancelBtn);
+    container.appendChild(actions);
+  }
+
+  function renderRecertContent() {
+    var container = document.getElementById('recertContent');
+    container.innerHTML = '';
+    if (!recertBatch || !recertBatch.batch || recertBatch.batch.length === 0) {
+      container.appendChild(noDataParagraph('No scenarios need recertification right now.'));
+      return;
+    }
+    var scenario = recertBatch.batch[0];
+    container.appendChild(el('h4', {}, [scenario.name]));
+    container.appendChild(el('pre', { class: 'gherkin' }, [scenario.text]));
+
+    var actions = el('div', { class: 'recert-actions' }, []);
+    actions.appendChild(mailtoLink('Confirm — still accurate', recertMailtoHref(scenario.id, 'confirm')));
+
+    var updateBtn = el('button', { type: 'button' }, ['Update text']);
+    updateBtn.addEventListener('click', function () {
+      renderRecertUpdateForm(container, scenario);
+    });
+    actions.appendChild(updateBtn);
+
+    var deleteBtn = el('button', { type: 'button' }, ['Delete — obsolete']);
+    deleteBtn.addEventListener('click', function () {
+      renderRecertDeleteConfirm(container, scenario);
+    });
+    actions.appendChild(deleteBtn);
+
+    container.appendChild(actions);
+  }
+
+  function renderRecertBatch(data) {
+    recertBatch = data;
+    var asOf = document.getElementById('recertAsOf');
+    asOf.textContent = 'As of ' + new Date(data.generatedAtIso).toLocaleString();
+    renderRecertContent();
+  }
+
   function registerServiceWorker() {
     if (!('serviceWorker' in navigator)) {
       return Promise.resolve(null);
@@ -413,6 +528,15 @@
     .then(renderDocsTree)
     .catch(function () {
       document.getElementById('docsAsOf').textContent = 'Could not load docs-tree.json (offline and nothing cached yet).';
+    });
+
+  fetch(RECERT_BATCH_URL)
+    .then(function (res) {
+      return res.json();
+    })
+    .then(renderRecertBatch)
+    .catch(function () {
+      document.getElementById('recertAsOf').textContent = 'Could not load recert-batch.json (offline and nothing cached yet).';
     });
 
   registerServiceWorker().then(registerPeriodicSync);
