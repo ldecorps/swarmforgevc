@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 9, 2026
+**Last Updated:** July 10, 2026
 
 ## Overview
 
@@ -235,8 +235,9 @@ The bridge is an **opt-in local HTTP server** that exposes the same on-disk swar
 | `GET /metrics` | JSON: delivery-flow metrics (velocity, burndown, cycle time, forecasts, suite duration trend) | Trend/forecast data for monitoring dashboards or scripts |
 | `GET /cost-telemetry` | JSON: per-role token/cost usage by day, cost attributed per ticket, and resource (RSS/CPU) trends | Token spend and resource usage for monitoring dashboards or scripts |
 | `GET /holistic` | JSON: the projection backing the `/` page — swarm assignments, done-by-milestone, recent activity | The web UI's own data source; also usable directly by scripts |
+| `GET /stage-dwell` | JSON: per-stage queue-wait/processing dwell (median/p90/max), bottleneck stage, trend vs. prior window | The coordinator's swarm-optimizer instrument; also usable directly by scripts |
 
-`GET /metrics`, `GET /cost-telemetry`, and `GET /holistic` are all computed fresh on each request rather than folded into the ~1s SSE poll loop the other endpoints share — the underlying git-history walk and handoff-state/transcript reads are too expensive to recompute every tick.
+`GET /metrics`, `GET /cost-telemetry`, `GET /holistic`, and `GET /stage-dwell` are all computed fresh on each request rather than folded into the ~1s SSE poll loop the other endpoints share — the underlying git-history walk and handoff-state/transcript reads are too expensive to recompute every tick.
 
 **Holistic dev-state web UI:** Opening the bridge's root URL (`http://127.0.0.1:<port>/?token=<token>`) in any browser — desktop or phone, as long as it can reach the dev machine — serves a single self-contained page (inline CSS/JS, no external fetch or CDN, no localStorage/sessionStorage) showing the backlog board, per-swarm panel, pipeline flow, and recent activity, live-updated over the same `/events` SSE stream the rest of the bridge uses. It is read-only, exactly like every other bridge surface. A ticket's `swarm:` field (defaulting to `primary` when absent, per BL-090) determines whether it's shown as a live-tracked local ticket or labeled remote/last-synced. The page also has a **Metrics section** charting the delivery metrics above — a dependency-free inline SVG bar chart for velocity and for each milestone's burndown, plus text readouts for cycle time and forecasts — fetched once per page load/reconnect from `GET /metrics` (presentation only; no metric computation happens client-side) and re-rendered from the already-fetched data on each live update rather than re-fetching every tick.
 
@@ -329,6 +330,16 @@ node extension/out/tools/queue-status.js [--debug]
 ```
 
 Runnable from the repo root or any `.worktrees/<role>/` checkout, same project-root resolution as `swarm-metrics.js`. By default, prints one line per role with only its real `.handoff` payload count (`inbox/new` + `inbox/in_process`) — sidecar files are not even listed, not just hidden. Pass `--debug` to additionally list each role's sidecar files, labeled by kind (`chase-sidecar`, `nudge-sidecar`, `other`).
+
+#### Stage-dwell & bottleneck report CLI
+
+A third headless CLI is the coordinator's swarm-optimizer instrument: per-stage queue-wait and processing dwell (median/p90/max, with IQR-based outlier honesty so one wedged parcel can't masquerade as a capacity problem), the bottleneck stage and its multiple over the next slowest stage, and a trend vs. the prior window:
+
+```sh
+node extension/out/tools/stage-dwell-report.js [--hours N] [--json]
+```
+
+Runnable from the repo root or any `.worktrees/<role>/` checkout, same project-root resolution as `swarm-metrics.js`. Defaults to a 24-hour window; pass `--hours` to change it and `--json` for machine-readable output. Reads every pipeline role's completed handoffs (never the coordinator, which sits outside the forward chain), including batch directories a batch role's `done_with_current_batch.sh` moves completed batches into. Fed by the same computation as the bridge's `GET /stage-dwell` endpoint, so the CLI and bridge always report the same numbers.
 
 ---
 
