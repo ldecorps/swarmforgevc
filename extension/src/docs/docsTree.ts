@@ -3,6 +3,7 @@ import * as path from 'path';
 import { BacklogItem, readBacklogFolders } from '../panel/backlogReader';
 import { getCurrentSha } from '../metrics/gitHistoryAdapter';
 import { extractScenarios, GherkinScenario } from './gherkinScenarios';
+import { translateMarkdown, translateString, TranslationSession } from '../i18n/translate';
 
 // BL-117: documentation drill-down tree - vision -> milestone -> ticket ->
 // Gherkin. All derivation (reading vision docs, grouping by milestone,
@@ -10,6 +11,14 @@ import { extractScenarios, GherkinScenario } from './gherkinScenarios';
 // renderer; the PWA client is a pure renderer of the published artifact
 // (this ticket's own non-behavioral gate). buildDocsTree is pure over
 // already-read data; computeDocsTree is the one impure orchestrator.
+//
+// BL-118: every translatable field below gains an additive *Fr sibling
+// (contentFr/titleFr/descriptionFr) rather than replacing the existing
+// English field's shape - schemaVersion stays unchanged (same additive-
+// field precedent as costHealth on BacklogDashboardData), and every
+// existing English-only consumer/test keeps working untouched.
+// translateDocsTree (below) is the one function that populates them; a
+// tree computeDocsTree alone produces carries none of them at all.
 
 export const DOCS_TREE_SCHEMA_VERSION = 1;
 
@@ -18,6 +27,11 @@ export interface VisionDoc {
   title: string;
   kind: 'markdown' | 'mermaid';
   content: string;
+  // Only ever set for kind "markdown" - a mermaid doc's content is a
+  // diagram source (bilingual-06: never translated), so it simply never
+  // gains this field, rather than gaining one equal to its own English text.
+  contentFr?: string;
+  contentFrUntranslated?: boolean;
 }
 
 export interface MilestoneTicketSummary {
@@ -40,6 +54,10 @@ export interface TicketNode {
   milestone?: string;
   description?: string;
   scenarios: GherkinScenario[];
+  titleFr?: string;
+  titleFrUntranslated?: boolean;
+  descriptionFr?: string;
+  descriptionFrUntranslated?: boolean;
 }
 
 export interface DocsTreeData {
@@ -201,4 +219,56 @@ export function computeDocsTree(targetPath: string, nowMs: number = Date.now()):
   }
 
   return buildDocsTree(vision, items, scenariosByTicketId, getCurrentSha(targetPath), new Date(nowMs).toISOString());
+}
+
+async function translateVisionDoc(session: TranslationSession, doc: VisionDoc): Promise<VisionDoc> {
+  if (doc.kind !== 'markdown') {
+    return doc; // mermaid diagram source - bilingual-06, never translated
+  }
+  const translated = await translateMarkdown(session, doc.content);
+  const result: VisionDoc = { ...doc, contentFr: translated.fr };
+  if (translated.frUntranslated) {
+    result.contentFrUntranslated = true;
+  }
+  return result;
+}
+
+async function translateScenario(session: TranslationSession, scenario: GherkinScenario): Promise<GherkinScenario> {
+  const translated = await translateString(session, scenario.text);
+  const result: GherkinScenario = { ...scenario, textFr: translated.fr };
+  if (translated.frUntranslated) {
+    result.textFrUntranslated = true;
+  }
+  return result;
+}
+
+async function translateTicket(session: TranslationSession, ticket: TicketNode): Promise<TicketNode> {
+  const title = await translateString(session, ticket.title);
+  const scenarios = await Promise.all(ticket.scenarios.map((s) => translateScenario(session, s)));
+  const result: TicketNode = { ...ticket, titleFr: title.fr, scenarios };
+  if (title.frUntranslated) {
+    result.titleFrUntranslated = true;
+  }
+  if (ticket.description !== undefined) {
+    const description = await translateString(session, ticket.description);
+    result.descriptionFr = description.fr;
+    if (description.frUntranslated) {
+      result.descriptionFrUntranslated = true;
+    }
+  }
+  return result;
+}
+
+// BL-118: populates every translatable field's additive *Fr sibling on an
+// already-computed English tree - a separate pass from computeDocsTree
+// (which stays English-only) so the translation step can be skipped
+// entirely (e.g. a local dev build) without touching the tree's own
+// derivation logic at all. Ticket ids, ticket status, milestone names,
+// priorities, sourceSha, and generatedAtIso are never wrapped (bilingual-06:
+// identifiers are never translated) - only title/description/scenario
+// text/markdown vision-doc content go through the session.
+export async function translateDocsTree(tree: DocsTreeData, session: TranslationSession): Promise<DocsTreeData> {
+  const vision = await Promise.all(tree.vision.map((doc) => translateVisionDoc(session, doc)));
+  const tickets = await Promise.all(tree.tickets.map((ticket) => translateTicket(session, ticket)));
+  return { ...tree, vision, tickets };
 }

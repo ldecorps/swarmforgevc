@@ -60,6 +60,8 @@ function renderDashboard(dashboardData) {
     return Promise.reject(new Error('unexpected fetch: ' + url));
   };
 
+  const localesSource = fs.readFileSync(path.join(PWA_DIR, 'locales.js'), 'utf8');
+  dom.window.eval(localesSource);
   const appSource = fs.readFileSync(path.join(PWA_DIR, 'app.js'), 'utf8');
   dom.window.eval(appSource);
 
@@ -140,6 +142,8 @@ test('shows an honest failure message rather than a blank page when the fetch fa
   const html = fs.readFileSync(path.join(PWA_DIR, 'index.html'), 'utf8');
   const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://example.github.io/dashboard/' });
   dom.window.fetch = () => Promise.reject(new Error('offline, nothing cached'));
+  const localesSource = fs.readFileSync(path.join(PWA_DIR, 'locales.js'), 'utf8');
+  dom.window.eval(localesSource);
   const appSource = fs.readFileSync(path.join(PWA_DIR, 'app.js'), 'utf8');
   dom.window.eval(appSource);
   await flush();

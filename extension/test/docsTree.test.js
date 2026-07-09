@@ -7,7 +7,10 @@ const {
   isFeatureFilePath,
   buildDocsTree,
   computeDocsTree,
+  translateDocsTree,
 } = require('../out/docs/docsTree');
+const { createTranslationSession } = require('../out/i18n/translate');
+const { emptyTranslationCache } = require('../out/i18n/translationCache');
 
 function item(overrides = {}) {
   return { id: 'BL-100', title: 't', status: 'active', ...overrides };
@@ -159,4 +162,137 @@ test('computeDocsTree reads the vision docs that exist and skips any that are mi
   assert.equal(spec.kind, 'markdown');
   const diagram = tree.vision.find((v) => v.id === 'architectureDiagram');
   assert.equal(diagram.kind, 'mermaid');
+});
+
+// ── translateDocsTree (BL-118) ───────────────────────────────────────────
+
+function fakeEngine(translations = {}) {
+  const calls = [];
+  return {
+    calls,
+    engine: {
+      async translate(text) {
+        calls.push(text);
+        if (text in translations) {
+          return { success: true, text: translations[text] };
+        }
+        return { success: false, error: 'no fake translation' };
+      },
+    },
+  };
+}
+
+test('translateDocsTree adds titleFr/descriptionFr to a ticket, leaving the English fields untouched', async () => {
+  const tree = {
+    schemaVersion: DOCS_TREE_SCHEMA_VERSION,
+    generatedAtIso: '2026-07-09T00:00:00Z',
+    sourceSha: 'abc',
+    vision: [],
+    milestones: [],
+    tickets: [{ id: 'BL-100', title: 'cost telemetry', status: 'done', description: 'Full prose.', scenarios: [] }],
+  };
+  const { engine } = fakeEngine({ 'cost telemetry': 'télémétrie des coûts', 'Full prose.': 'Prose complète.' });
+  const session = createTranslationSession(emptyTranslationCache(), engine);
+
+  const translated = await translateDocsTree(tree, session);
+
+  const ticket = translated.tickets[0];
+  assert.equal(ticket.title, 'cost telemetry', 'the English field must be unchanged');
+  assert.equal(ticket.titleFr, 'télémétrie des coûts');
+  assert.equal(ticket.description, 'Full prose.');
+  assert.equal(ticket.descriptionFr, 'Prose complète.');
+});
+
+test('bilingual-06: a ticket id is never sent through the translation engine', async () => {
+  const tree = {
+    schemaVersion: DOCS_TREE_SCHEMA_VERSION,
+    generatedAtIso: '2026-07-09T00:00:00Z',
+    sourceSha: 'abc',
+    vision: [],
+    milestones: [],
+    tickets: [{ id: 'BL-100', title: 't', status: 'active', scenarios: [] }],
+  };
+  const { engine, calls } = fakeEngine({ t: 'traduit' });
+  const session = createTranslationSession(emptyTranslationCache(), engine);
+
+  const translated = await translateDocsTree(tree, session);
+
+  assert.equal(translated.tickets[0].id, 'BL-100');
+  assert.ok(!calls.includes('BL-100'));
+});
+
+test('bilingual-04: a scenario keeps canonical English text and gains textFr for the French rendering', async () => {
+  const tree = {
+    schemaVersion: DOCS_TREE_SCHEMA_VERSION,
+    generatedAtIso: '2026-07-09T00:00:00Z',
+    sourceSha: 'abc',
+    vision: [],
+    milestones: [],
+    tickets: [{
+      id: 'BL-100', title: 't', status: 'active',
+      scenarios: [{ id: 'BL-100/s1', name: 'works', text: 'Given a\nThen b' }],
+    }],
+  };
+  const { engine } = fakeEngine({ 'Given a\nThen b': 'Étant donné a\nAlors b' });
+  const session = createTranslationSession(emptyTranslationCache(), engine);
+
+  const translated = await translateDocsTree(tree, session);
+
+  const scenario = translated.tickets[0].scenarios[0];
+  assert.equal(scenario.text, 'Given a\nThen b', 'canonical English text is unchanged - it stays the binding contract');
+  assert.equal(scenario.textFr, 'Étant donné a\nAlors b');
+});
+
+test('bilingual-06: a mermaid vision doc is never translated - no contentFr field at all', async () => {
+  const tree = {
+    schemaVersion: DOCS_TREE_SCHEMA_VERSION,
+    generatedAtIso: '2026-07-09T00:00:00Z',
+    sourceSha: 'abc',
+    vision: [{ id: 'architectureDiagram', title: 'Architecture', kind: 'mermaid', content: 'graph TD; A-->B;' }],
+    milestones: [],
+    tickets: [],
+  };
+  const { engine, calls } = fakeEngine({});
+  const session = createTranslationSession(emptyTranslationCache(), engine);
+
+  const translated = await translateDocsTree(tree, session);
+
+  assert.equal('contentFr' in translated.vision[0], false);
+  assert.equal(calls.length, 0);
+});
+
+test('a markdown vision doc gains contentFr via the code-fence-aware translation pass', async () => {
+  const tree = {
+    schemaVersion: DOCS_TREE_SCHEMA_VERSION,
+    generatedAtIso: '2026-07-09T00:00:00Z',
+    sourceSha: 'abc',
+    vision: [{ id: 'specification', title: 'Specification', kind: 'markdown', content: 'Some prose.' }],
+    milestones: [],
+    tickets: [],
+  };
+  const { engine } = fakeEngine({ 'Some prose.': 'Un peu de prose.' });
+  const session = createTranslationSession(emptyTranslationCache(), engine);
+
+  const translated = await translateDocsTree(tree, session);
+
+  assert.equal(translated.vision[0].content, 'Some prose.');
+  assert.equal(translated.vision[0].contentFr, 'Un peu de prose.');
+});
+
+test('bilingual-05: a failed translation flags the ticket titleFrUntranslated, and publishing (translateDocsTree itself) never throws', async () => {
+  const tree = {
+    schemaVersion: DOCS_TREE_SCHEMA_VERSION,
+    generatedAtIso: '2026-07-09T00:00:00Z',
+    sourceSha: 'abc',
+    vision: [],
+    milestones: [],
+    tickets: [{ id: 'BL-100', title: 'untranslatable', status: 'active', scenarios: [] }],
+  };
+  const { engine } = fakeEngine({});
+  const session = createTranslationSession(emptyTranslationCache(), engine);
+
+  const translated = await translateDocsTree(tree, session);
+
+  assert.equal(translated.tickets[0].titleFr, 'untranslatable');
+  assert.equal(translated.tickets[0].titleFrUntranslated, true);
 });
