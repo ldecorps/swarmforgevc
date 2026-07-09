@@ -140,6 +140,79 @@ test('serves the cost-telemetry endpoint for an authorized request', async () =>
   });
 });
 
+// BL-094: /holistic is token-gated like every other data route.
+test('rejects an unauthorized request to the holistic endpoint', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/holistic`);
+    assert.equal(res.status, 401);
+  });
+});
+
+test('serves the holistic endpoint with assignments/swarms/doneByMilestone/recentActivity for an authorized request', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/holistic`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(body.assignments, []);
+    assert.deepEqual(body.swarms, [{ name: 'primary', isLocal: true, agents: [] }]);
+    assert.deepEqual(body.doneByMilestone, {});
+    assert.deepEqual(body.recentActivity, { recentCloses: [], recentMerges: [], currentRun: null });
+  });
+});
+
+// BL-094: the root HTML shell - the one route reachable by a plain browser
+// navigation, so it accepts the token via query string as well as header.
+test('rejects a plain (unauthenticated) request to the root URL', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/`);
+    assert.equal(res.status, 401);
+  });
+});
+
+test('rejects a root request with the wrong query token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/?token=wrong`);
+    assert.equal(res.status, 401);
+  });
+});
+
+test('serves the root URL as self-contained HTML given a valid header token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /text\/html/);
+    const body = await res.text();
+    assert.match(body, /SwarmForge/);
+    assert.doesNotMatch(body, /cdn\.|https?:\/\/(?!127\.0\.0\.1)/, 'no external network fetch in the UI bundle');
+  });
+});
+
+test('serves the root URL given a valid query-string token (a plain browser navigation cannot set a header)', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/?token=${TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /text\/html/);
+  });
+});
+
+test('the query-token fallback does not unlock any other (data) route', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/pipeline?token=${TOKEN}`);
+    assert.equal(res.status, 401, 'query-token auth is scoped to the root HTML shell only, per bridgeAuth.ts');
+  });
+});
+
 test('returns 404 for an unknown route, even when authorized', async () => {
   const target = mkTmp();
   await withBridge(target, {}, async (handle) => {

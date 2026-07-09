@@ -1312,8 +1312,12 @@ export function activate(context: vscode.ExtensionContext): void {
       // once to the user; it is never written into the target repo.
       const token = generateBridgeToken();
       currentBridge = await startBridge(targetPath, runLogPath, token);
+      // BL-094: the holistic dev-state UI lives at the bridge root; a plain
+      // browser navigation can't set an Authorization header, so the token
+      // is offered as a query param here for convenience (bridgeAuth.ts
+      // restricts that fallback to the root route only).
       vscode.window.showInformationMessage(
-        `SwarmForge bridge listening on http://127.0.0.1:${currentBridge.port} — token: ${token}`
+        `SwarmForge bridge listening — open http://127.0.0.1:${currentBridge.port}/?token=${token} for the dev-state UI, or use token: ${token} as a Bearer header.`
       );
     }),
 

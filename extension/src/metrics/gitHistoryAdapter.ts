@@ -130,3 +130,42 @@ export function deriveTicketLifecycles(entries: GitLogEntry[]): Map<string, Tick
   }
   return result;
 }
+
+// BL-094: recent-activity's "merges to main" - a distinct git-log shape
+// from the backlog-lifecycle walk above (merge commits only, one line per
+// commit with its subject, no --name-status), so it gets its own thin
+// adapter rather than overloading parseGitLog's per-commit-block format.
+export interface MergeLogEntry {
+  commit: string;
+  dateIso: string;
+  subject: string;
+}
+
+export function parseMergeLog(output: string): MergeLogEntry[] {
+  const entries: MergeLogEntry[] = [];
+  for (const line of output.split('\n')) {
+    if (!line.trim()) {
+      continue;
+    }
+    const [commit, dateIso, ...subjectParts] = line.split('\t');
+    if (!commit || !dateIso) {
+      continue;
+    }
+    entries.push({ commit, dateIso, subject: subjectParts.join('\t') });
+  }
+  return entries;
+}
+
+export function runMergeLog(targetPath: string, limit: number = 20): MergeLogEntry[] {
+  let output: string;
+  try {
+    output = execFileSync(
+      'git',
+      ['-C', targetPath, 'log', '--merges', `-n${limit}`, '--format=%H%x09%cI%x09%s'],
+      { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
+    );
+  } catch {
+    return [];
+  }
+  return parseMergeLog(output);
+}

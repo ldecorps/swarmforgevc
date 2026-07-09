@@ -11,6 +11,10 @@ export interface BacklogItem {
   priority?: number;
   dependsOn?: string[];
   pack?: string[];
+  // BL-090/BL-094: which swarm this ticket is assigned to. Absent means the
+  // primary swarm (BL-090's own default) - callers must apply that fallback
+  // themselves, since no swarm: field exists in live ticket YAML yet.
+  swarm?: string;
 }
 
 const VALID_STATUSES = new Set(['todo', 'active', 'done']);
@@ -38,21 +42,32 @@ function parsePriority(priorityStr: string | undefined): number | undefined {
   return !Number.isNaN(n) ? n : undefined;
 }
 
+// Assigns key only when value is truthy (undefined AND empty-string/empty-
+// array both count as "field absent") - the shape every optional field
+// EXCEPT priority uses, where 0 is a meaningful value, not an absence
+// (assignIfDefined below). Split out of assignOptionalFields/
+// assignOptionalFieldsFromObject so each stays under the CRAP<=6 gate as
+// fields are added (BL-094's swarm: field pushed both over it) - a nested
+// function body doesn't count toward its caller's complexity.
+function assignIfTruthy<K extends keyof BacklogItem>(item: BacklogItem, key: K, value: BacklogItem[K] | undefined): void {
+  if (value) {
+    item[key] = value;
+  }
+}
+
+function assignIfDefined<K extends keyof BacklogItem>(item: BacklogItem, key: K, value: BacklogItem[K] | undefined): void {
+  if (value !== undefined) {
+    item[key] = value;
+  }
+}
+
 function assignOptionalFields(item: BacklogItem, content: string): void {
-  const assignedTo = parseYamlScalar(content, 'assigned_to');
-  if (assignedTo) item.assignedTo = assignedTo;
-
-  const milestone = parseYamlScalar(content, 'milestone');
-  if (milestone) item.milestone = milestone;
-
-  const priority = parsePriority(parseYamlScalar(content, 'priority'));
-  if (priority !== undefined) item.priority = priority;
-
-  const dependsOn = parseYamlList(content, 'depends_on');
-  if (dependsOn) item.dependsOn = dependsOn;
-
-  const pack = parseYamlList(content, 'pack');
-  if (pack) item.pack = pack;
+  assignIfTruthy(item, 'assignedTo', parseYamlScalar(content, 'assigned_to'));
+  assignIfTruthy(item, 'milestone', parseYamlScalar(content, 'milestone'));
+  assignIfDefined(item, 'priority', parsePriority(parseYamlScalar(content, 'priority')));
+  assignIfTruthy(item, 'dependsOn', parseYamlList(content, 'depends_on'));
+  assignIfTruthy(item, 'pack', parseYamlList(content, 'pack'));
+  assignIfTruthy(item, 'swarm', parseYamlScalar(content, 'swarm'));
 }
 
 function toOptionalNumber(value: unknown): number | undefined {
@@ -68,6 +83,10 @@ function toOptionalStringList(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const entries = value.map(String).filter((s) => s.length > 0);
   return entries.length > 0 ? entries : undefined;
+}
+
+function toOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value ? value : undefined;
 }
 
 // Builds a BacklogItem from a strictly-parsed js-yaml document. Reads only
@@ -89,14 +108,12 @@ function extractRequiredFields(obj: Record<string, unknown>): Pick<BacklogItem, 
 }
 
 function assignOptionalFieldsFromObject(item: BacklogItem, obj: Record<string, unknown>): void {
-  if (typeof obj.assigned_to === 'string' && obj.assigned_to) item.assignedTo = obj.assigned_to;
-  if (typeof obj.milestone === 'string' && obj.milestone) item.milestone = obj.milestone;
-  const priority = toOptionalNumber(obj.priority);
-  if (priority !== undefined) item.priority = priority;
-  const dependsOn = toOptionalStringList(obj.depends_on);
-  if (dependsOn) item.dependsOn = dependsOn;
-  const pack = toOptionalStringList(obj.pack);
-  if (pack) item.pack = pack;
+  assignIfTruthy(item, 'assignedTo', toOptionalString(obj.assigned_to));
+  assignIfTruthy(item, 'milestone', toOptionalString(obj.milestone));
+  assignIfDefined(item, 'priority', toOptionalNumber(obj.priority));
+  assignIfTruthy(item, 'dependsOn', toOptionalStringList(obj.depends_on));
+  assignIfTruthy(item, 'pack', toOptionalStringList(obj.pack));
+  assignIfTruthy(item, 'swarm', toOptionalString(obj.swarm));
 }
 
 function buildItemFromParsedObject(obj: Record<string, unknown>): BacklogItem | null {
