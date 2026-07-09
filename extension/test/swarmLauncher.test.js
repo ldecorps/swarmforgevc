@@ -101,6 +101,90 @@ test('buildLaunchEnv PATH includes Homebrew bin so tmux/bb/claude resolve', () =
   assert(env['PATH'].split(':').includes('/usr/local/bin'));
 });
 
+// --- BL-116: login-shell PATH probe - a GUI-launched VS Code on Linux with
+//     tmux/bb/claude in a linuxbrew or custom shell-profile dir needs the
+//     REAL login shell's PATH, not just a hardcoded macOS-shaped list. ---
+
+const {
+  parseLoginShellPathOutput,
+  probeLoginShellPath,
+  getCachedLoginShellPathDirs,
+  resetLoginShellPathCacheForTests,
+} = require('../out/swarm/swarmLauncher');
+
+test('parseLoginShellPathOutput splits a colon-separated PATH into directories', () => {
+  assert.deepEqual(parseLoginShellPathOutput('/usr/bin:/home/u/.local/bin\n'), ['/usr/bin', '/home/u/.local/bin']);
+});
+
+test('parseLoginShellPathOutput drops empty segments (leading/trailing/doubled colons)', () => {
+  assert.deepEqual(parseLoginShellPathOutput(':/usr/bin::/bin:'), ['/usr/bin', '/bin']);
+});
+
+test('BL-116 path-probe-01: augmentPath merges probed directories ahead of the hardcoded list', () => {
+  const result = augmentPath('/usr/bin', ['/home/u/.linuxbrew/bin']);
+  const parts = result.split(':');
+  assert(parts.includes('/home/u/.linuxbrew/bin'), 'probed dir missing');
+  assert(parts.includes('/opt/homebrew/bin'), 'hardcoded fallback dir must still be present');
+  assert(parts.indexOf('/home/u/.linuxbrew/bin') < parts.indexOf('/opt/homebrew/bin'), 'probed dirs take precedence');
+});
+
+test('augmentPath with no probedDirs argument behaves exactly as before this ticket', () => {
+  assert.equal(augmentPath('/usr/bin'), augmentPath('/usr/bin', []));
+});
+
+test('BL-116 path-probe-01: probeLoginShellPath parses the login shell PATH on success (exit 0)', async () => {
+  const fakeRun = async () => ({ code: 0, stdout: '/home/u/.linuxbrew/bin:/usr/bin\n' });
+  const dirs = await probeLoginShellPath('/bin/zsh', 1000, fakeRun);
+  assert.deepEqual(dirs, ['/home/u/.linuxbrew/bin', '/usr/bin']);
+});
+
+test('BL-116 path-probe-02: probeLoginShellPath falls back to [] on a nonzero exit', async () => {
+  const fakeRun = async () => ({ code: 1, stdout: '' });
+  const dirs = await probeLoginShellPath('/bin/zsh', 1000, fakeRun);
+  assert.deepEqual(dirs, []);
+});
+
+test('BL-116 path-probe-02: probeLoginShellPath falls back to [] on a timeout (code null)', async () => {
+  const fakeRun = async () => ({ code: null, stdout: '' });
+  const dirs = await probeLoginShellPath('/bin/zsh', 1000, fakeRun);
+  assert.deepEqual(dirs, []);
+});
+
+test('BL-116 path-probe-01: the probe runs at most once per activation (cached, not re-run on a second call)', async () => {
+  resetLoginShellPathCacheForTests();
+  let calls = 0;
+  const fakeRun = async () => {
+    calls += 1;
+    return { code: 0, stdout: '/probed/bin\n' };
+  };
+
+  const first = await getCachedLoginShellPathDirs('/bin/zsh', 1000, fakeRun);
+  const second = await getCachedLoginShellPathDirs('/bin/zsh', 1000, fakeRun);
+
+  assert.deepEqual(first, ['/probed/bin']);
+  assert.deepEqual(second, ['/probed/bin']);
+  assert.equal(calls, 1, 'the login shell must only ever be probed once per (cached) activation');
+});
+
+test('BL-116: concurrent callers before the probe resolves share the same in-flight probe, not a second one', async () => {
+  resetLoginShellPathCacheForTests();
+  let calls = 0;
+  const fakeRun = () =>
+    new Promise((resolve) => {
+      calls += 1;
+      setImmediate(() => resolve({ code: 0, stdout: '/probed/bin\n' }));
+    });
+
+  const [first, second] = await Promise.all([
+    getCachedLoginShellPathDirs('/bin/zsh', 1000, fakeRun),
+    getCachedLoginShellPathDirs('/bin/zsh', 1000, fakeRun),
+  ]);
+
+  assert.deepEqual(first, ['/probed/bin']);
+  assert.deepEqual(second, ['/probed/bin']);
+  assert.equal(calls, 1, 'two callers racing before resolution must share one in-flight probe');
+});
+
 test('buildLaunchEnv omits SWARM_RUN_NAME when runName is empty string', () => {
   const env = buildLaunchEnv('');
   assert.equal(env['SWARM_RUN_NAME'], undefined);

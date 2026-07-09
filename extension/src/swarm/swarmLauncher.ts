@@ -99,11 +99,143 @@ function pythonUserBinDirs(): string[] {
   }
 }
 
-export function augmentPath(currentPath: string | undefined): string {
-  const toolPaths = [...COMMON_TOOL_PATHS, ...pythonUserBinDirs()];
+// BL-116: probedDirs (from the user's login shell, see below) are merged in
+// ahead of the hardcoded common-tool list, which stays as the fallback -
+// this parameter defaults to [] so every existing call site/test is
+// unaffected until something actually supplies a probe result.
+export function augmentPath(currentPath: string | undefined, probedDirs: string[] = []): string {
+  const toolPaths = [...probedDirs, ...COMMON_TOOL_PATHS, ...pythonUserBinDirs()];
   const existing = (currentPath ?? '').split(':').filter((p) => p.length > 0);
   const missing = toolPaths.filter((dir) => !existing.includes(dir));
   return [...missing, ...existing].join(':');
+}
+
+// BL-116: COMMON_TOOL_PATHS above hardcodes macOS dirs (Homebrew, ~/.local/bin
+// covers some Linux cases but not linuxbrew or a custom shell profile's own
+// PATH exports). A desktop-launched VS Code inherits a minimal PATH
+// regardless of platform, so the spawned ./swarm can't find tmux/bb/claude.
+// Probing the user's actual LOGIN shell ($SHELL -lc 'echo $PATH') is the
+// portable fix: whatever the user's own shell profile puts on PATH is
+// exactly what a terminal-launched swarm would see.
+const LOGIN_SHELL_PROBE_TIMEOUT_MS = 1500;
+
+export function parseLoginShellPathOutput(stdout: string): string[] {
+  return stdout
+    .trim()
+    .split(':')
+    .filter((p) => p.length > 0);
+}
+
+// Thin adapter boundary (constitution testability rule): the only piece
+// that touches a real subprocess/timer. probeLoginShellPath below is the
+// testable logic layer, built on an injected runFn.
+function spawnAndCaptureShellOutput(
+  shell: string,
+  args: string[],
+  timeoutMs: number
+): Promise<{ code: number | null; stdout: string }> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (result: { code: number | null; stdout: string }) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(result);
+    };
+
+    let child: cp.ChildProcess;
+    try {
+      child = cp.spawn(shell, args, { stdio: ['ignore', 'pipe', 'ignore'] });
+    } catch {
+      finish({ code: null, stdout: '' });
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      child.kill();
+      finish({ code: null, stdout: '' });
+    }, timeoutMs);
+
+    let stdout = '';
+    child.stdout?.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      finish({ code, stdout });
+    });
+    child.on('error', () => {
+      clearTimeout(timer);
+      finish({ code: null, stdout: '' });
+    });
+  });
+}
+
+export type ShellRunFn = (
+  shell: string,
+  args: string[],
+  timeoutMs: number
+) => Promise<{ code: number | null; stdout: string }>;
+
+// BL-116 path-probe-01/02: runs the login-shell probe and parses its PATH,
+// or returns [] (never throws) on any failure/timeout - callers merge an
+// empty probe result in as a no-op, falling back to the existing hardcoded
+// list exactly as augmentPath already did before this ticket.
+export async function probeLoginShellPath(
+  shell: string,
+  timeoutMs: number = LOGIN_SHELL_PROBE_TIMEOUT_MS,
+  runFn: ShellRunFn = spawnAndCaptureShellOutput
+): Promise<string[]> {
+  const { code, stdout } = await runFn(shell, ['-lc', 'echo $PATH'], timeoutMs);
+  if (code !== 0) {
+    return [];
+  }
+  return parseLoginShellPathOutput(stdout);
+}
+
+let cachedProbePromise: Promise<string[]> | null = null;
+let cachedProbeResult: string[] = [];
+
+// BL-116 path-probe-01: the probe runs at MOST once per activation - a
+// second call while one is already in flight (or after one has completed)
+// returns the same cached promise/result rather than spawning another
+// shell. resetLoginShellPathCacheForTests exists only for test isolation
+// between cases.
+export function resetLoginShellPathCacheForTests(): void {
+  cachedProbePromise = null;
+  cachedProbeResult = [];
+}
+
+export function getCachedLoginShellPathDirs(
+  shell: string = process.env.SHELL ?? '/bin/sh',
+  timeoutMs: number = LOGIN_SHELL_PROBE_TIMEOUT_MS,
+  runFn?: ShellRunFn
+): Promise<string[]> {
+  if (cachedProbePromise === null) {
+    cachedProbePromise = probeLoginShellPath(shell, timeoutMs, runFn).then((dirs) => {
+      cachedProbeResult = dirs;
+      return dirs;
+    });
+  }
+  return cachedProbePromise;
+}
+
+// BL-116: kicks off the (at-most-once, cached) probe in the background and
+// never awaits it - callers must not block activation or a launch on a
+// login shell that might be slow or hung. augmentPath/buildLaunchEnv stay
+// synchronous and simply read whatever has resolved so far
+// (readCachedLoginShellPathDirsSync, below): [] until the probe completes,
+// the real probed dirs once it does. A launch that races ahead of the
+// probe still works exactly as it did before this ticket (falls back to
+// the hardcoded list); one that starts after the probe resolves benefits
+// from it.
+export function primeLoginShellPathProbe(): void {
+  void getCachedLoginShellPathDirs();
+}
+
+export function readCachedLoginShellPathDirsSync(): string[] {
+  return cachedProbeResult;
 }
 
 export function resolveSwarmConfigPath(): string | undefined {
@@ -159,7 +291,7 @@ export function buildLaunchEnv(runName?: string, configPath?: string): NodeJS.Pr
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     SWARMFORGE_TERMINAL: 'none',
-    PATH: augmentPath(process.env.PATH),
+    PATH: augmentPath(process.env.PATH, readCachedLoginShellPathDirsSync()),
   };
 
   if (runName) {
