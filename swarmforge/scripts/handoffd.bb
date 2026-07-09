@@ -560,6 +560,28 @@
      :inbox-new-dir (str (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "inbox" "new"))
      :in-process-dir (str (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "inbox" "in_process"))}))
 
+;; BL-098: durable per-role chase/nudge/dead-letter/respawn telemetry. The
+;; existing .chase.json/.nudge sidecars are ephemeral (abandoned once an
+;; item completes), so nothing durable could answer "how many nudges did a
+;; role need this week?" One JSON line per event, keyed by month like
+;; rule-proposals-file above; a `type` field keeps the schema additive so a
+;; later stage-transition event (BL-097 dwell/bounce) can share this log.
+(defn chaser-telemetry-file [at-ms]
+  (fs/path state-dir "telemetry"
+           (str "chaser-"
+                (.format (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM")
+                         (.atZone (java.time.Instant/ofEpochMilli at-ms) java.time.ZoneOffset/UTC))
+                ".jsonl")))
+
+(defn log-chaser-telemetry! [event at-ms]
+  (let [file (chaser-telemetry-file at-ms)
+        line (json/generate-string
+              (assoc event :at
+                     (.format (java.time.format.DateTimeFormatter/ISO_INSTANT)
+                              (java.time.Instant/ofEpochMilli at-ms))))]
+    (fs/create-dirs (fs/parent file))
+    (spit (str file) (str line "\n") :append true)))
+
 (defn chase-sweep! [roles socket]
   (let [now-ms (System/currentTimeMillis)
         adapters {:get-liveness get-liveness
@@ -572,7 +594,10 @@
                                             (catch Exception e (log! "chase-respawn-error" role (.getMessage e)))))
                   :log-dead-letter! (fn [role path] (log! "dead-letter" role (fs/file-name path)))
                   :get-last-activity-ms (fn [role] (get-last-activity-ms (get roles role) socket now-ms))
-                  :on-stuck-escalation! (fn [role escalated?] (chase-sweep-lib/write-escalation! (str daemon-dir) role escalated?))}]
+                  :on-stuck-escalation! (fn [role escalated?] (chase-sweep-lib/write-escalation! (str daemon-dir) role escalated?))
+                  :log-telemetry! (fn [event at-ms]
+                                     (try (log-chaser-telemetry! event at-ms)
+                                          (catch Exception e (log! "telemetry-error" (:type event) (.getMessage e)))))}]
     (chase-sweep-lib/run-sweep! (role-inboxes-for-chase roles) now-ms chase-sweep-config adapters)
     (write-chase-status! now-ms)))
 

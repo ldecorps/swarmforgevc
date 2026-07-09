@@ -54,6 +54,11 @@ CHASE_COUNT="$(python3 -c "import json; print(json.load(open('$ROOT/inbox/new/00
 [[ "$CHASE_COUNT" == "1" ]] || fail "01: chaseCount not incremented to 1 (got $CHASE_COUNT)"
 pass "01: a stale item under maxChases is chased and its chaseCount incremented"
 
+# BL-098 telemetry-01: one chase event line, count matching the incremented sidecar.
+grep -q "^telemetry chase coder 00_item.handoff 1$" "$ROOT/calls.log" \
+  || fail "01: expected a BL-098 chase telemetry event; got: $(cat "$ROOT/calls.log")"
+pass "01 (BL-098 telemetry-01): a chase decision emits one telemetry event"
+
 # ── 02: an exhausted item (chaseCount >= maxChases) with unresponsive liveness is respawned ─
 make_fixture
 write_handoff "$ROOT/inbox/new/00_item.handoff"
@@ -63,6 +68,11 @@ run_sweep "unknown" $(( NOW_MS - (STUCK_TIMEOUT_S + 100) * 1000 ))
 
 grep -q "^respawn coder$" "$ROOT/calls.log" || fail "02: exhausted item with unresponsive liveness was not respawned"
 pass "02: an exhausted item with unresponsive (unknown) liveness is respawned"
+
+# BL-098: a respawn decision also emits a telemetry event.
+grep -q "^telemetry respawn coder 00_item.handoff 3$" "$ROOT/calls.log" \
+  || fail "02: expected a BL-098 respawn telemetry event; got: $(cat "$ROOT/calls.log")"
+pass "02 (BL-098): a respawn decision emits one telemetry event"
 
 # ── 03: an exhausted item with ALIVE liveness is dead-lettered, never respawned ─
 make_fixture
@@ -75,6 +85,12 @@ grep -q "respawn" "$ROOT/calls.log" && fail "03: an exhausted item with alive li
 grep -q "^dead-letter coder 00_item.handoff$" "$ROOT/calls.log" || fail "03: exhausted alive-liveness item was not dead-lettered"
 [[ -f "$ROOT/inbox/new/00_item.handoff.dead" ]] || fail "03: item file was not renamed to .dead"
 pass "03: an exhausted item with alive liveness is dead-lettered, never respawned"
+
+# BL-098: a dead-letter decision also emits a telemetry event (count = the
+# chase-count already on the sidecar, i.e. 3 from the fixture above).
+grep -q "^telemetry dead-letter coder 00_item.handoff 3$" "$ROOT/calls.log" \
+  || fail "03: expected a BL-098 dead-letter telemetry event; got: $(cat "$ROOT/calls.log")"
+pass "03 (BL-098): a dead-letter decision emits one telemetry event"
 
 # ── 04: an item younger than chaseTimeoutSeconds is skipped entirely ────────
 make_fixture
@@ -95,6 +111,11 @@ grep -q "^wake-up coder$" "$ROOT/calls.log" || fail "05: a stuck in_process item
 NUDGE_COUNT="$(python3 -c "import json; print(json.load(open('$ROOT/inbox/in_process/00_item.handoff.nudge'))['nudgeCount'])")"
 [[ "$NUDGE_COUNT" == "1" ]] || fail "05: nudgeCount not incremented (got $NUDGE_COUNT)"
 pass "05: a stuck in_process item is nudged and its nudgeCount incremented"
+
+# BL-098 telemetry-02: one nudge event line, count matching the incremented sidecar.
+grep -q "^telemetry nudge coder 00_item.handoff 1$" "$ROOT/calls.log" \
+  || fail "05: expected a BL-098 nudge telemetry event; got: $(cat "$ROOT/calls.log")"
+pass "05 (BL-098 telemetry-02): a nudge decision emits one telemetry event"
 
 # ── 06: in_process work stuck across maxChases nudges escalates to alert, never nudges again ─
 make_fixture

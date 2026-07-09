@@ -333,6 +333,7 @@ export interface SwarmMetrics {
   retryTotal: number;
   retryByTicket: Record<string, number>;
   suiteDuration: SuiteDurationStats;
+  chaserTelemetry: ChaserTelemetry;
 }
 
 export const NO_SAMPLE_PLACEHOLDER = '—';
@@ -441,6 +442,177 @@ export function computeSuiteDuration(
   return { latestMs, meanMs, sampleCount: windowed.length, warn };
 }
 
+// BL-098: durable per-role chase/nudge/dead-letter/respawn counts, read from
+// handoffd.bb's chaser-YYYY-MM.jsonl telemetry log (chase_sweep_lib.bb emits
+// one line per decision). The sidecars that used to hold these counts
+// (.chase.json/.nudge) are abandoned once an item completes; this log is
+// the durable answer to "how many nudges did a role need this week?"
+export interface ChaserTelemetryEvent {
+  type: string;
+  role: string;
+  handoffId?: string;
+  count?: number;
+  at: string;
+}
+
+export interface RoleChaserTelemetry {
+  chases: number;
+  nudges: number;
+  deadLetters: number;
+  respawns: number;
+  /** (chases + nudges) within the recent window, per day. */
+  recentDailyRate: number;
+}
+
+export type ChaserTelemetry = Record<string, RoleChaserTelemetry>;
+
+export const CHASER_TELEMETRY_WINDOW_DAYS = 7;
+
+function chaserTelemetryDir(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'telemetry');
+}
+
+// A malformed or unrecognized line is skipped, never a crash - the same
+// forgiving-reader spirit as parseTestDurationLine above. The `type` field
+// is what keeps the schema additive (BL-097 dwell/bounce events can join
+// this same log later); an event whose type this reader does not know is
+// silently ignored rather than rejected outright.
+function parseChaserTelemetryLine(line: string): ChaserTelemetryEvent | null {
+  try {
+    const parsed = JSON.parse(line);
+    if (typeof parsed.type === 'string' && typeof parsed.role === 'string' && typeof parsed.at === 'string') {
+      return parsed;
+    }
+  } catch {
+    // malformed line: skip
+  }
+  return null;
+}
+
+// A single telemetry file's lines, parsed. Split out of
+// readChaserTelemetryEvents so each function stays under the CRAP<=6 gate:
+// an unreadable file (deleted/permission-denied between readdir and read)
+// contributes nothing rather than aborting the whole read.
+function readChaserTelemetryFile(dir: string, file: string): ChaserTelemetryEvent[] {
+  let content: string;
+  try {
+    content = fs.readFileSync(path.join(dir, file), 'utf8');
+  } catch {
+    return [];
+  }
+  const events: ChaserTelemetryEvent[] = [];
+  for (const line of content.split('\n')) {
+    if (!line.trim()) {
+      continue;
+    }
+    const event = parseChaserTelemetryLine(line);
+    if (event) {
+      events.push(event);
+    }
+  }
+  return events;
+}
+
+function readChaserTelemetryEvents(targetPath: string): ChaserTelemetryEvent[] {
+  const dir = chaserTelemetryDir(targetPath);
+  let files: string[];
+  try {
+    files = fs.readdirSync(dir).filter((f) => f.startsWith('chaser-') && f.endsWith('.jsonl'));
+  } catch {
+    return [];
+  }
+  return files.flatMap((file) => readChaserTelemetryFile(dir, file));
+}
+
+function emptyRoleTelemetry(): RoleChaserTelemetry {
+  return { chases: 0, nudges: 0, deadLetters: 0, respawns: 0, recentDailyRate: 0 };
+}
+
+type ChaserCountField = 'chases' | 'nudges' | 'deadLetters' | 'respawns';
+
+// Maps a telemetry event's `type` to the bucket field it increments; an
+// unrecognized type has no field, which is how an event whose type this
+// reader does not know is ignored rather than rejected (forward-compatible
+// schema for BL-097's later stage-transition events).
+function chaserCountField(eventType: string): ChaserCountField | null {
+  switch (eventType) {
+    case 'chase':
+      return 'chases';
+    case 'nudge':
+      return 'nudges';
+    case 'dead-letter':
+      return 'deadLetters';
+    case 'respawn':
+      return 'respawns';
+    default:
+      return null;
+  }
+}
+
+// Only chase/nudge events count toward the recent-window daily rate;
+// dead-letters and respawns are lifetime totals only.
+function countsTowardRecentRate(eventType: string): boolean {
+  return eventType === 'chase' || eventType === 'nudge';
+}
+
+// Counts one event's timestamp toward its role's recent-window tally when
+// the timestamp parses and falls inside the window; split out of
+// applyChaserEvent so both functions stay under the CRAP<=6 gate.
+function tallyRecentRate(recentCounts: Record<string, number>, role: string, atIso: string, windowStartMs: number): void {
+  const atMs = Date.parse(atIso);
+  if (!Number.isNaN(atMs) && atMs >= windowStartMs) {
+    recentCounts[role] = (recentCounts[role] ?? 0) + 1;
+  }
+}
+
+// Applies one telemetry event to its role's bucket (lifetime total) and,
+// for chase/nudge events within the window, to the recent-rate tally. Split
+// out of computeChaserTelemetry so each function stays under the CRAP<=6
+// gate.
+function applyChaserEvent(
+  result: ChaserTelemetry,
+  recentCounts: Record<string, number>,
+  event: ChaserTelemetryEvent,
+  windowStartMs: number
+): void {
+  const bucket = result[event.role];
+  const field = chaserCountField(event.type);
+  if (!bucket || !field) {
+    return; // unknown role (not in roles.tsv) or unrecognized event type
+  }
+  bucket[field] += 1;
+  if (countsTowardRecentRate(event.type)) {
+    tallyRecentRate(recentCounts, event.role, event.at, windowStartMs);
+  }
+}
+
+// Absent/empty telemetry (no directory yet, or a target with no chases ever
+// logged) reads as all-zero totals for every known role, never an error
+// (telemetry-05) - a fresh swarm or one whose chaser has never had to
+// intervene is not a fault condition.
+export function computeChaserTelemetry(
+  targetPath: string,
+  roleNames: string[],
+  nowMs: number = Date.now(),
+  windowDays: number = CHASER_TELEMETRY_WINDOW_DAYS
+): ChaserTelemetry {
+  const result: ChaserTelemetry = {};
+  for (const role of roleNames) {
+    result[role] = emptyRoleTelemetry();
+  }
+
+  const windowStartMs = nowMs - windowDays * 24 * 60 * 60 * 1000;
+  const recentCounts: Record<string, number> = {};
+  for (const event of readChaserTelemetryEvents(targetPath)) {
+    applyChaserEvent(result, recentCounts, event, windowStartMs);
+  }
+
+  for (const role of roleNames) {
+    result[role].recentDailyRate = (recentCounts[role] ?? 0) / windowDays;
+  }
+  return result;
+}
+
 export function computeSwarmMetrics(
   targetPath: string,
   roles: RoleWorktree[],
@@ -455,6 +627,11 @@ export function computeSwarmMetrics(
       : Object.fromEntries(roles.map((r) => [r.role, 0]));
   const { total, perTicket } = computeRetries(roles);
   const suiteDuration = computeSuiteDuration(targetPath, roles, suiteWarnSeconds * 1000);
+  const chaserTelemetry = computeChaserTelemetry(
+    targetPath,
+    roles.map((r) => r.role),
+    nowMs
+  );
 
   return {
     meanTicketTimeMs: meanMs,
@@ -463,5 +640,6 @@ export function computeSwarmMetrics(
     retryTotal: total,
     retryByTicket: perTicket,
     suiteDuration,
+    chaserTelemetry,
   };
 }
