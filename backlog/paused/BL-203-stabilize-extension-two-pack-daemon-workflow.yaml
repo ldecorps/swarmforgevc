@@ -38,6 +38,18 @@ notes: |
   real disruption to the other paused work, not a normal promotion. Flagged
   to the operator for a go/no-go before isolating+bouncing.
 
+  UPDATE (coordinator, 2026-07-09, later still): operator approved bouncing
+  in principle, but BL-112-aps-stage2 was found actively in flight at the
+  architect stage on the current 7-pack at ask time — stabilize-two-pack has
+  no architect/hardener/documenter/QA roles, so bouncing immediately would
+  strand that parcel with no role able to pick it up. Operator decision:
+  wait for BL-112 to clear the 7-pack (finish architect->hardener->
+  documenter->QA->merge) before isolating the queue and bouncing. Same
+  precedent as the earlier BL-121/122 hold. Re-evaluate this hold at the next
+  merge/close recheck once BL-112 closes to done/ (and re-check BL-132/BL-217
+  too, which were freshly active/routed at ask time and may also be in
+  flight by then).
+
 description: |
   Problem:
   The VS Code extension launch path has been unreliable for hundreds of
