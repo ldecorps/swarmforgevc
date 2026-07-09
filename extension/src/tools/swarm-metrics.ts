@@ -199,7 +199,7 @@ export function formatDeliveryOverview(metrics: DeliveryMetrics): string {
 // line per role (per-day/per-ticket detail is available via the bridge's
 // /cost-telemetry endpoint - the CLI stays a compact overview, matching
 // formatOverview's own "one line per role" busyness convention).
-function formatCostTelemetryLine(costTelemetry: Record<string, RoleCostTelemetry>, roleNames: string[]): string {
+export function formatCostTelemetryLine(costTelemetry: Record<string, RoleCostTelemetry>, roleNames: string[]): string {
   const parts = roleNames.map((role) => {
     const roleTelemetry = costTelemetry[role];
     const days = roleTelemetry ? Object.values(roleTelemetry.byDay) : [];
@@ -213,7 +213,7 @@ function formatCostTelemetryLine(costTelemetry: Record<string, RoleCostTelemetry
   return 'Cost telemetry: ' + parts.join(', ');
 }
 
-function formatResourceTrendsLine(resourceTrends: Record<string, RoleResourceTrend>, roleNames: string[]): string {
+export function formatResourceTrendsLine(resourceTrends: Record<string, RoleResourceTrend>, roleNames: string[]): string {
   const parts = roleNames.map((role) => {
     const trend = resourceTrends[role];
     if (!trend || trend.currentRssBytes === null || trend.currentCpuPercent === null) {

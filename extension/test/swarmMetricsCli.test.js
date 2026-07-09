@@ -8,6 +8,8 @@ const {
   resolveMainWorktreePath,
   formatOverview,
   formatDeliveryOverview,
+  formatCostTelemetryLine,
+  formatResourceTrendsLine,
   runCliMain,
 } = require('../out/tools/swarm-metrics');
 
@@ -266,6 +268,76 @@ test('formatDeliveryOverview reports the latest suite-duration sample and its tr
   };
   const text = formatDeliveryOverview(metrics);
   assert.match(text, /Suite duration trend: 5s latest \(\+1s vs prior\)/);
+});
+
+// --- formatCostTelemetryLine / formatResourceTrendsLine (BL-100) ---
+
+test('formatCostTelemetryLine reports total tokens and cost per role', () => {
+  const costTelemetry = {
+    coder: {
+      byDay: {
+        '2026-07-08': { usage: { inputTokens: 100, outputTokens: 50, cacheCreationTokens: 0, cacheReadTokens: 0 }, costUsd: 0.5 },
+        '2026-07-09': { usage: { inputTokens: 200, outputTokens: 75, cacheCreationTokens: 0, cacheReadTokens: 0 }, costUsd: 0.75 },
+      },
+      byTicket: {},
+    },
+  };
+  const text = formatCostTelemetryLine(costTelemetry, ['coder']);
+  assert.equal(text, 'Cost telemetry: coder 425 tok / $1.25');
+});
+
+test('formatCostTelemetryLine prints the placeholder for a role with no telemetry at all', () => {
+  const text = formatCostTelemetryLine({}, ['coder']);
+  assert.equal(text, 'Cost telemetry: coder —');
+});
+
+test('formatCostTelemetryLine treats a null costUsd day as $0, not NaN', () => {
+  const costTelemetry = {
+    coder: {
+      byDay: {
+        '2026-07-09': { usage: { inputTokens: 10, outputTokens: 5, cacheCreationTokens: 0, cacheReadTokens: 0 }, costUsd: null },
+      },
+      byTicket: {},
+    },
+  };
+  const text = formatCostTelemetryLine(costTelemetry, ['coder']);
+  assert.equal(text, 'Cost telemetry: coder 15 tok / $0.00');
+  assert.doesNotMatch(text, /NaN/);
+});
+
+test('formatResourceTrendsLine reports current RSS in MB and CPU percent per role', () => {
+  const resourceTrends = {
+    coder: {
+      currentRssBytes: 256 * 1024 * 1024,
+      currentCpuPercent: 12.345,
+      rssSeries: [],
+      rssTrend: { series: [], currentValue: null, priorValue: null, delta: null, direction: 'unknown' },
+      cpuSeries: [],
+      cpuTrend: { series: [], currentValue: null, priorValue: null, delta: null, direction: 'unknown' },
+    },
+  };
+  const text = formatResourceTrendsLine(resourceTrends, ['coder']);
+  assert.equal(text, 'Resource usage: coder 256MB / 12.3% cpu');
+});
+
+test('formatResourceTrendsLine prints the placeholder for a role with no resource samples yet', () => {
+  const text = formatResourceTrendsLine({}, ['coder']);
+  assert.equal(text, 'Resource usage: coder —');
+});
+
+test('formatResourceTrendsLine prints the placeholder when only one of rss/cpu is null', () => {
+  const resourceTrends = {
+    coder: {
+      currentRssBytes: 100 * 1024 * 1024,
+      currentCpuPercent: null,
+      rssSeries: [],
+      rssTrend: { series: [], currentValue: null, priorValue: null, delta: null, direction: 'unknown' },
+      cpuSeries: [],
+      cpuTrend: { series: [], currentValue: null, priorValue: null, delta: null, direction: 'unknown' },
+    },
+  };
+  const text = formatResourceTrendsLine(resourceTrends, ['coder']);
+  assert.equal(text, 'Resource usage: coder —');
 });
 
 // --- end-to-end: the compiled CLI actually runs headless and exits 0 ---
