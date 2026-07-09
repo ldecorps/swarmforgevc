@@ -18,7 +18,7 @@ import { reapAllTrackedJobs, reapStaleTrackedJobs } from './swarm/childJobRegist
 import { writeStateDump, startPeriodicStateDump, ExtensionStateSnapshot } from './swarm/stateDump';
 import { orchestrateFullLaunch } from './swarm/swarmOrchestrator';
 import { hasPriorRunState, shouldOfferResumePrompt } from './swarm/swarmDiscovery';
-import { stopSwarm, stopSwarmOnExtensionShutdown } from './swarm/swarmStopper';
+import { stopSwarm, stopSwarmOnExtensionShutdown, stopSwarmCompletely } from './swarm/swarmStopper';
 import { bounceSwarm, buildBounceExtensionCommand } from './swarm/bouncer';
 import { listTmuxSessions } from './swarm/tmuxClient';
 import { resolveRunName } from './run/resolveRunName';
@@ -1138,24 +1138,41 @@ export function activate(context: vscode.ExtensionContext): void {
           cancellable: false,
         },
         async () => {
+          console.log(`[Launch] Starting SwarmForge launch for run: ${runName}`);
+          console.log(`[Launch] Target: ${targetPath}`);
+
           // Prepare launch environment with API keys
           const launchEnv = buildLaunchEnv(runName, resolveSwarmConfigPath());
+          console.log(`[Launch] Environment prepared with run name and config`);
+
           const enrichedEnv = await import('./notify/secrets').then(async (m) => {
             const e = { ...launchEnv };
             const mistral = await m.resolveMistralApiKey(context.secrets);
-            if (mistral) e['MISTRAL_API_KEY'] = mistral;
+            if (mistral) {
+              e['MISTRAL_API_KEY'] = mistral;
+              console.log(`[Launch] Mistral API key loaded`);
+            }
             const openai = await m.resolveOpenAIApiKey(context.secrets);
-            if (openai) e['OPENAI_API_KEY'] = openai;
+            if (openai) {
+              e['OPENAI_API_KEY'] = openai;
+              console.log(`[Launch] OpenAI API key loaded`);
+            }
             return e;
           });
 
-          // Orchestrate full launch: agents → daemon → verify ready
+          // Orchestrate full launch: Phase 1: agents → Phase 2: daemon → Phase 3: verify ready
+          console.log(`[Launch] Orchestrating full launch sequence...`);
+          const launchStart = Date.now();
           const result = await orchestrateFullLaunch(targetPath!, enrichedEnv, 120_000);
+          const launchDuration = Date.now() - launchStart;
+
           if (!result.success) {
+            console.error(`[Launch] FAILED after ${launchDuration}ms: ${result.message}`);
             vscode.window.showErrorMessage(result.message);
             return;
           }
 
+          console.log(`[Launch] SUCCESS in ${launchDuration}ms - agents: ${result.agentStarted}, daemon: ${result.daemonStarted}, skipDaemon: ${result.skipDaemon}`);
           vscode.window.showInformationMessage(result.message);
           const panel = SwarmPanel.createOrShow(
             context.extensionUri,
@@ -1198,7 +1215,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
 
       const confirmed = await vscode.window.showWarningMessage(
-        'Stop the SwarmForge swarm? This will kill all agent sessions.',
+        'Stop the SwarmForge swarm? This will kill all agent sessions, daemon processes, and clear all state.',
         { modal: true },
         STOP_SWARM_BUTTON
       );
@@ -1206,9 +1223,11 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
 
-      const result = stopSwarm(targetPath);
+      // Complete stop: tmux sessions → daemons → state cleanup → verify stopped
+      const result = stopSwarmCompletely(targetPath);
       if (result.success) {
         vscode.window.showInformationMessage(result.message);
+        console.log(`SwarmForge stop completed: ${result.phases.map((p) => `${p.name}(${p.success ? 'ok' : 'err'})`).join(' → ')}`);
         // Stop chaser monitor when swarm is stopped
         if (currentChaserMonitor) {
           stopChaserMonitor(currentChaserMonitor);
