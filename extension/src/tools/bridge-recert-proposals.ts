@@ -31,18 +31,29 @@ function isReviewOutcome(value: unknown): value is ReviewOutcome {
   return value === 'update' || value === 'delete';
 }
 
-function parseRecertProposal(raw: string): RecertProposal | null {
+function tryParseJsonObject(raw: string): Record<string, unknown> | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
     return null;
   }
-  if (!parsed || typeof parsed !== 'object') {
+  return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+}
+
+function hasRequiredProposalFields(
+  candidate: Partial<RecertProposal>
+): candidate is Partial<RecertProposal> & Pick<RecertProposal, 'scenarioId' | 'receivedAtIso' | 'outcome'> {
+  return typeof candidate.scenarioId === 'string' && typeof candidate.receivedAtIso === 'string' && isReviewOutcome(candidate.outcome);
+}
+
+function parseRecertProposal(raw: string): RecertProposal | null {
+  const parsed = tryParseJsonObject(raw);
+  if (!parsed) {
     return null;
   }
   const candidate = parsed as Partial<RecertProposal>;
-  if (typeof candidate.scenarioId !== 'string' || typeof candidate.receivedAtIso !== 'string' || !isReviewOutcome(candidate.outcome)) {
+  if (!hasRequiredProposalFields(candidate)) {
     return null;
   }
   const proposal: RecertProposal = { scenarioId: candidate.scenarioId, outcome: candidate.outcome, receivedAtIso: candidate.receivedAtIso };
