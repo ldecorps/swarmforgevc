@@ -63,6 +63,15 @@
   real signal can never crash the test worker or its IPC channel. (BL-121:
   `swarmStopper.test.js` SIGTERM'd its own Vitest worker via `process.pid`,
   nondeterministically crashing the whole suite's IPC channel.)
+- **Never simulate a failure with filesystem permission bits.** `chmod 0000`
+  (or dropping read/execute) to force a "cannot open / cannot spawn" path is not
+  portable: root bypasses permission checks entirely (containers and CI
+  routinely run as root), and WSL / Windows-mounted filesystems do not reliably
+  enforce POSIX mode bits — so the expected failure silently does not happen and
+  the test flakes. Force the failure deterministically instead: point at a
+  non-existent path (ENOENT) or inject a failing spawn/exec/open seam. (BL-219:
+  `swarmLauncher.test.js`'s "cannot be spawned" test used `chmod 0o000` and
+  flaked under root/WSL.)
 
 ## Acceptance Pipeline
 - Use github.com/unclebob/Acceptance-Pipeline-Specification (pinned, see above)
