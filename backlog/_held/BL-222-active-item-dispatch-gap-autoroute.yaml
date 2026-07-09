@@ -1,0 +1,75 @@
+id: BL-222
+title: "Sweep must detect and auto-route never-dispatched backlog/active/ items (dispatch-gap detection)"
+milestone: M2
+status: todo
+priority: 04
+direction: reliability
+assigned_to: coder
+depends_on: [BL-146]
+source: "coordinator rule_proposal (engineering scope) 2026-07-09: BL-217 sat in backlog/active/ ~3h with zero routing handoff sent; the assigned coder was idle with an empty queue and no alert fired. Operator (2026-07-09) chose: detect + auto-route, reusing the existing chase interval."
+
+description: |
+  COORDINATOR (2026-07-09): a promoted backlog/active/ item can sit undispatched
+  — no routing handoff ever sent to its assigned_to — leaving the assignee idle
+  with an empty queue and NO alert. BL-217 sat this way ~3h. The existing
+  chase/sweep only watches stuck INBOX mail (queued/in_process handoffs that sit
+  too long); never-dispatched work produces no inbox mail at all, so the sweep is
+  blind to it.
+
+  Root cause (verified against live code):
+    - swarmforge/scripts/chase_sweep_lib.bb scans only inbox/new/
+      (scan-inbox-new) and inbox/in_process/ (scan-in-process); its decisions
+      (decide-item-action, decide-stuck-action, decide-stale-item-action) operate
+      purely on inbox handoff files. It has NO backlog/active/ awareness and never
+      inspects whether an active item's assigned_to actually received a dispatch.
+    - So an active item with zero routing handoff is invisible: nothing in any
+      inbox to chase, nothing stuck to nudge, no alert path.
+    - (Per BL-146 the live chase/nudge/sweep decisions are in this daemon lib,
+      driven by handoffd.bb — not the retired extension/src/swarm/inboxChaser.ts.)
+
+  Wanted behavior (operator decisions 2026-07-09):
+  - The sweep also evaluates every backlog/active/ item for a dispatch gap: it
+    checks whether a routing handoff for that item exists for the item's
+    assigned_to (in any mailbox state, or the item has already progressed to a
+    later pipeline role). If none exists, the item was never dispatched.
+  - AUTO-ROUTE: on a detected gap, the sweep sends the missing routing handoff to
+    the assignee itself (as/for the coordinator), so the assignee is dispatched
+    without waiting for a human. This is a deliberate, narrow extension of the
+    daemon into a routing action the coordinator normally owns — scoped to
+    "active item that has NO dispatch at all", never re-routing already-dispatched
+    or progressed work.
+  - IDEMPOTENT: an item that already has a routing handoff for its assignee, or
+    has already moved to a later role, is left alone — no duplicate dispatch.
+  - TIMING: reuse the existing sweep cadence / chase interval configuration
+    (e.g. the current stuck/chase timeout knobs). Do NOT add a separate
+    dispatch-gap timeout.
+
+  Constraints:
+  - Babashka; the dispatch-gap DECISION must be a pure function over provided
+    inputs (the active-item list with assigned_to, and the set of routing
+    handoffs known for each assignee) — no real mailbox I/O, no network, no real
+    timers in tests (engineering article). Cover at least: (1) active item with
+    no dispatch is auto-routed; (2) active item already dispatched to its
+    assignee is not re-routed; (3) active item that progressed to a later role is
+    not re-routed.
+  - Auto-route must go through the normal outbound handoff path
+    (swarm_handoff.sh / the daemon's own send path), not a hand-written inbox
+    file, and must be idempotent across consecutive sweeps (a still-undispatched
+    item must not be routed twice if the first route is already in flight).
+  - Does not change existing inbox chase/nudge behavior; this is additive.
+  - LAYER OWNERSHIP (coordinator clarification 2026-07-09): the dispatch-gap
+    chase runs in the watcher/daemon layer (handoffd.bb + chase_sweep_lib.bb /
+    the liveness watchdog), the SAME owner as the existing liveness/inbox chase.
+    It must NOT be implemented as coordinator self-polling — the constitution
+    forbids self-scheduled polling loops; roles act on wake-ups, not timers. The
+    daemon already runs unattended, so it is the correct home for chasing
+    unattended active tickets.
+
+  QA e2e procedure (live swarm):
+  - Promote an item to backlog/active/ but suppress its routing handoff.
+  - Let the sweep run one cadence; confirm the assignee receives an auto-routed
+    dispatch for that item and that a second sweep does not send a duplicate.
+  - Confirm a normally-dispatched active item is never re-routed.
+
+acceptance: specs/features/BL-222-active-item-dispatch-gap-autoroute.feature
+mutation_cost: medium
