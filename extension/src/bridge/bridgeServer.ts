@@ -1,6 +1,10 @@
+import * as fs from 'fs';
 import * as http from 'http';
+import * as path from 'path';
 import { buildBridgeState, BridgeState } from './bridgeState';
 import { isAuthorizedRequest } from './bridgeAuth';
+import { computeStageDwellReport } from '../metrics/swarmMetrics';
+import { parseRolesTsv } from '../swarm/swarmState';
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const LOCALHOST = '127.0.0.1';
@@ -17,6 +21,18 @@ export interface StartBridgeOptions {
 }
 
 type StateRoute = '/pipeline' | '/agents' | '/backlog' | '/runlog';
+
+function buildStageDwellReport(targetPath: string): unknown {
+  const rolesTsvPath = path.join(targetPath, '.swarmforge', 'roles.tsv');
+  let rolesTsv: string;
+  try {
+    rolesTsv = fs.readFileSync(rolesTsvPath, 'utf8');
+  } catch {
+    return {};
+  }
+  const roles = parseRolesTsv(rolesTsv);
+  return computeStageDwellReport(targetPath, roles, 24 * 60 * 60 * 1000, Date.now());
+}
 
 function stateForRoute(state: BridgeState, route: StateRoute): unknown {
   switch (route) {
@@ -74,6 +90,12 @@ export function startBridge(
         const state = buildBridgeState(targetPath, runLogPath);
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify(stateForRoute(state, url)));
+        return;
+      }
+
+      if (url === '/metrics/stage-dwell') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(buildStageDwellReport(targetPath)));
         return;
       }
 

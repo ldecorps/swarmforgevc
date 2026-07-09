@@ -19,8 +19,10 @@ import { execFileSync } from 'child_process';
 import { parseRolesTsv, RoleEntry } from '../swarm/swarmState';
 import { loadRuns } from '../runs/runLog';
 import {
+  computeStageDwellReport,
   computeSwarmMetrics,
   formatDurationMs,
+  formatStageDwellReport,
   formatSuiteDurationMs,
   NO_SAMPLE_PLACEHOLDER,
   SwarmMetrics,
@@ -119,10 +121,34 @@ export function runCliMain(main: () => void): void {
   }
 }
 
-export function main(): void {
+function parseWindowHours(argv: string[]): number {
+  const index = argv.indexOf('--window-hours');
+  if (index === -1 || index + 1 >= argv.length) {
+    return 24;
+  }
+  const parsed = Number(argv[index + 1]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 24;
+}
+
+function parseJsonFlag(argv: string[]): boolean {
+  return argv.includes('--json');
+}
+
+export function main(argv: string[] = process.argv.slice(2)): void {
+  const command = argv[0];
   const projectRoot = resolveProjectRoot(process.cwd());
   const roles = loadRoles(projectRoot);
   const mainWorktreePath = resolveMainWorktreePath(projectRoot, roles);
+
+  if (command === 'stage-dwell' || command === 'bottleneck') {
+    const report = computeStageDwellReport(mainWorktreePath, roles, parseWindowHours(argv) * 60 * 60 * 1000, Date.now());
+    if (parseJsonFlag(argv)) {
+      console.log(JSON.stringify(report, null, 2));
+    } else {
+      console.log(formatStageDwellReport(report));
+    }
+    return;
+  }
 
   const runLogPath = path.join(os.homedir(), '.swarmforge', 'runs.jsonl');
   const runs = loadRuns(runLogPath).filter((r) => r.targetPath === mainWorktreePath);
@@ -134,5 +160,5 @@ export function main(): void {
 }
 
 if (require.main === module) {
-  runCliMain(main);
+  runCliMain(() => main(process.argv.slice(2)));
 }
