@@ -1,7 +1,7 @@
 id: BL-053
 title: redo BL-038 — show active ticket ID + summary in the holding agent's tile header
 milestone: M3
-status: todo
+status: done
 priority: 05
 assigned_to: coder
 

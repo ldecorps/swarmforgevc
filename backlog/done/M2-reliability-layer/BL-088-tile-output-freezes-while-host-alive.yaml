@@ -1,7 +1,7 @@
 id: BL-088
 title: BUG — tile output freezes at a stale frame while the extension host and swarm are both alive
 milestone: M2
-status: todo
+status: done
 priority: 01
 source: operator report 2026-07-04 ("panes are very static, no animation whatsoever")
 

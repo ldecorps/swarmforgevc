@@ -1,7 +1,7 @@
 id: BL-143
 title: "Coordinator inbox visibility: show real .handoff payloads by default, hide sidecars unless debug"
 milestone: M4
-status: todo
+status: done
 priority: 05
 direction: aligned
 assigned_to: specifier
