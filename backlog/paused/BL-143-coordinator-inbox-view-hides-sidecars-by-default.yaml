@@ -25,34 +25,5 @@ description: |
     filtering, not sidecar deletion policy.
   - Ensure docs and runbook examples use payload-only queue checks by default.
 
-acceptance: |
-  Feature: coordinator views are payload-first and sidecar-safe
-
-  # BL-143 inbox-visibility-01
-  Scenario: default queue view excludes sidecars
-    Given inbox directories contain .handoff payloads and sidecar files
-    When coordinator queue state is rendered in default mode
-    Then only .handoff payload files are counted and listed
-
-  # BL-143 inbox-visibility-02
-  Scenario: debug mode can reveal sidecars intentionally
-    Given inbox directories contain sidecar files
-    When coordinator enables debug/diagnostic mode
-    Then sidecar files are visible with explicit metadata labeling
-
-  # BL-143 inbox-visibility-03
-  Scenario: no false busy signal from sidecar-only inbox
-    Given an inbox has sidecars but no .handoff payload
-    When coordinator evaluates whether work is pending
-    Then result is no pending payload work
-
-  # BL-143 inbox-visibility-04
-  Scenario: chaser behavior remains unchanged
-    Given sidecar files are hidden from default coordinator views
-    When chaser sweep runs
-    Then chase/nudge logic still reads and writes sidecars as before
-
-  # Non-behavioral gates:
-  #  - Add tests for listing/counting behavior with mixed payload+sidecar sets.
-  #  - Update docs/runbooks with payload-first queue inspection examples.
+acceptance: specs/features/BL-143-coordinator-inbox-view-hides-sidecars-by-default.feature
 mutation_cost: low
