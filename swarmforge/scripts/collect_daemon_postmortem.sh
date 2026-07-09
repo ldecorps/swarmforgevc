@@ -4,22 +4,15 @@ set -euo pipefail
 
 ROOT="${1:-$(pwd)}"
 ROOT="$(cd "$ROOT" && pwd -P)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DAEMON_DIR="$ROOT/.swarmforge/daemon"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 OUT="$DAEMON_DIR/postmortem-$STAMP.log"
 
-# BL-203: BSD/macOS `stat -f FORMAT` and GNU/Linux `stat -c FORMAT` are not
-# interchangeable - on GNU coreutils, `-f` means "filesystem status" instead,
-# so it fails (and can dump multi-line filesystem info to stdout) rather than
-# reporting the heartbeat's mtime/size. Try the BSD form first, fall back to
-# GNU, matching the existing file_size_bytes pattern in check_commit_size.sh.
+source "$SCRIPT_DIR/portable_stat_lib.sh"
+
 heartbeat_stat_line() {
-  local file="$1"
-  if stat -f "heartbeat mtime=%Sm size=%z" "$file" >/dev/null 2>&1; then
-    stat -f "heartbeat mtime=%Sm size=%z" "$file"
-  else
-    stat -c "heartbeat mtime=%y size=%s" "$file"
-  fi
+  portable_stat "heartbeat mtime=%Sm size=%z" "heartbeat mtime=%y size=%s" "$1"
 }
 
 mkdir -p "$DAEMON_DIR"
