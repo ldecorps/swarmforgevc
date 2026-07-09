@@ -1,0 +1,44 @@
+id: BL-214
+title: "Send the daily-briefing email from the headless daemon, not the VS Code host"
+milestone: M2
+status: todo
+priority: 05
+direction: reliability
+assigned_to: coder
+source: "coordinator rule_proposal (scope engineering, filed as ticket) 2026-07-09: briefing email only sends when VS Code host is open; operator runs headless."
+
+description: |
+  COORDINATOR (2026-07-09): the daily-briefing email currently sends from
+  extension/src/notify/briefingEmailWatcher.ts, an extension-HOST module that
+  only fires when VS Code is open with the Resend key/setting resolved —
+  neither guaranteed for an operator running the swarm headless. So committed
+  briefings (docs/briefings/<date>.md) may never be emailed.
+
+  The headless Babashka daemon already has a working, host-independent send
+  path: swarmforge/scripts/daemon_alarm_lib.bb's send-alarm-email! does a real
+  Resend POST (https://api.resend.com/emails) behind an injectable seam, using
+  RESEND_API_KEY and swarmforge.conf's notify_email_to/notify_email_from (the
+  same config the BL-144 daemon-death alarm uses).
+
+  Wanted behavior:
+  - The daemon detects a newly-committed docs/briefings/<date>.md and emails it
+    exactly once, using send-alarm-email! with the daemon's configured
+    to/from + RESEND_API_KEY — no dependency on the VS Code host being open.
+  - Exactly-once across restarts: a durable sent-marker (e.g. a per-date
+    marker file) prevents re-emailing an already-sent briefing when the daemon
+    restarts.
+  - Graceful no-op when unconfigured: if notify_email_to or RESEND_API_KEY is
+    absent, log and skip (same posture as the alarm), never crash.
+  - Retire the host-dependent send: remove or disable briefingEmailWatcher.ts's
+    email send so a briefing is never double-emailed when VS Code happens to be
+    open alongside the daemon.
+
+  Constraints:
+  - Reuse daemon_alarm_lib.bb's send-alarm-email! and its injectable POST seam;
+    do not add a second Resend client. Tests never touch the network (inject a
+    fake POST) and use no real timers.
+  - This is delivery only; it does not change how the briefing is composed
+    (coordinator role prompt) or its content (that is BL-099 / BL-213).
+
+acceptance: specs/features/BL-214-daemon-sends-briefing-email-headless.feature
+mutation_cost: low
