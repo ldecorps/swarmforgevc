@@ -101,6 +101,19 @@ test('runPipeline returns the run() result', async () => {
   assert.deepEqual(result, { success: false, output: 'boom' });
 });
 
+test('runPipeline uses the real parse/generate/run defaults when no deps override is given', async () => {
+  const featurePath = path.join(__dirname, 'fixtures', 'backlog-folders.feature');
+  const stepsPath = path.join(__dirname, '..', 'steps', 'index.js');
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-runner-defaults-'));
+  try {
+    const result = await runPipeline(featurePath, outDir, stepsPath);
+    assert.equal(result.success, true, result.output);
+    assert.match(result.output, /a ticket in backlog\/active is reported as active/);
+  } finally {
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
 test('runPipeline propagates a parse failure without calling generate or run', async () => {
   const order = [];
   const parse = () => {
