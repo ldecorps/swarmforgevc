@@ -7,7 +7,17 @@ direction: non-aligned
 source: operator request 2026-07-04 ("token consumption per agent, per ticket; cpu/ram; anything useful — rather too much than not enough")
 depends_on: BL-096 (trend framework), BL-098 (telemetry log family + holding periods)
 
-description: |
+notes: |
+  Sliced by specifier 2026-07-09 (coder scope-gap evidence
+  BL-100-scope-gap-20260709.md): this ticket is now the COMPUTATION/TELEMETRY
+  layer (cost-01/02/03/04/07) — transcript token parser, per-ticket
+  attribution, pricing/cost, resource sampler, absent-data zeros — all
+  buildable now against BL-096/BL-098. The briefing "cost & health paragraph"
+  (cost-05) and the phone/backlog.json surfacing (cost-06) moved to BL-213:
+  they need BL-097's Action/backlog.json (unbuilt) and an extendable briefing
+  content path (BL-099 is "done" but LLM-composed via a nudge with no code
+  path/sidecar to extend). BL-100's depends_on (BL-096, BL-098) is now correct
+  for what remains.
   Extend the metrics story with cost and resource telemetry. Operator
   stance: include generously — they will prune later. Everything lands in
   the BL-096 trend framework (series + windowed delta), the bridge/BL-094
@@ -65,12 +75,12 @@ description: |
       the same briefing flow) into backlog.json. Live-granularity
       cost/resource data stays local to the bridge/UI.
 
-  Scope: metrics module (transcript parser, attribution join, pricing
-  table, resource-sample reader), host resource sampler (thin adapter),
-  bridge/CLI additions, briefing content contract addition (BL-099 role
-  text), Action/backlog.json additive fields (schema_version minor bump).
-  Transcript parsing must tolerate unknown JSONL fields and missing dirs
-  (role never ran here -> zeros).
+  Scope (this ticket, sliced): metrics module (transcript parser,
+  attribution join, pricing table, resource-sample reader), host resource
+  sampler (thin adapter), bridge/CLI additions. Transcript parsing must
+  tolerate unknown JSONL fields and missing dirs (role never ran here ->
+  zeros). The briefing content contract addition and the Action/backlog.json
+  additive fields are OUT of scope here — they are BL-213.
 
 acceptance: specs/features/BL-100-token-cost-resource-telemetry.feature
 mutation_cost: low

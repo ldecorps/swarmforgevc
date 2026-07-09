@@ -28,19 +28,6 @@ Scenario: resource samples become trends
   When CPU/RAM metrics are queried
   Then per-role current values and windowed trends are reported
 
-# BL-100 cost-05
-Scenario: briefing carries the cost & health paragraph
-  When the coordinator composes a briefing with telemetry available
-  Then it includes per-agent cost one-liners, top expensive tickets,
-    flow balance, and reliability counts, each with trend direction
-
-# BL-100 cost-06
-Scenario: phone sees daily figures via the committed briefing
-  Given a committed briefing (or its json sidecar) with metrics
-  When the Action regenerates backlog.json
-  Then the daily cost/health figures appear in backlog.json
-  And no runtime telemetry file was committed to git
-
 # BL-100 cost-07
 Scenario: absent data degrades to zeros
   Given a role with no transcript directory or no telemetry
@@ -52,5 +39,7 @@ Scenario: absent data degrades to zeros
 #    (fake transcripts in tests); filesystem discovery is a thin tested
 #    adapter. ~/.claude transcripts are read-only inputs.
 #  - Pricing table is versioned data in-repo; no rates hardcoded.
-#  - backlog.json changes are additive (schema_version respected).
 #  - BL-096 trend function reused unmodified for every new series.
+#  - Briefing paragraph (cost-05) and phone/backlog.json surfacing (cost-06)
+#    are deferred to BL-213 — they need BL-097's Action/backlog.json and an
+#    extendable briefing content path, neither of which exists yet.
