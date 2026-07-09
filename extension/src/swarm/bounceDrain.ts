@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { atomicWrite } from '../util/atomicWrite';
-import { BounceType, isBounceType, processBounceFile } from './bounceWatcher';
+import { BounceType, isBounceType, handleFileWatchEvent } from './bounceWatcher';
 
 // BL-069: graceful bounce. Before the existing verified bounce (BL-058) kills
 // panes, the swarm enters a DRAIN mode: agents finish their current
@@ -162,14 +162,7 @@ export function handleGracefulWatchEvent(
   onError: ((error: string) => void) | undefined,
   scheduleTick: (fn: () => void, ms: number) => void = (fn, ms) => { setTimeout(fn, ms); },
 ): void {
-  if (filename !== GRACEFUL_TRIGGER_FILENAME) {
-    return;
-  }
-  scheduleTick(() => {
-    if (fs.existsSync(triggerFilePath)) {
-      processBounceFile(triggerFilePath, onGracefulBounce, onError);
-    }
-  }, 50);
+  handleFileWatchEvent(filename, GRACEFUL_TRIGGER_FILENAME, triggerFilePath, onGracefulBounce, onError, scheduleTick);
 }
 
 export function startGracefulBounceFileWatcher(
