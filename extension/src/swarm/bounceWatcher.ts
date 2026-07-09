@@ -29,6 +29,12 @@ export function parseBounceFile(content: string): BounceParsed {
   return { valid: false, error: `Unknown bounce type: ${trimmed}` };
 }
 
+function reportBounceError(onError: ((error: string) => void) | undefined, message: string): void {
+  if (onError) {
+    onError(message);
+  }
+}
+
 export function processBounceFile(
   filePath: string,
   onBounce: (bounceType: BounceType) => void,
@@ -39,9 +45,7 @@ export function processBounceFile(
     const parsed = parseBounceFile(content);
 
     if (!parsed.valid) {
-      if (onError) {
-        onError(parsed.error || 'Unknown error');
-      }
+      reportBounceError(onError, parsed.error || 'Unknown error');
     } else if (parsed.bounceType) {
       onBounce(parsed.bounceType);
     }
@@ -49,10 +53,8 @@ export function processBounceFile(
     // Delete the file after processing (whether valid or invalid)
     fs.unlinkSync(filePath);
   } catch (error) {
-    if (onError) {
-      const message = error instanceof Error ? error.message : String(error);
-      onError(`Failed to process bounce file: ${message}`);
-    }
+    const message = error instanceof Error ? error.message : String(error);
+    reportBounceError(onError, `Failed to process bounce file: ${message}`);
   }
 }
 
