@@ -103,4 +103,65 @@ echo "$OUT5" | grep -qi "does not point at" || fail "05: error should say the co
 pass "05: launch.json drifted onto the wrong profile path is caught"
 rm -rf "$ROOT"
 
+# ── 6: a missing profile file entirely is caught (before any other check
+#       runs — was previously exercised by no test) ─────────────────────────
+make_good_fixture
+rm -f "$ROOT/swarmforge/profiles/stabilize-two-pack.conf"
+set +e
+OUT6="$(bash "$SMOKE" "$ROOT" 2>&1)"
+STATUS6=$?
+set -e
+[[ "$STATUS6" -ne 0 ]] || fail "06: expected a missing profile file to fail the smoke check"
+echo "$OUT6" | grep -qi "profile missing" || fail "06: error should say the profile is missing, got: $OUT6"
+pass "06: a missing profile file is caught"
+rm -rf "$ROOT"
+
+# ── 7: a missing launch.json entirely is caught (was previously exercised by
+#       no test) ─────────────────────────────────────────────────────────────
+make_good_fixture
+rm -f "$ROOT/.vscode/launch.json"
+set +e
+OUT7="$(bash "$SMOKE" "$ROOT" 2>&1)"
+STATUS7=$?
+set -e
+[[ "$STATUS7" -ne 0 ]] || fail "07: expected a missing launch.json to fail the smoke check"
+echo "$OUT7" | grep -qi "launch.json missing" || fail "07: error should say launch.json is missing, got: $OUT7"
+pass "07: a missing launch.json is caught"
+rm -rf "$ROOT"
+
+# ── 8: malformed JSON in launch.json is caught (the node -e JSON.parse catch
+#       path — was previously exercised by no test) ──────────────────────────
+make_good_fixture
+echo '{ not valid json' > "$ROOT/.vscode/launch.json"
+set +e
+OUT8="$(bash "$SMOKE" "$ROOT" 2>&1)"
+STATUS8=$?
+set -e
+[[ "$STATUS8" -ne 0 ]] || fail "08: expected malformed launch.json to fail the smoke check"
+echo "$OUT8" | grep -qi "not valid JSON" || fail "08: error should say launch.json is not valid JSON, got: $OUT8"
+pass "08: malformed JSON in launch.json is caught"
+rm -rf "$ROOT"
+
+# ── 9: SWARMFORGE_SKIP_DAEMON=1 on the launch.json config itself is caught —
+#       distinct from case 03's profile-level check; a fixed/regressed
+#       profile could still be undermined by this launch-entry-local flag
+#       flipping daemon-off at the exact moment of launch (was previously
+#       exercised by no test) ─────────────────────────────────────────────
+make_good_fixture
+node -e '
+const fs = require("fs");
+const path = "'"$ROOT"'/.vscode/launch.json";
+const parsed = JSON.parse(fs.readFileSync(path, "utf8"));
+parsed.configurations[0].env.SWARMFORGE_SKIP_DAEMON = "1";
+fs.writeFileSync(path, JSON.stringify(parsed, null, 2));
+'
+set +e
+OUT9="$(bash "$SMOKE" "$ROOT" 2>&1)"
+STATUS9=$?
+set -e
+[[ "$STATUS9" -ne 0 ]] || fail "09: expected launch.json's own SWARMFORGE_SKIP_DAEMON=1 to fail the smoke check"
+echo "$OUT9" | grep -qi "SKIP_DAEMON=1" || fail "09: error should mention SWARMFORGE_SKIP_DAEMON=1, got: $OUT9"
+pass "09: SWARMFORGE_SKIP_DAEMON=1 set directly on the launch.json config is caught"
+rm -rf "$ROOT"
+
 echo "ALL PASS"
