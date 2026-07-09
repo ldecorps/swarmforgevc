@@ -8,6 +8,8 @@ const {
   computeBusyness,
   computeRetries,
   computeSwarmMetrics,
+  computeStageDwellReport,
+  formatStageDwellReport,
 } = require('../out/metrics/swarmMetrics');
 
 function mkTmp() {
@@ -381,4 +383,71 @@ test('computeSwarmMetrics honors a custom suiteWarnSeconds threshold', () => {
 
   const strict = computeSwarmMetrics(target, [], null, Date.now(), 10);
   assert.equal(strict.suiteDuration.warn, true, '50s exceeds a 10s threshold');
+});
+
+test('computeStageDwellReport computes wait/processing stats and includes batch directories', () => {
+  const target = mkTmp();
+  const coderWt = path.join(target, 'coder-wt');
+  const completedDir = path.join(coderWt, '.swarmforge', 'handoffs', 'inbox', 'completed');
+  const batchDir = path.join(completedDir, 'batch_20260702T000000Z_000001');
+
+  const now = Date.parse('2026-07-03T00:00:00Z');
+  writeHandoff(completedDir, '00_primary.handoff', {
+    enqueued_at: new Date(now - 3 * 60 * 60 * 1000).toISOString(),
+    dequeued_at: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
+    completed_at: new Date(now - 1 * 60 * 60 * 1000).toISOString(),
+  });
+  writeHandoff(batchDir, '00_batch.handoff', {
+    enqueued_at: new Date(now - 5 * 60 * 60 * 1000).toISOString(),
+    dequeued_at: new Date(now - 4 * 60 * 60 * 1000).toISOString(),
+    completed_at: new Date(now - 3 * 60 * 60 * 1000).toISOString(),
+  });
+  writeHandoff(completedDir, '00_partial.handoff', {
+    enqueued_at: new Date(now - 30 * 60 * 1000).toISOString(),
+    completed_at: new Date(now - 10 * 60 * 1000).toISOString(),
+  });
+
+  const report = computeStageDwellReport(target, [{ role: 'coder', worktreePath: coderWt }], 24 * 60 * 60 * 1000, now);
+
+  assert.equal(report.stages.length, 1);
+  const stage = report.stages[0];
+  assert.equal(stage.role, 'coder');
+  assert.equal(stage.parcelsProcessed, 2);
+  assert.equal(stage.wait.medianMs, 60 * 60 * 1000);
+  assert.equal(stage.processing.medianMs, 60 * 60 * 1000);
+  assert.equal(stage.skippedItems, 1);
+  assert.equal(report.bottleneck?.role, 'coder');
+});
+
+test('computeStageDwellReport isolates a single extreme parcel from the median story and surfaces it in the text report', () => {
+  const target = mkTmp();
+  const coderWt = path.join(target, 'coder-wt');
+  const completedDir = path.join(coderWt, '.swarmforge', 'handoffs', 'inbox', 'completed');
+
+  const now = Date.parse('2026-07-03T00:00:00Z');
+  writeHandoff(completedDir, '00_normal.handoff', {
+    enqueued_at: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
+    dequeued_at: new Date(now - 60 * 60 * 1000).toISOString(),
+    completed_at: new Date(now - 30 * 60 * 1000).toISOString(),
+  });
+  writeHandoff(completedDir, '00_outlier.handoff', {
+    enqueued_at: new Date(now - 12 * 60 * 60 * 1000).toISOString(),
+    dequeued_at: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
+    completed_at: new Date(now - 30 * 60 * 1000).toISOString(),
+  });
+
+  const report = computeStageDwellReport(target, [{ role: 'coder', worktreePath: coderWt }], 24 * 60 * 60 * 1000, now);
+  const stage = report.stages[0];
+
+  assert.equal(stage.parcelsProcessed, 2);
+  assert.equal(stage.wait.medianMs, 60 * 60 * 1000);
+  assert.equal(stage.processing.medianMs, 30 * 60 * 1000);
+  assert.equal(stage.outliers.length, 2);
+  assert.ok(stage.outliers.some((item) => item.kind === 'wait'));
+  assert.ok(stage.outliers.some((item) => item.kind === 'processing'));
+
+  const text = formatStageDwellReport(report);
+  assert.match(text, /outliers:/);
+  assert.match(text, /wait/);
+  assert.match(text, /processing/);
 });

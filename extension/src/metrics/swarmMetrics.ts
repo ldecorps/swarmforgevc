@@ -335,6 +335,37 @@ export interface SwarmMetrics {
   suiteDuration: SuiteDurationStats;
 }
 
+export interface DurationStats {
+  medianMs: number | null;
+  p90Ms: number | null;
+  maxMs: number | null;
+}
+
+export interface StageDwellTrend {
+  direction: 'up' | 'down' | 'flat' | 'n/a';
+  deltaPercent: number | null;
+  previousValueMs: number | null;
+}
+
+export interface StageDwellSummary {
+  role: string;
+  parcelsProcessed: number;
+  skippedItems: number;
+  wait: DurationStats;
+  processing: DurationStats;
+  totalDwellMs: number;
+  trend: StageDwellTrend;
+  outliers: Array<{ kind: 'wait' | 'processing'; durationMs: number; filePath: string }>;
+}
+
+export interface StageDwellReport {
+  windowMs: number;
+  windowStartMs: number;
+  windowEndMs: number;
+  stages: StageDwellSummary[];
+  bottleneck: { role: string; totalDwellMs: number; multiple: number } | null;
+}
+
 export const NO_SAMPLE_PLACEHOLDER = '—';
 
 export function formatDurationMs(ms: number): string {
@@ -439,6 +470,252 @@ export function computeSuiteDuration(
   const warn = latestMs > warnThresholdMs || (baselineMeanMs !== null && latestMs > 2 * baselineMeanMs);
 
   return { latestMs, meanMs, sampleCount: windowed.length, warn };
+}
+
+function median(values: number[]): number | null {
+  if (values.length === 0) {
+    return null;
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) {
+    return (sorted[middle - 1] + sorted[middle]) / 2;
+  }
+  return sorted[middle];
+}
+
+function percentile(values: number[], pct: number): number | null {
+  if (values.length === 0) {
+    return null;
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  const rank = Math.max(0, Math.min(sorted.length - 1, Math.ceil((pct / 100) * sorted.length) - 1));
+  return sorted[rank];
+}
+
+function parseTimestamp(value: string | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function collectCompletedHandoffFiles(dir: string): string[] {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const files: string[] = [];
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...collectCompletedHandoffFiles(fullPath));
+    } else if (entry.isFile() && entry.name.endsWith('.handoff')) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+interface StageDwellRecord {
+  role: string;
+  filePath: string;
+  waitMs: number | null;
+  processingMs: number | null;
+  completedAtMs: number | null;
+  skipped: boolean;
+}
+
+function readStageDwellRecords(role: RoleWorktree, windowStartMs: number, windowEndMs: number): StageDwellRecord[] {
+  const completedDir = path.join(role.worktreePath, '.swarmforge', 'handoffs', 'inbox', 'completed');
+  const files = collectCompletedHandoffFiles(completedDir);
+  const records: StageDwellRecord[] = [];
+  for (const filePath of files) {
+    let headers: Record<string, string>;
+    try {
+      headers = parseHandoffHeaders(fs.readFileSync(filePath, 'utf8'));
+    } catch {
+      records.push({ role: role.role, filePath, waitMs: null, processingMs: null, completedAtMs: null, skipped: true });
+      continue;
+    }
+
+    const enqueuedAtMs = parseTimestamp(headers.enqueued_at);
+    const dequeuedAtMs = parseTimestamp(headers.dequeued_at);
+    const completedAtMs = parseTimestamp(headers.completed_at);
+    const waitMs = enqueuedAtMs !== null && dequeuedAtMs !== null ? dequeuedAtMs - enqueuedAtMs : null;
+    const processingMs = dequeuedAtMs !== null && completedAtMs !== null ? completedAtMs - dequeuedAtMs : null;
+
+    if (
+      completedAtMs === null ||
+      completedAtMs < windowStartMs ||
+      completedAtMs > windowEndMs ||
+      waitMs === null ||
+      processingMs === null
+    ) {
+      records.push({ role: role.role, filePath, waitMs, processingMs, completedAtMs, skipped: true });
+      continue;
+    }
+
+    records.push({ role: role.role, filePath, waitMs, processingMs, completedAtMs, skipped: false });
+  }
+  return records;
+}
+
+function computeTrend(currentValue: number | null, previousValue: number | null): StageDwellTrend {
+  if (currentValue === null || previousValue === null || previousValue === 0) {
+    return { direction: 'n/a', deltaPercent: null, previousValueMs: previousValue };
+  }
+  const deltaPercent = ((currentValue - previousValue) / previousValue) * 100;
+  return {
+    direction: deltaPercent > 0 ? 'up' : deltaPercent < 0 ? 'down' : 'flat',
+    deltaPercent: Number(deltaPercent.toFixed(1)),
+    previousValueMs: previousValue,
+  };
+}
+
+function computeOutliers(
+  values: Array<{ durationMs: number; filePath: string }>,
+  kind: 'wait' | 'processing',
+  baselineMedian: number | null
+): Array<{ kind: 'wait' | 'processing'; durationMs: number; filePath: string }> {
+  if (baselineMedian === null || values.length === 0) {
+    return [];
+  }
+  const sorted = [...values].sort((a, b) => a.durationMs - b.durationMs);
+  const topValue = sorted[sorted.length - 1];
+  const secondValue = sorted.length > 1 ? sorted[sorted.length - 2] : null;
+  const threshold = Math.max(baselineMedian * 3, 1000);
+  const relativeThreshold = secondValue ? Math.max(secondValue.durationMs * 3, baselineMedian * 1.5, 1000) : threshold;
+  return topValue.durationMs >= relativeThreshold
+    ? [{ kind, durationMs: topValue.durationMs, filePath: topValue.filePath }]
+    : [];
+}
+
+function computeStageSummary(role: RoleWorktree, records: StageDwellRecord[], previousRecords: StageDwellRecord[]): StageDwellSummary {
+  const validRecords = records.filter((record) => !record.skipped && record.waitMs !== null && record.processingMs !== null);
+  const waitValues = validRecords.map((record) => record.waitMs as number);
+  const processingValues = validRecords.map((record) => record.processingMs as number);
+  const totalDwellMs = validRecords.reduce((sum, record) => sum + (record.waitMs ?? 0) + (record.processingMs ?? 0), 0);
+
+  const currentWaitOutlierItems = validRecords
+    .filter((record) => record.waitMs !== null)
+    .map((record) => ({ durationMs: record.waitMs as number, filePath: record.filePath }));
+  const currentProcessingOutlierItems = validRecords
+    .filter((record) => record.processingMs !== null)
+    .map((record) => ({ durationMs: record.processingMs as number, filePath: record.filePath }));
+
+  const waitMedian = median(waitValues);
+  const processingMedian = median(processingValues);
+  const waitOutliers = computeOutliers(currentWaitOutlierItems, 'wait', waitMedian);
+  const processingOutliers = computeOutliers(currentProcessingOutlierItems, 'processing', processingMedian);
+  const outliers = [...waitOutliers, ...processingOutliers];
+
+  const waitSummaryValues = waitValues.filter((value, index) => !waitOutliers.some((item) => validRecords[index].filePath === item.filePath && value === item.durationMs));
+  const processingSummaryValues = processingValues.filter((value, index) => !processingOutliers.some((item) => validRecords[index].filePath === item.filePath && value === item.durationMs));
+  const effectiveWaitValues = waitSummaryValues.length > 0 ? waitSummaryValues : waitValues;
+  const effectiveProcessingValues = processingSummaryValues.length > 0 ? processingSummaryValues : processingValues;
+
+  const previousTotal = previousRecords.reduce((sum, record) => sum + (record.waitMs ?? 0) + (record.processingMs ?? 0), 0);
+  return {
+    role: role.role,
+    parcelsProcessed: validRecords.length,
+    skippedItems: records.filter((record) => record.skipped).length,
+    wait: {
+      medianMs: median(effectiveWaitValues),
+      p90Ms: percentile(effectiveWaitValues, 90),
+      maxMs: effectiveWaitValues.length > 0 ? Math.max(...effectiveWaitValues) : null,
+    },
+    processing: {
+      medianMs: median(effectiveProcessingValues),
+      p90Ms: percentile(effectiveProcessingValues, 90),
+      maxMs: effectiveProcessingValues.length > 0 ? Math.max(...effectiveProcessingValues) : null,
+    },
+    totalDwellMs,
+    trend: computeTrend(totalDwellMs || null, previousTotal || null),
+    outliers,
+  };
+}
+
+export function computeStageDwellReport(
+  targetPath: string,
+  roles: RoleWorktree[],
+  windowMs: number = 24 * 60 * 60 * 1000,
+  nowMs: number = Date.now()
+): StageDwellReport {
+  const windowEndMs = nowMs;
+  const windowStartMs = windowEndMs - windowMs;
+  const previousWindowEndMs = windowStartMs;
+  const previousWindowStartMs = previousWindowEndMs - windowMs;
+
+  const currentRecordsByRole = new Map<string, StageDwellRecord[]>();
+  const previousRecordsByRole = new Map<string, StageDwellRecord[]>();
+  for (const role of roles) {
+    currentRecordsByRole.set(role.role, readStageDwellRecords(role, windowStartMs, windowEndMs));
+    previousRecordsByRole.set(role.role, readStageDwellRecords(role, previousWindowStartMs, previousWindowEndMs));
+  }
+
+  const stages = roles.map((role) =>
+    computeStageSummary(role, currentRecordsByRole.get(role.role) ?? [], previousRecordsByRole.get(role.role) ?? [])
+  );
+  const meaningfulStages = stages.filter((stage) => stage.parcelsProcessed > 0);
+  const bottleneck = meaningfulStages.length
+    ? meaningfulStages.reduce((best, stage) => {
+        return stage.totalDwellMs > best.totalDwellMs ? stage : best;
+      })
+    : null;
+
+  const bottleneckWithMultiple = bottleneck && meaningfulStages.length > 1
+    ? {
+        role: bottleneck.role,
+        totalDwellMs: bottleneck.totalDwellMs,
+        multiple: meaningfulStages
+          .filter((stage) => stage.role !== bottleneck.role)
+          .reduce((bestMultiple, stage) => {
+            const candidate = bottleneck.totalDwellMs / Math.max(stage.totalDwellMs, 1);
+            return stage.totalDwellMs > 0 && candidate > bestMultiple ? candidate : bestMultiple;
+          }, 1),
+      }
+    : bottleneck
+    ? { role: bottleneck.role, totalDwellMs: bottleneck.totalDwellMs, multiple: 1 }
+    : null;
+
+  return {
+    windowMs,
+    windowStartMs,
+    windowEndMs,
+    stages,
+    bottleneck: bottleneckWithMultiple,
+  };
+}
+
+function formatSummaryValue(value: number | null): string {
+  return value === null ? '—' : `${Math.round(value / 60000)}m`;
+}
+
+export function formatStageDwellReport(report: StageDwellReport): string {
+  const lines = [
+    `Stage dwell report (${Math.round(report.windowMs / 60000)}m window)`,
+    'role | parcels | wait median/p90/max | processing median/p90/max | total dwell | trend',
+  ];
+  for (const stage of report.stages) {
+    lines.push(
+      `${stage.role} | ${stage.parcelsProcessed} | ${formatSummaryValue(stage.wait.medianMs)}/${formatSummaryValue(stage.wait.p90Ms)}/${formatSummaryValue(stage.wait.maxMs)} | ${formatSummaryValue(stage.processing.medianMs)}/${formatSummaryValue(stage.processing.p90Ms)}/${formatSummaryValue(stage.processing.maxMs)} | ${formatSummaryValue(stage.totalDwellMs)} | ${stage.trend.direction} ${stage.trend.deltaPercent === null ? '' : `${stage.trend.deltaPercent}%`}`.trim()
+    );
+    if (stage.outliers.length > 0) {
+      const outlierSummary = stage.outliers
+        .map((item) => `${item.kind} ${formatSummaryValue(item.durationMs)}`)
+        .join(', ');
+      lines.push(`  outliers: ${outlierSummary}`);
+    }
+  }
+  if (report.bottleneck) {
+    lines.push(`Bottleneck: ${report.bottleneck.role} (${report.bottleneck.multiple.toFixed(1)}x over next slowest)`);
+  }
+  return lines.join('\n');
 }
 
 export function computeSwarmMetrics(
