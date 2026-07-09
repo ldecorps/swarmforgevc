@@ -164,6 +164,43 @@ test('serves the holistic endpoint with assignments/swarms/doneByMilestone/recen
   });
 });
 
+// BL-102: /stage-dwell is token-gated like every other route, and degrades
+// to an empty stages list rather than erroring for a target with no roles.
+test('rejects an unauthorized request to the stage-dwell endpoint', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/stage-dwell`);
+    assert.equal(res.status, 401);
+  });
+});
+
+test('serves the stage-dwell endpoint with per-stage dwell and a bottleneck for an authorized request', async () => {
+  const target = mkTmp();
+  const coderWt = mkTmp();
+  writeRolesTsv(target, [{ role: 'coder', worktreePath: coderWt, displayName: 'Coder' }]);
+  const completedDir = path.join(coderWt, '.swarmforge', 'handoffs', 'inbox', 'completed');
+  mkdirp(completedDir);
+  const now = new Date();
+  const dequeuedAt = new Date(now.getTime() - 10 * 60 * 1000).toISOString();
+  fs.writeFileSync(
+    path.join(completedDir, '00_test.handoff'),
+    `task: BL-1-fixture\ndequeued_at: ${dequeuedAt}\ncompleted_at: ${now.toISOString()}\n\nbody\n`
+  );
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/stage-dwell`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.windowHours, 24);
+    const coderStage = body.stages.find((s) => s.role === 'coder');
+    assert.ok(coderStage);
+    assert.equal(coderStage.parcelsProcessed, 1);
+    assert.equal(body.bottleneck.role, 'coder');
+  });
+});
+
 // BL-094: the root HTML shell - the one route reachable by a plain browser
 // navigation, so it accepts the token via query string as well as header.
 test('rejects a plain (unauthenticated) request to the root URL', async () => {
