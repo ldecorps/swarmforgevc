@@ -40,7 +40,7 @@ launch an Extension Development Host with SwarmForge VC loaded.
 
 In the Extension Development Host window:
 
-1. Run **SwarmForge: Set Target Project** (`swarmforge.setTarget`) and pick
+1. Run **SwarmForge: Set Target** (`swarmforge.setTarget`) and pick
    the target repo's folder.
 2. Run **SwarmForge: Initialize Target** (`swarmforge.initializeTarget`).
    This scaffolds and commits `project.prompt` and `engineering.prompt` into
@@ -49,11 +49,11 @@ In the Extension Development Host window:
 
 ## 3. Run and watch
 
-1. Run **SwarmForge: Launch Swarm** (`swarmforge.launchSwarm`) to shell out
+1. Run **SwarmForge: Run Swarm** (`swarmforge.run`) to shell out
    to the target's `./swarm` wrapper and start the agents.
 2. The extension automatically opens the tiled agent panel when the swarm
-   launches. If you close the panel, run **SwarmForge: Open Panel**
-   (`swarmforge.openPanel`) to reopen it — one live terminal tile per role,
+   launches. If you close the panel, reopen the SwarmForge panel from the
+   command palette — one live terminal tile per role,
    tailing that role's tmux pane in real time.
 3. Click into any tile and type to nudge that agent directly.
 
@@ -62,13 +62,13 @@ In the Extension Development Host window:
 See `docs/specs/headless-reattach-doctrine.md` for the full reattach vs launch decision table.
 
 To stop the swarm cleanly at any point, run **SwarmForge: Stop Swarm**
-(`swarmforge.stopSwarm`).
+(`swarmforge.stop`).
 
 ## 4. Get your PR
 
-When the swarm finishes, run **SwarmForge: Open Pull Request**
-(`swarmforge.openPR`) to open a pull request from the swarm's dev branch into
-the target's main branch. Review and merge it in GitHub like any other PR.
+When the swarm finishes, the extension opens a pull request from the swarm's
+dev branch into the target's main branch. Review and merge it in GitHub like
+any other PR.
 
 ## Troubleshooting: Bring the swarm to a known-good state
 
