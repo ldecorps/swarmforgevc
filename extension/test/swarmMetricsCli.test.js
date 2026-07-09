@@ -7,6 +7,7 @@ const {
   resolveProjectRoot,
   resolveMainWorktreePath,
   formatOverview,
+  runCliMain,
 } = require('../out/tools/swarm-metrics');
 
 // realpath: macOS resolves /var -> /private/var, and git rev-parse
@@ -79,6 +80,10 @@ test('formatOverview prints a short plain-text overview with mean time, busyness
     retryTotal: 3,
     retryByTicket: { 'BL-101': 2, 'BL-102': 1 },
     suiteDuration: { latestMs: 33000, meanMs: 33000, sampleCount: 5, warn: false },
+    chaserTelemetry: {
+      coder: { chases: 3, nudges: 1, deadLetters: 0, respawns: 0, recentDailyRate: 0.5 },
+      cleaner: { chases: 0, nudges: 0, deadLetters: 0, respawns: 0, recentDailyRate: 0 },
+    },
   };
   const text = formatOverview(metrics, ['coder', 'cleaner']);
 
@@ -92,6 +97,7 @@ test('formatOverview prints a short plain-text overview with mean time, busyness
       'Busyness: coder 45%, cleaner 2%',
       'Retries: 3 total (worst: BL-101 x2, BL-102 x1)',
       'Suite duration: 33s (mean 33s over 5 run(s))',
+      'Chaser telemetry: coder 3 chases/1 nudges (0.50/day), cleaner 0 chases/0 nudges (0.00/day)',
     ].join('\n')
   );
 });
@@ -142,6 +148,10 @@ test('formatOverview on a fresh run prints placeholders, never NaN/Infinity/unde
   assert.match(text, /Retries: 0 total/);
   const suiteLine = text.split('\n')[3];
   assert.equal(suiteLine, 'Suite duration: — (0 runs)', 'no WARN prefix and no stray text before "Suite duration"');
+  // telemetry-05: absent chaserTelemetry (no field on this fixture at all,
+  // simulating an older metrics object or a target with no telemetry log
+  // yet) reads as zero for every role, never an error.
+  assert.equal(text.split('\n')[4], 'Chaser telemetry: coder 0 chases/0 nudges (0.00/day), cleaner 0 chases/0 nudges (0.00/day)');
   assert.doesNotMatch(text, /NaN|Infinity|undefined/);
 });
 
@@ -181,4 +191,49 @@ test('the compiled swarm-metrics CLI runs from a worktree and exits 0 on a fresh
 
   assert.match(output, /Mean ticket time: —/);
   assert.doesNotMatch(output, /NaN|Infinity|undefined/);
+});
+
+// --- runCliMain: the shared require.main === module bootstrap ---
+
+test('runCliMain runs the given main() and does not exit when it succeeds', () => {
+  const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined);
+  let ran = false;
+
+  runCliMain(() => {
+    ran = true;
+  });
+
+  assert.equal(ran, true);
+  assert.equal(exitSpy.mock.calls.length, 0);
+  exitSpy.mockRestore();
+});
+
+test('runCliMain reports a thrown Error and exits 1 instead of letting it propagate', () => {
+  const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined);
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+  assert.doesNotThrow(() => {
+    runCliMain(() => {
+      throw new Error('boom');
+    });
+  });
+
+  assert.equal(errorSpy.mock.calls[0][0], 'Fatal error: boom');
+  assert.deepEqual(exitSpy.mock.calls[0], [1]);
+  exitSpy.mockRestore();
+  errorSpy.mockRestore();
+});
+
+test('runCliMain reports a non-Error throw via String() and exits 1', () => {
+  const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined);
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+  runCliMain(() => {
+    throw 'plain string failure';
+  });
+
+  assert.equal(errorSpy.mock.calls[0][0], 'Fatal error: plain string failure');
+  assert.deepEqual(exitSpy.mock.calls[0], [1]);
+  exitSpy.mockRestore();
+  errorSpy.mockRestore();
 });

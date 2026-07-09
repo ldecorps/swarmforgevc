@@ -66,6 +66,22 @@ CHASE_COUNT="$(python3 -c "import json; print(json.load(open('$HANDOFF_FILE.chas
 grep -q "send-keys" "$TMUX_LOG" || fail "01: no wake-up (send-keys) was sent for the chased item"
 pass "01: the consolidated daemon itself performed the chase sweep"
 
+# ── 01b (BL-098): the same chase decision durably logs a telemetry event ────
+MONTH="$(date -u +%Y-%m)"
+TELEMETRY_FILE="$ROOT/.swarmforge/telemetry/chaser-$MONTH.jsonl"
+[[ -f "$TELEMETRY_FILE" ]] || fail "01b: chaser telemetry log was never written"
+python3 - "$TELEMETRY_FILE" <<'PY'
+import json, sys
+lines = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+chase_events = [l for l in lines if l.get("type") == "chase" and l.get("role") == "coder"]
+assert chase_events, f"no chase telemetry event for role coder: {lines!r}"
+event = chase_events[0]
+assert event.get("handoffId"), f"telemetry event missing handoffId: {event!r}"
+assert isinstance(event.get("count"), int) and event["count"] >= 1, f"telemetry event missing/bad count: {event!r}"
+assert event.get("at"), f"telemetry event missing timestamp: {event!r}"
+PY
+pass "01b (BL-098 telemetry-01): the daemon's own chase decision durably logs a telemetry event"
+
 # ── 02: duties file advertises both duties with a pid and per-duty timestamp ─
 # A dedicated file, not handoffd.status.json - that file is exclusively
 # owned by handoffd_supervisor.bb, which runs CONCURRENTLY with handoffd.bb

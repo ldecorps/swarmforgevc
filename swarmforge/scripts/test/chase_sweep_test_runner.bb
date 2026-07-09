@@ -45,6 +45,8 @@
    :trigger-respawn! (fn [role] (log-call! "respawn" role))
    :log-dead-letter! (fn [role path] (log-call! "dead-letter" role (fs/file-name path)))
    :get-last-activity-ms (fn [_role] last-activity-ms)
-   :on-stuck-escalation! (fn [role escalated] (log-call! "escalation" role (str escalated)))})
+   :on-stuck-escalation! (fn [role escalated] (log-call! "escalation" role (str escalated)))
+   :log-telemetry! (fn [event _now-ms]
+                      (log-call! "telemetry" (:type event) (:role event) (:handoffId event) (str (:count event))))})
 
 (chase-sweep-lib/run-sweep! [{:role role :inbox-new-dir inbox-new-dir :in-process-dir in-process-dir}] now-ms config adapters)
