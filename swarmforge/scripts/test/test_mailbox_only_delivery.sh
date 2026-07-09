@@ -26,7 +26,10 @@ CODER_WT="$ROOT"
 printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT" > "$ROOT/.swarmforge/roles.tsv"
 printf 'coder\tmaster\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
 
-mkdir -p "$ROOT/.swarmforge/handoffs/"{outbox/tmp,sent,inbox/new}
+# BL-128: coordinator and coder are both master-resident here, so each gets
+# its own <role> mailbox subdirectory rather than one shared tree.
+mkdir -p "$ROOT/.swarmforge/handoffs/coordinator/"{outbox/tmp,sent} \
+         "$ROOT/.swarmforge/handoffs/coder/inbox/new"
 
 FAKE_BIN="$ROOT/bin"
 mkdir -p "$FAKE_BIN"
@@ -56,14 +59,14 @@ EOF
 ) | tee "$ROOT/out.txt"
 
 grep -q "HANDOFF QUEUED (mailbox only" "$ROOT/out.txt" || fail "expected mailbox-only queue message"
-outbox_count="$(find "$ROOT/.swarmforge/handoffs/outbox" -maxdepth 1 -name '*.handoff' 2>/dev/null | wc -l | tr -d ' ')"
+outbox_count="$(find "$ROOT/.swarmforge/handoffs/coordinator/outbox" -maxdepth 1 -name '*.handoff' 2>/dev/null | wc -l | tr -d ' ')"
 [[ "$outbox_count" -ge 1 ]] || fail "parcel must remain in outbox for daemon"
 
 SWARMFORGE_MAILBOX_ONLY=1 PATH="$FAKE_BIN:$PATH" bb "$HANDOFFD" "$ROOT" --poll-once
 
-find "$ROOT/.swarmforge/handoffs/inbox/new" -name '*_for_coder.handoff' -print -quit | grep -q . \
+find "$ROOT/.swarmforge/handoffs/coder/inbox/new" -name '*_for_coder.handoff' -print -quit | grep -q . \
   || fail "parcel missing from coder inbox/new"
-find "$ROOT/.swarmforge/handoffs/sent" -name '*.handoff' -print -quit | grep -q . \
+find "$ROOT/.swarmforge/handoffs/coordinator/sent" -name '*.handoff' -print -quit | grep -q . \
   || fail "outbox parcel not archived to sent/"
 ! grep -q -- '-l' "$CALL_LOG" 2>/dev/null || fail "mailbox-only must not call tmux literal send-keys"
 grep -q "delivered-mailbox-only" "$ROOT/.swarmforge/daemon/handoffd.log" || fail "daemon must log delivered-mailbox-only"

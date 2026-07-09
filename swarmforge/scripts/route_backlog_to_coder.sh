@@ -75,7 +75,7 @@ EOF
 echo "Routing $(basename "$YAML") → coder (message: ${MSG})"
 "$SCRIPT_DIR/swarm_handoff.sh" "$DRAFT"
 
-INBOX="$ROOT/.swarmforge/handoffs/inbox/new"
+INBOX="$(bb "$SCRIPT_DIR/mailbox_dir.bb" "$ROOT" coder new)"
 if compgen -G "${INBOX}"/*"_for_coder.handoff" >/dev/null 2>&1; then
   echo "Coder inbox: $(ls -1t "${INBOX}"/*"_for_coder.handoff" | head -1)"
 else

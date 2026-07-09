@@ -25,7 +25,7 @@ SOCK="$ROOT/fake.sock"
 touch "$SOCK"
 mkdir -p "$ROOT/.swarmforge" "$ROOT/.swarmforge/handoffs/inbox/new"
 echo "$SOCK" > "$ROOT/.swarmforge/tmux-socket"
-printf 'coder\tmaster\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT" > "$ROOT/.swarmforge/roles.tsv"
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT" > "$ROOT/.swarmforge/roles.tsv"
 
 INBOX_NEW="$ROOT/.swarmforge/handoffs/inbox/new"
 HANDOFF_FILE="$INBOX_NEW/00_20260701T000000Z_000001_from_specifier_to_coder.handoff"

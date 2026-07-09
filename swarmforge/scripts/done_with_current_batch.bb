@@ -13,9 +13,8 @@
   (process/exec (str (fs/path script-dir "ready_for_next_batch.sh")) "--idle-boundary"))
 
 (defn -main []
-  (let [inbox (handoff-lib/inbox-dir)
-        in-process-dir (fs/path inbox "in_process")
-        completed-dir (fs/path inbox "completed")]
+  (let [in-process-dir (handoff-lib/my-mailbox-dir :in_process)
+        completed-dir (handoff-lib/my-mailbox-dir :completed)]
     (doseq [dir [in-process-dir completed-dir]]
       (fs/create-dirs dir))
     (let [in-process-batches (handoff-lib/batch-dirs in-process-dir)

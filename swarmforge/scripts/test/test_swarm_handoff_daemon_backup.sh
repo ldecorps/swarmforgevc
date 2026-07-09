@@ -24,7 +24,9 @@ mkdir -p "$ROOT/.swarmforge/daemon"
 echo "$SOCK" > "$ROOT/.swarmforge/tmux-socket"
 
 CODER_WT="$ROOT/.worktrees/coder"
-mkdir -p "$CODER_WT/.swarmforge/handoffs/"{outbox/tmp,sent,inbox/new}
+# BL-128: coordinator is master-resident, so it gets its own <role> mailbox
+# subdirectory rather than the old flat shared one.
+mkdir -p "$ROOT/.swarmforge/handoffs/coordinator/"{outbox/tmp,sent} "$CODER_WT/.swarmforge/handoffs/inbox/new"
 printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT" > "$ROOT/.swarmforge/roles.tsv"
 printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$CODER_WT" >> "$ROOT/.swarmforge/roles.tsv"
 
@@ -64,16 +66,16 @@ EOF
 
 grep -q "HANDOFF QUEUED (daemon backup will deliver):" "$ROOT/out.txt" \
   || fail "expected daemon backup queue message"
-outbox_count="$(find "$ROOT/.swarmforge/handoffs/outbox" -maxdepth 1 -name '*.handoff' 2>/dev/null | wc -l | tr -d ' ')"
+outbox_count="$(find "$ROOT/.swarmforge/handoffs/coordinator/outbox" -maxdepth 1 -name '*.handoff' 2>/dev/null | wc -l | tr -d ' ')"
 [[ "$outbox_count" -ge 1 ]] || fail "parcel must remain in outbox for daemon backup"
 
 PATH="$FAKE_BIN:$PATH" bb "$HANDOFFD" "$ROOT" --poll-once
 
 find "$CODER_WT/.swarmforge/handoffs/inbox/new" -name '*_for_coder.handoff' -print -quit | grep -q . \
   || fail "daemon must deliver parcel to coder inbox/new"
-find "$ROOT/.swarmforge/handoffs/sent" -name '*.handoff' -print -quit | grep -q . \
+find "$ROOT/.swarmforge/handoffs/coordinator/sent" -name '*.handoff' -print -quit | grep -q . \
   || fail "daemon must archive outbox parcel to sent/"
-outbox_after="$(find "$ROOT/.swarmforge/handoffs/outbox" -maxdepth 1 -name '*.handoff' 2>/dev/null | wc -l | tr -d ' ')"
+outbox_after="$(find "$ROOT/.swarmforge/handoffs/coordinator/outbox" -maxdepth 1 -name '*.handoff' 2>/dev/null | wc -l | tr -d ' ')"
 [[ "$outbox_after" == "0" ]] || fail "outbox must be empty after daemon delivery"
 
 pass "sync failure queues outbox; handoffd delivers backup"
