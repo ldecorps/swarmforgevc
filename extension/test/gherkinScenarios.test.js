@@ -85,6 +85,76 @@ test('returns an empty array for empty or null input, never throwing', () => {
   assert.deepEqual(extractScenarios(null), []);
 });
 
+// QA bounce (2026-07-09): a `# BL-XXX tag-NN` comment line BETWEEN two
+// scenarios was absorbed into the END of the PRECEDING scenario's text
+// (the earlier "ignores comment lines" test above only covered a comment
+// BEFORE the first scenario, never between two, which is the actually-
+// broken case - reproduces on the large majority of real tickets, since
+// almost every multi-scenario feature file in this repo uses this exact
+// tag convention between scenarios).
+test('a comment tag between two scenarios belongs to neither scenario\'s text (real .feature file shape)', () => {
+  const text = [
+    'Feature: swarm-name branch namespacing',
+    '',
+    '# BL-106 branch-ns-01',
+    'Scenario: launcher derives branch names from swarm_name',
+    '  Given a conf with swarm_name alpha',
+    '  When the swarm launches its worktrees',
+    '  Then every role worktree is on branch alpha/<role>',
+    '',
+    '# BL-106 branch-ns-02',
+    'Scenario: migration preserves everything',
+    '  Given the current mixed-scheme branches',
+    '  When the migration runs',
+    '  Then each role worktree is on its unified branch with identical HEAD',
+    '',
+  ].join('\n');
+  const scenarios = extractScenarios(text);
+  assert.equal(scenarios.length, 2);
+  assert.doesNotMatch(scenarios[0].text, /BL-106 branch-ns-02/, 'the first scenario must not absorb the second scenario\'s own tag');
+  assert.match(scenarios[0].text, /alpha\/<role>/, 'the first scenario must still keep its own last real line');
+  assert.doesNotMatch(scenarios[1].text, /BL-106 branch-ns-01/);
+});
+
+// QA bounce: the LAST scenario in a file additionally absorbed the entire
+// trailing "# Non-behavioral gates:" comment block that follows every
+// scenario in this repo's own feature files.
+test('the last scenario does not absorb a trailing "Non-behavioral gates" comment block', () => {
+  const text = [
+    'Feature: x',
+    '',
+    'Scenario: migration preserves everything',
+    '  Given the current mixed-scheme branches',
+    '  When the migration runs',
+    '  Then each role worktree is on its unified branch with identical HEAD',
+    '  And stale duplicate role branches are removed only if fully merged',
+    '',
+    '# Non-behavioral gates:',
+    '#  - Derivation/validation logic script-tested; migration rehearsed on',
+    '#    a scratch clone before the live run.',
+    '#  - No history rewrite; branch renames only.',
+  ].join('\n');
+  const scenarios = extractScenarios(text);
+  assert.equal(scenarios.length, 1);
+  assert.doesNotMatch(scenarios[0].text, /Non-behavioral gates/);
+  assert.match(scenarios[0].text, /removed only if fully merged$/, 'text must end at the scenario\'s own last step line');
+});
+
+test('a blank line inside a Scenario Outline\'s own Examples table is preserved, not stripped as trailing noise', () => {
+  const text = [
+    'Scenario Outline: configurable behavior',
+    '  Given <input>',
+    '  Then <output>',
+    '',
+    '  Examples:',
+    '    | input | output |',
+    '    | 1     | a      |',
+  ].join('\n');
+  const scenarios = extractScenarios(text);
+  assert.match(scenarios[0].text, /Examples:/);
+  assert.match(scenarios[0].text, /\| 1\s+\| a\s+\|/);
+});
+
 test('works identically for a .feature-file-shaped source and an inline acceptance: | block (both forms)', () => {
   const featureFileStyle = 'Feature: x\n\nScenario: shared behavior\n  Given a\n  Then b\n';
   const inlineBlockStyle = 'Feature: x\n\n# BL-149 cooldown-gate-01\nScenario: shared behavior\n  Given a\n  Then b\n';
