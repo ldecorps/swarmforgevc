@@ -309,9 +309,9 @@ export interface RetryCounts {
   perTicket: Record<string, number>;
 }
 
-// BL-102: exported so stageDwell.ts's dwell-record derivation reuses this
-// same ticket-id extraction instead of a third copy (ticketHoldingWindows.ts
-// already has its own private duplicate of this exact regex).
+// BL-102: exported so stageDwell.ts's dwell-record derivation and
+// ticketHoldingWindows.ts's window derivation both reuse this same
+// ticket-id extraction instead of keeping their own duplicate copies.
 export function extractTicketId(task: string): string | null {
   const match = task.match(/^([A-Za-z]+-\d+)/);
   return match ? match[1] : null;

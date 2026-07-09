@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { readHandoffHeaderRecordsFlat, readHandoffHeaderRecordsWithBatches } from './swarmMetrics';
+import { extractTicketId, readHandoffHeaderRecordsFlat, readHandoffHeaderRecordsWithBatches } from './swarmMetrics';
 
 // BL-100 cost-02: per-ticket token attribution needs each role's actual
 // ticket-holding windows (dequeued_at -> completed_at), not just the
@@ -12,11 +12,6 @@ export interface TicketHoldingWindow {
   startMs: number;
   /** null means still open (in_process) at read time. */
   endMs: number | null;
-}
-
-function extractTicketId(task: string): string | null {
-  const match = task.match(/^([A-Za-z]+-\d+)/);
-  return match ? match[1] : null;
 }
 
 // Parses an ISO timestamp header, or null if absent/unparsable - the one

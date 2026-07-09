@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { formatStageDwellReport } = require('../out/tools/stage-dwell-report');
+const { formatStageDwellReport, parseArgs } = require('../out/tools/stage-dwell-report');
 
 // BL-102 dwell-05: the presenter for computeStageDwellReportForRoles -
 // resolveProjectRoot/roles.tsv wiring is exercised by swarm-metrics.ts's own
@@ -109,6 +109,47 @@ test('formatStageDwellReport appends the unparseable-count note only when there 
     unparseableCount: 0,
   });
   assert.doesNotMatch(withoutNote, /could not be parsed/);
+});
+
+// ── parseArgs (pure, in-process so it's actually coverage-instrumented -
+//    the end-to-end CLI tests below run a separate `node` process, which v8
+//    coverage cannot see into) ─────────────────────────────────────────────
+
+test('parseArgs defaults to the standard window and plain-text output with no flags', () => {
+  const args = parseArgs([]);
+  assert.equal(args.json, false);
+  assert.equal(args.hours, 24);
+});
+
+test('parseArgs sets json true on --json', () => {
+  const args = parseArgs(['--json']);
+  assert.equal(args.json, true);
+});
+
+test('parseArgs honors a valid --hours value', () => {
+  const args = parseArgs(['--hours', '6']);
+  assert.equal(args.hours, 6);
+});
+
+test('parseArgs ignores a non-numeric --hours value and keeps the default', () => {
+  const args = parseArgs(['--hours', 'not-a-number']);
+  assert.equal(args.hours, 24);
+});
+
+test('parseArgs ignores a non-positive --hours value and keeps the default', () => {
+  const args = parseArgs(['--hours', '0']);
+  assert.equal(args.hours, 24);
+});
+
+test('parseArgs ignores a trailing --hours with no value and keeps the default', () => {
+  const args = parseArgs(['--hours']);
+  assert.equal(args.hours, 24);
+});
+
+test('parseArgs combines --json and --hours regardless of order', () => {
+  const args = parseArgs(['--hours', '3', '--json']);
+  assert.equal(args.json, true);
+  assert.equal(args.hours, 3);
 });
 
 // ── end-to-end: the compiled CLI, plain-text and --json (dwell-05) ──────
