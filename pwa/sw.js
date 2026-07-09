@@ -18,7 +18,7 @@
 //   app.js's job; this worker just handles the event if it ever fires.
 
 const CACHE_NAME = 'swarmforge-dashboard-v2';
-const SHELL_ASSETS = ['./', './index.html', './app.js', './manifest.json', './icon.svg'];
+const SHELL_ASSETS = ['./', './index.html', './app.js', './locales.js', './manifest.json', './icon.svg'];
 const DATA_URLS = ['./backlog.json', './docs-tree.json', './recert-batch.json'];
 
 self.addEventListener('install', (event) => {
