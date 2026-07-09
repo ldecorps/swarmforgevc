@@ -68,6 +68,47 @@ test('parseBacklogYaml omits swarm when absent, never defaulting it itself', () 
   assert.equal(Object.prototype.hasOwnProperty.call(item, 'swarm'), false);
 });
 
+// BL-117: prose description + acceptance reference, for the docs
+// drill-down explorer's ticket and Gherkin levels.
+
+test('parseBacklogYaml parses a multi-line description block scalar', () => {
+  const yaml = 'id: BL-007\ntitle: t\nstatus: active\ndescription: |\n  First line.\n  Second line.\n\n  A new paragraph.\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.description, 'First line.\nSecond line.\n\nA new paragraph.');
+});
+
+test('parseBacklogYaml parses an acceptance file-path reference', () => {
+  const yaml = 'id: BL-007\ntitle: t\nstatus: active\nacceptance: specs/features/BL-007-thing.feature\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.acceptance, 'specs/features/BL-007-thing.feature');
+});
+
+test('parseBacklogYaml parses an inline Gherkin acceptance block (pre-BL-111 form)', () => {
+  const yaml = [
+    'id: BL-007',
+    'title: t',
+    'status: active',
+    'acceptance: |',
+    '  Feature: a thing',
+    '',
+    '  Scenario: it works',
+    '    Given a precondition',
+    '    When an action happens',
+    '    Then an outcome is observed',
+    '',
+  ].join('\n');
+  const item = parseBacklogYaml(yaml);
+  assert.match(item.acceptance, /Feature: a thing/);
+  assert.match(item.acceptance, /Scenario: it works/);
+});
+
+test('parseBacklogYaml omits description/acceptance when absent', () => {
+  const yaml = 'id: BL-007\ntitle: t\nstatus: active\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'description'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'acceptance'), false);
+});
+
 test('parseBacklogYaml handles title with colons in value', () => {
   const yaml = 'id: BL-007\ntitle: Named runs — branch and PR named after work item\nstatus: active\n';
   const item = parseBacklogYaml(yaml);
