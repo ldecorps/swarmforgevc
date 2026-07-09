@@ -8,12 +8,13 @@ depends_on: [BL-142]
 source: "Decomposed from BL-142 provider-neutral contract epic (operator request 2026-07-06) by specifier 2026-07-09."
 
 notes: |
-  HOLD (operator, 2026-07-09): postpone the remaining provider-abstraction
-  slices (BL-206/207/208) until after the phone app (BL-097/BL-117/BL-211)
-  and daily-briefing enrichment (BL-100) land. Operator is running
-  Claude-only for now and doesn't need multi-provider abstraction urgency.
-  Also depends_on BL-206 in practice (error taxonomy sits at the same
-  adapter boundary BL-206 builds) - sequence after it regardless.
+  HOLD RELEASED (coordinator, 2026-07-09): phone app and daily-briefing
+  enrichment chain fully merged. Still sequence after BL-206 (error
+  taxonomy sits at the same adapter boundary BL-206 builds) - not a
+  formal depends_on, but a real ordering preference.
+
+  Prior hold (kept for audit): postpone until phone app + briefing land -
+  operator was running Claude-only for now, no multi-provider urgency.
 
 description: |
   Slice 3 of the provider-neutral contract epic. Backend failures during launch
