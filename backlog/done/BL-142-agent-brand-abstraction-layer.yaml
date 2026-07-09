@@ -1,7 +1,7 @@
 id: BL-142
 title: "Provider contract slice 1: extension pane-state detection driven by provider descriptors, not hardcoded brand names"
 milestone: M6
-status: todo
+status: done
 priority: 05
 direction: non-aligned
 assigned_to: coder

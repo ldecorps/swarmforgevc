@@ -1,4 +1,4 @@
-Feature: delivery metrics derived from repo history and charted
+Feature: delivery metrics computed from repo history and exposed via endpoint/CLI
 
 # BL-096 metrics-01
 Scenario: velocity series matches git-recorded closes
@@ -23,14 +23,6 @@ Scenario: cycle time per closed ticket
   Then that ticket contributes the spec-to-close duration
   And the reported median/percentiles reflect the recent closed set
 
-# BL-096 metrics-04
-Scenario: charts render from the endpoint
-  Given the bridge is running and the web UI is open
-  When the metrics section loads
-  Then a burndown chart per milestone and a velocity chart render from
-    the endpoint's JSON
-  And the endpoint rejects requests without the bearer token
-
 # BL-096 metrics-08
 Scenario: every open ticket and milestone carries a forecast
   Given historical closes and a current open queue with dependencies
@@ -53,6 +45,14 @@ Scenario: suite-duration trend from local records
   Then a test-suite duration series and trend are reported
   And a machine without the file reports "no local data" without error
 
+# BL-096 metrics-09
+Scenario: metrics are exposed as JSON via the token-gated endpoint and via CLI
+  Given the metrics have been computed
+  When the bridge endpoint is queried with the bearer token
+  Then it returns the series, current values, trends, and forecasts as JSON
+  And the endpoint rejects requests without the bearer token
+  And the metrics CLI reports the same numbers
+
 # BL-096 metrics-05
 Scenario: no new bookkeeping state
   When metrics are computed twice with no intervening git changes
@@ -63,4 +63,7 @@ Scenario: no new bookkeeping state
 #  - All derivations pure functions over a provided history/event list;
 #    git-log parsing isolated behind a thin tested adapter (fake history
 #    in unit tests, no live git required).
+#  - The trend computation is one shared pure function applied to every
+#    series (BL-100 depends on this framework).
 #  - BL-071 metrics-module suite and BL-065 bridge suite stay green.
+#  - Charting of these metrics is BL-211, not this ticket.

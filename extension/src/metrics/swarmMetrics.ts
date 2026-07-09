@@ -357,7 +357,7 @@ export function formatSuiteDurationMs(ms: number): string {
 
 export const DEFAULT_SUITE_WARN_SECONDS = 120;
 
-interface TestDurationRecord {
+export interface TestDurationRecord {
   finishedAtMs: number;
   durationMs: number;
 }
@@ -384,7 +384,10 @@ function parseTestDurationLine(line: string): TestDurationRecord | null {
   return null;
 }
 
-function readTestDurationRecords(worktreePath: string): TestDurationRecord[] {
+// BL-096: exported so deliveryMetrics.ts's suite-duration-trend metric can
+// reuse this same reader (and its "malformed line skipped, never a crash"
+// behavior) instead of re-implementing the .test-durations.jsonl parse.
+export function readTestDurationRecords(worktreePath: string): TestDurationRecord[] {
   let content: string;
   try {
     content = fs.readFileSync(suiteDurationLogPath(worktreePath), 'utf8');

@@ -1,7 +1,7 @@
 id: BL-010
 title: Heartbeat decorator — per-tool-call liveness timestamps
 milestone: M2
-status: todo
+status: done
 priority: 10
 
 description: >

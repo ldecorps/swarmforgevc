@@ -1,7 +1,7 @@
 id: BL-133
 title: trace-hop.js resolves traces dir wrong when run from the master checkout (coordinator/specifier)
 milestone: M3
-status: todo
+status: done
 priority: 10
 direction: aligned
 assigned_to: coder

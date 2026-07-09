@@ -1,7 +1,7 @@
 id: BL-144
 title: "Daemon-death alarm: when the daemon dies, email the operator, capture a failure log, and hard-stop the swarm (no silent auto-restart)"
 milestone: M2
-status: todo
+status: done
 priority: 01
 direction: reliability
 assigned_to: specifier

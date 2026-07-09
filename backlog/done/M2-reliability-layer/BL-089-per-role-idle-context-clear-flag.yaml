@@ -1,7 +1,7 @@
 id: BL-089
 title: per-role feature flag — clear a role's session context at the idle boundary
 milestone: M2
-status: todo
+status: done
 priority: 03
 source: operator request 2026-07-04 (root intake idle-context-clear-feature-flag.md, coordinator relay)
 

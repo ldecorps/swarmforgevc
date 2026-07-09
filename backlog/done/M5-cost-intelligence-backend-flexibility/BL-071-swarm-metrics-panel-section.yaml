@@ -1,7 +1,7 @@
 id: BL-071
 title: swarm metrics — foldable panel pane + agent-callable CLI overview (turnaround, busyness, retries)
 milestone: M5
-status: todo
+status: done
 priority: 16
 assigned_to: coder
 
