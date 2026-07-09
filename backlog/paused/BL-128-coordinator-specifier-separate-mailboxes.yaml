@@ -6,6 +6,16 @@ priority: 01
 depends_on: [BL-122]  # BL-151 sequencing: edits the same notify/transport paths; must land after wake-parity + detection + recovery, never concurrently
 direction: aligned
 
+UPDATE (coordinator, 2026-07-09): BL-121 and BL-122 both merged — the
+depends_on gate is satisfied and the file-overlap conflict that held this
+back is gone. Still not promoted: mutation_cost is high, and the Mutation-
+Heavy Scheduling policy prefers light tickets during office hours,
+deferring heavy ones to the overnight/quiet window. Extra caution warranted
+regardless of timing: this ticket restructures the physical mailbox the
+coordinator and specifier themselves read from — landing it live needs a
+clean daemon/queue-drain moment, not mid-flight against other active work.
+Top candidate for the next overnight promotion batch.
+
 held (coordinator, 2026-07-05): not promoted yet despite priority 01 — Concurrent
 Work Orthogonality. BL-121/122 (handoff transport detection/recovery, top
 priority) are mid-pipeline right now (hardener stage) and touch the same

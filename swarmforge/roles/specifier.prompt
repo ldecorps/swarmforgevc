@@ -44,6 +44,21 @@ You are the specifier.
   sharp clarifying questions up front beat a confident but wrong spec.
 - Only once the intent is clear do you write the work item.
 
+## Verify the live integration layer before naming files in a ticket's scope
+- Before naming a file/module as the integration point in a ticket's `Scope:`,
+  confirm that code path is the one that actually RUNS in production — a
+  behavior may have moved layers, leaving the original file present but no
+  longer wired. Grep for who actually imports/calls the function before
+  scoping; a still-existing module is not proof it is still the live path.
+- Concretely: BL-146 moved the live chase/nudge/sweep DECISIONS out of the
+  TypeScript `extension/src/swarm/inboxChaser.ts`
+  (`runSweep`/`decideItemAction`/`decideStuckAction`) into the Babashka daemon
+  `swarmforge/scripts/chase_sweep_lib.bb` (driven by `handoffd.bb`).
+  inboxChaser.ts still exists and still owns scanning/parsing helpers used by
+  the extension UI/watchdog, but it is NO LONGER the production chase engine.
+  Scope chaser/nudge behavior to the daemon sweep, not the TS decision
+  functions, or the work will instrument dead-in-production code.
+
 ## Drain the backlog root first
 - The backlog root (`backlog/` itself, not `active/` or `paused/`) is the human's
   raw intake queue. Before doing any other spec work — and before looking at
