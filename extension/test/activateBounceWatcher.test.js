@@ -26,7 +26,7 @@ test('startBounceWatcher creates watcher when .swarmforge exists', () => {
   fs.rmSync(tmpDir, { recursive: true });
 });
 
-test('startBounceWatcher returns null when .swarmforge does not exist', () => {
+test('startBounceWatcher creates .swarmforge and watches it when missing', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-watcher-'));
 
   const watcher = startBounceWatcher(
@@ -34,7 +34,9 @@ test('startBounceWatcher returns null when .swarmforge does not exist', () => {
     () => {}
   );
 
-  assert.equal(watcher, null);
+  assert.ok(watcher !== null);
+  assert.equal(fs.existsSync(path.join(tmpDir, '.swarmforge')), true);
+  watcher.close();
 
   // Cleanup
   fs.rmSync(tmpDir, { recursive: true });
