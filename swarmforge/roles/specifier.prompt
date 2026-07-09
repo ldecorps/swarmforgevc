@@ -94,6 +94,13 @@ You are the specifier.
   `id` and intent.
 - Only once the backlog root is empty do you turn to queued work. See the
   constitution's "Backlog Intake Order" rule.
+- BL-114: if the drained root item's `id` is `GH-<n>` (seeded from a GitHub
+  issue via `.github/workflows/swarm-intake.yml`, `source:` carries the
+  issue URL), close the loop on the issue once you have written its spec:
+  `swarmforge/scripts/issue_specced.sh <issue-url-or-source-field>
+  <paused-path>`. This comments the issue with the paused item's path and
+  applies the `swarm-specced` label. It never blocks your turn — a missing
+  `gh` auth prints a SKIP line and exits 0; do not treat that as an error.
 
 ## New backlog items are proposals, not active work
 - Write each new backlog item's YAML into `backlog/paused/`, NOT
