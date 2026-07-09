@@ -473,16 +473,25 @@ export function chooseReattachTimeoutMs(
   return swarmSocketPresent ? coldStartTimeoutMs : fastTimeoutMs;
 }
 
+// BL-131: getNowMs/scheduleTick default to the real clock/setTimeout, so
+// every existing production call site is byte-for-byte unaffected; tests
+// inject a fake clock + a tick-capturing scheduler (same pattern as
+// briefingScheduler.ts/chaserMonitor.ts) to drive the poll loop
+// synchronously instead of waiting on the real clock.
 export function waitForSwarmReady(
   targetPath: string,
   timeoutMs = 120_000,
-  pollMs = 500
+  pollMs = 500,
+  getNowMs: () => number = Date.now,
+  scheduleTick: (fn: () => void, ms: number) => void = (fn, ms) => {
+    setTimeout(fn, ms);
+  }
 ): Promise<boolean> {
   if (isSwarmReady(targetPath)) {
     return Promise.resolve(true);
   }
 
-  const deadline = Date.now() + timeoutMs;
+  const deadline = getNowMs() + timeoutMs;
 
   return new Promise((resolve) => {
     const check = () => {
@@ -490,11 +499,11 @@ export function waitForSwarmReady(
         resolve(true);
         return;
       }
-      if (Date.now() >= deadline) {
+      if (getNowMs() >= deadline) {
         resolve(false);
         return;
       }
-      setTimeout(check, pollMs);
+      scheduleTick(check, pollMs);
     };
     check();
   });

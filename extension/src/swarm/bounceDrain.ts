@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { atomicWrite } from '../util/atomicWrite';
-import { BounceType, isBounceType, processBounceFile } from './bounceWatcher';
+import { BounceType, isBounceType, handleFileWatchEvent } from './bounceWatcher';
 
 // BL-069: graceful bounce. Before the existing verified bounce (BL-058) kills
 // panes, the swarm enters a DRAIN mode: agents finish their current
@@ -105,7 +105,9 @@ export interface BounceDrainMonitorConfig {
 
 export function startBounceDrainWatcher(
   config: BounceDrainMonitorConfig,
-  adapters: BounceDrainAdapters
+  adapters: BounceDrainAdapters,
+  scheduleTick: (fn: () => void, ms: number) => NodeJS.Timeout = setInterval,
+  getNowMs: () => number = Date.now
 ): NodeJS.Timeout {
   // Prompt the human once per drain session, not once per poll: the sentinel
   // itself only carries the state a role script needs, not UI state. `bounced`
@@ -116,7 +118,7 @@ export function startBounceDrainWatcher(
   // own, so it is guarded directly rather than relying on it.
   let timeoutPrompted = false;
   let bounced = false;
-  const intervalId = setInterval(() => {
+  const intervalId = scheduleTick(() => {
     const state = readBounceDrainState(config.targetPath);
     if (!state) {
       timeoutPrompted = false;
@@ -125,7 +127,7 @@ export function startBounceDrainWatcher(
     }
     const startedAtMs = Date.parse(state.startedAt);
     const roles = adapters.getRoleStatuses();
-    const decision = decideDrainAction(roles, startedAtMs, Date.now(), state.timeoutSeconds);
+    const decision = decideDrainAction(roles, startedAtMs, getNowMs(), state.timeoutSeconds);
     if (decision === 'bounce' && !bounced) {
       bounced = true;
       adapters.onBounce(state.bounceType);
@@ -138,19 +140,36 @@ export function startBounceDrainWatcher(
   return intervalId;
 }
 
-export function stopBounceDrainWatcher(intervalId: NodeJS.Timeout | null): void {
+export function stopBounceDrainWatcher(
+  intervalId: NodeJS.Timeout | null,
+  clearTick: (handle: NodeJS.Timeout) => void = clearInterval
+): void {
   if (intervalId) {
-    clearInterval(intervalId);
+    clearTick(intervalId);
   }
 }
 
 // ── remote sentinel variant ("plus a variant of the existing remote-bounce
 // sentinel", BL-069) — mirrors bounceWatcher.ts's own fs.watch pattern for a
 // second, distinct trigger file so the immediate-bounce path is untouched.
+// BL-131: pulled out of the fs.watch callback so tests can drive it directly
+// with an injected scheduleTick instead of writing real files and waiting on
+// real fs.watch timing (mirrors bounceWatcher.ts's handleWatchEvent split).
+export function handleGracefulWatchEvent(
+  filename: string | null,
+  triggerFilePath: string,
+  onGracefulBounce: (bounceType: BounceType) => void,
+  onError: ((error: string) => void) | undefined,
+  scheduleTick: (fn: () => void, ms: number) => void = (fn, ms) => { setTimeout(fn, ms); },
+): void {
+  handleFileWatchEvent(filename, GRACEFUL_TRIGGER_FILENAME, triggerFilePath, onGracefulBounce, onError, scheduleTick);
+}
+
 export function startGracefulBounceFileWatcher(
   targetPath: string,
   onGracefulBounce: (bounceType: BounceType) => void,
-  onError?: (error: string) => void
+  onError?: (error: string) => void,
+  scheduleTick: (fn: () => void, ms: number) => void = (fn, ms) => { setTimeout(fn, ms); },
 ): fs.FSWatcher | null {
   const swarmforgeDir = path.join(targetPath, '.swarmforge');
   const triggerFilePath = path.join(swarmforgeDir, GRACEFUL_TRIGGER_FILENAME);
@@ -160,14 +179,7 @@ export function startGracefulBounceFileWatcher(
   }
 
   const watcher = fs.watch(swarmforgeDir, (_eventType, filename) => {
-    if (filename !== GRACEFUL_TRIGGER_FILENAME) {
-      return;
-    }
-    setTimeout(() => {
-      if (fs.existsSync(triggerFilePath)) {
-        processBounceFile(triggerFilePath, onGracefulBounce, onError);
-      }
-    }, 50);
+    handleGracefulWatchEvent(filename, triggerFilePath, onGracefulBounce, onError, scheduleTick);
   });
 
   return watcher;

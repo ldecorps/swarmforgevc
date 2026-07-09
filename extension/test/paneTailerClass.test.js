@@ -16,22 +16,26 @@ function writeState(targetPath, roleLines = '1\tcoder\tswarmforge-coder\tCoder\t
   fs.writeFileSync(path.join(stateDir, 'sessions.tsv'), roleLines);
 }
 
-function waitUntil(predicate, timeoutMs = 2000, intervalMs = 10) {
-  return new Promise((resolve, reject) => {
-    const deadline = Date.now() + timeoutMs;
-    const check = () => {
-      if (predicate()) {
-        resolve();
-        return;
+// BL-131: captures start()'s interval callback instead of scheduling it for
+// real (same injection point chaserMonitor.ts/waitForSwarmReady already
+// use) - fire() runs one poll() cycle synchronously (poll() itself is
+// synchronous), so a test drives N polls with zero real wall-clock wait.
+function fakeScheduler() {
+  let tick = null;
+  return {
+    scheduleTick: (fn) => {
+      tick = fn;
+      return {};
+    },
+    clearTick: () => {
+      tick = null;
+    },
+    fire: () => {
+      if (tick) {
+        tick();
       }
-      if (Date.now() >= deadline) {
-        reject(new Error('waitUntil timed out'));
-        return;
-      }
-      setTimeout(check, intervalMs);
-    };
-    check();
-  });
+    },
+  };
 }
 
 test('refreshState reads roles and socket path from target state', () => {
@@ -48,7 +52,7 @@ test('refreshState reads roles and socket path from target state', () => {
   }
 });
 
-test('start/poll reports pane output for a live session, stop halts further polling', async () => {
+test('start/poll reports pane output for a live session, stop halts further polling', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
   const fake = installFakeTmux([
@@ -60,14 +64,16 @@ test('start/poll reports pane output for a live session, stop halts further poll
   try {
     const updates = [];
     const tailer = new PaneTailer(targetPath, (u) => updates.push(...u));
-    tailer.start(15);
-    await waitUntil(() => updates.length > 0);
+    const { scheduleTick, clearTick, fire } = fakeScheduler();
+    tailer.start(15, scheduleTick, clearTick);
+    // start() already runs one poll() synchronously, before the (fake)
+    // interval is even relevant.
     assert.equal(updates[0].role, 'coder');
     assert.match(updates[0].text, /agent output/);
 
-    tailer.stop();
+    tailer.stop(clearTick);
     const countAfterStop = updates.length;
-    await new Promise((resolve) => setTimeout(resolve, 60));
+    fire(); // a tick "firing" after stop must be a no-op (clearTick took effect)
     assert.equal(updates.length, countAfterStop, 'no further polls should fire after stop()');
   } finally {
     fake.restore();
