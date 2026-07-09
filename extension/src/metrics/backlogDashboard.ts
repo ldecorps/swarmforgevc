@@ -1,0 +1,177 @@
+import { BacklogItem, BacklogFolders, readBacklogFolders } from '../panel/backlogReader';
+import { runGitLog, deriveTicketLifecycles, getCurrentSha, TicketLifecycleEvent } from './gitHistoryAdapter';
+import { computeDeliveryMetrics, DeliveryMetrics, VelocityResult, MilestoneBurndownResult, CycleTimeResult, ForecastResult } from './deliveryMetrics';
+import { RoleWorktree } from './swarmMetrics';
+import { readSwarmName } from '../bridge/holisticProjections';
+
+// BL-097: backlog.json's data contract - a versioned, git-derived
+// projection of backlog state + BL-096 metrics, reusing computeDeliveryMetrics
+// as-is (never re-deriving numbers) so a backlog.json generated at a given
+// SHA agrees with the metrics CLI run at that same SHA by construction
+// (dashboard-02). Generator logic here is pure over already-read data; only
+// computeBacklogDashboard touches git/fs.
+
+export const BACKLOG_DASHBOARD_SCHEMA_VERSION = 1;
+
+export interface DashboardTicketSummary {
+  id: string;
+  title: string;
+  status: 'active' | 'paused' | 'done';
+  swarm: string;
+  milestone?: string;
+  priority?: number;
+  specDateIso?: string;
+  closeDateIso?: string;
+  p50Iso?: string;
+  p85Iso?: string;
+}
+
+export interface BacklogDashboardData {
+  schemaVersion: number;
+  generatedAtIso: string;
+  sourceSha: string | null;
+  board: {
+    active: DashboardTicketSummary[];
+    paused: DashboardTicketSummary[];
+    doneByMilestone: Record<string, DashboardTicketSummary[]>;
+  };
+  metrics: {
+    velocity: VelocityResult;
+    burndown: MilestoneBurndownResult[];
+    cycleTime: CycleTimeResult;
+    forecasts: ForecastResult;
+  };
+}
+
+const UNSPECIFIED_MILESTONE = 'unspecified';
+
+// The three field groups below are set only when present so the JSON
+// payload never carries an explicit `undefined`. Split out of
+// toDashboardSummary so each function stays under the CRAP<=6 gate.
+function applyItemFields(summary: DashboardTicketSummary, item: BacklogItem): void {
+  if (item.milestone !== undefined) {
+    summary.milestone = item.milestone;
+  }
+  if (item.priority !== undefined) {
+    summary.priority = item.priority;
+  }
+}
+
+function applyLifecycleFields(summary: DashboardTicketSummary, lifecycle: TicketLifecycleEvent | undefined): void {
+  if (lifecycle?.specDateIso) {
+    summary.specDateIso = lifecycle.specDateIso;
+  }
+  if (lifecycle?.closeDateIso) {
+    summary.closeDateIso = lifecycle.closeDateIso;
+  }
+}
+
+function applyForecastFields(
+  summary: DashboardTicketSummary,
+  ticketId: string,
+  p50ByTicketId: Map<string, string>,
+  p85ByTicketId: Map<string, string>
+): void {
+  const p50 = p50ByTicketId.get(ticketId);
+  if (p50) {
+    summary.p50Iso = p50;
+  }
+  const p85 = p85ByTicketId.get(ticketId);
+  if (p85) {
+    summary.p85Iso = p85;
+  }
+}
+
+function toDashboardSummary(
+  item: BacklogItem,
+  status: DashboardTicketSummary['status'],
+  localSwarmName: string,
+  lifecycleByTicketId: Map<string, TicketLifecycleEvent>,
+  p50ByTicketId: Map<string, string>,
+  p85ByTicketId: Map<string, string>
+): DashboardTicketSummary {
+  const summary: DashboardTicketSummary = {
+    id: item.id,
+    title: item.title,
+    status,
+    swarm: item.swarm ?? localSwarmName,
+  };
+  applyItemFields(summary, item);
+  applyLifecycleFields(summary, lifecycleByTicketId.get(item.id));
+  applyForecastFields(summary, item.id, p50ByTicketId, p85ByTicketId);
+  return summary;
+}
+
+function groupDoneByMilestone(
+  doneItems: BacklogItem[],
+  localSwarmName: string,
+  lifecycleByTicketId: Map<string, TicketLifecycleEvent>,
+  p50ByTicketId: Map<string, string>,
+  p85ByTicketId: Map<string, string>
+): Record<string, DashboardTicketSummary[]> {
+  const result: Record<string, DashboardTicketSummary[]> = {};
+  for (const item of doneItems) {
+    const milestone = item.milestone ?? UNSPECIFIED_MILESTONE;
+    if (!result[milestone]) {
+      result[milestone] = [];
+    }
+    result[milestone].push(toDashboardSummary(item, 'done', localSwarmName, lifecycleByTicketId, p50ByTicketId, p85ByTicketId));
+  }
+  return result;
+}
+
+// Pure: assembles the full backlog.json payload from already-read backlog
+// folders, git-derived lifecycles, and BL-096's delivery metrics (passed
+// through unmodified - never re-derived here). Test-suite duration is
+// deliberately excluded: its records are gitignored/machine-local, so no
+// git-derived projection can see them.
+export function buildBacklogDashboard(
+  folders: BacklogFolders,
+  lifecycles: TicketLifecycleEvent[],
+  deliveryMetrics: DeliveryMetrics,
+  localSwarmName: string,
+  sourceSha: string | null,
+  generatedAtIso: string
+): BacklogDashboardData {
+  const lifecycleByTicketId = new Map(lifecycles.map((l) => [l.ticketId, l]));
+  const p50ByTicketId = new Map(
+    deliveryMetrics.forecasts.tickets.filter((t) => t.p50Iso !== null).map((t) => [t.ticketId, t.p50Iso as string])
+  );
+  const p85ByTicketId = new Map(
+    deliveryMetrics.forecasts.tickets.filter((t) => t.p85Iso !== null).map((t) => [t.ticketId, t.p85Iso as string])
+  );
+
+  const toSummary = (item: BacklogItem, status: DashboardTicketSummary['status']) =>
+    toDashboardSummary(item, status, localSwarmName, lifecycleByTicketId, p50ByTicketId, p85ByTicketId);
+
+  return {
+    schemaVersion: BACKLOG_DASHBOARD_SCHEMA_VERSION,
+    generatedAtIso,
+    sourceSha,
+    board: {
+      active: folders.active.map((item) => toSummary(item, 'active')),
+      paused: folders.paused.map((item) => toSummary(item, 'paused')),
+      doneByMilestone: groupDoneByMilestone(folders.done, localSwarmName, lifecycleByTicketId, p50ByTicketId, p85ByTicketId),
+    },
+    metrics: {
+      velocity: deliveryMetrics.velocity,
+      burndown: deliveryMetrics.burndown,
+      cycleTime: deliveryMetrics.cycleTime,
+      forecasts: deliveryMetrics.forecasts,
+    },
+  };
+}
+
+// The one impure entry point: reads current backlog state, walks git
+// history, computes delivery metrics (reusing computeDeliveryMetrics
+// as-is), and resolves the source SHA - then delegates to the pure
+// assembler above.
+export function computeBacklogDashboard(targetPath: string, roles: RoleWorktree[], nowMs: number = Date.now()): BacklogDashboardData {
+  const folders = readBacklogFolders(targetPath);
+  const lifecycles = [...deriveTicketLifecycles(runGitLog(targetPath, 'backlog')).values()];
+  const deliveryMetrics = computeDeliveryMetrics(targetPath, roles, nowMs);
+  const localSwarmName = readSwarmName(targetPath);
+  const sourceSha = getCurrentSha(targetPath);
+
+  return buildBacklogDashboard(folders, lifecycles, deliveryMetrics, localSwarmName, sourceSha, new Date(nowMs).toISOString());
+}
