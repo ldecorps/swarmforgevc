@@ -7,6 +7,20 @@ direction: reliability
 assigned_to: coordinator
 source: operator request 2026-07-09 (extension in bad state; stabilize bare workflow)
 
+notes: |
+  HOLD (coordinator, 2026-07-09): filed after the current session's BL-121
+  promotion sweep, so it was never evaluated against the running 7-pack.
+  BL-203 needs queue isolation (only paused ticket) and a relaunch under the
+  stabilize-two-pack profile (coordinator+coder+cleaner) — a swarm-config
+  change, not a normal same-swarm promotion. BL-121 is mid-flight at the
+  coder on the current 7-pack (uncommitted canary/detection WIP:
+  canaryInjector.ts, transportHealth.ts). Operator decision (2026-07-09):
+  let BL-121 finish and merge to main first; do NOT bounce or isolate the
+  queue while BL-121 is in flight. Once BL-121's QA-approved commit merges
+  to main and the ticket closes to done/, isolate the paused queue per this
+  ticket's stabilize-two-pack.conf header comment, request a bounce to the
+  stabilize-two-pack profile via remote_bounce.sh, then promote BL-203 solo.
+
 description: |
   Problem:
   The VS Code extension launch path has been unreliable for hundreds of

@@ -2,12 +2,19 @@ id: BL-094
 title: holistic dev-state web UI on the BL-065 bridge (phase 2) — one view of swarms, parcels, backlog, agents
 milestone: M6
 status: todo
-priority: 02
+priority: 01
 direction: non-aligned
 source: operator requirement 2026-07-04 ("expose a webui showing a holistic view of the dev state"; revises the web-UI phase deferred by BL-065)
 
 description: |
   **HOLD (BL-153):** paused while BL-154 handoff resilience work is in flight.
+  Reaffirmed by the operator 2026-07-09 (running headless, needs a phone-
+  monitoring path): hold stays in force until BL-121's chain merges — do not
+  promote concurrently, extension/src overlaps BL-121/BL-122's live files —
+  but priority raised 02->01 so this ticket (and its BL-096/BL-097/BL-117
+  chain) promotes ahead of same-tier siblings (BL-098, BL-100, BL-132) the
+  moment the hold lifts. Stopgap in the meantime: Claude Remote Control is
+  already wired per-role in swarmforge.conf (claude.ai/code / mobile app).
 
   Phase 2 of the remote-visibility track. BL-065 (merged) built the
   read-only localhost REST+SSE bridge and explicitly deferred "the web UI
