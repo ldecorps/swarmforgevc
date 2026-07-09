@@ -73,3 +73,4 @@ acceptance: |
   #  - This umbrella carries no code; its acceptance is the union of its
   #    children's acceptance. Do NOT promote BL-151 as a work slice — promote
   #    the children in sequence.
+mutation_cost: low

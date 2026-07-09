@@ -23,6 +23,11 @@ if [[ "${1:-}" == "ensure" ]]; then
   exec bb "$SCRIPT_DIR/swarm_ensure.bb" "$ENSURE_WORKING_DIR"
 fi
 
+if [[ "${1:-}" == "attach" ]]; then
+  shift
+  exec "$SCRIPT_DIR/swarm_attach.sh" "$@"
+fi
+
 WORKING_DIR="${1:-$PWD}"
 WORKING_DIR="$(cd "$WORKING_DIR" && pwd)"
 SWARM_FORGE_DIR="$WORKING_DIR/swarmforge"
@@ -576,6 +581,10 @@ sync_worktree_scripts() {
     role_state_dir="$worktree_path/.swarmforge"
     mkdir -p "$role_scripts_dir"
     cp -R "$SCRIPT_DIR/." "$role_scripts_dir/"
+    if [[ -d "$SWARM_FORGE_DIR/profiles" ]]; then
+      mkdir -p "$worktree_path/swarmforge/profiles"
+      cp -R "$SWARM_FORGE_DIR/profiles/." "$worktree_path/swarmforge/profiles/"
+    fi
     mkdir -p "$role_state_dir/notify"
     cp "$SESSIONS_FILE" "$role_state_dir/sessions.tsv"
     cp "$ROLES_FILE" "$role_state_dir/roles.tsv"
@@ -606,29 +615,80 @@ create_role_session() {
   tmux -S "$TMUX_SOCKET" set-window-option -t "$session:$title" allow-rename off
 }
 
+is_two_pack_config() {
+  [[ "$CONFIG_FILE" == *two-pack* ]]
+}
+
+config_overlay_prompt() {
+  local base prompt
+  if [[ "$CONFIG_FILE" = /* ]]; then
+    base="$CONFIG_FILE"
+  else
+    base="$WORKING_DIR/$CONFIG_FILE"
+  fi
+  base="${base%.conf}"
+  prompt="${base}.prompt"
+  if [[ -f "$prompt" ]]; then
+    if [[ "$prompt" == "$WORKING_DIR"/* ]]; then
+      echo "${prompt#"$WORKING_DIR"/}"
+    else
+      echo "$prompt"
+    fi
+  fi
+}
+
+handoff_draft_rel_path() {
+  bb "$SCRIPT_DIR/agent_runtime_cli.bb" handoff-draft-path claude 2>/dev/null \
+    || echo "swarmforge/runtime/handoff-draft.txt"
+}
+
+pack_has_role() {
+  local want="$1"
+  local r
+  for r in "${ROLES[@]}"; do
+    [[ "$r" == "$want" ]] && return 0
+  done
+  return 1
+}
+
 write_agent_instruction_file() {
   local role="$1"
   local prompt_file="$2"
+  local agent="${3:-claude}"
+  local two_pack_flag=0
+  local overlay=""
 
-  cat > "$prompt_file" <<EOF
-Read swarmforge/constitution.prompt, then read every file it refers to recursively, and obey all of those instructions.
-Read swarmforge/PIPELINE.md and follow the parcel flow for your role.
-Read swarmforge/roles/${role}.prompt, then read every file it refers to recursively, and follow all of those instructions.
-EOF
+  is_two_pack_config && two_pack_flag=1
+  overlay="$(config_overlay_prompt)"
+  bb "$SCRIPT_DIR/agent_runtime_cli.bb" bootstrap-text "$agent" "$role" "$two_pack_flag" "$overlay" > "$prompt_file"
 }
 
-send_initial_grok_prompt() {
+agent-runtime-needs-bootstrap() {
+  local agent="$1"
+  case "$agent" in
+    aider|grok) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+run_agent_bootstrap() {
   local session="$1"
   local display="$2"
-  local prompt_file="$3"
+  local role="$3"
+  local agent="$4"
+  local prompt_file="$5"
+  local target two_pack_flag=0
+  local overlay=""
+
+  agent-runtime-needs-bootstrap "$agent" || return 0
+
+  target="$(tmux_agent_target "$session" "$display")"
+  is_two_pack_config && two_pack_flag=1
+  overlay="$(config_overlay_prompt)"
 
   (
-    sleep 3
-    tmux -S "$TMUX_SOCKET" send-keys -t "$(tmux_agent_target "$session" "$display")" -l -- "$(< "$prompt_file")"
-    sleep 0.15
-    tmux -S "$TMUX_SOCKET" send-keys -t "$(tmux_agent_target "$session" "$display")" C-m
-    sleep 0.05
-    tmux -S "$TMUX_SOCKET" send-keys -t "$(tmux_agent_target "$session" "$display")" C-j
+    bb "$SCRIPT_DIR/agent_runtime_cli.bb" run-bootstrap \
+      "$TMUX_SOCKET" "$target" "$agent" "$role" "$prompt_file" "$two_pack_flag" "$overlay"
   ) &!
 }
 
@@ -755,13 +815,17 @@ write_role_launch_script() {
       launch_body="codex${extra_cli:+ $extra_cli} -C '$role_worktree' \"\$(cat '$prompt_file')\""
       ;;
     copilot)
-      launch_body="copilot${extra_cli:+ $extra_cli} -C '$role_worktree' --name 'SwarmForge ${display}' -i \"\$(cat '$prompt_file')\""
+      local copilot_dirs=""
+      if [[ "$role_worktree" != "$WORKING_DIR" ]]; then
+        copilot_dirs=" --add-dir '$WORKING_DIR'"
+      fi
+      launch_body="copilot${extra_cli:+ $extra_cli} --yolo --allow-all-paths${copilot_dirs} -C '$role_worktree' --name 'SwarmForge ${display}' -i \"\$(cat '$prompt_file')\""
       ;;
     grok)
       launch_body="grok${extra_cli:+ $extra_cli} --cwd '$role_worktree' --permission-mode acceptEdits --rules \"\$(cat '$prompt_file')\""
       ;;
     aider)
-      launch_body="aider${extra_cli:+ $extra_cli} --yes-always --message-file '$prompt_file'"
+      launch_body="aider${extra_cli:+ $extra_cli} --yes-always"
       ;;
     *)
       echo -e "${RED}Error:${RESET} Unsupported agent '$agent' for role '$role'"
@@ -770,8 +834,11 @@ write_role_launch_script() {
   esac
 
   local billing_guard=""
+  local copilot_guard=""
   if [[ "$agent" == "claude" ]]; then
     billing_guard=$'unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN\n'
+  elif [[ "$agent" == "copilot" ]]; then
+    copilot_guard=$'export COPILOT_ALLOW_ALL=1\n'
   fi
   # BL-130-VIOLATION fix: a provider API key (OPENAI_API_KEY/MISTRAL_API_KEY,
   # for an alternate-runtime role like aider on Mistral/OpenAI) must NEVER be
@@ -789,10 +856,13 @@ set -euo pipefail
 export SWARMFORGE_ROLE='$role'
 export PATH='$role_script_dir':\$PATH
 cd '$role_worktree'
-${billing_guard}${launch_body}
+${billing_guard}${copilot_guard}${launch_body}
 LAUNCH
 
-  if [[ "$index" -eq "${CLEANUP_OWNER_INDEX}" ]]; then
+  # Only wire cleanup when a GUI terminal backend owns windows to close.
+  # Headless (SWARMFORGE_TERMINAL=none): coordinator exiting — e.g. aider
+  # auth failure without MISTRAL_API_KEY — must not tear down every session.
+  if [[ "$index" -eq "${CLEANUP_OWNER_INDEX}" ]] && terminal_backend_can_open_sessions; then
     cat >> "$launch_script" <<LAUNCH
 exit_code=\$?
 SWARMFORGE_TERMINAL_BACKEND='$TERMINAL_BACKEND' nohup '$SCRIPT_DIR/swarm-cleanup.sh' '$TMUX_SOCKET' '$WINDOW_IDS_FILE' \\
@@ -810,6 +880,44 @@ LAUNCH
 
   chmod +x "$launch_script"
   echo "$launch_script"
+}
+
+copilot_trust_swarm_paths() {
+  local i agent any=0
+  local -a paths=("$WORKING_DIR")
+
+  for agent in "${AGENTS[@]}"; do
+    [[ "$agent" == "copilot" ]] && any=1 && break
+  done
+  (( any )) || return 0
+
+  for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
+    local wt="${WORKTREE_PATHS[$i]}"
+    if [[ "$wt" != "$WORKING_DIR" ]]; then
+      paths+=("$wt")
+    fi
+  done
+
+  bash "$SCRIPT_DIR/copilot_trust_folders.sh" "${paths[@]}"
+}
+
+dismiss_copilot_folder_trust() {
+  local session="$1"
+  local target attempt pane
+
+  target="$(tmux_agent_target_for_session "$session")"
+  for attempt in {1..40}; do
+    pane="$(tmux -S "$TMUX_SOCKET" capture-pane -t "$target" -p 2>/dev/null || true)"
+    if [[ "$pane" == *"remember this folder"* ]]; then
+      tmux -S "$TMUX_SOCKET" send-keys -t "$target" Down Enter
+      sleep 0.5
+      return 0
+    fi
+    if [[ "$pane" == *"ready_for_next"* || "$pane" == *"TASK:"* || "$pane" == *"NO_TASK"* ]]; then
+      return 0
+    fi
+    sleep 0.25
+  done
 }
 
 wait_for_session_pane() {
@@ -835,7 +943,7 @@ launch_role() {
   local display="${DISPLAY_NAMES[$index]}"
   local launch_script=""
 
-  write_agent_instruction_file "$role" "$PROMPTS_DIR/${role}.md"
+  write_agent_instruction_file "$role" "$PROMPTS_DIR/${role}.md" "$agent"
   launch_script="$(write_role_launch_script "$index")"
 
   # BL-130-VIOLATION fix: pass a non-claude role's provider API key as a
@@ -854,8 +962,10 @@ launch_role() {
   wait_for_session_pane "$session"
   tmux -S "$TMUX_SOCKET" respawn-pane -k "${provider_env_flags[@]}" -t "$(tmux_agent_target_for_session "$session")" "zsh '$launch_script'"
   sleep 0.25
-  if [[ "$agent" == "grok" ]]; then
-    send_initial_grok_prompt "$session" "$display" "$prompt_file"
+  if agent-runtime-needs-bootstrap "$agent"; then
+    run_agent_bootstrap "$session" "$display" "$role" "$agent" "$PROMPTS_DIR/${role}.md"
+  elif [[ "$agent" == "copilot" ]]; then
+    dismiss_copilot_folder_trust "$session"
   fi
   echo -e "  ${CYAN}[${display}]${RESET} started in session ${session}"
 }
@@ -948,6 +1058,8 @@ done
 write_tmux_env_file
 sync_worktree_scripts
 start_handoff_daemon
+
+copilot_trust_swarm_paths
 
 echo -e "${GREEN}Starting agents...${RESET}"
 for (( i = 1; i <= ${#ROLES[@]}; i++ )); do

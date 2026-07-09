@@ -118,3 +118,4 @@ acceptance: |
   #    from client bundle and repo.
   #  - English remains the binding acceptance contract; nothing in the
   #    pipeline (BL-111..113 APS tooling) consumes the French text.
+mutation_cost: high

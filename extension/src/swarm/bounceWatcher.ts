@@ -186,6 +186,6 @@ export function startBounceWatcher(
   targetPath: string,
   onBounce: (bounceType: BounceType) => void,
   onError?: (error: string) => void,
-): BounceWatcher | null {
+): BounceWatcher {
   return new BounceFSWatcher(targetPath, onBounce, onError) as unknown as BounceWatcher;
 }

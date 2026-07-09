@@ -623,6 +623,16 @@ This load profile is shown in the run artifacts / Work Tree (a simple per-role b
 
 A pragmatic default that needs no tuning: **start each role at a sensible tier (strong for architect/specifier, mid for coder, cheap for cleaner/documenter), then let outcome signals nudge suggestions over time.** Most of the savings come from not running everything on the top model, which this captures immediately.
 
+### Swarm profiles
+
+A **pack** defines pipeline topology (which roles exist). A **swarm profile** is a named, reusable launch preset: pack + backend + per-role model and effort tier. Profiles live under `swarmforge/profiles/` as a pair:
+
+- `<id>.yaml` — metadata (`id`, `name`, `pack`, `backend`, `tier`, description)
+- `<id>.conf` — the `swarmforge.conf` window lines passed to `./swarm`
+- `<id>.prompt` *(optional)* — profile overlay read at agent startup (intake/routing rules for this tier)
+
+Example: `cheap-copilot-seven-pack` runs the full seven-pack on GitHub Copilot CLI with mini/flash models. Its overlay tells the coordinator to **route pre-specced `backlog/paused/` and `backlog/active/` items directly to coder** — not the specifier — because spec work is too costly on cheap models. Select a profile via `SWARMFORGE_CONFIG=swarmforge/profiles/<id>.conf` or the matching VS Code launch configuration. The cost advisor (above) can suggest upgrading or downgrading profiles from outcome signals (QA bounces, reroutes).
+
 ---
 
 ## Pack Suggestion Logic
@@ -652,19 +662,19 @@ Built on Uncle Bob's six-pack, with two deviations: **hardener is dropped**, and
 
 | # | Role | Responsibility |
 |---|---|---|
-| 1 | **specifier** | Turns user intent into accepted Gherkin specs + end-to-end QA procedures. Owns the dev branch. Sole writer of governance text (constitution, role prompts, project/engineering prompts) — see Governance. |
+| 1 | **specifier** | Turns user intent into accepted Gherkin specs + end-to-end QA procedures. Writes specs and governance only — no integration merges. Sole writer of governance text (constitution, role prompts, project/engineering prompts) — see Governance. |
 | 2 | **coder** | Implements approved behavior slices with TDD, unit tests, generated acceptance tests. |
 | 3 | **cleaner** | Behavior-preserving cleanup, coverage improvement, CRAP & DRY review, mutation-site scans. |
 | 4 | **architect** | Reviews module structure, boundaries, dependency direction, property-test coverage. |
 | 5 | **documenter** | Updates docs for humans: high-level docs plus a doc for the piece just developed. |
-| 6 | **QA** | Converts the specifier's QA procedures into executable scripts, runs final UI verification, checks handoff consistency. As the last stage, it's the convergence point and signals completion to the specifier. |
+| 6 | **QA** | Converts the specifier's QA procedures into executable scripts, runs final UI verification, checks handoff consistency. As the last stage, it's the convergence point: broadcasts merge-up to worktree roles and notifies the **coordinator** to integrate on `main`. |
 
-(The coordinator is the 7th role — it owns the master working directory and orchestration.)
+(The coordinator is the 7th role — it owns orchestration on `main` and performs mechanical integration after QA: merge to `main`, close the ticket, promote the next item, push.)
 
 ### The pipeline flow
 
 ```
-specifier ──► coder ──► cleaner ──► architect ──► documenter ──► QA ──► specifier (done)
+specifier ──► coder ──► cleaner ──► architect ──► documenter ──► QA ──► coordinator (integrate)
 ```
 
 Stage by stage:
@@ -674,7 +684,7 @@ Stage by stage:
 3. **Cleaner** cleans up, then hands to the architect.
 4. **Architect** reviews structure, then hands to the documenter.
 5. **Documenter** updates the human-facing docs (high-level + the just-developed piece), then hands to QA.
-6. **QA**, when done, **forces everyone to merge their own branch with QA's** — this is the integration convergence point (see below) — then notifies the specifier that everything is complete.
+6. **QA**, when done, **forces every pipeline worktree role to merge its own branch up to QA's verified commit** — this is the integration convergence point (see below) — then notifies the **coordinator** with the approved commit so the coordinator can merge to `main`, close the ticket, and promote the next backlog item.
 
 Putting the documenter **before** QA means the docs are covered by QA's final verification pass, rather than landing after the swarm has already converged.
 
@@ -683,9 +693,9 @@ The workflow **must visit everyone** — the pipeline is the quality gate sequen
 ### Branches & integration
 
 - Each agent works in its own worktree, and **each worktree is its own branch**
-- The **specifier owns the dev branch** — the swarm's integration branch (*not* the target's master), and the branch the final PR is raised from
-- The **coder pulls the dev branch into its branch** at the start of its stage, so it builds on the latest integrated state
-- **QA is the convergence point:** as the final stage, when QA finishes it forces every agent to merge QA's (verified) branch into their own, bringing the whole swarm to a single consistent, verified state before the PR — and since the documenter ran just before QA, the docs are part of what QA verifies
+- **`main`** (master worktree) is the integration branch — the coordinator merges QA-approved work here; the specifier works on master for spec/prompt files only, not feature integration
+- The **coder pulls integrated state into its branch** at the start of its stage (via `merge_and_process` on handoffs), so it builds on the latest parcel state
+- **QA is the convergence point:** as the final pipeline stage, when QA passes it broadcasts merge-up to every worktree role (`coder`, `cleaner`, `architect`, `hardender`, `documenter`) instructing each to merge QA's verified commit into its own branch — bringing the swarm to a single consistent, verified state before integration on `main`. The **coordinator** then merges that commit to `main`, moves the ticket to `done/`, promotes the next item, and pushes — keeping the costly specifier on specification work only
 - Because work moves through one branch at a time in pipeline order (rather than many agents editing concurrently), file-level collisions are rare by construction — the sequence *is* the conflict-avoidance strategy
 
 ### Conflict resolution: the receiver owns it
@@ -707,7 +717,7 @@ Any agent can **reroute the parcel** to a relevant agent if it spots a problem o
 As the swarm works, rules emerge — a convention worth enforcing, a recurring mistake worth forbidding, a sharper instruction for a role. The model: **propose by many, commit by one.**
 
 - **Any agent can propose a rule.** When an agent discovers something that should become a standing rule, it reports it to the **specifier** as a tracked message (`event: rule-proposal`, with the proposed change and rationale).
-- **The specifier is the sole writer** of governance text: the constitution, any role prompt, and the project/engineering prompts. No other agent edits these — the same single-writer discipline that makes the specifier own the dev branch, applied to governance so prompts can't drift under concurrent edits.
+- **The specifier is the sole writer** of governance text: the constitution, any role prompt, and the project/engineering prompts. No other agent edits these — single-writer discipline applied to governance so prompts can't drift under concurrent edits.
 - **The specifier triages** each proposal: accept (commit the edit), refine (reword first), or reject (with reason back to the proposer). Acceptance is an explicit, attributable commit.
 
 **Where a committed rule lands depends on what it touches — and respects the forge/target boundary:**
@@ -748,7 +758,7 @@ Reroutes can loop: architect → specifier → coder → architect → … forev
 
 ### Item completion & the next-item loop
 
-The pipeline defines "done with the *pipeline*" (QA converges, notifies specifier) but not "done with the *work item*" or what the swarm does next. Defined here:
+The pipeline defines "done with the *pipeline*" (QA converges worktree branches, coordinator integrates on `main`) but not "done with the *work item*" or what the swarm does next. Defined here:
 
 - **Item-complete criteria:** QA convergence succeeded **and** the item's scenarios pass on the dev branch (completion = 100% measured post-convergence, per Work Tree). Only then is the item considered delivered.
 - **What happens at item-complete (configurable run mode):**
@@ -837,7 +847,7 @@ There's a trap where dormancy and branch-per-worktree collide: a dormant role's 
 The fix is to keep a dormant branch current rather than frozen:
 
 - **Rebase-on-wake.** When a role wakes, before it does any work its branch is fast-forwarded/rebased onto the current dev branch. It starts from today's integrated state, not the stale point where it went dormant — small mechanical merges instead of one giant divergent one.
-- **Dev is the baseline, not peer branches.** A waking role syncs to the dev branch (the specifier's integration branch, the single source of integrated truth), never to some other peer's in-flight branch — so there's one well-defined thing to catch up to.
+- **Dev is the baseline, not peer branches.** A waking role syncs to `main` (the coordinator's integration branch, the single source of integrated truth), never to some other peer's in-flight branch — so there's one well-defined thing to catch up to.
 - **Background catch-up (optional).** The extension can fast-forward dormant branches onto dev whenever dev advances, so "wake" is always cheap and a dormant branch is never more than one item behind. This is a pure fast-forward when the dormant branch has no unmerged commits of its own (the common case), so it's safe to automate.
 - **Convergence only includes active roles.** The QA convergence step forces a merge across the *active* pack for the item, not dormant roles — a dormant role has no item-specific work to contribute, so it isn't part of that item's merge. It only needs to be current *before* it next becomes active, which rebase-on-wake guarantees.
 
@@ -878,9 +888,9 @@ Extension streams each process's output → tiled panel updates
         ▼
 Agents work in pipeline order on their own branches:
   specifier → coder → cleaner → architect → documenter → QA
-  Coder pulls dev branch first; documenter updates docs before verification;
-  QA convergence forces all branches to merge QA's and notifies specifier
-  → integrated state on the dev branch
+  Coder merges received commits first; documenter updates docs before verification;
+  QA convergence forces worktree branches to merge QA's; coordinator integrates on main
+  → integrated state on main
         │
         ▼
 Swarm completes work → coordinator signals done

@@ -88,3 +88,4 @@ acceptance: |
   #  - Any substrate incompatibility found under WSL2 is filed as its own
   #    ticket with root cause, not patched inline without a test.
   #  - Existing single-swarm launch behavior unchanged (suites green).
+mutation_cost: low

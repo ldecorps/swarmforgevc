@@ -81,3 +81,4 @@ acceptance: |
   #  - The cooldown check is a hard skip with no exceptions; it is not
   #    overridden by a quiet host.
   #  - New config keys live in swarmforge.conf, read fresh at decision time.
+mutation_cost: low

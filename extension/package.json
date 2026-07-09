@@ -115,6 +115,14 @@
       {
         "command": "swarmforge.clearResendApiKey",
         "title": "SwarmForge: Clear Resend API Key"
+      },
+      {
+        "command": "swarmforge.setMistralApiKey",
+        "title": "SwarmForge: Set Mistral API Key"
+      },
+      {
+        "command": "swarmforge.clearMistralApiKey",
+        "title": "SwarmForge: Clear Mistral API Key"
       }
     ],
     "configuration": {

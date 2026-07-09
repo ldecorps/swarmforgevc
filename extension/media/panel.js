@@ -4,6 +4,7 @@ const status = document.getElementById('status');
 const stageEl = document.getElementById('stage');
 const placeholder = document.getElementById('placeholder');
 const transportHealthEl = document.getElementById('transport-health');
+const daemonStatusEl = document.getElementById('daemon-status');
 const tiles = new Map();
 let activeRole = null;
 let selectedRole = null;
@@ -669,9 +670,18 @@ window.addEventListener('message', (event) => {
         if (entry) {
           if (e.stalled) {
             entry.tile.classList.add('stalled');
+            entry.tile.classList.remove('working');
           } else {
             entry.tile.classList.remove('stalled');
           }
+        }
+      });
+      break;
+    case 'activity':
+      message.events.forEach((e) => {
+        const entry = tiles.get(e.role);
+        if (entry) {
+          entry.tile.classList.toggle('working', e.working);
         }
       });
       break;
@@ -682,6 +692,7 @@ window.addEventListener('message', (event) => {
           if (e.needsHuman) {
             entry.tile.classList.add('needs-human');
             entry.tile.classList.remove('stalled');
+            entry.tile.classList.remove('working');
           } else {
             entry.tile.classList.remove('needs-human');
           }
@@ -722,6 +733,19 @@ window.addEventListener('message', (event) => {
           setTimeout(() => entry.tile.classList.remove('bl-highlighted'), 2000);
         }
       });
+      break;
+    case 'daemonProcessStatus':
+      if (daemonStatusEl) {
+        const daemon = message.status || {};
+        const phase = daemon.phase || 'dead';
+        daemonStatusEl.className = 'daemon-status ' + phase;
+        daemonStatusEl.textContent = daemon.label || 'handoffd unknown';
+        daemonStatusEl.title = daemon.detail
+          ? String(daemon.detail)
+          : daemon.heartbeatAgeMs != null
+            ? 'heartbeat age: ' + daemon.heartbeatAgeMs + 'ms'
+            : '';
+      }
       break;
     case 'transportHealth':
       if (transportHealthEl) {

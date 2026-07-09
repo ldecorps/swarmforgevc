@@ -14,3 +14,4 @@ extension/.dev-activation.json
 extension/.test-durations.jsonl
 *.code-workspace
 extension/stryker-incremental.json
+.aider*

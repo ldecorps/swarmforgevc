@@ -1,0 +1,29 @@
+# Cheap Copilot profile overlay (seven-pack topology)
+
+Read this when launched with `swarmforge/profiles/cheap-copilot-seven-pack.conf`.
+
+## Purpose
+This profile uses mini/flash Copilot models. The **specifier is present but idle by default** — too costly and too weak here for reliable new specs. Execute **already-specced** backlog items only.
+
+## Coordinator — intake and routing (critical)
+- **Do not route parcels to the specifier** in normal operation. No `git_handoff` or `note` to specifier for new work, backlog drain, or promotion follow-up.
+- **Work the existing queue:** promote eligible items from `backlog/paused/` into `backlog/active/` (respect `active_backlog_max_depth`), then route **directly to coder**.
+- Prefer mechanical routing when the active item is ready:
+  ```sh
+  swarmforge/scripts/route_backlog_to_coder.sh [BL-id]
+  ```
+- If a parcel is already in flight downstream (coder..QA), chase and unblock — do not restart via specifier.
+- **Backlog root** (`backlog/*.yaml` not in `active/`/`paused/`/`done/`): do **not** send to specifier. Leave raw intake for the human or a stronger profile; note the human if root items are blocking progress.
+- When `backlog/paused/` and `backlog/active/` are both empty, go idle — do not invent specifier work.
+- Rule-proposals to specifier: only if a human explicitly asks; otherwise defer.
+
+## Specifier on this profile
+- Stay idle unless the **human** types directly into your pane or explicitly asks you to spec something.
+- Do not self-assign backlog root drain on this profile — coordinator owns routing to coder for pre-specced work.
+
+## Other roles
+- Normal seven-pack chain after coder: cleaner → architect → hardender → documenter → QA → coordinator (integrate per PIPELINE.md).
+
+## Handoffs
+- Draft path: **`swarmforge/runtime/handoff-draft.txt`**
+- Run: `swarmforge/scripts/swarm_handoff.sh swarmforge/runtime/handoff-draft.txt`

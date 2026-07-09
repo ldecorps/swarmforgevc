@@ -54,3 +54,4 @@ acceptance: |
   #    swarmforge.lock.json.
   #  - Mutation manifests only ever written by the tools.
   #  - hardender.prompt updated with the soft-Gherkin-mutation duty.
+mutation_cost: low

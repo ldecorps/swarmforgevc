@@ -126,3 +126,4 @@ acceptance: |
   #    queue state, injected canary/health results); NO live babashka daemon
   #    or tmux in tests.
   #  - Depends on BL-121's health signals; do not promote ahead of it.
+mutation_cost: low

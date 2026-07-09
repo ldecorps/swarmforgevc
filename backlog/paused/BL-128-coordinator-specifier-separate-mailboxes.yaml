@@ -103,3 +103,4 @@ acceptance: |
   #  - Recipient-header filter may be simplified/removed only after
   #    confirming nothing else depends on it; the recipient: header itself
   #    remains for audit.
+mutation_cost: high

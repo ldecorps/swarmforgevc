@@ -102,3 +102,4 @@ acceptance: |
   #  - The proposal queue reuses the existing rule_proposal-style durable
   #    review mechanism; specifier review/accept/reject is out of this
   #    ticket's testable scope beyond the queuing contract above.
+mutation_cost: low

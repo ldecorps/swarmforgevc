@@ -13,11 +13,11 @@ import { startBridge } from './bridge/bridgeServer';
 import type { BridgeHandle } from './bridge/bridgeServer';
 import { generateBridgeToken } from './bridge/bridgeToken';
 import { getCurrentBranch, openPullRequest } from './swarm/prCreator';
-import { launchSwarm, waitForSwarmReady, chooseReattachTimeoutMs, isSwarmReady } from './swarm/swarmLauncher';
+import { launchSwarm, waitForSwarmReady, chooseReattachTimeoutMs, isSwarmReady, runningSwarmMatchesConfig, resolveSwarmConfigPath } from './swarm/swarmLauncher';
 import { reapAllTrackedJobs, reapStaleTrackedJobs } from './swarm/childJobRegistry';
 import { writeStateDump, startPeriodicStateDump, ExtensionStateSnapshot } from './swarm/stateDump';
 import { hasPriorRunState, shouldOfferResumePrompt } from './swarm/swarmDiscovery';
-import { stopSwarm } from './swarm/swarmStopper';
+import { stopSwarm, stopSwarmOnExtensionShutdown } from './swarm/swarmStopper';
 import { bounceSwarm, buildBounceExtensionCommand } from './swarm/bouncer';
 import { listTmuxSessions } from './swarm/tmuxClient';
 import { resolveRunName } from './run/resolveRunName';
@@ -54,10 +54,12 @@ import { computeLiveness } from './watchdog/liveness';
 import type { LivenessState, WatchdogConfig } from './watchdog/liveness';
 import {
   RESEND_SECRET_KEY,
+  MISTRAL_SECRET_KEY,
   trimmedResendKeyInput,
   describeSetResult,
   describeClearResult,
   resolveResendApiKey,
+  resolveMistralApiKey,
 } from './notify/secrets';
 import { startBriefingScheduler } from './notify/briefingScheduler';
 import { startBriefingEmailWatcher } from './notify/briefingEmailWatcher';
@@ -174,6 +176,44 @@ function generateDefaultRunName(): string {
   const hour = String(now.getHours()).padStart(2, '0');
   const minute = String(now.getMinutes()).padStart(2, '0');
   return `run-${year}${month}${day}-${hour}${minute}`;
+}
+
+function shouldAutoLaunchOnActivation(context: vscode.ExtensionContext): boolean {
+  if (context.extensionMode !== vscode.ExtensionMode.Development) {
+    return false;
+  }
+  if (process.env['SWARMFORGE_AUTO_LAUNCH'] === '0') {
+    return false;
+  }
+  const config = vscode.workspace.getConfiguration('swarmforge');
+  return config.get<boolean>('run.promptForName', true) === false;
+}
+
+async function autoLaunchSwarmOnActivation(
+  context: vscode.ExtensionContext,
+  targetPath: string,
+  runLogPath: string
+): Promise<void> {
+  const runName = generateDefaultRunName();
+  await context.globalState.update(LAST_RUN_NAME_KEY, runName);
+  appendRun(runLogPath, { name: runName, targetPath, startedAt: new Date().toISOString() });
+  const result = await launchSwarm(targetPath, runName, 120_000, context.secrets);
+  if (!result.success) {
+    vscode.window.showErrorMessage(result.message);
+    return;
+  }
+  const panel = SwarmPanel.createOrShow(
+    context.extensionUri,
+    targetPath,
+    runLogPath,
+    undefined,
+    context.secrets,
+    true
+  );
+  panel.updateTarget(targetPath);
+  startOrRestartChaserMonitor(targetPath, context);
+  startOrRestartDailyBriefing(targetPath, context);
+  startOrRestartIdleClearMonitor(targetPath, context);
 }
 
 function startOrRestartBounceWatcher(
@@ -933,8 +973,14 @@ export function activate(context: vscode.ExtensionContext): void {
       // a command wins the activation race before onStartupFinished fires,
       // preserving today's resume-offer behavior on that path.
       const isStartupTriggeredActivation = true;
-      waitForSwarmReady(targetPath, reattachTimeoutMs, REATTACH_READY_POLL_MS).then((ready) => {
-        if (ready) {
+      waitForSwarmReady(targetPath, reattachTimeoutMs, REATTACH_READY_POLL_MS).then(async (ready) => {
+        const configPath = resolveSwarmConfigPath();
+        let matchesConfig = runningSwarmMatchesConfig(targetPath, configPath);
+        if (ready && !matchesConfig) {
+          stopSwarm(targetPath);
+          ready = false;
+        }
+        if (ready && matchesConfig) {
           // Re-attach automatically: tiles reconnect to the live output
           // streams without restarting any agent. preserveFocus keeps the
           // editor the operator opened into in the foreground.
@@ -947,6 +993,8 @@ export function activate(context: vscode.ExtensionContext): void {
             isStartupTriggeredActivation
           );
           panel.updateTarget(targetPath);
+        } else if (shouldAutoLaunchOnActivation(context)) {
+          await autoLaunchSwarmOnActivation(context, targetPath, runLogPath);
         } else if (
           shouldOfferResumePrompt(isStartupTriggeredActivation, hasPriorRunState(targetPath))
         ) {
@@ -976,7 +1024,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const lastRunName = context.globalState.get<string>(LAST_RUN_NAME_KEY);
     if (targetPath && lastRunName) {
       vscode.window.showInformationMessage('Auto-launching swarm after reload...');
-      launchSwarm(targetPath, lastRunName).then((result) => {
+      launchSwarm(targetPath, lastRunName, 120_000, context.secrets).then((result) => {
         if (result.success) {
           vscode.window.showInformationMessage(result.message);
           const panel = SwarmPanel.createOrShow(
@@ -1089,7 +1137,7 @@ export function activate(context: vscode.ExtensionContext): void {
           cancellable: false,
         },
         async () => {
-          const result = await launchSwarm(targetPath!, runName);
+          const result = await launchSwarm(targetPath!, runName, 120_000, context.secrets);
           if (!result.success) {
             vscode.window.showErrorMessage(result.message);
             return;
@@ -1405,7 +1453,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const runName = next.id.toLowerCase();
       await context.globalState.update(LAST_RUN_NAME_KEY, runName);
       appendRun(runLogPath, { name: runName, targetPath, startedAt: new Date().toISOString() });
-      const result = await launchSwarm(targetPath, runName);
+      const result = await launchSwarm(targetPath, runName, 120_000, context.secrets);
       if (!result.success) {
         vscode.window.showErrorMessage(result.message);
         return;
@@ -1438,6 +1486,30 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('swarmforge.clearResendApiKey', async () => {
       await context.secrets.delete(RESEND_SECRET_KEY);
       vscode.window.showInformationMessage(describeClearResult(Boolean(process.env.RESEND_API_KEY)));
+    }),
+
+    vscode.commands.registerCommand('swarmforge.setMistralApiKey', async () => {
+      const input = await vscode.window.showInputBox({
+        title: 'SwarmForge: Set Mistral API Key',
+        prompt: 'Enter the Mistral API key to store in SecretStorage',
+        password: true,
+        ignoreFocusOut: true,
+      });
+      const key = trimmedResendKeyInput(input);
+      if (!key) {
+        return;
+      }
+      await context.secrets.store(MISTRAL_SECRET_KEY, key);
+      vscode.window.showInformationMessage(
+        `Mistral API key stored in SecretStorage.${Boolean(process.env.MISTRAL_API_KEY) ? ' Note: MISTRAL_API_KEY env var takes precedence until unset.' : ''}`
+      );
+    }),
+
+    vscode.commands.registerCommand('swarmforge.clearMistralApiKey', async () => {
+      await context.secrets.delete(MISTRAL_SECRET_KEY);
+      vscode.window.showInformationMessage(
+        `Mistral API key cleared from SecretStorage.${Boolean(process.env.MISTRAL_API_KEY) ? ' Note: MISTRAL_API_KEY env var is still set.' : ''}`
+      );
     })
   );
 }
@@ -1452,6 +1524,9 @@ export function deactivate(): void {
     currentBridge.stop();
     currentBridge = null;
   }
+  // Stopping the extension host must tear down live tmux agents too — not
+  // only the extension-spawned ./swarm bootstrap child below.
+  stopSwarmOnExtensionShutdown(currentTargetPath);
   // BL-108 deactivate-reap-02: a normal "stop the extension" must not leak
   // any process group this host spawned and tracked. Best-effort - a
   // partially-torn-down group must not block the rest of deactivate().

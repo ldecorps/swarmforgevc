@@ -5,71 +5,40 @@ const os = require('node:os');
 
 const { startBounceWatcher } = require('../out/swarm/bounceWatcher');
 
-// Test for startBounceWatcher with .swarmforge directory
-test('startBounceWatcher creates watcher when .swarmforge exists', () => {
+test('startBounceWatcher creates watcher and detects bounce files', async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-watcher-'));
-  const swarmforgeDir = path.join(tmpDir, '.swarmforge');
-  fs.mkdirSync(swarmforgeDir);
+  try {
+    const swarmforgeDir = path.join(tmpDir, '.swarmforge');
+    let bounceDetected = null;
+    const watcher = startBounceWatcher(
+      tmpDir,
+      (bounceType) => {
+        bounceDetected = bounceType;
+      }
+    );
 
-  let bounceDetected = null;
-  const watcher = startBounceWatcher(
-    tmpDir,
-    (bounceType) => {
-      bounceDetected = bounceType;
-    }
-  );
-
-  assert.ok(watcher !== null);
-  watcher.close();
-
-  // Cleanup
-  fs.rmSync(tmpDir, { recursive: true });
+    assert.ok(watcher);
+    fs.writeFileSync(path.join(swarmforgeDir, 'bounce'), 'swarm\n');
+    await new Promise((resolve, reject) => {
+      const deadline = Date.now() + 2000;
+      const check = () => {
+        if (bounceDetected === 'swarm') {
+          resolve();
+          return;
+        }
+        if (Date.now() >= deadline) {
+          reject(new Error('waitUntil timed out'));
+          return;
+        }
+        setTimeout(check, 10);
+      };
+      check();
+    });
+    watcher.close();
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true });
+  }
 });
-
-test('startBounceWatcher returns null when .swarmforge does not exist', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-watcher-'));
-
-  const watcher = startBounceWatcher(
-    tmpDir,
-    () => {}
-  );
-
-  assert.equal(watcher, null);
-
-  // Cleanup
-  fs.rmSync(tmpDir, { recursive: true });
-});
-
-test('startBounceWatcher detects bounce file creation', () => new Promise((resolve, reject) => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-watcher-'));
-  const swarmforgeDir = path.join(tmpDir, '.swarmforge');
-  fs.mkdirSync(swarmforgeDir);
-
-  let bounceDetected = null;
-  const watcher = startBounceWatcher(
-    tmpDir,
-    (bounceType) => {
-      bounceDetected = bounceType;
-    }
-  );
-
-  // Create bounce file after a short delay
-  setTimeout(() => {
-    const bounceFile = path.join(swarmforgeDir, 'bounce');
-    fs.writeFileSync(bounceFile, 'swarm\n');
-
-    // Wait for watcher to process the file
-    setTimeout(() => {
-      let err = null;
-      try { assert.equal(bounceDetected, 'swarm'); } catch (e) { err = e; }
-      watcher.close();
-
-      // Cleanup
-      fs.rmSync(tmpDir, { recursive: true });
-      err ? reject(err) : resolve();
-    }, 200);
-  }, 100);
-}));
 
 test('startBounceWatcher ignores non-bounce file changes', () => new Promise((resolve, reject) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-watcher-'));

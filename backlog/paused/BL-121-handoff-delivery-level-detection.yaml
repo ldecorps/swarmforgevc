@@ -122,3 +122,4 @@ acceptance: |
   #  - Tested through the messageBus/handoff and daemonHealth fakes (injected
   #    queue state, injected canary results); NO live babashka daemon or tmux
   #    in tests.
+mutation_cost: high

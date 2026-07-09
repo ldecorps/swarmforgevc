@@ -74,3 +74,4 @@ acceptance: |
   #  - Derivation/validation logic script-tested; migration rehearsed on
   #    a scratch clone before the live run.
   #  - No history rewrite; branch renames only.
+mutation_cost: high
