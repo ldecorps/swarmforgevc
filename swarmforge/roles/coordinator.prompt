@@ -117,6 +117,14 @@ and task/backlog id, often alongside QA's merge-up broadcast to worktree roles):
 1. **Merge** the QA-approved commit into `main` on the master worktree (plain
    `git merge`; never force-push).
 2. **Close** the ticket: move its YAML from `backlog/active/` to `backlog/done/`.
+   - BL-114: if the ticket's `id` is `GH-<n>` (seeded from a GitHub issue via
+     `.github/workflows/swarm-intake.yml`; its `source:` field carries the
+     issue URL — preserved through drain per specifier.prompt's "preserve
+     its id" rule), close the loop on the issue now:
+     `swarmforge/scripts/issue_done.sh <source-url> <merge-commit>`. This
+     comments the issue with the merge commit and closes it. It never
+     blocks your turn — a missing `gh` auth prints a SKIP line and exits 0;
+     do not treat that as an error.
 3. **Promote** the next eligible item from `backlog/paused/` into
    `backlog/active/` if below `active_backlog_max_depth`.
 4. **Push** `main` to origin in the same session. On push rejection: fetch,
