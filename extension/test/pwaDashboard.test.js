@@ -86,6 +86,19 @@ test('renders the state board, velocity, burndown, and cycle-time sections from 
   assert.match(document.getElementById('cycleTime').textContent, /Median 2h, p85 4h over 6 ticket/);
 });
 
+test('trend arrows match each section\'s own direction (up/down/flat) - the fixture varies them precisely so a swapped or dropped arrow is caught', async () => {
+  const dom = renderDashboard(fakeDashboard());
+  await flush();
+  const document = dom.window.document;
+
+  // velocity.trend.direction: 'up'
+  assert.match(document.getElementById('velocity').textContent, /5 closed ▲/);
+  // burndown[0].trend.direction: 'down'
+  assert.match(document.getElementById('burndown').textContent, /2 remaining ▼/);
+  // cycleTime.trend.direction: 'flat'
+  assert.match(document.getElementById('cycleTime').textContent, /ticket\(s\) ▬/);
+});
+
 test('shows a remote (non-primary) swarm assignment as a visible badge', async () => {
   const dom = renderDashboard(fakeDashboard());
   await flush();
