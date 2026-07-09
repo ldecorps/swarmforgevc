@@ -209,7 +209,7 @@ The bridge is an **opt-in local HTTP server** that exposes the same on-disk swar
 **Starting the bridge:**
 - Run the VS Code command **SwarmForge: Start Bridge** (`swarmforge.startBridge`)
 - The extension generates a one-time bearer token and starts the server on a localhost port (e.g. `http://127.0.0.1:9999`)
-- The token is shown in an info message; save it for API requests
+- The info message shows both a ready-to-open URL with the token embedded (`http://127.0.0.1:<port>/?token=<token>`, for the holistic web UI below) and the raw token for `Authorization: Bearer` API requests
 
 **Stopping the bridge:**
 - Run the VS Code command **SwarmForge: Stop Bridge** (`swarmforge.stopBridge`)
@@ -217,6 +217,7 @@ The bridge is an **opt-in local HTTP server** that exposes the same on-disk swar
 
 **Security:**
 - Every request requires a valid bearer token in the `Authorization` header: `Authorization: Bearer <token>`
+- Exception: the root HTML page (below) additionally accepts the token via a `?token=` query parameter, since a plain browser navigation cannot attach a header — scoped narrowly to that one route; every JSON/SSE endpoint stays header-only
 - The token is generated per run and held only in the extension host environment — it never appears in the target repo or any commit
 - Requests without a valid token receive a 401 Unauthorized response with no state disclosed
 - The bridge listens on 127.0.0.1 only; it is not accessible over the network
@@ -225,15 +226,19 @@ The bridge is an **opt-in local HTTP server** that exposes the same on-disk swar
 
 | Endpoint | Response | Purpose |
 |---|---|---|
-| `GET /api/pipeline` | JSON: current stage per active parcel | Which role holds each ticket |
-| `GET /api/agents` | JSON: per-agent status + heartbeat | Liveness, stall detection, "needs human" states |
-| `GET /api/backlog` | JSON: active/paused/done items | Backlog folders and ticket metadata |
-| `GET /api/runlog` | JSON: timeline of stage transitions and key events | Run history and audit trail |
+| `GET /` | HTML: the holistic dev-state web UI (see below) | A single-page, self-contained live view of the swarm |
+| `GET /pipeline` | JSON: current stage per active parcel | Which role holds each ticket |
+| `GET /agents` | JSON: per-agent status + heartbeat | Liveness, stall detection, "needs human" states |
+| `GET /backlog` | JSON: active/paused/done items | Backlog folders and ticket metadata |
+| `GET /runlog` | JSON: timeline of stage transitions and key events | Run history and audit trail |
 | `GET /events` | Server-Sent Events (SSE) stream | Real-time updates when stage or agent state changes |
 | `GET /metrics` | JSON: delivery-flow metrics (velocity, burndown, cycle time, forecasts, suite duration trend) | Trend/forecast data for monitoring dashboards or scripts |
 | `GET /cost-telemetry` | JSON: per-role token/cost usage by day, cost attributed per ticket, and resource (RSS/CPU) trends | Token spend and resource usage for monitoring dashboards or scripts |
+| `GET /holistic` | JSON: the projection backing the `/` page — swarm assignments, done-by-milestone, recent activity | The web UI's own data source; also usable directly by scripts |
 
-`GET /metrics` and `GET /cost-telemetry` are both computed fresh on each request rather than folded into the ~1s SSE poll loop the other endpoints share — the underlying git-history walk (`/metrics`) and transcript/telemetry reads (`/cost-telemetry`) are too expensive to recompute every tick.
+`GET /metrics`, `GET /cost-telemetry`, and `GET /holistic` are all computed fresh on each request rather than folded into the ~1s SSE poll loop the other endpoints share — the underlying git-history walk and handoff-state/transcript reads are too expensive to recompute every tick.
+
+**Holistic dev-state web UI:** Opening the bridge's root URL (`http://127.0.0.1:<port>/?token=<token>`) in any browser — desktop or phone, as long as it can reach the dev machine — serves a single self-contained page (inline CSS/JS, no external fetch or CDN, no localStorage/sessionStorage) showing the backlog board, per-swarm panel, pipeline flow, and recent activity, live-updated over the same `/events` SSE stream the rest of the bridge uses. It is read-only, exactly like every other bridge surface. A ticket's `swarm:` field (defaulting to `primary` when absent, per BL-090) determines whether it's shown as a live-tracked local ticket or labeled remote/last-synced.
 
 **Example usage (cURL):**
 
@@ -242,7 +247,7 @@ The bridge is an **opt-in local HTTP server** that exposes the same on-disk swar
 TOKEN=$(grep "token:" ~/.swarmforge/current_run.env | cut -d' ' -f2)
 
 # Query pipeline state
-curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9999/api/pipeline
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9999/pipeline
 
 # Subscribe to the event stream
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9999/events
