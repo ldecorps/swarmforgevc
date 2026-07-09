@@ -66,6 +66,58 @@ export function isStalled(lastChangedAt: number, now: number): boolean {
   return now - lastChangedAt >= STALL_THRESHOLD_MS;
 }
 
+// BL-210: the per-role working-state decision emitActivityEvents used to
+// compute inline (CRAP 93.91 - unreachable except through a full
+// timer-driven PaneTailer). Pure so it's testable without a class instance
+// or a real clock: given a role's raw command/pane text, its last-changed
+// time, whether it was previously working, and whether it's currently a
+// dead role, decide whether it's working now and whether that's a change
+// from before - emitActivityEvents becomes a thin loop over this.
+export interface RoleActivityStatus {
+  command: string;
+  rawText: string;
+  lastChangedMs: number | undefined;
+  wasWorking: boolean;
+  isDead: boolean;
+}
+
+export interface RoleActivityDecision {
+  working: boolean;
+  changed: boolean;
+}
+
+export function decideRoleActivity(status: RoleActivityStatus, nowMs: number): RoleActivityDecision {
+  // A dead role can never be "working" - forced false regardless of
+  // whatever its last-observed command/text/recency would otherwise imply.
+  const working = status.isDead
+    ? false
+    : isAgentActivelyWorking(status.command, status.rawText) ||
+      (status.lastChangedMs !== undefined && nowMs - status.lastChangedMs < WORKING_INDICATOR_MS);
+  return { working, changed: working !== status.wasWorking };
+}
+
+// Builds the RoleActivityStatus decideRoleActivity needs from the raw,
+// possibly-unset per-role lookups emitActivityEvents holds (Map.get returns
+// undefined for a role not yet observed). Split out so those two `?? ''`
+// fallbacks - untestable without a class instance - are pure and covered
+// directly instead of holding emitActivityEvents' own CRAP up as dead weight
+// atop decideRoleActivity's already-covered decision branches.
+export function buildRoleActivityStatus(
+  command: string | undefined,
+  rawText: string | undefined,
+  lastChangedMs: number | undefined,
+  wasWorking: boolean,
+  isDead: boolean
+): RoleActivityStatus {
+  return {
+    command: command ?? '',
+    rawText: rawText ?? '',
+    lastChangedMs,
+    wasWorking,
+    isDead,
+  };
+}
+
 /**
  * BL-120: `tmux respawn-pane` (e.g. a relaunch that reuses the existing
  * session rather than killing it) swaps the process running in a pane
@@ -327,29 +379,23 @@ export class PaneTailer {
     const now = Date.now();
     const events: ActivityEvent[] = [];
     for (const role of this.roles) {
-      if (this.deadRoles.has(role.role)) {
-        if (this.workingRoles.has(role.role)) {
-          this.workingRoles.delete(role.role);
-          events.push({ role: role.role, working: false });
-        }
+      const status = buildRoleActivityStatus(
+        this.lastPaneCommand.get(role.role),
+        this.lastRawText.get(role.role),
+        this.lastChangedAt.get(role.role),
+        this.workingRoles.has(role.role),
+        this.deadRoles.has(role.role)
+      );
+      const decision = decideRoleActivity(status, now);
+      if (!decision.changed) {
         continue;
       }
-      const lastChanged = this.lastChangedAt.get(role.role);
-      const raw = this.lastRawText.get(role.role) ?? '';
-      const cmd = this.lastPaneCommand.get(role.role) ?? '';
-      const working =
-        isAgentActivelyWorking(cmd, raw) ||
-        (lastChanged !== undefined && now - lastChanged < WORKING_INDICATOR_MS);
-      const wasWorking = this.workingRoles.has(role.role);
-      if (working === wasWorking) {
-        continue;
-      }
-      if (working) {
+      if (decision.working) {
         this.workingRoles.add(role.role);
       } else {
         this.workingRoles.delete(role.role);
       }
-      events.push({ role: role.role, working });
+      events.push({ role: role.role, working: decision.working });
     }
     if (events.length > 0) {
       this.onActivity(events);
