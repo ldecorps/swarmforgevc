@@ -12,18 +12,12 @@
  */
 
 import { computeBacklogDashboard } from '../metrics/backlogDashboard';
-import { resolveProjectRoot, resolveMainWorktreePath, loadRoles, runCliMain } from './swarm-metrics';
+import { resolveCliMainWorktreeContext, printJsonToStdout, runCliMain } from './swarm-metrics';
 
 export function main(): void {
-  const projectRoot = resolveProjectRoot(process.cwd());
-  const roles = loadRoles(projectRoot);
-  const mainWorktreePath = resolveMainWorktreePath(projectRoot, roles);
-
-  const dashboard = computeBacklogDashboard(
-    mainWorktreePath,
-    roles.map((r) => ({ role: r.role, worktreePath: r.worktreePath }))
-  );
-  process.stdout.write(JSON.stringify(dashboard, null, 2) + '\n');
+  const { mainWorktreePath, roleWorktrees } = resolveCliMainWorktreeContext();
+  const dashboard = computeBacklogDashboard(mainWorktreePath, roleWorktrees);
+  printJsonToStdout(dashboard);
 }
 
 if (require.main === module) {
