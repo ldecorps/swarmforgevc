@@ -95,6 +95,12 @@ function buildJsonRoutes(targetPath: string, runLogPath: string): JsonRoute[] {
       matches: (url) => url === '/cost-telemetry',
       compute: () => buildCostTelemetryState(targetPath),
     },
+    {
+      // BL-094: same posture as /metrics/cost-telemetry - git-history +
+      // handoff-state reads, too expensive for the SSE poll loop.
+      matches: (url) => url === '/holistic',
+      compute: () => buildHolisticState(targetPath, runLogPath),
+    },
   ];
 }
 
@@ -148,15 +154,6 @@ export function startBridge(
       if (jsonRoute) {
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify(jsonRoute.compute(url)));
-        return;
-      }
-
-      // BL-094: same posture as /metrics/cost-telemetry - git-history +
-      // handoff-state reads, too expensive for the SSE poll loop.
-      if (url === '/holistic') {
-        const state = buildHolisticState(targetPath, runLogPath);
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify(state));
         return;
       }
 
