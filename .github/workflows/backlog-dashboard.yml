@@ -14,6 +14,18 @@ name: Backlog dashboard
 # BL-150: also regenerates recert-batch.json (the recertification view's
 # already oldest-first-selected batch), same trigger, same posture.
 #
+# BL-118: also runs the FR translation pass over both artifacts (locale
+# catalog + toggle live entirely client-side in pwa/locales.js+app.js, no
+# workflow involvement) and commits docs/i18n/translation-cache.json back to
+# main when the pass added/changed any entry - the content-hash cache lives
+# in the repo so a later run never re-translates an unchanged string
+# (bilingual-03). That commit message carries [skip ci] and
+# docs/i18n/translation-cache.json is excluded from this workflow's own
+# trigger paths below, so committing it can never re-trigger this workflow.
+# MT_API_KEY absent (e.g. before the operator configures the secret) is not
+# an error - generate-docs-tree.js/generate-backlog-dashboard.js fall back
+# to publishing every string as English flagged untranslated (bilingual-05).
+#
 # Runs AFTER a push has already landed, and is not configured as a required
 # status check, so a failure here is visible in the Actions tab but never
 # blocks the push or the pipeline that produced it.
@@ -24,11 +36,13 @@ on:
     paths:
       - 'backlog/**'
       - 'docs/**'
+      - '!docs/i18n/**'
       - 'specs/features/**'
       - 'extension/src/metrics/**'
       - 'extension/src/panel/backlogReader.ts'
       - 'extension/src/bridge/holisticProjections.ts'
       - 'extension/src/docs/**'
+      - 'extension/src/i18n/**'
       - 'extension/src/tools/generate-backlog-dashboard.ts'
       - 'extension/src/tools/generate-docs-tree.ts'
       - 'extension/src/tools/generate-recert-batch.ts'
@@ -38,7 +52,7 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -82,11 +96,31 @@ jobs:
           printf 'coordinator\tnone\t%s\tswarmforge-coordinator\tCoordinator\tnone\ttask\n' "$(pwd)" > .swarmforge/roles.tsv
 
       - name: Generate backlog.json, docs-tree.json, and recert-batch.json
+        env:
+          MT_API_KEY: ${{ secrets.MT_API_KEY }}
         run: |
           mkdir -p _site
           node extension/out/tools/generate-backlog-dashboard.js > _site/backlog.json
           node extension/out/tools/generate-docs-tree.js > _site/docs-tree.json
           node extension/out/tools/generate-recert-batch.js > _site/recert-batch.json
+
+      # BL-118: the two generator steps above may have added/changed entries
+      # in docs/i18n/translation-cache.json (a repo-committed file, never
+      # published under _site/) - persisted here so the NEXT run reuses them
+      # instead of re-translating (bilingual-03). [skip ci] plus this
+      # workflow's own !docs/i18n/** trigger exclusion above both prevent
+      # this commit from re-triggering the workflow.
+      - name: Commit updated translation cache
+        run: |
+          if git diff --quiet -- docs/i18n/translation-cache.json; then
+            echo "No translation cache changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/i18n/translation-cache.json
+          git commit -m "chore: update translation cache [skip ci]"
+          git push
 
       - name: Copy PWA static assets
         run: cp -r pwa/. _site/

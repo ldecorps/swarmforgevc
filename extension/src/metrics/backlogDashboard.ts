@@ -6,6 +6,7 @@ import { computeDeliveryMetrics, DeliveryMetrics, VelocityResult, MilestoneBurnd
 import { RoleWorktree } from './swarmMetrics';
 import { readSwarmName } from '../bridge/holisticProjections';
 import { CostHealthSidecar } from '../notify/costHealthSidecar';
+import { translateString, TranslationSession } from '../i18n/translate';
 
 // BL-097: backlog.json's data contract - a versioned, git-derived
 // projection of backlog state + BL-096 metrics, reusing computeDeliveryMetrics
@@ -27,6 +28,10 @@ export interface DashboardTicketSummary {
   closeDateIso?: string;
   p50Iso?: string;
   p85Iso?: string;
+  // BL-118: additive - only translateBacklogDashboard populates these;
+  // buildBacklogDashboard/computeBacklogDashboard alone never set them.
+  titleFr?: string;
+  titleFrUntranslated?: boolean;
 }
 
 export interface BacklogDashboardData {
@@ -214,4 +219,27 @@ export function computeBacklogDashboard(targetPath: string, roles: RoleWorktree[
   const costHealth = readLatestCostHealthSidecar(targetPath);
 
   return buildBacklogDashboard(folders, lifecycles, deliveryMetrics, localSwarmName, sourceSha, new Date(nowMs).toISOString(), costHealth);
+}
+
+async function translateSummary(session: TranslationSession, summary: DashboardTicketSummary): Promise<DashboardTicketSummary> {
+  const title = await translateString(session, summary.title);
+  const result: DashboardTicketSummary = { ...summary, titleFr: title.fr };
+  if (title.frUntranslated) {
+    result.titleFrUntranslated = true;
+  }
+  return result;
+}
+
+// BL-118: populates every board ticket's additive titleFr, mirroring
+// docsTree.ts's translateDocsTree - a separate pass over an
+// already-computed English dashboard, so translation can be skipped
+// entirely without touching computeBacklogDashboard's own derivation.
+export async function translateBacklogDashboard(data: BacklogDashboardData, session: TranslationSession): Promise<BacklogDashboardData> {
+  const active = await Promise.all(data.board.active.map((s) => translateSummary(session, s)));
+  const paused = await Promise.all(data.board.paused.map((s) => translateSummary(session, s)));
+  const doneByMilestone: Record<string, DashboardTicketSummary[]> = {};
+  for (const [milestone, summaries] of Object.entries(data.board.doneByMilestone)) {
+    doneByMilestone[milestone] = await Promise.all(summaries.map((s) => translateSummary(session, s)));
+  }
+  return { ...data, board: { active, paused, doneByMilestone } };
 }

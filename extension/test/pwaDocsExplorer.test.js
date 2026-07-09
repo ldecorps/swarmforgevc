@@ -67,6 +67,8 @@ function renderDashboard(docsTree) {
     }
     return Promise.reject(new Error('unexpected fetch: ' + url));
   };
+  const localesSource = fs.readFileSync(path.join(PWA_DIR, 'locales.js'), 'utf8');
+  dom.window.eval(localesSource);
   const appSource = fs.readFileSync(path.join(PWA_DIR, 'app.js'), 'utf8');
   dom.window.eval(appSource);
   return dom;
@@ -189,6 +191,8 @@ test('shows an honest failure message when the docs-tree fetch fails entirely', 
     }
     return Promise.reject(new Error('offline, nothing cached'));
   };
+  const localesSource = fs.readFileSync(path.join(PWA_DIR, 'locales.js'), 'utf8');
+  dom.window.eval(localesSource);
   const appSource = fs.readFileSync(path.join(PWA_DIR, 'app.js'), 'utf8');
   dom.window.eval(appSource);
   await flush();
