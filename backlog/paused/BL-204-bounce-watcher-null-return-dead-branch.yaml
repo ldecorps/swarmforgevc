@@ -1,0 +1,96 @@
+id: BL-204
+title: startBounceWatcher never returns null, making extension.ts's null-check an uncoverable branch that blocks mutation testing
+milestone: M3
+status: todo
+priority: 5
+direction: aligned
+assigned_to: coder
+
+description: |
+  HARDENER (2026-07-09, via rule_proposal): startBounceWatcher in
+  extension/src/swarm/bounceWatcher.ts is typed `fs.FSWatcher | null`, but it
+  unconditionally `fs.mkdirSync('.swarmforge', {recursive:true})` and then
+  `fs.watch(...)` and returns the watcher — there is NO code path that returns
+  null. The `| null` is dead.
+
+  Two consequences:
+  1. In extension/src/extension.ts, startOrRestartBounceWatcher both (a) early-
+     returns `if (!fs.existsSync(swarmforgeDir)) return;` BEFORE calling
+     startBounceWatcher, and (b) guards the result with
+     `if (currentBounceWatcher) { ...register subscription... }`. Because the
+     dir always exists by the time it calls, and startBounceWatcher never
+     returns null anyway, the FALSE branch of that null-check is unreachable.
+     An uncoverable branch cannot be killed, so it leaves a permanent surviving
+     mutant — the sole remaining blocker to live mutation testing repo-wide
+     (BL-121 and BL-122 hardening both hit exactly this). Needs a coder fix,
+     not a hardener workaround.
+  2. The two test files contradict each other about the missing-dir case:
+     - extension/test/bounceWatcher.test.js asserts startBounceWatcher CREATES
+       .swarmforge and returns a watcher when the dir is MISSING.
+     - extension/test/activateBounceWatcher.test.js asserts it RETURNS NULL when
+       the dir does NOT exist.
+     Both cannot hold; the current code satisfies the first and fails the
+     second.
+
+  DECISION (operator, 2026-07-09): resolve toward "only watch existing swarms."
+  `.swarmforge` is created by SwarmForge's own launcher; if it is absent there
+  is no swarm to bounce, so the watcher must NOT create it.
+
+  Wanted:
+  - startBounceWatcher returns null (and does NOT create `.swarmforge`) when the
+    directory does not already exist; it creates a watcher only when the
+    directory is already present.
+  - The existence decision must live in exactly ONE place so the null and
+    non-null outcomes are BOTH reachable and testable through the extension's
+    call site. Concretely: remove extension.ts's now-redundant early
+    `if (!fs.existsSync(swarmforgeDir)) return;` guard and let the
+    `if (currentBounceWatcher)` null-check be the single live guard that decides
+    whether to register the subscription. After the fix, no branch of the
+    watcher's null-handling may be unreachable — that uncoverable branch is the
+    mutation-testing blocker being removed, and is the acceptance signal.
+  - Reconcile the tests: update the contradictory create-if-missing test in
+    bounceWatcher.test.js to match the new contract (missing dir -> null, no
+    creation); keep activateBounceWatcher.test.js's returns-null test.
+
+  Constraints:
+  - The return-null and "no directory created" behavior is a synchronous check:
+    verify it with NO timer and NO wall-clock wait (engineering rule; see
+    BL-131). Do not add any new real-timer waits in these tests. Eliminating the
+    real timers already present in the fs.watch-based detection tests is
+    BL-131's scope, not this ticket's — leave those detection tests otherwise
+    intact.
+  - Do not change the watcher's bounce-file parsing/dispatch behavior; this
+    ticket is only about the missing-directory contract and the resulting dead
+    branch.
+
+acceptance: |
+  Feature: Bounce watcher only activates for an existing swarm directory
+
+  # BL-204 absent-returns-null-01
+  Scenario: absent .swarmforge yields null and creates nothing
+    Given a target directory with no .swarmforge subdirectory
+    When startBounceWatcher runs for that target
+    Then it returns null
+    And the target still has no .swarmforge subdirectory
+
+  # BL-204 present-returns-watcher-02
+  Scenario: existing .swarmforge yields a working watcher
+    Given a target directory that already contains a .swarmforge subdirectory
+    When startBounceWatcher runs for that target
+    Then it returns a non-null watcher
+    And a "swarm" bounce file later written into .swarmforge is parsed and dispatched
+
+  # BL-204 both-branches-reachable-03
+  Scenario Outline: the extension registers a watcher only when the swarm dir exists
+    Given a target whose .swarmforge subdirectory is <dir_state>
+    When startOrRestartBounceWatcher runs for that target
+    Then a watcher subscription registered is <registered>
+
+    # Both rows must be covered so neither branch of the null-check is
+    # uncoverable — this is the surviving-mutant blocker being removed.
+    Examples:
+      | dir_state | registered |
+      | absent    | no         |
+      | present   | yes        |
+
+mutation_cost: low
