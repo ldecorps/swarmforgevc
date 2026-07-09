@@ -184,6 +184,45 @@ test('detectCompletedCanaries does not fail when completed dir does not exist', 
   assert.equal(tracked.length, 1);
 });
 
+test('detectCompletedCanaries still records a valid canary when an earlier entry is unreadable', () => {
+  const target = mkTmp();
+  const roles = ['coordinator', 'specifier', 'coder'];
+
+  const taskName = tryInjectCanary(target, NOW, { injectionIntervalSeconds: 600, budgetSeconds: 300 }, roles);
+  assert(taskName);
+
+  const completedDir = mkTmp();
+  const unreadableName = `00_20260705T220045Z_000001_from_QA_to_coordinator_for_coordinator.handoff`;
+  const unreadablePath = path.join(completedDir, unreadableName);
+  fs.writeFileSync(unreadablePath, 'not readable', 'utf-8');
+  fs.chmodSync(unreadablePath, 0o000);
+
+  try {
+    const validName = `00_20260705T220046Z_000002_from_QA_to_coordinator_for_coordinator.handoff`;
+    const validContent = `id: 20260705T220046Z_000002_from_QA
+from: QA
+to: coordinator
+recipient: coordinator
+priority: 00
+type: git_handoff
+role: QA
+task: ${taskName}
+commit: 1234567890
+
+Canary completed`;
+    fs.writeFileSync(path.join(completedDir, validName), validContent, 'utf-8');
+
+    detectCompletedCanaries(target, NOW + 45_000, completedDir);
+
+    const status = readCanaryStatus(target);
+    assert.equal(status.lastRoundTripMs, 45_000);
+    const tracked = readTrackedCanaries(target);
+    assert.equal(tracked.length, 0);
+  } finally {
+    fs.chmodSync(unreadablePath, 0o644);
+  }
+});
+
 test('detectCompletedCanaries ignores a completed-path that is not a directory', () => {
   const target = mkTmp();
   const roles = ['coordinator', 'specifier', 'coder'];

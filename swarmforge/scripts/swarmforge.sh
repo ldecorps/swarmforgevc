@@ -31,7 +31,7 @@ fi
 WORKING_DIR="${1:-$PWD}"
 WORKING_DIR="$(cd "$WORKING_DIR" && pwd)"
 SWARM_FORGE_DIR="$WORKING_DIR/swarmforge"
-CONFIG_FILE="$SWARM_FORGE_DIR/swarmforge.conf"
+CONFIG_FILE="${SWARMFORGE_CONFIG:-$SWARM_FORGE_DIR/swarmforge.conf}"
 for (( idx = 2; idx <= $#; idx++ )); do
   if [[ "${!idx}" == "--pack" ]]; then
     next=$((idx + 1))
@@ -41,18 +41,6 @@ for (( idx = 2; idx <= $#; idx++ )); do
     break
   fi
 done
-if [[ -n "${SWARMFORGE_CONFIG:-}" ]]; then
-  if [[ "$SWARMFORGE_CONFIG" = /* ]]; then
-    if [[ -f "$SWARMFORGE_CONFIG" ]] && [[ "$SWARMFORGE_CONFIG" == "$WORKING_DIR"/* ]]; then
-      CONFIG_FILE="$SWARMFORGE_CONFIG"
-    fi
-  else
-    local_override="$WORKING_DIR/$SWARMFORGE_CONFIG"
-    if [[ -f "$local_override" ]]; then
-      CONFIG_FILE="$local_override"
-    fi
-  fi
-fi
 WORKTREES_DIR="$WORKING_DIR/.worktrees"
 ROLES_DIR="$SWARM_FORGE_DIR/roles"
 CONSTITUTION_FILE="$SWARM_FORGE_DIR/constitution.prompt"
@@ -847,10 +835,6 @@ write_role_launch_script() {
 
   local billing_guard=""
   local copilot_guard=""
-  if ! typeset -f terminal_backend_can_open_sessions >/dev/null 2>&1; then
-    TERMINAL_BACKEND="${TERMINAL_BACKEND:-$(detect_terminal_backend)}"
-    load_terminal_backend "$TERMINAL_BACKEND"
-  fi
   if [[ "$agent" == "claude" ]]; then
     billing_guard=$'unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN\n'
   elif [[ "$agent" == "copilot" ]]; then
