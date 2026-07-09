@@ -3,6 +3,17 @@ import * as path from 'path';
 
 export type BounceType = 'swarm' | 'extension' | 'all';
 
+// BL-131: shared by every fs.watch-callback debounce in this file and in
+// bounceDrain.ts's handleGracefulWatchEvent (which mirrors this same
+// pattern for its own trigger file) - one place for the type and the
+// real-setTimeout default instead of six repeated inline copies (jscpd
+// flagged the repetition once the scheduleTick param made these
+// functions' signatures line up almost exactly).
+export type ScheduleTick = (fn: () => void, ms: number) => void;
+export const defaultScheduleTick: ScheduleTick = (fn, ms) => {
+  setTimeout(fn, ms);
+};
+
 export function isBounceType(value: unknown): value is BounceType {
   return value === 'swarm' || value === 'extension' || value === 'all';
 }
@@ -71,7 +82,7 @@ export function handleFileWatchEvent(
   filePath: string,
   onBounce: (bounceType: BounceType) => void,
   onError: ((error: string) => void) | undefined,
-  scheduleTick: (fn: () => void, ms: number) => void = (fn, ms) => { setTimeout(fn, ms); },
+  scheduleTick: ScheduleTick = defaultScheduleTick,
 ): void {
   if (filename !== expectedFilename) {
     return;
@@ -90,7 +101,7 @@ export function handleWatchEvent(
   bounceFilePath: string,
   onBounce: (bounceType: BounceType) => void,
   onError: ((error: string) => void) | undefined,
-  scheduleTick: (fn: () => void, ms: number) => void = (fn, ms) => { setTimeout(fn, ms); },
+  scheduleTick: ScheduleTick = defaultScheduleTick,
 ): void {
   handleFileWatchEvent(filename, 'bounce', bounceFilePath, onBounce, onError, scheduleTick);
 }
@@ -99,7 +110,7 @@ export function startBounceWatcher(
   targetPath: string,
   onBounce: (bounceType: BounceType) => void,
   onError?: (error: string) => void,
-  scheduleTick: (fn: () => void, ms: number) => void = (fn, ms) => { setTimeout(fn, ms); },
+  scheduleTick: ScheduleTick = defaultScheduleTick,
 ): fs.FSWatcher | null {
   const swarmforgeDir = path.join(targetPath, '.swarmforge');
   const bounceFilePath = path.join(swarmforgeDir, 'bounce');
