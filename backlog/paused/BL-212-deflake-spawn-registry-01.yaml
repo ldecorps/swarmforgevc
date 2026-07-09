@@ -1,0 +1,44 @@
+id: BL-212
+title: "De-flake swarmLauncher spawn-registry-01: stop launching a real detached process in the registry test"
+milestone: M2
+status: todo
+priority: 05
+direction: aligned
+depends_on: [BL-131]
+source: "coder note 2026-07-09 (found while working BL-131): spawn-registry-01 flaky ~1/4 under parallel load."
+
+description: |
+  CODER (2026-07-09): extension/test/swarmLauncher.test.js's 'spawn-registry-01:
+  launchSwarm records a tracked child-job entry keyed on the spawned process
+  group' fails ~1/4 of the time under parallel load.
+
+  Root cause: the test launches a REAL detached child process (a shell script
+  that echoes ready then blocks on `read _line`), asserts exactly one
+  tracked-job registry entry, then kills the process group. Under parallel test
+  execution the real spawn/ready/registry-write timing is non-deterministic, so
+  the entries.length === 1 assertion intermittently fails. Standing up a real
+  process and waiting on it in a unit test violates the engineering article's
+  Test Speed And Isolation rule (prefer test doubles; do not stand up real
+  collaborators or wait on them).
+
+  Note: the tracked-job REGISTRY contract is already covered deterministically
+  by extension/test/childJobRegistry.test.js's spawnTrackedJob unit tests, so
+  the flaky real-process assertion at the launchSwarm level is redundant risk.
+
+  Wanted behavior:
+  - spawn-registry-01 must be deterministic under parallel load with NO real
+    OS process launched and no process group left to kill — either by injecting
+    a spawn double at the launchSwarm seam, or by relying on the existing
+    deterministic spawnTrackedJob unit coverage for the registry contract.
+  - The "launchSwarm records a swarm-launch job keyed on the process group"
+    behavior must remain covered (by the de-flaked test or the unit tests).
+
+  Constraints:
+  - Test-isolation fix. If a production spawn seam is needed to inject a double,
+    add only that seam; do not change launch runtime behavior.
+  - No real timers either (engineering rule).
+  - Overlaps BL-131 on swarmLauncher.test.js — depends_on BL-131; sequence
+    after it to avoid concurrent edits to the same file.
+
+acceptance: specs/features/BL-212-deflake-spawn-registry-01.feature
+mutation_cost: low

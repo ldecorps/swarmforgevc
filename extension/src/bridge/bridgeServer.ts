@@ -1,5 +1,5 @@
 import * as http from 'http';
-import { buildBridgeState, buildDeliveryMetricsState, BridgeState } from './bridgeState';
+import { buildBridgeState, buildDeliveryMetricsState, buildCostTelemetryState, BridgeState } from './bridgeState';
 import { isAuthorizedRequest } from './bridgeAuth';
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
@@ -91,6 +91,15 @@ export function startBridge(
         const metrics = buildDeliveryMetricsState(targetPath);
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify(metrics));
+        return;
+      }
+
+      // BL-100: same posture as /metrics - transcript + telemetry reads are
+      // too expensive for the SSE poll loop, computed only on direct request.
+      if (url === '/cost-telemetry') {
+        const state = buildCostTelemetryState(targetPath);
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(state));
         return;
       }
 
