@@ -87,6 +87,20 @@ class BounceFSWatcher extends EventEmitter {
     fs.mkdirSync(swarmforgeDir, { recursive: true });
     const bounceFilePath = path.join(swarmforgeDir, 'bounce');
 
+    const scheduleBounceProbe = () => {
+      const probe = () => {
+        if (this.watcherGeneration !== generation) {
+          return;
+        }
+        if (fs.existsSync(bounceFilePath)) {
+          processBounceFile(bounceFilePath, this.onBounce, this.onError);
+        }
+      };
+
+      setTimeout(probe, 50);
+      setTimeout(probe, 250);
+    };
+
     const watcher = fs.watch(swarmforgeDir, (_eventType, filename) => {
       if (filename !== 'bounce') {
         return;
@@ -98,6 +112,8 @@ class BounceFSWatcher extends EventEmitter {
         }
       }, 50);
     });
+
+    scheduleBounceProbe();
 
     const handleError = (error: Error) => {
       if (this.watcherGeneration !== generation) {
