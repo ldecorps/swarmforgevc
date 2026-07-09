@@ -13,7 +13,7 @@ import { startBridge } from './bridge/bridgeServer';
 import type { BridgeHandle } from './bridge/bridgeServer';
 import { generateBridgeToken } from './bridge/bridgeToken';
 import { getCurrentBranch, openPullRequest } from './swarm/prCreator';
-import { launchSwarm, waitForSwarmReady, chooseReattachTimeoutMs, isSwarmReady, runningSwarmMatchesConfig, resolveSwarmConfigPath, buildLaunchEnv, augmentPath } from './swarm/swarmLauncher';
+import { launchSwarm, waitForSwarmReady, chooseReattachTimeoutMs, isSwarmReady, runningSwarmMatchesConfig, resolveSwarmConfigPath, buildLaunchEnv, augmentPath, primeLoginShellPathProbe } from './swarm/swarmLauncher';
 import { reapAllTrackedJobs, reapStaleTrackedJobs } from './swarm/childJobRegistry';
 import { writeStateDump, startPeriodicStateDump, ExtensionStateSnapshot } from './swarm/stateDump';
 import { orchestrateFullLaunch } from './swarm/swarmOrchestrator';
@@ -944,6 +944,13 @@ export function activate(context: vscode.ExtensionContext): void {
     context.extensionMode === vscode.ExtensionMode.Development,
     context.extensionPath
   );
+
+  // BL-116: kick off the login-shell PATH probe as early as possible in
+  // activation (fire-and-forget, never awaited here) so it has the best
+  // chance of having resolved by the time the user actually triggers a
+  // launch. Runs at most once per activation; buildLaunchEnv reads
+  // whatever has resolved so far, synchronously, whenever a launch happens.
+  primeLoginShellPathProbe();
 
   const runLogPath = path.join(os.homedir(), '.swarmforge', 'runs.jsonl');
 
