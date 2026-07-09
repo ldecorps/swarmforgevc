@@ -101,10 +101,18 @@ export function recoverDeadLettersForRole(
     if (action === 'redelivered') {
       const restoredPath = baseHandoffPath(dl.filePath);
       fs.renameSync(dl.filePath, restoredPath);
-      const deadSidecar = `${dl.filePath}.chase.json`;
-      if (fs.existsSync(deadSidecar)) {
-        fs.renameSync(deadSidecar, `${restoredPath}.chase.json`);
-      }
+      // RE-SCOPE (c): the daemon's chase-sweep dead-letters by mtime age AND
+      // an exhausted chase-count sidecar - both of which this file still
+      // carries from before it was dead-lettered. Carrying either forward
+      // unchanged means the very next daemon sweep cycle sees an old mtime
+      // and an already-exhausted chase-count and dead-letters it again
+      // immediately, before the recipient has any real chance to consume it
+      // (the chase-then-recover race). A redelivery is a fresh delivery
+      // attempt from the transport's own chase clock: drop the stale
+      // sidecar and touch the file to now.
+      fs.rmSync(`${dl.filePath}.chase.json`, { force: true });
+      const redeliveredAt = new Date();
+      fs.utimesSync(restoredPath, redeliveredAt, redeliveredAt);
       writeRecoveryAttempts(restoredPath, attempts + 1);
       const outcome: RecoveryOutcome = { role, filePath: restoredPath, action, attempts: attempts + 1 };
       outcomes.push(outcome);
