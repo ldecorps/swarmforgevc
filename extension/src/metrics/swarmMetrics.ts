@@ -333,6 +333,7 @@ export interface SwarmMetrics {
   retryTotal: number;
   retryByTicket: Record<string, number>;
   suiteDuration: SuiteDurationStats;
+  chaserTelemetry: ChaserTelemetry;
 }
 
 export const NO_SAMPLE_PLACEHOLDER = '—';
@@ -441,6 +442,134 @@ export function computeSuiteDuration(
   return { latestMs, meanMs, sampleCount: windowed.length, warn };
 }
 
+// BL-098: durable per-role chase/nudge/dead-letter/respawn counts, read from
+// handoffd.bb's chaser-YYYY-MM.jsonl telemetry log (chase_sweep_lib.bb emits
+// one line per decision). The sidecars that used to hold these counts
+// (.chase.json/.nudge) are abandoned once an item completes; this log is
+// the durable answer to "how many nudges did a role need this week?"
+export interface ChaserTelemetryEvent {
+  type: string;
+  role: string;
+  handoffId?: string;
+  count?: number;
+  at: string;
+}
+
+export interface RoleChaserTelemetry {
+  chases: number;
+  nudges: number;
+  deadLetters: number;
+  respawns: number;
+  /** (chases + nudges) within the recent window, per day. */
+  recentDailyRate: number;
+}
+
+export type ChaserTelemetry = Record<string, RoleChaserTelemetry>;
+
+export const CHASER_TELEMETRY_WINDOW_DAYS = 7;
+
+function chaserTelemetryDir(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'telemetry');
+}
+
+// A malformed or unrecognized line is skipped, never a crash - the same
+// forgiving-reader spirit as parseTestDurationLine above. The `type` field
+// is what keeps the schema additive (BL-097 dwell/bounce events can join
+// this same log later); an event whose type this reader does not know is
+// silently ignored rather than rejected outright.
+function parseChaserTelemetryLine(line: string): ChaserTelemetryEvent | null {
+  try {
+    const parsed = JSON.parse(line);
+    if (typeof parsed.type === 'string' && typeof parsed.role === 'string' && typeof parsed.at === 'string') {
+      return parsed;
+    }
+  } catch {
+    // malformed line: skip
+  }
+  return null;
+}
+
+function readChaserTelemetryEvents(targetPath: string): ChaserTelemetryEvent[] {
+  let files: string[];
+  try {
+    files = fs.readdirSync(chaserTelemetryDir(targetPath)).filter((f) => f.startsWith('chaser-') && f.endsWith('.jsonl'));
+  } catch {
+    return [];
+  }
+
+  const events: ChaserTelemetryEvent[] = [];
+  for (const file of files) {
+    let content: string;
+    try {
+      content = fs.readFileSync(path.join(chaserTelemetryDir(targetPath), file), 'utf8');
+    } catch {
+      continue;
+    }
+    for (const line of content.split('\n')) {
+      if (!line.trim()) {
+        continue;
+      }
+      const event = parseChaserTelemetryLine(line);
+      if (event) {
+        events.push(event);
+      }
+    }
+  }
+  return events;
+}
+
+function emptyRoleTelemetry(): RoleChaserTelemetry {
+  return { chases: 0, nudges: 0, deadLetters: 0, respawns: 0, recentDailyRate: 0 };
+}
+
+// Absent/empty telemetry (no directory yet, or a target with no chases ever
+// logged) reads as all-zero totals for every known role, never an error
+// (telemetry-05) - a fresh swarm or one whose chaser has never had to
+// intervene is not a fault condition.
+export function computeChaserTelemetry(
+  targetPath: string,
+  roleNames: string[],
+  nowMs: number = Date.now(),
+  windowDays: number = CHASER_TELEMETRY_WINDOW_DAYS
+): ChaserTelemetry {
+  const result: ChaserTelemetry = {};
+  for (const role of roleNames) {
+    result[role] = emptyRoleTelemetry();
+  }
+
+  const windowStartMs = nowMs - windowDays * 24 * 60 * 60 * 1000;
+  const recentCounts: Record<string, number> = {};
+
+  for (const event of readChaserTelemetryEvents(targetPath)) {
+    const bucket = result[event.role];
+    if (!bucket) {
+      continue; // event for a role no longer in roles.tsv - not this view's concern
+    }
+    if (event.type === 'chase') {
+      bucket.chases += 1;
+    } else if (event.type === 'nudge') {
+      bucket.nudges += 1;
+    } else if (event.type === 'dead-letter') {
+      bucket.deadLetters += 1;
+    } else if (event.type === 'respawn') {
+      bucket.respawns += 1;
+    } else {
+      continue; // forward-compatible: unknown event types are ignored, not errors
+    }
+    if (event.type === 'chase' || event.type === 'nudge') {
+      const atMs = Date.parse(event.at);
+      if (!Number.isNaN(atMs) && atMs >= windowStartMs) {
+        recentCounts[event.role] = (recentCounts[event.role] ?? 0) + 1;
+      }
+    }
+  }
+
+  for (const role of roleNames) {
+    result[role].recentDailyRate = (recentCounts[role] ?? 0) / windowDays;
+  }
+  return result;
+}
+
 export function computeSwarmMetrics(
   targetPath: string,
   roles: RoleWorktree[],
@@ -455,6 +584,11 @@ export function computeSwarmMetrics(
       : Object.fromEntries(roles.map((r) => [r.role, 0]));
   const { total, perTicket } = computeRetries(roles);
   const suiteDuration = computeSuiteDuration(targetPath, roles, suiteWarnSeconds * 1000);
+  const chaserTelemetry = computeChaserTelemetry(
+    targetPath,
+    roles.map((r) => r.role),
+    nowMs
+  );
 
   return {
     meanTicketTimeMs: meanMs,
@@ -463,5 +597,6 @@ export function computeSwarmMetrics(
     retryTotal: total,
     retryByTicket: perTicket,
     suiteDuration,
+    chaserTelemetry,
   };
 }
