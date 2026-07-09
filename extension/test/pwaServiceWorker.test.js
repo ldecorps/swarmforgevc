@@ -90,6 +90,7 @@ function fireActivate(listeners) {
 const ORIGIN = 'https://example.github.io/dashboard/';
 const BACKLOG_URL = ORIGIN + 'backlog.json';
 const DOCS_TREE_URL = ORIGIN + 'docs-tree.json';
+const RECERT_BATCH_URL = ORIGIN + 'recert-batch.json';
 const APP_JS_URL = ORIGIN + 'app.js';
 
 function fireFetch(listeners, url) {
@@ -160,6 +161,26 @@ test('docs-tree.json fetch falls back to the cache when the network fails (BL-11
   assert.equal(result, cachedResponse);
 });
 
+test('recert-batch.json fetch is network-first, same as backlog.json (BL-150)', async () => {
+  const networkResponse = { clone: () => ({ served: 'recert-batch-network' }), body: 'network' };
+  const { listeners } = loadServiceWorker((req) => {
+    assert.equal(req.url, RECERT_BATCH_URL);
+    return Promise.resolve(networkResponse);
+  });
+  const result = await fireFetch(listeners, RECERT_BATCH_URL);
+  assert.equal(result, networkResponse);
+});
+
+test('recert-batch.json fetch falls back to the cache when the network fails (BL-150)', async () => {
+  const { listeners, sandbox } = loadServiceWorker(() => Promise.reject(new Error('offline')));
+  const cache = await sandbox.caches.open('swarmforge-dashboard-v2');
+  const cachedResponse = { body: 'cached recert batch' };
+  await cache.put(RECERT_BATCH_URL, cachedResponse);
+
+  const result = await fireFetch(listeners, RECERT_BATCH_URL);
+  assert.equal(result, cachedResponse);
+});
+
 test('a static shell asset is served cache-first, without touching the network at all', async () => {
   let networkCalled = false;
   const { listeners, sandbox } = loadServiceWorker(() => {
@@ -175,7 +196,7 @@ test('a static shell asset is served cache-first, without touching the network a
   assert.equal(networkCalled, false);
 });
 
-test('periodicsync with the expected tag re-fetches and caches both backlog.json and docs-tree.json (dashboard-06)', async () => {
+test('periodicsync with the expected tag re-fetches and caches every data artifact (dashboard-06, BL-150 recert-batch.json included)', async () => {
   let fetchCount = 0;
   const { listeners, sandbox } = loadServiceWorker((req) => {
     fetchCount += 1;
@@ -186,12 +207,14 @@ test('periodicsync with the expected tag re-fetches and caches both backlog.json
   listeners.periodicsync({ tag: 'refresh-backlog-json', waitUntil: (p) => { waited = p; } });
   await waited;
 
-  assert.equal(fetchCount, 2, 'both data artifacts must be re-fetched on periodic sync');
+  assert.equal(fetchCount, 3, 'every data artifact must be re-fetched on periodic sync');
   const cache = await sandbox.caches.open('swarmforge-dashboard-v2');
   const cachedBacklog = await cache.match('./backlog.json');
   const cachedDocsTree = await cache.match('./docs-tree.json');
+  const cachedRecertBatch = await cache.match('./recert-batch.json');
   assert.deepEqual(cachedBacklog, { served: 'refreshed:./backlog.json' });
   assert.deepEqual(cachedDocsTree, { served: 'refreshed:./docs-tree.json' });
+  assert.deepEqual(cachedRecertBatch, { served: 'refreshed:./recert-batch.json' });
 });
 
 test('periodicsync with an unrecognized tag does nothing', async () => {

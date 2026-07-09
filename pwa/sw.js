@@ -4,13 +4,14 @@
 // - Static shell (index.html/app.js/manifest.json/icon.svg): cache-first,
 //   so the app shell itself is available offline immediately after first
 //   install.
-// - backlog.json and docs-tree.json: network-first with a cache fallback,
-//   so an online open always shows the freshest data while an offline open
-//   still renders whatever was last successfully fetched (dashboard-04's
-//   "as of <generation time>" honesty requirement, and BL-117's
-//   docs-drilldown-04 same requirement for the docs tree - the client, not
-//   this worker, surfaces that timestamp from the cached payload itself).
-// - periodicsync (dashboard-06, Android/Chrome only): re-fetches both data
+// - backlog.json, docs-tree.json, and recert-batch.json (BL-150): network-
+//   first with a cache fallback, so an online open always shows the
+//   freshest data while an offline open still renders whatever was last
+//   successfully fetched (dashboard-04's "as of <generation time>" honesty
+//   requirement, and BL-117's docs-drilldown-04 same requirement for the
+//   docs tree - the client, not this worker, surfaces that timestamp from
+//   the cached payload itself).
+// - periodicsync (dashboard-06, Android/Chrome only): re-fetches all data
 //   artifacts into the cache on the browser's own schedule, so a later
 //   offline open can render data newer than the last time the app was
 //   actually opened. Registration (feature-detected, permission-gated) is
@@ -18,7 +19,7 @@
 
 const CACHE_NAME = 'swarmforge-dashboard-v2';
 const SHELL_ASSETS = ['./', './index.html', './app.js', './manifest.json', './icon.svg'];
-const DATA_URLS = ['./backlog.json', './docs-tree.json'];
+const DATA_URLS = ['./backlog.json', './docs-tree.json', './recert-batch.json'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

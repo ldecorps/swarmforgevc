@@ -23,6 +23,9 @@
   .docs-list-item:hover { background: color-mix(in srgb, CanvasText 6%, transparent); }
   .gherkin { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 0.8rem; background: color-mix(in srgb, CanvasText 6%, transparent); padding: 0.5rem; border-radius: 4px; }
   .doc-content { white-space: pre-wrap; font-size: 0.85rem; max-height: 20rem; overflow-y: auto; }
+  .recert-actions button { margin: 0.25rem 0.4rem 0 0; }
+  .recert-update-text { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 0.8rem; min-height: 6rem; }
+  .recert-delete-warning { color: #c0392b; }
 </style>
 </head>
 <body>
@@ -59,6 +62,12 @@
   <p id="docsAsOf" style="font-size: 0.8rem; opacity: 0.7;"></p>
   <div class="crumbs" id="docsCrumbs"></div>
   <div id="docsExplorer"></div>
+</section>
+
+<section id="recertSection">
+  <h2>Recertify a scenario</h2>
+  <p id="recertAsOf" style="font-size: 0.8rem; opacity: 0.7;"></p>
+  <div id="recertContent"></div>
 </section>
 
 <script src="app.js"></script>
