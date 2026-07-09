@@ -82,6 +82,31 @@ function isDonePath(filePath: string): boolean {
   return filePath.includes('backlog/done/');
 }
 
+// Records one change's contribution to the earliest-spec/earliest-close
+// maps, if any (a non-arrival change, or one with no extractable ticket id,
+// contributes nothing). Split out of deriveTicketLifecycles so each
+// function stays under the CRAP<=6 gate.
+function recordArrival(
+  change: GitLogChange,
+  entryDateIso: string,
+  specDates: Map<string, string>,
+  closeDates: Map<string, string>
+): void {
+  if (!isArrival(change.status)) {
+    return;
+  }
+  const ticketId = extractTicketId(change.path);
+  if (!ticketId) {
+    return;
+  }
+  if (!specDates.has(ticketId)) {
+    specDates.set(ticketId, entryDateIso);
+  }
+  if (isDonePath(change.path) && !closeDates.has(ticketId)) {
+    closeDates.set(ticketId, entryDateIso);
+  }
+}
+
 // Pure: derives each ticket's earliest arrival anywhere under backlog/ (its
 // spec date) and its earliest arrival under backlog/done/ (its close date,
 // null if never closed). Earliest-wins for both, so a later re-milestoning
@@ -95,19 +120,7 @@ export function deriveTicketLifecycles(entries: GitLogEntry[]): Map<string, Tick
 
   for (const entry of sorted) {
     for (const change of entry.changes) {
-      if (!isArrival(change.status)) {
-        continue;
-      }
-      const ticketId = extractTicketId(change.path);
-      if (!ticketId) {
-        continue;
-      }
-      if (!specDates.has(ticketId)) {
-        specDates.set(ticketId, entry.dateIso);
-      }
-      if (isDonePath(change.path) && !closeDates.has(ticketId)) {
-        closeDates.set(ticketId, entry.dateIso);
-      }
+      recordArrival(change, entry.dateIso, specDates, closeDates);
     }
   }
 

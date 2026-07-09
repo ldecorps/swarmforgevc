@@ -193,3 +193,21 @@ test('deriveTicketLifecycles tracks multiple distinct tickets independently', ()
   assert.equal(lifecycles.get('BL-001').closeDateIso, '2026-01-05T00:00:00Z');
   assert.equal(lifecycles.get('BL-002').closeDateIso, null);
 });
+
+test('deriveTicketLifecycles ignores a plain content edit (M status) - it is not an arrival', () => {
+  const output = [
+    commitLine('aaa', '2026-01-01T00:00:00Z'),
+    'A\tbacklog/active/BL-001-example.yaml',
+    '',
+    commitLine('bbb', '2026-01-03T00:00:00Z'),
+    'M\tbacklog/active/BL-001-example.yaml',
+    '',
+  ].join('\n');
+
+  const lifecycles = deriveTicketLifecycles(parseGitLog(output));
+  assert.equal(
+    lifecycles.get('BL-001').specDateIso,
+    '2026-01-01T00:00:00Z',
+    'a later content edit must not be mistaken for a new arrival'
+  );
+});
