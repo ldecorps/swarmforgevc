@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { PaneTailer, STALL_THRESHOLD_MS, didPaneRespawn } = require('../out/panel/paneTailer');
+const { PaneTailer, STALL_THRESHOLD_MS, WORKING_INDICATOR_MS, didPaneRespawn } = require('../out/panel/paneTailer');
 const { installFakeTmux } = require('./helpers/fakeTmux');
 
 function mkTmp() {
@@ -525,6 +525,70 @@ test('onNeedsHuman fires true when a pane shows a question, then false once it r
     assert.equal(needsHumanEvents.length, 2);
     assert.deepEqual(needsHumanEvents[1], { role: 'coder', needsHuman: false });
   } finally {
+    fake.restore();
+  }
+});
+
+test('onActivity fires working then not-working as the pane enters and leaves an active-work state, with no duplicate while unchanged', async () => {
+  const targetPath = mkTmp();
+  writeState(targetPath);
+  const fake = installFakeTmux([
+    { subcommand: 'has-session', exitCode: 0 },
+    { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+    { exitCode: 0, stdout: '' },
+  ]);
+  const realDateNow = Date.now;
+  let mockedNow = realDateNow();
+  Date.now = () => mockedNow;
+  try {
+    const activityEvents = [];
+    const tailer = new PaneTailer(
+      targetPath,
+      () => {},
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (events) => activityEvents.push(...events)
+    );
+
+    fake.setRules([
+      { subcommand: 'has-session', exitCode: 0 },
+      { subcommand: 'capture-pane', exitCode: 0, stdout: 'Thinking… (esc to interrupt)' },
+      { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+      { exitCode: 0, stdout: '' },
+    ]);
+    tailer.start(1_000_000);
+    tailer.stop();
+    assert.equal(activityEvents.length, 1);
+    assert.deepEqual(activityEvents[0], { role: 'coder', working: true });
+
+    // Same active-work text again: still working, must not refire.
+    tailer.poll();
+    assert.equal(activityEvents.length, 1, 'unchanged working state must not refire');
+
+    // Text goes idle, but a just-changed pane still reads as working via the
+    // WORKING_INDICATOR_MS recency window - no event yet.
+    fake.setRules([
+      { subcommand: 'has-session', exitCode: 0 },
+      { subcommand: 'capture-pane', exitCode: 0, stdout: 'idle output' },
+      { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+      { exitCode: 0, stdout: '' },
+    ]);
+    tailer.poll();
+    assert.equal(activityEvents.length, 1, 'a freshly-changed pane stays "working" via recency alone');
+
+    // Once idle output holds and the recency window elapses, working flips false.
+    mockedNow += WORKING_INDICATOR_MS + 1;
+    tailer.poll();
+    assert.equal(activityEvents.length, 2);
+    assert.deepEqual(activityEvents[1], { role: 'coder', working: false });
+  } finally {
+    Date.now = realDateNow;
     fake.restore();
   }
 });

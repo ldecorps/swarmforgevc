@@ -96,6 +96,28 @@ export function decideRoleActivity(status: RoleActivityStatus, nowMs: number): R
   return { working, changed: working !== status.wasWorking };
 }
 
+// Builds the RoleActivityStatus decideRoleActivity needs from the raw,
+// possibly-unset per-role lookups emitActivityEvents holds (Map.get returns
+// undefined for a role not yet observed). Split out so those two `?? ''`
+// fallbacks - untestable without a class instance - are pure and covered
+// directly instead of holding emitActivityEvents' own CRAP up as dead weight
+// atop decideRoleActivity's already-covered decision branches.
+export function buildRoleActivityStatus(
+  command: string | undefined,
+  rawText: string | undefined,
+  lastChangedMs: number | undefined,
+  wasWorking: boolean,
+  isDead: boolean
+): RoleActivityStatus {
+  return {
+    command: command ?? '',
+    rawText: rawText ?? '',
+    lastChangedMs,
+    wasWorking,
+    isDead,
+  };
+}
+
 /**
  * BL-120: `tmux respawn-pane` (e.g. a relaunch that reuses the existing
  * session rather than killing it) swaps the process running in a pane
@@ -357,13 +379,13 @@ export class PaneTailer {
     const now = Date.now();
     const events: ActivityEvent[] = [];
     for (const role of this.roles) {
-      const status: RoleActivityStatus = {
-        command: this.lastPaneCommand.get(role.role) ?? '',
-        rawText: this.lastRawText.get(role.role) ?? '',
-        lastChangedMs: this.lastChangedAt.get(role.role),
-        wasWorking: this.workingRoles.has(role.role),
-        isDead: this.deadRoles.has(role.role),
-      };
+      const status = buildRoleActivityStatus(
+        this.lastPaneCommand.get(role.role),
+        this.lastRawText.get(role.role),
+        this.lastChangedAt.get(role.role),
+        this.workingRoles.has(role.role),
+        this.deadRoles.has(role.role)
+      );
       const decision = decideRoleActivity(status, now);
       if (!decision.changed) {
         continue;

@@ -348,3 +348,33 @@ test('a dead role is never working even with an active-work command/recent chang
   const decision = decideRoleActivity(status, ACTIVITY_NOW);
   assert.equal(decision.working, false);
 });
+
+// ── buildRoleActivityStatus (pure, BL-210 cleanup) ────────────────────────
+// Builds decideRoleActivity's input from the raw Map.get() lookups
+// emitActivityEvents holds - a role not yet observed reads back undefined
+// for command/rawText, which must default to '' rather than reach
+// isAgentActivelyWorking as undefined.
+
+const { buildRoleActivityStatus } = require('../out/panel/paneTailer');
+
+test('buildRoleActivityStatus defaults an unobserved command/rawText to empty strings', () => {
+  const status = buildRoleActivityStatus(undefined, undefined, undefined, false, false);
+  assert.deepEqual(status, {
+    command: '',
+    rawText: '',
+    lastChangedMs: undefined,
+    wasWorking: false,
+    isDead: false,
+  });
+});
+
+test('buildRoleActivityStatus passes through an observed command/rawText unchanged', () => {
+  const status = buildRoleActivityStatus('node', 'Thinking… (esc to interrupt)', ACTIVITY_NOW, true, false);
+  assert.deepEqual(status, {
+    command: 'node',
+    rawText: 'Thinking… (esc to interrupt)',
+    lastChangedMs: ACTIVITY_NOW,
+    wasWorking: true,
+    isDead: false,
+  });
+});
