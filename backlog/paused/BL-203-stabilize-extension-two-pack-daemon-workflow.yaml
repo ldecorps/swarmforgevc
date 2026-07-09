@@ -21,6 +21,14 @@ notes: |
   ticket's stabilize-two-pack.conf header comment, request a bounce to the
   stabilize-two-pack profile via remote_bounce.sh, then promote BL-203 solo.
 
+  UPDATE (coordinator, 2026-07-09): BL-121 merged (6a9446125, closed to
+  done/). At that fork the operator chose to continue the reliability epic
+  rather than pivot to BL-203 immediately — BL-122 (recovery half,
+  depends_on BL-121, priority 00) is now active on the 7-pack. BL-203 stays
+  held until BL-122's chain (and whatever follows per BL-151: BL-128,
+  BL-146) clears too — same reasoning as before, now extended: do not
+  isolate/bounce while reliability-epic work is in flight at the coder.
+
 description: |
   Problem:
   The VS Code extension launch path has been unreliable for hundreds of
