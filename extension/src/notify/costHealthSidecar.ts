@@ -85,6 +85,21 @@ function fillDailyBuckets(counts: Map<number, number>, nowMs: number): TrendSeri
   return series;
 }
 
+// Increments the day-bucket count for one ISO date, or does nothing if the
+// date is absent/unparsable. Split out of bucketDailyFlowBalance so each
+// function stays under the CRAP<=6 gate.
+function incrementDateBucket(counts: Map<number, number>, dateIso: string | null | undefined): void {
+  if (!dateIso) {
+    return;
+  }
+  const ms = Date.parse(dateIso);
+  if (Number.isNaN(ms)) {
+    return;
+  }
+  const bucket = bucketStartMs(ms, DAY_MS);
+  counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
+}
+
 // Pure: daily specced-vs-closed ticket counts, gap-filled so trend
 // comparisons are always adjacent-day (mirrors deliveryMetrics.ts's own
 // computeVelocity bucketing convention, but daily and covering both spec
@@ -96,18 +111,8 @@ export function bucketDailyFlowBalance(
   const speccedCounts = new Map<number, number>();
   const closedCounts = new Map<number, number>();
   for (const lifecycle of lifecycles) {
-    const specMs = Date.parse(lifecycle.specDateIso);
-    if (!Number.isNaN(specMs)) {
-      const bucket = bucketStartMs(specMs, DAY_MS);
-      speccedCounts.set(bucket, (speccedCounts.get(bucket) ?? 0) + 1);
-    }
-    if (lifecycle.closeDateIso) {
-      const closeMs = Date.parse(lifecycle.closeDateIso);
-      if (!Number.isNaN(closeMs)) {
-        const bucket = bucketStartMs(closeMs, DAY_MS);
-        closedCounts.set(bucket, (closedCounts.get(bucket) ?? 0) + 1);
-      }
-    }
+    incrementDateBucket(speccedCounts, lifecycle.specDateIso);
+    incrementDateBucket(closedCounts, lifecycle.closeDateIso);
   }
   return { speccedSeries: fillDailyBuckets(speccedCounts, nowMs), closedSeries: fillDailyBuckets(closedCounts, nowMs) };
 }
@@ -279,6 +284,54 @@ function trendArrow(trend: TrendResult): string {
   return '';
 }
 
+// Each renderXLines helper below returns the lines for one section (or []
+// when that section has nothing to show), so renderCostHealthSection
+// itself is just concatenation - split out so every function stays under
+// the CRAP<=6 gate.
+function renderAgentLines(agents: AgentDailyCost[]): string[] {
+  return agents.map((agent) => {
+    const costText = agent.costUsd !== null ? `$${agent.costUsd.value.toFixed(2)} ${trendArrow(agent.costUsd.trend)}` : 'no priced usage';
+    return `- ${agent.role}: ${agent.tokens.value} tokens ${trendArrow(agent.tokens.trend)}, ${costText}`;
+  });
+}
+
+function renderExpensiveTicketLines(tickets: ExpensiveTicket[]): string[] {
+  if (tickets.length === 0) {
+    return [];
+  }
+  return ['', '**Top expensive tickets to date:**', ...tickets.map((t) => `- ${t.ticketId}: $${t.costUsd.toFixed(2)}`)];
+}
+
+function renderFlowBalanceLine(flow: CostHealthSidecar['flowBalance']): string {
+  return (
+    `**Flow balance:** specced ${flow.speccedPerDay.value}/day ${trendArrow(flow.speccedPerDay.trend)}, ` +
+    `closed ${flow.closedPerDay.value}/day ${trendArrow(flow.closedPerDay.trend)}`
+  );
+}
+
+function renderReliabilityLine(rel: ReliabilityCounts): string {
+  return (
+    `**Reliability:** ${rel.chases.value} chases ${trendArrow(rel.chases.trend)}, ` +
+    `${rel.nudges.value} nudges ${trendArrow(rel.nudges.trend)}, ` +
+    `${rel.respawns.value} respawns ${trendArrow(rel.respawns.trend)}, ` +
+    `${rel.failedDeliveries.value} failed deliveries ${trendArrow(rel.failedDeliveries.trend)}`
+  );
+}
+
+function renderAnomalyLines(anomalies: ResourceAnomaly[]): string[] {
+  if (anomalies.length === 0) {
+    return [];
+  }
+  return [
+    '',
+    '**Resource anomalies:**',
+    ...anomalies.map((a) => {
+      const mb = Math.round(a.rssBytes / (1024 * 1024));
+      return `- ${a.role}: ${mb}MB ${trendArrow(a.rssTrend)}, ${a.cpuPercent.toFixed(1)}% cpu ${trendArrow(a.cpuTrend)}`;
+    }),
+  ];
+}
+
 // Pure: renders the briefing's "Cost & Health" section directly from the
 // sidecar - every figure traces to a sidecar field, nothing invented
 // (cost-05b). A null sidecar (no day's telemetry available) renders an
@@ -287,44 +340,18 @@ export function renderCostHealthSection(sidecar: CostHealthSidecar | null): stri
   if (!sidecar) {
     return '';
   }
-
-  const lines: string[] = ['## Cost & Health', '', '**Per-agent tokens/cost today:**'];
-  for (const agent of sidecar.agents) {
-    const costText = agent.costUsd !== null ? `$${agent.costUsd.value.toFixed(2)} ${trendArrow(agent.costUsd.trend)}` : 'no priced usage';
-    lines.push(`- ${agent.role}: ${agent.tokens.value} tokens ${trendArrow(agent.tokens.trend)}, ${costText}`);
-  }
-
-  if (sidecar.topExpensiveTickets.length > 0) {
-    lines.push('', '**Top expensive tickets to date:**');
-    for (const ticket of sidecar.topExpensiveTickets) {
-      lines.push(`- ${ticket.ticketId}: $${ticket.costUsd.toFixed(2)}`);
-    }
-  }
-
-  const flow = sidecar.flowBalance;
-  lines.push(
+  const lines: string[] = [
+    '## Cost & Health',
     '',
-    `**Flow balance:** specced ${flow.speccedPerDay.value}/day ${trendArrow(flow.speccedPerDay.trend)}, ` +
-      `closed ${flow.closedPerDay.value}/day ${trendArrow(flow.closedPerDay.trend)}`
-  );
-
-  const rel = sidecar.reliability;
-  lines.push(
+    '**Per-agent tokens/cost today:**',
+    ...renderAgentLines(sidecar.agents),
+    ...renderExpensiveTicketLines(sidecar.topExpensiveTickets),
     '',
-    `**Reliability:** ${rel.chases.value} chases ${trendArrow(rel.chases.trend)}, ` +
-      `${rel.nudges.value} nudges ${trendArrow(rel.nudges.trend)}, ` +
-      `${rel.respawns.value} respawns ${trendArrow(rel.respawns.trend)}, ` +
-      `${rel.failedDeliveries.value} failed deliveries ${trendArrow(rel.failedDeliveries.trend)}`
-  );
-
-  if (sidecar.resourceAnomalies.length > 0) {
-    lines.push('', '**Resource anomalies:**');
-    for (const anomaly of sidecar.resourceAnomalies) {
-      const mb = Math.round(anomaly.rssBytes / (1024 * 1024));
-      lines.push(`- ${anomaly.role}: ${mb}MB ${trendArrow(anomaly.rssTrend)}, ${anomaly.cpuPercent.toFixed(1)}% cpu ${trendArrow(anomaly.cpuTrend)}`);
-    }
-  }
-
+    renderFlowBalanceLine(sidecar.flowBalance),
+    '',
+    renderReliabilityLine(sidecar.reliability),
+    ...renderAnomalyLines(sidecar.resourceAnomalies),
+  ];
   return lines.join('\n');
 }
 
