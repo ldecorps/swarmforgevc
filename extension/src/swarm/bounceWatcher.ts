@@ -64,7 +64,15 @@ export function startBounceWatcher(
   const swarmforgeDir = path.join(targetPath, '.swarmforge');
   const bounceFilePath = path.join(swarmforgeDir, 'bounce');
 
-  fs.mkdirSync(swarmforgeDir, { recursive: true });
+  // BL-204: .swarmforge is created by SwarmForge's own launcher - if it is
+  // absent there is no swarm to bounce, so the watcher must not create it.
+  // This is the single place that decides null vs. a real watcher; the
+  // caller's own null-check is the only other branch point (extension.ts's
+  // now-removed early existsSync guard duplicated this decision and made
+  // that branch unreachable).
+  if (!fs.existsSync(swarmforgeDir)) {
+    return null;
+  }
 
   // Watch the directory since watching a non-existent file may not work reliably
   const watcher = fs.watch(swarmforgeDir, (eventType, filename) => {
