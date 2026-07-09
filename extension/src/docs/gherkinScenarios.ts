@@ -35,8 +35,29 @@ function groupIntoScenarioBlocks(lines: string[]): ScenarioBlock[] {
   return blocks;
 }
 
+const COMMENT_LINE = /^\s*#/;
+
+// QA bounce (2026-07-09): groupIntoScenarioBlocks unconditionally appends
+// every non-Scenario line to whichever block is currently open, with
+// nothing to stop collecting until the next Scenario:/Scenario Outline:
+// line or end of input - so a `# BL-XXX tag-NN` comment that precedes the
+// NEXT scenario ends up appended to the END of the CURRENT one, and the
+// feature file's trailing "# Non-behavioral gates:" block ends up appended
+// to the LAST scenario. Strips trailing blank/comment-only lines back to
+// the block's own last real content line (never below the Scenario: line
+// itself) before joining, so a scenario's text always ends at its own last
+// step - this generalizes the pre-existing trailing-whitespace .trim(),
+// which alone doesn't touch comment lines.
+function stripTrailingCommentLines(lines: string[]): string[] {
+  let end = lines.length;
+  while (end > 1 && (COMMENT_LINE.test(lines[end - 1]) || lines[end - 1].trim() === '')) {
+    end--;
+  }
+  return lines.slice(0, end);
+}
+
 function toScenario(block: ScenarioBlock): GherkinScenario {
-  return { name: block.name, text: block.lines.join('\n').trim() };
+  return { name: block.name, text: stripTrailingCommentLines(block.lines).join('\n').trim() };
 }
 
 export function extractScenarios(gherkinText: string | null | undefined): GherkinScenario[] {
