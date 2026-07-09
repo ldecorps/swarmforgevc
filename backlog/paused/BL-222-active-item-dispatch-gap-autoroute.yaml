@@ -57,6 +57,13 @@ description: |
     file, and must be idempotent across consecutive sweeps (a still-undispatched
     item must not be routed twice if the first route is already in flight).
   - Does not change existing inbox chase/nudge behavior; this is additive.
+  - LAYER OWNERSHIP (coordinator clarification 2026-07-09): the dispatch-gap
+    chase runs in the watcher/daemon layer (handoffd.bb + chase_sweep_lib.bb /
+    the liveness watchdog), the SAME owner as the existing liveness/inbox chase.
+    It must NOT be implemented as coordinator self-polling — the constitution
+    forbids self-scheduled polling loops; roles act on wake-ups, not timers. The
+    daemon already runs unattended, so it is the correct home for chasing
+    unattended active tickets.
 
   QA e2e procedure (live swarm):
   - Promote an item to backlog/active/ but suppress its routing handoff.
