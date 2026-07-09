@@ -72,6 +72,16 @@
   non-existent path (ENOENT) or inject a failing spawn/exec/open seam. (BL-219:
   `swarmLauncher.test.js`'s "cannot be spawned" test used `chmod 0o000` and
   flaked under root/WSL.)
+- **Never assert on a before/after diff of a shared global directory.**
+  Snapshotting a process-global dir such as `os.tmpdir()` (`/tmp`) and asserting
+  on which entries appeared or disappeared flakes under the swarm: several
+  worktrees run the same suite concurrently and add/remove their own sibling
+  temp entries in the same window, so the diff carries unrelated churn. Assert
+  on the exact path the test itself created — that it exists, or was cleaned up
+  — never on a listing of its shared parent. (BL-112: `backlogSteps`' cleanup
+  test diffed the `os.tmpdir()` listing and flaked ~1-in-several runs when
+  another worktree's concurrent `aps-backlog-*` temp dir appeared; fixed by
+  asserting the specific created path.)
 
 ## Acceptance Pipeline
 - Use github.com/unclebob/Acceptance-Pipeline-Specification (pinned, see above)
