@@ -192,7 +192,10 @@ test('serves the root URL as self-contained HTML given a valid header token', as
     assert.match(res.headers.get('content-type'), /text\/html/);
     const body = await res.text();
     assert.match(body, /SwarmForge/);
-    assert.doesNotMatch(body, /cdn\.|https?:\/\/(?!127\.0\.0\.1)/, 'no external network fetch in the UI bundle');
+    // www.w3.org is the standard SVG/XML namespace URI (createElementNS),
+    // never actually fetched over the network by a browser - excluded
+    // alongside the bridge's own 127.0.0.1 origin.
+    assert.doesNotMatch(body, /cdn\.|https?:\/\/(?!127\.0\.0\.1|www\.w3\.org)/, 'no external network fetch in the UI bundle');
   });
 });
 
