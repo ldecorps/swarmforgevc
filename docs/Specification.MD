@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 6, 2026
+**Last Updated:** July 9, 2026
 
 ## Overview
 
@@ -390,6 +390,8 @@ Current status = the last event. History is free, "who changed what when" is aud
 **Outbox as durable retry queue.** The sender writes to its outbox and treats a message as *unconfirmed* until the receiver appends an explicit `received` ack event. On respawn, an agent replays its unacked outbox — combined with receiver-side auto-pickup, no handoff is lost across a crash.
 
 **Explicit dead-letter state.** After `maxChases` with no ack, the message transitions to `dead-letter` (a terminal event) and escalates to the human (red tile) — rather than chasing forever or rotting silently.
+
+**Automatic recovery before escalation (implemented: `handoffRecovery.ts`).** A dead-lettered or stalled parcel is not immediately handed to the human: it is first re-delivered to its current live holder, with bounded retries, and only escalates to the needs-human tile state once retries are exhausted. Recovery never re-delivers into a busy recipient's in-flight work (the BL-109 busy-recipient bug), and redelivery resets the parcel's stale mtime and chase-count sidecar so the daemon's own chase clock doesn't immediately dead-letter it again on the next sweep (the chase-then-recover race). **Recovery owner:** the same extension-host watchdog timer that already drives `chaserMonitor`'s sweep, not any single pipeline agent — an agent process can exit and tear the swarm down around it (see Heartbeat & Watchdog above and BL-107), so recovery is owned by the supervised extension-host timer rather than becoming a new single point of failure.
 
 **Schema version on every message.** `schema: 1` on the `created` event means a mid-project format change won't break in-flight messages.
 
