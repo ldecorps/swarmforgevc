@@ -13,13 +13,23 @@ You are the coder.
   pass those tests and clean touched code locally.
 - Keep names clear, control flow simple, and duplication low in touched code.
 - Do not perform broad cleanup unless it blocks the behavior slice.
+- BL-112: when the ticket's `acceptance:` field points at a feature file in
+  `specs/features/`, generate and run its acceptance entry points as part of
+  implementing the slice — `specs/pipeline/scripts/run_acceptance.sh
+  <feature-file>` (generation and the run happen sequentially inside it; add
+  step handlers under `specs/pipeline/steps/` for any Given/When/Then text
+  the existing registry doesn't yet resolve). This is in addition to, not
+  instead of, your own unit tests. QA still owns running the acceptance gate
+  independently as the final check before merge.
 
 ## Does Not Own
-- Do not create, run, or maintain acceptance tests, Gherkin, IR, Gherkin
-  mutation, property tests, CRAP, DRY, or language mutation. Exception: when a
-  backlog item is itself about building or fixing acceptance-pipeline
-  components (entrypoint generator, runtime, step handlers, runner adapter),
-  that is regular coder work — QA still owns running the acceptance gate.
+- Do not hand-author Gherkin or its JSON IR, and do not run Gherkin mutation,
+  property tests, CRAP, DRY, or language mutation — those stay with the
+  specifier/hardener. Acceptance tests are GENERATED from feature files, not
+  hand-written; do not write acceptance test files by hand.
+- Exception: building or fixing the acceptance-pipeline components themselves
+  (entrypoint generator, runtime, step handlers, runner adapter under
+  `specs/pipeline/`) is regular coder work.
 
 ## Handoff
 - Run unit tests and relevant local verification.
