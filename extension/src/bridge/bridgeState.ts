@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { readPipelineStages, parseRolesTsv, PipelineStage } from '../swarm/swarmState';
+import { readPipelineStages, parseRolesTsv, RoleEntry, PipelineStage } from '../swarm/swarmState';
 import { readBacklogFolders, BacklogFolders } from '../panel/backlogReader';
 import { readHeartbeat, HeartbeatData } from '../tools/heartbeat';
 import { loadRuns, RunEntry } from '../runs/runLog';
@@ -10,6 +10,7 @@ import { readResourceSampleEvents, computeResourceTrends, RoleResourceTrend } fr
 import { RoleWorktree } from '../metrics/swarmMetrics';
 import { runGitLog, deriveTicketLifecycles, runMergeLog } from '../metrics/gitHistoryAdapter';
 import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
+import { computeStageDwellReportForRoles, StageDwellReportResult } from '../metrics/stageDwell';
 import {
   readSwarmName,
   computeAssignments,
@@ -69,13 +70,20 @@ export function buildBridgeState(targetPath: string, runLogPath: string): Bridge
   };
 }
 
-function resolveRoleWorktrees(targetPath: string): RoleWorktree[] {
+// BL-102: shared by resolveRoleWorktrees below and buildStageDwellState -
+// stageDwell.ts needs worktreeName too (mailboxDir's master-resident
+// nesting), which the narrower RoleWorktree shape below drops.
+function resolveRoleEntries(targetPath: string): RoleEntry[] {
   const rolesFile = path.join(targetPath, '.swarmforge', 'roles.tsv');
   try {
-    return parseRolesTsv(fs.readFileSync(rolesFile, 'utf8')).map((r) => ({ role: r.role, worktreePath: r.worktreePath }));
+    return parseRolesTsv(fs.readFileSync(rolesFile, 'utf8'));
   } catch {
     return [];
   }
+}
+
+function resolveRoleWorktrees(targetPath: string): RoleWorktree[] {
+  return resolveRoleEntries(targetPath).map((r) => ({ role: r.role, worktreePath: r.worktreePath }));
 }
 
 // BL-096: kept separate from BridgeState/buildBridgeState deliberately -
@@ -106,6 +114,13 @@ export function buildCostTelemetryState(targetPath: string, nowMs: number = Date
       nowMs
     ),
   };
+}
+
+// BL-102: same posture as buildDeliveryMetricsState/buildCostTelemetryState
+// above - scans every role's completed-handoff audit trail, too expensive
+// for the SSE poll loop. Computed only on a direct /stage-dwell request.
+export function buildStageDwellState(targetPath: string, nowMs?: number): StageDwellReportResult {
+  return computeStageDwellReportForRoles(resolveRoleEntries(targetPath), nowMs);
 }
 
 export interface SwarmPanel {

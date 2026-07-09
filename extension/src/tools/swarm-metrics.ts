@@ -128,7 +128,9 @@ export function formatOverview(metrics: SwarmMetrics, roleNames: string[]): stri
 // the same "one line per metric" way formatOverview above already
 // established, fed by the same computeDeliveryMetrics the bridge's /metrics
 // endpoint calls (metrics-09: CLI and bridge report the same numbers).
-function formatTrend(trend: TrendResult, unit: (v: number) => string): string {
+// BL-102: exported so stage-dwell-report.ts's presenter reuses this same
+// trend-suffix formatting instead of a second copy.
+export function formatTrend(trend: TrendResult, unit: (v: number) => string): string {
   if (trend.direction === 'unknown' || trend.delta === null) {
     return '';
   }

@@ -1,0 +1,61 @@
+id: BL-115
+title: "bounce watcher resilience: never silently dead"
+milestone: M2
+status: todo
+priority: 06
+direction: aligned
+assigned_to: coder
+source: "root intake BL-057-bounce-watcher-resilience (renumbered: id BL-057 already used by done/M4 per-recipient-inbox ticket)"
+
+description: |
+  extension/src/swarm/bounceWatcher.ts + extension.ts wiring. Today the
+  watcher is silently absent in two cases:
+  - startBounceWatcher returns null when .swarmforge/ does not exist at
+    activation, and nothing ever retries -> remote_bounce.sh writes a
+    sentinel nobody watches (fresh target before first launch).
+  - fs.watch holds the directory inode; if .swarmforge/ is
+    removed/recreated (target re-init) the watcher is orphaned without
+    error.
+  Fix: create .swarmforge/ (mkdir -p) before watching instead of
+  returning null; restart the watcher after every successful launch/bounce
+  (hook where startOrRestartChaserMonitor is already called); on watcher
+  'error'/'close', log and re-establish.
+
+  SEQUENCING: BL-107 (bounce-all end-to-end, in paused/) adds bounce-ack
+  machinery around this same watcher and names this ticket as adjacent
+  scope that must not be duplicated. Coordinator must sequence the two —
+  never concurrent; whichever runs second builds on the first.
+
+acceptance: |
+  Feature: a bounce sentinel is always watched, whatever came before
+
+  # BL-115 bounce-watch-01
+  Scenario: sentinel written before any launch triggers a bounce
+    Given a fresh target where .swarmforge/ does not exist at activation
+    When the extension activates and remote_bounce.sh writes the sentinel
+    Then the bounce is triggered
+
+  # BL-115 bounce-watch-02
+  Scenario: sentinel written after target re-init triggers a bounce
+    Given the watcher was established and .swarmforge/ was then removed
+      and recreated
+    When the sentinel is written
+    Then the bounce is triggered
+
+  # BL-115 bounce-watch-03
+  Scenario: sentinel written after a completed bounce triggers again
+    Given a bounce has already been processed this session
+    When the sentinel is written again
+    Then the bounce is triggered again
+
+  # BL-115 bounce-watch-04
+  Scenario: a watcher error re-establishes the watch
+    Given an established watcher
+    When the watcher emits error or close
+    Then the event is logged and the watch is re-established
+
+  # Non-behavioral gates:
+  #  - Tested through the existing bounceWatcher seams with fake fs/watch;
+  #    no live tmux in tests.
+  #  - Host-side only; two-layer rule unchanged.
+mutation_cost: low
