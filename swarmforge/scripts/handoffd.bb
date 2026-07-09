@@ -10,6 +10,7 @@
             [clojure.java.io :as io]
             [clojure.string :as str]))
 
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_inject.bb")))
@@ -155,8 +156,7 @@
   (str/replace filename #"\.handoff$" (str "_for_" recipient ".handoff")))
 
 (defn target-path [role-info filename recipient]
-  (fs/path (:worktree-path role-info)
-           ".swarmforge" "handoffs" "inbox" "new"
+  (fs/path (handoff-lib/mailbox-dir role-info :new)
            (delivered-filename filename recipient)))
 
 (defn tmux! [& args]
@@ -248,7 +248,7 @@
         target))))
 
 (defn sent-dir [role-info]
-  (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "sent"))
+  (handoff-lib/mailbox-dir role-info :sent))
 
 (defn already-archived?
   "True when a file of this name already sits in the sender's sent/ dir -
@@ -295,7 +295,7 @@
         (log! "delivered" (str path))))))
 
 (defn inbox-new-files [role-info]
-  (let [new-dir (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "inbox" "new")]
+  (let [new-dir (handoff-lib/mailbox-dir role-info :new)]
     (when (fs/exists? new-dir)
       (->> (fs/list-dir new-dir)
            (filter #(and (fs/regular-file? %)
@@ -303,7 +303,7 @@
            seq))))
 
 (defn outbox-files [role-info]
-  (let [outbox (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "outbox")]
+  (let [outbox (handoff-lib/mailbox-dir role-info :outbox)]
     (when (fs/exists? outbox)
       (->> (fs/list-dir outbox)
            (filter #(and (fs/regular-file? %)
@@ -311,7 +311,7 @@
            (sort-by #(fs/file-name %))))))
 
 (defn outbox-error-stubs [role-info]
-  (let [outbox (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "outbox")]
+  (let [outbox (handoff-lib/mailbox-dir role-info :outbox)]
     (when (fs/exists? outbox)
       (->> (fs/list-dir outbox)
            (filter #(and (fs/regular-file? %)
@@ -524,8 +524,8 @@
 
 (defn get-last-activity-ms [role-info socket now-ms]
   (let [pane (try (capture-pane-lines socket (:session role-info) 50) (catch Exception _ ""))
-        outbox-dir (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "outbox")
-        sent-dir* (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "sent")
+        outbox-dir (handoff-lib/mailbox-dir role-info :outbox)
+        sent-dir* (handoff-lib/mailbox-dir role-info :sent)
         outbox-activity-ms (apply max 0
                                    (for [d [outbox-dir sent-dir*] :when (fs/exists? d)]
                                      (.toMillis (fs/last-modified-time d))))]
@@ -557,8 +557,8 @@
 (defn role-inboxes-for-chase [roles]
   (for [[role role-info] roles]
     {:role role
-     :inbox-new-dir (str (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "inbox" "new"))
-     :in-process-dir (str (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "inbox" "in_process"))}))
+     :inbox-new-dir (str (handoff-lib/mailbox-dir role-info :new))
+     :in-process-dir (str (handoff-lib/mailbox-dir role-info :in_process))}))
 
 ;; BL-098: durable per-role chase/nudge/dead-letter/respawn telemetry. The
 ;; existing .chase.json/.nudge sidecars are ephemeral (abandoned once an

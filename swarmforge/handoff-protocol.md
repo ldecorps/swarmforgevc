@@ -41,6 +41,19 @@ The daemon consumes `outbox/`. Agents consume `inbox/new/` through helper
 scripts. The `sent`, `failed`, `in_process`, and `completed` directories provide
 the audit trail and restart state.
 
+**Master-resident roles get their own mailbox subdirectory.** Any role whose
+`swarmforge.conf` window line uses worktree name `master` (typically
+`coordinator` and `specifier`) shares one physical checkout with every other
+master-resident role, so it does not get the physical separation a dedicated
+`.worktrees/<role>` checkout provides. For those roles only, the layout above
+lives one level deeper, under `.swarmforge/handoffs/<role>/` — e.g.
+`.swarmforge/handoffs/coordinator/inbox/new/`. Every role with its own
+dedicated worktree keeps the flat layout shown above unchanged. All mailbox
+paths are resolved through one shared function (`mailbox-dir`/
+`mailbox-base-dir` in `handoff_lib.bb`, callable from shell via
+`mailbox_dir.bb`; mirrored in the extension's `swarmState.ts`) — no script
+constructs a mailbox path by hand.
+
 ## Role Receive Mode
 
 `swarmforge.conf` window lines may include an optional receive mode:

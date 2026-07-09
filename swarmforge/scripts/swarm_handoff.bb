@@ -5,6 +5,7 @@
             [clojure.java.shell :refer [sh]]
             [clojure.string :as str]))
 
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_inject_lib.bb")))
 
 (def usage-text
@@ -88,8 +89,7 @@
     (exit! 1 "Set SWARMFORGE_ROLE.")))
 
 (defn state-dir []
-  (fs/path (or (git-root) (System/getProperty "user.dir"))
-           ".swarmforge" "handoffs"))
+  (handoff-lib/my-mailbox-base-dir))
 
 (defn timestamp []
   (.format java.time.format.DateTimeFormatter/ISO_INSTANT

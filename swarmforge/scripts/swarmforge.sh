@@ -563,16 +563,29 @@ prepare_worktrees() {
 }
 
 prepare_handoff_dirs() {
-  local i worktree_path
+  local i role worktree_name worktree_path mailbox_base
   for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
+    role="${ROLES[$i]}"
+    worktree_name="${WORKTREE_NAMES[$i]}"
     worktree_path="${WORKTREE_PATHS[$i]}"
+    # BL-128: coordinator and specifier share the master worktree, so each
+    # gets its own <role> mailbox subdirectory instead of one shared
+    # .swarmforge/handoffs/ - matching mailbox_dir.bb's mailbox-base-dir.
+    # Every other role's own dedicated worktree already provides physical
+    # separation and keeps the flat layout.
+    if [[ "$worktree_name" == "master" ]]; then
+      mailbox_base="$worktree_path/.swarmforge/handoffs/$role"
+    else
+      mailbox_base="$worktree_path/.swarmforge/handoffs"
+    fi
     mkdir -p \
-      "$worktree_path/.swarmforge/handoffs/outbox/tmp" \
-      "$worktree_path/.swarmforge/handoffs/sent" \
-      "$worktree_path/.swarmforge/handoffs/failed" \
-      "$worktree_path/.swarmforge/handoffs/inbox/new" \
-      "$worktree_path/.swarmforge/handoffs/inbox/in_process" \
-      "$worktree_path/.swarmforge/handoffs/inbox/completed"
+      "$mailbox_base/outbox/tmp" \
+      "$mailbox_base/sent" \
+      "$mailbox_base/failed" \
+      "$mailbox_base/inbox/new" \
+      "$mailbox_base/inbox/in_process" \
+      "$mailbox_base/inbox/completed" \
+      "$mailbox_base/inbox/abandoned"
   done
 }
 

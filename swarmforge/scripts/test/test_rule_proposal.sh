@@ -39,7 +39,7 @@ mkdir -p "$CODER_WT/.swarmforge"
 printf "$ROLES" > "$CODER_WT/.swarmforge/roles.tsv"
 
 CODER_OUTBOX="$CODER_WT/.swarmforge/handoffs/outbox"
-SPECIFIER_INBOX_NEW="$ROOT/.swarmforge/handoffs/inbox/new"
+SPECIFIER_INBOX_NEW="$ROOT/.swarmforge/handoffs/specifier/inbox/new"
 mkdir -p "$CODER_OUTBOX"
 
 # ── fake tmux so notify! succeeds without a real session ────────────────────
