@@ -145,3 +145,55 @@ test('shows an honest failure message rather than a blank page when the fetch fa
   await flush();
   assert.match(dom.window.document.getElementById('asOf').textContent, /Could not load/);
 });
+
+// ── BL-213 cost-06b: cost & health card visibility ──────────────────────
+
+function fakeCostHealth() {
+  return {
+    schemaVersion: 1,
+    dateIso: '2026-07-09',
+    agents: [{ role: 'coder', tokens: { value: 500, trend: { direction: 'up' } }, costUsd: { value: 3.5, trend: { direction: 'up' } } }],
+    topExpensiveTickets: [{ ticketId: 'BL-100', costUsd: 12.5 }],
+    flowBalance: { speccedPerDay: { value: 3, trend: { direction: 'flat' } }, closedPerDay: { value: 2, trend: { direction: 'down' } } },
+    reliability: {
+      chases: { value: 1, trend: { direction: 'up' } },
+      nudges: { value: 0, trend: { direction: 'flat' } },
+      respawns: { value: 0, trend: { direction: 'flat' } },
+      failedDeliveries: { value: 0, trend: { direction: 'flat' } },
+      daemonRestarts: { value: 0, trend: { direction: 'unknown' } },
+    },
+    resourceAnomalies: [{ role: 'coder', rssBytes: 250_000_000, cpuPercent: 12.3, rssTrend: { direction: 'up' }, cpuTrend: { direction: 'flat' } }],
+  };
+}
+
+test('the cost & health card is shown and populated when backlog.json carries a costHealth field (cost-06b, present)', async () => {
+  const dom = renderDashboard(fakeDashboard({ costHealth: fakeCostHealth() }));
+  await flush();
+  const section = dom.window.document.getElementById('costHealthSection');
+  assert.notEqual(section.style.display, 'none');
+  const text = dom.window.document.getElementById('costHealth').textContent;
+  assert.match(text, /coder: 500 tokens/);
+  assert.match(text, /\$3\.50/);
+  assert.match(text, /BL-100: \$12\.50/);
+  assert.match(text, /specced 3\/day/);
+  assert.match(text, /1 chases/);
+});
+
+test('the cost & health card\'s trend arrows match each field\'s own direction, not just its number', async () => {
+  const dom = renderDashboard(fakeDashboard({ costHealth: fakeCostHealth() }));
+  await flush();
+  const text = dom.window.document.getElementById('costHealth').textContent;
+  // agents[0].tokens.trend.direction: 'up'
+  assert.match(text, /500 tokens ▲/);
+  // flowBalance.closedPerDay.trend.direction: 'down'
+  assert.match(text, /closed 2\/day ▼/);
+  // reliability.nudges.trend.direction: 'flat'
+  assert.match(text, /0 nudges ▬/);
+});
+
+test('the cost & health card is hidden entirely when backlog.json carries no costHealth field (cost-06b, absent)', async () => {
+  const dom = renderDashboard(fakeDashboard());
+  await flush();
+  const section = dom.window.document.getElementById('costHealthSection');
+  assert.equal(section.style.display, 'none');
+});

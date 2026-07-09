@@ -4,42 +4,79 @@ milestone: M5
 status: todo
 priority: 10
 direction: non-aligned
+assigned_to: coder
 depends_on: [BL-097, BL-100]
 source: "Sliced out of BL-100 by specifier 2026-07-09 (coder scope-gap evidence): cost-05/06 need infrastructure that isn't built yet."
 
+notes: |
+  UNBLOCKED + content-path DECIDED by specifier 2026-07-09 (coordinator handed
+  BL-213-briefing-content-path). Both deps are now on main: BL-097
+  (Action + backlog.json + PWA) merged/closed; BL-100 (cost/health producers)
+  in backlog/done/. The one open design question — how the briefing's cost/
+  health figures reach the phone — is resolved below: a DETERMINISTIC committed
+  sidecar, NOT LLM-prose-parsing, NOT a second PWA fetch path.
+
+  Live-layer facts verified before deciding:
+    - BL-100 producers exist (extension/src/metrics/): costTelemetry.ts
+      (computeDailyRoleUsage, computeCostTelemetry, attributeUsageToTickets),
+      resourceTelemetry.ts (CPU/RAM), swarmMetrics.ts (computeChaserTelemetry
+      reliability counts), deliveryMetrics.ts (BL-096 velocity/flow), trend.ts.
+    - The briefing markdown is LLM-composed by the coordinator
+      (briefingScheduler.ts:5-7 "role-prompt-owned concern"); there is no
+      deterministic content emitter. briefingEmailWatcher.ts already commits +
+      dedups each docs/briefings/<date>.md.
+    - BL-097's Action builds backlog.json via backlogDashboard.ts /
+      generate-backlog-dashboard.ts; pwa/app.js fetches ONLY backlog.json.
+      The schema doc's "optimizer card sidecar" line is aspirational — the PWA
+      has no sidecar fetch and no such card yet.
+
 description: |
-  The briefing + phone surfacing half of BL-100, split out so BL-100's
-  computation/telemetry layer can land now. These two behaviors reach into
-  infrastructure that does not yet exist:
+  Deliver the daily cost/health figures (from BL-100) into the briefing AND
+  onto the BL-097 phone dashboard, via one deterministic carrier.
 
-  - cost-05 (briefing carries the cost & health paragraph): BL-099's daily
-    briefing is "done" as a ticket but is composed by the coordinator LLM from
-    a tmux nudge — there is no deterministic content path or committed
-    docs/briefings/<date>.json sidecar to extend. Making the briefing carry a
-    structured cost/health paragraph therefore needs the briefing's content
-    contract concretized first (either a coordinator.prompt briefing-writing
-    instruction that names the required cost/health lines, or a deterministic
-    briefing+sidecar emitter). That design choice is specifier/architect work,
-    NOT something the coder should invent unilaterally — resolve it before
-    implementing cost-05.
-  - cost-06 (phone sees daily figures via the committed briefing): needs
-    BL-097's GitHub Action + backlog.json generator + PWA, none of which exist
-    yet (no workflow touches backlog.json, no schema_version, no example).
+  DESIGN — the content path (decided):
+  A committed sidecar docs/briefings/<date>.json is the single machine-readable
+  carrier. It is emitted DETERMINISTICALLY by a thin tool over the BL-100
+  producers named above — never hand-written by the LLM and never parsed out of
+  markdown prose. It carries daily AGGREGATES only; raw transcript/resource
+  telemetry stays local and is never committed.
 
-  Wanted behavior (unchanged from BL-100's original cost-05/06):
-  - When the coordinator composes a briefing with BL-100 telemetry available,
-    it includes per-agent cost one-liners, top expensive tickets, flow
-    balance, and reliability counts, each with a trend direction.
-  - The committed briefing (or its json sidecar) is parsed by BL-097's Action
-    into backlog.json so the phone shows the daily cost/health figures, with
-    no runtime telemetry file committed to git.
+  Sidecar contract (the durable fields — see the feature file):
+    - per-agent daily tokens + estimated cost (one entry per role)
+    - top-N most expensive tickets to date (attributed)
+    - flow balance: specced/day vs closed/day
+    - reliability counts (chases, nudges, respawns, failed deliveries,
+      daemon restarts) for the day
+    - CPU/RAM anomaly flags (only roles whose usage moved meaningfully)
+    - each figure carries a BL-096 trend direction
+    - schemaVersion for the sidecar itself (additive evolution, same posture
+      as backlog.json)
+
+  cost-05 (briefing carries the cost & health section): the briefing's
+  human-readable "Cost & Health" section is rendered FROM that day's sidecar
+  figures, so prose and machine data never diverge and the LLM never invents
+  numbers. If no sidecar exists for the day, the section is omitted (no error).
+
+  cost-06 (phone sees the figures): BL-097's Action reads the LATEST committed
+  docs/briefings/<date>.json and folds its figures into backlog.json under a
+  NEW additive optional field (schemaVersion stays 1 — additive only). The PWA
+  renders a "cost & health" card, hidden when the field is absent (matches the
+  schema doc's stated intent). One carrier, one fetch — no second PWA fetch.
 
   Constraints:
-  - Do not start until BL-100 (telemetry) and BL-097 (Action/backlog.json)
-    are on main, and the briefing content path is decided.
-  - backlog.json changes are additive (schema_version respected).
-  - No runtime telemetry file is committed to git — the committed briefing /
-    sidecar is the only carrier.
+  - Deterministic + testable: sidecar emit and Action fold-in are pure over
+    provided inputs (fixtures in tests) — no network, no real timers. Reuse the
+    BL-096 trend function unmodified.
+  - No runtime telemetry file committed to git — only the daily-aggregate
+    sidecar is committed; it is the sole carrier.
+  - backlog.json changes are additive (schemaVersion 1 respected); reuse the
+    existing Action + single backlog.json the PWA already fetches.
+
+  Specifier follow-up (NOT coder work): the coordinator.prompt briefing
+  instruction — "include the machine-emitted Cost & Health figures verbatim,
+  do not fabricate; omit the section when no sidecar exists" — is a
+  specifier-owned prompt edit to land WITH integration once the emitter exists.
+  Flagged here so it is not lost; the coder does not touch prompt files.
 
 acceptance: specs/features/BL-213-cost-health-briefing-phone.feature
 mutation_cost: low

@@ -1,8 +1,11 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { BacklogItem, BacklogFolders, readBacklogFolders } from '../panel/backlogReader';
 import { runGitLog, deriveTicketLifecycles, getCurrentSha, TicketLifecycleEvent } from './gitHistoryAdapter';
 import { computeDeliveryMetrics, DeliveryMetrics, VelocityResult, MilestoneBurndownResult, CycleTimeResult, ForecastResult } from './deliveryMetrics';
 import { RoleWorktree } from './swarmMetrics';
 import { readSwarmName } from '../bridge/holisticProjections';
+import { CostHealthSidecar } from '../notify/costHealthSidecar';
 
 // BL-097: backlog.json's data contract - a versioned, git-derived
 // projection of backlog state + BL-096 metrics, reusing computeDeliveryMetrics
@@ -41,6 +44,11 @@ export interface BacklogDashboardData {
     cycleTime: CycleTimeResult;
     forecasts: ForecastResult;
   };
+  // BL-213 cost-06a: additive, optional - the latest committed
+  // docs/briefings/<date>.json sidecar, folded in as-is. Absent when no
+  // sidecar has ever been committed; schemaVersion stays unchanged either
+  // way since this is a purely additive field.
+  costHealth?: CostHealthSidecar;
 }
 
 const UNSPECIFIED_MILESTONE = 'unspecified';
@@ -131,7 +139,8 @@ export function buildBacklogDashboard(
   deliveryMetrics: DeliveryMetrics,
   localSwarmName: string,
   sourceSha: string | null,
-  generatedAtIso: string
+  generatedAtIso: string,
+  costHealth: CostHealthSidecar | null = null
 ): BacklogDashboardData {
   const lifecycleByTicketId = new Map(lifecycles.map((l) => [l.ticketId, l]));
   const p50ByTicketId = new Map(
@@ -144,7 +153,7 @@ export function buildBacklogDashboard(
   const toSummary = (item: BacklogItem, status: DashboardTicketSummary['status']) =>
     toDashboardSummary(item, status, localSwarmName, lifecycleByTicketId, p50ByTicketId, p85ByTicketId);
 
-  return {
+  const dashboard: BacklogDashboardData = {
     schemaVersion: BACKLOG_DASHBOARD_SCHEMA_VERSION,
     generatedAtIso,
     sourceSha,
@@ -160,18 +169,49 @@ export function buildBacklogDashboard(
       forecasts: deliveryMetrics.forecasts,
     },
   };
+  if (costHealth) {
+    dashboard.costHealth = costHealth;
+  }
+  return dashboard;
+}
+
+const SIDECAR_FILENAME_PATTERN = /^\d{4}-\d{2}-\d{2}\.json$/;
+
+// BL-213 cost-06a: the most recently committed docs/briefings/<date>.json
+// sidecar (ISO date filenames sort chronologically). No sidecar ever
+// committed, or a malformed/unreadable one, reads as null rather than
+// throwing - cost-06b's "hidden when absent" is handled entirely by
+// buildBacklogDashboard's own costHealth-omitted-when-null branch above.
+function readLatestCostHealthSidecar(targetPath: string): CostHealthSidecar | null {
+  const briefingsDir = path.join(targetPath, 'docs', 'briefings');
+  let files: string[];
+  try {
+    files = fs.readdirSync(briefingsDir).filter((f) => SIDECAR_FILENAME_PATTERN.test(f));
+  } catch {
+    return null;
+  }
+  if (files.length === 0) {
+    return null;
+  }
+  files.sort();
+  try {
+    return JSON.parse(fs.readFileSync(path.join(briefingsDir, files[files.length - 1]), 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 // The one impure entry point: reads current backlog state, walks git
 // history, computes delivery metrics (reusing computeDeliveryMetrics
-// as-is), and resolves the source SHA - then delegates to the pure
-// assembler above.
+// as-is), resolves the source SHA, and reads the latest committed cost/
+// health sidecar if one exists - then delegates to the pure assembler above.
 export function computeBacklogDashboard(targetPath: string, roles: RoleWorktree[], nowMs: number = Date.now()): BacklogDashboardData {
   const folders = readBacklogFolders(targetPath);
   const lifecycles = [...deriveTicketLifecycles(runGitLog(targetPath, 'backlog')).values()];
   const deliveryMetrics = computeDeliveryMetrics(targetPath, roles, nowMs);
   const localSwarmName = readSwarmName(targetPath);
   const sourceSha = getCurrentSha(targetPath);
+  const costHealth = readLatestCostHealthSidecar(targetPath);
 
-  return buildBacklogDashboard(folders, lifecycles, deliveryMetrics, localSwarmName, sourceSha, new Date(nowMs).toISOString());
+  return buildBacklogDashboard(folders, lifecycles, deliveryMetrics, localSwarmName, sourceSha, new Date(nowMs).toISOString(), costHealth);
 }
