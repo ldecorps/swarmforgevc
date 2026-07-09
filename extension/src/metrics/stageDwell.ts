@@ -58,22 +58,32 @@ function parseMsOrNaN(iso: string | undefined): number {
   return iso ? Date.parse(iso) : NaN;
 }
 
-// One record's dequeued_at/completed_at must both parse and be in order for
-// queue-wait/processing to mean anything; anything else is unparseable per
-// this ticket's "missing/partial headers degrade per-item" gate. Split out
-// of deriveDwellRecords so each function stays under the CRAP<=6 gate.
+// A dequeued_at/completed_at pair only means something for dwell purposes
+// when both parse and land in order; anything else is unparseable per this
+// ticket's "missing/partial headers degrade per-item" gate.
+function isValidDwellWindow(dequeuedMs: number, completedMs: number): boolean {
+  return !Number.isNaN(dequeuedMs) && !Number.isNaN(completedMs) && completedMs >= dequeuedMs;
+}
+
+// null when enqueued_at is absent/unparsable or out of order - processing is
+// still counted in that case, only queue-wait is unknown.
+function computeQueueWaitMs(enqueuedMs: number, dequeuedMs: number): number | null {
+  return !Number.isNaN(enqueuedMs) && dequeuedMs >= enqueuedMs ? dequeuedMs - enqueuedMs : null;
+}
+
+// Split out of deriveDwellRecords, and further split into the two helpers
+// above, so each function stays under the CRAP<=6 gate.
 function deriveOneDwellRecord(role: string, headers: Record<string, string>): DwellRecord | null {
   const dequeuedMs = parseMsOrNaN(headers.dequeued_at);
   const completedMs = parseMsOrNaN(headers.completed_at);
-  if (Number.isNaN(dequeuedMs) || Number.isNaN(completedMs) || completedMs < dequeuedMs) {
+  if (!isValidDwellWindow(dequeuedMs, completedMs)) {
     return null;
   }
   const enqueuedMs = parseMsOrNaN(headers.enqueued_at);
-  const queueWaitMs = !Number.isNaN(enqueuedMs) && dequeuedMs >= enqueuedMs ? dequeuedMs - enqueuedMs : null;
   return {
     role,
     ticketId: headers.task ? extractTicketId(headers.task) : null,
-    queueWaitMs,
+    queueWaitMs: computeQueueWaitMs(enqueuedMs, dequeuedMs),
     processingMs: completedMs - dequeuedMs,
     completedAtMs: completedMs,
   };

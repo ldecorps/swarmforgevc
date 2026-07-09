@@ -66,21 +66,14 @@ interface CliArgs {
   hours: number;
 }
 
-function parseArgs(argv: string[]): CliArgs {
-  let hours = DEFAULT_STAGE_DWELL_WINDOW_HOURS;
-  let json = false;
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--json') {
-      json = true;
-    } else if (argv[i] === '--hours') {
-      const value = Number(argv[i + 1]);
-      if (Number.isFinite(value) && value > 0) {
-        hours = value;
-      }
-      i++;
-    }
-  }
-  return { json, hours };
+function parseHoursFlag(argv: string[]): number {
+  const hoursIdx = argv.indexOf('--hours');
+  const value = hoursIdx === -1 ? NaN : Number(argv[hoursIdx + 1]);
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_STAGE_DWELL_WINDOW_HOURS;
+}
+
+export function parseArgs(argv: string[]): CliArgs {
+  return { json: argv.includes('--json'), hours: parseHoursFlag(argv) };
 }
 
 export function main(): void {
