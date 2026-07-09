@@ -15,6 +15,10 @@ export interface BacklogItem {
   // primary swarm (BL-090's own default) - callers must apply that fallback
   // themselves, since no swarm: field exists in live ticket YAML yet.
   swarm?: string;
+  // BL-117: prose description and acceptance reference/inline-Gherkin, for
+  // the docs drill-down explorer's ticket and Gherkin levels.
+  description?: string;
+  acceptance?: string;
 }
 
 const VALID_STATUSES = new Set(['todo', 'active', 'done']);
@@ -34,6 +38,33 @@ function parseYamlList(content: string, field: string): string[] | undefined {
     .map((line) => line.replace(/^\s*-\s*/, '').replace(/#.*$/, '').trim())
     .filter((line) => line.length > 0);
   return entries.length > 0 ? entries : undefined;
+}
+
+// BL-117: extracts a `field: |` (or `>`) literal block scalar's prose,
+// dedented to its own minimum indentation - the lenient-parser counterpart
+// to js-yaml's own block-scalar handling, for description/acceptance text
+// on tickets whose free-form prose elsewhere in the file isn't strict YAML.
+function parseYamlBlockScalar(content: string, field: string): string | undefined {
+  const blockMatch = content.match(new RegExp(`^${field}:\\s*[|>][+-]?\\s*\\n((?:[ \\t]*\\n|[ \\t]+.*\\n?)*)`, 'm'));
+  if (!blockMatch) {
+    return undefined;
+  }
+  const rawLines = blockMatch[1].split('\n');
+  while (rawLines.length > 0 && rawLines[rawLines.length - 1].trim() === '') {
+    rawLines.pop();
+  }
+  if (rawLines.length === 0) {
+    return undefined;
+  }
+  const indent = Math.min(...rawLines.filter((l) => l.trim() !== '').map((l) => l.match(/^ */)![0].length));
+  return rawLines.map((l) => l.slice(indent)).join('\n');
+}
+
+// BL-117: acceptance is usually a single-line file reference
+// (`specs/features/<name>.feature`) but older tickets carry inline Gherkin
+// as a block scalar - try the scalar form first, then the block form.
+function parseAcceptanceField(content: string): string | undefined {
+  return parseYamlScalar(content, 'acceptance') ?? parseYamlBlockScalar(content, 'acceptance');
 }
 
 function parsePriority(priorityStr: string | undefined): number | undefined {
@@ -68,6 +99,8 @@ function assignOptionalFields(item: BacklogItem, content: string): void {
   assignIfTruthy(item, 'dependsOn', parseYamlList(content, 'depends_on'));
   assignIfTruthy(item, 'pack', parseYamlList(content, 'pack'));
   assignIfTruthy(item, 'swarm', parseYamlScalar(content, 'swarm'));
+  assignIfTruthy(item, 'description', parseYamlBlockScalar(content, 'description'));
+  assignIfTruthy(item, 'acceptance', parseAcceptanceField(content));
 }
 
 function toOptionalNumber(value: unknown): number | undefined {
@@ -87,6 +120,15 @@ function toOptionalStringList(value: unknown): string[] | undefined {
 
 function toOptionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value ? value : undefined;
+}
+
+// BL-117: js-yaml's default `|` clip chomping keeps exactly one trailing
+// newline, while the lenient block-scalar extractor strips all trailing
+// blank lines - trimmed here so description/acceptance read the same
+// regardless of which parser path produced them.
+function toTrimmedOptionalString(value: unknown): string | undefined {
+  const str = toOptionalString(value);
+  return str ? str.trim() : undefined;
 }
 
 // Builds a BacklogItem from a strictly-parsed js-yaml document. Reads only
@@ -114,6 +156,8 @@ function assignOptionalFieldsFromObject(item: BacklogItem, obj: Record<string, u
   assignIfTruthy(item, 'dependsOn', toOptionalStringList(obj.depends_on));
   assignIfTruthy(item, 'pack', toOptionalStringList(obj.pack));
   assignIfTruthy(item, 'swarm', toOptionalString(obj.swarm));
+  assignIfTruthy(item, 'description', toTrimmedOptionalString(obj.description));
+  assignIfTruthy(item, 'acceptance', toTrimmedOptionalString(obj.acceptance));
 }
 
 function buildItemFromParsedObject(obj: Record<string, unknown>): BacklogItem | null {
