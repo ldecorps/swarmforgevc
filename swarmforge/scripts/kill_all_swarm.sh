@@ -71,6 +71,28 @@ kill_tmux_socket() {
 mkdir -p "$DAEMON_DIR"
 log "kill_all_swarm begin root=$ROOT sweep_inbox=$SWEEP_INBOX reset_worktrees=$RESET_WORKTREES"
 
+# 0. Graceful agent shutdown FIRST. `tmux kill-server` below sends SIGHUP, which
+# kills each role's `claude` before it can deregister its --remote-control
+# session on the claude.ai backend, leaving ghost entries in the app (a stale
+# "SwarmForge-Coder" alongside the live one on every restart). SIGTERM the agent
+# processes for THIS root and give them a moment to clean up, then let the tmux
+# teardown reap whatever remains.
+graceful_stop_agents() {
+  local pids
+  pids="$(pgrep -f "claude .*$ROOT/.swarmforge/launch/" 2>/dev/null || true)"
+  [[ -n "$pids" ]] || { log "no agent processes to stop gracefully"; return 0; }
+  log "SIGTERM agents: $(printf '%s ' $pids)"
+  # shellcheck disable=SC2086
+  kill -TERM $pids 2>/dev/null || true
+  # Wait up to ~3s for graceful deregistration + exit.
+  for _ in 1 2 3 4 5 6; do
+    pids="$(pgrep -f "claude .*$ROOT/.swarmforge/launch/" 2>/dev/null || true)"
+    [[ -n "$pids" ]] || break
+    sleep 0.5
+  done
+}
+graceful_stop_agents
+
 # 1. Per-role sessions on the tracked socket (best-effort before kill-server).
 if [[ -f "$ROOT/.swarmforge/tmux-socket" ]]; then
   tracked="$(< "$ROOT/.swarmforge/tmux-socket")"
