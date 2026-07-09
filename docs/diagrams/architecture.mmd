@@ -7,7 +7,11 @@
 %% BL-066 note: the extension drives real SwarmForge over tmux, not the
 %% "standalone orchestrator" model docs/Specification.MD's overview once
 %% described. BL-146 consolidated chase/watchdog liveness into the daemon
-%% (handoffd.bb now owns both delivery and chase sweeps).
+%% (handoffd.bb now owns both delivery and chase sweeps). BL-121 added a
+%% synthetic canary round-trip: canaryInjector.ts schedules it and
+%% handoffd.bb's canary-sweep! completes it as part of the daemon's own poll
+%% loop, so transportHealth.ts's health state reflects genuine delivery, not
+%% just daemon process liveness.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
@@ -17,6 +21,8 @@ flowchart TB
     DISCOVERY["swarmDiscovery.ts"]
     STATE["swarmState.ts\n(roles.tsv, pipeline stage)"]
     DAEMONHEALTH["daemonHealth.ts\n(handoffd status, read-only)"]
+    TRANSPORTHEALTH["transportHealth.ts\n(delivery-level health:\ndead-letters, stalls, canary)"]
+    CANARY["canaryInjector.ts\n(schedules synthetic\ncanary round-trips)"]
     METRICS["swarmMetrics.ts"]
     BACKLOGRW["backlogReader.ts / backlogWriter.ts"]
     BOUNCE["bounceWatcher.ts / bouncer.ts / bounceDrain.ts"]
@@ -58,6 +64,8 @@ flowchart TB
   PANEL --> STATE
   PANEL --> DISCOVERY
   PANEL --> DAEMONHEALTH
+  PANEL --> TRANSPORTHEALTH
+  PANEL --> CANARY
   PANEL --> METRICS
   PANEL --> BACKLOGRW
   PANEL --> BOUNCE
@@ -68,11 +76,14 @@ flowchart TB
   STATE -->|reads| ROLESTSV
   DISCOVERY -->|reads| SOCKET
   DAEMONHEALTH -->|reads| DAEMONDIR
+  TRANSPORTHEALTH -->|reads| HANDOFFS
+  TRANSPORTHEALTH -->|reads| DAEMONDIR
+  CANARY -->|writes canary-queue/pending,\nreads canary-queue/completed| DAEMONDIR
   BOUNCE -->|reads/writes| HANDOFFS
   BACKLOGRW -->|reads/writes\n(atomicWrite)| BACKLOGDIR
 
   PANES -->|read/write| HANDOFFS
-  PANES -->|handoffd.bb: polls outbox,\nperforms chase sweeps,\nnotifies via tmux send-keys| SOCKET
+  PANES -->|handoffd.bb: polls outbox,\nperforms chase sweeps,\ncanary sweep,\nnotifies via tmux send-keys| SOCKET
   PANES -->|git commit/merge| TARGETREPO
 
   PANEL -->|postMessage: output, stage,\nbadgeUpdate, backlogUpdate, ...| TILES
@@ -86,7 +97,7 @@ flowchart TB
   classDef substrate fill:#8250df,color:#fff,stroke:#4c2889;
   classDef state fill:#9a6700,color:#fff,stroke:#5c4200;
   classDef gh fill:#57606a,color:#fff,stroke:#32383f;
-  class EXT,LAUNCHER,TMUXCLIENT,TAILER,DISCOVERY,STATE,DAEMONHEALTH,METRICS,BACKLOGRW,BOUNCE,MSGBUS,PRCREATOR,BRIDGE,PANEL host;
+  class EXT,LAUNCHER,TMUXCLIENT,TAILER,DISCOVERY,STATE,DAEMONHEALTH,TRANSPORTHEALTH,CANARY,METRICS,BACKLOGRW,BOUNCE,MSGBUS,PRCREATOR,BRIDGE,PANEL host;
   class TILES webview;
   class SOCKET,PANES substrate;
   class ROLESTSV,HANDOFFS,DAEMONDIR,BACKLOGDIR state;

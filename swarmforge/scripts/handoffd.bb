@@ -359,6 +359,31 @@
                 (catch Exception _ignored nil)))
             (fail! path (.getMessage e))))))))
 
+;; ── BL-121: canary sweep - completes synthetic canary round-trips ──────────
+;; The extension's canaryInjector.ts writes a pending marker under
+;; canary-queue/pending/ on a schedule and later checks canary-queue/completed/
+;; for a match (transportHealth.ts reads the resulting canary-status.json).
+;; Moving pending -> completed here, inside THIS process's own poll loop,
+;; means a canary only completes if the daemon is actually still iterating -
+;; not just alive as an OS process. A wedged-but-running daemon lets pending
+;; canaries pile up and eventually miss budget, which is exactly the
+;; delivery-level signal BL-121 needs (never touches any role's real inbox,
+;; so a canary can never appear as a work item - BL-121 canary-isolation-04).
+(defn canary-pending-dir [] (fs/path daemon-dir "canary-queue" "pending"))
+(defn canary-completed-dir [] (fs/path daemon-dir "canary-queue" "completed"))
+
+(defn canary-sweep! []
+  (let [pending-dir (canary-pending-dir)]
+    (when (fs/exists? pending-dir)
+      (doseq [f (->> (fs/list-dir pending-dir)
+                     (filter #(and (fs/regular-file? %)
+                                   (str/ends-with? (fs/file-name %) ".handoff"))))]
+        (try
+          (move-with-collision f (canary-completed-dir))
+          (log! "canary-completed" (fs/file-name f))
+          (catch Exception e
+            (log! "canary-sweep-error" (str f) (.getMessage e))))))))
+
 ;; The JVM only waits for registered shutdown-hook THREADS to finish before
 ;; halting - it does not wait for arbitrary other threads. A hook that only
 ;; flips an atom returns in microseconds, so the poll loop (running on the
@@ -559,6 +584,7 @@
       poll-once-only?
       (do
         (poll-once!)
+        (canary-sweep!)
         (log! "poll-once done"))
 
       startup-notify-only?
@@ -587,6 +613,10 @@
               (loop [cycle 0]
                 (when (and (not @stopping?) (not (fs/exists? stop-file)))
                   (poll-once!)
+                  (try
+                    (canary-sweep!)
+                    (catch Exception e
+                      (log! "canary-sweep-error" (.getMessage e))))
                   ;; BL-146: chase/nudge sweep runs on its own cadence,
                   ;; sharing this single process/thread with delivery -
                   ;; exactly one process now owns both duties.
