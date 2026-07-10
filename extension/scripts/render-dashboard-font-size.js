@@ -15,9 +15,16 @@ const path = require('path');
 const { JSDOM } = require('jsdom');
 
 const PWA_DIR = path.join(__dirname, '..', '..', 'pwa');
-// BL-249 bounce fix: must match pwa/app.js's own PREFERENCES_CACHE_NAME,
-// not sw.js's per-deploy-stamped CACHE_NAME.
-const CACHE_NAME = 'swarmforge-dashboard-preferences';
+const APP_JS_SOURCE = fs.readFileSync(path.join(PWA_DIR, 'app.js'), 'utf8');
+// BL-249 bounce fix: parsed out of pwa/app.js's own PREFERENCES_CACHE_NAME
+// source rather than duplicated by hand, so this harness can't silently drift
+// from the real value the same way the pre-fix hardcoded literal did (same
+// precedent as stamp-pwa-cache-name.ts parsing SHELL_ASSETS out of sw.js).
+const CACHE_NAME_MATCH = APP_JS_SOURCE.match(/PREFERENCES_CACHE_NAME\s*=\s*'([^']+)'/);
+if (!CACHE_NAME_MATCH) {
+  throw new Error('render-dashboard-font-size.js: could not find PREFERENCES_CACHE_NAME in pwa/app.js');
+}
+const CACHE_NAME = CACHE_NAME_MATCH[1];
 const FONT_SIZE_KEY = './__font-size-preference__';
 
 const [, , mode, control, countArg] = process.argv;
