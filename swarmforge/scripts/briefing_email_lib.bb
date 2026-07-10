@@ -50,16 +50,34 @@
                        first)]
     (str "SwarmForge briefing " date-label (when headline (str " - " headline)))))
 
-;; BL-252: appends the suite-duration trend + BL-078 regression-flag line
-;; (sourced from suite-duration-line.js, reusing computeSuiteDurationTrend/
-;; computeSuiteDuration unchanged - never a second threshold) to the
-;; outgoing briefing content. A blank/nil line - the CLI unavailable, not
-;; "no local data" (the CLI itself already renders that as non-blank text)
-;; - leaves content untouched rather than appending nothing meaningful.
-(defn append-suite-duration-line [content line]
-  (if (str/blank? line)
+;; BL-252 (generalized for BL-251): appends a computed content block - the
+;; suite-duration trend + BL-078 regression flag (BL-252), the
+;; needs-approval section (BL-251), or any future one - to the outgoing
+;; briefing content. A blank/nil block (the source CLI unavailable, not
+;; "nothing to report" - each source CLI already renders that as its own
+;; non-blank text) leaves content untouched rather than appending nothing
+;; meaningful. Shipped under the name append-suite-duration-line in BL-252;
+;; renamed here since BL-251 needed the identical behavior for a second,
+;; independent block - same function, reused, not duplicated.
+(defn append-content-block [content block]
+  (if (str/blank? block)
     content
-    (str (str/trim-newline (or content "")) "\n\n" line "\n")))
+    (str (str/trim-newline (or content "")) "\n\n" block "\n")))
+
+;; Threads content through every optional section adapter present in
+;; `adapters`, in order - each key independently appends its own block (or
+;; leaves content untouched if its fn returns blank/nil), so adding a third
+;; section later is a new entry in this vector, not a new branch.
+(def optional-section-adapter-keys [:suite-duration-line :needs-approval-section])
+
+(defn- apply-optional-sections [content adapters]
+  (reduce
+   (fn [acc adapter-key]
+     (if-let [section-fn (get adapters adapter-key)]
+       (append-content-block acc (section-fn))
+       acc))
+   content
+   optional-section-adapter-keys))
 
 (defn send-unsent-briefings!
   "Sends each not-yet-sent committed briefing exactly once via the injected
@@ -69,18 +87,17 @@
    and leave the file to retry on the next sweep, never crashing and never
    losing the briefing. Returns the file names actually sent this call.
 
-   The optional :suite-duration-line adapter (zero-arg fn returning a line
-   string or nil) is appended to the content before sending (BL-252) - a
-   caller that omits it (or whose adapter returns nil) sends the original
-   content unchanged, backward compatible with every pre-BL-252 caller."
+   Each optional section adapter (:suite-duration-line, BL-252;
+   :needs-approval-section, BL-251 - zero-arg fns returning a content block
+   string or nil) is appended to the content before sending, in that order.
+   A caller that omits an adapter (or whose adapter returns nil) sends the
+   original content unaffected by that section, backward compatible with
+   every earlier caller."
   [briefings-dir adapters]
-  (let [sent-now (atom [])
-        suite-duration-line-fn (:suite-duration-line adapters)]
+  (let [sent-now (atom [])]
     (doseq [file-name (find-unsent-briefings briefings-dir)]
       (let [raw-content ((:read-briefing-content adapters) file-name)
-            content (if suite-duration-line-fn
-                      (append-suite-duration-line raw-content (suite-duration-line-fn))
-                      raw-content)
+            content (apply-optional-sections raw-content adapters)
             date-label (str/replace file-name #"\.md$" "")
             subject (build-briefing-subject date-label content)
             result ((:send-email! adapters) subject content)]
