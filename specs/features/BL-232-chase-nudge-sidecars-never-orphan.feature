@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=403aef5ed523036cc088b59e109cd5b7eca8fff42e71c1313cc3afc0afe74220
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-10T07:17:52.338202394Z","feature_name":"chase/nudge sidecars never orphan in an inbox new/ directory","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-232-chase-nudge-sidecars-never-orphan.feature","background_hash":"d033d1ae8b579da310d58742865ef8a4b20aa1998c739286e6b1f2e04811410c","implementation_hash":"unknown","scenarios":[{"index":0,"name":"dequeuing a handoff leaves no orphaned sidecar behind","scenario_hash":"cbbfc3b10b045e71b3195260fea664eb98732e42f3ecc908d91f659a2425f543","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-07-10T07:17:38.742016011Z"},{"index":1,"name":"a sidecar whose parent handoff is already gone is reaped","scenario_hash":"59bad4898928ab787c212ee1e95c94e548c1e217c938e118334a0c3c72f6ab38","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-10T07:17:05.567963809Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: chase/nudge sidecars never orphan in an inbox new/ directory
 
   A chase/nudge sidecar (<handoff>.chase.json or <handoff>.nudge) is ephemeral

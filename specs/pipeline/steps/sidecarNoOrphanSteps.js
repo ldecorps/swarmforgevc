@@ -64,6 +64,15 @@ function writeQueuedHandoff(inboxNewDir, name) {
 }
 
 function dequeue(worktree, mode) {
+  // Strict, not a `=== 'batch' ? ... : task-default` fallthrough: a
+  // fallthrough treats any unrecognized mode string as "task", so a
+  // mutated/typo'd "batch" example silently runs the task-mode script
+  // and the sidecar-cleanup assertions below can't tell the difference
+  // (both scripts carry the BL-232 fix) - the mode value itself would
+  // never be load-bearing to this scenario.
+  if (mode !== 'task' && mode !== 'batch') {
+    throw new Error(`dequeue() got an unrecognized receive mode "${mode}" - expected "task" or "batch"`);
+  }
   const script = mode === 'batch' ? READY_BATCH : READY_TASK;
   return execFileSync('bb', [script], {
     cwd: worktree,
