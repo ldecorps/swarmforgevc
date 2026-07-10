@@ -526,13 +526,12 @@ This is safe because the protocol is already context-free between parcels — ev
 
 ### Cooldown-aware wake scheduling (rate-limit backoff)
 
-When an agent reports hitting a rate limit and provides a reset time (e.g., "tokens available again at 2pm"), the extension automatically avoids waking that agent during the cooldown window and resumes normal operation once the cooldown expires:
+When an agent reports hitting a rate limit and provides a reset time (e.g., "tokens available again at 2pm"), the swarm automatically avoids waking that agent during the cooldown window and resumes normal operation once the cooldown expires. Detection and enforcement are split across two components that share one state file, `.swarmforge/rate-limit-cooldown.json`:
 
-- **Detection:** the extension listens for rate-limit signals from agents (reported through the monitoring/logging interface) that include a reset timestamp
-- **Suppression:** while a role has an active cooldown window, the watchdog's chase/wake nudges for that role are suppressed — no pointless retry attempts during the quiet period
+- **Detection (extension host):** the same pane tailer that already watches for session URLs (`swarmPanel.ts`'s `setupTailer`) scans for a usage/rate-limit line naming a reset time and records the cooldown to the shared file via `cooldownScheduler`'s `parseResetTime`/`recordCooldown`
+- **Suppression + resume (handoff daemon):** `handoffd.bb`'s live chase sweep (`chase_sweep_lib.bb`) reads that same file each cycle — a cooling-down role is skipped entirely (no chase/nudge/wake); once past the reset time it is woken exactly once and marked woken, so it does not re-trigger the next cycle
 - **Automatic resume:** once the cooldown timestamp passes, normal chase and wake behavior resumes automatically
-- **Visibility:** the tile's liveness indicator and diagnostics surface which roles are cooling down and when they'll resume, so the human understands why a seemingly-idle agent is intentionally quiet
-- **Resilience:** cooldown state persists across extension restarts — if the extension reloads before cooldown expires, wake suppression still applies until the deadline
+- **Resilience:** cooldown state persists on disk — an extension reload or daemon restart before cooldown expires does not lose the suppression window
 - **Isolation:** cooldown affects only the role that hit the limit; other agents continue normal chase/wake behavior uninterrupted
 
 This prevents the "retry storm" where a rate-limited agent gets nudged repeatedly while unable to act, saving tokens and clearing the notification noise during the windowed recovery period.
