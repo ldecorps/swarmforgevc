@@ -25,6 +25,7 @@ const DOMAINS = [
   require('./providerObservabilityParitySteps'),
   require('./pwaLabelCatalogSteps'),
   require('./readyForNextPromotionSteps'),
+  require('./swarmIntakeEnvRouteSteps'),
 ];
 
 function registerSteps(registry) {
