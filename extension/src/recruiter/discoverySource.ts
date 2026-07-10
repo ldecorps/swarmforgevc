@@ -1,0 +1,50 @@
+// BL-233 slice 1 (discover-candidates-01): the discovery seam. "hunt the
+// internet for cheap/free plans" - the TESTABLE-boundary constraint means
+// the injectable seam is a DiscoverySource, faked in tests; no real network
+// in tests. The default production source reads an operator-maintained
+// JSON candidates file rather than scraping live sites itself: discovery
+// data becomes a reviewable, versioned artifact (the same "defined,
+// reviewable list" posture as the i18n jargon preserve-list) instead of
+// unbounded, un-testable network I/O baked into this tool. A smarter
+// crawler-backed DiscoverySource can fill the same seam later without
+// touching the report/CLI code that consumes it.
+
+import * as fs from 'fs';
+import { ModelCandidate } from './candidate';
+
+export interface DiscoverySource {
+  discover(): Promise<ModelCandidate[]>;
+}
+
+function isModelCandidate(value: unknown): value is ModelCandidate {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.model === 'string' &&
+    typeof v.provider === 'string' &&
+    typeof v.planCost === 'object' &&
+    v.planCost !== null &&
+    typeof v.signupPath === 'object' &&
+    v.signupPath !== null
+  );
+}
+
+// A missing candidates file reads as "nothing discovered yet" (empty
+// report), not an error - mirrors translationCache.ts's own defensive-read
+// posture for absent/malformed state.
+export function createFileDiscoverySource(candidatesFilePath: string): DiscoverySource {
+  return {
+    async discover(): Promise<ModelCandidate[]> {
+      if (!fs.existsSync(candidatesFilePath)) {
+        return [];
+      }
+      const parsed = JSON.parse(fs.readFileSync(candidatesFilePath, 'utf-8'));
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+      return parsed.filter(isModelCandidate);
+    },
+  };
+}

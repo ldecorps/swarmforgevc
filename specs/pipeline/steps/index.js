@@ -31,6 +31,7 @@ const DOMAINS = [
   require('./burndownEtaSteps'),
   require('./pwaTranslatedContentSteps'),
   require('./sidecarNoOrphanSteps'),
+  require('./recruiterDiscoverSteps'),
 ];
 
 function registerSteps(registry) {
