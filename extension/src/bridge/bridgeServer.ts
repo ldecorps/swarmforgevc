@@ -173,7 +173,17 @@ function isGateAnswerRoute(req: http.IncomingMessage, url: string): boolean {
   return req.method === 'POST' && url === '/gate-answer';
 }
 
-function handleGateAnswerRoute(req: http.IncomingMessage, res: http.ServerResponse, targetPath: string): void {
+// BL-241 control-requires-step-up-04: the step-up check is enforced here
+// (not in the dispatcher) so the dispatcher's own complexity stays flat as
+// this route's auth grows - a read-scoped device passes the dispatcher's
+// read-level gate (it can view) but is refused here (read-only-cannot-
+// control-03).
+function handleGateAnswerRoute(req: http.IncomingMessage, res: http.ServerResponse, targetPath: string, registry: DeviceRegistry): void {
+  if (!isAuthorizedForControl(req, registry)) {
+    res.writeHead(403, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ success: false, reason: 'control auth required' }));
+    return;
+  }
   readJsonBody(req, GATE_ANSWER_MAX_BODY_BYTES).then((body) => {
     if (!body.ok) {
       res.writeHead(400, { 'content-type': 'application/json' });
@@ -327,19 +337,12 @@ export function startBridge(
 
       // BL-240/BL-241: the bridge's one write route - answers a captured
       // to-human gate only. Read-level auth is already enforced above,
-      // uniformly with every other route; control actions additionally
-      // require the step-up check (control-requires-step-up-04) - a
-      // read-scoped device passes the gate above (it can view) but is
-      // refused here (read-only-cannot-control-03). GET (or any other
+      // uniformly with every other route; handleGateAnswerRoute itself
+      // enforces the additional control step-up. GET (or any other
       // method) to this path falls through to the 404 below, same as any
       // unrecognized route - it is never treated as an answer attempt.
       if (isGateAnswerRoute(req, url)) {
-        if (!isAuthorizedForControl(req, registry)) {
-          res.writeHead(403, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({ success: false, reason: 'control auth required' }));
-          return;
-        }
-        handleGateAnswerRoute(req, res, targetPath);
+        handleGateAnswerRoute(req, res, targetPath, registry);
         return;
       }
 
