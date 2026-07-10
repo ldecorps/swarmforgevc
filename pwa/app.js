@@ -329,16 +329,137 @@
   // Derived from backlog.json's needsApproval (backlogDashboard.ts's own
   // computeNeedsApproval, sourced from the structured human_approval field
   // only) - this renderer never re-parses a comment itself.
+  //
+  // BL-266: a needs-approval entry now opens (drill-in, like the docs
+  // explorer's own navButton pattern) to a READ-ONLY detail view of that
+  // SAME ticket's description + acceptance scenarios, cross-referenced by
+  // id into the already-fetched docsTree (BL-117) - no new store, no
+  // second Gherkin parser, and never a divergent copy of what the swarm
+  // builds against. approvalTicketId (module state, mirrors docsView) is
+  // null in list mode; set to a ticket id in detail mode. Approving/
+  // rejecting from the phone stays explicitly out of scope (gap #10);
+  // this view offers navigation only, never a write action.
+  var approvalTicketId = null;
+
+  function findApprovalTicket(id) {
+    return docsTree && (docsTree.tickets || []).find(function (t) { return t.id === id; });
+  }
+
+  // Pure - the whole description + acceptance-scenario text, in order, as
+  // it will be spoken (slice 2). Kept separate from any DOM/adapter code
+  // so it is directly exercisable against a fixture ticket object.
+  function assembleSpokenText(ticket) {
+    var parts = [];
+    if (ticket.description) {
+      parts.push(ticket.description);
+    }
+    (ticket.scenarios || []).forEach(function (s) {
+      if (s.text) {
+        parts.push(s.text);
+      }
+    });
+    return parts.join('\n\n');
+  }
+
+  // Pure - BCP-47 language tag SpeechSynthesisUtterance.lang expects,
+  // derived from the SAME currentLocale every other section already
+  // renders in - never a second, independently-toggled language.
+  var SPEECH_LANG_BY_LOCALE = { en: 'en-US', fr: 'fr-FR' };
+  function speechLangForLocale(locale) {
+    return SPEECH_LANG_BY_LOCALE[locale] || SPEECH_LANG_BY_LOCALE.en;
+  }
+
+  // Browser-API boundary (not unit-tested itself, per the testable-module
+  // boundary) - on-device only (window.speechSynthesis), no network, no
+  // storage; degrades gracefully when unavailable rather than erroring.
+  function speechAvailable() {
+    return typeof window.speechSynthesis !== 'undefined' && typeof window.SpeechSynthesisUtterance !== 'undefined';
+  }
+
+  function renderListenControl(container, ticket) {
+    if (!speechAvailable()) {
+      container.appendChild(el('p', { class: 'listen-unavailable-note' }, [tr('listenUnavailable')]));
+      return;
+    }
+    var speakingNow = false;
+    var btn = el('button', { type: 'button' }, [tr('startListening')]);
+    btn.addEventListener('click', function () {
+      if (speakingNow) {
+        window.speechSynthesis.cancel();
+        speakingNow = false;
+        btn.textContent = tr('startListening');
+        return;
+      }
+      window.speechSynthesis.cancel();
+      var utterance = new window.SpeechSynthesisUtterance(assembleSpokenText(ticket));
+      utterance.lang = speechLangForLocale(currentLocale);
+      utterance.onend = function () {
+        speakingNow = false;
+        btn.textContent = tr('startListening');
+      };
+      window.speechSynthesis.speak(utterance);
+      speakingNow = true;
+      btn.textContent = tr('stopListening');
+    });
+    container.appendChild(btn);
+  }
+
+  function renderApprovalDetail(container, ticketId, entries) {
+    var backBtn = el('button', { type: 'button' }, [tr('approvalDetailBack')]);
+    backBtn.addEventListener('click', function () {
+      if (speechAvailable()) {
+        window.speechSynthesis.cancel();
+      }
+      approvalTicketId = null;
+      renderNeedsApproval(entries);
+    });
+    container.appendChild(backBtn);
+
+    var ticket = findApprovalTicket(ticketId);
+    if (!ticket) {
+      container.appendChild(noDataParagraph(tr('ticketNotFound')));
+      return;
+    }
+    container.appendChild(el('h3', {}, [ticket.id + ' — ' + ticketTitle(ticket)]));
+    var usingFrDescription = currentLocale === 'fr' && !!ticket.descriptionFr;
+    var description = usingFrDescription ? ticket.descriptionFr : ticket.description;
+    if (isUntranslatedFr(usingFrDescription, ticket.descriptionFrUntranslated)) {
+      container.appendChild(untranslatedNotice());
+    }
+    container.appendChild(el('p', {}, [description || tr('noDescription')]));
+    renderListenControl(container, ticket);
+    container.appendChild(el('h4', {}, [tr('documentationAcceptance')]));
+    if (!ticket.scenarios || ticket.scenarios.length === 0) {
+      container.appendChild(noDataParagraph(tr('noScenariosResolved')));
+      return;
+    }
+    ticket.scenarios.forEach(function (s) {
+      container.appendChild(el('h5', {}, [s.name]));
+      container.appendChild(el('pre', { class: 'gherkin' }, [s.text]));
+    });
+  }
+
   function renderNeedsApproval(entries) {
     var container = document.getElementById('needsApproval');
     container.innerHTML = '';
+    if (approvalTicketId) {
+      renderApprovalDetail(container, approvalTicketId, entries);
+      return;
+    }
     if (!entries || entries.length === 0) {
       container.appendChild(noDataParagraph(tr('needsApprovalEmpty')));
       return;
     }
     var list = el('ul', {});
     entries.forEach(function (t) {
-      list.appendChild(el('li', {}, [t.id + ' — ' + t.title]));
+      var item = el('li', {});
+      var btn = el('button', { type: 'button', class: 'docs-list-item' }, [t.id + ' — ' + t.title]);
+      btn.addEventListener('click', function () {
+        approvalTicketId = t.id;
+        renderNeedsApproval(entries);
+      });
+      item.appendChild(btn);
+      list.appendChild(item);
     });
     container.appendChild(list);
   }
