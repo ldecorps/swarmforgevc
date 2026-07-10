@@ -205,6 +205,56 @@ test('scanTextForStorageGlobal still flags real code usage elsewhere in a file t
   assert.deepEqual(violation, { from: 'media/real-violation.js', to: 'localStorage', rule: 'no-webview-storage' });
 });
 
+// Architect bounce (BL-259, 20260710, second): the line-comment stripper
+// above treated ANY `//` as a comment start, including a `//` inside an
+// ordinary string literal (e.g. a URL) - so it silently deleted REAL CODE
+// that followed it on the same line, a false NEGATIVE (worse than the
+// original false positive: a real violation goes uncaught). Comment
+// stripping must be string-aware: a `//`/`/*` inside a '...'/"..."/`...`
+// literal is not a comment start.
+
+test('scanTextForStorageGlobal still flags real code after a // inside a URL string literal on the same line', () => {
+  const violation = scanTextForStorageGlobal(
+    'media/real-violation.js',
+    "const url = 'https://example.com'; localStorage.setItem('x', '1');\n"
+  );
+  assert.deepEqual(violation, { from: 'media/real-violation.js', to: 'localStorage', rule: 'no-webview-storage' });
+});
+
+test('scanTextForStorageGlobal still flags real code after a // inside a double-quoted URL string literal', () => {
+  const violation = scanTextForStorageGlobal(
+    'media/real-violation.js',
+    'fetch("https://example.com/api"); sessionStorage.getItem("x");\n'
+  );
+  assert.deepEqual(violation, { from: 'media/real-violation.js', to: 'sessionStorage', rule: 'no-webview-storage' });
+});
+
+test('scanTextForStorageGlobal still flags real code after a // inside a template-literal URL string', () => {
+  const violation = scanTextForStorageGlobal(
+    'media/real-violation.js',
+    '`https://example.com/${id}`; localStorage.setItem("x", "1");\n'
+  );
+  assert.deepEqual(violation, { from: 'media/real-violation.js', to: 'localStorage', rule: 'no-webview-storage' });
+});
+
+test('scanTextForStorageGlobal does not treat a /* -looking sequence inside a string as a block-comment start', () => {
+  const violation = scanTextForStorageGlobal(
+    'media/real-violation.js',
+    'const s = "look /* not a comment"; localStorage.setItem("x", "1");\n'
+  );
+  assert.deepEqual(violation, { from: 'media/real-violation.js', to: 'localStorage', rule: 'no-webview-storage' });
+});
+
+test('scanTextForStorageGlobal still ignores a genuine // comment even when an earlier string on the same line contains a URL', () => {
+  assert.equal(
+    scanTextForStorageGlobal(
+      'media/clean.js',
+      "const url = 'https://example.com'; // mentions localStorage only in this comment\nconsole.log(url);\n"
+    ),
+    null
+  );
+});
+
 test('mergeDependencyGateResults combines depcruise violations and supplementary-scan violations into one deterministic result', () => {
   const depcruise = { passed: false, violations: [{ from: 'src/a.ts', to: 'fs', rule: 'no-io-from-policy' }] };
   const supplementary = [{ from: 'media/real-violation.js', to: 'localStorage', rule: 'no-webview-storage' }];
