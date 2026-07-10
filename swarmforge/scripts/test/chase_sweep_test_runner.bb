@@ -39,6 +39,13 @@
 (defn log-call! [& parts]
   (spit calls-log (str (str/join " " parts) "\n") :append true))
 
+;; BL-209: the shared rate-limit cooldown file lives directly in
+;; fixture-root - a test pre-populates fixture-root/rate-limit-cooldown.json
+;; to simulate an existing cooldown; absent (the common case for this
+;; harness's existing scenarios) reads as "not cooling down", preserving
+;; every prior test's behavior unchanged.
+(def rate-limit-state-dir fixture-root)
+
 (def adapters
   {:get-liveness (fn [_role] liveness)
    :send-wake-up! (fn [role] (log-call! "wake-up" role))
@@ -47,6 +54,12 @@
    :get-last-activity-ms (fn [_role] last-activity-ms)
    :on-stuck-escalation! (fn [role escalated] (log-call! "escalation" role (str escalated)))
    :log-telemetry! (fn [event _now-ms]
-                      (log-call! "telemetry" (:type event) (:role event) (:handoffId event) (str (:count event))))})
+                      (log-call! "telemetry" (:type event) (:role event) (:handoffId event) (str (:count event))))
+   :get-rate-limit-cooldown-until-ms
+   (fn [role] (chase-sweep-lib/read-rate-limit-cooldown-until-ms rate-limit-state-dir role))
+   :get-rate-limit-cooldown-woken-marker
+   (fn [role] (chase-sweep-lib/read-rate-limit-cooldown-woken-marker rate-limit-state-dir role))
+   :mark-rate-limit-cooldown-woken!
+   (fn [role until-ms] (chase-sweep-lib/mark-rate-limit-cooldown-woken! rate-limit-state-dir role until-ms))})
 
 (chase-sweep-lib/run-sweep! [{:role role :inbox-new-dir inbox-new-dir :in-process-dir in-process-dir}] now-ms config adapters)
