@@ -1,0 +1,77 @@
+id: BL-231
+title: "Swarm-compliance battery: qualify a candidate agent model (Grok, Mistral, ...) against the tasks every role must do"
+direction: tooling
+priority: 40
+mutation_cost: medium
+source: "operator chat request 2026-07-10: 'add a little agent testing exercise so we can test grok, mistral, etc. — find a series of tasks agents should be able to do to be swarm compliant.'"
+
+description: |
+  A repeatable exercise to decide whether a candidate model can act as a swarm
+  agent ("swarm compliant"). Confirmed with the operator (2026-07-10):
+    - FORMAT: hybrid — script the objectively-checkable tasks (pass/fail against
+      the real helper scripts), surface the judgment-y ones to a short human
+      rubric. Scales to testing many models with modest manual effort.
+    - ENVIRONMENT: standalone probe — the candidate runs the battery in a
+      throwaway scratch worktree against the real scripts; no full swarm needed.
+    - SCOPE: comprehensive — the 8 role-agnostic core competencies PLUS each
+      role's signature gate.
+
+  The 8 core (role-agnostic) competencies, grounded in the constitution:
+    1. Startup re-read — on wake/clear, re-read constitution + PIPELINE + role.
+    2. Receive — ready_for_next.sh; resume in_process first; parse
+       TASK/BATCH/NO_TASK; never peek inbox/new directly.
+    3. Send a valid handoff — draft + swarm_handoff.sh: correct type/to/priority,
+       <=80-char note, no reserved headers, never write inbox/new.
+    4. Complete — done_with_current.sh; treat a note as a task.
+    5. Git/worktree discipline — work only in own worktree; role-bylined commit;
+       ./tmp not /tmp; merge_and_process + ancestry check before forwarding.
+    6. No-op rule — don't forward a no-functional-change commit; DO forward a
+       docs/config parcel.
+    7. No self-scheduling — no loop/cron/send_later.
+    8. Asks when blocked — on ambiguity/contradiction, stop and ask, not fabricate.
+
+  Per-role signature gates (candidate tested in the role it would fill):
+    specifier -> lint-clean Gherkin feature file; coder -> a building,
+    test-passing commit; cleaner -> a behavior-preserving refactor (tests green);
+    architect -> a design-review note naming a real concern; hardener -> CRAP <= 6
+    and no surviving mutants on changed code; documenter -> a doc/diagram update
+    matching a change; QA -> an acceptance run + correct approve/reject;
+    coordinator -> a promotion respecting depth cap + orthogonality.
+
+  Output: a per-model scorecard (each competency pass/fail/human-verdict + an
+  overall "swarm compliant" verdict). The battery also runs against the current
+  Claude agents as a known-good REFERENCE and must not flag them non-compliant —
+  this validates the battery itself and doubles as a swarm self-test.
+
+  Scope: a new probe harness (reuse the real helper scripts; the OPTIONAL live
+  variant may reuse the tracer-bullet harness trace-hop.js). Host-side and
+  testable per the engineering boundary. Do not modify the helper scripts or
+  role prompts — the battery observes them.
+
+  DEPENDENCY: actually driving a NON-Claude candidate as an agent requires the
+  provider abstraction (BL-206–209, provider-contract work). Until that lands the
+  battery is validated against Claude (reference scenario) and defines the bar;
+  the compliance DEFINITION is provider-agnostic.
+
+  DELIVER IN SLICES (recommended): slice 1 = scripted core battery + scorecard +
+  reference self-test; slice 2 = per-role gates; slice 3 = human-rubric wiring.
+  Ship slice 1 first; it is the smallest useful "swarm compliant" screen.
+
+acceptance: specs/features/BL-231-swarm-compliance-battery.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs:
+  1. Run the battery against the current Claude agent config (reference); assert
+     every scripted core check passes and the scorecard shows overall compliant.
+  2. Inject a non-compliant behavior (a draft that writes inbox/new directly; a
+     commit missing the role byline; a forwarded no-op commit; a self-scheduled
+     loop); assert each is recorded fail with a reason on the scorecard.
+  3. Run a per-role gate (e.g. specifier) and assert its outcome is recorded (a
+     lint-clean feature file passes gherkin_lint_gate).
+  4. Confirm the judgment competencies (asks-when-blocked, startup-reread) are
+     surfaced with a human rubric and their verdicts land on the scorecard.
+  5. Confirm the battery ran in a scratch worktree and left the real backlog/
+     mailbox state untouched.
+
+# HUMAN APPROVAL: feature file specs/features/BL-231-...feature is a new draft
+# authored by the specifier and is pending human review.
