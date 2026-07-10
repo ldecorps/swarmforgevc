@@ -36,6 +36,7 @@ const DOMAINS = [
   require('./backendSwitchSteps'),
   require('./docsWindowsClaimSteps'),
   require('./effortDialSteps'),
+  require('./accessibilitySteps'),
 ];
 
 function registerSteps(registry) {

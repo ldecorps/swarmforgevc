@@ -665,14 +665,28 @@
     return 'mailto:' + encodeURIComponent(recertEmailTo()) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
   }
 
+  // BL-238: role="button" on an <a href> promises Space-bar activation per
+  // ARIA button semantics, but a native anchor only activates on Enter/
+  // click - this keydown handler completes that contract rather than
+  // leaving Space silently do nothing for a keyboard/screen-reader user.
   function mailtoLink(label, href) {
-    return el('a', { href: href, class: 'recert-send-link', role: 'button' }, [label]);
+    var link = el('a', { href: href, class: 'recert-send-link', role: 'button' }, [label]);
+    link.addEventListener('keydown', function (e) {
+      if (e.key === ' ') {
+        e.preventDefault();
+        link.click();
+      }
+    });
+    return link;
   }
 
   function renderRecertUpdateForm(container, scenario) {
     container.innerHTML = '';
     container.appendChild(el('h4', {}, [scenario.name]));
-    var textarea = el('textarea', { class: 'recert-update-text' }, []);
+    // BL-238: the preceding <h4> is not programmatically associated with
+    // this control (no <label for>/id pairing in this codebase's plain-DOM
+    // helper style) - aria-label gives it an accessible name directly.
+    var textarea = el('textarea', { class: 'recert-update-text', 'aria-label': 'Edit scenario text: ' + scenario.name }, []);
     textarea.value = scenario.text;
     container.appendChild(textarea);
 
