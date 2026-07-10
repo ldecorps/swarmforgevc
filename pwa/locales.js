@@ -41,6 +41,12 @@
       noScenariosResolved: 'no scenarios resolved for this ticket',
       noDescription: 'No description.',
       docsNotAvailable: 'documentation not available',
+      // BL-254: the search box's placeholder and the no-results state - the
+      // matched CONTENT (Gherkin/title/description text) stays canonical
+      // English regardless of locale (bilingual-04's own rule), only this
+      // chrome text is translated.
+      docsSearchPlaceholder: 'Search spec text…',
+      docsNoSearchResults: 'No tickets match your search.',
       couldNotLoadDocsTree: 'Could not load docs-tree.json (offline and nothing cached yet).',
       couldNotLoadBacklog: 'Could not load backlog.json (offline and nothing cached yet).',
       couldNotLoadRecertBatch: 'Could not load recert-batch.json (offline and nothing cached yet).',
@@ -97,6 +103,8 @@
       noScenariosResolved: 'aucun scénario résolu pour ce ticket',
       noDescription: 'Aucune description.',
       docsNotAvailable: 'documentation non disponible',
+      docsSearchPlaceholder: 'Rechercher dans le texte des specs…',
+      docsNoSearchResults: 'Aucun ticket ne correspond à votre recherche.',
       couldNotLoadDocsTree: 'Impossible de charger docs-tree.json (hors ligne et rien en cache).',
       couldNotLoadBacklog: 'Impossible de charger backlog.json (hors ligne et rien en cache).',
       couldNotLoadRecertBatch: 'Impossible de charger recert-batch.json (hors ligne et rien en cache).',
