@@ -19,16 +19,12 @@
  * derivation logic here, same posture as recruiter-run.ts.
  */
 
-import { createComplianceBatteryGate } from '../recruiter/complianceBatteryGate';
 import { ConfChangeSuggestion, ModelCandidate, RoleLeaderboard } from '../recruiter/candidate';
 import { labelCostTier } from '../recruiter/costTierLabel';
-import { EscalatedCandidate, RecruiterReport, RoleReport, runRecruiter } from '../recruiter/orchestrator';
-import { createFileRoleTrialRunner } from '../recruiter/roleTrialRunner';
+import { EscalatedCandidate, RecruiterReport, RoleReport } from '../recruiter/orchestrator';
 import { createFileRosterSource } from '../recruiter/rosterSource';
-import { createFileSecretStore } from '../recruiter/secretStore';
-import { createFileSignupSource } from '../recruiter/signupSource';
-import { readCurrentModelByRole } from './recruiter-run';
-import { printJsonToStdout, runCliMain } from './swarm-metrics';
+import { runRecruiterWithFileAdapters } from '../recruiter/runRecruiterFromFiles';
+import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 
 export interface BakeoffRunArgs {
   catalogFile: string;
@@ -105,26 +101,12 @@ export function labelReportCostTiers(report: RecruiterReport, candidates: ModelC
   };
 }
 
-export async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
-  if (!args) {
-    process.stderr.write(USAGE);
-    process.exitCode = 1;
-    return;
-  }
-
+export const main = makeArgsGuardedMain(parseArgs, USAGE, async (args) => {
   const roster = createFileRosterSource(args.catalogFile);
   const candidates = await roster.discover();
-  const report = await runRecruiter({
-    discovery: roster,
-    signup: createFileSignupSource(args.signupKeysFile),
-    secretStore: createFileSecretStore(args.secretsFile),
-    trialRunner: createFileRoleTrialRunner(args.roleTrialsFile),
-    battery: createComplianceBatteryGate(),
-    currentModelByRole: readCurrentModelByRole(args.currentModelsFile),
-  });
+  const report = await runRecruiterWithFileAdapters(roster, args);
   printJsonToStdout(labelReportCostTiers(report, candidates));
-}
+});
 
 if (require.main === module) {
   runCliMain(main);
