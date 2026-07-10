@@ -142,15 +142,30 @@ export function startBounceWatcher(
   // This is the single place that decides null vs. a real watcher; the
   // caller's own null-check is the only other branch point (extension.ts's
   // now-removed early existsSync guard duplicated this decision and made
-  // that branch unreachable).
+  // that branch unreachable). Not a failure - never reported via
+  // onWatcherLost - the "restart after every successful launch/bounce" hook
+  // is what re-attempts this later, once the swarm actually exists.
   if (!fs.existsSync(swarmforgeDir)) {
     return null;
   }
 
-  // Watch the directory since watching a non-existent file may not work reliably
-  const watcher = fs.watch(swarmforgeDir, (eventType, filename) => {
-    handleWatchEvent(filename, bounceFilePath, onBounce, onError, scheduleTick);
-  });
+  // fs.watch can throw SYNCHRONOUSLY (e.g. ENOSPC once the host's inotify
+  // watch limit is exhausted) rather than failing later via an 'error'
+  // event on an already-created watcher - both are real, unexpected
+  // failures and must reach onWatcherLost through the same channel so a
+  // caller has exactly one place to decide whether/how to retry.
+  let watcher: fs.FSWatcher;
+  try {
+    // Watch the directory since watching a non-existent file may not work reliably
+    watcher = fs.watch(swarmforgeDir, (eventType, filename) => {
+      handleWatchEvent(filename, bounceFilePath, onBounce, onError, scheduleTick);
+    });
+  } catch (err) {
+    if (onWatcherLost) {
+      onWatcherLost(`Bounce watcher failed to start: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return null;
+  }
 
   watcher.on('error', (err) => {
     if (onWatcherLost) {
@@ -165,4 +180,122 @@ export function startBounceWatcher(
   });
 
   return watcher;
+}
+
+// BL-115 bounce-watch-05 / engineering.prompt's retry-cap rule: a lost
+// watcher must not re-establish immediately and unconditionally forever -
+// e.g. a persistent ENOSPC would otherwise spin a tight infinite loop.
+// Exponential backoff (attempt is 1-based: the Nth retry), capped at maxMs.
+export const DEFAULT_MAX_REESTABLISH_ATTEMPTS = 5;
+export const DEFAULT_REESTABLISH_BACKOFF_BASE_MS = 1000;
+export const DEFAULT_REESTABLISH_BACKOFF_MAX_MS = 30000;
+
+export function computeReestablishBackoffMs(
+  attempt: number,
+  baseMs: number = DEFAULT_REESTABLISH_BACKOFF_BASE_MS,
+  maxMs: number = DEFAULT_REESTABLISH_BACKOFF_MAX_MS
+): number {
+  return Math.min(baseMs * Math.pow(2, Math.max(0, attempt - 1)), maxMs);
+}
+
+export interface ResilientWatcherHandle {
+  close: () => void;
+}
+
+export interface ResilientWatcherOptions {
+  scheduleTick?: ScheduleTick;
+  maxAttempts?: number;
+  backoffBaseMs?: number;
+  backoffMaxMs?: number;
+  onLost?: (reason: string) => void;
+  onExhausted?: (reason: string) => void;
+}
+
+/**
+ * Bounded, backed-off re-establish loop around a single-attempt watcher
+ * factory. attemptEstablish is given an onLost callback to invoke if/when
+ * ITS watcher is later lost - it returns the watcher (or null for a
+ * non-failure "nothing to watch yet", which is never retried here; the
+ * caller's own periodic re-invocation, e.g. after every launch/bounce,
+ * covers that case instead).
+ *
+ * A successful establish resets the attempt count, so a later, unrelated
+ * failure gets its own full retry budget rather than inheriting an old
+ * count. Exhausting maxAttempts calls onExhausted instead of retrying
+ * forever (BL-115 bounce-watch-05). Kept generic (not bounce-specific) so
+ * its retry/backoff/cap logic is unit-testable with a fully fake watcher
+ * factory and a fake scheduleTick - no real fs.watch, no real timers.
+ */
+export function createResilientWatcherSupervisor(
+  attemptEstablish: (onLost: (reason: string) => void) => fs.FSWatcher | null,
+  options: ResilientWatcherOptions = {}
+): ResilientWatcherHandle {
+  const {
+    scheduleTick = defaultScheduleTick,
+    maxAttempts = DEFAULT_MAX_REESTABLISH_ATTEMPTS,
+    backoffBaseMs = DEFAULT_REESTABLISH_BACKOFF_BASE_MS,
+    backoffMaxMs = DEFAULT_REESTABLISH_BACKOFF_MAX_MS,
+    onLost,
+    onExhausted,
+  } = options;
+
+  let current: fs.FSWatcher | null = null;
+  let attempt = 0;
+  let disposed = false;
+
+  function handleLost(reason: string): void {
+    if (disposed) {
+      return;
+    }
+    if (onLost) {
+      onLost(reason);
+    }
+    attempt += 1;
+    if (attempt >= maxAttempts) {
+      if (onExhausted) {
+        onExhausted(reason);
+      }
+      current = null;
+      return;
+    }
+    scheduleTick(tryOnce, computeReestablishBackoffMs(attempt, backoffBaseMs, backoffMaxMs));
+  }
+
+  function tryOnce(): void {
+    if (disposed) {
+      return;
+    }
+    const watcher = attemptEstablish(handleLost);
+    if (watcher) {
+      attempt = 0;
+    }
+    current = watcher;
+  }
+
+  tryOnce();
+
+  return {
+    close: () => {
+      disposed = true;
+      closeBounceWatcher(current);
+      current = null;
+    },
+  };
+}
+
+export interface StartResilientBounceWatcherOptions extends ResilientWatcherOptions {
+  onError?: (error: string) => void;
+}
+
+/** Production wiring: createResilientWatcherSupervisor bound to the real startBounceWatcher. */
+export function startResilientBounceWatcher(
+  targetPath: string,
+  onBounce: (bounceType: BounceType) => void,
+  options: StartResilientBounceWatcherOptions = {}
+): ResilientWatcherHandle {
+  const { onError, ...supervisorOptions } = options;
+  return createResilientWatcherSupervisor(
+    (onLost) => startBounceWatcher(targetPath, onBounce, onError, undefined, onLost),
+    supervisorOptions
+  );
 }
