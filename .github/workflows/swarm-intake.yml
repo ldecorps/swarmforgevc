@@ -42,13 +42,16 @@ jobs:
           echo "file=$file" >> "$GITHUB_ENV"
 
       - name: Commit
+        env:
+          NUM: ${{ github.event.issue.number }}
+          URL: ${{ github.event.issue.html_url }}
         run: |
           git config user.name "swarm-intake[bot]"
           git config user.email "swarm-intake@users.noreply.github.com"
           git add "$file"
-          git commit -m "Intake GH-${{ github.event.issue.number }} to backlog root
+          git commit -m "Intake GH-$NUM to backlog root
 
-          From issue: ${{ github.event.issue.html_url }}"
+          From issue: $URL"
           git push
 
       - name: Acknowledge on issue
