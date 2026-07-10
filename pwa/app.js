@@ -383,11 +383,17 @@
     }
     var speakingNow = false;
     var btn = el('button', { type: 'button' }, [tr('startListening')]);
+    // BL-238 (architect bounce): aria-label mirrors the visible label,
+    // matching the existing data-i18n-aria pattern - since this control
+    // toggles Listen/Stop, the aria-label must track the SAME state on
+    // every transition, not just be set once at creation.
+    btn.setAttribute('aria-label', tr('startListening'));
     btn.addEventListener('click', function () {
       if (speakingNow) {
         window.speechSynthesis.cancel();
         speakingNow = false;
         btn.textContent = tr('startListening');
+        btn.setAttribute('aria-label', tr('startListening'));
         return;
       }
       window.speechSynthesis.cancel();
@@ -396,10 +402,12 @@
       utterance.onend = function () {
         speakingNow = false;
         btn.textContent = tr('startListening');
+        btn.setAttribute('aria-label', tr('startListening'));
       };
       window.speechSynthesis.speak(utterance);
       speakingNow = true;
       btn.textContent = tr('stopListening');
+      btn.setAttribute('aria-label', tr('stopListening'));
     });
     container.appendChild(btn);
   }
