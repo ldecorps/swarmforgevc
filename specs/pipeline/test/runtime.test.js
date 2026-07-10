@@ -21,6 +21,25 @@ test('substitute leaves an unmatched token untouched', () => {
   assert.equal(substitute('a role "<role>" is dead', { other: 'x' }), 'a role "<role>" is dead');
 });
 
+// BL-259: a real Scenario Outline Examples column name with a space (e.g.
+// "forbidden edge", "what is checked") was silently never substituted -
+// the placeholder regex only matched [A-Za-z0-9_]+, so <forbidden edge>
+// passed through literally, and every step handler saw the raw "<...>"
+// text instead of the real per-example value.
+test('substitute replaces a multi-word <param with spaces> token from the example row', () => {
+  assert.equal(
+    substitute('a dependency edge where "<forbidden edge>"', { 'forbidden edge': 'a policy module imports fs' }),
+    'a dependency edge where "a policy module imports fs"'
+  );
+});
+
+test('substitute replaces multiple distinct multi-word tokens in the same step text', () => {
+  assert.equal(
+    substitute('given "<what is checked>" and "<forbidden edge>"', { 'what is checked': 'the whole repository', 'forbidden edge': 'a cycle' }),
+    'given "the whole repository" and "a cycle"'
+  );
+});
+
 test('scenarioSteps concatenates background steps before scenario steps', () => {
   const feature = { background: [step('Given', 'setup')] };
   const scenario = { steps: [step('When', 'action'), step('Then', 'result')] };
