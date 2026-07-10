@@ -91,26 +91,18 @@ function debouncedSendTilePaneSize(role, tile, output) {
 // BL-238: aria-expanded tracks the same collapsed/expanded state the glyph
 // swap already conveys visually, so a screen reader announces the current
 // state of a native <button> it already reads as keyboard-operable for free.
-runsToggleBtn.addEventListener('click', () => {
-  recentRunsEl.classList.toggle('collapsed');
-  const collapsed = recentRunsEl.classList.contains('collapsed');
-  runsToggleBtn.textContent = collapsed ? '▸' : '▾';
-  runsToggleBtn.setAttribute('aria-expanded', String(!collapsed));
-});
+function wireCollapseToggle(button, panel) {
+  button.addEventListener('click', () => {
+    panel.classList.toggle('collapsed');
+    const collapsed = panel.classList.contains('collapsed');
+    button.textContent = collapsed ? '▸' : '▾';
+    button.setAttribute('aria-expanded', String(!collapsed));
+  });
+}
 
-backlogToggleBtn.addEventListener('click', () => {
-  backlogEl.classList.toggle('collapsed');
-  const collapsed = backlogEl.classList.contains('collapsed');
-  backlogToggleBtn.textContent = collapsed ? '▸' : '▾';
-  backlogToggleBtn.setAttribute('aria-expanded', String(!collapsed));
-});
-
-metricsToggleBtn.addEventListener('click', () => {
-  metricsEl.classList.toggle('collapsed');
-  const collapsed = metricsEl.classList.contains('collapsed');
-  metricsToggleBtn.textContent = collapsed ? '▸' : '▾';
-  metricsToggleBtn.setAttribute('aria-expanded', String(!collapsed));
-});
+wireCollapseToggle(runsToggleBtn, recentRunsEl);
+wireCollapseToggle(backlogToggleBtn, backlogEl);
+wireCollapseToggle(metricsToggleBtn, metricsEl);
 
 // BL-034: delegated on the stable list container, not per-row, since
 // renderBacklog replaces backlogListEl's innerHTML on every poll.
