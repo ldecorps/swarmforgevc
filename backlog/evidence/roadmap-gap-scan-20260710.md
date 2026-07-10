@@ -86,3 +86,11 @@ they are not lost):
 
 Windows ruling: docs are wrong, not the architecture — BL-237 corrects the docs;
 do NOT spec native Windows support.
+
+### Remaining gaps specced (2026-07-10, coordinator: "spec next")
+- Accessibility -> **BL-238** (keyboard nav + labels, webview + PWA).
+- Gap #4 remote gate-answer write path (answer captured gates only) -> **BL-240**.
+- Gap #3 Telegram chat adapter (human-only projection; relays gate replies via
+  BL-240) -> **BL-239** (depends_on BL-240).
+- Gap #5 remote-access security hardening -> **BL-241** (depends_on BL-240).
+All gap-scan items are now specced or ruled. Backlog gap scan CLOSED.
