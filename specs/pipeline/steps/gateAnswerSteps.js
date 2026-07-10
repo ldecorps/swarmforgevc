@@ -62,7 +62,11 @@ function registerSteps(registry) {
 
   // ── answer-unblocks-01 ─────────────────────────────────────────────────
   registry.define(/^an authenticated remote client$/, (ctx) => {
-    ctx.authHeaders = { authorization: `Bearer ${TOKEN}` };
+    // BL-241: answering a gate is a CONTROL action, which needs the
+    // step-up header in addition to the bearer - the legacy string-token
+    // bootstrap this fixture uses (see startBridge/normalizeToRegistry in
+    // bridgeServer.ts) accepts the same value for both.
+    ctx.authHeaders = { authorization: `Bearer ${TOKEN}`, 'x-control-token': TOKEN };
   });
 
   registry.define(/^it submits an answer to that captured gate$/, async (ctx) => {
@@ -124,7 +128,7 @@ function registerSteps(registry) {
     writeSessionsTsv(ctx.targetPath, ['coder', 'cleaner']);
     writeTmuxSocket(ctx.targetPath, '/tmp/aps-gate-answer-two.sock');
     ctx.fakeTmux = installFakeTmux(gatedTmuxRules());
-    ctx.authHeaders = { authorization: `Bearer ${TOKEN}` };
+    ctx.authHeaders = { authorization: `Bearer ${TOKEN}`, 'x-control-token': TOKEN };
   });
 
   registry.define(/^the remote client answers one of them$/, async (ctx) => {
