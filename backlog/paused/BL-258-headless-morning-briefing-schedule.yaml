@@ -67,4 +67,4 @@ qa_e2e_procedure: |
 # HUMAN APPROVAL: feature file
 # specs/features/BL-258-headless-morning-briefing-schedule.feature is a NEW draft
 # authored by the specifier and is PENDING human review.
-human_approval: pending
+human_approval: approved

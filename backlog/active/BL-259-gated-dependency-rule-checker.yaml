@@ -1,0 +1,104 @@
+id: BL-259
+title: "Gated static dependency-rule checker: enforce dependency-direction/boundary rules as a hard architect gate"
+direction: tooling
+priority: 35
+mutation_cost: medium
+source: "operator intake 2026-07-10 (via coordinator): backlog/INTAKE-gated-dependency-checker.md — 'a real, tool-backed, GATED dependency-rule checker the architect MUST run; make it a hard gate like the hardener's no-surviving-mutants gate.'"
+
+description: |
+  Make the architect's dependency-direction check mechanical and GATED. Today
+  architect.prompt:30 says "check module boundaries, dependency direction,
+  encapsulation..." as PROSE judgment and the cleaner corrects by hand; there is no
+  tool (grep-confirmed: no dependency-cruiser / eslint-boundaries / madge / ts-arch).
+  Add a real, pinned, gated checker so compliance is a hard fail, not eyeballing.
+
+  Tool: a PINNED declarative dependency-rule checker. Recommended: dependency-cruiser
+  (declarative forbidden rules, non-zero exit on violation, diffable report).
+  Acceptable alternatives: eslint-plugin-boundaries / import no-restricted-paths, or
+  ts-arch (ArchUnit-style). Pinned per the engineering pinned-tools rule (exact ref
+  in package.json + lockfile; a bump is a human commit). The tool choice is the
+  build's, among these vetted candidates.
+
+  Ruleset — encode THIS project's dependency rules (the ones architect/cleaner check
+  in prose) as machine-checkable FORBIDDEN EDGES (config is versioned project source,
+  reviewed, not generated):
+    1. no-io-from-policy: high-level policy modules must not import IO/UI/framework/
+       filesystem/network/device modules.
+    2. view-not-import-host-io: webview/view code must not import extension-host I/O.
+    3. no-process-spawn-from-view: no direct child_process/process-spawn from the view
+       layer (bypassing the tmux substrate).
+    4. core-not-vscode-api: testable-core modules must not depend on the VS Code API,
+       the webview context, or live tmux/PTY (the engineering testable boundary).
+    5. no-webview-storage: no webview browser-storage import (localStorage/
+       sessionStorage).
+    6. acyclic: no dependency cycles.
+  Mapping the project's actual directories to policy/IO/view/core is a build task —
+  derive it from the current module layout (local-engineering two-layer rules).
+
+  Wanted behavior (observable):
+    - Code with no forbidden edge passes the gate; the parcel proceeds.
+    - A forbidden edge is a HARD FAIL: the architect bounces the parcel to the coder
+      with the specific offending edge (source file -> target file) and the rule name,
+      and does NOT forward it onward.
+    - Each rule above is enforced (a matching forbidden edge is reported as violating
+      that named rule).
+    - The report is deterministic and diffable (stable ordering), so the bounce note
+      is precise and reproducible.
+    - The gate scopes to the parcel's changed files for the per-review gate, and
+      supports a full-repo run for CI / the acceptance pipeline.
+
+  Constraints:
+    - PINNED tool (engineering rule): exact version in package.json/lockfile; bump is
+      a human commit. The ruleset config is versioned project source.
+    - DETERMINISTIC, diffable output naming each violating edge + its rule.
+    - COMPLEMENTS BL-255 (temporal/co-change, advisory); this is static + gated — two
+      separate tools. Do not merge them.
+    - DO NOT HOT-EDIT THE LIVE ARCHITECT PROTOCOL (BL-247 lesson): the
+      architect.prompt Review Order update that makes this a required gate step lands
+      WITH the tool, sequenced through the pipeline — never edited ahead of the tool
+      existing (an architect told to run a non-existent gate would stall).
+    - TESTABLE host-side: the gate wrapper (parse checker output -> pass/violations
+      -> gate decision + bounce-note formatting) is a testable module fed recorded
+      checker output; the ruleset itself is validated by running the pinned checker
+      against fixture code (a fixture with a known forbidden edge FAILS; a clean
+      fixture PASSES). No dependence on a live full-repo run in unit tests.
+
+  Scope: (a) add + pin the dependency-rule checker in package.json/lockfile; (b) the
+  ruleset config (forbidden edges 1-6) mapping this project's directories; (c) a
+  runnable gate command (changed-files and full-repo modes) with deterministic
+  report; (d) a testable gate wrapper producing the pass/violation decision + precise
+  bounce note; (e) when the tool + ruleset land, update
+  swarmforge/roles/architect.prompt Review Order to REQUIRE running the gate (a hard
+  fail bounces to coder) — sequenced with the tool through the pipeline, not a
+  hot-edit. Verify the live architect review path before wiring the gate step.
+
+  DELIVERY: buildable now (no unbuilt dependency). Priority normal, BUT it changes a
+  role gate — sequence carefully; run the architect.prompt change through the
+  pipeline (BL-247). Likely one slice (tool + ruleset + gate + wrapper), with the
+  prompt wiring as the final integration.
+
+acceptance: specs/features/BL-259-gated-dependency-rule-checker.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (checker output recorded for the wrapper tests; the
+  ruleset validated against fixture code):
+  1. Run the gate over a clean fixture (no forbidden edge); assert it passes and the
+     parcel may proceed.
+  2. Run it over a fixture with a forbidden edge (e.g. a policy module importing a
+     filesystem module); assert a hard fail, and that the report names the offending
+     edge (source -> target) and the rule; assert the architect's action is a bounce
+     to coder, not a forward.
+  3. For each ruleset rule (no-io-from-policy, view-not-import-host-io,
+     no-process-spawn-from-view, core-not-vscode-api, no-webview-storage, acyclic),
+     feed a fixture edge that breaks it; assert it is reported under that rule name.
+  4. Run the gate twice over identical input; assert byte-identical reports
+     (deterministic).
+  5. Run in per-parcel mode (changed files only) and full-repo mode; assert each
+     checks the expected scope.
+  6. Confirm the tool + version are pinned in package.json/lockfile and the ruleset
+     config is committed project source.
+
+# HUMAN APPROVAL: feature file
+# specs/features/BL-259-gated-dependency-rule-checker.feature is a NEW draft authored
+# by the specifier and is PENDING human review.
+human_approval: approved

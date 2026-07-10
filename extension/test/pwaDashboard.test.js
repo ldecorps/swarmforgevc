@@ -100,6 +100,30 @@ test('renders the state board, velocity, burndown, and cycle-time sections from 
   assert.match(document.getElementById('board').textContent, /BL-100 — cost telemetry — ETA 2026-08-01/);
 });
 
+// ── BL-251: needs-approval list (pwa-lists-pending-01) ────────────────────
+
+test('the needs-approval section lists exactly the tickets in backlog.json\'s needsApproval, with id and title', async () => {
+  const dom = renderDashboard(fakeDashboard({ needsApproval: [{ id: 'BL-200', title: 'A ticket pending review' }] }));
+  await flush();
+  const text = dom.window.document.getElementById('needsApproval').textContent;
+  assert.match(text, /BL-200/);
+  assert.match(text, /A ticket pending review/);
+});
+
+test('the needs-approval section has no approve/reject control - read-only', async () => {
+  const dom = renderDashboard(fakeDashboard({ needsApproval: [{ id: 'BL-200', title: 'A ticket pending review' }] }));
+  await flush();
+  const container = dom.window.document.getElementById('needsApproval');
+  const controls = container.querySelectorAll('button, input, textarea, [contenteditable="true"], form');
+  assert.equal(controls.length, 0);
+});
+
+test('an empty needsApproval array shows an explicit no-data state, not a blank section (empty-state-04)', async () => {
+  const dom = renderDashboard(fakeDashboard({ needsApproval: [] }));
+  await flush();
+  assert.match(dom.window.document.getElementById('needsApproval').textContent, /Nothing awaiting approval/);
+});
+
 test('trend arrows match each section\'s own direction (up/down/flat) - the fixture varies them precisely so a swapped or dropped arrow is caught', async () => {
   const dom = renderDashboard(fakeDashboard());
   await flush();
