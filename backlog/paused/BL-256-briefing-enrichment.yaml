@@ -1,0 +1,79 @@
+id: BL-256
+title: "Briefing enrichment: what-merged/blocked digest, per-stage throughput/dwell, QA-bounce/chase trends, PWA deep links (sliced)"
+direction: tooling
+priority: 35
+mutation_cost: medium
+source: "operator direction 2026-07-10 (via coordinator, backlog/INTAKE-beef-up-briefing-and-pwa.md): beef up the daily briefing; operator selected all briefing candidates + 'think of any observables you already have — I'd rather have too many and remove what I don't need.'"
+
+description: |
+  Additive enrichment of the daily briefing (BL-099: business-features headline +
+  delivery-metric trends + forecasts + dashboard link; BL-251 adds a needs-approval
+  list; BL-252 adds a suite-duration trend). Operator wants MORE observables and
+  will drop what they don't need — so this is a SLICED epic; each section is a slice
+  the operator can keep or drop.
+
+  Sections (slices), each reusing EXISTING telemetry (do not re-derive):
+    1. What-merged / what's-blocked digest — tickets merged since the last briefing
+       (backlog done/ + git) and currently blocked/stalled tickets (active/ + stall
+       signals). Why: at-a-glance progress + attention items.
+    2. Per-stage throughput & dwell — each stage's dwell time + pipeline throughput,
+       from BL-102's stage-dwell report (stageDwell.ts). Why: spot bottlenecks.
+    3. QA-bounce & chase trends — bounce rate + chase/nudge counts with trend
+       direction, from chaserMonitor.ts + QA-bounce telemetry. Why: pipeline-health
+       signal (the circuit-breaker's inputs).
+    4. Deep links into PWA views — each briefing item links to its PWA view (ticket,
+       approval list, trend). Why: one tap from the email to the phone.
+    5. GENEROUS EXTRAS (operator "too many things") — surface any other cheap, already
+       -available observable as its own droppable slice: per-role resource use
+       (resourceTelemetry.ts CPU/RAM), cost-per-stage where telemetry exists
+       (costTelemetry.ts / BL-213), forecast-ETA "changed since yesterday" call-outs
+       (deliveryMetrics forecasts — BL-099 already has the base). Add each only where
+       the data already exists; do not build new telemetry here.
+
+  Wanted behavior (observable):
+    - The briefing lists tickets merged since the last briefing and the blocked/
+      stalled ones needing attention.
+    - It reports per-stage dwell + throughput, and QA-bounce/chase counts with trend
+      direction.
+    - Briefing items deep-link into their PWA views.
+    - A section whose telemetry is unavailable shows an explicit no-data note (BL-099
+      missing-data posture) rather than breaking or vanishing silently.
+
+  Constraints:
+    - REUSE, don't re-derive: read from the existing metrics/telemetry modules
+      (stageDwell, deliveryMetrics, trend, chaserMonitor, costTelemetry,
+      resourceTelemetry); the briefing composes them, it does not recompute them.
+    - GIT-PROJECTION BOUNDARY (BL-252): the committed briefing derives from
+      git-visible state + existing telemetry; do not embed machine-local-only data in
+      a way that breaks reproducibility — where a metric is machine-local, present it
+      as a point-in-time observation, consistent with today's briefing.
+    - TESTABLE host-side: the section-assembly logic (telemetry -> section text) is a
+      testable module; the email send is the unsuitable boundary — assert on the
+      assembled section content, not a real send.
+    - GRACEFUL GAPS: every section degrades to an explicit no-data note.
+
+  Scope: extend the briefing composition (swarmforge/scripts/briefing_email_lib.bb
+  and/or the briefing generator that writes docs/briefings/<date>.md) with the
+  sections above, each reading its existing telemetry source. Verify the live
+  briefing-generation path before naming files in a built slice.
+
+  DELIVERY: SLICED — each section is an independently buildable/droppable slice. At
+  build time scope the live acceptance feature file to BUILT slices; park the rest in
+  a BL-256-*.feature.draft (BL-233 slice-scoping rule). Buildable now (reuses shipped
+  telemetry). Priority normal.
+
+acceptance: specs/features/BL-256-briefing-enrichment.feature
+
+qa_e2e_procedure: |
+  Per built slice (telemetry fed from fixtures; no real email send):
+  1. With fixture merged/blocked state, assert the briefing lists the merged and the
+     blocked/stalled tickets.
+  2. With fixture stage-dwell telemetry, assert per-stage dwell + throughput appear.
+  3. With fixture bounce/chase telemetry, assert the rates + trend direction appear.
+  4. Assert briefing items include deep links to their PWA views.
+  5. With a section's telemetry unavailable, assert an explicit no-data note (not a
+     broken or silently-omitted section).
+
+# HUMAN APPROVAL: feature file specs/features/BL-256-briefing-enrichment.feature is a
+# NEW draft authored by the specifier and is PENDING human review.
+human_approval: pending
