@@ -19,8 +19,16 @@
  * gate.
  */
 import { execFileSync } from 'child_process';
+import * as fs from 'fs';
 import * as path from 'path';
-import { parseDependencyCruiserOutput, renderGateOutcome } from '../quality/dependencyGate';
+import {
+  DependencyGateResult,
+  DependencyViolation,
+  parseDependencyCruiserOutput,
+  mergeDependencyGateResults,
+  scanTextForStorageGlobal,
+  renderGateOutcome,
+} from '../quality/dependencyGate';
 import { runCliMain } from './swarm-metrics';
 
 const EXTENSION_ROOT = path.join(__dirname, '..', '..');
@@ -65,10 +73,75 @@ export function runDependencyCruiser(
   });
 }
 
+// Real fs walk of every .js file under a media/ scope path - the only
+// realistic file type/location for the view-layer localStorage/
+// sessionStorage global-usage check (QA bounce 6747a4812d), since
+// dependency-cruiser's own import-graph analysis structurally cannot see
+// a bare global reference. Non-media scope paths (e.g. 'src', a changed
+// src/*.ts file) contribute nothing here - correctly, since the rule only
+// ever applied to the view layer.
+function walkJsFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...walkJsFiles(full));
+    } else if (entry.name.endsWith('.js')) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
+function isMediaScopePath(scopePath: string): boolean {
+  return scopePath === 'media' || scopePath.startsWith('media/');
+}
+
+function findMediaJsFiles(cwd: string, scopePaths: string[]): string[] {
+  const results: string[] = [];
+  for (const scopePath of scopePaths) {
+    if (!isMediaScopePath(scopePath)) {
+      continue;
+    }
+    const fullPath = path.join(cwd, scopePath);
+    let stat;
+    try {
+      stat = fs.statSync(fullPath);
+    } catch {
+      continue;
+    }
+    if (stat.isDirectory()) {
+      results.push(...walkJsFiles(fullPath).map((f) => path.relative(cwd, f)));
+    } else if (scopePath.endsWith('.js')) {
+      results.push(scopePath);
+    }
+  }
+  return results;
+}
+
+export function scanMediaFilesForStorageGlobals(cwd: string, scopePaths: string[]): DependencyViolation[] {
+  return findMediaJsFiles(cwd, scopePaths)
+    .map((relPath) => scanTextForStorageGlobal(relPath, fs.readFileSync(path.join(cwd, relPath), 'utf8')))
+    .filter((v): v is DependencyViolation => v !== null);
+}
+
+// The full gate: dependency-cruiser's import-graph rules PLUS the
+// supplementary global-usage scan, merged into one result - injectable
+// (cwd/configPath) for the same reason runDependencyCruiser is.
+export function runGate(
+  scopePaths: string[],
+  cwd: string = EXTENSION_ROOT,
+  configPath: string = DEFAULT_CONFIG_PATH
+): DependencyGateResult {
+  const rawJson = runDependencyCruiser(scopePaths, cwd, configPath);
+  const depcruiseResult = parseDependencyCruiserOutput(rawJson);
+  const supplementaryViolations = scanMediaFilesForStorageGlobals(cwd, scopePaths);
+  return mergeDependencyGateResults(depcruiseResult, supplementaryViolations);
+}
+
 export function main(): void {
   const { scopePaths } = parseArgs(process.argv.slice(2));
-  const rawJson = runDependencyCruiser(scopePaths);
-  const result = parseDependencyCruiserOutput(rawJson);
+  const result = runGate(scopePaths);
   const outcome = renderGateOutcome(result);
   console.log(outcome.text);
   process.exitCode = outcome.exitCode;

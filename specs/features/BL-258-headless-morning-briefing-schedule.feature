@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=77d8d31d312dc4c5d8d017bd5390132c6b1b60aab6a610aa7b2161b7e9920c6e
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-10T19:51:29.552048334Z","feature_name":"the daily briefing is generated every morning even when the swarm runs headless","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-258-headless-morning-briefing-schedule.feature","background_hash":"337aa3835d62d1add0d205b01e542f495b10632e1e78c292ce9de14c2c4e7b4e","implementation_hash":"unknown","scenarios":[{"index":3,"name":"the morning time is read from configuration","scenario_hash":"ecf8917aee4122578ae7d30d6e683ecf09ca14d504341edcd6f053b63d391cb1","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-10T19:51:29.552048334Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the daily briefing is generated every morning even when the swarm runs headless
 
   # Operator direction 2026-07-10 ("I need this scheduled every morning, to start

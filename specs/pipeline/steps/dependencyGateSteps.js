@@ -2,20 +2,20 @@
 
 // BL-259: step handlers for "a gated static dependency-rule checker
 // enforces the project's dependency-direction rules". Drives the REAL
-// pinned dependency-cruiser (via extension/out/tools/dependency-gate.js's
-// exported runDependencyCruiser, the SAME wiring the architect's own gate
-// run uses) against REAL, isolated fixture code trees, using the REAL
-// project ruleset (.dependency-cruiser.cjs) - per the ticket's own
-// "the ruleset itself is validated by running the pinned checker against
-// fixture code" requirement. No mocked checker output.
+// pinned dependency-cruiser PLUS the supplementary global-usage scan (via
+// extension/out/tools/dependency-gate.js's exported runGate - the SAME
+// combined wiring the architect's own gate run uses, fixed after QA bounce
+// 6747a4812d found depcruise alone cannot see a bare localStorage/
+// sessionStorage global reference) against REAL, isolated fixture code
+// trees, using the REAL project ruleset (.dependency-cruiser.cjs) - per
+// the ticket's own "the ruleset itself is validated by running the pinned
+// checker against fixture code" requirement. No mocked checker output.
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { runDependencyCruiser } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'tools', 'dependency-gate'));
-const { parseDependencyCruiserOutput, formatBounceNote } = require(
-  path.join(__dirname, '..', '..', '..', 'extension', 'out', 'quality', 'dependencyGate')
-);
+const { runGate: runDependencyGate } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'tools', 'dependency-gate'));
+const { formatBounceNote } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'quality', 'dependencyGate'));
 
 const REAL_CONFIG_PATH = path.join(__dirname, '..', '..', '..', 'extension', '.dependency-cruiser.cjs');
 
@@ -36,9 +36,8 @@ function writeFile(root, relPath, content) {
   fs.writeFileSync(fullPath, content);
 }
 
-function runGate(ctx, scopePaths) {
-  const rawJson = runDependencyCruiser(scopePaths, ctx.fixtureRoot, REAL_CONFIG_PATH);
-  ctx.gateResult = parseDependencyCruiserOutput(rawJson);
+function runGateForCtx(ctx, scopePaths) {
+  ctx.gateResult = runDependencyGate(scopePaths, ctx.fixtureRoot, REAL_CONFIG_PATH);
 }
 
 // One fixture-builder per Scenario Outline `forbidden edge` value (a
@@ -63,8 +62,16 @@ const FORBIDDEN_EDGE_FIXTURES = {
     writeFile(root, 'src/swarm/oops.ts', "import * as vscode from 'vscode';\nexport function oops() { return vscode; }\n");
     return { scope: ['src'], expectedRule: 'core-not-vscode-api' };
   },
+  // QA bounce (6747a4812d): the ORIGINAL fixture here used
+  // require('localforage') - a wrapper-package IMPORT, which
+  // dependency-cruiser's own import-graph analysis can see. But the
+  // realistic violation (and QA's own exact repro) is a BARE
+  // localStorage/sessionStorage global reference, which has no import
+  // statement at all - depcruise alone cannot see it; only the
+  // supplementary scan runGate() now also runs can. This fixture matches
+  // QA's own repro pattern exactly.
   'webview code imports browser storage': (root) => {
-    writeFile(root, 'media/storage.js', "const localforage = require('localforage');\nlocalforage.setItem('x', 1);\n");
+    writeFile(root, 'media/storage.js', "localStorage.setItem('x', '1');\n");
     return { scope: ['media'], expectedRule: 'no-webview-storage' };
   },
   'the imports form a dependency cycle': (root) => {
@@ -88,7 +95,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the architect runs the dependency-rule gate$/, (ctx) => {
-    runGate(ctx, ctx.scope);
+    runGateForCtx(ctx, ctx.scope);
   });
 
   registry.define(/^the gate passes and the parcel may proceed$/, (ctx) => {
@@ -141,7 +148,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the gate runs$/, (ctx) => {
-    runGate(ctx, ctx.scope);
+    runGateForCtx(ctx, ctx.scope);
   });
 
   registry.define(/^it is reported as violating the "([^"]+)" rule$/, (ctx, expectedRuleName) => {
@@ -160,10 +167,8 @@ function registerSteps(registry) {
   });
 
   registry.define(/^running it again produces the same violation report$/, (ctx) => {
-    const rawFirst = runDependencyCruiser(ctx.scope, ctx.fixtureRoot, REAL_CONFIG_PATH);
-    const rawSecond = runDependencyCruiser(ctx.scope, ctx.fixtureRoot, REAL_CONFIG_PATH);
-    const first = parseDependencyCruiserOutput(rawFirst);
-    const second = parseDependencyCruiserOutput(rawSecond);
+    const first = runDependencyGate(ctx.scope, ctx.fixtureRoot, REAL_CONFIG_PATH);
+    const second = runDependencyGate(ctx.scope, ctx.fixtureRoot, REAL_CONFIG_PATH);
     if (JSON.stringify(first) !== JSON.stringify(second)) {
       throw new Error('expected byte-identical reports across repeated runs on identical inputs');
     }
@@ -192,7 +197,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^it checks "([^"]+)"$/, (ctx, expectedCoverage) => {
-    runGate(ctx, ctx.scope);
+    runGateForCtx(ctx, ctx.scope);
     if (ctx.scopeName === 'per-parcel') {
       if (expectedCoverage !== 'only the changed files') {
         throw new Error(`fixture/example mismatch for per-parcel: "${expectedCoverage}"`);
