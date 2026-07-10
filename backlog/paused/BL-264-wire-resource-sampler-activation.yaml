@@ -1,0 +1,85 @@
+id: BL-264
+title: "Wire the resource sampler into swarm activation so cost/resource readers get real samples (gap #7)"
+direction: tooling
+priority: 25
+mutation_cost: low
+source: "operator direction 2026-07-10 (via coordinator, spec-vs-implementation gap pass, gap #7): backlog/INTAKE-wire-resource-sampler.md — the resource-usage sampler is built but never started, so every live swarm reports 'no samples'. Operator approved closing it."
+
+description: |
+  extension/src/metrics/resourceTelemetry.ts is complete and tested — it exports
+  startResourceSampler(...), stopResourceSampler(...), sampleProcessStats(pid), and
+  appendResourceSample(targetPath, role, rss, cpu, atMs). The READ side already
+  consumes its output (metrics/swarmMetrics.ts, tools/swarm-metrics.ts,
+  notify/costHealthSidecar.ts, bridge/bridgeState.ts). BUT extension.ts never
+  references it (grep-confirmed) — the sampler is never STARTED, so no samples are
+  appended and every downstream reader shows "no samples yet."
+
+  This is a WIRING ticket — do NOT rebuild the module. Reuse
+  startResourceSampler / stopResourceSampler / sampleProcessStats /
+  appendResourceSample as-is; call them from the extension's real swarm-lifecycle
+  path.
+
+  Verified live layer (specifier grepped the tree):
+    - startResourceSampler(targetPath, roles: SampledRole[], getStats?, scheduleTick?,
+      intervalMs?) returns the interval handle and takes INJECTABLE getStats +
+      scheduleTick seams (default sampleProcessStats / setInterval), and
+      stopResourceSampler(intervalId, clearTick?) — so start->sample->append and
+      stop->no-append are asserted against fakes, never a real timer.
+    - Swarm lifecycle hooks in extension.ts: launchSwarm(targetPath, runName, ...) at
+      activation-reattach (~:236), relaunch (~:1207), and the swarmforge.launchSwarm
+      command (~:1286); stop via stopSwarm (~:1160), stopSwarmCompletely
+      (swarmforge.stopSwarm command ~:1408), and stopSwarmOnExtensionShutdown. Start
+      the sampler after a successful launch/reattach; stop it on every stop/shutdown
+      path. Hold the returned interval handle across the lifecycle so it can be
+      stopped (no leak).
+    - Resolve each role's pid from the existing swarm-discovery layer
+      (swarm/swarmDiscovery.ts / swarm/tmuxClient.ts) — reuse, do not add a new
+      discovery path.
+
+  Wanted behavior (observable):
+    - While a swarm runs, RSS/CPU samples are collected per role and appended via the
+      existing appendResourceSample, so the cost/resource readers (/cost-telemetry,
+      cost sidecar, bridge) show real data instead of "no samples."
+    - The sampler STARTS when the swarm starts and STOPS when the swarm stops — no
+      leaked interval past teardown.
+
+  Constraints:
+    - WIRING ONLY: reuse the four exported functions as-is. Do NOT change the
+      telemetry FORMAT or the reader side — only start producing the samples the
+      readers already expect.
+    - NO REAL TIMERS in tests (engineering rule): drive start->sample->append and
+      stop->no-more-append through the injected scheduleTick + getStats seams against
+      a fake clock, never wall-clock. The lifecycle wiring decision (start on
+      swarm-up, stop on swarm-down) is a pure/testable unit.
+    - NO LEAKED SAMPLER: stopping the swarm must stop the sampler (assert the tick
+      handle is cleared and no further samples append after teardown).
+    - COMPOSE, DON'T FORK: resolve pids via the existing swarm-discovery layer; do not
+      add a second discovery mechanism.
+
+  Scope: the extension's swarm-lifecycle wiring (extension.ts and/or the swarm
+  start/stop modules) — start the resource sampler after a successful
+  launchSwarm/reattach (holding the interval handle), resolving each role's pid via
+  swarmDiscovery/tmuxClient; stop it on stopSwarm / stopSwarmCompletely /
+  stopSwarmOnExtensionShutdown. Verify the exact activation + start/stop path (and the
+  SampledRole shape the sampler expects) before naming files in the built slice.
+
+acceptance: specs/features/BL-264-wire-resource-sampler-activation.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (injected clock + fake getStats; no real timer/swarm):
+  1. Start the sampler for a fixture role set with a fake getStats and injected tick;
+     advance the fake clock; assert an RSS/CPU sample is appended per role via the
+     existing append path.
+  2. Assert the lifecycle decision starts the sampler on swarm-ready and not before.
+  3. Stop the swarm; assert the sampler is stopped, its tick handle cleared, and no
+     further samples append after teardown (no leaked interval).
+  4. Assert the telemetry format and the reader side are unchanged (only production
+     of samples is added).
+  5. Confirm pids are resolved via the existing swarm-discovery layer, not a new one.
+
+# HUMAN APPROVAL: feature file
+# specs/features/BL-264-wire-resource-sampler-activation.feature is a NEW draft
+# authored by the specifier and is PENDING human review.
+# Priority 25 (normal-high) per intake — cheap, unblocks the whole cost/resource
+# surface; operator to confirm/adjust.
+human_approval: pending
