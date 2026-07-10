@@ -46,4 +46,4 @@ qa_e2e_procedure: |
   4. Assert children() returns one node per pack agent, each answering the same
      four calls.
 
-# HUMAN APPROVAL: new specifier draft feature file, pending human review.
+# HUMAN APPROVAL: APPROVED by operator 2026-07-10. Promoted to active by coordinator.
