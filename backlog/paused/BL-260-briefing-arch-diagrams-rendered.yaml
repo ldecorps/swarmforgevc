@@ -103,4 +103,4 @@ qa_e2e_procedure: |
 # HUMAN APPROVAL: feature file
 # specs/features/BL-260-briefing-arch-diagrams-rendered.feature is a NEW draft
 # authored by the specifier and is PENDING human review.
-human_approval: pending
+human_approval: approved

@@ -25,6 +25,11 @@
      and the ticket-detail status line; nothing about interactivity
      changes, only color. */
   .not-yet-implemented { color: color-mix(in srgb, CanvasText 55%, transparent); }
+  /* BL-261: the SAME amber "needs attention" hue used elsewhere in this
+     project for this class of signal (BL-078/BL-252's suite-duration warn
+     treatment) - a machine-translation fallback shown as if it were real
+     French must never look like ordinary text. */
+  .untranslated-notice { font-style: italic; font-weight: 600; color: #d4a017; }
   /* BL-238 keyboard-nav-tiles-01/tree-02: an explicit, visible focus ring -
      several controls above zero out their border, which in some browsers
      (notably Safari) can also suppress the default focus ring on buttons

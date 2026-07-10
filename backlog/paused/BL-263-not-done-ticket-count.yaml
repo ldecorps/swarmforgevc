@@ -1,0 +1,82 @@
+id: BL-263
+title: "Show the count of 'not done' tickets in the PWA and the daily briefing"
+direction: tooling
+priority: 40
+mutation_cost: low
+source: "operator direction 2026-07-10 (via coordinator, backlog/INTAKE-not-done-count.md): 'add to the phone app + daily briefing the number of tickets not done.'"
+
+description: |
+  Both the phone app (backlog dashboard) and the daily briefing (morning email)
+  show a single count: how many tickets are NOT done.
+
+  "Not done" = every ticket whose lifecycle state is NOT done — the active and
+  paused tickets, excluding done. A finer active/paused/backlog split is an explicit
+  nice-to-have and is OUT OF SCOPE here; the primary ask is the single total.
+
+  Verified live layer (specifier grepped the tree):
+    - The committed projection producer extension/src/metrics/backlogDashboard.ts
+      (backlog.json, BL-097) already buckets board.active[] / board.paused[] /
+      doneByMilestone. The not-done total is a PURE derivation over data already in
+      that projection: active.length + paused.length. Presentation/composition only
+      — NO new store (BL-252 projection boundary; the count is git-SHA-reproducible
+      from the committed backlog, so unlike suite-durations it MAY live in
+      backlog.json).
+    - The PWA (pwa/app.js) reads backlog.json (BL-097 dashboard) and renders the
+      count on the backlog dashboard.
+    - The daily briefing is composed via swarmforge/scripts/briefing_email_lib.bb,
+      which appends metric lines to the briefing content (the same append-line seam
+      BL-252's suite-duration line uses); extension/src/metrics/deliveryMetrics.ts
+      (BL-099) already derives delivery metrics from the same backlogReader source.
+
+  Wanted behavior (observable):
+    - The PWA backlog dashboard shows the not-done total.
+    - The daily briefing shows the not-done total as one line/metric.
+    - Both surfaces show the SAME number, from ONE shared derivation — they never
+      disagree.
+    - With every ticket done, the total is zero (graceful), not blank or an error.
+
+  Constraints:
+    - PRESENTATION / COMPOSITION ONLY: derive the count from the existing projection;
+      add no authoritative store (BL-252 boundary). Do NOT re-derive backlog state a
+      second way — reuse the existing reader (backlogReader / backlogDashboard).
+    - SINGLE SOURCE (avoid the recurring TS-host / JS-client duplication hazard):
+      one pure count function is the single source. RECOMMENDED mechanism — compute
+      it host-side in the projection producer and EMIT it as a notDoneCount field on
+      backlog.json; the PWA reads that emitted field and the briefing composes the
+      same number, so neither surface recomputes it independently. (Do not hand-
+      duplicate the count logic in JS and TS.)
+    - TESTABLE host-side: the count function (tickets -> not-done total) is a pure,
+      fixtured unit; assert the number, not a live repo scan.
+    - LOCALIZATION (BL-229/230): any new PWA/briefing label goes through the existing
+      string plumbing (pwa/locales.js); graceful empty/zero state.
+    - COMPOSE, DON'T COLLIDE (coordinator orthogonality): touches pwa/app.js
+      (BL-251/257/261 lane) and the briefing compose path (BL-256/258/260 lane) —
+      serialize at build time with those; not a scoping concern.
+
+  Scope: (a) a pure count function (not-done total = active + paused) in the
+  projection producer (backlogDashboard.ts), emitted as a notDoneCount field on
+  backlog.json; (b) pwa/app.js renders the emitted total on the backlog dashboard,
+  label localized via pwa/locales.js; (c) the daily briefing composes the same total
+  as one metric line via the briefing_email_lib.bb append-line seam, reusing the
+  emitted field / count function rather than recomputing. Verify the briefing compose
+  point and the backlog.json field wiring before naming files in the built slice.
+
+acceptance: specs/features/BL-263-not-done-ticket-count.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (count + surfaces fixture-driven, no live repo scan):
+  1. Feed the count function a fixture backlog with active, paused, and done tickets;
+     assert the total = active + paused (done excluded).
+  2. Feed an all-done fixture; assert the total is zero (no blank/error).
+  3. Assert the PWA and the briefing both read the SAME emitted total (one shared
+     derivation) — change the fixture and assert both move together, never diverge.
+  4. Assert the count adds no authoritative store — it is a pure derivation of the
+     committed projection (backlog.json stays git-reproducible).
+  5. Assert the new PWA/briefing label is localized (pwa/locales.js), present in
+     en + fr, with a graceful zero state.
+
+# HUMAN APPROVAL: feature file
+# specs/features/BL-263-not-done-ticket-count.feature is a NEW draft authored by the
+# specifier and is PENDING human review.
+# Priority 40 (normal) is the intake's suggestion; operator to confirm/adjust.
+human_approval: pending
