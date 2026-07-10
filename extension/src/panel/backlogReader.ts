@@ -5,7 +5,16 @@ import * as yaml from 'js-yaml';
 export interface BacklogItem {
   id: string;
   title: string;
-  status: 'todo' | 'active' | 'done';
+  // BL-234: the folder a ticket physically sits in is authoritative for
+  // which bucket it belongs to (readBacklogFolders/readBacklog never gate
+  // on this field) - status is optional because the pipeline moves files
+  // between folders without touching this field, and a great many real
+  // tickets never set it at all. A present-but-unrecognized value (e.g.
+  // "blocked", "paused") is treated the same as absent rather than stored
+  // raw, keeping this type's three known values coherent for the few
+  // consumers (readBacklog's own overrideStatus callers) that DO rely on
+  // it being one of them.
+  status?: 'todo' | 'active' | 'done';
   assignedTo?: string;
   milestone?: string;
   priority?: number;
@@ -131,6 +140,14 @@ function toTrimmedOptionalString(value: unknown): string | undefined {
   return str ? str.trim() : undefined;
 }
 
+// BL-234: a status value that isn't one of VALID_STATUSES (unrecognized,
+// e.g. "blocked"/"paused", or simply absent) reads as undefined rather than
+// dropping the ticket or storing the raw string - the folder is
+// authoritative for bucketing, this field is never a gate.
+function normalizeStatus(statusRaw: string | undefined): BacklogItem['status'] {
+  return statusRaw !== undefined && VALID_STATUSES.has(statusRaw) ? (statusRaw as BacklogItem['status']) : undefined;
+}
+
 // Builds a BacklogItem from a strictly-parsed js-yaml document. Reads only
 // the known BacklogItem fields off the parsed object so extra keys elsewhere
 // in the document (e.g. `evidence:`, `notes:`) never leak into the contract
@@ -139,14 +156,18 @@ function toTrimmedOptionalString(value: unknown): string | undefined {
 // the required-field validation from optional-field assignment so each half
 // stays independently low-complexity/testable.
 function extractRequiredFields(obj: Record<string, unknown>): Pick<BacklogItem, 'id' | 'title' | 'status'> | null {
-  const id = typeof obj.id === 'string' ? obj.id : undefined;
-  const title = typeof obj.title === 'string' ? obj.title : undefined;
-  const statusRaw = typeof obj.status === 'string' ? obj.status : undefined;
+  const id = toOptionalString(obj.id);
+  const title = toOptionalString(obj.title);
 
-  if (!id || !title || !statusRaw || !VALID_STATUSES.has(statusRaw)) {
+  if (!id || !title) {
     return null;
   }
-  return { id, title, status: statusRaw as BacklogItem['status'] };
+  const status = normalizeStatus(toOptionalString(obj.status));
+  const result: Pick<BacklogItem, 'id' | 'title' | 'status'> = { id, title };
+  if (status !== undefined) {
+    result.status = status;
+  }
+  return result;
 }
 
 function assignOptionalFieldsFromObject(item: BacklogItem, obj: Record<string, unknown>): void {
@@ -173,13 +194,13 @@ function buildItemFromParsedObject(obj: Record<string, unknown>): BacklogItem | 
 function parseBacklogYamlLenient(content: string): BacklogItem | null {
   const id = parseYamlScalar(content, 'id');
   const title = parseYamlScalar(content, 'title');
-  const statusRaw = parseYamlScalar(content, 'status');
 
-  if (!id || !title || !statusRaw || !VALID_STATUSES.has(statusRaw)) {
+  if (!id || !title) {
     return null;
   }
 
-  const item: BacklogItem = { id, title, status: statusRaw as BacklogItem['status'] };
+  const item: BacklogItem = { id, title };
+  assignIfDefined(item, 'status', normalizeStatus(parseYamlScalar(content, 'status')));
   assignOptionalFields(item, content);
   return item;
 }

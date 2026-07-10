@@ -32,6 +32,7 @@ const DOMAINS = [
   require('./pwaTranslatedContentSteps'),
   require('./sidecarNoOrphanSteps'),
   require('./recruiterDiscoverSteps'),
+  require('./backlogFoldersStatusSteps'),
 ];
 
 function registerSteps(registry) {
