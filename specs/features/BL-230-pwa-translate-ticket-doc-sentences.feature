@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=681124e91dc4bb918802c7abbde0dd7fddd7f3f8524a6cb7882bf31c4f19dacd
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-10T07:12:43.047775845Z","feature_name":"The PWA auto-translates ticket (and doc) sentences into configured locales at build time, with jargon preserved","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-230-pwa-translate-ticket-doc-sentences.feature","background_hash":"43af0102630fc45886d1f3c5a169770b85875a0133f11ccca2e1772cff038d69","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a ticket title renders translated in a configured target locale","scenario_hash":"54d12417c63a2cc2e08cfde0cbc357efc15b496a142d5ae740b75cdfd11b45ba","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-10T07:12:43.047775845Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The PWA auto-translates ticket (and doc) sentences into configured locales at build time, with jargon preserved
 
   # Follow-up to BL-118. In a non-source locale the chrome is translated but the
