@@ -215,7 +215,7 @@ function fakeEngine(translations = {}) {
   };
 }
 
-test('translateBacklogDashboard adds titleFr to every active/paused/done ticket, leaving English titles unchanged', async () => {
+test('translateBacklogDashboard adds titleTranslations.fr to every active/paused/done ticket, leaving English titles unchanged', async () => {
   const data = buildBacklogDashboard(
     {
       active: [item({ id: 'BL-1', title: 'active ticket' })],
@@ -234,12 +234,12 @@ test('translateBacklogDashboard adds titleFr to every active/paused/done ticket,
   const translated = await translateBacklogDashboard(data, session);
 
   assert.equal(translated.board.active[0].title, 'active ticket');
-  assert.equal(translated.board.active[0].titleFr, 'ticket actif');
-  assert.equal(translated.board.paused[0].titleFr, 'ticket en pause');
-  assert.equal(translated.board.doneByMilestone.M1[0].titleFr, 'ticket terminé');
+  assert.equal(translated.board.active[0].titleTranslations.fr.title, 'ticket actif');
+  assert.equal(translated.board.paused[0].titleTranslations.fr.title, 'ticket en pause');
+  assert.equal(translated.board.doneByMilestone.M1[0].titleTranslations.fr.title, 'ticket terminé');
 });
 
-test('bilingual-05: an unavailable translation flags titleFrUntranslated rather than failing', async () => {
+test('bilingual-05: an unavailable translation flags titleTranslations.fr.untranslated rather than failing', async () => {
   const data = buildBacklogDashboard(
     { active: [item({ id: 'BL-1', title: 'no translation' })], paused: [], done: [] },
     [],
@@ -252,6 +252,60 @@ test('bilingual-05: an unavailable translation flags titleFrUntranslated rather 
 
   const translated = await translateBacklogDashboard(data, session);
 
-  assert.equal(translated.board.active[0].titleFr, 'no translation');
-  assert.equal(translated.board.active[0].titleFrUntranslated, true);
+  assert.equal(translated.board.active[0].titleTranslations.fr.title, 'no translation');
+  assert.equal(translated.board.active[0].titleTranslations.fr.untranslated, true);
+});
+
+// ── BL-230: N-locale generalization + jargon preservation ────────────────
+
+test('BL-230: translateBacklogDashboard populates every configured target locale, not just fr', async () => {
+  const data = buildBacklogDashboard(
+    { active: [item({ id: 'BL-1', title: 'active ticket' })], paused: [], done: [] },
+    [],
+    emptyDeliveryMetrics(),
+    'primary',
+    'abc',
+    '2026-07-09T00:00:00Z'
+  );
+  const engine = {
+    async translate(text, targetLang) {
+      return { success: true, text: `[${targetLang}] ${text}` };
+    },
+  };
+  const session = createTranslationSession(emptyTranslationCache(), engine);
+
+  const translated = await translateBacklogDashboard(data, session);
+
+  // TARGET_LOCALES (targetLocales.ts) is ['fr'] today - this proves the
+  // translation is keyed by whatever locales are actually configured,
+  // not a hardcoded 'fr' field, so a future added locale needs no code
+  // change here (add-language-05).
+  const { TARGET_LOCALES } = require('../out/i18n/targetLocales');
+  for (const locale of TARGET_LOCALES) {
+    assert.equal(translated.board.active[0].titleTranslations[locale].title, `[${locale}] active ticket`);
+  }
+});
+
+test('BL-230: a jargon token (ticket id) in a title survives translation verbatim', async () => {
+  const data = buildBacklogDashboard(
+    { active: [item({ id: 'BL-1', title: 'Fix BL-230 before release' })], paused: [], done: [] },
+    [],
+    emptyDeliveryMetrics(),
+    'primary',
+    'abc',
+    '2026-07-09T00:00:00Z'
+  );
+  const engine = {
+    async translate(text) {
+      // A realistic MT response: translates the prose, leaves the
+      // <jargon> tag pair and its content untouched (DeepL's own
+      // ignore_tags contract - mtEngine.test.js covers the request side).
+      return { success: true, text: text.replace('Fix', 'Réparer').replace('before release', 'avant la sortie') };
+    },
+  };
+  const session = createTranslationSession(emptyTranslationCache(), engine);
+
+  const translated = await translateBacklogDashboard(data, session);
+
+  assert.equal(translated.board.active[0].titleTranslations.fr.title, 'Réparer BL-230 avant la sortie');
 });
