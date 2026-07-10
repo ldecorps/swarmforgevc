@@ -194,8 +194,12 @@
     container.appendChild(el('h3', {}, [tr(titleKey) + ' (' + tickets.length + ')']));
     var list = el('ul', {});
     tickets.forEach(function (t) {
+      // BL-229: swarm/status badges wrap a raw data enum value (not an
+      // English UI label), so they stay unlocalized here and at every
+      // other ' [' + x + ']' badge site below - only the surrounding
+      // "ETA"/"remaining" words are catalog lookups.
       var badge = t.swarm && t.swarm !== 'primary' ? ' [' + t.swarm + ']' : '';
-      var eta = t.p50Iso ? ' — ETA ' + t.p50Iso.slice(0, 10) : '';
+      var eta = t.p50Iso ? tr('etaPrefix') + t.p50Iso.slice(0, 10) : '';
       list.appendChild(el('li', {}, [t.id + ' — ' + ticketTitle(t) + badge + eta]));
     });
     container.appendChild(list);
@@ -233,7 +237,7 @@
       return;
     }
     burndown.forEach(function (m) {
-      container.appendChild(el('h4', {}, [m.milestone + ': ' + m.currentRemaining + ' remaining' + trendArrow(m.trend)]));
+      container.appendChild(el('h4', {}, [m.milestone + ': ' + m.currentRemaining + tr('remainingSuffix') + trendArrow(m.trend)]));
       container.appendChild(barChart(m.dailySeries, 300, 60));
     });
   }
