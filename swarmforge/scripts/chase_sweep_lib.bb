@@ -251,16 +251,82 @@
         (when (= action "respawned")
           (write-respawn-cooldown-until-ms! inbox-new-dir (+ now-ms (* (:respawnCooldownSeconds config) 1000))))))))
 
+;; ── BL-209: rate-limit cooldown gate ─────────────────────────────────────
+;; A role whose agent hit a provider usage limit must not be blind-retried
+;; every sweep cycle into the same limit - it must wait until the reported
+;; reset time, then be woken exactly once to resume. Mirrors the shape the
+;; now-retired TS inboxChaser.ts's own runSweep already had (one shared,
+;; role-keyed cooldown file - NOT chase_sweep_lib.bb's own per-role
+;; respawn-cooldown.json convention above, which is a different concern:
+;; that one throttles the daemon's OWN forced-respawn action; this one
+;; reflects what the AGENT'S PROVIDER reported). The file shape mirrors
+;; extension/src/swarm/cooldownScheduler.ts's CooldownFileState exactly
+;; (role -> {untilMs, wokenForUntilMs}) so the extension (which detects and
+;; records) and this daemon (which enforces) agree on one format without
+;; either side rebuilding the other's logic.
+
+(defn rate-limit-cooling-down?
+  "True while now-ms is still before the recorded cooldown expiry - mirrors
+   cooldownScheduler.ts's isCoolingDown exactly."
+  [cooldown-until-ms now-ms]
+  (and (number? cooldown-until-ms) (< now-ms cooldown-until-ms)))
+
+(defn should-wake-on-rate-limit-expiry?
+  "True exactly once per cooldown window: past expiry AND no wake yet
+   recorded for this exact until-ms - mirrors cooldownScheduler.ts's
+   shouldWakeOnExpiry exactly, including its rationale (comparing against
+   until-ms, not just a boolean flag, so a LATER cooldown for the same role
+   gets its own wake instead of being silenced by a stale marker)."
+  [cooldown-until-ms now-ms woken-for-until-ms]
+  (and (number? cooldown-until-ms)
+       (>= now-ms cooldown-until-ms)
+       (not= woken-for-until-ms cooldown-until-ms)))
+
+(defn rate-limit-cooldown-path [state-dir]
+  (str (fs/path state-dir "rate-limit-cooldown.json")))
+
+(defn read-rate-limit-cooldown-state [state-dir]
+  (or (read-json (rate-limit-cooldown-path state-dir)) {}))
+
+(defn read-rate-limit-cooldown-until-ms [state-dir role]
+  (get-in (read-rate-limit-cooldown-state state-dir) [(keyword role) :untilMs]))
+
+(defn read-rate-limit-cooldown-woken-marker [state-dir role]
+  (get-in (read-rate-limit-cooldown-state state-dir) [(keyword role) :wokenForUntilMs]))
+
+;; Marks (not deletes) the entry, exactly like cooldownScheduler.ts's own
+;; markCooldownWoken - the untilMs itself stays on record so a later, DIFFERENT
+;; cooldown for the same role is still distinguishable from this one.
+(defn mark-rate-limit-cooldown-woken! [state-dir role until-ms]
+  (let [state (read-rate-limit-cooldown-state state-dir)
+        role-kw (keyword role)]
+    (when (contains? state role-kw)
+      (spit (rate-limit-cooldown-path state-dir)
+            (json/generate-string (update state role-kw assoc :wokenForUntilMs until-ms))))))
+
+(defn- apply-rate-limit-expiry-wake! [role adapters cooldown-until-ms]
+  ((:send-wake-up! adapters) role)
+  ((:mark-rate-limit-cooldown-woken! adapters) role cooldown-until-ms))
+
+(defn- sweep-role! [role inbox-new-dir in-process-dir now-ms config adapters]
+  (sweep-in-process! role in-process-dir now-ms config adapters)
+  (sweep-role-inbox! role inbox-new-dir now-ms config adapters))
+
 (defn run-sweep!
   "role-inboxes: seq of {:role :inbox-new-dir :in-process-dir}. Does not own
-   dead-letter recovery/escalation (handoffRecovery.ts) or token-exhaustion
-   cooldown-wake - both are unwired at the current extension.ts call site
-   too, and are deferred to a follow-up ticket rather than widening this
-   parcel."
+   dead-letter recovery/escalation (handoffRecovery.ts) - deferred to a
+   follow-up ticket rather than widening this parcel.
+   adapters additionally requires (BL-209): :get-rate-limit-cooldown-until-ms
+   (fn [role]), :get-rate-limit-cooldown-woken-marker (fn [role]),
+   :mark-rate-limit-cooldown-woken! (fn [role until-ms])."
   [role-inboxes now-ms config adapters]
   (doseq [{:keys [role inbox-new-dir in-process-dir]} role-inboxes]
-    (sweep-in-process! role in-process-dir now-ms config adapters)
-    (sweep-role-inbox! role inbox-new-dir now-ms config adapters)))
+    (let [cooldown-until-ms ((:get-rate-limit-cooldown-until-ms adapters) role)]
+      (when-not (rate-limit-cooling-down? cooldown-until-ms now-ms)
+        (when (should-wake-on-rate-limit-expiry?
+               cooldown-until-ms now-ms ((:get-rate-limit-cooldown-woken-marker adapters) role))
+          (apply-rate-limit-expiry-wake! role adapters cooldown-until-ms))
+        (sweep-role! role inbox-new-dir in-process-dir now-ms config adapters)))))
 
 ;; ── busy-vs-wedged respawn precheck (BL-137/BL-147 parity) ──────────────────
 ;; The daemon's own respawn action must never regress the exact incident
