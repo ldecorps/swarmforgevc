@@ -1,0 +1,62 @@
+name: Second swarm wake-up bridge
+
+# BL-092: an event-driven replacement for manual/periodic `git pull` on the
+# second (secondary-mode) swarm. Runs ONLY on the self-hosted runner
+# registered from inside that swarm's own WSL2 environment
+# (docs/runbooks/BL-091-wsl2-second-swarm-bringup.md) - no inbound ports,
+# tunnels, or firewall changes needed on either machine, since a self-hosted
+# runner holds an outbound long-poll connection to GitHub.
+#
+# No business logic here: sync the swarm's own persistent checkout, decide
+# (via the pure, unit-tested remote_wakeup_lib.bb) whether this push
+# concerns THIS swarm, and if so wake its specifier pane via its own tmux
+# socket - the same wake mechanism handoffd.bb's own notify! already uses.
+# Routing decisions stay with the roles.
+#
+# Setup (once, on the second swarm's own machine/repo settings):
+#   - Register a self-hosted runner labeled "second-swarm" for this repo.
+#   - Set the repository/environment variable SECOND_SWARM_CHECKOUT_PATH to
+#     that runner's persistent swarm checkout (e.g. ~/code/swarmforgevc,
+#     never /mnt/c - see the WSL2 runbook). Not a secret: a local path.
+#   - If your second swarm's own swarmforge.conf swarm_name isn't the
+#     default "second", update SECOND_SWARM_NAME below to match.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backlog/active/**'
+      - 'backlog/paused/**'
+
+jobs:
+  wake:
+    runs-on: [self-hosted, second-swarm]
+    env:
+      SECOND_SWARM_NAME: second
+      SWARM_ROOT: ${{ vars.SECOND_SWARM_CHECKOUT_PATH }}
+    steps:
+      - name: Sync the swarm's own persistent checkout (fast-forward only)
+        run: swarmforge/scripts/remote_wakeup_periodic_pull.sh "$SWARM_ROOT"
+
+      - name: Determine which backlog files this push changed
+        id: changed
+        working-directory: ${{ vars.SECOND_SWARM_CHECKOUT_PATH }}
+        run: |
+          before="${{ github.event.before }}"
+          if [[ "$before" =~ ^0+$ ]]; then
+            # First push seen on this branch (null before-SHA): there is no
+            # prior commit to diff against, so treat every backlog file
+            # present at this commit as newly relevant.
+            files="$(git -C "$SWARM_ROOT" ls-tree -r --name-only "${{ github.sha }}" -- backlog/active backlog/paused)"
+          else
+            files="$(git -C "$SWARM_ROOT" diff --name-only "$before" "${{ github.sha }}" -- backlog/active backlog/paused)"
+          fi
+          {
+            echo "files<<EOF"
+            echo "$files"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Decide and nudge
+        run: |
+          bb swarmforge/scripts/remote_wakeup_nudge.bb "$SWARM_ROOT" "$SECOND_SWARM_NAME" ${{ steps.changed.outputs.files }}
