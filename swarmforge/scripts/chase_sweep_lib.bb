@@ -308,6 +308,10 @@
   ((:send-wake-up! adapters) role)
   ((:mark-rate-limit-cooldown-woken! adapters) role cooldown-until-ms))
 
+(defn- sweep-role! [role inbox-new-dir in-process-dir now-ms config adapters]
+  (sweep-in-process! role in-process-dir now-ms config adapters)
+  (sweep-role-inbox! role inbox-new-dir now-ms config adapters))
+
 (defn run-sweep!
   "role-inboxes: seq of {:role :inbox-new-dir :in-process-dir}. Does not own
    dead-letter recovery/escalation (handoffRecovery.ts) - deferred to a
@@ -318,21 +322,11 @@
   [role-inboxes now-ms config adapters]
   (doseq [{:keys [role inbox-new-dir in-process-dir]} role-inboxes]
     (let [cooldown-until-ms ((:get-rate-limit-cooldown-until-ms adapters) role)]
-      (cond
-        (rate-limit-cooling-down? cooldown-until-ms now-ms)
-        nil ;; skip entirely while cooling down - no chase, no nudge, no wake
-
-        (should-wake-on-rate-limit-expiry?
-         cooldown-until-ms now-ms ((:get-rate-limit-cooldown-woken-marker adapters) role))
-        (do
-          (apply-rate-limit-expiry-wake! role adapters cooldown-until-ms)
-          (sweep-in-process! role in-process-dir now-ms config adapters)
-          (sweep-role-inbox! role inbox-new-dir now-ms config adapters))
-
-        :else
-        (do
-          (sweep-in-process! role in-process-dir now-ms config adapters)
-          (sweep-role-inbox! role inbox-new-dir now-ms config adapters))))))
+      (when-not (rate-limit-cooling-down? cooldown-until-ms now-ms)
+        (when (should-wake-on-rate-limit-expiry?
+               cooldown-until-ms now-ms ((:get-rate-limit-cooldown-woken-marker adapters) role))
+          (apply-rate-limit-expiry-wake! role adapters cooldown-until-ms))
+        (sweep-role! role inbox-new-dir in-process-dir now-ms config adapters)))))
 
 ;; ── busy-vs-wedged respawn precheck (BL-137/BL-147 parity) ──────────────────
 ;; The daemon's own respawn action must never regress the exact incident
