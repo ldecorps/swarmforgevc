@@ -15,6 +15,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { scanInboxNew, scanInProcess } from './inboxChaser';
 import { mailboxDir, RoleEntry } from './swarmState';
 
 export type NodeKind = 'agent' | 'swarm' | 'fleet';
@@ -58,30 +59,12 @@ function isConvergenceNote(content: string): boolean {
   return /merge (your|its) (own )?(worktree )?branch up to qa's/i.test(content) || /qa-approved/i.test(content);
 }
 
-function listHandoffContents(dir: string): string[] {
-  if (!fs.existsSync(dir)) {
-    return [];
-  }
-  const contents: string[] = [];
-  for (const entry of fs.readdirSync(dir)) {
-    const fullPath = path.join(dir, entry);
-    let stat;
-    try {
-      stat = fs.statSync(fullPath);
-    } catch {
-      continue;
-    }
-    if (stat.isDirectory()) {
-      for (const inner of fs.readdirSync(fullPath)) {
-        if (inner.endsWith('.handoff')) {
-          contents.push(fs.readFileSync(path.join(fullPath, inner), 'utf8'));
-        }
-      }
-    } else if (entry.endsWith('.handoff')) {
-      contents.push(fs.readFileSync(fullPath, 'utf8'));
-    }
-  }
-  return contents;
+// Reuses inboxChaser.ts's own scanInboxNew/scanInProcess (already the
+// single, tested definition of "list real .handoff payloads under an
+// inbox dir," including scanInProcess's batch_* subdirectory recursion)
+// rather than a second, independent directory-walk here.
+function readHandoffContents(items: { filePath: string }[]): string[] {
+  return items.map((item) => fs.readFileSync(item.filePath, 'utf8'));
 }
 
 function hasActiveBacklogItems(targetPath: string): boolean {
@@ -93,8 +76,8 @@ function hasActiveBacklogItems(targetPath: string): boolean {
 }
 
 function mailboxAgentStatus(targetPath: string, role: RoleEntry): 'idle' | 'queued' | 'active' | 'done' | 'converging' {
-  const newContents = listHandoffContents(mailboxDir(role, 'inbox', 'new'));
-  const inProcessContents = listHandoffContents(mailboxDir(role, 'inbox', 'in_process'));
+  const newContents = readHandoffContents(scanInboxNew(mailboxDir(role, 'inbox', 'new')));
+  const inProcessContents = readHandoffContents(scanInProcess(mailboxDir(role, 'inbox', 'in_process')));
   if ([...newContents, ...inProcessContents].some(isConvergenceNote)) {
     return 'converging';
   }
