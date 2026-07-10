@@ -161,6 +161,50 @@ test('scanTextForStorageGlobal does not false-positive on an unrelated identifie
   assert.equal(scanTextForStorageGlobal('media/clean.js', 'var myLocalStorageHelper = 1;\n'), null);
 });
 
+// Architect bounce (BL-259, 20260710): the naive word-boundary scan above
+// matched the file's RAW text, including comments - a `//` or `/* */`
+// comment merely discussing localStorage/sessionStorage (e.g. explaining
+// why the code avoids it) would itself fail the gate. Strips comments
+// before matching, same as any developer reading the file would mentally
+// do, so only genuine code usage is flagged.
+
+test('scanTextForStorageGlobal ignores a mention inside a // line comment', () => {
+  assert.equal(
+    scanTextForStorageGlobal('media/clean.js', "// we intentionally avoid localStorage here\nconsole.log('ok');\n"),
+    null
+  );
+});
+
+test('scanTextForStorageGlobal ignores a mention inside a /* */ block comment', () => {
+  assert.equal(
+    scanTextForStorageGlobal('media/clean.js', '/* sessionStorage is not available in this webview */\nconsole.log("ok");\n'),
+    null
+  );
+});
+
+test('scanTextForStorageGlobal ignores a mention inside a multi-line /* */ block comment', () => {
+  assert.equal(
+    scanTextForStorageGlobal('media/clean.js', '/*\n * no localStorage/sessionStorage in this file\n */\nconsole.log("ok");\n'),
+    null
+  );
+});
+
+test('scanTextForStorageGlobal still flags real code usage on the same line as a comment', () => {
+  const violation = scanTextForStorageGlobal(
+    'media/real-violation.js',
+    "localStorage.setItem('x', '1'); // not a comment mention, real usage\n"
+  );
+  assert.deepEqual(violation, { from: 'media/real-violation.js', to: 'localStorage', rule: 'no-webview-storage' });
+});
+
+test('scanTextForStorageGlobal still flags real code usage elsewhere in a file that also has an unrelated comment mentioning it', () => {
+  const violation = scanTextForStorageGlobal(
+    'media/real-violation.js',
+    '// localStorage is used below intentionally, see ticket BL-XXX\nlocalStorage.setItem("x", "1");\n'
+  );
+  assert.deepEqual(violation, { from: 'media/real-violation.js', to: 'localStorage', rule: 'no-webview-storage' });
+});
+
 test('mergeDependencyGateResults combines depcruise violations and supplementary-scan violations into one deterministic result', () => {
   const depcruise = { passed: false, violations: [{ from: 'src/a.ts', to: 'fs', rule: 'no-io-from-policy' }] };
   const supplementary = [{ from: 'media/real-violation.js', to: 'localStorage', rule: 'no-webview-storage' }];
