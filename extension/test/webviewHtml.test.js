@@ -246,11 +246,16 @@ test('panel.js makes the tile header keyboard-operable as a button, not mouse-on
 });
 
 test('panel.js reflects the collapse/expand state via aria-expanded, not just the glyph swap', () => {
-  const toggleBlocks = panelJs.match(/\w+ToggleBtn\.addEventListener\('click', \(\) => \{[\s\S]*?\n\}\);/g) || [];
-  assert.equal(toggleBlocks.length, 3, 'expected exactly 3 section toggle click handlers');
-  for (const block of toggleBlocks) {
-    assert(block.includes("setAttribute('aria-expanded'"), `toggle handler missing aria-expanded sync: ${block}`);
-  }
+  // BL-238/cleaner: the 3 section toggles are wired through one shared
+  // wireCollapseToggle helper (jscpd flagged the original 3 near-identical
+  // click handlers as duplication) - assert its body syncs aria-expanded,
+  // and that all 3 sections actually call it, rather than matching the
+  // pre-refactor per-button click-handler shape.
+  const helperBody = panelJs.match(/function wireCollapseToggle\([^)]*\)\s*\{[\s\S]*?\n\}/);
+  assert(helperBody, 'expected a wireCollapseToggle helper');
+  assert(helperBody[0].includes("setAttribute('aria-expanded'"), `toggle helper missing aria-expanded sync: ${helperBody[0]}`);
+  const callSites = panelJs.match(/wireCollapseToggle\(\w+,\s*\w+\);/g) || [];
+  assert.equal(callSites.length, 3, 'expected exactly 3 section toggles wired through the helper');
 });
 
 test('panel.js names and roles the live output pane for a screen reader', () => {
