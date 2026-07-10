@@ -103,14 +103,19 @@ function authenticateRequest(
   return null;
 }
 
-// The parse -> validate guard chain, run only once the request has already
-// authenticated. Every early exit here is a "not a proposal we can build"
-// outcome (bad JSON, unmatched shape, disallowed sender, out-of-scope
-// outcome) - none of them touch deps.commitProposal.
-function parseProposal(
+type ResolvedFields = { earlyResponse: InboundWebhookResponse; fields?: undefined } | { earlyResponse?: undefined; fields: EmailFields };
+
+// BL-248: parse -> authorize, split from parseProposal's parse -> validate
+// chain below so the sender-allowlist check's own branching doesn't compound
+// into that function's CRAP. Every early exit here is a "never even reaches
+// recert-email parsing" outcome: bad JSON, unmatched shape, or a disallowed
+// sender. A disallowed sender gets 403 (not the 200 "ignored" the shape
+// guards use) so it is distinguishable in logs/monitoring from ordinary
+// non-recert mail landing on the same address.
+function resolveAuthorizedFields(
   rawBody: string,
-  deps: Pick<HandleInboundEmailWebhookDeps, 'nowIso' | 'log' | 'senderAllowlist'>
-): ResolvedProposal {
+  deps: Pick<HandleInboundEmailWebhookDeps, 'log' | 'senderAllowlist'>
+): ResolvedFields {
   let payload: unknown;
   try {
     payload = JSON.parse(rawBody);
@@ -125,15 +130,28 @@ function parseProposal(
     return { earlyResponse: { status: 200, body: 'ignored' } };
   }
 
-  // BL-248: authorization, run BEFORE the email is parsed for a recert
-  // outcome - a disallowed sender's content is never processed beyond
-  // this point. 403 (not the 200 "ignored" the shape/content guards
-  // below use) so a rejected sender is distinguishable in logs/monitoring
-  // from ordinary non-recert mail landing on the same address.
   if (!isSenderAllowed(fields.from, deps.senderAllowlist)) {
     deps.log(`recert webhook: rejected sender "${fields.from ?? '(none)'}" - not on the allowlist`);
     return { earlyResponse: { status: 403, body: 'sender not allowed' } };
   }
+
+  return { fields };
+}
+
+// The parse -> validate guard chain, run only once the request has already
+// authenticated and its sender authorized. Every early exit here is a
+// "not a proposal we can build" outcome (unresolved fields/sender, unmatched
+// recert-email shape, out-of-scope outcome) - none of them touch
+// deps.commitProposal.
+function parseProposal(
+  rawBody: string,
+  deps: Pick<HandleInboundEmailWebhookDeps, 'nowIso' | 'log' | 'senderAllowlist'>
+): ResolvedProposal {
+  const resolved = resolveAuthorizedFields(rawBody, deps);
+  if (!resolved.fields) {
+    return { earlyResponse: resolved.earlyResponse };
+  }
+  const { fields } = resolved;
 
   const parsed = parseRecertEmail(fields.subject, fields.body);
   if (!parsed) {
