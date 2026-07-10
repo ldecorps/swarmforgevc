@@ -31,18 +31,25 @@ interface RawCatalogEntry {
   costTier: CostTier;
 }
 
-function isRawCatalogEntry(value: unknown): value is RawCatalogEntry {
-  if (!isNonNullObject(value)) {
-    return false;
-  }
+// Hardener split (CRAP<=6 gate): the original single 6-condition &&/||
+// chain scored complexity=8. Split into two small, named sub-validators -
+// same behavior, each independently readable and well under threshold.
+function hasCatalogEntryShape(value: Record<string, unknown>): boolean {
   return (
     typeof value.model === 'string' &&
     typeof value.provider === 'string' &&
     isNonNullObject(value.planCost) &&
     isNonNullObject(value.signupPath) &&
-    typeof value.endpointType === 'string' &&
-    (value.costTier === 'paid-only' || value.costTier === 'free/eval-tier')
+    typeof value.endpointType === 'string'
   );
+}
+
+function isValidCostTier(value: unknown): value is CostTier {
+  return value === 'paid-only' || value === 'free/eval-tier';
+}
+
+function isRawCatalogEntry(value: unknown): value is RawCatalogEntry {
+  return isNonNullObject(value) && hasCatalogEntryShape(value) && isValidCostTier(value.costTier);
 }
 
 function toModelCandidate(entry: RawCatalogEntry): ModelCandidate {
