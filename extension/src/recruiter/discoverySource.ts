@@ -9,15 +9,11 @@
 // crawler-backed DiscoverySource can fill the same seam later without
 // touching the report/CLI code that consumes it.
 
-import * as fs from 'fs';
 import { ModelCandidate } from './candidate';
+import { isNonNullObject, readJsonArrayFile } from './jsonCatalog';
 
 export interface DiscoverySource {
   discover(): Promise<ModelCandidate[]>;
-}
-
-function isNonNullObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 
 function isModelCandidate(value: unknown): value is ModelCandidate {
@@ -38,14 +34,7 @@ function isModelCandidate(value: unknown): value is ModelCandidate {
 export function createFileDiscoverySource(candidatesFilePath: string): DiscoverySource {
   return {
     async discover(): Promise<ModelCandidate[]> {
-      if (!fs.existsSync(candidatesFilePath)) {
-        return [];
-      }
-      const parsed = JSON.parse(fs.readFileSync(candidatesFilePath, 'utf-8'));
-      if (!Array.isArray(parsed)) {
-        return [];
-      }
-      return parsed.filter(isModelCandidate);
+      return readJsonArrayFile(candidatesFilePath, isModelCandidate);
     },
   };
 }

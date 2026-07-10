@@ -19,11 +19,19 @@ export interface PlanCost {
   unit: 'free' | 'monthly';
 }
 
+// BL-250 (bake-off, companion to BL-233): whether a candidate has a free/
+// eval tier at all, or requires payment to access. Optional and additive
+// to ModelCandidate - BL-233's own discovery/acquire/qualify/rank never
+// read or require it, so nothing already-shipped changes behavior; only
+// BL-250's own roster source sets it.
+export type CostTier = 'paid-only' | 'free/eval-tier';
+
 export interface ModelCandidate {
   model: string;
   provider: string;
   planCost: PlanCost;
   signupPath: SignupPath;
+  costTier?: CostTier;
 }
 
 // BL-233 slice 2 (auto-acquire-free-02 / acquire-wall-escalates-03): a
