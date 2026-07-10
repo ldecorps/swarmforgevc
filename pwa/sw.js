@@ -30,6 +30,18 @@ const CACHE_NAME = '__PWA_CACHE_NAME_PLACEHOLDER__';
 const SHELL_ASSETS = ['./', './index.html', './app.js', './locales.js', './manifest.json', './icon.svg'];
 const DATA_URLS = ['./backlog.json', './docs-tree.json', './recert-batch.json'];
 
+// BL-249 hardener bounce: app.js persists the locale (BL-118) and font-size
+// (BL-220) user preferences in a SEPARATE Cache Storage cache under this
+// name - kept permanently static (never stamped, unlike CACHE_NAME above)
+// and explicitly exempted from the purge below. Before this exemption, the
+// activate handler deleted ANY cache key that wasn't the current CACHE_NAME,
+// so once CACHE_NAME started actually changing per deploy (BL-249's own
+// point), the very next shell-changing deploy would have silently wiped
+// every returning user's preferences. Mirrored literally in app.js's own
+// PREFERENCES_CACHE_NAME - keep both in sync by hand, since sw.js and app.js
+// share no module system.
+const PREFERENCES_CACHE_NAME = 'swarmforge-dashboard-preferences';
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
@@ -43,7 +55,11 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) =>
+        Promise.all(
+          keys.filter((key) => key !== CACHE_NAME && key !== PREFERENCES_CACHE_NAME).map((key) => caches.delete(key))
+        )
+      )
       .then(() => self.clients.claim())
   );
 });

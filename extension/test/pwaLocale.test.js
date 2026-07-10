@@ -190,7 +190,7 @@ test('bilingual-02: the toggle persists the choice via Cache Storage, not localS
   click(dom, toggle(dom));
   await flush();
 
-  const cache = await dom.window.caches.open('swarmforge-dashboard-v2');
+  const cache = await dom.window.caches.open('swarmforge-dashboard-preferences');
   const stored = await cache.match('./__locale-preference__');
   assert.ok(stored, 'the locale preference must be written into the existing dashboard cache');
   const data = await stored.json();
@@ -202,7 +202,7 @@ test('bilingual-02: a persisted French preference is restored on reopen (no togg
   await flush();
   click(first, toggle(first));
   await flush();
-  const cacheStore = await first.window.caches.open('swarmforge-dashboard-v2');
+  const cacheStore = await first.window.caches.open('swarmforge-dashboard-preferences');
   const stored = await cacheStore.match('./__locale-preference__');
   const persisted = await stored.json();
   assert.equal(persisted.locale, 'fr');
@@ -211,7 +211,7 @@ test('bilingual-02: a persisted French preference is restored on reopen (no togg
   const html = fs.readFileSync(path.join(PWA_DIR, 'index.html'), 'utf8');
   const second = new JSDOM(html, { runScripts: 'outside-only', url: 'https://example.github.io/dashboard/', pretendToBeVisual: true });
   installFakeCaches(second);
-  await second.window.caches.open('swarmforge-dashboard-v2').then((c) => c.put('./__locale-preference__', new second.window.Response(JSON.stringify({ locale: 'fr' }))));
+  await second.window.caches.open('swarmforge-dashboard-preferences').then((c) => c.put('./__locale-preference__', new second.window.Response(JSON.stringify({ locale: 'fr' }))));
   second.window.fetch = (url) => {
     if (url === './backlog.json') return Promise.resolve({ json: () => Promise.resolve(fakeBacklog()) });
     if (url === './docs-tree.json') return Promise.resolve({ json: () => Promise.resolve(fakeDocsTree()) });
@@ -415,7 +415,7 @@ test('BL-230: a persisted locale no longer in the configured set is ignored, fal
   const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://example.github.io/dashboard/', pretendToBeVisual: true });
   installFakeCaches(dom);
   await dom.window.caches
-    .open('swarmforge-dashboard-v2')
+    .open('swarmforge-dashboard-preferences')
     .then((c) => c.put('./__locale-preference__', new dom.window.Response(JSON.stringify({ locale: 'de' }))));
   dom.window.fetch = (url) => {
     if (url === './backlog.json') return Promise.resolve({ json: () => Promise.resolve(fakeBacklog()) });
