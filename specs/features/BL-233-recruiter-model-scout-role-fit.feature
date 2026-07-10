@@ -16,8 +16,9 @@ Feature: a recruiter scouts cheap/free model plans and ranks best-value model pe
   # runner (specs/pipeline/runtime.js) THROWS on any scenario lacking a step
   # handler, so this file carries ONLY the scenarios for slices already BUILT and
   # grows as each slice lands. Currently built: slice 1 = discovery, slice 2 =
-  # acquire access (below). Slices 3-4's Gherkin is parked in the companion
-  # BL-233-recruiter-model-scout-role-fit.slices-3-4.feature.draft and is promoted
+  # acquire access, slice 3 = qualify via battery (below). Slice 4's Gherkin is
+  # parked in the companion
+  # BL-233-recruiter-model-scout-role-fit.slice-4.feature.draft and is promoted
   # into this file when its slice is implemented.
 
   Background:
@@ -48,3 +49,9 @@ Feature: a recruiter scouts cheap/free model plans and ranks best-value model pe
       | payment details       |
       | a captcha             |
       | manual ToS acceptance |
+
+  # BL-233 qualify-via-battery-04
+  Scenario: each acquired candidate is scored by the swarm-compliance battery
+    Given a candidate whose access has been acquired
+    When the recruiter qualifies it
+    Then it runs the swarm-compliance battery and records the candidate's per-role scorecard
