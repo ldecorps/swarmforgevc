@@ -11,11 +11,22 @@ function timingSafeStringEqual(provided: string, expected: string): boolean {
   return crypto.timingSafeEqual(providedBuf, expectedBuf);
 }
 
-export function isAuthorizedRequest(authHeader: string | undefined, token: string): boolean {
+// BL-241: factored out of isAuthorizedRequest so deviceRegistry-based
+// (multi-device) auth checks can extract the same bearer token this
+// single-token check always has, without duplicating the prefix logic.
+export function extractBearerToken(authHeader: string | undefined): string | undefined {
   if (!authHeader || !authHeader.startsWith(BEARER_PREFIX)) {
+    return undefined;
+  }
+  return authHeader.slice(BEARER_PREFIX.length);
+}
+
+export function isAuthorizedRequest(authHeader: string | undefined, token: string): boolean {
+  const provided = extractBearerToken(authHeader);
+  if (provided === undefined) {
     return false;
   }
-  return timingSafeStringEqual(authHeader.slice(BEARER_PREFIX.length), token);
+  return timingSafeStringEqual(provided, token);
 }
 
 // BL-094: a plain browser navigation to the holistic UI's root URL cannot
