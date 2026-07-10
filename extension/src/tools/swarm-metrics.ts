@@ -336,6 +336,28 @@ export function runCliMain(main: () => void | Promise<void>): void {
   }
 }
 
+// Shared "parse positional args or print usage and exit 1" skeleton for
+// tools/ CLIs that take several required args (recruiter-run.ts,
+// bakeoff-run.ts) - jscpd flagged the identical guard block once a second
+// CLI grew the same shape as the first. parseArgs stays each CLI's own
+// (its return shape differs per tool); this only owns the shared
+// "no args -> usage + exit 1, otherwise run the body" wrapper.
+export function makeArgsGuardedMain<T>(
+  parseArgs: (argv: string[]) => T | null,
+  usage: string,
+  run: (args: T) => Promise<void>
+): () => Promise<void> {
+  return async () => {
+    const args = parseArgs(process.argv.slice(2));
+    if (!args) {
+      process.stderr.write(usage);
+      process.exitCode = 1;
+      return;
+    }
+    await run(args);
+  };
+}
+
 export function main(): void {
   const projectRoot = resolveProjectRoot(process.cwd());
   const roles = loadRoles(projectRoot);
