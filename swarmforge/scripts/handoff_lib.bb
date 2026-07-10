@@ -266,6 +266,41 @@
 (defn my-handoff-files [dir]
   (vec (filter mine? (handoff-files dir))))
 
+;; ── BL-218: mailbox intake idempotency ──────────────────────────────────
+;; ready_for_next_task.bb/ready_for_next_batch.bb historically only checked
+;; whether a target in_process file already existed (AMBIGUOUS_TASK_STATE);
+;; neither ever checked whether the SAME handoff (by basename) was already
+;; terminal in completed/ or abandoned/. A stale duplicate lingering in
+;; new/ - e.g. surfaced by the BL-128 migration window's flat<->per-role
+;; layout fallback - was resurrected as brand-new work with a fresh
+;; dequeued_at. dedup-new-candidates is pure over already-listed basenames
+;; (fixtures in tests, real fs/file-name output in production) so intake
+;; can refuse to resurrect a terminal handoff without doing its own I/O -
+;; and the guard holds no matter which physical layout (flat or per-role)
+;; my-mailbox-dir resolved the three directories from.
+
+(defn already-terminal?
+  "True when basename already appears among completed-basenames or
+   abandoned-basenames - the two states a handoff, once reached, must
+   never leave."
+  [basename completed-basenames abandoned-basenames]
+  (boolean (or (contains? (set completed-basenames) basename)
+               (contains? (set abandoned-basenames) basename))))
+
+(defn dedup-new-candidates
+  "Splits new-dir candidate file paths (already sorted; mine? already
+   applied by the caller for task mode) into :skipped (basename already
+   terminal - must not be resurrected) and :dequeueable (genuinely new),
+   preserving order. Builds the terminal-basename set once up front rather
+   than calling already-terminal? (which re-builds both sets from scratch)
+   per candidate - O(n+m) instead of O(n*m) for n candidates and m
+   completed/abandoned basenames."
+  [new-files completed-basenames abandoned-basenames]
+  (let [terminal-basenames (into (set completed-basenames) abandoned-basenames)
+        terminal? (fn [f] (contains? terminal-basenames (fs/file-name f)))]
+    {:skipped (vec (filter terminal? new-files))
+     :dequeueable (vec (remove terminal? new-files))}))
+
 (defn roles-tsv-path []
   (fs/path (target-root) ".swarmforge" "roles.tsv"))
 

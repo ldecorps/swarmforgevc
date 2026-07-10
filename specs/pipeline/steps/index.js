@@ -5,7 +5,12 @@
 // .swarmforge state parsing, handoff protocol, backlog parsing, and grid
 // layout logic (local-engineering.prompt); domains are added here
 // incrementally as tickets need their vocabulary, same as backlogSteps.
-const DOMAINS = [require('./backlogSteps'), require('./daemonWorkflowSteps'), require('./launchSpawnFailureSteps')];
+const DOMAINS = [
+  require('./backlogSteps'),
+  require('./daemonWorkflowSteps'),
+  require('./launchSpawnFailureSteps'),
+  require('./mailboxIntakeSteps'),
+];
 
 function registerSteps(registry) {
   for (const domain of DOMAINS) {
