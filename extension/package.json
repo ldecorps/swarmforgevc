@@ -253,7 +253,7 @@
     "watch": "tsc -watch -p ./",
     "test": "npm run compile && node scripts/recordTestDuration.js",
     "tracer-bullet": "npm run compile && node out/tools/tracer-bullet-launcher.js",
-    "mutation": "npm run compile && stryker run",
+    "mutation": "npm run compile && node scripts/ensureStrykerPwaSandbox.js && stryker run",
     "dry": "jscpd --config .jscpd.json src",
     "coverage": "npm run compile && vitest run --coverage",
     "crap": "npm run coverage && node scripts/crapReport.js"
