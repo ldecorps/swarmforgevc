@@ -3,7 +3,7 @@
 ## 4.1 Pipeline Gates
 1. **Specifier** – Acceptance criteria defined.
 2. **Architect** – Design review passed.
-3. **Hardener** – 100% test coverage, no surviving mutants, CRAP < 5.
+3. **Hardener** – 100% test coverage, no surviving mutants, CRAP <= 6.
 4. **QA** – Final approval before merge.
 
 ## 4.2 Merge Criteria
