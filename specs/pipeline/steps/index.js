@@ -47,6 +47,7 @@ const DOMAINS = [
   require('./recruiterAcquireSteps'),
   require('./recruiterQualifySteps'),
   require('./recruiterRankRecommendSteps'),
+  require('./compositeNodeSteps'),
 ];
 
 function registerSteps(registry) {
