@@ -2,12 +2,12 @@
 
 // BL-233 slice 1 (discover-candidates-01): step handlers for the recruiter
 // discovery scenario only. This ticket is explicitly DELIVER-IN-SLICES
-// (spec: "Ship slice 1 first") - slices 2-4 (auto-acquire + secret store,
-// battery qualification, best-value ranking + report) are NOT implemented
-// yet, so this file intentionally does not register handlers for the
-// feature file's other scenarios (auto-acquire-free-02,
-// acquire-wall-escalates-03, qualify-via-battery-04, best-value-ranking-05,
-// recommend-not-adopt-06) or the shared Background. Running the full
+// (spec: "Ship slice 1 first") - slice 2 (auto-acquire-free-02,
+// acquire-wall-escalates-03) is now implemented in the sibling
+// recruiterAcquireSteps.js. Slices 3-4 (battery qualification, best-value
+// ranking + report: qualify-via-battery-04, best-value-ranking-05,
+// recommend-not-adopt-06) are NOT implemented yet, so neither this file nor
+// recruiterAcquireSteps.js registers handlers for them. Running the full
 // feature file will report "no step handler matched" for those until a
 // later slice lands - expected, not a regression in this slice.
 const path = require('node:path');
