@@ -65,7 +65,13 @@ test('the signature accept and reject tests pass exactly as before passes on a c
 
 test('the reproduction-snippet step fails loudly when the evidence doc still embeds the literal', () => {
   const registry = freshRegistry();
-  const ctx = { evidenceDoc: "const SECRET = 'whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw';\nBuffer.from('x')" };
+  // BL-225: built at runtime, not a literal whsec_ token in this file's own
+  // source text - otherwise this fixture would retrigger the exact scanner
+  // (noWebhookSecretLiteral.test.js) this ticket exists to keep clean. The
+  // runtime VALUE still matches the step handler's whsec_ detection regex,
+  // which is all this test needs.
+  const fakeEmbeddedSecret = 'whsec_' + Buffer.from('bl-225-fixture-step-test-seed').toString('base64');
+  const ctx = { evidenceDoc: `const SECRET = '${fakeEmbeddedSecret}';\nBuffer.from('x')` };
   assert.throws(
     () =>
       resolveAndRun(
