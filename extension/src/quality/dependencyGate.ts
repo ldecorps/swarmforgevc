@@ -36,8 +36,23 @@ interface RawDepcruiseViolation {
 // Word-boundary match so e.g. `myLocalStorageHelper` never false-positives.
 const STORAGE_GLOBAL_PATTERN = /\b(localStorage|sessionStorage)\b/;
 
+// Architect bounce (BL-259, 20260710): scanning RAW file text (as above)
+// also matched a `//` or `/* */` comment merely discussing localStorage/
+// sessionStorage (e.g. explaining why the code avoids it), failing the
+// gate over prose, not code. Strips comments first - block comments
+// (including multi-line) then line comments - so only genuine code
+// survives to the identifier match. Not a full tokenizer (a `//`/`/*`
+// inside a string literal is not distinguished), a deliberate limit
+// matching this check's own "small supplementary scan" scope - the
+// realistic content of media/*.js webview scripts does not lean on such
+// tricks, and the primary defense (dependency-cruiser's import-graph
+// analysis) is unaffected either way.
+function stripComments(content: string): string {
+  return content.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+}
+
 export function scanTextForStorageGlobal(filePath: string, content: string): DependencyViolation | null {
-  const match = content.match(STORAGE_GLOBAL_PATTERN);
+  const match = stripComments(content).match(STORAGE_GLOBAL_PATTERN);
   return match ? { from: filePath, to: match[1], rule: 'no-webview-storage' } : null;
 }
 
