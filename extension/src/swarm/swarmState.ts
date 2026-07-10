@@ -8,12 +8,18 @@ const TSV_ROLE_INDEX = 0;
 const TSV_WORKTREE_NAME_INDEX = 1;
 const TSV_WORKTREE_INDEX = 2;
 const TSV_DISPLAY_NAME_INDEX = 4;
+const TSV_AGENT_INDEX = 5;
 
 export interface RoleEntry {
   role: string;
   worktreeName: string;
   worktreePath: string;
   displayName: string;
+  // BL-208: the configured agent/provider brand (claude/aider/grok/codex/
+  // copilot/mock - agent_runtime_lib.bb's supported-agents), the one
+  // common field cross-provider readers group telemetry by. Undefined for
+  // a TSV row shorter than expected, never a crash.
+  agent?: string;
 }
 
 export interface PipelineStage {
@@ -33,8 +39,9 @@ export function parseRolesTsv(tsv: string): RoleEntry[] {
     const worktreeName = parts[TSV_WORKTREE_NAME_INDEX];
     const worktreePath = parts[TSV_WORKTREE_INDEX];
     const displayName = parts[TSV_DISPLAY_NAME_INDEX];
+    const agent = parts[TSV_AGENT_INDEX];
     if (role && worktreePath && displayName) {
-      entries.push({ role, worktreeName, worktreePath, displayName });
+      entries.push(agent ? { role, worktreeName, worktreePath, displayName, agent } : { role, worktreeName, worktreePath, displayName });
     }
   }
   return entries;
