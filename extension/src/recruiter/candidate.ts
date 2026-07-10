@@ -46,3 +46,53 @@ export interface SignupSource {
 export interface SecretStore {
   store(candidate: ModelCandidate, apiKey: string): Promise<void>;
 }
+
+// BL-233 slice 3 (qualify-via-battery-04): qualifying a candidate means
+// driving it through a representative trial task for each swarm role, then
+// scoring that trial's output with BL-231's swarm-compliance battery
+// (swarmforge/scripts/compliance_battery.bb). gateArgs is deliberately a
+// plain string array, not a typed per-role shape: the battery CLI's own
+// `gate <role> <args...>` argument list already varies per role (coder
+// takes a project dir + shell command, hardener takes complexity/coverage/
+// mutants-survived, etc.) - RoleTrialRunner passes through whatever that
+// role's gate needs, never re-deriving its own copy of that contract.
+export interface RoleTrial {
+  role: string;
+  gateArgs: string[];
+}
+
+// Injectable seam (TESTABLE-boundary constraint): actually driving an
+// arbitrary candidate model through a representative task per role is a
+// separate, provider-specific undertaking with nothing in the ticket
+// specifying it (same posture as acquire.ts's SignupSource - no real
+// automation shipped here). Faked in unit tests.
+export interface RoleTrialRunner {
+  runTrials(candidate: ModelCandidate): Promise<RoleTrial[]>;
+}
+
+export interface BatteryEntry {
+  competency: string;
+  status: string;
+  reason?: string;
+}
+
+export interface BatteryScorecard {
+  model: string;
+  entries: BatteryEntry[];
+  overall: string;
+}
+
+// Wraps the REAL compliance_battery.bb CLI (see complianceBatteryGate.ts) -
+// unlike RoleTrialRunner, this is genuinely real/safe to run in tests: the
+// battery is already-existing, already-tested local infrastructure with no
+// network or external signup involved (the same "real, not faked" posture
+// discoverySource.ts's and secretStore.ts's own file I/O have).
+export interface BatteryGate {
+  gate(role: string, args: string[]): Promise<BatteryEntry>;
+  scorecard(model: string, entries: BatteryEntry[]): Promise<BatteryScorecard>;
+}
+
+export interface QualifyOutcome {
+  model: string;
+  scorecard: BatteryScorecard;
+}
