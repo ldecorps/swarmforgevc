@@ -1,0 +1,73 @@
+id: BL-257
+title: "PWA enrichment: backlog board filter/search, per-ticket timeline, changed-since-last-visit, live metric trends (sliced)"
+direction: tooling
+priority: 35
+mutation_cost: medium
+source: "operator direction 2026-07-10 (via coordinator, backlog/INTAKE-beef-up-briefing-and-pwa.md): beef up the phone app; operator selected all four PWA candidates."
+
+description: |
+  Additive views on the shipped phone app (backlog dashboard BL-097, docs
+  drill-down BL-117, recert BL-150, implemented-greyed BL-253, spec search BL-254,
+  approval list BL-251, suite trend BL-252, localization BL-229/230, a11y BL-238).
+  SLICED epic; each view is a slice the operator can keep or drop.
+
+  Views (slices):
+    1. Backlog board filter/search — filter/search the backlog dashboard by status,
+       priority, or text. Why: find tickets fast on the board. (BL-254 covered
+       docs/Gherkin search; this covers the backlog board.) Reads backlog.json.
+    2. Per-ticket timeline — a ticket's lifecycle (specced -> coded -> ... -> merged)
+       as an ordered timeline from the existing git-derived lifecycle events
+       (TicketLifecycleEvent). Why: see a ticket's journey.
+    3. Changed-since-last-visit — highlight tickets that changed state since the
+       operator last opened the app. Why: quick catch-up. Needs a last-visit marker
+       persisted by the EXTENSION HOST (no browser storage, per the rules).
+    4. Live briefing metrics as trends — surface throughput / QA-bounce /
+       suite-duration as live trend views, from the LIVE metric feed (holistic),
+       NOT backlog.json (BL-252 boundary). Why: the phone becomes the live dashboard.
+
+  Wanted behavior (observable):
+    - Filtering/searching the backlog board leaves only matching tickets.
+    - A ticket's timeline shows its stages in order with timestamps.
+    - After tickets change state, the changed ones are highlighted since the last
+      visit.
+    - The trends view shows each metric's latest value + trend direction.
+    - A view with no data shows a localized empty state, not an error or blank.
+
+  Constraints:
+    - PRESENTATION-ONLY WEBVIEW: reads backlog.json / docs-tree.json / the live
+      metric feed; NO new authoritative store. The filter/timeline/diff logic is a
+      pure, testable function separate from the DOM render.
+    - NO BROWSER STORAGE: the last-visit marker persists via the extension host
+      (workspace state / a file), never localStorage/sessionStorage.
+    - PROJECTION BOUNDARY (BL-252): live machine-local metrics come from the live
+      holistic feed, not backlog.json; do not push machine-local data into the git
+      projection.
+    - LOCALIZATION (BL-229/230): new strings (labels, empty states) via
+      pwa/locales.js. Preserve accessibility (BL-238).
+
+  Scope: extend pwa/app.js with the four views + pwa/locales.js strings; a
+  host-persisted last-visit marker for view 3; the live-trend view consumes the
+  holistic feed (reuse BL-252/BL-094 plumbing). Reuse existing lifecycle-event and
+  backlog data; add no new store. Verify the live PWA data paths before naming files
+  in a built slice.
+
+  DELIVERY: SLICED — each view is an independently buildable/droppable slice. At
+  build time scope the live acceptance feature file to BUILT slices; park the rest in
+  a BL-257-*.feature.draft (BL-233 slice-scoping rule). Buildable now. Priority
+  normal.
+
+acceptance: specs/features/BL-257-pwa-enrichment.feature
+
+qa_e2e_procedure: |
+  Per built slice (PWA render faked; assert on the pure view logic / feed data):
+  1. Filter/search the backlog board; assert only matching tickets remain.
+  2. Open a ticket's timeline; assert stages appear in order with timestamps.
+  3. Change some tickets' state, reopen; assert the changed ones are highlighted vs
+     the host-persisted last-visit marker.
+  4. Open the trends view; assert each metric shows latest value + trend direction
+     from the live feed (backlog.json unchanged).
+  5. With a view's data unavailable, assert a localized empty state (no error/blank).
+
+# HUMAN APPROVAL: feature file specs/features/BL-257-pwa-enrichment.feature is a NEW
+# draft authored by the specifier and is PENDING human review.
+human_approval: pending
