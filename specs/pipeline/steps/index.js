@@ -37,6 +37,7 @@ const DOMAINS = [
   require('./docsWindowsClaimSteps'),
   require('./effortDialSteps'),
   require('./accessibilitySteps'),
+  require('./gateAnswerSteps'),
 ];
 
 function registerSteps(registry) {
