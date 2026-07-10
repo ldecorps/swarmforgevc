@@ -223,3 +223,37 @@
    of them."
   [_agent]
   [{:op :respawn-pane}])
+
+;; ── BL-207: provider error taxonomy ──────────────────────────────────────
+;; Slice 3 of the provider-neutral contract epic, at the same adapter
+;; boundary BL-206's capability model lives at. A stable, closed Forge-level
+;; error taxonomy so fork orchestration and the extension's own surfacing
+;; of errors agree on failure CATEGORY, never brand-specific message text.
+;; Mirrors extension/src/swarm/providerErrorTaxonomy.ts's
+;; classifyProviderError exactly (same six categories, same keyword
+;; patterns) - the same failure text classifies to the same category on
+;; both sides. Best-effort keyword classification (exact per-provider
+;; wording was not independently confirmed against live docs for every
+;; brand while building this, same posture as recertInboundWebhook.ts's
+;; extractEmailFields): an unrecognized detail safely falls back to
+;; :unknown with the detail attached, never a crash.
+(def error-category-patterns
+  [[:timeout #"(?i)\btimed?[\s-]?out\b|ETIMEDOUT"]
+   [:auth #"(?i)\b(unauthorized|forbidden|invalid api[\s-]?key|invalid[\s\S]*credential|authentication failed|401|403)\b"]
+   [:unavailable #"(?i)\b(rate[\s-]?limit|too many requests|overloaded|service unavailable|429|503)\b"]
+   [:launch-failed #"(?i)\b(enoent|command not found|no such file|cannot spawn|no launch script|no tmux socket|no .*wrapper found|failed to start)\b"]
+   [:protocol #"(?i)\b(unexpected token|json[\s\S]*pars|parse error|malformed|invalid response)\b"]])
+
+(defn classify-provider-error
+  "Maps a raw backend failure detail onto one of the closed Forge error
+   categories ({:category :detail}). code, if given (e.g. a shell exit
+   signal name or errno-like string), is folded into the same text search
+   as detail so a structured signal and its equivalent free-text wording
+   always agree on category. Falls back to :unknown - detail is never
+   discarded, never a crash."
+  ([detail] (classify-provider-error detail nil))
+  ([detail code]
+   (let [haystack (str (or code "") " " (or detail ""))
+         match (some (fn [[category pattern]] (when (re-find pattern haystack) category))
+                     error-category-patterns)]
+     {:category (or match :unknown) :detail detail})))
