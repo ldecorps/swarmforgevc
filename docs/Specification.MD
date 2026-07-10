@@ -302,6 +302,8 @@ A second metrics layer, derived purely from git history and the current `backlog
 
 Available via the `GET /metrics` bridge endpoint (see Remote Access & Phone App below), the CLI (below), and charted directly in the holistic dev-state web UI's Metrics section (below) — all three are fed by the same computation, so they always report the same numbers.
 
+**Regression flag (BL-252):** the holistic UI's suite-duration readout (`bridge/holisticUiHtml.ts`'s `renderSuiteDurationReadout`) and the daily briefing (`swarmforge/scripts/briefing_email_lib.bb`) both now show the latest duration, its trend direction, and — when set — a regression flag, applying the same amber warn treatment used elsewhere in the UI. Both surfaces read the ONE existing BL-078 warn computation in `swarmMetrics.ts` (`latest > warnThresholdMs` OR `latest > 2x` the baseline mean) rather than a second, re-derived threshold, so they can never disagree; with no local duration records, both show a no-data state rather than an error or a fabricated value. This is surfacing only — `backlog.json` and the backlog-dashboard PWA deliberately stay untouched, since machine-local suite-duration records can't ride the git-SHA-reproducible `backlog.json` projection.
+
 #### Cost & Resource Telemetry
 
 A third telemetry layer tracks token spend and per-role resource usage:
