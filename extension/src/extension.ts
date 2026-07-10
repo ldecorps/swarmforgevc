@@ -22,7 +22,7 @@ import { stopSwarm, stopSwarmOnExtensionShutdown, stopSwarmCompletely } from './
 import { bounceSwarm, buildBounceExtensionCommand } from './swarm/bouncer';
 import { listTmuxSessions } from './swarm/tmuxClient';
 import { resolveRunName } from './run/resolveRunName';
-import { startBounceWatcher, BounceType } from './swarm/bounceWatcher';
+import { startBounceWatcher, closeBounceWatcher, BounceType } from './swarm/bounceWatcher';
 import { writeBounceAck, clearBounceAck, BouncePhase } from './swarm/bounceAck';
 import { startChaserMonitor, stopChaserMonitor, buildRoleInboxes } from './watchdog/chaserMonitor';
 import type { ChaserMonitorConfig, ChaserCallbacks } from './watchdog/chaserMonitor';
@@ -232,7 +232,7 @@ function startOrRestartBounceWatcher(
 ): void {
   // Dispose old watcher if it exists
   if (currentBounceWatcher) {
-    currentBounceWatcher.close();
+    closeBounceWatcher(currentBounceWatcher);
     currentBounceWatcher = null;
   }
 
@@ -255,15 +255,27 @@ function startOrRestartBounceWatcher(
     vscode.window.showWarningMessage(`Bounce watcher error: ${error}`);
   };
 
+  // BL-115: an unexpected error/close (e.g. .swarmforge/ removed and
+  // recreated out from under the watched inode) re-establishes the watch
+  // against the current .swarmforge/ instead of leaving the bounce sentinel
+  // silently unwatched. A deliberate close (target switch, deactivation, or
+  // this very function's own cleanup above) never reaches here - see
+  // closeBounceWatcher's intentional-close marking.
+  const handleWatcherLost = (reason: string) => {
+    vscode.window.showWarningMessage(`Bounce watcher error: ${reason}`);
+    currentBounceWatcher = null;
+    startOrRestartBounceWatcher(context, targetPath);
+  };
+
   // Start the watcher
-  currentBounceWatcher = startBounceWatcher(targetPath, handleBounce, handleError);
+  currentBounceWatcher = startBounceWatcher(targetPath, handleBounce, handleError, undefined, handleWatcherLost);
 
   // Add to subscriptions for cleanup
   if (currentBounceWatcher) {
     context.subscriptions.push({
       dispose: () => {
         if (currentBounceWatcher) {
-          currentBounceWatcher.close();
+          closeBounceWatcher(currentBounceWatcher);
           currentBounceWatcher = null;
         }
       },
@@ -611,6 +623,11 @@ function handleBounceResult(
   if (panel) {
     panel.updateTarget(targetPath);
   }
+  // BL-115: re-establish the bounce watcher after every successful
+  // launch/bounce, same as every sibling per-target monitor below - covers
+  // a target re-init that swapped out .swarmforge/ out from under the
+  // watcher's old inode, and leaves it ready for the next bounce sentinel.
+  startOrRestartBounceWatcher(context, targetPath);
   startOrRestartChaserMonitor(targetPath, context);
   startOrRestartDailyBriefing(targetPath, context);
   startOrRestartIdleClearMonitor(targetPath, context);
@@ -1621,7 +1638,7 @@ export function activate(context: vscode.ExtensionContext): void {
 export function deactivate(): void {
   SwarmPanel.currentPanel?.dispose();
   if (currentBounceWatcher) {
-    currentBounceWatcher.close();
+    closeBounceWatcher(currentBounceWatcher);
     currentBounceWatcher = null;
   }
   if (currentBridge) {
