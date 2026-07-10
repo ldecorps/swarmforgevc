@@ -1,0 +1,95 @@
+id: BL-253
+title: "Phone docs drill-down: mark implemented vs not-yet-implemented tickets (not-yet greyed but expandable)"
+direction: tooling
+priority: 15
+mutation_cost: low
+source: "operator intake 2026-07-10 (via coordinator, PRIORITIZED): backlog/INTAKE-pwa-implemented-drilldown.md — 'prioritize the phone app drill-down into what has been implemented; show not-yet items greyed out.'"
+
+description: |
+  Enhance the existing BL-117 phone docs drill-down (milestone -> ticket -> Gherkin)
+  with an implementation-status dimension, so the tree reads "here's what's shipped,
+  and here's what's still to come". Not-yet-implemented tickets stay visible but
+  greyed. Operator wants this PRIORITIZED (promoted ahead of BL-246/BL-251/BL-252).
+
+  REUSE — enhancement, not a new tree:
+    - BL-117 (done) already renders the drill-down; each TicketNode in docsTree.ts
+      already carries a folder-authoritative status (done|active|paused), and
+      pwa/app.js already shows a raw "[status]" tag. So the DATA is present — this
+      is a rendering + recert-gating change, not a new data feed.
+    - BL-150 (done) provides gherkin recertification on that surface; keep it
+      working.
+    - Implementation status DERIVES from existing git-visible state ("the repo is
+      the API"): a ticket's backlog folder — done/ = implemented; active/ or paused/
+      = not-yet-implemented. No new authoritative store. (Status is git-visible, so
+      this stays inside the backlog.json git-projection boundary — unlike
+      machine-local data; see BL-252.)
+
+  Operator decisions (2026-07-10, via specifier questions):
+    1. GRANULARITY: whole-ticket. done/ = implemented; active/ + paused/ = not-yet
+       (greyed). NOT per-Gherkin-scenario (a per-scenario live-vs-draft view would
+       need the tree to also surface parked .feature.draft scenarios — deferred; a
+       later item can add it).
+    2. INTERACTION: greyed = visually muted but still EXPANDABLE — the operator can
+       drill into a not-yet ticket and read its planned scenarios (the "what's
+       coming" value). Recertification is simply NOT offered on a not-yet item
+       (nothing shipped to recertify); it keeps working on implemented tickets.
+
+  Wanted behavior (observable):
+    - A ticket in done/ renders as implemented (normal, not greyed).
+    - A ticket in active/ or paused/ renders greyed as not-yet-implemented, and can
+      still be expanded to read its planned scenarios.
+    - A not-yet-implemented ticket offers no recertification action; an implemented
+      ticket's recertification works exactly as before (BL-150 preserved).
+    - The implemented / not-yet labels are localized via pwa/locales.js.
+
+  Constraints:
+    - REUSE, don't rebuild: extend the existing docs drill-down render in pwa/app.js
+      (renderDocsExplorer / renderDocsTicket) using the status the tree already
+      carries; do not add a new tree, a new data feed, or a new status store.
+    - LOCALIZATION: any new PWA string (implemented / not-yet labels) goes through
+      pwa/locales.js (BL-229/BL-230), like the rest of the PWA.
+    - RECERT PRESERVED (BL-150): recertification keeps working on implemented
+      tickets. If the recert section already naturally excludes not-yet items
+      (recert applies only to shipped/live scenarios), this scenario is a
+      confirm-not-a-change; if not, gate it so not-yet items offer no recert action.
+    - WEBVIEW BOUNDARY (engineering): the PWA render is the testability-unsuitable
+      boundary; the status-derivation (done -> implemented; active/paused -> not-yet)
+      is a pure host-side mapping and is where the testable assertion lives. Test the
+      derived per-ticket implemented flag reaching the tree data, not the rendered
+      DOM.
+
+  Scope: (a) surface an implemented-vs-not-yet flag from the existing TicketNode
+  status (done => implemented; active/paused => not-yet) — ideally computed once in
+  docsTree.ts so both the tree data and any consumer agree; (b) render it in
+  pwa/app.js: greyed/muted styling for not-yet tickets, kept expandable, with a
+  clear implemented/not-yet label; (c) pwa/locales.js strings for those labels; (d)
+  ensure BL-150 recertification is not offered on not-yet tickets and unchanged on
+  implemented ones. Verify the live docs-tree data path (docsTree.ts -> the tree
+  JSON the PWA fetches -> pwa/app.js renderDocsExplorer) actually runs before naming
+  files in the built slice.
+
+  DELIVERY: buildable now (BL-117 and BL-150 are done/merged; no unbuilt
+  dependency). Small; likely a single slice.
+
+acceptance: specs/features/BL-253-pwa-implemented-drilldown-greyed.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (PWA render faked; assert on the derived tree data
+  and the rendered section data, not the DOM):
+  1. Build the docs tree over a fixture with tickets in done/, active/, and paused/;
+     assert each done ticket derives implemented and each active/paused ticket
+     derives not-yet-implemented.
+  2. Render the drill-down; assert done tickets are shown normally and active/paused
+     tickets are shown greyed as not-yet-implemented.
+  3. Expand a greyed not-yet ticket; assert it expands and shows its planned
+     scenarios (still interactive).
+  4. Assert a not-yet ticket offers no recertification action, and an implemented
+     ticket's recertification is available as before.
+  5. Switch the app locale to a supported non-default language; assert the
+     implemented / not-yet labels render in that locale.
+
+# HUMAN APPROVAL: feature file
+# specs/features/BL-253-pwa-implemented-drilldown-greyed.feature is a NEW draft
+# authored by the specifier and is PENDING human review before it is treated as the
+# authoritative acceptance contract.
+human_approval: pending
