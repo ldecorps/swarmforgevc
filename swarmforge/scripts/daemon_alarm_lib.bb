@@ -3,7 +3,8 @@
 ;; boundary) - only the thin adapters handoffd_supervisor.bb injects here
 ;; touch the filesystem, a real clock, or the network.
 (ns daemon-alarm-lib
-  (:require [clojure.string :as str]))
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]))
 
 (defn parse-conf
   "Parses `config <key> <value>` lines from swarmforge.conf content into a
@@ -104,6 +105,27 @@
           "environment - alarm/briefing email cannot send. Export RESEND_API_KEY in the "
           "daemon's launch environment."))
     (mark-warned!)))
+
+;; BL-214: the one shared "read conf, send, warn if misconfigured" wrapper -
+;; every caller (BL-144's alarm, BL-214's briefing sweep) was independently
+;; re-deriving the exact same to/from/api-key-from-conf steps and either
+;; wiring warn-missing-key-if-needed! or (easy to miss) forgetting to. One
+;; function here means a new caller gets the loud warning by construction
+;; instead of by remembering to copy it.
+(defn send-configured-email!
+  "Reads notify_email_to/notify_email_from from conf-file (parse-conf) and
+   RESEND_API_KEY from the process env, sends via send-alarm-email!, then
+   runs warn-missing-key-if-needed! with warn-adapters (shape:
+   {:already-warned?! :log-warning! :mark-warned!}, typically a per-process
+   atom so repeated calls across a long-lived daemon warn only once)."
+  [conf-file subject text warn-adapters]
+  (let [conf (parse-conf (when (fs/exists? conf-file) (slurp (str conf-file))))
+        to (get conf "notify_email_to")
+        from (or (get conf "notify_email_from") "onboarding@resend.dev")
+        api-key (System/getenv "RESEND_API_KEY")
+        result (send-alarm-email! api-key to from subject text)]
+    (warn-missing-key-if-needed! result warn-adapters)
+    result))
 
 (defn alarm-and-halt!
   "Orchestrates the whole daemon-death response through injected adapters -

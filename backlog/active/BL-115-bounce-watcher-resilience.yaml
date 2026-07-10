@@ -11,15 +11,22 @@ description: |
   extension/src/swarm/bounceWatcher.ts + extension.ts wiring. Today the
   watcher is silently absent in two cases:
   - startBounceWatcher returns null when .swarmforge/ does not exist at
-    activation, and nothing ever retries -> remote_bounce.sh writes a
-    sentinel nobody watches (fresh target before first launch).
+    activation, and nothing ever re-establishes it once the swarm later
+    exists (BL-204: the watcher must NOT create .swarmforge/ — the launcher
+    owns that — and remote_bounce.sh already refuses to write a sentinel
+    when .swarmforge/ is absent, so there is no orphan-sentinel bug; the
+    residual gap is only that a watcher absent at activation stays dead
+    after the first launch).
   - fs.watch holds the directory inode; if .swarmforge/ is
     removed/recreated (target re-init) the watcher is orphaned without
     error.
-  Fix: create .swarmforge/ (mkdir -p) before watching instead of
-  returning null; restart the watcher after every successful launch/bounce
-  (hook where startOrRestartChaserMonitor is already called); on watcher
-  'error'/'close', log and re-establish.
+  Fix: do NOT create .swarmforge/ (BL-204 forbids it; the launcher owns
+  creation). Restart the watcher after every successful launch/bounce (hook
+  where startOrRestartChaserMonitor is already called) so a watcher absent
+  at activation is established once the swarm exists; on watcher
+  'error'/'close', log and re-establish — but with BOUNDED, backed-off
+  retries that escalate on exhaustion (match chaserMonitor/tmuxClient's
+  cap+backoff convention), never an immediate unbounded restart loop.
 
   SEQUENCING: BL-107 (bounce-all end-to-end, in paused/) adds bounce-ack
   machinery around this same watcher and names this ticket as adjacent
@@ -30,10 +37,10 @@ acceptance: |
   Feature: a bounce sentinel is always watched, whatever came before
 
   # BL-115 bounce-watch-01
-  Scenario: sentinel written before any launch triggers a bounce
-    Given a fresh target where .swarmforge/ does not exist at activation
-    When the extension activates and remote_bounce.sh writes the sentinel
-    Then the bounce is triggered
+  Scenario: a watcher absent before launch is established once the swarm launches
+    Given a fresh target where .swarmforge/ did not exist at activation, so no watcher started
+    When a launch creates .swarmforge/ and a sentinel is later written
+    Then the watcher has been established and the bounce is triggered
 
   # BL-115 bounce-watch-02
   Scenario: sentinel written after target re-init triggers a bounce
@@ -49,13 +56,23 @@ acceptance: |
     Then the bounce is triggered again
 
   # BL-115 bounce-watch-04
-  Scenario: a watcher error re-establishes the watch
+  Scenario: a transient watcher error re-establishes the watch
     Given an established watcher
-    When the watcher emits error or close
+    When the watcher emits error or close and re-establishment then succeeds
     Then the event is logged and the watch is re-established
+
+  # BL-115 bounce-watch-05
+  Scenario: a persistently failing watcher backs off, caps retries, and escalates
+    Given an established watcher whose re-establishment keeps failing
+    When it emits error repeatedly
+    Then each re-establish attempt waits a backoff delay, not immediately
+    And the retries are bounded by a cap
+    And on reaching the cap the failure is surfaced instead of retried forever
 
   # Non-behavioral gates:
   #  - Tested through the existing bounceWatcher seams with fake fs/watch;
   #    no live tmux in tests.
+  #  - The backoff/cap (bounce-watch-05) is driven by injected/fake time and a
+  #    fake failing watcher — never a real timer or real wall-clock wait.
   #  - Host-side only; two-layer rule unchanged.
 mutation_cost: low

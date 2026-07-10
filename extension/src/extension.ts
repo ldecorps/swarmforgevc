@@ -22,7 +22,7 @@ import { stopSwarm, stopSwarmOnExtensionShutdown, stopSwarmCompletely } from './
 import { bounceSwarm, buildBounceExtensionCommand } from './swarm/bouncer';
 import { listTmuxSessions } from './swarm/tmuxClient';
 import { resolveRunName } from './run/resolveRunName';
-import { startBounceWatcher, closeBounceWatcher, BounceType } from './swarm/bounceWatcher';
+import { startResilientBounceWatcher, BounceType, ResilientWatcherHandle } from './swarm/bounceWatcher';
 import { writeBounceAck, clearBounceAck, BouncePhase } from './swarm/bounceAck';
 import { startChaserMonitor, stopChaserMonitor, buildRoleInboxes } from './watchdog/chaserMonitor';
 import type { ChaserMonitorConfig, ChaserCallbacks } from './watchdog/chaserMonitor';
@@ -63,7 +63,6 @@ import {
   resolveMistralApiKey,
 } from './notify/secrets';
 import { startBriefingScheduler } from './notify/briefingScheduler';
-import { startBriefingEmailWatcher } from './notify/briefingEmailWatcher';
 import { computeCostHealthSidecar, writeCostHealthSidecar, commitCostHealthSidecar } from './notify/costHealthSidecar';
 import { parseRolesTsv } from './swarm/swarmState';
 import { sendResendEmail } from './notify/resendClient';
@@ -127,7 +126,7 @@ const DEACTIVATE_REAP_GRACE_MS = 5_000;
 
 type RunMode = 'one-shot' | 'drain';
 
-let currentBounceWatcher: fs.FSWatcher | null = null;
+let currentBounceWatcher: ResilientWatcherHandle | null = null;
 let currentChaserMonitor: NodeJS.Timeout | null = null;
 let currentBounceDrainWatcher: NodeJS.Timeout | null = null;
 let currentGracefulBounceFileWatcher: fs.FSWatcher | null = null;
@@ -148,14 +147,16 @@ let stopPeriodicStateDump: (() => void) | null = null;
 const STATE_DUMP_INTERVAL_MS = 60_000;
 
 // BL-099: the coder's slice of the daily briefing - scheduling the once-a-
-// day "briefing due" nudge and sending each committed briefing exactly once.
-// Composing the briefing's content is the coordinator role prompt's job
-// (specifier-owned), not this extension code.
+// day "briefing due" nudge. Composing the briefing's content is the
+// coordinator role prompt's job (specifier-owned), not this extension code.
+// BL-214: emailing each committed briefing moved to the headless daemon
+// (swarmforge/scripts/briefing_email_lib.bb via handoffd.bb) so delivery no
+// longer depends on the VS Code host being open - this extension no longer
+// sends that email itself (retired, not just disabled, to guarantee no
+// double-send when the host happens to be open alongside the daemon).
 let stopBriefingScheduler: (() => void) | null = null;
-let stopBriefingEmailWatcher: (() => void) | null = null;
 const BRIEFING_HOUR_UTC = 8;
 const BRIEFING_SCHEDULE_CHECK_INTERVAL_MS = 5 * 60_000;
-const BRIEFING_EMAIL_CHECK_INTERVAL_MS = 2 * 60_000;
 
 function buildExtensionStateSnapshot(targetPath: string | null, reason: string | null): ExtensionStateSnapshot {
   const roles = targetPath ? readSwarmRoles(targetPath) : [];
@@ -232,7 +233,7 @@ function startOrRestartBounceWatcher(
 ): void {
   // Dispose old watcher if it exists
   if (currentBounceWatcher) {
-    closeBounceWatcher(currentBounceWatcher);
+    currentBounceWatcher.close();
     currentBounceWatcher = null;
   }
 
@@ -256,31 +257,31 @@ function startOrRestartBounceWatcher(
   };
 
   // BL-115: an unexpected error/close (e.g. .swarmforge/ removed and
-  // recreated out from under the watched inode) re-establishes the watch
-  // against the current .swarmforge/ instead of leaving the bounce sentinel
-  // silently unwatched. A deliberate close (target switch, deactivation, or
-  // this very function's own cleanup above) never reaches here - see
-  // closeBounceWatcher's intentional-close marking.
-  const handleWatcherLost = (reason: string) => {
-    vscode.window.showWarningMessage(`Bounce watcher error: ${reason}`);
-    currentBounceWatcher = null;
-    startOrRestartBounceWatcher(context, targetPath);
-  };
+  // recreated out from under the watched inode) re-establishes the watch -
+  // bounded and backed off (engineering.prompt's retry/auto-restart cap
+  // rule), never an immediate unconditional restart loop (a persistent
+  // failure like inotify ENOSPC would otherwise spin forever). A deliberate
+  // close (target switch, deactivation, or this very function's own cleanup
+  // above) never reaches onLost/onExhausted - see
+  // createResilientWatcherSupervisor's intentional-close handling.
+  currentBounceWatcher = startResilientBounceWatcher(targetPath, handleBounce, {
+    onError: handleError,
+    onLost: (reason) => vscode.window.showWarningMessage(`Bounce watcher error: ${reason}`),
+    onExhausted: (reason) =>
+      vscode.window.showErrorMessage(
+        `Bounce watcher gave up re-establishing after repeated failures (${reason}). ` +
+          'The bounce sentinel is no longer being watched - reload the window or bounce the swarm to retry.'
+      ),
+  });
 
-  // Start the watcher
-  currentBounceWatcher = startBounceWatcher(targetPath, handleBounce, handleError, undefined, handleWatcherLost);
-
-  // Add to subscriptions for cleanup
-  if (currentBounceWatcher) {
-    context.subscriptions.push({
-      dispose: () => {
-        if (currentBounceWatcher) {
-          closeBounceWatcher(currentBounceWatcher);
-          currentBounceWatcher = null;
-        }
-      },
-    });
-  }
+  context.subscriptions.push({
+    dispose: () => {
+      if (currentBounceWatcher) {
+        currentBounceWatcher.close();
+        currentBounceWatcher = null;
+      }
+    },
+  });
 }
 
 function startOrRestartChaserMonitor(targetPath: string, context: vscode.ExtensionContext): void {
@@ -480,18 +481,13 @@ function startOrRestartChaserMonitor(targetPath: string, context: vscode.Extensi
 
 // BL-099: daily briefing - once-a-day nudge into the coordinator's pane
 // (the coordinator's own role prompt composes and commits the briefing
-// content, per the ticket's role-prompt-owned scope) plus a watcher that
-// emails each committed docs/briefings/<date>.md exactly once. Reuses the
-// existing BL-073 Resend client and secret storage; this extension code
-// never holds the API key beyond the single resolveResendApiKey() call.
+// content, per the ticket's role-prompt-owned scope). BL-214: emailing each
+// committed briefing is now the headless daemon's job, not this host's -
+// see briefing_email_lib.bb.
 function startOrRestartDailyBriefing(targetPath: string, context: vscode.ExtensionContext): void {
   if (stopBriefingScheduler) {
     stopBriefingScheduler();
     stopBriefingScheduler = null;
-  }
-  if (stopBriefingEmailWatcher) {
-    stopBriefingEmailWatcher();
-    stopBriefingEmailWatcher = null;
   }
 
   const swarmforgeDir = path.join(targetPath, '.swarmforge');
@@ -500,7 +496,6 @@ function startOrRestartDailyBriefing(targetPath: string, context: vscode.Extensi
   }
 
   const socketPath = readTmuxSocket(targetPath);
-  const briefingsDir = path.join(targetPath, 'docs', 'briefings');
 
   stopBriefingScheduler = startBriefingScheduler(
     {
@@ -549,38 +544,11 @@ function startOrRestartDailyBriefing(targetPath: string, context: vscode.Extensi
     clearInterval
   );
 
-  let resendApiKey: string | undefined;
-  resolveResendApiKey(context.secrets).then((key) => {
-    resendApiKey = key ?? undefined;
-  });
-  const config = vscode.workspace.getConfiguration('swarmforge');
-  const to = config.get<string>('notify.email.to', '');
-  const from = config.get<string>('notify.email.from', 'onboarding@resend.dev');
-
-  stopBriefingEmailWatcher = startBriefingEmailWatcher(
-    briefingsDir,
-    {
-      readBriefingContent: (fileName: string) => fs.readFileSync(path.join(briefingsDir, fileName), 'utf-8'),
-      sendEmail: async (subject: string, text: string) => {
-        if (!resendApiKey || !to) return false;
-        const result = await sendResendEmail(resendApiKey, { to, from, subject, text });
-        return result.success;
-      },
-    },
-    BRIEFING_EMAIL_CHECK_INTERVAL_MS,
-    setInterval,
-    clearInterval
-  );
-
   context.subscriptions.push({
     dispose: () => {
       if (stopBriefingScheduler) {
         stopBriefingScheduler();
         stopBriefingScheduler = null;
-      }
-      if (stopBriefingEmailWatcher) {
-        stopBriefingEmailWatcher();
-        stopBriefingEmailWatcher = null;
       }
     },
   });
@@ -1638,7 +1606,7 @@ export function activate(context: vscode.ExtensionContext): void {
 export function deactivate(): void {
   SwarmPanel.currentPanel?.dispose();
   if (currentBounceWatcher) {
-    closeBounceWatcher(currentBounceWatcher);
+    currentBounceWatcher.close();
     currentBounceWatcher = null;
   }
   if (currentBridge) {

@@ -10,6 +10,8 @@ const {
   startBounceWatcher,
   handleWatchEvent,
   closeBounceWatcher,
+  computeReestablishBackoffMs,
+  createResilientWatcherSupervisor,
 } = require('../out/swarm/bounceWatcher');
 
 // BL-131: captures the debounce callback instead of scheduling it for real -
@@ -365,6 +367,191 @@ test('BL-115: closeBounceWatcher does not call onWatcherLost for a deliberate cl
 test('closeBounceWatcher is a no-op for null/undefined', () => {
   assert.doesNotThrow(() => closeBounceWatcher(null));
   assert.doesNotThrow(() => closeBounceWatcher(undefined));
+});
+
+// BL-115 bounce-watch-04: fs.watch can throw SYNCHRONOUSLY (e.g. ENOSPC once
+// the host's inotify watch limit is exhausted) rather than failing later via
+// an 'error' event - a real.fs.watch is monkeypatched here since that
+// failure mode can't be reproduced on demand any other way.
+test('BL-115: a synchronous fs.watch failure (e.g. ENOSPC) calls onWatcherLost and returns null', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
+  fs.mkdirSync(path.join(tmpDir, '.swarmforge'), { recursive: true });
+
+  const realWatch = fs.watch;
+  fs.watch = () => {
+    throw new Error('ENOSPC: System limit for number of file watchers reached');
+  };
+  try {
+    const lostReasons = [];
+    const watcher = startBounceWatcher(tmpDir, () => {}, undefined, undefined, (reason) => lostReasons.push(reason));
+    assert.equal(watcher, null);
+    assert.equal(lostReasons.length, 1);
+    assert.match(lostReasons[0], /ENOSPC/);
+  } finally {
+    fs.watch = realWatch;
+  }
+});
+
+// ── createResilientWatcherSupervisor (BL-115 bounce-watch-04/05) ────────
+// Generic over a fake watcher factory - no real fs.watch, no real timers -
+// so the bounded-retry/backoff/cap logic itself is fully deterministic.
+
+function fakeWatcher() {
+  return { close: () => {} };
+}
+
+function fakeTickScheduler() {
+  const scheduled = [];
+  return {
+    scheduleTick: (fn, ms) => scheduled.push({ fn, ms }),
+    scheduled,
+    fireNext: () => {
+      const next = scheduled.shift();
+      if (next) next.fn();
+    },
+  };
+}
+
+test('BL-115 bounce-watch-04: a transient failure re-establishes after a backoff delay, then succeeds', () => {
+  const { scheduleTick, scheduled, fireNext } = fakeTickScheduler();
+  let attempts = 0;
+  const lostReasons = [];
+  createResilientWatcherSupervisor(
+    (onLost) => {
+      attempts += 1;
+      if (attempts === 1) {
+        onLost('transient failure');
+        return null;
+      }
+      return fakeWatcher();
+    },
+    { scheduleTick, onLost: (r) => lostReasons.push(r) }
+  );
+
+  assert.equal(attempts, 1, 'the first attempt runs immediately');
+  assert.equal(scheduled.length, 1, 'a retry must be scheduled, not fired immediately/synchronously');
+  assert.ok(scheduled[0].ms > 0, 'the retry must wait a backoff delay, not 0ms');
+  fireNext();
+  assert.equal(attempts, 2, 'the scheduled retry establishes the watcher');
+  assert.deepEqual(lostReasons, ['transient failure']);
+});
+
+test('BL-115 bounce-watch-05: backoff delay increases between consecutive failures (capped)', () => {
+  const delays = [];
+  // maxAttempts=8 exhausts right after the 7th scheduled retry, so the fully
+  // synchronous scheduleTick below (each retry fires the next immediately)
+  // terminates on its own instead of recursing indefinitely.
+  createResilientWatcherSupervisor(
+    (onLost) => {
+      onLost('fail');
+      return null;
+    },
+    {
+      scheduleTick: (fn, ms) => {
+        delays.push(ms);
+        fn();
+      },
+      maxAttempts: 8,
+      backoffBaseMs: 1000,
+      backoffMaxMs: 30000,
+    }
+  );
+  assert.deepEqual(delays, [1000, 2000, 4000, 8000, 16000, 30000, 30000], 'exponential backoff, capped at backoffMaxMs');
+});
+
+test('BL-115 bounce-watch-05: retries are bounded by a cap, then onExhausted fires instead of retrying forever', () => {
+  const { scheduleTick } = fakeTickScheduler();
+  let attempts = 0;
+  const exhausted = [];
+  const delays = [];
+  createResilientWatcherSupervisor(
+    (onLost) => {
+      attempts += 1;
+      onLost('persistent failure');
+      return null;
+    },
+    {
+      scheduleTick: (fn, ms) => {
+        delays.push(ms);
+        fn();
+      },
+      maxAttempts: 3,
+      onExhausted: (reason) => exhausted.push(reason),
+    }
+  );
+  assert.equal(attempts, 3, 'exactly maxAttempts establish attempts run, never a 4th');
+  assert.equal(delays.length, 2, 'only maxAttempts-1 retries are scheduled after the first attempt');
+  assert.deepEqual(exhausted, ['persistent failure']);
+});
+
+test('BL-115: a successful establish resets the attempt count for a LATER, unrelated failure', () => {
+  const { scheduleTick, fireNext } = fakeTickScheduler();
+  let attemptCall = 0;
+  const exhausted = [];
+  let capturedOnLost;
+  createResilientWatcherSupervisor(
+    (onLost) => {
+      attemptCall += 1;
+      capturedOnLost = onLost;
+      if (attemptCall === 1) {
+        onLost('first failure'); // schedules attempt 2 via backoff
+        return null;
+      }
+      return fakeWatcher(); // attempt 2 succeeds -> resets the attempt count to 0
+    },
+    { scheduleTick, maxAttempts: 2, onExhausted: (r) => exhausted.push(r) }
+  );
+  fireNext(); // runs attempt 2, which succeeds
+  assert.equal(attemptCall, 2);
+
+  // The same (now-established) watcher fails again later. Since the count
+  // was reset on success, this is attempt #1 of a FRESH maxAttempts=2
+  // budget - it must NOT immediately exhaust as if it were attempt #3 of
+  // the old, un-reset count.
+  capturedOnLost('second, unrelated failure');
+  assert.deepEqual(exhausted, [], 'a fresh failure right after a reset must not immediately exhaust the budget');
+});
+
+test('BL-115: close() disposes and prevents any further scheduled re-establish attempt from acting', () => {
+  const { scheduleTick, scheduled } = fakeTickScheduler();
+  let attempts = 0;
+  const supervisor = createResilientWatcherSupervisor(
+    (onLost) => {
+      attempts += 1;
+      onLost('fail');
+      return null;
+    },
+    { scheduleTick, maxAttempts: 100 }
+  );
+  assert.equal(attempts, 1);
+  supervisor.close();
+  // Firing the already-scheduled retry after close() must be a no-op.
+  const pending = scheduled.shift();
+  pending.fn();
+  assert.equal(attempts, 1, 'a scheduled retry must not run after close()');
+});
+
+test('BL-115: an onLost callback firing after close() is a no-op (not just the scheduled retry)', () => {
+  const { scheduleTick } = fakeTickScheduler();
+  let capturedOnLost;
+  const lostReasons = [];
+  const exhausted = [];
+  const supervisor = createResilientWatcherSupervisor(
+    (onLost) => {
+      capturedOnLost = onLost;
+      return fakeWatcher(); // establishes successfully - the watcher itself outlives close() briefly
+    },
+    { scheduleTick, maxAttempts: 2, onLost: (r) => lostReasons.push(r), onExhausted: (r) => exhausted.push(r) }
+  );
+  supervisor.close();
+  // Simulates a real fs.FSWatcher's 'error'/'close' event arriving late,
+  // after close() already ran but before the underlying OS handle fully
+  // tears down - handleLost's OWN disposed-check (not just tryOnce's) must
+  // swallow this, independent of closeBounceWatcher's intentional-close
+  // tracking at the fs.FSWatcher layer below it.
+  capturedOnLost('late event after close');
+  assert.deepEqual(lostReasons, [], 'onLost must not fire for an event arriving after disposal');
+  assert.deepEqual(exhausted, [], 'onExhausted must not fire for an event arriving after disposal');
 });
 
 test('handleWatchEvent reports invalid bounce file content via onError', () => {

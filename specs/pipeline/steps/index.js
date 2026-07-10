@@ -16,6 +16,7 @@ const DOMAINS = [
   require('./remoteWakeupSteps'),
   require('./rateLimitCooldownSteps'),
   require('./emailMissingKeySteps'),
+  require('./briefingEmailSteps'),
 ];
 
 function registerSteps(registry) {
