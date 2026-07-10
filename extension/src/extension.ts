@@ -61,6 +61,10 @@ import {
   describeClearResult,
   resolveResendApiKey,
   resolveMistralApiKey,
+  resolveTelegramBotToken,
+  resolveTelegramChatId,
+  TELEGRAM_BOT_TOKEN_SECRET_KEY,
+  TELEGRAM_CHAT_ID_SECRET_KEY,
 } from './notify/secrets';
 import { startBriefingScheduler } from './notify/briefingScheduler';
 import { computeCostHealthSidecar, writeCostHealthSidecar, commitCostHealthSidecar } from './notify/costHealthSidecar';
@@ -73,6 +77,15 @@ import {
 } from './notify/needsHumanEmailNotifier';
 import { getSessionUrl } from './notify/sessionUrlCapture';
 import { buildBadgeMap } from './panel/badgeSummary';
+import { sendTelegramMessage, getTelegramUpdates } from './notify/telegramClient';
+import { TelegramNarrator } from './notify/telegramNarrator';
+import type { TelegramRetryConfig } from './notify/telegramRetry';
+import { TelegramInboundRelay, nextUpdateOffset } from './notify/telegramInboundRelay';
+import { buildNarrationSnapshot } from './notify/telegramNarrationSnapshot';
+import { computeRoleGateStatesLive } from './bridge/gateSnapshot';
+import { buildBridgeState } from './bridge/bridgeState';
+import { answerCapturedGateLive } from './bridge/gateAnswerLive';
+import { listDeadLetters } from './swarm/inboxChaser';
 
 const NO_TARGET_MESSAGE = 'Set a target project first (SwarmForge: Set Target Project).';
 const STOP_SWARM_BUTTON = 'Stop Swarm';
@@ -98,6 +111,15 @@ const CHASER_BACKOFF_MAX_SECONDS = 300;
 const BOUNCE_DRAIN_POLL_INTERVAL_SECONDS = 5;
 const BOUNCE_DRAIN_TIMEOUT_SECONDS_DEFAULT = 900;
 const CONTEXT_CLEAR_POLL_INTERVAL_SECONDS = 15;
+// BL-239: outbound narration sweep cadence and inbound reply-poll cadence
+// for the optional (Tier 2) Telegram adapter - both no-ops unless a bot
+// token AND chat id are configured. Inbound uses a short server-side
+// getUpdates timeout (not a real multi-second long-poll) since this runs
+// inside a plain setInterval tick, not a dedicated connection.
+const TELEGRAM_NARRATION_POLL_INTERVAL_MS = 2000;
+const TELEGRAM_INBOUND_POLL_INTERVAL_MS = 3000;
+const TELEGRAM_INBOUND_GET_UPDATES_TIMEOUT_SECONDS = 0;
+const TELEGRAM_RETRY_CONFIG: TelegramRetryConfig = { maxAttempts: 3, backoffBaseMs: 2000, backoffMaxMs: 30_000 };
 const CONTEXT_CLEAR_SETTLE_WINDOW_SECONDS_DEFAULT = 120;
 // BL-141: no backend this extension drives currently reports real context-
 // token usage, so the fullness gate always runs on the proxy tier for now
@@ -135,6 +157,9 @@ let idleClearOutputChannel: vscode.OutputChannel | undefined;
 let bounceOutputChannel: vscode.OutputChannel | undefined;
 let chaserOutputChannel: vscode.OutputChannel | undefined;
 let currentBridge: BridgeHandle | null = null;
+let currentTelegramNarrationInterval: NodeJS.Timeout | null = null;
+let currentTelegramInboundInterval: NodeJS.Timeout | null = null;
+let telegramOutputChannel: vscode.OutputChannel | undefined;
 // BL-108: deactivate() has no other route to the target's .swarmforge dir
 // (activate's targetPath is function-scoped) - remembered here so a spawned
 // child-job registry can be reaped on the way out, same pattern as the
@@ -225,6 +250,7 @@ async function autoLaunchSwarmOnActivation(
   startOrRestartChaserMonitor(targetPath, context);
   startOrRestartDailyBriefing(targetPath, context);
   startOrRestartIdleClearMonitor(targetPath, context);
+  startOrRestartTelegramAdapter(targetPath, context);
 }
 
 function startOrRestartBounceWatcher(
@@ -554,6 +580,96 @@ function startOrRestartDailyBriefing(targetPath: string, context: vscode.Extensi
   });
 }
 
+function stopTelegramAdapter(): void {
+  if (currentTelegramNarrationInterval) {
+    clearInterval(currentTelegramNarrationInterval);
+    currentTelegramNarrationInterval = null;
+  }
+  if (currentTelegramInboundInterval) {
+    clearInterval(currentTelegramInboundInterval);
+    currentTelegramInboundInterval = null;
+  }
+}
+
+// BL-239: the Telegram chat adapter. Entirely optional (Tier 2) - a no-op
+// whenever a bot token and chat id are not BOTH configured (resolveTelegram*
+// checks env var then SecretStorage; see notify/secrets.ts). All the actual
+// narration-diffing, bounded-retry, and human-only-relay logic lives in the
+// unit-tested notify/telegramNarrator.ts + notify/telegramInboundRelay.ts;
+// this function is composition glue only, mirroring
+// startOrRestartDailyBriefing's shape immediately above.
+function startOrRestartTelegramAdapter(targetPath: string, context: vscode.ExtensionContext): void {
+  stopTelegramAdapter();
+
+  Promise.all([resolveTelegramBotToken(context.secrets), resolveTelegramChatId(context.secrets)]).then(
+    ([token, chatId]) => {
+      if (!token || !chatId) {
+        return;
+      }
+      if (!telegramOutputChannel) {
+        telegramOutputChannel = vscode.window.createOutputChannel('SwarmForge: Telegram');
+        context.subscriptions.push(telegramOutputChannel);
+      }
+      const outputChannel = telegramOutputChannel;
+
+      const relay = new TelegramInboundRelay(chatId, {
+        answerGate: (role, answer) => answerCapturedGateLive(targetPath, { role, answer }),
+        onRelayed: (role, _answer, result) => {
+          if (!result.success) {
+            outputChannel.appendLine(`Telegram gate-answer relay for "${role}" failed: ${result.reason}`);
+          }
+        },
+        onRejected: (reason) => outputChannel.appendLine(`Telegram inbound message rejected: ${reason}`),
+      });
+
+      const narrator = new TelegramNarrator(TELEGRAM_RETRY_CONFIG, {
+        sendOnce: (text, replyToMessageId) => sendTelegramMessage(token, chatId, text, replyToMessageId),
+        onSendResult: (event, result) => {
+          if (event.kind === 'gate' && event.role && result.success && result.messageId !== undefined) {
+            relay.recordGatePrompt(result.messageId, event.role);
+          }
+          if (!result.success) {
+            outputChannel.appendLine(
+              `Telegram narration send failed after ${result.attempts} attempt(s): ${result.error}`
+            );
+          }
+        },
+      });
+
+      const runLogPath = path.join(os.homedir(), '.swarmforge', 'runs.jsonl');
+
+      currentTelegramNarrationInterval = setInterval(() => {
+        const rolesList = readSwarmRoles(targetPath).map((r) => r.role);
+        const bridgeState = buildBridgeState(targetPath, runLogPath);
+        const gates = computeRoleGateStatesLive(targetPath, rolesList);
+        const deadLetters = listDeadLetters(buildRoleInboxes(targetPath, rolesList));
+        const snapshot = buildNarrationSnapshot(targetPath, bridgeState, gates, deadLetters);
+        if (snapshot) {
+          narrator.sweep(snapshot, Date.now()).catch((err) => {
+            outputChannel.appendLine(`Telegram narration sweep failed: ${err instanceof Error ? err.message : err}`);
+          });
+        }
+      }, TELEGRAM_NARRATION_POLL_INTERVAL_MS);
+
+      let updateOffset = 0;
+      currentTelegramInboundInterval = setInterval(() => {
+        getTelegramUpdates(token, updateOffset, TELEGRAM_INBOUND_GET_UPDATES_TIMEOUT_SECONDS).then((result) => {
+          if (!result.success) {
+            outputChannel.appendLine(`Telegram inbound poll failed: ${result.error}`);
+            return;
+          }
+          for (const update of result.updates) {
+            relay.handleUpdate(update);
+          }
+          updateOffset = nextUpdateOffset(result.updates, updateOffset);
+        });
+      }, TELEGRAM_INBOUND_POLL_INTERVAL_MS);
+
+      context.subscriptions.push({ dispose: stopTelegramAdapter });
+    }
+  );
+}
+
 // BL-107: durable acknowledgement for bounce requests. remote_bounce.sh's
 // sentinel write is fire-and-forget; this records each phase transition to
 // .swarmforge/bounce-ack.json (pollable by a human or an agent script) and
@@ -599,6 +715,7 @@ function handleBounceResult(
   startOrRestartChaserMonitor(targetPath, context);
   startOrRestartDailyBriefing(targetPath, context);
   startOrRestartIdleClearMonitor(targetPath, context);
+  startOrRestartTelegramAdapter(targetPath, context);
   return true;
 }
 
@@ -994,6 +1111,7 @@ export function activate(context: vscode.ExtensionContext): void {
     startOrRestartDailyBriefing(targetPath, context);
     startOrRestartGracefulBounceFileWatcher(targetPath, context);
     startOrRestartIdleClearMonitor(targetPath, context);
+    startOrRestartTelegramAdapter(targetPath, context);
 
     // BL-066: a live swarm runs under tmux, independent of the extension
     // host — an editor reload never touches it. Skip when a deliberate
@@ -1101,6 +1219,7 @@ export function activate(context: vscode.ExtensionContext): void {
           startOrRestartChaserMonitor(targetPath, context);
           startOrRestartDailyBriefing(targetPath, context);
           startOrRestartIdleClearMonitor(targetPath, context);
+          startOrRestartTelegramAdapter(targetPath, context);
         } else {
           vscode.window.showErrorMessage(result.message);
         }
@@ -1137,6 +1256,7 @@ export function activate(context: vscode.ExtensionContext): void {
         startOrRestartDailyBriefing(newTargetPath, context);
         startOrRestartGracefulBounceFileWatcher(newTargetPath, context);
         startOrRestartIdleClearMonitor(newTargetPath, context);
+        startOrRestartTelegramAdapter(newTargetPath, context);
       }
     }),
 
@@ -1247,6 +1367,7 @@ export function activate(context: vscode.ExtensionContext): void {
           startOrRestartChaserMonitor(targetPath!, context);
           startOrRestartDailyBriefing(targetPath!, context);
           startOrRestartIdleClearMonitor(targetPath!, context);
+          startOrRestartTelegramAdapter(targetPath!, context);
         }
       );
     }),
@@ -1293,6 +1414,7 @@ export function activate(context: vscode.ExtensionContext): void {
           stopChaserMonitor(currentChaserMonitor, clearInterval);
           currentChaserMonitor = null;
         }
+        stopTelegramAdapter();
       } else {
         vscode.window.showWarningMessage(result.message);
       }
@@ -1609,6 +1731,66 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.window.showInformationMessage(
         `Mistral API key cleared from SecretStorage.${Boolean(process.env.MISTRAL_API_KEY) ? ' Note: MISTRAL_API_KEY env var is still set.' : ''}`
       );
+    }),
+
+    // BL-239: the Telegram chat adapter's bot token + authorized chat id.
+    // Both must be set (resolveTelegramBotToken/resolveTelegramChatId) for
+    // the adapter to activate - see startOrRestartTelegramAdapter.
+    vscode.commands.registerCommand('swarmforge.setTelegramBotToken', async () => {
+      const input = await vscode.window.showInputBox({
+        title: 'SwarmForge: Set Telegram Bot Token',
+        prompt: 'Enter the Telegram bot token (from @BotFather) to store in SecretStorage',
+        password: true,
+        ignoreFocusOut: true,
+      });
+      const token = trimmedResendKeyInput(input);
+      if (!token) {
+        return;
+      }
+      await context.secrets.store(TELEGRAM_BOT_TOKEN_SECRET_KEY, token);
+      vscode.window.showInformationMessage(
+        `Telegram bot token stored in SecretStorage.${Boolean(process.env.TELEGRAM_BOT_TOKEN) ? ' Note: TELEGRAM_BOT_TOKEN env var takes precedence until unset.' : ''}`
+      );
+      const targetPath = getTargetPath();
+      if (targetPath) {
+        startOrRestartTelegramAdapter(targetPath, context);
+      }
+    }),
+
+    vscode.commands.registerCommand('swarmforge.clearTelegramBotToken', async () => {
+      await context.secrets.delete(TELEGRAM_BOT_TOKEN_SECRET_KEY);
+      vscode.window.showInformationMessage(
+        `Telegram bot token cleared from SecretStorage.${Boolean(process.env.TELEGRAM_BOT_TOKEN) ? ' Note: TELEGRAM_BOT_TOKEN env var is still set.' : ''}`
+      );
+      stopTelegramAdapter();
+    }),
+
+    vscode.commands.registerCommand('swarmforge.setTelegramChatId', async () => {
+      const input = await vscode.window.showInputBox({
+        title: 'SwarmForge: Set Telegram Chat Id',
+        prompt: 'Enter the one Telegram chat id authorized to receive narration and answer gates',
+        ignoreFocusOut: true,
+      });
+      const chatId = trimmedResendKeyInput(input);
+      if (!chatId) {
+        return;
+      }
+      await context.secrets.store(TELEGRAM_CHAT_ID_SECRET_KEY, chatId);
+      vscode.window.showInformationMessage(
+        `Telegram chat id stored in SecretStorage.${Boolean(process.env.TELEGRAM_CHAT_ID) ? ' Note: TELEGRAM_CHAT_ID env var takes precedence until unset.' : ''}`
+      );
+      const targetPath = getTargetPath();
+      if (targetPath) {
+        startOrRestartTelegramAdapter(targetPath, context);
+      }
+    }),
+
+    vscode.commands.registerCommand('swarmforge.clearTelegramChatId', async () => {
+      await context.secrets.delete(TELEGRAM_CHAT_ID_SECRET_KEY);
+      vscode.window.showInformationMessage(
+        `Telegram chat id cleared from SecretStorage.${Boolean(process.env.TELEGRAM_CHAT_ID) ? ' Note: TELEGRAM_CHAT_ID env var is still set.' : ''}`
+      );
+      stopTelegramAdapter();
     })
   );
 }

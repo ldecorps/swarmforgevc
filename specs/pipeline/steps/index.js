@@ -40,6 +40,7 @@ const DOMAINS = [
   require('./gateAnswerSteps'),
   require('./deviceRegistrySteps'),
   require('./coordinatorProvisioningSteps'),
+  require('./telegramAdapterSteps'),
 ];
 
 function registerSteps(registry) {
