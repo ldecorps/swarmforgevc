@@ -48,7 +48,7 @@ test('the Background rem-sizing check fails loudly when a view selector is missi
 test('the Background rem-sizing check passes when every view selector sizes in rem', () => {
   const registry = freshRegistry();
   const ctx = {
-    html: '<style>h2 { font-size: 0.95rem; } h3, h4 { font-size: 0.85rem; } ul { font-size: 0.85rem; } .doc-content { font-size: 0.85rem; } .gherkin { font-size: 0.8rem; }</style>',
+    html: '<style>h2 { font-size: 0.95rem; } h3, h4, h5 { font-size: 0.85rem; } ul { font-size: 0.85rem; } .doc-content { font-size: 0.85rem; } .gherkin { font-size: 0.8rem; }</style>',
   };
   assert.doesNotThrow(() =>
     resolveAndRun(registry, ctx, 'the PWA phone app, whose views all size in rem from the root font-size')

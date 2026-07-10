@@ -611,11 +611,28 @@
     }
   }
 
+  // BL-256 deep-links-into-pwa-04: a #ticket=<id> or #approval=<id> URL
+  // fragment (built by extension/src/metrics/pwaDeepLinks.ts's
+  // buildTicketDeepLink/buildApprovalDeepLink) opens directly to that
+  // view on load. Parsed once at module init and consumed (nulled) the
+  // first time each relevant render runs, so a LATER re-render (locale
+  // toggle, manual "back" navigation) never re-applies it and fights the
+  // user's own navigation.
+  var initialHashRoute = (function () {
+    var hash = (location.hash || '').replace(/^#/, '');
+    var params = new URLSearchParams(hash);
+    return { ticketId: params.get('ticket'), approvalId: params.get('approval') };
+  })();
+
   function renderAll(data) {
     lastBacklogData = data;
     var asOf = document.getElementById('asOf');
     var shaText = data.sourceSha ? ' (' + data.sourceSha.slice(0, 10) + ')' : '';
     asOf.textContent = tr('asOfPrefix') + new Date(data.generatedAtIso).toLocaleString() + shaText;
+    if (initialHashRoute.approvalId) {
+      approvalTicketId = initialHashRoute.approvalId;
+      initialHashRoute.approvalId = null;
+    }
     renderNeedsApproval(data.needsApproval);
     renderBoard(data.board);
     renderVelocity(data.metrics.velocity);
@@ -907,8 +924,21 @@
 
   function renderDocsTree(data) {
     docsTree = data;
+    if (initialHashRoute.ticketId) {
+      var t = (data.tickets || []).find(function (x) { return x.id === initialHashRoute.ticketId; });
+      docsView = { level: 'ticket', milestone: t ? t.milestone : '', ticketId: initialHashRoute.ticketId };
+      initialHashRoute.ticketId = null;
+    }
     setDocsAsOfText(data);
     renderDocsExplorer();
+    // BL-256: backlog.json and docs-tree.json load independently - if a
+    // #approval=<id> hash route already opened the approval detail view
+    // (in renderAll, via the OTHER fetch) before docsTree was available,
+    // that view rendered a premature "not found" (findApprovalTicket
+    // reads docsTree). Re-render it now that docsTree is actually here.
+    if (approvalTicketId && lastBacklogData) {
+      renderNeedsApproval(lastBacklogData.needsApproval);
+    }
   }
 
   // BL-150: recertification - a separate section from the read-only docs

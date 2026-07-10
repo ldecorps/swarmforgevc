@@ -68,7 +68,12 @@
 ;; `adapters`, in order - each key independently appends its own block (or
 ;; leaves content untouched if its fn returns blank/nil), so adding a third
 ;; section later is a new entry in this vector, not a new branch.
-(def optional-section-adapter-keys [:suite-duration-line :needs-approval-section])
+;;
+;; BL-256: three more sections, same shape - :merged-blocked-digest (what
+;; merged/what's blocked), :stage-dwell-section (per-stage throughput +
+;; dwell), :chase-trend-section (chase/nudge pipeline-health trend).
+(def optional-section-adapter-keys
+  [:suite-duration-line :needs-approval-section :merged-blocked-digest :stage-dwell-section :chase-trend-section])
 
 (defn- apply-optional-sections [content adapters]
   (reduce
