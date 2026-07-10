@@ -19,28 +19,11 @@
  * posture as recruiter-discover.ts.
  */
 
-import * as fs from 'fs';
-import { createComplianceBatteryGate } from '../recruiter/complianceBatteryGate';
 import { createFileDiscoverySource } from '../recruiter/discoverySource';
-import { runRecruiter } from '../recruiter/orchestrator';
-import { createFileRoleTrialRunner } from '../recruiter/roleTrialRunner';
-import { createFileSecretStore } from '../recruiter/secretStore';
-import { createFileSignupSource } from '../recruiter/signupSource';
+import { readCurrentModelByRole, runRecruiterWithFileAdapters } from '../recruiter/runRecruiterFromFiles';
 import { printJsonToStdout, runCliMain } from './swarm-metrics';
 
-// Exported so it can be unit tested directly (in-process) rather than only
-// through the subprocess CLI test - same posture as secretStore.ts's own
-// readExisting, which is covered because its caller (store()) is always
-// invoked in-process. A CLI main() run only via execFileSync never shows up
-// under coverage instrumentation, so any real logic left inline in main()
-// is invisible to the CRAP gate; hardener split (BL-233 hardening pass).
-export function readCurrentModelByRole(currentModelsFile: string): Record<string, string> {
-  if (!fs.existsSync(currentModelsFile)) {
-    return {};
-  }
-  const parsed: unknown = JSON.parse(fs.readFileSync(currentModelsFile, 'utf-8'));
-  return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, string>) : {};
-}
+export { readCurrentModelByRole };
 
 export interface RecruiterRunArgs {
   candidatesFile: string;
@@ -77,14 +60,7 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const report = await runRecruiter({
-    discovery: createFileDiscoverySource(args.candidatesFile),
-    signup: createFileSignupSource(args.signupKeysFile),
-    secretStore: createFileSecretStore(args.secretsFile),
-    trialRunner: createFileRoleTrialRunner(args.roleTrialsFile),
-    battery: createComplianceBatteryGate(),
-    currentModelByRole: readCurrentModelByRole(args.currentModelsFile),
-  });
+  const report = await runRecruiterWithFileAdapters(createFileDiscoverySource(args.candidatesFile), args);
   printJsonToStdout(report);
 }
 
