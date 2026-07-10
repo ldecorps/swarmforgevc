@@ -9,10 +9,13 @@
   var DOCS_TREE_URL = './docs-tree.json';
   var RECERT_BATCH_URL = './recert-batch.json';
   var SVG_NS = 'http://www.w3.org/2000/svg';
-  // BL-150: the inbound-webhook seam that would receive this address' mail
-  // is deployment/ops work outside this ticket's scope (no public Resend
-  // Inbound endpoint exists yet) - placeholder until that's stood up.
-  var RECERT_EMAIL_TO = 'recert@swarmforge.invalid';
+  // BL-223: the inbound address comes from recert-batch.json's own
+  // recertEmailTo field (recertificationStore.ts's readRecertEmailTo,
+  // swarmforge.conf's recert_email_to - never hardcoded here a second time,
+  // so a future custom-domain swap is a config change only). This fallback
+  // only covers recertBatch not having loaded/lacking the field yet - it is
+  // never the reserved .invalid TLD, which can never resolve.
+  var RECERT_EMAIL_FALLBACK = 'recert@tolokarooo.resend.app';
 
   // BL-118: bilingual chrome + content. English is always the first-launch
   // default (bilingual-01) regardless of browser locale - currentLocale
@@ -530,10 +533,14 @@
     return lines.join('\n');
   }
 
+  function recertEmailTo() {
+    return (recertBatch && recertBatch.recertEmailTo) || RECERT_EMAIL_FALLBACK;
+  }
+
   function recertMailtoHref(scenarioId, outcome, newText) {
     var subject = recertEmailSubject(scenarioId, outcome);
     var body = recertEmailBody(scenarioId, outcome, newText);
-    return 'mailto:' + encodeURIComponent(RECERT_EMAIL_TO) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+    return 'mailto:' + encodeURIComponent(recertEmailTo()) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
   }
 
   function mailtoLink(label, href) {

@@ -1,0 +1,16 @@
+id: BL-228
+title: "Burndown charts: show an ETA per milestone"
+source: "operator chat request 2026-07-10 (relayed by coordinator)"
+description: |
+  Operator asked directly (in chat with the coordinator) that the burndown
+  charts show an ETA for each milestone. The burndown/velocity instrument is
+  BL-096 (velocity-burndown-metrics, done) and its consumers are the PWA
+  dashboard and swarm-metrics CLI (see also BL-102 stage-dwell/bottleneck
+  report, done, for the sibling per-stage instrument).
+
+  Raw request only — which surface(s) render the ETA (PWA dashboard vs. CLI
+  vs. both), the ETA method (linear extrapolation from recent velocity vs.
+  something else), how it should degrade with sparse/noisy history, and
+  whether it's per-milestone only or also a whole-backlog ETA are all
+  unresolved. Specifier: please confirm scope and method with the operator
+  before writing acceptance criteria.

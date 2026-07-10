@@ -5,7 +5,7 @@
 cd extension && node -e "
 const { verifySvixSignature } = require('./out/notify/svixSignature');
 const crypto = require('crypto');
-const SECRET = 'whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw';
+const SECRET = 'whsec_' + Buffer.from('bl-225-fake-fixture-seed').toString('base64'); // BL-225: runtime-built, not a committed literal
 function sign(id, timestamp, rawBody, secret = SECRET) {
   const secretBytes = Buffer.from(secret.replace(/^whsec_/, ''), 'base64');
   const signedContent = id + '.' + timestamp + '.' + rawBody;
