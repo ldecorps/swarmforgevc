@@ -305,6 +305,24 @@
     container.appendChild(list);
   }
 
+  // BL-251: read-only - no approve/reject affordance anywhere here.
+  // Derived from backlog.json's needsApproval (backlogDashboard.ts's own
+  // computeNeedsApproval, sourced from the structured human_approval field
+  // only) - this renderer never re-parses a comment itself.
+  function renderNeedsApproval(entries) {
+    var container = document.getElementById('needsApproval');
+    container.innerHTML = '';
+    if (!entries || entries.length === 0) {
+      container.appendChild(noDataParagraph(tr('needsApprovalEmpty')));
+      return;
+    }
+    var list = el('ul', {});
+    entries.forEach(function (t) {
+      list.appendChild(el('li', {}, [t.id + ' — ' + t.title]));
+    });
+    container.appendChild(list);
+  }
+
   function renderBoard(board) {
     var container = document.getElementById('board');
     container.innerHTML = '';
@@ -449,6 +467,7 @@
     var asOf = document.getElementById('asOf');
     var shaText = data.sourceSha ? ' (' + data.sourceSha.slice(0, 10) + ')' : '';
     asOf.textContent = tr('asOfPrefix') + new Date(data.generatedAtIso).toLocaleString() + shaText;
+    renderNeedsApproval(data.needsApproval);
     renderBoard(data.board);
     renderVelocity(data.metrics.velocity);
     renderBurndown(data.metrics.burndown, data.metrics.forecasts);

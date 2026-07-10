@@ -714,12 +714,25 @@
       (when (zero? exit) (str/trim out)))
     (catch Exception _ nil)))
 
+;; BL-251: same shell-out pattern as suite-duration-briefing-line above -
+;; reuses computeBacklogDashboard's own needsApproval field unchanged, the
+;; SAME field backlog.json/the PWA already carry, so the briefing can never
+;; disagree with the PWA about what's pending. Any failure degrades to
+;; omitting the section entirely - never crashes the sweep.
+(defn needs-approval-briefing-section []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "needs-approval-line.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
 (defn briefing-email-sweep! []
   (briefing-email-lib/send-unsent-briefings!
    (str briefings-dir)
    {:read-briefing-content (fn [file-name] (slurp (str (fs/path briefings-dir file-name))))
     :send-email! send-configured-briefing-email!
     :suite-duration-line suite-duration-briefing-line
+    :needs-approval-section needs-approval-briefing-section
     :log! (fn [& parts] (apply log! parts))}))
 
 (defn -main []
