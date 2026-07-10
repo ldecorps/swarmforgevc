@@ -33,6 +33,7 @@ const DOMAINS = [
   require('./sidecarNoOrphanSteps'),
   require('./recruiterDiscoverSteps'),
   require('./backlogFoldersStatusSteps'),
+  require('./backendSwitchSteps'),
 ];
 
 function registerSteps(registry) {
