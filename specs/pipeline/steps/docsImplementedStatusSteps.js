@@ -47,8 +47,25 @@ function registerSteps(registry) {
     }
   });
 
+  // Hardener fix (BL-113 Gherkin mutation): validate against the exact
+  // known treatment strings rather than collapsing everything that isn't
+  // literally "implemented and not greyed" into expectedImplemented=false
+  // - a mutated "greyed as not-yet-implemented" example (e.g. a case
+  // typo) still equally fails that equality check, so the assertion below
+  // passed regardless of what the "not-yet" treatment text actually said.
+  // Same lookup-and-reject-unknown pattern as recruiterAcquireSteps.js's
+  // WALL_TEXT_TO_AUTOMATION (BL-233) and bakeoffRosterSteps.js's
+  // KNOWN_COST_TIERS (BL-250).
+  const IMPLEMENTED_BY_TREATMENT = {
+    'implemented and not greyed': true,
+    'greyed as not-yet-implemented': false,
+  };
+
   registry.define(/^it is shown as "([^"]+)"$/, (ctx, expectedTreatment) => {
-    const expectedImplemented = expectedTreatment === 'implemented and not greyed';
+    if (!Object.prototype.hasOwnProperty.call(IMPLEMENTED_BY_TREATMENT, expectedTreatment)) {
+      throw new Error(`unrecognized treatment "${expectedTreatment}" - expected one of: ${Object.keys(IMPLEMENTED_BY_TREATMENT).join(', ')}`);
+    }
+    const expectedImplemented = IMPLEMENTED_BY_TREATMENT[expectedTreatment];
     if (ctx.pickedTicket.implemented !== expectedImplemented) {
       throw new Error(
         `expected ticket "${ctx.pickedId}" implemented=${expectedImplemented} (treatment "${expectedTreatment}"), got implemented=${ctx.pickedTicket.implemented}`
@@ -78,7 +95,19 @@ function registerSteps(registry) {
   });
 
   // ── refine-regardless-of-status-03 ───────────────────────────────────
+  // Hardener fix (BL-113 Gherkin mutation): the same shared-cell survivor
+  // shape as IMPLEMENTED_BY_TREATMENT above - `status === 'implemented'`
+  // collapsed every OTHER string (the real "not-yet" value, any typo of
+  // it, or garbage) to implemented=false alike, and nothing downstream
+  // ever reads implemented (the ticket's own point - recert must not
+  // gate on it), so the example value was never actually verified to be
+  // one of the two real statuses. Validate against the known set first.
+  const KNOWN_REFINE_STATUSES = ['implemented', 'not-yet'];
+
   registry.define(/^a "([^"]+)" ticket with a live Gherkin scenario$/, (ctx, status) => {
+    if (!KNOWN_REFINE_STATUSES.includes(status)) {
+      throw new Error(`unrecognized status "${status}" - expected one of: ${KNOWN_REFINE_STATUSES.join(', ')}`);
+    }
     ctx.recertTicket = {
       id: 'BL-999',
       // implemented/not-yet is asserted to make NO difference below -
