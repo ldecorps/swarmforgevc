@@ -118,6 +118,58 @@ test('an empty backlog produces an empty, valid, non-throwing dashboard', () => 
   assert.equal(data.sourceSha, null);
 });
 
+// ── BL-251: needsApproval - the single-source pending-approval set ───────
+// Derived ONLY from the structured human_approval field (backlogReader.ts),
+// never re-parsed from the free-text "# HUMAN APPROVAL:" comment - the PWA
+// and the daily briefing both read this same computed field so they can
+// never disagree.
+
+test('a live active ticket with human_approval: pending appears in needsApproval with its id and title', () => {
+  const data = buildBacklogDashboard(
+    { active: [item({ id: 'BL-100', title: 'Needs a look', humanApproval: 'pending' })], paused: [], done: [] },
+    [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z'
+  );
+  assert.deepEqual(data.needsApproval, [{ id: 'BL-100', title: 'Needs a look' }]);
+});
+
+test('a live paused ticket with human_approval: pending is included too (both active and paused are "live")', () => {
+  const data = buildBacklogDashboard(
+    { active: [], paused: [item({ id: 'BL-101', humanApproval: 'pending' })], done: [] },
+    [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z'
+  );
+  assert.deepEqual(data.needsApproval.map((t) => t.id), ['BL-101']);
+});
+
+test('an approved ticket is never in needsApproval', () => {
+  const data = buildBacklogDashboard(
+    { active: [item({ humanApproval: 'approved' })], paused: [], done: [] },
+    [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z'
+  );
+  assert.deepEqual(data.needsApproval, []);
+});
+
+test('a ticket with no human_approval field at all is never in needsApproval', () => {
+  const data = buildBacklogDashboard(
+    { active: [item()], paused: [], done: [] },
+    [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z'
+  );
+  assert.deepEqual(data.needsApproval, []);
+});
+
+test('a done ticket with human_approval: pending is excluded - only active/paused are "live"', () => {
+  const data = buildBacklogDashboard(
+    { active: [], paused: [], done: [item({ status: 'done', humanApproval: 'pending' })] },
+    [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z'
+  );
+  assert.deepEqual(data.needsApproval, []);
+});
+
+test('needsApproval is always present, even empty - never absent (both surfaces render an explicit no-data state from it)', () => {
+  const data = buildBacklogDashboard({ active: [], paused: [], done: [] }, [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z');
+  assert.equal(Object.prototype.hasOwnProperty.call(data, 'needsApproval'), true);
+  assert.deepEqual(data.needsApproval, []);
+});
+
 // ── BL-213 cost-06a/06b: costHealth fold-in ──────────────────────────────
 
 test('costHealth is folded in verbatim when a sidecar is provided (cost-06a)', () => {
