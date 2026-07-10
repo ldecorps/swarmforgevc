@@ -147,6 +147,19 @@ test('bilingual-01: first launch renders English chrome with the toggle visible'
   assert.equal(t.textContent, 'FR');
 });
 
+// BL-238: the toggle's visible text is just a locale code ("FR"/"EN"),
+// which is not descriptive out of context for a screen reader - it must
+// carry a real accessible name, applied on load like every other chrome
+// string (bilingual-01's "never derived at runtime alone" posture).
+test('BL-238: the locale toggle has an accessible name, in both locales', async () => {
+  const dom = renderDashboard();
+  await flush();
+  assert.equal(toggle(dom).getAttribute('aria-label'), 'Switch language');
+
+  click(dom, toggle(dom));
+  assert.equal(toggle(dom).getAttribute('aria-label'), 'Changer de langue');
+});
+
 // ── bilingual-02 ─────────────────────────────────────────────────────────
 
 test('bilingual-02: tapping the toggle switches chrome and content to French instantly, no reload', async () => {
