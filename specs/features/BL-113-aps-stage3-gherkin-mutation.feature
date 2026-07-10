@@ -10,8 +10,7 @@ Scenario: a caught mutant passes the check
 Scenario: a surviving mutant is reported
   Given a scenario whose example value is not actually asserted anywhere
   When its mutated IR run executes
-  Then the run reports that mutant as surviving, naming the scenario
-    and the mutated value
+  Then the run reports that mutant as surviving, naming the scenario and the mutated value
 
 # BL-113 gherkin-mutation-03
 Scenario: long mutation runs are distinguishable from hangs
