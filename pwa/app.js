@@ -77,41 +77,54 @@
     document.documentElement.style.fontSize = px + 'px';
   }
 
-  function loadPersistedFontSize() {
+  // Shared by the locale preference (bilingual-02) and the BL-220 font-size
+  // preference below - both need the exact same "read one JSON value from
+  // the dashboard's own Cache Storage instance, tolerate it being
+  // unavailable/quota'd/missing, fall back to null" shape, differing only
+  // in which key and how the raw JSON is validated into a usable value.
+  function loadPersistedPreference(key, parseValue) {
     if (!('caches' in window)) {
       return Promise.resolve(null);
     }
     return caches
       .open(LOCALE_CACHE_NAME)
       .then(function (cache) {
-        return cache.match(FONT_SIZE_PREF_KEY);
+        return cache.match(key);
       })
       .then(function (res) {
         return res ? res.json() : null;
       })
-      .then(function (data) {
-        var px = data && Number(data.fontSizePx);
-        return Number.isFinite(px) && px >= MIN_FONT_SIZE_PX && px <= MAX_FONT_SIZE_PX ? px : null;
-      })
+      .then(parseValue)
       .catch(function () {
         return null;
       });
   }
 
-  function persistFontSize(px) {
+  // The write half of loadPersistedPreference above - best-effort, never a
+  // hard requirement to function: the control still works for this
+  // session even when Cache Storage is unavailable/quota'd, it just won't
+  // survive a reopen.
+  function persistPreference(key, value) {
     if (!('caches' in window)) {
       return;
     }
     caches
       .open(LOCALE_CACHE_NAME)
       .then(function (cache) {
-        return cache.put(FONT_SIZE_PREF_KEY, new Response(JSON.stringify({ fontSizePx: px })));
+        return cache.put(key, new Response(JSON.stringify(value)));
       })
-      .catch(function () {
-        // Cache Storage unavailable/quota'd - the control still works for
-        // this session, it just won't survive a reopen (best-effort,
-        // same as persistLocale above).
-      });
+      .catch(function () {});
+  }
+
+  function loadPersistedFontSize() {
+    return loadPersistedPreference(FONT_SIZE_PREF_KEY, function (data) {
+      var px = data && Number(data.fontSizePx);
+      return Number.isFinite(px) && px >= MIN_FONT_SIZE_PX && px <= MAX_FONT_SIZE_PX ? px : null;
+    });
+  }
+
+  function persistFontSize(px) {
+    persistPreference(FONT_SIZE_PREF_KEY, { fontSizePx: px });
   }
 
   // Sets, applies (instantly, no reload), and persists a new font size in
@@ -123,39 +136,13 @@
   }
 
   function loadPersistedLocale() {
-    if (!('caches' in window)) {
-      return Promise.resolve(null);
-    }
-    return caches
-      .open(LOCALE_CACHE_NAME)
-      .then(function (cache) {
-        return cache.match(LOCALE_PREF_KEY);
-      })
-      .then(function (res) {
-        return res ? res.json() : null;
-      })
-      .then(function (data) {
-        return data && (data.locale === 'fr' || data.locale === 'en') ? data.locale : null;
-      })
-      .catch(function () {
-        return null;
-      });
+    return loadPersistedPreference(LOCALE_PREF_KEY, function (data) {
+      return data && (data.locale === 'fr' || data.locale === 'en') ? data.locale : null;
+    });
   }
 
   function persistLocale(locale) {
-    if (!('caches' in window)) {
-      return;
-    }
-    caches
-      .open(LOCALE_CACHE_NAME)
-      .then(function (cache) {
-        return cache.put(LOCALE_PREF_KEY, new Response(JSON.stringify({ locale: locale })));
-      })
-      .catch(function () {
-        // Cache Storage unavailable/quota'd - the toggle still works for
-        // this session, it just won't survive a reopen (bilingual-02 is a
-        // best-effort persistence, not a hard requirement to function).
-      });
+    persistPreference(LOCALE_PREF_KEY, { locale: locale });
   }
 
   // bilingual-02: re-renders chrome + every already-fetched section from
