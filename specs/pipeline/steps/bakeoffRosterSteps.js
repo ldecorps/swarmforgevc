@@ -1,20 +1,19 @@
 'use strict';
 
-// BL-250: step handlers for the bake-off's built scenarios
-// (roster-enumerates-01, cost-tier-labeled-03). Drives the REAL
-// createFileRosterSource and labelCostTier - no hand-simulated logic.
-// Ranking/report-emission/secret-storage (scenarios 02/04/05/06) reuse
-// BL-233's rank.ts/orchestrator.ts/recommend.ts/secretStore.ts unchanged
-// and are parked until wired - see the .feature.draft companion.
+// BL-250: step handlers for roster-enumerates-01. Drives the REAL
+// createFileRosterSource - no hand-simulated logic. cost-tier-labeled-03
+// (which shares this file's Background) has its own "the bake-off
+// enumerates..."-adjacent Given/Then steps here, but its shared
+// "the bake-off emits its report" step is registered centrally in
+// bakeoffPipelineSteps.js (see that file's own header) since three
+// scenarios share that exact step text and the registry is
+// first-match-wins.
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 
 const { createFileRosterSource } = require(
   path.join(__dirname, '..', '..', '..', 'extension', 'out', 'recruiter', 'rosterSource')
-);
-const { labelCostTier } = require(
-  path.join(__dirname, '..', '..', '..', 'extension', 'out', 'recruiter', 'costTierLabel')
 );
 
 function mkCatalogFile(entries) {
@@ -128,9 +127,11 @@ function registerSteps(registry) {
     ctx.expectedTier = tier;
   });
 
-  registry.define(/^the bake-off emits its report$/, (ctx) => {
-    ctx.label = labelCostTier(ctx.candidate);
-  });
+  // "the bake-off emits its report" is registered once, centrally, in
+  // bakeoffPipelineSteps.js - three scenarios (this one, inaccessible-
+  // listed-04, recommend-not-adopt-05) share that exact step text, and
+  // the registry is first-match-wins, so only ONE registration may exist
+  // for it; that handler branches on which Given populated ctx.
 
   registry.define(/^the report labels that candidate "([^"]+)" and shows its plan cost$/, (ctx, expected) => {
     if (ctx.label.costTier !== expected) {

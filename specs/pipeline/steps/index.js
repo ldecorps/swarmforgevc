@@ -49,6 +49,7 @@ const DOMAINS = [
   require('./recruiterRankRecommendSteps'),
   require('./compositeNodeSteps'),
   require('./bakeoffRosterSteps'),
+  require('./bakeoffPipelineSteps'),
   require('./coordinatorLossSteps'),
 ];
 
