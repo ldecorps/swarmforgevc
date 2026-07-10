@@ -193,6 +193,81 @@
  (agent-runtime-lib/respawn-steps "codex")
  (agent-runtime-lib/respawn-steps "copilot"))
 
+;; ── BL-207: provider error taxonomy ───────────────────────────────────────
+
+;; normalize-01: provider-specific failures map to a stable category, with
+;; the original backend detail attached as context.
+(let [result (agent-runtime-lib/classify-provider-error "No launch script found for role \"coder\" at /path/coder.sh")]
+  (assert= "normalize-01: launch failure maps to :launch-failed" :launch-failed (:category result))
+  (assert= "normalize-01: original detail is attached, never discarded"
+           "No launch script found for role \"coder\" at /path/coder.sh"
+           (:detail result)))
+
+(assert= "a missing tmux socket maps to :launch-failed"
+         :launch-failed
+         (:category (agent-runtime-lib/classify-provider-error "Cannot respawn \"coder\": no tmux socket recorded")))
+
+(assert= "a rate-limit message maps to :unavailable"
+         :unavailable
+         (:category (agent-runtime-lib/classify-provider-error "429 Too Many Requests - rate limit exceeded")))
+
+(assert= "a service-overloaded message maps to :unavailable"
+         :unavailable
+         (:category (agent-runtime-lib/classify-provider-error "Service unavailable, please retry later")))
+
+(assert= "a malformed-JSON message maps to :protocol"
+         :protocol
+         (:category (agent-runtime-lib/classify-provider-error "Unexpected token < in JSON at position 0")))
+
+(assert= "a timeout message maps to :timeout"
+         :timeout
+         (:category (agent-runtime-lib/classify-provider-error "Timed out waiting for swarm to become ready.")))
+
+(assert= "a structured timeout code maps to :timeout even with an unrelated message"
+         :timeout
+         (:category (agent-runtime-lib/classify-provider-error "connect failed" "ETIMEDOUT")))
+
+;; cross-provider-parity-02: the SAME failure class from different
+;; providers (different exact wording) maps to the SAME category.
+(let [claude-style (agent-runtime-lib/classify-provider-error "Error: 401 Unauthorized - invalid API key provided")
+      aider-style (agent-runtime-lib/classify-provider-error "Authentication failed: invalid credential for this account")]
+  (assert= "cross-provider-parity-02: claude-style auth failure maps to :auth" :auth (:category claude-style))
+  (assert= "cross-provider-parity-02: aider-style auth failure maps to :auth" :auth (:category aider-style))
+  (assert= "cross-provider-parity-02: both providers' auth failures share one category"
+           (:category claude-style)
+           (:category aider-style)))
+
+(let [provider-a (agent-runtime-lib/classify-provider-error "429 rate limit exceeded, back off and retry")
+      provider-b (agent-runtime-lib/classify-provider-error "Request overloaded the service, try again shortly")]
+  (assert= "two differently-worded rate-limit failures share one category"
+           (:category provider-a)
+           (:category provider-b)))
+
+;; unknown-fallback-03: an unmapped backend error becomes :unknown with its
+;; raw detail attached, never a crash.
+(let [result (agent-runtime-lib/classify-provider-error "some entirely novel provider-specific gibberish xyz123")]
+  (assert= "unknown-fallback-03: unrecognized error falls back to :unknown" :unknown (:category result))
+  (assert= "unknown-fallback-03: detail is still attached even when unknown"
+           "some entirely novel provider-specific gibberish xyz123"
+           (:detail result)))
+
+(assert= "empty/nil detail never throws and falls back to :unknown"
+         :unknown
+         (:category (agent-runtime-lib/classify-provider-error "")))
+(assert= "nil detail is tolerated, not a crash"
+         :unknown
+         (:category (agent-runtime-lib/classify-provider-error nil)))
+
+;; Closed set: every category the classifier can ever return is one of the
+;; six enumerated keywords - guards against a typo'd category silently
+;; becoming a new, unenumerated one.
+(let [allowed #{:launch-failed :auth :unavailable :protocol :timeout :unknown}
+      samples ["No launch script found" "401 unauthorized" "429 too many requests"
+               "unexpected token in JSON" "timed out" "totally unrecognized text"]]
+  (doseq [sample samples]
+    (assert-true (str "category for \"" sample "\" is one of the six enumerated values")
+                 (contains? allowed (:category (agent-runtime-lib/classify-provider-error sample))))))
+
 ;; ── report ────────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do

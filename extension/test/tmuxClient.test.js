@@ -351,6 +351,9 @@ test('respawnAgent fails without touching tmux when the launch script is missing
   const result = respawnAgent(tmp, 'coder');
   assert.equal(result.success, false);
   assert.match(result.message, /No launch script found/);
+  // BL-207: orchestration/UI can branch on the stable category instead of
+  // parsing this message text.
+  assert.equal(result.category, 'launch-failed');
 });
 
 test('respawnAgent fails when no tmux socket is recorded', () => {
@@ -362,6 +365,7 @@ test('respawnAgent fails when no tmux socket is recorded', () => {
   const result = respawnAgent(tmp, 'coder');
   assert.equal(result.success, false);
   assert.match(result.message, /no tmux socket/i);
+  assert.equal(result.category, 'launch-failed');
 });
 
 test('respawnAgent fails when the role has no session in sessions.tsv', () => {
@@ -502,6 +506,9 @@ test('respawnAgent refuses to type into a pane that is actively processing a tur
     // wrongly consume the bound and could escalate to needs-human.
     assert.equal(result.skippedBusy, true);
     assert.match(result.message, /actively processing|esc to interrupt/i);
+    // BL-207: a deliberate safety skip is not a backend failure to
+    // categorize - no category assigned.
+    assert.equal(result.category, undefined);
     const sendCalls = fake.calls().filter((args) => args.includes('send-keys'));
     assert.equal(sendCalls.length, 0, 'must never type into a pane that is actively processing a turn');
     const respawnCalls = fake.calls().filter((args) => args.includes('respawn-pane'));
