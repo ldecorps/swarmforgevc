@@ -1,0 +1,26 @@
+# PARKED — BL-262 slice 2 (the PROPOSE step). NOT built in slice 1 and NOT wired
+# into the live acceptance runner (a .feature.draft is picked up by no *.feature glob
+# and no runner, per BL-233), so the up-front design is preserved without failing the
+# hardener's gate. Promote these scenarios into the live
+# BL-262-onboarding-contract-agreement.feature only when this slice is built.
+#
+# Slice 1 ships an EMPTY-template contract the operator fills in by hand. Slice 2 has
+# the swarm auto-DRAFT the contract's scope/charter from the target's seed vision /
+# initial backlog, so the operator reviews a populated proposal rather than a blank
+# template — then still hand-agrees (slice 1's marker/gate unchanged).
+
+Feature: the swarm drafts the onboarding contract's scope from the target's seed
+
+  Background:
+    Given a newly onboarded target with a seed vision and an initial backlog
+
+  # BL-262 proposal-scope-from-seed-06
+  Scenario: the swarm proposes contract scope derived from the seed
+    When the swarm drafts the onboarding contract
+    Then the contract's scope section is populated from the seed rather than left blank
+    And the drafted contract is left awaiting the operator's agreement
+
+  # BL-262 proposal-out-of-scope-from-seed-07
+  Scenario: the proposed out-of-scope is drawn from the seed's stated boundaries
+    When the swarm drafts the onboarding contract
+    Then the contract's out-of-scope section reflects the seed's stated boundaries

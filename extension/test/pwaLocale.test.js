@@ -273,6 +273,124 @@ test('bilingual-05: a ticket with no titleFr/contentFr falls back to English rat
   assert.match(dom.window.document.getElementById('docsExplorer').textContent, /cost telemetry/, 'falls back to the English title');
 });
 
+// ── BL-261: untranslated French fallback must be flagged, never passed off as real ──
+// bilingual-05 above covers "no *Fr field at all" (falls back to English,
+// no French claim made at all). This covers the DISTINCT bug case: a *Fr
+// field IS present (translate.ts's own degrade-to-English-with-a-flag
+// behavior, bilingual-05's OWN "never block publishing" contract) but its
+// paired *Untranslated flag says it is not a real translation - docsTree.ts
+// already publishes these flags correctly; this is a pure PWA rendering
+// gap (grep-confirmed zero "Untranslated" references in pwa/ before this
+// fix).
+
+function untranslatedFixtureTree() {
+  const tree = fakeDocsTree();
+  tree.vision[0].contentFrUntranslated = true;
+  tree.tickets[0].titleFrUntranslated = true;
+  tree.tickets[0].descriptionFrUntranslated = true;
+  tree.tickets[0].scenarios[0].textFrUntranslated = true;
+  // The milestone list's own ticket summaries are separate, lighter
+  // objects (docsTree.ts's MilestoneTicketSummary) that carry no titleFr
+  // at all in the base fixture - mirrors BL-253's own labels-localized-05
+  // test needing to set `implemented` there too for the SAME reason.
+  tree.milestones[0].tickets[0].titleFr = tree.tickets[0].titleFr;
+  tree.milestones[0].tickets[0].titleFrUntranslated = true;
+  return tree;
+}
+
+// Element-based, not text-based: the notice's OWN text is locale-dependent
+// (French once toggled), and .textContent includes hidden (display:none)
+// elements regardless of visibility - checking for the .untranslated-notice
+// element itself (and, where relevant, its own style.display) is the only
+// check that is both locale-agnostic and visibility-accurate, mirroring
+// how the existing bilingual-04 reveal test checks frBlock.style.display
+// directly rather than the container's textContent.
+
+test('untranslated-flagged-01 (ticket title): an untranslated titleFr is flagged inline, not passed off as French', async () => {
+  const dom = renderDashboard({ docsTree: untranslatedFixtureTree() });
+  await flush();
+  click(dom, toggle(dom));
+
+  const milestoneButton = [...dom.window.document.getElementById('docsExplorer').querySelectorAll('button')].find((b) => b.textContent.indexOf('M4') === 0);
+  click(dom, milestoneButton);
+  const ticketButton = [...dom.window.document.getElementById('docsExplorer').querySelectorAll('button')].find((b) => b.textContent.indexOf('BL-100') === 0);
+  assert.match(ticketButton.textContent, /Traduction automatique indisponible/, 'ticketTitle() labels the fallback inline, in the active (fr) locale');
+  assert.doesNotMatch(ticketButton.textContent, /^télémétrie des coûts$/, 'must not read as a bare, unflagged French title');
+});
+
+test('untranslated-flagged-01 (ticket description): an untranslated descriptionFr is flagged', async () => {
+  const dom = renderDashboard({ docsTree: untranslatedFixtureTree() });
+  await flush();
+  click(dom, toggle(dom));
+
+  const explorer = dom.window.document.getElementById('docsExplorer');
+  click(dom, [...explorer.querySelectorAll('button')].find((b) => b.textContent.indexOf('M4') === 0));
+  click(dom, [...explorer.querySelectorAll('button')].find((b) => b.textContent.indexOf('BL-100') === 0));
+  assert.ok(explorer.querySelector('.untranslated-notice'), 'expected an untranslated-notice element on the ticket detail view');
+});
+
+test('untranslated-flagged-01 (vision doc content): an untranslated contentFr is flagged', async () => {
+  const dom = renderDashboard({ docsTree: untranslatedFixtureTree() });
+  await flush();
+  click(dom, toggle(dom));
+
+  const explorer = dom.window.document.getElementById('docsExplorer');
+  const specButton = [...explorer.querySelectorAll('button')].find((b) => b.textContent === 'Specification');
+  click(dom, specButton);
+  assert.ok(explorer.querySelector('.untranslated-notice'), 'expected an untranslated-notice element on the vision doc view');
+});
+
+test('untranslated-flagged-01 (Gherkin scenario): revealing an untranslated textFr shows the indicator, hidden until then', async () => {
+  const dom = renderDashboard({ docsTree: untranslatedFixtureTree() });
+  await flush();
+  const explorer = dom.window.document.getElementById('docsExplorer');
+  click(dom, [...explorer.querySelectorAll('button')].find((b) => b.textContent.indexOf('M4') === 0));
+  click(dom, [...explorer.querySelectorAll('button')].find((b) => b.textContent.indexOf('BL-100') === 0));
+  click(dom, explorer.querySelector('button'));
+
+  const notice = explorer.querySelector('.untranslated-notice');
+  assert.ok(notice, 'expected an untranslated-notice element alongside the French reveal');
+  assert.equal(notice.style.display, 'none', 'hidden until the reveal tap, same as the French block itself');
+
+  const revealBtn = [...explorer.querySelectorAll('button')].find((b) => b.textContent === 'Show French rendering');
+  click(dom, revealBtn);
+  assert.notEqual(notice.style.display, 'none');
+});
+
+test('real-translation-not-flagged-02: a genuine translation (no *Untranslated flags) shows no indicator anywhere', async () => {
+  const dom = renderDashboard({ docsTree: fakeDocsTree() });
+  await flush();
+  click(dom, toggle(dom));
+
+  const explorer = dom.window.document.getElementById('docsExplorer');
+  const specButton = [...explorer.querySelectorAll('button')].find((b) => b.textContent === 'Specification');
+  click(dom, specButton);
+  assert.equal(explorer.querySelector('.untranslated-notice'), null, 'vision doc: no indicator for a real translation');
+
+  click(dom, dom.window.document.getElementById('docsCrumbs').querySelector('button'));
+  click(dom, [...explorer.querySelectorAll('button')].find((b) => b.textContent.indexOf('M4') === 0));
+  const ticketButton = [...explorer.querySelectorAll('button')].find((b) => b.textContent.indexOf('BL-100') === 0);
+  assert.doesNotMatch(ticketButton.textContent, /indisponible/, 'ticket title: no inline fallback label for a real translation');
+  click(dom, ticketButton);
+  assert.equal(explorer.querySelector('.untranslated-notice'), null, 'ticket description: no indicator for a real translation');
+  click(dom, explorer.querySelector('button'));
+  const revealBtn = [...explorer.querySelectorAll('button')].find((b) => b.textContent.indexOf('French') !== -1 || b.textContent.indexOf('française') !== -1);
+  click(dom, revealBtn);
+  assert.equal(explorer.querySelector('.untranslated-notice'), null, 'scenario: no indicator for a real translation, even revealed');
+});
+
+test('indicator-localized-03: the indicator text is a locale catalog lookup, not a hardcoded literal, and differs between en/fr', () => {
+  const appSource = fs.readFileSync(path.join(PWA_DIR, 'app.js'), 'utf8');
+  assert.doesNotMatch(appSource, /['"]Machine translation unavailable/, 'expected a tr(...) catalog lookup, not an inline string literal');
+  assert.match(appSource, /tr\('translationUnavailableNotice'\)/);
+
+  const localesSource = fs.readFileSync(path.join(PWA_DIR, 'locales.js'), 'utf8');
+  const enMatch = localesSource.match(/en:\s*\{[\s\S]*?translationUnavailableNotice:\s*'([^']+)'/);
+  const frMatch = localesSource.match(/fr:\s*\{[\s\S]*?translationUnavailableNotice:\s*'([^']+)'/);
+  assert.ok(enMatch && frMatch, 'expected translationUnavailableNotice in both en and fr locale catalogs');
+  assert.notEqual(enMatch[1], frMatch[1], 'expected a genuinely different (translated) fr value, not the English string reused');
+});
+
 // ── bilingual-04 ─────────────────────────────────────────────────────────
 
 test('bilingual-04: the Gherkin scenario always shows canonical English text, even in FR mode', async () => {
