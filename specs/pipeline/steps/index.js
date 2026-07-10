@@ -22,6 +22,7 @@ const DOMAINS = [
   require('./providerErrorTaxonomySteps'),
   require('./gherkinMutationSteps'),
   require('./swarmMutationCostPrepassSteps'),
+  require('./providerObservabilityParitySteps'),
 ];
 
 function registerSteps(registry) {

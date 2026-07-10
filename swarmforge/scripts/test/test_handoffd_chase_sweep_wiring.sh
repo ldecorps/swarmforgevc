@@ -79,8 +79,13 @@ event = chase_events[0]
 assert event.get("handoffId"), f"telemetry event missing handoffId: {event!r}"
 assert isinstance(event.get("count"), int) and event["count"] >= 1, f"telemetry event missing/bad count: {event!r}"
 assert event.get("at"), f"telemetry event missing timestamp: {event!r}"
+# BL-208: every event now carries the role's configured agent as a common
+# "provider" field (roles.tsv's own agent column for "coder" is "claude"),
+# so a reader can compare providers without a per-role branch.
+assert event.get("provider") == "claude", f"telemetry event missing/wrong provider field: {event!r}"
 PY
 pass "01b (BL-098 telemetry-01): the daemon's own chase decision durably logs a telemetry event"
+pass "01c (BL-208 common-fields-01): the telemetry event carries the role's provider (agent) as a common field"
 
 # ── 02: duties file advertises both duties with a pid and per-duty timestamp ─
 # A dedicated file, not handoffd.status.json - that file is exclusively
