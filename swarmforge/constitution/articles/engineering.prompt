@@ -97,6 +97,17 @@
   example values in the JSON IR. It is distinct from language mutation of source.
 - Gherkin acceptance mutation runs must report periodic progress/status so agents
   can distinguish normal long-running work from a hang.
+- A `Scenario Outline` step handler must make every `Examples:` column value
+  LOAD-BEARING: validate the value against an explicit KNOWN_VALUES lookup (a
+  map/set of the exact accepted values) and fail on any value not in it — never a
+  bare passthrough, and never a binary `===`/ternary that treats one value
+  specially and lumps every other value (including a mutant) into an `else`
+  branch. A binary/passthrough check lets `gherkin-mutator` mutate an example
+  value into the else branch undetected, so the mutation SURVIVES until the
+  hardener's Gherkin-mutation pass instead of failing the scenario immediately.
+  An explicit lookup kills the mutant at the acceptance run (an unknown mutated
+  value throws / fails the lookup). (Confirmed 5x across BL-250/BL-252/BL-253 in
+  one session.)
 
 ## Verification
 - Before running language, build, or test commands, prefer project-local
