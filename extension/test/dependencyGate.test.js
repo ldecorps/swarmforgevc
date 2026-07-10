@@ -255,6 +255,22 @@ test('scanTextForStorageGlobal still ignores a genuine // comment even when an e
   );
 });
 
+// Hardener bounce evidence (BL-259, 20260710): the hardener's own exact
+// repro - a compliant file whose ONLY mention of the forbidden identifiers
+// is a two-line explanatory // comment, no real API usage anywhere. Tested
+// against commit 648f76d (before the architect's comment-stripping bounce
+// landed); already fixed by that same fix, confirmed here as a permanent
+// regression test tied to the hardener's own evidence file
+// (backlog/evidence/BL-259-gated-dependency-rule-checker-bounce-20260710-hardener.md).
+test('scanTextForStorageGlobal passes a compliant file whose only mention is an explanatory comment (hardener repro)', () => {
+  const text = [
+    '// This view intentionally avoids localStorage/sessionStorage per',
+    '// local-engineering.prompt - state lives in the extension host instead.',
+    'function noop() { return 1; }',
+  ].join('\n');
+  assert.equal(scanTextForStorageGlobal('media/compliant.js', text), null);
+});
+
 test('mergeDependencyGateResults combines depcruise violations and supplementary-scan violations into one deterministic result', () => {
   const depcruise = { passed: false, violations: [{ from: 'src/a.ts', to: 'fs', rule: 'no-io-from-policy' }] };
   const supplementary = [{ from: 'media/real-violation.js', to: 'localStorage', rule: 'no-webview-storage' }];
