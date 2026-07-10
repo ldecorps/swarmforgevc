@@ -7,6 +7,7 @@ import { RoleWorktree } from './swarmMetrics';
 import { readSwarmName } from '../bridge/holisticProjections';
 import { CostHealthSidecar } from '../notify/costHealthSidecar';
 import { translateString, TranslationSession } from '../i18n/translate';
+import { TARGET_LOCALES } from '../i18n/targetLocales';
 
 // BL-097: backlog.json's data contract - a versioned, git-derived
 // projection of backlog state + BL-096 metrics, reusing computeDeliveryMetrics
@@ -28,10 +29,13 @@ export interface DashboardTicketSummary {
   closeDateIso?: string;
   p50Iso?: string;
   p85Iso?: string;
-  // BL-118: additive - only translateBacklogDashboard populates these;
-  // buildBacklogDashboard/computeBacklogDashboard alone never set them.
-  titleFr?: string;
-  titleFrUntranslated?: boolean;
+  // BL-230: additive, per-locale - only translateBacklogDashboard
+  // populates this; buildBacklogDashboard/computeBacklogDashboard alone
+  // never set it. Keyed by locale code (targetLocales.ts's TARGET_LOCALES),
+  // generalizing BL-118's single fixed titleFr/titleFrUntranslated fields -
+  // adding a target locale means a new key in this same map, not a new
+  // pair of fields (add-language-05: no per-language code change).
+  titleTranslations?: Record<string, { title: string; untranslated?: boolean }>;
 }
 
 export interface BacklogDashboardData {
@@ -221,17 +225,21 @@ export function computeBacklogDashboard(targetPath: string, roles: RoleWorktree[
   return buildBacklogDashboard(folders, lifecycles, deliveryMetrics, localSwarmName, sourceSha, new Date(nowMs).toISOString(), costHealth);
 }
 
+// BL-230: translates summary.title into every configured target locale
+// (TARGET_LOCALES) - the N-language generalization of BL-118's
+// single-fr translateSummary. Adding a target locale is purely a
+// TARGET_LOCALES config change; this loop never changes.
 async function translateSummary(session: TranslationSession, summary: DashboardTicketSummary): Promise<DashboardTicketSummary> {
-  const title = await translateString(session, summary.title);
-  const result: DashboardTicketSummary = { ...summary, titleFr: title.fr };
-  if (title.frUntranslated) {
-    result.titleFrUntranslated = true;
+  const titleTranslations: Record<string, { title: string; untranslated?: boolean }> = {};
+  for (const locale of TARGET_LOCALES) {
+    const translated = await translateString(session, summary.title, locale);
+    titleTranslations[locale] = translated.untranslated ? { title: translated.text, untranslated: true } : { title: translated.text };
   }
-  return result;
+  return { ...summary, titleTranslations };
 }
 
-// BL-118: populates every board ticket's additive titleFr, mirroring
-// docsTree.ts's translateDocsTree - a separate pass over an
+// BL-118/BL-230: populates every board ticket's additive titleTranslations,
+// mirroring docsTree.ts's translateDocsTree - a separate pass over an
 // already-computed English dashboard, so translation can be skipped
 // entirely without touching computeBacklogDashboard's own derivation.
 export async function translateBacklogDashboard(data: BacklogDashboardData, session: TranslationSession): Promise<BacklogDashboardData> {

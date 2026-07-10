@@ -135,9 +135,17 @@
     persistFontSize(currentFontSizePx);
   }
 
+  // BL-230: validates against whatever locales are actually configured
+  // (window.LOCALES's own keys - the chrome catalog is the one place that
+  // already lists them) rather than a hardcoded fr/en pair, so a persisted
+  // locale that is no longer configured is ignored instead of trusted.
+  function configuredLocales() {
+    return (window.LOCALES && Object.keys(window.LOCALES)) || ['en'];
+  }
+
   function loadPersistedLocale() {
     return loadPersistedPreference(LOCALE_PREF_KEY, function (data) {
-      return data && (data.locale === 'fr' || data.locale === 'en') ? data.locale : null;
+      return data && configuredLocales().indexOf(data.locale) !== -1 ? data.locale : null;
     });
   }
 
@@ -241,9 +249,28 @@
   // only ever absent when the artifact predates BL-118 or the translation
   // pass hasn't run yet, which must degrade the same way as a flagged
   // failure, not throw.
+  // BL-230 scope note: this stays French-only, reading the docs explorer's
+  // own docsTree ticket shape (titleFr) - descriptions/docs/scenarios are a
+  // later BL-230 slice. Board tickets (backlogDashboard.ts) use the
+  // N-locale boardTicketTitle below instead.
   function ticketTitle(ticket) {
     if (currentLocale === 'fr' && ticket.titleFr) {
       return ticket.titleFr;
+    }
+    return ticket.title;
+  }
+
+  // BL-230: the board's own N-locale hook - keyed by whatever locale is
+  // active against ticket.titleTranslations (backlogDashboard.ts's
+  // per-configured-locale map), so a newly configured target locale needs
+  // no change here (add-language-05). Falls back to the authored source
+  // title the same way ticketTitle above does: missing/failed translation,
+  // or the active locale simply being the source locale, both render the
+  // source text rather than nothing.
+  function boardTicketTitle(ticket) {
+    var translated = ticket.titleTranslations && ticket.titleTranslations[currentLocale];
+    if (translated && translated.title) {
+      return translated.title;
     }
     return ticket.title;
   }
@@ -258,7 +285,7 @@
       // "ETA"/"remaining" words are catalog lookups.
       var badge = t.swarm && t.swarm !== 'primary' ? ' [' + t.swarm + ']' : '';
       var eta = t.p50Iso ? tr('etaPrefix') + t.p50Iso.slice(0, 10) : '';
-      list.appendChild(el('li', {}, [t.id + ' — ' + ticketTitle(t) + badge + eta]));
+      list.appendChild(el('li', {}, [t.id + ' — ' + boardTicketTitle(t) + badge + eta]));
     });
     container.appendChild(list);
   }
@@ -761,10 +788,21 @@
   // never derived from navigator.language.
   applyChromeLocale();
 
+  // BL-230: cycles through every configured locale (window.LOCALES's own
+  // keys), not a hardcoded en/fr flip - with today's two configured
+  // locales this is identical to the old toggle; adding a third locale to
+  // the catalog is then a config change only, the click handler itself
+  // never changes (add-language-05).
+  function nextLocale() {
+    var locales = configuredLocales();
+    var idx = locales.indexOf(currentLocale);
+    return locales[(idx + 1 + locales.length) % locales.length];
+  }
+
   var localeToggleButton = document.getElementById('localeToggle');
   if (localeToggleButton) {
     localeToggleButton.addEventListener('click', function () {
-      setLocale(currentLocale === 'en' ? 'fr' : 'en');
+      setLocale(nextLocale());
     });
   }
 

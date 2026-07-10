@@ -221,38 +221,47 @@ export function computeDocsTree(targetPath: string, nowMs: number = Date.now()):
   return buildDocsTree(vision, items, scenariosByTicketId, getCurrentSha(targetPath), new Date(nowMs).toISOString());
 }
 
+// BL-230: translate.ts's session-level API is now parameterized over an
+// arbitrary target locale (a single fixed session.targetLang collided
+// across configured locales - see translationCache.ts's schema bump).
+// docsTree.ts stays French-only for now (descriptions/docs/scenarios are
+// explicitly out of BL-230's own scope, a later slice) - 'fr' passed
+// explicitly here is a mechanical adaptation to the shared API's new
+// shape, not a behavior change.
+const DOCS_TREE_LOCALE = 'fr';
+
 async function translateVisionDoc(session: TranslationSession, doc: VisionDoc): Promise<VisionDoc> {
   if (doc.kind !== 'markdown') {
     return doc; // mermaid diagram source - bilingual-06, never translated
   }
-  const translated = await translateMarkdown(session, doc.content);
-  const result: VisionDoc = { ...doc, contentFr: translated.fr };
-  if (translated.frUntranslated) {
+  const translated = await translateMarkdown(session, doc.content, DOCS_TREE_LOCALE);
+  const result: VisionDoc = { ...doc, contentFr: translated.text };
+  if (translated.untranslated) {
     result.contentFrUntranslated = true;
   }
   return result;
 }
 
 async function translateScenario(session: TranslationSession, scenario: GherkinScenario): Promise<GherkinScenario> {
-  const translated = await translateString(session, scenario.text);
-  const result: GherkinScenario = { ...scenario, textFr: translated.fr };
-  if (translated.frUntranslated) {
+  const translated = await translateString(session, scenario.text, DOCS_TREE_LOCALE);
+  const result: GherkinScenario = { ...scenario, textFr: translated.text };
+  if (translated.untranslated) {
     result.textFrUntranslated = true;
   }
   return result;
 }
 
 async function translateTicket(session: TranslationSession, ticket: TicketNode): Promise<TicketNode> {
-  const title = await translateString(session, ticket.title);
+  const title = await translateString(session, ticket.title, DOCS_TREE_LOCALE);
   const scenarios = await Promise.all(ticket.scenarios.map((s) => translateScenario(session, s)));
-  const result: TicketNode = { ...ticket, titleFr: title.fr, scenarios };
-  if (title.frUntranslated) {
+  const result: TicketNode = { ...ticket, titleFr: title.text, scenarios };
+  if (title.untranslated) {
     result.titleFrUntranslated = true;
   }
   if (ticket.description !== undefined) {
-    const description = await translateString(session, ticket.description);
-    result.descriptionFr = description.fr;
-    if (description.frUntranslated) {
+    const description = await translateString(session, ticket.description, DOCS_TREE_LOCALE);
+    result.descriptionFr = description.text;
+    if (description.untranslated) {
       result.descriptionFrUntranslated = true;
     }
   }
