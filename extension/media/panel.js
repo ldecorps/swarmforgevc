@@ -537,7 +537,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-function ensureTile(role, displayName, agent, currentModel, availableModels) {
+function ensureTile(role, displayName, agent, currentModel, availableModels, currentEffort, availableEfforts, suggestedEffort, effortRationale) {
   if (tiles.has(role)) {
     return tiles.get(role);
   }
@@ -596,13 +596,41 @@ function ensureTile(role, displayName, agent, currentModel, availableModels) {
     header.appendChild(modelSelect);
   }
 
+  // BL-236 ("Suggest" tier only): an effort dial alongside the model
+  // dropdown, same claude-only availability gate. suggestedEffort/
+  // effortRationale are advisory (shown as the dial's title tooltip) -
+  // nothing is ever applied automatically; picking a value is the only
+  // thing that posts switchEffort. A role with no availableEfforts (a
+  // non-claude backend) gets no dial at all, i.e. shown unavailable.
+  let effortSelect;
+  if (Array.isArray(availableEfforts) && availableEfforts.length > 0) {
+    effortSelect = document.createElement('select');
+    effortSelect.className = 'effort-select';
+    if (effortRationale) {
+      effortSelect.title = effortRationale;
+    }
+    availableEfforts.forEach((effort) => {
+      const option = document.createElement('option');
+      option.value = effort;
+      option.textContent = effort === suggestedEffort ? effort + ' (suggested)' : effort;
+      option.selected = effort === currentEffort;
+      effortSelect.appendChild(option);
+    });
+    effortSelect.addEventListener('click', (e) => e.stopPropagation());
+    effortSelect.addEventListener('change', () => {
+      vscode.postMessage({ type: 'switchEffort', role, effort: effortSelect.value });
+    });
+    header.appendChild(effortSelect);
+  }
+
   header.appendChild(nudgeBtn);
   header.appendChild(restartBtn);
   header.addEventListener('click', (e) => {
+    const onDropdown = (select) => select && (e.target === select || select.contains(e.target));
     const onControl =
       e.target === nudgeBtn || nudgeBtn.contains(e.target) ||
       e.target === restartBtn || restartBtn.contains(e.target) ||
-      (modelSelect && (e.target === modelSelect || modelSelect.contains(e.target)));
+      onDropdown(modelSelect) || onDropdown(effortSelect);
     if (!onControl) {
       selectTile(role);
     }
@@ -656,7 +684,10 @@ window.addEventListener('message', (event) => {
   switch (message.type) {
     case 'roles':
       status.textContent = message.roles.length + ' agent(s)';
-      message.roles.forEach((r) => ensureTile(r.role, r.displayName, r.agent, r.currentModel, r.availableModels));
+      message.roles.forEach((r) => ensureTile(
+        r.role, r.displayName, r.agent, r.currentModel, r.availableModels,
+        r.currentEffort, r.availableEfforts, r.suggestedEffort, r.effortRationale
+      ));
       updateGridLayout(message.roles.length, message.roles);
       break;
     case 'output':
