@@ -56,6 +56,10 @@
       remainingSuffix: ' remaining',
       fontDecreaseLabel: 'Decrease text size',
       fontIncreaseLabel: 'Increase text size',
+      // BL-228: no new ETA computation - reuses the same forecast/etaPrefix.
+      noEtaYet: 'no ETA yet',
+      p85RangeInfix: ' (p85 ',
+      overallEtaPrefix: 'Overall ETA: ',
     },
     fr: {
       pageTitle: 'SwarmForge — tableau de bord',
@@ -107,6 +111,11 @@
       remainingSuffix: ' restants',
       fontDecreaseLabel: 'Diminuer la taille du texte',
       fontIncreaseLabel: 'Augmenter la taille du texte',
+      // BL-228: "no ETA yet" is ordinary words -> translated; "p85" stays
+      // jargon per the operator's rule (same as etaPrefix above).
+      noEtaYet: 'ETA non disponible',
+      p85RangeInfix: ' (p85 ',
+      overallEtaPrefix: 'ETA globale : ',
     },
   };
 })();
