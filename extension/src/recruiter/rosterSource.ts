@@ -16,9 +16,9 @@
 // swarm agents, so they never reach the returned roster regardless of
 // what the catalog file lists.
 
-import * as fs from 'fs';
 import { CostTier, ModelCandidate } from './candidate';
 import { DiscoverySource } from './discoverySource';
+import { isNonNullObject, readJsonArrayFile } from './jsonCatalog';
 
 const CHAT_ENDPOINT_TYPE = 'chat';
 
@@ -29,10 +29,6 @@ interface RawCatalogEntry {
   signupPath: { url: string; automation: string };
   endpointType: string;
   costTier: CostTier;
-}
-
-function isNonNullObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 
 function isRawCatalogEntry(value: unknown): value is RawCatalogEntry {
@@ -65,15 +61,7 @@ function toModelCandidate(entry: RawCatalogEntry): ModelCandidate {
 export function createFileRosterSource(catalogFilePath: string): DiscoverySource {
   return {
     async discover(): Promise<ModelCandidate[]> {
-      if (!fs.existsSync(catalogFilePath)) {
-        return [];
-      }
-      const parsed: unknown = JSON.parse(fs.readFileSync(catalogFilePath, 'utf-8'));
-      if (!Array.isArray(parsed)) {
-        return [];
-      }
-      return parsed
-        .filter(isRawCatalogEntry)
+      return readJsonArrayFile(catalogFilePath, isRawCatalogEntry)
         .filter((entry) => entry.endpointType === CHAT_ENDPOINT_TYPE)
         .map(toModelCandidate);
     },
