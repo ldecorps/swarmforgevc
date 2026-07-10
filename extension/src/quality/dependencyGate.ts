@@ -36,19 +36,69 @@ interface RawDepcruiseViolation {
 // Word-boundary match so e.g. `myLocalStorageHelper` never false-positives.
 const STORAGE_GLOBAL_PATTERN = /\b(localStorage|sessionStorage)\b/;
 
-// Architect bounce (BL-259, 20260710): scanning RAW file text (as above)
-// also matched a `//` or `/* */` comment merely discussing localStorage/
-// sessionStorage (e.g. explaining why the code avoids it), failing the
-// gate over prose, not code. Strips comments first - block comments
-// (including multi-line) then line comments - so only genuine code
-// survives to the identifier match. Not a full tokenizer (a `//`/`/*`
-// inside a string literal is not distinguished), a deliberate limit
-// matching this check's own "small supplementary scan" scope - the
-// realistic content of media/*.js webview scripts does not lean on such
-// tricks, and the primary defense (dependency-cruiser's import-graph
-// analysis) is unaffected either way.
+// Architect bounce (BL-259, 20260710, first): scanning RAW file text (as
+// above) also matched a `//` or `/* */` comment merely discussing
+// localStorage/sessionStorage (e.g. explaining why the code avoids it),
+// failing the gate over prose, not code.
+//
+// Architect bounce (BL-259, 20260710, second): a first fix (two
+// regexes, `/\/\*[\s\S]*?\*\//g` then `/\/\/.*$/gm`) treated ANY `//` as a
+// comment start, including one inside an ordinary string literal (e.g. a
+// URL) - silently deleting REAL CODE that followed it on the same line, a
+// false NEGATIVE (a real violation going uncaught is worse than the
+// original false positive). This single-pass scanner is string-aware: a
+// `//`/`/*` inside a '...'/"..."/`...` literal (with backslash-escape
+// handling) is never treated as a comment start, so only a genuine
+// (unquoted) `//`/`/*` strips anything. Not a full parser - `${...}`
+// interpolation inside a template literal is not re-entered, so
+// executable code nested inside an interpolation is treated as opaque
+// string text (a narrower, deliberate limit matching this check's own
+// "small supplementary scan" scope; dependency-cruiser's import-graph
+// analysis remains the primary defense either way).
 function stripComments(content: string): string {
-  return content.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  let result = '';
+  let inString: '"' | "'" | '`' | null = null;
+  let i = 0;
+  const n = content.length;
+  while (i < n) {
+    const ch = content[i];
+    if (inString) {
+      result += ch;
+      if (ch === '\\' && i + 1 < n) {
+        result += content[i + 1];
+        i += 2;
+        continue;
+      }
+      if (ch === inString) {
+        inString = null;
+      }
+      i += 1;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') {
+      inString = ch;
+      result += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === '/' && content[i + 1] === '/') {
+      while (i < n && content[i] !== '\n') {
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === '/' && content[i + 1] === '*') {
+      i += 2;
+      while (i < n && !(content[i] === '*' && content[i + 1] === '/')) {
+        i += 1;
+      }
+      i += 2;
+      continue;
+    }
+    result += ch;
+    i += 1;
+  }
+  return result;
 }
 
 export function scanTextForStorageGlobal(filePath: string, content: string): DependencyViolation | null {
