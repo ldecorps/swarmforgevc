@@ -94,6 +94,15 @@ On a successful launch:
   line present under secondary mode. Fix the conf and relaunch; nothing
   partially starts.
 
+BL-215: this headless daemon reads `RESEND_API_KEY` from its own process
+environment (never VS Code SecretStorage, which a headless launch has no
+access to) — export it in the same shell/session before running `./swarm`,
+or in whatever launcher/systemd unit starts it, if you want the BL-144
+daemon-death alarm or BL-214 briefing email to actually send. A
+`notify_email_to` configured in `swarmforge.conf` with no `RESEND_API_KEY`
+in the daemon's env no longer fails silently: it logs a loud warning naming
+`RESEND_API_KEY` to `.swarmforge/daemon/handoffd-supervisor.log`.
+
 ## 5. Working the shared backlog
 
 BL-090 wired the shared-backlog convention (a ticket's `swarm:` field); BL-092
