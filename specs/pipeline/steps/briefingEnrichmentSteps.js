@@ -87,7 +87,7 @@ function registerSteps(registry) {
   });
 
   // ── qa-bounce-chase-trends-03 ────────────────────────────────────────
-  registry.define(/^QA-bounce and chase\/nudge telemetry over the recent window$/, (ctx) => {
+  registry.define(/^chase\/nudge telemetry over the recent window$/, (ctx) => {
     const dir = mkFixtureRoot();
     writeTelemetryEvent(dir, { type: 'chase', role: 'coder', at: new Date(ctx.nowMs - 60000).toISOString() });
     writeTelemetryEvent(dir, { type: 'nudge', role: 'coder', at: new Date(ctx.nowMs - 120000).toISOString() });
@@ -95,7 +95,7 @@ function registerSteps(registry) {
     ctx.chaseTrend = computeChaseTrend(dir, ['coder'], ctx.nowMs);
   });
 
-  registry.define(/^it reports the QA-bounce rate and chase\/nudge counts with their trend direction$/, (ctx) => {
+  registry.define(/^it reports the chase\/nudge counts with their trend direction$/, (ctx) => {
     const text = formatChaseTrendLine(ctx.chaseCurrent, ctx.chaseTrend, ['coder']);
     if (!/chase\(s\)/.test(text) || !/nudge\(s\)/.test(text)) {
       throw new Error(`expected chase/nudge counts, got: ${text}`);
