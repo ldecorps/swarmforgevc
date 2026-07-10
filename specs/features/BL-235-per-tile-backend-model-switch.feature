@@ -1,13 +1,22 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-10T08:07:42.966439107Z","feature_name":"switch one tile's backend/model on the fly, respawning just that role","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-235-per-tile-backend-model-switch.feature","background_hash":"0dd637ff36f3fa1678f95007a193c246ebfce5f7659cb95c543ea035f559cace","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: switch one tile's backend/model on the fly, respawning just that role
 
   # Roadmap gap (coordinator scan 2026-07-10): M5 / Spec.MD "Change an agent's
   # backend/model on the fly" (lines 575-661). A per-tile backend/model dropdown
   # rewrites that one window's launch command in the IN-MEMORY config and respawns
   # only that role's agent on the new choice; no other agent is affected;
-  # swarmforge.conf on disk is untouched. "Switch model" and "switch backend" are
-  # the same respawn operation. The provider/backend abstraction this rides on is
-  # already done (BL-130/BL-142/BL-206-208). Explicitly M5 — a paused proposal,
-  # NOT Milestone-1 work (M1 excludes per-tile respawn/model-switch controls).
+  # swarmforge.conf on disk is untouched. Conceptually "switch model" and "switch
+  # backend" are the same respawn operation, but this slice delivers the MODEL
+  # switch (same backend). Cross-BACKEND switching (e.g. an external CLI backend
+  # <-> the in-process vscode.lm runtime, which have different process lifecycles)
+  # is a DEFERRED slice, parked in
+  # BL-235-per-tile-backend-model-switch.cross-backend.feature.draft. The
+  # provider/backend abstraction this rides on is already done
+  # (BL-130/BL-142/BL-206-208). Explicitly M5 — a paused proposal, NOT
+  # Milestone-1 work (M1 excludes per-tile respawn/model-switch controls).
 
   Background:
     Given a running swarm with a tiled agent panel, each tile bound to one role's agent
@@ -20,9 +29,8 @@ Feature: switch one tile's backend/model on the fly, respawning just that role
     And no other role's agent is respawned
 
     Examples:
-      | from            | to                   |
-      | claude-sonnet-5 | claude-opus-4-8      |
-      | Claude Code CLI | in-process vscode.lm |
+      | from            | to              |
+      | claude-sonnet-5 | claude-opus-4-8 |
 
   # BL-235 in-memory-not-persisted-02
   Scenario: the switch changes only the in-memory launch command, not swarmforge.conf
