@@ -28,7 +28,13 @@ import { createFileSecretStore } from '../recruiter/secretStore';
 import { createFileSignupSource } from '../recruiter/signupSource';
 import { printJsonToStdout, runCliMain } from './swarm-metrics';
 
-function readCurrentModelByRole(currentModelsFile: string): Record<string, string> {
+// Exported so it can be unit tested directly (in-process) rather than only
+// through the subprocess CLI test - same posture as secretStore.ts's own
+// readExisting, which is covered because its caller (store()) is always
+// invoked in-process. A CLI main() run only via execFileSync never shows up
+// under coverage instrumentation, so any real logic left inline in main()
+// is invisible to the CRAP gate; hardener split (BL-233 hardening pass).
+export function readCurrentModelByRole(currentModelsFile: string): Record<string, string> {
   if (!fs.existsSync(currentModelsFile)) {
     return {};
   }
@@ -36,23 +42,48 @@ function readCurrentModelByRole(currentModelsFile: string): Record<string, strin
   return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, string>) : {};
 }
 
+export interface RecruiterRunArgs {
+  candidatesFile: string;
+  signupKeysFile: string;
+  roleTrialsFile: string;
+  secretsFile: string;
+  currentModelsFile: string;
+}
+
+const USAGE =
+  'Usage: recruiter-run.js <candidates-file> <signup-keys-file> <role-trials-file> <secrets-file> <current-models-file>\n';
+
+// Pure - no process.argv/stderr/exitCode access here, so it is unit
+// testable without the subprocess boundary main() itself needs. Same
+// "keep main() a thin dispatcher over a testable pure helper" split
+// trace-hop.ts already established for this codebase's other multi-arg CLIs.
+// A single `files.some(...)` check over the five positional args (rather
+// than a five-way `||` chain) so the required-ness check is one decision
+// point here, not five - lower CRAP surface for the same behavior.
+export function parseArgs(argv: string[]): RecruiterRunArgs | null {
+  const [candidatesFile, signupKeysFile, roleTrialsFile, secretsFile, currentModelsFile] = argv;
+  const files = [candidatesFile, signupKeysFile, roleTrialsFile, secretsFile, currentModelsFile];
+  if (files.some((file) => !file)) {
+    return null;
+  }
+  return { candidatesFile, signupKeysFile, roleTrialsFile, secretsFile, currentModelsFile };
+}
+
 export async function main(): Promise<void> {
-  const [candidatesFile, signupKeysFile, roleTrialsFile, secretsFile, currentModelsFile] = process.argv.slice(2);
-  if (!candidatesFile || !signupKeysFile || !roleTrialsFile || !secretsFile || !currentModelsFile) {
-    process.stderr.write(
-      'Usage: recruiter-run.js <candidates-file> <signup-keys-file> <role-trials-file> <secrets-file> <current-models-file>\n'
-    );
+  const args = parseArgs(process.argv.slice(2));
+  if (!args) {
+    process.stderr.write(USAGE);
     process.exitCode = 1;
     return;
   }
 
   const report = await runRecruiter({
-    discovery: createFileDiscoverySource(candidatesFile),
-    signup: createFileSignupSource(signupKeysFile),
-    secretStore: createFileSecretStore(secretsFile),
-    trialRunner: createFileRoleTrialRunner(roleTrialsFile),
+    discovery: createFileDiscoverySource(args.candidatesFile),
+    signup: createFileSignupSource(args.signupKeysFile),
+    secretStore: createFileSecretStore(args.secretsFile),
+    trialRunner: createFileRoleTrialRunner(args.roleTrialsFile),
     battery: createComplianceBatteryGate(),
-    currentModelByRole: readCurrentModelByRole(currentModelsFile),
+    currentModelByRole: readCurrentModelByRole(args.currentModelsFile),
   });
   printJsonToStdout(report);
 }
