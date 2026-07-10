@@ -1,7 +1,18 @@
 id: BL-101
 title: headless secondary swarms on small Linux hosts — Raspberry Pi and VPS bring-up (systemd, headless auth, throughput-aware assignment)
 milestone: M6
-status: todo
+status: done
+
+close_notes: |
+  QA (2026-07-10) passed everything code-side (unit tests, mutation
+  coverage, systemd unit generation, provisioning scripts, docs) and
+  merged (coordinator, cb2b0632c6). QA flagged the ticket's own acceptance
+  feature file has real-hardware-only scenarios (actual Pi 5 / VPS
+  bring-up) it cannot execute — same precedent as BL-091's feature file.
+  OPERATOR ACTION STILL PENDING: run the manual verification checklist in
+  docs/runbooks/BL-101-pi-vps-secondary-swarm-bringup.md against real
+  hardware before treating the secondary-swarm capability as fully proven
+  end-to-end.
 priority: 05
 direction: non-aligned
 source: operator request 2026-07-04 (Pi feasibility confirmed; operator also has an idle VPS)
