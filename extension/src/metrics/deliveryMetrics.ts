@@ -1,7 +1,7 @@
 import { runGitLog, deriveTicketLifecycles, TicketLifecycleEvent } from './gitHistoryAdapter';
 import { computeTrend, TrendResult, TrendSeriesPoint } from './trend';
 import { readBacklogFolders, BacklogFolders, BacklogItem } from '../panel/backlogReader';
-import { RoleWorktree, readAllTestDurationRecords } from './swarmMetrics';
+import { RoleWorktree, readAllTestDurationRecords, computeSuiteDuration } from './swarmMetrics';
 
 // BL-096: delivery-flow metrics (velocity, burndown, cycle time, forecasts)
 // derived purely from git history + the current backlog/ folder state - see
@@ -422,13 +422,18 @@ export interface SuiteDurationTrendResult {
   hasLocalData: boolean;
   dailySeries: TrendSeriesPoint[];
   trend: TrendResult;
+  // BL-252: reuses swarmMetrics.ts's own BL-078 computeSuiteDuration warn
+  // signal unchanged (no second threshold/definition of "regressing") - the
+  // one source both the holistic UI and the daily briefing flag from.
+  warn: boolean;
 }
 
 export function computeSuiteDurationTrend(targetPath: string, roles: RoleWorktree[], nowMs: number): SuiteDurationTrendResult {
   const allRecords = readAllTestDurationRecords(targetPath, roles);
+  const warn = computeSuiteDuration(targetPath, roles).warn;
 
   if (allRecords.length === 0) {
-    return { hasLocalData: false, dailySeries: [], trend: computeTrend([]) };
+    return { hasLocalData: false, dailySeries: [], trend: computeTrend([]), warn };
   }
 
   const byDay = new Map<number, number[]>();
@@ -446,7 +451,7 @@ export function computeSuiteDurationTrend(targetPath: string, roles: RoleWorktre
       value: durations.reduce((sum, d) => sum + d, 0) / durations.length,
     }));
 
-  return { hasLocalData: true, dailySeries, trend: computeTrend(dailySeries) };
+  return { hasLocalData: true, dailySeries, trend: computeTrend(dailySeries), warn };
 }
 
 // ── top-level aggregator ─────────────────────────────────────────────────
