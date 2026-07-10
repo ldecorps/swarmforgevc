@@ -9,6 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { atomicAppend, atomicWrite } from '../util/atomicWrite';
+import { parseConfigValue, readConfigValue } from '../util/swarmforgeConfig';
 import { computeDocsTree } from './docsTree';
 import {
   emptyRecertStore,
@@ -79,16 +80,11 @@ const DEFAULT_RECERT_BATCH_SIZE = 1;
 const DEFAULT_RECERT_EMAIL_TO = 'recert@tolokarooo.resend.app';
 
 export function parseRecertEmailTo(confContent: string): string {
-  const match = confContent.match(/^\s*config\s+recert_email_to\s+(\S+)/m);
-  return match ? match[1] : DEFAULT_RECERT_EMAIL_TO;
+  return parseConfigValue(confContent, 'recert_email_to') ?? DEFAULT_RECERT_EMAIL_TO;
 }
 
 export function readRecertEmailTo(targetPath: string): string {
-  try {
-    return parseRecertEmailTo(fs.readFileSync(path.join(targetPath, 'swarmforge', 'swarmforge.conf'), 'utf8'));
-  } catch {
-    return DEFAULT_RECERT_EMAIL_TO;
-  }
+  return readConfigValue(targetPath, 'recert_email_to') ?? DEFAULT_RECERT_EMAIL_TO;
 }
 
 // The one impure orchestrator generate-recert-batch.ts's CLI wraps (same
