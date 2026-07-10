@@ -1,0 +1,70 @@
+id: BL-258
+title: "Schedule the daily briefing every morning, headless (host-independent generation trigger)"
+direction: reliability
+priority: 30
+mutation_cost: low
+source: "operator direction 2026-07-10 (via coordinator): 'I need this scheduled every morning (to start with).'"
+
+description: |
+  Make the daily briefing generate every morning even when the swarm runs headless.
+
+  Current state (specifier verified): the briefing's WRITE trigger is the VS Code
+  host's once-per-day timer (BL-099, "the extension host's timer delivers a briefing
+  due prompt to the coordinator pane once per day"); the headless daemon only handles
+  the SEND of an already-committed docs/briefings/<date>.md (BL-214). So an operator
+  running HEADLESS (no VS Code host) may never have the briefing GENERATED — the send
+  path has nothing to send. This adds a headless, host-independent MORNING trigger so
+  the briefing is written (and then emailed by BL-214) each morning.
+
+  Operator: scheduled every morning "to start with" (a fixed daily morning trigger is
+  the first step; richer scheduling can follow).
+
+  Wanted behavior (observable):
+    - At the configured morning time, on a day with no briefing yet, the daily
+      briefing for that day is generated.
+    - It is generated even with no VS Code host running (headless).
+    - At most one briefing per day: if today's is already generated, a later trigger
+      the same day does nothing (no double-generate, no double-email) — compose with
+      BL-214's already-sent marker.
+    - The morning time is read from configuration (swarmforge.conf), not hardcoded.
+
+  Constraints:
+    - REUSE: keep BL-099's briefing CONTENT and BL-214's daemon SEND path; this adds
+      only the scheduled GENERATION trigger. Do not duplicate the send logic.
+    - NO ROLE SELF-SCHEDULING: the trigger is daemon/host infrastructure (consistent
+      with BL-099's "roles must not self-schedule"); an agent must not cron/send_later
+      its own briefing.
+    - IDEMPOTENT: gate on the day's existing briefing (and BL-214's sent marker) so a
+      double trigger — e.g. both the host timer AND the headless schedule present —
+      never double-generates or double-emails.
+    - TESTABLE host-side: the "is it time / has today's briefing been generated"
+      decision is a pure, testable function driven by an injected clock; NEVER a real
+      timer/sleep (engineering no-real-timers rule). Assert the decision against fake
+      time, not wall-clock.
+
+  Scope: a headless, host-independent morning trigger for briefing GENERATION —
+  likely in the Babashka daemon (handoffd.bb / a sibling), reading a configurable
+  morning time from swarmforge.conf, generating the day's docs/briefings/<date>.md if
+  absent, then letting BL-214's existing daemon path email it. Verify the current
+  briefing generation + BL-214 send path before naming files. Confirm whether any
+  daemon daily trigger already exists (grep) so this fills only the headless-morning
+  gap, not a duplicate.
+
+  DELIVERY: buildable now (reuses BL-099/BL-214). Small. Priority normal.
+
+acceptance: specs/features/BL-258-headless-morning-briefing-schedule.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (clock injected; no real timer; no real email send):
+  1. Advance the injected clock to the configured morning time on a day with no
+     briefing; assert the day's briefing is generated.
+  2. With no VS Code host present, assert the headless schedule still generates it.
+  3. With today's briefing already present, fire the trigger again; assert no second
+     generation and no second email (idempotent, composes with BL-214's marker).
+  4. Set the configured morning time to two different values; assert generation
+     happens at the configured time, not a hardcoded one.
+
+# HUMAN APPROVAL: feature file
+# specs/features/BL-258-headless-morning-briefing-schedule.feature is a NEW draft
+# authored by the specifier and is PENDING human review.
+human_approval: pending
