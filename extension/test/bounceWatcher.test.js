@@ -531,6 +531,29 @@ test('BL-115: close() disposes and prevents any further scheduled re-establish a
   assert.equal(attempts, 1, 'a scheduled retry must not run after close()');
 });
 
+test('BL-115: an onLost callback firing after close() is a no-op (not just the scheduled retry)', () => {
+  const { scheduleTick } = fakeTickScheduler();
+  let capturedOnLost;
+  const lostReasons = [];
+  const exhausted = [];
+  const supervisor = createResilientWatcherSupervisor(
+    (onLost) => {
+      capturedOnLost = onLost;
+      return fakeWatcher(); // establishes successfully - the watcher itself outlives close() briefly
+    },
+    { scheduleTick, maxAttempts: 2, onLost: (r) => lostReasons.push(r), onExhausted: (r) => exhausted.push(r) }
+  );
+  supervisor.close();
+  // Simulates a real fs.FSWatcher's 'error'/'close' event arriving late,
+  // after close() already ran but before the underlying OS handle fully
+  // tears down - handleLost's OWN disposed-check (not just tryOnce's) must
+  // swallow this, independent of closeBounceWatcher's intentional-close
+  // tracking at the fs.FSWatcher layer below it.
+  capturedOnLost('late event after close');
+  assert.deepEqual(lostReasons, [], 'onLost must not fire for an event arriving after disposal');
+  assert.deepEqual(exhausted, [], 'onExhausted must not fire for an event arriving after disposal');
+});
+
 test('handleWatchEvent reports invalid bounce file content via onError', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
   const swarmforgeDir = path.join(tmpDir, '.swarmforge');
