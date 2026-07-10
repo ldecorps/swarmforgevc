@@ -53,3 +53,22 @@ export function formatBounceNote(violations: DependencyViolation[]): string {
   const lines = violations.map((v) => `  ${v.from} -> ${v.to} violates "${v.rule}"`);
   return ['Dependency-rule gate FAILED:', ...lines].join('\n');
 }
+
+export interface GateOutcome {
+  text: string;
+  exitCode: 0 | 1;
+}
+
+// Hardener split (dependency-gate.ts's main() only ever gets exercised
+// end-to-end against the REAL repo, never an isolated fixture - its own
+// runDependencyCruiser hardcodes cwd=EXTENSION_ROOT so a subprocess test
+// pointed at a fixture can't reach main()'s fail branch at all). Pulling
+// the pass/fail -> printed-text/exit-code decision out into this pure
+// function makes BOTH branches directly unit-testable in-process, with no
+// subprocess or fixture involved - main() itself becomes a thin dispatcher.
+export function renderGateOutcome(result: DependencyGateResult): GateOutcome {
+  if (result.passed) {
+    return { text: 'Dependency-rule gate PASSED: no forbidden edges.', exitCode: 0 };
+  }
+  return { text: formatBounceNote(result.violations), exitCode: 1 };
+}

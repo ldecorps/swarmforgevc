@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { parseDependencyCruiserOutput, formatBounceNote } = require('../out/quality/dependencyGate');
+const { parseDependencyCruiserOutput, formatBounceNote, renderGateOutcome } = require('../out/quality/dependencyGate');
 
 // BL-259: the gate wrapper - parses RECORDED dependency-cruiser JSON output
 // (the shape real depcruise --output-type json produces) into a pass/
@@ -103,4 +103,25 @@ test('output with no summary.violations key at all reads as passed, never a cras
 
 test('formatBounceNote on an empty violations array (never called for a passing gate, but must not throw)', () => {
   assert.doesNotThrow(() => formatBounceNote([]));
+});
+
+// ── renderGateOutcome (pure) ────────────────────────────────────────────
+// Hardener split: dependency-gate.ts's main() can only ever be exercised
+// end-to-end against the REAL repo (its runDependencyCruiser hardcodes
+// cwd=EXTENSION_ROOT, so a subprocess test pointed at an isolated fixture
+// can never reach main()'s fail branch) - this pure function carries the
+// pass/fail -> printed-text/exit-code decision so BOTH branches are
+// directly testable here, in-process, with no subprocess involved.
+
+test('renderGateOutcome for a passing result: PASSED text, exit code 0', () => {
+  const outcome = renderGateOutcome({ passed: true, violations: [] });
+  assert.equal(outcome.exitCode, 0);
+  assert.match(outcome.text, /PASSED: no forbidden edges/);
+});
+
+test('renderGateOutcome for a failing result: the bounce note text, exit code 1', () => {
+  const violations = [{ from: 'src/quality/bad.ts', to: 'fs', rule: 'no-io-from-policy' }];
+  const outcome = renderGateOutcome({ passed: false, violations });
+  assert.equal(outcome.exitCode, 1);
+  assert.equal(outcome.text, formatBounceNote(violations));
 });

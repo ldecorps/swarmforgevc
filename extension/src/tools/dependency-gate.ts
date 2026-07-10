@@ -20,7 +20,7 @@
  */
 import { execFileSync } from 'child_process';
 import * as path from 'path';
-import { parseDependencyCruiserOutput, formatBounceNote } from '../quality/dependencyGate';
+import { parseDependencyCruiserOutput, renderGateOutcome } from '../quality/dependencyGate';
 import { runCliMain } from './swarm-metrics';
 
 const EXTENSION_ROOT = path.join(__dirname, '..', '..');
@@ -69,12 +69,9 @@ export function main(): void {
   const { scopePaths } = parseArgs(process.argv.slice(2));
   const rawJson = runDependencyCruiser(scopePaths);
   const result = parseDependencyCruiserOutput(rawJson);
-  if (result.passed) {
-    console.log('Dependency-rule gate PASSED: no forbidden edges.');
-    return;
-  }
-  console.log(formatBounceNote(result.violations));
-  process.exitCode = 1;
+  const outcome = renderGateOutcome(result);
+  console.log(outcome.text);
+  process.exitCode = outcome.exitCode;
 }
 
 if (require.main === module) {
