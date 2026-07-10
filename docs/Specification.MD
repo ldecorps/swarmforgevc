@@ -709,6 +709,10 @@ A **pack** defines pipeline topology (which roles exist). A **swarm profile** is
 
 Example: `cheap-copilot-seven-pack` runs the full seven-pack on GitHub Copilot CLI with mini/flash models. Its overlay tells the coordinator to **route pre-specced `backlog/paused/` and `backlog/active/` items directly to coder** — not the specifier — because spec work is too costly on cheap models. Select a profile via `SWARMFORGE_CONFIG=swarmforge/profiles/<id>.conf` or the matching VS Code launch configuration. The cost advisor (above) can suggest upgrading or downgrading profiles from outcome signals (QA bounces, reroutes).
 
+### Swarm-compliance battery (qualifying a candidate model/backend)
+
+Before adopting a new agent model or backend (e.g. evaluating Grok or Mistral for a role), `swarmforge/scripts/compliance_battery.bb` is a repeatable exercise that decides whether it's "swarm compliant" — i.e. can actually follow this project's protocol, not just produce plausible code. It drives the real helper scripts (`swarm_handoff.bb`, `ready_for_next.bb`/`done_with_current.bb`, the specifier/QA gates, the coordinator's depth-cap logic) against a scratch git worktree, rather than re-implementing any check logic — the same "pure lib + thin CLI" split as `swarm_ensure.bb`. Each check emits one scorecard entry (pass/fail/human-verdict-pending); judgment competencies that no script can read from a transcript (asks-when-blocked, startup-reread, constitution-adherence) surface as a short human rubric instead. `compliance_battery.bb scorecard <model-name> <entries-json-file>` aggregates all entries into one overall verdict. Provider-agnostic by design — it also runs against this project's own reference Claude configuration and must show a clean pass.
+
 ---
 
 ## Pack Suggestion Logic
