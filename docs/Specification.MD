@@ -1355,7 +1355,7 @@ The PWA's inbound address (`recertEmailTo`, config-injected from `swarmforge.con
 The bridge exposes:
 
 - **A read projection** — pipeline stage, per-agent status/heartbeat, completion %, run log — all derived from the same on-disk state, pushed over an event stream (WebSocket/SSE)
-- **A small control surface** — answer a `to: human` gate, respawn an agent, stop the swarm, switch a model — each implemented as the same helper-script call the extension would make locally
+- **A small control surface — narrower than originally scoped here, by deliberate operator posture (BL-240, 2026-07-10):** the ONLY write route the bridge exposes is answering a captured `to: human` gate (`POST /gate-answer {role, answer}`), authenticated, dispatched through the exact same tmux send-keys call the extension uses when the operator types into a tile locally, and refused for any role that isn't currently showing a captured gate. Respawn-an-agent, stop-the-swarm, and switch-a-model remain future work on this surface, not yet implemented — a client cannot do them remotely today.
 - **Auth + tunnel** — token-based; opt-in and encrypted (see the remote-access security gap)
 
 It deliberately does *not* hold or cache authoritative state, run its own watchdog, or duplicate logic. If it dies, the swarm is unaffected and the desktop extension carries on — because neither depends on it.
@@ -1366,7 +1366,7 @@ The phone is not where you'd read full agent transcripts or resolve a merge — 
 
 - **Glanceable status:** which stage the parcel is at, per-agent liveness dots, run completion %
 - **Push notifications** (the mobile-native win): "PR ready for review," "agent dead-lettered," "agent is asking you a question," "run finished/failed"
-- **Light controls:** approve/answer a `to: human` gate, respawn a stuck agent, pause/stop the swarm, switch a model — all of which are single taps and don't need a big screen
+- **Light controls:** approve/answer a `to: human` gate — the one control the bridge's write path supports today (BL-240); respawn a stuck agent, pause/stop the swarm, and switch a model are envisioned as future single-tap additions to this surface, not yet built
 - **The Work Tree** in collapsed form: backlog → feature → scenario with the same red→green completion circles, so you can see what's done from anywhere
 - **Tap a tile** to see that agent's recent output (tailed, not the full scrollback) and type a one-line nudge
 

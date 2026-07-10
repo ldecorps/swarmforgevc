@@ -137,7 +137,7 @@ Tick each — these are the seams the whole spec depends on. Built and proven fr
 **Goal:** monitor and unblock the swarm from anywhere.
 
 - **Tier-2 bridge** — projects the same on-disk state over an authenticated tunnel; read projection + small control surface; holds no authoritative state
-- **Phone app or chat adapter** — glanceable status, push notifications, **answer `to: human` gates remotely** (the headline remote feature), simple controls
+- **Phone app or chat adapter** — glanceable status, push notifications, **answer `to: human` gates remotely** (the headline remote feature — the bridge's gate-answer write path landed, BL-240; a phone app/chat adapter client consuming it is still to come), simple controls
 - **Chat adapter** (Telegram easiest; Signal/WhatsApp/Teams per context) — human channel only, per-run thread as activity feed; agents never coordinate through it
 - **Remote security** — threat model: token rotation, read-only vs. control scope, device revocation, stronger auth for control actions
 
