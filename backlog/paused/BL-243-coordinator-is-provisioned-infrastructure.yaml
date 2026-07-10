@@ -33,11 +33,10 @@ description: |
       local-engineering, fork changes go through the drift-watch review
       (upstream-watch.json, docs/upstream-deviations.md); this is a deliberate
       local modification, not an upstream pull.
-    - RECONCILE ON HUMAN REVIEW: scenario 03 ("no integration branch") diverges from
-      today's coordinator, which integrates QA-approved work on main from the shared
-      master checkout (memory: main IS the coordinator's live worktree). Decide
-      whether Baton's coordinator keeps the integration role (then soften scenario
-      03) or sheds it to a separate convergence step.
+    - Scenario 03 ("no integration branch") is RESOLVED by the operator ruling
+      2026-07-10: the coordinator sheds the integration role (bookkeeping only) and
+      QA lands approved work on main. That mechanism is sibling BL-247; scenario 03
+      stands as written.
     - Swarm NAMING: no swarm_name field exists today; how a swarm gets its name is
       part of the deferred publish-format brainstorm (BL-242 notes). Treated as a
       given here.
@@ -60,5 +59,5 @@ qa_e2e_procedure: |
   5. Assert identity() for the swarm returns its name and the coordinator is the
      console subscribe endpoint.
 
-# HUMAN APPROVAL: new specifier draft feature file, pending human review — in
-# particular the coordinator integration-role reconciliation (scenario 03).
+# HUMAN APPROVAL: new specifier draft feature file, pending human review. (The
+# scenario-03 integration-role question is resolved by sibling BL-247.)

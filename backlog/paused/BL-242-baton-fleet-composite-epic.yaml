@@ -5,7 +5,7 @@ status: todo
 type: epic
 priority: 00
 depends_on: []
-decomposes_into: [BL-243, BL-244, BL-245, BL-246]
+decomposes_into: [BL-243, BL-244, BL-245, BL-246, BL-247]
 source: "operator upload 2026-07-10 'Baton — Fleet Composite Spec (Gherkin)'; specifier questions answered same day."
 
 notes: |
@@ -32,6 +32,9 @@ notes: |
     2. BL-244 — a swarm is a composite node (rollup). depends_on BL-243.
     3. BL-245 — graceful degradation when the coordinator dies. depends_on BL-243.
     4. BL-246 — the fleet console (composite of swarms). depends_on BL-244.
+    5. BL-247 — integration-role redesign: QA lands approved work on main, the
+       coordinator does bookkeeping only (operator ruling 2026-07-10). depends_on
+       BL-243. Resolves BL-243 scenario 03.
 
   DEFERRED — needs a human/agent brainstorm before speccing (operator: "i need more
   brainstorming, maybe a chat with an agent"): (a) swarm-status publish format —

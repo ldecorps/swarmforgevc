@@ -7,10 +7,10 @@ Feature: the coordinator is provisioned infrastructure, not a configured role
   # the NORMAL launch path. This changes the maintained fork's launch path ->
   # drift-watch review applies. How a swarm is NAMED (no swarm_name field exists
   # today) is part of the deferred swarm-status publish-format decision; the name
-  # is a given here. NOTE for human review: scenario 03 ("no integration branch")
-  # diverges from the current coordinator, which integrates QA-approved work on
-  # main from the shared master checkout — reconcile whether Baton's coordinator
-  # keeps or sheds the integration role.
+  # is a given here. Scenario 03 ("no integration branch") is now RESOLVED:
+  # operator ruling 2026-07-10 — the coordinator SHEDS the integration role
+  # (bookkeeping only) and QA lands approved work on main. That shedding mechanism
+  # is specced in sibling BL-247, so scenario 03 stands as written.
 
   Background:
     Given a swarm named "second" whose swarmforge.conf declares its pack as role windows
