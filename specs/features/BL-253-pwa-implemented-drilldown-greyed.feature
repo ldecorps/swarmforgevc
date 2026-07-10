@@ -14,9 +14,13 @@ Feature: the phone docs drill-down distinguishes implemented tickets from not-ye
   # Operator decisions (2026-07-10, via specifier questions):
   #  1. GRANULARITY: whole-ticket — a ticket in done/ is implemented; active/ or
   #     paused/ is not-yet-implemented (greyed). Not per-scenario.
-  #  2. INTERACTION: greyed = visually muted but still EXPANDABLE (drill in and read
-  #     planned scenarios). Recertification is simply not offered on a not-yet item
-  #     (nothing shipped to recertify); it keeps working on implemented tickets.
+  #  2. INTERACTION: greyed = visually muted but FULLY interactive. Greying is a
+  #     visual treatment only — it disables nothing. You can drill in and read the
+  #     planned scenarios AND still REFINE a not-yet-implemented ticket's Gherkin via
+  #     the BL-150 recertification/update flow (operator refinement 2026-07-10:
+  #     "we should still be able to refine a gherkin that has not been implemented
+  #     yet" — refining planned specs pre-build is valuable). Recertification
+  #     (confirm/update/delete) stays available regardless of implementation status.
   #  Localize new PWA strings via the existing pwa/locales.js mechanism.
 
   Background:
@@ -40,17 +44,22 @@ Feature: the phone docs drill-down distinguishes implemented tickets from not-ye
     When the operator taps it
     Then it expands to show its planned scenarios
 
-  # BL-253 recert-not-on-not-yet-03
-  Scenario: recertification is not offered on a not-yet-implemented ticket
-    Given a not-yet-implemented ticket in the tree
-    When the operator views it
-    Then no recertification action is offered for it
+  # BL-253 refine-regardless-of-status-03
+  Scenario Outline: a ticket's Gherkin can be refined regardless of implementation status
+    Given a "<status>" ticket with a live Gherkin scenario
+    When the operator refines that scenario in the recertification flow
+    Then the proposed edit is accepted for specifier review
 
-  # BL-253 recert-preserved-04
-  Scenario: recertification still works on an implemented ticket
-    Given an implemented ticket that already supports recertification
-    When the operator views it
-    Then its recertification action is available as before
+    Examples:
+      | status      |
+      | implemented |
+      | not-yet     |
+
+  # BL-253 greying-is-visual-only-04
+  Scenario: greying is a visual treatment only and disables no interaction
+    Given a not-yet-implemented ticket in the tree
+    When the operator uses its recertification controls
+    Then they behave exactly as they do for an implemented ticket
 
   # BL-253 labels-localized-05
   Scenario: the implemented and not-yet labels are localized

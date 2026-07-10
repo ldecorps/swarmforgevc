@@ -91,8 +91,5 @@ qa_e2e_procedure: |
   6. Switch the app locale; assert the search placeholder and no-results text render
      in that locale.
 
-# HUMAN APPROVAL: feature file
-# specs/features/BL-254-phone-spec-fulltext-search.feature is a NEW draft authored by
-# the specifier and is PENDING human review before it is treated as the
-# authoritative acceptance contract.
-human_approval: pending
+# HUMAN APPROVAL: APPROVED by operator 2026-07-10 ("254 ok").
+human_approval: approved

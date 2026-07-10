@@ -96,8 +96,7 @@ qa_e2e_procedure: |
   5. Switch the app locale to a supported non-default language; assert the
      implemented / not-yet labels render in that locale.
 
-# HUMAN APPROVAL: REVISED 2026-07-10 per operator ("we should still be able to
-# refine a gherkin that has not been implemented yet") — recert/refine gating
-# removed; greying is now visual-only. Awaiting operator's final ok on the revised
-# feature file.
+# HUMAN APPROVAL: APPROVED by operator 2026-07-10, after revision per operator
+# ("we should still be able to refine a gherkin that has not been implemented yet")
+# — recert/refine gating removed; greying is visual-only.
 human_approval: approved
