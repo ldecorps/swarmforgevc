@@ -55,45 +55,82 @@ const STORAGE_GLOBAL_PATTERN = /\b(localStorage|sessionStorage)\b/;
 // string text (a narrower, deliberate limit matching this check's own
 // "small supplementary scan" scope; dependency-cruiser's import-graph
 // analysis remains the primary defense either way).
+// Index just past the closing (unescaped) `quote`, or content.length if the
+// literal is unterminated (copy-to-end matches stripComments' own prior
+// inline behavior for that edge case).
+function stringLiteralEnd(content: string, start: number, quote: '"' | "'" | '`'): number {
+  const n = content.length;
+  let i = start + 1;
+  while (i < n) {
+    if (content[i] === '\\' && i + 1 < n) {
+      i += 2;
+      continue;
+    }
+    if (content[i] === quote) {
+      return i + 1;
+    }
+    i += 1;
+  }
+  return i;
+}
+
+// Index just past the line's end (the `\n` itself is left for the caller,
+// matching stripComments' own prior inline `//` handling).
+function lineCommentEnd(content: string, start: number): number {
+  const n = content.length;
+  let i = start;
+  while (i < n && content[i] !== '\n') {
+    i += 1;
+  }
+  return i;
+}
+
+// Index just past a closing `*/`, or content.length if unterminated.
+function blockCommentEnd(content: string, start: number): number {
+  const n = content.length;
+  let i = start + 2;
+  while (i < n && !(content[i] === '*' && content[i + 1] === '/')) {
+    i += 1;
+  }
+  return Math.min(i + 2, n);
+}
+
+function isQuoteChar(ch: string): ch is '"' | "'" | '`' {
+  return ch === '"' || ch === "'" || ch === '`';
+}
+
+// null when `content[i]` is a `/` that doesn't start a `//` or `/* */`
+// comment (an ordinary division/regex slash), so the caller falls through
+// to copying it as a normal character - matching stripComments' own prior
+// inline dispatch exactly.
+function commentEnd(content: string, i: number): number | null {
+  if (content[i + 1] === '/') {
+    return lineCommentEnd(content, i);
+  }
+  if (content[i + 1] === '*') {
+    return blockCommentEnd(content, i);
+  }
+  return null;
+}
+
 function stripComments(content: string): string {
   let result = '';
-  let inString: '"' | "'" | '`' | null = null;
   let i = 0;
   const n = content.length;
   while (i < n) {
     const ch = content[i];
-    if (inString) {
-      result += ch;
-      if (ch === '\\' && i + 1 < n) {
-        result += content[i + 1];
-        i += 2;
+    if (isQuoteChar(ch)) {
+      const end = stringLiteralEnd(content, i, ch);
+      result += content.slice(i, end);
+      i = end;
+      continue;
+    }
+    if (ch === '/') {
+      const end = commentEnd(content, i);
+      if (end !== null) {
+        i = end;
         continue;
       }
-      if (ch === inString) {
-        inString = null;
-      }
-      i += 1;
-      continue;
-    }
-    if (ch === '"' || ch === "'" || ch === '`') {
-      inString = ch;
-      result += ch;
-      i += 1;
-      continue;
-    }
-    if (ch === '/' && content[i + 1] === '/') {
-      while (i < n && content[i] !== '\n') {
-        i += 1;
-      }
-      continue;
-    }
-    if (ch === '/' && content[i + 1] === '*') {
-      i += 2;
-      while (i < n && !(content[i] === '*' && content[i + 1] === '/')) {
-        i += 1;
-      }
-      i += 2;
-      continue;
     }
     result += ch;
     i += 1;
