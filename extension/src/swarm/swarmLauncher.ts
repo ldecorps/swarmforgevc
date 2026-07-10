@@ -12,11 +12,16 @@ import {
 } from './tmuxClient';
 import { stopSwarm } from './swarmStopper';
 import { spawnTrackedJob } from './childJobRegistry';
+import { classifyProviderError, ForgeErrorCategory } from './providerErrorTaxonomy';
 
 export interface LaunchResult {
   success: boolean;
   message: string;
   targetPath: string;
+  // BL-207: the stable Forge error category message's raw detail
+  // classifies to - never set on success. Orchestration/UI can branch on
+  // this instead of parsing message text.
+  category?: ForgeErrorCategory;
 }
 
 const SWARM_LAUNCH_SUCCESS_MESSAGE = 'Swarm launched successfully.';
@@ -383,7 +388,7 @@ export async function launchSwarm(
       stdout: '',
       stderr: '',
     });
-    return { success: false, message, targetPath };
+    return { success: false, message, targetPath, category: classifyProviderError(message).category };
   }
 
   const configPath = resolveSwarmConfigPath();
@@ -433,7 +438,7 @@ export async function launchSwarm(
         stdout,
         stderr,
       });
-      resolve({ success, message, targetPath });
+      resolve({ success, message, targetPath, category: success ? undefined : classifyProviderError(message).category });
     };
 
     child.stderr?.on('data', (chunk: Buffer) => {

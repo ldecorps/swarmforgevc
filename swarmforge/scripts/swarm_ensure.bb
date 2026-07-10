@@ -21,6 +21,8 @@
             [babashka.process :as process]
             [clojure.string :as str]))
 
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_lib.bb")))
+
 (defn usage []
   (binding [*out* *err*]
     (println "Usage: swarm_ensure.bb <project-root>"))
@@ -151,13 +153,24 @@
              :status (classify before after)
              :action repair-description}))))
     (catch Exception e
-      {:component name :status :failed :action (str "probe error: " (.getMessage e))})))
+      ;; BL-207: a genuine raw backend-failure detail (unlike the static
+      ;; repair-description strings above, which describe the attempted
+      ;; FIX, not why it failed) - the one place in this function worth
+      ;; classifying into the stable Forge error taxonomy.
+      (let [detail (str "probe error: " (.getMessage e))]
+        {:component name :status :failed :action detail
+         :category (:category (agent-runtime-lib/classify-provider-error detail))}))))
 
-(defn report-line [{:keys [component status action]}]
+(defn report-line [{:keys [component status action category]}]
   (case status
     :healthy (str component ": HEALTHY")
     :fixed (str component ": FIXED (" action ")")
+    ;; BL-207: names the stable Forge error category alongside the raw
+    ;; detail (never discarded) when one was classified, so an operator
+    ;; scanning `./swarm ensure` output can tell "auth" from "unavailable"
+    ;; from "unknown" at a glance, not just read provider-specific prose.
     :failed (str component ": FAILED"
+                  (when category (str " [" (name category) "]"))
                   (when action (str " (" action ")")))))
 
 (defn -main []
@@ -172,8 +185,10 @@
                                                    "respawned pane from its persisted launch script"))
                              (role-rows))
                        (mapv (fn [{:keys [role]}]
-                               {:component (str "agent:" role) :status :failed
-                                :action "no tmux socket found for this project root"})
+                               (let [detail "no tmux socket found for this project root"]
+                                 {:component (str "agent:" role) :status :failed
+                                  :action detail
+                                  :category (:category (agent-runtime-lib/classify-provider-error detail))}))
                              (role-rows)))
         daemon-result (ensure-component! "daemon" daemon-healthy? ensure-daemon!
                                           "restarted the handoff daemon")
