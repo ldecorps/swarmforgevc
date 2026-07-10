@@ -10,9 +10,9 @@ Feature: a recruiter scouts cheap/free model plans and ranks best-value model pe
   # SLICED DELIVERY (see BL-233): this ticket ships in slices. The acceptance
   # runner (specs/pipeline/runtime.js) THROWS on any scenario lacking a step
   # handler, so this file carries ONLY the scenarios for slices already BUILT and
-  # grows as each slice lands. Currently built: slice 1 = discovery (below).
-  # Slices 2-4's Gherkin is parked in the companion
-  # BL-233-recruiter-model-scout-role-fit.slices-2-4.feature.draft and is promoted
+  # grows as each slice lands. Currently built: slice 1 = discovery, slice 2 =
+  # acquire access (below). Slices 3-4's Gherkin is parked in the companion
+  # BL-233-recruiter-model-scout-role-fit.slices-3-4.feature.draft and is promoted
   # into this file when its slice is implemented.
 
   Background:
@@ -23,3 +23,23 @@ Feature: a recruiter scouts cheap/free model plans and ranks best-value model pe
     Given the recruiter searches for free or cheap model plans
     When discovery completes
     Then it reports each candidate's model, provider, plan cost, and signup path
+
+  # BL-233 auto-acquire-free-02
+  Scenario: a free plan is auto-signed-up and its key stored in the host secret store
+    Given a discovered candidate whose plan is free and permits automated signup
+    When the recruiter acquires access
+    Then it obtains an API key and stores it in the host secret store
+    And the key is never written to the working tree or any commit
+
+  # BL-233 acquire-wall-escalates-03
+  Scenario Outline: a signup wall escalates to a human instead of proceeding
+    Given a discovered candidate whose signup requires "<wall>"
+    When the recruiter attempts to acquire access
+    Then it escalates to a human for that candidate
+    And no API key is fabricated and nothing is committed
+
+    Examples:
+      | wall                  |
+      | payment details       |
+      | a captcha             |
+      | manual ToS acceptance |
