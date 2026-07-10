@@ -73,6 +73,29 @@ test('fleet status is done only when every swarm is done', () => {
   assert.equal(fleet.status(), 'done');
 });
 
+// Architect bounce (8128ba4b08, "fleet rollup mishandles stopped swarm"):
+// rollupStatus's STATUS_PRIORITY only ever saw agent-level statuses before
+// BL-246 existed, so it never needed to rank BL-245's terminal "stopped
+// (coordinator lost)" swarm status - reused unchanged at the fleet level,
+// that value fell through every priority check AND the "all done" special
+// case, silently landing on the default 'idle'. A fleet operator would see
+// a healthy-looking fleet while one swarm had actually torn itself down.
+test('a stopped (coordinator lost) swarm is reflected at the fleet level, never silently hidden as idle', () => {
+  const alpha = fakeSwarmNode('alpha', 'proj-a', 'idle');
+  const beta = fakeSwarmNode('beta', 'proj-b', 'stopped (coordinator lost)');
+  const fleet = createFleetNode({ fleetName: 'fleet', swarms: [alpha, beta] });
+
+  assert.equal(fleet.status(), 'stopped (coordinator lost)');
+});
+
+test('a stopped (coordinator lost) swarm outranks even a degraded sibling in the fleet rollup', () => {
+  const alpha = fakeSwarmNode('alpha', 'proj-a', 'degraded');
+  const beta = fakeSwarmNode('beta', 'proj-b', 'stopped (coordinator lost)');
+  const fleet = createFleetNode({ fleetName: 'fleet', swarms: [alpha, beta] });
+
+  assert.equal(fleet.status(), 'stopped (coordinator lost)');
+});
+
 // ── fleet-console-03: composite uniformity ────────────────────────────────
 
 test('a single-swarm fleet renders through the SAME interface as a multi-swarm fleet - status is that swarm\'s own status, not a special case', () => {

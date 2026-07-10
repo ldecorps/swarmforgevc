@@ -112,7 +112,15 @@ function agentStatus(deps: SwarmNodeDeps, role: RoleEntry): NodeStatus {
   return mailboxAgentStatus(deps.targetPath, role);
 }
 
-const STATUS_PRIORITY: NodeStatus[] = ['degraded', 'blocked', 'converging', 'active', 'queued'];
+// BL-246 architect bounce (8128ba4b08, "fleet rollup mishandles stopped
+// swarm"): 'stopped (coordinator lost)' (BL-245) never appears as an AGENT
+// status (only createSwarmNode's own terminal override ever produces it),
+// so this list never needed to rank it while only agent-level rollup
+// reused it - purely additive here, an agent status can still never equal
+// this value, so swarm-level rollup is unaffected. Ranked above 'degraded'
+// because a stopped swarm has already torn itself down (terminal), which
+// is worse than a swarm still trying (degraded).
+const STATUS_PRIORITY: NodeStatus[] = ['stopped (coordinator lost)', 'degraded', 'blocked', 'converging', 'active', 'queued'];
 
 // Exported for BL-246's fleetNode.ts: rolling up a fleet's swarms uses the
 // SAME "worst status wins, all-done is a special case, empty/no-signal is
