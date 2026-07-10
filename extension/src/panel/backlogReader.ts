@@ -156,14 +156,13 @@ function normalizeStatus(statusRaw: string | undefined): BacklogItem['status'] {
 // the required-field validation from optional-field assignment so each half
 // stays independently low-complexity/testable.
 function extractRequiredFields(obj: Record<string, unknown>): Pick<BacklogItem, 'id' | 'title' | 'status'> | null {
-  const id = typeof obj.id === 'string' ? obj.id : undefined;
-  const title = typeof obj.title === 'string' ? obj.title : undefined;
+  const id = toOptionalString(obj.id);
+  const title = toOptionalString(obj.title);
 
   if (!id || !title) {
     return null;
   }
-  const statusRaw = typeof obj.status === 'string' ? obj.status : undefined;
-  const status = normalizeStatus(statusRaw);
+  const status = normalizeStatus(toOptionalString(obj.status));
   const result: Pick<BacklogItem, 'id' | 'title' | 'status'> = { id, title };
   if (status !== undefined) {
     result.status = status;
