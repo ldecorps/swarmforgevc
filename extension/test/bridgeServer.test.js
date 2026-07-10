@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { startBridge } = require('../out/bridge/bridgeServer');
+const { installFakeTmux } = require('./helpers/fakeTmux');
 
 const TOKEN = 'test-token-123';
 
@@ -26,6 +27,32 @@ function dropHandoff(worktreePath, filename, content) {
   const dir = path.join(worktreePath, '.swarmforge', 'handoffs', 'inbox', 'new');
   mkdirp(dir);
   fs.writeFileSync(path.join(dir, filename), content);
+}
+
+// BL-240: separate from writeRolesTsv above - readSwarmRoles (tmuxClient.ts,
+// what answerCapturedGateLive/gateAnswerLive.ts's target resolution reads)
+// is sessions.tsv, a DIFFERENT file from roles.tsv (bridgeState.ts's own
+// read-only agent projection).
+function writeSessionsTsv(targetPath, roles) {
+  mkdirp(path.join(targetPath, '.swarmforge'));
+  const tsv = roles
+    .map((r, i) => [i + 1, r.role, `swarmforge-${r.role}`, r.displayName ?? r.role, 'claude'].join('\t'))
+    .join('\n');
+  fs.writeFileSync(path.join(targetPath, '.swarmforge', 'sessions.tsv'), tsv + '\n');
+}
+
+function writeTmuxSocket(targetPath, socketPath) {
+  mkdirp(path.join(targetPath, '.swarmforge'));
+  fs.writeFileSync(path.join(targetPath, '.swarmforge', 'tmux-socket'), socketPath);
+}
+
+function gatedTmuxRules(paneText) {
+  return [
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: paneText },
+    { subcommand: 'send-keys', exitCode: 0, stdout: '' },
+  ];
 }
 
 async function withBridge(targetPath, opts, fn) {
@@ -303,6 +330,177 @@ test('the events stream sends an SSE event when the on-disk state changes', asyn
 
     controller.abort();
   });
+});
+
+// --- BL-240: POST /gate-answer, the bridge's one write route ---
+
+function postGateAnswer(port, headers, body) {
+  return fetch(`http://127.0.0.1:${port}/gate-answer`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+  });
+}
+
+test('answer-unblocks-01: an authenticated client answers a role\'s captured gate via the same send-keys path as a local operator', async () => {
+  const target = mkTmp();
+  writeSessionsTsv(target, [{ role: 'coder' }]);
+  writeTmuxSocket(target, '/tmp/fake-bridge.sock');
+  const fake = installFakeTmux(gatedTmuxRules('Proceed with the migration? (y/n)'));
+  try {
+    await withBridge(target, {}, async (handle) => {
+      const res = await postGateAnswer(handle.port, { authorization: `Bearer ${TOKEN}` }, { role: 'coder', answer: 'y' });
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.success, true);
+
+      const sendCalls = fake.calls().filter((args) => args.includes('send-keys'));
+      assert.ok(sendCalls.length > 0, 'the same tmux send-keys call the local operator path uses must have fired');
+    });
+  } finally {
+    fake.restore();
+  }
+});
+
+test('scope-gates-only-02: refuses an authenticated attempt against a role with no captured gate, sending no keys', async () => {
+  const target = mkTmp();
+  writeSessionsTsv(target, [{ role: 'coder' }]);
+  writeTmuxSocket(target, '/tmp/fake-bridge.sock');
+  const fake = installFakeTmux(gatedTmuxRules('Compiling... done. [auto] idle'));
+  try {
+    await withBridge(target, {}, async (handle) => {
+      const res = await postGateAnswer(handle.port, { authorization: `Bearer ${TOKEN}` }, { role: 'coder', answer: 'y' });
+      assert.equal(res.status, 403);
+      const body = await res.json();
+      assert.equal(body.success, false);
+      assert.ok(!fake.calls().some((args) => args.includes('send-keys')), 'no arbitrary keystrokes may be sent for a non-gated role');
+    });
+  } finally {
+    fake.restore();
+  }
+});
+
+test('scope-gates-only-02: a differently-shaped body (not {role, answer}) is refused as a bad request, no tmux call at all', async () => {
+  const target = mkTmp();
+  writeSessionsTsv(target, [{ role: 'coder' }]);
+  writeTmuxSocket(target, '/tmp/fake-bridge.sock');
+  const fake = installFakeTmux(gatedTmuxRules('Proceed? (y/n)'));
+  try {
+    await withBridge(target, {}, async (handle) => {
+      const res = await postGateAnswer(handle.port, { authorization: `Bearer ${TOKEN}` }, { action: 'shell', command: 'rm -rf /' });
+      assert.equal(res.status, 400);
+      assert.deepEqual(fake.calls(), [], 'a malformed/non-gate-answer body must never reach tmux');
+    });
+  } finally {
+    fake.restore();
+  }
+});
+
+test('unauthenticated-refused-03: a request with no auth is refused before it ever reaches tmux', async () => {
+  const target = mkTmp();
+  writeSessionsTsv(target, [{ role: 'coder' }]);
+  writeTmuxSocket(target, '/tmp/fake-bridge.sock');
+  const fake = installFakeTmux(gatedTmuxRules('Proceed? (y/n)'));
+  try {
+    await withBridge(target, {}, async (handle) => {
+      const res = await postGateAnswer(handle.port, {}, { role: 'coder', answer: 'y' });
+      assert.equal(res.status, 401);
+      assert.deepEqual(fake.calls(), [], 'auth is checked before any tmux interaction');
+    });
+  } finally {
+    fake.restore();
+  }
+});
+
+test('unauthenticated-refused-03: a request with the wrong token is refused', async () => {
+  const target = mkTmp();
+  writeSessionsTsv(target, [{ role: 'coder' }]);
+  writeTmuxSocket(target, '/tmp/fake-bridge.sock');
+  const fake = installFakeTmux(gatedTmuxRules('Proceed? (y/n)'));
+  try {
+    await withBridge(target, {}, async (handle) => {
+      const res = await postGateAnswer(handle.port, { authorization: 'Bearer wrong' }, { role: 'coder', answer: 'y' });
+      assert.equal(res.status, 401);
+      assert.deepEqual(fake.calls(), []);
+    });
+  } finally {
+    fake.restore();
+  }
+});
+
+test('answer-targets-specific-gate-04: answering one of two gated roles leaves the other untouched', async () => {
+  const target = mkTmp();
+  writeSessionsTsv(target, [{ role: 'coder' }, { role: 'cleaner' }]);
+  writeTmuxSocket(target, '/tmp/fake-bridge.sock');
+  const fake = installFakeTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: 'Proceed? (y/n)' },
+    { subcommand: 'send-keys', exitCode: 0, stdout: '' },
+  ]);
+  try {
+    await withBridge(target, {}, async (handle) => {
+      const res = await postGateAnswer(handle.port, { authorization: `Bearer ${TOKEN}` }, { role: 'coder', answer: 'y' });
+      assert.equal(res.status, 200);
+
+      const sendCalls = fake.calls().filter((args) => args.includes('send-keys'));
+      assert.ok(sendCalls.length > 0);
+      // Every send-keys call must target coder's pane, never cleaner's -
+      // the fixture gives both roles the same fake window/pane geometry, so
+      // the -t target argument is what proves only "coder" was reached.
+      assert.ok(
+        sendCalls.every((args) => args[args.indexOf('-t') + 1].startsWith('swarmforge-coder')),
+        'must only target the specific role the request named, not any other gated role'
+      );
+    });
+  } finally {
+    fake.restore();
+  }
+});
+
+test('GET to /gate-answer is not treated as an answer attempt (404, same as any other unrecognized route+method)', async () => {
+  const target = mkTmp();
+  writeSessionsTsv(target, [{ role: 'coder' }]);
+  writeTmuxSocket(target, '/tmp/fake-bridge.sock');
+  const fake = installFakeTmux(gatedTmuxRules('Proceed? (y/n)'));
+  try {
+    await withBridge(target, {}, async (handle) => {
+      const res = await fetch(`http://127.0.0.1:${handle.port}/gate-answer`, {
+        headers: { authorization: `Bearer ${TOKEN}` },
+      });
+      assert.equal(res.status, 404);
+      assert.deepEqual(fake.calls(), []);
+    });
+  } finally {
+    fake.restore();
+  }
+});
+
+test('a request body over the size cap is rejected without ever parsing it', async () => {
+  const target = mkTmp();
+  writeSessionsTsv(target, [{ role: 'coder' }]);
+  writeTmuxSocket(target, '/tmp/fake-bridge.sock');
+  const fake = installFakeTmux(gatedTmuxRules('Proceed? (y/n)'));
+  try {
+    await withBridge(target, {}, async (handle) => {
+      const oversized = { role: 'coder', answer: 'y'.repeat(20 * 1024) };
+      const res = await fetch(`http://127.0.0.1:${handle.port}/gate-answer`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+        body: JSON.stringify(oversized),
+      }).catch(() => null);
+      // A destroyed connection may surface as a fetch rejection (network
+      // error) rather than a clean HTTP response, depending on timing -
+      // either outcome is an acceptable "did not process it" signal, but
+      // tmux must never have been reached either way.
+      if (res) {
+        assert.notEqual(res.status, 200);
+      }
+      assert.deepEqual(fake.calls(), []);
+    });
+  } finally {
+    fake.restore();
+  }
 });
 
 test('stopping the bridge leaves the swarm state on disk unaffected and a new bridge serves it again', async () => {
