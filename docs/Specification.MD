@@ -1200,6 +1200,10 @@ Domain-specific code generated for a target stays in the target's PR branch and 
 | `SwarmForge: Initialize Target` | Scaffolds `project.prompt` + `engineering.prompt` in the target repo and commits them, so they travel with the repo when the swarm clones it |
 | `SwarmForge: Set Resend API Key` | Store your Resend API key in VS Code's encrypted SecretStorage (for email notifications). Uses masked input and never echoes the key. |
 | `SwarmForge: Clear Resend API Key` | Remove the stored Resend API key from VS Code's encrypted storage. |
+| `SwarmForge: Set Telegram Bot Token` | Store the Telegram bot token (from [@BotFather](https://t.me/BotFather)) in SecretStorage (BL-239). Masked input. |
+| `SwarmForge: Clear Telegram Bot Token` | Remove the stored Telegram bot token. |
+| `SwarmForge: Set Telegram Chat Id` | Store the authorized Telegram chat id the adapter will narrate to and accept gate replies from. |
+| `SwarmForge: Clear Telegram Chat Id` | Remove the stored Telegram chat id. |
 
 ---
 
@@ -1398,16 +1402,18 @@ message store  ──►  bridge  ──►  chat adapter  ──►  Signal/Tel
 
 **Per-run thread as activity feed.** Each run gets one thread/conversation; the bot narrates stage transitions, gates, dead-letters, and the final PR link. A scrollable, human-readable log of the run on your phone — and the place gates are asked and answered.
 
-**What the human can do from chat:** receive notifications, answer a `to: human` gate (reply to the prompt), and issue a few simple controls (stop, respawn a named role) as commands. Anything needing a real UI — diff review, merge resolution, tile layout — stays desktop.
+**What the human can do from chat:** receive notifications, and answer a `to: human` gate by replying to its prompt message. That reply-to-a-gate-prompt is the adapter's *only* inbound surface, by construction, not by a command deny-list — there is no command parser at all, so a bare `/stop`, `/respawn coder`, an unprompted message, or a reply to anything other than a currently-pending gate prompt is never honored. Anything needing a real UI — diff review, merge resolution, tile layout, or a stop/respawn control — stays desktop (or the bridge's own gate-answer-only write path, BL-240).
 
 **Platform trade-offs (pick per context):**
 
 | Platform | Verdict |
 |---|---|
-| **Telegram** | Easiest real bot API — free, instant, unprompted messages fine. Best path of least resistance. |
-| **Signal** | Best privacy, but no official bot API (`signal-cli`, unofficial). Workable, gray-area. |
-| **WhatsApp** | Official Cloud API exists but built for business→customer: approval, per-conversation cost, 24-hour-window rules make unprompted pings awkward. Heavier than it looks. |
-| **Teams** | Right choice *only* in a corporate/Teams context; first-class bots but heavyweight setup (Azure app registration). Overkill for a solo dev. |
+| **Telegram** | Easiest real bot API — free, instant, unprompted messages fine. Best path of least resistance. **Landed (BL-239)** — see Implementation below. |
+| **Signal** | Best privacy, but no official bot API (`signal-cli`, unofficial). Workable, gray-area. Not built. |
+| **WhatsApp** | Official Cloud API exists but built for business→customer: approval, per-conversation cost, 24-hour-window rules make unprompted pings awkward. Heavier than it looks. Not built. |
+| **Teams** | Right choice *only* in a corporate/Teams context; first-class bots but heavyweight setup (Azure app registration). Overkill for a solo dev. Not built. |
+
+**Implementation (Telegram, BL-239).** Entirely optional (Tier 2): a no-op unless both a bot token and an authorized chat id are configured. Setup: message [@BotFather](https://t.me/BotFather) to create a bot and get a token, then run `SwarmForge: Set Telegram Bot Token` and `SwarmForge: Set Telegram Chat Id` (masked input, stored in VS Code `SecretStorage`; `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` environment variables take precedence if set, same resolution order as the Resend key). Once both are configured, a narration sweep runs every 2 seconds (stage transitions, new gates, new dead-letters, the PR link — never re-announcing something already told to the human) and an inbound poll runs every 3 seconds (Telegram's `getUpdates` long-poll). Only messages from the one authorized chat id are ever considered, closing the door on a stranger messaging the bot. The adapter is stopped alongside the swarm and restarted whenever the target/token/chat id changes. Bounded-retry (3 attempts, capped exponential backoff) applies to sends; a permanently-failed send is logged to the "SwarmForge: Telegram" output channel rather than retried forever.
 
 The adapter is one bridge option among the remote tier (Tier 2) — entirely optional, and the same security/threat-model gap applies (what a chat reply is authorized to trigger, how the bot authenticates the human).
 
