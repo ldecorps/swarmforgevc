@@ -1,0 +1,52 @@
+id: BL-237
+title: "Docs fix: remove native-Windows-first-class claims; state macOS/Linux only (tmux substrate)"
+direction: docs
+type: bug
+priority: 30
+mutation_cost: low
+source: "coordinator roadmap-gap-scan 2026-07-10 (stale/contradicted claim); operator ruling: fix the docs to macOS/Linux only."
+
+description: |
+  Doc-vs-reality contradiction the gap scan flagged. Milestone Roadmap.MD:154,
+  Specification.MD:40, and Specification.MD:1457 claim native Windows is
+  first-class and is the reason the extension owns orchestration instead of tmux.
+  The governing constitution says the opposite: local-engineering.prompt "Target
+  OS: macOS and Linux only. Do not write Windows-specific code; the swarm
+  substrate depends on tmux," with the two-layer tmux-as-substrate architecture
+  rule; and BL-091 (done) rules native Windows out of scope ("tmux is the process
+  substrate by architecture rule and has no native Windows port").
+
+  Operator ruling (2026-07-10): fix the docs to match reality — macOS/Linux only.
+
+  Wanted behavior (observable):
+    - Roadmap.MD and Specification.MD no longer claim native Windows is
+      first-class, nor that supporting Windows natively is why the extension owns
+      orchestration instead of depending on tmux.
+    - Those sections state macOS and Linux only, with tmux as the process
+      substrate (the extension drives an unmodified tmux-based SwarmForge).
+    - No Windows-native contradiction remains between the docs and
+      local-engineering.prompt / BL-091.
+
+  Constraints:
+    - Documentation-only change; no product/code behavior changes.
+    - Correct the platform claims and the Windows-driven "own orchestration"
+      rationale specifically at Roadmap.MD:154, Spec.MD:40, and Spec.MD:1457
+      (grep "Windows" for any others); keep the rest of each doc intact.
+    - The documenter owns doc edits; this ticket flows the correction through the
+      pipeline like any other parcel.
+
+  Scope: docs/Milestone Roadmap.MD, docs/Specification.MD (the Windows-native /
+  own-orchestration-for-Windows passages only).
+
+acceptance: specs/features/BL-237-docs-windows-macos-linux-only.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs:
+  1. Grep Roadmap.MD and Spec.MD for "Windows"; assert no remaining claim that
+     native Windows is first-class or the reason for owning orchestration.
+  2. Assert the platform sections state macOS and Linux only, tmux as substrate.
+  3. Diff the corrected claims against local-engineering.prompt and BL-091; assert
+     no Windows-native contradiction remains.
+
+# HUMAN APPROVAL: feature file specs/features/BL-237-...feature is a new draft
+# authored by the specifier and is pending human review.

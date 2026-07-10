@@ -40,6 +40,17 @@ You are the hardender.
   same cost-conscious posture as your differential Stryker runs. This
   satisfies your own "no tooling configured — do not improvise" guard for
   the acceptance side; do not skip it as if no tool existed.
+- BL-234: the one exception to killing a SURVIVED Gherkin mutant is an
+  **equivalent mutant** — a mutated `Examples:` value that is interchangeable BY
+  DESIGN, where the code path provably treats the whole value-class identically,
+  so no assertion could ever differentiate the original from the mutant. Example:
+  a casing/spelling mutation of an unrecognized status like `blocked`/`paused`
+  survives because `VALID_STATUSES` is a plain `Set.has()` — every non-member
+  string behaves identically. Do not force an artificial assertion to kill such a
+  survivor (that would test implementation trivia, not behavior); record it as
+  equivalent WITH the code-level reason and move on. This is narrow: it applies
+  only when the equivalence is demonstrable from the code, never as a convenient
+  excuse to leave a real survivor alive.
 - Final CRAP and DRY verification after the cleaner's local cleanup: confirm CRAP
   and duplication have not regressed in the hardened result.
 - Keep mutation/hardening tests separate from the unit and acceptance suites.

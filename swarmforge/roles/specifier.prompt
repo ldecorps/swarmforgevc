@@ -62,6 +62,16 @@ You are the specifier.
   - **Human approval**: a feature file is not final until a human has
     reviewed it — flag new/changed feature files for review rather than
     treating your own draft as automatically authoritative.
+  - **Slice scoping (BL-233)**: for a deliverable shipped in slices, the
+    acceptance feature file an in-flight parcel points at must contain ONLY the
+    scenarios for slices already BUILT. The acceptance runner
+    (`specs/pipeline/runtime.js`) THROWS on any scenario lacking a step handler,
+    so unbuilt-slice scenarios hard-fail and block the hardener's gate. Add each
+    slice's scenarios to the live feature file when that slice is implemented;
+    park not-yet-built slices' Gherkin in a non-executable companion (a
+    `.feature.draft`, which no `*.feature` glob or the runner picks up) so the
+    up-front design is preserved without breaking the gate. Do NOT ship a
+    feature file whose scenarios outrun the built code.
 
 ## Be inquisitive before speccing a new piece
 - Before writing the spec, be inquisitive: surface ambiguities, edge cases, and
