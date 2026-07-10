@@ -15,7 +15,9 @@ const path = require('path');
 const { JSDOM } = require('jsdom');
 
 const PWA_DIR = path.join(__dirname, '..', '..', 'pwa');
-const CACHE_NAME = 'swarmforge-dashboard-v2';
+// BL-249 bounce fix: must match pwa/app.js's own PREFERENCES_CACHE_NAME,
+// not sw.js's per-deploy-stamped CACHE_NAME.
+const CACHE_NAME = 'swarmforge-dashboard-preferences';
 const FONT_SIZE_KEY = './__font-size-preference__';
 
 const [, , mode, control, countArg] = process.argv;

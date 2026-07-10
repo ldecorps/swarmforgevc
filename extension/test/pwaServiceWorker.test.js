@@ -175,6 +175,37 @@ test('a returning user with a stale cache gets the updated shell once the served
   assert.ok(served, 'the returning user must receive the freshly re-installed shell, not nothing');
 });
 
+// BL-249 hardener bounce: app.js persists locale (BL-118) and font-size
+// (BL-220) preferences in a SEPARATE cache under the permanently-static
+// name below (see pwa/app.js's own PREFERENCES_CACHE_NAME) - the activate
+// purge above deletes ANY key that isn't CACHE_NAME, so without an explicit
+// exemption, the very next shell-changing deploy would silently wipe every
+// returning user's preferences. This must survive activate while an
+// unrelated stale shell cache from a prior deploy is still purged.
+const PREFERENCES_CACHE_NAME = 'swarmforge-dashboard-preferences';
+
+test('BL-249 bounce: activate purges a stale shell cache but keeps app.js\'s preferences cache', async () => {
+  const { listeners, sandbox } = loadServiceWorker(
+    () => Promise.reject(new Error('no network in this test')),
+    'swarmforge-dashboard-newhash0001'
+  );
+  await sandbox.caches.open('swarmforge-dashboard-oldhash0000'); // stale shell cache from a prior deploy
+  const prefsCache = await sandbox.caches.open(PREFERENCES_CACHE_NAME);
+  await prefsCache.put('./__locale-preference__', { body: 'fr' });
+
+  await fireInstall(listeners); // creates the current CACHE_NAME's own cache
+  await fireActivate(listeners);
+
+  const remaining = await sandbox.caches.keys();
+  assert.deepEqual(
+    remaining.sort(),
+    [PREFERENCES_CACHE_NAME, 'swarmforge-dashboard-newhash0001'].sort(),
+    'the stale shell cache is purged, but the preferences cache must survive'
+  );
+  const stillThere = await prefsCache.match('./__locale-preference__');
+  assert.deepEqual(stillThere, { body: 'fr' }, 'a returning user\'s persisted preference must not be wiped by a shell-changing deploy');
+});
+
 // BL-249 unchanged-shell-no-churn-02: two installs stamped with the SAME
 // CACHE_NAME (a byte-identical redeploy, since the stamp is content-
 // derived) never purge anything and never force a re-download.
