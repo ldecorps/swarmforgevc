@@ -145,7 +145,7 @@ test('the human-rubric assertion passes end to end (pending prompt, then a recor
 
 test('the gate-outcome assertion fails loudly when the gate did not pass', () => {
   const registry = freshRegistry();
-  const ctx = { gateResult: { competency: 'specifier-gate', status: 'fail', reason: 'malformed' } };
+  const ctx = { role: 'specifier', gateResult: { competency: 'specifier-gate', status: 'fail', reason: 'malformed' } };
   assert.throws(
     () => resolveAndRun(registry, ctx, 'the "a lint-clean Gherkin feature file" outcome is recorded on the scorecard'),
     /expected the a lint-clean Gherkin feature file outcome to be recorded pass/
@@ -154,9 +154,22 @@ test('the gate-outcome assertion fails loudly when the gate did not pass', () =>
 
 test('the gate-outcome assertion passes when the gate passed', () => {
   const registry = freshRegistry();
-  const ctx = { gateResult: { competency: 'specifier-gate', status: 'pass' } };
+  const ctx = { role: 'specifier', gateResult: { competency: 'specifier-gate', status: 'pass' } };
   assert.doesNotThrow(() =>
     resolveAndRun(registry, ctx, 'the "a lint-clean Gherkin feature file" outcome is recorded on the scorecard')
+  );
+});
+
+// BL-231 per-role-04 hardening: the gate-description text itself must
+// match the role under test - a Gherkin-mutation pass (BL-113) found the
+// prior version of this step captured "<gate>" but never checked it,
+// so a scrambled/mismatched description would pass unnoticed.
+test('the gate-outcome assertion fails loudly when the gate text does not match the role under test', () => {
+  const registry = freshRegistry();
+  const ctx = { role: 'hardener', gateResult: { competency: 'specifier-gate', status: 'pass' } };
+  assert.throws(
+    () => resolveAndRun(registry, ctx, 'the "a lint-clean Gherkin feature file" outcome is recorded on the scorecard'),
+    /expected the gate description for role "hardener" to be "CRAP <= 6 and no surviving mutants on changed code", got: "a lint-clean Gherkin feature file"/
   );
 });
 

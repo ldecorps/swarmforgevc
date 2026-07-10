@@ -284,7 +284,30 @@ function registerSteps(registry) {
     }
   });
 
+  // BL-231 per-role-04 hardening: the feature file's own Examples table
+  // (mirrored here) pairs each role with its gate description - a
+  // Gherkin-mutation pass (BL-113) found the step below previously
+  // captured the "<gate>" text but never checked it against anything, so
+  // a mutated/scrambled description (e.g. two rows swapped, or "surviving"
+  // flipped to "Surviving") would pass unnoticed. This closes that gap:
+  // the recorded gate text must match the role under test, not just be
+  // present.
+  const EXPECTED_GATE_BY_ROLE = {
+    specifier: 'a lint-clean Gherkin feature file',
+    coder: 'a building, test-passing commit',
+    cleaner: 'a behavior-preserving refactor, tests still green',
+    architect: 'a design-review note naming a real concern',
+    hardener: 'CRAP <= 6 and no surviving mutants on changed code',
+    documenter: 'a doc/diagram update matching the change',
+    QA: 'an acceptance run and a correct approve or reject',
+    coordinator: 'a promotion respecting depth cap and orthogonality',
+  };
+
   registry.define(/^the "([^"]+)" outcome is recorded on the scorecard$/, (ctx, gate) => {
+    const expected = EXPECTED_GATE_BY_ROLE[ctx.role];
+    if (gate !== expected) {
+      throw new Error(`expected the gate description for role "${ctx.role}" to be "${expected}", got: "${gate}"`);
+    }
     if (ctx.gateResult.status !== 'pass') {
       throw new Error(`expected the ${gate} outcome to be recorded pass for a correctly-performed gate, got: ${JSON.stringify(ctx.gateResult)}`);
     }
