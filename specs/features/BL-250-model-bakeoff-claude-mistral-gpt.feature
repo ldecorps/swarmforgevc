@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=fdfa4d25b1f1541e1f50c131bc7fd9a7d834f4a2f5fdd6aaae8a7a681d3b7b62
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-10T14:52:08.160011845Z","feature_name":"a curated bake-off runs all available Claude, Mistral, and GPT models through the compliance battery and ranks best-value per role","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-250-model-bakeoff-claude-mistral-gpt.feature","background_hash":"6a9621664b770245d25175e66c28bc9678acf53af51d22906c278dc8591d4ee6","implementation_hash":"unknown","scenarios":[{"index":1,"name":"each candidate is labeled by its cost tier with its plan cost","scenario_hash":"29cb874598067313d6b7e50fea571b69ff2afd093ae50336d94c3ceb7cd6f2f4","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-10T14:52:08.160011845Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a curated bake-off runs all available Claude, Mistral, and GPT models through the compliance battery and ranks best-value per role
 
   # Purpose (operator 2026-07-10): a companion to BL-233. Instead of BL-233's open

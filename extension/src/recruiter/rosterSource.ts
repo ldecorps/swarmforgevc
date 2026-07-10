@@ -16,9 +16,9 @@
 // swarm agents, so they never reach the returned roster regardless of
 // what the catalog file lists.
 
-import * as fs from 'fs';
 import { CostTier, ModelCandidate } from './candidate';
 import { DiscoverySource } from './discoverySource';
+import { isNonNullObject, readJsonArrayFile } from './jsonCatalog';
 
 const CHAT_ENDPOINT_TYPE = 'chat';
 
@@ -31,22 +31,25 @@ interface RawCatalogEntry {
   costTier: CostTier;
 }
 
-function isNonNullObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function isRawCatalogEntry(value: unknown): value is RawCatalogEntry {
-  if (!isNonNullObject(value)) {
-    return false;
-  }
+// Hardener split (CRAP<=6 gate): the original single 6-condition &&/||
+// chain scored complexity=8. Split into two small, named sub-validators -
+// same behavior, each independently readable and well under threshold.
+function hasCatalogEntryShape(value: Record<string, unknown>): boolean {
   return (
     typeof value.model === 'string' &&
     typeof value.provider === 'string' &&
     isNonNullObject(value.planCost) &&
     isNonNullObject(value.signupPath) &&
-    typeof value.endpointType === 'string' &&
-    (value.costTier === 'paid-only' || value.costTier === 'free/eval-tier')
+    typeof value.endpointType === 'string'
   );
+}
+
+function isValidCostTier(value: unknown): value is CostTier {
+  return value === 'paid-only' || value === 'free/eval-tier';
+}
+
+function isRawCatalogEntry(value: unknown): value is RawCatalogEntry {
+  return isNonNullObject(value) && hasCatalogEntryShape(value) && isValidCostTier(value.costTier);
 }
 
 function toModelCandidate(entry: RawCatalogEntry): ModelCandidate {
@@ -65,15 +68,7 @@ function toModelCandidate(entry: RawCatalogEntry): ModelCandidate {
 export function createFileRosterSource(catalogFilePath: string): DiscoverySource {
   return {
     async discover(): Promise<ModelCandidate[]> {
-      if (!fs.existsSync(catalogFilePath)) {
-        return [];
-      }
-      const parsed: unknown = JSON.parse(fs.readFileSync(catalogFilePath, 'utf-8'));
-      if (!Array.isArray(parsed)) {
-        return [];
-      }
-      return parsed
-        .filter(isRawCatalogEntry)
+      return readJsonArrayFile(catalogFilePath, isRawCatalogEntry)
         .filter((entry) => entry.endpointType === CHAT_ENDPOINT_TYPE)
         .map(toModelCandidate);
     },
