@@ -30,6 +30,7 @@ const DOMAINS = [
   require('./complianceBatterySteps'),
   require('./burndownEtaSteps'),
   require('./pwaTranslatedContentSteps'),
+  require('./sidecarNoOrphanSteps'),
 ];
 
 function registerSteps(registry) {

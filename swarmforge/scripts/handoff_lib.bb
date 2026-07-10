@@ -124,8 +124,9 @@
 
 (defn remove-sidecars-of!
   "Deletes <handoff-file>.nudge and <handoff-file>.chase.json if present -
-   called right after a handoff moves to completed/, so its now-orphaned
-   sidecars never linger in in_process/ to wedge later stuck-parcel checks."
+   called right after a handoff moves out of a directory (new/ on dequeue,
+   BL-232; in_process/ on completion), so its now-orphaned sidecars never
+   linger at the handoff's old location to wedge later stuck-parcel checks."
   [handoff-file]
   (doseq [suffix sidecar-suffixes]
     (let [sidecar (fs/path (str (str handoff-file) suffix))]
