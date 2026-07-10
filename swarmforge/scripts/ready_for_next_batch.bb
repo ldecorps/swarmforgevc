@@ -41,8 +41,9 @@
 (defn -main []
   (let [new-dir (handoff-lib/my-mailbox-dir :new)
         in-process-dir (handoff-lib/my-mailbox-dir :in_process)
-        completed-dir (handoff-lib/my-mailbox-dir :completed)]
-    (doseq [dir [new-dir in-process-dir completed-dir]]
+        completed-dir (handoff-lib/my-mailbox-dir :completed)
+        abandoned-dir (handoff-lib/my-mailbox-dir :abandoned)]
+    (doseq [dir [new-dir in-process-dir completed-dir abandoned-dir]]
       (fs/create-dirs dir))
     (let [in-process-batches (handoff-lib/batch-dirs in-process-dir)
           in-process-files (handoff-lib/handoff-files in-process-dir)]
@@ -58,14 +59,19 @@
         (print-batch (first in-process-batches))
         (if (handoff-lib/draining?)
           (println "DRAINING")
-          (let [new-files (handoff-lib/handoff-files new-dir)]
-            (if (empty? new-files)
+          (let [new-files (handoff-lib/handoff-files new-dir)
+                completed-basenames (map fs/file-name (handoff-lib/handoff-files completed-dir))
+                abandoned-basenames (map fs/file-name (handoff-lib/handoff-files abandoned-dir))
+                {:keys [skipped dequeueable]} (handoff-lib/dedup-new-candidates new-files completed-basenames abandoned-basenames)]
+            (doseq [f skipped]
+              (println "SKIPPED already-processed:" (fs/file-name f)))
+            (if (empty? dequeueable)
               (do
                 (println "NO_TASK")
                 (maybe-clear-at-idle-boundary!))
-              (let [batch-priority (handoff-lib/header-value (first new-files) "priority" "50")
+              (let [batch-priority (handoff-lib/header-value (first dequeueable) "priority" "50")
                     batch-dir (new-batch-dir in-process-dir)
-                    selected-files (filter #(= batch-priority (handoff-lib/header-value % "priority" "50")) new-files)]
+                    selected-files (filter #(= batch-priority (handoff-lib/header-value % "priority" "50")) dequeueable)]
                 (fs/create-dir batch-dir)
                 (doseq [source-file selected-files]
                   (let [target-file (fs/path batch-dir (fs/file-name source-file))]
