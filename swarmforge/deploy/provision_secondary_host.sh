@@ -126,6 +126,18 @@ mkdir -p "$PROJECT_ROOT/swarmforge/packs"
 UNIT_PATH="/tmp/swarmforge-${SWARM_NAME}.service"
 "$PROJECT_ROOT/swarmforge/deploy/generate_systemd_units.sh" "$PROJECT_ROOT" "$SWARM_NAME" "$(whoami)" "$UNIT_PATH"
 sudo mv "$UNIT_PATH" "/etc/systemd/system/swarmforge-${SWARM_NAME}.service"
+
+# A systemd service starts with a clean environment - it does NOT source
+# this user's shell profile - so a token exported there (Option B auth,
+# below) would never reach the swarm process. The generated unit's
+# EnvironmentFile= reads this file instead; root-owned and 600 so the
+# token is not readable by anyone but root and whatever reads it as root
+# (systemd itself, before dropping to User= in the unit). Left EMPTY here -
+# populated only if the operator chooses Option B below.
+sudo install -d -m 0755 /etc/swarmforge
+sudo touch "/etc/swarmforge/${SWARM_NAME}.env"
+sudo chmod 600 "/etc/swarmforge/${SWARM_NAME}.env"
+
 sudo systemctl daemon-reload
 sudo systemctl enable "swarmforge-${SWARM_NAME}.service"
 
@@ -139,7 +151,10 @@ for detail on each):
      run: claude
      Or, for a token-only setup that forgoes Remote Control, run:
        claude setup-token
-     and export CLAUDE_CODE_OAUTH_TOKEN in this user's shell profile instead.
+     and write CLAUDE_CODE_OAUTH_TOKEN=<the printed token> into
+       /etc/swarmforge/${SWARM_NAME}.env
+     (NOT the shell profile - systemd does not source it; this file is
+     what the generated unit's EnvironmentFile= actually reads).
 
   2. Register the GitHub Actions self-hosted runner for this box's arch
      ($ARCH) using its own installer and systemd unit (./svc.sh install &&
