@@ -16,18 +16,19 @@ export interface DiscoverySource {
   discover(): Promise<ModelCandidate[]>;
 }
 
+function isNonNullObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
 function isModelCandidate(value: unknown): value is ModelCandidate {
-  if (!value || typeof value !== 'object') {
+  if (!isNonNullObject(value)) {
     return false;
   }
-  const v = value as Record<string, unknown>;
   return (
-    typeof v.model === 'string' &&
-    typeof v.provider === 'string' &&
-    typeof v.planCost === 'object' &&
-    v.planCost !== null &&
-    typeof v.signupPath === 'object' &&
-    v.signupPath !== null
+    typeof value.model === 'string' &&
+    typeof value.provider === 'string' &&
+    isNonNullObject(value.planCost) &&
+    isNonNullObject(value.signupPath)
   );
 }
 
