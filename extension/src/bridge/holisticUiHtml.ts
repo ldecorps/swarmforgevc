@@ -24,6 +24,10 @@ export function getHolisticUiHtml(): string {
   th, td { text-align: left; padding: 0.25rem 0.5rem; border-bottom: 1px solid color-mix(in srgb, CanvasText 10%, transparent); }
   .badge { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.75rem; background: color-mix(in srgb, CanvasText 12%, transparent); }
   .badge.remote { background: color-mix(in srgb, orange 30%, transparent); }
+  /* BL-252: the SAME amber "needs attention" hue webviewHtml.ts's
+     .metric-value-warn / media/panel.js already use for this exact BL-078
+     signal - reused here, not a new color. */
+  .metric-value-warn { font-weight: 700; color: #d4a017; }
   .stale { opacity: 0.6; font-style: italic; }
   #tokenGate { max-width: 28rem; margin: 4rem auto; text-align: center; }
   #tokenGate input { width: 100%; padding: 0.5rem; font-size: 1rem; box-sizing: border-box; }
@@ -178,13 +182,18 @@ export function getHolisticUiHtml(): string {
   // BL-211 empty-state-03: the endpoint's own explicit "no local data"
   // signal (suite-duration records are gitignored/machine-local, so a
   // machine without them reports hasLocalData:false, not an error).
+  //
+  // BL-252: suiteDurationTrend.warn is the SAME BL-078 creep-warning signal
+  // (swarmMetrics.ts's computeSuiteDuration) computeSuiteDurationTrend
+  // already reuses unchanged - never a second threshold computed here.
   function renderSuiteDurationReadout(suiteDurationTrend) {
     if (!suiteDurationTrend || !suiteDurationTrend.hasLocalData) {
       return noDataParagraph('no local data');
     }
     var series = suiteDurationTrend.dailySeries;
     var latestMs = series[series.length - 1].value;
-    return el('p', {}, ['Suite duration: ' + Math.round(latestMs / 1000) + 's latest' + trendArrow(suiteDurationTrend.trend)]);
+    var label = (suiteDurationTrend.warn ? 'Suite duration (WARN): ' : 'Suite duration: ') + Math.round(latestMs / 1000) + 's latest' + trendArrow(suiteDurationTrend.trend);
+    return el('p', { class: suiteDurationTrend.warn ? 'metric-value-warn' : '' }, [label]);
   }
 
   function renderMetrics(metrics) {

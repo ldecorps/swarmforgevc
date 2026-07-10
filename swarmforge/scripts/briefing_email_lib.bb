@@ -50,17 +50,37 @@
                        first)]
     (str "SwarmForge briefing " date-label (when headline (str " - " headline)))))
 
+;; BL-252: appends the suite-duration trend + BL-078 regression-flag line
+;; (sourced from suite-duration-line.js, reusing computeSuiteDurationTrend/
+;; computeSuiteDuration unchanged - never a second threshold) to the
+;; outgoing briefing content. A blank/nil line - the CLI unavailable, not
+;; "no local data" (the CLI itself already renders that as non-blank text)
+;; - leaves content untouched rather than appending nothing meaningful.
+(defn append-suite-duration-line [content line]
+  (if (str/blank? line)
+    content
+    (str (str/trim-newline (or content "")) "\n\n" line "\n")))
+
 (defn send-unsent-briefings!
   "Sends each not-yet-sent committed briefing exactly once via the injected
    send-email! adapter (daemon_alarm_lib.bb's send-alarm-email!). A file is
    marked sent only once send-email! reports :success true - unconfigured
    (:reason :disabled/:missing-api-key) or a real failure both log a skip
    and leave the file to retry on the next sweep, never crashing and never
-   losing the briefing. Returns the file names actually sent this call."
+   losing the briefing. Returns the file names actually sent this call.
+
+   The optional :suite-duration-line adapter (zero-arg fn returning a line
+   string or nil) is appended to the content before sending (BL-252) - a
+   caller that omits it (or whose adapter returns nil) sends the original
+   content unchanged, backward compatible with every pre-BL-252 caller."
   [briefings-dir adapters]
-  (let [sent-now (atom [])]
+  (let [sent-now (atom [])
+        suite-duration-line-fn (:suite-duration-line adapters)]
     (doseq [file-name (find-unsent-briefings briefings-dir)]
-      (let [content ((:read-briefing-content adapters) file-name)
+      (let [raw-content ((:read-briefing-content adapters) file-name)
+            content (if suite-duration-line-fn
+                      (append-suite-duration-line raw-content (suite-duration-line-fn))
+                      raw-content)
             date-label (str/replace file-name #"\.md$" "")
             subject (build-briefing-subject date-label content)
             result ((:send-email! adapters) subject content)]

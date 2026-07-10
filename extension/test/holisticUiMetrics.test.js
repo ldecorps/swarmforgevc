@@ -100,6 +100,32 @@ test('"no local data" for suite duration renders an empty state, not an error (e
   assert.match(dom.window.document.getElementById('metricsSection').textContent, /no local data/);
 });
 
+// ── BL-252: suite-duration regression warn flag ───────────────────────────
+
+test('a non-regressing suite duration (warn: false) renders with no WARN marker and no amber class', async () => {
+  const dom = renderWithToken(fakeMetrics({
+    suiteDurationTrend: { hasLocalData: true, dailySeries: [{ periodStart: '2026-07-09T00:00:00Z', value: 5000 }], trend: emptyTrend(), warn: false },
+  }));
+  await flush();
+  await flush();
+  const section = dom.window.document.getElementById('metricsSection');
+  assert.match(section.textContent, /Suite duration: 5s latest/);
+  assert.doesNotMatch(section.textContent, /WARN/);
+  assert.equal(section.querySelector('.metric-value-warn'), null);
+});
+
+test('a regressing suite duration (warn: true, the SAME BL-078 signal) renders the amber WARN treatment', async () => {
+  const dom = renderWithToken(fakeMetrics({
+    suiteDurationTrend: { hasLocalData: true, dailySeries: [{ periodStart: '2026-07-09T00:00:00Z', value: 5000 }], trend: emptyTrend(), warn: true },
+  }));
+  await flush();
+  await flush();
+  const section = dom.window.document.getElementById('metricsSection');
+  assert.match(section.textContent, /Suite duration \(WARN\): 5s latest/);
+  const warnEl = section.querySelector('.metric-value-warn');
+  assert.ok(warnEl, 'expected the amber .metric-value-warn treatment when warn is true');
+});
+
 test('an empty burndown array renders "no milestones" rather than an error', async () => {
   const dom = renderWithToken(fakeMetrics({ burndown: [] }));
   await flush();

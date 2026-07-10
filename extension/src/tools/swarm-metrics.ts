@@ -228,12 +228,17 @@ function formatForecastsLine(forecasts: ForecastResult): string {
   );
 }
 
-function formatSuiteDurationTrendLine(trend: SuiteDurationTrendResult): string {
+// BL-252: exported so both formatDeliveryOverview below and the dedicated
+// suite-duration-line.ts CLI (the daily briefing's data source) share the
+// SAME "latest + trend + WARN prefix" line - one formatter, one place the
+// BL-078 warn signal turns into text, never a second copy that could drift.
+export function formatSuiteDurationTrendLine(trend: SuiteDurationTrendResult): string {
   if (!trend.hasLocalData) {
     return 'Suite duration trend: no local data';
   }
   const latest = trend.dailySeries[trend.dailySeries.length - 1];
-  return `Suite duration trend: ${formatSuiteDurationMs(latest.value)} latest${formatTrend(trend.trend, formatSuiteDurationMs)}`;
+  const warnPrefix = trend.warn ? 'WARN ' : '';
+  return `${warnPrefix}Suite duration trend: ${formatSuiteDurationMs(latest.value)} latest${formatTrend(trend.trend, formatSuiteDurationMs)}`;
 }
 
 export function formatDeliveryOverview(metrics: DeliveryMetrics): string {

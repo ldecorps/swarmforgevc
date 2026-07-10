@@ -54,6 +54,7 @@ const DOMAINS = [
   require('./fleetConsoleSteps'),
   require('./docsSearchFilterSteps'),
   require('./docsImplementedStatusSteps'),
+  require('./suiteDurationReadoutSteps'),
 ];
 
 function registerSteps(registry) {
