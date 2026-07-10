@@ -1,0 +1,106 @@
+id: BL-260
+title: "Render the architecture diagrams inline in the morning briefing email"
+direction: tooling
+priority: 35
+mutation_cost: medium
+source: "operator direction 2026-07-10 (via coordinator): backlog/INTAKE-briefing-arch-diagrams.md — 'I need the architecture diagrams rendered in the morning email as well.'"
+
+description: |
+  The daily briefing morning email should include the project's architecture
+  diagram(s) rendered as viewable images inline in the body — not merely a link to a
+  .mmd source. Opening the morning email shows the diagram.
+
+  Verified assets (specifier checked the live layer):
+    - Diagram SOURCES exist as Mermaid: docs/diagrams/architecture.mmd (two-layer
+      host + tmux-substrate "as built", BL-146) and docs/diagrams/swarm-flow.mmd.
+    - Send path: briefing_email_lib.bb calls ((:send-email! adapters) subject
+      content), content = briefing markdown TEXT. The Resend adapter
+      (extension/src/notify/resendClient.ts) sends {subject, text} ONLY today — no
+      html/attachment path.
+    - Daily send = BL-214 (headless daemon); morning generation = BL-258 (approved);
+      content enrichment = BL-256 (approved). This ADDS a rendered-diagram section.
+    - NO Mermaid renderer installed (grep: no mermaid-cli / mmdc / puppeteer).
+
+  SCOPE DECISION (specifier's call, per intake): this is its OWN sibling ticket, NOT
+  a slice of BL-256 — it is heavier and different in kind (a new renderer + an
+  email-format change), distinct from BL-256's text-telemetry sections.
+
+  The two design problems:
+    1. RENDER: Mermaid .mmd -> image (SVG/PNG) at briefing-generation time, using a
+       LOCAL, PINNED, DETERMINISTIC renderer (engineering pinned-tools rule; exact
+       version in package.json/lockfile, bump = human commit; byte-stable output for
+       identical .mmd). Candidates the build weighs: @mermaid-js/mermaid-cli (heavy —
+       pulls headless Chromium) vs a lighter pinned path. An EXTERNAL render service
+       (kroki / mermaid.ink) is REJECTED by default — it ships project internals off
+       the machine and adds a network dependency (reproducibility/privacy, BL-252
+       spirit) — allowed only if the operator explicitly accepts it. Tool choice is
+       the build's, among vetted local candidates.
+    2. EMBED: the email today is plaintext markdown. Rendering inline needs an HTML
+       email body with the image embedded (inline data: URI or CID attachment) — or a
+       normal attachment. Extend the Resend adapter to support an HTML body /
+       attachments (verify Resend's capability first). Send MULTIPART (HTML +
+       plaintext) so clients that don't render HTML still get a readable briefing with
+       a link/note for the diagram.
+
+  Wanted behavior (observable):
+    - With rendering available, the morning briefing email shows the architecture
+      diagram rendered as an inline image.
+    - The render is local and deterministic: identical .mmd -> byte-identical image;
+      the diagram is not sent to an external service.
+    - The email is multipart; a plaintext-only client still shows the briefing text
+      with a link/note for the diagram.
+    - If rendering is unavailable, the email still sends with a clear no-diagram note
+      (never a broken/failed send).
+    - Rendering a fixture .mmd yields a non-empty, well-formed image.
+
+  Constraints:
+    - REUSE, don't fork: the diagram sources, the BL-214 send, the BL-258 schedule,
+      and the BL-099/BL-256 content — this adds a rendered-diagram section only.
+    - PINNED, LOCAL, DETERMINISTIC render (engineering pinned-tools rule); byte-stable
+      output. No default external service.
+    - REPRODUCIBILITY / PRIVACY (BL-252 spirit): the briefing must not depend on an
+      external render service shipping internals off-machine unless the operator
+      explicitly accepts it.
+    - GRACEFUL DEGRADATION: rendering unavailable -> email still sends with a
+      no-diagram note (BL-099 missing-data posture; BL-214 send must not crash).
+    - TESTABLE host-side: the render step (.mmd -> image bytes) and the embed/compose
+      step (image -> HTML/multipart body) are testable modules fed fixtures — assert
+      on the produced image/body, never a real render-binary invocation or a real
+      email send in unit tests. Validate the renderer by rendering a fixture .mmd and
+      asserting a non-empty well-formed image.
+    - COMPOSE, DON'T COLLIDE (coordinator orthogonality): touches the same briefing
+      email path (briefing_email_lib.bb / resendClient.ts) as BL-256 and BL-258 — do
+      NOT run it concurrently with them; sequence so the shared compose file is built
+      by one ticket at a time.
+
+  Scope: (a) add + pin a local Mermaid renderer (package.json/lockfile); (b) a render
+  step .mmd -> image for docs/diagrams/architecture.mmd (and swarm-flow.mmd); (c)
+  extend the Resend adapter + briefing compose to an HTML/multipart body embedding the
+  image inline, keeping the plaintext part; (d) graceful no-diagram degradation.
+  Verify the live briefing-generation + send path (briefing_email_lib.bb,
+  resendClient.ts, BL-214 daemon send) before naming files in the built slice.
+
+  DELIVERY: buildable now (sources exist; reuses BL-214/BL-258/BL-099). The renderer
+  install + HTML/inline-image email body is the substantive work. Likely one slice.
+  Priority normal. SEQUENCE after / not-concurrent-with BL-256 & BL-258 (shared file).
+
+acceptance: specs/features/BL-260-briefing-arch-diagrams-rendered.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (render binary + email send faked; assert on produced
+  image/body from fixtures):
+  1. Generate a briefing with rendering available; assert the composed email body
+     includes the architecture diagram as an inline image.
+  2. Render the same .mmd twice; assert byte-identical output, and that the render
+     used a local renderer with no external network call.
+  3. Assert the email is multipart (HTML + plaintext) and the plaintext part carries
+     the briefing text plus a link/note for the diagram.
+  4. Make the renderer unavailable; assert the email still sends with a clear
+     no-diagram note (no crash/failed send).
+  5. Render a fixture .mmd; assert a non-empty, well-formed image.
+  6. Confirm the renderer + version are pinned in package.json/lockfile.
+
+# HUMAN APPROVAL: feature file
+# specs/features/BL-260-briefing-arch-diagrams-rendered.feature is a NEW draft
+# authored by the specifier and is PENDING human review.
+human_approval: pending
