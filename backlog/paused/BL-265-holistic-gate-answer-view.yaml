@@ -1,0 +1,106 @@
+id: BL-265
+title: "Answer to:human gates from the phone (M6 capstone): host GET /gates read route, then holistic-UI gate list + answer view (sliced)"
+direction: tooling
+priority: 35
+mutation_cost: medium
+source: "operator direction 2026-07-10 (via coordinator, backlog/INTAKE-phone-gate-answer-client.md): gap #10 — M6's 'answer to:human gates from your phone' had no client. Specifier verified the live layer and the operator chose the holistic-UI surface + two-slice split (2026-07-10)."
+
+description: |
+  Close M6's headline capability: let the operator ANSWER a pending to:human gate
+  from the phone. The host WRITE path already landed and is wired — POST /gate-answer
+  (extension/src/bridge/bridgeServer.ts) with the BL-241 control step-up, dispatching
+  through answerCapturedGateLive -> answerCapturedGate (bridge/gateAnswerPath.ts /
+  gateAnswerLive.ts, BL-240). What is missing: (1) no HTTP route LISTS the pending
+  gates — computeRoleGateStatesLive (bridge/gateSnapshot.ts) computes them for the
+  Telegram narrator (BL-239) but is not HTTP-exposed; (2) no UI to view/answer them.
+
+  SURFACE DECISION (operator, 2026-07-10): the gate list + answer view lives on the
+  HOLISTIC bridge UI (extension/src/bridge/holisticUiHtml.ts) — the surface already
+  authenticated to the LIVE bridge (it holds a page-lifetime bearer token and does
+  authed fetches). The static PWA (pwa/app.js) is a git-projection surface that reads
+  ./backlog.json etc. with NO bridge connection, token, or auth, and CANNOT reach the
+  live authenticated bridge or perform a control write; it stays read-only and is NOT
+  touched. This upholds the live-data/control vs git-projection surface boundary.
+
+  Wanted behavior (observable):
+    - A client can list the currently-pending to:human gate(s) awaiting an answer,
+      each with the gated role and its question snippet; an empty list (not an error)
+      when nothing is gated.
+    - From the holistic UI the operator sees the pending gate(s) and can answer one;
+      the answer reaches the existing host write path and the blocked agent proceeds.
+    - Listing is a READ (read-scoped auth suffices); ANSWERING is a control action
+      requiring the BL-241 step-up (a separate X-Control-Token beyond the read bearer)
+      — a read-only session may VIEW gates but cannot answer without the step-up.
+    - Answering an already-answered/stale gate is rejected cleanly and surfaced.
+    - With no pending gate the surface shows a LOCALIZED empty state, not error/blank.
+
+  Constraints (security-sensitive — the crux):
+    - HOST STAYS AUTHORITATIVE: the client sends an answer REQUEST; the host validates
+      (control step-up, gate still pending via live pane capture, well-formed shape)
+      and performs the write via answerCapturedGate. No trust in the client. Reuse the
+      existing POST /gate-answer path as-is; do NOT open a second write surface.
+    - CONTROL, NOT READ: answering is a WRITE/control action — it must ride the BL-241
+      control step-up, never an unauthenticated or read-only-token POST. Listing gates
+      stays a plain read route, consistent with every other bridge read endpoint.
+    - IDEMPOTENT / RACE-SAFE: compose with how answerCapturedGate already refuses a
+      no-longer-pending gate; the UI surfaces that rejection rather than silently
+      retrying.
+    - TESTABLE host-side: the GET /gates route and the UI's gate-list + answer logic
+      are testable units fed fixtures; the list/answer logic is a PURE function
+      separate from the DOM render. No live gate / real swarm / real device / real
+      tmux in unit tests.
+    - LOCALIZATION (BL-229/230) + a11y (BL-238) for the new UI; localized empty state.
+    - NO BROWSER STORAGE (webview rule): the holistic UI already keeps its token in
+      page memory only; the answer view adds no storage.
+
+  Scope (verified against the live layer 2026-07-10):
+    Slice 1 — host GET /gates read route on the bridge
+      (extension/src/bridge/bridgeServer.ts) exposing computeRoleGateStatesLive
+      (bridge/gateSnapshot.ts) as read-scoped JSON; add it via the existing
+      buildJsonRoutes table so the dispatcher's complexity stays flat. Read auth
+      (isAuthorizedForRead), same as every other read route.
+    Slice 2 — holistic-UI gate list + answer view (bridge/holisticUiHtml.ts):
+      fetch GET /gates (slice 1), render pending gates, and answer via the EXISTING
+      POST /gate-answer with the control step-up (capture the separate control token
+      as a step-up moment; the page holds only the read bearer today). New strings
+      localized; graceful localized empty state; list/answer logic pure + fixture-
+      tested. The static PWA (pwa/app.js) is untouched.
+
+  DELIVERY: SLICED (operator, 2026-07-10). Slice 1 (GET /gates) is the live
+  acceptance contract now (specs/features/BL-265-holistic-gate-answer-view.feature);
+  slice 2's scenarios are PARKED in
+  specs/features/BL-265-holistic-gate-answer-view.slice-2-ui.feature.draft and are
+  promoted into the live feature only when slice 2 is built (BL-233 slice-scoping).
+  PWA-LANE NOTE: slice 2 touches only holisticUiHtml.ts, NOT pwa/app.js, so it does
+  NOT collide with the BL-251/257/261 pwa/app.js build lane. Buildable now.
+
+acceptance: specs/features/BL-265-holistic-gate-answer-view.feature
+
+qa_e2e_procedure: |
+  Host-side; transport/UI/tmux seam faked, no live swarm or real device.
+  Slice 1 (GET /gates read route):
+  1. Block one or more roles on a captured gate (faked pane capture); request the
+     pending-gate list as a read-authenticated client; assert each gated role appears
+     with its question snippet and non-gated roles are absent.
+  2. With no role gated, request the list; assert a successful empty list, not an error.
+  3. Request the list with no/invalid auth; assert refused.
+  4. Request the list as a read-scoped device (no control token); assert it succeeds
+     without requiring the control step-up.
+  Slice 2 (holistic-UI gate list + answer view — run when built):
+  5. Render the gate view against a fixture gate list; assert each pending gate shows
+     the role + question snippet.
+  6. Render against an empty gate list; assert a localized empty state (no error/blank).
+  7. Submit an answer with the control step-up supplied; assert it POSTs to the
+     existing write path and the blocked agent proceeds.
+  8. Attempt an answer from a read-only session (no step-up); assert refused for
+     lacking control auth while the gate list stays viewable.
+  9. Answer an already-answered/stale gate; assert a clean rejection surfaced to the
+     operator.
+
+# HUMAN APPROVAL: feature files
+# specs/features/BL-265-holistic-gate-answer-view.feature (slice 1, live) and
+# specs/features/BL-265-holistic-gate-answer-view.slice-2-ui.feature.draft (slice 2,
+# parked) are NEW drafts authored by the specifier. The operator approved the SURFACE
+# (holistic UI) and the two-slice SPLIT on 2026-07-10; the scenario wording itself is
+# pending human review. Park in paused until approved.
+human_approval: pending

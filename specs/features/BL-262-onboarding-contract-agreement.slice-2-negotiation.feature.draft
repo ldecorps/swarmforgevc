@@ -1,0 +1,38 @@
+# PARKED — BL-262 slice 2 (the iterative NEGOTIATION loop). NOT built in slice 1 and
+# NOT wired into the live acceptance runner (a .feature.draft is picked up by no
+# *.feature glob and no runner, per BL-233), so the up-front design is preserved
+# without failing the hardener's gate. Promote these scenarios into the live
+# BL-262-onboarding-contract-agreement.feature only when this slice is built.
+#
+# Slice 1 ships survey -> propose -> single agreement + the build-start gate: the swarm
+# proposes a populated contract and the operator agrees once (marker proposed -> agreed).
+# Slice 2 adds the iterative loop the operator asked for (2026-07-10): the operator can
+# REQUEST CHANGES on a proposed contract and the swarm REVISES and re-proposes, looping
+# until agreed. The build-start gate (slice 1) stays HELD throughout every proposed/
+# revised round and releases only on agreement — the gate mechanics are unchanged; this
+# slice only adds the revise-and-re-propose cycle above them. Revision must be RESPONSIVE
+# (the operator's requested change is reflected), not a blind regenerate-from-scratch.
+
+Feature: the operator and the swarm negotiate the onboarding contract to agreement
+
+  Background:
+    Given a proposed onboarding contract the swarm has drafted from its repo survey
+
+  # BL-262 negotiation-request-changes-revises-05
+  Scenario: requesting changes makes the swarm revise and re-propose
+    When the operator requests a change to the proposed contract
+    Then the swarm revises the contract and re-proposes it, still awaiting agreement
+    And the requested change is reflected in the revised proposal
+
+  # BL-262 negotiation-gate-held-through-rounds-06
+  Scenario: the build-start gate stays held across negotiation rounds until agreement
+    Given the contract has been revised across one or more request-and-revise rounds
+    When the coordinator evaluates the build-start gate before agreement
+    Then the gate holds dispatch
+    And once the operator agrees to a revised contract the gate allows dispatch
+
+  # BL-262 negotiation-revision-is-responsive-07
+  Scenario: a revision responds to the operator's request rather than discarding it
+    Given the operator requested a specific change to the proposed scope
+    When the swarm re-proposes the contract
+    Then the re-proposed scope carries the operator's requested change rather than a fresh survey that ignores it
