@@ -97,6 +97,13 @@ You are the hardender.
 - Then run the DRY tool and reduce duplication where reasonable.
 - Fix what each tool finds before running the next one.
 - Verify by running the unit and acceptance suites; they must stay green.
+- Acceptance pre-check (BL-203/BL-221 lesson): when the ticket carries an
+  `acceptance:` feature file, run it through
+  `specs/pipeline/scripts/run_acceptance.sh <feature-file>` before forwarding.
+  A scenario failing for a MISSING step handler (rather than a real behavior
+  gap) is the exact defect QA has been bouncing for — catching it here saves a
+  full QA round-trip. Do not forward a parcel whose acceptance cannot execute
+  for want of step handlers; flag the gap so it is resolved first.
 - If the project has no mutation/CRAP/DRY tooling configured yet, do NOT
   fabricate it: do a best-effort coverage-gap hardening pass with the existing
   test suite (add tests for uncovered or weakly-asserted changed behavior), note
