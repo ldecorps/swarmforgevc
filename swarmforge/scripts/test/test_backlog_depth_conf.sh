@@ -71,25 +71,14 @@ echo "$OUT" | grep -qi "Active backlog depth exceeded" \
 pass "depth-01c: cap=3, active=2 -> no warning"
 rm -rf "$ROOT"
 
-# ── depth-02: the -1 sentinel leaves promotion ungated by depth ───────────
-# NOTE: ready_for_next.bb's promote-next-paused-item-if-needed cannot be
-# exercised end-to-end through the real CLI here - dispatch-lib/run-dispatch!
-# always ends in either process/exec (which REPLACES the process image and
-# never returns, confirmed empirically) or System/exit, so the line calling
-# promote-next-paused-item-if-needed is unreachable dead code in every
-# observed path. That is a separate, pre-existing issue from this ticket's
-# own scope (flagged separately, not fixed here - BL-216 explicitly carves
-# out "whether ready_for_next.bb should auto-promote at all" as a policy
-# question for the coordinator/specifier). This test instead pins that the
-# call site is correctly WIRED to the shared helper (same gate the pure
-# backlog_depth_test_runner.bb already proves correct), so if/when the
-# reachability issue is separately resolved, the depth logic itself is
-# already right.
-grep -q "backlog-depth-lib/read-max-depth project-root" "$SCRIPT_DIR/../ready_for_next.bb" \
-  || fail "depth-02 wiring: expected promote-next-paused-item-if-needed to read max-depth via the shared helper"
-grep -q "backlog-depth-lib/under-depth-cap? active-count max-depth" "$SCRIPT_DIR/../ready_for_next.bb" \
-  || fail "depth-02 wiring: expected the promotion gate to use backlog-depth-lib/under-depth-cap? (no-limit-aware), not a raw < comparison"
-pass "depth-02: promote-next-paused-item-if-needed is wired to the shared, no-limit-aware depth helper"
+# ── depth-02: removed ─────────────────────────────────────────────────────
+# This used to pin that ready_for_next.bb's (dead, unreachable) paused-item
+# auto-promotion helper read the depth cap via the shared backlog-depth-lib
+# functions. BL-226 deleted that helper entirely (it never belonged in a
+# receive helper - promotion is the coordinator's exclusive duty, and the
+# code was provably unreachable besides), so there is nothing left here to
+# pin; backlog_depth_test_runner.bb still covers backlog-depth-lib's own
+# read-max-depth/under-depth-cap? logic directly.
 
 # ── depth-03: the cap comes from the tracked config, not a silent default ─
 ROOT="$(mk_fixture 3)"
