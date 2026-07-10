@@ -36,6 +36,10 @@ export function getWorkTreeHtml(nonce: string): string {
     tr.done td { opacity: 0.45; text-decoration: line-through; }
     tr.active { cursor: pointer; }
     tr.active:hover td { background: var(--vscode-list-hoverBackground); }
+    tr.active:focus, tr.active:focus-visible {
+      outline: 2px solid var(--vscode-focusBorder);
+      outline-offset: -2px;
+    }
     .badge {
       display: inline-block; padding: 1px 6px; border-radius: 3px;
       font-size: 10px; text-align: center;
@@ -72,10 +76,15 @@ export function getWorkTreeHtml(nonce: string): string {
         const commit = item.lastCommit
           ? '<span class="commit-hash" title="' + escapeHtml(item.lastCommit.message) + '">' + escapeHtml(item.lastCommit.hash) + '</span>'
           : '—';
-        const clickAttr = item.status === 'active' && role
-          ? ' onclick="highlight(\'' + escapeHtml(role) + '\')"'
+        // BL-238: a row that highlights a role on activation is keyboard-
+        // operable (tabindex + Enter/Space via the shared onRowKey handler,
+        // mirroring the click behavior) and screen-reader-labeled - a
+        // <tr onclick> alone is mouse-only and has no accessible name.
+        const interactiveAttrs = item.status === 'active' && role
+          ? ' onclick="highlight(\'' + escapeHtml(role) + '\')" onkeydown="onRowKey(event, \'' + escapeHtml(role) + '\')"' +
+            ' tabindex="0" role="button" aria-label="Highlight ' + escapeHtml(role) + '\'s tile"'
           : '';
-        return '<tr class="' + cls + '"' + clickAttr + '>' +
+        return '<tr class="' + cls + '"' + interactiveAttrs + '>' +
           '<td>' + badge(item.status) + '</td>' +
           '<td>' + escapeHtml(item.id) + '</td>' +
           '<td>' + escapeHtml(item.title) + '</td>' +
@@ -93,6 +102,15 @@ export function getWorkTreeHtml(nonce: string): string {
 
     function highlight(role) {
       vscode.postMessage({ type: 'highlightTile', role });
+    }
+
+    // BL-238: Enter/Space activates a row exactly like a click, completing
+    // the role="button" keyboard contract for the work-tree's active rows.
+    function onRowKey(event, role) {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        highlight(role);
+      }
     }
 
     window.addEventListener('message', event => {
@@ -198,6 +216,13 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
       display: flex;
       justify-content: space-between;
     }
+    /* BL-238 keyboard-nav-tiles-01: an explicit, visible focus ring for the
+       header's own role="button"/tabindex - do not rely on a bare div's
+       default (often nonexistent) UA focus styling. */
+    .tile-header:focus-visible {
+      outline: 2px solid var(--vscode-focusBorder);
+      outline-offset: -2px;
+    }
     .tile-agent {
       opacity: 0.7;
       font-weight: 400;
@@ -213,6 +238,22 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
       font-weight: 500;
     }
     .tile.bl-active .tile-bl-badge {
+      display: inline-block;
+    }
+    /* BL-238 status-not-color-only-04: a textual equivalent of the
+       liveness border colors below (.tile.stalled/.dead/.needs-human/
+       .working), so status is never color-only. */
+    .tile-status-badge {
+      display: none;
+      margin-left: 6px;
+      padding: 1px 6px;
+      font-size: 10px;
+      border-radius: 3px;
+      background: var(--vscode-badge-background, #555);
+      color: var(--vscode-badge-foreground, #fff);
+      font-weight: 500;
+    }
+    .tile-status-badge.visible {
       display: inline-block;
     }
     /* BL-077: one stable color per pipeline stage. Ordered along the
@@ -643,22 +684,22 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
   <div id="bottom-row" style="display:none;">
     <div id="recent-runs" style="display:none;">
       <div class="section-header">
-        <span class="section-title">Recent Runs</span>
-        <button class="collapse-btn" id="runs-toggle" title="Toggle">▾</button>
+        <span class="section-title" id="runs-title">Recent Runs</span>
+        <button class="collapse-btn" id="runs-toggle" aria-label="Toggle Recent Runs section" aria-expanded="true" aria-controls="runs-list">▾</button>
       </div>
       <div id="runs-list"></div>
     </div>
     <div id="backlog" style="display:none;">
       <div class="section-header">
-        <span class="section-title">Backlog</span>
-        <button class="collapse-btn" id="backlog-toggle" title="Toggle">▾</button>
+        <span class="section-title" id="backlog-title">Backlog</span>
+        <button class="collapse-btn" id="backlog-toggle" aria-label="Toggle Backlog section" aria-expanded="true" aria-controls="backlog-list">▾</button>
       </div>
       <div id="backlog-list"></div>
     </div>
     <div id="metrics" style="display:none;">
       <div class="section-header">
-        <span class="section-title">Metrics</span>
-        <button class="collapse-btn" id="metrics-toggle" title="Toggle">▾</button>
+        <span class="section-title" id="metrics-title">Metrics</span>
+        <button class="collapse-btn" id="metrics-toggle" aria-label="Toggle Metrics section" aria-expanded="true" aria-controls="metrics-list">▾</button>
       </div>
       <div id="metrics-list"></div>
     </div>

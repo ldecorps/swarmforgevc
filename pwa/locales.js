@@ -11,6 +11,11 @@
       pageHeading: 'SwarmForge — backlog dashboard',
       loading: 'Loading…',
       localeToggleLabel: 'FR',
+      // BL-238: static fallback accessible name (mirrors fontDecrease/
+      // fontIncrease's own aria-label + data-i18n-aria pattern) - the
+      // visible glyph alone (the target locale's code) is not descriptive
+      // out of context for a screen reader.
+      localeToggleAriaLabel: 'Switch language',
       boardHeading: 'Backlog board',
       boardActive: 'Active',
       boardPaused: 'Paused',
@@ -66,6 +71,7 @@
       pageHeading: 'SwarmForge — tableau de bord',
       loading: 'Chargement…',
       localeToggleLabel: 'EN',
+      localeToggleAriaLabel: 'Changer de langue',
       boardHeading: 'Tableau des tickets',
       boardActive: 'Actifs',
       boardPaused: 'En pause',
