@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=6e009cf629fc2c231c4f78252bcc523d8bf4113b7fe7f48381e125cd5891190b
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-10T19:03:38.577279702Z","feature_name":"a gated static dependency-rule checker enforces the project's dependency-direction rules","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-259-gated-dependency-rule-checker.feature","background_hash":"b921ccd72cbdb2ba86760c9092099cc0e506d4c398a968d5172d2fe16ebdfa36","implementation_hash":"unknown","scenarios":[{"index":2,"name":"each of the project's dependency rules is enforced","scenario_hash":"077819c7dbc075a4eed06d797bde2c5aa8ff9a4a34c4564e6517e4bc0b861ba6","mutation_count":12,"result":{"Total":12,"Killed":12,"Survived":0,"Errors":0},"tested_at":"2026-07-10T19:03:38.577279702Z"},{"index":4,"name":"the gate scopes to changed files per parcel but supports a full-repo CI run","scenario_hash":"2f2d73b5b3ce64f82e70a18d794fa199a3a41abdde4b54a906f8f2e8fa8e6d5c","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-07-10T19:03:38.577279702Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a gated static dependency-rule checker enforces the project's dependency-direction rules
 
   # Operator intake 2026-07-10 (via coordinator): make the architect's PROSE
