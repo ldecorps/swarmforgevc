@@ -105,3 +105,38 @@ export async function resolveMistralApiKey(
   }
   return readMistralKeyFromShellProfile();
 }
+
+// BL-239: the Telegram chat adapter's bot token, and the one chat id it is
+// authorized to treat as "the human" (bot auth of the human - an inbound
+// message from any other chat is never honored, see
+// notify/telegramInboundRelay.ts). Same secrets rule as Resend/OpenAI/
+// Mistral above: env var first, then SecretStorage, never a workspace
+// setting, dotfile, or the repo.
+export const TELEGRAM_BOT_TOKEN_SECRET_KEY = 'swarmforge.telegramBotToken';
+export const TELEGRAM_CHAT_ID_SECRET_KEY = 'swarmforge.telegramChatId';
+
+export async function resolveTelegramBotToken(
+  secrets?: vscode.SecretStorage
+): Promise<string | undefined> {
+  const envToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (envToken) {
+    return envToken;
+  }
+  if (secrets) {
+    return await secrets.get(TELEGRAM_BOT_TOKEN_SECRET_KEY);
+  }
+  return undefined;
+}
+
+export async function resolveTelegramChatId(
+  secrets?: vscode.SecretStorage
+): Promise<string | undefined> {
+  const envChatId = process.env.TELEGRAM_CHAT_ID;
+  if (envChatId) {
+    return envChatId;
+  }
+  if (secrets) {
+    return await secrets.get(TELEGRAM_CHAT_ID_SECRET_KEY);
+  }
+  return undefined;
+}

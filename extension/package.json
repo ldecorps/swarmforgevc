@@ -123,6 +123,22 @@
       {
         "command": "swarmforge.clearMistralApiKey",
         "title": "SwarmForge: Clear Mistral API Key"
+      },
+      {
+        "command": "swarmforge.setTelegramBotToken",
+        "title": "SwarmForge: Set Telegram Bot Token"
+      },
+      {
+        "command": "swarmforge.clearTelegramBotToken",
+        "title": "SwarmForge: Clear Telegram Bot Token"
+      },
+      {
+        "command": "swarmforge.setTelegramChatId",
+        "title": "SwarmForge: Set Telegram Chat Id"
+      },
+      {
+        "command": "swarmforge.clearTelegramChatId",
+        "title": "SwarmForge: Clear Telegram Chat Id"
       }
     ],
     "configuration": {

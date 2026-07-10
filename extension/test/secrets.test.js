@@ -9,6 +9,10 @@ const {
   OPENAI_SECRET_KEY,
   resolveMistralApiKey,
   MISTRAL_SECRET_KEY,
+  resolveTelegramBotToken,
+  TELEGRAM_BOT_TOKEN_SECRET_KEY,
+  resolveTelegramChatId,
+  TELEGRAM_CHAT_ID_SECRET_KEY,
 } = require('../out/notify/secrets');
 
 // Per the constitution's secrets rule: RESEND_API_KEY must resolve only from
@@ -16,6 +20,8 @@ const {
 const ORIGINAL_ENV = process.env.RESEND_API_KEY;
 const ORIGINAL_OPENAI_ENV = process.env.OPENAI_API_KEY;
 const ORIGINAL_MISTRAL_ENV = process.env.MISTRAL_API_KEY;
+const ORIGINAL_TELEGRAM_TOKEN_ENV = process.env.TELEGRAM_BOT_TOKEN;
+const ORIGINAL_TELEGRAM_CHAT_ENV = process.env.TELEGRAM_CHAT_ID;
 
 afterEach(() => {
   if (ORIGINAL_ENV === undefined) {
@@ -32,6 +38,16 @@ afterEach(() => {
     delete process.env.MISTRAL_API_KEY;
   } else {
     process.env.MISTRAL_API_KEY = ORIGINAL_MISTRAL_ENV;
+  }
+  if (ORIGINAL_TELEGRAM_TOKEN_ENV === undefined) {
+    delete process.env.TELEGRAM_BOT_TOKEN;
+  } else {
+    process.env.TELEGRAM_BOT_TOKEN = ORIGINAL_TELEGRAM_TOKEN_ENV;
+  }
+  if (ORIGINAL_TELEGRAM_CHAT_ENV === undefined) {
+    delete process.env.TELEGRAM_CHAT_ID;
+  } else {
+    process.env.TELEGRAM_CHAT_ID = ORIGINAL_TELEGRAM_CHAT_ENV;
   }
 });
 
@@ -191,4 +207,64 @@ test('resolveMistralApiKey returns undefined when neither source has a value', a
   delete process.env.MISTRAL_API_KEY;
 
   assert.equal(await resolveMistralApiKey(undefined), undefined);
+});
+
+// --- BL-239: the Telegram chat adapter's bot token and authorized chat id.
+//     Same env-first, then-SecretStorage, never-a-repo-file resolution rule. ---
+
+test('TELEGRAM_BOT_TOKEN_SECRET_KEY and TELEGRAM_CHAT_ID_SECRET_KEY are the stable SecretStorage keys', () => {
+  assert.equal(TELEGRAM_BOT_TOKEN_SECRET_KEY, 'swarmforge.telegramBotToken');
+  assert.equal(TELEGRAM_CHAT_ID_SECRET_KEY, 'swarmforge.telegramChatId');
+});
+
+test('resolveTelegramBotToken returns the env var when set, without consulting SecretStorage', async () => {
+  process.env.TELEGRAM_BOT_TOKEN = 'env-telegram-token-123';
+  const { calls, storage } = fakeSecrets('storage-key-should-not-be-used');
+
+  const result = await resolveTelegramBotToken(storage);
+
+  assert.equal(result, 'env-telegram-token-123');
+  assert.deepEqual(calls, []);
+});
+
+test('resolveTelegramBotToken falls back to SecretStorage when no env var is set', async () => {
+  delete process.env.TELEGRAM_BOT_TOKEN;
+  const { calls, storage } = fakeSecrets('storage-telegram-token-456');
+
+  const result = await resolveTelegramBotToken(storage);
+
+  assert.equal(result, 'storage-telegram-token-456');
+  assert.deepEqual(calls, [TELEGRAM_BOT_TOKEN_SECRET_KEY]);
+});
+
+test('resolveTelegramBotToken returns undefined when neither source has a value', async () => {
+  delete process.env.TELEGRAM_BOT_TOKEN;
+
+  assert.equal(await resolveTelegramBotToken(undefined), undefined);
+});
+
+test('resolveTelegramChatId returns the env var when set, without consulting SecretStorage', async () => {
+  process.env.TELEGRAM_CHAT_ID = '999888777';
+  const { calls, storage } = fakeSecrets('storage-chat-id-should-not-be-used');
+
+  const result = await resolveTelegramChatId(storage);
+
+  assert.equal(result, '999888777');
+  assert.deepEqual(calls, []);
+});
+
+test('resolveTelegramChatId falls back to SecretStorage when no env var is set', async () => {
+  delete process.env.TELEGRAM_CHAT_ID;
+  const { calls, storage } = fakeSecrets('storage-chat-id-456');
+
+  const result = await resolveTelegramChatId(storage);
+
+  assert.equal(result, 'storage-chat-id-456');
+  assert.deepEqual(calls, [TELEGRAM_CHAT_ID_SECRET_KEY]);
+});
+
+test('resolveTelegramChatId returns undefined when neither source has a value', async () => {
+  delete process.env.TELEGRAM_CHAT_ID;
+
+  assert.equal(await resolveTelegramChatId(undefined), undefined);
 });
