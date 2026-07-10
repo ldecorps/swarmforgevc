@@ -14,7 +14,16 @@ const { execFileSync } = require('node:child_process');
 const SWARMFORGE_SCRIPTS = path.join(__dirname, '..', '..', '..', 'swarmforge', 'scripts');
 const HARNESS = path.join(SWARMFORGE_SCRIPTS, 'test', 'briefing_email_harness.bb');
 const HANDOFFD = path.join(SWARMFORGE_SCRIPTS, 'handoffd.bb');
+const DAEMON_ALARM_LIB = path.join(SWARMFORGE_SCRIPTS, 'daemon_alarm_lib.bb');
 const FILE_NAME = '2026-07-09.md';
+
+function definedFunctionBody(src, defnName, maxChars) {
+  const after = src.split(`(defn ${defnName}`)[1];
+  if (!after) {
+    return null;
+  }
+  return after.slice(0, maxChars);
+}
 
 function ensureBriefingsDir(ctx) {
   if (!ctx.briefingsDir) {
@@ -55,25 +64,42 @@ function registerSteps(registry) {
 
   registry.define(/^the send uses the daemon's configured to\/from and RESEND_API_KEY$/, () => {
     // Wiring-contract guard (real bb read, same pattern as
-    // dispatchGapSteps.js's cadence check): send-configured-briefing-email!
-    // must read notify_email_to/notify_email_from from swarmforge.conf and
-    // RESEND_API_KEY from the daemon's own process env - never a second,
-    // parallel Resend client. The real end-to-end read is exercised for
-    // real (no mocks) by test_handoffd_briefing_email_wiring.sh.
-    const src = fs.readFileSync(HANDOFFD, 'utf8');
-    const fnSrc = src.split('(defn send-configured-briefing-email!')[1];
-    if (!fnSrc) {
+    // dispatchGapSteps.js's cadence check) - checks WHERE the behavior
+    // actually lives now, not a literal inline pattern: the cleaner
+    // extracted daemon_alarm_lib.bb's shared send-configured-email! (BL-215
+    // + BL-214 both read conf/env through it, one Resend client, one
+    // missing-key-warning path), so handoffd.bb's own briefing wrapper is
+    // asserted only to DELEGATE to it, and the actual to/from/RESEND_API_KEY
+    // reading is asserted against send-configured-email! itself. The real
+    // end-to-end read is exercised for real (no mocks) by
+    // test_handoffd_briefing_email_wiring.sh.
+    const handoffdSrc = fs.readFileSync(HANDOFFD, 'utf8');
+    const briefingWrapperBody = definedFunctionBody(handoffdSrc, 'send-configured-briefing-email!', 400);
+    if (!briefingWrapperBody) {
       throw new Error('expected handoffd.bb to define send-configured-briefing-email!');
     }
-    const body = fnSrc.slice(0, 500);
-    if (!/notify_email_to/.test(body) || !/notify_email_from/.test(body)) {
-      throw new Error(`expected send-configured-briefing-email! to read notify_email_to/notify_email_from from conf; got: ${body}`);
+    if (!/daemon-alarm-lib\/send-configured-email!/.test(briefingWrapperBody)) {
+      throw new Error(
+        `expected send-configured-briefing-email! to delegate to daemon_alarm_lib.bb's shared send-configured-email! (no second Resend client); got: ${briefingWrapperBody}`
+      );
     }
-    if (!/System\/getenv "RESEND_API_KEY"/.test(body)) {
-      throw new Error(`expected send-configured-briefing-email! to read RESEND_API_KEY from the daemon's own env; got: ${body}`);
+    if (!/conf-file/.test(briefingWrapperBody)) {
+      throw new Error(`expected send-configured-briefing-email! to pass the daemon's conf-file through; got: ${briefingWrapperBody}`);
     }
-    if (!/daemon-alarm-lib\/send-alarm-email!/.test(body)) {
-      throw new Error(`expected send-configured-briefing-email! to reuse daemon_alarm_lib.bb's send-alarm-email! (no second Resend client); got: ${body}`);
+
+    const alarmLibSrc = fs.readFileSync(DAEMON_ALARM_LIB, 'utf8');
+    const sharedBody = definedFunctionBody(alarmLibSrc, 'send-configured-email!', 800);
+    if (!sharedBody) {
+      throw new Error('expected daemon_alarm_lib.bb to define the shared send-configured-email!');
+    }
+    if (!/notify_email_to/.test(sharedBody) || !/notify_email_from/.test(sharedBody)) {
+      throw new Error(`expected send-configured-email! to read notify_email_to/notify_email_from from conf; got: ${sharedBody}`);
+    }
+    if (!/System\/getenv "RESEND_API_KEY"/.test(sharedBody)) {
+      throw new Error(`expected send-configured-email! to read RESEND_API_KEY from the daemon's own env; got: ${sharedBody}`);
+    }
+    if (!/send-alarm-email!/.test(sharedBody)) {
+      throw new Error(`expected send-configured-email! to reuse send-alarm-email! for the actual POST; got: ${sharedBody}`);
     }
   });
 
