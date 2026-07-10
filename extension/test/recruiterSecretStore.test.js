@@ -9,7 +9,10 @@ const { createFileSecretStore } = require('../out/recruiter/secretStore');
 // for a host-level path (never a path inside this or any target repo) - the
 // module itself never assumes a location, callers always supply one, so
 // these tests prove the real read/write/merge behavior without touching the
-// actual host store.
+// actual host store. os.tmpdir() fixtures are never inside process.cwd()
+// (the default forbidden root), so the happy-path tests below also
+// implicitly exercise that default; the rejection path is tested
+// explicitly further down.
 
 function candidate(overrides = {}) {
   return {
@@ -76,4 +79,44 @@ test('the secrets file is created with owner-only read/write permissions', async
 
   const mode = fs.statSync(secretsFile).mode & 0o777;
   assert.equal(mode, 0o600);
+});
+
+// BL-233 architect bounce (2d96adcb10): a path is only "outside the working
+// tree" by convention unless something actually checks - these prove the
+// guard is real, not just a comment's claim. Uses an EXPLICIT forbidden
+// root (never blanket "any git repository on the filesystem" - an
+// operator's real host-level secrets location can innocently sit inside an
+// unrelated repo, e.g. a dotfiles checkout under their home directory,
+// which has nothing to do with "the target working directory").
+test('refuses to store directly inside the target working directory', () => {
+  const targetRepo = mkTmp();
+  const secretsFile = path.join(targetRepo, 'secrets.json');
+
+  assert.throws(
+    () => createFileSecretStore(secretsFile, targetRepo),
+    /target working directory/i
+  );
+});
+
+test('refuses to store several directories deep inside the target working directory', () => {
+  const targetRepo = mkTmp();
+  const secretsFile = path.join(targetRepo, 'nested', 'deeper', 'secrets.json');
+
+  assert.throws(
+    () => createFileSecretStore(secretsFile, targetRepo),
+    /target working directory/i
+  );
+});
+
+test('does not throw for a path outside the given target working directory', () => {
+  const targetRepo = mkTmp();
+  const secretsFile = path.join(mkTmp(), 'secrets.json'); // a SIBLING tmpdir, not under targetRepo
+
+  assert.doesNotThrow(() => createFileSecretStore(secretsFile, targetRepo));
+});
+
+test('with no explicit root given, defaults to refusing storage inside the current process cwd', () => {
+  const secretsFile = path.join(process.cwd(), 'sfvc-recruiter-secrets-test-should-never-exist.json');
+
+  assert.throws(() => createFileSecretStore(secretsFile), /target working directory/i);
 });
