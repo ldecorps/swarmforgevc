@@ -3,7 +3,7 @@ import * as path from 'path';
 import { BacklogItem } from '../panel/backlogReader';
 import { TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
 import { TicketLifecycleEvent, MergeLogEntry } from '../metrics/gitHistoryAdapter';
-import { RunEntry } from '../runs/runLog';
+import { RunEntry, mostRecentRunForTarget } from '../runs/runLog';
 
 // BL-094: pure projections for the holistic web UI. Every function here
 // takes already-read data (backlog items, holding windows, git-derived
@@ -115,14 +115,6 @@ export interface RecentActivity {
   recentCloses: Array<{ ticketId: string; closeDateIso: string }>;
   recentMerges: MergeLogEntry[];
   currentRun: RunEntry | null;
-}
-
-function mostRecentRunForTarget(runs: RunEntry[], targetPath: string): RunEntry | null {
-  const forTarget = runs.filter((r) => r.targetPath === targetPath);
-  if (forTarget.length === 0) {
-    return null;
-  }
-  return forTarget.reduce((latest, r) => (Date.parse(r.startedAt) > Date.parse(latest.startedAt) ? r : latest));
 }
 
 export function computeRecentActivity(
