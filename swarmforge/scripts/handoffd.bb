@@ -14,6 +14,8 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_inject.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "briefing_email_lib.bb")))
 
 (def poll-ms 1000)
 (def wake-message agent-runtime-lib/default-wake-chat-message)
@@ -41,10 +43,16 @@
 (def project-root
   (or (first *command-line-args*) (usage)))
 
+(def script-dir (str (fs/parent (fs/canonicalize *file*))))
 (def state-dir (fs/path project-root ".swarmforge"))
 (def daemon-dir (fs/path state-dir "daemon"))
 (def roles-file (fs/path state-dir "roles.tsv"))
 (def socket-file (fs/path state-dir "tmux-socket"))
+;; BL-214: same conf handoffd_supervisor.bb's BL-144 alarm already reads -
+;; notify_email_to/notify_email_from live here, RESEND_API_KEY in the
+;; daemon's own process env, same as that alarm path.
+(def conf-file (fs/path script-dir ".." "swarmforge.conf"))
+(def briefings-dir (fs/path project-root "docs" "briefings"))
 (def pid-file (fs/path daemon-dir "handoffd.pid"))
 (def pid-lock-dir (fs/path daemon-dir "pid.lock"))
 (def stop-file (fs/path daemon-dir "stop"))
@@ -659,6 +667,29 @@
       (catch Exception e
         (log! "dispatch-gap-autoroute-error" (:id item) (:assigned-to item) (.getMessage e))))))
 
+;; ── BL-214: briefing-email sweep - the daemon's fourth duty ─────────────────
+;; Runs on the SAME cadence as chase-sweep!/dispatch-gap-sweep! above (no
+;; separate timeout) since this daemon already runs unattended regardless of
+;; whether the VS Code host is open. briefing_email_lib.bb owns the pure
+;; scanning/marker/subject logic (fixture-tested); this is the thin,
+;; environment-specific wiring - reusing daemon_alarm_lib.bb's
+;; send-alarm-email! exactly as handoffd_supervisor.bb's BL-144 alarm does,
+;; so there is still only ONE Resend client in the whole swarm.
+
+(defn send-configured-briefing-email! [subject text]
+  (let [conf (daemon-alarm-lib/parse-conf (when (fs/exists? conf-file) (slurp (str conf-file))))
+        to (get conf "notify_email_to")
+        from (or (get conf "notify_email_from") "onboarding@resend.dev")
+        api-key (System/getenv "RESEND_API_KEY")]
+    (daemon-alarm-lib/send-alarm-email! api-key to from subject text)))
+
+(defn briefing-email-sweep! []
+  (briefing-email-lib/send-unsent-briefings!
+   (str briefings-dir)
+   {:read-briefing-content (fn [file-name] (slurp (str (fs/path briefings-dir file-name))))
+    :send-email! send-configured-briefing-email!
+    :log! (fn [& parts] (apply log! parts))}))
+
 (defn -main []
   (let [roles  (load-roles)
         socket (str/trim (slurp (str socket-file)))]
@@ -714,7 +745,13 @@
                     (try
                       (dispatch-gap-sweep! (load-roles))
                       (catch Exception e
-                        (log! "dispatch-gap-sweep-error" (.getMessage e)))))
+                        (log! "dispatch-gap-sweep-error" (.getMessage e))))
+                    ;; BL-214: briefing-email sweep shares the same cadence -
+                    ;; no separate timeout, same rationale as BL-222 above.
+                    (try
+                      (briefing-email-sweep!)
+                      (catch Exception e
+                        (log! "briefing-email-sweep-error" (.getMessage e)))))
                   (spit (str heartbeat-file) (str (now) "\n"))
                   (when (zero? (mod cycle heartbeat-log-every-cycles))
                     (log! "heartbeat" (str "cycle=" cycle)))
