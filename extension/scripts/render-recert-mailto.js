@@ -59,7 +59,17 @@ dom.window.fetch = (url) => {
 dom.window.eval(fs.readFileSync(path.join(PWA_DIR, 'locales.js'), 'utf8'));
 dom.window.eval(fs.readFileSync(path.join(PWA_DIR, 'app.js'), 'utf8'));
 
-setTimeout(() => {
+// BL-223 VIOLATION fix (architect): a real, arbitrary-duration wait ("hope
+// 50ms is enough") is exactly the flaky real-timer pattern the engineering
+// article's testability rule forbids. This is a single macrotask tick
+// (0ms), the same flush() convention pwaRecertification.test.js's own
+// tests already use - it drains the microtask queue (where app.js's
+// fetch().then() chain resolves) deterministically, not a wall-clock wait.
+function flush() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+flush().then(() => {
   const contentEl = dom.window.document.getElementById('recertContent');
   const confirmLink = [...contentEl.querySelectorAll('a')].find((a) => a.textContent.indexOf('Confirm') === 0);
   if (!confirmLink) {
@@ -74,4 +84,4 @@ setTimeout(() => {
       body: url.searchParams.get('body'),
     })
   );
-}, 50);
+});
