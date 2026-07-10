@@ -59,6 +59,11 @@
       couldNotLoadRecertBatch: 'Could not load recert-batch.json (offline and nothing cached yet).',
       showFrenchScenario: 'Show French rendering',
       hideFrenchScenario: 'Hide French rendering',
+      // BL-261: shown whenever a rendered *Fr field's paired *Untranslated
+      // flag is true (translate.ts degraded to the English fallback) - the
+      // fallback text may still be shown, but never silently as if it were
+      // a genuine French translation.
+      translationUnavailableNotice: 'Machine translation unavailable — showing English.',
       recertHeading: 'Recertify a scenario',
       recertNoneNeeded: 'No scenarios need recertification right now.',
       recertConfirm: 'Confirm — still accurate',
@@ -121,6 +126,7 @@
       couldNotLoadRecertBatch: 'Impossible de charger recert-batch.json (hors ligne et rien en cache).',
       showFrenchScenario: 'Afficher la version française',
       hideFrenchScenario: 'Masquer la version française',
+      translationUnavailableNotice: 'Traduction automatique indisponible — affichage en anglais.',
       recertHeading: 'Recertifier un scénario',
       recertNoneNeeded: 'Aucun scénario à recertifier pour le moment.',
       recertConfirm: 'Confirmer — toujours exact',

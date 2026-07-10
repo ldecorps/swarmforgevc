@@ -57,6 +57,8 @@ const DOMAINS = [
   require('./suiteDurationReadoutSteps'),
   require('./coChangeSteps'),
   require('./needsApprovalSteps'),
+  require('./dependencyGateSteps'),
+  require('./docsUntranslatedFlagSteps'),
 ];
 
 function registerSteps(registry) {

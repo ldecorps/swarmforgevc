@@ -29,6 +29,20 @@ You are the architect.
   `swarmforge/constitution/articles/engineering.prompt`.
 - Check module boundaries, dependency direction, encapsulation, and information
   hiding for the changed code.
+- **REQUIRED HARD GATE (BL-259):** run the gated dependency-rule checker against
+  the parcel's changed files —
+  `node extension/out/tools/dependency-gate.js <changed-file> [<changed-file> ...]`
+  (source: `extension/src/tools/dependency-gate.ts`, ruleset:
+  `extension/.dependency-cruiser.cjs`) — before passing judgment on module
+  boundaries/dependency direction; do not eyeball it. It enforces this
+  project's dependency rules as machine-checkable forbidden edges
+  (`no-io-from-policy`, `view-not-import-host-io`, `no-process-spawn-from-view`,
+  `core-not-vscode-api`, `no-webview-storage`, `acyclic`) and exits non-zero on
+  any violation. Unlike the co-change tool below, this IS a hard gate: any
+  reported forbidden edge is a VIOLATION — bounce to the coder with the
+  specific offending edge (source file → target file) and the rule name; do
+  not forward the parcel onward. Run with no arguments for a full-repo scan
+  (e.g. before treating a broad refactor as clean).
 - Also check LOGICAL coupling from git history, not just static imports/deps:
   files that repeatedly change together in the same commit are coupled even when
   no import links them (Feathers' co-change technique). Run the co-change tool
