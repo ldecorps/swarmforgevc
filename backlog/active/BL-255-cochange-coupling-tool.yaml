@@ -1,0 +1,99 @@
+id: BL-255
+title: "Co-change coupling tool: automate the architect's Feathers temporal-coupling check over git history"
+direction: tooling
+priority: 40
+mutation_cost: medium
+source: "operator intake 2026-07-10 (via coordinator): backlog/INTAKE-cochange-coupling-tool.md — 'make the Feathers co-change check a real tool the architect runs, not just a prompt instruction.'"
+
+description: |
+  Make the architect's MANUAL Feathers co-change check (architect.prompt:32-37) a
+  real, repeatable host-side tool. Today the architect is told to eyeball `git log`
+  for files that repeatedly change together — logical/temporal coupling the static
+  import graph misses — a non-reproducible manual step. This makes it an analysis
+  the architect runs and consumes.
+
+  Inspiration — Michael Feathers, "Using Repository Analysis to Find Single
+  Responsibility Violations" (delta-flora): things changed together in a commit are
+  usually one story, so coincident change reveals responsibility/coupling that
+  static imports don't show. Treat repo history as design documentation.
+
+  SCOPE DECISION (specifier's call, per the intake's "specifier decides"): this
+  ticket is the TEMPORAL co-change lens ONLY, at FILE level.
+    - File-level is the MVP (matches architect.prompt's "which files most often
+      appear alongside them"). Method-level (delta-flora went there) is a valuable
+      LATER slice, not this one.
+    - The complementary STATIC dependency-direction gate (import-direction /
+      Dependency Inversion — high-level policy independent of low-level detail;
+      adapters depend inward) is a SEPARATE companion concern, NOT folded in here.
+      Static + temporal are complementary lenses; a later ticket can add the static
+      one (or unify them). Flagging this as a candidate follow-on, not building it.
+
+  Wanted behavior (observable):
+    - Given the parcel's changed files, the tool reports which OTHER files most
+      frequently co-change with them across git history, ranked by co-occurrence
+      count / support.
+    - A file pair whose co-change frequency is at or above a tunable threshold is
+      flagged as suspected logical coupling; a pair below it is not.
+    - Co-change surfaces coupling that has NO static import link between the files
+      (the whole point — coupling the dependency graph misses).
+    - A tunable history window bounds which commits are counted (all vs recent N).
+    - Output is a concise, DETERMINISTIC report (stable ordering) the architect
+      consumes during review; the architect still makes the pass/bounce judgment.
+
+  Tunable knobs (do NOT hardcode; sensible defaults, Feathers used group size > 2 and
+  frequency > 3 as a reference point):
+    - minimum co-change frequency / support,
+    - minimum group size (for clustering beyond pairs),
+    - history window (all commits vs recent N).
+
+  Constraints:
+    - TESTABLE host-side (engineering test-double rules): git-history reading sits
+      behind an INJECTABLE SEAM fed RECORDED `git log --name-only`/`--numstat`
+      output; NO real git invocation in unit tests. Assert on the computed co-change
+      ranking from fixture history, never on live repo state.
+    - DETERMINISTIC: stable ordering (break ties deterministically) so the
+      architect's report diffs cleanly.
+    - NEW project code, not a wrapped external tool: no existing co-change tool in
+      the repo (grep-confirmed). TS, host-side, alongside the other quality scripts,
+      with its own unit tests. (The pinned-tool discipline applies only when wrapping
+      an external tool; this is project code.)
+    - INFORMS, does not gate: the tool produces a report; the architect makes the
+      judgment. Do not auto-bounce on a co-change flag.
+
+  Scope: (a) a host-side TS analysis module + CLI (e.g. extension/src/tools/ or
+  scripts/quality/) that, given the parcel's changed files and git-history output
+  from an injectable seam, computes per-file co-change frequencies, ranks
+  co-changers, and flags pairs above the tunable threshold; (b) tunable knobs
+  (min-frequency, min-group-size, window) with defaults; (c) a concise deterministic
+  report format the architect consumes. When the tool lands, update
+  architect.prompt:32-37 to have the architect RUN and consume the tool (replacing
+  the manual "inspect git log" wording) — a documenter/prompt step at build time, not
+  before the tool exists. Verify the live architect review path before finalizing the
+  integration wording.
+
+  DELIVERY: buildable now (no unbuilt dependency). Priority normal (operator did not
+  mark it top). Likely a single slice for the file-level MVP.
+
+acceptance: specs/features/BL-255-cochange-coupling-tool.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (git-history fed through the injectable seam as
+  recorded fixture output — no live git):
+  1. Feed a recorded history where files A and B co-change often and A and C rarely;
+     run the analysis for changed file A; assert B is ranked above C by co-change
+     frequency.
+  2. Set a minimum co-change frequency threshold; assert a pair at/above it is
+     flagged as suspected coupling and a pair below it is not.
+  3. Feed two files that co-change frequently with no import link between them;
+     assert they are reported as coupled.
+  4. Set a history window to the most recent N commits; assert commits older than the
+     window do not contribute to the co-change counts.
+  5. Run the analysis twice over identical inputs; assert byte-identical ranked
+     reports (deterministic ordering).
+  6. Confirm the unit tests use recorded git-log fixtures via the seam and invoke no
+     real git.
+
+# HUMAN APPROVAL: feature file specs/features/BL-255-cochange-coupling-tool.feature
+# is a NEW draft authored by the specifier and is PENDING human review before it is
+# treated as the authoritative acceptance contract.
+human_approval: pending
