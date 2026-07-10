@@ -301,12 +301,23 @@
     (spit (str path) content)
     (str path)))
 
+;; BL-215: one-shot per process - the daemon's launch environment does not
+;; change mid-process, so a repeated warning across polls/sweeps would just
+;; be spam once the operator has already been told once.
+(def missing-key-warned? (atom false))
+
 (defn send-configured-alarm-email! [subject text]
   (let [conf (daemon-alarm-lib/parse-conf (when (fs/exists? conf-file) (slurp (str conf-file))))
         to (get conf "notify_email_to")
         from (or (get conf "notify_email_from") "onboarding@resend.dev")
-        api-key (System/getenv "RESEND_API_KEY")]
-    (daemon-alarm-lib/send-alarm-email! api-key to from subject text)))
+        api-key (System/getenv "RESEND_API_KEY")
+        result (daemon-alarm-lib/send-alarm-email! api-key to from subject text)]
+    (daemon-alarm-lib/warn-missing-key-if-needed!
+     result
+     {:already-warned?! (fn [] @missing-key-warned?)
+      :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+      :mark-warned! (fn [] (reset! missing-key-warned? true))})
+    result))
 
 (defn distinct-sessions []
   (if (fs/exists? roles-file)
