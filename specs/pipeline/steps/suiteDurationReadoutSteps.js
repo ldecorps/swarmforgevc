@@ -73,6 +73,27 @@ function runBriefingLineCli(targetPath) {
   return execFileSync('node', [CLI_PATH], { cwd: targetPath, encoding: 'utf8' }).trim();
 }
 
+// Hardener fix (BL-113 Gherkin mutation): validate the "<state>"/"<flag>"
+// example values against the exact known set rather than a binary
+// `=== oneLiteral` ternary, which collapses BOTH the real other value AND
+// any mutation of it into the same else-branch - a mutated "within The
+// bound" or "omitS" is indistinguishable from the real value under that
+// shape, so the assertion downstream (itself independently derived from
+// the SAME collapsing pattern) trivially agrees with it either way. Same
+// lookup-and-reject-unknown pattern as recruiterAcquireSteps.js's
+// WALL_TEXT_TO_AUTOMATION (BL-233), bakeoffRosterSteps.js's
+// KNOWN_COST_TIERS (BL-250), and docsImplementedStatusSteps.js's
+// IMPLEMENTED_BY_TREATMENT (BL-253).
+const RECORDS_BY_STATE = {
+  'over the bound': overBoundRecords,
+  'within the bound': withinBoundRecords,
+};
+
+const WARN_BY_FLAG_VERB = {
+  shows: true,
+  omits: false,
+};
+
 function registerSteps(registry) {
   // ── Background ───────────────────────────────────────────────────────
   registry.define(
@@ -84,8 +105,11 @@ function registerSteps(registry) {
 
   // ── surface-readout-01 ───────────────────────────────────────────────
   registry.define(/^the latest unit-suite duration is "([^"]+)" by the creep-warning criterion$/, (ctx, state) => {
-    const records = state === 'over the bound' ? overBoundRecords() : withinBoundRecords();
-    writeDurationRecords(ctx.targetPath, records);
+    const recordsFn = RECORDS_BY_STATE[state];
+    if (!recordsFn) {
+      throw new Error(`unrecognized state "${state}" - expected one of: ${Object.keys(RECORDS_BY_STATE).join(', ')}`);
+    }
+    writeDurationRecords(ctx.targetPath, recordsFn());
   });
 
   registry.define(/^the "([^"]+)" renders its suite-duration readout$/, (ctx, surface) => {
@@ -112,7 +136,10 @@ function registerSteps(registry) {
   });
 
   registry.define(/^it "([^"]+)" a regression flag$/, (ctx, flagVerb) => {
-    const expectWarn = flagVerb === 'shows';
+    if (!Object.prototype.hasOwnProperty.call(WARN_BY_FLAG_VERB, flagVerb)) {
+      throw new Error(`unrecognized flag verb "${flagVerb}" - expected one of: ${Object.keys(WARN_BY_FLAG_VERB).join(', ')}`);
+    }
+    const expectWarn = WARN_BY_FLAG_VERB[flagVerb];
     if (ctx.surface === 'holistic UI') {
       if (ctx.holisticState.warn !== expectWarn) {
         throw new Error(`expected holistic warn=${expectWarn}, got ${ctx.holisticState.warn}`);
