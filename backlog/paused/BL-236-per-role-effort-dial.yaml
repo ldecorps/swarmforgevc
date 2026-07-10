@@ -1,0 +1,61 @@
+id: BL-236
+title: "Per-role effort dial: suggest + manually set reasoning-effort per role (Suggest tier)"
+direction: feature
+milestone: M5
+priority: 45
+mutation_cost: medium
+depends_on: [BL-235]
+source: "coordinator roadmap-gap-scan 2026-07-10; gap #2. Spec.MD 'Effort dial' (~688), M5. Distinct from BL-233 (ranks models by cost) — this is the per-role EFFORT lever."
+
+description: |
+  Roadmap gap #2. Beyond which model runs a role, a reasoning-effort /
+  thinking-budget lever: suggest lower effort for mechanical roles (cleaner,
+  documenter) and higher for design-heavy ones (architect, specifier), and let
+  the operator set it per role.
+
+  Scope to the conservative "Suggest" tier only (Spec.MD's tiered autonomy):
+  recommend a per-role effort at run start with a one-line rationale; the operator
+  accepts or overrides; nothing changes silently. The Adapt (auto-escalate on
+  bounces) and Auto (apply within budget bounds) tiers are explicitly DEFERRED to
+  later items. Paused proposal, M5 (not M1).
+
+  Depends on BL-235: setting a role's effort re-issues its launch command with the
+  effort argument swapped and respawns the agent — the same in-memory respawn
+  mechanism BL-235 builds (swarmforge.conf window lines already carry --effort per
+  role today, statically). This adds the suggestion + the live per-role dial.
+
+  Wanted behavior (observable):
+    - At run start, a per-role effort suggestion with a one-line rationale;
+      higher for design-heavy roles, lower for mechanical ones.
+    - Suggestions are advisory: nothing changes until the operator accepts (never
+      applied silently).
+    - Setting a role's effort via its dial respawns that role on the new effort,
+      in the in-memory config only (swarmforge.conf untouched, per BL-235).
+    - A backend that exposes no reasoning-effort setting shows the dial as
+      unavailable rather than sending an unsupported argument.
+
+  Constraints:
+    - In-memory only (never persist to swarmforge.conf); reuse BL-235's respawn.
+    - Suggestions are heuristic/advisory (price+demand priors, per Spec.MD's
+      cost-aware advisor); never assume real-time rates.
+    - Testable boundary: the dial is webview UI; suggestion + apply logic is a
+      host-side module.
+
+  Scope: extension host — per-role effort suggestion (from role-demand priors),
+  the in-memory effort-set + respawn (via BL-235), and the webview dial;
+  backend capability check for whether an effort setting exists.
+
+acceptance: specs/features/BL-236-per-role-effort-dial.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (host-side; UI seam faked):
+  1. Start a swarm; assert each role gets an effort suggestion with a one-line
+     rationale, higher for design-heavy roles and lower for mechanical ones.
+  2. Do not accept a suggestion; assert the role's effort is unchanged.
+  3. Set a role's effort via its dial; assert the role respawned with the new
+     effort and swarmforge.conf on disk is unchanged (in-memory only).
+  4. Point a role at a backend with no effort setting; assert the dial shows
+     unavailable and no unsupported argument is sent.
+
+# HUMAN APPROVAL: feature file specs/features/BL-236-...feature is a new draft
+# authored by the specifier and is pending human review.
