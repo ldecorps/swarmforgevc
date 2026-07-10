@@ -75,6 +75,15 @@ function flush() {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+// BL-238 keyboard-nav-tiles-01/pwa-parity-05: an explicit, visible focus
+// ring for every native interactive element - several controls zero out
+// their border, which in some browsers can also suppress the default
+// focus ring on custom-styled buttons.
+test('BL-238: index.html defines a visible focus-visible outline for interactive elements', () => {
+  const html = fs.readFileSync(path.join(PWA_DIR, 'index.html'), 'utf8');
+  assert.match(html, /button:focus-visible[\s\S]*?outline:/, 'expected an explicit :focus-visible outline rule');
+});
+
 test('renders the state board, velocity, burndown, and cycle-time sections from one fetch (dashboard-03)', async () => {
   const dom = renderDashboard(fakeDashboard());
   await flush();

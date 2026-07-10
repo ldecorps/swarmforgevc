@@ -88,20 +88,21 @@ function debouncedSendTilePaneSize(role, tile, output) {
   resizeDebounceTimers.set(role, timer);
 }
 
-runsToggleBtn.addEventListener('click', () => {
-  recentRunsEl.classList.toggle('collapsed');
-  runsToggleBtn.textContent = recentRunsEl.classList.contains('collapsed') ? '▸' : '▾';
-});
+// BL-238: aria-expanded tracks the same collapsed/expanded state the glyph
+// swap already conveys visually, so a screen reader announces the current
+// state of a native <button> it already reads as keyboard-operable for free.
+function wireCollapseToggle(button, panel) {
+  button.addEventListener('click', () => {
+    panel.classList.toggle('collapsed');
+    const collapsed = panel.classList.contains('collapsed');
+    button.textContent = collapsed ? '▸' : '▾';
+    button.setAttribute('aria-expanded', String(!collapsed));
+  });
+}
 
-backlogToggleBtn.addEventListener('click', () => {
-  backlogEl.classList.toggle('collapsed');
-  backlogToggleBtn.textContent = backlogEl.classList.contains('collapsed') ? '▸' : '▾';
-});
-
-metricsToggleBtn.addEventListener('click', () => {
-  metricsEl.classList.toggle('collapsed');
-  metricsToggleBtn.textContent = metricsEl.classList.contains('collapsed') ? '▸' : '▾';
-});
+wireCollapseToggle(runsToggleBtn, recentRunsEl);
+wireCollapseToggle(backlogToggleBtn, backlogEl);
+wireCollapseToggle(metricsToggleBtn, metricsEl);
 
 // BL-034: delegated on the stable list container, not per-row, since
 // renderBacklog replaces backlogListEl's innerHTML on every poll.
@@ -305,8 +306,11 @@ function backlogRowHtml(item) {
     const assigneeOptions = [...tiles.keys()].map((role) =>
       '<option value="' + role + '"' + (role === item.assignedTo ? ' selected' : '') + '>' + role + '</option>'
     ).join('');
-    controls = '<select class="bl-assignee-select" data-id="' + item.id + '">' + assigneeOptions + '</select>' +
-      '<button class="bl-mark-done" data-id="' + item.id + '">Done</button>';
+    // BL-238: per-row aria-labels disambiguate these otherwise-identical
+    // "Done" buttons / unlabeled selects once there is more than one
+    // active row on screen.
+    controls = '<select class="bl-assignee-select" data-id="' + item.id + '" aria-label="Assignee for ' + item.id + '">' + assigneeOptions + '</select>' +
+      '<button class="bl-mark-done" data-id="' + item.id + '" aria-label="Mark ' + item.id + ' done">Done</button>';
   } else if (item.assignedTo) {
     // For todo items, show the intended assignee
     assignedDisplay = '<span class="bl-assigned">' + item.assignedTo + '</span>';
@@ -537,6 +541,22 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// BL-238 status-not-color-only-04: derives one text label from a tile's
+// liveness classes (priority: dead > needs-human > stalled > working),
+// so the border-color-only cues above always have a textual equivalent.
+// Idle (none of the four classes) intentionally clears the badge rather
+// than showing a fifth "idle" label - the absence of a flag IS idle.
+function updateStatusBadge(entry) {
+  const cls = entry.tile.classList;
+  const label = cls.contains('dead') ? 'Dead'
+    : cls.contains('needs-human') ? 'Needs human'
+    : cls.contains('stalled') ? 'Stalled'
+    : cls.contains('working') ? 'Working'
+    : '';
+  entry.statusBadge.textContent = label;
+  entry.statusBadge.classList.toggle('visible', label !== '');
+}
+
 function ensureTile(role, displayName, agent, currentModel, availableModels, currentEffort, availableEfforts, suggestedEffort, effortRationale) {
   if (tiles.has(role)) {
     return tiles.get(role);
@@ -553,6 +573,7 @@ function ensureTile(role, displayName, agent, currentModel, availableModels, cur
   const nudgeBtn = document.createElement('button');
   nudgeBtn.className = 'nudge-btn';
   nudgeBtn.textContent = 'Nudge';
+  nudgeBtn.setAttribute('aria-label', 'Nudge ' + displayName);
   nudgeBtn.addEventListener('click', () => {
     tile.classList.remove('stalled');
     vscode.postMessage({ type: 'input', role, data: '\n' });
@@ -561,6 +582,7 @@ function ensureTile(role, displayName, agent, currentModel, availableModels, cur
   const restartBtn = document.createElement('button');
   restartBtn.className = 'restart-btn';
   restartBtn.textContent = 'Restart';
+  restartBtn.setAttribute('aria-label', 'Restart ' + displayName);
   restartBtn.addEventListener('click', () => {
     tile.classList.remove('dead');
     vscode.postMessage({ type: 'restartAgent', role });
@@ -569,10 +591,17 @@ function ensureTile(role, displayName, agent, currentModel, availableModels, cur
   const blBadge = document.createElement('span');
   blBadge.className = 'tile-bl-badge';
 
+  // BL-238 status-not-color-only-04: liveness (needs-human/dead/stalled/
+  // working) was conveyed only by a border color/animation - text here
+  // gives the same information to a screen reader and a color-blind user.
+  const statusBadge = document.createElement('span');
+  statusBadge.className = 'tile-status-badge';
+
   const header = document.createElement('div');
   header.className = 'tile-header';
   header.innerHTML = '<span>' + displayName + '</span><span class="tile-agent">' + agent + '</span>';
   header.appendChild(blBadge);
+  header.appendChild(statusBadge);
 
   // BL-235 (M5, narrow slice): a model dropdown only for claude-backed
   // roles (the only agent this switch mechanism supports so far) - picking
@@ -582,6 +611,7 @@ function ensureTile(role, displayName, agent, currentModel, availableModels, cur
   if (Array.isArray(availableModels) && availableModels.length > 0) {
     modelSelect = document.createElement('select');
     modelSelect.className = 'model-select';
+    modelSelect.setAttribute('aria-label', displayName + ' model');
     availableModels.forEach((model) => {
       const option = document.createElement('option');
       option.value = model;
@@ -606,6 +636,7 @@ function ensureTile(role, displayName, agent, currentModel, availableModels, cur
   if (Array.isArray(availableEfforts) && availableEfforts.length > 0) {
     effortSelect = document.createElement('select');
     effortSelect.className = 'effort-select';
+    effortSelect.setAttribute('aria-label', displayName + ' reasoning effort' + (effortRationale ? ' - ' + effortRationale : ''));
     if (effortRationale) {
       effortSelect.title = effortRationale;
     }
@@ -625,13 +656,33 @@ function ensureTile(role, displayName, agent, currentModel, availableModels, cur
 
   header.appendChild(nudgeBtn);
   header.appendChild(restartBtn);
+
+  // BL-238: the header selects/expands this tile on click - previously
+  // mouse-only. tabindex + role="button" + a keydown handler for
+  // Enter/Space give it the same keyboard/screen-reader affordance a real
+  // <button> gets for free, without changing its existing click behavior
+  // or the child controls' own independent interaction (guarded the same
+  // way the click handler already guards them).
+  header.tabIndex = 0;
+  header.setAttribute('role', 'button');
+  header.setAttribute('aria-label', 'Select ' + displayName + ' tile');
+
+  const onHeaderControl = (target) => {
+    const onDropdown = (select) => select && (target === select || select.contains(target));
+    return (
+      target === nudgeBtn || nudgeBtn.contains(target) ||
+      target === restartBtn || restartBtn.contains(target) ||
+      onDropdown(modelSelect) || onDropdown(effortSelect)
+    );
+  };
   header.addEventListener('click', (e) => {
-    const onDropdown = (select) => select && (e.target === select || select.contains(e.target));
-    const onControl =
-      e.target === nudgeBtn || nudgeBtn.contains(e.target) ||
-      e.target === restartBtn || restartBtn.contains(e.target) ||
-      onDropdown(modelSelect) || onDropdown(effortSelect);
-    if (!onControl) {
+    if (!onHeaderControl(e.target)) {
+      selectTile(role);
+    }
+  });
+  header.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && !onHeaderControl(e.target)) {
+      e.preventDefault();
       selectTile(role);
     }
   });
@@ -640,8 +691,15 @@ function ensureTile(role, displayName, agent, currentModel, availableModels, cur
   output.className = 'tile-output';
   output.tabIndex = 0;
   output.dataset.role = role;
+  // BL-238: names and roles the live terminal feed for a screen reader.
+  // No aria-live here deliberately - a continuously-streaming pane would
+  // announce every update, which is worse than silence for a fast-moving
+  // agent transcript; Tab-focus + the tile header's own status text
+  // (needs-human/stalled/dead below) are the accessible entry points.
+  output.setAttribute('role', 'log');
+  output.setAttribute('aria-label', displayName + ' output');
 
-  const entry = { tile, output, blBadge, text: '', tailLocked: true };
+  const entry = { tile, output, blBadge, statusBadge, text: '', tailLocked: true };
 
   output.addEventListener('focus', () => {
     activeRole = role;
@@ -719,6 +777,7 @@ window.addEventListener('message', (event) => {
           } else {
             entry.tile.classList.remove('dead');
           }
+          updateStatusBadge(entry);
         }
       });
       break;
@@ -732,6 +791,7 @@ window.addEventListener('message', (event) => {
           } else {
             entry.tile.classList.remove('stalled');
           }
+          updateStatusBadge(entry);
         }
       });
       break;
@@ -740,6 +800,7 @@ window.addEventListener('message', (event) => {
         const entry = tiles.get(e.role);
         if (entry) {
           entry.tile.classList.toggle('working', e.working);
+          updateStatusBadge(entry);
         }
       });
       break;
@@ -754,6 +815,7 @@ window.addEventListener('message', (event) => {
           } else {
             entry.tile.classList.remove('needs-human');
           }
+          updateStatusBadge(entry);
         }
       });
       break;
