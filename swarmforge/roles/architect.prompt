@@ -31,9 +31,15 @@ You are the architect.
   hiding for the changed code.
 - Also check LOGICAL coupling from git history, not just static imports/deps:
   files that repeatedly change together in the same commit are coupled even when
-  no import links them (Feathers' co-change technique). Inspect the changed
-  files' co-change frequency in `git log` — which files most often appear
-  alongside them — and flag hidden coupling the static dependency graph misses.
+  no import links them (Feathers' co-change technique). Run the co-change tool
+  against the parcel's changed files —
+  `node extension/out/tools/co-change-report.js <changed-file> [<changed-file> ...]`
+  (source: `extension/src/tools/co-change-report.ts`, BL-255) — rather than
+  eyeballing `git log` by hand; it ranks other files by co-change frequency and
+  flags any pair at or above the tunable threshold (`--min-frequency`,
+  `--min-group-size`, `--window`; defaults: frequency 3, group size 2, full
+  history) as suspected coupling. The tool only informs — it never auto-bounces;
+  you still make the pass/send-back judgment on what it reports.
   (Operator request 2026-07-10.)
 - If the change respects the architecture, pass it forward to the documenter.
 - If it violates an architecture rule, send it back to the coder with a precise,

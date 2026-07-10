@@ -33,6 +33,22 @@ test('files are ranked by how often they co-change with the file under review', 
   assert.equal(coChangers[1].count, 1);
 });
 
+// Every commit fixture above happens to touch the file under review in
+// EVERY commit - in a real repo, most commits touch neither the file
+// under review nor its co-changers at all. This proves such unrelated
+// commits are excluded from the count rather than polluting it (or
+// crashing on a fileSets entry with no overlap).
+test('a commit that does not touch the file under review contributes nothing to its co-change counts', () => {
+  const history = [
+    commit('c1', '2026-07-01T00:00:00Z', ['A.ts', 'B.ts']),
+    commit('c2', '2026-07-02T00:00:00Z', ['X.ts', 'Y.ts']),
+  ];
+  const report = computeCoChangeReport(['A.ts'], history, { minFrequency: 1, minGroupSize: 1 });
+  const coChangers = ranked(report, 'A.ts');
+  assert.deepEqual(coChangers.map((c) => c.file), ['B.ts']);
+  assert.equal(coChangers[0].count, 1);
+});
+
 test('a file with no co-changers at all reports an empty list, never a crash', () => {
   const history = [commit('c1', '2026-07-01T00:00:00Z', ['A.ts'])];
   const report = computeCoChangeReport(['A.ts'], history, { minFrequency: 1, minGroupSize: 1 });
