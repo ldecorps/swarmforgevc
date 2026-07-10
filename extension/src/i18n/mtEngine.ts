@@ -53,7 +53,18 @@ function isDeeplTranslateResponse(value: unknown): value is DeeplTranslateRespon
 export function createDeeplEngine(apiKey: string, postFn: PostFn = defaultPost): MtEngine {
   return {
     async translate(text: string, targetLang: string): Promise<TranslateResult> {
-      const body = JSON.stringify({ text: [text], target_lang: targetLang.toUpperCase() });
+      // BL-230: tag_handling/ignore_tags is DeepL's own documented
+      // mechanism for "translate around this span verbatim" - jargonPreserve.ts
+      // wraps preserved tokens in <jargon> tags before this call; DeepL
+      // passes their content through untouched (the tags themselves stay
+      // in the response, stripped back out by translate.ts afterward).
+      // Harmless to always set: a no-op when the text has no such tags.
+      const body = JSON.stringify({
+        text: [text],
+        target_lang: targetLang.toUpperCase(),
+        tag_handling: 'xml',
+        ignore_tags: ['jargon'],
+      });
       try {
         const res = await postFn(DEEPL_API_URL, body, apiKey);
         if (!res.ok) {
