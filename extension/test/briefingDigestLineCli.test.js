@@ -35,6 +35,17 @@ test('an absent briefings directory falls back to a 24h window, not a crash', ()
   assert.equal(sinceLastBriefingMs(path.join(mkTmp(), 'nonexistent'), nowMs), nowMs - 24 * 60 * 60 * 1000);
 });
 
+test('a second-most-recent filename that is not a parseable date falls back to a 24h window, not NaN', () => {
+  const dir = mkTmp();
+  // "9999-99-99" sorts before "zzz-not-a-date" alphabetically, landing it in
+  // the second-most-recent slot Date.parse can't turn into a real instant.
+  fs.writeFileSync(path.join(dir, '9999-99-99.md'), 'malformed\n');
+  fs.writeFileSync(path.join(dir, 'zzz-not-a-date.md'), 'also not a date\n');
+  const nowMs = Date.parse('2026-07-10T20:00:00Z');
+
+  assert.equal(sinceLastBriefingMs(dir, nowMs), nowMs - 24 * 60 * 60 * 1000);
+});
+
 // ── formatMergedBlockedDigest ────────────────────────────────────────────
 // graceful-missing-data-05
 

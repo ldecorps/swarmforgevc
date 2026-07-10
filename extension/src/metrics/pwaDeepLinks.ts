@@ -6,20 +6,14 @@
 // recertificationStore.ts's parseRecertEmailTo/readRecertEmailTo
 // convention exactly, except absent/unset degrades to no deep link at all
 // (graceful-missing-data-05), never a broken link or a fabricated URL.
-import * as fs from 'fs';
-import * as path from 'path';
+import { parseConfigValue, readConfigValue } from '../util/swarmforgeConfig';
 
 export function parsePwaBaseUrl(confContent: string): string | undefined {
-  const match = confContent.match(/^\s*config\s+pwa_base_url\s+(\S+)/m);
-  return match ? match[1] : undefined;
+  return parseConfigValue(confContent, 'pwa_base_url');
 }
 
 export function readPwaBaseUrl(targetPath: string): string | undefined {
-  try {
-    return parsePwaBaseUrl(fs.readFileSync(path.join(targetPath, 'swarmforge', 'swarmforge.conf'), 'utf8'));
-  } catch {
-    return undefined;
-  }
+  return readConfigValue(targetPath, 'pwa_base_url');
 }
 
 function withTrailingSlash(baseUrl: string): string {
