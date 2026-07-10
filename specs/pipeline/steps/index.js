@@ -39,6 +39,7 @@ const DOMAINS = [
   require('./accessibilitySteps'),
   require('./gateAnswerSteps'),
   require('./deviceRegistrySteps'),
+  require('./coordinatorProvisioningSteps'),
 ];
 
 function registerSteps(registry) {

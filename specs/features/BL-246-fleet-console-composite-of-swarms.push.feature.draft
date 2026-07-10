@@ -1,0 +1,15 @@
+# PARKED DRAFT — NOT an executable acceptance contract (.feature.draft, so no
+# *.feature glob or the acceptance runner picks it up). This is BL-246's DEFERRED
+# @m2 push slice: true Observer-style propagation without an explicit refresh. The
+# PoC uses POLL ("when the console refreshes"); push is a later milestone. When the
+# push slice is built, MOVE this scenario into the live acceptance file
+# specs/features/BL-246-fleet-console-composite-of-swarms.feature and re-lint there.
+# Background (verbatim from the live file):
+#   Given a swarm "alpha" working project "proj-a" publishing to the fleet console
+#   And a swarm "beta" working project "proj-b" publishing to the fleet console
+
+# BL-246 fleet-console-push-05 (deferred, @m2)
+Scenario: a swarm state change propagates without an explicit refresh
+  Given the console is observing the fleet
+  When swarm "alpha" transitions from active to converging
+  Then the console reflects the change without a manual refresh

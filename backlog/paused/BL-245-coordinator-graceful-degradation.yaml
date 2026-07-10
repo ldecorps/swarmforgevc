@@ -1,0 +1,43 @@
+id: BL-245
+title: "Baton: graceful degradation when the coordinator dies (workers keep flowing; swarm reports degraded)"
+direction: reliability
+milestone: M7
+priority: 15
+mutation_cost: medium
+depends_on: [BL-243]
+source: "Baton epic BL-242 child."
+
+description: |
+  Losing the coordinator must not stop work in flight. Workers keep flowing handoffs
+  over the local bus; only convergence-triggering and the fleet-facing identity go
+  dark until the coordinator respawns.
+
+  Wanted behavior (observable):
+    - When the coordinator pane dies, in-flight worker agents keep running and
+      handoffd keeps delivering point-to-point handoffs between them.
+    - While the coordinator is down, status() for the swarm is "degraded" and
+      convergence-triggering is reported unavailable.
+    - On respawn, the coordinator re-reads swarm state from the filesystem event
+      log, status() clears from "degraded", and no in-flight worker state is lost.
+
+  Constraints:
+    - Respawn recovery reads durable filesystem state (.swarmforge/), consistent
+      with today's coordinator startup re-read; do not depend on in-memory state.
+    - Bounded/safe respawn per the engineering bounded-retry rule.
+    - Testable host-side: the degraded-status computation and the respawn re-read
+      are host-side modules; killing/respawning a pane is faked in unit tests.
+
+  Scope: the swarm status computation (degraded when coordinator_alive is false),
+  the convergence-unavailable signal, and the coordinator respawn re-read path.
+
+acceptance: specs/features/BL-245-coordinator-graceful-degradation.feature
+
+qa_e2e_procedure: |
+  1. With work in flight, kill the coordinator pane; assert worker agents keep
+     running and handoffd keeps delivering handoffs between them.
+  2. Refresh the console; assert status() is "degraded" and convergence-triggering
+     is reported unavailable.
+  3. Respawn the coordinator; assert it re-reads state from the filesystem log,
+     status() clears from "degraded", and no in-flight worker state is lost.
+
+# HUMAN APPROVAL: new specifier draft feature file, pending human review.
