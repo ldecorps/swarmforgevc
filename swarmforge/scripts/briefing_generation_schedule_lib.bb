@@ -73,10 +73,16 @@
        (not (briefing-already-generated? briefings-dir (utc-day-key now-ms)))))
 
 (defn briefing-due-instruction
-  "BL-099's own literal nudge text (extension.ts's
-   startOrRestartDailyBriefing), reused verbatim and parametrized only by
-   the target date, so the coordinator's own composition instructions never
-   diverge between the host timer and this headless trigger."
+  "BL-099's own nudge prose (extension.ts's startOrRestartDailyBriefing) -
+   the static wording is reused verbatim; the target date is interpolated
+   here as the real day-key, whereas extension.ts's own instruction still
+   sends the literal placeholder text \"<date>\" (unverified/untested on
+   that side - grep-confirmed no test locks in that string). The two
+   trigger paths are therefore NOT byte-identical when the target date
+   differs from the placeholder text itself; both are expected to land the
+   coordinator on the same file in practice (an LLM reader resolves either
+   form to \"today\"), but a future change to either side's wording should
+   not assume the other stays in lockstep without re-checking this comment."
   [day-key]
   (str "Daily briefing due: compose today's briefing per your role and commit it to docs/briefings/" day-key ".md."))
 
