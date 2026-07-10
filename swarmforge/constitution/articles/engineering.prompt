@@ -187,3 +187,12 @@
   step and reference it as a quoted shell variable (`"$VAR"`) in the script, so
   it is passed as data, never as script text. (BL-092: a workflow put
   `steps.changed.outputs.files` straight into `run:`.)
+- Any retry-after-failure or auto-restart loop must be BOUNDED: cap the number
+  of attempts and space them with a backoff — never retry immediately and
+  unconditionally. On exhausting the cap, surface or escalate the failure (a
+  user-visible warning, or a needs-human dead-letter) rather than spinning
+  forever. Match the project's existing convention: chaserMonitor's bounded
+  retries then dead-letter escalation (BL-122) and tmuxClient's capped respawn
+  with backoff. (BL-115: the bounceWatcher re-establish-on-error had no
+  cap/backoff, so a persistent `fs.watch` error — e.g. inotify ENOSPC — would
+  restart immediately, forever.)
