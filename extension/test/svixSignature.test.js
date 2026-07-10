@@ -2,7 +2,11 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const { verifySvixSignature, isTimestampFresh, SVIX_TIMESTAMP_TOLERANCE_SECONDS } = require('../out/notify/svixSignature');
 
-const SECRET = 'whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw';
+// BL-225: built at runtime from an obviously-fake seed, not a committed
+// whsec_ literal (GitGuardian flagged the fixed literal across history as
+// a "Stripe Webhook Secret" false positive - whsec_ is shared by Svix and
+// Stripe). Still base64-decodes to real HMAC bytes, same as before.
+const SECRET = 'whsec_' + Buffer.from('bl-225-fake-fixture-seed').toString('base64');
 
 function sign(id, timestamp, rawBody, secret = SECRET) {
   const secretBytes = Buffer.from(secret.replace(/^whsec_/, ''), 'base64');
