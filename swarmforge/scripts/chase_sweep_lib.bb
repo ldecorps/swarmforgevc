@@ -286,3 +286,130 @@
   (let [current (read-escalations daemon-dir)
         updated (if escalated? (assoc current (keyword role) true) (dissoc current (keyword role)))]
     (spit (escalations-path daemon-dir) (json/generate-string updated))))
+
+;; ── BL-222: dispatch-gap detection + auto-route ─────────────────────────────
+;; A promoted backlog/active/ item can sit with zero routing handoff ever
+;; sent to its assigned_to - the sweep above only watches INBOX mail
+;; (queued/in_process handoffs); never-dispatched work produces no inbox
+;; mail at all, so it was invisible (BL-217: sat ~3h with no alert).
+;; decide-dispatch-gaps is the pure, independently-testable core: given the
+;; active-item list and the set of ticket ids already known to have SOME
+;; handoff trail anywhere (any mailbox state, any role - proof of dispatch
+;; even if the item has since progressed past its original assignee), it
+;; returns exactly the items with no trail at all. The scanning functions
+;; below assemble that trail set from a real (or fixture) mailbox tree;
+;; they do real fs I/O like scan-inbox-new above, but are still pure enough
+;; to unit test directly against a fixture directory - no live swarm.
+
+(defn decide-dispatch-gaps
+  "active-items: seq of {:id :assigned-to}. dispatched-ids: set of ticket
+   ids (e.g. #{\"BL-217\"}) already seen in some handoff's task/message
+   header anywhere. Returns the subset of active-items with no dispatch
+   trail at all - these need auto-routing."
+  [active-items dispatched-ids]
+  (vec (remove #(contains? dispatched-ids (:id %)) active-items)))
+
+(defn extract-ticket-id
+  "The leading <PREFIX>-<digits> token from a task or message field (e.g.
+   \"BL-217\" from \"BL-217-inbound-email-webhook\" or from a routing
+   note's own \"BL-217 active, spec-complete...\" message text - every
+   routing note in this swarm conventionally leads with the ticket id)."
+  [text]
+  (when text
+    (second (re-find #"^([A-Za-z]+-\d+)" text))))
+
+(defn- list-handoff-files [dir]
+  (if-not (fs/exists? dir)
+    []
+    (->> (fs/list-dir dir)
+         (filter #(and (fs/regular-file? %) (str/ends-with? (fs/file-name %) ".handoff")))
+         (map str))))
+
+(defn- list-batch-dirs [dir]
+  (if-not (fs/exists? dir)
+    []
+    (->> (fs/list-dir dir)
+         (filter #(and (fs/directory? %) (str/starts-with? (fs/file-name %) "batch_")))
+         (map str))))
+
+;; Direct .handoff files in dir, plus files inside any batch_* subdirectory
+;; (one level, never deeper) - a batch role moves a whole completed/
+;; in_process batch into one such subdirectory (mirrors handoff_lib.bb's
+;; own batch-aware readers).
+(defn- list-handoff-files-with-batches [dir]
+  (concat (list-handoff-files dir) (mapcat list-handoff-files (list-batch-dirs dir))))
+
+(defn- read-header-field [file-path field]
+  (let [header (first (str/split (slurp file-path) #"\n\n" 2))
+        prefix (str field ": ")]
+    (some (fn [line] (when (str/starts-with? line prefix) (subs line (count prefix))))
+          (str/split-lines header))))
+
+(defn- dispatch-ticket-ref
+  "A handoff file's own ticket reference for dispatch-gap purposes: its
+   task header (git_handoff) if present, else its message header (note) -
+   both conventionally lead with the ticket id."
+  [file-path]
+  (or (read-header-field file-path "task") (read-header-field file-path "message")))
+
+(defn collect-dispatched-ticket-ids
+  "Scans every given directory path for .handoff files (including one level
+   of batch_* subdirectories) and returns the set of ticket ids referenced
+   in their task/message headers."
+  [dirs]
+  (->> dirs
+       (mapcat list-handoff-files-with-batches)
+       (keep dispatch-ticket-ref)
+       (keep extract-ticket-id)
+       set))
+
+(defn- read-yaml-field [content field]
+  (let [prefix (str field ": ")]
+    (some (fn [line] (when (str/starts-with? line prefix) (str/trim (subs line (count prefix)))))
+          (str/split-lines content))))
+
+(defn- read-active-item [yaml-file]
+  (let [content (slurp (str yaml-file))]
+    {:id (read-yaml-field content "id")
+     :assigned-to (read-yaml-field content "assigned_to")}))
+
+(defn read-active-items
+  "Every backlog/active/*.yaml item with both an id and an assigned_to -
+   items missing either are not dispatch-gap candidates (nothing to route,
+   or nowhere to route it)."
+  [active-dir]
+  (if-not (fs/exists? active-dir)
+    []
+    (->> (fs/list-dir active-dir)
+         (filter #(str/ends-with? (fs/file-name %) ".yaml"))
+         (map read-active-item)
+         (filter #(and (:id %) (:assigned-to %)))
+         vec)))
+
+(defn dispatch-gap-items
+  "Full pipeline for one evaluation: reads active items from active-dir and
+   the dispatched-ticket-id set from scan-dirs, returning exactly the items
+   needing auto-route. decide-dispatch-gaps above remains the independently
+   pure/testable core."
+  [active-dir scan-dirs]
+  (decide-dispatch-gaps (read-active-items active-dir) (collect-dispatched-ticket-ids scan-dirs)))
+
+(def dispatch-gap-note-max-length 80)
+
+(defn dispatch-gap-note-message
+  "Leads with the ticket id (the swarm's own routing-note convention,
+   which is exactly what makes it detectable as a dispatch trail on the
+   next sweep via dispatch-ticket-ref/extract-ticket-id above)."
+  [item-id]
+  (str item-id " is active with no dispatch on record - auto-routed by the sweep."))
+
+(defn dispatch-gap-draft-lines
+  "The swarm_handoff.sh draft text for one auto-route note - pure string
+   construction; handoffd.bb's auto-route! writes this to a temp file and
+   shells to swarm_handoff.bb, the normal outbound handoff path, rather
+   than hand-writing an inbox file."
+  [item]
+  ["type: note"
+   (str "to: " (:assigned-to item))
+   "priority: 00"
+   (str "message: " (dispatch-gap-note-message (:id item)))])
