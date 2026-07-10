@@ -18,6 +18,14 @@
       localeToggleAriaLabel: 'Switch language',
       needsApprovalHeading: 'Needs your approval',
       needsApprovalEmpty: 'Nothing awaiting approval.',
+      // BL-266: the read-only ticket-detail drill-in opened from a
+      // needs-approval entry (description + acceptance scenarios) and its
+      // slice-2 listen/stop control (on-device Web Speech API, no
+      // network/storage).
+      approvalDetailBack: 'Back',
+      startListening: 'Listen',
+      stopListening: 'Stop',
+      listenUnavailable: 'Listening is not available on this device.',
       boardHeading: 'Backlog board',
       boardActive: 'Active',
       boardPaused: 'Paused',
@@ -92,6 +100,10 @@
       localeToggleAriaLabel: 'Changer de langue',
       needsApprovalHeading: 'Nécessite votre approbation',
       needsApprovalEmpty: 'Rien en attente d’approbation.',
+      approvalDetailBack: 'Retour',
+      startListening: 'Écouter',
+      stopListening: 'Arrêter',
+      listenUnavailable: "L'écoute n'est pas disponible sur cet appareil.",
       boardHeading: 'Tableau des tickets',
       boardActive: 'Actifs',
       boardPaused: 'En pause',
