@@ -182,6 +182,31 @@ test('per-parcel mode: scanMediaFilesForStorageGlobals scans a single changed me
   assert.deepEqual(violations, [{ from: 'media/real-violation.js', to: 'localStorage', rule: 'no-webview-storage' }]);
 });
 
+// QA bounce (2nd pass, 20260710): findMediaJsFiles's own CRAP gate breach
+// (complexity=6, coverage=90%) traced to these two untested branches - a
+// scope path that does not exist on disk at all (the statSync catch), and
+// a per-parcel scope path pointing at an existing file that is NOT a .js
+// file (the isDirectory-false / endsWith('.js')-false combination).
+
+test('a media scope path that does not exist on disk contributes nothing, not a crash', () => {
+  const root = mkFixtureRoot();
+  writeFixtureTsconfig(root);
+
+  const violations = scanMediaFilesForStorageGlobals(root, ['media/does-not-exist']);
+
+  assert.deepEqual(violations, []);
+});
+
+test('per-parcel mode: a scope path pointing at an existing non-.js file contributes nothing', () => {
+  const root = mkFixtureRoot();
+  writeFixtureTsconfig(root);
+  writeFile(root, 'media/notes.txt', 'localStorage mentioned here but not a JS file\n');
+
+  const violations = scanMediaFilesForStorageGlobals(root, ['media/notes.txt']);
+
+  assert.deepEqual(violations, []);
+});
+
 test('the REAL checker catches a dependency cycle (acyclic)', () => {
   const root = mkFixtureRoot();
   writeFixtureTsconfig(root);

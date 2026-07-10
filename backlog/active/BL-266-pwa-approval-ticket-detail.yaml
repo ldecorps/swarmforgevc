@@ -1,0 +1,127 @@
+id: BL-266
+title: "Read or LISTEN to a pending ticket (description + acceptance scenarios) from the phone approval list (BL-251 drill-in; sliced: read, listen)"
+direction: tooling
+priority: 12
+mutation_cost: low
+source: "operator direction 2026-07-10 (via coordinator, backlog/INTAKE-pwa-read-pending-ticket-detail.md): the phone lists tickets needing approval but the operator cannot read what they are approving. 'can I read about them via the phone app?' — operator wants to tap a needs-approval entry and read the ticket."
+
+description: |
+  BL-251 shipped a needs-approval list in the PWA (pwa/app.js renderNeedsApproval,
+  ~line 312) that renders ONLY id + title. The operator sees WHICH tickets await
+  approval but cannot READ the ticket's description or the acceptance scenarios they
+  are being asked to approve. This adds a READ-ONLY drill-in: tap a needs-approval
+  entry to read that ticket's description and its acceptance (Gherkin) scenarios.
+
+  READ-ONLY (in scope): showing OR reading aloud the description + scenarios only.
+  Actually approving / flipping human_approval from the phone is a SEPARATE,
+  security-sensitive control action (same class as the gate-answer client, gap #10 /
+  BL-265) and is EXPLICITLY OUT OF SCOPE — do not add any approve/reject/write
+  affordance here (matches BL-251's own read-only posture).
+
+  LISTEN (operator addition 2026-07-10): the operator also wants to LISTEN to the
+  ticket, not only read it. Operator decisions: ON-DEVICE text-to-speech (browser
+  Web Speech API, window.speechSynthesis — no server, no network, no storage; stays
+  within the static-PWA boundary); FOLDED INTO BL-266 as slice 2; speak the
+  DESCRIPTION + ACCEPTANCE SCENARIOS. Still read-only (no write action).
+
+  Wanted behavior (observable):
+    - From the needs-approval list, the operator opens a pending ticket and reads its
+      description AND its acceptance scenarios.
+    - The description + scenarios shown are those of the SAME committed ticket YAML +
+      its .feature the swarm builds against — never a divergent copy.
+    - A pending ticket whose acceptance scenarios cannot be resolved shows a LOCALIZED
+      empty state, not an error or blank.
+    - The detail view offers no approve/reject/write action.
+    - The detail view renders in the active locale.
+
+  Reuse / live-path verification (2026-07-10 — this changed the scope):
+    - docs-tree.json (extension/src/docs/docsTree.ts, buildDocsTree/toTicketNode)
+      ALREADY carries every backlog ticket's `description` (BL-117) AND its resolved
+      acceptance `scenarios` (resolveGherkinText reads the referenced .feature), for
+      ALL statuses — a paused human_approval:pending ticket is present with both. The
+      `implemented` flag is only a PWA visual-greying signal (BL-253), NOT a data
+      filter. Every needs-approval ticket (active+paused, humanApproval pending) is a
+      subset of docs-tree's tickets, so it is always present there.
+    - pwa/app.js already fetches DOCS_TREE_URL and renders docs-drill-down scenarios
+      (BL-117). So the detail is a CROSS-REFERENCE from a needs-approval entry (by
+      ticket id) into the already-fetched docs-tree, reusing the existing docs-scenario
+      render helpers. No new authoritative store, no second Gherkin parser, and no
+      host/projection change is expected — the needsApproval feed (backlogDashboard.ts)
+      stays id+title; the description+scenarios come from docs-tree.json.
+
+  Constraints:
+    - READ-ONLY / PRESENTATION: reads only git-tracked backlog + feature files
+      (reproducible — correctly rides backlog.json / docs-tree.json, unlike
+      machine-local/live data per the BL-252 surface boundary). No new store; no
+      approve/write action.
+    - SINGLE SOURCE: the description + scenarios come from the SAME committed ticket
+      YAML + .feature the swarm builds against; the phone never shows a version
+      different from what will be built.
+    - TESTABLE host-side: any projection logic is a pure fixtured unit; the PWA render
+      logic is tested with jsdom fixtures (pwaDocsExplorer.test.js precedent) — no live
+      repo.
+    - LOCALIZATION (BL-229/230): new strings (detail labels, empty state) via
+      pwa/locales.js. Preserve accessibility (BL-238).
+    - KNOWN PROPERTY (note, not a change here): the deployed PWA reflects PUSHED main;
+      a pending ticket appears once a QA landing pushes it (coordinator bookkeeping is
+      unpushed by design, BL-247). This ticket does not change that cadence.
+
+  Scope (SLICE 1 — read): extend pwa/app.js so a needs-approval entry is
+  expandable/drill-in to the ticket's description + acceptance scenarios, looked up by
+  ticket id in the already-fetched docs-tree and rendered with the existing docs-scenario
+  helpers; add pwa/locales.js strings for the new labels + empty state. If a
+  needs-approval ticket were ever absent from docs-tree, render the localized
+  empty/unavailable state rather than erroring.
+
+  Scope (SLICE 2 — listen): add a labelled listen/stop control to that same detail view
+  that reads the description + acceptance scenarios aloud via window.speechSynthesis. The
+  spoken-text assembly (description + each scenario in order) and the utterance language
+  (derived from the active locale, currentLocale) are a PURE fixtured function; the
+  actual speechSynthesis.speak()/cancel() calls are a thin browser-API adapter (not
+  unit-tested), per the testable-module boundary. Localize the control label (BL-229/230)
+  and give it an aria-label (BL-238, matching the existing data-i18n-aria pattern).
+  Degrade gracefully when speechSynthesis is unavailable. No existing PWA speech code —
+  net-new; no network/storage.
+
+  DELIVERY: SLICED (BL-233). Slice 1 (READ) is the live acceptance contract
+  (specs/features/BL-266-pwa-approval-ticket-detail.feature). Slice 2 (LISTEN) is PARKED
+  in specs/features/BL-266-pwa-approval-ticket-detail.slice-2-listen.feature.draft and
+  promoted into the live feature only when built. Both slices touch the same pwa/app.js
+  detail view — build slice 1 then slice 2. Buildable now. Priority normal.
+
+  PWA-LANE SERIALIZATION (coordinator orthogonality): touches pwa/app.js — the
+  BL-257/261/263/265-adjacent lane. NOTE: BL-265 slice 2 lands on holisticUiHtml.ts,
+  NOT pwa/app.js, so it does not collide; but the other pwa/app.js tickets
+  (BL-257/261/263) do — serialize this on the pwa/app.js build lane.
+
+acceptance: specs/features/BL-266-pwa-approval-ticket-detail.feature
+
+qa_e2e_procedure: |
+  Host-side / jsdom fixtures; no live repo or push.
+  SLICE 1 (read):
+  1. Fixture a needs-approval list with a pending ticket "A" present in docs-tree with
+     a description + acceptance scenarios; open "A"; assert its description and its
+     scenarios are shown.
+  2. Assert the shown description + scenarios equal "A"'s committed docs-tree entry
+     (single source), not a separately-stored copy.
+  3. Assert the detail view exposes no approve/reject/write control.
+  4. Open a pending ticket whose scenarios cannot be resolved (empty docs-tree
+     scenarios); assert a localized empty state, not an error/blank.
+  5. Set the active locale to a non-default locale; open a ticket; assert the detail
+     view's own labels render in that locale.
+  SLICE 2 (listen — run when built):
+  6. Assert the pure spoken-text assembly yields the description followed by each
+     acceptance scenario in order, with the utterance language derived from the active
+     locale (fake the speechSynthesis adapter; assert the utterance plan, not audio).
+  7. Activate listen; assert the adapter is asked to speak that assembled text/lang.
+  8. Stop while speaking; assert the adapter is asked to cancel.
+  9. With the speechSynthesis adapter reporting unavailable, render the detail view;
+     assert the listen control is unavailable with a localized note, no error/no-op tap.
+
+# HUMAN APPROVAL: feature file specs/features/BL-266-pwa-approval-ticket-detail.feature
+# (slice 1, live) and specs/features/BL-266-pwa-approval-ticket-detail.slice-2-listen.feature.draft
+# (slice 2, parked) are specifier drafts PENDING human review. The operator approved the
+# LISTEN addition + its decisions (on-device TTS, fold into BL-266 as slice 2, speak
+# description+scenarios) on 2026-07-10; the scenario wording is pending review. Park in
+# paused until approved.
+human_approval: approved

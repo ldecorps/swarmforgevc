@@ -97,23 +97,28 @@ function isMediaScopePath(scopePath: string): boolean {
   return scopePath === 'media' || scopePath.startsWith('media/');
 }
 
+// QA bounce (2nd pass, CRAP=6.04): the per-scope-path try/stat/isDirectory/
+// endsWith handling, split out of findMediaJsFiles's own loop so each
+// function's complexity - and CRAP score - stays low independently.
+function mediaJsFilesForScopePath(cwd: string, scopePath: string): string[] {
+  const fullPath = path.join(cwd, scopePath);
+  let stat;
+  try {
+    stat = fs.statSync(fullPath);
+  } catch {
+    return [];
+  }
+  if (stat.isDirectory()) {
+    return walkJsFiles(fullPath).map((f) => path.relative(cwd, f));
+  }
+  return scopePath.endsWith('.js') ? [scopePath] : [];
+}
+
 function findMediaJsFiles(cwd: string, scopePaths: string[]): string[] {
   const results: string[] = [];
   for (const scopePath of scopePaths) {
-    if (!isMediaScopePath(scopePath)) {
-      continue;
-    }
-    const fullPath = path.join(cwd, scopePath);
-    let stat;
-    try {
-      stat = fs.statSync(fullPath);
-    } catch {
-      continue;
-    }
-    if (stat.isDirectory()) {
-      results.push(...walkJsFiles(fullPath).map((f) => path.relative(cwd, f)));
-    } else if (scopePath.endsWith('.js')) {
-      results.push(scopePath);
+    if (isMediaScopePath(scopePath)) {
+      results.push(...mediaJsFilesForScopePath(cwd, scopePath));
     }
   }
   return results;
