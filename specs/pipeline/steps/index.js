@@ -62,6 +62,7 @@ const DOMAINS = [
   require('./briefingGenerationScheduleSteps'),
   require('./approvalTicketDetailSteps'),
   require('./briefingEnrichmentSteps'),
+  require('./pwaEnrichmentSteps'),
 ];
 
 function registerSteps(registry) {
