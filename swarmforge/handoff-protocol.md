@@ -236,20 +236,25 @@ The `message` value must be a single line no longer than 80 characters.
 
 After the final QA gate passes on a parcel:
 
-1. **QA → coordinator:** `git_handoff` or `note` with priority `00`, the
-   QA-approved commit (10-char abbrev), and stable task/backlog id.
-2. **QA → worktree roles:** `note` broadcast to
+1. **QA → worktree roles:** `note` broadcast to
    `coder,cleaner,architect,hardender,documenter` with priority `00`, instructing
    each recipient to merge its own worktree branch up to QA's approved commit
    (not to `main`). Example message:
    `BL-042 QA-approved a1b2c3d4e5 — merge your branch up to QA's`.
-3. **Worktree roles:** on receiving the merge-up `note`, run
+2. **QA lands `main`:** QA's approved commit is the verified, integrated result,
+   so QA merges/fast-forwards `main` to it and pushes origin (same session; never
+   force-push), and closes the GitHub issue for a `GH-`-seeded ticket
+   (`issue_done.sh`). QA is the integration point (BL-247).
+3. **QA → coordinator:** `git_handoff` or `note` with priority `00`, the
+   QA-approved commit (10-char abbrev), and stable task/backlog id, so the
+   coordinator does the backlog bookkeeping.
+4. **Worktree roles:** on receiving the merge-up `note`, run
    `git merge <qa-commit>` (or `--no-ff`) in your worktree, resolve conflicts
    if any, then `done_with_current.sh`. Do not forward the parcel — QA already
    closed the pipeline chain.
-4. **Coordinator:** on receiving QA approval, merge the approved commit into
-   `main`, move the ticket from `backlog/active/` to `backlog/done/`, promote
-   the next paused item if below `active_backlog_max_depth`, and push `main`.
+5. **Coordinator:** on receiving QA approval, move the ticket from
+   `backlog/active/` to `backlog/done/` and promote the next paused item if below
+   `active_backlog_max_depth`. The coordinator runs NO git merge or push (BL-247).
 
 The **specifier** is excluded from the merge-up broadcast and does not perform
 integration merges — it specifies only.

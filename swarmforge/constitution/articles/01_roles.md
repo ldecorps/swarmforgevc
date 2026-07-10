@@ -6,14 +6,17 @@
   - Controls intake of new parcels from the backlog.
   - Routes parcels to the **specifier** for initial processing.
   - Tracks parcel location in the pipeline and unblocks stalls.
-  - Decides when a parcel is ready for merging (via the **specifier**).
+  - After QA approval, does backlog bookkeeping only: moves the ticket to
+    `backlog/done/` and promotes the next paused item. Runs no git merge or
+    push — QA lands the approved commit on `main` (BL-247).
 
 ## 1.2 Specifier
 - **Worktree**: `main`.
 - **Responsibilities**:
   - Receives parcels from the **coordinator** and defines acceptance criteria.
   - Forwards parcels to the **coder** for implementation.
-  - Merges QA-approved parcels into `main`.
+  - Writes specifications and prompt/constitution files only; never merges,
+    closes tickets, or integrates.
 
 ## 1.3 Coder
 - **Worktree**: `.worktrees/coder`.
@@ -49,7 +52,10 @@
 - **Worktree**: `.worktrees/QA`.
 - **Responsibilities**:
   - Runs final tests and quality checks.
-  - Forwards approved parcels to the **specifier** for merging.
+  - On pass: broadcasts merge-up to the worktree roles, **lands the approved
+    commit on `main`** (push origin, and close the GH issue for a `GH-`-seeded
+    ticket), and notifies the coordinator to do backlog bookkeeping. QA is the
+    integration point (BL-247).
   - Rejects parcels with issues, routing them back to the appropriate role.
 
 ## 1.9 Handoff Rules
