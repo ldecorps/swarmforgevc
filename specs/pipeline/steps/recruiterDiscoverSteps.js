@@ -1,15 +1,12 @@
 'use strict';
 
 // BL-233 slice 1 (discover-candidates-01): step handlers for the recruiter
-// discovery scenario only. This ticket is explicitly DELIVER-IN-SLICES
-// (spec: "Ship slice 1 first") - slice 2 (auto-acquire-free-02,
-// acquire-wall-escalates-03) is implemented in the sibling
-// recruiterAcquireSteps.js, and slice 3 (qualify-via-battery-04) in
-// recruiterQualifySteps.js. Slice 4 (best-value ranking + report:
-// best-value-ranking-05, recommend-not-adopt-06) is NOT implemented yet, so
-// no steps file registers handlers for it. Running the full feature file
-// will report "no step handler matched" for those until that slice lands -
-// expected, not a regression in this slice.
+// discovery scenario only. This ticket was DELIVER-IN-SLICES (spec: "Ship
+// slice 1 first") and is now fully built: slice 2 (auto-acquire-free-02,
+// acquire-wall-escalates-03) lives in recruiterAcquireSteps.js, slice 3
+// (qualify-via-battery-04) in recruiterQualifySteps.js, and slice 4
+// (best-value-ranking-05, recommend-not-adopt-06) in
+// recruiterRankRecommendSteps.js.
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
