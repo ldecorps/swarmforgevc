@@ -291,9 +291,13 @@
   "Splits new-dir candidate file paths (already sorted; mine? already
    applied by the caller for task mode) into :skipped (basename already
    terminal - must not be resurrected) and :dequeueable (genuinely new),
-   preserving order."
+   preserving order. Builds the terminal-basename set once up front rather
+   than calling already-terminal? (which re-builds both sets from scratch)
+   per candidate - O(n+m) instead of O(n*m) for n candidates and m
+   completed/abandoned basenames."
   [new-files completed-basenames abandoned-basenames]
-  (let [terminal? (fn [f] (already-terminal? (fs/file-name f) completed-basenames abandoned-basenames))]
+  (let [terminal-basenames (into (set completed-basenames) abandoned-basenames)
+        terminal? (fn [f] (contains? terminal-basenames (fs/file-name f)))]
     {:skipped (vec (filter terminal? new-files))
      :dequeueable (vec (remove terminal? new-files))}))
 
