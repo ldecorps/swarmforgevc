@@ -164,11 +164,38 @@ function formatVelocityLine(velocity: VelocityResult): string {
   return `Velocity: ${velocity.rollingWindowCount} closed in trailing ${velocity.rollingWindowDays}d${trendText}`;
 }
 
-function formatBurndownLine(burndown: MilestoneBurndownResult[]): string {
+// BL-228: reuses the SAME forecast computeForecasts already produces (no
+// parallel ETA model) - forecasts.milestones already drives the per-ticket
+// ETAs on the PWA board, this just surfaces the same p50/p85 per milestone
+// on the burndown line too.
+function milestoneEtaSuffix(forecasts: ForecastResult, milestone: string): string {
+  const forecast = forecasts.milestones.find((m) => m.milestone === milestone);
+  if (!forecast || !forecast.p50Iso) {
+    return ' (no ETA yet)';
+  }
+  const p50 = formatDateOnly(forecast.p50Iso);
+  return forecast.p85Iso ? ` (ETA ${p50}, p85 ${formatDateOnly(forecast.p85Iso)})` : ` (ETA ${p50})`;
+}
+
+// The overall "all remaining work" ETA: the latest projected completion
+// (max p50) across every open ticket's own forecast - not a new model,
+// just the max of the same per-ticket forecasts.tickets p50s.
+function overallEtaText(forecasts: ForecastResult): string {
+  const p50Dates = forecasts.tickets.map((t) => t.p50Iso).filter((d): d is string => d !== null);
+  if (p50Dates.length === 0) {
+    return 'no ETA yet';
+  }
+  return formatDateOnly(p50Dates.reduce((max, d) => (d > max ? d : max)));
+}
+
+function formatBurndownLine(burndown: MilestoneBurndownResult[], forecasts: ForecastResult): string {
   if (burndown.length === 0) {
     return `Burndown: ${NO_SAMPLE_PLACEHOLDER} (no milestones)`;
   }
-  return 'Burndown: ' + burndown.map((b) => `${b.milestone} ${b.currentRemaining} remaining`).join(', ');
+  const perMilestone = burndown
+    .map((b) => `${b.milestone} ${b.currentRemaining} remaining${milestoneEtaSuffix(forecasts, b.milestone)}`)
+    .join(', ');
+  return `Burndown: ${perMilestone} — overall ETA ${overallEtaText(forecasts)}`;
 }
 
 function formatCycleTimeLine(cycleTime: CycleTimeResult): string {
@@ -212,7 +239,7 @@ function formatSuiteDurationTrendLine(trend: SuiteDurationTrendResult): string {
 export function formatDeliveryOverview(metrics: DeliveryMetrics): string {
   return [
     formatVelocityLine(metrics.velocity),
-    formatBurndownLine(metrics.burndown),
+    formatBurndownLine(metrics.burndown, metrics.forecasts),
     formatCycleTimeLine(metrics.cycleTime),
     formatForecastsLine(metrics.forecasts),
     formatSuiteDurationTrendLine(metrics.suiteDurationTrend),
