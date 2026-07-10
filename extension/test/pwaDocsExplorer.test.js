@@ -333,6 +333,31 @@ test('no-results-06: a query matching nothing shows the localized no-results sta
   assert.doesNotMatch(explorer(dom).textContent, /M4/);
 });
 
+// docsTree.ts's filterDocsTree (the TS/unit-tested implementation) and
+// pwa/app.js's own hand-duplicated copy (this file's coverage) are two
+// independent reimplementations kept in sync by hand - the app.js
+// comment says so outright. docsTree.test.js already covers these two
+// cases on the TS side (match-title-description-02, empty-query-05's
+// whitespace variant); mirroring them here closes the asymmetry so a
+// future JS-only divergence (e.g. someone drops the `.description` check
+// or the `.trim()` call from just the app.js copy) fails a PWA-side test
+// too, not only the TS one.
+test('description-only-02: a query matching only a ticket\'s description (not title or Gherkin) still surfaces it', async () => {
+  const dom = renderDashboard(searchFixtureTree());
+  await flush();
+  typeSearch(dom, 'prose description of BL-100');
+  assert.match(explorer(dom).textContent, /M4/);
+  assert.doesNotMatch(explorer(dom).textContent, /M7/);
+});
+
+test('whitespace-only-query-05: a query of only spaces is treated the same as empty - the full tree, not zero matches', async () => {
+  const dom = renderDashboard(searchFixtureTree());
+  await flush();
+  typeSearch(dom, '   ');
+  assert.match(explorer(dom).textContent, /M4/);
+  assert.match(explorer(dom).textContent, /M7/);
+});
+
 test('the search input placeholder is localized', async () => {
   const dom = renderDashboard(searchFixtureTree());
   await flush();
