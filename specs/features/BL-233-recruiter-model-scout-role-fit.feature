@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=574636154ace8d44597535510eb427e6c3f010f8395025b081bf261740f52ca5
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-10T13:33:08.919120759Z","feature_name":"a recruiter scouts cheap/free model plans and ranks best-value model per swarm role","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-233-recruiter-model-scout-role-fit.feature","background_hash":"0fa0dc9a5643003fef2663df390f14f4ee3e707caa7c37ffde25a3e2a4ccba1d","implementation_hash":"unknown","scenarios":[{"index":2,"name":"a signup wall escalates to a human instead of proceeding","scenario_hash":"20ac7879bcd3bc0c278ead3e374270cbfbe5ae60192774f87fc62e4df5c1a837","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-07-10T13:33:08.919120759Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a recruiter scouts cheap/free model plans and ranks best-value model per swarm role
 
   # Purpose (operator 2026-07-10): an out-of-band "recruiter" that hunts the
