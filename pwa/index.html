@@ -21,6 +21,10 @@
   .crumbs button { background: none; border: none; color: LinkText; text-decoration: underline; cursor: pointer; font-size: 0.8rem; padding: 0; }
   .docs-list-item { display: block; width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid color-mix(in srgb, CanvasText 10%, transparent); padding: 0.4rem 0.1rem; cursor: pointer; color: inherit; font-size: 0.85rem; }
   .docs-list-item:hover { background: color-mix(in srgb, CanvasText 6%, transparent); }
+  /* BL-253: visual-only - applies to both the milestone list's nav buttons
+     and the ticket-detail status line; nothing about interactivity
+     changes, only color. */
+  .not-yet-implemented { color: color-mix(in srgb, CanvasText 55%, transparent); }
   /* BL-238 keyboard-nav-tiles-01/tree-02: an explicit, visible focus ring -
      several controls above zero out their border, which in some browsers
      (notably Safari) can also suppress the default focus ring on buttons
