@@ -124,7 +124,7 @@ Tick each — these are the seams the whole spec depends on. Built and proven fr
 - **Backend abstraction** — formalize the `InteractiveProcess` launch contract; per-tile **backend/model switch on the fly**; mixed backends per role. This milestone adds **external CLI backends** (Claude Code, Codex, Copilot CLI — the latter offering multi-model behind one auth) as alternative `InteractiveProcess` implementations, and generalizes model selection beyond the bootstrap's single `copilot` vendor. Per-tile **model** switch for Claude-backed roles landed (BL-235); the `InteractiveProcess` abstraction and an in-process `vscode.lm` backend — despite an earlier claim here that the latter "already exists from M0" — do not exist in `extension/src` yet, so cross-backend switching remains future work on top of this milestone's own abstraction, not something to build on top of an already-landed one.
 - **Load measurement** — per-role active time, time-in-stage, rework load, surfaced in the Work Tree
 - **Cost-aware selection** — Suggest tier first (per-role recommendations + rationale), then opt-in Adapt; per-run budget cap as the backstop
-- **Effort dial** where backends expose it
+- **Effort dial** where backends expose it — Suggest-tier landed for Claude-backed roles (BL-236): per-role effort suggestion + rationale at run start, manual dial reusing BL-235's respawn mechanism; Adapt/Auto tiers still deferred
 
 **Why here:** cost intelligence is built on the load signals (M2 heartbeats + M3 reroute/rework data), so it can only be as good as those layers. Deliberately late because it's an optimization, not a foundation — and the "just don't run everything on the top model" default captures most savings cheaply even before the smart logic.
 
