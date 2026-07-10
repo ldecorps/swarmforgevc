@@ -7,9 +7,19 @@ import {
   buildStageDwellState,
   BridgeState,
 } from './bridgeState';
-import { isAuthorizedRequest, isAuthorizedByQueryToken } from './bridgeAuth';
+import { extractBearerToken, isAuthorizedByQueryToken } from './bridgeAuth';
 import { getHolisticUiHtml } from './holisticUiHtml';
 import { answerCapturedGateLive } from './gateAnswerLive';
+import {
+  DeviceRegistry,
+  DeviceScope,
+  Device,
+  registerDevice,
+  revokeDevice,
+  rotateDeviceToken,
+  findDeviceByToken,
+  findDeviceByControlToken,
+} from './deviceRegistry';
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const LOCALHOST = '127.0.0.1';
@@ -21,13 +31,59 @@ const GATE_ANSWER_MAX_BODY_BYTES = 16 * 1024;
 
 export interface BridgeHandle {
   port: number;
+  // BL-241: the bootstrap device's own base (read) token - still present
+  // for backward compatibility with a plain-string startBridge call and
+  // anything that only ever needed the one original credential. A caller
+  // that wants real multi-device rotation/revocation/scope uses the
+  // registerDevice/revokeDevice/rotateToken/getRegistry methods below
+  // instead of this single field.
   token: string;
+  registerDevice: (label: string, scope: DeviceScope) => Device;
+  revokeDevice: (deviceId: string) => void;
+  rotateToken: (deviceId: string) => Device | undefined;
+  getRegistry: () => DeviceRegistry;
   stop: () => void;
 }
 
 export interface StartBridgeOptions {
   port?: number;
   pollIntervalMs?: number;
+}
+
+// BL-241: startBridge's auth param generalizes from BL-065's one static
+// string to a full DeviceRegistry, without breaking a caller that only
+// ever passed a bare token - normalized once, right at the top, into a
+// single bootstrap control-scoped device whose token AND controlToken are
+// both the passed string. This is the SAME "hardens rather than replaces"
+// posture the whole ticket takes: reading (the bearer alone) behaves
+// exactly as before either way; a bare-string caller wanting the new
+// control step-up simply presents that same string as BOTH the bearer and
+// the X-Control-Token header - registry-based callers get real separate
+// credentials for free.
+function normalizeToRegistry(tokenOrRegistry: string | DeviceRegistry): DeviceRegistry {
+  if (typeof tokenOrRegistry !== 'string') {
+    return tokenOrRegistry;
+  }
+  return {
+    devices: [
+      {
+        id: 'bootstrap',
+        label: 'bootstrap',
+        scope: 'control',
+        token: tokenOrRegistry,
+        controlToken: tokenOrRegistry,
+        revoked: false,
+      },
+    ],
+  };
+}
+
+// The token surfaced on BridgeHandle.token: the bootstrap device's token
+// when this bridge was started the legacy (string) way, else the first
+// still-registered device's token as a reasonable default - never throws
+// on an empty registry.
+function primaryTokenOf(registry: DeviceRegistry): string {
+  return registry.devices[0]?.token ?? '';
 }
 
 type StateRoute = '/pipeline' | '/agents' | '/backlog' | '/runlog';
@@ -147,14 +203,28 @@ function queryToken(url: string): string | undefined {
   return new URLSearchParams(url.slice(queryIndex + 1)).get('token') ?? undefined;
 }
 
-// BL-094: every route stays header-only EXCEPT the root HTML shell, which a
-// plain browser navigation cannot attach a header to - it additionally
-// accepts the token via query string (see bridgeAuth.ts's own comment).
-function isAuthorizedForUrl(authHeader: string | undefined, url: string, token: string): boolean {
-  if (isAuthorizedRequest(authHeader, token)) {
+// BL-094/BL-241: every route stays header-only EXCEPT the root HTML shell,
+// which a plain browser navigation cannot attach a header to - it
+// additionally accepts the token via query string (see bridgeAuth.ts's own
+// comment). Read auth accepts ANY non-revoked device regardless of scope -
+// unchanged from BL-065's original "one token, full read access" model,
+// just generalized to a roster. The stronger control-only check lives in
+// isAuthorizedForControl below.
+function isAuthorizedForRead(authHeader: string | undefined, url: string, registry: DeviceRegistry): boolean {
+  if (findDeviceByToken(registry, extractBearerToken(authHeader))) {
     return true;
   }
-  return isRootPath(url) && isAuthorizedByQueryToken(queryToken(url), token);
+  return isRootPath(url) && isAuthorizedByQueryToken(queryToken(url), primaryTokenOf(registry));
+}
+
+// BL-241 control-requires-step-up-04: control actions require a SEPARATE
+// X-Control-Token header in addition to the normal bearer - a genuinely
+// stronger auth step than read-only viewing needs, never satisfiable by a
+// read-scoped device (it has no control token at all).
+function isAuthorizedForControl(req: http.IncomingMessage, registry: DeviceRegistry): boolean {
+  const bearer = extractBearerToken(req.headers.authorization);
+  const stepUp = req.headers['x-control-token'];
+  return Boolean(findDeviceByControlToken(registry, bearer, typeof stepUp === 'string' ? stepUp : undefined));
 }
 
 interface JsonRoute {
@@ -207,7 +277,7 @@ function buildJsonRoutes(targetPath: string, runLogPath: string): JsonRoute[] {
 export function startBridge(
   targetPath: string,
   runLogPath: string,
-  token: string,
+  tokenOrRegistry: string | DeviceRegistry,
   options: StartBridgeOptions = {}
 ): Promise<BridgeHandle> {
   const port = options.port ?? 0;
@@ -216,11 +286,16 @@ export function startBridge(
   return new Promise((resolve) => {
     const sseClients = new Set<http.ServerResponse>();
     let lastSnapshot: string | undefined;
+    // BL-241: mutable so rotate/revoke/register (via the BridgeHandle
+    // methods below) take effect on the NEXT request without restarting
+    // the bridge - token-rotation-01/device-revocation-02 both need a
+    // live bridge whose auth state can actually change mid-run.
+    let registry: DeviceRegistry = normalizeToRegistry(tokenOrRegistry);
 
     const server = http.createServer((req, res) => {
       const url = requestPath(req);
 
-      if (!isAuthorizedForUrl(req.headers.authorization, url, token)) {
+      if (!isAuthorizedForRead(req.headers.authorization, url, registry)) {
         res.writeHead(401, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ error: 'unauthorized' }));
         return;
@@ -250,12 +325,20 @@ export function startBridge(
         return;
       }
 
-      // BL-240: the bridge's one write route - answers a captured to-human
-      // gate only. Auth is already enforced above, uniformly with every
-      // other route. GET (or any other method) to this path falls through
-      // to the 404 below, same as any unrecognized route - it is never
-      // treated as an answer attempt.
+      // BL-240/BL-241: the bridge's one write route - answers a captured
+      // to-human gate only. Read-level auth is already enforced above,
+      // uniformly with every other route; control actions additionally
+      // require the step-up check (control-requires-step-up-04) - a
+      // read-scoped device passes the gate above (it can view) but is
+      // refused here (read-only-cannot-control-03). GET (or any other
+      // method) to this path falls through to the 404 below, same as any
+      // unrecognized route - it is never treated as an answer attempt.
       if (isGateAnswerRoute(req, url)) {
+        if (!isAuthorizedForControl(req, registry)) {
+          res.writeHead(403, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ success: false, reason: 'control auth required' }));
+          return;
+        }
         handleGateAnswerRoute(req, res, targetPath);
         return;
       }
@@ -291,7 +374,26 @@ export function startBridge(
       const boundPort = typeof address === 'object' && address ? address.port : port;
       resolve({
         port: boundPort,
-        token,
+        get token() {
+          return primaryTokenOf(registry);
+        },
+        registerDevice: (label, scope) => {
+          const result = registerDevice(registry, label, scope);
+          registry = result.registry;
+          return result.device;
+        },
+        revokeDevice: (deviceId) => {
+          registry = revokeDevice(registry, deviceId);
+        },
+        rotateToken: (deviceId) => {
+          const result = rotateDeviceToken(registry, deviceId);
+          if (!result) {
+            return undefined;
+          }
+          registry = result.registry;
+          return result.device;
+        },
+        getRegistry: () => registry,
         stop: () => {
           clearInterval(poll);
           for (const client of sseClients) {
