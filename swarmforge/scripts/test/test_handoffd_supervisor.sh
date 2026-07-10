@@ -336,4 +336,23 @@ COUNT="$(handoffd_process_count)"
   || fail "04: expected exactly one handoffd process after simultaneous launcher+supervisor starts; found $COUNT"
 pass "04: simultaneous launcher and supervisor starts still yield exactly one handoffd process"
 
+# ── BL-215: a dead-daemon alarm with a configured recipient but no
+#     RESEND_API_KEY in the daemon's own env warns loudly instead of no-oping
+#     silently. Explicitly unsets RESEND_API_KEY so this never risks a real
+#     network call regardless of the ambient shell's env; conf-file itself
+#     (like every daemon_alarm_lib.bb wiring test here) is the repo's real
+#     swarmforge.conf, which already configures notify_email_to. ──────────
+make_fixture
+trap 'stop_daemon; rm -rf "$ROOT"' EXIT
+echo "999999" > "$DAEMON_DIR/handoffd.pid"
+echo "old log line" > "$DAEMON_DIR/handoffd.log"
+
+env -u RESEND_API_KEY SUPERVISOR_STALL_MS=500 SWARMFORGE_TERMINAL_BACKEND=none PATH="$FAKE_BIN:$PATH" \
+  bb "$SUPERVISOR" "$ROOT" --check-once
+
+[[ "$(status_field alarm_email)" == "False" ]] || fail "BL-215: expected alarm_email=false when RESEND_API_KEY is missing"
+grep -q "RESEND_API_KEY" "$DAEMON_DIR/handoffd-supervisor.log" \
+  || fail "BL-215: expected a loud warning naming RESEND_API_KEY in the supervisor log; got: $(cat "$DAEMON_DIR/handoffd-supervisor.log" 2>/dev/null)"
+pass "BL-215: a configured-but-keyless daemon warns loudly (naming RESEND_API_KEY) instead of a silent no-op"
+
 echo "ALL PASS"
