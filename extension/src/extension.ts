@@ -63,7 +63,6 @@ import {
   resolveMistralApiKey,
 } from './notify/secrets';
 import { startBriefingScheduler } from './notify/briefingScheduler';
-import { startBriefingEmailWatcher } from './notify/briefingEmailWatcher';
 import { computeCostHealthSidecar, writeCostHealthSidecar, commitCostHealthSidecar } from './notify/costHealthSidecar';
 import { parseRolesTsv } from './swarm/swarmState';
 import { sendResendEmail } from './notify/resendClient';
@@ -148,14 +147,16 @@ let stopPeriodicStateDump: (() => void) | null = null;
 const STATE_DUMP_INTERVAL_MS = 60_000;
 
 // BL-099: the coder's slice of the daily briefing - scheduling the once-a-
-// day "briefing due" nudge and sending each committed briefing exactly once.
-// Composing the briefing's content is the coordinator role prompt's job
-// (specifier-owned), not this extension code.
+// day "briefing due" nudge. Composing the briefing's content is the
+// coordinator role prompt's job (specifier-owned), not this extension code.
+// BL-214: emailing each committed briefing moved to the headless daemon
+// (swarmforge/scripts/briefing_email_lib.bb via handoffd.bb) so delivery no
+// longer depends on the VS Code host being open - this extension no longer
+// sends that email itself (retired, not just disabled, to guarantee no
+// double-send when the host happens to be open alongside the daemon).
 let stopBriefingScheduler: (() => void) | null = null;
-let stopBriefingEmailWatcher: (() => void) | null = null;
 const BRIEFING_HOUR_UTC = 8;
 const BRIEFING_SCHEDULE_CHECK_INTERVAL_MS = 5 * 60_000;
-const BRIEFING_EMAIL_CHECK_INTERVAL_MS = 2 * 60_000;
 
 function buildExtensionStateSnapshot(targetPath: string | null, reason: string | null): ExtensionStateSnapshot {
   const roles = targetPath ? readSwarmRoles(targetPath) : [];
@@ -480,18 +481,13 @@ function startOrRestartChaserMonitor(targetPath: string, context: vscode.Extensi
 
 // BL-099: daily briefing - once-a-day nudge into the coordinator's pane
 // (the coordinator's own role prompt composes and commits the briefing
-// content, per the ticket's role-prompt-owned scope) plus a watcher that
-// emails each committed docs/briefings/<date>.md exactly once. Reuses the
-// existing BL-073 Resend client and secret storage; this extension code
-// never holds the API key beyond the single resolveResendApiKey() call.
+// content, per the ticket's role-prompt-owned scope). BL-214: emailing each
+// committed briefing is now the headless daemon's job, not this host's -
+// see briefing_email_lib.bb.
 function startOrRestartDailyBriefing(targetPath: string, context: vscode.ExtensionContext): void {
   if (stopBriefingScheduler) {
     stopBriefingScheduler();
     stopBriefingScheduler = null;
-  }
-  if (stopBriefingEmailWatcher) {
-    stopBriefingEmailWatcher();
-    stopBriefingEmailWatcher = null;
   }
 
   const swarmforgeDir = path.join(targetPath, '.swarmforge');
@@ -500,7 +496,6 @@ function startOrRestartDailyBriefing(targetPath: string, context: vscode.Extensi
   }
 
   const socketPath = readTmuxSocket(targetPath);
-  const briefingsDir = path.join(targetPath, 'docs', 'briefings');
 
   stopBriefingScheduler = startBriefingScheduler(
     {
@@ -549,38 +544,11 @@ function startOrRestartDailyBriefing(targetPath: string, context: vscode.Extensi
     clearInterval
   );
 
-  let resendApiKey: string | undefined;
-  resolveResendApiKey(context.secrets).then((key) => {
-    resendApiKey = key ?? undefined;
-  });
-  const config = vscode.workspace.getConfiguration('swarmforge');
-  const to = config.get<string>('notify.email.to', '');
-  const from = config.get<string>('notify.email.from', 'onboarding@resend.dev');
-
-  stopBriefingEmailWatcher = startBriefingEmailWatcher(
-    briefingsDir,
-    {
-      readBriefingContent: (fileName: string) => fs.readFileSync(path.join(briefingsDir, fileName), 'utf-8'),
-      sendEmail: async (subject: string, text: string) => {
-        if (!resendApiKey || !to) return false;
-        const result = await sendResendEmail(resendApiKey, { to, from, subject, text });
-        return result.success;
-      },
-    },
-    BRIEFING_EMAIL_CHECK_INTERVAL_MS,
-    setInterval,
-    clearInterval
-  );
-
   context.subscriptions.push({
     dispose: () => {
       if (stopBriefingScheduler) {
         stopBriefingScheduler();
         stopBriefingScheduler = null;
-      }
-      if (stopBriefingEmailWatcher) {
-        stopBriefingEmailWatcher();
-        stopBriefingEmailWatcher = null;
       }
     },
   });

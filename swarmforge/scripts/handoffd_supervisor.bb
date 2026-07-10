@@ -307,17 +307,11 @@
 (def missing-key-warned? (atom false))
 
 (defn send-configured-alarm-email! [subject text]
-  (let [conf (daemon-alarm-lib/parse-conf (when (fs/exists? conf-file) (slurp (str conf-file))))
-        to (get conf "notify_email_to")
-        from (or (get conf "notify_email_from") "onboarding@resend.dev")
-        api-key (System/getenv "RESEND_API_KEY")
-        result (daemon-alarm-lib/send-alarm-email! api-key to from subject text)]
-    (daemon-alarm-lib/warn-missing-key-if-needed!
-     result
-     {:already-warned?! (fn [] @missing-key-warned?)
-      :log-warning! (fn [msg] (log! "email-misconfigured" msg))
-      :mark-warned! (fn [] (reset! missing-key-warned? true))})
-    result))
+  (daemon-alarm-lib/send-configured-email!
+   conf-file subject text
+   {:already-warned?! (fn [] @missing-key-warned?)
+    :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+    :mark-warned! (fn [] (reset! missing-key-warned? true))}))
 
 (defn distinct-sessions []
   (if (fs/exists? roles-file)
