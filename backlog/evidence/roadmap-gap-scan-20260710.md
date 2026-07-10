@@ -64,3 +64,25 @@ webview + PWA.
   contradiction worth surfacing to the operator, not a ticket to silently spec.
 
 Full agent transcript available on request (session-local, not persisted).
+
+## Specifier follow-up — operator decisions + spec status (2026-07-10)
+
+Specced this pass (paused/):
+- Gap #1 per-tile backend/model switch -> **BL-235** (M5).
+- Gap #2 effort dial (Suggest tier + manual dial) -> **BL-236** (M5, depends_on BL-235).
+- Windows contradiction -> **BL-237** docs-fix (operator ruled: fix docs to macOS/Linux only).
+
+Operator decisions for the remaining gaps (spec next; decisions recorded here so
+they are not lost):
+- Gap #3 two-way chat adapter — platform = **Telegram** first (free bot API);
+  other platforms follow the same adapter shape. M6, large.
+- Gap #4 remote gate-answering — posture = **answer captured needs-human gates
+  only** (submit an answer to a specific captured gate; NO arbitrary keystrokes /
+  shell). Narrow, auditable write scope. M6, large.
+- Gap #5 remote security hardening — sequence AFTER gap #4 (no control surface to
+  harden until #4 lands). M6, medium.
+- Accessibility (keyboard nav + ARIA across webview + PWA) — decision-free;
+  spec next. Medium.
+
+Windows ruling: docs are wrong, not the architecture — BL-237 corrects the docs;
+do NOT spec native Windows support.
