@@ -16,6 +16,8 @@
       // visible glyph alone (the target locale's code) is not descriptive
       // out of context for a screen reader.
       localeToggleAriaLabel: 'Switch language',
+      needsApprovalHeading: 'Needs your approval',
+      needsApprovalEmpty: 'Nothing awaiting approval.',
       boardHeading: 'Backlog board',
       boardActive: 'Active',
       boardPaused: 'Paused',
@@ -83,6 +85,8 @@
       loading: 'Chargement…',
       localeToggleLabel: 'EN',
       localeToggleAriaLabel: 'Changer de langue',
+      needsApprovalHeading: 'Nécessite votre approbation',
+      needsApprovalEmpty: 'Rien en attente d’approbation.',
       boardHeading: 'Tableau des tickets',
       boardActive: 'Actifs',
       boardPaused: 'En pause',

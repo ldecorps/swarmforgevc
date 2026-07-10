@@ -74,6 +74,41 @@ test('parseBacklogYaml omits swarm when absent, never defaulting it itself', () 
   assert.equal(Object.prototype.hasOwnProperty.call(item, 'swarm'), false);
 });
 
+// BL-251: the structured human_approval field (single source of truth for
+// the needs-approval list, never the free-text "# HUMAN APPROVAL:" comment
+// - see backfillHumanApproval.ts for the one-time migration off that
+// comment). Mirrors normalizeStatus's own "known value or undefined" shape.
+
+test('parseBacklogYaml parses human_approval: pending', () => {
+  const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: active\nhuman_approval: pending\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.humanApproval, 'pending');
+});
+
+test('parseBacklogYaml parses human_approval: approved', () => {
+  const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: active\nhuman_approval: approved\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.humanApproval, 'approved');
+});
+
+test('parseBacklogYaml omits humanApproval when the field is absent, never defaulting it itself', () => {
+  const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: active\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'humanApproval'), false);
+});
+
+test('parseBacklogYaml normalizes an unrecognized human_approval value to undefined, mirroring status', () => {
+  const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: active\nhuman_approval: maybe\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'humanApproval'), false);
+});
+
+test('parseBacklogYaml parses human_approval via the lenient fallback on a strict-unparsable ticket', () => {
+  const yaml = 'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\nhuman_approval: pending\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.humanApproval, 'pending');
+});
+
 // BL-117: prose description + acceptance reference, for the docs
 // drill-down explorer's ticket and Gherkin levels.
 
