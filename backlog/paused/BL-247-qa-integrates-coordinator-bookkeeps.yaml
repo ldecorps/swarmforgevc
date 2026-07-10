@@ -1,0 +1,66 @@
+id: BL-247
+title: "Baton: QA lands approved work on main; coordinator does bookkeeping only (integration-role redesign)"
+direction: infrastructure
+milestone: M7
+priority: 10
+mutation_cost: medium
+depends_on: [BL-243]
+source: "operator ruling 2026-07-10 via coordinator (evidence backlog/evidence/BL-243-integration-role-ruling-20260710.md); specifier design call = candidate (a)."
+
+description: |
+  Emerged from BL-243's scenario-03 reconciliation. Operator ruling (verbatim):
+  "every agent should merge his branch with QA's. the only thing coordinator does
+  is that he physically moves the backlog tickets."
+
+  SPECIFIER DESIGN CALL — candidate (a): QA becomes the integration point.
+  Every worktree role already merges up to QA's approved commit (the existing
+  merge-up broadcast protocol), so QA's branch already holds the integrated
+  result. QA then lands that commit on main and pushes origin. The coordinator's
+  post-QA job narrows to backlog bookkeeping (move the ticket active -> done,
+  promote the next paused item, recheck the depth cap) — it runs NO git merge or
+  push. `main` is RETAINED as the integration/PR target (the product goal is a PR
+  into main); candidate (b) "retire main" is rejected on that ground, and (c) "a
+  new script/other role" is rejected because QA is already the gate + convergence
+  point, so no new owner is needed.
+
+  Wanted behavior (observable):
+    - After QA approves and broadcasts merge-up, and every worktree role has merged
+      up to QA's commit, QA fast-forwards main to the approved commit and pushes
+      origin; the coordinator performs no git merge into main.
+    - The coordinator only moves the ticket (active -> done) and promotes the next
+      paused item; it runs no git merge or push.
+    - The GitHub-issue-close step on merge (issue_done.sh) moves to QA (the
+      integration owner); the coordinator no longer runs it.
+
+  Constraints / flags:
+    - LIVE-PROTOCOL CHANGE: rewrites the merge-up + integration protocol across
+      swarmforge/handoff-protocol.md, swarmforge/PIPELINE.md, the constitution
+      articles (01_roles, 02_handoffs, 04_quality_gates), and the coordinator.prompt
+      / QA.prompt role files. Because it changes how the RUNNING swarm integrates,
+      sequence it carefully (do not hot-edit the live protocol); the pipeline builds
+      and verifies it before it takes effect.
+    - HUMAN REVIEW: if the operator actually intends candidate (b) (retire main /
+      Baton tracks QA's branch as the live tip), redirect at review — this ticket
+      assumes main is retained.
+    - Resolves BL-243 scenario 03 (coordinator owns no integration branch — now
+      true under this design).
+
+  Scope: swarmforge/handoff-protocol.md (QA approval + merge-up section),
+  swarmforge/PIPELINE.md (integration step owner), swarmforge/constitution/articles/
+  01_roles.md + 02_handoffs.md + 04_quality_gates.md, swarmforge/roles/
+  coordinator.prompt (drop main-merge; keep bookkeeping) and QA.prompt (add
+  land-on-main + push + issue-close after the merge-up broadcast).
+
+acceptance: specs/features/BL-247-qa-integrates-coordinator-bookkeeps.feature
+
+qa_e2e_procedure: |
+  1. Approve a parcel and broadcast merge-up; have every worktree role merge up;
+     assert QA fast-forwards main to the approved commit and pushes origin, and the
+     coordinator runs no merge into main.
+  2. Assert the coordinator's post-approval actions are limited to moving the ticket
+     active -> done and promoting the next paused item (no git merge/push).
+  3. For a GH-issue-seeded ticket, assert QA runs the issue-close on merge and the
+     coordinator does not.
+
+# HUMAN APPROVAL: new specifier draft feature file, pending human review — in
+# particular confirm candidate (a) (retain main, QA integrates) over (b)/(c).

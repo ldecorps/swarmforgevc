@@ -43,3 +43,17 @@ export function updateLastRunForTarget(
     }
   }
 }
+
+// Colocated with RunEntry (rather than living in bridge/holisticProjections.ts
+// or notify/telegramNarrationSnapshot.ts, which both used to carry their own
+// private copy) so a caller needing "the latest run for this target" never
+// has to choose between duplicating this 5-line reduce and importing an
+// unrelated, heavier module just to reach it - this file only ever touches
+// fs/path, never tmux/git-history.
+export function mostRecentRunForTarget(runs: RunEntry[], targetPath: string): RunEntry | null {
+  const forTarget = runs.filter((r) => r.targetPath === targetPath);
+  if (forTarget.length === 0) {
+    return null;
+  }
+  return forTarget.reduce((latest, r) => (Date.parse(r.startedAt) > Date.parse(latest.startedAt) ? r : latest));
+}
