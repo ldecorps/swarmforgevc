@@ -23,6 +23,35 @@ interface RawDepcruiseViolation {
   rule?: { name?: string; severity?: string };
 }
 
+// QA bounce (6747a4812d): dependency-cruiser is a pure import/require-EDGE
+// analyzer - it structurally cannot see a bare global-identifier
+// reference like `localStorage.setItem(...)`, which has no import
+// statement at all. The wrapper-package-import check
+// (.dependency-cruiser.cjs's own no-webview-storage rule, matching
+// idb/localforage/dexie/store2/lockr - none installed, by design) can
+// therefore only ever catch an essentially impossible-today scenario, not
+// the realistic violation. This supplementary check scans FILE TEXT
+// directly and reports under the SAME rule name, so the architect's
+// bounce note stays consistent regardless of which mechanism caught it.
+// Word-boundary match so e.g. `myLocalStorageHelper` never false-positives.
+const STORAGE_GLOBAL_PATTERN = /\b(localStorage|sessionStorage)\b/;
+
+export function scanTextForStorageGlobal(filePath: string, content: string): DependencyViolation | null {
+  const match = content.match(STORAGE_GLOBAL_PATTERN);
+  return match ? { from: filePath, to: match[1], rule: 'no-webview-storage' } : null;
+}
+
+// Combines dependency-cruiser's own (import-graph) violations with the
+// supplementary (file-text) scan's findings into one deterministic result -
+// a caller never has to reason about which mechanism found what.
+export function mergeDependencyGateResults(
+  depcruiseResult: DependencyGateResult,
+  supplementaryViolations: DependencyViolation[]
+): DependencyGateResult {
+  const violations = sortViolations([...depcruiseResult.violations, ...supplementaryViolations]);
+  return { passed: violations.length === 0, violations };
+}
+
 // Deterministic: sorted by from, then to, then rule - regardless of
 // whatever order the underlying tool's own JSON happened to list them in,
 // so two runs over identical input always report violations in the same
