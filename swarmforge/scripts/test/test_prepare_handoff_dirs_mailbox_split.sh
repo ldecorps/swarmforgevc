@@ -34,7 +34,6 @@ trap 'rm -rf "$ROOT"' EXIT
 
 cat > "$ROOT/swarmforge/swarmforge.conf" <<'CONF'
 config active_backlog_max_depth -1
-window coordinator claude master --model x
 window specifier claude master --model x
 window coder claude coder task --model x
 CONF

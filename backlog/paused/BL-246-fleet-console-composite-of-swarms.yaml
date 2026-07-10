@@ -1,0 +1,52 @@
+id: BL-246
+title: "Baton: the fleet is a composite of swarms — consolidated console (fleet of one == fleet of many)"
+direction: feature
+milestone: M7
+priority: 20
+mutation_cost: high
+depends_on: [BL-244]
+source: "Baton epic BL-242 child."
+
+description: |
+  Two swarms, two projects, one console. The console subscribes to each swarm's
+  coordinator and treats a fleet of one identically to a fleet of many — the
+  composite uniformity that is the epic's acceptance bar.
+
+  Wanted behavior (observable, @poc slice):
+    - The console lists every swarm with its per-swarm status (on refresh).
+    - Fleet status() is the rollup of its swarms (a blocked member shows in the
+      fleet status).
+    - Composite uniformity: a single-swarm fleet renders through the SAME interface
+      as a multi-swarm fleet, with no special-case single-swarm path.
+    - children() traverses fleet -> swarm -> agent, each level answering the same
+      four calls.
+
+  Scope/slicing and open bindings:
+    - PoC transport = POLL ("when the console refreshes"). True push (Observer) is
+      DEFERRED (@m2), parked in
+      specs/features/BL-246-fleet-console-composite-of-swarms.push.feature.draft;
+      promote it into the live feature file when the push slice is built (per the
+      sliced-acceptance rule).
+    - CONCRETE TRANSPORT BINDING IS OPEN (BL-242 decision 2): whether each
+      coordinator publishes via the existing bridge (BL-065) or a Pi relay is
+      settled by the deferred swarm-status publish-format decision. The @poc rollup
+      behavior here is transport-agnostic and does not depend on that choice.
+    - Aggregation point (per the spec) is the always-on Pi (Tailscale relay), ties
+      to BL-101. Confirm during the publish-format brainstorm.
+
+  Scope: the fleet composite/console — subscribe to coordinators, list swarms +
+  per-swarm status, roll up fleet status, and traverse children() at each level,
+  through one uniform interface. Host-side rollup module + the console view.
+
+acceptance: specs/features/BL-246-fleet-console-composite-of-swarms.feature
+
+qa_e2e_procedure: |
+  1. Register swarms alpha (proj-a) and beta (proj-b); refresh; assert both are
+     listed with their status.
+  2. Set alpha active, beta blocked; assert fleet status() reflects a blocked member.
+  3. Register only alpha; assert the console renders it through the same interface
+     as a multi-swarm fleet, with no single-swarm special-case path.
+  4. Read children() for the fleet; assert it returns alpha + beta, children() on
+     alpha returns its agents, and each agent answers all four calls.
+
+# HUMAN APPROVAL: new specifier draft feature file, pending human review.
