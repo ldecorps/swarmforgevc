@@ -6,19 +6,19 @@
 // explicitly calls switchRoleEffort) and lets the operator manually set an
 // effort via a tile dial.
 //
-// switchRoleEffort reuses BL-235's exact mechanism (backendSwitch.ts):
-// claude's settings file already carries "effortLevel" alongside "model"
-// (swarmforge.sh's write_claude_settings_file writes both), so rewriting
-// that field in place and respawning via the existing respawnAgent is
-// enough - same in-memory-only, swarmforge.conf-untouched guarantee BL-235
-// established. Same claude-only scope as BL-235 too: a role on a backend
-// with no settings file (not claude-backed) has no effort setting to show
-// or change (effort-unsupported-04) - hasEffortSetting mirrors the exact
-// `agent === 'claude'` gate BL-235's own dropdown uses.
+// switchRoleEffort reuses BL-235's exact mechanism: claude's settings file
+// already carries "effortLevel" alongside "model" (swarmforge.sh's
+// write_claude_settings_file writes both), so rewriting that field in
+// place and respawning is enough - same in-memory-only,
+// swarmforge.conf-untouched guarantee BL-235 established, via the
+// read/write/respawn plumbing shared with backendSwitch.ts in
+// claudeSettingsFile.ts. Same claude-only scope as BL-235 too: a role on a
+// backend with no settings file (not claude-backed) has no effort setting
+// to show or change (effort-unsupported-04) - hasEffortSetting mirrors the
+// exact `agent === 'claude'` gate BL-235's own dropdown uses.
 
-import * as fs from 'fs';
-import * as path from 'path';
-import { respawnAgent, RespawnResult } from './tmuxClient';
+import { RespawnResult } from './tmuxClient';
+import { readClaudeSettingsField, writeClaudeSettingsFieldAndRespawn } from './claudeSettingsFile';
 
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh'] as const;
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
@@ -89,38 +89,21 @@ export function hasEffortSetting(agent: string): boolean {
   return agent === 'claude';
 }
 
-function claudeSettingsPath(targetPath: string, role: string): string {
-  return path.join(targetPath, '.swarmforge', 'launch', `${role}.claude-settings.json`);
-}
-
 // The current effort for a claude-backed role, read from its own settings
 // file - undefined when the role has no settings file yet.
 export function readCurrentEffort(targetPath: string, role: string): EffortLevel | undefined {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(claudeSettingsPath(targetPath, role), 'utf8'));
-    return EFFORT_LEVELS.includes(parsed.effortLevel) ? (parsed.effortLevel as EffortLevel) : undefined;
-  } catch {
-    return undefined;
-  }
+  const effort = readClaudeSettingsField(targetPath, role, 'effortLevel');
+  return typeof effort === 'string' && (EFFORT_LEVELS as readonly string[]).includes(effort) ? (effort as EffortLevel) : undefined;
 }
 
 // Rewrites role's settings-file effortLevel in place, preserving every
 // other field (model, permissions, etc.) unchanged, then respawns that ONE
-// role's pane via the existing respawnAgent - never touches any other
-// role, never touches swarmforge.conf. Mirrors backendSwitch.ts's
-// switchRoleModel exactly, operating on effortLevel instead of model.
+// role's pane - never touches any other role, never touches
+// swarmforge.conf. Mirrors backendSwitch.ts's switchRoleModel exactly,
+// operating on effortLevel instead of model.
 export function switchRoleEffort(targetPath: string, role: string, effort: string): RespawnResult {
   if (!(EFFORT_LEVELS as readonly string[]).includes(effort)) {
     return { success: false, message: `Unknown effort "${effort}" - expected one of: ${EFFORT_LEVELS.join(', ')}` };
   }
-  const settingsPath = claudeSettingsPath(targetPath, role);
-  let settings: Record<string, unknown>;
-  try {
-    settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-  } catch {
-    return { success: false, message: `No claude settings file found for role "${role}" at ${settingsPath}` };
-  }
-  settings.effortLevel = effort;
-  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
-  return respawnAgent(targetPath, role);
+  return writeClaudeSettingsFieldAndRespawn(targetPath, role, 'effortLevel', effort);
 }
