@@ -601,6 +601,55 @@
     (chase-sweep-lib/run-sweep! (role-inboxes-for-chase roles) now-ms chase-sweep-config adapters)
     (write-chase-status! now-ms)))
 
+;; ── BL-222: dispatch-gap sweep - the daemon's third duty ────────────────────
+;; Runs on the SAME cadence as chase-sweep! above (no separate timeout, per
+;; the ticket) since it's the daemon (never coordinator self-polling) that
+;; already runs unattended. chase_sweep_lib.bb owns the pure decision plus
+;; the fixture-testable scanning; everything below is the thin, environment-
+;; specific wiring (project paths, the actual subprocess send) that mirrors
+;; how chase-sweep!'s adapters wire pure decisions to real tmux/heartbeat.
+
+(defn active-backlog-dir [] (fs/path project-root "backlog" "active"))
+
+(defn dispatch-gap-scan-dirs [roles]
+  (vec (for [[_ role-info] roles
+             state [:new :in_process :completed :sent :outbox]]
+         (str (handoff-lib/mailbox-dir role-info state)))))
+
+(defn write-scratch-draft! [lines]
+  (let [tmp-dir (fs/path daemon-dir "dispatch-gap-drafts")]
+    (fs/create-dirs tmp-dir)
+    (let [draft (fs/path tmp-dir (str "draft-" (System/nanoTime) ".txt"))]
+      (spit (str draft) (str (str/join "\n" lines) "\n"))
+      draft)))
+
+(defn swarm-handoff-script []
+  (str (fs/path (fs/parent (fs/canonicalize *file*)) "swarm_handoff.bb")))
+
+;; Shells to swarm_handoff.bb (SWARMFORGE_ROLE=coordinator) rather than
+;; hand-writing an inbox file, per the ticket's "must go through the normal
+;; outbound handoff path" constraint - reuses its full existing validation,
+;; sequencing, and atomic outbox write, plus its own sync-delivery attempt.
+(defn auto-route! [item]
+  (let [draft (write-scratch-draft! (chase-sweep-lib/dispatch-gap-draft-lines item))
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+        ;; process/sh's varargs form (cmd arg1 arg2 opts-map) silently drops
+        ;; :dir/:env overrides - only the [cmd & args] vector form applies
+        ;; them (confirmed empirically). Must use the vector form here:
+        ;; auto-route! only works at all if SWARMFORGE_ROLE actually
+        ;; resolves to "coordinator" inside the subprocess.
+        result (process/sh ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
+    (if (zero? (:exit result))
+      (log! "dispatch-gap-autoroute" (:id item) (:assigned-to item))
+      (log! "dispatch-gap-autoroute-error" (:id item) (:assigned-to item) (str (:err result))))))
+
+(defn dispatch-gap-sweep! [roles]
+  (doseq [item (chase-sweep-lib/dispatch-gap-items (active-backlog-dir) (dispatch-gap-scan-dirs roles))]
+    (try
+      (auto-route! item)
+      (catch Exception e
+        (log! "dispatch-gap-autoroute-error" (:id item) (:assigned-to item) (.getMessage e))))))
+
 (defn -main []
   (let [roles  (load-roles)
         socket (str/trim (slurp (str socket-file)))]
@@ -649,7 +698,14 @@
                     (try
                       (chase-sweep! (load-roles) socket)
                       (catch Exception e
-                        (log! "chase-sweep-error" (.getMessage e)))))
+                        (log! "chase-sweep-error" (.getMessage e))))
+                    ;; BL-222: dispatch-gap sweep shares the same cadence -
+                    ;; no separate timeout, reusing the existing chase
+                    ;; interval per the ticket.
+                    (try
+                      (dispatch-gap-sweep! (load-roles))
+                      (catch Exception e
+                        (log! "dispatch-gap-sweep-error" (.getMessage e)))))
                   (spit (str heartbeat-file) (str (now) "\n"))
                   (when (zero? (mod cycle heartbeat-log-every-cycles))
                     (log! "heartbeat" (str "cycle=" cycle)))
