@@ -1,124 +1,142 @@
 id: BL-262
-title: "Onboarding contract: the target repo agrees to a scope charter before the swarm starts building"
+title: "Onboarding contract: the swarm surveys a new target repo, proposes a scope contract, and negotiates it to agreement before build starts"
 direction: tooling
 priority: 40
 mutation_cost: medium
-source: "operator direction 2026-07-10 (via coordinator, backlog/INTAKE-onboarding-contract-agreement.md): 'plug the swarm into a new project… the target repo has to AGREE to a contract firming up what the swarm is going to do.' Operator chose spec + build. Specifier resolved the design choices with the operator (2026-07-10)."
+source: "operator direction 2026-07-10 (via coordinator): original INTAKE-onboarding-contract-agreement.md ('the target repo has to AGREE to a contract firming up what the swarm is going to do'), RE-SCOPED 2026-07-10 (via coordinator) to 'swarm surveys repo + proposes contract to negotiate'. Specifier resolved the re-scope design choices with the operator (2026-07-10)."
 
 description: |
-  A NEW project-level ONBOARDING CONTRACT: after the swarm is pointed at a target
-  repo, the target (operator) AGREES to a scope charter — what the swarm will do
-  (and will NOT do) — and the swarm does NOT start dispatching build work until that
-  contract is agreed. This sits ABOVE the existing per-ticket human_approval gate
-  (the contract firms up the overall mandate; per-ticket approval still gates each
-  feature draft) — it does NOT replace or duplicate human_approval.
+  A NEW project-level ONBOARDING CONTRACT. After the swarm is pointed at a target
+  repo, the swarm SURVEYS the repo and PROPOSES a scope charter — what the swarm will
+  do (and will NOT do) — which the operator then NEGOTIATES to agreement. The swarm
+  does NOT dispatch build work until that contract is agreed. This sits ABOVE the
+  existing per-ticket human_approval gate (the contract firms the overall mandate;
+  per-ticket approval still gates each feature draft) — it does NOT replace or
+  duplicate human_approval.
 
-  No such mechanism exists today (coordinator verified): onboarding is purely
-  mechanical (point at target, copy constitution, run). The only agreement today is
-  the per-ticket human_approval gate.
+  RE-SCOPE (operator, 2026-07-10). The prior design had a HAND-AUTHORED contract the
+  operator hand-flipped to agreed. Superseded — the swarm now surveys + proposes, and
+  the operator negotiates. Operator decisions on the re-scope:
+    - NEGOTIATE = ITERATIVE loop: propose -> request changes -> revise -> re-propose,
+      repeating until the operator agrees. (The iteration is SLICE 2; slice 1 is
+      survey -> propose -> single agreement + gate.)
+    - SURVEY source = the target repo's own CODE + STRUCTURE (languages, layout,
+      README) PLUS any seed vision and initial backlog — not a blank template, not
+      seed-only.
+    - RESTRUCTURE = survey+propose is the NEW primary path (slice 1); the
+      hand-authored-only framing is retired/folded in. The fail-closed build-start
+      gate ships with it.
 
-  OPERATOR DECISIONS (2026-07-10):
+  Retained operator decisions (unchanged by the re-scope):
     - ARTIFACT = HYBRID. A structured .swarmforge/contract.yaml in the TARGET repo is
-      the source of truth the gate parses; a legible CONTRACT.md view is generated
-      and committed alongside for the target's own humans. Both git-tracked in the
-      target (reproducible/auditable — never machine-local state).
-    - CONSENT = HAND-FLIPPED marker. The operator edits agreement: pending -> agreed
-      and commits, reusing the human_approval field PATTERN (structured + legible).
-    - SCOPE CHANGE = MANUAL re-open. When scope changes, the operator flips the marker
-      back to pending and re-agrees; the gate re-holds until re-agreed. No automated
-      drift detection in this ticket.
-    - FIRST SLICE = the artifact + agree marker + the build-start gate. The swarm
-      auto-drafting the scope proposal from the seed is a LATER slice (parked, below).
+      the source of truth the gate parses; a legible CONTRACT.md view is generated and
+      committed alongside for the target's humans. Both git-tracked in the target
+      (reproducible/auditable — never machine-local state).
+    - CONSENT marker reuses the human_approval field PATTERN (structured + legible):
+      agreement state proposed | agreed. Scope change = MANUAL re-open (operator flips
+      agreed -> pending and re-negotiates; the gate re-holds). No automated drift
+      detection in this ticket.
+    - FAIL-CLOSED: proposed/pending/missing/malformed/unknown agreement value -> HOLD,
+      never a default-allow (BL-099 missing-data posture).
 
-  Contract CONTENT (keep small and legible): scope / deliverables the swarm commits
-  to, explicit out-of-scope, boundaries/constraints, and a short summary of the
-  initial backlog; plus the agreement marker (pending | agreed).
+  Contract CONTENT (keep small and legible): scope / deliverables the swarm commits to,
+  explicit out-of-scope, boundaries/constraints, and a short summary of the initial
+  backlog; plus the agreement marker (proposed | agreed).
 
-  Verified live layer (specifier grepped the tree):
+  Verified live layer (specifier grepped the tree, 2026-07-10):
     - SCAFFOLD point: extension/src/config/targetBootstrap.ts —
       buildTargetBootstrapFiles() / planTargetBootstrapFiles() are ALREADY pure and
       already scaffold+commit project.prompt/engineering.prompt into the target. Add
-      the contract source + generated legible view to that bootstrap set (pure,
-      fixture-testable — no live repo needed to test the file plan).
+      the (survey-populated) contract source + generated legible view to that bootstrap
+      set (pure, fixture-testable — no live repo needed to test the file plan).
     - GATE point: build dispatch begins when the coordinator promotes a paused item
       into backlog/active/ (coordinator.prompt promotion rules). The gate holds the
       FIRST build promotion for a target until its contract is agreed.
-    - human_approval is a PATTERN to reuse, NOT a code dependency: the field is not
-      on main yet (BL-251 active/unbuilt) and is about listing tickets — the
+    - No existing repo-survey or contract module — this capability is net-new. The
+      contract-proposal mapping (survey facts -> proposed contract) is a PURE function
+      fed a fixture survey; the act of surveying the live repo is swarm/agent behavior
+      exercised in the QA e2e, not a unit test.
+    - human_approval is a PATTERN to reuse, NOT a code dependency (BL-251 unbuilt); the
       contract's agreement marker is its own field on its own artifact.
-    - docs/Onboarding-New-Project.md is in-flight (documenter/QA worktrees), not yet
-      on main; the doc cross-link (slice d) lands when both are on main.
 
   Wanted behavior (observable) — SLICE 1:
-    - Initializing a target scaffolds a contract source marked awaiting-agreement plus
-      a committed legible view.
+    - Onboarding a target SURVEYS its code + structure + seed + backlog and PROPOSES a
+      contract whose scope / out-of-scope / boundaries are populated from the survey
+      (not blank), marked proposed (awaiting agreement); the initial-backlog summary
+      reflects the surveyed backlog.
     - The build-start gate ALLOWS dispatch only when the contract is agreed; it HOLDS
-      (fail-closed) when the contract is pending, missing, or malformed, naming the
-      unagreed contract as the reason — never crashing, never allowing on bad input.
-    - Flipping the marker back to pending (a scope-change re-open) re-holds the gate.
-    - The generated legible CONTRACT.md reflects the yaml source (scope + agreement
+      (fail-closed) when proposed/pending/missing/malformed, naming the unagreed
+      contract as the reason — never crashing, never allowing on bad input.
+    - The generated legible CONTRACT.md mirrors the yaml source (scope + agreement
       state) so the two do not diverge.
+    - Flipping the marker back to pending (a scope-change re-open) re-holds the gate.
 
   Constraints:
-    - The contract + agreement live in the TARGET repo, git-tracked (reproducible),
-      not machine-local (see [[pwa-vs-holistic-surface-boundary]] git-reproducible
-      rule).
-    - TESTABLE host-side: the gate decision (contract state -> allow/hold + reason)
-      and the contract parse/agree-state read and the legible-view generation are
-      PURE functions fed fixtures — no live swarm / real timer / real repo / VS Code
-      API in unit tests. Extend the already-pure targetBootstrap seams for scaffold.
+    - The contract + agreement live in the TARGET repo, git-tracked (reproducible), not
+      machine-local (see [[pwa-vs-holistic-surface-boundary]] git-reproducible rule).
+    - TESTABLE host-side: the gate decision (contract state -> allow/hold + reason), the
+      contract parse/agree-state read, the survey-facts -> proposed-contract mapping,
+      and the legible-view generation are PURE functions fed fixtures — no live swarm /
+      real timer / real repo / VS Code API in unit tests. Extend the already-pure
+      targetBootstrap seams for scaffold.
     - REUSE the human_approval structured-field PATTERN for the agree marker; do not
       reinvent consent plumbing; do not duplicate or replace human_approval.
     - COMPOSE, DON'T FORK: extend the existing "point at target + copy constitution"
-      bootstrap and cross-link docs/Onboarding-New-Project.md when it lands — this
-      ADDS the up-front agreement layer above per-ticket approval.
+      bootstrap and cross-link docs/Onboarding-New-Project.md when it lands — this ADDS
+      the up-front survey/propose/agree layer above per-ticket approval.
     - BL-247 (NO hot-edit of live role protocol): the coordinator.prompt rule that
       enforces the gate at promotion lands WITH this mechanism, sequenced through the
-      pipeline in this ticket's parcel — never edited onto main ahead of the gate
-      code. The gate is exposed so the coordinator can consult it at promotion time.
-    - FAIL-CLOSED: missing / malformed / unknown agreement value -> HOLD, never a
-      default-allow (BL-099 missing-data posture).
+      pipeline in this ticket's parcel — never edited onto main ahead of the gate code.
+    - FAIL-CLOSED: missing / malformed / unknown agreement value -> HOLD.
 
   Scope (SLICE 1): (a) a pure contract module — parse .swarmforge/contract.yaml, read
   the agreement marker, evaluate the build-start gate (state -> {allow|hold, reason}),
-  and generate the legible CONTRACT.md view from the source; (b) extend
-  targetBootstrap.ts to scaffold + commit the pending contract source and its legible
-  view on target init; (c) wire the gate at the coordinator's first-build-promotion
-  decision, with the enforcing coordinator.prompt rule landing in this parcel (BL-247).
-  Verify the promotion/dispatch integration point before naming files in the built
-  slice.
+  map a repo-survey (+ seed + backlog) into a proposed contract, and generate the
+  legible CONTRACT.md view from the source; (b) extend targetBootstrap.ts to scaffold +
+  commit the proposed contract source and its legible view on target onboarding; (c)
+  wire the gate at the coordinator's first-build-promotion decision, with the enforcing
+  coordinator.prompt rule landing in this parcel (BL-247). Verify the promotion/dispatch
+  integration point before naming files in the built slice.
 
-  SLICING: slice 1 (this feature) = artifact + agree marker + gate. Slice 2 (parked
-  in BL-262-onboarding-contract-agreement.slice-2-proposal.feature.draft) = the swarm
-  auto-drafts the scope proposal from the seed vision/backlog. Slice 3 = documenter
-  extends docs/Onboarding-New-Project.md with the shipped mechanism (documenter task,
-  in-pipeline, not a Gherkin scenario).
+  SLICING (BL-233): slice 1 (this live feature) = survey -> propose -> single agreement
+  + gate. Slice 2 (parked in
+  BL-262-onboarding-contract-agreement.slice-2-negotiation.feature.draft) = the
+  ITERATIVE negotiation loop (request changes -> revise -> re-propose, until agreed;
+  gate held through rounds). Slice 3 = documenter extends
+  docs/Onboarding-New-Project.md with the shipped mechanism (documenter task,
+  in-pipeline, not a Gherkin scenario). Add each slice's scenarios to the live feature
+  only when that slice is built.
 
 acceptance: specs/features/BL-262-onboarding-contract-agreement.feature
 
 qa_e2e_procedure: |
-  End-to-end procedure QA runs (gate + parse + scaffold + view all fixture-driven,
-  no live swarm / real repo):
-  1. Feed the gate a contract fixture in each state — agreed, pending, missing,
-     malformed — and assert: agreed -> allows dispatch; pending/missing/malformed ->
+  End-to-end procedure QA runs (gate + parse + survey-mapping + scaffold + view all
+  fixture-driven, no live swarm / real repo) — SLICE 1:
+  1. Feed the survey->propose mapping a fixture survey (repo code/structure facts +
+     seed vision + initial backlog); assert the proposed contract's scope/out-of-scope/
+     boundaries are populated from it (not blank) and the backlog summary reflects the
+     surveyed backlog, with the contract marked proposed.
+  2. Feed the gate a contract fixture in each state — agreed, proposed, pending,
+     missing, malformed — and assert: agreed -> allows dispatch; everything else ->
      holds (fail-closed), naming the unagreed contract as the reason; no crash.
-  2. Run the target-bootstrap file planner against a fixture target; assert the plan
-     creates a pending contract source AND a legible CONTRACT.md, and that re-running
-     against a target that already has them is a no-op (idempotent scaffold).
-  3. Take an agreed contract, flip the marker back to pending, re-evaluate the gate;
+  3. Run the target-bootstrap file planner against a fixture target; assert the plan
+     creates the proposed contract source AND a legible CONTRACT.md, and that
+     re-running against a target that already has them is a no-op (idempotent scaffold).
+  4. Take an agreed contract, flip the marker back to pending, re-evaluate the gate;
      assert it holds again (scope-change re-open).
-  4. Generate the legible view from a contract source fixture; assert it shows the
-     same scope + agreement state as the source (hybrid consistency).
-  5. Assert the gate is a pure function on injected state (no live swarm/timer/repo)
-     and that the coordinator.prompt gate rule shipped in THIS parcel (not pre-added
-     to main), consistent with BL-247.
-  6. Confirm the contract artifacts land git-tracked in the TARGET repo, not as
+  5. Generate the legible view from a contract source fixture; assert it shows the same
+     scope + agreement state as the source (hybrid consistency).
+  6. Assert the gate + survey-mapping are pure functions on injected state (no live
+     swarm/timer/repo) and that the coordinator.prompt gate rule shipped in THIS parcel
+     (not pre-added to main), consistent with BL-247.
+  7. Confirm the contract artifacts land git-tracked in the TARGET repo, not as
      machine-local state.
 
 # HUMAN APPROVAL: feature file
-# specs/features/BL-262-onboarding-contract-agreement.feature is a NEW draft
-# authored by the specifier and is PENDING human review. (The parked
-# .slice-2-proposal.feature.draft is design-only, not part of slice 1's contract.)
-# Priority 40 (normal) is the intake's suggestion — foundational to onboarding but
-# not blocking current work; operator to confirm/adjust.
+# specs/features/BL-262-onboarding-contract-agreement.feature is a RE-SCOPED draft
+# authored by the specifier and is PENDING human review. The operator approved the
+# re-scope DIRECTION (survey+propose+iterative-negotiate, repo+seed survey source,
+# survey+propose as the new slice 1) on 2026-07-10; the scenario wording is pending
+# review. (The parked .slice-2-negotiation.feature.draft is design-only, not part of
+# slice 1's contract.) Priority 40 (normal).
 human_approval: pending
