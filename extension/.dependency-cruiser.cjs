@@ -55,11 +55,22 @@ module.exports = {
       to: { path: '^child_process$' },
     },
     {
-      // Matches the bare package specifier, not a resolved node_modules
-      // path - none of these packages are installed in this project (by
-      // design), so dependency-cruiser reports them as an UNRESOLVED
-      // dependency whose `resolved`/`module` value is the raw specifier
-      // string itself, not a node_modules/... path (verified empirically).
+      // QA bounce (6747a4812d): dependency-cruiser is an import/require-EDGE
+      // analyzer - it structurally cannot see a bare global reference like
+      // `localStorage.setItem(...)`, which has no import statement at all.
+      // This rule therefore only ever catches a WRAPPER-PACKAGE import
+      // (matches the bare, unresolved specifier - none of these packages
+      // are installed in this project by design, so dependency-cruiser
+      // reports them as unresolved, verified empirically) - a real but
+      // secondary defense. The PRIMARY, realistic no-webview-storage
+      // violation (a bare localStorage/sessionStorage global reference) is
+      // caught by a SEPARATE supplementary check, dependency-gate.ts's own
+      // scanMediaFilesForStorageGlobals (a file-text scan, not an
+      // import-graph rule) - merged into the same "no-webview-storage"
+      // rule name by dependency-gate.ts's runGate() so the architect's
+      // bounce note stays consistent regardless of which mechanism caught
+      // it. Both must be run together (via runGate, never
+      // runDependencyCruiser alone) for this rule to actually be enforced.
       name: 'no-webview-storage',
       severity: 'error',
       comment: 'No localStorage/sessionStorage (or a browser-storage wrapper package) import from the view layer (local-engineering.prompt).',
