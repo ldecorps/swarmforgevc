@@ -39,6 +39,7 @@ export interface MilestoneTicketSummary {
   title: string;
   status: 'active' | 'paused' | 'done';
   priority?: number;
+  implemented: boolean;
 }
 
 export interface MilestoneNode {
@@ -54,6 +55,7 @@ export interface TicketNode {
   milestone?: string;
   description?: string;
   scenarios: GherkinScenario[];
+  implemented: boolean;
   titleFr?: string;
   titleFrUntranslated?: boolean;
   descriptionFr?: string;
@@ -85,8 +87,20 @@ export function isFeatureFilePath(acceptance: string | undefined): boolean {
 
 type StatusedItem = Omit<BacklogItem, 'status'> & { status: 'active' | 'paused' | 'done' };
 
+// BL-253: whole-ticket implementation status derives purely from the
+// backlog folder-authoritative status - done/ => implemented; active/ or
+// paused/ => not-yet-implemented. Computed once here so the ticket node
+// and its milestone summary always agree; a PWA consumer reads this field
+// directly rather than re-deriving its own copy of the done/not-done rule.
+// Greying not-yet tickets is a PWA-side VISUAL treatment only - this flag
+// gates nothing else (recertification stays available regardless, see
+// recertification.ts's own status-blind recertifiableScenariosFrom).
+function deriveImplemented(status: StatusedItem['status']): boolean {
+  return status === 'done';
+}
+
 function toMilestoneTicketSummary(item: StatusedItem): MilestoneTicketSummary {
-  const summary: MilestoneTicketSummary = { id: item.id, title: item.title, status: item.status };
+  const summary: MilestoneTicketSummary = { id: item.id, title: item.title, status: item.status, implemented: deriveImplemented(item.status) };
   if (item.priority !== undefined) {
     summary.priority = item.priority;
   }
@@ -113,6 +127,7 @@ function toTicketNode(item: StatusedItem, scenariosByTicketId: Map<string, Gherk
     title: item.title,
     status: item.status,
     scenarios: scenariosByTicketId.get(item.id) ?? [],
+    implemented: deriveImplemented(item.status),
   };
   if (item.priority !== undefined) {
     node.priority = item.priority;
