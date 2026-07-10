@@ -42,6 +42,7 @@ const DOMAINS = [
   require('./coordinatorProvisioningSteps'),
   require('./telegramAdapterSteps'),
   require('./recertSenderAllowlistSteps'),
+  require('./pwaCacheStampSteps'),
 ];
 
 function registerSteps(registry) {

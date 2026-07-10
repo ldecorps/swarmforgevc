@@ -17,7 +17,16 @@
 //   actually opened. Registration (feature-detected, permission-gated) is
 //   app.js's job; this worker just handles the event if it ever fires.
 
-const CACHE_NAME = 'swarmforge-dashboard-v2';
+// BL-249: stamped at deploy time (.github/workflows/backlog-dashboard.yml's
+// "Stamp PWA cache name" step, via extension/src/tools/
+// stamp-pwa-cache-name.ts) with a hash of SHELL_ASSETS' own content, so a
+// deploy that changes the shell yields a different CACHE_NAME (the
+// activate handler below already purges the old cache once CACHE_NAME
+// changes) and a byte-identical shell yields the same one - no manual
+// version bump, no forced re-download of an unchanged shell. Left as this
+// literal placeholder in the source tree; only the SERVED sw.js (under
+// _site/) is ever stamped.
+const CACHE_NAME = '__PWA_CACHE_NAME_PLACEHOLDER__';
 const SHELL_ASSETS = ['./', './index.html', './app.js', './locales.js', './manifest.json', './icon.svg'];
 const DATA_URLS = ['./backlog.json', './docs-tree.json', './recert-batch.json'];
 
