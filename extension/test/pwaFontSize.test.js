@@ -178,7 +178,7 @@ test('persist-04: a chosen size is written to the same Cache Storage instance as
   click(dom, increaseButton(dom));
   await flush();
 
-  const cache = await dom.window.caches.open('swarmforge-dashboard-v2');
+  const cache = await dom.window.caches.open('swarmforge-dashboard-preferences');
   const stored = await cache.match('./__font-size-preference__');
   assert.ok(stored, 'the font-size preference must be written into the existing dashboard cache');
   const data = await stored.json();
@@ -192,7 +192,7 @@ test('persist-04: a previously-chosen non-default size is restored on reopen, no
   click(first, increaseButton(first));
   click(first, increaseButton(first));
   await flush();
-  const cacheStore = await first.window.caches.open('swarmforge-dashboard-v2');
+  const cacheStore = await first.window.caches.open('swarmforge-dashboard-preferences');
   const stored = await cacheStore.match('./__font-size-preference__');
   const persisted = await stored.json();
   assert.equal(persisted.fontSizePx, 34);
@@ -202,7 +202,7 @@ test('persist-04: a previously-chosen non-default size is restored on reopen, no
   const second = new JSDOM(html, { runScripts: 'outside-only', url: 'https://example.github.io/dashboard/', pretendToBeVisual: true });
   installFakeCaches(second);
   await second.window.caches
-    .open('swarmforge-dashboard-v2')
+    .open('swarmforge-dashboard-preferences')
     .then((c) => c.put('./__font-size-preference__', new second.window.Response(JSON.stringify({ fontSizePx: 34 }))));
   second.window.fetch = (url) => {
     if (url === './backlog.json') return Promise.resolve({ json: () => Promise.resolve(fakeBacklog()) });
@@ -223,7 +223,7 @@ test('persist-04: a corrupt/out-of-range saved value falls back to the 28px defa
   const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://example.github.io/dashboard/', pretendToBeVisual: true });
   installFakeCaches(dom);
   await dom.window.caches
-    .open('swarmforge-dashboard-v2')
+    .open('swarmforge-dashboard-preferences')
     .then((c) => c.put('./__font-size-preference__', new dom.window.Response(JSON.stringify({ fontSizePx: 9999 }))));
   dom.window.fetch = (url) => {
     if (url === './backlog.json') return Promise.resolve({ json: () => Promise.resolve(fakeBacklog()) });
