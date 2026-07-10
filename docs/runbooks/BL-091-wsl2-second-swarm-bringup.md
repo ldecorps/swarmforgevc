@@ -96,11 +96,9 @@ On a successful launch:
 
 ## 5. Working the shared backlog
 
-Nothing here is automatic yet beyond what BL-090 already wired: pull
-regularly (`git pull` on the primary machine's promotions and your own
-specifier's routing decisions) so the second swarm's specifier sees newly
-assigned tickets. (Automatic wake-on-new-mail across machines is BL-092;
-until then, a periodic/manual `git pull` is expected.)
+BL-090 wired the shared-backlog convention (a ticket's `swarm:` field); BL-092
+(below) wires the automatic wake-up itself. Without it, pull regularly
+(`git pull`) so the second swarm's specifier sees newly assigned tickets.
 
 Once pulled, the second swarm's specifier only routes tickets whose `swarm:`
 field names it — it ignores every ticket assigned elsewhere, and the
@@ -110,7 +108,53 @@ merges push to the shared `main` with the same fetch/re-merge/retry
 discipline as a primary swarm's specifier — a push race is retried, never
 force-pushed, never silently dropped (BL-090 multi-swarm-05).
 
-## 6. Stop
+## 6. Automatic wake-up on relevant pushes (BL-092)
+
+Replaces the manual/periodic `git pull` above with an event-driven nudge,
+using GitHub itself as the notification bus - no inbound ports, tunnels, or
+firewall changes on either machine, since a self-hosted runner holds an
+outbound long-poll connection to GitHub.
+
+**Register a self-hosted runner from inside this same WSL2 environment:**
+
+1. In the repo's GitHub settings, add a new self-hosted runner and follow
+   GitHub's own generated registration commands (`config.sh` +
+   `run.sh`/`svc.sh`) inside this WSL2 shell - the runner process lives
+   alongside the swarm on the same Linux userland.
+2. Give it the label `second-swarm` (in addition to GitHub's defaults) -
+   `.github/workflows/second-swarm-wakeup.yml` targets exactly that label,
+   so the workflow only ever runs on this machine.
+3. Set the repository (or environment) variable
+   `SECOND_SWARM_CHECKOUT_PATH` to this swarm's persistent clone path from
+   step 2 above (e.g. `/home/you/code/swarmforgevc` - never `/mnt/c`). Not
+   a secret: a plain local path, safe as a `vars.*` value.
+4. If this swarm's own `swarmforge.conf`/pack sets a `swarm_name` other
+   than the default `second`, update `SECOND_SWARM_NAME` in the workflow
+   YAML to match - it only has to equal what the primary coordinator's
+   promotion step assigns tickets to.
+
+On a relevant push to `main` (one that touches `backlog/active/` or
+`backlog/paused/`), the workflow syncs this checkout (fast-forward only)
+and, only if a changed item is actually assigned to this swarm, wakes the
+specifier pane via this swarm's own tmux socket - the identical wake
+handoffd.bb's own daemon sends locally. A push that only concerns another
+swarm's assignments never wakes this one.
+
+**Fallback for a GitHub/Actions outage:** schedule
+`swarmforge/scripts/remote_wakeup_periodic_pull.sh <checkout-path>` as a
+slow crontab entry (every 10-15 minutes is plenty) so the local checkout
+never goes stale for long even without the instant nudge - every role
+(the specifier included) already runs its own idle self-check
+(`ready_for_next.sh`) once idle past its own timeout, so a fresh checkout
+alone is enough for newly assigned work to surface on its own:
+
+```sh
+crontab -e
+# add:
+*/10 * * * * /home/you/code/swarmforgevc/swarmforge/scripts/remote_wakeup_periodic_pull.sh /home/you/code/swarmforgevc
+```
+
+## 7. Stop
 
 ```sh
 ./swarm ensure ~/code/swarmforgevc   # check/repair without relaunching
