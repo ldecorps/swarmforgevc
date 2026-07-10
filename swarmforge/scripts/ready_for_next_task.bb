@@ -53,6 +53,11 @@
                 (when (fs/exists? target-file)
                   (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: target in-process file already exists: " target-file)))
                 (fs/move source-file target-file)
+                ;; BL-232: drops any .chase.json/.nudge sidecar left behind
+                ;; at source-file's now-stale new/ location - it only ever
+                ;; described state about this handoff waiting in new/, and
+                ;; must not outlive it there.
+                (handoff-lib/remove-sidecars-of! source-file)
                 (handoff-lib/set-header! target-file "dequeued_at" (handoff-lib/timestamp))
                 (handoff-lib/print-task target-file)))))))))
 
