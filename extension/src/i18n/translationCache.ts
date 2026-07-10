@@ -36,20 +36,21 @@ export function translationCacheFile(targetPath: string): string {
   return path.join(targetPath, 'docs', 'i18n', 'translation-cache.json');
 }
 
+function isValidTranslationCache(parsed: unknown): parsed is TranslationCacheData {
+  return (
+    !!parsed &&
+    typeof parsed === 'object' &&
+    (parsed as TranslationCacheData).schemaVersion === TRANSLATION_CACHE_SCHEMA_VERSION &&
+    !!(parsed as TranslationCacheData).entries &&
+    typeof (parsed as TranslationCacheData).entries === 'object'
+  );
+}
+
 export function readTranslationCache(targetPath: string): TranslationCacheData {
   try {
     const content = fs.readFileSync(translationCacheFile(targetPath), 'utf-8');
     const parsed = JSON.parse(content);
-    if (
-      parsed &&
-      typeof parsed === 'object' &&
-      parsed.schemaVersion === TRANSLATION_CACHE_SCHEMA_VERSION &&
-      parsed.entries &&
-      typeof parsed.entries === 'object'
-    ) {
-      return parsed as TranslationCacheData;
-    }
-    return emptyTranslationCache();
+    return isValidTranslationCache(parsed) ? parsed : emptyTranslationCache();
   } catch {
     return emptyTranslationCache();
   }

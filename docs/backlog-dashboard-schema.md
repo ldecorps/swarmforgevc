@@ -37,7 +37,7 @@ bumping `schemaVersion` and documenting the change here.
 |---|---|---|
 | `id` | string | e.g. `"BL-097"`. |
 | `title` | string | |
-| `titleFr` / `titleFrUntranslated` | string / boolean (optional) | BL-118: machine-translated French title. `titleFrUntranslated: true` means `titleFr` is untranslated English (MT engine unavailable/failed), not an actual translation; absent (not `false`) when translation succeeded. |
+| `titleTranslations` | `Record<string, { title: string; untranslated?: boolean }>` (optional) | BL-230: per-configured-target-locale machine-translated title, keyed by locale code (see `extension/src/i18n/targetLocales.ts`'s `TARGET_LOCALES`; French (`fr`) is the first delivered target). Supersedes BL-118's fixed `titleFr`/`titleFrUntranslated` pair — adding a target locale is a new key in this map, not a new field pair, so no per-language code change is needed (only `translateBacklogDashboard` populates this; `buildBacklogDashboard`/`computeBacklogDashboard` alone never set it). Each entry's `untranslated: true` means `title` is untranslated English (MT engine unavailable/failed), not an actual translation; absent (not `false`) when translation succeeded. A locale with no entry falls back to the ticket's source `title`. |
 | `status` | `"active" \| "paused" \| "done"` | The folder this ticket currently sits in (authoritative over any `status:` field inside the ticket YAML). |
 | `swarm` | string | The ticket's `swarm:` field (BL-090), defaulting to `"primary"` when absent. |
 | `milestone` | string (optional) | Absent if the ticket has no milestone. |

@@ -53,21 +53,39 @@ function registerSteps(registry) {
   );
 
   // ── content-translated-01 (Scenario Outline: fr, es) ───────────────────
+  // Fixed, independent of the Examples-table value fed in below: the
+  // titleTranslations key and the "expected" text a later step checks for
+  // must NOT both be derived from the same runtime `locale` variable, or a
+  // mutated example value (e.g. "fr" -> "fR") threads through self-
+  // consistently and the render call always finds "its own" fixture entry -
+  // no mutation of the table can ever be observed. Looking the locale up in
+  // this fixed catalog instead means an unrecognized/mutated value is
+  // rejected here, before it can reach the render call at all.
+  const CONTENT_TRANSLATED_FIXTURES = {
+    fr: { title: '[fr] cost telemetry rollup', extraLocales: undefined },
+    // 'es' is not a real shipped target locale yet (FR is BL-230's first
+    // delivered target) - injecting it as data-only proves the render
+    // mechanism generalizes without claiming ES ships today.
+    es: { title: '[es] cost telemetry rollup', extraLocales: { es: { localeToggleLabel: 'ES' } } },
+  };
+
   registry.define(
     /^a ticket whose source title is a prose sentence and a "([^"]+)" translation was produced at build time$/,
     (ctx, locale) => {
+      const fixture = CONTENT_TRANSLATED_FIXTURES[locale];
+      if (!fixture) {
+        throw new Error(`content-translated-01 has no fixed fixture for locale "${locale}"`);
+      }
       ctx.locale = locale;
       ctx.ticket = {
         id: 'BL-100',
         title: 'cost telemetry rollup',
         status: 'active',
         swarm: 'primary',
-        titleTranslations: { [locale]: { title: `[${locale}] cost telemetry rollup` } },
+        titleTranslations: { [locale]: { title: fixture.title } },
       };
-      // 'es' is not a real shipped target locale yet (FR is BL-230's first
-      // delivered target) - injecting it as data-only proves the render
-      // mechanism generalizes without claiming ES ships today.
-      ctx.extraLocales = locale === 'en' || locale === 'fr' ? undefined : { [locale]: { localeToggleLabel: locale.toUpperCase() } };
+      ctx.expectedTitle = fixture.title;
+      ctx.extraLocales = fixture.extraLocales;
     }
   );
 
@@ -77,9 +95,8 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the title is shown as a sentence in that locale$/, (ctx) => {
-    const expected = `[${ctx.locale}] cost telemetry rollup`;
-    if (!ctx.boardText.includes(expected)) {
-      throw new Error(`expected the board to show "${expected}", got: ${ctx.boardText}`);
+    if (!ctx.boardText.includes(ctx.expectedTitle)) {
+      throw new Error(`expected the board to show "${ctx.expectedTitle}", got: ${ctx.boardText}`);
     }
   });
 
