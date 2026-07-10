@@ -65,6 +65,14 @@
 
 <section>
   <h2 data-i18n="boardHeading">Backlog board</h2>
+  <input type="search" id="boardFilterQuery" data-i18n-placeholder="boardFilterPlaceholder" placeholder="Filter by id or title…">
+  <select id="boardFilterStatus" data-i18n-aria="boardFilterStatusAriaLabel">
+    <option value="all" data-i18n="boardFilterStatusAll">All statuses</option>
+    <option value="active" data-i18n="boardFilterStatusActive">Active</option>
+    <option value="paused" data-i18n="boardFilterStatusPaused">Paused</option>
+    <option value="done" data-i18n="boardFilterStatusDone">Done</option>
+  </select>
+  <input type="number" id="boardFilterPriority" data-i18n-placeholder="boardFilterPriorityPlaceholder" placeholder="Priority">
   <div id="board"></div>
 </section>
 
