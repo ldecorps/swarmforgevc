@@ -27,6 +27,13 @@ the shared signing secret to match `HandleInboundEmailWebhookDeps.secret`
 in the function's own deployment environment — never committed to the
 repo, per the constitution's secrets rule.
 
+**Also required (BL-248): set `HandleInboundEmailWebhookDeps.senderAllowlist`** in
+that same deployment environment, to the email address(es) the operator
+actually sends recertification replies from. This gate is **fail-closed** —
+an empty or missing allowlist rejects every sender, so the receiver stays
+inert (every inbound recert email 403s) until this is set, even with a
+correct signing secret.
+
 ## 3. Verify (QA e2e procedure)
 
 - From the phone, tap a recertification action (confirm/update/delete).
@@ -34,6 +41,9 @@ repo, per the constitution's secrets rule.
   the old `.invalid` placeholder — and the email sends without bouncing.
 - Confirm a signed inbound email reaches the BL-217 receiver and queues
   exactly one proposal for specifier review.
+- Confirm a signed email from a sender **not** on the allowlist gets a 403
+  and creates no proposal (BL-248); confirm the same email from an
+  allowlisted sender succeeds.
 - Confirm an **unsigned** POST to the same endpoint creates no proposal
   (`recertInboundWebhook.ts`'s signature/freshness gate — BL-223 does not
   weaken it; a real address changes only where mail is delivered from, not
