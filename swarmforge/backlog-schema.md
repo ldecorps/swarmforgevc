@@ -18,6 +18,7 @@ The coordinator reads these to route work.
 | `workflow_pin` | list[string] | Override the default pack for this item (e.g., `[coder, cleaner]`). |
 | `depends_on` | list[string] | IDs of items that must complete first. |
 | `acceptance` | string | A path to the item's Gherkin feature file under `specs/features/` (e.g. `specs/features/BL-042-add-oauth-login.feature`) — the feature file is the durable acceptance contract and outlives the backlog item. Older items may still carry the criteria inline (`acceptance: \|` followed by a Gherkin block) until migrated; both forms are read. |
+| `human_approval` | string | `pending` or `approved` (BL-251). Set by the specifier to `pending` when it authors or re-specs a feature file that needs human review; a human flips it to `approved`. Unset/absent means not applicable (no approval needed, or a legacy item). This structured field is the SINGLE source for the "needs human approval" lists surfaced in the PWA and the daily briefing — both read this field directly, never the free-text `# HUMAN APPROVAL: ...` comment some items still also carry. Only meaningful on live items (`backlog/active/`, `backlog/paused/`); not read from `backlog/done/`. |
 
 ## Example
 ```yaml
