@@ -1,0 +1,106 @@
+id: BL-233
+title: "Recruiter: scout cheap/free model plans, qualify via the compliance battery, rank best-value model per role"
+direction: tooling
+priority: 40
+mutation_cost: medium
+source: "operator chat request 2026-07-10: 'introduce a recruiter — hunt the internet for cheap/free plans, put models through our agent-fit-to-swarm battery so we can use new models; important to know which model is best for which role.'"
+
+description: |
+  Follow-on to BL-231 (the swarm-compliance battery). An out-of-band "recruiter"
+  that lets the swarm adopt cheaper models and tells us which model is best for
+  which role. It is swarm-INFRASTRUCTURE tooling (like BL-231), not a
+  Milestone-1 product feature — write it paused; the coordinator schedules it.
+
+  Operator decisions (2026-07-10, via specifier questions):
+    1. FORM: an out-of-band tool/job (run on demand or scheduled by the
+       coordinator/operator). NOT a new pipeline role — no worktree, no mailbox,
+       no swarmforge.conf window line; parcels do not flow through it.
+    2. PLAN ACCESS: auto sign-up + store keys — the recruiter itself obtains a
+       candidate's API key where automated signup is possible. GUARDRAILS (see
+       constraints): keys live in the host secret store only, and any signup wall
+       requiring payment, a captcha, or manual ToS acceptance ESCALATES to a
+       human rather than being bypassed.
+    3. RANKING: best value — rank compliant candidates per role by capability
+       weighted against plan cost (cheapest breaks ties); pure-capability visible
+       too.
+    4. ADOPTION: recommend only — emit a per-role leaderboard + a suggested
+       swarmforge.conf --model change; a human applies it. The recruiter never
+       mutates swarmforge.conf or bounces the swarm.
+
+  Pipeline: discover cheap/free model plans (web) -> acquire access (auto
+  sign-up + store key, or escalate at a wall) -> qualify each candidate through
+  the BL-231 battery (the landed provider abstraction BL-206-209 is what lets the
+  battery drive a non-Claude candidate) -> rank compliant candidates per role by
+  best value against the current model as reference -> report recommendation.
+
+  Wanted behavior (observable):
+    - Discovery reports each candidate's model, provider, plan cost, and signup
+      path.
+    - A free, automatable plan is signed up and its key stored in the host secret
+      store — never in the working tree or a commit.
+    - A payment/captcha/manual-ToS wall escalates to a human; no key is
+      fabricated and nothing is committed.
+    - Each acquired candidate is scored by the compliance battery (per-role
+      scorecard); non-compliant candidates are excluded from any role's ranking.
+    - Per role: a best-value leaderboard over compliant candidates, ordered by
+      capability-per-cost with the current model shown as the reference baseline,
+      and one recommended pick.
+    - The report includes a suggested swarmforge.conf --model change per role and
+      the recruiter changes no live config.
+
+  Constraints:
+    - SECRETS (local-engineering rule): any obtained API key is stored in the
+      host secret store only — never written into the target working directory,
+      the repo, .swarmforge/, or any commit. QA greps the tree + git diff to
+      prove non-leak.
+    - BOUNDED + SAFE signup (engineering bounded-retry rule): automate signup
+      only where a free/no-payment plan permits it; on a captcha/payment/manual-
+      ToS wall, escalate to a human (bounded retry -> human escalation), never
+      attempt to defeat anti-automation controls or accept ToS/payment on the
+      human's behalf.
+    - REUSE, don't reimplement: use BL-231's battery for compliance scoring and
+      the provider abstraction (BL-206-209) to drive candidates. Do not fork the
+      compliance checks.
+    - TESTABLE boundary: web discovery and provider signup sit behind injectable
+      seams (faked in unit tests per the engineering test-double rules); no real
+      network, signup, or secret writes in tests.
+    - OUT-OF-BAND: leaves backlog/ and mailbox state untouched (BL-231's
+      scratch-worktree posture); no agent self-scheduling.
+
+  Scope: a new host-side recruiter tool (e.g. extension/src/tools/ alongside the
+  BL-231 battery harness, or a swarmforge script) — discovery adapter, acquire/
+  secret-store adapter, battery-orchestration, best-value ranker, report writer.
+  Cost per plan is the value denominator, captured at discovery.
+
+  DELIVER IN SLICES: (1) discovery + candidate report (model/plan/cost/signup) —
+  smallest useful "here are cheap models" screen; (2) auto-acquire access + host
+  secret-store + wall-escalation; (3) qualify acquired candidates via the BL-231
+  battery; (4) best-value per-role leaderboard + recommended conf change. Ship
+  slice 1 first.
+
+acceptance: specs/features/BL-233-recruiter-model-scout-role-fit.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (all external seams faked/recorded):
+  1. Run discovery against a recorded web source; assert the candidate report
+     lists model, provider, plan cost, and signup path for each candidate.
+  2. Acquire access for a free-plan candidate via a fake signup seam; assert a
+     key is stored in the host secret store, AND grep the working tree + `git
+     diff`/`git log -p` to prove the key text appears in NEITHER.
+  3. Drive a candidate whose signup requires payment / captcha / manual ToS
+     (faked); assert the recruiter escalates to a human, stores no key, and
+     commits nothing.
+  4. Qualify an acquired candidate; assert it invokes the BL-231 battery and
+     records a per-role scorecard; a non-compliant candidate is excluded from
+     ranking.
+  5. Rank for a role given >=2 compliant candidates plus the incumbent model;
+     assert only compliant candidates are ranked, ordering is value-based (on
+     ~equal capability the cheaper wins), the incumbent shows as reference, and a
+     best-value pick is named.
+  6. Assert the report contains a suggested swarmforge.conf --model line per role
+     AND that swarmforge.conf is byte-for-byte unchanged and no bounce fired.
+
+# HUMAN APPROVAL: feature file specs/features/BL-233-...feature is a new draft
+# authored by the specifier and is pending human review — in particular the
+# auto-signup guardrails (secret storage + wall-escalation) chosen to keep the
+# operator's "auto sign-up + store keys" decision safe.
