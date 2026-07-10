@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-10T11:11:52.129730415Z","feature_name":"the recert inbound-email webhook accepts proposals only from allowlisted senders","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-248-recert-webhook-sender-allowlist.feature","background_hash":"d8062ff8163a201c3b7a4cdb7e519761043c02df2b6a37dc9c5d14298b743aee","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: the recert inbound-email webhook accepts proposals only from allowlisted senders
 
   # Operator request 2026-07-10 (via architect). Today handleInboundEmailWebhook
