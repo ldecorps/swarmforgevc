@@ -61,6 +61,7 @@ const DOMAINS = [
   require('./docsUntranslatedFlagSteps'),
   require('./briefingGenerationScheduleSteps'),
   require('./approvalTicketDetailSteps'),
+  require('./briefingEnrichmentSteps'),
 ];
 
 function registerSteps(registry) {
