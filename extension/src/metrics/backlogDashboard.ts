@@ -38,6 +38,11 @@ export interface DashboardTicketSummary {
   titleTranslations?: Record<string, { title: string; untranslated?: boolean }>;
 }
 
+export interface NeedsApprovalEntry {
+  id: string;
+  title: string;
+}
+
 export interface BacklogDashboardData {
   schemaVersion: number;
   generatedAtIso: string;
@@ -47,6 +52,13 @@ export interface BacklogDashboardData {
     paused: DashboardTicketSummary[];
     doneByMilestone: Record<string, DashboardTicketSummary[]>;
   };
+  // BL-251: live (active + paused) tickets whose human_approval field is
+  // "pending" - the SINGLE SOURCE both the PWA and the daily briefing read,
+  // derived only from that structured field, never the free-text
+  // "# HUMAN APPROVAL:" comment. Always present (possibly empty), never
+  // omitted, so both surfaces can render an explicit no-data state from it
+  // rather than treating "field absent" as "nothing to show yet."
+  needsApproval: NeedsApprovalEntry[];
   metrics: {
     velocity: VelocityResult;
     burndown: MilestoneBurndownResult[];
@@ -119,6 +131,15 @@ function toDashboardSummary(
   return summary;
 }
 
+// BL-251: live-only (active + paused, never done/) - matches the ticket's
+// own "not applicable" reading of absent/approved, and the constraint that
+// the needs-approval list is exactly the LIVE items still pending review.
+function computeNeedsApproval(active: BacklogItem[], paused: BacklogItem[]): NeedsApprovalEntry[] {
+  return [...active, ...paused]
+    .filter((item) => item.humanApproval === 'pending')
+    .map((item) => ({ id: item.id, title: item.title }));
+}
+
 function groupDoneByMilestone(
   doneItems: BacklogItem[],
   localSwarmName: string,
@@ -171,6 +192,7 @@ export function buildBacklogDashboard(
       paused: folders.paused.map((item) => toSummary(item, 'paused')),
       doneByMilestone: groupDoneByMilestone(folders.done, localSwarmName, lifecycleByTicketId, p50ByTicketId, p85ByTicketId),
     },
+    needsApproval: computeNeedsApproval(folders.active, folders.paused),
     metrics: {
       velocity: deliveryMetrics.velocity,
       burndown: deliveryMetrics.burndown,

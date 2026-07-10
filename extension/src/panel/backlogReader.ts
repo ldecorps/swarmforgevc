@@ -28,6 +28,11 @@ export interface BacklogItem {
   // the docs drill-down explorer's ticket and Gherkin levels.
   description?: string;
   acceptance?: string;
+  // BL-251: structured human-approval status - the single source of truth
+  // for the needs-approval list (never re-derived from the free-text
+  // "# HUMAN APPROVAL:" comment). Absent means not applicable (no approval
+  // needed, or a legacy ticket the one-time backfill hasn't reached).
+  humanApproval?: 'pending' | 'approved';
 }
 
 const VALID_STATUSES = new Set(['todo', 'active', 'done']);
@@ -110,6 +115,7 @@ function assignOptionalFields(item: BacklogItem, content: string): void {
   assignIfTruthy(item, 'swarm', parseYamlScalar(content, 'swarm'));
   assignIfTruthy(item, 'description', parseYamlBlockScalar(content, 'description'));
   assignIfTruthy(item, 'acceptance', parseAcceptanceField(content));
+  assignIfDefined(item, 'humanApproval', normalizeHumanApproval(parseYamlScalar(content, 'human_approval')));
 }
 
 function toOptionalNumber(value: unknown): number | undefined {
@@ -148,6 +154,15 @@ function normalizeStatus(statusRaw: string | undefined): BacklogItem['status'] {
   return statusRaw !== undefined && VALID_STATUSES.has(statusRaw) ? (statusRaw as BacklogItem['status']) : undefined;
 }
 
+const VALID_HUMAN_APPROVALS = new Set(['pending', 'approved']);
+
+// BL-251: mirrors normalizeStatus's own "known value or undefined" shape -
+// an unrecognized/absent value reads as undefined rather than storing raw
+// text or gating the ticket.
+function normalizeHumanApproval(raw: string | undefined): BacklogItem['humanApproval'] {
+  return raw !== undefined && VALID_HUMAN_APPROVALS.has(raw) ? (raw as BacklogItem['humanApproval']) : undefined;
+}
+
 // Builds a BacklogItem from a strictly-parsed js-yaml document. Reads only
 // the known BacklogItem fields off the parsed object so extra keys elsewhere
 // in the document (e.g. `evidence:`, `notes:`) never leak into the contract
@@ -179,6 +194,7 @@ function assignOptionalFieldsFromObject(item: BacklogItem, obj: Record<string, u
   assignIfTruthy(item, 'swarm', toOptionalString(obj.swarm));
   assignIfTruthy(item, 'description', toTrimmedOptionalString(obj.description));
   assignIfTruthy(item, 'acceptance', toTrimmedOptionalString(obj.acceptance));
+  assignIfDefined(item, 'humanApproval', normalizeHumanApproval(toOptionalString(obj.human_approval)));
 }
 
 function buildItemFromParsedObject(obj: Record<string, unknown>): BacklogItem | null {

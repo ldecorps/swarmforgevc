@@ -31,25 +31,27 @@
          "SwarmForge briefing 2026-07-09 - Real headline"
          (briefing-email-lib/build-briefing-subject "2026-07-09" "\n  \nReal headline\nmore"))
 
-;; ── append-suite-duration-line (pure, BL-252) ────────────────────────────
-;; Appends the suite-duration trend + BL-078 regression-flag line (sourced
-;; from suite-duration-line.js, reusing computeSuiteDurationTrend/
-;; computeSuiteDuration unchanged) to the briefing content; a blank/nil line
-;; (the CLI unavailable, not "no data" - the CLI itself already produces a
-;; non-blank "no local data" text for that case) leaves content untouched
-;; rather than fabricating anything.
+;; ── append-content-block (pure, BL-252, generalized for BL-251) ──────────
+;; Appends a computed content block (suite-duration trend + BL-078 flag,
+;; the needs-approval section, or any future one) after the existing
+;; content; a blank/nil block (the source CLI unavailable, not "no data" -
+;; each CLI already produces its own non-blank "nothing to report" text for
+;; that case) leaves content untouched rather than fabricating anything.
+;; Named generically (BL-252 shipped it as append-suite-duration-line; BL-251
+;; needed the identical behavior for a second, independent block, so this is
+;; a rename, not a new function) - reused as-is by both.
 
-(assert= "a non-blank line is appended after the existing content"
+(assert= "a non-blank block is appended after the existing content"
          "Headline\n\nSuite duration trend: 5s latest\n"
-         (briefing-email-lib/append-suite-duration-line "Headline\n" "Suite duration trend: 5s latest"))
+         (briefing-email-lib/append-content-block "Headline\n" "Suite duration trend: 5s latest"))
 
-(assert= "a nil line leaves the content untouched"
+(assert= "a nil block leaves the content untouched"
          "Headline\n"
-         (briefing-email-lib/append-suite-duration-line "Headline\n" nil))
+         (briefing-email-lib/append-content-block "Headline\n" nil))
 
-(assert= "a blank line leaves the content untouched"
+(assert= "a blank block leaves the content untouched"
          "Headline\n"
-         (briefing-email-lib/append-suite-duration-line "Headline\n" "   "))
+         (briefing-email-lib/append-content-block "Headline\n" "   "))
 
 ;; ── load-sent-briefings / record-briefing-sent! / find-unsent-briefings ──
 
@@ -136,6 +138,56 @@
     :send-email! (fn [_subject text] (swap! sent-texts conj text) {:success true})
     :log! (fn [& _] nil)})
   (assert= "BL-252: no :suite-duration-line adapter -> content is unchanged (backward compatible)"
+           "Headline\n"
+           (first @sent-texts)))
+
+;; BL-251: the needs-approval section reaches the actual sent content too,
+;; the same "real production caller, not a tested-but-uncalled formatter"
+;; wiring bar BL-252 already established - reusing the SAME append-content-
+;; block helper via a second, independent adapter.
+(let [dir (mk-tmp)
+      sent-texts (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text] (swap! sent-texts conj text) {:success true})
+    :needs-approval-section (fn [] "Needs approval:\n  - BL-100: A ticket")
+    :log! (fn [& _] nil)})
+  (assert= "BL-251: the needs-approval section reaches the actual sent content"
+           true
+           (str/includes? (first @sent-texts) "Needs approval:\n  - BL-100: A ticket")))
+
+;; Both optional sections compose - each independently appended, neither
+;; overwriting the other, in adapter-map order.
+(let [dir (mk-tmp)
+      sent-texts (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text] (swap! sent-texts conj text) {:success true})
+    :suite-duration-line (fn [] "Suite duration trend: 5s latest")
+    :needs-approval-section (fn [] "Needs approval:\n  - BL-100: A ticket")
+    :log! (fn [& _] nil)})
+  (assert= "both the suite-duration line and the needs-approval section land in the same sent content"
+           true
+           (and (str/includes? (first @sent-texts) "Suite duration trend: 5s latest")
+                (str/includes? (first @sent-texts) "Needs approval:\n  - BL-100: A ticket"))))
+
+;; A nil-returning (or absent) :needs-approval-section adapter degrades to
+;; the original content unchanged - same graceful-degrade contract as
+;; :suite-duration-line.
+(let [dir (mk-tmp)
+      sent-texts (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text] (swap! sent-texts conj text) {:success true})
+    :needs-approval-section (fn [] nil)
+    :log! (fn [& _] nil)})
+  (assert= "BL-251: a nil-returning :needs-approval-section adapter leaves content unchanged"
            "Headline\n"
            (first @sent-texts)))
 
