@@ -177,11 +177,12 @@ test('countPriorRetries escapes regex metacharacters in role', () => {
   assert.equal(countPriorRetries(logPath, 'coder'), 1);
 });
 
-test('countPriorRetries throws when log exists but unreadable', () => {
+test('countPriorRetries throws when the log path exists but is not a readable file', () => {
   const tmp = mkTmp();
   const logPath = path.join(tmp, 'trace-abc.log');
-  fs.writeFileSync(logPath, 'RETRY coder 2026-06-30T00:00:01.000Z attempt=1 reason="test"', 'utf-8');
-  fs.chmodSync(logPath, 0o000);  // Remove all permissions
-  assert.throws(() => countPriorRetries(logPath, 'coder'), /failed to append|permission denied|cannot read/i);
-  fs.chmodSync(logPath, 0o644);  // Restore for cleanup
+  // A directory where a file is expected forces a deterministic read
+  // failure (EISDIR) regardless of user/filesystem - unlike chmod 0000,
+  // which root and WSL/mounted filesystems can silently ignore (BL-219).
+  fs.mkdirSync(logPath);
+  assert.throws(() => countPriorRetries(logPath, 'coder'), (err) => err.code === 'EISDIR');
 });
