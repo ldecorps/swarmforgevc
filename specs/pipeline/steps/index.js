@@ -20,6 +20,7 @@ const DOMAINS = [
   require('./recertAddressSteps'),
   require('./webhookSecretFixtureSteps'),
   require('./providerErrorTaxonomySteps'),
+  require('./gherkinMutationSteps'),
 ];
 
 function registerSteps(registry) {

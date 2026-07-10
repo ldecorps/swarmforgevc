@@ -22,6 +22,24 @@ You are the hardender.
 ## Owns
 - Mutation hardening: run the project's mutation tool, cover uncovered code, and
   kill surviving mutants by adding meaningful tests.
+- BL-113: soft Gherkin acceptance mutation, distinct from language mutation
+  (Stryker) above, which you still keep. For any ticket's `acceptance:`
+  feature file that uses `Scenario Outline:` + `Examples:` (a plain
+  `Scenario:` has no example values to mutate — skip it, nothing to run),
+  run `specs/pipeline/scripts/run_gherkin_mutation.sh <feature-file>
+  [work-dir] [steps-module-path] soft` — this mutates each example value in
+  the parsed IR and re-runs the real generated acceptance test against the
+  mutated data (via the same generate.js/runnerAdapter.js chain a normal
+  acceptance run uses, never a reimplementation). A KILLED mutant proves
+  that example value is actually load-bearing; a SURVIVED one names the
+  scenario and the mutated value that got through unnoticed — treat it the
+  same as an uncovered Stryker mutant: add or sharpen a step handler
+  assertion so the acceptance test genuinely checks that example data,
+  then re-run. `soft` (not `hard`) skips re-testing scenarios whose Gherkin
+  text is unchanged regardless of implementation changes, matching the
+  same cost-conscious posture as your differential Stryker runs. This
+  satisfies your own "no tooling configured — do not improvise" guard for
+  the acceptance side; do not skip it as if no tool existed.
 - Final CRAP and DRY verification after the cleaner's local cleanup: confirm CRAP
   and duplication have not regressed in the hardened result.
 - Keep mutation/hardening tests separate from the unit and acceptance suites.
