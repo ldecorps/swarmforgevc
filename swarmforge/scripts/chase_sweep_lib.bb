@@ -19,6 +19,10 @@
             [cheshire.core :as json]
             [clojure.string :as str]))
 
+;; BL-232: reuses handoff-lib's own sidecar-suffixes definition (never a
+;; second copy) for orphan reaping below.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
+
 ;; ── sidecar files (exact JSON shapes/paths as inboxChaser.ts) ───────────────
 
 (defn sidecar-path [handoff-file-path]
@@ -236,7 +240,46 @@
                       ((:log-telemetry! adapters) {:type "dead-letter" :role role :handoffId (handoff-id (:filePath item)) :count (:chaseCount item)} now-ms))
     nil))
 
+;; ── BL-232: orphaned chase/nudge sidecar reaping ────────────────────────
+;; A sidecar (.chase.json/.nudge) is state ABOUT a handoff still waiting in
+;; new/ - once the handoff itself leaves new/ (the normal dequeue path
+;; drops it there, via handoff-lib/remove-sidecars-of! - see
+;; ready_for_next_task.bb/ready_for_next_batch.bb), the sidecar is
+;; meaningless. This sweep-time reaper is the backstop for anything that
+;; slips past that (e.g. a stray sidecar left over from a layout
+;; migration): it removes only a sidecar whose parent .handoff is NOT
+;; present in the same directory, never touching a live sidecar (parent
+;; still waiting) or any non-sidecar file.
+
+(defn- sidecar-filename->parent-handoff-filename
+  "'foo.handoff.chase.json' -> 'foo.handoff', or nil when filename does not
+   end with a known sidecar suffix."
+  [filename]
+  (some (fn [suffix]
+          (when (str/ends-with? filename suffix)
+            (subs filename 0 (- (count filename) (count suffix)))))
+        handoff-lib/sidecar-suffixes))
+
+(defn orphaned-sidecar-filenames
+  "Given every filename currently in an inbox/new/ directory, returns the
+   sidecar filenames whose parent .handoff is NOT among them - safe to
+   remove. Pure; the impure reap-orphaned-sidecars! below is a thin fs
+   wrapper around this."
+  [filenames]
+  (let [names (set filenames)]
+    (vec (filter (fn [filename]
+                   (when-let [parent (sidecar-filename->parent-handoff-filename filename)]
+                     (not (contains? names parent))))
+                 filenames))))
+
+(defn reap-orphaned-sidecars! [inbox-new-dir]
+  (when (fs/exists? inbox-new-dir)
+    (let [filenames (map fs/file-name (fs/list-dir inbox-new-dir))]
+      (doseq [orphan (orphaned-sidecar-filenames filenames)]
+        (fs/delete (fs/path inbox-new-dir orphan))))))
+
 (defn sweep-role-inbox! [role inbox-new-dir now-ms config adapters]
+  (reap-orphaned-sidecars! inbox-new-dir)
   (let [items (scan-inbox-new inbox-new-dir)
         liveness ((:get-liveness adapters) role)
         last-activity-ms ((:get-last-activity-ms adapters) role)
