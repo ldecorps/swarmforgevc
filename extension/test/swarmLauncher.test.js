@@ -223,6 +223,9 @@ test('launchSwarm fails fast when no ./swarm wrapper exists', async () => {
   assert.equal(result.success, false);
   assert.match(result.message, /No .\/swarm wrapper found/);
   assert.equal(result.targetPath, targetPath);
+  // BL-207: orchestration/UI can branch on the stable category instead of
+  // parsing this message text.
+  assert.equal(result.category, 'launch-failed');
 });
 
 test('launchSwarm resolves success once the process closes and the swarm is ready', async () => {
@@ -355,6 +358,7 @@ test('launchSwarm resolves failure when the process cannot be spawned', async ()
   const result = await launchSwarm(targetPath, undefined, 120_000, undefined, () => fakeUnspawnableChild());
   assert.equal(result.success, false);
   assert.match(result.message, /Failed to start swarm/);
+  assert.equal(result.category, 'launch-failed');
 });
 
 test('launchSwarm resolves success via the readiness poll when the process keeps running quietly', async () => {
@@ -389,6 +393,7 @@ test('launchSwarm times out when the swarm never becomes ready in time', async (
   const result = await launchSwarm(targetPath, undefined, 200);
   assert.equal(result.success, false);
   assert.match(result.message, /Timed out waiting/);
+  assert.equal(result.category, 'timeout');
 });
 
 // --- Launch log (BL-058): launch failures were ephemeral toast messages —

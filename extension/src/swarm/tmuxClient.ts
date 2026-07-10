@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { sendInstructionVerified, VerifiedInjectResult } from './verifiedInject';
 import { isPaneActivelyProcessing } from '../panel/agentPaneState';
+import { classifyProviderError, ForgeErrorCategory } from './providerErrorTaxonomy';
 
 export interface TmuxRunResult {
   stdout: string;
@@ -295,6 +296,15 @@ export interface RespawnResult {
   // respawn outright (BL-147): the pane was never touched, so callers that
   // bound automatic respawn attempts must not count this as a used attempt.
   skippedBusy?: boolean;
+  // BL-207: the stable Forge error category message's raw detail
+  // classifies to - never set on success, or on skippedBusy (a deliberate
+  // safety skip, not a backend failure to categorize). Orchestration/UI can
+  // branch on this instead of parsing message text.
+  category?: ForgeErrorCategory;
+}
+
+function respawnFailure(message: string): RespawnResult {
+  return { success: false, message, category: classifyProviderError(message).category };
 }
 
 // Synchronous backoff wait for the retry loop below. The extension host is
@@ -330,17 +340,17 @@ export function respawnPaneForced(
 export function respawnAgent(targetPath: string, role: string): RespawnResult {
   const launchScript = path.join(targetPath, '.swarmforge', 'launch', `${role}.sh`);
   if (!fs.existsSync(launchScript)) {
-    return { success: false, message: `No launch script found for role "${role}" at ${launchScript}` };
+    return respawnFailure(`No launch script found for role "${role}" at ${launchScript}`);
   }
 
   const socketPath = readTmuxSocket(targetPath);
   if (!socketPath) {
-    return { success: false, message: `Cannot respawn "${role}": no tmux socket recorded (is the swarm running?)` };
+    return respawnFailure(`Cannot respawn "${role}": no tmux socket recorded (is the swarm running?)`);
   }
 
   const roleEntry = readSwarmRoles(targetPath).find((entry) => entry.role === role);
   if (!roleEntry) {
-    return { success: false, message: `Cannot respawn "${role}": role not found in sessions.tsv` };
+    return respawnFailure(`Cannot respawn "${role}": role not found in sessions.tsv`);
   }
 
   // The launch script runs `claude` in the foreground and only exits when the
@@ -402,7 +412,7 @@ function performVerifiedRespawn(socketPath: string, target: string, launchScript
   );
 
   if (typeFailure) {
-    return { success: false, message: `Failed to respawn "${role}": ${typeFailure.stderr || typeFailure.stdout || `exit ${typeFailure.exitCode}`}` };
+    return respawnFailure(`Failed to respawn "${role}": ${typeFailure.stderr || typeFailure.stdout || `exit ${typeFailure.exitCode}`}`);
   }
 
   if (result.status === 'delivered') {
@@ -421,10 +431,9 @@ function escalateToForcedRespawn(
 ): RespawnResult {
   const forced = respawnPaneForced(socketPath, target, launchScript);
   if (forced.exitCode !== 0) {
-    return {
-      success: false,
-      message: `Failed to respawn "${role}": send-keys did not submit (${result.reason}), and forced pane respawn also failed: ${forced.stderr || forced.stdout || `exit ${forced.exitCode}`}`,
-    };
+    return respawnFailure(
+      `Failed to respawn "${role}": send-keys did not submit (${result.reason}), and forced pane respawn also failed: ${forced.stderr || forced.stdout || `exit ${forced.exitCode}`}`
+    );
   }
   return {
     success: true,

@@ -1,0 +1,52 @@
+id: BL-228
+title: "Burndown charts: show a per-milestone ETA (reuse existing forecast) + an overall ETA"
+priority: 30
+mutation_cost: low
+source: "operator chat request 2026-07-10 (relayed by coordinator); scope + method confirmed with operator 2026-07-10"
+
+description: |
+  The operator asked that the burndown charts show an ETA for each milestone.
+  Confirmed with the operator (2026-07-10):
+    - SURFACE: both the PWA dashboard and the swarm-metrics CLI.
+    - METHOD: REUSE the existing forecast, do not build a new one. A
+      per-milestone forecast already exists — deliveryMetrics.computeForecasts
+      yields forecasts.milestones = [{milestone, p50Iso, p85Iso}] (throughput +
+      cycle-time + dependency-aware) and it already drives the per-ticket ETAs on
+      the board (pwa/app.js:195). Surfacing that on the burndown keeps the ETA
+      consistent with the per-ticket ETAs already on the same dashboard, rather
+      than introducing a second, disagreeing linear-velocity number.
+    - COVERAGE: per-milestone ETA AND an overall "all remaining work" ETA.
+
+  Wanted behavior:
+    - Each milestone on the burndown shows its forecast ETA (p50) next to its
+      remaining count; p85 MAY be shown as a p50–p85 range.
+    - An overall ETA for all remaining open work — the latest projected
+      completion (max p50 across forecasts.tickets) — is shown.
+    - A milestone whose forecast p50 is null (insufficient throughput/history)
+      shows a "no ETA yet" indication, never an infinite or fabricated date —
+      reusing the same null-p50 handling the per-ticket board render relies on.
+
+  Scope (verified live 2026-07-10): pwa/app.js renderBurndown (the burndown card
+  already receives forecasts in backlog.json via backlogDashboard.ts:174) and
+  extension/src/tools/swarm-metrics.ts formatBurndownLine (already has
+  metrics.forecasts). The metric layer (deliveryMetrics.ts) is UNCHANGED — the
+  forecast data is already computed and delivered; this is a rendering change on
+  both surfaces. Do not add a parallel ETA computation.
+
+acceptance: specs/features/BL-228-burndown-milestone-eta.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs:
+  1. Generate the dashboard for a target with a multi-milestone backlog and
+     enough close history for a forecast. On the PWA burndown card, assert each
+     milestone shows an ETA matching its forecasts.milestones p50Iso, next to
+     "N remaining"; and an overall "all remaining work" ETA is shown.
+  2. Run swarm-metrics; assert the burndown line includes each milestone's ETA
+     (same p50 values) and the overall ETA.
+  3. For a milestone whose forecast p50 is null (starve throughput/history),
+     assert both surfaces show "no ETA yet", not an infinite/fabricated date.
+  4. Confirm no new ETA computation was added — the values equal the existing
+     forecasts.milestones / forecasts.tickets p50s.
+
+# HUMAN APPROVAL: feature file specs/features/BL-228-...feature is a new draft
+# authored by the specifier and is pending human review.
