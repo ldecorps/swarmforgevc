@@ -7,9 +7,12 @@ const {
 } = require('../out/i18n/translate');
 const { emptyTranslationCache, hashSourceText } = require('../out/i18n/translationCache');
 
-// BL-118: the translation pass, tested with a fake MT engine (records
-// calls) - no live translation API in tests, per this ticket's own
-// non-behavioral gate.
+// BL-118/BL-230: the translation pass, tested with a fake MT engine
+// (records calls) - no live translation API in tests, per this ticket's
+// own non-behavioral gate. BL-230 generalized translateString/
+// translateMarkdown to take an explicit target locale (a session no
+// longer carries one fixed targetLang - see translationCache.ts's schema
+// bump for why: a single-locale cache silently collided across locales).
 
 function fakeEngine(translations = {}) {
   const calls = [];
@@ -31,22 +34,23 @@ test('translateString calls the engine on a cache miss and stores the result', a
   const { engine, calls } = fakeEngine({ hello: 'bonjour' });
   const session = createTranslationSession(emptyTranslationCache(), engine);
 
-  const result = await translateString(session, 'hello');
+  const result = await translateString(session, 'hello', 'fr');
 
-  assert.deepEqual(result, { en: 'hello', fr: 'bonjour' });
+  assert.deepEqual(result, { text: 'bonjour' });
   assert.equal(calls.length, 1);
+  assert.equal(calls[0].targetLang, 'fr');
   assert.equal(session.stats.misses, 1);
   assert.equal(session.stats.hits, 0);
 });
 
 test('bilingual-03: an unchanged source string is served from the cache, not re-translated', async () => {
   const { engine, calls } = fakeEngine({ hello: 'bonjour' });
-  const cache = { schemaVersion: 1, entries: { [hashSourceText('hello')]: 'bonjour (cached)' } };
+  const cache = { schemaVersion: 2, entries: { [hashSourceText('hello')]: { fr: 'bonjour (cached)' } } };
   const session = createTranslationSession(cache, engine);
 
-  const result = await translateString(session, 'hello');
+  const result = await translateString(session, 'hello', 'fr');
 
-  assert.deepEqual(result, { en: 'hello', fr: 'bonjour (cached)' });
+  assert.deepEqual(result, { text: 'bonjour (cached)' });
   assert.equal(calls.length, 0, 'the engine must never be called for a cache hit');
   assert.equal(session.stats.hits, 1);
   assert.equal(session.stats.misses, 0);
@@ -54,13 +58,13 @@ test('bilingual-03: an unchanged source string is served from the cache, not re-
 
 test('only changed (uncached) strings are sent to the engine across a batch', async () => {
   const { engine, calls } = fakeEngine({ new1: 'nouveau1', new2: 'nouveau2' });
-  const cache = { schemaVersion: 1, entries: { [hashSourceText('cached1')]: 'mis en cache' } };
+  const cache = { schemaVersion: 2, entries: { [hashSourceText('cached1')]: { fr: 'mis en cache' } } };
   const session = createTranslationSession(cache, engine);
 
-  await translateString(session, 'cached1');
-  await translateString(session, 'new1');
-  await translateString(session, 'new2');
-  await translateString(session, 'cached1'); // seen twice - second time still a cache hit
+  await translateString(session, 'cached1', 'fr');
+  await translateString(session, 'new1', 'fr');
+  await translateString(session, 'new2', 'fr');
+  await translateString(session, 'cached1', 'fr'); // seen twice - second time still a cache hit
 
   assert.deepEqual(calls.map((c) => c.text), ['new1', 'new2']);
   assert.equal(session.stats.hits, 2);
@@ -72,18 +76,18 @@ test('a cache miss populates the cache so a later session reuses it', async () =
   const cache = emptyTranslationCache();
   const session = createTranslationSession(cache, engine);
 
-  await translateString(session, 'hello');
+  await translateString(session, 'hello', 'fr');
 
-  assert.equal(cache.entries[hashSourceText('hello')], 'bonjour');
+  assert.equal(cache.entries[hashSourceText('hello')].fr, 'bonjour');
 });
 
-test('bilingual-05: an engine failure degrades to English, flagged untranslated - never throws', async () => {
+test('bilingual-05: an engine failure degrades to the source text, flagged untranslated - never throws', async () => {
   const { engine } = fakeEngine({});
   const session = createTranslationSession(emptyTranslationCache(), engine);
 
-  const result = await translateString(session, 'no translation available');
+  const result = await translateString(session, 'no translation available', 'fr');
 
-  assert.deepEqual(result, { en: 'no translation available', fr: 'no translation available', frUntranslated: true });
+  assert.deepEqual(result, { text: 'no translation available', untranslated: true });
   assert.equal(session.stats.failures, 1);
 });
 
@@ -91,10 +95,39 @@ test('a blank/whitespace-only string is never sent to the engine', async () => {
   const { engine, calls } = fakeEngine({});
   const session = createTranslationSession(emptyTranslationCache(), engine);
 
-  const result = await translateString(session, '   ');
+  const result = await translateString(session, '   ', 'fr');
 
-  assert.deepEqual(result, { en: '   ', fr: '   ' });
+  assert.deepEqual(result, { text: '   ' });
   assert.equal(calls.length, 0);
+});
+
+// ── BL-230: N-locale cache dimension ─────────────────────────────────────
+
+test('the SAME source string translated into two different locales does not collide in the cache', async () => {
+  const { engine, calls } = fakeEngine({ hello: 'hola' });
+  const cache = { schemaVersion: 2, entries: { [hashSourceText('hello')]: { fr: 'bonjour' } } };
+  const session = createTranslationSession(cache, engine);
+
+  const frResult = await translateString(session, 'hello', 'fr');
+  const esResult = await translateString(session, 'hello', 'es');
+
+  assert.equal(frResult.text, 'bonjour', 'fr was already cached - must not be overwritten by the es call');
+  assert.equal(esResult.text, 'hola', 'es is a genuine cache miss, calls the engine with its own target');
+  assert.equal(cache.entries[hashSourceText('hello')].fr, 'bonjour');
+  assert.equal(cache.entries[hashSourceText('hello')].es, 'hola');
+  assert.deepEqual(calls.map((c) => c.targetLang), ['es']);
+});
+
+// ── BL-230: jargon preservation ───────────────────────────────────────────
+
+test('a jargon token (ticket id) survives translation verbatim, wrapped for the engine and unwrapped from its response', async () => {
+  const { engine, calls } = fakeEngine({ 'Fix <jargon>BL-230</jargon> now.': 'Réparer <jargon>BL-230</jargon> maintenant.' });
+  const session = createTranslationSession(emptyTranslationCache(), engine);
+
+  const result = await translateString(session, 'Fix BL-230 now.', 'fr');
+
+  assert.equal(result.text, 'Réparer BL-230 maintenant.');
+  assert.equal(calls[0].text, 'Fix <jargon>BL-230</jargon> now.', 'the engine must receive the jargon-wrapped text');
 });
 
 // ── segmentMarkdown / translateMarkdown (bilingual-06) ──────────────────────
@@ -125,12 +158,11 @@ test('bilingual-06: translateMarkdown leaves fenced code blocks verbatim, transl
   const session = createTranslationSession(emptyTranslationCache(), engine);
   const markdown = ['Some prose.', '```js', 'const secretCode = 1;', '```', 'More prose.'].join('\n');
 
-  const result = await translateMarkdown(session, markdown);
+  const result = await translateMarkdown(session, markdown, 'fr');
 
-  assert.equal(result.en, markdown);
-  assert.match(result.fr, /Un peu de prose\./);
-  assert.match(result.fr, /Plus de prose\./);
-  assert.match(result.fr, /const secretCode = 1;/, 'code fence content must survive verbatim into the French rendering');
+  assert.match(result.text, /Un peu de prose\./);
+  assert.match(result.text, /Plus de prose\./);
+  assert.match(result.text, /const secretCode = 1;/, 'code fence content must survive verbatim into the translated rendering');
   assert.equal(calls.length, 2, 'the engine is called only for the two prose segments, never the code segment');
 });
 
@@ -139,9 +171,9 @@ test('translateMarkdown flags the whole document untranslated if any prose segme
   const session = createTranslationSession(emptyTranslationCache(), engine);
   const markdown = ['translatable prose', 'untranslatable prose'].join('\n\n');
 
-  const result = await translateMarkdown(session, markdown);
+  const result = await translateMarkdown(session, markdown, 'fr');
 
-  assert.equal(result.frUntranslated, true);
+  assert.equal(result.untranslated, true);
 });
 
 test('translateMarkdown with only code fences never calls the engine', async () => {
@@ -149,8 +181,8 @@ test('translateMarkdown with only code fences never calls the engine', async () 
   const session = createTranslationSession(emptyTranslationCache(), engine);
   const markdown = ['```mermaid', 'graph TD; A-->B;', '```'].join('\n');
 
-  const result = await translateMarkdown(session, markdown);
+  const result = await translateMarkdown(session, markdown, 'fr');
 
-  assert.equal(result.fr, markdown);
+  assert.equal(result.text, markdown);
   assert.equal(calls.length, 0);
 });

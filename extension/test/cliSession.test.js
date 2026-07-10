@@ -26,20 +26,20 @@ test('createCliTranslationSession loads whatever cache already exists on disk', 
   const target = mkTmp();
   const file = translationCacheFile(target);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify({ schemaVersion: 1, entries: { abc: 'bonjour' } }));
+  fs.writeFileSync(file, JSON.stringify({ schemaVersion: 2, entries: { abc: { fr: 'bonjour' } } }));
 
   const session = createCliTranslationSession(target);
 
-  assert.equal(session.cache.entries.abc, 'bonjour');
+  assert.equal(session.cache.entries.abc.fr, 'bonjour');
 });
 
 test('persistCliTranslationSession writes the session cache back to disk', () => {
   const target = mkTmp();
   const session = createCliTranslationSession(target);
-  session.cache.entries.newhash = 'nouveau';
+  session.cache.entries.newhash = { fr: 'nouveau' };
 
   persistCliTranslationSession(target, session);
 
   const written = JSON.parse(fs.readFileSync(translationCacheFile(target), 'utf-8'));
-  assert.equal(written.entries.newhash, 'nouveau');
+  assert.equal(written.entries.newhash.fr, 'nouveau');
 });
