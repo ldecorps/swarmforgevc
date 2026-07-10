@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=01d9bd76e2d0ad5d0be3f7ec7258b7dea0b8025596b2eb098184744a47e6fe38
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-10T16:15:32.205805418Z","feature_name":"the phone docs drill-down distinguishes implemented tickets from not-yet-implemented ones","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-253-pwa-implemented-drilldown-greyed.feature","background_hash":"e7eacb4436a97ed7dee2efc2cccaea5219f2cd887cf44479af94cdb88c38ed7f","implementation_hash":"unknown","scenarios":[{"index":0,"name":"implementation status derives from the backlog folder and greys the not-yet items","scenario_hash":"b22b4df3ef16bed8f0b86fff1ff7d504aad180e46d76ae0e34e0e6b52878586d","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-07-10T16:15:22.181007808Z"},{"index":2,"name":"a ticket's Gherkin can be refined regardless of implementation status","scenario_hash":"c703c3c79d55e4a5aeef3d0776d7fb0f9ab47dc1324bbeeddbcddba83320e86e","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-10T16:15:22.181007808Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the phone docs drill-down distinguishes implemented tickets from not-yet-implemented ones
 
   # Operator request (2026-07-10, via coordinator intake, PRIORITIZED): enhance the

@@ -524,13 +524,27 @@
     return (docsTree.vision || []).find(function (v) { return v.id === id; });
   }
 
-  function navButton(label, view) {
-    var btn = el('button', { type: 'button', class: 'docs-list-item' }, [label]);
+  function navButton(label, view, extraClass) {
+    var className = extraClass ? 'docs-list-item ' + extraClass : 'docs-list-item';
+    var btn = el('button', { type: 'button', class: className }, [label]);
     btn.addEventListener('click', function () {
       docsView = view;
       renderDocsExplorer();
     });
     return btn;
+  }
+
+  // BL-253: whole-ticket implementation status, read directly off the tree
+  // data's own implemented flag (docsTree.ts computes it once) - never
+  // re-derived from status here, so the PWA can never drift from the
+  // done/not-done rule the tree already applied. Greying is visual only:
+  // the returned label/class never disable anything, they only decorate.
+  function implementationLabel(t) {
+    return t.implemented ? tr('implementedLabel') : tr('notYetImplementedLabel');
+  }
+
+  function implementationClass(t) {
+    return t.implemented ? '' : 'not-yet-implemented';
   }
 
   function renderDocsCrumbs() {
@@ -607,9 +621,11 @@
       return;
     }
     milestone.tickets.forEach(function (t) {
-      container.appendChild(navButton(t.id + ' — ' + ticketTitle(t) + ' [' + t.status + ']', {
-        level: 'ticket', milestone: docsView.milestone, ticketId: t.id,
-      }));
+      container.appendChild(navButton(
+        t.id + ' — ' + ticketTitle(t) + ' [' + t.status + '] (' + implementationLabel(t) + ')',
+        { level: 'ticket', milestone: docsView.milestone, ticketId: t.id },
+        implementationClass(t)
+      ));
     });
   }
 
@@ -620,7 +636,10 @@
       return;
     }
     var description = currentLocale === 'fr' && ticket.descriptionFr ? ticket.descriptionFr : ticket.description;
-    container.appendChild(el('p', {}, [ticketTitle(ticket) + ' [' + ticket.status + ']' + (ticket.priority !== undefined ? ' priority ' + ticket.priority : '')]));
+    var statusLine = el('p', { class: implementationClass(ticket) }, [
+      ticketTitle(ticket) + ' [' + ticket.status + '] (' + implementationLabel(ticket) + ')' + (ticket.priority !== undefined ? ' priority ' + ticket.priority : ''),
+    ]);
+    container.appendChild(statusLine);
     container.appendChild(el('p', {}, [description || tr('noDescription')]));
     container.appendChild(el('h4', {}, [tr('documentationAcceptance')]));
     if (!ticket.scenarios || ticket.scenarios.length === 0) {
