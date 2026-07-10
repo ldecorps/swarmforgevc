@@ -60,6 +60,35 @@ test('tickets are grouped into milestone nodes with folder-authoritative status'
   );
 });
 
+// ── implemented flag (BL-253) ─────────────────────────────────────────────
+// Whole-ticket implementation status derives purely from the backlog
+// folder-authoritative status (done => implemented; active/paused =>
+// not-yet), computed once here so both the ticket node and its milestone
+// summary agree - a PWA consumer reads this field directly rather than
+// re-deriving its own copy of the done/not-done rule.
+
+test('a ticket in the done folder derives implemented: true', () => {
+  const tree = buildDocsTree(emptyVisionDocs(), [item({ status: 'done' })], new Map(), 'abc', '2026-07-09T00:00:00Z');
+  assert.equal(tree.tickets[0].implemented, true);
+});
+
+test('a ticket in the active folder derives implemented: false (not-yet)', () => {
+  const tree = buildDocsTree(emptyVisionDocs(), [item({ status: 'active' })], new Map(), 'abc', '2026-07-09T00:00:00Z');
+  assert.equal(tree.tickets[0].implemented, false);
+});
+
+test('a ticket in the paused folder derives implemented: false (not-yet)', () => {
+  const tree = buildDocsTree(emptyVisionDocs(), [item({ status: 'paused' })], new Map(), 'abc', '2026-07-09T00:00:00Z');
+  assert.equal(tree.tickets[0].implemented, false);
+});
+
+test('the milestone ticket summary carries the same implemented flag as the full ticket node, not a separate derivation', () => {
+  const items = [item({ id: 'BL-100', status: 'done', milestone: 'M4' }), item({ id: 'BL-101', status: 'active', milestone: 'M4' })];
+  const tree = buildDocsTree(emptyVisionDocs(), items, new Map(), 'abc', '2026-07-09T00:00:00Z');
+  const byId = Object.fromEntries(tree.milestones[0].tickets.map((t) => [t.id, t.implemented]));
+  assert.deepEqual(byId, { 'BL-100': true, 'BL-101': false });
+});
+
 test('a ticket with no milestone is grouped under "unspecified"', () => {
   const tree = buildDocsTree(emptyVisionDocs(), [item({ milestone: undefined })], new Map(), 'abc', '2026-07-09T00:00:00Z');
   assert.equal(tree.milestones[0].milestone, 'unspecified');
