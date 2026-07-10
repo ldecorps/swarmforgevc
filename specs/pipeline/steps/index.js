@@ -11,6 +11,7 @@ const DOMAINS = [
   require('./launchSpawnFailureSteps'),
   require('./mailboxIntakeSteps'),
   require('./strykerPwaSandboxSteps'),
+  require('./dispatchGapSteps'),
 ];
 
 function registerSteps(registry) {
