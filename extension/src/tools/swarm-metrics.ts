@@ -87,7 +87,10 @@ export function resolveMainWorktreePath(projectRoot: string, roles: RoleEntry[])
   return specifier ? specifier.worktreePath : projectRoot;
 }
 
-export function formatOverview(metrics: SwarmMetrics, roleNames: string[]): string {
+// BL-208: providerNames defaults to empty so a caller that hasn't derived a
+// provider roster (or a target where no role carries an `agent`) omits the
+// line entirely rather than printing an empty "By provider: ".
+export function formatOverview(metrics: SwarmMetrics, roleNames: string[], providerNames: string[] = []): string {
   const meanLine =
     metrics.meanTicketTimeMs === null
       ? `Mean ticket time: ${NO_SAMPLE_PLACEHOLDER} (0 tickets)`
@@ -121,7 +124,25 @@ export function formatOverview(metrics: SwarmMetrics, roleNames: string[]): stri
       })
       .join(', ');
 
-  return [meanLine, busynessLine, retryLine, suiteLine, chaserLine].join('\n');
+  // BL-208 brand-agnostic-read-02: the same chaser telemetry, grouped by
+  // provider brand instead of role - proves an operator reader can compare
+  // providers (which brand is slower/failing/idling) via the one common
+  // field, with no per-brand branch (this loop is identical for
+  // claude/aider/grok/codex/copilot/mock).
+  const lines = [meanLine, busynessLine, retryLine, suiteLine, chaserLine];
+  if (providerNames.length > 0) {
+    lines.push(
+      'By provider: ' +
+        providerNames
+          .map((provider) => {
+            const t = metrics.providerTelemetry?.[provider] ?? { chases: 0, nudges: 0, recentDailyRate: 0 };
+            return `${provider} ${t.chases} chases/${t.nudges} nudges (${t.recentDailyRate.toFixed(2)}/day)`;
+          })
+          .join(', ')
+    );
+  }
+
+  return lines.join('\n');
 }
 
 // BL-096: delivery metrics (velocity/burndown/cycle-time/forecasts) formatted
@@ -299,7 +320,8 @@ export function main(): void {
   const runStartMs = runs.length > 0 ? Date.parse(runs[0].startedAt) : null;
 
   const metrics = computeSwarmMetrics(mainWorktreePath, roles, runStartMs);
-  console.log(formatOverview(metrics, roles.map((r) => r.role)));
+  const providerNames = [...new Set(roles.map((r) => r.agent).filter((a): a is string => Boolean(a)))];
+  console.log(formatOverview(metrics, roles.map((r) => r.role), providerNames));
 
   const roleWorktrees = roles.map((r) => ({ role: r.role, worktreePath: r.worktreePath }));
   const deliveryMetrics = computeDeliveryMetrics(mainWorktreePath, roleWorktrees);
