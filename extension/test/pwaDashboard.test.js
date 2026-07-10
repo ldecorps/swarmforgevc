@@ -86,6 +86,9 @@ test('renders the state board, velocity, burndown, and cycle-time sections from 
   assert.match(document.getElementById('velocity').textContent, /5 closed/);
   assert.match(document.getElementById('burndown').textContent, /2 remaining/);
   assert.match(document.getElementById('cycleTime').textContent, /Median 2h, p85 4h over 6 ticket/);
+  // BL-229: the ETA label is now a tr('etaPrefix') catalog lookup - English
+  // mode must still render byte-for-byte the same text as before the change.
+  assert.match(document.getElementById('board').textContent, /BL-100 — cost telemetry — ETA 2026-08-01/);
 });
 
 test('trend arrows match each section\'s own direction (up/down/flat) - the fixture varies them precisely so a swapped or dropped arrow is caught', async () => {

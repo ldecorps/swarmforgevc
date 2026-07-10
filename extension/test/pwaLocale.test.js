@@ -323,3 +323,59 @@ test('board ticket titles switch to titleFr in FR mode and back to title in EN m
   click(dom, toggle(dom));
   assert.match(dom.window.document.getElementById('board').textContent, /cost telemetry/);
 });
+
+// ── BL-229: hardcoded PWA labels now route through the locale catalog ───
+
+test('label-catalog-01: the burndown "remaining" label is a real catalog lookup, not a hardcoded literal', async () => {
+  const backlog = fakeBacklog({
+    metrics: {
+      velocity: { weeklySeries: [], trend: { direction: 'unknown' }, rollingWindowCount: 0, rollingWindowDays: 7 },
+      burndown: [{ milestone: 'M4', currentRemaining: 2, trend: { direction: 'unknown' }, dailySeries: [] }],
+      cycleTime: { medianMs: null, p85Ms: null, sampleCount: 0, trend: { direction: 'unknown' }, weeklySeries: [] },
+      forecasts: { tickets: [], milestones: [] },
+    },
+  });
+  const dom = renderDashboard({ backlog });
+  await flush();
+  assert.match(dom.window.document.getElementById('burndown').textContent, /2 remaining/);
+
+  // Swapping the catalog value proves the render actually reads it live -
+  // a hardcoded ' remaining' literal would be unaffected by this change.
+  dom.window.LOCALES.fr.remainingSuffix = ' SENTINEL-RESTANTS';
+  click(dom, toggle(dom));
+  assert.match(dom.window.document.getElementById('burndown').textContent, /2 SENTINEL-RESTANTS/);
+});
+
+test('label-catalog-01: the French catalog default for "remaining" is the ordinary-word translation "restants"', async () => {
+  const dom = renderDashboard();
+  await flush();
+  assert.equal(dom.window.LOCALES.fr.remainingSuffix, ' restants');
+});
+
+test('label-catalog-02: the ETA label is a catalog lookup, and French keeps the jargon value "ETA"', async () => {
+  const backlog = fakeBacklog({
+    board: {
+      active: [{ id: 'BL-100', title: 'x', status: 'active', swarm: 'primary', p50Iso: '2026-08-01T00:00:00Z' }],
+      paused: [],
+      doneByMilestone: {},
+    },
+  });
+  const dom = renderDashboard({ backlog });
+  await flush();
+  assert.match(dom.window.document.getElementById('board').textContent, /— ETA 2026-08-01/);
+
+  // Per the operator's rule, jargon may keep its English value in French -
+  // still a catalog lookup, so the two locale entries are simply equal.
+  assert.equal(dom.window.LOCALES.fr.etaPrefix, dom.window.LOCALES.en.etaPrefix);
+
+  click(dom, toggle(dom));
+  assert.match(dom.window.document.getElementById('board').textContent, /— ETA 2026-08-01/);
+});
+
+test('no-hardcoded-03: the previously-hardcoded ETA and remaining literals no longer appear as inline string literals in app.js', () => {
+  const source = fs.readFileSync(path.join(PWA_DIR, 'app.js'), 'utf8');
+  assert.doesNotMatch(source, /['"] — ETA ['"]/, 'the ETA label must be a tr(...) catalog lookup, not an inline literal');
+  assert.doesNotMatch(source, /['"] remaining['"]/, 'the remaining-count label must be a tr(...) catalog lookup, not an inline literal');
+  assert.match(source, /tr\('etaPrefix'\)/);
+  assert.match(source, /tr\('remainingSuffix'\)/);
+});
