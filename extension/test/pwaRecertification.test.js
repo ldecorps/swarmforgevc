@@ -32,6 +32,7 @@ function fakeRecertBatch(overrides = {}) {
   return {
     schemaVersion: 1,
     generatedAtIso: '2026-07-09T12:00:00Z',
+    recertEmailTo: 'recert@tolokarooo.resend.app',
     batch: [
       {
         id: 'BL-096/metrics-01',
@@ -107,29 +108,49 @@ test('recert-02: the Confirm link composes a mailto: with outcome "confirm" and 
   const confirmLink = [...content(dom).querySelectorAll('a')].find((a) => a.textContent.indexOf('Confirm') === 0);
   assert.ok(confirmLink, 'a Confirm link must be rendered');
   const mail = decodeMailto(confirmLink.href);
-  assert.equal(mail.to, 'recert@swarmforge.invalid');
+  assert.equal(mail.to, 'recert@tolokarooo.resend.app');
   assert.match(mail.subject, /confirm/);
   assert.match(mail.subject, /BL-096\/metrics-01/);
   assert.doesNotMatch(mail.body, /---/);
 });
 
-// Every outcome shares recertMailtoHref's one RECERT_EMAIL_TO constant - a
+// BL-223 recert-address-01: proves the address is actually READ from the
+// published recert-batch.json config, not a second app.js hardcode of the
+// new literal - a differently-configured address (e.g. a later custom
+// domain) must flow straight through with no code change.
+test('BL-223 recert-address-01: the recert mailto targets the configured inbound address from recert-batch.json', async () => {
+  const dom = renderDashboard(fakeRecertBatch({ recertEmailTo: 'recert@inbound.musicalsifu.com' }));
+  await flush();
+  const confirmLink = [...content(dom).querySelectorAll('a')].find((a) => a.textContent.indexOf('Confirm') === 0);
+  assert.equal(decodeMailto(confirmLink.href).to, 'recert@inbound.musicalsifu.com');
+});
+
+// BL-223 recert-address-02: the reserved .invalid placeholder must never be
+// used, whatever the configured or fallback address happens to be.
+test('BL-223 recert-address-02: the reserved .invalid placeholder is never used', async () => {
+  const dom = renderDashboard(fakeRecertBatch());
+  await flush();
+  const confirmLink = [...content(dom).querySelectorAll('a')].find((a) => a.textContent.indexOf('Confirm') === 0);
+  assert.doesNotMatch(decodeMailto(confirmLink.href).to, /\.invalid$/);
+});
+
+// Every outcome shares recertMailtoHref's one recertEmailTo() lookup - a
 // wrong or blank recipient here silently strands every recert mail (nothing
 // bounces, nothing errors), and no other assertion in this file happens to
 // touch the "to" address, so this must be checked explicitly on more than
-// one outcome to catch a regression in the shared constant itself, not just
+// one outcome to catch a regression in the shared lookup itself, not just
 // one call site.
 test('recert-03/04: the Update and Delete send links use the same recert recipient address as Confirm', async () => {
   const dom = renderDashboard(fakeRecertBatch());
   await flush();
   click(dom, [...content(dom).querySelectorAll('button')].find((b) => b.textContent === 'Update text'));
   const updateSendLink = [...content(dom).querySelectorAll('a')].find((a) => a.textContent === 'Send update');
-  assert.equal(decodeMailto(updateSendLink.href).to, 'recert@swarmforge.invalid');
+  assert.equal(decodeMailto(updateSendLink.href).to, 'recert@tolokarooo.resend.app');
 
   click(dom, [...content(dom).querySelectorAll('button')].find((b) => b.textContent === 'Cancel'));
   click(dom, [...content(dom).querySelectorAll('button')].find((b) => b.textContent.indexOf('Delete') === 0));
   const deleteSendLink = [...content(dom).querySelectorAll('a')].find((a) => a.textContent === 'Yes, delete');
-  assert.equal(decodeMailto(deleteSendLink.href).to, 'recert@swarmforge.invalid');
+  assert.equal(decodeMailto(deleteSendLink.href).to, 'recert@tolokarooo.resend.app');
 });
 
 test('recert-03: choosing Update reveals the current text for editing, and the Send link reflects live edits', async () => {
