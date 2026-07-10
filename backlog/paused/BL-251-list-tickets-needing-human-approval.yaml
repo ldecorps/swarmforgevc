@@ -1,0 +1,110 @@
+id: BL-251
+title: "PWA + daily briefing list tickets needing human approval (structured human_approval field)"
+direction: tooling
+priority: 30
+mutation_cost: medium
+source: "operator chat request 2026-07-10 (via coordinator): 'PWA + daily briefing should list tickets needing human approval - spec it.'"
+
+description: |
+  Surface, in the phone PWA and the daily briefing email, the tickets that are
+  waiting on human approval, so the operator sees their approval to-do without
+  digging through the backlog.
+
+  Operator decisions (2026-07-10, via specifier questions):
+    1. SIGNAL: a STRUCTURED backlog field is the source of truth — add
+       human_approval: pending|approved. Today "needs approval" is only a
+       free-text "# HUMAN APPROVAL: ... pending human review" comment, which is too
+       brittle to list from reliably. A one-time BACKFILL seeds the field on live
+       items from their existing comments.
+    2. SCOPE: only specifier-authored feature files pending human review (the APS
+       human-approval rule) — the concrete class that exists today. Not
+       recertification proposals or generic operator flags (a later item can widen
+       it).
+    3. INTERACTION: LIST / read-only — both surfaces SHOW the pending tickets (id,
+       title); approving still happens as it does today. No approve/reject from the
+       phone (that would need a write-back path + auth — out of scope here).
+
+  The human_approval field:
+    - human_approval: pending  -> the ticket's feature file is awaiting human review.
+    - human_approval: approved -> a human has reviewed/approved it.
+    - unset/absent             -> not applicable (no approval needed / legacy).
+    The specifier sets "pending" when it authors or re-specs a feature file; the
+    field flips to "approved" when a human approves (as the operator already does by
+    hand today). The needs-approval LIST is exactly the LIVE items (backlog/active +
+    backlog/paused) whose human_approval is "pending".
+
+  Wanted behavior (observable):
+    - The PWA shows a read-only "needs human approval" list of the live tickets
+      whose human_approval is "pending", each with its id and title; approved or
+      unset tickets are not listed.
+    - The daily briefing email includes a section listing those same tickets by id
+      and title.
+    - Both surfaces derive the list from the human_approval FIELD (never by
+      re-parsing the prose comment), so they always agree — a single source.
+    - When nothing is pending, both show an explicit "nothing awaiting approval"
+      state, not an error or a blank.
+    - A one-time backfill seeds human_approval on live items from their existing
+      approval comments (pending -> pending, approved -> approved).
+
+  Constraints:
+    - REUSE, don't reimplement: parse the field in the existing backlog reader
+      (extension/src/panel/backlogReader.ts); include the pending set in the
+      computed dashboard JSON (extension/src/metrics/backlogDashboard.ts ->
+      backlog.json, which the PWA already consumes); render a new read-only section
+      in pwa/app.js; add a section to swarmforge/scripts/briefing_email_lib.bb.
+      Do not stand up a new backlog parser or a second data feed.
+    - SINGLE SOURCE: compute "needs approval" from the human_approval field only;
+      never re-derive it from the free-text comment. Both surfaces read the same
+      field so they cannot diverge.
+    - LOCALIZATION: PWA strings (the section header, the empty state) are localized
+      via the existing pwa/locales.js mechanism (BL-229/BL-230), like the rest of
+      the PWA.
+    - BOUNDED, IDEMPOTENT backfill: the one-time migration is idempotent
+      (re-running does not double-set or clobber a human's later edit) and touches
+      only live items (active + paused), not done/.
+    - TESTABLE host-side (engineering boundary): the needs-approval computation
+      (filter live items by human_approval) and the backfill are host-side testable
+      modules reachable without booting VS Code; the PWA webview render and the
+      email send are the unsuitable boundary — test the computed list and the
+      assembled section data, not a rendered webview or a real email send.
+
+  Scope: (a) the human_approval field parsed by backlogReader.ts; (b) the
+  pending-approval set added to backlogDashboard.ts's backlog.json; (c) a read-only
+  PWA section in pwa/app.js + pwa/locales.js strings; (d) a briefing section in
+  briefing_email_lib.bb reading the same field; (e) a one-time, idempotent backfill
+  over active + paused items; (f) documenting the field in
+  swarmforge/backlog-schema.md (documenter). Verify the live data path
+  (backlogReader -> backlogDashboard -> backlog.json -> pwa/app.js, and
+  briefing_email_lib.bb) actually runs before naming files in the built slice.
+
+  DELIVERY: buildable now (no unbuilt dependency). MAY be sliced: slice 1 = field +
+  backfill + PWA list; slice 2 = the briefing section. If sliced, scope the live
+  acceptance feature file to BUILT slices only and park the rest in a
+  BL-251-*.feature.draft companion (BL-233 slice-scoping rule); never ship a feature
+  file whose scenarios outrun the built code.
+
+acceptance: specs/features/BL-251-list-tickets-needing-human-approval.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (webview render + email send faked; assert on the
+  computed list / assembled section data):
+  1. Seed live tickets with human_approval pending / approved / unset; compute the
+     dashboard JSON and assert the pending ones (id + title) are in the
+     needs-approval set and the approved/unset ones are not.
+  2. Open the PWA against that JSON; assert the read-only needs-approval section
+     lists exactly the pending tickets, localized, with no approve/reject control.
+  3. Produce the daily briefing; assert it contains a section listing the same
+     pending tickets by id and title.
+  4. Assert the PWA and the briefing list the same set, both read from the
+     human_approval field.
+  5. With nothing pending, assert both surfaces show an explicit nothing-awaiting
+     -approval state, not an error or blank.
+  6. Run the backfill twice over a fixture with legacy approval comments; assert the
+     field is seeded correctly (pending/approved) and the second run is a no-op
+     (idempotent), touching no done/ item.
+
+# HUMAN APPROVAL: feature file
+# specs/features/BL-251-list-tickets-needing-human-approval.feature is a NEW draft
+# authored by the specifier and is PENDING human review before it is treated as the
+# authoritative acceptance contract.
+human_approval: pending
