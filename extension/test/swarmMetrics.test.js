@@ -299,24 +299,23 @@ test('computeBusyness skips an unreadable in_process entry without throwing', ()
   assert.doesNotThrow(() => computeBusyness([{ role: 'coder', worktreePath: coderWt }], runStart, now));
 });
 
-test('computeBusyness skips an in_process handoff it cannot read (permission denied)', () => {
+test('computeBusyness skips an in_process handoff it cannot read', () => {
   const target = mkTmp();
   const coderWt = path.join(target, 'coder-wt');
   const inProcessDir = path.join(coderWt, '.swarmforge', 'handoffs', 'inbox', 'in_process');
-  const filePath = path.join(inProcessDir, '00_unreadable.handoff');
-  writeHandoff(inProcessDir, '00_unreadable.handoff', {
-    dequeued_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-  });
-  fs.chmodSync(filePath, 0o000);
+  fs.mkdirSync(inProcessDir, { recursive: true });
+  // A symlink whose target has vanished forces a deterministic read
+  // failure (ENOENT) regardless of user/filesystem - unlike chmod 0000,
+  // which root and WSL/mounted filesystems can silently ignore (BL-219).
+  // Also more realistic: a handoff disappearing mid-read is an actual race
+  // this code guards against in a live swarm, not a synthetic permission
+  // state that never occurs there.
+  fs.symlinkSync(path.join(inProcessDir, 'does-not-exist'), path.join(inProcessDir, '00_unreadable.handoff'));
 
   const now = Date.now();
   const runStart = now - 60 * 60 * 1000;
 
-  try {
-    assert.doesNotThrow(() => computeBusyness([{ role: 'coder', worktreePath: coderWt }], runStart, now));
-  } finally {
-    fs.chmodSync(filePath, 0o644); // restore so the tmp dir can be cleaned up
-  }
+  assert.doesNotThrow(() => computeBusyness([{ role: 'coder', worktreePath: coderWt }], runStart, now));
 });
 
 test('computeBusyness takes the earliest dequeued_at across multiple open in_process entries', () => {
