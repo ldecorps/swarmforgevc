@@ -8,18 +8,32 @@ const TSV_ROLE_INDEX = 0;
 const TSV_WORKTREE_NAME_INDEX = 1;
 const TSV_WORKTREE_INDEX = 2;
 const TSV_DISPLAY_NAME_INDEX = 4;
+const TSV_AGENT_INDEX = 5;
 
 export interface RoleEntry {
   role: string;
   worktreeName: string;
   worktreePath: string;
   displayName: string;
+  // BL-208: the configured agent/provider brand (claude/aider/grok/codex/
+  // copilot/mock - agent_runtime_lib.bb's supported-agents), the one
+  // common field cross-provider readers group telemetry by. Undefined for
+  // a TSV row shorter than expected, never a crash.
+  agent?: string;
 }
 
 export interface PipelineStage {
   role: string;
   displayName: string;
   status: 'active' | 'idle';
+}
+
+// Split out of parseRolesTsv so each function stays under the CRAP<=6 gate
+// - the agent field is only present on the entry when the TSV row actually
+// carried one (an `agent?: undefined` property would fail the ticket's own
+// "omitted, not present-but-undefined" role-entry shape elsewhere).
+function buildRoleEntry(role: string, worktreeName: string, worktreePath: string, displayName: string, agent: string): RoleEntry {
+  return agent ? { role, worktreeName, worktreePath, displayName, agent } : { role, worktreeName, worktreePath, displayName };
 }
 
 export function parseRolesTsv(tsv: string): RoleEntry[] {
@@ -34,7 +48,7 @@ export function parseRolesTsv(tsv: string): RoleEntry[] {
     const worktreePath = parts[TSV_WORKTREE_INDEX];
     const displayName = parts[TSV_DISPLAY_NAME_INDEX];
     if (role && worktreePath && displayName) {
-      entries.push({ role, worktreeName, worktreePath, displayName });
+      entries.push(buildRoleEntry(role, worktreeName, worktreePath, displayName, parts[TSV_AGENT_INDEX]));
     }
   }
   return entries;

@@ -9,6 +9,7 @@ const {
   computeRetries,
   computeSwarmMetrics,
   computeChaserTelemetry,
+  computeProviderTelemetry,
 } = require('../out/metrics/swarmMetrics');
 
 function mkTmp() {
@@ -351,7 +352,7 @@ test('computeSwarmMetrics returns placeholders on a fresh run, never NaN/Infinit
   mkdirp(path.join(coderWt, '.swarmforge', 'handoffs', 'inbox', 'completed'));
   mkdirp(path.join(coderWt, '.swarmforge', 'handoffs', 'inbox', 'in_process'));
 
-  const result = computeSwarmMetrics(target, [{ role: 'coder', worktreePath: coderWt }], null, Date.now());
+  const result = computeSwarmMetrics(target, [{ role: 'coder', worktreePath: coderWt, agent: 'claude' }], null, Date.now());
 
   assert.equal(result.meanTicketTimeMs, null);
   assert.equal(result.ticketSampleCount, 0);
@@ -360,6 +361,10 @@ test('computeSwarmMetrics returns placeholders on a fresh run, never NaN/Infinit
   assert.deepEqual(result.retryByTicket, {});
   assert.deepEqual(result.suiteDuration, { latestMs: null, meanMs: null, sampleCount: 0, warn: false });
   assert.deepEqual(result.chaserTelemetry.coder, { chases: 0, nudges: 0, deadLetters: 0, respawns: 0, recentDailyRate: 0 });
+  // BL-208: a role's `agent` derives the provider roster computeSwarmMetrics
+  // feeds to computeProviderTelemetry - an untouched provider reads as zero
+  // too, same as an untouched role.
+  assert.deepEqual(result.providerTelemetry.claude, { chases: 0, nudges: 0, deadLetters: 0, respawns: 0, recentDailyRate: 0 });
 
   const serialized = JSON.stringify(result);
   assert.doesNotMatch(serialized, /NaN|Infinity/);
@@ -546,4 +551,60 @@ test('telemetry: recentDailyRate divides the recent count by windowDays, not mul
   const telemetry = computeChaserTelemetry(target, ['coder'], now, windowDays);
   assert.equal(telemetry.coder.chases, 3);
   assert.equal(telemetry.coder.recentDailyRate, 3 / 7, '3 events over a 7-day window is a rate below 1/day, not 21');
+});
+
+// ── BL-208: computeProviderTelemetry ──────────────────────────────────────
+// Same chaser-*.jsonl log, grouped by the role's configured agent/provider
+// brand (the `provider` field handoffd.bb's chase sweep now stamps onto
+// every event) instead of by role - lets a reader compare providers
+// without a per-role/per-brand branch (BL-208 brand-agnostic-read-02).
+
+test('providerTelemetry-01 (BL-208 empty-reads-zero-03): no telemetry directory reads as zero for every provider, without error', () => {
+  const target = mkTmp();
+  const telemetry = computeProviderTelemetry(target, ['claude', 'aider'], Date.now());
+  assert.deepEqual(telemetry, {
+    claude: { chases: 0, nudges: 0, deadLetters: 0, respawns: 0, recentDailyRate: 0 },
+    aider: { chases: 0, nudges: 0, deadLetters: 0, respawns: 0, recentDailyRate: 0 },
+  });
+});
+
+test('providerTelemetry-02 (BL-208 common-fields-01): reports the same field keys/shape as computeChaserTelemetry', () => {
+  const target = mkTmp();
+  const now = Date.parse('2026-07-09T12:00:00Z');
+  writeTelemetryLine(target, '2026-07', { type: 'chase', role: 'coder', provider: 'claude', handoffId: 'a.handoff', at: '2026-07-09T11:00:00Z' });
+
+  const byRole = computeChaserTelemetry(target, ['coder'], now, 1);
+  const byProvider = computeProviderTelemetry(target, ['claude'], now, 1);
+  assert.deepEqual(Object.keys(byProvider.claude).sort(), Object.keys(byRole.coder).sort());
+});
+
+test('providerTelemetry-03 (BL-208 brand-agnostic-read-02): aggregates events from different roles sharing one provider brand', () => {
+  const target = mkTmp();
+  const now = Date.parse('2026-07-09T12:00:00Z');
+  writeTelemetryLine(target, '2026-07', { type: 'chase', role: 'coder', provider: 'claude', handoffId: 'a.handoff', at: '2026-07-09T11:00:00Z' });
+  writeTelemetryLine(target, '2026-07', { type: 'nudge', role: 'cleaner', provider: 'claude', handoffId: 'b.handoff', at: '2026-07-09T11:30:00Z' });
+  writeTelemetryLine(target, '2026-07', { type: 'chase', role: 'architect', provider: 'aider', handoffId: 'c.handoff', at: '2026-07-09T11:45:00Z' });
+
+  const telemetry = computeProviderTelemetry(target, ['claude', 'aider'], now, 1);
+  assert.equal(telemetry.claude.chases, 1, 'coder and cleaner both run claude - their events land in one shared bucket');
+  assert.equal(telemetry.claude.nudges, 1);
+  assert.equal(telemetry.aider.chases, 1);
+});
+
+test('providerTelemetry-04: an event for a provider not in the current providerNames list is ignored', () => {
+  const target = mkTmp();
+  writeTelemetryLine(target, '2026-07', { type: 'chase', role: 'coder', provider: 'retired-brand', handoffId: 'a.handoff', at: '2026-07-09T10:00:00Z' });
+
+  const telemetry = computeProviderTelemetry(target, ['claude'], Date.parse('2026-07-09T12:00:00Z'));
+  assert.equal(telemetry.claude.chases, 0);
+  assert.equal(Object.keys(telemetry).includes('retired-brand'), false);
+});
+
+test('providerTelemetry-05: an event with no provider field is ignored, not grouped under an "undefined" bucket', () => {
+  const target = mkTmp();
+  writeTelemetryLine(target, '2026-07', { type: 'chase', role: 'coder', handoffId: 'a.handoff', at: '2026-07-09T10:00:00Z' });
+
+  const telemetry = computeProviderTelemetry(target, ['claude'], Date.parse('2026-07-09T12:00:00Z'));
+  assert.equal(telemetry.claude.chases, 0);
+  assert.equal(Object.keys(telemetry).includes('undefined'), false);
 });

@@ -603,8 +603,16 @@
                   :log-dead-letter! (fn [role path] (log! "dead-letter" role (fs/file-name path)))
                   :get-last-activity-ms (fn [role] (get-last-activity-ms (get roles role) socket now-ms))
                   :on-stuck-escalation! (fn [role escalated?] (chase-sweep-lib/write-escalation! (str daemon-dir) role escalated?))
+                  ;; BL-208: :provider is the one common, brand-name field
+                  ;; every telemetry event now carries (chase_sweep_lib.bb
+                  ;; itself stays agent-agnostic - this is the only place
+                  ;; that knows which agent a role runs, same lookup
+                  ;; :send-wake-up! above already does) so a reader can
+                  ;; compare providers without a per-role branch.
                   :log-telemetry! (fn [event at-ms]
-                                     (try (log-chaser-telemetry! event at-ms)
+                                     (try (log-chaser-telemetry!
+                                           (assoc event :provider (:agent (get roles (:role event))))
+                                           at-ms)
                                           (catch Exception e (log! "telemetry-error" (:type event) (.getMessage e)))))
                   ;; BL-209: the shared rate-limit cooldown file the
                   ;; extension writes to (one file, every role - state-dir

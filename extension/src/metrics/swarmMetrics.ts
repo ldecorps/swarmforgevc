@@ -9,6 +9,11 @@ import { execFileSync } from 'child_process';
 export interface RoleWorktree {
   role: string;
   worktreePath: string;
+  // BL-208: the configured agent/provider brand (roles.tsv's own agent
+  // column), when the caller has it - lets computeSwarmMetrics derive a
+  // provider roster for computeProviderTelemetry without a second read of
+  // roles.tsv.
+  agent?: string;
 }
 
 export interface MeanTicketTime {
@@ -397,6 +402,9 @@ export interface SwarmMetrics {
   retryByTicket: Record<string, number>;
   suiteDuration: SuiteDurationStats;
   chaserTelemetry: ChaserTelemetry;
+  // BL-208: the same chaser telemetry, grouped by provider brand instead of
+  // role - empty (no keys) when no role in `roles` carries an `agent`.
+  providerTelemetry: ChaserTelemetry;
 }
 
 export const NO_SAMPLE_PLACEHOLDER = '—';
@@ -527,6 +535,10 @@ export interface ChaserTelemetryEvent {
   handoffId?: string;
   count?: number;
   at: string;
+  // BL-208: the role's configured agent/provider brand, the one common
+  // field every event carries regardless of role - lets a reader group by
+  // provider instead of role with no per-brand branch.
+  provider?: string;
 }
 
 export interface RoleChaserTelemetry {
@@ -665,31 +677,65 @@ function applyChaserEvent(
   }
 }
 
-// Absent/empty telemetry (no directory yet, or a target with no chases ever
-// logged) reads as all-zero totals for every known role, never an error
-// (telemetry-05) - a fresh swarm or one whose chaser has never had to
-// intervene is not a fault condition.
+// Shared by computeChaserTelemetry (groups by event.role) and BL-208's
+// computeProviderTelemetry (groups by event.provider) - both need the exact
+// same "pre-seed every known name with an empty bucket, then tally events
+// keyed by some field of the event" shape, differing only in which field
+// keys the grouping. Absent/empty telemetry (no directory yet, or a target
+// with no chases ever logged) reads as all-zero totals for every known
+// name, never an error (telemetry-05/BL-208 empty-reads-zero-03) - a fresh
+// swarm or one whose chaser has never had to intervene is not a fault
+// condition.
+function computeGroupedTelemetry(
+  targetPath: string,
+  groupNames: string[],
+  keyOf: (event: ChaserTelemetryEvent) => string | undefined,
+  nowMs: number,
+  windowDays: number
+): ChaserTelemetry {
+  const result: ChaserTelemetry = {};
+  for (const name of groupNames) {
+    result[name] = emptyRoleTelemetry();
+  }
+
+  const windowStartMs = nowMs - windowDays * 24 * 60 * 60 * 1000;
+  const recentCounts: Record<string, number> = {};
+  for (const event of readChaserTelemetryEvents(targetPath)) {
+    const key = keyOf(event);
+    if (key !== undefined) {
+      applyChaserEvent(result, recentCounts, { ...event, role: key }, windowStartMs);
+    }
+  }
+
+  for (const name of groupNames) {
+    result[name].recentDailyRate = (recentCounts[name] ?? 0) / windowDays;
+  }
+  return result;
+}
+
 export function computeChaserTelemetry(
   targetPath: string,
   roleNames: string[],
   nowMs: number = Date.now(),
   windowDays: number = CHASER_TELEMETRY_WINDOW_DAYS
 ): ChaserTelemetry {
-  const result: ChaserTelemetry = {};
-  for (const role of roleNames) {
-    result[role] = emptyRoleTelemetry();
-  }
+  return computeGroupedTelemetry(targetPath, roleNames, (event) => event.role, nowMs, windowDays);
+}
 
-  const windowStartMs = nowMs - windowDays * 24 * 60 * 60 * 1000;
-  const recentCounts: Record<string, number> = {};
-  for (const event of readChaserTelemetryEvents(targetPath)) {
-    applyChaserEvent(result, recentCounts, event, windowStartMs);
-  }
-
-  for (const role of roleNames) {
-    result[role].recentDailyRate = (recentCounts[role] ?? 0) / windowDays;
-  }
-  return result;
+// BL-208 brand-agnostic-read-02: the same telemetry log, grouped by the
+// role's configured agent/provider brand instead of role, so an operator
+// reader can compare providers (which brand is slower/failing/idling)
+// using one common field with no per-brand branch. Reuses
+// computeGroupedTelemetry (and the ChaserTelemetry/RoleChaserTelemetry
+// shapes) rather than a parallel implementation, per BL-208's own
+// "reuse existing telemetry surfaces" constraint.
+export function computeProviderTelemetry(
+  targetPath: string,
+  providerNames: string[],
+  nowMs: number = Date.now(),
+  windowDays: number = CHASER_TELEMETRY_WINDOW_DAYS
+): ChaserTelemetry {
+  return computeGroupedTelemetry(targetPath, providerNames, (event) => event.provider, nowMs, windowDays);
 }
 
 export function computeSwarmMetrics(
@@ -711,6 +757,8 @@ export function computeSwarmMetrics(
     roles.map((r) => r.role),
     nowMs
   );
+  const providerNames = [...new Set(roles.map((r) => r.agent).filter((a): a is string => Boolean(a)))];
+  const providerTelemetry = computeProviderTelemetry(targetPath, providerNames, nowMs);
 
   return {
     meanTicketTimeMs: meanMs,
@@ -720,5 +768,6 @@ export function computeSwarmMetrics(
     retryByTicket: perTicket,
     suiteDuration,
     chaserTelemetry,
+    providerTelemetry,
   };
 }
