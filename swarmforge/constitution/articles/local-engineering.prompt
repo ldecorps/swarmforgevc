@@ -46,6 +46,22 @@ shared article remains in force.
 4. Secrets. Tokens and keys (e.g. a GitHub token for opening PRs) live in the
    extension host environment only. Never written into the target working
    directory or any commit.
+5. Two phone-viewable surfaces, one boundary — pick correctly at spec time.
+   There are TWO web surfaces a developer can view on a phone, and they are NOT
+   interchangeable: (a) the STATIC backlog-dashboard PWA (`pwa/index.html` ->
+   `pwa/app.js`), a pure renderer that fetches `./backlog.json` — a
+   git-SHA-reproducible PROJECTION with NO bridge/host connectivity, NO auth,
+   and NO write path; and (b) the LIVE holistic UI
+   (`extension/src/bridge/holisticUiHtml.ts`), served by `bridge/bridgeServer.ts`
+   with token auth, which fetches live endpoints and can perform control actions.
+   Only data derivable from git state at a SHA may ride `backlog.json`/the static
+   PWA. Route any view that needs machine-local/live data, a host-persisted
+   marker, or a control/write action to the LIVE holistic UI (and/or the
+   host-side daily briefing) — never the static PWA; do not push machine-local
+   data into the git projection. Confirm which surface a request means before
+   speccing; "put it on the phone app" does not automatically mean the static
+   PWA. (Recurred 3x in 2026-07-10: BL-252 suite-duration trend, BL-265
+   gate-answer view, BL-257 slices 3-4 changed-since-visit + live trends.)
 
 ## Diagrams (this project)
 Per the shared Diagrams rule, the diagrams this project maintains are:
