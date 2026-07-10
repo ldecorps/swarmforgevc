@@ -35,6 +35,7 @@ Each agent worktree owns this structure:
     new/
     in_process/
     completed/
+    abandoned/
 ```
 
 The daemon consumes `outbox/`. Agents consume `inbox/new/` through helper
@@ -459,11 +460,17 @@ Responsibilities:
 - If an in-process file exists, report that it must be resumed or completed
   before accepting new work.
 - If no in-process file exists, select the first file in `inbox/new/` by sorted
-  filename order.
+  filename order, skipping any candidate whose basename already exists in
+  `inbox/completed/` or `inbox/abandoned/` — a stale duplicate left behind in
+  `new/` (e.g. by a layout migration or interrupted delivery) is logged as
+  `SKIPPED already-processed: <basename>` rather than resurrected as fresh
+  work, and the next genuinely-new candidate behind it is dequeued instead
+  (BL-218).
 - Atomically move that file to `inbox/in_process/`.
 - Add or update `dequeued_at`.
 - Print the accepted task path, sender, message type, priority, and payload.
-- Print `NO_TASK` if no inbox item is available.
+- Print `NO_TASK` if no inbox item is available (including when every `new/`
+  candidate was skipped as already-processed).
 - Refuse ambiguous states, such as multiple in-process files, unless an explicit
   repair is made outside the helper.
 
@@ -509,7 +516,9 @@ Responsibilities:
 - If an in-process batch exists, print that batch.
 - Refuse to run if a single in-process task exists.
 - If no in-process work exists, select the first file in `inbox/new/` by sorted
-  filename order.
+  filename order, applying the same already-processed skip against
+  `inbox/completed/` and `inbox/abandoned/` as `ready_for_next_task.sh`
+  (BL-218).
 - Select every queued handoff with the same priority as that first file.
 - Move those files into one `inbox/in_process/batch_<timestamp>_<suffix>/`
   directory.
