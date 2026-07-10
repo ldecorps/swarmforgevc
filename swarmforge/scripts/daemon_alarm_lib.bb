@@ -65,13 +65,45 @@
         {:success false :error (.getMessage e)}))))
 
 (defn send-alarm-email!
-  "Sends the alarm email, or reports why it could not: email is off (like
-   BL-073's own pattern) until both a recipient and an API key are configured."
+  "Sends the alarm email, or reports why it could not. BL-215: the two off
+   states are distinguished so a caller can tell them apart - no recipient
+   is an intentional, quiet no-op (like BL-073's own pattern); a recipient
+   present but no API key is a real misconfiguration the caller should
+   escalate loudly via warn-missing-key-if-needed! below."
   ([api-key to from subject text] (send-alarm-email! api-key to from subject text default-post!))
   ([api-key to from subject text post-fn!]
-   (if (or (str/blank? to) (str/blank? api-key))
-     {:success false :error "email not configured (missing notify_email_to or RESEND_API_KEY)"}
+   (cond
+     (str/blank? to)
+     {:success false :reason :disabled :error "email not configured (notify_email_to unset)"}
+
+     (str/blank? api-key)
+     {:success false :reason :missing-api-key :error "email not configured (missing RESEND_API_KEY)"}
+
+     :else
      (post-fn! api-key {:to to :from from :subject subject :text text}))))
+
+;; BL-215: a recipient-configured-but-keyless daemon must warn loudly instead
+;; of silently no-oping (the defect: send-alarm-email!'s old single failure
+;; shape made "email intentionally off" and "real misconfiguration"
+;; indistinguishable, and the supervisor caller just swallowed the result).
+;; Lives in this shared library, not the caller, so BOTH the BL-144 alarm and
+;; a future BL-214 briefing send get the warning for free through the same
+;; send-configured-alarm-email!-shaped wrapper.
+
+(defn warn-missing-key-if-needed!
+  "Given a send-alarm-email! result, logs a loud one-time warning naming
+   RESEND_API_KEY when :reason is :missing-api-key and no such warning has
+   been logged yet (already-warned?! false) - never logs the key value
+   itself (there is none to log: the whole point is that it's absent). A
+   no-op for a quiet :disabled no-op, a real send attempt, or a repeat call
+   once already warned (do not spam every poll/sweep)."
+  [{:keys [reason]} {:keys [already-warned?! log-warning! mark-warned!]}]
+  (when (and (= reason :missing-api-key) (not (already-warned?!)))
+    (log-warning!
+     (str "notify_email_to is configured but RESEND_API_KEY is missing from the daemon's "
+          "environment - alarm/briefing email cannot send. Export RESEND_API_KEY in the "
+          "daemon's launch environment."))
+    (mark-warned!)))
 
 (defn alarm-and-halt!
   "Orchestrates the whole daemon-death response through injected adapters -
