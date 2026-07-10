@@ -229,3 +229,24 @@ test('readCoordinatorLossState returns null when no stop has ever happened', () 
 
   assert.equal(readCoordinatorLossState(targetPath), null);
 });
+
+// A sentinel file can exist and parse as valid JSON while still not
+// matching CoordinatorLossState's shape (a stale/foreign/corrupted write)
+// - the if-condition's FALSE fallthrough must return null rather than a
+// garbage object, distinct from readCoordinatorLossState's catch-block
+// null (a missing file / invalid JSON, already covered above).
+test('readCoordinatorLossState returns null for a valid-JSON sentinel with an unrecognized phase', () => {
+  const targetPath = mkTarget();
+  fs.mkdirSync(path.dirname(coordinatorLossStatePath(targetPath)), { recursive: true });
+  fs.writeFileSync(coordinatorLossStatePath(targetPath), JSON.stringify({ phase: 'bogus', startedAt: '2026-07-10T00:00:00.000Z' }));
+
+  assert.equal(readCoordinatorLossState(targetPath), null);
+});
+
+test('readCoordinatorLossState returns null for a valid-JSON sentinel missing startedAt', () => {
+  const targetPath = mkTarget();
+  fs.mkdirSync(path.dirname(coordinatorLossStatePath(targetPath)), { recursive: true });
+  fs.writeFileSync(coordinatorLossStatePath(targetPath), JSON.stringify({ phase: 'stopped' }));
+
+  assert.equal(readCoordinatorLossState(targetPath), null);
+});
