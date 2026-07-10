@@ -83,18 +83,40 @@ test('mailboxDir gives coordinator and specifier physically distinct mailboxes o
   assert.equal(specifierNew, path.join('/proj', '.swarmforge', 'handoffs', 'specifier', 'inbox', 'new'));
 });
 
-test('parseRolesTsv parses role, worktreeName, worktreePath, and displayName', () => {
+test('parseRolesTsv parses role, worktreeName, worktreePath, displayName, and agent', () => {
   const tsv = [
     'coder\tcoder\t/proj/.worktrees/coder\tswarmforge-coder\tCoder\tclaude\ttask',
-    'cleaner\tcleaner\t/proj/.worktrees/cleaner\tswarmforge-cleaner\tCleaner\tclaude\tbatch',
+    'cleaner\tcleaner\t/proj/.worktrees/cleaner\tswarmforge-cleaner\tCleaner\taider\tbatch',
     '',
   ].join('\n');
 
   const roles = parseRolesTsv(tsv);
 
   assert.equal(roles.length, 2);
-  assert.deepEqual(roles[0], { role: 'coder', worktreeName: 'coder', worktreePath: '/proj/.worktrees/coder', displayName: 'Coder' });
-  assert.deepEqual(roles[1], { role: 'cleaner', worktreeName: 'cleaner', worktreePath: '/proj/.worktrees/cleaner', displayName: 'Cleaner' });
+  assert.deepEqual(roles[0], {
+    role: 'coder',
+    worktreeName: 'coder',
+    worktreePath: '/proj/.worktrees/coder',
+    displayName: 'Coder',
+    agent: 'claude',
+  });
+  assert.deepEqual(roles[1], {
+    role: 'cleaner',
+    worktreeName: 'cleaner',
+    worktreePath: '/proj/.worktrees/cleaner',
+    displayName: 'Cleaner',
+    agent: 'aider',
+  });
+});
+
+// BL-208: a TSV row missing the agent column (an older/shorter format)
+// must not throw - agent reads as undefined, never crashes a caller that
+// groups by provider.
+test('parseRolesTsv tolerates a missing agent column', () => {
+  const tsv = 'coder\tcoder\t/proj/.worktrees/coder\tswarmforge-coder\tCoder\n';
+  const roles = parseRolesTsv(tsv);
+  assert.equal(roles.length, 1);
+  assert.equal(roles[0].agent, undefined);
 });
 
 test('parseRolesTsv returns empty array for empty input', () => {

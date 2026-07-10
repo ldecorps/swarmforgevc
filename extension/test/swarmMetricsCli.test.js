@@ -172,6 +172,56 @@ test('formatOverview prefixes WARN when the suite-duration entry is flagged', ()
   assert.match(text, /WARN Suite duration: 2m 10s/);
 });
 
+// BL-208: "By provider" line - grouped by agent/provider brand instead of
+// role, the operator-facing proof of brand-agnostic-read-02.
+
+test('formatOverview omits the "By provider" line entirely when no providerNames are given', () => {
+  const metrics = {
+    meanTicketTimeMs: null,
+    ticketSampleCount: 0,
+    busyness: {},
+    retryTotal: 0,
+    retryByTicket: {},
+    suiteDuration: { latestMs: null, meanMs: null, sampleCount: 0, warn: false },
+  };
+  const text = formatOverview(metrics, []);
+  assert.doesNotMatch(text, /By provider/);
+});
+
+test('formatOverview appends a "By provider" line grouped by provider brand, not role', () => {
+  const metrics = {
+    meanTicketTimeMs: null,
+    ticketSampleCount: 0,
+    busyness: {},
+    retryTotal: 0,
+    retryByTicket: {},
+    suiteDuration: { latestMs: null, meanMs: null, sampleCount: 0, warn: false },
+    providerTelemetry: {
+      claude: { chases: 4, nudges: 1, deadLetters: 0, respawns: 0, recentDailyRate: 0.71 },
+      aider: { chases: 0, nudges: 0, deadLetters: 0, respawns: 0, recentDailyRate: 0 },
+    },
+  };
+  const text = formatOverview(metrics, ['coder', 'cleaner'], ['claude', 'aider']);
+  const providerLine = text.split('\n').at(-1);
+  assert.equal(providerLine, 'By provider: claude 4 chases/1 nudges (0.71/day), aider 0 chases/0 nudges (0.00/day)');
+});
+
+test('formatOverview reads an absent providerTelemetry field as zero for a listed provider, never a crash', () => {
+  const metrics = {
+    meanTicketTimeMs: null,
+    ticketSampleCount: 0,
+    busyness: {},
+    retryTotal: 0,
+    retryByTicket: {},
+    suiteDuration: { latestMs: null, meanMs: null, sampleCount: 0, warn: false },
+    // no providerTelemetry field at all - simulates an older SwarmMetrics object.
+  };
+  const text = formatOverview(metrics, [], ['claude']);
+  const providerLine = text.split('\n').at(-1);
+  assert.equal(providerLine, 'By provider: claude 0 chases/0 nudges (0.00/day)');
+  assert.doesNotMatch(text, /NaN|Infinity|undefined/);
+});
+
 // --- formatDeliveryOverview / formatTrend (BL-096) ---
 // formatTrend itself is private, but every direction/null-delta branch it
 // has is reachable through formatDeliveryOverview's velocity line, so
