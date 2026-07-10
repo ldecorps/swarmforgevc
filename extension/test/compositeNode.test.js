@@ -98,6 +98,22 @@ test('one agent blocked (injected needs-human signal) rolls up to swarm blocked,
   assert.equal(swarm.status(), 'blocked');
 });
 
+// SwarmNodeDeps declares isBlocked as OPTIONAL (`isBlocked?:`) - every
+// test above always supplies one via baseDeps, so this proves the
+// declared-optional contract actually holds for a caller that omits it
+// entirely (e.g. a console with no "needs human" signal source wired
+// yet), rather than only ever exercising `agentStatus`'s `deps.isBlocked
+// ?.(role)` optional-chain with a real function present.
+test('omitting isBlocked entirely behaves like it always returns false (never blocked)', () => {
+  const fixture = mkFixture();
+  markBacklogActive(fixture.targetPath, true);
+  const deps = baseDeps(fixture);
+  delete deps.isBlocked;
+  const swarm = createSwarmNode(deps);
+
+  assert.equal(swarm.status(), 'idle');
+});
+
 test('a pending QA merge-up note in any worktree role rolls up to swarm converging', () => {
   const fixture = mkFixture();
   markBacklogActive(fixture.targetPath, true);
