@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { SwarmRole, respawnAgent } from '../swarm/tmuxClient';
+import { AVAILABLE_CLAUDE_MODELS, readCurrentModel, switchRoleModel } from '../swarm/backendSwitch';
 import { PaneTailer } from './paneTailer';
 import { currentStageLabel, readPipelineStages, findLiveHolder, parseRolesTsv } from '../swarm/swarmState';
 import { computeSwarmMetrics, DEFAULT_SUITE_WARN_SECONDS } from '../metrics/swarmMetrics';
@@ -89,6 +90,13 @@ export class SwarmPanel {
             break;
           case 'restartAgent': {
             const result = respawnAgent(this.targetPath, message.role);
+            if (!result.success) {
+              vscode.window.showErrorMessage(result.message);
+            }
+            break;
+          }
+          case 'switchModel': {
+            const result = switchRoleModel(this.targetPath, message.role, message.model);
             if (!result.success) {
               vscode.window.showErrorMessage(result.message);
             }
@@ -464,6 +472,12 @@ export class SwarmPanel {
         role: r.role,
         displayName: r.displayName,
         agent: r.agent,
+        // BL-235: only claude-backed roles get a model dropdown (the
+        // narrow-slice scope) - currentModel/availableModels are omitted
+        // for every other agent rather than sent as empty/misleading data.
+        ...(r.agent === 'claude'
+          ? { currentModel: readCurrentModel(this.targetPath, r.role), availableModels: AVAILABLE_CLAUDE_MODELS }
+          : {}),
       })),
     });
   }
