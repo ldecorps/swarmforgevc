@@ -287,15 +287,48 @@
     container.appendChild(barChart(velocity.weeklySeries, 300, 80));
   }
 
-  function renderBurndown(burndown) {
+  // BL-228: reuses the SAME forecast computeForecasts already produces (no
+  // parallel ETA model) - forecasts.milestones already drives the
+  // per-ticket ETAs on the board (ticketTitle/eta above), this just
+  // surfaces the same p50/p85 per milestone here too.
+  function milestoneEtaSuffix(forecasts, milestoneName) {
+    var forecast = ((forecasts && forecasts.milestones) || []).filter(function (f) {
+      return f.milestone === milestoneName;
+    })[0];
+    if (!forecast || !forecast.p50Iso) {
+      return ' — ' + tr('noEtaYet');
+    }
+    var text = tr('etaPrefix') + forecast.p50Iso.slice(0, 10);
+    if (forecast.p85Iso) {
+      text += tr('p85RangeInfix') + forecast.p85Iso.slice(0, 10) + ')';
+    }
+    return text;
+  }
+
+  // The overall "all remaining work" ETA: the latest projected completion
+  // (max p50) across every open ticket's own forecast - not a new model,
+  // just the max of the same per-ticket forecasts.tickets p50s.
+  function overallEtaText(forecasts) {
+    var p50Dates = ((forecasts && forecasts.tickets) || [])
+      .map(function (t) { return t.p50Iso; })
+      .filter(function (d) { return d; });
+    if (p50Dates.length === 0) {
+      return tr('noEtaYet');
+    }
+    var maxDate = p50Dates.reduce(function (max, d) { return d > max ? d : max; });
+    return tr('overallEtaPrefix') + maxDate.slice(0, 10);
+  }
+
+  function renderBurndown(burndown, forecasts) {
     var container = document.getElementById('burndown');
     container.innerHTML = '';
     if (!burndown || burndown.length === 0) {
       container.appendChild(el('p', {}, [tr('burndownNoMilestones')]));
       return;
     }
+    container.appendChild(el('p', { class: 'burndown-overall-eta' }, [overallEtaText(forecasts)]));
     burndown.forEach(function (m) {
-      container.appendChild(el('h4', {}, [m.milestone + ': ' + m.currentRemaining + tr('remainingSuffix') + trendArrow(m.trend)]));
+      container.appendChild(el('h4', {}, [m.milestone + ': ' + m.currentRemaining + tr('remainingSuffix') + milestoneEtaSuffix(forecasts, m.milestone) + trendArrow(m.trend)]));
       container.appendChild(barChart(m.dailySeries, 300, 60));
     });
   }
@@ -376,7 +409,7 @@
     asOf.textContent = tr('asOfPrefix') + new Date(data.generatedAtIso).toLocaleString() + shaText;
     renderBoard(data.board);
     renderVelocity(data.metrics.velocity);
-    renderBurndown(data.metrics.burndown);
+    renderBurndown(data.metrics.burndown, data.metrics.forecasts);
     renderCycleTime(data.metrics.cycleTime);
     renderCostHealth(data.costHealth || null);
   }

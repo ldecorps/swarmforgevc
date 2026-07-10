@@ -28,6 +28,7 @@ const DOMAINS = [
   require('./swarmIntakeEnvRouteSteps'),
   require('./pwaFontSizeSteps'),
   require('./complianceBatterySteps'),
+  require('./burndownEtaSteps'),
 ];
 
 function registerSteps(registry) {
