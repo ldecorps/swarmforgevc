@@ -35,10 +35,19 @@ Feature: the daily briefing is enriched with pipeline-health observables and PWA
     Then it reports each stage's dwell time and the pipeline throughput
 
   # BL-256 qa-bounce-chase-trends-03
-  Scenario: the briefing reports QA-bounce and chase trends
-    Given QA-bounce and chase/nudge telemetry over the recent window
+  # Wording note (QA bounce 20260710, evidence
+  # BL-256-briefing-enrichment-bounce-20260710.md): no distinct QA-bounce
+  # counter exists anywhere in this codebase (grep-confirmed) - REUSE, don't
+  # re-derive rules out inventing one. Scoped to chase/nudge/dead-letter
+  # telemetry (the real, already-computed pipeline-health signal BL-098
+  # provides), matching docs/Specification.MD's own already-honest wording
+  # and chase-trend-line.js's own "Chase/nudge trend:" output label - this
+  # scenario's own name is kept (BL-256's own numbered scenario id) but its
+  # Given/Then text no longer claims QA-bounce-rate coverage.
+  Scenario: the briefing reports chase/nudge trends
+    Given chase/nudge telemetry over the recent window
     When the briefing is generated
-    Then it reports the QA-bounce rate and chase/nudge counts with their trend direction
+    Then it reports the chase/nudge counts with their trend direction
 
   # BL-256 deep-links-into-pwa-04
   Scenario: briefing items deep-link into their PWA views
