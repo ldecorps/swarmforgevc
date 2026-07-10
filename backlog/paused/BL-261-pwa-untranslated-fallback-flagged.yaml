@@ -1,0 +1,90 @@
+id: BL-261
+title: "BUG: PWA shows English as French — render helpers ignore the *Untranslated flags docs-tree.json already publishes"
+direction: bug
+type: bug
+priority: 25
+mutation_cost: low
+source: "operator report 2026-07-10 (via coordinator, task 000150 / backlog/INTAKE-pwa-untranslated-not-flagged.md): the phone docs drill-down silently shows English as French when machine translation fails. Specifier confirmed the live producer + rendering layer."
+
+description: |
+  On the phone docs drill-down, "Show French rendering" (and the FR-locale ticket
+  title / description / vision doc) can display a block word-for-word identical to
+  the English above it, with no sign anything is wrong. It reads as a real French
+  translation; it is actually an untranslated English fallback.
+
+  Root cause (specifier confirmed the live layer):
+    - translate.ts degrades on ANY machine-translation failure to
+      { text: <English>, untranslated: true } (bilingual-05: an MT failure must
+      never block publishing) — correct and intended.
+    - docsTree.ts CORRECTLY publishes the paired *Untranslated flags on
+      docs-tree.json: titleFrUntranslated (docsTree.ts:306),
+      descriptionFrUntranslated (:312), contentFrUntranslated (:287), and
+      textFrUntranslated (gherkinScenarios.ts:16 / docsTree.ts:296).
+    - pwa/app.js NEVER reads any of them (grep: zero "Untranslated" references in
+      pwa/) and renders the *Fr fields UNCONDITIONALLY, so the English fallback is
+      presented as a genuine French translation.
+    - No PWA-layer test exercises the untranslated path, so this shipped since the
+      bilingual work (BL-118 / BL-230).
+
+  This is a PWA RENDERING-LAYER bug only. The flags already exist and are correctly
+  computed and published — REUSE them; do NOT touch translate.ts or docsTree.ts.
+
+  The four surfaces that read a *Fr field, each with its paired flag (verified):
+    - ticketTitle()        app.js:272  ticket.titleFr        <- titleFrUntranslated
+    - renderDocsVision()   app.js:613  doc.contentFr         <- contentFrUntranslated
+    - renderDocsTicket()   app.js:638  ticket.descriptionFr  <- descriptionFrUntranslated
+    - renderDocsScenario() app.js:667  scenario.textFr       <- textFrUntranslated
+
+  Wanted behavior (observable):
+    - When a rendered *Fr field's paired *Untranslated flag is true, the surface
+      shows a clear machine-translation-unavailable indicator, and the fallback text
+      is NOT presented as a genuine French translation. (The English fallback may
+      still be shown, but only clearly labelled as untranslated — never silently.)
+    - When the paired flag is false/absent, the translated text renders as today,
+      with no indicator (no false alarms on real translations).
+    - The fix is SYSTEMIC across all four surfaces, not just the scenario reveal.
+    - The indicator string is localized (comes from the locale table, not a
+      hardcoded literal).
+
+  Constraints:
+    - REUSE the existing flags: rendering-layer change to pwa/app.js only. No change
+      to extension/src/i18n/translate.ts or extension/src/docs/docsTree.ts.
+    - LOCALIZE the indicator string via pwa/locales.js (BL-229/BL-230), one key with
+      en + fr entries; no hardcoded user-facing string in app.js.
+    - TESTABLE / no gap: the untranslated check is a small pure predicate over a
+      field's paired flag — extract it so it is unit-testable, and add PWA-layer
+      (jsdom) coverage that fixtures *Untranslated: true and asserts the indicator
+      renders on each of the four surfaces, plus that a genuine translation shows no
+      indicator. Precedent: extension/test/pwaDocsExplorer.test.js and
+      extension/test/pwaLocale.test.js. Closing this coverage gap is required — its
+      absence is why the bug shipped.
+
+  Scope: pwa/app.js (the four render helpers above each consult their paired
+  *Untranslated flag and render the localized indicator when true) and
+  pwa/locales.js (the new indicator string, en + fr). Add the jsdom PWA-layer
+  test(s). Verify the four render helpers and the paired flag names on
+  docs-tree.json before naming files in the built slice.
+
+acceptance: specs/features/BL-261-pwa-untranslated-fallback-flagged.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (PWA rendering layer over fixture docs-tree data):
+  1. Fixture a ticket/doc/scenario whose *Fr field is set with its paired
+     *Untranslated flag true; render each of the four surfaces in FR locale; assert
+     a machine-translation-unavailable indicator appears and the fallback is not
+     passed off as a genuine translation.
+  2. Fixture a genuine translation (paired flag false/absent); render; assert the
+     translated text shows with NO indicator.
+  3. Assert the indicator string comes from pwa/locales.js (localized), not a
+     hardcoded literal — verify it differs across en/fr locale.
+  4. Assert translate.ts and docsTree.ts are unchanged (flags reused, not
+     recomputed).
+  5. Assert new PWA-layer (jsdom) tests cover all four surfaces' untranslated path.
+
+# HUMAN APPROVAL: feature file
+# specs/features/BL-261-pwa-untranslated-fallback-flagged.feature is a NEW draft
+# authored by the specifier and is PENDING human review.
+# Priority 25 is a specifier default (bug tier, below the BL-249 cache-staleness
+# 15; intake: "low relative to a live outage, but real user-facing confusion") —
+# operator to confirm/adjust.
+human_approval: pending
