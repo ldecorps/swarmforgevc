@@ -286,6 +286,32 @@ test('the spoken audio uses the default locale language when no toggle happened'
   assert.equal(dom.window.__speechCalls.spoken[0].lang, 'en-US');
 });
 
+// Architect bounce (BL-266, 20260710): the listen control is missing its
+// aria-label - the ticket's own slice-2 scope explicitly requires one
+// (BL-238, matching the existing data-i18n-aria pattern), which I missed
+// implementing. Since the visible label toggles Listen/Stop, the
+// aria-label must track the SAME state, not just be set once.
+
+test('the listen control has an aria-label matching its current visible state', async () => {
+  const ticket = pendingTicket();
+  const dom = renderApp(
+    fakeBacklog({ needsApproval: [{ id: ticket.id, title: ticket.title }] }),
+    fakeDocsTree({ tickets: [ticket] }),
+    true
+  );
+  await flush();
+
+  openTicket(dom, 'BL-200');
+  const listenBtn = Array.from(needsApproval(dom).querySelectorAll('button')).find((b) => /listen/i.test(b.textContent));
+  assert.equal(listenBtn.getAttribute('aria-label'), 'Listen');
+
+  click(dom, listenBtn);
+  assert.equal(listenBtn.getAttribute('aria-label'), 'Stop');
+
+  click(dom, listenBtn);
+  assert.equal(listenBtn.getAttribute('aria-label'), 'Listen');
+});
+
 // ── listen-can-be-stopped-08 ─────────────────────────────────────────────
 
 test('stopping listen halts playback via the speech adapter\'s cancel', async () => {
