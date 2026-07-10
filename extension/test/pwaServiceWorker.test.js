@@ -10,6 +10,7 @@ const vm = require('node:vm');
 // REAL pwa/sw.js source, rather than restating its caching logic by hand.
 
 const SW_PATH = path.join(__dirname, '..', '..', 'pwa', 'sw.js');
+const APP_JS_PATH = path.join(__dirname, '..', '..', 'pwa', 'app.js');
 
 function fakeCacheStorage() {
   const caches = new Map();
@@ -204,6 +205,31 @@ test('BL-249 bounce: activate purges a stale shell cache but keeps app.js\'s pre
   );
   const stillThere = await prefsCache.match('./__locale-preference__');
   assert.deepEqual(stillThere, { body: 'fr' }, 'a returning user\'s persisted preference must not be wiped by a shell-changing deploy');
+});
+
+// BL-249 hardener bounce, hardening gap: sw.js's exemption and app.js's own
+// cache both hardcode PREFERENCES_CACHE_NAME as a literal - the two files
+// share no module system, so nothing but eyeballing keeps them in sync. The
+// test above only proves sw.js keeps whatever name IT declares; it can't
+// catch the two literals drifting apart, which is the exact collision class
+// this ticket exists to prevent (sw.js's CACHE_NAME and app.js's old
+// LOCALE_CACHE_NAME happened to match by accident until BL-249 made one of
+// them change). Parse both real source files - same precedent as
+// render-dashboard-font-size.js parsing this same constant out of app.js -
+// so a future rename on only one side fails this test instead of silently
+// reopening the wipe.
+test('BL-249 bounce: sw.js and app.js declare the identical PREFERENCES_CACHE_NAME literal', () => {
+  const swJsSource = fs.readFileSync(SW_PATH, 'utf8');
+  const appJsSource = fs.readFileSync(APP_JS_PATH, 'utf8');
+  const swMatch = swJsSource.match(/const PREFERENCES_CACHE_NAME\s*=\s*'([^']+)'/);
+  const appMatch = appJsSource.match(/var PREFERENCES_CACHE_NAME\s*=\s*'([^']+)'/);
+  assert.ok(swMatch, 'sw.js must declare a PREFERENCES_CACHE_NAME string literal');
+  assert.ok(appMatch, 'app.js must declare a PREFERENCES_CACHE_NAME string literal');
+  assert.equal(
+    swMatch[1],
+    appMatch[1],
+    'sw.js\'s purge exemption and app.js\'s actual preferences cache name must be hand-synced identically, or the next shell-changing deploy silently wipes preferences again'
+  );
 });
 
 // BL-249 unchanged-shell-no-churn-02: two installs stamped with the SAME
