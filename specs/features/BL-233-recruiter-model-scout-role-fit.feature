@@ -12,14 +12,10 @@ Feature: a recruiter scouts cheap/free model plans and ranks best-value model pe
   # models — knowing which model is best for which role. The recruiter RECOMMENDS
   # a swarmforge.conf change; a human applies it. It never mutates live config.
   #
-  # SLICED DELIVERY (see BL-233): this ticket ships in slices. The acceptance
-  # runner (specs/pipeline/runtime.js) THROWS on any scenario lacking a step
-  # handler, so this file carries ONLY the scenarios for slices already BUILT and
-  # grows as each slice lands. Currently built: slice 1 = discovery, slice 2 =
-  # acquire access, slice 3 = qualify via battery (below). Slice 4's Gherkin is
-  # parked in the companion
-  # BL-233-recruiter-model-scout-role-fit.slice-4.feature.draft and is promoted
-  # into this file when its slice is implemented.
+  # SLICED DELIVERY (see BL-233): this ticket shipped in slices - slice 1 =
+  # discovery, slice 2 = acquire access, slice 3 = qualify via battery, slice
+  # 4 = best-value ranking + recommend (all below). All four slices are now
+  # built; nothing remains in a parked .feature.draft companion.
 
   Background:
     Given the recruiter runs out-of-band, reusing the swarm-compliance battery and the provider abstraction, without modifying live swarm config
@@ -55,3 +51,19 @@ Feature: a recruiter scouts cheap/free model plans and ranks best-value model pe
     Given a candidate whose access has been acquired
     When the recruiter qualifies it
     Then it runs the swarm-compliance battery and records the candidate's per-role scorecard
+
+  # BL-233 best-value-ranking-05
+  Scenario: each role gets a best-value leaderboard over compliant candidates
+    Given several candidates scored by the battery for a role
+    When the recruiter ranks them for that role
+    Then only battery-compliant candidates are ranked
+    And they are ordered by capability weighted against plan cost, cheapest breaking ties
+    And the current model for that role appears as the reference baseline
+    And a best-value model is recommended for that role
+
+  # BL-233 recommend-not-adopt-06
+  Scenario: the recruiter recommends a config change but never applies it
+    Given a best-value recommendation for a role
+    When the recruiter emits its report
+    Then the report includes a suggested swarmforge.conf --model change for that role
+    And the recruiter does not modify swarmforge.conf or bounce the swarm
