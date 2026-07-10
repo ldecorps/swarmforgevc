@@ -32,6 +32,7 @@ import { resolveResendApiKey } from '../notify/secrets';
 import { readBounceDrainState } from '../swarm/bounceDrain';
 import { buildRoleInboxes } from '../watchdog/chaserMonitor';
 import { scanInProcess } from '../swarm/inboxChaser';
+import { handleCoordinatorDeadEvent } from '../swarm/coordinatorLossTrigger';
 
 const STAGE_POLL_INTERVAL_MS = 2000;
 const OUTPUT_CHANNEL_NAME = 'SwarmForge';
@@ -230,6 +231,11 @@ export class SwarmPanel {
       },
       (events) => {
         this.panel.webview.postMessage({ type: 'dead', events });
+        // BL-245: an unexpected coordinator pane death triggers bounded
+        // respawn, then quiesce-and-teardown on exhaustion - fire-and-forget
+        // (the recovery engine itself owns its own timeouts/backoff; this
+        // callback must not block delivering the 'dead' event to the webview).
+        void handleCoordinatorDeadEvent(this.targetPath, events);
       },
       (message) => {
         this.outputChannel.appendLine(message);
