@@ -1,0 +1,61 @@
+id: BL-230
+title: "PWA French: translate ticket/doc sentences (jargon preserved) — needs translation-mechanism design"
+direction: i18n
+priority: 35
+mutation_cost: medium
+needs_design: true
+source: "operator screenshot + chat 2026-07-10: 'FR should translate everything' -> clarified 'sentences have to be translated, jargon terms can stay in english'."
+
+description: |
+  Follow-up to BL-118. In French the chrome is translated, but the ticket titles/
+  descriptions and doc content — the English text the operator authors — stay
+  English. Operator decision (2026-07-10): "sentences have to be translated;
+  jargon terms can stay in English." So ordinary prose renders in French while
+  jargon tokens (BL-ids, role names, product/tech terms) remain English.
+
+  pwa/app.js already has the delivery hook: ticketTitle() returns ticket.titleFr
+  when in French (pwa/app.js:183), falling back to the English title — but nothing
+  populates titleFr today. Descriptions/docs would need an equivalent field.
+
+  OPEN DESIGN DECISION (architect + human MUST resolve before build): HOW the
+  French content is sourced. Candidates:
+    - Automated translation at dashboard-build time (backlogDashboard.ts) filling
+      titleFr / description / doc-French fields, with a jargon preserve-list. Only
+      practical path to "all sentences, ongoing", but adds a translation service,
+      secret handling, per-build cost, and must respect the PWA no-localStorage/
+      offline rules; auto output may be imperfect.
+    - Human-authored titleFr per ticket: accurate but manual and realistically
+      titles only, not long descriptions/docs.
+  This choice has real cost/infra implications and is NOT settled here.
+
+  Wanted behavior (mechanism-agnostic acceptance):
+    - French mode shows ticket titles as French sentences; jargon tokens preserved.
+    - Missing French translation falls back to the original text (no error/blank).
+    - English mode unchanged.
+    - Smallest first slice: titles only (titleFr hook exists); descriptions/docs
+      follow in later slices.
+
+  Scope: pwa/app.js (ticketTitle + doc render), pwa/locales.js if needed, and the
+  build-time source in extension/src/metrics/backlogDashboard.ts. The translation
+  SOURCE is a build-time input to backlog.json, never a runtime browser call.
+
+  NOTE: this is a PROPOSAL. Do not promote to build until the translation
+  mechanism and its cost are confirmed by a human (the label-only fix BL-229 is
+  the independent quick win and can proceed first).
+
+acceptance: specs/features/BL-230-pwa-translate-ticket-doc-sentences.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (once a mechanism is chosen and built):
+  1. For a ticket whose title is a prose sentence with a French translation
+     available, render the board in French; assert the title shows in French with
+     jargon tokens (BL-id, role name) preserved in English.
+  2. For a ticket with no French translation, assert French mode falls back to the
+     original title, no error/blank.
+  3. Render in English; assert titles are the authored English text unchanged.
+  4. Confirm the French content came from a build-time source in backlog.json, not
+     a runtime browser translation call (no new browser storage/secret use).
+
+# HUMAN APPROVAL: feature file specs/features/BL-230-...feature is a new draft
+# authored by the specifier. Pending human review AND a translation-mechanism
+# design/cost decision before it is promoted to build.
