@@ -1005,6 +1005,10 @@ Because work state lives on disk (.swarmforge/) rather than only in memory, rest
 
 If the graceful drain phase takes longer than expected (e.g., an agent is hung), the extension will eventually force-stop it after a timeout. This is safe because of the per-stage checkpoints — no committed work is lost, and agents resume from their last successful handoff on restart.
 
+### Bounce-sentinel watcher resilience
+
+The extension watches a bounce sentinel file to detect and act on a bounce request. If that watch is unexpectedly lost (e.g. `.swarmforge/` is removed and recreated out from under it) it automatically re-establishes, with a capped, backed-off retry budget rather than retrying forever against a persistent failure (such as the host's inotify watch limit being exhausted). A transient loss shows a warning notification; if the retry budget is exhausted, an error notification tells you the sentinel is no longer being watched and to reload the window or bounce the swarm to re-establish it manually.
+
 ---
 
 ## Traceability & Completion ("Work Tree")
