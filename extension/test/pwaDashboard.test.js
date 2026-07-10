@@ -100,6 +100,124 @@ test('renders the state board, velocity, burndown, and cycle-time sections from 
   assert.match(document.getElementById('board').textContent, /BL-100 — cost telemetry — ETA 2026-08-01/);
 });
 
+// ── BL-257: backlog board filter/search (backlog-board-filter-search-01) ──
+
+function filterFixture() {
+  return fakeDashboard({
+    board: {
+      active: [
+        { id: 'BL-100', title: 'cost telemetry', swarm: 'primary', status: 'active', priority: 5 },
+        { id: 'BL-101', title: 'suite duration trend', swarm: 'primary', status: 'active', priority: 12 },
+      ],
+      paused: [{ id: 'BL-102', title: 'cost telemetry followup', swarm: 'primary', status: 'paused', priority: 5 }],
+      doneByMilestone: { M4: [{ id: 'BL-096', title: 'metrics', swarm: 'primary', status: 'done', priority: 5 }] },
+    },
+  });
+}
+
+function boardFilterInput(dom) {
+  return dom.window.document.getElementById('boardFilterQuery');
+}
+
+function boardFilterStatus(dom) {
+  return dom.window.document.getElementById('boardFilterStatus');
+}
+
+function boardFilterPriority(dom) {
+  return dom.window.document.getElementById('boardFilterPriority');
+}
+
+function typeInto(dom, input, value) {
+  input.value = value;
+  input.dispatchEvent(new dom.window.Event('input'));
+}
+
+test('typing a text query filters the board to only matching tickets (by id or title)', async () => {
+  const dom = renderDashboard(filterFixture());
+  await flush();
+
+  typeInto(dom, boardFilterInput(dom), 'cost telemetry');
+
+  const text = dom.window.document.getElementById('board').textContent;
+  assert.match(text, /BL-100/);
+  assert.match(text, /BL-102/);
+  assert.doesNotMatch(text, /BL-101/);
+  assert.doesNotMatch(text, /BL-096/);
+});
+
+test('selecting a status filters the board to only that status', async () => {
+  const dom = renderDashboard(filterFixture());
+  await flush();
+
+  boardFilterStatus(dom).value = 'paused';
+  boardFilterStatus(dom).dispatchEvent(new dom.window.Event('change'));
+
+  const text = dom.window.document.getElementById('board').textContent;
+  assert.match(text, /BL-102/);
+  assert.doesNotMatch(text, /BL-100/);
+  assert.doesNotMatch(text, /BL-101/);
+  assert.doesNotMatch(text, /BL-096/);
+});
+
+test('a priority filter shows only tickets with that exact priority', async () => {
+  const dom = renderDashboard(filterFixture());
+  await flush();
+
+  typeInto(dom, boardFilterPriority(dom), '5');
+
+  const text = dom.window.document.getElementById('board').textContent;
+  assert.match(text, /BL-100/);
+  assert.match(text, /BL-102/);
+  assert.match(text, /M4: 1/); // BL-096's milestone still counts it - done items are never listed by id
+  assert.doesNotMatch(text, /BL-101/);
+});
+
+test('text, status, and priority filters combine (AND, not OR)', async () => {
+  const dom = renderDashboard(filterFixture());
+  await flush();
+
+  typeInto(dom, boardFilterInput(dom), 'cost telemetry');
+  boardFilterStatus(dom).value = 'paused';
+  boardFilterStatus(dom).dispatchEvent(new dom.window.Event('change'));
+
+  const text = dom.window.document.getElementById('board').textContent;
+  assert.match(text, /BL-102/);
+  assert.doesNotMatch(text, /BL-100/);
+});
+
+test('clearing the filters restores the full unfiltered board', async () => {
+  const dom = renderDashboard(filterFixture());
+  await flush();
+
+  typeInto(dom, boardFilterInput(dom), 'cost telemetry');
+  typeInto(dom, boardFilterInput(dom), '');
+
+  const text = dom.window.document.getElementById('board').textContent;
+  assert.match(text, /BL-100/);
+  assert.match(text, /BL-101/);
+  assert.match(text, /BL-102/);
+  assert.match(text, /M4: 1/);
+});
+
+test('a filter matching nothing shows a localized no-results state, not a blank section', async () => {
+  const dom = renderDashboard(filterFixture());
+  await flush();
+
+  typeInto(dom, boardFilterInput(dom), 'no such ticket anywhere');
+
+  assert.match(dom.window.document.getElementById('board').textContent, /No tickets match your filter/);
+});
+
+test('the board filter query input is not re-created across re-renders (focus/cursor survive)', async () => {
+  const dom = renderDashboard(filterFixture());
+  await flush();
+  const inputBefore = boardFilterInput(dom);
+
+  typeInto(dom, inputBefore, 'BL-100');
+
+  assert.equal(boardFilterInput(dom), inputBefore);
+});
+
 // ── BL-251: needs-approval list (pwa-lists-pending-01) ────────────────────
 
 test('the needs-approval section lists exactly the tickets in backlog.json\'s needsApproval, with id and title', async () => {

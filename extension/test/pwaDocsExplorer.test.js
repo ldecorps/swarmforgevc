@@ -159,6 +159,46 @@ test('breadcrumbs navigate back up to an earlier level', async () => {
   assert.doesNotMatch(crumbs(dom).textContent, /BL-100/);
 });
 
+// ── BL-257 per-ticket-timeline-02 ─────────────────────────────────────────
+
+test('a ticket with git-derived lifecycle dates shows its timeline in order', async () => {
+  const tree = fakeDocsTree();
+  tree.tickets[0].specDateIso = '2026-07-01T00:00:00Z';
+  tree.tickets[0].closeDateIso = '2026-07-05T00:00:00Z';
+  const dom = renderDashboard(tree);
+  await flush();
+  click(dom, [...explorer(dom).querySelectorAll('button')].find((b) => b.textContent.indexOf('M4') === 0));
+  click(dom, [...explorer(dom).querySelectorAll('button')].find((b) => b.textContent.indexOf('BL-100') === 0));
+
+  const text = explorer(dom).textContent;
+  const speccedIndex = text.indexOf('2026-07-01');
+  const closedIndex = text.indexOf('2026-07-05');
+  assert.ok(speccedIndex !== -1 && closedIndex !== -1, `expected both dates shown, got: ${text}`);
+  assert.ok(speccedIndex < closedIndex, 'expected specced before closed, in order');
+});
+
+test('a still-open ticket shows only its specced date, no closed date', async () => {
+  const tree = fakeDocsTree();
+  tree.tickets[0].specDateIso = '2026-07-01T00:00:00Z';
+  const dom = renderDashboard(tree);
+  await flush();
+  click(dom, [...explorer(dom).querySelectorAll('button')].find((b) => b.textContent.indexOf('M4') === 0));
+  click(dom, [...explorer(dom).querySelectorAll('button')].find((b) => b.textContent.indexOf('BL-100') === 0));
+
+  const text = explorer(dom).textContent;
+  assert.match(text, /2026-07-01/);
+  assert.match(text, /Timeline/);
+});
+
+test('a ticket with no lifecycle data shows a localized empty timeline state, not an error', async () => {
+  const dom = renderDashboard(fakeDocsTree());
+  await flush();
+  click(dom, [...explorer(dom).querySelectorAll('button')].find((b) => b.textContent.indexOf('M4') === 0));
+  click(dom, [...explorer(dom).querySelectorAll('button')].find((b) => b.textContent.indexOf('BL-100') === 0));
+
+  assert.match(explorer(dom).textContent, /No timeline data available/);
+});
+
 test('a ticket with no resolved scenarios shows an explicit empty state, not an error', async () => {
   const tree = fakeDocsTree();
   tree.tickets[0].scenarios = [];
