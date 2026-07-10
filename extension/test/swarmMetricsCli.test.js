@@ -8,6 +8,7 @@ const {
   resolveMainWorktreePath,
   formatOverview,
   formatDeliveryOverview,
+  formatSuiteDurationTrendLine,
   formatCostTelemetryLine,
   formatResourceTrendsLine,
   runCliMain,
@@ -374,9 +375,43 @@ test('formatDeliveryOverview reports the latest suite-duration sample and its tr
     hasLocalData: true,
     dailySeries: [{ periodStart: '2026-07-08', value: 4000 }, { periodStart: '2026-07-09', value: 5000 }],
     trend,
+    warn: false,
   };
   const text = formatDeliveryOverview(metrics);
   assert.match(text, /Suite duration trend: 5s latest \(\+1s vs prior\)/);
+});
+
+// ── formatSuiteDurationTrendLine (BL-252) ─────────────────────────────────
+// Directly exercises the exported formatter every "surface the suite
+// duration trend + regression flag" consumer reuses (formatDeliveryOverview
+// above, and the new suite-duration-line.ts CLI the daily briefing shells
+// out to) - one function, one WARN-prefix rule, never duplicated.
+
+test('no local data: "no local data", no WARN prefix regardless of the warn field', () => {
+  assert.equal(formatSuiteDurationTrendLine({ hasLocalData: false, dailySeries: [], trend: noSampleTrend(), warn: true }), 'Suite duration trend: no local data');
+});
+
+test('warn: false renders the ordinary line with no WARN prefix', () => {
+  const trend = { series: [], currentValue: 5000, priorValue: 4000, delta: 1000, direction: 'up' };
+  const line = formatSuiteDurationTrendLine({
+    hasLocalData: true,
+    dailySeries: [{ periodStart: '2026-07-09', value: 5000 }],
+    trend,
+    warn: false,
+  });
+  assert.equal(line, 'Suite duration trend: 5s latest (+1s vs prior)');
+});
+
+test('warn: true prepends a WARN marker, sourced from the SAME field formatDeliveryOverview reads - no second threshold', () => {
+  const trend = { series: [], currentValue: 5000, priorValue: 4000, delta: 1000, direction: 'up' };
+  const line = formatSuiteDurationTrendLine({
+    hasLocalData: true,
+    dailySeries: [{ periodStart: '2026-07-09', value: 5000 }],
+    trend,
+    warn: true,
+  });
+  assert.match(line, /^WARN /);
+  assert.match(line, /Suite duration trend: 5s latest \(\+1s vs prior\)/);
 });
 
 // --- formatCostTelemetryLine / formatResourceTrendsLine (BL-100) ---

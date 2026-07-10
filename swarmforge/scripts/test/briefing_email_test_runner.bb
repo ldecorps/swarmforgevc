@@ -4,7 +4,8 @@
 ;; adapter - no real network, no real timers, no live daemon).
 (ns briefing-email-test-runner
   (:require [babashka.fs :as fs]
-            [cheshire.core :as json]))
+            [cheshire.core :as json]
+            [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "briefing_email_lib.bb")))
 
@@ -29,6 +30,26 @@
 (assert= "subject skips leading blank lines to find the headline"
          "SwarmForge briefing 2026-07-09 - Real headline"
          (briefing-email-lib/build-briefing-subject "2026-07-09" "\n  \nReal headline\nmore"))
+
+;; ── append-suite-duration-line (pure, BL-252) ────────────────────────────
+;; Appends the suite-duration trend + BL-078 regression-flag line (sourced
+;; from suite-duration-line.js, reusing computeSuiteDurationTrend/
+;; computeSuiteDuration unchanged) to the briefing content; a blank/nil line
+;; (the CLI unavailable, not "no data" - the CLI itself already produces a
+;; non-blank "no local data" text for that case) leaves content untouched
+;; rather than fabricating anything.
+
+(assert= "a non-blank line is appended after the existing content"
+         "Headline\n\nSuite duration trend: 5s latest\n"
+         (briefing-email-lib/append-suite-duration-line "Headline\n" "Suite duration trend: 5s latest"))
+
+(assert= "a nil line leaves the content untouched"
+         "Headline\n"
+         (briefing-email-lib/append-suite-duration-line "Headline\n" nil))
+
+(assert= "a blank line leaves the content untouched"
+         "Headline\n"
+         (briefing-email-lib/append-suite-duration-line "Headline\n" "   "))
 
 ;; ── load-sent-briefings / record-briefing-sent! / find-unsent-briefings ──
 
@@ -84,6 +105,39 @@
     (assert= "brief-01: a sent event is logged"
              true
              (some #(= (first %) "briefing-sent") @calls))))
+
+;; BL-252: when a :suite-duration-line adapter is supplied, its line reaches
+;; the ACTUAL emailed content - the wiring gap this ticket exists to close
+;; (a real production caller, not just a tested-but-uncalled formatter).
+(let [dir (mk-tmp)
+      sent-texts (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text] (swap! sent-texts conj text) {:success true})
+    :suite-duration-line (fn [] "WARN Suite duration trend: 300s latest ▲")
+    :log! (fn [& _] nil)})
+  (assert= "BL-252: the suite-duration line reaches the actual sent content"
+           true
+           (str/includes? (first @sent-texts) "WARN Suite duration trend: 300s latest ▲"))
+  (assert= "BL-252: the original headline is preserved, unaffected by the appended line"
+           true
+           (str/starts-with? (first @sent-texts) "Headline")))
+
+;; A nil-returning (or absent) :suite-duration-line adapter degrades to the
+;; original content unchanged - never an error, never a blank line appended.
+(let [dir (mk-tmp)
+      sent-texts (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text] (swap! sent-texts conj text) {:success true})
+    :log! (fn [& _] nil)})
+  (assert= "BL-252: no :suite-duration-line adapter -> content is unchanged (backward compatible)"
+           "Headline\n"
+           (first @sent-texts)))
 
 ;; brief-02: exactly once across restarts - a second sweep against the same
 ;; (already-marked-sent) briefings-dir sends nothing more.
