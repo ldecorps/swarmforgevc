@@ -25,3 +25,24 @@ export interface ModelCandidate {
   planCost: PlanCost;
   signupPath: SignupPath;
 }
+
+// BL-233 slice 2 (auto-acquire-free-02 / acquire-wall-escalates-03): a
+// candidate whose signupPath.automation isn't 'automatable' - the three
+// wall kinds discovery can classify a candidate under.
+export type WallAutomation = Exclude<SignupAutomation, 'automatable'>;
+
+export type AcquireOutcome =
+  | { model: string; status: 'acquired' }
+  | { model: string; status: 'escalated'; wall: WallAutomation };
+
+// Injectable seams (TESTABLE-boundary constraint): faked in unit tests, no
+// real network/signup/secret writes there. signUp() resolves the raw API
+// key; callers must hand it straight to a SecretStore and never surface it
+// elsewhere (a printed report, a log, an outcome value) - see acquire.ts.
+export interface SignupSource {
+  signUp(candidate: ModelCandidate): Promise<string>;
+}
+
+export interface SecretStore {
+  store(candidate: ModelCandidate, apiKey: string): Promise<void>;
+}

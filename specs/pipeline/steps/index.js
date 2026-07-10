@@ -44,6 +44,7 @@ const DOMAINS = [
   require('./recertSenderAllowlistSteps'),
   require('./pwaCacheStampSteps'),
   require('./qaIntegratesCoordinatorBookkeepsSteps'),
+  require('./recruiterAcquireSteps'),
 ];
 
 function registerSteps(registry) {
