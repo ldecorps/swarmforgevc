@@ -21,7 +21,7 @@
 
 import { createFileDiscoverySource } from '../recruiter/discoverySource';
 import { readCurrentModelByRole, runRecruiterWithFileAdapters } from '../recruiter/runRecruiterFromFiles';
-import { printJsonToStdout, runCliMain } from './swarm-metrics';
+import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 
 export { readCurrentModelByRole };
 
@@ -52,17 +52,10 @@ export function parseArgs(argv: string[]): RecruiterRunArgs | null {
   return { candidatesFile, signupKeysFile, roleTrialsFile, secretsFile, currentModelsFile };
 }
 
-export async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
-  if (!args) {
-    process.stderr.write(USAGE);
-    process.exitCode = 1;
-    return;
-  }
-
+export const main = makeArgsGuardedMain(parseArgs, USAGE, async (args) => {
   const report = await runRecruiterWithFileAdapters(createFileDiscoverySource(args.candidatesFile), args);
   printJsonToStdout(report);
-}
+});
 
 if (require.main === module) {
   runCliMain(main);
