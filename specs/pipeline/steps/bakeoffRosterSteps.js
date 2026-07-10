@@ -99,7 +99,20 @@ function registerSteps(registry) {
   });
 
   // ── cost-tier-labeled-03 ─────────────────────────────────────────────
+  // Hardener fix (BL-113 Gherkin mutation): validate against the exact
+  // known CostTier set rather than accepting any string verbatim - a
+  // Given/Then pair that both read the SAME Examples cell can never
+  // desync from a mutated value (whatever garbled string flows into
+  // Given also flows into Then's expectation and trivially matches), so
+  // survivor detection here depends on the Given step itself rejecting
+  // anything outside the real value set, same as recruiterAcquireSteps.js's
+  // WALL_TEXT_TO_AUTOMATION lookup for BL-233's acquire-wall-escalates-03.
+  const KNOWN_COST_TIERS = ['paid-only', 'free/eval-tier'];
+
   registry.define(/^a compliant candidate whose cost tier is "([^"]+)"$/, (ctx, tier) => {
+    if (!KNOWN_COST_TIERS.includes(tier)) {
+      throw new Error(`unrecognized cost tier "${tier}" - expected one of: ${KNOWN_COST_TIERS.join(', ')}`);
+    }
     ctx.candidate = chatEntry({
       costTier: tier,
       planCost: tier === 'paid-only' ? { amountUsd: 20, unit: 'monthly' } : { amountUsd: 0, unit: 'free' },
