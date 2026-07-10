@@ -1,5 +1,11 @@
 const assert = require('node:assert/strict');
-const { parseDependencyCruiserOutput, formatBounceNote, renderGateOutcome } = require('../out/quality/dependencyGate');
+const {
+  parseDependencyCruiserOutput,
+  formatBounceNote,
+  renderGateOutcome,
+  scanTextForStorageGlobal,
+  mergeDependencyGateResults,
+} = require('../out/quality/dependencyGate');
 
 // BL-259: the gate wrapper - parses RECORDED dependency-cruiser JSON output
 // (the shape real depcruise --output-type json produces) into a pass/
@@ -124,4 +130,59 @@ test('renderGateOutcome for a failing result: the bounce note text, exit code 1'
   const outcome = renderGateOutcome({ passed: false, violations });
   assert.equal(outcome.exitCode, 1);
   assert.equal(outcome.text, formatBounceNote(violations));
+});
+
+// ── scanTextForStorageGlobal / mergeDependencyGateResults (QA bounce fix) ──
+// QA bounce (6747a4812d): dependency-cruiser only sees import/require
+// EDGES, so no-webview-storage's wrapper-package-import check
+// (idb/localforage/dexie/store2/lockr - none installed, by design) could
+// never catch the REALISTIC violation - a bare `localStorage.setItem(...)`
+// global reference in media/*.js, which has no import statement at all.
+// This supplementary check scans FILE TEXT directly for the literal
+// identifiers and reports under the SAME no-webview-storage rule name, so
+// the architect's bounce note stays consistent regardless of which
+// mechanism actually caught it.
+
+test('scanTextForStorageGlobal flags a bare localStorage reference (QA\'s exact repro pattern)', () => {
+  const violation = scanTextForStorageGlobal('media/real-violation.js', "localStorage.setItem('x', '1');\n");
+  assert.deepEqual(violation, { from: 'media/real-violation.js', to: 'localStorage', rule: 'no-webview-storage' });
+});
+
+test('scanTextForStorageGlobal flags a bare sessionStorage reference', () => {
+  const violation = scanTextForStorageGlobal('media/other.js', 'sessionStorage.getItem("x");\n');
+  assert.deepEqual(violation, { from: 'media/other.js', to: 'sessionStorage', rule: 'no-webview-storage' });
+});
+
+test('scanTextForStorageGlobal returns null for text mentioning neither identifier', () => {
+  assert.equal(scanTextForStorageGlobal('media/clean.js', "console.log('hello');\n"), null);
+});
+
+test('scanTextForStorageGlobal does not false-positive on an unrelated identifier that merely CONTAINS the word (word-boundary match)', () => {
+  assert.equal(scanTextForStorageGlobal('media/clean.js', 'var myLocalStorageHelper = 1;\n'), null);
+});
+
+test('mergeDependencyGateResults combines depcruise violations and supplementary-scan violations into one deterministic result', () => {
+  const depcruise = { passed: false, violations: [{ from: 'src/a.ts', to: 'fs', rule: 'no-io-from-policy' }] };
+  const supplementary = [{ from: 'media/real-violation.js', to: 'localStorage', rule: 'no-webview-storage' }];
+  const merged = mergeDependencyGateResults(depcruise, supplementary);
+  assert.equal(merged.passed, false);
+  assert.deepEqual(merged.violations, [
+    { from: 'media/real-violation.js', to: 'localStorage', rule: 'no-webview-storage' },
+    { from: 'src/a.ts', to: 'fs', rule: 'no-io-from-policy' },
+  ]);
+});
+
+test('mergeDependencyGateResults with a clean depcruise result and no supplementary violations still passes', () => {
+  const merged = mergeDependencyGateResults({ passed: true, violations: [] }, []);
+  assert.equal(merged.passed, true);
+  assert.deepEqual(merged.violations, []);
+});
+
+test('mergeDependencyGateResults fails when depcruise is clean but the supplementary scan alone finds a violation', () => {
+  const merged = mergeDependencyGateResults(
+    { passed: true, violations: [] },
+    [{ from: 'media/real-violation.js', to: 'sessionStorage', rule: 'no-webview-storage' }]
+  );
+  assert.equal(merged.passed, false);
+  assert.equal(merged.violations.length, 1);
 });
