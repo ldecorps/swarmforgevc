@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-10T17:48:35.729414233Z","feature_name":"the PWA and daily briefing list the tickets whose feature file needs human approval","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-251-list-tickets-needing-human-approval.feature","background_hash":"ed6a8e78123af6b22267de87c7f4c28736299ad63ace6b59ff144af59cd41d5f","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: the PWA and daily briefing list the tickets whose feature file needs human approval
 
   # Operator request (2026-07-10, via coordinator): surface, in the phone PWA and

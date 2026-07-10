@@ -2,7 +2,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { backfillHumanApprovalText, runHumanApprovalBackfill } = require('../out/tools/backfill-human-approval');
+const { execFileSync } = require('node:child_process');
+const {
+  backfillHumanApprovalText,
+  runHumanApprovalBackfill,
+  formatBackfillResultLine,
+  formatBackfillReport,
+  resolveTargetPath,
+} = require('../out/tools/backfill-human-approval');
 
 // BL-251 backfill-seeds-field-05: a one-time, idempotent migration seeding
 // the structured human_approval field on live tickets from their existing
@@ -136,4 +143,74 @@ test('running the backfill twice is a no-op the second time (idempotent) - no do
 test('a missing active or paused folder is handled gracefully, never a crash', () => {
   const targetPath = mkTmp();
   assert.doesNotThrow(() => runHumanApprovalBackfill(targetPath));
+});
+
+// ── formatBackfillResultLine / formatBackfillReport / resolveTargetPath (pure) ──
+// Hardener split (CRAP<=6 gate): pulled out of main() so the report text
+// is exercised in-process, same "CLI main() run only via execFileSync is
+// coverage-invisible" lesson this codebase's other CLI hardener passes
+// already established.
+
+test('formatBackfillResultLine includes the derived value in parens when present', () => {
+  const line = formatBackfillResultLine({ filePath: '/x/BL-900.yaml', outcome: 'seeded', value: 'pending' });
+  assert.equal(line, 'seeded (pending): /x/BL-900.yaml');
+});
+
+test('formatBackfillResultLine omits the parenthetical when no value was derived', () => {
+  const line = formatBackfillResultLine({ filePath: '/x/BL-901.yaml', outcome: 'no-comment-found' });
+  assert.equal(line, 'no-comment-found: /x/BL-901.yaml');
+});
+
+test('formatBackfillReport lists every result and a seeded/checked summary count', () => {
+  const report = formatBackfillReport([
+    { filePath: '/x/BL-900.yaml', outcome: 'seeded', value: 'pending' },
+    { filePath: '/x/BL-901.yaml', outcome: 'already-set' },
+  ]);
+  assert.match(report, /seeded \(pending\): \/x\/BL-900\.yaml/);
+  assert.match(report, /already-set: \/x\/BL-901\.yaml/);
+  assert.match(report, /1 ticket\(s\) seeded, 2 checked\.$/);
+});
+
+test('formatBackfillReport summarizes 0 seeded for an empty result set, not an error', () => {
+  assert.match(formatBackfillReport([]), /0 ticket\(s\) seeded, 0 checked\.$/);
+});
+
+test('resolveTargetPath uses the explicit argv[2] path when given', () => {
+  assert.equal(resolveTargetPath(['node', 'backfill-human-approval.js', '/explicit/path']), '/explicit/path');
+});
+
+test('resolveTargetPath falls back to process.cwd() when no path argument is given', () => {
+  assert.equal(resolveTargetPath(['node', 'backfill-human-approval.js']), process.cwd());
+});
+
+// ── end-to-end: the compiled CLI runs against a REAL fs fixture ──────────
+
+test('the compiled CLI backfills a real target path given as an argument and prints a summary', () => {
+  const targetPath = mkTmp();
+  writeTicket(
+    path.join(targetPath, 'backlog', 'active'),
+    'BL-900.yaml',
+    'id: BL-900\ntitle: t\n\n# HUMAN APPROVAL: pending human review.\n'
+  );
+
+  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'backfill-human-approval.js');
+  const output = execFileSync('node', [cliPath, targetPath], { encoding: 'utf8' });
+
+  assert.match(output, /seeded \(pending\).*BL-900\.yaml/);
+  assert.match(output, /1 ticket\(s\) seeded, 1 checked\./);
+  assert.match(fs.readFileSync(path.join(targetPath, 'backlog', 'active', 'BL-900.yaml'), 'utf8'), /human_approval: pending/);
+});
+
+test('the compiled CLI defaults to process.cwd() when no target path argument is given', () => {
+  const targetPath = mkTmp();
+  writeTicket(
+    path.join(targetPath, 'backlog', 'paused'),
+    'BL-901.yaml',
+    'id: BL-901\ntitle: t\n\n# HUMAN APPROVAL: approved by operator.\n'
+  );
+
+  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'backfill-human-approval.js');
+  const output = execFileSync('node', [cliPath], { cwd: targetPath, encoding: 'utf8' });
+
+  assert.match(output, /seeded \(approved\).*BL-901\.yaml/);
 });
