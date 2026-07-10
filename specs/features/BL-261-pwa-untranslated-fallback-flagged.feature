@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=32b3e6d4ea6ea7cc039a2d6213bcf7c4dadd727e5031293cf92739c181491559
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-10T19:06:53.507362196Z","feature_name":"the phone app flags an untranslated French rendering instead of passing English off as French","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-261-pwa-untranslated-fallback-flagged.feature","background_hash":"b999440f5630f50d7d3b489ab31680877ff876887e9318e12bdec63535000515","implementation_hash":"unknown","scenarios":[{"index":0,"name":"an untranslated French rendering is flagged, not passed off as French","scenario_hash":"e1d7e296045337c434649d04ffa9a9abc896f7a6fb286fab9781b1370f7398ea","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-07-10T19:06:53.507362196Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the phone app flags an untranslated French rendering instead of passing English off as French
 
   # Operator report 2026-07-10 (via QA): on the docs drill-down, "Show French
