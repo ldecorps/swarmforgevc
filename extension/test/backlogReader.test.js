@@ -38,14 +38,20 @@ test('parseBacklogYaml returns null when title is missing', () => {
   assert.equal(parseBacklogYaml(yaml), null);
 });
 
-test('parseBacklogYaml returns null when status is missing', () => {
+// BL-234: status is folder-derived, never a required/gating field - a
+// missing or unrecognized status no longer drops the ticket.
+test('parseBacklogYaml parses a ticket with no status field, leaving status undefined', () => {
   const yaml = 'id: BL-007\ntitle: Backlog panel\n';
-  assert.equal(parseBacklogYaml(yaml), null);
+  const item = parseBacklogYaml(yaml);
+  assert.deepEqual(item, { id: 'BL-007', title: 'Backlog panel' });
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'status'), false);
 });
 
-test('parseBacklogYaml returns null for invalid status value', () => {
+test('parseBacklogYaml parses a ticket with an unrecognized status value, normalizing status to undefined', () => {
   const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: in-progress\n';
-  assert.equal(parseBacklogYaml(yaml), null);
+  const item = parseBacklogYaml(yaml);
+  assert.deepEqual(item, { id: 'BL-007', title: 'Backlog panel' });
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'status'), false);
 });
 
 test('parseBacklogYaml parses known optional fields (milestone, priority)', () => {
@@ -200,6 +206,32 @@ test('readBacklog marks active-folder items as active even when yaml status says
   const items = readBacklog(tmp);
   assert.equal(items.length, 1);
   assert.equal(items[0].status, 'active');
+});
+
+// BL-234: readBacklog shares backlogReader.ts's parse seam with
+// readBacklogFolders - a status-less/unrecognized-status ticket in
+// active/done used to be dropped before its own overrideStatus ever got a
+// chance to apply (readYamlFiles only overrides a non-null parse result).
+test('BL-234: readBacklog no longer drops a status-less ticket in active/, overriding it to active', () => {
+  const tmp = mkTmp();
+  const activeDir = path.join(tmp, 'backlog', 'active');
+  mkdirp(activeDir);
+  fs.writeFileSync(path.join(activeDir, 'BL-233.yaml'), 'id: BL-233\ntitle: Recruiter\n');
+  const items = readBacklog(tmp);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].id, 'BL-233');
+  assert.equal(items[0].status, 'active');
+});
+
+test('BL-234: readBacklog no longer drops a ticket with an unrecognized status in done/, overriding it to done', () => {
+  const tmp = mkTmp();
+  const doneDir = path.join(tmp, 'backlog', 'done');
+  mkdirp(doneDir);
+  fs.writeFileSync(path.join(doneDir, 'BL-101.yaml'), 'id: BL-101\ntitle: Blocked thing\nstatus: blocked\n');
+  const items = readBacklog(tmp);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].id, 'BL-101');
+  assert.equal(items[0].status, 'done');
 });
 
 test('readBacklog reads items from done directory', () => {
@@ -381,14 +413,17 @@ test('BL-129 no-regression-03: every real gnarly ticket the lenient parser alrea
   }
 });
 
-test('BL-129: a strict-parseable object missing a required field yields null (no lenient retry within the strict branch)', () => {
-  const item = parseBacklogYaml('id: BL-999\ntitle: missing status\n');
+test('BL-129: a strict-parseable object missing a required field (id) yields null (no lenient retry within the strict branch)', () => {
+  const item = parseBacklogYaml('title: missing id\nstatus: active\n');
   assert.equal(item, null);
 });
 
-test('BL-129: a strict-parseable object with an invalid status enum value yields null', () => {
+// BL-234: status is no longer a gate - an invalid/absent status enum value
+// still yields a ticket via the strict path, with status simply omitted.
+test('BL-129/BL-234: a strict-parseable object with an invalid status enum value still yields a ticket, status omitted', () => {
   const item = parseBacklogYaml('id: BL-999\ntitle: bad status\nstatus: cancelled\n');
-  assert.equal(item, null);
+  assert.deepEqual(item, { id: 'BL-999', title: 'bad status' });
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'status'), false);
 });
 
 test('BL-129: a quoted numeric priority string is coerced to a number via the strict path', () => {
