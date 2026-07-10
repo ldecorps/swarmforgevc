@@ -1,9 +1,8 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import { BacklogItem } from '../panel/backlogReader';
 import { TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
 import { TicketLifecycleEvent, MergeLogEntry } from '../metrics/gitHistoryAdapter';
 import { RunEntry, mostRecentRunForTarget } from '../runs/runLog';
+import { parseConfigValue, readConfigValue } from '../util/swarmforgeConfig';
 
 // BL-094: pure projections for the holistic web UI. Every function here
 // takes already-read data (backlog items, holding windows, git-derived
@@ -17,16 +16,11 @@ const DEFAULT_SWARM_NAME = 'primary';
 // entirely (the common case today - no ticket has actually adopted this
 // yet) defaults to "primary", matching BL-090's own stated default.
 export function parseSwarmName(confContent: string): string {
-  const match = confContent.match(/^\s*config\s+swarm_name\s+(\S+)/m);
-  return match ? match[1] : DEFAULT_SWARM_NAME;
+  return parseConfigValue(confContent, 'swarm_name') ?? DEFAULT_SWARM_NAME;
 }
 
 export function readSwarmName(targetPath: string): string {
-  try {
-    return parseSwarmName(fs.readFileSync(path.join(targetPath, 'swarmforge', 'swarmforge.conf'), 'utf8'));
-  } catch {
-    return DEFAULT_SWARM_NAME;
-  }
+  return readConfigValue(targetPath, 'swarm_name') ?? DEFAULT_SWARM_NAME;
 }
 
 // ── assignments (holistic-ui-02/03) ─────────────────────────────────────

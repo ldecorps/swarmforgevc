@@ -22,7 +22,9 @@ function render(mode, control, count) {
 // A representative sample of view-defining selectors, proving text is
 // sized relative to the root (rem), not fixed (px) - the premise the whole
 // feature depends on (a single root knob scales every view together).
-const REM_VIEW_SELECTORS = ['h2 {', 'h3, h4 {', 'ul {', '.doc-content {', '.gherkin {'];
+// BL-266 added h5 (the approval-detail scenario heading) to the same rule
+// as h3/h4, so this literal must match the CURRENT selector list exactly.
+const REM_VIEW_SELECTORS = ['h2 {', 'h3, h4, h5 {', 'ul {', '.doc-content {', '.gherkin {'];
 
 function findNonRemSelectors(html) {
   return REM_VIEW_SELECTORS.filter((sel) => {

@@ -727,6 +727,36 @@
       (when (zero? exit) (str/trim out)))
     (catch Exception _ nil)))
 
+;; BL-256: same shell-out pattern as suite-duration-briefing-line/
+;; needs-approval-briefing-section above - each CLI reuses existing
+;; telemetry unchanged (gitHistoryAdapter.ts + ticketHoldingWindows.ts,
+;; stageDwell.ts's own already-shipped stage-dwell-report.js CLI as-is, and
+;; swarmMetrics.ts's chaser telemetry), so the briefing can never disagree
+;; with the live UI/CLI about what these numbers are. Any failure degrades
+;; to omitting the section entirely - never crashes the sweep.
+(defn merged-blocked-digest-briefing-section []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "briefing-digest-line.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
+;; Reuses BL-102's own stage-dwell-report.js CLI directly (no new wrapper
+;; needed - its default text output is already briefing-ready).
+(defn stage-dwell-briefing-section []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "stage-dwell-report.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
+(defn chase-trend-briefing-section []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "chase-trend-line.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
 (defn briefing-email-sweep! []
   (briefing-email-lib/send-unsent-briefings!
    (str briefings-dir)
@@ -734,6 +764,9 @@
     :send-email! send-configured-briefing-email!
     :suite-duration-line suite-duration-briefing-line
     :needs-approval-section needs-approval-briefing-section
+    :merged-blocked-digest merged-blocked-digest-briefing-section
+    :stage-dwell-section stage-dwell-briefing-section
+    :chase-trend-section chase-trend-briefing-section
     :log! (fn [& parts] (apply log! parts))}))
 
 ;; BL-258: headless, host-independent morning trigger for briefing
