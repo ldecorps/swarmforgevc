@@ -54,6 +54,8 @@
       // BL-229: jargon - the operator's rule keeps this English in French too.
       etaPrefix: ' — ETA ',
       remainingSuffix: ' remaining',
+      fontDecreaseLabel: 'Decrease text size',
+      fontIncreaseLabel: 'Increase text size',
     },
     fr: {
       pageTitle: 'SwarmForge — tableau de bord',
@@ -103,6 +105,8 @@
       // BL-229: jargon - "ETA" keeps its English value in French per the operator's rule.
       etaPrefix: ' — ETA ',
       remainingSuffix: ' restants',
+      fontDecreaseLabel: 'Diminuer la taille du texte',
+      fontIncreaseLabel: 'Augmenter la taille du texte',
     },
   };
 })();

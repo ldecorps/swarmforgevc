@@ -26,13 +26,15 @@
   .recert-actions button { margin: 0.25rem 0.4rem 0 0; }
   .recert-update-text { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 0.8rem; min-height: 6rem; }
   .recert-delete-warning { color: #c0392b; }
-  .locale-toggle { position: absolute; top: 1rem; right: 1rem; }
+  .locale-toggle { position: absolute; top: 1rem; right: 1rem; display: flex; gap: 0.4rem; }
   .locale-toggle button { font-size: 0.8rem; padding: 0.3rem 0.6rem; cursor: pointer; }
   body { position: relative; }
 </style>
 </head>
 <body>
 <div class="locale-toggle">
+  <button type="button" id="fontDecrease" aria-label="Decrease text size" data-i18n-aria="fontDecreaseLabel">A-</button>
+  <button type="button" id="fontIncrease" aria-label="Increase text size" data-i18n-aria="fontIncreaseLabel">A+</button>
   <button type="button" id="localeToggle"></button>
 </div>
 <h1 id="pageHeading" data-i18n="pageHeading">SwarmForge — backlog dashboard</h1>
