@@ -2,7 +2,11 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const { extractEmailFields, handleInboundEmailWebhook } = require('../out/notify/recertInboundWebhook');
 
-const SECRET = 'whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw';
+// BL-225: built at runtime from an obviously-fake seed, not a committed
+// whsec_ literal (GitGuardian flagged the fixed literal across history as
+// a "Stripe Webhook Secret" false positive - whsec_ is shared by Svix and
+// Stripe). Still base64-decodes to real HMAC bytes, same as before.
+const SECRET = 'whsec_' + Buffer.from('bl-225-fake-fixture-seed').toString('base64');
 const NOW_ISO = '2026-07-09T12:00:00Z';
 const FRESH_TIMESTAMP = String(Math.floor(Date.parse(NOW_ISO) / 1000));
 
