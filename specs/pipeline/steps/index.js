@@ -34,6 +34,7 @@ const DOMAINS = [
   require('./recruiterDiscoverSteps'),
   require('./backlogFoldersStatusSteps'),
   require('./backendSwitchSteps'),
+  require('./docsWindowsClaimSteps'),
 ];
 
 function registerSteps(registry) {
