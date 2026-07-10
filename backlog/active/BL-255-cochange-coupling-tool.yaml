@@ -96,4 +96,4 @@ qa_e2e_procedure: |
 # HUMAN APPROVAL: feature file specs/features/BL-255-cochange-coupling-tool.feature
 # is a NEW draft authored by the specifier and is PENDING human review before it is
 # treated as the authoritative acceptance contract.
-human_approval: pending
+human_approval: approved
