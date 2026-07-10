@@ -18,6 +18,7 @@ const DOMAINS = [
   require('./emailMissingKeySteps'),
   require('./briefingEmailSteps'),
   require('./recertAddressSteps'),
+  require('./webhookSecretFixtureSteps'),
 ];
 
 function registerSteps(registry) {
