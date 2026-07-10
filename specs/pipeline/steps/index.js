@@ -15,6 +15,7 @@ const DOMAINS = [
   require('./backlogDepthSteps'),
   require('./remoteWakeupSteps'),
   require('./rateLimitCooldownSteps'),
+  require('./emailMissingKeySteps'),
 ];
 
 function registerSteps(registry) {
