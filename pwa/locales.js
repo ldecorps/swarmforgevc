@@ -51,6 +51,9 @@
       recertCancel: 'Cancel',
       recertDeleteWarning: 'This removes the scenario from the acceptance contract once the specifier accepts it. This cannot be undone. Are you sure?',
       asOfPrefix: 'As of ',
+      // BL-229: jargon - the operator's rule keeps this English in French too.
+      etaPrefix: ' — ETA ',
+      remainingSuffix: ' remaining',
     },
     fr: {
       pageTitle: 'SwarmForge — tableau de bord',
@@ -97,6 +100,9 @@
       recertCancel: 'Annuler',
       recertDeleteWarning: "Cela retire le scénario du contrat d'acceptation une fois accepté par le specifier. Cette action est irréversible. Êtes-vous sûr(e) ?",
       asOfPrefix: 'Au ',
+      // BL-229: jargon - "ETA" keeps its English value in French per the operator's rule.
+      etaPrefix: ' — ETA ',
+      remainingSuffix: ' restants',
     },
   };
 })();
