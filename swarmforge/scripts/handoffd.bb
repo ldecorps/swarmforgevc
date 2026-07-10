@@ -673,15 +673,21 @@
 ;; whether the VS Code host is open. briefing_email_lib.bb owns the pure
 ;; scanning/marker/subject logic (fixture-tested); this is the thin,
 ;; environment-specific wiring - reusing daemon_alarm_lib.bb's
-;; send-alarm-email! exactly as handoffd_supervisor.bb's BL-144 alarm does,
-;; so there is still only ONE Resend client in the whole swarm.
+;; send-configured-email! exactly as handoffd_supervisor.bb's BL-144 alarm
+;; does, so there is still only ONE Resend client in the whole swarm, and a
+;; configured-but-keyless setup warns loudly here too (BL-215), not just for
+;; the death alarm.
+
+;; One-shot per process, same rationale as handoffd_supervisor.bb's own
+;; missing-key-warned? - a separate atom because this is a separate process.
+(def briefing-missing-key-warned? (atom false))
 
 (defn send-configured-briefing-email! [subject text]
-  (let [conf (daemon-alarm-lib/parse-conf (when (fs/exists? conf-file) (slurp (str conf-file))))
-        to (get conf "notify_email_to")
-        from (or (get conf "notify_email_from") "onboarding@resend.dev")
-        api-key (System/getenv "RESEND_API_KEY")]
-    (daemon-alarm-lib/send-alarm-email! api-key to from subject text)))
+  (daemon-alarm-lib/send-configured-email!
+   conf-file subject text
+   {:already-warned?! (fn [] @briefing-missing-key-warned?)
+    :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+    :mark-warned! (fn [] (reset! briefing-missing-key-warned? true))}))
 
 (defn briefing-email-sweep! []
   (briefing-email-lib/send-unsent-briefings!
