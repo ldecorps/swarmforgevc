@@ -27,6 +27,7 @@ const DOMAINS = [
   require('./readyForNextPromotionSteps'),
   require('./swarmIntakeEnvRouteSteps'),
   require('./pwaFontSizeSteps'),
+  require('./complianceBatterySteps'),
 ];
 
 function registerSteps(registry) {
