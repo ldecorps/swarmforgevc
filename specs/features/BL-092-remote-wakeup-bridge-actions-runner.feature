@@ -1,13 +1,11 @@
 Feature: the remote swarm wakes on relevant pushes without open ports
 
 Background:
-  Given the second swarm runs under WSL2 with a registered self-hosted
-    runner (BL-091 merged)
+  Given the second swarm runs under WSL2 with a registered self-hosted runner (BL-091 merged)
 
 # BL-092 wakeup-bridge-01
 Scenario: assignment push wakes the remote specifier
-  Given the primary coordinator pushes a promotion assigning a ticket to
-    the second swarm
+  Given the primary coordinator pushes a promotion assigning a ticket to the second swarm
   When the workflow run for that push completes
   Then the remote checkout contains the assignment commit
   And the remote specifier pane received a wake-up nudge
