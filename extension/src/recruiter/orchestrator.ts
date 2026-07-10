@@ -60,9 +60,22 @@ function rolesTrialledFor(scored: ScoredCandidate): string[] {
   return scored.scorecard.entries.map((entry) => entry.competency.replace(/-gate$/, ''));
 }
 
-export async function runRecruiter(deps: RunRecruiterDeps): Promise<RecruiterReport> {
-  const candidates: ModelCandidate[] = await deps.discovery.discover();
+interface AcquireAndQualifyResult {
+  scoredCandidates: ScoredCandidate[];
+  escalated: EscalatedCandidate[];
+}
 
+// Hardener split (BL-233 hardening pass): runRecruiter itself is pure
+// composition of these named steps, no loop/branch of its own - the
+// crapReport.js CRAP gate scores this codebase's functions by their OWN
+// cyclomatic complexity (nested-function bodies get their own separate
+// score, per crapLib.js's own exclusion rule), so naming each step here is
+// both more readable AND keeps runRecruiter itself at complexity 1 without
+// changing behavior.
+async function acquireAndQualifyAll(
+  candidates: ModelCandidate[],
+  deps: Pick<RunRecruiterDeps, 'signup' | 'secretStore' | 'trialRunner' | 'battery'>
+): Promise<AcquireAndQualifyResult> {
   const scoredCandidates: ScoredCandidate[] = [];
   const escalated: EscalatedCandidate[] = [];
 
@@ -76,20 +89,38 @@ export async function runRecruiter(deps: RunRecruiterDeps): Promise<RecruiterRep
     scoredCandidates.push({ candidate, scorecard: qualifyOutcome.scorecard });
   }
 
+  return { scoredCandidates, escalated };
+}
+
+function collectRoles(scoredCandidates: ScoredCandidate[]): Set<string> {
   const roles = new Set<string>();
   for (const scored of scoredCandidates) {
     for (const role of rolesTrialledFor(scored)) {
       roles.add(role);
     }
   }
+  return roles;
+}
 
+function buildRoleReports(
+  roles: Set<string>,
+  scoredCandidates: ScoredCandidate[],
+  currentModelByRole: Record<string, string>
+): RoleReport[] {
   const roleReports: RoleReport[] = [];
   for (const role of roles) {
     const candidatesForRole = scoredCandidates.filter((scored) => rolesTrialledFor(scored).includes(role));
-    const currentModel = deps.currentModelByRole[role] ?? '';
+    const currentModel = currentModelByRole[role] ?? '';
     const leaderboard = rankForRole(role, candidatesForRole, currentModel);
     roleReports.push({ role, leaderboard, suggestion: suggestConfChange(leaderboard) });
   }
+  return roleReports;
+}
 
+export async function runRecruiter(deps: RunRecruiterDeps): Promise<RecruiterReport> {
+  const candidates: ModelCandidate[] = await deps.discovery.discover();
+  const { scoredCandidates, escalated } = await acquireAndQualifyAll(candidates, deps);
+  const roles = collectRoles(scoredCandidates);
+  const roleReports = buildRoleReports(roles, scoredCandidates, deps.currentModelByRole);
   return { roles: roleReports, escalated };
 }
