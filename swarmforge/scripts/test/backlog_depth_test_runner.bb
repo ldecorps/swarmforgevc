@@ -57,6 +57,10 @@
          false
          (backlog-depth-lib/depth-exceeded? 2 3))
 
+(assert= "an active count exactly AT the cap does not warn - only strictly over triggers it"
+         false
+         (backlog-depth-lib/depth-exceeded? 3 3))
+
 (assert= "depth-02: no-limit (-1) always leaves promotion ungated, however deep active/ is"
          true
          (backlog-depth-lib/under-depth-cap? 5 -1))
