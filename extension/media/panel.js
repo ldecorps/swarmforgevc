@@ -537,7 +537,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-function ensureTile(role, displayName, agent) {
+function ensureTile(role, displayName, agent, currentModel, availableModels) {
   if (tiles.has(role)) {
     return tiles.get(role);
   }
@@ -573,10 +573,37 @@ function ensureTile(role, displayName, agent) {
   header.className = 'tile-header';
   header.innerHTML = '<span>' + displayName + '</span><span class="tile-agent">' + agent + '</span>';
   header.appendChild(blBadge);
+
+  // BL-235 (M5, narrow slice): a model dropdown only for claude-backed
+  // roles (the only agent this switch mechanism supports so far) - picking
+  // a different model respawns ONLY this tile's agent on it, in memory
+  // only (swarmforge.conf is never touched).
+  let modelSelect;
+  if (Array.isArray(availableModels) && availableModels.length > 0) {
+    modelSelect = document.createElement('select');
+    modelSelect.className = 'model-select';
+    availableModels.forEach((model) => {
+      const option = document.createElement('option');
+      option.value = model;
+      option.textContent = model;
+      option.selected = model === currentModel;
+      modelSelect.appendChild(option);
+    });
+    modelSelect.addEventListener('click', (e) => e.stopPropagation());
+    modelSelect.addEventListener('change', () => {
+      vscode.postMessage({ type: 'switchModel', role, model: modelSelect.value });
+    });
+    header.appendChild(modelSelect);
+  }
+
   header.appendChild(nudgeBtn);
   header.appendChild(restartBtn);
   header.addEventListener('click', (e) => {
-    if (e.target !== nudgeBtn && e.target !== restartBtn && !nudgeBtn.contains(e.target) && !restartBtn.contains(e.target)) {
+    const onControl =
+      e.target === nudgeBtn || nudgeBtn.contains(e.target) ||
+      e.target === restartBtn || restartBtn.contains(e.target) ||
+      (modelSelect && (e.target === modelSelect || modelSelect.contains(e.target)));
+    if (!onControl) {
       selectTile(role);
     }
   });
@@ -629,7 +656,7 @@ window.addEventListener('message', (event) => {
   switch (message.type) {
     case 'roles':
       status.textContent = message.roles.length + ' agent(s)';
-      message.roles.forEach((r) => ensureTile(r.role, r.displayName, r.agent));
+      message.roles.forEach((r) => ensureTile(r.role, r.displayName, r.agent, r.currentModel, r.availableModels));
       updateGridLayout(message.roles.length, message.roles);
       break;
     case 'output':

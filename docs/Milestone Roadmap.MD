@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Milestone Roadmap
 
-**Last Updated:** July 2, 2026
+**Last Updated:** July 10, 2026
 
 A phased plan from a true MVP to the full spec. The guiding principle: **each milestone is independently useful and shippable** — you could stop after any one and have something worth running. Later milestones add reach, reliability, and intelligence, but the core value (drive a disciplined swarm from VS Code, get a reviewable PR) lands in the MVP.
 
@@ -121,7 +121,7 @@ Tick each — these are the seams the whole spec depends on. Built and proven fr
 
 **Goal:** spend less per delivered item, and run any agent.
 
-- **Backend abstraction** — formalize the `InteractiveProcess` launch contract; per-tile **backend/model switch on the fly**; mixed backends per role. The in-process `vscode.lm` backend already exists from M0; this milestone adds **external CLI backends** (Claude Code, Codex, Copilot CLI — the latter offering multi-model behind one auth) as alternative `InteractiveProcess` implementations, and generalizes model selection beyond the bootstrap's single `copilot` vendor.
+- **Backend abstraction** — formalize the `InteractiveProcess` launch contract; per-tile **backend/model switch on the fly**; mixed backends per role. This milestone adds **external CLI backends** (Claude Code, Codex, Copilot CLI — the latter offering multi-model behind one auth) as alternative `InteractiveProcess` implementations, and generalizes model selection beyond the bootstrap's single `copilot` vendor. Per-tile **model** switch for Claude-backed roles landed (BL-235); the `InteractiveProcess` abstraction and an in-process `vscode.lm` backend — despite an earlier claim here that the latter "already exists from M0" — do not exist in `extension/src` yet, so cross-backend switching remains future work on top of this milestone's own abstraction, not something to build on top of an already-landed one.
 - **Load measurement** — per-role active time, time-in-stage, rework load, surfaced in the Work Tree
 - **Cost-aware selection** — Suggest tier first (per-role recommendations + rationale), then opt-in Adapt; per-run budget cap as the backstop
 - **Effort dial** where backends expose it

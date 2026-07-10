@@ -437,6 +437,16 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
     .tile.stalled .nudge-btn {
       display: inline-block;
     }
+    .model-select {
+      margin-left: 6px;
+      padding: 1px 4px;
+      font-size: 11px;
+      max-width: 9em;
+      background: var(--vscode-dropdown-background, transparent);
+      color: var(--vscode-dropdown-foreground, inherit);
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 3px;
+    }
     #open-pr-btn {
       display: none;
       padding: 4px 10px;

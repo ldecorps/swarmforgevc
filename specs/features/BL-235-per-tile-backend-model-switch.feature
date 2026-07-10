@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-10T08:07:42.966439107Z","feature_name":"switch one tile's backend/model on the fly, respawning just that role","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-235-per-tile-backend-model-switch.feature","background_hash":"0dd637ff36f3fa1678f95007a193c246ebfce5f7659cb95c543ea035f559cace","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: switch one tile's backend/model on the fly, respawning just that role
 
   # Roadmap gap (coordinator scan 2026-07-10): M5 / Spec.MD "Change an agent's
