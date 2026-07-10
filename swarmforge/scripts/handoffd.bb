@@ -697,11 +697,29 @@
     :log-warning! (fn [msg] (log! "email-misconfigured" msg))
     :mark-warned! (fn [] (reset! briefing-missing-key-warned? true))}))
 
+;; BL-252: shells to the compiled suite-duration-line.js CLI (Babashka has
+;; no way to import compiled TS) - reuses computeSuiteDurationTrend/
+;; computeSuiteDuration unchanged, the SAME functions already feeding the
+;; bridge's /metrics route the holistic UI reads, so the briefing can never
+;; disagree with the live UI about what "regressing" means. Must use the
+;; [cmd & args] + opts-map form of process/sh, not flat varargs - the
+;; latter silently drops :dir (see auto-route!'s own comment above). Any
+;; failure (CLI not yet compiled on this checkout, etc.) degrades to
+;; omitting the line entirely - never crashes the sweep, never a fabricated
+;; value.
+(defn suite-duration-briefing-line []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "suite-duration-line.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
 (defn briefing-email-sweep! []
   (briefing-email-lib/send-unsent-briefings!
    (str briefings-dir)
    {:read-briefing-content (fn [file-name] (slurp (str (fs/path briefings-dir file-name))))
     :send-email! send-configured-briefing-email!
+    :suite-duration-line suite-duration-briefing-line
     :log! (fn [& parts] (apply log! parts))}))
 
 (defn -main []
