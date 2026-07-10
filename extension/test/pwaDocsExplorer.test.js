@@ -90,6 +90,16 @@ function crumbs(dom) {
   return dom.window.document.getElementById('docsCrumbs');
 }
 
+function searchInput(dom) {
+  return dom.window.document.getElementById('docsSearchInput');
+}
+
+function typeSearch(dom, text) {
+  var input = searchInput(dom);
+  input.value = text;
+  input.dispatchEvent(new dom.window.Event('input'));
+}
+
 test('the root level lists the vision docs and every milestone (docs-drilldown-01)', async () => {
   const dom = renderDashboard(fakeDocsTree());
   await flush();
@@ -180,6 +190,108 @@ test('an empty docs tree (no vision, no milestones, no tickets) renders without 
   const dom = renderDashboard(fakeDocsTree({ vision: [], milestones: [], tickets: [] }));
   await flush();
   assert.doesNotThrow(() => explorer(dom).textContent);
+});
+
+// ── BL-254: full-text search filter ───────────────────────────────────────
+
+function searchFixtureTree() {
+  return fakeDocsTree({
+    milestones: [
+      { milestone: 'M4', tickets: [{ id: 'BL-100', title: 'cost telemetry', status: 'done', priority: 1 }] },
+      { milestone: 'M7', tickets: [{ id: 'BL-200', title: 'unrelated ticket', status: 'active', priority: 1 }] },
+    ],
+    tickets: [
+      {
+        id: 'BL-100',
+        title: 'cost telemetry',
+        status: 'done',
+        priority: 1,
+        milestone: 'M4',
+        description: 'Full prose description of BL-100.',
+        scenarios: [{ name: 'per-agent daily tokens', text: 'Scenario: per-agent daily tokens\n  Given the fleet console refreshes' }],
+      },
+      {
+        id: 'BL-200',
+        title: 'unrelated ticket',
+        status: 'active',
+        priority: 1,
+        milestone: 'M7',
+        description: 'Nothing to do with the search term.',
+        scenarios: [{ name: 'other', text: 'Scenario: other\n  Given something else entirely' }],
+      },
+    ],
+  });
+}
+
+test('filter-by-gherkin-01: typing a query matching a ticket\'s Gherkin filters the milestone list to it', async () => {
+  const dom = renderDashboard(searchFixtureTree());
+  await flush();
+  typeSearch(dom, 'fleet console');
+  assert.match(explorer(dom).textContent, /M4/);
+  assert.doesNotMatch(explorer(dom).textContent, /M7/);
+});
+
+test('case-insensitive-03: a query differing only in letter case still matches', async () => {
+  const dom = renderDashboard(searchFixtureTree());
+  await flush();
+  typeSearch(dom, 'FLEET CONSOLE');
+  assert.match(explorer(dom).textContent, /M4/);
+});
+
+test('empty-query-05: clearing the search box restores the full unfiltered tree', async () => {
+  const dom = renderDashboard(searchFixtureTree());
+  await flush();
+  typeSearch(dom, 'fleet console');
+  typeSearch(dom, '');
+  assert.match(explorer(dom).textContent, /M4/);
+  assert.match(explorer(dom).textContent, /M7/);
+});
+
+test('no-results-06: a query matching nothing shows the localized no-results state, not a blank or error', async () => {
+  const dom = renderDashboard(searchFixtureTree());
+  await flush();
+  typeSearch(dom, 'nothing matches this at all');
+  assert.match(explorer(dom).textContent, /No tickets match your search/);
+  assert.doesNotMatch(explorer(dom).textContent, /M4/);
+});
+
+// docsTree.ts's filterDocsTree (the TS/unit-tested implementation) and
+// pwa/app.js's own hand-duplicated copy (this file's coverage) are two
+// independent reimplementations kept in sync by hand - the app.js
+// comment says so outright. docsTree.test.js already covers these two
+// cases on the TS side (match-title-description-02, empty-query-05's
+// whitespace variant); mirroring them here closes the asymmetry so a
+// future JS-only divergence (e.g. someone drops the `.description` check
+// or the `.trim()` call from just the app.js copy) fails a PWA-side test
+// too, not only the TS one.
+test('description-only-02: a query matching only a ticket\'s description (not title or Gherkin) still surfaces it', async () => {
+  const dom = renderDashboard(searchFixtureTree());
+  await flush();
+  typeSearch(dom, 'prose description of BL-100');
+  assert.match(explorer(dom).textContent, /M4/);
+  assert.doesNotMatch(explorer(dom).textContent, /M7/);
+});
+
+test('whitespace-only-query-05: a query of only spaces is treated the same as empty - the full tree, not zero matches', async () => {
+  const dom = renderDashboard(searchFixtureTree());
+  await flush();
+  typeSearch(dom, '   ');
+  assert.match(explorer(dom).textContent, /M4/);
+  assert.match(explorer(dom).textContent, /M7/);
+});
+
+test('the search input placeholder is localized', async () => {
+  const dom = renderDashboard(searchFixtureTree());
+  await flush();
+  assert.equal(searchInput(dom).getAttribute('placeholder'), 'Search spec text…');
+});
+
+test('typing does not destroy the search input itself (focus/cursor survive a re-render)', async () => {
+  const dom = renderDashboard(searchFixtureTree());
+  await flush();
+  const before = searchInput(dom);
+  typeSearch(dom, 'fleet');
+  assert.equal(searchInput(dom), before, 'the input element must be the same DOM node across re-renders');
 });
 
 test('shows an honest failure message when the docs-tree fetch fails entirely', async () => {
