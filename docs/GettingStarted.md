@@ -107,4 +107,7 @@ not be brought to health.
 
 For pipeline stages, watchdogs, hardening tooling, the full command and
 settings reference, and the roadmap beyond this MVP, see
-[Specification.MD](Specification.MD).
+[Specification.MD](Specification.MD). Plugging the swarm into a
+**new/greenfield** project? See
+[Onboarding a New Project](Onboarding-New-Project.md), which covers the
+acceptance contract that drives what the swarm builds.
