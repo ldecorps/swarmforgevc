@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
  * BL-097: generates backlog.json for the Pages-hosted PWA dashboard.
- * BL-118: also runs the FR translation pass over every board ticket's title
- * (docs/i18n/translation-cache.json committed back to the repo by the
- * workflow, never re-translating an unchanged string) and folds titleFr
- * into the same artifact.
+ * BL-118/BL-230: also runs the translation pass over every board ticket's
+ * title into each configured target locale (docs/i18n/translation-cache.json
+ * committed back to the repo by the workflow, never re-translating an
+ * unchanged string) and folds titleTranslations (keyed by locale code) into
+ * the same artifact.
  *
  * Usage: node generate-backlog-dashboard.js > backlog.json
  *

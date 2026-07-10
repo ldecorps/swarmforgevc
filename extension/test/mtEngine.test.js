@@ -27,6 +27,25 @@ test('createDeeplEngine posts the text and target language, returning the transl
   assert.equal(parsedBody.target_lang, 'FR');
 });
 
+// BL-230: always sends DeepL's own tag_handling/ignore_tags params, so
+// <jargon>...</jargon>-wrapped tokens (jargonPreserve.ts) pass through
+// untranslated regardless of what text is sent - a no-op when the text has
+// no such tags.
+test('createDeeplEngine always requests xml tag_handling with jargon tags ignored', async () => {
+  let capturedBody;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: async () => ({ translations: [{ text: 'bonjour' }] }) };
+  };
+  const engine = createDeeplEngine('test-key', postFn);
+
+  await engine.translate('hello', 'fr');
+
+  const parsedBody = JSON.parse(capturedBody);
+  assert.equal(parsedBody.tag_handling, 'xml');
+  assert.deepEqual(parsedBody.ignore_tags, ['jargon']);
+});
+
 test('a non-ok HTTP response fails with the status code, not a thrown exception', async () => {
   const postFn = async () => ({ ok: false, status: 429, json: async () => ({}) });
   const engine = createDeeplEngine('test-key', postFn);

@@ -16,7 +16,7 @@ function fakeBacklog(overrides = {}) {
     generatedAtIso: '2026-07-09T12:00:00Z',
     sourceSha: 'abc123def456',
     board: {
-      active: [{ id: 'BL-100', title: 'cost telemetry', titleFr: 'télémétrie des coûts', status: 'active', swarm: 'primary' }],
+      active: [{ id: 'BL-100', title: 'cost telemetry', titleTranslations: { fr: { title: 'télémétrie des coûts' } }, status: 'active', swarm: 'primary' }],
       paused: [],
       doneByMilestone: {},
     },
@@ -312,7 +312,7 @@ test('bilingual-06/docs-drilldown-05: the French reveal button is not an edit af
 
 // ── board titles ────────────────────────────────────────────────────────
 
-test('board ticket titles switch to titleFr in FR mode and back to title in EN mode', async () => {
+test('board ticket titles switch to titleTranslations.fr in FR mode and back to title in EN mode', async () => {
   const dom = renderDashboard();
   await flush();
   assert.match(dom.window.document.getElementById('board').textContent, /cost telemetry/);
@@ -322,6 +322,100 @@ test('board ticket titles switch to titleFr in FR mode and back to title in EN m
 
   click(dom, toggle(dom));
   assert.match(dom.window.document.getElementById('board').textContent, /cost telemetry/);
+});
+
+// ── BL-230: N-locale board title generalization ──────────────────────────
+
+test('BL-230 fallback-03: a board ticket with no titleTranslations for the active locale falls back to its source title', async () => {
+  const backlog = {
+    schemaVersion: 1,
+    generatedAtIso: '2026-07-09T12:00:00Z',
+    sourceSha: 'abc123def456',
+    board: { active: [{ id: 'BL-101', title: 'untranslated ticket', status: 'active', swarm: 'primary' }], paused: [], doneByMilestone: {} },
+    metrics: {
+      velocity: { weeklySeries: [], trend: { direction: 'unknown' }, rollingWindowCount: 0, rollingWindowDays: 7 },
+      burndown: [],
+      cycleTime: { medianMs: null, p85Ms: null, sampleCount: 0, trend: { direction: 'unknown' }, weeklySeries: [] },
+      forecasts: { tickets: [], milestones: [] },
+    },
+  };
+  const dom = renderDashboard({ backlog });
+  await flush();
+
+  click(dom, toggle(dom)); // en -> fr, but this ticket has no translation at all
+
+  assert.match(dom.window.document.getElementById('board').textContent, /untranslated ticket/);
+});
+
+test('BL-230 source-unchanged-04: the source locale always shows the authored title, even when a translation exists', async () => {
+  const dom = renderDashboard();
+  await flush();
+
+  assert.match(dom.window.document.getElementById('board').textContent, /cost telemetry/);
+  assert.doesNotMatch(dom.window.document.getElementById('board').textContent, /télémétrie des coûts/);
+});
+
+test('BL-230 add-language-05: a locale added to window.LOCALES joins the toggle cycle and board titles resolve against it, with no app.js change', async () => {
+  const backlog = {
+    schemaVersion: 1,
+    generatedAtIso: '2026-07-09T12:00:00Z',
+    sourceSha: 'abc123def456',
+    board: {
+      active: [
+        {
+          id: 'BL-100',
+          title: 'cost telemetry',
+          titleTranslations: { fr: { title: 'télémétrie des coûts' }, es: { title: 'telemetría de costos' } },
+          status: 'active',
+          swarm: 'primary',
+        },
+      ],
+      paused: [],
+      doneByMilestone: {},
+    },
+    metrics: {
+      velocity: { weeklySeries: [], trend: { direction: 'unknown' }, rollingWindowCount: 0, rollingWindowDays: 7 },
+      burndown: [],
+      cycleTime: { medianMs: null, p85Ms: null, sampleCount: 0, trend: { direction: 'unknown' }, weeklySeries: [] },
+      forecasts: { tickets: [], milestones: [] },
+    },
+  };
+  const dom = renderDashboard({ backlog });
+  await flush();
+  // 'es' is not a real shipped chrome-catalog locale yet (FR is BL-230's
+  // first delivered target) - adding it here purely as data proves the
+  // cycle/lookup mechanism is generic, without claiming ES ships today.
+  dom.window.LOCALES.es = Object.assign({}, dom.window.LOCALES.en, { localeToggleLabel: 'ES' });
+
+  click(dom, toggle(dom)); // en -> fr
+  assert.match(dom.window.document.getElementById('board').textContent, /télémétrie des coûts/);
+
+  click(dom, toggle(dom)); // fr -> es
+  assert.match(dom.window.document.getElementById('board').textContent, /telemetría de costos/);
+
+  click(dom, toggle(dom)); // es -> en, cycling back to the start
+  assert.match(dom.window.document.getElementById('board').textContent, /cost telemetry/);
+});
+
+test('BL-230: a persisted locale no longer in the configured set is ignored, falling back to the default', async () => {
+  const html = fs.readFileSync(path.join(PWA_DIR, 'index.html'), 'utf8');
+  const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://example.github.io/dashboard/', pretendToBeVisual: true });
+  installFakeCaches(dom);
+  await dom.window.caches
+    .open('swarmforge-dashboard-v2')
+    .then((c) => c.put('./__locale-preference__', new dom.window.Response(JSON.stringify({ locale: 'de' }))));
+  dom.window.fetch = (url) => {
+    if (url === './backlog.json') return Promise.resolve({ json: () => Promise.resolve(fakeBacklog()) });
+    if (url === './docs-tree.json') return Promise.resolve({ json: () => Promise.resolve(fakeDocsTree()) });
+    if (url === './recert-batch.json') return Promise.resolve({ json: () => Promise.resolve(fakeRecertBatch()) });
+    return Promise.reject(new Error('unexpected fetch: ' + url));
+  };
+  dom.window.eval(fs.readFileSync(path.join(PWA_DIR, 'locales.js'), 'utf8'));
+  dom.window.eval(fs.readFileSync(path.join(PWA_DIR, 'app.js'), 'utf8'));
+  await flush();
+  await flush();
+
+  assert.equal(dom.window.document.getElementById('pageHeading').textContent, 'SwarmForge — backlog dashboard');
 });
 
 // ── BL-229: hardcoded PWA labels now route through the locale catalog ───

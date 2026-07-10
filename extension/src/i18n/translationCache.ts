@@ -14,12 +14,18 @@ export function hashSourceText(text: string): string {
   return crypto.createHash('sha256').update(text, 'utf8').digest('hex');
 }
 
-export const TRANSLATION_CACHE_SCHEMA_VERSION = 1;
+// BL-230: bumped from 1 - entries gained a locale dimension (a single
+// target language collided across locales otherwise: schema 1 stored one
+// string per hash with no way to tell which language it was). A schema-1
+// (or any unrecognized-shape) cache reads as empty rather than
+// misinterpreted, so the next build just re-translates everything once -
+// never a crash, matching this cache's existing defensive-read posture.
+export const TRANSLATION_CACHE_SCHEMA_VERSION = 2;
 
 export interface TranslationCacheData {
   schemaVersion: number;
-  // hash of the English source string -> its French translation
-  entries: Record<string, string>;
+  // hash of the source string -> { locale code -> translated text }
+  entries: Record<string, Record<string, string>>;
 }
 
 export function emptyTranslationCache(): TranslationCacheData {
@@ -34,7 +40,13 @@ export function readTranslationCache(targetPath: string): TranslationCacheData {
   try {
     const content = fs.readFileSync(translationCacheFile(targetPath), 'utf-8');
     const parsed = JSON.parse(content);
-    if (parsed && typeof parsed === 'object' && parsed.entries && typeof parsed.entries === 'object') {
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      parsed.schemaVersion === TRANSLATION_CACHE_SCHEMA_VERSION &&
+      parsed.entries &&
+      typeof parsed.entries === 'object'
+    ) {
       return parsed as TranslationCacheData;
     }
     return emptyTranslationCache();

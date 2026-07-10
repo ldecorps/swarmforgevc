@@ -29,6 +29,7 @@ const DOMAINS = [
   require('./pwaFontSizeSteps'),
   require('./complianceBatterySteps'),
   require('./burndownEtaSteps'),
+  require('./pwaTranslatedContentSteps'),
 ];
 
 function registerSteps(registry) {
