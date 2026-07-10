@@ -78,6 +78,8 @@
                     (when (fs/exists? target-file)
                       (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: target batch file already exists: " target-file)))
                     (fs/move source-file target-file)
+                    ;; BL-232: same sidecar drop as the task-mode dequeue path.
+                    (handoff-lib/remove-sidecars-of! source-file)
                     (handoff-lib/set-header! target-file "dequeued_at" (handoff-lib/timestamp))))
                 (when (empty? selected-files)
                   (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: no tasks selected for batch priority " batch-priority ".")))
