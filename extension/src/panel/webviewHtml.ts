@@ -447,6 +447,16 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
       border: 1px solid var(--vscode-panel-border);
       border-radius: 3px;
     }
+    .effort-select {
+      margin-left: 6px;
+      padding: 1px 4px;
+      font-size: 11px;
+      max-width: 7em;
+      background: var(--vscode-dropdown-background, transparent);
+      color: var(--vscode-dropdown-foreground, inherit);
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 3px;
+    }
     #open-pr-btn {
       display: none;
       padding: 4px 10px;
