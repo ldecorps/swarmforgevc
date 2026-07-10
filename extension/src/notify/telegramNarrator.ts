@@ -20,14 +20,8 @@ export interface NarrationEvent {
   role?: string;
 }
 
-// Pure: given the run's previous narrated snapshot (or null for a run never
-// narrated before) and its current snapshot, compute the NEW events to post.
-// Never re-derives anything already told to the human - only transitions
-// (active<->idle), newly-appeared gates, newly-appeared dead-letters, and a
-// PR link the first time it appears are ever emitted.
-export function diffNarrationEvents(prev: NarrationSnapshot | null, curr: NarrationSnapshot): NarrationEvent[] {
+function diffStageTransitions(prev: NarrationSnapshot | null, curr: NarrationSnapshot): NarrationEvent[] {
   const events: NarrationEvent[] = [];
-
   const prevStatusByRole = new Map((prev?.pipeline ?? []).map((p) => [p.role, p.status]));
   for (const stage of curr.pipeline) {
     const before = prevStatusByRole.get(stage.role);
@@ -35,34 +29,58 @@ export function diffNarrationEvents(prev: NarrationSnapshot | null, curr: Narrat
       events.push({ kind: 'stage-transition', text: `${stage.role}: ${before} -> ${stage.status}` });
     }
   }
+  return events;
+}
 
+function formatGateEventText(role: string, snippet: string | undefined): string {
+  return `${role} needs you${snippet ? `: ${snippet}` : ''}`;
+}
+
+function diffNewGates(prev: NarrationSnapshot | null, curr: NarrationSnapshot): NarrationEvent[] {
+  const events: NarrationEvent[] = [];
   const wasGatedByRole = new Map((prev?.gates ?? []).map((g) => [g.role, g.gated]));
   for (const gate of curr.gates) {
     const wasGated = wasGatedByRole.get(gate.role) ?? false;
     if (gate.gated && !wasGated) {
-      events.push({
-        kind: 'gate',
-        text: `${gate.role} needs you${gate.snippet ? `: ${gate.snippet}` : ''}`,
-        role: gate.role,
-      });
+      events.push({ kind: 'gate', text: formatGateEventText(gate.role, gate.snippet), role: gate.role });
     }
   }
+  return events;
+}
 
+function formatDeadLetterEventText(role: string, task: string | undefined): string {
+  return `dead-letter for ${role}${task ? `: ${task}` : ''}`;
+}
+
+function diffNewDeadLetters(prev: NarrationSnapshot | null, curr: NarrationSnapshot): NarrationEvent[] {
+  const events: NarrationEvent[] = [];
   const priorDeadLetterPaths = new Set((prev?.deadLetters ?? []).map((d) => d.filePath));
   for (const deadLetter of curr.deadLetters) {
     if (!priorDeadLetterPaths.has(deadLetter.filePath)) {
-      events.push({
-        kind: 'dead-letter',
-        text: `dead-letter for ${deadLetter.role}${deadLetter.task ? `: ${deadLetter.task}` : ''}`,
-      });
+      events.push({ kind: 'dead-letter', text: formatDeadLetterEventText(deadLetter.role, deadLetter.task) });
     }
   }
-
-  if (curr.prUrl && curr.prUrl !== (prev?.prUrl ?? null)) {
-    events.push({ kind: 'pr-link', text: `PR ready: ${curr.prUrl}` });
-  }
-
   return events;
+}
+
+function diffPrLink(prev: NarrationSnapshot | null, curr: NarrationSnapshot): NarrationEvent[] {
+  if (curr.prUrl && curr.prUrl !== (prev?.prUrl ?? null)) {
+    return [{ kind: 'pr-link', text: `PR ready: ${curr.prUrl}` }];
+  }
+  return [];
+}
+
+// Pure: given the run's previous narrated snapshot (or null for a run never
+// narrated before) and its current snapshot, compute the NEW events to post,
+// in this fixed order: stage transitions, then new gates, then new
+// dead-letters, then a PR link. Never re-derives anything already told to
+// the human - only transitions (active<->idle), newly-appeared gates,
+// newly-appeared dead-letters, and a PR link the first time it appears are
+// ever emitted. Split into one diff* function per event kind (each pure,
+// independently testable) so no single function's own branching climbs back
+// toward the CRAP<=6 gate as a kind's own diff logic grows.
+export function diffNarrationEvents(prev: NarrationSnapshot | null, curr: NarrationSnapshot): NarrationEvent[] {
+  return [...diffStageTransitions(prev, curr), ...diffNewGates(prev, curr), ...diffNewDeadLetters(prev, curr), ...diffPrLink(prev, curr)];
 }
 
 export interface TelegramNarratorAdapters {

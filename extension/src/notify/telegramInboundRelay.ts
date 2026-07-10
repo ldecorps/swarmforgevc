@@ -13,7 +13,7 @@
 // mailbox machinery - it only ever calls the single injected answerGate
 // adapter, which is how "never an agent-to-agent coordination channel" is
 // enforced structurally, not just by convention.
-import { TelegramUpdate } from './telegramClient';
+import { TelegramUpdate, TelegramMessage } from './telegramClient';
 
 export interface GateAnswerOutcome {
   success: boolean;
@@ -42,16 +42,14 @@ export class TelegramInboundRelay {
     this.pendingGatesByMessageId.set(messageId, role);
   }
 
-  handleUpdate(update: TelegramUpdate): void {
-    const message = update.message;
-    if (!message || typeof message.text !== 'string') {
-      // Non-text updates (edits, reactions, other update types) carry no
-      // answer text - never treated as a gate reply.
-      return;
-    }
+  // The authorization + reply-target + pending-gate lookup chain, split out
+  // of handleUpdate so that chain's own branching doesn't push handleUpdate
+  // itself back over the CRAP<=6 gate. Each rejection reason/onRejected call
+  // is unchanged from before this split - only the grouping moved.
+  private resolvePendingAnswer(message: TelegramMessage, update: TelegramUpdate): { role: string; replyToId: number } | undefined {
     if (String(message.chat.id) !== this.authorizedChatId) {
       this.adapters.onRejected?.('message from an unauthorized chat', update);
-      return;
+      return undefined;
     }
     const replyToId = message.reply_to_message?.message_id;
     if (replyToId === undefined) {
@@ -59,19 +57,33 @@ export class TelegramInboundRelay {
         'not a reply to a gate prompt - inbound is answer-only, no other commands are honored',
         update
       );
-      return;
+      return undefined;
     }
     const role = this.pendingGatesByMessageId.get(replyToId);
     if (!role) {
       this.adapters.onRejected?.('reply does not target a currently pending gate prompt', update);
+      return undefined;
+    }
+    return { role, replyToId };
+  }
+
+  handleUpdate(update: TelegramUpdate): void {
+    const message = update.message;
+    if (!message || typeof message.text !== 'string') {
+      // Non-text updates (edits, reactions, other update types) carry no
+      // answer text - never treated as a gate reply.
+      return;
+    }
+    const pending = this.resolvePendingAnswer(message, update);
+    if (!pending) {
       return;
     }
 
-    const result = this.adapters.answerGate(role, message.text);
+    const result = this.adapters.answerGate(pending.role, message.text);
     if (result.success) {
-      this.pendingGatesByMessageId.delete(replyToId);
+      this.pendingGatesByMessageId.delete(pending.replyToId);
     }
-    this.adapters.onRelayed?.(role, message.text, result);
+    this.adapters.onRelayed?.(pending.role, message.text, result);
   }
 }
 
