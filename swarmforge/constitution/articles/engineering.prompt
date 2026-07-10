@@ -178,3 +178,12 @@
   (BL-128's post-merge/pre-migration window resurrected an already-completed QA
   handoff as fresh in_process mail: a redelivery loop that masked live work.
   Fix: BL-218.)
+- GitHub Actions: never interpolate a `${{ }}` expression — especially
+  `github.event.*` and `steps.*.outputs.*` (issue/PR titles, bodies, branch
+  names, changed filenames are all attacker-influenceable) — directly inside a
+  `run:` script body. Interpolation splices the raw value into the script text
+  before the shell runs, so a crafted value executes as commands — a real RCE,
+  particularly on a self-hosted runner. Bind the value to an `env:` key on the
+  step and reference it as a quoted shell variable (`"$VAR"`) in the script, so
+  it is passed as data, never as script text. (BL-092: a workflow put
+  `steps.changed.outputs.files` straight into `run:`.)
