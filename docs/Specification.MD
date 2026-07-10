@@ -37,7 +37,7 @@ directly. The diagrams reflect the tmux-driving architecture.
 
 The extension is a **standalone orchestrator** inspired by SwarmForge — it borrows the *model* (a sequential role pipeline, worktree-per-role, filesystem-mediated handoffs) but spawns and manages the agent processes itself. SwarmForge is **not a runtime dependency**: no fork, no vendored source, no `./swarm` wrapper, no tmux, nothing fetched at setup.
 
-**Why own orchestration.** The driving constraint is native Windows. tmux — SwarmForge's process substrate — has no native Windows implementation, and WSL/emulation layers were explicitly rejected in favor of a clean cross-platform path. Owning the orchestrator means one process API across Windows, macOS, and Linux. The cost is giving up upstream feature relay; the benefit is a substrate the extension fully controls and can run anywhere VS Code runs.
+**Platform.** macOS and Linux only — tmux, the process substrate the extension drives (see the doc/code note above, BL-095), has no native Windows implementation. A Windows-hosted swarm runs via WSL2 (a real Linux userland), never natively (BL-091).
 
 **The substrate is process + filesystem, owned in-repo.** The extension runs the swarm through its own thin orchestrator:
 - spawns each agent as an `InteractiveProcess` (a `child_process.spawn` shell backend, or an in-process `vscode.lm` runtime — see Agent Backends),
@@ -1454,4 +1454,4 @@ A scan of what the spec doesn't yet cover, roughly in priority order. Not all ar
 - Multi-target support in a single run
 - Auto-merge on green CI (human reviews all PRs)
 - Extension marketplace publication (internal use first)
-- (Windows is now first-class — supporting it natively is why the extension owns orchestration instead of depending on tmux. No longer out of scope.)
+- Native Windows (tmux has no native Windows port; a Windows-hosted swarm runs via WSL2 instead — BL-091)

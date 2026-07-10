@@ -151,7 +151,7 @@ Tick each — these are the seams the whole spec depends on. Built and proven fr
 
 These don't get their own milestone; they're applied continuously:
 
-- **Cross-platform** (native Windows, macOS, and Linux) — the orchestrator's process backend is the same API on all three; Windows is first-class, and supporting it natively is precisely why the extension owns orchestration rather than depending on tmux
+- **macOS/Linux only** — tmux (SwarmForge's process substrate) has no native Windows implementation; a Windows-hosted swarm runs via WSL2 (a real Linux userland), never natively (BL-091)
 - **Secrets handling** — keep tokens/keys in the extension host, never in the worktree or commits (lightweight from M1, formalized as backends multiply in M5)
 - **Accessibility** — completion never color-only; keyboard nav; screen-reader labels
 - **Observability** — durable run log and transcript export, growing as features land
