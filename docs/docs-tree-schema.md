@@ -52,8 +52,8 @@ absent from the array (not a null placeholder).
 | `priority` | number (optional) | |
 | `milestone` | string (optional) | Absent if the ticket has no milestone (it still appears under `milestones`' `"unspecified"` entry). |
 | `description` | string (optional) | The ticket's prose `description:` field, trimmed. Absent if the ticket has none. |
-| `titleFr` / `titleFrUntranslated` | string / boolean (optional) | BL-118, same additive-sibling shape as `contentFr`/`contentFrUntranslated` above. |
-| `descriptionFr` / `descriptionFrUntranslated` | string / boolean (optional) | BL-118, present only when `description` is present. |
+| `titleFr` / `titleFrUntranslated` | string / boolean (optional) | BL-118, same additive-sibling shape as `contentFr`/`contentFrUntranslated` above. Still the fixed-French pair here — BL-230 generalized `backlog.json`'s board `title` to a per-locale `titleTranslations` map (see `docs/backlog-dashboard-schema.md`) but has not yet reached docs-tree content; that generalization is a planned follow-on slice. |
+| `descriptionFr` / `descriptionFrUntranslated` | string / boolean (optional) | BL-118, present only when `description` is present. Same fixed-French scope note as `titleFr` above. |
 | `scenarios` | `GherkinScenario[]` | Resolved acceptance scenarios, readable as scenario text. Empty array if the ticket has no acceptance field, or its `specs/features/*.feature` reference doesn't resolve. |
 
 ### GherkinScenario
