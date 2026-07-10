@@ -136,6 +136,19 @@ function registerSteps(registry) {
   });
 
   // ── backfill-seeds-field-05 ───────────────────────────────────────────
+  // BL-234 equivalent mutants (confirmed, BL-113 mutation pass): a mutation
+  // of the "<comment>" column that touches only incidental wording ("human"
+  // -> "Human" in "pending human review") or a case change to the matched
+  // keyword itself ("approved" -> "approveD" in "approved by operator")
+  // survives - correctly. backfillHumanApprovalText's own
+  // deriveApprovalFromCommentBlock does `text.toLowerCase().includes(
+  // 'pending'|'approved')` over the WHOLE comment block: it provably
+  // ignores every word except those two keywords, and is provably
+  // case-insensitive to the keywords themselves. No assertion here could
+  // ever differentiate the original example from either mutation without
+  // testing implementation trivia the production code deliberately doesn't
+  // care about - real ticket comments in this repo vary in wording/casing
+  // exactly this way, and the loose match is intentional, not a gap.
   registry.define(/^a live ticket predating the field whose comment marks it "([^"]+)"$/, (ctx, comment) => {
     ctx.rawYaml = `id: BL-900\ntitle: t\n\n# HUMAN APPROVAL: ${comment}.\n`;
   });

@@ -101,14 +101,27 @@ export function runHumanApprovalBackfill(targetPath: string): BackfillFileResult
   return results;
 }
 
-export function main(): void {
-  const targetPath = process.argv[2] ?? process.cwd();
-  const results = runHumanApprovalBackfill(targetPath);
-  for (const result of results) {
-    console.log(`${result.outcome}${result.value ? ` (${result.value})` : ''}: ${result.filePath}`);
-  }
+// Pure - split out of main() so the report text is exercised in-process
+// (same "CLI main() run only via execFileSync is coverage-invisible"
+// lesson recruiter-run.ts's/co-change-report.ts's own hardener passes
+// already established for this codebase's other CLIs).
+export function formatBackfillResultLine(result: BackfillFileResult): string {
+  return `${result.outcome}${result.value ? ` (${result.value})` : ''}: ${result.filePath}`;
+}
+
+export function formatBackfillReport(results: BackfillFileResult[]): string {
   const seeded = results.filter((r) => r.outcome === 'seeded').length;
-  console.log(`\n${seeded} ticket(s) seeded, ${results.length} checked.`);
+  return [...results.map(formatBackfillResultLine), '', `${seeded} ticket(s) seeded, ${results.length} checked.`].join('\n');
+}
+
+export function resolveTargetPath(argv: string[]): string {
+  return argv[2] ?? process.cwd();
+}
+
+export function main(): void {
+  const targetPath = resolveTargetPath(process.argv);
+  const results = runHumanApprovalBackfill(targetPath);
+  console.log(formatBackfillReport(results));
 }
 
 if (require.main === module) {
