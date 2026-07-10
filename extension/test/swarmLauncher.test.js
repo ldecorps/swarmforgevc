@@ -282,6 +282,25 @@ function fakeSwarmChild(pid) {
   };
 }
 
+// BL-219: forces the "cannot be spawned" condition deterministically via
+// launchSwarm's spawnFn seam, instead of chmod 0o000 - root bypasses
+// permission checks entirely, and WSL/mounted filesystems don't reliably
+// enforce mode bits, so a chmod-based simulation silently stops
+// reproducing the failure it exists to test. This fires the same 'error'
+// event a real ENOENT/EACCES spawn failure would.
+function fakeUnspawnableChild() {
+  return {
+    pid: undefined,
+    stdout: { on() {} },
+    stderr: { on() {} },
+    on(event, listener) {
+      if (event === 'error') {
+        queueMicrotask(() => listener(new Error('spawn ENOENT')));
+      }
+    },
+  };
+}
+
 test('spawn-registry-01: launchSwarm records a tracked child-job entry keyed on the spawned process group', async () => {
   const targetPath = mkTmp();
   writeSwarmScript(targetPath, 'exit 0'); // only fs.existsSync(swarmScript) needs this - never actually run
@@ -332,15 +351,10 @@ test('launchSwarm reports the exit code when the process closes with no output a
 
 test('launchSwarm resolves failure when the process cannot be spawned', async () => {
   const targetPath = mkTmp();
-  const scriptPath = writeSwarmScript(targetPath, 'exit 0');
-  fs.chmodSync(scriptPath, 0o000);
-  try {
-    const result = await launchSwarm(targetPath);
-    assert.equal(result.success, false);
-    assert.match(result.message, /Failed to start swarm/);
-  } finally {
-    fs.chmodSync(scriptPath, 0o755);
-  }
+  writeSwarmScript(targetPath, 'exit 0'); // only fs.existsSync(swarmScript) needs this - the injected spawnFn below never actually runs it
+  const result = await launchSwarm(targetPath, undefined, 120_000, undefined, () => fakeUnspawnableChild());
+  assert.equal(result.success, false);
+  assert.match(result.message, /Failed to start swarm/);
 });
 
 test('launchSwarm resolves success via the readiness poll when the process keeps running quietly', async () => {
