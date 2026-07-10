@@ -23,6 +23,12 @@ export interface InboundWebhookResponse {
 export interface HandleInboundEmailWebhookDeps {
   secret: string;
   nowIso: string;
+  // BL-248: the authorization layer signature+freshness alone doesn't
+  // provide - only a sender on this list may commit a proposal. Sourced
+  // from the serverless env, same deployment-agnostic posture as `secret`
+  // (the core cannot read this host's .swarmforge/, BL-217). FAIL CLOSED:
+  // an empty/missing allowlist rejects every sender (see isSenderAllowed).
+  senderAllowlist: string[];
   commitProposal: (proposal: RecertProposal) => Promise<void>;
   log: (message: string) => void;
 }
@@ -30,6 +36,7 @@ export interface HandleInboundEmailWebhookDeps {
 export interface EmailFields {
   subject: string;
   body: string;
+  from?: string;
 }
 
 function asObject(value: unknown): Record<string, unknown> | null {
@@ -48,11 +55,24 @@ export function extractEmailFields(payload: unknown): EmailFields | null {
   if (!data) {
     return null;
   }
-  const { subject, text: body } = data;
+  const { subject, text: body, from } = data;
   if (typeof subject !== 'string' || typeof body !== 'string') {
     return null;
   }
-  return { subject, body };
+  return { subject, body, ...(typeof from === 'string' ? { from } : {}) };
+}
+
+// BL-248: case-insensitive exact match on the email address. An empty or
+// missing allowlist rejects every sender - a deliberate secure default
+// (FLAGS FOR HUMAN REVIEW in the ticket) that changes the prior
+// accept-any-signed-request behavior; an allowlist that fails OPEN when
+// unconfigured is not a control.
+export function isSenderAllowed(sender: string | undefined, allowlist: string[]): boolean {
+  if (!sender || !allowlist || allowlist.length === 0) {
+    return false;
+  }
+  const normalized = sender.trim().toLowerCase();
+  return allowlist.some((entry) => entry.trim().toLowerCase() === normalized);
 }
 
 function isReviewOutcome(outcome: string): outcome is ReviewOutcome {
@@ -85,49 +105,62 @@ function authenticateRequest(
 
 // The parse -> validate guard chain, run only once the request has already
 // authenticated. Every early exit here is a "not a proposal we can build"
-// outcome (bad JSON, unmatched shape, out-of-scope outcome) - none of them
-// touch deps.commitProposal.
-function parseProposal(rawBody: string, nowIso: string, log: (message: string) => void): ResolvedProposal {
+// outcome (bad JSON, unmatched shape, disallowed sender, out-of-scope
+// outcome) - none of them touch deps.commitProposal.
+function parseProposal(
+  rawBody: string,
+  deps: Pick<HandleInboundEmailWebhookDeps, 'nowIso' | 'log' | 'senderAllowlist'>
+): ResolvedProposal {
   let payload: unknown;
   try {
     payload = JSON.parse(rawBody);
   } catch {
-    log('recert webhook: request body was not valid JSON');
+    deps.log('recert webhook: request body was not valid JSON');
     return { earlyResponse: { status: 200, body: 'ignored' } };
   }
 
   const fields = extractEmailFields(payload);
   if (!fields) {
-    log('recert webhook: payload carried no recognizable email subject/body');
+    deps.log('recert webhook: payload carried no recognizable email subject/body');
     return { earlyResponse: { status: 200, body: 'ignored' } };
+  }
+
+  // BL-248: authorization, run BEFORE the email is parsed for a recert
+  // outcome - a disallowed sender's content is never processed beyond
+  // this point. 403 (not the 200 "ignored" the shape/content guards
+  // below use) so a rejected sender is distinguishable in logs/monitoring
+  // from ordinary non-recert mail landing on the same address.
+  if (!isSenderAllowed(fields.from, deps.senderAllowlist)) {
+    deps.log(`recert webhook: rejected sender "${fields.from ?? '(none)'}" - not on the allowlist`);
+    return { earlyResponse: { status: 403, body: 'sender not allowed' } };
   }
 
   const parsed = parseRecertEmail(fields.subject, fields.body);
   if (!parsed) {
-    log(`recert webhook: could not parse a recertification email from subject "${fields.subject}"`);
+    deps.log(`recert webhook: could not parse a recertification email from subject "${fields.subject}"`);
     return { earlyResponse: { status: 200, body: 'ignored' } };
   }
 
   // confirm is local-only per BL-150 recert-02 and does not use this path
   // (BL-217 scope note) - RecertProposal only models update/delete anyway.
   if (!isReviewOutcome(parsed.outcome)) {
-    log(`recert webhook: outcome "${parsed.outcome}" is out of this webhook's scope, ignoring`);
+    deps.log(`recert webhook: outcome "${parsed.outcome}" is out of this webhook's scope, ignoring`);
     return { earlyResponse: { status: 200, body: 'ignored' } };
   }
 
-  const proposal = toRecertProposal({ scenarioId: parsed.scenarioId, outcome: parsed.outcome, newText: parsed.newText }, nowIso);
+  const proposal = toRecertProposal({ scenarioId: parsed.scenarioId, outcome: parsed.outcome, newText: parsed.newText }, deps.nowIso);
   return { proposal };
 }
 
 function resolveProposal(
   request: InboundWebhookRequest,
-  deps: Pick<HandleInboundEmailWebhookDeps, 'secret' | 'nowIso' | 'log'>
+  deps: Pick<HandleInboundEmailWebhookDeps, 'secret' | 'nowIso' | 'log' | 'senderAllowlist'>
 ): ResolvedProposal {
   const authFailure = authenticateRequest(request, deps);
   if (authFailure) {
     return { earlyResponse: authFailure };
   }
-  return parseProposal(request.rawBody, deps.nowIso, deps.log);
+  return parseProposal(request.rawBody, deps);
 }
 
 export async function handleInboundEmailWebhook(
