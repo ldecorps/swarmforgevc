@@ -749,14 +749,14 @@ Built on Uncle Bob's six-pack, with two deviations: **hardener is dropped**, and
 | 3 | **cleaner** | Behavior-preserving cleanup, coverage improvement, CRAP & DRY review, mutation-site scans. |
 | 4 | **architect** | Reviews module structure, boundaries, dependency direction, property-test coverage. |
 | 5 | **documenter** | Updates docs for humans: high-level docs plus a doc for the piece just developed. |
-| 6 | **QA** | Converts the specifier's QA procedures into executable scripts, runs final UI verification, checks handoff consistency. As the last stage, it's the convergence point: broadcasts merge-up to worktree roles and notifies the **coordinator** to integrate on `main`. |
+| 6 | **QA** | Converts the specifier's QA procedures into executable scripts, runs final UI verification, checks handoff consistency. As the last stage, it's the convergence point: broadcasts merge-up to worktree roles, then lands the approved commit on `main` itself and pushes origin (BL-247 — QA is the integration point) before notifying the **coordinator**. |
 
-(The coordinator is the 7th role — it owns orchestration on `main` and performs mechanical integration after QA: merge to `main`, close the ticket, promote the next item, push.)
+(The coordinator is the 7th role — it owns orchestration on `main` but performs no git merge or push after QA; its post-approval job is backlog bookkeeping only: move the ticket to `done/`, promote the next item (BL-247).)
 
 ### The pipeline flow
 
 ```
-specifier ──► coder ──► cleaner ──► architect ──► documenter ──► QA ──► coordinator (integrate)
+specifier ──► coder ──► cleaner ──► architect ──► documenter ──► QA (integrate) ──► coordinator (bookkeep)
 ```
 
 Stage by stage:
@@ -766,7 +766,7 @@ Stage by stage:
 3. **Cleaner** cleans up, then hands to the architect.
 4. **Architect** reviews structure, then hands to the documenter.
 5. **Documenter** updates the human-facing docs (high-level + the just-developed piece), then hands to QA.
-6. **QA**, when done, **forces every pipeline worktree role to merge its own branch up to QA's verified commit** — this is the integration convergence point (see below) — then notifies the **coordinator** with the approved commit so the coordinator can merge to `main`, close the ticket, and promote the next backlog item.
+6. **QA**, when done, **forces every pipeline worktree role to merge its own branch up to QA's verified commit** — this is the integration convergence point (see below) — then **lands that approved commit on `main` itself and pushes origin** (closing the GitHub issue for a `GH-`-seeded ticket), and notifies the **coordinator** with the approved commit so the coordinator can move the ticket to `done/` and promote the next backlog item (BL-247: the coordinator runs no git merge or push).
 
 Putting the documenter **before** QA means the docs are covered by QA's final verification pass, rather than landing after the swarm has already converged.
 
@@ -775,9 +775,9 @@ The workflow **must visit everyone** — the pipeline is the quality gate sequen
 ### Branches & integration
 
 - Each agent works in its own worktree, and **each worktree is its own branch**
-- **`main`** (master worktree) is the integration branch — the coordinator merges QA-approved work here; the specifier works on master for spec/prompt files only, not feature integration
+- **`main`** (master worktree) is the integration branch — **QA** lands QA-approved work here itself and pushes origin (BL-247); the specifier works on master for spec/prompt files only, not feature integration
 - The **coder pulls integrated state into its branch** at the start of its stage (via `merge_and_process` on handoffs), so it builds on the latest parcel state
-- **QA is the convergence point:** as the final pipeline stage, when QA passes it broadcasts merge-up to every worktree role (`coder`, `cleaner`, `architect`, `hardender`, `documenter`) instructing each to merge QA's verified commit into its own branch — bringing the swarm to a single consistent, verified state before integration on `main`. The **coordinator** then merges that commit to `main`, moves the ticket to `done/`, promotes the next item, and pushes — keeping the costly specifier on specification work only
+- **QA is the convergence point:** as the final pipeline stage, when QA passes it broadcasts merge-up to every worktree role (`coder`, `cleaner`, `architect`, `hardender`, `documenter`) instructing each to merge QA's verified commit into its own branch — bringing the swarm to a single consistent, verified state — then **QA itself** merges that commit to `main` and pushes origin, before notifying the **coordinator**. The coordinator's only post-approval job is backlog bookkeeping: move the ticket to `done/`, promote the next item — it runs no git merge or push (BL-247), keeping the costly specifier on specification work only
 - Because work moves through one branch at a time in pipeline order (rather than many agents editing concurrently), file-level collisions are rare by construction — the sequence *is* the conflict-avoidance strategy
 
 ### Conflict resolution: the receiver owns it
@@ -840,7 +840,7 @@ Reroutes can loop: architect → specifier → coder → architect → … forev
 
 ### Item completion & the next-item loop
 
-The pipeline defines "done with the *pipeline*" (QA converges worktree branches, coordinator integrates on `main`) but not "done with the *work item*" or what the swarm does next. Defined here:
+The pipeline defines "done with the *pipeline*" (QA converges worktree branches and integrates on `main` itself; the coordinator only bookkeeps the backlog — BL-247) but not "done with the *work item*" or what the swarm does next. Defined here:
 
 - **Item-complete criteria:** QA convergence succeeded **and** the item's scenarios pass on the dev branch (completion = 100% measured post-convergence, per Work Tree). Only then is the item considered delivered.
 - **What happens at item-complete (configurable run mode):**
@@ -929,7 +929,7 @@ There's a trap where dormancy and branch-per-worktree collide: a dormant role's 
 The fix is to keep a dormant branch current rather than frozen:
 
 - **Rebase-on-wake.** When a role wakes, before it does any work its branch is fast-forwarded/rebased onto the current dev branch. It starts from today's integrated state, not the stale point where it went dormant — small mechanical merges instead of one giant divergent one.
-- **Dev is the baseline, not peer branches.** A waking role syncs to `main` (the coordinator's integration branch, the single source of integrated truth), never to some other peer's in-flight branch — so there's one well-defined thing to catch up to.
+- **Dev is the baseline, not peer branches.** A waking role syncs to `main` (the integration branch QA lands approved work on — BL-247 — the single source of integrated truth), never to some other peer's in-flight branch — so there's one well-defined thing to catch up to.
 - **Background catch-up (optional).** The extension can fast-forward dormant branches onto dev whenever dev advances, so "wake" is always cheap and a dormant branch is never more than one item behind. This is a pure fast-forward when the dormant branch has no unmerged commits of its own (the common case), so it's safe to automate.
 - **Convergence only includes active roles.** The QA convergence step forces a merge across the *active* pack for the item, not dormant roles — a dormant role has no item-specific work to contribute, so it isn't part of that item's merge. It only needs to be current *before* it next becomes active, which rebase-on-wake guarantees.
 
@@ -971,7 +971,7 @@ Extension streams each process's output → tiled panel updates
 Agents work in pipeline order on their own branches:
   specifier → coder → cleaner → architect → documenter → QA
   Coder merges received commits first; documenter updates docs before verification;
-  QA convergence forces worktree branches to merge QA's; coordinator integrates on main
+  QA convergence forces worktree branches to merge QA's; QA integrates on main itself and pushes; coordinator bookkeeps the backlog only (BL-247)
   → integrated state on main
         │
         ▼
