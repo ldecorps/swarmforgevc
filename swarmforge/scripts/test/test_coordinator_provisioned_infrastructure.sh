@@ -47,11 +47,24 @@ zsh -c "
   write_roles_file
   write_swarm_identity_file
   print -l -- \"\${ROLES[@]}\" > '$OUT_DIR/roles.txt'
+  print -l -- \"\${EXTRA_CLI_ARGS[@]}\" > '$OUT_DIR/extra_cli_args.txt'
   print -r -- \"\$(pack_size)\" > '$OUT_DIR/pack_size.txt'
 "
 
 grep -qx "coordinator" "$OUT_DIR/roles.txt" || fail "01: a conf omitting coordinator must still provision one"
 pass "01: a conf that omits coordinator still brings a coordinator up"
+
+# coordinator-infrastructure-01 (BL-243 follow-up disclosure): the coder's
+# own commit flagged that provision_coordinator's hardcoded model
+# (claude-opus-4-8) differs from the removed conf line's claude-sonnet-5 -
+# an already-disclosed, operator-confirmed change, not a hidden one. Lock
+# it in with a regression test so a future accidental edit to that
+# hardcoded string is caught here rather than discovered live.
+COORD_LINE_NO="$(grep -nx "coordinator" "$OUT_DIR/roles.txt" | cut -d: -f1)"
+COORD_EXTRA_CLI="$(sed -n "${COORD_LINE_NO}p" "$OUT_DIR/extra_cli_args.txt")"
+[[ "$COORD_EXTRA_CLI" == *"--model claude-opus-4-8"* ]] \
+  || fail "01: expected the coordinator's launch args to carry --model claude-opus-4-8, got: $COORD_EXTRA_CLI"
+pass "01: the coordinator's provisioned model is the documented claude-opus-4-8 default"
 
 COORD_COUNT="$(grep -cx "coordinator" "$OUT_DIR/roles.txt")"
 [[ "$COORD_COUNT" == "1" ]] || fail "01: expected exactly one coordinator entry, got $COORD_COUNT"
