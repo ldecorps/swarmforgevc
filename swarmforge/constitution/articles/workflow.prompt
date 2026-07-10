@@ -113,8 +113,9 @@
 - On that note: `git merge <qa-commit>` in your worktree (plain merge or
   `--no-ff`), resolve conflicts as the receiver, then `done_with_current.sh`.
   Do not forward the parcel — the pipeline chain ended at QA.
-- The **specifier** and **coordinator** are not merge-up recipients; the
-  coordinator integrates on `main` separately after QA notifies it.
+- The **specifier** and **coordinator** are not merge-up recipients; QA lands
+  the approved commit on `main` itself, then notifies the coordinator to do
+  backlog bookkeeping (BL-247).
 
 ## Announcements
 - Do not add role bylines to announcements or check-in comments.

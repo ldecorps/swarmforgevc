@@ -34,11 +34,13 @@ All handoffs use the following JSON format, written to `swarmforge/runtime/hando
 3. **Stuck Detection** – If a parcel sits in `inbox/new/` for >10 minutes, the coordinator must chase it.
 
 ## 2.5 Merge-Up Protocol
-- **QA** sends approval to the **coordinator** (approved commit + task id).
 - **QA** broadcasts a `note` to pipeline worktree roles (`coder`, `cleaner`,
   `architect`, `hardender`, `documenter`) instructing each to merge its branch up
   to QA's approved commit.
-- The **coordinator** merges the approved commit into `main`, moves the ticket
-  from `backlog/active/` to `backlog/done/`, promotes the next paused item if a
-  slot is open, and pushes `main`.
+- **QA** lands the approved commit on `main` and pushes origin (QA is the
+  integration point), then sends approval to the **coordinator** (approved commit
+  + task id).
+- The **coordinator** does backlog bookkeeping only: moves the ticket from
+  `backlog/active/` to `backlog/done/` and promotes the next paused item if a
+  slot is open. It runs no git merge or push (BL-247).
 - The **specifier** does not perform integration merges — it specifies only.

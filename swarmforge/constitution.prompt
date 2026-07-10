@@ -17,8 +17,8 @@ alongside the numbered articles: `engineering.prompt`, `workflow.prompt`,
 `local-engineering.prompt`, and `project.prompt`.
 
 ## Key Rules
-1. **Pipeline Flow**: Parcels move through the chain `specifier → coder → cleaner → architect → hardener → documenter → QA → coordinator (integrate)`.
-2. **Worktrees**: Each role works in its own branch (e.g., `.worktrees/coder`). The **coordinator** merges QA-approved work into `main`; the specifier never performs integration merges.
+1. **Pipeline Flow**: Parcels move through the chain `specifier → coder → cleaner → architect → hardener → documenter → QA (integrate) → coordinator (bookkeep)`.
+2. **Worktrees**: Each role works in its own branch (e.g., `.worktrees/coder`). **QA** lands QA-approved work on `main`; the coordinator does backlog bookkeeping only and the specifier never performs integration merges (BL-247).
 3. **Handoffs**: Use `swarm_handoff.sh` to send parcels; never write directly to `inbox/new/`.
 4. **No-Op Rule**: A role must **not** forward a `git_handoff` if the received commit produces no functional change.
 
@@ -26,4 +26,4 @@ alongside the numbered articles: `engineering.prompt`, `workflow.prompt`,
 To propose a change to the constitution:
 1. Create a new article in `swarmforge/constitution/articles/` (e.g., `99_proposed_change.md`).
 2. Route it to the **specifier** via `git_handoff` with priority `00`.
-3. The **specifier** incorporates approved constitution changes into spec/prompt files; the **coordinator** merges to `main` after QA approval.
+3. The **specifier** incorporates approved constitution changes into spec/prompt files; **QA** lands them on `main` after approval and the coordinator does backlog bookkeeping (BL-247).
