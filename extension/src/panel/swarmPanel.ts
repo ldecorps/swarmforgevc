@@ -18,6 +18,7 @@ import { NeedsHumanReconciler } from './needsHumanReconciler';
 import { extractQuestionSnippet } from './needsHumanDetection';
 import { NeedsHumanEvent } from './paneTailer';
 import { recordSessionUrl, getSessionUrl } from '../notify/sessionUrlCapture';
+import { recordRateLimitCooldownIfPresent } from '../swarm/rateLimitCooldownDetector';
 import {
   NeedsHumanEmailNotifier,
   EmailNotifyConfig,
@@ -205,6 +206,7 @@ export class SwarmPanel {
         for (const update of updates) {
           this.latestPaneText.set(update.role, update.text);
           recordSessionUrl(update.role, update.text);
+          recordRateLimitCooldownIfPresent(this.targetPath, update.role, update.text, Date.now());
         }
       },
       (events) => {

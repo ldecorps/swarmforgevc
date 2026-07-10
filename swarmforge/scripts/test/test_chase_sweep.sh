@@ -138,4 +138,44 @@ run_sweep "alive" "$NOW_MS"
 grep -qE "^(wake-up|respawn|dead-letter)" "$ROOT/calls.log" 2>/dev/null && fail "07: a just-chased, still-busy item must be backed off, not re-chased immediately"
 pass "07: a recently-chased item with recent activity is backed off (skipped), not hammered"
 
+# ── BL-209 suppress-wake-02: an active rate-limit cooldown suppresses the
+#     whole sweep for that role, even for an otherwise-stale item ──────────
+make_fixture
+write_handoff "$ROOT/inbox/new/00_item.handoff"
+set_mtime "$ROOT/inbox/new/00_item.handoff" $(( (NOW_MS / 1000) - CHASE_TIMEOUT_S - 5 ))
+echo "{\"coder\":{\"untilMs\":$(( NOW_MS + 60000 ))}}" > "$ROOT/rate-limit-cooldown.json"
+run_sweep "unknown" $(( NOW_MS - (STUCK_TIMEOUT_S + 100) * 1000 ))
+
+[[ ! -s "$ROOT/calls.log" ]] || fail "08: expected no wake-up/respawn/chase/telemetry calls at all while cooling down; got: $(cat "$ROOT/calls.log")"
+[[ ! -f "$ROOT/inbox/new/00_item.handoff.chase.json" ]] || fail "08: expected the stale item's chase sidecar to be untouched while cooling down"
+pass "08 (BL-209 suppress-wake-02): an active rate-limit cooldown suppresses the whole sweep, even for a stale item"
+
+# ── BL-209 resume-at-reset-03: once the reset time passes, the role is
+#     woken exactly once, its cooldown marked woken (not re-triggered next
+#     sweep), and normal sweep processing resumes the same cycle ──────────
+make_fixture
+write_handoff "$ROOT/inbox/new/00_item.handoff"
+set_mtime "$ROOT/inbox/new/00_item.handoff" $(( (NOW_MS / 1000) - CHASE_TIMEOUT_S - 5 ))
+echo "{\"coder\":{\"untilMs\":$(( NOW_MS - 1000 ))}}" > "$ROOT/rate-limit-cooldown.json"
+run_sweep "unknown" $(( NOW_MS - (STUCK_TIMEOUT_S + 100) * 1000 ))
+
+grep -q "^wake-up coder$" "$ROOT/calls.log" || fail "09: expected the expired cooldown to wake the role once; got: $(cat "$ROOT/calls.log")"
+[[ -f "$ROOT/inbox/new/00_item.handoff.chase.json" ]] \
+  || fail "09: expected normal sweep processing (the stale item chased) to resume the same cycle"
+WOKEN_MARKER="$(python3 -c "import json; print(json.load(open('$ROOT/rate-limit-cooldown.json'))['coder'].get('wokenForUntilMs'))")"
+[[ "$WOKEN_MARKER" == "$(( NOW_MS - 1000 ))" ]] || fail "09: expected wokenForUntilMs recorded on the shared cooldown file, got: $WOKEN_MARKER"
+pass "09 (BL-209 resume-at-reset-03): an expired cooldown wakes the role once, marks it woken, and resumes normal sweep processing"
+
+# A second sweep against an already-woken cooldown (same until-ms) must not
+# wake again - proves the gate is a one-shot wake, not a per-cycle repeat
+# while the marker still matches. Uses its own empty-inbox fixture so the
+# only possible "wake-up" call in the log can be the rate-limit path, never
+# an ordinary stale-item chase (which logs the identical "wake-up coder"
+# line and would make this assertion ambiguous against a busy inbox).
+make_fixture
+echo "{\"coder\":{\"untilMs\":$(( NOW_MS - 1000 )),\"wokenForUntilMs\":$(( NOW_MS - 1000 ))}}" > "$ROOT/rate-limit-cooldown.json"
+run_sweep "unknown" $(( NOW_MS - (STUCK_TIMEOUT_S + 100) * 1000 ))
+grep -q "^wake-up coder$" "$ROOT/calls.log" 2>/dev/null && fail "09b: expected no SECOND wake-up for the same already-woken cooldown; got: $(cat "$ROOT/calls.log" 2>/dev/null)"
+pass "09b (BL-209 resume-at-reset-03): an already-woken cooldown (same until-ms) does not re-wake"
+
 echo "ALL PASS"

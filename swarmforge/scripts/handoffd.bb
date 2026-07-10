@@ -597,7 +597,16 @@
                   :on-stuck-escalation! (fn [role escalated?] (chase-sweep-lib/write-escalation! (str daemon-dir) role escalated?))
                   :log-telemetry! (fn [event at-ms]
                                      (try (log-chaser-telemetry! event at-ms)
-                                          (catch Exception e (log! "telemetry-error" (:type event) (.getMessage e)))))}]
+                                          (catch Exception e (log! "telemetry-error" (:type event) (.getMessage e)))))
+                  ;; BL-209: the shared rate-limit cooldown file the
+                  ;; extension writes to (one file, every role - state-dir
+                  ;; is the one directory every role's worktree shares).
+                  :get-rate-limit-cooldown-until-ms
+                  (fn [role] (chase-sweep-lib/read-rate-limit-cooldown-until-ms (str state-dir) role))
+                  :get-rate-limit-cooldown-woken-marker
+                  (fn [role] (chase-sweep-lib/read-rate-limit-cooldown-woken-marker (str state-dir) role))
+                  :mark-rate-limit-cooldown-woken!
+                  (fn [role until-ms] (chase-sweep-lib/mark-rate-limit-cooldown-woken! (str state-dir) role until-ms))}]
     (chase-sweep-lib/run-sweep! (role-inboxes-for-chase roles) now-ms chase-sweep-config adapters)
     (write-chase-status! now-ms)))
 
