@@ -53,6 +53,7 @@ const DOMAINS = [
   require('./coordinatorLossSteps'),
   require('./fleetConsoleSteps'),
   require('./docsSearchFilterSteps'),
+  require('./docsImplementedStatusSteps'),
 ];
 
 function registerSteps(registry) {

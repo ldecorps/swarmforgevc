@@ -47,6 +47,11 @@
       // chrome text is translated.
       docsSearchPlaceholder: 'Search spec text…',
       docsNoSearchResults: 'No tickets match your search.',
+      // BL-253: greying is visual-only chrome text - it gates no
+      // interaction (recertification stays available regardless, see
+      // recertification.ts).
+      implementedLabel: 'implemented',
+      notYetImplementedLabel: 'not yet implemented',
       couldNotLoadDocsTree: 'Could not load docs-tree.json (offline and nothing cached yet).',
       couldNotLoadBacklog: 'Could not load backlog.json (offline and nothing cached yet).',
       couldNotLoadRecertBatch: 'Could not load recert-batch.json (offline and nothing cached yet).',
@@ -105,6 +110,8 @@
       docsNotAvailable: 'documentation non disponible',
       docsSearchPlaceholder: 'Rechercher dans le texte des specs…',
       docsNoSearchResults: 'Aucun ticket ne correspond à votre recherche.',
+      implementedLabel: 'implémenté',
+      notYetImplementedLabel: 'pas encore implémenté',
       couldNotLoadDocsTree: 'Impossible de charger docs-tree.json (hors ligne et rien en cache).',
       couldNotLoadBacklog: 'Impossible de charger backlog.json (hors ligne et rien en cache).',
       couldNotLoadRecertBatch: 'Impossible de charger recert-batch.json (hors ligne et rien en cache).',
