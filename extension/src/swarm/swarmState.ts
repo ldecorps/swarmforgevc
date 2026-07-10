@@ -28,6 +28,14 @@ export interface PipelineStage {
   status: 'active' | 'idle';
 }
 
+// Split out of parseRolesTsv so each function stays under the CRAP<=6 gate
+// - the agent field is only present on the entry when the TSV row actually
+// carried one (an `agent?: undefined` property would fail the ticket's own
+// "omitted, not present-but-undefined" role-entry shape elsewhere).
+function buildRoleEntry(role: string, worktreeName: string, worktreePath: string, displayName: string, agent: string): RoleEntry {
+  return agent ? { role, worktreeName, worktreePath, displayName, agent } : { role, worktreeName, worktreePath, displayName };
+}
+
 export function parseRolesTsv(tsv: string): RoleEntry[] {
   const entries: RoleEntry[] = [];
   for (const line of tsv.split('\n')) {
@@ -39,9 +47,8 @@ export function parseRolesTsv(tsv: string): RoleEntry[] {
     const worktreeName = parts[TSV_WORKTREE_NAME_INDEX];
     const worktreePath = parts[TSV_WORKTREE_INDEX];
     const displayName = parts[TSV_DISPLAY_NAME_INDEX];
-    const agent = parts[TSV_AGENT_INDEX];
     if (role && worktreePath && displayName) {
-      entries.push(agent ? { role, worktreeName, worktreePath, displayName, agent } : { role, worktreeName, worktreePath, displayName });
+      entries.push(buildRoleEntry(role, worktreeName, worktreePath, displayName, parts[TSV_AGENT_INDEX]));
     }
   }
   return entries;

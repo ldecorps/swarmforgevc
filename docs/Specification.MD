@@ -321,6 +321,8 @@ node extension/out/tools/swarm-metrics.js
 
 Runnable from the repo root or from any `.worktrees/<role>/` checkout. Prints a short plain-text summary — mean ticket time, one busyness line per role, retry total, suite duration with warnings, and a chaser telemetry line per role — followed by one line per delivery metric (velocity, burndown, cycle time, forecasts, suite duration trend), then a cost telemetry line and a resource usage line, each one role-summary per role — and exits 0 with placeholder values on a fresh run. The CLI and panel/bridge are fed by the same underlying metrics computation modules, so they always report the same values.
 
+When roles are configured on more than one agent/provider brand (`swarmforge.conf`'s `window` lines), the summary also prints a **"By provider"** line — the same chase/nudge telemetry as the per-role line, grouped by provider brand instead, so you can compare which brand is slower, failing, or idling more without reading per-role detail. Omitted entirely (not printed empty) when every role shares one provider or no provider roster can be derived.
+
 #### Queue status CLI
 
 A second headless, read-only CLI answers "is there actually pending work?" without mixing in the chaser's own operational sidecar files (`.chase.json`, `.nudge`), which used to dominate a raw directory listing and give a false impression of a busy queue:
