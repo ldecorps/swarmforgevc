@@ -1,10 +1,14 @@
 'use strict';
 
+// BL-259: a Scenario Outline Examples column name may legitimately contain
+// spaces (e.g. "forbidden edge", "what is checked") - matches ANY
+// non-angle-bracket text between < and >, not just [A-Za-z0-9_]+, so a
+// multi-word placeholder is substituted the same as a single-word one.
 function substitute(text, exampleRow) {
   if (!exampleRow) {
     return text;
   }
-  return text.replace(/<([A-Za-z0-9_]+)>/g, (whole, name) => (name in exampleRow ? exampleRow[name] : whole));
+  return text.replace(/<([^<>]+)>/g, (whole, name) => (name in exampleRow ? exampleRow[name] : whole));
 }
 
 function scenarioSteps(feature, scenario) {

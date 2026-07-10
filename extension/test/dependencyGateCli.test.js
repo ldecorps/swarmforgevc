@@ -1,0 +1,180 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+const { parseArgs, runDependencyCruiser } = require('../out/tools/dependency-gate');
+const { parseDependencyCruiserOutput } = require('../out/quality/dependencyGate');
+
+// BL-259: runs the REAL pinned dependency-cruiser against small, isolated
+// fixture trees using the REAL project ruleset (.dependency-cruiser.cjs) -
+// per the ticket's own "the ruleset itself is validated by running the
+// pinned checker against fixture code" requirement. No mocked checker
+// output here (that half is covered by dependencyGate.test.js's recorded-
+// output tests); this file proves the RULESET is actually wired to catch
+// real violations, not just that the parser can read a hand-written
+// fixture JSON blob.
+
+const REAL_CONFIG_PATH = path.join(__dirname, '..', '.dependency-cruiser.cjs');
+
+function mkFixtureRoot() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-depgate-fixture-'));
+}
+
+function writeFixtureTsconfig(root) {
+  // allowJs: a fixture that carries ONLY .js files (e.g. a media/-only
+  // fixture with no .ts anywhere) otherwise leaves tsc's own `include`
+  // resolution empty (TS18003), since tsc excludes .js from `include` by
+  // default - the real project's own tsconfig.json never hits this because
+  // src/**/*.ts always has plenty of real .ts files alongside media/.
+  fs.writeFileSync(
+    path.join(root, 'tsconfig.json'),
+    JSON.stringify({ compilerOptions: { module: 'commonjs', target: 'ES2022', allowJs: true }, include: ['src/**/*', 'media/**/*'] })
+  );
+}
+
+function writeFile(root, relPath, content) {
+  const fullPath = path.join(root, relPath);
+  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+  fs.writeFileSync(fullPath, content);
+}
+
+// ── parseArgs (pure) ───────────────────────────────────────────────────
+
+test('parseArgs with no arguments defaults to full-repo scope (src, media)', () => {
+  assert.deepEqual(parseArgs([]), { scopePaths: ['src', 'media'] });
+});
+
+test('parseArgs with file arguments scopes to exactly those (per-parcel mode)', () => {
+  assert.deepEqual(parseArgs(['src/quality/coChange.ts', 'src/tools/co-change-report.ts']), {
+    scopePaths: ['src/quality/coChange.ts', 'src/tools/co-change-report.ts'],
+  });
+});
+
+// ── clean-passes-01 ──────────────────────────────────────────────────────
+
+test('the REAL pinned checker + REAL project ruleset passes a clean fixture with no forbidden edge', () => {
+  const root = mkFixtureRoot();
+  writeFixtureTsconfig(root);
+  writeFile(root, 'src/quality/clean.ts', "export function clean(x: number) { return x + 1; }\n");
+
+  const rawJson = runDependencyCruiser(['src'], root, REAL_CONFIG_PATH);
+  const result = parseDependencyCruiserOutput(rawJson);
+
+  assert.equal(result.passed, true);
+  assert.deepEqual(result.violations, []);
+});
+
+// ── violation-hard-fails-and-bounces-02 / ruleset-enforced-03 ────────────
+
+test('the REAL checker catches a policy module importing fs (no-io-from-policy)', () => {
+  const root = mkFixtureRoot();
+  writeFixtureTsconfig(root);
+  writeFile(root, 'src/quality/bad.ts', "import * as fs from 'fs';\nexport function bad() { return fs.existsSync('.'); }\n");
+
+  const rawJson = runDependencyCruiser(['src'], root, REAL_CONFIG_PATH);
+  const result = parseDependencyCruiserOutput(rawJson);
+
+  assert.equal(result.passed, false);
+  const violation = result.violations.find((v) => v.rule === 'no-io-from-policy');
+  assert.ok(violation, `expected a no-io-from-policy violation, got: ${JSON.stringify(result.violations)}`);
+  assert.equal(violation.from, 'src/quality/bad.ts');
+  assert.equal(violation.to, 'fs');
+});
+
+test('the REAL checker catches view code importing extension-host modules (view-not-import-host-io)', () => {
+  const root = mkFixtureRoot();
+  writeFixtureTsconfig(root);
+  writeFile(root, 'src/swarm/hostThing.ts', 'export function hostThing() { return 1; }\n');
+  writeFile(root, 'media/view.js', "const { hostThing } = require('../src/swarm/hostThing');\nhostThing();\n");
+
+  const rawJson = runDependencyCruiser(['media'], root, REAL_CONFIG_PATH);
+  const result = parseDependencyCruiserOutput(rawJson);
+
+  assert.equal(result.passed, false);
+  assert.ok(result.violations.some((v) => v.rule === 'view-not-import-host-io'), JSON.stringify(result.violations));
+});
+
+test('the REAL checker catches view code spawning a child process (no-process-spawn-from-view)', () => {
+  const root = mkFixtureRoot();
+  writeFixtureTsconfig(root);
+  writeFile(root, 'media/spawner.js', "const { execSync } = require('child_process');\nexecSync('ls');\n");
+
+  const rawJson = runDependencyCruiser(['media'], root, REAL_CONFIG_PATH);
+  const result = parseDependencyCruiserOutput(rawJson);
+
+  assert.equal(result.passed, false);
+  assert.ok(result.violations.some((v) => v.rule === 'no-process-spawn-from-view'), JSON.stringify(result.violations));
+});
+
+test('the REAL checker catches a testable-core module importing vscode (core-not-vscode-api)', () => {
+  const root = mkFixtureRoot();
+  writeFixtureTsconfig(root);
+  writeFile(root, 'src/swarm/oops.ts', "import * as vscode from 'vscode';\nexport function oops() { return vscode; }\n");
+
+  const rawJson = runDependencyCruiser(['src'], root, REAL_CONFIG_PATH);
+  const result = parseDependencyCruiserOutput(rawJson);
+
+  assert.equal(result.passed, false);
+  assert.ok(result.violations.some((v) => v.rule === 'core-not-vscode-api'), JSON.stringify(result.violations));
+});
+
+test('the REAL checker catches view code importing a browser-storage wrapper package (no-webview-storage)', () => {
+  const root = mkFixtureRoot();
+  writeFixtureTsconfig(root);
+  writeFile(root, 'media/storage.js', "const localforage = require('localforage');\nlocalforage.setItem('x', 1);\n");
+
+  const rawJson = runDependencyCruiser(['media'], root, REAL_CONFIG_PATH);
+  const result = parseDependencyCruiserOutput(rawJson);
+
+  assert.equal(result.passed, false);
+  assert.ok(result.violations.some((v) => v.rule === 'no-webview-storage'), JSON.stringify(result.violations));
+});
+
+test('the REAL checker catches a dependency cycle (acyclic)', () => {
+  const root = mkFixtureRoot();
+  writeFixtureTsconfig(root);
+  writeFile(root, 'src/swarm/a.ts', "import { b } from './b';\nexport function a() { return b; }\n");
+  writeFile(root, 'src/swarm/b.ts', "import { a } from './a';\nexport function b() { return a; }\n");
+
+  const rawJson = runDependencyCruiser(['src'], root, REAL_CONFIG_PATH);
+  const result = parseDependencyCruiserOutput(rawJson);
+
+  assert.equal(result.passed, false);
+  assert.ok(result.violations.some((v) => v.rule === 'acyclic'), JSON.stringify(result.violations));
+});
+
+// ── deterministic-report-04 ────────────────────────────────────────────
+
+test('running the REAL checker twice over identical fixture code produces byte-identical reports', () => {
+  const root = mkFixtureRoot();
+  writeFixtureTsconfig(root);
+  writeFile(root, 'src/quality/bad.ts', "import * as fs from 'fs';\nexport function bad() { return fs.existsSync('.'); }\n");
+
+  const first = parseDependencyCruiserOutput(runDependencyCruiser(['src'], root, REAL_CONFIG_PATH));
+  const second = parseDependencyCruiserOutput(runDependencyCruiser(['src'], root, REAL_CONFIG_PATH));
+
+  assert.equal(JSON.stringify(first), JSON.stringify(second));
+});
+
+// ── scope-changed-vs-full-05 ──────────────────────────────────────────────
+
+test('per-parcel mode (a single changed file) reports only violations reachable from that file, not the whole fixture', () => {
+  const root = mkFixtureRoot();
+  writeFixtureTsconfig(root);
+  writeFile(root, 'src/quality/bad.ts', "import * as fs from 'fs';\nexport function bad() { return fs.existsSync('.'); }\n");
+  writeFile(root, 'src/quality/clean.ts', 'export function clean() { return 1; }\n');
+
+  const rawJson = runDependencyCruiser(['src/quality/clean.ts'], root, REAL_CONFIG_PATH);
+  const result = parseDependencyCruiserOutput(rawJson);
+
+  assert.equal(result.passed, true, 'scoping to only the clean file must not see the unrelated bad.ts violation');
+});
+
+// ── end-to-end: the compiled CLI's own exit code + stdout ────────────────
+
+test('the compiled CLI exits 0 and prints PASSED for a clean real project run', () => {
+  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'dependency-gate.js');
+  const output = execFileSync('node', [cliPath], { cwd: path.join(__dirname, '..'), encoding: 'utf8' });
+  assert.match(output, /PASSED/);
+});
