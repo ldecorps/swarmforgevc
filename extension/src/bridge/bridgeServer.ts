@@ -106,6 +106,39 @@ function isGateAnswerRequestShape(value: unknown): value is { role: string; answ
   );
 }
 
+// BL-240: matcher + handler for the write route, split out of the main
+// request dispatcher (mirroring this file's existing route-predicate style,
+// e.g. isRootPath/isStateRoute) so the new branch's own if/&&/body-parsing
+// doesn't grow the dispatcher's own complexity - the same "table instead of
+// per-route branch" reasoning buildJsonRoutes's comment above documents,
+// applied to a route whose body-read + non-200 statuses don't fit that
+// table's uniform "match, compute JSON, respond 200" shape.
+function isGateAnswerRoute(req: http.IncomingMessage, url: string): boolean {
+  return req.method === 'POST' && url === '/gate-answer';
+}
+
+function handleGateAnswerRoute(req: http.IncomingMessage, res: http.ServerResponse, targetPath: string): void {
+  readJsonBody(req, GATE_ANSWER_MAX_BODY_BYTES).then((body) => {
+    if (!body.ok) {
+      res.writeHead(400, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ success: false, reason: body.reason }));
+      return;
+    }
+    if (!isGateAnswerRequestShape(body.value)) {
+      res.writeHead(400, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ success: false, reason: 'expected a JSON body of {role, answer}' }));
+      return;
+    }
+    const result = answerCapturedGateLive(targetPath, body.value);
+    res.writeHead(result.success ? 200 : 403, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(result));
+  });
+}
+
+function requestPath(req: http.IncomingMessage): string {
+  return req.url ?? '/';
+}
+
 function queryToken(url: string): string | undefined {
   const queryIndex = url.indexOf('?');
   if (queryIndex === -1) {
@@ -185,7 +218,7 @@ export function startBridge(
     let lastSnapshot: string | undefined;
 
     const server = http.createServer((req, res) => {
-      const url = req.url ?? '/';
+      const url = requestPath(req);
 
       if (!isAuthorizedForUrl(req.headers.authorization, url, token)) {
         res.writeHead(401, { 'content-type': 'application/json' });
@@ -222,22 +255,8 @@ export function startBridge(
       // other route. GET (or any other method) to this path falls through
       // to the 404 below, same as any unrecognized route - it is never
       // treated as an answer attempt.
-      if (req.method === 'POST' && url === '/gate-answer') {
-        readJsonBody(req, GATE_ANSWER_MAX_BODY_BYTES).then((body) => {
-          if (!body.ok) {
-            res.writeHead(400, { 'content-type': 'application/json' });
-            res.end(JSON.stringify({ success: false, reason: body.reason }));
-            return;
-          }
-          if (!isGateAnswerRequestShape(body.value)) {
-            res.writeHead(400, { 'content-type': 'application/json' });
-            res.end(JSON.stringify({ success: false, reason: 'expected a JSON body of {role, answer}' }));
-            return;
-          }
-          const result = answerCapturedGateLive(targetPath, body.value);
-          res.writeHead(result.success ? 200 : 403, { 'content-type': 'application/json' });
-          res.end(JSON.stringify(result));
-        });
+      if (isGateAnswerRoute(req, url)) {
+        handleGateAnswerRoute(req, res, targetPath);
         return;
       }
 
