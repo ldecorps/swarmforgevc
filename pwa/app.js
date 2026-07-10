@@ -75,6 +75,13 @@
     for (var j = 0; j < ariaNodes.length; j++) {
       ariaNodes[j].setAttribute('aria-label', tr(ariaNodes[j].getAttribute('data-i18n-aria')));
     }
+    // BL-254: same pass, targeting a placeholder attribute - the search
+    // box's placeholder is chrome text (not spec content), so it goes
+    // through locale like every other static label above.
+    var placeholderNodes = document.querySelectorAll('[data-i18n-placeholder]');
+    for (var k = 0; k < placeholderNodes.length; k++) {
+      placeholderNodes[k].setAttribute('placeholder', tr(placeholderNodes[k].getAttribute('data-i18n-placeholder')));
+    }
   }
 
   function clampFontSizePx(px) {
@@ -456,13 +463,61 @@
   // already-fetched docsTree, never writes anything back to the network.
   var docsTree = null;
   var docsView = { level: 'root' };
+  var docsSearchQuery = '';
+
+  // BL-254: pure, client-side full-text search filter, mirroring
+  // extension/src/docs/docsTree.ts's filterDocsTree exactly (case-
+  // insensitive substring over a ticket's title/description/scenario
+  // text, pruning to matching tickets while keeping the milestone
+  // hierarchy). Duplicated here because this file is a plain, unbundled
+  // browser script with no access to the compiled TS module - the two
+  // must be kept in sync by hand; the TS version is the one unit- and
+  // acceptance-tested, this one is exercised by pwaDocsExplorer.test.js.
+  function ticketMatchesQuery(ticket, lowerQuery) {
+    if (ticket.title && ticket.title.toLowerCase().indexOf(lowerQuery) !== -1) {
+      return true;
+    }
+    if (ticket.description && ticket.description.toLowerCase().indexOf(lowerQuery) !== -1) {
+      return true;
+    }
+    return (ticket.scenarios || []).some(function (s) { return s.text.toLowerCase().indexOf(lowerQuery) !== -1; });
+  }
+
+  function filterDocsTree(tree, query) {
+    var trimmed = (query || '').trim();
+    if (!trimmed) {
+      return tree;
+    }
+    var lowerQuery = trimmed.toLowerCase();
+    var tickets = (tree.tickets || []).filter(function (t) { return ticketMatchesQuery(t, lowerQuery); });
+    var matchingIds = {};
+    tickets.forEach(function (t) { matchingIds[t.id] = true; });
+    var milestones = (tree.milestones || [])
+      .map(function (m) { return { milestone: m.milestone, tickets: m.tickets.filter(function (t) { return matchingIds[t.id]; }) }; })
+      .filter(function (m) { return m.tickets.length > 0; });
+    var filtered = {};
+    for (var key in tree) {
+      if (Object.prototype.hasOwnProperty.call(tree, key)) {
+        filtered[key] = tree[key];
+      }
+    }
+    filtered.tickets = tickets;
+    filtered.milestones = milestones;
+    return filtered;
+  }
+
+  // The filtered view every list-rendering function below reads from -
+  // vision docs are never filtered (search is over tickets/Gherkin only).
+  function activeDocsTree() {
+    return filterDocsTree(docsTree, docsSearchQuery);
+  }
 
   function findMilestone(name) {
-    return (docsTree.milestones || []).find(function (m) { return m.milestone === name; });
+    return (activeDocsTree().milestones || []).find(function (m) { return m.milestone === name; });
   }
 
   function findTicket(id) {
-    return (docsTree.tickets || []).find(function (t) { return t.id === id; });
+    return (activeDocsTree().tickets || []).find(function (t) { return t.id === id; });
   }
 
   function findVisionDoc(id) {
@@ -520,7 +575,12 @@
       container.appendChild(navButton(doc.title, { level: 'vision', docId: doc.id }));
     });
     container.appendChild(el('h3', {}, [tr('documentationMilestones')]));
-    (docsTree.milestones || []).forEach(function (m) {
+    var tree = activeDocsTree();
+    if (docsSearchQuery.trim() && tree.tickets.length === 0) {
+      container.appendChild(noDataParagraph(tr('docsNoSearchResults')));
+      return;
+    }
+    (tree.milestones || []).forEach(function (m) {
       container.appendChild(navButton(m.milestone + ' (' + m.tickets.length + ')', { level: 'milestone', milestone: m.milestone }));
     });
   }
@@ -867,6 +927,17 @@
       applyFontSize(persisted);
     }
   });
+
+  // BL-254: the search box lives once in static markup (never re-created
+  // by renderDocsExplorer's own container.innerHTML reset), so typing
+  // never loses focus/cursor position across re-renders.
+  var docsSearchInput = document.getElementById('docsSearchInput');
+  if (docsSearchInput) {
+    docsSearchInput.addEventListener('input', function () {
+      docsSearchQuery = docsSearchInput.value;
+      renderDocsExplorer();
+    });
+  }
 
   fetch(DASHBOARD_URL)
     .then(function (res) {

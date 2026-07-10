@@ -8,6 +8,7 @@ const {
   buildDocsTree,
   computeDocsTree,
   translateDocsTree,
+  filterDocsTree,
 } = require('../out/docs/docsTree');
 const { createTranslationSession } = require('../out/i18n/translate');
 const { emptyTranslationCache } = require('../out/i18n/translationCache');
@@ -295,4 +296,128 @@ test('bilingual-05: a failed translation flags the ticket titleFrUntranslated, a
 
   assert.equal(translated.tickets[0].titleFr, 'untranslatable');
   assert.equal(translated.tickets[0].titleFrUntranslated, true);
+});
+
+// ── filterDocsTree (pure, BL-254) ─────────────────────────────────────────
+// PURE client-side case-insensitive substring filter over an already-built
+// tree: matches a ticket's Gherkin scenario text OR its title/description,
+// prunes to matching tickets while keeping the milestone grouping - the
+// DOM search box (pwa/app.js) is the unsuitable-for-testing boundary the
+// ticket itself calls out; only this pure function is driven here and by
+// the acceptance step handlers.
+
+function scenario(text, name) {
+  return { name: name ?? 'a scenario', text };
+}
+
+function docsTreeFixture(items, scenariosByTicketId = new Map()) {
+  return buildDocsTree(emptyVisionDocs(), items, scenariosByTicketId, 'abc', '2026-07-09T00:00:00Z');
+}
+
+test('filter-by-gherkin-01: a query matching a ticket\'s Gherkin scenario text keeps that ticket, hides one that matches nowhere', () => {
+  const tree = docsTreeFixture(
+    [item({ id: 'BL-100', title: 'a', milestone: 'M1' }), item({ id: 'BL-101', title: 'b', milestone: 'M1' })],
+    new Map([
+      ['BL-100', [scenario('Scenario: x\n  Given the fleet console refreshes')]],
+      ['BL-101', [scenario('Scenario: y\n  Given something unrelated')]],
+    ])
+  );
+
+  const filtered = filterDocsTree(tree, 'fleet console');
+
+  assert.deepEqual(filtered.tickets.map((t) => t.id), ['BL-100']);
+});
+
+test('match-title-description-02: a query matching only a ticket\'s title or description keeps that ticket', () => {
+  const tree = docsTreeFixture([
+    item({ id: 'BL-100', title: 'Baton fleet epic', milestone: 'M1' }),
+    item({ id: 'BL-101', title: 'unrelated', description: 'the fleet is a composite of swarms', milestone: 'M1' }),
+    item({ id: 'BL-102', title: 'no match here', milestone: 'M1' }),
+  ]);
+
+  const filtered = filterDocsTree(tree, 'fleet');
+
+  assert.deepEqual(filtered.tickets.map((t) => t.id).sort(), ['BL-100', 'BL-101']);
+});
+
+test('case-insensitive-03: a query differing only in letter case from tree text still matches', () => {
+  const tree = docsTreeFixture(
+    [item({ id: 'BL-100', title: 'a', milestone: 'M1' })],
+    new Map([['BL-100', [scenario('Scenario: x\n  Given the FLEET console refreshes')]]])
+  );
+
+  const filtered = filterDocsTree(tree, 'fleet CONSOLE');
+
+  assert.deepEqual(filtered.tickets.map((t) => t.id), ['BL-100']);
+});
+
+test('spans-implemented-and-not-yet-04: a query matching both a done and an active ticket keeps both, status untouched', () => {
+  const tree = docsTreeFixture([
+    item({ id: 'BL-100', title: 'fleet console', status: 'done', milestone: 'M1' }),
+    item({ id: 'BL-101', title: 'fleet console', status: 'active', milestone: 'M1' }),
+  ]);
+
+  const filtered = filterDocsTree(tree, 'fleet');
+
+  assert.deepEqual(
+    filtered.tickets.map((t) => [t.id, t.status]).sort(),
+    [['BL-100', 'done'], ['BL-101', 'active']]
+  );
+});
+
+test('empty-query-05: an empty query returns the full unfiltered tree unchanged', () => {
+  const tree = docsTreeFixture([item({ id: 'BL-100', milestone: 'M1' }), item({ id: 'BL-101', milestone: 'M1' })]);
+
+  assert.deepEqual(filterDocsTree(tree, ''), tree);
+});
+
+test('empty-query-05: a whitespace-only query is treated the same as empty - the full tree, not zero matches', () => {
+  const tree = docsTreeFixture([item({ id: 'BL-100', milestone: 'M1' })]);
+
+  assert.deepEqual(filterDocsTree(tree, '   '), tree);
+});
+
+test('no-results-06: a query matching no ticket returns an empty tickets list, not a throw', () => {
+  const tree = docsTreeFixture([item({ id: 'BL-100', title: 'a', milestone: 'M1' })]);
+
+  const filtered = filterDocsTree(tree, 'nothing matches this');
+
+  assert.deepEqual(filtered.tickets, []);
+});
+
+test('the milestone hierarchy is kept, but each milestone\'s own ticket summaries are pruned to matches too', () => {
+  const tree = docsTreeFixture([
+    item({ id: 'BL-100', title: 'fleet console', milestone: 'M7' }),
+    item({ id: 'BL-101', title: 'unrelated', milestone: 'M7' }),
+  ]);
+
+  const filtered = filterDocsTree(tree, 'fleet');
+
+  assert.equal(filtered.milestones.length, 1);
+  assert.equal(filtered.milestones[0].milestone, 'M7');
+  assert.deepEqual(filtered.milestones[0].tickets.map((t) => t.id), ['BL-100']);
+});
+
+test('a milestone left with zero matching tickets is dropped from the filtered hierarchy', () => {
+  const tree = docsTreeFixture([
+    item({ id: 'BL-100', title: 'fleet console', milestone: 'M7' }),
+    item({ id: 'BL-101', title: 'no match', milestone: 'M8' }),
+  ]);
+
+  const filtered = filterDocsTree(tree, 'fleet');
+
+  assert.deepEqual(filtered.milestones.map((m) => m.milestone), ['M7']);
+});
+
+test('vision docs and every other tree field pass through untouched by filtering', () => {
+  const tree = {
+    ...docsTreeFixture([item({ id: 'BL-100', title: 'fleet console', milestone: 'M1' })]),
+    vision: [{ id: 'specification', title: 'Specification', kind: 'markdown', content: '# Spec' }],
+  };
+
+  const filtered = filterDocsTree(tree, 'fleet');
+
+  assert.deepEqual(filtered.vision, tree.vision);
+  assert.equal(filtered.schemaVersion, tree.schemaVersion);
+  assert.equal(filtered.sourceSha, tree.sourceSha);
 });

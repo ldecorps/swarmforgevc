@@ -148,6 +148,38 @@ export function buildDocsTree(
   };
 }
 
+// BL-254: pure, client-side full-text search filter over an already-built
+// tree - case-insensitive substring against a ticket's title, description,
+// and every scenario's text, pruning to matching tickets while keeping the
+// milestone hierarchy (a milestone left with zero matches after pruning is
+// dropped, rather than shown as an empty bucket). REUSE: filters the tree
+// the PWA already fetches; adds no new store or endpoint. The DOM search
+// box (pwa/app.js) is the unsuitable-for-testing boundary - only this pure
+// function is unit- and acceptance-tested.
+function ticketMatchesQuery(ticket: TicketNode, lowerQuery: string): boolean {
+  if (ticket.title.toLowerCase().includes(lowerQuery)) {
+    return true;
+  }
+  if (ticket.description?.toLowerCase().includes(lowerQuery)) {
+    return true;
+  }
+  return ticket.scenarios.some((scenario) => scenario.text.toLowerCase().includes(lowerQuery));
+}
+
+export function filterDocsTree(tree: DocsTreeData, query: string): DocsTreeData {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return tree;
+  }
+  const lowerQuery = trimmed.toLowerCase();
+  const tickets = tree.tickets.filter((ticket) => ticketMatchesQuery(ticket, lowerQuery));
+  const matchingIds = new Set(tickets.map((ticket) => ticket.id));
+  const milestones = tree.milestones
+    .map((milestone) => ({ ...milestone, tickets: milestone.tickets.filter((ticket) => matchingIds.has(ticket.id)) }))
+    .filter((milestone) => milestone.tickets.length > 0);
+  return { ...tree, tickets, milestones };
+}
+
 interface VisionDocSpec {
   id: string;
   title: string;
