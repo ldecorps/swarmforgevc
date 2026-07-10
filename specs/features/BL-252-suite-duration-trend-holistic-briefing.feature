@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=a34b698488d72d873e948657ad01e83944fa46ef68136e21ac94763def475095
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-10T16:50:05.637898304Z","feature_name":"the holistic UI and daily briefing surface the unit-test suite-duration trend and flag regressions","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-252-suite-duration-trend-holistic-briefing.feature","background_hash":"36bd2fdd5bc5df33cbf45c739061e1e790ec2744653583cba5026d0f9f12c9af","implementation_hash":"unknown","scenarios":[{"index":0,"name":"each surface shows the suite-duration trend and flags a regression","scenario_hash":"0dd6b7061d7fe6a5517f0f24e37ecf2b7255833f2a371f7afaf553c65698cc67","mutation_count":12,"result":{"Total":12,"Killed":12,"Survived":0,"Errors":0},"tested_at":"2026-07-10T16:50:05.637898304Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the holistic UI and daily briefing surface the unit-test suite-duration trend and flag regressions
 
   # Operator request (2026-07-10, via coordinator): show the unit-test execution
