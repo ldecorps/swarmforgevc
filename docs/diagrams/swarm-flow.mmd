@@ -1,22 +1,27 @@
-%% BL-095: current swarm parcel flow (2026-07-05), matching
+%% BL-247: current swarm parcel flow (2026-07-10), matching
 %% swarmforge/PIPELINE.md and swarmforge/swarmforge.conf's window lines.
 %% cleaner and hardender are batch-mode roles (consume all queued
 %% equal-priority handoffs as one batch); every other pipeline role is
 %% task-mode (one handoff at a time). The coordinator sits outside the
-%% forward chain: it only controls intake/promotion, never commits code.
+%% forward chain: it controls intake/promotion, and after QA approval does
+%% backlog bookkeeping only (move ticket to done/, promote next paused item)
+%% — it runs no git merge or push. QA is the integration point: after
+%% broadcasting merge-up to every worktree role, QA itself lands the
+%% approved commit on main and pushes origin (BL-247).
 flowchart LR
   ROOT["backlog/ root\n(human raw intake)"]
-  COORD(("coordinator\n(master, intake/routing only,\nnever commits code)"))
+  COORD(("coordinator\n(master, intake/routing +\nbacklog bookkeeping only,\nnever commits code,\nno git merge/push)"))
   SPEC["specifier\n(master, task)"]
   PAUSED["backlog/paused/"]
   ACTIVE["backlog/active/"]
+  DONE["backlog/done/"]
 
   CODER["coder\n(.worktrees/coder, task)"]
   CLEANER["cleaner\n(.worktrees/cleaner, BATCH)"]
   ARCHITECT["architect\n(.worktrees/architect, task)"]
   HARDENER["hardender\n(.worktrees/hardender, BATCH)"]
   DOCUMENTER["documenter\n(.worktrees/documenter, task)"]
-  QA["QA\n(.worktrees/QA, task)"]
+  QA["QA\n(.worktrees/QA, task,\nintegration point)"]
 
   MAIN["main branch\n(target repo)"]
 
@@ -25,18 +30,25 @@ flowchart LR
   PAUSED -->|promote (respecting\nactive_backlog_max_depth\nand orthogonality)| COORD
   COORD -->|promotes into| ACTIVE
   COORD -->|routes first parcel| SPEC
-  SPEC -->|git_handoff\npriority 50| CODER
+  SPEC -->|git_handoff\npriority 00| CODER
 
-  CODER -->|git_handoff\npriority 50| CLEANER
+  CODER -->|git_handoff| CLEANER
   CLEANER -->|git_handoff\n(batch of queued items)| ARCHITECT
   ARCHITECT -->|git_handoff| HARDENER
   HARDENER -->|git_handoff\n(batch)| DOCUMENTER
   DOCUMENTER -->|git_handoff| QA
-  QA -->|final gate: pass ->\ngit_handoff to specifier| SPEC
-  SPEC -->|merge QA-approved work| MAIN
 
-  COORD -.->|unblocks stalls,\ndecides PR-ready| SPEC
-  COORD -.->|reads state, promotes/holds| ACTIVE
+  QA -->|merge-up broadcast: each role\nmerges its branch up to\nQA's approved commit| CODER
+  QA -->|merge-up broadcast| CLEANER
+  QA -->|merge-up broadcast| ARCHITECT
+  QA -->|merge-up broadcast| HARDENER
+  QA -->|merge-up broadcast| DOCUMENTER
+  QA -->|lands approved commit,\npushes origin\n(QA integrates)| MAIN
+  QA -->|notifies: approved commit\n+ task id| COORD
+
+  COORD -->|moves ticket| DONE
+  COORD -.->|unblocks stalls| SPEC
+  COORD -.->|rechecks depth cap,\npromotes next paused item| ACTIVE
 
   classDef coordinator fill:#8250df,color:#fff,stroke:#4c2889;
   classDef chain fill:#1f6feb,color:#fff,stroke:#0b3d91;
@@ -46,5 +58,5 @@ flowchart LR
   class COORD coordinator;
   class SPEC,CODER,ARCHITECT,DOCUMENTER,QA chain;
   class CLEANER,HARDENER batch;
-  class ROOT,PAUSED,ACTIVE backlog;
+  class ROOT,PAUSED,ACTIVE,DONE backlog;
   class MAIN target;

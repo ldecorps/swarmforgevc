@@ -7,7 +7,7 @@ the substance of your stage; this file is only the flow between stages.
 ## Notify chain
 
 ```
-specifier ─► coder ─► cleaner ─► architect ─► hardender ─► documenter ─► QA ─► coordinator (integrate)
+specifier ─► coder ─► cleaner ─► architect ─► hardender ─► documenter ─► QA (integrate) ─► coordinator (bookkeep)
 ```
 
 The **coordinator** sits outside the forward chain: it controls intake, routes
