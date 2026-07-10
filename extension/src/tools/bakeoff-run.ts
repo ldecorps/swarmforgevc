@@ -24,7 +24,7 @@ import { labelCostTier } from '../recruiter/costTierLabel';
 import { EscalatedCandidate, RecruiterReport, RoleReport } from '../recruiter/orchestrator';
 import { createFileRosterSource } from '../recruiter/rosterSource';
 import { runRecruiterWithFileAdapters } from '../recruiter/runRecruiterFromFiles';
-import { printJsonToStdout, runCliMain } from './swarm-metrics';
+import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 
 export interface BakeoffRunArgs {
   catalogFile: string;
@@ -101,19 +101,12 @@ export function labelReportCostTiers(report: RecruiterReport, candidates: ModelC
   };
 }
 
-export async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
-  if (!args) {
-    process.stderr.write(USAGE);
-    process.exitCode = 1;
-    return;
-  }
-
+export const main = makeArgsGuardedMain(parseArgs, USAGE, async (args) => {
   const roster = createFileRosterSource(args.catalogFile);
   const candidates = await roster.discover();
   const report = await runRecruiterWithFileAdapters(roster, args);
   printJsonToStdout(labelReportCostTiers(report, candidates));
-}
+});
 
 if (require.main === module) {
   runCliMain(main);
