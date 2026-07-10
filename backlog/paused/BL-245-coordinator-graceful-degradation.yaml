@@ -1,43 +1,96 @@
 id: BL-245
-title: "Baton: graceful degradation when the coordinator dies (workers keep flowing; swarm reports degraded)"
+title: "Baton: graceful STOP when the coordinator is lost (bounded respawn, then quiesce-and-teardown; fleet shows stopped)"
 direction: reliability
 milestone: M7
 priority: 15
 mutation_cost: medium
 depends_on: [BL-243]
-source: "Baton epic BL-242 child."
+source: "Baton epic BL-242 child. Re-specced 2026-07-10: operator inverted it — losing the coordinator STOPS the swarm gracefully instead of running on degraded."
 
 description: |
-  Losing the coordinator must not stop work in flight. Workers keep flowing handoffs
-  over the local bus; only convergence-triggering and the fleet-facing identity go
-  dark until the coordinator respawns.
+  RE-SPEC (operator 2026-07-10 inversion). The prior spec kept workers flowing in a
+  "degraded" mode after coordinator loss. The operator inverts this: losing the
+  coordinator must STOP the swarm gracefully. Losing the coordinator is not a
+  steady-state to run in — it ends the run cleanly.
+
+  Operator decisions (2026-07-10, via specifier questions):
+    1. TRIGGER: bounded respawn first, THEN stop. On coordinator loss, attempt a
+       capped number of respawns with backoff (engineering bounded-retry rule);
+       if a respawn recovers within the cap, resume; if the cap is exhausted, the
+       swarm stops gracefully.
+    2. DRAIN: quiesce, then stop. Freeze intake (promote no new work), let each
+       in-flight parcel finish its CURRENT stage and commit, then flush durable
+       state and tear down handoffd and every role session cleanly — no parcel is
+       cut off mid-stage, no orphaned processes.
+    3. FLEET: terminal "stopped (coordinator lost)" status, no auto-restart. The
+       fleet console surfaces/alerts the stopped swarm; a human decides whether to
+       relaunch. The swarm does not restart itself.
+
+  Relationship to BL-107 (COMPLEMENTS, does not reverse): BL-107 forbids the
+  coordinator from DELIBERATELY exiting and routes sanctioned restarts through the
+  bounce procedure. This ticket governs UNEXPECTED coordinator loss (crash): try
+  bounded recovery, and on exhaustion stop the rest gracefully rather than leave a
+  headless/orphaned swarm.
 
   Wanted behavior (observable):
-    - When the coordinator pane dies, in-flight worker agents keep running and
-      handoffd keeps delivering point-to-point handoffs between them.
-    - While the coordinator is down, status() for the swarm is "degraded" and
-      convergence-triggering is reported unavailable.
-    - On respawn, the coordinator re-reads swarm state from the filesystem event
-      log, status() clears from "degraded", and no in-flight worker state is lost.
+    - When the coordinator pane dies, in-flight worker agents keep running while a
+      bounded respawn is attempted (capped attempts, backoff).
+    - If a respawn succeeds within the cap, the coordinator re-reads swarm state
+      from durable filesystem state, no in-flight worker state is lost, and status
+      returns to normal.
+    - If every respawn attempt fails up to the cap, the swarm stops gracefully
+      instead of continuing in a degraded mode.
+    - A graceful stop freezes intake, lets each in-flight parcel finish its current
+      stage and commit, then tears down handoffd and every role session with no
+      orphaned processes.
+    - After the stop, status() for the swarm is the terminal "stopped (coordinator
+      lost)"; the swarm is not automatically restarted (a human relaunches).
 
   Constraints:
-    - Respawn recovery reads durable filesystem state (.swarmforge/), consistent
-      with today's coordinator startup re-read; do not depend on in-memory state.
-    - Bounded/safe respawn per the engineering bounded-retry rule.
-    - Testable host-side: the degraded-status computation and the respawn re-read
-      are host-side modules; killing/respawning a pane is faked in unit tests.
+    - BOUNDED + SAFE respawn (engineering bounded-retry rule): the respawn loop is
+      capped with backoff, then ESCALATES to the graceful stop — never retries
+      forever. Reuse the project's existing capped-respawn/backoff convention.
+    - QUIESCE, don't cut: reuse the existing bounce DRAIN pattern (bounceDrain) so
+      an in-flight parcel finishes its current stage and commits before teardown;
+      do not kill a parcel mid-stage.
+    - DURABLE STATE: both the respawn re-read and the teardown rely on durable
+      .swarmforge/ state, consistent with today's coordinator startup re-read; do
+      not depend on in-memory state.
+    - NO ORPHANS: teardown kills handoffd and every role session in the right order
+      (matches swarmStopper), leaving no orphaned processes (swarm-teardown
+      discipline).
+    - TESTABLE host-side (engineering test-double rules): the respawn-cap decision,
+      the quiesce/drain sequencing, the teardown ordering, and the terminal-status
+      computation are host-side modules. Killing/respawning a pane and the real
+      tmux teardown are faked in unit tests; never target the test's own PID; drive
+      backoff with an injected/fake clock, never a real timer.
 
-  Scope: the swarm status computation (degraded when coordinator_alive is false),
-  the convergence-unavailable signal, and the coordinator respawn re-read path.
+  Scope: (a) coordinator-loss detection + the bounded-respawn decision (reuse
+  bouncer.ts / remote_bounce.sh; cap + backoff); (b) the quiesce-then-teardown path
+  on respawn exhaustion (reuse bounceDrain.ts to drain in-flight stages, then
+  swarmStopper.ts to tear down handoffd + panes); (c) the terminal "stopped
+  (coordinator lost)" status computation surfaced to the fleet (extends the swarm
+  status model; the fleet CONSOLE that displays it is BL-242/BL-246). Verify the
+  live stop/bounce code path (swarmStopper.ts, bounceDrain.ts, bouncer.ts) actually
+  runs before naming files in the built slice's Scope.
 
 acceptance: specs/features/BL-245-coordinator-graceful-degradation.feature
 
 qa_e2e_procedure: |
-  1. With work in flight, kill the coordinator pane; assert worker agents keep
-     running and handoffd keeps delivering handoffs between them.
-  2. Refresh the console; assert status() is "degraded" and convergence-triggering
-     is reported unavailable.
-  3. Respawn the coordinator; assert it re-reads state from the filesystem log,
-     status() clears from "degraded", and no in-flight worker state is lost.
+  All pane kill/respawn and tmux teardown faked/recorded; backoff on a fake clock.
+  1. With work in flight, kill the coordinator pane and let a respawn succeed within
+     the cap; assert in-flight workers kept running, the coordinator re-read durable
+     state, no worker state was lost, and status returned to normal.
+  2. Kill the coordinator pane and fail every respawn up to the cap; assert the
+     respawn loop is bounded (does not retry forever) and the swarm then begins a
+     graceful stop rather than continuing degraded.
+  3. During the graceful stop, assert no new work is promoted, each in-flight parcel
+     finished its current stage and committed, and handoffd + every role session were
+     torn down with no orphaned processes left behind.
+  4. After the stop, assert status() for the swarm is "stopped (coordinator lost)"
+     and that nothing auto-restarted the swarm.
 
-# HUMAN APPROVAL: new specifier draft feature file, pending human review.
+# HUMAN APPROVAL: re-specced feature file (operator-directed inversion 2026-07-10);
+# the rewritten specs/features/BL-245-coordinator-graceful-degradation.feature is
+# PENDING human review before it is treated as the authoritative acceptance
+# contract. Remains paused (depends_on BL-243); coordinator schedules it.
