@@ -345,3 +345,53 @@ test('suite duration trend is derived from the local records and reports a trend
   assert.equal(result.dailySeries.length, 2);
   assert.equal(result.trend.direction, 'up');
 });
+
+// BL-252: warn REUSES swarmMetrics.ts's own BL-078 computeSuiteDuration
+// unchanged (no second threshold) - these tests only prove the flag
+// reaches SuiteDurationTrendResult correctly, not the threshold math
+// itself (already exhaustively covered by suiteDuration.test.js).
+
+test('no local data reports warn: false, never a crash', () => {
+  const os = require('node:os');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-suite-trend-'));
+  const result = computeSuiteDurationTrend(tmpDir, [], Date.now());
+  assert.equal(result.warn, false);
+});
+
+test('a latest run under the warn floor and under 2x the baseline mean reports warn: false', () => {
+  const os = require('node:os');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-suite-trend-'));
+  fs.mkdirSync(path.join(tmpDir, 'extension'), { recursive: true });
+  const lines = [
+    { finished_at: '2026-01-01T00:00:00Z', test_count: 10, result: 'pass', duration_ms: 1000 },
+    { finished_at: '2026-01-02T00:00:00Z', test_count: 10, result: 'pass', duration_ms: 1200 },
+  ];
+  fs.writeFileSync(
+    path.join(tmpDir, 'extension', '.test-durations.jsonl'),
+    lines.map((l) => JSON.stringify(l)).join('\n') + '\n'
+  );
+  const result = computeSuiteDurationTrend(tmpDir, [], Date.parse('2026-01-03T00:00:00Z'));
+  assert.equal(result.warn, false);
+});
+
+test('a latest run over 2x the baseline mean reports warn: true, sourced from computeSuiteDuration - the SAME reused signal', () => {
+  const os = require('node:os');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-suite-trend-'));
+  fs.mkdirSync(path.join(tmpDir, 'extension'), { recursive: true });
+  const lines = [
+    { finished_at: '2026-01-01T00:00:00Z', test_count: 10, result: 'pass', duration_ms: 1000 },
+    { finished_at: '2026-01-02T00:00:00Z', test_count: 10, result: 'pass', duration_ms: 5000 },
+  ];
+  fs.writeFileSync(
+    path.join(tmpDir, 'extension', '.test-durations.jsonl'),
+    lines.map((l) => JSON.stringify(l)).join('\n') + '\n'
+  );
+  const result = computeSuiteDurationTrend(tmpDir, [], Date.parse('2026-01-03T00:00:00Z'));
+  assert.equal(result.warn, true);
+});
