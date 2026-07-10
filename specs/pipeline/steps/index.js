@@ -13,6 +13,7 @@ const DOMAINS = [
   require('./strykerPwaSandboxSteps'),
   require('./dispatchGapSteps'),
   require('./backlogDepthSteps'),
+  require('./remoteWakeupSteps'),
 ];
 
 function registerSteps(registry) {
