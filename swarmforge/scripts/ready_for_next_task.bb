@@ -20,8 +20,9 @@
 (defn -main []
   (let [new-dir (handoff-lib/my-mailbox-dir :new)
         in-process-dir (handoff-lib/my-mailbox-dir :in_process)
-        completed-dir (handoff-lib/my-mailbox-dir :completed)]
-    (doseq [dir [new-dir in-process-dir completed-dir]]
+        completed-dir (handoff-lib/my-mailbox-dir :completed)
+        abandoned-dir (handoff-lib/my-mailbox-dir :abandoned)]
+    (doseq [dir [new-dir in-process-dir completed-dir abandoned-dir]]
       (fs/create-dirs dir))
     (let [in-process-batches (handoff-lib/batch-dirs in-process-dir)
           in-process-files (handoff-lib/my-handoff-files in-process-dir)]
@@ -37,12 +38,17 @@
         (handoff-lib/print-task (first in-process-files))
         (if (handoff-lib/draining?)
           (println "DRAINING")
-          (let [new-files (handoff-lib/my-handoff-files new-dir)]
-            (if (empty? new-files)
+          (let [new-files (handoff-lib/my-handoff-files new-dir)
+                completed-basenames (map fs/file-name (handoff-lib/handoff-files completed-dir))
+                abandoned-basenames (map fs/file-name (handoff-lib/handoff-files abandoned-dir))
+                {:keys [skipped dequeueable]} (handoff-lib/dedup-new-candidates new-files completed-basenames abandoned-basenames)]
+            (doseq [f skipped]
+              (println "SKIPPED already-processed:" (fs/file-name f)))
+            (if (empty? dequeueable)
               (do
                 (println "NO_TASK")
                 (maybe-clear-at-idle-boundary!))
-              (let [source-file (first new-files)
+              (let [source-file (first dequeueable)
                     target-file (fs/path in-process-dir (fs/file-name source-file))]
                 (when (fs/exists? target-file)
                   (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: target in-process file already exists: " target-file)))
