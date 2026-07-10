@@ -295,7 +295,7 @@ The metrics pane folds and unfolds like the Backlog pane and refreshes on the pa
 A second metrics layer, derived purely from git history and the current `backlog/` folder state, computes delivery-flow trends:
 
 - **Velocity**: closed-ticket count over a trailing window, with a trend vs. the prior window (e.g. "12 closed in trailing 7d (+3 vs prior)")
-- **Burndown**: remaining-ticket count per milestone, reconstructed so the final point always matches the current backlog state
+- **Burndown**: remaining-ticket count per milestone, reconstructed so the final point always matches the current backlog state, alongside each milestone's forecast ETA (reusing the same per-milestone forecast below — no parallel ETA model) and an overall "all remaining work" ETA (the latest/max p50 across every open ticket's own forecast). A milestone with no computable forecast shows "no ETA yet" rather than a fabricated date.
 - **Cycle time**: median and p85 spec-to-close duration over the recent closed set
 - **Forecasts**: p50/p85 completion date per open milestone, projected from trailing throughput and historical cycle-time distribution — dependency-aware, so a ticket's forecast date never precedes its `depends_on` tickets'
 - **Suite duration trend**: the existing per-run suite duration (BL-078) expressed as a trend line; reports "no local data" gracefully rather than erroring
