@@ -20,10 +20,18 @@
   // BL-118: bilingual chrome + content. English is always the first-launch
   // default (bilingual-01) regardless of browser locale - currentLocale
   // only ever changes via the visible toggle, never navigator.language.
-  // Persistence goes through the same Cache Storage instance sw.js already
-  // owns (bilingual-02's "no other browser storage"), not localStorage.
+  // Persistence goes through Cache Storage (bilingual-02's "no other browser
+  // storage"), not localStorage - see PREFERENCES_CACHE_NAME below.
   var currentLocale = 'en';
-  var LOCALE_CACHE_NAME = 'swarmforge-dashboard-v2'; // must match sw.js's CACHE_NAME
+  // BL-249 hardener bounce: PERMANENTLY static, deliberately distinct from
+  // sw.js's own CACHE_NAME (which is content-hash-stamped per deploy - see
+  // pwa/sw.js). sw.js's activate handler explicitly exempts this exact name
+  // from its per-deploy purge (its own PREFERENCES_CACHE_NAME, kept in sync
+  // by hand - sw.js and app.js share no module system). Never rename/stamp
+  // this without also updating sw.js's exemption, or a shell-changing
+  // deploy will silently wipe every returning user's locale and font-size
+  // preference again.
+  var PREFERENCES_CACHE_NAME = 'swarmforge-dashboard-preferences';
   var LOCALE_PREF_KEY = './__locale-preference__';
   var lastBacklogData = null;
 
@@ -87,7 +95,7 @@
       return Promise.resolve(null);
     }
     return caches
-      .open(LOCALE_CACHE_NAME)
+      .open(PREFERENCES_CACHE_NAME)
       .then(function (cache) {
         return cache.match(key);
       })
@@ -109,7 +117,7 @@
       return;
     }
     caches
-      .open(LOCALE_CACHE_NAME)
+      .open(PREFERENCES_CACHE_NAME)
       .then(function (cache) {
         return cache.put(key, new Response(JSON.stringify(value)));
       })

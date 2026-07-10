@@ -17,9 +17,30 @@
 //   actually opened. Registration (feature-detected, permission-gated) is
 //   app.js's job; this worker just handles the event if it ever fires.
 
-const CACHE_NAME = 'swarmforge-dashboard-v2';
+// BL-249: stamped at deploy time (.github/workflows/backlog-dashboard.yml's
+// "Stamp PWA cache name" step, via extension/src/tools/
+// stamp-pwa-cache-name.ts) with a hash of SHELL_ASSETS' own content, so a
+// deploy that changes the shell yields a different CACHE_NAME (the
+// activate handler below already purges the old cache once CACHE_NAME
+// changes) and a byte-identical shell yields the same one - no manual
+// version bump, no forced re-download of an unchanged shell. Left as this
+// literal placeholder in the source tree; only the SERVED sw.js (under
+// _site/) is ever stamped.
+const CACHE_NAME = '__PWA_CACHE_NAME_PLACEHOLDER__';
 const SHELL_ASSETS = ['./', './index.html', './app.js', './locales.js', './manifest.json', './icon.svg'];
 const DATA_URLS = ['./backlog.json', './docs-tree.json', './recert-batch.json'];
+
+// BL-249 hardener bounce: app.js persists the locale (BL-118) and font-size
+// (BL-220) user preferences in a SEPARATE Cache Storage cache under this
+// name - kept permanently static (never stamped, unlike CACHE_NAME above)
+// and explicitly exempted from the purge below. Before this exemption, the
+// activate handler deleted ANY cache key that wasn't the current CACHE_NAME,
+// so once CACHE_NAME started actually changing per deploy (BL-249's own
+// point), the very next shell-changing deploy would have silently wiped
+// every returning user's preferences. Mirrored literally in app.js's own
+// PREFERENCES_CACHE_NAME - keep both in sync by hand, since sw.js and app.js
+// share no module system.
+const PREFERENCES_CACHE_NAME = 'swarmforge-dashboard-preferences';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -34,7 +55,11 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) =>
+        Promise.all(
+          keys.filter((key) => key !== CACHE_NAME && key !== PREFERENCES_CACHE_NAME).map((key) => caches.delete(key))
+        )
+      )
       .then(() => self.clients.claim())
   );
 });

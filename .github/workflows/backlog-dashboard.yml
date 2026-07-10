@@ -125,6 +125,17 @@ jobs:
       - name: Copy PWA static assets
         run: cp -r pwa/. _site/
 
+      # BL-249: derives the served sw.js's CACHE_NAME from a hash of the
+      # shell assets it actually caches (already copied into _site/ above),
+      # so a deploy that changes the shell yields a different CACHE_NAME
+      # (sw.js's own activate handler purges the old cache once it changes)
+      # and a byte-identical shell yields the same one - no hand-edited
+      # version string. The hash is computed entirely by the tool, over
+      # real files in _site/ - this step needs no ${{ }} expression in its
+      # run: body (GitHub Actions safety / engineering rule BL-092).
+      - name: Stamp PWA cache name
+        run: node extension/out/tools/stamp-pwa-cache-name.js _site
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
