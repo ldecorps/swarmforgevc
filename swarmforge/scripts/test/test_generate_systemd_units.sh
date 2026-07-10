@@ -27,6 +27,15 @@ grep -q "^ExecStop=/home/pi/swarmforgevc/swarm-kill$" <<< "$UNIT" \
   || fail "01: expected ExecStop to invoke the real ./swarm-kill teardown, not a bespoke one"
 pass "01: project root, linux user, and pack name are correctly substituted"
 
+# ── 01b (architect violation fix): secrets set for the Option B headless-
+#     auth path (CLAUDE_CODE_OAUTH_TOKEN) must reach the swarm process even
+#     though systemd services start with a clean env, not the launching
+#     user's shell profile - EnvironmentFile= is the fix; '-' tolerates the
+#     file being absent for Option A/interactive-auth operators. ───────────
+grep -q "^EnvironmentFile=-/etc/swarmforge/pi5.env$" <<< "$UNIT" \
+  || fail "01b: expected an optional EnvironmentFile= naming a per-pack file outside the repo clone; got: $UNIT"
+pass "01b: EnvironmentFile= lets operator-set secrets (e.g. CLAUDE_CODE_OAUTH_TOKEN) reach the systemd-launched process"
+
 # ── 02: boots unattended (enabled at multi-user.target, no manual step) ─────
 grep -q "^WantedBy=multi-user.target$" <<< "$UNIT" || fail "02: expected WantedBy=multi-user.target so 'systemctl enable' makes it boot-persistent"
 pass "02: the unit installs against multi-user.target for unattended boot"
