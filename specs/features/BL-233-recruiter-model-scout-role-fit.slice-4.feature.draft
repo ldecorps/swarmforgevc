@@ -1,21 +1,12 @@
 # PARKED DRAFT — NOT an executable acceptance contract (extension is
 # .feature.draft, so the acceptance runner and any *.feature glob skip it).
-# These are BL-233's slice 3-4 scenarios, authored up front but not yet built.
-# When a slice is implemented, MOVE its scenarios into the live acceptance file
-# specs/features/BL-233-recruiter-model-scout-role-fit.feature (and re-lint /
-# IR-DRY there). Slice map: slice 3 = qualify via battery (04); slice 4 =
-# best-value ranking + recommend (05, 06). Slice 2 (02, 03) was promoted into
-# the live file when it was built.
+# These are BL-233's slice 4 scenarios, authored up front but not yet built.
+# When the slice is implemented, MOVE its scenarios into the live acceptance
+# file specs/features/BL-233-recruiter-model-scout-role-fit.feature (and
+# re-lint / IR-DRY there). Slice 4 = best-value ranking + recommend (05, 06).
+# Slices 2 (02, 03) and 3 (04) were promoted into the live file when built.
 # Background (shared, verbatim from the live file):
 #   Given the recruiter runs out-of-band, reusing the swarm-compliance battery and the provider abstraction, without modifying live swarm config
-
-# --- slice 3: qualify via battery ---
-
-# BL-233 qualify-via-battery-04
-Scenario: each acquired candidate is scored by the swarm-compliance battery
-  Given a candidate whose access has been acquired
-  When the recruiter qualifies it
-  Then it runs the swarm-compliance battery and records the candidate's per-role scorecard
 
 # --- slice 4: best-value ranking + recommend ---
 
