@@ -1,7 +1,7 @@
 id: BL-253
 title: "Phone docs drill-down: mark implemented vs not-yet-implemented tickets (not-yet greyed but expandable)"
 direction: tooling
-priority: 15
+priority: 0  # operator directive 2026-07-10: TOP priority, promote immediately
 mutation_cost: low
 source: "operator intake 2026-07-10 (via coordinator, PRIORITIZED): backlog/INTAKE-pwa-implemented-drilldown.md — 'prioritize the phone app drill-down into what has been implemented; show not-yet items greyed out.'"
 
