@@ -117,7 +117,5 @@ qa_e2e_procedure: |
   6. Grep the working tree + `git diff`/`git log -p` to prove no API key text
      appears in the tree or history.
 
-# HUMAN APPROVAL: feature file specs/features/BL-250-model-bakeoff-claude-mistral-gpt.feature
-# is a NEW draft authored by the specifier and is PENDING human review (per the
-# APS human-approval rule). Flagged for operator review before it is treated as
-# the authoritative acceptance contract.
+# HUMAN APPROVAL: APPROVED by operator 2026-07-10. Held in paused pending BL-233
+# completion (depends_on BL-233 slices 3-4); coordinator promotes once BL-233 closes.
