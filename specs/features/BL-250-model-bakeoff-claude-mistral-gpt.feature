@@ -20,18 +20,14 @@ Feature: a curated bake-off runs all available Claude, Mistral, and GPT models t
   # fixed three-provider roster source (agent-capable models + cost + paid-only
   # flag) and the paid-only cost-tier label in the report.
   #
-  # SLICED DELIVERY (see BL-250): this ticket ships in slices, mirroring
-  # BL-233's own scoping rule - the acceptance runner
-  # (specs/pipeline/runtime.js) THROWS on any scenario lacking a step handler,
-  # so this file carries ONLY the scenarios for slices already BUILT. Currently
-  # built: the roster adapter (01) and the cost-tier label (03). Ranking (02),
-  # untested-listed (04), recommend-not-adopt (05), and key-never-committed (06)
-  # are parked in the companion
-  # BL-250-model-bakeoff-claude-mistral-gpt.slices-2-4-5-6.feature.draft and are
-  # promoted into this file when their slice is implemented - each of those
-  # already reuses BL-233's rank.ts/orchestrator.ts/recommend.ts/secretStore.ts
-  # unchanged, so "built" there just means wiring the bake-off's own roster
-  # source through them.
+  # SLICED DELIVERY (see BL-250): this ticket shipped in slices, mirroring
+  # BL-233's own scoping rule. All six scenarios are now built: the roster
+  # adapter (01), cost-tier label (03), and the remaining four (ranking-02,
+  # untested-listed-04, recommend-not-adopt-05, key-never-committed-06),
+  # each reusing BL-233's rank.ts/orchestrator.ts/recommend.ts/acquire.ts/
+  # secretStore.ts unchanged - "built" there meant wiring the bake-off's
+  # own roster source through them. Nothing remains in a parked
+  # .feature.draft companion.
 
   Background:
     Given the bake-off runs out-of-band over a fixed Claude, Mistral, and GPT candidate set, reusing the compliance battery, the provider abstraction, and the recruiter ranking, without modifying live swarm config
@@ -54,3 +50,32 @@ Feature: a curated bake-off runs all available Claude, Mistral, and GPT models t
       | tier           |
       | paid-only      |
       | free/eval-tier |
+
+  # BL-250 best-value-leaderboard-02
+  Scenario: each role gets a best-value leaderboard over compliant candidates across all three providers
+    Given several candidates across Claude, Mistral, and GPT scored by the battery for a role
+    When the bake-off ranks them for that role
+    Then only battery-compliant candidates are ranked
+    And they are ordered by capability weighted against plan cost, cheapest breaking ties
+    And the current model for that role appears as the reference baseline
+    And a best-value model is recommended for that role
+
+  # BL-250 inaccessible-listed-04
+  Scenario: a candidate that could not be accessed is listed as untested, not dropped
+    Given a rostered candidate the bake-off could not access
+    When the bake-off emits its report
+    Then that candidate is listed as untested with the reason
+
+  # BL-250 recommend-not-adopt-05
+  Scenario: the bake-off recommends a config change but never applies it
+    Given a best-value recommendation for a role
+    When the bake-off emits its report
+    Then the report includes a suggested swarmforge.conf --model change for that role
+    And the bake-off does not modify swarmforge.conf or bounce the swarm
+
+  # BL-250 key-never-committed-06
+  Scenario: any provider key used stays in the host secret store and never in the tree
+    Given the bake-off acquires or uses a provider API key
+    When it stores the key
+    Then the key is stored in the host secret store only
+    And the key is never written to the working tree or any commit
