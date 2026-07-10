@@ -406,12 +406,12 @@ test('readBacklog handles read errors gracefully', () => {
   const tmp = mkTmp();
   const activeDir = path.join(tmp, 'backlog', 'active');
   mkdirp(activeDir);
-  const yamlFile = path.join(activeDir, 'BL-007.yaml');
-  fs.writeFileSync(yamlFile, 'id: BL-007\ntitle: Backlog panel\nstatus: active\n');
-  fs.chmodSync(yamlFile, 0o000);
+  // A directory where a .yaml file is expected forces a deterministic read
+  // failure (EISDIR) regardless of user/filesystem - unlike chmod 0000,
+  // which root and WSL/mounted filesystems can silently ignore (BL-219).
+  fs.mkdirSync(path.join(activeDir, 'BL-007.yaml'));
   const items = readBacklog(tmp);
   assert.equal(items.length, 0);
-  fs.chmodSync(yamlFile, 0o644);
 });
 
 test('readBacklog overrides done folder items to status done regardless of YAML', () => {
