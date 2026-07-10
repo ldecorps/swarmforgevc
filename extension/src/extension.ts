@@ -1310,15 +1310,25 @@ export function activate(context: vscode.ExtensionContext): void {
       }
 
       // The token lives only in this extension host process and is shown
-      // once to the user; it is never written into the target repo.
+      // once to the user; it is never written into the target repo. This
+      // bootstrap call still passes a plain string (backward-compatible
+      // with startBridge's pre-BL-241 signature - see
+      // bridgeServer.ts's normalizeToRegistry) rather than building a
+      // device out of the box; per-device registration/rotation/
+      // revocation is a host-side module surface (bridgeServer.ts's
+      // BridgeHandle methods) for now, not yet exposed as its own command.
       const token = generateBridgeToken();
       currentBridge = await startBridge(targetPath, runLogPath, token);
       // BL-094: the holistic dev-state UI lives at the bridge root; a plain
       // browser navigation can't set an Authorization header, so the token
       // is offered as a query param here for convenience (bridgeAuth.ts
-      // restricts that fallback to the root route only).
+      // restricts that fallback to the root route only). BL-241: that same
+      // token also still works as a Bearer header for every read route,
+      // but a control action (e.g. answering a gate) additionally needs it
+      // repeated as an X-Control-Token header - the step-up this bootstrap
+      // token satisfies by presenting itself twice.
       vscode.window.showInformationMessage(
-        `SwarmForge bridge listening — open http://127.0.0.1:${currentBridge.port}/?token=${token} for the dev-state UI, or use token: ${token} as a Bearer header.`
+        `SwarmForge bridge listening — open http://127.0.0.1:${currentBridge.port}/?token=${token} for the dev-state UI, or use token: ${token} as a Bearer header (also as X-Control-Token for control actions like answering a gate).`
       );
     }),
 

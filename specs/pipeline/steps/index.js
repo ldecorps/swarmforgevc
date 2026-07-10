@@ -38,6 +38,7 @@ const DOMAINS = [
   require('./effortDialSteps'),
   require('./accessibilitySteps'),
   require('./gateAnswerSteps'),
+  require('./deviceRegistrySteps'),
 ];
 
 function registerSteps(registry) {

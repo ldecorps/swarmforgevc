@@ -332,7 +332,7 @@ test('the events stream sends an SSE event when the on-disk state changes', asyn
   });
 });
 
-// --- BL-240: POST /gate-answer, the bridge's one write route ---
+// --- BL-240/BL-241: POST /gate-answer, the bridge's one write route ---
 
 function postGateAnswer(port, headers, body) {
   return fetch(`http://127.0.0.1:${port}/gate-answer`, {
@@ -342,6 +342,15 @@ function postGateAnswer(port, headers, body) {
   });
 }
 
+// BL-241: control actions require the step-up header in addition to the
+// normal bearer - a legacy string-token bootstrap (see normalizeToRegistry
+// in bridgeServer.ts) uses the SAME value for both, so these two headers
+// together are "full control access" for a bridge started the plain-string
+// way, same as bare-bearer used to be pre-BL-241.
+function controlAuthHeaders(token = TOKEN) {
+  return { authorization: `Bearer ${token}`, 'x-control-token': token };
+}
+
 test('answer-unblocks-01: an authenticated client answers a role\'s captured gate via the same send-keys path as a local operator', async () => {
   const target = mkTmp();
   writeSessionsTsv(target, [{ role: 'coder' }]);
@@ -349,7 +358,7 @@ test('answer-unblocks-01: an authenticated client answers a role\'s captured gat
   const fake = installFakeTmux(gatedTmuxRules('Proceed with the migration? (y/n)'));
   try {
     await withBridge(target, {}, async (handle) => {
-      const res = await postGateAnswer(handle.port, { authorization: `Bearer ${TOKEN}` }, { role: 'coder', answer: 'y' });
+      const res = await postGateAnswer(handle.port, controlAuthHeaders(), { role: 'coder', answer: 'y' });
       assert.equal(res.status, 200);
       const body = await res.json();
       assert.equal(body.success, true);
@@ -362,14 +371,14 @@ test('answer-unblocks-01: an authenticated client answers a role\'s captured gat
   }
 });
 
-test('scope-gates-only-02: refuses an authenticated attempt against a role with no captured gate, sending no keys', async () => {
+test('scope-gates-only-02: refuses a control-authenticated attempt against a role with no captured gate, sending no keys', async () => {
   const target = mkTmp();
   writeSessionsTsv(target, [{ role: 'coder' }]);
   writeTmuxSocket(target, '/tmp/fake-bridge.sock');
   const fake = installFakeTmux(gatedTmuxRules('Compiling... done. [auto] idle'));
   try {
     await withBridge(target, {}, async (handle) => {
-      const res = await postGateAnswer(handle.port, { authorization: `Bearer ${TOKEN}` }, { role: 'coder', answer: 'y' });
+      const res = await postGateAnswer(handle.port, controlAuthHeaders(), { role: 'coder', answer: 'y' });
       assert.equal(res.status, 403);
       const body = await res.json();
       assert.equal(body.success, false);
@@ -387,13 +396,117 @@ test('scope-gates-only-02: a differently-shaped body (not {role, answer}) is ref
   const fake = installFakeTmux(gatedTmuxRules('Proceed? (y/n)'));
   try {
     await withBridge(target, {}, async (handle) => {
-      const res = await postGateAnswer(handle.port, { authorization: `Bearer ${TOKEN}` }, { action: 'shell', command: 'rm -rf /' });
+      const res = await postGateAnswer(handle.port, controlAuthHeaders(), { action: 'shell', command: 'rm -rf /' });
       assert.equal(res.status, 400);
       assert.deepEqual(fake.calls(), [], 'a malformed/non-gate-answer body must never reach tmux');
     });
   } finally {
     fake.restore();
   }
+});
+
+// --- BL-241: read-vs-control scope and the step-up requirement itself ---
+
+test('BL-241 read-only-cannot-control-03: a bearer-only request (no step-up header) is refused, even though it can read', async () => {
+  const target = mkTmp();
+  writeSessionsTsv(target, [{ role: 'coder' }]);
+  writeTmuxSocket(target, '/tmp/fake-bridge.sock');
+  const fake = installFakeTmux(gatedTmuxRules('Proceed? (y/n)'));
+  try {
+    await withBridge(target, {}, async (handle) => {
+      // The same bearer that already grants read access (proven below)
+      // is NOT enough on its own for a control action.
+      const readRes = await fetch(`http://127.0.0.1:${handle.port}/pipeline`, { headers: { authorization: `Bearer ${TOKEN}` } });
+      assert.equal(readRes.status, 200, 'sanity: the bearer alone must still grant read access');
+
+      const controlRes = await postGateAnswer(handle.port, { authorization: `Bearer ${TOKEN}` }, { role: 'coder', answer: 'y' });
+      assert.equal(controlRes.status, 403);
+      assert.deepEqual(fake.calls().filter((a) => a.includes('send-keys')), [], 'no keys sent without the step-up header');
+    });
+  } finally {
+    fake.restore();
+  }
+});
+
+test('BL-241 read-only-cannot-control-03: a read-scoped device can never answer a gate, even presenting its own token as the step-up header', async () => {
+  const target = mkTmp();
+  writeSessionsTsv(target, [{ role: 'coder' }]);
+  writeTmuxSocket(target, '/tmp/fake-bridge.sock');
+  const fake = installFakeTmux(gatedTmuxRules('Proceed? (y/n)'));
+  try {
+    await withBridge(target, {}, async (handle) => {
+      const viewer = handle.registerDevice('phone', 'read');
+      // A read-scoped device has no controlToken at all - presenting its
+      // own base token as BOTH headers must still fail.
+      const res = await postGateAnswer(
+        handle.port,
+        { authorization: `Bearer ${viewer.token}`, 'x-control-token': viewer.token },
+        { role: 'coder', answer: 'y' }
+      );
+      assert.equal(res.status, 403);
+      assert.deepEqual(fake.calls().filter((a) => a.includes('send-keys')), []);
+    });
+  } finally {
+    fake.restore();
+  }
+});
+
+test('BL-241 control-requires-step-up-04: a control-scoped device\'s own two credentials answer the gate', async () => {
+  const target = mkTmp();
+  writeSessionsTsv(target, [{ role: 'coder' }]);
+  writeTmuxSocket(target, '/tmp/fake-bridge.sock');
+  const fake = installFakeTmux(gatedTmuxRules('Proceed? (y/n)'));
+  try {
+    await withBridge(target, {}, async (handle) => {
+      const controller = handle.registerDevice('laptop', 'control');
+      const res = await postGateAnswer(
+        handle.port,
+        { authorization: `Bearer ${controller.token}`, 'x-control-token': controller.controlToken },
+        { role: 'coder', answer: 'y' }
+      );
+      assert.equal(res.status, 200);
+      assert.ok(fake.calls().some((a) => a.includes('send-keys')));
+    });
+  } finally {
+    fake.restore();
+  }
+});
+
+test('BL-241 token-rotation-01: rotating a device\'s token invalidates the old one and the new one works, for reads', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const before = await fetch(`http://127.0.0.1:${handle.port}/pipeline`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    assert.equal(before.status, 200);
+
+    const rotated = handle.rotateToken('bootstrap');
+    assert.ok(rotated, 'expected the bootstrap device to exist and rotate');
+    assert.notEqual(rotated.token, TOKEN);
+
+    const withOldToken = await fetch(`http://127.0.0.1:${handle.port}/pipeline`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    assert.equal(withOldToken.status, 401, 'the old token must no longer authenticate');
+
+    const withNewToken = await fetch(`http://127.0.0.1:${handle.port}/pipeline`, { headers: { authorization: `Bearer ${rotated.token}` } });
+    assert.equal(withNewToken.status, 200, 'the new token must authenticate');
+  });
+});
+
+test('BL-241 device-revocation-02: revoking one device does not affect another', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const alice = handle.registerDevice('alice-phone', 'read');
+    const bob = handle.registerDevice('bob-phone', 'read');
+
+    const aliceBefore = await fetch(`http://127.0.0.1:${handle.port}/pipeline`, { headers: { authorization: `Bearer ${alice.token}` } });
+    assert.equal(aliceBefore.status, 200);
+
+    handle.revokeDevice(alice.id);
+
+    const aliceAfter = await fetch(`http://127.0.0.1:${handle.port}/pipeline`, { headers: { authorization: `Bearer ${alice.token}` } });
+    assert.equal(aliceAfter.status, 401, 'the revoked device must no longer connect');
+
+    const bobAfter = await fetch(`http://127.0.0.1:${handle.port}/pipeline`, { headers: { authorization: `Bearer ${bob.token}` } });
+    assert.equal(bobAfter.status, 200, 'a different, non-revoked device must be unaffected');
+  });
 });
 
 test('unauthenticated-refused-03: a request with no auth is refused before it ever reaches tmux', async () => {
@@ -440,7 +553,7 @@ test('answer-targets-specific-gate-04: answering one of two gated roles leaves t
   ]);
   try {
     await withBridge(target, {}, async (handle) => {
-      const res = await postGateAnswer(handle.port, { authorization: `Bearer ${TOKEN}` }, { role: 'coder', answer: 'y' });
+      const res = await postGateAnswer(handle.port, controlAuthHeaders(), { role: 'coder', answer: 'y' });
       assert.equal(res.status, 200);
 
       const sendCalls = fake.calls().filter((args) => args.includes('send-keys'));
@@ -486,7 +599,7 @@ test('a request body over the size cap is rejected without ever parsing it', asy
       const oversized = { role: 'coder', answer: 'y'.repeat(20 * 1024) };
       const res = await fetch(`http://127.0.0.1:${handle.port}/gate-answer`, {
         method: 'POST',
-        headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+        headers: { ...controlAuthHeaders(), 'content-type': 'application/json' },
         body: JSON.stringify(oversized),
       }).catch(() => null);
       // A destroyed connection may surface as a fetch rejection (network
