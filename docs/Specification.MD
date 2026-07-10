@@ -723,6 +723,14 @@ Each slice above landed as an individually-tested, individually-correct function
 
 `node out/tools/recruiter-run.js <candidates-file> <signup-keys-file> <role-trials-file> <secrets-file> <current-models-file>` (source: `extension/src/tools/recruiter-run.ts`) is the recruiter's actual end-to-end entry point: it wires the orchestrator to the real file-backed `DiscoverySource`, `SignupSource`, `SecretStore`, `RoleTrialRunner`, and `createComplianceBatteryGate`, then prints the combined `RecruiterReport` (each role's leaderboard + suggested config line, plus the list of escalated candidates) as JSON to stdout — a thin presenter over `orchestrator.ts`, same posture as `recruiter-discover.ts`. A human still applies any suggested `swarmforge.conf --model` change; the recruiter never mutates `swarmforge.conf` or bounces the swarm itself.
 
+#### Model bake-off (BL-250, companion to the recruiter above) — slice 1: curated roster + cost-tier label
+
+A companion to the recruiter, not a fork of it: instead of an operator-maintained "here's what I found" candidates file, the bake-off enumerates the WHOLE agent-capable model roster across a fixed three-provider set (Anthropic/Claude, Mistral, OpenAI/GPT), so every accessible chat-capable model gets tested, not a hand-picked subset. It reuses the recruiter's acquire/secret-store, battery-orchestration, best-value ranker, and report writer unchanged — this ticket adds only the roster source and a cost-tier label. Only **slice 1 (roster + cost-tier label)** is landed so far.
+
+`createFileRosterSource` (`extension/src/recruiter/rosterSource.ts`) reads an operator-maintained JSON catalog file — same "reviewable, versioned artifact" posture as `discoverySource.ts` rather than calling each provider's live models API directly — and returns a `DiscoverySource`-compatible candidate list, excluding any non-chat endpoint (embeddings, image, audio, moderation), which cannot act as a swarm agent regardless of what the catalog lists. `labelCostTier` (`extension/src/recruiter/costTierLabel.ts`) is a pure, additive label over a candidate's existing `planCost` — `'paid-only'` or `'free/eval-tier'` — for the report; it never touches `rank.ts` or `recommend.ts`, which stay unchanged from BL-233 per this ticket's reuse-not-fork scope.
+
+Planned remaining slices (not yet built): qualifying rostered candidates through the battery and ranking them per role across all three providers, and wiring the roster source into the recruiter's end-to-end CLI so a bake-off run produces the full cost-tier-labeled leaderboard.
+
 ---
 
 ## Pack Suggestion Logic
