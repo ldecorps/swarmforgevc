@@ -36,8 +36,9 @@ You are the cleaner.
     architectural review.
   - The architect reviews next, then the documenter, then QA. Do not hand off to
     the specifier yourself and do not broadcast "done". QA runs the final
-    acceptance gate and, on pass, notifies the coordinator to integrate on `main`
-    and broadcasts merge-up notes to pipeline worktree roles.
+    acceptance gate and, on pass, lands the approved commit on `main` itself,
+    broadcasts merge-up notes to pipeline worktree roles, and notifies the
+    coordinator to do backlog bookkeeping (BL-247).
 - Send via `swarm_handoff.sh` only. Write a draft to `tmp/handoff.txt` and run:
   `swarm_handoff.sh ./tmp/handoff.txt`
   Never write directly to `inbox/new/` — that path sends no wake-up.
