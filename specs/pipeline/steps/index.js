@@ -23,6 +23,7 @@ const DOMAINS = [
   require('./gherkinMutationSteps'),
   require('./swarmMutationCostPrepassSteps'),
   require('./providerObservabilityParitySteps'),
+  require('./pwaLabelCatalogSteps'),
 ];
 
 function registerSteps(registry) {
