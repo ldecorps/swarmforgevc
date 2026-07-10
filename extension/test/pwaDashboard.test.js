@@ -98,8 +98,10 @@ test('trend arrows match each section\'s own direction (up/down/flat) - the fixt
 
   // velocity.trend.direction: 'up'
   assert.match(document.getElementById('velocity').textContent, /5 closed ▲/);
-  // burndown[0].trend.direction: 'down'
-  assert.match(document.getElementById('burndown').textContent, /2 remaining ▼/);
+  // burndown[0].trend.direction: 'down'. BL-228: the ETA suffix now sits
+  // between "remaining" and the trend arrow (this fixture's forecasts are
+  // empty, so it's "no ETA yet").
+  assert.match(document.getElementById('burndown').textContent, /2 remaining — no ETA yet ▼/);
   // cycleTime.trend.direction: 'flat'
   assert.match(document.getElementById('cycleTime').textContent, /ticket\(s\) ▬/);
 });
@@ -132,6 +134,52 @@ test('renders a "no milestones yet" placeholder for an empty burndown array', as
   const dom = renderDashboard(data);
   await flush();
   assert.match(dom.window.document.getElementById('burndown').textContent, /No milestones yet/);
+});
+
+// --- BL-228: burndown shows each milestone's forecast ETA + an overall ETA ---
+// Reuses the SAME forecasts data already present in backlog.json (no new
+// computation) - deliveryMetrics.computeForecasts is unchanged.
+
+test('milestone-eta-01: a burndown milestone with a forecast p50 shows its ETA alongside its remaining count', async () => {
+  const data = fakeDashboard();
+  data.metrics.forecasts = {
+    tickets: [{ ticketId: 'BL-1', p50Iso: '2026-08-01T00:00:00Z', p85Iso: '2026-08-10T00:00:00Z' }],
+    milestones: [{ milestone: 'M4', p50Iso: '2026-08-01T00:00:00Z', p85Iso: '2026-08-10T00:00:00Z' }],
+    throughputPerDay: 0.5,
+  };
+  const dom = renderDashboard(data);
+  await flush();
+  assert.match(dom.window.document.getElementById('burndown').textContent, /M4: 2 remaining — ETA 2026-08-01 \(p85 2026-08-10\)/);
+});
+
+test('backlog-eta-02: an overall "all remaining work" ETA (the latest p50 across every open ticket) is shown', async () => {
+  const data = fakeDashboard();
+  data.metrics.forecasts = {
+    tickets: [
+      { ticketId: 'BL-1', p50Iso: '2026-08-01T00:00:00Z', p85Iso: null },
+      { ticketId: 'BL-2', p50Iso: '2026-09-15T00:00:00Z', p85Iso: null },
+    ],
+    milestones: [{ milestone: 'M4', p50Iso: '2026-08-01T00:00:00Z', p85Iso: null }],
+    throughputPerDay: 0.5,
+  };
+  const dom = renderDashboard(data);
+  await flush();
+  assert.match(dom.window.document.getElementById('burndown').textContent, /^Overall ETA: 2026-09-15/);
+});
+
+test('no-eta-03: a milestone whose forecast p50 is null shows "no ETA yet", never a fabricated date', async () => {
+  const data = fakeDashboard();
+  data.metrics.forecasts = {
+    tickets: [],
+    milestones: [{ milestone: 'M4', p50Iso: null, p85Iso: null }],
+    throughputPerDay: 0,
+  };
+  const dom = renderDashboard(data);
+  await flush();
+  const text = dom.window.document.getElementById('burndown').textContent;
+  assert.match(text, /^no ETA yet/);
+  assert.match(text, /M4: 2 remaining — no ETA yet/);
+  assert.doesNotMatch(text, /Invalid Date|NaN/);
 });
 
 test('does not attempt service worker registration in an environment without the API (dashboard-07), and renders anyway', async () => {
