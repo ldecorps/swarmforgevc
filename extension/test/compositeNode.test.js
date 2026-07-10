@@ -4,6 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { createSwarmNode } = require('../out/swarm/compositeNode');
 const { mailboxDir } = require('../out/swarm/swarmState');
+const { coordinatorLossStatePath } = require('../out/swarm/coordinatorLossRecovery');
 
 // BL-244: a swarm is a composite node, rolling up its pack agents. Reads
 // REAL on-disk state (.swarmforge/handoffs/, backlog/active/) via
@@ -223,4 +224,41 @@ test('an active agent child reports its own active status, distinct from an idle
   const byName = Object.fromEntries(swarm.children().map((c) => [c.identity().name, c]));
   assert.equal(byName.coder.status(), 'active');
   assert.equal(byName.specifier.status(), 'idle');
+});
+
+// ── BL-245: terminal "stopped (coordinator lost)" status ─────────────────
+
+test('a durable coordinator-loss "stopped" sentinel overrides the rollup entirely, even with active work', () => {
+  const fixture = mkFixture();
+  markBacklogActive(fixture.targetPath, true);
+  dropHandoff(fixture.roles.coder, 'in_process', '00_task.handoff', 'type: git_handoff\n');
+  fs.mkdirSync(path.dirname(coordinatorLossStatePath(fixture.targetPath)), { recursive: true });
+  fs.writeFileSync(
+    coordinatorLossStatePath(fixture.targetPath),
+    JSON.stringify({ phase: 'stopped', startedAt: '2026-07-10T00:00:00.000Z' })
+  );
+  const swarm = createSwarmNode(baseDeps(fixture));
+
+  assert.equal(swarm.status(), 'stopped (coordinator lost)');
+});
+
+test('a "quiescing" sentinel (mid-drain, not yet fully stopped) does not report the terminal status', () => {
+  const fixture = mkFixture();
+  markBacklogActive(fixture.targetPath, true);
+  fs.mkdirSync(path.dirname(coordinatorLossStatePath(fixture.targetPath)), { recursive: true });
+  fs.writeFileSync(
+    coordinatorLossStatePath(fixture.targetPath),
+    JSON.stringify({ phase: 'quiescing', startedAt: '2026-07-10T00:00:00.000Z' })
+  );
+  const swarm = createSwarmNode(baseDeps(fixture));
+
+  assert.notEqual(swarm.status(), 'stopped (coordinator lost)');
+});
+
+test('no coordinator-loss sentinel present: status rolls up normally, unaffected', () => {
+  const fixture = mkFixture();
+  markBacklogActive(fixture.targetPath, true);
+  const swarm = createSwarmNode(baseDeps(fixture));
+
+  assert.equal(swarm.status(), 'idle');
 });
