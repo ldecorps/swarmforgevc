@@ -27,6 +27,17 @@
   var LOCALE_PREF_KEY = './__locale-preference__';
   var lastBacklogData = null;
 
+  // BL-220: every view sizes its text in rem, relative to the root (html)
+  // font-size, so that root is the single knob that scales the whole app.
+  // Persistence reuses the SAME Cache Storage instance as the locale
+  // preference above (a new key), never localStorage/sessionStorage.
+  var DEFAULT_FONT_SIZE_PX = 28;
+  var FONT_SIZE_STEP_PX = 2;
+  var MIN_FONT_SIZE_PX = 16;
+  var MAX_FONT_SIZE_PX = 40;
+  var FONT_SIZE_PREF_KEY = './__font-size-preference__';
+  var currentFontSizePx = DEFAULT_FONT_SIZE_PX;
+
   function tr(key) {
     var dict = (window.LOCALES && window.LOCALES[currentLocale]) || {};
     var fallback = (window.LOCALES && window.LOCALES.en) || {};
@@ -49,6 +60,66 @@
     for (var i = 0; i < nodes.length; i++) {
       nodes[i].textContent = tr(nodes[i].getAttribute('data-i18n'));
     }
+    // BL-220: accessible labels (aria-label) for chrome controls whose
+    // visible text stays universal (e.g. "A-"/"A+"), mirroring the
+    // data-i18n pass above but targeting an attribute instead of textContent.
+    var ariaNodes = document.querySelectorAll('[data-i18n-aria]');
+    for (var j = 0; j < ariaNodes.length; j++) {
+      ariaNodes[j].setAttribute('aria-label', tr(ariaNodes[j].getAttribute('data-i18n-aria')));
+    }
+  }
+
+  function clampFontSizePx(px) {
+    return Math.min(MAX_FONT_SIZE_PX, Math.max(MIN_FONT_SIZE_PX, px));
+  }
+
+  function applyFontSize(px) {
+    document.documentElement.style.fontSize = px + 'px';
+  }
+
+  function loadPersistedFontSize() {
+    if (!('caches' in window)) {
+      return Promise.resolve(null);
+    }
+    return caches
+      .open(LOCALE_CACHE_NAME)
+      .then(function (cache) {
+        return cache.match(FONT_SIZE_PREF_KEY);
+      })
+      .then(function (res) {
+        return res ? res.json() : null;
+      })
+      .then(function (data) {
+        var px = data && Number(data.fontSizePx);
+        return Number.isFinite(px) && px >= MIN_FONT_SIZE_PX && px <= MAX_FONT_SIZE_PX ? px : null;
+      })
+      .catch(function () {
+        return null;
+      });
+  }
+
+  function persistFontSize(px) {
+    if (!('caches' in window)) {
+      return;
+    }
+    caches
+      .open(LOCALE_CACHE_NAME)
+      .then(function (cache) {
+        return cache.put(FONT_SIZE_PREF_KEY, new Response(JSON.stringify({ fontSizePx: px })));
+      })
+      .catch(function () {
+        // Cache Storage unavailable/quota'd - the control still works for
+        // this session, it just won't survive a reopen (best-effort,
+        // same as persistLocale above).
+      });
+  }
+
+  // Sets, applies (instantly, no reload), and persists a new font size in
+  // one step - the sole entry point A-/A+ use, so clamping always applies.
+  function setFontSize(px) {
+    currentFontSizePx = clampFontSizePx(px);
+    applyFontSize(currentFontSizePx);
+    persistFontSize(currentFontSizePx);
   }
 
   function loadPersistedLocale() {
@@ -685,6 +756,35 @@
     if (persisted) {
       currentLocale = persisted;
       rerenderForLocale();
+    }
+  });
+
+  // BL-220 default-large-01: applied immediately, before the persisted
+  // font-size lookup below resolves, so the very first paint is always the
+  // large default - a fresh device/first launch simply stays here.
+  applyFontSize(currentFontSizePx);
+
+  var fontDecreaseButton = document.getElementById('fontDecrease');
+  if (fontDecreaseButton) {
+    fontDecreaseButton.addEventListener('click', function () {
+      setFontSize(currentFontSizePx - FONT_SIZE_STEP_PX);
+    });
+  }
+  var fontIncreaseButton = document.getElementById('fontIncrease');
+  if (fontIncreaseButton) {
+    fontIncreaseButton.addEventListener('click', function () {
+      setFontSize(currentFontSizePx + FONT_SIZE_STEP_PX);
+    });
+  }
+
+  // BL-220 persist-04: a previously-chosen size (persisted via the same
+  // Cache Storage instance as the locale preference) is restored on
+  // reopen. A fresh device/first launch resolves to null here and simply
+  // stays on the default applied above.
+  loadPersistedFontSize().then(function (persisted) {
+    if (persisted !== null) {
+      currentFontSizePx = persisted;
+      applyFontSize(persisted);
     }
   });
 
