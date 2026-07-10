@@ -114,7 +114,11 @@ function agentStatus(deps: SwarmNodeDeps, role: RoleEntry): NodeStatus {
 
 const STATUS_PRIORITY: NodeStatus[] = ['degraded', 'blocked', 'converging', 'active', 'queued'];
 
-function rollupStatus(agentStatuses: NodeStatus[]): NodeStatus {
+// Exported for BL-246's fleetNode.ts: rolling up a fleet's swarms uses the
+// SAME "worst status wins, all-done is a special case, empty/no-signal is
+// idle" rule this file already established for rolling up a swarm's
+// agents - reused directly rather than re-implemented at the fleet level.
+export function rollupStatus(agentStatuses: NodeStatus[]): NodeStatus {
   if (agentStatuses.length > 0 && agentStatuses.every((status) => status === 'done')) {
     return 'done';
   }

@@ -51,6 +51,8 @@ const DOMAINS = [
   require('./bakeoffRosterSteps'),
   require('./bakeoffPipelineSteps'),
   require('./coordinatorLossSteps'),
+  require('./fleetConsoleSteps'),
+  require('./docsSearchFilterSteps'),
 ];
 
 function registerSteps(registry) {
