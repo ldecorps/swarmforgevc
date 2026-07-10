@@ -54,6 +54,27 @@ test('getWorkTreeHtml inline script listens for update messages', () => {
   assert(html.includes("getElementById('content').innerHTML"));
 });
 
+// --- getWorkTreeHtml: BL-238 accessibility ---
+
+test('getWorkTreeHtml active rows are keyboard-focusable, labeled, and have a button role', () => {
+  const html = getWorkTreeHtml('n');
+  assert(html.includes('tabindex="0"'), 'active rows must be focusable');
+  assert(html.includes('role="button"'), 'active rows must expose a button role');
+  assert(html.includes('aria-label="Highlight '), 'active rows must carry an accessible name');
+});
+
+test('getWorkTreeHtml wires an onkeydown handler that activates the row like a click', () => {
+  const html = getWorkTreeHtml('n');
+  assert(html.includes('onkeydown="onRowKey(event'), 'active rows must be keyboard-operable, not mouse-only');
+  assert(html.includes('function onRowKey(event, role)'));
+  assert(html.includes("event.key === 'Enter' || event.key === ' '"));
+});
+
+test('getWorkTreeHtml gives active rows a visible focus indicator', () => {
+  const html = getWorkTreeHtml('n');
+  assert(html.includes('tr.active:focus'), 'active rows must define a focus style, not rely on UA default alone');
+});
+
 // --- getWebviewHtml: external script (VS Code 1.126 blocks inline scripts) ---
 
 test('getWebviewHtml loads script via external src, not inline nonce', () => {
@@ -92,6 +113,28 @@ test('getWebviewHtml contains backlog section element', () => {
 test('getWebviewHtml backlog section is hidden by default', () => {
   const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
   assert(html.includes('id="backlog"') && html.includes('display:none'));
+});
+
+// --- getWebviewHtml: BL-238 accessibility ---
+
+test('getWebviewHtml collapse toggle buttons carry an accessible name, expanded state, and controls target', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  for (const id of ['runs-toggle', 'backlog-toggle', 'metrics-toggle']) {
+    const button = html.match(new RegExp(`<button[^>]*id="${id}"[^>]*>`))[0];
+    assert(button.includes('aria-label='), `${id} must have an aria-label (an icon-only glyph is not an accessible name)`);
+    assert(button.includes('aria-expanded="true"'), `${id} must expose its initial expanded state`);
+    assert(button.includes('aria-controls='), `${id} must reference the section it controls`);
+  }
+});
+
+test('getWebviewHtml carries a tile status badge, for a textual status equivalent to the border-color cues', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  assert(html.includes('.tile-status-badge'), 'status must have a text equivalent to color-only liveness cues');
+});
+
+test('getWebviewHtml gives the (keyboard-focusable) tile header an explicit visible focus style', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  assert(html.includes('.tile-header:focus-visible'), 'a bare div with tabindex needs an explicit focus style, not an assumed UA default');
 });
 
 test('getWebviewHtml contains CSS styling', () => {
@@ -181,6 +224,50 @@ test('panel.js has nudge button that sends input', () => {
 test('panel.js has restart button that posts restartAgent', () => {
   assert(panelJs.includes('restart-btn'));
   assert(panelJs.includes('restartAgent'));
+});
+
+// --- panel.js: BL-238 accessibility ---
+
+test('panel.js gives the nudge/restart buttons a role-disambiguating accessible name', () => {
+  assert(panelJs.includes("nudgeBtn.setAttribute('aria-label', 'Nudge ' + displayName)"));
+  assert(panelJs.includes("restartBtn.setAttribute('aria-label', 'Restart ' + displayName)"));
+});
+
+test('panel.js labels the model and effort dropdowns', () => {
+  assert(panelJs.includes("modelSelect.setAttribute('aria-label',"));
+  assert(panelJs.includes("effortSelect.setAttribute('aria-label',"));
+});
+
+test('panel.js makes the tile header keyboard-operable as a button, not mouse-only', () => {
+  assert(panelJs.includes("header.setAttribute('role', 'button')"));
+  assert(panelJs.includes('header.tabIndex = 0'));
+  assert(panelJs.includes("header.addEventListener('keydown'"));
+  assert(panelJs.includes("e.key === 'Enter' || e.key === ' '"), 'must handle both Enter and Space, the two native activation keys for role="button"');
+});
+
+test('panel.js reflects the collapse/expand state via aria-expanded, not just the glyph swap', () => {
+  const toggleBlocks = panelJs.match(/\w+ToggleBtn\.addEventListener\('click', \(\) => \{[\s\S]*?\n\}\);/g) || [];
+  assert.equal(toggleBlocks.length, 3, 'expected exactly 3 section toggle click handlers');
+  for (const block of toggleBlocks) {
+    assert(block.includes("setAttribute('aria-expanded'"), `toggle handler missing aria-expanded sync: ${block}`);
+  }
+});
+
+test('panel.js names and roles the live output pane for a screen reader', () => {
+  assert(panelJs.includes("output.setAttribute('role', 'log')"));
+  assert(panelJs.includes("output.setAttribute('aria-label', displayName + ' output')"));
+});
+
+test('panel.js derives a textual status badge from liveness, not color alone, on every status event', () => {
+  assert(panelJs.includes('function updateStatusBadge(entry)'));
+  // Every one of the four liveness-mutating cases must call it, so the
+  // badge never goes stale relative to the class it derives from.
+  const cases = ['dead', 'stall', 'activity', 'needsHuman'];
+  for (const c of cases) {
+    const caseBlock = panelJs.match(new RegExp(`case '${c}':[\\s\\S]*?break;`));
+    assert(caseBlock, `expected a case '${c}' handler`);
+    assert(caseBlock[0].includes('updateStatusBadge(entry)'), `case '${c}' must refresh the status badge`);
+  }
 });
 
 test('panel.js renders recent runs with running badge', () => {

@@ -173,6 +173,34 @@ test('recert-03: choosing Update reveals the current text for editing, and the S
   assert.match(mail.body, /Given a new precondition/);
 });
 
+// --- BL-238 accessibility ---
+
+test('BL-238: the Update text field has an accessible name (no <label for> pairing exists in this codebase)', async () => {
+  const dom = renderDashboard(fakeRecertBatch());
+  await flush();
+  click(dom, [...content(dom).querySelectorAll('button')].find((b) => b.textContent === 'Update text'));
+
+  const textarea = content(dom).querySelector('textarea');
+  assert.ok(textarea.getAttribute('aria-label'), 'the textarea must have an aria-label, not rely on an unassociated heading');
+  assert.match(textarea.getAttribute('aria-label'), /velocity series matches git-recorded closes/);
+});
+
+test('BL-238: a role="button" mailto: link also activates on Space, completing its ARIA button contract', async () => {
+  const dom = renderDashboard(fakeRecertBatch());
+  await flush();
+  const confirmLink = [...content(dom).querySelectorAll('a')].find((a) => a.textContent.indexOf('Confirm') === 0);
+  assert.equal(confirmLink.getAttribute('role'), 'button');
+
+  let navigated = false;
+  confirmLink.addEventListener('click', (e) => {
+    navigated = true;
+    e.preventDefault();
+  });
+  confirmLink.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }));
+
+  assert.equal(navigated, true, 'Space must activate a role="button" anchor the same way Enter/click already does natively');
+});
+
 test('recert-03: cancelling out of Update returns to the confirm/update/delete choice with nothing sent', async () => {
   const dom = renderDashboard(fakeRecertBatch());
   await flush();
