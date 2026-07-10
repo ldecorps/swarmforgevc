@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { SwarmRole, respawnAgent } from '../swarm/tmuxClient';
 import { AVAILABLE_CLAUDE_MODELS, readCurrentModel, switchRoleModel } from '../swarm/backendSwitch';
+import { EFFORT_LEVELS, hasEffortSetting, readCurrentEffort, suggestRoleEffort, switchRoleEffort } from '../swarm/effortDial';
 import { PaneTailer } from './paneTailer';
 import { currentStageLabel, readPipelineStages, findLiveHolder, parseRolesTsv } from '../swarm/swarmState';
 import { computeSwarmMetrics, DEFAULT_SUITE_WARN_SECONDS } from '../metrics/swarmMetrics';
@@ -97,6 +98,13 @@ export class SwarmPanel {
           }
           case 'switchModel': {
             const result = switchRoleModel(this.targetPath, message.role, message.model);
+            if (!result.success) {
+              vscode.window.showErrorMessage(result.message);
+            }
+            break;
+          }
+          case 'switchEffort': {
+            const result = switchRoleEffort(this.targetPath, message.role, message.effort);
             if (!result.success) {
               vscode.window.showErrorMessage(result.message);
             }
@@ -477,6 +485,23 @@ export class SwarmPanel {
         // for every other agent rather than sent as empty/misleading data.
         ...(r.agent === 'claude'
           ? { currentModel: readCurrentModel(this.targetPath, r.role), availableModels: AVAILABLE_CLAUDE_MODELS }
+          : {}),
+        // BL-236: same claude-only gate for the effort dial - a non-claude
+        // role gets no effort fields at all, so the webview shows it
+        // unavailable rather than sending an unsupported argument
+        // (effort-unsupported-04). suggestedEffort/rationale are advisory
+        // only (suggestRoleEffort has no side effects); nothing changes
+        // until the operator explicitly picks a value.
+        ...(hasEffortSetting(r.agent)
+          ? (() => {
+              const suggestion = suggestRoleEffort(r.role);
+              return {
+                currentEffort: readCurrentEffort(this.targetPath, r.role),
+                availableEfforts: EFFORT_LEVELS,
+                suggestedEffort: suggestion.suggestedEffort,
+                effortRationale: suggestion.rationale,
+              };
+            })()
           : {}),
       })),
     });
