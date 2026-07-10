@@ -65,7 +65,12 @@ test('the signature accept and reject tests pass exactly as before passes on a c
 
 test('the reproduction-snippet step fails loudly when the evidence doc still embeds the literal', () => {
   const registry = freshRegistry();
-  const ctx = { evidenceDoc: "const SECRET = 'whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw';\nBuffer.from('x')" };
+  // Built at runtime, not a source-text literal: this file is itself
+  // git-grepped by noWebhookSecretLiteral.test.js's regression guard, so
+  // even a FAKE whsec_+base64 literal here would trip it the same as a
+  // real one - the guard is shape-based, not content-aware.
+  const fakeLiteral = 'whsec_' + Buffer.from('some-other-fake-seed').toString('base64');
+  const ctx = { evidenceDoc: `const SECRET = '${fakeLiteral}';\nBuffer.from('x')` };
   assert.throws(
     () =>
       resolveAndRun(
