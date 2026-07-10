@@ -107,4 +107,4 @@ qa_e2e_procedure: |
 # specs/features/BL-251-list-tickets-needing-human-approval.feature is a NEW draft
 # authored by the specifier and is PENDING human review before it is treated as the
 # authoritative acceptance contract.
-human_approval: pending
+human_approval: approved
