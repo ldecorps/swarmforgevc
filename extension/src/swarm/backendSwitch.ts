@@ -12,31 +12,18 @@
 // this codebase outside aspirational Spec.MD prose. Operator-confirmed
 // 2026-07-10: ship the safe same-agent slice now, defer the rest.
 //
-// A same-agent MODEL switch needs none of that porting. claude's launch
-// script (.swarmforge/launch/<role>.sh, written once at swarm start and
-// UNCHANGED by this module) already points at a settings file by a FIXED
-// path (.swarmforge/launch/<role>.claude-settings.json, written by
-// swarmforge.sh's write_claude_settings_file) and passes it to the CLI via
-// `--settings`. Rewriting that settings file's "model" field in place and
-// respawning via the EXISTING respawnAgent (tmuxClient.ts, itself
-// unchanged) is enough - the respawned process reads the updated file
-// automatically, so this module never touches swarmforge.conf or the
-// launch script itself. The settings file is already runtime-only,
-// gitignored state regenerated at every swarm launch, not the config file
-// the "in-memory, never persisted" constraint means.
+// A same-agent MODEL switch needs none of that porting - claude's launch
+// script already points at a fixed-path settings file that this module
+// rewrites one field of and respawns via, per claudeSettingsFile.ts (the
+// read/write/respawn plumbing shared with effortDial.ts's effort switch).
 
-import * as fs from 'fs';
-import * as path from 'path';
 import { PRICING_TABLE } from '../metrics/pricingTable';
-import { respawnAgent, RespawnResult } from './tmuxClient';
+import { RespawnResult } from './tmuxClient';
+import { readClaudeSettingsField, writeClaudeSettingsFieldAndRespawn } from './claudeSettingsFile';
 
 // The dropdown's available-models list is the SAME versioned catalog cost
 // estimation already uses - one list, not a second copy that could drift.
 export const AVAILABLE_CLAUDE_MODELS: readonly string[] = Object.keys(PRICING_TABLE);
-
-function claudeSettingsPath(targetPath: string, role: string): string {
-  return path.join(targetPath, '.swarmforge', 'launch', `${role}.claude-settings.json`);
-}
 
 // The current model for a claude-backed role, read from its own settings
 // file - the same file the running agent itself reads, so this is always
@@ -44,30 +31,16 @@ function claudeSettingsPath(targetPath: string, role: string): string {
 // stale. undefined when the role has no settings file yet (not launched,
 // or not a claude-backed role).
 export function readCurrentModel(targetPath: string, role: string): string | undefined {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(claudeSettingsPath(targetPath, role), 'utf8'));
-    return typeof parsed.model === 'string' ? parsed.model : undefined;
-  } catch {
-    return undefined;
-  }
+  const model = readClaudeSettingsField(targetPath, role, 'model');
+  return typeof model === 'string' ? model : undefined;
 }
 
 // Rewrites role's settings-file model in place, preserving every other
 // field (effortLevel, permissions, etc.) unchanged, then respawns that ONE
-// role's pane via the existing respawnAgent - never touches any other
-// role, never touches swarmforge.conf.
+// role's pane - never touches any other role, never touches swarmforge.conf.
 export function switchRoleModel(targetPath: string, role: string, model: string): RespawnResult {
   if (!AVAILABLE_CLAUDE_MODELS.includes(model)) {
     return { success: false, message: `Unknown model "${model}" - expected one of: ${AVAILABLE_CLAUDE_MODELS.join(', ')}` };
   }
-  const settingsPath = claudeSettingsPath(targetPath, role);
-  let settings: Record<string, unknown>;
-  try {
-    settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-  } catch {
-    return { success: false, message: `No claude settings file found for role "${role}" at ${settingsPath}` };
-  }
-  settings.model = model;
-  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
-  return respawnAgent(targetPath, role);
+  return writeClaudeSettingsFieldAndRespawn(targetPath, role, 'model', model);
 }
