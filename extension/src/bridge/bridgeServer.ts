@@ -9,9 +9,15 @@ import {
 } from './bridgeState';
 import { isAuthorizedRequest, isAuthorizedByQueryToken } from './bridgeAuth';
 import { getHolisticUiHtml } from './holisticUiHtml';
+import { answerCapturedGateLive } from './gateAnswerLive';
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const LOCALHOST = '127.0.0.1';
+// BL-240: the gate-answer body is a short {role, answer} JSON payload (a
+// human-typed reply) - capped well above any realistic answer so a
+// malformed/hostile client can't hold the connection open streaming an
+// unbounded body into memory.
+const GATE_ANSWER_MAX_BODY_BYTES = 16 * 1024;
 
 export interface BridgeHandle {
   port: number;
@@ -52,6 +58,52 @@ function resolveEventsSnapshot(lastSnapshot: string | undefined, targetPath: str
 
 function isRootPath(url: string): boolean {
   return url === '/' || url.startsWith('/?');
+}
+
+// BL-240: the ONLY route on this server that reads a request body - every
+// other route is GET/no-body. Rejects (never parses) a body over the cap
+// rather than buffering an unbounded stream into memory.
+function readJsonBody(req: http.IncomingMessage, maxBytes: number): Promise<{ ok: true; value: unknown } | { ok: false; reason: string }> {
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    let settled = false;
+    const finish = (result: { ok: true; value: unknown } | { ok: false; reason: string }) => {
+      if (!settled) {
+        settled = true;
+        resolve(result);
+      }
+    };
+    req.on('data', (chunk: Buffer) => {
+      total += chunk.length;
+      if (total > maxBytes) {
+        req.destroy();
+        finish({ ok: false, reason: 'request body too large' });
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('error', () => finish({ ok: false, reason: 'request body read error' }));
+    req.on('end', () => {
+      try {
+        finish({ ok: true, value: JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') });
+      } catch {
+        finish({ ok: false, reason: 'invalid JSON body' });
+      }
+    });
+  });
+}
+
+// BL-240: the write path accepts ONLY this exact {role, answer} shape -
+// no additional fields select some other action, matching the ticket's
+// "gate answers only, no arbitrary control" scope.
+function isGateAnswerRequestShape(value: unknown): value is { role: string; answer: string } {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof (value as Record<string, unknown>).role === 'string' &&
+    typeof (value as Record<string, unknown>).answer === 'string'
+  );
 }
 
 function queryToken(url: string): string | undefined {
@@ -162,6 +214,30 @@ export function startBridge(
         res.write(`data: ${snapshot}\n\n`);
         sseClients.add(res);
         req.on('close', () => sseClients.delete(res));
+        return;
+      }
+
+      // BL-240: the bridge's one write route - answers a captured to-human
+      // gate only. Auth is already enforced above, uniformly with every
+      // other route. GET (or any other method) to this path falls through
+      // to the 404 below, same as any unrecognized route - it is never
+      // treated as an answer attempt.
+      if (req.method === 'POST' && url === '/gate-answer') {
+        readJsonBody(req, GATE_ANSWER_MAX_BODY_BYTES).then((body) => {
+          if (!body.ok) {
+            res.writeHead(400, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ success: false, reason: body.reason }));
+            return;
+          }
+          if (!isGateAnswerRequestShape(body.value)) {
+            res.writeHead(400, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ success: false, reason: 'expected a JSON body of {role, answer}' }));
+            return;
+          }
+          const result = answerCapturedGateLive(targetPath, body.value);
+          res.writeHead(result.success ? 200 : 403, { 'content-type': 'application/json' });
+          res.end(JSON.stringify(result));
+        });
         return;
       }
 
