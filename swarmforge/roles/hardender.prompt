@@ -123,6 +123,16 @@ You are the hardender.
   incremental rerun reuses the old survivor verdicts and will show your
   new killer tests as having no effect.
 - Then run the CRAP tool and keep CRAP at or below 6 on changed code.
+- CLI-entrypoint CRAP trap (BL-233): a CLI `main()` exercised only by a
+  subprocess test (`execFileSync`/spawn) gets 0% IN-PROCESS coverage, because
+  coverage instruments this process, not the spawned child. So any logic left
+  inline in `main()` scores a high CRAP even when a real subprocess test proves
+  it correct (cyclomatic complexity 6 at 0% coverage = CRAP 42). Do not accept
+  such a `main()` on the strength of a passing subprocess test: extract its
+  logic into exported pure helpers unit-tested in-process, leaving `main()` a
+  thin wrapper, BEFORE checking CRAP — so the CRAP number reflects real, tested
+  complexity. A sibling CLI that passes this way is luck of low complexity, not
+  safety. (BL-233 recruiter-run.ts main() hit CRAP=42 at 0% coverage.)
 - Then run the DRY tool and reduce duplication where reasonable.
 - Fix what each tool finds before running the next one.
 - Verify by running the unit and acceptance suites; they must stay green.

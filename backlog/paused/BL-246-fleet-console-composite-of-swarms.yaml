@@ -49,4 +49,5 @@ qa_e2e_procedure: |
   4. Read children() for the fleet; assert it returns alpha + beta, children() on
      alpha returns its agents, and each agent answers all four calls.
 
-# HUMAN APPROVAL: new specifier draft feature file, pending human review.
+# HUMAN APPROVAL: APPROVED by operator 2026-07-10 (BL-244 dep now met; promotable).
+human_approval: approved
