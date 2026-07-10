@@ -246,6 +246,20 @@ test('bilingual-03: documentation content and ticket title/description display i
   assert.match(dom.window.document.getElementById('docsExplorer').textContent, /Description française\./);
 });
 
+test('BL-253 labels-localized-05: the implemented / not-yet-implemented labels render in French once toggled', async () => {
+  const tree = fakeDocsTree();
+  tree.tickets[0].implemented = true;
+  tree.milestones[0].tickets[0].implemented = true;
+  const dom = renderDashboard({ docsTree: tree });
+  await flush();
+  click(dom, toggle(dom));
+
+  const milestoneButton = [...dom.window.document.getElementById('docsExplorer').querySelectorAll('button')].find((b) => b.textContent.indexOf('M4') === 0);
+  click(dom, milestoneButton);
+  const ticketButton = [...dom.window.document.getElementById('docsExplorer').querySelectorAll('button')].find((b) => b.textContent.indexOf('BL-100') === 0);
+  assert.match(ticketButton.textContent, /implémenté/);
+});
+
 test('bilingual-05: a ticket with no titleFr/contentFr falls back to English rather than showing nothing', async () => {
   const tree = fakeDocsTree();
   delete tree.tickets[0].titleFr;

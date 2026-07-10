@@ -192,6 +192,84 @@ test('an empty docs tree (no vision, no milestones, no tickets) renders without 
   assert.doesNotThrow(() => explorer(dom).textContent);
 });
 
+// ── BL-253: implemented vs not-yet-implemented greying ────────────────────
+
+function implementationFixtureTree() {
+  return fakeDocsTree({
+    milestones: [
+      {
+        milestone: 'M4',
+        tickets: [
+          { id: 'BL-100', title: 'cost telemetry', status: 'done', priority: 1, implemented: true },
+          { id: 'BL-200', title: 'not built yet', status: 'active', priority: 1, implemented: false },
+        ],
+      },
+    ],
+    tickets: [
+      {
+        id: 'BL-100',
+        title: 'cost telemetry',
+        status: 'done',
+        priority: 1,
+        milestone: 'M4',
+        implemented: true,
+        description: 'Full prose description of BL-100.',
+        scenarios: [{ name: 'a scenario', text: 'Scenario: a scenario\n  Given x' }],
+      },
+      {
+        id: 'BL-200',
+        title: 'not built yet',
+        status: 'active',
+        priority: 1,
+        milestone: 'M4',
+        implemented: false,
+        description: 'A planned ticket.',
+        scenarios: [{ name: 'planned scenario', text: 'Scenario: planned scenario\n  Given a plan' }],
+      },
+    ],
+  });
+}
+
+test('status-from-folder-01: a done ticket renders as implemented, not greyed', async () => {
+  const dom = renderDashboard(implementationFixtureTree());
+  await flush();
+  const milestoneButton = [...explorer(dom).querySelectorAll('button')].find((b) => b.textContent.indexOf('M4') === 0);
+  click(dom, milestoneButton);
+  const doneButton = [...explorer(dom).querySelectorAll('button')].find((b) => b.textContent.indexOf('BL-100') === 0);
+  assert.match(doneButton.textContent, /\(implemented\)/);
+  assert.equal(doneButton.classList.contains('not-yet-implemented'), false);
+});
+
+test('status-from-folder-01: an active (not-yet) ticket renders greyed as not-yet-implemented', async () => {
+  const dom = renderDashboard(implementationFixtureTree());
+  await flush();
+  const milestoneButton = [...explorer(dom).querySelectorAll('button')].find((b) => b.textContent.indexOf('M4') === 0);
+  click(dom, milestoneButton);
+  const notYetButton = [...explorer(dom).querySelectorAll('button')].find((b) => b.textContent.indexOf('BL-200') === 0);
+  assert.match(notYetButton.textContent, /\(not yet implemented\)/);
+  assert.equal(notYetButton.classList.contains('not-yet-implemented'), true);
+});
+
+test('not-yet-expandable-02: a greyed not-yet ticket still expands to show its planned scenarios', async () => {
+  const dom = renderDashboard(implementationFixtureTree());
+  await flush();
+  click(dom, [...explorer(dom).querySelectorAll('button')].find((b) => b.textContent.indexOf('M4') === 0));
+  click(dom, [...explorer(dom).querySelectorAll('button')].find((b) => b.textContent.indexOf('BL-200') === 0));
+  assert.match(explorer(dom).textContent, /A planned ticket/);
+  const scenarioButton = explorer(dom).querySelector('button');
+  assert.ok(scenarioButton, 'a not-yet-implemented ticket must still list its planned scenarios as clickable');
+  assert.match(scenarioButton.textContent, /planned scenario/);
+});
+
+test('the ticket-detail status line is greyed for a not-yet-implemented ticket, not for an implemented one', async () => {
+  const dom = renderDashboard(implementationFixtureTree());
+  await flush();
+  click(dom, [...explorer(dom).querySelectorAll('button')].find((b) => b.textContent.indexOf('M4') === 0));
+  click(dom, [...explorer(dom).querySelectorAll('button')].find((b) => b.textContent.indexOf('BL-100') === 0));
+  const doneStatusLine = [...explorer(dom).querySelectorAll('p')].find((p) => /cost telemetry/.test(p.textContent));
+  assert.equal(doneStatusLine.classList.contains('not-yet-implemented'), false);
+});
+
 // ── BL-254: full-text search filter ───────────────────────────────────────
 
 function searchFixtureTree() {
