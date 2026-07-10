@@ -14,6 +14,15 @@ Feature: read a pending ticket's description and acceptance scenarios from the p
   # (by ticket id) into the already-fetched docs-tree — no new store, no second parser,
   # and no divergent copy of the ticket. READ-ONLY: approving from the phone is a separate
   # control action (gap #10) and is explicitly OUT OF SCOPE here.
+  #
+  # Slice 2 (LISTEN, operator addition 2026-07-10, promoted from
+  # BL-266-pwa-approval-ticket-detail.slice-2-listen.feature.draft now that it is built):
+  # the same detail view gains a listen/stop control that reads the description +
+  # acceptance scenarios aloud via the on-device Web Speech API (window.speechSynthesis) -
+  # no server, no network, no storage. This file has one shared Background (this project's
+  # convention, see BL-250), so each listen scenario below opens the ticket itself first via
+  # the SAME "a pending ticket ... opens ... from the needs-approval list" steps slice 1
+  # already registers, rather than repeating the draft's own separate Background.
 
   Background:
     Given the phone app's needs-approval list of tickets pending human approval
@@ -50,3 +59,33 @@ Feature: read a pending ticket's description and acceptance scenarios from the p
     And the active locale is not the default
     When the operator opens "A" from the needs-approval list
     Then the detail view's own labels render in the active locale
+
+  # BL-266 listen-speaks-description-and-scenarios-06
+  Scenario: activating listen reads the description and acceptance scenarios aloud in order
+    Given a pending ticket "A" with a description and acceptance scenarios
+    And the operator opens "A" from the needs-approval list
+    When the operator activates the listen control
+    Then the ticket's description is spoken aloud, followed by each acceptance scenario in order
+
+  # BL-266 listen-uses-active-locale-07
+  Scenario: the spoken audio uses the active locale's language
+    Given a pending ticket "A" with a description and acceptance scenarios
+    And the active locale is not the default
+    And the operator opens "A" from the needs-approval list
+    When the operator activates the listen control
+    Then the speech uses the active locale's language rather than the default
+
+  # BL-266 listen-can-be-stopped-08
+  Scenario: the operator can stop playback
+    Given a pending ticket "A" with a description and acceptance scenarios
+    And the operator opens "A" from the needs-approval list
+    And the ticket is being read aloud
+    When the operator stops the listen control
+    Then playback halts
+
+  # BL-266 listen-unavailable-degrades-gracefully-09
+  Scenario: with no on-device speech synthesis the control degrades gracefully
+    Given a pending ticket "A" with a description and acceptance scenarios
+    And the device has no available speech synthesis
+    When the operator opens "A" from the needs-approval list
+    Then the listen control is unavailable with a localized note rather than erroring or reading nothing on tap
