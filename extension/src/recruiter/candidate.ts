@@ -96,3 +96,34 @@ export interface QualifyOutcome {
   model: string;
   scorecard: BatteryScorecard;
 }
+
+// BL-233 slice 4 (best-value-ranking-05 / recommend-not-adopt-06): a
+// candidate's qualify-slice output (candidate.ts:ModelCandidate + its
+// BatteryScorecard), the input rankForRole ranks per role.
+export interface ScoredCandidate {
+  candidate: ModelCandidate;
+  scorecard: BatteryScorecard;
+}
+
+// capability is a "pure-capability" number (operator's own wording,
+// visible independent of the ranking/cost weighting) - the count of
+// PASSING battery entries, reused directly from the scorecard slice 3
+// already produced rather than inventing a second capability metric.
+export interface RoleLeaderboardEntry {
+  model: string;
+  capability: number;
+  planCost: PlanCost;
+}
+
+export interface RoleLeaderboard {
+  role: string;
+  reference: { model: string };
+  ranked: RoleLeaderboardEntry[];
+  recommended: string | null;
+}
+
+export interface ConfChangeSuggestion {
+  role: string;
+  suggestedModel: string;
+  swarmforgeConfLine: string;
+}
