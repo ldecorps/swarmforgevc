@@ -310,6 +310,34 @@
     return ticket.title;
   }
 
+  // BL-257 backlog-board-filter-search-01: pure, client-side over the
+  // already-fetched board data (no new store, no re-fetch) - text matches
+  // id or title (case-insensitive substring), status is an exact match
+  // against DashboardTicketSummary's own status field (backlogDashboard.ts),
+  // priority is an exact match against the ticket's own priority. All
+  // three combine with AND, mirroring BL-254's docs-search filter shape.
+  var boardFilterQuery = '';
+  var boardFilterStatus = 'all';
+  var boardFilterPriority = '';
+
+  function ticketMatchesBoardFilter(t) {
+    if (boardFilterStatus !== 'all' && t.status !== boardFilterStatus) {
+      return false;
+    }
+    if (boardFilterPriority !== '' && String(t.priority) !== boardFilterPriority) {
+      return false;
+    }
+    var q = boardFilterQuery.trim().toLowerCase();
+    if (q && (t.id + ' ' + boardTicketTitle(t)).toLowerCase().indexOf(q) === -1) {
+      return false;
+    }
+    return true;
+  }
+
+  function boardFilterActive() {
+    return boardFilterQuery.trim() !== '' || boardFilterStatus !== 'all' || boardFilterPriority !== '';
+  }
+
   function renderTicketList(container, titleKey, tickets) {
     container.appendChild(el('h3', {}, [tr(titleKey) + ' (' + tickets.length + ')']));
     var list = el('ul', {});
@@ -475,14 +503,29 @@
   function renderBoard(board) {
     var container = document.getElementById('board');
     container.innerHTML = '';
-    renderTicketList(container, 'boardActive', board.active);
-    renderTicketList(container, 'boardPaused', board.paused);
+    var filteredActive = board.active.filter(ticketMatchesBoardFilter);
+    var filteredPaused = board.paused.filter(ticketMatchesBoardFilter);
+    var milestones = Object.keys(board.doneByMilestone).sort();
+    var filteredDoneCounts = {};
+    var totalDone = 0;
+    milestones.forEach(function (m) {
+      var count = board.doneByMilestone[m].filter(ticketMatchesBoardFilter).length;
+      filteredDoneCounts[m] = count;
+      totalDone += count;
+    });
+
+    if (boardFilterActive() && filteredActive.length === 0 && filteredPaused.length === 0 && totalDone === 0) {
+      container.appendChild(noDataParagraph(tr('boardFilterNoResults')));
+      return;
+    }
+
+    renderTicketList(container, 'boardActive', filteredActive);
+    renderTicketList(container, 'boardPaused', filteredPaused);
 
     container.appendChild(el('h3', {}, [tr('boardDoneByMilestone')]));
-    var milestones = Object.keys(board.doneByMilestone).sort();
     var doneList = el('ul', {});
     milestones.forEach(function (m) {
-      doneList.appendChild(el('li', {}, [m + ': ' + board.doneByMilestone[m].length]));
+      doneList.appendChild(el('li', {}, [m + ': ' + filteredDoneCounts[m]]));
     });
     container.appendChild(doneList);
   }
@@ -611,11 +654,28 @@
     }
   }
 
+  // BL-256 deep-links-into-pwa-04: a #ticket=<id> or #approval=<id> URL
+  // fragment (built by extension/src/metrics/pwaDeepLinks.ts's
+  // buildTicketDeepLink/buildApprovalDeepLink) opens directly to that
+  // view on load. Parsed once at module init and consumed (nulled) the
+  // first time each relevant render runs, so a LATER re-render (locale
+  // toggle, manual "back" navigation) never re-applies it and fights the
+  // user's own navigation.
+  var initialHashRoute = (function () {
+    var hash = (location.hash || '').replace(/^#/, '');
+    var params = new URLSearchParams(hash);
+    return { ticketId: params.get('ticket'), approvalId: params.get('approval') };
+  })();
+
   function renderAll(data) {
     lastBacklogData = data;
     var asOf = document.getElementById('asOf');
     var shaText = data.sourceSha ? ' (' + data.sourceSha.slice(0, 10) + ')' : '';
     asOf.textContent = tr('asOfPrefix') + new Date(data.generatedAtIso).toLocaleString() + shaText;
+    if (initialHashRoute.approvalId) {
+      approvalTicketId = initialHashRoute.approvalId;
+      initialHashRoute.approvalId = null;
+    }
     renderNeedsApproval(data.needsApproval);
     renderBoard(data.board);
     renderVelocity(data.metrics.velocity);
@@ -801,6 +861,28 @@
     });
   }
 
+  // BL-257 per-ticket-timeline-02: git-derived (docsTree.ts's specDateIso/
+  // closeDateIso, from gitHistoryAdapter.ts's deriveTicketLifecycles) -
+  // reproducible from the same committed docs-tree.json the rest of this
+  // view already reads, no new store. Only two stages exist in that
+  // data (specced, closed) - a richer per-role breakdown would need live
+  // .swarmforge/ mailbox state this static, git-projected artifact does
+  // not have (see extension/src/metrics/briefingDigest.ts's own comment
+  // on the same boundary).
+  function renderTicketTimeline(container, ticket) {
+    container.appendChild(el('h4', {}, [tr('timelineHeading')]));
+    if (!ticket.specDateIso) {
+      container.appendChild(noDataParagraph(tr('timelineNoData')));
+      return;
+    }
+    var list = el('ul', {});
+    list.appendChild(el('li', {}, [tr('timelineSpecced') + ': ' + ticket.specDateIso.slice(0, 10)]));
+    if (ticket.closeDateIso) {
+      list.appendChild(el('li', {}, [tr('timelineClosed') + ': ' + ticket.closeDateIso.slice(0, 10)]));
+    }
+    container.appendChild(list);
+  }
+
   function renderDocsTicket(container) {
     var ticket = findTicket(docsView.ticketId);
     if (!ticket) {
@@ -817,6 +899,7 @@
       container.appendChild(untranslatedNotice());
     }
     container.appendChild(el('p', {}, [description || tr('noDescription')]));
+    renderTicketTimeline(container, ticket);
     container.appendChild(el('h4', {}, [tr('documentationAcceptance')]));
     if (!ticket.scenarios || ticket.scenarios.length === 0) {
       container.appendChild(noDataParagraph(tr('noScenariosResolved')));
@@ -907,8 +990,21 @@
 
   function renderDocsTree(data) {
     docsTree = data;
+    if (initialHashRoute.ticketId) {
+      var t = (data.tickets || []).find(function (x) { return x.id === initialHashRoute.ticketId; });
+      docsView = { level: 'ticket', milestone: t ? t.milestone : '', ticketId: initialHashRoute.ticketId };
+      initialHashRoute.ticketId = null;
+    }
     setDocsAsOfText(data);
     renderDocsExplorer();
+    // BL-256: backlog.json and docs-tree.json load independently - if a
+    // #approval=<id> hash route already opened the approval detail view
+    // (in renderAll, via the OTHER fetch) before docsTree was available,
+    // that view rendered a premature "not found" (findApprovalTicket
+    // reads docsTree). Re-render it now that docsTree is actually here.
+    if (approvalTicketId && lastBacklogData) {
+      renderNeedsApproval(lastBacklogData.needsApproval);
+    }
   }
 
   // BL-150: recertification - a separate section from the read-only docs
@@ -1146,6 +1242,36 @@
     docsSearchInput.addEventListener('input', function () {
       docsSearchQuery = docsSearchInput.value;
       renderDocsExplorer();
+    });
+  }
+
+  // BL-257: same "static markup, never re-created by innerHTML resets"
+  // pattern as docsSearchInput above - re-renders the board from the
+  // already-fetched lastBacklogData on every filter change, no re-fetch.
+  function rerenderBoardIfLoaded() {
+    if (lastBacklogData) {
+      renderBoard(lastBacklogData.board);
+    }
+  }
+  var boardFilterQueryInput = document.getElementById('boardFilterQuery');
+  if (boardFilterQueryInput) {
+    boardFilterQueryInput.addEventListener('input', function () {
+      boardFilterQuery = boardFilterQueryInput.value;
+      rerenderBoardIfLoaded();
+    });
+  }
+  var boardFilterStatusSelect = document.getElementById('boardFilterStatus');
+  if (boardFilterStatusSelect) {
+    boardFilterStatusSelect.addEventListener('change', function () {
+      boardFilterStatus = boardFilterStatusSelect.value;
+      rerenderBoardIfLoaded();
+    });
+  }
+  var boardFilterPriorityInput = document.getElementById('boardFilterPriority');
+  if (boardFilterPriorityInput) {
+    boardFilterPriorityInput.addEventListener('input', function () {
+      boardFilterPriority = boardFilterPriorityInput.value;
+      rerenderBoardIfLoaded();
     });
   }
 
