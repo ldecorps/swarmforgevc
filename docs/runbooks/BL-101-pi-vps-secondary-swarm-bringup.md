@@ -86,7 +86,16 @@ existing `--remote-control` flags in `packs/second-swarm.conf` keep working
 **Option B — a scoped, fully-scriptable token (drops Remote Control):**
 ```sh
 claude setup-token   # prints a one-year OAuth token; requires Pro/Max/Team/Enterprise
-export CLAUDE_CODE_OAUTH_TOKEN=<the printed token>   # add to this user's shell profile
+```
+Write it to `/etc/swarmforge/<swarm-name>.env` (created, empty, root-owned,
+mode 600 by the provisioning script) — **not** the shell profile: a systemd
+service starts with a clean environment and never sources it, so an export
+there would never reach the swarm process. The generated unit's
+`EnvironmentFile=-/etc/swarmforge/<swarm-name>.env` is what actually feeds
+this to the swarm:
+```sh
+echo "CLAUDE_CODE_OAUTH_TOKEN=<the printed token>" | sudo tee /etc/swarmforge/<swarm-name>.env >/dev/null
+sudo systemctl restart swarmforge-<swarm-name>.service   # picks up the new env
 ```
 `CLAUDE_CODE_OAUTH_TOKEN` is scoped to inference only and **cannot** open a
 Remote Control session — use this only if you don't need mobile monitoring
