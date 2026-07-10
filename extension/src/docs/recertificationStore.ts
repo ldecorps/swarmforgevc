@@ -62,10 +62,34 @@ export const RECERT_BATCH_SCHEMA_VERSION = 1;
 export interface RecertBatchData {
   schemaVersion: number;
   generatedAtIso: string;
+  recertEmailTo: string;
   batch: RecertifiableScenario[];
 }
 
 const DEFAULT_RECERT_BATCH_SIZE = 1;
+
+// BL-223: recert_email_to in swarmforge.conf, mirroring BL-090's swarm_name
+// convention (holisticProjections.ts's parseSwarmName/readSwarmName) - kept
+// config-injected, not a second hardcode, so a later branded custom-domain
+// swap (e.g. recert@inbound.musicalsifu.com) is a config change, never a
+// code change. Defaults to the operator's Resend-managed receiving domain
+// (no DNS/MX setup needed) - NEVER the reserved .invalid TLD, which can
+// never resolve and made every phone recert email bounce (BL-223 root
+// cause: pwa/app.js used to hardcode that placeholder directly).
+const DEFAULT_RECERT_EMAIL_TO = 'recert@tolokarooo.resend.app';
+
+export function parseRecertEmailTo(confContent: string): string {
+  const match = confContent.match(/^\s*config\s+recert_email_to\s+(\S+)/m);
+  return match ? match[1] : DEFAULT_RECERT_EMAIL_TO;
+}
+
+export function readRecertEmailTo(targetPath: string): string {
+  try {
+    return parseRecertEmailTo(fs.readFileSync(path.join(targetPath, 'swarmforge', 'swarmforge.conf'), 'utf8'));
+  } catch {
+    return DEFAULT_RECERT_EMAIL_TO;
+  }
+}
 
 // The one impure orchestrator generate-recert-batch.ts's CLI wraps (same
 // split as docsTree.ts's computeDocsTree/buildDocsTree): resolves the
@@ -84,6 +108,7 @@ export function computeRecertBatch(
   return {
     schemaVersion: RECERT_BATCH_SCHEMA_VERSION,
     generatedAtIso: new Date(nowMs).toISOString(),
+    recertEmailTo: readRecertEmailTo(targetPath),
     batch: selectForRecertification(pool, store, batchSize),
   };
 }

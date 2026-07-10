@@ -39,6 +39,7 @@ Feature: Webhook-signature test fixtures carry no scanner-tripping secret litera
 #    tests stay instant, no real timers.
 #  - Operator action (NOT pipeline work): mark the GitGuardian incident resolved /
 #    false positive. NO rotation needed — the value is confirmed to be Svix's
-#    public docs example (whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw), never a live
-#    credential. History rewrite is out of scope (no real secret to purge); this
-#    neutralization is the whole fix.
+#    own public docs example secret, never a live credential (quoting it here
+#    would reintroduce the same scanner-tripping literal this feature exists
+#    to remove). History rewrite is out of scope (no real secret to purge);
+#    this neutralization is the whole fix.
