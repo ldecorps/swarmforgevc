@@ -7,6 +7,7 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_inject_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
 
 (def usage-text
   (str "Usage: swarm_handoff.sh <draft-file>\n\n"
@@ -185,19 +186,11 @@
 
 (defn- check-backlog-depth []
   (let [project-root (project-root)
-        conf-file (fs/path project-root ".swarmforge" "swarmforge.conf")
         active-dir (fs/path project-root "backlog" "active")
-        max-depth (try
-                    (->> (slurp (str conf-file))
-                         str/split-lines
-                         (filter #(str/starts-with? % "config active_backlog_max_depth"))
-                         first
-                         (re-find #"\d+")
-                         parse-long)
-                    (catch Exception _ 5))] ; Default to 5 if config is missing
+        max-depth (backlog-depth-lib/read-max-depth project-root)]
     (when (fs/exists? active-dir)
       (let [active-count (count (fs/list-dir active-dir))]
-        (when (> active-count max-depth)
+        (when (backlog-depth-lib/depth-exceeded? active-count max-depth)
           (binding [*out* *err*]
             (println (format "WARNING: Active backlog depth exceeded (active=%d, max=%d). Coordinator should promote paused items." active-count max-depth))))))))
 
