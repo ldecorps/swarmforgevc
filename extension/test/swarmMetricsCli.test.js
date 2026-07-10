@@ -289,12 +289,71 @@ test('formatDeliveryOverview renders populated burndown, cycle time, and forecas
   };
 
   const text = formatDeliveryOverview(metrics);
-  assert.match(text, /Burndown: M1 3 remaining, M2 0 remaining/);
+  // BL-228: the burndown line now also carries each milestone's forecast
+  // ETA (M1 has one, M2 does not) and an overall "all remaining work" ETA.
+  assert.match(text, /Burndown: M1 3 remaining \(ETA 2026-07-15, p85 2026-07-20\), M2 0 remaining \(no ETA yet\)/);
+  assert.match(text, /overall ETA no ETA yet$/m);
   assert.match(text, /Cycle time: median 9h/);
   assert.match(text, /p85/);
   assert.match(text, /over 12 ticket\(s\)/);
   assert.match(text, /Forecasts: M1 p50 2026-07-15 \/ p85 2026-07-20/);
   assert.doesNotMatch(text, /NaN|Infinity|undefined/);
+});
+
+// --- BL-228: burndown ETA reuses the existing forecast, no new model ---
+
+test('formatDeliveryOverview burndown line shows each milestone forecast ETA next to its remaining count', () => {
+  const metrics = baseDeliveryMetrics(noSampleTrend());
+  metrics.burndown = [{ milestone: 'M1', dailySeries: [], trend: noSampleTrend(), currentRemaining: 5 }];
+  metrics.forecasts = {
+    tickets: [{ ticketId: 'BL-1', p50Iso: '2026-08-01T00:00:00.000Z', p85Iso: '2026-08-05T00:00:00.000Z' }],
+    milestones: [{ milestone: 'M1', p50Iso: '2026-08-01T00:00:00.000Z', p85Iso: '2026-08-05T00:00:00.000Z' }],
+    throughputPerDay: 0.5,
+  };
+  const text = formatDeliveryOverview(metrics);
+  assert.match(text, /Burndown: M1 5 remaining \(ETA 2026-08-01, p85 2026-08-05\) — overall ETA 2026-08-01/);
+});
+
+test('formatDeliveryOverview burndown line shows "no ETA yet" for a milestone with no computable forecast, never a fabricated date', () => {
+  const metrics = baseDeliveryMetrics(noSampleTrend());
+  metrics.burndown = [{ milestone: 'M1', dailySeries: [], trend: noSampleTrend(), currentRemaining: 5 }];
+  metrics.forecasts = {
+    tickets: [],
+    milestones: [{ milestone: 'M1', p50Iso: null, p85Iso: null }],
+    throughputPerDay: 0,
+  };
+  const text = formatDeliveryOverview(metrics);
+  assert.match(text, /Burndown: M1 5 remaining \(no ETA yet\) — overall ETA no ETA yet/);
+  assert.doesNotMatch(text, /NaN|Infinity|undefined/);
+});
+
+test('formatDeliveryOverview overall ETA is the latest (max) p50 across every open ticket, not the first or the milestone p50', () => {
+  const metrics = baseDeliveryMetrics(noSampleTrend());
+  metrics.burndown = [{ milestone: 'M1', dailySeries: [], trend: noSampleTrend(), currentRemaining: 5 }];
+  metrics.forecasts = {
+    tickets: [
+      { ticketId: 'BL-1', p50Iso: '2026-08-01T00:00:00.000Z', p85Iso: null },
+      { ticketId: 'BL-2', p50Iso: '2026-09-15T00:00:00.000Z', p85Iso: null },
+      { ticketId: 'BL-3', p50Iso: '2026-08-20T00:00:00.000Z', p85Iso: null },
+    ],
+    milestones: [{ milestone: 'M1', p50Iso: '2026-08-01T00:00:00.000Z', p85Iso: null }],
+    throughputPerDay: 0.5,
+  };
+  const text = formatDeliveryOverview(metrics);
+  assert.match(text, /overall ETA 2026-09-15$/m);
+});
+
+test('formatDeliveryOverview omits the p85 range when a milestone forecast has no p85 date', () => {
+  const metrics = baseDeliveryMetrics(noSampleTrend());
+  metrics.burndown = [{ milestone: 'M1', dailySeries: [], trend: noSampleTrend(), currentRemaining: 5 }];
+  metrics.forecasts = {
+    tickets: [{ ticketId: 'BL-1', p50Iso: '2026-08-01T00:00:00.000Z', p85Iso: null }],
+    milestones: [{ milestone: 'M1', p50Iso: '2026-08-01T00:00:00.000Z', p85Iso: null }],
+    throughputPerDay: 0.5,
+  };
+  const text = formatDeliveryOverview(metrics);
+  const burndownLine = text.split('\n').find((line) => line.startsWith('Burndown:'));
+  assert.equal(burndownLine, 'Burndown: M1 5 remaining (ETA 2026-08-01) — overall ETA 2026-08-01');
 });
 
 test('formatDeliveryOverview forecast line falls back to the placeholder when a milestone has no p50/p85 date yet', () => {

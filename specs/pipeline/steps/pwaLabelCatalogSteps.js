@@ -43,7 +43,17 @@ function registerSteps(registry) {
   });
 
   // ── label-catalog-01 ─────────────────────────────────────────────────
+  // BL-228's own feature file independently reuses this exact step text
+  // ("the burndown is rendered") - see burndownEtaSteps.js's export
+  // comment. Dispatch on ctx.burndown (only BL-228's own Given steps set
+  // it) before falling back to this ticket's own fixture.
   registry.define(/^the burndown is rendered$/, (ctx) => {
+    if (ctx.burndown !== undefined) {
+      const { renderPwaBurndown, cliBurndownLine } = require('./burndownEtaSteps');
+      ctx.pwaBurndownText = renderPwaBurndown(ctx.burndown, ctx.forecasts);
+      ctx.cliBurndownLine = cliBurndownLine(ctx.burndown, ctx.forecasts);
+      return;
+    }
     const backlog = fakeBacklog({
       metrics: {
         velocity: { weeklySeries: [], trend: { direction: 'unknown' }, rollingWindowCount: 0, rollingWindowDays: 7 },

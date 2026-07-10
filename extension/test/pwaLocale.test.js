@@ -379,3 +379,27 @@ test('no-hardcoded-03: the previously-hardcoded ETA and remaining literals no lo
   assert.match(source, /tr\('etaPrefix'\)/);
   assert.match(source, /tr\('remainingSuffix'\)/);
 });
+
+// ── BL-228: the burndown's forecast ETA and overall ETA are localized ───
+
+test('BL-228: the burndown milestone ETA and overall ETA switch to their French catalog values', async () => {
+  const backlog = fakeBacklog({
+    metrics: {
+      velocity: { weeklySeries: [], trend: { direction: 'unknown' }, rollingWindowCount: 0, rollingWindowDays: 7 },
+      burndown: [{ milestone: 'M4', currentRemaining: 2, trend: { direction: 'unknown' }, dailySeries: [] }],
+      cycleTime: { medianMs: null, p85Ms: null, sampleCount: 0, trend: { direction: 'unknown' }, weeklySeries: [] },
+      forecasts: {
+        tickets: [{ ticketId: 'BL-1', p50Iso: '2026-08-01T00:00:00Z', p85Iso: null }],
+        milestones: [{ milestone: 'M4', p50Iso: '2026-08-01T00:00:00Z', p85Iso: null }],
+        throughputPerDay: 0.5,
+      },
+    },
+  });
+  const dom = renderDashboard({ backlog });
+  await flush();
+  click(dom, toggle(dom));
+
+  const text = dom.window.document.getElementById('burndown').textContent;
+  assert.match(text, /^ETA globale : 2026-08-01/);
+  assert.match(text, /M4: 2 restants — ETA 2026-08-01/);
+});
