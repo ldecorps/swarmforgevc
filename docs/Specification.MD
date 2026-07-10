@@ -1033,6 +1033,21 @@ If the graceful drain phase takes longer than expected (e.g., an agent is hung),
 
 The extension watches a bounce sentinel file to detect and act on a bounce request. If that watch is unexpectedly lost (e.g. `.swarmforge/` is removed and recreated out from under it) it automatically re-establishes, with a capped, backed-off retry budget rather than retrying forever against a persistent failure (such as the host's inotify watch limit being exhausted). A transient loss shows a warning notification; if the retry budget is exhausted, an error notification tells you the sentinel is no longer being watched and to reload the window or bounce the swarm to re-establish it manually.
 
+### A swarm is a composite node (BL-244, Baton fleet epic)
+
+Every node in the (still-emerging) Baton fleet model answers the same four calls, whether it's a single agent, a whole swarm, or a fleet of swarms — the console never inspects agents directly, only the layer immediately below it (fleet → coordinator → agents): `identity()` (name, project, and node kind: `agent`/`swarm`/`fleet`), `status()` (`idle`/`queued`/`active`/`blocked`/`converging`/`done`/`degraded`, plus the terminal `"stopped (coordinator lost)"` added by BL-245 below), `health()` (`expected_panes`/`live_panes`/`coordinator_alive`), and `children()` (one node per pack agent, each answering the same interface). `extension/src/swarm/compositeNode.ts`'s `createSwarmNode` computes a swarm's rollup by reading existing on-disk state only (`.swarmforge/handoffs/`, `backlog/active/`) — no new authoritative store — with a swarm's own `status()` rolling up its agents' individual statuses (e.g. any agent `blocked` makes the swarm `blocked`). This module has no fleet-level console consumer yet (that's BL-242/BL-246); today it is read by the coordinator-loss recovery logic below.
+
+### Unexpected coordinator loss: bounded respawn, then graceful stop (BL-245)
+
+The graceful bounce above is a *sanctioned* restart the human (or the bounce procedure) requests — it never applies to the coordinator exiting on its own, which is forbidden (BL-107: the coordinator's pane exiting tears down the whole swarm). BL-245 covers the other case: the coordinator pane dies *unexpectedly* (a crash, not a deliberate exit). Losing the coordinator is not a mode the swarm keeps running in — it either recovers or ends the run cleanly:
+
+1. **Bounded respawn.** On an unexpected coordinator-pane death, the extension attempts a capped number of respawns with backoff (`extension/src/swarm/coordinatorLossTrigger.ts`'s `handleCoordinatorDeadEvent`, wired to `PaneTailer`'s `onDead` callback in `swarmPanel.ts`) — in-flight worker agents keep running throughout. `respawnCoordinator` reuses `tmuxClient.ts`'s single-pane `respawnAgent` (never the full-swarm `bouncer.ts`, which would also kill in-flight workers).
+2. **Recovery.** If a respawn succeeds within the cap, the coordinator re-reads swarm state from durable `.swarmforge/` state (never in-memory state) and status returns to normal — no in-flight worker state is lost.
+3. **Graceful stop on exhaustion.** If every respawn attempt fails up to the cap, the swarm stops gracefully instead of continuing degraded: intake freezes (no new work promoted), each in-flight parcel finishes its current stage and commits (reusing the existing bounce-drain pattern), then `swarmStopper.ts`'s `stopSwarmCompletely` tears down `handoffd` and every role session — no orphaned processes.
+4. **Terminal status.** After the stop, the swarm's composite-node `status()` (see the composite-node rollup above) reports the terminal `"stopped (coordinator lost)"` — the fleet console surfaces this so a human can decide whether to relaunch; the swarm never auto-restarts itself.
+
+`extension/src/swarm/coordinatorLossRecovery.ts` holds the pure respawn-cap/quiesce decision logic; `coordinatorLossTrigger.ts` is the real live call site wiring it to production dependencies. This closes an earlier architect bounce ("engine has no live caller") — the recovery engine was fully built and tested before anything in the running extension actually invoked it.
+
 ---
 
 ## Traceability & Completion ("Work Tree")
