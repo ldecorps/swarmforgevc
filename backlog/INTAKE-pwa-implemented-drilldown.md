@@ -7,6 +7,16 @@ been **implemented** so far. Show the not-yet-implemented items too, but **greye
 out** (still visible in the tree, visually de-emphasized), so the tree reads as
 "here's what's shipped, and here's what's still to come."
 
+**SEARCH / FILTER THE SPEC (operator clarification — this is the core need):**
+The operator needs **a way to search the spec** from the phone app — a text
+search/filter box that **matches any Gherkin scenario** (and ideally ticket
+title/description) by its text. Typing a query filters the drill-down tree to the
+items whose Gherkin scenarios contain that text, across BOTH implemented and
+not-yet-implemented items. Matched results keep their implementation-status
+styling (greyed if not yet implemented). Example: type a phrase and see every
+scenario/ticket mentioning it. This full-text spec search is the primary ask;
+the implemented-vs-greyed drill-down is the surface it filters over.
+
 **Priority:** operator wants this **prioritized** — spec it with a high priority
 so the coordinator promotes it ahead of the current approved-but-unpromoted queue
 (BL-246 / BL-251 / BL-252) as soon as a slot frees.
