@@ -110,12 +110,23 @@ test('the needs-approval section lists exactly the tickets in backlog.json\'s ne
   assert.match(text, /A ticket pending review/);
 });
 
+// BL-266: an entry is now an openable navButton-style control (tap to read
+// its description + acceptance scenarios) - a read/navigate action, not a
+// write one, same distinction the docs explorer's own navButton already
+// draws. Narrowed from "zero interactive elements" to "zero WRITE-capable
+// elements and zero approve/reject-labeled buttons" - the property this
+// test actually intends to guard - so BL-266's legitimate open-ticket
+// button doesn't false-fail a check aimed at a different concern.
 test('the needs-approval section has no approve/reject control - read-only', async () => {
   const dom = renderDashboard(fakeDashboard({ needsApproval: [{ id: 'BL-200', title: 'A ticket pending review' }] }));
   await flush();
   const container = dom.window.document.getElementById('needsApproval');
-  const controls = container.querySelectorAll('button, input, textarea, [contenteditable="true"], form');
-  assert.equal(controls.length, 0);
+  const writeControls = container.querySelectorAll('input, textarea, [contenteditable="true"], form');
+  assert.equal(writeControls.length, 0);
+  const approveRejectButtons = Array.from(container.querySelectorAll('button')).filter((b) =>
+    /approve|reject|accept|deny/i.test(b.textContent)
+  );
+  assert.equal(approveRejectButtons.length, 0);
 });
 
 test('an empty needsApproval array shows an explicit no-data state, not a blank section (empty-state-04)', async () => {

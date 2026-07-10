@@ -36,8 +36,110 @@ interface RawDepcruiseViolation {
 // Word-boundary match so e.g. `myLocalStorageHelper` never false-positives.
 const STORAGE_GLOBAL_PATTERN = /\b(localStorage|sessionStorage)\b/;
 
+// Architect bounce (BL-259, 20260710, first): scanning RAW file text (as
+// above) also matched a `//` or `/* */` comment merely discussing
+// localStorage/sessionStorage (e.g. explaining why the code avoids it),
+// failing the gate over prose, not code.
+//
+// Architect bounce (BL-259, 20260710, second): a first fix (two
+// regexes, `/\/\*[\s\S]*?\*\//g` then `/\/\/.*$/gm`) treated ANY `//` as a
+// comment start, including one inside an ordinary string literal (e.g. a
+// URL) - silently deleting REAL CODE that followed it on the same line, a
+// false NEGATIVE (a real violation going uncaught is worse than the
+// original false positive). This single-pass scanner is string-aware: a
+// `//`/`/*` inside a '...'/"..."/`...` literal (with backslash-escape
+// handling) is never treated as a comment start, so only a genuine
+// (unquoted) `//`/`/*` strips anything. Not a full parser - `${...}`
+// interpolation inside a template literal is not re-entered, so
+// executable code nested inside an interpolation is treated as opaque
+// string text (a narrower, deliberate limit matching this check's own
+// "small supplementary scan" scope; dependency-cruiser's import-graph
+// analysis remains the primary defense either way).
+// Index just past the closing (unescaped) `quote`, or content.length if the
+// literal is unterminated (copy-to-end matches stripComments' own prior
+// inline behavior for that edge case).
+function stringLiteralEnd(content: string, start: number, quote: '"' | "'" | '`'): number {
+  const n = content.length;
+  let i = start + 1;
+  while (i < n) {
+    if (content[i] === '\\' && i + 1 < n) {
+      i += 2;
+      continue;
+    }
+    if (content[i] === quote) {
+      return i + 1;
+    }
+    i += 1;
+  }
+  return i;
+}
+
+// Index just past the line's end (the `\n` itself is left for the caller,
+// matching stripComments' own prior inline `//` handling).
+function lineCommentEnd(content: string, start: number): number {
+  const n = content.length;
+  let i = start;
+  while (i < n && content[i] !== '\n') {
+    i += 1;
+  }
+  return i;
+}
+
+// Index just past a closing `*/`, or content.length if unterminated.
+function blockCommentEnd(content: string, start: number): number {
+  const n = content.length;
+  let i = start + 2;
+  while (i < n && !(content[i] === '*' && content[i + 1] === '/')) {
+    i += 1;
+  }
+  return Math.min(i + 2, n);
+}
+
+function isQuoteChar(ch: string): ch is '"' | "'" | '`' {
+  return ch === '"' || ch === "'" || ch === '`';
+}
+
+// null when `content[i]` is a `/` that doesn't start a `//` or `/* */`
+// comment (an ordinary division/regex slash), so the caller falls through
+// to copying it as a normal character - matching stripComments' own prior
+// inline dispatch exactly.
+function commentEnd(content: string, i: number): number | null {
+  if (content[i + 1] === '/') {
+    return lineCommentEnd(content, i);
+  }
+  if (content[i + 1] === '*') {
+    return blockCommentEnd(content, i);
+  }
+  return null;
+}
+
+function stripComments(content: string): string {
+  let result = '';
+  let i = 0;
+  const n = content.length;
+  while (i < n) {
+    const ch = content[i];
+    if (isQuoteChar(ch)) {
+      const end = stringLiteralEnd(content, i, ch);
+      result += content.slice(i, end);
+      i = end;
+      continue;
+    }
+    if (ch === '/') {
+      const end = commentEnd(content, i);
+      if (end !== null) {
+        i = end;
+        continue;
+      }
+    }
+    result += ch;
+    i += 1;
+  }
+  return result;
+}
+
 export function scanTextForStorageGlobal(filePath: string, content: string): DependencyViolation | null {
-  const match = content.match(STORAGE_GLOBAL_PATTERN);
+  const match = stripComments(content).match(STORAGE_GLOBAL_PATTERN);
   return match ? { from: filePath, to: match[1], rule: 'no-webview-storage' } : null;
 }
 
