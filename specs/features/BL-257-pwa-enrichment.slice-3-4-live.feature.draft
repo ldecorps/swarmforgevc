@@ -1,0 +1,55 @@
+# PARKED - BL-257 slices 3-4 (changed-since-last-visit, live briefing-metric
+# trends). NOT built in this pass and NOT wired into the live acceptance runner
+# (a .feature.draft is picked up by no *.feature glob and no runner, per
+# BL-233), so the up-front design is preserved without failing the hardener's
+# gate. Promote these scenarios into a live feature only when built.
+#
+# WHY PARKED (coder investigation, 2026-07-10, sent as a rule_proposal to the
+# specifier/architect alongside this build): BL-257's own "Scope" text says
+# "extend pwa/app.js with the four views ... the live-trend view consumes the
+# holistic feed (reuse BL-252/BL-094 plumbing)" - an internal contradiction.
+# pwa/app.js is the STATIC, GitHub-Pages-deployed dashboard (confirmed
+# empirically: zero bridge/token/localhost reference anywhere in the file) -
+# it has no live connectivity to the extension host or the bridge server at
+# all. BL-094/bridge plumbing (extension/src/bridge/bridgeServer.ts,
+# holisticUiHtml.ts) is a SEPARATE, loopback-bound live surface, reachable
+# only while the VS Code extension host is running. BL-252 (done, approved)
+# already resolved this exact question for suite-duration and landed
+# unambiguously: "SURFACE: the LIVE holistic UI + the daily briefing. Leave
+# backlog.json and the backlog-dashboard PWA untouched (respect the
+# git-projection boundary)." These two slices need:
+#   - Scenario 3: a last-visit marker PERSISTED BY THE EXTENSION HOST (no
+#     browser storage) - needs a new host-side persistence module (mirroring
+#     extension/src/swarm/bounceAck.ts's atomicWrite-backed
+#     .swarmforge/<name>.json pattern) plus a new bridge write route.
+#   - Scenario 4: throughput/QA-bounce/suite-duration as LIVE trends - reuses
+#     DeliveryMetrics (throughput, suite-duration already bridge-exposed via
+#     /metrics) but "QA-bounce" specifically has no existing distinct counter
+#     anywhere in this codebase (same finding BL-256 already documented for
+#     its own chase-trend-line.ts); the closest reusable signal is BL-098's
+#     chase/nudge/dead-letter/respawn telemetry (computeChaseTrend), which
+#     would need new bridge-side composition (a buildJsonRoutes table entry,
+#     per bridgeServer.ts's own established route-addition pattern) - this is
+#     genuinely new plumbing, not a wiring-only task.
+# Both are real, buildable slices - just on a different surface
+# (holisticUiHtml.ts, not pwa/app.js) than this ticket's own literal Scope
+# prose names, and via new (not merely reused) infrastructure. Flagging for a
+# specifier/architect decision rather than guessing; a coordinator note has
+# also been sent.
+
+Feature: the phone app highlights changes since the last visit and live briefing-metric trends
+
+  Background:
+    Given the phone app reading backlog.json and the live metric feed
+
+  # BL-257 changed-since-last-visit-03
+  Scenario: the app highlights what changed since the last visit
+    Given a last-visit marker persisted by the extension host
+    When the operator opens the app after some tickets changed state
+    Then the tickets that changed state since the last visit are highlighted
+
+  # BL-257 live-briefing-trends-04
+  Scenario: the app surfaces the briefing metrics as live trends
+    Given the live metric feed with throughput, QA-bounce, and suite-duration trends
+    When the operator opens the trends view
+    Then each metric is shown with its latest value and trend direction

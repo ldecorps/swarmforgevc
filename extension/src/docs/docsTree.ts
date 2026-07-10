@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { BacklogItem, readBacklogFolders } from '../panel/backlogReader';
-import { getCurrentSha } from '../metrics/gitHistoryAdapter';
+import { getCurrentSha, deriveTicketLifecycles, runGitLog, TicketLifecycleEvent } from '../metrics/gitHistoryAdapter';
 import { extractScenarios, GherkinScenario } from './gherkinScenarios';
 import { translateMarkdown, translateString, TranslationSession } from '../i18n/translate';
 
@@ -60,6 +60,16 @@ export interface TicketNode {
   titleFrUntranslated?: boolean;
   descriptionFr?: string;
   descriptionFrUntranslated?: boolean;
+  // BL-257 per-ticket-timeline-02: git-derived (gitHistoryAdapter.ts's
+  // deriveTicketLifecycles), reproducible from a fresh clone - unlike a
+  // richer per-role holding-window breakdown, which needs live
+  // .swarmforge/ mailbox state this artifact's own generation pipeline
+  // does not have. specDateIso is absent only when no lifecycle event
+  // matched this ticket id at all (should not happen for a real backlog
+  // item, but never crashes); closeDateIso is absent for a still-open
+  // ticket.
+  specDateIso?: string;
+  closeDateIso?: string;
 }
 
 export interface DocsTreeData {
@@ -121,7 +131,24 @@ function buildMilestoneNodes(items: StatusedItem[]): MilestoneNode[] {
     .sort((a, b) => a.milestone.localeCompare(b.milestone));
 }
 
-function toTicketNode(item: StatusedItem, scenariosByTicketId: Map<string, GherkinScenario[]>): TicketNode {
+// Split out of toTicketNode (below) so each function's own complexity -
+// and CRAP score - stays low independently, same pattern as
+// dependency-gate.ts's mediaJsFilesForScopePath split.
+function applyLifecycleFields(node: TicketNode, lifecycle: TicketLifecycleEvent | undefined): void {
+  if (!lifecycle) {
+    return;
+  }
+  node.specDateIso = lifecycle.specDateIso;
+  if (lifecycle.closeDateIso) {
+    node.closeDateIso = lifecycle.closeDateIso;
+  }
+}
+
+function toTicketNode(
+  item: StatusedItem,
+  scenariosByTicketId: Map<string, GherkinScenario[]>,
+  lifecyclesByTicketId: Map<string, TicketLifecycleEvent>
+): TicketNode {
   const node: TicketNode = {
     id: item.id,
     title: item.title,
@@ -138,6 +165,7 @@ function toTicketNode(item: StatusedItem, scenariosByTicketId: Map<string, Gherk
   if (item.description !== undefined) {
     node.description = item.description;
   }
+  applyLifecycleFields(node, lifecyclesByTicketId.get(item.id));
   return node;
 }
 
@@ -151,7 +179,8 @@ export function buildDocsTree(
   items: StatusedItem[],
   scenariosByTicketId: Map<string, GherkinScenario[]>,
   sourceSha: string | null,
-  generatedAtIso: string
+  generatedAtIso: string,
+  lifecyclesByTicketId: Map<string, TicketLifecycleEvent> = new Map()
 ): DocsTreeData {
   return {
     schemaVersion: DOCS_TREE_SCHEMA_VERSION,
@@ -159,7 +188,7 @@ export function buildDocsTree(
     sourceSha,
     vision,
     milestones: buildMilestoneNodes(items),
-    tickets: items.map((item) => toTicketNode(item, scenariosByTicketId)),
+    tickets: items.map((item) => toTicketNode(item, scenariosByTicketId, lifecyclesByTicketId)),
   };
 }
 
@@ -265,7 +294,16 @@ export function computeDocsTree(targetPath: string, nowMs: number = Date.now()):
     }
   }
 
-  return buildDocsTree(vision, items, scenariosByTicketId, getCurrentSha(targetPath), new Date(nowMs).toISOString());
+  const lifecyclesByTicketId = deriveTicketLifecycles(runGitLog(targetPath, 'backlog'));
+
+  return buildDocsTree(
+    vision,
+    items,
+    scenariosByTicketId,
+    getCurrentSha(targetPath),
+    new Date(nowMs).toISOString(),
+    lifecyclesByTicketId
+  );
 }
 
 // BL-230: translate.ts's session-level API is now parameterized over an

@@ -82,6 +82,39 @@ test('a ticket in the paused folder derives implemented: false (not-yet)', () =>
   assert.equal(tree.tickets[0].implemented, false);
 });
 
+// ── per-ticket timeline (BL-257 per-ticket-timeline-02) ───────────────────
+// specDateIso/closeDateIso, sourced from gitHistoryAdapter.ts's
+// deriveTicketLifecycles (git-derived, reproducible from a fresh clone -
+// unlike per-role holding windows, which need live .swarmforge/ mailbox
+// state this artifact's own generation pipeline does not have). Additive
+// and OPTIONAL (default empty map) so every existing 5-arg buildDocsTree
+// call site above keeps working unchanged.
+
+test('a ticket with a matching lifecycle event gains specDateIso/closeDateIso', () => {
+  const lifecycles = new Map([['BL-100', { ticketId: 'BL-100', specDateIso: '2026-07-01T00:00:00Z', closeDateIso: '2026-07-05T00:00:00Z' }]]);
+  const tree = buildDocsTree(emptyVisionDocs(), [item({ status: 'done' })], new Map(), 'abc', '2026-07-09T00:00:00Z', lifecycles);
+  assert.equal(tree.tickets[0].specDateIso, '2026-07-01T00:00:00Z');
+  assert.equal(tree.tickets[0].closeDateIso, '2026-07-05T00:00:00Z');
+});
+
+test('an unclosed ticket carries specDateIso only, no closeDateIso', () => {
+  const lifecycles = new Map([['BL-100', { ticketId: 'BL-100', specDateIso: '2026-07-01T00:00:00Z', closeDateIso: null }]]);
+  const tree = buildDocsTree(emptyVisionDocs(), [item({ status: 'active' })], new Map(), 'abc', '2026-07-09T00:00:00Z', lifecycles);
+  assert.equal(tree.tickets[0].specDateIso, '2026-07-01T00:00:00Z');
+  assert.equal('closeDateIso' in tree.tickets[0], false);
+});
+
+test('a ticket with no matching lifecycle event carries neither field, not a crash', () => {
+  const tree = buildDocsTree(emptyVisionDocs(), [item({ status: 'active' })], new Map(), 'abc', '2026-07-09T00:00:00Z', new Map());
+  assert.equal('specDateIso' in tree.tickets[0], false);
+  assert.equal('closeDateIso' in tree.tickets[0], false);
+});
+
+test('omitting the lifecycles argument entirely defaults to no timeline fields (backward compatible)', () => {
+  const tree = buildDocsTree(emptyVisionDocs(), [item({ status: 'active' })], new Map(), 'abc', '2026-07-09T00:00:00Z');
+  assert.equal('specDateIso' in tree.tickets[0], false);
+});
+
 test('the milestone ticket summary carries the same implemented flag as the full ticket node, not a separate derivation', () => {
   const items = [item({ id: 'BL-100', status: 'done', milestone: 'M4' }), item({ id: 'BL-101', status: 'active', milestone: 'M4' })];
   const tree = buildDocsTree(emptyVisionDocs(), items, new Map(), 'abc', '2026-07-09T00:00:00Z');
