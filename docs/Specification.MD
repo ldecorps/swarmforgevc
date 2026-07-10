@@ -572,19 +572,13 @@ A core capability: managing individual agents without disrupting the swarm.
 
 Respawn replaces the *process* itself — the orchestrator kills the old backend PID and re-issues the launch for that role in the same worktree.
 
-### Change an agent's backend/model on the fly
+### Change an agent's model on the fly (BL-235, M5 — Claude-backed roles only)
 
-- Pick a different backend or model from the tile's `backend ▾` dropdown
-- The extension rewrites that one window's launch command in the in-memory config and respawns the agent
-- No other agent is affected; the swarm-wide pack/role topology is otherwise unchanged
-- Lets you, e.g., drop a struggling agent onto a stronger model for one tricky slice, then switch back (see Agent Backends)
+**Landed slice:** a per-tile model dropdown, shown only for Claude-backed roles, lets you pick a different model for that one role. The extension rewrites that role's `.swarmforge/launch/<role>.claude-settings.json` `model` field in place (every other field untouched) and respawns just that role's pane via the existing single-agent respawn — no other agent is affected, `swarmforge.conf` and the launch script itself are never touched, and the swap is gone on the next fresh swarm launch (the settings file is regenerated then). Because role prompts and the constitution are re-read at launch, the respawned agent picks up the new model and resumes its in-process work normally. The dropdown's model catalog is the same versioned list `pricingTable.ts` uses for cost estimation — one list, not a second copy that could drift.
 
-### Implementation notes
+**Deferred (not yet built):** switching a role to a *different backend* (e.g. Claude → Codex, or to an in-process `vscode.lm` runtime) — see the note below and Agent Backends. That needs a TypeScript launch-command builder porting `swarmforge.sh`'s per-agent-CLI case-statement (five different CLIs' exact flags, including a documented past secrets-handling incident), which does not exist yet; a same-agent model switch needed none of that porting, so it shipped first as the safe narrow slice.
 
-- The extension tracks each role → (backend process/PID, worktree, current backend) mapping
-- Respawn = send kill to the running backend PID, then re-issue the launch command (the same command the orchestrator uses at startup for that role)
-- Model change = same as respawn, but with the launch command's backend argument swapped
-- Because role prompts and constitution are re-read at launch, mid-run prompt edits in the forge propagate on the next respawn
+> **Doc-accuracy note:** the "Agent Backends" section below describes a `vscode.lm` in-process runtime and a backend-agnostic `InteractiveProcess` abstraction as already-built. As of BL-235, that TypeScript-side abstraction and runtime do not exist in `extension/src` — `vscode.lm` appears nowhere in the codebase outside this aspirational prose. Only Claude-backed model switching (above) is real today; treat the rest of "Agent Backends" as the target design, not shipped behavior, until a future ticket lands it.
 
 ---
 
