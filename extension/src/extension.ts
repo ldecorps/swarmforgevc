@@ -22,7 +22,7 @@ import { stopSwarm, stopSwarmOnExtensionShutdown, stopSwarmCompletely } from './
 import { bounceSwarm, buildBounceExtensionCommand } from './swarm/bouncer';
 import { listTmuxSessions } from './swarm/tmuxClient';
 import { resolveRunName } from './run/resolveRunName';
-import { startBounceWatcher, closeBounceWatcher, BounceType } from './swarm/bounceWatcher';
+import { startResilientBounceWatcher, BounceType, ResilientWatcherHandle } from './swarm/bounceWatcher';
 import { writeBounceAck, clearBounceAck, BouncePhase } from './swarm/bounceAck';
 import { startChaserMonitor, stopChaserMonitor, buildRoleInboxes } from './watchdog/chaserMonitor';
 import type { ChaserMonitorConfig, ChaserCallbacks } from './watchdog/chaserMonitor';
@@ -126,7 +126,7 @@ const DEACTIVATE_REAP_GRACE_MS = 5_000;
 
 type RunMode = 'one-shot' | 'drain';
 
-let currentBounceWatcher: fs.FSWatcher | null = null;
+let currentBounceWatcher: ResilientWatcherHandle | null = null;
 let currentChaserMonitor: NodeJS.Timeout | null = null;
 let currentBounceDrainWatcher: NodeJS.Timeout | null = null;
 let currentGracefulBounceFileWatcher: fs.FSWatcher | null = null;
@@ -233,7 +233,7 @@ function startOrRestartBounceWatcher(
 ): void {
   // Dispose old watcher if it exists
   if (currentBounceWatcher) {
-    closeBounceWatcher(currentBounceWatcher);
+    currentBounceWatcher.close();
     currentBounceWatcher = null;
   }
 
@@ -257,31 +257,31 @@ function startOrRestartBounceWatcher(
   };
 
   // BL-115: an unexpected error/close (e.g. .swarmforge/ removed and
-  // recreated out from under the watched inode) re-establishes the watch
-  // against the current .swarmforge/ instead of leaving the bounce sentinel
-  // silently unwatched. A deliberate close (target switch, deactivation, or
-  // this very function's own cleanup above) never reaches here - see
-  // closeBounceWatcher's intentional-close marking.
-  const handleWatcherLost = (reason: string) => {
-    vscode.window.showWarningMessage(`Bounce watcher error: ${reason}`);
-    currentBounceWatcher = null;
-    startOrRestartBounceWatcher(context, targetPath);
-  };
+  // recreated out from under the watched inode) re-establishes the watch -
+  // bounded and backed off (engineering.prompt's retry/auto-restart cap
+  // rule), never an immediate unconditional restart loop (a persistent
+  // failure like inotify ENOSPC would otherwise spin forever). A deliberate
+  // close (target switch, deactivation, or this very function's own cleanup
+  // above) never reaches onLost/onExhausted - see
+  // createResilientWatcherSupervisor's intentional-close handling.
+  currentBounceWatcher = startResilientBounceWatcher(targetPath, handleBounce, {
+    onError: handleError,
+    onLost: (reason) => vscode.window.showWarningMessage(`Bounce watcher error: ${reason}`),
+    onExhausted: (reason) =>
+      vscode.window.showErrorMessage(
+        `Bounce watcher gave up re-establishing after repeated failures (${reason}). ` +
+          'The bounce sentinel is no longer being watched - reload the window or bounce the swarm to retry.'
+      ),
+  });
 
-  // Start the watcher
-  currentBounceWatcher = startBounceWatcher(targetPath, handleBounce, handleError, undefined, handleWatcherLost);
-
-  // Add to subscriptions for cleanup
-  if (currentBounceWatcher) {
-    context.subscriptions.push({
-      dispose: () => {
-        if (currentBounceWatcher) {
-          closeBounceWatcher(currentBounceWatcher);
-          currentBounceWatcher = null;
-        }
-      },
-    });
-  }
+  context.subscriptions.push({
+    dispose: () => {
+      if (currentBounceWatcher) {
+        currentBounceWatcher.close();
+        currentBounceWatcher = null;
+      }
+    },
+  });
 }
 
 function startOrRestartChaserMonitor(targetPath: string, context: vscode.ExtensionContext): void {
@@ -1606,7 +1606,7 @@ export function activate(context: vscode.ExtensionContext): void {
 export function deactivate(): void {
   SwarmPanel.currentPanel?.dispose();
   if (currentBounceWatcher) {
-    closeBounceWatcher(currentBounceWatcher);
+    currentBounceWatcher.close();
     currentBounceWatcher = null;
   }
   if (currentBridge) {
