@@ -3,7 +3,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
-const { isBounceType, parseBounceFile, processBounceFile, startBounceWatcher, handleWatchEvent } = require('../out/swarm/bounceWatcher');
+const {
+  isBounceType,
+  parseBounceFile,
+  processBounceFile,
+  startBounceWatcher,
+  handleWatchEvent,
+  closeBounceWatcher,
+} = require('../out/swarm/bounceWatcher');
 
 // BL-131: captures the debounce callback instead of scheduling it for real -
 // fire() simulates the 50ms settle delay elapsing synchronously, with no
@@ -282,6 +289,82 @@ test('handleWatchEvent does not process a bounce file that is gone by the time i
   handleWatchEvent('bounce', bounceFilePath, () => {}, (err) => errors.push(err), scheduleTick);
   fire();
   assert.deepEqual(errors, [], 'a bounce file gone before the delayed check must be skipped, not treated as a read error');
+});
+
+// --- BL-115: watcher error/close recovery ---
+
+// BL-115 bounce-watch-04: a real watcher error must be surfaced through
+// onWatcherLost so the caller can re-establish - emitted directly on the
+// real fs.FSWatcher (an EventEmitter) rather than waiting on a genuine OS
+// failure, since a watcher error is inherently not reproducible on demand.
+test('BL-115 bounce-watch-04: a watcher error calls onWatcherLost, naming the error', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
+  fs.mkdirSync(path.join(tmpDir, '.swarmforge'), { recursive: true });
+
+  const lostReasons = [];
+  const watcher = startBounceWatcher(
+    tmpDir,
+    () => {},
+    undefined,
+    undefined,
+    (reason) => lostReasons.push(reason)
+  );
+  try {
+    watcher.emit('error', new Error('ENOSPC watch failure'));
+    assert.equal(lostReasons.length, 1);
+    assert.match(lostReasons[0], /ENOSPC watch failure/);
+  } finally {
+    closeBounceWatcher(watcher);
+  }
+});
+
+// BL-115 bounce-watch-04: an unexpected close (not routed through
+// closeBounceWatcher) must also call onWatcherLost - e.g. the underlying
+// platform watch tearing itself down when .swarmforge/ is removed.
+test('BL-115 bounce-watch-04: an unexpected close calls onWatcherLost', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
+  fs.mkdirSync(path.join(tmpDir, '.swarmforge'), { recursive: true });
+
+  const lostReasons = [];
+  const watcher = startBounceWatcher(
+    tmpDir,
+    () => {},
+    undefined,
+    undefined,
+    (reason) => lostReasons.push(reason)
+  );
+  const closed = new Promise((resolve) => watcher.once('close', resolve));
+  watcher.close(); // NOT via closeBounceWatcher - simulates an unexpected close
+  await closed;
+  assert.equal(lostReasons.length, 1);
+  assert.match(lostReasons[0], /unexpectedly/);
+});
+
+// BL-115: closeBounceWatcher marks the close as intentional first - a
+// deliberate teardown (target switch, deactivation, a bounce replacing the
+// watcher) must NEVER be mistaken for a lost watcher and re-trigger a
+// redundant re-establish.
+test('BL-115: closeBounceWatcher does not call onWatcherLost for a deliberate close', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
+  fs.mkdirSync(path.join(tmpDir, '.swarmforge'), { recursive: true });
+
+  const lostReasons = [];
+  const watcher = startBounceWatcher(
+    tmpDir,
+    () => {},
+    undefined,
+    undefined,
+    (reason) => lostReasons.push(reason)
+  );
+  const closed = new Promise((resolve) => watcher.once('close', resolve));
+  closeBounceWatcher(watcher);
+  await closed;
+  assert.deepEqual(lostReasons, []);
+});
+
+test('closeBounceWatcher is a no-op for null/undefined', () => {
+  assert.doesNotThrow(() => closeBounceWatcher(null));
+  assert.doesNotThrow(() => closeBounceWatcher(undefined));
 });
 
 test('handleWatchEvent reports invalid bounce file content via onError', () => {

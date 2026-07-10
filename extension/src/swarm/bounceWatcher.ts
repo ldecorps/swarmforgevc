@@ -106,11 +106,33 @@ export function handleWatchEvent(
   handleFileWatchEvent(filename, 'bounce', bounceFilePath, onBounce, onError, scheduleTick);
 }
 
+// BL-115: fs.watch holds the directory's inode at watch time. If .swarmforge/
+// is ever removed and recreated (a target re-init) the original watcher is
+// silently orphaned - watching a now-unlinked inode, delivering no further
+// events for the new directory, with no error of its own. Node does surface
+// this as the watcher's 'error' or 'close' event on SOME platforms/causes,
+// so those are wired below - but deliberately closing a watcher ourselves
+// (a target-path switch, extension deactivation, a bounce cycle replacing it
+// with a fresh one) ALSO fires 'close', and must not be mistaken for a lost
+// watcher and trigger a redundant re-establish. closeBounceWatcher marks a
+// watcher as an intentional close before actually closing it so the 'close'
+// handler below can tell the two apart.
+const intentionallyClosingWatchers = new WeakSet<fs.FSWatcher>();
+
+export function closeBounceWatcher(watcher: fs.FSWatcher | null | undefined): void {
+  if (!watcher) {
+    return;
+  }
+  intentionallyClosingWatchers.add(watcher);
+  watcher.close();
+}
+
 export function startBounceWatcher(
   targetPath: string,
   onBounce: (bounceType: BounceType) => void,
   onError?: (error: string) => void,
   scheduleTick: ScheduleTick = defaultScheduleTick,
+  onWatcherLost?: (reason: string) => void,
 ): fs.FSWatcher | null {
   const swarmforgeDir = path.join(targetPath, '.swarmforge');
   const bounceFilePath = path.join(swarmforgeDir, 'bounce');
@@ -128,6 +150,18 @@ export function startBounceWatcher(
   // Watch the directory since watching a non-existent file may not work reliably
   const watcher = fs.watch(swarmforgeDir, (eventType, filename) => {
     handleWatchEvent(filename, bounceFilePath, onBounce, onError, scheduleTick);
+  });
+
+  watcher.on('error', (err) => {
+    if (onWatcherLost) {
+      onWatcherLost(`Bounce watcher error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+  watcher.on('close', () => {
+    if (!intentionallyClosingWatchers.has(watcher) && onWatcherLost) {
+      onWatcherLost('Bounce watcher closed unexpectedly');
+    }
+    intentionallyClosingWatchers.delete(watcher);
   });
 
   return watcher;
