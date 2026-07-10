@@ -94,7 +94,7 @@ For each component, it reports one of:
 - **HEALTHY** — No repair needed.
 - **FIXED** — It repaired the component and names what it did (e.g., "started
   extension", "respawned coder pane", "restarted daemon").
-- **FAILED** — It attempted repair but failed; check the error details.
+- **FAILED** — It attempted repair but failed; check the error details. When the failure can be classified, the line also names a stable category in brackets (`auth`, `unavailable`, `protocol`, `timeout`, `launch-failed`, or `unknown`) alongside the raw detail — e.g. `agent:coder: FAILED [launch-failed] (no tmux socket found for this project root)` — so you can tell at a glance whether it's a credentials problem, a backend outage, or something else, without parsing provider-specific prose.
 
 On an already-healthy swarm, `./swarm ensure` is a fast no-op that changes
 nothing. A failed repair of one component does not stop the remaining checks —
