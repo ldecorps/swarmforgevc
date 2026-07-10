@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { parseArgs, runDependencyCruiser } = require('../out/tools/dependency-gate');
+const { parseArgs, runDependencyCruiser, runGate, scanMediaFilesForStorageGlobals } = require('../out/tools/dependency-gate');
 const { parseDependencyCruiserOutput } = require('../out/quality/dependencyGate');
 
 // BL-259: runs the REAL pinned dependency-cruiser against small, isolated
@@ -129,6 +129,57 @@ test('the REAL checker catches view code importing a browser-storage wrapper pac
 
   assert.equal(result.passed, false);
   assert.ok(result.violations.some((v) => v.rule === 'no-webview-storage'), JSON.stringify(result.violations));
+});
+
+// ── QA bounce (6747a4812d): the REALISTIC no-webview-storage violation ──
+// dependency-cruiser alone (the test above) cannot see this at all - it
+// only sees import/require EDGES, never a bare global reference. This is
+// QA's OWN exact repro command, reproduced here as a real regression test.
+
+test('QA bounce repro: runGate flags a bare localStorage.setItem(...) global reference that depcruise alone misses', () => {
+  const root = mkFixtureRoot();
+  writeFixtureTsconfig(root);
+  writeFile(root, 'media/real-violation.js', "localStorage.setItem('x', '1');\n");
+
+  const depcruiseOnly = parseDependencyCruiserOutput(runDependencyCruiser(['media'], root, REAL_CONFIG_PATH));
+  assert.equal(depcruiseOnly.passed, true, 'confirms depcruise alone genuinely cannot see this - the gap QA found');
+
+  const full = runGate(['media'], root, REAL_CONFIG_PATH);
+  assert.equal(full.passed, false);
+  const violation = full.violations.find((v) => v.rule === 'no-webview-storage');
+  assert.ok(violation, `expected a no-webview-storage violation, got: ${JSON.stringify(full.violations)}`);
+  assert.equal(violation.from, 'media/real-violation.js');
+});
+
+test('QA bounce repro: sessionStorage is caught too, and a clean media file is not flagged', () => {
+  const root = mkFixtureRoot();
+  writeFixtureTsconfig(root);
+  writeFile(root, 'media/bad.js', 'sessionStorage.getItem("x");\n');
+  writeFile(root, 'media/clean.js', "console.log('hello');\n");
+
+  const violations = scanMediaFilesForStorageGlobals(root, ['media']);
+
+  assert.deepEqual(violations.map((v) => v.from).sort(), ['media/bad.js']);
+});
+
+test('scanMediaFilesForStorageGlobals only scans media/ scope paths - a src/ scope contributes nothing', () => {
+  const root = mkFixtureRoot();
+  writeFixtureTsconfig(root);
+  writeFile(root, 'src/quality/notMedia.ts', "const localStorage_lookalike = 'localStorage in a comment or string';\n");
+
+  const violations = scanMediaFilesForStorageGlobals(root, ['src']);
+
+  assert.deepEqual(violations, []);
+});
+
+test('per-parcel mode: scanMediaFilesForStorageGlobals scans a single changed media file directly', () => {
+  const root = mkFixtureRoot();
+  writeFixtureTsconfig(root);
+  writeFile(root, 'media/real-violation.js', "localStorage.setItem('x', '1');\n");
+
+  const violations = scanMediaFilesForStorageGlobals(root, ['media/real-violation.js']);
+
+  assert.deepEqual(violations, [{ from: 'media/real-violation.js', to: 'localStorage', rule: 'no-webview-storage' }]);
 });
 
 test('the REAL checker catches a dependency cycle (acyclic)', () => {

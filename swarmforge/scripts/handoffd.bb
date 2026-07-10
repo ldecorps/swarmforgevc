@@ -16,6 +16,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_inject.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "briefing_email_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "briefing_generation_schedule_lib.bb")))
 
 (def poll-ms 1000)
 (def wake-message agent-runtime-lib/default-wake-chat-message)
@@ -735,6 +736,30 @@
     :needs-approval-section needs-approval-briefing-section
     :log! (fn [& parts] (apply log! parts))}))
 
+;; BL-258: headless, host-independent morning trigger for briefing
+;; GENERATION (complements briefing-email-sweep! above, which only handles
+;; the SEND of an already-committed file). Reads the configured morning
+;; time the same way send-configured-briefing-email! reads notify_email_to
+;; above - daemon_alarm_lib.bb's shared parse-conf, one convention for every
+;; daemon-level swarmforge.conf key.
+(defn configured-morning-time []
+  (let [conf (daemon-alarm-lib/parse-conf (when (fs/exists? conf-file) (slurp (str conf-file))))]
+    (briefing-generation-schedule-lib/parse-morning-time (get conf "briefing_morning_time_utc"))))
+
+(defn briefing-generation-sweep! [roles socket]
+  (let [[hour minute] (configured-morning-time)]
+    (briefing-generation-schedule-lib/generate-briefing-if-due!
+     (System/currentTimeMillis) hour minute (str briefings-dir)
+     {:notify! (fn [instruction-text]
+                 (if (tmux-inject-disabled?)
+                   (log! "briefing-generation-skip-mailbox-only")
+                   (when-let [coordinator (get roles "coordinator")]
+                     (agent-runtime-inject/notify-agent!
+                      socket (:session coordinator) (or (:agent coordinator) "claude")
+                      :log-fn (fn [tag sess detail] (log! tag sess detail))
+                      :text instruction-text))))
+      :log! (fn [& parts] (apply log! parts))})))
+
 (defn -main []
   (let [roles  (load-roles)
         socket (str/trim (slurp (str socket-file)))]
@@ -796,7 +821,14 @@
                     (try
                       (briefing-email-sweep!)
                       (catch Exception e
-                        (log! "briefing-email-sweep-error" (.getMessage e)))))
+                        (log! "briefing-email-sweep-error" (.getMessage e))))
+                    ;; BL-258: briefing-generation sweep shares the same
+                    ;; cadence - no separate timeout, same rationale as
+                    ;; BL-222/BL-214 above.
+                    (try
+                      (briefing-generation-sweep! (load-roles) socket)
+                      (catch Exception e
+                        (log! "briefing-generation-sweep-error" (.getMessage e)))))
                   (spit (str heartbeat-file) (str (now) "\n"))
                   (when (zero? (mod cycle heartbeat-log-every-cycles))
                     (log! "heartbeat" (str "cycle=" cycle)))
