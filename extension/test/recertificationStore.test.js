@@ -4,7 +4,14 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
-const { readRecertStore, writeRecertStore, appendRecertProposal, computeRecertBatch } = require('../out/docs/recertificationStore');
+const {
+  readRecertStore,
+  writeRecertStore,
+  appendRecertProposal,
+  computeRecertBatch,
+  parseRecertEmailTo,
+  readRecertEmailTo,
+} = require('../out/docs/recertificationStore');
 
 // BL-150: the impure filesystem layer for the durable recert-state.json
 // store and the recert_proposals/<yyyy-MM>.jsonl queue.
@@ -76,6 +83,39 @@ test('appendRecertProposal in a different month writes a separate file', () => {
   assert.ok(fs.existsSync(path.join(target, '.swarmforge', 'recert_proposals', '2026-07.jsonl')));
 });
 
+// ── BL-223: recert_email_to (real inbound address, off the .invalid placeholder) ──
+
+test('parseRecertEmailTo reads the configured recert_email_to', () => {
+  assert.equal(
+    parseRecertEmailTo('config notify_email_to a@b.com\nconfig recert_email_to recert@tolokarooo.resend.app\n'),
+    'recert@tolokarooo.resend.app'
+  );
+});
+
+test('parseRecertEmailTo defaults to the Resend-managed receiving domain when unconfigured', () => {
+  assert.equal(parseRecertEmailTo('config notify_email_to a@b.com\n'), 'recert@tolokarooo.resend.app');
+});
+
+test('parseRecertEmailTo defaults for empty content', () => {
+  assert.equal(parseRecertEmailTo(''), 'recert@tolokarooo.resend.app');
+});
+
+test('parseRecertEmailTo never defaults to the reserved .invalid TLD', () => {
+  assert.doesNotMatch(parseRecertEmailTo(''), /\.invalid/);
+});
+
+test('readRecertEmailTo reads swarmforge/swarmforge.conf under the target path', () => {
+  const target = mkTmp();
+  mkdirp(path.join(target, 'swarmforge'));
+  fs.writeFileSync(path.join(target, 'swarmforge', 'swarmforge.conf'), 'config recert_email_to recert@inbound.musicalsifu.com\n');
+  assert.equal(readRecertEmailTo(target), 'recert@inbound.musicalsifu.com');
+});
+
+test('readRecertEmailTo defaults (never throws) when swarmforge.conf is missing', () => {
+  const target = mkTmp();
+  assert.equal(readRecertEmailTo(target), 'recert@tolokarooo.resend.app');
+});
+
 // recert-01: computeRecertBatch resolves the docs tree + durable store into
 // the already oldest-first-sorted artifact the PWA renders without any
 // derivation of its own.
@@ -103,6 +143,26 @@ test('computeRecertBatch selects the oldest-reviewed tagged scenario across the 
   const batch = computeRecertBatch(root, 1, Date.parse('2026-07-09T00:00:00Z'));
   assert.equal(batch.batch.length, 1);
   assert.equal(batch.batch[0].id, 'BL-900/scen-02');
+});
+
+// BL-223: the published recert-batch.json is the ONE place the PWA gets the
+// inbound address from - never a second hardcode alongside app.js's own.
+test('computeRecertBatch includes recertEmailTo, defaulting to the Resend-managed receiving domain', () => {
+  const root = mkTmp();
+  mkdirp(path.join(root, 'backlog', 'active'));
+  mkdirp(path.join(root, '.swarmforge'));
+  const batch = computeRecertBatch(root, 1, Date.parse('2026-07-09T00:00:00Z'));
+  assert.equal(batch.recertEmailTo, 'recert@tolokarooo.resend.app');
+});
+
+test('computeRecertBatch reflects a configured recert_email_to override (future custom-domain swap)', () => {
+  const root = mkTmp();
+  mkdirp(path.join(root, 'backlog', 'active'));
+  mkdirp(path.join(root, '.swarmforge'));
+  mkdirp(path.join(root, 'swarmforge'));
+  fs.writeFileSync(path.join(root, 'swarmforge', 'swarmforge.conf'), 'config recert_email_to recert@inbound.musicalsifu.com\n');
+  const batch = computeRecertBatch(root, 1, Date.parse('2026-07-09T00:00:00Z'));
+  assert.equal(batch.recertEmailTo, 'recert@inbound.musicalsifu.com');
 });
 
 test('the compiled generate-recert-batch CLI prints a valid, schema-versioned recert-batch.json to stdout', () => {
