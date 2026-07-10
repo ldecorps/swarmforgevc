@@ -11,7 +11,7 @@
 // is a read-only narration concern, gateAnswerLive.ts is the security-
 // sensitive gate-answer WRITE path, and the two have no shared lifecycle
 // worth coupling.
-import { readTmuxSocket, readSwarmRoles, resolveAgentPaneTarget, getPaneBaseIndex, capturePane } from '../swarm/tmuxClient';
+import { readTmuxSocket, readSwarmRoles, resolveAgentPaneTarget, getPaneBaseIndex, capturePane, TmuxRunResult } from '../swarm/tmuxClient';
 import { detectNeedsHuman, extractQuestionSnippet } from '../panel/needsHumanDetection';
 
 export interface RoleGateState {
@@ -46,6 +46,13 @@ function resolveLiveTarget(targetPath: string, socketPath: string, role: string)
   return resolveAgentPaneTarget(socketPath, roleEntry.session, getPaneBaseIndex(socketPath));
 }
 
+// Kept local to this file rather than shared with gateAnswerLive.ts's own
+// identical-shaped capturePaneText (see the file header) - narrowing this
+// closure's own branching, not re-coupling the two.
+function stdoutIfCaptureSucceeded(captured: TmuxRunResult): string | undefined {
+  return captured.exitCode === 0 ? captured.stdout : undefined;
+}
+
 export function computeRoleGateStatesLive(targetPath: string, roles: string[]): RoleGateState[] {
   const socketPath = readTmuxSocket(targetPath);
   if (!socketPath) {
@@ -53,10 +60,6 @@ export function computeRoleGateStatesLive(targetPath: string, roles: string[]): 
   }
   return computeRoleGateStates(roles, (role) => {
     const target = resolveLiveTarget(targetPath, socketPath, role);
-    if (!target) {
-      return undefined;
-    }
-    const captured = capturePane(socketPath, target);
-    return captured.exitCode === 0 ? captured.stdout : undefined;
+    return target ? stdoutIfCaptureSucceeded(capturePane(socketPath, target)) : undefined;
   });
 }

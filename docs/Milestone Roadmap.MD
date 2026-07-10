@@ -138,7 +138,7 @@ Tick each — these are the seams the whole spec depends on. Built and proven fr
 
 - **Tier-2 bridge** — projects the same on-disk state over an authenticated tunnel; read projection + small control surface; holds no authoritative state
 - **Phone app or chat adapter** — glanceable status, push notifications, **answer `to: human` gates remotely** (the headline remote feature — the bridge's gate-answer write path landed, BL-240; a phone app/chat adapter client consuming it is still to come), simple controls
-- **Chat adapter** (Telegram easiest; Signal/WhatsApp/Teams per context) — human channel only, per-run thread as activity feed; agents never coordinate through it
+- **Chat adapter** (Telegram easiest; Signal/WhatsApp/Teams per context) — human channel only, per-run thread as activity feed; agents never coordinate through it. Telegram landed (BL-239): narrates stage transitions/gates/dead-letters/PR link, relays a gate reply via BL-240 (answer-only, no stop/respawn commands); other platforms not built.
 - **Remote security** — threat model: token rotation, read-only vs. control scope, device revocation, stronger auth for control actions — landed (BL-241) as a host-side device-registry module; no dedicated per-device registration command/UI yet, the bootstrap "Start Bridge" flow still mints one bootstrap token
 
 **Why last:** it's the only piece that genuinely needs new networked infrastructure, and the spec shows it's cleanly deferrable (the filesystem already decouples the swarm from the UI). Everything it exposes already exists as state by M5; the bridge is a projection, not a re-architecture. Answering gates from your phone is the standout payoff and a natural capstone.

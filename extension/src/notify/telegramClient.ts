@@ -116,6 +116,11 @@ export interface GetUpdatesResult {
   error?: string;
 }
 
+function extractUpdates(json: unknown): TelegramUpdate[] {
+  const result = json && typeof json === 'object' ? (json as Record<string, unknown>).result : undefined;
+  return Array.isArray(result) ? (result as TelegramUpdate[]) : [];
+}
+
 // Long-polling read: `timeoutSeconds` is Telegram's own long-poll wait (the
 // API holds the connection open until an update arrives or the timeout
 // elapses), not a client-side request timeout.
@@ -132,9 +137,7 @@ export async function getTelegramUpdates(
       const description = extractDescription(res.json);
       return { success: false, updates: [], error: redactToken(`Telegram API responded with status ${res.status}${description ? `: ${description}` : ''}`, token) };
     }
-    const result =
-      res.json && typeof res.json === 'object' ? (res.json as Record<string, unknown>).result : undefined;
-    return { success: true, updates: Array.isArray(result) ? (result as TelegramUpdate[]) : [] };
+    return { success: true, updates: extractUpdates(res.json) };
   } catch (err) {
     const detail = err instanceof Error ? err.message : 'unknown error';
     return { success: false, updates: [], error: redactToken(`Telegram request failed: ${detail}`, token) };
