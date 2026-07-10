@@ -1,7 +1,7 @@
 id: BL-266
 title: "Read or LISTEN to a pending ticket (description + acceptance scenarios) from the phone approval list (BL-251 drill-in; sliced: read, listen)"
 direction: tooling
-priority: 35
+priority: 12
 mutation_cost: low
 source: "operator direction 2026-07-10 (via coordinator, backlog/INTAKE-pwa-read-pending-ticket-detail.md): the phone lists tickets needing approval but the operator cannot read what they are approving. 'can I read about them via the phone app?' — operator wants to tap a needs-approval entry and read the ticket."
 
@@ -124,4 +124,4 @@ qa_e2e_procedure: |
 # LISTEN addition + its decisions (on-device TTS, fold into BL-266 as slice 2, speak
 # description+scenarios) on 2026-07-10; the scenario wording is pending review. Park in
 # paused until approved.
-human_approval: pending
+human_approval: approved
