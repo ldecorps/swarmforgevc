@@ -1,0 +1,98 @@
+id: BL-254
+title: "Phone spec search: full-text filter of the docs drill-down by Gherkin (and title/description) text"
+direction: tooling
+priority: 15
+mutation_cost: low
+source: "operator intake clarification 2026-07-10 (via coordinator, commit b575253, appended to INTAKE-pwa-implemented-drilldown.md): 'a way to search the spec from the phone — a text search/filter matching any Gherkin scenario; this full-text spec search is the primary ask.'"
+
+description: |
+  The operator's PRIMARY ask from the phone-app intake: a text search/filter box in
+  the phone app that matches any Gherkin scenario (and ideally ticket
+  title/description) by its text, filtering the docs drill-down tree to the matching
+  items — across BOTH implemented and not-yet-implemented items. The
+  implemented-vs-greyed drill-down (BL-253) is the surface this filters over.
+
+  Note (drain/audit): the operator appended this clarification to
+  backlog/INTAKE-pwa-implemented-drilldown.md (commit b575253); that intake file was
+  removed when its drill-down half was drained into BL-253, so this half is specced
+  from that git history. The intake is now fully drained (BL-253 + BL-254).
+
+  REUSE — filter the tree, don't build a new one or a new store:
+    - BL-117 (done) already renders the milestone -> ticket -> Gherkin drill-down,
+      and the docs-tree data the PWA fetches already carries each ticket's
+      scenarios, title, and status. Filter that already-loaded data client-side; no
+      new search endpoint or index.
+    - COMPOSES with BL-253 (implemented-vs-greyed): matched items render with the
+      tree's NORMAL status treatment (BL-253's greying when present). This item does
+      NOT hard-depend on BL-253 — it filters the existing tree, and the two compose.
+      (Operator framed search as the primary ask, so it stays independently
+      promotable.)
+
+  Matching (from the intake):
+    - Match a query as a CASE-INSENSITIVE SUBSTRING against a ticket's Gherkin
+      scenario text AND its title/description.
+    - A ticket matches if ANY of its scenarios, or its title/description, contains
+      the query. The tree is pruned to matching tickets, keeping the milestone
+      hierarchy. Matching spans implemented and not-yet-implemented items alike.
+    - An empty query applies no filter (full tree). A query that matches nothing
+      shows a clear no-results state.
+
+  Wanted behavior (observable):
+    - Typing a query filters the drill-down tree to the tickets whose Gherkin (or
+      title/description) contains that text; non-matching tickets are hidden.
+    - Matching is case-insensitive substring.
+    - Search spans implemented and not-yet-implemented items; each match keeps the
+      tree's normal implementation-status treatment.
+    - An empty query shows the full unfiltered tree; a no-match query shows a clear
+      no-results state, not a blank or an error.
+
+  Constraints:
+    - REUSE, don't rebuild: filter the docs-tree data the PWA already fetches; extend
+      the existing docs section render in pwa/app.js (renderDocsExplorer). Do not add
+      a new tree, a new search endpoint, or a server-side index.
+    - PURE, TESTABLE filter (engineering boundary): the match/filter logic (tree data
+      + query -> filtered tree) is a PURE function kept separate from DOM rendering,
+      so it is unit-testable without the webview; the DOM render is the unsuitable
+      boundary. The acceptance step handlers drive the pure filter, not the rendered
+      DOM.
+    - LOCALIZATION: the search box placeholder and the no-results text go through
+      pwa/locales.js (BL-229/BL-230). The matched CONTENT is the spec's own (English)
+      Gherkin text — matching is on that raw text, not translated.
+    - COMPOSE, don't special-case: matched items reuse the tree's existing status
+      rendering (BL-253's greying when built); do not re-implement status styling
+      here.
+
+  Scope: (a) a pure client-side filter over the loaded docs-tree data
+  (case-insensitive substring over each ticket's scenario text + title/description),
+  pruning the tree to matching tickets while keeping the milestone hierarchy; (b) a
+  search/filter input + no-results state in the PWA docs section (pwa/app.js), with
+  localized strings in pwa/locales.js. Verify the live docs-tree data path
+  (docsTree.ts -> the tree JSON the PWA fetches -> pwa/app.js renderDocsExplorer)
+  actually runs before naming files in the built slice.
+
+  DELIVERY: buildable now (BL-117 done; independent of BL-253, composes with it).
+  Small; likely a single slice.
+
+acceptance: specs/features/BL-254-phone-spec-fulltext-search.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (PWA render faked; assert on the pure filter output):
+  1. Build the docs tree over a fixture; apply a query that appears in one ticket's
+     Gherkin scenario; assert that ticket is in the filtered result and a
+     non-matching ticket is not.
+  2. Apply a query appearing only in a ticket's title/description; assert that ticket
+     is included.
+  3. Apply a query differing only in letter case from tree text; assert it still
+     matches (case-insensitive substring).
+  4. Apply a query matching both a done and an active/paused ticket; assert both are
+     in the filtered result, each carrying its status treatment.
+  5. Apply an empty query; assert the full unfiltered tree is returned. Apply a
+     no-match query; assert a clear no-results state (not a blank/error).
+  6. Switch the app locale; assert the search placeholder and no-results text render
+     in that locale.
+
+# HUMAN APPROVAL: feature file
+# specs/features/BL-254-phone-spec-fulltext-search.feature is a NEW draft authored by
+# the specifier and is PENDING human review before it is treated as the
+# authoritative acceptance contract.
+human_approval: pending
