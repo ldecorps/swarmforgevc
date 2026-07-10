@@ -259,6 +259,21 @@
     return ' ▬';
   }
 
+  // BL-261: true only when a *Fr field is BOTH the one actually being
+  // shown right now (the active locale is fr AND that field is present)
+  // AND its paired *Untranslated flag says translate.ts degraded to the
+  // English fallback (bilingual-05's own "never block publishing"
+  // contract) - never flags a field that isn't even being presented as
+  // French at the moment. One shared predicate so all four render sites
+  // below agree, rather than four separately-drifting copies of this check.
+  function isUntranslatedFr(usingFr, untranslatedFlag) {
+    return usingFr === true && untranslatedFlag === true;
+  }
+
+  function untranslatedNotice() {
+    return el('p', { class: 'untranslated-notice' }, [tr('translationUnavailableNotice')]);
+  }
+
   // bilingual-05: a ticket whose title translation is unavailable falls
   // back to its own English title (never blank/undefined) - titleFr is
   // only ever absent when the artifact predates BL-118 or the translation
@@ -268,9 +283,14 @@
   // own docsTree ticket shape (titleFr) - descriptions/docs/scenarios are a
   // later BL-230 slice. Board tickets (backlogDashboard.ts) use the
   // N-locale boardTicketTitle below instead.
+  // BL-261: returns a plain string (every caller composes it into a larger
+  // line), so an untranslated fallback is labelled INLINE rather than via
+  // a separate DOM node - the only shape that fits every call site.
   function ticketTitle(ticket) {
-    if (currentLocale === 'fr' && ticket.titleFr) {
-      return ticket.titleFr;
+    var usingFr = currentLocale === 'fr' && !!ticket.titleFr;
+    if (usingFr) {
+      var suffix = isUntranslatedFr(usingFr, ticket.titleFrUntranslated) ? ' (' + tr('translationUnavailableNotice') + ')' : '';
+      return ticket.titleFr + suffix;
     }
     return ticket.title;
   }
@@ -629,7 +649,11 @@
       container.appendChild(noDataParagraph(tr('documentationNotFound')));
       return;
     }
-    var text = currentLocale === 'fr' && doc.contentFr ? doc.contentFr : doc.content;
+    var usingFr = currentLocale === 'fr' && !!doc.contentFr;
+    var text = usingFr ? doc.contentFr : doc.content;
+    if (isUntranslatedFr(usingFr, doc.contentFrUntranslated)) {
+      container.appendChild(untranslatedNotice());
+    }
     container.appendChild(el('pre', { class: 'doc-content' }, [text]));
   }
 
@@ -654,11 +678,15 @@
       container.appendChild(noDataParagraph(tr('ticketNotFound')));
       return;
     }
-    var description = currentLocale === 'fr' && ticket.descriptionFr ? ticket.descriptionFr : ticket.description;
+    var usingFrDescription = currentLocale === 'fr' && !!ticket.descriptionFr;
+    var description = usingFrDescription ? ticket.descriptionFr : ticket.description;
     var statusLine = el('p', { class: implementationClass(ticket) }, [
       ticketTitle(ticket) + ' [' + ticket.status + '] (' + implementationLabel(ticket) + ')' + (ticket.priority !== undefined ? ' priority ' + ticket.priority : ''),
     ]);
     container.appendChild(statusLine);
+    if (isUntranslatedFr(usingFrDescription, ticket.descriptionFrUntranslated)) {
+      container.appendChild(untranslatedNotice());
+    }
     container.appendChild(el('p', {}, [description || tr('noDescription')]));
     container.appendChild(el('h4', {}, [tr('documentationAcceptance')]));
     if (!ticket.scenarios || ticket.scenarios.length === 0) {
@@ -685,15 +713,30 @@
     container.appendChild(el('pre', { class: 'gherkin' }, [scenario.text]));
     if (scenario.textFr) {
       var revealed = false;
+      // BL-261: reveal semantics don't gate on currentLocale at all
+      // (bilingual-04's own design - available regardless of locale
+      // toggle), so "using" the French rendering is simply "has it been
+      // revealed" rather than a locale check.
+      var flagged = isUntranslatedFr(true, scenario.textFrUntranslated);
+      var notice = flagged ? untranslatedNotice() : null;
+      if (notice) {
+        notice.style.display = 'none';
+      }
       var frBlock = el('pre', { class: 'gherkin french-reveal' }, [scenario.textFr]);
       frBlock.style.display = 'none';
       var revealBtn = el('button', { type: 'button' }, [tr('showFrenchScenario')]);
       revealBtn.addEventListener('click', function () {
         revealed = !revealed;
         frBlock.style.display = revealed ? '' : 'none';
+        if (notice) {
+          notice.style.display = revealed ? '' : 'none';
+        }
         revealBtn.textContent = tr(revealed ? 'hideFrenchScenario' : 'showFrenchScenario');
       });
       container.appendChild(revealBtn);
+      if (notice) {
+        container.appendChild(notice);
+      }
       container.appendChild(frBlock);
     }
   }
