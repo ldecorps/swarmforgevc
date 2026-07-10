@@ -10,6 +10,7 @@ const DOMAINS = [
   require('./daemonWorkflowSteps'),
   require('./launchSpawnFailureSteps'),
   require('./mailboxIntakeSteps'),
+  require('./strykerPwaSandboxSteps'),
 ];
 
 function registerSteps(registry) {
