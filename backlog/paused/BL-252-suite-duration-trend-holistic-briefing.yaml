@@ -1,0 +1,98 @@
+id: BL-252
+title: "Surface unit-test suite-duration trend + regression flag in the holistic UI and daily briefing"
+direction: reliability
+priority: 30
+mutation_cost: low
+source: "operator chat request 2026-07-10 (via coordinator): 'show unit-test execution duration trend in PWA + daily briefing - spec it.'"
+
+description: |
+  Show the unit-test execution duration trend, with a regression flag, on the
+  phone-facing surface and in the daily briefing, so a slowing unit suite (which
+  the engineering rules treat as a real defect) gets noticed.
+
+  Specifier verified the live integration layer; this reflects what already exists:
+    - TREND already computed: computeSuiteDurationTrend (deliveryMetrics.ts) yields
+      {hasLocalData, dailySeries, trend}. The holistic dev-state UI
+      (bridge/holisticUiHtml.ts renderSuiteDurationReadout) ALREADY renders
+      "Suite duration: Ns latest <arrow>".
+    - REGRESSION SIGNAL already computed: swarmMetrics.ts (BL-078) folds the
+      records into latest/mean and computes warn = latest > warnThresholdMs (an
+      absolute floor, DEFAULT_SUITE_WARN_SECONDS) OR latest > 2x baseline mean.
+    - The backlog-dashboard PWA is fed by backlog.json, a git-SHA-reproducible
+      projection that DELIBERATELY excludes machine-local suite-duration records
+      (backlogDashboard.ts states this). So suite-duration cannot ride backlog.json.
+
+  Operator decisions (2026-07-10, via specifier questions):
+    1. BEHAVIOR: show the trend AND flag regression (not passive display only).
+    2. DETAIL: compact — latest value + trend arrow + regression flag; no sparkline.
+    3. SURFACE: the LIVE holistic UI + the daily briefing. Leave backlog.json and
+       the backlog-dashboard PWA untouched (respect the git-projection boundary).
+
+  This is a SURFACING ticket — reuse the existing trend and the existing BL-078
+  warn signal; do NOT recompute duration, invent a new threshold, or add a second
+  definition of "regressing".
+
+  Wanted behavior (observable):
+    - The holistic dev-state UI shows the latest unit-suite duration and its trend
+      direction (as today) and, when the BL-078 creep-warning signal is set, flags
+      the suite as regressing (the amber warn treatment already used elsewhere).
+    - The daily briefing email includes a line with the latest unit-suite duration
+      and its trend direction, and flags it as regressing when that same signal is
+      set.
+    - Both surfaces derive the regression flag from the ONE existing BL-078 warn
+      computation, not a re-derived threshold — so they cannot disagree.
+    - With no machine-local duration records (hasLocalData false), each surface
+      shows a no-data state, not an error or a fabricated value.
+    - backlog.json remains free of the machine-local suite-duration records (the
+      PWA and the git projection are untouched).
+
+  Constraints:
+    - REUSE, don't reimplement: read the trend from computeSuiteDurationTrend and
+      the regression flag from swarmMetrics.ts's BL-078 warn computation. Do not
+      duplicate the threshold logic.
+    - PROJECTION BOUNDARY: do not add machine-local suite-duration to backlog.json
+      or the backlog-dashboard PWA; backlog.json must stay reproducible from a git
+      SHA. This ticket touches only the live holistic UI and the briefing.
+    - TESTABLE host-side (engineering boundary): the trend + warn computations are
+      already host-side testable (deliveryMetrics/swarmMetrics); the briefing line
+      assembly is testable in Babashka; the holistic HTML render and the email send
+      are the unsuitable boundary — test the holistic STATE (the warn flag and
+      trend reaching the readout) and the assembled briefing line, not rendered HTML
+      or a real email send.
+
+  Scope: (a) surface the existing BL-078 warn flag into the holistic UI's
+  suite-duration readout (bridge/holisticUiHtml.ts renderSuiteDurationReadout +
+  whatever buildHolisticState feeds it), applying the amber warn treatment when
+  set; (b) add a suite-duration line (latest + trend direction + regression flag) to
+  the daily briefing (swarmforge/scripts/briefing_email_lib.bb), reading the
+  computed suite-duration summary, not backlog.json. Leave backlogDashboard.ts,
+  backlog.json, and pwa/app.js untouched. Verify the live path
+  (buildHolisticState -> holisticUiHtml.renderSuiteDurationReadout, and the
+  briefing's data source) actually runs before naming files in the built slice.
+
+  DELIVERY: buildable now (reuses shipped BL-096/BL-078 metrics; no unbuilt
+  dependency). Small; likely a single slice.
+
+acceptance: specs/features/BL-252-suite-duration-trend-holistic-briefing.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (holistic HTML render + email send faked; assert on
+  the holistic state and the assembled briefing line):
+  1. Seed local duration records with the latest WITHIN bound; render the holistic
+     readout and produce the briefing; assert both show the latest Ns + trend
+     direction and NO regression flag.
+  2. Seed records with the latest OVER the warn floor (or > 2x the baseline mean);
+     assert both surfaces show the regression flag, sourced from the BL-078 warn
+     signal.
+  3. Assert both surfaces derive the flag from the same swarmMetrics warn
+     computation (no second threshold constant introduced).
+  4. With no local records (hasLocalData false), assert both show a no-data state,
+     not an error or a fabricated value.
+  5. Regenerate backlog.json and assert it still excludes the machine-local
+     suite-duration records and that pwa/app.js is unchanged.
+
+# HUMAN APPROVAL: feature file
+# specs/features/BL-252-suite-duration-trend-holistic-briefing.feature is a NEW
+# draft authored by the specifier and is PENDING human review before it is treated
+# as the authoritative acceptance contract.
+human_approval: pending
