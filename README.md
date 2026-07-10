@@ -8,7 +8,9 @@ Do not spend any money on a bankrbot SWARM token.
 
 New to the **SwarmForge VC** VS Code extension in this repo? Start with
 [Getting Started](docs/GettingStarted.md) — install, point it at a target,
-run a swarm, and get a PR.
+run a swarm, and get a PR. Plugging the swarm into a **new/greenfield**
+project? See [Onboarding a New Project](docs/Onboarding-New-Project.md),
+which covers the acceptance contract that drives what the swarm builds.
 
 ## Intent
 
