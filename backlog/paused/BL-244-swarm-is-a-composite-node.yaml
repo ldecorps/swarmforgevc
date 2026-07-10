@@ -1,0 +1,49 @@
+id: BL-244
+title: "Baton: a swarm is a composite node (coordinator rolls up its pack via identity/status/health/children)"
+direction: feature
+milestone: M7
+priority: 15
+mutation_cost: medium
+depends_on: [BL-243]
+source: "Baton epic BL-242 child."
+
+description: |
+  A swarm answers the composite interface by rolling up its agents. The coordinator
+  computes the rollup; the console never inspects agents directly (layering:
+  fleet -> coordinator -> agents). Transport binding is deferred (BL-242 decision 2)
+  — these behaviors are transport-agnostic.
+
+  The four composite calls every node answers:
+    - identity() -> { name, project, kind: agent|swarm|fleet }
+    - status()   -> idle | queued | active | blocked | converging | done | degraded
+    - health()   -> { expected_panes, live_panes, coordinator_alive }
+    - children() -> child nodes (agents for a swarm)
+
+  Wanted behavior (observable):
+    - status() for a swarm is the rollup of its agents' states (idle when all idle;
+      active/blocked when an agent is; converging while merging; done when complete).
+    - identity() returns the swarm name, the project it works, and the coordinator
+      address to subscribe to.
+    - health() returns expected_panes, live_panes, and coordinator_alive.
+    - children() returns one node per pack agent, each answering the same interface.
+
+  Constraints:
+    - The rollup reads existing on-disk swarm state (.swarmforge/, pipeline stage);
+      do not add a new authoritative store. Testable host-side module.
+    - Map the swarm-status vocabulary to real pipeline/stage signals; "converging"
+      corresponds to the convergence/integration phase.
+
+  Scope: a host-side composite/rollup module the coordinator exposes (identity/
+  status/health/children over the swarm's agents), reading existing state.
+
+acceptance: specs/features/BL-244-swarm-is-a-composite-node.feature
+
+qa_e2e_procedure: |
+  1. Put pack agents in each state set; assert status() rolls up to the expected
+     swarm status (idle/active/blocked/converging/done).
+  2. Assert identity() returns name + project + coordinator address.
+  3. Set expected=live=4; assert health() reports 4/4 and coordinator_alive true.
+  4. Assert children() returns one node per pack agent, each answering the same
+     four calls.
+
+# HUMAN APPROVAL: new specifier draft feature file, pending human review.
