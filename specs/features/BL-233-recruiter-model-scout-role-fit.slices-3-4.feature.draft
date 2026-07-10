@@ -1,34 +1,13 @@
 # PARKED DRAFT — NOT an executable acceptance contract (extension is
 # .feature.draft, so the acceptance runner and any *.feature glob skip it).
-# These are BL-233's slice 2-4 scenarios, authored up front but not yet built.
+# These are BL-233's slice 3-4 scenarios, authored up front but not yet built.
 # When a slice is implemented, MOVE its scenarios into the live acceptance file
 # specs/features/BL-233-recruiter-model-scout-role-fit.feature (and re-lint /
-# IR-DRY there). Slice map: slice 2 = acquire access (02, 03); slice 3 = qualify
-# via battery (04); slice 4 = best-value ranking + recommend (05, 06).
+# IR-DRY there). Slice map: slice 3 = qualify via battery (04); slice 4 =
+# best-value ranking + recommend (05, 06). Slice 2 (02, 03) was promoted into
+# the live file when it was built.
 # Background (shared, verbatim from the live file):
 #   Given the recruiter runs out-of-band, reusing the swarm-compliance battery and the provider abstraction, without modifying live swarm config
-
-# --- slice 2: acquire access ---
-
-# BL-233 auto-acquire-free-02
-Scenario: a free plan is auto-signed-up and its key stored in the host secret store
-  Given a discovered candidate whose plan is free and permits automated signup
-  When the recruiter acquires access
-  Then it obtains an API key and stores it in the host secret store
-  And the key is never written to the working tree or any commit
-
-# BL-233 acquire-wall-escalates-03
-Scenario Outline: a signup wall escalates to a human instead of proceeding
-  Given a discovered candidate whose signup requires "<wall>"
-  When the recruiter attempts to acquire access
-  Then it escalates to a human for that candidate
-  And no API key is fabricated and nothing is committed
-
-  Examples:
-    | wall                  |
-    | payment details       |
-    | a captcha             |
-    | manual ToS acceptance |
 
 # --- slice 3: qualify via battery ---
 

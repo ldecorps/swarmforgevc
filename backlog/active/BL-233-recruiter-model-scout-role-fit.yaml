@@ -100,7 +100,6 @@ qa_e2e_procedure: |
   6. Assert the report contains a suggested swarmforge.conf --model line per role
      AND that swarmforge.conf is byte-for-byte unchanged and no bounce fired.
 
-# HUMAN APPROVAL: feature file specs/features/BL-233-...feature is a new draft
-# authored by the specifier and is pending human review — in particular the
-# auto-signup guardrails (secret storage + wall-escalation) chosen to keep the
-# operator's "auto sign-up + store keys" decision safe.
+# HUMAN APPROVAL: APPROVED by operator 2026-07-10 (feature file + auto-signup
+# guardrails: secret storage + wall-escalation). Moved done/ -> paused/ by
+# coordinator so it can be scheduled into the pipeline for build.
