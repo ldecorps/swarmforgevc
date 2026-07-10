@@ -252,6 +252,25 @@ worktree_path_for_name() {
   echo "$WORKTREES_DIR/$1"
 }
 
+# Registers one role into the parallel ROLES/AGENTS/SESSIONS/etc. arrays -
+# shared by parse_config's per-conf-line loop and provision_coordinator
+# (BL-243) so the role model (which array a role occupies a slot in) is a
+# one-place change, not two near-identical 8-line array-push blocks kept
+# in sync by hand.
+register_role() {
+  local role="$1" agent="$2" worktree="$3" receive_mode="$4" idle_clear="$5" extra_cli="$6" worktree_path="$7"
+  ROLE_INDEX[$role]=${#ROLES[@]}
+  ROLES+=("$role")
+  AGENTS+=("$agent")
+  SESSIONS+=("$(session_name_for_role "$role")")
+  DISPLAY_NAMES+=("$(display_name_for_role "$role")")
+  WORKTREE_NAMES+=("$worktree")
+  RECEIVE_MODES+=("$receive_mode")
+  IDLE_CLEAR_FLAGS+=("$idle_clear")
+  EXTRA_CLI_ARGS+=("$extra_cli")
+  WORKTREE_PATHS+=("$worktree_path")
+}
+
 parse_config() {
   if [[ ! -f "$CONFIG_FILE" ]]; then
     echo -e "${RED}Error:${RESET} Config not found at $CONFIG_FILE"
@@ -414,23 +433,21 @@ parse_config() {
       exit 1
     fi
 
-    ROLE_INDEX[$role]=${#ROLES[@]}
     if [[ "$worktree" != "none" && "$worktree" != "master" ]]; then
       WORKTREE_INDEX[$worktree]=${#ROLES[@]}
     fi
-    ROLES+=("$role")
-    AGENTS+=("$agent")
-    SESSIONS+=("$(session_name_for_role "$role")")
-    DISPLAY_NAMES+=("$(display_name_for_role "$role")")
-    WORKTREE_NAMES+=("$worktree")
-    RECEIVE_MODES+=("$receive_mode")
-    IDLE_CLEAR_FLAGS+=("$idle_clear")
-    EXTRA_CLI_ARGS+=("$extra_cli")
+    # zsh gotcha: a bare `local name` (no `=value`) on an iteration where
+    # `name` is already local+set from a PRIOR pass of this same loop
+    # doesn't just redeclare it - zsh treats a valueless, flagless typeset
+    # of an already-set name as a query and prints "name=value" to stdout.
+    # An explicit (even empty) initial value avoids that path entirely.
+    local worktree_path=""
     if [[ "$worktree" == "none" || "$worktree" == "master" ]]; then
-      WORKTREE_PATHS+=("$WORKING_DIR")
+      worktree_path="$WORKING_DIR"
     else
-      WORKTREE_PATHS+=("$(worktree_path_for_name "$worktree")")
+      worktree_path="$(worktree_path_for_name "$worktree")"
     fi
+    register_role "$role" "$agent" "$worktree" "$receive_mode" "$idle_clear" "$extra_cli" "$worktree_path"
   done < "$CONFIG_FILE"
 
   if (( ${#ROLES[@]} == 0 )); then
@@ -475,16 +492,7 @@ provision_coordinator() {
     extra_cli+=" --remote-control $(remote_control_session_name_for_role "$role")"
   fi
 
-  ROLE_INDEX[$role]=${#ROLES[@]}
-  ROLES+=("$role")
-  AGENTS+=("claude")
-  SESSIONS+=("$(session_name_for_role "$role")")
-  DISPLAY_NAMES+=("$(display_name_for_role "$role")")
-  WORKTREE_NAMES+=("master")
-  RECEIVE_MODES+=("task")
-  IDLE_CLEAR_FLAGS+=("off")
-  EXTRA_CLI_ARGS+=("$extra_cli")
-  WORKTREE_PATHS+=("$WORKING_DIR")
+  register_role "$role" "claude" "master" "task" "off" "$extra_cli" "$WORKING_DIR"
 }
 
 # BL-243 coordinator-infrastructure-02: the pack is the conf's own
