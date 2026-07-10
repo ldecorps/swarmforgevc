@@ -71,6 +71,13 @@ You are the coordinator.
   (mutation-heavy work to the fastest box, ordinary parcels to the
   bricks); holding intake when a stage's queue is the constraint rather
   than flooding it.
+  - BL-101: a headless secondary swarm on small hardware (Raspberry Pi,
+    a modest VPS) runs CPU-bound gates — full suite, mutation testing —
+    roughly 2-4x slower than a full-size machine, while API-bound stages
+    (an agent's own LLM calls) run at essentially full speed regardless
+    of host. Weigh this when assigning: mutation-heavy/hardener-long
+    tickets fit the fastest swarm better; ordinary parcels are a good fit
+    for a brick. Guidance, not a hard rule — assignment stays your call.
 - Recommend (beyond your powers — never act unilaterally): capacity
   changes (add/remove a role instance or a secondary swarm), per-role
   model/effort changes in `swarmforge.conf`, per-role idle-context-clear

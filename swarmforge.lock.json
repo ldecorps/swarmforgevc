@@ -5,5 +5,33 @@
     "commit": "accaa33d503340c56513ef387258f8da929ba902",
     "vendored_at": "swarmforge/vendor/aps/",
     "installed_by": "swarmforge/scripts/install_aps_tools.sh"
+  },
+  "secondary_host_substrate": {
+    "_comment": "BL-101: pinned substrate for provisioning a headless secondary swarm host (Pi 5 / VPS). installed_by never resolves a floating 'latest' - each install command below interpolates the exact version pinned here.",
+    "babashka": {
+      "version": "1.12.218",
+      "asset_pattern": "babashka-{version}-linux-{arch}-static.tar.gz",
+      "arch_map": { "aarch64": "aarch64", "x86_64": "amd64" },
+      "release_url": "https://github.com/babashka/babashka/releases/download/v{version}/{asset}",
+      "installed_by": "swarmforge/deploy/provision_secondary_host.sh"
+    },
+    "node": {
+      "major": "24",
+      "note": "Active LTS as of provisioning (2026-07). Installed via NodeSource's setup_24.x (pins the MAJOR line; only that major's own patch releases apply, never a different major).",
+      "installed_by": "swarmforge/deploy/provision_secondary_host.sh"
+    },
+    "claude_cli": {
+      "version": "2.1.205",
+      "install_method": "native installer, pinned version arg (never the floating 'latest'/'stable' channel arg)",
+      "install_command": "curl -fsSL https://claude.ai/install.sh | bash -s {version}",
+      "auto_update_disabled_via": "DISABLE_AUTOUPDATER=1 in ~/.claude/settings.json env - a headless box must not silently self-update mid-operation",
+      "installed_by": "swarmforge/deploy/provision_secondary_host.sh"
+    },
+    "github_actions_runner": {
+      "version": "2.333.1",
+      "note": "GitHub enforces upgrading self-hosted runners within 30 days of each new release (2026 policy) - this pin needs a periodic human bump, not a set-and-forget one.",
+      "release_url": "https://github.com/actions/runner/releases/download/v{version}/actions-runner-linux-{arch}-{version}.tar.gz",
+      "installed_by": "swarmforge/deploy/provision_secondary_host.sh"
+    }
   }
 }
