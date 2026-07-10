@@ -21,6 +21,7 @@ const DOMAINS = [
   require('./webhookSecretFixtureSteps'),
   require('./providerErrorTaxonomySteps'),
   require('./gherkinMutationSteps'),
+  require('./swarmMutationCostPrepassSteps'),
 ];
 
 function registerSteps(registry) {
