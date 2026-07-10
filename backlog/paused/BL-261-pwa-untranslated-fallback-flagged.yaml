@@ -87,4 +87,4 @@ qa_e2e_procedure: |
 # Priority 25 is a specifier default (bug tier, below the BL-249 cache-staleness
 # 15; intake: "low relative to a live outage, but real user-facing confusion") —
 # operator to confirm/adjust.
-human_approval: pending
+human_approval: approved
