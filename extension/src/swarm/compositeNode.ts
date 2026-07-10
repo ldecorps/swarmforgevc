@@ -15,11 +15,23 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { readCoordinatorLossState } from './coordinatorLossRecovery';
 import { scanInboxNew, scanInProcess } from './inboxChaser';
 import { mailboxDir, RoleEntry } from './swarmState';
 
 export type NodeKind = 'agent' | 'swarm' | 'fleet';
-export type NodeStatus = 'idle' | 'queued' | 'active' | 'blocked' | 'converging' | 'done' | 'degraded';
+export type NodeStatus =
+  | 'idle'
+  | 'queued'
+  | 'active'
+  | 'blocked'
+  | 'converging'
+  | 'done'
+  | 'degraded'
+  // BL-245: terminal - the coordinator was lost and every bounded respawn
+  // attempt failed, so the swarm quiesced and tore itself down rather than
+  // run on degraded. Not auto-restarted; a human relaunches.
+  | 'stopped (coordinator lost)';
 
 export interface NodeIdentity {
   name: string;
@@ -130,7 +142,16 @@ export function createSwarmNode(deps: SwarmNodeDeps): CompositeNode {
 
   return {
     identity: () => ({ name: deps.swarmName, project: deps.project, kind: 'swarm', coordinatorAddress: deps.coordinatorAddress }),
-    status: () => rollupStatus(packRoles.map((role) => agentStatus(deps, role))),
+    status: () => {
+      // BL-245: terminal, and overrides the ordinary rollup entirely - once
+      // the swarm has torn itself down there is no "worse" status to
+      // report instead, regardless of whatever stale mailbox state remains
+      // on disk from before the stop.
+      if (readCoordinatorLossState(deps.targetPath)?.phase === 'stopped') {
+        return 'stopped (coordinator lost)';
+      }
+      return rollupStatus(packRoles.map((role) => agentStatus(deps, role)));
+    },
     health: () => ({
       expected_panes: deps.roles.length,
       live_panes: deps.roles.filter((role) => deps.isSessionAlive(role)).length,
