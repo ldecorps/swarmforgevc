@@ -28,7 +28,6 @@ mk_root() {
 ROOT1="$(mk_root)"
 cat > "$ROOT1/swarmforge/swarmforge.conf" <<'CONF'
 config active_backlog_max_depth -1
-window coordinator claude master --model x
 window specifier claude master --model x
 CONF
 zsh -c "source '$SWARMFORGE_SH' '$ROOT1'; parse_config; check_primacy; write_swarm_identity_file"
@@ -53,7 +52,10 @@ grep -qx $'swarm_mode\tsecondary' "$IDENTITY2" || fail "02: expected swarm_mode 
 grep -qx $'swarm_mode_primary\tprimary' "$IDENTITY2" || fail "02: expected swarm_mode_primary 'primary', got: $(cat "$IDENTITY2")"
 pass "02: explicit swarm_name + secondary mode normalize into swarm-identity"
 
-# ── 3: secondary mode declaring a coordinator window is rejected ───────────
+# ── 3: a coordinator window is rejected even in a secondary-mode conf
+# (BL-243: coordinator is reserved infrastructure in every mode, not a
+# secondary-specific restriction anymore - see
+# test_coordinator_provisioned_infrastructure.sh for the general case) ───
 ROOT3="$(mk_root)"
 cat > "$ROOT3/swarmforge/swarmforge.conf" <<'CONF'
 config swarm_mode secondary primary
@@ -64,9 +66,9 @@ set +e
 OUT3="$(zsh -c "source '$SWARMFORGE_SH' '$ROOT3'; parse_config" 2>&1)"
 STATUS3=$?
 set -e
-[[ "$STATUS3" -ne 0 ]] || fail "03: expected launch to fail when secondary mode declares a coordinator window"
-echo "$OUT3" | grep -qi "coordinator" || fail "03: error must mention the coordinator conflict, got: $OUT3"
-pass "03: secondary mode + a coordinator window is rejected at parse time"
+[[ "$STATUS3" -ne 0 ]] || fail "03: expected launch to fail when a coordinator window is declared"
+echo "$OUT3" | grep -qi "coordinator is reserved infrastructure" || fail "03: error must report coordinator as reserved infrastructure, got: $OUT3"
+pass "03: a coordinator window is rejected at parse time, even in a secondary-mode conf"
 
 # ── 4: secondary mode with no primary name is rejected ─────────────────────
 ROOT4="$(mk_root)"
@@ -96,9 +98,11 @@ set -e
 pass "05: an unrecognized swarm_mode value is rejected"
 
 # ── 6: no primacy marker present -> autonomous launch is allowed through ───
+# (BL-243: coordinator is auto-provisioned, never declared - the conf needs
+# at least one real work-role window instead)
 ROOT6="$(mk_root)"
 cat > "$ROOT6/swarmforge/swarmforge.conf" <<'CONF'
-window coordinator claude master --model x
+window specifier claude master --model x
 CONF
 zsh -c "source '$SWARMFORGE_SH' '$ROOT6'; parse_config; check_primacy"
 pass "06: an absent primacy marker does not block an autonomous launch"
@@ -106,7 +110,7 @@ pass "06: an absent primacy marker does not block an autonomous launch"
 # ── 7: primacy marker naming THIS swarm -> allowed through ─────────────────
 ROOT7="$(mk_root)"
 cat > "$ROOT7/swarmforge/swarmforge.conf" <<'CONF'
-window coordinator claude master --model x
+window specifier claude master --model x
 CONF
 echo "primary" > "$ROOT7/swarmforge/primary"
 zsh -c "source '$SWARMFORGE_SH' '$ROOT7'; parse_config; check_primacy"
@@ -116,7 +120,7 @@ pass "07: a primacy marker naming this swarm allows the autonomous launch throug
 ROOT8="$(mk_root)"
 cat > "$ROOT8/swarmforge/swarmforge.conf" <<'CONF'
 config swarm_name second
-window coordinator claude master --model x
+window specifier claude master --model x
 CONF
 echo "primary" > "$ROOT8/swarmforge/primary"
 set +e

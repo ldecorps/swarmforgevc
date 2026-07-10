@@ -367,6 +367,17 @@ parse_config() {
       exit 1
     fi
 
+    # BL-243: coordinator is provisioned infrastructure, never a
+    # swarmforge.conf window line - the conf declares the PACK only.
+    # provision_coordinator (below, after this parsing loop) always adds
+    # exactly one, so a conf naming it here would either collide or let an
+    # operator accidentally reconfigure guaranteed-present infrastructure
+    # as if it were a regular pack-configurable role.
+    if [[ "$role" == "coordinator" ]]; then
+      echo -e "${RED}Error:${RESET} coordinator is reserved infrastructure and may not be declared as a window in $CONFIG_FILE (line $line_no) - it is always provisioned automatically."
+      exit 1
+    fi
+
     if [[ -n "${ROLE_INDEX[$role]:-}" ]]; then
       echo -e "${RED}Error:${RESET} Duplicate role '$role' in $CONFIG_FILE"
       exit 1
@@ -427,10 +438,64 @@ parse_config() {
     exit 1
   fi
 
-  if [[ "$SWARM_MODE" == "secondary" && -n "${ROLE_INDEX[coordinator]:-}" ]]; then
-    echo -e "${RED}Error:${RESET} swarm_mode secondary must not declare a coordinator window (role '$SWARM_NAME' would both triage and be enslaved to '$SWARM_MODE_PRIMARY')"
-    exit 1
+  # BL-243: a coordinator window line is rejected inline above (role ==
+  # "coordinator" can never reach this point), so the old swarm_mode
+  # secondary-specific rejection this replaced is now unreachable dead
+  # code - removed rather than left behind. provision_coordinator is the
+  # new, unconditional source of a swarm's coordinator; it already
+  # preserves secondary mode's own "no local coordinator, enslaved to the
+  # primary's triage" behavior unchanged.
+  provision_coordinator
+}
+
+# BL-243 coordinator-infrastructure-01/03: the coordinator is never a
+# swarmforge.conf window line (rejected in parse_config above) - every
+# autonomous swarm gets exactly one, appended here after the conf's own
+# roles are parsed so every existing per-role array (ROLES, AGENTS,
+# write_roles_file, write_sessions_file, etc.) treats it uniformly with
+# zero special-casing downstream. worktree "master" means no dedicated
+# worktree/branch is ever created for it (same existing path every
+# "master"/"none"-worktree role already takes). A secondary swarm has no
+# local coordinator (unchanged from today - it is enslaved to its
+# primary's own triage, never triages itself; this preserves the exact
+# invariant the removed inline check above used to enforce the hard way).
+#
+# The model/effort/permission flags below are this ticket's own default
+# for the now-unconfigurable coordinator identity (no window line exists
+# to carry --model/--effort anymore) - matching this project's own current
+# convention for the coordinator role (Opus-tier model, high effort).
+provision_coordinator() {
+  if [[ "$SWARM_MODE" == "secondary" ]]; then
+    return
   fi
+
+  local role="coordinator"
+  local extra_cli="--model claude-opus-4-8 --dangerously-skip-permissions --effort high"
+  if [[ "$REMOTE_CONTROL_DEFAULT" == 1 ]]; then
+    extra_cli+=" --remote-control $(remote_control_session_name_for_role "$role")"
+  fi
+
+  ROLE_INDEX[$role]=${#ROLES[@]}
+  ROLES+=("$role")
+  AGENTS+=("claude")
+  SESSIONS+=("$(session_name_for_role "$role")")
+  DISPLAY_NAMES+=("$(display_name_for_role "$role")")
+  WORKTREE_NAMES+=("master")
+  RECEIVE_MODES+=("task")
+  IDLE_CLEAR_FLAGS+=("off")
+  EXTRA_CLI_ARGS+=("$extra_cli")
+  WORKTREE_PATHS+=("$WORKING_DIR")
+}
+
+# BL-243 coordinator-infrastructure-02: the pack is the conf's own
+# work-role windows only - the always-provisioned coordinator (never a
+# conf line) is excluded from this count regardless of how it got here.
+pack_size() {
+  local count=0 role
+  for role in "${ROLES[@]}"; do
+    [[ "$role" == "coordinator" ]] || count=$((count + 1))
+  done
+  echo "$count"
 }
 
 # BL-090: single-triage invariant. The committed primacy marker
@@ -1063,6 +1128,7 @@ echo "  ╚═══════════════════════
 echo -e "${RESET}"
 
 echo -e "${GREEN}Launching SwarmForge tmux sessions...${RESET}"
+echo -e "${CYAN}Pack size: $(pack_size) role(s) (coordinator excluded)${RESET}"
 for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
   create_role_session "${SESSIONS[$i]}" "${DISPLAY_NAMES[$i]}"
 done
