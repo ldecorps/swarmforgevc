@@ -21,17 +21,23 @@
 (def logs (atom []))
 (def last-sent-text (atom nil))
 (def last-sent-html (atom :unset))
+(def last-sent-attachments (atom :unset))
 
 ;; BL-260: the diagram modes exercise send-unsent-briefings!'s :diagram-section
-;; adapter path (a 3-arg :send-email! call) through the real
-;; build-diagram-section - "diagram-available" fakes one rendered diagram
-;; (never a real render-binary invocation, per the testable-module
-;; constraint), "diagram-unavailable" mirrors what the render CLI reports
-;; when the renderer is missing (nil).
+;; adapter path through the real build-diagram-section - "diagram-available"
+;; fakes two rendered diagrams (never a real render-binary invocation, per
+;; the testable-module constraint), "diagram-unavailable" mirrors what the
+;; render CLI reports when the renderer is missing (nil).
+;;
+;; BL-286: "diagram-available" now also exercises the 4-arg (+attachments)
+;; :send-email! call - two diagrams (not one) so acceptance can assert the
+;; cid<->attachment correspondence is per-diagram, not just present.
 (def diagram-section-adapter
   (case mode
     "diagram-available"
-    (fn [] (briefing-email-lib/build-diagram-section [{:name "architecture" :base64 "ZmFrZS1wbmctYnl0ZXM="}]))
+    (fn [] (briefing-email-lib/build-diagram-section
+            [{:name "architecture" :base64 "ZmFrZS1wbmctYnl0ZXM="}
+             {:name "swarm-flow" :base64 "ZmFrZS1zd2FybS1mbG93"}]))
 
     "diagram-unavailable"
     (fn [] (briefing-email-lib/build-diagram-section nil))
@@ -44,10 +50,11 @@
     "missing-api-key" (fn [_s _t] {:success false :reason :missing-api-key :error "email not configured (missing RESEND_API_KEY)"})
     "disabled" (fn [_s _t] {:success false :reason :disabled :error "email not configured (notify_email_to unset)"})
     ("diagram-available" "diagram-unavailable")
-    (fn [_subject text html]
+    (fn [_subject text html & [attachments]]
       (swap! emails-sent inc)
       (reset! last-sent-text text)
       (reset! last-sent-html html)
+      (reset! last-sent-attachments attachments)
       {:success true})))
 
 (def base-adapters
@@ -64,4 +71,5 @@
                                  :emailsSent @emails-sent
                                  :logs @logs
                                  :lastSentText @last-sent-text
-                                 :lastSentHtml (when-not (= :unset @last-sent-html) @last-sent-html)}))
+                                 :lastSentHtml (when-not (= :unset @last-sent-html) @last-sent-html)
+                                 :lastSentAttachments (when-not (= :unset @last-sent-attachments) @last-sent-attachments)}))
