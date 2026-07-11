@@ -13,6 +13,8 @@ import { getHolisticUiHtml } from './holisticUiHtml';
 import { answerCapturedGateLive } from './gateAnswerLive';
 import { computeRoleGateStatesLive, filterPendingGates } from './gateSnapshot';
 import { readSwarmRoles } from '../swarm/tmuxClient';
+import { readThread, writeThread, appendMessage } from './supportThreadStore';
+import { appendOperatorEvent, readNewReplyOutboxEntries } from './operatorEventQueue';
 import {
   DeviceRegistry,
   DeviceScope,
@@ -31,6 +33,10 @@ const LOCALHOST = '127.0.0.1';
 // malformed/hostile client can't hold the connection open streaming an
 // unbounded body into memory.
 const GATE_ANSWER_MAX_BODY_BYTES = 16 * 1024;
+// BL-281: an inbound Telegram message body ({subjectId, channel, text}) -
+// same cap posture as the gate-answer body above; Telegram's own message
+// length limit is far under this.
+const TELEGRAM_INBOUND_MAX_BODY_BYTES = 16 * 1024;
 
 export interface BridgeHandle {
   port: number;
@@ -189,28 +195,118 @@ function isGateAnswerRoute(req: http.IncomingMessage, url: string): boolean {
 // this route's auth grows - a read-scoped device passes the dispatcher's
 // read-level gate (it can view) but is refused here (read-only-cannot-
 // control-03).
-function handleGateAnswerRoute(req: http.IncomingMessage, res: http.ServerResponse, targetPath: string, registry: DeviceRegistry): void {
+// Shared by handleGateAnswerRoute/handleTelegramInboundRoute below - both
+// are control-scoped write routes with the exact same auth-check/body-cap/
+// shape-validate shell around a different action; factored out so a
+// future write route reuses this shell instead of a third copy of it.
+function respondJson(res: http.ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, { 'content-type': 'application/json' });
+  res.end(JSON.stringify(body));
+}
+
+function requireControlAuth(req: http.IncomingMessage, res: http.ServerResponse, registry: DeviceRegistry): boolean {
   if (!isAuthorizedForControl(req, registry)) {
-    res.writeHead(403, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ success: false, reason: 'control auth required' }));
+    respondJson(res, 403, { success: false, reason: 'control auth required' });
+    return false;
+  }
+  return true;
+}
+
+// Reads and shape-validates the request body, responding 400 itself (and
+// resolving null) on either a body-read failure or a shape mismatch - the
+// caller only has to handle its own non-null, already-validated body.
+async function readValidatedBody<T>(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  maxBytes: number,
+  isShape: (value: unknown) => value is T,
+  shapeErrorReason: string
+): Promise<T | null> {
+  const body = await readJsonBody(req, maxBytes);
+  if (!body.ok) {
+    respondJson(res, 400, { success: false, reason: body.reason });
+    return null;
+  }
+  if (!isShape(body.value)) {
+    respondJson(res, 400, { success: false, reason: shapeErrorReason });
+    return null;
+  }
+  return body.value;
+}
+
+function handleGateAnswerRoute(req: http.IncomingMessage, res: http.ServerResponse, targetPath: string, registry: DeviceRegistry): void {
+  if (!requireControlAuth(req, res, registry)) {
     return;
   }
-  readJsonBody(req, GATE_ANSWER_MAX_BODY_BYTES).then((body) => {
-    if (!body.ok) {
-      res.writeHead(400, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ success: false, reason: body.reason }));
+  readValidatedBody(req, res, GATE_ANSWER_MAX_BODY_BYTES, isGateAnswerRequestShape, 'expected a JSON body of {role, answer}').then((value) => {
+    if (!value) {
       return;
     }
-    if (!isGateAnswerRequestShape(body.value)) {
-      res.writeHead(400, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ success: false, reason: 'expected a JSON body of {role, answer}' }));
-      return;
-    }
-    const result = answerCapturedGateLive(targetPath, body.value);
-    res.writeHead(result.success ? 200 : 403, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(result));
+    const result = answerCapturedGateLive(targetPath, value);
+    respondJson(res, result.success ? 200 : 403, result);
   });
 }
+
+// BL-281: {subjectId, channel, text} - the Front Desk Bot has ALREADY
+// resolved which SUP-### thread this belongs to (topic<->SUP-### mapping
+// is entirely bot-owned); the bridge only ever ingests an already-resolved
+// subject, never a raw Telegram update.
+function isTelegramInboundRequestShape(value: unknown): value is { subjectId: string; channel: string; text: string } {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof (value as Record<string, unknown>).subjectId === 'string' &&
+    typeof (value as Record<string, unknown>).channel === 'string' &&
+    typeof (value as Record<string, unknown>).text === 'string'
+  );
+}
+
+function isTelegramInboundRoute(req: http.IncomingMessage, url: string): boolean {
+  return req.method === 'POST' && url === '/telegram-inbound';
+}
+
+// BL-281 telegram-topic-01/telegram-topic-02: mirrors handleGateAnswerRoute
+// exactly - same control-scope step-up auth, same body-cap/shape-validate/
+// dispatch shape. ASYNC, not RPC (the ticket's own explicit constraint):
+// this ingests the message (appends to the SUP-###'s transcript, enqueues
+// a per-SUP-### Operator event for the runtime to pick up on its own next
+// tick) and responds immediately - it never waits for the Operator to
+// react, so the reply (if any) is guaranteed to not exist yet when this
+// response is sent.
+function handleTelegramInboundRoute(req: http.IncomingMessage, res: http.ServerResponse, targetPath: string, registry: DeviceRegistry): void {
+  if (!requireControlAuth(req, res, registry)) {
+    return;
+  }
+  readValidatedBody(
+    req,
+    res,
+    TELEGRAM_INBOUND_MAX_BODY_BYTES,
+    isTelegramInboundRequestShape,
+    'expected a JSON body of {subjectId, channel, text}'
+  ).then((value) => {
+    if (!value) {
+      return;
+    }
+    const { subjectId, channel, text } = value;
+    const existing = readThread(targetPath, subjectId);
+    writeThread(targetPath, appendMessage(existing, subjectId, channel, new Date().toISOString(), text));
+    appendOperatorEvent(targetPath, { type: 'TELEGRAM_TOPIC_MESSAGE', subject: subjectId });
+    respondJson(res, 200, { success: true });
+  });
+}
+
+interface WriteRoute {
+  matches: (req: http.IncomingMessage, url: string) => boolean;
+  handle: (req: http.IncomingMessage, res: http.ServerResponse, targetPath: string, registry: DeviceRegistry) => void;
+}
+
+// The bridge's write (POST) routes, table-driven for the same reason
+// buildJsonRoutes is: a future write route only ever adds a row here,
+// never another branch in the request dispatcher below.
+const writeRoutes: WriteRoute[] = [
+  { matches: isGateAnswerRoute, handle: handleGateAnswerRoute },
+  { matches: isTelegramInboundRoute, handle: handleTelegramInboundRoute },
+];
 
 function requestPath(req: http.IncomingMessage): string {
   return req.url ?? '/';
@@ -369,14 +465,15 @@ export function startBridge(
         return;
       }
 
-      // BL-240/BL-241: the bridge's one write route - answers a captured
-      // to-human gate only. Read-level auth is already enforced above,
-      // uniformly with every other route; handleGateAnswerRoute itself
-      // enforces the additional control step-up. GET (or any other
-      // method) to this path falls through to the 404 below, same as any
-      // unrecognized route - it is never treated as an answer attempt.
-      if (isGateAnswerRoute(req, url)) {
-        handleGateAnswerRoute(req, res, targetPath, registry);
+      // BL-240/BL-241/BL-281: the bridge's write (POST) routes - answering a
+      // captured to-human gate, and ingesting a resolved Telegram inbound
+      // message. Read-level auth is already enforced above, uniformly with
+      // every other route; each handler enforces its own additional control
+      // step-up. GET (or any other method) to either path falls through to
+      // the 404 below, same as any unrecognized route.
+      const writeRoute = writeRoutes.find((route) => route.matches(req, url));
+      if (writeRoute) {
+        writeRoute.handle(req, res, targetPath, registry);
         return;
       }
 
@@ -391,18 +488,46 @@ export function startBridge(
       res.end(JSON.stringify({ error: 'not_found' }));
     });
 
+    // BL-281 telegram-topic-03: how the Operator's reply reaches the bot -
+    // the disposable Operator (via operator_reply.bb) appends {threadId,
+    // text} to .swarmforge/operator/telegram-reply-outbox.jsonl;
+    // lastReplyLineIndex is this bridge's own "already delivered" cursor
+    // (mirrors lastSnapshot's diff role, but for an append-only log
+    // instead of a whole-state snapshot) so a reconnecting/slow poll never
+    // redelivers or drops an entry.
+    let lastReplyLineIndex = 0;
+
+    // Split out of the poll tick below so that callback's own branch count
+    // stays low - each half of the tick (state snapshot, reply relay) is
+    // independently a couple of branches, not one six-branch function.
+    function broadcastSnapshotIfChanged(previousSnapshot: string | undefined): string {
+      const snapshot = JSON.stringify(buildBridgeState(targetPath, runLogPath));
+      if (snapshot === previousSnapshot) {
+        return previousSnapshot;
+      }
+      for (const client of sseClients) {
+        client.write(`data: ${snapshot}\n\n`);
+      }
+      return snapshot;
+    }
+
+    function relayNewReplyOutboxEntries(sinceIndex: number): number {
+      const { entries, totalLines } = readNewReplyOutboxEntries(targetPath, sinceIndex);
+      for (const entry of entries) {
+        const payload = JSON.stringify(entry);
+        for (const client of sseClients) {
+          client.write(`event: telegram-reply\ndata: ${payload}\n\n`);
+        }
+      }
+      return totalLines;
+    }
+
     const poll = setInterval(() => {
       if (sseClients.size === 0) {
         return;
       }
-      const snapshot = JSON.stringify(buildBridgeState(targetPath, runLogPath));
-      if (snapshot === lastSnapshot) {
-        return;
-      }
-      lastSnapshot = snapshot;
-      for (const client of sseClients) {
-        client.write(`data: ${snapshot}\n\n`);
-      }
+      lastSnapshot = broadcastSnapshotIfChanged(lastSnapshot);
+      lastReplyLineIndex = relayNewReplyOutboxEntries(lastReplyLineIndex);
     }, pollIntervalMs);
     poll.unref();
 
