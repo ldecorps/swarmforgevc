@@ -1,105 +1,102 @@
 id: BL-274
-title: "EPIC — Operator-hosted Telegram per-subject async threads (SUP-### <-> forum topics); do not promote directly; tracks children"
+title: "EPIC — Telegram front desk for the swarm (Operator-staffed; Talk/Status/Decide/Notify over per-subject topics); do not promote directly; tracks children"
 milestone: M8
 status: todo
 type: epic
 priority: 00
 depends_on: []
-decomposes_into: [BL-275, BL-281, BL-282, BL-283, BL-276]
-source: ".swarmforge/operator/INTAKE-support-role.md (original) + .swarmforge/operator/INTAKE-telegram-threads-refocus-bl274.md (REFOCUS, human command via operator -> coordinator 2026-07-11, attended RC session). Specifier re-scoped 2026-07-11."
+decomposes_into: [BL-275, BL-281, BL-282, BL-284, BL-285, BL-283, BL-276]
+source: ".swarmforge/operator/INTAKE-support-role.md (original) -> INTAKE-telegram-threads-refocus-bl274.md -> INTAKE-telegram-front-desk-bl274.md (this framing SUPERSEDES both priors). Human command via operator -> coordinator 2026-07-11 (attended RC session). Specifier re-scoped 2026-07-11."
 
 notes: |
-  REFOCUSED 2026-07-11 (supersedes the original email-first "Support role" framing).
-  UMBRELLA/tracking item, not directly promotable — actionable work is its children.
+  REFRAMED 2026-07-11 (supersedes both the original email-first "Support role" and the
+  interim "Telegram threads refocus"). UMBRELLA/tracking item, not directly promotable.
 
-  THE PROBLEM (human): live RC is hard to follow when >1 subject is discussed at once
-  (context bleed), and the human can't always be online. Solution: each subject gets
-  its OWN durable, async thread — as a Telegram FORUM TOPIC — hosted by the OPERATOR
-  (already external, disposable-per-event, memory-capable, survives swarm death, and
-  already hands actionable items to the Coordinator). Per-topic demux means each
-  Operator wake handles exactly ONE subject with only that subject's context — no
-  bleed between parallel discussions.
+  VISION: Telegram is the human's async FRONT DESK to the swarm — the single place they
+  meet it: talk to it, see what it's doing, decide what proceeds, and get notified. Each
+  concern is its own Telegram forum TOPIC (native thread). The OPERATOR staffs the desk
+  (external, disposable-per-event, memory-capable, survives swarm death). This reframes
+  BL-274 from "a support feature" into "the interface", and UNIFIES today's scattered
+  Telegram bits (narration BL-239, gate-answers BL-240/265) under one coherent desk.
 
-  WHAT CHANGED vs the original BL-274 (email-first Support role):
-    - PRIMARY channel is now Telegram forum TOPICS (native per-subject threads), NOT
-      email-first. Email echo/system-of-record + RC unification are DEFERRED.
-    - NO separate "Support" role. The OPERATOR hosts the threads. BL-275's
-      support_runtime.bb FOLDS INTO the operator runtime over these slices (specifier
-      set the module boundary per slice; do not stand up a second daemon long-term).
-    - KEPT from the original: the SUP-### thread store, memory-backing,
-      hand-to-Coordinator, and the no-self-close lifecycle.
+  THE DESK DOES FOUR THINGS (human chose the FULL desk, talk first):
+    1. TALK (centerpiece) — per-subject discussion threads. Each subject = one topic =
+       one tracked SUP-###, memory-backed; when actionable, spawns/links BL-### build
+       work via the Coordinator. Per-topic isolation = no cross-subject bleed, async.
+    2. STATUS — ask the desk about swarm/backlog/ticket state; reuse existing
+       projections (backlog.json, holistic UI data, operator status.json); reply in the
+       asking topic.
+    3. DECIDE — approve gates / give go-aheads from a topic; reuse the BL-240 gate-answer
+       write path + BL-265 gate view; route the decision to the Coordinator.
+    4. NOTIFY — the desk proactively pings the RIGHT topic when something needs the human
+       or a status changes; generalize BL-239 run-narration into topic-routed notices.
 
-  DECISIONS LOCKED WITH THE HUMAN (2026-07-11 refocus):
-    1. Refocus BL-274 (one epic; reuse the SUP-### store; defer email/new-role).
-    2. Thread agent: the OPERATOR (single agent to start).
-    3. Memory: per-thread durable transcript RELOADED on every reply (full context, no
-       cross-subject bleed) + distill durable facts into the Operator's long-term memory.
-    4. Subject model: each thread is a tracked SUP-### that spawns/links BL-### build
-       work via the Coordinator when actionable.
-    5. (Carried) Single principal (the human); human-only inbound (reuse BL-239/240's
-       restrict-to-the-human's-Telegram-user-id posture).
-    6. Close: the Operator NEVER closes a thread of its own will — the human confirms
-       close. (Softens the original autonomous 3-strike abandon; an optional daily
-       nudge into the topic survives — see BL-276.)
+  DECISIONS LOCKED WITH THE HUMAN (2026-07-11):
+    - Reframe BL-274 to this; reuse the SUP-### store; defer the email-first +
+      separate-Support-role framing (email/RC become optional later channels).
+    - The OPERATOR staffs the desk (single agent); BL-275's support_runtime.bb FOLDS
+      INTO the operator runtime (not a new daemon).
+    - Memory = per-thread durable transcript RELOADED on every reply (full context, no
+      cross-subject bleed) + distill durable facts into the Operator's long-term memory.
+    - Subject model = each topic is a tracked SUP-### that spawns/links BL-###.
+    - Single principal (the human); human-only inbound (reuse BL-239/240 posture).
+    - The Operator never self-closes a thread (human confirms close).
+    - Scope = the FULL desk (talk + status + decide + notify), TALK first.
 
   ARCHITECTURE:
-    - Telegram forum topics = per-subject threads: a supergroup with Topics enabled,
-      bot as admin (manage-topics). Each SUP-### <-> one topic (message_thread_id);
-      opening a subject = create/adopt a topic named for the subject.
+    - Telegram forum topics = threads: supergroup with Topics enabled, bot admin
+      (manage-topics). SUP-### <-> topic (message_thread_id); open a subject =
+      create/adopt a topic.
     - Operator runtime (extends operator_runtime.bb): long-poll getUpdates, demux
       inbound by message_thread_id -> SUP-###, persist per-thread transcript, enqueue a
-      per-topic event.
-    - Disposable Operator LLM per event: loads ONLY that SUP-###'s transcript (+
-      relevant long-term memory), reasons about that ONE subject, replies into that
-      topic via sendMessage(message_thread_id=...), distills durable facts to memory,
-      and — when actionable — files a Coordinator intake referencing SUP-###, tracking
-      BL-### status back INTO the topic. Never fabricates a design/promote/approve;
-      relays decisions + status. Never self-closes (human confirms close).
+      per-topic event; also owns OUTBOUND notification routing to the right topic.
+    - Disposable Operator LLM per event: loads ONLY that SUP-###'s transcript (+ relevant
+      long-term memory); talks / answers status / relays a decision / posts a
+      notification for that ONE topic; distills durable facts to memory; files a
+      Coordinator intake when actionable and tracks BL-### status back into the topic.
+      Never fabricates a design/promote/approve; never self-closes.
 
-  SEQUENCE (children specced JUST-IN-TIME as the coordinator promotes each; only the
-  MVP (BL-281) is specced now besides the re-scoped BL-276):
-    - BL-275 — DONE (foundation): SUP-### thread store + memory-backed runtime
-      substrate (support_lib.bb/support_thread.bb/support_runtime.bb). Reused; its
-      standalone Support runtime folds into the Operator over the slices below. Its
-      email-echo + RC paths are DEFERRED-secondary (already built, not the primary
-      path). depends_on [].
-    - BL-281 — SPECCED (MVP, promote first): SUP-### <-> Telegram-topic mapping +
-      runtime getUpdates demux by message_thread_id + per-thread transcript +
-      disposable Operator reply-in-topic with that thread's transcript reloaded. Prove
-      two topics stay fully independent. depends_on [BL-275].
-    - BL-282 (PENDING spec) — long-term memory distillation + reload of relevant
-      memory per wake. depends_on [BL-281].
-    - BL-283 (PENDING spec) — Coordinator handoff: actionable thread spawns/links
+  SEQUENCE (children specced JUST-IN-TIME as the coordinator promotes each; BL-281 and
+  BL-276 are already specced, the rest pending):
+    - BL-275 — DONE (foundation): SUP-### thread store + memory-backed runtime substrate
+      (support_lib.bb/support_thread.bb/support_runtime.bb). Reused; its standalone
+      runtime + email-echo/RC paths fold-in/defer. depends_on [].
+    - BL-281 — SPECCED (slice 1, TALK MVP, promote first): SUP-### <-> Telegram-topic
+      mapping + getUpdates demux by message_thread_id + per-thread transcript +
+      disposable Operator reply-in-topic (transcript reload); prove two topics stay
+      independent; human-only inbound. depends_on [BL-275].
+    - BL-282 (PENDING) — slice 2, MEMORY: distill durable facts to long-term memory +
+      reload relevant memory per wake. depends_on [BL-281].
+    - BL-284 (PENDING) — slice 3, NOTIFY: proactive topic-routed pings when something
+      needs the human / status changes; generalize BL-239 narration. depends_on [BL-281].
+    - BL-285 (PENDING) — slice 4, DECIDE + STATUS: approve gates / go-aheads from a topic
+      (reuse BL-240 write path + BL-265 gate view, route to Coordinator) and answer
+      status queries from a topic (reuse backlog.json / holistic / operator status.json
+      projections). depends_on [BL-281].
+    - BL-283 (PENDING) — slice 5a, COORDINATOR HANDOFF: an actionable thread spawns/links
       BL-###; BL-### status flows back into the topic. depends_on [BL-281].
-    - BL-276 — RE-SCOPED (lifecycle, last): subject status (open/resolved/closed),
-      no self-close, human-confirm close, optional daily nudge into the topic (from
-      the original reminder logic, softened). depends_on [BL-281].
+    - BL-276 — SPECCED (slice 5b, LIFECYCLE): subject status (open/resolved/closed), no
+      self-close, human-confirm close, optional idle nudge into the topic. depends_on
+      [BL-281].
 
-  RETIRED reservations from the original slicing: BL-277 (separate Telegram-channel
-  slice — subsumed by the Telegram-first MVP BL-281), BL-278 (inbound email — DEFERRED),
-  BL-279 (coordinator bridge — now BL-283). Do not create BL-277/278/279 under this epic.
-
-  NET-NEW (the refocus adds):
-    - Telegram forum-topic support (message_thread_id, createForumTopic) in
-      extension/src/notify/telegramClient.ts (today: sendTelegramMessage +
-      getTelegramUpdates only, BL-239 — no topic support).
-    - Per-topic inbound demux + per-SUP-### transcript persistence in the operator
-      runtime.
-    - The Operator's per-thread reply + long-term-memory distillation loop.
-    - One-time HUMAN setup: a supergroup with Topics enabled + the SwarmForge bot as
-      admin with manage-topics. Bot token stays in the extension-host env (existing
-      posture), never committed.
+  NET-NEW: Telegram forum-topic support (message_thread_id, createForumTopic) in
+  extension/src/notify/telegramClient.ts (today: sendTelegramMessage +
+  getTelegramUpdates only, BL-239); per-topic inbound demux + per-SUP-### transcript +
+  outbound topic routing in the operator runtime; the Operator's talk/status/decide/
+  notify loop + memory distillation. One-time HUMAN setup: a supergroup with Topics
+  enabled + the bot as admin (manage-topics); bot token stays in the extension-host env,
+  never committed.
 
   EXISTING INFRA TO REUSE (verified 2026-07-11): telegramClient.ts
-  (sendTelegramMessage/getTelegramUpdates, BL-239); BL-239/240 human-only inbound
-  posture; BL-275 SUP-### store + memory-backed runtime; operator_runtime.bb; the
-  Operator's long-term memory system.
+  (sendTelegramMessage/getTelegramUpdates, BL-239); BL-240 gate-answer write path +
+  BL-265 gate view (DECIDE); BL-239 run narration (NOTIFY); backlog.json / holistic UI
+  data / operator status.json (STATUS); BL-275 SUP-### store + memory-backed runtime;
+  operator_runtime.bb + the Operator's long-term memory store.
 
-  Operator prompt: the thread-hosting behaviour moves into the Operator. The specifier
-  lands the Operator-side thread-hosting guidance WITH the MVP slice (as a
-  specifier-owned prompt change, sequenced with that slice), rather than the now-
-  superseded standalone support.prompt; support.prompt stays live for BL-275's merged
-  machinery until that machinery is folded into the Operator.
+  Operator prompt: the desk (talk/status/decide/notify) behaviour lands in the Operator
+  prompt WITH the slices that add each function (specifier-owned prompt changes,
+  sequenced with their slices — superseding the standalone support.prompt, which stays
+  live for BL-275's merged machinery until it is folded into the Operator).
 
   Note: intakes live under .swarmforge/operator/ (operator domain, not the backlog
   root); left in place as source-of-record — not deleted by the specifier.
