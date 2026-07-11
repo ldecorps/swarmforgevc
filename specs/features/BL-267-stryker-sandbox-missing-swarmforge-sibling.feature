@@ -1,6 +1,6 @@
-# mutation-stamp: sha256=02c394133ac0312d9d0a018e9b276be8df2f60ecc63f857a40b86ad6b3a69ed8
+# mutation-stamp: sha256=e57fc0fb7d21a4d150dade7c0f17254f51382eeaefbd05bfbcb9e123d32644fc
 # acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-07-11T01:17:13.990270877Z","feature_name":"Stryker mutation runs resolve every runtime-loaded repo-root sibling","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-267-stryker-sandbox-missing-swarmforge-sibling.feature","background_hash":"2cf828de82ea672da51a52e201590a8d952a83bd1a40c9123927dc91671884e1","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a runtime-loaded repo-root sibling resolves inside the Stryker sandbox","scenario_hash":"e65bf36e32571e58b47419c94ba9dbf9fe5fcc942d36a3dcda93857b73b81aba","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-11T01:17:13.990270877Z"}]}
+# {"version":1,"tested_at":"2026-07-11T01:18:58.157304282Z","feature_name":"Stryker mutation runs resolve every runtime-loaded repo-root sibling","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-267-stryker-sandbox-missing-swarmforge-sibling.feature","background_hash":"2cf828de82ea672da51a52e201590a8d952a83bd1a40c9123927dc91671884e1","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a runtime-loaded repo-root sibling resolves inside the Stryker sandbox","scenario_hash":"d07eae201a05e0bbc5ae00e094ce74b5085407f066d93c6bf7e409ab9ad7800d","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-07-11T01:18:58.157304282Z"}]}
 # acceptance-mutation-manifest-end
 
 Feature: Stryker mutation runs resolve every runtime-loaded repo-root sibling
@@ -11,7 +11,7 @@ Feature: Stryker mutation runs resolve every runtime-loaded repo-root sibling
 
   # BL-267 stryker-sibling-sandbox-01
   Scenario Outline: a runtime-loaded repo-root sibling resolves inside the Stryker sandbox
-    Given code under test that resolves the repo-root <sibling> path at run time
+    Given a test or the code under test resolves the repo-root <sibling> path at run time
     When the hardener runs the Stryker mutation dry run
     Then the dry run does not fail with ENOENT on the <sibling> path
     And the <sibling> path resolves inside the sandbox as it does in a normal run
@@ -20,6 +20,8 @@ Feature: Stryker mutation runs resolve every runtime-loaded repo-root sibling
       | sibling    |
       | pwa        |
       | swarmforge |
+      | .github    |
+      | docs       |
 
   # BL-267 stryker-sibling-sandbox-02
   Scenario: the compliance battery CLI is reachable from mutated recruiter code inside the sandbox
