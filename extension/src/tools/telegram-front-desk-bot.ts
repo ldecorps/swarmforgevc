@@ -21,6 +21,14 @@
  * (support_thread.bb open, shelled out to below), never a second id
  * sequence in this file.
  *
+ * BL-300: a THIRD, wall-clock loop (tickLoop) derives TaskStarted/
+ * TaskCompleted events from the live backlog folders every
+ * CONCIERGE_TICK_INTERVAL_MS and routes each into its BL-### Telegram
+ * topic (creating/closing as BL-297/299 decide) - the runtime wiring the
+ * rest of the Concierge epic's pure modules needed to stop being dark
+ * features. Every decision/persistence lives in runConciergeTick
+ * (adapter-injected, unit-tested); this loop only owns the timing.
+ *
  * Usage: node telegram-front-desk-bot.js <bridge-url> <target-path>
  *
  * Env:
@@ -28,12 +36,13 @@
  *   TELEGRAM_PRINCIPAL_USER_ID             the one authorized sender
  *   BRIDGE_TOKEN                            bridge bearer token (read)
  *   BRIDGE_CONTROL_TOKEN                    bridge X-Control-Token (write)
+ *   CONCIERGE_TICK_INTERVAL_MS              optional, defaults to 30000
  */
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { getTelegramUpdates, sendTelegramMessage, TelegramUpdate } from '../notify/telegramClient';
+import { getTelegramUpdates, sendTelegramMessage, createForumTopic, closeForumTopic, TelegramUpdate } from '../notify/telegramClient';
 import { nextUpdateOffset } from '../notify/telegramInboundRelay';
 import {
   pollAndForward,
@@ -45,6 +54,8 @@ import {
   DEFAULT_SUBJECT_KEY,
 } from './telegramFrontDeskBotCore';
 import { backlogForTopic } from '../concierge/topicRouter';
+import { runConciergeTick, ConciergeTickAdapters, BacklogFoldersSnapshot, TickState } from '../concierge/conciergeTick';
+import { readBacklogFolders } from '../panel/backlogReader';
 import { appendOperatorEvent } from '../bridge/operatorEventQueue';
 import { runCliMain } from './swarm-metrics';
 
@@ -96,6 +107,36 @@ function readBacklogTopicMap(targetPath: string): Record<string, number> {
   } catch {
     return {};
   }
+}
+
+// BL-300: the missing writer - modelled on writeTopicMap's own shape.
+// recordTopicId (topicRouter.ts's own RouteAdapters field) is wired to
+// this, so a topic created by the outbound tick becomes visible to
+// BL-298's own inbound readBacklogTopicMap on the very next poll.
+function writeBacklogTopicMap(targetPath: string, topicMap: Record<string, number>): void {
+  fs.mkdirSync(path.dirname(backlogTopicMapPath(targetPath)), { recursive: true });
+  fs.writeFileSync(backlogTopicMapPath(targetPath), JSON.stringify(topicMap));
+}
+
+// BL-300: the tick's own durable state (the prev/curr diff baseline +
+// the DURABLE emitted-keys dedup set) - a restart must not lose either,
+// or an already-routed event could fire again. Machine-local, gitignored
+// under .swarmforge/, same posture as every other file in this directory.
+function tickStatePath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'concierge-tick-state.json');
+}
+
+function readTickState(targetPath: string): TickState {
+  try {
+    return JSON.parse(fs.readFileSync(tickStatePath(targetPath), 'utf8')) as TickState;
+  } catch {
+    return { snapshot: null, emittedKeys: [] };
+  }
+}
+
+function writeTickState(targetPath: string, state: TickState): void {
+  fs.mkdirSync(path.dirname(tickStatePath(targetPath)), { recursive: true });
+  fs.writeFileSync(tickStatePath(targetPath), JSON.stringify(state));
 }
 
 // BL-298: routes a reply as context for its backlog item's task via the
@@ -202,6 +243,64 @@ async function subscribeReplies(botToken: string, chatId: string, targetPath: st
   });
 }
 
+// BL-300: readBacklogFolders returns the panel's own richer BacklogItem
+// shape - narrowed to {id, title} here so conciergeTick.ts stays decoupled
+// from panel/backlogReader.ts's type (the same "core stays narrow, live
+// wrapper adapts the real type" split as every other adapter in this file).
+function toFoldersSnapshot(targetPath: string): BacklogFoldersSnapshot {
+  const folders = readBacklogFolders(targetPath);
+  const pick = (items: { id: string; title: string }[]) => items.map((item) => ({ id: item.id, title: item.title }));
+  return { active: pick(folders.active), paused: pick(folders.paused), done: pick(folders.done) };
+}
+
+function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId: string): ConciergeTickAdapters {
+  return {
+    readFolders: () => toFoldersSnapshot(targetPath),
+    readTickState: () => readTickState(targetPath),
+    writeTickState: (state) => writeTickState(targetPath, state),
+    routeAdapters: {
+      getTopicMap: () => readBacklogTopicMap(targetPath),
+      createTopic: async (name) => {
+        const result = await createForumTopic(botToken, chatId, name);
+        return { success: result.success, topicId: result.messageThreadId };
+      },
+      recordTopicId: (backlogId, topicId) => {
+        const map = readBacklogTopicMap(targetPath);
+        map[backlogId] = topicId;
+        writeBacklogTopicMap(targetPath, map);
+      },
+      sendMessage: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then((r) => r.success),
+      closeTopic: (topicId) => closeForumTopic(botToken, chatId, topicId).then((r) => r.success),
+    },
+  };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const DEFAULT_CONCIERGE_TICK_INTERVAL_MS = 30_000;
+
+function conciergeTickIntervalMs(): number {
+  const raw = process.env.CONCIERGE_TICK_INTERVAL_MS;
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CONCIERGE_TICK_INTERVAL_MS;
+}
+
+// BL-300: the process's first wall-clock loop (pollLoop/subscribeReplies
+// are both long-poll/SSE-driven) - derives TaskStarted/TaskCompleted from
+// the live backlog folders and routes each via routeEvent, every
+// intervalMs, forever. Every decision/persistence lives in
+// runConciergeTick (adapter-injected, unit-tested); this loop only owns
+// the timing.
+async function tickLoop(targetPath: string, botToken: string, chatId: string, intervalMs: number): Promise<void> {
+  const adapters = buildConciergeTickAdapters(targetPath, botToken, chatId);
+  for (;;) {
+    await runConciergeTick(adapters);
+    await sleep(intervalMs);
+  }
+}
+
 // Split out of main() so that function's own branch count stays low, same
 // technique as every other CLI's parseArgs in this directory.
 export function parseCliArgs(argv: string[]): { bridgeUrl: string; targetPath: string } | null {
@@ -226,6 +325,7 @@ export async function main(): Promise<void> {
   await Promise.all([
     pollLoop(botToken, principalUserId, targetPath, bridgeUrl, controlToken),
     subscribeReplies(botToken, chatId, targetPath, bridgeUrl, bridgeToken),
+    tickLoop(targetPath, botToken, chatId, conciergeTickIntervalMs()),
   ]);
 }
 
