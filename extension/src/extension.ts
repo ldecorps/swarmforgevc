@@ -27,6 +27,8 @@ import { writeBounceAck, clearBounceAck, BouncePhase } from './swarm/bounceAck';
 import { startChaserMonitor, stopChaserMonitor, buildRoleInboxes } from './watchdog/chaserMonitor';
 import type { ChaserMonitorConfig, ChaserCallbacks } from './watchdog/chaserMonitor';
 import { readTmuxSocket, paneTarget, getPaneBaseIndex, sendKeys, capturePane, readSwarmRoles, sleepSync, respawnAgent } from './swarm/tmuxClient';
+import { startResourceSampler, stopResourceSampler } from './metrics/resourceTelemetry';
+import { buildSampledRoles } from './swarm/resourceSamplerActivation';
 import { sendInstructionVerified, sendHandoffWakeUp } from './swarm/verifiedInject';
 import { trackPaneActivity, outboxNewestMtimeMs } from './watchdog/paneActivity';
 import { setStuckEscalation, escalatedStuckRoles } from './watchdog/stuckEscalations';
@@ -153,6 +155,7 @@ let currentChaserMonitor: NodeJS.Timeout | null = null;
 let currentBounceDrainWatcher: NodeJS.Timeout | null = null;
 let currentGracefulBounceFileWatcher: fs.FSWatcher | null = null;
 let currentIdleClearMonitor: NodeJS.Timeout | null = null;
+let currentResourceSampler: NodeJS.Timeout | null = null;
 let idleClearOutputChannel: vscode.OutputChannel | undefined;
 let bounceOutputChannel: vscode.OutputChannel | undefined;
 let chaserOutputChannel: vscode.OutputChannel | undefined;
@@ -251,6 +254,7 @@ async function autoLaunchSwarmOnActivation(
   startOrRestartDailyBriefing(targetPath, context);
   startOrRestartIdleClearMonitor(targetPath, context);
   startOrRestartTelegramAdapter(targetPath, context);
+  startOrRestartResourceSampler(targetPath);
 }
 
 function startOrRestartBounceWatcher(
@@ -716,6 +720,7 @@ function handleBounceResult(
   startOrRestartDailyBriefing(targetPath, context);
   startOrRestartIdleClearMonitor(targetPath, context);
   startOrRestartTelegramAdapter(targetPath, context);
+  startOrRestartResourceSampler(targetPath);
   return true;
 }
 
@@ -1027,6 +1032,29 @@ function startOrRestartIdleClearMonitor(targetPath: string, context: vscode.Exte
   });
 }
 
+// BL-264 (gap #7): resourceTelemetry.ts's startResourceSampler/
+// stopResourceSampler were built and tested but never called from anywhere
+// - so no RSS/CPU samples were ever produced, and every reader (cost
+// sidecar, bridge, swarm-metrics CLI) showed "no samples yet." WIRING
+// ONLY: reuses the sampler and buildSampledRoles's tmux-discovery pid
+// resolution exactly as built, same start/restart/no-op-when-not-up shape
+// as startOrRestartChaserMonitor/startOrRestartIdleClearMonitor above.
+function startOrRestartResourceSampler(targetPath: string): void {
+  if (currentResourceSampler) {
+    stopResourceSampler(currentResourceSampler);
+    currentResourceSampler = null;
+  }
+
+  const swarmforgeDir = path.join(targetPath, '.swarmforge');
+  if (!fs.existsSync(swarmforgeDir)) {
+    return;
+  }
+
+  const roles = readSwarmRoles(targetPath);
+  const sampledRoles = buildSampledRoles(targetPath, roles);
+  currentResourceSampler = startResourceSampler(targetPath, sampledRoles);
+}
+
 async function resolveTargetPath(context: vscode.ExtensionContext): Promise<string | undefined> {
   let targetPath = getTargetPath();
   if (!targetPath) {
@@ -1112,6 +1140,7 @@ export function activate(context: vscode.ExtensionContext): void {
     startOrRestartGracefulBounceFileWatcher(targetPath, context);
     startOrRestartIdleClearMonitor(targetPath, context);
     startOrRestartTelegramAdapter(targetPath, context);
+    startOrRestartResourceSampler(targetPath);
 
     // BL-066: a live swarm runs under tmux, independent of the extension
     // host — an editor reload never touches it. Skip when a deliberate
@@ -1220,6 +1249,7 @@ export function activate(context: vscode.ExtensionContext): void {
           startOrRestartDailyBriefing(targetPath, context);
           startOrRestartIdleClearMonitor(targetPath, context);
           startOrRestartTelegramAdapter(targetPath, context);
+          startOrRestartResourceSampler(targetPath);
         } else {
           vscode.window.showErrorMessage(result.message);
         }
@@ -1257,6 +1287,7 @@ export function activate(context: vscode.ExtensionContext): void {
         startOrRestartGracefulBounceFileWatcher(newTargetPath, context);
         startOrRestartIdleClearMonitor(newTargetPath, context);
         startOrRestartTelegramAdapter(newTargetPath, context);
+        startOrRestartResourceSampler(newTargetPath);
       }
     }),
 
@@ -1368,6 +1399,7 @@ export function activate(context: vscode.ExtensionContext): void {
           startOrRestartDailyBriefing(targetPath!, context);
           startOrRestartIdleClearMonitor(targetPath!, context);
           startOrRestartTelegramAdapter(targetPath!, context);
+          startOrRestartResourceSampler(targetPath!);
         }
       );
     }),
@@ -1415,6 +1447,11 @@ export function activate(context: vscode.ExtensionContext): void {
           currentChaserMonitor = null;
         }
         stopTelegramAdapter();
+        // BL-264: no leaked sampler interval past teardown.
+        if (currentResourceSampler) {
+          stopResourceSampler(currentResourceSampler);
+          currentResourceSampler = null;
+        }
       } else {
         vscode.window.showWarningMessage(result.message);
       }
@@ -1808,6 +1845,11 @@ export function deactivate(): void {
   // Stopping the extension host must tear down live tmux agents too — not
   // only the extension-spawned ./swarm bootstrap child below.
   stopSwarmOnExtensionShutdown(currentTargetPath);
+  // BL-264: no leaked sampler interval past extension shutdown.
+  if (currentResourceSampler) {
+    stopResourceSampler(currentResourceSampler);
+    currentResourceSampler = null;
+  }
   // BL-108 deactivate-reap-02: a normal "stop the extension" must not leak
   // any process group this host spawned and tracked. Best-effort - a
   // partially-torn-down group must not block the rest of deactivate().
