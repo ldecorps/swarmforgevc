@@ -21,6 +21,18 @@ export function topicNameForItem(backlogId: string, title: string): string {
   return `${backlogId} - ${title}`;
 }
 
+// BL-298: the inverse of the forward backlogId->topicId map - given a
+// topic id (from an inbound reply's message_thread_id), which backlog item
+// (if any) owns that topic. Mirrors telegramFrontDeskBotCore.ts's own
+// topicForSubject reverse-lookup shape.
+export function backlogForTopic(topicMap: BacklogTopicMap, topicId: number | undefined): string | undefined {
+  if (topicId === undefined) {
+    return undefined;
+  }
+  const found = Object.entries(topicMap).find(([, tid]) => tid === topicId);
+  return found ? found[0] : undefined;
+}
+
 // Human-readable, but always contains the event's own type verbatim - the
 // posted message must "name the event" (topic-routing-03), and never a
 // silently-drifting label that could stop matching a real SwarmEventType.

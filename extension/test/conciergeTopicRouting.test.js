@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { decideTopicAction, routeEvent, topicNameForItem, messageTextForEvent } = require('../out/concierge/topicRouter');
+const { decideTopicAction, routeEvent, topicNameForItem, messageTextForEvent, backlogForTopic } = require('../out/concierge/topicRouter');
 
 function event(overrides = {}) {
   return { type: 'TaskStarted', backlogId: 'BL-123', payload: {}, ...overrides };
@@ -25,6 +25,21 @@ test('decideTopicAction only ever looks at ITS OWN backlogId entry, never anothe
 test('topicNameForItem / messageTextForEvent are pure helpers', () => {
   assert.equal(topicNameForItem('BL-1', 'fix the thing'), 'BL-1 - fix the thing');
   assert.equal(messageTextForEvent(event({ type: 'NeedsApproval' })), 'NeedsApproval: BL-123');
+});
+
+// ── backlogForTopic (pure) — BL-298: the inverse of the forward map ───────
+
+test('BL-298: backlogForTopic resolves a mapped topic id back to ITS OWN backlog item', () => {
+  assert.equal(backlogForTopic({ 'BL-123': 42, 'BL-456': 43 }, 42), 'BL-123');
+  assert.equal(backlogForTopic({ 'BL-123': 42, 'BL-456': 43 }, 43), 'BL-456');
+});
+
+test('BL-298: backlogForTopic returns undefined for an unmapped topic id (never a crash)', () => {
+  assert.equal(backlogForTopic({ 'BL-123': 42 }, 999), undefined);
+});
+
+test('BL-298: backlogForTopic returns undefined for topicId undefined (a DM has no topic at all)', () => {
+  assert.equal(backlogForTopic({ 'BL-123': 42 }, undefined), undefined);
 });
 
 // ── routeEvent (adapter-injected) — BL-297 topic-routing-01/02/03 ────────
