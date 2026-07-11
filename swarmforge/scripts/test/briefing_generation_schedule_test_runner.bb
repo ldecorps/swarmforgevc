@@ -105,9 +105,11 @@
 (let [dir (mk-tmp)
       notified (atom [])
       logs (atom [])
+      emitted (atom 0)
       fired? (briefing-generation-schedule-lib/generate-briefing-if-due!
               (ms "2026-07-10T07:00:00Z") 7 0 dir
               {:notify! (fn [text] (swap! notified conj text))
+               :emit-sidecar! (fn [] (swap! emitted inc))
                :log! (fn [& parts] (swap! logs conj (vec parts)))})]
   (assert= "morning-trigger-01: due -> fires and returns true" true fired?)
   (assert= "morning-trigger-01: the notify adapter is called exactly once with the built instruction"
@@ -115,29 +117,56 @@
            @notified)
   (assert= "morning-trigger-01: a nudge-sent event is logged"
            true
-           (some #(= (first %) "briefing-generation-nudge-sent") @logs)))
+           (some #(= (first %) "briefing-generation-nudge-sent") @logs))
+  ;; BL-272 headless-cost-health-sidecar-01: the sidecar emit adapter fires
+  ;; exactly once alongside the nudge.
+  (assert= "BL-272: the emit-sidecar adapter is called exactly once when due" 1 @emitted))
 
 ;; idempotent-once-per-day-03: firing again the same day, with the file now
 ;; present, does nothing - no second notify, no second log.
 (let [dir (mk-tmp)
-      notified (atom [])]
+      notified (atom [])
+      emitted (atom 0)]
   (spit (str (fs/path dir "2026-07-10.md")) "Headline\n")
   (let [fired? (briefing-generation-schedule-lib/generate-briefing-if-due!
                 (ms "2026-07-10T20:00:00Z") 7 0 dir
                 {:notify! (fn [text] (swap! notified conj text))
+                 :emit-sidecar! (fn [] (swap! emitted inc))
                  :log! (fn [& _] nil)})]
     (assert= "idempotent-once-per-day-03: already generated -> does not fire, returns false" false fired?)
-    (assert= "idempotent-once-per-day-03: the notify adapter is never called" [] @notified)))
+    (assert= "idempotent-once-per-day-03: the notify adapter is never called" [] @notified)
+    (assert= "BL-272: not due -> the emit-sidecar adapter is never called" 0 @emitted)))
 
 ;; before the configured time, no adapter call at all.
 (let [dir (mk-tmp)
-      notified (atom [])]
+      notified (atom [])
+      emitted (atom 0)]
   (let [fired? (briefing-generation-schedule-lib/generate-briefing-if-due!
                 (ms "2026-07-10T06:00:00Z") 7 0 dir
                 {:notify! (fn [text] (swap! notified conj text))
+                 :emit-sidecar! (fn [] (swap! emitted inc))
                  :log! (fn [& _] nil)})]
     (assert= "not yet time -> does not fire, returns false" false fired?)
-    (assert= "not yet time -> the notify adapter is never called" [] @notified)))
+    (assert= "not yet time -> the notify adapter is never called" [] @notified)
+    (assert= "BL-272: not yet time -> the emit-sidecar adapter is never called" 0 @emitted)))
+
+;; ── BL-272: sidecar emission is best-effort ──────────────────────────────
+;; headless-cost-health-sidecar-02: an emit-sidecar! that throws must never
+;; block or suppress the notify nudge - mirrors extension.ts's own
+;; try/catch-then-nudge ordering around the host's compute/write/commit
+;; calls (onBriefingDue).
+
+(let [dir (mk-tmp)
+      notified (atom [])
+      fired? (briefing-generation-schedule-lib/generate-briefing-if-due!
+              (ms "2026-07-10T07:00:00Z") 7 0 dir
+              {:notify! (fn [text] (swap! notified conj text))
+               :emit-sidecar! (fn [] (throw (ex-info "simulated sidecar emit failure" {})))
+               :log! (fn [& _] nil)})]
+  (assert= "BL-272 headless-cost-health-sidecar-02: a throwing emit-sidecar adapter still fires the trigger" true fired?)
+  (assert= "BL-272 headless-cost-health-sidecar-02: the notify adapter is still called exactly once despite the emit failure"
+           ["Daily briefing due: compose today's briefing per your role and commit it to docs/briefings/2026-07-10.md."]
+           @notified))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
