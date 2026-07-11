@@ -18,6 +18,10 @@
 ;;     human confirmation of resolution (thread-lifecycle-02), never on an
 ;;     idle/timer decision (thread-lifecycle-01 - the Operator never
 ;;     closes a thread of its own will).
+;;   support_thread.bb <project-root> link      --thread <id> --ticket <BL-###>
+;;     BL-283: records a BL-### this thread's actionable discussion spawned -
+;;     never creates/specs/promotes the ticket itself (the coordinator
+;;     owns that; see operator_handoff.bb for the intake+note half).
 ;;
 ;; Env:
 ;;   RESEND_API_KEY            operator-provided (see BL-214/BL-215) - never a key store here.
@@ -106,6 +110,11 @@
     (write-thread! thread)
     (println (json/generate-string thread))))
 
+(defn run-link! []
+  (let [thread (support-lib/link-ticket (read-thread! (:thread opts)) (:ticket opts))]
+    (write-thread! thread)
+    (println (json/generate-string thread))))
+
 (defn run-email-echo! []
   (let [thread (read-thread! (:thread opts))
         options (str/split (or (:options opts) "") #",")
@@ -120,6 +129,7 @@
     "read" (run-read!)
     "email-echo" (run-email-echo!)
     "resolve" (run-resolve!)
+    "link" (run-link!)
     (usage)))
 
 (-main)

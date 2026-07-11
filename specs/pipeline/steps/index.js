@@ -86,6 +86,7 @@ const DOMAINS = [
   require('./recertInboundWebhookSteps'),
   require('./operatorDecideStatusSteps'),
   require('./suiteDurationPwaSidecarSteps'),
+  require('./operatorCoordinatorHandoffSteps'),
 ];
 
 function registerSteps(registry) {
