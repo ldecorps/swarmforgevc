@@ -619,6 +619,18 @@ test('no-hardcoded-03: the previously-hardcoded ETA and remaining literals no lo
   assert.match(source, /tr\('remainingSuffix'\)/);
 });
 
+// BL-290: the suite-duration readout's own labels go through tr(), never
+// an inline literal, same posture as the guard above.
+test('BL-290: the suite-duration readout labels are tr(...) catalog lookups, never inline string literals', () => {
+  const source = fs.readFileSync(path.join(PWA_DIR, 'app.js'), 'utf8');
+  assert.doesNotMatch(source, /['"]Suite duration: ['"]/, 'the label must be a tr(...) catalog lookup, not an inline literal');
+  assert.doesNotMatch(source, /['"]Suite duration \(WARN\): ['"]/, 'the warn label must be a tr(...) catalog lookup, not an inline literal');
+  assert.doesNotMatch(source, /['"]no local data['"]/, 'the no-data readout must be a tr(...) catalog lookup, not an inline literal');
+  assert.match(source, /tr\('suiteDurationLabel'\)/);
+  assert.match(source, /tr\('suiteDurationLabelWarn'\)/);
+  assert.match(source, /tr\('suiteDurationNoData'\)/);
+});
+
 // ── BL-228: the burndown's forecast ETA and overall ETA are localized ───
 
 test('BL-228: the burndown milestone ETA and overall ETA switch to their French catalog values', async () => {
