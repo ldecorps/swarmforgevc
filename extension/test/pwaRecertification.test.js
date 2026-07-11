@@ -24,8 +24,8 @@ function fakeBacklog() {
   };
 }
 
-function fakeDocsTree() {
-  return { schemaVersion: 1, generatedAtIso: '2026-07-09T12:00:00Z', sourceSha: 'abc123def456', vision: [], milestones: [], tickets: [] };
+function fakeDocsTree(overrides = {}) {
+  return { schemaVersion: 1, generatedAtIso: '2026-07-09T12:00:00Z', sourceSha: 'abc123def456', vision: [], milestones: [], tickets: [], ...overrides };
 }
 
 function fakeRecertBatch(overrides = {}) {
@@ -37,6 +37,7 @@ function fakeRecertBatch(overrides = {}) {
       {
         id: 'BL-096/metrics-01',
         ticketId: 'BL-096',
+        ticketTitle: 'Metrics dashboard',
         name: 'velocity series matches git-recorded closes',
         text: 'Scenario: velocity series matches git-recorded closes\n  Given a repo\n  Then counts match',
       },
@@ -45,7 +46,7 @@ function fakeRecertBatch(overrides = {}) {
   };
 }
 
-function renderDashboard(recertBatch, speech) {
+function renderDashboard(recertBatch, speech, docsTree) {
   const html = fs.readFileSync(path.join(PWA_DIR, 'index.html'), 'utf8');
   const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://example.github.io/dashboard/', pretendToBeVisual: true });
   dom.window.fetch = (url) => {
@@ -53,7 +54,7 @@ function renderDashboard(recertBatch, speech) {
       return Promise.resolve({ json: () => Promise.resolve(fakeBacklog()) });
     }
     if (url === './docs-tree.json') {
-      return Promise.resolve({ json: () => Promise.resolve(fakeDocsTree()) });
+      return Promise.resolve({ json: () => Promise.resolve(docsTree || fakeDocsTree()) });
     }
     if (url === './recert-batch.json') {
       return Promise.resolve({ json: () => Promise.resolve(recertBatch) });
@@ -299,6 +300,74 @@ test('BL-271: with no on-device speech synthesis the recert Listen control degra
   const listenBtn = [...content(dom).querySelectorAll('button')].find((b) => /listen/i.test(b.textContent));
   assert.equal(listenBtn, undefined, 'expected no listen button when speech synthesis is unavailable');
   assert.match(content(dom).textContent, /not available/i);
+});
+
+// --- BL-280: recert view shows the backlog item + tap-through ---
+
+test('BL-280 recert-context-01: the recert card shows the scenario\'s ticket id and title above the scenario', async () => {
+  const dom = renderDashboard(fakeRecertBatch());
+  await flush();
+  const contextLine = content(dom).querySelector('.recert-ticket-context');
+  assert.ok(contextLine, 'expected a ticket-context element above the scenario');
+  assert.equal(contextLine.textContent, 'BL-096 — Metrics dashboard');
+  // it must render ABOVE the scenario name/text, not after.
+  const text = content(dom).textContent;
+  assert.ok(text.indexOf('BL-096 — Metrics dashboard') < text.indexOf('velocity series matches git-recorded closes'));
+});
+
+test('BL-280 recert-context-02: tapping the ticket line opens the full ticket detail in the docs explorer', async () => {
+  const ticket = {
+    id: 'BL-096',
+    title: 'Metrics dashboard',
+    status: 'active',
+    priority: 5,
+    milestone: 'M4',
+    description: 'Full description of BL-096.',
+    scenarios: [],
+  };
+  const dom = renderDashboard(fakeRecertBatch(), false, fakeDocsTree({ tickets: [ticket] }));
+  await flush();
+  const link = content(dom).querySelector('.recert-ticket-context');
+  click(dom, link);
+  const docsExplorer = dom.window.document.getElementById('docsExplorer');
+  assert.match(docsExplorer.textContent, /Full description of BL-096\./);
+});
+
+test('BL-280 recert-context-03: the localized (French) ticket title is shown under the fr locale', async () => {
+  const dom = renderDashboard(fakeRecertBatch({
+    batch: [
+      {
+        id: 'BL-096/metrics-01',
+        ticketId: 'BL-096',
+        ticketTitle: 'Metrics dashboard',
+        ticketTitleFr: 'Tableau de bord des métriques',
+        name: 'velocity series matches git-recorded closes',
+        text: 'Scenario: velocity series matches git-recorded closes\n  Given a repo\n  Then counts match',
+      },
+    ],
+  }));
+  await flush();
+  click(dom, dom.window.document.getElementById('localeToggle'));
+  const contextLine = content(dom).querySelector('.recert-ticket-context');
+  assert.equal(contextLine.textContent, 'BL-096 — Tableau de bord des métriques');
+});
+
+test('BL-280 recert-context-04: a scenario with no resolvable ticket shows only its id, with no link and no error', async () => {
+  const dom = renderDashboard(fakeRecertBatch({
+    batch: [
+      {
+        id: 'BL-096/metrics-01',
+        ticketId: 'BL-096',
+        name: 'velocity series matches git-recorded closes',
+        text: 'Scenario: velocity series matches git-recorded closes\n  Given a repo\n  Then counts match',
+      },
+    ],
+  }));
+  await flush();
+  const contextEl = content(dom).querySelector('.recert-ticket-context');
+  assert.ok(contextEl, 'expected the id to still render even with no resolvable ticket title');
+  assert.equal(contextEl.textContent, 'BL-096');
+  assert.equal(contextEl.tagName, 'P', 'expected a plain, non-interactive element - no link');
 });
 
 test('shows an honest failure message when the recert-batch fetch fails entirely', async () => {
