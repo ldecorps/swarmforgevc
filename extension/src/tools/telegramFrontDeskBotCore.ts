@@ -250,6 +250,25 @@ export async function runPollCycle(
   };
 }
 
+// Adapter-injected: the per-cycle side effects (the degraded-warning
+// write, the backoff wait) split out of pollLoop's own for(;;) so that
+// loop stays a bare, complexity-1 forever loop - mirroring every other
+// "extract the branch, thin the loop" split in this file. Both decisions
+// (WHETHER to warn, HOW LONG to wait) already live in runPollCycle above;
+// this function only ever sequences the two adapter calls it's handed.
+export async function applyPollCycleResult(
+  cycle: PollCycleResult,
+  writeWarning: (message: string) => void,
+  wait: (ms: number) => Promise<void>
+): Promise<void> {
+  if (cycle.degradedWarning) {
+    writeWarning(`front-desk bot: poll degraded - ${cycle.state.consecutiveFailures} consecutive failures, still retrying\n`);
+  }
+  if (cycle.delayMs > 0) {
+    await wait(cycle.delayMs);
+  }
+}
+
 // BL-302 LOOP ISOLATION: runs `start` and, if it THROWS (a fault - never
 // on a normal return, which stays exactly as-is; subscribeReplies's own
 // silent-stop-on-stream-end gap is an explicitly out-of-scope follow-up),

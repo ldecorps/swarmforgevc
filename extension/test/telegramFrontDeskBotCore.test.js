@@ -13,6 +13,7 @@ const {
   computePollBackoffMs,
   shouldRaiseDegradedWarning,
   runPollCycle,
+  applyPollCycleResult,
   runContainedLoop,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
@@ -539,6 +540,49 @@ test('a successful cycle with real updates still advances the offset via runPoll
   const cycle = await runPollCycle({ offset: 0, consecutiveFailures: 2 }, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [update] }), BACKOFF_CONFIG);
   assert.equal(cycle.state.offset, 1);
   assert.equal(cycle.state.consecutiveFailures, 0);
+});
+
+// ── applyPollCycleResult (adapter-injected per-cycle side effects) ───────
+// Split out of pollLoop's own for(;;) (found during cleaner review: two
+// ifs inline in that forever loop pushed its own CRAP over threshold at
+// near-zero coverage) so the decision-to-effect wiring is unit-tested here
+// instead of only reachable through the live, untested loop wrapper.
+
+test('applyPollCycleResult writes the warning and waits when both are present', async () => {
+  const warnings = [];
+  const waits = [];
+  await applyPollCycleResult(
+    { state: { offset: 0, consecutiveFailures: 3 }, delayMs: 4000, degradedWarning: true },
+    (message) => warnings.push(message),
+    async (ms) => waits.push(ms)
+  );
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /3 consecutive failures/);
+  assert.deepEqual(waits, [4000]);
+});
+
+test('applyPollCycleResult writes nothing and waits nothing on a successful cycle (delayMs 0, no warning)', async () => {
+  const warnings = [];
+  const waits = [];
+  await applyPollCycleResult(
+    { state: { offset: 5, consecutiveFailures: 0 }, delayMs: 0, degradedWarning: false },
+    (message) => warnings.push(message),
+    async (ms) => waits.push(ms)
+  );
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(waits, []);
+});
+
+test('applyPollCycleResult still waits on a failed cycle below the degraded threshold (no warning yet)', async () => {
+  const warnings = [];
+  const waits = [];
+  await applyPollCycleResult(
+    { state: { offset: 0, consecutiveFailures: 1 }, delayMs: 1000, degradedWarning: false },
+    (message) => warnings.push(message),
+    async (ms) => waits.push(ms)
+  );
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(waits, [1000]);
 });
 
 // ── runContainedLoop (adapter-injected loop isolation) ────────────────────
