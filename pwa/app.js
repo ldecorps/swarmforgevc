@@ -46,6 +46,15 @@
   var FONT_SIZE_PREF_KEY = './__font-size-preference__';
   var currentFontSizePx = DEFAULT_FONT_SIZE_PX;
 
+  // BL-291: per-section collapse/expand state, keyed by each section's own
+  // <h2 data-i18n> value (a stable identity - NOT DOM order/index, which
+  // drifts as suiteDurationSection/costHealthSection show/hide by data
+  // presence). One JSON map, not one preference row per section; a key
+  // absent from the map always means "expanded" (default-open, scenario
+  // -05), never persisted as an explicit false.
+  var SECTION_COLLAPSE_PREF_KEY = './__section-collapsed-preference__';
+  var sectionCollapseMap = {};
+
   function tr(key) {
     var dict = (window.LOCALES && window.LOCALES[currentLocale]) || {};
     var fallback = (window.LOCALES && window.LOCALES.en) || {};
@@ -140,6 +149,29 @@
 
   function persistFontSize(px) {
     persistPreference(FONT_SIZE_PREF_KEY, { fontSizePx: px });
+  }
+
+  // Only ever keeps entries that are explicitly `true` (collapsed) -
+  // garbage/corrupt cached JSON degrades to "nothing collapsed" rather than
+  // a crash, same posture as loadPersistedFontSize's range check above.
+  function parseSectionCollapseMap(data) {
+    var map = {};
+    if (data && typeof data === 'object') {
+      Object.keys(data).forEach(function (key) {
+        if (data[key] === true) {
+          map[key] = true;
+        }
+      });
+    }
+    return map;
+  }
+
+  function loadPersistedSectionCollapse() {
+    return loadPersistedPreference(SECTION_COLLAPSE_PREF_KEY, parseSectionCollapseMap);
+  }
+
+  function persistSectionCollapse(map) {
+    persistPreference(SECTION_COLLAPSE_PREF_KEY, map);
   }
 
   // Sets, applies (instantly, no reload), and persists a new font size in
@@ -1380,6 +1412,95 @@
       applyFontSize(persisted);
     }
   });
+
+  // BL-291: hides/shows one section's body and keeps its header's
+  // aria-expanded in sync - the SAME two things happen whether the change
+  // came from a user activating the header (toggleSection) or from
+  // restoring a persisted state on load (initCollapsibleSections), so both
+  // paths share this single apply.
+  function applySectionCollapsed(control, collapsed) {
+    control.body.style.display = collapsed ? 'none' : '';
+    control.header.setAttribute('aria-expanded', String(!collapsed));
+  }
+
+  function toggleSection(control) {
+    var willCollapse = control.header.getAttribute('aria-expanded') !== 'false';
+    applySectionCollapsed(control, willCollapse);
+    if (willCollapse) {
+      sectionCollapseMap[control.key] = true;
+    } else {
+      delete sectionCollapseMap[control.key];
+    }
+    persistSectionCollapse(sectionCollapseMap);
+  }
+
+  // The section header itself is the control (per BL-291's own
+  // "header is a control" requirement) - a bare <h2> has no native
+  // interactive semantics, so role="button" + tabindex make it focusable/
+  // announced, and BOTH Enter and Space are wired by hand (an <h2> gets
+  // neither key for free the way a native <button> or an <a href> does).
+  function wireSectionToggle(control) {
+    control.header.setAttribute('role', 'button');
+    control.header.setAttribute('tabindex', '0');
+    control.header.setAttribute('aria-controls', control.body.id);
+    control.header.addEventListener('click', function () {
+      toggleSection(control);
+    });
+    control.header.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggleSection(control);
+      }
+    });
+  }
+
+  // Splits every top-level <section> into its (untouched) <h2 data-i18n>
+  // header and a NEW body wrapper holding everything else that was already
+  // there. Every render*() function still finds its own inner div by id
+  // regardless of the extra wrapper, so no existing renderer needs to
+  // change. Runs once at init - locale/data re-renders only ever replace
+  // an inner container's innerHTML, never the section/header/wrapper
+  // structure built here.
+  function initCollapsibleSections() {
+    var sections = Array.prototype.slice.call(document.querySelectorAll('section'));
+    var controls = [];
+    sections.forEach(function (section) {
+      var header = section.firstElementChild;
+      if (!header || header.tagName !== 'H2' || !header.hasAttribute('data-i18n')) {
+        return;
+      }
+      var key = header.getAttribute('data-i18n');
+      var body = document.createElement('div');
+      body.className = 'section-body';
+      body.id = 'section-body-' + key;
+      var node = header.nextSibling;
+      while (node) {
+        var next = node.nextSibling;
+        body.appendChild(node);
+        node = next;
+      }
+      section.appendChild(body);
+      header.setAttribute('aria-expanded', 'true');
+      controls.push({ key: key, header: header, body: body });
+    });
+    controls.forEach(wireSectionToggle);
+    // collapsible-sections-05: every section already reads as expanded
+    // (set synchronously above) before this async lookup ever resolves -
+    // a fresh device/first launch simply stays there, exactly like
+    // applyFontSize/applyChromeLocale's own default-then-override shape.
+    loadPersistedSectionCollapse().then(function (map) {
+      Object.keys(map || {}).forEach(function (key) {
+        sectionCollapseMap[key] = true;
+      });
+      controls.forEach(function (control) {
+        if (sectionCollapseMap[control.key] === true) {
+          applySectionCollapsed(control, true);
+        }
+      });
+    });
+  }
+
+  initCollapsibleSections();
 
   // BL-254: the search box lives once in static markup (never re-created
   // by renderDocsExplorer's own container.innerHTML reset), so typing
