@@ -9,6 +9,7 @@ const {
   pollAndForward,
   parseNextSseRecord,
   relaySseReplies,
+  DEFAULT_SUBJECT_KEY,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
 const PRINCIPAL_ID = 111;
@@ -38,6 +39,14 @@ test('subjectForTopic resolves a mapped topic id to its subject', () => {
 
 test('subjectForTopic returns undefined for an unmapped topic id (never a crash)', () => {
   assert.equal(subjectForTopic({ '7': 'SUP-1' }, 999), undefined);
+});
+
+test('BL-294: subjectForTopic resolves a DM (topicId undefined) through the reserved default-subject key', () => {
+  const map = { [DEFAULT_SUBJECT_KEY]: 'SUP-1', '7': 'SUP-2' };
+  assert.equal(subjectForTopic(map, undefined), 'SUP-1');
+});
+
+test('subjectForTopic returns undefined for a DM when no default subject has been opened yet', () => {
   assert.equal(subjectForTopic({ '7': 'SUP-1' }, undefined), undefined);
 });
 
@@ -51,33 +60,50 @@ test('topicForSubject returns undefined for a subject with no mapped topic', () 
   assert.equal(topicForSubject({ '7': 'SUP-1' }, 'SUP-999'), undefined);
 });
 
-// ── decideUpdateAction (pure) — BL-281 telegram-topic-01/05 ──────────────
-
-test('BL-281 telegram-topic-01: a principal message on a MAPPED topic posts to the bridge with the resolved subjectId', () => {
-  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'any update?' });
-  const decision = decideUpdateAction(update, PRINCIPAL_ID, (topicId) => (topicId === 7 ? 'SUP-1' : undefined));
-  assert.deepEqual(decision, { action: 'post', subjectId: 'SUP-1', text: 'any update?' });
+test('BL-294: topicForSubject returns undefined (not NaN) for a subject mapped under the DM default key', () => {
+  const map = { [DEFAULT_SUBJECT_KEY]: 'SUP-1' };
+  assert.equal(topicForSubject(map, 'SUP-1'), undefined);
 });
 
-test('BL-281 telegram-topic-05: a non-principal message is dropped, never posted', () => {
+// ── decideUpdateAction (pure) — BL-281 telegram-topic-01/05, BL-294 auto-open-01..04 ──
+
+test('BL-281 telegram-topic-01: a principal message on a MAPPED topic posts under the resolved subjectId', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'any update?' });
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, (topicId) => (topicId === 7 ? 'SUP-1' : undefined));
+  assert.deepEqual(decision, { action: 'post-existing', subjectId: 'SUP-1', text: 'any update?' });
+});
+
+test('BL-281 telegram-topic-05 / BL-294 auto-open-04: a non-principal message is dropped, never posted or opened', () => {
   const update = mkUpdate({ fromId: 999, topicId: 7, text: 'let me in' });
   const decision = decideUpdateAction(update, PRINCIPAL_ID, () => 'SUP-1');
   assert.deepEqual(decision, { action: 'drop', reason: 'not-principal' });
 });
 
-test('a principal message on an UNMAPPED topic is dropped (opening a subject is out of scope here)', () => {
-  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 999, text: 'new subject' });
+test('BL-294 auto-open-01: a principal DM (no topic) with no default subject yet opens the default subject', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, text: 'hello from a DM' });
   const decision = decideUpdateAction(update, PRINCIPAL_ID, () => undefined);
-  assert.deepEqual(decision, { action: 'drop', reason: 'unmapped-topic' });
+  assert.deepEqual(decision, { action: 'open-default', text: 'hello from a DM' });
 });
 
-test('a textless update (e.g. a sticker/photo) is dropped, never posted with undefined text', () => {
+test('BL-294 auto-open-02: a principal message on an unmapped topic opens a subject FOR that topic', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'new conversation' });
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, () => undefined);
+  assert.deepEqual(decision, { action: 'open-for-topic', topicId: 42, text: 'new conversation' });
+});
+
+test('a textless update (e.g. a sticker/photo) is dropped, never posted or opened with undefined text', () => {
   const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7 });
   const decision = decideUpdateAction(update, PRINCIPAL_ID, () => 'SUP-1');
   assert.deepEqual(decision, { action: 'drop', reason: 'no-text' });
 });
 
 // ── pollAndForward (adapter-injected) ────────────────────────────────────
+
+function stubOpenSubjectAndRecord() {
+  return async () => {
+    throw new Error('openSubjectAndRecord should not be called for this test');
+  };
+}
 
 test('pollAndForward posts each accepted update and counts posted/dropped', async () => {
   const posted = [];
@@ -94,6 +120,7 @@ test('pollAndForward posts each accepted update and counts posted/dropped', asyn
       return true;
     },
     subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
     nextOffset: (updates, current) => current + updates.length,
   });
 
@@ -108,6 +135,7 @@ test('pollAndForward leaves the offset unchanged when the poll itself fails', as
     getUpdates: async () => ({ success: false, updates: [], error: 'network error' }),
     postToBridge: async () => true,
     subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
     nextOffset: (_updates, current) => current + 1,
   });
   assert.equal(result.nextOffset, 5);
@@ -119,10 +147,82 @@ test('pollAndForward counts a failed bridge POST as dropped, not posted', async 
     getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'hi' })] }),
     postToBridge: async () => false,
     subjectForTopic: () => 'SUP-1',
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
     nextOffset: (updates, current) => current + updates.length,
   });
   assert.equal(result.posted, 0);
   assert.equal(result.dropped, 1);
+});
+
+// ── pollAndForward open-and-record path — BL-294 auto-open-01/02/03 ──────
+
+test('BL-294 auto-open-01: a DM with no default subject yet opens one via openSubjectAndRecord and counts it posted', async () => {
+  const opened = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, text: 'hello' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a fresh open - openSubjectAndRecord already delivered it');
+    },
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: async (topicId, text) => {
+      opened.push({ topicId, text });
+      return 'SUP-500';
+    },
+    nextOffset: (updates, current) => current + updates.length,
+  });
+  assert.deepEqual(opened, [{ topicId: undefined, text: 'hello' }]);
+  assert.equal(result.posted, 1);
+  assert.equal(result.dropped, 0);
+});
+
+test('BL-294 auto-open-02: an unmapped topic opens a subject FOR that topic via openSubjectAndRecord', async () => {
+  const opened = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'new topic' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a fresh open');
+    },
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: async (topicId, text) => {
+      opened.push({ topicId, text });
+      return 'SUP-501';
+    },
+    nextOffset: (updates, current) => current + updates.length,
+  });
+  assert.deepEqual(opened, [{ topicId: 42, text: 'new topic' }]);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-294 auto-open-03: a second message in an already-mapped context posts to the SAME subject, opening no second one', async () => {
+  let opens = 0;
+  const posted = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    getUpdates: async () => ({
+      success: true,
+      updates: [
+        mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'first' }),
+        mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'second' }),
+      ],
+    }),
+    postToBridge: async (subjectId, text) => {
+      posted.push({ subjectId, text });
+      return true;
+    },
+    // Once a context is mapped, subjectForTopic resolves it - this fixture
+    // simulates the SECOND update arriving after the map was already
+    // updated by the first (mirrors what openSubjectAndRecord's real
+    // implementation does between calls).
+    subjectForTopic: (topicId) => (topicId === 42 && opens > 0 ? 'SUP-502' : undefined),
+    openSubjectAndRecord: async (topicId, text) => {
+      opens += 1;
+      return 'SUP-502';
+    },
+    nextOffset: (updates, current) => current + updates.length,
+  });
+  assert.equal(opens, 1, 'exactly one open per context');
+  assert.deepEqual(posted, [{ subjectId: 'SUP-502', text: 'second' }]);
+  assert.equal(result.posted, 2);
+  assert.equal(result.dropped, 0);
 });
 
 // ── parseNextSseRecord (pure) ────────────────────────────────────────────

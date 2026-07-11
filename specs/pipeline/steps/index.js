@@ -90,6 +90,7 @@ const DOMAINS = [
   require('./frontDeskHeadlessLauncherSteps'),
   require('./pwaCollapsibleSectionsSteps'),
   require('./swarmEventStreamSteps'),
+  require('./frontDeskAutoOpenSubjectSteps'),
 ];
 
 function registerSteps(registry) {
