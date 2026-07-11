@@ -8,12 +8,22 @@ const {
   buildTargetBootstrapFiles,
   planTargetBootstrapFiles,
   initializeTargetRepo,
+  buildContractBootstrapFiles,
+  initializeTargetContract,
 } = require('../out/config/targetBootstrap');
 const { resolveTargetPath } = require('../out/config/targetPath');
 
 function mkTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bootstrap-'));
 }
+
+const FIXTURE_CONTRACT = {
+  scope: ['Build the thing.'],
+  outOfScope: ['Rewrite the stack.'],
+  boundaries: ['Respect the README.'],
+  initialBacklogSummary: '3 tickets queued.',
+  agreement: 'proposed',
+};
 
 test('resolveTargetPath prefers configured workspace target', () => {
   const target = resolveTargetPath({
@@ -124,4 +134,96 @@ test('initializeTargetRepo commits new files in a git repository', async () => {
   assert.deepEqual(result.created.sort(), ['engineering.prompt', 'project.prompt']);
   const log = execSync('git log --oneline', { cwd: tmp }).toString();
   assert.match(log, /Initialize SwarmForge target prompts/);
+});
+
+// A file absent from the working tree (so the fs.access idempotency check
+// counts it as "to create") but already committed under git with the exact
+// same content it gets rewritten with (e.g. `rm` without `git rm`) restages
+// to no net diff from HEAD - `git commit` genuinely has nothing to commit.
+// Treated as a quiet non-error, not a crash: `committed: false`, still
+// reported as created since it was freshly written to disk.
+test('initializeTargetRepo does not throw when re-creating a file whose content is unchanged from HEAD (nothing to commit)', async () => {
+  const tmp = mkTmpDir();
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+  await initializeTargetRepo(tmp);
+  fs.unlinkSync(path.join(tmp, 'engineering.prompt'));
+  fs.unlinkSync(path.join(tmp, 'project.prompt'));
+
+  const result = await initializeTargetRepo(tmp);
+
+  assert.equal(result.committed, false);
+  assert.deepEqual(result.created.sort(), ['engineering.prompt', 'project.prompt']);
+  assert.ok(fs.existsSync(path.join(tmp, 'engineering.prompt')), 'the file must still be restored to disk');
+});
+
+// ── BL-262: onboarding contract scaffold (extends the same idempotent seam) ──
+
+test('buildContractBootstrapFiles returns the contract source and its legible view', () => {
+  const files = buildContractBootstrapFiles(FIXTURE_CONTRACT);
+
+  assert.deepEqual(
+    files.map((file) => file.path),
+    [path.join('.swarmforge', 'contract.yaml'), 'CONTRACT.md']
+  );
+  assert.match(files[0].content, /agreement: proposed/);
+  assert.match(files[1].content, /Agreement: proposed/);
+});
+
+test('planTargetBootstrapFiles generalizes over an explicit file list (BL-262: not just the two prompts)', () => {
+  const contractFiles = buildContractBootstrapFiles(FIXTURE_CONTRACT);
+
+  const plan = planTargetBootstrapFiles(new Set([path.join('.swarmforge', 'contract.yaml')]), contractFiles);
+
+  assert.deepEqual(plan.filesToCreate.map((file) => file.path), ['CONTRACT.md']);
+  assert.deepEqual(plan.alreadyPresent, [path.join('.swarmforge', 'contract.yaml')]);
+});
+
+test('initializeTargetContract creates both contract files (including the nested .swarmforge/ dir) in a non-git directory', async () => {
+  const tmp = mkTmpDir();
+  const result = await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+
+  assert.deepEqual(result.created.sort(), ['CONTRACT.md', path.join('.swarmforge', 'contract.yaml')].sort());
+  assert.deepEqual(result.skipped, []);
+  assert.equal(result.committed, false);
+  assert.ok(fs.existsSync(path.join(tmp, '.swarmforge', 'contract.yaml')));
+  assert.ok(fs.existsSync(path.join(tmp, 'CONTRACT.md')));
+});
+
+test('initializeTargetContract skips a contract file that already exists (idempotent scaffold)', async () => {
+  const tmp = mkTmpDir();
+  fs.mkdirSync(path.join(tmp, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, '.swarmforge', 'contract.yaml'), 'agreement: agreed\n');
+
+  const result = await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+
+  assert.deepEqual(result.created, ['CONTRACT.md']);
+  assert.deepEqual(result.skipped, [path.join('.swarmforge', 'contract.yaml')]);
+  assert.equal(fs.readFileSync(path.join(tmp, '.swarmforge', 'contract.yaml'), 'utf8'), 'agreement: agreed\n');
+});
+
+test('initializeTargetContract commits new contract files in a git repository with a distinct commit message', async () => {
+  const tmp = mkTmpDir();
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+
+  const result = await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+
+  assert.equal(result.committed, true);
+  const log = execSync('git log --oneline', { cwd: tmp }).toString();
+  assert.match(log, /Propose SwarmForge onboarding contract/);
+});
+
+test('initializeTargetContract and initializeTargetRepo compose without interfering (both run on the same target)', async () => {
+  const tmp = mkTmpDir();
+
+  const promptResult = await initializeTargetRepo(tmp);
+  const contractResult = await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+
+  assert.deepEqual(promptResult.created.sort(), ['engineering.prompt', 'project.prompt']);
+  assert.deepEqual(contractResult.created.sort(), ['CONTRACT.md', path.join('.swarmforge', 'contract.yaml')].sort());
+  assert.ok(fs.existsSync(path.join(tmp, 'project.prompt')));
+  assert.ok(fs.existsSync(path.join(tmp, 'CONTRACT.md')));
 });
