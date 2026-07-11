@@ -1,79 +1,91 @@
 id: BL-267
-title: "Stryker sandbox omits sibling swarmforge/; mutation dry run ENOENTs on compliance_battery.bb, blocking the gate (BL-221 only covered pwa/)"
+title: "Stryker sandbox omits repo-root siblings (swarmforge/, .github/, docs/); mutation dry run ENOENTs, blocking the gate (BL-221 only covered pwa/)"
 milestone: M2
 status: todo
 priority: 03
 direction: reliability
 assigned_to: coder
-source: "hardener rule_proposal (engineering scope) 2026-07-11, accepted by specifier (0615aae generalized the engineering-article Stryker-sibling rule). 2nd instance surfaced by BL-260 (cleaner, 07ec89c5b7); verified against live code (extension/src/recruiter/complianceBatteryGate.ts shells the repo-root swarmforge/ tree; BL-221's strykerPwaSandboxLib.js symlinks only pwa/)."
+source: "hardener rule_proposal (engineering scope) 2026-07-11, accepted by specifier (0615aae generalized the engineering-article Stryker-sibling rule). 2nd instance (swarmforge/) surfaced by BL-260 (cleaner, 07ec89c5b7); 3rd (.github/) by QA rule_proposal verifying BL-260; 4th (docs/) by a specifier sweep (7f5654a). All verified against live code."
 
 description: |
-  Same systemic failure mode BL-221 fixed for pwa/, now confirmed for a second
-  repo-root sibling. The Stryker sandbox copies only the extension/ project
+  Same systemic failure mode BL-221 fixed for pwa/, now confirmed for THREE more
+  repo-root siblings. The Stryker sandbox copies only the extension/ project
   directory, so any repo-root sibling a test — or the code under test — resolves
   at run time ENOENTs inside the sandbox and aborts the mutation dry run,
   blocking the hardener's no-surviving-mutants gate for EVERY ticket. BL-221
-  symlinked ONLY pwa/, so it does not cover this one.
+  symlinked ONLY pwa/, so it does not cover the others. These surface
+  ITERATIVELY (fix one, the dry run ENOENTs on the next) — this ticket covers the
+  COMPLETE swept set, not one at a time.
 
-  Second instance (verified against live code):
-    - extension/src/recruiter/complianceBatteryGate.ts computes
+  Confirmed instances (all four, verified against live code). Each lands at the
+  shared parent extension/.stryker-tmp/ inside the sandbox — a test at
+  .stryker-tmp/sandbox-<id>/test/ resolving two-up, or out/recruiter/ resolving
+  three-up, both reach .stryker-tmp/:
+    - pwa/ — read via path.join(__dirname, '..', '..', 'pwa', ...) from
+      extension/test/*. Already fixed by BL-221; keep it covered (regression).
+    - swarmforge/ (swarmforge/scripts/compliance_battery.bb) —
+      extension/src/recruiter/complianceBatteryGate.ts computes
       REPO_ROOT = path.join(__dirname, '..', '..', '..') and shells
-      `bb <REPO_ROOT>/swarmforge/scripts/compliance_battery.bb ...` (also
-      candidate.ts / orchestrator.ts through the same gate).
-    - In a normal run __dirname is extension/out/recruiter/, so REPO_ROOT is the
-      repo root and swarmforge/ resolves. Inside a Stryker sandbox, out/ is
-      copied under extension/.stryker-tmp/sandbox-<id>/, so REPO_ROOT resolves to
-      the shared parent extension/.stryker-tmp/ and
-      .stryker-tmp/swarmforge/scripts/compliance_battery.bb does not exist ->
-      ENOENT, dry run aborts.
-    - Tests that exercise this path: extension/test/recruiterComplianceBatteryGate.test.js,
+      `bb <REPO_ROOT>/swarmforge/scripts/compliance_battery.bb ...`
+      (also candidate.ts / orchestrator.ts via the same gate). Tests:
+      extension/test/recruiterComplianceBatteryGate.test.js,
       extension/test/recruiterQualify.test.js (both drive the REAL CLI).
+    - .github/ (.github/workflows/backlog-dashboard.yml) — read by
+      extension/test/backlogDashboardWorkflowCacheStamp.test.js via two-up.
+    - docs/ (docs/GettingStarted.md) — read by
+      extension/test/gettingStartedDrift.test.js via two-up.
 
   Wanted behavior:
-  - The Stryker mutation dry run resolves every repo-root sibling a test/CLI
-    reaches into — pwa/ AND swarmforge/ — with no ENOENT on
-    swarmforge/scripts/compliance_battery.bb (or any swarmforge/ path the gate
-    shells).
-  - The hardener's no-surviving-mutants gate reaches mutant evaluation on the
-    recruiter files instead of aborting in the dry run.
-  - No change to the mutation SCOPE: only out/**/*.js is mutated; making
-    swarmforge/ available to the sandbox must not add swarmforge/ files to the
-    mutated set.
+  - The Stryker mutation dry run resolves EVERY repo-root sibling a test/CLI
+    reaches into — pwa/, swarmforge/, .github/, docs/ — with no ENOENT on any of
+    them (incl. swarmforge/scripts/compliance_battery.bb).
+  - The hardener's no-surviving-mutants gate reaches mutant evaluation instead of
+    aborting in the dry run, for any ticket.
+  - No change to the mutation SCOPE: only out/**/*.js is mutated; making the
+    siblings available to the sandbox must not add any of them to the mutated set.
+  - Coder should re-run a full sandbox dry run to confirm no FIFTH sibling
+    remains (grep extension/test for two-up sibling reads and extension/src for
+    three-up / REPO_ROOT reads to double-check the set is complete).
 
   Implementation latitude (coder chooses the mechanism):
-  - Prefer GENERALIZING the existing mechanism over a second bespoke one. Today
-    extension/scripts/strykerPwaSandboxLib.js creates a single shared symlink
-    .stryker-tmp/pwa -> ../../pwa at the shared parent of every sandbox-<id>.
-    The swarmforge/ shell-out lands at the SAME shared parent
-    (.stryker-tmp/swarmforge), so the natural fix is to drive the same symlink
-    helper from a LIST of sibling names ({pwa, swarmforge}) rather than a single
-    hardcoded pwa. Keep it a shared symlink at .stryker-tmp/<name> -> ../../<name>,
-    never a per-sandbox copy, so it survives Stryker's per-sandbox dispose exactly
-    as BL-221's does.
+  - Prefer GENERALIZING the existing mechanism over per-sibling bespoke ones.
+    Today extension/scripts/strykerPwaSandboxLib.js creates a single shared
+    symlink .stryker-tmp/pwa -> ../../pwa at the shared parent of every
+    sandbox-<id>. The other three siblings all land at the SAME shared parent
+    (.stryker-tmp/swarmforge, .stryker-tmp/.github, .stryker-tmp/docs), so the
+    natural fix is to drive the same symlink helper from a LIST of sibling names
+    ({pwa, swarmforge, .github, docs}) rather than a single hardcoded pwa. Keep
+    each a shared symlink at .stryker-tmp/<name> -> ../../<name>, never a
+    per-sandbox copy, so it survives Stryker's per-sandbox dispose exactly as
+    BL-221's does.
   - Whatever mechanism is chosen, it must be trivially extensible to the NEXT
     sibling (add a name to the list), per the engineering-article rule updated in
-    0615aae.
+    0615aae / 7f5654a.
 
   Constraints:
   - Do not edit mutation manifests by hand; the tools own those.
-  - A green local test run that shells compliance_battery.bb in place is NOT
-    proof the sandboxed dry run resolves it — verify against the actual sandbox.
+  - A green local test run that shells/reads a sibling in place is NOT proof the
+    sandboxed dry run resolves it — verify against the actual sandbox.
   - Keep the unit suite fast and isolated per the engineering article (no real
     `stryker run` subprocess in unit/acceptance steps; no real timers). Model
     BL-221's step handlers (specs/pipeline/steps/strykerPwaSandboxSteps.js), which
     exercise the symlink mechanism deterministically without a real dry run.
   - For the Scenario Outline sibling column, the step handler must validate each
-    value against an explicit KNOWN_VALUES lookup ({pwa, swarmforge}) — not a
-    passthrough or binary check — so a gherkin-mutator mutation of the value fails
-    the acceptance run (engineering-article Acceptance Pipeline rule).
+    value against an explicit KNOWN_VALUES lookup ({pwa, swarmforge, .github,
+    docs}) — not a passthrough or binary check — so a gherkin-mutator mutation of
+    the value fails the acceptance run (engineering-article Acceptance Pipeline
+    rule).
 
   QA e2e procedure (live swarm):
-  - In a worktree with swarmforge/ present, run the hardener's Stryker command
-    scoped to a changed extension/out/recruiter/*.js file whose covering test
-    shells the REAL compliance_battery.bb (e.g. recruiterComplianceBatteryGate.test.js).
-  - Confirm the dry run completes (no ENOENT on swarmforge/scripts/compliance_battery.bb),
-    the run reaches mutant evaluation, and the mutate set remains out/**/*.js only.
-  - Re-confirm the pwa/ sibling still resolves (regression check on BL-221).
+  - In a worktree with all four siblings present, run the hardener's Stryker
+    command scoped to a changed extension/out/recruiter/*.js file whose covering
+    test shells the REAL compliance_battery.bb (e.g.
+    recruiterComplianceBatteryGate.test.js).
+  - Confirm the dry run completes with no ENOENT on ANY of
+    swarmforge/scripts/compliance_battery.bb, .github/workflows/backlog-dashboard.yml,
+    docs/GettingStarted.md, or pwa/index.html; the run reaches mutant evaluation;
+    and the mutate set remains out/**/*.js only.
+  - Confirm the pwa/ sibling still resolves (regression check on BL-221).
 
 acceptance: specs/features/BL-267-stryker-sandbox-missing-swarmforge-sibling.feature
 mutation_cost: low
