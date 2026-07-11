@@ -15,7 +15,18 @@
  * analyzed - no .swarmforge/roles.tsv dependency (unlike swarm-metrics.ts/
  * queue-status.ts), since this is a general git-history tool, not
  * swarm-specific. Read-only, headless.
+ *
+ * BL-268: git log --name-status -- <pathspec> FILTERS to paths under
+ * targetPath's subtree - passing process.cwd() as targetPath silently
+ * dropped every cross-directory co-changer when run from a subdirectory
+ * (exactly the coupling this tool exists to surface). Resolving the repo
+ * top-level first and passing THAT as targetPath makes the history query
+ * cwd-independent; each changedFiles arg is normalized the same way (cwd-
+ * relative -> repo-root-relative) so it still exact-string-matches history
+ * paths regardless of where the tool was invoked from.
  */
+import * as path from 'path';
+import { execFileSync } from 'child_process';
 import { runGitLog } from '../metrics/gitHistoryAdapter';
 import { computeCoChangeReport, CoChangeOptions, CoChangeReport, DEFAULT_CO_CHANGE_OPTIONS } from '../quality/coChange';
 import { makeArgsGuardedMain, runCliMain } from './swarm-metrics';
@@ -62,9 +73,29 @@ export function formatCoChangeReport(report: CoChangeReport[]): string {
     .join('\n\n');
 }
 
+// Pure - a changed-file arg may be written relative to the invoker's cwd
+// (e.g. "src/foo.ts" run from extension/), but git log --name-status paths
+// (and computeCoChangeReport's exact-string matching against them) are
+// always repo-root-relative. Resolving against cwd first, then re-relativizing
+// to repoRoot, normalizes every input shape - already repo-root-relative,
+// cwd-relative, or absolute - to the one form history entries use.
+export function toRepoRelativePath(cwd: string, repoRoot: string, filePath: string): string {
+  const absolute = path.resolve(cwd, filePath);
+  return path.relative(repoRoot, absolute).split(path.sep).join('/');
+}
+
+// The one impure lookup this fix adds - isolated so parseArgs/
+// toRepoRelativePath/formatCoChangeReport stay pure and directly testable.
+function resolveRepoRoot(cwd: string): string {
+  return execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8' }).trim();
+}
+
 export const main = makeArgsGuardedMain(parseArgs, USAGE, async (args) => {
-  const history = runGitLog(process.cwd(), '.');
-  const report = computeCoChangeReport(args.changedFiles, history, args.options);
+  const cwd = process.cwd();
+  const repoRoot = resolveRepoRoot(cwd);
+  const history = runGitLog(repoRoot, '.');
+  const changedFiles = args.changedFiles.map((file) => toRepoRelativePath(cwd, repoRoot, file));
+  const report = computeCoChangeReport(changedFiles, history, args.options);
   console.log(formatCoChangeReport(report));
 });
 
