@@ -32,6 +32,7 @@ function fakeFetchImpl(metrics) {
       '/runlog': [],
       '/holistic': { assignments: [], swarms: [], doneByMilestone: {}, recentActivity: { recentCloses: [], recentMerges: [], currentRun: null } },
       '/metrics': metrics,
+      '/burn-rate': {},
     }[url];
     if (url === '/events') {
       return Promise.reject(new Error('SSE not exercised in this test'));
