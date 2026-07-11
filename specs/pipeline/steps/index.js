@@ -66,6 +66,7 @@ const DOMAINS = [
   require('./pwaEnrichmentSteps'),
   require('./onboardingContractSteps'),
   require('./notDoneCountSteps'),
+  require('./coChangeCwdSteps'),
 ];
 
 function registerSteps(registry) {
