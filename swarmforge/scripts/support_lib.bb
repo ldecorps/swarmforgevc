@@ -120,6 +120,33 @@
           (>= (- now-ms last-human-ms) default-idle-nudge-threshold-ms) :post-nudge
           :else :none)))))
 
+;; ── proactive notice (pure) — BL-284: NOTIFY slice ────────────────────────
+;; Mirrors idle-nudge-decision's own shape: a pure, adapter-free gate over
+;; provided inputs. Unlike the idle nudge (which derives its own due/not-due
+;; call from message timestamps), a proactive notice concerns a SUBJECT
+;; whose status changed elsewhere - detecting WHETHER something changed is
+;; explicitly out of this slice's scope (BL-239 run-narration rehoming is
+;; deferred), so status-change is a caller-supplied descriptor
+;; ({:changed? bool :summary text}) and this function only gates on it plus
+;; the subject having an OPEN thread/topic - a resolved/nonexistent thread
+;; never gets a notice (proactive-notify-03/04), and an unchanged
+;; descriptor stays silent even for an open one (no spurious pings).
+
+(defn proactive-notice-decision
+  "Given a subject's thread (or nil) and a status-change descriptor, decides
+   whether to raise exactly one proactive notice. Returns :notify or :none."
+  [thread status-change]
+  (if (and thread (= (:status thread) "open") (:changed? status-change))
+    :notify
+    :none))
+
+(defn proactive-notice-text
+  "The notice text for a status-change descriptor that decided :notify -
+   just its own :summary, same 'composition stays pure, deciding WHAT to
+   say is the caller's job' split as build-email-body's next-step/options."
+  [status-change]
+  (:summary status-change))
+
 ;; ── email echo composition (pure) — mirrors briefing_email_lib.bb's ────────
 ;; ── build-briefing-subject / append-content-block split ────────────────────
 

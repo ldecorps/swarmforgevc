@@ -80,6 +80,7 @@ const DOMAINS = [
   require('./operatorThreadLifecycleSteps'),
   require('./operatorLongtermMemorySteps'),
   require('./briefingDiagramCidAttachmentsSteps'),
+  require('./operatorProactiveNotifySteps'),
 ];
 
 function registerSteps(registry) {
