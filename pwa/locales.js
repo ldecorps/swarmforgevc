@@ -96,6 +96,9 @@
       recertCancel: 'Cancel',
       recertDeleteWarning: 'This removes the scenario from the acceptance contract once the specifier accepts it. This cannot be undone. Are you sure?',
       asOfPrefix: 'As of ',
+      // BL-263: single not-done total (active + paused, excluding done),
+      // read from backlog.json's notDoneCount - never recomputed here.
+      notDoneCountPrefix: 'Not done: ',
       // BL-229: jargon - the operator's rule keeps this English in French too.
       etaPrefix: ' — ETA ',
       remainingSuffix: ' remaining',
@@ -175,6 +178,9 @@
       recertCancel: 'Annuler',
       recertDeleteWarning: "Cela retire le scénario du contrat d'acceptation une fois accepté par le specifier. Cette action est irréversible. Êtes-vous sûr(e) ?",
       asOfPrefix: 'Au ',
+      // BL-263: total non terminé unique (actif + en pause, hors terminé),
+      // lu depuis backlog.json's notDoneCount - jamais recalculé ici.
+      notDoneCountPrefix: 'Non terminé : ',
       // BL-229: jargon - "ETA" keeps its English value in French per the operator's rule.
       etaPrefix: ' — ETA ',
       remainingSuffix: ' restants',
