@@ -1,0 +1,74 @@
+id: BL-302
+title: "Bug: front-desk bot poll loop hot-spins (no backoff) when the Telegram poll socket drops — add bounded backoff + escalation, and isolate the loop from its siblings"
+milestone: M8
+status: todo
+type: bug
+priority: 10
+depends_on: []
+source: "Coordinator bug report 2026-07-11 (note 000244): 'front-desk bot crash-loops on dropped poll socket; spec resilience fix.' Specifier traced the live call chain before scoping."
+
+notes: |
+  ROOT CAUSE (verified 2026-07-11, live call chain):
+    - `callTelegramApi` (telegramClient.ts) already CATCHES a fetch/network reject and
+      returns {success:false}, so a dropped poll socket surfaces as
+      `getTelegramUpdates` -> {success:false, updates:[]} (NOT a throw at that layer).
+    - `pollAndForward` (telegramFrontDeskBotCore.ts ~L154-158) handles success:false by
+      returning {nextOffset: offset, posted:0, dropped:0} — but it SWALLOWS the failure:
+      the caller cannot tell a failed cycle from a legitimately-empty one.
+    - `pollLoop` (telegram-front-desk-bot.ts ~L219-226) is a bare `for(;;)` with NO delay
+      of its own — the ONLY thing pacing it is the healthy long-poll's 25s server wait.
+      When the socket is DOWN, getUpdates rejects FAST, so pollAndForward returns
+      instantly and the loop HOT-SPINS — hammering CPU/network with zero backoff. That is
+      the reported "crash-loop." (If the process ever does die, the supervisor restarts it
+      straight back into the same dropped socket — the same tight loop one level up.)
+    - Coupling risk: all three forever-loops run under one `Promise.all` (~L226) — a THROW
+      in any one rejects main() and takes down the OTHER two (the Concierge `tickLoop` and
+      the SSE `subscribeReplies` reply relay) with it.
+
+  This violates the engineering bounded-retry rule (a retry/auto-restart loop must be
+  BOUNDED: capped attempts + backoff, escalate on exhaustion, never tight-spin — see
+  chaserMonitor / tmuxClient convention). Fix the front-desk poll loop to that standard.
+
+  SCOPE:
+    1. Surface the poll cycle's success/failure to pollLoop — add an `ok` (poll-succeeded)
+       signal to pollAndForward's PollResult (or equivalent) so the loop can distinguish a
+       failed cycle from an empty-but-successful one. pollAndForward's decision logic is
+       otherwise unchanged.
+    2. pollLoop applies BOUNDED backoff on a failed cycle: a growing (e.g. exponential)
+       delay capped at a max, RESET to its floor on the next successful cycle. Reuse the
+       project's existing bounded-backoff convention rather than a bespoke one. Keep the
+       backoff policy a named PURE function (delay-for-attempt / reset-on-success) tested
+       with an injected clock/sleep — no real timers in the test (CLI main() thin-wrapper
+       rule: the loop wrapper stays thin, the policy is the tested core).
+    3. ESCALATION: after N consecutive failures, surface a VISIBLE degraded warning (log /
+       dead-letter) so a sustained outage is not silent — then KEEP retrying at the capped
+       cadence. (Design decision, no human fork: a chat bot must self-recover when the
+       network returns, so retry-forever-with-capped-backoff + escalate-on-sustained is
+       correct here; a hard stop-after-N — which would take the bot permanently offline —
+       is REJECTED. This is the sensible reading of the bounded-retry rule for a network
+       poll; flagged for architect/human review since feature files aren't final until
+       reviewed.)
+    4. LOOP ISOLATION: a fault in one forever-loop must not tear down its siblings. Replace
+       the fail-fast `Promise.all` coupling so each loop is contained and self-recovers;
+       a poll-socket fault leaves the Concierge tick and the reply relay running.
+
+  E2E QA PROCEDURE: drive pollLoop with a fake getUpdates that returns success:false for a
+  run of cycles then success — assert (via an injected clock) the inter-attempt delay grows
+  and is capped while failing, and drops to the floor after the success; assert no
+  tight-spin (delay > 0 on every failed cycle). Cross the consecutive-failure threshold ->
+  assert a degraded warning is emitted and retries continue. Force a fault in the poll loop
+  -> assert the tick + reply relay are still running afterwards.
+
+  OUT OF SCOPE (note as possible follow-ups, not this bug): applying the same
+  reconnect-with-backoff pattern to the SSE reply loop (`subscribeReplies` currently just
+  RETURNS on stream end — a related silent-stop gap); changing the Babashka supervisor's
+  own restart policy (already bounded).
+
+acceptance:
+  feature: specs/features/BL-302-front-desk-poll-resilience.feature
+  steps:
+    - "A failed poll cycle waits a bounded, growing backoff before the next attempt (never an immediate hot retry); a later successful cycle resets the delay to its floor"
+    - "After the consecutive-failure threshold is crossed, the bot raises a visible degraded warning and keeps retrying (does not go permanently offline)"
+    - "A fault in the poll loop does not tear down the bot's other loops — the concierge tick and the reply relay keep running"
+
+mutation_cost: medium
