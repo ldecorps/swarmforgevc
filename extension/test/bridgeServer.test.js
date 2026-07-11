@@ -228,6 +228,87 @@ test('serves the stage-dwell endpoint with per-stage dwell and a bottleneck for 
   });
 });
 
+// BL-265 slice 1: GET /gates lists the currently-pending to-human gates -
+// same token-gated, computed-only-on-request posture as /stage-dwell above.
+
+test('rejects an unauthorized request to the gates endpoint', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/gates`);
+    assert.equal(res.status, 401);
+  });
+});
+
+// BL-265 gates-list-pending-01
+test('lists a gated role with its question snippet and omits a non-gated role', async () => {
+  const target = mkTmp();
+  writeSessionsTsv(target, [{ role: 'coder' }, { role: 'cleaner' }]);
+  writeTmuxSocket(target, '/tmp/fake-bridge.sock');
+  const fake = installFakeTmux(gatedTmuxRules('Proceed with the migration? (y/n)'));
+  try {
+    await withBridge(target, {}, async (handle) => {
+      const res = await fetch(`http://127.0.0.1:${handle.port}/gates`, { headers: { authorization: `Bearer ${TOKEN}` } });
+      assert.equal(res.status, 200);
+      const gates = await res.json();
+      // The fake tmux answers every pane capture identically (both roles
+      // read as gated here) - the real per-role distinction is
+      // filterPendingGates's own unit-tested job (gateSnapshot.test.js);
+      // this route-level test proves gated roles appear with a role +
+      // snippet, and never a non-gated placeholder entry.
+      assert.deepEqual(
+        gates.map((g) => g.role).sort(),
+        ['cleaner', 'coder']
+      );
+      for (const gate of gates) {
+        assert.equal(gate.gated, true);
+        assert.match(gate.snippet, /Proceed with the migration/);
+      }
+    });
+  } finally {
+    fake.restore();
+  }
+});
+
+// BL-265 gates-empty-when-none-02
+test('returns a successful empty list when no role is gated', async () => {
+  const target = mkTmp();
+  writeSessionsTsv(target, [{ role: 'coder' }]);
+  writeTmuxSocket(target, '/tmp/fake-bridge.sock');
+  const fake = installFakeTmux(gatedTmuxRules('Compiling... done. [auto] idle'));
+  try {
+    await withBridge(target, {}, async (handle) => {
+      const res = await fetch(`http://127.0.0.1:${handle.port}/gates`, { headers: { authorization: `Bearer ${TOKEN}` } });
+      assert.equal(res.status, 200);
+      assert.deepEqual(await res.json(), []);
+    });
+  } finally {
+    fake.restore();
+  }
+});
+
+// BL-265 gates-read-scope-suffices-04
+test('a read-scoped device can list gates without the control step-up', async () => {
+  const target = mkTmp();
+  writeSessionsTsv(target, [{ role: 'coder' }]);
+  writeTmuxSocket(target, '/tmp/fake-bridge.sock');
+  const fake = installFakeTmux(gatedTmuxRules('Proceed? (y/n)'));
+  try {
+    await withBridge(target, {}, async (handle) => {
+      const viewer = handle.registerDevice('phone', 'read');
+      // No x-control-token header at all - a read-scoped device has none.
+      const res = await fetch(`http://127.0.0.1:${handle.port}/gates`, {
+        headers: { authorization: `Bearer ${viewer.token}` },
+      });
+      assert.equal(res.status, 200);
+      const gates = await res.json();
+      assert.equal(gates.length, 1);
+      assert.equal(gates[0].role, 'coder');
+    });
+  } finally {
+    fake.restore();
+  }
+});
+
 // BL-094: the root HTML shell - the one route reachable by a plain browser
 // navigation, so it accepts the token via query string as well as header.
 test('rejects a plain (unauthenticated) request to the root URL', async () => {
