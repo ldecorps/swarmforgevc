@@ -32,6 +32,15 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_lib.bb")))
+;; BL-281: Telegram forum-topic threads (refocus of the Support epic,
+;; BL-274) - telegram_topic_lib.bb is the pure demux/dispatch decision
+;; logic; support_thread_store.bb is the SAME unified SUP-### thread-store
+;; fs adapters support_thread.bb (RC channel) uses, so a thread opened over
+;; either channel lives in one store; daemon_alarm_lib.bb is reused only
+;; for its parse-conf (the alarm/email send path itself is untouched here).
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "telegram_topic_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "support_thread_store.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -68,6 +77,12 @@
 (def operator-session "operator")
 (def operator-rc-name "Operator")
 (def operator-socket-file (fs/path op-dir "operator-tmux.sock"))
+
+;; ── BL-281: Telegram forum-topic threads ──────────────────────────────────
+(def telegram-offset-file (fs/path op-dir "telegram-offset"))
+(def telegram-topics-file (fs/path op-dir "telegram-topics.json"))
+(def telegram-reply-context-file (fs/path op-dir "telegram-reply-context.json"))
+(def telegram-bridge-cli (fs/path project-root "extension" "out" "tools" "telegram-bridge.js"))
 
 (defn env-ms [name default]
   (or (some-> (System/getenv name) parse-long) default))
@@ -174,6 +189,15 @@
   (fs/create-dirs op-dir)
   (spit (str events-file) (str (json/generate-string event) "\n") :append true))
 
+;; BL-281: whole-file overwrite counterpart to append-event! - launch-
+;; operator! below uses this to write EXACTLY the selected dispatch batch
+;; to inflight-file (never the raw fs/move it used before select-dispatch-
+;; batch existed), and to rewrite events-file with only the deferred
+;; leftovers.
+(defn write-events! [path events]
+  (fs/create-dirs (fs/parent path))
+  (spit (str path) (str/join "" (map #(str (json/generate-string %) "\n") events))))
+
 (defn enqueue-observed!
   "Append every observed event that survives operator-lib de-dup against what
    is already queued. Returns the number newly enqueued."
@@ -183,6 +207,104 @@
         added (drop (count pending) merged)]
     (doseq [e added] (append-event! e))
     (count added)))
+
+;; ── BL-281: Telegram forum-topic threads - real fs/network adapters ──────
+;; The pure decision logic (open/demux/route/dispatch-batch/reply-context)
+;; lives entirely in telegram_topic_lib.bb; everything below is the thin,
+;; untested-boundary I/O that wires it to the real thread store, the
+;; topic<->thread mapping, and the Telegram API (shelled through
+;; extension/out/tools/telegram-bridge.js - Babashka cannot import a
+;; CommonJS/TS module directly, the same pattern handoffd.bb already uses
+;; for emit-cost-health-sidecar.js).
+
+(defn telegram-configured? []
+  (boolean (and (not (str/blank? (or (System/getenv "TELEGRAM_BOT_TOKEN") "")))
+                (not (str/blank? (or (System/getenv "TELEGRAM_CHAT_ID") ""))))))
+
+(defn telegram-principal-user-id []
+  (let [conf (daemon-alarm-lib/parse-conf (when (fs/exists? conf-file) (slurp (str conf-file))))]
+    (get conf "telegram_principal_user_id")))
+
+;; process/sh's varargs form silently drops :dir/:env overrides - only the
+;; [cmd & args] vector form applies them (handoffd.bb's own auto-route!
+;; comment documents this the same way). The token/chat id are inherited
+;; from this process's own environment (operator-provided, RESEND_API_KEY's
+;; same convention) via the full env passthrough - never a second copy.
+(defn telegram-bridge! [& args]
+  (let [result (process/sh (into ["node" (str telegram-bridge-cli)] args)
+                            {:dir (str project-root) :env (into {} (System/getenv))})]
+    (if (zero? (:exit result))
+      (try (json/parse-string (:out result) true) (catch Exception _ nil))
+      (do (log! "telegram-bridge-error" (str/join " " args) (str (:err result))) nil))))
+
+(defn telegram-create-topic! [name]
+  (:messageThreadId (telegram-bridge! "create-topic" name)))
+
+;; timeout 0 - a NON-blocking poll (Telegram's own long-poll hold would
+;; otherwise stall the whole Operator tick loop, which has other concerns
+;; to observe every cycle too).
+(defn telegram-get-updates! [offset]
+  (:updates (telegram-bridge! "get-updates" (str offset) "--timeout" "0")))
+
+;; topic<->thread mapping (Operator-owned state, not shared with support_
+;; thread_store.bb's thread files - those ARE shared, this mapping is not,
+;; since only the Telegram channel has topics). String-keyed throughout
+;; (keywordize disabled) since keys are dynamic Telegram topic ids, not a
+;; fixed schema.
+(defn read-topic-map []
+  (if (fs/exists? telegram-topics-file)
+    (try (json/parse-string (slurp (str telegram-topics-file)) false) (catch Exception _ {}))
+    {}))
+
+(defn write-topic-map! [m] (atomic-spit! telegram-topics-file (json/generate-string m)))
+
+(defn thread-for-topic! [topic-id] (get (read-topic-map) (str topic-id)))
+
+(defn topic-for-thread! [thread-id]
+  (some (fn [[topic-id mapped-thread-id]] (when (= mapped-thread-id thread-id) topic-id)) (read-topic-map)))
+
+(defn map-topic! [topic-id thread-id]
+  (write-topic-map! (assoc (read-topic-map) (str topic-id) thread-id)))
+
+(defn telegram-topic-adapters []
+  (merge
+   (support-thread-store/adapters-for state-dir)
+   {:create-topic! telegram-create-topic!
+    :map-topic! map-topic!
+    :thread-for-topic! thread-for-topic!
+    :topic-for-thread! topic-for-thread!
+    :now-iso! now-iso
+    :enqueue-event! append-event!}))
+
+(defn telegram-topic-poll-sweep!
+  "Best-effort (never crashes the tick on a Telegram API failure, mirrors
+   BL-272's own emit-sidecar try/catch posture): polls for updates since the
+   last persisted offset, routes each through telegram-topic-lib/route-
+   update! (opens a new subject, or demuxes into its mapped thread +
+   enqueues a wake), then persists the advanced offset. Silently does
+   nothing when Telegram is not configured (no bot token/chat id - BL-215's
+   own quiet-no-op-vs-real-misconfiguration distinction; here there is no
+   loud-warn path since Telegram, unlike email, is fully optional infra) or
+   when telegram_principal_user_id is not yet set in swarmforge.conf."
+  []
+  (when (telegram-configured?)
+    (try
+      (let [offset (or (read-pid telegram-offset-file) 0)
+            principal-id (telegram-principal-user-id)
+            updates (telegram-get-updates! offset)]
+        (cond
+          (empty? updates) nil
+
+          (not principal-id)
+          (log! "telegram-poll-skip" "telegram_principal_user_id not configured in swarmforge.conf")
+
+          :else
+          (do
+            (doseq [u updates]
+              (telegram-topic-lib/route-update! u principal-id (telegram-topic-adapters)))
+            (atomic-spit! telegram-offset-file (str (telegram-topic-lib/next-offset updates offset))))))
+      (catch Exception e
+        (log! "telegram-poll-error" (.getMessage e))))))
 
 ;; ── cooldown / provider state ─────────────────────────────────────────────────
 
@@ -247,14 +369,49 @@
 
 ;; ── launching the disposable LLM Operator ─────────────────────────────────────
 
+(defn dispatch-subject-of
+  "The :subject (thread id) of the first TELEGRAM_TOPIC_MESSAGE event in a
+   dispatch batch, or nil when the batch carries none - used to decide
+   whether a reply-context file needs writing."
+  [dispatch-events]
+  (some :subject (filter #(= (:type %) "TELEGRAM_TOPIC_MESSAGE") dispatch-events)))
+
+(defn write-telegram-reply-context!
+  "BL-281 telegram-topic-03/telegram-topic-04: pre-fetches the ONE dispatched
+   subject's reloaded transcript (telegram-topic-lib/reply-context-for) and
+   its mapped topic id, and writes them together into one file the
+   disposable Operator's kickoff can reference - the structural guarantee
+   that a wake for one subject has no path to another subject's transcript,
+   never left to the LLM's own reading discipline."
+  [thread-id]
+  (atomic-spit! telegram-reply-context-file
+                (json/generate-string
+                 {:thread-id thread-id
+                  :topic-id (topic-for-thread! thread-id)
+                  :transcript (telegram-topic-lib/reply-context-for thread-id (telegram-topic-adapters))})))
+
 (defn launch-operator!
   "Move the pending queue aside so new events accumulate cleanly, then spawn
    launch_operator.sh which starts the Opus Operator (with --remote-control)
    in the swarm's tmux, pointed at the inflight events. Never launches a
-   second one (caller already checked operator-running?)."
+   second one (caller already checked operator-running?).
+
+   BL-281: the pending queue is no longer moved wholesale - select-dispatch-
+   batch first splits off AT MOST ONE Telegram subject's events (every
+   other pending event type dispatches together unchanged); only the
+   selected :dispatch batch becomes inflight, :deferred events are written
+   back to events-file for a later tick. When the dispatch batch is a
+   Telegram wake, its reply context is pre-fetched and written alongside."
   []
-  (when (fs/exists? events-file)
-    (fs/move events-file inflight-file {:replace-existing true :atomic-move true}))
+  (let [pending (read-events events-file)
+        {:keys [dispatch deferred]} (telegram-topic-lib/select-dispatch-batch pending)
+        telegram-subject (dispatch-subject-of dispatch)]
+    (fs/delete-if-exists events-file)
+    (write-events! inflight-file dispatch)
+    (doseq [e deferred] (append-event! e))
+    (if telegram-subject
+      (write-telegram-reply-context! telegram-subject)
+      (fs/delete-if-exists telegram-reply-context-file)))
   (log! "launch-operator" "inflight=" (str (when (fs/exists? inflight-file)
                                              (count (read-events inflight-file)))))
   (if skip-launch?
@@ -292,6 +449,9 @@
                (fs/path done-dir (str "events-" (now-ms) ".jsonl"))
                {:replace-existing true})
       (fs/delete-if-exists operator-pid-file)
+      ;; BL-281: a stale reply-context file must never carry over into the
+      ;; NEXT (possibly non-Telegram) run.
+      (fs/delete-if-exists telegram-reply-context-file)
       (log! "reap-operator" "inflight retired"))))
 
 ;; ── status ────────────────────────────────────────────────────────────────────
@@ -338,6 +498,14 @@
       (when (operator-lib/timer-due? (last-swarm-check-ms) now swarm-check-ms)
         (record-swarm-check! now))
       (enqueue-observed! observed))
+
+    ;; BL-281: Telegram forum-topic poll - best-effort, queues its own
+    ;; TELEGRAM_TOPIC_MESSAGE events directly (via telegram-topic-adapters'
+    ;; :enqueue-event! -> append-event!), independent of the observed/
+    ;; enqueue-observed! block above (those events are not de-dup-worthy
+    ;; against a general "observed" batch - route-update!/demux-inbound!
+    ;; already scope one event per newly-appended message).
+    (telegram-topic-poll-sweep!)
 
     (reap-finished-operator!)
 
