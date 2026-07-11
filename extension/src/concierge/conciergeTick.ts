@@ -6,7 +6,7 @@
 // Telegram-agnostic in its own imports (it composes topicRouter.ts's
 // RouteAdapters, which is where Telegram-specific adapters actually get
 // wired, in the live wrapper - telegram-front-desk-bot.ts).
-import { EventStreamSnapshot, SwarmEventType, deriveSwarmEvents, swarmEventKey } from '../events/swarmEventStream';
+import { EventStreamSnapshot, GateSignal, SwarmEventType, deriveSwarmEvents, swarmEventKey } from '../events/swarmEventStream';
 import { RouteAdapters, routeEvent } from './topicRouter';
 
 export interface BacklogFolderItem {
@@ -30,6 +30,13 @@ export interface TickState {
 
 export interface ConciergeTickAdapters {
   readFolders: () => BacklogFoldersSnapshot;
+  // BL-301: the live gate snapshot (computeRoleGateStatesLive, tmux-pane
+  // capture) and the role->ticket inversion (computeCurrentHolders'
+  // ticketId->role, inverted) - both wired live in the bot from targetPath,
+  // same "core stays narrow, live wrapper adapts the real source" split as
+  // readFolders.
+  readGates: () => GateSignal[];
+  readRoleTicket: () => Record<string, string>;
   readTickState: () => TickState;
   writeTickState: (state: TickState) => void;
   routeAdapters: RouteAdapters;
@@ -39,19 +46,15 @@ export interface TickResult {
   routed: number;
 }
 
-function toEventStreamSnapshot(folders: BacklogFoldersSnapshot): EventStreamSnapshot {
+function toEventStreamSnapshot(folders: BacklogFoldersSnapshot, gates: GateSignal[], roleTicket: Record<string, string>): EventStreamSnapshot {
   return {
     backlog: {
       active: folders.active.map((item) => item.id),
       paused: folders.paused.map((item) => item.id),
       done: folders.done.map((item) => item.id),
     },
-    // NeedsApproval routing needs the live gate snapshot + role->ticket
-    // inversion - a different, tmux-pane-capture integration surface
-    // (BL-301). This tick's own snapshot stays pure-filesystem/backlog-only
-    // by construction, so no gate ever fires from here.
-    gates: [],
-    roleTicket: {},
+    gates,
+    roleTicket,
   };
 }
 
@@ -74,11 +77,24 @@ function titleForBacklogId(folders: BacklogFoldersSnapshot, backlogId: string): 
 // the persisted baseline past a given transition - mirrors the "only marks
 // the SUCCESSFULLY posted ones as emitted" contract this module already
 // keeps for emittedKeys, applied to the snapshot half of the same state.
+//
+// BL-301: RETRY SYMMETRY for NeedsApproval - a gate transition is keyed by
+// ROLE (gates[].gated), not backlogId, so a failed NeedsApproval post
+// instead reverts that role's OWN gate entry back to not-gated in the
+// persisted snapshot (never in curr, which still reflects the swarm's real
+// live gate state) - the next tick's diffNeedsApproval then sees the SAME
+// false->true transition again. Resolved via curr.roleTicket (role's
+// currently-held backlogId), the exact inversion diffNeedsApproval itself
+// already used to tag the event that just failed to post.
 function withRetryableTransitionsHeldBack(curr: EventStreamSnapshot, unrouted: ReadonlySet<string>): EventStreamSnapshot {
   if (unrouted.size === 0) {
     return curr;
   }
   const isUnrouted = (type: SwarmEventType, backlogId: string) => unrouted.has(swarmEventKey({ type, backlogId, payload: {} }));
+  const gates = curr.gates.map((gate) => {
+    const backlogId = curr.roleTicket[gate.role];
+    return gate.gated && backlogId && isUnrouted('NeedsApproval', backlogId) ? { ...gate, gated: false } : gate;
+  });
   return {
     ...curr,
     backlog: {
@@ -86,6 +102,7 @@ function withRetryableTransitionsHeldBack(curr: EventStreamSnapshot, unrouted: R
       active: curr.backlog.active.filter((id) => !isUnrouted('TaskStarted', id)),
       done: curr.backlog.done.filter((id) => !isUnrouted('TaskCompleted', id)),
     },
+    gates,
   };
 }
 
@@ -100,7 +117,7 @@ function withRetryableTransitionsHeldBack(curr: EventStreamSnapshot, unrouted: R
 // retried next tick (see withRetryableTransitionsHeldBack above).
 export async function runConciergeTick(adapters: ConciergeTickAdapters): Promise<TickResult> {
   const folders = adapters.readFolders();
-  const curr = toEventStreamSnapshot(folders);
+  const curr = toEventStreamSnapshot(folders, adapters.readGates(), adapters.readRoleTicket());
   const state = adapters.readTickState();
   const alreadyEmitted = new Set(state.emittedKeys);
   const events = deriveSwarmEvents(state.snapshot, curr, alreadyEmitted);
