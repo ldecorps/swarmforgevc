@@ -240,6 +240,26 @@ test('costHealth is omitted entirely (not null) when no sidecar is provided (cos
   assert.equal(Object.prototype.hasOwnProperty.call(data, 'costHealth'), false);
 });
 
+// ── BL-290 suite-duration-pwa-02: suiteDurationTrend fold-in ─────────────
+
+test('BL-290: metrics.suiteDurationTrend is folded in from the sidecar\'s own field when present', () => {
+  const suiteDurationTrend = { hasLocalData: true, dailySeries: [{ periodStart: '2026-07-09T00:00:00Z', value: 45000 }], trend: { direction: 'flat', delta: 0, currentValue: 45000, priorValue: 45000, series: [] }, warn: false };
+  const sidecar = { schemaVersion: 1, dateIso: '2026-07-09', agents: [], topExpensiveTickets: [], flowBalance: {}, reliability: {}, resourceAnomalies: [], suiteDurationTrend };
+  const data = buildBacklogDashboard({ active: [], paused: [], done: [] }, [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z', sidecar);
+  assert.deepEqual(data.metrics.suiteDurationTrend, suiteDurationTrend);
+});
+
+test('BL-290: metrics.suiteDurationTrend is omitted when the sidecar carries none (a pre-BL-290 sidecar)', () => {
+  const sidecar = { schemaVersion: 1, dateIso: '2026-07-09', agents: [], topExpensiveTickets: [], flowBalance: {}, reliability: {}, resourceAnomalies: [] };
+  const data = buildBacklogDashboard({ active: [], paused: [], done: [] }, [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z', sidecar);
+  assert.equal(Object.prototype.hasOwnProperty.call(data.metrics, 'suiteDurationTrend'), false);
+});
+
+test('BL-290: metrics.suiteDurationTrend is omitted when no sidecar is provided at all', () => {
+  const data = buildBacklogDashboard({ active: [], paused: [], done: [] }, [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z');
+  assert.equal(Object.prototype.hasOwnProperty.call(data.metrics, 'suiteDurationTrend'), false);
+});
+
 // ── computeBacklogDashboard (impure orchestrator, real git repo) ────────
 
 function mkTmp() {
@@ -308,6 +328,21 @@ test('computeBacklogDashboard omits costHealth when no sidecar has ever been com
 
   const dashboard = computeBacklogDashboard(repo, [], Date.parse('2026-07-09T12:00:00Z'));
   assert.equal(Object.prototype.hasOwnProperty.call(dashboard, 'costHealth'), false);
+});
+
+// BL-290 suite-duration-pwa-02
+test('computeBacklogDashboard folds metrics.suiteDurationTrend in from the latest committed sidecar', () => {
+  const repo = mkTmp();
+  mkdirp(path.join(repo, 'backlog', 'active'));
+  mkdirp(path.join(repo, 'docs', 'briefings'));
+  const suiteDurationTrend = { hasLocalData: true, dailySeries: [{ periodStart: '2026-07-09T00:00:00Z', value: 45000 }], trend: { direction: 'flat', delta: 0, currentValue: 45000, priorValue: 45000, series: [] }, warn: true };
+  fs.writeFileSync(
+    path.join(repo, 'docs', 'briefings', '2026-07-09.json'),
+    JSON.stringify({ schemaVersion: 1, dateIso: '2026-07-09', agents: [], topExpensiveTickets: [], flowBalance: {}, reliability: {}, resourceAnomalies: [], suiteDurationTrend })
+  );
+
+  const dashboard = computeBacklogDashboard(repo, [], Date.parse('2026-07-09T12:00:00Z'));
+  assert.deepEqual(dashboard.metrics.suiteDurationTrend, suiteDurationTrend);
 });
 
 // ── translateBacklogDashboard (BL-118) ───────────────────────────────────

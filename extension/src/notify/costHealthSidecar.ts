@@ -6,6 +6,7 @@ import { computeCostTelemetry, RoleCostTelemetry } from '../metrics/costTelemetr
 import { readResourceSampleEvents, computeResourceTrends, RoleResourceTrend } from '../metrics/resourceTelemetry';
 import { RoleWorktree, readChaserTelemetryEvents, ChaserTelemetryEvent } from '../metrics/swarmMetrics';
 import { runGitLog, deriveTicketLifecycles, TicketLifecycleEvent } from '../metrics/gitHistoryAdapter';
+import { computeSuiteDurationTrend, SuiteDurationTrendResult } from '../metrics/deliveryMetrics';
 
 // BL-213: the daily cost & health sidecar - a deterministic, committed
 // carrier (docs/briefings/<date>.json) for BL-100's producers, never
@@ -71,6 +72,13 @@ export interface CostHealthSidecar {
   flowBalance: { speccedPerDay: TrendedNumber; closedPerDay: TrendedNumber };
   reliability: ReliabilityCounts;
   resourceAnomalies: ResourceAnomaly[];
+  // BL-290: additive, optional - suite-test duration is machine-local/
+  // gitignored (deliveryMetrics.ts's own computeSuiteDurationTrend reads
+  // it live), so this committed snapshot is the ONLY way it can ever reach
+  // a git-derived projection like backlog.json. Absent when the emitting
+  // sidecar predates this ticket; schemaVersion stays unchanged either way
+  // since this is purely additive, same posture as every other field here.
+  suiteDurationTrend?: SuiteDurationTrendResult;
 }
 
 // ── daily bucketing (pure) ───────────────────────────────────────────────
@@ -247,9 +255,10 @@ export function buildCostHealthSidecar(
   reliabilityDailySeries: DailyReliabilitySeries,
   speccedSeries: TrendSeriesPoint[],
   closedSeries: TrendSeriesPoint[],
-  topN: number = DEFAULT_TOP_EXPENSIVE_TICKETS
+  topN: number = DEFAULT_TOP_EXPENSIVE_TICKETS,
+  suiteDurationTrend?: SuiteDurationTrendResult
 ): CostHealthSidecar {
-  return {
+  const sidecar: CostHealthSidecar = {
     schemaVersion: COST_HEALTH_SIDECAR_SCHEMA_VERSION,
     dateIso,
     agents: Object.keys(costTelemetryByRole).map((role) => latestAgentDailyCost(role, costTelemetryByRole[role])),
@@ -267,6 +276,10 @@ export function buildCostHealthSidecar(
     },
     resourceAnomalies: computeResourceAnomalies(resourceTrendsByRole),
   };
+  if (suiteDurationTrend) {
+    sidecar.suiteDurationTrend = suiteDurationTrend;
+  }
+  return sidecar;
 }
 
 // ── markdown renderer (pure, cost-05b/05c) ──────────────────────────────
@@ -364,8 +377,18 @@ export function computeCostHealthSidecar(targetPath: string, roles: RoleWorktree
   const reliabilityDailySeries = bucketDailyReliabilityEvents(readChaserTelemetryEvents(targetPath), nowMs);
   const lifecycles = [...deriveTicketLifecycles(runGitLog(targetPath, 'backlog')).values()];
   const { speccedSeries, closedSeries } = bucketDailyFlowBalance(lifecycles, nowMs);
+  const suiteDurationTrend = computeSuiteDurationTrend(targetPath, roles, nowMs);
 
-  return buildCostHealthSidecar(dateIso, costTelemetryByRole, resourceTrendsByRole, reliabilityDailySeries, speccedSeries, closedSeries);
+  return buildCostHealthSidecar(
+    dateIso,
+    costTelemetryByRole,
+    resourceTrendsByRole,
+    reliabilityDailySeries,
+    speccedSeries,
+    closedSeries,
+    DEFAULT_TOP_EXPENSIVE_TICKETS,
+    suiteDurationTrend
+  );
 }
 
 // ── thin fs/git adapters ─────────────────────────────────────────────────
