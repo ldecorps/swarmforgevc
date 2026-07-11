@@ -69,6 +69,7 @@ const DOMAINS = [
   require('./coChangeCwdSteps'),
   require('./resourceSamplerActivationSteps'),
   require('./gatesListSteps'),
+  require('./onboardingPromptsSteps'),
 ];
 
 function registerSteps(registry) {
