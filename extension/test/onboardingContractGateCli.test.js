@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { parseArgs } = require('../out/tools/onboarding-contract-gate');
+const { parseArgs, readContractYaml } = require('../out/tools/onboarding-contract-gate');
 const { renderContractYaml } = require('../out/onboarding/contractView');
 
 function mkTargetRepo() {
@@ -18,6 +18,22 @@ test('parseArgs returns the target repo path when given', () => {
 
 test('parseArgs returns null when no argument is given', () => {
   assert.equal(parseArgs([]), null);
+});
+
+// ── readContractYaml ─────────────────────────────────────────────────────
+
+test('readContractYaml returns the file contents when contract.yaml exists', () => {
+  const targetRepo = mkTargetRepo();
+  fs.mkdirSync(path.join(targetRepo, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(path.join(targetRepo, '.swarmforge', 'contract.yaml'), 'agreement: agreed\n');
+
+  assert.equal(readContractYaml(targetRepo), 'agreement: agreed\n');
+});
+
+test('readContractYaml returns undefined when contract.yaml is absent, rather than throwing', () => {
+  const targetRepo = mkTargetRepo();
+
+  assert.equal(readContractYaml(targetRepo), undefined);
 });
 
 // ── the compiled CLI's own real output ────────────────────────────────────

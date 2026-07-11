@@ -1288,7 +1288,7 @@ Domain-specific code generated for a target stays in the target's PR branch and 
 
 ## `project.prompt` and `engineering.prompt` — Contracts
 
-These are the only files the swarm reads from the target. Their format is intentionally simple (plain text), so the target has no schema dependency on the forge.
+These, plus the onboarding scope contract below (BL-262), are the only files the swarm reads from the target. `project.prompt`/`engineering.prompt` are intentionally simple plain text; the onboarding contract below is structured YAML plus a generated legible view, so the target still has no forge-schema dependency on anything but that one small shape.
 
 ### `project.prompt` (target repo)
 ```
@@ -1315,6 +1315,10 @@ These are the only files the swarm reads from the target. Their format is intent
 ```
 
 The `Initialize Target` command scaffolds these with sensible defaults so the developer only fills in the blanks.
+
+### The onboarding scope contract (BL-262, slice 1) — survey, propose, agree, fail-closed gate
+
+A separate, higher-level contract sits above these two files and above the per-ticket acceptance contract (`docs/Onboarding-New-Project.md`'s section 3): the overall mandate for what the swarm will and will not do on a target, which the swarm surveys and proposes and the operator must agree before any ticket for that target dispatches. `proposeContractFromSurvey` (`extension/src/onboarding/contractSurvey.ts`) is a pure function mapping already-gathered `RepoSurveyFacts` (languages, layout, README, seed vision, initial backlog — the survey itself is swarm/agent behavior, not this function's job) into a `ProposedContract` (scope, out-of-scope, boundaries, initial-backlog summary, `agreement: proposed`). `node extension/out/tools/propose-onboarding-contract.js <target-repo-path> <survey-facts-json-path>` runs it and scaffolds + commits the hybrid artifact into the target via `initializeTargetContract` (`extension/src/config/targetBootstrap.ts`, generalized from the same idempotent plan/write/commit seam `initializeTargetRepo` already uses): `.swarmforge/contract.yaml` is the structured source, `CONTRACT.md` a generated legible view rendered from the same source so the two can never diverge (`extension/src/onboarding/contractView.ts`). The operator flips `agreement` to `agreed` once satisfied (or back to `pending` to re-open scope and re-hold the gate). Before every promotion of a paused ticket into `backlog/active/`, the coordinator runs `node extension/out/tools/onboarding-contract-gate.js <target-repo-path>` (`swarmforge/roles/coordinator.prompt`'s Onboarding Contract Gate section); `evaluateBuildStartGate` (`extension/src/onboarding/buildStartGate.ts`) is fail-closed — only `agreed` allows dispatch, and missing/malformed/`proposed`/`pending` all hold with a reason, never a default-allow (BL-099 missing-data posture), so a target with no contract yet simply reads as `missing` until surveyed and proposed. This does not replace or duplicate per-ticket `human_approval` — it gates whether any ticket can start, not what each ticket contains. Slice 1 (this) ships survey → propose → single agree/hold; an iterative negotiate loop (request changes → revise → re-propose) is designed but parked, not yet built (`specs/features/BL-262-onboarding-contract-agreement.slice-2-negotiation.feature.draft`).
 
 ---
 
