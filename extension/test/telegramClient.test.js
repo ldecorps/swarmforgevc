@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { sendTelegramMessage, getTelegramUpdates } = require('../out/notify/telegramClient');
+const { sendTelegramMessage, getTelegramUpdates, createForumTopic } = require('../out/notify/telegramClient');
 
 const TOKEN = '123456:test-bot-token';
 const CHAT_ID = '999888777';
@@ -80,5 +80,59 @@ test('getTelegramUpdates reports failure without leaking the token', async () =>
 
   assert.equal(result.success, false);
   assert.deepEqual(result.updates, []);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+// ── BL-281: forum-topic support ──────────────────────────────────────────
+
+test('sendTelegramMessage includes message_thread_id when replying into a forum topic', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 44 } } };
+  };
+
+  await sendTelegramMessage(TOKEN, CHAT_ID, 'reply in topic', undefined, postFn, 7);
+
+  assert.deepEqual(JSON.parse(capturedBody), {
+    chat_id: CHAT_ID,
+    text: 'reply in topic',
+    message_thread_id: 7,
+  });
+});
+
+test('sendTelegramMessage omits message_thread_id entirely when not given (existing callers unaffected)', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 45 } } };
+  };
+
+  await sendTelegramMessage(TOKEN, CHAT_ID, 'no topic', undefined, postFn);
+
+  assert.equal(Object.prototype.hasOwnProperty.call(JSON.parse(capturedBody), 'message_thread_id'), false);
+});
+
+test('createForumTopic posts to the Telegram API and reports the new topic\'s message_thread_id', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: { message_thread_id: 7, name: 'billing question' } } };
+  };
+
+  const result = await createForumTopic(TOKEN, CHAT_ID, 'billing question', postFn);
+
+  assert.deepEqual(result, { success: true, messageThreadId: 7 });
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/createForumTopic`);
+  assert.deepEqual(JSON.parse(calls[0].body), { chat_id: CHAT_ID, name: 'billing question' });
+});
+
+test('createForumTopic reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'Topics are not enabled' } });
+
+  const result = await createForumTopic(TOKEN, CHAT_ID, 'billing question', postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /Topics are not enabled/);
   assert.doesNotMatch(result.error, new RegExp(TOKEN));
 });

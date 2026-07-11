@@ -67,17 +67,26 @@ function extractMessageId(json: unknown): number | undefined {
 // BL-239's "one Telegram thread per run" is built from these chains: the
 // first message about a run has no reply target, every later message about
 // that same run replies to that first message's id.
+//
+// BL-281: messageThreadId (added LAST, after postFn, so every existing
+// positional call site - which never passes a 6th arg - keeps its exact
+// prior behavior unchanged) routes the message into a specific Telegram
+// FORUM TOPIC (message_thread_id), the per-subject SUP-### hosting this
+// ticket adds. Independent of replyToMessageId - a topic reply can also
+// reply-chain within that topic.
 export async function sendTelegramMessage(
   token: string,
   chatId: string,
   text: string,
   replyToMessageId?: number,
-  postFn: TelegramPostFn = defaultPost
+  postFn: TelegramPostFn = defaultPost,
+  messageThreadId?: number
 ): Promise<SendMessageResult> {
   const body = JSON.stringify({
     chat_id: chatId,
     text,
     ...(replyToMessageId !== undefined ? { reply_to_message_id: replyToMessageId } : {}),
+    ...(messageThreadId !== undefined ? { message_thread_id: messageThreadId } : {}),
   });
 
   try {
@@ -103,6 +112,9 @@ export interface TelegramMessage {
   text?: string;
   reply_to_message?: { message_id: number };
   from?: { id: number | string; username?: string };
+  // BL-281: present on a message posted inside a forum topic - the SAME id
+  // sendTelegramMessage's messageThreadId routes a reply back into.
+  message_thread_id?: number;
 }
 
 export interface TelegramUpdate {
@@ -141,5 +153,51 @@ export async function getTelegramUpdates(
   } catch (err) {
     const detail = err instanceof Error ? err.message : 'unknown error';
     return { success: false, updates: [], error: redactToken(`Telegram request failed: ${detail}`, token) };
+  }
+}
+
+// ── BL-281: forum-topic support ─────────────────────────────────────────
+
+export interface CreateForumTopicResult {
+  success: boolean;
+  messageThreadId?: number;
+  error?: string;
+}
+
+function extractMessageThreadId(json: unknown): number | undefined {
+  if (
+    json &&
+    typeof json === 'object' &&
+    (json as Record<string, unknown>).result &&
+    typeof (json as Record<string, unknown>).result === 'object'
+  ) {
+    const threadId = ((json as Record<string, unknown>).result as Record<string, unknown>).message_thread_id;
+    return typeof threadId === 'number' ? threadId : undefined;
+  }
+  return undefined;
+}
+
+// Creates a new forum topic in a supergroup with Topics enabled (a one-time
+// human setup step, out of this ticket's scope to automate) - each SUP-###
+// discussion gets its own topic so parallel subjects never bleed context
+// (BL-281). The returned messageThreadId is the id every later
+// sendTelegramMessage call for that subject routes into.
+export async function createForumTopic(
+  token: string,
+  chatId: string,
+  name: string,
+  postFn: TelegramPostFn = defaultPost
+): Promise<CreateForumTopicResult> {
+  const body = JSON.stringify({ chat_id: chatId, name });
+  try {
+    const res = await postFn(apiUrl(token, 'createForumTopic'), body);
+    if (!res.ok) {
+      const description = extractDescription(res.json);
+      return { success: false, error: redactToken(`Telegram API responded with status ${res.status}${description ? `: ${description}` : ''}`, token) };
+    }
+    return { success: true, messageThreadId: extractMessageThreadId(res.json) };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : 'unknown error';
+    return { success: false, error: redactToken(`Telegram request failed: ${detail}`, token) };
   }
 }
