@@ -157,6 +157,67 @@
   [reset-ms now-ms]
   (boolean (and reset-ms (>= now-ms reset-ms))))
 
+;; BL-305 (Bug HIGH, fail-open): two false-freeze defects fixed here.
+;;   1. A usage-limit signal with NO parseable reset (nil) previously
+;;      produced a {:state :cooldown :reset-ms nil} that cooldown-elapsed?
+;;      can NEVER satisfy (nil never elapses) - an INDEFINITE freeze.
+;;   2. A STALE pane banner took priority over an already-recorded
+;;      cooldown and RE-DERIVED a fresh reset from scrollback every tick;
+;;      reset-epoch-ms's own next-occurrence roll turns an hours-stale
+;;      "resets 7:50pm" into "tomorrow 7:50pm" once today's 7:50pm has
+;;      passed - a ~24h freeze that kept renewing off text nobody
+;;      refreshed.
+;; plausible-reset? is the sanity bound that kills the next-occurrence 24h
+;; artifact: a resolved reset must be in the future AND within
+;; plausible-max-ms of now, or it is treated the same as an unparseable
+;; one (mis-parsed), never honored as a day-long freeze.
+(defn- plausible-reset? [reset-ms now-ms plausible-max-ms]
+  (boolean (and reset-ms (> reset-ms now-ms) (<= (- reset-ms now-ms) plausible-max-ms))))
+
+(defn resolve-provider-state
+  "The FAIL-OPEN provider-state decision. scan-provider-state (the thin,
+   impure caller) gathers the SAME inputs it always has - a just-observed
+   usage-limit banner's text/parsed reset, the persisted cooldown record,
+   now-ms - plus two config knobs, and this returns exactly the
+   {:state :reset-ms :reset-raw} shape its own callers already expect.
+
+   Priority order (each an independently-testable branch):
+     1. An ALREADY-recorded, not-yet-elapsed cooldown is AUTHORITATIVE on
+        its own reset-ms - live pane text is never re-consulted while it
+        is still cooling, so it can never be renewed/extended (fixes
+        defect 2's 'every tick' half).
+     2. A recorded cooldown whose reset has ALREADY elapsed resumes
+        UNCONDITIONALLY this tick, even if the same (or any) usage-limit
+        text still lingers in a pane - fresh evidence is required to
+        (re-)enter cooldown on a LATER tick, never mere leftover
+        scrollback on the very tick of resuming (fixes defect 2's
+        'stale banner never lets you leave' half; scan-provider-state's
+        own caller (tick!) clears the persisted record once this returns
+        :available, so a genuinely NEW signal gets a fair, fresh
+        evaluation on the next tick).
+     3. A fresh usage-limit signal with no PRIOR record: a plausible,
+        parseable, near-term reset genuinely freezes until it (no
+        regression); anything else (nil, or implausibly far - defect 1 +
+        the sanity bound) caps to a SHORT bounded-fallback-ms window
+        instead of an unbounded/never-elapsing one.
+     4. No signal, no record - available."
+  [{:keys [limited-text parsed-reset-ms reset-raw existing-reset-ms existing-reset-raw now-ms
+           bounded-fallback-ms plausible-max-ms]}]
+  (cond
+    (and existing-reset-ms (< now-ms existing-reset-ms))
+    {:state :cooldown :reset-ms existing-reset-ms :reset-raw existing-reset-raw}
+
+    existing-reset-ms
+    {:state :available}
+
+    limited-text
+    (if (plausible-reset? parsed-reset-ms now-ms plausible-max-ms)
+      {:state :cooldown :reset-ms parsed-reset-ms :reset-raw reset-raw}
+      {:state :cooldown :reset-ms (+ now-ms bounded-fallback-ms) :reset-raw reset-raw})
+
+    :else
+    {:state :available}))
+
 ;; ── the launch decision (the money question) ─────────────────────────────────
 
 (defn should-launch-operator?

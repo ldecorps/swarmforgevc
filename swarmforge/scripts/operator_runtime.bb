@@ -101,6 +101,10 @@
 
 (def interval-ms (env-ms "OPERATOR_INTERVAL_MS" 30000))
 (def swarm-check-ms (env-ms "OPERATOR_SWARM_CHECK_MS" 1800000))
+;; BL-305: fail-open cooldown config - see operator_lib.bb's own
+;; resolve-provider-state docstring for what each bounds.
+(def cooldown-bounded-fallback-ms (env-ms "OPERATOR_COOLDOWN_FALLBACK_MS" 1800000))
+(def cooldown-plausible-max-ms (env-ms "OPERATOR_COOLDOWN_PLAUSIBLE_MAX_MS" 21600000))
 (def heartbeat? (not= "0" (System/getenv "OPERATOR_HEARTBEAT")))
 (def skip-launch? (= "1" (System/getenv "OPERATOR_SKIP_LAUNCH")))
 
@@ -296,12 +300,12 @@
 (defn scan-provider-state
   "Look at the agent panes + the operator's own last run for a usage-limit
    banner. Returns {:state :available|:cooldown, :reset-ms N?, :reset-raw s?}.
-   Reuses the pure detectors in operator_lib."
+   A THIN caller (BL-305): gathers the live pane text + the persisted
+   cooldown record, then hands the whole fail-open DECISION to
+   operator_lib.bb's own resolve-provider-state - this function performs
+   no cooldown/freeze policy itself."
   [now]
   (let [existing (read-cooldown)
-        ;; still cooling if a recorded reset has not yet elapsed
-        cooling-recorded? (and existing (:reset_ms existing)
-                               (not (operator-lib/cooldown-elapsed? (:reset_ms existing) now)))
         agent-panes (->> (operator-lib/parse-roles-tsv
                           (when (fs/exists? roles-file) (slurp (str roles-file))))
                          (map :session) distinct
@@ -309,18 +313,19 @@
         ;; the Operator's own pane lives on its dedicated socket, not the swarm's
         op-pane (capture-pane-on operator-socket-file operator-session 40)
         panes (keep identity (cons op-pane agent-panes))
-        limited-text (some #(when (operator-lib/usage-limited? %) %) panes)]
-    (cond
-      limited-text
-      (let [clock (operator-lib/parse-reset-clock limited-text)
-            reset-ms (when clock (operator-lib/reset-epoch-ms clock now (local-offset-ms)))]
-        {:state :cooldown :reset-ms reset-ms
-         :reset-raw (some-> (re-find #"(?i)resets?[^\n]*" limited-text) str/trim)})
-
-      cooling-recorded?
-      {:state :cooldown :reset-ms (:reset_ms existing) :reset-raw (:reset_raw existing)}
-
-      :else {:state :available})))
+        limited-text (some #(when (operator-lib/usage-limited? %) %) panes)
+        clock (when limited-text (operator-lib/parse-reset-clock limited-text))
+        parsed-reset-ms (when clock (operator-lib/reset-epoch-ms clock now (local-offset-ms)))
+        reset-raw (when limited-text (some-> (re-find #"(?i)resets?[^\n]*" limited-text) str/trim))]
+    (operator-lib/resolve-provider-state
+     {:limited-text limited-text
+      :parsed-reset-ms parsed-reset-ms
+      :reset-raw reset-raw
+      :existing-reset-ms (:reset_ms existing)
+      :existing-reset-raw (:reset_raw existing)
+      :now-ms now
+      :bounded-fallback-ms cooldown-bounded-fallback-ms
+      :plausible-max-ms cooldown-plausible-max-ms})))
 
 ;; ── timer ─────────────────────────────────────────────────────────────────────
 
