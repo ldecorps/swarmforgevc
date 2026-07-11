@@ -57,6 +57,10 @@ import { backlogForTopic } from '../concierge/topicRouter';
 import { runConciergeTick, ConciergeTickAdapters, BacklogFoldersSnapshot, TickState } from '../concierge/conciergeTick';
 import { readBacklogFolders } from '../panel/backlogReader';
 import { appendOperatorEvent } from '../bridge/operatorEventQueue';
+import { computeRoleGateStatesLive, RoleGateState } from '../bridge/gateSnapshot';
+import { computeCurrentHolders } from '../bridge/holisticProjections';
+import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
+import { parseRolesTsv } from '../swarm/swarmState';
 import { runCliMain } from './swarm-metrics';
 
 const execFileAsync = promisify(execFile);
@@ -253,9 +257,53 @@ function toFoldersSnapshot(targetPath: string): BacklogFoldersSnapshot {
   return { active: pick(folders.active), paused: pick(folders.paused), done: pick(folders.done) };
 }
 
+// BL-301: resolveRoleWorktrees is file-local in bridge/bridgeState.ts -
+// duplicated here rather than exported/imported, same "no shared lifecycle
+// worth coupling" posture gateSnapshot.ts's own header already documents
+// for this exact live-glue class of function.
+function resolveLiveRoles(targetPath: string): { role: string; worktreePath: string }[] {
+  try {
+    return parseRolesTsv(fs.readFileSync(path.join(targetPath, '.swarmforge', 'roles.tsv'), 'utf8')).map((r) => ({
+      role: r.role,
+      worktreePath: r.worktreePath,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// BL-301: computeRoleGateStatesLive's RoleGateState carries an optional
+// snippet the swarm-agnostic GateSignal shape has no room for (question-
+// snippet enrichment is explicitly out of this slice's scope, same limit
+// as BL-299's summary) - narrowed to {role, gated} here.
+function readGates(targetPath: string): { role: string; gated: boolean }[] {
+  const roles = resolveLiveRoles(targetPath).map((r) => r.role);
+  return computeRoleGateStatesLive(targetPath, roles).map((g: RoleGateState) => ({ role: g.role, gated: g.gated }));
+}
+
+// BL-301: inverts computeCurrentHolders' ticketId->role into role->ticketId
+// (a role holds exactly one ticket at a time in normal operation - an
+// anomalous multi-hold picks one, never mis-tags a gate to the wrong
+// BL-###; a gated role with no held ticket is simply absent here, and
+// diffNeedsApproval already drops an untagged gate rather than guess).
+function readRoleTicket(targetPath: string): Record<string, string> {
+  const roles = resolveLiveRoles(targetPath);
+  const windowsByRole: Record<string, TicketHoldingWindow[]> = {};
+  for (const role of roles) {
+    windowsByRole[role.role] = readRoleHoldingWindows(role.worktreePath);
+  }
+  const roleTicket: Record<string, string> = {};
+  for (const [ticketId, role] of computeCurrentHolders(windowsByRole)) {
+    roleTicket[role] = ticketId;
+  }
+  return roleTicket;
+}
+
 function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId: string): ConciergeTickAdapters {
   return {
     readFolders: () => toFoldersSnapshot(targetPath),
+    readGates: () => readGates(targetPath),
+    readRoleTicket: () => readRoleTicket(targetPath),
     readTickState: () => readTickState(targetPath),
     writeTickState: (state) => writeTickState(targetPath, state),
     routeAdapters: {
