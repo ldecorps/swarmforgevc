@@ -28,6 +28,16 @@ export interface RepoSurveyFacts {
   initialBacklogSummary: string;
 }
 
+// BL-269: the target repo's own project.prompt/engineering.prompt, generated
+// from the SAME survey that proposes the contract - a sibling artifact that
+// rides the contract's agreement marker (one agreement, whole artifact set):
+// withheld from the target repo while proposed/pending, released for commit
+// only once the contract is agreed.
+export interface ProposedPrompts {
+  projectPrompt: string;
+  engineeringPrompt: string;
+}
+
 export type GateDecisionKind = 'allow' | 'hold';
 
 export interface GateDecision {

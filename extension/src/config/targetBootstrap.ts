@@ -2,7 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { ProposedContract } from '../onboarding/contractTypes';
+import { GateDecision, ProposedContract, ProposedPrompts } from '../onboarding/contractTypes';
 import { generateContractMarkdown, renderContractYaml } from '../onboarding/contractView';
 
 const execFileAsync = promisify(execFile);
@@ -159,6 +159,49 @@ export async function initializeTargetContract(
     buildContractBootstrapFiles(contract),
     'Propose SwarmForge onboarding contract'
   );
+}
+
+// BL-269: the target repo's own project.prompt/engineering.prompt,
+// generated from the survey (replaces buildTargetBootstrapFiles's generic
+// placeholder content for the same two paths once this has run - the
+// existing existence-only idempotency in writeAndCommitBootstrapPlan means
+// whichever of the two runs FIRST wins; initializeTargetRepo's generic
+// scaffold backs off on a path that already exists).
+export function buildGeneratedPromptBootstrapFiles(prompts: ProposedPrompts): BootstrapFile[] {
+  return [
+    { path: 'project.prompt', content: prompts.projectPrompt },
+    { path: 'engineering.prompt', content: prompts.engineeringPrompt },
+  ];
+}
+
+// BL-269: the generated prompts ride the SAME agreement gate as the
+// contract (one agreement, whole artifact set) - withheld from the target
+// repo (never written, never committed) while gateDecision is 'hold'
+// (proposed/pending/missing/malformed), released for commit only on
+// 'allow' (agreed). Unlike initializeTargetContract's contract.yaml/
+// CONTRACT.md (committed immediately, marked "proposed", so the human can
+// review/edit it during negotiation), these prose files simply do not
+// exist in the target repo until agreement - BL-269's own explicit
+// "withheld from... released for commit to" contract.
+export async function initializeTargetPrompts(
+  targetPath: string,
+  prompts: ProposedPrompts,
+  gateDecision: GateDecision
+): Promise<{
+  created: string[];
+  skipped: string[];
+  committed: boolean;
+  withheld: boolean;
+}> {
+  if (gateDecision.decision !== 'allow') {
+    return { created: [], skipped: [], committed: false, withheld: true };
+  }
+  const result = await writeAndCommitBootstrapPlan(
+    targetPath,
+    buildGeneratedPromptBootstrapFiles(prompts),
+    'Commit onboarding-generated target prompts'
+  );
+  return { ...result, withheld: false };
 }
 
 async function isGitRepository(targetPath: string): Promise<boolean> {
