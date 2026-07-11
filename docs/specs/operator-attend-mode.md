@@ -1,8 +1,10 @@
 # Operator attended mode — summon a live, phone-reachable Operator on demand
 
-Status: PROPOSAL (human + Claude discussion, 2026-07-11). Not yet a backlog
-intake — deliberately parked in docs/specs so the swarm does not pick it up
-before the human has settled the open questions at the bottom.
+Status: AGREED (human decisions recorded 2026-07-11, see "Settled decisions"
+at the bottom). Intake: `backlog/INTAKE-operator-attend-mode.md` (two
+slices). Companion fix already landed on this branch: disposable Operator
+runs are now headless (no `--remote-control`), so the only "Operator" entry
+the phone app will ever show is the attended one this spec adds.
 
 ## Problem
 
@@ -97,14 +99,16 @@ until dismissed.
   attended command keeps `--remote-control` and the disposable command
   drops it.
 
-## Open questions for the human
+## Settled decisions (human, 2026-07-11)
 
-1. RC naming: single `Operator` name (recommended, with disposable runs
-   headless) vs a distinct `Operator-Attended`?
-2. TTL default: 4h reasonable? Should TTL expiry notify (email/briefing)
-   rather than silently reap?
-3. Should the PWA summon button be part of slice 1, or is the attend file
-   alone enough to start (PWA as slice 2)?
-4. While attended, is pausing autonomous event handling acceptable, or do
-   AGENT_EXITED events need to interrupt the attended session (e.g. the
-   runtime injects a note into the attended pane)?
+1. **RC naming**: single `Operator` name. Disposable runs stay headless
+   (already landed); only attended runs carry `--remote-control Operator`.
+2. **TTL**: 4h default (`OPERATOR_ATTEND_TTL_MS`) accepted. Expiry reaps
+   and leaves an `operator.log` / `runtime.log` line; no push notification
+   in slice 1.
+3. **Slicing**: two slices. Slice 1 = attend-file trigger + `HUMAN_ATTEND`
+   event + attended launch/lifecycle (TTL, dismiss). Slice 2 = PWA
+   "Summon Operator" button through the host bridge.
+4. **Event handling while attended**: pauses. Routine events queue during an
+   attended session and dispatch on the first tick after dismissal — the
+   single-Operator invariant holds; no interruption injection.
