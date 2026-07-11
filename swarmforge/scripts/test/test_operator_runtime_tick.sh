@@ -83,6 +83,34 @@ check "BL-281: SUP-2's event is DEFERRED back to events.jsonl, not dropped" \
 check "BL-281: SUP-2's event is NOT in the inflight batch"      '! grep -q "SUP-2" "$F/.swarmforge/operator/events.inflight.jsonl"'
 rm -rf "$F"
 
+# ── 7. BL-276: an idle OPEN thread gets a gentle nudge (transcript + reply
+#      outbox); a resolved thread is skipped entirely; a recently-active
+#      thread is not nudged yet. Real-clock-tolerant (like section 3's own
+#      cooldown fixture above): a fixture timestamp far in the past is
+#      always "idle" relative to whenever this test actually runs, no
+#      clock injection needed for this coarse a check - exact boundary
+#      timing is exhaustively covered by support_lib_test_runner.bb's own
+#      injected-clock idle-nudge-decision tests ─────────────────────────────
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/support/threads"
+printf '{"id":"SUP-1","status":"open","messages":[{"channel":"telegram","timestamp":"2020-01-01T00:00:00Z","text":"long idle"}]}' \
+  > "$F/.swarmforge/support/threads/SUP-1.json"
+printf '{"id":"SUP-2","status":"resolved","messages":[{"channel":"telegram","timestamp":"2020-01-01T00:00:00Z","text":"already resolved"}]}' \
+  > "$F/.swarmforge/support/threads/SUP-2.json"
+recent="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf '{"id":"SUP-3","status":"open","messages":[{"channel":"telegram","timestamp":"%s","text":"just now"}]}' "$recent" \
+  > "$F/.swarmforge/support/threads/SUP-3.json"
+tick "$F" > /dev/null
+check "BL-276: an idle OPEN thread gets a nudge appended to its transcript" \
+  'grep -q "checking in" "$F/.swarmforge/support/threads/SUP-1.json" && grep -q "\"channel\":\"operator\"" "$F/.swarmforge/support/threads/SUP-1.json"'
+check "BL-276: the nudge is posted to the reply outbox (the SAME SSE relay path as any Operator reply)" \
+  'grep -q "SUP-1" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl"'
+check "BL-276: a RESOLVED thread is never nudged, even long idle" \
+  '! grep -q "SUP-2" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl"'
+check "BL-276: a recently-active thread is not nudged yet" \
+  '! grep -q "SUP-3" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl"'
+rm -rf "$F"
+
 # ── 4. launcher assembles a --remote-control command ─────────────────────────
 DRY="$(OPERATOR_LAUNCH_DRYRUN=1 bash "$SRC/launch_operator.sh" "$SRC/.." /tmp/x.jsonl 2>&1 || true)"
 check "operator named 'Operator' (not a swarm agent)"          '[[ "$DRY" == *"--remote-control Operator"* ]]'
