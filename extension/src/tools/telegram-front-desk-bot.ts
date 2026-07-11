@@ -31,8 +31,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getTelegramUpdates, sendTelegramMessage, TelegramUpdate } from '../notify/telegramClient';
 import { nextUpdateOffset } from '../notify/telegramInboundRelay';
-import { pollAndForward, PollAdapters, subjectForTopic, topicForSubject } from './telegramFrontDeskBotCore';
+import { pollAndForward, PollAdapters, subjectForTopic, topicForSubject, relaySseReplies, parseNextSseRecord } from './telegramFrontDeskBotCore';
 import { runCliMain } from './swarm-metrics';
+
+// Re-exported for backward compatibility - parseNextSseRecord's
+// implementation lives in telegramFrontDeskBotCore.ts (the testable core),
+// not this thin live wrapper.
+export { parseNextSseRecord };
 
 const POLL_TIMEOUT_SECONDS = 25;
 
@@ -89,28 +94,11 @@ async function pollLoop(botToken: string, principalUserId: string, targetPath: s
   }
 }
 
-// Parses one complete "event: ...\ndata: ...\n\n" SSE record out of an
-// accumulated buffer, mirroring holisticUiHtml.ts's own client-side SSE
-// parser but extended to read the named `event:` line (that page's own
-// stream is unnamed data-only). Returns the record's {event, data} and
-// the remaining buffer, or null if no complete record is buffered yet.
-export function parseNextSseRecord(buffer: string): { event: string | undefined; data: string; rest: string } | null {
-  const boundary = buffer.indexOf('\n\n');
-  if (boundary === -1) {
-    return null;
-  }
-  const record = buffer.slice(0, boundary);
-  const rest = buffer.slice(boundary + 2);
-  const eventLine = record.split('\n').find((l) => l.startsWith('event: '));
-  const dataLine = record.split('\n').find((l) => l.startsWith('data: '));
-  return { event: eventLine?.slice('event: '.length), data: dataLine?.slice('data: '.length) ?? '', rest };
-}
-
-// Subscribes to the bridge's SSE stream forever, relaying every named
-// telegram-reply event into its mapped Telegram topic (telegram-topic-03).
-// An unmapped threadId (should not happen for a reply to a real dispatch,
-// but never throws) is dropped, same "no silent mis-route" posture as the
-// poll side.
+// Subscribes to the bridge's SSE stream forever - the only untested
+// boundary is readChunk (the real stream reader); every decision (which
+// records to relay, which topic, dropping an unmapped threadId) lives in
+// relaySseReplies (adapter-injected, unit-tested), mirroring pollLoop/
+// pollAndForward's own thin-wrapper/tested-core split above.
 async function subscribeReplies(botToken: string, chatId: string, targetPath: string, bridgeUrl: string, bridgeToken: string): Promise<void> {
   const res = await fetch(`${bridgeUrl}/events`, { headers: { authorization: `Bearer ${bridgeToken}` } });
   if (!res.body) {
@@ -118,35 +106,31 @@ async function subscribeReplies(botToken: string, chatId: string, targetPath: st
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
-  let buffer = '';
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) {
-      return;
-    }
-    buffer += decoder.decode(value, { stream: true });
-    let parsed = parseNextSseRecord(buffer);
-    while (parsed) {
-      buffer = parsed.rest;
-      if (parsed.event === 'telegram-reply' && parsed.data) {
-        const { threadId, text } = JSON.parse(parsed.data) as { threadId: string; text: string };
-        const topicId = topicForSubject(readTopicMap(targetPath), threadId);
-        if (topicId !== undefined) {
-          await sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId);
-        }
-      }
-      parsed = parseNextSseRecord(buffer);
-    }
-  }
+  await relaySseReplies('', {
+    readChunk: async () => {
+      const { done, value } = await reader.read();
+      return { done, chunk: done ? '' : decoder.decode(value, { stream: true }) };
+    },
+    sendReply: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then(() => undefined),
+    topicForSubject: (subjectId) => topicForSubject(readTopicMap(targetPath), subjectId),
+  });
+}
+
+// Split out of main() so that function's own branch count stays low, same
+// technique as every other CLI's parseArgs in this directory.
+export function parseCliArgs(argv: string[]): { bridgeUrl: string; targetPath: string } | null {
+  const [bridgeUrl, targetPath] = argv;
+  return bridgeUrl && targetPath ? { bridgeUrl, targetPath } : null;
 }
 
 export async function main(): Promise<void> {
-  const [bridgeUrl, targetPath] = process.argv.slice(2);
-  if (!bridgeUrl || !targetPath) {
+  const args = parseCliArgs(process.argv.slice(2));
+  if (!args) {
     process.stderr.write('Usage: telegram-front-desk-bot.js <bridge-url> <target-path>\n');
     process.exitCode = 1;
     return;
   }
+  const { bridgeUrl, targetPath } = args;
   const botToken = requiredEnv('TELEGRAM_BOT_TOKEN');
   const chatId = requiredEnv('TELEGRAM_CHAT_ID');
   const principalUserId = requiredEnv('TELEGRAM_PRINCIPAL_USER_ID');

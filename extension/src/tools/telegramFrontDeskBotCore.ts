@@ -107,3 +107,84 @@ export async function pollAndForward(offset: number, principalUserId: string, ad
   }
   return { nextOffset: adapters.nextOffset(result.updates, offset), posted, dropped };
 }
+
+// ── SSE reply relay (telegram-topic-03) ──────────────────────────────────
+
+export interface SseRecord {
+  event: string | undefined;
+  data: string;
+}
+
+// Parses one complete "event: ...\ndata: ...\n\n" SSE record out of an
+// accumulated buffer, mirroring holisticUiHtml.ts's own client-side SSE
+// parser but extended to read the named `event:` line (that page's own
+// stream is unnamed data-only). Returns the record's {event, data} and
+// the remaining buffer, or null if no complete record is buffered yet.
+export function parseNextSseRecord(buffer: string): (SseRecord & { rest: string }) | null {
+  const boundary = buffer.indexOf('\n\n');
+  if (boundary === -1) {
+    return null;
+  }
+  const record = buffer.slice(0, boundary);
+  const rest = buffer.slice(boundary + 2);
+  const eventLine = record.split('\n').find((l) => l.startsWith('event: '));
+  const dataLine = record.split('\n').find((l) => l.startsWith('data: '));
+  return { event: eventLine?.slice('event: '.length), data: dataLine?.slice('data: '.length) ?? '', rest };
+}
+
+export interface SseChunkResult {
+  done: boolean;
+  chunk: string;
+}
+
+export interface ReplyRelayAdapters {
+  readChunk: () => Promise<SseChunkResult>;
+  sendReply: (topicId: number, text: string) => Promise<void>;
+  topicForSubject: (subjectId: string) => number | undefined;
+}
+
+// Adapter-injected: reads chunks forever (readChunk is the only untested
+// boundary - the real stream reader), draining every complete SSE record
+// out of the buffer as it grows and relaying each named telegram-reply
+// record into its mapped topic (an unmapped threadId - should not happen
+// for a reply to a real dispatch, but never throws - is dropped, same
+// "no silent mis-route" posture as pollAndForward's own drop path).
+// Testable with a fake readChunk sequence (a few chunks then done) and
+// fake sendReply/topicForSubject, mirroring pollAndForward's own shape -
+// so this decision logic is not left uncovered behind the live network
+// wrapper (telegram-front-desk-bot.ts's subscribeReplies).
+// One record's worth of relay decision, split out of relaySseReplies below
+// so that function's own branch count stays low.
+async function relayOneRecord(record: SseRecord, adapters: ReplyRelayAdapters): Promise<void> {
+  if (record.event !== 'telegram-reply' || !record.data) {
+    return;
+  }
+  const { threadId, text } = JSON.parse(record.data) as { threadId: string; text: string };
+  const topicId = adapters.topicForSubject(threadId);
+  if (topicId !== undefined) {
+    await adapters.sendReply(topicId, text);
+  }
+}
+
+// Drains every complete record out of buffer, relaying each in turn, and
+// returns the remaining (incomplete) buffer.
+async function drainBufferedRecords(buffer: string, adapters: ReplyRelayAdapters): Promise<string> {
+  let parsed = parseNextSseRecord(buffer);
+  while (parsed) {
+    buffer = parsed.rest;
+    await relayOneRecord(parsed, adapters);
+    parsed = parseNextSseRecord(buffer);
+  }
+  return buffer;
+}
+
+export async function relaySseReplies(initialBuffer: string, adapters: ReplyRelayAdapters): Promise<void> {
+  let buffer = initialBuffer;
+  for (;;) {
+    const { done, chunk } = await adapters.readChunk();
+    if (done) {
+      return;
+    }
+    buffer = await drainBufferedRecords(buffer + chunk, adapters);
+  }
+}

@@ -1,35 +1,29 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { parseNextSseRecord } = require('../out/tools/telegram-front-desk-bot');
+const { parseCliArgs } = require('../out/tools/telegram-front-desk-bot');
 
-// ── parseNextSseRecord (pure) ────────────────────────────────────────────
+// parseNextSseRecord's own tests live in telegramFrontDeskBotCore.test.js -
+// its implementation moved there (the testable core); this file re-exports
+// it only for backward compatibility, so testing it again here would just
+// be the same assertions against the same function through a second import
+// path.
 
-test('parseNextSseRecord parses a named event + data line, returning the remaining buffer', () => {
-  const buffer = 'event: telegram-reply\ndata: {"threadId":"SUP-1","text":"hi"}\n\nrest of buffer';
-  const result = parseNextSseRecord(buffer);
-  assert.equal(result.event, 'telegram-reply');
-  assert.equal(result.data, '{"threadId":"SUP-1","text":"hi"}');
-  assert.equal(result.rest, 'rest of buffer');
+// ── parseCliArgs (pure) ───────────────────────────────────────────────────
+
+test('parseCliArgs returns both positional args when given', () => {
+  assert.deepEqual(parseCliArgs(['http://127.0.0.1:9000', '/some/target']), {
+    bridgeUrl: 'http://127.0.0.1:9000',
+    targetPath: '/some/target',
+  });
 });
 
-test('parseNextSseRecord parses an UNNAMED data-only record (the BridgeState snapshot shape) with event undefined', () => {
-  const result = parseNextSseRecord('data: {"pipeline":[]}\n\n');
-  assert.equal(result.event, undefined);
-  assert.equal(result.data, '{"pipeline":[]}');
+test('parseCliArgs returns null when no arguments are given', () => {
+  assert.equal(parseCliArgs([]), null);
 });
 
-test('parseNextSseRecord returns null when no complete record (no blank-line terminator) is buffered yet', () => {
-  assert.equal(parseNextSseRecord('event: telegram-reply\ndata: {"threadId"'), null);
-});
-
-test('parseNextSseRecord can be called repeatedly to drain multiple buffered records', () => {
-  const buffer = 'data: {"a":1}\n\ndata: {"a":2}\n\n';
-  const first = parseNextSseRecord(buffer);
-  assert.equal(first.data, '{"a":1}');
-  const second = parseNextSseRecord(first.rest);
-  assert.equal(second.data, '{"a":2}');
-  assert.equal(parseNextSseRecord(second.rest), null);
+test('parseCliArgs returns null when only the bridge url is given', () => {
+  assert.equal(parseCliArgs(['http://127.0.0.1:9000']), null);
 });
 
 // ── subprocess: main() wiring (no real network - fails before any request) ──
