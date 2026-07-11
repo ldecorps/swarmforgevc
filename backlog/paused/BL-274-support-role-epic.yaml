@@ -43,28 +43,48 @@ notes: |
     - The Operator never self-closes a thread (human confirms close).
     - Scope = the FULL desk (talk + status + decide + notify), TALK first.
 
-  ARCHITECTURE:
+  ARCHITECTURE — a REST bridge sits in between (human decision 2026-07-11). Telegram is
+  NOT coupled directly to the Operator runtime; it is a thin FRONT DESK BOT that is a
+  CLIENT of the existing bridge (BL-065). The path:
+    Telegram <-> Front Desk Bot (thin adapter, bridge client) <-> [authed POST inbound +
+    SSE outbound] <-> bridgeServer <-> [per-SUP-### event enqueue] <-> Operator runtime
+    <-> disposable Operator LLM.
+  This is ASYNC ingestion + SSE egress, NOT synchronous RPC: the bot POSTs an inbound
+  message and returns; the reply arrives later over SSE and the bot posts it into the
+  topic. The bridge and runtime speak SUP-### only; all Telegram specifics stay in the
+  bot.
     - Telegram forum topics = threads: supergroup with Topics enabled, bot admin
       (manage-topics). SUP-### <-> topic (message_thread_id); open a subject =
-      create/adopt a topic.
-    - Operator runtime (extends operator_runtime.bb): long-poll getUpdates, demux
-      inbound by message_thread_id -> SUP-###, persist per-thread transcript, enqueue a
-      per-topic event; also owns OUTBOUND notification routing to the right topic.
+      create/adopt a topic. The Front Desk Bot OWNS this mapping + the human-only inbound
+      filter; it maps an inbound message to its SUP-### before POSTing to the bridge.
+    - Bridge (extends bridgeServer.ts, BL-065): a new authed POST inbound-message route
+      (mirrors the BL-240 POST /gate-answer pattern + bridgeAuth) ingests {SUP-###,
+      message}, appends to that transcript, and enqueues a per-SUP-### event; an SSE
+      channel (reuse the existing text/event-stream egress) carries outbound Operator
+      replies + notifications tagged by SUP-###.
+    - Operator runtime (extends operator_runtime.bb): CONSUMES the bridge-ingested
+      per-SUP-### events, persists per-thread transcript, and ROUTES outbound replies /
+      notifications to the bridge SSE egress. It never calls Telegram and never long-polls
+      getUpdates — that is the bot's job.
     - Disposable Operator LLM per event: loads ONLY that SUP-###'s transcript (+ relevant
       long-term memory); talks / answers status / relays a decision / posts a
       notification for that ONE topic; distills durable facts to memory; files a
       Coordinator intake when actionable and tracks BL-### status back into the topic.
-      Never fabricates a design/promote/approve; never self-closes.
+      Never fabricates a design/promote/approve; never self-closes. Its reply flows out
+      over the bridge SSE stream -> bot -> the same topic.
 
   SEQUENCE (children specced JUST-IN-TIME as the coordinator promotes each; BL-281 and
   BL-276 are already specced, the rest pending):
     - BL-275 — DONE (foundation): SUP-### thread store + memory-backed runtime substrate
       (support_lib.bb/support_thread.bb/support_runtime.bb). Reused; its standalone
       runtime + email-echo/RC paths fold-in/defer. depends_on [].
-    - BL-281 — SPECCED (slice 1, TALK MVP, promote first): SUP-### <-> Telegram-topic
-      mapping + getUpdates demux by message_thread_id + per-thread transcript +
-      disposable Operator reply-in-topic (transcript reload); prove two topics stay
-      independent; human-only inbound. depends_on [BL-275].
+    - BL-281 — SPECCED (slice 1, TALK MVP, promote first): over the BRIDGE — a thin
+      Front Desk Bot (bridge client) owns Telegram (topic <-> SUP-### mapping +
+      human-only inbound) and POSTs inbound to a new authed bridge inbound-message route;
+      the bridge enqueues a per-SUP-### event; the runtime consumes it and routes the
+      disposable Operator's reply out over SSE -> bot -> the same topic (transcript
+      reload). Prove two topics stay independent; async, not RPC; no direct
+      runtime<->Telegram coupling. depends_on [BL-275].
     - BL-282 (PENDING) — slice 2, MEMORY: distill durable facts to long-term memory +
       reload relevant memory per wake. depends_on [BL-281].
     - BL-284 (PENDING) — slice 3, NOTIFY: proactive topic-routed pings when something
@@ -79,19 +99,26 @@ notes: |
       self-close, human-confirm close, optional idle nudge into the topic. depends_on
       [BL-281].
 
-  NET-NEW: Telegram forum-topic support (message_thread_id, createForumTopic) in
-  extension/src/notify/telegramClient.ts (today: sendTelegramMessage +
-  getTelegramUpdates only, BL-239); per-topic inbound demux + per-SUP-### transcript +
-  outbound topic routing in the operator runtime; the Operator's talk/status/decide/
-  notify loop + memory distillation. One-time HUMAN setup: a supergroup with Topics
-  enabled + the bot as admin (manage-topics); bot token stays in the extension-host env,
-  never committed.
+  NET-NEW: a thin FRONT DESK BOT (bridge client) that owns Telegram — forum-topic
+  support (message_thread_id, createForumTopic) generalized from telegramClient.ts
+  (today: sendTelegramMessage + getTelegramUpdates only, BL-239), the topic <-> SUP-###
+  mapping, and the human-only inbound filter; a new AUTHED bridge inbound-message route
+  on bridgeServer.ts (mirror the BL-240 POST /gate-answer pattern + bridgeAuth) that
+  ingests + enqueues a per-SUP-### event, plus an SSE reply/notify egress; per-SUP-###
+  event consumption + transcript + outbound SSE routing in the operator runtime (NOT a
+  Telegram poll); the Operator's talk/status/decide/notify loop + memory distillation.
+  One-time HUMAN setup: a supergroup with Topics enabled + the bot as admin
+  (manage-topics); bot token + bridge token stay in the extension-host env, never
+  committed.
 
-  EXISTING INFRA TO REUSE (verified 2026-07-11): telegramClient.ts
-  (sendTelegramMessage/getTelegramUpdates, BL-239); BL-240 gate-answer write path +
-  BL-265 gate view (DECIDE); BL-239 run narration (NOTIFY); backlog.json / holistic UI
-  data / operator status.json (STATUS); BL-275 SUP-### store + memory-backed runtime;
-  operator_runtime.bb + the Operator's long-term memory store.
+  EXISTING INFRA TO REUSE (verified 2026-07-11): bridgeServer.ts (BL-065) — authed POST
+  route pattern (POST /gate-answer, BL-240), SSE text/event-stream egress, buildJsonRoutes
+  table — with bridgeAuth.ts / bridgeToken.ts for auth; telegramClient.ts
+  (sendTelegramMessage/getTelegramUpdates, BL-239) generalized to forum topics inside the
+  bot; BL-240 gate-answer write path + BL-265 gate view (DECIDE); BL-239 run narration
+  (NOTIFY); backlog.json / holistic UI data / operator status.json (STATUS); BL-275
+  SUP-### store + memory-backed runtime; operator_runtime.bb + the Operator's long-term
+  memory store.
 
   Operator prompt: the desk (talk/status/decide/notify) behaviour lands in the Operator
   prompt WITH the slices that add each function (specifier-owned prompt changes,
