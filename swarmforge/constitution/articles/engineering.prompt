@@ -233,3 +233,18 @@
   with backoff. (BL-115: the bounceWatcher re-establish-on-error had no
   cap/backoff, so a persistent `fs.watch` error — e.g. inotify ENOSPC — would
   restart immediately, forever.)
+- A whole-repo history-analysis tool must scope its git query to the repo
+  independent of the invoker's cwd — resolve the repo top-level (or use a
+  top-of-tree `:/` pathspec), never a cwd-relative pathspec like `.`. `git log
+  --name-status -- <pathspec>` FILTERS the per-commit name-status listing to
+  paths matching the pathspec, so `-- .` run from a subdirectory (e.g.
+  `extension/`) silently drops every changed file OUTSIDE that subtree — which,
+  for a coupling/co-change tool, is exactly the cross-directory relationship it
+  exists to surface (it will report zero co-changers where the truth is many).
+  Also normalize the tool's input file arguments to repo-relative paths so they
+  match repo-relative history paths regardless of where it was invoked. A green
+  run from the repo root is NOT proof it works from a subdirectory — the results
+  are cwd-dependent when this is wrong. (BL-263 architect review: co-change-
+  report.js's `runGitLog(process.cwd(), '.')` reported zero co-changers for
+  backlogDashboard.ts from `extension/`, but pwa/app.js x6 and
+  briefing_email_lib.bb x2 from the repo root. Fix tracked by BL-268.)
