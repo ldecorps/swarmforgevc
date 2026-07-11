@@ -82,6 +82,24 @@
   test diffed the `os.tmpdir()` listing and flaked ~1-in-several runs when
   another worktree's concurrent `aps-backlog-*` temp dir appeared; fixed by
   asserting the specific created path.)
+- **Never seed a test fixture from the real clock when the code under test
+  reads the real clock too.** The no-real-timers ban above covers not just
+  `setTimeout`/`sleep` but any `new Date()` / `Date.now()` used to BUILD fixture
+  data (timestamps in a handoff, record, or file) that the code under test then
+  evaluates against its OWN wall-clock read. Even with no delay, the two
+  independent clock reads can straddle a window/comparison boundary and the test
+  flakes intermittently. Pin BOTH sides to one fixed instant: build the fixture
+  from a constant reference time and inject that same instant into the code
+  (thread the existing `nowMs`/clock seam through to the call site), so the
+  comparison is deterministic. (BL-102: `bridgeServer.test.js`'s stage-dwell
+  test wrote `dequeued_at`/`completed_at` from `new Date()` while the
+  `/stage-dwell` route evaluated them against the server's own `Date.now()`,
+  flaking ~1/6 in isolation. The pure `computeStageDwellReportForRoles(roles,
+  nowMs, …)` already accepts an injectable `nowMs`; the route just never
+  threaded it. Fixed by BL-270: `StartBridgeOptions` grew an optional
+  `nowMs`, threaded through to the `/stage-dwell` route and defaulting to
+  the real clock (`undefined`) in production, so a test can now pin the
+  same instant its fixture and the route both evaluate against.)
 
 ## Acceptance Pipeline
 - Use github.com/unclebob/Acceptance-Pipeline-Specification (pinned, see above)

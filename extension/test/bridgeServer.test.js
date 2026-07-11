@@ -207,14 +207,25 @@ test('serves the stage-dwell endpoint with per-stage dwell and a bottleneck for 
   writeRolesTsv(target, [{ role: 'coder', worktreePath: coderWt, displayName: 'Coder' }]);
   const completedDir = path.join(coderWt, '.swarmforge', 'handoffs', 'inbox', 'completed');
   mkdirp(completedDir);
-  const now = new Date();
-  const dequeuedAt = new Date(now.getTime() - 10 * 60 * 1000).toISOString();
+  // BL-270: FIXED reference instants, never new Date()/Date.now() - the
+  // fixture's own dequeued_at/completed_at AND the route's evaluation clock
+  // (injected below via startBridge's nowMs option) are both pinned to
+  // constants, so they can never straddle the window boundary as two
+  // independent real-clock reads (engineering article: never seed a test
+  // fixture from the real clock when the code under test reads it too).
+  // readRoleStageDwellRecords' window is HALF-OPEN, [earliest, latest) -
+  // completedAtMs must be strictly LESS than the injected nowMs, so
+  // FIXED_NOW_MS sits a full minute after FIXED_COMPLETED_MS, never equal.
+  const FIXED_COMPLETED_MS = Date.parse('2026-07-09T12:00:00.000Z');
+  const FIXED_NOW_MS = FIXED_COMPLETED_MS + 60 * 1000;
+  const dequeuedAt = new Date(FIXED_COMPLETED_MS - 10 * 60 * 1000).toISOString();
+  const completedAt = new Date(FIXED_COMPLETED_MS).toISOString();
   fs.writeFileSync(
     path.join(completedDir, '00_test.handoff'),
-    `task: BL-1-fixture\ndequeued_at: ${dequeuedAt}\ncompleted_at: ${now.toISOString()}\n\nbody\n`
+    `task: BL-1-fixture\ndequeued_at: ${dequeuedAt}\ncompleted_at: ${completedAt}\n\nbody\n`
   );
 
-  await withBridge(target, {}, async (handle) => {
+  await withBridge(target, { nowMs: FIXED_NOW_MS }, async (handle) => {
     const res = await fetch(`http://127.0.0.1:${handle.port}/stage-dwell`, {
       headers: { authorization: `Bearer ${TOKEN}` },
     });
