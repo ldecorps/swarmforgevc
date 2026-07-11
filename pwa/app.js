@@ -246,6 +246,91 @@
     return container;
   }
 
+  // BL-287: a classic sprint burndown line chart - a solid "Remaining"
+  // polyline through the milestone's own dailySeries, a dotted "Ideal"
+  // line from the series' own first value straight down to zero at the
+  // series' own last date (no target end date is git-derivable, so the
+  // observed window IS the span - see the ticket's ideal-line caveat),
+  // light gridlines, and axis tick labels (dates along the bottom,
+  // remaining counts up the side). Dependency-free SVG, same posture as
+  // barChart above - no charting library, no CDN.
+  function lineChart(series, width, height) {
+    var container = svgEl('svg', { viewBox: '0 0 ' + width + ' ' + height, width: '100%', height: height });
+    if (!series || series.length === 0) {
+      return container;
+    }
+    var marginLeft = 26;
+    var marginRight = 4;
+    var marginTop = 6;
+    var marginBottom = 16;
+    var plotWidth = width - marginLeft - marginRight;
+    var plotHeight = height - marginTop - marginBottom;
+    var max = Math.max.apply(
+      null,
+      series.map(function (p) { return p.value; }).concat([1])
+    );
+    var lastIndex = series.length - 1;
+
+    function x(i) {
+      return marginLeft + (lastIndex > 0 ? (i / lastIndex) * plotWidth : plotWidth / 2);
+    }
+    function y(v) {
+      return marginTop + plotHeight - (max > 0 ? (v / max) * plotHeight : 0);
+    }
+
+    // Gridlines + Y-axis (remaining-count) tick labels at 0/half/max.
+    [0, max / 2, max].forEach(function (v) {
+      container.appendChild(svgEl('line', {
+        x1: marginLeft, x2: marginLeft + plotWidth, y1: y(v), y2: y(v),
+        stroke: 'currentColor', 'stroke-opacity': '0.15', 'stroke-width': '1',
+      }));
+      var yLabel = svgEl('text', {
+        x: marginLeft - 3, y: y(v) + 3, 'text-anchor': 'end', 'font-size': '7',
+        class: 'chart-axis-label',
+      });
+      yLabel.textContent = String(Math.round(v));
+      container.appendChild(yLabel);
+    });
+
+    // X-axis (date) tick labels - first, middle (if any), and last, so a
+    // long series never crowds the bottom with one label per day.
+    var tickIndexes = lastIndex > 1 ? [0, Math.round(lastIndex / 2), lastIndex] : [0, lastIndex];
+    tickIndexes.forEach(function (i) {
+      var label = svgEl('text', {
+        x: x(i), y: marginTop + plotHeight + 12, 'text-anchor': 'middle', 'font-size': '7',
+        class: 'chart-axis-label',
+      });
+      label.textContent = String(series[i].periodStart).slice(0, 10);
+      container.appendChild(label);
+    });
+
+    // Dotted "Ideal" line: straight from the series' own first value down
+    // to zero at the series' own last date.
+    container.appendChild(svgEl('line', {
+      x1: x(0), y1: y(series[0].value), x2: x(lastIndex), y2: y(0),
+      stroke: 'currentColor', 'stroke-opacity': '0.5', 'stroke-width': '1.5',
+      'stroke-dasharray': '3 2', class: 'ideal-line',
+    }));
+
+    // Solid "Remaining" polyline, drawn last so it sits on top.
+    var points = series.map(function (p, i) { return x(i) + ',' + y(p.value); }).join(' ');
+    container.appendChild(svgEl('polyline', {
+      points: points, fill: 'none', stroke: '#5fb0ff', 'stroke-width': '2', class: 'remaining-line',
+    }));
+
+    return container;
+  }
+
+  // BL-287: distinguishes the solid "Remaining" line from the dotted
+  // "Ideal" line - a small HTML legend below the chart (CSS draws each
+  // entry's own solid/dashed swatch via ::before, see pwa/index.html).
+  function chartLegend() {
+    return el('div', { class: 'chart-legend' }, [
+      el('span', { class: 'chart-legend-entry legend-remaining' }, [tr('burndownRemainingLegend')]),
+      el('span', { class: 'chart-legend-entry legend-ideal' }, [tr('burndownIdealLegend')]),
+    ]);
+  }
+
   function trendArrow(trend) {
     if (!trend || trend.direction === 'unknown') {
       return '';
@@ -581,7 +666,8 @@
     container.appendChild(el('p', { class: 'burndown-overall-eta' }, [overallEtaText(forecasts)]));
     burndown.forEach(function (m) {
       container.appendChild(el('h4', {}, [m.milestone + ': ' + m.currentRemaining + tr('remainingSuffix') + milestoneEtaSuffix(forecasts, m.milestone) + trendArrow(m.trend)]));
-      container.appendChild(barChart(m.dailySeries, 300, 60));
+      container.appendChild(lineChart(m.dailySeries, 300, 110));
+      container.appendChild(chartLegend());
     });
   }
 
