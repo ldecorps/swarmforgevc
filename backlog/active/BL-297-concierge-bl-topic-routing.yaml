@@ -1,0 +1,80 @@
+id: BL-297
+title: "Concierge slice 2: BL-### <-> Topic map + event routing (create/lookup topic, post each event into it, never the main chat)"
+milestone: M8
+status: todo
+priority: 25
+direction: non-aligned
+assigned_to: coder
+depends_on: [BL-296]
+parent_epic: BL-295
+source: "BL-295 Concierge refinement, slice 2. Human prompt: 'each BL-### has exactly ONE Topic; look up its topic, create if none (BL-123 - Desc), persist backlog_id -> telegram_topic_id, post all updates into it, never the main group chat.' Specced by specifier 2026-07-11 on the LANDED BL-296 event stream."
+
+description: |
+  Slice 2 of BL-295: the Concierge consumes BL-296's typed event stream and routes each
+  event into its backlog item's OWN Telegram topic, creating the topic on first sight.
+  This is the Telegram-facing half (BL-296 was the Telegram-agnostic emit half).
+
+  Live layer verified 2026-07-11 (LANDED seams — this is wiring, not new primitives):
+    - Events: extension/src/events/swarmEventStream.ts (BL-296) - SwarmEvent
+      {type: 'TaskStarted'|'NeedsApproval'|'TaskCompleted', backlogId, ...} + swarmEventKey
+      (stable identity for dedup). deriveSwarmEvents produces the stream. The Concierge
+      consumes these; the events already carry the backlogId.
+    - createForumTopic(token, chatId, name, postFn) (telegramClient.ts, BL-281) ->
+      {success, messageThreadId}. Use it to create "BL-123 - <short desc>".
+    - sendTelegramMessage(..., messageThreadId) (telegramClient.ts) posts INTO a topic.
+    - The bot's persisted topic-map pattern (BL-281, {topicId: subjectId} for SUP-###) is
+      the model for the NET-NEW backlog_id -> telegram_topic_id map (machine-local,
+      gitignored). Short desc for the topic name = the backlog item's title (read from
+      the backlog projection / ticket), Concierge-side.
+
+  NET-NEW: the backlog_id -> telegram_topic_id persisted map; the routing that, per
+  event, looks up (or createForumTopic + persists) the item's topic and
+  sendTelegramMessage into it; the per-event-type message formatting (Concierge-side -
+  the swarm's events stay text-free/agnostic per BL-296).
+
+  Wanted behavior (see the feature file):
+    - The first event for a backlog item with no topic yet creates a topic named for that
+      item ("BL-### - <title>") and records the backlog_id -> topic mapping; a later event
+      for the same item posts into that SAME topic (no second topic created).
+    - Every event's message is posted into its item's topic (via message_thread_id) and
+      NEVER into the main group chat.
+    - The posted message states the event (its type; a human-readable line the Concierge
+      formats).
+
+  Constraints / testability:
+    - The routing DECISION is a PURE function over provided inputs (an event + the current
+      backlog_id->topic map + the item's title) -> {ensure-topic (create with name, or
+      reuse), the message text, the target thread}. createForumTopic / sendTelegramMessage
+      / the map persistence are behind fake adapters - unit-tested with NO live Telegram,
+      NO network. Never seed a fixture timestamp from the real clock while the code reads
+      its own clock (de0991e).
+    - NEVER-MAIN-CHAT is a HARD contract: every send goes to a message_thread_id; a test
+      asserts sendTelegramMessage is ALWAYS called with a thread id and NEVER without one
+      (no main-chat post). If a topic cannot be created (no supergroup / DM), the event is
+      SKIPPED + logged - it must NOT fall back to the main chat.
+    - Idempotent topic creation: a second event for an already-mapped item reuses the
+      mapped topic (createForumTopic called exactly once per item; a test asserts one
+      create + two posts).
+    - Any CLI keeps main()/dispatch a THIN wrapper over exported pure helpers, with a
+      subprocess test in ADDITION (engineering "CLI main() must be a thin wrapper").
+    - The backlog_id->topic map is machine-local (gitignored), never committed; bot/bridge
+      tokens stay in env.
+
+  Scope boundary: this slice is EVENT -> TOPIC (outbound). Human replies FROM a BL-###
+  topic back to the Operator are BL-298; completion summary + close are BL-299. It reuses
+  createForumTopic (needs the one-time human supergroup+Topics ops step, out of scope to
+  automate) - surface that dependency but do not build group creation.
+
+  QA e2e procedure (fake createForumTopic/sendTelegramMessage + fake map store):
+    - Route an event for a backlog item with no mapping; assert createForumTopic is called
+      with name "BL-### - <title>", the mapping is recorded, and sendTelegramMessage posts
+      into the returned thread id.
+    - Route a second event for the same item; assert NO second createForumTopic and the
+      post goes into the same thread id.
+    - Assert every sendTelegramMessage carries a message_thread_id (never a main-chat post);
+      simulate a topic-create failure and assert the event is skipped + logged, not sent to
+      the main chat.
+    - Assert the posted message text states the event's type.
+
+acceptance: specs/features/BL-297-concierge-bl-topic-routing.feature
+mutation_cost: medium
