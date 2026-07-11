@@ -89,6 +89,14 @@ const DOMAINS = [
   require('./operatorCoordinatorHandoffSteps'),
   require('./frontDeskHeadlessLauncherSteps'),
   require('./pwaCollapsibleSectionsSteps'),
+  // BL-300: registered BEFORE swarmEventStreamSteps - its own "a backlog
+  // item that has newly (started being worked|completed)" pattern is more
+  // specific than (and would otherwise be shadowed by) BL-296's own
+  // greedy catch-all "a backlog item (.+)" below. Both patterns can match
+  // the same PREFIX text, so registration order decides which handler a
+  // given full string resolves to - registry.resolve is first-match, not
+  // most-specific-match (see stepRegistry.js).
+  require('./conciergeRuntimeWiringSteps'),
   require('./swarmEventStreamSteps'),
   require('./frontDeskAutoOpenSubjectSteps'),
   require('./gherkinDetailListenSteps'),
