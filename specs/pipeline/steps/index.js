@@ -89,6 +89,7 @@ const DOMAINS = [
   require('./operatorCoordinatorHandoffSteps'),
   require('./frontDeskHeadlessLauncherSteps'),
   require('./pwaCollapsibleSectionsSteps'),
+  require('./swarmEventStreamSteps'),
 ];
 
 function registerSteps(registry) {
