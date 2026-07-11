@@ -1,0 +1,76 @@
+id: BL-291
+title: "PWA: collapsible top-level sections with per-section open/collapsed state remembered via the preferences Cache (not web storage)"
+milestone: M8
+status: todo
+priority: 30
+direction: aligned
+assigned_to: coder
+depends_on: []
+source: ".swarmforge/operator/INTAKE-pwa-collapsible-sections.md — human command via operator -> coordinator 2026-07-11 (attended RC): make the static PWA's top-level sections collapsible and remember each section's open/collapsed state across reloads. Specifier scoped it."
+
+description: |
+  On the static backlog-dashboard PWA (pwa/index.html -> pwa/app.js): make each
+  top-level section collapsible (tap/activate its header to collapse/expand) and
+  remember each section's open/collapsed state across reloads/reopens, per section.
+
+  Live layer verified 2026-07-11:
+    - Sections are the <section> blocks in pwa/index.html, each led by an
+      <h2 data-i18n="...Heading"> (needsApprovalHeading, boardHeading, velocityHeading,
+      burndownHeading, cycleTimeHeading, costHealthHeading, documentationHeading,
+      recertHeading, ...). The data-i18n key is a STABLE per-section identity to key the
+      preference on — do NOT key on DOM order/index (it drifts as sections show/hide,
+      e.g. costHealthSection is display:none until data arrives).
+    - Persistence seam (REUSE, do not replace): loadPersistedPreference(key, parseValue)
+      + persistPreference(key, value) over PREFERENCES_CACHE_NAME
+      ('swarmforge-dashboard-preferences', Cache Storage API) in pwa/app.js (~L34/100/
+      122). Locale + font-size prefs already ride this. Add the collapse state as a new
+      preference key on the SAME mechanism.
+    - No collapsible pattern exists today (no <details>/toggle) — the collapse UI is
+      net-new; only the persistence half is an existing pattern to extend.
+
+  Wanted behavior (see the feature file):
+    - Each section header is a control that collapses/expands its body (toggle).
+    - The toggle is keyboard-operable and exposes aria-expanded reflecting open/closed
+      (BL-238 a11y + BL-266 aria discipline).
+    - On reload/reopen, each section restores its last open/collapsed state from the
+      preferences cache; per-section (collapsing one does not affect others).
+    - A first-ever visit (no saved state) defaults to every section open.
+
+  Constraints / testability:
+    - HARD — NO WEB STORAGE: persistence must NOT use localStorage or sessionStorage.
+      The BL-259 dependency gate scans pwa/*.js
+      (scanMediaFilesForStorageGlobals / .dependency-cruiser.cjs no-webview-storage,
+      STORAGE_GLOBAL_PATTERN = /\b(localStorage|sessionStorage)\b/) and FAILS the build
+      on either global. Use ONLY the PREFERENCES_CACHE_NAME persistPreference/
+      loadPersistedPreference seam. (This is the exact gate that bounced BL-259; do not
+      reintroduce it.)
+    - Cache reads are ASYNC (caches.open -> promise): once the persisted state resolves
+      it MUST win over the default, so a collapsed section does not stay open after a
+      reload. A brief pre-resolve flash of the default is acceptable; a wrong final state
+      is not.
+    - Accessibility: the header control is a real, focusable, keyboard-operable control
+      (Enter/Space) with aria-expanded kept in sync on every toggle AND on restore
+      (set it at creation and at each state change, per BL-266's lesson). Consistent with
+      the BL-238 a11y pass.
+    - Keep new user-visible strings (if any) going through the tr()/locale catalog
+      (pwa/locales.js), BL-229/BL-261 posture; the section headings already localize.
+    - Self-contained page (no CDN); pure client-side UI preference over the git
+      projection — NO host/live data, NO new fetch (two-surface rule holds).
+    - The collapse-state read/write + the per-section apply are unit-testable in jsdom
+      like the existing pref-backed prefs (extension/test/pwaFontSize.test.js /
+      pwaDashboard.test.js patterns): assert toggle hides/shows the body, aria-expanded
+      tracks state, a persisted collapsed state restores on re-render, and no-saved-state
+      defaults open. Fake the cache the same way the locale/font-size tests do; never
+      touch localStorage/sessionStorage even in tests.
+
+  QA e2e procedure (jsdom; fake preferences cache):
+    - Render the dashboard; activate a section header; assert its body hides and
+      aria-expanded flips to false; activate again and assert it shows / aria-expanded
+      true; confirm the toggle fires on keyboard (Enter/Space), not just click.
+    - Persist a collapsed state for one section; re-render; assert that section restores
+      collapsed (from the cache) while the others stay open (per-section independence).
+    - Render with an empty preferences cache; assert every section starts open.
+    - Grep the built pwa/*.js for localStorage/sessionStorage; assert neither appears.
+
+acceptance: specs/features/BL-291-pwa-collapsible-sections.feature
+mutation_cost: medium
