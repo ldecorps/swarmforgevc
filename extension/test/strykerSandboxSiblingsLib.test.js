@@ -24,10 +24,12 @@ function mkFixture(siblingName) {
   return { root, extensionDir, siblingDir };
 }
 
-// The same behavioral contract, run for both confirmed siblings (BL-221's
-// pwa/, BL-267's swarmforge/) - a regression in either one is a real bug,
-// not just a pwa-specific one.
-for (const siblingName of ['pwa', 'swarmforge']) {
+// The same behavioral contract, run for every confirmed sibling (BL-221's
+// pwa/, BL-267's swarmforge/, .github/, docs/) - a regression in any one is
+// a real bug, not just a pwa-specific one. .github/ is included here
+// specifically to prove the mechanism handles a dot-prefixed directory name
+// the same as an ordinary one (symlink creation, path joining).
+for (const siblingName of ['pwa', 'swarmforge', '.github', 'docs']) {
   test(`creates a symlink at <extensionDir>/.stryker-tmp/${siblingName} pointing at the sibling ${siblingName}/ dir`, () => {
     const { extensionDir, siblingDir } = mkFixture(siblingName);
 
@@ -112,17 +114,18 @@ test('ensureStrykerSandboxSiblingLinks links every sibling in the given list, in
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-stryker-sandbox-'));
   const extensionDir = path.join(root, 'extension');
   fs.mkdirSync(extensionDir, { recursive: true });
-  for (const name of ['pwa', 'swarmforge']) {
+  const names = ['pwa', 'swarmforge', '.github', 'docs'];
+  for (const name of names) {
     const dir = path.join(root, name);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'marker'), `${name}-content`);
   }
 
-  const results = ensureStrykerSandboxSiblingLinks(extensionDir, '.stryker-tmp', ['pwa', 'swarmforge']);
+  const results = ensureStrykerSandboxSiblingLinks(extensionDir, '.stryker-tmp', names);
 
-  assert.equal(results.length, 2);
-  assert.deepEqual(results.map((r) => r.siblingName), ['pwa', 'swarmforge']);
-  for (const name of ['pwa', 'swarmforge']) {
+  assert.equal(results.length, 4);
+  assert.deepEqual(results.map((r) => r.siblingName), names);
+  for (const name of names) {
     const linkPath = path.join(extensionDir, '.stryker-tmp', name);
     assert.equal(fs.lstatSync(linkPath).isSymbolicLink(), true);
     assert.equal(fs.readFileSync(path.join(linkPath, 'marker'), 'utf8'), `${name}-content`);
