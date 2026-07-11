@@ -1118,6 +1118,10 @@
     var scenario = recertBatch.batch[0];
     container.appendChild(el('h4', {}, [scenario.name]));
     container.appendChild(el('pre', { class: 'gherkin' }, [scenario.text]));
+    // BL-271: reuse BL-266's Listen control unchanged - adapt the recert
+    // scenario (.name + .text) into the { description, scenarios } shape
+    // assembleSpokenText already expects, rather than a second TTS path.
+    renderListenControl(container, { description: scenario.name, scenarios: [{ text: scenario.text }] });
 
     var actions = el('div', { class: 'recert-actions' }, []);
     actions.appendChild(mailtoLink(tr('recertConfirm'), recertMailtoHref(scenario.id, 'confirm')));
