@@ -13,6 +13,11 @@
 ;;   support_thread.bb <project-root> followup  --thread <id> --channel <c> --text <t>
 ;;   support_thread.bb <project-root> read      --thread <id>
 ;;   support_thread.bb <project-root> email-echo --thread <id> --next-step <s> --options <opt1,opt2,...> [--to <email>]
+;;   support_thread.bb <project-root> resolve   --thread <id>
+;;     BL-276: the ONLY closing action - call this ONLY on an explicit
+;;     human confirmation of resolution (thread-lifecycle-02), never on an
+;;     idle/timer decision (thread-lifecycle-01 - the Operator never
+;;     closes a thread of its own will).
 ;;
 ;; Env:
 ;;   RESEND_API_KEY            operator-provided (see BL-214/BL-215) - never a key store here.
@@ -96,6 +101,11 @@
 (defn run-read! []
   (println (json/generate-string (read-thread! (:thread opts)))))
 
+(defn run-resolve! []
+  (let [thread (support-lib/resolve-thread (read-thread! (:thread opts)))]
+    (write-thread! thread)
+    (println (json/generate-string thread))))
+
 (defn run-email-echo! []
   (let [thread (read-thread! (:thread opts))
         options (str/split (or (:options opts) "") #",")
@@ -109,6 +119,7 @@
     "followup" (run-followup!)
     "read" (run-read!)
     "email-echo" (run-email-echo!)
+    "resolve" (run-resolve!)
     (usage)))
 
 (-main)

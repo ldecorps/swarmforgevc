@@ -40,8 +40,11 @@
 ;; desk-bot.ts). support_thread_store.bb is the SAME unified SUP-###
 ;; thread-store fs adapters support_thread.bb (RC channel) and the bridge's
 ;; new inbound-message route (Telegram channel) both write to, so a thread
-;; opened over either channel lives in one store.
+;; opened over either channel lives in one store. BL-276: support_lib.bb
+;; itself (the pure lib) is now load-file'd directly too, for idle-nudge-
+;; sweep!'s own status-transition/idle-decision calls below.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "telegram_topic_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "support_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "support_thread_store.bb")))
 
 (defn usage []
@@ -217,6 +220,36 @@
 ;; read-events/enqueue-observed! above. The runtime's only remaining
 ;; Telegram-aware job is per-launch dispatch/reply-context (below, in the
 ;; launch-operator! section) - it still speaks SUP-### only, never Telegram.
+
+;; ── BL-276: idle-nudge sweep (thread-lifecycle-03/04) ─────────────────────
+;; Reuses BL-281's exact reply-relay path (append to the thread transcript
+;; + append to the SAME reply outbox the bridge's SSE stream reads) so a
+;; nudge reaches the Front Desk Bot the identical way any other Operator
+;; reply does - no new comms path, per the ticket's own constraint. This
+;; sweep NEVER calls support-lib/resolve-thread - that is thread-
+;; lifecycle-02's own separate, human-confirmation-only path
+;; (support_thread.bb resolve), proof by construction that idle nudging can
+;; never close a thread (thread-lifecycle-01).
+(def reply-outbox-file (fs/path op-dir "telegram-reply-outbox.jsonl"))
+
+(defn append-to-reply-outbox! [thread-id text]
+  (fs/create-dirs (fs/parent reply-outbox-file))
+  (spit (str reply-outbox-file) (str (json/generate-string {"threadId" thread-id "text" text}) "\n") :append true))
+
+(defn idle-nudge-sweep!
+  "For every OPEN thread in the unified store, evaluates support-lib/idle-
+   nudge-decision (pure, injected now-ms) and posts the nudge (transcript +
+   reply outbox) when due. A resolved/closed thread is skipped entirely -
+   there is nothing to nudge once a human has confirmed resolution."
+  [now-ms]
+  (doseq [thread-id (support-thread-store/list-existing-ids! state-dir)]
+    (when-let [thread (support-thread-store/read-thread! state-dir thread-id)]
+      (when (and (= (:status thread) "open")
+                 (= :post-nudge (support-lib/idle-nudge-decision thread now-ms)))
+        (let [updated (support-lib/append-message thread support-lib/operator-channel (now-iso) support-lib/idle-nudge-text)]
+          (support-thread-store/write-thread! state-dir updated)
+          (append-to-reply-outbox! thread-id support-lib/idle-nudge-text)
+          (log! "idle-nudge-posted" thread-id))))))
 
 ;; ── cooldown / provider state ─────────────────────────────────────────────────
 
@@ -415,6 +448,12 @@
     ;; BL-281 (reshaped): TELEGRAM_TOPIC_MESSAGE events now arrive here
     ;; because the bridge's inbound-message route appends them directly to
     ;; events-file - no poll, no direct Telegram call from the runtime.
+
+    ;; BL-276: gentle idle nudge, posted directly (bypasses the event
+    ;; queue/dispatch-batch entirely - a nudge is a best-effort side
+    ;; message into an already-open topic, not a wake worth spending an
+    ;; Operator LLM launch on).
+    (idle-nudge-sweep! now)
 
     (reap-finished-operator!)
 
