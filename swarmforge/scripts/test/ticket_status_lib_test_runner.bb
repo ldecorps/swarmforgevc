@@ -50,6 +50,19 @@
            "active"
            (ticket-status-lib/current-status root "BL-101")))
 
+;; Regression (found during cleaner review): backlog/done/ is NOT flat
+;; like active/paused - it holds a mix of flat <id>.yaml files and older
+;; items nested one level under a milestone subdirectory (e.g.
+;; backlog/done/M4-.../<id>.yaml). A ticket nested that way must still be
+;; found, not silently invisible.
+(let [root (mk-tmp)
+      nested-dir (fs/path root "backlog" "done" "M4-governance-backlog-sync")]
+  (fs/create-dirs nested-dir)
+  (spit (str (fs/path nested-dir "BL-100.yaml")) "id: BL-100\ntitle: a thing\nstatus: done\n")
+  (assert= "a ticket nested one level under a done/ milestone subdirectory still reports \"done\""
+           "done"
+           (ticket-status-lib/current-status root "BL-100")))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do

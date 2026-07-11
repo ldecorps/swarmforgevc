@@ -17,14 +17,21 @@
 (defn- ticket-id-of [yaml-file]
   (read-yaml-field (slurp (str yaml-file)) "id"))
 
+;; BUG FIX (found during cleaner review): backlog/active/ and
+;; backlog/paused/ are flat, but backlog/done/ is NOT - it holds a mix of
+;; flat <id>.yaml files AND older items nested one level under a
+;; milestone subdirectory (e.g. backlog/done/M4-.../<id>.yaml). A plain
+;; fs/list-dir only sees the milestone subdirectory itself (a dir entry,
+;; never ending in ".yaml"), so every ticket nested under one was silently
+;; invisible to current-status (confirmed empirically: 127 of done/'s 237
+;; tickets live under a milestone subdir, and BL-052 - genuinely done -
+;; returned nil before this fix). fs/glob "**.yaml" matches at any depth,
+;; covering both the flat and nested layouts uniformly.
 (defn- contains-ticket? [dir ticket-id]
   (and (fs/exists? dir)
-       (some (fn [f] (and (str/ends-with? (fs/file-name f) ".yaml") (= (ticket-id-of f) ticket-id)))
-             (fs/list-dir dir))))
+       (some (fn [f] (= (ticket-id-of f) ticket-id))
+             (fs/glob dir "**.yaml"))))
 
-;; backlog/{active,paused,done}/<id>.yaml is a flat layout (no nested
-;; milestone subdirs on disk - that grouping is derived only in
-;; backlog.json) so a plain per-folder scan is enough.
 (def ^:private status-dirs ["active" "paused" "done"])
 
 (defn current-status
