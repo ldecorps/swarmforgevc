@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { parseCliArgs } = require('../out/tools/telegram-front-desk-bot');
+const { parseCliArgs, conciergeTickIntervalMs } = require('../out/tools/telegram-front-desk-bot');
 
 // parseNextSseRecord's own tests live in telegramFrontDeskBotCore.test.js -
 // its implementation moved there (the testable core); this file re-exports
@@ -24,6 +24,25 @@ test('parseCliArgs returns null when no arguments are given', () => {
 
 test('parseCliArgs returns null when only the bridge url is given', () => {
   assert.equal(parseCliArgs(['http://127.0.0.1:9000']), null);
+});
+
+// ── conciergeTickIntervalMs (pure, BL-300) ───────────────────────────────
+
+test('conciergeTickIntervalMs defaults to 30000ms when the env var is unset', () => {
+  assert.equal(conciergeTickIntervalMs(undefined), 30_000);
+});
+
+test('conciergeTickIntervalMs uses a valid positive override', () => {
+  assert.equal(conciergeTickIntervalMs('5000'), 5000);
+});
+
+test('conciergeTickIntervalMs falls back to the default for a non-numeric value', () => {
+  assert.equal(conciergeTickIntervalMs('not-a-number'), 30_000);
+});
+
+test('conciergeTickIntervalMs falls back to the default for a non-positive value', () => {
+  assert.equal(conciergeTickIntervalMs('0'), 30_000);
+  assert.equal(conciergeTickIntervalMs('-100'), 30_000);
 });
 
 // ── subprocess: main() wiring (no real network - fails before any request) ──

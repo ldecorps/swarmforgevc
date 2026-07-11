@@ -5,7 +5,7 @@ status: todo
 type: epic
 priority: 20
 depends_on: []
-decomposes_into: [BL-296, BL-297, BL-298, BL-299, BL-300]
+decomposes_into: [BL-296, BL-297, BL-298, BL-299, BL-300, BL-301]
 source: ".swarmforge/operator/INTAKE-telegram-concierge-bl-topics.md — human-supplied Concierge operator prompt via operator -> coordinator 2026-07-11, refining shipped BL-274. Human decision 2026-07-11 (AskUserQuestion): ADDITIVE model. Specifier reconciled + scoped."
 
 notes: |
@@ -55,6 +55,14 @@ notes: |
       for that BL-### task. depends_on [BL-297].
     - BL-299 — SLICE 4: completion summary + mark/close the topic on TaskCompleted.
       depends_on [BL-297].
+    - BL-301 — SLICE 6 (added 2026-07-11 during BL-300 scoping): extend the Concierge
+      snapshot with the GATE signals + roleTicket mapping so NeedsApproval events route
+      into their BL-### topics too. NET-NEW surface vs BL-300: the gate source
+      (computeRoleGateStatesLive, tmux-pane capture) + inverting computeCurrentHolders
+      (ticketId->role) into roleTicket (role->ticketId) with a role/ticket collision rule.
+      Split out of BL-300 to keep that slice's snapshot pure-filesystem; NeedsApproval is
+      simply not emitted until this lands (no dark/broken behavior, just absent).
+      depends_on [BL-300].
     - BL-300 — SLICE 5 (RUNTIME WIRING, added 2026-07-11 per hardener rule proposal,
       engineering rule): an explicit runtime-wiring slice that CALLS the pure foundation
       modules on a real trigger so this epic is not a dark feature. Verified 2026-07-11 by
