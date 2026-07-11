@@ -54,6 +54,14 @@ description: |
       on-demand routes). Follow the page's existing token-gated fetch + render
       pattern; no browser storage.
 
+  Known pre-existing gap (NOT this ticket's scope): bridgeServer.ts binds
+  127.0.0.1 only — there is no phone-tunnel/QR/remote path for a phone to reach
+  the holistic UI yet (the same gap that parked BL-257 slices 3/4). BL-273
+  builds the meter ON the holistic UI (the correct live surface); actually
+  reaching it from a phone rides on that separate transport work — do NOT build
+  a tunnel here, and do not push this live meter onto the static PWA to work
+  around the gap.
+
   Wanted behavior:
   - The holistic UI shows a per-agent meter: one entry per pipeline role with its
     current tokens/hr, refreshed live (recomputed on request).
