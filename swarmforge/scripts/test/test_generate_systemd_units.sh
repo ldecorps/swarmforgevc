@@ -69,4 +69,68 @@ diff <(printf '%s\n' "$UNIT") <(cat "$ROOT/via-path.service") >/dev/null \
   || fail "07: expected the output-path form to match the stdout form byte-for-byte"
 pass "07: an explicit output path produces the same content as stdout"
 
+# ── 08 (BL-304): omitting --unit still defaults to the swarm unit
+#     (backward compatibility - every call site above uses the 3/4-arg
+#     form with no --unit= flag at all) ──────────────────────────────────
+UNIT_DEFAULT="$("$GENERATOR" /home/pi/swarmforgevc pi5 pi)"
+diff <(printf '%s\n' "$UNIT") <(printf '%s\n' "$UNIT_DEFAULT") >/dev/null \
+  || fail "08: expected the no-flag form to still render the swarm unit unchanged"
+pass "08: no --unit= flag still defaults to the swarm unit (backward compatible)"
+
+# ── BL-304: --unit=operator renders the operator-runtime unit ──────────────
+OP_UNIT="$("$GENERATOR" /home/pi/swarmforgevc pi5 pi --unit=operator)"
+
+# ── operator-autostart-01: restarts on any exit, never permanently gives up ─
+grep -q "^Restart=always$" <<< "$OP_UNIT" || fail "operator-autostart-01: expected Restart=always"
+grep -q "^StartLimitIntervalSec=0$" <<< "$OP_UNIT" \
+  || fail "operator-autostart-01: expected StartLimitIntervalSec=0 (disables systemd's own start-rate-limit - the exact analogue of the BL-303 sticky-give-up defect)"
+pass "operator-autostart-01: Restart=always + StartLimitIntervalSec=0 - a crash burst never permanently stops the unit"
+
+# ── operator-autostart-02: boot-enabled ──────────────────────────────────
+grep -q "^WantedBy=multi-user.target$" <<< "$OP_UNIT" \
+  || fail "operator-autostart-02: expected WantedBy=multi-user.target so the runtime comes back after a reboot"
+pass "operator-autostart-02: the operator unit installs against multi-user.target for boot autostart"
+
+# ── operator-autostart-03: carries secrets via EnvironmentFile ──────────────
+grep -q "^EnvironmentFile=-/etc/swarmforge/pi5.env$" <<< "$OP_UNIT" \
+  || fail "operator-autostart-03: expected an optional EnvironmentFile= naming the SAME per-pack file the swarm unit uses, so CLAUDE_CODE_OAUTH_TOKEN etc. reach the runtime and the disposable LLM it launches"
+pass "operator-autostart-03: EnvironmentFile= carries the operator's secrets into the clean systemd environment"
+
+# ── the ExecStart runs operator_runtime.bb in the FOREGROUND (Type=simple
+#     main-pid tracking), never start_operator_runtime.sh (which
+#     backgrounds via nohup and returns - wrong for systemd) ──────────────
+grep -q "^Type=simple$" <<< "$OP_UNIT" || fail "expected Type=simple (a real foreground main pid for systemd to track/restart)"
+grep -q "^ExecStart=bb /home/pi/swarmforgevc/swarmforge/scripts/operator_runtime.bb /home/pi/swarmforgevc\$" <<< "$OP_UNIT" \
+  || fail "expected ExecStart to run operator_runtime.bb directly in the foreground, not start_operator_runtime.sh; got: $OP_UNIT"
+pass "the operator unit's ExecStart runs operator_runtime.bb directly in the foreground"
+
+# ── ExecStop touches the runtime's OWN stop-file (graceful, matches
+#     start_operator_runtime.sh's own stop convention) ─────────────────────
+grep -q "^ExecStop=.*touch /home/pi/swarmforgevc/.swarmforge/operator/stop\$" <<< "$OP_UNIT" \
+  || fail "expected ExecStop to gracefully touch the runtime's own stop-file; got: $OP_UNIT"
+pass "the operator unit's ExecStop gracefully signals the runtime's own stop-file"
+
+# ── User=/WorkingDirectory= substitution matches the swarm unit's own
+#     posture (same host, same clone) ───────────────────────────────────────
+grep -q "^WorkingDirectory=/home/pi/swarmforgevc$" <<< "$OP_UNIT" || fail "expected WorkingDirectory to name the project root"
+grep -q "^User=pi$" <<< "$OP_UNIT" || fail "expected User to name the linux user"
+pass "the operator unit's WorkingDirectory/User are correctly substituted"
+
+# ── an unknown --unit= value is rejected with a clear error, never a
+#     silent fall-through to either unit ───────────────────────────────────
+set +e
+"$GENERATOR" /home/pi/swarmforgevc pi5 pi --unit=bogus >/dev/null 2>"$ROOT/unit-err.txt"
+RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || fail "expected a non-zero exit for an unknown --unit= value"
+grep -qi "unit" "$ROOT/unit-err.txt" || fail "expected a clear error naming the constraint; got: $(cat "$ROOT/unit-err.txt")"
+pass "an unknown --unit= value is rejected with a clear error"
+
+# ── --unit= interacts correctly with an explicit output path regardless of
+#     argument order ────────────────────────────────────────────────────────
+"$GENERATOR" /home/pi/swarmforgevc pi5 pi "$ROOT/via-path-operator.service" --unit=operator
+diff <(printf '%s\n' "$OP_UNIT") <(cat "$ROOT/via-path-operator.service") >/dev/null \
+  || fail "expected the operator unit written via an explicit output path to match its stdout form byte-for-byte"
+pass "the operator unit's explicit-output-path form matches its stdout form byte-for-byte"
+
 echo "ALL PASS"
