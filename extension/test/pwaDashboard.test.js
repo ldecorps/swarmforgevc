@@ -316,6 +316,100 @@ test('renders a "no milestones yet" placeholder for an empty burndown array', as
   assert.match(dom.window.document.getElementById('burndown').textContent, /No milestones yet/);
 });
 
+// --- BL-287: burndown restyled as a classic sprint line chart ------------
+
+function burndownFixture() {
+  const data = fakeDashboard();
+  data.metrics.burndown = [
+    {
+      milestone: 'M4',
+      currentRemaining: 1,
+      trend: { direction: 'down', delta: -1, currentValue: 1, priorValue: 2, series: [] },
+      dailySeries: [
+        { periodStart: '2026-07-01T00:00:00Z', value: 5 },
+        { periodStart: '2026-07-02T00:00:00Z', value: 4 },
+        { periodStart: '2026-07-03T00:00:00Z', value: 2 },
+        { periodStart: '2026-07-04T00:00:00Z', value: 1 },
+      ],
+    },
+  ];
+  return data;
+}
+
+// BL-287 burndown-line-01
+test('burndown-line-01: the remaining counts are drawn as one connected line, not bars', async () => {
+  const dom = renderDashboard(burndownFixture());
+  await flush();
+  const document = dom.window.document;
+  const polyline = document.querySelector('#burndown svg polyline.remaining-line');
+  assert.ok(polyline, 'expected a connected polyline for the remaining counts');
+  const points = polyline.getAttribute('points').trim().split(/\s+/);
+  assert.equal(points.length, 4, 'expected one point per daily-series entry');
+  assert.equal(document.querySelectorAll('#burndown svg rect').length, 0, 'expected no bar-chart rects');
+});
+
+// BL-287 burndown-line-02
+test('burndown-line-02: date runs along the horizontal axis, remaining count up the vertical axis', async () => {
+  const dom = renderDashboard(burndownFixture());
+  await flush();
+  const labels = Array.from(dom.window.document.querySelectorAll('#burndown svg text.chart-axis-label')).map((n) => n.textContent);
+  assert.ok(labels.includes('2026-07-01'), `expected the first date on the horizontal axis, got: ${labels}`);
+  assert.ok(labels.includes('2026-07-04'), `expected the last date on the horizontal axis, got: ${labels}`);
+  assert.ok(labels.includes('5'), `expected the max remaining count on the vertical axis, got: ${labels}`);
+  assert.ok(labels.includes('0'), `expected zero on the vertical axis, got: ${labels}`);
+});
+
+// BL-287 burndown-line-03
+test('burndown-line-03: a dotted ideal line runs straight from the starting count to zero across the same dates', async () => {
+  const dom = renderDashboard(burndownFixture());
+  await flush();
+  const idealLine = dom.window.document.querySelector('#burndown svg line.ideal-line');
+  assert.ok(idealLine, 'expected a dedicated ideal-line element');
+  assert.ok(idealLine.getAttribute('stroke-dasharray'), 'expected the ideal line to be dashed');
+  // Same X positions as the remaining line's own first/last points (the
+  // observed date span) - Y runs from the FIRST value down to 0.
+  const polyline = dom.window.document.querySelector('#burndown svg polyline.remaining-line');
+  const firstPoint = polyline.getAttribute('points').trim().split(/\s+/)[0].split(',');
+  assert.equal(idealLine.getAttribute('x1'), firstPoint[0], 'expected the ideal line to start at the same date as the first remaining point');
+  assert.equal(idealLine.getAttribute('y1'), firstPoint[1], 'expected the ideal line to start at the starting remaining count');
+  const lastPoint = polyline.getAttribute('points').trim().split(/\s+/)[3].split(',');
+  assert.equal(idealLine.getAttribute('x2'), lastPoint[0], 'expected the ideal line to end at the same date as the last remaining point');
+  assert.notEqual(idealLine.getAttribute('y2'), lastPoint[1], 'expected the ideal line to end at zero, not the actual last remaining count');
+});
+
+// BL-287 burndown-line-04
+test('burndown-line-04: a legend labels the solid remaining line and the dotted ideal line distinctly', async () => {
+  const dom = renderDashboard(burndownFixture());
+  await flush();
+  const remainingEntry = dom.window.document.querySelector('#burndown .chart-legend .legend-remaining');
+  const idealEntry = dom.window.document.querySelector('#burndown .chart-legend .legend-ideal');
+  assert.ok(remainingEntry, 'expected a legend entry for the remaining line');
+  assert.ok(idealEntry, 'expected a legend entry for the ideal line');
+  assert.equal(remainingEntry.textContent, 'Remaining');
+  assert.equal(idealEntry.textContent, 'Ideal');
+});
+
+// BL-287 burndown-line-05
+test('burndown-line-05: with no milestone data the burndown shows its empty message and draws no chart', async () => {
+  const data = fakeDashboard();
+  data.metrics.burndown = [];
+  const dom = renderDashboard(data);
+  await flush();
+  const document = dom.window.document;
+  assert.match(document.getElementById('burndown').textContent, /No milestones yet/);
+  assert.equal(document.querySelectorAll('#burndown svg').length, 0, 'expected no chart to be drawn');
+});
+
+test('BL-287: the burndown legend labels are localized (fr)', async () => {
+  const dom = renderDashboard(burndownFixture());
+  await flush();
+  dom.window.document.getElementById('localeToggle').click();
+  const remainingEntry = dom.window.document.querySelector('#burndown .chart-legend .legend-remaining');
+  const idealEntry = dom.window.document.querySelector('#burndown .chart-legend .legend-ideal');
+  assert.equal(remainingEntry.textContent, 'Restants');
+  assert.equal(idealEntry.textContent, 'Idéal');
+});
+
 // --- BL-228: burndown shows each milestone's forecast ETA + an overall ETA ---
 // Reuses the SAME forecasts data already present in backlog.json (no new
 // computation) - deliveryMetrics.computeForecasts is unchanged.
