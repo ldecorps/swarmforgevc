@@ -20,6 +20,7 @@ bumping `schemaVersion` and documenting the change here.
 | `generatedAtIso` | string (ISO 8601) | When this file was generated. |
 | `sourceSha` | string \| null | The commit this projection was generated from. `null` only if `git rev-parse HEAD` itself failed (should not happen in the Action). |
 | `board` | object | See **Board** below. |
+| `notDoneCount` | number | BL-263: `board.active.length + board.paused.length` — the total of live (not-done) tickets, excluding `done`. Always present (`0` when every ticket is done, never blank/omitted). The SAME number the daily briefing composes (`not-done-count-line.js` calls `computeBacklogDashboard`'s identical `computeNotDoneCount`), so the two surfaces can never disagree. |
 | `metrics` | object | See **Metrics** below. Test-suite duration is deliberately absent: its records (`extension/.test-durations.jsonl`, BL-078) are gitignored/machine-local, so no git-derived projection can see them. |
 | `costHealth` | `CostHealthSidecar` (optional) | BL-213: the most recently committed `docs/briefings/<date>.json` sidecar, folded in verbatim. Absent when no sidecar has ever been committed — additive field, `schemaVersion` unchanged either way. See `extension/src/notify/costHealthSidecar.ts`'s own `CostHealthSidecar` interface for the exact shape (per-agent tokens/cost, top expensive tickets, flow balance, reliability counts, resource anomalies — each figure carrying a BL-096 trend). |
 

@@ -20,6 +20,7 @@ function fakeDashboard(overrides = {}) {
       paused: [{ id: 'BL-101', title: 'paused thing', swarm: 'secondary-1' }],
       doneByMilestone: { M4: [{ id: 'BL-096', title: 'metrics', swarm: 'primary', status: 'done' }] },
     },
+    notDoneCount: 2,
     metrics: {
       velocity: {
         weeklySeries: [{ periodStart: '2026-07-01T00:00:00Z', value: 3 }],
@@ -280,6 +281,23 @@ test('shows the "as of" generation time and source SHA (dashboard-04\'s honesty 
   const asOf = dom.window.document.getElementById('asOf').textContent;
   assert.match(asOf, /As of/);
   assert.match(asOf, /abc123def4/);
+});
+
+// BL-263 surfaces-agree-02: renders backlog.json's own notDoneCount
+// verbatim - never a client-side recomputation from board.active/paused.
+test('shows the not-done total from backlog.json\'s notDoneCount field', async () => {
+  const dom = renderDashboard(fakeDashboard({ notDoneCount: 7 }));
+  await flush();
+  assert.match(dom.window.document.getElementById('notDoneCount').textContent, /7/);
+});
+
+// BL-263 zero-state-03
+test('shows a not-done total of zero rather than a blank when every ticket is done', async () => {
+  const dom = renderDashboard(fakeDashboard({ notDoneCount: 0 }));
+  await flush();
+  const text = dom.window.document.getElementById('notDoneCount').textContent;
+  assert.match(text, /0/);
+  assert.notEqual(text.trim(), '');
 });
 
 test('renders a "no closed tickets yet" placeholder rather than crashing on an empty cycle-time result', async () => {

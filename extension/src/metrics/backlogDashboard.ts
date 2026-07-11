@@ -59,6 +59,12 @@ export interface BacklogDashboardData {
   // omitted, so both surfaces can render an explicit no-data state from it
   // rather than treating "field absent" as "nothing to show yet."
   needsApproval: NeedsApprovalEntry[];
+  // BL-263: the total of live (active + paused) tickets, excluding done -
+  // the SINGLE SOURCE both the PWA and the daily briefing read, so neither
+  // surface recomputes "not done" a second way and the two can never
+  // disagree. Always present (zero when every ticket is done), never
+  // omitted - same "explicit rather than absent" convention as needsApproval.
+  notDoneCount: number;
   metrics: {
     velocity: VelocityResult;
     burndown: MilestoneBurndownResult[];
@@ -140,6 +146,13 @@ function computeNeedsApproval(active: BacklogItem[], paused: BacklogItem[]): Nee
     .map((item) => ({ id: item.id, title: item.title }));
 }
 
+// BL-263 count-excludes-done-01: "not done" = every live ticket - active and
+// paused - excluding done. A pure derivation over the same folders already
+// read for the board above, never a second backlog scan.
+export function computeNotDoneCount(active: BacklogItem[], paused: BacklogItem[]): number {
+  return active.length + paused.length;
+}
+
 function groupDoneByMilestone(
   doneItems: BacklogItem[],
   localSwarmName: string,
@@ -193,6 +206,7 @@ export function buildBacklogDashboard(
       doneByMilestone: groupDoneByMilestone(folders.done, localSwarmName, lifecycleByTicketId, p50ByTicketId, p85ByTicketId),
     },
     needsApproval: computeNeedsApproval(folders.active, folders.paused),
+    notDoneCount: computeNotDoneCount(folders.active, folders.paused),
     metrics: {
       velocity: deliveryMetrics.velocity,
       burndown: deliveryMetrics.burndown,
