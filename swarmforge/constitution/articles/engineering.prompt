@@ -138,23 +138,26 @@
   fails ENOENT inside the sandbox and blocks the hardener's no-surviving-mutants
   gate for EVERY ticket, not just the one that touched the sibling. This is a
   GENERAL failure mode, not a `pwa/`-specific one: make the fix cover every
-  sibling path a test/CLI reaches into, not a per-directory one-off. Two
-  confirmed instances so far:
-    - repo-root `pwa/` (`pwa/index.html`, `pwa/app.js`), read via
-      `path.join(__dirname, '..', '..', 'pwa', ...)`. Fixed by BL-221 — but
-      BL-221 symlinked ONLY `pwa/`, so it does not cover the next sibling.
-    - repo-root `swarmforge/` (`swarmforge/scripts/compliance_battery.bb`),
-      shelled by `extension/src/recruiter/complianceBatteryGate.ts`
-      (`REPO_ROOT = __dirname/../../..`, then `bb <REPO_ROOT>/swarmforge/...`).
-      Surfaced by BL-260 (cleaner, 07ec89c5b7) — still uncovered; tracked by
-      its own follow-up ticket.
-  Runtime-loaded sibling paths must be made available inside the sandbox
-  (Stryker's `files`/sandbox configuration or an equivalent copy/symlink
-  mechanism), and the mechanism must be generalizable to each new sibling rather
-  than rebuilt per directory. A green local test run that reads/shells the
-  sibling in place is NOT proof the sandboxed dry run can — verify against the
-  sandbox. (pwa/ confirmed 2026-07-09 during BL-132 QA; swarmforge/ confirmed
-  2026-07-11 during BL-260; systemic.)
+  sibling path a test/CLI reaches into, not a per-directory one-off. Fixed by
+  BL-221 (`pwa/`) then generalized by BL-267 to a shared, extensible mechanism
+  (`extension/scripts/strykerSandboxSiblingsLib.js`'s
+  `ensureStrykerSandboxSiblingLinks`, driven by a `SIBLING_NAMES` list in
+  `extension/scripts/ensureStrykerSandboxSiblings.js` rather than one hardcoded
+  name) after a second instance recurred: repo-root `swarmforge/`
+  (`swarmforge/scripts/compliance_battery.bb`), shelled by
+  `extension/src/recruiter/complianceBatteryGate.ts`
+  (`REPO_ROOT = __dirname/../../..`, then `bb <REPO_ROOT>/swarmforge/...`),
+  surfaced by BL-260 (cleaner, 07ec89c5b7). Confirmed covered siblings today:
+  `pwa/`, `swarmforge/`, and `.github/` (the last found during BL-267's own
+  verification pass — `backlogDashboardWorkflowCacheStamp.test.js` reads
+  `.github/workflows/backlog-dashboard.yml`). Each is a single shared symlink
+  at `.stryker-tmp/<name>` (never a per-sandbox copy, so it survives Stryker's
+  per-sandbox dispose); covering the next sibling is adding its name to
+  `SIBLING_NAMES`, not building a new mechanism. A green local test run that
+  reads/shells the sibling in place is NOT proof the sandboxed dry run can —
+  verify against the sandbox. (pwa/ confirmed 2026-07-09 during BL-132 QA;
+  swarmforge/ confirmed 2026-07-11 during BL-260; generalized + .github/
+  confirmed 2026-07-11 by BL-267; systemic.)
 
 ## Diagrams
 - The project's documentation must include an up-to-date architecture
