@@ -54,6 +54,34 @@ You are the coordinator.
   any needed fix to that machinery through the pipeline as normal domain work —
   never hand-roll polling yourself.
 
+## Onboarding Contract Gate (BL-262, fail-closed)
+- Before EVERY promotion of a paused item into `backlog/active/` — wherever
+  this file describes one (the intake rule above, the QA-approval bookkeeping
+  section, and the promotion-recheck section) — consult the target's
+  onboarding contract gate first:
+  `node extension/out/tools/onboarding-contract-gate.js <target-repo-path>`
+  (target-repo-path is the repo this swarm is onboarded onto — the same
+  checkout this coordinator operates in, unless a distinct target path is
+  configured).
+- The CLI prints JSON: `{"decision":"allow"}` or `{"decision":"hold","reason":"..."}`.
+  On `hold`, do NOT promote — leave the item in `backlog/paused/` and note the
+  gate's reason (e.g. "onboarding contract not yet agreed: proposed") rather
+  than silently doing nothing.
+- On `allow`, promote normally per the surrounding rule.
+- This gate is FAIL-CLOSED: missing, malformed, `proposed`, or `pending`
+  contract state all hold. Only `agreed` allows dispatch. Never treat a
+  gate error/crash as allow — if the CLI itself fails to run, treat that the
+  same as `hold` and surface it, never promote on a gate you couldn't
+  evaluate.
+- This sits ABOVE the existing per-ticket `human_approval` gate — it does not
+  replace or duplicate it; a ticket can be `human_approval: approved` and
+  still not promote if the target's onboarding contract itself is unagreed.
+- No target repo predates this rule needing special-casing: a target with no
+  `.swarmforge/contract.yaml` yet reads as `missing` (hold) — onboard it first
+  (survey + propose via `propose-onboarding-contract.js`, then have the
+  operator flip `agreement` to `agreed` in `.swarmforge/contract.yaml`) before
+  any build work can dispatch for it.
+
 ## Swarm Optimizer (first-class responsibility)
 - You own swarm THROUGHPUT AND EFFICIENCY as a standing duty, at the same
   altitude as routing: observe how the pipeline is performing, act where
