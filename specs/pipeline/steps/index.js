@@ -82,6 +82,7 @@ const DOMAINS = [
   require('./briefingDiagramCidAttachmentsSteps'),
   require('./operatorProactiveNotifySteps'),
   require('./recertInboundServerlessHandlerSteps'),
+  require('./burndownLineChartSteps'),
 ];
 
 function registerSteps(registry) {
