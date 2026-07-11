@@ -92,6 +92,7 @@ const DOMAINS = [
   require('./swarmEventStreamSteps'),
   require('./frontDeskAutoOpenSubjectSteps'),
   require('./gherkinDetailListenSteps'),
+  require('./conciergeTopicRoutingSteps'),
 ];
 
 function registerSteps(registry) {
