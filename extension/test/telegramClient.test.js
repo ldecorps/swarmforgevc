@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { sendTelegramMessage, getTelegramUpdates, createForumTopic } = require('../out/notify/telegramClient');
+const { sendTelegramMessage, getTelegramUpdates, createForumTopic, closeForumTopic } = require('../out/notify/telegramClient');
 
 const TOKEN = '123456:test-bot-token';
 const CHAT_ID = '999888777';
@@ -134,5 +134,29 @@ test('createForumTopic reports failure on a non-2xx response without leaking the
 
   assert.equal(result.success, false);
   assert.match(result.error, /Topics are not enabled/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('BL-299: closeForumTopic posts to the Telegram API with the topic\'s message_thread_id and reports success', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  const result = await closeForumTopic(TOKEN, CHAT_ID, 7, postFn);
+
+  assert.deepEqual(result, { success: true });
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/closeForumTopic`);
+  assert.deepEqual(JSON.parse(calls[0].body), { chat_id: CHAT_ID, message_thread_id: 7 });
+});
+
+test('BL-299: closeForumTopic reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'topic already closed' } });
+
+  const result = await closeForumTopic(TOKEN, CHAT_ID, 7, postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /topic already closed/);
   assert.doesNotMatch(result.error, new RegExp(TOKEN));
 });
