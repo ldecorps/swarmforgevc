@@ -9,23 +9,21 @@
  * commits the files; running it earlier (proposed/pending) is a safe no-op
  * that reports withheld:true.
  *
- * Reuses propose-onboarding-contract.js's readSurveyFacts and
+ * Reuses propose-onboarding-contract.js's parseArgs/readSurveyFacts and
  * onboarding-contract-gate.js's readContractYaml as-is - never a second
- * survey-facts parser or a second gate-state reader.
+ * arg parser, survey-facts parser, or gate-state reader (both CLIs take
+ * the identical <target-repo-path> <survey-facts-json-path> shape).
  *
  * Usage: node propose-onboarding-prompts.js <target-repo-path> <survey-facts-json-path>
  */
 import { proposePromptsFromSurvey } from '../onboarding/promptProposal';
 import { evaluateBuildStartGate } from '../onboarding/buildStartGate';
 import { initializeTargetPrompts } from '../config/targetBootstrap';
-import { readSurveyFacts } from './propose-onboarding-contract';
+import { parseArgs, readSurveyFacts } from './propose-onboarding-contract';
 import { readContractYaml } from './onboarding-contract-gate';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 
-export function parseArgs(argv: string[]): { targetRepoPath: string; surveyFactsPath: string } | null {
-  const [targetRepoPath, surveyFactsPath] = argv;
-  return targetRepoPath && surveyFactsPath ? { targetRepoPath, surveyFactsPath } : null;
-}
+export { parseArgs };
 
 export const main = makeArgsGuardedMain(
   parseArgs,
