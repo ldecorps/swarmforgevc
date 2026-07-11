@@ -93,6 +93,7 @@ const DOMAINS = [
   require('./frontDeskAutoOpenSubjectSteps'),
   require('./gherkinDetailListenSteps'),
   require('./conciergeTopicRoutingSteps'),
+  require('./conciergeTopicReplySteps'),
 ];
 
 function registerSteps(registry) {
