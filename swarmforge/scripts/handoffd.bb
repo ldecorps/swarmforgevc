@@ -763,6 +763,18 @@
       (when (zero? exit) (str/trim out)))
     (catch Exception _ nil)))
 
+;; BL-263: same shell-out pattern as needs-approval-briefing-section above -
+;; reuses computeBacklogDashboard's own notDoneCount field unchanged, the
+;; SAME field backlog.json/the PWA already carry, so the briefing can never
+;; disagree with the PWA about the not-done total. Any failure degrades to
+;; omitting the line entirely - never crashes the sweep.
+(defn not-done-count-briefing-line []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "not-done-count-line.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
 ;; BL-260: same shell-out pattern as the *-briefing-section fns above, but
 ;; the CLI's stdout is JSON ([{:name :base64}...] - the rendered diagrams),
 ;; not a single text line, so this parses it instead of trimming it. Any
@@ -794,6 +806,7 @@
     :merged-blocked-digest merged-blocked-digest-briefing-section
     :stage-dwell-section stage-dwell-briefing-section
     :chase-trend-section chase-trend-briefing-section
+    :not-done-count-line not-done-count-briefing-line
     :log! (fn [& parts] (apply log! parts))}))
 
 ;; BL-258: headless, host-independent morning trigger for briefing
