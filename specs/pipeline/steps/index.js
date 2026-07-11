@@ -74,6 +74,7 @@ const DOMAINS = [
   require('./recertListenSteps'),
   require('./costHealthSidecarHeadlessSteps'),
   require('./burnRateSteps'),
+  require('./supportThreadEmailEchoSteps'),
 ];
 
 function registerSteps(registry) {
