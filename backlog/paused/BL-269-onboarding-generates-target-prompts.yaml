@@ -95,3 +95,7 @@ description: |
 
 acceptance: specs/features/BL-269-onboarding-generates-target-prompts.feature
 mutation_cost: medium
+# Operator gave explicit promotion go-ahead 2026-07-11 ('269 go'); specifier had
+# left human_approval absent after confirming scope with the human. Recorded as
+# approved so the next promotion recheck (on a freed slot) promotes it first.
+human_approval: approved
