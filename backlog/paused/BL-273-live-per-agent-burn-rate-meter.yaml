@@ -1,0 +1,91 @@
+id: BL-273
+title: "Live per-agent token burn-rate meter (tokens/hr) on the holistic UI (beyond BL-100's daily aggregates)"
+milestone: M5
+status: todo
+priority: 15
+direction: non-aligned
+assigned_to: coder
+depends_on: [BL-100]
+source: "coordinator direction 2026-07-11: 'Live per-agent burn-rate meter (tokens/hr) on phone, beyond BL-100.' Specifier confirmed surface + rate definition with the human 2026-07-11: LIVE holistic UI; rolling recent window extrapolated to /hr; total tokens (input+output+cache)."
+
+description: |
+  Add a LIVE per-agent burn-rate meter — each role's current token consumption
+  as tokens/hr — to the phone-viewable holistic UI. BL-100 gives per-agent DAILY
+  totals and BL-213 commits a daily aggregate sidecar; neither is a live rate.
+  This is the live "how fast is each agent burning tokens right now" view.
+
+  Surface (human-confirmed): the LIVE holistic UI
+  (extension/src/bridge/holisticUiHtml.ts, served by
+  extension/src/bridge/bridgeServer.ts with bearer-token auth), NOT the static
+  PWA. A live tokens/hr rate is machine-local live telemetry, not reproducible
+  from git state at a SHA, so per the two-surface rule (local-engineering.prompt)
+  it must ride the live authed surface, never the static git-projection PWA.
+
+  Rate definition (human-confirmed):
+    - ROLLING recent window extrapolated to an hourly rate: sum a role's tokens
+      whose transcript timestamp falls in [now - window, now], then rate =
+      windowTokens / windowHours. Default the window to 15 minutes (a named
+      constant; keep it trivially tunable) so the meter reacts to bursts/idle.
+    - TOTAL tokens = input + output + cacheCreation + cacheRead (the full
+      throughput), per role.
+    - An idle role (no usage in the window) reads a real 0 tokens/hr, not
+      null/omitted.
+
+  Live layer verified 2026-07-11 (build against these, do not reinvent):
+    - Feed: extension/src/metrics/transcriptUsage.ts's readTranscriptUsage yields
+      TranscriptUsageRecord[] { messageId, timestampMs, model, usage:UsageTotals }
+      per role — already timestamped, exactly what a windowed rate needs.
+    - Mirror BL-100's split: extension/src/metrics/costTelemetry.ts has ONE impure
+      orchestrator (computeCostTelemetry, reads each role's transcripts once) over
+      PURE functions. Add a PURE per-role windowed-rate function over
+      TranscriptUsageRecord[] + an injected nowMs, and one thin impure orchestrator
+      that reads each role's records (reuse the readTranscriptUsage read; do not
+      write a second transcript reader).
+    - Endpoint: bridgeServer.ts has a route table of { matches, compute } entries
+      (/cost-telemetry, /holistic, /stage-dwell, /gates) behind the global
+      read-auth check. Add a new read route (e.g. /burn-rate) whose compute builds
+      the per-role rate for the target — same on-demand posture as /cost-telemetry
+      and /stage-dwell ("too expensive for the SSE poll loop, computed only on
+      direct request"). Do NOT put transcript scanning in the SSE poll loop.
+    - UI: holisticUiHtml.ts renders sections (e.g. renderBurndownCharts) from
+      fetched state; add a per-agent burn-rate meter section (one row per role,
+      role -> tokens/hr) that fetches the new route and refreshes on the UI's
+      normal refresh/open (live = recomputed per request, matching the other
+      on-demand routes). Follow the page's existing token-gated fetch + render
+      pattern; no browser storage.
+
+  Wanted behavior:
+  - The holistic UI shows a per-agent meter: one entry per pipeline role with its
+    current tokens/hr, refreshed live (recomputed on request).
+  - Each role's rate = total (input+output+cache) tokens in the recent rolling
+    window, extrapolated to tokens/hr; an idle role shows 0.
+  - The burn-rate endpoint is token-gated like every other holistic route
+    (unauthorized requests rejected).
+
+  Constraints:
+  - Testable core: the windowed-rate computation is PURE over fixture
+    TranscriptUsageRecord[] + an injected nowMs. NEVER read `now` from the real
+    clock inside it, and NEVER seed the fixture timestamps from the real clock
+    while the code reads its own clock — pin both to one fixed instant (engineering
+    "Never seed a test fixture from the real clock…" rule, de0991e). No real
+    timers, no waiting on the wall clock.
+  - The bridge route handler is host-side and testable (mirror bridgeServer.test.js,
+    including an unauthorized-request test for the new route). The holistic UI HTML/
+    JS is the webview boundary (not unit-tested) — keep all rate logic in the pure
+    host-side module, not the page script.
+  - REUSE BL-100's transcriptUsage feed and pricing/telemetry conventions; this is
+    a new RATE producer, not a rewrite of BL-100.
+  - Raw transcript/token telemetry stays local (never committed to git); only the
+    live endpoint exposes the derived rate.
+
+  QA e2e procedure (clock injected; no real timer):
+  - Feed the pure rate function fixture records for a role within a fixed window at
+    a fixed nowMs; assert the rate = total(input+output+cache) in-window
+    extrapolated to /hr; assert a role with no in-window records reads 0.
+  - Hit GET /burn-rate on a running bridge with the bearer token; assert a per-role
+    rate payload. Hit it without the token; assert it is rejected (401).
+  - Open the holistic UI on a phone; confirm the per-agent meter renders one
+    tokens/hr entry per role and updates on refresh.
+
+acceptance: specs/features/BL-273-live-per-agent-burn-rate-meter.feature
+mutation_cost: medium
