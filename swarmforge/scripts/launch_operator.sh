@@ -2,12 +2,16 @@
 # Operator v2 — launch the DISPOSABLE LLM Operator (Claude Opus).
 #
 # Called by operator_runtime.bb only when an event needs reasoning. Starts an
-# interactive claude session in a tmux window on the SWARM socket so it is
-# monitorable via Remote Control (--remote-control SwarmForge-Operator), the
-# same way every role agent is. The operator processes the pending events,
-# acts, and — as its instructed final step — writes .swarmforge/operator/
-# operator.done; the runtime then tears the window down (disposal is the
-# runtime's job, keeping the LLM half stateless/disposable).
+# interactive claude session in a tmux window on the Operator's own socket.
+# Deliberately HEADLESS (no --remote-control): each run lives minutes and is
+# killed by the runtime, so registering a claude.ai session would leave a
+# disconnected "Operator" corpse in the phone app on every run (the 2026-07-11
+# "sessions dropping like flies" incident). Its record is operator.log; a
+# phone-reachable Operator is the attended mode proposed in
+# docs/specs/operator-attend-mode.md. The operator processes the pending
+# events, acts, and — as its instructed final step — writes .swarmforge/
+# operator/operator.done; the runtime then tears the window down (disposal is
+# the runtime's job, keeping the LLM half stateless/disposable).
 #
 # Usage: launch_operator.sh <project-root> <inflight-events-file>
 #
@@ -24,10 +28,8 @@ OP_DIR="$ROOT/.swarmforge/operator"
 SETTINGS="$SCRIPT_DIR/operator.claude-settings.json"
 PROMPT="$ROOT/swarmforge/roles/operator.prompt"
 # Named plainly "Operator" (NOT "SwarmForge-Operator") — it is the external
-# supervisor, not a swarm agent, and its name should make that obvious in
-# claude.ai Remote Control and tmux.
+# supervisor, not a swarm agent, and its name should make that obvious in tmux.
 SESSION="operator"
-RC_NAME="Operator"
 
 # CRITICAL (resilience): the Operator runs on its OWN dedicated tmux socket,
 # NOT the swarm's socket. This is what lets the Operator survive — and
@@ -46,13 +48,12 @@ KICKOFF="You are the Operator — the external supervisor of the SwarmForge swar
 CLAUDE_CMD=(claude
   --settings "$SETTINGS"
   --dangerously-skip-permissions
-  --remote-control "$RC_NAME"
   --append-system-prompt-file "$PROMPT"
   -n "Operator"
   "$KICKOFF")
 
 if [[ "${OPERATOR_LAUNCH_DRYRUN:-}" == "1" ]]; then
-  printf 'DRYRUN launch_operator session=%s rc=%s events=%s\n' "$SESSION" "$RC_NAME" "$EVENTS"
+  printf 'DRYRUN launch_operator session=%s events=%s\n' "$SESSION" "$EVENTS"
   printf 'DRYRUN cmd:'; printf ' %q' "${CLAUDE_CMD[@]}"; printf '\n'
   exit 0
 fi
@@ -77,4 +78,4 @@ tmux -S "$OP_SOCK" new-session -d -s "$SESSION" -n "$SESSION" \
 # Record the pane pid for liveness tracking (best-effort).
 sleep 0.3
 tmux -S "$OP_SOCK" list-panes -t "$SESSION" -F '#{pane_pid}' 2>/dev/null | head -1 > "$OP_DIR/operator.pid" || true
-echo "launch_operator: started $SESSION ($RC_NAME) on its own socket $OP_SOCK"
+echo "launch_operator: started $SESSION (headless, no remote-control) on its own socket $OP_SOCK"

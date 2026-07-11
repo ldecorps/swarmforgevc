@@ -6,9 +6,9 @@
 ;; babashka loop that never sleeps indefinitely, owns the timers and
 ;; heartbeat, publishes status.json, watches tmux + the filesystem +
 ;; provider state, maintains an event queue, and launches the DISPOSABLE LLM
-;; Operator (Claude Opus, via launch_operator.sh, with --remote-control
-;; SwarmForge-Operator) ONLY when an event needs reasoning and the provider
-;; is available. It performs no reasoning itself — every judgement call is
+;; Operator (Claude Opus, via launch_operator.sh, headless — no
+;; --remote-control; see launch_operator.sh) ONLY when an event needs
+;; reasoning and the provider is available. It performs no reasoning itself — every judgement call is
 ;; either a pure function in operator_lib.bb or is deferred to the LLM.
 ;;
 ;; Structure deliberately mirrors handoffd_supervisor.bb (pid file,
@@ -62,11 +62,10 @@
 (def launch-operator (fs/path script-dir "launch_operator.sh"))
 
 ;; The Operator is NOT a swarm agent: it runs on its OWN tmux socket (see
-;; launch_operator.sh) and its session/RC name deliberately drop the
+;; launch_operator.sh) and its session name deliberately drops the
 ;; "swarmforge-" prefix the role agents use, so it reads as the external
 ;; supervisor it is, never a swarm member.
 (def operator-session "operator")
-(def operator-rc-name "Operator")
 (def operator-socket-file (fs/path op-dir "operator-tmux.sock"))
 
 (defn env-ms [name default]
@@ -249,9 +248,9 @@
 
 (defn launch-operator!
   "Move the pending queue aside so new events accumulate cleanly, then spawn
-   launch_operator.sh which starts the Opus Operator (with --remote-control)
-   in the swarm's tmux, pointed at the inflight events. Never launches a
-   second one (caller already checked operator-running?)."
+   launch_operator.sh which starts the Opus Operator (headless) on its own
+   tmux socket, pointed at the inflight events. Never launches a second one
+   (caller already checked operator-running?)."
   []
   (when (fs/exists? events-file)
     (fs/move events-file inflight-file {:replace-existing true :atomic-move true}))
@@ -265,8 +264,8 @@
 (defn kill-operator-window!
   "Tear down the Operator's own tmux session (on its dedicated socket). Used
    when the Operator signalled completion (operator.done) but its interactive
-   --remote-control session is still sitting at a prompt — the runtime owns
-   disposal so the LLM half stays truly disposable."
+   claude session is still sitting at a prompt — the runtime owns disposal so
+   the LLM half stays truly disposable."
   []
   (when (fs/exists? operator-socket-file)
     (process/sh {:continue true} "tmux" "-S" (str operator-socket-file)
@@ -275,14 +274,14 @@
 (defn reap-finished-operator!
   "Retire a completed Operator run. Two triggers:
    1. the Operator wrote operator.done (its instructed last act) — kill its
-      lingering RC window, so it becomes not-running;
+      lingering window, so it becomes not-running;
    2. the Operator window/pid is already gone.
    In either case, once it is no longer running its inflight events are
    archived. Inflight stays put until a run completes, so a crash never loses
    the queue permanently."
   []
   (when (fs/exists? done-file)
-    (log! "reap-operator" "operator.done seen; killing RC window")
+    (log! "reap-operator" "operator.done seen; killing operator window")
     (kill-operator-window!)
     (fs/delete-if-exists done-file))
   (when (and (fs/exists? inflight-file) (not (operator-running?)))

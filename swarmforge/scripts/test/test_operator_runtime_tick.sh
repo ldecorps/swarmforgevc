@@ -51,9 +51,14 @@ check "state waiting_for_provider"              '[[ "$(jget "$F/.swarmforge/oper
 check "event stays queued (no inflight)"        '[[ ! -f "$F/.swarmforge/operator/events.inflight.jsonl" ]]'
 rm -rf "$F"
 
-# ── 4. launcher assembles a --remote-control command ─────────────────────────
+# ── 4. launcher assembles a HEADLESS command (no remote-control) ─────────────
+# Disposable runs are killed by the runtime minutes after launch; registering
+# a claude.ai session would leave a disconnected "Operator" in the phone app
+# on every run (2026-07-11 incident). Attended mode (docs/specs/
+# operator-attend-mode.md) is where a remote-control session belongs.
 DRY="$(OPERATOR_LAUNCH_DRYRUN=1 bash "$SRC/launch_operator.sh" "$SRC/.." /tmp/x.jsonl 2>&1 || true)"
-check "operator named 'Operator' (not a swarm agent)"          '[[ "$DRY" == *"--remote-control Operator"* ]]'
+check "disposable operator launch is headless (no --remote-control)" '[[ "$DRY" != *"--remote-control"* ]]'
+check "operator session named 'Operator' (not a swarm agent)"  '[[ "$DRY" == *"-n Operator"* ]]'
 check "operator NOT named SwarmForge-Operator"                 '[[ "$DRY" != *"SwarmForge-Operator"* ]]'
 check "launcher targets the operator system prompt"            '[[ "$DRY" == *"roles/operator.prompt"* ]]'
 
