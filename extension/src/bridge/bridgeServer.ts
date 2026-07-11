@@ -5,6 +5,7 @@ import {
   buildCostTelemetryState,
   buildHolisticState,
   buildStageDwellState,
+  buildBurnRateState,
   BridgeState,
 } from './bridgeState';
 import { extractBearerToken, isAuthorizedByQueryToken } from './bridgeAuth';
@@ -304,6 +305,15 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
       // never writes anything.
       matches: (url) => url === '/gates',
       compute: () => filterPendingGates(computeRoleGateStatesLive(targetPath, readSwarmRoles(targetPath).map((r) => r.role))),
+    },
+    {
+      // BL-273: same posture as /cost-telemetry above - transcript scans are
+      // too expensive for the SSE poll loop, computed only on direct
+      // request. nowMs mirrors /stage-dwell's own StartBridgeOptions.nowMs
+      // injection (BL-270) so a test can pin the same instant its fixture
+      // and this route both evaluate against.
+      matches: (url) => url === '/burn-rate',
+      compute: () => buildBurnRateState(targetPath, nowMs),
     },
   ];
 }
