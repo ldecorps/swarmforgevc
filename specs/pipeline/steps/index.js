@@ -68,6 +68,7 @@ const DOMAINS = [
   require('./notDoneCountSteps'),
   require('./coChangeCwdSteps'),
   require('./resourceSamplerActivationSteps'),
+  require('./gatesListSteps'),
 ];
 
 function registerSteps(registry) {
