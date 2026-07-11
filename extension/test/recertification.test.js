@@ -20,13 +20,31 @@ const {
 
 test('recert-01: recertifiableScenariosFrom keeps only tagged (stable-id) scenarios, pairing each with its ticket id', () => {
   const tickets = [
-    { id: 'BL-096', scenarios: [{ id: 'BL-096/metrics-01', name: 'a', text: 'a-text' }, { name: 'untagged', text: 'x' }] },
-    { id: 'BL-097', scenarios: [{ id: 'BL-097/dashboard-01', name: 'b', text: 'b-text' }] },
+    { id: 'BL-096', title: 'Metrics dashboard', scenarios: [{ id: 'BL-096/metrics-01', name: 'a', text: 'a-text' }, { name: 'untagged', text: 'x' }] },
+    { id: 'BL-097', title: 'Board', scenarios: [{ id: 'BL-097/dashboard-01', name: 'b', text: 'b-text' }] },
   ];
   const result = recertifiableScenariosFrom(tickets);
   assert.equal(result.length, 2);
-  assert.deepEqual(result[0], { id: 'BL-096/metrics-01', ticketId: 'BL-096', name: 'a', text: 'a-text' });
-  assert.deepEqual(result[1], { id: 'BL-097/dashboard-01', ticketId: 'BL-097', name: 'b', text: 'b-text' });
+  assert.deepEqual(result[0], { id: 'BL-096/metrics-01', ticketId: 'BL-096', ticketTitle: 'Metrics dashboard', name: 'a', text: 'a-text' });
+  assert.deepEqual(result[1], { id: 'BL-097/dashboard-01', ticketId: 'BL-097', ticketTitle: 'Board', name: 'b', text: 'b-text' });
+});
+
+// BL-280: the ONE projection add - a ticket's French title rides through
+// as ticketTitleFr (optional, absent when the ticket has none), mirroring
+// docsTree's own TicketNode.titleFr? convention.
+test('BL-280 recert-context-01: recertifiableScenariosFrom also carries the ticket title (+ French title) for each scenario', () => {
+  const tickets = [
+    { id: 'BL-096', title: 'Metrics dashboard', titleFr: 'Tableau de bord', scenarios: [{ id: 'BL-096/metrics-01', name: 'a', text: 'a-text' }] },
+  ];
+  const [result] = recertifiableScenariosFrom(tickets);
+  assert.equal(result.ticketTitle, 'Metrics dashboard');
+  assert.equal(result.ticketTitleFr, 'Tableau de bord');
+});
+
+test('BL-280: a ticket with no French title omits ticketTitleFr rather than a blank/undefined value', () => {
+  const tickets = [{ id: 'BL-096', title: 'Metrics dashboard', scenarios: [{ id: 'BL-096/metrics-01', name: 'a', text: 'a-text' }] }];
+  const [result] = recertifiableScenariosFrom(tickets);
+  assert.equal(Object.prototype.hasOwnProperty.call(result, 'ticketTitleFr'), false);
 });
 
 test('recert-01: the human is shown the least-recently-reviewed scenario first', () => {
