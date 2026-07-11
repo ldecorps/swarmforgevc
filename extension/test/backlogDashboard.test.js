@@ -8,6 +8,7 @@ const {
   buildBacklogDashboard,
   computeBacklogDashboard,
   translateBacklogDashboard,
+  computeNotDoneCount,
 } = require('../out/metrics/backlogDashboard');
 const { computeDeliveryMetrics } = require('../out/metrics/deliveryMetrics');
 const { createTranslationSession } = require('../out/i18n/translate');
@@ -168,6 +169,61 @@ test('needsApproval is always present, even empty - never absent (both surfaces 
   const data = buildBacklogDashboard({ active: [], paused: [], done: [] }, [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z');
   assert.equal(Object.prototype.hasOwnProperty.call(data, 'needsApproval'), true);
   assert.deepEqual(data.needsApproval, []);
+});
+
+// ── BL-263: notDoneCount - the single-source not-done total ─────────────
+
+// BL-263 count-excludes-done-01
+test('notDoneCount totals active + paused and excludes done tickets', () => {
+  const data = buildBacklogDashboard(
+    { active: [item({ id: 'BL-1' }), item({ id: 'BL-2' })], paused: [item({ id: 'BL-3' })], done: [item({ id: 'BL-4', status: 'done' }), item({ id: 'BL-5', status: 'done' })] },
+    [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z'
+  );
+  assert.equal(data.notDoneCount, 3);
+});
+
+test('computeNotDoneCount is a pure function of the active/paused arrays alone', () => {
+  assert.equal(computeNotDoneCount([item({ id: 'BL-1' }), item({ id: 'BL-2' })], [item({ id: 'BL-3' })]), 3);
+  assert.equal(computeNotDoneCount([], []), 0);
+});
+
+// BL-263 zero-state-03
+test('notDoneCount is zero (not blank, not an error) when every ticket is done', () => {
+  const data = buildBacklogDashboard(
+    { active: [], paused: [], done: [item({ id: 'BL-1', status: 'done' }), item({ id: 'BL-2', status: 'done' })] },
+    [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z'
+  );
+  assert.equal(data.notDoneCount, 0);
+  assert.equal(typeof data.notDoneCount, 'number');
+});
+
+test('notDoneCount is always present, even at zero - never absent', () => {
+  const data = buildBacklogDashboard({ active: [], paused: [], done: [] }, [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z');
+  assert.equal(Object.prototype.hasOwnProperty.call(data, 'notDoneCount'), true);
+  assert.equal(data.notDoneCount, 0);
+});
+
+// BL-263 derived-not-stored-04: notDoneCount rides the same schemaVersion,
+// no new store - a version bump would signal a new authoritative field
+// this ticket must NOT introduce.
+test('notDoneCount is additive - schemaVersion is unchanged', () => {
+  const data = buildBacklogDashboard({ active: [item()], paused: [], done: [] }, [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z');
+  assert.equal(data.schemaVersion, BACKLOG_DASHBOARD_SCHEMA_VERSION);
+});
+
+// BL-263 surfaces-agree-02: translateBacklogDashboard (the PWA-facing i18n
+// pass) must carry notDoneCount through untouched - the briefing composes
+// from the SAME buildBacklogDashboard output, so if translation silently
+// dropped or altered the field the two surfaces would diverge.
+test('translateBacklogDashboard carries notDoneCount through unchanged', async () => {
+  const data = buildBacklogDashboard(
+    { active: [item({ id: 'BL-1' })], paused: [item({ id: 'BL-2' })], done: [] },
+    [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z'
+  );
+  const session = createTranslationSession(emptyTranslationCache(), fakeEngine({}));
+  const translated = await translateBacklogDashboard(data, session);
+  assert.equal(translated.notDoneCount, data.notDoneCount);
+  assert.equal(translated.notDoneCount, 2);
 });
 
 // ── BL-213 cost-06a/06b: costHealth fold-in ──────────────────────────────
