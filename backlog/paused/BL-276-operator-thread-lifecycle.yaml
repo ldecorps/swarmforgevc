@@ -1,0 +1,70 @@
+id: BL-276
+title: "Operator thread lifecycle: status, no self-close, human-confirm close, optional idle nudge into the topic"
+milestone: M8
+status: todo
+priority: 20
+direction: non-aligned
+assigned_to: coder
+depends_on: [BL-281]
+parent_epic: BL-274
+source: "BL-274 refocus (.swarmforge/operator/INTAKE-telegram-threads-refocus-bl274.md), lifecycle slice. RE-SCOPED 2026-07-11 from the original 'daily reminder + 3-strike autonomous close': the refocus SOFTENS close to human-confirm-only and nudges into the Telegram topic, not email."
+
+description: |
+  Lifecycle slice of the refocused BL-274. Adds subject status and a gentle idle
+  nudge to the Operator-hosted Telegram threads (BL-281), WITHOUT any autonomous
+  close.
+
+  RE-SCOPE note: the original BL-276 had an autonomous 3-strike-then-abandon close.
+  The 2026-07-11 refocus (decision 6) DROPS autonomous close entirely — the Operator
+  NEVER closes a thread of its own will; the HUMAN confirms close. The daily reminder
+  survives only as an OPTIONAL gentle nudge posted INTO THE TOPIC (Telegram), not an
+  email, and it never escalates to a close.
+
+  Locked decisions this slice realizes:
+    - Subject status: open / resolved / closed.
+    - The Operator never self-closes. Only the human closing/confirming-resolution
+      closes a thread.
+    - Optional: when a thread has been idle (counted from the human's last
+      participation), the Operator may post one gentle daily nudge INTO that thread's
+      topic; the idle clock resets the moment the human replies. The nudge never leads
+      to an autonomous close.
+
+  Live layer (build on BL-281 + BL-275):
+    - Thread status lives on the SUP-### thread (extend BL-275's thread model
+      open -> resolved/closed as a PURE state transition in support_lib.bb; add a
+      close/resolve op to support_thread.bb).
+    - The idle-nudge due-decision is a PURE function, adapter-injected + injected
+      clock (mirror briefing_generation_schedule_lib.bb's due-decision and BL-275's
+      handle-message): given now + thread transcript, return {none | post-nudge}.
+      Idle counted from the human's last participation (DERIVE from the transcript,
+      consistent with BL-275/BL-281); reset on any reply.
+    - The nudge is posted into the thread's Telegram topic via BL-281's
+      sendMessage(message_thread_id=...) path — reuse it; do not add an email path
+      here (email is deferred at the epic level).
+
+  Wanted behavior (see the feature file):
+    - The Operator does not close a thread of its own will, even after long silence.
+    - The human confirming resolution closes the thread (as resolved).
+    - An idle thread gets one gentle daily nudge posted into its topic.
+    - Participation resets the idle clock.
+
+  Constraints / testability:
+    - The idle-nudge decision and the status transition are PURE over provided inputs
+      + an injected clock. NO real timers, NO waiting on the wall clock; drive with
+      fake time. Never seed a fixture timestamp from the real clock while the code
+      reads its own clock (de0991e).
+    - Any CLI keeps main()/dispatch a THIN wrapper over exported pure helpers, with a
+      subprocess test in ADDITION (engineering "CLI main() must be a thin wrapper").
+    - Reuse BL-281's topic-post path for the nudge; no new comms path. Thread state
+      stays machine-local (gitignored), never committed.
+
+  QA e2e procedure (clock injected; no real timer/network):
+    - Advance the injected clock many days past the human's last message; assert the
+      Operator does NOT close the thread.
+    - Advance a day past the last participation; assert one nudge is posted into the
+      topic; emit a human reply; assert the idle clock resets (no immediate second
+      nudge).
+    - Issue a human resolution confirmation; assert the thread closes as resolved.
+
+acceptance: specs/features/BL-276-operator-thread-lifecycle.feature
+mutation_cost: medium

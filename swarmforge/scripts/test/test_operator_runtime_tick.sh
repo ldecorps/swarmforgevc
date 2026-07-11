@@ -14,7 +14,12 @@ check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi
 make_fixture() {
   local d; d="$(mktemp -d)"
   mkdir -p "$d/.swarmforge/operator" "$d/swarmforge/scripts" "$d/swarmforge/roles"
-  cp "$SRC/operator_lib.bb" "$SRC/operator_runtime.bb" "$d/swarmforge/scripts/"
+  # BL-281: operator_runtime.bb now also load-files telegram_topic_lib.bb
+  # (which itself load-files support_lib.bb), support_thread_store.bb, and
+  # daemon_alarm_lib.bb (reused only for its parse-conf).
+  cp "$SRC/operator_lib.bb" "$SRC/operator_runtime.bb" "$SRC/telegram_topic_lib.bb" \
+     "$SRC/support_lib.bb" "$SRC/support_thread_store.bb" "$SRC/daemon_alarm_lib.bb" \
+     "$d/swarmforge/scripts/"
   printf '%s' "$d"
 }
 tick() { OPERATOR_SKIP_LAUNCH=1 bb "$1/swarmforge/scripts/operator_runtime.bb" "$1" --tick-once; }
@@ -49,6 +54,38 @@ OUT3="$(tick "$F")"
 check "cooldown does NOT launch"                '[[ "$OUT3" == *"\"launched?\":false"* ]]'
 check "state waiting_for_provider"              '[[ "$(jget "$F/.swarmforge/operator/status.json" ":state")" == waiting_for_provider ]]'
 check "event stays queued (no inflight)"        '[[ ! -f "$F/.swarmforge/operator/events.inflight.jsonl" ]]'
+rm -rf "$F"
+
+# ── 5. BL-281: a pending Telegram wake dispatches with its OWN reply context,
+#      a DIFFERENT subject's event is deferred (not bled into the same wake) ──
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/support/threads"
+printf '{"id":"SUP-1","status":"open","messages":[{"channel":"telegram","timestamp":"2026-07-11T09:00:00Z","text":"about A"}]}' \
+  > "$F/.swarmforge/support/threads/SUP-1.json"
+printf '{"id":"SUP-2","status":"open","messages":[{"channel":"telegram","timestamp":"2026-07-11T09:00:00Z","text":"about B"}]}' \
+  > "$F/.swarmforge/support/threads/SUP-2.json"
+printf '{"42":"SUP-1","43":"SUP-2"}' > "$F/.swarmforge/operator/telegram-topics.json"
+printf '{"type":"TELEGRAM_TOPIC_MESSAGE","subject":"SUP-1"}\n{"type":"TELEGRAM_TOPIC_MESSAGE","subject":"SUP-2"}\n' \
+  > "$F/.swarmforge/operator/events.jsonl"
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+OUT5="$(tick "$F")"
+check "BL-281: a pending telegram wake launches"                '[[ "$OUT5" == *"\"launched?\":true"* ]]'
+check "BL-281: reply-context file is written"                   '[[ -f "$F/.swarmforge/operator/telegram-reply-context.json" ]]'
+check "BL-281: reply-context names the dispatched thread"       '[[ "$(jget "$F/.swarmforge/operator/telegram-reply-context.json" ":thread-id")" == SUP-1 ]]'
+check "BL-281: reply-context names that thread's OWN topic"     '[[ "$(jget "$F/.swarmforge/operator/telegram-reply-context.json" ":topic-id")" == 42 ]]'
+check "BL-281: reply-context carries SUP-1's transcript"        'jget "$F/.swarmforge/operator/telegram-reply-context.json" ":transcript" | grep -q "about A"'
+check "BL-281: reply-context does NOT carry SUP-2's transcript" '! (jget "$F/.swarmforge/operator/telegram-reply-context.json" ":transcript" | grep -q "about B")'
+check "BL-281: SUP-1's event is in the inflight batch"          'grep -q "SUP-1" "$F/.swarmforge/operator/events.inflight.jsonl"'
+check "BL-281: SUP-2's event is DEFERRED back to events.jsonl, not dropped" \
+  'grep -q "SUP-2" "$F/.swarmforge/operator/events.jsonl"'
+check "BL-281: SUP-2's event is NOT in the inflight batch"      '! grep -q "SUP-2" "$F/.swarmforge/operator/events.inflight.jsonl"'
+rm -rf "$F"
+
+# ── 6. BL-281: Telegram not configured (no bot token) - poll sweep is a
+#      silent no-op, never crashes the tick ───────────────────────────────────
+F="$(make_fixture)"
+OUT6="$(TELEGRAM_BOT_TOKEN= TELEGRAM_CHAT_ID= tick "$F" 2>&1)"
+check "BL-281: an unconfigured Telegram poll never crashes the tick" '[[ "$OUT6" == *"\"launched?\":true"* ]]'
 rm -rf "$F"
 
 # ── 4. launcher assembles a --remote-control command ─────────────────────────
