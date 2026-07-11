@@ -62,6 +62,64 @@
     ((:write-thread! adapters) thread)
     thread))
 
+;; ── lifecycle (pure) — BL-276: status, no self-close, idle nudge ─────────
+
+(defn resolve-thread
+  "The ONLY closing transition this epic builds: a human-CONFIRMED
+   resolution (thread-lifecycle-02). Every caller of this function is
+   itself triggered by an explicit human confirmation, never a timer/idle
+   decision - idle-nudge-decision below has no code path into this
+   function, which IS thread-lifecycle-01's own guarantee (the Operator
+   never closes a thread of its own will, even after long silence)."
+  [thread]
+  (assoc thread :status "resolved"))
+
+;; A day - named + trivially tunable, matching BL-273's own
+;; DEFAULT_BURN_RATE_WINDOW_MS convention for a similar "one named
+;; constant, not a magic number sprinkled at each call site" ask.
+(def default-idle-nudge-threshold-ms (* 24 60 60 1000))
+
+;; "operator" is the ONE channel record-interaction!/append-message never
+;; write for an inbound message (support_thread.bb/the bridge's inbound
+;; route always pass a human channel: "rc" or "telegram") - only the
+;; Operator's own reply/nudge path (operator_reply.bb) tags a message this
+;; way, so this is an unambiguous "who spoke" signal already present in
+;; the transcript, no separate flag needed.
+(def operator-channel "operator")
+
+(defn- human-message? [message]
+  (not= (:channel message) operator-channel))
+
+(defn- parse-iso-ms [iso]
+  (.toEpochMilli (java.time.Instant/parse iso)))
+
+(def idle-nudge-text
+  "Just checking in - still here whenever you're ready to continue.")
+
+(defn idle-nudge-decision
+  "Pure, injected-clock (thread-lifecycle-01/03/04): decides whether a
+   gentle idle nudge is due for an OPEN thread. Idle is counted from the
+   human's LAST participation (any non-\"operator\"-channel message), never
+   from the thread's creation or the Operator's own messages - resets the
+   moment the human replies (thread-lifecycle-04). A nudge already posted
+   (an \"operator\" message) AFTER the human's last word means the runtime
+   is already waiting on them - never a second nudge until they reply
+   again (thread-lifecycle-03's own \"one gentle daily nudge\", not a
+   repeating spam). Returns :none or :post-nudge - there is no :close
+   outcome; this function structurally cannot close a thread (thread-
+   lifecycle-01)."
+  [thread now-ms]
+  (let [human-times (keep (fn [m] (when (human-message? m) (parse-iso-ms (:timestamp m)))) (:messages thread))]
+    (if (empty? human-times)
+      :none
+      (let [last-human-ms (apply max human-times)
+            already-nudged? (some (fn [m] (and (not (human-message? m)) (> (parse-iso-ms (:timestamp m)) last-human-ms)))
+                                   (:messages thread))]
+        (cond
+          already-nudged? :none
+          (>= (- now-ms last-human-ms) default-idle-nudge-threshold-ms) :post-nudge
+          :else :none)))))
+
 ;; ── email echo composition (pure) — mirrors briefing_email_lib.bb's ────────
 ;; ── build-briefing-subject / append-content-block split ────────────────────
 
