@@ -40,15 +40,28 @@ SUP_SOCK="$SUP_DIR/support-tmux.sock"
 
 mkdir -p "$SUP_DIR"
 
-KICKOFF="You are Support — the human-facing front desk (you are NOT a swarm agent). Read your system prompt, then process the pending events in ${EVENTS}. Take the minimal correct action per your prompt (open or follow up a SUP-### thread via support_thread.bb, converse with the caller over this Remote Control session, send the email echo), then as your FINAL action run: touch ${SUP_DIR}/support.done — and stop."
+KICKOFF="You are Support — the human-facing front desk (you are NOT a swarm agent). Read your system prompt if one was loaded, then process the pending events in ${EVENTS}. Take the minimal correct action (open or follow up a SUP-### thread via support_thread.bb, converse with the caller over this Remote Control session, send the email echo), then as your FINAL action run: touch ${SUP_DIR}/support.done — and stop."
 
+# BL-275 QA bounce (2026-07-11): swarmforge/roles/support.prompt is a
+# SPECIFIER-owned deliverable, landed as its own separate parcel (not this
+# coder slice's job to author — see the constitution's role separation).
+# Until it exists, --append-system-prompt-file pointing at a missing path
+# makes the `claude` CLI exit 1 immediately, so EVERY real Support launch
+# failed before the disposable LLM ever started. Degrade instead: include
+# the flag only when the file is actually present, so a real launch always
+# succeeds (with the KICKOFF's own inline framing as the fallback) today,
+# and picks up the specifier's real prompt automatically the moment it
+# lands — no further coder change needed then.
 CLAUDE_CMD=(claude
   --settings "$SETTINGS"
   --dangerously-skip-permissions
-  --remote-control "$RC_NAME"
-  --append-system-prompt-file "$PROMPT"
-  -n "Support"
-  "$KICKOFF")
+  --remote-control "$RC_NAME")
+if [[ -f "$PROMPT" ]]; then
+  CLAUDE_CMD+=(--append-system-prompt-file "$PROMPT")
+else
+  echo "launch_support: $PROMPT not found yet (specifier-owned, pending) - launching with the inline kickoff only" >&2
+fi
+CLAUDE_CMD+=(-n "Support" "$KICKOFF")
 
 if [[ "${SUPPORT_LAUNCH_DRYRUN:-}" == "1" ]]; then
   printf 'DRYRUN launch_support session=%s rc=%s events=%s\n' "$SESSION" "$RC_NAME" "$EVENTS"
