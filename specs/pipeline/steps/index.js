@@ -76,6 +76,7 @@ const DOMAINS = [
   require('./burnRateSteps'),
   require('./supportThreadEmailEchoSteps'),
   require('./recertBacklogContextSteps'),
+  require('./telegramTopicThreadsSteps'),
 ];
 
 function registerSteps(registry) {

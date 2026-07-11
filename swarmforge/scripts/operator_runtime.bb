@@ -32,6 +32,17 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_lib.bb")))
+;; BL-281 (reshaped 2026-07-11, bridge-client architecture): Telegram
+;; forum-topic threads over the bridge. The runtime NEVER talks to
+;; Telegram directly - telegram_topic_lib.bb is now only the pure per-
+;; launch dispatch/reply-context logic (topic<->SUP-### demux moved to the
+;; Front Desk Bot, a bridge client - extension/src/tools/telegram-front-
+;; desk-bot.ts). support_thread_store.bb is the SAME unified SUP-###
+;; thread-store fs adapters support_thread.bb (RC channel) and the bridge's
+;; new inbound-message route (Telegram channel) both write to, so a thread
+;; opened over either channel lives in one store.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "telegram_topic_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "support_thread_store.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -68,6 +79,11 @@
 (def operator-session "operator")
 (def operator-rc-name "Operator")
 (def operator-socket-file (fs/path op-dir "operator-tmux.sock"))
+
+;; ── BL-281: Telegram forum-topic threads (bridge-client architecture) ────
+;; Just the reply-context handoff file now - the runtime never touches
+;; Telegram, an offset, or a topic mapping directly (all bot-owned).
+(def telegram-reply-context-file (fs/path op-dir "telegram-reply-context.json"))
 
 (defn env-ms [name default]
   (or (some-> (System/getenv name) parse-long) default))
@@ -174,6 +190,15 @@
   (fs/create-dirs op-dir)
   (spit (str events-file) (str (json/generate-string event) "\n") :append true))
 
+;; BL-281: whole-file overwrite counterpart to append-event! - launch-
+;; operator! below uses this to write EXACTLY the selected dispatch batch
+;; to inflight-file (never the raw fs/move it used before select-dispatch-
+;; batch existed), and to rewrite events-file with only the deferred
+;; leftovers.
+(defn write-events! [path events]
+  (fs/create-dirs (fs/parent path))
+  (spit (str path) (str/join "" (map #(str (json/generate-string %) "\n") events))))
+
 (defn enqueue-observed!
   "Append every observed event that survives operator-lib de-dup against what
    is already queued. Returns the number newly enqueued."
@@ -183,6 +208,15 @@
         added (drop (count pending) merged)]
     (doseq [e added] (append-event! e))
     (count added)))
+
+;; BL-281 (reshaped): the runtime no longer touches Telegram, an offset, or
+;; a topic mapping at all - the Front Desk Bot (a bridge client) owns all
+;; of that. TELEGRAM_TOPIC_MESSAGE events now arrive in events.jsonl
+;; because the BRIDGE's inbound-message route appends them directly
+;; (bridgeServer.ts), the same file this runtime already reads via
+;; read-events/enqueue-observed! above. The runtime's only remaining
+;; Telegram-aware job is per-launch dispatch/reply-context (below, in the
+;; launch-operator! section) - it still speaks SUP-### only, never Telegram.
 
 ;; ── cooldown / provider state ─────────────────────────────────────────────────
 
@@ -247,14 +281,50 @@
 
 ;; ── launching the disposable LLM Operator ─────────────────────────────────────
 
+(defn dispatch-subject-of
+  "The :subject (thread id) of the first TELEGRAM_TOPIC_MESSAGE event in a
+   dispatch batch, or nil when the batch carries none - used to decide
+   whether a reply-context file needs writing."
+  [dispatch-events]
+  (some :subject (filter #(= (:type %) "TELEGRAM_TOPIC_MESSAGE") dispatch-events)))
+
+(defn write-telegram-reply-context!
+  "BL-281 telegram-topic-03/telegram-topic-04: pre-fetches the ONE dispatched
+   subject's reloaded transcript (telegram-topic-lib/reply-context-for) and
+   writes it into a file the disposable Operator's kickoff can reference -
+   the structural guarantee that a wake for one subject has no path to
+   another subject's transcript, never left to the LLM's own reading
+   discipline. No topic id here (reshaped architecture) - the runtime
+   speaks SUP-### only; the Front Desk Bot owns the topic mapping and
+   resolves it itself once the reply reaches it over SSE."
+  [thread-id]
+  (atomic-spit! telegram-reply-context-file
+                (json/generate-string
+                 {:thread-id thread-id
+                  :transcript (telegram-topic-lib/reply-context-for thread-id (support-thread-store/adapters-for state-dir))})))
+
 (defn launch-operator!
   "Move the pending queue aside so new events accumulate cleanly, then spawn
    launch_operator.sh which starts the Opus Operator (with --remote-control)
    in the swarm's tmux, pointed at the inflight events. Never launches a
-   second one (caller already checked operator-running?)."
+   second one (caller already checked operator-running?).
+
+   BL-281: the pending queue is no longer moved wholesale - select-dispatch-
+   batch first splits off AT MOST ONE Telegram subject's events (every
+   other pending event type dispatches together unchanged); only the
+   selected :dispatch batch becomes inflight, :deferred events are written
+   back to events-file for a later tick. When the dispatch batch is a
+   Telegram wake, its reply context is pre-fetched and written alongside."
   []
-  (when (fs/exists? events-file)
-    (fs/move events-file inflight-file {:replace-existing true :atomic-move true}))
+  (let [pending (read-events events-file)
+        {:keys [dispatch deferred]} (telegram-topic-lib/select-dispatch-batch pending)
+        telegram-subject (dispatch-subject-of dispatch)]
+    (fs/delete-if-exists events-file)
+    (write-events! inflight-file dispatch)
+    (doseq [e deferred] (append-event! e))
+    (if telegram-subject
+      (write-telegram-reply-context! telegram-subject)
+      (fs/delete-if-exists telegram-reply-context-file)))
   (log! "launch-operator" "inflight=" (str (when (fs/exists? inflight-file)
                                              (count (read-events inflight-file)))))
   (if skip-launch?
@@ -292,6 +362,9 @@
                (fs/path done-dir (str "events-" (now-ms) ".jsonl"))
                {:replace-existing true})
       (fs/delete-if-exists operator-pid-file)
+      ;; BL-281: a stale reply-context file must never carry over into the
+      ;; NEXT (possibly non-Telegram) run.
+      (fs/delete-if-exists telegram-reply-context-file)
       (log! "reap-operator" "inflight retired"))))
 
 ;; ── status ────────────────────────────────────────────────────────────────────
@@ -338,6 +411,10 @@
       (when (operator-lib/timer-due? (last-swarm-check-ms) now swarm-check-ms)
         (record-swarm-check! now))
       (enqueue-observed! observed))
+
+    ;; BL-281 (reshaped): TELEGRAM_TOPIC_MESSAGE events now arrive here
+    ;; because the bridge's inbound-message route appends them directly to
+    ;; events-file - no poll, no direct Telegram call from the runtime.
 
     (reap-finished-operator!)
 

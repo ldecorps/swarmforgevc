@@ -1486,6 +1486,16 @@ message store  ──►  bridge  ──►  chat adapter  ──►  Signal/Tel
 
 The adapter is one bridge option among the remote tier (Tier 2) — entirely optional, and the same security/threat-model gap applies (what a chat reply is authorized to trigger, how the bot authenticates the human).
 
+**Operator front desk: per-subject Telegram topics over the bridge (BL-281).** Beyond the per-run narration thread above, the **Operator** — a role that runs outside the swarm's build pipeline as the human-facing front desk, on its own tmux session/socket — can host each discussion subject as its own Telegram **forum topic**, mapped one-to-one to a `SUP-###` thread (reusing BL-275's thread store), so parallel discussions never bleed context: a disposable Operator wake for one `SUP-###` reloads only that subject's transcript, never another topic's. The path is asynchronous, mediated entirely by the bridge — never a direct or synchronous call between Telegram and the Operator runtime:
+
+```
+Telegram  ◄──►  Front Desk Bot (bridge client)  ──POST /telegram-inbound──►  bridgeServer  ──event──►  Operator runtime  ──►  disposable Operator LLM
+                        ▲                                                         │
+                        └──────────────────── SSE reply relay ◄────────────────────┘
+```
+
+`extension/src/tools/telegram-front-desk-bot.ts` is a thin adapter (its pure decision logic lives in `telegramFrontDeskBotCore.ts`, testable with fixture updates and no live Telegram) that owns Telegram entirely: it filters inbound updates to the one authorized principal, demuxes each by its `message_thread_id` against its own persisted `{topic: SUP-###}` map, and `POST`s an already-resolved `{subjectId, channel, text}` to the bridge's new `POST /telegram-inbound` route — the bridge itself never sees raw Telegram specifics. That route (control-auth-gated exactly like the existing `POST /gate-answer`) appends the message to the `SUP-###` thread and enqueues a per-subject Operator event, then responds immediately without waiting for a reply — ingestion and reply are decoupled, never a synchronous RPC. The disposable Operator, woken for that `SUP-###`, loads only that subject's transcript, and its reply is appended to `.swarmforge/operator/telegram-reply-outbox.jsonl` (`operator_reply.bb`); the bridge relays each new outbox entry over its existing SSE stream, and the bot posts it back into the same topic. **One-time human setup (not automated):** create a Telegram **supergroup with Topics enabled** and add the bot as an admin with the "Manage Topics" permission — creating a forum topic requires this; a regular chat or a group without Topics enabled cannot host per-subject threads.
+
 ---
 
 ## Gaps & Things Still Missing
