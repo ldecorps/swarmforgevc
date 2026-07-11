@@ -695,11 +695,18 @@
 ;; diagrams section) through to send-configured-email!'s new 5-arg form; the
 ;; 2-arg form is unchanged (html nil), matching daemon-alarm-lib's own
 ;; additive, backward-compatible arity pattern.
+;;
+;; BL-286: the 4-arg form additionally threads an optional attachments seq
+;; (the diagram section's cid inline attachments) through to
+;; send-configured-email!'s new 6-arg form; the 3-arg form delegates to it
+;; with attachments nil, so every pre-BL-286 caller keeps its exact prior
+;; behavior.
 (defn send-configured-briefing-email!
   ([subject text] (send-configured-briefing-email! subject text nil))
-  ([subject text html]
+  ([subject text html] (send-configured-briefing-email! subject text html nil))
+  ([subject text html attachments]
    (daemon-alarm-lib/send-configured-email!
-    conf-file subject text html
+    conf-file subject text html attachments
     {:already-warned?! (fn [] @briefing-missing-key-warned?)
      :log-warning! (fn [msg] (log! "email-misconfigured" msg))
      :mark-warned! (fn [] (reset! briefing-missing-key-warned? true))})))

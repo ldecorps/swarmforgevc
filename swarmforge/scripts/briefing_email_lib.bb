@@ -87,29 +87,46 @@
    content
    optional-section-adapter-keys))
 
+;; BL-286: Gmail (and most webmail) blocks data-URI <img> sources, so a
+;; data-URI diagram silently renders broken/blank there - the exact defect
+;; this ticket fixes. Content-ids only need to be unique within one email,
+;; so the diagram's own name is enough (names are already unique per run).
+(defn- diagram-content-id [name]
+  (str name "-diagram"))
+
 ;; BL-260: given the render CLI's parsed [{:name :base64}...] payload (nil/
 ;; empty when rendering is unavailable this run - the CLI shell-out failed,
-;; threw, or was never installed), returns {:html :note-line} for
-;; send-unsent-briefings!'s optional :diagram-section adapter below. :html is
-;; nil when there is nothing to render - the email still sends, plaintext-
-;; only, exactly as before this ticket, but with a clear note rather than
-;; silence (BL-260 render-unavailable-degradation-04). When diagrams ARE
-;; available, :html carries them as inline <img> data URIs (no external
-;; service, no CID/attachment plumbing needed - Resend accepts a plain `html`
-;; field directly) and :note-line still gets appended to the plaintext part,
-;; since a plaintext-only client can never show the html part at all
+;; threw, or was never installed), returns {:html :note-line :attachments}
+;; for send-unsent-briefings!'s optional :diagram-section adapter below.
+;; :html is nil when there is nothing to render - the email still sends,
+;; plaintext-only, exactly as before this ticket, but with a clear note
+;; rather than silence (BL-260 render-unavailable-degradation-04).
+;;
+;; BL-286: when diagrams ARE available, :html references each by a
+;; cid:<content-id> <img> source (RFC-2392) rather than a data-URI - Gmail
+;; blocks data-URI image sources, so those rendered broken in every real
+;; client that matters. :attachments carries one {:filename :content-id
+;; :base64} descriptor per diagram, each content-id matching the cid that
+;; references it 1:1; the no-diagrams branch has no :attachments key at all
+;; (nothing to attach). :note-line still gets appended to the plaintext
+;; part, since a plaintext-only client can never show the html part at all
 ;; (BL-260 plaintext-degradation-03).
 (defn build-diagram-section [diagrams]
   (if (seq diagrams)
     {:html (str "<div>"
                 (str/join ""
-                          (map (fn [{:keys [name base64]}]
+                          (map (fn [{:keys [name]}]
                                  (str "<h3>" name " diagram</h3>"
-                                      "<img src=\"data:image/png;base64," base64 "\" "
+                                      "<img src=\"cid:" (diagram-content-id name) "\" "
                                       "alt=\"" name " diagram\" style=\"max-width:100%;height:auto\"/>"))
                                diagrams))
                 "</div>")
-     :note-line "Architecture diagrams: rendered inline above (HTML view) - see docs/diagrams/ in the repo for the Mermaid source."}
+     :note-line "Architecture diagrams: rendered inline above (HTML view) - see docs/diagrams/ in the repo for the Mermaid source."
+     :attachments (mapv (fn [{:keys [name base64]}]
+                           {:filename (str name "-diagram.png")
+                            :content-id (diagram-content-id name)
+                            :base64 base64})
+                         diagrams)}
     {:html nil
      :note-line "Architecture diagrams: unavailable this run (renderer not installed) - see docs/diagrams/ in the repo."}))
 
@@ -133,7 +150,14 @@
    the plaintext content exactly like the other optional sections, and -
    only when present - passes :html as a 3rd arg to :send-email!. An absent
    :diagram-section adapter keeps the exact 2-arg :send-email! call every
-   earlier caller/test already uses, so this is fully backward compatible."
+   earlier caller/test already uses, so this is fully backward compatible.
+
+   BL-286: when the diagram section also carries :attachments (available
+   diagrams, not the renderer-unavailable/no-diagrams branch), it is passed
+   as a 4th arg to :send-email! alongside :html. A diagram section with no
+   :attachments key (nothing to attach) keeps the exact 3-arg call, and no
+   :diagram-section adapter at all keeps the exact 2-arg call - both
+   pre-BL-286 shapes are unaffected."
   [briefings-dir adapters]
   (let [sent-now (atom [])]
     (doseq [file-name (find-unsent-briefings briefings-dir)]
@@ -145,8 +169,14 @@
                       content)
             date-label (str/replace file-name #"\.md$" "")
             subject (build-briefing-subject date-label content)
-            result (if diagram-section
+            result (cond
+                     (seq (:attachments diagram-section))
+                     ((:send-email! adapters) subject content (:html diagram-section) (:attachments diagram-section))
+
+                     diagram-section
                      ((:send-email! adapters) subject content (:html diagram-section))
+
+                     :else
                      ((:send-email! adapters) subject content))]
         (cond
           (:success result)

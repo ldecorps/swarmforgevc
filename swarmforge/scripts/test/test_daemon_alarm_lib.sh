@@ -175,4 +175,34 @@ bb "$ROOT/html_absent_test.bb" | grep -q "html-absent-ok" \
   || fail "BL-260 html-02: expected the pre-BL-260 6-arg form to carry no :html key"
 pass "BL-260 html-02: the pre-existing 6-arg form is unaffected - carries no :html key"
 
+# ── BL-286 attachments-01: send-alarm-email!'s 8-arg form threads attachments to post-fn! ──
+cat > "$ROOT/attachments_threaded_test.bb" <<EOF
+(load-file "$SCRIPT_DIR/../daemon_alarm_lib.bb")
+(let [captured (atom nil)
+      attachments [{:filename "architecture-diagram.png" :content-id "architecture-diagram" :base64 "QUJD"}]
+      result (daemon-alarm-lib/send-alarm-email! "fake-key" "ops@example.com" "onboarding@resend.dev" "subj" "text"
+               "<p>diagram</p>" attachments
+               (fn [_api-key msg] (reset! captured msg) {:success true}))]
+  (assert (true? (:success result)) "expected the send to succeed")
+  (assert (= attachments (:attachments @captured)) "expected the attachments to reach post-fn! unchanged")
+  (assert (= "<p>diagram</p>" (:html @captured)) "expected the html body to still reach post-fn! alongside attachments")
+  (println "attachments-threaded-ok"))
+EOF
+bb "$ROOT/attachments_threaded_test.bb" | grep -q "attachments-threaded-ok" \
+  || fail "BL-286 attachments-01: expected the 8-arg send-alarm-email! form to thread attachments through to post-fn!"
+pass "BL-286 attachments-01: the 8-arg send-alarm-email! form threads attachments through to post-fn!"
+
+# ── BL-286 attachments-02: the existing 7-arg form is unaffected - no :attachments key at all ──
+cat > "$ROOT/attachments_absent_test.bb" <<EOF
+(load-file "$SCRIPT_DIR/../daemon_alarm_lib.bb")
+(let [captured (atom nil)]
+  (daemon-alarm-lib/send-alarm-email! "fake-key" "ops@example.com" "onboarding@resend.dev" "subj" "text" "<p>diagram</p>"
+    (fn [_api-key msg] (reset! captured msg) {:success true}))
+  (assert (not (contains? @captured :attachments)) "expected no :attachments key at all when the pre-BL-286 7-arg form is used")
+  (println "attachments-absent-ok"))
+EOF
+bb "$ROOT/attachments_absent_test.bb" | grep -q "attachments-absent-ok" \
+  || fail "BL-286 attachments-02: expected the pre-BL-286 7-arg form to carry no :attachments key"
+pass "BL-286 attachments-02: the pre-existing 7-arg form is unaffected - carries no :attachments key"
+
 echo "ALL PASS"
