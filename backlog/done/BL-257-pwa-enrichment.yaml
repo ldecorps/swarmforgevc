@@ -21,9 +21,13 @@ description: |
     3. Changed-since-last-visit — highlight tickets that changed state since the
        operator last opened the app. Why: quick catch-up. Needs a last-visit marker
        persisted by the EXTENSION HOST (no browser storage, per the rules).
+       SURFACE: the LIVE holistic UI (holisticUiHtml.ts), NOT the static pwa/app.js —
+       see SURFACE RE-SCOPE below.
     4. Live briefing metrics as trends — surface throughput / QA-bounce /
        suite-duration as live trend views, from the LIVE metric feed (holistic),
        NOT backlog.json (BL-252 boundary). Why: the phone becomes the live dashboard.
+       SURFACE: the LIVE holistic UI (holisticUiHtml.ts), NOT the static pwa/app.js —
+       see SURFACE RE-SCOPE below.
 
   Wanted behavior (observable):
     - Filtering/searching the backlog board leaves only matching tickets.
@@ -45,16 +49,41 @@ description: |
     - LOCALIZATION (BL-229/230): new strings (labels, empty states) via
       pwa/locales.js. Preserve accessibility (BL-238).
 
-  Scope: extend pwa/app.js with the four views + pwa/locales.js strings; a
-  host-persisted last-visit marker for view 3; the live-trend view consumes the
-  holistic feed (reuse BL-252/BL-094 plumbing). Reuse existing lifecycle-event and
-  backlog data; add no new store. Verify the live PWA data paths before naming files
-  in a built slice.
+  SURFACE RE-SCOPE (coder investigation + specifier decision 2026-07-10): the original
+  Scope said "extend pwa/app.js with the four views ... the live-trend view consumes
+  the holistic feed" — an internal CONTRADICTION. pwa/app.js is the STATIC,
+  GitHub-Pages-deployed dashboard (empirically zero bridge/token/localhost reference);
+  it has NO live connectivity to the extension host or the bridge server. So the two
+  LIVE/host-state views cannot live there. Per the BL-252 precedent (approved: live
+  metrics render on the holistic UI + briefing, leaving the PWA/git-projection
+  untouched) and [[pwa-vs-holistic-surface-boundary]], slices 3 & 4 RE-SCOPE to the
+  live holistic surface (extension/src/bridge/holisticUiHtml.ts + its bridge routes),
+  NOT pwa/app.js. Slices 1 & 2 stay on pwa/app.js (they read backlog.json + git-derived
+  TicketLifecycleEvent — both reproducible). This is a forced technical correction, not
+  a change to what the operator asked for (all four views ship; two just render on the
+  phone's live bridge surface instead of the static one).
 
-  DELIVERY: SLICED — each view is an independently buildable/droppable slice. At
-  build time scope the live acceptance feature file to BUILT slices; park the rest in
-  a BL-257-*.feature.draft (BL-233 slice-scoping rule). Buildable now. Priority
-  normal.
+  Scope (SLICES 1 & 2 — pwa/app.js, THIS pass): extend pwa/app.js with the backlog
+  board filter/search view + the per-ticket timeline view, + pwa/locales.js strings.
+  Pure filter/timeline logic separate from the DOM render. Reuse existing backlog.json +
+  lifecycle-event data; add no new store.
+
+  Scope (SLICES 3 & 4 — holisticUiHtml.ts, re-scoped, PARKED for a later build): render
+  on the live holistic UI, not the static PWA. Slice 3 (changed-since-last-visit) needs
+  a NEW host-side last-visit persistence module (mirror extension/src/swarm/bounceAck.ts's
+  atomicWrite-backed .swarmforge/<name>.json pattern) + a bridge write route to set it —
+  new plumbing, not wiring-only. Slice 4 (live trends) reuses DeliveryMetrics (throughput,
+  suite-duration already bridge-exposed via /metrics) but "QA-bounce" has NO existing
+  distinct counter in this codebase (same gap BL-256 documented); the closest reusable
+  signal is BL-098's chase/nudge/dead-letter/respawn telemetry (computeChaseTrend),
+  composed into a new buildJsonRoutes entry (bridgeServer.ts's route-add pattern) — also
+  new plumbing. Verify the live bridge/holistic data paths before naming files when built.
+
+  DELIVERY: SLICED — each view is an independently buildable/droppable slice. THIS pass
+  builds slices 1 & 2 on pwa/app.js; the live acceptance feature file is scoped to those
+  (BL-233), and slices 3 & 4 are parked in the coder-authored
+  BL-257-pwa-enrichment.slice-3-4-live.feature.draft (re-scoped to the holistic surface),
+  promoted into a live feature only when built. Buildable now. Priority normal.
 
 acceptance: specs/features/BL-257-pwa-enrichment.feature
 
