@@ -1,0 +1,94 @@
+id: BL-294
+title: "Front Desk Bot: auto-open a SUP-### for DM + new-topic inbound (the built bot DROPS both today) — delta on BL-292's poller"
+milestone: M8
+status: todo
+priority: 10
+direction: aligned
+assigned_to: coder
+depends_on: []
+source: ".swarmforge/operator/INTAKE-telegram-headless-poller-gap.md — human command via operator -> coordinator 2026-07-11: nothing consumes Telegram inbound autonomously (getUpdates showed 2 unconsumed msgs). Specifier confirmed BL-292 covers LAUNCH; this is the carved DELTA in the bot's inbound handling."
+
+description: |
+  COVERAGE ANALYSIS (coordinator asked: does BL-292 cover the poller gap, or is there a
+  delta?). Answer: BL-292 covers LAUNCH + SUPERVISE of the headless bot poller, but the
+  BUILT bot DROPS the two inbound cases the gap actually needs, so autonomous
+  consumption still does not happen. This ticket is that delta.
+
+  What BL-292 covers: running telegram-front-desk-bot.js (a getUpdates long-poller,
+  human-gated via isFromPrincipal, POSTing to /telegram-inbound) headless + supervised.
+  Necessary but NOT sufficient.
+
+  The DELTA (verified 2026-07-11 in telegramFrontDeskBotCore.ts decideUpdateAction):
+    1. PRIVATE DM is dropped. topicIdOf(update) = message_thread_id = undefined for a DM;
+       subjectForTopic(undefined) = undefined; decideUpdateAction returns
+       drop:'unmapped-topic'. The human is in a PRIVATE DM TODAY (chat.type=private,
+       has_topics_enabled=false), so BL-292's running poller would drop EVERY message.
+    2. NEW/UNMAPPED topic is dropped, no subject creation. The code comment is explicit:
+       "Topic/subject CREATION is OUT OF SCOPE for this slice ... an update on an
+       unmapped topic is dropped ... never auto-opened." So no SUP-### ever STARTS from
+       inbound - a new conversation can't begin over Telegram.
+
+  What "fixed" looks like (extend the bot's inbound handling):
+    - A no-topic (private DM) principal message maps to a SINGLE DEFAULT subject (open on
+      first message, reuse thereafter) and is consumed - not dropped.
+    - A principal message on a topic with no subject mapped yet OPENS/adopts a SUP-### for
+      that topic, RECORDS the topicId -> SUP-### mapping in the bot's persisted map, and
+      is consumed - not dropped. (In a DM this degenerates to the single default subject;
+      in a Topics supergroup it is per-topic.)
+    - Subsequent messages in the same context (the DM, or the same topic) reuse the SAME
+      subject - no second subject opened.
+    - Human-only gating is UNCHANGED: a non-principal message is still dropped and opens
+      no subject.
+
+  Reuse (verified 2026-07-11):
+    - telegramFrontDeskBotCore.ts decideUpdateAction / subjectForTopic / topicIdOf +
+      the bot's persisted {topicId: subjectId} map - extend the drop:'unmapped-topic'
+      branch into an OPEN-OR-ADOPT branch.
+    - SUP-### id assignment STAYS with the support store: support_thread.bb `open`
+      (BL-275) + support_lib.bb next-thread-id own id assignment - do NOT duplicate an
+      id sequence in the bot. The bot POSTs the inbound with its CONTEXT (topic id, or a
+      DM marker); the ingest/runtime side opens the SUP-### via the store and the mapping
+      is recorded (exact ownership of the open-and-record step is the build's call, but
+      id assignment stays in the store, and the recorded mapping is the bot's persisted
+      map so its reply relay - topicForSubject - keeps working).
+    - /telegram-inbound (BL-281 async ingest) + operator_runtime event pickup + the
+      disposable Operator reply + [SUP-###] email-of-record all already work once a
+      subject exists - unchanged.
+
+  Constraints / testability:
+    - The extended decision (given an update + principal id + the current mapping ->
+      {open-default | open-for-topic | post-existing | drop}) is a PURE function over
+      provided inputs, unit-tested with fixture updates + a fixture map (mirror the
+      existing decideUpdateAction tests) - no live Telegram/network. The open-and-record
+      + POST go through fake adapters. NO real timers; never seed a fixture timestamp
+      from the real clock while the code reads its own clock (de0991e).
+    - Idempotent/no-double-open: a second message in an already-mapped context opens no
+      second subject (a test asserts exactly one open per context).
+    - Human-only gating preserved: a non-principal update opens no subject and is dropped
+      (regression guard on the existing posture).
+    - Bot token/chat/principal id stay in env (existing posture); the persisted mapping
+      stays machine-local (gitignored), never committed.
+
+  Relationship: BL-292 (launch/supervise the poller) + this (make the poller actually
+  CONSUME DM + new inbound) are BOTH needed for end-to-end autonomy; they touch different
+  code (launcher scripts vs the bot core), so no hard dependency - can build in parallel.
+  The DM case here unblocks the human's CURRENT setup immediately (no supergroup needed);
+  the per-topic case activates after the one-time ops step below.
+
+  One-time OPS step (human, NOT build - surface alongside): the per-SUBJECT topic flow
+  needs a Telegram supergroup with Topics enabled + @swarmforge_concierge_bot as admin
+  (manage-topics). Until then the human is in a private DM and gets the single default
+  subject (which this ticket makes work). Note it to the human; do not automate group
+  creation.
+
+  QA e2e procedure (fixture updates + fake adapters; no live Telegram):
+    - Feed a principal DM update (no message_thread_id); assert it is consumed under a
+      single default subject (opened once), not dropped; feed a second DM update and
+      assert the SAME subject (no second open).
+    - Feed a principal update on an unmapped topic; assert a subject is opened for that
+      topic, the mapping recorded, and it is consumed; feed another on that topic and
+      assert the same subject.
+    - Feed a non-principal update; assert it is dropped and opens no subject.
+
+acceptance: specs/features/BL-294-front-desk-bot-auto-open-subject.feature
+mutation_cost: medium
