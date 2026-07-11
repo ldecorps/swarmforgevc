@@ -21,7 +21,6 @@ const { computeSuiteDurationTrend } = require(
 
 const CLI_PATH = path.join(__dirname, '..', '..', '..', 'extension', 'out', 'tools', 'suite-duration-line.js');
 const BACKLOG_DASHBOARD_SRC = path.join(__dirname, '..', '..', '..', 'extension', 'src', 'metrics', 'backlogDashboard.ts');
-const APP_JS_PATH = path.join(__dirname, '..', '..', '..', 'pwa', 'app.js');
 
 function git(cwd, args) {
   execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -204,15 +203,25 @@ function registerSteps(registry) {
   // ── backlog-json-untouched-04 ────────────────────────────────────────
   registry.define(/^the backlog dashboard projection backlog\.json is generated$/, (ctx) => {
     ctx.backlogDashboardSrc = fs.readFileSync(BACKLOG_DASHBOARD_SRC, 'utf8');
-    ctx.appJsSrc = fs.readFileSync(APP_JS_PATH, 'utf8');
   });
 
-  registry.define(/^backlog\.json still excludes the machine-local suite-duration records$/, (ctx) => {
-    if (/suiteDuration/i.test(ctx.backlogDashboardSrc)) {
-      throw new Error('expected backlogDashboard.ts to carry no suite-duration field - it must stay git-SHA-reproducible');
+  // BL-290 superseded this scenario's original contract ("backlog.json
+  // stays free of machine-local data" - now backlog.json/the PWA DO carry
+  // suite-duration data, via BL-290's committed sidecar). What still must
+  // hold, and is worth guarding here: backlogDashboard.ts itself must
+  // NEVER call computeSuiteDurationTrend directly - that would be a live,
+  // machine-local read reaching a git-derived projection, breaking
+  // reproducibility. It may only fold in whatever value the already-read,
+  // COMMITTED costHealth sidecar itself carries (BL-290's own feature file
+  // covers the PWA-rendering behavior this now enables).
+  registry.define(/^backlog\.json carries the suite-duration trend only through the committed sidecar, never a live machine-local read$/, (ctx) => {
+    if (/computeSuiteDurationTrend/.test(ctx.backlogDashboardSrc)) {
+      throw new Error(
+        'expected backlogDashboard.ts to never call computeSuiteDurationTrend directly - that is a live read and would break git-reproducibility; it must only fold in the value the committed costHealth sidecar already carries'
+      );
     }
-    if (/suiteDuration/i.test(ctx.appJsSrc)) {
-      throw new Error('expected pwa/app.js to stay untouched by BL-252 - no suite-duration reference belongs on the PWA surface');
+    if (!/suiteDurationTrend/.test(ctx.backlogDashboardSrc)) {
+      throw new Error('expected backlogDashboard.ts to fold suiteDurationTrend in from the committed sidecar (BL-290)');
     }
   });
 }

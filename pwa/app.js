@@ -685,6 +685,33 @@
     );
   }
 
+  // BL-290: mirrors renderCostHealth's own "hidden entirely when the field
+  // is absent" contract (a backlog.json that predates this ticket, or one
+  // whose sidecar never carried a suiteDurationTrend at all) - distinct
+  // from suiteDurationTrend.hasLocalData false, which is a REAL, present
+  // answer ("no local suite-duration records exist on the machine that
+  // emitted the sidecar") and gets its own no-data readout inside the
+  // (visible) section, mirroring holisticUiHtml.ts's renderSuiteDurationReadout.
+  function renderSuiteDuration(suiteDurationTrend) {
+    var section = document.getElementById('suiteDurationSection');
+    var container = document.getElementById('suiteDuration');
+    if (!suiteDurationTrend) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = '';
+    container.innerHTML = '';
+    if (!suiteDurationTrend.hasLocalData) {
+      container.appendChild(el('p', {}, [tr('suiteDurationNoData')]));
+      return;
+    }
+    var series = suiteDurationTrend.dailySeries;
+    var latestSeconds = Math.round(series[series.length - 1].value / 1000);
+    var label = (suiteDurationTrend.warn ? tr('suiteDurationLabelWarn') : tr('suiteDurationLabel')) +
+      latestSeconds + tr('suiteDurationLatestSuffix') + trendArrow(suiteDurationTrend.trend);
+    container.appendChild(el('p', { class: suiteDurationTrend.warn ? 'metric-value-warn' : '' }, [label]));
+  }
+
   // BL-213 cost-06b: the card is hidden entirely (not rendered empty) when
   // backlog.json carries no costHealth field - the field's own presence is
   // the signal, nothing here guesses at "no data yet" vs "not shipped yet".
@@ -778,6 +805,7 @@
     renderVelocity(data.metrics.velocity);
     renderBurndown(data.metrics.burndown, data.metrics.forecasts);
     renderCycleTime(data.metrics.cycleTime);
+    renderSuiteDuration(data.metrics.suiteDurationTrend || null);
     renderCostHealth(data.costHealth || null);
   }
 
