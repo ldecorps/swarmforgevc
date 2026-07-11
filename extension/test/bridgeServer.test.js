@@ -264,6 +264,137 @@ test('serves the burn-rate endpoint with a zero rate for an idle role that has n
   });
 });
 
+// --- BL-281: POST /telegram-inbound, the Front Desk Bot's write route ---
+
+function postTelegramInbound(port, headers, body) {
+  return fetch(`http://127.0.0.1:${port}/telegram-inbound`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+  });
+}
+
+function readThreadFixture(targetPath, id) {
+  return JSON.parse(fs.readFileSync(path.join(targetPath, '.swarmforge', 'support', 'threads', `${id}.json`), 'utf8'));
+}
+
+function readEventsFixture(targetPath) {
+  return fs
+    .readFileSync(path.join(targetPath, '.swarmforge', 'operator', 'events.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => JSON.parse(l));
+}
+
+// BL-281 telegram-topic-02
+test('rejects a completely unauthenticated request to the telegram-inbound endpoint', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    // No auth at all is refused by the global read-level gate (401),
+    // before ever reaching the route's own control-scope check below.
+    const res = await postTelegramInbound(handle.port, {}, { subjectId: 'SUP-1', channel: 'telegram', text: 'hi' });
+    assert.equal(res.status, 401);
+  });
+});
+
+test('a bearer-only request (no control step-up) is refused, even though it can read', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await postTelegramInbound(handle.port, { authorization: `Bearer ${TOKEN}` }, { subjectId: 'SUP-1', channel: 'telegram', text: 'hi' });
+    assert.equal(res.status, 403);
+  });
+});
+
+// BL-281 telegram-topic-01
+test('telegram-topic-01: an authorized inbound message is ingested - appended to the SUP-###\'s transcript and enqueued as a per-SUP-### event', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await postTelegramInbound(handle.port, controlAuthHeaders(), { subjectId: 'SUP-1', channel: 'telegram', text: 'need help with billing' });
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).success, true);
+
+    const thread = readThreadFixture(target, 'SUP-1');
+    assert.equal(thread.status, 'open');
+    assert.deepEqual(thread.messages[thread.messages.length - 1].text, 'need help with billing');
+    assert.equal(thread.messages[thread.messages.length - 1].channel, 'telegram');
+
+    const events = readEventsFixture(target);
+    assert.ok(events.some((e) => e.type === 'TELEGRAM_TOPIC_MESSAGE' && e.subject === 'SUP-1'));
+  });
+});
+
+test('telegram-topic-01: a follow-up message on an EXISTING thread appends rather than overwriting prior messages', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    await postTelegramInbound(handle.port, controlAuthHeaders(), { subjectId: 'SUP-1', channel: 'telegram', text: 'first' });
+    await postTelegramInbound(handle.port, controlAuthHeaders(), { subjectId: 'SUP-1', channel: 'telegram', text: 'second' });
+    const thread = readThreadFixture(target, 'SUP-1');
+    assert.equal(thread.messages.length, 2);
+    assert.equal(thread.messages[0].text, 'first');
+    assert.equal(thread.messages[1].text, 'second');
+  });
+});
+
+test('a differently-shaped body (missing text) is refused as a bad request, nothing written', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await postTelegramInbound(handle.port, controlAuthHeaders(), { subjectId: 'SUP-1', channel: 'telegram' });
+    assert.equal(res.status, 400);
+    assert.equal(fs.existsSync(path.join(target, '.swarmforge', 'support', 'threads', 'SUP-1.json')), false);
+  });
+});
+
+// BL-281: async ingestion, never RPC - the POST must complete (and this
+// assertion must observe it complete) before any reply could possibly
+// exist, since nothing in this test ever writes to the reply outbox at all.
+test('the inbound POST completes without waiting on any Operator reply (async, not RPC)', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await postTelegramInbound(handle.port, controlAuthHeaders(), { subjectId: 'SUP-1', channel: 'telegram', text: 'hi' });
+    assert.equal(res.status, 200);
+    // No reply outbox file was ever written - proves the response above
+    // did not (and structurally cannot) depend on one existing.
+    assert.equal(fs.existsSync(path.join(target, '.swarmforge', 'operator', 'telegram-reply-outbox.jsonl')), false);
+  });
+});
+
+// --- BL-281 telegram-topic-03: the Operator's reply relays out over SSE ---
+
+test('a reply appended to the outbox is relayed on the SSE stream as a named telegram-reply event', async () => {
+  const target = mkTmp();
+  await withBridge(target, { pollIntervalMs: 20 }, async (handle) => {
+    const controller = new AbortController();
+    const res = await fetch(`http://127.0.0.1:${handle.port}/events`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+      signal: controller.signal,
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    await reader.read(); // initial state snapshot
+
+    const outboxDir = path.join(target, '.swarmforge', 'operator');
+    fs.mkdirSync(outboxDir, { recursive: true });
+    fs.writeFileSync(path.join(outboxDir, 'telegram-reply-outbox.jsonl'), JSON.stringify({ threadId: 'SUP-1', text: 'check the CI logs' }) + '\n');
+
+    // A concurrent BridgeState snapshot tick can be coalesced into the SAME
+    // chunk (or arrive as its own earlier chunk) - accumulate across reads
+    // until the telegram-reply event shows up anywhere in the stream so
+    // far, rather than assuming chunk boundaries align with write() calls.
+    let buffer = '';
+    let attempts = 0;
+    while (!buffer.includes('event: telegram-reply') && attempts < 5) {
+      buffer += decoder.decode((await reader.read()).value);
+      attempts += 1;
+    }
+    assert.match(buffer, /event: telegram-reply\ndata: \{[^}]*\}\n\n/);
+    assert.match(buffer, /"threadId":"SUP-1"/);
+    assert.match(buffer, /"text":"check the CI logs"/);
+
+    controller.abort();
+  });
+});
+
 // BL-265 slice 1: GET /gates lists the currently-pending to-human gates -
 // same token-gated, computed-only-on-request posture as /stage-dwell above.
 

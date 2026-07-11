@@ -1486,6 +1486,8 @@ message store  ──►  bridge  ──►  chat adapter  ──►  Signal/Tel
 
 The adapter is one bridge option among the remote tier (Tier 2) — entirely optional, and the same security/threat-model gap applies (what a chat reply is authorized to trigger, how the bot authenticates the human).
 
+**Operator-hosted per-subject forum topics (BL-281).** Beyond the per-run narration thread above, the **Operator** — a role that runs outside the swarm's build pipeline as the human-facing front desk, on its own tmux session/socket — can host each discussion subject as its own Telegram **forum topic**, mapped one-to-one to a `SUP-###` thread (reusing BL-275's thread store), so parallel discussions never bleed context: a disposable Operator wake for one `SUP-###` reloads only that subject's transcript, never another topic's. `telegramClient.ts` gained `createForumTopic` (creates the topic, returns its `message_thread_id`) and `sendTelegramMessage`/inbound `TelegramMessage` now carry an optional `message_thread_id` to route a reply into (or demux an inbound message from) a specific topic — additive, so every pre-BL-281 call site keeps its exact prior behavior. Inbound messages are demuxed by their topic id to the right `SUP-###` transcript, and only the one authorized principal's messages are ever considered (the same posture as the narration adapter above). **One-time human setup (not automated):** create a Telegram **supergroup with Topics enabled** and add the bot as an admin with the "Manage Topics" permission — `createForumTopic` requires this; a regular chat or a group without Topics enabled cannot host per-subject threads.
+
 ---
 
 ## Gaps & Things Still Missing

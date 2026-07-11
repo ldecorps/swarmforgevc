@@ -1,5 +1,5 @@
 id: BL-281
-title: "Operator-hosted Telegram per-subject threads MVP: SUP-### <-> forum topics + per-topic demux + reply-in-topic"
+title: "Telegram front-desk Talk MVP over the bridge: Front Desk Bot (bridge client) + inbound-message route + SSE reply egress + SUP-### <-> topic"
 milestone: M8
 status: todo
 priority: 15
@@ -7,77 +7,110 @@ direction: non-aligned
 assigned_to: coder
 depends_on: [BL-275]
 parent_epic: BL-274
-source: "BL-274 refocus (.swarmforge/operator/INTAKE-telegram-threads-refocus-bl274.md), MVP slice. Human command via operator -> coordinator 2026-07-11."
+source: "BL-274 front-desk framing (.swarmforge/operator/INTAKE-telegram-front-desk-bl274.md), Talk MVP slice. Human decision 2026-07-11: a REST bridge sits in between — Telegram is a thin Front Desk Bot that is a CLIENT of the existing bridge (BL-065), not coupled directly to the Operator runtime. Reshaped by specifier 2026-07-11."
 
 description: |
-  MVP of the refocused BL-274: the OPERATOR hosts each discussion subject as its own
-  Telegram FORUM TOPIC, mapped to a SUP-### thread, so parallel discussions never
-  bleed context. Builds on BL-275's merged SUP-### thread store; the standalone
-  Support runtime folds into the Operator here.
+  Talk MVP of the refocused BL-274, over the BRIDGE. Telegram becomes a thin FRONT
+  DESK BOT that is a CLIENT of the existing bridge (BL-065). Each discussion subject
+  is a Telegram FORUM TOPIC the bot maps to a SUP-### thread; parallel discussions
+  never bleed context. Builds on BL-275's merged SUP-### store.
+
+  ARCHITECTURE — REST bridge in between (human decision 2026-07-11). The path is:
+    Telegram <-> Front Desk Bot (thin adapter, bridge client) <-> [authed POST inbound
+    + SSE outbound] <-> bridgeServer <-> [per-SUP-### event enqueue] <-> Operator runtime
+    <-> disposable Operator LLM.
+  This is ASYNC ingestion + SSE egress, NOT a synchronous RPC: the bot POSTs an inbound
+  message and returns; the Operator's reply arrives LATER over the SSE stream, and the
+  bot posts it into the topic. The runtime NEVER calls Telegram and the bot NEVER calls
+  the runtime directly — every hop is mediated by the bridge. The bridge and runtime
+  speak SUP-### only; Telegram specifics (message_thread_id, forum topics, the
+  principal filter) stay entirely inside the bot.
 
   Solves the human's core pain: each Operator wake handles exactly ONE subject with
-  only that subject's transcript reloaded — no cross-subject bleed.
+  only that subject's transcript reloaded — no cross-subject bleed — and Telegram is
+  decoupled from the runtime behind the bridge.
 
   Live layer verified 2026-07-11 (reuse; net-new is scoped):
-    - extension/src/notify/telegramClient.ts today has sendTelegramMessage +
-      getTelegramUpdates only (BL-239) — NO forum-topic support. NET-NEW: add
-      message_thread_id to send + createForumTopic (or adopt) to the client, as thin,
-      testable wrappers (keep the BL-239 TelegramPostFn seam so tests inject a fake
-      post, never a real Telegram call).
-    - Inbound restriction: reuse BL-239/240's human-only posture — accept updates
-      only from the principal's Telegram user id; ignore everyone else.
-    - Thread store: reuse BL-275's SUP-### store (support_lib.bb / support_thread.bb);
-      the per-thread TRANSCRIPT is the reloaded context. A topic <-> SUP-### mapping
-      (message_thread_id <-> SUP-### id) is the net-new persisted association.
-    - Runtime: extend operator_runtime.bb (fold the support runtime in — specifier's
-      module boundary: keep the pure SUP-### store lib, host the poll/demux/wake in the
-      operator runtime). Long-poll getUpdates, demux each inbound by message_thread_id
-      -> SUP-###, append to that transcript, enqueue a per-topic event.
-    - Disposable Operator LLM (per event): loads ONLY that SUP-###'s transcript,
-      replies into the same topic via sendMessage(message_thread_id=...). The
-      thread-hosting guidance lands in the Operator prompt WITH this slice (specifier-
-      owned prompt change, sequenced with the slice — supersedes the standalone
-      support.prompt for this behavior).
+    - Bridge (extension/src/bridge/bridgeServer.ts): already serves an authed POST route
+      (POST /gate-answer, BL-240 — guarded by bridgeAuth, JSON body) and an SSE
+      egress stream (text/event-stream), plus the buildJsonRoutes {matches, compute}
+      table. NET-NEW: a POST inbound-message route mirroring the /gate-answer pattern
+      (same bridgeAuth guard) that ingests {SUP-### subject ref, message} — appends to
+      that SUP-###'s transcript (BL-275 store) and enqueues a per-SUP-### Operator event;
+      and an SSE reply channel (reuse/extend the existing stream) carrying outbound
+      Operator replies tagged by SUP-###.
+    - Bridge auth: reuse bridgeAuth.ts / bridgeToken.ts on the new inbound route exactly
+      as /gate-answer does — an unauthorized POST is rejected.
+    - Front Desk Bot (NET-NEW thin adapter, a bridge client): owns Telegram entirely —
+      getUpdates/sendMessage generalized to forum topics (message_thread_id on send,
+      createForumTopic/adopt), the topic <-> SUP-### mapping, and the human-only inbound
+      filter (reuse BL-239/240's principal-only posture). It maps an inbound topic
+      message to its SUP-### and POSTs to the bridge inbound route (authed); it
+      subscribes to the bridge SSE stream and posts each outbound reply into the mapped
+      topic. Reuses telegramClient.ts (today sendTelegramMessage + getTelegramUpdates
+      only, BL-239 — NO forum-topic support) via its TelegramPostFn seam so tests inject
+      a fake post, never a real Telegram call.
+    - Thread store: reuse BL-275's SUP-### store (support_lib.bb / support_thread.bb) for
+      the per-thread TRANSCRIPT — the reloaded context. The topic <-> SUP-### mapping is
+      the bot's net-new persisted association (machine-local).
+    - Runtime (extension of operator_runtime.bb; fold the support runtime in): CONSUMES
+      the bridge-ingested per-SUP-### events, wakes the disposable Operator, and ROUTES
+      the reply to the bridge SSE egress. No poll of Telegram, no direct Telegram call.
+    - Disposable Operator LLM (per event): loads ONLY that SUP-###'s transcript and
+      writes a reply; the runtime relays it out over SSE -> bot -> same topic. The
+      front-desk (Talk) guidance lands in the Operator prompt WITH this slice
+      (specifier-owned prompt change, sequenced with the slice — supersedes the
+      standalone support.prompt for this behavior).
 
   Wanted behavior (see the feature file):
-    - Opening a subject creates/adopts a Telegram forum topic mapped one-to-one to a
-      new SUP-###.
-    - An inbound topic message is demuxed by its topic to the right SUP-### transcript
-      and enqueues a per-topic event for it.
-    - The disposable Operator, woken for a SUP-###, loads only that thread's transcript
-      and replies into the same topic.
-    - Two subjects on separate topics stay fully independent — a wake for one never
-      sees the other's transcript.
-    - Inbound from anyone other than the principal is ignored (no thread event).
+    - An inbound topic message the bot maps to a SUP-### and POSTs is ingested by the
+      bridge and enqueued as a per-SUP-### event.
+    - The bridge inbound-message route requires authorization; an unauthorized request
+      is rejected.
+    - The disposable Operator, woken for a SUP-###, loads only that thread's transcript;
+      its reply flows out over the bridge SSE stream and the bot posts it into the same
+      topic.
+    - Two subjects on separate topics stay fully independent — a wake for one never sees
+      the other's transcript.
+    - Inbound from anyone other than the principal is dropped at the bot (never POSTed).
 
-  Scope boundary (per the refocus): email echo / system-of-record, RC unification, a
-  separate Support role, and multi-user are DEFERRED. This slice is transcript-reload
-  only — long-term-memory distillation is BL-282, coordinator handoff is BL-283,
-  lifecycle/close is BL-276.
+  Scope boundary (per the front-desk framing): email echo / system-of-record, RC
+  unification, a separate Support role, and multi-user are DEFERRED. This slice is Talk
+  with transcript-reload only — long-term-memory distillation is BL-282, Notify is
+  BL-284, Decide+Status is BL-285, coordinator handoff is BL-283, lifecycle/close is
+  BL-276.
 
   Constraints / testability:
-    - The demux (message_thread_id -> SUP-###), transcript append, and the principal
-      filter are PURE functions over provided inputs (fixture updates), testable with
-      no live Telegram — inject the TelegramPostFn/getUpdates seam. NO real network,
-      NO real timers, NO waiting on the wall clock; the poll/wake decision is adapter-
-      injected with an injected clock (mirror operator_runtime.bb / BL-275's
-      handle-message). Never seed a fixture timestamp from the real clock while the
-      code reads its own clock (de0991e).
+    - The bot's demux (message_thread_id -> SUP-###) and principal filter are PURE
+      functions over provided inputs (fixture updates), testable with no live Telegram —
+      inject the TelegramPostFn/getUpdates seam. The bridge inbound route + auth are
+      host-side and testable the way bridgeServer's existing routes are (POST with and
+      without a valid token). NO real network, NO real timers, NO waiting on the wall
+      clock; the poll/wake/enqueue decisions are adapter-injected with an injected clock
+      (mirror operator_runtime.bb / BL-275's handle-message). Never seed a fixture
+      timestamp from the real clock while the code reads its own clock (de0991e).
+    - Async, not RPC: the bridge inbound route MUST NOT block on the Operator reply — it
+      ingests + enqueues and returns; the reply is delivered separately over SSE. A test
+      must prove the POST completes before any reply exists.
     - Any CLI keeps main()/dispatch a THIN wrapper over exported pure helpers, with a
       subprocess test in ADDITION (engineering "CLI main() must be a thin wrapper").
-    - Bot token stays in the extension-host env (existing posture), never committed;
-      thread/topic mapping + transcripts are machine-local (gitignored), never committed.
+    - Bot token + bridge token stay in the extension-host env (existing posture), never
+      committed; the topic <-> SUP-### mapping + transcripts are machine-local
+      (gitignored), never committed.
     - One-time HUMAN setup (out of scope to build): a supergroup with Topics enabled +
       the bot as admin with manage-topics. Note it in docs; do not automate group
       creation.
 
-  QA e2e procedure (fake Telegram post/getUpdates injected; no real network):
-    - Open a subject; assert a topic is created and mapped to a fresh SUP-###.
-    - Feed an inbound update on that topic; assert it appends to that SUP-###'s
-      transcript and enqueues a per-topic event; feed one from a non-principal user id
-      and assert it is ignored.
-    - Wake the Operator for a SUP-### with prior transcript; assert it replies into the
-      same topic and that a second topic's transcript is not loaded (independence).
+  QA e2e procedure (fake Telegram post/getUpdates + fake bridge auth; no real network):
+    - POST an inbound message (with a valid token) to the bridge inbound route for a
+      SUP-###; assert it appends to that SUP-###'s transcript and enqueues a per-SUP-###
+      event, and that the POST returns before any reply exists (async, not RPC). Repeat
+      without a valid token; assert the route rejects it.
+    - Feed the bot an inbound update from a non-principal user id; assert the bot never
+      POSTs it to the bridge.
+    - Wake the Operator for a SUP-### with prior transcript; assert its reply is emitted
+      on the SSE stream tagged for that SUP-### and the bot posts it into the mapped
+      topic, and that a second subject's transcript is never loaded (independence).
 
 acceptance: specs/features/BL-281-operator-telegram-topic-threads.feature
 mutation_cost: medium
