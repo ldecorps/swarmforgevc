@@ -85,6 +85,7 @@ const DOMAINS = [
   require('./burndownLineChartSteps'),
   require('./recertInboundWebhookSteps'),
   require('./operatorDecideStatusSteps'),
+  require('./suiteDurationPwaSidecarSteps'),
 ];
 
 function registerSteps(registry) {

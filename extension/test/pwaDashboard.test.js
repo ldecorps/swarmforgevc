@@ -54,7 +54,13 @@ function renderDashboard(dashboardData) {
   const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://example.github.io/dashboard/', pretendToBeVisual: true });
   const { window } = dom;
 
+  // BL-290 suite-duration-pwa-05: tracks every fetch URL so a test can
+  // assert the two-surface rule holds (backlog.json only, never a live
+  // host endpoint) - additive, does not change any existing test's
+  // behavior (an "unexpected fetch" still rejects exactly as before).
+  dom.fetchCalls = [];
   window.fetch = (url) => {
+    dom.fetchCalls.push(url);
     if (url === './backlog.json') {
       return Promise.resolve({ json: () => Promise.resolve(dashboardData) });
     }
@@ -525,4 +531,81 @@ test('the cost & health card is hidden entirely when backlog.json carries no cos
   await flush();
   const section = dom.window.document.getElementById('costHealthSection');
   assert.equal(section.style.display, 'none');
+});
+
+// ── BL-290: suite-test duration on the static PWA ────────────────────────
+
+function fakeSuiteDurationTrend(overrides = {}) {
+  return {
+    hasLocalData: true,
+    dailySeries: [
+      { periodStart: '2026-07-08T00:00:00Z', value: 30000 },
+      { periodStart: '2026-07-09T00:00:00Z', value: 45000 },
+    ],
+    trend: { direction: 'up', delta: 15000, currentValue: 45000, priorValue: 30000, series: [] },
+    warn: false,
+    ...overrides,
+  };
+}
+
+// fakeDashboard's own overrides param replaces top-level keys wholesale
+// (a shallow spread), so a suiteDurationTrend fixture must be merged into
+// a FULL metrics object, not passed as a made-up nested override key.
+function fakeDashboardWithSuiteDuration(suiteDurationTrend) {
+  const data = fakeDashboard();
+  data.metrics.suiteDurationTrend = suiteDurationTrend;
+  return data;
+}
+
+// BL-290 suite-duration-pwa-03
+test('suite-duration-pwa-03: the static PWA shows the latest suite duration and its trend', async () => {
+  const dom = renderDashboard(fakeDashboardWithSuiteDuration(fakeSuiteDurationTrend()));
+  await flush();
+  const section = dom.window.document.getElementById('suiteDurationSection');
+  assert.notEqual(section.style.display, 'none');
+  const text = dom.window.document.getElementById('suiteDuration').textContent;
+  assert.match(text, /Suite duration: 45s latest ▲/);
+});
+
+// BL-290 suite-duration-pwa-04
+test('suite-duration-pwa-04: a regressing suite duration is marked WARN on the PWA', async () => {
+  const dom = renderDashboard(fakeDashboardWithSuiteDuration(fakeSuiteDurationTrend({ warn: true })));
+  await flush();
+  const text = dom.window.document.getElementById('suiteDuration').textContent;
+  assert.match(text, /Suite duration \(WARN\): 45s latest/);
+  const p = dom.window.document.querySelector('#suiteDuration p');
+  assert.equal(p.className, 'metric-value-warn');
+});
+
+// BL-290 suite-duration-pwa-05
+test('suite-duration-pwa-05: with local data absent (hasLocalData false) the PWA shows a no-data readout, still visible', async () => {
+  const dom = renderDashboard(fakeDashboardWithSuiteDuration(fakeSuiteDurationTrend({ hasLocalData: false })));
+  await flush();
+  const section = dom.window.document.getElementById('suiteDurationSection');
+  assert.notEqual(section.style.display, 'none');
+  const text = dom.window.document.getElementById('suiteDuration').textContent;
+  assert.match(text, /no local data/);
+});
+
+test('suite-duration-pwa-05: with the field entirely absent from backlog.json, the section is hidden and no live fetch is ever made', async () => {
+  const dom = renderDashboard(fakeDashboard());
+  await flush();
+  const section = dom.window.document.getElementById('suiteDurationSection');
+  assert.equal(section.style.display, 'none');
+  // The two-surface rule: the PWA only ever fetches its own three static,
+  // committed JSON files (backlog.json/docs-tree.json/recert-batch.json,
+  // pre-existing, unrelated to this ticket) - suite duration introduces NO
+  // new fetch of its own (a live host endpoint) to reach the readout.
+  const STATIC_COMMITTED_URLS = ['./backlog.json', './docs-tree.json', './recert-batch.json'];
+  for (const url of dom.fetchCalls) {
+    assert.ok(STATIC_COMMITTED_URLS.includes(url), `expected only static committed fetches, got a live fetch to: ${url}`);
+  }
+});
+
+test('BL-290: the suite-duration labels are localized (fr)', async () => {
+  const dom = renderDashboard(fakeDashboardWithSuiteDuration(fakeSuiteDurationTrend()));
+  await flush();
+  dom.window.document.getElementById('localeToggle').click();
+  const text = dom.window.document.getElementById('suiteDuration').textContent;
+  assert.match(text, /Durée de la suite : 45s \(dernière mesure\)/);
 });
