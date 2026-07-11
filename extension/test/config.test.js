@@ -10,6 +10,8 @@ const {
   initializeTargetRepo,
   buildContractBootstrapFiles,
   initializeTargetContract,
+  buildGeneratedPromptBootstrapFiles,
+  initializeTargetPrompts,
 } = require('../out/config/targetBootstrap');
 const { resolveTargetPath } = require('../out/config/targetPath');
 
@@ -23,6 +25,11 @@ const FIXTURE_CONTRACT = {
   boundaries: ['Respect the README.'],
   initialBacklogSummary: '3 tickets queued.',
   agreement: 'proposed',
+};
+
+const FIXTURE_PROMPTS = {
+  projectPrompt: '# Project\nA visual front-end for SwarmForge\n',
+  engineeringPrompt: '# Tech Stack\nTypeScript, Clojure\n',
 };
 
 test('resolveTargetPath prefers configured workspace target', () => {
@@ -226,4 +233,67 @@ test('initializeTargetContract and initializeTargetRepo compose without interfer
   assert.deepEqual(contractResult.created.sort(), ['CONTRACT.md', path.join('.swarmforge', 'contract.yaml')].sort());
   assert.ok(fs.existsSync(path.join(tmp, 'project.prompt')));
   assert.ok(fs.existsSync(path.join(tmp, 'CONTRACT.md')));
+});
+
+// ── BL-269: generated target prompts, gated on the contract's agreement ─────
+
+test('buildGeneratedPromptBootstrapFiles returns project.prompt and engineering.prompt', () => {
+  const files = buildGeneratedPromptBootstrapFiles(FIXTURE_PROMPTS);
+
+  assert.deepEqual(files.map((file) => file.path), ['project.prompt', 'engineering.prompt']);
+  assert.equal(files[0].content, FIXTURE_PROMPTS.projectPrompt);
+  assert.equal(files[1].content, FIXTURE_PROMPTS.engineeringPrompt);
+});
+
+// BL-269 onboarding-generated-prompts-03 (proposed/pending rows)
+test('initializeTargetPrompts withholds the prompts from the target repo when the gate holds (proposed)', async () => {
+  const tmp = mkTmpDir();
+
+  const result = await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'hold', reason: 'proposed: not yet agreed' });
+
+  assert.equal(result.withheld, true);
+  assert.equal(result.committed, false);
+  assert.deepEqual(result.created, []);
+  assert.equal(fs.existsSync(path.join(tmp, 'project.prompt')), false);
+  assert.equal(fs.existsSync(path.join(tmp, 'engineering.prompt')), false);
+});
+
+test('initializeTargetPrompts withholds the prompts from the target repo when the gate holds (pending)', async () => {
+  const tmp = mkTmpDir();
+
+  const result = await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'hold', reason: 'pending: not yet agreed' });
+
+  assert.equal(result.withheld, true);
+  assert.equal(fs.existsSync(path.join(tmp, 'project.prompt')), false);
+});
+
+// BL-269 onboarding-generated-prompts-03 (agreed row)
+test('initializeTargetPrompts releases the prompts for commit to the target repo when the gate allows (agreed)', async () => {
+  const tmp = mkTmpDir();
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+
+  const result = await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'allow' });
+
+  assert.equal(result.withheld, false);
+  assert.equal(result.committed, true);
+  assert.deepEqual(result.created.sort(), ['engineering.prompt', 'project.prompt']);
+  assert.equal(fs.readFileSync(path.join(tmp, 'project.prompt'), 'utf8'), FIXTURE_PROMPTS.projectPrompt);
+  const log = execSync('git log --oneline', { cwd: tmp }).toString();
+  assert.match(log, /Commit onboarding-generated target prompts/);
+});
+
+test('initializeTargetPrompts is idempotent: re-running after release does not re-write existing content', async () => {
+  const tmp = mkTmpDir();
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+
+  await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'allow' });
+  const secondResult = await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'allow' });
+
+  assert.deepEqual(secondResult.created, []);
+  assert.deepEqual(secondResult.skipped.sort(), ['engineering.prompt', 'project.prompt']);
+  assert.equal(secondResult.committed, false);
 });
