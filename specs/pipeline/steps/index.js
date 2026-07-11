@@ -106,6 +106,7 @@ const DOMAINS = [
   require('./conciergeNeedsApprovalSteps'),
   require('./frontDeskPollResilienceSteps'),
   require('./frontDeskSupervisorRecoverySteps'),
+  require('./operatorSystemdSupervisionSteps'),
 ];
 
 function registerSteps(registry) {
