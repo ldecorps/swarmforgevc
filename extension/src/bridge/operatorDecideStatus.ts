@@ -80,23 +80,39 @@ function findTicket(backlog: StatusProjections['backlog'], ticketId: string) {
   return [...backlog.board.active, ...backlog.board.paused, ...done].find((t) => t.id === ticketId);
 }
 
+// Each split out of composeStatusAnswer so that function's own branch
+// count stays low - one answer-builder per query kind, same anti-
+// fabrication contract (an id/kind absent from its projection answers
+// "I don't know", never a guess).
+function answerTicketQuery(projections: StatusProjections, ticketId: string): string {
+  const ticket = findTicket(projections.backlog, ticketId);
+  return ticket ? `${ticket.id} is ${ticket.status} - ${ticket.title}.` : `I don't know - ${ticketId} isn't in the projection.`;
+}
+
+function answerSwarmLivenessQuery(projections: StatusProjections): string {
+  const status = projections.operatorStatus;
+  return status
+    ? `Swarm state: ${status.state}, ${status.agents_running} agent(s) running, ${status.pending_events} pending event(s).`
+    : "I don't know - no swarm status is available.";
+}
+
+function answerPendingGatesQuery(projections: StatusProjections): string {
+  const gates = projections.pendingGates ?? [];
+  return gates.length === 0 ? 'No gates pending.' : `${gates.length} gate(s) pending: ${gates.map((g) => g.role).join(', ')}.`;
+}
+
 // Composes a status answer STRICTLY from the given projections - never a
 // guess. An id/kind absent from its projection answers "I don't know",
 // exactly like the ticket's own anti-fabrication contract, rather than
 // inventing a plausible-sounding state.
 export function composeStatusAnswer(query: StatusQuery, projections: StatusProjections): string {
   if (query.kind === 'ticket') {
-    const ticket = findTicket(projections.backlog, query.ticketId);
-    return ticket ? `${ticket.id} is ${ticket.status} - ${ticket.title}.` : `I don't know - ${query.ticketId} isn't in the projection.`;
+    return answerTicketQuery(projections, query.ticketId);
   }
   if (query.kind === 'swarm-liveness') {
-    const status = projections.operatorStatus;
-    return status
-      ? `Swarm state: ${status.state}, ${status.agents_running} agent(s) running, ${status.pending_events} pending event(s).`
-      : "I don't know - no swarm status is available.";
+    return answerSwarmLivenessQuery(projections);
   }
-  const gates = projections.pendingGates ?? [];
-  return gates.length === 0 ? 'No gates pending.' : `${gates.length} gate(s) pending: ${gates.map((g) => g.role).join(', ')}.`;
+  return answerPendingGatesQuery(projections);
 }
 
 export interface StatusDeps {

@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { parseArgs } = require('../out/tools/operator-decide');
+const { parseArgs, buildStatusQuery } = require('../out/tools/operator-decide');
 
 // ── parseArgs (pure) ─────────────────────────────────────────────────────
 
@@ -72,6 +72,37 @@ function initFixture() {
   );
   return root;
 }
+
+// ── buildStatusQuery (real fixture fs/git, in-process) ───────────────────
+// main()'s own per-mode projection wiring, split out during cleanup so
+// main() itself stays a flat dispatch - exercised here directly against
+// the same real fixture the subprocess tests below use, so it runs
+// in-process (counted by coverage) instead of only through the CLI.
+
+function fixtureCtx(root) {
+  return { projectRoot: root, mainWorktreePath: root, roleWorktrees: [], reply: () => {} };
+}
+
+test('buildStatusQuery for status-ticket reads the real backlog projection', () => {
+  const root = initFixture();
+  const { query, projections } = buildStatusQuery({ mode: 'status-ticket', threadId: 'SUP-1', ticketId: 'BL-999' }, fixtureCtx(root));
+  assert.deepEqual(query, { kind: 'ticket', ticketId: 'BL-999' });
+  assert.ok(projections.backlog);
+});
+
+test('buildStatusQuery for status-swarm reads the real operator status.json', () => {
+  const root = initFixture();
+  const { query, projections } = buildStatusQuery({ mode: 'status-swarm', threadId: 'SUP-1' }, fixtureCtx(root));
+  assert.deepEqual(query, { kind: 'swarm-liveness' });
+  assert.equal(projections.operatorStatus.state, 'dispatching');
+});
+
+test('buildStatusQuery for status-gates reads the live pending-gate view', () => {
+  const root = initFixture();
+  const { query, projections } = buildStatusQuery({ mode: 'status-gates', threadId: 'SUP-1' }, fixtureCtx(root));
+  assert.deepEqual(query, { kind: 'pending-gates' });
+  assert.deepEqual(projections.pendingGates, []);
+});
 
 const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'operator-decide.js');
 
