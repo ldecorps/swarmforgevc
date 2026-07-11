@@ -819,6 +819,21 @@
   (let [conf (daemon-alarm-lib/parse-conf (when (fs/exists? conf-file) (slurp (str conf-file))))]
     (briefing-generation-schedule-lib/parse-morning-time (get conf "briefing_morning_time_utc"))))
 
+;; BL-272: headless entrypoint for BL-213's deterministic cost & health
+;; sidecar emitter (extension/src/tools/emit-cost-health-sidecar.ts,
+;; compiled to out/tools/emit-cost-health-sidecar.js) - the same
+;; compute -> write -> commit path extension.ts's onBriefingDue calls
+;; in-process from a VS Code host. A non-zero exit is surfaced as a thrown
+;; exception so generate-briefing-if-due!'s own try/catch around
+;; :emit-sidecar! stays the single place that makes this best-effort;
+;; this adapter does not need its own try/catch.
+(defn emit-cost-health-sidecar! []
+  (let [cli-path (str (fs/path project-root "extension" "out" "tools" "emit-cost-health-sidecar.js"))
+        {:keys [exit out err]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+    (if (zero? exit)
+      (log! "cost-health-sidecar-emitted" (str/trim out))
+      (throw (ex-info "emit-cost-health-sidecar.js failed" {:exit exit :err err})))))
+
 (defn briefing-generation-sweep! [roles socket]
   (let [[hour minute] (configured-morning-time)]
     (briefing-generation-schedule-lib/generate-briefing-if-due!
@@ -831,6 +846,7 @@
                       socket (:session coordinator) (or (:agent coordinator) "claude")
                       :log-fn (fn [tag sess detail] (log! tag sess detail))
                       :text instruction-text))))
+      :emit-sidecar! emit-cost-health-sidecar!
       :log! (fn [& parts] (apply log! parts))})))
 
 (defn -main []
