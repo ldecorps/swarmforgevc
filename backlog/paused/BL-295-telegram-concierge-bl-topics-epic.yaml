@@ -5,7 +5,7 @@ status: todo
 type: epic
 priority: 20
 depends_on: []
-decomposes_into: [BL-296, BL-297, BL-298, BL-299]
+decomposes_into: [BL-296, BL-297, BL-298, BL-299, BL-300]
 source: ".swarmforge/operator/INTAKE-telegram-concierge-bl-topics.md — human-supplied Concierge operator prompt via operator -> coordinator 2026-07-11, refining shipped BL-274. Human decision 2026-07-11 (AskUserQuestion): ADDITIVE model. Specifier reconciled + scoped."
 
 notes: |
@@ -55,6 +55,16 @@ notes: |
       for that BL-### task. depends_on [BL-297].
     - BL-299 — SLICE 4: completion summary + mark/close the topic on TaskCompleted.
       depends_on [BL-297].
+    - BL-300 — SLICE 5 (RUNTIME WIRING, added 2026-07-11 per hardener rule proposal,
+      engineering rule): an explicit runtime-wiring slice that CALLS the pure foundation
+      modules on a real trigger so this epic is not a dark feature. Verified 2026-07-11 by
+      grep: deriveSwarmEvents (BL-296), decideTopicAction/RouteAdapters (BL-297) have ZERO
+      production callers and backlog-topic-map.json has NO writer — so BL-298's inbound
+      branch can never fire live. BL-300 wires deriveSwarmEvents -> topicRouter into the
+      live Operator-hosted loop (operator_runtime.bb tick!, the Concierge's host) and
+      persists the backlog_id->topic_id map (the store's writer). THE EPIC IS NOT COMPLETE
+      until BL-300 lands. depends_on [BL-296, BL-297, BL-298, BL-299]. Spec just-in-time
+      after BL-299, once the runtime call-site is design-confirmed with the architect.
 
   NET-NEW: the typed event vocabulary + Telegram-agnostic emission (BL-296); the
   backlog_id->topic_id map + createForumTopic/route (BL-297, generalizing
