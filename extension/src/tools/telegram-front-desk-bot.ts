@@ -29,6 +29,13 @@
  * features. Every decision/persistence lives in runConciergeTick
  * (adapter-injected, unit-tested); this loop only owns the timing.
  *
+ * BL-302: the poll loop backs off (bounded, growing, reset on success) on
+ * a failed cycle instead of hot-spinning, and escalates a visible warning
+ * on sustained failure without ever giving up (runPollCycle owns this
+ * decision). All three forever-loops now run inside runContainedLoop - a
+ * fault in one is caught, logged, and the loop restarted, without ever
+ * tearing down its siblings via a rejected Promise.all.
+ *
  * Usage: node telegram-front-desk-bot.js <bridge-url> <target-path>
  *
  * Env:
@@ -45,13 +52,15 @@ import { promisify } from 'util';
 import { getTelegramUpdates, sendTelegramMessage, createForumTopic, closeForumTopic, TelegramUpdate } from '../notify/telegramClient';
 import { nextUpdateOffset } from '../notify/telegramInboundRelay';
 import {
-  pollAndForward,
   PollAdapters,
   subjectForTopic,
   topicForSubject,
   relaySseReplies,
   parseNextSseRecord,
   DEFAULT_SUBJECT_KEY,
+  runPollCycle,
+  PollLoopState,
+  runContainedLoop,
 } from './telegramFrontDeskBotCore';
 import { backlogForTopic } from '../concierge/topicRouter';
 import { runConciergeTick, ConciergeTickAdapters, BacklogFoldersSnapshot, TickState } from '../concierge/conciergeTick';
@@ -213,15 +222,30 @@ function buildPollAdapters(botToken: string, targetPath: string, bridgeUrl: stri
   };
 }
 
-// Polls forever, one batch at a time - each cycle's decision goes through
-// pollAndForward (adapter-injected, unit-tested); this loop only owns the
-// offset threaded across cycles and never stopping.
+// BL-302: bounded, growing backoff on a failed poll cycle (reset to the
+// floor on the next successful one), reusing telegramRetry.ts's own
+// exponential-capped math via computePollBackoffMs. Escalates a VISIBLE
+// warning after DEGRADED_THRESHOLD consecutive failures but keeps
+// retrying forever at the capped cadence - a chat bot must self-recover
+// when the network returns, never go permanently offline.
+const POLL_BACKOFF_CONFIG = { backoffBaseMs: 2000, backoffMaxMs: 60_000, degradedThreshold: 5 };
+
+// Polls forever, one batch at a time - every decision (post/open/route,
+// AND now the backoff/warning decision) goes through runPollCycle
+// (adapter-injected, unit-tested); this loop only owns the timing (the
+// actual sleep call) and the stderr write for a degraded warning.
 async function pollLoop(botToken: string, principalUserId: string, targetPath: string, bridgeUrl: string, controlToken: string): Promise<void> {
   const adapters = buildPollAdapters(botToken, targetPath, bridgeUrl, controlToken);
-  let offset = 0;
+  let state: PollLoopState = { offset: 0, consecutiveFailures: 0 };
   for (;;) {
-    const result = await pollAndForward(offset, principalUserId, adapters);
-    offset = result.nextOffset;
+    const cycle = await runPollCycle(state, principalUserId, adapters, POLL_BACKOFF_CONFIG);
+    state = cycle.state;
+    if (cycle.degradedWarning) {
+      process.stderr.write(`front-desk bot: poll degraded - ${state.consecutiveFailures} consecutive failures, still retrying\n`);
+    }
+    if (cycle.delayMs > 0) {
+      await sleep(cycle.delayMs);
+    }
   }
 }
 
@@ -355,6 +379,18 @@ async function tickLoop(targetPath: string, botToken: string, chatId: string, in
   }
 }
 
+// BL-302: how long runContainedLoop waits before restarting a loop that
+// just threw - deliberately separate from POLL_BACKOFF_CONFIG (that's the
+// poll loop's OWN internal cycle-to-cycle pacing on a getUpdates failure,
+// which never throws in the first place - callTelegramApi already catches
+// network errors into {success:false}). This is the outer, whole-loop
+// containment net for a genuinely unexpected fault.
+const LOOP_RESTART_DELAY_MS = 5000;
+
+function logLoopFault(name: string, error: unknown): void {
+  process.stderr.write(`front-desk bot: ${name} loop faulted (restarting): ${error instanceof Error ? error.message : String(error)}\n`);
+}
+
 // Split out of main() so that function's own branch count stays low, same
 // technique as every other CLI's parseArgs in this directory.
 export function parseCliArgs(argv: string[]): { bridgeUrl: string; targetPath: string } | null {
@@ -376,10 +412,17 @@ export async function main(): Promise<void> {
   const bridgeToken = requiredEnv('BRIDGE_TOKEN');
   const controlToken = requiredEnv('BRIDGE_CONTROL_TOKEN');
 
+  // BL-302 LOOP ISOLATION: each of the three forever-loops runs inside its
+  // own runContainedLoop - a fault (thrown exception) in one is caught,
+  // logged, and RESTARTED after a brief delay, without ever rejecting the
+  // Promise.all itself. A bare Promise.all of the raw loop promises would
+  // let any one loop's fault reject the whole thing, and runCliMain's own
+  // reportFatalAndExit would then process.exit(1) - tearing down the other
+  // two loops even though nothing was wrong with them.
   await Promise.all([
-    pollLoop(botToken, principalUserId, targetPath, bridgeUrl, controlToken),
-    subscribeReplies(botToken, chatId, targetPath, bridgeUrl, bridgeToken),
-    tickLoop(targetPath, botToken, chatId, conciergeTickIntervalMs()),
+    runContainedLoop('poll', () => pollLoop(botToken, principalUserId, targetPath, bridgeUrl, controlToken), sleep, LOOP_RESTART_DELAY_MS, logLoopFault),
+    runContainedLoop('reply-relay', () => subscribeReplies(botToken, chatId, targetPath, bridgeUrl, bridgeToken), sleep, LOOP_RESTART_DELAY_MS, logLoopFault),
+    runContainedLoop('concierge-tick', () => tickLoop(targetPath, botToken, chatId, conciergeTickIntervalMs()), sleep, LOOP_RESTART_DELAY_MS, logLoopFault),
   ]);
 }
 

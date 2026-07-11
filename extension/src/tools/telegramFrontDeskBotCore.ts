@@ -7,6 +7,7 @@
 // getUpdates, a real fetch POST to the bridge, the real persisted topic
 // map) into pollAndForward below.
 import { TelegramUpdate, GetUpdatesResult } from '../notify/telegramClient';
+import { computeTelegramRetryBackoffMs } from '../notify/telegramRetry';
 
 export function isFromPrincipal(update: TelegramUpdate, principalUserId: string): boolean {
   const fromId = update.message?.from?.id;
@@ -126,6 +127,13 @@ export interface PollResult {
   nextOffset: number;
   posted: number;
   dropped: number;
+  // BL-302: surfaces the poll CYCLE's own success/failure (getUpdates'
+  // own result.success) - distinct from posted/dropped, which describe
+  // per-update OUTCOMES within a successful cycle. A failed cycle has
+  // posted:0/dropped:0 too, which was previously indistinguishable from a
+  // legitimately-empty successful cycle - the caller (pollLoop) needs to
+  // tell these apart to back off only on a real failure.
+  ok: boolean;
 }
 
 // Split out of pollAndForward so that function's own branch count stays
@@ -154,7 +162,7 @@ async function processUpdate(update: TelegramUpdate, principalUserId: string, ad
 export async function pollAndForward(offset: number, principalUserId: string, adapters: PollAdapters): Promise<PollResult> {
   const result = await adapters.getUpdates(offset);
   if (!result.success) {
-    return { nextOffset: offset, posted: 0, dropped: 0 };
+    return { nextOffset: offset, posted: 0, dropped: 0, ok: false };
   }
   let posted = 0;
   let dropped = 0;
@@ -165,7 +173,106 @@ export async function pollAndForward(offset: number, principalUserId: string, ad
       dropped += 1;
     }
   }
-  return { nextOffset: adapters.nextOffset(result.updates, offset), posted, dropped };
+  return { nextOffset: adapters.nextOffset(result.updates, offset), posted, dropped, ok: true };
+}
+
+// ── BL-302: poll-loop resilience (bounded backoff, escalation, isolation) ──
+
+export interface PollBackoffConfig {
+  backoffBaseMs: number;
+  backoffMaxMs: number;
+  // Consecutive FAILED cycles before raising a degraded warning. The
+  // warning fires exactly once per outage streak (consecutiveFailures
+  // strictly increases while failing and resets to 0 on success, so it
+  // equals this threshold on exactly one cycle per streak) - mirrors
+  // paneTailer's own "keeps failing... only pushes the message once"
+  // posture, not a warning-per-cycle spam once deep into an outage.
+  degradedThreshold: number;
+}
+
+// Reuses telegramRetry.ts's own exponential-capped math directly (the
+// project's established bounded-backoff convention) rather than
+// reimplementing it - that function only ever reads backoffBaseMs/
+// backoffMaxMs, so maxAttempts here is a required-but-unused field of its
+// TelegramRetryConfig shape.
+export function computePollBackoffMs(consecutiveFailures: number, config: PollBackoffConfig): number {
+  return computeTelegramRetryBackoffMs(consecutiveFailures, {
+    maxAttempts: Number.MAX_SAFE_INTEGER,
+    backoffBaseMs: config.backoffBaseMs,
+    backoffMaxMs: config.backoffMaxMs,
+  });
+}
+
+// Retry-forever-with-capped-backoff, escalate-on-sustained is a DELIBERATE
+// departure from decideTelegramRetryAction's own retry|escalate=stop
+// semantics - a chat bot must keep trying to self-recover when the
+// network returns, so "escalate" here means "raise a visible warning",
+// never "give up".
+export function shouldRaiseDegradedWarning(consecutiveFailures: number, config: PollBackoffConfig): boolean {
+  return consecutiveFailures === config.degradedThreshold;
+}
+
+export interface PollLoopState {
+  offset: number;
+  consecutiveFailures: number;
+}
+
+export interface PollCycleResult {
+  state: PollLoopState;
+  // 0 means no explicit delay is needed (a successful cycle - the healthy
+  // long-poll's own server-side wait already paces the loop, per the
+  // ticket's own root-cause analysis).
+  delayMs: number;
+  degradedWarning: boolean;
+}
+
+// Adapter-injected, ONE cycle: calls pollAndForward, then applies the pure
+// backoff/warning decisions above - deliberately never calls a sleep/wait
+// itself (unlike sendWithBoundedRetry's own injected-wait shape), so this
+// stays testable with zero clock/timer concerns at all; the actual waiting
+// happens one level up, in the live, untested pollLoop wrapper, which owns
+// only the timing.
+export async function runPollCycle(
+  state: PollLoopState,
+  principalUserId: string,
+  adapters: PollAdapters,
+  config: PollBackoffConfig
+): Promise<PollCycleResult> {
+  const result = await pollAndForward(state.offset, principalUserId, adapters);
+  if (result.ok) {
+    return { state: { offset: result.nextOffset, consecutiveFailures: 0 }, delayMs: 0, degradedWarning: false };
+  }
+  const consecutiveFailures = state.consecutiveFailures + 1;
+  return {
+    state: { offset: result.nextOffset, consecutiveFailures },
+    delayMs: computePollBackoffMs(consecutiveFailures, config),
+    degradedWarning: shouldRaiseDegradedWarning(consecutiveFailures, config),
+  };
+}
+
+// BL-302 LOOP ISOLATION: runs `start` and, if it THROWS (a fault - never
+// on a normal return, which stays exactly as-is; subscribeReplies's own
+// silent-stop-on-stream-end gap is an explicitly out-of-scope follow-up),
+// reports it via onFault, waits, and retries - forever, without ever
+// itself rejecting. Wrapping each of the bot's three forever-loops in this
+// (instead of racing their raw promises under Promise.all) means a fault
+// in one can never reject the Promise.all and take runCliMain's
+// reportFatalAndExit(process.exit(1)) path, which would otherwise kill
+// the other two loops too even though nothing is actually wrong with them.
+export async function runContainedLoop(
+  name: string,
+  start: () => Promise<void>,
+  wait: (ms: number) => Promise<void>,
+  restartDelayMs: number,
+  onFault?: (name: string, error: unknown) => void
+): Promise<void> {
+  try {
+    await start();
+  } catch (error) {
+    onFault?.(name, error);
+    await wait(restartDelayMs);
+    await runContainedLoop(name, start, wait, restartDelayMs, onFault);
+  }
 }
 
 // ── SSE reply relay (telegram-topic-03) ──────────────────────────────────
