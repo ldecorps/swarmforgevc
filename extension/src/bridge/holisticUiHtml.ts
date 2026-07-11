@@ -66,6 +66,10 @@ export function getHolisticUiHtml(): string {
       <h2>Metrics</h2>
       <div id="metricsSection"></div>
     </section>
+    <section>
+      <h2>Burn rate (tokens/hr)</h2>
+      <div id="burnRateSection"></div>
+    </section>
   </div>
 </div>
 
@@ -214,6 +218,26 @@ export function getHolisticUiHtml(): string {
     container.appendChild(renderSuiteDurationReadout(metrics.suiteDurationTrend));
   }
 
+  // BL-273: presentation-only render of the /burn-rate payload (a plain
+  // { role: tokensPerHour } map) - no rate computation happens here, matching
+  // renderMetrics' own "the fetched JSON is the whole truth" convention. An
+  // idle role's real 0 still renders its own row (burn-rate-02), never
+  // omitted like a missing/unknown value would be.
+  function renderBurnRate(burnRate) {
+    var container = document.getElementById('burnRateSection');
+    container.innerHTML = '';
+    var roles = Object.keys(burnRate || {}).sort();
+    if (roles.length === 0) {
+      container.appendChild(noDataParagraph());
+      return;
+    }
+    var table = el('table', {}, [el('tr', {}, [el('th', {}, ['role']), el('th', {}, ['tokens/hr'])])]);
+    roles.forEach(function (role) {
+      table.appendChild(el('tr', {}, [el('td', {}, [role]), el('td', {}, [String(Math.round(burnRate[role]))])]));
+    });
+    container.appendChild(table);
+  }
+
   function renderBacklogBoard(backlog, assignments, doneByMilestone) {
     var container = document.getElementById('backlogBoard');
     container.innerHTML = '';
@@ -293,12 +317,13 @@ export function getHolisticUiHtml(): string {
     });
   }
 
-  function renderAll(state, holistic, metrics) {
+  function renderAll(state, holistic, metrics, burnRate) {
     renderBacklogBoard(state.backlog, holistic.assignments, holistic.doneByMilestone);
     renderSwarmPanel(holistic.swarms);
     renderPipelineFlow(state.pipeline);
     renderRecentActivity(holistic.recentActivity, state.runLog);
     renderMetrics(metrics);
+    renderBurnRate(burnRate);
     document.getElementById('status').textContent = '(updated ' + new Date().toLocaleTimeString() + ')';
   }
 
@@ -315,19 +340,23 @@ export function getHolisticUiHtml(): string {
       }),
       fetchJson('/holistic'),
       fetchJson('/metrics'),
+      fetchJson('/burn-rate'),
     ]).then(function (results) {
-      renderAll(results[0], results[1], results[2]);
+      renderAll(results[0], results[1], results[2], results[3]);
     });
   }
 
   // /events pushes BridgeState (pipeline/agents/backlog/runlog) on change -
-  // re-render those sections live; /holistic and /metrics (git-derived,
-  // expensive) are refreshed on load only, matching each endpoint's own
-  // polling posture (BL-211: metrics is presentation-only, no need to
-  // re-fetch it on every SSE tick since it never changes via BridgeState).
-  function subscribeEvents(initialHolistic, initialMetrics) {
+  // re-render those sections live; /holistic, /metrics, and /burn-rate
+  // (git-derived or transcript-scanning, all expensive) are refreshed on
+  // load only, matching each endpoint's own polling posture (BL-211: metrics
+  // is presentation-only, no need to re-fetch it on every SSE tick since it
+  // never changes via BridgeState; BL-273's /burn-rate is "live" in the
+  // sense of recomputed fresh per page load/refresh, not per SSE tick).
+  function subscribeEvents(initialHolistic, initialMetrics, initialBurnRate) {
     var holistic = initialHolistic;
     var metrics = initialMetrics;
+    var burnRate = initialBurnRate;
     fetch('/events', { headers: authHeaders() }).then(function (res) {
       var reader = res.body.getReader();
       var decoder = new TextDecoder();
@@ -342,7 +371,7 @@ export function getHolisticUiHtml(): string {
             if (chunk.indexOf('data: ') !== 0) { return; }
             try {
               var state = JSON.parse(chunk.slice(6));
-              renderAll(state, holistic, metrics);
+              renderAll(state, holistic, metrics, burnRate);
             } catch (e) { /* ignore a malformed/partial chunk */ }
           });
           return pump();
@@ -358,9 +387,9 @@ export function getHolisticUiHtml(): string {
     document.getElementById('tokenGate').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     loadOnce().then(function () {
-      return Promise.all([fetchJson('/holistic'), fetchJson('/metrics')]);
+      return Promise.all([fetchJson('/holistic'), fetchJson('/metrics'), fetchJson('/burn-rate')]);
     }).then(function (results) {
-      subscribeEvents(results[0], results[1]);
+      subscribeEvents(results[0], results[1], results[2]);
     }).catch(function (err) {
       document.getElementById('status').textContent = '(failed to load: ' + err.message + ')';
     });

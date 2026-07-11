@@ -6,6 +6,7 @@ import { readHeartbeat, HeartbeatData } from '../tools/heartbeat';
 import { loadRuns, RunEntry } from '../runs/runLog';
 import { computeDeliveryMetrics, DeliveryMetrics } from '../metrics/deliveryMetrics';
 import { computeCostTelemetry, RoleCostTelemetry } from '../metrics/costTelemetry';
+import { computeBurnRateForRoles } from '../metrics/burnRate';
 import { readResourceSampleEvents, computeResourceTrends, RoleResourceTrend } from '../metrics/resourceTelemetry';
 import { RoleWorktree } from '../metrics/swarmMetrics';
 import { runGitLog, deriveTicketLifecycles, runMergeLog } from '../metrics/gitHistoryAdapter';
@@ -121,6 +122,16 @@ export function buildCostTelemetryState(targetPath: string, nowMs: number = Date
 // for the SSE poll loop. Computed only on a direct /stage-dwell request.
 export function buildStageDwellState(targetPath: string, nowMs?: number): StageDwellReportResult {
   return computeStageDwellReportForRoles(resolveRoleEntries(targetPath), nowMs);
+}
+
+// BL-273: same posture as buildCostTelemetryState above - transcript scans
+// are too expensive for the SSE poll loop, computed only on a direct
+// /burn-rate request. nowMs mirrors buildStageDwellState's own optional
+// injection (BL-270) so a test can pin the same instant its fixture and
+// this route both evaluate against; undefined here falls through to
+// computeBurnRateForRoles' own real-clock default in production.
+export function buildBurnRateState(targetPath: string, nowMs?: number): Record<string, number> {
+  return computeBurnRateForRoles(targetPath, resolveRoleWorktrees(targetPath), nowMs);
 }
 
 export interface SwarmPanel {
