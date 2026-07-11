@@ -239,6 +239,31 @@ test('serves the stage-dwell endpoint with per-stage dwell and a bottleneck for 
   });
 });
 
+// BL-273: GET /burn-rate reports each role's live tokens/hr - same
+// token-gated, computed-only-on-request posture as /cost-telemetry above.
+
+test('rejects an unauthorized request to the burn-rate endpoint', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/burn-rate`);
+    assert.equal(res.status, 401);
+  });
+});
+
+test('serves the burn-rate endpoint with a zero rate for an idle role that has never run (cost-07 parity)', async () => {
+  const target = mkTmp();
+  const coderWt = mkTmp();
+  writeRolesTsv(target, [{ role: 'coder', worktreePath: coderWt, displayName: 'Coder' }]);
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/burn-rate`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(body, { coder: 0 });
+  });
+});
+
 // BL-265 slice 1: GET /gates lists the currently-pending to-human gates -
 // same token-gated, computed-only-on-request posture as /stage-dwell above.
 

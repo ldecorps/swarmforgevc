@@ -73,6 +73,7 @@ const DOMAINS = [
   require('./stageDwellFixedClockSteps'),
   require('./recertListenSteps'),
   require('./costHealthSidecarHeadlessSteps'),
+  require('./burnRateSteps'),
 ];
 
 function registerSteps(registry) {
