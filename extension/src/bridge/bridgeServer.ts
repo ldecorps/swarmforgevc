@@ -50,6 +50,14 @@ export interface BridgeHandle {
 export interface StartBridgeOptions {
   port?: number;
   pollIntervalMs?: number;
+  // BL-270: injectable evaluation instant for /stage-dwell (and any future
+  // route that reads the clock), so a test can pin the SAME instant its
+  // fixture timestamps are built from - two independent real `new Date()`
+  // reads (one in the fixture, one at request time) are exactly the
+  // real-clock-fixture-vs-real-clock-code flake this exists to prevent
+  // (engineering article, Test Speed And Isolation). Undefined in
+  // production - buildStageDwellState defaults to the real clock unchanged.
+  nowMs?: number;
 }
 
 // BL-241: startBridge's auth param generalizes from BL-065's one static
@@ -251,7 +259,7 @@ interface JsonRoute {
 // /metrics and BL-100's /cost-telemetry each pushed the handler's
 // per-branch version back over the CRAP<=6 gate in turn; a future route
 // only ever adds a table entry here, never another handler branch.
-function buildJsonRoutes(targetPath: string, runLogPath: string): JsonRoute[] {
+function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number): JsonRoute[] {
   return [
     {
       matches: isStateRoute,
@@ -279,9 +287,12 @@ function buildJsonRoutes(targetPath: string, runLogPath: string): JsonRoute[] {
     {
       // BL-102: same posture as /metrics/cost-telemetry/holistic - scans
       // every role's completed-handoff audit trail, too expensive for the
-      // SSE poll loop.
+      // SSE poll loop. BL-270: nowMs defaults to undefined here too -
+      // buildStageDwellState/computeStageDwellReportForRoles fall back to
+      // the real clock unless a test injected an instant via
+      // StartBridgeOptions.nowMs, so production behavior is unchanged.
       matches: (url) => url === '/stage-dwell',
-      compute: () => buildStageDwellState(targetPath),
+      compute: () => buildStageDwellState(targetPath, nowMs),
     },
     {
       // BL-265 slice 1: lists the currently-PENDING to-human gates (a live
@@ -359,7 +370,7 @@ export function startBridge(
         return;
       }
 
-      const jsonRoute = buildJsonRoutes(targetPath, runLogPath).find((route) => route.matches(url));
+      const jsonRoute = buildJsonRoutes(targetPath, runLogPath, options.nowMs).find((route) => route.matches(url));
       if (jsonRoute) {
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify(jsonRoute.compute(url)));

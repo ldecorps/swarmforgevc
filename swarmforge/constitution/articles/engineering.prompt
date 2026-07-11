@@ -96,7 +96,10 @@
   `/stage-dwell` route evaluated them against the server's own `Date.now()`,
   flaking ~1/6 in isolation. The pure `computeStageDwellReportForRoles(roles,
   nowMs, …)` already accepts an injectable `nowMs`; the route just never
-  threaded it. Fix tracked by BL-270.)
+  threaded it. Fixed by BL-270: `StartBridgeOptions` grew an optional
+  `nowMs`, threaded through to the `/stage-dwell` route and defaulting to
+  the real clock (`undefined`) in production, so a test can now pin the
+  same instant its fixture and the route both evaluate against.)
 
 ## Acceptance Pipeline
 - Use github.com/unclebob/Acceptance-Pipeline-Specification (pinned, see above)
