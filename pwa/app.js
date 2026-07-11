@@ -1056,6 +1056,12 @@
       container.appendChild(untranslatedNotice());
     }
     container.appendChild(el('p', {}, [description || tr('noDescription')]));
+    // BL-293: reuses the BL-266/BL-271 Listen control AS-IS - ticket already
+    // carries .description + .scenarios[].text, exactly what
+    // assembleSpokenText expects (the same shape renderApprovalDetail
+    // already feeds it), so this is the control's third call site, not a
+    // second implementation.
+    renderListenControl(container, ticket);
     renderTicketTimeline(container, ticket);
     container.appendChild(el('h4', {}, [tr('documentationAcceptance')]));
     if (!ticket.scenarios || ticket.scenarios.length === 0) {
