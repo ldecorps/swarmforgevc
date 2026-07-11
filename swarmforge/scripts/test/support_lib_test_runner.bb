@@ -91,6 +91,72 @@
 (assert= "should-wake-support? does not fire while already running (never double-launch)"
          false (support-lib/should-wake-support? {:llm-running? true :pending-count 3}))
 
+;; ── resolve-thread (pure) — BL-276 thread-lifecycle-02 ───────────────────
+
+(let [thread (support-lib/new-thread "SUP-1" "telegram" "2026-07-01T09:00:00Z" "my PR is stuck")
+      resolved (support-lib/resolve-thread thread)]
+  (assert= "BL-276 thread-lifecycle-02: resolve-thread sets status to resolved"
+           "resolved" (:status resolved))
+  (assert= "BL-276 thread-lifecycle-02: resolve-thread never drops prior messages"
+           (:messages thread) (:messages resolved)))
+
+;; ── idle-nudge-decision (pure) — BL-276 thread-lifecycle-01/03/04 ────────
+
+(def ONE_DAY_MS (* 24 60 60 1000))
+
+(defn mk-thread [messages]
+  {:id "SUP-1" :status "open" :messages messages})
+
+(defn human-msg [timestamp] {:channel "telegram" :timestamp timestamp :text "hi"})
+(defn operator-msg [timestamp] {:channel "operator" :timestamp timestamp :text support-lib/idle-nudge-text})
+
+;; thread-lifecycle-01: many days silent -> still :none (never a close
+;; decision exists at all - this pure fn's only outcomes are :none/
+;; :post-nudge, structurally proving no close path exists here).
+(let [thread (mk-thread [(human-msg "2026-01-01T09:00:00Z")])
+      now-ms (+ (.toEpochMilli (java.time.Instant/parse "2026-01-01T09:00:00Z")) (* 90 ONE_DAY_MS))]
+  (assert= "BL-276 thread-lifecycle-01: even many days silent, the decision is never a close"
+           true (contains? #{:none :post-nudge} (support-lib/idle-nudge-decision thread now-ms))))
+
+;; thread-lifecycle-03: idle exactly one day -> nudge due.
+(let [last-human-ms (.toEpochMilli (java.time.Instant/parse "2026-07-10T09:00:00Z"))
+      thread (mk-thread [(human-msg "2026-07-10T09:00:00Z")])
+      now-ms (+ last-human-ms ONE_DAY_MS)]
+  (assert= "BL-276 thread-lifecycle-03: idle >= 1 day since the human's last word -> nudge due"
+           :post-nudge (support-lib/idle-nudge-decision thread now-ms)))
+
+(let [last-human-ms (.toEpochMilli (java.time.Instant/parse "2026-07-10T09:00:00Z"))
+      thread (mk-thread [(human-msg "2026-07-10T09:00:00Z")])
+      now-ms (+ last-human-ms (- ONE_DAY_MS 1))]
+  (assert= "not yet a full day idle -> no nudge"
+           :none (support-lib/idle-nudge-decision thread now-ms)))
+
+;; thread-lifecycle-04: a nudge already posted (after the human's last
+;; word) suppresses a second one until the human replies again.
+(let [last-human-ms (.toEpochMilli (java.time.Instant/parse "2026-07-10T09:00:00Z"))
+      nudge-ms (+ last-human-ms ONE_DAY_MS)
+      thread (mk-thread [(human-msg "2026-07-10T09:00:00Z") (operator-msg "2026-07-11T09:00:00Z")])
+      now-ms (+ nudge-ms ONE_DAY_MS)] ; another full day after the nudge too
+  (assert= "BL-276 thread-lifecycle-04 (part 1): a nudge already posted since the human's last word suppresses a repeat"
+           :none (support-lib/idle-nudge-decision thread now-ms)))
+
+(let [thread (mk-thread [(human-msg "2026-07-10T09:00:00Z")
+                          (operator-msg "2026-07-11T09:00:00Z")
+                          (human-msg "2026-07-11T10:00:00Z")]) ; the human replies AFTER the nudge
+      now-ms (+ (.toEpochMilli (java.time.Instant/parse "2026-07-11T10:00:00Z")) ONE_DAY_MS)]
+  (assert= "BL-276 thread-lifecycle-04 (part 2): a reply resets the idle clock - a full day after THAT reply is due again"
+           :post-nudge (support-lib/idle-nudge-decision thread now-ms)))
+
+(let [thread (mk-thread [(human-msg "2026-07-10T09:00:00Z")
+                          (operator-msg "2026-07-11T09:00:00Z")
+                          (human-msg "2026-07-11T10:00:00Z")])
+      now-ms (+ (.toEpochMilli (java.time.Instant/parse "2026-07-11T10:00:00Z")) 1000)]
+  (assert= "BL-276 thread-lifecycle-04 (part 3): immediately after the reply, no second nudge yet"
+           :none (support-lib/idle-nudge-decision thread now-ms)))
+
+(assert= "idle-nudge-decision on a thread with no human participation at all is never a nudge"
+         :none (support-lib/idle-nudge-decision (mk-thread []) (* 999 ONE_DAY_MS)))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do
