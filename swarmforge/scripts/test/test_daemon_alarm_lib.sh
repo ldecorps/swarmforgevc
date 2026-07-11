@@ -144,4 +144,35 @@ bb "$ROOT/warn_dedup_test.bb" | grep -q "warn-dedup-ok" \
   || fail "warn-04: expected the missing-key warning deduped across repeated send attempts"
 pass "BL-215 warn-04: the missing-key warning is deduped, not emitted on every send attempt"
 
+# ── BL-260 html-01: send-alarm-email!'s 7-arg form threads html to post-fn! ──
+# (post-fn! is always a fake here, same as every test above - default-post!
+# itself is real network I/O and is never called directly by these tests.)
+cat > "$ROOT/html_threaded_test.bb" <<EOF
+(load-file "$SCRIPT_DIR/../daemon_alarm_lib.bb")
+(let [captured (atom nil)
+      result (daemon-alarm-lib/send-alarm-email! "fake-key" "ops@example.com" "onboarding@resend.dev" "subj" "text"
+               "<p>diagram</p>"
+               (fn [_api-key msg] (reset! captured msg) {:success true}))]
+  (assert (true? (:success result)) "expected the send to succeed")
+  (assert (= "<p>diagram</p>" (:html @captured)) "expected the html body to reach post-fn!")
+  (assert (= "text" (:text @captured)) "expected the text body to still reach post-fn! alongside html")
+  (println "html-threaded-ok"))
+EOF
+bb "$ROOT/html_threaded_test.bb" | grep -q "html-threaded-ok" \
+  || fail "BL-260 html-01: expected the 7-arg send-alarm-email! form to thread html through to post-fn!"
+pass "BL-260 html-01: the 7-arg send-alarm-email! form threads an html body through to post-fn!"
+
+# ── BL-260 html-02: the existing 6-arg form is unaffected - no :html key at all ──
+cat > "$ROOT/html_absent_test.bb" <<EOF
+(load-file "$SCRIPT_DIR/../daemon_alarm_lib.bb")
+(let [captured (atom nil)]
+  (daemon-alarm-lib/send-alarm-email! "fake-key" "ops@example.com" "onboarding@resend.dev" "subj" "text"
+    (fn [_api-key msg] (reset! captured msg) {:success true}))
+  (assert (not (contains? @captured :html)) "expected no :html key at all when the pre-BL-260 6-arg form is used")
+  (println "html-absent-ok"))
+EOF
+bb "$ROOT/html_absent_test.bb" | grep -q "html-absent-ok" \
+  || fail "BL-260 html-02: expected the pre-BL-260 6-arg form to carry no :html key"
+pass "BL-260 html-02: the pre-existing 6-arg form is unaffected - carries no :html key"
+
 echo "ALL PASS"

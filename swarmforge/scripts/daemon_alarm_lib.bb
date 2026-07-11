@@ -51,15 +51,20 @@
 
 (defn default-post!
   "Real Resend POST, isolated behind an injectable seam so tests never touch
-   the network (mirrors extension/src/notify/resendClient.ts's PostFn)."
-  [api-key {:keys [to from subject text]}]
+   the network (mirrors extension/src/notify/resendClient.ts's PostFn).
+   BL-260: an optional :html key is included in the JSON body when present -
+   Resend sends a multipart/alternative email (html + text parts) itself
+   when both fields are given, so no MIME boundary handling is needed here."
+  [api-key {:keys [to from subject text html]}]
   (let [http (requiring-resolve 'babashka.http-client/post)
-        json-generate (requiring-resolve 'cheshire.core/generate-string)]
+        json-generate (requiring-resolve 'cheshire.core/generate-string)
+        body (cond-> {:from from :to [to] :subject subject :text text}
+               html (assoc :html html))]
     (try
       (let [res (http "https://api.resend.com/emails"
                        {:headers {"Authorization" (str "Bearer " api-key)
                                   "Content-Type" "application/json"}
-                        :body (json-generate {:from from :to [to] :subject subject :text text})
+                        :body (json-generate body)
                         :throw false})]
         {:success (<= 200 (:status res) 299) :status (:status res)})
       (catch Exception e
@@ -70,9 +75,15 @@
    states are distinguished so a caller can tell them apart - no recipient
    is an intentional, quiet no-op (like BL-073's own pattern); a recipient
    present but no API key is a real misconfiguration the caller should
-   escalate loudly via warn-missing-key-if-needed! below."
+   escalate loudly via warn-missing-key-if-needed! below.
+
+   BL-260: the 7-arg form threads an optional html body through to post-fn!
+   (nil when the caller has none, e.g. BL-144's plain-text-only death alarm)
+   - the existing 5-/6-arg forms are unchanged and still delegate with no
+   html, so every pre-BL-260 caller/test keeps its exact prior behavior."
   ([api-key to from subject text] (send-alarm-email! api-key to from subject text default-post!))
-  ([api-key to from subject text post-fn!]
+  ([api-key to from subject text post-fn!] (send-alarm-email! api-key to from subject text nil post-fn!))
+  ([api-key to from subject text html post-fn!]
    (cond
      (str/blank? to)
      {:success false :reason :disabled :error "email not configured (notify_email_to unset)"}
@@ -81,7 +92,8 @@
      {:success false :reason :missing-api-key :error "email not configured (missing RESEND_API_KEY)"}
 
      :else
-     (post-fn! api-key {:to to :from from :subject subject :text text}))))
+     (post-fn! api-key (cond-> {:to to :from from :subject subject :text text}
+                          html (assoc :html html))))))
 
 ;; BL-215: a recipient-configured-but-keyless daemon must warn loudly instead
 ;; of silently no-oping (the defect: send-alarm-email!'s old single failure
@@ -117,15 +129,20 @@
    RESEND_API_KEY from the process env, sends via send-alarm-email!, then
    runs warn-missing-key-if-needed! with warn-adapters (shape:
    {:already-warned?! :log-warning! :mark-warned!}, typically a per-process
-   atom so repeated calls across a long-lived daemon warn only once)."
-  [conf-file subject text warn-adapters]
-  (let [conf (parse-conf (when (fs/exists? conf-file) (slurp (str conf-file))))
-        to (get conf "notify_email_to")
-        from (or (get conf "notify_email_from") "onboarding@resend.dev")
-        api-key (System/getenv "RESEND_API_KEY")
-        result (send-alarm-email! api-key to from subject text)]
-    (warn-missing-key-if-needed! result warn-adapters)
-    result))
+   atom so repeated calls across a long-lived daemon warn only once).
+
+   BL-260: the 5-arg form threads an optional html body through; the
+   existing 4-arg form (BL-144's death alarm) is unchanged, delegating with
+   no html."
+  ([conf-file subject text warn-adapters] (send-configured-email! conf-file subject text nil warn-adapters))
+  ([conf-file subject text html warn-adapters]
+   (let [conf (parse-conf (when (fs/exists? conf-file) (slurp (str conf-file))))
+         to (get conf "notify_email_to")
+         from (or (get conf "notify_email_from") "onboarding@resend.dev")
+         api-key (System/getenv "RESEND_API_KEY")
+         result (send-alarm-email! api-key to from subject text html default-post!)]
+     (warn-missing-key-if-needed! result warn-adapters)
+     result)))
 
 (defn alarm-and-halt!
   "Orchestrates the whole daemon-death response through injected adapters -
