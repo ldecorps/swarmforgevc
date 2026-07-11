@@ -154,3 +154,29 @@ test('routing multiple events in one tick only marks the SUCCESSFULLY posted one
   assert.ok(state.emittedKeys.includes('TaskStarted:BL-2'));
   assert.ok(!state.emittedKeys.includes('TaskStarted:BL-1'));
 });
+
+// Regression (found during cleaner review): a failed route was never
+// marked emitted, but the persisted snapshot advanced past the transition
+// anyway, so the diff could never see it as "new" again on a later tick -
+// a transient createTopic failure silently and permanently dropped the
+// event. Fixed by holding a failed transition's id back out of the
+// persisted snapshot so the next tick's diff still treats it as pending.
+test('a route that fails to post is retried on a later tick once the transition is still pending', async () => {
+  const { adapters, setFolders, created, state } = fakeAdapters();
+  let shouldFail = true;
+  adapters.routeAdapters.createTopic = async (name) => {
+    created.push(name);
+    return shouldFail ? { success: false } : { success: true, topicId: 950 };
+  };
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'flaky open' }] }));
+
+  const first = await runConciergeTick(adapters);
+  assert.equal(first.routed, 0);
+  assert.ok(!state.emittedKeys.includes('TaskStarted:BL-1'));
+
+  shouldFail = false;
+  const second = await runConciergeTick(adapters); // folders unchanged - still active
+  assert.equal(second.routed, 1);
+  assert.deepEqual(created, ['BL-1 - flaky open', 'BL-1 - flaky open']);
+  assert.ok(state.emittedKeys.includes('TaskStarted:BL-1'));
+});

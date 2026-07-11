@@ -6,7 +6,7 @@
 // Telegram-agnostic in its own imports (it composes topicRouter.ts's
 // RouteAdapters, which is where Telegram-specific adapters actually get
 // wired, in the live wrapper - telegram-front-desk-bot.ts).
-import { EventStreamSnapshot, deriveSwarmEvents, swarmEventKey } from '../events/swarmEventStream';
+import { EventStreamSnapshot, SwarmEventType, deriveSwarmEvents, swarmEventKey } from '../events/swarmEventStream';
 import { RouteAdapters, routeEvent } from './topicRouter';
 
 export interface BacklogFolderItem {
@@ -66,13 +66,38 @@ function titleForBacklogId(folders: BacklogFoldersSnapshot, backlogId: string): 
   return all.find((item) => item.id === backlogId)?.title ?? backlogId;
 }
 
+// A failed-to-post event's backlogId is held back out of the PERSISTED
+// snapshot's active/done list (never out of `curr` itself, which still
+// reflects real backlog state) - so the next tick's prev/curr diff still
+// sees that transition as pending and re-derives + retries it, instead of
+// silently advancing past it forever. Only a SUCCESSFUL post may advance
+// the persisted baseline past a given transition - mirrors the "only marks
+// the SUCCESSFULLY posted ones as emitted" contract this module already
+// keeps for emittedKeys, applied to the snapshot half of the same state.
+function withRetryableTransitionsHeldBack(curr: EventStreamSnapshot, unrouted: ReadonlySet<string>): EventStreamSnapshot {
+  if (unrouted.size === 0) {
+    return curr;
+  }
+  const isUnrouted = (type: SwarmEventType, backlogId: string) => unrouted.has(swarmEventKey({ type, backlogId, payload: {} }));
+  return {
+    ...curr,
+    backlog: {
+      ...curr.backlog,
+      active: curr.backlog.active.filter((id) => !isUnrouted('TaskStarted', id)),
+      done: curr.backlog.done.filter((id) => !isUnrouted('TaskCompleted', id)),
+    },
+  };
+}
+
 // Adapter-injected: one tick. Reads the live folders snapshot + the
 // durable prior state, derives new events (durably deduped), routes each
 // through routeEvent (BL-297/299's single entrypoint - it already
 // dispatches TaskCompleted -> summary+close internally), and persists the
 // advanced snapshot + emitted-keys set REGARDLESS of whether any event
 // routed this tick (the diff mechanism only fires once per transition, so
-// prev must always advance to curr).
+// prev must always advance to curr) - EXCEPT for a transition whose event
+// failed to post, which stays out of the persisted snapshot so it is
+// retried next tick (see withRetryableTransitionsHeldBack above).
 export async function runConciergeTick(adapters: ConciergeTickAdapters): Promise<TickResult> {
   const folders = adapters.readFolders();
   const curr = toEventStreamSnapshot(folders);
@@ -81,15 +106,19 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters): Promise
   const events = deriveSwarmEvents(state.snapshot, curr, alreadyEmitted);
 
   let routed = 0;
+  const unrouted = new Set<string>();
   for (const event of events) {
     const title = titleForBacklogId(folders, event.backlogId);
     const result = await routeEvent(event, title, adapters.routeAdapters);
     if (result.posted) {
       alreadyEmitted.add(swarmEventKey(event));
       routed += 1;
+    } else {
+      unrouted.add(swarmEventKey(event));
     }
   }
 
-  adapters.writeTickState({ snapshot: curr, emittedKeys: [...alreadyEmitted] });
+  const persistedSnapshot = withRetryableTransitionsHeldBack(curr, unrouted);
+  adapters.writeTickState({ snapshot: persistedSnapshot, emittedKeys: [...alreadyEmitted] });
   return { routed };
 }

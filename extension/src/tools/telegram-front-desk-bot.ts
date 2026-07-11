@@ -281,9 +281,12 @@ function sleep(ms: number): Promise<void> {
 
 const DEFAULT_CONCIERGE_TICK_INTERVAL_MS = 30_000;
 
-function conciergeTickIntervalMs(): number {
-  const raw = process.env.CONCIERGE_TICK_INTERVAL_MS;
-  const parsed = raw ? Number(raw) : NaN;
+// Exported (CLI main() thin-wrapper rule) so every branch - unset, a valid
+// override, and an invalid/non-positive value falling back to the default
+// - is unit-tested in-process rather than only coverage-invisible behind
+// the live env-var read.
+export function conciergeTickIntervalMs(rawEnv: string | undefined = process.env.CONCIERGE_TICK_INTERVAL_MS): number {
+  const parsed = rawEnv ? Number(rawEnv) : NaN;
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CONCIERGE_TICK_INTERVAL_MS;
 }
 
