@@ -46,6 +46,11 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "telegram_topic_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "support_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "support_thread_store.bb")))
+;; BL-282: the Operator's long-term memory (durable, generalizable facts,
+;; distinct from any subject's per-thread transcript) - reloaded alongside
+;; the dispatched subject's transcript on every wake, below.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_memory_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_memory_store.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -322,19 +327,26 @@
   (some :subject (filter #(= (:type %) "TELEGRAM_TOPIC_MESSAGE") dispatch-events)))
 
 (defn write-telegram-reply-context!
-  "BL-281 telegram-topic-03/telegram-topic-04: pre-fetches the ONE dispatched
-   subject's reloaded transcript (telegram-topic-lib/reply-context-for) and
-   writes it into a file the disposable Operator's kickoff can reference -
-   the structural guarantee that a wake for one subject has no path to
-   another subject's transcript, never left to the LLM's own reading
-   discipline. No topic id here (reshaped architecture) - the runtime
-   speaks SUP-### only; the Front Desk Bot owns the topic mapping and
-   resolves it itself once the reply reaches it over SSE."
+  "BL-281 telegram-topic-03/telegram-topic-04 + BL-282 operator-memory-02:
+   pre-fetches the ONE dispatched subject's reloaded transcript
+   (telegram-topic-lib/reply-context-for) TOGETHER WITH the Operator's
+   long-term memory facts (operator-memory-lib/facts-for-wake - the SAME
+   full set for every subject, MVP: no ranking), and writes them into one
+   file the disposable Operator's kickoff can reference - the structural
+   guarantee that a wake for one subject has no path to another subject's
+   TRANSCRIPT (telegram-topic-04), while the durable facts alongside it are
+   intentionally global (operator-memory-02/03: durable facts are shared
+   context, never a per-subject transcript leak - the two are kept in
+   clearly separate fields here, never merged into one blob). No topic id
+   here (reshaped architecture) - the runtime speaks SUP-### only; the
+   Front Desk Bot owns the topic mapping and resolves it itself once the
+   reply reaches it over SSE."
   [thread-id]
   (atomic-spit! telegram-reply-context-file
                 (json/generate-string
                  {:thread-id thread-id
-                  :transcript (telegram-topic-lib/reply-context-for thread-id (support-thread-store/adapters-for state-dir))})))
+                  :transcript (telegram-topic-lib/reply-context-for thread-id (support-thread-store/adapters-for state-dir))
+                  :long-term-memory (operator-memory-lib/facts-for-wake (operator-memory-store/read-store! state-dir))})))
 
 (defn launch-operator!
   "Move the pending queue aside so new events accumulate cleanly, then spawn

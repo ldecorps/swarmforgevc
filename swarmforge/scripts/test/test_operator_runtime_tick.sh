@@ -18,8 +18,11 @@ make_fixture() {
   # (per-launch dispatch/reply-context only, bridge-client architecture)
   # and support_thread_store.bb (the SAME unified SUP-### thread store the
   # bridge's inbound-message route and support_thread.bb both write to).
+  # BL-282: + operator_memory_lib.bb/operator_memory_store.bb (long-term
+  # memory, reloaded alongside the transcript on every wake).
   cp "$SRC/operator_lib.bb" "$SRC/operator_runtime.bb" "$SRC/telegram_topic_lib.bb" \
      "$SRC/support_lib.bb" "$SRC/support_thread_store.bb" \
+     "$SRC/operator_memory_lib.bb" "$SRC/operator_memory_store.bb" \
      "$d/swarmforge/scripts/"
   printf '%s' "$d"
 }
@@ -109,6 +112,27 @@ check "BL-276: a RESOLVED thread is never nudged, even long idle" \
   '! grep -q "SUP-2" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl"'
 check "BL-276: a recently-active thread is not nudged yet" \
   '! grep -q "SUP-3" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl"'
+rm -rf "$F"
+
+# ── 8. BL-282: a wake's reply-context carries the long-term memory facts
+#      ALONGSIDE the dispatched subject's own transcript, and never a
+#      different subject's private transcript detail (operator-memory-02/03) ──
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/support/threads" "$F/.swarmforge/support/memory"
+printf '{"facts":["the human prefers terse replies"]}' > "$F/.swarmforge/support/memory/facts.json"
+printf '{"id":"SUP-1","status":"open","messages":[{"channel":"telegram","timestamp":"2026-07-11T09:00:00Z","text":"about A"}]}' \
+  > "$F/.swarmforge/support/threads/SUP-1.json"
+printf '{"id":"SUP-2","status":"open","messages":[{"channel":"telegram","timestamp":"2026-07-11T09:00:00Z","text":"private detail about B, never distilled"}]}' \
+  > "$F/.swarmforge/support/threads/SUP-2.json"
+printf '{"type":"TELEGRAM_TOPIC_MESSAGE","subject":"SUP-1"}\n' > "$F/.swarmforge/operator/events.jsonl"
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+tick "$F" > /dev/null
+check "BL-282: the reply-context carries the long-term memory fact" \
+  'grep -q "the human prefers terse replies" "$F/.swarmforge/operator/telegram-reply-context.json"'
+check "BL-282: the reply-context still carries the dispatched subject's OWN transcript" \
+  'grep -q "about A" "$F/.swarmforge/operator/telegram-reply-context.json"'
+check "BL-282: the reply-context NEVER carries a different subject's private transcript detail" \
+  '! grep -q "private detail about B" "$F/.swarmforge/operator/telegram-reply-context.json"'
 rm -rf "$F"
 
 # ── 4. launcher assembles a --remote-control command ─────────────────────────
