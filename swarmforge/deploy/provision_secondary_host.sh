@@ -127,18 +127,28 @@ UNIT_PATH="/tmp/swarmforge-${SWARM_NAME}.service"
 "$PROJECT_ROOT/swarmforge/deploy/generate_systemd_units.sh" "$PROJECT_ROOT" "$SWARM_NAME" "$(whoami)" "$UNIT_PATH"
 sudo mv "$UNIT_PATH" "/etc/systemd/system/swarmforge-${SWARM_NAME}.service"
 
+# BL-304: the operator runtime gets its OWN systemd unit alongside the
+# swarm's - previously nothing supervised it at all (a crash/OOM/reboot
+# left the Operator permanently dead until a human intervened).
+OPERATOR_UNIT_PATH="/tmp/swarmforge-operator-${SWARM_NAME}.service"
+"$PROJECT_ROOT/swarmforge/deploy/generate_systemd_units.sh" "$PROJECT_ROOT" "$SWARM_NAME" "$(whoami)" "$OPERATOR_UNIT_PATH" --unit=operator
+sudo mv "$OPERATOR_UNIT_PATH" "/etc/systemd/system/swarmforge-operator-${SWARM_NAME}.service"
+
 # A systemd service starts with a clean environment - it does NOT source
 # this user's shell profile - so a token exported there (Option B auth,
 # below) would never reach the swarm process. The generated unit's
 # EnvironmentFile= reads this file instead; root-owned and 600 so the
 # token is not readable by anyone but root and whatever reads it as root
 # (systemd itself, before dropping to User= in the unit). Left EMPTY here -
-# populated only if the operator chooses Option B below.
+# populated only if the operator chooses Option B below. The SAME file
+# also backs the operator unit's own EnvironmentFile= (both the swarm and
+# the operator runtime/disposable LLM need identical secrets on this host).
 sudo install -d -m 0755 /etc/swarmforge
 sudo touch "/etc/swarmforge/${SWARM_NAME}.env"
 sudo chmod 600 "/etc/swarmforge/${SWARM_NAME}.env"
 
 sudo systemctl daemon-reload
+sudo systemctl enable --now "swarmforge-operator-${SWARM_NAME}.service"
 sudo systemctl enable "swarmforge-${SWARM_NAME}.service"
 
 cat <<EOF
@@ -166,5 +176,10 @@ for detail on each):
        sudo systemctl start swarmforge-${SWARM_NAME}.service
      (subsequent boots start it automatically - that is what
      'systemctl enable' above already configured).
+
+Note: swarmforge-operator-${SWARM_NAME}.service is already enabled AND
+started (systemd supervises it - Restart=always, never permanently gives
+up on a crash burst, survives a reboot). It will retry harmlessly until
+step 1's authentication is in place; nothing further to do for it here.
 
 EOF
