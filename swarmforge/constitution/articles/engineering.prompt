@@ -36,6 +36,19 @@
   property-test tags in normal unit coverage, Gherkin acceptance mutation,
   language mutation, CRAP, or coverage commands unless the role owns
   property-test verification or the user explicitly asks.
+- **A CLI's `main()` must be a THIN wrapper over exported, pure/testable
+  helpers.** Every CLI entry point (`extension/src/tools/*.ts`, and any
+  `require.main === module` script) keeps `main()` to argument dispatch and
+  I/O wiring only; put ALL parsing, formatting, branching, and business logic
+  in exported functions that in-process unit tests call directly. Logic reachable
+  ONLY by spawning the CLI as a subprocess is invisible to in-process coverage
+  and mutation, so its CRAP sits unmeasured at/near threshold and mutants survive
+  — the hardener then catches it late, ticket after ticket. A subprocess smoke
+  test of `main()` is fine as an ADDITION (it locks the wiring), never as the
+  only cover for real logic. (Recurring hardener-caught gap: BL-233, BL-262,
+  BL-272; the codebase's own `parseArgs`/`makeArgsGuardedMain` +
+  `computeX`/`formatX` split — e.g. co-change-report.ts, swarm-metrics.ts — is
+  the pattern to follow.)
 
 ## Test Speed And Isolation
 - Strive to keep the unit suite running in seconds. Speed is a correctness
