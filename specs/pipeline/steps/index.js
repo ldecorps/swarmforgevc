@@ -87,6 +87,7 @@ const DOMAINS = [
   require('./operatorDecideStatusSteps'),
   require('./suiteDurationPwaSidecarSteps'),
   require('./operatorCoordinatorHandoffSteps'),
+  require('./frontDeskHeadlessLauncherSteps'),
 ];
 
 function registerSteps(registry) {
