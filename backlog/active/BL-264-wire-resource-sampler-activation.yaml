@@ -82,4 +82,4 @@ qa_e2e_procedure: |
 # authored by the specifier and is PENDING human review.
 # Priority 25 (normal-high) per intake — cheap, unblocks the whole cost/resource
 # surface; operator to confirm/adjust.
-human_approval: pending
+human_approval: approved
