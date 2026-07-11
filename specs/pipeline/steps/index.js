@@ -91,6 +91,7 @@ const DOMAINS = [
   require('./pwaCollapsibleSectionsSteps'),
   require('./swarmEventStreamSteps'),
   require('./frontDeskAutoOpenSubjectSteps'),
+  require('./gherkinDetailListenSteps'),
 ];
 
 function registerSteps(registry) {
