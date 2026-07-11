@@ -21,7 +21,11 @@ export function parseArgs(argv: string[]): { targetRepoPath: string } | null {
   return targetRepoPath ? { targetRepoPath } : null;
 }
 
-function readContractYaml(targetRepoPath: string): string | undefined {
+// Exported (like parseArgs above) so it runs in-process under coverage
+// instead of only via the compiled CLI's subprocess (BL-233 CLI-entrypoint
+// CRAP trap: a function exercised only through execFileSync gets 0%
+// in-process coverage no matter how well the subprocess test covers it).
+export function readContractYaml(targetRepoPath: string): string | undefined {
   const contractPath = path.join(targetRepoPath, '.swarmforge', 'contract.yaml');
   try {
     return fs.readFileSync(contractPath, 'utf8');

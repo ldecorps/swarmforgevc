@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=7035801021d846c13e2e3eef354f1b237b5ef21f05223728ca3f36ff283c9093
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-11T04:33:03.405623691Z","feature_name":"the swarm surveys a new target repo and proposes an onboarding contract, gated on agreement","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-262-onboarding-contract-agreement.feature","background_hash":"a27d907e362b49d0c1328e09c61cc91a7796559fc1520eb119e85bba43b1446c","implementation_hash":"unknown","scenarios":[{"index":1,"name":"the build-start gate allows dispatch only for an agreed contract","scenario_hash":"d8c776fb884ddcd2babe336bb24c124f1e095f858bf81753dd56506a0da5a17c","mutation_count":10,"result":{"Total":10,"Killed":10,"Survived":0,"Errors":0},"tested_at":"2026-07-11T04:33:03.405623691Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the swarm surveys a new target repo and proposes an onboarding contract, gated on agreement
 
   # Operator RE-SCOPE (2026-07-10, via coordinator): the earlier design had a
