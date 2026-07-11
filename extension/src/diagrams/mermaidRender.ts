@@ -99,19 +99,27 @@ const DERIVED_VAR_NAMES = [
   '_key-badge',
 ] as const;
 
+// Every derived var below falls back to a computed color only when the
+// theme doesn't supply an explicit override - factored out of
+// resolveThemeVars so that repeated fallback sits in one branch instead of
+// one per field.
+function withThemeOverride(explicit: string | undefined, computed: string): string {
+  return explicit ?? computed;
+}
+
 function resolveThemeVars(theme: MermaidDiagramTheme): Record<string, string> {
   const { bg, fg } = theme;
   return {
     bg,
     fg,
     _text: fg,
-    '_text-sec': theme.muted ?? mixInSrgb(fg, 60, bg),
-    '_text-muted': theme.muted ?? mixInSrgb(fg, 40, bg),
+    '_text-sec': withThemeOverride(theme.muted, mixInSrgb(fg, 60, bg)),
+    '_text-muted': withThemeOverride(theme.muted, mixInSrgb(fg, 40, bg)),
     '_text-faint': mixInSrgb(fg, 25, bg),
-    _line: theme.line ?? mixInSrgb(fg, 50, bg),
-    _arrow: theme.accent ?? mixInSrgb(fg, 85, bg),
-    '_node-fill': theme.surface ?? mixInSrgb(fg, 3, bg),
-    '_node-stroke': theme.border ?? mixInSrgb(fg, 20, bg),
+    _line: withThemeOverride(theme.line, mixInSrgb(fg, 50, bg)),
+    _arrow: withThemeOverride(theme.accent, mixInSrgb(fg, 85, bg)),
+    '_node-fill': withThemeOverride(theme.surface, mixInSrgb(fg, 3, bg)),
+    '_node-stroke': withThemeOverride(theme.border, mixInSrgb(fg, 20, bg)),
     '_group-fill': bg,
     '_group-hdr': mixInSrgb(fg, 5, bg),
     '_inner-stroke': mixInSrgb(fg, 12, bg),
