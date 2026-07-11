@@ -20,9 +20,12 @@ make_fixture() {
   # bridge's inbound-message route and support_thread.bb both write to).
   # BL-282: + operator_memory_lib.bb/operator_memory_store.bb (long-term
   # memory, reloaded alongside the transcript on every wake).
+  # BL-283: + ticket_status_lib.bb (linked-ticket-status-sweep!'s own live
+  # backlog-status reader).
   cp "$SRC/operator_lib.bb" "$SRC/operator_runtime.bb" "$SRC/telegram_topic_lib.bb" \
      "$SRC/support_lib.bb" "$SRC/support_thread_store.bb" \
      "$SRC/operator_memory_lib.bb" "$SRC/operator_memory_store.bb" \
+     "$SRC/ticket_status_lib.bb" \
      "$d/swarmforge/scripts/"
   printf '%s' "$d"
 }
@@ -133,6 +136,39 @@ check "BL-282: the reply-context still carries the dispatched subject's OWN tran
   'grep -q "about A" "$F/.swarmforge/operator/telegram-reply-context.json"'
 check "BL-282: the reply-context NEVER carries a different subject's private transcript detail" \
   '! grep -q "private detail about B" "$F/.swarmforge/operator/telegram-reply-context.json"'
+rm -rf "$F"
+
+# ── 9. BL-283: linked-ticket status-back - a moved-on linked ticket posts a
+#      status notice into ITS OWN subject's topic only; an unchanged linked
+#      ticket posts nothing; a thread with no linked ticket at all is
+#      untouched (coordinator-handoff-03/04/05). Recent timestamps (like
+#      section 8's own SUP-3 "just now" fixture) so BL-276's idle-nudge
+#      sweep never ALSO fires and pollutes the same reply outbox this
+#      section asserts against ───────────────────────────────────────────────
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/support/threads" "$F/backlog/done" "$F/backlog/active"
+printf 'id: BL-300\ntitle: shipped thing\nstatus: done\n' > "$F/backlog/done/BL-300.yaml"
+printf 'id: BL-301\ntitle: still building\nstatus: active\n' > "$F/backlog/active/BL-301.yaml"
+recent="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf '{"id":"SUP-1","status":"open","messages":[{"channel":"telegram","timestamp":"%s","text":"about A"}],"linked-tickets":[{"id":"BL-300","last-reported-status":"active"}]}' "$recent" \
+  > "$F/.swarmforge/support/threads/SUP-1.json"
+printf '{"id":"SUP-2","status":"open","messages":[{"channel":"telegram","timestamp":"%s","text":"about B"}],"linked-tickets":[{"id":"BL-301","last-reported-status":"active"}]}' "$recent" \
+  > "$F/.swarmforge/support/threads/SUP-2.json"
+printf '{"id":"SUP-3","status":"open","messages":[{"channel":"telegram","timestamp":"%s","text":"about C, no linked ticket"}]}' "$recent" \
+  > "$F/.swarmforge/support/threads/SUP-3.json"
+tick "$F" > /dev/null
+check "coordinator-handoff-03: a moved-on linked ticket (active -> done) posts a status notice" \
+  'grep -q "SUP-1" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl" && grep -q "BL-300 is now done" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl"'
+check "coordinator-handoff-03: the notice is appended to the linked thread's own transcript too" \
+  'grep -q "BL-300 is now done" "$F/.swarmforge/support/threads/SUP-1.json"'
+check "coordinator-handoff-04: an unchanged linked ticket (still active) posts no status notice" \
+  '! grep -q "SUP-2" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl"'
+check "coordinator-handoff-05: a thread with no linked ticket at all is never touched by the sweep" \
+  '! grep -q "SUP-3" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl"'
+# a second tick must not re-post the same already-reported status
+tick "$F" > /dev/null
+check "coordinator-handoff-03: the same status is never reported twice" \
+  '[[ "$(grep -c "SUP-1" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl")" -eq 1 ]]'
 rm -rf "$F"
 
 # ── 4. launcher assembles a --remote-control command ─────────────────────────

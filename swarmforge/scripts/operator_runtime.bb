@@ -51,6 +51,9 @@
 ;; the dispatched subject's transcript on every wake, below.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_memory_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_memory_store.bb")))
+;; BL-283: reads a linked ticket's CURRENT backlog status for
+;; linked-ticket-status-sweep! below.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ticket_status_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -255,6 +258,31 @@
           (support-thread-store/write-thread! state-dir updated)
           (append-to-reply-outbox! thread-id support-lib/idle-nudge-text)
           (log! "idle-nudge-posted" thread-id))))))
+
+;; ── BL-283: linked-ticket status-back sweep (coordinator-handoff-03/04/05) ─
+;; Reuses support-lib/check-linked-ticket-status! (adapter-injected, itself
+;; reusing proactive-notice-decision/proactive-notice-text UNCHANGED - no
+;; second notice path) with REAL adapters: ticket-status-lib/current-status
+;; for the live backlog read, and the SAME append-to-reply-outbox!/
+;; support-thread-store write path idle-nudge-sweep! above already uses -
+;; a status notice reaches its subject's topic the identical way any other
+;; Operator reply does. Re-reads the thread fresh before each linked
+;; ticket's own check (not once per thread-id) so a thread with more than
+;; one linked ticket never has a second check overwrite the first's update.
+(defn linked-ticket-status-sweep! []
+  (doseq [thread-id (support-thread-store/list-existing-ids! state-dir)]
+    (doseq [linked-id (map :id (:linked-tickets (support-thread-store/read-thread! state-dir thread-id)))]
+      (let [thread (support-thread-store/read-thread! state-dir thread-id)
+            linked (first (filter #(= (:id %) linked-id) (:linked-tickets thread)))
+            current (ticket-status-lib/current-status project-root linked-id)]
+        (when (:posted?
+               (support-lib/check-linked-ticket-status!
+                thread linked
+                {:current-status! (fn [_id] current)
+                 :now-iso! now-iso
+                 :post-notice! (fn [tid text] (append-to-reply-outbox! tid text))
+                 :write-thread! #(support-thread-store/write-thread! state-dir %)}))
+          (log! "linked-ticket-status-posted" thread-id linked-id current))))))
 
 ;; ── cooldown / provider state ─────────────────────────────────────────────────
 
@@ -466,6 +494,11 @@
     ;; message into an already-open topic, not a wake worth spending an
     ;; Operator LLM launch on).
     (idle-nudge-sweep! now)
+
+    ;; BL-283: linked-ticket status-back, same "best-effort side message,
+    ;; never a wake worth an Operator LLM launch" posture as the idle
+    ;; nudge above.
+    (linked-ticket-status-sweep!)
 
     (reap-finished-operator!)
 
