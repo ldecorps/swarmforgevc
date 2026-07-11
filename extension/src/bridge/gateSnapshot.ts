@@ -20,6 +20,16 @@ export interface RoleGateState {
   snippet?: string;
 }
 
+// BL-265: computeRoleGateStates(Live) returns ONE entry per role, gated or
+// not (the Telegram narrator needs the full set to detect a gate-resolved
+// transition) - the bridge's GET /gates read route lists only the
+// currently-PENDING ones (BL-265 gates-list-pending-01: a non-gated role is
+// absent from the list; gates-empty-when-none-02: nothing gated -> an empty
+// list, not one entry per role).
+export function filterPendingGates(gateStates: RoleGateState[]): RoleGateState[] {
+  return gateStates.filter((state) => state.gated);
+}
+
 export function computeRoleGateStates(
   roles: string[],
   capturePaneText: (role: string) => string | undefined
