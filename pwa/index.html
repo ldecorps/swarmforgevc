@@ -13,6 +13,14 @@
   #asOf { font-size: 0.8rem; opacity: 0.7; margin: 0 0 1rem; }
   section { border: 1px solid color-mix(in srgb, CanvasText 20%, transparent); border-radius: 6px; padding: 0.75rem; margin-bottom: 0.75rem; }
   h2 { font-size: 0.95rem; margin: 0 0 0.5rem; }
+  /* BL-291: the section header IS the collapse/expand control (set up in
+     app.js's initCollapsibleSections) - a chevron affordance driven purely
+     off the aria-expanded state it already keeps in sync, so no extra text
+     node is ever inserted (one would be wiped by applyChromeLocale's own
+     textContent pass over every [data-i18n] node, including this one). */
+  section > h2[role="button"] { cursor: pointer; }
+  section > h2[role="button"]::before { content: '▾ '; }
+  section > h2[role="button"][aria-expanded="false"]::before { content: '▸ '; }
   h3, h4, h5 { font-size: 0.85rem; margin: 0.5rem 0 0.25rem; }
   ul { margin: 0.25rem 0; padding-left: 1.25rem; font-size: 0.85rem; }
   li { margin-bottom: 0.15rem; }
