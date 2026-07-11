@@ -34,36 +34,51 @@ function flagValue(argv: string[], flag: string): string | undefined {
   return i !== -1 ? argv[i + 1] : undefined;
 }
 
+// Each split out of parseArgs so that function's own branch count stays
+// low, same technique as bakeoff-run.ts's parseArgs/labelReportCostTiers
+// split.
+function parseCreateTopicArgs(rest: string[]): TelegramBridgeArgs | null {
+  const [name] = rest;
+  return name ? { subcommand: 'create-topic', name } : null;
+}
+
+function parseSendArgs(rest: string[]): TelegramBridgeArgs | null {
+  const [text] = rest;
+  if (!text) {
+    return null;
+  }
+  const threadIdRaw = flagValue(rest, '--thread');
+  const replyToRaw = flagValue(rest, '--reply-to');
+  return {
+    subcommand: 'send',
+    text,
+    threadId: threadIdRaw !== undefined ? Number(threadIdRaw) : undefined,
+    replyTo: replyToRaw !== undefined ? Number(replyToRaw) : undefined,
+  };
+}
+
+function parseGetUpdatesArgs(rest: string[]): TelegramBridgeArgs | null {
+  const [offsetRaw] = rest;
+  if (!offsetRaw) {
+    return null;
+  }
+  const timeoutRaw = flagValue(rest, '--timeout');
+  return { subcommand: 'get-updates', offset: Number(offsetRaw), timeoutSeconds: timeoutRaw !== undefined ? Number(timeoutRaw) : 25 };
+}
+
 // Pure - no process.argv/stderr/exitCode access here, the same "thin
 // main()" split every CLI in this directory follows (engineering "CLI
 // main() must be a thin wrapper over pure helpers").
 export function parseArgs(argv: string[]): TelegramBridgeArgs | null {
   const [subcommand, ...rest] = argv;
   if (subcommand === 'create-topic') {
-    const [name] = rest;
-    return name ? { subcommand, name } : null;
+    return parseCreateTopicArgs(rest);
   }
   if (subcommand === 'send') {
-    const [text] = rest;
-    if (!text) {
-      return null;
-    }
-    const threadIdRaw = flagValue(rest, '--thread');
-    const replyToRaw = flagValue(rest, '--reply-to');
-    return {
-      subcommand,
-      text,
-      threadId: threadIdRaw !== undefined ? Number(threadIdRaw) : undefined,
-      replyTo: replyToRaw !== undefined ? Number(replyToRaw) : undefined,
-    };
+    return parseSendArgs(rest);
   }
   if (subcommand === 'get-updates') {
-    const [offsetRaw] = rest;
-    if (!offsetRaw) {
-      return null;
-    }
-    const timeoutRaw = flagValue(rest, '--timeout');
-    return { subcommand, offset: Number(offsetRaw), timeoutSeconds: timeoutRaw !== undefined ? Number(timeoutRaw) : 25 };
+    return parseGetUpdatesArgs(rest);
   }
   return null;
 }
@@ -76,6 +91,28 @@ function requiredEnv(name: string): string {
   return value;
 }
 
+// One action per subcommand, keyed in the ACTIONS table below so main()
+// itself stays a flat lookup + call - the same data-driven-dispatch shape
+// bridgeServer.ts's JsonRoute table uses ("a future entry only ever adds a
+// table row, never another branch").
+async function runCreateTopic(token: string, args: Extract<TelegramBridgeArgs, { subcommand: 'create-topic' }>): Promise<void> {
+  printJsonToStdout(await createForumTopic(token, requiredEnv('TELEGRAM_CHAT_ID'), args.name));
+}
+
+async function runSend(token: string, args: Extract<TelegramBridgeArgs, { subcommand: 'send' }>): Promise<void> {
+  printJsonToStdout(await sendTelegramMessage(token, requiredEnv('TELEGRAM_CHAT_ID'), args.text, args.replyTo, undefined, args.threadId));
+}
+
+async function runGetUpdates(token: string, args: Extract<TelegramBridgeArgs, { subcommand: 'get-updates' }>): Promise<void> {
+  printJsonToStdout(await getTelegramUpdates(token, args.offset, args.timeoutSeconds));
+}
+
+const ACTIONS: { [K in TelegramBridgeArgs['subcommand']]: (token: string, args: Extract<TelegramBridgeArgs, { subcommand: K }>) => Promise<void> } = {
+  'create-topic': runCreateTopic,
+  send: runSend,
+  'get-updates': runGetUpdates,
+};
+
 export async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (!args) {
@@ -84,16 +121,7 @@ export async function main(): Promise<void> {
     return;
   }
   const token = requiredEnv('TELEGRAM_BOT_TOKEN');
-
-  if (args.subcommand === 'create-topic') {
-    printJsonToStdout(await createForumTopic(token, requiredEnv('TELEGRAM_CHAT_ID'), args.name));
-    return;
-  }
-  if (args.subcommand === 'send') {
-    printJsonToStdout(await sendTelegramMessage(token, requiredEnv('TELEGRAM_CHAT_ID'), args.text, args.replyTo, undefined, args.threadId));
-    return;
-  }
-  printJsonToStdout(await getTelegramUpdates(token, args.offset, args.timeoutSeconds));
+  await ACTIONS[args.subcommand](token, args as never);
 }
 
 if (require.main === module) {

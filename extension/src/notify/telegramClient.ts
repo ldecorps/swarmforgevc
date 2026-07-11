@@ -37,6 +37,31 @@ function apiUrl(token: string, method: string): string {
   return `https://api.telegram.org/bot${token}/${method}`;
 }
 
+interface TelegramApiCallResult {
+  success: boolean;
+  json?: unknown;
+  error?: string;
+}
+
+// Shared by sendTelegramMessage/getTelegramUpdates/createForumTopic below -
+// each POSTs a different method + body but interprets the response/error
+// identically (a non-ok status becomes a description-carrying error, a
+// thrown request becomes a redacted network-error message). Every caller
+// still owns interpreting a SUCCESSFUL response's own json shape.
+async function callTelegramApi(token: string, method: string, body: string, postFn: TelegramPostFn): Promise<TelegramApiCallResult> {
+  try {
+    const res = await postFn(apiUrl(token, method), body);
+    if (!res.ok) {
+      const description = extractDescription(res.json);
+      return { success: false, error: redactToken(`Telegram API responded with status ${res.status}${description ? `: ${description}` : ''}`, token) };
+    }
+    return { success: true, json: res.json };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : 'unknown error';
+    return { success: false, error: redactToken(`Telegram request failed: ${detail}`, token) };
+  }
+}
+
 export interface SendMessageResult {
   success: boolean;
   messageId?: number;
@@ -50,17 +75,24 @@ function extractDescription(json: unknown): string | undefined {
   return undefined;
 }
 
-function extractMessageId(json: unknown): number | undefined {
+// Shared by extractMessageId/extractMessageThreadId below - both pull a
+// single numeric field off the same {result: {...}} envelope shape,
+// differing only in which field.
+function extractResultNumberField(json: unknown, field: string): number | undefined {
   if (
     json &&
     typeof json === 'object' &&
     (json as Record<string, unknown>).result &&
     typeof (json as Record<string, unknown>).result === 'object'
   ) {
-    const messageId = ((json as Record<string, unknown>).result as Record<string, unknown>).message_id;
-    return typeof messageId === 'number' ? messageId : undefined;
+    const value = ((json as Record<string, unknown>).result as Record<string, unknown>)[field];
+    return typeof value === 'number' ? value : undefined;
   }
   return undefined;
+}
+
+function extractMessageId(json: unknown): number | undefined {
+  return extractResultNumberField(json, 'message_id');
 }
 
 // replyToMessageId set links this message into an existing reply chain -
@@ -89,17 +121,11 @@ export async function sendTelegramMessage(
     ...(messageThreadId !== undefined ? { message_thread_id: messageThreadId } : {}),
   });
 
-  try {
-    const res = await postFn(apiUrl(token, 'sendMessage'), body);
-    if (!res.ok) {
-      const description = extractDescription(res.json);
-      return { success: false, error: redactToken(`Telegram API responded with status ${res.status}${description ? `: ${description}` : ''}`, token) };
-    }
-    return { success: true, messageId: extractMessageId(res.json) };
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : 'unknown error';
-    return { success: false, error: redactToken(`Telegram request failed: ${detail}`, token) };
+  const result = await callTelegramApi(token, 'sendMessage', body, postFn);
+  if (!result.success) {
+    return { success: false, error: result.error };
   }
+  return { success: true, messageId: extractMessageId(result.json) };
 }
 
 export interface TelegramChat {
@@ -143,17 +169,11 @@ export async function getTelegramUpdates(
   postFn: TelegramPostFn = defaultPost
 ): Promise<GetUpdatesResult> {
   const body = JSON.stringify({ offset, timeout: timeoutSeconds });
-  try {
-    const res = await postFn(apiUrl(token, 'getUpdates'), body);
-    if (!res.ok) {
-      const description = extractDescription(res.json);
-      return { success: false, updates: [], error: redactToken(`Telegram API responded with status ${res.status}${description ? `: ${description}` : ''}`, token) };
-    }
-    return { success: true, updates: extractUpdates(res.json) };
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : 'unknown error';
-    return { success: false, updates: [], error: redactToken(`Telegram request failed: ${detail}`, token) };
+  const result = await callTelegramApi(token, 'getUpdates', body, postFn);
+  if (!result.success) {
+    return { success: false, updates: [], error: result.error };
   }
+  return { success: true, updates: extractUpdates(result.json) };
 }
 
 // ── BL-281: forum-topic support ─────────────────────────────────────────
@@ -165,16 +185,7 @@ export interface CreateForumTopicResult {
 }
 
 function extractMessageThreadId(json: unknown): number | undefined {
-  if (
-    json &&
-    typeof json === 'object' &&
-    (json as Record<string, unknown>).result &&
-    typeof (json as Record<string, unknown>).result === 'object'
-  ) {
-    const threadId = ((json as Record<string, unknown>).result as Record<string, unknown>).message_thread_id;
-    return typeof threadId === 'number' ? threadId : undefined;
-  }
-  return undefined;
+  return extractResultNumberField(json, 'message_thread_id');
 }
 
 // Creates a new forum topic in a supergroup with Topics enabled (a one-time
@@ -189,15 +200,9 @@ export async function createForumTopic(
   postFn: TelegramPostFn = defaultPost
 ): Promise<CreateForumTopicResult> {
   const body = JSON.stringify({ chat_id: chatId, name });
-  try {
-    const res = await postFn(apiUrl(token, 'createForumTopic'), body);
-    if (!res.ok) {
-      const description = extractDescription(res.json);
-      return { success: false, error: redactToken(`Telegram API responded with status ${res.status}${description ? `: ${description}` : ''}`, token) };
-    }
-    return { success: true, messageThreadId: extractMessageThreadId(res.json) };
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : 'unknown error';
-    return { success: false, error: redactToken(`Telegram request failed: ${detail}`, token) };
+  const result = await callTelegramApi(token, 'createForumTopic', body, postFn);
+  if (!result.success) {
+    return { success: false, error: result.error };
   }
+  return { success: true, messageThreadId: extractMessageThreadId(result.json) };
 }
