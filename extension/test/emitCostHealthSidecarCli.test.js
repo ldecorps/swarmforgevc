@@ -3,6 +3,17 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { formatEmitResult } = require('../out/tools/emit-cost-health-sidecar');
+
+// ── formatEmitResult ─────────────────────────────────────────────────────
+
+test('formatEmitResult reports EMITTED when a commit was made', () => {
+  assert.equal(formatEmitResult(true, 'docs/briefings/2026-07-11.json'), 'EMITTED docs/briefings/2026-07-11.json');
+});
+
+test('formatEmitResult reports NOOP when the sidecar was unchanged', () => {
+  assert.equal(formatEmitResult(false, 'docs/briefings/2026-07-11.json'), 'NOOP docs/briefings/2026-07-11.json');
+});
 
 function mkTmp() {
   return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-cost-health-cli-')));
