@@ -51,10 +51,28 @@ check "inflight reaped to events-done"            '[[ -n "$(ls "$F/.swarmforge/s
 rm -rf "$F"
 
 # ── 4. launcher assembles a --remote-control command, named "Support" ───────
-DRY="$(SUPPORT_LAUNCH_DRYRUN=1 bash "$SRC/launch_support.sh" "$SRC/.." /tmp/x.jsonl 2>&1 || true)"
+# BL-275 QA bounce (2026-07-11): a fixture root with NO swarmforge/roles/
+# support.prompt (today's real state, since it is a separate specifier
+# deliverable) must NOT assemble --append-system-prompt-file pointing at a
+# missing path — that is exactly what made every real (non-dry-run) launch
+# exit 1 before the disposable LLM ever started. Uses its own isolated
+# fixture root (not $SRC/..'s real repo path) so this is never accidentally
+# green just because the real file happens to exist by the time this runs.
+NOPROMPT_ROOT="$(mktemp -d)"
+DRY="$(SUPPORT_LAUNCH_DRYRUN=1 bash "$SRC/launch_support.sh" "$NOPROMPT_ROOT" /tmp/x.jsonl 2>&1 || true)"
 check "support named 'Support' (not a swarm agent)"  '[[ "$DRY" == *"--remote-control Support"* ]]'
 check "support NOT named SwarmForge-Support"         '[[ "$DRY" != *"SwarmForge-Support"* ]]'
-check "launcher targets the support system prompt"   '[[ "$DRY" == *"roles/support.prompt"* ]]'
+check "no prompt file -> --append-system-prompt-file is OMITTED, never a dangling path"  '[[ "$DRY" != *"--append-system-prompt-file"* ]]'
+rm -rf "$NOPROMPT_ROOT"
+
+# When the prompt DOES exist (once the specifier lands it), the launcher
+# must pick it up automatically - a regression guard for that future state.
+WITHPROMPT_ROOT="$(mktemp -d)"
+mkdir -p "$WITHPROMPT_ROOT/swarmforge/roles"
+echo "You are Support." > "$WITHPROMPT_ROOT/swarmforge/roles/support.prompt"
+DRY2="$(SUPPORT_LAUNCH_DRYRUN=1 bash "$SRC/launch_support.sh" "$WITHPROMPT_ROOT" /tmp/x.jsonl 2>&1 || true)"
+check "an existing prompt file IS passed via --append-system-prompt-file"  '[[ "$DRY2" == *"--append-system-prompt-file $WITHPROMPT_ROOT/swarmforge/roles/support.prompt"* ]]'
+rm -rf "$WITHPROMPT_ROOT"
 
 if [[ "$fail" -eq 0 ]]; then
   echo "support_runtime smoke: ALL CHECKS PASSED"
