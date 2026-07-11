@@ -44,6 +44,7 @@ import {
   parseNextSseRecord,
   DEFAULT_SUBJECT_KEY,
 } from './telegramFrontDeskBotCore';
+import { backlogForTopic } from '../concierge/topicRouter';
 import { appendOperatorEvent } from '../bridge/operatorEventQueue';
 import { runCliMain } from './swarm-metrics';
 
@@ -78,6 +79,33 @@ function readTopicMap(targetPath: string): Record<string, string> {
 function writeTopicMap(targetPath: string, topicMap: Record<string, string>): void {
   fs.mkdirSync(path.dirname(topicMapPath(targetPath)), { recursive: true });
   fs.writeFileSync(topicMapPath(targetPath), JSON.stringify(topicMap));
+}
+
+// BL-298: BL-297's own backlogId->topicId map (topicRouter.ts's own
+// BacklogTopicMap shape) - a SEPARATE, reverse-keyed file from
+// readTopicMap's {topicId: subjectId} above, never a repurposing of it.
+// Read-only here: this slice only consumes the mapping BL-297's own
+// outbound routing writes, it never creates a BL-### topic itself.
+function backlogTopicMapPath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'backlog-topic-map.json');
+}
+
+function readBacklogTopicMap(targetPath: string): Record<string, number> {
+  try {
+    return JSON.parse(fs.readFileSync(backlogTopicMapPath(targetPath), 'utf8')) as Record<string, number>;
+  } catch {
+    return {};
+  }
+}
+
+// BL-298: routes a reply as context for its backlog item's task via the
+// SAME operator-event file appendOperatorEvent already writes
+// TELEGRAM_TOPIC_MESSAGE (SUP-###) events into - a distinct event type
+// carrying backlogId, so the two paths never collide. What the Operator
+// does with this event is the Operator's own behavior (out of scope here).
+async function postOperatorContext(targetPath: string, backlogId: string, text: string): Promise<boolean> {
+  appendOperatorEvent(targetPath, { type: 'TELEGRAM_BL_TOPIC_MESSAGE', backlogId, text });
+  return true;
 }
 
 function requiredEnv(name: string): string {
@@ -134,6 +162,8 @@ function buildPollAdapters(botToken: string, targetPath: string, bridgeUrl: stri
     postToBridge: (subjectId, text) => postToBridge(bridgeUrl, controlToken, subjectId, text),
     subjectForTopic: (topicId) => subjectForTopic(readTopicMap(targetPath), topicId),
     openSubjectAndRecord: (topicId, text) => openSubjectAndRecord(targetPath, topicId, text),
+    backlogForTopic: (topicId) => backlogForTopic(readBacklogTopicMap(targetPath), topicId),
+    postOperatorContext: (backlogId, text) => postOperatorContext(targetPath, backlogId, text),
     nextOffset: nextUpdateOffset,
   };
 }

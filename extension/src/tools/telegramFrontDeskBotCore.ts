@@ -48,26 +48,37 @@ export function topicForSubject(topicMap: Record<string, string>, subjectId: str
 
 export type BotUpdateDecision =
   | { action: 'post-existing'; subjectId: string; text: string }
+  | { action: 'operator-context'; backlogId: string; text: string }
   | { action: 'open-default'; text: string }
   | { action: 'open-for-topic'; topicId: number; text: string }
   | { action: 'drop'; reason: 'not-principal' | 'no-text' };
 
 // Pure: the bot's whole per-update decision - given the update, the
-// principal's user id, and a lookup from topic id -> already-mapped
-// SUP-### subject id (the bot's own persisted mapping, read by the
-// caller), decides whether to post under an existing subject, open a new
-// one (private DM -> the single default subject; an unmapped topic -> a
-// fresh per-topic subject), or drop.
+// principal's user id, a lookup from topic id -> already-mapped SUP-###
+// subject id (the bot's own persisted mapping), and a lookup from topic id
+// -> a BL-### backlog item's topic (BL-297's own persisted mapping,
+// inverted via topicRouter.ts's backlogForTopic) - decides whether to post
+// under an existing subject, route as Operator context for a backlog item
+// (BL-298), open a new subject (private DM -> the single default subject;
+// an unmapped topic -> a fresh per-topic subject), or drop.
+//
+// backlogForTopic defaults to a no-op (always undefined) so every existing
+// caller that has no notion of BL-### topics (BL-281/BL-294's own call
+// sites/tests) keeps its exact prior behavior unchanged.
 //
 // SUP-### id ASSIGNMENT itself is not this function's job - it stays with
 // the support store (support_thread.bb open / support_lib.bb's
 // next-thread-id), reached through the openSubjectAndRecord adapter below;
-// this function only ever decides WHICH of those three things should
-// happen for a given update.
+// this function only ever decides WHICH of these things should happen for
+// a given update. A topic already known to be a BL-### item's topic is
+// checked BEFORE falling through to "open a new SUP-### subject here" -
+// a reply in a BL-### topic must never be misfiled as a fresh support
+// conversation.
 export function decideUpdateAction(
   update: TelegramUpdate,
   principalUserId: string,
-  subjectForTopic: (topicId: number | undefined) => string | undefined
+  subjectForTopic: (topicId: number | undefined) => string | undefined,
+  backlogForTopic: (topicId: number | undefined) => string | undefined = () => undefined
 ): BotUpdateDecision {
   if (!isFromPrincipal(update, principalUserId)) {
     return { action: 'drop', reason: 'not-principal' };
@@ -80,6 +91,10 @@ export function decideUpdateAction(
   const subjectId = subjectForTopic(topicId);
   if (subjectId) {
     return { action: 'post-existing', subjectId, text };
+  }
+  const backlogId = backlogForTopic(topicId);
+  if (backlogId) {
+    return { action: 'operator-context', backlogId, text };
   }
   return topicId === undefined ? { action: 'open-default', text } : { action: 'open-for-topic', topicId, text };
 }
@@ -95,6 +110,15 @@ export interface PollAdapters {
   // context resolve through subjectForTopic instead of opening again, and
   // notifies the Operator the same way an existing-subject post does.
   openSubjectAndRecord: (topicId: number | undefined, text: string) => Promise<string>;
+  // BL-298: looks up a BL-### backlog item's topic (topicRouter.ts's own
+  // backlogForTopic, inverted from BL-297's outbound map) - checked before
+  // treating an unmapped topic as a fresh support conversation.
+  backlogForTopic: (topicId: number | undefined) => string | undefined;
+  // BL-298: routes a reply as context for the given backlog item's task -
+  // NOT the support-thread path (postToBridge/openSubjectAndRecord). What
+  // the Operator does with that context is the Operator's own behavior,
+  // out of scope here.
+  postOperatorContext: (backlogId: string, text: string) => Promise<boolean>;
   nextOffset: (updates: TelegramUpdate[], currentOffset: number) => number;
 }
 
@@ -108,9 +132,12 @@ export interface PollResult {
 // low - one update's whole decision -> outcome, true when posted/opened,
 // false when dropped.
 async function processUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<boolean> {
-  const decision = decideUpdateAction(update, principalUserId, adapters.subjectForTopic);
+  const decision = decideUpdateAction(update, principalUserId, adapters.subjectForTopic, adapters.backlogForTopic);
   if (decision.action === 'post-existing') {
     return adapters.postToBridge(decision.subjectId, decision.text);
+  }
+  if (decision.action === 'operator-context') {
+    return adapters.postOperatorContext(decision.backlogId, decision.text);
   }
   if (decision.action === 'open-default' || decision.action === 'open-for-topic') {
     const topicId = decision.action === 'open-for-topic' ? decision.topicId : undefined;
