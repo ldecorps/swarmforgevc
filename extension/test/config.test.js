@@ -136,6 +136,28 @@ test('initializeTargetRepo commits new files in a git repository', async () => {
   assert.match(log, /Initialize SwarmForge target prompts/);
 });
 
+// A file absent from the working tree (so the fs.access idempotency check
+// counts it as "to create") but already committed under git with the exact
+// same content it gets rewritten with (e.g. `rm` without `git rm`) restages
+// to no net diff from HEAD - `git commit` genuinely has nothing to commit.
+// Treated as a quiet non-error, not a crash: `committed: false`, still
+// reported as created since it was freshly written to disk.
+test('initializeTargetRepo does not throw when re-creating a file whose content is unchanged from HEAD (nothing to commit)', async () => {
+  const tmp = mkTmpDir();
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+  await initializeTargetRepo(tmp);
+  fs.unlinkSync(path.join(tmp, 'engineering.prompt'));
+  fs.unlinkSync(path.join(tmp, 'project.prompt'));
+
+  const result = await initializeTargetRepo(tmp);
+
+  assert.equal(result.committed, false);
+  assert.deepEqual(result.created.sort(), ['engineering.prompt', 'project.prompt']);
+  assert.ok(fs.existsSync(path.join(tmp, 'engineering.prompt')), 'the file must still be restored to disk');
+});
+
 // ── BL-262: onboarding contract scaffold (extends the same idempotent seam) ──
 
 test('buildContractBootstrapFiles returns the contract source and its legible view', () => {

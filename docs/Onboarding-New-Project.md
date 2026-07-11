@@ -22,7 +22,57 @@ worth calling out:
   initializes one and makes the first commit at startup (README, startup
   step 5) — a brand-new project does not need to be a git repo beforehand.
 
-## 2. The acceptance contract
+## 2. The onboarding scope contract (survey → propose → agree)
+
+Before any build work dispatches for a target at all, the swarm and the
+operator settle a separate, higher-level **onboarding contract** — the
+overall mandate for what the swarm will (and will not) do on this repo. This
+is new as of BL-262 and sits *above* the per-ticket acceptance contract
+described in section 3 below: agreeing the onboarding contract doesn't
+replace or skip per-ticket `human_approval` — every feature draft still gets
+its own sign-off — it just gates whether *any* ticket can start at all.
+
+- **Survey.** An onboarding agent reads the target repo's own code and
+  structure (languages, layout, README) plus any seed vision and initial
+  backlog, and gathers that into a `RepoSurveyFacts` fixture (the survey
+  itself is swarm/agent behavior; everything downstream of it is a pure
+  function fed that fixture).
+- **Propose.** `proposeContractFromSurvey`
+  (`extension/src/onboarding/contractSurvey.ts`) maps those facts into a
+  `ProposedContract` — scope, out-of-scope, boundaries, and an initial-backlog
+  summary all populated from the survey (never a blank template) — marked
+  `agreement: proposed`. `node extension/out/tools/propose-onboarding-contract.js
+  <target-repo-path> <survey-facts-json-path>` runs this and scaffolds +
+  commits the result into the target repo via `initializeTargetContract`
+  (`extension/src/config/targetBootstrap.ts`, reusing the same idempotent
+  plan/write/commit seam `initializeTargetRepo` already uses for
+  `project.prompt`/`engineering.prompt`).
+- **Hybrid artifact.** The contract is git-tracked in the *target* repo, not
+  machine-local state: `.swarmforge/contract.yaml` is the structured source
+  the gate parses, and a generated `CONTRACT.md` is a legible view for the
+  target's humans, rendered from that same source
+  (`generateContractMarkdown`/`renderContractYaml` in
+  `extension/src/onboarding/contractView.ts`) so the two can never diverge.
+- **Agree.** The operator reviews `CONTRACT.md` (or the yaml directly) and
+  flips `.swarmforge/contract.yaml`'s `agreement` field from `proposed` to
+  `agreed` once satisfied. To re-open scope later, flip it back to `pending`
+  and re-negotiate — the gate re-holds automatically.
+- **Gate.** Before promoting a paused ticket into `backlog/active/`, the
+  coordinator runs `node extension/out/tools/onboarding-contract-gate.js
+  <target-repo-path>` (`swarmforge/roles/coordinator.prompt`'s Onboarding
+  Contract Gate section). The gate is **fail-closed**
+  (`evaluateBuildStartGate`, `extension/src/onboarding/buildStartGate.ts`):
+  only an `agreed` contract allows dispatch. A missing, malformed, `proposed`,
+  or `pending` contract all hold, each with a reason naming why — a target
+  with no contract yet simply reads as `missing` (hold), so it must be
+  surveyed and proposed before any ticket for it can start.
+
+This ships as slice 1 (survey → propose → a single agree/hold decision). An
+iterative negotiate loop (request changes → revise → re-propose, repeating
+until agreed) is designed but not yet built — parked in
+`specs/features/BL-262-onboarding-contract-agreement.slice-2-negotiation.feature.draft`.
+
+## 3. The acceptance contract
 
 This is the part the operator asked about specifically.
 
@@ -52,12 +102,16 @@ machine-executable:
   (N/N) before the work is approved. The contract isn't aspirational — it's
   the actual pass/fail bar the swarm is held to.
 
-> **Not to be confused with:** this repo's README also uses the word
-> "contract" for something unrelated — the small shell-function contract
-> (`terminal_backend_label`, `terminal_backend_can_open_sessions`, etc.) a
-> terminal backend adapter must implement (README, "Adding A Terminal
-> Backend"). That's an internal plumbing contract for terminal automation; it
-> has nothing to do with the acceptance contract described here.
+> **Not to be confused with:** two other things in this project also use the
+> word "contract." Section 2 above describes the **onboarding scope
+> contract** — a project-level, survey-and-agree mandate gating whether any
+> ticket can start at all; this section's acceptance contract is a *separate*,
+> per-ticket thing that still applies underneath it. This repo's README also
+> uses "contract" for something unrelated again — the small shell-function
+> contract (`terminal_backend_label`, `terminal_backend_can_open_sessions`,
+> etc.) a terminal backend adapter must implement (README, "Adding A Terminal
+> Backend"), an internal plumbing contract for terminal automation with
+> nothing to do with either of the above.
 
 ### How a new project gets its first contract
 
@@ -117,7 +171,7 @@ ticket's live `.feature` file against its sibling `.feature.draft` — e.g.
 alongside `BL-235-per-tile-backend-model-switch.feature` — to see scenarios
 for a not-yet-built slice parked outside the executable glob.
 
-## 3. Seeding a fresh project's initial contracts
+## 4. Seeding a fresh project's initial contracts
 
 For a genuinely new target with no backlog yet, the human's inputs enter the
 same way any request does: drop a raw description into the target's

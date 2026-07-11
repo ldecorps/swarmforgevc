@@ -16,7 +16,11 @@ import { RepoSurveyFacts } from '../onboarding/contractTypes';
 import { initializeTargetContract } from '../config/targetBootstrap';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 
-function parseArgs(argv: string[]): { targetRepoPath: string; surveyFactsPath: string } | null {
+// Exported (like bakeoff-run.ts's own parseArgs/labelReportCostTiers) so
+// these run in-process under coverage instead of only via the compiled
+// CLI's subprocess - a CLI's main() run solely via execFileSync is
+// coverage-invisible for everything it calls.
+export function parseArgs(argv: string[]): { targetRepoPath: string; surveyFactsPath: string } | null {
   const [targetRepoPath, surveyFactsPath] = argv;
   return targetRepoPath && surveyFactsPath ? { targetRepoPath, surveyFactsPath } : null;
 }
@@ -25,17 +29,23 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
 }
 
-function readSurveyFacts(surveyFactsPath: string): RepoSurveyFacts {
+// Split out of readSurveyFacts so that function's own branch count stays
+// low, same technique as contractView.ts's isContractShape. Not a type
+// predicate: RepoSurveyFacts has no index signature, so it cannot narrow a
+// Record<string, unknown> directly - the caller casts once shape is confirmed.
+function isRepoSurveyFactsShape(value: Record<string, unknown>): boolean {
+  return (
+    isStringArray(value.languages) &&
+    typeof value.layoutSummary === 'string' &&
+    typeof value.readmeSummary === 'string' &&
+    typeof value.seedVision === 'string' &&
+    typeof value.initialBacklogSummary === 'string'
+  );
+}
+
+export function readSurveyFacts(surveyFactsPath: string): RepoSurveyFacts {
   const raw: unknown = JSON.parse(fs.readFileSync(surveyFactsPath, 'utf8'));
-  if (
-    !raw ||
-    typeof raw !== 'object' ||
-    !isStringArray((raw as Record<string, unknown>).languages) ||
-    typeof (raw as Record<string, unknown>).layoutSummary !== 'string' ||
-    typeof (raw as Record<string, unknown>).readmeSummary !== 'string' ||
-    typeof (raw as Record<string, unknown>).seedVision !== 'string' ||
-    typeof (raw as Record<string, unknown>).initialBacklogSummary !== 'string'
-  ) {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw) || !isRepoSurveyFactsShape(raw as Record<string, unknown>)) {
     throw new Error(
       `${surveyFactsPath} does not match RepoSurveyFacts (languages: string[], layoutSummary/readmeSummary/seedVision/initialBacklogSummary: string)`
     );
