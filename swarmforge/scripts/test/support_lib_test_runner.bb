@@ -157,6 +157,36 @@
 (assert= "idle-nudge-decision on a thread with no human participation at all is never a nudge"
          :none (support-lib/idle-nudge-decision (mk-thread []) (* 999 ONE_DAY_MS)))
 
+;; ── proactive-notice-decision / proactive-notice-text (pure) — BL-284 ────
+;; proactive-notify-01/02/03/04: mirrors idle-nudge-decision's own pure,
+;; adapter-free shape - given a subject's thread and a status-change
+;; descriptor, decide :notify or :none. WHETHER something changed is the
+;; caller's own job (deferred, BL-239 rehoming); this function only gates
+;; on an open thread + the given :changed? flag.
+
+(assert= "BL-284 proactive-notify-03: an open thread + a real change -> :notify"
+         :notify
+         (support-lib/proactive-notice-decision (mk-thread [(human-msg "2026-07-10T09:00:00Z")])
+                                                  {:changed? true :summary "BL-100 moved to done"}))
+
+(assert= "BL-284 proactive-notify-04: an open thread + no change -> :none, stays silent"
+         :none
+         (support-lib/proactive-notice-decision (mk-thread [(human-msg "2026-07-10T09:00:00Z")])
+                                                  {:changed? false :summary "BL-100 moved to done"}))
+
+(assert= "a resolved thread never gets a proactive notice, even on a real change"
+         :none
+         (support-lib/proactive-notice-decision (assoc (mk-thread [(human-msg "2026-07-10T09:00:00Z")]) :status "resolved")
+                                                  {:changed? true :summary "BL-100 moved to done"}))
+
+(assert= "a nonexistent thread (nil) never gets a proactive notice"
+         :none
+         (support-lib/proactive-notice-decision nil {:changed? true :summary "BL-100 moved to done"}))
+
+(assert= "proactive-notice-text carries the status-change descriptor's own summary"
+         "BL-100 moved to done"
+         (support-lib/proactive-notice-text {:changed? true :summary "BL-100 moved to done"}))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do
