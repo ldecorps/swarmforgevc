@@ -84,6 +84,32 @@
    content
    optional-section-adapter-keys))
 
+;; BL-260: given the render CLI's parsed [{:name :base64}...] payload (nil/
+;; empty when rendering is unavailable this run - the CLI shell-out failed,
+;; threw, or was never installed), returns {:html :note-line} for
+;; send-unsent-briefings!'s optional :diagram-section adapter below. :html is
+;; nil when there is nothing to render - the email still sends, plaintext-
+;; only, exactly as before this ticket, but with a clear note rather than
+;; silence (BL-260 render-unavailable-degradation-04). When diagrams ARE
+;; available, :html carries them as inline <img> data URIs (no external
+;; service, no CID/attachment plumbing needed - Resend accepts a plain `html`
+;; field directly) and :note-line still gets appended to the plaintext part,
+;; since a plaintext-only client can never show the html part at all
+;; (BL-260 plaintext-degradation-03).
+(defn build-diagram-section [diagrams]
+  (if (seq diagrams)
+    {:html (str "<div>"
+                (str/join ""
+                          (map (fn [{:keys [name base64]}]
+                                 (str "<h3>" name " diagram</h3>"
+                                      "<img src=\"data:image/png;base64," base64 "\" "
+                                      "alt=\"" name " diagram\" style=\"max-width:100%;height:auto\"/>"))
+                               diagrams))
+                "</div>")
+     :note-line "Architecture diagrams: rendered inline above (HTML view) - see docs/diagrams/ in the repo for the Mermaid source."}
+    {:html nil
+     :note-line "Architecture diagrams: unavailable this run (renderer not installed) - see docs/diagrams/ in the repo."}))
+
 (defn send-unsent-briefings!
   "Sends each not-yet-sent committed briefing exactly once via the injected
    send-email! adapter (daemon_alarm_lib.bb's send-alarm-email!). A file is
@@ -97,15 +123,28 @@
    string or nil) is appended to the content before sending, in that order.
    A caller that omits an adapter (or whose adapter returns nil) sends the
    original content unaffected by that section, backward compatible with
-   every earlier caller."
+   every earlier caller.
+
+   BL-260: an optional :diagram-section adapter (zero-arg fn returning
+   build-diagram-section's {:html :note-line} shape) appends :note-line to
+   the plaintext content exactly like the other optional sections, and -
+   only when present - passes :html as a 3rd arg to :send-email!. An absent
+   :diagram-section adapter keeps the exact 2-arg :send-email! call every
+   earlier caller/test already uses, so this is fully backward compatible."
   [briefings-dir adapters]
   (let [sent-now (atom [])]
     (doseq [file-name (find-unsent-briefings briefings-dir)]
       (let [raw-content ((:read-briefing-content adapters) file-name)
             content (apply-optional-sections raw-content adapters)
+            diagram-section (when-let [f (:diagram-section adapters)] (f))
+            content (if diagram-section
+                      (append-content-block content (:note-line diagram-section))
+                      content)
             date-label (str/replace file-name #"\.md$" "")
             subject (build-briefing-subject date-label content)
-            result ((:send-email! adapters) subject content)]
+            result (if diagram-section
+                     ((:send-email! adapters) subject content (:html diagram-section))
+                     ((:send-email! adapters) subject content))]
         (cond
           (:success result)
           (do
