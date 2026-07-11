@@ -84,6 +84,7 @@ const DOMAINS = [
   require('./recertInboundServerlessHandlerSteps'),
   require('./burndownLineChartSteps'),
   require('./recertInboundWebhookSteps'),
+  require('./operatorDecideStatusSteps'),
 ];
 
 function registerSteps(registry) {
