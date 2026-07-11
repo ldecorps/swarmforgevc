@@ -12,6 +12,8 @@ function fakeAdapters(overrides = {}) {
   const sent = [];
   const closed = [];
   let currentFolders = folders();
+  let currentGates = [];
+  let currentRoleTicket = {};
   return {
     state,
     topicMap,
@@ -21,8 +23,16 @@ function fakeAdapters(overrides = {}) {
     setFolders: (f) => {
       currentFolders = f;
     },
+    setGates: (g) => {
+      currentGates = g;
+    },
+    setRoleTicket: (rt) => {
+      currentRoleTicket = rt;
+    },
     adapters: {
       readFolders: () => currentFolders,
+      readGates: () => currentGates,
+      readRoleTicket: () => currentRoleTicket,
       readTickState: () => state,
       writeTickState: (next) => {
         state.snapshot = next.snapshot;
@@ -179,4 +189,85 @@ test('a route that fails to post is retried on a later tick once the transition 
   assert.equal(second.routed, 1);
   assert.deepEqual(created, ['BL-1 - flaky open', 'BL-1 - flaky open']);
   assert.ok(state.emittedKeys.includes('TaskStarted:BL-1'));
+});
+
+// ── needs-approval-01/02 — BL-301 ─────────────────────────────────────────
+
+test('needs-approval-01 [a backlog item]: a newly-gated role holding a ticket posts NeedsApproval into that ticket\'s topic', async () => {
+  const { adapters, setFolders, setGates, setRoleTicket, created, sent, topicMap } = fakeAdapters();
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature' }] }));
+  setRoleTicket({ coder: 'BL-1' });
+  setGates([{ role: 'coder', gated: true }]);
+
+  const result = await runConciergeTick(adapters);
+
+  // Both TaskStarted (newly active) and NeedsApproval (newly gated,
+  // tagged BL-1) derive on this same first tick - both route into BL-1's
+  // ONE topic (created once), never two topics for one item.
+  assert.equal(created.length, 1);
+  assert.equal(topicMap['BL-1'], 801);
+  assert.ok(sent.some((m) => m.text === 'NeedsApproval: BL-1' && m.topicId === 801));
+  assert.equal(result.routed, 2);
+});
+
+test('needs-approval-01 [no backlog item]: a newly-gated role holding no ticket posts no NeedsApproval anywhere', async () => {
+  const { adapters, setGates, setRoleTicket, created, sent } = fakeAdapters();
+  setGates([{ role: 'coder', gated: true }]);
+  setRoleTicket({}); // coder holds nothing
+
+  const result = await runConciergeTick(adapters);
+
+  assert.deepEqual(created, []);
+  assert.deepEqual(sent, []);
+  assert.equal(result.routed, 0);
+});
+
+test('needs-approval-01: a gate that stays captured across two polls only posts once (no duplicate NeedsApproval)', async () => {
+  const { adapters, setFolders, setGates, setRoleTicket, sent } = fakeAdapters();
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature' }] }));
+  setRoleTicket({ coder: 'BL-1' });
+  setGates([{ role: 'coder', gated: true }]);
+  await runConciergeTick(adapters);
+  const sentAfterFirst = sent.length;
+
+  const result = await runConciergeTick(adapters); // gate still true, nothing changed
+
+  assert.equal(sent.length, sentAfterFirst);
+  assert.equal(result.routed, 0);
+});
+
+// ── needs-approval-02 — BL-301 retry symmetry ─────────────────────────────
+
+test('needs-approval-02: a NeedsApproval whose post fails is retried on the next tick, not dropped', async () => {
+  const { adapters, setFolders, setGates, setRoleTicket, state } = fakeAdapters();
+  // The item already has a topic (an earlier TaskStarted already opened
+  // it) and is NOT newly active this tick - isolates the scenario to ONLY
+  // the NeedsApproval transition, so only its own send can fail/retry.
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature' }] }));
+  adapters.writeTickState({ snapshot: { backlog: { active: ['BL-1'], paused: [], done: [] }, gates: [], roleTicket: {} }, emittedKeys: ['TaskStarted:BL-1'] });
+  setRoleTicket({ coder: 'BL-1' });
+  setGates([{ role: 'coder', gated: true }]);
+  adapters.routeAdapters.getTopicMap = () => ({ 'BL-1': 42 });
+  let shouldFail = true;
+  const sent = [];
+  adapters.routeAdapters.sendMessage = async (topicId, text) => {
+    if (shouldFail) {
+      return false;
+    }
+    sent.push({ topicId, text });
+    return true;
+  };
+
+  const first = await runConciergeTick(adapters);
+  assert.equal(first.routed, 0);
+  assert.ok(!state.emittedKeys.includes('NeedsApproval:BL-1'));
+  // The gate transition must still be pending in the persisted snapshot -
+  // a real restart/next tick re-reads the SAME live gate (still true).
+  assert.equal(state.snapshot.gates.find((g) => g.role === 'coder').gated, false);
+
+  shouldFail = false;
+  const second = await runConciergeTick(adapters); // gate still true, unchanged live state
+  assert.equal(second.routed, 1);
+  assert.deepEqual(sent, [{ topicId: 42, text: 'NeedsApproval: BL-1' }]);
+  assert.ok(state.emittedKeys.includes('NeedsApproval:BL-1'));
 });

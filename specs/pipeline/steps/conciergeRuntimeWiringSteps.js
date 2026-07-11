@@ -17,6 +17,8 @@ const TITLE = 'a fine feature';
 function buildAdapters(ctx) {
   return {
     readFolders: () => ctx.folders,
+    readGates: () => ctx.gates || [],
+    readRoleTicket: () => ctx.roleTicket || {},
     readTickState: () => ctx.state,
     writeTickState: (next) => {
       ctx.state = next;
