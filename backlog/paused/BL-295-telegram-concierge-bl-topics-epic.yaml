@@ -1,0 +1,76 @@
+id: BL-295
+title: "EPIC — Telegram Concierge: one Topic per BL-### + typed swarm-unaware event stream (additive on BL-274's SUP-### front desk); tracks children, do not promote directly"
+milestone: M8
+status: todo
+type: epic
+priority: 20
+depends_on: []
+decomposes_into: [BL-296, BL-297, BL-298, BL-299]
+source: ".swarmforge/operator/INTAKE-telegram-concierge-bl-topics.md — human-supplied Concierge operator prompt via operator -> coordinator 2026-07-11, refining shipped BL-274. Human decision 2026-07-11 (AskUserQuestion): ADDITIVE model. Specifier reconciled + scoped."
+
+notes: |
+  UMBRELLA / tracking item, not directly promotable. Refines the shipped BL-274 front
+  desk (which stays closed as the SUP-### foundation) by adding a per-work-item BL-###
+  Topic layer + a typed, Telegram-AGNOSTIC event stream from the swarm.
+
+  HUMAN DECISION (AskUserQuestion 2026-07-11): **ADDITIVE**. Keep SUP-### threads for
+  open-ended PRE-ticket discussion (chat -> spawn a BL-###, e.g. BL-271/272/273 this
+  session); ADD one BL-### Topic per work item for its progress + replies. Two topic
+  types coexist; a SUP-### that spawns a BL-### links to that BL-###'s topic.
+
+  THE CONCIERGE MODEL (human's authoritative prompt, reconciled):
+    - Each backlog item BL-### has exactly ONE Telegram Topic. When work starts on a
+      BL-###: look up its topic; if none, create one named "BL-123 - Short Description";
+      persist backlog_id -> telegram_topic_id. All updates for that BL-### post into its
+      topic (message_thread_id). Never post task-specific updates into the main group.
+    - Human replies inside a BL-### topic belong to that item and route back to the
+      Operator as context for that task.
+    - On completion: post a final summary in the topic + mark complete (optionally
+      archive/close).
+    - THE SWARM IS COMPLETELY UNAWARE OF TELEGRAM. It emits GENERIC typed events; the
+      Concierge (external, Operator-hosted) is SOLELY responsible for translating events
+      into Telegram messages in the correct topic. Architecture:
+        Developer -> Concierge -> Operator -> Swarm -> EVENTS -> Concierge -> BL-### Topic
+
+  RECONCILIATION WITH SHIPPED BL-274 (specifier-resolved):
+    1. Keying: BL-274 keys by SUP-### (subjectId). This epic ADDS a parallel
+       backlog_id -> telegram_topic_id keying for the BL-### topic layer. SUP-###
+       keying is unchanged (pre-ticket). A spawned BL-### (BL-283 handoff) links its
+       SUP-### thread to the new BL-### topic.
+    2. Snapshot -> typed events: BL-239 telegramNarrator emits per-ROLE, Telegram-COUPLED
+       snapshot-diff events (stage-transition/gate/pr-link/dead-letter). This epic
+       generalizes that into a per-BL-###, Telegram-AGNOSTIC typed event stream the
+       Concierge consumes (the swarm↔Concierge contract). The swarm stops knowing about
+       Telegram; the Concierge owns all Telegram translation.
+
+  SLICE PLAN (children specced JUST-IN-TIME; BL-296 specced now):
+    - BL-296 — SLICE 1 (foundation): the typed, Telegram-agnostic, BL-###-tagged EVENT
+      STREAM emitted from the swarm's existing signals (swarm-unaware). The
+      swarm↔Concierge contract. depends_on [].
+    - BL-297 — SLICE 2: BL-### <-> Topic mapping + event routing. The Concierge
+      looks-up/creates the BL-###'s topic ("BL-123 - Desc", persist backlog_id ->
+      topic_id) and posts each typed event into it via message_thread_id; never the main
+      chat. depends_on [BL-296].
+    - BL-298 — SLICE 3: human replies in a BL-### topic route to the Operator as context
+      for that BL-### task. depends_on [BL-297].
+    - BL-299 — SLICE 4: completion summary + mark/close the topic on TaskCompleted.
+      depends_on [BL-297].
+
+  NET-NEW: the typed event vocabulary + Telegram-agnostic emission (BL-296); the
+  backlog_id->topic_id map + createForumTopic/route (BL-297, generalizing
+  telegramClient.ts to forum topics for the BL layer); BL-### topic reply routing
+  (BL-298); completion summary/close (BL-299).
+
+  REUSE (verified 2026-07-11): telegramNarrator.ts diffNarrationEvents (the existing
+  typed-event-diff pattern to generalize); needsHumanDetection.ts / gateSnapshot.ts
+  (NeedsApproval); backlog folders + ticket lifecycle (specDateIso/closeDateIso) for
+  TaskStarted/TaskCompleted; telegramClient.ts + bridge /telegram-inbound (BL-281);
+  the Concierge IS the headless translator layer that BL-292 (launch) + BL-294
+  (auto-open/consume) run - fold this event/topic work into that same Concierge.
+
+  ONE-TIME OPS (human, NOT build): a Telegram supergroup with Topics enabled +
+  @swarmforge_concierge_bot as admin (manage-topics). The human is in a private DM today
+  (no topics); the per-BL-### topic flow needs the supergroup. Surface alongside.
+
+acceptance: none (epic — acceptance lives in the child slices)
+mutation_cost: none
