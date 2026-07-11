@@ -88,6 +88,7 @@ const DOMAINS = [
   require('./suiteDurationPwaSidecarSteps'),
   require('./operatorCoordinatorHandoffSteps'),
   require('./frontDeskHeadlessLauncherSteps'),
+  require('./pwaCollapsibleSectionsSteps'),
 ];
 
 function registerSteps(registry) {
