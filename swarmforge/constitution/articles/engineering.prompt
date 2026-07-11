@@ -138,16 +138,18 @@
   fails ENOENT inside the sandbox and blocks the hardener's no-surviving-mutants
   gate for EVERY ticket, not just the one that touched the sibling. This is a
   GENERAL failure mode, not a `pwa/`-specific one: make the fix cover every
-  sibling path a test/CLI reaches into, not a per-directory one-off. These
-  surface ITERATIVELY — fix one and the dry run ENOENTs on the next — so do NOT
-  chase them one bounce at a time: run a full sandbox dry run and enumerate the
-  COMPLETE set at once (grep `extension/test` for two-up sibling reads and
-  `extension/src` for three-up / `REPO_ROOT`-relative reads). Four confirmed
-  instances so far, all landing at the shared `.stryker-tmp/` parent:
+  sibling path a test/CLI reaches into, not a per-directory one-off. Fixed by
+  BL-221 (`pwa/`) then generalized by BL-267 to a shared, extensible mechanism
+  (`extension/scripts/strykerSandboxSiblingsLib.js`'s
+  `ensureStrykerSandboxSiblingLinks`, driven by a `SIBLING_NAMES` list in
+  `extension/scripts/ensureStrykerSandboxSiblings.js` rather than one hardcoded
+  name), after these surfaced ITERATIVELY (fixing one exposed the dry run
+  ENOENTing on the next) — a full sandbox sweep (grep `extension/test` for
+  two-up sibling reads and `extension/src` for three-up / `REPO_ROOT`-relative
+  reads) found the complete set:
     - repo-root `pwa/` (`pwa/index.html`, `pwa/app.js`), read via
       `path.join(__dirname, '..', '..', 'pwa', ...)` from `extension/test/`.
-      Fixed by BL-221 — but BL-221 symlinked ONLY `pwa/`, so it does not cover
-      the others.
+      Fixed by BL-221.
     - repo-root `swarmforge/` (`swarmforge/scripts/compliance_battery.bb`),
       shelled by `extension/src/recruiter/complianceBatteryGate.ts`
       (`REPO_ROOT = __dirname/../../..`, then `bb <REPO_ROOT>/swarmforge/...`).
@@ -158,14 +160,14 @@
     - repo-root `docs/` (`docs/GettingStarted.md`), read by
       `extension/test/gettingStartedDrift.test.js`. Surfaced by a specifier
       sweep 2026-07-11.
-  All four are tracked by BL-267 (the follow-up that generalizes BL-221's fix).
-  Runtime-loaded sibling paths must be made available inside the sandbox
-  (Stryker's `files`/sandbox configuration or an equivalent copy/symlink
-  mechanism), and the mechanism must be generalizable to each new sibling rather
-  than rebuilt per directory. A green local test run that reads/shells the
-  sibling in place is NOT proof the sandboxed dry run can — verify against the
-  sandbox. (pwa/ confirmed 2026-07-09 during BL-132 QA; swarmforge/, .github/,
-  docs/ confirmed 2026-07-11 during/after BL-260; systemic.)
+  All four resolve today as a single shared symlink each at
+  `.stryker-tmp/<name>` (never a per-sandbox copy, so it survives Stryker's
+  per-sandbox dispose); covering the next sibling is adding its name to
+  `SIBLING_NAMES`, not building a new mechanism. A green local test run that
+  reads/shells the sibling in place is NOT proof the sandboxed dry run can —
+  verify against the sandbox. (pwa/ confirmed 2026-07-09 during BL-132 QA;
+  swarmforge/, .github/, docs/ confirmed 2026-07-11 during/after BL-260;
+  generalized to all four by BL-267; systemic.)
 
 ## Diagrams
 - The project's documentation must include an up-to-date architecture
