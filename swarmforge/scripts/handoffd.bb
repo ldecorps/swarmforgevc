@@ -691,12 +691,18 @@
 ;; missing-key-warned? - a separate atom because this is a separate process.
 (def briefing-missing-key-warned? (atom false))
 
-(defn send-configured-briefing-email! [subject text]
-  (daemon-alarm-lib/send-configured-email!
-   conf-file subject text
-   {:already-warned?! (fn [] @briefing-missing-key-warned?)
-    :log-warning! (fn [msg] (log! "email-misconfigured" msg))
-    :mark-warned! (fn [] (reset! briefing-missing-key-warned? true))}))
+;; BL-260: the 3-arg form threads an optional html body (the rendered-
+;; diagrams section) through to send-configured-email!'s new 5-arg form; the
+;; 2-arg form is unchanged (html nil), matching daemon-alarm-lib's own
+;; additive, backward-compatible arity pattern.
+(defn send-configured-briefing-email!
+  ([subject text] (send-configured-briefing-email! subject text nil))
+  ([subject text html]
+   (daemon-alarm-lib/send-configured-email!
+    conf-file subject text html
+    {:already-warned?! (fn [] @briefing-missing-key-warned?)
+     :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+     :mark-warned! (fn [] (reset! briefing-missing-key-warned? true))})))
 
 ;; BL-252: shells to the compiled suite-duration-line.js CLI (Babashka has
 ;; no way to import compiled TS) - reuses computeSuiteDurationTrend/
@@ -757,11 +763,32 @@
       (when (zero? exit) (str/trim out)))
     (catch Exception _ nil)))
 
+;; BL-260: same shell-out pattern as the *-briefing-section fns above, but
+;; the CLI's stdout is JSON ([{:name :base64}...] - the rendered diagrams),
+;; not a single text line, so this parses it instead of trimming it. Any
+;; failure (renderer dependency missing, an .mmd parse error, the CLI not
+;; yet compiled on this checkout) degrades to nil, same as every sibling
+;; CLI here - never crashes the sweep.
+(defn briefing-diagrams-json []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "render-briefing-diagrams.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit) (json/parse-string out true)))
+    (catch Exception _ nil)))
+
+;; Wraps briefing-diagrams-json with briefing_email_lib.bb's pure
+;; build-diagram-section - the ONLY :diagram-section adapter shape
+;; send-unsent-briefings! expects (BL-260 render-unavailable-degradation-04:
+;; nil diagrams still produce a clear no-diagram note, never a crash).
+(defn briefing-diagram-section []
+  (briefing-email-lib/build-diagram-section (briefing-diagrams-json)))
+
 (defn briefing-email-sweep! []
   (briefing-email-lib/send-unsent-briefings!
    (str briefings-dir)
    {:read-briefing-content (fn [file-name] (slurp (str (fs/path briefings-dir file-name))))
     :send-email! send-configured-briefing-email!
+    :diagram-section briefing-diagram-section
     :suite-duration-line suite-duration-briefing-line
     :needs-approval-section needs-approval-briefing-section
     :merged-blocked-digest merged-blocked-digest-briefing-section

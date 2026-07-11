@@ -88,7 +88,11 @@ function registerSteps(registry) {
     }
 
     const alarmLibSrc = fs.readFileSync(DAEMON_ALARM_LIB, 'utf8');
-    const sharedBody = definedFunctionBody(alarmLibSrc, 'send-configured-email!', 800);
+    // BL-260 widened this function (a new 5-arg html-carrying arity plus its
+    // own docstring) past the old 800-char window before reaching the
+    // notify_email_to/RESEND_API_KEY/send-alarm-email! lines this check
+    // greps for - bumped to comfortably cover both arities' bodies.
+    const sharedBody = definedFunctionBody(alarmLibSrc, 'send-configured-email!', 1400);
     if (!sharedBody) {
       throw new Error('expected daemon_alarm_lib.bb to define the shared send-configured-email!');
     }
