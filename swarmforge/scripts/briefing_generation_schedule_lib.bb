@@ -89,15 +89,25 @@
 (defn generate-briefing-if-due!
   "The whole trigger decision + action, adapter-injected (mirrors
    briefing_email_lib.bb's send-unsent-briefings! shape) so the DECISION is
-   directly testable with a fake :notify!/:log! adapter pair and an
-   injected now-ms - no real tmux, no real timer, in every unit test.
-   :notify! is called with the built instruction text exactly once when
-   due. Returns true when it fired, false when skipped (already generated
-   today, or the configured time has not yet been reached)."
+   directly testable with a fake :notify!/:emit-sidecar!/:log! adapter set
+   and an injected now-ms - no real tmux, no real timer, in every unit
+   test. :notify! is called with the built instruction text exactly once
+   when due. Returns true when it fired, false when skipped (already
+   generated today, or the configured time has not yet been reached).
+
+   BL-272: :emit-sidecar! runs the BL-213 cost & health sidecar emitter
+   BEST-EFFORT before :notify! - mirrors extension.ts's onBriefingDue host
+   path, which emits+commits the sidecar inside a try/catch before nudging
+   the coordinator. A throwing :emit-sidecar! must never suppress the
+   nudge, so it is wrapped here, not left to each adapter implementation to
+   remember."
   [now-ms morning-hour morning-minute briefings-dir adapters]
   (let [day-key (utc-day-key now-ms)]
     (if (morning-trigger-due? now-ms morning-hour morning-minute briefings-dir)
       (do
+        (try
+          ((:emit-sidecar! adapters))
+          (catch Exception _ nil))
         ((:notify! adapters) (briefing-due-instruction day-key))
         ((:log! adapters) "briefing-generation-nudge-sent" day-key)
         true)
