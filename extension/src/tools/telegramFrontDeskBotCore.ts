@@ -21,34 +21,49 @@ export function messageTextOf(update: TelegramUpdate): string | undefined {
   return update.message?.text;
 }
 
+// BL-294: the reserved topic-map key a private DM (no message_thread_id,
+// topicIdOf undefined) resolves through - the SAME map/lookup mechanism a
+// real topic id uses, just one sentinel key wide, so a DM "degenerates to
+// the single default subject" (the ticket's own wording) without a second
+// map or a second code path.
+export const DEFAULT_SUBJECT_KEY = '__default__';
+
 // Pure lookups over the bot's own persisted {topicId: subjectId} map (read
 // by the caller) - subjectForTopic drives inbound demux (topic-topic-01/
-// -02), topicForSubject drives the reply relay (telegram-topic-03): given
-// a reply tagged by SUP-### subject id, which Telegram topic does it go
-// back into.
+// -02, auto-open-01/02/03), topicForSubject drives the reply relay
+// (telegram-topic-03): given a reply tagged by SUP-### subject id, which
+// Telegram topic does it go back into.
 export function subjectForTopic(topicMap: Record<string, string>, topicId: number | undefined): string | undefined {
-  return topicId === undefined ? undefined : topicMap[String(topicId)];
+  return topicMap[topicId === undefined ? DEFAULT_SUBJECT_KEY : String(topicId)];
 }
 
+// A subject opened from a DM (mapped under DEFAULT_SUBJECT_KEY, not a real
+// topic id) has no Telegram topic to reply into - returns undefined rather
+// than Number(DEFAULT_SUBJECT_KEY) (NaN), which relaySseReplies would
+// otherwise treat as "mapped" and forward a corrupt message_thread_id.
 export function topicForSubject(topicMap: Record<string, string>, subjectId: string): number | undefined {
-  const found = Object.entries(topicMap).find(([, sid]) => sid === subjectId);
+  const found = Object.entries(topicMap).find(([key, sid]) => sid === subjectId && key !== DEFAULT_SUBJECT_KEY);
   return found ? Number(found[0]) : undefined;
 }
 
 export type BotUpdateDecision =
-  | { action: 'post'; subjectId: string; text: string }
-  | { action: 'drop'; reason: 'not-principal' | 'unmapped-topic' | 'no-text' };
+  | { action: 'post-existing'; subjectId: string; text: string }
+  | { action: 'open-default'; text: string }
+  | { action: 'open-for-topic'; topicId: number; text: string }
+  | { action: 'drop'; reason: 'not-principal' | 'no-text' };
 
 // Pure: the bot's whole per-update decision - given the update, the
 // principal's user id, and a lookup from topic id -> already-mapped
 // SUP-### subject id (the bot's own persisted mapping, read by the
-// caller), decides whether to POST to the bridge and with what body.
+// caller), decides whether to post under an existing subject, open a new
+// one (private DM -> the single default subject; an unmapped topic -> a
+// fresh per-topic subject), or drop.
 //
-// Topic/subject CREATION is OUT OF SCOPE for this slice (no acceptance
-// scenario covers "opening a new subject" over Telegram - every scenario
-// assumes a topic already mapped to a SUP-###, per the ticket's own
-// Background/Given wording): an update on an unmapped topic is dropped,
-// logged, never silently mis-routed or auto-opened.
+// SUP-### id ASSIGNMENT itself is not this function's job - it stays with
+// the support store (support_thread.bb open / support_lib.bb's
+// next-thread-id), reached through the openSubjectAndRecord adapter below;
+// this function only ever decides WHICH of those three things should
+// happen for a given update.
 export function decideUpdateAction(
   update: TelegramUpdate,
   principalUserId: string,
@@ -61,17 +76,25 @@ export function decideUpdateAction(
   if (!text) {
     return { action: 'drop', reason: 'no-text' };
   }
-  const subjectId = subjectForTopic(topicIdOf(update));
-  if (!subjectId) {
-    return { action: 'drop', reason: 'unmapped-topic' };
+  const topicId = topicIdOf(update);
+  const subjectId = subjectForTopic(topicId);
+  if (subjectId) {
+    return { action: 'post-existing', subjectId, text };
   }
-  return { action: 'post', subjectId, text };
+  return topicId === undefined ? { action: 'open-default', text } : { action: 'open-for-topic', topicId, text };
 }
 
 export interface PollAdapters {
   getUpdates: (offset: number) => Promise<GetUpdatesResult>;
   postToBridge: (subjectId: string, text: string) => Promise<boolean>;
   subjectForTopic: (topicId: number | undefined) => string | undefined;
+  // BL-294: opens a fresh SUP-### for a not-yet-mapped context (topicId
+  // undefined means the DM default) via the support store - the
+  // authoritative id sequence, never duplicated here - records the
+  // topicId(or default)->subjectId mapping so later messages in the same
+  // context resolve through subjectForTopic instead of opening again, and
+  // notifies the Operator the same way an existing-subject post does.
+  openSubjectAndRecord: (topicId: number | undefined, text: string) => Promise<string>;
   nextOffset: (updates: TelegramUpdate[], currentOffset: number) => number;
 }
 
@@ -79,6 +102,22 @@ export interface PollResult {
   nextOffset: number;
   posted: number;
   dropped: number;
+}
+
+// Split out of pollAndForward so that function's own branch count stays
+// low - one update's whole decision -> outcome, true when posted/opened,
+// false when dropped.
+async function processUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<boolean> {
+  const decision = decideUpdateAction(update, principalUserId, adapters.subjectForTopic);
+  if (decision.action === 'post-existing') {
+    return adapters.postToBridge(decision.subjectId, decision.text);
+  }
+  if (decision.action === 'open-default' || decision.action === 'open-for-topic') {
+    const topicId = decision.action === 'open-for-topic' ? decision.topicId : undefined;
+    await adapters.openSubjectAndRecord(topicId, decision.text);
+    return true;
+  }
+  return false;
 }
 
 // Adapter-injected: one poll-and-forward cycle. Every update decision goes
@@ -93,14 +132,8 @@ export async function pollAndForward(offset: number, principalUserId: string, ad
   let posted = 0;
   let dropped = 0;
   for (const update of result.updates) {
-    const decision = decideUpdateAction(update, principalUserId, adapters.subjectForTopic);
-    if (decision.action === 'post') {
-      const ok = await adapters.postToBridge(decision.subjectId, decision.text);
-      if (ok) {
-        posted += 1;
-      } else {
-        dropped += 1;
-      }
+    if (await processUpdate(update, principalUserId, adapters)) {
+      posted += 1;
     } else {
       dropped += 1;
     }
