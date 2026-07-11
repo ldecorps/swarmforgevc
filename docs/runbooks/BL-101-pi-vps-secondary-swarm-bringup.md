@@ -64,6 +64,18 @@ hardware install) does, in order:
    `swarmforge.sh` parser) and its systemd unit
    (`generate_systemd_units.sh`), then enables the unit (`systemctl enable`)
    so it starts on every future boot.
+6. Generates and enables a **second** systemd unit (BL-304,
+   `generate_systemd_units.sh ... --unit=operator`) supervising the
+   Operator runtime (`operator_runtime.bb`) itself — previously nothing
+   restarted it after a crash, OOM, or reboot, leaving the Operator
+   permanently dead until a human intervened. Like the swarm unit,
+   `Restart=always` with `StartLimitIntervalSec=0` (systemd's own
+   start-rate-limit disabled) means a crash burst never parks it in a
+   permanent failed state, and `WantedBy=multi-user.target` brings it back
+   after a reboot. It shares the same `EnvironmentFile=` as the swarm unit
+   (see step 3 below), and is enabled + started immediately by the
+   provisioning script — it retries harmlessly until authentication (step
+   3) is in place.
 
 The script prints the remaining **manual** steps at the end (repeated below
 with detail).
@@ -92,10 +104,13 @@ mode 600 by the provisioning script) — **not** the shell profile: a systemd
 service starts with a clean environment and never sources it, so an export
 there would never reach the swarm process. The generated unit's
 `EnvironmentFile=-/etc/swarmforge/<swarm-name>.env` is what actually feeds
-this to the swarm:
+this to the swarm — the same file backs the Operator unit's
+`EnvironmentFile=` too (step 6 above), so restart both to pick up a new
+token:
 ```sh
 echo "CLAUDE_CODE_OAUTH_TOKEN=<the printed token>" | sudo tee /etc/swarmforge/<swarm-name>.env >/dev/null
-sudo systemctl restart swarmforge-<swarm-name>.service   # picks up the new env
+sudo systemctl restart swarmforge-<swarm-name>.service            # picks up the new env
+sudo systemctl restart swarmforge-operator-<swarm-name>.service   # same env, operator side
 ```
 `CLAUDE_CODE_OAUTH_TOKEN` is scoped to inference only and **cannot** open a
 Remote Control session — use this only if you don't need mobile monitoring
