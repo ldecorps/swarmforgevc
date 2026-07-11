@@ -10,6 +10,8 @@ import {
 import { extractBearerToken, isAuthorizedByQueryToken } from './bridgeAuth';
 import { getHolisticUiHtml } from './holisticUiHtml';
 import { answerCapturedGateLive } from './gateAnswerLive';
+import { computeRoleGateStatesLive, filterPendingGates } from './gateSnapshot';
+import { readSwarmRoles } from '../swarm/tmuxClient';
 import {
   DeviceRegistry,
   DeviceScope,
@@ -280,6 +282,17 @@ function buildJsonRoutes(targetPath: string, runLogPath: string): JsonRoute[] {
       // SSE poll loop.
       matches: (url) => url === '/stage-dwell',
       compute: () => buildStageDwellState(targetPath),
+    },
+    {
+      // BL-265 slice 1: lists the currently-PENDING to-human gates (a live
+      // tmux pane capture per role) - same "too expensive for the SSE poll
+      // loop, computed only on direct request" posture as every sibling
+      // route above. READ-scoped only (the global isAuthorizedForRead check
+      // ahead of this table already covers it) - answering a gate stays the
+      // separate, control-step-up-gated POST /gate-answer route below; this
+      // never writes anything.
+      matches: (url) => url === '/gates',
+      compute: () => filterPendingGates(computeRoleGateStatesLive(targetPath, readSwarmRoles(targetPath).map((r) => r.role))),
     },
   ];
 }
