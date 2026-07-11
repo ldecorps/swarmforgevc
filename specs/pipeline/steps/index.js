@@ -103,6 +103,7 @@ const DOMAINS = [
   require('./conciergeTopicRoutingSteps'),
   require('./conciergeTopicReplySteps'),
   require('./conciergeTopicCompletionSteps'),
+  require('./conciergeNeedsApprovalSteps'),
 ];
 
 function registerSteps(registry) {
