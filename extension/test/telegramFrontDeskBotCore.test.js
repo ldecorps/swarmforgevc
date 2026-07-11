@@ -97,6 +97,54 @@ test('a textless update (e.g. a sticker/photo) is dropped, never posted or opene
   assert.deepEqual(decision, { action: 'drop', reason: 'no-text' });
 });
 
+// ── BL-298 topic-reply-01/02/03: BL-### topic replies route as Operator context ──
+
+test('BL-298 topic-reply-01: a reply on a topic mapped to a backlog item routes as operator context, not a support subject', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'here is an update' });
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, () => undefined, (topicId) => (topicId === 42 ? 'BL-123' : undefined));
+  assert.deepEqual(decision, { action: 'operator-context', backlogId: 'BL-123', text: 'here is an update' });
+});
+
+test('BL-298: a topic mapped to BOTH a SUP-### subject and a backlog item resolves to the subject (support-thread priority, no regression)', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'ambiguous' });
+  const decision = decideUpdateAction(
+    update,
+    PRINCIPAL_ID,
+    (topicId) => (topicId === 42 ? 'SUP-1' : undefined),
+    (topicId) => (topicId === 42 ? 'BL-123' : undefined)
+  );
+  assert.deepEqual(decision, { action: 'post-existing', subjectId: 'SUP-1', text: 'ambiguous' });
+});
+
+test('BL-298 topic-reply-02: a topic mapped to a SUP-### subject still posts to that subject (no regression) even when backlogForTopic is provided', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'any update?' });
+  const decision = decideUpdateAction(
+    update,
+    PRINCIPAL_ID,
+    (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    () => undefined
+  );
+  assert.deepEqual(decision, { action: 'post-existing', subjectId: 'SUP-1', text: 'any update?' });
+});
+
+test('BL-298 topic-reply-03: a non-principal reply on a backlog item\'s topic is still dropped, never routed as context', () => {
+  const update = mkUpdate({ fromId: 999, topicId: 42, text: 'let me in' });
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, () => undefined, () => 'BL-123');
+  assert.deepEqual(decision, { action: 'drop', reason: 'not-principal' });
+});
+
+test('an unmapped topic with no backlog mapping either still opens a fresh SUP-### subject (unrelated brand-new topic, unchanged)', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 99, text: 'brand new' });
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, () => undefined, () => undefined);
+  assert.deepEqual(decision, { action: 'open-for-topic', topicId: 99, text: 'brand new' });
+});
+
+test('decideUpdateAction called with only 3 args (no backlogForTopic) behaves exactly as before BL-298 - existing callers are unaffected', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 99, text: 'brand new' });
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, () => undefined);
+  assert.deepEqual(decision, { action: 'open-for-topic', topicId: 99, text: 'brand new' });
+});
+
 // ── pollAndForward (adapter-injected) ────────────────────────────────────
 
 function stubOpenSubjectAndRecord() {
@@ -223,6 +271,73 @@ test('BL-294 auto-open-03: a second message in an already-mapped context posts t
   assert.deepEqual(posted, [{ subjectId: 'SUP-502', text: 'second' }]);
   assert.equal(result.posted, 2);
   assert.equal(result.dropped, 0);
+});
+
+// ── pollAndForward operator-context path — BL-298 topic-reply-01/02/03 ───
+
+test('BL-298 topic-reply-01: a reply on a backlog item\'s topic routes to postOperatorContext, never postToBridge/openSubjectAndRecord', async () => {
+  const contexts = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'progress update' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a backlog-item topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for a backlog-item topic reply');
+    },
+    subjectForTopic: () => undefined,
+    backlogForTopic: (topicId) => (topicId === 42 ? 'BL-123' : undefined),
+    postOperatorContext: async (backlogId, text) => {
+      contexts.push({ backlogId, text });
+      return true;
+    },
+    nextOffset: (updates, current) => current + updates.length,
+  });
+  assert.deepEqual(contexts, [{ backlogId: 'BL-123', text: 'progress update' }]);
+  assert.equal(result.posted, 1);
+  assert.equal(result.dropped, 0);
+});
+
+test('BL-298 topic-reply-02: a SUP-### subject\'s topic still posts via postToBridge (no regression), never postOperatorContext', async () => {
+  const posted = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'any update?' })] }),
+    postToBridge: async (subjectId, text) => {
+      posted.push({ subjectId, text });
+      return true;
+    },
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    backlogForTopic: () => {
+      throw new Error('backlogForTopic should not even be consulted once subjectForTopic resolves');
+    },
+    postOperatorContext: async () => {
+      throw new Error('postOperatorContext should not be called for a SUP-### subject topic');
+    },
+    nextOffset: (updates, current) => current + updates.length,
+  });
+  assert.deepEqual(posted, [{ subjectId: 'SUP-1', text: 'any update?' }]);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-298 topic-reply-03: a non-principal reply on a backlog item\'s topic is dropped - reaches neither the Operator nor a thread', async () => {
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: 999, topicId: 42, text: 'let me in' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a non-principal reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for a non-principal reply');
+    },
+    subjectForTopic: () => undefined,
+    backlogForTopic: () => 'BL-123',
+    postOperatorContext: async () => {
+      throw new Error('postOperatorContext should not be called for a non-principal reply');
+    },
+    nextOffset: (updates, current) => current + updates.length,
+  });
+  assert.equal(result.posted, 0);
+  assert.equal(result.dropped, 1);
 });
 
 // ── parseNextSseRecord (pure) ────────────────────────────────────────────
