@@ -14,7 +14,9 @@ import * as path from 'path';
 import { evaluateBuildStartGate } from '../onboarding/buildStartGate';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 
-function parseArgs(argv: string[]): { targetRepoPath: string } | null {
+// Exported (like bakeoff-run.ts's own parseArgs) so it runs in-process
+// under coverage instead of only via the compiled CLI's subprocess.
+export function parseArgs(argv: string[]): { targetRepoPath: string } | null {
   const [targetRepoPath] = argv;
   return targetRepoPath ? { targetRepoPath } : null;
 }

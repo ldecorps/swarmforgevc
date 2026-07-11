@@ -9,6 +9,25 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+// Each field's own shape check, split out of parseContractYaml so that
+// function's own branch count stays low - the validation logic is
+// unchanged, just named and testable independently. Not a type predicate:
+// ProposedContract has no index signature, so it cannot narrow a
+// Record<string, unknown> directly - the caller casts once shape is confirmed.
+function isContractShape(value: Record<string, unknown>): boolean {
+  return (
+    isStringArray(value.scope) &&
+    isStringArray(value.outOfScope) &&
+    isStringArray(value.boundaries) &&
+    typeof value.initialBacklogSummary === 'string' &&
+    isContractAgreementState(value.agreement)
+  );
+}
+
 // BL-262: strict parse - unlike backlogReader.ts's parseBacklogYaml (which
 // falls back to a lenient regex extractor for free-form ticket prose), a
 // contract that fails to parse as well-shaped YAML is genuinely MALFORMED
@@ -20,20 +39,10 @@ export function parseContractYaml(raw: string): ProposedContract | null {
   } catch {
     return null;
   }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+  if (!isPlainObject(parsed) || !isContractShape(parsed)) {
     return null;
   }
-
-  const candidate = parsed as Record<string, unknown>;
-  if (
-    !isStringArray(candidate.scope) ||
-    !isStringArray(candidate.outOfScope) ||
-    !isStringArray(candidate.boundaries) ||
-    typeof candidate.initialBacklogSummary !== 'string' ||
-    !isContractAgreementState(candidate.agreement)
-  ) {
-    return null;
-  }
+  const candidate = parsed as unknown as ProposedContract;
 
   return {
     scope: candidate.scope,
