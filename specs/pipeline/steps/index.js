@@ -71,6 +71,7 @@ const DOMAINS = [
   require('./gatesListSteps'),
   require('./onboardingPromptsSteps'),
   require('./stageDwellFixedClockSteps'),
+  require('./recertListenSteps'),
 ];
 
 function registerSteps(registry) {
