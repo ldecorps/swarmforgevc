@@ -54,8 +54,8 @@
         adapters (support-thread-store/adapters-for state-dir)
         existing ((:read-thread! adapters) thread-id)
         updated (if existing
-                  (support-lib/append-message existing "operator" (now-iso) text)
-                  (support-lib/new-thread thread-id "operator" (now-iso) text))]
+                  (support-lib/append-message existing support-lib/operator-channel (now-iso) text)
+                  (support-lib/new-thread thread-id support-lib/operator-channel (now-iso) text))]
     ((:write-thread! adapters) updated)
     (append-to-outbox! thread-id text)
     (println (json/generate-string updated))))
