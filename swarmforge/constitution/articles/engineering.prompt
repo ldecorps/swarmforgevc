@@ -281,3 +281,19 @@
   briefing_email_lib.bb x2 from the repo root. Fixed by BL-268: it now
   resolves the repo top-level via `git rev-parse --show-toplevel` and
   normalizes changed-file args to repo-relative paths before matching.)
+- A multi-slice emit→route→consume pipeline (an epic whose slices are pure
+  foundation modules — a deriver, a router, a store — each landed with no live
+  caller) is NOT complete until an explicit runtime-wiring slice CALLS them on a
+  real trigger and persists their state. Pure modules with zero production
+  callers are dark features: green tests, but the behavior can never fire live.
+  So the epic's slice plan must include a dedicated wiring ticket (a runtime
+  caller + the store's writer), and neither the epic nor its consumer slices may
+  be treated as "done" behavior-wise until that ticket lands — a foundation
+  slice's own "wiring comes later" scope is fine per-slice, but the epic owner
+  must ensure "later" is a real, tracked slice, not an implicit gap. (3rd
+  occurrence. BL-272 cost-health and the recert-inbound path both shipped a
+  correct module that stayed dark until a headless caller was added. BL-296/297/
+  298 Concierge: deriveSwarmEvents, decideTopicAction/RouteAdapters have zero
+  callers and backlog-topic-map.json has no writer — verified by grep — so
+  BL-298's new inbound branch can never fire live. The BL-295 epic plan lacked a
+  wiring slice; add one before calling the epic complete.)
