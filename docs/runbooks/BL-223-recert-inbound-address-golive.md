@@ -10,6 +10,24 @@ Code-side, `recert@tolokarooo.resend.app` now flows end-to-end:
 the remaining *ops* half: pointing that address at the already-built BL-217
 serverless receiver (`extension/src/notify/recertInboundWebhook.ts`).
 
+## 0. The BL-217 serverless receiver now exists (BL-288)
+
+`api/recert-webhook.js` (Vercel Node function, `vercel.json` at the repo
+root) wraps `extension/src/notify/recertInboundWebhook.ts`'s already-tested
+core end to end — this repo can now be deployed to Vercel to obtain the
+endpoint URL step 2 below points the Resend route at. Set these serverless
+environment variables in the Vercel project (never committed to the repo):
+
+- `RECERT_WEBHOOK_SECRET` — the shared Svix/Resend signing secret
+  (`HandleInboundEmailWebhookDeps.secret`).
+- `RECERT_SENDER_ALLOWLIST` — comma-separated allowed sender email(s)
+  (BL-248, fail-closed: empty/missing rejects every sender).
+- `RECERT_GITHUB_OWNER`, `RECERT_GITHUB_REPO` — the repo a committed
+  proposal writes to via the GitHub Contents API.
+- `RECERT_GITHUB_BRANCH` — defaults to `main` if unset.
+- `RECERT_GITHUB_TOKEN` — a GitHub token with contents-write access to that
+  repo (never committed).
+
 ## 1. Confirm the receiving domain
 
 In the [Resend dashboard](https://resend.com/domains), under **Receiving**,
