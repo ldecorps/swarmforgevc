@@ -100,6 +100,80 @@ check "the bridge (never crashed) is unaffected by the bot giving up" \
 cleanup_children "$F"
 rm -rf "$F"
 
+# ── 4. BL-303 supervisor-recovery-01: a healthy, long-running process has
+#      its attempt count reset (the cap counts CONSECUTIVE crashes, not
+#      lifetime-accumulated ones) ─────────────────────────────────────────
+F="$(make_fixture)"
+# Crash the bot once (bumps attempts to 2 across the restart), then let it
+# stay healthy long enough to cross a tiny FRONT_DESK_HEALTHY_RESET_MS.
+cat > "$F/extension/out/tools/telegram-front-desk-bot.js" <<'EOF'
+process.exit(1);
+EOF
+FRONT_DESK_MAX_ATTEMPTS=5 FRONT_DESK_BACKOFF_BASE_MS=10 FRONT_DESK_BACKOFF_MAX_MS=20 check_once "$F" > /dev/null
+# tick 1: not-started -> running (attempt 1, but exits almost immediately)
+sleep 0.2
+FRONT_DESK_MAX_ATTEMPTS=5 FRONT_DESK_BACKOFF_BASE_MS=10 FRONT_DESK_BACKOFF_MAX_MS=20 check_once "$F" > /dev/null
+# tick 2: running -> waiting (crash detected; the restart itself only
+# happens once its own short backoff elapses, one tick later)
+sleep 0.2
+FRONT_DESK_MAX_ATTEMPTS=5 FRONT_DESK_BACKOFF_BASE_MS=10 FRONT_DESK_BACKOFF_MAX_MS=20 check_once "$F" > /dev/null
+# tick 3: waiting -> running again (attempt 2)
+check "bl-303 setup: the bot restarted at least once (attempts > 1) before the healthy window" \
+  '[[ "$(jget "$F/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :attempts]")" -gt 1 ]]'
+# Now let it stay alive - swap in a fixture that never crashes.
+cat > "$F/extension/out/tools/telegram-front-desk-bot.js" <<'EOF'
+setInterval(() => {}, 1000);
+EOF
+FRONT_DESK_MAX_ATTEMPTS=5 FRONT_DESK_BACKOFF_BASE_MS=10 FRONT_DESK_BACKOFF_MAX_MS=20 check_once "$F" > /dev/null
+sleep 0.3
+FRONT_DESK_HEALTHY_RESET_MS=100 FRONT_DESK_MAX_ATTEMPTS=5 FRONT_DESK_BACKOFF_BASE_MS=10 FRONT_DESK_BACKOFF_MAX_MS=20 check_once "$F" > /dev/null
+check "bl-303 supervisor-recovery-01: attempts reset to 0 once past the healthy-uptime window" \
+  '[[ "$(jget "$F/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :attempts]")" -eq 0 ]]'
+check "bl-303: status stays running through the reset" \
+  '[[ "$(jget "$F/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :status]")" == running ]]'
+cleanup_children "$F"
+rm -rf "$F"
+
+# ── 5. BL-303 supervisor-recovery-02: a given-up child re-arms once its
+#      cooldown elapses (attempts reset, restarted) - and stays down,
+#      never spawning, while the cooldown has NOT yet elapsed ────────────
+F="$(make_fixture)"
+cat > "$F/extension/out/tools/telegram-front-desk-bot.js" <<'EOF'
+process.exit(1);
+EOF
+export FRONT_DESK_MAX_ATTEMPTS=1 FRONT_DESK_BACKOFF_BASE_MS=10 FRONT_DESK_BACKOFF_MAX_MS=20 FRONT_DESK_GIVEUP_COOLDOWN_MS=300
+check_once "$F" > /dev/null
+gave_up=0
+for _ in $(seq 1 15); do
+  sleep 0.2
+  check_once "$F" > /dev/null
+  if [[ "$(jget "$F/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :status]")" == gave-up ]]; then
+    gave_up=1
+    break
+  fi
+done
+check "bl-303 setup: the bot reaches gave-up (max-attempts=1)" '[[ "$gave_up" -eq 1 ]]'
+
+# Immediately re-check, well before the 300ms cooldown - must stay down.
+check_once "$F" > /dev/null
+check "bl-303 supervisor-recovery-02 [not elapsed]: still gave-up, not restarted" \
+  '[[ "$(jget "$F/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :status]")" == gave-up ]]'
+
+# Swap in a healthy entrypoint (so the re-armed child does not immediately
+# crash and give up again), wait past the cooldown, then re-check.
+cat > "$F/extension/out/tools/telegram-front-desk-bot.js" <<'EOF'
+setInterval(() => {}, 1000);
+EOF
+sleep 0.4
+check_once "$F" > /dev/null
+check "bl-303 supervisor-recovery-02 [elapsed]: re-armed to running" \
+  '[[ "$(jget "$F/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :status]")" == running ]]'
+check "bl-303 supervisor-recovery-02 [elapsed]: attempts reset to a fresh budget (1, not stuck at/past the old cap)" \
+  '[[ "$(jget "$F/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :attempts]")" -eq 1 ]]'
+unset FRONT_DESK_MAX_ATTEMPTS FRONT_DESK_BACKOFF_BASE_MS FRONT_DESK_BACKOFF_MAX_MS FRONT_DESK_GIVEUP_COOLDOWN_MS
+cleanup_children "$F"
+rm -rf "$F"
+
 if [[ "$fail" -eq 0 ]]; then
   echo "front_desk_supervisor smoke: ALL CHECKS PASSED"
 else
