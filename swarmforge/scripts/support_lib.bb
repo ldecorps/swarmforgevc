@@ -198,3 +198,112 @@
    has no swarm agents to scan."
   [{:keys [llm-running? pending-count]}]
   (and (not llm-running?) (pos? pending-count)))
+
+;; ── coordinator handoff (pure + adapter-injected) — BL-283 ────────────────
+;; The bridge between a subject thread and the swarm's build pipeline: the
+;; Operator files an intake + coordinator note referencing the subject
+;; (never creates/specs/promotes the ticket itself - the coordinator owns
+;; that), and records the resulting ticket(s) the thread spawned. Later,
+;; check-linked-ticket-status! reuses proactive-notice-decision/
+;; proactive-notice-text (BL-284, unchanged) to report the linked ticket's
+;; status back into the SAME topic, over the SAME reply-outbox path - no
+;; second notice mechanism.
+
+(defn link-ticket
+  "Records a BL-### this thread's actionable discussion spawned - the ONE
+   net-new thread field this ticket adds (mirrors resolve-thread's own
+   one-line pure transition shape). A thread may link more than one ticket
+   over its lifetime; linking the same id twice is a no-op, not a
+   duplicate entry. :last-reported-status starts nil - nothing has been
+   reported into the topic yet."
+  [thread ticket-id]
+  (if (some #(= (:id %) ticket-id) (:linked-tickets thread))
+    thread
+    (update thread :linked-tickets (fnil conj []) {:id ticket-id :last-reported-status nil})))
+
+(defn record-linked-ticket-status
+  "Updates ONLY the named linked ticket's own last-reported-status, leaving
+   every other linked ticket (and the rest of the thread) untouched -
+   called once a status notice for that ticket has actually been posted,
+   so the same status is never reported twice (mirrors
+   idle-nudge-decision's own 'already posted, do not repeat' guard)."
+  [thread ticket-id status]
+  (update thread :linked-tickets
+          (fn [links] (mapv (fn [l] (if (= (:id l) ticket-id) (assoc l :last-reported-status status) l)) links))))
+
+;; A slug filenames/note text can carry safely - thread ids are always a
+;; short "SUP-<digits>" shape, so a plain lowercase is enough (no other
+;; character ever needs stripping).
+(defn build-intake-slug [thread]
+  (str/lower-case (:id thread)))
+
+(defn build-intake-content [thread]
+  (str "# Intake: " (:id thread) "\n\n"
+       "Filed by the Operator - a Telegram topic discussion became actionable.\n"
+       "This is a PROPOSAL only: the coordinator owns specing/promoting/creating\n"
+       "the resulting ticket; give it `source: " (:id thread) "` so the two stay linked.\n\n"
+       "## Conversation so far\n\n"
+       (build-conversation-summary thread) "\n"))
+
+;; Kept well under swarm_handoff.bb's 80-char note-message limit regardless
+;; of thread id length (SUP-### ids are always short) - never references
+;; the intake file's own path, since the coordinator's inbox freshness
+;; check alone is what wakes it (operator_runtime.bb's
+;; coordinator-inbox-has-fresh?); the note only needs to name the subject.
+(defn build-coordinator-note-message [thread]
+  (str (:id thread) " actionable: intake filed for coordinator review"))
+
+(defn hand-off-to-coordinator!
+  "Adapter-injected (coordinator-handoff-01/02): files the intake + sends
+   the coordinator note via the given adapters, then records the linked
+   ticket and persists the thread. The adapters map is the ONLY side-effect
+   surface this function can reach - :write-intake!/:send-coordinator-note!/
+   :write-thread! and nothing else, so it is structurally impossible for
+   this function to create, spec, or promote a backlog ticket itself
+   (anti-fabrication - the coordinator owns that)."
+  [thread ticket-id adapters]
+  (let [intake-content (build-intake-content thread)
+        note-message (build-coordinator-note-message thread)
+        updated (link-ticket thread ticket-id)]
+    ((:write-intake! adapters) (build-intake-slug thread) intake-content)
+    ((:send-coordinator-note! adapters) note-message)
+    ((:write-thread! adapters) updated)
+    updated))
+
+(defn status-change-for-linked-ticket
+  "Pure compare: a linked ticket's CURRENT backlog status vs its own
+   last-reported-status -> {:changed? :summary}, the exact shape
+   proactive-notice-decision/proactive-notice-text (BL-284) already
+   expect - no second 'changed' signal. A status never before reported
+   (last-reported-status nil) is itself news the first time. A ticket
+   that cannot currently be found anywhere (current-status nil - not yet
+   created, or an id typo) is never reported as a change - nothing to say
+   about it yet, never a fabricated one."
+  [linked-ticket current-status]
+  (if (and current-status (not= current-status (:last-reported-status linked-ticket)))
+    {:changed? true :summary (str (:id linked-ticket) " is now " current-status ".")}
+    {:changed? false :summary nil}))
+
+(defn check-linked-ticket-status!
+  "Adapter-injected (coordinator-handoff-03/04/05): for ONE linked ticket,
+   derives its status-change descriptor (pure, above) via the injected
+   :current-status! reader, then reuses proactive-notice-decision/
+   proactive-notice-text UNCHANGED to decide whether to post - an unchanged
+   status touches no adapter at all (coordinator-handoff-04: no notice, no
+   write). On :notify, posts into the SAME reply-outbox/topic path BL-284's
+   own operator_notify.bb already posts through (:post-notice!, given the
+   thread's own id - coordinator-handoff-05: only ITS subject's topic),
+   records the new last-reported status, and persists the thread. Returns
+   {:posted? bool}."
+  [thread linked-ticket adapters]
+  (let [current ((:current-status! adapters) (:id linked-ticket))
+        status-change (status-change-for-linked-ticket linked-ticket current)]
+    (if (= :notify (proactive-notice-decision thread status-change))
+      (let [text (proactive-notice-text status-change)
+            updated (-> thread
+                        (append-message operator-channel ((:now-iso! adapters)) text)
+                        (record-linked-ticket-status (:id linked-ticket) current))]
+        ((:post-notice! adapters) (:id thread) text)
+        ((:write-thread! adapters) updated)
+        {:posted? true})
+      {:posted? false})))

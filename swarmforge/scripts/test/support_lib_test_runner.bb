@@ -187,6 +187,169 @@
          "BL-100 moved to done"
          (support-lib/proactive-notice-text {:changed? true :summary "BL-100 moved to done"}))
 
+;; ── link-ticket / record-linked-ticket-status (pure) — BL-283 ────────────
+
+(let [thread (mk-thread [(human-msg "2026-07-10T09:00:00Z")])
+      linked (support-lib/link-ticket thread "BL-100")]
+  (assert= "link-ticket records the ticket id"
+           [{:id "BL-100" :last-reported-status nil}]
+           (:linked-tickets linked))
+  (assert= "link-ticket never touches messages/status"
+           (dissoc thread :linked-tickets)
+           (dissoc linked :linked-tickets)))
+
+(let [thread (support-lib/link-ticket (mk-thread []) "BL-100")
+      linked-again (support-lib/link-ticket thread "BL-100")]
+  (assert= "linking the same ticket twice is idempotent - no duplicate entry"
+           [{:id "BL-100" :last-reported-status nil}]
+           (:linked-tickets linked-again)))
+
+(let [thread (-> (mk-thread [])
+                  (support-lib/link-ticket "BL-100")
+                  (support-lib/link-ticket "BL-101"))]
+  (assert= "a thread can link more than one ticket over its lifetime"
+           ["BL-100" "BL-101"]
+           (map :id (:linked-tickets thread))))
+
+(let [thread (-> (mk-thread [])
+                  (support-lib/link-ticket "BL-100")
+                  (support-lib/link-ticket "BL-101"))
+      updated (support-lib/record-linked-ticket-status thread "BL-100" "active")]
+  (assert= "record-linked-ticket-status updates only the named ticket's last-reported-status"
+           [{:id "BL-100" :last-reported-status "active"} {:id "BL-101" :last-reported-status nil}]
+           (:linked-tickets updated)))
+
+;; ── status-change-for-linked-ticket (pure) — BL-283 decide-status-03/04 ──
+
+(assert= "coordinator-handoff-03: a moved-on current status is a real change"
+         {:changed? true :summary "BL-100 is now done."}
+         (support-lib/status-change-for-linked-ticket {:id "BL-100" :last-reported-status "active"} "done"))
+
+(assert= "coordinator-handoff-04: an unchanged current status produces no change"
+         {:changed? false :summary nil}
+         (support-lib/status-change-for-linked-ticket {:id "BL-100" :last-reported-status "active"} "active"))
+
+(assert= "a never-before-reported status (nil last-reported) is itself news the first time"
+         {:changed? true :summary "BL-100 is now active."}
+         (support-lib/status-change-for-linked-ticket {:id "BL-100" :last-reported-status nil} "active"))
+
+(assert= "a ticket that cannot currently be found anywhere (nil current) is never reported as a change"
+         {:changed? false :summary nil}
+         (support-lib/status-change-for-linked-ticket {:id "BL-100" :last-reported-status "active"} nil))
+
+;; ── intake / coordinator-note composition (pure) — BL-283 coordinator-handoff-01 ──
+
+(let [thread (support-lib/new-thread "SUP-7" "telegram" "2026-07-11T09:00:00Z" "my PR is stuck\nmore detail")]
+  (assert= "build-intake-slug is a lowercase, filename-safe form of the thread id"
+           "sup-7"
+           (support-lib/build-intake-slug thread))
+  (assert= "build-intake-content references the subject thread id"
+           true
+           (clojure.string/includes? (support-lib/build-intake-content thread) "SUP-7"))
+  (assert= "build-intake-content carries the conversation so far"
+           true
+           (clojure.string/includes? (support-lib/build-intake-content thread) "my PR is stuck"))
+  (assert= "build-coordinator-note-message references the subject thread id"
+           true
+           (clojure.string/starts-with? (support-lib/build-coordinator-note-message thread) "SUP-7"))
+  (assert= "build-coordinator-note-message stays under swarm_handoff.bb's 80-char note limit"
+           true
+           (<= (count (support-lib/build-coordinator-note-message thread)) 80)))
+
+;; ── hand-off-to-coordinator! (adapter-injected) — BL-283 coordinator-handoff-01/02 ──
+
+(let [thread (support-lib/new-thread "SUP-8" "telegram" "2026-07-11T09:00:00Z" "we should build this")
+      intake-calls (atom [])
+      note-calls (atom [])
+      store (atom {})
+      adapters {:write-intake! (fn [slug content] (swap! intake-calls conj {:slug slug :content content}))
+                :send-coordinator-note! (fn [message] (swap! note-calls conj message))
+                :write-thread! (fn [t] (swap! store assoc (:id t) t))}
+      result (support-lib/hand-off-to-coordinator! thread "BL-200" adapters)]
+  (assert= "coordinator-handoff-01: an intake is filed referencing the subject"
+           1
+           (count @intake-calls))
+  (assert= "coordinator-handoff-01: the intake slug matches the thread id"
+           "sup-8"
+           (:slug (first @intake-calls)))
+  (assert= "coordinator-handoff-01: a coordinator note is sent"
+           1
+           (count @note-calls))
+  (assert= "coordinator-handoff-01: the thread records the linked ticket"
+           ["BL-200"]
+           (map :id (:linked-tickets result)))
+  (assert= "coordinator-handoff-01: the updated thread is persisted"
+           result
+           (get @store "SUP-8"))
+  ;; coordinator-handoff-02: anti-fabrication is a STRUCTURAL guarantee here
+  ;; - the adapters map has no possible path to create/spec/promote a
+  ;; backlog ticket at all (no such adapter exists), so this assertion is
+  ;; really just confirming the only two side-effect adapters were used,
+  ;; nothing else.
+  (assert= "coordinator-handoff-02: no adapter beyond intake/note/thread-write is ever invoked"
+           #{:write-intake! :send-coordinator-note! :write-thread!}
+           (set (keys adapters))))
+
+;; ── check-linked-ticket-status! (adapter-injected) — BL-283 coordinator-handoff-03/04/05 ──
+
+(defn fake-status-check-deps [overrides]
+  (let [posted (atom [])
+        written (atom [])]
+    (merge
+     {:posted posted
+      :written written
+      :current-status! (fn [_id] (:current overrides))
+      :post-notice! (fn [thread-id text] (swap! posted conj {:thread-id thread-id :text text}))
+      :write-thread! (fn [t] (swap! written conj t))
+      :now-iso! (fn [] "2026-07-11T10:00:00Z")}
+     overrides)))
+
+(let [thread (-> (support-lib/new-thread "SUP-9" "telegram" "2026-07-10T09:00:00Z" "topic")
+                  (support-lib/link-ticket "BL-300")
+                  (support-lib/record-linked-ticket-status "BL-300" "active"))
+      linked (first (:linked-tickets thread))
+      deps (fake-status-check-deps {:current "done"})
+      result (support-lib/check-linked-ticket-status! thread linked deps)]
+  (assert= "coordinator-handoff-03: a moved-on ticket posts exactly one status notice into the subject's topic"
+           true
+           (:posted? result))
+  (assert= "coordinator-handoff-03: the notice is posted to the linked thread's own subject"
+           [{:thread-id "SUP-9" :text "BL-300 is now done."}]
+           @(:posted deps))
+  (assert= "coordinator-handoff-03: the thread's last-reported status is updated so it is not reported again"
+           "done"
+           (:last-reported-status (first (:linked-tickets (first @(:written deps)))))))
+
+(let [thread (-> (support-lib/new-thread "SUP-9" "telegram" "2026-07-10T09:00:00Z" "topic")
+                  (support-lib/link-ticket "BL-300")
+                  (support-lib/record-linked-ticket-status "BL-300" "active"))
+      linked (first (:linked-tickets thread))
+      deps (fake-status-check-deps {:current "active"})
+      result (support-lib/check-linked-ticket-status! thread linked deps)]
+  (assert= "coordinator-handoff-04: an unchanged linked ticket posts no status notice"
+           false
+           (:posted? result))
+  (assert= "coordinator-handoff-04: no notice reaches any topic"
+           []
+           @(:posted deps))
+  (assert= "coordinator-handoff-04: no thread write happens for a no-op check"
+           []
+           @(:written deps)))
+
+(let [threadA (-> (support-lib/new-thread "SUP-1" "telegram" "2026-07-10T09:00:00Z" "about A")
+                   (support-lib/link-ticket "BL-300")
+                   (support-lib/record-linked-ticket-status "BL-300" "active"))
+      threadB (support-lib/new-thread "SUP-2" "telegram" "2026-07-10T09:00:00Z" "about B")
+      linkedA (first (:linked-tickets threadA))
+      depsA (fake-status-check-deps {:current "done"})]
+  (support-lib/check-linked-ticket-status! threadA linkedA depsA)
+  (assert= "coordinator-handoff-05: the status notice names only the linked subject's own thread id"
+           [{:thread-id "SUP-1" :text "BL-300 is now done."}]
+           @(:posted depsA))
+  (assert= "coordinator-handoff-05: a thread with no linked ticket at all has nothing to check"
+           nil
+           (:linked-tickets threadB)))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do
