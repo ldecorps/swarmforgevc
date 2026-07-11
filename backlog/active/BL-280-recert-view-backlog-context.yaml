@@ -1,0 +1,73 @@
+id: BL-280
+title: "Recert view shows the backlog item a scenario belongs to (BL-### + title), tap-through to the full ticket"
+milestone: M2
+status: todo
+priority: 12
+direction: non-aligned
+assigned_to: coder
+source: ".swarmforge/operator/INTAKE-recert-backlog-context.md — human command via operator -> coordinator 2026-07-11 (attended RC session). Depth chosen by the human: id + title + TAP-THROUGH."
+
+description: |
+  On the phone recert view, a Gherkin recertifier should see which backlog item the
+  scenario they're recertifying belongs to — its BL-### and feature title — and be
+  able to tap through to the full ticket. Small PWA-lane ticket (edits pwa/app.js +
+  the recert projection); sibling of BL-266 (recert Listen) and the docs cross-ref
+  pattern. NOT an epic.
+
+  Surface: the STATIC PWA. Both the id/title and the tap-through target are
+  git-projected (recert-batch.json + docs-tree.json) with no live/host data, so this
+  belongs on the static PWA per the two-surface rule — no holistic UI needed.
+
+  Live layer verified 2026-07-11 (reuse; the data is mostly already there):
+    - recert-batch.json scenarios ALREADY carry ticketId
+      (extension/src/docs/recertification.ts:25, RecertifiableScenario =
+      { id, ticketId, name, text }). The phone just doesn't render it today.
+    - The ONE projection add: also carry the ticket TITLE (+ French title).
+      recertifiableScenariosFrom (recertification.ts:37) iterates docs-tree ticket
+      nodes; the docs-tree TicketNode already has title (docsTree.ts:52) and
+      titleFr? (docsTree.ts:59). Widen recertifiableScenariosFrom's input to receive
+      title/titleFr and set ticketTitle (+ ticketTitleFr?) on RecertifiableScenario.
+      This is a PURE function — testable with fixture ticket nodes.
+    - Deep-link target already exists: pwa/app.js renderRecertContent renders the
+      scenario; pwa/app.js renderDocsTicket renders full ticket detail (description +
+      sibling scenarios + timeline) keyed by docsView.ticketId. Tap-through reuses
+      the docs explorer's own in-page navigation (navButton -> docsView {level:
+      'ticket', ticketId} -> renderDocsTicket), consistent with the existing
+      #ticket=<id> deep-link scheme (BL-256, pwaDeepLinks.ts). Do NOT build a new
+      routing mechanism.
+    - Localization: titleFr is respected the same way other PWA localized fields are
+      (e.g. renderDocsTicket's descriptionFr/titleFr handling) — French title when
+      the fr locale is active and a French title exists, else the English title.
+
+  Wanted behavior (see the feature file):
+    - Above the scenario in renderRecertContent, show "BL-### — <ticket title>" for
+      the scenario being recertified.
+    - That line is a LINK: tapping it navigates to that ticket's full detail in the
+      existing docs explorer.
+    - The localized title is respected (French title under the fr locale).
+    - Degrade gracefully: if a scenario has no resolvable ticket, show the id alone —
+      no broken link, no error.
+
+  Net-new: one field in the recert projection (ticketTitle, + ticketTitleFr) and the
+  PWA link + navigation wiring from the recert card into the docs-explorer ticket
+  view. No new data source.
+
+  Constraints:
+    - PWA-lane serialization: edits pwa/app.js; sequence against any other in-flight
+      pwa/app.js ticket.
+    - Keep the projection add a PURE function change (recertifiableScenariosFrom),
+      testable with fixtures; the PWA render/navigation is the webview boundary
+      (exercised via the existing pwa recert/docs tests).
+    - No new browser storage; no live/host data pushed into the git projection.
+    - recert-batch.json remains git-SHA-reproducible (additive field only).
+
+  QA e2e procedure:
+    - Feed recertifiableScenariosFrom fixture ticket nodes with title/titleFr; assert
+      each RecertifiableScenario carries ticketTitle (and ticketTitleFr).
+    - On the PWA recert view: confirm the "BL-### — title" line renders above the
+      scenario, tapping it opens that ticket's docs detail, the French title shows
+      under the fr locale, and a scenario with an unresolvable ticket shows the id
+      alone with no link and no error.
+
+acceptance: specs/features/BL-280-recert-view-backlog-context.feature
+mutation_cost: low
