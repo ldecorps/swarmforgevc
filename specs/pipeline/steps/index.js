@@ -70,6 +70,7 @@ const DOMAINS = [
   require('./resourceSamplerActivationSteps'),
   require('./gatesListSteps'),
   require('./onboardingPromptsSteps'),
+  require('./stageDwellFixedClockSteps'),
 ];
 
 function registerSteps(registry) {
