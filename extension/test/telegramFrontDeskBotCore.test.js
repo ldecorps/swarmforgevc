@@ -10,6 +10,11 @@ const {
   parseNextSseRecord,
   relaySseReplies,
   DEFAULT_SUBJECT_KEY,
+  computePollBackoffMs,
+  shouldRaiseDegradedWarning,
+  runPollCycle,
+  applyPollCycleResult,
+  runContainedLoop,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
 const PRINCIPAL_ID = 111;
@@ -441,4 +446,213 @@ test('relaySseReplies returns cleanly once readChunk reports done', async () => 
     },
     topicForSubject: () => 1,
   });
+});
+
+// ── BL-302: poll-loop resilience (backoff, escalation, isolation) ────────
+
+const BACKOFF_CONFIG = { backoffBaseMs: 1000, backoffMaxMs: 8000, degradedThreshold: 3 };
+
+// ── computePollBackoffMs / shouldRaiseDegradedWarning (pure) ─────────────
+
+test('poll-resilience-01: computePollBackoffMs grows exponentially per consecutive failure, capped at backoffMaxMs', () => {
+  assert.equal(computePollBackoffMs(1, BACKOFF_CONFIG), 1000);
+  assert.equal(computePollBackoffMs(2, BACKOFF_CONFIG), 2000);
+  assert.equal(computePollBackoffMs(3, BACKOFF_CONFIG), 4000);
+  assert.equal(computePollBackoffMs(4, BACKOFF_CONFIG), 8000);
+  assert.equal(computePollBackoffMs(10, BACKOFF_CONFIG), 8000);
+});
+
+test('poll-resilience-01: computePollBackoffMs is never zero for any failed cycle (no tight-spin)', () => {
+  for (let n = 1; n <= 20; n++) {
+    assert.ok(computePollBackoffMs(n, BACKOFF_CONFIG) > 0, `expected a positive delay at consecutiveFailures=${n}`);
+  }
+});
+
+test('poll-resilience-02: shouldRaiseDegradedWarning fires exactly on the threshold crossing, not before or after', () => {
+  assert.equal(shouldRaiseDegradedWarning(1, BACKOFF_CONFIG), false);
+  assert.equal(shouldRaiseDegradedWarning(2, BACKOFF_CONFIG), false);
+  assert.equal(shouldRaiseDegradedWarning(3, BACKOFF_CONFIG), true);
+  assert.equal(shouldRaiseDegradedWarning(4, BACKOFF_CONFIG), false);
+  assert.equal(shouldRaiseDegradedWarning(100, BACKOFF_CONFIG), false);
+});
+
+// ── runPollCycle (adapter-injected, one cycle) ────────────────────────────
+
+function fakeCycleAdapters(getUpdatesResult) {
+  return {
+    getUpdates: async () => getUpdatesResult,
+    postToBridge: async () => true,
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: async () => 'SUP-1',
+    backlogForTopic: () => undefined,
+    postOperatorContext: async () => true,
+    nextOffset: (updates, current) => current + updates.length,
+  };
+}
+
+test('poll-resilience-01: a failed cycle increments consecutiveFailures and returns a positive delay', async () => {
+  const state = { offset: 5, consecutiveFailures: 0 };
+  const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'network error' }), BACKOFF_CONFIG);
+  assert.equal(cycle.state.consecutiveFailures, 1);
+  assert.equal(cycle.delayMs, 1000);
+  assert.equal(cycle.degradedWarning, false);
+});
+
+test('poll-resilience-01: a run of failures backs off with growing delay, then a success resets to the floor', async () => {
+  let state = { offset: 0, consecutiveFailures: 0 };
+  const delays = [];
+  for (let i = 0; i < 4; i++) {
+    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG);
+    delays.push(cycle.delayMs);
+    state = cycle.state;
+  }
+  assert.deepEqual(delays, [1000, 2000, 4000, 8000]);
+
+  const recovered = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [] }), BACKOFF_CONFIG);
+  assert.equal(recovered.state.consecutiveFailures, 0);
+  assert.equal(recovered.delayMs, 0);
+});
+
+test('poll-resilience-02: the degraded warning fires on the exact cycle the threshold is crossed', async () => {
+  let state = { offset: 0, consecutiveFailures: 0 };
+  const warnings = [];
+  for (let i = 0; i < 5; i++) {
+    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG);
+    warnings.push(cycle.degradedWarning);
+    state = cycle.state;
+  }
+  assert.deepEqual(warnings, [false, false, true, false, false]);
+});
+
+test('poll-resilience-02: retries continue past the degraded threshold (never gives up)', async () => {
+  let state = { offset: 0, consecutiveFailures: 0 };
+  for (let i = 0; i < 10; i++) {
+    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG);
+    state = cycle.state;
+  }
+  assert.equal(state.consecutiveFailures, 10);
+  const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [] }), BACKOFF_CONFIG);
+  assert.equal(cycle.state.consecutiveFailures, 0, 'the loop must still be able to recover after a sustained outage');
+});
+
+test('a successful cycle with real updates still advances the offset via runPollCycle', async () => {
+  const update = { update_id: 1, message: { message_id: 1, chat: { id: 1 }, from: { id: PRINCIPAL_ID }, text: 'hi' } };
+  const cycle = await runPollCycle({ offset: 0, consecutiveFailures: 2 }, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [update] }), BACKOFF_CONFIG);
+  assert.equal(cycle.state.offset, 1);
+  assert.equal(cycle.state.consecutiveFailures, 0);
+});
+
+// ── applyPollCycleResult (adapter-injected per-cycle side effects) ───────
+// Split out of pollLoop's own for(;;) (found during cleaner review: two
+// ifs inline in that forever loop pushed its own CRAP over threshold at
+// near-zero coverage) so the decision-to-effect wiring is unit-tested here
+// instead of only reachable through the live, untested loop wrapper.
+
+test('applyPollCycleResult writes the warning and waits when both are present', async () => {
+  const warnings = [];
+  const waits = [];
+  await applyPollCycleResult(
+    { state: { offset: 0, consecutiveFailures: 3 }, delayMs: 4000, degradedWarning: true },
+    (message) => warnings.push(message),
+    async (ms) => waits.push(ms)
+  );
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /3 consecutive failures/);
+  assert.deepEqual(waits, [4000]);
+});
+
+test('applyPollCycleResult writes nothing and waits nothing on a successful cycle (delayMs 0, no warning)', async () => {
+  const warnings = [];
+  const waits = [];
+  await applyPollCycleResult(
+    { state: { offset: 5, consecutiveFailures: 0 }, delayMs: 0, degradedWarning: false },
+    (message) => warnings.push(message),
+    async (ms) => waits.push(ms)
+  );
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(waits, []);
+});
+
+test('applyPollCycleResult still waits on a failed cycle below the degraded threshold (no warning yet)', async () => {
+  const warnings = [];
+  const waits = [];
+  await applyPollCycleResult(
+    { state: { offset: 0, consecutiveFailures: 1 }, delayMs: 1000, degradedWarning: false },
+    (message) => warnings.push(message),
+    async (ms) => waits.push(ms)
+  );
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(waits, [1000]);
+});
+
+// ── runContainedLoop (adapter-injected loop isolation) ────────────────────
+
+test('poll-resilience-03: a loop that throws is reported, waited on, and RESTARTED - runContainedLoop itself never rejects', async () => {
+  let calls = 0;
+  const faults = [];
+  const waits = [];
+  const start = async () => {
+    calls += 1;
+    if (calls === 1) {
+      throw new Error('socket dropped');
+    }
+    // second call succeeds (returns normally) - the recursive chain ends.
+  };
+  await runContainedLoop(
+    'poll',
+    start,
+    async (ms) => waits.push(ms),
+    5000,
+    (name, error) => faults.push({ name, message: error.message })
+  );
+  assert.equal(calls, 2);
+  assert.deepEqual(faults, [{ name: 'poll', message: 'socket dropped' }]);
+  assert.deepEqual(waits, [5000]);
+});
+
+test('poll-resilience-03: a loop that never throws resolves cleanly with no fault/wait at all', async () => {
+  const faults = [];
+  const waits = [];
+  await runContainedLoop(
+    'reply-relay',
+    async () => {},
+    async (ms) => waits.push(ms),
+    5000,
+    (name, error) => faults.push({ name, error })
+  );
+  assert.deepEqual(faults, []);
+  assert.deepEqual(waits, []);
+});
+
+test('poll-resilience-03: a fault in one loop does not affect a concurrently-running sibling loop', async () => {
+  const siblingTicks = [];
+  let siblingRunning = true;
+
+  async function siblingLoop() {
+    for (let i = 0; i < 5 && siblingRunning; i++) {
+      siblingTicks.push(i);
+    }
+  }
+
+  let poisonCalls = 0;
+  const poisonedStart = async () => {
+    poisonCalls += 1;
+    if (poisonCalls <= 2) {
+      throw new Error('fault ' + poisonCalls);
+    }
+  };
+
+  await Promise.all([
+    runContainedLoop('poisoned', poisonedStart, async () => {}, 0, () => {}),
+    runContainedLoop('sibling', siblingLoop, async () => {}, 0, () => {
+      throw new Error('sibling should never fault');
+    }),
+  ]);
+
+  // The poisoned loop faulted twice and still recovered (3rd call
+  // succeeds); the sibling ran to completion completely undisturbed by
+  // it - proof neither Promise.all entry ever rejected because of the
+  // other.
+  assert.equal(poisonCalls, 3);
+  assert.deepEqual(siblingTicks, [0, 1, 2, 3, 4]);
 });
