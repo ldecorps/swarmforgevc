@@ -94,6 +94,7 @@ const DOMAINS = [
   require('./gherkinDetailListenSteps'),
   require('./conciergeTopicRoutingSteps'),
   require('./conciergeTopicReplySteps'),
+  require('./conciergeTopicCompletionSteps'),
 ];
 
 function registerSteps(registry) {
