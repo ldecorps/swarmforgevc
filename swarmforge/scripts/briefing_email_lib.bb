@@ -72,8 +72,11 @@
 ;; BL-256: three more sections, same shape - :merged-blocked-digest (what
 ;; merged/what's blocked), :stage-dwell-section (per-stage throughput +
 ;; dwell), :chase-trend-section (chase/nudge pipeline-health trend).
+;; BL-263: :not-done-count-line - the same single not-done total the PWA
+;; reads from backlog.json's notDoneCount, never a second derivation.
 (def optional-section-adapter-keys
-  [:suite-duration-line :needs-approval-section :merged-blocked-digest :stage-dwell-section :chase-trend-section])
+  [:suite-duration-line :needs-approval-section :merged-blocked-digest :stage-dwell-section :chase-trend-section
+   :not-done-count-line])
 
 (defn- apply-optional-sections [content adapters]
   (reduce
