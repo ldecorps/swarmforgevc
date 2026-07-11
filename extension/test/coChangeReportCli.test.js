@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { parseArgs, formatCoChangeReport } = require('../out/tools/co-change-report');
+const { parseArgs, formatCoChangeReport, toRepoRelativePath } = require('../out/tools/co-change-report');
 
 // BL-255: parseArgs/formatCoChangeReport are pulled out of main() so
 // they're exercised in-process (same "CLI main() run only via execFileSync
@@ -59,6 +59,25 @@ test('formatCoChangeReport is byte-identical across repeated calls on the same i
   assert.equal(formatCoChangeReport(data), formatCoChangeReport(data));
 });
 
+// ── toRepoRelativePath (pure, BL-268) ─────────────────────────────────────
+
+test('an arg already repo-root-relative, run from the repo root, is unchanged', () => {
+  assert.equal(toRepoRelativePath('/repo', '/repo', 'extension/src/foo.ts'), 'extension/src/foo.ts');
+});
+
+test('an arg relative to a subdirectory cwd resolves to its repo-relative path', () => {
+  assert.equal(toRepoRelativePath('/repo/extension', '/repo', 'src/foo.ts'), 'extension/src/foo.ts');
+});
+
+test('an absolute path resolves to its repo-relative path regardless of cwd', () => {
+  assert.equal(toRepoRelativePath('/repo/extension', '/repo', '/repo/pwa/app.js'), 'pwa/app.js');
+});
+
+test('uses forward slashes in the result (matching git log --name-status path format)', () => {
+  const result = toRepoRelativePath('/repo/extension', '/repo', 'src/foo.ts');
+  assert.doesNotMatch(result, /\\/);
+});
+
 // ── end-to-end: the compiled CLI runs against a REAL git repo ────────────
 
 function mkTmp() {
@@ -94,6 +113,59 @@ test('the compiled CLI reports real co-changers from a real git repo, ranked and
   assert.match(output, /a\.ts/);
   assert.match(output, /b\.ts: 3 co-change\(s\) \(SUSPECTED COUPLING\)/);
   assert.match(output, /c\.ts: 1 co-change\(s\)$/m);
+});
+
+// ── BL-268: cross-directory co-changers must not depend on invoker cwd ──
+// A green run from the repo ROOT is not proof - the whole bug was that
+// results silently differed by cwd, so every test below runs from a
+// SUBDIRECTORY and compares against the same query from the root.
+
+function mkCrossDirRepo() {
+  const root = mkTmp();
+  git(root, ['init', '-q']);
+  git(root, ['config', 'user.email', 't@t']);
+  git(root, ['config', 'user.name', 't']);
+  // Three commits touch dirA/target.ts alongside a file in a DIFFERENT
+  // top-level directory (dirB/) - cross-directory co-change, the exact
+  // shape BL-268 found silently dropped when scoped to dirA/'s subtree.
+  commitFiles(root, { 'dirA/target.ts': '1', 'dirB/other.ts': '1' });
+  commitFiles(root, { 'dirA/target.ts': '2', 'dirB/other.ts': '2' });
+  commitFiles(root, { 'dirA/target.ts': '3', 'dirB/other.ts': '3' });
+  return root;
+}
+
+// BL-268 co-change-cwd-independence-01
+test('cross-directory co-changers are reported identically whether run from the repo root or a subdirectory', () => {
+  const root = mkCrossDirRepo();
+  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'co-change-report.js');
+
+  const fromRoot = execFileSync('node', [cliPath, '--min-frequency=3', 'dirA/target.ts'], { cwd: root, encoding: 'utf8' });
+  // Addressed cwd-relative ("target.ts" from inside dirA/) - the same file
+  // as "dirA/target.ts" from the root, per toRepoRelativePath's own
+  // documented cwd-relative contract.
+  const fromSubdir = execFileSync('node', [cliPath, '--min-frequency=3', 'target.ts'], {
+    cwd: path.join(root, 'dirA'),
+    encoding: 'utf8',
+  });
+
+  assert.match(fromSubdir, /dirB\/other\.ts: 3 co-change\(s\) \(SUSPECTED COUPLING\)/);
+  assert.equal(fromSubdir, fromRoot);
+});
+
+// BL-268 co-change-cwd-independence-02
+test('a changed-file argument written relative to a subdirectory resolves to its repo-relative history path', () => {
+  const root = mkCrossDirRepo();
+  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'co-change-report.js');
+
+  // Run from dirA/, address the target file relative to THAT directory
+  // (just "target.ts") rather than the repo-relative "dirA/target.ts".
+  const output = execFileSync('node', [cliPath, '--min-frequency=3', 'target.ts'], {
+    cwd: path.join(root, 'dirA'),
+    encoding: 'utf8',
+  });
+
+  assert.match(output, /^dirA\/target\.ts:/m);
+  assert.match(output, /dirB\/other\.ts: 3 co-change\(s\) \(SUSPECTED COUPLING\)/);
 });
 
 test('the CLI exits non-zero with a usage message when no changed files are given', () => {
