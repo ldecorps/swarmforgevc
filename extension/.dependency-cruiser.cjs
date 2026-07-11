@@ -78,6 +78,14 @@ module.exports = {
       to: { path: '^(idb|localforage|dexie|store2|lockr)($|/)' },
     },
     {
+      name: 'no-notify-from-events',
+      severity: 'error',
+      comment:
+        'BL-296: the swarm typed-event stream is the swarm<->Concierge CONTRACT and must stay Telegram-agnostic (the swarm never knows Telegram exists) - it must not import notify/telegram* Telegram-coupled code.',
+      from: { path: '^src/events/' },
+      to: { path: '^src/notify/' },
+    },
+    {
       name: 'acyclic',
       severity: 'error',
       comment: 'No dependency cycles.',
