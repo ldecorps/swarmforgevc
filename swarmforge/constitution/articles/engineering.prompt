@@ -143,21 +143,31 @@
   (`extension/scripts/strykerSandboxSiblingsLib.js`'s
   `ensureStrykerSandboxSiblingLinks`, driven by a `SIBLING_NAMES` list in
   `extension/scripts/ensureStrykerSandboxSiblings.js` rather than one hardcoded
-  name) after a second instance recurred: repo-root `swarmforge/`
-  (`swarmforge/scripts/compliance_battery.bb`), shelled by
-  `extension/src/recruiter/complianceBatteryGate.ts`
-  (`REPO_ROOT = __dirname/../../..`, then `bb <REPO_ROOT>/swarmforge/...`),
-  surfaced by BL-260 (cleaner, 07ec89c5b7). Confirmed covered siblings today:
-  `pwa/`, `swarmforge/`, and `.github/` (the last found during BL-267's own
-  verification pass — `backlogDashboardWorkflowCacheStamp.test.js` reads
-  `.github/workflows/backlog-dashboard.yml`). Each is a single shared symlink
-  at `.stryker-tmp/<name>` (never a per-sandbox copy, so it survives Stryker's
+  name), after these surfaced ITERATIVELY (fixing one exposed the dry run
+  ENOENTing on the next) — a full sandbox sweep (grep `extension/test` for
+  two-up sibling reads and `extension/src` for three-up / `REPO_ROOT`-relative
+  reads) found the complete set:
+    - repo-root `pwa/` (`pwa/index.html`, `pwa/app.js`), read via
+      `path.join(__dirname, '..', '..', 'pwa', ...)` from `extension/test/`.
+      Fixed by BL-221.
+    - repo-root `swarmforge/` (`swarmforge/scripts/compliance_battery.bb`),
+      shelled by `extension/src/recruiter/complianceBatteryGate.ts`
+      (`REPO_ROOT = __dirname/../../..`, then `bb <REPO_ROOT>/swarmforge/...`).
+      Surfaced by BL-260 (cleaner, 07ec89c5b7).
+    - repo-root `.github/` (`.github/workflows/backlog-dashboard.yml`), read by
+      `extension/test/backlogDashboardWorkflowCacheStamp.test.js`. Surfaced by
+      QA verifying BL-260.
+    - repo-root `docs/` (`docs/GettingStarted.md`), read by
+      `extension/test/gettingStartedDrift.test.js`. Surfaced by a specifier
+      sweep 2026-07-11.
+  All four resolve today as a single shared symlink each at
+  `.stryker-tmp/<name>` (never a per-sandbox copy, so it survives Stryker's
   per-sandbox dispose); covering the next sibling is adding its name to
   `SIBLING_NAMES`, not building a new mechanism. A green local test run that
   reads/shells the sibling in place is NOT proof the sandboxed dry run can —
   verify against the sandbox. (pwa/ confirmed 2026-07-09 during BL-132 QA;
-  swarmforge/ confirmed 2026-07-11 during BL-260; generalized + .github/
-  confirmed 2026-07-11 by BL-267; systemic.)
+  swarmforge/, .github/, docs/ confirmed 2026-07-11 during/after BL-260;
+  generalized to all four by BL-267; systemic.)
 
 ## Diagrams
 - The project's documentation must include an up-to-date architecture
