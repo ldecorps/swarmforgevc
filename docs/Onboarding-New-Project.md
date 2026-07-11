@@ -21,6 +21,13 @@ worth calling out:
 - If the target directory is not already a git repository, SwarmForge
   initializes one and makes the first commit at startup (README, startup
   step 5) — a brand-new project does not need to be a git repo beforehand.
+- **Initialize Target**'s scaffold is generic placeholder text
+  (`<what this project does and why>`-style angle brackets). Section 2 below
+  (BL-269) generates SURVEY-POPULATED content for these same two files as
+  part of the onboarding contract negotiation — whichever runs first for a
+  given target wins that file (existence-only idempotency), so running the
+  onboarding survey/negotiation before or instead of a bare `Initialize
+  Target` gets you real content immediately rather than blanks to fill in.
 
 ## 2. The onboarding scope contract (survey → propose → agree)
 
@@ -71,6 +78,20 @@ This ships as slice 1 (survey → propose → a single agree/hold decision). An
 iterative negotiate loop (request changes → revise → re-propose, repeating
 until agreed) is designed but not yet built — parked in
 `specs/features/BL-262-onboarding-contract-agreement.slice-2-negotiation.feature.draft`.
+
+**The same negotiation also generates `project.prompt`/`engineering.prompt`
+(BL-269, a child slice of this family).** `proposePromptsFromSurvey`
+(`extension/src/onboarding/promptProposal.ts`) maps the identical
+`RepoSurveyFacts` used above into survey-populated `project.prompt` and
+`engineering.prompt` content — real prose, not section 1's generic
+placeholder template. These two files ride the *same* agreement marker as
+the contract (one agreement, whole artifact set): `node
+extension/out/tools/propose-onboarding-prompts.js <target-repo-path>
+<survey-facts-json-path>` is safe to re-run at any point — while the
+contract is `proposed`/`pending` it's a no-op (`withheld: true`, nothing
+written), and only once the contract is `agreed` does the same command
+actually write and commit both files into the target repo. Re-running it
+after the operator flips `agreement` to `agreed` is what releases them.
 
 ## 3. The acceptance contract
 
