@@ -30,7 +30,11 @@ const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const KNOWN_SIBLING_CHECK_FILES = {
   pwa: 'index.html',
   swarmforge: path.join('scripts', 'compliance_battery.bb'),
+  '.github': path.join('workflows', 'backlog-dashboard.yml'),
+  docs: 'GettingStarted.md',
 };
+
+const ALL_SIBLING_NAMES = Object.keys(KNOWN_SIBLING_CHECK_FILES);
 
 function ensureTargetPath(ctx) {
   if (!ctx.targetPath) {
@@ -125,7 +129,7 @@ function registerSteps(registry) {
   });
 
   // ── BL-267 stryker-sibling-sandbox-01 (Scenario Outline, parametrized) ─
-  registry.define(/^code under test that resolves the repo-root (.+) path at run time$/, (ctx, sibling) => {
+  registry.define(/^a test or the code under test resolves the repo-root (.+) path at run time$/, (ctx, sibling) => {
     if (!(sibling in KNOWN_SIBLING_CHECK_FILES)) {
       throw new Error(`unknown sibling example value: "${sibling}" (KNOWN_SIBLING_CHECK_FILES: ${Object.keys(KNOWN_SIBLING_CHECK_FILES).join(', ')})`);
     }
@@ -222,14 +226,15 @@ function registerSteps(registry) {
   registry.define(/^the sandbox availability mechanism makes the sibling paths available$/, (ctx) => {
     const targetPath = ensureTargetPath(ctx);
     const extensionDir = path.join(targetPath, 'extension');
-    fs.mkdirSync(path.join(targetPath, 'pwa'), { recursive: true });
-    fs.mkdirSync(path.join(targetPath, 'swarmforge'), { recursive: true });
-    ctx.siblingLinkResults = ensureStrykerSandboxSiblingLinks(extensionDir, '.stryker-tmp', ['pwa', 'swarmforge']);
+    for (const sibling of ALL_SIBLING_NAMES) {
+      fs.mkdirSync(path.join(targetPath, sibling), { recursive: true });
+    }
+    ctx.siblingLinkResults = ensureStrykerSandboxSiblingLinks(extensionDir, '.stryker-tmp', ALL_SIBLING_NAMES);
   });
 
   registry.define(/^the mutated set remains out\/\*\*\/\*\.js only$/, (ctx) => {
-    if (!ctx.siblingLinkResults || ctx.siblingLinkResults.length !== 2) {
-      throw new Error('expected the sibling-link mechanism to have run for both pwa and swarmforge first');
+    if (!ctx.siblingLinkResults || ctx.siblingLinkResults.length !== ALL_SIBLING_NAMES.length) {
+      throw new Error(`expected the sibling-link mechanism to have run for all of ${ALL_SIBLING_NAMES.join(', ')} first`);
     }
     const config = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'extension', 'stryker.config.json'), 'utf8'));
     if (config.mutate.length !== 1 || config.mutate[0] !== 'out/**/*.js') {
