@@ -21,6 +21,18 @@
 ;; on each fresh invocation, exactly like operator_runtime.bb's own
 ;; pid-alive?/operator-running? checks do for the disposable LLM Operator.
 ;;
+;; BL-303 (Defect B fix): "gave-up" was previously STICKY/TERMINAL and
+;; attempts never reset - a crash burst (or isolated crashes accumulated
+;; over the process's whole life) caused a PERMANENT outage. A "running"
+;; child now resets its attempt count once continuously healthy past
+;; FRONT_DESK_HEALTHY_RESET_MS (the cap counts CONSECUTIVE rapid crashes,
+;; not lifetime ones), and "gave-up" is a TIMED state: once
+;; FRONT_DESK_GIVEUP_COOLDOWN_MS elapses it re-arms with a fresh attempt
+;; budget. Both decisions live in front_desk_supervisor_lib.bb's own
+;; check-one! (now the WHOLE per-process state machine, pure/adapter-
+;; injected); this script only supplies the real now-ms/pid-alive?/spawn!
+;; and logs whatever :event comes back.
+;;
 ;; Usage:
 ;;   front_desk_supervisor.bb <project-root> [--check-once]
 ;;
@@ -28,6 +40,8 @@
 ;;   FRONT_DESK_INTERVAL_MS        loop sleep between checks (default 2000)
 ;;   FRONT_DESK_MAX_ATTEMPTS       bounded restart cap per process (default 5)
 ;;   FRONT_DESK_BACKOFF_BASE_MS / FRONT_DESK_BACKOFF_MAX_MS
+;;   FRONT_DESK_HEALTHY_RESET_MS   continuous-uptime attempt reset (default 600000)
+;;   FRONT_DESK_GIVEUP_COOLDOWN_MS give-up re-arm cooldown (default 900000)
 ;;   BRIDGE_PORT                   fixed port the bridge listens on (default 8765)
 ;;   BRIDGE_TOKEN                  shared bridge token - provisioned by
 ;;                                 launch_front_desk.sh, never generated here
@@ -68,7 +82,17 @@
 (def restart-config
   {:max-attempts (env-long "FRONT_DESK_MAX_ATTEMPTS" 5)
    :backoff-base-ms (env-long "FRONT_DESK_BACKOFF_BASE_MS" 1000)
-   :backoff-max-ms (env-long "FRONT_DESK_BACKOFF_MAX_MS" 60000)})
+   :backoff-max-ms (env-long "FRONT_DESK_BACKOFF_MAX_MS" 60000)
+   ;; BL-303: a "running" child continuously alive past this window has
+   ;; proven it is not in a crash loop, so its attempt count resets to 0 -
+   ;; the cap counts CONSECUTIVE rapid crashes, not lifetime-accumulated
+   ;; ones. Default 10 minutes.
+   :healthy-reset-ms (env-long "FRONT_DESK_HEALTHY_RESET_MS" 600000)})
+;; BL-303: "gave-up" is a TIMED state, not terminal - once this (longer)
+;; cooldown elapses the child re-arms with a fresh attempt budget. Default
+;; 15 minutes - long enough to stay a bounded-RATE retry (never a tight
+;; loop), short enough that a healed fault recovers without a human.
+(def giveup-config {:giveup-cooldown-ms (env-long "FRONT_DESK_GIVEUP_COOLDOWN_MS" 900000)})
 (def bridge-port (env-long "BRIDGE_PORT" 8765))
 
 (defn now-ms [] (System/currentTimeMillis))
@@ -112,12 +136,10 @@
                     "node" (str bot-entrypoint) (str "http://127.0.0.1:" bridge-port) project-root))
 
 (def process-specs
-  [{:key :bridge :spawn! spawn-bridge!}
-   {:key :bot :spawn! spawn-bot!}])
+  [{:key :bridge :spawn-pid! (fn [] (.pid (:proc (spawn-bridge!))))}
+   {:key :bot :spawn-pid! (fn [] (.pid (:proc (spawn-bot!))))}])
 
 ;; ── persisted state (JSON: {"bridge": {...}, "bot": {...}}) ───────────────
-
-(defn default-entry [] {:pid nil :attempts 0 :status "not-started" :crashed-at-ms nil})
 
 (defn read-state []
   (if (fs/exists? status-file)
@@ -127,45 +149,30 @@
 (defn write-status! [state]
   (atomic-spit! status-file (json/generate-string (assoc state :updated_at (now-iso)))))
 
-(defn start! [spec entry]
-  (let [proc ((:spawn! spec))
-        pid (.pid (:proc proc))
-        attempts (inc (:attempts entry))]
-    (log! "started" (name (:key spec)) "pid=" (str pid) "attempt=" (str attempts))
-    {:pid pid :attempts attempts :status "running" :crashed-at-ms nil}))
-
-;; One process's own check-and-react, split out of tick! so that function's
-;; own branch count stays low - a crash transitions straight to "waiting"
-;; (the backoff timer starts NOW, at detection time), a due backoff either
-;; restarts (bounded) or gives up permanently (front_desk_supervisor_lib.bb's
-;; pure decision, never re-evaluated once given up).
-(defn check-one! [spec entry]
-  (case (:status entry)
-    "not-started"
-    (start! spec entry)
-
-    "running"
-    (if (pid-alive? (:pid entry))
-      entry
-      (do
-        (log! "crashed" (name (:key spec)) "attempt=" (str (:attempts entry)))
-        (assoc entry :status "waiting" :crashed-at-ms (now-ms))))
-
-    "waiting"
-    (let [due-ms (+ (:crashed-at-ms entry) (front-desk-supervisor-lib/compute-backoff-ms (:attempts entry) restart-config))]
-      (if (< (now-ms) due-ms)
-        entry
-        (if (= :restart (front-desk-supervisor-lib/decide-restart-action (:attempts entry) restart-config))
-          (start! spec entry)
-          (do
-            (log! "gave-up" (name (:key spec)) "after" (str (:attempts entry)) "attempt(s)")
-            (assoc entry :status "gave-up")))))
-
-    entry))
+;; BL-303: check-one!'s own state-machine decision now lives in
+;; front_desk_supervisor_lib.bb (pure, adapter-injected) - this is just the
+;; logging cue for whatever :event it returns, the one piece of real I/O
+;; that decision itself never performs.
+(defn log-event! [spec-key event entry]
+  (case event
+    :started (log! "started" (name spec-key) "pid=" (str (:pid entry)) "attempt=" (str (:attempts entry)))
+    :crashed (log! "crashed" (name spec-key) "attempt=" (str (:attempts entry)))
+    :healthy-reset (log! "healthy-reset" (name spec-key))
+    :gave-up (log! "gave-up" (name spec-key) "after" (str (:attempts entry)) "attempt(s)")
+    :re-armed (log! "re-armed" (name spec-key) "pid=" (str (:pid entry)))
+    nil))
 
 (defn tick! []
   (let [prior (read-state)
-        next-state (into {} (map (fn [spec] [(:key spec) (check-one! spec (merge (default-entry) (get prior (:key spec))))])) process-specs)]
+        now (now-ms)
+        next-state (into {}
+                          (map (fn [spec]
+                                 (let [entry (merge (front-desk-supervisor-lib/default-entry) (get prior (:key spec)))
+                                       {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                                                               entry now pid-alive? (:spawn-pid! spec) restart-config giveup-config)]
+                                   (log-event! (:key spec) event entry)
+                                   [(:key spec) entry])))
+                          process-specs)]
     (write-status! next-state)
     next-state))
 
