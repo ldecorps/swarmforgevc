@@ -153,6 +153,71 @@
                                       :provider "claude" :provider-state :cooldown
                                       :agents-running 8 :pending-count 3}))
 
+;; ── resolve-provider-state (pure) — BL-305 fail-open cooldown ────────────
+;; A fixed instant, never the real clock (de0991e). now = 6pm local (UTC,
+;; tz-offset 0) on day 0 = 18*3600000 = 64800000 ms.
+(def cfg {:now-ms 64800000 :bounded-fallback-ms 1800000 :plausible-max-ms 21600000})
+
+;; cooldown-resilience-01: a genuine, not-yet-elapsed reset - first-ever
+;; detection (no existing record) with a plausible near-term reset.
+(assert= "cooldown-resilience-01: a readable, not-yet-elapsed reset genuinely freezes until it"
+         {:state :cooldown :reset-ms 71400000 :reset-raw "resets 7:50pm"}
+         (operator-lib/resolve-provider-state
+          (merge cfg {:limited-text "usage limit reached, resets 7:50pm"
+                      :parsed-reset-ms 71400000 ;; 19:50 today, 1h50m ahead - plausible
+                      :reset-raw "resets 7:50pm"
+                      :existing-reset-ms nil :existing-reset-raw nil})))
+
+;; cooldown-resilience-01 (steady state): an ALREADY-cooling genuine
+;; cooldown is authoritative on its OWN reset-ms - a fresh (even
+;; identical) live rescan never renews/extends it.
+(assert= "an already-cooling genuine cooldown stays on its own reset-ms, ignoring a fresh rescan"
+         {:state :cooldown :reset-ms 71400000 :reset-raw "resets 7:50pm"}
+         (operator-lib/resolve-provider-state
+          (merge cfg {:limited-text "usage limit reached, resets 7:50pm"
+                      :parsed-reset-ms 71400000
+                      :reset-raw "resets 7:50pm"
+                      :existing-reset-ms 71400000 :existing-reset-raw "resets 7:50pm"})))
+
+;; cooldown-resilience-02: no parseable reset at all - bounded fallback,
+;; never an unbounded/nil-reset freeze.
+(assert= "cooldown-resilience-02: an unparseable reset caps to the bounded fallback window"
+         {:state :cooldown :reset-ms (+ 64800000 1800000) :reset-raw "usage limit reached"}
+         (operator-lib/resolve-provider-state
+          (merge cfg {:limited-text "usage limit reached"
+                      :parsed-reset-ms nil
+                      :reset-raw "usage limit reached"
+                      :existing-reset-ms nil :existing-reset-raw nil})))
+
+;; cooldown-resilience-02 variant / BL-305 QA (d): a resolved reset more
+;; than plausible-max-ms ahead is ALSO treated as mis-parsed, not honored
+;; as a ~day-long freeze.
+(assert= "an implausibly-far-off resolved reset ALSO caps to the bounded fallback window"
+         {:state :cooldown :reset-ms (+ 64800000 1800000) :reset-raw "resets 9am"}
+         (operator-lib/resolve-provider-state
+          (merge cfg {:limited-text "usage limit reached, resets 9am"
+                      :parsed-reset-ms (+ 64800000 46800000) ;; ~13h ahead - implausible
+                      :reset-raw "resets 9am"
+                      :existing-reset-ms nil :existing-reset-raw nil})))
+
+;; cooldown-resilience-03: once the RECORDED reset has passed, resume -
+;; even with the old banner still lingering (never re-frozen on stale text
+;; alone, no fresh-evidence-free re-entry into cooldown).
+(assert= "cooldown-resilience-03: a recorded cooldown whose reset has elapsed resumes, ignoring a lingering stale banner"
+         {:state :available}
+         (operator-lib/resolve-provider-state
+          (merge cfg {:limited-text "usage limit reached, resets 7:50pm"
+                      :parsed-reset-ms (+ 64800000 46800000) ;; the SAME stale text re-parsed/rolled to tomorrow - implausible
+                      :reset-raw "resets 7:50pm"
+                      :existing-reset-ms 60000000 :existing-reset-raw "resets 7:50pm"}))) ;; already in the past (< now-ms)
+
+;; no signal at all, no prior record -> available.
+(assert= "no usage-limit signal and no recorded cooldown -> available"
+         {:state :available}
+         (operator-lib/resolve-provider-state
+          (merge cfg {:limited-text nil :parsed-reset-ms nil :reset-raw nil
+                      :existing-reset-ms nil :existing-reset-raw nil})))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "operator_lib: ALL TESTS PASSED")
