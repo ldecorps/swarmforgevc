@@ -261,7 +261,7 @@ function toFoldersSnapshot(targetPath: string): BacklogFoldersSnapshot {
 // duplicated here rather than exported/imported, same "no shared lifecycle
 // worth coupling" posture gateSnapshot.ts's own header already documents
 // for this exact live-glue class of function.
-function resolveLiveRoles(targetPath: string): { role: string; worktreePath: string }[] {
+export function resolveLiveRoles(targetPath: string): { role: string; worktreePath: string }[] {
   try {
     return parseRolesTsv(fs.readFileSync(path.join(targetPath, '.swarmforge', 'roles.tsv'), 'utf8')).map((r) => ({
       role: r.role,
@@ -286,7 +286,10 @@ function readGates(targetPath: string): { role: string; gated: boolean }[] {
 // anomalous multi-hold picks one, never mis-tags a gate to the wrong
 // BL-###; a gated role with no held ticket is simply absent here, and
 // diffNeedsApproval already drops an untagged gate rather than guess).
-function readRoleTicket(targetPath: string): Record<string, string> {
+// Exported (CLI main() thin-wrapper rule) so this is unit-tested in-process
+// against a real roles.tsv + handoff fixture rather than only reachable
+// through the live bot process.
+export function readRoleTicket(targetPath: string): Record<string, string> {
   const roles = resolveLiveRoles(targetPath);
   const windowsByRole: Record<string, TicketHoldingWindow[]> = {};
   for (const role of roles) {
