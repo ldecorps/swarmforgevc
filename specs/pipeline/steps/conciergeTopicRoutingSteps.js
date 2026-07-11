@@ -32,6 +32,14 @@ function buildAdapters(ctx) {
       ctx.sent.push({ topicId, text });
       return true;
     },
+    // BL-299: routeEvent's own completion path calls this for a
+    // TaskCompleted event - defined here (even though this feature's own
+    // scenarios don't assert on it) so "a later event" fixtures that
+    // happen to use TaskCompleted don't crash on a missing adapter.
+    closeTopic: async (topicId) => {
+      ctx.closed.push(topicId);
+      return true;
+    },
   };
 }
 
@@ -41,6 +49,7 @@ function registerSteps(registry) {
     ctx.topicMap = {};
     ctx.created = [];
     ctx.sent = [];
+    ctx.closed = [];
     ctx.event = mkEvent();
   });
 

@@ -40,6 +40,15 @@ export function messageTextForEvent(event: SwarmEvent): string {
   return `${event.type}: ${event.backlogId}`;
 }
 
+// BL-299: distinct from messageTextForEvent's generic progress line - the
+// final message posted into a topic before it closes, naming the item.
+// Kept lean/swarm-agnostic (event + title only) - richer content (PR link,
+// metrics) needs a richer SwarmEvent payload, out of this ticket's scope
+// (BL-296 shipped payload {}).
+export function completionSummaryText(event: SwarmEvent, title: string): string {
+  return `${topicNameForItem(event.backlogId, title)} is complete.`;
+}
+
 export type TopicAction =
   | { kind: 'reuse'; topicId: number; text: string }
   | { kind: 'create'; topicName: string; text: string };
@@ -61,11 +70,35 @@ export interface RouteAdapters {
   createTopic: (name: string) => Promise<{ success: boolean; topicId?: number }>;
   recordTopicId: (backlogId: string, topicId: number) => void;
   sendMessage: (topicId: number, text: string) => Promise<boolean>;
+  // BL-299: closes a topic (read-only, history preserved - never delete,
+  // which would destroy the summary just posted). Only ever called with a
+  // concrete topicId (NEVER-MAIN-CHAT holds here too - there is no
+  // "close the main chat" notion).
+  closeTopic: (topicId: number) => Promise<boolean>;
 }
 
 export interface RouteResult {
   posted: boolean;
   skipped: boolean;
+}
+
+// BL-299: TaskCompleted gets its OWN routing path, never decideTopicAction's
+// reuse-or-CREATE logic - an item that completed with no topic ever mapped
+// has nothing to summarize and gets no topic created just to immediately
+// close it (a no-op, mirroring routeEvent's own create-failure skip shape).
+// ORDER MATTERS: the summary is posted into the topic BEFORE it closes (a
+// closed topic can no longer be posted into) - close only follows a
+// successful post, never an attempted one.
+async function routeCompletionEvent(event: SwarmEvent, title: string, adapters: RouteAdapters): Promise<RouteResult> {
+  const topicId = adapters.getTopicMap()[event.backlogId];
+  if (topicId === undefined) {
+    return { posted: false, skipped: true };
+  }
+  const ok = await adapters.sendMessage(topicId, completionSummaryText(event, title));
+  if (ok) {
+    await adapters.closeTopic(topicId);
+  }
+  return { posted: ok, skipped: false };
 }
 
 // Adapter-injected: routes one event end to end. NEVER-MAIN-CHAT is a
@@ -75,6 +108,9 @@ export interface RouteResult {
 // rate-limited, etc.) the event is skipped - never a fallback post to a
 // main chat that does not exist in this function's adapter surface at all.
 export async function routeEvent(event: SwarmEvent, title: string, adapters: RouteAdapters): Promise<RouteResult> {
+  if (event.type === 'TaskCompleted') {
+    return routeCompletionEvent(event, title, adapters);
+  }
   const action = decideTopicAction(event, adapters.getTopicMap(), title);
   if (action.kind === 'reuse') {
     const ok = await adapters.sendMessage(action.topicId, action.text);
