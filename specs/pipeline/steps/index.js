@@ -10,7 +10,7 @@ const DOMAINS = [
   require('./daemonWorkflowSteps'),
   require('./launchSpawnFailureSteps'),
   require('./mailboxIntakeSteps'),
-  require('./strykerPwaSandboxSteps'),
+  require('./strykerSandboxSiblingsSteps'),
   require('./dispatchGapSteps'),
   require('./backlogDepthSteps'),
   require('./remoteWakeupSteps'),
