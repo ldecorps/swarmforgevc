@@ -64,9 +64,13 @@ function registerSteps(registry) {
   });
 
   registry.define(/^it includes the architecture diagram rendered as an inline image$/, (ctx) => {
+    // BL-286: the image is now referenced by a cid: inline-attachment source
+    // (RFC-2392), not a data-URI - Gmail blocks data-URI image sources, so
+    // those rendered broken there. Still shows inline in the client, just
+    // via a different transport.
     const html = ctx.result.lastSentHtml || '';
-    if (!/data:image\/png;base64,/.test(html)) {
-      throw new Error(`expected the composed html body to embed an inline PNG image; got: ${html}`);
+    if (!/cid:/.test(html)) {
+      throw new Error(`expected the composed html body to reference an inline cid image; got: ${html}`);
     }
     if (!/architecture/.test(html)) {
       throw new Error(`expected the composed html body to name the architecture diagram; got: ${html}`);

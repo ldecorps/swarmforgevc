@@ -79,6 +79,7 @@ const DOMAINS = [
   require('./telegramTopicThreadsSteps'),
   require('./operatorThreadLifecycleSteps'),
   require('./operatorLongtermMemorySteps'),
+  require('./briefingDiagramCidAttachmentsSteps'),
 ];
 
 function registerSteps(registry) {

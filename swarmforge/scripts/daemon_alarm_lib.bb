@@ -49,17 +49,30 @@
               "Failure log: " failure-log-path "\n"
               "After fixing the daemon, run: " ensure-command "\n")})
 
+;; BL-286: our own {:filename :content-id :base64} attachment descriptor
+;; (matching build-diagram-section's shape) -> Resend's own attachment
+;; field names ({:filename :content :content_id}, RFC-2392 inline
+;; reference - setting content_id is what lets HTML reference it via
+;; cid:<content_id>).
+(defn- resend-attachment [{:keys [filename content-id base64]}]
+  {:filename filename :content base64 :content_id content-id})
+
 (defn default-post!
   "Real Resend POST, isolated behind an injectable seam so tests never touch
    the network (mirrors extension/src/notify/resendClient.ts's PostFn).
    BL-260: an optional :html key is included in the JSON body when present -
    Resend sends a multipart/alternative email (html + text parts) itself
-   when both fields are given, so no MIME boundary handling is needed here."
-  [api-key {:keys [to from subject text html]}]
+   when both fields are given, so no MIME boundary handling is needed here.
+   BL-286: an optional, non-empty :attachments seq (our own descriptor
+   shape) is translated to Resend's own attachment shape and included -
+   absent/empty attachments means no :attachments key at all, the exact
+   prior body."
+  [api-key {:keys [to from subject text html attachments]}]
   (let [http (requiring-resolve 'babashka.http-client/post)
         json-generate (requiring-resolve 'cheshire.core/generate-string)
         body (cond-> {:from from :to [to] :subject subject :text text}
-               html (assoc :html html))]
+               html (assoc :html html)
+               (seq attachments) (assoc :attachments (mapv resend-attachment attachments)))]
     (try
       (let [res (http "https://api.resend.com/emails"
                        {:headers {"Authorization" (str "Bearer " api-key)
@@ -80,10 +93,17 @@
    BL-260: the 7-arg form threads an optional html body through to post-fn!
    (nil when the caller has none, e.g. BL-144's plain-text-only death alarm)
    - the existing 5-/6-arg forms are unchanged and still delegate with no
-   html, so every pre-BL-260 caller/test keeps its exact prior behavior."
+   html, so every pre-BL-260 caller/test keeps its exact prior behavior.
+
+   BL-286: the 8-arg form additionally threads an optional attachments seq
+   (our own {:filename :content-id :base64} shape) - the 7-arg form now
+   delegates to it with attachments nil, which cond-> below skips entirely
+   (no :attachments key), so every pre-BL-286 caller/test keeps its exact
+   prior behavior too."
   ([api-key to from subject text] (send-alarm-email! api-key to from subject text default-post!))
   ([api-key to from subject text post-fn!] (send-alarm-email! api-key to from subject text nil post-fn!))
-  ([api-key to from subject text html post-fn!]
+  ([api-key to from subject text html post-fn!] (send-alarm-email! api-key to from subject text html nil post-fn!))
+  ([api-key to from subject text html attachments post-fn!]
    (cond
      (str/blank? to)
      {:success false :reason :disabled :error "email not configured (notify_email_to unset)"}
@@ -93,7 +113,8 @@
 
      :else
      (post-fn! api-key (cond-> {:to to :from from :subject subject :text text}
-                          html (assoc :html html))))))
+                          html (assoc :html html)
+                          (seq attachments) (assoc :attachments attachments))))))
 
 ;; BL-215: a recipient-configured-but-keyless daemon must warn loudly instead
 ;; of silently no-oping (the defect: send-alarm-email!'s old single failure
@@ -133,14 +154,19 @@
 
    BL-260: the 5-arg form threads an optional html body through; the
    existing 4-arg form (BL-144's death alarm) is unchanged, delegating with
-   no html."
+   no html.
+
+   BL-286: the 6-arg form additionally threads an optional attachments seq;
+   the 5-arg form now delegates to it with attachments nil, so every
+   pre-BL-286 caller/test keeps its exact prior behavior."
   ([conf-file subject text warn-adapters] (send-configured-email! conf-file subject text nil warn-adapters))
-  ([conf-file subject text html warn-adapters]
+  ([conf-file subject text html warn-adapters] (send-configured-email! conf-file subject text html nil warn-adapters))
+  ([conf-file subject text html attachments warn-adapters]
    (let [conf (parse-conf (when (fs/exists? conf-file) (slurp (str conf-file))))
          to (get conf "notify_email_to")
          from (or (get conf "notify_email_from") "onboarding@resend.dev")
          api-key (System/getenv "RESEND_API_KEY")
-         result (send-alarm-email! api-key to from subject text html default-post!)]
+         result (send-alarm-email! api-key to from subject text html attachments default-post!)]
      (warn-missing-key-if-needed! result warn-adapters)
      result)))
 

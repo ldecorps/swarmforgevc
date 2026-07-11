@@ -279,19 +279,40 @@
            #{}
            (briefing-email-lib/load-sent-briefings dir)))
 
-;; ── build-diagram-section (pure, BL-260) ─────────────────────────────────
+;; ── build-diagram-section (pure, BL-260 / BL-286) ────────────────────────
 
-;; BL-260 rendered-inline-01: available diagrams produce an html body with
-;; an inline image per diagram.
+;; BL-286 diagram-cid-01: available diagrams are referenced by a cid image
+;; source, never a data-URI (Gmail blocks data-URI image sources - the
+;; defect this ticket fixes).
 (let [section (briefing-email-lib/build-diagram-section
                [{:name "architecture" :base64 "QUJD"} {:name "swarm-flow" :base64 "WFla"}])]
-  (assert= "rendered-inline-01: the html section embeds each diagram as an inline data-URI image"
+  (assert= "diagram-cid-01: each diagram is referenced by a cid image source"
            true
-           (and (str/includes? (:html section) "data:image/png;base64,QUJD")
-                (str/includes? (:html section) "data:image/png;base64,WFla")))
+           (and (str/includes? (:html section) "cid:architecture-diagram")
+                (str/includes? (:html section) "cid:swarm-flow-diagram")))
+  (assert= "diagram-cid-01: the html contains no data-URI image source"
+           false
+           (str/includes? (:html section) "data:image"))
   (assert= "rendered-inline-01: the note-line points at the rendered-above html view"
            true
            (str/includes? (:note-line section) "rendered inline above")))
+
+;; BL-286 diagram-cid-02/03: each referenced diagram carries a matching
+;; inline attachment, with the image bytes and a filename.
+(let [section (briefing-email-lib/build-diagram-section
+               [{:name "architecture" :base64 "QUJD"} {:name "swarm-flow" :base64 "WFla"}])
+      attachments (:attachments section)]
+  (assert= "diagram-cid-02: one attachment per referenced diagram"
+           2
+           (count attachments))
+  (assert= "diagram-cid-02: each attachment's content-id matches the cid that references it"
+           true
+           (and (str/includes? (:html section) (str "cid:" (:content-id (first attachments))))
+                (str/includes? (:html section) (str "cid:" (:content-id (second attachments))))))
+  (assert= "diagram-cid-03: each attachment carries the diagram's image bytes and a filename"
+           [{:filename "architecture-diagram.png" :content-id "architecture-diagram" :base64 "QUJD"}
+            {:filename "swarm-flow-diagram.png" :content-id "swarm-flow-diagram" :base64 "WFla"}]
+           attachments))
 
 ;; BL-260 render-unavailable-degradation-04: nil/empty diagrams -> no html,
 ;; but still a clear, non-blank note - never silence, never a crash.
@@ -304,68 +325,89 @@
 (assert= "render-unavailable-degradation-04: an empty diagram list behaves the same as nil"
          nil
          (:html (briefing-email-lib/build-diagram-section [])))
+(assert= "diagram-cid-04: nil diagrams -> no :attachments key at all"
+         false
+         (contains? (briefing-email-lib/build-diagram-section nil) :attachments))
 
-;; ── send-unsent-briefings! + :diagram-section adapter (BL-260) ──────────────
+;; ── send-unsent-briefings! + :diagram-section adapter (BL-260 / BL-286) ──────
 
-;; BL-260 rendered-inline-01 (wiring): a :diagram-section adapter reaches
-;; :send-email! as a 3rd (html) argument, and its note-line reaches the
-;; plaintext content exactly like the other optional sections.
+;; BL-286 diagram-cid-02/03 (wiring): a :diagram-section adapter with
+;; available diagrams reaches :send-email! as a 4th (attachments) argument
+;; alongside html, and its note-line reaches the plaintext content exactly
+;; like the other optional sections.
 (let [dir (mk-tmp)
       sent-texts (atom [])
-      sent-html (atom [])]
+      sent-html (atom [])
+      sent-attachments (atom [])]
   (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
   (briefing-email-lib/send-unsent-briefings!
    dir
    {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
-    :send-email! (fn [_subject text html] (swap! sent-texts conj text) (swap! sent-html conj html) {:success true})
+    :send-email! (fn [_subject text html attachments]
+                   (swap! sent-texts conj text)
+                   (swap! sent-html conj html)
+                   (swap! sent-attachments conj attachments)
+                   {:success true})
     :diagram-section (fn [] (briefing-email-lib/build-diagram-section [{:name "architecture" :base64 "QUJD"}]))
     :log! (fn [& _] nil)})
-  (assert= "the diagram html reaches the actual :send-email! call"
+  (assert= "the diagram html reaches the actual :send-email! call, referencing the cid"
            true
-           (str/includes? (first @sent-html) "data:image/png;base64,QUJD"))
+           (str/includes? (first @sent-html) "cid:architecture-diagram"))
+  (assert= "the diagram attachments reach the actual :send-email! call"
+           [{:filename "architecture-diagram.png" :content-id "architecture-diagram" :base64 "QUJD"}]
+           (first @sent-attachments))
   (assert= "the diagram note-line reaches the plaintext content alongside the headline"
            true
            (and (str/starts-with? (first @sent-texts) "Headline")
                 (str/includes? (first @sent-texts) "rendered inline above"))))
 
-;; BL-260 render-unavailable-degradation-04 (wiring): a :diagram-section
-;; adapter that reports unavailable still sends - html is nil, and the
-;; plaintext note says so, matching build-diagram-section's own contract.
+;; BL-286 diagram-cid-04 (wiring): a :diagram-section adapter that reports
+;; unavailable still sends - html is nil, no attachments are passed (only
+;; the 3-arg :send-email! call is made, matching build-diagram-section's own
+;; no-:attachments-key contract), and the plaintext note says so.
 (let [dir (mk-tmp)
       sent-texts (atom [])
-      sent-html (atom [])
+      sent-args (atom [])
       sent (atom nil)]
   (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
   (reset! sent
           (briefing-email-lib/send-unsent-briefings!
            dir
            {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
-            :send-email! (fn [_subject text html] (swap! sent-texts conj text) (swap! sent-html conj html) {:success true})
+            :send-email! (fn [& args] (swap! sent-texts conj (second args)) (swap! sent-args conj args) {:success true})
             :diagram-section (fn [] (briefing-email-lib/build-diagram-section nil))
             :log! (fn [& _] nil)}))
   (assert= "render-unavailable-degradation-04: the email still sends (never fails) when rendering is unavailable"
            ["2026-07-09.md"]
            @sent)
+  (assert= "diagram-cid-04: its send payload carries no attachments - only html (3-arg) is passed"
+           3
+           (count (first @sent-args)))
   (assert= "render-unavailable-degradation-04: html is nil - a plaintext-only send, exactly as before this ticket"
            nil
-           (first @sent-html))
+           (nth (first @sent-args) 2))
   (assert= "render-unavailable-degradation-04: the plaintext part carries the clear no-diagram note"
            true
            (str/includes? (first @sent-texts) "unavailable")))
 
-;; No :diagram-section adapter at all (every pre-BL-260 caller/test) -> the
-;; exact 2-arg :send-email! call, unaffected, no diagram note appended.
+;; diagram-cid-05: no :diagram-section adapter at all (every pre-BL-260
+;; caller/test) -> the exact 2-arg :send-email! call, unaffected - no
+;; :html/:attachments args at all, no diagram note appended.
 (let [dir (mk-tmp)
-      sent-texts (atom [])]
+      sent-texts (atom [])
+      sent-args (atom [])]
   (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
   (briefing-email-lib/send-unsent-briefings!
    dir
    {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
-    :send-email! (fn [_subject text] (swap! sent-texts conj text) {:success true})
+    :send-email! (fn [& args] (swap! sent-texts conj (second args)) (swap! sent-args conj args) {:success true})
     :log! (fn [& _] nil)})
   (assert= "BL-260: no :diagram-section adapter -> content is unchanged (backward compatible)"
            "Headline\n"
-           (first @sent-texts)))
+           (first @sent-texts))
+  (assert= "diagram-cid-05: no :diagram-section adapter -> the send payload has neither html nor attachments args"
+           2
+           (count (first @sent-args))))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
