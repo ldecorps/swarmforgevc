@@ -45,7 +45,7 @@ function fakeRecertBatch(overrides = {}) {
   };
 }
 
-function renderDashboard(recertBatch) {
+function renderDashboard(recertBatch, speech) {
   const html = fs.readFileSync(path.join(PWA_DIR, 'index.html'), 'utf8');
   const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://example.github.io/dashboard/', pretendToBeVisual: true });
   dom.window.fetch = (url) => {
@@ -60,6 +60,24 @@ function renderDashboard(recertBatch) {
     }
     return Promise.reject(new Error('unexpected fetch: ' + url));
   };
+
+  if (speech) {
+    const calls = { spoken: [], cancelled: 0 };
+    dom.window.SpeechSynthesisUtterance = function (text) {
+      this.text = text;
+      this.lang = '';
+    };
+    dom.window.speechSynthesis = {
+      speak: (utterance) => {
+        calls.spoken.push({ text: utterance.text, lang: utterance.lang });
+      },
+      cancel: () => {
+        calls.cancelled += 1;
+      },
+    };
+    dom.window.__speechCalls = calls;
+  }
+
   const localesSource = fs.readFileSync(path.join(PWA_DIR, 'locales.js'), 'utf8');
   dom.window.eval(localesSource);
   const appSource = fs.readFileSync(path.join(PWA_DIR, 'app.js'), 'utf8');
@@ -237,6 +255,50 @@ test('recert-04: cancelling the delete confirmation returns to the normal choice
   click(dom, [...content(dom).querySelectorAll('button')].find((b) => b.textContent === 'Cancel'));
   assert.equal([...content(dom).querySelectorAll('a')].find((a) => a.textContent === 'Yes, delete'), undefined);
   assert.ok([...content(dom).querySelectorAll('a')].find((a) => a.textContent.indexOf('Confirm') === 0), 'must return to the normal choice screen');
+});
+
+// --- BL-271: Listen control on the recert view ---
+
+test('BL-271 recert-listen-01: activating Listen speaks the shown scenario\'s name followed by its Gherkin text', async () => {
+  const dom = renderDashboard(fakeRecertBatch(), true);
+  await flush();
+  const listenBtn = [...content(dom).querySelectorAll('button')].find((b) => /listen/i.test(b.textContent));
+  click(dom, listenBtn);
+
+  assert.equal(dom.window.__speechCalls.spoken.length, 1);
+  const spoken = dom.window.__speechCalls.spoken[0].text;
+  const nameIndex = spoken.indexOf('velocity series matches git-recorded closes');
+  const textIndex = spoken.indexOf('Given a repo');
+  assert.ok(nameIndex !== -1 && textIndex !== -1, `expected both name and Gherkin text present in: ${spoken}`);
+  assert.ok(nameIndex < textIndex, 'expected the scenario name spoken before its Gherkin text');
+});
+
+test('BL-271 recert-listen-02: the recert Listen control\'s accessible label tracks Listen/Stop state', async () => {
+  const dom = renderDashboard(fakeRecertBatch(), true);
+  await flush();
+  const listenBtn = [...content(dom).querySelectorAll('button')].find((b) => /listen/i.test(b.textContent));
+  assert.equal(listenBtn.getAttribute('aria-label'), 'Listen');
+
+  click(dom, listenBtn);
+  assert.equal(listenBtn.getAttribute('aria-label'), 'Stop');
+
+  click(dom, listenBtn);
+  assert.equal(listenBtn.getAttribute('aria-label'), 'Listen');
+});
+
+test('BL-271 recert-listen-03: no Listen control when nothing needs recertification', async () => {
+  const dom = renderDashboard(fakeRecertBatch({ batch: [] }), true);
+  await flush();
+  const listenBtn = [...content(dom).querySelectorAll('button')].find((b) => /listen/i.test(b.textContent));
+  assert.equal(listenBtn, undefined, 'expected no Listen control when recertNoneNeeded');
+});
+
+test('BL-271: with no on-device speech synthesis the recert Listen control degrades to a localized unavailable note', async () => {
+  const dom = renderDashboard(fakeRecertBatch(), false);
+  await flush();
+  const listenBtn = [...content(dom).querySelectorAll('button')].find((b) => /listen/i.test(b.textContent));
+  assert.equal(listenBtn, undefined, 'expected no listen button when speech synthesis is unavailable');
+  assert.match(content(dom).textContent, /not available/i);
 });
 
 test('shows an honest failure message when the recert-batch fetch fails entirely', async () => {
