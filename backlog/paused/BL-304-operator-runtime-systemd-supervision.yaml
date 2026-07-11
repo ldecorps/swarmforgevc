@@ -1,0 +1,84 @@
+id: BL-304
+title: "Bug: operator_runtime.bb has no supervisor/autostart (a crash/OOM/reboot leaves the Operator dead) — generate a systemd unit (Restart=always, boot-enabled, never permanently gives up) via the BL-101 generator"
+milestone: M8
+status: todo
+type: bug
+priority: 10
+depends_on: []
+source: "Coordinator bug report 2026-07-11 (note 000249): 'operator_runtime has no supervisor/autostart; spec resilience fix.' Human decision (AskUserQuestion 2026-07-11): SYSTEMD unit (Restart=always) substrate. Specifier verified the launch path + the existing BL-101 systemd generator before scoping."
+
+notes: |
+  Resilience gap (sibling of [[front-desk-resilience-defect-track]], different mechanism).
+  VERIFIED 2026-07-11:
+    - `start_operator_runtime.sh` launches `operator_runtime.bb` ONCE under `nohup` and
+      never watches it again; grep shows NOTHING even invokes that script (autostart is
+      manual/external today). If the runtime crashes/OOMs or the host reboots, `runtime.pid`
+      goes stale and nothing respawns it -> the Operator is DEAD until a human intervenes.
+    - This directly contradicts the Operator's mandate: `launch_operator.sh`'s own
+      "CRITICAL (resilience)" comment says the Operator must "survive - and recover - a
+      total swarm/tmux failure" ([[operator-is-external-to-swarm]]). A recovery delegate
+      with no survival mechanism of its own is the bug.
+    - `operator_runtime.bb` already exposes the needed conventions: `runtime.pid`,
+      `stop-file`, `status.json`, and a foreground `while (not stop-file)` `-main` loop
+      (ready to run as a systemd Type=simple ExecStart).
+    - The repo already has a systemd convention: `generate_systemd_units.sh` (BL-101)
+      renders the secondary-swarm unit, installed by `provision_secondary_host.sh` step 6/6
+      (`sudo mv` -> /etc/systemd/system). It does NOT yet emit an operator unit.
+
+  HUMAN DECISION (AskUserQuestion 2026-07-11) = systemd unit, Restart=always. The OS is the
+  supervisor (autostart + reboot survival + crash restart, no who-watches-the-watcher
+  regress). A bb supervisor (front_desk_supervisor.bb style) was OFFERED and NOT chosen
+  (it wouldn't survive a reboot on its own).
+
+  SCOPE:
+    1. Extend `generate_systemd_units.sh` to ALSO render an OPERATOR-RUNTIME unit:
+       - Type=simple; ExecStart runs the runtime IN THE FOREGROUND:
+         `bb $PROJECT_ROOT/swarmforge/scripts/operator_runtime.bb $PROJECT_ROOT`
+         (NOT `start_operator_runtime.sh`, which backgrounds via nohup and returns —
+         wrong for systemd main-pid tracking).
+       - Restart=always, RestartSec=<small backoff, e.g. 5>.
+       - **StartLimitIntervalSec=0** (CRITICAL): disable systemd's OWN start-rate-limit so
+         a burst of rapid crashes never parks the unit in a permanent `failed`/stopped
+         state. This is systemd's exact analogue of the BL-303 sticky-give-up defect — the
+         Operator must ALWAYS come back, per the resilience-track policy (self-recover,
+         never stop-after-N).
+       - User=$LINUX_USER, WorkingDirectory=$PROJECT_ROOT.
+       - EnvironmentFile=-$ENV_FILE (BL-101 clean-env lesson: systemd starts with a CLEAN
+         env, so the runtime AND the disposable LLM it launches get the operator's secrets/
+         auth — e.g. CLAUDE_CODE_OAUTH_TOKEN — only via this file; leading '-' tolerates
+         absence for interactive-auth operators).
+       - After=network-online.target, Wants=network-online.target.
+       - WantedBy=multi-user.target (boot autostart).
+       - ExecStop: stop the runtime GRACEFULLY via its existing stop-file
+         (`touch $OP_DIR/stop`) so `-main`'s finally clears runtime.pid; pick a KillMode
+         that tears down the disposable-LLM tmux window on stop without orphaning it.
+    2. Wire `provision_secondary_host.sh` (step 6/6) to also generate + install
+       (`sudo mv` -> /etc/systemd/system/swarmforge-operator-<name>.service) + enable the
+       operator unit (`systemctl enable --now`) alongside the swarm unit.
+    3. `start_operator_runtime.sh` STAYS as the manual / non-systemd / local-dogfood path
+       (unchanged) — the systemd unit is the production supervisor.
+
+  TEST (mirror `test_generate_systemd_units.sh`): assert the rendered operator unit
+  contains Restart=always, StartLimitIntervalSec=0, WantedBy=multi-user.target,
+  EnvironmentFile=, and an ExecStart pointing at operator_runtime.bb (foreground). The unit
+  is a pure text render — no real systemctl needed for the unit-content acceptance.
+
+  E2E QA PROCEDURE: run generate_systemd_units.sh -> assert the operator unit renders with
+  the directives above. On a systemd host (optional live check): install + enable, then
+  `kill` the runtime pid and assert systemd relaunches it; assert `WantedBy=multi-user`
+  is present as the boot-autostart proxy (a real reboot is out of a unit test's reach).
+
+  OUT OF SCOPE: a bb operator_supervisor.bb (offered, NOT chosen); the disposable LLM's own
+  resilience (launch_operator.sh unchanged); operator_tunnel.sh / tunnel wiring; the
+  CONTENT of the secrets EnvironmentFile (operator-provided, same posture as BL-101);
+  non-systemd hosts (start_operator_runtime.sh remains their path). Do NOT edit
+  operator_runtime.bb itself — it already has the pid/stop/foreground-loop the unit needs.
+
+acceptance:
+  feature: specs/features/BL-304-operator-runtime-systemd-supervision.feature
+  steps:
+    - "The generated operator unit restarts the runtime on any exit and, with the start-rate-limit disabled (StartLimitIntervalSec=0), never lands in a permanent stopped/failed state after a crash burst"
+    - "The generated operator unit is boot-enabled (WantedBy=multi-user.target) so the runtime comes back up after a host reboot"
+    - "The generated operator unit loads the operator's EnvironmentFile so the clean systemd environment still carries the runtime/LLM secrets"
+
+mutation_cost: medium
