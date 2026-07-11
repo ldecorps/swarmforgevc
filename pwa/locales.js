@@ -111,6 +111,12 @@
       // BL-287: the burndown line-chart legend.
       burndownRemainingLegend: 'Remaining',
       burndownIdealLegend: 'Ideal',
+      // BL-290: suite-test duration, riding the committed cost/health sidecar.
+      suiteDurationHeading: 'Suite duration',
+      suiteDurationLabel: 'Suite duration: ',
+      suiteDurationLabelWarn: 'Suite duration (WARN): ',
+      suiteDurationLatestSuffix: 's latest',
+      suiteDurationNoData: 'no local data',
     },
     fr: {
       pageTitle: 'SwarmForge — tableau de bord',
@@ -197,6 +203,12 @@
       // BL-287: la légende du graphique en ligne du burndown.
       burndownRemainingLegend: 'Restants',
       burndownIdealLegend: 'Idéal',
+      // BL-290: durée de la suite de tests, via le sidecar coût/santé commité.
+      suiteDurationHeading: 'Durée de la suite de tests',
+      suiteDurationLabel: 'Durée de la suite : ',
+      suiteDurationLabelWarn: 'Durée de la suite (ALERTE) : ',
+      suiteDurationLatestSuffix: 's (dernière mesure)',
+      suiteDurationNoData: 'aucune donnée locale',
     },
   };
 })();

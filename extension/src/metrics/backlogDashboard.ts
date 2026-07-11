@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { BacklogItem, BacklogFolders, readBacklogFolders } from '../panel/backlogReader';
 import { runGitLog, deriveTicketLifecycles, getCurrentSha, TicketLifecycleEvent } from './gitHistoryAdapter';
-import { computeDeliveryMetrics, DeliveryMetrics, VelocityResult, MilestoneBurndownResult, CycleTimeResult, ForecastResult } from './deliveryMetrics';
+import { computeDeliveryMetrics, DeliveryMetrics, VelocityResult, MilestoneBurndownResult, CycleTimeResult, ForecastResult, SuiteDurationTrendResult } from './deliveryMetrics';
 import { RoleWorktree } from './swarmMetrics';
 import { readSwarmName } from '../bridge/holisticProjections';
 import { CostHealthSidecar } from '../notify/costHealthSidecar';
@@ -70,6 +70,13 @@ export interface BacklogDashboardData {
     burndown: MilestoneBurndownResult[];
     cycleTime: CycleTimeResult;
     forecasts: ForecastResult;
+    // BL-290: additive, optional - unlike DeliveryMetrics.suiteDurationTrend
+    // (a LIVE read of the machine-local .test-durations.jsonl,
+    // deliberately never copied here), this comes from the latest
+    // COMMITTED sidecar's own suiteDurationTrend field, so backlog.json at
+    // a SHA carries only what was committed at/before that SHA - the same
+    // git-reproducible posture as costHealth, never a live read.
+    suiteDurationTrend?: SuiteDurationTrendResult;
   };
   // BL-213 cost-06a: additive, optional - the latest committed
   // docs/briefings/<date>.json sidecar, folded in as-is. Absent when no
@@ -174,8 +181,12 @@ function groupDoneByMilestone(
 // Pure: assembles the full backlog.json payload from already-read backlog
 // folders, git-derived lifecycles, and BL-096's delivery metrics (passed
 // through unmodified - never re-derived here). Test-suite duration is
-// deliberately excluded: its records are gitignored/machine-local, so no
-// git-derived projection can see them.
+// excluded from deliveryMetrics itself (its records are gitignored/
+// machine-local, so no git-derived projection can see a LIVE read of
+// them) - BL-290 instead folds metrics.suiteDurationTrend in from the
+// costHealth sidecar param below, which already carries a COMMITTED
+// snapshot of it (same "committed sidecar carries machine-local data
+// across the two-surface boundary" mechanism as costHealth itself).
 export function buildBacklogDashboard(
   folders: BacklogFolders,
   lifecycles: TicketLifecycleEvent[],
@@ -216,6 +227,9 @@ export function buildBacklogDashboard(
   };
   if (costHealth) {
     dashboard.costHealth = costHealth;
+    if (costHealth.suiteDurationTrend) {
+      dashboard.metrics.suiteDurationTrend = costHealth.suiteDurationTrend;
+    }
   }
   return dashboard;
 }

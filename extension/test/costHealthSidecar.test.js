@@ -298,3 +298,27 @@ test('computeCostHealthSidecar wires real BL-100/BL-096 producers together witho
   assert.equal(sidecar.schemaVersion, COST_HEALTH_SIDECAR_SCHEMA_VERSION);
   assert.deepEqual(sidecar.topExpensiveTickets, []);
 });
+
+// ── BL-290: suiteDurationTrend rides the same sidecar ────────────────────
+
+test('BL-290 suite-duration-pwa-01: buildCostHealthSidecar carries the given suiteDurationTrend verbatim', () => {
+  const trend = { hasLocalData: true, dailySeries: [{ periodStart: '2026-07-09T00:00:00Z', value: 45000 }], trend: { direction: 'flat', delta: 0, currentValue: 45000, priorValue: 45000, series: [] }, warn: false };
+  const sidecar = buildCostHealthSidecar('2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], [], undefined, trend);
+  assert.deepEqual(sidecar.suiteDurationTrend, trend);
+});
+
+test('BL-290: suiteDurationTrend is omitted entirely (not null) when none is given, matching costHealth\'s own additive-optional convention', () => {
+  const sidecar = buildCostHealthSidecar('2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], []);
+  assert.equal(Object.prototype.hasOwnProperty.call(sidecar, 'suiteDurationTrend'), false);
+});
+
+test('BL-290: computeCostHealthSidecar folds in a real suiteDurationTrend without throwing on an empty target', () => {
+  const target = mkTmp();
+  git(target, ['init', '-q']);
+  git(target, ['config', 'user.email', 't@t']);
+  git(target, ['config', 'user.name', 't']);
+  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+
+  const sidecar = computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }]);
+  assert.equal(sidecar.suiteDurationTrend.hasLocalData, false, 'no .test-durations.jsonl exists in this fixture, so hasLocalData must be false, never fabricated');
+});

@@ -17,9 +17,12 @@ Feature: the holistic UI and daily briefing surface the unit-test suite-duration
   #    already exists too (swarmMetrics.ts, BL-078: latest > warn floor OR latest >
   #    2x baseline mean). REUSE both — never recompute or re-threshold.
   #  - The backlog-dashboard PWA is fed by backlog.json, a git-SHA-reproducible
-  #    projection that DELIBERATELY excludes machine-local suite-duration records.
-  #    So this lands on the LIVE holistic UI + the daily briefing; backlog.json and
-  #    the PWA are left untouched (operator decision 2026-07-10).
+  #    projection. This ticket lands the trend on the LIVE holistic UI + the daily
+  #    briefing only; backlog.json and the PWA are left untouched for now (operator
+  #    decision 2026-07-10). BL-290 (2026-07-11) superseded that decision: it lands
+  #    suite duration on backlog.json/the PWA too, via the SAME committed-sidecar
+  #    mechanism BL-213/BL-272 already use for cost/health data - still never a
+  #    live read, so backlog.json stays git-reproducible either way.
   #  - Operator: SHOW the trend AND FLAG regression; compact (latest value + arrow +
   #    flag), no sparkline.
 
@@ -53,7 +56,12 @@ Feature: the holistic UI and daily briefing surface the unit-test suite-duration
     Then each shows a no-data state rather than an error or a fabricated value
 
   # BL-252 backlog-json-untouched-04
-  Scenario: the git-reproducible backlog projection stays free of machine-local data
+  # BL-290 note: this scenario's own contract was updated - backlog.json now
+  # DOES carry suite-duration data (via BL-290's committed sidecar), but the
+  # projection stays git-reproducible either way since it is never a live
+  # machine-local read within backlogDashboard.ts itself - see BL-290's own
+  # feature file for the PWA-rendering scenarios this landed alongside.
+  Scenario: the backlog projection stays git-reproducible - suite duration reaches it only via the committed sidecar, never a live read
     Given the backlog dashboard projection backlog.json is generated
     When the holistic UI and the daily briefing render their suite-duration readouts
-    Then backlog.json still excludes the machine-local suite-duration records
+    Then backlog.json carries the suite-duration trend only through the committed sidecar, never a live machine-local read

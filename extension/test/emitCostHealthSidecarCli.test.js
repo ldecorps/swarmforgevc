@@ -71,6 +71,21 @@ test('the compiled CLI emits and commits today\'s cost & health sidecar', () => 
   assert.equal(commitCount(root, path.join('docs', 'briefings', jsonFiles[0])), 1);
 });
 
+// BL-290 suite-duration-pwa-01: the same emit path also carries the
+// suite-duration trend - no .test-durations.jsonl exists in this fixture,
+// so hasLocalData must be a real, honest false, never fabricated.
+test('the compiled CLI\'s emitted sidecar carries the suite-duration trend', () => {
+  const root = initFixture();
+  execFileSync('node', [CLI_PATH], { cwd: root, encoding: 'utf8' });
+
+  const briefingsDir = path.join(root, 'docs', 'briefings');
+  const jsonFile = fs.readdirSync(briefingsDir).find((f) => f.endsWith('.json'));
+  const sidecar = JSON.parse(fs.readFileSync(path.join(briefingsDir, jsonFile), 'utf8'));
+
+  assert.ok(sidecar.suiteDurationTrend, 'expected the sidecar to carry a suiteDurationTrend field');
+  assert.equal(sidecar.suiteDurationTrend.hasLocalData, false);
+});
+
 // BL-272 headless-cost-health-sidecar-03: re-running against an unchanged
 // day makes no duplicate commit - commitCostHealthSidecar's existing
 // fails-closed `git commit` no-op, exercised end-to-end through the CLI.
