@@ -104,6 +104,22 @@ export interface PollResult {
   dropped: number;
 }
 
+// Split out of pollAndForward so that function's own branch count stays
+// low - one update's whole decision -> outcome, true when posted/opened,
+// false when dropped.
+async function processUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<boolean> {
+  const decision = decideUpdateAction(update, principalUserId, adapters.subjectForTopic);
+  if (decision.action === 'post-existing') {
+    return adapters.postToBridge(decision.subjectId, decision.text);
+  }
+  if (decision.action === 'open-default' || decision.action === 'open-for-topic') {
+    const topicId = decision.action === 'open-for-topic' ? decision.topicId : undefined;
+    await adapters.openSubjectAndRecord(topicId, decision.text);
+    return true;
+  }
+  return false;
+}
+
 // Adapter-injected: one poll-and-forward cycle. Every update decision goes
 // through decideUpdateAction (pure) above - this function's own job is
 // just sequencing the adapters and counting outcomes, never a second
@@ -116,17 +132,7 @@ export async function pollAndForward(offset: number, principalUserId: string, ad
   let posted = 0;
   let dropped = 0;
   for (const update of result.updates) {
-    const decision = decideUpdateAction(update, principalUserId, adapters.subjectForTopic);
-    if (decision.action === 'post-existing') {
-      const ok = await adapters.postToBridge(decision.subjectId, decision.text);
-      if (ok) {
-        posted += 1;
-      } else {
-        dropped += 1;
-      }
-    } else if (decision.action === 'open-default' || decision.action === 'open-for-topic') {
-      const topicId = decision.action === 'open-for-topic' ? decision.topicId : undefined;
-      await adapters.openSubjectAndRecord(topicId, decision.text);
+    if (await processUpdate(update, principalUserId, adapters)) {
       posted += 1;
     } else {
       dropped += 1;
