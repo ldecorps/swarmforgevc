@@ -34,7 +34,16 @@
     "PROVIDER_AVAILABLE"  ; a usage-limit cooldown elapsed
     "PROVIDER_LIMIT_REACHED"
     "CONFIG_CHANGED"      ; swarmforge.conf or a launch script changed
-    "TASK_ARRIVED"})      ; a new handoff/backlog item landed
+    "TASK_ARRIVED"        ; a new handoff/backlog item landed
+    "TELEGRAM_TOPIC_MESSAGE"}) ; BL-281: an inbound Telegram forum-topic
+                               ; message was demuxed to a SUP-### thread -
+                               ; per-subject (:subject = the thread id,
+                               ; like AGENT_EXITED/HUMAN_COMMAND/TASK_ARRIVED
+                               ; below), never coalescing: a second message
+                               ; on an ALREADY-pending thread still collapses
+                               ; to one wake (event-key dedup), but a
+                               ; DIFFERENT thread's message must survive as
+                               ; its own distinct pending event.
 
 (def coalescing-types
   "Event types where a second pending copy adds nothing — the LLM will

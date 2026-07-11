@@ -27,6 +27,7 @@
 
 (def script-dir (str (fs/parent (fs/canonicalize *file*))))
 (load-file (str (fs/path script-dir "support_lib.bb")))
+(load-file (str (fs/path script-dir "support_thread_store.bb")))
 (load-file (str (fs/path script-dir "daemon_alarm_lib.bb")))
 
 (defn usage []
@@ -44,39 +45,30 @@
 (def opts (parse-opts (drop 2 *command-line-args*)))
 
 (def state-dir (fs/path project-root ".swarmforge"))
-(def sup-dir (fs/path state-dir "support"))
-(def threads-dir (fs/path sup-dir "threads"))
 
 (defn now-iso []
   (.format (java.time.format.DateTimeFormatter/ISO_INSTANT) (java.time.Instant/now)))
 
-(defn atomic-spit! [path content]
-  (fs/create-dirs (fs/parent path))
-  (let [tmp (fs/path (fs/parent path) (str "." (fs/file-name path) ".tmp"))]
-    (spit (str tmp) content)
-    (fs/move tmp path {:replace-existing true :atomic-move true})))
-
 ;; ── real thread-store fs adapters (impure; support_lib.bb stays pure) ────
-
-(defn thread-path [id] (fs/path threads-dir (str id ".json")))
+;; BL-281: delegates to support_thread_store.bb, the SAME unified store
+;; operator_runtime.bb's Telegram integration reads/writes - a thread
+;; opened over RC (this CLI) and one opened over Telegram share one store.
+;; This CLI's own "no such thread -> exit 1" UX is preserved here, not
+;; pushed into the shared lib (support_thread_store.bb's own read-thread!
+;; just returns nil on a miss, for a caller like operator_runtime.bb that
+;; wants to handle that case itself, not exit the whole runtime process).
 
 (defn read-thread! [id]
-  (let [p (thread-path id)]
-    (when-not (fs/exists? p)
-      (binding [*out* *err*] (println (str "support_thread.bb: no such thread " id)))
-      (System/exit 1))
-    (json/parse-string (slurp (str p)) true)))
+  (or (support-thread-store/read-thread! state-dir id)
+      (do
+        (binding [*out* *err*] (println (str "support_thread.bb: no such thread " id)))
+        (System/exit 1))))
 
 (defn write-thread! [thread]
-  (fs/create-dirs threads-dir)
-  (atomic-spit! (thread-path (:id thread)) (json/generate-string thread)))
+  (support-thread-store/write-thread! state-dir thread))
 
 (defn list-existing-ids! []
-  (if (fs/exists? threads-dir)
-    (->> (fs/list-dir threads-dir)
-         (map fs/file-name)
-         (keep #(second (re-matches #"(SUP-\d+)\.json" %))))
-    []))
+  (support-thread-store/list-existing-ids! state-dir))
 
 (def store-adapters
   {:read-thread! read-thread! :write-thread! write-thread! :list-existing-ids! list-existing-ids!})

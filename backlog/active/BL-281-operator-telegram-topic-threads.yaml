@@ -1,0 +1,83 @@
+id: BL-281
+title: "Operator-hosted Telegram per-subject threads MVP: SUP-### <-> forum topics + per-topic demux + reply-in-topic"
+milestone: M8
+status: todo
+priority: 15
+direction: non-aligned
+assigned_to: coder
+depends_on: [BL-275]
+parent_epic: BL-274
+source: "BL-274 refocus (.swarmforge/operator/INTAKE-telegram-threads-refocus-bl274.md), MVP slice. Human command via operator -> coordinator 2026-07-11."
+
+description: |
+  MVP of the refocused BL-274: the OPERATOR hosts each discussion subject as its own
+  Telegram FORUM TOPIC, mapped to a SUP-### thread, so parallel discussions never
+  bleed context. Builds on BL-275's merged SUP-### thread store; the standalone
+  Support runtime folds into the Operator here.
+
+  Solves the human's core pain: each Operator wake handles exactly ONE subject with
+  only that subject's transcript reloaded — no cross-subject bleed.
+
+  Live layer verified 2026-07-11 (reuse; net-new is scoped):
+    - extension/src/notify/telegramClient.ts today has sendTelegramMessage +
+      getTelegramUpdates only (BL-239) — NO forum-topic support. NET-NEW: add
+      message_thread_id to send + createForumTopic (or adopt) to the client, as thin,
+      testable wrappers (keep the BL-239 TelegramPostFn seam so tests inject a fake
+      post, never a real Telegram call).
+    - Inbound restriction: reuse BL-239/240's human-only posture — accept updates
+      only from the principal's Telegram user id; ignore everyone else.
+    - Thread store: reuse BL-275's SUP-### store (support_lib.bb / support_thread.bb);
+      the per-thread TRANSCRIPT is the reloaded context. A topic <-> SUP-### mapping
+      (message_thread_id <-> SUP-### id) is the net-new persisted association.
+    - Runtime: extend operator_runtime.bb (fold the support runtime in — specifier's
+      module boundary: keep the pure SUP-### store lib, host the poll/demux/wake in the
+      operator runtime). Long-poll getUpdates, demux each inbound by message_thread_id
+      -> SUP-###, append to that transcript, enqueue a per-topic event.
+    - Disposable Operator LLM (per event): loads ONLY that SUP-###'s transcript,
+      replies into the same topic via sendMessage(message_thread_id=...). The
+      thread-hosting guidance lands in the Operator prompt WITH this slice (specifier-
+      owned prompt change, sequenced with the slice — supersedes the standalone
+      support.prompt for this behavior).
+
+  Wanted behavior (see the feature file):
+    - Opening a subject creates/adopts a Telegram forum topic mapped one-to-one to a
+      new SUP-###.
+    - An inbound topic message is demuxed by its topic to the right SUP-### transcript
+      and enqueues a per-topic event for it.
+    - The disposable Operator, woken for a SUP-###, loads only that thread's transcript
+      and replies into the same topic.
+    - Two subjects on separate topics stay fully independent — a wake for one never
+      sees the other's transcript.
+    - Inbound from anyone other than the principal is ignored (no thread event).
+
+  Scope boundary (per the refocus): email echo / system-of-record, RC unification, a
+  separate Support role, and multi-user are DEFERRED. This slice is transcript-reload
+  only — long-term-memory distillation is BL-282, coordinator handoff is BL-283,
+  lifecycle/close is BL-276.
+
+  Constraints / testability:
+    - The demux (message_thread_id -> SUP-###), transcript append, and the principal
+      filter are PURE functions over provided inputs (fixture updates), testable with
+      no live Telegram — inject the TelegramPostFn/getUpdates seam. NO real network,
+      NO real timers, NO waiting on the wall clock; the poll/wake decision is adapter-
+      injected with an injected clock (mirror operator_runtime.bb / BL-275's
+      handle-message). Never seed a fixture timestamp from the real clock while the
+      code reads its own clock (de0991e).
+    - Any CLI keeps main()/dispatch a THIN wrapper over exported pure helpers, with a
+      subprocess test in ADDITION (engineering "CLI main() must be a thin wrapper").
+    - Bot token stays in the extension-host env (existing posture), never committed;
+      thread/topic mapping + transcripts are machine-local (gitignored), never committed.
+    - One-time HUMAN setup (out of scope to build): a supergroup with Topics enabled +
+      the bot as admin with manage-topics. Note it in docs; do not automate group
+      creation.
+
+  QA e2e procedure (fake Telegram post/getUpdates injected; no real network):
+    - Open a subject; assert a topic is created and mapped to a fresh SUP-###.
+    - Feed an inbound update on that topic; assert it appends to that SUP-###'s
+      transcript and enqueues a per-topic event; feed one from a non-principal user id
+      and assert it is ignored.
+    - Wake the Operator for a SUP-### with prior transcript; assert it replies into the
+      same topic and that a second topic's transcript is not loaded (independence).
+
+acceptance: specs/features/BL-281-operator-telegram-topic-threads.feature
+mutation_cost: medium

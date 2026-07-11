@@ -41,6 +41,19 @@
           [{:type "SWARM_CHECK_TIMER"}]
           [{:type "SWARM_CHECK_TIMER"} {:type "AGENT_EXITED" :subject "coder"}]))
 
+;; ── BL-281: TELEGRAM_TOPIC_MESSAGE is per-subject, not coalescing ─────────
+(assert-true "TELEGRAM_TOPIC_MESSAGE is a valid event type"
+             (operator-lib/valid-event? {:type "TELEGRAM_TOPIC_MESSAGE" :subject "SUP-1"}))
+(assert= "TELEGRAM_TOPIC_MESSAGE keys by its subject (the thread id), like AGENT_EXITED"
+         "TELEGRAM_TOPIC_MESSAGE SUP-1"
+         (operator-lib/event-key {:type "TELEGRAM_TOPIC_MESSAGE" :subject "SUP-1"}))
+(assert-false "a second message for an ALREADY-pending thread coalesces to one wake"
+              (operator-lib/should-enqueue? [{:type "TELEGRAM_TOPIC_MESSAGE" :subject "SUP-1"}]
+                                             {:type "TELEGRAM_TOPIC_MESSAGE" :subject "SUP-1"}))
+(assert-true "a message for a DIFFERENT thread still enqueues as its own event"
+             (operator-lib/should-enqueue? [{:type "TELEGRAM_TOPIC_MESSAGE" :subject "SUP-1"}]
+                                            {:type "TELEGRAM_TOPIC_MESSAGE" :subject "SUP-2"}))
+
 ;; ── usage-limit detection ─────────────────────────────────────────────────
 (assert-true "detects 'hit your session limit'"
              (operator-lib/usage-limited? "You've hit your session limit · resets 7:50pm (Europe/London)"))
