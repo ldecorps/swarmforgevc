@@ -25,6 +25,13 @@ export function emptyRecertStore(): RecertStoreData {
 export interface RecertifiableScenario {
   id: string;
   ticketId: string;
+  // BL-280: the backlog item's title (+ French title, when the ticket has
+  // one) rides along so the phone recert view can show "BL-### — <title>"
+  // without a second cross-reference into docs-tree.json - ticketTitleFr is
+  // omitted (not set to undefined) when the ticket has no French title,
+  // mirroring docsTree's own TicketNode.titleFr? convention.
+  ticketTitle: string;
+  ticketTitleFr?: string;
   name: string;
   text: string;
 }
@@ -35,13 +42,23 @@ export interface RecertifiableScenario {
 // is simply excluded from the recertification queue rather than tracked
 // under a positional index that would shift under editing.
 export function recertifiableScenariosFrom(
-  tickets: Array<{ id: string; scenarios: GherkinScenario[] }>
+  tickets: Array<{ id: string; title: string; titleFr?: string; scenarios: GherkinScenario[] }>
 ): RecertifiableScenario[] {
   const result: RecertifiableScenario[] = [];
   for (const ticket of tickets) {
     for (const scenario of ticket.scenarios) {
       if (scenario.id) {
-        result.push({ id: scenario.id, ticketId: ticket.id, name: scenario.name, text: scenario.text });
+        const entry: RecertifiableScenario = {
+          id: scenario.id,
+          ticketId: ticket.id,
+          ticketTitle: ticket.title,
+          name: scenario.name,
+          text: scenario.text,
+        };
+        if (ticket.titleFr) {
+          entry.ticketTitleFr = ticket.titleFr;
+        }
+        result.push(entry);
       }
     }
   }
