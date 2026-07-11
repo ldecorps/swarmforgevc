@@ -247,4 +247,6 @@
   are cwd-dependent when this is wrong. (BL-263 architect review: co-change-
   report.js's `runGitLog(process.cwd(), '.')` reported zero co-changers for
   backlogDashboard.ts from `extension/`, but pwa/app.js x6 and
-  briefing_email_lib.bb x2 from the repo root. Fix tracked by BL-268.)
+  briefing_email_lib.bb x2 from the repo root. Fixed by BL-268: it now
+  resolves the repo top-level via `git rev-parse --show-toplevel` and
+  normalizes changed-file args to repo-relative paths before matching.)
