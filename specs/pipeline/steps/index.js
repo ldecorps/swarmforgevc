@@ -83,6 +83,7 @@ const DOMAINS = [
   require('./operatorProactiveNotifySteps'),
   require('./recertInboundServerlessHandlerSteps'),
   require('./burndownLineChartSteps'),
+  require('./recertInboundWebhookSteps'),
 ];
 
 function registerSteps(registry) {
