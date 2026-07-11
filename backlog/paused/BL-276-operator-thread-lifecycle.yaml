@@ -38,9 +38,11 @@ description: |
       handle-message): given now + thread transcript, return {none | post-nudge}.
       Idle counted from the human's last participation (DERIVE from the transcript,
       consistent with BL-275/BL-281); reset on any reply.
-    - The nudge is posted into the thread's Telegram topic via BL-281's
-      sendMessage(message_thread_id=...) path — reuse it; do not add an email path
-      here (email is deferred at the epic level).
+    - The nudge is routed into the thread's Telegram topic the same way BL-281 routes
+      any Operator reply: emit it over the bridge SSE egress tagged for the SUP-###; the
+      Front Desk Bot posts it into the mapped topic. Reuse that path; the runtime never
+      calls Telegram directly, and do not add an email path here (email is deferred at
+      the epic level).
 
   Wanted behavior (see the feature file):
     - The Operator does not close a thread of its own will, even after long silence.
