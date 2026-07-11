@@ -1108,6 +1108,23 @@
     container.appendChild(actions);
   }
 
+  // BL-280: shows which backlog item the scenario being recertified belongs
+  // to, above the scenario itself. A LINK (tap-through via the docs
+  // explorer's own in-page navigation - navButton -> docsView {level:
+  // 'ticket'} -> renderDocsTicket, the SAME mechanism the docs explorer
+  // already uses, never a new routing mechanism) when the batch carries a
+  // resolvable ticketTitle; otherwise the bare id with no link and no error
+  // (recert-context-04). Reuses ticketTitle()'s existing locale-fallback
+  // (French title under the fr locale, else English) unchanged.
+  function renderRecertTicketContext(container, scenario) {
+    if (!scenario.ticketTitle) {
+      container.appendChild(el('p', { class: 'recert-ticket-context' }, [scenario.ticketId]));
+      return;
+    }
+    var label = scenario.ticketId + ' — ' + ticketTitle({ title: scenario.ticketTitle, titleFr: scenario.ticketTitleFr });
+    container.appendChild(navButton(label, { level: 'ticket', milestone: '', ticketId: scenario.ticketId }, 'recert-ticket-context'));
+  }
+
   function renderRecertContent() {
     var container = document.getElementById('recertContent');
     container.innerHTML = '';
@@ -1116,6 +1133,7 @@
       return;
     }
     var scenario = recertBatch.batch[0];
+    renderRecertTicketContext(container, scenario);
     container.appendChild(el('h4', {}, [scenario.name]));
     container.appendChild(el('pre', { class: 'gherkin' }, [scenario.text]));
     // BL-271: reuse BL-266's Listen control unchanged - adapt the recert
