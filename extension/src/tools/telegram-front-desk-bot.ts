@@ -59,6 +59,7 @@ import {
   parseNextSseRecord,
   DEFAULT_SUBJECT_KEY,
   runPollCycle,
+  applyPollCycleResult,
   PollLoopState,
   runContainedLoop,
 } from './telegramFrontDeskBotCore';
@@ -240,12 +241,7 @@ async function pollLoop(botToken: string, principalUserId: string, targetPath: s
   for (;;) {
     const cycle = await runPollCycle(state, principalUserId, adapters, POLL_BACKOFF_CONFIG);
     state = cycle.state;
-    if (cycle.degradedWarning) {
-      process.stderr.write(`front-desk bot: poll degraded - ${state.consecutiveFailures} consecutive failures, still retrying\n`);
-    }
-    if (cycle.delayMs > 0) {
-      await sleep(cycle.delayMs);
-    }
+    await applyPollCycleResult(cycle, (message) => process.stderr.write(message), sleep);
   }
 }
 
