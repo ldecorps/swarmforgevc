@@ -206,3 +206,25 @@ export async function createForumTopic(
   }
   return { success: true, messageThreadId: extractMessageThreadId(result.json) };
 }
+
+// BL-299: closes a forum topic (read-only, history preserved) - CLOSE, not
+// delete (deleteForumTopic would destroy the very completion summary just
+// posted into it). Mirrors createForumTopic's own shape/error handling.
+export interface CloseForumTopicResult {
+  success: boolean;
+  error?: string;
+}
+
+export async function closeForumTopic(
+  token: string,
+  chatId: string,
+  messageThreadId: number,
+  postFn: TelegramPostFn = defaultPost
+): Promise<CloseForumTopicResult> {
+  const body = JSON.stringify({ chat_id: chatId, message_thread_id: messageThreadId });
+  const result = await callTelegramApi(token, 'closeForumTopic', body, postFn);
+  if (!result.success) {
+    return { success: false, error: result.error };
+  }
+  return { success: true };
+}

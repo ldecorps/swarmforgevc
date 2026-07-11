@@ -93,6 +93,18 @@ You are the specifier.
   the extension UI/watchdog, but it is NO LONGER the production chase engine.
   Scope chaser/nudge behavior to the daemon sweep, not the TS decision
   functions, or the work will instrument dead-in-production code.
+- A slice that READS a shared store/map/file (not just a code symbol) has a live
+  DATA dependency: confirm at spec time that a real WRITER of that exact store
+  exists in production, or is scoped in a NAMED sibling/wiring slice — never
+  assume "a sibling slice writes it." A consumer spec can be fully green over
+  fakes while the end-to-end path stays dark because nothing populates the store.
+  (QA, BL-298: the built bot's `readBacklogTopicMap` reads
+  `.swarmforge/operator/backlog-topic-map.json` and its own comment asserts
+  "BL-297's outbound routing writes it" — but BL-297's `recordTopicId` adapter
+  has no runtime caller, so nothing writes that file; both Concierge halves stay
+  dark until the wiring slice BL-300 lands. This is the spec-time, per-slice
+  companion to engineering.prompt's epic-level "a multi-slice emit→route→consume
+  pipeline needs an explicit runtime-wiring ticket" rule.)
 
 ## Drain the backlog root first
 - The backlog root (`backlog/` itself, not `active/` or `paused/`) is the human's
