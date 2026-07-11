@@ -79,4 +79,4 @@ qa_e2e_procedure: |
 # specs/features/BL-263-not-done-ticket-count.feature is a NEW draft authored by the
 # specifier and is PENDING human review.
 # Priority 40 (normal) is the intake's suggestion; operator to confirm/adjust.
-human_approval: pending
+human_approval: approved

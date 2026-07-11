@@ -667,11 +667,22 @@
     return { ticketId: params.get('ticket'), approvalId: params.get('approval') };
   })();
 
+  // BL-263: renders backlog.json's own notDoneCount verbatim - never
+  // recomputed client-side, so the PWA and the daily briefing (which
+  // composes the same field via briefing_email_lib.bb) can never disagree.
+  // 0 is a real, valid count (every ticket done) and renders like any other
+  // number, never a blank/no-data state.
+  function renderNotDoneCount(count) {
+    var notDoneCountEl = document.getElementById('notDoneCount');
+    notDoneCountEl.textContent = tr('notDoneCountPrefix') + count;
+  }
+
   function renderAll(data) {
     lastBacklogData = data;
     var asOf = document.getElementById('asOf');
     var shaText = data.sourceSha ? ' (' + data.sourceSha.slice(0, 10) + ')' : '';
     asOf.textContent = tr('asOfPrefix') + new Date(data.generatedAtIso).toLocaleString() + shaText;
+    renderNotDoneCount(data.notDoneCount);
     if (initialHashRoute.approvalId) {
       approvalTicketId = initialHashRoute.approvalId;
       initialHashRoute.approvalId = null;
