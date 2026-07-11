@@ -1,0 +1,81 @@
+id: BL-276
+title: "Support slice 2: daily reminder clock + 3-strike final-warning-then-close"
+milestone: M8
+status: todo
+priority: 20
+direction: non-aligned
+assigned_to: coder
+depends_on: [BL-275]
+parent_epic: BL-274
+source: "BL-274 Support-role epic, slice 2. Coordinator direction 2026-07-11: 'BL-275 merged; spec next Support slice BL-276.' Carries the epic's locked close/reminder decisions."
+
+description: |
+  Second slice of the Support role epic (BL-274), on top of BL-275's merged MVP
+  (thread store + support_runtime.bb skeleton + RC + outbound email echo). Adds the
+  daily reminder clock and the 3-strike final-warning-then-close.
+
+  Locked decisions (BL-274, decision 7) this slice realizes:
+    - The runtime fires ONE gentle reminder email per day per open thread, counted
+      from the caller's LAST PARTICIPATION; each reminder restates status + next step
+      + options (reuse the BL-275 email-echo composition).
+    - The counter RESETS the moment the caller replies on ANY channel.
+    - Support never closes a thread of its own will while the caller is engaged. The
+      ONLY autonomous close: after 3 unanswered daily reminders — and the 3rd is a
+      FINAL notice ("I'll close SUP-### in 24h unless you reply") — close as
+      ABANDONED only if still silent 24h after that final notice.
+    - The caller asking to close, or confirming resolution, also closes the thread
+      (a distinct, caller-requested close, not "abandoned").
+    - A spawned BL-### shipping does NOT auto-close the thread (already role policy;
+      no timer involved).
+
+  Live layer verified 2026-07-11 (build against BL-275's merged slice; reuse):
+    - Thread model (swarmforge/scripts/support_lib.bb): {:id :status "open"
+      :messages [{:channel :timestamp :text}...]}. `append-message` deliberately
+      leaves status unchanged. Caller's last-participation time and the unanswered-
+      reminder count are DERIVABLE from :messages (latest caller message vs
+      reminder-channel messages) — prefer deriving over adding parallel counters, to
+      stay consistent with slice 1's message-centric model; add explicit reminder
+      state only if deriving proves insufficient.
+    - The DUE-DECISION must be a PURE function, adapter-injected + injected clock,
+      mirroring briefing_generation_schedule_lib.bb's `morning-trigger-due?` /
+      `generate-briefing-if-due!` pattern and BL-275's own adapter-injected
+      `handle-message` — given now + thread, return one of: none | send-reminder |
+      send-final-notice | close-abandoned. The runtime (support_runtime.bb) drives it
+      on its sweep (mirror operator_runtime.bb's timer), sending the reminder email
+      via the SAME email path BL-275 uses, or performing the close.
+    - Close operation: add a status transition to the thread (open -> "abandoned"
+      for the autonomous 3-strike close; open -> "closed" for a caller-requested
+      close) + a support_thread.bb `close` subcommand. Keep it a pure state
+      transition in support_lib.bb over the CLI wrapper.
+
+  Wanted behavior (see the feature file):
+    - A daily reminder is sent when the caller has been silent for a day on an open
+      thread (counted from last participation).
+    - Caller participation on any channel resets the reminder counter to zero.
+    - The 3rd unanswered reminder is a final notice that the thread closes in 24h.
+    - Continued silence 24h after the final notice closes the thread as abandoned.
+    - The caller asking to close ends the thread (caller-requested close).
+
+  Constraints / testability:
+    - The reminder due-decision and the close transition are PURE over provided
+      inputs + an injected clock. NO real timers, NO waiting on the wall clock; drive
+      the decision with fake time. And never seed a fixture timestamp from the real
+      clock while the code reads its own clock — pin both to one fixed instant
+      (engineering "Never seed a test fixture from the real clock…" rule, de0991e).
+    - Any CLI (support_thread.bb subcommand) keeps main()/dispatch a THIN wrapper
+      over exported pure helpers, with a subprocess test in ADDITION (engineering
+      "CLI main() must be a thin wrapper" rule).
+    - Reuse BL-275's email-echo composition + Resend send path for reminders; do not
+      add a second email path. Reminder emails are still `[SUP-###]` echoes.
+    - SUP thread state stays machine-local (gitignored), never committed.
+
+  QA e2e procedure (clock injected; no real timer/email):
+    - Advance the injected clock a day past the caller's last message on an open
+      thread; assert a reminder is emitted; assert none is emitted before the day.
+    - Emit a caller reply; assert the reminder counter resets.
+    - Drive to 2 unanswered reminders, tick again; assert the 3rd is a final 24h
+      notice; advance 24h with continued silence; assert the thread closes abandoned.
+    - Issue a caller close request; assert the thread closes (caller-requested).
+
+acceptance: specs/features/BL-276-support-daily-reminder-three-strike-close.feature
+mutation_cost: medium
