@@ -108,6 +108,9 @@
       noEtaYet: 'no ETA yet',
       p85RangeInfix: ' (p85 ',
       overallEtaPrefix: 'Overall ETA: ',
+      // BL-287: the burndown line-chart legend.
+      burndownRemainingLegend: 'Remaining',
+      burndownIdealLegend: 'Ideal',
     },
     fr: {
       pageTitle: 'SwarmForge — tableau de bord',
@@ -191,6 +194,9 @@
       noEtaYet: 'ETA non disponible',
       p85RangeInfix: ' (p85 ',
       overallEtaPrefix: 'ETA globale : ',
+      // BL-287: la légende du graphique en ligne du burndown.
+      burndownRemainingLegend: 'Restants',
+      burndownIdealLegend: 'Idéal',
     },
   };
 })();
