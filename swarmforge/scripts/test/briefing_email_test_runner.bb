@@ -248,6 +248,94 @@
            #{}
            (briefing-email-lib/load-sent-briefings dir)))
 
+;; ── build-diagram-section (pure, BL-260) ─────────────────────────────────
+
+;; BL-260 rendered-inline-01: available diagrams produce an html body with
+;; an inline image per diagram.
+(let [section (briefing-email-lib/build-diagram-section
+               [{:name "architecture" :base64 "QUJD"} {:name "swarm-flow" :base64 "WFla"}])]
+  (assert= "rendered-inline-01: the html section embeds each diagram as an inline data-URI image"
+           true
+           (and (str/includes? (:html section) "data:image/png;base64,QUJD")
+                (str/includes? (:html section) "data:image/png;base64,WFla")))
+  (assert= "rendered-inline-01: the note-line points at the rendered-above html view"
+           true
+           (str/includes? (:note-line section) "rendered inline above")))
+
+;; BL-260 render-unavailable-degradation-04: nil/empty diagrams -> no html,
+;; but still a clear, non-blank note - never silence, never a crash.
+(assert= "render-unavailable-degradation-04: nil diagrams -> no html body"
+         nil
+         (:html (briefing-email-lib/build-diagram-section nil)))
+(assert= "render-unavailable-degradation-04: nil diagrams -> a clear no-diagram note"
+         true
+         (str/includes? (:note-line (briefing-email-lib/build-diagram-section nil)) "unavailable"))
+(assert= "render-unavailable-degradation-04: an empty diagram list behaves the same as nil"
+         nil
+         (:html (briefing-email-lib/build-diagram-section [])))
+
+;; ── send-unsent-briefings! + :diagram-section adapter (BL-260) ──────────────
+
+;; BL-260 rendered-inline-01 (wiring): a :diagram-section adapter reaches
+;; :send-email! as a 3rd (html) argument, and its note-line reaches the
+;; plaintext content exactly like the other optional sections.
+(let [dir (mk-tmp)
+      sent-texts (atom [])
+      sent-html (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text html] (swap! sent-texts conj text) (swap! sent-html conj html) {:success true})
+    :diagram-section (fn [] (briefing-email-lib/build-diagram-section [{:name "architecture" :base64 "QUJD"}]))
+    :log! (fn [& _] nil)})
+  (assert= "the diagram html reaches the actual :send-email! call"
+           true
+           (str/includes? (first @sent-html) "data:image/png;base64,QUJD"))
+  (assert= "the diagram note-line reaches the plaintext content alongside the headline"
+           true
+           (and (str/starts-with? (first @sent-texts) "Headline")
+                (str/includes? (first @sent-texts) "rendered inline above"))))
+
+;; BL-260 render-unavailable-degradation-04 (wiring): a :diagram-section
+;; adapter that reports unavailable still sends - html is nil, and the
+;; plaintext note says so, matching build-diagram-section's own contract.
+(let [dir (mk-tmp)
+      sent-texts (atom [])
+      sent-html (atom [])
+      sent (atom nil)]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (reset! sent
+          (briefing-email-lib/send-unsent-briefings!
+           dir
+           {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+            :send-email! (fn [_subject text html] (swap! sent-texts conj text) (swap! sent-html conj html) {:success true})
+            :diagram-section (fn [] (briefing-email-lib/build-diagram-section nil))
+            :log! (fn [& _] nil)}))
+  (assert= "render-unavailable-degradation-04: the email still sends (never fails) when rendering is unavailable"
+           ["2026-07-09.md"]
+           @sent)
+  (assert= "render-unavailable-degradation-04: html is nil - a plaintext-only send, exactly as before this ticket"
+           nil
+           (first @sent-html))
+  (assert= "render-unavailable-degradation-04: the plaintext part carries the clear no-diagram note"
+           true
+           (str/includes? (first @sent-texts) "unavailable")))
+
+;; No :diagram-section adapter at all (every pre-BL-260 caller/test) -> the
+;; exact 2-arg :send-email! call, unaffected, no diagram note appended.
+(let [dir (mk-tmp)
+      sent-texts (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text] (swap! sent-texts conj text) {:success true})
+    :log! (fn [& _] nil)})
+  (assert= "BL-260: no :diagram-section adapter -> content is unchanged (backward compatible)"
+           "Headline\n"
+           (first @sent-texts)))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do
