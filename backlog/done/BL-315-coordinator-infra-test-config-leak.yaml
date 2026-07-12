@@ -1,7 +1,7 @@
 id: BL-315
 title: "test_coordinator_provisioned_infrastructure.sh false-fails when the caller's shell has SWARMFORGE_CONFIG set"
 milestone: M8
-status: active
+status: done
 type: bug
 priority: 30
 direction: expedite

@@ -1,7 +1,7 @@
 id: BL-311
 title: "Dispositioned .swarmforge/operator/INTAKE-*.md files are archived instead of sitting undeleted forever"
 milestone: M8
-status: todo
+status: active
 type: chore
 priority: 40
 direction: aligned
