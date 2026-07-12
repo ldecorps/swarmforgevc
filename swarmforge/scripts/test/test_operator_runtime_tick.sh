@@ -329,6 +329,28 @@ check "a pull-eligible (non-blocked) paused ticket blocks hibernation" \
   '[[ ! -f "$F/.swarmforge/operator/hibernation.json" ]] && [[ -s "$F/.swarmforge/roles.tsv" ]]'
 rm -rf "$F"
 
+# ── BL-318: a self-generated paused ticket never blocks hibernation (the
+#     circularity fix - BL-307's own down-trigger was structurally
+#     unreachable because the coordinator writes itself a fresh paused
+#     ticket the instant the backlog drains) ─────────────────────────────
+F="$(make_roster_fixture)"
+printf 'id: BL-500\nstatus: todo\nsource: "Raised by the coordinator itself (self-generated) - cost review flagged idle quota"\n' \
+  > "$F/backlog/paused/BL-500.yaml"
+OUT18b="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
+check "BL-318: a self-generated-only paused backlog still hibernates" \
+  '[[ -f "$F/.swarmforge/operator/hibernation.json" ]] && [[ ! -s "$F/.swarmforge/roles.tsv" ]]'
+rm -rf "$F"
+
+# ── BL-318 control: a human-raised paused ticket still blocks hibernation
+#     exactly as before - only self-generation was ever excluded ────────
+F="$(make_roster_fixture)"
+printf 'id: BL-501\nstatus: todo\nsource: "Raised by the human 2026-07-12 via INTAKE-foo.md"\n' \
+  > "$F/backlog/paused/BL-501.yaml"
+OUT18c="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
+check "BL-318 control: a human-raised paused ticket still blocks hibernation" \
+  '[[ ! -f "$F/.swarmforge/operator/hibernation.json" ]] && [[ -s "$F/.swarmforge/roles.tsv" ]]'
+rm -rf "$F"
+
 # ── 19: an active backlog item blocks hibernation ─────────────────────────
 F="$(make_roster_fixture)"
 printf 'id: BL-300\nstatus: active\n' > "$F/backlog/active/BL-300.yaml"
