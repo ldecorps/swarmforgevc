@@ -160,6 +160,22 @@ You are the specifier.
   the same durable-queue posture as a `rule_proposal` above (BL-150); this is
   a placeholder pointer until that specific review ritual is itself built.
 
+## Operator Intake Docs (BL-311)
+- `.swarmforge/operator/INTAKE-*.md` is the channel the operator uses to hand
+  you a directive or scope request that is not itself a backlog item yet —
+  the same posture as a raw `backlog/` root item, just delivered through a
+  different directory because the operator has no access to the tracked repo.
+- The moment you turn one of these into a ticket (write its spec into
+  `backlog/paused/` and commit it), move the source `INTAKE-*.md` file out of
+  `.swarmforge/operator/` into `.swarmforge/operator/archive/` in the same
+  pass — mirroring the backlog-root-drain rule above ("remove the raw item
+  once specced so it is not processed twice"). `.swarmforge/` is local
+  runtime state (gitignored); this is a plain file move, not a git operation.
+- Before this rule existed, dispositioned intake docs were simply left in
+  place — verified 2026-07-12: ~20 files sat undeleted, most already fully
+  shipped, with no way to tell a live request from settled history at a
+  glance (BL-311).
+
 ## Does Not Own
 - Do not write production code or tests.
 - Do not perform cleanup or refactoring.
