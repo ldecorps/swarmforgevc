@@ -1,0 +1,83 @@
+id: BL-314
+title: "Coordinator model/effort become pack-configurable, defaulting to Sonnet-tier instead of hardcoded Opus"
+milestone: M8
+status: active
+type: bug
+priority: 10
+direction: expedite
+depends_on: ["BL-313"]
+source: "Raised by the human 2026-07-12 after reviewing the Cost & Health panel, verified by the coordinator against live code, transported via backlog/INTAKE-coordinator-model-not-configurable.md (drained from the backlog root)."
+
+notes: |
+  CONFIRMED against live code (`swarmforge/scripts/swarmforge.sh:484-493`,
+  `provision_coordinator`): the coordinator is unconditionally provisioned
+  with `--model claude-opus-4-8 --dangerously-skip-permissions --effort
+  high`, with no config line of any kind able to change it — BL-243 made
+  the coordinator "reserved infrastructure" (rejected outright as a
+  declarable `window` line, `parse_config`) but its replacement,
+  `provision_coordinator`, hardcoded the model/effort inline instead of
+  reading them from anywhere.
+
+  This IS a real cost mismatch, not just theoretical: under `lean-drain.conf`
+  (which deliberately puts specifier/coder/QA on Sonnet 5), the coordinator
+  still gets the most expensive tier in the swarm for a role whose work is
+  routing/bookkeeping (queue sweeps, backlog YAML reads, the depth-cap
+  check, moving tickets active/->done/, sending handoffs) — the coder,
+  doing the actual engineering, cost $25.43 in a window where the whole
+  master checkout (coordinator+specifier) cost $104.90.
+
+  NOTE ON PROJECT MEMORY: the specifier's own memory
+  (agent-spec-upgrade.md) claims coordinator was demoted from Opus-xhigh to
+  Sonnet-5-high on 2026-07-09 to cut cost. That memory is STALE relative to
+  the live code checked just now — `provision_coordinator` hardcodes Opus
+  today regardless. Treat the live code, not that memory entry, as ground
+  truth; the memory is being corrected as part of filing this ticket.
+
+  SCOPE (mechanism per the intake's own explicit delegation to the
+  specifier, kept as close to the existing pattern as possible):
+    1. Add two new `config` lines readable the same way
+       `active_backlog_max_depth` is today: `config coordinator_model
+       <model-id>` and `config coordinator_effort <level>`. Whichever
+       conf file is EFFECTIVELY in force at launch (default
+       `swarmforge.conf`, or a pack override) can set them, exactly like
+       `active_backlog_max_depth` — reuse BL-313's effective-config
+       plumbing for reading them, do NOT build a second, parallel
+       mechanism for resolving "which conf file is actually in effect."
+       This is why this ticket depends on BL-313 landing first and must
+       not run concurrently with it (same file/plumbing scope:
+       `swarmforge.sh` provisioning + the config-reading path).
+    2. Absent/blank/malformed `coordinator_model`/`coordinator_effort`
+       falls back to a default — same non-crashing posture as
+       `backlog_depth_lib.bb`'s `default-max-depth` fallback — and that
+       default is a SONNET-tier model (`claude-sonnet-5`) at `high`
+       effort, not Opus. A pack that genuinely wants an Opus coordinator
+       sets `config coordinator_model claude-opus-4-8` explicitly.
+    3. `provision_coordinator`'s other flags (`--dangerously-skip-
+       permissions`, `--remote-control` handling) are unchanged; only the
+       `--model`/`--effort` values become configurable.
+    4. The coordinator remains "reserved infrastructure": still never a
+       declarable `window` line, still always exactly one, still
+       auto-provisioned. BL-243's rejection of a coordinator `window` line
+       in `parse_config` is untouched.
+    5. No other role's declared model in any pack changes.
+
+  E2E QA PROCEDURE: (a) launch (or the equivalent test harness) with a
+  pack conf declaring `config coordinator_model claude-sonnet-5` and
+  `config coordinator_effort high` -> assert the provisioned coordinator's
+  CLI flags carry those values; (b) launch with a conf that declares
+  neither line -> assert the coordinator defaults to `claude-sonnet-5`/
+  `high`, not Opus; (c) launch with a pack explicitly declaring
+  `claude-opus-4-8` -> assert it is honored (packs can still opt into
+  Opus); (d) attempt to declare `coordinator` as a `window` line -> assert
+  it is still rejected exactly as BL-243 left it; (e) confirm no other
+  role's declared model in `lean-drain.conf`/`full-forge.conf`/etc. changed.
+
+acceptance:
+  feature: specs/features/BL-314-coordinator-model-configurable.feature
+  steps:
+    - "A pack's config coordinator_model/coordinator_effort lines set the provisioned coordinator's model/effort"
+    - "Absent or malformed coordinator_model/coordinator_effort falls back to a Sonnet-tier default, not Opus"
+    - "A pack may still explicitly opt the coordinator into Opus"
+    - "The coordinator remains rejected as a declarable window line, unchanged from BL-243"
+
+mutation_cost: medium
