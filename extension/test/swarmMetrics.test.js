@@ -10,6 +10,8 @@ const {
   computeSwarmMetrics,
   computeChaserTelemetry,
   computeProviderTelemetry,
+  groupRolesByWorktreePath,
+  combinedRoleKey,
 } = require('../out/metrics/swarmMetrics');
 
 function mkTmp() {
@@ -607,4 +609,43 @@ test('providerTelemetry-05: an event with no provider field is ignored, not grou
   const telemetry = computeProviderTelemetry(target, ['claude'], Date.parse('2026-07-09T12:00:00Z'));
   assert.equal(telemetry.claude.chases, 0);
   assert.equal(Object.keys(telemetry).includes('undefined'), false);
+});
+
+// ── groupRolesByWorktreePath / combinedRoleKey (BL-312) ──────────────────
+
+test('BL-312 burn-meter-master-resident-03: roles on distinct worktreePaths each get their own singleton group', () => {
+  const groups = groupRolesByWorktreePath([
+    { role: 'coder', worktreePath: '/wt/coder' },
+    { role: 'cleaner', worktreePath: '/wt/cleaner' },
+  ]);
+  assert.equal(groups.length, 2);
+  assert.deepEqual(groups.map((g) => g.map((r) => r.role)).sort(), [['cleaner'], ['coder']]);
+});
+
+test('BL-312 burn-meter-master-resident-01: roles sharing one worktreePath (master-resident) group together', () => {
+  const groups = groupRolesByWorktreePath([
+    { role: 'coordinator', worktreePath: '/wt/master' },
+    { role: 'specifier', worktreePath: '/wt/master' },
+    { role: 'coder', worktreePath: '/wt/coder' },
+  ]);
+  assert.equal(groups.length, 2);
+  const masterGroup = groups.find((g) => g.length === 2);
+  assert.deepEqual(
+    masterGroup.map((r) => r.role).sort(),
+    ['coordinator', 'specifier']
+  );
+});
+
+test('combinedRoleKey reports a singleton group under its own role name, unchanged', () => {
+  assert.equal(combinedRoleKey([{ role: 'coder', worktreePath: '/wt/coder' }]), 'coder');
+});
+
+test('combinedRoleKey joins a colliding group\'s role names, sorted so the label is order-independent', () => {
+  assert.equal(
+    combinedRoleKey([
+      { role: 'specifier', worktreePath: '/wt/master' },
+      { role: 'coordinator', worktreePath: '/wt/master' },
+    ]),
+    'coordinator+specifier'
+  );
 });

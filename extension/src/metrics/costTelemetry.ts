@@ -1,7 +1,7 @@
 import { TranscriptUsageRecord, UsageTotals, readTranscriptUsage } from './transcriptUsage';
 import { estimateCostUsd } from './pricingTable';
 import { TicketHoldingWindow, readRoleHoldingWindows } from './ticketHoldingWindows';
-import { RoleWorktree } from './swarmMetrics';
+import { RoleWorktree, groupRolesByWorktreePath, combinedRoleKey } from './swarmMetrics';
 
 // BL-100 cost-01/02/03: per-agent daily tokens+cost, and per-ticket
 // attribution (windowed against a role's actual holding windows, with an
@@ -118,21 +118,28 @@ export interface RoleCostTelemetry {
   byTicket: Record<string, AttributedUsage>;
 }
 
-// The one impure entry point: reads each role's transcript usage and
-// handoff-derived holding windows, then delegates to the pure functions
-// above. A role with no transcript directory and no telemetry degrades to
-// empty maps, never an error (cost-07).
+// The one impure entry point: reads each DISTINCT worktreePath's transcript
+// usage and handoff-derived holding windows exactly once, then delegates to
+// the pure functions above. A role with no transcript directory and no
+// telemetry degrades to empty maps, never an error (cost-07). BL-312: two
+// or more roles sharing one worktreePath (the master-resident collision)
+// report ONE combined usage/cost total under a joined key instead of the
+// same full total independently under each role's own name - a role on its
+// own distinct worktreePath is unaffected (its group is a singleton, key =
+// its own role name).
 export function computeCostTelemetry(
   targetPath: string,
   roles: RoleWorktree[],
   claudeProjectsDir?: string
 ): Record<string, RoleCostTelemetry> {
   const result: Record<string, RoleCostTelemetry> = {};
-  for (const role of roles) {
-    const records = readTranscriptUsage(role.worktreePath, claudeProjectsDir);
-    const windows = readRoleHoldingWindows(role.worktreePath);
-    result[role.role] = {
-      byDay: computeDailyRoleUsage({ [role.role]: records })[role.role] ?? {},
+  for (const group of groupRolesByWorktreePath(roles)) {
+    const worktreePath = group[0].worktreePath;
+    const key = combinedRoleKey(group);
+    const records = readTranscriptUsage(worktreePath, claudeProjectsDir);
+    const windows = readRoleHoldingWindows(worktreePath);
+    result[key] = {
+      byDay: computeDailyRoleUsage({ [key]: records })[key] ?? {},
       byTicket: attributeUsageToTickets(records, windows),
     };
   }
