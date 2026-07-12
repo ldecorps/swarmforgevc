@@ -4,7 +4,7 @@
 (ns agent-runtime-lib
   (:require [clojure.string :as str]))
 
-(def supported-agents #{"claude" "aider" "grok" "codex" "copilot" "mock"})
+(def supported-agents #{"claude" "aider" "grok" "codex" "copilot" "vibe" "mock"})
 
 (def handoff-draft-rel-path "swarmforge/runtime/handoff-draft.txt")
 
@@ -46,6 +46,16 @@
               :bootstrap-style :add-files-then-paste
               :bootstrap-text-style :aider
               :startup-delay-ms 5000}
+   ;; Mistral Vibe: a CLI coding agent with bash tools, so it takes the SAME
+   ;; shape as claude/copilot — the role prompt is embedded in the launch
+   ;; command (positional PROMPT) and it is woken by chatting at it. Do NOT
+   ;; model it on aider: aider shares Mistral as a MODEL but is a file editor
+   ;; that cannot execute, and that difference is what makes aider unusable as
+   ;; a swarm role. Capability entries describe the AGENT, not the model.
+   "vibe"    {:wake-style :chat-message
+              :bootstrap-style :embedded
+              :bootstrap-text-style :generic
+              :startup-delay-ms 3000}
    "mock"    {:wake-style :mock
               :bootstrap-style :mock
               :bootstrap-text-style :mock}})

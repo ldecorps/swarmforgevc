@@ -413,7 +413,7 @@ parse_config() {
     fi
 
     case "$agent" in
-      claude|codex|copilot|grok|aider) ;;
+      claude|codex|copilot|grok|aider|vibe) ;;
       *)
         echo -e "${RED}Error:${RESET} Unsupported agent '$agent' for role '$role'"
         exit 1
@@ -959,6 +959,28 @@ write_role_launch_script() {
       ;;
     aider)
       launch_body="aider${extra_cli:+ $extra_cli} --yes-always"
+      ;;
+    vibe)
+      # Mistral Vibe (pipx install mistral-vibe): a real CLI coding AGENT with
+      # bash tools, unlike aider, which is a file editor that cannot execute and
+      # therefore SIMULATES ready_for_next.sh instead of running it (see
+      # INTAKE / packs/mistral-lean.conf). Verified: `vibe --yolo -p "run
+      # ./ready_for_next.sh and do what it says"` ran the script and performed
+      # the task.
+      #
+      # --workdir, NOT --worktree: vibe's --worktree would create its OWN git
+      # worktree under $VIBE_HOME on a branch it names, fighting the worktree
+      # SwarmForge already provisioned for this role. --workdir just cd's there.
+      # --trust: a role's worktree is provisioned by us and is not a directory
+      # the human needs to re-confirm per launch (vibe implicitly trusts only
+      # its own --worktree sessions).
+      # MISTRAL_API_KEY is supplied at respawn-pane time via `-e` (BL-130) and
+      # is never written into this launch script.
+      local vibe_dirs=""
+      if [[ "$role_worktree" != "$WORKING_DIR" ]]; then
+        vibe_dirs=" --add-dir '$WORKING_DIR'"
+      fi
+      launch_body="vibe${extra_cli:+ $extra_cli} --yolo --trust --workdir '$role_worktree'${vibe_dirs} \"\$(cat '$prompt_file')\""
       ;;
     *)
       echo -e "${RED}Error:${RESET} Unsupported agent '$agent' for role '$role'"
