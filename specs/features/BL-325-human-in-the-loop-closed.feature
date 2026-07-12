@@ -30,6 +30,14 @@ Scenario: The human's answer reaches the gated role and unblocks it
   Then the gated role is unblocked
   And the answer is relayed through the existing approval relay rather than a second one
 
+# BL-325 human-in-the-loop-closed-07
+Scenario: An answer in an item's topic goes to that item's gate, even when other gates are pending
+  Given two different backlog items are each waiting on their own approval question
+  When the human answers in the first item's topic
+  Then the first item's gate is answered
+  And the human is not asked which gate they meant
+  And the second item's gate is left untouched
+
 # BL-325 human-in-the-loop-closed-04
 Scenario: The Operator can post into a backlog item's topic through a supported path
   When the Operator posts a message to that backlog item's topic

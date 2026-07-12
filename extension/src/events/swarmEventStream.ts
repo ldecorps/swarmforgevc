@@ -62,6 +62,14 @@ function diffTaskCompleted(prev: EventStreamSnapshot, curr: EventStreamSnapshot)
     .map((id): SwarmEvent => ({ type: 'TaskCompleted', backlogId: id, payload: {} }));
 }
 
+// BL-325: split out of diffNeedsApproval below so its own branch count
+// stays at the pre-BL-325 level (cleaner review: this one ternary pushed
+// diffNeedsApproval's CRAP over threshold even at 100% coverage - complexity
+// alone, not a coverage gap).
+function needsApprovalPayload(snippet: string | undefined): Record<string, unknown> {
+  return snippet ? { snippet } : {};
+}
+
 function diffNeedsApproval(prev: EventStreamSnapshot, curr: EventStreamSnapshot): SwarmEvent[] {
   const wasGatedByRole = new Map(prev.gates.map((g) => [g.role, g.gated]));
   const events: SwarmEvent[] = [];
@@ -70,7 +78,7 @@ function diffNeedsApproval(prev: EventStreamSnapshot, curr: EventStreamSnapshot)
     if (gate.gated && !wasGated) {
       const backlogId = curr.roleTicket[gate.role];
       if (backlogId) {
-        events.push({ type: 'NeedsApproval', backlogId, payload: gate.snippet ? { snippet: gate.snippet } : {} });
+        events.push({ type: 'NeedsApproval', backlogId, payload: needsApprovalPayload(gate.snippet) });
       }
     }
   }
