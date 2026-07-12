@@ -84,4 +84,47 @@ pass "03: the durable marker recorded BL-401 as cleared"
 grep -q "closing-context-clear-sweep-error" "$LOG_FILE" && fail "04: the closing-context-clear sweep threw an exception; got: $(cat "$LOG_FILE")"
 pass "04: the closing-context-clear sweep ran without throwing"
 
+# ── 05: BL-309 bounce regression - SWARMFORGE_MAILBOX_ONLY=1 must never
+#     record a clear when nothing was actually injected (QA repro, fixed by
+#     skipping the WHOLE sweep, not just the individual tmux calls, while
+#     tmux injection is disabled) ────────────────────────────────────────
+ROOT2="$(cd "$(mktemp -d)" && pwd -P)"
+SOCK2="$ROOT2/fake.sock"
+touch "$SOCK2"
+mkdir -p "$ROOT2/.swarmforge" "$ROOT2/.swarmforge/handoffs/inbox/new" "$ROOT2/docs/briefings" \
+  "$ROOT2/backlog/active" "$ROOT2/backlog/paused" "$ROOT2/backlog/done" \
+  "$ROOT2/.swarmforge/handoffs/coordinator/inbox/new" "$ROOT2/.swarmforge/handoffs/coordinator/inbox/in_process"
+echo "$SOCK2" > "$ROOT2/.swarmforge/tmux-socket"
+printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT2" > "$ROOT2/.swarmforge/roles.tsv"
+printf 'id: BL-401\nstatus: done\n' > "$ROOT2/backlog/done/BL-401.yaml"
+printf 'Headline: unrelated\n' > "$ROOT2/docs/briefings/${TODAY_DAY_KEY}.md"
+FAKE_BIN2="$ROOT2/bin"
+mkdir -p "$FAKE_BIN2"
+CALL_LOG2="$ROOT2/tmux-calls.log"
+cat > "$FAKE_BIN2/tmux" <<TMUX
+#!/usr/bin/env bash
+echo "\$*" >> "$CALL_LOG2"
+exit 0
+TMUX
+chmod +x "$FAKE_BIN2/tmux"
+
+LOG_FILE2="$ROOT2/.swarmforge/daemon/handoffd.log"
+env -u RESEND_API_KEY SWARMFORGE_MAILBOX_ONLY=1 PATH="$FAKE_BIN2:$PATH" bb "$HANDOFFD" "$ROOT2" &
+DAEMON_PID2=$!
+
+for _ in $(seq 1 40); do
+  [[ -f "$LOG_FILE2" ]] && grep -q "closing-context-clear-skip-mailbox-only" "$LOG_FILE2" 2>/dev/null && break
+  sleep 0.25
+done
+mkdir -p "$ROOT2/.swarmforge/daemon"
+touch "$ROOT2/.swarmforge/daemon/stop"
+wait "$DAEMON_PID2" 2>/dev/null || true
+
+grep -q "closing-context-clear-skip-mailbox-only" "$LOG_FILE2" || fail "05: expected the sweep to log a mailbox-only skip; got: $(cat "$LOG_FILE2" 2>/dev/null)"
+grep -q "closing-context-clear-fired" "$LOG_FILE2" && fail "05: expected NO clear to be recorded under SWARMFORGE_MAILBOX_ONLY=1; got: $(cat "$LOG_FILE2")"
+[[ -f "$ROOT2/.swarmforge/coordinator-context-clear.json" ]] && fail "05: expected the marker to NEVER be written when nothing was actually injected"
+pass "05: SWARMFORGE_MAILBOX_ONLY=1 skips the whole sweep - no clear recorded when nothing was injected"
+
+rm -rf "$ROOT2"
+
 echo "ALL PASS"

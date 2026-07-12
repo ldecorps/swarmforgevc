@@ -977,28 +977,35 @@
     :in-process-count (count (chase-sweep-lib/scan-in-process (handoff-lib/mailbox-dir role-info :in_process)))}))
 
 (defn closing-context-clear-sweep! [roles socket]
-  (when-let [coordinator (get roles "coordinator")]
-    (closing-context-clear-lib/evaluate-closing-context-clear!
-     {:idle? (coordinator-idle? coordinator)
-      :closed-ticket-id (latest-done-ticket-id)
-      :last-cleared-ticket-id (read-last-cleared-ticket-id)
-      :role-name "coordinator"}
-     {:inject-clear! (fn []
-                        (if (tmux-inject-disabled?)
-                          (log! "closing-context-clear-skip-mailbox-only")
+  ;; BL-309 bounce fix: :record-clear! durably poisons closed-ticket-id
+  ;; against ever being re-cleared (new-close?'s whole point). Skip the
+  ;; WHOLE sweep - never even evaluate the decision - while tmux injection
+  ;; is disabled (SWARMFORGE_MAILBOX_ONLY / SWARMFORGE_SKIP_TMUX_INJECT),
+  ;; so a mailbox-only session can never mark a close cleared when nothing
+  ;; was actually injected into the coordinator's pane. Mirrors
+  ;; briefing-generation-sweep!'s own :notify! skip, which never writes any
+  ;; persistent "already notified" marker either.
+  (if (tmux-inject-disabled?)
+    (log! "closing-context-clear-skip-mailbox-only")
+    (when-let [coordinator (get roles "coordinator")]
+      (closing-context-clear-lib/evaluate-closing-context-clear!
+       {:idle? (coordinator-idle? coordinator)
+        :closed-ticket-id (latest-done-ticket-id)
+        :last-cleared-ticket-id (read-last-cleared-ticket-id)
+        :role-name "coordinator"}
+       {:inject-clear! (fn []
                           (agent-runtime-inject/notify-agent!
                            socket (:session coordinator) (or (:agent coordinator) "claude")
                            :log-fn (fn [tag sess detail] (log! tag sess detail))
-                           :text "/clear")))
-      :inject-startup-reread! (fn [instruction-text]
-                                 (when-not (tmux-inject-disabled?)
+                           :text "/clear"))
+        :inject-startup-reread! (fn [instruction-text]
                                    (agent-runtime-inject/notify-agent!
                                     socket (:session coordinator) (or (:agent coordinator) "claude")
                                     :log-fn (fn [tag sess detail] (log! tag sess detail))
-                                    :text instruction-text)))
-      :record-clear! (fn [ticket-id]
-                       (record-context-clear! ticket-id)
-                       (log! "closing-context-clear-fired" ticket-id))})))
+                                    :text instruction-text))
+        :record-clear! (fn [ticket-id]
+                         (record-context-clear! ticket-id)
+                         (log! "closing-context-clear-fired" ticket-id))}))))
 
 (defn -main []
   (let [roles  (load-roles)
