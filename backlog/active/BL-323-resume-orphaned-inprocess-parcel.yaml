@@ -1,0 +1,92 @@
+id: BL-323
+title: "A parcel claimed into in_process by a killed agent is never resumed — the swarm stalls silently and survives relaunch"
+milestone: M8
+status: todo
+type: defect
+severity: high
+priority: 5
+direction: aligned
+depends_on: []
+source: "Raised by the Operator 2026-07-12 after a real ~4-hour stall on this repo, via .swarmforge/operator/INTAKE-orphaned-inprocess-parcel-not-resumed-on-relaunch.md; drained per BL-311's convention."
+
+notes: |
+  THE STALL. The coordinator dispatched BL-316 to the coder; the coder claimed it
+  (new/ -> in_process/, dequeued_at 17:18:24Z) and was killed 3 seconds later when the
+  swarm was parked. On relaunch — TWICE, across two different launches (lean-drain, then
+  full-forge) — the fresh coder did not resume it. BL-316 sat in backlog/active/ for ~4
+  hours with nobody working it. `ready_for_next.sh` run by hand correctly printed the
+  parcel: the work was findable, nobody was looking. It took an explicit Operator nudge
+  naming the parcel id to restart it.
+
+  WHY IT IS SILENT. The ticket is `active`, the mail is `in_process`, and every surface
+  reports healthy independently: panes alive, `inbox/new` empty (so "no pending mail"),
+  `backlog/active` non-empty (so "work in progress"), agents showing COMPLETION stamps
+  ("Cooked for 5m 34s") which read as done, not stuck. The daemon's dispatch-gap sweep
+  cannot see it either: that sweep flags an active item with NO handoff trail anywhere,
+  and this parcel has a trail — it is sitting in in_process. It survives a full relaunch,
+  so restarting the swarm does not clear it.
+
+  A STUCK DETECTOR EXISTS AND IS DEFEATED — VERIFIED, AND IT IS NOT WHAT THE INTAKE
+  ASSUMED. chase_sweep_lib.bb DOES scan in_process (`scan-in-process`) and DOES have
+  stuck detection (`decide-stuck-action`: idle past stuckInProcessTimeoutSeconds ->
+  nudge, then alert). It fails because of how "idle" is measured.
+  `track-pane-activity!` (chase_sweep_lib.bb:176) marks a role active whenever its PANE
+  CONTENT HASH CHANGES — and the daemon's own nudge is injected INTO that pane, so the
+  nudge is itself a pane change. Sequence: daemon nudges a stalled agent -> the injected
+  text changes the pane -> next sweep sees "recent activity" -> `decide-stuck-action`
+  returns "skipped" -> the daemon concludes the agent is working. Compounding it, the
+  Operator observed injected nudges landing in the prompt buffer WITHOUT being submitted
+  (text sits at the `❯` until an Enter arrives; six of eight roles were holding
+  unsubmitted buffers), so the agent never actually receives the nudge it was
+  "successfully" sent. The detector nudges into a void and then congratulates itself.
+  (Also: `activity-records` is an in-memory atom, so a daemon restart resets every
+  role's idle clock to "fresh" as well.)
+
+  THIS SLICE FIXES THE ROBUST THING. Resume-on-start does not depend on tmux injection,
+  on pane-hash heuristics, or on the daemon being alive at all — the agent asks its own
+  durable queue. That is why it is slice 1 and why it alone would have prevented the
+  4-hour stall.
+
+  SCOPE:
+    1. RESUME-ON-START. At role startup an agent must consult its OWN in_process/ queue
+       and resume any parcel there BEFORE concluding there is no work.
+       `ready_for_next.sh` ALREADY returns in_process work first — the gap is that a
+       relaunched agent does not consult it unprompted. Find whether the role prompt or
+       the launcher owns this, and fix it in exactly ONE place (do not fix it in both).
+    2. VISIBILITY. Stall detection / status output must COUNT in_process parcels, not
+       just new/. "0 new mail" must stop reading as "nothing pending" when the truth is
+       "something is pending and nobody owns it". Status must distinguish those two.
+    3. Never disturb a parcel that a LIVE agent is legitimately working.
+    4. OUT OF SCOPE for this slice: the stale-claim reaper (requeueing a parcel whose
+       claiming process is provably dead). It needs a liveness signal that does not
+       exist yet — a claiming agent would have to record its pid/session INTO the
+       parcel so "claimed by a process that no longer exists" is decidable rather than
+       guessed from a timeout. Worth doing, but it is a separate slice with its own
+       design; resume-on-start makes the stall self-healing without it.
+
+  ADJACENT, FOUND WHILE INVESTIGATING (not this ticket, do not fix here):
+    - The pane-activity self-reset above is a real, independent defect in the chase
+      daemon: its own nudge resets the idle clock it uses to decide whether to nudge.
+      Flagged to the human 2026-07-13; not yet ticketed.
+    - `.swarmforge/handoffs/inbox/new/` holds ~10 chase parcels dated 2026-07-09 — stale
+      for days, never reaped.
+    - Injected nudges not being submitted (the known paste-not-submitting issue).
+
+  E2E QA PROCEDURE: claim a parcel, `kill -9` the owning agent, relaunch, and assert the
+  parcel is resumed with NO human intervention. Assert against a REALLY killed process,
+  not a fixture — the bug is precisely that the live relaunch path never reaches the code
+  that already knows about in_process, so a fixture-level test can pass while the real
+  path stays broken. Then assert (a) a parcel held by a live agent is never taken from
+  it, and (b) status output distinguishes "no work" from "work claimed by nobody".
+
+acceptance:
+  feature: specs/features/BL-323-resume-orphaned-inprocess-parcel.feature
+  steps:
+    - "A parcel orphaned by a killed agent is resumed on relaunch"
+    - "A parcel held by a live agent is never taken away from it"
+    - "Status distinguishes no work from work claimed by nobody"
+    - "An idle role with a genuinely empty inbox still reports no work"
+
+human_approval: approved
+
+mutation_cost: medium
