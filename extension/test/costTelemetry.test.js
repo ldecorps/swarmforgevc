@@ -150,3 +150,67 @@ test('computeCostTelemetry degrades to empty/zero for a role with no transcripts
   assert.deepEqual(result.coder.byDay, {});
   assert.deepEqual(result.coder.byTicket, {});
 });
+
+// ── BL-312: master-resident worktreePath collision ──────────────────────
+
+test('BL-312 burn-meter-master-resident-01: coordinator and specifier sharing one worktreePath report ONE combined usage total, not two byte-identical ones', () => {
+  const masterWt = mkTmp();
+  const projectsDir = mkTmp();
+
+  function slugFor(p) {
+    return p.replace(/[/.]/g, '-');
+  }
+  const slugDir = path.join(projectsDir, slugFor(masterWt));
+  fs.mkdirSync(slugDir, { recursive: true });
+  const line = JSON.stringify({
+    type: 'assistant',
+    timestamp: '2026-07-09T08:30:00Z',
+    message: { id: 'm1', model: 'claude-sonnet-5', usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } },
+  });
+  fs.writeFileSync(path.join(slugDir, 's1.jsonl'), line + '\n');
+
+  const result = computeCostTelemetry(
+    masterWt,
+    [
+      { role: 'coordinator', worktreePath: masterWt },
+      { role: 'specifier', worktreePath: masterWt },
+    ],
+    projectsDir
+  );
+
+  assert.deepEqual(Object.keys(result), ['coordinator+specifier']);
+  const dayKey = Object.keys(result['coordinator+specifier'].byDay)[0];
+  assert.equal(result['coordinator+specifier'].byDay[dayKey].usage.inputTokens, 100);
+  assert.equal(result.coordinator, undefined);
+  assert.equal(result.specifier, undefined);
+});
+
+test('BL-312 burn-meter-master-resident-03: a role on its own distinct worktreePath reports exactly as it does today, unaffected by a collision elsewhere', () => {
+  const masterWt = mkTmp();
+  const coderWt = mkTmp();
+  const projectsDir = mkTmp();
+
+  function slugFor(p) {
+    return p.replace(/[/.]/g, '-');
+  }
+  fs.mkdirSync(path.join(projectsDir, slugFor(coderWt)), { recursive: true });
+  const line = JSON.stringify({
+    type: 'assistant',
+    timestamp: '2026-07-09T08:30:00Z',
+    message: { id: 'm1', model: 'claude-sonnet-5', usage: { input_tokens: 20, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } },
+  });
+  fs.writeFileSync(path.join(projectsDir, slugFor(coderWt), 's1.jsonl'), line + '\n');
+
+  const result = computeCostTelemetry(
+    masterWt,
+    [
+      { role: 'coordinator', worktreePath: masterWt },
+      { role: 'specifier', worktreePath: masterWt },
+      { role: 'coder', worktreePath: coderWt },
+    ],
+    projectsDir
+  );
+
+  const dayKey = Object.keys(result.coder.byDay)[0];
+  assert.equal(result.coder.byDay[dayKey].usage.inputTokens, 20);
+});

@@ -16,6 +16,37 @@ export interface RoleWorktree {
   agent?: string;
 }
 
+// BL-312: a master-resident roster (e.g. coordinator + specifier, both
+// worktreeName "master") collapses to one physical worktreePath - reading
+// or reporting per-role there would read the same transcript directory
+// once per colliding role and double-count it. Groups roles by
+// worktreePath so a caller reads/reports each distinct physical directory
+// exactly once; a lone role keeps its own singleton group. Shared by
+// burnRate.ts and costTelemetry.ts (the two producers the ticket's own
+// root-cause names), rather than each re-deriving the grouping.
+export function groupRolesByWorktreePath(roles: RoleWorktree[]): RoleWorktree[][] {
+  const byPath = new Map<string, RoleWorktree[]>();
+  for (const role of roles) {
+    const group = byPath.get(role.worktreePath);
+    if (group) {
+      group.push(role);
+    } else {
+      byPath.set(role.worktreePath, [role]);
+    }
+  }
+  return [...byPath.values()];
+}
+
+// The reported key for a worktreePath group: the role's own name for a
+// singleton group (unaffected roles report exactly as before), or every
+// colliding role's name joined - sorted so the label is deterministic
+// regardless of roles.tsv's row order - so a combined total is visibly
+// labeled shared/combined rather than silently duplicated under one role's
+// name.
+export function combinedRoleKey(group: RoleWorktree[]): string {
+  return group.length === 1 ? group[0].role : [...group].map((r) => r.role).sort().join('+');
+}
+
 export interface MeanTicketTime {
   meanMs: number | null;
   sampleCount: number;

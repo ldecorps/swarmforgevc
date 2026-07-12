@@ -299,6 +299,25 @@ test('computeCostHealthSidecar wires real BL-100/BL-096 producers together witho
   assert.deepEqual(sidecar.topExpensiveTickets, []);
 });
 
+// ── BL-312: master-resident worktreePath collision reaches the sidecar too ──
+
+test('BL-312 burn-meter-master-resident-04: coordinator+specifier sharing one worktreePath appear as ONE combined sidecar agent, not two byte-identical day-totals', () => {
+  const target = mkTmp();
+  git(target, ['init', '-q']);
+  git(target, ['config', 'user.email', 't@t']);
+  git(target, ['config', 'user.name', 't']);
+  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+
+  const sidecar = computeCostHealthSidecar(target, [
+    { role: 'coordinator', worktreePath: target },
+    { role: 'specifier', worktreePath: target },
+  ]);
+  assert.deepEqual(
+    sidecar.agents.map((a) => a.role),
+    ['coordinator+specifier']
+  );
+});
+
 // ── BL-290: suiteDurationTrend rides the same sidecar ────────────────────
 
 test('BL-290 suite-duration-pwa-01: buildCostHealthSidecar carries the given suiteDurationTrend verbatim', () => {

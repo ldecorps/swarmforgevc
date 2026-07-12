@@ -132,3 +132,51 @@ test('every configured role appears in the result, even when idle', () => {
   );
   assert.deepEqual(rates, { coder: 0, cleaner: 0 });
 });
+
+// ── BL-312: master-resident worktreePath collision ──────────────────────
+
+test('BL-312 burn-meter-master-resident-01: coordinator and specifier sharing one worktreePath report ONE combined rate, not two independent full rates', () => {
+  const projectsDir = mkTmp();
+  const masterWt = path.join(mkTmp(), 'master');
+  fs.mkdirSync(masterWt, { recursive: true });
+  writeTranscript(projectsDir, masterWt, [
+    usageRecord({ messageId: 'x', timestampMs: NOW_MS - 5 * 60 * 1000, usage: { inputTokens: 100, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 } }),
+  ]);
+
+  const rates = computeBurnRateForRoles(
+    '/unused/target',
+    [
+      { role: 'coordinator', worktreePath: masterWt },
+      { role: 'specifier', worktreePath: masterWt },
+    ],
+    NOW_MS,
+    WINDOW_MS,
+    projectsDir
+  );
+  assert.deepEqual(rates, { 'coordinator+specifier': 100 * 4 });
+  assert.equal(rates.coordinator, undefined);
+  assert.equal(rates.specifier, undefined);
+});
+
+test('BL-312 burn-meter-master-resident-03: a role on its own distinct worktreePath is unaffected by a collision elsewhere', () => {
+  const projectsDir = mkTmp();
+  const masterWt = path.join(mkTmp(), 'master');
+  const coderWt = path.join(mkTmp(), 'coder');
+  fs.mkdirSync(masterWt, { recursive: true });
+  writeTranscript(projectsDir, coderWt, [
+    usageRecord({ messageId: 'x', timestampMs: NOW_MS - 5 * 60 * 1000, usage: { inputTokens: 50, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 } }),
+  ]);
+
+  const rates = computeBurnRateForRoles(
+    '/unused/target',
+    [
+      { role: 'coordinator', worktreePath: masterWt },
+      { role: 'specifier', worktreePath: masterWt },
+      { role: 'coder', worktreePath: coderWt },
+    ],
+    NOW_MS,
+    WINDOW_MS,
+    projectsDir
+  );
+  assert.equal(rates.coder, 50 * 4);
+});

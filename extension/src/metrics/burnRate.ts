@@ -1,5 +1,5 @@
 import { TranscriptUsageRecord, UsageTotals, readTranscriptUsage } from './transcriptUsage';
-import { RoleWorktree } from './swarmMetrics';
+import { RoleWorktree, groupRolesByWorktreePath, combinedRoleKey } from './swarmMetrics';
 
 // BL-273: a LIVE per-agent token burn-rate (tokens/hr), distinct from
 // BL-100's daily aggregates - the recent rolling window this reads reacts
@@ -34,10 +34,15 @@ export function computeBurnRateTokensPerHour(
   return windowTokens / (windowMs / MS_PER_HOUR);
 }
 
-// The one impure entry point: reads each role's transcript usage (reusing
-// BL-100's readTranscriptUsage) and delegates to the pure rate function
-// above. A role with no transcript directory degrades to a 0 rate, matching
-// readTranscriptUsage's own "missing dir -> []" degradation (cost-07).
+// The one impure entry point: reads each DISTINCT worktreePath's transcript
+// usage exactly once (reusing BL-100's readTranscriptUsage) and delegates to
+// the pure rate function above. A role with no transcript directory
+// degrades to a 0 rate, matching readTranscriptUsage's own "missing dir ->
+// []" degradation (cost-07). BL-312: two or more roles sharing one
+// worktreePath (the master-resident collision) report ONE combined rate
+// under a joined key instead of the same full rate independently under
+// each role's own name - a role on its own distinct worktreePath is
+// unaffected (its group is a singleton, key = its own role name).
 export function computeBurnRateForRoles(
   targetPath: string,
   roles: RoleWorktree[],
@@ -46,9 +51,9 @@ export function computeBurnRateForRoles(
   claudeProjectsDir?: string
 ): Record<string, number> {
   const result: Record<string, number> = {};
-  for (const role of roles) {
-    const records = readTranscriptUsage(role.worktreePath, claudeProjectsDir);
-    result[role.role] = computeBurnRateTokensPerHour(records, nowMs, windowMs);
+  for (const group of groupRolesByWorktreePath(roles)) {
+    const records = readTranscriptUsage(group[0].worktreePath, claudeProjectsDir);
+    result[combinedRoleKey(group)] = computeBurnRateTokensPerHour(records, nowMs, windowMs);
   }
   return result;
 }

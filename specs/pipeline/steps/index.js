@@ -113,6 +113,7 @@ const DOMAINS = [
   require('./operatorAskAwaitSteps'),
   require('./operatorAutoHibernateSteps'),
   require('./operatorSeedRaceLaunchGraceSteps'),
+  require('./burnMeterMasterResidentSteps'),
 ];
 
 function registerSteps(registry) {
