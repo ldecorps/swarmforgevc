@@ -265,20 +265,25 @@ thing the coordinator does is physically move the backlog tickets"). Keep the
   — and the coordinator treating a drained backlog as a reason to write itself
   new tickets makes those two conditions mutually exclusive, so the swarm never
   parks and burns quota on unrequested work. BL-318 exists to break exactly that
-  circularity; these two rules are how YOU close it, because a Babashka helper
-  the coordinator never invokes is a dark feature.
+  circularity; the rules below are how YOU close it, because a helper the
+  coordinator never invokes is a dark feature.
+- Reach BOTH helpers below through their shell CLI wrapper (BL-327), the same way
+  you reach `coordinator_config_cli.bb` / `backlog_depth_cli.bb` — never by
+  hand-assembling a `bb -e '...'` call against `operator_lib.bb`'s internals. If
+  that wrapper is not in your checkout yet, apply the hold rule at the bottom of
+  this section rather than improvising a Clojure invocation.
 - **Honest provenance, written by the tool, not by memory.** When you do raise a
-  ticket yourself, compose its `source:` with `operator_lib.bb`'s
-  `format-self-generated-source <reason>` — never hand-write the line. A
+  ticket yourself, compose its `source:` with `format-self-generated-source
+  <reason>` — never hand-write the line. A
   self-generated ticket that claims a human or the Operator raised it makes
   self-generated scope indistinguishable from a real directive on review, which
   has already happened (BL-314's `source:` claimed the human raised it when the
   human did not). `self-generated-item?` recognizes only the canonical marker
   that helper writes, and defaults to NOT-self-generated, so a hand-written
   source silently escapes the gate below.
-- **Check the gate before promoting.** Before promoting any paused candidate, run
-  `operator_lib.bb`'s `promotion-blocked-by-quiet-period? <candidate> {:backlog-drained?
-  … :roster-idle? …}`. When it returns true, do NOT promote — hibernation wins
+- **Check the gate before promoting.** Before promoting any paused candidate, put it
+  to `promotion-blocked-by-quiet-period?` through that CLI. When it answers blocked,
+  do NOT promote — hibernation wins
   over self-promotion. The gate blocks ONLY a self-generated candidate during a
   quiet period; a human-, Operator-, or role-raised ticket is NEVER blocked by it,
   whatever the quiet-period state. So this rule can never starve real work — it
