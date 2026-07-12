@@ -67,5 +67,36 @@ test('readNewReplyOutboxEntries skips a malformed line rather than crashing the 
     'not valid json\n' + JSON.stringify({ threadId: 'SUP-1', text: 'ok' }) + '\n'
   );
   const result = readNewReplyOutboxEntries(targetPath, 0);
-  assert.deepEqual(result.entries, [{ threadId: 'SUP-1', text: 'ok' }]);
+  assert.deepEqual(result.entries, [{ id: 'legacy-1', threadId: 'SUP-1', text: 'ok' }]);
+});
+
+// BL-320: an outbox line written by operator_reply.bb going forward carries
+// its own idempotency key - that value must ride through verbatim, never
+// overwritten by the legacy-position fallback.
+test('readNewReplyOutboxEntries passes through an entry\'s own id field verbatim', () => {
+  const targetPath = mkTmp();
+  writeOutbox(targetPath, [{ id: 'reply-abc123', threadId: 'SUP-1', text: 'hi' }]);
+  const result = readNewReplyOutboxEntries(targetPath, 0);
+  assert.deepEqual(result.entries, [{ id: 'reply-abc123', threadId: 'SUP-1', text: 'hi' }]);
+});
+
+// BL-320: a line written before this ticket has no id field at all - it
+// must still round-trip as a usable entry (never dropped like a malformed
+// line), with a synthesized id stable across re-reads of the same
+// append-only file (derived from its own absolute line position, so a
+// later poll starting from a later sinceIndex still reconstructs the same
+// id for the same physical line).
+test('readNewReplyOutboxEntries synthesizes a stable id for a pre-BL-320 entry with no id field', () => {
+  const targetPath = mkTmp();
+  writeOutbox(targetPath, [
+    { threadId: 'SUP-1', text: 'first' },
+    { threadId: 'SUP-2', text: 'second' },
+  ]);
+  const fromStart = readNewReplyOutboxEntries(targetPath, 0);
+  assert.deepEqual(fromStart.entries, [
+    { id: 'legacy-0', threadId: 'SUP-1', text: 'first' },
+    { id: 'legacy-1', threadId: 'SUP-2', text: 'second' },
+  ]);
+  const fromSecond = readNewReplyOutboxEntries(targetPath, 1);
+  assert.deepEqual(fromSecond.entries, [{ id: 'legacy-1', threadId: 'SUP-2', text: 'second' }]);
 });

@@ -386,66 +386,150 @@ function mkChunkReader(chunks) {
   };
 }
 
-test('relaySseReplies posts a telegram-reply record into its mapped topic', async () => {
+test('relaySseReplies posts a telegram-reply record into its mapped topic, then acks it', async () => {
   const sent = [];
-  await relaySseReplies('', {
-    readChunk: mkChunkReader(['event: telegram-reply\ndata: {"threadId":"SUP-1","text":"hello"}\n\n']),
-    sendReply: async (topicId, text) => {
-      sent.push({ topicId, text });
+  const acked = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-1","text":"hello"}\n\n']),
+      sendReply: async (topicId, text) => {
+        sent.push({ topicId, text });
+      },
+      topicForSubject: (subjectId) => (subjectId === 'SUP-1' ? 42 : undefined),
+      ackReply: async (id) => {
+        acked.push(id);
+      },
     },
-    topicForSubject: (subjectId) => (subjectId === 'SUP-1' ? 42 : undefined),
-  });
+    new Set()
+  );
   assert.deepEqual(sent, [{ topicId: 42, text: 'hello' }]);
+  assert.deepEqual(acked, ['r1']);
 });
 
-test('relaySseReplies drops a reply for an unmapped thread id, never throws', async () => {
+test('relaySseReplies drops a reply for an unmapped thread id, never throws, but still acks it', async () => {
   const sent = [];
-  await relaySseReplies('', {
-    readChunk: mkChunkReader(['event: telegram-reply\ndata: {"threadId":"SUP-9","text":"hi"}\n\n']),
-    sendReply: async (topicId, text) => {
-      sent.push({ topicId, text });
+  const acked = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-9","text":"hi"}\n\n']),
+      sendReply: async (topicId, text) => {
+        sent.push({ topicId, text });
+      },
+      topicForSubject: () => undefined,
+      ackReply: async (id) => {
+        acked.push(id);
+      },
     },
-    topicForSubject: () => undefined,
-  });
+    new Set()
+  );
   assert.deepEqual(sent, []);
+  assert.deepEqual(acked, ['r1']);
 });
 
-test('relaySseReplies ignores a record that is not a telegram-reply event', () => {
+test('relaySseReplies ignores a record that is not a telegram-reply event, and never acks it', () => {
   const sent = [];
-  return relaySseReplies('', {
-    readChunk: mkChunkReader(['event: some-other-event\ndata: {"threadId":"SUP-1","text":"hi"}\n\n']),
-    sendReply: async (topicId, text) => {
-      sent.push({ topicId, text });
+  const acked = [];
+  return relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: some-other-event\ndata: {"id":"r1","threadId":"SUP-1","text":"hi"}\n\n']),
+      sendReply: async (topicId, text) => {
+        sent.push({ topicId, text });
+      },
+      topicForSubject: () => 42,
+      ackReply: async (id) => {
+        acked.push(id);
+      },
     },
-    topicForSubject: () => 42,
-  }).then(() => assert.deepEqual(sent, []));
+    new Set()
+  ).then(() => {
+    assert.deepEqual(sent, []);
+    assert.deepEqual(acked, []);
+  });
 });
 
 test('relaySseReplies drains multiple records buffered across chunks before reading the next one', async () => {
   const sent = [];
-  await relaySseReplies('', {
-    readChunk: mkChunkReader([
-      'event: telegram-reply\ndata: {"threadId":"SUP-1","text":"first"}\n\nevent: telegram-reply\ndata: {"threadId":"SUP-2","text":"second"}\n\n',
-    ]),
-    sendReply: async (topicId, text) => {
-      sent.push({ topicId, text });
+  const acked = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader([
+        'event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-1","text":"first"}\n\nevent: telegram-reply\ndata: {"id":"r2","threadId":"SUP-2","text":"second"}\n\n',
+      ]),
+      sendReply: async (topicId, text) => {
+        sent.push({ topicId, text });
+      },
+      topicForSubject: (subjectId) => ({ 'SUP-1': 1, 'SUP-2': 2 })[subjectId],
+      ackReply: async (id) => {
+        acked.push(id);
+      },
     },
-    topicForSubject: (subjectId) => ({ 'SUP-1': 1, 'SUP-2': 2 })[subjectId],
-  });
+    new Set()
+  );
   assert.deepEqual(sent, [
     { topicId: 1, text: 'first' },
     { topicId: 2, text: 'second' },
   ]);
+  assert.deepEqual(acked, ['r1', 'r2']);
 });
 
 test('relaySseReplies returns cleanly once readChunk reports done', async () => {
-  await relaySseReplies('', {
-    readChunk: mkChunkReader([]),
-    sendReply: async () => {
-      throw new Error('should never be called');
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader([]),
+      sendReply: async () => {
+        throw new Error('should never be called');
+      },
+      topicForSubject: () => 1,
+      ackReply: async () => {
+        throw new Error('should never be called');
+      },
     },
-    topicForSubject: () => 1,
-  });
+    new Set()
+  );
+});
+
+// ── BL-320: idempotency (redelivery after a reconnect must never double-post) ──
+
+test('relaySseReplies never re-sends a record whose id is already in seenIds, but still acks it', async () => {
+  const sent = [];
+  const acked = [];
+  const seenIds = new Set(['r1']);
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-1","text":"hello"}\n\n']),
+      sendReply: async (topicId, text) => {
+        sent.push({ topicId, text });
+      },
+      topicForSubject: () => 42,
+      ackReply: async (id) => {
+        acked.push(id);
+      },
+    },
+    seenIds
+  );
+  assert.deepEqual(sent, [], 'a record already in seenIds must never be re-posted to Telegram');
+  assert.deepEqual(acked, ['r1'], 'the (possibly lost) ack must still be retried');
+});
+
+test('relaySseReplies adds a newly-sent record\'s id to the shared seenIds set so a later reconnect dedupes it', async () => {
+  const seenIds = new Set();
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-1","text":"hello"}\n\n']),
+      sendReply: async () => {},
+      topicForSubject: () => 42,
+      ackReply: async () => {},
+    },
+    seenIds
+  );
+  assert.ok(seenIds.has('r1'));
 });
 
 // ── BL-302: poll-loop resilience (backoff, escalation, isolation) ────────

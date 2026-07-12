@@ -41,12 +41,20 @@
 (defn now-iso []
   (.format (java.time.format.DateTimeFormatter/ISO_INSTANT) (java.time.Instant/now)))
 
+;; BL-320: id is the idempotency key operatorEventQueue.ts's
+;; readNewReplyOutboxEntries reads verbatim - a UUID needs no coordinated
+;; sequence counter (unlike handoff ids' timestamp+sequence+sender scheme)
+;; since this is a single append-only, single-writer file where "globally
+;; unique" is the only property either consumer (the bridge's ack-cursor
+;; match, the bot's seenIds dedup) actually needs.
 (defn append-to-outbox! [thread-id text]
   (fs/create-dirs (fs/parent reply-outbox-file))
   ;; String keys (not keyword) so generate-string prints EXACTLY
-  ;; {"threadId":...,"text":...} - operatorEventQueue.ts's
-  ;; readNewReplyOutboxEntries reads these two field names verbatim.
-  (spit (str reply-outbox-file) (str (json/generate-string {"threadId" thread-id "text" text}) "\n") :append true))
+  ;; {"id":...,"threadId":...,"text":...} - operatorEventQueue.ts's
+  ;; readNewReplyOutboxEntries reads these field names verbatim.
+  (spit (str reply-outbox-file)
+        (str (json/generate-string {"id" (str (java.util.UUID/randomUUID)) "threadId" thread-id "text" text}) "\n")
+        :append true))
 
 (defn -main []
   (let [thread-id (:thread opts)

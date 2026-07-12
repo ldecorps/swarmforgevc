@@ -62,6 +62,9 @@ import {
   applyPollCycleResult,
   PollLoopState,
   runContainedLoop,
+  computePollBackoffMs,
+  shouldRaiseDegradedWarning,
+  PollBackoffConfig,
 } from './telegramFrontDeskBotCore';
 import { backlogForTopic } from '../concierge/topicRouter';
 import { runConciergeTick, ConciergeTickAdapters, BacklogFoldersSnapshot, TickState } from '../concierge/conciergeTick';
@@ -245,26 +248,105 @@ async function pollLoop(botToken: string, principalUserId: string, targetPath: s
   }
 }
 
-// Subscribes to the bridge's SSE stream forever - the only untested
-// boundary is readChunk (the real stream reader); every decision (which
-// records to relay, which topic, dropping an unmapped threadId) lives in
+// BL-320: confirms one entry's id back to the bridge - the bridge only
+// advances its persisted cursor on this, never on emit. A non-ok response
+// is treated as a failed ack (thrown, not swallowed) so it flows through
+// the SAME reconnect-with-backoff path as a dropped connection: the next
+// attempt (this one or after a reconnect) replays/retries it rather than
+// silently leaving the bridge's cursor stuck.
+async function ackReply(bridgeUrl: string, controlToken: string, id: string): Promise<void> {
+  const res = await fetch(`${bridgeUrl}/reply-ack`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${controlToken}`, 'x-control-token': controlToken },
+    body: JSON.stringify({ id }),
+  });
+  if (!res.ok) {
+    throw new Error(`reply-ack failed with status ${res.status}`);
+  }
+}
+
+// One connection attempt: subscribes to the bridge's SSE stream and relays
+// until the stream ends or the connection drops (readChunk rejects - the
+// real stream reader is the only untested boundary here). Every decision
+// (which records to relay, which topic, idempotency, acking) lives in
 // relaySseReplies (adapter-injected, unit-tested), mirroring pollLoop/
-// pollAndForward's own thin-wrapper/tested-core split above.
-async function subscribeReplies(botToken: string, chatId: string, targetPath: string, bridgeUrl: string, bridgeToken: string): Promise<void> {
+// pollAndForward's own thin-wrapper/tested-core split above. seenIds is
+// threaded in from subscribeReplies below so it survives a reconnect.
+async function connectAndRelayReplies(
+  botToken: string,
+  chatId: string,
+  targetPath: string,
+  bridgeUrl: string,
+  bridgeToken: string,
+  controlToken: string,
+  seenIds: Set<string>
+): Promise<void> {
   const res = await fetch(`${bridgeUrl}/events`, { headers: { authorization: `Bearer ${bridgeToken}` } });
   if (!res.body) {
     return;
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
-  await relaySseReplies('', {
-    readChunk: async () => {
-      const { done, value } = await reader.read();
-      return { done, chunk: done ? '' : decoder.decode(value, { stream: true }) };
+  await relaySseReplies(
+    '',
+    {
+      readChunk: async () => {
+        const { done, value } = await reader.read();
+        return { done, chunk: done ? '' : decoder.decode(value, { stream: true }) };
+      },
+      sendReply: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then(() => undefined),
+      topicForSubject: (subjectId) => topicForSubject(readTopicMap(targetPath), subjectId),
+      ackReply: (id) => ackReply(bridgeUrl, controlToken, id),
     },
-    sendReply: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then(() => undefined),
-    topicForSubject: (subjectId) => topicForSubject(readTopicMap(targetPath), subjectId),
-  });
+    seenIds
+  );
+}
+
+// BL-320: retry-forever with capped backoff around the SSE connection
+// itself (reusing BL-302's own computePollBackoffMs/shouldRaiseDegraded
+// Warning - the front-desk track's established resilience policy),
+// layered UNDERNEATH runContainedLoop's flat 5s whole-loop restart net at
+// the main() call site below. A dropped connection (undici "terminated")
+// or a failed ack both surface as a rejection out of
+// connectAndRelayReplies and are caught HERE, not left to propagate: the
+// live failure this ticket exists for (subscribeReplies's own silent-stop
+// gap, flagged as BL-302's explicit follow-up) is handled at the layer
+// that can actually replay - the outer runContainedLoop restart alone
+// would lose seenIds and read a fresh empty buffer with no memory of what
+// was already relayed.
+const REPLY_RECONNECT_BACKOFF_CONFIG: PollBackoffConfig = { backoffBaseMs: 2000, backoffMaxMs: 60_000, degradedThreshold: 5 };
+
+async function subscribeReplies(
+  botToken: string,
+  chatId: string,
+  targetPath: string,
+  bridgeUrl: string,
+  bridgeToken: string,
+  controlToken: string
+): Promise<void> {
+  const seenIds = new Set<string>();
+  let consecutiveFailures = 0;
+  for (;;) {
+    try {
+      await connectAndRelayReplies(botToken, chatId, targetPath, bridgeUrl, bridgeToken, controlToken, seenIds);
+      consecutiveFailures = 0;
+    } catch (error) {
+      consecutiveFailures += 1;
+      if (shouldRaiseDegradedWarning(consecutiveFailures, REPLY_RECONNECT_BACKOFF_CONFIG)) {
+        process.stderr.write(
+          `front-desk bot: reply-relay degraded - ${consecutiveFailures} consecutive reconnect failures, still retrying: ${
+            error instanceof Error ? error.message : String(error)
+          }\n`
+        );
+      }
+      await sleep(computePollBackoffMs(consecutiveFailures, REPLY_RECONNECT_BACKOFF_CONFIG));
+      continue;
+    }
+    // The stream ended cleanly (server-closed, or no body at all) - not a
+    // fault, but still worth a brief pause before resubscribing rather
+    // than a hot reconnect loop.
+    await sleep(REPLY_RECONNECT_BACKOFF_CONFIG.backoffBaseMs);
+  }
 }
 
 // BL-300: readBacklogFolders returns the panel's own richer BacklogItem
@@ -417,7 +499,13 @@ export async function main(): Promise<void> {
   // two loops even though nothing was wrong with them.
   await Promise.all([
     runContainedLoop('poll', () => pollLoop(botToken, principalUserId, targetPath, bridgeUrl, controlToken), sleep, LOOP_RESTART_DELAY_MS, logLoopFault),
-    runContainedLoop('reply-relay', () => subscribeReplies(botToken, chatId, targetPath, bridgeUrl, bridgeToken), sleep, LOOP_RESTART_DELAY_MS, logLoopFault),
+    runContainedLoop(
+      'reply-relay',
+      () => subscribeReplies(botToken, chatId, targetPath, bridgeUrl, bridgeToken, controlToken),
+      sleep,
+      LOOP_RESTART_DELAY_MS,
+      logLoopFault
+    ),
     runContainedLoop('concierge-tick', () => tickLoop(targetPath, botToken, chatId, conciergeTickIntervalMs()), sleep, LOOP_RESTART_DELAY_MS, logLoopFault),
   ]);
 }
