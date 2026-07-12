@@ -72,6 +72,23 @@ notes: |
     4. REUSE BL-285's `operator-decide approve` relay to unblock the gated pane. Do NOT
        build a second relay.
     5. Regression: SUP threads keep working exactly as today.
+    6. THE ANSWER MUST BE DIRECTED BY THE TOPIC'S TICKET, NOT BY COUNTING GATES (added
+       2026-07-13 after the architect's review of the first build). `bl-topic-approval-sweep!`
+       must NOT reuse BL-285's `selectGateDecision` as-is: that selector is purely count-based
+       (0 -> nothing, 1 -> answer, 2+ -> ask-which), which is CORRECT for a SUP thread carrying
+       no ticket context, but a BL topic HAS a `backlogId`. Discarding it means that with two
+       or more gates pending, a reply typed into ticket A's own topic is answered with "which
+       gate do you mean?" — safe (it never answers the WRONG gate) but degraded exactly in the
+       case the human most needs it, and BL-325's original suite never had two gates pending so
+       nothing caught it. Select the gate held by the topic's OWN backlogId. The mapping already
+       exists and this codebase already uses it in the OUTBOUND direction — BL-301's
+       `conciergeTick.ts:95` does `const backlogId = curr.roleTicket[gate.role]` to decide which
+       topic a NeedsApproval belongs to; the inbound path just needs the same `roleTicket`
+       mapping applied in reverse. Keep ask-which ONLY as the genuine fallback (the topic's
+       ticket has no pending gate of its own), never as the multi-gate default.
+       NOTE FOR THE CODER: scenario `human-in-the-loop-closed-07` was added to the feature file
+       for this. It needs its step handler wired in the same parcel — an unhandled scenario
+       hard-fails the acceptance runner and will block the hardener's gate (BL-233).
 
   E2E QA PROCEDURE: drive the WHOLE loop against a real gated role — gate raised -> assert
   the NeedsApproval message states the question (not just an id) -> type an answer into that
