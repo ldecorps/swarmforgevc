@@ -252,6 +252,23 @@ worktree_path_for_name() {
   echo "$WORKTREES_DIR/$1"
 }
 
+# BL-319: the one allow-list check for a role's agent - shared by
+# parse_config's per-window-line loop and provision_coordinator, so the
+# coordinator's own agent (config coordinator_agent, BL-319) fails loudly
+# with the EXACT same message/exit-1 shape a bogus window-line agent
+# already does, rather than a second near-identical case statement drifting
+# out of sync with the first.
+validate_agent() {
+  local agent="$1" role="$2"
+  case "$agent" in
+    claude|codex|copilot|grok|aider|vibe) ;;
+    *)
+      echo -e "${RED}Error:${RESET} Unsupported agent '$agent' for role '$role'"
+      exit 1
+      ;;
+  esac
+}
+
 # Registers one role into the parallel ROLES/AGENTS/SESSIONS/etc. arrays -
 # shared by parse_config's per-conf-line loop and provision_coordinator
 # (BL-243) so the role model (which array a role occupies a slot in) is a
@@ -412,13 +429,7 @@ parse_config() {
       exit 1
     fi
 
-    case "$agent" in
-      claude|codex|copilot|grok|aider|vibe) ;;
-      *)
-        echo -e "${RED}Error:${RESET} Unsupported agent '$agent' for role '$role'"
-        exit 1
-        ;;
-    esac
+    validate_agent "$agent" "$role"
 
     case "$receive_mode" in
       task|batch) ;;
@@ -488,13 +499,27 @@ parse_config() {
 # tier in the swarm; a pack that wants Opus sets coordinator_model
 # explicitly. --dangerously-skip-permissions and --remote-control handling
 # are unchanged.
+#
+# BL-319: a third tab-separated field, coordinator_agent, resolves the
+# coordinator's PROVIDER the same way - absent/blank falls back to claude,
+# preserving every existing pack's exact prior behavior unchanged.
 resolve_coordinator_config() {
-  local resolved
+  local resolved rest
   resolved="$(bb "$SCRIPT_DIR/coordinator_config_cli.bb" "$CONFIG_FILE")"
+  rest="${resolved#*$'\t'}"
   COORDINATOR_MODEL="${resolved%%$'\t'*}"
-  COORDINATOR_EFFORT="${resolved#*$'\t'}"
+  COORDINATOR_EFFORT="${rest%%$'\t'*}"
+  COORDINATOR_AGENT="${rest#*$'\t'}"
 }
 
+# BL-319: --model/--dangerously-skip-permissions/--effort are Claude-
+# specific (write_role_launch_script's claude branch parses them out of
+# extra_cli into a settings JSON; no other provider's CLI takes the same
+# flags, and COORDINATOR_MODEL's own default is a Claude model id,
+# meaningless to splice verbatim into e.g. copilot's --model). Every other
+# configured provider gets a bare launch (its own launch body already
+# supplies whatever flags it needs, e.g. copilot's --yolo --allow-all-paths)
+# plus --remote-control when enabled, same as any other role.
 provision_coordinator() {
   if [[ "$SWARM_MODE" == "secondary" ]]; then
     return
@@ -502,12 +527,17 @@ provision_coordinator() {
 
   resolve_coordinator_config
   local role="coordinator"
-  local extra_cli="--model $COORDINATOR_MODEL --dangerously-skip-permissions --effort $COORDINATOR_EFFORT"
+  validate_agent "$COORDINATOR_AGENT" "$role"
+
+  local extra_cli=""
+  if [[ "$COORDINATOR_AGENT" == "claude" ]]; then
+    extra_cli="--model $COORDINATOR_MODEL --dangerously-skip-permissions --effort $COORDINATOR_EFFORT"
+  fi
   if [[ "$REMOTE_CONTROL_DEFAULT" == 1 ]]; then
-    extra_cli+=" --remote-control $(remote_control_session_name_for_role "$role")"
+    extra_cli+="${extra_cli:+ }--remote-control $(remote_control_session_name_for_role "$role")"
   fi
 
-  register_role "$role" "claude" "master" "task" "off" "$extra_cli" "$WORKING_DIR"
+  register_role "$role" "$COORDINATOR_AGENT" "master" "task" "off" "$extra_cli" "$WORKING_DIR"
 }
 
 # BL-243 coordinator-infrastructure-02: the pack is the conf's own
