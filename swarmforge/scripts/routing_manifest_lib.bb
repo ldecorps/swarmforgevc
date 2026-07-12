@@ -23,9 +23,20 @@
   "Pulls a flow-style `roles: [a, b, c]` field's contents out of raw YAML
    text - trimmed, comma-split, quote-stripped. nil when the field is
    absent (the caller's cue to default to the full chain) or when the
-   value is not a recognizable `[...]` flow list."
+   value is not a recognizable `[...]` flow list.
+
+   Matches only an UNINDENTED `roles:` line (column 0, checked against the
+   raw un-trimmed line) - the same anchoring every other read-yaml-field
+   in this codebase (chase_sweep_lib.bb, operator_runtime.bb,
+   quiet_period_gate_cli.bb, ticket_status_lib.bb) already uses. Trimming
+   the line before the starts-with? check (as an earlier version of this
+   function did) strips away indentation, so an example line inside a
+   `notes: |` block - e.g. a ticket's own notes illustrating what a
+   declaration looks like, indented under the block - would collide with
+   a real top-level field. A top-level YAML scalar/list field is never
+   indented, so anchoring to column 0 is both correct and consistent."
   [content]
-  (when-let [line (some (fn [l] (when (str/starts-with? (str/trim l) "roles:") (str/trim l)))
+  (when-let [line (some (fn [l] (when (str/starts-with? l "roles:") (str/trim l)))
                         (str/split-lines content))]
     (let [after-colon (str/trim (subs line (inc (str/index-of line ":"))))]
       (when (and (str/starts-with? after-colon "[") (str/ends-with? after-colon "]"))

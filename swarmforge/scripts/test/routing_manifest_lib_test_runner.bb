@@ -25,6 +25,18 @@
          ["specifier" "coder" "cleaner" "architect" "hardender" "documenter" "QA"]
          (routing-manifest-lib/read-roles "id: BL-1\nnotes: |\n  (b) a ticket YAML declaring roles: [coder, QA] -> assert\nstatus: todo\n"))
 
+;; ── hardener-added: an INDENTED notes: example line that is itself a
+;;    well-formed flow-list (not just prose mentioning the word) must
+;;    never be mistaken for the real field - a real field is never
+;;    indented. Regression guard for a real bug found during hardening: an
+;;    earlier version of parse-roles-field trimmed the line before the
+;;    starts-with? check, stripping the indentation that is the ONLY thing
+;;    distinguishing this from a genuine top-level declaration. ──────────
+(assert= "an indented, well-formed-looking roles: example line inside notes: is never mistaken for the real field"
+         ["specifier" "coder" "cleaner" "architect" "hardender" "documenter" "QA"]
+         (routing-manifest-lib/read-roles
+          "id: BL-1\nnotes: |\n  Example: roles: [coder, QA] is what a declaration looks like.\n  On its own line:\n  roles: [coder, QA]\nstatus: todo\n"))
+
 ;; ── read-roles: an explicit flow-style list is read back exactly ──────────
 (assert= "roles: [coder, QA] is read back exactly as declared"
          ["coder" "QA"]
