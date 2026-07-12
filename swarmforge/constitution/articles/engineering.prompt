@@ -107,6 +107,21 @@
   test diffed the `os.tmpdir()` listing and flaked ~1-in-several runs when
   another worktree's concurrent `aps-backlog-*` temp dir appeared; fixed by
   asserting the specific created path.)
+- **The PROCESS TABLE is a shared global too — never assert on a `ps`/`pgrep`
+  match broad enough to catch another worktree's processes.** The rule above is
+  usually read as being about directories; it is not. A "no stray process
+  survived" check that greps the process table for a broad pattern (e.g. any
+  `handoffd.bb` whose command line contains `/tmp/tmp.`) matches processes the
+  test never started — several worktrees run the same suite concurrently, and any
+  one of them can leave an orphan that makes an innocent test fail, or (worse) can
+  be ABSENT at the moment you run, so the check passes for reasons that have
+  nothing to do with the code. Scope the assertion to markers or roots the test
+  ITSELF created (its own temp root path, its own recorded pids), never to a
+  pattern that a sibling worktree's process can satisfy. A green run proves
+  nothing here unless the pattern is unique to this test. (BL-326 scenario 05's
+  stray-daemon check grepped `ps` for `handoffd.bb` + `/tmp/tmp.` and passed only
+  because unrelated coder-worktree orphans happened to be gone at that moment —
+  same class as BL-112, for `ps` rather than a directory listing.)
 - **Never seed a test fixture from the real clock when the code under test
   reads the real clock too.** The no-real-timers ban above covers not just
   `setTimeout`/`sleep` but any `new Date()` / `Date.now()` used to BUILD fixture
