@@ -58,6 +58,31 @@ notes: |
        `roles:` list declares (mirrors the intake's own "near-always:
        coder, QA" framing) — the validator rejects a `roles:` list
        missing either.
+    4b. ABSENT AND UNREADABLE MUST NOT BE THE SAME ANSWER (added 2026-07-13 after the
+       architect's review of the first build). `routing_manifest_lib.bb`'s
+       `parse-roles-field` returns nil BOTH when `roles:` is absent AND when it is present
+       but not a flow-style `[...]` list — and nil means "full chain". So the reader
+       structurally cannot tell "no manifest" from "a manifest I could not read", and a
+       present-but-unparseable field silently discards the specifier's narrowing intent
+       with no error. That also means it escapes the validation in (3)/(4) entirely: those
+       checks only run on a list that parsed, so a malformed manifest is never rejected
+       "before promotion" as this ticket requires — it just looks absent. Two fixes:
+         a. ACCEPT BLOCK-STYLE LISTS. `roles:` followed by a block list (`- coder`) must be
+            read exactly like `roles: [coder, QA]`. Block style is THIS SCHEMA'S OWN
+            established convention for multi-item lists (`acceptance.steps:` uses it; only
+            `depends_on:` is flow-style), so a specifier writing it is following the schema,
+            not misusing it. Silently ignoring the schema's own list style defeats the
+            feature.
+         b. FAIL LOUD, NEVER SILENTLY FULL-CHAIN. A `roles:` field that is PRESENT but
+            cannot be parsed in any supported form is a validation ERROR rejected before
+            promotion — never a silent fall-through to the full chain. Only a genuinely
+            ABSENT field may default to the full chain. (Defaulting to the full chain is the
+            right SAFE behavior — it never narrows wrongly — but safety is not the issue:
+            the human/specifier gets no signal that their manifest was thrown away.)
+       NOTE FOR THE CODER: scenarios `routing-manifest-field-05` and `-06` were added to the
+       feature file for this. They need their step handlers wired in the same parcel — an
+       unhandled scenario hard-fails the acceptance runner and blocks the hardener's gate
+       (BL-233).
     5. OUT OF SCOPE (future slices, do not build now): actually bringing a
        role's tmux session up/down based on the manifest (the "per-role
        lifecycle" slice), `active_backlog_max_depth 1` serialization
