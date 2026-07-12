@@ -147,6 +147,21 @@ You are the hardender.
   fabricate it: do a best-effort coverage-gap hardening pass with the existing
   test suite (add tests for uncovered or weakly-asserted changed behavior), note
   the missing tooling, and forward — a hardening pass must not stall the pipeline.
+- **A test that spawns `handoffd.bb` with a root under this repo will be killed by
+  the LIVE swarm's own `handoffd_supervisor.bb` — that is the environment reaping
+  your fixture, not a defect in the ticket's code.** The supervisor's
+  `handoffd-pids-for-root` reaps every `handoffd.bb` process whose command line
+  merely CONTAINS the project root as a substring
+  (`swarmforge/scripts/handoffd_supervisor.bb:195`), so a fixture rooted anywhere
+  beneath the repo (e.g. `<repo>/tmp/...`) matches, is TERM'd on the supervisor's
+  ~30–60s cadence, and the test flakes intermittently. This is CURRENT `main`'s
+  behavior, not a stale or pre-fix copy — do not go looking for a fix that has
+  already landed, because none has. Before blaming the code under test: re-run the
+  fixture from a path-isolated copy OUTSIDE the project root (a clean repeated run
+  there proves the environment, not the ticket, was at fault), and check
+  `.swarmforge/daemon/handoffd-supervisor.log` for `reap-orphan` lines timed to
+  your failures. (BL-316: flaked ~50%, and was independently rediscovered by the
+  cleaner, the architect, and the hardener on one ticket.)
 
 ## Lessons Discipline
 - After a hardening mistake or a non-obvious root cause (a survivor class
