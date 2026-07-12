@@ -472,6 +472,20 @@ test('POST /reply-ack requires control auth, same as the other write routes', as
   });
 });
 
+test('POST /reply-ack with a differently-shaped body (not {id}) is refused as a bad request, cursor untouched', async () => {
+  const target = mkTmp();
+  await withBridge(target, { pollIntervalMs: 20 }, async (handle) => {
+    writeOutboxEntries(target, [{ id: 'r1', threadId: 'SUP-1', text: 'hi' }]);
+    const res = await fetch(`http://127.0.0.1:${handle.port}/reply-ack`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...replyAckHeaders() },
+      body: JSON.stringify({ notAnId: 'r1' }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(fs.existsSync(cursorFile(target)), false, 'a rejected ack must not create the cursor file');
+  });
+});
+
 // telegram-topic-03/BL-320-01: a dropped connection must not silently eat
 // the reply - a REAL destroyed TCP connection (AbortController.abort()
 // resets the underlying socket rather than cleanly ending the stream,

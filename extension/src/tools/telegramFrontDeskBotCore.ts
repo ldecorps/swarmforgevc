@@ -269,6 +269,53 @@ export async function applyPollCycleResult(
   }
 }
 
+export interface ReplyRelayLoopState {
+  consecutiveFailures: number;
+}
+
+export interface ReplyRelayCycleResult {
+  state: ReplyRelayLoopState;
+  delayMs: number;
+  degradedWarning: boolean;
+}
+
+// BL-320: same pure decision/adapter-sequencing split as runPollCycle/
+// applyPollCycleResult above, for subscribeReplies's own reconnect-with-
+// backoff loop. ok=true covers BOTH a real successful relay AND the SSE
+// stream ending cleanly (server-closed, no body) - neither is a fault, but
+// a brief pause (backoffBaseMs) before resubscribing is still worth it
+// over a hot reconnect loop, mirrored below by returning that same delay
+// on success rather than 0.
+export function computeReplyRelayCycleResult(state: ReplyRelayLoopState, ok: boolean, config: PollBackoffConfig): ReplyRelayCycleResult {
+  if (ok) {
+    return { state: { consecutiveFailures: 0 }, delayMs: config.backoffBaseMs, degradedWarning: false };
+  }
+  const consecutiveFailures = state.consecutiveFailures + 1;
+  return {
+    state: { consecutiveFailures },
+    delayMs: computePollBackoffMs(consecutiveFailures, config),
+    degradedWarning: shouldRaiseDegradedWarning(consecutiveFailures, config),
+  };
+}
+
+// errorMessage is only ever read when degradedWarning is true (a failed
+// cycle) - undefined on the success path, where it is never referenced.
+export async function applyReplyRelayCycleResult(
+  cycle: ReplyRelayCycleResult,
+  errorMessage: string | undefined,
+  writeWarning: (message: string) => void,
+  wait: (ms: number) => Promise<void>
+): Promise<void> {
+  if (cycle.degradedWarning) {
+    writeWarning(
+      `front-desk bot: reply-relay degraded - ${cycle.state.consecutiveFailures} consecutive reconnect failures, still retrying: ${errorMessage}\n`
+    );
+  }
+  if (cycle.delayMs > 0) {
+    await wait(cycle.delayMs);
+  }
+}
+
 // BL-302 LOOP ISOLATION: runs `start` and, if it THROWS (a fault - never
 // on a normal return, which stays exactly as-is; subscribeReplies's own
 // silent-stop-on-stream-end gap is an explicitly out-of-scope follow-up),
