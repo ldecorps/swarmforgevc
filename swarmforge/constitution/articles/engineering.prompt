@@ -70,6 +70,18 @@
   and never wait on one to be ready; that is what the testable-module boundary
   above exists to enable. Test doubles are the standard practice — use them
   always, not as a fallback.
+- **A shell test that sources or invokes `swarmforge.sh` must `env -u
+  SWARMFORGE_CONFIG` before setting its own fixture conf path**, or the
+  caller's own live launch override (now a normal, correct thing to have set
+  in your shell per BL-313) silently replaces the fixture the test meant to
+  exercise, false-failing on the tester's own environment rather than the
+  code under test. Match the pattern already in
+  `test_backlog_depth_pack_override.sh`: `env -u SWARMFORGE_CONFIG
+  SWARMFORGE_CONFIG="<fixture-conf>" ...`. (QA, 2026-07-12: a shell with
+  `SWARMFORGE_CONFIG=lean-drain.conf` set leaked into
+  `test_coordinator_provisioned_infrastructure.sh`'s 2-pack check and
+  false-failed it; confirmed still failing today under that same
+  environment — tracked as BL-315.)
 - **Never target the test's own process from code under test.** Never pass a
   test's own `process.pid` (or the test runner's PID) to `kill()`-style code
   under test; spawn a disposable child process and target that instead, so a

@@ -1,0 +1,53 @@
+id: BL-315
+title: "test_coordinator_provisioned_infrastructure.sh false-fails when the caller's shell has SWARMFORGE_CONFIG set"
+milestone: M8
+status: todo
+type: bug
+priority: 30
+direction: expedite
+depends_on: []
+source: "QA rule_proposal (engineering scope) while verifying BL-313, 2026-07-12: a shell with SWARMFORGE_CONFIG=lean-drain.conf leaked into this test's 2-pack check and false-failed it. Confirmed still reproducible against this live session's own shell before filing."
+
+notes: |
+  CONFIRMED live: running `bash swarmforge/scripts/test/
+  test_coordinator_provisioned_infrastructure.sh` in this session's own
+  shell (which has `SWARMFORGE_CONFIG=swarmforge/packs/lean-drain.conf`
+  set, per BL-313's now-normal usage) reproduces exactly:
+
+    FAIL: 02: a 2-pack (coder, cleaner) must report pack size 2
+
+  The test never clears an inherited `SWARMFORGE_CONFIG` before pointing
+  `CONFIG_FILE` at its own 2-role fixture conf, so the test process's
+  outer-shell override wins instead, and the fixture's declared pack size
+  is never what gets exercised. `test_backlog_depth_pack_override.sh`
+  (added for BL-313) already has the fix pattern: `env -u SWARMFORGE_CONFIG
+  SWARMFORGE_CONFIG="<fixture-conf>" ...` before invoking
+  `swarmforge.sh`/whatever sources it.
+
+  This is now a live, reproducible failure for anyone running the suite
+  from a shell that has `SWARMFORGE_CONFIG` set — which BL-313 makes a
+  normal, correct thing to have set, so this is likely to keep biting
+  people going forward, not a one-off.
+
+  SCOPE: apply the same `env -u SWARMFORGE_CONFIG` guard to
+  `test_coordinator_provisioned_infrastructure.sh` wherever it invokes/
+  sources `swarmforge.sh` with its own fixture conf. No behavior change to
+  `swarmforge.sh` itself or to the test's assertions — purely fixing the
+  test's own environment isolation. The corresponding engineering rule is
+  already recorded (this session, `swarmforge/constitution/articles/
+  engineering.prompt`, Test Speed And Isolation) so future tests follow
+  the same pattern; this ticket is the fix for the one test that predates
+  it.
+
+  E2E QA PROCEDURE: run the test with `SWARMFORGE_CONFIG` unset -> PASS
+  (already true today); run it again with `SWARMFORGE_CONFIG` pointed at
+  any real pack conf (e.g. `swarmforge/packs/lean-drain.conf`) -> PASS
+  (currently FAILs before this fix).
+
+acceptance:
+  feature: specs/features/BL-315-coordinator-infra-test-config-leak.feature
+  steps:
+    - "The test passes when the caller's shell has no SWARMFORGE_CONFIG set"
+    - "The test passes when the caller's shell has SWARMFORGE_CONFIG pointed at a real pack conf"
+
+mutation_cost: low
