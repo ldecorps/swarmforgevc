@@ -15,6 +15,7 @@ import { computeRoleGateStatesLive, filterPendingGates } from './gateSnapshot';
 import { readSwarmRoles } from '../swarm/tmuxClient';
 import { readThread, writeThread, appendMessage } from './supportThreadStore';
 import { appendOperatorEvent, readNewReplyOutboxEntries } from './operatorEventQueue';
+import { readPersistedCursor, writePersistedCursor, advanceCursorOnAck } from './replyRelayCursor';
 import {
   DeviceRegistry,
   DeviceScope,
@@ -37,6 +38,9 @@ const GATE_ANSWER_MAX_BODY_BYTES = 16 * 1024;
 // same cap posture as the gate-answer body above; Telegram's own message
 // length limit is far under this.
 const TELEGRAM_INBOUND_MAX_BODY_BYTES = 16 * 1024;
+// BL-320: a reply-ack body ({id}) is a single idempotency-key string -
+// same small-body posture as the gate-answer/telegram-inbound bodies above.
+const REPLY_ACK_MAX_BODY_BYTES = 4 * 1024;
 
 export interface BridgeHandle {
   port: number;
@@ -295,6 +299,45 @@ function handleTelegramInboundRoute(req: http.IncomingMessage, res: http.ServerR
   });
 }
 
+// BL-320: {id} - the idempotency key of the outbox entry the bot just
+// finished processing (posted to Telegram, or decided to drop as
+// unmapped) - the ONLY thing that ever advances the persisted cursor.
+function isReplyAckRequestShape(value: unknown): value is { id: string } {
+  return !!value && typeof value === 'object' && typeof (value as Record<string, unknown>).id === 'string';
+}
+
+function isReplyAckRoute(req: http.IncomingMessage, url: string): boolean {
+  return req.method === 'POST' && url === '/reply-ack';
+}
+
+// BL-320: the ack-driven cursor's only writer. Deliberately stateless
+// (re-reads the persisted cursor fresh on every call rather than
+// threading per-bridge-instance mutable state through the write-route
+// table) - acks are low-frequency (one human reply at a time) so the tiny
+// extra file read/write per ack costs nothing, and it keeps this route the
+// same "plain function of (targetPath, body)" shape as every other route
+// here instead of needing closure access to startBridge's internals.
+// advanceCursorOnAck (pure) refuses to advance past an entry that does not
+// match the ack's id, so a stale or out-of-order ack is a harmless no-op,
+// never a corrupted cursor.
+function handleReplyAckRoute(req: http.IncomingMessage, res: http.ServerResponse, targetPath: string, registry: DeviceRegistry): void {
+  if (!requireControlAuth(req, res, registry)) {
+    return;
+  }
+  readValidatedBody(req, res, REPLY_ACK_MAX_BODY_BYTES, isReplyAckRequestShape, 'expected a JSON body of {id}').then((value) => {
+    if (!value) {
+      return;
+    }
+    const { ackedIndex } = readPersistedCursor(targetPath);
+    const { entries } = readNewReplyOutboxEntries(targetPath, ackedIndex);
+    const nextAckedIndex = advanceCursorOnAck(ackedIndex, value.id, entries);
+    if (nextAckedIndex !== ackedIndex) {
+      writePersistedCursor(targetPath, { ackedIndex: nextAckedIndex });
+    }
+    respondJson(res, 200, { success: true, ackedIndex: nextAckedIndex });
+  });
+}
+
 interface WriteRoute {
   matches: (req: http.IncomingMessage, url: string) => boolean;
   handle: (req: http.IncomingMessage, res: http.ServerResponse, targetPath: string, registry: DeviceRegistry) => void;
@@ -306,6 +349,7 @@ interface WriteRoute {
 const writeRoutes: WriteRoute[] = [
   { matches: isGateAnswerRoute, handle: handleGateAnswerRoute },
   { matches: isTelegramInboundRoute, handle: handleTelegramInboundRoute },
+  { matches: isReplyAckRoute, handle: handleReplyAckRoute },
 ];
 
 function requestPath(req: http.IncomingMessage): string {
@@ -462,6 +506,25 @@ export function startBridge(
         res.write(`data: ${snapshot}\n\n`);
         sseClients.add(res);
         req.on('close', () => sseClients.delete(res));
+        // BL-320: replay every entry the persisted cursor still considers
+        // unacked to THIS freshly (re)connected client - covers both "the
+        // previous connection dropped mid-relay before acking" and "the
+        // bridge itself restarted" (the persisted cursor, re-read fresh
+        // here rather than trusted from a stale in-memory copy, is exactly
+        // what survived the restart). Sent only to the new client, not
+        // broadcast to every already-connected one, since an existing
+        // client has no reason to see history it may have already acked.
+        // Deliberately does NOT touch emittedIndex: /events can have more
+        // than one live client (the front-desk bot AND a holistic-UI
+        // viewer both subscribe), and emittedIndex is the poll tick's own
+        // "already broadcast to everyone" pointer - advancing it here from
+        // a single new client's catch-up replay would make the NEXT poll
+        // tick skip broadcasting that same still-unacked range to every
+        // OTHER already-connected client, silently starving them of an
+        // entry they never actually received. The bot's own idempotency-
+        // by-id dedup already makes an extra, unadvanced-emittedIndex
+        // redelivery on the very next tick harmless.
+        relayEntriesFrom(readPersistedCursor(targetPath).ackedIndex, [res]);
         return;
       }
 
@@ -488,14 +551,20 @@ export function startBridge(
       res.end(JSON.stringify({ error: 'not_found' }));
     });
 
-    // BL-281 telegram-topic-03: how the Operator's reply reaches the bot -
-    // the disposable Operator (via operator_reply.bb) appends {threadId,
-    // text} to .swarmforge/operator/telegram-reply-outbox.jsonl;
-    // lastReplyLineIndex is this bridge's own "already delivered" cursor
-    // (mirrors lastSnapshot's diff role, but for an append-only log
-    // instead of a whole-state snapshot) so a reconnecting/slow poll never
-    // redelivers or drops an entry.
-    let lastReplyLineIndex = 0;
+    // BL-281/BL-320 telegram-topic-03: how the Operator's reply reaches the
+    // bot - the disposable Operator (via operator_reply.bb) appends {id,
+    // threadId, text} to .swarmforge/operator/telegram-reply-outbox.jsonl.
+    // emittedIndex is an in-memory, best-effort "already pushed to the
+    // CURRENTLY connected client(s)" pointer - it exists only to avoid
+    // re-broadcasting the same unacked entry on every single poll tick; it
+    // carries no durability requirement of its own (losing it costs at
+    // most one redundant replay, which the bot's own idempotency-by-id
+    // guard already absorbs harmlessly). The genuinely durable, at-least-
+    // once-delivery cursor is the ACKED one persisted in
+    // telegram-reply-relay-cursor.json (replyRelayCursor.ts) - that file,
+    // never this variable, is what the "/events" connect handler above
+    // replays from on every fresh connection.
+    let emittedIndex = readPersistedCursor(targetPath).ackedIndex;
 
     // Split out of the poll tick below so that callback's own branch count
     // stays low - each half of the tick (state snapshot, reply relay) is
@@ -511,11 +580,11 @@ export function startBridge(
       return snapshot;
     }
 
-    function relayNewReplyOutboxEntries(sinceIndex: number): number {
+    function relayEntriesFrom(sinceIndex: number, clients: Iterable<http.ServerResponse>): number {
       const { entries, totalLines } = readNewReplyOutboxEntries(targetPath, sinceIndex);
       for (const entry of entries) {
         const payload = JSON.stringify(entry);
-        for (const client of sseClients) {
+        for (const client of clients) {
           client.write(`event: telegram-reply\ndata: ${payload}\n\n`);
         }
       }
@@ -527,7 +596,7 @@ export function startBridge(
         return;
       }
       lastSnapshot = broadcastSnapshotIfChanged(lastSnapshot);
-      lastReplyLineIndex = relayNewReplyOutboxEntries(lastReplyLineIndex);
+      emittedIndex = relayEntriesFrom(emittedIndex, sseClients);
     }, pollIntervalMs);
     poll.unref();
 

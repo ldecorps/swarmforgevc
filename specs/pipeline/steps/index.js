@@ -118,6 +118,7 @@ const DOMAINS = [
   require('./coordinatorModelConfigurableSteps'),
   require('./coordinatorInfraTestConfigLeakSteps'),
   require('./contextClearAllRolesSteps'),
+  require('./replyRelayAtLeastOnceSteps'),
 ];
 
 function registerSteps(registry) {
