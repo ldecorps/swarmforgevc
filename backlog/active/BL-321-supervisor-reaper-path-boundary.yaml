@@ -75,6 +75,6 @@ acceptance:
     - "A spared daemon is left able to keep delivering handoffs"
     - "The supervisor never reaps itself"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: low
