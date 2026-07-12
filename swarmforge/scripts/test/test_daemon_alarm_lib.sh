@@ -205,4 +205,74 @@ bb "$ROOT/attachments_absent_test.bb" | grep -q "attachments-absent-ok" \
   || fail "BL-286 attachments-02: expected the pre-BL-286 7-arg form to carry no :attachments key"
 pass "BL-286 attachments-02: the pre-existing 7-arg form is unaffected - carries no :attachments key"
 
+# ── BL-326: test-fixture-root? - the automatic, no-cooperation-required signal ──
+cat > "$ROOT/test_fixture_root_test.bb" <<EOF
+(load-file "$SCRIPT_DIR/../daemon_alarm_lib.bb")
+(assert (true? (daemon-alarm-lib/test-fixture-root? "$ROOT/nested/fixture")) "01: a path under the system temp dir must read as a test fixture")
+(assert (false? (daemon-alarm-lib/test-fixture-root? "/home/carillon/swarmforgevc")) "02: a real, non-temp project root must NOT read as a test fixture")
+(assert (false? (daemon-alarm-lib/test-fixture-root? "/srv/swarm")) "03: an arbitrary non-temp root must NOT read as a test fixture")
+(println "test-fixture-root-ok")
+EOF
+bb "$ROOT/test_fixture_root_test.bb" | grep -q "test-fixture-root-ok" \
+  || fail "BL-326: test-fixture-root? did not correctly distinguish temp vs real roots"
+pass "BL-326: test-fixture-root? identifies a temp-directory root, and only a temp-directory root"
+
+# ── BL-326 test-suite-never-emails-02: a test-fixture root never sends, even fully configured ──
+cat > "$ROOT/suppressed_send_test.bb" <<EOF
+(load-file "$SCRIPT_DIR/../daemon_alarm_lib.bb")
+(let [conf-file "$ROOT/fixture.conf"
+      _ (spit conf-file "config notify_email_to real-human@example.com\n")
+      result (daemon-alarm-lib/send-configured-email!
+              "$ROOT/nested/fixture" conf-file "subj" "text"
+              {:already-warned?! (fn [] false)
+               :log-warning! (fn [& _] (throw (ex-info "must never warn for a suppressed send" {})))
+               :mark-warned! (fn [] (throw (ex-info "must never mark-warned for a suppressed send" {})))})]
+  (assert (false? (:success result)) "expected success=false for a test-fixture root")
+  (assert (= :test-fixture-suppressed (:reason result)) "expected :reason :test-fixture-suppressed")
+  (println "suppressed-send-ok"))
+EOF
+env RESEND_API_KEY=fake-real-looking-key bb "$ROOT/suppressed_send_test.bb" | grep -q "suppressed-send-ok" \
+  || fail "BL-326 test-suite-never-emails-02: a fully-configured (real key + real recipient) test-fixture-root send must still be suppressed"
+pass "BL-326 test-suite-never-emails-02: a daemon rooted in a throwaway test directory never sends mail, even with a real key and a real recipient configured"
+
+# ── BL-326: a REAL (non-temp) root still sends normally - the fail-safe is scoped, not global ──
+cat > "$ROOT/real_root_still_sends_test.bb" <<EOF
+(load-file "$SCRIPT_DIR/../daemon_alarm_lib.bb")
+(let [conf-file "$ROOT/fixture2.conf"
+      _ (spit conf-file "config notify_email_to real-human@example.com\n")
+      sent (atom false)
+      real-post! (fn [_api-key _msg] (reset! sent true) {:success true})]
+  (with-redefs [daemon-alarm-lib/default-post! real-post!]
+    (daemon-alarm-lib/send-configured-email!
+     "/home/carillon/swarmforgevc" conf-file "subj" "text"
+     {:already-warned?! (fn [] false) :log-warning! (fn [& _] nil) :mark-warned! (fn [] nil)}))
+  (assert (true? @sent) "expected a REAL (non-temp) project root to still attempt a real send")
+  (println "real-root-sends-ok"))
+EOF
+env RESEND_API_KEY=fake-key bb "$ROOT/real_root_still_sends_test.bb" | grep -q "real-root-sends-ok" \
+  || fail "BL-326: a real project root's alarm must still attempt to send - the fail-safe must not suppress everything"
+pass "BL-326: a real (non-temp) project root's alarm still attempts to send - the fail-safe is scoped to test fixtures only"
+
+# ── BL-326 test-suite-never-emails-04: a test-fixture root still warns loudly
+#    when configured-but-keyless - the fail-safe intercepts only the actual
+#    network POST, never the :missing-api-key decision above it ──────────
+cat > "$ROOT/suppressed_still_warns_test.bb" <<EOF
+(load-file "$SCRIPT_DIR/../daemon_alarm_lib.bb")
+(let [conf-file "$ROOT/fixture3.conf"
+      _ (spit conf-file "config notify_email_to real-human@example.com\n")
+      warned (atom false)
+      result (daemon-alarm-lib/send-configured-email!
+              "$ROOT/nested/fixture" conf-file "subj" "text"
+              {:already-warned?! (fn [] false)
+               :log-warning! (fn [msg] (reset! warned msg))
+               :mark-warned! (fn [] nil)})]
+  (assert (false? (:success result)) "expected success=false for a test-fixture root with no key")
+  (assert (= :missing-api-key (:reason result)) "expected :reason :missing-api-key, NOT :test-fixture-suppressed - the key really is missing here")
+  (assert (string? @warned) "expected the loud missing-key warning to still fire for a test-fixture root")
+  (println "suppressed-still-warns-ok"))
+EOF
+env -u RESEND_API_KEY bb "$ROOT/suppressed_still_warns_test.bb" | grep -q "suppressed-still-warns-ok" \
+  || fail "BL-326 test-suite-never-emails-04: a configured-but-keyless test-fixture-root daemon must still warn loudly (BL-215 behavior preserved)"
+pass "BL-326 test-suite-never-emails-04: a configured-but-keyless daemon still warns loudly even when its root is a test fixture, and does not send an email"
+
 echo "ALL PASS"

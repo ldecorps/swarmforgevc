@@ -122,6 +122,7 @@ const DOMAINS = [
   require('./coordinatorProviderConfigurableSteps'),
   require('./supervisorReaperPathBoundarySteps'),
   require('./resumeOrphanedInProcessSteps'),
+  require('./testSuiteNeverEmailsSteps'),
 ];
 
 function registerSteps(registry) {

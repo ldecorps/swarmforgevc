@@ -23,6 +23,22 @@ SUPERVISOR="$SCRIPT_DIR/../handoffd_supervisor.bb"
 # scenarios below.
 HANDOFFD="$(cd "$SCRIPT_DIR/.." && pwd)/handoffd.bb"
 
+# This suite deliberately KILLS daemons to exercise BL-144's alarm-and-halt.
+# Every such case fires a real alarm, which reads notify_email_to from the
+# effective swarmforge.conf (the packs configure a REAL address) and
+# RESEND_API_KEY from the daemon's inherited env - so a plain `npm test` on a
+# developer/agent machine mails a human, once per killed daemon. That happened:
+# 136 failure logs across 253 temp roots, i.e. ~136 real emails to the operator.
+#
+# The BL-215 case below already knew this and guarded ITSELF with `env -u
+# RESEND_API_KEY` - but that guard is per-invocation, so cases 01/02/04 (the
+# ones that actually kill daemons) were never covered by it. Unset it ONCE for
+# the whole suite instead: no case asserts alarm_email==true, so nothing here
+# depends on a mail actually being sent, and the BL-215 case's own `env -u`
+# remains correct and redundant. Same class as BL-315's config leak: real
+# operator env must never reach a test fixture.
+unset RESEND_API_KEY
+
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
@@ -335,6 +351,15 @@ COUNT="$(handoffd_process_count)"
 [[ "$COUNT" == "1" ]] \
   || fail "04: expected exactly one handoffd process after simultaneous launcher+supervisor starts; found $COUNT"
 pass "04: simultaneous launcher and supervisor starts still yield exactly one handoffd process"
+
+# BL-326: the race's WINNER is still a live daemon at this point (COUNT==1
+# just confirmed it) - every other case transition in this file starts with
+# stop_daemon for exactly this reason, but this one didn't, so the winner
+# was never stopped before make_fixture below overwrote $ROOT/$DAEMON_DIR
+# for a fresh fixture. Nothing thereafter ever referenced its pid again -
+# a real, permanently orphaned /tmp/tmp.* daemon on every single run of
+# this suite, the exact class of stray process BL-326 found 8 of.
+stop_daemon
 
 # ── BL-215: a dead-daemon alarm with a configured recipient but no
 #     RESEND_API_KEY in the daemon's own env warns loudly instead of no-oping
