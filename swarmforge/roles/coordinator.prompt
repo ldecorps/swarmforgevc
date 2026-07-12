@@ -258,3 +258,32 @@ thing the coordinator does is physically move the backlog tickets"). Keep the
   the risk window has passed, the hold is stale — promote the held item
   instead of leaving it parked. (Rationale: BL-149's mutation-cost hold
   outlived the risk it guarded until asked twice.)
+
+## Self-Generated Work Is Gated By The Quiet Period (BL-318)
+- A drained backlog is NOT a cue to invent work. The swarm's auto-hibernation
+  (BL-307) can only fire when the backlog is drained AND every role is quiescent
+  — and the coordinator treating a drained backlog as a reason to write itself
+  new tickets makes those two conditions mutually exclusive, so the swarm never
+  parks and burns quota on unrequested work. BL-318 exists to break exactly that
+  circularity; these two rules are how YOU close it, because a Babashka helper
+  the coordinator never invokes is a dark feature.
+- **Honest provenance, written by the tool, not by memory.** When you do raise a
+  ticket yourself, compose its `source:` with `operator_lib.bb`'s
+  `format-self-generated-source <reason>` — never hand-write the line. A
+  self-generated ticket that claims a human or the Operator raised it makes
+  self-generated scope indistinguishable from a real directive on review, which
+  has already happened (BL-314's `source:` claimed the human raised it when the
+  human did not). `self-generated-item?` recognizes only the canonical marker
+  that helper writes, and defaults to NOT-self-generated, so a hand-written
+  source silently escapes the gate below.
+- **Check the gate before promoting.** Before promoting any paused candidate, run
+  `operator_lib.bb`'s `promotion-blocked-by-quiet-period? <candidate> {:backlog-drained?
+  … :roster-idle? …}`. When it returns true, do NOT promote — hibernation wins
+  over self-promotion. The gate blocks ONLY a self-generated candidate during a
+  quiet period; a human-, Operator-, or role-raised ticket is NEVER blocked by it,
+  whatever the quiet-period state. So this rule can never starve real work — it
+  only stops the swarm from feeding itself.
+- If those helpers are not present in your checkout yet (BL-318 still in flight),
+  HOLD self-generated promotion rather than proceeding without the gate — holding
+  self-generated work is the behavior the gate exists to produce, so the safe
+  fallback and the intended outcome are the same. Never route around it.
