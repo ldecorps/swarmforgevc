@@ -81,12 +81,23 @@
    the tracked default swarmforge/swarmforge.conf when no launch persisted
    one (a bare launch, or a test/compliance-battery fixture that writes a
    conf file directly and never runs swarmforge.sh at all - both must keep
-   reading the default file exactly as before)."
+   reading the default file exactly as before).
+
+   BL-313 bounce (QA): a RELATIVE persisted path (produced whenever
+   SWARMFORGE_CONFIG itself was exported as a relative path at launch) must
+   resolve against project-root, never against the calling process's own
+   cwd - every pipeline role invokes swarm_handoff.bb/ready_for_next.bb
+   from its own .worktrees/<role> directory, never from project-root, so a
+   bare relative string silently failed to resolve everywhere except the
+   original launch cwd. (fs/path project-root persisted) is defense in
+   depth even though swarmforge.sh now also normalizes to absolute before
+   persisting: java.nio's own Path/resolve returns an ABSOLUTE second
+   argument verbatim, so this is correct for both cases with no branch."
   [project-root]
   (let [persisted (get (swarm-identity-lib/read-swarm-identity project-root)
                         "active_backlog_max_depth_conf_path")]
     (if (not-empty persisted)
-      (fs/path persisted)
+      (fs/path project-root persisted)
       (apply fs/path project-root default-conf-relpath))))
 
 (defn read-max-depth

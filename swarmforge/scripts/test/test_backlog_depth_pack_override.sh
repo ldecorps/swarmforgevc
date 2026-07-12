@@ -82,6 +82,31 @@ pass "depth-cap-override-02: a bare launch (no override) persists the default co
   || fail "03: the pack conf's own 1 must be untouched"
 pass "depth-cap-override-04: resolving/persisting the effective cap never rewrites any conf file's own declared value"
 
+# ── 5 (QA bounce 2026-07-12): a RELATIVE SWARMFORGE_CONFIG is normalized to
+#      an ABSOLUTE path before being persisted, so the value resolves
+#      identically regardless of which cwd later reads it ─────────────────
+ROOT5="$(mk_root)"
+cat > "$ROOT5/swarmforge/swarmforge.conf" <<'CONF'
+config active_backlog_max_depth -1
+window specifier claude master --model x
+CONF
+mkdir -p "$ROOT5/altpack"
+cat > "$ROOT5/altpack/lean.conf" <<'CONF'
+config active_backlog_max_depth 1
+window specifier claude master --model x
+CONF
+# A RELATIVE SWARMFORGE_CONFIG, exactly the ticket's own live-confirmation
+# example (SWARMFORGE_CONFIG=swarmforge/packs/lean-drain.conf) - resolved
+# relative to WORKING_DIR ($ROOT5), not the calling shell's own cwd.
+( cd "$ROOT5" && env -u SWARMFORGE_CONFIG SWARMFORGE_CONFIG="altpack/lean.conf" \
+  zsh -c "source '$SWARMFORGE_SH' '$ROOT5'; parse_config; check_primacy; write_swarm_identity_file" )
+IDENTITY5="$ROOT5/.swarmforge/swarm-identity"
+PERSISTED5="$(read_identity_value "$IDENTITY5" active_backlog_max_depth_conf_path)"
+[[ "$PERSISTED5" == "$ROOT5/altpack/lean.conf" ]] \
+  || fail "05: expected a relative SWARMFORGE_CONFIG normalized to an absolute path before persisting, got: $PERSISTED5"
+pass "depth-cap-override-05: a relative SWARMFORGE_CONFIG is normalized to absolute before being persisted"
+rm -rf "$ROOT5"
+
 rm -rf "$ROOT1" "$ROOT2"
 
 # ── 4: the launch banner's source states the effective cap and its source
