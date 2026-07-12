@@ -35,7 +35,7 @@
     "PROVIDER_LIMIT_REACHED"
     "CONFIG_CHANGED"      ; swarmforge.conf or a launch script changed
     "TASK_ARRIVED"        ; a new handoff/backlog item landed
-    "TELEGRAM_TOPIC_MESSAGE"}) ; BL-281: an inbound Telegram forum-topic
+    "TELEGRAM_TOPIC_MESSAGE"  ; BL-281: an inbound Telegram forum-topic
                                ; message was demuxed to a SUP-### thread -
                                ; per-subject (:subject = the thread id,
                                ; like AGENT_EXITED/HUMAN_COMMAND/TASK_ARRIVED
@@ -44,6 +44,13 @@
                                ; to one wake (event-key dedup), but a
                                ; DIFFERENT thread's message must survive as
                                ; its own distinct pending event.
+    "TELEGRAM_BL_TOPIC_MESSAGE"}) ; BL-325: an inbound reply typed into a
+                               ; BL-### backlog item's OWN topic (BL-298's
+                               ; producer) - consumed deterministically by
+                               ; operator_runtime.bb's bl-topic-approval-
+                               ; sweep! every tick (see partition-bl-topic-
+                               ; events below), never dispatched to the LLM
+                               ; Operator's own reasoning.
 
 (def coalescing-types
   "Event types where a second pending copy adds nothing — the LLM will
@@ -63,6 +70,20 @@
 
 (defn valid-event? [{:keys [type]}]
   (contains? event-types type))
+
+(defn partition-bl-topic-events
+  "BL-325: splits pending events into TELEGRAM_BL_TOPIC_MESSAGE events (a
+   human's reply typed into a backlog item's own topic - to be consumed
+   deterministically, THIS tick, by the approve relay) and everything else
+   (left untouched for the normal dispatch/launch path). Consuming these
+   here rather than folding them into an LLM Operator dispatch means the
+   answer reaches the gated role's pane without waiting on an Opus launch -
+   the ticket's own scenario-05 ordering guarantee (the item must not
+   complete before the human's answer arrives)."
+  [pending-events]
+  (let [bl-topic? #(= (:type %) "TELEGRAM_BL_TOPIC_MESSAGE")]
+    {:to-consume (filterv bl-topic? pending-events)
+     :remaining (remove bl-topic? pending-events)}))
 
 (defn should-enqueue?
   "True when new-event is worth appending given the events already pending.

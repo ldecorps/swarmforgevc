@@ -32,6 +32,25 @@ test('typed-events-01: a role whose gate newly captures maps to its currently-he
   assert.deepEqual(events, [{ type: 'NeedsApproval', backlogId: 'BL-500', payload: {} }]);
 });
 
+test('BL-325: a captured gate carrying a snippet puts it into the NeedsApproval payload', () => {
+  const prev = snapshot({ gates: [{ role: 'coder', gated: false }] });
+  const curr = snapshot({
+    gates: [{ role: 'coder', gated: true, snippet: 'Proceed with the migration? (y/n)' }],
+    roleTicket: { coder: 'BL-500' },
+  });
+  const events = deriveSwarmEvents(prev, curr);
+  assert.deepEqual(events, [
+    { type: 'NeedsApproval', backlogId: 'BL-500', payload: { snippet: 'Proceed with the migration? (y/n)' } },
+  ]);
+});
+
+test('BL-325: a captured gate with no snippet still emits payload {} (regression)', () => {
+  const prev = snapshot({ gates: [{ role: 'coder', gated: false }] });
+  const curr = snapshot({ gates: [{ role: 'coder', gated: true }], roleTicket: { coder: 'BL-500' } });
+  const events = deriveSwarmEvents(prev, curr);
+  assert.deepEqual(events, [{ type: 'NeedsApproval', backlogId: 'BL-500', payload: {} }]);
+});
+
 test('typed-events-01: a backlog item newly in the done folder emits TaskCompleted tagged with it', () => {
   const prev = snapshot();
   const curr = snapshot({ backlog: { active: [], paused: [], done: ['BL-500'] } });

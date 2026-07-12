@@ -5,6 +5,7 @@ const {
   messageTextOf,
   subjectForTopic,
   topicForSubject,
+  resolveReplyTopicId,
   decideUpdateAction,
   pollAndForward,
   parseNextSseRecord,
@@ -70,6 +71,29 @@ test('topicForSubject returns undefined for a subject with no mapped topic', () 
 test('BL-294: topicForSubject returns undefined (not NaN) for a subject mapped under the DM default key', () => {
   const map = { [DEFAULT_SUBJECT_KEY]: 'SUP-1' };
   assert.equal(topicForSubject(map, 'SUP-1'), undefined);
+});
+
+// ── resolveReplyTopicId (pure) — BL-325: the reply egress's BL-### fallback ──
+
+test('BL-325: resolveReplyTopicId resolves a SUP-### threadId through the SUP map, unchanged from before', () => {
+  const supMap = { '7': 'SUP-1' };
+  assert.equal(resolveReplyTopicId(supMap, {}, 'SUP-1'), 7);
+});
+
+test('BL-325: resolveReplyTopicId falls back to the backlog map for a BL-### threadId', () => {
+  const supMap = { '7': 'SUP-1' };
+  const backlogMap = { 'BL-316': 62 };
+  assert.equal(resolveReplyTopicId(supMap, backlogMap, 'BL-316'), 62);
+});
+
+test('BL-325: resolveReplyTopicId prefers the SUP map when (hypothetically) both would match', () => {
+  const supMap = { '7': 'SUP-1' };
+  const backlogMap = { 'SUP-1': 99 };
+  assert.equal(resolveReplyTopicId(supMap, backlogMap, 'SUP-1'), 7);
+});
+
+test('BL-325: resolveReplyTopicId returns undefined when neither map has the threadId', () => {
+  assert.equal(resolveReplyTopicId({ '7': 'SUP-1' }, { 'BL-1': 2 }, 'BL-999'), undefined);
 });
 
 // ── decideUpdateAction (pure) — BL-281 telegram-topic-01/05, BL-294 auto-open-01..04 ──
