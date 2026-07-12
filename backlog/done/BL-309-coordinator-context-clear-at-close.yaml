@@ -1,7 +1,7 @@
 id: BL-309
 title: "Coordinator's session context is cleared at the safe idle boundary after each ticket's bookkeeping close"
 milestone: M8
-status: active
+status: done
 type: feature
 priority: 03
 direction: expedite

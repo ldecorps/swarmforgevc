@@ -307,6 +307,31 @@
 (assert-false "should-relaunch? does not fire while still drained"
               (operator-lib/should-relaunch? {:already-hibernated? true :backlog-drained? true}))
 
+;; ── BL-310: seed-race launch grace ────────────────────────────────────────
+
+(assert-true "within-launch-grace? true just after start (age < grace)"
+             (operator-lib/within-launch-grace? 0 60000 120000))
+(assert-false "within-launch-grace? false once the grace window has elapsed"
+              (operator-lib/within-launch-grace? 0 120000 120000))
+(assert-false "within-launch-grace? false well past the grace window"
+              (operator-lib/within-launch-grace? 0 300000 120000))
+(assert-false "within-launch-grace? false when started-at-ms is unknown (nil) - no process lifetime to gate on"
+              (operator-lib/within-launch-grace? nil 999999999 120000))
+
+(assert-false "should-hibernate? never fires within the launch grace window, even drained+idle"
+              (operator-lib/should-hibernate? {:backlog-drained? true :roster-idle? true
+                                                :already-hibernated? false :within-launch-grace? true}))
+(assert-true "should-hibernate? fires once the grace window has elapsed (drained+idle as before)"
+             (operator-lib/should-hibernate? {:backlog-drained? true :roster-idle? true
+                                               :already-hibernated? false :within-launch-grace? false}))
+
+(assert-true "should-relaunch? fires on fresh coordinator mail alone, with no promotable backlog work"
+             (operator-lib/should-relaunch? {:already-hibernated? true :backlog-drained? true
+                                              :fresh-coordinator-mail? true}))
+(assert-false "should-relaunch? does not fire with neither fresh mail nor promotable work"
+              (operator-lib/should-relaunch? {:already-hibernated? true :backlog-drained? true
+                                               :fresh-coordinator-mail? false}))
+
 ;; hibernate-swarm!/relaunch-swarm! — adapter-injected, spied via an atom.
 (let [calls (atom [])
       adapters {:backup-roster! (fn [] (swap! calls conj :backup-roster))
@@ -360,7 +385,46 @@
                 {:backlog-drained? false :roster-idle? true :already-hibernated? false :now-ms 3}
                 adapters)]
     (assert= "evaluate-closing-pass! does nothing on a normal in-flight tick" nil (:action result))
-    (assert= "evaluate-closing-pass! touched no adapter at all when neither trigger fires" [] @calls)))
+    (assert= "evaluate-closing-pass! touched no adapter at all when neither trigger fires" [] @calls))
+
+  ;; BL-310 swarm-seed-race-01: within grace, drained+idle -> does not hibernate
+  (reset! calls [])
+  (let [result (operator-lib/evaluate-closing-pass!
+                {:backlog-drained? true :roster-idle? true :already-hibernated? false :now-ms 4
+                 :within-launch-grace? true}
+                adapters)]
+    (assert= "BL-310-01: never hibernates within the launch grace window" nil (:action result))
+    (assert= "BL-310-01: touched no adapter at all" [] @calls))
+
+  ;; BL-310 swarm-seed-race-02: grace elapsed, drained+idle -> hibernates as before
+  (reset! calls [])
+  (let [result (operator-lib/evaluate-closing-pass!
+                {:backlog-drained? true :roster-idle? true :already-hibernated? false :now-ms 5
+                 :within-launch-grace? false}
+                adapters)]
+    (assert= "BL-310-02: hibernates once the grace window has elapsed" :hibernated (:action result))
+    (assert= "BL-310-02: invoked only the hibernate-side adapters"
+             [:backup-roster :empty-roster :kill-swarm-tmux :write-hibernation-state] @calls))
+
+  ;; BL-310 swarm-seed-race-03: hibernated, no promotable work, fresh mail -> relaunches
+  (reset! calls [])
+  (let [result (operator-lib/evaluate-closing-pass!
+                {:backlog-drained? true :roster-idle? true :already-hibernated? true :now-ms 6
+                 :fresh-coordinator-mail? true}
+                adapters)]
+    (assert= "BL-310-03: fresh coordinator mail wakes a hibernated swarm with no promotable ticket yet"
+             :relaunched (:action result))
+    (assert= "BL-310-03: invoked only the relaunch-side adapters"
+             [:restore-roster :relaunch-tmux :clear-hibernation-state] @calls))
+
+  ;; BL-310 swarm-seed-race-04: hibernated, no promotable work, no fresh mail -> stays hibernated
+  (reset! calls [])
+  (let [result (operator-lib/evaluate-closing-pass!
+                {:backlog-drained? true :roster-idle? true :already-hibernated? true :now-ms 7
+                 :fresh-coordinator-mail? false}
+                adapters)]
+    (assert= "BL-310-04: stays hibernated with no fresh mail and no promotable work" nil (:action result))
+    (assert= "BL-310-04: touched no adapter at all" [] @calls)))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)

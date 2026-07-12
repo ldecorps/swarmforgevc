@@ -352,6 +352,59 @@ check "BL-307/swarm-auto-hibernate-07: the backed-up roster is restored" \
   'grep -q "^coder" "$F/.swarmforge/roles.tsv"'
 rm -rf "$F"
 
+# ── 21-24. BL-310: seed-race launch grace. runtime-started-at-ms reuses the
+#          pid-file's own mtime (only ever written by the real -main
+#          while-loop, never by --tick-once) - these fixtures seed that same
+#          file by hand to simulate "the runtime started N ago" without a
+#          real long-running process ─────────────────────────────────────
+
+# ── 21: within the 2-minute grace window -> never hibernates, even drained+idle
+F="$(make_roster_fixture)"
+: > "$F/.swarmforge/operator/runtime.pid"
+OUT21="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
+check "swarm-seed-race-01: does not hibernate within the launch grace window" \
+  '[[ ! -f "$F/.swarmforge/operator/hibernation.json" ]] && [[ -s "$F/.swarmforge/roles.tsv" ]]'
+rm -rf "$F"
+
+# ── 22: grace window elapsed (pid-file mtime backdated) -> hibernates as before
+F="$(make_roster_fixture)"
+: > "$F/.swarmforge/operator/runtime.pid"
+touch -d "-5 minutes" "$F/.swarmforge/operator/runtime.pid"
+OUT22="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
+check "swarm-seed-race-02: hibernates once the grace window has elapsed" \
+  '[[ -f "$F/.swarmforge/operator/hibernation.json" ]] && [[ ! -s "$F/.swarmforge/roles.tsv" ]]'
+rm -rf "$F"
+
+# ── 23: hibernated, no promotable backlog work, fresh coordinator mail arrives
+#        -> relaunches (the mail-triggered up-trigger, not the backlog one) ──
+F="$(make_roster_fixture)"
+: > "$F/.swarmforge/roles.tsv"
+printf 'coder\tcoder\t%s/.worktrees/coder\tswarmforge-coder\tCoder\tclaude\ttask\n' "$F" \
+  > "$F/.swarmforge/roles.tsv.hibernate-backup"
+printf '{"hibernated":true,"hibernated_at_ms":1,"config_path":""}' \
+  > "$F/.swarmforge/operator/hibernation.json"
+mkdir -p "$F/.swarmforge/handoffs/coordinator/inbox/new"
+printf 'from: specifier\nto: coordinator\npriority: 00\ntype: note\n\nbody\n' \
+  > "$F/.swarmforge/handoffs/coordinator/inbox/new/00_x_from_specifier_to_coordinator.handoff"
+OUT23="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
+check "swarm-seed-race-03: fresh coordinator mail relaunches a hibernated swarm with no promotable ticket yet" \
+  '[[ ! -f "$F/.swarmforge/operator/hibernation.json" ]]'
+check "swarm-seed-race-03: the backed-up roster is restored" \
+  'grep -q "^coder" "$F/.swarmforge/roles.tsv"'
+rm -rf "$F"
+
+# ── 24: hibernated, no promotable backlog work, no fresh mail -> stays hibernated
+F="$(make_roster_fixture)"
+: > "$F/.swarmforge/roles.tsv"
+printf 'coder\tcoder\t%s/.worktrees/coder\tswarmforge-coder\tCoder\tclaude\ttask\n' "$F" \
+  > "$F/.swarmforge/roles.tsv.hibernate-backup"
+printf '{"hibernated":true,"hibernated_at_ms":1,"config_path":""}' \
+  > "$F/.swarmforge/operator/hibernation.json"
+OUT24="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
+check "swarm-seed-race-04: stays hibernated with no fresh mail and no promotable work" \
+  '[[ -f "$F/.swarmforge/operator/hibernation.json" ]]'
+rm -rf "$F"
+
 # ── 4. launcher assembles a --remote-control command ─────────────────────────
 DRY="$(OPERATOR_LAUNCH_DRYRUN=1 bash "$SRC/launch_operator.sh" "$SRC/.." /tmp/x.jsonl 2>&1 || true)"
 check "operator named 'Operator' (not a swarm agent)"          '[[ "$DRY" == *"--remote-control Operator"* ]]'

@@ -101,11 +101,6 @@ function registerSteps(registry) {
 
   registry.define(/^the runtime evaluates the closing pass$/, (ctx) => {
     ctx.tickResult = tickOnce(ctx.root);
-    // A roster role with no live tmux session still fires its own
-    // unrelated dead-agent-events pending event on the very first tick
-    // (see test_operator_runtime_tick.sh's own BL-307 section-14 comment) -
-    // tick again so a settled hibernated/idle state is observable.
-    ctx.tickResult = tickOnce(ctx.root);
   });
 
   registry.define(/^it hibernates the swarm$/, (ctx) => {

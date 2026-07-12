@@ -127,6 +127,9 @@
 ;; BL-306: how long the runtime waits for a human reply to a pending
 ;; clarifying question before escalating once and dropping the wait.
 (def await-timeout-ms (env-ms "OPERATOR_AWAIT_TIMEOUT_MS" 3600000))
+;; BL-310: the closing pass's cold-start guard - never hibernate within this
+;; many ms of the runtime's own process start (see runtime-started-at-ms).
+(def launch-grace-ms (env-ms "OPERATOR_LAUNCH_GRACE_MS" 120000))
 (def heartbeat? (not= "0" (System/getenv "OPERATOR_HEARTBEAT")))
 (def skip-launch? (= "1" (System/getenv "OPERATOR_SKIP_LAUNCH")))
 
@@ -468,10 +471,16 @@
    :relaunch-tmux! relaunch-tmux!
    :clear-hibernation-state! clear-hibernation-state!})
 
+;; runtime-started-at-ms/coordinator-inbox-has-fresh? are defined further
+;; down (they share the file-age-ms filesystem-signal section); declared
+;; here so closing-pass-sweep! can reuse both without duplicating either.
+(declare runtime-started-at-ms coordinator-inbox-has-fresh?)
+
 (defn closing-pass-sweep!
-  "One tick's full BL-307 evaluation: gathers the pure state (backlog-
-   drained?, roster-idle?, already-hibernated?) and hands it to operator-
-   lib/evaluate-closing-pass! with the real adapters above. Logs+returns the
+  "One tick's full BL-307/BL-310 evaluation: gathers the pure state
+   (backlog-drained?, roster-idle?, already-hibernated?, within-launch-
+   grace?, fresh-coordinator-mail?) and hands it to operator-lib/
+   evaluate-closing-pass! with the real adapters above. Logs+returns the
    action taken (:hibernated/:relaunched/nil).
 
    Guarded by eligible?: a roster that has NEVER existed (roles.tsv absent/
@@ -487,10 +496,14 @@
         idle? (operator-lib/roster-idle? roster)
         hibernated-before? (already-hibernated?)
         eligible? (or hibernated-before? (seq roster))
+        within-grace? (operator-lib/within-launch-grace? (runtime-started-at-ms) now launch-grace-ms)
+        fresh-mail? (boolean (coordinator-inbox-has-fresh?))
         {:keys [action] :as result} (if eligible?
                                        (operator-lib/evaluate-closing-pass!
                                         {:backlog-drained? drained? :roster-idle? idle?
-                                         :already-hibernated? hibernated-before? :now-ms now}
+                                         :already-hibernated? hibernated-before? :now-ms now
+                                         :within-launch-grace? within-grace?
+                                         :fresh-coordinator-mail? fresh-mail?}
                                         (closing-pass-adapters))
                                        {:action nil})]
     (when action (log! "closing-pass" (name action)))
@@ -538,6 +551,15 @@
 (defn file-age-ms [path]
   (when (fs/exists? path)
     (- (now-ms) (.toMillis (fs/last-modified-time path)))))
+
+(defn runtime-started-at-ms
+  "BL-310: the runtime's own process-start instant, reused from the
+   existing pid-file write in -main rather than a new timestamp file - its
+   mtime IS 'when this run of the tick loop began'. nil when the pid-file
+   is absent (e.g. a --tick-once invocation never writes it)."
+  []
+  (when (fs/exists? pid-file)
+    (.toMillis (fs/last-modified-time pid-file))))
 
 (defn coordinator-inbox-has-fresh?
   "A handoff landed for the coordinator within the last interval → TASK_ARRIVED.

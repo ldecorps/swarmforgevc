@@ -376,18 +376,41 @@
   [role-states]
   (every? role-idle? role-states))
 
+;; BL-310: the seed-race launch-grace guard. A freshly (re)started runtime
+;; evaluates the closing pass on its very first tick, which can land on the
+;; NORMAL post-launch state (backlog drained, roster idle) before the
+;; coordinator has had any chance to wake and triage pending intake - the
+;; feature eating the very launch meant to feed it. within-launch-grace? is
+;; a cold-start guard ONLY: it does not change hibernate/relaunch behavior
+;; once the grace period elapses, and does not apply across ordinary
+;; hibernate/relaunch cycles that happen without the process itself
+;; restarting.
+(defn within-launch-grace?
+  "True while now-ms is still within grace-ms of the runtime's OWN process
+   start (started-at-ms). started-at-ms nil (no long-running process start
+   was ever recorded - e.g. a one-shot --tick-once evaluation, which is not
+   the always-alive runtime this guard protects) is NOT in grace, matching
+   pre-BL-310 behavior exactly when there is no process lifetime to gate on."
+  [started-at-ms now-ms grace-ms]
+  (boolean (and started-at-ms (< (- now-ms started-at-ms) grace-ms))))
+
 (defn should-hibernate?
   "The DOWN-TRIGGER: fires only on the intersection of a drained backlog, an
-   idle roster, and not already hibernated - re-hibernating would back up an
-   already-emptied roster over the real one."
-  [{:keys [backlog-drained? roster-idle? already-hibernated?]}]
-  (boolean (and backlog-drained? roster-idle? (not already-hibernated?))))
+   idle roster, not already hibernated, and PAST the launch grace window
+   (BL-310) - re-hibernating would back up an already-emptied roster over
+   the real one, and hibernating inside the grace window would eat the very
+   launch meant to let the coordinator triage pending intake."
+  [{:keys [backlog-drained? roster-idle? already-hibernated? within-launch-grace?]}]
+  (boolean (and backlog-drained? roster-idle? (not already-hibernated?) (not within-launch-grace?))))
 
 (defn should-relaunch?
   "The UP-TRIGGER: while hibernated, new promotable work arriving (the
-   backlog is no longer drained) triggers an automatic relaunch."
-  [{:keys [already-hibernated? backlog-drained?]}]
-  (boolean (and already-hibernated? (not backlog-drained?))))
+   backlog is no longer drained) triggers an automatic relaunch - and so
+   does (BL-310) fresh coordinator mail arriving, even with no promotable
+   ticket yet, so a hibernated swarm can still wake to let the coordinator
+   triage newly-arrived intake."
+  [{:keys [already-hibernated? backlog-drained? fresh-coordinator-mail?]}]
+  (boolean (and already-hibernated? (or (not backlog-drained?) fresh-coordinator-mail?))))
 
 (defn hibernate-swarm!
   "Adapter-injected: the exact hand-proven sequence - back up the roster,
@@ -422,13 +445,16 @@
    the injected adapters. Mutually exclusive by construction - already-
    hibernated? gates which branch can even fire, so never both in the same
    tick. Returns {:action :hibernated|:relaunched|nil ...}."
-  [{:keys [backlog-drained? roster-idle? already-hibernated? now-ms]} adapters]
+  [{:keys [backlog-drained? roster-idle? already-hibernated? now-ms
+           within-launch-grace? fresh-coordinator-mail?]} adapters]
   (cond
     (should-hibernate? {:backlog-drained? backlog-drained? :roster-idle? roster-idle?
-                         :already-hibernated? already-hibernated?})
+                         :already-hibernated? already-hibernated?
+                         :within-launch-grace? within-launch-grace?})
     (assoc (hibernate-swarm! now-ms adapters) :action :hibernated)
 
-    (should-relaunch? {:already-hibernated? already-hibernated? :backlog-drained? backlog-drained?})
+    (should-relaunch? {:already-hibernated? already-hibernated? :backlog-drained? backlog-drained?
+                        :fresh-coordinator-mail? fresh-coordinator-mail?})
     (assoc (relaunch-swarm! now-ms adapters) :action :relaunched)
 
     :else {:action nil}))
