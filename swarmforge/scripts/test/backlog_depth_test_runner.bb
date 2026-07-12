@@ -99,6 +99,47 @@
            3
            (backlog-depth-lib/read-max-depth root)))
 
+;; ── conf-file-path / read-max-depth honor a persisted launch override (BL-313) ──
+
+(defn write-identity! [root kvs]
+  (fs/create-dirs (fs/path root ".swarmforge"))
+  (spit (str (fs/path root ".swarmforge" "swarm-identity"))
+        (apply str (for [[k v] kvs] (str k "\t" v "\n")))))
+
+(let [root (mk-tmp)
+      pack-conf (str (fs/path root "elsewhere" "pack.conf"))]
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf")) "config active_backlog_max_depth -1\n")
+  (fs/create-dirs (fs/path root "elsewhere"))
+  (spit pack-conf "config active_backlog_max_depth 1\n")
+  (write-identity! root {"swarm_name" "primary" "active_backlog_max_depth_conf_path" pack-conf})
+  (assert= "depth-cap-override-01: a persisted pack override is enforced, not the default file's own cap"
+           1
+           (backlog-depth-lib/read-max-depth root)))
+
+(let [root (mk-tmp)]
+  ;; No swarm-identity persisted at all - a bare launch, or a fixture (like
+  ;; test_backlog_depth_conf.sh's own) that writes a conf directly and never
+  ;; runs swarmforge.sh. Must fall back to the default file exactly as
+  ;; before BL-313.
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf")) "config active_backlog_max_depth -1\n")
+  (assert= "depth-cap-override-02: no persisted override -> the default tracked config is enforced, unchanged"
+           -1
+           (backlog-depth-lib/read-max-depth root)))
+
+(let [root (mk-tmp)]
+  ;; A swarm-identity file exists (e.g. swarm_name/swarm_mode from an older
+  ;; pre-BL-313 launch) but carries no active_backlog_max_depth_conf_path
+  ;; key at all - must still fall back to the default file, not crash or
+  ;; misread an empty path.
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf")) "config active_backlog_max_depth 3\n")
+  (write-identity! root {"swarm_name" "primary" "swarm_mode" "autonomous"})
+  (assert= "depth-cap-override-02b: a pre-BL-313 identity file with no persisted conf path falls back to the default"
+           3
+           (backlog-depth-lib/read-max-depth root)))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do

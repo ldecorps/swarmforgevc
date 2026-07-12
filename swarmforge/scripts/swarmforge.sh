@@ -537,9 +537,20 @@ check_primacy() {
   fi
 }
 
+# BL-313: the effective active_backlog_max_depth for THIS launch -
+# whichever pack/SWARMFORGE_CONFIG override CONFIG_FILE resolved to above,
+# not always the tracked default. Shells out to backlog_depth_cli.bb (the
+# one place that parses active_backlog_max_depth) rather than
+# re-implementing the parse in bash, so this can never drift from what
+# backlog_depth_lib.bb's own read-max-depth actually enforces.
+resolve_effective_backlog_max_depth() {
+  EFFECTIVE_MAX_DEPTH="$(bb "$SCRIPT_DIR/backlog_depth_cli.bb" "$CONFIG_FILE")"
+}
+
 write_swarm_identity_file() {
-  printf 'swarm_name\t%s\nswarm_mode\t%s\nswarm_mode_primary\t%s\n' \
-    "$SWARM_NAME" "$SWARM_MODE" "$SWARM_MODE_PRIMARY" > "$STATE_DIR/swarm-identity"
+  resolve_effective_backlog_max_depth
+  printf 'swarm_name\t%s\nswarm_mode\t%s\nswarm_mode_primary\t%s\nactive_backlog_max_depth\t%s\nactive_backlog_max_depth_conf_path\t%s\n' \
+    "$SWARM_NAME" "$SWARM_MODE" "$SWARM_MODE_PRIMARY" "$EFFECTIVE_MAX_DEPTH" "$CONFIG_FILE" > "$STATE_DIR/swarm-identity"
 }
 
 write_sessions_file() {
@@ -1137,6 +1148,11 @@ echo -e "${RESET}"
 
 echo -e "${GREEN}Launching SwarmForge tmux sessions...${RESET}"
 echo -e "${CYAN}Pack size: $(pack_size) role(s) (coordinator excluded)${RESET}"
+# BL-313: state the EFFECTIVE cap and which config supplied it, so an
+# uncapped (or unexpectedly capped) pipeline is never entered silently.
+# EFFECTIVE_MAX_DEPTH was already resolved by prepare_workspace's call to
+# write_swarm_identity_file above - reused here, not recomputed.
+echo -e "${CYAN}active_backlog_max_depth: ${EFFECTIVE_MAX_DEPTH} (from ${CONFIG_FILE})${RESET}"
 for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
   create_role_session "${SESSIONS[$i]}" "${DISPLAY_NAMES[$i]}"
 done

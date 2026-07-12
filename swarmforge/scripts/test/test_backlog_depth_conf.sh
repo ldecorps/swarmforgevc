@@ -110,4 +110,35 @@ echo "$OUT" | grep -qi "Active backlog depth exceeded" \
 pass "depth-04: an absent config degrades gracefully - no crash, no spurious warning"
 rm -rf "$ROOT"
 
+# ── BL-313: the real WARNING enforces a PERSISTED pack override, not the
+#     default swarmforge/swarmforge.conf's own cap ────────────────────────
+# depth-cap-override-01: the default file declares -1 (no limit), but a
+# pack override persisted into .swarmforge/swarm-identity at launch time
+# (BL-313's own write_swarm_identity_file) declares 1 - the WARNING must
+# enforce the PACK's 1, not the default's -1.
+ROOT="$(mk_fixture -1)"
+mkdir -p "$ROOT/elsewhere"
+printf 'config active_backlog_max_depth 1\n' > "$ROOT/elsewhere/pack.conf"
+printf 'swarm_name\tprimary\nswarm_mode\tautonomous\nactive_backlog_max_depth\t1\nactive_backlog_max_depth_conf_path\t%s\n' \
+  "$ROOT/elsewhere/pack.conf" > "$ROOT/.swarmforge/swarm-identity"
+write_active_items "$ROOT" 2
+OUT="$(run_handoff_capture_stderr "$ROOT")"
+echo "$OUT" | grep -qi "Active backlog depth exceeded (active=2, max=1)" \
+  || fail "depth-cap-override-01: expected the persisted pack's cap (1) enforced, not the default file's -1; got: $OUT"
+pass "depth-cap-override-01: a persisted pack override (max=1) is enforced over the default file's own -1"
+rm -rf "$ROOT"
+
+# ── depth-cap-override-02: no persisted override at all (no swarm-identity
+#     file) -> the default tracked config's own cap is still enforced,
+#     unchanged from depth-03 above ────────────────────────────────────────
+ROOT="$(mk_fixture 3)"
+[[ ! -e "$ROOT/.swarmforge/swarm-identity" ]] \
+  || fail "depth-cap-override-02 setup: fixture must not have a swarm-identity file"
+write_active_items "$ROOT" 5
+OUT="$(run_handoff_capture_stderr "$ROOT")"
+echo "$OUT" | grep -qi "max=3" \
+  || fail "depth-cap-override-02: expected the default file's own cap (3) with no persisted override; got: $OUT"
+pass "depth-cap-override-02: no persisted override -> the default tracked config's cap is still enforced"
+rm -rf "$ROOT"
+
 echo "ALL PASS"
