@@ -953,6 +953,37 @@ write_role_launch_script() {
   local prompt_file="$PROMPTS_DIR/${role}.md"
   local extra_cli="${EXTRA_CLI_ARGS[$index]}"
   local launch_script="$STATE_DIR/launch/${role}.sh"
+  # BL-323: RESUME-ON-START. Every tmux respawn of this role's pane -
+  # the initial launch, an idle-boundary respawn-self!, the chase daemon's
+  # do-respawn!, swarm_ensure.bb's respawn-role!, the extension's manual
+  # restart - converges on re-executing THIS generated script, fresh, with
+  # zero LLM cooperation required. That makes it the one place a check can
+  # run on EVERY respawn without depending on tmux injection landing, the
+  # daemon being alive, or an agent choosing on its own initiative to read
+  # nested prompt files and act on them - all three were independently
+  # true and still failed to resume a real orphaned parcel for ~4 hours
+  # (two separate relaunches) before this fix (BL-323's own incident
+  # report). resume_check is spliced into the script's PREAMBLE, before
+  # launch_body runs, so RESUME_NOTE is already set by the time launch_body
+  # embeds it into the agent's own first-message argument (below) - a
+  # role whose in_process queue already holds a parcel gets told about it
+  # explicitly in its very first message, rather than needing to discover
+  # and act on ready_for_next.sh itself. Read-only: this never claims,
+  # moves, or touches the parcel - it only informs the agent, so a parcel
+  # a live agent is legitimately working is never disturbed by a
+  # concurrent respawn of some OTHER role.
+  local resume_check
+  resume_check="$(cat <<RESUMECHECK
+RESUME_NOTE=""
+if in_process_dir="\$(bb '$SCRIPT_DIR/mailbox_dir.bb' '$WORKING_DIR' '$role' in_process 2>/dev/null)" \\
+    && [[ -n "\$in_process_dir" && -d "\$in_process_dir" ]] \\
+    && find "\$in_process_dir" -mindepth 1 -maxdepth 1 \( -name '*.handoff' -o -name 'batch_*' \) -print -quit 2>/dev/null | grep -q .; then
+  RESUME_NOTE='RESUME-ON-START: your inbox/in_process queue already holds a parcel from before this session started (a prior session claimed it and did not finish it). Run ready_for_next.sh as your very first action, before reading or doing anything else, and follow its output to resume it.
+
+'
+fi
+RESUMECHECK
+)"
   local settings_file=""
   local claude_flags=""
   local launch_body=""
@@ -972,20 +1003,20 @@ write_role_launch_script() {
       elif [[ -n "$CLAUDE_SETTINGS_PERMISSION_MODE" ]]; then
         claude_permission_flags=" --permission-mode '$CLAUDE_SETTINGS_PERMISSION_MODE'"
       fi
-      launch_body="claude --settings '$settings_file'${claude_permission_flags}${claude_flags:+ $claude_flags} --append-system-prompt-file '$prompt_file' -n 'SwarmForge ${display}' \"\$(cat '$prompt_file')\""
+      launch_body="claude --settings '$settings_file'${claude_permission_flags}${claude_flags:+ $claude_flags} --append-system-prompt-file '$prompt_file' -n 'SwarmForge ${display}' \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
       ;;
     codex)
-      launch_body="codex${extra_cli:+ $extra_cli} -C '$role_worktree' \"\$(cat '$prompt_file')\""
+      launch_body="codex${extra_cli:+ $extra_cli} -C '$role_worktree' \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
       ;;
     copilot)
       local copilot_dirs=""
       if [[ "$role_worktree" != "$WORKING_DIR" ]]; then
         copilot_dirs=" --add-dir '$WORKING_DIR'"
       fi
-      launch_body="copilot${extra_cli:+ $extra_cli} --yolo --allow-all-paths${copilot_dirs} -C '$role_worktree' --name 'SwarmForge ${display}' -i \"\$(cat '$prompt_file')\""
+      launch_body="copilot${extra_cli:+ $extra_cli} --yolo --allow-all-paths${copilot_dirs} -C '$role_worktree' --name 'SwarmForge ${display}' -i \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
       ;;
     grok)
-      launch_body="grok${extra_cli:+ $extra_cli} --cwd '$role_worktree' --permission-mode acceptEdits --rules \"\$(cat '$prompt_file')\""
+      launch_body="grok${extra_cli:+ $extra_cli} --cwd '$role_worktree' --permission-mode acceptEdits --rules \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
       ;;
     aider)
       launch_body="aider${extra_cli:+ $extra_cli} --yes-always"
@@ -1010,7 +1041,7 @@ write_role_launch_script() {
       if [[ "$role_worktree" != "$WORKING_DIR" ]]; then
         vibe_dirs=" --add-dir '$WORKING_DIR'"
       fi
-      launch_body="vibe${extra_cli:+ $extra_cli} --yolo --trust --workdir '$role_worktree'${vibe_dirs} \"\$(cat '$prompt_file')\""
+      launch_body="vibe${extra_cli:+ $extra_cli} --yolo --trust --workdir '$role_worktree'${vibe_dirs} \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
       ;;
     *)
       echo -e "${RED}Error:${RESET} Unsupported agent '$agent' for role '$role'"
@@ -1041,6 +1072,7 @@ set -euo pipefail
 export SWARMFORGE_ROLE='$role'
 export PATH='$role_script_dir':\$PATH
 cd '$role_worktree'
+${resume_check}
 ${billing_guard}${copilot_guard}${launch_body}
 LAUNCH
 
