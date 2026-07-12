@@ -10,6 +10,16 @@
 
 set -euo pipefail
 
+# BL-315: a caller's own shell may have SWARMFORGE_CONFIG set (a normal,
+# correct thing to have per BL-313's pack-override usage) - unset it once
+# here so every fixture below resolves its own conf via the DEFAULT
+# swarmforge/swarmforge.conf path, never the caller's live override
+# (engineering.prompt's "shell test... must env -u SWARMFORGE_CONFIG"
+# rule; no fixture in this file needs a non-default value, so one unset
+# covers every zsh -c call below instead of repeating an env -u prefix at
+# each of them).
+unset SWARMFORGE_CONFIG
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SWARMFORGE_SH="$SCRIPT_DIR/../swarmforge.sh"
 

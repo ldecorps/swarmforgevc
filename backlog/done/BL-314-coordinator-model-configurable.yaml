@@ -1,7 +1,7 @@
 id: BL-314
 title: "Coordinator model/effort become pack-configurable, defaulting to Sonnet-tier instead of hardcoded Opus"
 milestone: M8
-status: active
+status: done
 type: bug
 priority: 10
 direction: expedite

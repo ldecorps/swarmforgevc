@@ -116,6 +116,7 @@ const DOMAINS = [
   require('./burnMeterMasterResidentSteps'),
   require('./backlogDepthCapOverrideSteps'),
   require('./coordinatorModelConfigurableSteps'),
+  require('./coordinatorInfraTestConfigLeakSteps'),
 ];
 
 function registerSteps(registry) {
