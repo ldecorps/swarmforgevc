@@ -477,17 +477,32 @@ parse_config() {
 # primary's own triage, never triages itself; this preserves the exact
 # invariant the removed inline check above used to enforce the hard way).
 #
-# The model/effort/permission flags below are this ticket's own default
-# for the now-unconfigurable coordinator identity (no window line exists
-# to carry --model/--effort anymore) - matching this project's own current
-# convention for the coordinator role (Opus-tier model, high effort).
+# BL-314: the model/effort below are now pack-configurable (no window line
+# exists to carry --model/--effort for the coordinator, since BL-243 made
+# it reserved infrastructure) via `config coordinator_model <id>` /
+# `config coordinator_effort <level>` in whichever conf file is EFFECTIVELY
+# in force ($CONFIG_FILE - reusing BL-313's own effective-config
+# resolution, not a second parallel mechanism). Absent/blank/malformed
+# falls back to a SONNET-tier default, not Opus - the coordinator's own
+# work (routing, backlog bookkeeping) does not need the most expensive
+# tier in the swarm; a pack that wants Opus sets coordinator_model
+# explicitly. --dangerously-skip-permissions and --remote-control handling
+# are unchanged.
+resolve_coordinator_config() {
+  local resolved
+  resolved="$(bb "$SCRIPT_DIR/coordinator_config_cli.bb" "$CONFIG_FILE")"
+  COORDINATOR_MODEL="${resolved%%$'\t'*}"
+  COORDINATOR_EFFORT="${resolved#*$'\t'}"
+}
+
 provision_coordinator() {
   if [[ "$SWARM_MODE" == "secondary" ]]; then
     return
   fi
 
+  resolve_coordinator_config
   local role="coordinator"
-  local extra_cli="--model claude-opus-4-8 --dangerously-skip-permissions --effort high"
+  local extra_cli="--model $COORDINATOR_MODEL --dangerously-skip-permissions --effort $COORDINATOR_EFFORT"
   if [[ "$REMOTE_CONTROL_DEFAULT" == 1 ]]; then
     extra_cli+=" --remote-control $(remote_control_session_name_for_role "$role")"
   fi
