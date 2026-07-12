@@ -229,6 +229,58 @@
                 (= provider-state :available)
                 (pos? (or pending-count 0)))))
 
+;; ── BL-306: ask + await a clarifying answer ────────────────────────────────
+;; The disposable Operator LLM can ASK one clarifying question then MUST
+;; exit (it can never wait); the always-alive runtime holds the
+;; awaiting-answer state {:question :thread-id :asked-at-ms} across ticks
+;; and pairs a later reply / times it out. All decisions here are pure and
+;; injected-clock (de0991e); operator_runtime.bb is the thin caller that
+;; reads/writes the actual awaiting-answer.json and posts the escalation.
+
+;; Duplicated from support_lib.bb's own (private) operator-channel/
+;; human-message? rather than cross-namespace-coupled to it - a one-line
+;; constant, the SAME "small live-glue duplicated across independent pure
+;; libs, no shared lifecycle worth coupling" posture already used
+;; elsewhere in this codebase (see gateSnapshot.ts's own header comment).
+(def ^:private operator-channel-name "operator")
+
+(defn resolve-pending-answer
+  "True when a just-dispatched thread-id is THE SAME thread a pending
+   question was asked in - the unambiguous MVP pairing rule (ONE pending
+   question at a time; the next reply in that one thread is the answer)."
+  [awaiting thread-id]
+  (boolean (and awaiting thread-id (= (:thread-id awaiting) thread-id))))
+
+(defn answer-text-from-messages
+  "The human's own LATEST reply text out of a thread's messages - the
+   plain-text 'answer' to pair alongside :pending-question in the
+   dispatched context. nil when the thread carries no non-operator
+   message at all (should not happen for a genuine reply-triggered
+   dispatch, but never a crash over a blank pairing)."
+  [messages]
+  (:text (last (remove #(= (:channel %) operator-channel-name) messages))))
+
+(defn await-timeout-elapsed?
+  "True once now-ms has reached asked-at-ms + timeout-ms. nil asked-at-ms
+   (nothing pending) never elapses - mirrors cooldown-elapsed?'s own
+   nil-safe polarity above."
+  [asked-at-ms now-ms timeout-ms]
+  (boolean (and asked-at-ms (>= (- now-ms asked-at-ms) timeout-ms))))
+
+(defn check-awaiting-answer
+  "The BOUNDED escalate-once-then-drop decision for a pending clarifying-
+   question await. awaiting = {:question :thread-id :asked-at-ms} or nil
+   (nothing pending). Escalate and drop happen TOGETHER, in the SAME
+   timeout crossing - there is no persisted 'escalated but still waiting'
+   state, matching the ticket's own 'escalate once THEN clear' (never a
+   second, later timeout, never an endless re-ask, never a guess at the
+   answer). Returns {:event :escalate-and-drop :question :thread-id} or
+   {:event nil}."
+  [awaiting now-ms timeout-ms]
+  (if (and awaiting (await-timeout-elapsed? (:asked-at-ms awaiting) now-ms timeout-ms))
+    {:event :escalate-and-drop :question (:question awaiting) :thread-id (:thread-id awaiting)}
+    {:event nil}))
+
 ;; ── swarm-check timer ─────────────────────────────────────────────────────────
 
 (defn timer-due?

@@ -96,6 +96,13 @@
 ;; Telegram, an offset, or a topic mapping directly (all bot-owned).
 (def telegram-reply-context-file (fs/path op-dir "telegram-reply-context.json"))
 
+;; ── BL-306: ask + await a clarifying answer ────────────────────────────────
+;; Runtime-owned cross-tick state, same posture as cooldown.json - the
+;; disposable Operator LLM asks (one run, via operator_ask.bb) then MUST
+;; exit; this file is what lets a LATER run know a question is still
+;; pending, and what the runtime itself times out.
+(def awaiting-answer-file (fs/path op-dir "awaiting-answer.json"))
+
 (defn env-ms [name default]
   (or (some-> (System/getenv name) parse-long) default))
 
@@ -105,6 +112,9 @@
 ;; resolve-provider-state docstring for what each bounds.
 (def cooldown-bounded-fallback-ms (env-ms "OPERATOR_COOLDOWN_FALLBACK_MS" 1800000))
 (def cooldown-plausible-max-ms (env-ms "OPERATOR_COOLDOWN_PLAUSIBLE_MAX_MS" 21600000))
+;; BL-306: how long the runtime waits for a human reply to a pending
+;; clarifying question before escalating once and dropping the wait.
+(def await-timeout-ms (env-ms "OPERATOR_AWAIT_TIMEOUT_MS" 3600000))
 (def heartbeat? (not= "0" (System/getenv "OPERATOR_HEARTBEAT")))
 (def skip-launch? (= "1" (System/getenv "OPERATOR_SKIP_LAUNCH")))
 
@@ -297,6 +307,34 @@
 (defn write-cooldown! [m] (atomic-spit! cooldown-file (json/generate-string m)))
 (defn clear-cooldown! [] (fs/delete-if-exists cooldown-file))
 
+;; ── BL-306: awaiting-answer (runtime-owned, same posture as cooldown) ────────
+
+(defn read-awaiting-answer []
+  (when (fs/exists? awaiting-answer-file)
+    (try
+      (let [m (json/parse-string (slurp (str awaiting-answer-file)) true)]
+        {:question (:question m) :thread-id (:thread_id m) :asked-at-ms (:asked_at_ms m)})
+      (catch Exception _ nil))))
+
+(defn write-awaiting-answer! [{:keys [question thread-id asked-at-ms]}]
+  (atomic-spit! awaiting-answer-file
+                (json/generate-string {:question question :thread_id thread-id :asked_at_ms asked-at-ms})))
+
+(defn clear-awaiting-answer! [] (fs/delete-if-exists awaiting-answer-file))
+
+;; BL-306: the bounded escalate-once-then-drop sweep - best-effort side
+;; action, same "runs every tick, never a wake worth an Operator LLM
+;; launch" posture as the idle-nudge/linked-ticket sweeps above.
+(defn awaiting-answer-sweep! [now]
+  (let [{:keys [event question thread-id]} (operator-lib/check-awaiting-answer (read-awaiting-answer) now await-timeout-ms)]
+    (when (= event :escalate-and-drop)
+      (let [text (str "[still needed] " question)]
+        (append-to-reply-outbox! thread-id text)
+        (when-let [thread (support-thread-store/read-thread! state-dir thread-id)]
+          (support-thread-store/write-thread! state-dir (support-lib/append-message thread support-lib/operator-channel (now-iso) text))))
+      (clear-awaiting-answer!)
+      (log! "await-escalated-and-dropped" thread-id question))))
+
 (defn scan-provider-state
   "Look at the agent panes + the operator's own last run for a usage-limit
    banner. Returns {:state :available|:cooldown, :reset-ms N?, :reset-raw s?}.
@@ -373,13 +411,25 @@
    clearly separate fields here, never merged into one blob). No topic id
    here (reshaped architecture) - the runtime speaks SUP-### only; the
    Front Desk Bot owns the topic mapping and resolves it itself once the
-   reply reaches it over SSE."
+   reply reaches it over SSE.
+
+   BL-306 operator-ask-02: when this dispatched subject is the SAME thread
+   a clarifying question is pending on (operator-lib/resolve-pending-
+   answer), the reply IS that question's answer - paired in as
+   :pending-question/:answer, and the runtime's own await state is cleared
+   (this reply has been delivered; nothing left to time out)."
   [thread-id]
-  (atomic-spit! telegram-reply-context-file
-                (json/generate-string
-                 {:thread-id thread-id
-                  :transcript (telegram-topic-lib/reply-context-for thread-id (support-thread-store/adapters-for state-dir))
-                  :long-term-memory (operator-memory-lib/facts-for-wake (operator-memory-store/read-store! state-dir))})))
+  (let [awaiting (read-awaiting-answer)
+        pending? (operator-lib/resolve-pending-answer awaiting thread-id)
+        transcript (telegram-topic-lib/reply-context-for thread-id (support-thread-store/adapters-for state-dir))]
+    (when pending? (clear-awaiting-answer!))
+    (atomic-spit! telegram-reply-context-file
+                  (json/generate-string
+                   (cond-> {:thread-id thread-id
+                            :transcript transcript
+                            :long-term-memory (operator-memory-lib/facts-for-wake (operator-memory-store/read-store! state-dir))}
+                     pending? (assoc :pending-question (:question awaiting)
+                                      :answer (operator-lib/answer-text-from-messages (:messages transcript))))))))
 
 (defn launch-operator!
   "Move the pending queue aside so new events accumulate cleanly, then spawn
@@ -504,6 +554,13 @@
     ;; never a wake worth an Operator LLM launch" posture as the idle
     ;; nudge above.
     (linked-ticket-status-sweep!)
+
+    ;; BL-306: bounded escalate-once-then-drop on an unanswered clarifying
+    ;; question - same "best-effort side action every tick" posture as the
+    ;; sweeps above; never gates the launch decision below (a pending
+    ;; question is scoped to its own thread, never an emergency-recovery
+    ;; blocker).
+    (awaiting-answer-sweep! now)
 
     (reap-finished-operator!)
 
