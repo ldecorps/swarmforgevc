@@ -1,0 +1,77 @@
+id: BL-327
+title: "Give BL-318's quiet-period promotion gate a shell-callable CLI wrapper, so prompt prose is not its sole enforcement"
+milestone: M8
+status: todo
+type: defect
+severity: medium
+priority: 15
+direction: aligned
+depends_on: [BL-318]
+source: "Raised by QA 2026-07-13 as a rule_proposal (scope role:coordinator) while verifying BL-318: 'give promotion-blocked-by-quiet-period?/format-self-generated-source a dedicated CLI wrapper like coordinator_config_cli.bb, not prompt prose invoking bare Clojure fns via bb -e'. The proposal asked for CODE, not a prompt rule, so the specifier specced it rather than appending prose. Role-raised, not self-generated."
+
+notes: |
+  WHAT QA FOUND. BL-318 (283b63b) landed `promotion-blocked-by-quiet-period?` and
+  `format-self-generated-source` in `operator_lib.bb` with ZERO callers — only tests
+  referenced them. The specifier wired the gate into `coordinator.prompt` (1d4d036) so it
+  could fire at all, but that wiring is PROSE telling an LLM to invoke bare Clojure
+  functions. QA's objection is correct on two counts:
+    1. It deviates from this codebase's own convention. Shell-callable behavior lives in a
+       thin `*_cli.bb` wrapper over a `*_lib.bb` — `coordinator_config_cli.bb`,
+       `backlog_depth_cli.bb`, `agent_runtime_cli.bb`. Nothing else asks an agent to hand-write
+       `bb -e '...'` against a lib's internals.
+    2. Prompt prose is weak enforcement for a HIGH cost-control gate. The whole point of
+       BL-318 is that the swarm must not feed itself; an enforcement path that depends on the
+       coordinator correctly hand-assembling a Clojure call is exactly the "guard that lives in
+       an author's memory" failure this project has now been bitten by twice (BL-326's
+       RESEND_API_KEY; BL-314's hand-written provenance line).
+
+  HONEST LIMIT — DO NOT OVERSELL THIS TICKET. A CLI wrapper makes the gate *callable* and
+  *contractual*; it does NOT make it *unskippable*. The coordinator is an LLM, not a code path
+  — there is no place in the promotion flow to enforce the call from the outside, because the
+  promotion flow IS the coordinator's judgment. This ticket buys a real, testable contract and
+  removes the hand-assembled-Clojure hazard; it does not make prose-level compliance
+  unnecessary. Anyone who wants true enforcement has to move promotion itself into code, which
+  is a much larger change and NOT this ticket.
+
+  SCOPE:
+    1. Add a thin CLI wrapper over the BL-318 gate, following the `coordinator_config_cli.bb`
+       shape exactly (shebang, `load-file` the sibling lib, `-main`, usage-to-stderr,
+       explicit exit codes). Do not reimplement any decision logic in the wrapper — it parses
+       args, calls the lib, and reports. The lib stays the single source of truth.
+    2. Expose BOTH halves of BL-318 through it: the read path
+       (`promotion-blocked-by-quiet-period?` — is this candidate blocked right now) and the
+       write path (`format-self-generated-source` — compose the canonical source line). Both
+       matter: `self-generated-item?` recognizes ONLY the marker the write path emits and
+       defaults to not-self-generated, so a hand-written source line silently escapes the gate
+       entirely. The write path is not a convenience; it is half the gate.
+    3. FAIL CLOSED. An unreadable/unparseable candidate, or a missing quiet-state input, must
+       report an error and MUST NOT answer "promotion allowed". A gate that fails open is not
+       a gate — and this one guards spend.
+    4. Give it a defined shell contract: answer on stdout, and an exit status that distinguishes
+       blocked from allowed from error, so a caller can branch on it without parsing prose.
+    5. Update `coordinator.prompt` to invoke the CLI by name instead of describing a bare
+       Clojure call. (Specifier owns that edit — Article 1.2 — and will make it once this
+       lands; the prompt's existing conservative fallback, "if the gate is unavailable, HOLD
+       self-generated promotion", stays correct either way.)
+
+  E2E QA PROCEDURE: invoke the CLI as a real shell command (not via the lib's test harness —
+  the whole defect is that the shell-callable path did not exist). Assert: (a) a
+  coordinator-raised candidate during a drained+idle quiet period answers BLOCKED; (b) the same
+  candidate with work in flight answers NOT BLOCKED; (c) a human-raised candidate answers NOT
+  BLOCKED in BOTH quiet states — the gate must never be able to starve real work; (d) a source
+  line composed by the write path round-trips: the gate recognizes it as self-generated; (e) a
+  hand-written source line does NOT get answered "allowed" silently; (f) an unreadable candidate
+  errors and does not answer "allowed".
+
+acceptance:
+  feature: specs/features/BL-327-quiet-period-gate-cli.feature
+  steps:
+    - "The gate blocks only self-generated work during a quiet period"
+    - "A self-generated source line composed by the tool is recognized by the gate"
+    - "A hand-written source line does not silently escape the gate"
+    - "An unreadable candidate fails closed rather than allowing promotion"
+    - "The gate is reachable as a shell command"
+
+human_approval: pending
+
+mutation_cost: low
