@@ -182,6 +182,40 @@ You are the hardender.
   PPID failure as this known environmental gap, and never "fix" it by making a test
   assert whatever PPID the host happens to produce.
 
+- **Exercise a selector with 2+ concurrent candidates, never just one.** A
+  selection function ("which gate does this answer?", "which role holds this?",
+  "which item did they mean?") is usually correct and fully green with ONE
+  candidate pending, and only reveals its real behavior at two. Single-candidate
+  tests pass while the multi-candidate path silently degrades — to an
+  ask-which/give-up branch, or worse, to picking the wrong one. If a selector
+  takes a collection, a test MUST pass it a collection with more than one member.
+  Watch especially for a selector that DISCARDS an identifying key it was handed
+  (a ticket id, a topic id, a role) and falls back to counting: that is correct
+  only when no key was available, and it is a defect the moment one was. (BL-325
+  architect review: `bl-topic-approval-sweep!` reuses BL-285's count-based
+  `selectGateDecision`, which is right for a SUP thread carrying no ticket
+  context, but the BL-topic path HAS a `backlogId` — so with 2+ gates pending, a
+  reply typed into ticket A's own topic gets "which gate do you mean?" instead of
+  answering A's. Safe, never wrong — but degraded exactly when it matters, and
+  BL-325's own suite never had two gates pending, so nothing caught it.)
+
+- **A parser that returns the same value for "absent" and "unreadable" cannot
+  validate — probe it with a PRESENT-BUT-MALFORMED input, not just a missing
+  one.** Optional-field readers routinely collapse both cases into one nil/default
+  ("field not there" and "field there but I could not parse it" -> the same safe
+  default). The default is usually SAFE, so nothing crashes and every test passes —
+  but the author's intent is silently discarded with no signal, and any validation
+  that only runs on successfully-parsed values is skipped entirely, because a
+  malformed field looks absent. Safety is not the test: SIGNAL is. For every
+  optional field, assert three distinct cases — absent (defaults), well-formed
+  (honored), and present-but-malformed (REJECTED, not defaulted) — including each
+  alternate spelling the surrounding schema/format legitimately allows. (BL-317
+  architect review: `parse-roles-field` parses only a flow-style `roles: [a, b]`
+  and returns nil for anything else, so a block-style `- a` list — which is this
+  schema's OWN convention for `acceptance.steps:` — silently reads as "no manifest"
+  and defaults to the full chain, discarding the specifier's narrowing with no
+  error and bypassing the ticket's own before-promotion validation.)
+
 ## Lessons Discipline
 - After a hardening mistake or a non-obvious root cause (a survivor class
   you misjudged, a tooling behavior that cost a rerun, an environment trap),
