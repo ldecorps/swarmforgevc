@@ -338,7 +338,7 @@ A second headless, read-only CLI answers "is there actually pending work?" witho
 node extension/out/tools/queue-status.js [--debug]
 ```
 
-Runnable from the repo root or any `.worktrees/<role>/` checkout, same project-root resolution as `swarm-metrics.js`. By default, prints one line per role with only its real `.handoff` payload count (`inbox/new` + `inbox/in_process`) — sidecar files are not even listed, not just hidden. Pass `--debug` to additionally list each role's sidecar files, labeled by kind (`chase-sidecar`, `nudge-sidecar`, `other`).
+Runnable from the repo root or any `.worktrees/<role>/` checkout, same project-root resolution as `swarm-metrics.js`. By default, prints one line per role reporting its `inbox/new` and `inbox/in_process` counts SEPARATELY, not flattened into one combined figure (BL-323): a genuinely idle role reads `no work pending`, a role with fresh mail reads `N new pending` (plus an `in_process` suffix if any), and — the case a combined count used to hide — a role whose `new/` is empty but `in_process/` holds an orphaned claim reads `work claimed by nobody`, distinct from true idle. Sidecar files are not even listed by default, not just hidden. Pass `--debug` to additionally list each role's sidecar files, labeled by kind (`chase-sidecar`, `nudge-sidecar`, `other`).
 
 #### Stage-dwell & bottleneck report CLI
 
@@ -502,7 +502,7 @@ A single monitor loop in the extension host, polling on an interval:
 ### Auto-respawn (optional, configurable)
 
 - When `autoRespawn` is enabled, a dead agent is respawned automatically in its existing worktree
-- On relaunch the agent auto-picks-up its pending messages (see above), so recovery is seamless
+- On relaunch the agent auto-picks-up its pending messages (see above), so recovery is seamless — including a parcel the prior (killed) process had already claimed into its own `inbox/in_process/` but never finished: every respawn path (auto-respawn, a manual restart, the chase daemon's own respawn, or a fresh swarm launch) converges on one generated launch script that checks the role's `in_process/` queue first and explicitly instructs the fresh agent to resume it, rather than relying on the agent to notice unprompted (BL-323 — a real ~4-hour stall where an orphaned `in_process` claim survived two relaunches before a human manually nudged it by name)
 - A per-role respawn cap (e.g., 3 within a window) prevents crash-loops — once exceeded, the watchdog stops and leaves the tile red for human intervention
 
 ### UI surfacing
