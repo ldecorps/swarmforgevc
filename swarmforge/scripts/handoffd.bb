@@ -985,6 +985,22 @@
    {:inbox-new-count (count (chase-sweep-lib/scan-inbox-new (handoff-lib/mailbox-dir role-info :new)))
     :in-process-count (count (chase-sweep-lib/scan-in-process (handoff-lib/mailbox-dir role-info :in_process)))}))
 
+;; Shared by every context-clear sweep below (coordinator and per-role,
+;; BL-316): both inject via the same agent-runtime-inject/notify-agent!
+;; call, differing only in which role-info/socket they target - only
+;; :record-clear! differs per sweep, so that stays sweep-local.
+(defn context-clear-injectors [socket role-info]
+  {:inject-clear! (fn []
+                     (agent-runtime-inject/notify-agent!
+                      socket (:session role-info) (or (:agent role-info) "claude")
+                      :log-fn (fn [tag sess detail] (log! tag sess detail))
+                      :text "/clear"))
+   :inject-startup-reread! (fn [instruction-text]
+                              (agent-runtime-inject/notify-agent!
+                               socket (:session role-info) (or (:agent role-info) "claude")
+                               :log-fn (fn [tag sess detail] (log! tag sess detail))
+                               :text instruction-text))})
+
 (defn closing-context-clear-sweep! [roles socket]
   ;; BL-309 bounce fix: :record-clear! durably poisons closed-ticket-id
   ;; against ever being re-cleared (new-close?'s whole point). Skip the
@@ -1002,19 +1018,10 @@
         :closed-ticket-id (latest-done-ticket-id)
         :last-cleared-ticket-id (read-last-cleared-ticket-id)
         :role-name "coordinator"}
-       {:inject-clear! (fn []
-                          (agent-runtime-inject/notify-agent!
-                           socket (:session coordinator) (or (:agent coordinator) "claude")
-                           :log-fn (fn [tag sess detail] (log! tag sess detail))
-                           :text "/clear"))
-        :inject-startup-reread! (fn [instruction-text]
-                                   (agent-runtime-inject/notify-agent!
-                                    socket (:session coordinator) (or (:agent coordinator) "claude")
-                                    :log-fn (fn [tag sess detail] (log! tag sess detail))
-                                    :text instruction-text))
-        :record-clear! (fn [ticket-id]
-                         (record-context-clear! ticket-id)
-                         (log! "closing-context-clear-fired" ticket-id))}))))
+       (merge (context-clear-injectors socket coordinator)
+              {:record-clear! (fn [ticket-id]
+                                 (record-context-clear! ticket-id)
+                                 (log! "closing-context-clear-fired" ticket-id))})))))
 
 ;; ── BL-316: generalized per-role context-clear at the safe idle boundary
 ;;    after a role's OWN inbox/completed/ gains a fresh entry ─────────────
@@ -1068,19 +1075,10 @@
           :closed-ticket-id (latest-completed-entry-id role-info)
           :last-cleared-ticket-id (read-role-last-cleared role-name)
           :role-name role-name}
-         {:inject-clear! (fn []
-                            (agent-runtime-inject/notify-agent!
-                             socket (:session role-info) (or (:agent role-info) "claude")
-                             :log-fn (fn [tag sess detail] (log! tag sess detail))
-                             :text "/clear"))
-          :inject-startup-reread! (fn [instruction-text]
-                                     (agent-runtime-inject/notify-agent!
-                                      socket (:session role-info) (or (:agent role-info) "claude")
-                                      :log-fn (fn [tag sess detail] (log! tag sess detail))
-                                      :text instruction-text))
-          :record-clear! (fn [entry-id]
-                           (record-role-context-clear! role-name entry-id)
-                           (log! "role-context-clear-fired" role-name entry-id))})
+         (merge (context-clear-injectors socket role-info)
+                {:record-clear! (fn [entry-id]
+                                   (record-role-context-clear! role-name entry-id)
+                                   (log! "role-context-clear-fired" role-name entry-id))}))
         (catch Exception e
           (log! "role-context-clear-role-error" role-name (.getMessage e)))))))
 
