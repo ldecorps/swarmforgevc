@@ -19,6 +19,11 @@ export interface BacklogFolderSnapshot {
 export interface GateSignal {
   role: string;
   gated: boolean;
+  // BL-325: the gated role's own question text (RoleGateState.snippet,
+  // carried through readGates unnarrowed) - lets diffNeedsApproval below
+  // put the actual question, not just a ticket id, into a NeedsApproval
+  // event's payload.
+  snippet?: string;
 }
 
 export interface EventStreamSnapshot {
@@ -65,7 +70,7 @@ function diffNeedsApproval(prev: EventStreamSnapshot, curr: EventStreamSnapshot)
     if (gate.gated && !wasGated) {
       const backlogId = curr.roleTicket[gate.role];
       if (backlogId) {
-        events.push({ type: 'NeedsApproval', backlogId, payload: {} });
+        events.push({ type: 'NeedsApproval', backlogId, payload: gate.snippet ? { snippet: gate.snippet } : {} });
       }
     }
   }

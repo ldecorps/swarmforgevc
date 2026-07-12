@@ -86,6 +86,9 @@
 (def tmux-socket-file (fs/path state-dir "tmux-socket"))
 (def conf-file (fs/path state-dir ".." "swarmforge" "swarmforge.conf"))
 (def launch-operator (fs/path script-dir "launch_operator.sh"))
+;; BL-325: the SAME BL-285 approve relay bl-topic-approval-sweep! below
+;; shells out to directly - never a second relay.
+(def operator-decide-cli (fs/path project-root "extension" "out" "tools" "operator-decide.js"))
 ;; BL-307: the whole-swarm auto-hibernate closing pass. roles-backup-file
 ;; and hibernation-state-file are the same posture as cooldown.json/
 ;; awaiting-answer.json above - durable, runtime-owned cross-tick state.
@@ -357,6 +360,34 @@
           (support-thread-store/write-thread! state-dir (support-lib/append-message thread support-lib/operator-channel (now-iso) text))))
       (clear-awaiting-answer!)
       (log! "await-escalated-and-dropped" thread-id question))))
+
+;; ── BL-325: deterministic BL-topic-message consumer ─────────────────────────
+;; TELEGRAM_BL_TOPIC_MESSAGE (a human's reply typed into a backlog item's own
+;; topic, BL-298's producer) had zero consumers - written, never read. This
+;; sweep is that consumer: every tick, BEFORE the launch-decision below even
+;; counts pending events, it pulls every such event out of the queue and
+;; shells directly into operator-decide.js's OWN approve mode (BL-285) -
+;; reusing that relay exactly, never a second one. threadId is the
+;; backlogId itself; the reply-outbox->SSE relay's resolveReplyTopicId
+;; fallback (BL-325's egress extension, telegramFrontDeskBotCore.ts) is what
+;; lets that threadId route back into the SAME BL topic the question came
+;; from. Deterministic and same-tick, never deferred to the disposable LLM
+;; Operator's own reasoning latency - the ticket's own scenario-05 ordering
+;; guarantee (the item must not complete before the human's answer arrives).
+(defn consume-bl-topic-message! [{:keys [backlogId text]}]
+  (let [{:keys [exit err]} (process/sh {:continue true :dir (str project-root)}
+                                        "node" (str operator-decide-cli) backlogId "approve" text)]
+    (when-not (zero? exit)
+      (log! "bl-topic-consume-error" backlogId err))))
+
+(defn bl-topic-approval-sweep! []
+  (let [pending (read-events events-file)
+        {:keys [to-consume remaining]} (operator-lib/partition-bl-topic-events pending)]
+    (when (seq to-consume)
+      (doseq [event to-consume]
+        (consume-bl-topic-message! event)
+        (log! "bl-topic-consumed" (:backlogId event)))
+      (write-events! events-file (vec remaining)))))
 
 ;; ── BL-307: auto-hibernate on drain + mandatory closing pass ────────────────
 ;; Reuses the exact hand-proven park/relaunch mechanics (see memory
@@ -781,6 +812,12 @@
     ;; question is scoped to its own thread, never an emergency-recovery
     ;; blocker).
     (awaiting-answer-sweep! now)
+
+    ;; BL-325: consume any TELEGRAM_BL_TOPIC_MESSAGE events (a human's reply
+    ;; typed into a backlog item's own topic) deterministically, same tick -
+    ;; before the pending count below is even read, so a consumed event
+    ;; never also counts toward the LLM-launch decision.
+    (bl-topic-approval-sweep!)
 
     ;; BL-307: auto-hibernate on drain + mandatory closing pass - same
     ;; "best-effort side action every tick" posture as the sweeps above;
