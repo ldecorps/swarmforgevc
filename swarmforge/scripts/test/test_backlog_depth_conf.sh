@@ -141,4 +141,27 @@ echo "$OUT" | grep -qi "max=3" \
 pass "depth-cap-override-02: no persisted override -> the default tracked config's cap is still enforced"
 rm -rf "$ROOT"
 
+# ── QA bounce 2026-07-12: a RELATIVE persisted conf path must resolve
+#     against project-root, not the calling process's own cwd - every
+#     pipeline role invokes swarm_handoff.bb from its OWN .worktrees/<role>
+#     directory, never from project-root. Reproduces the bounce evidence's
+#     own repro shape (a plain subdirectory standing in for a role's
+#     worktree cwd) directly against the real swarm_handoff.bb ───────────
+ROOT="$(mk_fixture -1)"
+mkdir -p "$ROOT/packs" "$ROOT/other-role-worktree"
+printf 'config active_backlog_max_depth 1\n' > "$ROOT/packs/lean-drain.conf"
+# A RELATIVE persisted path, exactly as the ticket's own live-confirmation
+# example produced before the write-side normalization fix (and exactly
+# what the read-side fix must ALSO tolerate as defense in depth).
+printf 'swarm_name\tprimary\nswarm_mode\tautonomous\nactive_backlog_max_depth\t1\nactive_backlog_max_depth_conf_path\tpacks/lean-drain.conf\n' \
+  > "$ROOT/.swarmforge/swarm-identity"
+write_active_items "$ROOT" 2
+write_draft "$ROOT"
+OUT="$(cd "$ROOT/other-role-worktree" && SWARMFORGE_ROLE=coordinator SWARMFORGE_SKIP_DAEMON=1 SWARMFORGE_MAILBOX_ONLY=1 \
+  bb "$SWARM_HANDOFF" "$ROOT/draft.txt" 2>&1 1>/dev/null || true)"
+echo "$OUT" | grep -qi "Active backlog depth exceeded (active=2, max=1)" \
+  || fail "depth-cap-override-relative: expected the pack's cap (1) enforced even from a DIFFERENT cwd than project-root with a RELATIVE persisted path; got: $OUT"
+pass "depth-cap-override-relative: a relative persisted conf path resolves against project-root, not the caller's own cwd"
+rm -rf "$ROOT"
+
 echo "ALL PASS"

@@ -547,10 +547,28 @@ resolve_effective_backlog_max_depth() {
   EFFECTIVE_MAX_DEPTH="$(bb "$SCRIPT_DIR/backlog_depth_cli.bb" "$CONFIG_FILE")"
 }
 
+# BL-313 bounce: CONFIG_FILE may be relative - whenever SWARMFORGE_CONFIG
+# itself is exported as a relative path, CONFIG_FILE inherits that exact
+# string. config_overlay_prompt (below) already normalizes it against
+# WORKING_DIR for its own purpose; write_swarm_identity_file needs the
+# IDENTICAL normalization so the persisted active_backlog_max_depth_conf_path
+# resolves from ANY reader's cwd - every pipeline role invokes
+# swarm_handoff.bb/ready_for_next.bb from its own .worktrees/<role>
+# directory, never from WORKING_DIR, so a raw relative path silently
+# resolved to the wrong file (or nothing) everywhere except the original
+# launch cwd.
+absolute_config_file() {
+  if [[ "$CONFIG_FILE" = /* ]]; then
+    echo "$CONFIG_FILE"
+  else
+    echo "$WORKING_DIR/$CONFIG_FILE"
+  fi
+}
+
 write_swarm_identity_file() {
   resolve_effective_backlog_max_depth
   printf 'swarm_name\t%s\nswarm_mode\t%s\nswarm_mode_primary\t%s\nactive_backlog_max_depth\t%s\nactive_backlog_max_depth_conf_path\t%s\n' \
-    "$SWARM_NAME" "$SWARM_MODE" "$SWARM_MODE_PRIMARY" "$EFFECTIVE_MAX_DEPTH" "$CONFIG_FILE" > "$STATE_DIR/swarm-identity"
+    "$SWARM_NAME" "$SWARM_MODE" "$SWARM_MODE_PRIMARY" "$EFFECTIVE_MAX_DEPTH" "$(absolute_config_file)" > "$STATE_DIR/swarm-identity"
 }
 
 write_sessions_file() {
@@ -725,11 +743,7 @@ is_two_pack_config() {
 
 config_overlay_prompt() {
   local base prompt
-  if [[ "$CONFIG_FILE" = /* ]]; then
-    base="$CONFIG_FILE"
-  else
-    base="$WORKING_DIR/$CONFIG_FILE"
-  fi
+  base="$(absolute_config_file)"
   base="${base%.conf}"
   prompt="${base}.prompt"
   if [[ -f "$prompt" ]]; then
