@@ -117,6 +117,7 @@ const DOMAINS = [
   require('./backlogDepthCapOverrideSteps'),
   require('./coordinatorModelConfigurableSteps'),
   require('./coordinatorInfraTestConfigLeakSteps'),
+  require('./contextClearAllRolesSteps'),
 ];
 
 function registerSteps(registry) {
