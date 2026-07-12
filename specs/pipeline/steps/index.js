@@ -123,6 +123,7 @@ const DOMAINS = [
   require('./supervisorReaperPathBoundarySteps'),
   require('./resumeOrphanedInProcessSteps'),
   require('./testSuiteNeverEmailsSteps'),
+  require('./operatorSelfGenProvenanceSteps'),
 ];
 
 function registerSteps(registry) {
