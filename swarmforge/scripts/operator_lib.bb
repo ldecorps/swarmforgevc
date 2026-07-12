@@ -440,9 +440,9 @@
    other-role-raised candidate is NEVER blocked by this regardless of
    quiet-period state; only self-generation created the circularity this
    ticket fixes, so only self-generation is gated by it."
-  [candidate-item {:keys [backlog-drained? roster-idle?]}]
+  [candidate-item quiet-state]
   (boolean (and (self-generated-item? candidate-item)
-                (quiet-period-active? {:backlog-drained? backlog-drained? :roster-idle? roster-idle?}))))
+                (quiet-period-active? quiet-state))))
 
 (defn role-idle?
   "A roster role blocks hibernation while it holds a pending inbox item or
