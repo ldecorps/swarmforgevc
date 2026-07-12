@@ -15,6 +15,8 @@ const {
   runPollCycle,
   applyPollCycleResult,
   runContainedLoop,
+  computeReplyRelayCycleResult,
+  applyReplyRelayCycleResult,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
 const PRINCIPAL_ID = 111;
@@ -386,66 +388,150 @@ function mkChunkReader(chunks) {
   };
 }
 
-test('relaySseReplies posts a telegram-reply record into its mapped topic', async () => {
+test('relaySseReplies posts a telegram-reply record into its mapped topic, then acks it', async () => {
   const sent = [];
-  await relaySseReplies('', {
-    readChunk: mkChunkReader(['event: telegram-reply\ndata: {"threadId":"SUP-1","text":"hello"}\n\n']),
-    sendReply: async (topicId, text) => {
-      sent.push({ topicId, text });
+  const acked = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-1","text":"hello"}\n\n']),
+      sendReply: async (topicId, text) => {
+        sent.push({ topicId, text });
+      },
+      topicForSubject: (subjectId) => (subjectId === 'SUP-1' ? 42 : undefined),
+      ackReply: async (id) => {
+        acked.push(id);
+      },
     },
-    topicForSubject: (subjectId) => (subjectId === 'SUP-1' ? 42 : undefined),
-  });
+    new Set()
+  );
   assert.deepEqual(sent, [{ topicId: 42, text: 'hello' }]);
+  assert.deepEqual(acked, ['r1']);
 });
 
-test('relaySseReplies drops a reply for an unmapped thread id, never throws', async () => {
+test('relaySseReplies drops a reply for an unmapped thread id, never throws, but still acks it', async () => {
   const sent = [];
-  await relaySseReplies('', {
-    readChunk: mkChunkReader(['event: telegram-reply\ndata: {"threadId":"SUP-9","text":"hi"}\n\n']),
-    sendReply: async (topicId, text) => {
-      sent.push({ topicId, text });
+  const acked = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-9","text":"hi"}\n\n']),
+      sendReply: async (topicId, text) => {
+        sent.push({ topicId, text });
+      },
+      topicForSubject: () => undefined,
+      ackReply: async (id) => {
+        acked.push(id);
+      },
     },
-    topicForSubject: () => undefined,
-  });
+    new Set()
+  );
   assert.deepEqual(sent, []);
+  assert.deepEqual(acked, ['r1']);
 });
 
-test('relaySseReplies ignores a record that is not a telegram-reply event', () => {
+test('relaySseReplies ignores a record that is not a telegram-reply event, and never acks it', () => {
   const sent = [];
-  return relaySseReplies('', {
-    readChunk: mkChunkReader(['event: some-other-event\ndata: {"threadId":"SUP-1","text":"hi"}\n\n']),
-    sendReply: async (topicId, text) => {
-      sent.push({ topicId, text });
+  const acked = [];
+  return relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: some-other-event\ndata: {"id":"r1","threadId":"SUP-1","text":"hi"}\n\n']),
+      sendReply: async (topicId, text) => {
+        sent.push({ topicId, text });
+      },
+      topicForSubject: () => 42,
+      ackReply: async (id) => {
+        acked.push(id);
+      },
     },
-    topicForSubject: () => 42,
-  }).then(() => assert.deepEqual(sent, []));
+    new Set()
+  ).then(() => {
+    assert.deepEqual(sent, []);
+    assert.deepEqual(acked, []);
+  });
 });
 
 test('relaySseReplies drains multiple records buffered across chunks before reading the next one', async () => {
   const sent = [];
-  await relaySseReplies('', {
-    readChunk: mkChunkReader([
-      'event: telegram-reply\ndata: {"threadId":"SUP-1","text":"first"}\n\nevent: telegram-reply\ndata: {"threadId":"SUP-2","text":"second"}\n\n',
-    ]),
-    sendReply: async (topicId, text) => {
-      sent.push({ topicId, text });
+  const acked = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader([
+        'event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-1","text":"first"}\n\nevent: telegram-reply\ndata: {"id":"r2","threadId":"SUP-2","text":"second"}\n\n',
+      ]),
+      sendReply: async (topicId, text) => {
+        sent.push({ topicId, text });
+      },
+      topicForSubject: (subjectId) => ({ 'SUP-1': 1, 'SUP-2': 2 })[subjectId],
+      ackReply: async (id) => {
+        acked.push(id);
+      },
     },
-    topicForSubject: (subjectId) => ({ 'SUP-1': 1, 'SUP-2': 2 })[subjectId],
-  });
+    new Set()
+  );
   assert.deepEqual(sent, [
     { topicId: 1, text: 'first' },
     { topicId: 2, text: 'second' },
   ]);
+  assert.deepEqual(acked, ['r1', 'r2']);
 });
 
 test('relaySseReplies returns cleanly once readChunk reports done', async () => {
-  await relaySseReplies('', {
-    readChunk: mkChunkReader([]),
-    sendReply: async () => {
-      throw new Error('should never be called');
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader([]),
+      sendReply: async () => {
+        throw new Error('should never be called');
+      },
+      topicForSubject: () => 1,
+      ackReply: async () => {
+        throw new Error('should never be called');
+      },
     },
-    topicForSubject: () => 1,
-  });
+    new Set()
+  );
+});
+
+// ── BL-320: idempotency (redelivery after a reconnect must never double-post) ──
+
+test('relaySseReplies never re-sends a record whose id is already in seenIds, but still acks it', async () => {
+  const sent = [];
+  const acked = [];
+  const seenIds = new Set(['r1']);
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-1","text":"hello"}\n\n']),
+      sendReply: async (topicId, text) => {
+        sent.push({ topicId, text });
+      },
+      topicForSubject: () => 42,
+      ackReply: async (id) => {
+        acked.push(id);
+      },
+    },
+    seenIds
+  );
+  assert.deepEqual(sent, [], 'a record already in seenIds must never be re-posted to Telegram');
+  assert.deepEqual(acked, ['r1'], 'the (possibly lost) ack must still be retried');
+});
+
+test('relaySseReplies adds a newly-sent record\'s id to the shared seenIds set so a later reconnect dedupes it', async () => {
+  const seenIds = new Set();
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-1","text":"hello"}\n\n']),
+      sendReply: async () => {},
+      topicForSubject: () => 42,
+      ackReply: async () => {},
+    },
+    seenIds
+  );
+  assert.ok(seenIds.has('r1'));
 });
 
 // ── BL-302: poll-loop resilience (backoff, escalation, isolation) ────────
@@ -583,6 +669,80 @@ test('applyPollCycleResult still waits on a failed cycle below the degraded thre
   );
   assert.deepEqual(warnings, []);
   assert.deepEqual(waits, [1000]);
+});
+
+// ── computeReplyRelayCycleResult / applyReplyRelayCycleResult (BL-320) ───
+// Extracted from subscribeReplies's own for(;;) (cleaner review: the
+// inline try/catch plus two nested ifs pushed subscribeReplies's own CRAP
+// to 30 at 0% coverage - the live wrapper is never unit-exercised, same
+// class of gap the comment above this block already called out for
+// pollLoop/runPollCycle/applyPollCycleResult), mirroring that exact split.
+
+test('computeReplyRelayCycleResult on success resets consecutiveFailures and waits the base backoff, not zero', () => {
+  const cycle = computeReplyRelayCycleResult({ consecutiveFailures: 3 }, true, BACKOFF_CONFIG);
+  assert.equal(cycle.state.consecutiveFailures, 0);
+  assert.equal(cycle.delayMs, BACKOFF_CONFIG.backoffBaseMs);
+  assert.equal(cycle.degradedWarning, false);
+});
+
+test('computeReplyRelayCycleResult on failure increments consecutiveFailures and backs off like the poll cycle', () => {
+  let state = { consecutiveFailures: 0 };
+  const delays = [];
+  for (let i = 0; i < 4; i++) {
+    const cycle = computeReplyRelayCycleResult(state, false, BACKOFF_CONFIG);
+    delays.push(cycle.delayMs);
+    state = cycle.state;
+  }
+  assert.deepEqual(delays, [1000, 2000, 4000, 8000]);
+});
+
+test('computeReplyRelayCycleResult raises the degraded warning on the exact cycle the threshold is crossed', () => {
+  let state = { consecutiveFailures: 0 };
+  const warnings = [];
+  for (let i = 0; i < 5; i++) {
+    const cycle = computeReplyRelayCycleResult(state, false, BACKOFF_CONFIG);
+    warnings.push(cycle.degradedWarning);
+    state = cycle.state;
+  }
+  assert.deepEqual(warnings, [false, false, true, false, false]);
+});
+
+test('computeReplyRelayCycleResult keeps retrying past the degraded threshold and still recovers on success', () => {
+  let state = { consecutiveFailures: 0 };
+  for (let i = 0; i < 10; i++) {
+    state = computeReplyRelayCycleResult(state, false, BACKOFF_CONFIG).state;
+  }
+  assert.equal(state.consecutiveFailures, 10);
+  const cycle = computeReplyRelayCycleResult(state, true, BACKOFF_CONFIG);
+  assert.equal(cycle.state.consecutiveFailures, 0, 'reconnects must still be able to recover after a sustained outage');
+});
+
+test('applyReplyRelayCycleResult writes the warning (with the error message) and waits when both are present', async () => {
+  const warnings = [];
+  const waits = [];
+  await applyReplyRelayCycleResult(
+    { state: { consecutiveFailures: 3 }, delayMs: 4000, degradedWarning: true },
+    'socket terminated',
+    (message) => warnings.push(message),
+    async (ms) => waits.push(ms)
+  );
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /3 consecutive reconnect failures/);
+  assert.match(warnings[0], /socket terminated/);
+  assert.deepEqual(waits, [4000]);
+});
+
+test('applyReplyRelayCycleResult writes no warning but still waits the base backoff on a clean stream end (success)', async () => {
+  const warnings = [];
+  const waits = [];
+  await applyReplyRelayCycleResult(
+    { state: { consecutiveFailures: 0 }, delayMs: BACKOFF_CONFIG.backoffBaseMs, degradedWarning: false },
+    undefined,
+    (message) => warnings.push(message),
+    async (ms) => waits.push(ms)
+  );
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(waits, [BACKOFF_CONFIG.backoffBaseMs]);
 });
 
 // ── runContainedLoop (adapter-injected loop isolation) ────────────────────

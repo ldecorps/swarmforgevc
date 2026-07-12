@@ -395,6 +395,256 @@ test('a reply appended to the outbox is relayed on the SSE stream as a named tel
   });
 });
 
+// ── BL-320: at-least-once reply egress (ack-driven, persisted cursor) ────
+
+function replyAckHeaders(token = TOKEN) {
+  return { authorization: `Bearer ${token}`, 'x-control-token': token };
+}
+
+function postReplyAck(port, id, headers = replyAckHeaders()) {
+  return fetch(`http://127.0.0.1:${port}/reply-ack`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify({ id }),
+  });
+}
+
+function cursorFile(targetPath) {
+  return path.join(targetPath, '.swarmforge', 'operator', 'telegram-reply-relay-cursor.json');
+}
+
+function readCursor(targetPath) {
+  return JSON.parse(fs.readFileSync(cursorFile(targetPath), 'utf8'));
+}
+
+function writeOutboxEntries(targetPath, entries) {
+  const dir = path.join(targetPath, '.swarmforge', 'operator');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'telegram-reply-outbox.jsonl'), entries.map((e) => JSON.stringify(e) + '\n').join(''));
+}
+
+// Reads SSE chunks off a real fetch stream until the given predicate is
+// satisfied or attempts run out - the same accumulate-across-reads
+// technique the BL-281 relay test above uses, since a concurrent
+// BridgeState snapshot tick can share/precede the chunk carrying the
+// telegram-reply record.
+async function readUntil(reader, decoder, predicate, maxAttempts = 20) {
+  let buffer = '';
+  for (let i = 0; i < maxAttempts && !predicate(buffer); i++) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value);
+  }
+  return buffer;
+}
+
+test('POST /reply-ack for the id at the cursor advances the persisted cursor by one', async () => {
+  const target = mkTmp();
+  await withBridge(target, { pollIntervalMs: 20 }, async (handle) => {
+    writeOutboxEntries(target, [{ id: 'r1', threadId: 'SUP-1', text: 'hi' }]);
+    const res = await postReplyAck(handle.port, 'r1');
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ackedIndex, 1);
+    assert.deepEqual(readCursor(target), { ackedIndex: 1 });
+  });
+});
+
+test('POST /reply-ack for an id that does not match the entry at the cursor leaves it unchanged', async () => {
+  const target = mkTmp();
+  await withBridge(target, { pollIntervalMs: 20 }, async (handle) => {
+    writeOutboxEntries(target, [{ id: 'r1', threadId: 'SUP-1', text: 'hi' }]);
+    const res = await postReplyAck(handle.port, 'some-stale-or-wrong-id');
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ackedIndex, 0);
+    assert.equal(fs.existsSync(cursorFile(target)), false, 'a no-op ack must not even create the cursor file');
+  });
+});
+
+test('POST /reply-ack requires control auth, same as the other write routes', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await postReplyAck(handle.port, 'r1', { authorization: `Bearer ${TOKEN}` });
+    assert.equal(res.status, 403);
+  });
+});
+
+test('POST /reply-ack with a differently-shaped body (not {id}) is refused as a bad request, cursor untouched', async () => {
+  const target = mkTmp();
+  await withBridge(target, { pollIntervalMs: 20 }, async (handle) => {
+    writeOutboxEntries(target, [{ id: 'r1', threadId: 'SUP-1', text: 'hi' }]);
+    const res = await fetch(`http://127.0.0.1:${handle.port}/reply-ack`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...replyAckHeaders() },
+      body: JSON.stringify({ notAnId: 'r1' }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(fs.existsSync(cursorFile(target)), false, 'a rejected ack must not create the cursor file');
+  });
+});
+
+// telegram-topic-03/BL-320-01: a dropped connection must not silently eat
+// the reply - a REAL destroyed TCP connection (AbortController.abort()
+// resets the underlying socket rather than cleanly ending the stream,
+// exactly what a real network drop looks like from the server's own
+// req.on('close') perspective), never acked, must be replayed to the NEXT
+// connection.
+test('reply-relay-at-least-once-01: a reply relayed but never acked before a real dropped connection is redelivered on reconnect', async () => {
+  const target = mkTmp();
+  await withBridge(target, { pollIntervalMs: 20 }, async (handle) => {
+    const firstController = new AbortController();
+    const first = await fetch(`http://127.0.0.1:${handle.port}/events`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+      signal: firstController.signal,
+    });
+    const firstReader = first.body.getReader();
+    const firstDecoder = new TextDecoder();
+    await firstReader.read(); // initial state snapshot
+
+    writeOutboxEntries(target, [{ id: 'r1', threadId: 'SUP-1', text: 'check the CI logs' }]);
+    const firstBuffer = await readUntil(firstReader, firstDecoder, (b) => b.includes('event: telegram-reply'));
+    assert.match(firstBuffer, /"id":"r1"/);
+
+    // A real socket reset, not a clean end - the connection dies before
+    // any ack for r1 was ever sent.
+    firstController.abort();
+
+    const secondController = new AbortController();
+    const second = await fetch(`http://127.0.0.1:${handle.port}/events`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+      signal: secondController.signal,
+    });
+    const secondReader = second.body.getReader();
+    const secondDecoder = new TextDecoder();
+    const secondBuffer = await readUntil(secondReader, secondDecoder, (b) => b.includes('event: telegram-reply'));
+    assert.match(secondBuffer, /event: telegram-reply\ndata: \{[^}]*\}\n\n/, 'the unacked entry must be replayed on the new connection');
+    assert.match(secondBuffer, /"id":"r1"/);
+
+    secondController.abort();
+  });
+});
+
+// reply-relay-at-least-once-03: an acked entry must never be redelivered.
+test('reply-relay-at-least-once-03: an acked entry is not redelivered to a subsequent connection (no duplicate)', async () => {
+  const target = mkTmp();
+  await withBridge(target, { pollIntervalMs: 20 }, async (handle) => {
+    const firstController = new AbortController();
+    const first = await fetch(`http://127.0.0.1:${handle.port}/events`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+      signal: firstController.signal,
+    });
+    const firstReader = first.body.getReader();
+    const firstDecoder = new TextDecoder();
+    await firstReader.read(); // initial state snapshot
+
+    writeOutboxEntries(target, [{ id: 'r1', threadId: 'SUP-1', text: 'check the CI logs' }]);
+    await readUntil(firstReader, firstDecoder, (b) => b.includes('event: telegram-reply'));
+
+    const ackRes = await postReplyAck(handle.port, 'r1');
+    assert.equal(ackRes.status, 200);
+    firstController.abort();
+
+    const secondController = new AbortController();
+    const second = await fetch(`http://127.0.0.1:${handle.port}/events`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+      signal: secondController.signal,
+    });
+    const secondReader = second.body.getReader();
+    const secondDecoder = new TextDecoder();
+    await secondReader.read(); // initial state snapshot only
+
+    // reader.read() blocks indefinitely absent new data - race it against a
+    // short timer so "nothing arrived" (the correct outcome here) resolves
+    // instead of hanging the test. Two poll ticks' worth of margin
+    // (pollIntervalMs: 20) gives the replay-from-ackedIndex path a real
+    // chance to (incorrectly) fire before concluding it did not.
+    const timeout = Symbol('timeout');
+    const pendingRead = secondReader.read().catch(() => timeout);
+    const outcome = await Promise.race([pendingRead, new Promise((resolve) => setTimeout(() => resolve(timeout), 150))]);
+    if (outcome !== timeout) {
+      const chunk = secondDecoder.decode(outcome.value ?? new Uint8Array());
+      assert.doesNotMatch(chunk, /event: telegram-reply/, 'an already-acked entry must never be redelivered');
+    }
+
+    secondController.abort();
+    await pendingRead; // let the aborted read settle before the test ends
+  });
+});
+
+// reply-relay-at-least-once-02: the cursor must survive a bridge restart.
+test('reply-relay-at-least-once-02: a persisted cursor survives a bridge restart - unacked entries redeliver exactly once, acked ones do not', async () => {
+  const target = mkTmp();
+  writeOutboxEntries(target, [
+    { id: 'r1', threadId: 'SUP-1', text: 'first' },
+    { id: 'r2', threadId: 'SUP-1', text: 'second' },
+  ]);
+
+  await withBridge(target, { pollIntervalMs: 20 }, async (handle) => {
+    const ackRes = await postReplyAck(handle.port, 'r1');
+    assert.equal(ackRes.status, 200);
+  });
+  assert.deepEqual(readCursor(target), { ackedIndex: 1 });
+
+  await withBridge(target, { pollIntervalMs: 20 }, async (handle) => {
+    const controller = new AbortController();
+    const res = await fetch(`http://127.0.0.1:${handle.port}/events`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+      signal: controller.signal,
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    const buffer = await readUntil(reader, decoder, (b) => b.includes('event: telegram-reply'));
+    assert.match(buffer, /"id":"r2"/, 'the still-unacked entry must be redelivered after restart');
+    assert.doesNotMatch(buffer, /"id":"r1"/, 'the already-acked entry must not be redelivered after restart');
+    controller.abort();
+  });
+});
+
+// Regression: /events can have more than one live client at once (the
+// front-desk bot AND a holistic-UI viewer both subscribe in production).
+// The catch-up replay a freshly-connecting SECOND client triggers must
+// never cause the FIRST, already-connected client to miss the next poll
+// tick's normal broadcast of that same still-unacked entry.
+test('a second client connecting mid-stream does not starve an already-connected client of the next poll-tick broadcast', async () => {
+  const target = mkTmp();
+  await withBridge(target, { pollIntervalMs: 20 }, async (handle) => {
+    const firstController = new AbortController();
+    const first = await fetch(`http://127.0.0.1:${handle.port}/events`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+      signal: firstController.signal,
+    });
+    const firstReader = first.body.getReader();
+    const firstDecoder = new TextDecoder();
+    await firstReader.read(); // initial state snapshot
+
+    writeOutboxEntries(target, [{ id: 'r1', threadId: 'SUP-1', text: 'check the CI logs' }]);
+
+    // A second client connects (well before the next poll tick) - its own
+    // catch-up replay sees and relays the just-written entry to ITSELF.
+    // In the pre-fix code this wrongly advanced the shared emittedIndex,
+    // making the next poll tick skip broadcasting the same entry to the
+    // FIRST, already-connected client.
+    const secondController = new AbortController();
+    const second = await fetch(`http://127.0.0.1:${handle.port}/events`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+      signal: secondController.signal,
+    });
+    const secondReader = second.body.getReader();
+    const secondDecoder = new TextDecoder();
+    const secondBuffer = await readUntil(secondReader, secondDecoder, (b) => b.includes('event: telegram-reply'));
+    assert.match(secondBuffer, /"id":"r1"/, 'setup: the second client\'s own catch-up replay must have relayed the entry');
+
+    const firstBuffer = await readUntil(firstReader, firstDecoder, (b) => b.includes('event: telegram-reply'));
+    assert.match(firstBuffer, /"id":"r1"/, 'the already-connected first client must still receive the broadcast');
+
+    firstController.abort();
+    secondController.abort();
+  });
+});
+
 // BL-265 slice 1: GET /gates lists the currently-pending to-human gates -
 // same token-gated, computed-only-on-request posture as /stage-dwell above.
 

@@ -31,7 +31,7 @@ flowchart TB
     BOUNCE["bounceWatcher.ts / bouncer.ts / bounceDrain.ts"]
     MSGBUS["messageBus.ts\n(append-only audit log)"]
     PRCREATOR["prCreator.ts"]
-    BRIDGE["bridgeServer.ts\n(localhost REST+SSE, in-memory token;\nread routes + a small control-scoped\nwrite surface: gate-answer, telegram-inbound)"]
+    BRIDGE["bridgeServer.ts\n(localhost REST+SSE, in-memory token;\nread routes + a small control-scoped\nwrite surface: gate-answer, telegram-inbound,\nreply-ack)"]
     PANEL["swarmPanel.ts / workTreePanel.ts\n(webview controller)"]
   end
 
