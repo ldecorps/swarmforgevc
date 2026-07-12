@@ -1,7 +1,7 @@
 id: BL-308
 title: "Morning briefing still generates and sends while the swarm is banked (headless, no-agent composer)"
 milestone: M8
-status: todo
+status: active
 type: feature
 priority: 02
 direction: expedite
