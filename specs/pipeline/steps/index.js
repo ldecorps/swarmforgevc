@@ -121,6 +121,7 @@ const DOMAINS = [
   require('./replyRelayAtLeastOnceSteps'),
   require('./coordinatorProviderConfigurableSteps'),
   require('./supervisorReaperPathBoundarySteps'),
+  require('./resumeOrphanedInProcessSteps'),
 ];
 
 function registerSteps(registry) {
