@@ -70,6 +70,13 @@
 ;; hibernation-state-file, so a daemon restart never replays a clear for a
 ;; close already handled.
 (def context-clear-marker-file (fs/path state-dir "coordinator-context-clear.json"))
+;; BL-316: the generalized per-role counterpart - one JSON map keyed by
+;; role-name -> last-cleared inbox/completed/ entry id, so a daemon restart
+;; never replays a clear for any non-coordinator role's completion already
+;; handled. Deliberately a SEPARATE file from context-clear-marker-file
+;; above: the coordinator keeps its own dedicated mechanism/marker
+;; untouched, and this file must never gain a "coordinator" key.
+(def role-context-clear-marker-file (fs/path state-dir "role-context-clear.json"))
 (def pid-file (fs/path daemon-dir "handoffd.pid"))
 (def pid-lock-dir (fs/path daemon-dir "pid.lock"))
 (def stop-file (fs/path daemon-dir "stop"))
@@ -970,8 +977,10 @@
 ;; role-idle? mirrors operator_lib.bb's BL-307 shape exactly (reused, not
 ;; reimplemented); the counts themselves reuse chase_sweep_lib.bb's own
 ;; scan-inbox-new/scan-in-process (already loaded here for the chase sweep)
-;; rather than a third copy of that directory-walking logic.
-(defn coordinator-idle? [role-info]
+;; rather than a third copy of that directory-walking logic. Generic over
+;; role-info (BL-316): the coordinator sweep below and the generalized
+;; per-role sweep further down both call this same fn.
+(defn role-mailbox-idle? [role-info]
   (operator-lib/role-idle?
    {:inbox-new-count (count (chase-sweep-lib/scan-inbox-new (handoff-lib/mailbox-dir role-info :new)))
     :in-process-count (count (chase-sweep-lib/scan-in-process (handoff-lib/mailbox-dir role-info :in_process)))}))
@@ -989,7 +998,7 @@
     (log! "closing-context-clear-skip-mailbox-only")
     (when-let [coordinator (get roles "coordinator")]
       (closing-context-clear-lib/evaluate-closing-context-clear!
-       {:idle? (coordinator-idle? coordinator)
+       {:idle? (role-mailbox-idle? coordinator)
         :closed-ticket-id (latest-done-ticket-id)
         :last-cleared-ticket-id (read-last-cleared-ticket-id)
         :role-name "coordinator"}
@@ -1006,6 +1015,74 @@
         :record-clear! (fn [ticket-id]
                          (record-context-clear! ticket-id)
                          (log! "closing-context-clear-fired" ticket-id))}))))
+
+;; ── BL-316: generalized per-role context-clear at the safe idle boundary
+;;    after a role's OWN inbox/completed/ gains a fresh entry ─────────────
+;; Same pure decision (closing_context_clear_lib.bb), same
+;; degrade-quietly-never-crash-the-sweep posture as every sweep in this
+;; file - only the "what just finished" signal differs from the
+;; coordinator's own bookkeeping-close signal above: here it is a fresh
+;; entry in the role's own inbox/completed/ (a single .handoff file for a
+;; task role, or a whole batch_* directory landing at once for a batch
+;; role). The coordinator is deliberately excluded - it keeps its own
+;; dedicated mechanism/marker above, untouched.
+
+(defn latest-completed-entry-id
+  "The most recently modified top-level entry in role-info's own
+   inbox/completed/ - a .handoff file for a task role, or a batch_*
+   directory (as a single unit, not its individual members) for a batch
+   role. nil when the directory is empty/absent."
+  [role-info]
+  (let [dir (handoff-lib/mailbox-dir role-info :completed)]
+    (when (fs/exists? dir)
+      (let [entries (->> (fs/list-dir dir)
+                          (filter (fn [p]
+                                    (or (and (fs/regular-file? p) (str/ends-with? (fs/file-name p) ".handoff"))
+                                        (and (fs/directory? p) (str/starts-with? (fs/file-name p) "batch_")))))
+                          vec)]
+        (when (seq entries)
+          (-> (apply max-key #(.toMillis (fs/last-modified-time %)) entries)
+              fs/file-name))))))
+
+(defn read-role-context-clear-marker []
+  (if (fs/exists? role-context-clear-marker-file)
+    (try (json/parse-string (slurp (str role-context-clear-marker-file)) true)
+         (catch Exception _ {}))
+    {}))
+
+(defn read-role-last-cleared [role-name]
+  (get (read-role-context-clear-marker) (keyword role-name)))
+
+(defn record-role-context-clear! [role-name entry-id]
+  (spit (str role-context-clear-marker-file)
+        (json/generate-string (assoc (read-role-context-clear-marker) (keyword role-name) entry-id))))
+
+(defn role-context-clear-sweep! [roles socket]
+  (if (tmux-inject-disabled?)
+    (log! "role-context-clear-skip-mailbox-only")
+    (doseq [[role-name role-info] roles
+            :when (not= role-name "coordinator")]
+      (try
+        (closing-context-clear-lib/evaluate-closing-context-clear!
+         {:idle? (role-mailbox-idle? role-info)
+          :closed-ticket-id (latest-completed-entry-id role-info)
+          :last-cleared-ticket-id (read-role-last-cleared role-name)
+          :role-name role-name}
+         {:inject-clear! (fn []
+                            (agent-runtime-inject/notify-agent!
+                             socket (:session role-info) (or (:agent role-info) "claude")
+                             :log-fn (fn [tag sess detail] (log! tag sess detail))
+                             :text "/clear"))
+          :inject-startup-reread! (fn [instruction-text]
+                                     (agent-runtime-inject/notify-agent!
+                                      socket (:session role-info) (or (:agent role-info) "claude")
+                                      :log-fn (fn [tag sess detail] (log! tag sess detail))
+                                      :text instruction-text))
+          :record-clear! (fn [entry-id]
+                           (record-role-context-clear! role-name entry-id)
+                           (log! "role-context-clear-fired" role-name entry-id))})
+        (catch Exception e
+          (log! "role-context-clear-role-error" role-name (.getMessage e)))))))
 
 (defn -main []
   (let [roles  (load-roles)
@@ -1082,7 +1159,14 @@
                     (try
                       (closing-context-clear-sweep! (load-roles) socket)
                       (catch Exception e
-                        (log! "closing-context-clear-sweep-error" (.getMessage e)))))
+                        (log! "closing-context-clear-sweep-error" (.getMessage e))))
+                    ;; BL-316: generalized per-role context-clear sweep
+                    ;; shares the same cadence - no separate timeout, same
+                    ;; rationale as BL-222/BL-214/BL-258/BL-309 above.
+                    (try
+                      (role-context-clear-sweep! (load-roles) socket)
+                      (catch Exception e
+                        (log! "role-context-clear-sweep-error" (.getMessage e)))))
                   (spit (str heartbeat-file) (str (now) "\n"))
                   (when (zero? (mod cycle heartbeat-log-every-cycles))
                     (log! "heartbeat" (str "cycle=" cycle)))
