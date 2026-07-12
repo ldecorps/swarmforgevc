@@ -87,6 +87,6 @@ acceptance:
     - "Status distinguishes no work from work claimed by nobody"
     - "An idle role with a genuinely empty inbox still reports no work"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: medium
