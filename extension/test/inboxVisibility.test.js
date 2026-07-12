@@ -69,7 +69,8 @@ test('BL-143 inbox-visibility-01: default mode counts/lists only .handoff payloa
 
   const view = computeRoleQueueView('coder', inboxNew, inProcess, false);
 
-  assert.deepEqual(view.payloads, ['00_a.handoff']);
+  assert.deepEqual(view.newPayloads, ['00_a.handoff']);
+  assert.deepEqual(view.inProcessPayloads, []);
   assert.deepEqual(view.sidecars, []);
 });
 
@@ -84,7 +85,7 @@ test('BL-143 inbox-visibility-02: debug mode reveals sidecars with explicit kind
 
   const view = computeRoleQueueView('coder', inboxNew, inProcess, true);
 
-  assert.deepEqual(view.payloads, ['00_a.handoff']);
+  assert.deepEqual(view.newPayloads, ['00_a.handoff']);
   assert.deepEqual(view.sidecars, [{ name: '00_a.handoff.chase.json', kind: 'chase-sidecar' }]);
 });
 
@@ -98,11 +99,13 @@ test('BL-143 inbox-visibility-03: a sidecar-only inbox (no .handoff) reports zer
 
   const view = computeRoleQueueView('coder', inboxNew, inProcess, false);
 
-  assert.deepEqual(view.payloads, []);
-  assert.equal(view.payloads.length, 0, 'a sidecar-only inbox must never read as pending work');
+  assert.deepEqual(view.newPayloads, []);
+  assert.equal(view.newPayloads.length, 0, 'a sidecar-only inbox must never read as pending work');
 });
 
-test('computeRoleQueueView also covers in_process payloads and sidecars, not just inbox/new', () => {
+// ── BL-323: new and in_process payloads are reported SEPARATELY ────────────
+
+test('BL-323: computeRoleQueueView keeps in_process payloads separate from new/, not flattened together', () => {
   const target = mkTmp();
   const inboxNew = path.join(target, 'inbox', 'new');
   const inProcess = path.join(target, 'inbox', 'in_process');
@@ -110,7 +113,8 @@ test('computeRoleQueueView also covers in_process payloads and sidecars, not jus
   writeSidecar(inProcess, '00_c.handoff.nudge');
 
   const defaultView = computeRoleQueueView('coder', inboxNew, inProcess, false);
-  assert.deepEqual(defaultView.payloads, ['00_c.handoff']);
+  assert.deepEqual(defaultView.newPayloads, []);
+  assert.deepEqual(defaultView.inProcessPayloads, ['00_c.handoff']);
 
   const debugView = computeRoleQueueView('coder', inboxNew, inProcess, true);
   assert.deepEqual(debugView.sidecars, [{ name: '00_c.handoff.nudge', kind: 'nudge-sidecar' }]);
@@ -119,6 +123,7 @@ test('computeRoleQueueView also covers in_process payloads and sidecars, not jus
 test('computeRoleQueueView reports zero payloads without error against entirely missing inbox dirs', () => {
   const target = mkTmp();
   const view = computeRoleQueueView('coder', path.join(target, 'new'), path.join(target, 'in_process'), false);
-  assert.deepEqual(view.payloads, []);
+  assert.deepEqual(view.newPayloads, []);
+  assert.deepEqual(view.inProcessPayloads, []);
   assert.deepEqual(view.sidecars, []);
 });
