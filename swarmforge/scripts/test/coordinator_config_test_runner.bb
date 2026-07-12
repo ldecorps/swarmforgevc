@@ -62,6 +62,36 @@
          "claude-opus-4-8"
          (coordinator-config-lib/coordinator-model "config coordinator_model claude-opus-4-8\nconfig coordinator_effort xhigh\n"))
 
+;; ── coordinator-provider-configurable-01/02: coordinator_agent (BL-319) ──
+
+(assert= "coordinator-provider-configurable-01: a declared coordinator_agent is read"
+         "copilot"
+         (coordinator-config-lib/coordinator-agent "config coordinator_agent copilot"))
+
+(assert= "coordinator-provider-configurable-02: absent coordinator_agent falls back to claude"
+         "claude"
+         (coordinator-config-lib/coordinator-agent "config active_backlog_max_depth 3"))
+
+(assert= "coordinator-provider-configurable-02: nil conf text falls back to claude"
+         "claude"
+         (coordinator-config-lib/coordinator-agent nil))
+
+(assert= "coordinator-provider-configurable-02: a blank (whitespace-only) value falls back to claude, not an empty string"
+         "claude"
+         (coordinator-config-lib/coordinator-agent "config coordinator_agent   \n"))
+
+(assert= "the default agent is claude, preserving every existing pack's prior behavior"
+         "claude"
+         coordinator-config-lib/default-coordinator-agent)
+
+(assert= "coordinator-provider-configurable-03: an unrecognized value is still READ verbatim by this pure fn - validation is swarmforge.sh's job, not this layer's"
+         "bogus"
+         (coordinator-config-lib/coordinator-agent "config coordinator_agent bogus"))
+
+(assert= "ignores surrounding comment/blank lines and other config keys"
+         "vibe"
+         (coordinator-config-lib/coordinator-agent "# a comment\n\nconfig active_backlog_max_depth 3\nconfig coordinator_agent vibe\n"))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do

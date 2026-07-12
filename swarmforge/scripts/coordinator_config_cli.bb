@@ -1,13 +1,14 @@
 #!/usr/bin/env bb
 
-;; BL-314: the one shell-callable entry point for coordinator_config_lib.bb.
-;; swarmforge.sh's provision_coordinator shells out to this to resolve the
-;; coordinator's model/effort from the effective config file, rather than
-;; re-implementing the parse in bash.
+;; BL-314/BL-319: the one shell-callable entry point for
+;; coordinator_config_lib.bb. swarmforge.sh's provision_coordinator shells
+;; out to this to resolve the coordinator's model/effort/agent from the
+;; effective config file, rather than re-implementing the parse in bash.
 ;;
 ;; Usage: coordinator_config_cli.bb <conf-path>
-;; Prints "<model>\t<effort>" (falling back to the shared Sonnet/high
-;; defaults when the conf file is absent/unparseable) and exits 0.
+;; Prints "<model>\t<effort>\t<agent>" (falling back to the shared
+;; Sonnet/high/claude defaults when the conf file is absent/unparseable)
+;; and exits 0.
 
 (ns coordinator-config-cli
   (:require [babashka.fs :as fs]))
@@ -26,6 +27,8 @@
         conf-text (try (slurp conf-path) (catch Exception _ nil))]
     (println (str (coordinator-config-lib/coordinator-model conf-text)
                    "\t"
-                   (coordinator-config-lib/coordinator-effort conf-text)))))
+                   (coordinator-config-lib/coordinator-effort conf-text)
+                   "\t"
+                   (coordinator-config-lib/coordinator-agent conf-text)))))
 
 (apply -main *command-line-args*)
