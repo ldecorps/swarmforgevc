@@ -182,6 +182,23 @@ You are the hardender.
   PPID failure as this known environmental gap, and never "fix" it by making a test
   assert whatever PPID the host happens to produce.
 
+- **Exercise a selector with 2+ concurrent candidates, never just one.** A
+  selection function ("which gate does this answer?", "which role holds this?",
+  "which item did they mean?") is usually correct and fully green with ONE
+  candidate pending, and only reveals its real behavior at two. Single-candidate
+  tests pass while the multi-candidate path silently degrades — to an
+  ask-which/give-up branch, or worse, to picking the wrong one. If a selector
+  takes a collection, a test MUST pass it a collection with more than one member.
+  Watch especially for a selector that DISCARDS an identifying key it was handed
+  (a ticket id, a topic id, a role) and falls back to counting: that is correct
+  only when no key was available, and it is a defect the moment one was. (BL-325
+  architect review: `bl-topic-approval-sweep!` reuses BL-285's count-based
+  `selectGateDecision`, which is right for a SUP thread carrying no ticket
+  context, but the BL-topic path HAS a `backlogId` — so with 2+ gates pending, a
+  reply typed into ticket A's own topic gets "which gate do you mean?" instead of
+  answering A's. Safe, never wrong — but degraded exactly when it matters, and
+  BL-325's own suite never had two gates pending, so nothing caught it.)
+
 ## Lessons Discipline
 - After a hardening mistake or a non-obvious root cause (a survivor class
   you misjudged, a tooling behavior that cost a rerun, an environment trap),
