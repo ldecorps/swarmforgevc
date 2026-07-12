@@ -42,8 +42,19 @@ export function listSidecars(dir: string): SidecarEntry[] {
 
 export interface RoleQueueView {
   role: string;
-  /** Real .handoff payload file names only - the default-mode count/listing. */
-  payloads: string[];
+  /** Real .handoff payload file names still waiting in inbox/new/. */
+  newPayloads: string[];
+  /**
+   * BL-323: real .handoff payload file names already CLAIMED into
+   * inbox/in_process/ - kept SEPARATE from newPayloads (not flattened
+   * together as before) so a caller can tell "nothing pending" (both
+   * empty) apart from "something is claimed and nobody visibly owns it"
+   * (in_process non-empty, new empty). A role whose agent was killed
+   * mid-task looked identical to a genuinely idle one under the old
+   * flattened count - exactly how a real ~4-hour stall went unnoticed
+   * (BL-323's own incident report).
+   */
+  inProcessPayloads: string[];
   /** Populated only when debug is requested; empty otherwise. */
   sidecars: SidecarEntry[];
 }
@@ -59,12 +70,10 @@ export function computeRoleQueueView(
   inProcessDir: string,
   debug: boolean
 ): RoleQueueView {
-  const payloads = [
-    ...scanInboxNew(inboxNewDir).map((item) => path.basename(item.filePath)),
-    ...scanInProcess(inProcessDir).map((item) => path.basename(item.filePath)),
-  ];
+  const newPayloads = scanInboxNew(inboxNewDir).map((item) => path.basename(item.filePath));
+  const inProcessPayloads = scanInProcess(inProcessDir).map((item) => path.basename(item.filePath));
 
   const sidecars = debug ? [...listSidecars(inboxNewDir), ...listSidecars(inProcessDir)] : [];
 
-  return { role, payloads, sidecars };
+  return { role, newPayloads, inProcessPayloads, sidecars };
 }
