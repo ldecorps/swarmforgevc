@@ -96,19 +96,32 @@
    generated today, or the configured time has not yet been reached).
 
    BL-272: :emit-sidecar! runs the BL-213 cost & health sidecar emitter
-   BEST-EFFORT before :notify! - mirrors extension.ts's onBriefingDue host
-   path, which emits+commits the sidecar inside a try/catch before nudging
-   the coordinator. A throwing :emit-sidecar! must never suppress the
-   nudge, so it is wrapped here, not left to each adapter implementation to
-   remember."
-  [now-ms morning-hour morning-minute briefings-dir adapters]
-  (let [day-key (utc-day-key now-ms)]
-    (if (morning-trigger-due? now-ms morning-hour morning-minute briefings-dir)
-      (do
-        (try
-          ((:emit-sidecar! adapters))
-          (catch Exception _ nil))
-        ((:notify! adapters) (briefing-due-instruction day-key))
-        ((:log! adapters) "briefing-generation-nudge-sent" day-key)
-        true)
-      false)))
+   BEST-EFFORT before :notify!/:compose-headless! - mirrors extension.ts's
+   onBriefingDue host path, which emits+commits the sidecar inside a
+   try/catch before nudging the coordinator. A throwing :emit-sidecar!
+   must never suppress the nudge, so it is wrapped here, not left to each
+   adapter implementation to remember.
+
+   BL-308: the 6-arg form takes an explicit hibernated? flag. When due AND
+   hibernated?, :compose-headless! (day-key) is called INSTEAD OF :notify!
+   - there is no coordinator to nudge while banked, so the headless
+   composer writes the briefing itself. The 5-arg form (every pre-BL-308
+   caller/test) is unchanged: it defaults hibernated? to false, so its
+   behavior stays byte-identical to before this ticket."
+  ([now-ms morning-hour morning-minute briefings-dir adapters]
+   (generate-briefing-if-due! now-ms morning-hour morning-minute briefings-dir false adapters))
+  ([now-ms morning-hour morning-minute briefings-dir hibernated? adapters]
+   (let [day-key (utc-day-key now-ms)]
+     (if (morning-trigger-due? now-ms morning-hour morning-minute briefings-dir)
+       (do
+         (try
+           ((:emit-sidecar! adapters))
+           (catch Exception _ nil))
+         (if hibernated?
+           ((:compose-headless! adapters) day-key)
+           ((:notify! adapters) (briefing-due-instruction day-key)))
+         ((:log! adapters)
+          (if hibernated? "briefing-generation-headless-composed" "briefing-generation-nudge-sent")
+          day-key)
+         true)
+       false))))

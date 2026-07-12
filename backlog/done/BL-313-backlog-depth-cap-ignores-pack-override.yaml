@@ -1,0 +1,93 @@
+id: BL-313
+title: "active_backlog_max_depth enforcement always reads the default swarmforge.conf and silently ignores any --pack/SWARMFORGE_CONFIG override — currently live, not just a future-launch trap"
+milestone: M8
+status: todo
+type: bug
+priority: 01
+direction: expedite
+depends_on: []
+source: "Coordinator flagged in its 2026-07-12 briefing (\"config is beyond my powers, so flagging\"), escalated by the human via operator (.swarmforge/operator/INTAKE-swarmforge-conf-max-depth-trap.md). Root cause found to be materially worse than the intake's own hypothesis — confirmed by code inspection and against this live session before speccing."
+
+notes: |
+  CORRECTED ROOT CAUSE (the intake assumed pack overrides currently work
+  and only a bare/no-pack launch is exposed — that assumption is FALSE;
+  verified against both the code and this live session):
+
+  `swarmforge.sh` resolves the effective config for PROVISIONING (which
+  roles run, worktrees, receive modes) via
+  `CONFIG_FILE="${SWARMFORGE_CONFIG:-$SWARM_FORGE_DIR/swarmforge.conf}"`
+  (`swarmforge/scripts/swarmforge.sh:34`), correctly honoring a
+  `--pack`/`SWARMFORGE_CONFIG` override for that purpose.
+
+  But the ACTUAL depth-cap enforcement — `swarm_handoff.bb`'s depth
+  WARNING and `ready_for_next.bb`'s AUTO-PROMOTE gate — both go through
+  `backlog_depth_lib.bb`'s `read-max-depth`/`conf-file-path`
+  (`swarmforge/scripts/backlog_depth_lib.bb:56-69`), which is HARDCODED to
+  `(fs/path project-root "swarmforge" "swarmforge.conf")` — it never
+  consults `SWARMFORGE_CONFIG` or any pack override at all. Nothing
+  propagates the launch-time override into this reader: `SWARMFORGE_CONFIG`
+  is a shell env var read once by `swarmforge.sh` at launch and never
+  exported into the spawned tmux panes (no `tmux set-environment`
+  anywhere), so a role's own pane process has no way to see which pack
+  launched it, and no other state file records it either (the only
+  adjacent snapshot, `.swarmforge/state/swarm-identity`, captures swarm
+  name/mode, not the config path or its resolved cap).
+
+  LIVE CONFIRMATION (not hypothetical): this very session is running with
+  `SWARMFORGE_CONFIG=swarmforge/packs/lean-drain.conf` (declared cap `1`),
+  but `swarmforge/swarmforge.conf` (the file `read-max-depth` actually
+  reads, unconditionally) still declares `-1`. The real enforcement in
+  this live swarm is therefore uncapped right now, not capped at 1 as
+  intended — this is a currently-active defeat of a WIP-control safety
+  mechanism, not merely a risk for "whoever launches next without a pack."
+
+  SCOPE:
+    1. The depth-cap reader must enforce the SAME effective cap that was
+       actually chosen at launch time (whichever pack/override was used),
+       not always the tracked default file. Since the override is not
+       currently visible to a role's own process, the launcher must
+       persist the effective config's `active_backlog_max_depth` (or the
+       resolved config path) into durable per-launch state at
+       provisioning time — the same posture as the existing
+       `write_swarm_identity_file` snapshot — and `backlog_depth_lib.bb`
+       must read that persisted effective value instead of hardcoding
+       `swarmforge/swarmforge.conf`.
+    2. A bare launch with no pack/override still resolves to the tracked
+       default `swarmforge/swarmforge.conf`'s own declared value — same
+       behavior as intended today, just now actually reflected correctly
+       end-to-end.
+    3. The launch banner/log must state the effective
+       `active_backlog_max_depth` and which config supplied it, so an
+       uncapped (or unexpectedly capped) pipeline is never entered
+       silently — the intake's explicit visibility ask, and the only
+       remaining gap for a bare/no-pack launch once (1) is fixed.
+    4. Value question (specifier's call, per the intake): do NOT force the
+       default `swarmforge.conf`'s own `-1` to a different number —
+       `-1` is plausibly intentional for a full 8-role pack running
+       parallel tickets. This ticket's job is to make whichever cap is
+       actually in effect the one that is enforced and visible, not to
+       change what any pack declares.
+    5. Every already-tracked pack conf's own declared cap (`lean-drain.conf`
+       and `resilience-min.conf` at `1`; `full-forge.conf` at `-1`) is
+       unchanged by this ticket — the defect is in enforcement plumbing,
+       not in any pack's declared value.
+
+  E2E QA PROCEDURE: (a) launch (or the equivalent test harness) with
+  `SWARMFORGE_CONFIG` pointed at a pack declaring cap `1` and enough
+  active+paused backlog items to exceed it -> assert `swarm_handoff.bb`'s
+  WARNING and `ready_for_next.bb`'s AUTO-PROMOTE gate both enforce `1`,
+  not the default file's `-1`; (b) launch with no override -> assert
+  behavior is unchanged (default file's own value enforced); (c) confirm
+  the launch banner/log states the effective cap and its source in both
+  cases; (d) re-verify against this actual live session (lean-drain,
+  cap should be `1`) that the real gate now enforces `1`.
+
+acceptance:
+  feature: specs/features/BL-313-backlog-depth-cap-ignores-pack-override.feature
+  steps:
+    - "Launching with a pack that declares a different active_backlog_max_depth makes the real WARNING and AUTO-PROMOTE gates enforce the pack's cap, not the default swarmforge.conf's"
+    - "Launching with no pack/override still enforces the default swarmforge.conf's own declared cap, unchanged from today"
+    - "The launch banner/log states the effective active_backlog_max_depth and which config file supplied it"
+    - "No pack's own declared cap value is changed by this ticket"
+
+mutation_cost: medium

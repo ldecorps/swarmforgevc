@@ -186,13 +186,28 @@
    scanning the process table, not just the pid the pid file names - the
    only way to find an orphan left behind by a prior supervisor or launcher
    (BL-081). Never matches handoffd_supervisor.bb itself or another
-   project's daemon."
+   project's daemon.
+
+   Matches on the LAST whitespace-separated token of the command line (the
+   actual <project-root> argument handoffd.bb was invoked with -
+   start_handoff_daemon.sh always launches it as `bb handoffd.bb
+   <project-root>`), not a raw substring search over the whole command
+   line: a worktree's own copy of handoffd.bb (e.g.
+   .worktrees/coder/swarmforge/scripts/handoffd.bb) is textually NESTED
+   under this project's own root path, so a substring search false-
+   positive-matched that worktree's handoffd.bb SCRIPT PATH as if it were
+   serving this root, even when it was actually launched against a wholly
+   different <project-root> argument - and reaped it. Confirmed live: this
+   supervisor SIGTERM'd a handoffd.bb test fixture running against a /tmp
+   root from a coder-worktree test script, every ~10s poll, purely because
+   the worktree's own script path happened to start with this root's path
+   (coder session, 2026-07-12)."
   []
   (->> (all-pid-commands)
        (filter (fn [[_ cmd]]
                  (and (str/includes? cmd "handoffd.bb")
                       (not (str/includes? cmd "handoffd_supervisor.bb"))
-                      (str/includes? cmd project-root))))
+                      (= project-root (last (str/split (str/trim cmd) #"\s+"))))))
        (map first)
        distinct))
 

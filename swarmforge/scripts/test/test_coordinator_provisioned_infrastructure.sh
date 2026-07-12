@@ -10,6 +10,16 @@
 
 set -euo pipefail
 
+# BL-315: a caller's own shell may have SWARMFORGE_CONFIG set (a normal,
+# correct thing to have per BL-313's pack-override usage) - unset it once
+# here so every fixture below resolves its own conf via the DEFAULT
+# swarmforge/swarmforge.conf path, never the caller's live override
+# (engineering.prompt's "shell test... must env -u SWARMFORGE_CONFIG"
+# rule; no fixture in this file needs a non-default value, so one unset
+# covers every zsh -c call below instead of repeating an env -u prefix at
+# each of them).
+unset SWARMFORGE_CONFIG
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SWARMFORGE_SH="$SCRIPT_DIR/../swarmforge.sh"
 
@@ -54,17 +64,19 @@ zsh -c "
 grep -qx "coordinator" "$OUT_DIR/roles.txt" || fail "01: a conf omitting coordinator must still provision one"
 pass "01: a conf that omits coordinator still brings a coordinator up"
 
-# coordinator-infrastructure-01 (BL-243 follow-up disclosure): the coder's
-# own commit flagged that provision_coordinator's hardcoded model
-# (claude-opus-4-8) differs from the removed conf line's claude-sonnet-5 -
-# an already-disclosed, operator-confirmed change, not a hidden one. Lock
-# it in with a regression test so a future accidental edit to that
-# hardcoded string is caught here rather than discovered live.
+# coordinator-infrastructure-01 (BL-314): the coordinator's model/effort
+# are now pack-configurable (config coordinator_model/coordinator_effort),
+# defaulting to claude-sonnet-5/high - not the old hardcoded
+# claude-opus-4-8 - when a conf declares neither line, exactly this
+# fixture's own conf. Lock it in with a regression test so a future
+# accidental revert of the default is caught here rather than discovered
+# live (see test_coordinator_config_pack_override.sh for the
+# pack-override/explicit-Opus/malformed-value scenarios).
 COORD_LINE_NO="$(grep -nx "coordinator" "$OUT_DIR/roles.txt" | cut -d: -f1)"
 COORD_EXTRA_CLI="$(sed -n "${COORD_LINE_NO}p" "$OUT_DIR/extra_cli_args.txt")"
-[[ "$COORD_EXTRA_CLI" == *"--model claude-opus-4-8"* ]] \
-  || fail "01: expected the coordinator's launch args to carry --model claude-opus-4-8, got: $COORD_EXTRA_CLI"
-pass "01: the coordinator's provisioned model is the documented claude-opus-4-8 default"
+[[ "$COORD_EXTRA_CLI" == *"--model claude-sonnet-5"* && "$COORD_EXTRA_CLI" == *"--effort high"* ]] \
+  || fail "01: expected the coordinator's launch args to default to --model claude-sonnet-5 --effort high, got: $COORD_EXTRA_CLI"
+pass "01: the coordinator defaults to claude-sonnet-5/high (BL-314), not the old hardcoded claude-opus-4-8"
 
 COORD_COUNT="$(grep -cx "coordinator" "$OUT_DIR/roles.txt")"
 [[ "$COORD_COUNT" == "1" ]] || fail "01: expected exactly one coordinator entry, got $COORD_COUNT"

@@ -1,0 +1,89 @@
+id: BL-310
+title: "Swarm relaunch into a drained backlog no longer auto-hibernates before the coordinator can triage queued work"
+milestone: M8
+status: todo
+type: bug
+priority: 01
+direction: expedite
+depends_on: ["BL-307"]
+source: "Operator follow-up defect on BL-307, found live 2026-07-12 while relaunching to build BL-308/BL-309 (.swarmforge/operator/INTAKE-bl307-seed-race.md). Not a pre-baked design — scope decided with the human via clarifying questions."
+
+notes: |
+  BL-307 shipped the closing-pass auto-hibernate/auto-relaunch pair. This
+  defect is a race in the DOWN-trigger: a freshly (re)started
+  `operator_runtime.bb` evaluates the closing pass on its normal tick
+  (`OPERATOR_INTERVAL_MS`, currently 30000ms) starting immediately at
+  process start. If `backlog/active/` is empty and every roster role
+  happens to be idle at that instant — which is the NORMAL state right
+  after a fresh launch, before the coordinator has had a chance to wake,
+  read any pending `.swarmforge/operator/INTAKE-*.md` docs or its own
+  inbox mail, and turn them into tickets/handoffs — the closing pass
+  hibernates the swarm within ~15-30s of launch, before any triage can
+  happen. The feature eats the very launch meant to feed it. (Live
+  evidence: the operator had to stop `operator_runtime`, relaunch, hand-seed
+  the coordinator's inbox to hold hibernation off, wait for a promote, then
+  restart the runtime — see the intake doc for the full by-hand workaround.)
+
+  SCOPE (decided with the human — two fixes only, both reusing existing
+  primitives; do NOT key any behavior on raw `.swarmforge/operator/
+  INTAKE-*.md` file existence):
+    1. LAUNCH GRACE WINDOW (down-trigger): the closing pass must never
+       decide to hibernate within a fixed grace period (2 minutes) of
+       `operator_runtime.bb`'s OWN process start (this run of the tick
+       loop, not the swarm's roster/tmux state — the runtime already
+       tracks its own PID at start via the existing `pid-file` write, so
+       "since this process began" is a well-defined instant to gate on).
+       This is a cold-start guard only: it does not change hibernate/
+       relaunch behavior once the grace period has elapsed, and it does
+       not apply to the runtime's own long-running lifetime across many
+       ordinary hibernate/relaunch cycles that happen without the process
+       itself restarting.
+    2. MAIL-TRIGGERED WAKE (up-trigger): while hibernated, the runtime
+       must also relaunch when fresh coordinator mail arrives — not only
+       when a promotable backlog ticket appears (today's only up-trigger
+       condition, per `should-relaunch?` in `operator_lib.bb:386-390`).
+       Reuse the existing `coordinator-inbox-has-fresh?` probe
+       (`operator_runtime.bb:550-558`, already used elsewhere for the
+       disposable-LLM-operator launch decision) as the new signal — do not
+       build a second freshness probe.
+
+  EXPLICITLY DESCOPED (specifier's call, confirmed with the human): do NOT
+  treat the presence of `.swarmforge/operator/INTAKE-*.md` files as a
+  hibernation-blocking or wake-triggering signal in this ticket. Verified
+  live: ~20 such files currently sit in `.swarmforge/operator/`, most
+  already fully shipped and QA-approved long ago — there is no disposition/
+  archive convention today, so raw file existence would permanently wedge
+  the swarm awake. That gap is tracked separately as BL-311 (hygiene); if
+  BL-311 later adds a disposition marker, a future ticket may revisit using
+  it as a signal here.
+
+  CONTAMINATION FLAG (pipeline): `operator_runtime.bb` may be dirty in the
+  shared main checkout with ticket-less operator-tunnel work (see memory
+  [[operator-tunnel-contamination-blocks-merge]]). The coder must
+  `git stash --include-untracked` before starting, keep this ticket's diff
+  to `operator_lib.bb`/`operator_runtime.bb`/tests only, and pop the stash
+  back immediately after landing — never fold tunnel work into this
+  ticket's commit.
+
+  E2E QA PROCEDURE (fixture-driven, injected clock/state — no real tmux):
+  (a) feed a closing-pass evaluation with `now-ms` inside the grace window
+  of a fixture "runtime started at" instant, with backlog drained and
+  roster idle -> assert it does NOT hibernate; (b) feed the same fixture
+  with `now-ms` past the grace window -> assert it hibernates exactly as
+  BL-307 already specifies; (c) from a hibernated fixture with no
+  promotable backlog work, feed a fresh-coordinator-mail signal -> assert
+  the runtime relaunches; (d) from the same hibernated fixture with
+  neither fresh mail nor promotable backlog work -> assert it stays
+  hibernated. Then, as a live confirmation (not unit-covered), QA restarts
+  the real `operator_runtime.bb` process against a drained fixture backlog
+  and confirms it does not hibernate inside the 2-minute grace window.
+
+acceptance:
+  feature: specs/features/BL-310-swarm-seed-race-launch-grace.feature
+  steps:
+    - "The closing pass never hibernates within 2 minutes of the runtime's own process start, even when the backlog is drained and the roster is idle"
+    - "Once the grace window has elapsed, the closing pass hibernates exactly as before (drained backlog + idle roster)"
+    - "Fresh coordinator mail arriving while hibernated triggers an automatic relaunch, even with no promotable backlog ticket yet"
+    - "With no fresh coordinator mail and no promotable backlog work, a hibernated swarm stays hibernated"
+
+mutation_cost: low

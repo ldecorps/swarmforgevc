@@ -23,10 +23,12 @@ make_fixture() {
   # BL-283: + ticket_status_lib.bb (linked-ticket-status-sweep!'s own live
   # backlog-status reader).
   # BL-306: + operator_ask.bb (the disposable LLM's own one-shot ask CLI).
+  # BL-307: + handoff_lib.bb (the shared mailbox-path resolver
+  # closing-pass-sweep! uses for per-role inbox/in-process counts).
   cp "$SRC/operator_lib.bb" "$SRC/operator_runtime.bb" "$SRC/telegram_topic_lib.bb" \
      "$SRC/support_lib.bb" "$SRC/support_thread_store.bb" \
      "$SRC/operator_memory_lib.bb" "$SRC/operator_memory_store.bb" \
-     "$SRC/ticket_status_lib.bb" "$SRC/operator_ask.bb" \
+     "$SRC/ticket_status_lib.bb" "$SRC/operator_ask.bb" "$SRC/handoff_lib.bb" \
      "$d/swarmforge/scripts/"
   printf '%s' "$d"
 }
@@ -247,6 +249,160 @@ check "operator-ask-04: the emergency event still dispatches while a question is
   '[[ "$OUT13" == *"\"launched?\":true"* ]]'
 check "operator-ask-04: the still-unanswered (not yet due) question is left untouched" \
   '[[ -f "$F/.swarmforge/operator/awaiting-answer.json" ]] && [[ "$(jget "$F/.swarmforge/operator/awaiting-answer.json" ":thread_id")" == SUP-1 ]]'
+rm -rf "$F"
+
+# ── 14-20. BL-307: auto-hibernate on drain + mandatory closing pass. Every
+#          scenario gives the roster one REAL role ("coder", its own
+#          worktree) so closing-pass-sweep!'s eligible? guard (never
+#          hibernate a roster that never existed) is satisfied - matching
+#          every one of the ticket's own scenarios, which all describe an
+#          actual roster in play. No real tmux socket is ever created, so
+#          kill-swarm-tmux!/relaunch-tmux! (gated by OPERATOR_SKIP_LAUNCH,
+#          same seam launch-operator! already uses) never shell out for
+#          real - the "injectable seam...without a real tmux socket" the
+#          ticket asks for ─────────────────────────────────────────────────
+make_roster_fixture() {
+  local d; d="$(make_fixture)"
+  mkdir -p "$d/.worktrees/coder/.swarmforge/handoffs/inbox/new" \
+           "$d/.worktrees/coder/.swarmforge/handoffs/inbox/in_process" \
+           "$d/backlog/active" "$d/backlog/paused"
+  printf 'coder\tcoder\t%s/.worktrees/coder\tswarmforge-coder\tCoder\tclaude\ttask\n' "$d" \
+    > "$d/.swarmforge/roles.tsv"
+  # Pre-seed the swarm-check timer (like section 3's cooldown fixture) so a
+  # fresh SWARM_CHECK_TIMER event never masks a fully-idle tick's own state.
+  echo "$(( $(date +%s) * 1000 ))" > "$d/.swarmforge/operator/last-swarm-check"
+  printf '%s' "$d"
+}
+
+# ── 14: fully drained + idle roster -> hibernates ─────────────────────────
+F="$(make_roster_fixture)"
+OUT14="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
+check "BL-307/swarm-auto-hibernate-01: hibernation.json records hibernated=true" \
+  '[[ -f "$F/.swarmforge/operator/hibernation.json" ]] && [[ "$(jget "$F/.swarmforge/operator/hibernation.json" ":hibernated")" == true ]]'
+check "BL-307/swarm-auto-hibernate-01: roles.tsv is emptied" \
+  '[[ ! -s "$F/.swarmforge/roles.tsv" ]]'
+check "BL-307/swarm-auto-hibernate-01: the pre-hibernate roster is backed up" \
+  'grep -q "^coder" "$F/.swarmforge/roles.tsv.hibernate-backup"'
+# The FIRST tick's own dead-agent-events (real roster row, no live tmux
+# session backing it - unrelated to closing-pass-sweep!) still dispatches a
+# pending event, so :state legitimately reads "dispatching" that tick (like
+# section 1's own first-tick assertion). By the SECOND tick roles.tsv is
+# already empty (nothing left to report dead) and the dispatched event has
+# been reaped, so :state settles on "hibernated" - BL-307/swarm-auto-
+# hibernate-06's own "recorded in the runtime's status output" assertion.
+OUT14b="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
+check "BL-307/swarm-auto-hibernate-06: status.json records the hibernated state" \
+  '[[ "$(jget "$F/.swarmforge/operator/status.json" ":state")" == hibernated ]]'
+rm -rf "$F"
+
+# ── 15: an in-process task blocks hibernation ─────────────────────────────
+F="$(make_roster_fixture)"
+printf 'from: coder\nto: cleaner\npriority: 50\ntype: git_handoff\ntask: t\ncommit: abc\n\nbody\n' \
+  > "$F/.worktrees/coder/.swarmforge/handoffs/inbox/in_process/00_x_from_coder_to_cleaner.handoff"
+OUT15="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
+check "BL-307/swarm-auto-hibernate-02: an in-process task blocks hibernation" \
+  '[[ ! -f "$F/.swarmforge/operator/hibernation.json" ]] && [[ -s "$F/.swarmforge/roles.tsv" ]]'
+rm -rf "$F"
+
+# ── 16: a pending inbox item blocks hibernation ───────────────────────────
+F="$(make_roster_fixture)"
+printf 'from: coder\nto: cleaner\npriority: 50\ntype: git_handoff\ntask: t\ncommit: abc\n\nbody\n' \
+  > "$F/.worktrees/coder/.swarmforge/handoffs/inbox/new/00_x_from_coder_to_cleaner.handoff"
+OUT16="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
+check "BL-307/swarm-auto-hibernate-03: a pending inbox item blocks hibernation" \
+  '[[ ! -f "$F/.swarmforge/operator/hibernation.json" ]] && [[ -s "$F/.swarmforge/roles.tsv" ]]'
+rm -rf "$F"
+
+# ── 17: a blocked paused ticket never blocks hibernation ─────────────────
+F="$(make_roster_fixture)"
+printf 'id: BL-101\nstatus: blocked\n' > "$F/backlog/paused/BL-101.yaml"
+OUT17="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
+check "BL-307/swarm-auto-hibernate-04: a blocked-only paused backlog still hibernates" \
+  '[[ -f "$F/.swarmforge/operator/hibernation.json" ]] && [[ ! -s "$F/.swarmforge/roles.tsv" ]]'
+rm -rf "$F"
+
+# ── 18: a pull-eligible paused ticket blocks hibernation (control for 17) ─
+F="$(make_roster_fixture)"
+printf 'id: BL-200\nstatus: todo\n' > "$F/backlog/paused/BL-200.yaml"
+OUT18="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
+check "a pull-eligible (non-blocked) paused ticket blocks hibernation" \
+  '[[ ! -f "$F/.swarmforge/operator/hibernation.json" ]] && [[ -s "$F/.swarmforge/roles.tsv" ]]'
+rm -rf "$F"
+
+# ── 19: an active backlog item blocks hibernation ─────────────────────────
+F="$(make_roster_fixture)"
+printf 'id: BL-300\nstatus: active\n' > "$F/backlog/active/BL-300.yaml"
+OUT19="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
+check "an active backlog item blocks hibernation" \
+  '[[ ! -f "$F/.swarmforge/operator/hibernation.json" ]] && [[ -s "$F/.swarmforge/roles.tsv" ]]'
+rm -rf "$F"
+
+# ── 20: new promotable work arriving while hibernated triggers relaunch ──
+F="$(make_roster_fixture)"
+: > "$F/.swarmforge/roles.tsv"
+printf 'coder\tcoder\t%s/.worktrees/coder\tswarmforge-coder\tCoder\tclaude\ttask\n' "$F" \
+  > "$F/.swarmforge/roles.tsv.hibernate-backup"
+printf '{"hibernated":true,"hibernated_at_ms":1,"config_path":""}' \
+  > "$F/.swarmforge/operator/hibernation.json"
+printf 'id: BL-400\nstatus: active\n' > "$F/backlog/active/BL-400.yaml"
+OUT20="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
+check "BL-307/swarm-auto-hibernate-07: hibernation state clears on relaunch" \
+  '[[ ! -f "$F/.swarmforge/operator/hibernation.json" ]]'
+check "BL-307/swarm-auto-hibernate-07: the backed-up roster is restored" \
+  'grep -q "^coder" "$F/.swarmforge/roles.tsv"'
+rm -rf "$F"
+
+# ── 21-24. BL-310: seed-race launch grace. runtime-started-at-ms reuses the
+#          pid-file's own mtime (only ever written by the real -main
+#          while-loop, never by --tick-once) - these fixtures seed that same
+#          file by hand to simulate "the runtime started N ago" without a
+#          real long-running process ─────────────────────────────────────
+
+# ── 21: within the 2-minute grace window -> never hibernates, even drained+idle
+F="$(make_roster_fixture)"
+: > "$F/.swarmforge/operator/runtime.pid"
+OUT21="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
+check "swarm-seed-race-01: does not hibernate within the launch grace window" \
+  '[[ ! -f "$F/.swarmforge/operator/hibernation.json" ]] && [[ -s "$F/.swarmforge/roles.tsv" ]]'
+rm -rf "$F"
+
+# ── 22: grace window elapsed (pid-file mtime backdated) -> hibernates as before
+F="$(make_roster_fixture)"
+: > "$F/.swarmforge/operator/runtime.pid"
+touch -d "-5 minutes" "$F/.swarmforge/operator/runtime.pid"
+OUT22="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
+check "swarm-seed-race-02: hibernates once the grace window has elapsed" \
+  '[[ -f "$F/.swarmforge/operator/hibernation.json" ]] && [[ ! -s "$F/.swarmforge/roles.tsv" ]]'
+rm -rf "$F"
+
+# ── 23: hibernated, no promotable backlog work, fresh coordinator mail arrives
+#        -> relaunches (the mail-triggered up-trigger, not the backlog one) ──
+F="$(make_roster_fixture)"
+: > "$F/.swarmforge/roles.tsv"
+printf 'coder\tcoder\t%s/.worktrees/coder\tswarmforge-coder\tCoder\tclaude\ttask\n' "$F" \
+  > "$F/.swarmforge/roles.tsv.hibernate-backup"
+printf '{"hibernated":true,"hibernated_at_ms":1,"config_path":""}' \
+  > "$F/.swarmforge/operator/hibernation.json"
+mkdir -p "$F/.swarmforge/handoffs/coordinator/inbox/new"
+printf 'from: specifier\nto: coordinator\npriority: 00\ntype: note\n\nbody\n' \
+  > "$F/.swarmforge/handoffs/coordinator/inbox/new/00_x_from_specifier_to_coordinator.handoff"
+OUT23="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
+check "swarm-seed-race-03: fresh coordinator mail relaunches a hibernated swarm with no promotable ticket yet" \
+  '[[ ! -f "$F/.swarmforge/operator/hibernation.json" ]]'
+check "swarm-seed-race-03: the backed-up roster is restored" \
+  'grep -q "^coder" "$F/.swarmforge/roles.tsv"'
+rm -rf "$F"
+
+# ── 24: hibernated, no promotable backlog work, no fresh mail -> stays hibernated
+F="$(make_roster_fixture)"
+: > "$F/.swarmforge/roles.tsv"
+printf 'coder\tcoder\t%s/.worktrees/coder\tswarmforge-coder\tCoder\tclaude\ttask\n' "$F" \
+  > "$F/.swarmforge/roles.tsv.hibernate-backup"
+printf '{"hibernated":true,"hibernated_at_ms":1,"config_path":""}' \
+  > "$F/.swarmforge/operator/hibernation.json"
+OUT24="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
+check "swarm-seed-race-04: stays hibernated with no fresh mail and no promotable work" \
+  '[[ -f "$F/.swarmforge/operator/hibernation.json" ]]'
 rm -rf "$F"
 
 # ── 4. launcher assembles a --remote-control command ─────────────────────────
