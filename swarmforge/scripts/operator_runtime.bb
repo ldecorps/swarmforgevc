@@ -95,6 +95,14 @@
 (def backlog-paused-dir (fs/path project-root "backlog" "paused"))
 (def swarmforge-sh (fs/path script-dir "swarmforge.sh"))
 
+;; Resilient remote-access tunnel (Microsoft `code tunnel`). The runtime keeps
+;; a phone-reachable vscode.dev tunnel into this box alive so the swarm can be
+;; observed and bounced even when the Remote Control relay / extension host are
+;; dead — a channel that rides a different transport than RC, owned by the
+;; always-alive runtime rather than a transient session. See operator_tunnel.sh.
+(def tunnel-helper (fs/path script-dir "operator_tunnel.sh"))
+(def tunnel-status-file (fs/path op-dir "tunnel.status.json"))
+
 ;; The Operator is NOT a swarm agent: it runs on its OWN tmux socket (see
 ;; launch_operator.sh) and its session/RC name deliberately drop the
 ;; "swarmforge-" prefix the role agents use, so it reads as the external
@@ -683,6 +691,28 @@
 (defn write-status! [m]
   (atomic-spit! status-file (str (json/generate-string (assoc m :updated_at (now-iso))) "\n")))
 
+;; ── remote-access tunnel ──────────────────────────────────────────────────────
+
+(defn ensure-tunnel!
+  "Best-effort: ask the tunnel helper to (re)establish the vscode.dev tunnel if
+   it has died and we are authenticated. Idempotent and cheap — a no-op when the
+   tunnel is already up, when auth has not been bootstrapped, or when disabled
+   via SWARMFORGE_SKIP_TUNNEL. Never throws into the tick: the tunnel is a
+   recovery convenience, not a runtime dependency."
+  []
+  (try
+    (process/sh {:continue true} "bash" (str tunnel-helper) "ensure" project-root)
+    (catch Exception e (log! "tunnel-error" (.getMessage e)))))
+
+(defn read-tunnel-status
+  "The tunnel helper's last-published status ({:state :url :name :updated_at}),
+   or nil if it has never run. Surfaced into status.json so the phone can read
+   the current tunnel URL from the same place as everything else."
+  []
+  (when (fs/exists? tunnel-status-file)
+    (try (json/parse-string (slurp (str tunnel-status-file)) true)
+         (catch Exception _ nil))))
+
 ;; ── one tick ──────────────────────────────────────────────────────────────────
 
 (defn tick! []
@@ -755,8 +785,12 @@
 
     (reap-finished-operator!)
 
+    ;; keep the resilient remote-access tunnel alive (best-effort, non-blocking)
+    (ensure-tunnel!)
+
     (let [llm-running? (operator-running?)
           pending (read-events events-file)
+          tunnel (read-tunnel-status)
           decision (operator-lib/should-launch-operator?
                     {:llm-running? llm-running?
                      :provider-state provider-state
@@ -767,11 +801,12 @@
                   (pos? (count pending)) :dispatching
                   (already-hibernated?) :hibernated
                   :else :idle)]
-      (write-status! (operator-lib/render-status
-                      {:state state :llm-running? llm-running?
-                       :provider "claude" :provider-state provider-state
-                       :agents-running agents-running
-                       :pending-count (count pending)}))
+      (write-status! (cond-> (operator-lib/render-status
+                              {:state state :llm-running? llm-running?
+                               :provider "claude" :provider-state provider-state
+                               :agents-running agents-running
+                               :pending-count (count pending)})
+                       tunnel (assoc :tunnel tunnel)))
       (when decision
         (log! "decision" "launch (pending=" (str (count pending)) ")")
         (launch-operator!)
