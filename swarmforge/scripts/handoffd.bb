@@ -729,7 +729,7 @@
   ([subject text html] (send-configured-briefing-email! subject text html nil))
   ([subject text html attachments]
    (daemon-alarm-lib/send-configured-email!
-    conf-file subject text html attachments
+    project-root conf-file subject text html attachments
     {:already-warned?! (fn [] @briefing-missing-key-warned?)
      :log-warning! (fn [msg] (log! "email-misconfigured" msg))
      :mark-warned! (fn [] (reset! briefing-missing-key-warned? true))})))
