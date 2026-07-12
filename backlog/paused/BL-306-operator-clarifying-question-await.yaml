@@ -1,0 +1,92 @@
+id: BL-306
+title: "Enh: Operator can ask the human a clarifying question in the front-desk SUP thread and hold a runtime-owned awaiting-answer state (bounded: escalate once then drop; never blocks emergencies; never guesses)"
+milestone: M8
+status: todo
+type: feature
+priority: 20
+depends_on: []
+source: "Coordinator enhancement 2026-07-11 (note 000255): 'Operator asks clarifying Qs in-thread (Telegram) + awaiting-answer state.' Human decisions (AskUserQuestion 2026-07-11): ASK SURFACE = front-desk SUP thread; ON NO ANSWER = escalate once then drop+note. Specifier mapped the Operator<->Telegram boundary before scoping."
+
+notes: |
+  The Operator is a DISPOSABLE per-event LLM (operator.prompt): it acts then exits and can
+  NEVER wait — the always-alive `operator_runtime.bb` owns all cross-run state/waiting. So
+  "ask + await" splits: the LLM ASKS (one run), the RUNTIME holds the awaiting state and
+  pairs the later answer + times out.
+
+  HUMAN DECISIONS (AskUserQuestion 2026-07-11):
+    - ASK SURFACE = the front-desk SUP thread (one operator<->human channel). NOT a BL-###
+      topic (out of scope). Reuses the exact BL-284/276 egress; the answer arrives via the
+      existing BL-281/294 SUP inbound.
+    - ON NO ANSWER = escalate once, then drop+note. Never re-ask endlessly; never guess.
+
+  VERIFIED LIVE INTEGRATION LAYER (2026-07-11) — this MVP is almost all REUSE:
+    - EGRESS exists: `append-to-reply-outbox! [thread-id text]` (operator_runtime.bb ~L255)
+      + the support-thread-store append is exactly how idle-nudge (BL-276) and
+      linked-ticket status (BL-283) post into a SUP thread. The Operator asks the same way.
+    - INBOUND exists: a human SUP reply arrives as a `TELEGRAM_TOPIC_MESSAGE` event;
+      `dispatch-subject-of` (~L363) gives its subject/thread-id and
+      `write-telegram-reply-context!` already pre-loads that thread's transcript for the
+      woken Operator (BL-281/282). BL-306 pairs that reply to the pending question.
+    - STATE owner: the runtime already persists cross-run state files (cooldown.json,
+      status.json). Awaiting-answer is another such runtime-owned file.
+    - The Operator today only NOTIFIES/escalates (fire-and-forget); there is NO structured
+      ask+await. That gap is this ticket.
+
+  SCOPE (pure decisions in the CLEAN `operator_lib.bb`, injected clock per de0991e; thin
+  wiring in `operator_runtime.bb`; behavior in `operator.prompt`):
+    1. ASK (operator.prompt): add a distinct "ask a clarifying question" action — when the
+      Operator hits a decision only the human can make (today -> notify/escalate), it MAY
+      instead post ONE specific clarifying question into the front-desk SUP thread (via the
+      existing append-to-reply-outbox! + support-thread append) AND record an
+      awaiting-answer state, then exit. Reinforce the hard limit: ASK, never fabricate the
+      decision. Distinct from the existing fire-and-forget NOTIFY.
+    2. AWAITING-ANSWER STATE (runtime-owned, e.g. `.swarmforge/operator/awaiting-answer.json`):
+      {question, thread-id (the front-desk SUP thread), asked-at-ms}. Written on ask; it is
+      the DEDUP guard — while a question is pending it is NOT re-posted each tick.
+    3. RESOLVE: when a TELEGRAM_TOPIC_MESSAGE arrives whose subject == the pending
+      question's thread-id, the runtime surfaces the reply to the woken Operator AS that
+      question's answer (e.g. include {pending-question, answer} in the dispatched context)
+      and CLEARS awaiting-answer.json. Pairing decision is pure (operator_lib.bb).
+    4. BOUNDED TIMEOUT: runtime tracks asked-at; when now - asked-at >
+      OPERATOR_AWAIT_TIMEOUT_MS (configurable, sensible default) with no matching reply,
+      ESCALATE ONCE (re-post "[still needed] <question>" to the thread) then CLEAR
+      awaiting-answer + note it. Exactly one escalation — never endless re-ask, never guess.
+      (This is the resilience guard: an unresolved await must not stick the Operator, same
+      class as [[front-desk-resilience-defect-track]] / BL-305.)
+    5. SCOPED / NON-BLOCKING: awaiting-answer gates ONLY the specific pending decision.
+      Every other event (AGENT_EXITED, SWARM DOWN, PROVIDER_*, TASK_ARRIVED) is handled
+      normally while a question is pending — a clarifying question must NEVER block
+      emergency recovery.
+
+  DESIGN DECISIONS (no further fork; human set surface + timeout): ONE pending question at
+  a time for this MVP (a SUP thread + a single operator<->human channel makes pairing
+  unambiguous — the next reply in that thread is the answer); concurrent/multiple pending
+  questions are OUT OF SCOPE (future). Await timeout length is configurable (default flagged
+  for architect review).
+
+  CONTAMINATION FLAG (pipeline): `operator_runtime.bb` is dirty in the worktree (ticket-less
+  operator_tunnel work, [[operator-tunnel-contamination-blocks-merge]]). Keep its edit
+  MINIMAL (thin call into operator_lib.bb) and stash --include-untracked -> land -> pop at
+  merge. operator_lib.bb and operator.prompt are clean.
+
+  E2E QA PROCEDURE (injected clock, fake reply-outbox + support store): (a) Operator asks ->
+  assert the question text is appended to the SUP thread AND awaiting-answer.json records
+  {question, thread-id, asked-at}. (b) Feed a TELEGRAM_TOPIC_MESSAGE for that thread ->
+  assert the woken Operator's context carries {pending-question, answer} and
+  awaiting-answer.json is gone. (c) Advance the clock past the window with no reply ->
+  assert exactly ONE "[still needed]" escalation is posted and the state clears. (d) With a
+  question pending, feed an AGENT_EXITED/SWARM-DOWN event -> assert it is still handled.
+
+  OUT OF SCOPE: asking in a BL-### topic (human chose SUP-only); multiple concurrent
+  pending questions; the LLM's own judgment on WHAT to ask; any new comms/transport code
+  (all egress/inbound is reused).
+
+acceptance:
+  feature: specs/features/BL-306-operator-clarifying-question-await.feature
+  steps:
+    - "Asking posts the question into the front-desk SUP thread and records a runtime-owned awaiting-answer state (so it is not re-asked while pending)"
+    - "A human reply in that thread is delivered to the Operator as the pending question's answer and the awaiting-answer state is cleared"
+    - "An unanswered question is escalated exactly once past the bounded window, then the awaiting-answer state clears — the Operator never re-asks endlessly and never guesses the answer"
+    - "While a question is pending, a swarm emergency is still handled normally (awaiting an answer never blocks recovery)"
+
+mutation_cost: medium
