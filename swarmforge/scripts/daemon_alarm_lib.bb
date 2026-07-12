@@ -145,6 +145,42 @@
 ;; wiring warn-missing-key-if-needed! or (easy to miss) forgetting to. One
 ;; function here means a new caller gets the loud warning by construction
 ;; instead of by remembering to copy it.
+;; BL-326: the fail-safe that must live in the SEND PATH, not in every test
+;; author's memory. A per-invocation `env -u RESEND_API_KEY` convention
+;; already existed (BL-215's own case guarded itself) and still mailed the
+;; human 136 real times, because ONE test file's daemon-killing cases never
+;; got the memo - a 1-in-7 miss rate with a real-world blast radius is not a
+;; control. This predicate is the automatic, no-cooperation-required signal:
+;; every test fixture in this codebase creates its throwaway project root
+;; via `mktemp -d`, which always lands under the system temp directory - a
+;; real swarm's project root never does. Checked at the ONE place every
+;; alarm/briefing email already funnels through (send-configured-email!
+;; below), so a new test file gets the guard for free, by construction,
+;; the same way BL-214 already made warn-missing-key-if-needed! automatic
+;; for a new caller instead of copy-pasted.
+(defn test-fixture-root?
+  "True when project-root resolves under the system temp directory (honors
+   $TMPDIR, falling back to the JVM's own java.io.tmpdir the way `mktemp`
+   does) - the tell every one of this suite's throwaway daemon fixtures
+   shares, confirmed on the real incident's own mail body (the /tmp/tmp.*
+   root was the giveaway). Never throws: an unresolvable/relative path is
+   treated as project-root's own raw string, not a crash."
+  [project-root]
+  (let [tmp-dir (or (System/getenv "TMPDIR") (System/getProperty "java.io.tmpdir") "/tmp")
+        canonical-tmp (try (str (fs/canonicalize tmp-dir)) (catch Exception _ tmp-dir))
+        canonical-root (try (str (fs/canonicalize project-root)) (catch Exception _ (str project-root)))]
+    (str/starts-with? canonical-root canonical-tmp)))
+
+;; BL-326: intercepts ONLY the actual network POST, never the decision path
+;; above it - a test-fixture root with a configured recipient but a MISSING
+;; key must still fall through send-alarm-email!'s existing :missing-api-key
+;; branch and still warn loudly (BL-215/BL-326 scenario 04 both depend on
+;; this staying true for exactly the fixtures that exercise it); only the
+;; branch that would otherwise reach a REAL post-fn! call (both to and
+;; api-key present) is redirected here instead of default-post!.
+(defn- suppressed-post! [_api-key _msg]
+  {:success false :reason :test-fixture-suppressed :error "email suppressed: project root is a throwaway test/temp directory"})
+
 (defn send-configured-email!
   "Reads notify_email_to/notify_email_from from conf-file (parse-conf) and
    RESEND_API_KEY from the process env, sends via send-alarm-email!, then
@@ -152,21 +188,36 @@
    {:already-warned?! :log-warning! :mark-warned!}, typically a per-process
    atom so repeated calls across a long-lived daemon warn only once).
 
-   BL-260: the 5-arg form threads an optional html body through; the
-   existing 4-arg form (BL-144's death alarm) is unchanged, delegating with
+   BL-260: the 6-arg form threads an optional html body through; the
+   existing 5-arg form (BL-144's death alarm) is unchanged, delegating with
    no html.
 
-   BL-286: the 6-arg form additionally threads an optional attachments seq;
-   the 5-arg form now delegates to it with attachments nil, so every
-   pre-BL-286 caller/test keeps its exact prior behavior."
-  ([conf-file subject text warn-adapters] (send-configured-email! conf-file subject text nil warn-adapters))
-  ([conf-file subject text html warn-adapters] (send-configured-email! conf-file subject text html nil warn-adapters))
-  ([conf-file subject text html attachments warn-adapters]
+   BL-286: the 7-arg form additionally threads an optional attachments seq;
+   the 6-arg form now delegates to it with attachments nil, so every
+   pre-BL-286 caller/test keeps its exact prior behavior too.
+
+   BL-326: project-root is now a REQUIRED first argument (every existing
+   caller already has it in scope - handoffd_supervisor.bb/handoffd.bb both
+   def it top-level) so the test-fixture-root? fail-safe applies to every
+   current AND future caller by construction, never opt-in. A test-fixture
+   root swaps in suppressed-post! in place of default-post! - the
+   :disabled/:missing-api-key decisions in send-alarm-email! are UNCHANGED
+   (still computed from the real to/api-key), so a configured-but-keyless
+   test fixture still warns loudly exactly as before; only a call that
+   would otherwise reach the real network (both to and api-key present) is
+   redirected, returning :reason :test-fixture-suppressed (distinct from
+   :disabled and :missing-api-key) instead of ever touching the network."
+  ([project-root conf-file subject text warn-adapters]
+   (send-configured-email! project-root conf-file subject text nil warn-adapters))
+  ([project-root conf-file subject text html warn-adapters]
+   (send-configured-email! project-root conf-file subject text html nil warn-adapters))
+  ([project-root conf-file subject text html attachments warn-adapters]
    (let [conf (parse-conf (when (fs/exists? conf-file) (slurp (str conf-file))))
          to (get conf "notify_email_to")
          from (or (get conf "notify_email_from") "onboarding@resend.dev")
          api-key (System/getenv "RESEND_API_KEY")
-         result (send-alarm-email! api-key to from subject text html attachments default-post!)]
+         post-fn! (if (test-fixture-root? project-root) suppressed-post! default-post!)
+         result (send-alarm-email! api-key to from subject text html attachments post-fn!)]
      (warn-missing-key-if-needed! result warn-adapters)
      result)))
 
