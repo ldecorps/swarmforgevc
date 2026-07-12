@@ -115,6 +115,7 @@ const DOMAINS = [
   require('./operatorSeedRaceLaunchGraceSteps'),
   require('./burnMeterMasterResidentSteps'),
   require('./backlogDepthCapOverrideSteps'),
+  require('./coordinatorModelConfigurableSteps'),
 ];
 
 function registerSteps(registry) {
