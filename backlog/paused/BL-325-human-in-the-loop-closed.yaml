@@ -1,0 +1,96 @@
+id: BL-325
+title: "Close the human-in-the-loop: a gate must state its question, hear the human's answer, and unblock on it"
+milestone: M8
+status: todo
+type: defect
+severity: high
+priority: 5
+direction: aligned
+depends_on: []
+source: "Raised by the human 2026-07-13 from a real failure in the BL-316 Telegram topic, via .swarmforge/operator/INTAKE-human-in-the-loop-is-decorative.md; drained per BL-311's convention. Coordinator routed it HIGH, 'ship as one loop'."
+
+notes: |
+  THE FAILURE (verbatim from the BL-316 topic). 23:18 "NeedsApproval: BL-316" ->
+  23:46 the human asks "What do I need to approve?" (delivered, never read) -> next day
+  "BL-316 ... is complete" (a TaskCompleted event, NOT a reply). The human was asked to
+  approve something, asked what it was, was never answered, and the work completed anyway.
+  The final message only LOOKS like a response because it landed under the question. What
+  actually unblocked it was the external Operator by hand — answering a role's pane dialog
+  WITHOUT KNOWING the human had asked anything. No approval was bypassed in the contract
+  sense (BL-316 carries no `human_approval` field, nothing was force-merged); the defect is
+  that a human-in-the-loop request was raised, ignored, and satisfied by someone else.
+
+  SHIP AS ONE LOOP. Any single leg fixed alone leaves the loop open: question text with no
+  inbound path -> the human reads the ask and still cannot answer it; inbound path with no
+  question text -> the human can reply, but only to ask "to what?"; both, without the answer
+  reaching the gated pane -> the agent stays blocked regardless. Prove the LOOP, not the
+  parts. A test exercising one leg does not satisfy this ticket.
+
+  THE INTAKE'S GAP 2 IS WRONG — VERIFIED, AND THE REAL GAP IS WORSE. The intake claims a BL
+  topic "cannot hear the human" because inbound resolution only consults
+  telegram-topic-map.json and never the backlog map. That is NOT what the code does, and a
+  coder who follows the intake literally will rebuild working inbound resolution and still
+  ship a broken loop. Verified on the live tree:
+    - `.swarmforge/operator/backlog-topic-map.json` IS populated and DOES contain
+      `"BL-316":62` — the very topic in the report.
+    - `decideUpdateAction` (telegramFrontDeskBotCore.ts:96) DOES consult `backlogForTopic`
+      right after `subjectForTopic`, and returns `{action:'operator-context', backlogId}`.
+    - So the human's message RESOLVED correctly to BL-316 and reached
+      `postOperatorContext` (telegram-front-desk-bot.ts:165).
+  The REAL gap 2: `postOperatorContext` appends a `TELEGRAM_BL_TOPIC_MESSAGE` operator
+  event and its own comment says "What the Operator does with this event is the Operator's
+  own behavior (out of scope here)" — and NOTHING EVER READS IT. Grep across `swarmforge/`
+  and `extension/src/` finds exactly ONE occurrence of `TELEGRAM_BL_TOPIC_MESSAGE`: the
+  write. Zero consumers. The live operator event file ALREADY HOLDS 2 such events — the
+  human's messages were resolved, recorded, and read by nobody. This is
+  epic-runtime-wiring-slice-rule again (the rule the intake itself cites, but points at the
+  wrong leg): a produced event with no consumer is a dark path.
+
+  THE THREE REAL GAPS:
+    1. THE QUESTION IS THROWN AWAY. `readGates` (telegram-front-desk-bot.ts:400) narrows
+       `computeRoleGateStatesLive`'s RoleGateState down to `{role, gated}`, DROPPING the
+       `snippet` it already captures. The human gets a doorbell with nobody at the door.
+       BL-301 shipped the foundation and named snippet-enrichment out of scope; no follow-up
+       slice was ever tracked. The deferral was reasonable — not writing it down was not.
+    2. THE ANSWER IS RECORDED WHERE NOTHING READS IT. `TELEGRAM_BL_TOPIC_MESSAGE` has one
+       producer and zero consumers (above). The inbound resolution is FINE; give the event a
+       consumer that actually acts on it.
+    3. NO EGRESS INTO A BL TOPIC. `operator_reply.bb` / `operator_notify.bb` accept only
+       `--thread SUP-###`, and BL-285's working relay (`operator-decide.js <thread-id>
+       approve <text>`) works only from a SUP thread. The ask lands in a BL topic: two halves
+       of a working feature wired to different sockets. Even the Operator has no supported
+       way to post into a BL topic — backfilling summaries required calling the Telegram API
+       directly, reaching AROUND the architecture.
+
+  SCOPE:
+    1. Preserve the gate's question snippet through the notification path (stop narrowing it
+       away in `readGates`), so a NeedsApproval message states WHAT is being asked.
+    2. Give `TELEGRAM_BL_TOPIC_MESSAGE` a real consumer that routes the human's answer to
+       the gated role. Do NOT rebuild inbound resolution — it already works.
+    3. Extend the reply/notify egress to accept a BL-### target so an answer (and the
+       Operator) can post into a backlog item's topic through a supported path.
+    4. REUSE BL-285's `operator-decide approve` relay to unblock the gated pane. Do NOT
+       build a second relay.
+    5. Regression: SUP threads keep working exactly as today.
+
+  E2E QA PROCEDURE: drive the WHOLE loop against a real gated role — gate raised -> assert
+  the NeedsApproval message states the question (not just an id) -> type an answer into that
+  BL topic as the human -> assert it resolves to the ticket AND a consumer acts on it (assert
+  the consumer, not just the event write: the current bug is precisely a written-but-unread
+  event) -> assert the answer reaches the gated pane and unblocks it -> assert the item did
+  not complete before the answer arrived. Use a REAL inbound message from a REAL BL topic id.
+  Then assert SUP threads are unchanged.
+
+acceptance:
+  feature: specs/features/BL-325-human-in-the-loop-closed.feature
+  steps:
+    - "The approval request states what is being asked"
+    - "A reply typed into the item's topic reaches a consumer that acts on it"
+    - "The human's answer reaches the gated role and unblocks it"
+    - "The Operator can post into a backlog item's topic through a supported path"
+    - "The whole loop closes without the human being bypassed"
+    - "Support threads are unaffected"
+
+human_approval: pending
+
+mutation_cost: medium
