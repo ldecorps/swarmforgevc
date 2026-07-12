@@ -24,6 +24,16 @@
    masks a real explicit value as a crash."
   "high")
 
+(def default-coordinator-agent
+  "BL-319: absent/blank preserves every existing pack's exact prior
+   behavior (the coordinator was always claude before this ticket).
+   Unlike model/effort, an EXPLICIT but unrecognized value is not this
+   pure fn's concern to reject - swarmforge.sh's validate_agent (the
+   same allow-list check a bogus window-line agent already fails) is the
+   one enforcement point, so a provider added there is automatically
+   usable here with no second allow-list to keep in sync."
+  "claude")
+
 (defn parse-config-value
   "Pure: the value of a `config <key> <value...>` line from conf-text's own
    text, or default when the line is absent or its value is
@@ -46,3 +56,6 @@
 
 (defn coordinator-effort [conf-text]
   (parse-config-value conf-text "coordinator_effort" default-coordinator-effort))
+
+(defn coordinator-agent [conf-text]
+  (parse-config-value conf-text "coordinator_agent" default-coordinator-agent))
