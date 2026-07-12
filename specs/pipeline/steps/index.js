@@ -109,6 +109,7 @@ const DOMAINS = [
   require('./operatorSystemdSupervisionSteps'),
   require('./operatorCooldownResilienceSteps'),
   require('./operatorAskAwaitSteps'),
+  require('./operatorAutoHibernateSteps'),
 ];
 
 function registerSteps(registry) {

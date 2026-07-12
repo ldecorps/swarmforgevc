@@ -54,6 +54,10 @@
 ;; BL-283: reads a linked ticket's CURRENT backlog status for
 ;; linked-ticket-status-sweep! below.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ticket_status_lib.bb")))
+;; BL-307: the ONE shared mailbox-path resolver (handoff-protocol.md - no
+;; script constructs a mailbox path by hand), for closing-pass-sweep!'s own
+;; per-role inbox/in-process gathering below.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -82,6 +86,14 @@
 (def tmux-socket-file (fs/path state-dir "tmux-socket"))
 (def conf-file (fs/path state-dir ".." "swarmforge" "swarmforge.conf"))
 (def launch-operator (fs/path script-dir "launch_operator.sh"))
+;; BL-307: the whole-swarm auto-hibernate closing pass. roles-backup-file
+;; and hibernation-state-file are the same posture as cooldown.json/
+;; awaiting-answer.json above - durable, runtime-owned cross-tick state.
+(def roles-backup-file (fs/path state-dir "roles.tsv.hibernate-backup"))
+(def hibernation-state-file (fs/path op-dir "hibernation.json"))
+(def backlog-active-dir (fs/path project-root "backlog" "active"))
+(def backlog-paused-dir (fs/path project-root "backlog" "paused"))
+(def swarmforge-sh (fs/path script-dir "swarmforge.sh"))
 
 ;; The Operator is NOT a swarm agent: it runs on its OWN tmux socket (see
 ;; launch_operator.sh) and its session/RC name deliberately drop the
@@ -335,6 +347,155 @@
       (clear-awaiting-answer!)
       (log! "await-escalated-and-dropped" thread-id question))))
 
+;; ── BL-307: auto-hibernate on drain + mandatory closing pass ────────────────
+;; Reuses the exact hand-proven park/relaunch mechanics (see memory
+;; swarm-profiles-full-forge-concierge-banked) - this is the thin, impure
+;; wiring; the decision + orchestration logic itself lives in
+;; operator_lib.bb's should-hibernate?/should-relaunch?/hibernate-swarm!/
+;; relaunch-swarm!/evaluate-closing-pass!, all adapter-injected so they are
+;; unit-testable without a real tmux socket.
+
+(defn read-hibernation-state []
+  (when (fs/exists? hibernation-state-file)
+    (try (json/parse-string (slurp (str hibernation-state-file)) true) (catch Exception _ nil))))
+
+(defn already-hibernated? []
+  (boolean (:hibernated (read-hibernation-state))))
+
+(defn- yaml-files [dir]
+  (if (fs/exists? dir)
+    (filter #(str/ends-with? (fs/file-name %) ".yaml") (fs/list-dir dir))
+    []))
+
+;; Duplicated from ticket_status_lib.bb's/chase_sweep_lib.bb's own private
+;; read-yaml-field rather than cross-namespace-coupled to either - the same
+;; small live-glue duplication already established across this codebase's
+;; independent pure libs (see operator-lib's own operator-channel-name).
+(defn- read-yaml-field [content field]
+  (let [prefix (str field ": ")]
+    (some (fn [line] (when (str/starts-with? line prefix) (str/trim (subs line (count prefix)))))
+          (str/split-lines content))))
+
+(defn active-backlog-count []
+  (count (yaml-files backlog-active-dir)))
+
+(defn paused-backlog-items []
+  (vec (for [f (yaml-files backlog-paused-dir)]
+         {:status (read-yaml-field (slurp (str f)) "status")})))
+
+;; Duplicated from handoffd_supervisor.bb's own count-handoff-files - same
+;; small live-glue duplication rationale as read-yaml-field above.
+(defn- count-handoff-files [dir]
+  (if (fs/exists? dir)
+    (count (filter #(and (fs/regular-file? %) (str/ends-with? (fs/file-name %) ".handoff"))
+                   (fs/list-dir dir)))
+    0))
+
+(defn- count-in-process-files
+  "Direct .handoff files plus one level of batch_* subdirectory contents -
+   a batch role (cleaner/hardener/architect) holds its in-process work inside
+   one such subdirectory, mirrors chase_sweep_lib.bb's own collect-in-process."
+  [dir]
+  (if-not (fs/exists? dir)
+    0
+    (reduce + (for [entry (fs/list-dir dir)
+                    :let [name (fs/file-name entry)]]
+                (cond
+                  (and (fs/directory? entry) (str/starts-with? name "batch_")) (count-handoff-files entry)
+                  (and (fs/regular-file? entry) (str/ends-with? name ".handoff")) 1
+                  :else 0)))))
+
+(defn roster-role-states
+  "Every CURRENT roster role (read fresh from roles.tsv via handoff-lib's own
+   shared mailbox resolver, never a hardcoded role list) paired with its
+   pending-inbox/in-process counts. A role absent from roles.tsv simply never
+   appears here."
+  []
+  (vec (for [role-info (handoff-lib/load-all-roles project-root)
+             :when (:worktree-path role-info)]
+         {:role (:role role-info)
+          :inbox-new-count (count-handoff-files (handoff-lib/mailbox-dir role-info :new))
+          :in-process-count (count-in-process-files (handoff-lib/mailbox-dir role-info :in_process))})))
+
+(defn- backup-roster! []
+  (when (fs/exists? roles-file)
+    (fs/copy roles-file roles-backup-file {:replace-existing true})))
+
+(defn- empty-roster! [] (atomic-spit! roles-file ""))
+
+(defn- restore-roster! []
+  (when (fs/exists? roles-backup-file)
+    (fs/copy roles-backup-file roles-file {:replace-existing true})))
+
+(defn- kill-swarm-tmux!
+  "Kills the build-agent tmux sessions on the SWARM socket only - NEVER the
+   Operator's own socket (operator-socket-file, a distinct file). A no-op
+   when the swarm socket is already gone/absent, same posture as
+   tmux-live-sessions above."
+  []
+  (when-let [sock (tmux-socket)]
+    (process/sh {:continue true} "tmux" "-S" sock "kill-server")))
+
+(defn- write-hibernation-state! [now-ms]
+  (atomic-spit! hibernation-state-file
+                (json/generate-string
+                 {:hibernated true :hibernated_at_ms now-ms
+                  :config_path (or (System/getenv "SWARMFORGE_CONFIG") "")})))
+
+(defn- clear-hibernation-state! [] (fs/delete-if-exists hibernation-state-file))
+
+(defn- relaunch-tmux!
+  "Brings the build-agent tmux sessions back up via the SAME mechanism
+   already proven by hand (SWARMFORGE_CONFIG override + the zsh entrypoint -
+   never the self-updating ./swarm bootstrapper, never --pack; see memory
+   swarm-profiles-full-forge-concierge-banked). Gated by skip-launch? the
+   SAME dry-run flag launch-operator! already respects, so tests never spawn
+   a real swarm relaunch."
+  []
+  (let [config (or (:config_path (read-hibernation-state)) "")]
+    (if skip-launch?
+      (log! "relaunch-swarm" "SKIPPED (OPERATOR_SKIP_LAUNCH=1)")
+      (process/process ["zsh" (str swarmforge-sh) project-root]
+                        {:out :inherit :err :inherit
+                         :extra-env {"SWARMFORGE_CONFIG" config "SWARMFORGE_TERMINAL" "none"}}))))
+
+(defn closing-pass-adapters []
+  {:backup-roster! backup-roster!
+   :empty-roster! empty-roster!
+   :kill-swarm-tmux! kill-swarm-tmux!
+   :write-hibernation-state! write-hibernation-state!
+   :restore-roster! restore-roster!
+   :relaunch-tmux! relaunch-tmux!
+   :clear-hibernation-state! clear-hibernation-state!})
+
+(defn closing-pass-sweep!
+  "One tick's full BL-307 evaluation: gathers the pure state (backlog-
+   drained?, roster-idle?, already-hibernated?) and hands it to operator-
+   lib/evaluate-closing-pass! with the real adapters above. Logs+returns the
+   action taken (:hibernated/:relaunched/nil).
+
+   Guarded by eligible?: a roster that has NEVER existed (roles.tsv absent/
+   empty, e.g. a fresh checkout or a runtime started standalone before any
+   swarm launch) is vacuously 'idle' too, but hibernating one is meaningless
+   - nothing to back up, nothing to kill - so the DOWN-trigger only fires
+   once a real roster is actually on record. The UP-trigger is exempt (an
+   already-hibernated swarm legitimately HAS an emptied roles.tsv, and must
+   still be able to relaunch)."
+  [now]
+  (let [roster (roster-role-states)
+        drained? (operator-lib/backlog-drained? (active-backlog-count) (paused-backlog-items))
+        idle? (operator-lib/roster-idle? roster)
+        hibernated-before? (already-hibernated?)
+        eligible? (or hibernated-before? (seq roster))
+        {:keys [action] :as result} (if eligible?
+                                       (operator-lib/evaluate-closing-pass!
+                                        {:backlog-drained? drained? :roster-idle? idle?
+                                         :already-hibernated? hibernated-before? :now-ms now}
+                                        (closing-pass-adapters))
+                                       {:action nil})]
+    (when action (log! "closing-pass" (name action)))
+    result))
+
 (defn scan-provider-state
   "Look at the agent panes + the operator's own last run for a usage-limit
    banner. Returns {:state :available|:cooldown, :reset-ms N?, :reset-raw s?}.
@@ -562,6 +723,14 @@
     ;; blocker).
     (awaiting-answer-sweep! now)
 
+    ;; BL-307: auto-hibernate on drain + mandatory closing pass - same
+    ;; "best-effort side action every tick" posture as the sweeps above;
+    ;; never gates the LLM launch decision below (a hibernated swarm still
+    ;; dispatches a genuine event exactly as it does today - only the
+    ;; build-agent tmux sessions are parked, never handoffd/the runtime
+    ;; itself/the front-desk bot).
+    (closing-pass-sweep! now)
+
     (reap-finished-operator!)
 
     (let [llm-running? (operator-running?)
@@ -574,6 +743,7 @@
                   (= provider-state :cooldown) :waiting_for_provider
                   llm-running? :operator_running
                   (pos? (count pending)) :dispatching
+                  (already-hibernated?) :hibernated
                   :else :idle)]
       (write-status! (operator-lib/render-status
                       {:state state :llm-running? llm-running?

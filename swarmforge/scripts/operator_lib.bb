@@ -335,5 +335,103 @@
    :agents_running (or agents-running 0)
    :pending_events (or pending-count 0)})
 
+;; ── BL-307: auto-hibernate on drain + mandatory closing pass ────────────────
+;; The whole-swarm park/relaunch transition a human has done by hand (see
+;; memory swarm-profiles-full-forge-concierge-banked): back up + empty
+;; roles.tsv and kill the build-agent tmux session once fully drained, and
+;; reverse it the moment new promotable work arrives. The predicates below
+;; mirror should-launch-operator?'s own shape (injected state, no I/O); the
+;; two adapter-injected orchestration fns mirror support_lib.bb's
+;; check-linked-ticket-status! shape - the ONLY place the actual
+;; backup/empty/kill/restore/relaunch actions happen, always through an
+;; adapters map so a test can spy on which actions ran without a real tmux
+;; socket.
+
+(defn paused-item-pull-eligible?
+  "A backlog/paused/ item is promotable unless it is explicitly parked
+   status: blocked - any other status (or none at all) is pull-eligible. A
+   blocked ticket (e.g. waiting on a human hardware step) must never
+   permanently block the closing pass."
+  [{:keys [status]}]
+  (not= status "blocked"))
+
+(defn backlog-drained?
+  "No promotable work remains: backlog/active/ is empty AND no paused item
+   is currently pull-eligible."
+  [active-count paused-items]
+  (and (zero? (or active-count 0))
+       (not-any? paused-item-pull-eligible? paused-items)))
+
+(defn role-idle?
+  "A roster role blocks hibernation while it holds a pending inbox item or
+   an in-process task."
+  [{:keys [inbox-new-count in-process-count]}]
+  (and (zero? (or inbox-new-count 0)) (zero? (or in-process-count 0))))
+
+(defn roster-idle?
+  "Every role in the CURRENT roster is idle. A role simply absent from the
+   roster (e.g. lean-drain has no architect/hardener/documenter/cleaner)
+   never appears here at all, so it is trivially quiescent - and an empty
+   roster is vacuously idle."
+  [role-states]
+  (every? role-idle? role-states))
+
+(defn should-hibernate?
+  "The DOWN-TRIGGER: fires only on the intersection of a drained backlog, an
+   idle roster, and not already hibernated - re-hibernating would back up an
+   already-emptied roster over the real one."
+  [{:keys [backlog-drained? roster-idle? already-hibernated?]}]
+  (boolean (and backlog-drained? roster-idle? (not already-hibernated?))))
+
+(defn should-relaunch?
+  "The UP-TRIGGER: while hibernated, new promotable work arriving (the
+   backlog is no longer drained) triggers an automatic relaunch."
+  [{:keys [already-hibernated? backlog-drained?]}]
+  (boolean (and already-hibernated? (not backlog-drained?))))
+
+(defn hibernate-swarm!
+  "Adapter-injected: the exact hand-proven sequence - back up the roster,
+   THEN empty it (order matters: emptying first would back up nothing),
+   kill the build-agent tmux sessions, and record the transition. adapters:
+   :backup-roster! :empty-roster! :kill-swarm-tmux! (all fn []), and
+   :write-hibernation-state! (fn [now-ms]) - the timestamp is a plain
+   injected value, never read from the system clock here."
+  [now-ms adapters]
+  ((:backup-roster! adapters))
+  ((:empty-roster! adapters))
+  ((:kill-swarm-tmux! adapters))
+  ((:write-hibernation-state! adapters) now-ms)
+  {:hibernated? true :at-ms now-ms})
+
+(defn relaunch-swarm!
+  "Adapter-injected up-trigger counterpart: restore the backed-up roster,
+   bring the build-agent tmux sessions back up, then clear the hibernation
+   state - in that order, so a crash mid-relaunch never leaves the state
+   file claiming 'still hibernated' once the roster is already restored.
+   adapters: :restore-roster! :relaunch-tmux! :clear-hibernation-state!
+   (all fn [])."
+  [now-ms adapters]
+  ((:restore-roster! adapters))
+  ((:relaunch-tmux! adapters))
+  ((:clear-hibernation-state! adapters))
+  {:relaunched? true :at-ms now-ms})
+
+(defn evaluate-closing-pass!
+  "One tick's full down/up-trigger evaluation: given the gathered pure state
+   decides whether to hibernate or relaunch and, if so, performs it through
+   the injected adapters. Mutually exclusive by construction - already-
+   hibernated? gates which branch can even fire, so never both in the same
+   tick. Returns {:action :hibernated|:relaunched|nil ...}."
+  [{:keys [backlog-drained? roster-idle? already-hibernated? now-ms]} adapters]
+  (cond
+    (should-hibernate? {:backlog-drained? backlog-drained? :roster-idle? roster-idle?
+                         :already-hibernated? already-hibernated?})
+    (assoc (hibernate-swarm! now-ms adapters) :action :hibernated)
+
+    (should-relaunch? {:already-hibernated? already-hibernated? :backlog-drained? backlog-drained?})
+    (assoc (relaunch-swarm! now-ms adapters) :action :relaunched)
+
+    :else {:action nil}))
+
 ;; Allow `bb operator_lib.bb` to be a no-op load (it is a library).
 (when (= *file* (System/getProperty "babashka.file")) nil)
