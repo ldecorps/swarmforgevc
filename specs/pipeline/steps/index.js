@@ -126,6 +126,7 @@ const DOMAINS = [
   require('./operatorSelfGenProvenanceSteps'),
   require('./humanInTheLoopClosedSteps'),
   require('./quietPeriodGateCliSteps'),
+  require('./routingManifestFieldSteps'),
 ];
 
 function registerSteps(registry) {
