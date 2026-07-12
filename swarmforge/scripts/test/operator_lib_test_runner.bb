@@ -54,6 +54,31 @@
              (operator-lib/should-enqueue? [{:type "TELEGRAM_TOPIC_MESSAGE" :subject "SUP-1"}]
                                             {:type "TELEGRAM_TOPIC_MESSAGE" :subject "SUP-2"}))
 
+;; ── BL-325: TELEGRAM_BL_TOPIC_MESSAGE is a valid, dedicated event type ────
+(assert-true "TELEGRAM_BL_TOPIC_MESSAGE is a valid event type"
+             (operator-lib/valid-event? {:type "TELEGRAM_BL_TOPIC_MESSAGE" :backlogId "BL-316"}))
+
+;; ── BL-325: partition-bl-topic-events splits the deterministic consumer's
+;;    own batch out of the pending queue, leaving everything else untouched ─
+(assert= "no BL-topic events: to-consume empty, remaining unchanged"
+         {:to-consume [] :remaining [{:type "SWARM_CHECK_TIMER"}]}
+         (operator-lib/partition-bl-topic-events [{:type "SWARM_CHECK_TIMER"}]))
+
+(assert= "a BL-topic event is pulled into to-consume, remaining stays as everything else"
+         {:to-consume [{:type "TELEGRAM_BL_TOPIC_MESSAGE" :backlogId "BL-316" :text "yes, approved"}]
+          :remaining [{:type "SWARM_CHECK_TIMER"}]}
+         (operator-lib/partition-bl-topic-events
+          [{:type "TELEGRAM_BL_TOPIC_MESSAGE" :backlogId "BL-316" :text "yes, approved"}
+           {:type "SWARM_CHECK_TIMER"}]))
+
+(assert= "two different BL-topic events both survive into to-consume"
+         {:to-consume [{:type "TELEGRAM_BL_TOPIC_MESSAGE" :backlogId "BL-316" :text "a"}
+                       {:type "TELEGRAM_BL_TOPIC_MESSAGE" :backlogId "BL-317" :text "b"}]
+          :remaining []}
+         (operator-lib/partition-bl-topic-events
+          [{:type "TELEGRAM_BL_TOPIC_MESSAGE" :backlogId "BL-316" :text "a"}
+           {:type "TELEGRAM_BL_TOPIC_MESSAGE" :backlogId "BL-317" :text "b"}]))
+
 ;; ── usage-limit detection ─────────────────────────────────────────────────
 (assert-true "detects 'hit your session limit'"
              (operator-lib/usage-limited? "You've hit your session limit · resets 7:50pm (Europe/London)"))

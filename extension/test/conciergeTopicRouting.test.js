@@ -27,6 +27,16 @@ test('topicNameForItem / messageTextForEvent are pure helpers', () => {
   assert.equal(messageTextForEvent(event({ type: 'NeedsApproval' })), 'NeedsApproval: BL-123');
 });
 
+test('BL-325: messageTextForEvent appends a NeedsApproval snippet so the message states the question, not just the id', () => {
+  const text = messageTextForEvent(event({ type: 'NeedsApproval', payload: { snippet: 'Proceed with the migration? (y/n)' } }));
+  assert.equal(text, 'NeedsApproval: BL-123 - Proceed with the migration? (y/n)');
+  assert.notEqual(text, 'NeedsApproval: BL-123');
+});
+
+test('BL-325: a non-string payload.snippet is ignored, never crashes or leaks [object Object]', () => {
+  assert.equal(messageTextForEvent(event({ type: 'NeedsApproval', payload: { snippet: 42 } })), 'NeedsApproval: BL-123');
+});
+
 // ── backlogForTopic (pure) — BL-298: the inverse of the forward map ───────
 
 test('BL-298: backlogForTopic resolves a mapped topic id back to ITS OWN backlog item', () => {

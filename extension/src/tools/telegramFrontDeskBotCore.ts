@@ -47,6 +47,26 @@ export function topicForSubject(topicMap: Record<string, string>, subjectId: str
   return found ? Number(found[0]) : undefined;
 }
 
+// BL-325: a reply's threadId may name either a SUP-### support subject
+// (topicForSubject's own {topicId: subjectId} map) or a BL-### backlog
+// item (the SEPARATE, forward backlogId->topicId map - no reversal
+// needed). Tries the SUP map first so every existing SUP thread keeps its
+// exact prior resolution/priority; falls back to the backlog map only when
+// the SUP map has no match. The two id spaces never collide (SUP-### vs
+// BL-###), so this is the "extend the egress to accept a BL-### target"
+// half of the loop - the SAME reply-outbox entries operator_reply.bb,
+// operator_notify.bb, and operator-decide.js's approve relay all already
+// write now reach a BL topic through this one resolver, no second egress
+// path.
+export function resolveReplyTopicId(
+  topicMap: Record<string, string>,
+  backlogTopicMap: Record<string, number>,
+  threadId: string
+): number | undefined {
+  const supTopicId = topicForSubject(topicMap, threadId);
+  return supTopicId !== undefined ? supTopicId : backlogTopicMap[threadId];
+}
+
 export type BotUpdateDecision =
   | { action: 'post-existing'; subjectId: string; text: string }
   | { action: 'operator-context'; backlogId: string; text: string }
