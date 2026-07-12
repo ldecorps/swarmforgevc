@@ -108,6 +108,7 @@ const DOMAINS = [
   require('./frontDeskSupervisorRecoverySteps'),
   require('./operatorSystemdSupervisionSteps'),
   require('./operatorCooldownResilienceSteps'),
+  require('./operatorAskAwaitSteps'),
 ];
 
 function registerSteps(registry) {

@@ -218,6 +218,48 @@
           (merge cfg {:limited-text nil :parsed-reset-ms nil :reset-raw nil
                       :existing-reset-ms nil :existing-reset-raw nil})))
 
+;; ── BL-306: ask + await a clarifying answer (pure) ───────────────────────
+
+;; resolve-pending-answer: unambiguous MVP pairing - the SAME thread.
+(assert-true "operator-ask-02: a reply in the awaited thread resolves the pending question"
+             (operator-lib/resolve-pending-answer {:question "which env?" :thread-id "SUP-1" :asked-at-ms 1000} "SUP-1"))
+(assert-false "a reply in a DIFFERENT thread does not resolve an unrelated pending question"
+              (operator-lib/resolve-pending-answer {:question "which env?" :thread-id "SUP-1" :asked-at-ms 1000} "SUP-2"))
+(assert-false "no pending question at all - nothing to resolve"
+              (operator-lib/resolve-pending-answer nil "SUP-1"))
+
+;; answer-text-from-messages: the human's own latest reply text.
+(assert= "the human's latest non-operator message is the answer text"
+         "use staging"
+         (operator-lib/answer-text-from-messages
+          [{:channel "operator" :timestamp "2026-07-12T00:00:00Z" :text "which env?"}
+           {:channel "telegram" :timestamp "2026-07-12T00:05:00Z" :text "use staging"}]))
+(assert= "picks the LATEST human message, not an earlier one"
+         "second reply"
+         (operator-lib/answer-text-from-messages
+          [{:channel "operator" :timestamp "2026-07-12T00:00:00Z" :text "which env?"}
+           {:channel "telegram" :timestamp "2026-07-12T00:05:00Z" :text "first reply"}
+           {:channel "telegram" :timestamp "2026-07-12T00:06:00Z" :text "second reply"}]))
+(assert= "no non-operator message at all -> nil, never a crash"
+         nil
+         (operator-lib/answer-text-from-messages [{:channel "operator" :timestamp "2026-07-12T00:00:00Z" :text "which env?"}]))
+
+;; await-timeout-elapsed? / check-awaiting-answer: the bounded
+;; escalate-once-then-drop decision.
+(assert-true "await-timeout-elapsed? true once now reaches asked-at + timeout" (operator-lib/await-timeout-elapsed? 1000 11000 10000))
+(assert-false "await-timeout-elapsed? false before the window elapses" (operator-lib/await-timeout-elapsed? 1000 10999 10000))
+(assert-false "await-timeout-elapsed? false with no asked-at at all (nothing to time out)" (operator-lib/await-timeout-elapsed? nil 999999 10000))
+
+(assert= "nothing pending -> no event"
+         {:event nil}
+         (operator-lib/check-awaiting-answer nil 50000 10000))
+(assert= "operator-ask-03: pending but window not yet elapsed -> no event, still waiting"
+         {:event nil}
+         (operator-lib/check-awaiting-answer {:question "which env?" :thread-id "SUP-1" :asked-at-ms 1000} 10999 10000))
+(assert= "operator-ask-03: window elapsed -> escalate AND drop together, exactly once (never a second, later timeout)"
+         {:event :escalate-and-drop :question "which env?" :thread-id "SUP-1"}
+         (operator-lib/check-awaiting-answer {:question "which env?" :thread-id "SUP-1" :asked-at-ms 1000} 11000 10000))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "operator_lib: ALL TESTS PASSED")

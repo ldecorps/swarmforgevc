@@ -22,10 +22,11 @@ make_fixture() {
   # memory, reloaded alongside the transcript on every wake).
   # BL-283: + ticket_status_lib.bb (linked-ticket-status-sweep!'s own live
   # backlog-status reader).
+  # BL-306: + operator_ask.bb (the disposable LLM's own one-shot ask CLI).
   cp "$SRC/operator_lib.bb" "$SRC/operator_runtime.bb" "$SRC/telegram_topic_lib.bb" \
      "$SRC/support_lib.bb" "$SRC/support_thread_store.bb" \
      "$SRC/operator_memory_lib.bb" "$SRC/operator_memory_store.bb" \
-     "$SRC/ticket_status_lib.bb" \
+     "$SRC/ticket_status_lib.bb" "$SRC/operator_ask.bb" \
      "$d/swarmforge/scripts/"
   printf '%s' "$d"
 }
@@ -169,6 +170,83 @@ check "coordinator-handoff-05: a thread with no linked ticket at all is never to
 tick "$F" > /dev/null
 check "coordinator-handoff-03: the same status is never reported twice" \
   '[[ "$(grep -c "SUP-1" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl")" -eq 1 ]]'
+rm -rf "$F"
+
+# ── 10. BL-306 operator-ask-01: the disposable LLM asks a clarifying
+#       question - it is posted into the SUP thread + reply outbox, and the
+#       runtime records an awaiting-answer state (the DEDUP guard: a second
+#       ask while one is pending is refused, not silently overwritten) ─────
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/support/threads"
+ASK_OUT="$(bb "$F/swarmforge/scripts/operator_ask.bb" "$F" --thread SUP-1 --question "which environment?")"
+check "operator-ask-01: the ask CLI reports success" '[[ "$ASK_OUT" == *"\"asked\":true"* ]]'
+check "operator-ask-01: the question is posted into the SUP thread" \
+  'grep -q "which environment?" "$F/.swarmforge/support/threads/SUP-1.json"'
+check "operator-ask-01: the question is posted into the reply outbox" \
+  'grep -q "which environment?" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl"'
+check "operator-ask-01: awaiting-answer.json records the question/thread" \
+  '[[ "$(jget "$F/.swarmforge/operator/awaiting-answer.json" ":question")" == "which environment?" ]] && [[ "$(jget "$F/.swarmforge/operator/awaiting-answer.json" ":thread_id")" == SUP-1 ]]'
+ASK_OUT2="$(bb "$F/swarmforge/scripts/operator_ask.bb" "$F" --thread SUP-1 --question "a second one?")"
+check "operator-ask-01: a second ask while one is pending is refused (never silently overwritten)" \
+  '[[ "$ASK_OUT2" == *"\"asked\":false"* ]] && ! grep -q "a second one?" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl"'
+rm -rf "$F"
+
+# ── 11. BL-306 operator-ask-02: a human reply in the awaited thread is
+#       delivered to the woken Operator as that question's answer, and the
+#       awaiting-answer state is cleared ────────────────────────────────────
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/support/threads"
+printf '{"question":"which environment?","thread_id":"SUP-1","asked_at_ms":%s}' "$(( $(date +%s) * 1000 ))" \
+  > "$F/.swarmforge/operator/awaiting-answer.json"
+printf '{"id":"SUP-1","status":"open","messages":[{"channel":"operator","timestamp":"2026-07-11T09:00:00Z","text":"which environment?"},{"channel":"telegram","timestamp":"2026-07-11T09:05:00Z","text":"use staging"}]}' \
+  > "$F/.swarmforge/support/threads/SUP-1.json"
+printf '{"type":"TELEGRAM_TOPIC_MESSAGE","subject":"SUP-1"}\n' > "$F/.swarmforge/operator/events.jsonl"
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+tick "$F" > /dev/null
+check "operator-ask-02: the reply-context pairs the pending question" \
+  'grep -q "which environment?" "$F/.swarmforge/operator/telegram-reply-context.json"'
+check "operator-ask-02: the reply-context pairs the human's own answer text" \
+  'grep -q "\"answer\":\"use staging\"" "$F/.swarmforge/operator/telegram-reply-context.json"'
+check "operator-ask-02: awaiting-answer.json is cleared once the reply is delivered" \
+  '[[ ! -f "$F/.swarmforge/operator/awaiting-answer.json" ]]'
+rm -rf "$F"
+
+# ── 12. BL-306 operator-ask-03: an unanswered question escalates EXACTLY
+#       once past the bounded window, then the wait clears - never an
+#       endless re-ask, never a guess ───────────────────────────────────────
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/support/threads"
+printf '{"id":"SUP-1","status":"open","messages":[{"channel":"operator","timestamp":"2020-01-01T00:00:00Z","text":"which environment?"}]}' \
+  > "$F/.swarmforge/support/threads/SUP-1.json"
+printf '{"question":"which environment?","thread_id":"SUP-1","asked_at_ms":0}' \
+  > "$F/.swarmforge/operator/awaiting-answer.json"
+OPERATOR_AWAIT_TIMEOUT_MS=1 tick "$F" > /dev/null
+check "operator-ask-03: exactly one escalation is posted to the reply outbox" \
+  '[[ "$(grep -c "still needed" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl")" -eq 1 ]]'
+check "operator-ask-03: the escalation names the original question" \
+  'grep -q "which environment?" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl"'
+check "operator-ask-03: the escalation is appended to the thread transcript too" \
+  'grep -q "still needed" "$F/.swarmforge/support/threads/SUP-1.json"'
+check "operator-ask-03: awaiting-answer.json clears - never a permanent wait" \
+  '[[ ! -f "$F/.swarmforge/operator/awaiting-answer.json" ]]'
+# a further tick must never re-escalate the same (now-cleared) question.
+OPERATOR_AWAIT_TIMEOUT_MS=1 tick "$F" > /dev/null
+check "operator-ask-03: a later tick never re-escalates (exactly once, not endlessly)" \
+  '[[ "$(grep -c "still needed" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl")" -eq 1 ]]'
+rm -rf "$F"
+
+# ── 13. BL-306 operator-ask-04: a swarm emergency is handled normally while
+#       a question is pending - awaiting an answer never blocks recovery ────
+F="$(make_fixture)"
+printf '{"question":"which environment?","thread_id":"SUP-1","asked_at_ms":%s}' "$(( $(date +%s) * 1000 ))" \
+  > "$F/.swarmforge/operator/awaiting-answer.json"
+printf '{"type":"HUMAN_COMMAND","detail":"emergency"}\n' > "$F/.swarmforge/operator/events.jsonl"
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+OUT13="$(tick "$F")"
+check "operator-ask-04: the emergency event still dispatches while a question is pending" \
+  '[[ "$OUT13" == *"\"launched?\":true"* ]]'
+check "operator-ask-04: the still-unanswered (not yet due) question is left untouched" \
+  '[[ -f "$F/.swarmforge/operator/awaiting-answer.json" ]] && [[ "$(jget "$F/.swarmforge/operator/awaiting-answer.json" ":thread_id")" == SUP-1 ]]'
 rm -rf "$F"
 
 # ── 4. launcher assembles a --remote-control command ─────────────────────────
