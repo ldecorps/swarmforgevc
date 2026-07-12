@@ -1,0 +1,64 @@
+id: BL-319
+title: "Coordinator provider is configurable — mirroring the other roles"
+description: |
+  swarmforge.sh supports five agent providers (claude, codex, copilot, grok, aider) for
+  work roles via window lines, and each has real launch bodies and provider-capabilities.
+  The coordinator cannot — BL-243 made it reserved infrastructure with no window line,
+  and provision_coordinator() hardcodes the provider to "claude" regardless of pack
+  config. BL-314 made the coordinator's model and effort configurable, but stopped short
+  of its provider.
+  
+  This makes a full provider switch impossible: a copilot-forge.conf can move all 7
+  work roles onto GitHub Copilot quota, but the coordinator still burns Claude tokens on
+  every triage, promote, close and bookkeeping commit. The coordinator is the most
+  frequently poked role in the swarm (wakes on every handoff), so this exception is
+  significant.
+  
+  This ticket adds config coordinator_agent <provider> alongside BL-314's existing
+  coordinator_model / coordinator_effort, resolved through the same
+  coordinator_config_cli.bb path. The coordinator's extra_cli flags are built per
+  provider (Claude-specific flags like --dangerously-skip-permissions and --effort
+  are omitted for non-Claude providers; copilot's launch body already supplies its own
+  --yolo --allow-all-paths).
+
+  Scope: swarmforge.sh provision_coordinator() and coordinator_config_cli.bb to add
+  COORDINATOR_AGENT resolution. Does NOT change the window-line parser or the
+  provider-capabilities mechanism — reuses the existing allow-list validator.
+
+  mutation_cost: low
+  direction: aligned
+  type: defect
+  severity: medium
+milestone: M8
+priority: 15
+direction: aligned
+status: todo
+type: defect
+source: "Raised by Operator 2026-07-12 via .swarmforge/operator/INTAKE-coordinator-provider-hardcoded-to-claude.md"
+depends_on: []
+notes: |
+  RELATED: BL-243 (coordinator is provisioned infrastructure), BL-314 (coordinator
+  model/effort configurable).
+  
+  ADJACENT GAPS (out of scope, future tickets):
+  - Usage-limit detection is Claude-pane-shaped: operator_lib.bb's parse-reset-clock
+    scrapes Claude's "resets at H:MM am/pm" banner. On a Copilot swarm this will never
+    match, causing burn meter and cooldown handling to go blind. Not a blocker for
+    the switch.
+  - Windows-npm copilot shim shadows the Linux-native one in bash but not zsh. Any
+    future dependency check for copilot must run under zsh. check_dependency only
+    guards claude today.
+  
+  ACCEPTANCE: a pack setting config coordinator_agent copilot must launch a
+  coordinator whose .swarmforge/launch/coordinator.sh invokes copilot with no
+  --effort or --dangerously-skip-permissions in it. Regression: a pack setting
+  nothing still launches Claude coordinator with today's exact flags. Unknown
+  provider fails with same error as a bogus window-line agent.
+
+acceptance:
+  feature: specs/features/BL-319-coordinator-provider-configurable.feature
+  steps:
+    - "Coordinator launches with configured provider (copilot)"
+    - "Default coordinator provider is claude when not configured"
+    - "Unknown coordinator provider fails launch loudly"
+    - "Coordinator handoff injection works with non-Claude provider"

@@ -1,0 +1,63 @@
+id: BL-320
+title: "Telegram reply egress is at-least-once — a dropped SSE socket must not silently eat a reply"
+description: |
+  The reply path to Telegram is:
+  operator_reply.bb → telegram-reply-outbox.jsonl → bridgeServer SSE → front-desk bot → Telegram
+  
+  bridgeServer.ts currently tracks delivered outbox entries with an in-memory cursor
+  that advances on emit-to-socket, NOT on acknowledgement. This creates two defects:
+  
+  1. Write != delivery: if the SSE connection drops mid-relay (observed: the
+     subscribeReplies path fault-storms with undici "terminated"), entries are counted
+     as delivered but never retried. The reply is lost.
+  2. The cursor is in-memory: a bridge restart re-reads the outbox from a cursor
+     that no longer reflects what the bot actually received.
+  
+  This is the human's primary channel to the swarm when everything else is parked.
+  A silently dropped reply looks exactly like "the swarm ignored me" — the failure
+  the whole front-desk epic (BL-274) existed to eliminate.
+  
+  This ticket moves the egress from at-most-once to at-least-once:
+  - Ack-driven cursor: the bot confirms delivery (POST back to bridge or ack event);
+    bridge only advances the cursor on that ack
+  - Persist the cursor so bridge restart resumes from genuinely delivered position
+  - Idempotency key per outbox entry prevents double-post to Telegram
+  - Survive the drop: terminated socket triggers reconnect + replay, not silent success
+  
+  Scope: bridgeServer.ts relayNewReplyOutboxEntries() and the bot's reply handler
+  in telegram-front-desk-bot.ts. Does NOT change the outbox format or the operator_reply
+  emission path.
+
+  mutation_cost: low
+  direction: aligned
+  type: defect
+  severity: high
+milestone: M8
+priority: 10
+direction: aligned
+status: todo
+type: defect
+source: "Raised by Operator 2026-07-12 via .swarmforge/operator/INTAKE-reply-relay-at-most-once-egress.md"
+depends_on: []
+notes: |
+  RELATED: BL-274 (front-desk bot epic), BL-292 (headless front-desk launcher),
+  BL-302 (Telegram bot poll crash resilience).
+  
+  OBSERVED FAILURE: The subscribeReplies path fault-storms with undici "terminated"
+  (same failure class as BL-302). A NORMAL transient network event kills the relay,
+  and the current code counts partial writes as success. The bug is that the live
+  failure never reaches the code a mock exercises — acceptance must test against
+  real dropped sockets.
+  
+  REUSE: Use the same retry-forever, capped-backoff policy the front-desk track
+  settled on (BL-274): retry forever, capped backoff, escalate — never silently
+  give up.
+
+acceptance:
+  feature: specs/features/BL-320-reply-relay-at-least-once.feature
+  steps:
+    - "Dropped SSE socket triggers reconnect and replay of unacked entries"
+    - "Persisted cursor survives bridge restart"
+    - "Idempotency key prevents double-post on redelivery"
+    - "Ack-driven cursor advancement"
+    - "Terminated socket triggers replay, not silent success"
