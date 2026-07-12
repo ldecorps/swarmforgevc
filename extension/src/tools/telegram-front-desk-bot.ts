@@ -62,9 +62,10 @@ import {
   applyPollCycleResult,
   PollLoopState,
   runContainedLoop,
-  computePollBackoffMs,
-  shouldRaiseDegradedWarning,
   PollBackoffConfig,
+  ReplyRelayLoopState,
+  computeReplyRelayCycleResult,
+  applyReplyRelayCycleResult,
 } from './telegramFrontDeskBotCore';
 import { backlogForTopic } from '../concierge/topicRouter';
 import { runConciergeTick, ConciergeTickAdapters, BacklogFoldersSnapshot, TickState } from '../concierge/conciergeTick';
@@ -316,6 +317,37 @@ async function connectAndRelayReplies(
 // was already relayed.
 const REPLY_RECONNECT_BACKOFF_CONFIG: PollBackoffConfig = { backoffBaseMs: 2000, backoffMaxMs: 60_000, degradedThreshold: 5 };
 
+// Split out of subscribeReplies below so its own for(;;) stays a bare
+// two-statement loop (cleaner review: the inline try/catch here previously
+// pushed subscribeReplies's own complexity/CRAP well over threshold at the
+// near-zero coverage this live-network wrapper realistically gets - same
+// "extract the branch, thin the loop" split as pollLoop/runPollCycle
+// above). Returns undefined on success, the failure's message otherwise -
+// connectAndRelayReplies runs until the connection drops or the stream
+// ends, so a rejection here is always a real fault worth backing off for.
+async function attemptReplyRelayConnection(
+  botToken: string,
+  chatId: string,
+  targetPath: string,
+  bridgeUrl: string,
+  bridgeToken: string,
+  controlToken: string,
+  seenIds: Set<string>
+): Promise<string | undefined> {
+  try {
+    await connectAndRelayReplies(botToken, chatId, targetPath, bridgeUrl, bridgeToken, controlToken, seenIds);
+    return undefined;
+  } catch (error) {
+    return describeError(error);
+  }
+}
+
+// Cleaner pass: the state-transition/backoff/warning decision (both the
+// success-vs-failure branch AND the "stream ended cleanly" pause) lives in
+// computeReplyRelayCycleResult/applyReplyRelayCycleResult
+// (telegramFrontDeskBotCore.ts, unit-tested), mirroring pollLoop/
+// runPollCycle/applyPollCycleResult's own "thin live loop, tested core"
+// split above - this loop stays a bare for(;;) two-statement wrapper.
 async function subscribeReplies(
   botToken: string,
   chatId: string,
@@ -325,27 +357,12 @@ async function subscribeReplies(
   controlToken: string
 ): Promise<void> {
   const seenIds = new Set<string>();
-  let consecutiveFailures = 0;
+  let state: ReplyRelayLoopState = { consecutiveFailures: 0 };
   for (;;) {
-    try {
-      await connectAndRelayReplies(botToken, chatId, targetPath, bridgeUrl, bridgeToken, controlToken, seenIds);
-      consecutiveFailures = 0;
-    } catch (error) {
-      consecutiveFailures += 1;
-      if (shouldRaiseDegradedWarning(consecutiveFailures, REPLY_RECONNECT_BACKOFF_CONFIG)) {
-        process.stderr.write(
-          `front-desk bot: reply-relay degraded - ${consecutiveFailures} consecutive reconnect failures, still retrying: ${
-            error instanceof Error ? error.message : String(error)
-          }\n`
-        );
-      }
-      await sleep(computePollBackoffMs(consecutiveFailures, REPLY_RECONNECT_BACKOFF_CONFIG));
-      continue;
-    }
-    // The stream ended cleanly (server-closed, or no body at all) - not a
-    // fault, but still worth a brief pause before resubscribing rather
-    // than a hot reconnect loop.
-    await sleep(REPLY_RECONNECT_BACKOFF_CONFIG.backoffBaseMs);
+    const errorMessage = await attemptReplyRelayConnection(botToken, chatId, targetPath, bridgeUrl, bridgeToken, controlToken, seenIds);
+    const cycle = computeReplyRelayCycleResult(state, errorMessage === undefined, REPLY_RECONNECT_BACKOFF_CONFIG);
+    state = cycle.state;
+    await applyReplyRelayCycleResult(cycle, errorMessage, (message) => process.stderr.write(message), sleep);
   }
 }
 
@@ -465,8 +482,16 @@ async function tickLoop(targetPath: string, botToken: string, chatId: string, in
 // containment net for a genuinely unexpected fault.
 const LOOP_RESTART_DELAY_MS = 5000;
 
+// Shared by every catch site in this file that needs a human-readable
+// message out of an unknown thrown value (a rejection is not guaranteed to
+// be an Error instance) - was duplicated inline at logLoopFault and
+// subscribeReplies below before this cleaner pass.
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function logLoopFault(name: string, error: unknown): void {
-  process.stderr.write(`front-desk bot: ${name} loop faulted (restarting): ${error instanceof Error ? error.message : String(error)}\n`);
+  process.stderr.write(`front-desk bot: ${name} loop faulted (restarting): ${describeError(error)}\n`);
 }
 
 // Split out of main() so that function's own branch count stays low, same

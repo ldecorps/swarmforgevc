@@ -1,0 +1,70 @@
+id: BL-322
+title: "A new BL topic opens with a short what-it-is / what-it-solves / how-it-works summary, not a bare TaskStarted line"
+milestone: M8
+status: todo
+type: feature
+severity: medium
+priority: 30
+direction: non-aligned
+depends_on: []
+source: "Raised by the human 2026-07-13 (screenshot of the Telegram front desk) via .swarmforge/operator/INTAKE-topic-opening-summary-not-just-taskstarted.md; drained per BL-311's convention. Coordinator routed it to the specifier as ~pri30, orthogonal to active work."
+
+notes: |
+  ROOT CAUSE (verified). `diffTaskStarted` mints the event with an EMPTY payload —
+  `extension/src/events/swarmEventStream.ts:50`:
+
+      .map((id): SwarmEvent => ({ type: 'TaskStarted', backlogId: id, payload: {} }));
+
+  So the renderer has only a type and an id, and a new topic opens with exactly
+  "TaskStarted: BL-XXX". The topic TITLE already carries the ticket title, so the body
+  adds nothing. Everything needed is already on disk in backlog/active/BL-XXX*.yaml
+  (title, notes, acceptance.steps) and is simply never read.
+
+  APPROACH — DERIVE, DO NOT ADD A SCHEMA FIELD. The intake offers two options and
+  explicitly says to pick ONE. Take option (1): derive the three lines from what every
+  existing ticket already has — title -> "what it is"; first paragraph of `notes` ->
+  "what it solves"; first `acceptance.steps` entry -> "how it works". Zero token cost,
+  no LLM call, no schema change, and it works on every ticket already in flight. Do NOT
+  also add a `summary:` field (option 2) — that is a schema + specifier.prompt change
+  that would still need this fallback anyway.
+
+  SCOPE:
+    1. Populate the `TaskStarted` payload in `diffTaskStarted` from the ticket YAML
+       (title, first paragraph of notes, first acceptance step).
+    2. Render a SHORT 3-line topic opener from that payload. This is a topic header,
+       not a spec dump.
+    3. Truncation is mandatory, not optional: hard-cap the message well under
+       Telegram's length limit. Some `notes` blocks are enormous (BL-316's is ~40
+       lines; this ticket's own is not short either).
+    4. Degrade gracefully: a ticket with no `notes`, or no `acceptance.steps`, must
+       still open with a valid non-empty message (fall back to the title).
+    5. OUT OF SCOPE: `TaskCompleted` and `NeedsApproval` rendering and routing are
+       UNCHANGED (BL-295/BL-300 wired all three types end to end; this only enriches
+       the TaskStarted payload and its render). Not a redesign of the event stream.
+
+  DIRECTION NOTE: classified `non-aligned` honestly — the active STEERING direction is
+  `reliability-first` (through 2026-07-20), whose target metric is QA first-pass rate
+  and open-bug count. This is a front-desk UX enrichment; it serves neither. It is
+  cheap and self-contained, but the coordinator should promote it under STEERING's
+  direction lane, not ahead of aligned reliability work.
+
+  E2E QA PROCEDURE: (a) take a real ticket with title + notes + acceptance steps
+  (BL-321 is a good live case) and assert its opening message carries all three lines
+  and is not a bare "TaskStarted: BL-321"; (b) assert against a REAL oversized fixture
+  (BL-316's ~40-line notes block) that the message is truncated and lands under the
+  Telegram limit — do not use a synthetic short fixture, the bug is precisely about
+  real notes being huge; (c) a ticket with no `notes` still opens with a valid non-empty
+  message; (d) regression: TaskCompleted and NeedsApproval messages are byte-identical
+  to before.
+
+acceptance:
+  feature: specs/features/BL-322-topic-opening-summary.feature
+  steps:
+    - "A newly-active ticket opens its topic with a what/solves/how summary"
+    - "A ticket missing a summary source still opens cleanly"
+    - "An oversized notes block is truncated to a safe message length"
+    - "Other event types are unchanged"
+
+human_approval: pending
+
+mutation_cost: low

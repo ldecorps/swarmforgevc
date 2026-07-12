@@ -15,6 +15,8 @@ const {
   runPollCycle,
   applyPollCycleResult,
   runContainedLoop,
+  computeReplyRelayCycleResult,
+  applyReplyRelayCycleResult,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
 const PRINCIPAL_ID = 111;
@@ -667,6 +669,80 @@ test('applyPollCycleResult still waits on a failed cycle below the degraded thre
   );
   assert.deepEqual(warnings, []);
   assert.deepEqual(waits, [1000]);
+});
+
+// ── computeReplyRelayCycleResult / applyReplyRelayCycleResult (BL-320) ───
+// Extracted from subscribeReplies's own for(;;) (cleaner review: the
+// inline try/catch plus two nested ifs pushed subscribeReplies's own CRAP
+// to 30 at 0% coverage - the live wrapper is never unit-exercised, same
+// class of gap the comment above this block already called out for
+// pollLoop/runPollCycle/applyPollCycleResult), mirroring that exact split.
+
+test('computeReplyRelayCycleResult on success resets consecutiveFailures and waits the base backoff, not zero', () => {
+  const cycle = computeReplyRelayCycleResult({ consecutiveFailures: 3 }, true, BACKOFF_CONFIG);
+  assert.equal(cycle.state.consecutiveFailures, 0);
+  assert.equal(cycle.delayMs, BACKOFF_CONFIG.backoffBaseMs);
+  assert.equal(cycle.degradedWarning, false);
+});
+
+test('computeReplyRelayCycleResult on failure increments consecutiveFailures and backs off like the poll cycle', () => {
+  let state = { consecutiveFailures: 0 };
+  const delays = [];
+  for (let i = 0; i < 4; i++) {
+    const cycle = computeReplyRelayCycleResult(state, false, BACKOFF_CONFIG);
+    delays.push(cycle.delayMs);
+    state = cycle.state;
+  }
+  assert.deepEqual(delays, [1000, 2000, 4000, 8000]);
+});
+
+test('computeReplyRelayCycleResult raises the degraded warning on the exact cycle the threshold is crossed', () => {
+  let state = { consecutiveFailures: 0 };
+  const warnings = [];
+  for (let i = 0; i < 5; i++) {
+    const cycle = computeReplyRelayCycleResult(state, false, BACKOFF_CONFIG);
+    warnings.push(cycle.degradedWarning);
+    state = cycle.state;
+  }
+  assert.deepEqual(warnings, [false, false, true, false, false]);
+});
+
+test('computeReplyRelayCycleResult keeps retrying past the degraded threshold and still recovers on success', () => {
+  let state = { consecutiveFailures: 0 };
+  for (let i = 0; i < 10; i++) {
+    state = computeReplyRelayCycleResult(state, false, BACKOFF_CONFIG).state;
+  }
+  assert.equal(state.consecutiveFailures, 10);
+  const cycle = computeReplyRelayCycleResult(state, true, BACKOFF_CONFIG);
+  assert.equal(cycle.state.consecutiveFailures, 0, 'reconnects must still be able to recover after a sustained outage');
+});
+
+test('applyReplyRelayCycleResult writes the warning (with the error message) and waits when both are present', async () => {
+  const warnings = [];
+  const waits = [];
+  await applyReplyRelayCycleResult(
+    { state: { consecutiveFailures: 3 }, delayMs: 4000, degradedWarning: true },
+    'socket terminated',
+    (message) => warnings.push(message),
+    async (ms) => waits.push(ms)
+  );
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /3 consecutive reconnect failures/);
+  assert.match(warnings[0], /socket terminated/);
+  assert.deepEqual(waits, [4000]);
+});
+
+test('applyReplyRelayCycleResult writes no warning but still waits the base backoff on a clean stream end (success)', async () => {
+  const warnings = [];
+  const waits = [];
+  await applyReplyRelayCycleResult(
+    { state: { consecutiveFailures: 0 }, delayMs: BACKOFF_CONFIG.backoffBaseMs, degradedWarning: false },
+    undefined,
+    (message) => warnings.push(message),
+    async (ms) => waits.push(ms)
+  );
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(waits, [BACKOFF_CONFIG.backoffBaseMs]);
 });
 
 // ── runContainedLoop (adapter-injected loop isolation) ────────────────────
