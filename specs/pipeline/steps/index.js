@@ -125,6 +125,7 @@ const DOMAINS = [
   require('./testSuiteNeverEmailsSteps'),
   require('./operatorSelfGenProvenanceSteps'),
   require('./humanInTheLoopClosedSteps'),
+  require('./quietPeriodGateCliSteps'),
 ];
 
 function registerSteps(registry) {
