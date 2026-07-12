@@ -62,6 +62,7 @@ const DOMAINS = [
   require('./docsUntranslatedFlagSteps'),
   require('./briefingGenerationScheduleSteps'),
   require('./bankedBriefingHeadlessSteps'),
+  require('./closingContextClearSteps'),
   require('./approvalTicketDetailSteps'),
   require('./briefingEnrichmentSteps'),
   require('./pwaEnrichmentSteps'),

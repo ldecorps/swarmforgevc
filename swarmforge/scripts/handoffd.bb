@@ -18,6 +18,8 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "briefing_email_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "briefing_generation_schedule_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "banked_briefing_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "closing_context_clear_lib.bb")))
 
 (def poll-ms 1000)
 (def wake-message agent-runtime-lib/default-wake-chat-message)
@@ -63,6 +65,11 @@
 (def backlog-active-dir (fs/path project-root "backlog" "active"))
 (def backlog-paused-dir (fs/path project-root "backlog" "paused"))
 (def backlog-done-dir (fs/path project-root "backlog" "done"))
+;; BL-309: durable "which bookkeeping close was last cleared for" marker -
+;; same small-JSON-under-.swarmforge/ posture as operator_runtime.bb's own
+;; hibernation-state-file, so a daemon restart never replays a clear for a
+;; close already handled.
+(def context-clear-marker-file (fs/path state-dir "coordinator-context-clear.json"))
 (def pid-file (fs/path daemon-dir "handoffd.pid"))
 (def pid-lock-dir (fs/path daemon-dir "pid.lock"))
 (def stop-file (fs/path daemon-dir "stop"))
@@ -931,6 +938,68 @@
       :emit-sidecar! emit-cost-health-sidecar!
       :log! (fn [& parts] (apply log! parts))})))
 
+;; ── BL-309: coordinator context-clear at the safe idle boundary after a
+;;    ticket's bookkeeping close ────────────────────────────────────────────
+;; The pure decision is closing_context_clear_lib.bb; everything below is
+;; the impure gathering/adapter side, following the exact same
+;; degrade-quietly-never-crash-the-sweep posture as every other sweep here.
+
+;; The most recently closed ticket id: backlog/done/'s own newest-mtime
+;; entry, per the ticket's own wording ("a ticket file present in
+;; backlog/done/ that was not there at the last check") - cheap, no new
+;; state needed to detect it. nil when backlog/done/ is empty/absent.
+(defn latest-done-ticket-id []
+  (when (fs/exists? backlog-done-dir)
+    (let [entries (filter #(str/ends-with? (fs/file-name %) ".yaml") (fs/list-dir backlog-done-dir))]
+      (when (seq entries)
+        (-> (apply max-key #(.toMillis (fs/last-modified-time %)) entries)
+            fs/file-name
+            (str/replace #"\.yaml$" ""))))))
+
+(defn read-last-cleared-ticket-id []
+  (when (fs/exists? context-clear-marker-file)
+    (try
+      (:last_cleared_ticket_id (json/parse-string (slurp (str context-clear-marker-file)) true))
+      (catch Exception _ nil))))
+
+(defn record-context-clear! [ticket-id]
+  (spit (str context-clear-marker-file)
+        (json/generate-string {:last_cleared_ticket_id ticket-id
+                                :cleared_at_ms (System/currentTimeMillis)})))
+
+;; role-idle? mirrors operator_lib.bb's BL-307 shape exactly (reused, not
+;; reimplemented); the counts themselves reuse chase_sweep_lib.bb's own
+;; scan-inbox-new/scan-in-process (already loaded here for the chase sweep)
+;; rather than a third copy of that directory-walking logic.
+(defn coordinator-idle? [role-info]
+  (operator-lib/role-idle?
+   {:inbox-new-count (count (chase-sweep-lib/scan-inbox-new (handoff-lib/mailbox-dir role-info :new)))
+    :in-process-count (count (chase-sweep-lib/scan-in-process (handoff-lib/mailbox-dir role-info :in_process)))}))
+
+(defn closing-context-clear-sweep! [roles socket]
+  (when-let [coordinator (get roles "coordinator")]
+    (closing-context-clear-lib/evaluate-closing-context-clear!
+     {:idle? (coordinator-idle? coordinator)
+      :closed-ticket-id (latest-done-ticket-id)
+      :last-cleared-ticket-id (read-last-cleared-ticket-id)
+      :role-name "coordinator"}
+     {:inject-clear! (fn []
+                        (if (tmux-inject-disabled?)
+                          (log! "closing-context-clear-skip-mailbox-only")
+                          (agent-runtime-inject/notify-agent!
+                           socket (:session coordinator) (or (:agent coordinator) "claude")
+                           :log-fn (fn [tag sess detail] (log! tag sess detail))
+                           :text "/clear")))
+      :inject-startup-reread! (fn [instruction-text]
+                                 (when-not (tmux-inject-disabled?)
+                                   (agent-runtime-inject/notify-agent!
+                                    socket (:session coordinator) (or (:agent coordinator) "claude")
+                                    :log-fn (fn [tag sess detail] (log! tag sess detail))
+                                    :text instruction-text)))
+      :record-clear! (fn [ticket-id]
+                       (record-context-clear! ticket-id)
+                       (log! "closing-context-clear-fired" ticket-id))})))
+
 (defn -main []
   (let [roles  (load-roles)
         socket (str/trim (slurp (str socket-file)))]
@@ -999,7 +1068,14 @@
                     (try
                       (briefing-generation-sweep! (load-roles) socket)
                       (catch Exception e
-                        (log! "briefing-generation-sweep-error" (.getMessage e)))))
+                        (log! "briefing-generation-sweep-error" (.getMessage e))))
+                    ;; BL-309: closing-context-clear sweep shares the same
+                    ;; cadence - no separate timeout, same rationale as
+                    ;; BL-222/BL-214/BL-258 above.
+                    (try
+                      (closing-context-clear-sweep! (load-roles) socket)
+                      (catch Exception e
+                        (log! "closing-context-clear-sweep-error" (.getMessage e)))))
                   (spit (str heartbeat-file) (str (now) "\n"))
                   (when (zero? (mod cycle heartbeat-log-every-cycles))
                     (log! "heartbeat" (str "cycle=" cycle)))
