@@ -168,6 +168,64 @@
            ["Daily briefing due: compose today's briefing per your role and commit it to docs/briefings/2026-07-10.md."]
            @notified))
 
+;; ── BL-308: hibernated? branch calls :compose-headless! instead of :notify! ──
+;; banked-composer-fires-01 / full-forge-unaffected-03
+
+(let [dir (mk-tmp)
+      notified (atom [])
+      composed (atom [])
+      logs (atom [])
+      fired? (briefing-generation-schedule-lib/generate-briefing-if-due!
+              (ms "2026-07-10T07:00:00Z") 7 0 dir true
+              {:notify! (fn [text] (swap! notified conj text))
+               :compose-headless! (fn [day-key] (swap! composed conj day-key))
+               :emit-sidecar! (fn [] nil)
+               :log! (fn [& parts] (swap! logs conj (vec parts)))})]
+  (assert= "banked-composer-fires-01: due while hibernated -> fires and returns true" true fired?)
+  (assert= "banked-composer-fires-01: the headless composer is called exactly once with today's day-key"
+           ["2026-07-10"] @composed)
+  (assert= "banked-composer-fires-01: the notify (coordinator-nudge) adapter is never called while hibernated"
+           [] @notified)
+  (assert= "banked-composer-fires-01: a distinct headless-composed event is logged"
+           true
+           (some #(= (first %) "briefing-generation-headless-composed") @logs)))
+
+;; full-forge-unaffected-03: the explicit false 6-arg form behaves exactly
+;; like the 5-arg form (byte-identical to pre-BL-308 behavior).
+(let [dir (mk-tmp)
+      notified (atom [])
+      composed (atom [])
+      fired? (briefing-generation-schedule-lib/generate-briefing-if-due!
+              (ms "2026-07-10T07:00:00Z") 7 0 dir false
+              {:notify! (fn [text] (swap! notified conj text))
+               :compose-headless! (fn [day-key] (swap! composed conj day-key))
+               :emit-sidecar! (fn [] nil)
+               :log! (fn [& _] nil)})]
+  (assert= "full-forge-unaffected-03: not hibernated -> fires and returns true" true fired?)
+  (assert= "full-forge-unaffected-03: the coordinator-nudge adapter fires, unchanged"
+           ["Daily briefing due: compose today's briefing per your role and commit it to docs/briefings/2026-07-10.md."]
+           @notified)
+  (assert= "full-forge-unaffected-03: the headless composer is never called when not hibernated"
+           [] @composed))
+
+;; idempotent-no-double-generate-04: hibernated AND already generated today
+;; -> neither adapter fires.
+(let [dir (mk-tmp)
+      notified (atom [])
+      composed (atom [])]
+  (spit (str (fs/path dir "2026-07-10.md")) "Swarm parked - lightweight briefing for 2026-07-10\n")
+  (let [fired? (briefing-generation-schedule-lib/generate-briefing-if-due!
+                (ms "2026-07-10T20:00:00Z") 7 0 dir true
+                {:notify! (fn [text] (swap! notified conj text))
+                 :compose-headless! (fn [day-key] (swap! composed conj day-key))
+                 :emit-sidecar! (fn [] nil)
+                 :log! (fn [& _] nil)})]
+    (assert= "idempotent-no-double-generate-04: already generated -> does not fire, returns false" false fired?)
+    (assert= "idempotent-no-double-generate-04: the headless composer is never called a second time"
+             [] @composed)
+    (assert= "idempotent-no-double-generate-04: the notify adapter is never called either"
+             [] @notified)))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do

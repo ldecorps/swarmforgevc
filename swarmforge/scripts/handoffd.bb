@@ -17,6 +17,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "briefing_email_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "briefing_generation_schedule_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "banked_briefing_lib.bb")))
 
 (def poll-ms 1000)
 (def wake-message agent-runtime-lib/default-wake-chat-message)
@@ -54,6 +55,14 @@
 ;; daemon's own process env, same as that alarm path.
 (def conf-file (fs/path script-dir ".." "swarmforge.conf"))
 (def briefings-dir (fs/path project-root "docs" "briefings"))
+;; BL-308: read-only reuse of BL-307's hibernation-state signal (READ ONLY -
+;; this ticket does not touch operator_runtime.bb, which owns writing it).
+;; Same path/shape operator_runtime.bb's write-hibernation-state! produces:
+;; {"hibernated": true, "hibernated_at_ms": ..., "config_path": ...}.
+(def hibernation-state-file (fs/path state-dir "operator" "hibernation.json"))
+(def backlog-active-dir (fs/path project-root "backlog" "active"))
+(def backlog-paused-dir (fs/path project-root "backlog" "paused"))
+(def backlog-done-dir (fs/path project-root "backlog" "done"))
 (def pid-file (fs/path daemon-dir "handoffd.pid"))
 (def pid-lock-dir (fs/path daemon-dir "pid.lock"))
 (def stop-file (fs/path daemon-dir "stop"))
@@ -841,10 +850,75 @@
       (log! "cost-health-sidecar-emitted" (str/trim out))
       (throw (ex-info "emit-cost-health-sidecar.js failed" {:exit exit :err err})))))
 
+;; ── BL-308: headless, no-agent briefing composer for banked (hibernated) mode ─
+;; The pure content composer is banked_briefing_lib.bb; everything below is
+;; the impure gathering of the "cheap headless signals" that ticket asks
+;; for, following the exact same shell-out-and-degrade-to-nil/empty pattern
+;; as suite-duration-briefing-line/needs-approval-briefing-section above -
+;; a gathering failure degrades quietly, it never crashes the sweep.
+
+(defn read-hibernation-state []
+  (when (fs/exists? hibernation-state-file)
+    (try (json/parse-string (slurp (str hibernation-state-file)) true) (catch Exception _ nil))))
+
+(defn swarm-hibernated? []
+  (boolean (:hibernated (read-hibernation-state))))
+
+(defn- count-yaml-files [dir]
+  (if (fs/exists? dir)
+    (count (filter #(str/ends-with? (fs/file-name %) ".yaml") (fs/list-dir dir)))
+    0))
+
+(defn banked-backlog-counts []
+  {:active (count-yaml-files backlog-active-dir)
+   :paused (count-yaml-files backlog-paused-dir)
+   :done (count-yaml-files backlog-done-dir)})
+
+;; git log since the prior UTC day-key, oneline - degrades to [] on any
+;; failure (not yet a git repo in some fixture, git not on PATH, etc.).
+(defn recent-git-activity-lines [day-key]
+  (try
+    (let [since (str (banked-briefing-lib/prior-day-key day-key) "T00:00:00Z")
+          {:keys [exit out]} (process/sh ["git" "log" "--oneline" (str "--since=" since)]
+                                          {:dir (str project-root)})]
+      (if (zero? exit)
+        (vec (remove str/blank? (str/split-lines out)))
+        []))
+    (catch Exception _ [])))
+
+;; Reuses BL-272's own committed docs/briefings/<day>.json sidecar (already
+;; emitted by :emit-sidecar! just before this runs, same day-key) rather
+;; than computing daemon health a second way - degrades to [] when the
+;; sidecar is missing/unreadable/has no reliability data this run.
+(defn banked-daemon-health-lines [day-key]
+  (try
+    (let [sidecar-path (fs/path briefings-dir (str day-key ".json"))]
+      (if (fs/exists? sidecar-path)
+        (let [{:keys [reliability]} (json/parse-string (slurp (str sidecar-path)) true)]
+          (if reliability
+            [(str "chases=" (get-in reliability [:chases :value] 0)
+                  " nudges=" (get-in reliability [:nudges :value] 0)
+                  " respawns=" (get-in reliability [:respawns :value] 0)
+                  " failedDeliveries=" (get-in reliability [:failedDeliveries :value] 0))]
+            []))
+        []))
+    (catch Exception _ [])))
+
+(defn compose-and-write-banked-briefing! [day-key]
+  (let [state (read-hibernation-state)
+        content (banked-briefing-lib/compose-banked-briefing
+                 {:day-key day-key
+                  :profile-name (banked-briefing-lib/profile-name-from-config-path (:config_path state))
+                  :hibernated-at-ms (:hibernated_at_ms state)
+                  :backlog-counts (banked-backlog-counts)
+                  :git-activity-lines (recent-git-activity-lines day-key)
+                  :daemon-health-lines (banked-daemon-health-lines day-key)})]
+    (spit (str (fs/path briefings-dir (str day-key ".md"))) content)))
+
 (defn briefing-generation-sweep! [roles socket]
   (let [[hour minute] (configured-morning-time)]
     (briefing-generation-schedule-lib/generate-briefing-if-due!
-     (System/currentTimeMillis) hour minute (str briefings-dir)
+     (System/currentTimeMillis) hour minute (str briefings-dir) (swarm-hibernated?)
      {:notify! (fn [instruction-text]
                  (if (tmux-inject-disabled?)
                    (log! "briefing-generation-skip-mailbox-only")
@@ -853,6 +927,7 @@
                       socket (:session coordinator) (or (:agent coordinator) "claude")
                       :log-fn (fn [tag sess detail] (log! tag sess detail))
                       :text instruction-text))))
+      :compose-headless! compose-and-write-banked-briefing!
       :emit-sidecar! emit-cost-health-sidecar!
       :log! (fn [& parts] (apply log! parts))})))
 
