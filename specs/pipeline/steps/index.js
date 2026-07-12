@@ -120,6 +120,7 @@ const DOMAINS = [
   require('./contextClearAllRolesSteps'),
   require('./replyRelayAtLeastOnceSteps'),
   require('./coordinatorProviderConfigurableSteps'),
+  require('./supervisorReaperPathBoundarySteps'),
 ];
 
 function registerSteps(registry) {
