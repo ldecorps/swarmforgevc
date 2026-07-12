@@ -124,6 +124,7 @@ const DOMAINS = [
   require('./resumeOrphanedInProcessSteps'),
   require('./testSuiteNeverEmailsSteps'),
   require('./operatorSelfGenProvenanceSteps'),
+  require('./humanInTheLoopClosedSteps'),
 ];
 
 function registerSteps(registry) {

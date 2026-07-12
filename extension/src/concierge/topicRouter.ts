@@ -36,8 +36,16 @@ export function backlogForTopic(topicMap: BacklogTopicMap, topicId: number | und
 // Human-readable, but always contains the event's own type verbatim - the
 // posted message must "name the event" (topic-routing-03), and never a
 // silently-drifting label that could stop matching a real SwarmEventType.
+//
+// BL-325: a NeedsApproval event's payload.snippet (when present - the
+// gated role's own question text) is appended, so the message states WHAT
+// is being asked rather than just the ticket id (the ticket's own
+// human-in-the-loop-closed-01 scenario). Every other event type carries no
+// snippet and keeps the exact prior text.
 export function messageTextForEvent(event: SwarmEvent): string {
-  return `${event.type}: ${event.backlogId}`;
+  const base = `${event.type}: ${event.backlogId}`;
+  const snippet = typeof event.payload.snippet === 'string' ? event.payload.snippet : undefined;
+  return snippet ? `${base} - ${snippet}` : base;
 }
 
 // BL-299: distinct from messageTextForEvent's generic progress line - the
