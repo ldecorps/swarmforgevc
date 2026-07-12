@@ -343,7 +343,7 @@
 
 (defn send-configured-alarm-email! [subject text]
   (daemon-alarm-lib/send-configured-email!
-   conf-file subject text
+   project-root conf-file subject text
    {:already-warned?! (fn [] @missing-key-warned?)
     :log-warning! (fn [msg] (log! "email-misconfigured" msg))
     :mark-warned! (fn [] (reset! missing-key-warned? true))}))
