@@ -307,6 +307,74 @@
 (assert-false "should-relaunch? does not fire while still drained"
               (operator-lib/should-relaunch? {:already-hibernated? true :backlog-drained? true}))
 
+;; ── BL-318: self-generated provenance + the hibernation quiet-period gate ──
+
+(assert= "format-self-generated-source produces the canonical honest marker"
+         "Raised by the coordinator itself (self-generated) - cost review flagged idle quota"
+         (operator-lib/format-self-generated-source "cost review flagged idle quota"))
+
+(assert-true "self-generated-item? true for a source carrying the canonical marker"
+             (operator-lib/self-generated-item? {:source (operator-lib/format-self-generated-source "reason")}))
+(assert-false "self-generated-item? false for an ordinary human-raised source"
+              (operator-lib/self-generated-item? {:source "Raised by the human 2026-07-12 via INTAKE-foo.md"}))
+(assert-false "self-generated-item? false for an item with no :source at all (conservative default)"
+              (operator-lib/self-generated-item? {}))
+(assert-false "self-generated-item? false for an Operator-raised source (a real channel, not self-generation)"
+              (operator-lib/self-generated-item? {:source "Raised by the Operator 2026-07-12 via INTAKE-bar.md"}))
+
+(assert-true "honest-source? true when a self-generated ticket's source carries the marker"
+             (operator-lib/honest-source? (operator-lib/format-self-generated-source "reason") true))
+(assert-false "honest-source? false (BL-314's own bug): actually self-generated but source claims human origin"
+              (operator-lib/honest-source? "Raised by the human 2026-07-12 after reviewing the Cost & Health panel" true))
+(assert-true "honest-source? true for a genuinely human-raised ticket claiming human origin"
+             (operator-lib/honest-source? "Raised by the human 2026-07-12 via INTAKE-foo.md" false))
+(assert-true "honest-source? is vacuously true when the ticket is not actually self-generated, regardless of text"
+             (operator-lib/honest-source? "Raised by the human 2026-07-12 via INTAKE-foo.md" false))
+
+(assert-true "paused-item-blocks-hibernation? true for an ordinary pull-eligible, non-self-generated item"
+             (operator-lib/paused-item-blocks-hibernation? {:status "todo"}))
+(assert-false "paused-item-blocks-hibernation? false for a blocked item (unchanged from paused-item-pull-eligible?)"
+              (operator-lib/paused-item-blocks-hibernation? {:status "blocked"}))
+(assert-false "paused-item-blocks-hibernation? false for a self-generated item, even if otherwise pull-eligible"
+              (operator-lib/paused-item-blocks-hibernation?
+               {:status "todo" :source (operator-lib/format-self-generated-source "reason")}))
+
+(assert-true "backlog-drained? true when the only paused item is self-generated (BL-318's own fix)"
+             (operator-lib/backlog-drained? 0 [{:status "todo" :source (operator-lib/format-self-generated-source "reason")}]))
+(assert-false "backlog-drained? still false when a NON-self-generated paused item is pull-eligible"
+              (operator-lib/backlog-drained? 0 [{:status "todo"}]))
+(assert-true "backlog-drained? true with a mix of blocked and self-generated paused items, no real pending work"
+             (operator-lib/backlog-drained?
+              0 [{:status "blocked"} {:status "todo" :source (operator-lib/format-self-generated-source "reason")}]))
+(assert-false "backlog-drained? false when a human-raised item sits alongside a self-generated one"
+              (operator-lib/backlog-drained?
+               0 [{:status "todo" :source "Raised by the human via INTAKE-foo.md"}
+                  {:status "todo" :source (operator-lib/format-self-generated-source "reason")}]))
+
+(assert-true "quiet-period-active? true when drained and roster idle"
+             (operator-lib/quiet-period-active? {:backlog-drained? true :roster-idle? true}))
+(assert-false "quiet-period-active? false when backlog is not drained"
+              (operator-lib/quiet-period-active? {:backlog-drained? false :roster-idle? true}))
+(assert-false "quiet-period-active? false when the roster is not idle"
+              (operator-lib/quiet-period-active? {:backlog-drained? true :roster-idle? false}))
+
+(assert-true "promotion-blocked-by-quiet-period?: a self-generated candidate is blocked during the quiet period"
+             (operator-lib/promotion-blocked-by-quiet-period?
+              {:source (operator-lib/format-self-generated-source "reason")}
+              {:backlog-drained? true :roster-idle? true}))
+(assert-false "promotion-blocked-by-quiet-period?: a human-raised candidate is NEVER blocked, even during the quiet period"
+              (operator-lib/promotion-blocked-by-quiet-period?
+               {:source "Raised by the human via INTAKE-foo.md"}
+               {:backlog-drained? true :roster-idle? true}))
+(assert-false "promotion-blocked-by-quiet-period?: a self-generated candidate is NOT blocked once real work exists (roster busy)"
+              (operator-lib/promotion-blocked-by-quiet-period?
+               {:source (operator-lib/format-self-generated-source "reason")}
+               {:backlog-drained? true :roster-idle? false}))
+(assert-false "promotion-blocked-by-quiet-period?: a self-generated candidate is NOT blocked once active backlog work exists"
+              (operator-lib/promotion-blocked-by-quiet-period?
+               {:source (operator-lib/format-self-generated-source "reason")}
+               {:backlog-drained? false :roster-idle? true}))
+
 ;; ── BL-310: seed-race launch grace ────────────────────────────────────────
 
 (assert-true "within-launch-grace? true just after start (age < grace)"

@@ -355,12 +355,94 @@
   [{:keys [status]}]
   (not= status "blocked"))
 
+;; ── BL-318: self-generated provenance + the hibernation quiet-period gate ──
+;; BL-307's auto-hibernation was structurally unreachable: the coordinator
+;; writes itself a new paused ticket the moment the backlog empties (BL-311,
+;; BL-314-317 all landed this way), and ANY pull-eligible paused item
+;; (self-generated or not) made backlog-drained? false - so "drained" and
+;; "coordinator just self-generated more work" were mutually exclusive by
+;; construction, and hibernation could never fire. This section breaks that
+;; circularity: a self-generated paused item no longer counts as pending
+;; work for drainage purposes, and a NEW gate stops the coordinator from
+;; promoting one while the swarm would otherwise hibernate.
+
+(def self-generated-source-marker
+  "The one honest-provenance marker (see format-self-generated-source) -
+   self-generated-item? below looks for this exact substring, never a
+   softer heuristic (guessing at phrasing) that could mis-classify a
+   legitimately human/Operator/role-raised ticket as self-generated, or
+   vice versa."
+  "(self-generated)")
+
+(defn format-self-generated-source
+  "The WRITE-PATH helper: the one place a self-generated ticket's source
+   line is composed, so honest provenance is a property of the tool, not
+   of an LLM remembering to phrase it correctly each time (BL-326's own
+   lesson, recurring: a guard that lives only in an author's memory has
+   already cost this swarm a real incident once). Produces the exact
+   string self-generated-item? recognizes."
+  [reason]
+  (str "Raised by the coordinator itself " self-generated-source-marker " - " reason))
+
+(defn self-generated-item?
+  "True when a backlog item's :source field carries the canonical
+   self-generated marker. An item with no :source at all, or one that
+   doesn't carry the marker, is NOT self-generated - the conservative
+   default, so an ordinary human/Operator/role-raised ticket (the
+   overwhelming majority, and everything the existing paused-item-pull-
+   eligible? tests already cover) is completely unaffected by this."
+  [{:keys [source]}]
+  (boolean (and source (str/includes? source self-generated-source-marker))))
+
+(defn honest-source?
+  "True unless a ticket BOTH claims human origin in its source text AND is
+   actually self-generated - the exact BL-314 provenance bug (source text
+   said 'Raised by the human...' for a ticket that traced to the
+   coordinator's own cost analysis). actually-self-generated? is supplied
+   by the caller (the one place that genuinely knows origin at write
+   time) - this function only catches the CONTRADICTION between a claim
+   and that known fact, it can never independently detect a lie from text
+   alone."
+  [source actually-self-generated?]
+  (not (and actually-self-generated?
+            (boolean (and source (str/includes? (str/lower-case source) "raised by the human")))
+            (not (self-generated-item? {:source source})))))
+
+(defn paused-item-blocks-hibernation?
+  "A paused item blocks hibernation when it is pull-eligible (not blocked)
+   AND not self-generated. Self-generated work sitting in paused/ must
+   never itself be the reason hibernation can't fire - that circularity is
+   exactly BL-318's own defect."
+  [item]
+  (and (paused-item-pull-eligible? item) (not (self-generated-item? item))))
+
 (defn backlog-drained?
-  "No promotable work remains: backlog/active/ is empty AND no paused item
-   is currently pull-eligible."
+  "No promotable, non-self-generated work remains: backlog/active/ is
+   empty AND no paused item is currently pull-eligible AND not self-
+   generated (BL-318 - a self-generated paused item no longer blocks
+   drainage/hibernation, closing BL-307's own structurally-unreachable
+   gap)."
   [active-count paused-items]
   (and (zero? (or active-count 0))
-       (not-any? paused-item-pull-eligible? paused-items)))
+       (not-any? paused-item-blocks-hibernation? paused-items)))
+
+(defn quiet-period-active?
+  "True when the swarm sits in the down-trigger's own condition (drained +
+   idle roster, using backlog-drained?'s own BL-318 definition above) -
+   the state in which hibernation is eligible to fire on this tick."
+  [{:keys [backlog-drained? roster-idle?]}]
+  (boolean (and backlog-drained? roster-idle?)))
+
+(defn promotion-blocked-by-quiet-period?
+  "The gate BL-318 adds to the coordinator's own promotion decision: a
+   SELF-GENERATED candidate must not be promoted while quiet-period-
+   active? holds - hibernate wins over self-promotion. A human/Operator/
+   other-role-raised candidate is NEVER blocked by this regardless of
+   quiet-period state; only self-generation created the circularity this
+   ticket fixes, so only self-generation is gated by it."
+  [candidate-item {:keys [backlog-drained? roster-idle?]}]
+  (boolean (and (self-generated-item? candidate-item)
+                (quiet-period-active? {:backlog-drained? backlog-drained? :roster-idle? roster-idle?}))))
 
 (defn role-idle?
   "A roster role blocks hibernation while it holds a pending inbox item or

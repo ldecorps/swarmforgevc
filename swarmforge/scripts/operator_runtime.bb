@@ -392,7 +392,14 @@
 
 (defn paused-backlog-items []
   (vec (for [f (yaml-files backlog-paused-dir)]
-         {:status (read-yaml-field (slurp (str f)) "status")})))
+         (let [content (slurp (str f))]
+           {:status (read-yaml-field content "status")
+            ;; BL-318: source is read here too - operator-lib/backlog-
+            ;; drained? now excludes a self-generated paused item (source
+            ;; carrying format-self-generated-source's own marker) from
+            ;; counting as pending work, so it can no longer be the reason
+            ;; hibernation never fires.
+            :source (read-yaml-field content "source")}))))
 
 ;; Duplicated from handoffd_supervisor.bb's own count-handoff-files - same
 ;; small live-glue duplication rationale as read-yaml-field above.
