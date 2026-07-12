@@ -1,0 +1,109 @@
+id: BL-309
+title: "Coordinator's session context is cleared at the safe idle boundary after each ticket's bookkeeping close"
+milestone: M8
+status: todo
+type: feature
+priority: 03
+direction: expedite
+depends_on: [BL-308, BL-247]
+source: "HUMAN COMMAND 2026-07-12 (lean-pair build order, ticket 2 of 2, transported via .swarmforge/operator/INTAKE-auto-clear-context-at-ticket-boundary.md). Runs strictly after BL-308 lands (active_backlog_max_depth is 1 for the lean-drain pack)."
+
+notes: |
+  BUILD SECOND of this pair.
+
+  DESIGN DECISIONS SETTLED WITH THE HUMAN (both intake open questions
+  resolved, do not re-litigate):
+    1. Mechanism: keystroke injection, NOT a session tear-down/relaunch. The
+       daemon already has a proven, verified injection path for exactly this
+       shape of "put text into a role's tmux pane" -
+       `swarmforge/scripts/agent_runtime_inject.bb`'s `notify-agent!`
+       (already used by `handoffd.bb`'s `briefing-generation-sweep!` to nudge
+       the coordinator - same file, same pattern, reuse it). Inject a literal
+       `/clear` into the coordinator's pane, and immediately follow it with
+       the constitution's own required startup re-read instruction
+       (`workflow.prompt`'s "Context Clear Requires Startup Re-Read": "Whoever
+       issues a /clear to an agent pane must follow it with the startup
+       instruction message"). A full session recycle is explicitly OUT of
+       scope - it overlaps the deferred dynamic-per-ticket-routing epic
+       (INTAKE-dynamic-per-ticket-agent-routing.md) and is not what this
+       lean-pair ticket is for.
+    2. Scope: COORDINATOR ONLY this slice, not every role. The coordinator is
+       longest-lived and the intake names it as the biggest beneficiary; it
+       is also the only role for which "a ticket's bookkeeping close" is a
+       well-defined, already-durable boundary event (BL-247: QA lands main,
+       coordinator bookkeeps by moving the ticket active/ -> done/). Write
+       the idle/safe-boundary predicate generically (reusable), but wire and
+       verify only the coordinator's clear-after-close in this ticket -
+       extending to other roles is a future ticket, not this one.
+
+  TRIGGER SIGNAL: drive off already-durable state, not a new side-channel
+  flag prone to drift (same idempotency philosophy as BL-258's day-key file
+  presence gate) - detect "the coordinator just completed a bookkeeping
+  close" from the backlog/done/ transition (a ticket file present in
+  backlog/done/ that was not there at the last check) or from the
+  coordinator's own completed-handoff trail
+  (`.swarmforge/handoffs/coordinator/inbox/completed/`), whichever the
+  daemon can read cheaply without new state. Persist "which close was last
+  cleared for" durably (mirroring `operator_runtime.bb`'s
+  `hibernation-state-file` pattern - a small JSON marker under
+  `.swarmforge/`) so a daemon restart never replays a clear for a close
+  already handled, and so the SAME close is never cleared twice.
+
+  SAFE-BOUNDARY GUARDRAIL (hard requirement, reuse existing state, do not
+  reinvent): the clear fires ONLY when the coordinator is idle - empty inbox
+  AND no in-process task. Reuse `operator_lib.bb`'s existing `role-idle?`
+  shape (`{:inbox-new-count :in-process-count}` -> boolean), already proven
+  by BL-307 for exactly this kind of "is this role safe to act on right
+  now" check. Never clear a role holding an in-process task (see memory
+  inflight-coder-task-cannot-be-preempted for why interrupting in-flight
+  work is unsafe) - a bookkeeping-close having just happened does not by
+  itself imply idle if the coordinator has already picked up its next task
+  by the time the check runs; both conditions are evaluated together, not
+  inferred from one another.
+
+  SCOPE: `swarmforge/scripts/handoffd.bb` (wiring, new sweep alongside the
+  existing chase/hibernation-check cadence), a new small pure decision
+  module (mirroring `operator_lib.bb`'s BL-307 predicates: injected
+  roster/backlog-close/clear-marker state in, `{:action :clear|nil}` out -
+  no live tmux/fs reads inside the pure function itself), plus tests. Do
+  not touch the dynamic-routing epic's deferred pieces
+  (INTAKE-dynamic-per-ticket-agent-routing.md) - this ticket is the
+  lightweight within-agent version only.
+
+  MEASUREMENT (not a Gherkin scenario - a live, real-run observation):
+  after this lands and the coordinator closes its next ticket on the live
+  lean-drain run, compare the coordinator's per-poke input-token reading
+  before vs after via the BL-273 burn-rate meter / BL-272 cost sidecar and
+  confirm a visible drop. Note the before/after numbers in the QA report;
+  this is evidence, not a pass/fail gate on its own (a flat token reading
+  because no further coordinator poke happened yet in the QA window is not
+  a defect).
+
+  E2E QA PROCEDURE (fixture-driven, injected roster/close-event/clear-marker
+  state and an injected clock - no real /clear sent to the live coordinator
+  during QA's own unit-level verification): (a) feed a fixture where the
+  coordinator just closed a ticket and is idle -> assert the decision is
+  "clear" and that a real dry-run wiring call (adapter-injected, spied) would
+  inject `/clear` then the startup re-read instruction, in that order. (b)
+  same fixture but the coordinator holds an in-process task -> assert no
+  clear. (c) same fixture but the coordinator has a pending inbox item ->
+  assert no clear. (d) feed a fixture where a clear was already recorded for
+  the current close and nothing new has happened -> assert no second clear.
+  (e) feed a fixture where a DIFFERENT, later close has since happened and
+  the coordinator is idle -> assert a clear fires again. Then, as a single
+  live confirmation (not unit-covered): after this ticket's own QA approval
+  is bookkept by the coordinator on the real live run, observe (do not
+  force) whether the next scheduled sweep clears the coordinator's real pane
+  and confirm the coordinator's next poke still re-reads its startup
+  instructions correctly (per workflow.prompt) before resuming work - this
+  is a real, low-risk opportunity since the coordinator's own close of THIS
+  ticket is a legitimate trigger, not a synthetic one.
+
+acceptance:
+  feature: specs/features/BL-309-coordinator-context-clear-at-close.feature
+  steps:
+    - "After the coordinator completes a ticket's bookkeeping close and is idle (empty inbox, no in-process task), a /clear is injected into its pane immediately followed by the startup re-read instruction"
+    - "No clear is injected while the coordinator is not idle, whether because it holds an in-process task or has a pending inbox item"
+    - "A clear already issued for the coordinator's most recent close is never issued again for that same close, but a later close of a different ticket triggers a clear again once the coordinator is idle"
+
+mutation_cost: medium
