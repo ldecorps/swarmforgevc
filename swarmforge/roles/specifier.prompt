@@ -167,6 +167,12 @@ You are the specifier.
 
 ## Handoff
 ### Sending specs to the coordinator
+- A spec/feature file is not delivered until it is committed to `main` — run
+  `git status` on the backlog YAML and its `.feature` file and confirm both show
+  as tracked (not untracked/uncommitted) before reporting a ticket spec-ready.
+  (BL-314: the feature file sat untracked in the shared master checkout, so the
+  coder's worktree never saw it and bounced the ticket back within a minute of
+  promotion.)
 - After writing a paused backlog item, send the **coordinator** a `note` (priority
   `00`) that the item is ready in `backlog/paused/`.
 - For rule-proposal outcomes (accept/reject), notify the coordinator or proposer
