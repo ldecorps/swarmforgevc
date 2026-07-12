@@ -19,6 +19,11 @@ export interface BacklogFolderSnapshot {
 export interface GateSignal {
   role: string;
   gated: boolean;
+  // BL-325: the gated role's own question text (RoleGateState.snippet,
+  // carried through readGates unnarrowed) - lets diffNeedsApproval below
+  // put the actual question, not just a ticket id, into a NeedsApproval
+  // event's payload.
+  snippet?: string;
 }
 
 export interface EventStreamSnapshot {
@@ -57,6 +62,14 @@ function diffTaskCompleted(prev: EventStreamSnapshot, curr: EventStreamSnapshot)
     .map((id): SwarmEvent => ({ type: 'TaskCompleted', backlogId: id, payload: {} }));
 }
 
+// BL-325: split out of diffNeedsApproval below so its own branch count
+// stays at the pre-BL-325 level (cleaner review: this one ternary pushed
+// diffNeedsApproval's CRAP over threshold even at 100% coverage - complexity
+// alone, not a coverage gap).
+function needsApprovalPayload(snippet: string | undefined): Record<string, unknown> {
+  return snippet ? { snippet } : {};
+}
+
 function diffNeedsApproval(prev: EventStreamSnapshot, curr: EventStreamSnapshot): SwarmEvent[] {
   const wasGatedByRole = new Map(prev.gates.map((g) => [g.role, g.gated]));
   const events: SwarmEvent[] = [];
@@ -65,7 +78,7 @@ function diffNeedsApproval(prev: EventStreamSnapshot, curr: EventStreamSnapshot)
     if (gate.gated && !wasGated) {
       const backlogId = curr.roleTicket[gate.role];
       if (backlogId) {
-        events.push({ type: 'NeedsApproval', backlogId, payload: {} });
+        events.push({ type: 'NeedsApproval', backlogId, payload: needsApprovalPayload(gate.snippet) });
       }
     }
   }

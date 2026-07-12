@@ -54,7 +54,7 @@ import { nextUpdateOffset } from '../notify/telegramInboundRelay';
 import {
   PollAdapters,
   subjectForTopic,
-  topicForSubject,
+  resolveReplyTopicId,
   relaySseReplies,
   parseNextSseRecord,
   DEFAULT_SUBJECT_KEY,
@@ -296,7 +296,11 @@ async function connectAndRelayReplies(
         return { done, chunk: done ? '' : decoder.decode(value, { stream: true }) };
       },
       sendReply: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then(() => undefined),
-      topicForSubject: (subjectId) => topicForSubject(readTopicMap(targetPath), subjectId),
+      // BL-325: falls back to the backlog topic map so a reply whose
+      // threadId names a BL-### item (operator-decide.js's approve relay,
+      // invoked with backlogId as threadId) reaches that item's own topic
+      // - the SAME resolver every SUP-### reply already went through.
+      topicForSubject: (subjectId) => resolveReplyTopicId(readTopicMap(targetPath), readBacklogTopicMap(targetPath), subjectId),
       ackReply: (id) => ackReply(bridgeUrl, controlToken, id),
     },
     seenIds
@@ -391,13 +395,13 @@ export function resolveLiveRoles(targetPath: string): { role: string; worktreePa
   }
 }
 
-// BL-301: computeRoleGateStatesLive's RoleGateState carries an optional
-// snippet the swarm-agnostic GateSignal shape has no room for (question-
-// snippet enrichment is explicitly out of this slice's scope, same limit
-// as BL-299's summary) - narrowed to {role, gated} here.
-function readGates(targetPath: string): { role: string; gated: boolean }[] {
+// BL-325: computeRoleGateStatesLive's RoleGateState.snippet (the gated
+// role's own question text) now passes through into GateSignal instead of
+// being narrowed away - BL-301 deferred this; discarding it here is exactly
+// the "question thrown away" defect the ticket fixes.
+function readGates(targetPath: string): { role: string; gated: boolean; snippet?: string }[] {
   const roles = resolveLiveRoles(targetPath).map((r) => r.role);
-  return computeRoleGateStatesLive(targetPath, roles).map((g: RoleGateState) => ({ role: g.role, gated: g.gated }));
+  return computeRoleGateStatesLive(targetPath, roles).map((g: RoleGateState) => ({ role: g.role, gated: g.gated, snippet: g.snippet }));
 }
 
 // BL-301: inverts computeCurrentHolders' ticketId->role into role->ticketId

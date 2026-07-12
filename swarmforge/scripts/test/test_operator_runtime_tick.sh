@@ -92,6 +92,57 @@ check "BL-281: SUP-2's event is DEFERRED back to events.jsonl, not dropped" \
 check "BL-281: SUP-2's event is NOT in the inflight batch"      '! grep -q "SUP-2" "$F/.swarmforge/operator/events.inflight.jsonl"'
 rm -rf "$F"
 
+# ── BL-325: a TELEGRAM_BL_TOPIC_MESSAGE event (a human's reply typed into a
+#    backlog item's own topic) is consumed DETERMINISTICALLY, same tick -
+#    shelled straight into operator-decide.js's OWN approve mode (BL-285's
+#    relay, reused - never a second one), and never dispatched to the LLM
+#    Operator at all (nothing else pending -> no launch). extension/out/
+#    tools/operator-decide.js is stubbed (same "fake compiled JS entry
+#    point under the fixture root" technique test_front_desk_supervisor_
+#    tick.sh already uses) so this proves the WIRING (right script, right
+#    args, event actually removed from the queue) without needing a real
+#    tmux socket - BL-285's own suites already cover the approve CLI's
+#    internals live ─────────────────────────────────────────────────────────
+F="$(make_fixture)"
+mkdir -p "$F/extension/out/tools"
+cat > "$F/extension/out/tools/operator-decide.js" <<'EOF'
+const fs = require('fs');
+const path = require('path');
+fs.appendFileSync(path.join(__dirname, '..', '..', '..', 'consumed.log'), JSON.stringify(process.argv.slice(2)) + '\n');
+EOF
+printf '{"type":"TELEGRAM_BL_TOPIC_MESSAGE","backlogId":"BL-316","text":"yes, approved"}\n' \
+  > "$F/.swarmforge/operator/events.jsonl"
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+OUT_BL325="$(tick "$F")"
+check "BL-325: a BL-topic-only tick never launches the LLM Operator" '[[ "$OUT_BL325" == *"\"launched?\":false"* ]]'
+check "BL-325: operator-decide.js was invoked exactly once"          '[[ "$(wc -l < "$F/consumed.log")" -eq 1 ]]'
+check "BL-325: invoked with the backlogId as threadId, approve, and the exact text" \
+  'grep -qF "[\"BL-316\",\"approve\",\"yes, approved\"]" "$F/consumed.log"'
+check "BL-325: the consumed event is removed from the queue, not dispatched" \
+  '[[ ! -f "$F/.swarmforge/operator/events.inflight.jsonl" ]] && [[ ! -s "$F/.swarmforge/operator/events.jsonl" ]]'
+rm -rf "$F"
+
+# ── BL-325 control: a BL-topic event alongside an unrelated pending event
+#    (SWARM_CHECK_TIMER) is still consumed and stripped, while the OTHER
+#    event dispatches normally to the LLM Operator - the sweep must never
+#    swallow or block unrelated pending work ─────────────────────────────────
+F="$(make_fixture)"
+mkdir -p "$F/extension/out/tools"
+cat > "$F/extension/out/tools/operator-decide.js" <<'EOF'
+const fs = require('fs');
+const path = require('path');
+fs.appendFileSync(path.join(__dirname, '..', '..', '..', 'consumed.log'), JSON.stringify(process.argv.slice(2)) + '\n');
+EOF
+printf '{"type":"TELEGRAM_BL_TOPIC_MESSAGE","backlogId":"BL-317","text":"approved, go ahead"}\n{"type":"HUMAN_COMMAND","detail":"x"}\n' \
+  > "$F/.swarmforge/operator/events.jsonl"
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+OUT_BL325B="$(tick "$F")"
+check "BL-325 control: the unrelated event still launches the LLM Operator" '[[ "$OUT_BL325B" == *"\"launched?\":true"* ]]'
+check "BL-325 control: the BL-topic event was still consumed"              '[[ -f "$F/consumed.log" ]]'
+check "BL-325 control: only the unrelated event reaches inflight"          \
+  'grep -q "HUMAN_COMMAND" "$F/.swarmforge/operator/events.inflight.jsonl" && ! grep -q "TELEGRAM_BL_TOPIC_MESSAGE" "$F/.swarmforge/operator/events.inflight.jsonl"'
+rm -rf "$F"
+
 # ── 7. BL-276: an idle OPEN thread gets a gentle nudge (transcript + reply
 #      outbox); a resolved thread is skipped entirely; a recently-active
 #      thread is not nudged yet. Real-clock-tolerant (like section 3's own
