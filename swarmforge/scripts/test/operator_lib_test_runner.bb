@@ -260,6 +260,172 @@
          {:event :escalate-and-drop :question "which env?" :thread-id "SUP-1"}
          (operator-lib/check-awaiting-answer {:question "which env?" :thread-id "SUP-1" :asked-at-ms 1000} 11000 10000))
 
+;; ── BL-307: auto-hibernate on drain + mandatory closing pass ─────────────
+
+(assert-true "a paused item with no status is pull-eligible" (operator-lib/paused-item-pull-eligible? {}))
+(assert-true "a paused item with status todo is pull-eligible" (operator-lib/paused-item-pull-eligible? {:status "todo"}))
+(assert-false "a paused item with status blocked is NOT pull-eligible" (operator-lib/paused-item-pull-eligible? {:status "blocked"}))
+
+(assert-true "backlog-drained? true when active is empty and every paused item is blocked"
+             (operator-lib/backlog-drained? 0 [{:status "blocked"}]))
+(assert-true "backlog-drained? true when active and paused are both empty"
+             (operator-lib/backlog-drained? 0 []))
+(assert-false "backlog-drained? false when active has an item"
+              (operator-lib/backlog-drained? 1 []))
+(assert-false "backlog-drained? false when a paused item is pull-eligible"
+              (operator-lib/backlog-drained? 0 [{:status "blocked"} {:status "todo"}]))
+
+(assert-true "role-idle? true with zero inbox and zero in-process"
+             (operator-lib/role-idle? {:inbox-new-count 0 :in-process-count 0}))
+(assert-false "role-idle? false with a pending inbox item"
+              (operator-lib/role-idle? {:inbox-new-count 1 :in-process-count 0}))
+(assert-false "role-idle? false with an in-process task"
+              (operator-lib/role-idle? {:inbox-new-count 0 :in-process-count 1}))
+
+(assert-true "roster-idle? true when every role is idle"
+             (operator-lib/roster-idle? [{:inbox-new-count 0 :in-process-count 0}
+                                          {:inbox-new-count 0 :in-process-count 0}]))
+(assert-false "roster-idle? false when one role still holds an in-process task"
+              (operator-lib/roster-idle? [{:inbox-new-count 0 :in-process-count 0}
+                                           {:inbox-new-count 0 :in-process-count 1}]))
+(assert-true "roster-idle? vacuously true for an empty roster (a role absent from the roster is trivially quiescent)"
+             (operator-lib/roster-idle? []))
+
+(assert-true "should-hibernate? fires on drained backlog + idle roster + not already hibernated"
+             (operator-lib/should-hibernate? {:backlog-drained? true :roster-idle? true :already-hibernated? false}))
+(assert-false "should-hibernate? never fires while already hibernated"
+              (operator-lib/should-hibernate? {:backlog-drained? true :roster-idle? true :already-hibernated? true}))
+(assert-false "should-hibernate? does not fire with a non-idle roster"
+              (operator-lib/should-hibernate? {:backlog-drained? true :roster-idle? false :already-hibernated? false}))
+(assert-false "should-hibernate? does not fire with backlog work remaining"
+              (operator-lib/should-hibernate? {:backlog-drained? false :roster-idle? true :already-hibernated? false}))
+
+(assert-true "should-relaunch? fires when hibernated and promotable work arrives"
+             (operator-lib/should-relaunch? {:already-hibernated? true :backlog-drained? false}))
+(assert-false "should-relaunch? does not fire while not hibernated"
+              (operator-lib/should-relaunch? {:already-hibernated? false :backlog-drained? false}))
+(assert-false "should-relaunch? does not fire while still drained"
+              (operator-lib/should-relaunch? {:already-hibernated? true :backlog-drained? true}))
+
+;; ── BL-310: seed-race launch grace ────────────────────────────────────────
+
+(assert-true "within-launch-grace? true just after start (age < grace)"
+             (operator-lib/within-launch-grace? 0 60000 120000))
+(assert-false "within-launch-grace? false once the grace window has elapsed"
+              (operator-lib/within-launch-grace? 0 120000 120000))
+(assert-false "within-launch-grace? false well past the grace window"
+              (operator-lib/within-launch-grace? 0 300000 120000))
+(assert-false "within-launch-grace? false when started-at-ms is unknown (nil) - no process lifetime to gate on"
+              (operator-lib/within-launch-grace? nil 999999999 120000))
+
+(assert-false "should-hibernate? never fires within the launch grace window, even drained+idle"
+              (operator-lib/should-hibernate? {:backlog-drained? true :roster-idle? true
+                                                :already-hibernated? false :within-launch-grace? true}))
+(assert-true "should-hibernate? fires once the grace window has elapsed (drained+idle as before)"
+             (operator-lib/should-hibernate? {:backlog-drained? true :roster-idle? true
+                                               :already-hibernated? false :within-launch-grace? false}))
+
+(assert-true "should-relaunch? fires on fresh coordinator mail alone, with no promotable backlog work"
+             (operator-lib/should-relaunch? {:already-hibernated? true :backlog-drained? true
+                                              :fresh-coordinator-mail? true}))
+(assert-false "should-relaunch? does not fire with neither fresh mail nor promotable work"
+              (operator-lib/should-relaunch? {:already-hibernated? true :backlog-drained? true
+                                               :fresh-coordinator-mail? false}))
+
+;; hibernate-swarm!/relaunch-swarm! — adapter-injected, spied via an atom.
+(let [calls (atom [])
+      adapters {:backup-roster! (fn [] (swap! calls conj :backup-roster))
+                :empty-roster! (fn [] (swap! calls conj :empty-roster))
+                :kill-swarm-tmux! (fn [] (swap! calls conj :kill-swarm-tmux))
+                :write-hibernation-state! (fn [ms] (swap! calls conj [:write-hibernation-state ms]))}
+      result (operator-lib/hibernate-swarm! 5000 adapters)]
+  (assert= "hibernate-swarm! invokes backup, empty, kill, write-state in order"
+           [:backup-roster :empty-roster :kill-swarm-tmux [:write-hibernation-state 5000]]
+           @calls)
+  (assert= "hibernate-swarm! returns hibernated? true with the given timestamp"
+           {:hibernated? true :at-ms 5000} result))
+
+(let [calls (atom [])
+      adapters {:restore-roster! (fn [] (swap! calls conj :restore-roster))
+                :relaunch-tmux! (fn [] (swap! calls conj :relaunch-tmux))
+                :clear-hibernation-state! (fn [] (swap! calls conj :clear-hibernation-state))}
+      result (operator-lib/relaunch-swarm! 9000 adapters)]
+  (assert= "relaunch-swarm! invokes restore, relaunch, clear-state in order"
+           [:restore-roster :relaunch-tmux :clear-hibernation-state]
+           @calls)
+  (assert= "relaunch-swarm! returns relaunched? true with the given timestamp"
+           {:relaunched? true :at-ms 9000} result))
+
+;; evaluate-closing-pass! — the full tick-level dispatch; asserts EXACTLY
+;; which adapters ran for each trigger, and that a normal in-flight tick
+;; touches none of them at all.
+(let [calls (atom [])
+      adapters {:backup-roster! (fn [] (swap! calls conj :backup-roster))
+                :empty-roster! (fn [] (swap! calls conj :empty-roster))
+                :kill-swarm-tmux! (fn [] (swap! calls conj :kill-swarm-tmux))
+                :write-hibernation-state! (fn [_] (swap! calls conj :write-hibernation-state))
+                :restore-roster! (fn [] (swap! calls conj :restore-roster))
+                :relaunch-tmux! (fn [] (swap! calls conj :relaunch-tmux))
+                :clear-hibernation-state! (fn [] (swap! calls conj :clear-hibernation-state))}]
+  (let [result (operator-lib/evaluate-closing-pass!
+                {:backlog-drained? true :roster-idle? true :already-hibernated? false :now-ms 1}
+                adapters)]
+    (assert= "evaluate-closing-pass! hibernates on a drained+idle tick" :hibernated (:action result))
+    (assert= "evaluate-closing-pass! invoked only the hibernate-side adapters"
+             [:backup-roster :empty-roster :kill-swarm-tmux :write-hibernation-state] @calls))
+  (reset! calls [])
+  (let [result (operator-lib/evaluate-closing-pass!
+                {:backlog-drained? false :roster-idle? true :already-hibernated? true :now-ms 2}
+                adapters)]
+    (assert= "evaluate-closing-pass! relaunches once new work arrives while hibernated" :relaunched (:action result))
+    (assert= "evaluate-closing-pass! invoked only the relaunch-side adapters"
+             [:restore-roster :relaunch-tmux :clear-hibernation-state] @calls))
+  (reset! calls [])
+  (let [result (operator-lib/evaluate-closing-pass!
+                {:backlog-drained? false :roster-idle? true :already-hibernated? false :now-ms 3}
+                adapters)]
+    (assert= "evaluate-closing-pass! does nothing on a normal in-flight tick" nil (:action result))
+    (assert= "evaluate-closing-pass! touched no adapter at all when neither trigger fires" [] @calls))
+
+  ;; BL-310 swarm-seed-race-01: within grace, drained+idle -> does not hibernate
+  (reset! calls [])
+  (let [result (operator-lib/evaluate-closing-pass!
+                {:backlog-drained? true :roster-idle? true :already-hibernated? false :now-ms 4
+                 :within-launch-grace? true}
+                adapters)]
+    (assert= "BL-310-01: never hibernates within the launch grace window" nil (:action result))
+    (assert= "BL-310-01: touched no adapter at all" [] @calls))
+
+  ;; BL-310 swarm-seed-race-02: grace elapsed, drained+idle -> hibernates as before
+  (reset! calls [])
+  (let [result (operator-lib/evaluate-closing-pass!
+                {:backlog-drained? true :roster-idle? true :already-hibernated? false :now-ms 5
+                 :within-launch-grace? false}
+                adapters)]
+    (assert= "BL-310-02: hibernates once the grace window has elapsed" :hibernated (:action result))
+    (assert= "BL-310-02: invoked only the hibernate-side adapters"
+             [:backup-roster :empty-roster :kill-swarm-tmux :write-hibernation-state] @calls))
+
+  ;; BL-310 swarm-seed-race-03: hibernated, no promotable work, fresh mail -> relaunches
+  (reset! calls [])
+  (let [result (operator-lib/evaluate-closing-pass!
+                {:backlog-drained? true :roster-idle? true :already-hibernated? true :now-ms 6
+                 :fresh-coordinator-mail? true}
+                adapters)]
+    (assert= "BL-310-03: fresh coordinator mail wakes a hibernated swarm with no promotable ticket yet"
+             :relaunched (:action result))
+    (assert= "BL-310-03: invoked only the relaunch-side adapters"
+             [:restore-roster :relaunch-tmux :clear-hibernation-state] @calls))
+
+  ;; BL-310 swarm-seed-race-04: hibernated, no promotable work, no fresh mail -> stays hibernated
+  (reset! calls [])
+  (let [result (operator-lib/evaluate-closing-pass!
+                {:backlog-drained? true :roster-idle? true :already-hibernated? true :now-ms 7
+                 :fresh-coordinator-mail? false}
+                adapters)]
+    (assert= "BL-310-04: stays hibernated with no fresh mail and no promotable work" nil (:action result))
+    (assert= "BL-310-04: touched no adapter at all" [] @calls)))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "operator_lib: ALL TESTS PASSED")

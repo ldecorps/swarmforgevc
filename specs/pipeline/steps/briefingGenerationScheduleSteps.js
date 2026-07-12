@@ -29,8 +29,16 @@ function ensureBriefingsDir(ctx) {
   return ctx.briefingsDir;
 }
 
-function runHarness(briefingsDir, nowIso, hour, minute) {
-  const out = execFileSync('bb', [HARNESS, briefingsDir, nowIso, String(hour), String(minute)], { encoding: 'utf8' });
+function runHarness(briefingsDir, nowIso, hour, minute, hibernated) {
+  const args = [HARNESS, briefingsDir, nowIso, String(hour), String(minute)];
+  // BL-308: an explicit hibernated flag is threaded through only when the
+  // caller sets ctx.hibernated - every pre-BL-308 caller/scenario omits it,
+  // so the harness's own "false" default (byte-identical prior behavior)
+  // is unaffected.
+  if (hibernated !== undefined) {
+    args.push(hibernated ? 'true' : 'false');
+  }
+  const out = execFileSync('bb', args, { encoding: 'utf8' });
   return JSON.parse(out);
 }
 
@@ -61,7 +69,13 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the configured morning time is reached$/, (ctx) => {
-    ctx.result = runHarness(ensureBriefingsDir(ctx), morningTimeIso(DAY_KEY, ctx.hour, ctx.minute), ctx.hour, ctx.minute);
+    ctx.result = runHarness(
+      ensureBriefingsDir(ctx),
+      morningTimeIso(DAY_KEY, ctx.hour, ctx.minute),
+      ctx.hour,
+      ctx.minute,
+      ctx.hibernated
+    );
   });
 
   registry.define(/^the daily briefing for that day is generated$/, (ctx) => {
@@ -98,7 +112,7 @@ function registerSteps(registry) {
 
   registry.define(/^the morning trigger fires again the same day$/, (ctx) => {
     // Well past the configured morning time, same UTC day.
-    ctx.result = runHarness(ensureBriefingsDir(ctx), `${DAY_KEY}T20:00:00Z`, ctx.hour, ctx.minute);
+    ctx.result = runHarness(ensureBriefingsDir(ctx), `${DAY_KEY}T20:00:00Z`, ctx.hour, ctx.minute, ctx.hibernated);
   });
 
   registry.define(/^no second briefing for that day is generated or emailed$/, (ctx) => {

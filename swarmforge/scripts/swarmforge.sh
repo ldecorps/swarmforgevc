@@ -477,17 +477,32 @@ parse_config() {
 # primary's own triage, never triages itself; this preserves the exact
 # invariant the removed inline check above used to enforce the hard way).
 #
-# The model/effort/permission flags below are this ticket's own default
-# for the now-unconfigurable coordinator identity (no window line exists
-# to carry --model/--effort anymore) - matching this project's own current
-# convention for the coordinator role (Opus-tier model, high effort).
+# BL-314: the model/effort below are now pack-configurable (no window line
+# exists to carry --model/--effort for the coordinator, since BL-243 made
+# it reserved infrastructure) via `config coordinator_model <id>` /
+# `config coordinator_effort <level>` in whichever conf file is EFFECTIVELY
+# in force ($CONFIG_FILE - reusing BL-313's own effective-config
+# resolution, not a second parallel mechanism). Absent/blank/malformed
+# falls back to a SONNET-tier default, not Opus - the coordinator's own
+# work (routing, backlog bookkeeping) does not need the most expensive
+# tier in the swarm; a pack that wants Opus sets coordinator_model
+# explicitly. --dangerously-skip-permissions and --remote-control handling
+# are unchanged.
+resolve_coordinator_config() {
+  local resolved
+  resolved="$(bb "$SCRIPT_DIR/coordinator_config_cli.bb" "$CONFIG_FILE")"
+  COORDINATOR_MODEL="${resolved%%$'\t'*}"
+  COORDINATOR_EFFORT="${resolved#*$'\t'}"
+}
+
 provision_coordinator() {
   if [[ "$SWARM_MODE" == "secondary" ]]; then
     return
   fi
 
+  resolve_coordinator_config
   local role="coordinator"
-  local extra_cli="--model claude-opus-4-8 --dangerously-skip-permissions --effort high"
+  local extra_cli="--model $COORDINATOR_MODEL --dangerously-skip-permissions --effort $COORDINATOR_EFFORT"
   if [[ "$REMOTE_CONTROL_DEFAULT" == 1 ]]; then
     extra_cli+=" --remote-control $(remote_control_session_name_for_role "$role")"
   fi
@@ -537,9 +552,38 @@ check_primacy() {
   fi
 }
 
+# BL-313: the effective active_backlog_max_depth for THIS launch -
+# whichever pack/SWARMFORGE_CONFIG override CONFIG_FILE resolved to above,
+# not always the tracked default. Shells out to backlog_depth_cli.bb (the
+# one place that parses active_backlog_max_depth) rather than
+# re-implementing the parse in bash, so this can never drift from what
+# backlog_depth_lib.bb's own read-max-depth actually enforces.
+resolve_effective_backlog_max_depth() {
+  EFFECTIVE_MAX_DEPTH="$(bb "$SCRIPT_DIR/backlog_depth_cli.bb" "$CONFIG_FILE")"
+}
+
+# BL-313 bounce: CONFIG_FILE may be relative - whenever SWARMFORGE_CONFIG
+# itself is exported as a relative path, CONFIG_FILE inherits that exact
+# string. config_overlay_prompt (below) already normalizes it against
+# WORKING_DIR for its own purpose; write_swarm_identity_file needs the
+# IDENTICAL normalization so the persisted active_backlog_max_depth_conf_path
+# resolves from ANY reader's cwd - every pipeline role invokes
+# swarm_handoff.bb/ready_for_next.bb from its own .worktrees/<role>
+# directory, never from WORKING_DIR, so a raw relative path silently
+# resolved to the wrong file (or nothing) everywhere except the original
+# launch cwd.
+absolute_config_file() {
+  if [[ "$CONFIG_FILE" = /* ]]; then
+    echo "$CONFIG_FILE"
+  else
+    echo "$WORKING_DIR/$CONFIG_FILE"
+  fi
+}
+
 write_swarm_identity_file() {
-  printf 'swarm_name\t%s\nswarm_mode\t%s\nswarm_mode_primary\t%s\n' \
-    "$SWARM_NAME" "$SWARM_MODE" "$SWARM_MODE_PRIMARY" > "$STATE_DIR/swarm-identity"
+  resolve_effective_backlog_max_depth
+  printf 'swarm_name\t%s\nswarm_mode\t%s\nswarm_mode_primary\t%s\nactive_backlog_max_depth\t%s\nactive_backlog_max_depth_conf_path\t%s\n' \
+    "$SWARM_NAME" "$SWARM_MODE" "$SWARM_MODE_PRIMARY" "$EFFECTIVE_MAX_DEPTH" "$(absolute_config_file)" > "$STATE_DIR/swarm-identity"
 }
 
 write_sessions_file() {
@@ -714,11 +758,7 @@ is_two_pack_config() {
 
 config_overlay_prompt() {
   local base prompt
-  if [[ "$CONFIG_FILE" = /* ]]; then
-    base="$CONFIG_FILE"
-  else
-    base="$WORKING_DIR/$CONFIG_FILE"
-  fi
+  base="$(absolute_config_file)"
   base="${base%.conf}"
   prompt="${base}.prompt"
   if [[ -f "$prompt" ]]; then
@@ -1137,6 +1177,11 @@ echo -e "${RESET}"
 
 echo -e "${GREEN}Launching SwarmForge tmux sessions...${RESET}"
 echo -e "${CYAN}Pack size: $(pack_size) role(s) (coordinator excluded)${RESET}"
+# BL-313: state the EFFECTIVE cap and which config supplied it, so an
+# uncapped (or unexpectedly capped) pipeline is never entered silently.
+# EFFECTIVE_MAX_DEPTH was already resolved by prepare_workspace's call to
+# write_swarm_identity_file above - reused here, not recomputed.
+echo -e "${CYAN}active_backlog_max_depth: ${EFFECTIVE_MAX_DEPTH} (from ${CONFIG_FILE})${RESET}"
 for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
   create_role_session "${SESSIONS[$i]}" "${DISPLAY_NAMES[$i]}"
 done

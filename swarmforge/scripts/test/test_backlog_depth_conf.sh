@@ -110,4 +110,58 @@ echo "$OUT" | grep -qi "Active backlog depth exceeded" \
 pass "depth-04: an absent config degrades gracefully - no crash, no spurious warning"
 rm -rf "$ROOT"
 
+# ── BL-313: the real WARNING enforces a PERSISTED pack override, not the
+#     default swarmforge/swarmforge.conf's own cap ────────────────────────
+# depth-cap-override-01: the default file declares -1 (no limit), but a
+# pack override persisted into .swarmforge/swarm-identity at launch time
+# (BL-313's own write_swarm_identity_file) declares 1 - the WARNING must
+# enforce the PACK's 1, not the default's -1.
+ROOT="$(mk_fixture -1)"
+mkdir -p "$ROOT/elsewhere"
+printf 'config active_backlog_max_depth 1\n' > "$ROOT/elsewhere/pack.conf"
+printf 'swarm_name\tprimary\nswarm_mode\tautonomous\nactive_backlog_max_depth\t1\nactive_backlog_max_depth_conf_path\t%s\n' \
+  "$ROOT/elsewhere/pack.conf" > "$ROOT/.swarmforge/swarm-identity"
+write_active_items "$ROOT" 2
+OUT="$(run_handoff_capture_stderr "$ROOT")"
+echo "$OUT" | grep -qi "Active backlog depth exceeded (active=2, max=1)" \
+  || fail "depth-cap-override-01: expected the persisted pack's cap (1) enforced, not the default file's -1; got: $OUT"
+pass "depth-cap-override-01: a persisted pack override (max=1) is enforced over the default file's own -1"
+rm -rf "$ROOT"
+
+# ── depth-cap-override-02: no persisted override at all (no swarm-identity
+#     file) -> the default tracked config's own cap is still enforced,
+#     unchanged from depth-03 above ────────────────────────────────────────
+ROOT="$(mk_fixture 3)"
+[[ ! -e "$ROOT/.swarmforge/swarm-identity" ]] \
+  || fail "depth-cap-override-02 setup: fixture must not have a swarm-identity file"
+write_active_items "$ROOT" 5
+OUT="$(run_handoff_capture_stderr "$ROOT")"
+echo "$OUT" | grep -qi "max=3" \
+  || fail "depth-cap-override-02: expected the default file's own cap (3) with no persisted override; got: $OUT"
+pass "depth-cap-override-02: no persisted override -> the default tracked config's cap is still enforced"
+rm -rf "$ROOT"
+
+# ── QA bounce 2026-07-12: a RELATIVE persisted conf path must resolve
+#     against project-root, not the calling process's own cwd - every
+#     pipeline role invokes swarm_handoff.bb from its OWN .worktrees/<role>
+#     directory, never from project-root. Reproduces the bounce evidence's
+#     own repro shape (a plain subdirectory standing in for a role's
+#     worktree cwd) directly against the real swarm_handoff.bb ───────────
+ROOT="$(mk_fixture -1)"
+mkdir -p "$ROOT/packs" "$ROOT/other-role-worktree"
+printf 'config active_backlog_max_depth 1\n' > "$ROOT/packs/lean-drain.conf"
+# A RELATIVE persisted path, exactly as the ticket's own live-confirmation
+# example produced before the write-side normalization fix (and exactly
+# what the read-side fix must ALSO tolerate as defense in depth).
+printf 'swarm_name\tprimary\nswarm_mode\tautonomous\nactive_backlog_max_depth\t1\nactive_backlog_max_depth_conf_path\tpacks/lean-drain.conf\n' \
+  > "$ROOT/.swarmforge/swarm-identity"
+write_active_items "$ROOT" 2
+write_draft "$ROOT"
+OUT="$(cd "$ROOT/other-role-worktree" && SWARMFORGE_ROLE=coordinator SWARMFORGE_SKIP_DAEMON=1 SWARMFORGE_MAILBOX_ONLY=1 \
+  bb "$SWARM_HANDOFF" "$ROOT/draft.txt" 2>&1 1>/dev/null || true)"
+echo "$OUT" | grep -qi "Active backlog depth exceeded (active=2, max=1)" \
+  || fail "depth-cap-override-relative: expected the pack's cap (1) enforced even from a DIFFERENT cwd than project-root with a RELATIVE persisted path; got: $OUT"
+pass "depth-cap-override-relative: a relative persisted conf path resolves against project-root, not the caller's own cwd"
+rm -rf "$ROOT"
+
 echo "ALL PASS"

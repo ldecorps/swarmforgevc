@@ -1,0 +1,84 @@
+id: BL-317
+title: "A backlog ticket can declare its required role set (routing manifest), defaulting to the full chain when omitted"
+milestone: M8
+status: todo
+type: feature
+priority: 25
+direction: non-aligned
+depends_on: []
+source: "Slice 2 of the dynamic-per-ticket-agent-routing epic (.swarmforge/operator/INTAKE-dynamic-per-ticket-agent-routing.md), drained from .swarmforge/operator/ per BL-311's convention. Slice 1 (auto-hibernate on drain) shipped as BL-307; this epic's remaining slices (per-role lifecycle, max-depth-1 serialization, warm-core/break-even tuning) are explicitly deferred beyond this one."
+
+notes: |
+  EPIC CONTEXT: the intake names four slices in order: routing-manifest ->
+  per-role lifecycle -> max-depth-1 serialization -> warm-core/break-even
+  tuning. Slice 1 (auto-hibernate/closing-pass) already shipped as BL-307.
+  This ticket is ONLY the routing-manifest piece — deciding and recording
+  which roles a ticket needs. It deliberately does NOT bring any role up or
+  down; that is the next slice (per-role lifecycle), tracked separately so
+  it isn't an implicit gap (per this project's own "a foundation slice
+  needs its wiring slice tracked, not assumed" rule). Classified
+  `non-aligned` under the current `reliability-first` STEERING direction —
+  a cost/efficiency epic, not a reliability fix — so it holds for
+  promotion per STEERING's direction lane rather than pulling ahead of
+  aligned/expedite work.
+
+  WHY A DECLARED FIELD, NOT AN AUTOMATIC CLASSIFIER (specifier's call,
+  deliberately conservative): the intake leaves "who decides" open
+  ("the coordinator/specifier at promote time, or a rule over the
+  ticket's labels/scope"). An automatic rule that infers required roles
+  from a ticket's type/scope is real future value, but getting it WRONG
+  has a real cost this codebase cares about a lot: this project's quality
+  gates (Article 4 — 100% coverage, no surviving mutants, CRAP<=6) are
+  hard requirements, and a misclassified ticket that skips, say, the
+  hardener would silently ship un-hardened code. Rather than guess a
+  heuristic now, this slice adds an explicit `roles:` list field to the
+  backlog YAML schema that the SPECIFIER sets by judgment at spec time
+  (the specifier already writes the ticket's scope/description and is
+  best placed to know which stages are actually needed) — and if the
+  field is ABSENT, the safe default is the FULL current pipeline chain,
+  never a narrowed one. This ships the schema + a safe, conservative
+  default now; a smarter automatic classifier can be layered on top in a
+  later slice without changing the field's meaning.
+
+  SCOPE:
+    1. Add an optional `roles:` field to the backlog YAML schema — an
+       ordered list of role names from the standard chain (specifier,
+       coder, cleaner, architect, hardener, documenter, QA — coordinator
+       is never included, it is not a pipeline chain member per BL-243).
+    2. A ticket whose YAML omits `roles:` (every ticket that exists today)
+       behaves EXACTLY as today — the full chain, unchanged. This is a
+       pure additive schema change with no default-path behavior change.
+    3. A ticket that DOES declare a narrower `roles:` list is only
+       consumed by this ticket's own reader/validator — nothing in this
+       slice yet skips or reorders any actual pipeline stage. The
+       reader validates the list (unknown role name, or coordinator
+       included, is a spec-time error caught before promotion) and
+       exposes it for the next slice to consume.
+    4. Coder and QA are always implicitly required regardless of what a
+       `roles:` list declares (mirrors the intake's own "near-always:
+       coder, QA" framing) — the validator rejects a `roles:` list
+       missing either.
+    5. OUT OF SCOPE (future slices, do not build now): actually bringing a
+       role's tmux session up/down based on the manifest (the "per-role
+       lifecycle" slice), `active_backlog_max_depth 1` serialization
+       tied to routing, and any warm-core/break-even tuning.
+
+  E2E QA PROCEDURE: (a) a real ticket YAML with no `roles:` field ->
+  assert the reader reports the full standard chain; (b) a ticket YAML
+  declaring `roles: [coder, QA]` -> assert the reader reports exactly
+  that list; (c) a ticket YAML declaring `roles:` that omits `coder` or
+  `QA` -> assert validation rejects it before promotion; (d) a ticket
+  YAML declaring `roles:` that includes `coordinator` or an unknown role
+  name -> assert validation rejects it; (e) confirm every existing
+  `backlog/done/`+`backlog/active/`+`backlog/paused/` ticket (none of
+  which declare `roles:` yet) is read as the full chain, unchanged.
+
+acceptance:
+  feature: specs/features/BL-317-ticket-routing-manifest-field.feature
+  steps:
+    - "A ticket with no roles: field is treated as needing the full standard pipeline chain"
+    - "A ticket with an explicit roles: list is read back exactly as declared"
+    - "A roles: list missing coder or QA is rejected at validation time"
+    - "A roles: list naming coordinator or an unknown role is rejected at validation time"
+
+mutation_cost: low

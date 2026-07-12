@@ -61,6 +61,8 @@ const DOMAINS = [
   require('./dependencyGateSteps'),
   require('./docsUntranslatedFlagSteps'),
   require('./briefingGenerationScheduleSteps'),
+  require('./bankedBriefingHeadlessSteps'),
+  require('./closingContextClearSteps'),
   require('./approvalTicketDetailSteps'),
   require('./briefingEnrichmentSteps'),
   require('./pwaEnrichmentSteps'),
@@ -109,6 +111,13 @@ const DOMAINS = [
   require('./operatorSystemdSupervisionSteps'),
   require('./operatorCooldownResilienceSteps'),
   require('./operatorAskAwaitSteps'),
+  require('./operatorAutoHibernateSteps'),
+  require('./operatorSeedRaceLaunchGraceSteps'),
+  require('./burnMeterMasterResidentSteps'),
+  require('./backlogDepthCapOverrideSteps'),
+  require('./coordinatorModelConfigurableSteps'),
+  require('./coordinatorInfraTestConfigLeakSteps'),
+  require('./contextClearAllRolesSteps'),
 ];
 
 function registerSteps(registry) {

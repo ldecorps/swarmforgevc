@@ -1,0 +1,105 @@
+id: BL-308
+title: "Morning briefing still generates and sends while the swarm is banked (headless, no-agent composer)"
+milestone: M8
+status: done
+type: feature
+priority: 02
+direction: expedite
+depends_on: [BL-307, BL-258, BL-214]
+source: "HUMAN COMMAND 2026-07-12 (lean-pair build order, ticket 1 of 2, transported via .swarmforge/operator/INTAKE-banked-mode-briefing.md): BL-307 auto-hibernate landed and is live, so this gap now fires on its own every time the swarm parks."
+
+notes: |
+  BUILD FIRST of this pair (lean-drain active_backlog_max_depth is 1, so this
+  runs alone before BL-309).
+
+  THE GAP: briefing GENERATION is coordinator-agentic (BL-258) - the morning
+  trigger only nudges the coordinator to compose+commit
+  docs/briefings/<day>.md. In concierge-banked mode (BL-307, now automatic)
+  there is no coordinator, so the nudge lands on nobody, no briefing file is
+  ever composed, and the healthy BL-214 daemon send sweep finds nothing to
+  send. The send path is fine; only generation needs a non-coordinator
+  author while banked.
+
+  DETECTION - reuse the existing signal, do not invent a new one: BL-307
+  already writes an authoritative hibernation marker at
+  `.swarmforge/operator/hibernation.json`
+  (`operator_runtime.bb`'s `write-hibernation-state!` /
+  `hibernation-state-file`), shape `{"hibernated": true, "hibernated_at_ms":
+  ..., "config_path": ...}`, cleared by `clear-hibernation-state!` on
+  relaunch. Read THIS file's presence/`:hibernated` flag as "is the swarm
+  banked", not roles.tsv emptiness (roles.tsv can be transiently empty for
+  other reasons; the state file is the deliberate, durable signal BL-307
+  already produces).
+
+  WIRING POINT: `swarmforge/scripts/handoffd.bb`'s existing
+  `briefing-generation-sweep!` (around the `generate-briefing-if-due!` call
+  and its `:notify!` adapter that currently nudges `(get roles
+  "coordinator")` via `agent-runtime-inject/notify-agent!`). Add a headless
+  branch: when banked, `:notify!` (or a sibling adapter invoked in its
+  place) composes and writes `docs/briefings/<day>.md` directly instead of
+  nudging anyone - no coordinator exists to nudge. When NOT banked, behavior
+  is byte-identical to today (nudge the coordinator; the composer never
+  fires). The existing day-key file-presence idempotency gate in
+  `briefing_generation_schedule_lib.bb`'s `morning-trigger-due?` already
+  prevents a double-write regardless of which path composed the file first
+  - reuse it, do not add a second "did we already compose" flag.
+
+  CONTENT (cheap headless signals only, no agent, no LLM call): recent git
+  activity (e.g. `git log` since the prior day-key), backlog counts
+  (active/paused/done), the parked profile name + hibernated-since
+  timestamp, and daemon health (reuse whatever the BL-272 cost & health
+  sidecar / BL-273 burn-rate meter / existing backlog counters already
+  expose headless - do not build new signal-gathering machinery duplicating
+  those). Explicitly label the output "swarm parked - lightweight
+  briefing". Output is plain markdown, first line = subject line - the
+  exact format `briefing_email_lib.bb`'s send path already reads; no new
+  schema.
+
+  SEND SIDE: untouched. `briefing_email_lib.bb`'s `find-unsent-briefings!` /
+  `send-unsent-briefings!` / `.sent.json` bookkeeping already dedupe sends
+  regardless of which path authored the file, so a banked briefing sent
+  earlier in the day and a later same-day relaunch never double-sends -
+  verify this, do not rebuild it.
+
+  SCOPE: `swarmforge/scripts/handoffd.bb` (wiring),
+  `swarmforge/scripts/briefing_generation_schedule_lib.bb` (extend with the
+  pure compose-when-banked branch) and/or a new sibling pure lib alongside
+  it if that keeps the module cleaner, plus tests. Do not touch
+  `briefing_email_lib.bb`'s send logic (BL-214, working as-is). Do not touch
+  `operator_runtime.bb` for this ticket - only READ the hibernation state
+  file it already writes.
+
+  CONTAMINATION FLAG (pipeline): `operator_runtime.bb` may show as dirty in
+  the shared checkout from unrelated ticket-less `operator_tunnel.sh` work
+  (see memory operator-tunnel-contamination-blocks-merge). This ticket does
+  not need to modify `operator_runtime.bb` at all (read-only reuse of the
+  hibernation state file path/shape documented above); if the coder's
+  worktree is dirty from that unrelated work, stash --include-untracked
+  before starting and pop after landing - never fold it into this commit.
+
+  E2E QA PROCEDURE (fixture-driven, injected now-ms/hibernation-state/roles
+  - no real park needed, matching BL-258's own established pattern): (a)
+  feed a hibernated fixture + a day with no briefing yet + morning time
+  reached -> assert the headless composer writes
+  docs/briefings/<day>.md labeled "swarm parked - lightweight briefing" and
+  no coordinator nudge fires. (b) feed the same fixture with today's
+  briefing already present -> assert no second write. (c) feed a
+  NOT-hibernated fixture (live coordinator) -> assert the existing nudge
+  behavior fires unchanged and the headless composer does not write
+  anything itself. (d) feed a fixture where a banked briefing was already
+  generated+sent today, then flip to not-hibernated (simulating a mid-day
+  relaunch) -> assert no second email send is triggered.
+  QA must NOT flip the real `.swarmforge/operator/hibernation.json` or empty
+  the live roles.tsv on this run to "really" test banked mode - that would
+  hibernate the actual lean-drain crew mid-ticket. All verification here is
+  injected-fixture/unit-level, consistent with this project's testable-
+  module boundary (no real tmux/daemon state mutation in tests).
+
+acceptance:
+  feature: specs/features/BL-308-banked-mode-headless-briefing.feature
+  steps:
+    - "While the swarm is hibernated (no coordinator), the morning trigger composes and writes the day's briefing headlessly instead of nudging a coordinator, labeled as a parked/lightweight briefing with recent git activity, backlog counts, parked profile, and daemon health"
+    - "While the swarm is running with a live coordinator, the existing nudge-the-coordinator behavior is unchanged and the headless composer never writes the file itself"
+    - "A briefing already generated today (by either path) is never regenerated, and a mid-day relaunch after a banked briefing was already sent never triggers a second email for that day"
+
+mutation_cost: medium

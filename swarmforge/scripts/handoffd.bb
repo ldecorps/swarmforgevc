@@ -17,6 +17,9 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "briefing_email_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "briefing_generation_schedule_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "banked_briefing_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "closing_context_clear_lib.bb")))
 
 (def poll-ms 1000)
 (def wake-message agent-runtime-lib/default-wake-chat-message)
@@ -54,6 +57,26 @@
 ;; daemon's own process env, same as that alarm path.
 (def conf-file (fs/path script-dir ".." "swarmforge.conf"))
 (def briefings-dir (fs/path project-root "docs" "briefings"))
+;; BL-308: read-only reuse of BL-307's hibernation-state signal (READ ONLY -
+;; this ticket does not touch operator_runtime.bb, which owns writing it).
+;; Same path/shape operator_runtime.bb's write-hibernation-state! produces:
+;; {"hibernated": true, "hibernated_at_ms": ..., "config_path": ...}.
+(def hibernation-state-file (fs/path state-dir "operator" "hibernation.json"))
+(def backlog-active-dir (fs/path project-root "backlog" "active"))
+(def backlog-paused-dir (fs/path project-root "backlog" "paused"))
+(def backlog-done-dir (fs/path project-root "backlog" "done"))
+;; BL-309: durable "which bookkeeping close was last cleared for" marker -
+;; same small-JSON-under-.swarmforge/ posture as operator_runtime.bb's own
+;; hibernation-state-file, so a daemon restart never replays a clear for a
+;; close already handled.
+(def context-clear-marker-file (fs/path state-dir "coordinator-context-clear.json"))
+;; BL-316: the generalized per-role counterpart - one JSON map keyed by
+;; role-name -> last-cleared inbox/completed/ entry id, so a daemon restart
+;; never replays a clear for any non-coordinator role's completion already
+;; handled. Deliberately a SEPARATE file from context-clear-marker-file
+;; above: the coordinator keeps its own dedicated mechanism/marker
+;; untouched, and this file must never gain a "coordinator" key.
+(def role-context-clear-marker-file (fs/path state-dir "role-context-clear.json"))
 (def pid-file (fs/path daemon-dir "handoffd.pid"))
 (def pid-lock-dir (fs/path daemon-dir "pid.lock"))
 (def stop-file (fs/path daemon-dir "stop"))
@@ -841,10 +864,75 @@
       (log! "cost-health-sidecar-emitted" (str/trim out))
       (throw (ex-info "emit-cost-health-sidecar.js failed" {:exit exit :err err})))))
 
+;; ── BL-308: headless, no-agent briefing composer for banked (hibernated) mode ─
+;; The pure content composer is banked_briefing_lib.bb; everything below is
+;; the impure gathering of the "cheap headless signals" that ticket asks
+;; for, following the exact same shell-out-and-degrade-to-nil/empty pattern
+;; as suite-duration-briefing-line/needs-approval-briefing-section above -
+;; a gathering failure degrades quietly, it never crashes the sweep.
+
+(defn read-hibernation-state []
+  (when (fs/exists? hibernation-state-file)
+    (try (json/parse-string (slurp (str hibernation-state-file)) true) (catch Exception _ nil))))
+
+(defn swarm-hibernated? []
+  (boolean (:hibernated (read-hibernation-state))))
+
+(defn- count-yaml-files [dir]
+  (if (fs/exists? dir)
+    (count (filter #(str/ends-with? (fs/file-name %) ".yaml") (fs/list-dir dir)))
+    0))
+
+(defn banked-backlog-counts []
+  {:active (count-yaml-files backlog-active-dir)
+   :paused (count-yaml-files backlog-paused-dir)
+   :done (count-yaml-files backlog-done-dir)})
+
+;; git log since the prior UTC day-key, oneline - degrades to [] on any
+;; failure (not yet a git repo in some fixture, git not on PATH, etc.).
+(defn recent-git-activity-lines [day-key]
+  (try
+    (let [since (str (banked-briefing-lib/prior-day-key day-key) "T00:00:00Z")
+          {:keys [exit out]} (process/sh ["git" "log" "--oneline" (str "--since=" since)]
+                                          {:dir (str project-root)})]
+      (if (zero? exit)
+        (vec (remove str/blank? (str/split-lines out)))
+        []))
+    (catch Exception _ [])))
+
+;; Reuses BL-272's own committed docs/briefings/<day>.json sidecar (already
+;; emitted by :emit-sidecar! just before this runs, same day-key) rather
+;; than computing daemon health a second way - degrades to [] when the
+;; sidecar is missing/unreadable/has no reliability data this run.
+(defn banked-daemon-health-lines [day-key]
+  (try
+    (let [sidecar-path (fs/path briefings-dir (str day-key ".json"))]
+      (if (fs/exists? sidecar-path)
+        (let [{:keys [reliability]} (json/parse-string (slurp (str sidecar-path)) true)]
+          (if reliability
+            [(str "chases=" (get-in reliability [:chases :value] 0)
+                  " nudges=" (get-in reliability [:nudges :value] 0)
+                  " respawns=" (get-in reliability [:respawns :value] 0)
+                  " failedDeliveries=" (get-in reliability [:failedDeliveries :value] 0))]
+            []))
+        []))
+    (catch Exception _ [])))
+
+(defn compose-and-write-banked-briefing! [day-key]
+  (let [state (read-hibernation-state)
+        content (banked-briefing-lib/compose-banked-briefing
+                 {:day-key day-key
+                  :profile-name (banked-briefing-lib/profile-name-from-config-path (:config_path state))
+                  :hibernated-at-ms (:hibernated_at_ms state)
+                  :backlog-counts (banked-backlog-counts)
+                  :git-activity-lines (recent-git-activity-lines day-key)
+                  :daemon-health-lines (banked-daemon-health-lines day-key)})]
+    (spit (str (fs/path briefings-dir (str day-key ".md"))) content)))
+
 (defn briefing-generation-sweep! [roles socket]
   (let [[hour minute] (configured-morning-time)]
     (briefing-generation-schedule-lib/generate-briefing-if-due!
-     (System/currentTimeMillis) hour minute (str briefings-dir)
+     (System/currentTimeMillis) hour minute (str briefings-dir) (swarm-hibernated?)
      {:notify! (fn [instruction-text]
                  (if (tmux-inject-disabled?)
                    (log! "briefing-generation-skip-mailbox-only")
@@ -853,8 +941,146 @@
                       socket (:session coordinator) (or (:agent coordinator) "claude")
                       :log-fn (fn [tag sess detail] (log! tag sess detail))
                       :text instruction-text))))
+      :compose-headless! compose-and-write-banked-briefing!
       :emit-sidecar! emit-cost-health-sidecar!
       :log! (fn [& parts] (apply log! parts))})))
+
+;; ── BL-309: coordinator context-clear at the safe idle boundary after a
+;;    ticket's bookkeeping close ────────────────────────────────────────────
+;; The pure decision is closing_context_clear_lib.bb; everything below is
+;; the impure gathering/adapter side, following the exact same
+;; degrade-quietly-never-crash-the-sweep posture as every other sweep here.
+
+;; The most recently closed ticket id: backlog/done/'s own newest-mtime
+;; entry, per the ticket's own wording ("a ticket file present in
+;; backlog/done/ that was not there at the last check") - cheap, no new
+;; state needed to detect it. nil when backlog/done/ is empty/absent.
+(defn latest-done-ticket-id []
+  (when (fs/exists? backlog-done-dir)
+    (let [entries (filter #(str/ends-with? (fs/file-name %) ".yaml") (fs/list-dir backlog-done-dir))]
+      (when (seq entries)
+        (-> (apply max-key #(.toMillis (fs/last-modified-time %)) entries)
+            fs/file-name
+            (str/replace #"\.yaml$" ""))))))
+
+(defn read-last-cleared-ticket-id []
+  (when (fs/exists? context-clear-marker-file)
+    (try
+      (:last_cleared_ticket_id (json/parse-string (slurp (str context-clear-marker-file)) true))
+      (catch Exception _ nil))))
+
+(defn record-context-clear! [ticket-id]
+  (spit (str context-clear-marker-file)
+        (json/generate-string {:last_cleared_ticket_id ticket-id
+                                :cleared_at_ms (System/currentTimeMillis)})))
+
+;; role-idle? mirrors operator_lib.bb's BL-307 shape exactly (reused, not
+;; reimplemented); the counts themselves reuse chase_sweep_lib.bb's own
+;; scan-inbox-new/scan-in-process (already loaded here for the chase sweep)
+;; rather than a third copy of that directory-walking logic. Generic over
+;; role-info (BL-316): the coordinator sweep below and the generalized
+;; per-role sweep further down both call this same fn.
+(defn role-mailbox-idle? [role-info]
+  (operator-lib/role-idle?
+   {:inbox-new-count (count (chase-sweep-lib/scan-inbox-new (handoff-lib/mailbox-dir role-info :new)))
+    :in-process-count (count (chase-sweep-lib/scan-in-process (handoff-lib/mailbox-dir role-info :in_process)))}))
+
+;; Shared by every context-clear sweep below (coordinator and per-role,
+;; BL-316): both inject via the same agent-runtime-inject/notify-agent!
+;; call, differing only in which role-info/socket they target - only
+;; :record-clear! differs per sweep, so that stays sweep-local.
+(defn context-clear-injectors [socket role-info]
+  {:inject-clear! (fn []
+                     (agent-runtime-inject/notify-agent!
+                      socket (:session role-info) (or (:agent role-info) "claude")
+                      :log-fn (fn [tag sess detail] (log! tag sess detail))
+                      :text "/clear"))
+   :inject-startup-reread! (fn [instruction-text]
+                              (agent-runtime-inject/notify-agent!
+                               socket (:session role-info) (or (:agent role-info) "claude")
+                               :log-fn (fn [tag sess detail] (log! tag sess detail))
+                               :text instruction-text))})
+
+(defn closing-context-clear-sweep! [roles socket]
+  ;; BL-309 bounce fix: :record-clear! durably poisons closed-ticket-id
+  ;; against ever being re-cleared (new-close?'s whole point). Skip the
+  ;; WHOLE sweep - never even evaluate the decision - while tmux injection
+  ;; is disabled (SWARMFORGE_MAILBOX_ONLY / SWARMFORGE_SKIP_TMUX_INJECT),
+  ;; so a mailbox-only session can never mark a close cleared when nothing
+  ;; was actually injected into the coordinator's pane. Mirrors
+  ;; briefing-generation-sweep!'s own :notify! skip, which never writes any
+  ;; persistent "already notified" marker either.
+  (if (tmux-inject-disabled?)
+    (log! "closing-context-clear-skip-mailbox-only")
+    (when-let [coordinator (get roles "coordinator")]
+      (closing-context-clear-lib/evaluate-closing-context-clear!
+       {:idle? (role-mailbox-idle? coordinator)
+        :closed-ticket-id (latest-done-ticket-id)
+        :last-cleared-ticket-id (read-last-cleared-ticket-id)
+        :role-name "coordinator"}
+       (merge (context-clear-injectors socket coordinator)
+              {:record-clear! (fn [ticket-id]
+                                 (record-context-clear! ticket-id)
+                                 (log! "closing-context-clear-fired" ticket-id))})))))
+
+;; ── BL-316: generalized per-role context-clear at the safe idle boundary
+;;    after a role's OWN inbox/completed/ gains a fresh entry ─────────────
+;; Same pure decision (closing_context_clear_lib.bb), same
+;; degrade-quietly-never-crash-the-sweep posture as every sweep in this
+;; file - only the "what just finished" signal differs from the
+;; coordinator's own bookkeeping-close signal above: here it is a fresh
+;; entry in the role's own inbox/completed/ (a single .handoff file for a
+;; task role, or a whole batch_* directory landing at once for a batch
+;; role). The coordinator is deliberately excluded - it keeps its own
+;; dedicated mechanism/marker above, untouched.
+
+(defn latest-completed-entry-id
+  "The most recently modified top-level entry in role-info's own
+   inbox/completed/ - a .handoff file for a task role, or a batch_*
+   directory (as a single unit, not its individual members) for a batch
+   role. nil when the directory is empty/absent."
+  [role-info]
+  (let [dir (handoff-lib/mailbox-dir role-info :completed)]
+    (when (fs/exists? dir)
+      (let [entries (->> (fs/list-dir dir)
+                          (filter (fn [p]
+                                    (or (and (fs/regular-file? p) (str/ends-with? (fs/file-name p) ".handoff"))
+                                        (and (fs/directory? p) (str/starts-with? (fs/file-name p) "batch_")))))
+                          vec)]
+        (when (seq entries)
+          (-> (apply max-key #(.toMillis (fs/last-modified-time %)) entries)
+              fs/file-name))))))
+
+(defn read-role-context-clear-marker []
+  (if (fs/exists? role-context-clear-marker-file)
+    (try (json/parse-string (slurp (str role-context-clear-marker-file)) true)
+         (catch Exception _ {}))
+    {}))
+
+(defn read-role-last-cleared [role-name]
+  (get (read-role-context-clear-marker) (keyword role-name)))
+
+(defn record-role-context-clear! [role-name entry-id]
+  (spit (str role-context-clear-marker-file)
+        (json/generate-string (assoc (read-role-context-clear-marker) (keyword role-name) entry-id))))
+
+(defn role-context-clear-sweep! [roles socket]
+  (if (tmux-inject-disabled?)
+    (log! "role-context-clear-skip-mailbox-only")
+    (doseq [[role-name role-info] roles
+            :when (not= role-name "coordinator")]
+      (try
+        (closing-context-clear-lib/evaluate-closing-context-clear!
+         {:idle? (role-mailbox-idle? role-info)
+          :closed-ticket-id (latest-completed-entry-id role-info)
+          :last-cleared-ticket-id (read-role-last-cleared role-name)
+          :role-name role-name}
+         (merge (context-clear-injectors socket role-info)
+                {:record-clear! (fn [entry-id]
+                                   (record-role-context-clear! role-name entry-id)
+                                   (log! "role-context-clear-fired" role-name entry-id))}))
+        (catch Exception e
+          (log! "role-context-clear-role-error" role-name (.getMessage e)))))))
 
 (defn -main []
   (let [roles  (load-roles)
@@ -924,7 +1150,21 @@
                     (try
                       (briefing-generation-sweep! (load-roles) socket)
                       (catch Exception e
-                        (log! "briefing-generation-sweep-error" (.getMessage e)))))
+                        (log! "briefing-generation-sweep-error" (.getMessage e))))
+                    ;; BL-309: closing-context-clear sweep shares the same
+                    ;; cadence - no separate timeout, same rationale as
+                    ;; BL-222/BL-214/BL-258 above.
+                    (try
+                      (closing-context-clear-sweep! (load-roles) socket)
+                      (catch Exception e
+                        (log! "closing-context-clear-sweep-error" (.getMessage e))))
+                    ;; BL-316: generalized per-role context-clear sweep
+                    ;; shares the same cadence - no separate timeout, same
+                    ;; rationale as BL-222/BL-214/BL-258/BL-309 above.
+                    (try
+                      (role-context-clear-sweep! (load-roles) socket)
+                      (catch Exception e
+                        (log! "role-context-clear-sweep-error" (.getMessage e)))))
                   (spit (str heartbeat-file) (str (now) "\n"))
                   (when (zero? (mod cycle heartbeat-log-every-cycles))
                     (log! "heartbeat" (str "cycle=" cycle)))
