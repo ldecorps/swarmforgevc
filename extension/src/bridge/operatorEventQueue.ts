@@ -18,6 +18,15 @@ export function appendOperatorEvent(targetPath: string, event: Record<string, un
 }
 
 export interface ReplyOutboxEntry {
+  // BL-320: the idempotency key a redelivery (a replayed-on-reconnect or
+  // replayed-after-restart entry) is deduped against, both bridge-side
+  // (advanceCursorOnAck matches an ack against the entry AT the cursor by
+  // id) and bot-side (relayOneRecord's seenIds set). operator_reply.bb
+  // generates one per line going forward; a line written before this
+  // ticket has none, so it is synthesized below from its own absolute
+  // line position - stable across re-reads (the file is append-only) and
+  // unique, since no two lines share a position.
+  id: string;
   threadId: string;
   text: string;
 }
@@ -37,15 +46,16 @@ export function readNewReplyOutboxEntries(targetPath: string, sinceIndex: number
   }
   const lines = content.split('\n').filter((l) => l.trim().length > 0);
   const entries: ReplyOutboxEntry[] = [];
-  for (const line of lines.slice(sinceIndex)) {
+  lines.slice(sinceIndex).forEach((line, offset) => {
     try {
       const parsed = JSON.parse(line) as Record<string, unknown>;
       if (typeof parsed.threadId === 'string' && typeof parsed.text === 'string') {
-        entries.push({ threadId: parsed.threadId, text: parsed.text });
+        const id = typeof parsed.id === 'string' ? parsed.id : `legacy-${sinceIndex + offset}`;
+        entries.push({ id, threadId: parsed.threadId, text: parsed.text });
       }
     } catch {
       // skip a malformed line rather than crash the whole poll
     }
-  }
+  });
   return { entries, totalLines: lines.length };
 }
