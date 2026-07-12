@@ -154,14 +154,33 @@ You are the hardender.
   merely CONTAINS the project root as a substring
   (`swarmforge/scripts/handoffd_supervisor.bb:195`), so a fixture rooted anywhere
   beneath the repo (e.g. `<repo>/tmp/...`) matches, is TERM'd on the supervisor's
-  ~30–60s cadence, and the test flakes intermittently. This is CURRENT `main`'s
-  behavior, not a stale or pre-fix copy — do not go looking for a fix that has
-  already landed, because none has. Before blaming the code under test: re-run the
-  fixture from a path-isolated copy OUTSIDE the project root (a clean repeated run
-  there proves the environment, not the ticket, was at fault), and check
+  ~30–60s cadence, and the test flakes intermittently. BL-321 FIXED the matcher
+  (canonicalized path-equality against the daemon's own root argument), but the
+  LIVE `handoffd_supervisor.bb` is a long-lived process started once at swarm
+  launch: it keeps running the OLD substring logic in memory until it is
+  RESTARTED, no matter what is committed. So a wiring test can still flake against
+  the live process after BL-321 merged. Before blaming the code under test: re-run
+  the fixture from a path-isolated copy OUTSIDE the project root (a clean repeated
+  run there proves the environment, not the ticket, was at fault), check
   `.swarmforge/daemon/handoffd-supervisor.log` for `reap-orphan` lines timed to
-  your failures. (BL-316: flaked ~50%, and was independently rediscovered by the
-  cleaner, the architect, and the hardener on one ticket.)
+  your failures, and check which commit the live supervisor was launched from
+  (`ps aux | grep handoffd_supervisor`) before calling a post-BL-321 flake a
+  regression. (BL-316: flaked ~50%, independently rediscovered by the cleaner, the
+  architect, and the hardener on one ticket.)
+- **Do not assume a crash-orphaned process reparents to PID 1 — on this WSL2 host
+  it does not, and the PPID-1 assumption is baked into production, not just the
+  test.** `test_handoffd_supervisor_job_reaper.sh` waits for its fake Stryker
+  orphan to reach `ppid == 1` (scenarios 04/06), but under WSL2 orphans reparent to
+  a SUBREAPER — here pid 287 (`Relay(288)`, itself a child of systemd pid 1) — so
+  the test fails with "got 287" every run. That failure is environmental, NOT a
+  regression in whatever ticket you are hardening; do not conflate it with your
+  parcel. The same `(= 1 ppid)` hardcode sits in PRODUCTION
+  (`handoffd_supervisor.bb`'s `orphaned-job-groups`, ~line 267), which means
+  BL-108's crash-orphan reaper never fires on a subreaper host at all — a hung
+  Stryker/`node --test` process is never matched and never reaped, exactly the
+  multi-hour hung run the engineering rules warn about. Treat a job-reaper
+  PPID failure as this known environmental gap, and never "fix" it by making a test
+  assert whatever PPID the host happens to produce.
 
 ## Lessons Discipline
 - After a hardening mistake or a non-obvious root cause (a survivor class
