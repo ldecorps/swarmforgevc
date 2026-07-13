@@ -1,0 +1,80 @@
+id: BL-360
+title: "Onboarding tells us where a target repo's edges are, but never what it DOES — the human asked for a use-case inventory"
+milestone: M8
+type: feature
+status: needs_design
+severity: medium
+priority: 4
+direction: human-requested
+depends_on: []
+source: ".swarmforge/operator/INTAKE-target-repo-use-case-inventory.md — the human, verbatim, 2026-07-13 (SUP-4), naming a real target: https://github.com/ldecorps/free-email-scanner. 'I need to have the various use cases it supports now, so I can tweak or add new ones.'"
+
+notes: |
+  THE HUMAN'S WORDS. "I need this to be documented, so we can start making changes to it." / "I need
+  to have the various use cases it supports now, so I can tweak or add new ones."
+
+  THE GAP, VERIFIED IN CODE. The human reasonably assumed the onboarding flow (BL-262's survey +
+  BL-269's target prompts) would produce this. IT DOES NOT — and the Operator wrongly told him it
+  would, then corrected itself in-thread. `RepoSurveyFacts`
+  (`extension/src/onboarding/contractTypes.ts`) is the ENTIRE survey boundary: `languages`,
+  `layoutSummary`, `readmeSummary`, `seedVision`, `initialBacklogSummary`.
+  `proposeContractFromSurvey()` maps exactly those five facts into scope / out-of-scope /
+  boundaries. Every one of them answers "WHERE ARE THE EDGES of this codebase" — the question you
+  need in order to agree a MANDATE. None answers "WHAT DOES THIS APPLICATION DO, feature by
+  feature" — the question you need in order to CHANGE it. So a swarm can today agree a contract on
+  free-email-scanner and generate its `project.prompt`/`engineering.prompt` while still holding no
+  enumerated list of the use cases the app supports. That list is what the human asked for, and it
+  is net-new.
+
+  WHY THIS MATTERS BEYOND ONE REPO. A human pointing the swarm at an unfamiliar repo almost never
+  wants "a scope contract" as the end goal — he wants to know what the thing already does, so he can
+  tweak or extend it. The contract is the vehicle; the capability inventory is the goal. Today the
+  vehicle ships and the goal does not. It also compounds BL-344's argument: if the swarm's first
+  survey misreads the target, the human's recourse is to hand-write the contract himself — and a
+  use-case inventory is the artifact that lets him TELL whether the survey misread it.
+
+  ── OPEN DESIGN QUESTIONS — THIS TICKET IS `needs_design`; THE HUMAN/COORDINATOR DECIDES ──────────
+  Both were raised by the intake and neither may be guessed:
+    1. DOES THE INVENTORY EXTEND THE SURVEY OR SIT ALONGSIDE IT? Either one survey gathering richer
+       facts (a sixth field on `RepoSurveyFacts`, flowing through the same pure boundary), or its own
+       pass with its own pure boundary. The survey's pure-function seam works either way, so this is
+       a genuine choice about how much the contract path should carry.
+    2. WHERE DOES THE ARTIFACT GO — the TARGET repo (like CONTRACT.md), or the human only? THE TRAP
+       TO DESIGN AROUND: `ProposedPrompts` are deliberately WITHHELD from the target repo until the
+       contract is agreed. An inventory the human needs in order to DECIDE on the contract must NOT
+       be gated behind agreeing to it. Whatever is chosen must not recreate that ordering.
+  The feature file as written today encodes the ordering constraint (scenario 03) but takes no
+  position on either question; the specifier amends it once they are answered, BEFORE the coder
+  starts.
+
+  SCOPE (once the fork is resolved). `extension/src/onboarding/` — `contractTypes.ts` (the pure
+  boundary), `contractSurvey.ts` (`proposeContractFromSurvey`), `promptProposal.ts` (the withholding
+  precedent), and the CLI `extension/src/tools/propose-onboarding-contract.ts`. Per the CLI thin-main
+  rule, every bit of derivation/formatting stays in exported pure helpers. The survey ITSELF is agent
+  behaviour reading the target's code (never live I/O in a unit test) — the pure boundary is
+  everything downstream of the gathered facts, exactly as `RepoSurveyFacts` already establishes.
+
+  RELATED: BL-262 (done — survey + proposed contract; the gap originates there), BL-269 (done —
+  target prompts from the same five facts), BL-344 (active — iterative negotiation loop; adjacent,
+  does not close this). BL-360 touches the same onboarding files as BL-344 — SEQUENCE them, do not
+  run them concurrently.
+
+  E2E QA PROCEDURE: point the swarm at the real target (ldecorps/free-email-scanner) and run the
+  onboarding survey. Assert it produces a use-case inventory a human can read: each entry names a
+  capability the app supports today and where in the target's code it lives. Assert the inventory is
+  available to the human BEFORE he agrees the contract (it is not withheld the way ProposedPrompts
+  are). Then take one inventory entry and raise a change request against it, and assert the request
+  can cite that use case as its starting point.
+
+acceptance:
+  feature: specs/features/BL-360-target-use-case-inventory.feature
+  steps:
+    - "Onboarding a target repo produces an inventory of the use cases it supports"
+    - "The inventory is derived from the target's own code, not from its README alone"
+    - "The human sees the inventory before he has to decide on the contract"
+    - "The inventory is the base for the human's next change request"
+    - "A target whose code supports no discernible use case says so plainly"
+
+human_approval: pending
+
+mutation_cost: medium
