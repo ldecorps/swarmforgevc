@@ -1,0 +1,71 @@
+id: BL-357
+title: "A ticket's pending human_approval is never ASKED — it only sits on pull surfaces waiting to be found"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+priority: 4
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-approvals-asked-in-ticket-topics.md (GAP 1) — the human, 2026-07-13 in SUP-2: 'Can I get asked for tickets approvals in their topics?'"
+
+notes: |
+  WHAT ALREADY WORKS — DO NOT REBUILD IT. The BL-295 concierge epic plus BL-325's human-in-the-loop
+  loop already deliver ONE kind of approval into a ticket's own BL-### topic: when a ROLE BLOCKS AT A
+  GATE while holding a ticket, `conciergeTick` diffs the gate state, `diffNeedsApproval`
+  (`extension/src/events/swarmEventStream.ts:97`) emits a `NeedsApproval` event, BL-297's routing
+  posts it into that ticket's topic, and BL-325 closed the loop so the human's reply there reaches
+  the gated pane. It is live, not theoretical: `.swarmforge/operator/concierge-tick-state.json`'s
+  `emittedKeys` contains `NeedsApproval:BL-311`. THE TRANSPORT EXISTS. This ticket is about a second
+  thing reaching that same transport.
+
+  THE GAP. Tickets carry a structured `human_approval` field, and three ACTIVE tickets sit at
+  `human_approval: pending` right now (BL-338, BL-349, BL-353). That field feeds only PULL surfaces:
+  the PWA's "Needs approval" list (`pwa/app.js` renderNeedsApproval,
+  `extension/src/metrics/backlogDashboard.ts` computeNeedsApproval) and the briefing-email line
+  (`extension/src/tools/needs-approval-line.ts`). NOTHING EVER PUSHES IT. No `NeedsApproval` event is
+  emitted for a ticket merely because its approval is pending — only because a role is blocked at a
+  pane gate. So "please approve BL-338" is never ASKED of the human in BL-338's topic; he has to go
+  and look for it. Being asked is precisely what he requested.
+
+  THE CAUTION THAT SHAPES THE DESIGN. Do NOT let this collapse into "post a reminder for every
+  pending ticket every tick". The human has 3 pending-approval tickets and 9 paused ones; a per-tick
+  nag would be noise and he would mute the topic. The ask must fire on the TRANSITION into needing
+  approval — exactly as the existing `emittedKeys` de-duplication already does for
+  `NeedsApproval:BL-311`. The dedup guard is durable and restart-safe; reuse it, do not invent a
+  second one.
+
+  SCOPE. `EventStreamSnapshot` (`extension/src/events/swarmEventStream.ts`) already carries per-ticket
+  data derived from the ticket YAML (`ticketSummaries`); the ticket's `human_approval` is already
+  parsed by `extension/src/panel/backlogReader.ts` (`humanApproval`) and already reaches
+  `computeNeedsApproval`. So this is a THIRD diff* function over the same snapshot (or an extension of
+  the NeedsApproval derivation), plus whatever the snapshot needs to carry the pending-approval set,
+  plus the message text in `topicRouter.ts` — reusing `messageTextForEvent` rather than hand-rolling a
+  second formatter. The reply path back from the topic already exists (BL-325); the human's approval
+  landing ON the ticket (flipping `human_approval`) is the one genuinely new half — say plainly which
+  writer owns that flip, and make sure it is a real writer, not an assumed sibling slice.
+
+  RELATED, NOT DUPLICATED: BL-358 is the OTHER gap from the same intake (a gate that cannot be tagged
+  to a ticket is dropped rather than asked). BL-357 and BL-358 both touch `swarmEventStream.ts` /
+  `conciergeTick.ts` / `topicRouter.ts` — they are NOT orthogonal. SEQUENCE them; do not run them
+  concurrently.
+
+  E2E QA PROCEDURE: in a live swarm, flip a ticket's `human_approval` to `pending` and assert its own
+  BL-### topic receives an approval request within one concierge tick. Let several more ticks pass and
+  assert NO second request is posted. Answer the approval in that topic and assert the ticket's
+  `human_approval` is no longer pending and the PWA's needs-approval list drops it. Then force the
+  post to fail once and assert the request is retried on the next tick rather than silently advancing
+  past the transition.
+
+acceptance:
+  feature: specs/features/BL-357-pending-approval-asks-in-its-topic.feature
+  steps:
+    - "The ticket asks the human for its approval in its own topic"
+    - "The human is asked once, not on every tick"
+    - "The human's approval in the ticket's topic is recorded against that ticket"
+    - "A ticket that does not need approval is never asked about"
+    - "A request that could not be delivered is asked again, never dropped"
+
+human_approval: pending
+
+mutation_cost: medium
