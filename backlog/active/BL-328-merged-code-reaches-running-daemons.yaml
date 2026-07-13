@@ -72,6 +72,35 @@ notes: |
     4. THE SUPERVISOR MUST NOT RE-ARM THE STALE BUILD. If a supervisor respawns a process it
        must bring up the CURRENT build, recompiling first when the source is newer. Today a
        respawn faithfully restores the broken version, which is how a fixed bug "comes back".
+    4b. THE RESPAWN PATH MUST MAKE THE BUILD CURRENT ITSELF — IT MAY NOT ASSUME A SYNC ALREADY
+       RAN (added 2026-07-13 after the architect's review of the first build). The first build
+       leaves `front_desk_supervisor.bb`'s `spawn-bridge!`/`spawn-bot!` executing
+       `node <entrypoint>` against the same `extension/out/` as before: no freshness check, no
+       recompile. It only RE-STAMPS the build identity on `:re-armed`, which makes the staleness
+       VISIBLE (genuinely useful, and the safety net) but still faithfully re-arms the broken
+       build. That is exactly the "system self-heals back to broken" failure this scope item
+       exists to forbid.
+       THE OPEN WINDOW: a merge lands (out/ now stale) -> a process crashes BEFORE the
+       coordinator's step-0 sync runs -> the supervisor respawns it on the stale build. The
+       supervisor is the ONLY actor awake in that window, so it cannot delegate the problem to a
+       sync that has not happened yet.
+       THE FIXTURE HID IT: scenario 04's fixture stages a sync BEFORE the crash, so it never
+       exercises the merge->crash gap at all — it proves the easy path while being named as
+       though it proved the hard one. Scenario 04 now carries an explicit "no build sync has run
+       since that merge" Given precisely to make that fixture illegal, and scenarios 07/08 pin
+       the window directly.
+       DESIGN — RESOLVE THE CRASH-LOOP TENSION EXPLICITLY, do not recompile blindly on every
+       respawn: (a) CHECK freshness first (cheap — compare the stamped build identity against
+       main/source); (b) recompile ONLY when it is actually stale, which naturally bounds it to
+       at most once per merge rather than once per crash, so a crash-looping child cannot trigger
+       a compile storm; (c) then respawn on the current build.
+       (d) IF THE CURRENT BUILD CANNOT BE PRODUCED (a compile failure), still BRING THE PROCESS
+       BACK UP on the stale build and surface the staleness LOUDLY. Do NOT refuse to respawn: a
+       front desk that stays down is strictly worse than a front desk running old code, because
+       it takes the human's only channel with it. Degraded-and-visible beats dead.
+       NOTE FOR THE CODER: scenarios `merged-code-reaches-daemons-07` and `-08` were added, and
+       `-04` gained a Given. Their step handlers must be wired in the same parcel, or the
+       acceptance runner hard-fails and blocks the hardener's gate (BL-233).
     5. OUT OF SCOPE: changing how anything is deployed or packaged. This is about making the
        code that is already merged actually run.
 

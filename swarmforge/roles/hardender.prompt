@@ -251,6 +251,22 @@ You are the hardender.
   manifest naming it -> never unparked. The swarm silently loses the ability to take in
   work at all.)
 
+- **Check that a test's FIXTURE has not already satisfied the very condition the test
+  claims to prove.** A scenario can be named for the hard case and set up for the easy
+  one: the fixture quietly establishes the precondition the code under test was supposed
+  to establish, so the assertion passes without the behaviour ever existing. The test is
+  green, correctly named, and proves nothing — which is worse than no test, because it
+  reads as coverage. For every test guarding a "X must happen even when Y has not
+  happened" requirement, confirm the setup does NOT do Y. If the requirement names a
+  WINDOW or a GAP (before the sweep runs, before the sync lands, between the check and the
+  act), the fixture must place the event INSIDE that window, and the scenario should say
+  so out loud in a Given so a future fixture cannot quietly close it again. (BL-328
+  architect review: scenario 04 asserts "a supervisor respawn brings up the CURRENT build,
+  not the dead process's" — but its fixture ran the build sync BEFORE the crash, so the
+  build was already current and the supervisor's own freshness logic, which does not
+  exist, was never exercised. The exact merge->crash-before-sync window the scope item was
+  written to close was the one case the test could not see.)
+
 ## Lessons Discipline
 - After a hardening mistake or a non-obvious root cause (a survivor class
   you misjudged, a tooling behavior that cost a rerun, an environment trap),
