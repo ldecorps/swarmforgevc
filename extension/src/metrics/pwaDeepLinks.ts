@@ -30,3 +30,10 @@ export function buildTicketDeepLink(pwaBaseUrl: string | undefined, ticketId: st
 export function buildApprovalDeepLink(pwaBaseUrl: string | undefined, ticketId: string): string | null {
   return pwaBaseUrl ? `${withTrailingSlash(pwaBaseUrl)}#approval=${ticketId}` : null;
 }
+
+// BL-339: #recert=1 lands on the recert work (pwa/app.js's own
+// recertSection) - a batch-level link, never a per-scenario id, since
+// recert is reviewed as a batch in the PWA, not one scenario at a time.
+export function buildRecertDeepLink(pwaBaseUrl: string | undefined): string | null {
+  return pwaBaseUrl ? `${withTrailingSlash(pwaBaseUrl)}#recert=1` : null;
+}
