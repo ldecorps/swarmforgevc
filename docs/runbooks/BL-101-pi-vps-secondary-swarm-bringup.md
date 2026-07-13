@@ -194,6 +194,34 @@ swarmforge-<swarm-name>.service` reports active and the same parcel is still
 visible in that role's mailbox (nothing archived/dropped by the reboot
 itself).
 
+**The front desk (bridge + Telegram bot) is NOT covered by this script and
+needs its own manual unit install (BL-351).** The swarm and Operator units
+above survive a reboot; before BL-351 the front desk — the human's entire
+phone-card/holistic-UI/Concierge/Telegram surface — did not, because no
+boot unit for it existed at all (a reboot silently took away his only
+channel to the swarm, and nothing brought it back). `generate_systemd_units.sh`
+now has a `--unit=front-desk` branch, mirroring the operator unit's shape
+(`Restart=always`, `StartLimitIntervalSec=0`, `WantedBy=multi-user.target`,
+the same `EnvironmentFile=`) but wired to `launch_front_desk.sh` and using
+`Type=forking`/`PIDFile=` rather than `Type=simple`, since that launcher
+forks its supervisor into the background and exits rather than running in
+the foreground. This provisioning script does **not** call it — installing
+the front-desk unit is a deliberate manual step:
+
+```sh
+sudo swarmforge/deploy/generate_systemd_units.sh --unit=front-desk <swarm-name> <project-root>
+sudo systemctl enable --now swarmforge-front-desk-<swarm-name>.service
+```
+
+Safe to run even if the front desk is already hand-launched — the unit's
+`ExecStart` is `launch_front_desk.sh` itself, whose already-running guard
+is a no-op rather than a duplicate launch, so installing the unit against a
+live front desk never produces two. A generated-but-uninstalled unit is
+exactly as dark as no unit at all: run the two commands above on every host
+that hosts the front desk, and rehearse the same reboot check as above,
+confirming the Telegram bot actually answers again after boot — not just
+that its pid is alive.
+
 ## 8. Scaling down (smaller VPS instances)
 
 The full pack (`packs/second-swarm.conf`) runs the whole pipeline minus
