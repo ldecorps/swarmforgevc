@@ -144,6 +144,7 @@ const DOMAINS = [
   require('./frontDeskSurvivesRebootSteps'),
   require('./retireLegacyTelegramNarratorSteps'),
   require('./runHistoryHeadlessSteps'),
+  require('./costPerTicketDiagramSteps'),
 ];
 
 function registerSteps(registry) {
