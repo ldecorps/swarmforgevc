@@ -1,6 +1,6 @@
-import { execFileSync } from 'child_process';
 import * as path from 'path';
 import { atomicWrite } from '../util/atomicWrite';
+import { commitScopedFile } from '../util/gitCommitScopedFile';
 import { computeTrend, TrendResult, TrendSeriesPoint } from '../metrics/trend';
 import { computeCostTelemetry, RoleCostTelemetry } from '../metrics/costTelemetry';
 import { readResourceSampleEvents, computeResourceTrends, RoleResourceTrend } from '../metrics/resourceTelemetry';
@@ -410,15 +410,5 @@ export function writeCostHealthSidecar(targetPath: string, sidecar: CostHealthSi
 // briefing flow must proceed regardless of whether this particular commit
 // succeeded.
 export function commitCostHealthSidecar(targetPath: string, filePath: string, dateIso: string): boolean {
-  try {
-    execFileSync('git', ['-C', targetPath, 'add', '--', filePath], { stdio: 'ignore' });
-    execFileSync(
-      'git',
-      ['-C', targetPath, 'commit', '-m', `Cost & health sidecar for ${dateIso}\n\nBy coder (BL-213 deterministic emitter).`, '--', filePath],
-      { stdio: 'ignore' }
-    );
-    return true;
-  } catch {
-    return false;
-  }
+  return commitScopedFile(targetPath, filePath, `Cost & health sidecar for ${dateIso}\n\nBy coder (BL-213 deterministic emitter).`);
 }
