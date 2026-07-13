@@ -216,6 +216,23 @@ You are the hardender.
   and defaults to the full chain, discarding the specifier's narrowing with no
   error and bypassing the ticket's own before-promotion validation.)
 
+- **A safety check that runs ONCE PER BATCH is not a safety check for each item in
+  it — probe the window between the check and the act.** Code that surveys state up
+  front and then acts on every item in a loop ("gather who is safe to kill, then kill
+  them") is fully green in every test, because a test's world holds still between the
+  two steps. Production does not: the window spans everything the pass does in
+  between, and it is WIDEST for the last item acted on. If an item's safety can change
+  in that window, the check must be RE-RUN immediately before acting on that item, and
+  the act aborted if it no longer holds. Test it by making the state change inside the
+  window (claim the work, take the lock, dirty the file) — not by asserting the
+  up-front survey was correct, which it always is. And assert the resulting INVARIANT,
+  not merely that the check was called: a re-check narrows a race, only the invariant
+  proves it closed. (BL-324 architect review: `run-shape!` snapshots every role's
+  idleness once, then parks each role with no re-check; a role idle at survey time can
+  claim a parcel seconds later and be killed mid-task — and because a PARKED role never
+  relaunches, BL-323's resume-on-start cannot rescue it, so the parcel is stranded, not
+  just interrupted.)
+
 ## Lessons Discipline
 - After a hardening mistake or a non-obvious root cause (a survivor class
   you misjudged, a tooling behavior that cost a rerun, an environment trap),
