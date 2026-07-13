@@ -328,4 +328,63 @@ fi
 final_cleanup
 LIVE_ROOTS=()
 
+# ── BL-335 build-freshness-npm-recompile-01: sync recompiles extension/
+#    when ONLY handoffd (never front-desk) is stale. handoffd.bb shells out
+#    to several extension/out/tools/*.js CLIs of its own (render-briefing-
+#    diagrams.js, suite-duration-line.js, emit-cost-health-sidecar.js, ...)
+#    - a merge touching only one of those TS sources leaves handoffd stale
+#    while bridge/bot can already be fresh, and the OLD node-stale? check
+#    (scoped to the :front-desk group alone) never recompiled in that case,
+#    so restart-handoffd-group! (a plain process restart, no compile step)
+#    kept shelling out to the STALE compiled JS forever - the exact
+#    "shipped, closed, and invisible" defect class BL-335 investigated. ────
+ROOT="$(mk_git_root)"
+LIVE_ROOTS+=("$ROOT")
+OLD_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+git -C "$ROOT" commit -q --allow-empty -m init2
+NEW_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+git -C "$ROOT" branch main
+mkdir -p "$ROOT/.swarmforge/operator" "$ROOT/.swarmforge/daemon" \
+         "$ROOT/.swarmforge/handoffs/inbox/new" "$ROOT/.swarmforge/handoffs/inbox/in_process" "$ROOT/.swarmforge/handoffs/inbox/completed" \
+         "$ROOT/extension/out/tools"
+touch "$ROOT/.swarmforge/roles.tsv"
+echo "fake-socket" > "$ROOT/.swarmforge/tmux-socket"
+cat > "$ROOT/.swarmforge/operator/front-desk-supervisor.status.json" <<EOF
+{"bridge":{"pid":111,"build_sha":"$NEW_SHA"},"bot":{"pid":112,"build_sha":"$NEW_SHA"},"supervisor_build_sha":"$NEW_SHA"}
+EOF
+cat > "$ROOT/.swarmforge/operator/status.json" <<EOF
+{"build_sha":"$NEW_SHA"}
+EOF
+SWARMFORGE_MAILBOX_ONLY=1 bash "$START_HANDOFF_DAEMON" "$ROOT" >/dev/null
+wait_for 5 test -f "$ROOT/.swarmforge/daemon/handoffd.pid" || fail "build-freshness-npm-recompile-01 setup: handoffd did not start"
+python3 -c "
+import json
+p = '$ROOT/.swarmforge/daemon/handoffd-build.json'
+with open(p) as f: d = json.load(f)
+d['build_sha'] = '$OLD_SHA'
+with open(p, 'w') as f: json.dump(d, f)
+"
+FAKE_BIN_RC="$(mktemp -d)"
+cat > "$FAKE_BIN_RC/npm" <<EOF
+#!/usr/bin/env bash
+touch "$ROOT/extension/out/.recompiled-marker"
+echo "$NEW_SHA" > "$ROOT/extension/out/BUILD_SHA"
+exit 0
+EOF
+chmod +x "$FAKE_BIN_RC/npm"
+PATH="$FAKE_BIN_RC:$PATH" bb "$CLI" "$ROOT" sync >/dev/null
+SYNC_EXIT_RC=$?
+rm -rf "$FAKE_BIN_RC"
+check_recompile_01() {
+  [[ "$SYNC_EXIT_RC" -eq 0 ]] || return 1
+  [[ -f "$ROOT/extension/out/.recompiled-marker" ]]
+}
+if check_recompile_01; then
+  pass "build-freshness-npm-recompile-01: sync recompiles extension/ when only handoffd (a Node-shelling Babashka daemon) is stale, even with bridge/bot already fresh"
+else
+  fail "build-freshness-npm-recompile-01: expected extension/ to be recompiled when handoffd alone is stale (a Node-shelled tool it calls could be stale too)"
+fi
+final_cleanup
+LIVE_ROOTS=()
+
 echo "build_freshness_cli smoke: ALL CHECKS PASSED"
