@@ -4,6 +4,7 @@ const {
   readPwaBaseUrl,
   buildTicketDeepLink,
   buildApprovalDeepLink,
+  buildRecertDeepLink,
 } = require('../out/metrics/pwaDeepLinks');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -56,4 +57,18 @@ test('buildApprovalDeepLink builds a #approval= fragment URL', () => {
 
 test('buildApprovalDeepLink returns null when no base URL is configured', () => {
   assert.equal(buildApprovalDeepLink(undefined, 'BL-200'), null);
+});
+
+// ── buildRecertDeepLink (BL-339) ──────────────────────────────────────────
+
+test('BL-339: buildRecertDeepLink builds a #recert=1 fragment URL, a batch-level link (no per-scenario id)', () => {
+  assert.equal(buildRecertDeepLink('https://example.github.io/dashboard/'), 'https://example.github.io/dashboard/#recert=1');
+});
+
+test('buildRecertDeepLink normalizes a missing trailing slash, same as the other deep-link builders', () => {
+  assert.equal(buildRecertDeepLink('https://example.github.io/dashboard'), 'https://example.github.io/dashboard/#recert=1');
+});
+
+test('buildRecertDeepLink returns null when no base URL is configured', () => {
+  assert.equal(buildRecertDeepLink(undefined), null);
 });

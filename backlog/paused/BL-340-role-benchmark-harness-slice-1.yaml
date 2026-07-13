@@ -72,8 +72,25 @@ notes: |
     4. A real report artifact, from a real run against real models. Not a fixture.
     5. Report the VARIANCE, or the number of repetitions, so a reader can tell a real difference
        between models from noise.
-    6. OUT OF SCOPE (later slices): the other seven roles; every provider; historical trends;
-       the leaderboard; automatic swarm-config recommendation.
+    6. COMMIT THE REPORT AS A GIT ARTIFACT (added 2026-07-13, see below): write the report to
+       `docs/benchmarks/<date>.json` and COMMIT it, sidecar-style — `atomicWrite` + `commitScopedFile`
+       (the scoped commit touches ONLY that file, never a broad `git add`), exactly as
+       `extension/src/notify/costHealthSidecar.ts` already does for `docs/briefings/<date>.json`.
+       A benchmark run is machine-local and live; a committed artifact is the ONE sanctioned way its
+       numbers cross into git-derivable state.
+    7. OUT OF SCOPE (later slices): the other seven roles; every provider; historical trends;
+       automatic swarm-config recommendation. (The LEADERBOARD is no longer "later" — it is now a
+       named sibling, BL-347.)
+
+  AMENDMENT 2026-07-13 — WHY SCOPE ITEM 6 WAS ADDED. This ticket originally said only that it
+  produces "a real report artifact", with no requirement that the report be COMMITTED. Its consumer,
+  BL-347 (the Role Leaderboard on the static PWA), can by constitutional rule read ONLY
+  git-derivable state — so as written, BL-340 would have produced a report that BL-347 could never
+  legally read, and BL-347 would have shipped dark: green tests over a file nothing writes into git.
+  That is precisely the emit-with-no-writer trap the engineering rules were amended for after
+  BL-296/297/298. The writer is therefore named here, in this ticket, rather than assumed to appear
+  in a sibling. BL-340 owns PRODUCING and committing the artifact; BL-347 owns PRESENTING it. If the
+  report's schema changes during implementation, BL-340's schema wins and BL-347 follows it.
 
   E2E QA PROCEDURE: the deliverable is a REAL REPORT FROM A REAL RUN. A harness that only produces
   a report from mocked model responses fails this ticket — the entire point is measuring actual
@@ -89,6 +106,7 @@ acceptance:
     - "The quality threshold for cheapest acceptable is stated, not implied"
     - "Run-to-run variance is reported, so a difference can be told from noise"
     - "The report comes from a real run against real models"
+    - "The report is committed, so it can be read from repository state alone"
 
 human_approval: pending
 
