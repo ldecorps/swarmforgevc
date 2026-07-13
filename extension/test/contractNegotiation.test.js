@@ -61,6 +61,39 @@ test('a removal objection naming something NOT in scope falls back to a boundary
   assert.deepEqual(changedFields, ['boundaries']);
 });
 
+test('every revision path marks the contract "proposed" again (a revision is never silently pre-agreed)', () => {
+  assert.equal(reviseContractFromObjection(BASE_CONTRACT, 'remove the TypeScript codebase work').contract.agreement, 'proposed');
+  assert.equal(reviseContractFromObjection(BASE_CONTRACT, 'also add logging').contract.agreement, 'proposed');
+  assert.equal(reviseContractFromObjection(BASE_CONTRACT, 'not sure about this').contract.agreement, 'proposed');
+});
+
+test('a 4-letter word is significant enough to drive the phrase-overlap match (word.length >= 4, not > 4)', () => {
+  // "ship" is exactly 4 characters and appears in BASE_CONTRACT.scope[0]
+  // ("...Ship the MVP.") - a >4 threshold would exclude it and this
+  // removal would wrongly fall back to a boundary note instead.
+  const { contract, changedFields } = reviseContractFromObjection(BASE_CONTRACT, 'remove the ship deliverable');
+  assert.equal(contract.scope.length, BASE_CONTRACT.scope.length - 1);
+  assert.ok(!contract.scope.some((s) => s.toLowerCase().includes('ship')));
+  assert.deepEqual(changedFields, ['scope', 'outOfScope']);
+});
+
+test('"dont include" (no apostrophe) is still recognized as removal intent, not addition', () => {
+  // don'?t include - the apostrophe is optional in the pattern.
+  const { contract, changedFields } = reviseContractFromObjection(BASE_CONTRACT, "dont include the TypeScript codebase");
+  assert.equal(contract.scope.length, BASE_CONTRACT.scope.length - 1);
+  assert.deepEqual(changedFields, ['scope', 'outOfScope']);
+});
+
+test('an addition objection whose words happen to overlap an EXISTING scope entry still adds, never removes', () => {
+  // "typescript" overlaps BASE_CONTRACT.scope[1], but "include" alone
+  // (no remove/exclude/drop/don't-include/never) is addition intent, not
+  // removal - a removal-branch-first bug would delete scope[1] instead.
+  const { contract, changedFields } = reviseContractFromObjection(BASE_CONTRACT, 'also include typescript improvements');
+  assert.equal(contract.scope.length, BASE_CONTRACT.scope.length + 1);
+  assert.ok(contract.scope.some((s) => s.includes('TypeScript codebase')), 'the existing TypeScript scope entry must survive');
+  assert.deepEqual(changedFields, ['scope']);
+});
+
 // ── objectToContract / round tracking (onboarding-negotiation-05/07) ─────
 
 test('objectToContract records a new round with the objection and what changed', () => {
@@ -107,6 +140,13 @@ test('once ended, further objections are refused (state is simply returned uncha
   assert.equal(again.ended, true);
 });
 
+test('an APPROVED negotiation refuses a further objection outright (no phantom round appended)', () => {
+  let state = startNegotiation(BASE_CONTRACT);
+  state = approveContract(state);
+  const again = objectToContract(state, 'too late now');
+  assert.deepEqual(again, state);
+});
+
 // ── approveContract (onboarding-negotiation-04/06) ────────────────────────
 
 test('BL-344 onboarding-negotiation-04: approval ends the negotiation and the approved contract is the one that stands', () => {
@@ -131,6 +171,16 @@ test('approving an already-ended negotiation is a no-op (never re-approves or er
   state = approveContract(state);
   const again = approveContract(state);
   assert.deepEqual(again, state);
+});
+
+test('approving a negotiation already ended by round-limit is refused, never retroactively agrees it', () => {
+  let state = startNegotiation(BASE_CONTRACT);
+  state = objectToContract(state, 'first', 1);
+  state = objectToContract(state, 'second', 1); // ends here (round-limit)
+  const again = approveContract(state);
+  assert.deepEqual(again, state);
+  assert.notEqual(again.contract.agreement, 'agreed');
+  assert.equal(again.endedReason, 'round-limit');
 });
 
 // ── negotiationLog (onboarding-negotiation-07) ────────────────────────────
@@ -160,4 +210,20 @@ test('parseNegotiationLog skips a malformed/truncated line rather than losing th
 
 test('parseNegotiationLog on empty content is an empty round list, not an error', () => {
   assert.deepEqual(parseNegotiationLog(''), []);
+});
+
+test('parseNegotiationLog rejects a syntactically-valid JSON line whose fields have the wrong types', () => {
+  const lines =
+    renderNegotiationLogLine({ round: 1, objection: 'a', changedFields: ['scope'] }) +
+    '{"round":"one","objection":5,"changedFields":"not-an-array"}\n';
+  const parsed = parseNegotiationLog(lines);
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0].objection, 'a');
+});
+
+test('parseNegotiationLog tolerates a CRLF-terminated line (trims the trailing \\r before parsing)', () => {
+  const round = { round: 1, objection: 'remove the payments work', changedFields: ['scope'] };
+  const crlfContent = `${JSON.stringify(round)}\r\n`;
+  const parsed = parseNegotiationLog(crlfContent);
+  assert.deepEqual(parsed, [round]);
 });

@@ -12,6 +12,7 @@ const {
   initializeTargetContract,
   buildGeneratedPromptBootstrapFiles,
   initializeTargetPrompts,
+  updateTargetContract,
 } = require('../out/config/targetBootstrap');
 const { resolveTargetPath } = require('../out/config/targetPath');
 
@@ -131,6 +132,22 @@ test('initializeTargetRepo skips commit when all files already present', async (
   assert.deepEqual(result.skipped.sort(), ['engineering.prompt', 'project.prompt']);
 });
 
+// Same "nothing to create" case, but inside a real git repository - unlike
+// the non-git case above, writeFilesAndCommit must skip the `git add`/
+// `git commit` calls entirely on an empty file list rather than attempting
+// a no-pathspec `git add` (which git itself errors on).
+test('initializeTargetRepo skips commit when all files already present, in a git repository', async () => {
+  const tmp = mkTmpDir();
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+  fs.writeFileSync(path.join(tmp, 'project.prompt'), 'x');
+  fs.writeFileSync(path.join(tmp, 'engineering.prompt'), 'x');
+  const result = await initializeTargetRepo(tmp);
+  assert.equal(result.committed, false);
+  assert.deepEqual(result.created, []);
+});
+
 test('initializeTargetRepo commits new files in a git repository', async () => {
   const tmp = mkTmpDir();
   execSync('git init', { cwd: tmp });
@@ -233,6 +250,57 @@ test('initializeTargetContract and initializeTargetRepo compose without interfer
   assert.deepEqual(contractResult.created.sort(), ['CONTRACT.md', path.join('.swarmforge', 'contract.yaml')].sort());
   assert.ok(fs.existsSync(path.join(tmp, 'project.prompt')));
   assert.ok(fs.existsSync(path.join(tmp, 'CONTRACT.md')));
+});
+
+// ── BL-344: unconditional revision write, reusing writeFilesAndCommit ───────
+
+test('updateTargetContract rewrites both contract files unconditionally, even though they already exist', async () => {
+  const tmp = mkTmpDir();
+  await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+  const revised = { ...FIXTURE_CONTRACT, scope: [...FIXTURE_CONTRACT.scope, 'Per operator request: add logging'] };
+
+  const result = await updateTargetContract(tmp, revised, 'Revise contract');
+
+  assert.equal(result.committed, false, 'no git repo here, so nothing to commit');
+  const written = fs.readFileSync(path.join(tmp, '.swarmforge', 'contract.yaml'), 'utf8');
+  assert.match(written, /add logging/);
+});
+
+test('updateTargetContract commits a real content change in a git repository', async () => {
+  const tmp = mkTmpDir();
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+  await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+  const revised = { ...FIXTURE_CONTRACT, scope: [...FIXTURE_CONTRACT.scope, 'Per operator request: add logging'] };
+
+  const result = await updateTargetContract(tmp, revised, 'Revise contract (round 1)');
+
+  assert.equal(result.committed, true);
+  const log = execSync('git log --oneline', { cwd: tmp }).toString();
+  assert.match(log, /Revise contract \(round 1\)/);
+});
+
+test('updateTargetContract returns committed:false when the content is unchanged from HEAD (nothing to commit)', async () => {
+  const tmp = mkTmpDir();
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+  await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+
+  const result = await updateTargetContract(tmp, FIXTURE_CONTRACT, 'Revise contract (no-op)');
+
+  assert.equal(result.committed, false);
+});
+
+// A real commit failure (e.g. no git identity configured) is a DIFFERENT
+// error than "nothing to commit" and must propagate, not be silently
+// swallowed by the same catch that tolerates the no-op case above.
+test('updateTargetContract propagates a real git commit failure instead of swallowing it', async () => {
+  const tmp = mkTmpDir();
+  execSync('git init', { cwd: tmp });
+
+  await assert.rejects(() => updateTargetContract(tmp, FIXTURE_CONTRACT, 'Revise contract'));
 });
 
 // ── BL-269: generated target prompts, gated on the contract's agreement ─────
