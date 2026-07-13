@@ -7,6 +7,7 @@ import { readResourceSampleEvents, computeResourceTrends, RoleResourceTrend } fr
 import { RoleWorktree, readChaserTelemetryEvents, ChaserTelemetryEvent } from '../metrics/swarmMetrics';
 import { runGitLog, deriveTicketLifecycles, TicketLifecycleEvent } from '../metrics/gitHistoryAdapter';
 import { computeSuiteDurationTrend, SuiteDurationTrendResult } from '../metrics/deliveryMetrics';
+import { computeCostPerTicketSeries, CostPerTicketSeriesResult, COST_PER_TICKET_BASIS } from '../metrics/costPerTicket';
 
 // BL-213: the daily cost & health sidecar - a deterministic, committed
 // carrier (docs/briefings/<date>.json) for BL-100's producers, never
@@ -44,6 +45,19 @@ export interface ExpensiveTicket {
   costUsd: number;
 }
 
+// BL-338: additive - see costPerTicket.ts for the honesty properties this
+// carries (rework included, unpriced tickets excluded not zeroed). `basis`
+// rides on the data itself (not left to prose alone) so every surface that
+// renders this figure - PWA, briefing email - shows the SAME accounting
+// statement without re-deriving or re-typing it.
+export interface CostPerTicketSummary {
+  average: TrendedNumber | null;
+  sampleCount: number;
+  excludedCount: number;
+  series: TrendSeriesPoint[];
+  basis: string;
+}
+
 export interface ReliabilityCounts {
   chases: TrendedNumber;
   nudges: TrendedNumber;
@@ -79,6 +93,10 @@ export interface CostHealthSidecar {
   // sidecar predates this ticket; schemaVersion stays unchanged either way
   // since this is purely additive, same posture as every other field here.
   suiteDurationTrend?: SuiteDurationTrendResult;
+  // BL-338: additive, optional - a sidecar committed before this ticket
+  // carries no such field, same "purely additive, schemaVersion unchanged"
+  // posture as suiteDurationTrend above.
+  costPerTicket?: CostPerTicketSummary;
 }
 
 // ── daily bucketing (pure) ───────────────────────────────────────────────
@@ -256,7 +274,8 @@ export function buildCostHealthSidecar(
   speccedSeries: TrendSeriesPoint[],
   closedSeries: TrendSeriesPoint[],
   topN: number = DEFAULT_TOP_EXPENSIVE_TICKETS,
-  suiteDurationTrend?: SuiteDurationTrendResult
+  suiteDurationTrend?: SuiteDurationTrendResult,
+  costPerTicketSeries?: CostPerTicketSeriesResult
 ): CostHealthSidecar {
   const sidecar: CostHealthSidecar = {
     schemaVersion: COST_HEALTH_SIDECAR_SCHEMA_VERSION,
@@ -278,6 +297,15 @@ export function buildCostHealthSidecar(
   };
   if (suiteDurationTrend) {
     sidecar.suiteDurationTrend = suiteDurationTrend;
+  }
+  if (costPerTicketSeries) {
+    sidecar.costPerTicket = {
+      average: costPerTicketSeries.series.length > 0 ? trendedFromSeries(costPerTicketSeries.series) : null,
+      sampleCount: costPerTicketSeries.sampleCount,
+      excludedCount: costPerTicketSeries.excludedCount,
+      series: costPerTicketSeries.series,
+      basis: COST_PER_TICKET_BASIS,
+    };
   }
   return sidecar;
 }
@@ -313,6 +341,24 @@ function renderExpensiveTicketLines(tickets: ExpensiveTicket[]): string[] {
     return [];
   }
   return ['', '**Top expensive tickets to date:**', ...tickets.map((t) => `- ${t.ticketId}: $${t.costUsd.toFixed(2)}`)];
+}
+
+// Absent (a sidecar predating BL-338) or no delivered ticket has a priced
+// cost yet renders nothing - same "hidden, not fabricated" posture as
+// renderExpensiveTicketLines above. The basis line always accompanies the
+// figure so the accounting statement travels with the number on every
+// surface that shows it (cost-per-ticket-diagram-04).
+function renderCostPerTicketLines(costPerTicket: CostPerTicketSummary | undefined): string[] {
+  if (!costPerTicket || costPerTicket.average === null) {
+    return [];
+  }
+  const excludedNote = costPerTicket.excludedCount > 0 ? `, ${costPerTicket.excludedCount} delivered ticket(s) excluded (no priced usage)` : '';
+  return [
+    '',
+    `**Average cost/ticket:** $${costPerTicket.average.value.toFixed(2)} ${trendArrow(costPerTicket.average.trend)} ` +
+      `(over ${costPerTicket.sampleCount} delivered ticket(s)${excludedNote})`,
+    `_${costPerTicket.basis}_`,
+  ];
 }
 
 function renderFlowBalanceLine(flow: CostHealthSidecar['flowBalance']): string {
@@ -359,6 +405,7 @@ export function renderCostHealthSection(sidecar: CostHealthSidecar | null): stri
     '**Per-agent tokens/cost today:**',
     ...renderAgentLines(sidecar.agents),
     ...renderExpensiveTicketLines(sidecar.topExpensiveTickets),
+    ...renderCostPerTicketLines(sidecar.costPerTicket),
     '',
     renderFlowBalanceLine(sidecar.flowBalance),
     '',
@@ -370,14 +417,20 @@ export function renderCostHealthSection(sidecar: CostHealthSidecar | null): stri
 
 // ── impure orchestrator ──────────────────────────────────────────────────
 
-export function computeCostHealthSidecar(targetPath: string, roles: RoleWorktree[], nowMs: number = Date.now()): CostHealthSidecar {
+export function computeCostHealthSidecar(
+  targetPath: string,
+  roles: RoleWorktree[],
+  nowMs: number = Date.now(),
+  claudeProjectsDir?: string
+): CostHealthSidecar {
   const dateIso = toIso(nowMs).slice(0, 10);
-  const costTelemetryByRole = computeCostTelemetry(targetPath, roles);
+  const costTelemetryByRole = computeCostTelemetry(targetPath, roles, claudeProjectsDir);
   const resourceTrendsByRole = computeResourceTrends(readResourceSampleEvents(targetPath), roles.map((r) => r.role), nowMs);
   const reliabilityDailySeries = bucketDailyReliabilityEvents(readChaserTelemetryEvents(targetPath), nowMs);
   const lifecycles = [...deriveTicketLifecycles(runGitLog(targetPath, 'backlog')).values()];
   const { speccedSeries, closedSeries } = bucketDailyFlowBalance(lifecycles, nowMs);
   const suiteDurationTrend = computeSuiteDurationTrend(targetPath, roles, nowMs);
+  const costPerTicketSeries = computeCostPerTicketSeries(lifecycles, costTelemetryByRole);
 
   return buildCostHealthSidecar(
     dateIso,
@@ -387,7 +440,8 @@ export function computeCostHealthSidecar(targetPath: string, roles: RoleWorktree
     speccedSeries,
     closedSeries,
     DEFAULT_TOP_EXPENSIVE_TICKETS,
-    suiteDurationTrend
+    suiteDurationTrend,
+    costPerTicketSeries
   );
 }
 

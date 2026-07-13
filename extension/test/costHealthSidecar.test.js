@@ -341,3 +341,81 @@ test('BL-290: computeCostHealthSidecar folds in a real suiteDurationTrend withou
   const sidecar = computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }]);
   assert.equal(sidecar.suiteDurationTrend.hasLocalData, false, 'no .test-durations.jsonl exists in this fixture, so hasLocalData must be false, never fabricated');
 });
+
+// ── BL-338: average cost per ticket + trend rides the same sidecar ─────
+
+test('BL-338: buildCostHealthSidecar carries the given costPerTicketSeries as a value+trend+basis summary', () => {
+  const costPerTicketSeries = {
+    series: [
+      { periodStart: '2026-06-28T00:00:00.000Z', value: 12 },
+      { periodStart: '2026-07-05T00:00:00.000Z', value: 8 },
+    ],
+    sampleCount: 5,
+    excludedCount: 1,
+  };
+  const sidecar = buildCostHealthSidecar('2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], [], undefined, undefined, costPerTicketSeries);
+  assert.equal(sidecar.costPerTicket.average.value, 8);
+  assert.equal(sidecar.costPerTicket.average.trend.direction, 'down');
+  assert.equal(sidecar.costPerTicket.sampleCount, 5);
+  assert.equal(sidecar.costPerTicket.excludedCount, 1);
+  assert.deepEqual(sidecar.costPerTicket.series, costPerTicketSeries.series);
+  assert.match(sidecar.costPerTicket.basis, /includes/i);
+  assert.match(sidecar.costPerTicket.basis, /exclud/i);
+});
+
+test('BL-338: costPerTicket reports average null (not $0) when no delivered ticket has a priced cost yet', () => {
+  const sidecar = buildCostHealthSidecar('2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], [], undefined, undefined, { series: [], sampleCount: 0, excludedCount: 0 });
+  assert.equal(sidecar.costPerTicket.average, null);
+});
+
+test('BL-338: costPerTicket is omitted entirely (not null) when none is given, matching the sidecar\'s own additive-optional convention', () => {
+  const sidecar = buildCostHealthSidecar('2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], []);
+  assert.equal(Object.prototype.hasOwnProperty.call(sidecar, 'costPerTicket'), false);
+});
+
+test('BL-338: the rendered briefing section shows the figure with its accounting basis attached', () => {
+  const sidecar = buildCostHealthSidecar(
+    '2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], [],
+    undefined, undefined,
+    { series: [{ periodStart: '2026-07-05T00:00:00.000Z', value: 8 }], sampleCount: 5, excludedCount: 1 }
+  );
+  const text = renderCostHealthSection(sidecar);
+  assert.match(text, /Average cost\/ticket:\*\* \$8\.00/);
+  assert.match(text, /over 5 delivered ticket\(s\), 1 delivered ticket\(s\) excluded/);
+  assert.match(text, /includes/i);
+});
+
+test('BL-338: computeCostHealthSidecar folds in a real costPerTicket summary without throwing on an empty target', () => {
+  const target = mkTmp();
+  git(target, ['init', '-q']);
+  git(target, ['config', 'user.email', 't@t']);
+  git(target, ['config', 'user.name', 't']);
+  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+
+  const sidecar = computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }]);
+  assert.equal(sidecar.costPerTicket.average, null, 'no delivered ticket exists in this empty fixture, so the average must be null, never fabricated');
+  assert.equal(sidecar.costPerTicket.sampleCount, 0);
+});
+
+test('BL-338: computeCostHealthSidecar accepts an injectable claudeProjectsDir, matching computeCostTelemetry\'s own testability seam', () => {
+  const target = mkTmp();
+  git(target, ['init', '-q']);
+  git(target, ['config', 'user.email', 't@t']);
+  git(target, ['config', 'user.name', 't']);
+  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+
+  const claudeProjectsDir = mkTmp();
+  const slug = target.replace(/[/.]/g, '-');
+  fs.mkdirSync(path.join(claudeProjectsDir, slug), { recursive: true });
+  fs.writeFileSync(
+    path.join(claudeProjectsDir, slug, 's1.jsonl'),
+    JSON.stringify({
+      type: 'assistant',
+      timestamp: '2026-07-09T12:00:00Z',
+      message: { id: 'm1', model: 'claude-sonnet-5', usage: { input_tokens: 1_000_000, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } },
+    }) + '\n'
+  );
+
+  const sidecar = computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }], Date.parse('2026-07-09T18:00:00Z'), claudeProjectsDir);
+  assert.equal(sidecar.agents[0].costUsd.value, 3, 'expected the injected 1M priced input tokens ($3/Mtok) to reach the sidecar via the injected claudeProjectsDir');
+});
