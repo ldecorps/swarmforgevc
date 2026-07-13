@@ -122,7 +122,19 @@ function registerSteps(registry) {
     });
   });
 
+  // BL-349 shares this EXACT step text ("the sweep runs") for its own
+  // stuck-escalation-email-headless-07 - the registry resolves first-match,
+  // so whichever module registers this regex first speaks for every
+  // scenario that uses it (see mergedCodeReachesDaemonsSteps.js's own
+  // identical note for "the swarm's health is reported"). Dispatches to
+  // ctx.stuckEscalationRunner when an earlier Given step in the SAME
+  // scenario has set one; absent that flag (every scenario this file
+  // itself owns), behavior is UNCHANGED.
   registry.define(/^the sweep runs$/, (ctx) => {
+    if (ctx.stuckEscalationRunner) {
+      ctx.result = ctx.stuckEscalationRunner();
+      return;
+    }
     const targetPath = ensureTargetPath(ctx);
     ctx.sweepOutput = execFileSync('bb', [SWEEP_HARNESS, targetPath], { encoding: 'utf8' });
   });
