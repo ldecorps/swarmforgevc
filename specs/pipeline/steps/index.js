@@ -127,6 +127,7 @@ const DOMAINS = [
   require('./humanInTheLoopClosedSteps'),
   require('./quietPeriodGateCliSteps'),
   require('./routingManifestFieldSteps'),
+  require('./roleLifecycleParkUnneededSteps'),
 ];
 
 function registerSteps(registry) {
