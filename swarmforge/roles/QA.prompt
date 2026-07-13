@@ -46,6 +46,25 @@ You are QA.
   mutation_cooldown_gate.bb was built and unit-tested but referenced from
   nowhere — hardender.prompt still had only the old prose — so it was caught
   only by grepping for callers, not from test results.)
+- **Verify the commit you are about to APPROVE actually contains THIS ticket's own
+  work — "it is an ancestor of HEAD" proves nothing.** On a busy `main`, every
+  recently-landed commit is an ancestor of HEAD, including other tickets' commits.
+  So an ancestry-of-HEAD check passes for a commit that has nothing to do with your
+  parcel, and you can approve — and have the coordinator close — a ticket against a
+  SIBLING's commit that does not contain a line of the work you just verified. The
+  check that actually holds: for the commit you are citing, assert that THIS ticket's
+  own coder/cleaner/hardener merges are ancestors OF IT
+  (`git merge-base --is-ancestor <this-ticket's-hardener-merge> <commit-you-are-citing>`),
+  not merely that the commit is an ancestor of HEAD. If that fails, you are citing the
+  wrong commit — find the right one before approving. (BL-336's approval cited
+  `279671a3dc`, which is "Document BL-343 routing break-even measurement CLI" — a
+  DIFFERENT ticket's documenter commit — and it predates BL-336's own hardener merge
+  `cb24c041` entirely, so it contains none of BL-336's hardening. Ancestry-of-HEAD
+  passed cleanly on it. BL-336's work happened to be on `main` by another path, so
+  nothing was lost that time; the next one may not be so lucky. Note the related trap
+  already known here: a QA broadcast can legitimately point at a DOCUMENTER's commit
+  rather than a "Merge QA-approved" one — so "it looks like a documenter commit" is not
+  itself the smell. Whose documenter commit it is, is.)
 - If anything fails or the work does not satisfy its intent, send it back to
   the coder with a precise, reproducible description of the defect.
 

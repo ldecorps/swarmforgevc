@@ -1,0 +1,98 @@
+id: BL-346
+title: "A standing Operator topic on Telegram — one always-there front door to the restricted Operator"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+priority: 5
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-operator-dedicated-topic.md — raised by the HUMAN 2026-07-13 during the swarm-recovery incident, relayed at his explicit request ('file it') because he had no working operator access at the time. His words: 'Could the operator have its own Telegram topic so I can interact with it there?'"
+
+notes: |
+  THE ASK, IN HIS WORDS: "Could the operator have its own Telegram topic so I can interact with
+  it there?" One persistent, pinned topic that IS the Operator's home — the human talks to it any
+  time, without hunting for the right SUP-# thread or waiting for one to exist. During the
+  2026-07-13 incident his only reliable channel was screenshots into an external session. This is
+  the everyday, phone-friendly front door that was missing.
+
+  WHAT IS ALREADY TRUE (verified in code, 2026-07-13 — do not rebuild these):
+    - THE RESTRICTED OPERATOR IS LIVE. `launch-front-desk-operator!` (operator_runtime.bb:838),
+      one-shot, headless, `--tools ""` (launch_front_desk_operator.sh:49). BL-334 deliberately
+      restricted it: it answers the human, it cannot act on the swarm. THIS TICKET MUST NOT WIDEN
+      THAT BOUNDARY — the dedicated topic talks to the restricted operator, full stop.
+    - THE TRANSCRIPT + MEMORY SEAM IS LIVE, and the intake's instinct about it is right.
+      `telegram_topic_lib.bb/reply-context-for` (per-thread transcript) +
+      `operator_memory_lib.bb/facts-for-wake` (long-term facts) are both read at
+      operator_runtime.bb:857-859 and inlined into the one-shot prompt — mandatory, since a
+      `--tools ""` session cannot Read anything for itself. The reply is written back into the
+      same transcript (operator_runtime.bb:890-893), so a standing conversation genuinely
+      accumulates. Reuse this unchanged.
+    - INBOUND DISPATCH ALREADY EXISTS. `decideUpdateAction`
+      (extension/src/tools/telegramFrontDeskBotCore.ts:98) resolves an inbound message by topic
+      id: SUP map first, BL-topic map second, else open a new subject.
+
+  THE ACTUAL SEAM IS A SUBJECT, NOT "A TOPIC". The restricted operator is only ever reachable via
+  a `TELEGRAM_TOPIC_MESSAGE` carrying a `:subject` (a SUP-### id) — a message in a BL topic goes
+  somewhere else entirely (the gate-approval sweep). So the correct shape is: create ONE forum
+  topic named "Operator" and bind it to a STABLE, RESERVED subject in
+  `.swarmforge/operator/telegram-topic-map.json`.
+
+  THE TRAP THIS TICKET EXISTS TO AVOID: if you create the topic and do nothing else, the existing
+  `open-for-topic` branch will silently ADOPT it on first message and allocate it a random SUP-N,
+  making it just another disposable issue thread. That is not hypothetical — it is exactly what
+  happened to the three hand-made epic topics (`telegram-topic-map.json` today reads
+  `{"147":"SUP-3","149":"SUP-5","151":"SUP-4","__default__":"SUP-2"}`). Bind the reserved subject
+  BEFORE the topic can take an inbound message.
+
+  NET-NEW SURFACE, STATED HONESTLY: nothing today creates a topic on the SUP side at all —
+  `createForumTopic` (telegramClient.ts:196) is called only from the concierge tick's BL routing.
+  A standing Operator topic needs a creator, a persisted id, and an owner for it. That is the
+  main new code here; everything else is reuse.
+
+  ONE INTAKE CLAIM IS FALSE — DO NOT PLAN AROUND IT. The intake says the topic would be
+  "recreated if deleted, like other managed topics". THERE IS NO SUCH MECHANISM, for any topic.
+  Nothing detects a deleted topic; a topic id that stays in the map takes the `reuse` branch
+  forever and its sends just fail. So:
+    - IN SCOPE: create the topic if it is ABSENT from the recorded map (the cheap half — this is
+      the create-on-first-sight pattern that already exists for BL topics).
+    - OUT OF SCOPE: detecting that a topic present in the map was DELETED in Telegram. That needs
+      a send-failure detector that does not exist, and it is the same missing machinery BL-332
+      (recreate-topic-from-record) will need. Do not silently invent it here.
+
+  SCOPE:
+    1. A single forum topic named "Operator", created once if absent, bound to a stable reserved
+       subject id — never auto-adopted as an ad-hoc SUP thread.
+    2. A human message in that topic reaches the RESTRICTED front-desk operator as a standing
+       conversation (reusing the BL-281 transcript + long-term-memory prompt seam unchanged).
+    3. The Operator's reply lands back in that same topic (reusing the existing reply-outbox ->
+       SSE -> `resolveReplyTopicId` egress).
+    4. Idempotent: restarting the front desk never mints a second Operator topic.
+    5. OUT OF SCOPE: mirroring operator.log activity into the topic (the human's explicit
+       "nice-to-have if cheap" — he confirmed 2026-07-13 to ship conversation only, so the feed
+       does not drown the conversation; file it separately if still wanted once this exists).
+       Also out: widening what the restricted operator may DO (BL-334's boundary stands), and
+       deleted-topic recovery (above).
+
+  E2E QA PROCEDURE: with the real front desk running against the real Telegram forum, delete the
+  Operator topic id from `telegram-topic-map.json`, restart, and assert exactly one "Operator"
+  topic exists and is bound to the reserved subject. Post a message into it AS THE HUMAN and
+  assert (a) the restricted operator — not a fresh SUP-N — picks it up, (b) the reply lands in
+  that same topic, (c) a follow-up referring to the first message gets a reply informed by it.
+  Then restart the front desk and assert no second Operator topic appears. A fixture that fakes
+  the Telegram side proves nothing about the auto-adopt trap, which is the whole risk here.
+
+acceptance:
+  feature: specs/features/BL-346-standing-operator-topic.feature
+  steps:
+    - "The Operator topic exists without the human having to open an issue first"
+    - "A message in the Operator topic reaches the restricted Operator"
+    - "The Operator answers in its own topic"
+    - "The standing conversation accumulates"
+    - "The Operator topic is never adopted as an ad-hoc support thread"
+    - "Starting up again does not create a second Operator topic"
+    - "An Operator topic that was never recorded is created again"
+
+human_approval: pending
+
+mutation_cost: medium
