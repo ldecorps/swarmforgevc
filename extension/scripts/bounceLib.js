@@ -75,4 +75,86 @@ function decideNextStep(state) {
   return { action: 'wait' };
 }
 
-module.exports = { parseMarker, isMarkerFresh, filterDevHostPids, decideNextStep };
+// Parses role session names from a roles.tsv file (column 4).
+function parseRoleSessionsFromTsv(content) {
+  if (typeof content !== 'string') {
+    return [];
+  }
+  return content
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => line.split('\t')[3])
+    .filter((session) => typeof session === 'string' && session.length > 0);
+}
+
+// Parses `tmux list-sessions -F '#{session_name}'` output into session names.
+function parseTmuxSessionNames(listSessionsOutput) {
+  return (listSessionsOutput || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+// Pure readiness probe: every configured role session is present on the socket.
+function isSwarmReady({
+  socketExists,
+  tmuxListExitCode,
+  roleSessions,
+  listedSessionNames,
+}) {
+  if (!socketExists || tmuxListExitCode !== 0) {
+    return false;
+  }
+  if (roleSessions.length === 0) {
+    return false;
+  }
+  const listed = new Set(listedSessionNames);
+  return roleSessions.every((session) => listed.has(session));
+}
+
+function readTargetPathFromSettings(content) {
+  if (typeof content !== 'string') {
+    return undefined;
+  }
+  try {
+    const settings = JSON.parse(content);
+    const target = settings?.['swarmforge.targetPath'];
+    if (typeof target === 'string' && target.trim().length > 0) {
+      return target.trim();
+    }
+  } catch {
+    // ignore malformed settings
+  }
+  return undefined;
+}
+
+// Resolves the target repo for --autostart: explicit path arg, env var, then
+// extension/.vscode/settings.json (swarmforge.targetPath).
+function resolveAutostartTarget({ argv, env, settingsContent }) {
+  const flagIdx = argv.indexOf('--autostart');
+  if (flagIdx === -1) {
+    return null;
+  }
+  const nextArg = argv[flagIdx + 1];
+  if (nextArg && !nextArg.startsWith('-')) {
+    return nextArg;
+  }
+  const fromEnv = env.SWARMFORGE_TARGET_PATH?.trim();
+  if (fromEnv) {
+    return fromEnv;
+  }
+  return readTargetPathFromSettings(settingsContent) ?? null;
+}
+
+module.exports = {
+  parseMarker,
+  isMarkerFresh,
+  filterDevHostPids,
+  decideNextStep,
+  parseRoleSessionsFromTsv,
+  parseTmuxSessionNames,
+  isSwarmReady,
+  readTargetPathFromSettings,
+  resolveAutostartTarget,
+};
