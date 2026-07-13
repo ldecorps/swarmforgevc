@@ -10,6 +10,10 @@ const {
   sampleProcessStats,
   startResourceSampler,
   stopResourceSampler,
+  sampleRolesOnce,
+  latestSampleAtMs,
+  shouldSampleThisInterval,
+  DEFAULT_SAMPLER_INTERVAL_MS,
 } = require('../out/metrics/resourceTelemetry');
 
 function mkTmp() {
@@ -189,4 +193,85 @@ test('stopResourceSampler prevents further ticks from sampling', () => {
 
 test('stopResourceSampler tolerates a null timer', () => {
   assert.doesNotThrow(() => stopResourceSampler(null, fakeScheduler().clearTick));
+});
+
+// ── sampleRolesOnce (BL-350: the headless-callable single tick) ──────────
+
+test('sampleRolesOnce samples every tracked role once and returns the sampled count', () => {
+  const targetPath = mkTmp();
+  const roles = [{ role: 'coder', getPid: () => 111 }, { role: 'cleaner', getPid: () => 222 }];
+  const getStats = (pid) => ({ rssBytes: pid, cpuPercent: 1 });
+
+  const count = sampleRolesOnce(targetPath, roles, getStats, Date.parse('2026-07-13T00:00:00Z'));
+
+  assert.equal(count, 2);
+  const events = readResourceSampleEvents(targetPath);
+  assert.deepEqual(events.map((e) => e.role).sort(), ['cleaner', 'coder']);
+});
+
+test('sampleRolesOnce skips a role with no resolvable pid and does not count it', () => {
+  const targetPath = mkTmp();
+  const roles = [{ role: 'coder', getPid: () => null }];
+
+  const count = sampleRolesOnce(targetPath, roles, sampleProcessStats, Date.now());
+
+  assert.equal(count, 0);
+  assert.deepEqual(readResourceSampleEvents(targetPath), []);
+});
+
+test('sampleRolesOnce skips a role whose stats cannot be resolved and does not count it', () => {
+  const targetPath = mkTmp();
+  const roles = [{ role: 'coder', getPid: () => 111 }];
+
+  const count = sampleRolesOnce(targetPath, roles, () => null, Date.now());
+
+  assert.equal(count, 0);
+  assert.deepEqual(readResourceSampleEvents(targetPath), []);
+});
+
+test('startResourceSampler still samples correctly after delegating each tick to sampleRolesOnce', () => {
+  const targetPath = mkTmp();
+  const { scheduleTick, fire } = fakeScheduler();
+  const roles = [{ role: 'coder', getPid: () => 111 }];
+  const getStats = () => ({ rssBytes: 42, cpuPercent: 3 });
+
+  startResourceSampler(targetPath, roles, getStats, scheduleTick, 60_000);
+  fire();
+
+  const events = readResourceSampleEvents(targetPath);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].rssBytes, 42);
+});
+
+// ── latestSampleAtMs (pure) ───────────────────────────────────────────────
+
+test('latestSampleAtMs returns null for an empty event list', () => {
+  assert.equal(latestSampleAtMs([]), null);
+});
+
+test('latestSampleAtMs returns the max atMs across every role, not just the last in the array', () => {
+  const events = [
+    { role: 'coder', rssBytes: 1, cpuPercent: 1, atMs: 100 },
+    { role: 'cleaner', rssBytes: 1, cpuPercent: 1, atMs: 300 },
+    { role: 'coder', rssBytes: 1, cpuPercent: 1, atMs: 200 },
+  ];
+  assert.equal(latestSampleAtMs(events), 300);
+});
+
+// ── shouldSampleThisInterval (pure, BL-350 headless/host dedup gate) ─────
+
+test('shouldSampleThisInterval is true when no sample has ever been recorded', () => {
+  assert.equal(shouldSampleThisInterval(null, Date.now(), DEFAULT_SAMPLER_INTERVAL_MS), true);
+});
+
+test('shouldSampleThisInterval is false when the last sample is still within the interval', () => {
+  const nowMs = 1_000_000;
+  const lastSampleAtMs = nowMs - (DEFAULT_SAMPLER_INTERVAL_MS - 1000);
+  assert.equal(shouldSampleThisInterval(lastSampleAtMs, nowMs, DEFAULT_SAMPLER_INTERVAL_MS), false);
+});
+
+test('shouldSampleThisInterval is true once the interval has fully elapsed since the last sample', () => {
+  const nowMs = 1_000_000;
+  const lastSampleAtMs = nowMs - DEFAULT_SAMPLER_INTERVAL_MS;
+  assert.equal(shouldSampleThisInterval(lastSampleAtMs, nowMs, DEFAULT_SAMPLER_INTERVAL_MS), true);
 });
