@@ -20,6 +20,8 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "banked_briefing_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "closing_context_clear_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "standing_rule_violations_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "standing_rule_violations_files.bb")))
 
 (def poll-ms 1000)
 (def wake-message agent-runtime-lib/default-wake-chat-message)
@@ -805,6 +807,28 @@
       (when (zero? exit) (str/trim out)))
     (catch Exception _ nil)))
 
+;; BL-337: pure Babashka text-parsing, no compiled TS needed - unlike the
+;; *-briefing-line fns above, this reads standing_rule_violations_lib.bb's
+;; own scan directly (constitution articles + role prompts), never
+;; shelling to node. Any failure (a file unreadable, an unexpected repo
+;; layout) degrades to omitting the line entirely - never crashes the
+;; sweep, never fabricates a count. File discovery itself is shared with
+;; standing_rule_violations_cli.bb via standing_rule_violations_files.bb -
+;; both used to carry their own copy of this filter, with the same bug.
+(defn standing-rule-violations-briefing-line []
+  (try
+    (let [files (for [f (standing-rule-violations-files/rule-source-files project-root)]
+                  {:path (str (fs/relativize (fs/path project-root) f)) :content (slurp (str f))})
+          violations (standing-rule-violations-lib/scan-violations files)
+          total (standing-rule-violations-lib/total-citation-count violations)]
+      (when (pos? total)
+        (str "Standing-rule violations: " total " cited recurrence(s) across "
+             (count violations) " rule(s) since they landed (top: "
+             (str/join ", " (map (fn [{:keys [rule count]}] (str "\"" rule "\" x" count))
+                                  (take 3 violations)))
+             ").")))
+    (catch Exception _ nil)))
+
 ;; BL-260: same shell-out pattern as the *-briefing-section fns above, but
 ;; the CLI's stdout is JSON ([{:name :base64}...] - the rendered diagrams),
 ;; not a single text line, so this parses it instead of trimming it. Any
@@ -837,6 +861,7 @@
     :stage-dwell-section stage-dwell-briefing-section
     :chase-trend-section chase-trend-briefing-section
     :not-done-count-line not-done-count-briefing-line
+    :standing-rule-violations-line standing-rule-violations-briefing-line
     :log! (fn [& parts] (apply log! parts))}))
 
 ;; BL-258: headless, host-independent morning trigger for briefing
