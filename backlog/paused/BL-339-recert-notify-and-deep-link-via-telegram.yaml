@@ -1,0 +1,58 @@
+id: BL-339
+title: "Telegram announces a waiting recert batch and deep-links into the PWA"
+milestone: M8
+status: todo
+type: feature
+severity: low
+priority: 7
+direction: human-requested
+depends_on: []
+source: ".swarmforge/operator/INTAKE-recert-feedback-via-telegram.md — the HUMAN, verbatim, 2026-07-12T21:06Z: 'Can my feedbacl on gherkins recertification be done via telegram?'. Went unread for two days (BL-333/BL-334). It was a QUESTION first. THE ANSWER, as of 2026-07-13, is: NO, IT CANNOT — recert verdicts arrive only via the PWA and the inbound email path (BL-217/BL-223/BL-289); there is no Telegram path."
+
+notes: |
+  THE HUMAN CHOSE THE SHAPE, 2026-07-13. The intake offered three options and explicitly said not
+  to pick one without asking him. He was asked, and chose OPTION 1: NOTIFY + DEEP-LINK.
+
+    Telegram ANNOUNCES that a recert batch is waiting, and LINKS INTO THE PWA, where the batch UI
+    already works. Verdicts are still GIVEN in the PWA.
+
+  He did NOT choose in-thread verdicts, and did NOT choose "both". DO NOT BUILD EITHER. Do not
+  build a verdict grammar. Do not accept a verdict typed into a Telegram topic. This is a
+  notification ticket, and its whole value is that it is small.
+
+  WHY THIS SHAPE IS RIGHT (so nobody "improves" it back into the rejected one): recert is a BATCH
+  activity — a set of scenarios, each needing a verdict — while Telegram is a CONVERSATIONAL
+  surface. Naively pushing a batch into a topic either spams the human with one message per
+  scenario, or rebuilds a form in chat that the PWA already does better. The notify+deep-link shape
+  puts the nudge where he actually is (his phone) and the work where it already works.
+
+  SCOPE:
+    1. When a recert batch is WAITING on the human, Telegram tells him — once per batch.
+    2. The message DEEP-LINKS into the PWA, landing him on the recert work rather than the PWA's
+       front page. Deep links already exist (BL-256, e.g. `#ticket=BL-123`) — REUSE that
+       mechanism; do not invent a second link scheme.
+    3. DO NOT SPAM. One message per batch, not one per scenario. A recert batch of 17 tickets must
+       not produce 17 messages. If a batch is still outstanding, do not re-announce it every tick
+       (BL-326: this project has already sent 136 real notifications by accident).
+    4. If the batch is completed or emptied, do not announce it at all — a notification about
+       nothing waiting is worse than silence.
+    5. OUT OF SCOPE: accepting verdicts via Telegram (the rejected option 2); any change to the
+       recert store, the PWA recert UI, or the inbound email path.
+
+  E2E QA PROCEDURE: with a REAL waiting recert batch, assert a real Telegram message is sent, that
+  it contains a link, and that FOLLOWING THE LINK LANDS ON THE RECERT WORK — a deep link that
+  404s or dumps him on the home page fails the ticket's entire purpose. Assert a second tick does
+  not re-announce the same batch. Verify against real surfaces, not a fixture (BL-335).
+
+acceptance:
+  feature: specs/features/BL-339-recert-notify-and-deep-link-via-telegram.feature
+  steps:
+    - "A waiting recert batch is announced on Telegram"
+    - "The announcement links straight to the recert work in the PWA"
+    - "A batch of many scenarios produces one message, not one per scenario"
+    - "An outstanding batch is not re-announced on every tick"
+    - "Nothing is announced when no recert batch is waiting"
+
+human_approval: pending
+
+mutation_cost: low

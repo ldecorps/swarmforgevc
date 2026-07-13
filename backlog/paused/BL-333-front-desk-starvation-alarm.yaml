@@ -1,0 +1,85 @@
+id: BL-333
+title: "Alarm when the front desk is starved — a blocked consumer must never be silent"
+milestone: M8
+status: todo
+type: defect
+severity: high
+priority: 2
+direction: expedite
+depends_on: []
+source: ".swarmforge/operator/INTAKE-interactive-operator-starves-the-front-desk.md — the human: 'I typed something in the telegram general topic and nothing seems to be happening.' Tagged expedite: the failure is LIVE AS THIS TICKET IS WRITTEN (pid 1091470, age 45.8h, llm_running=true, pending_events=22). The human chose 'restricted 2nd Operator + alarm'; this is the alarm half, and it is the half that ships regardless of any other decision."
+
+notes: |
+  THE BUG, VERIFIED AGAINST THE RUNNING SYSTEM (not from the intake's description).
+
+  `operator_runtime.bb` spawns a DISPOSABLE Operator LLM per event and guards against a second
+  one with `operator-running?` (operator_runtime.bb:238), which answers "is an Operator alive?"
+  by looking for a tmux session named `operator` on the Operator's own socket, or a live pid file.
+
+  An ATTENDED (interactive) Operator runs on THAT SAME SOCKET UNDER THAT SAME SESSION NAME. It is
+  therefore indistinguishable from a disposable one and occupies the identical single-Operator
+  slot. And its own launch prompt instructs it, verbatim:
+
+      "do NOT touch operator.done and do NOT exit until the human explicitly dismisses you."
+
+  CORRECTION TO THE INTAKE — READ THIS BEFORE BUILDING. The intake frames the interactive session
+  as merely forgetting to drain the queue. That is wrong, and the difference is load-bearing: the
+  session is UNDER ORDERS never to release the slot. Attended mode is BY DESIGN a permanent
+  occupant. So for as long as the human talks to the Operator, `operator-running?` is true, no
+  disposable Operator is ever spawned, and EVERY inbound Telegram message queues unread. Measured:
+  two days, 22-25 events, including a bug report, an explicit "Action this:" instruction, and a
+  complete hand-written spec the human wrote into a channel nobody was reading.
+
+  WHY IT IS NASTY, AND WHY THE ALARM IS THE POINT:
+    - PERFECTLY SILENT. Nothing errors. `status.json` says `"state":"operator_running"`, which
+      READS LIKE HEALTH and actually means "the front desk is blocked". There is no signal
+      anywhere — no log line, no degraded state, no count anyone looks at.
+    - INVERTED INCENTIVE. The more the human uses the Operator directly, the more their Telegram
+      channel starves. Heavy engagement is exactly when the queue backs up.
+    - UNBOUNDED. No cap, no age limit, no drain. `pending_events` reached 25 with nothing reacting.
+
+  SCOPE — THE OBSERVABLE AND THE ALARM ONLY. Fixing the starvation itself is BL-334.
+    1. STATUS MUST DISTINGUISH TWO DIFFERENT FACTS. Today `operator_running` conflates "an
+       Operator process is alive" with "events are being processed", and means only the first.
+       Report them separately, so a reader (human, PWA, briefing, this alarm) can see a live
+       Operator that is consuming NOTHING. This is the durable fix to the observability half and
+       it is what makes the alarm expressible at all.
+    2. ALARM ON STARVATION. When the queue is backing up while an Operator holds the slot —
+       `pending_events` over a threshold, OR the OLDEST pending event ageing past a time limit —
+       escalate LOUDLY. Both conditions matter: 3 events unread for two days is starvation just
+       as much as 25 events unread for an hour, and a count-only trigger misses the slow case.
+       Thresholds configurable, with sane defaults; do not hardcode.
+    3. THE ESCALATION CHANNEL CANNOT BE THE BLOCKED ONE. Telegram is the thing that is broken —
+       an alarm delivered there is an alarm nobody sees. Use the existing daemon alarm email
+       (`daemon_alarm_lib.bb`, `send-configured-email!`). REUSE IT; do not build a new notifier.
+    4. DO NOT SPAM. Once starvation is alarmed, do not re-alarm every tick for two days — the
+       fatigue makes the signal worthless. Alarm on the EDGE (entering starvation), and re-arm
+       only after it clears. Mind BL-326: this project has already sent 136 real emails by
+       accident; a per-tick alarm on a 45-hour condition is exactly that bug again.
+    5. OUT OF SCOPE: a second Operator (BL-334); draining the queue; any change to what the
+       guard protects.
+
+  DO NOT "FIX" THIS BY KILLING THE ATTENDED SESSION. Its longevity is a feature — the human is
+  mid-conversation. Report the starvation; do not resolve it by hanging up on the human.
+
+  E2E QA PROCEDURE. Assert against a REAL long-lived session, not a fixture: the entire bug is
+  that the live path is the one that never runs. Start a real attended-shaped Operator (a session
+  on the Operator's socket that does not exit), inject real events into the queue, and assert (a)
+  status reports an Operator alive AND events not being consumed, as two distinct facts; (b) the
+  alarm fires on the configured threshold; (c) it fires ONCE, not once per tick; (d) it arrives
+  on the email channel, not Telegram. Verify the email path is exercised with the alarm's own
+  send disabled or captured — do NOT send 136 emails proving this works.
+
+acceptance:
+  feature: specs/features/BL-333-front-desk-starvation-alarm.feature
+  steps:
+    - "A live Operator that is consuming nothing is reported as exactly that"
+    - "A queue backing up behind a held slot raises a loud alarm"
+    - "An event left unread for too long raises the alarm even if the queue is short"
+    - "The alarm goes to a channel that is not the blocked one"
+    - "A starvation lasting days raises one alarm, not one per tick"
+    - "A healthy front desk raises no alarm"
+
+human_approval: pending
+
+mutation_cost: medium
