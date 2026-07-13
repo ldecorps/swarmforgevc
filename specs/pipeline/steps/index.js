@@ -140,6 +140,7 @@ const DOMAINS = [
   require('./standingRuleViolationsSteps'),
   require('./onboardingNegotiationSteps'),
   require('./recertNotifySteps'),
+  require('./standingOperatorTopicSteps'),
 ];
 
 function registerSteps(registry) {
