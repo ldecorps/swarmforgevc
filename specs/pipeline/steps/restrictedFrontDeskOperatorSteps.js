@@ -66,7 +66,19 @@ function registerSteps(registry) {
   });
 
   // ── restricted-front-desk-operator-01 ───────────────────────────────
-  registry.define(/^the human sends a message to the front desk$/, (ctx) => {
+  // BL-351 shares this EXACT step text ("the human sends a message to the
+  // front desk") for its own front-desk-survives-reboot-03 - the registry
+  // resolves first-match, so whichever module registers this regex first
+  // speaks for every scenario that uses it (see
+  // mergedCodeReachesDaemonsSteps.js's own identical note for "the swarm's
+  // health is reported"). Dispatches to ctx.frontDeskInboundRunner when an
+  // earlier Given step in the SAME scenario has set one; absent that flag
+  // (every scenario this file itself owns), behavior is UNCHANGED.
+  registry.define(/^the human sends a message to the front desk$/, async (ctx) => {
+    if (ctx.frontDeskInboundRunner) {
+      await ctx.frontDeskInboundRunner();
+      return;
+    }
     ctx.output = runRuntimeTickTest(ctx);
   });
   registry.define(/^the message is read$/, (ctx) => {

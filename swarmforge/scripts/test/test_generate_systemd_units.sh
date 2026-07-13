@@ -133,4 +133,65 @@ diff <(printf '%s\n' "$OP_UNIT") <(cat "$ROOT/via-path-operator.service") >/dev/
   || fail "expected the operator unit written via an explicit output path to match its stdout form byte-for-byte"
 pass "the operator unit's explicit-output-path form matches its stdout form byte-for-byte"
 
+# ── BL-351: --unit=front-desk renders the front-desk unit ──────────────────
+FD_UNIT="$("$GENERATOR" /home/pi/swarmforgevc pi5 pi --unit=front-desk)"
+
+# ── front-desk-survives-reboot-01: is generated at all, alongside the others ─
+grep -q "front desk" <<< "$FD_UNIT" || fail "front-desk-survives-reboot-01: expected a front-desk unit description"
+pass "front-desk-survives-reboot-01: a front-desk service is generated alongside swarm/operator"
+
+# ── front-desk-survives-reboot-02: restarts on any exit, never permanently
+#     gives up (the daemon-side bounded-restart already lives in
+#     front_desk_supervisor.bb; THIS is what brings the supervisor itself
+#     back if IT dies, or after a reboot) ───────────────────────────────────
+grep -q "^Restart=always$" <<< "$FD_UNIT" || fail "front-desk-survives-reboot-02: expected Restart=always"
+grep -q "^StartLimitIntervalSec=0$" <<< "$FD_UNIT" \
+  || fail "front-desk-survives-reboot-02: expected StartLimitIntervalSec=0, the same anti-sticky-give-up posture as the operator unit"
+pass "front-desk-survives-reboot-02/04: Restart=always + StartLimitIntervalSec=0 - a dead front desk is restarted without a human"
+
+# ── boot-enabled ─────────────────────────────────────────────────────────────
+grep -q "^WantedBy=multi-user.target$" <<< "$FD_UNIT" \
+  || fail "front-desk-survives-reboot-01: expected WantedBy=multi-user.target so the front desk comes back after a reboot"
+pass "front-desk-survives-reboot-01: the front-desk unit installs against multi-user.target for boot autostart"
+
+# ── carries secrets via the SAME per-pack EnvironmentFile the other units use
+#     (TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID/TELEGRAM_PRINCIPAL_USER_ID) ───────
+grep -q "^EnvironmentFile=-/etc/swarmforge/pi5.env$" <<< "$FD_UNIT" \
+  || fail "expected the SAME per-pack EnvironmentFile= the swarm/operator units use, so Telegram credentials reach the front desk"
+pass "the front-desk unit's EnvironmentFile= carries its Telegram secrets into the clean systemd environment"
+
+# ── Type=forking + PIDFile=, NOT Type=simple: launch_front_desk.sh forks the
+#     supervisor into the background and exits - Type=simple would track
+#     THAT near-immediate exit as "the service stopped" and relaunch the
+#     launcher in a tight loop instead of ever tracking the real supervisor ──
+grep -q "^Type=forking$" <<< "$FD_UNIT" \
+  || fail "expected Type=forking (launch_front_desk.sh forks and exits; the real daemon is tracked via PIDFile)"
+grep -q "^PIDFile=/home/pi/swarmforgevc/.swarmforge/operator/front-desk-supervisor.pid$" <<< "$FD_UNIT" \
+  || fail "expected PIDFile= naming front_desk_supervisor.bb's own real pid file; got: $FD_UNIT"
+pass "the front-desk unit uses Type=forking + PIDFile=, matching launch_front_desk.sh's own fork-and-exit shape"
+
+# ── ExecStart runs the REAL launch_front_desk.sh (idempotent already-running
+#     guard reused unchanged - front-desk-survives-reboot-05 depends on this,
+#     never a bespoke launcher) ─────────────────────────────────────────────
+grep -q "^ExecStart=/home/pi/swarmforgevc/swarmforge/scripts/launch_front_desk.sh /home/pi/swarmforgevc\$" <<< "$FD_UNIT" \
+  || fail "expected ExecStart to invoke the real launch_front_desk.sh; got: $FD_UNIT"
+pass "the front-desk unit's ExecStart reuses the real launch_front_desk.sh, including its own idempotent already-running guard"
+
+# ── ExecStop touches front_desk_supervisor.bb's OWN stop-file (graceful,
+#     matches its real stop-file loop exactly, never a bespoke teardown) ────
+grep -q "^ExecStop=.*touch /home/pi/swarmforgevc/.swarmforge/operator/front-desk-supervisor.stop\$" <<< "$FD_UNIT" \
+  || fail "expected ExecStop to gracefully touch front_desk_supervisor.bb's own stop-file; got: $FD_UNIT"
+pass "the front-desk unit's ExecStop gracefully signals front_desk_supervisor.bb's own real stop-file"
+
+# ── User=/WorkingDirectory= substitution ─────────────────────────────────────
+grep -q "^WorkingDirectory=/home/pi/swarmforgevc$" <<< "$FD_UNIT" || fail "expected WorkingDirectory to name the project root"
+grep -q "^User=pi$" <<< "$FD_UNIT" || fail "expected User to name the linux user"
+pass "the front-desk unit's WorkingDirectory/User are correctly substituted"
+
+# ── --unit= interacts correctly with an explicit output path ────────────────
+"$GENERATOR" /home/pi/swarmforgevc pi5 pi "$ROOT/via-path-front-desk.service" --unit=front-desk
+diff <(printf '%s\n' "$FD_UNIT") <(cat "$ROOT/via-path-front-desk.service") >/dev/null \
+  || fail "expected the front-desk unit written via an explicit output path to match its stdout form byte-for-byte"
+pass "the front-desk unit's explicit-output-path form matches its stdout form byte-for-byte"
+
 echo "ALL PASS"
