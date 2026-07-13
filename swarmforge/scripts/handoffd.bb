@@ -869,6 +869,25 @@
     :standing-rule-violations-line standing-rule-violations-briefing-line
     :log! (fn [& parts] (apply log! parts))}))
 
+;; BL-339: shells to the compiled notify-recert-batch.js CLI (Babashka has
+;; no way to import compiled TS, same posture as the *-briefing-line fns
+;; above) - reuses computeRecertBatch unchanged, the SAME data the PWA
+;; itself renders, so the Telegram announcement can never disagree with
+;; what the human sees when he follows the link. The CLI itself owns the
+;; edge-triggered arm/disarm decision and the delivery-based state
+;; (BL-345's own "arm on delivery, never on attempt" lesson) - this
+;; adapter only owns invoking it. Any failure (CLI not yet compiled, no
+;; TELEGRAM_BOT_TOKEN in this daemon's env) degrades to a no-op - never
+;; crashes the sweep, never fabricates a sent notification.
+(defn recert-notify-sweep! []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "notify-recert-batch.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit)
+        (log! "recert-notify" (str/trim out))))
+    (catch Exception e
+      (log! "recert-notify-sweep-error" (.getMessage e)))))
+
 ;; BL-258: headless, host-independent morning trigger for briefing
 ;; GENERATION (complements briefing-email-sweep! above, which only handles
 ;; the SEND of an already-committed file). Reads the configured morning
@@ -1194,7 +1213,14 @@
                     (try
                       (role-context-clear-sweep! (load-roles) socket)
                       (catch Exception e
-                        (log! "role-context-clear-sweep-error" (.getMessage e)))))
+                        (log! "role-context-clear-sweep-error" (.getMessage e))))
+                    ;; BL-339: recert-notify sweep shares the same cadence -
+                    ;; no separate timeout, same rationale as BL-222/BL-214/
+                    ;; BL-258/BL-309/BL-316 above.
+                    (try
+                      (recert-notify-sweep!)
+                      (catch Exception e
+                        (log! "recert-notify-sweep-error" (.getMessage e)))))
                   (spit (str heartbeat-file) (str (now) "\n"))
                   (when (zero? (mod cycle heartbeat-log-every-cycles))
                     (log! "heartbeat" (str "cycle=" cycle)))
