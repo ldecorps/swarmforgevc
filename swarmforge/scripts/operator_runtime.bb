@@ -188,6 +188,17 @@
 ;; incident this ticket documents ran pending_events=22-25 for 45.8 hours.
 (def starvation-count-limit (env-ms "OPERATOR_STARVATION_COUNT_LIMIT" 5))
 (def starvation-age-limit-ms (env-ms "OPERATOR_STARVATION_AGE_MS" 3600000))
+;; BL-345: bounded retry-with-backoff for an alarm delivery ATTEMPT that
+;; fails transiently - the engineering article's mandatory bounded-retry
+;; rule, same exponential-backoff-capped-at-max shape as front-desk-
+;; supervisor-lib's own restart config. Defaults: 1m/2m/4m/8m/16m across 5
+;; attempts (~31m worst case) before giving up and arming anyway.
+(def alarm-max-attempts (env-ms "OPERATOR_ALARM_MAX_ATTEMPTS" 5))
+(def alarm-backoff-base-ms (env-ms "OPERATOR_ALARM_BACKOFF_BASE_MS" 60000))
+(def alarm-backoff-max-ms (env-ms "OPERATOR_ALARM_BACKOFF_MAX_MS" 1800000))
+(def alarm-retry-config {:max-attempts alarm-max-attempts
+                          :backoff-base-ms alarm-backoff-base-ms
+                          :backoff-max-ms alarm-backoff-max-ms})
 
 (defn now-ms [] (System/currentTimeMillis))
 (defn now-iso []
@@ -405,12 +416,21 @@
 ;; itself already guards that; this is just the warn-once bookkeeping).
 (def starvation-email-key-warned? (atom false))
 
+;; BL-345 E2E test seam: when set, short-circuits the real send entirely and
+;; returns this JSON-decoded result instead - lets the acceptance suite
+;; drive the REAL tick!/caller logic (arming, retry counting, backoff,
+;; give-up logging) against a scripted transient-failure/success sequence
+;; without ever reaching daemon-alarm-lib or the network (mirrors this
+;; file's own OPERATOR_SKIP_LAUNCH dry-run convention). Never set in
+;; production; a bare env-var check, same posture as skip-launch? above.
 (defn send-starvation-alarm-email! [subject text]
-  (daemon-alarm-lib/send-configured-email!
-   project-root conf-file subject text
-   {:already-warned?! (fn [] @starvation-email-key-warned?)
-    :log-warning! (fn [msg] (log! "email-misconfigured" msg))
-    :mark-warned! (fn [] (reset! starvation-email-key-warned? true))}))
+  (if-let [forced (System/getenv "OPERATOR_ALARM_FORCE_RESULT")]
+    (json/parse-string forced true)
+    (daemon-alarm-lib/send-configured-email!
+     project-root conf-file subject text
+     {:already-warned?! (fn [] @starvation-email-key-warned?)
+      :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+      :mark-warned! (fn [] (reset! starvation-email-key-warned? true))})))
 
 ;; ── BL-306: awaiting-answer (runtime-owned, same posture as cooldown) ────────
 
@@ -880,6 +900,63 @@
       (fs/delete-if-exists (str front-desk-result-file ".err"))
       (fs/delete-if-exists front-desk-prompt-file))))
 
+;; ── BL-345: delivery-based starvation-alarm sweep ───────────────────────────
+
+(defn- alarm-email-text [pending-count oldest-pending-age-ms]
+  (str "The front desk's inbound queue is not being drained: " pending-count
+       " event(s) pending"
+       (when oldest-pending-age-ms
+         (str ", oldest waiting " (quot oldest-pending-age-ms 60000) " minute(s)"))
+       ".\n\n"
+       "An Operator is holding the single-Operator slot - an attended "
+       "(interactive) session holds it indefinitely by design, so no "
+       "disposable Operator can be spawned to read the queue while it "
+       "does. The attended session is NOT being stopped - its longevity "
+       "is a feature, not the bug.\n\n"
+       "This clears on its own once the attended session ends; investigate "
+       "sooner if the waiting messages are time-sensitive."))
+
+(defn starvation-alarm-sweep!
+  "One tick's full BL-345 delivery-based alarm evaluation. Returns the NEXT
+   starvation state to persist via write-starvation-state!. Never attempts a
+   send when not due (healthy, already armed, or backing off between
+   retries) - starvation-alarm-should-attempt? is the ONLY gate. On an
+   attempt, classifies send-starvation-alarm-email!'s own returned result
+   (never discards it - that discard is exactly BL-345's bug) and logs
+   ONE line naming the outcome, folding in the misconfiguration reason or
+   a loud give-up marker so the acceptance suite (and a human grepping
+   runtime.log) can tell what happened without a second log call."
+  [{:keys [starving? prev-starvation backlog-started-at-ms pending-count oldest-pending-age-ms now]}]
+  (if-not starving?
+    ;; cleared (or never started): ready to arm fresh next time it starves.
+    {:backlog-started-at-ms backlog-started-at-ms :armed? false
+     :delivery-attempts 0 :last-attempt-at-ms nil}
+    (let [armed? (boolean (:armed? prev-starvation))
+          delivery-attempts (:delivery-attempts prev-starvation)
+          last-attempt-at-ms (:last-attempt-at-ms prev-starvation)
+          attempt? (operator-lib/starvation-alarm-should-attempt?
+                    {:starving? starving? :armed? armed?
+                     :delivery-attempts delivery-attempts
+                     :last-attempt-at-ms last-attempt-at-ms
+                     :now-ms now :retry-config alarm-retry-config})]
+      (if-not attempt?
+        (assoc prev-starvation :backlog-started-at-ms backlog-started-at-ms)
+        (let [result (send-starvation-alarm-email!
+                      "SwarmForge: front desk starved - Operator holding the slot, queue not draining"
+                      (alarm-email-text pending-count oldest-pending-age-ms))
+              outcome (operator-lib/classify-delivery-result result)
+              {:keys [armed? delivery-attempts last-attempt-at-ms gave-up?]}
+              (operator-lib/next-starvation-alarm-state outcome prev-starvation alarm-retry-config now)]
+          (apply log! "starvation-alarm" (name outcome)
+                 (remove nil?
+                         [(str "pending=" pending-count)
+                          (str "oldest-age-ms=" oldest-pending-age-ms)
+                          (when (= outcome :terminal-misconfig)
+                            (str "reason=" (name (or (:reason result) :unknown))))
+                          (when gave-up? "GAVE-UP-after-max-attempts")]))
+          {:backlog-started-at-ms backlog-started-at-ms :armed? armed?
+           :delivery-attempts delivery-attempts :last-attempt-at-ms last-attempt-at-ms})))))
+
 ;; ── status ────────────────────────────────────────────────────────────────────
 
 (defn write-status! [m]
@@ -1026,27 +1103,13 @@
                      {:pending-count pending-count
                       :oldest-pending-age-ms oldest-pending-age-ms
                       :count-limit starvation-count-limit
-                      :age-limit-ms starvation-age-limit-ms})
-          {:keys [should-alarm? armed?]} (operator-lib/starvation-alarm-decision
-                                           starving? (:armed? prev-starvation))]
-      (write-starvation-state! {:backlog-started-at-ms backlog-started-at-ms :armed? armed?})
-      (when should-alarm?
-        (log! "starvation-alarm" "pending=" (str pending-count)
-              "oldest-age-ms=" (str oldest-pending-age-ms))
-        (send-starvation-alarm-email!
-         "SwarmForge: front desk starved - Operator holding the slot, queue not draining"
-         (str "The front desk's inbound queue is not being drained: " pending-count
-              " event(s) pending"
-              (when oldest-pending-age-ms
-                (str ", oldest waiting " (quot oldest-pending-age-ms 60000) " minute(s)"))
-              ".\n\n"
-              "An Operator is holding the single-Operator slot - an attended "
-              "(interactive) session holds it indefinitely by design, so no "
-              "disposable Operator can be spawned to read the queue while it "
-              "does. The attended session is NOT being stopped - its longevity "
-              "is a feature, not the bug.\n\n"
-              "This clears on its own once the attended session ends; investigate "
-              "sooner if the waiting messages are time-sensitive.")))
+                      :age-limit-ms starvation-age-limit-ms})]
+      (write-starvation-state!
+       (starvation-alarm-sweep! {:starving? starving? :prev-starvation prev-starvation
+                                  :backlog-started-at-ms backlog-started-at-ms
+                                  :pending-count pending-count
+                                  :oldest-pending-age-ms oldest-pending-age-ms
+                                  :now now}))
       ;; BL-334 restricted-front-desk-operator-07: the front-desk Operator's
       ;; status is nested under :front_desk in this SAME single write —
       ;; never a second write-status! call — which is what makes "neither

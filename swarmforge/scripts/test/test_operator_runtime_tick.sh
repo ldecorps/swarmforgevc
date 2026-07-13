@@ -637,6 +637,85 @@ check "front-desk-starvation-alarm-08: the Operator holding the slot is still ru
   'kill -0 "$operator_pid_before" 2>/dev/null'
 rm -rf "$F"
 
+# ── BL-345: delivery-based arming ─────────────────────────────────────────
+# OPERATOR_ALARM_FORCE_RESULT drives the REAL tick!/caller logic (arming,
+# retry counting, backoff, give-up logging) against a scripted send result -
+# never the real network, matching the ticket's own "email seam injected"
+# E2E procedure. OPERATOR_ALARM_BACKOFF_BASE_MS=0 makes a retry immediately
+# due on the very next tick, with no real sleep (never-real-timers rule) -
+# any elapsed wall-clock, even zero, satisfies a zero-length backoff.
+
+# ── 09: a transient failure leaves the alarm UNARMED and the next due tick retries it ──
+F="$(make_fixture)"
+configure_email "$F"
+hold_operator_slot "$F"
+seed_pending_events "$F" 9
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+OPERATOR_STARVATION_COUNT_LIMIT=5 OPERATOR_ALARM_BACKOFF_BASE_MS=0 \
+  OPERATOR_ALARM_FORCE_RESULT='{"success":false,"status":503}' tick "$F" >/dev/null
+check "front-desk-starvation-alarm-09 setup: a failing send leaves the alarm UNARMED (never treated as sent)" \
+  '[[ "$(jget "$F/.swarmforge/operator/starvation.json" ":armed?")" == false ]]'
+check "front-desk-starvation-alarm-09 setup: the failed attempt is counted" \
+  '[[ "$(jget "$F/.swarmforge/operator/starvation.json" ":delivery-attempts")" == 1 ]]'
+before_09="$(alarm_count "$F")"
+OPERATOR_STARVATION_COUNT_LIMIT=5 OPERATOR_ALARM_BACKOFF_BASE_MS=0 \
+  OPERATOR_ALARM_FORCE_RESULT='{"success":true,"status":200}' tick "$F" >/dev/null
+check "front-desk-starvation-alarm-09: an alarm that failed to deliver is retried, not treated as sent" \
+  '[[ "$(alarm_count "$F")" -gt "$before_09" ]] && [[ "$(jget "$F/.swarmforge/operator/starvation.json" ":armed?")" == true ]]'
+rm -rf "$F"
+
+# ── 10: retries are bounded - the cap is reached, arms anyway, logs loudly ──
+F="$(make_fixture)"
+configure_email "$F"
+hold_operator_slot "$F"
+seed_pending_events "$F" 9
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+OPERATOR_STARVATION_COUNT_LIMIT=5 OPERATOR_ALARM_MAX_ATTEMPTS=1 \
+  OPERATOR_ALARM_FORCE_RESULT='{"success":false,"status":503}' tick "$F" >/dev/null
+check "front-desk-starvation-alarm-10: no further alarm is delivered once the cap is reached" \
+  '[[ "$(jget "$F/.swarmforge/operator/starvation.json" ":armed?")" == true ]]'
+check "front-desk-starvation-alarm-10: the undelivered alarm is recorded loudly in the log" \
+  'grep -q "GAVE-UP-after-max-attempts" "$F/.swarmforge/operator/runtime.log"'
+attempts_before_10b="$(alarm_count "$F")"
+OPERATOR_STARVATION_COUNT_LIMIT=5 OPERATOR_ALARM_MAX_ATTEMPTS=1 \
+  OPERATOR_ALARM_FORCE_RESULT='{"success":false,"status":503}' tick "$F" >/dev/null
+check "front-desk-starvation-alarm-10: a later tick never retries again once armed (bounded, not forever)" \
+  '[[ "$(alarm_count "$F")" == "$attempts_before_10b" ]]'
+rm -rf "$F"
+
+# ── 11: a misconfigured channel (either kind) is warned about once, never retried ──
+# (missing a recipient) -> :disabled - notify_email_to left unconfigured.
+F="$(make_fixture)"
+hold_operator_slot "$F"
+seed_pending_events "$F" 9
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+OPERATOR_STARVATION_COUNT_LIMIT=5 tick "$F" >/dev/null
+check "front-desk-starvation-alarm-11 (missing a recipient): no further alarm is delivered" \
+  '[[ "$(jget "$F/.swarmforge/operator/starvation.json" ":armed?")" == true ]]'
+check "front-desk-starvation-alarm-11 (missing a recipient): the misconfiguration is warned about exactly once" \
+  '[[ "$(grep -c "reason=disabled" "$F/.swarmforge/operator/runtime.log")" -eq 1 ]]'
+OPERATOR_STARVATION_COUNT_LIMIT=5 tick "$F" >/dev/null
+check "front-desk-starvation-alarm-11 (missing a recipient): never retried on a later tick" \
+  '[[ "$(grep -c "reason=disabled" "$F/.swarmforge/operator/runtime.log")" -eq 1 ]]'
+rm -rf "$F"
+
+# (missing its api key) -> :missing-api-key - recipient configured, RESEND_API_KEY unset
+# for this subprocess only (this project's own env -u convention, BL-215/BL-326).
+F="$(make_fixture)"
+configure_email "$F"
+hold_operator_slot "$F"
+seed_pending_events "$F" 9
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+( unset RESEND_API_KEY; OPERATOR_STARVATION_COUNT_LIMIT=5 tick "$F" ) >/dev/null
+check "front-desk-starvation-alarm-11 (missing its api key): no further alarm is delivered" \
+  '[[ "$(jget "$F/.swarmforge/operator/starvation.json" ":armed?")" == true ]]'
+check "front-desk-starvation-alarm-11 (missing its api key): the misconfiguration is warned about exactly once" \
+  '[[ "$(grep -c "reason=missing-api-key" "$F/.swarmforge/operator/runtime.log")" -eq 1 ]]'
+( unset RESEND_API_KEY; OPERATOR_STARVATION_COUNT_LIMIT=5 tick "$F" ) >/dev/null
+check "front-desk-starvation-alarm-11 (missing its api key): never retried on a later tick" \
+  '[[ "$(grep -c "reason=missing-api-key" "$F/.swarmforge/operator/runtime.log")" -eq 1 ]]'
+rm -rf "$F"
+
 cleanup_starvation_pids
 trap - EXIT
 
