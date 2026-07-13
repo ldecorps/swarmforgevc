@@ -33,10 +33,25 @@ Scenario: A role holding an in-process parcel is never parked
   Then that role is left alive
   And its parcel is not orphaned
 
+# BL-324 per-role-lifecycle-07
+Scenario: A role that claims work after the idle check is still not parked
+  Given a role that is idle when the swarm's idleness is surveyed
+  And a ticket whose manifest does not name that role
+  And that role claims a parcel before its pane is killed
+  When the swarm is brought to that ticket's shape
+  Then that role is left alive
+  And its parcel is not orphaned
+
+# BL-324 per-role-lifecycle-08
+Scenario: No parked role is ever left holding a parcel
+  Given the swarm has been brought to a promoted ticket's shape
+  When every parked role is examined
+  Then no parked role holds a claimed parcel
+
 # BL-324 per-role-lifecycle-04
 Scenario: A role needed by the next queued ticket is not parked and re-woken
-  Given a promoted ticket whose manifest does not name a role
-  And the next queued ticket's manifest does need that role
+  Given a role that the next queued ticket's manifest needs
+  And a ticket whose manifest does not name that role
   When the swarm is brought to that ticket's shape
   Then that role is left alive rather than parked and immediately restarted
 
