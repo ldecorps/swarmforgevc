@@ -47,6 +47,32 @@ notes: |
       never infer one from the other (the posture BL-316 took).
     - DRAIN BEFORE PARK: a role must finish or hand off its current parcel before its
       pane is killed.
+    - THE IDLE CHECK MUST BE PER-KILL, NOT PER-BATCH (added 2026-07-13 after the
+      architect's review of the first build). `role_lifecycle_cli.bb`'s `run-shape!`
+      snapshots every role's idleness ONCE (`current-roster`), then `park-role!` does
+      `remove-role-row!` -> `kill-role-session!` with NO re-check. The window between the
+      snapshot and a given kill spans manifest validation plus a slurp of every paused
+      ticket YAML, and the kill order is sorted, so the last role parked has the widest
+      window — easily seconds. A role that is idle at survey time can claim a parcel in
+      that window and be killed mid-task. "Off-limits, full stop" means an idleness check
+      that still HOLDS at the moment of the kill, not one that held earlier in the pass.
+      Re-check `role-idle?` immediately before each `kill-role-session!`; if the role is no
+      longer idle, ABORT that role's park and restore its roster row, leaving it alive.
+      WHY THIS IS WORSE THAN AN ORDINARY INTERRUPT — and why BL-323 does NOT cover it: a
+      parcel claimed in that window ends up in a PARKED role's `in_process`. BL-323's
+      resume-on-start only fires when a role RELAUNCHES, and a parked role never does. So
+      the parcel is not merely interrupted, it is STRANDED — invisibly, with the ticket
+      still sitting in `backlog/active/` and no agent alive to work it. That is exactly the
+      silent-stall class BL-323 was written to eliminate, re-introduced by this slice. It is
+      precisely the "converts a rare accident into a designed-in failure mode" hazard this
+      ticket's own HARD DEPENDENCY section warns about.
+      THE INVARIANT THAT ACTUALLY MATTERS (assert this, not just the check): after a shape
+      pass, NO parked role holds a claimed parcel. A re-check narrows the race; the
+      invariant is what proves the race was closed. If a role cannot be parked without
+      stranding work, it must be left ALIVE — parking is always the sacrificable half.
+      NOTE FOR THE CODER: scenarios `per-role-lifecycle-07` and `-08` were added to the
+      feature file for this; their step handlers must be wired in the same parcel, or the
+      acceptance runner hard-fails and blocks the hardener's gate (BL-233).
 
   THE TRAP THAT MAKES NAIVE IMPLEMENTATIONS LOSE MONEY. Bringing a role back up is NOT
   free — a cold role re-reads its whole system prompt + constitution + role prompt on
