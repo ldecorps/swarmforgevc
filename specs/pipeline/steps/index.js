@@ -139,6 +139,7 @@ const DOMAINS = [
   require('./routingBreakEvenSteps'),
   require('./standingRuleViolationsSteps'),
   require('./onboardingNegotiationSteps'),
+  require('./recertNotifySteps'),
 ];
 
 function registerSteps(registry) {
