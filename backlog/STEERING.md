@@ -155,3 +155,66 @@ Also in flight:
 - BL-101 — headless secondary swarms. Holds until the human names the next
   direction; it is the largest of the cost-themed candidates and should not be
   pulled on inertia.
+
+---
+
+## 2026-07-13 — the INTAKE drain (BL-333..BL-344)
+
+Nine operator INTAKE docs were drained into twelve tickets. Most originate from
+the human's own Telegram messages, which went **unread for two days**. Read the
+starvation pair first; everything else in this batch is downstream of it.
+
+**Pull these first — the front desk is deaf while they are open.**
+
+1. **BL-333** — `expedite`, pri 2. Alarm when the front desk is starved. Ships
+   REGARDLESS of any other decision; it is what converts a silent, indefinite
+   failure into a visible one. Small.
+2. **BL-334** — `expedite`, pri 3. The restricted front-desk Operator — **the
+   human's own chosen fix**, picked from three options he was explicitly asked
+   to decide between. `depends_on: [BL-333]`: both change `operator_runtime.bb`'s
+   tick and its status output, and this project has been bitten by two roles
+   editing one file at once. Serial, deliberately.
+
+An interactive Operator holds the single-Operator slot **permanently** — it is
+instructed never to exit — so no disposable Operator is ever spawned to read
+Telegram. This is not a discipline lapse to be reminded away; it is structural.
+Until BL-334 lands, ANY message the human sends may sit unread indefinitely,
+including the ones that created this batch.
+
+**Then the verification pair — "done" does not currently mean "he can see it".**
+
+3. **BL-335** — pri 3. Three features shipped, closed, and STILL INVISIBLE to
+   him. Verify against his REAL email and the REAL deployed PWA. A passing test
+   is what all three already had; evidence from a test is a bounce.
+4. **BL-336** — pri 4. The one-pass headless audit he prefixed **"Action this:"**.
+   Its verdict must come from a real headless run, not a code reading — reasoning
+   from code is the exact mistake that created this bug class.
+
+**Then, independent — pull as capacity allows (no ordering constraint):**
+
+- BL-340 (pri 4) role benchmarking slice 1 — his own hand-written spec, sliced.
+- BL-341 (pri 5) epics as data + epic topics.
+- BL-343 (pri 5) does dynamic routing actually save money? A **negative answer is
+  a valid, valuable result** — four slices have already shipped on the assumption.
+- BL-337 / BL-338 (pri 6) rule-violation observable; cost per ticket.
+- BL-344 (pri 6) onboarding negotiation loop.
+- BL-339 / BL-342 (pri 7) recert notify+deep-link; topic icons.
+
+**A note on BL-343 and BL-344.** Both were remaining slices that existed ONLY as
+prose inside tickets already marked `done`. Both epics therefore READ AS COMPLETE
+while their key slice was missing. That is not a bookkeeping slip — it is the
+blindness BL-341 exists to remove, and it is why BL-341 must state remaining
+slices that have **no ticket yet**. An epic view that can only see tickets cannot
+see the omission, which is the one thing it is needed for.
+
+**Decisions the human made, not the swarm (do not re-litigate):**
+
+- Front-desk starvation → restricted 2nd Operator + alarm. Options "interactive
+  Operator drains the queue" and "alarm only" were offered and REJECTED.
+- Recert via Telegram → notify + deep-link. Verdicts stay in the PWA. In-thread
+  verdicts and "both" were offered and REJECTED. Do not build a verdict grammar.
+
+**Still open: the direction itself.** No direction is in force. The two live
+candidates remain cost-control and human-in-the-loop/front-desk-trust — and this
+batch is heavy with the latter, because the human kept asking and nobody heard.
+BL-101 still holds pending that choice.

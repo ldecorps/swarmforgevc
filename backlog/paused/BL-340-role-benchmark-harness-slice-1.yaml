@@ -1,0 +1,95 @@
+id: BL-340
+title: "Role benchmarking, slice 1: one role, several models, end to end, producing a real report"
+milestone: M8
+status: todo
+type: feature
+severity: medium
+priority: 4
+direction: human-requested
+epic: role-benchmarking
+depends_on: []
+source: ".swarmforge/operator/INTAKE-swarm-role-benchmarking-framework.md — a COMPLETE, HAND-WRITTEN SPEC by the HUMAN, marked Priority: High, posted to the Telegram front desk 2026-07-12T20:56Z. It went unread for two days (BL-333/BL-334); he then had to ask 'Has the benchmarking piece been specced?' — it had not. He wrote a full ticket into a channel nobody was reading."
+
+notes: |
+  PROVENANCE — READ THIS FIRST. The framework spec is THE HUMAN'S OWN, not an Operator proposal.
+  Preserve his authorship. (BL-314 made the opposite mistake — attributing an Operator idea to the
+  human. Here the discipline runs the other way: this IS his, and his stated objectives are the
+  requirement, not a starting point for negotiation.)
+
+  HIS OBJECTIVE, IN HIS WORDS: a repeatable benchmarking framework that evaluates LLMs against
+  SWARMFORGE ROLES rather than generic coding benchmarks. Existing benchmarks (HumanEval,
+  SWE-Bench, LiveCodeBench) — and even SonarSource's "Coding Personalities of Leading LLMs" —
+  measure models as GENERAL-PURPOSE PROGRAMMERS. SwarmForge assigns SPECIALISED roles (Specifier,
+  Architect, Coder, Cleaner, QA, Hardener, Operator), each with different success criteria, and so
+  each may want a different model. For each role he wants three answers:
+    - BEST — highest quality regardless of cost
+    - BEST VALUE — highest engineering quality per dollar
+    - CHEAPEST ACCEPTABLE — lowest cost still above a quality threshold
+  and for that to become the EVIDENCE BASE for recommending default swarm configurations.
+  Concrete questions he wants answerable: "Is Opus worth using as an architect?" "Can Codestral
+  replace Sonnet as a cleaner?"
+
+  THIS TICKET IS SLICE 1 OF THAT EPIC — IT IS NOT THE EPIC. The full spec (eight roles, every
+  provider, historical trends, a published leaderboard, `swarmforge benchmark roles`) is far too
+  large for one parcel and would fail as one. This slice PROVES THE HARNESS on the narrowest
+  useful case:
+
+    ONE ROLE — the CODER, because it is the most OBJECTIVELY measurable (tests pass / compiles /
+    diff quality), so the harness can be validated before anyone argues about how to score an
+    architect. Against 2-3 MODELS. END TO END. Producing a REAL REPORT with real cost and latency.
+
+  Generalising to eight roles and every provider comes AFTER this works. Slices deliberately left
+  un-ticketed until slice 1 lands and teaches us the shape: the remaining roles' evaluators;
+  historical trend storage; the leaderboard; automatic config recommendation.
+
+  WHAT ALREADY EXISTS — REUSE, DO NOT REBUILD:
+    - PROVIDER SUBSTRATE. `swarmforge.sh` already supports claude|codex|copilot|grok|aider|vibe,
+      and `agent_runtime_lib.bb`'s `provider-capabilities` makes adding one a single entry.
+      Benchmarking across providers is therefore mostly HARNESS + EVALUATION, not new plumbing.
+    - COST DATA. BL-100 (token/cost telemetry) and BL-273 (burn-rate meter) already capture
+      per-role token usage. BL-312 corrected the master-resident double-count — use the corrected
+      accounting. BL-338 (cost/ticket) is a natural consumer of this framework's cost metrics and
+      vice versa.
+    - KNOWN PROVIDER LIMIT: aider CANNOT execute shell autonomously — roles under it SIMULATE
+      rather than act. A benchmark that scores it as if it acted will produce a confidently wrong
+      recommendation. Either exclude it from this slice or handle the limitation explicitly.
+
+  DETERMINISM IS THE HARD PART, AND THE SPEC DEMANDS IT ("repeatable and deterministic benchmark
+  suites"). DO NOT HAND-WAVE IT. Roles in this swarm are driven through tmux panes with free-form
+  prompts against a live git repo. Making a role's task repeatable enough to compare two models
+  FAIRLY is the real engineering risk in this epic — the same task must be presented to each model
+  from the same starting state, or the numbers mean nothing and the "evidence base" is noise. If
+  true determinism is not achievable on this substrate, SAY SO EXPLICITLY and state what is
+  achievable instead (e.g. fixed seed task + pinned repo state + N repetitions with variance
+  reported). A benchmark whose variance is unmeasured cannot support a "best value" claim.
+
+  SCOPE:
+    1. A fixed, repeatable CODER benchmark task (or small suite) run from a pinned repo state.
+    2. Execute it against 2-3 configured models, capturing: success/failure, tests passing,
+       compilation, time to completion, token usage, API cost, iterations.
+    3. Automated evaluation producing a RANKED report — best / best value / cheapest acceptable —
+       with the quality threshold for "acceptable" STATED, not implied.
+    4. A real report artifact, from a real run against real models. Not a fixture.
+    5. Report the VARIANCE, or the number of repetitions, so a reader can tell a real difference
+       between models from noise.
+    6. OUT OF SCOPE (later slices): the other seven roles; every provider; historical trends;
+       the leaderboard; automatic swarm-config recommendation.
+
+  E2E QA PROCEDURE: the deliverable is a REAL REPORT FROM A REAL RUN. A harness that only produces
+  a report from mocked model responses fails this ticket — the entire point is measuring actual
+  models. Re-run the benchmark and assert the harness is repeatable (same task, same starting
+  state); if results differ run-to-run, that variance must be REPORTED, not hidden.
+
+acceptance:
+  feature: specs/features/BL-340-role-benchmark-harness-slice-1.feature
+  steps:
+    - "The same role task is run against several models from the same starting state"
+    - "Every run records quality, latency and cost"
+    - "The report ranks the models by best, best value, and cheapest acceptable"
+    - "The quality threshold for cheapest acceptable is stated, not implied"
+    - "Run-to-run variance is reported, so a difference can be told from noise"
+    - "The report comes from a real run against real models"
+
+human_approval: pending
+
+mutation_cost: high

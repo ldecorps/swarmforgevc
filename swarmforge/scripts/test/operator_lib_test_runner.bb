@@ -173,10 +173,64 @@
 ;; ── status doc ────────────────────────────────────────────────────────────
 (assert= "render-status matches the v2 schema"
          {:state "waiting_for_provider" :llm_running false :provider "claude"
-          :provider_state "cooldown" :agents_running 8 :pending_events 3}
+          :provider_state "cooldown" :agents_running 8 :pending_events 3
+          :queue_consuming true :oldest_pending_event_age_ms nil}
          (operator-lib/render-status {:state :waiting_for_provider :llm-running? false
                                       :provider "claude" :provider-state :cooldown
                                       :agents-running 8 :pending-count 3}))
+
+;; ── BL-333: queue-consuming? / front-desk-starving? / starvation-alarm-decision ──
+(assert-false "front-desk-starvation-alarm-01: a live Operator with events pending is NOT consuming"
+              (operator-lib/queue-consuming? true 5))
+(assert-true "an Operator with an EMPTY queue is still trivially 'consuming' (nothing to drain)"
+             (operator-lib/queue-consuming? true 0))
+(assert-true "no live Operator at all - should-launch-operator? can dispatch, so this is consuming"
+             (operator-lib/queue-consuming? false 5))
+(assert-true "no Operator, no events - consuming (healthy idle)"
+             (operator-lib/queue-consuming? false 0))
+
+(assert= "render-status reports queue_consuming/oldest age as independently-readable facts (01)"
+         {:state "operator_running" :llm_running true :provider "claude"
+          :provider_state "available" :agents_running 4 :pending_events 22
+          :queue_consuming false :oldest_pending_event_age_ms 3600000}
+         (operator-lib/render-status {:state :operator_running :llm-running? true
+                                      :provider "claude" :provider-state :available
+                                      :agents-running 4 :pending-count 22
+                                      :oldest-pending-age-ms 3600000}))
+
+(assert= "queue-backlog-started-at-ms: an empty queue has no marker"
+         nil (operator-lib/queue-backlog-started-at-ms 1000 0 5000))
+(assert= "queue-backlog-started-at-ms: a brand-new backlog stamps now-ms"
+         5000 (operator-lib/queue-backlog-started-at-ms nil 3 5000))
+(assert= "queue-backlog-started-at-ms: an ALREADY-tracked backlog keeps its original marker"
+         1000 (operator-lib/queue-backlog-started-at-ms 1000 3 5000))
+
+(assert-true "front-desk-starving?: over the count limit alone is starvation"
+             (operator-lib/front-desk-starving? {:pending-count 26 :count-limit 5 :age-limit-ms 3600000}))
+(assert-false "front-desk-starving?: AT the count limit (not over) is not yet starvation"
+              (operator-lib/front-desk-starving? {:pending-count 5 :count-limit 5 :age-limit-ms 3600000}))
+(assert-true "front-desk-starving?: a short queue that is simply OLD is still starvation (the slow case)"
+             (operator-lib/front-desk-starving? {:pending-count 1 :oldest-pending-age-ms 7200000
+                                                 :count-limit 5 :age-limit-ms 3600000}))
+(assert-false "front-desk-starving?: under both limits is healthy"
+              (operator-lib/front-desk-starving? {:pending-count 2 :oldest-pending-age-ms 60000
+                                                  :count-limit 5 :age-limit-ms 3600000}))
+(assert-false "front-desk-starving?: nil oldest age (no marker yet) never fabricates staleness"
+              (operator-lib/front-desk-starving? {:pending-count 2 :oldest-pending-age-ms nil
+                                                  :count-limit 5 :age-limit-ms 3600000}))
+
+(assert= "starvation-alarm-decision: fresh starvation (not yet armed) alarms and arms"
+         {:should-alarm? true :armed? true}
+         (operator-lib/starvation-alarm-decision true false))
+(assert= "starvation-alarm-decision: still starving, already armed - no re-alarm (never spam)"
+         {:should-alarm? false :armed? true}
+         (operator-lib/starvation-alarm-decision true true))
+(assert= "starvation-alarm-decision: cleared - disarms, no alarm"
+         {:should-alarm? false :armed? false}
+         (operator-lib/starvation-alarm-decision false true))
+(assert= "starvation-alarm-decision: healthy and never armed - no alarm"
+         {:should-alarm? false :armed? false}
+         (operator-lib/starvation-alarm-decision false false))
 
 ;; ── resolve-provider-state (pure) — BL-305 fail-open cooldown ────────────
 ;; A fixed instant, never the real clock (de0991e). now = 6pm local (UTC,

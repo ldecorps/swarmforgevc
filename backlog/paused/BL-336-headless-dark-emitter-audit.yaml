@@ -1,0 +1,67 @@
+id: BL-336
+title: "One-pass audit: every human-visible emitter, with an explicit verdict on whether it runs headless"
+milestone: M8
+status: todo
+type: chore
+severity: medium
+priority: 4
+direction: human-requested
+depends_on: []
+source: ".swarmforge/operator/INTAKE-host-only-dark-when-headless-audit.md — the HUMAN, verbatim, 2026-07-12T02:26Z, prefixed 'Action this:'. Went unread for two days (BL-333/BL-334). This is an instruction, not a suggestion."
+
+notes: |
+  THE HUMAN'S WORDS, VERBATIM:
+    "Recurring 'host-only, dark when headless' pattern. Briefing email (fixed by BL-214/BL-258)
+     and now the cost-health sidecar (BL-272, in flight) are the same class: work that only runs
+     from the VS Code host and goes dark on a headless day. Recommend a one-pass audit for any
+     other host-only emitter before it's discovered surface-by-surface. Two-thirds of the way
+     there already."
+
+  HE IS RIGHT, AND THE EVIDENCE IS THAT IT KEEPS HAPPENING. Three times now, each found separately
+  by a human noticing a dark surface rather than by the system reporting one:
+    - BL-214 / BL-258 — briefing generation + email, host-only.
+    - BL-272 — cost-health sidecar, dark on the phone because a headless caller was missing.
+    - Very likely the three "shipped but invisible" reports (BL-335), filed the same night.
+  The failure mode is SILENT BY CONSTRUCTION: nothing errors, a surface is simply empty, and it is
+  caught only when a human happens to look. That is a discovery method, not a control.
+
+  SCOPE — THIS IS AN AUDIT. THE OUTPUT IS A LIST, NOT A REFACTOR.
+    1. ENUMERATE EVERY emitter/producer that writes to a human-visible surface. At minimum: the
+       briefing email, PWA data, the phone cards, Telegram, status.json. Enumerate them from the
+       code, not from memory.
+    2. FOR EACH, state explicitly:
+         - what TRIGGERS it;
+         - whether that trigger EXISTS IN A HEADLESS RUN (no VS Code host);
+         - and if not, what the headless caller WOULD BE.
+    3. GIVE EACH A VERDICT: runs headless / dark when headless / not applicable.
+    4. EACH "dark when headless" FINDING GETS ITS OWN TICKET. Fix NOTHING silently inside this
+       audit. A fix folded into the audit is a fix nobody reviewed and a finding nobody counted.
+
+  THE ACCEPTANCE CONDITION THE HUMAN CARES ABOUT, AND THE ONE THAT WILL BE CHEATED IF UNGUARDED:
+  VERIFY BY ACTUALLY RUNNING HEADLESS — no VS Code — AND OBSERVING WHICH SURFACES POPULATE. NOT by
+  reading code and reasoning about it. This whole bug class is "the code looks like it runs". A
+  verdict derived from a code reading reproduces the exact mistake that created the bug class.
+  Reading code is how you build the CANDIDATE list; running headless is how you get the VERDICT.
+
+  RELATED: BL-335 investigates three specific invisible features. This ticket is the systematic
+  sweep behind them. They will overlap; that is fine and intended — if BL-335 finds a cause, this
+  audit should independently show the same emitter as dark. If the audit says an emitter runs
+  headless and the human still cannot see it, the audit is wrong; say so.
+
+  E2E QA PROCEDURE: QA must confirm the audit was performed against a REAL headless run. Ask for
+  the evidence of the headless execution (what was run, with the host absent, and what appeared).
+  An audit whose evidence is a set of code citations must be BOUNCED — that is the failure this
+  ticket exists to stop.
+
+acceptance:
+  feature: specs/features/BL-336-headless-dark-emitter-audit.feature
+  steps:
+    - "Every human-visible emitter is enumerated"
+    - "Each emitter gets an explicit headless verdict"
+    - "The verdict comes from a real headless run, not from reading the code"
+    - "Each dark emitter becomes its own ticket"
+    - "Nothing is fixed silently inside the audit"
+
+human_approval: pending
+
+mutation_cost: low
