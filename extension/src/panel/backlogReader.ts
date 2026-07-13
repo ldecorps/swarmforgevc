@@ -33,6 +33,16 @@ export interface BacklogItem {
   // "# HUMAN APPROVAL:" comment). Absent means not applicable (no approval
   // needed, or a legacy ticket the one-time backfill hasn't reached).
   humanApproval?: 'pending' | 'approved';
+  // BL-322: the ticket's full notes: block scalar, for the topic-opening
+  // summary's own "what it solves" line (topicOpeningSummary.ts takes just
+  // the first paragraph and truncates - kept full here since other
+  // consumers may want more).
+  notes?: string;
+  // BL-322: the FIRST entry of the modern nested `acceptance: {steps:
+  // [...]}` schema - distinct from the legacy `acceptance` field above
+  // (a file path or inline Gherkin string), for the topic-opening
+  // summary's own "how it works" line.
+  firstAcceptanceStep?: string;
 }
 
 const VALID_STATUSES = new Set(['todo', 'active', 'done']);
@@ -81,6 +91,30 @@ function parseAcceptanceField(content: string): string | undefined {
   return parseYamlScalar(content, 'acceptance') ?? parseYamlBlockScalar(content, 'acceptance');
 }
 
+// BL-322: the FIRST item of a nested `acceptance:\n  steps:\n    - "..."`
+// block - the lenient regex-fallback counterpart to
+// firstAcceptanceStepFromObject below (js-yaml's own strict parse path).
+// Distinct from parseAcceptanceField above, which reads the LEGACY flat
+// `acceptance: <path-or-gherkin>` scalar/block form - the two schemas are
+// never confused because this only ever looks inside a nested `steps:`
+// list, never at acceptance:'s own top-level value.
+function parseFirstAcceptanceStep(content: string): string | undefined {
+  const acceptanceBlockMatch = content.match(/^acceptance:\s*\n((?:[ \t]+.*\n?|[ \t]*\n)*)/m);
+  if (!acceptanceBlockMatch) {
+    return undefined;
+  }
+  const stepsMatch = acceptanceBlockMatch[1].match(/^[ \t]*steps:\s*\n((?:[ \t]+-[^\n]*\n?)*)/m);
+  if (!stepsMatch) {
+    return undefined;
+  }
+  const firstLine = stepsMatch[1].split('\n').find((l) => /^[ \t]*-/.test(l));
+  if (!firstLine) {
+    return undefined;
+  }
+  const item = firstLine.replace(/^[ \t]*-\s*/, '').replace(/^["']|["']$/g, '').trim();
+  return item || undefined;
+}
+
 function parsePriority(priorityStr: string | undefined): number | undefined {
   if (priorityStr === undefined) return undefined;
   const n = Number(priorityStr);
@@ -116,6 +150,8 @@ function assignOptionalFields(item: BacklogItem, content: string): void {
   assignIfTruthy(item, 'description', parseYamlBlockScalar(content, 'description'));
   assignIfTruthy(item, 'acceptance', parseAcceptanceField(content));
   assignIfDefined(item, 'humanApproval', normalizeHumanApproval(parseYamlScalar(content, 'human_approval')));
+  assignIfTruthy(item, 'notes', parseYamlBlockScalar(content, 'notes'));
+  assignIfTruthy(item, 'firstAcceptanceStep', parseFirstAcceptanceStep(content));
 }
 
 function toOptionalNumber(value: unknown): number | undefined {
@@ -165,8 +201,9 @@ function normalizeHumanApproval(raw: string | undefined): BacklogItem['humanAppr
 
 // Builds a BacklogItem from a strictly-parsed js-yaml document. Reads only
 // the known BacklogItem fields off the parsed object so extra keys elsewhere
-// in the document (e.g. `evidence:`, `notes:`) never leak into the contract
-// pinned by backlogReader.test.js.
+// in the document (e.g. `evidence:`) never leak into the contract pinned by
+// backlogReader.test.js. `notes:` is now one of the known fields read here
+// (BL-322) - no longer an example of an excluded one.
 // Split out of buildItemFromParsedObject (hardening pass, BL-129): isolates
 // the required-field validation from optional-field assignment so each half
 // stays independently low-complexity/testable.
@@ -185,6 +222,21 @@ function extractRequiredFields(obj: Record<string, unknown>): Pick<BacklogItem, 
   return result;
 }
 
+// BL-322: the strict-parse counterpart to parseFirstAcceptanceStep above -
+// js-yaml parses the modern `acceptance: {steps: [...]}` schema as a real
+// nested object, so this reads obj.acceptance.steps[0] directly rather
+// than regex-scanning. The LEGACY flat acceptance field (a string) simply
+// has no .steps property and falls through to undefined here, same as an
+// absent acceptance: field entirely.
+function firstAcceptanceStepFromObject(obj: Record<string, unknown>): string | undefined {
+  const acceptance = obj.acceptance;
+  if (!acceptance || typeof acceptance !== 'object' || Array.isArray(acceptance)) {
+    return undefined;
+  }
+  const steps = (acceptance as Record<string, unknown>).steps;
+  return Array.isArray(steps) && typeof steps[0] === 'string' && steps[0] ? steps[0] : undefined;
+}
+
 function assignOptionalFieldsFromObject(item: BacklogItem, obj: Record<string, unknown>): void {
   assignIfTruthy(item, 'assignedTo', toOptionalString(obj.assigned_to));
   assignIfTruthy(item, 'milestone', toOptionalString(obj.milestone));
@@ -195,6 +247,8 @@ function assignOptionalFieldsFromObject(item: BacklogItem, obj: Record<string, u
   assignIfTruthy(item, 'description', toTrimmedOptionalString(obj.description));
   assignIfTruthy(item, 'acceptance', toTrimmedOptionalString(obj.acceptance));
   assignIfDefined(item, 'humanApproval', normalizeHumanApproval(toOptionalString(obj.human_approval)));
+  assignIfTruthy(item, 'notes', toTrimmedOptionalString(obj.notes));
+  assignIfTruthy(item, 'firstAcceptanceStep', firstAcceptanceStepFromObject(obj));
 }
 
 function buildItemFromParsedObject(obj: Record<string, unknown>): BacklogItem | null {

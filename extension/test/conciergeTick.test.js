@@ -70,7 +70,10 @@ test('concierge-wiring-01: a newly-active item creates its topic, posts its open
   const result = await runConciergeTick(adapters);
 
   assert.deepEqual(created, ['BL-1 - a fine feature']);
-  assert.deepEqual(sent, [{ topicId: 801, text: 'TaskStarted: BL-1' }]);
+  // BL-322: TaskStarted now renders a derived summary, not the bare
+  // "TaskStarted: BL-1" line - title-only here since this fixture's
+  // BacklogFolderItem carries no notes/firstAcceptanceStep.
+  assert.deepEqual(sent, [{ topicId: 801, text: 'What it is: a fine feature' }]);
   assert.equal(topicMap['BL-1'], 801);
   assert.equal(result.routed, 1);
   assert.equal(state.snapshot.backlog.active[0], 'BL-1');
