@@ -38,6 +38,29 @@
     {:dispatch (concat other dispatch-telegram)
      :deferred deferred}))
 
+;; ── BL-334 restricted-front-desk-operator-06: front-desk's own dispatch ──
+
+(defn select-front-desk-dispatch-batch
+  "The front-desk Operator's counterpart to select-dispatch-batch: it has no
+   authority over non-human-facing events (AGENT_EXITED, TASK_ARRIVED, ...),
+   so it claims ONLY TELEGRAM_TOPIC_MESSAGE events - at most one subject
+   (oldest thread first, same ordering rule as select-dispatch-batch) - and
+   leaves EVERY other pending event, including any OTHER Telegram subject,
+   completely untouched in :remaining for the full Operator's own normal
+   path once it is free. Never mixes in select-dispatch-batch's `other`
+   events the way that function's own :dispatch does."
+  [pending-events]
+  (let [is-telegram? #(= (:type %) "TELEGRAM_TOPIC_MESSAGE")
+        telegram (filter is-telegram? pending-events)
+        other (remove is-telegram? pending-events)
+        by-thread (group-by :subject telegram)
+        thread-ids-in-order (distinct (map :subject telegram))
+        dispatch-thread-id (first thread-ids-in-order)
+        dispatch-telegram (get by-thread dispatch-thread-id [])
+        remaining-telegram (mapcat #(get by-thread %) (rest thread-ids-in-order))]
+    {:dispatch (vec dispatch-telegram)
+     :remaining (vec (concat other remaining-telegram))}))
+
 ;; ── reply context — telegram-topic-03 / telegram-topic-04 ────────────────
 
 (defn reply-context-for
