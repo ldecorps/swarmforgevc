@@ -229,6 +229,24 @@ test('parseBacklogYaml extracts notes: and the first nested acceptance.steps ent
   assert.equal(item.firstAcceptanceStep, 'The first step');
 });
 
+// BL-322 hardening: closes a real coverage gap in parseFirstAcceptanceStep
+// (the lenient-path regex counterpart) - a nested acceptance: block that
+// has no steps: sub-key at all (e.g. only feature:) was never covered, so
+// its own "give up gracefully" branch sat untested.
+test('parseBacklogYaml lenient fallback: a nested acceptance: block with no steps: sub-key never surfaces a firstAcceptanceStep', () => {
+  const yaml = [
+    'id: BL-093',
+    'title: BUG — colon: breaks strict YAML',
+    'status: done',
+    'acceptance:',
+    '  feature: specs/features/BL-093-thing.feature',
+    '',
+  ].join('\n');
+  const item = parseBacklogYaml(yaml);
+  assert.ok(item, 'expected the lenient parser to still surface a ticket');
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'firstAcceptanceStep'), false);
+});
+
 test('parseBacklogYaml lenient fallback dedents a block scalar to its own minimum indentation, including a deeper-indented paragraph', () => {
   const yaml =
     'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\ndescription: |\n  Top level.\n    More indented.\n  Back to top.\n';
