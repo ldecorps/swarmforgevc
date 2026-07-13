@@ -30,12 +30,16 @@ function readRoles(content) {
   return out.replace(/^\[|\]$/g, '').split(/\s+/).filter(Boolean);
 }
 
-function validateRoles(roles) {
-  const rolesEdn = `[${roles.map((r) => `"${r}"`).join(' ')}]`;
-  const out = execFileSync('bb', ['-e', `(load-file "${ROUTING_MANIFEST_LIB}") (println (:valid? (routing-manifest-lib/validate-roles ${rolesEdn})))`], {
+// BL-317 bounce fix (scope 4b): validation now runs on the ticket's WHOLE
+// raw content (validate-manifest), never a pre-parsed list - the one
+// entry point that can actually tell "absent" from "present but
+// unparseable" apart, which a list-only validator structurally cannot.
+function validateManifest(content) {
+  const out = execFileSync('bb', ['-e', `(load-file "${ROUTING_MANIFEST_LIB}") (let [r (routing-manifest-lib/validate-manifest ${edn(content)})] (println (:valid? r)) (println (:reason r)))`], {
     encoding: 'utf8',
-  }).trim();
-  return out === 'true';
+  });
+  const [validLine, ...reasonLines] = out.trim().split('\n');
+  return { valid: validLine === 'true', reason: reasonLines.join('\n') };
 }
 
 function registerSteps(registry) {
@@ -66,23 +70,48 @@ function registerSteps(registry) {
     }
   });
 
+  // ── routing-manifest-field-05: block-style lists ────────────────────────
+  registry.define(/^a ticket YAML declaring a block-style roles: list of coder and QA$/, (ctx) => {
+    ctx.ticketYaml = 'id: BL-902\nroles:\n  - coder\n  - QA\nstatus: todo\n';
+    ctx.declaredRoles = ['coder', 'QA'];
+  });
+
+  // ── routing-manifest-field-06: present but unparseable ──────────────────
+  registry.define(/^a ticket YAML whose roles: field is present but cannot be parsed$/, (ctx) => {
+    // Neither a flow-style [...] value nor an immediately-following
+    // block-style "- item" list - genuinely unparseable, not merely an
+    // unusual-but-valid form.
+    ctx.ticketYaml = 'id: BL-903\nroles: coder, QA\nstatus: todo\n';
+  });
+
+  registry.define(/^it does not silently report the full standard pipeline chain$/, (ctx) => {
+    if (ctx.validation.valid) {
+      throw new Error('expected the unparseable manifest to be rejected, not silently accepted as the full chain');
+    }
+    if (!/could not be parsed/.test(ctx.validation.reason)) {
+      throw new Error(`expected a parse-failure reason distinct from a coder/QA/coordinator rejection, got: ${JSON.stringify(ctx.validation.reason)}`);
+    }
+  });
+
   // ── routing-manifest-field-03 ───────────────────────────────────────────
   registry.define(/^a ticket YAML declaring a roles: list that omits coder or QA$/, (ctx) => {
+    ctx.ticketYaml = 'id: BL-904\nroles: [architect, QA]\nstatus: todo\n';
     ctx.declaredRoles = ['architect', 'QA'];
   });
 
   registry.define(/^the routing manifest is validated$/, (ctx) => {
-    ctx.valid = validateRoles(ctx.declaredRoles);
+    ctx.validation = validateManifest(ctx.ticketYaml);
   });
 
   registry.define(/^it is rejected before promotion$/, (ctx) => {
-    if (ctx.valid !== false) {
-      throw new Error(`expected the roles: list ${JSON.stringify(ctx.declaredRoles)} to be rejected, got valid=${ctx.valid}`);
+    if (ctx.validation.valid !== false) {
+      throw new Error(`expected the manifest to be rejected, got: ${JSON.stringify(ctx.validation)}`);
     }
   });
 
   // ── routing-manifest-field-04 ───────────────────────────────────────────
   registry.define(/^a ticket YAML declaring a roles: list that names coordinator or an unknown role$/, (ctx) => {
+    ctx.ticketYaml = 'id: BL-905\nroles: [coder, QA, coordinator]\nstatus: todo\n';
     ctx.declaredRoles = ['coder', 'QA', 'coordinator'];
   });
 }
