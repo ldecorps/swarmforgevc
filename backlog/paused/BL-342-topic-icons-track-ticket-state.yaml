@@ -1,0 +1,73 @@
+id: BL-342
+title: "A topic's icon tracks its ticket's state — set by the swarm, never left to rot by hand"
+milestone: M8
+status: todo
+type: feature
+severity: low
+priority: 7
+direction: human-requested
+depends_on: []
+source: ".swarmforge/operator/INTAKE-topic-icons-track-ticket-state.md — the HUMAN, 2026-07-13: he set a trophy icon on the benchmarking topic himself and asked to 'generalize to the others... pick something meaningful'."
+
+notes: |
+  WHY AN ICON ACTUALLY MATTERS HERE — this is not decoration. TELEGRAM NEVER HIDES A CLOSED TOPIC.
+  Closing locks it; it stays in the list forever. So the topic list GROWS WITHOUT BOUND and closing
+  a topic does nothing for legibility. The icon is therefore the ONLY per-topic signal that
+  separates history from live work at a glance. (BL-329..BL-332 make topics DELETABLE, which helps
+  — but a deleted topic is gone, and the human still needs to scan the live ones.)
+
+  THE STATE TODAY, VERIFIED: `createForumTopic(token, chatId, name)` in
+  `extension/src/notify/telegramClient.ts:196` takes NO icon parameter — the Telegram API accepts
+  `icon_custom_emoji_id`, the call simply does not pass one. And `editForumTopic` IS NOT WRAPPED IN
+  OUR CLIENT AT ALL (only `createForumTopic` and `closeForumTopic` are). The intake speaks of
+  "via editForumTopic" as though it were available; it is a real Telegram method but YOU WILL HAVE
+  TO ADD THE WRAPPER. Do not assume it is there.
+
+  THE CONVENTION THE OPERATOR APPLIED BY HAND (to all 26 mapped ticket topics + 2 epic topics) —
+  and which WILL ROT, because nothing in the swarm knows icons exist. The moment BL-329 ships, its
+  icon stays "defect in flight" and the convention starts LYING. A signal that silently goes stale
+  is WORSE THAN NO SIGNAL: it invites trust it has not earned.
+      Epics:   trophy = Benchmarking (SET BY THE HUMAN HIMSELF — DO NOT OVERRIDE)
+               lightning = Dynamic Routing;  folder = Onboarding a target repo
+      Tickets: check = done/shipped;  microbe = defect in flight;
+               bulb = feature in flight;  magnifier = paused/held
+
+  SCOPE:
+    1. SET THE ICON AT TOPIC CREATION, from the ticket's type/state.
+    2. UPDATE THE ICON ON STATE CHANGE (promoted -> in flight; done -> check; bounced -> back to
+       in flight). Ride the SAME events that already drive topic routing (TaskStarted /
+       TaskCompleted) — no new trigger, no second mechanism.
+    3. NEVER OVERRIDE A HUMAN-SET ICON. He set the trophy himself. If a human has customised a
+       topic's icon, the swarm MUST leave it alone. This needs a marker of what the swarm itself
+       set; ABSENT ONE, PREFER NOT TO TOUCH AN ICON THE SWARM DID NOT SET. Getting this wrong means
+       the swarm silently overwrites the human's own deliberate choice — which is the one outcome
+       he would notice and resent.
+    4. ICON IDS ARE NOT FREE-FORM. Telegram allows ONLY the set returned by
+       `getForumTopicIconStickers` (112 today). RESOLVE AGAINST THAT LIST; never hardcode an id
+       that was never validated. An unvalidated id fails at call time, on a live topic.
+    5. A BULK BACKFILL MUST HONOUR RATE LIMITS. This is not hypothetical: the Operator's own
+       attempt to set 26 icons hit `Too Many Requests: retry after 26` AFTER 19 CALLS and SILENTLY
+       DROPPED 7 OF 26. Honour `retry_after`, back off, and COMPLETE ALL TOPICS — a backfill that
+       drops its tail leaves precisely the stale-signal problem this ticket exists to remove.
+
+  USEFUL, VERIFIED BY THE OPERATOR: `editForumTopic` on a CLOSED topic still succeeds — so
+  updating a done ticket's icon after completion is fine. The GENERAL topic cannot take a custom
+  icon; do not try.
+
+  E2E QA PROCEDURE: against REAL topics — create a topic and assert its icon matches the ticket's
+  state; drive a real state change and assert the icon FOLLOWS; set an icon as a human and assert
+  the swarm does NOT overwrite it; run the backfill against enough topics to trip the rate limit
+  and assert EVERY topic ends with the right icon, none silently skipped.
+
+acceptance:
+  feature: specs/features/BL-342-topic-icons-track-ticket-state.feature
+  steps:
+    - "A new topic is created with an icon reflecting its ticket's state"
+    - "A ticket's state change updates its topic's icon"
+    - "An icon a human set is never overwritten by the swarm"
+    - "Icon ids are validated against the set Telegram allows"
+    - "A bulk backfill that is rate-limited still completes every topic"
+
+human_approval: pending
+
+mutation_cost: medium
