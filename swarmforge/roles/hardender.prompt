@@ -216,6 +216,41 @@ You are the hardender.
   and defaults to the full chain, discarding the specifier's narrowing with no
   error and bypassing the ticket's own before-promotion validation.)
 
+- **A safety check that runs ONCE PER BATCH is not a safety check for each item in
+  it — probe the window between the check and the act.** Code that surveys state up
+  front and then acts on every item in a loop ("gather who is safe to kill, then kill
+  them") is fully green in every test, because a test's world holds still between the
+  two steps. Production does not: the window spans everything the pass does in
+  between, and it is WIDEST for the last item acted on. If an item's safety can change
+  in that window, the check must be RE-RUN immediately before acting on that item, and
+  the act aborted if it no longer holds. Test it by making the state change inside the
+  window (claim the work, take the lock, dirty the file) — not by asserting the
+  up-front survey was correct, which it always is. And assert the resulting INVARIANT,
+  not merely that the check was called: a re-check narrows a race, only the invariant
+  proves it closed. (BL-324 architect review: `run-shape!` snapshots every role's
+  idleness once, then parks each role with no re-check; a role idle at survey time can
+  claim a parcel seconds later and be killed mid-task — and because a PARKED role never
+  relaunches, BL-323's resume-on-start cannot rescue it, so the parcel is stranded, not
+  just interrupted.)
+
+- **When a feature can DISABLE something, ask what re-enables it — and test that the
+  path back actually exists.** A disable/park/pause/evict mechanism is usually paired
+  with an enable trigger, and the pairing is almost never verified: the disable path
+  gets a test, the re-enable path gets a test, and NOBODY tests that the specific thing
+  disabled can actually reach its own re-enable trigger. When the trigger can only be
+  produced by work the disabled thing itself was responsible for doing, it is a ONE-WAY
+  DOOR: the feature switches something off and then destroys the only mechanism that
+  could switch it back on. Green tests throughout, permanent silent loss in production.
+  For every item a feature can disable, ask concretely: WHO turns this back on, and can
+  that actually happen while this is off? If the answer is circular, the item must be
+  exempt from disabling entirely. (BL-324 hardener review: `warm-core-roles` exempted
+  only the coordinator, so a narrow `roles: [coder, QA]` manifest parked an idle
+  SPECIFIER — and unparking fires only when a later ticket's manifest names a role,
+  while the specifier's entire job (draining intake, reviewing rule proposals, WRITING
+  the tickets) happens before any ticket exists. Parked specifier -> no new tickets -> no
+  manifest naming it -> never unparked. The swarm silently loses the ability to take in
+  work at all.)
+
 ## Lessons Discipline
 - After a hardening mistake or a non-obvious root cause (a survivor class
   you misjudged, a tooling behavior that cost a rerun, an environment trap),

@@ -1,0 +1,173 @@
+#!/usr/bin/env bb
+
+;; BL-324: slice 3 of the dynamic-per-ticket-agent-routing epic. BL-317
+;; records which roles a ticket needs (routing_manifest_lib.bb) and
+;; deliberately brings nothing up or down - the manifest is INERT without
+;; this slice acting on it. This is the per-role SIBLING of BL-307's
+;; whole-swarm hibernate-swarm!/relaunch-swarm! (operator_lib.bb) - same
+;; adapter-injected shape, one role at a time instead of the whole roster.
+;;
+;; Park = remove the role from .swarmforge/roles.tsv and kill its pane (the
+;; Operator's proven mechanism; a roster-absent role is already a
+;; first-class state everywhere - BL-307's roster-idle?, BL-316's
+;; roster-driven clear). Unpark = the reverse, in the opposite order (see
+;; park-role!/unpark-role! below for why the ordering itself matters).
+;;
+;; Pure decision logic only in this file - no filesystem, no tmux, no
+;; clock. The impure roles.tsv/tmux adapters are wired in
+;; role_lifecycle_cli.bb, the shell-callable entry point the coordinator
+;; calls on promote (mirrors quiet_period_gate_cli.bb's own CLI-wrapper
+;; shape for BL-318's gate).
+
+(ns role-lifecycle-lib)
+
+(def warm-core-roles
+  "Roles structurally exempt from parking regardless of any ticket's
+   manifest - the GENERAL rule (corrected 2026-07-13 after the hardener's
+   review): a role belongs here when its duties are CONTINUOUS and
+   TICKET-INDEPENDENT, i.e. not expressible in any ticket's roles:
+   manifest, and therefore unreachable by the manifest-driven unpark path.
+   Parking such a role is a ONE-WAY DOOR - never park a role whose only
+   route back is a trigger its own work can never produce.
+
+   Coordinator is the dispatcher and the most-woken role - parking it is
+   almost certainly never right, and it is also the one role no pack can
+   move off Claude today (BL-319). It is never a member of
+   routing_manifest_lib's own standard-chain (BL-243: coordinator is not a
+   pipeline chain role at all), so it can never appear in a ticket's
+   declared roles: manifest at all.
+
+   Specifier's every real duty happens BEFORE a ticket exists: draining
+   the backlog root, draining .swarmforge/operator/INTAKE-*.md, reviewing
+   a rule_proposal from any role, writing the specs for tickets not yet
+   written. None of that is expressible in a manifest, because a manifest
+   can only name the roles needed to BUILD a ticket that already exists -
+   and the specifier's job is to bring tickets INTO existence. Park it and
+   no new ticket is ever written, so no manifest ever names it again, so
+   it is never unparked - the swarm silently loses its ability to take in
+   ANY new work while every health surface reads green (the same
+   circularity family as BL-318's hibernate-vs-self-generate). UNLIKE
+   coordinator, specifier IS a member of routing_manifest_lib's standard-
+   chain and a manifest MAY legitimately name it - that must simply keep
+   it alive (role-needed? already treats explicit-need and warm-core as
+   equivalent, an OR), never park it.
+
+   The other chain roles (cleaner, architect, hardender, documenter) are
+   genuinely per-ticket and remain parkable; coder and QA are always
+   required by BL-317's own validator regardless."
+  #{"coordinator" "specifier"})
+
+(defn role-needed?
+  "True when role must stay alive: it is warm-core (always), OR the
+   CURRENT ticket's manifest names it, OR the NEXT QUEUED ticket's
+   manifest names it (hysteresis/lookahead - never park a role about to
+   be needed again immediately; park/unpark churn can cost more than
+   leaving a role warm)."
+  [role current-needed next-needed]
+  (boolean (or (contains? warm-core-roles role)
+               (contains? (set current-needed) role)
+               (contains? (set next-needed) role))))
+
+(defn parkable?
+  "A roster role is parkable only when it is NOT needed (role-needed?
+   above) AND it is idle (role-idle?-shaped :idle? - never park a role
+   holding an in-process task or a pending inbox item; DRAIN BEFORE PARK
+   is a hard constraint, not a preference - see the ticket's own note on
+   why this slice cannot ship before BL-323)."
+  [{:keys [role idle?]} current-needed next-needed]
+  (boolean (and idle? (not (role-needed? role current-needed next-needed)))))
+
+(defn roles-to-park
+  "Given the CURRENT roster (a vector of {:role :idle?} - the SAME shape
+   role-idle?'s own caller already builds), the current ticket's
+   needed-roles, and the next queued ticket's needed-roles, returns the
+   set of role names safe to park this cycle. A non-idle role is NEVER
+   included, full stop - no exception, no override."
+  [roster current-needed next-needed]
+  (set (map :role (filter #(parkable? % current-needed next-needed) roster))))
+
+(defn roles-to-unpark
+  "Given the roster's CURRENT role names and the roles the ticket at hand
+   needs, returns the roles that must be brought back up - needed but not
+   currently present in the roster (a previously-parked role, or a role
+   that was never provisioned at all)."
+  [roster-role-names current-needed]
+  (set (remove (set roster-role-names) current-needed)))
+
+(defn park-role!
+  "Adapter-injected: park ONE role. THE IDLE CHECK MUST BE PER-KILL, NOT
+   PER-BATCH: roles-to-park's own selection is a SNAPSHOT, and the window
+   between that snapshot and any one role's own kill (manifest validation
+   + slurping every paused ticket YAML + every earlier role's own park in
+   this same pass) is easily seconds - a role idle at survey time can
+   claim a parcel in that window. So: the roster row is removed FIRST
+   (same crash-safety rationale as before - a ghost pane with no roster
+   entry is harmless, 'expected alive but the pane is gone' is not), then
+   idleness is RE-CHECKED immediately before the kill, against the SAME
+   role this call is about, right now - not the stale snapshot. If the
+   role is no longer idle, the park is ABORTED: the kill never happens,
+   and the roster row is restored verbatim. Parking is always the
+   sacrificable half - a role must never be killed while holding a
+   parcel, full stop, even one claimed after the batch was decided.
+   adapters: :remove-role-row! (fn [role] -> removed-row, opaque to this
+   fn), :still-idle? (fn [role] -> bool, a FRESH check), :kill-role-
+   session! (fn [role]), :restore-role-row! (fn [role removed-row])."
+  [role adapters]
+  (let [removed-row ((:remove-role-row! adapters) role)]
+    (if ((:still-idle? adapters) role)
+      (do ((:kill-role-session! adapters) role)
+          {:parked role})
+      (do ((:restore-role-row! adapters) role removed-row)
+          {:parked role :aborted? true}))))
+
+(defn unpark-role!
+  "Adapter-injected: bring ONE role back up. The roster row is re-added
+   FIRST, then the session is (re)spawned - mirrors relaunch-swarm!'s own
+   restore-then-relaunch order: a crash mid-unpark leaves 'expected alive,
+   pane not yet up' (safely recoverable - the next sweep/manual restart
+   provisions it), never a phantom pane with no roster entry to claim it.
+   adapters: :add-role-row! (fn [role]), :respawn-role! (fn [role])."
+  [role adapters]
+  ((:add-role-row! adapters) role)
+  ((:respawn-role! adapters) role)
+  {:unparked role})
+
+(defn- pull-eligible?
+  "Duplicated from operator_lib.bb's own paused-item-pull-eligible? - the
+   same small live-glue duplication already established across this
+   codebase's independent pure libs (read-yaml-field, operator-channel-
+   name) rather than cross-namespace-coupling two standalone lib files."
+  [{:keys [status]}]
+  (not= status "blocked"))
+
+(defn next-queued-roles
+  "Given the paused backlog items (each {:status :priority :roles} - roles
+   already resolved via routing_manifest_lib/read-roles by the caller,
+   since manifest parsing is that lib's own job, not duplicated here),
+   picks the highest-priority (lowest number wins, this schema's own
+   convention) PULL-ELIGIBLE candidate and returns its declared roles
+   manifest - the lookahead role-needed?/roles-to-park above check against.
+   nil when no eligible candidate exists (the caller's cue that there is
+   nothing to look ahead to this cycle - never blocks park/unpark, the
+   hysteresis check just has nothing to add)."
+  [paused-items]
+  (->> paused-items
+       (filter pull-eligible?)
+       (sort-by #(or (:priority %) Long/MAX_VALUE))
+       first
+       :roles))
+
+(defn evaluate-role-lifecycle!
+  "The whole per-role lifecycle pass for one shape-change: bring the
+   roster from its CURRENT shape to the promoted ticket's needed shape.
+   Parks every parkable role (roles-to-park), then unparks every
+   needed-but-absent role (roles-to-unpark) - park before unpark, so a
+   role being handed off between two DIFFERENT roster slots in the same
+   pass never transiently exceeds the roster's real capacity. adapters:
+   the same four functions park-role!/unpark-role! above need."
+  [roster current-needed next-needed adapters]
+  (let [to-park (roles-to-park roster current-needed next-needed)
+        roster-names (map :role roster)
+        to-unpark (roles-to-unpark roster-names current-needed)]
+    {:parked (vec (map #(park-role! % adapters) (sort to-park)))
+     :unparked (vec (map #(unpark-role! % adapters) (sort to-unpark)))}))
