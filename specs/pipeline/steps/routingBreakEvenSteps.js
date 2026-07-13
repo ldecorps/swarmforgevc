@@ -24,13 +24,14 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
+const { resolveMainCheckout } = require('./lib/mainCheckout');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARMFORGE_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const ROLE_LIFECYCLE_TEST = path.join(SWARMFORGE_SCRIPTS, 'test', 'test_role_lifecycle_cli.sh');
 const EXTENSION_DIR = path.join(REPO_ROOT, 'extension');
 const EVIDENCE_DIR = path.join(REPO_ROOT, 'backlog', 'evidence');
-const MAIN_CHECKOUT = '/home/carillon/swarmforgevc';
+const MAIN_CHECKOUT = resolveMainCheckout(__dirname);
 
 function runRoleLifecycleTest(ctx) {
   if (ctx.roleLifecycleOutput) {
