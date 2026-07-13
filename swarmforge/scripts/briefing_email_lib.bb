@@ -74,9 +74,13 @@
 ;; dwell), :chase-trend-section (chase/nudge pipeline-health trend).
 ;; BL-263: :not-done-count-line - the same single not-done total the PWA
 ;; reads from backlog.json's notDoneCount, never a second derivation.
+;; BL-337: :standing-rule-violations-line - "a rule that nobody measures is
+;; a rule that silently stops holding"; derived purely from the citation
+;; trail already committed to the constitution/role prompts, never a new
+;; counter.
 (def optional-section-adapter-keys
   [:suite-duration-line :needs-approval-section :merged-blocked-digest :stage-dwell-section :chase-trend-section
-   :not-done-count-line])
+   :not-done-count-line :standing-rule-violations-line])
 
 (defn- apply-optional-sections [content adapters]
   (reduce
