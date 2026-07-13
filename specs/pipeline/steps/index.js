@@ -132,6 +132,7 @@ const DOMAINS = [
   require('./mergedCodeReachesDaemonsSteps'),
   require('./serialiseBlTopicContentSteps'),
   require('./topicLifecycleReconciliationSteps'),
+  require('./frontDeskStarvationAlarmSteps'),
 ];
 
 function registerSteps(registry) {
