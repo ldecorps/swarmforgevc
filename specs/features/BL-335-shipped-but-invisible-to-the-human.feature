@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=fb68dd112f312e89c2804c3cc4d51b55960dfff96f2de9925895e6fa1fd19992
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-13T09:24:00.870257836Z","feature_name":"A ticket marked done is actually visible to the human","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-335-shipped-but-invisible-to-the-human.feature","background_hash":"2e9de1526041f9fac1ac984df9b55bec32e15dc0171754cb5274f83877f01075","implementation_hash":"unknown","scenarios":[{"index":3,"name":"The known causes of an invisible feature are each ruled in or out","scenario_hash":"5d06dd320b85b68987ea7d5c7e95165f383af6b95b40a5aa3ca9ceb4ac043d75","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-07-13T09:24:00.870257836Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A ticket marked done is actually visible to the human
 
 # BL-335: three tickets are green, merged and closed — and the human says the feature is not
