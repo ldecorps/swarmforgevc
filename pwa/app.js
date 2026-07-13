@@ -774,6 +774,22 @@
       container.appendChild(ticketsList);
     }
 
+    // BL-338: the human explicitly asked for this figure so he can watch it
+    // fall - hidden (not fabricated) when no delivered ticket has a priced
+    // cost yet, same posture as topExpensiveTickets above. The basis text
+    // renders right under the number/chart, never left for a separate page.
+    var cpt = costHealth.costPerTicket;
+    if (cpt && cpt.average !== null) {
+      container.appendChild(el('h4', {}, [tr('costHealthAvgPerTicket')]));
+      var excludedSuffix = cpt.excludedCount > 0 ? ', ' + cpt.excludedCount + ' ' + tr('costHealthExcludedSuffix') : '';
+      container.appendChild(el('p', {}, [
+        '$' + cpt.average.value.toFixed(2) + trendArrow(cpt.average.trend) +
+        ' (' + cpt.sampleCount + ' ' + tr('costHealthTicketsSuffix') + excludedSuffix + ')',
+      ]));
+      container.appendChild(barChart(cpt.series, 300, 80));
+      container.appendChild(el('p', { class: 'cost-basis-note' }, [cpt.basis]));
+    }
+
     var flow = costHealth.flowBalance;
     container.appendChild(el('p', {}, [
       'Flow balance: specced ' + flow.speccedPerDay.value + '/day' + trendArrow(flow.speccedPerDay.trend) +
