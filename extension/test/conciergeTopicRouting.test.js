@@ -38,6 +38,21 @@ test('BL-325: a non-string payload.snippet is ignored, never crashes or leaks [o
   assert.equal(messageTextForEvent(event({ type: 'NeedsApproval', payload: { snippet: 42 } })), 'NeedsApproval: BL-123');
 });
 
+// ── BL-358: untagged NeedsApproval (backlogId null, role set) ────────────
+
+test('BL-358: messageTextForEvent names the role instead of a ticket id when untagged', () => {
+  assert.equal(messageTextForEvent(untaggedEvent()), 'NeedsApproval: coder');
+});
+
+test('BL-358: an untagged NeedsApproval still carries its snippet, same as a tagged one', () => {
+  const text = messageTextForEvent(untaggedEvent({ payload: { snippet: 'Which design should I pick? (1/2/3)' } }));
+  assert.equal(text, 'NeedsApproval: coder - Which design should I pick? (1/2/3)');
+});
+
+test('BL-358: decideTopicAction refuses an untagged event - routeEvent must route it elsewhere, never through here', () => {
+  assert.throws(() => decideTopicAction(untaggedEvent(), {}, 'irrelevant'), /requires a tagged event/);
+});
+
 // BL-322 hardening: the ticket's own E2E procedure insists on a REAL
 // oversized ticket, "not a synthetic short fixture, the bug is precisely
 // about real notes being huge" - but neither the delivered unit tests nor
@@ -129,12 +144,18 @@ function fakeAdapters(initialMap = {}) {
   const sent = [];
   const closed = [];
   const recorded = [];
+  let operatorTopicId = 700;
+  const ensureOperatorTopicCalls = [];
   return {
     map,
     created,
     sent,
     closed,
     recorded,
+    ensureOperatorTopicCalls,
+    setOperatorTopicId: (id) => {
+      operatorTopicId = id;
+    },
     adapters: {
       getTopicMap: () => map,
       createTopic: async (name) => {
@@ -155,8 +176,16 @@ function fakeAdapters(initialMap = {}) {
       recordMessage: (backlogId, text) => {
         recorded.push({ backlogId, text });
       },
+      ensureOperatorTopic: async () => {
+        ensureOperatorTopicCalls.push(true);
+        return operatorTopicId;
+      },
     },
   };
+}
+
+function untaggedEvent(overrides = {}) {
+  return { type: 'NeedsApproval', backlogId: null, role: 'coder', payload: {}, ...overrides };
 }
 
 test('topic-routing-01: the first event for an unmapped item creates a topic once and records the mapping', async () => {
@@ -243,6 +272,46 @@ test('a failed sendMessage reports posted:false but is not itself a skip (the to
   assert.deepEqual(result, { posted: false, skipped: false });
   assert.equal(map['BL-123'], 42);
   assert.deepEqual(recorded, [], 'a failed send must never be recorded into the ticket\'s own durable record');
+});
+
+// ── routeEvent untagged-gate path (BL-358) ────────────────────────────────
+
+test('BL-358: an untagged NeedsApproval routes to the standing Operator topic, never creates or reuses a per-ticket topic', async () => {
+  const { adapters, created, sent, map, ensureOperatorTopicCalls } = fakeAdapters();
+  const result = await routeEvent(untaggedEvent(), 'irrelevant', adapters);
+  assert.deepEqual(created, [], 'no per-ticket topic should ever be created for an untagged event');
+  assert.deepEqual(map, {}, 'the per-ticket BacklogTopicMap must never gain an entry for an untagged event');
+  assert.deepEqual(sent, [{ topicId: 700, text: 'NeedsApproval: coder' }]);
+  assert.equal(ensureOperatorTopicCalls.length, 1);
+  assert.deepEqual(result, { posted: true, skipped: false });
+});
+
+test('BL-358: an untagged NeedsApproval is never recorded into the per-ticket blTopicStore (it belongs to no ticket)', async () => {
+  const { adapters, recorded } = fakeAdapters();
+  await routeEvent(untaggedEvent(), 'irrelevant', adapters);
+  assert.deepEqual(recorded, []);
+});
+
+test('BL-358: a failed Operator-topic creation skips the event, never falls back anywhere else', async () => {
+  const { adapters, sent } = fakeAdapters();
+  adapters.ensureOperatorTopic = async () => undefined;
+  const result = await routeEvent(untaggedEvent(), 'irrelevant', adapters);
+  assert.deepEqual(result, { posted: false, skipped: true });
+  assert.deepEqual(sent, []);
+});
+
+test('BL-358: a failed send to an existing Operator topic reports posted:false but is not a skip', async () => {
+  const { adapters } = fakeAdapters();
+  adapters.sendMessage = async () => false;
+  const result = await routeEvent(untaggedEvent(), 'irrelevant', adapters);
+  assert.deepEqual(result, { posted: false, skipped: false });
+});
+
+test('BL-358: a tagged event still routes through the ordinary per-ticket path, unaffected (regression)', async () => {
+  const { adapters, created, ensureOperatorTopicCalls } = fakeAdapters();
+  await routeEvent(event(), 'a fine feature', adapters);
+  assert.deepEqual(created, ['BL-123 - a fine feature']);
+  assert.equal(ensureOperatorTopicCalls.length, 0, 'a tagged event must never touch the Operator topic');
 });
 
 // ── recordMessage (BL-329: outbound serialisation) ─────────────────────────

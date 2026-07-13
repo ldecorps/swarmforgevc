@@ -104,14 +104,20 @@ function titleForBacklogId(folders: BacklogFoldersSnapshot, backlogId: string): 
 // false->true transition again. Resolved via curr.roleTicket (role's
 // currently-held backlogId), the exact inversion diffNeedsApproval itself
 // already used to tag the event that just failed to post.
+// BL-358: an untagged gate's NeedsApproval is keyed by role (backlogId
+// null), not a ticket - retry symmetry now reverts a gated role whether its
+// event was tagged or not, resolved by the SAME curr.roleTicket lookup as
+// before; ?? null carries the "holds no ticket" case through unchanged
+// rather than passing undefined into a key swarmEventKey never expects.
 function withRetryableTransitionsHeldBack(curr: EventStreamSnapshot, unrouted: ReadonlySet<string>): EventStreamSnapshot {
   if (unrouted.size === 0) {
     return curr;
   }
-  const isUnrouted = (type: SwarmEventType, backlogId: string) => unrouted.has(swarmEventKey({ type, backlogId, payload: {} }));
+  const isUnrouted = (type: SwarmEventType, backlogId: string | null, role?: string) =>
+    unrouted.has(swarmEventKey({ type, backlogId, role, payload: {} }));
   const gates = curr.gates.map((gate) => {
-    const backlogId = curr.roleTicket[gate.role];
-    return gate.gated && backlogId && isUnrouted('NeedsApproval', backlogId) ? { ...gate, gated: false } : gate;
+    const backlogId = curr.roleTicket[gate.role] ?? null;
+    return gate.gated && isUnrouted('NeedsApproval', backlogId, gate.role) ? { ...gate, gated: false } : gate;
   });
   return {
     ...curr,
@@ -143,7 +149,11 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters): Promise
   let routed = 0;
   const unrouted = new Set<string>();
   for (const event of events) {
-    const title = titleForBacklogId(folders, event.backlogId);
+    // BL-358: an untagged event has no ticket to look a title up for -
+    // routeEvent never uses `title` on that branch (routeUntaggedGateEvent
+    // takes no title at all), so the role name is passed through purely for
+    // a harmless, honest value rather than a lookup that could never match.
+    const title = event.backlogId ? titleForBacklogId(folders, event.backlogId) : (event.role ?? 'unknown');
     const result = await routeEvent(event, title, adapters.routeAdapters);
     if (result.posted) {
       alreadyEmitted.add(swarmEventKey(event));
