@@ -266,6 +266,7 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
+    "postcompile": "node scripts/stampBuildSha.js",
     "watch": "tsc -watch -p ./",
     "test": "npm run compile && node scripts/recordTestDuration.js",
     "tracer-bullet": "npm run compile && node out/tools/tracer-bullet-launcher.js",

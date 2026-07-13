@@ -49,6 +49,18 @@ if [[ -f "$DAEMON_DIR/handoffd.status.json" ]]; then
     > "$DAEMON_DIR/handoffd.status.json"
 fi
 
+# BL-328: build identity (staleness detection) - a SEPARATE dedicated file,
+# never a field merged into handoffd.status.json above, since that file is
+# exclusively owned by handoffd_supervisor.bb's own read-modify-write cycle
+# (a lost-update race between two writers is exactly what that ownership
+# rule exists to prevent - see handoffd.bb's own header comment). Both
+# daemons are launched together, right here, from the SAME git state, so
+# one shared build_sha covers both - never a crash if git is unavailable,
+# staleness detection just can't resolve this build.
+HANDOFF_BUILD_SHA="$(git -C "$WORKING_DIR" rev-parse HEAD 2>/dev/null || true)"
+printf '{"build_sha":"%s","started_at":"%s"}\n' "$HANDOFF_BUILD_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  > "$DAEMON_DIR/handoffd-build.json"
+
 if [[ -s "$HANDOFFD_LOG" ]]; then
   mv "$HANDOFFD_LOG" "$HANDOFFD_LOG.$(date -u +%Y%m%dT%H%M%SZ)"
 fi
