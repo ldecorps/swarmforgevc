@@ -194,6 +194,29 @@ test('resource anomalies is empty when no role has any data', () => {
   assert.deepEqual(sidecar.resourceAnomalies, []);
 });
 
+// BL-350: resourceSamplesObserved is the signal that distinguishes a
+// genuinely quiet day (sampled, nothing anomalous) from a sampler that
+// never ran at all - both previously produced the same empty
+// resourceAnomalies array with no way to tell them apart.
+
+test('resourceSamplesObserved is true once any role has a recorded sample, even with no anomaly', () => {
+  const resourceTrendsByRole = {
+    coder: {
+      currentRssBytes: 100_000_000, currentCpuPercent: 5,
+      rssTrend: { direction: 'flat', delta: 0, priorValue: 100_000_000, currentValue: 100_000_000, series: [] },
+      cpuTrend: { direction: 'flat', delta: 0, priorValue: 5, currentValue: 5, series: [] },
+    },
+  };
+  const sidecar = buildCostHealthSidecar('2026-07-09', {}, resourceTrendsByRole, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], []);
+  assert.deepEqual(sidecar.resourceAnomalies, []);
+  assert.equal(sidecar.resourceSamplesObserved, true);
+});
+
+test('resourceSamplesObserved is false when no role has any recorded sample (the broken-sampler case)', () => {
+  const sidecar = buildCostHealthSidecar('2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], []);
+  assert.equal(sidecar.resourceSamplesObserved, false);
+});
+
 // ── renderCostHealthSection (pure markdown renderer, cost-05b/05c) ──────
 
 test('a null sidecar renders an empty section (cost-05c)', () => {
@@ -216,6 +239,31 @@ test('the rendered section shows exactly the sidecar figures, nothing invented (
   assert.match(text, /BL-100: \$4\.50/);
   assert.match(text, /specced 3\/day/);
   assert.match(text, /closed 2\/day/);
+});
+
+// BL-350 headless-resource-sampling-03: a quiet period (samples exist, none
+// anomalous) states that explicitly, rather than rendering the same nothing
+// a never-sampled sidecar would.
+test('a quiet period states that no resource anomaly was found', () => {
+  const resourceTrendsByRole = {
+    coder: {
+      currentRssBytes: 100_000_000, currentCpuPercent: 5,
+      rssTrend: { direction: 'flat', delta: 0, priorValue: 100_000_000, currentValue: 100_000_000, series: [] },
+      cpuTrend: { direction: 'flat', delta: 0, priorValue: 5, currentValue: 5, series: [] },
+    },
+  };
+  const sidecar = buildCostHealthSidecar('2026-07-09', {}, resourceTrendsByRole, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], []);
+  const text = renderCostHealthSection(sidecar);
+  assert.match(text, /Resource anomalies:.*none found/);
+});
+
+// BL-350: the ORIGINAL defect - a sidecar with no resource data at all
+// (the never-sampled/broken case) must NOT claim "none found"; it says
+// nothing about resource anomalies, since it never checked.
+test('a sidecar with no resource samples at all renders no resource-anomalies line', () => {
+  const sidecar = buildCostHealthSidecar('2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], []);
+  const text = renderCostHealthSection(sidecar);
+  assert.doesNotMatch(text, /Resource anomalies/);
 });
 
 // ── writeCostHealthSidecar / commitCostHealthSidecar / sidecarPath ──────

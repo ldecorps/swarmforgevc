@@ -174,7 +174,63 @@ export interface SampledRole {
   getPid: () => number | null;
 }
 
-const DEFAULT_SAMPLER_INTERVAL_MS = 5 * 60 * 1000;
+// BL-350: exported (was DEFAULT_SAMPLER_INTERVAL_MS's own private const) so
+// the headless CLI entrypoint can gate its own sampling cadence against the
+// SAME interval the host-side setInterval sampler uses below - one shared
+// notion of "how often is a sample due", not two independently-tuned ones.
+export const DEFAULT_SAMPLER_INTERVAL_MS = 5 * 60 * 1000;
+
+// BL-350: one sampling tick, extracted out of startResourceSampler's
+// setInterval closure so a headless caller (no VS Code host, no timer) can
+// invoke exactly the same tracked-roles-> pid -> stats -> append sequence
+// on demand. Returns the count of roles actually sampled (a role whose pid
+// or stats could not be resolved is skipped, not counted) so a caller can
+// report what happened without re-deriving it.
+export function sampleRolesOnce(
+  targetPath: string,
+  roles: SampledRole[],
+  getStats: (pid: number) => { rssBytes: number; cpuPercent: number } | null = sampleProcessStats,
+  nowMs: number = Date.now()
+): number {
+  let sampledCount = 0;
+  for (const { role, getPid } of roles) {
+    const pid = getPid();
+    if (pid === null) {
+      continue;
+    }
+    const stats = getStats(pid);
+    if (!stats) {
+      continue;
+    }
+    appendResourceSample(targetPath, role, stats.rssBytes, stats.cpuPercent, nowMs);
+    sampledCount++;
+  }
+  return sampledCount;
+}
+
+// Pure: the latest recorded sample's timestamp across every role, or null
+// when no samples exist yet. Used to decide whether a sampling interval is
+// still covered by an already-recorded sample (BL-350's headless/host
+// dedup) without caring which caller wrote it.
+export function latestSampleAtMs(events: ResourceSampleEvent[]): number | null {
+  if (events.length === 0) {
+    return null;
+  }
+  return events.reduce((max, e) => Math.max(max, e.atMs), -Infinity);
+}
+
+// Pure: true when enough time has passed since the last recorded sample
+// (or none was ever recorded) that a new one is due. BL-350: shared by the
+// headless CLI to skip sampling when the host-side sampler (an editor
+// attached) already covered this interval - and vice versa, since neither
+// caller knows about the other beyond this shared telemetry file.
+export function shouldSampleThisInterval(
+  lastSampleAtMs: number | null,
+  nowMs: number,
+  intervalMs: number = DEFAULT_SAMPLER_INTERVAL_MS
+): boolean {
+  return lastSampleAtMs === null || nowMs - lastSampleAtMs >= intervalMs;
+}
 
 // scheduleTick/getStats are both injectable so the orchestration (does every
 // tracked role get sampled and appended on each tick, does a role with an
@@ -188,18 +244,7 @@ export function startResourceSampler(
   intervalMs: number = DEFAULT_SAMPLER_INTERVAL_MS
 ): NodeJS.Timeout {
   return scheduleTick(() => {
-    const nowMs = Date.now();
-    for (const { role, getPid } of roles) {
-      const pid = getPid();
-      if (pid === null) {
-        continue;
-      }
-      const stats = getStats(pid);
-      if (!stats) {
-        continue;
-      }
-      appendResourceSample(targetPath, role, stats.rssBytes, stats.cpuPercent, nowMs);
-    }
+    sampleRolesOnce(targetPath, roles, getStats, Date.now());
   }, intervalMs);
 }
 

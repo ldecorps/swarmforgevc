@@ -145,6 +145,7 @@ const DOMAINS = [
   require('./retireLegacyTelegramNarratorSteps'),
   require('./runHistoryHeadlessSteps'),
   require('./costPerTicketDiagramSteps'),
+  require('./headlessResourceSamplingSteps'),
 ];
 
 function registerSteps(registry) {
