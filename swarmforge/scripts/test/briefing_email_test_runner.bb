@@ -189,6 +189,38 @@
            "Headline\n"
            (first @sent-texts)))
 
+;; BL-337: the standing-rule-violations line reaches the actual sent
+;; content too, the same real-production-caller wiring bar established
+;; above for every other optional section.
+(let [dir (mk-tmp)
+      sent-texts (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text] (swap! sent-texts conj text) {:success true})
+    :standing-rule-violations-line (fn [] "Standing-rule violations: 111 cited recurrence(s) across 73 rule(s).")
+    :log! (fn [& _] nil)})
+  (assert= "BL-337: the standing-rule-violations line reaches the actual sent content"
+           true
+           (str/includes? (first @sent-texts) "Standing-rule violations: 111 cited recurrence(s)")))
+
+;; A nil-returning (or absent) :standing-rule-violations-line adapter
+;; degrades to the original content unchanged - same graceful-degrade
+;; contract as every other optional section.
+(let [dir (mk-tmp)
+      sent-texts (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text] (swap! sent-texts conj text) {:success true})
+    :standing-rule-violations-line (fn [] nil)
+    :log! (fn [& _] nil)})
+  (assert= "BL-337: a nil-returning :standing-rule-violations-line adapter leaves content unchanged"
+           "Headline\n"
+           (first @sent-texts)))
+
 ;; Both optional sections compose - each independently appended, neither
 ;; overwriting the other, in adapter-map order.
 (let [dir (mk-tmp)
