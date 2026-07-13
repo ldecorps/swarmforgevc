@@ -71,6 +71,7 @@ import { backlogForTopic } from '../concierge/topicRouter';
 import { runConciergeTick, ConciergeTickAdapters, BacklogFoldersSnapshot, TickState } from '../concierge/conciergeTick';
 import { readBacklogFolders } from '../panel/backlogReader';
 import { appendOperatorEvent } from '../bridge/operatorEventQueue';
+import { appendMessage } from '../concierge/blTopicStore';
 import { computeRoleGateStatesLive, RoleGateState } from '../bridge/gateSnapshot';
 import { computeCurrentHolders } from '../bridge/holisticProjections';
 import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
@@ -162,8 +163,9 @@ function writeTickState(targetPath: string, state: TickState): void {
 // TELEGRAM_TOPIC_MESSAGE (SUP-###) events into - a distinct event type
 // carrying backlogId, so the two paths never collide. What the Operator
 // does with this event is the Operator's own behavior (out of scope here).
-async function postOperatorContext(targetPath: string, backlogId: string, text: string): Promise<boolean> {
+export async function postOperatorContext(targetPath: string, backlogId: string, text: string): Promise<boolean> {
   appendOperatorEvent(targetPath, { type: 'TELEGRAM_BL_TOPIC_MESSAGE', backlogId, text });
+  appendMessage(targetPath, backlogId, { author: 'human', type: 'inbound', text });
   return true;
 }
 
@@ -295,7 +297,19 @@ async function connectAndRelayReplies(
         const { done, value } = await reader.read();
         return { done, chunk: done ? '' : decoder.decode(value, { stream: true }) };
       },
-      sendReply: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then(() => undefined),
+      // BL-329: serialises this reply into the ticket's own durable record,
+      // ONLY when topicId resolves back to an actual BL-### ticket - a
+      // SUP-### thread reply has no backlogForTopic mapping and is
+      // deliberately skipped (that channel has its own store, BL-329 is
+      // BL-topics only).
+      sendReply: (topicId, text) =>
+        sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then(() => {
+          const backlogId = backlogForTopic(readBacklogTopicMap(targetPath), topicId);
+          if (backlogId) {
+            appendMessage(targetPath, backlogId, { author: 'swarm', type: 'outbound', text });
+          }
+          return undefined;
+        }),
       // BL-325: falls back to the backlog topic map so a reply whose
       // threadId names a BL-### item (operator-decide.js's approve relay,
       // invoked with backlogId as threadId) reaches that item's own topic
@@ -450,6 +464,9 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
       },
       sendMessage: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then((r) => r.success),
       closeTopic: (topicId) => closeForumTopic(botToken, chatId, topicId).then((r) => r.success),
+      recordMessage: (backlogId, text) => {
+        appendMessage(targetPath, backlogId, { author: 'swarm', type: 'outbound', text });
+      },
     },
   };
 }
