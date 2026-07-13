@@ -11,7 +11,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
-const { execFileSync, spawnSync } = require('node:child_process');
+const { execFileSync, spawnSync, spawn } = require('node:child_process');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARMFORGE_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -172,6 +172,36 @@ function runShape(root, ticketPath, fakeBin) {
   return { stdout: result.stdout.trim(), stderr: result.stderr, code: result.status };
 }
 
+// BL-324 per-role-lifecycle-07/08: THE IDLE CHECK MUST BE PER-KILL, NOT
+// PER-BATCH. Recreates the architect's own real-world window ("manifest
+// validation plus a slurp of every paused ticket YAML" - a REAL number of
+// paused tickets, not a contrived delay) between the roster snapshot and a
+// given role's own kill: starts the REAL shape command running in the
+// background, then immediately drops a claimed parcel into the target
+// role's in_process queue - reliably landing before that role's own kill
+// is reached, the same way it would in a live swarm with a real backlog.
+function writePaddingPausedTickets(root, count) {
+  for (let i = 1; i <= count; i += 1) {
+    writePausedTicket(root, `BL-PAD-${i}`, 999, 'coder, QA');
+  }
+}
+
+function runShapeWithRacedClaim(root, ticketPath, fakeBin, raceRole) {
+  return new Promise((resolve) => {
+    const child = spawn('bb', [ROLE_LIFECYCLE_CLI, root, 'shape', ticketPath], { env: fakeEnv(fakeBin) });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (d) => (stdout += d));
+    child.stderr.on('data', (d) => (stderr += d));
+    const inProcessDir = path.join(root, '.worktrees', raceRole, '.swarmforge', 'handoffs', 'inbox', 'in_process');
+    fs.writeFileSync(
+      path.join(inProcessDir, '00_raced_claim.handoff'),
+      `from: coder\nto: ${raceRole}\npriority: 50\ntype: git_handoff\ntask: t\ncommit: abc\n\nbody\n`
+    );
+    child.on('exit', (code) => resolve({ stdout: stdout.trim(), stderr, code }));
+  });
+}
+
 function registerSteps(registry) {
   // ── Background ───────────────────────────────────────────────────────
   registry.define(/^a swarm whose roster of expected-alive roles is \.swarmforge\/roles\.tsv$/, (ctx) => {
@@ -189,8 +219,10 @@ function registerSteps(registry) {
     ctx.ticketPath = writeTicket(ctx.root, 'BL-900', 10, 'coder, cleaner, QA');
   });
 
-  registry.define(/^the swarm is brought to that ticket's shape$/, (ctx) => {
-    ctx.result = runShape(ctx.root, ctx.ticketPath, ctx.fakeBin);
+  registry.define(/^the swarm is brought to that ticket's shape$/, async (ctx) => {
+    ctx.result = ctx.raceRole
+      ? await runShapeWithRacedClaim(ctx.root, ctx.ticketPath, ctx.fakeBin, ctx.raceRole)
+      : runShape(ctx.root, ctx.ticketPath, ctx.fakeBin);
   });
 
   registry.define(/^exactly those three roles and the warm core are alive$/, (ctx) => {
@@ -231,6 +263,7 @@ function registerSteps(registry) {
 
   // ── per-role-lifecycle-03 ───────────────────────────────────────────────
   registry.define(/^a role holding a claimed parcel in its in_process queue$/, (ctx) => {
+    ctx.targetRole = 'cleaner';
     const dir = path.join(ctx.root, '.worktrees', 'cleaner', '.swarmforge', 'handoffs', 'inbox', 'in_process');
     fs.writeFileSync(path.join(dir, '00_x.handoff'), 'from: coder\nto: cleaner\npriority: 50\ntype: git_handoff\ntask: t\ncommit: abc\n\nbody\n');
   });
@@ -240,28 +273,106 @@ function registerSteps(registry) {
   });
 
   registry.define(/^that role is left alive$/, (ctx) => {
-    if (!rolesTsvHas(ctx.root, 'cleaner')) throw new Error('expected the busy role (cleaner) left in roles.tsv');
-    if (!sessionAlive(ctx.root, 'swarmforge-cleaner')) throw new Error('expected the busy role (cleaner) left with a real live session');
+    const role = ctx.targetRole;
+    if (!rolesTsvHas(ctx.root, role)) throw new Error(`expected the protected role (${role}) left in roles.tsv`);
+    // coordinator/specifier are master-resident rows this fixture never
+    // launches a REAL session for (nothing here parks/unparks them via a
+    // real tmux dance) - the roles.tsv row alone is the meaningful proof
+    // for them: remove-role-row! is park-role!'s own FIRST action, so a
+    // row still present already proves park was never even attempted.
+    if (REAL_LAUNCH_ROLES.includes(role) && !sessionAlive(ctx.root, `swarmforge-${role}`)) {
+      throw new Error(`expected the protected role (${role}) left with a real live session`);
+    }
   });
 
   registry.define(/^its parcel is not orphaned$/, (ctx) => {
-    const dir = path.join(ctx.root, '.worktrees', 'cleaner', '.swarmforge', 'handoffs', 'inbox', 'in_process');
-    if (!fs.existsSync(path.join(dir, '00_x.handoff'))) throw new Error('expected the in-process parcel to still be present, never orphaned by a park');
+    const dir = path.join(ctx.root, '.worktrees', ctx.targetRole, '.swarmforge', 'handoffs', 'inbox', 'in_process');
+    const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.handoff')) : [];
+    if (files.length === 0) throw new Error(`expected ${ctx.targetRole}'s in-process parcel to still be present, never orphaned by a park`);
+  });
+
+  // ── per-role-lifecycle-07 ───────────────────────────────────────────────
+  registry.define(/^a role that is idle when the swarm's idleness is surveyed$/, (ctx) => {
+    ctx.targetRole = 'architect';
+    ctx.raceRole = 'architect';
+    // A REAL number of paused tickets to slurp - the SAME real-world
+    // window the architect's own finding named, not a contrived delay.
+    writePaddingPausedTickets(ctx.root, 300);
+  });
+
+  registry.define(/^that role claims a parcel before its pane is killed$/, () => {
+    // Structural marker only - the actual injection happens inside "the
+    // swarm is brought to that ticket's shape" below (ctx.raceRole is
+    // already set), since a real race can only happen CONCURRENTLY with
+    // that step's own execution, never strictly "before" it in wall-clock
+    // terms.
+  });
+
+  // ── per-role-lifecycle-08 ───────────────────────────────────────────────
+  registry.define(/^the swarm has been brought to a promoted ticket's shape$/, async (ctx) => {
+    ctx.targetRole = 'architect';
+    ctx.raceRole = 'architect';
+    writePaddingPausedTickets(ctx.root, 300);
+    ctx.ticketPath = writeTicket(ctx.root, 'BL-909', 10, 'coder, QA');
+    ctx.result = await runShapeWithRacedClaim(ctx.root, ctx.ticketPath, ctx.fakeBin, ctx.raceRole);
+  });
+
+  registry.define(/^every parked role is examined$/, () => {
+    // Structural - the invariant check itself is the Then step below,
+    // examining every role roles.tsv no longer lists.
+  });
+
+  registry.define(/^no parked role holds a claimed parcel$/, (ctx) => {
+    const parkedRoles = REAL_LAUNCH_ROLES.filter((role) => !rolesTsvHas(ctx.root, role));
+    for (const role of parkedRoles) {
+      const dir = path.join(ctx.root, '.worktrees', role, '.swarmforge', 'handoffs', 'inbox', 'in_process');
+      const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.handoff')) : [];
+      if (files.length > 0) {
+        throw new Error(`invariant violated: parked role ${role} holds a claimed parcel: ${JSON.stringify(files)}`);
+      }
+    }
   });
 
   // ── per-role-lifecycle-04 ───────────────────────────────────────────────
-  registry.define(/^a promoted ticket whose manifest does not name a role$/, (ctx) => {
-    ctx.ticketPath = writeTicket(ctx.root, 'BL-904', 10, 'coder, QA');
-  });
-
-  registry.define(/^the next queued ticket's manifest does need that role$/, (ctx) => {
+  registry.define(/^a role that the next queued ticket's manifest needs$/, (ctx) => {
+    ctx.targetRole = 'architect';
     writePausedTicket(ctx.root, 'BL-905', 20, 'coder, architect, QA');
   });
 
   registry.define(/^that role is left alive rather than parked and immediately restarted$/, (ctx) => {
-    ctx.result = runShape(ctx.root, ctx.ticketPath, ctx.fakeBin);
     if (!rolesTsvHas(ctx.root, 'architect')) throw new Error('expected architect (needed by the next queued ticket) left in roles.tsv');
     if (!sessionAlive(ctx.root, 'swarmforge-architect')) throw new Error('expected architect left with its ORIGINAL live session, never torn down and rebuilt');
+  });
+
+  // ── per-role-lifecycle-09 (Scenario Outline: coordinator | specifier) ──
+  registry.define(/^(coordinator|specifier) is idle$/, (ctx, role) => {
+    ctx.targetRole = role;
+    // Both are master-resident rows already in roles.tsv from
+    // mkFixtureRoot's own setup (idle - no in_process/new handoffs ever
+    // written for either in this fixture).
+  });
+
+  // ── per-role-lifecycle-10 (specifier as the concrete instance of the
+  //    general rule: a role whose duties are never manifest-expressible) ──
+  registry.define(/^a role whose duties are never named by any ticket's manifest$/, (ctx) => {
+    ctx.targetRole = 'specifier';
+  });
+
+  registry.define(/^that role is idle$/, () => {
+    // Structural - specifier is already idle from fixture setup, same as
+    // per-role-lifecycle-09's own Given above.
+  });
+
+  registry.define(/^it is not parked into a state only a manifest could reverse$/, (ctx) => {
+    // The general INVARIANT this scenario names: warm-core-roles is a
+    // structural exemption (role-needed? OR's it in unconditionally),
+    // never dependent on any manifest ever naming the role again - so
+    // "left alive" (already asserted by the shared "that role is left
+    // alive" step above) already IS the proof; this step just names the
+    // stronger claim explicitly for the record.
+    if (!rolesTsvHas(ctx.root, ctx.targetRole)) {
+      throw new Error(`expected ${ctx.targetRole} never parked into a manifest-only-reversible state - its row is gone`);
+    }
   });
 
   // ── per-role-lifecycle-05 ───────────────────────────────────────────────

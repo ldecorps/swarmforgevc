@@ -50,11 +50,26 @@
 
 (defn- role-of-row [row] (first (str/split row #"\t")))
 
+;; Returns the removed row's own raw text (opaque to role_lifecycle_lib.bb,
+;; handed back verbatim to restore-role-row! below) - the per-kill re-check
+;; (scope 4b / per-role-lifecycle-07/08) needs a real row to restore if the
+;; role turns out to no longer be idle, and re-deriving one via row-for
+;; would re-run swarmforge.conf parsing for no reason when the exact row
+;; is already sitting right here.
 (defn- remove-role-row! [project-root role]
   (let [f (roles-file project-root)
-        remaining (remove #(= role (role-of-row %)) (read-roster-rows project-root))]
+        rows (read-roster-rows project-root)
+        removed (first (filter #(= role (role-of-row %)) rows))
+        remaining (remove #(= role (role-of-row %)) rows)]
     (fs/create-dirs (fs/parent f))
-    (spit (str f) (if (seq remaining) (str (str/join "\n" remaining) "\n") ""))))
+    (spit (str f) (if (seq remaining) (str (str/join "\n" remaining) "\n") ""))
+    removed))
+
+(defn- restore-role-row! [project-root role removed-row]
+  (when removed-row
+    (let [f (roles-file project-root)]
+      (fs/create-dirs (fs/parent f))
+      (spit (str f) (str removed-row "\n") :append true))))
 
 (defn- run-role-lifecycle-sh! [project-root subcommand role]
   (process/sh {:continue true} "bash" (str role-lifecycle-sh) project-root subcommand role))
@@ -91,12 +106,6 @@
       (throw (ex-info (str "could not respawn " role " (not configured for this pack?): " err)
                        {:role role :exit exit :err err})))))
 
-(defn- real-adapters [project-root]
-  {:remove-role-row! (fn [role] (remove-role-row! project-root role))
-   :add-role-row! (fn [role] (add-role-row! project-root role))
-   :kill-role-session! (fn [role] (kill-role-session! project-root role))
-   :respawn-role! (fn [role] (respawn-role! project-root role))})
-
 ;; ── real state gathering ────────────────────────────────────────────────
 
 (defn- count-handoff-files [dir]
@@ -104,17 +113,41 @@
     (count (filter #(and (fs/regular-file? %) (str/ends-with? (fs/file-name %) ".handoff")) (fs/list-dir dir)))
     0))
 
+(defn- role-idle-now? [role-info]
+  (operator-lib/role-idle?
+   {:inbox-new-count (count-handoff-files (handoff-lib/mailbox-dir role-info :new))
+    :in-process-count (count-handoff-files (handoff-lib/mailbox-dir role-info :in_process))}))
+
 (defn- current-roster [project-root]
-  "Every roles.tsv row paired with its idle state - the SAME
-   {:inbox-new-count :in-process-count} shape operator_lib/role-idle?
-   already expects, gathered via handoff_lib's own shared mailbox
-   resolver (never a hand-rolled path)."
+  "Every roles.tsv row paired with its idle state AND its own role-info
+   (worktree-path etc, captured NOW while the row still exists) - the
+   per-kill re-check below (scope 4b / per-role-lifecycle-07/08) needs
+   this to re-read the SAME mailbox directories after remove-role-row!
+   has already deleted the row from roles.tsv, when a fresh roles.tsv
+   lookup could no longer find it at all."
   (vec (for [role-info (handoff-lib/load-all-roles project-root)
              :when (:worktree-path role-info)]
          {:role (:role role-info)
-          :idle? (operator-lib/role-idle?
-                  {:inbox-new-count (count-handoff-files (handoff-lib/mailbox-dir role-info :new))
-                   :in-process-count (count-handoff-files (handoff-lib/mailbox-dir role-info :in_process))})})))
+          :idle? (role-idle-now? role-info)
+          :role-info role-info})))
+
+;; FAIL LOUD before the shape pass even starts: if a role's own mailbox
+;; can no longer be re-derived (should never happen - role-info is
+;; captured from the SAME live roles.tsv read this whole pass already
+;; used), still-idle? must never silently answer "yes" and let a park
+;; proceed on a check it could not actually perform.
+(defn- real-adapters [project-root roster]
+  (let [role-info-by-name (into {} (map (juxt :role :role-info) roster))]
+    {:remove-role-row! (fn [role] (remove-role-row! project-root role))
+     :still-idle? (fn [role]
+                    (if-let [role-info (get role-info-by-name role)]
+                      (role-idle-now? role-info)
+                      (throw (ex-info (str "cannot re-check idleness for " role " - no captured role-info")
+                                       {:role role}))))
+     :restore-role-row! (fn [role removed-row] (restore-role-row! project-root role removed-row))
+     :kill-role-session! (fn [role] (kill-role-session! project-root role))
+     :add-role-row! (fn [role] (add-role-row! project-root role))
+     :respawn-role! (fn [role] (respawn-role! project-root role))}))
 
 ;; Duplicated from operator_runtime.bb's own private read-yaml-field - the
 ;; same small live-glue duplication already established across this
@@ -160,7 +193,7 @@
           roster (current-roster project-root)]
       (try
         (let [result (role-lifecycle-lib/evaluate-role-lifecycle!
-                      roster current-needed next-needed (real-adapters project-root))]
+                      roster current-needed next-needed (real-adapters project-root roster))]
           (println (json/generate-string result))
           (System/exit 0))
         (catch Exception e

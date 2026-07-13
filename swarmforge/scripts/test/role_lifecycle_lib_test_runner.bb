@@ -20,6 +20,8 @@
 ;; ── role-needed? ────────────────────────────────────────────────────────
 (assert-true "warm-core (coordinator) is always needed, even with an empty manifest"
              (role-lifecycle-lib/role-needed? "coordinator" [] []))
+(assert-true "per-role-lifecycle-09: warm-core (specifier) is always needed, even with a manifest that omits it"
+             (role-lifecycle-lib/role-needed? "specifier" ["coder" "QA"] []))
 (assert-true "a role named by the current ticket's manifest is needed"
              (role-lifecycle-lib/role-needed? "coder" ["coder" "QA"] []))
 (assert-true "a role named ONLY by the next queued ticket's manifest is still needed (hysteresis)"
@@ -36,6 +38,16 @@
               (role-lifecycle-lib/parkable? {:role "coder" :idle? true} ["coder" "QA"] []))
 (assert-false "coordinator is never parkable regardless of idleness"
               (role-lifecycle-lib/parkable? {:role "coordinator" :idle? true} [] []))
+(assert-false "per-role-lifecycle-09: specifier is never parkable regardless of idleness or manifest omission"
+              (role-lifecycle-lib/parkable? {:role "specifier" :idle? true} ["coder" "QA"] []))
+(assert-true "specifier IS still parkable-eligible-by-need when a manifest legitimately names it - warm-core and explicit-need are an OR, not exclusive of ordinary parking logic elsewhere"
+             (role-lifecycle-lib/role-needed? "specifier" ["specifier" "coder" "QA"] []))
+
+;; ── per-role-lifecycle-10: a role whose duties are never named by any
+;;    ticket's manifest must never be parked - the GENERAL rule behind
+;;    warm-core-roles, tested via specifier as the concrete instance ──────
+(assert-false "per-role-lifecycle-10: a role with no manifest-expressible route back is never parked into a state only a manifest could reverse"
+              (role-lifecycle-lib/parkable? {:role "specifier" :idle? true} [] []))
 
 ;; ── roles-to-park (per-role-lifecycle-01/03/04/05) ────────────────────────
 (assert= "per-role-lifecycle-01: only the roles the manifest does not need are parked, coordinator excluded"
@@ -44,6 +56,13 @@
           [{:role "coordinator" :idle? true} {:role "specifier" :idle? true} {:role "coder" :idle? true}
            {:role "cleaner" :idle? true} {:role "architect" :idle? true} {:role "QA" :idle? true}]
           ["specifier" "coder" "QA"] []))
+
+(assert= "per-role-lifecycle-09: a manifest that OMITS specifier still never parks it - warm-core, not explicit need"
+         #{"cleaner" "architect"}
+         (role-lifecycle-lib/roles-to-park
+          [{:role "coordinator" :idle? true} {:role "specifier" :idle? true} {:role "coder" :idle? true}
+           {:role "cleaner" :idle? true} {:role "architect" :idle? true} {:role "QA" :idle? true}]
+          ["coder" "QA"] []))
 
 (assert= "per-role-lifecycle-03: a role holding an in-process parcel is NEVER parked, even though its manifest doesn't need it"
          #{}
@@ -92,17 +111,24 @@
          (role-lifecycle-lib/next-queued-roles []))
 
 ;; ── park-role!/unpark-role! (adapter-injected, ordering) ───────────────────
-(defn spy-adapters []
-  (let [calls (atom [])]
-    {:calls calls
-     :adapters {:remove-role-row! (fn [role] (swap! calls conj [:remove-role-row! role]))
-                :kill-role-session! (fn [role] (swap! calls conj [:kill-role-session! role]))
-                :add-role-row! (fn [role] (swap! calls conj [:add-role-row! role]))
-                :respawn-role! (fn [role] (swap! calls conj [:respawn-role! role]))}}))
+;; still-idle? defaults true (the common case) unless overridden per-role -
+;; simulates the FRESH re-check role_lifecycle_cli.bb's real adapter
+;; performs immediately before each kill.
+(defn spy-adapters
+  ([] (spy-adapters {}))
+  ([still-idle-overrides]
+   (let [calls (atom [])]
+     {:calls calls
+      :adapters {:remove-role-row! (fn [role] (swap! calls conj [:remove-role-row! role]) (str "removed-row-for-" role))
+                 :still-idle? (fn [role] (get still-idle-overrides role true))
+                 :kill-role-session! (fn [role] (swap! calls conj [:kill-role-session! role]))
+                 :restore-role-row! (fn [role removed-row] (swap! calls conj [:restore-role-row! role removed-row]))
+                 :add-role-row! (fn [role] (swap! calls conj [:add-role-row! role]))
+                 :respawn-role! (fn [role] (swap! calls conj [:respawn-role! role]))}})))
 
 (let [{:keys [calls adapters]} (spy-adapters)]
   (role-lifecycle-lib/park-role! "architect" adapters)
-  (assert= "park-role!: the roster row is removed BEFORE the session is killed"
+  (assert= "park-role!: the roster row is removed, THEN a fresh idle re-check, THEN the session is killed"
            [[:remove-role-row! "architect"] [:kill-role-session! "architect"]]
            @calls))
 
@@ -111,6 +137,24 @@
   (assert= "unpark-role!: the roster row is added BEFORE the session is respawned"
            [[:add-role-row! "architect"] [:respawn-role! "architect"]]
            @calls))
+
+;; ── per-role-lifecycle-07/08: THE IDLE CHECK MUST BE PER-KILL, NOT
+;;    PER-BATCH - a role that claims work AFTER the batch snapshot but
+;;    BEFORE its own kill must never actually be killed ──────────────────
+(let [{:keys [calls adapters]} (spy-adapters {"architect" false})
+      result (role-lifecycle-lib/park-role! "architect" adapters)]
+  (assert= "park-role!: a role no longer idle at the fresh re-check is NEVER killed"
+           [[:remove-role-row! "architect"] [:restore-role-row! "architect" "removed-row-for-architect"]]
+           @calls)
+  (assert= "park-role!: an aborted park is reported as such, not silently reported identically to a real one"
+           {:parked "architect" :aborted? true}
+           result))
+
+(let [{:keys [calls adapters]} (spy-adapters)
+      result (role-lifecycle-lib/park-role! "architect" adapters)]
+  (assert= "park-role!: a role still idle at the fresh re-check is reported as a plain, non-aborted park"
+           {:parked "architect"}
+           result))
 
 ;; ── evaluate-role-lifecycle! (the whole pass, adapter-injected) ───────────
 (let [{:keys [calls adapters]} (spy-adapters)
@@ -130,8 +174,18 @@
 (let [{:keys [calls adapters]} (spy-adapters)
       roster [{:role "coordinator" :idle? true} {:role "cleaner" :idle? false}]]
   (role-lifecycle-lib/evaluate-role-lifecycle! roster [] [] adapters)
-  (assert= "evaluate-role-lifecycle!: a busy role is never touched even when its own ticket doesn't need it"
+  (assert= "evaluate-role-lifecycle!: a busy role (per the BATCH snapshot) is never even attempted"
            []
+           @calls))
+
+(let [{:keys [calls adapters]} (spy-adapters {"cleaner" false})
+      roster [{:role "coordinator" :idle? true} {:role "cleaner" :idle? true}]
+      result (role-lifecycle-lib/evaluate-role-lifecycle! roster [] [] adapters)]
+  (assert= "per-role-lifecycle-08 invariant: a role idle at snapshot time but busy at the fresh re-check is left alive, never left parked"
+           [{:parked "cleaner" :aborted? true}]
+           (:parked result))
+  (assert= "per-role-lifecycle-08 invariant: the abort path never reaches kill-role-session!"
+           [[:remove-role-row! "cleaner"] [:restore-role-row! "cleaner" "removed-row-for-cleaner"]]
            @calls))
 
 (if (seq @failures)
