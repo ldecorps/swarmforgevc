@@ -122,6 +122,38 @@ function mkOperatorDecideCliFixture(role) {
   return root;
 }
 
+// BL-325 scope 6 fixture: TWO roles, each with its OWN worktree holding a
+// DIFFERENT backlog item (an in_process handoff naming it, mirroring
+// telegramFrontDeskBotCli.test.js's own readRoleTicket fixture shape), so
+// runApprove's live readRoleTicket(...) resolves role->backlogId for both -
+// the exact multi-gate scenario the count-based selector alone cannot
+// direct correctly.
+function mkMultiRoleOperatorDecideCliFixture(roleTickets) {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'aps-human-in-loop-cli-multi-')));
+  git(root, ['init', '-q']);
+  git(root, ['config', 'user.email', 't@t']);
+  git(root, ['config', 'user.name', 't']);
+  fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
+  const rolesTsvLines = [`specifier\tmaster\t${root}\tswarmforge-specifier\tSpecifier\tclaude\ttask`];
+  const sessionsTsvLines = [];
+  roleTickets.forEach(({ role, backlogId }, i) => {
+    const worktree = path.join(root, '.worktrees', role);
+    fs.mkdirSync(path.join(worktree, '.swarmforge', 'handoffs', 'inbox', 'in_process'), { recursive: true });
+    fs.writeFileSync(
+      path.join(worktree, '.swarmforge', 'handoffs', 'inbox', 'in_process', '00_test.handoff'),
+      `task: ${backlogId}-a-fine-feature\ndequeued_at: 2026-07-13T08:00:00Z\n\nbody\n`
+    );
+    rolesTsvLines.push([role, role, worktree, `swarmforge-${role}`, role, 'claude', 'task'].join('\t'));
+    sessionsTsvLines.push([i + 1, role, `swarmforge-${role}`, role, 'claude'].join('\t'));
+  });
+  fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), rolesTsvLines.join('\n') + '\n');
+  fs.writeFileSync(path.join(root, '.swarmforge', 'sessions.tsv'), sessionsTsvLines.join('\n') + '\n');
+  fs.writeFileSync(path.join(root, '.swarmforge', 'tmux-socket'), '/tmp/aps-human-in-loop-multi.sock');
+  git(root, ['add', '-A']);
+  git(root, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  return root;
+}
+
 function registerSteps(registry) {
   // ── Background ───────────────────────────────────────────────────────
   registry.define(/^a gated role is blocked on a backlog item awaiting human approval$/, (ctx) => {
@@ -245,6 +277,54 @@ function registerSteps(registry) {
     // (BL-285's own approve relay) - no bespoke script was written for this.
     if (!fs.existsSync(OPERATOR_DECIDE_JS)) {
       throw new Error('expected BL-285\'s own operator-decide.js to be the thing invoked');
+    }
+  });
+
+  // ── human-in-the-loop-closed-07: ticket-directed gate selection ────────
+  registry.define(/^two different backlog items are each waiting on their own approval question$/, (ctx) => {
+    ctx.roleA = 'coder';
+    ctx.roleB = 'cleaner';
+    ctx.backlogIdA = 'BL-401';
+    ctx.backlogIdB = 'BL-402';
+    ctx.cliRoot = mkMultiRoleOperatorDecideCliFixture([
+      { role: ctx.roleA, backlogId: ctx.backlogIdA },
+      { role: ctx.roleB, backlogId: ctx.backlogIdB },
+    ]);
+    // Both roles' panes read as gated (gatedTmuxRules' capture-pane rule
+    // matches any invocation regardless of session) - the real multi-gate
+    // condition that made the count-based selector ask-which.
+    ctx.fakeTmux = installFakeTmux(gatedTmuxRules());
+  });
+
+  registry.define(/^the human answers in the first item's topic$/, (ctx) => {
+    ctx.answerText = 'yes, approved';
+    // bl-topic-approval-sweep! passes the backlogId as threadId - the SAME
+    // real CLI invocation the deterministic consumer makes.
+    ctx.cliOut = execFileSync('node', [OPERATOR_DECIDE_JS, ctx.backlogIdA, 'approve', ctx.answerText], {
+      cwd: ctx.cliRoot,
+      encoding: 'utf8',
+    });
+  });
+
+  registry.define(/^the first item's gate is answered$/, (ctx) => {
+    const sendCalls = ctx.fakeTmux.calls().filter((args) => args.includes('send-keys'));
+    const targets = sendCalls.map((args) => args[args.indexOf('-t') + 1]);
+    if (!targets.some((t) => t && t.startsWith(`swarmforge-${ctx.roleA}`))) {
+      throw new Error(`expected send-keys targeting swarmforge-${ctx.roleA} (the first item's own role), got ${JSON.stringify(targets)}`);
+    }
+  });
+
+  registry.define(/^the human is not asked which gate they meant$/, (ctx) => {
+    if (/which/i.test(ctx.cliOut)) {
+      throw new Error(`expected no "which gate" disambiguation, got: ${JSON.stringify(ctx.cliOut)}`);
+    }
+  });
+
+  registry.define(/^the second item's gate is left untouched$/, (ctx) => {
+    const sendCalls = ctx.fakeTmux.calls().filter((args) => args.includes('send-keys'));
+    const targets = sendCalls.map((args) => args[args.indexOf('-t') + 1]);
+    if (targets.some((t) => t && t.startsWith(`swarmforge-${ctx.roleB}`))) {
+      throw new Error(`expected the second item's own role (swarmforge-${ctx.roleB}) to never receive send-keys, got ${JSON.stringify(targets)}`);
     }
   });
 
