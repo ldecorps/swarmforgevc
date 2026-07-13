@@ -134,6 +134,7 @@ const DOMAINS = [
   require('./topicLifecycleReconciliationSteps'),
   require('./frontDeskStarvationAlarmSteps'),
   require('./restrictedFrontDeskOperatorSteps'),
+  require('./shippedButInvisibleSteps'),
 ];
 
 function registerSteps(registry) {
