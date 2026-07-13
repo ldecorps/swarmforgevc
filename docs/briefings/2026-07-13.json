@@ -135,7 +135,7 @@
     {
       "role": "cleaner",
       "tokens": {
-        "value": 123232,
+        "value": 123408,
         "trend": {
           "series": [
             {
@@ -156,17 +156,17 @@
             },
             {
               "periodStart": "2026-07-13T00:00:00.000Z",
-              "value": 123232
+              "value": 123408
             }
           ],
-          "currentValue": 123232,
+          "currentValue": 123408,
           "priorValue": 181594,
-          "delta": -58362,
+          "delta": -58186,
           "direction": "down"
         }
       },
       "costUsd": {
-        "value": 78.02763374999999,
+        "value": 78.06935370000001,
         "trend": {
           "series": [
             {
@@ -187,12 +187,12 @@
             },
             {
               "periodStart": "2026-07-13T00:00:00.000Z",
-              "value": 78.02763374999999
+              "value": 78.06935370000001
             }
           ],
-          "currentValue": 78.02763374999999,
+          "currentValue": 78.06935370000001,
           "priorValue": 53.00793645000001,
-          "delta": 25.019697299999983,
+          "delta": 25.061417249999998,
           "direction": "up"
         }
       }
