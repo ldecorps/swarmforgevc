@@ -230,5 +230,35 @@ else
 fi
 cleanup_root "$ROOT"
 
+# ── per-role-lifecycle-07/08: THE IDLE CHECK MUST BE PER-KILL, NOT
+#    PER-BATCH. Recreates the architect's own real-world window ("manifest
+#    validation plus a slurp of every paused ticket YAML" - a REAL number
+#    of paused tickets, not a contrived delay) between the roster snapshot
+#    and a given role's own kill: a role idle when surveyed claims a
+#    parcel in that window and must still never be killed, its row must
+#    be restored, and the parcel must never be orphaned ─────────────────
+ROOT="$(mk_fixture_root)"
+CURRENT_ROOT="$ROOT"
+for i in $(seq 1 300); do
+  write_ticket "$ROOT/backlog/paused/BL-PAD-$i.yaml" 999 "coder, QA"
+done
+write_ticket "$ROOT/backlog/active/BL-908.yaml" 10 "coder, QA"
+INPROCESS_DIR="$ROOT/.worktrees/architect/.swarmforge/handoffs/inbox/in_process"
+env -u SWARMFORGE_CONFIG PATH="$FAKE_BIN:$PATH" \
+  bb "$ROLE_LIFECYCLE_CLI" "$ROOT" shape "$ROOT/backlog/active/BL-908.yaml" >/tmp/aps-role-lifecycle-race-out.txt 2>&1 &
+SHAPE_PID=$!
+printf 'from: coder\nto: architect\npriority: 50\ntype: git_handoff\ntask: t\ncommit: abc\n\nbody\n' \
+  > "$INPROCESS_DIR/00_raced_claim.handoff"
+wait "$SHAPE_PID" || true
+if roles_tsv_has "$ROOT" architect \
+   && session_alive "$ROOT" swarmforge-architect \
+   && [[ -f "$INPROCESS_DIR/00_raced_claim.handoff" ]]; then
+  pass "per-role-lifecycle-07/08: a role that claims work after the batch survey but before its own kill is left alive, roster row restored, parcel never orphaned"
+else
+  fail "expected the raced role left alive with its parcel intact, got roles.tsv-has=$(roles_tsv_has "$ROOT" architect; echo $?) session=$(session_alive "$ROOT" swarmforge-architect; echo $?) ($(cat /tmp/aps-role-lifecycle-race-out.txt 2>/dev/null))"
+fi
+cleanup_root "$ROOT"
+rm -f /tmp/aps-role-lifecycle-race-out.txt
+
 rm -rf "$FAKE_BIN"
 echo "role_lifecycle_cli smoke: ALL CHECKS PASSED"
