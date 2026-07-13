@@ -49,7 +49,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { getTelegramUpdates, sendTelegramMessage, createForumTopic, closeForumTopic, TelegramUpdate } from '../notify/telegramClient';
+import { getTelegramUpdates, sendTelegramMessage, createForumTopic, closeForumTopic, TelegramUpdate, TelegramPostFn } from '../notify/telegramClient';
 import { nextUpdateOffset } from '../notify/telegramInboundRelay';
 import {
   PollAdapters,
@@ -66,6 +66,9 @@ import {
   ReplyRelayLoopState,
   computeReplyRelayCycleResult,
   applyReplyRelayCycleResult,
+  decideEnsureOperatorTopicAction,
+  OPERATOR_TOPIC_NAME,
+  OPERATOR_SUBJECT_ID,
 } from './telegramFrontDeskBotCore';
 import { backlogForTopic } from '../concierge/topicRouter';
 import { runConciergeTick, ConciergeTickAdapters, BacklogFoldersSnapshot, TickState } from '../concierge/conciergeTick';
@@ -202,6 +205,31 @@ async function openSubject(targetPath: string, text: string): Promise<string> {
 
 function topicMapKey(topicId: number | undefined): string {
   return topicId === undefined ? DEFAULT_SUBJECT_KEY : String(topicId);
+}
+
+// BL-346: creates the standing "Operator" forum topic and binds it to the
+// reserved OPERATOR_SUBJECT_ID in the SAME map subjectForTopic/
+// topicForSubject already trust - BEFORE the poll loop ever starts, so no
+// inbound message can reach this topic while it is still unbound (the
+// auto-adopt trap the ticket calls out: an unbound topic would take the
+// open-for-topic branch and mint a throwaway SUP-### instead). Idempotent
+// across restarts: decideEnsureOperatorTopicAction finds the existing
+// binding and this is a no-op. A failed create degrades quietly (logged,
+// not thrown) - the rest of the bot (ordinary SUP-###/BL-### routing)
+// must not go down over it, and the next restart retries since the map
+// still lacks the binding.
+export async function ensureOperatorTopic(targetPath: string, botToken: string, chatId: string, postFn?: TelegramPostFn): Promise<void> {
+  const topicMap = readTopicMap(targetPath);
+  if (decideEnsureOperatorTopicAction(topicMap).kind === 'reuse') {
+    return;
+  }
+  const created = await createForumTopic(botToken, chatId, OPERATOR_TOPIC_NAME, postFn);
+  if (!created.success || created.messageThreadId === undefined) {
+    process.stderr.write(`ensureOperatorTopic: failed to create the Operator topic: ${created.error ?? 'no messageThreadId returned'}\n`);
+    return;
+  }
+  topicMap[topicMapKey(created.messageThreadId)] = OPERATOR_SUBJECT_ID;
+  writeTopicMap(targetPath, topicMap);
 }
 
 // BL-294: opens the subject, records the topicId(or DM default)->subjectId
@@ -557,6 +585,13 @@ export async function main(): Promise<void> {
   const principalUserId = requiredEnv('TELEGRAM_PRINCIPAL_USER_ID');
   const bridgeToken = requiredEnv('BRIDGE_TOKEN');
   const controlToken = requiredEnv('BRIDGE_CONTROL_TOKEN');
+
+  // BL-346: bind the standing Operator topic BEFORE any loop starts
+  // polling, so no inbound message can ever reach it while it is still
+  // unbound (see ensureOperatorTopic's own comment for the auto-adopt
+  // trap this ordering avoids). A failed create here must never block the
+  // rest of the bot's ordinary routing from coming up.
+  await ensureOperatorTopic(targetPath, botToken, chatId);
 
   // BL-302 LOOP ISOLATION: each of the three forever-loops runs inside its
   // own runContainedLoop - a fault (thrown exception) in one is caught,
