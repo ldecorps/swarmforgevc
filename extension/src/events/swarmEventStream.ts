@@ -57,7 +57,18 @@ export type SwarmEventType = 'TaskStarted' | 'NeedsApproval' | 'TaskCompleted';
 
 export interface SwarmEvent {
   type: SwarmEventType;
-  backlogId: string;
+  // BL-358: null for a NeedsApproval whose gated role holds no ticket right
+  // now (an "untagged gate") - TaskStarted/TaskCompleted and a tagged
+  // NeedsApproval always carry a real ticket id. Never guessed at a ticket;
+  // routing an untagged event to a real destination (the standing Operator
+  // topic) is topicRouter.ts's job, not this module's.
+  backlogId: string | null;
+  // Present only alongside backlogId: null - identifies WHICH role's
+  // question this is, since backlogId (the stream's usual identity) can't.
+  // Omitted entirely (not even as undefined) for every tagged event, so it
+  // never appears as a stray key on the common case (typed-events-02's own
+  // "names only its type and backlog item" contract).
+  role?: string;
   payload: Record<string, unknown>;
 }
 
@@ -94,25 +105,35 @@ function needsApprovalPayload(snippet: string | undefined): Record<string, unkno
   return snippet ? { snippet } : {};
 }
 
+// BL-358: a gate for a role holding no ticket used to be dropped entirely
+// here (there was nowhere untagged to send it). It now still emits -
+// backlogId: null, role identifying WHO is asking - so the question reaches
+// the human via the standing Operator topic (topicRouter.ts) instead of
+// vanishing into a tmux pane nobody is watching.
+function needsApprovalEvent(role: string, backlogId: string | undefined, snippet: string | undefined): SwarmEvent {
+  const payload = needsApprovalPayload(snippet);
+  return backlogId ? { type: 'NeedsApproval', backlogId, payload } : { type: 'NeedsApproval', backlogId: null, role, payload };
+}
+
 function diffNeedsApproval(prev: EventStreamSnapshot, curr: EventStreamSnapshot): SwarmEvent[] {
   const wasGatedByRole = new Map(prev.gates.map((g) => [g.role, g.gated]));
   const events: SwarmEvent[] = [];
   for (const gate of curr.gates) {
     const wasGated = wasGatedByRole.get(gate.role) ?? false;
     if (gate.gated && !wasGated) {
-      const backlogId = curr.roleTicket[gate.role];
-      if (backlogId) {
-        events.push({ type: 'NeedsApproval', backlogId, payload: needsApprovalPayload(gate.snippet) });
-      }
+      events.push(needsApprovalEvent(gate.role, curr.roleTicket[gate.role], gate.snippet));
     }
   }
   return events;
 }
 
 // A stable identity for dedup - two derivations that both notice the same
-// (type, backlogId) transition must agree this is "the same event."
+// (type, backlogId) transition must agree this is "the same event." An
+// untagged event (backlogId: null) keys by role instead (BL-358) - still
+// stable, still unique per (type, role), so an untagged gate that stays
+// captured across ticks dedupes exactly like a tagged one does.
 export function swarmEventKey(event: SwarmEvent): string {
-  return `${event.type}:${event.backlogId}`;
+  return `${event.type}:${event.backlogId ?? `role:${event.role}`}`;
 }
 
 // Pure: given the previously-seen snapshot (or null for a stream never

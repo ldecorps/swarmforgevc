@@ -13,6 +13,7 @@ const { runConciergeTick } = require(path.join(__dirname, '..', '..', '..', 'ext
 const BACKLOG_ID = 'BL-123';
 const TITLE = 'a fine feature';
 const ROLE = 'coder';
+const OPERATOR_TOPIC_ID = 700;
 
 function buildAdapters(ctx) {
   return {
@@ -46,6 +47,10 @@ function buildAdapters(ctx) {
       // BL-329: routeEvent (called by runConciergeTick) calls this
       // unconditionally after a successful send.
       recordMessage: () => {},
+      // BL-358: the standing Operator topic's id - a fixed fake, distinct
+      // from any per-ticket topicId this fixture creates, so an assertion
+      // can tell the two destinations apart.
+      ensureOperatorTopic: async () => OPERATOR_TOPIC_ID,
     },
   };
 }
@@ -86,9 +91,16 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^no NeedsApproval message is posted anywhere$/, (ctx) => {
-    if (ctx.sent.some((m) => m.text.startsWith('NeedsApproval'))) {
-      throw new Error(`expected no NeedsApproval message, got ${JSON.stringify(ctx.sent)}`);
+  // BL-358: an untagged gate now posts into the standing Operator topic
+  // (fixed at OPERATOR_TOPIC_ID in this fixture) rather than being dropped -
+  // asserts both that the message posted AND that it went to the Operator
+  // topic specifically, never a per-ticket one (no ticket exists to own).
+  registry.define(/^a NeedsApproval message is posted into the standing Operator topic$/, (ctx) => {
+    if (!ctx.sent.some((m) => m.text === `NeedsApproval: ${ROLE}` && m.topicId === OPERATOR_TOPIC_ID)) {
+      throw new Error(`expected a NeedsApproval message naming ${ROLE} in the Operator topic (${OPERATOR_TOPIC_ID}), got ${JSON.stringify(ctx.sent)}`);
+    }
+    if (ctx.created.length !== 0) {
+      throw new Error(`expected no per-ticket topic to be created for an untagged gate, got ${JSON.stringify(ctx.created)}`);
     }
   });
 

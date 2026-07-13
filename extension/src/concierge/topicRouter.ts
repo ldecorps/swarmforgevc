@@ -101,11 +101,16 @@ function taskStartedText(event: SwarmEvent): string {
 // is being asked rather than just the ticket id (the ticket's own
 // human-in-the-loop-closed-01 scenario). Every other event type carries no
 // snippet and keeps the exact prior text.
+//
+// BL-358: an untagged NeedsApproval (backlogId null) names its role instead
+// of a ticket id - "NeedsApproval: coder - <question>" - the ONE formatter
+// every event still goes through, tagged or not.
 export function messageTextForEvent(event: SwarmEvent): string {
   if (event.type === 'TaskStarted') {
     return taskStartedText(event);
   }
-  const base = `${event.type}: ${event.backlogId}`;
+  const identity = event.backlogId ?? event.role ?? 'unknown';
+  const base = `${event.type}: ${identity}`;
   const snippet = stringPayloadField(event, 'snippet');
   return snippet ? `${base} - ${snippet}` : base;
 }
@@ -116,7 +121,11 @@ export function messageTextForEvent(event: SwarmEvent): string {
 // metrics) needs a richer SwarmEvent payload, out of this ticket's scope
 // (BL-296 shipped payload {}).
 export function completionSummaryText(event: SwarmEvent, title: string): string {
-  return `${topicNameForItem(event.backlogId, title)} is complete.`;
+  // TaskCompleted is always tagged (diffTaskCompleted only ever fires for a
+  // real backlog id) - the fallback never actually triggers, same posture
+  // as routeCompletionEvent's own guard above.
+  const backlogId = event.backlogId ?? 'unknown';
+  return `${topicNameForItem(backlogId, title)} is complete.`;
 }
 
 export type TopicAction =
@@ -125,14 +134,22 @@ export type TopicAction =
 
 // Pure: given the event, the CURRENT backlog_id->topic map, and the item's
 // title, decides whether to reuse an already-mapped topic or create a new
-// one - no I/O, directly testable with a plain fixture map.
+// one - no I/O, directly testable with a plain fixture map. Only ever
+// called for a TAGGED event (backlogId non-null) - routeEvent below routes
+// an untagged NeedsApproval through routeUntaggedGateEvent instead, before
+// this function is ever reached; the throw here guards that invariant
+// rather than silently indexing the map with "null".
 export function decideTopicAction(event: SwarmEvent, topicMap: BacklogTopicMap, title: string): TopicAction {
+  const { backlogId } = event;
+  if (backlogId === null) {
+    throw new Error('decideTopicAction requires a tagged event - route an untagged NeedsApproval via routeUntaggedGateEvent instead');
+  }
   const text = messageTextForEvent(event);
-  const existingTopicId = topicMap[event.backlogId];
+  const existingTopicId = topicMap[backlogId];
   if (existingTopicId !== undefined) {
     return { kind: 'reuse', topicId: existingTopicId, text };
   }
-  return { kind: 'create', topicName: topicNameForItem(event.backlogId, title), text };
+  return { kind: 'create', topicName: topicNameForItem(backlogId, title), text };
 }
 
 export interface RouteAdapters {
@@ -151,6 +168,16 @@ export interface RouteAdapters {
   // convention (BL-322). backlogId is always available here directly, no
   // topic-id reverse lookup needed.
   recordMessage: (backlogId: string, text: string) => void;
+  // BL-358: resolves (creating on first use) the ONE standing Operator
+  // topic's id - the destination for a NeedsApproval whose gated role
+  // holds no ticket. Mirrors telegramFrontDeskBotCore.ts's own
+  // decideEnsureOperatorTopicAction reuse-or-create shape; wired live to
+  // the SAME {topicId: subjectId}/OPERATOR_SUBJECT_ID binding the
+  // front-desk bot's own ensureOperatorTopic already maintains - never a
+  // second Operator-topic notion. undefined only when creation itself
+  // failed (degrades to a skipped route, same as a failed createTopic
+  // above - never a fallback post anywhere else).
+  ensureOperatorTopic: () => Promise<number | undefined>;
 }
 
 export interface RouteResult {
@@ -166,6 +193,12 @@ export interface RouteResult {
 // closed topic can no longer be posted into) - close only follows a
 // successful post, never an attempted one.
 async function routeCompletionEvent(event: SwarmEvent, title: string, adapters: RouteAdapters): Promise<RouteResult> {
+  // TaskCompleted is always tagged (diffTaskCompleted only ever fires for a
+  // real backlog id) - this never actually triggers, but keeps the map
+  // lookup below honestly typed rather than asserting past it.
+  if (event.backlogId === null) {
+    return { posted: false, skipped: true };
+  }
   const topicId = adapters.getTopicMap()[event.backlogId];
   if (topicId === undefined) {
     return { posted: false, skipped: true };
@@ -176,6 +209,24 @@ async function routeCompletionEvent(event: SwarmEvent, title: string, adapters: 
     adapters.recordMessage(event.backlogId, text);
     await adapters.closeTopic(topicId);
   }
+  return { posted: ok, skipped: false };
+}
+
+// BL-358: the untagged-gate twin of routeCompletionEvent above - a
+// NeedsApproval whose gated role holds no ticket has no per-ticket topic to
+// reuse/create (decideTopicAction's whole job), so it goes to the ONE
+// standing Operator topic instead. recordMessage/recordTopicId are
+// deliberately never called here: those serialise into the per-ticket
+// blTopicStore/BacklogTopicMap, and this event belongs to no ticket - the
+// Operator topic's own id is already durably owned by the front-desk bot's
+// separate {topicId: subjectId} map, not this module's.
+async function routeUntaggedGateEvent(event: SwarmEvent, adapters: RouteAdapters): Promise<RouteResult> {
+  const topicId = await adapters.ensureOperatorTopic();
+  if (topicId === undefined) {
+    return { posted: false, skipped: true };
+  }
+  const text = messageTextForEvent(event);
+  const ok = await adapters.sendMessage(topicId, text);
   return { posted: ok, skipped: false };
 }
 
@@ -202,16 +253,23 @@ export async function routeEvent(event: SwarmEvent, title: string, adapters: Rou
   if (event.type === 'TaskCompleted') {
     return routeCompletionEvent(event, title, adapters);
   }
+  // BL-358: an untagged NeedsApproval has no ticket to reuse/create a topic
+  // for at all - routed to the standing Operator topic instead, before
+  // decideTopicAction (which requires a tagged event) is ever reached.
+  const { backlogId } = event;
+  if (backlogId === null) {
+    return routeUntaggedGateEvent(event, adapters);
+  }
   const action = decideTopicAction(event, adapters.getTopicMap(), title);
   if (action.kind === 'reuse') {
-    const ok = await sendAndRecord(action.topicId, action.text, event.backlogId, adapters);
+    const ok = await sendAndRecord(action.topicId, action.text, backlogId, adapters);
     return { posted: ok, skipped: false };
   }
   const created = await adapters.createTopic(action.topicName);
   if (!created.success || created.topicId === undefined) {
     return { posted: false, skipped: true };
   }
-  adapters.recordTopicId(event.backlogId, created.topicId);
-  const ok = await sendAndRecord(created.topicId, action.text, event.backlogId, adapters);
+  adapters.recordTopicId(backlogId, created.topicId);
+  const ok = await sendAndRecord(created.topicId, action.text, backlogId, adapters);
   return { posted: ok, skipped: false };
 }
