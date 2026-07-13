@@ -5,7 +5,7 @@
     {
       "role": "coordinator+specifier",
       "tokens": {
-        "value": 473487,
+        "value": 475300,
         "trend": {
           "series": [
             {
@@ -26,17 +26,17 @@
             },
             {
               "periodStart": "2026-07-13T00:00:00.000Z",
-              "value": 473487
+              "value": 475300
             }
           ],
-          "currentValue": 473487,
+          "currentValue": 475300,
           "priorValue": 1100592,
-          "delta": -627105,
+          "delta": -625292,
           "direction": "down"
         }
       },
       "costUsd": {
-        "value": 193.6173888,
+        "value": 193.70049119999996,
         "trend": {
           "series": [
             {
@@ -57,12 +57,12 @@
             },
             {
               "periodStart": "2026-07-13T00:00:00.000Z",
-              "value": 193.6173888
+              "value": 193.70049119999996
             }
           ],
-          "currentValue": 193.6173888,
+          "currentValue": 193.70049119999996,
           "priorValue": 409.70049179999967,
-          "delta": -216.08310299999968,
+          "delta": -216.0000005999997,
           "direction": "down"
         }
       }
