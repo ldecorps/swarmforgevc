@@ -1,0 +1,51 @@
+Mon Jul 13 13:18:20 BST 2026
+{"provider_state":"available","state":"idle","llm_running":false,"updated_at":"2026-07-13T12:17:52.563639408Z","pending_events":0,"front_desk":{"llm_running":false,"pending_events":0},"oldest_pending_event_age_ms":null,"queue_consuming":true,"tunnel":{"state":"running","name":"swarmforge-ops","url":"https://vscode.dev/tunnel/swarmforge-ops/home/carillon/swarmforgevc","updated_at":"2026-07-13T12:17:52.555110536Z"},"build_sha":"ebea4257f76ac38eb432aae605d0c827e517b9b3","agents_running":8,"provider":"claude"}
+
+2026-07-13T11:40:02.986832913Z reap-operator operator.done seen; killing RC window
+2026-07-13T11:40:34.792870468Z reap-operator inflight retired
+2026-07-13T12:09:26.030239999Z decision launch (pending= 1 )
+2026-07-13T12:09:26.030841338Z launch-operator inflight= 1
+2026-07-13T12:10:30.083051428Z reap-operator operator.done seen; killing RC window
+2026-07-13T12:11:02.127141884Z reap-operator inflight retired
+=== CODER PANE ===
+      144    require('./frontDeskSurvivesRebootSteps'),
+      145 +  require('./retireLegacyTelegramNarratorSteps'),
+      146  ];
+      147
+      148  function registerSteps(registry) {
+
+● Now recompiling and running the acceptance suite.
+
+  Running 1 shell command…
+  ⎿  $ cd /home/carillon/swarmforgevc/.worktrees/coder/extension && npm run
+     compile 2>&1 | tail -30
+
+* Thundering… (3h 41m 10s · ↓ 884.1k tokens)
+  ⎿  Tip: Use /clear to start fresh when switching topics and free up context
+
+────────────────────────────────────────────────────────────────────────────────
+❯ 
+
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · gh auth login
+=== COORD PANE ===
+
+  Summary of this stretch:
+  - BL-336 closed cleanly once QA identified the correct commit (cb24c041,
+  already on main) — the wrong-commit incident is fully resolved, and my rule
+  proposal already landed in QA.prompt.
+  - Specced follow-ups BL-349–353 (from BL-336's audit) came in; promoted
+  BL-349, BL-351, BL-352, BL-353 (all orthogonal), held BL-350 since its own
+  spec says it must sequence after BL-349 on the same file (handoffd.bb).
+  - Active set is now: BL-330, BL-338, BL-339, BL-344, BL-346, BL-349, BL-351,
+  BL-352, BL-353.
+
+  Idling for the next wake-up.
+
+✻ Churned for 3m 7s
+
+────────────────────────────────────────────────────────────────────────────────
+❯ 
+
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
