@@ -133,6 +133,7 @@ const DOMAINS = [
   require('./serialiseBlTopicContentSteps'),
   require('./topicLifecycleReconciliationSteps'),
   require('./frontDeskStarvationAlarmSteps'),
+  require('./restrictedFrontDeskOperatorSteps'),
 ];
 
 function registerSteps(registry) {

@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=dc2d8dd1d64d66f3f14a9e806ec6ed2ebb42d08cc73ba99ad06bbc50401b8274
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-13T08:15:38.322179958Z","feature_name":"The human is answered even while an Operator is busy","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-334-restricted-front-desk-operator.feature","background_hash":"80f1b212100c15e1d6e4e05dcfde47d51746eec9ad44a00811f83533c7817336","implementation_hash":"unknown","scenarios":[{"index":2,"name":"The front-desk Operator cannot act on the swarm","scenario_hash":"ded8cc8c1b8a902ff0a159b3c4f139788224f43ef90b0555695d1e375d65033d","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-07-13T08:15:32.172407101Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The human is answered even while an Operator is busy
 
 # BL-334: the single-Operator guard is keyed on a session name, and an interactive Operator sits
