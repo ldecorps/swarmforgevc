@@ -26,6 +26,17 @@ export interface GateSignal {
   snippet?: string;
 }
 
+// BL-322: derived straight from the ticket YAML already on disk (title,
+// notes: block scalar, first acceptance.steps entry) - never a new schema
+// field. diffTaskStarted below reads this to populate a TaskStarted
+// event's payload; messageTextForEvent (topicRouter.ts) is the one place
+// that actually composes/truncates the rendered summary text.
+export interface TicketSummary {
+  title: string;
+  notes?: string;
+  firstAcceptanceStep?: string;
+}
+
 export interface EventStreamSnapshot {
   backlog: BacklogFolderSnapshot;
   gates: GateSignal[];
@@ -34,6 +45,12 @@ export interface EventStreamSnapshot {
   // here has no resolvable ticket, so its gate signal is dropped rather
   // than emitted untagged.
   roleTicket: Record<string, string>;
+  // BL-322: every ACTIVE ticket's derived summary (TaskStarted only ever
+  // fires for an id entering backlog.active, so only active tickets need
+  // an entry). An id absent here (should not happen within one tick, but
+  // never a crash over a degraded topic opener) falls back to just the id
+  // in diffTaskStarted below.
+  ticketSummaries: Record<string, TicketSummary>;
 }
 
 export type SwarmEventType = 'TaskStarted' | 'NeedsApproval' | 'TaskCompleted';
@@ -45,14 +62,21 @@ export interface SwarmEvent {
 }
 
 function emptySnapshot(): EventStreamSnapshot {
-  return { backlog: { active: [], paused: [], done: [] }, gates: [], roleTicket: {} };
+  return { backlog: { active: [], paused: [], done: [] }, gates: [], roleTicket: {}, ticketSummaries: {} };
+}
+
+// BL-322: {} degrades to messageTextForEvent's own title-only fallback -
+// an id somehow missing from ticketSummaries (should not happen within
+// one tick) is never a crash, just a plainer topic opener.
+function taskStartedPayload(summary: TicketSummary | undefined): Record<string, unknown> {
+  return summary ? { ...summary } : {};
 }
 
 function diffTaskStarted(prev: EventStreamSnapshot, curr: EventStreamSnapshot): SwarmEvent[] {
   const prevActive = new Set(prev.backlog.active);
   return curr.backlog.active
     .filter((id) => !prevActive.has(id))
-    .map((id): SwarmEvent => ({ type: 'TaskStarted', backlogId: id, payload: {} }));
+    .map((id): SwarmEvent => ({ type: 'TaskStarted', backlogId: id, payload: taskStartedPayload(curr.ticketSummaries[id]) }));
 }
 
 function diffTaskCompleted(prev: EventStreamSnapshot, curr: EventStreamSnapshot): SwarmEvent[] {

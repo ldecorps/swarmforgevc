@@ -99,6 +99,6 @@ acceptance:
     - "A restart loses no messages in either direction"
     - "A process running the current build is not reported as stale"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: medium
