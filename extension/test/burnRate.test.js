@@ -2,7 +2,13 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { computeBurnRateTokensPerHour, computeBurnRateForRoles, DEFAULT_BURN_RATE_WINDOW_MS } = require('../out/metrics/burnRate');
+const {
+  computeBurnRateTokensPerHour,
+  computeBurnRateForRoles,
+  sumTokensInSpan,
+  measureParkCycleCost,
+  DEFAULT_BURN_RATE_WINDOW_MS,
+} = require('../out/metrics/burnRate');
 
 function usageRecord(overrides = {}) {
   return {
@@ -156,6 +162,89 @@ test('BL-312 burn-meter-master-resident-01: coordinator and specifier sharing on
   assert.deepEqual(rates, { 'coordinator+specifier': 100 * 4 });
   assert.equal(rates.coordinator, undefined);
   assert.equal(rates.specifier, undefined);
+});
+
+// ── sumTokensInSpan (pure) — BL-324 ─────────────────────────────────────
+
+test('BL-324: sumTokensInSpan is the raw total, not extrapolated to an hourly rate', () => {
+  const records = [
+    usageRecord({ messageId: 'a', timestampMs: NOW_MS, usage: { inputTokens: 100, outputTokens: 50, cacheCreationTokens: 10, cacheReadTokens: 5 } }),
+  ];
+  assert.equal(sumTokensInSpan(records, NOW_MS - 1000, NOW_MS + 1000), 165);
+});
+
+test('BL-324: sumTokensInSpan sums multiple in-span records', () => {
+  const records = [
+    usageRecord({ messageId: 'a', timestampMs: NOW_MS, usage: { inputTokens: 100, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 } }),
+    usageRecord({ messageId: 'b', timestampMs: NOW_MS + 500, usage: { inputTokens: 50, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 } }),
+  ];
+  assert.equal(sumTokensInSpan(records, NOW_MS - 1000, NOW_MS + 1000), 150);
+});
+
+test('BL-324: sumTokensInSpan excludes records outside [start, end]', () => {
+  const records = [
+    usageRecord({ messageId: 'before', timestampMs: NOW_MS - 2000, usage: { inputTokens: 999, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 } }),
+    usageRecord({ messageId: 'after', timestampMs: NOW_MS + 2000, usage: { inputTokens: 999, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 } }),
+  ];
+  assert.equal(sumTokensInSpan(records, NOW_MS - 1000, NOW_MS + 1000), 0);
+});
+
+test('BL-324: sumTokensInSpan is 0 for an empty span with no records', () => {
+  assert.equal(sumTokensInSpan([], NOW_MS, NOW_MS + 1000), 0);
+});
+
+// ── measureParkCycleCost (pure) — BL-324 per-role-lifecycle-06 ───────────
+
+test('BL-324 per-role-lifecycle-06: a park cycle that saved tokens reports a positive delta, not a loss', () => {
+  const parkedAtMs = NOW_MS;
+  const unparkedAtMs = NOW_MS + 60 * 60 * 1000; // parked for 1 hour
+  const records = [
+    // Prior idle window (just before parking): 10 tokens/15min -> 40 tokens/hr baseline.
+    usageRecord({ messageId: 'prior', timestampMs: parkedAtMs - 5 * 60 * 1000, usage: { inputTokens: 10, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 } }),
+    // Cold-start cost right after unpark: only 20 tokens - cheaper than the
+    // ~40-token/hr warm-idle baseline over the 1-hour parked span would have been.
+    usageRecord({ messageId: 'cold', timestampMs: unparkedAtMs + 1000, usage: { inputTokens: 20, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 } }),
+  ];
+  const report = measureParkCycleCost(records, parkedAtMs, unparkedAtMs, 5 * 60 * 1000, 15 * 60 * 1000);
+  assert.equal(report.coldStartTokens, 20);
+  assert.equal(report.warmIdleBaselineTokens, 40);
+  assert.equal(report.deltaTokens, 20);
+  assert.equal(report.isLoss, false);
+});
+
+test('BL-324 per-role-lifecycle-06: a park cycle whose churn cost MORE than staying warm is reported as a loss, not hidden', () => {
+  const parkedAtMs = NOW_MS;
+  const unparkedAtMs = NOW_MS + 60 * 60 * 1000;
+  const records = [
+    // A near-silent prior idle window - almost nothing would have been spent staying warm.
+    usageRecord({ messageId: 'prior', timestampMs: parkedAtMs - 5 * 60 * 1000, usage: { inputTokens: 1, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 } }),
+    // A big, expensive cold-start re-read of the full system/constitution/role prompt.
+    usageRecord({ messageId: 'cold', timestampMs: unparkedAtMs + 1000, usage: { inputTokens: 5000, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 } }),
+  ];
+  const report = measureParkCycleCost(records, parkedAtMs, unparkedAtMs, 5 * 60 * 1000, 15 * 60 * 1000);
+  assert.equal(report.coldStartTokens, 5000);
+  assert.ok(report.deltaTokens < 0);
+  assert.equal(report.isLoss, true);
+});
+
+test('BL-324: measureParkCycleCost never crashes on a zero-duration or negative-duration span', () => {
+  const report = measureParkCycleCost([], NOW_MS, NOW_MS - 1000, 60000, 60000);
+  assert.equal(report.warmIdleBaselineTokens, 0);
+  assert.equal(report.coldStartTokens, 0);
+  assert.equal(report.deltaTokens, 0);
+  assert.equal(report.isLoss, false);
+});
+
+test('BL-324 burn-meter reuse: measureParkCycleCost never reads outside its own [parkedAt-priorIdleWindow, parkedAt) / [unparkedAt, unparkedAt+coldStartWindow] spans', () => {
+  const parkedAtMs = NOW_MS;
+  const unparkedAtMs = NOW_MS + 60 * 60 * 1000;
+  const records = [
+    // Mid-park activity (should never count toward either side of the delta).
+    usageRecord({ messageId: 'mid-park', timestampMs: parkedAtMs + 30 * 60 * 1000, usage: { inputTokens: 99999, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 } }),
+  ];
+  const report = measureParkCycleCost(records, parkedAtMs, unparkedAtMs, 5 * 60 * 1000, 15 * 60 * 1000);
+  assert.equal(report.coldStartTokens, 0);
+  assert.equal(report.warmIdleBaselineTokens, 0);
 });
 
 test('BL-312 burn-meter-master-resident-03: a role on its own distinct worktreePath is unaffected by a collision elsewhere', () => {
