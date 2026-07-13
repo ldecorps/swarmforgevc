@@ -69,9 +69,10 @@ import {
 } from './telegramFrontDeskBotCore';
 import { backlogForTopic } from '../concierge/topicRouter';
 import { runConciergeTick, ConciergeTickAdapters, BacklogFoldersSnapshot, TickState } from '../concierge/conciergeTick';
+import { reconcileTopicLifecycle, ReconcileAdapters } from '../concierge/topicReconciliation';
 import { readBacklogFolders } from '../panel/backlogReader';
 import { appendOperatorEvent } from '../bridge/operatorEventQueue';
-import { appendMessage } from '../concierge/blTopicStore';
+import { appendMessage, readRecord } from '../concierge/blTopicStore';
 import { computeRoleGateStatesLive, RoleGateState } from '../bridge/gateSnapshot';
 import { computeCurrentHolders } from '../bridge/holisticProjections';
 import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
@@ -492,10 +493,26 @@ export function conciergeTickIntervalMs(rawEnv: string | undefined = process.env
 // intervalMs, forever. Every decision/persistence lives in
 // runConciergeTick (adapter-injected, unit-tested); this loop only owns
 // the timing.
+// BL-330: the state-based safety net beneath the diff path above -
+// isAlreadyReconciled is backed by BL-329's own durable record (a
+// completion summary matching text already recorded means this ticket's
+// topic was already brought to its completed state), never a second,
+// parallel marker file.
+function buildReconcileAdapters(targetPath: string, routeAdapters: ConciergeTickAdapters['routeAdapters']): ReconcileAdapters {
+  return {
+    getTopicMap: routeAdapters.getTopicMap,
+    isAlreadyReconciled: (backlogId, summaryText) =>
+      readRecord(targetPath, backlogId).messages.some((m) => m.type === 'outbound' && m.text === summaryText),
+    routeAdapters,
+  };
+}
+
 async function tickLoop(targetPath: string, botToken: string, chatId: string, intervalMs: number): Promise<void> {
   const adapters = buildConciergeTickAdapters(targetPath, botToken, chatId);
+  const reconcileAdapters = buildReconcileAdapters(targetPath, adapters.routeAdapters);
   for (;;) {
     await runConciergeTick(adapters);
+    await reconcileTopicLifecycle(adapters.readFolders().done, reconcileAdapters);
     await sleep(intervalMs);
   }
 }
