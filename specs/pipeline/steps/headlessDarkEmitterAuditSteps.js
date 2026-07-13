@@ -14,30 +14,14 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { execFileSync } = require('node:child_process');
+const { makeEvidenceReader } = require('./lib/evidenceReport');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const WORKTREE_ROOT = REPO_ROOT; // this coder worktree
 const MAIN_CHECKOUT = '/home/carillon/swarmforgevc';
 const EVIDENCE_DIR = path.join(REPO_ROOT, 'backlog', 'evidence');
 
-function findEvidenceFile() {
-  const candidates = fs
-    .readdirSync(EVIDENCE_DIR)
-    .filter((f) => f.startsWith('BL-336-headless-dark-emitter-audit-') && f.endsWith('.md'));
-  if (candidates.length === 0) {
-    throw new Error(`no BL-336 evidence report found under ${EVIDENCE_DIR}`);
-  }
-  candidates.sort();
-  return path.join(EVIDENCE_DIR, candidates[candidates.length - 1]);
-}
-
-function readEvidence(ctx) {
-  if (!ctx.evidence) {
-    ctx.evidencePath = findEvidenceFile();
-    ctx.evidence = fs.readFileSync(ctx.evidencePath, 'utf8');
-  }
-  return ctx.evidence;
-}
+const readEvidence = makeEvidenceReader(EVIDENCE_DIR, 'BL-336-headless-dark-emitter-audit-', 'BL-336');
 
 function normalizeWhitespace(s) {
   return s.replace(/\s+/g, ' ');
