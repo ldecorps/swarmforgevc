@@ -32,6 +32,26 @@ function weekStartMs(ms: number): number {
   return Math.floor(ms / WEEK_MS) * WEEK_MS;
 }
 
+// Split out of totalCostByTicket so that function's own branch count stays
+// low, same technique as contractView.ts's isContractShape.
+function accumulateRoleTicketCosts(
+  roleTelemetry: RoleCostTelemetry,
+  totals: Map<string, number>,
+  anyPriced: Set<string>,
+  seen: Set<string>
+): void {
+  for (const [ticketId, attributed] of Object.entries(roleTelemetry.byTicket)) {
+    if (ticketId === UNATTRIBUTED_TICKET_KEY) {
+      continue;
+    }
+    seen.add(ticketId);
+    if (attributed.costUsd !== null) {
+      totals.set(ticketId, (totals.get(ticketId) ?? 0) + attributed.costUsd);
+      anyPriced.add(ticketId);
+    }
+  }
+}
+
 // Pure: each ticket's total cost summed across every role-group's byTicket
 // bucket (costTelemetryByRole is already keyed by BL-312's combined,
 // non-double-counted role groups - this never re-derives that grouping,
@@ -46,16 +66,7 @@ export function totalCostByTicket(costTelemetryByRole: Record<string, RoleCostTe
   const seen = new Set<string>();
 
   for (const roleTelemetry of Object.values(costTelemetryByRole)) {
-    for (const [ticketId, attributed] of Object.entries(roleTelemetry.byTicket)) {
-      if (ticketId === UNATTRIBUTED_TICKET_KEY) {
-        continue;
-      }
-      seen.add(ticketId);
-      if (attributed.costUsd !== null) {
-        totals.set(ticketId, (totals.get(ticketId) ?? 0) + attributed.costUsd);
-        anyPriced.add(ticketId);
-      }
-    }
+    accumulateRoleTicketCosts(roleTelemetry, totals, anyPriced, seen);
   }
 
   const result: Record<string, number | null> = {};
@@ -69,6 +80,35 @@ export interface CostPerTicketSeriesResult {
   series: TrendSeriesPoint[];
   sampleCount: number;
   excludedCount: number;
+}
+
+type LifecycleCostOutcome = 'sampled' | 'excluded' | 'skipped';
+
+// Split out of computeCostPerTicketSeries so that function's own branch
+// count stays low, same technique as totalCostByTicket's own
+// accumulateRoleTicketCosts above. A ticket with no closeDateIso is not
+// yet delivered ('skipped', never counted either way); a delivered ticket
+// with no priced cost anywhere, or an unparseable close date, is
+// 'excluded' (see COST_PER_TICKET_BASIS) rather than silently $0.
+function accumulateLifecycleCost(
+  lifecycle: TicketLifecycleEvent,
+  totals: Record<string, number | null>,
+  byPeriod: Map<number, number[]>
+): LifecycleCostOutcome {
+  if (!lifecycle.closeDateIso) {
+    return 'skipped';
+  }
+  const cost = totals[lifecycle.ticketId];
+  const closeMs = Date.parse(lifecycle.closeDateIso);
+  if (cost === undefined || cost === null || Number.isNaN(closeMs)) {
+    return 'excluded';
+  }
+  const period = weekStartMs(closeMs);
+  if (!byPeriod.has(period)) {
+    byPeriod.set(period, []);
+  }
+  byPeriod.get(period)!.push(cost);
+  return 'sampled';
 }
 
 // Pure: buckets each DELIVERED (closeDateIso set) ticket's total cost into
@@ -90,21 +130,12 @@ export function computeCostPerTicketSeries(
   let excludedCount = 0;
 
   for (const lifecycle of lifecycles) {
-    if (!lifecycle.closeDateIso) {
-      continue;
-    }
-    const cost = totals[lifecycle.ticketId];
-    const closeMs = Date.parse(lifecycle.closeDateIso);
-    if (cost === undefined || cost === null || Number.isNaN(closeMs)) {
+    const outcome = accumulateLifecycleCost(lifecycle, totals, byPeriod);
+    if (outcome === 'sampled') {
+      sampleCount += 1;
+    } else if (outcome === 'excluded') {
       excludedCount += 1;
-      continue;
     }
-    sampleCount += 1;
-    const period = weekStartMs(closeMs);
-    if (!byPeriod.has(period)) {
-      byPeriod.set(period, []);
-    }
-    byPeriod.get(period)!.push(cost);
   }
 
   const series: TrendSeriesPoint[] = [...byPeriod.entries()]
