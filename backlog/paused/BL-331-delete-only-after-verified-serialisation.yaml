@@ -76,6 +76,6 @@ acceptance:
     - "Nothing is deleted inside the retention window"
     - "A topic with no record is never deleted"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: medium
