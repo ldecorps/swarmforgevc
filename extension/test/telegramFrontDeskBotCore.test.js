@@ -20,6 +20,7 @@ const {
   applyReplyRelayCycleResult,
   decideEnsureOperatorTopicAction,
   OPERATOR_SUBJECT_ID,
+  nextUpdateOffset,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
 const PRINCIPAL_ID = 111;
@@ -856,4 +857,15 @@ test('poll-resilience-03: a fault in one loop does not affect a concurrently-run
   // other.
   assert.equal(poisonCalls, 3);
   assert.deepEqual(siblingTicks, [0, 1, 2, 3, 4]);
+});
+
+// ── nextUpdateOffset (pure) — BL-353: moved from the retired
+//    telegramInboundRelay.ts, unrelated to the deleted relay class ──────
+
+test('nextUpdateOffset advances past the highest update_id seen', () => {
+  assert.equal(nextUpdateOffset([{ update_id: 5 }, { update_id: 7 }, { update_id: 6 }], 0), 8);
+});
+
+test('nextUpdateOffset never regresses when given an empty batch', () => {
+  assert.equal(nextUpdateOffset([], 12), 12);
 });
