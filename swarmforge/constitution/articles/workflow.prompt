@@ -50,6 +50,27 @@
 - This governs the specifier's intake order only. The coordinator's separate
   promotion order (paused before root) is unchanged.
 
+## Amending An In-Flight Ticket's Spec (BL-317/BL-325, 2026-07-13)
+- A ticket's spec can legitimately change WHILE it is in flight — a reviewer finds a
+  gap, the specifier sharpens the contract. Committing that amendment to `main` is
+  NOT enough to deliver it: every pipeline role works in an isolated
+  `.worktrees/<role>` checkout, so a role holding the parcel keeps reading its OWN
+  stale copy of the YAML and `.feature` file and will happily rebuild against a spec
+  that no longer exists.
+- **The specifier must send a `note` (priority `00`) to whichever role currently
+  HOLDS the parcel, naming the amendment commit** — a silent `main` commit is not a
+  handoff. If the parcel is expected to bounce back to an earlier role (usually the
+  coder) to satisfy the amendment, notify that role too; the holder is not always the
+  one who will do the rebuilding.
+- **The receiving role must merge `main` before continuing** so it actually sees the
+  amended spec. Re-read the ticket YAML and its feature file AFTER merging, not from
+  memory of the version it was originally handed — the contract is whatever `main`
+  now says, not what the parcel said when it arrived.
+- A spec amendment that adds SCENARIOS also adds work: the new scenarios need their
+  step handlers wired in the same parcel, or the acceptance runner hard-fails on the
+  unhandled scenario and blocks the hardener's gate (BL-233). An amendment is never
+  "just a doc change".
+
 ## Concurrent Work Orthogonality
 - Applies to the coordinator when `active_backlog_max_depth` > 1, so more than one
   parcel can be in flight at once.
