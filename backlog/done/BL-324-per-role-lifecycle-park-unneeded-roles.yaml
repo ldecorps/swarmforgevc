@@ -154,6 +154,6 @@ acceptance:
     - "A ticket with no manifest keeps the full chain alive"
     - "A park cycle reports its measured token cost, even when it is a loss"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: medium
