@@ -70,18 +70,30 @@
   (set (remove (set roster-role-names) current-needed)))
 
 (defn park-role!
-  "Adapter-injected: park ONE role. The roster row is removed FIRST, then
-   the pane is killed - never the reverse. The roster is the source of
-   truth for who is EXPECTED alive; removing the row first means a crash
-   between the two steps leaves at worst 'a ghost pane nobody expects'
-   (harmless - the next sweep's own roster read never sees it), never
-   'expected alive but the pane is already gone' (exactly the
-   AGENT_EXITED-respawn-fight state this whole ticket exists to prevent).
-   adapters: :remove-role-row! (fn [role]), :kill-role-session! (fn [role])."
+  "Adapter-injected: park ONE role. THE IDLE CHECK MUST BE PER-KILL, NOT
+   PER-BATCH: roles-to-park's own selection is a SNAPSHOT, and the window
+   between that snapshot and any one role's own kill (manifest validation
+   + slurping every paused ticket YAML + every earlier role's own park in
+   this same pass) is easily seconds - a role idle at survey time can
+   claim a parcel in that window. So: the roster row is removed FIRST
+   (same crash-safety rationale as before - a ghost pane with no roster
+   entry is harmless, 'expected alive but the pane is gone' is not), then
+   idleness is RE-CHECKED immediately before the kill, against the SAME
+   role this call is about, right now - not the stale snapshot. If the
+   role is no longer idle, the park is ABORTED: the kill never happens,
+   and the roster row is restored verbatim. Parking is always the
+   sacrificable half - a role must never be killed while holding a
+   parcel, full stop, even one claimed after the batch was decided.
+   adapters: :remove-role-row! (fn [role] -> removed-row, opaque to this
+   fn), :still-idle? (fn [role] -> bool, a FRESH check), :kill-role-
+   session! (fn [role]), :restore-role-row! (fn [role removed-row])."
   [role adapters]
-  ((:remove-role-row! adapters) role)
-  ((:kill-role-session! adapters) role)
-  {:parked role})
+  (let [removed-row ((:remove-role-row! adapters) role)]
+    (if ((:still-idle? adapters) role)
+      (do ((:kill-role-session! adapters) role)
+          {:parked role})
+      (do ((:restore-role-row! adapters) role removed-row)
+          {:parked role :aborted? true}))))
 
 (defn unpark-role!
   "Adapter-injected: bring ONE role back up. The roster row is re-added
