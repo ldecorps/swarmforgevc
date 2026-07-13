@@ -33,9 +33,68 @@ export function backlogForTopic(topicMap: BacklogTopicMap, topicId: number | und
   return found ? found[0] : undefined;
 }
 
+// BL-322: a topic opener is a HEADER, not a spec dump - each derived field
+// is capped well before Telegram's own 4096-char message limit, and the
+// whole composed message gets a second, final cap as a backstop (a ticket
+// whose title alone is enormous is not this ticket's problem to solve
+// perfectly, just never to send something Telegram would reject).
+const TASK_STARTED_FIELD_MAX_LENGTH = 300;
+const TASK_STARTED_MESSAGE_MAX_LENGTH = 1000;
+
+function truncate(text: string, maxLength: number): string {
+  return text.length <= maxLength ? text : `${text.slice(0, maxLength - 1)}…`;
+}
+
+// An event payload field, when it is a string - the shared shape guard
+// every optional payload field (title, notes, firstAcceptanceStep,
+// snippet) already needed independently below; extracted rather than
+// repeated per field (cleaner review: the repeated inline ternaries also
+// pushed taskStartedText's own CRAP over threshold at real coverage).
+function stringPayloadField(event: SwarmEvent, field: string): string | undefined {
+  const value = event.payload[field];
+  return typeof value === 'string' ? value : undefined;
+}
+
+// The topic-opening summary's own "what it solves" line: just the FIRST
+// paragraph of notes (split on the first blank line), then capped - never
+// the whole notes: block, which can run to dozens of lines on a real
+// ticket (BL-316's is ~40).
+function firstParagraph(text: string): string {
+  return text.split(/\n\s*\n/)[0].trim();
+}
+
+// BL-322: a TaskStarted event's payload (diffTaskStarted's own
+// taskStartedPayload) carries {title, notes?, firstAcceptanceStep?} when a
+// ticket summary was resolved, {} when it degraded (should not happen
+// within one tick, but never a crash) - the {} case falls back to the
+// pre-BL-322 bare "TaskStarted: BL-XXX" line, the ONE shape this function
+// can compose with no real data at all.
+function taskStartedText(event: SwarmEvent): string {
+  const title = stringPayloadField(event, 'title');
+  if (!title) {
+    return `${event.type}: ${event.backlogId}`;
+  }
+  const notes = stringPayloadField(event, 'notes');
+  const firstAcceptanceStep = stringPayloadField(event, 'firstAcceptanceStep');
+  const lines = [`What it is: ${title}`];
+  if (notes) {
+    lines.push(`What it solves: ${truncate(firstParagraph(notes), TASK_STARTED_FIELD_MAX_LENGTH)}`);
+  }
+  if (firstAcceptanceStep) {
+    lines.push(`How it works: ${truncate(firstAcceptanceStep, TASK_STARTED_FIELD_MAX_LENGTH)}`);
+  }
+  return truncate(lines.join('\n'), TASK_STARTED_MESSAGE_MAX_LENGTH);
+}
+
 // Human-readable, but always contains the event's own type verbatim - the
 // posted message must "name the event" (topic-routing-03), and never a
 // silently-drifting label that could stop matching a real SwarmEventType.
+//
+// BL-322: TaskStarted gets its own richer render (taskStartedText above) -
+// a what-it-is/what-it-solves/how-it-works summary instead of a bare
+// "TaskStarted: BL-XXX" line, derived from the ticket YAML already on
+// disk. TaskCompleted/NeedsApproval are UNCHANGED (regression, topic-
+// opening-summary-04) - only TaskStarted's own rendering branch is new.
 //
 // BL-325: a NeedsApproval event's payload.snippet (when present - the
 // gated role's own question text) is appended, so the message states WHAT
@@ -43,8 +102,11 @@ export function backlogForTopic(topicMap: BacklogTopicMap, topicId: number | und
 // human-in-the-loop-closed-01 scenario). Every other event type carries no
 // snippet and keeps the exact prior text.
 export function messageTextForEvent(event: SwarmEvent): string {
+  if (event.type === 'TaskStarted') {
+    return taskStartedText(event);
+  }
   const base = `${event.type}: ${event.backlogId}`;
-  const snippet = typeof event.payload.snippet === 'string' ? event.payload.snippet : undefined;
+  const snippet = stringPayloadField(event, 'snippet');
   return snippet ? `${base} - ${snippet}` : base;
 }
 

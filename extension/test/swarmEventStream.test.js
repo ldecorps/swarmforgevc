@@ -12,6 +12,7 @@ function snapshot(overrides = {}) {
     backlog: { active: [], paused: [], done: [] },
     gates: [],
     roleTicket: {},
+    ticketSummaries: {},
     ...overrides,
   };
 }
@@ -21,6 +22,25 @@ function snapshot(overrides = {}) {
 test('typed-events-01: a backlog item newly in the active folder emits TaskStarted tagged with it', () => {
   const prev = snapshot();
   const curr = snapshot({ backlog: { active: ['BL-500'], paused: [], done: [] } });
+  const events = deriveSwarmEvents(prev, curr);
+  assert.deepEqual(events, [{ type: 'TaskStarted', backlogId: 'BL-500', payload: {} }]);
+});
+
+test('BL-322: a TaskStarted event carries the ticket summary (title/notes/firstAcceptanceStep) when one is resolved', () => {
+  const prev = snapshot();
+  const curr = snapshot({
+    backlog: { active: ['BL-500'], paused: [], done: [] },
+    ticketSummaries: { 'BL-500': { title: 'a fine feature', notes: 'the notes', firstAcceptanceStep: 'the first step' } },
+  });
+  const events = deriveSwarmEvents(prev, curr);
+  assert.deepEqual(events, [
+    { type: 'TaskStarted', backlogId: 'BL-500', payload: { title: 'a fine feature', notes: 'the notes', firstAcceptanceStep: 'the first step' } },
+  ]);
+});
+
+test('BL-322: a TaskStarted event with no resolved summary still emits payload {} (degraded, never a crash)', () => {
+  const prev = snapshot();
+  const curr = snapshot({ backlog: { active: ['BL-500'], paused: [], done: [] }, ticketSummaries: {} });
   const events = deriveSwarmEvents(prev, curr);
   assert.deepEqual(events, [{ type: 'TaskStarted', backlogId: 'BL-500', payload: {} }]);
 });

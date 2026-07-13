@@ -371,12 +371,17 @@ async function subscribeReplies(
 }
 
 // BL-300: readBacklogFolders returns the panel's own richer BacklogItem
-// shape - narrowed to {id, title} here so conciergeTick.ts stays decoupled
-// from panel/backlogReader.ts's type (the same "core stays narrow, live
-// wrapper adapts the real type" split as every other adapter in this file).
+// shape - narrowed to {id, title, notes?, firstAcceptanceStep?} here so
+// conciergeTick.ts stays decoupled from panel/backlogReader.ts's type (the
+// same "core stays narrow, live wrapper adapts the real type" split as
+// every other adapter in this file). BL-322: notes/firstAcceptanceStep now
+// pass through unnarrowed (topic-opening-summary-01's own two derived
+// sources) instead of being dropped the way BL-301's gate snippet used to
+// be before BL-325 fixed that same class of narrowing.
 function toFoldersSnapshot(targetPath: string): BacklogFoldersSnapshot {
   const folders = readBacklogFolders(targetPath);
-  const pick = (items: { id: string; title: string }[]) => items.map((item) => ({ id: item.id, title: item.title }));
+  const pick = (items: { id: string; title: string; notes?: string; firstAcceptanceStep?: string }[]) =>
+    items.map((item) => ({ id: item.id, title: item.title, notes: item.notes, firstAcceptanceStep: item.firstAcceptanceStep }));
   return { active: pick(folders.active), paused: pick(folders.paused), done: pick(folders.done) };
 }
 
