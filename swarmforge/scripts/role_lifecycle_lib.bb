@@ -23,14 +23,39 @@
 
 (def warm-core-roles
   "Roles structurally exempt from parking regardless of any ticket's
-   manifest. Coordinator is the dispatcher and the most-woken role -
-   parking it is almost certainly never right, and it is also the one
-   role no pack can move off Claude today (BL-319). Never a member of
-   routing_manifest_lib's own standard-chain (BL-243: coordinator is not
-   a pipeline chain role at all), so it can never appear in a ticket's
-   declared roles: manifest either - the exemption below is the ONLY
-   place its warm-core status is expressed."
-  #{"coordinator"})
+   manifest - the GENERAL rule (corrected 2026-07-13 after the hardener's
+   review): a role belongs here when its duties are CONTINUOUS and
+   TICKET-INDEPENDENT, i.e. not expressible in any ticket's roles:
+   manifest, and therefore unreachable by the manifest-driven unpark path.
+   Parking such a role is a ONE-WAY DOOR - never park a role whose only
+   route back is a trigger its own work can never produce.
+
+   Coordinator is the dispatcher and the most-woken role - parking it is
+   almost certainly never right, and it is also the one role no pack can
+   move off Claude today (BL-319). It is never a member of
+   routing_manifest_lib's own standard-chain (BL-243: coordinator is not a
+   pipeline chain role at all), so it can never appear in a ticket's
+   declared roles: manifest at all.
+
+   Specifier's every real duty happens BEFORE a ticket exists: draining
+   the backlog root, draining .swarmforge/operator/INTAKE-*.md, reviewing
+   a rule_proposal from any role, writing the specs for tickets not yet
+   written. None of that is expressible in a manifest, because a manifest
+   can only name the roles needed to BUILD a ticket that already exists -
+   and the specifier's job is to bring tickets INTO existence. Park it and
+   no new ticket is ever written, so no manifest ever names it again, so
+   it is never unparked - the swarm silently loses its ability to take in
+   ANY new work while every health surface reads green (the same
+   circularity family as BL-318's hibernate-vs-self-generate). UNLIKE
+   coordinator, specifier IS a member of routing_manifest_lib's standard-
+   chain and a manifest MAY legitimately name it - that must simply keep
+   it alive (role-needed? already treats explicit-need and warm-core as
+   equivalent, an OR), never park it.
+
+   The other chain roles (cleaner, architect, hardender, documenter) are
+   genuinely per-ticket and remain parkable; coder and QA are always
+   required by BL-317's own validator regardless."
+  #{"coordinator" "specifier"})
 
 (defn role-needed?
   "True when role must stay alive: it is warm-core (always), OR the
