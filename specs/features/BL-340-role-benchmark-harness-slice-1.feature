@@ -66,3 +66,9 @@ Scenario: A model that cannot really perform the role is not scored as if it had
   Given a configured model cannot carry out the role's actions
   When the benchmark is run
   Then that model is not ranked as though it completed the task
+
+# BL-340 role-benchmark-harness-09
+Scenario: The report is committed, so it can be read from repository state alone
+  When the benchmark is run
+  Then the report is written as a committed artifact in the repository
+  And the report can be read back from repository state without the benchmark's live state
