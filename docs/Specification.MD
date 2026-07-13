@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 13, 2026 (BL-335)
+**Last Updated:** July 13, 2026 (BL-337)
 
 ## Overview
 
@@ -349,6 +349,29 @@ node extension/out/tools/stage-dwell-report.js [--hours N] [--json]
 ```
 
 Runnable from the repo root or any `.worktrees/<role>/` checkout, same project-root resolution as `swarm-metrics.js`. Defaults to a 24-hour window; pass `--hours` to change it and `--json` for machine-readable output. Reads every pipeline role's completed handoffs (never the coordinator, which sits outside the forward chain), including batch directories a batch role's `done_with_current_batch.sh` moves completed batches into. Fed by the same computation as the bridge's `GET /stage-dwell` endpoint, so the CLI and bridge always report the same numbers.
+
+#### Routing break-even report CLI (BL-343)
+
+A fourth headless CLI answers the question the dynamic-routing epic (auto-hibernate, routing manifest, quiet-period gate, per-role park/unpark) exists to answer: does parking idle roles actually save money?
+
+```sh
+node extension/out/tools/park-cycle-report.js
+```
+
+Runnable from the repo root or any `.worktrees/<role>/` checkout, same project-root resolution as `swarm-metrics.js`. Read-only and headless. It pairs every REAL park/unpark event logged by `role_lifecycle_cli.bb` (`.swarmforge/role-lifecycle/park-cycle-log.jsonl` — one line per real park or unpark, an aborted park that never actually removed a role from service is never logged) into complete cycles, then measures each cycle's real cold-start cost and idle-burn saving from the role's own transcript token usage — never an estimate derived from prompt size. For each role with at least one complete cycle it reports the break-even idle duration (the point below which parking that role is a net loss); `routingSavesMoney` is `null`, not `false`, whenever zero real cycles exist yet, so an unmeasured state is never misreported as a measured negative. Until a role has actually been parked and unparked in production, the report is honestly empty — that is expected, not a bug, and is not tuned away.
+
+#### Standing rule violation report CLI (BL-337)
+
+A Babashka CLI answers a direct question about the constitution itself: how often has a standing engineering rule actually been breached since it was written?
+
+```sh
+bb swarmforge/scripts/standing_rule_violations_cli.bb <project-root> report
+bb swarmforge/scripts/standing_rule_violations_cli.bb <project-root> for-ticket <BL-NNN>
+```
+
+`report` scans every top-level rule (a `- ` bullet or `N. ` numbered item, with its wrapped continuation lines) in every `swarmforge/constitution/articles/*.prompt` and `swarmforge/roles/*.prompt` file, and prints each rule's cited `BL-NNN` ticket ids alongside a total citation count across all rules. `for-ticket <BL-NNN>` answers "how many times was this specific ticket cited as a violation" directly. Both derive purely from the committed text of the constitution/role files — no new bookkeeping, no git history walk — so a rule added tomorrow, anywhere in those files, is counted with no code change. A rule's numerically-smallest citation is treated as that rule's own origin (the incident that prompted writing it), never counted as a violation of it; every other citation is a real recorded violation since the rule landed. A `(source: ..., BL-NNN)` citation credits authorship, not a violation, and is excluded. A rule with zero violations is still reported, with a count of zero, never omitted — an all-zero result is a claim to verify, not the assumed answer.
+
+The daily briefing email's `:standing-rule-violations-line` section (`swarmforge/scripts/handoffd.bb`, composed the same way as every other optional briefing line) surfaces the `report` total on every send, e.g. `Standing-rule violations: 38 cited recurrence(s) across 458 rule(s) since they landed (top: "..." x3, "..." x3, "..." x3)`.
 
 ---
 

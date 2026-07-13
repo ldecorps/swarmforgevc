@@ -17,9 +17,18 @@ import * as path from 'path';
 import { readTranscriptUsage } from '../metrics/transcriptUsage';
 import { computeRoutingBreakEvenReport, parseParkCycleLog, DEFAULT_COLD_START_WINDOW_MS } from '../metrics/parkCycleReport';
 import { resolveProjectRoot, loadRoles, printJsonToStdout, runCliMain } from './swarm-metrics';
+import { RoleEntry } from '../swarm/swarmState';
 
 export function parkCycleLogPath(projectRoot: string): string {
   return path.join(projectRoot, '.swarmforge', 'role-lifecycle', 'park-cycle-log.jsonl');
+}
+
+// Extracted so the lookup (and its "role not found" fallback) is unit-
+// tested in-process rather than living only inside main(), where it would
+// be exercised solely by a subprocess and read as 0%-covered, high-CRAP
+// logic despite a passing smoke test (BL-233 CLI-entrypoint CRAP trap).
+export function resolveRoleWorktreePath(roles: RoleEntry[], role: string): string | null {
+  return roles.find((r) => r.role === role)?.worktreePath ?? null;
 }
 
 export function main(): void {
@@ -29,12 +38,10 @@ export function main(): void {
   const content = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : '';
   const events = parseParkCycleLog(content);
 
-  const roleWorktreePath = (role: string): string | null => roles.find((r) => r.role === role)?.worktreePath ?? null;
-
   const report = computeRoutingBreakEvenReport(
     events,
     (worktreePath) => readTranscriptUsage(worktreePath),
-    roleWorktreePath,
+    (role) => resolveRoleWorktreePath(roles, role),
     DEFAULT_COLD_START_WINDOW_MS
   );
 
