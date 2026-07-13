@@ -140,6 +140,29 @@
   `nowMs`, threaded through to the `/stage-dwell` route and defaulting to
   the real clock (`undefined`) in production, so a test can now pin the
   same instant its fixture and the route both evaluate against.)
+- **The no-real-timers ban covers SUBPROCESS and real-daemon tests too, not just
+  in-process unit tests.** A shell test that spawns a real daemon and then polls for
+  tens of seconds — because the behavior under test sits behind a HARDCODED production
+  timeout — is the same defect as a `sleep` in a unit test, not an exception to the
+  rule: it is slow by construction, and the long teardown window it opens is exactly
+  where "it failed once, then passed twice on retry" nondeterminism lives. Retrying
+  past such a failure is NOT an acceptable disposition — a flaky test is a defect to
+  fix at its root, and a rule licensing the retry would let a genuinely intermittent
+  regression be waved through (the point of the shared-global and green-run-proves-
+  nothing rules above). Fix it in two places: (1) give the production timeout the same
+  env-override seam the file already uses for its OTHER tunables — in `handoffd.bb`
+  that is `env-ms` + `escalation-alarm-retry-config`, alongside the
+  `ESCALATION_ALARM_FORCE_RESULT` network seam these tests already rely on — and drive
+  it to a small value from the test, so the wiring proof runs in seconds and
+  deterministically; (2) tear the daemon down on its OWN observable exit signal (it
+  deletes `handoffd.pid` and logs `stopped` in its `finally`) before deleting its
+  state root — never `rm -rf` the root on a timing assumption about when it stopped.
+  (BL-349: `test_handoffd_stuck_escalation_email_wiring.sh` waits out the hardcoded 60s
+  `:stuckInProcessTimeoutSeconds` in `chase-sweep-config` by polling `sleep 0.25` for
+  up to 90s, and flaked once with a tmux-socket FileNotFoundException at teardown; the
+  hardener proposed a rule to RETRY it, which was rejected in favour of this one. The
+  same `touch stop; wait; rm -rf "$ROOT"` teardown is copy-pasted across at least five
+  handoffd wiring tests, so the window is latent in all of them, not local to BL-349.)
 
 ## Acceptance Pipeline
 - Use github.com/unclebob/Acceptance-Pipeline-Specification (pinned, see above)

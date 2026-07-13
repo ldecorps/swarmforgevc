@@ -1,0 +1,82 @@
+id: BL-359
+title: "The Operator keeps dropping — and the only way to keep it up today silently disables the swarm's own recovery"
+milestone: M8
+type: feature
+status: needs_design
+severity: medium
+priority: 4
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-always-on-operator.md — the human via Telegram SUP-2, 2026-07-13T15:16Z: 'I want operator up & always on. File a bug ticket as it keeps dropping'."
+
+notes: |
+  THE ASK. A persistent, always-available Operator the human can talk to at any time — not one that
+  vanishes between messages.
+
+  WHY IT DROPS TODAY — VERIFIED, NOT GUESSED. This is current DESIGNED behaviour, which is exactly
+  why it needs a ticket rather than a fix-in-place:
+    1. THE DISPOSABLE OPERATOR IS BUILT TO DIE. Its exit protocol is to write
+       `.swarmforge/operator/operator.done` as its final act; `reap-finished-operator!`
+       (`swarmforge/scripts/operator_runtime.bb`, ~L815-834) then calls `kill-operator-window!` and
+       tears down its tmux session. Observed live in `runtime.log`: `p-operator operator.done seen;
+       killing RC window`. So any Remote-Control window the human is watching disappears the moment
+       that run finishes its events. From his chair, that IS the Operator dropping.
+    2. ATTENDED MODE IS THE ONLY PERSISTENT MODE, AND NOTHING SUPERVISES IT.
+       `.swarmforge/operator/attend.sh` launches `claude --remote-control Operator` with an
+       instruction that explicitly overrides the exit protocol. But it is a bare foreground `exec
+       claude` in whichever terminal the human ran it from: no pid supervision, no autostart, no
+       restart-on-exit. If that terminal, WSL session or SSH connection ends, it is gone and nothing
+       brings it back. (Contrast: the runtime itself IS supervised — BL-304 put `operator_runtime`
+       under systemd.)
+    3. STAYING ATTENDED COSTS THE SWARM ITS RECOVERY ARM. The single Operator slot is gated by
+       `operator-running?` (~L278). An attended session holds that slot indefinitely, so no
+       disposable, tool-holding Operator can spawn: NO health sweeps, NO dead-pane respawn, NO stall
+       nudges, for the whole duration. BL-334 fixed the FRONT-DESK half of this (a restricted second
+       Operator keeps answering Telegram alongside an attended one) but NOT the swarm-control half.
+       Today's real dispatch gap (coder idle 2h45m with four tickets unbuilt) was caught by a
+       disposable Operator WITH TOOLS — an attended session sitting at a prompt would not have caught
+       it.
+  So "always on" and "the swarm keeps being supervised" are, as built, MUTUALLY EXCLUSIVE. That
+  tension is the substance of this ticket, and the reason it is not a one-line fix.
+
+  ── OPEN DESIGN QUESTION — THIS TICKET IS `needs_design`; THE HUMAN/COORDINATOR DECIDES ────────────
+  Is "always on" satisfied by a durable CONVERSATION SURFACE (the BL-346 standing Operator topic —
+  always answerable, backed by disposable runs, no idle token burn), or does the human specifically
+  want a long-lived INTERACTIVE SESSION that never exits (a permanently attended Opus session, which
+  burns tokens while idle and, unless the slot problem is solved, disables the swarm's recovery arm)?
+  These have very different costs and very different builds. Do not start until it is answered; the
+  specifier then amends `specs/features/BL-359-always-on-operator-presence.feature` to match.
+
+  CONSTRAINT ON ANY ANSWER. Whichever surface is chosen, the slot-holding interaction (point 3) MUST
+  be resolved as part of this ticket. An always-on Operator that silently disables health sweeps,
+  respawns and stall nudges is a STRICTLY WORSE failure mode than one that drops — because it is
+  invisible. Do NOT assume the fix is "just keep attend.sh alive".
+
+  PRIOR ART TO READ BEFORE DESIGNING:
+    - BL-334 — a restricted second Operator admitted alongside a slot-holder. The same "second lane"
+      trick may generalise from the front desk to swarm control.
+    - BL-304 — systemd supervision + autostart of `operator_runtime`: the pattern for surviving
+      terminal close, crash and reboot.
+    - BL-346 — the standing Operator topic (merged to main, c59c4dec): a persistent CHANNEL, which is
+      adjacent to but not the same thing as a persistent PROCESS.
+
+  E2E QA PROCEDURE (shape depends on the answer above): with the swarm running, address the Operator
+  and assert an answer comes back. Let a disposable run finish its events; address the Operator again
+  and assert it still answers. Kill the terminal/session the presence was started from and assert it
+  is still reachable. Kill the presence process itself and assert it returns without a human. Then,
+  WITH the presence live, kill a role's pane and leave a handoff unattended, and assert the swarm's
+  own health sweep still detects and recovers them — the presence must never hold the slot that
+  recovery needs.
+
+acceptance:
+  feature: specs/features/BL-359-always-on-operator-presence.feature
+  steps:
+    - "The human can reach the Operator at any moment"
+    - "The Operator presence does not vanish when a run finishes"
+    - "The Operator presence survives the terminal it was started from"
+    - "The Operator presence comes back by itself after a crash"
+    - "An always-on Operator never suspends the swarm's own recovery"
+
+human_approval: pending
+
+mutation_cost: medium
