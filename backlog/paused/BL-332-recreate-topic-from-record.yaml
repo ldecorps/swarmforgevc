@@ -1,0 +1,75 @@
+id: BL-332
+title: "Recreate a topic from scratch by replaying its serialised record — the round trip is the acceptance test"
+milestone: M8
+status: todo
+type: feature
+severity: medium
+priority: 20
+direction: human-requested
+depends_on: [BL-329, BL-331]
+source: "Slice 4 of the human's 2026-07-13 request, RESHAPED by the human mid-spec: 'serialise the topic content, so that it can be recreated from scratch.' Via .swarmforge/operator/INTAKE-archive-then-delete-done-topics.md. The first spec of this ticket (written from the pre-reshape intake) framed reopening as 'post a summary + a pointer to the archive'; the reshape asks for a FULL REPLAY, which is materially different and is what makes deletion reversible."
+
+notes: |
+  THIS IS THE SLICE THAT PROVES THE DESIGN. The point of serialising (BL-329) is that the topic
+  becomes a PROJECTION of durable repo state — disposable, because it can always be rebuilt.
+  Nothing demonstrates that except actually rebuilding it. So the ROUND TRIP — serialise ->
+  delete -> recreate, content matches the record — IS THE ACCEPTANCE TEST OF THE WHOLE EPIC, not
+  an incidental property of this ticket. Until it passes, "deletion is safe" is a claim, not a
+  fact.
+
+  THE SHARP EDGE THE HUMAN'S PHRASING HIDES. `reopenForumTopic` only works on a topic that STILL
+  EXISTS. Once deleted, the thread id is gone permanently. So "reopen after deletion" cannot mean
+  reopen at all — it can only mean CREATE A FRESH TOPIC and REPLAY the record into it. Design it
+  as that from the start rather than discovering it by calling reopenForumTopic on a dead id.
+
+  HONEST LIMIT — IT IS A FAITHFUL REPLAY, NOT A BYTE-IDENTICAL RESTORE. Telegram will not let a
+  bot repost history as its original authors or at its original timestamps. A recreated topic is a
+  RENDERED RECONSTRUCTION:
+    - every message is (re)posted by the BOT, now;
+    - the original author and timestamp must be rendered INTO the message text, or they are lost —
+      which is exactly why BL-329 must capture them;
+    - the thread id and message ids change, so backlog-topic-map.json must be rewritten;
+    - reactions, edits and media may not round-trip — DECIDE EXPLICITLY what is in scope and say
+      so, rather than leaving it to be found later.
+  This is fine. But it must be DESIGNED and LABELLED as a replay — e.g. a header message "topic
+  reconstructed from the repo record on <date>" — never quietly presented as the original
+  conversation. A reconstruction passed off as the original is a lie the human would have no way
+  to detect.
+
+  SCOPE:
+    1. Recreate: `createForumTopic(title)` + replay the serialised messages IN ORDER, each
+       rendering its original author and timestamp into the posted text.
+    2. Label the recreated topic as a reconstruction, with the date it was rebuilt.
+    3. Rewrite `backlog-topic-map.json` to the NEW thread id, so ordinary routing resumes and
+       nothing points at the dead one.
+    4. NON-DESTRUCTIVE READ: recreating reads the record, never consumes or moves it. The repo
+       copy stays the source of truth, so the topic can be rebuilt again (and again).
+    5. Decide and state the scope for reactions / edits / media explicitly.
+    6. If a topic was CLOSED but not yet DELETED (inside BL-331's retention window), a TRUE reopen
+       is possible and is the cheaper, higher-fidelity path — prefer it, and fall back to
+       recreate+replay only once the topic is actually gone. (`reopenForumTopic` does not exist in
+       telegramClient.ts today.)
+    7. Note the interaction with the re-promote-from-done path: a re-promoted multi-slice ticket
+       continues its REMAINING slices, so its rebuilt topic must not read as if work is starting
+       from zero.
+
+  E2E QA PROCEDURE: drive the FULL ROUND TRIP against a real topic — serialise a real
+  conversation (swarm and human messages both), delete the topic for real, then recreate it from
+  the record ALONE and assert the content matches. That cycle is the ticket; a test that only
+  exercises the recreate leg proves nothing about whether the record was sufficient. Assert the
+  rebuilt topic is labelled a reconstruction, that each replayed message shows its ORIGINAL author
+  and timestamp (not the bot's, not now), that the ticket maps to the new thread id, and that the
+  repo record is unchanged afterwards so it can be rebuilt again.
+
+acceptance:
+  feature: specs/features/BL-332-recreate-topic-from-record.feature
+  steps:
+    - "The round trip holds — serialise, delete, recreate, content matches"
+    - "The recreated topic is labelled as a reconstruction"
+    - "Each replayed message preserves its original author and timestamp"
+    - "The recreated topic becomes the ticket's live topic"
+    - "Recreating reads the record without consuming it"
+
+human_approval: pending
+
+mutation_cost: medium
