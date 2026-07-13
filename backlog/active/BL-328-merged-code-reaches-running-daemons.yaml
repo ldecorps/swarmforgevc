@@ -1,0 +1,104 @@
+id: BL-328
+title: "Merged code never reaches the running daemons — a QA-approved, merged fix can sit inert in production for a day"
+milestone: M8
+status: todo
+type: defect
+severity: high
+priority: 0
+direction: expedite
+depends_on: []
+source: "Raised by the human 2026-07-13 after a landed fix visibly failed to work, via .swarmforge/operator/INTAKE-merged-code-never-reaches-running-daemons.md; drained per BL-311's convention. Coordinator routed it HIGH. Tagged `expedite` because it is genuinely a defect and an operational blocker — it defeats QA — not merely because the human asked."
+
+notes: |
+  WHAT HAPPENS. The swarm merges source to `main`. Nothing recompiles `extension/out/`, and
+  nothing restarts the long-lived processes that run it. Those processes keep executing the
+  code they loaded into memory at startup, which can be days old. A fix is green, merged,
+  closed — and dead.
+
+  WHY IT IS NASTIER THAN IT LOOKS. It is INVISIBLE: ticket done, tests green, process alive,
+  heartbeat fresh — nothing anywhere says "the code you are running is not the code you
+  merged". It DEFEATS QA: QA verifies the source while production runs a stale artifact, so a
+  perfect QA pass tells you nothing about what is executing. It SILENTLY REVERTS fixes: a
+  supervisor respawning a crashed process re-launches the SAME stale build, so the system
+  self-heals back to the broken version. And it SCALES WITH UPTIME — the longer daemons stay
+  up (which is the design goal, per BL-304's systemd autostart), the more merged work
+  accumulates unexecuted.
+
+  MEASURED TWICE BY THE HUMAN. (1) BL-302/BL-303 (bot crash-loop resilience) landed; the bot
+  kept crash-looping because the running process was the pre-fix build. (2) The human typed a
+  question into a BL topic and was not heard even though BL-298, BL-320 and BL-325 had all
+  shipped — the running bot and bridge were 24.9 HOURS old and predated the code written to
+  hear them. Manual `npm run compile` + respawn fixed it. Nothing in the system would ever
+  have done that on its own.
+
+  THE INTAKE IS WRONG ABOUT BABASHKA — AND THAT CHANGES THE SCOPE. The intake says "Babashka
+  is unaffected — .bb scripts are interpreted and pick up changes on next invocation", and
+  scopes the fix to the TypeScript -> `extension/out/` -> Node path. That is TRUE only of
+  SHORT-LIVED CLI invocations. A LONG-LIVED `.bb` daemon loads its code once at startup and
+  holds it in memory exactly like Node does. Verified live on this box, 2026-07-13:
+    - `handoffd_supervisor.bb` started 22:00:26. BL-321's reaper fix committed 23:26:18 — 86
+      minutes LATER. So the live supervisor is running the OLD substring-match reaper RIGHT
+      NOW, despite BL-321 being built, QA-approved, merged and closed. (This is already
+      written up as a standing trap in hardender.prompt: a post-BL-321 flake against the live
+      process is expected until the supervisor restarts.)
+    - `front_desk_supervisor.bb` had been up 24.9 HOURS; `handoffd.bb` and
+      `operator_runtime.bb` ~4.3 hours.
+  So the affected set is EVERY long-lived process, not just the compiled ones. The difference
+  between languages is only whether a RECOMPILE is needed before the restart — Babashka needs
+  no compile step, but it still needs the RESTART. Scope the fix to "long-lived process",
+  never to "compiled process", or the Babashka daemons stay silently stale.
+
+  AFFECTED (the long-lived set): `extension/out/tools/telegram-front-desk-bot.js`,
+  `extension/out/tools/start-bridge-headless.js` (bridgeServer), anything else launched from
+  `extension/out/` and expected to stay up — PLUS `handoffd.bb`, `handoffd_supervisor.bb`,
+  `front_desk_supervisor.bb`, `operator_runtime.bb`.
+
+  SCOPE:
+    1. DETECTION FIRST — it is the cheap, high-value half, and it alone would have caught BOTH
+       occurrences. Every long-lived process records the build it is running (git SHA, and for
+       compiled processes the `out/` build identity) at STARTUP, into its status/health output.
+       A health check compares that against `main`'s HEAD and reports staleness explicitly:
+       "running <sha-a>, main is <sha-b>". This converts a silent, indefinite failure into an
+       obvious one. Ship this even if (2) slips.
+    2. CLOSE THE LOOP. On a merge that touches a long-lived process's source, recompile (for
+       the TypeScript ones) and restart the affected processes. Ownership is a real design
+       decision — coordinator bookkeeping close? handoffd's sweep? the front-desk supervisor?
+       — PICK EXACTLY ONE and do not add a second parallel mechanism. Two restart owners racing
+       each other is a worse bug than the one being fixed.
+    3. RESTART MUST NOT LOSE WORK. The bridge holds an in-memory reply cursor and the bot holds
+       a long-poll offset. Coordinate with BL-320's ack-driven PERSISTED cursor rather than
+       working around it — a restart must neither drop nor duplicate a message in either
+       direction.
+    4. THE SUPERVISOR MUST NOT RE-ARM THE STALE BUILD. If a supervisor respawns a process it
+       must bring up the CURRENT build, recompiling first when the source is newer. Today a
+       respawn faithfully restores the broken version, which is how a fixed bug "comes back".
+    5. OUT OF SCOPE: changing how anything is deployed or packaged. This is about making the
+       code that is already merged actually run.
+
+  RELATED. Same family as the runtime-wiring-slice rule ("green tests, code never actually
+  runs") but one layer lower: the code here is not merely unwired, it is merged, wired, and
+  STILL not running. This is the deployment layer.
+
+  E2E QA PROCEDURE: merge a real change to a long-lived process's source and assert, with NO
+  human action, that the running process executes the new code within the configured interval.
+  Assert against a REAL merge and a REAL running process — the entire bug is that the live path
+  is the one that never runs, so a fixture-level test proves nothing here. Then: (a) start a
+  process deliberately on an OLD build and assert health reports it stale, naming both builds;
+  (b) do the same for a long-lived BABASHKA daemon, not just a Node one (the intake's blind
+  spot); (c) kill a process running a stale build and assert its supervisor respawns it on the
+  CURRENT build; (d) assert a restart drops and duplicates NO Telegram message in either
+  direction.
+
+acceptance:
+  feature: specs/features/BL-328-merged-code-reaches-running-daemons.feature
+  steps:
+    - "A process running an older build than main is reported as stale"
+    - "A merge reaches the running processes with no human action"
+    - "Every long-lived process is covered, whatever language it is written in"
+    - "A supervisor respawn brings up the current build, not the dead process's build"
+    - "A restart loses no messages in either direction"
+    - "A process running the current build is not reported as stale"
+
+human_approval: approved
+
+mutation_cost: medium

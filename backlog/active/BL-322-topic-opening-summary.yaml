@@ -68,6 +68,6 @@ acceptance:
     - "An oversized notes block is truncated to a safe message length"
     - "Other event types are unchanged"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: low

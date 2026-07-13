@@ -1,0 +1,71 @@
+id: BL-331
+title: "Archive a done ticket's topic into the repo, then delete it — delete only on a VERIFIED archive"
+milestone: M8
+status: todo
+type: feature
+severity: medium
+priority: 20
+direction: human-requested
+depends_on: [BL-329, BL-330]
+source: "Slice 3 of the archive-then-delete-topics request raised by the human 2026-07-13 via .swarmforge/operator/INTAKE-archive-then-delete-done-topics.md; drained per BL-311's convention. This is the slice the human actually asked for; BL-329 and BL-330 are the prerequisites that make it safe."
+
+notes: |
+  THE PROBLEM. Every BL ticket gets a Telegram topic, and completed tickets' topics are already
+  closed automatically (BL-299, summary-then-close on TaskCompleted). But TELEGRAM DOES NOT HIDE
+  CLOSED TOPICS — close LOCKS a topic, it does not remove it from the list. So the list grows
+  without bound: 21 closed topics already sit beside the 2 live ones. Telegram offers exactly
+  three verbs for a forum topic — close (locks, stays visible), reopen (undo close), delete
+  (removes it, destroys history). There is NO per-topic archive. Deletion is therefore the only
+  way to shorten the list, and deletion is irreversible.
+
+  HARD DEPENDENCY — DO NOT BUILD BEFORE BL-329 AND BL-330 LAND. depends_on is a BUILD GATE here,
+  not a preference:
+    - BL-329 (transcript store): without it there is literally NOTHING TO ARCHIVE. A delete today
+      destroys the content outright, including the human's own messages, which — unlike the
+      swarm's — are not regenerable from the ticket and git.
+    - BL-330 (state-based reconciliation): a completion missed while the bot was down leaves a
+      topic that was never archived. A retention sweep that then deletes it as "an old done
+      ticket" destroys an UN-ARCHIVED transcript. This has already happened (BL-328: the bot ran
+      a 25-hour-stale build), so it is not hypothetical.
+
+  SCOPE:
+    1. On completion + retention window, EXPORT that ticket's transcript (BL-329) into the REPO —
+       next to the ticket, or under docs/ — so the record lives with the work rather than inside a
+       chat app.
+    2. DELETE ONLY AFTER A VERIFIED SUCCESSFUL ARCHIVE. This is the same ordering discipline
+       BL-299 already applies to close ("close only follows a SUCCESSFUL post, never an ATTEMPTED
+       one"). Here: delete only follows a VERIFIED-WRITTEN archive, never an attempted one. A
+       silently-failed archive followed by a delete is permanent, unrecoverable data loss.
+    3. A failed or partial archive ABORTS the deletion and surfaces LOUDLY. Never fail quietly
+       toward deletion — when in doubt, keep the topic.
+    4. NEVER delete a topic that has no verified archive, for ANY reason (including "it is old"
+       or "the ticket is done"). Absence of an archive is a refusal to delete, not an edge case.
+    5. DROP THE MAPPING from backlog-topic-map.json on delete, so nothing later posts into a dead
+       thread id.
+    6. RETENTION WINDOW, not immediate deletion: keep a recently-done ticket's topic for N days so
+       it is still glanceable in the app; sweep only older ones, and only once archived.
+    7. `deleteForumTopic` ALREADY EXISTS in extension/src/notify/telegramClient.ts (the intake says
+       it does not — it is wrong on that point). The destructive verb is already reachable; what is
+       missing is everything that makes calling it safe.
+    8. OUT OF SCOPE: recreating/rehydrating a topic when work reopens (BL-332).
+
+  E2E QA PROCEDURE: archive and delete a real topic end to end and assert the transcript is in the
+  repo BEFORE the topic is gone. Then the case that actually matters: INDUCE A REAL ARCHIVE WRITE
+  FAILURE (a read-only path, a full disk, a failing writer seam) and assert the deletion DOES NOT
+  HAPPEN and the failure is loud. A delete that outruns its archive is unrecoverable, so this must
+  be asserted against a real induced failure, never a mocked one. Assert too that a completed
+  ticket with NO archive is never deleted, that nothing is deleted inside the retention window,
+  and that after a delete the ticket no longer maps to a topic and nothing posts to the dead id.
+
+acceptance:
+  feature: specs/features/BL-331-archive-then-delete-done-topics.feature
+  steps:
+    - "A completed ticket's topic is exported into the repo before any deletion"
+    - "A failed archive aborts the deletion and surfaces loudly"
+    - "A deleted topic's mapping is dropped so nothing posts to a dead thread"
+    - "Nothing is deleted inside the retention window"
+    - "A topic that was never archived is never deleted"
+
+human_approval: pending
+
+mutation_cost: medium

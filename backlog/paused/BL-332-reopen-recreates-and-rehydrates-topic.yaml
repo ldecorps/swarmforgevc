@@ -1,0 +1,52 @@
+id: BL-332
+title: "Reopening a deleted ticket's topic means recreate + rehydrate from the archive, not a true reopen"
+milestone: M8
+status: todo
+type: feature
+severity: low
+priority: 30
+direction: human-requested
+depends_on: [BL-331]
+source: "Slice 4 of the archive-then-delete-topics request raised by the human 2026-07-13 via .swarmforge/operator/INTAKE-archive-then-delete-done-topics.md; drained per BL-311's convention. The human asked for this explicitly: 'so that Support could reopen it in case there is work to do on it'."
+
+notes: |
+  THE SHARP EDGE THE HUMAN'S PHRASING HIDES. The human asked the swarm to "archive the topic
+  before deleting, so that Support could reopen it in case there is work to do on it" — which is
+  exactly right as an intent. But Telegram's `reopenForumTopic` ONLY WORKS ON A TOPIC THAT STILL
+  EXISTS. Once deleted, the thread id is gone permanently and cannot be revived. So "reopen after
+  deletion" can only mean: CREATE A FRESH TOPIC and REHYDRATE it from the archive. That is a fine
+  design — but it must be designed as such up front, not discovered by someone calling
+  reopenForumTopic on a dead id and getting an error.
+
+  SCOPE:
+    1. When a deleted-topic ticket is put back into work (re-promoted, or bounced back), create a
+       FRESH topic for it.
+    2. Its opening message carries the ARCHIVED SUMMARY plus a POINTER to the full transcript in
+       the repo, so Support and the human pick up with context intact rather than a blank thread.
+       (This composes with BL-322, which is what makes an opening message informative at all.)
+    3. Re-map the ticket to the new topic id, so ordinary routing resumes.
+    4. The archived transcript in the repo is LEFT INTACT — rehydrating reads it, never consumes
+       or moves it. The repo copy is the durable record; the topic is a view of it.
+    5. Note the interaction with the existing re-promote-from-done path — a re-promoted multi-slice
+       ticket continues its REMAINING slices, so its fresh topic should not read as if the work is
+       starting from zero.
+    6. `reopenForumTopic` does NOT exist in telegramClient.ts today. If a topic was CLOSED but not
+       yet deleted (inside the retention window), a true reopen IS possible and is the cheaper
+       path — prefer it, and fall back to recreate+rehydrate only once the topic is actually gone.
+
+  E2E QA PROCEDURE: archive and delete a real ticket's topic, then re-promote that ticket and
+  assert a NEW topic appears carrying the archived summary and a working pointer to the repo
+  transcript. Assert the repo transcript is unchanged afterwards. Then assert the retention-window
+  case: a ticket whose topic is closed but NOT yet deleted is genuinely reopened in place, not
+  duplicated by a second topic.
+
+acceptance:
+  feature: specs/features/BL-332-reopen-recreates-and-rehydrates-topic.feature
+  steps:
+    - "Re-promoting the ticket gives it a fresh topic"
+    - "The fresh topic opens with the archived context"
+    - "The archived transcript is not destroyed by reopening"
+
+human_approval: pending
+
+mutation_cost: low

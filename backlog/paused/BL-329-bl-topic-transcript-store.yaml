@@ -1,0 +1,71 @@
+id: BL-329
+title: "BL topics have no transcript store — the human's messages are the irreplaceable content and nothing keeps them"
+milestone: M8
+status: todo
+type: defect
+severity: high
+priority: 5
+direction: expedite
+depends_on: []
+source: "Slice 1 of the archive-then-delete-topics request raised by the human 2026-07-13 via .swarmforge/operator/INTAKE-archive-then-delete-done-topics.md; drained per BL-311's convention. Coordinator routed it 'data-loss deps, slice it'. Tagged expedite: this is live data loss today, independent of the deletion feature that surfaced it."
+
+notes: |
+  THE BLOCKER UNDER THE HUMAN'S REQUEST. The human asked for done tickets' topics to be
+  archived and then deleted, so the Telegram list stops growing without bound. But THERE IS
+  NOTHING TO ARCHIVE YET: BL topics have no transcript store. SUP threads have one
+  (support_thread_store.bb); BL topics have none. So a delete today destroys the content
+  outright. Archiving must be built FIRST — hence this slice, and hence the hard dependency
+  chain BL-329 -> BL-330 -> BL-331 -> BL-332.
+
+  PRECISION ON "STORED NOWHERE" (verified; the intake is nearly right, and the nuance matters).
+  Inbound human messages ARE appended today: telegram-front-desk-bot.ts:166 calls
+  appendOperatorEvent with a TELEGRAM_BL_TOPIC_MESSAGE record, which lands append-only in
+  `.swarmforge/operator/events.jsonl`. But that is NOT a transcript:
+    - `.swarmforge/` is GITIGNORED local runtime state — not in the repo, not backed up, gone on
+      a fresh checkout or a new machine.
+    - It is a FIREHOSE of every operator event, with no per-topic view.
+    - The swarm's OUTBOUND messages (TaskStarted, NeedsApproval, completion summary, replies)
+      are recorded there NOT AT ALL.
+  So: the human's words survive only in a gitignored event log, and the swarm's half of the
+  conversation survives nowhere. That is enough to make deletion unsafe and enough to be a
+  defect on its own.
+
+  WHY IT IS NEWLY URGENT. BL-298 and BL-325 just made BL topics TWO-WAY — the human can now post
+  in them. The swarm's own messages are always regenerable from the ticket and git; THE HUMAN'S
+  ARE NOT. They are precisely the irreplaceable content, and they are currently kept nowhere
+  durable.
+
+  SCOPE:
+    1. Persist EVERY message in a BL topic — inbound AND outbound — into a durable, per-ticket
+       transcript as it happens. Mirror support_thread_store.bb's existing shape; do NOT invent
+       a second mechanism alongside it.
+    2. Record who sent it and when, so the transcript is a conversation, not a text dump.
+    3. Retrievable PER TICKET, not as a firehose — the archive step (BL-331) needs to export one
+       ticket's transcript, which events.jsonl structurally cannot give it.
+    4. Durable across a restart of the process that wrote it (BL-328 shows these processes get
+       restarted, and will get restarted far more often once BL-328 lands).
+    5. BACKFILL what already exists: the human's past BL-topic messages are recoverable from
+       `.swarmforge/operator/events.jsonl`'s TELEGRAM_BL_TOPIC_MESSAGE records. Import them
+       rather than starting the transcript empty and abandoning the history we do still have.
+    6. OUT OF SCOPE: exporting to the repo, deleting anything, retention windows (BL-331);
+       reconciliation of missed completions (BL-330).
+
+  E2E QA PROCEDURE: post a real message into a real BL topic as the human, and assert it appears
+  in that ticket's durable transcript with sender and timestamp. Then have the swarm post
+  (TaskStarted or a reply) and assert the OUTBOUND side is recorded too — the outbound half is
+  the one nothing keeps today, so a test that only covers inbound would pass while leaving the
+  gap. Restart the recording process and assert the transcript survives. Finally, run the
+  backfill against the real events.jsonl and assert previously-captured human messages land in
+  the right ticket's transcript.
+
+acceptance:
+  feature: specs/features/BL-329-bl-topic-transcript-store.feature
+  steps:
+    - "Every message in the topic is recorded, in both directions"
+    - "The transcript is retrievable per ticket, not as a firehose"
+    - "The transcript survives a restart of the process that wrote it"
+    - "Existing human messages already captured are backfilled, not lost"
+
+human_approval: pending
+
+mutation_cost: medium
