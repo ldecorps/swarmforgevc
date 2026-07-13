@@ -935,6 +935,22 @@
     (catch Exception e
       (log! "recert-notify-sweep-error" (.getMessage e)))))
 
+;; BL-353: shells to the compiled notify-dead-letters.js CLI, same posture
+;; as recert-notify-sweep! above - ports the retired legacy narrator's
+;; "dead-letter" signal (telegramNarrator.ts:diffNewDeadLetters) onto the
+;; headless front desk, into BL-346's reserved Operator topic (a dead
+;; letter is not reliably ticket-scoped, unlike a NeedsApproval gate). The
+;; CLI itself owns the growing-set announced state and delivery-based
+;; arming; this adapter only owns invoking it.
+(defn dead-letter-notify-sweep! []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "notify-dead-letters.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit)
+        (log! "dead-letter-notify" (str/trim out))))
+    (catch Exception e
+      (log! "dead-letter-notify-sweep-error" (.getMessage e)))))
+
 ;; BL-258: headless, host-independent morning trigger for briefing
 ;; GENERATION (complements briefing-email-sweep! above, which only handles
 ;; the SEND of an already-committed file). Reads the configured morning
@@ -1267,7 +1283,14 @@
                     (try
                       (recert-notify-sweep!)
                       (catch Exception e
-                        (log! "recert-notify-sweep-error" (.getMessage e)))))
+                        (log! "recert-notify-sweep-error" (.getMessage e))))
+                    ;; BL-353: dead-letter-notify sweep shares the same
+                    ;; cadence - no separate timeout, same rationale as
+                    ;; BL-222/BL-214/BL-258/BL-309/BL-316/BL-339 above.
+                    (try
+                      (dead-letter-notify-sweep!)
+                      (catch Exception e
+                        (log! "dead-letter-notify-sweep-error" (.getMessage e)))))
                   (spit (str heartbeat-file) (str (now) "\n"))
                   (when (zero? (mod cycle heartbeat-log-every-cycles))
                     (log! "heartbeat" (str "cycle=" cycle)))

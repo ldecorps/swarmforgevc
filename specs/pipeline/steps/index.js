@@ -41,7 +41,6 @@ const DOMAINS = [
   require('./gateAnswerSteps'),
   require('./deviceRegistrySteps'),
   require('./coordinatorProvisioningSteps'),
-  require('./telegramAdapterSteps'),
   require('./recertSenderAllowlistSteps'),
   require('./pwaCacheStampSteps'),
   require('./qaIntegratesCoordinatorBookkeepsSteps'),
@@ -143,6 +142,8 @@ const DOMAINS = [
   require('./standingOperatorTopicSteps'),
   require('./stuckEscalationEmailSteps'),
   require('./frontDeskSurvivesRebootSteps'),
+  require('./retireLegacyTelegramNarratorSteps'),
+  require('./runHistoryHeadlessSteps'),
 ];
 
 function registerSteps(registry) {

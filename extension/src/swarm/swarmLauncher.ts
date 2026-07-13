@@ -326,6 +326,15 @@ export function buildLaunchEnv(runName?: string, configPath?: string): NodeJS.Pr
     ...process.env,
     SWARMFORGE_TERMINAL: 'none',
     PATH: augmentPath(process.env.PATH, readCachedLoginShellPathDirsSync()),
+    // BL-352: the ONE shared env builder both VS Code launch paths use
+    // before spawning ./swarm (extension.ts's own launchSwarm command
+    // directly, and autoLaunchSwarmOnActivation via this file's own
+    // launchSwarm) - both already call runLog.ts's appendRun themselves,
+    // so swarmforge.sh's own new run-recording must skip whenever this
+    // flag is present, or the SAME launch would be recorded twice. A real
+    // shell launch never runs through buildLaunchEnv at all, so the flag
+    // is simply absent there - swarmforge.sh's own default is to record.
+    SWARMFORGE_SKIP_SHELL_RUN_RECORD: '1',
   };
 
   if (runName) {

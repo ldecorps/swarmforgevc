@@ -1282,6 +1282,25 @@ done
 
 echo ""
 echo -e "${GREEN}${BOLD}SwarmForge is ready.${RESET}"
+
+# BL-352 (BL-336 finding H5): record this launch into the SAME run history
+# runLog.ts's appendRun already defines (~/.swarmforge/runs.jsonl, the
+# bridge's own /runlog source) - only VS Code commands wrote to it before
+# this, so a swarm launched from the shell (which is how the real swarm
+# actually runs) never appeared there. Skipped when
+# SWARMFORGE_SKIP_SHELL_RUN_RECORD is set - a VS Code-initiated launch
+# already recorded itself before invoking this script (see
+# swarmLauncher.ts's own buildLaunchEnv), and recording it again here
+# would be a second, duplicate entry for the same run. Best-effort: a
+# missing/stale compiled CLI must never block a real launch over a
+# history-recording concern.
+if [[ "${SWARMFORGE_SKIP_SHELL_RUN_RECORD:-}" != "1" ]]; then
+  RECORD_RUN_CLI="$WORKING_DIR/extension/out/tools/record-run.js"
+  if [[ -f "$RECORD_RUN_CLI" ]]; then
+    node "$RECORD_RUN_CLI" start "$WORKING_DIR" >/dev/null 2>&1 || true
+  fi
+fi
+
 echo -e "Working directory: ${WORKING_DIR}"
 echo -e "Sessions:"
 for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
