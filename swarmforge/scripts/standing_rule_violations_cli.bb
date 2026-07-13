@@ -22,29 +22,15 @@
 (def script-dir (str (fs/path (fs/parent (fs/canonicalize *file*)))))
 
 (load-file (str (fs/path script-dir "standing_rule_violations_lib.bb")))
+(load-file (str (fs/path script-dir "standing_rule_violations_files.bb")))
 
 (defn usage []
   (binding [*out* *err*]
     (println "Usage: standing_rule_violations_cli.bb <project-root> report | for-ticket <BL-NNN>"))
   (System/exit 2))
 
-;; Every file this project treats as carrying a standing engineering rule:
-;; the constitution articles (numbered + the project-wide prompts) and
-;; every role prompt (architect.prompt's own co-change-tool citation lives
-;; here, not under constitution/articles/). A rule added tomorrow in any
-;; of these needs no code change - only a new FILE (a role prompt this
-;; project doesn't have yet) would, and that is an explicit, reviewed
-;; addition to the swarm's own role roster, not a silent gap.
-(defn- rule-source-files [project-root]
-  (let [articles-dir (fs/path project-root "swarmforge" "constitution" "articles")
-        roles-dir (fs/path project-root "swarmforge" "roles")
-        prompt-files (fn [dir] (if (fs/exists? dir)
-                                  (filter #(str/ends-with? (fs/file-name %) ".prompt") (fs/list-dir dir))
-                                  []))]
-    (concat (prompt-files articles-dir) (prompt-files roles-dir))))
-
 (defn- read-files [project-root]
-  (vec (for [f (rule-source-files project-root)]
+  (vec (for [f (standing-rule-violations-files/rule-source-files project-root)]
          {:path (str (fs/relativize (fs/path project-root) f)) :content (slurp (str f))})))
 
 (defn- run-report! [project-root]

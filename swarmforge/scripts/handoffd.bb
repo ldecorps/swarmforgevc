@@ -21,6 +21,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "closing_context_clear_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "standing_rule_violations_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "standing_rule_violations_files.bb")))
 
 (def poll-ms 1000)
 (def wake-message agent-runtime-lib/default-wake-chat-message)
@@ -811,18 +812,12 @@
 ;; own scan directly (constitution articles + role prompts), never
 ;; shelling to node. Any failure (a file unreadable, an unexpected repo
 ;; layout) degrades to omitting the line entirely - never crashes the
-;; sweep, never fabricates a count.
-(defn- rule-source-files []
-  (let [articles-dir (fs/path project-root "swarmforge" "constitution" "articles")
-        roles-dir (fs/path project-root "swarmforge" "roles")
-        prompt-files (fn [dir] (if (fs/exists? dir)
-                                  (filter #(str/ends-with? (fs/file-name %) ".prompt") (fs/list-dir dir))
-                                  []))]
-    (concat (prompt-files articles-dir) (prompt-files roles-dir))))
-
+;; sweep, never fabricates a count. File discovery itself is shared with
+;; standing_rule_violations_cli.bb via standing_rule_violations_files.bb -
+;; both used to carry their own copy of this filter, with the same bug.
 (defn standing-rule-violations-briefing-line []
   (try
-    (let [files (for [f (rule-source-files)]
+    (let [files (for [f (standing-rule-violations-files/rule-source-files project-root)]
                   {:path (str (fs/relativize (fs/path project-root) f)) :content (slurp (str f))})
           violations (standing-rule-violations-lib/scan-violations files)
           total (standing-rule-violations-lib/total-citation-count violations)]
