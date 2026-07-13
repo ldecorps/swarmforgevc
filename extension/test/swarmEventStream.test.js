@@ -78,13 +78,50 @@ test('typed-events-01: a backlog item newly in the done folder emits TaskComplet
   assert.deepEqual(events, [{ type: 'TaskCompleted', backlogId: 'BL-500', payload: {} }]);
 });
 
-// ── unresolvable-tag guard ────────────────────────────────────────────────
+// ── untagged gate (BL-358) ─────────────────────────────────────────────────
 
-test('a captured gate for a role holding no ticket is dropped, never emitted untagged', () => {
+test('BL-358: a captured gate for a role holding no ticket emits an untagged NeedsApproval (backlogId null, role set)', () => {
   const prev = snapshot({ gates: [{ role: 'coder', gated: false }] });
   const curr = snapshot({ gates: [{ role: 'coder', gated: true }], roleTicket: {} });
   const events = deriveSwarmEvents(prev, curr);
-  assert.deepEqual(events, []);
+  assert.deepEqual(events, [{ type: 'NeedsApproval', backlogId: null, role: 'coder', payload: {} }]);
+});
+
+test('BL-358: an untagged captured gate still carries its snippet', () => {
+  const prev = snapshot({ gates: [{ role: 'specifier', gated: false }] });
+  const curr = snapshot({
+    gates: [{ role: 'specifier', gated: true, snippet: 'Which design should I pick? (1/2/3)' }],
+    roleTicket: {},
+  });
+  const events = deriveSwarmEvents(prev, curr);
+  assert.deepEqual(events, [
+    { type: 'NeedsApproval', backlogId: null, role: 'specifier', payload: { snippet: 'Which design should I pick? (1/2/3)' } },
+  ]);
+});
+
+test('BL-358: an untagged gate that stays captured across two polls only emits once', () => {
+  const gated = snapshot({ gates: [{ role: 'coder', gated: true }], roleTicket: {} });
+  assert.deepEqual(deriveSwarmEvents(gated, gated), []);
+});
+
+test('BL-358: an untagged gate is dedup-keyed per role, distinct from a tagged event and from other roles', () => {
+  const a = { type: 'NeedsApproval', backlogId: null, role: 'coder', payload: {} };
+  const b = { type: 'NeedsApproval', backlogId: null, role: 'coder', payload: { snippet: 'different' } };
+  const c = { type: 'NeedsApproval', backlogId: null, role: 'cleaner', payload: {} };
+  const d = { type: 'NeedsApproval', backlogId: 'BL-500', payload: {} };
+  assert.equal(swarmEventKey(a), swarmEventKey(b));
+  assert.notEqual(swarmEventKey(a), swarmEventKey(c));
+  assert.notEqual(swarmEventKey(a), swarmEventKey(d));
+});
+
+test('BL-358: an untagged gate is idempotent via the durable prior-emitted set, same as a tagged one', () => {
+  const curr = snapshot({ gates: [{ role: 'coder', gated: true }], roleTicket: {} });
+  const first = deriveSwarmEvents(null, curr);
+  assert.deepEqual(first, [{ type: 'NeedsApproval', backlogId: null, role: 'coder', payload: {} }]);
+
+  const alreadyEmitted = new Set(first.map(swarmEventKey));
+  const second = deriveSwarmEvents(null, curr, alreadyEmitted);
+  assert.deepEqual(second, []);
 });
 
 // ── no-real-transition guards ─────────────────────────────────────────────

@@ -1,0 +1,75 @@
+id: BL-358
+title: "A blocked role holding no ticket is dropped, not asked — its question reaches the human nowhere"
+milestone: M8
+type: defect
+status: todo
+severity: high
+priority: 3
+direction: expedite
+depends_on: []
+source: "backlog/INTAKE-approvals-asked-in-ticket-topics.md (GAP 2) — observed live 2026-07-13 16:26, and again ~10 minutes later when this very specifier pane blocked on a question no human could see."
+
+notes: |
+  THE DEFECT. `diffNeedsApproval` (`extension/src/events/swarmEventStream.ts:97`) keys a gate
+  transition by the ticket the gated ROLE currently holds (`curr.roleTicket[gate.role]`) and
+  DELIBERATELY DROPS a gate it cannot tag, rather than guess a topic — see the comment at
+  `extension/src/concierge/conciergeTick.ts:99-114` and the `if (backlogId)` guard in
+  swarmEventStream.ts:105. At the time that rule was written, dropping was the only honest option:
+  there was nowhere untagged to send it.
+
+  OBSERVED LIVE AT 16:26 TODAY.
+    - `gates`: specifier `gated: true` — its pane was sitting on a 3-option question dialog (the
+      BL-354 design fork).
+    - `roleTicket`: `{"QA": "BL-349"}` — the specifier held NO ticket, because it was draining an
+      INTAKE file, not building a BL ticket.
+  Result: a role was genuinely blocked asking the human a question, and that question reached the
+  human NOWHERE. It sat parked in a tmux pane until an operator happened to look — and the pane stayed
+  frozen ~10 minutes. This is the exact BL-325 failure mode ("a human-in-the-loop request was raised,
+  ignored, and satisfied by someone else") reappearing through the ONE seam BL-325 did not cover:
+  BL-325 fixed the loop for a gate that HAS a ticket; it left the untagged gate dropped.
+
+  WHAT CHANGED SINCE THE DROP RULE WAS WRITTEN. A gate with no ticket now HAS a home: the standing
+  Operator topic (BL-346, merged to main at c59c4dec today — `OPERATOR_TOPIC_NAME` in
+  `extension/src/tools/telegramFrontDeskBotCore.ts:88`, created by `telegram-front-desk-bot.ts:229`).
+  It did not exist when drop-rather-than-guess was written. The rule was right then and is wrong now.
+  Route the untagged gate to the Operator topic; keep the tagged gate going to its ticket's topic
+  exactly as it does today. This is NOT "guess a topic" — it is a real, correct destination for a
+  question that belongs to no ticket.
+
+  SCOPE. `diffNeedsApproval` + `EventStreamSnapshot` (`swarmEventStream.ts`), the tick's routing and
+  retry-hold-back logic (`conciergeTick.ts` — note `withRetryableTransitionsHeldBack` currently
+  resolves a failed NeedsApproval BACK through `curr.roleTicket[gate.role]`, so an untagged gate needs
+  its retry symmetry handled too, or a failed post to the Operator topic will never be retried), the
+  destination/message text in `topicRouter.ts`, and the standing Operator topic in the front-desk bot.
+  Reuse `messageTextForEvent`; do not hand-roll a second formatter. The answer path back from the
+  Operator topic to the blocked pane must reuse BL-325's existing loop — ship and prove the LOOP, not
+  the legs.
+
+  NOT ORTHOGONAL TO BL-357: both tickets touch `swarmEventStream.ts` / `conciergeTick.ts` /
+  `topicRouter.ts`. Sequence them; do not promote them concurrently.
+
+  IR-DRY DISPOSITION (specifier, reviewed): the checker reports three medium-confidence findings on
+  this feature file — "holds a ticket" vs "holds no ticket", "question has been posted" vs "no second
+  question is posted", and "asked in that ticket's topic" vs "asked in the standing Operator topic".
+  All three are the exact CONTRASTS this ticket exists to pin, and collapsing any of them would
+  delete the behaviour under test. They are deliberate; do not "DRY" them away.
+
+  E2E QA PROCEDURE: in a live swarm, put a role holding NO ticket into a gated state (a pane
+  question). Assert the question appears in the standing Operator topic within one concierge tick,
+  with the role's own question text. Answer it there and assert the answer reaches the pane and the
+  role unblocks. Assert a role gated WHILE HOLDING a ticket still asks in that ticket's topic
+  (regression). Let further ticks pass while the role stays gated and assert no second request is
+  posted. Finally, force the post to the Operator topic to fail once and assert it is retried on the
+  next tick rather than dropped.
+
+acceptance:
+  feature: specs/features/BL-358-untagged-gate-reaches-the-human.feature
+  steps:
+    - "A blocked role holding no ticket still reaches the human"
+    - "A blocked role holding a ticket still asks in that ticket's own topic"
+    - "The human's answer reaches the blocked role and unblocks it"
+    - "A role that blocks and stays blocked is asked about once, not every tick"
+
+human_approval: pending
+
+mutation_cost: medium
