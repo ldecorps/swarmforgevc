@@ -42,16 +42,26 @@
     (strip-quotes item)))
 
 (defn- parse-block-list
-  "Collects consecutive `  - item` lines immediately following the
-   `roles:` line - this schema's own established convention for
-   multi-item fields (acceptance.steps: uses it; only depends_on: is
-   flow-style). nil when no such lines immediately follow (present but
-   unparseable, never treated as an empty-but-valid list)."
+  "Collects `  - item` lines immediately following the `roles:` line -
+   this schema's own established convention for multi-item fields
+   (acceptance.steps: uses it; only depends_on: is flow-style).
+
+   The block REGION is every consecutive indented-or-blank line (a
+   dedent back to column 0 - a sibling top-level key, or end of file -
+   ends it, exactly like real YAML block-scoping). Every non-blank line
+   in that region must be a `- item` line, or the whole block is
+   malformed -> nil, never a silently truncated prefix. Stopping at the
+   first non-matching line (an earlier version of this fn did) let a
+   list interrupted by a stray non-dash line mid-block silently drop
+   every item after the interruption - a real, found-during-hardening
+   instance of scope 4b's own defect (present-but-malformed treated as
+   if it parsed), just one indentation level deeper than the flow-style
+   collision this ticket already bounced once for."
   [lines-after]
-  (let [items (->> lines-after
-                    (take-while #(re-matches #"^\s+-\s+.+$" %))
-                    (map block-item))]
-    (when (seq items) (vec items))))
+  (let [block-lines (take-while #(re-matches #"^(\s+.*)?$" %) lines-after)
+        non-blank (remove str/blank? block-lines)]
+    (when (and (seq non-blank) (every? #(re-matches #"^\s+-\s+.+$" %) non-blank))
+      (mapv block-item non-blank))))
 
 (defn- parse-roles-field
   "Returns {:present? bool :roles (list-or-nil)}.
