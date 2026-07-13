@@ -67,6 +67,22 @@
 (def project-root (or (first *command-line-args*) (usage)))
 (def tick-once? (some #{"--tick-once"} *command-line-args*))
 
+;; BL-328: this long-lived process's own build identity, captured ONCE at
+;; startup (a fresh bb invocation on every --tick-once call too, which is
+;; correct for that mode - each call IS a fresh assessment). Babashka has
+;; no separate compile step; the SOURCE loaded at THIS moment IS what runs
+;; until the process exits, exactly like a Node process's own compiled
+;; extension/out/BUILD_SHA - never re-read live, which would report
+;; whatever main currently is rather than what this process actually
+;; loaded. nil (never a crash) when git is unavailable.
+(defn- capture-build-sha! []
+  (try
+    (let [{:keys [exit out]} (process/sh {:continue true :dir project-root} "git" "rev-parse" "HEAD")]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
+(def own-build-sha (capture-build-sha!))
+
 (def script-dir (str (fs/parent (fs/canonicalize *file*))))
 (def state-dir (fs/path project-root ".swarmforge"))
 (def op-dir (fs/path state-dir "operator"))
@@ -850,7 +866,8 @@
                                :provider "claude" :provider-state provider-state
                                :agents-running agents-running
                                :pending-count (count pending)})
-                       tunnel (assoc :tunnel tunnel)))
+                       tunnel (assoc :tunnel tunnel)
+                       true (assoc :build_sha own-build-sha)))
       (when decision
         (log! "decision" "launch (pending=" (str (count pending)) ")")
         (launch-operator!)
