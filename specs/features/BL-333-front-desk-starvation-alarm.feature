@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=ed3e09c9d0753d2ff7a4d78d7f5c602b05dcc5bebcf2b2b272349c4ccf83e0f7
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-13T09:05:40.815935561Z","feature_name":"A starved front desk is loud, not silent","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-333-front-desk-starvation-alarm.feature","background_hash":"02ee5504373d18b18b95f01f36f088fb84b5df50eb97676c408279c06e77e993","implementation_hash":"unknown","scenarios":[{"index":10,"name":"A misconfigured alarm channel is warned about, not retried","scenario_hash":"6449dd4d0dd71eb3a5f06682a24311c3c72349ffe54ac4fd820b2a5760b8768d","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-13T09:05:40.815935561Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A starved front desk is loud, not silent
 
 # BL-333: an interactive Operator holds the single-Operator slot indefinitely (it is instructed
