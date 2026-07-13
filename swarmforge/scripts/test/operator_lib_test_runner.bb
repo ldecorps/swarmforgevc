@@ -179,7 +179,10 @@
                                       :provider "claude" :provider-state :cooldown
                                       :agents-running 8 :pending-count 3}))
 
-;; ── BL-333: queue-consuming? / front-desk-starving? / starvation-alarm-decision ──
+;; ── BL-333: queue-consuming? / front-desk-starving? (BL-345: delivery-based
+;;    arming - classify-delivery-result / starvation-alarm-should-attempt? /
+;;    next-starvation-alarm-state - replaces the old attempt-based
+;;    starvation-alarm-decision, see below) ──────────────────────────────
 (assert-false "front-desk-starvation-alarm-01: a live Operator with events pending is NOT consuming"
               (operator-lib/queue-consuming? true 5))
 (assert-true "an Operator with an EMPTY queue is still trivially 'consuming' (nothing to drain)"
@@ -219,18 +222,62 @@
               (operator-lib/front-desk-starving? {:pending-count 2 :oldest-pending-age-ms nil
                                                   :count-limit 5 :age-limit-ms 3600000}))
 
-(assert= "starvation-alarm-decision: fresh starvation (not yet armed) alarms and arms"
-         {:should-alarm? true :armed? true}
-         (operator-lib/starvation-alarm-decision true false))
-(assert= "starvation-alarm-decision: still starving, already armed - no re-alarm (never spam)"
-         {:should-alarm? false :armed? true}
-         (operator-lib/starvation-alarm-decision true true))
-(assert= "starvation-alarm-decision: cleared - disarms, no alarm"
-         {:should-alarm? false :armed? false}
-         (operator-lib/starvation-alarm-decision false true))
-(assert= "starvation-alarm-decision: healthy and never armed - no alarm"
-         {:should-alarm? false :armed? false}
-         (operator-lib/starvation-alarm-decision false false))
+;; ── BL-345: delivery-based arming ─────────────────────────────────────────
+(def retry-cfg {:backoff-base-ms 60000 :backoff-max-ms 1800000 :max-attempts 5})
+
+(assert= "classify-delivery-result: a successful send is :delivered"
+         :delivered (operator-lib/classify-delivery-result {:success true :status 200}))
+(assert= "classify-delivery-result: no recipient (:disabled) is :terminal-misconfig"
+         :terminal-misconfig (operator-lib/classify-delivery-result {:success false :reason :disabled}))
+(assert= "classify-delivery-result: missing api key is :terminal-misconfig"
+         :terminal-misconfig (operator-lib/classify-delivery-result {:success false :reason :missing-api-key}))
+(assert= "classify-delivery-result: test-fixture-suppressed is :terminal-misconfig, never a real failure"
+         :terminal-misconfig (operator-lib/classify-delivery-result {:success false :reason :test-fixture-suppressed}))
+(assert= "classify-delivery-result: a failed send with NO reason (HTTP non-2xx) is :transient-failure"
+         :transient-failure (operator-lib/classify-delivery-result {:success false :status 503}))
+(assert= "classify-delivery-result: a failed send with NO reason (exception) is :transient-failure"
+         :transient-failure (operator-lib/classify-delivery-result {:success false :error "Connection refused"}))
+
+(assert= "compute-alarm-backoff-ms: attempt 1 is the base"
+         60000 (operator-lib/compute-alarm-backoff-ms 1 retry-cfg))
+(assert= "compute-alarm-backoff-ms: doubles each attempt"
+         240000 (operator-lib/compute-alarm-backoff-ms 3 retry-cfg))
+(assert= "compute-alarm-backoff-ms: caps at backoff-max-ms"
+         1800000 (operator-lib/compute-alarm-backoff-ms 10 retry-cfg))
+
+(assert-true "starvation-alarm-should-attempt?: fresh starvation (never attempted) attempts immediately"
+             (operator-lib/starvation-alarm-should-attempt?
+              {:starving? true :armed? false :delivery-attempts 0 :last-attempt-at-ms nil
+               :now-ms 100000 :retry-config retry-cfg}))
+(assert-false "starvation-alarm-should-attempt?: already armed - never re-attempt (anti-spam)"
+              (operator-lib/starvation-alarm-should-attempt?
+               {:starving? true :armed? true :delivery-attempts 0 :last-attempt-at-ms nil
+                :now-ms 100000 :retry-config retry-cfg}))
+(assert-false "starvation-alarm-should-attempt?: no longer starving - never attempt"
+              (operator-lib/starvation-alarm-should-attempt?
+               {:starving? false :armed? false :delivery-attempts 1 :last-attempt-at-ms 0
+                :now-ms 100000 :retry-config retry-cfg}))
+(assert-false "starvation-alarm-should-attempt?: a retry before its backoff has elapsed waits"
+              (operator-lib/starvation-alarm-should-attempt?
+               {:starving? true :armed? false :delivery-attempts 1 :last-attempt-at-ms 100000
+                :now-ms 130000 :retry-config retry-cfg}))
+(assert-true "starvation-alarm-should-attempt?: a retry once its backoff has elapsed is due"
+             (operator-lib/starvation-alarm-should-attempt?
+              {:starving? true :armed? false :delivery-attempts 1 :last-attempt-at-ms 100000
+               :now-ms 160000 :retry-config retry-cfg}))
+
+(assert= "next-starvation-alarm-state: :delivered arms and resets attempts"
+         {:armed? true :delivery-attempts 0 :last-attempt-at-ms nil :gave-up? false}
+         (operator-lib/next-starvation-alarm-state :delivered {:delivery-attempts 2} retry-cfg 200000))
+(assert= "next-starvation-alarm-state: :terminal-misconfig arms without retrying"
+         {:armed? true :delivery-attempts 0 :last-attempt-at-ms nil :gave-up? false}
+         (operator-lib/next-starvation-alarm-state :terminal-misconfig {:delivery-attempts 0} retry-cfg 200000))
+(assert= "next-starvation-alarm-state: :transient-failure under the cap stays UNARMED and counts the attempt"
+         {:armed? false :delivery-attempts 1 :last-attempt-at-ms 200000 :gave-up? false}
+         (operator-lib/next-starvation-alarm-state :transient-failure {:delivery-attempts 0} retry-cfg 200000))
+(assert= "next-starvation-alarm-state: :transient-failure AT the cap arms anyway and gives up loudly"
+         {:armed? true :delivery-attempts 0 :last-attempt-at-ms nil :gave-up? true}
+         (operator-lib/next-starvation-alarm-state :transient-failure {:delivery-attempts 4} retry-cfg 200000))
 
 ;; ── resolve-provider-state (pure) — BL-305 fail-open cooldown ────────────
 ;; A fixed instant, never the real clock (de0991e). now = 6pm local (UTC,

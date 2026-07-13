@@ -9,16 +9,30 @@
 // lines - mirrors supervisorReaperPathBoundarySteps.js's/
 // mergedCodeReachesDaemonsSteps.js's own "drive the real shell test, grep
 // the PASS line" pattern rather than re-implementing the fixture here.
-// The pure decision core (queue-consuming?/front-desk-starving?/
-// starvation-alarm-decision) is unit-tested directly in Babashka
+// The pure decision core (queue-consuming?/front-desk-starving?/BL-345's
+// classify-delivery-result/starvation-alarm-should-attempt?/next-
+// starvation-alarm-state) is unit-tested directly in Babashka
 // (operator_lib_test_runner.bb) - this layer proves the REAL wiring: a
 // real llm-running? process, real events.jsonl, real status.json, and a
-// real (test-fixture-suppressed, never actually sent) alarm-email attempt.
+// real (test-fixture-suppressed, or BL-345's OPERATOR_ALARM_FORCE_RESULT
+// seam - never actually sent) alarm-email attempt.
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const SWARMFORGE_SCRIPTS = path.join(__dirname, '..', '..', '..', 'swarmforge', 'scripts');
 const RUNTIME_TICK_TEST = path.join(SWARMFORGE_SCRIPTS, 'test', 'test_operator_runtime_tick.sh');
+
+// BL-345 front-desk-starvation-alarm-11: a Scenario Outline Examples column
+// value MUST be validated against an explicit KNOWN_VALUES lookup, never a
+// bare passthrough - an unrecognized (e.g. mutated) value throws here
+// rather than silently surviving (this project's own recurring gap, see
+// restrictedFrontDeskOperatorSteps.js's KNOWN_SWARM_ACTIONS and the
+// engineering article). Maps each known Examples value to the stable
+// ctx.scenario tag the Then steps below branch on.
+const MISCONFIG_KNOWN_VALUES = {
+  'missing a recipient': '11-disabled',
+  'missing its api key': '11-missing-api-key',
+};
 
 function runRuntimeTickTest(ctx) {
   if (ctx.starvationTestOutput) {
@@ -72,6 +86,8 @@ function registerSteps(registry) {
     const output = ctx.output || runRuntimeTickTest(ctx);
     if (ctx.scenario === '06') {
       expectLine(output, 'front-desk-starvation-alarm-06: a starvation that clears and returns is alarmed again', '06');
+    } else if (ctx.scenario === '09') {
+      expectLine(output, 'front-desk-starvation-alarm-09: an alarm that failed to deliver is retried, not treated as sent', '09');
     } else {
       expectLine(output, 'front-desk-starvation-alarm-02: a queue over the count limit raises a starvation alarm', '02');
     }
@@ -96,8 +112,8 @@ function registerSteps(registry) {
     expectLine(output, 'front-desk-starvation-alarm-04: the runtime never load-files a Telegram client', '04');
   });
 
-  // ── front-desk-starvation-alarm-05 ──────────────────────────────────
-  registry.define(/^a starvation alarm has already been raised for that starvation$/, (ctx) => {
+  // ── front-desk-starvation-alarm-05 (AMENDED by BL-345: "raised" -> "delivered") ──
+  registry.define(/^a starvation alarm has already been delivered for that starvation$/, (ctx) => {
     ctx.output = ctx.output || runRuntimeTickTest(ctx);
   });
   registry.define(/^the front desk's health is reported again$/, (ctx) => {
@@ -105,7 +121,15 @@ function registerSteps(registry) {
   });
   registry.define(/^no further alarm is delivered$/, (ctx) => {
     const output = ctx.output || runRuntimeTickTest(ctx);
-    expectLine(output, 'front-desk-starvation-alarm-05: still starving on the NEXT tick raises no further alarm', '05');
+    if (ctx.scenario === '10') {
+      expectLine(output, 'front-desk-starvation-alarm-10: no further alarm is delivered once the cap is reached', '10');
+    } else if (ctx.scenario === '11-disabled') {
+      expectLine(output, 'front-desk-starvation-alarm-11 (missing a recipient): no further alarm is delivered', '11');
+    } else if (ctx.scenario === '11-missing-api-key') {
+      expectLine(output, 'front-desk-starvation-alarm-11 (missing its api key): no further alarm is delivered', '11');
+    } else {
+      expectLine(output, 'front-desk-starvation-alarm-05: still starving on the NEXT tick raises no further alarm', '05');
+    }
   });
 
   // ── front-desk-starvation-alarm-06 ──────────────────────────────────
@@ -128,6 +152,42 @@ function registerSteps(registry) {
     const output = ctx.output || runRuntimeTickTest(ctx);
     expectLine(output, 'front-desk-starvation-alarm-08: the Operator holding the slot is still running', '08');
     expectLine(output, 'ALL CHECKS PASSED', 'full suite');
+  });
+
+  // ── BL-345 front-desk-starvation-alarm-09 ───────────────────────────
+  // ("the front desk's health is reported" is already defined above, 01)
+  registry.define(/^the previous alarm attempt failed to deliver$/, (ctx) => {
+    ctx.scenario = '09';
+    ctx.output = ctx.output || runRuntimeTickTest(ctx);
+  });
+
+  // ── BL-345 front-desk-starvation-alarm-10 ───────────────────────────
+  registry.define(/^the delivery attempt limit has been reached$/, (ctx) => {
+    ctx.scenario = '10';
+    ctx.output = ctx.output || runRuntimeTickTest(ctx);
+  });
+  registry.define(/^the undelivered alarm is recorded loudly in the log$/, (ctx) => {
+    const output = ctx.output || runRuntimeTickTest(ctx);
+    expectLine(output, 'front-desk-starvation-alarm-10: the undelivered alarm is recorded loudly in the log', '10');
+  });
+
+  // ── BL-345 front-desk-starvation-alarm-11 (Scenario Outline) ────────
+  registry.define(/^the alarm channel is (.+)$/, (ctx, misconfiguration) => {
+    if (!Object.prototype.hasOwnProperty.call(MISCONFIG_KNOWN_VALUES, misconfiguration)) {
+      throw new Error(`front-desk-starvation-alarm-11: unknown alarm-channel misconfiguration example value "${misconfiguration}"`);
+    }
+    ctx.scenario = MISCONFIG_KNOWN_VALUES[misconfiguration];
+    ctx.output = ctx.output || runRuntimeTickTest(ctx);
+  });
+  registry.define(/^the misconfiguration is warned about exactly once$/, (ctx) => {
+    const output = ctx.output || runRuntimeTickTest(ctx);
+    if (ctx.scenario === '11-missing-api-key') {
+      expectLine(output, 'front-desk-starvation-alarm-11 (missing its api key): the misconfiguration is warned about exactly once', '11');
+    } else if (ctx.scenario === '11-disabled') {
+      expectLine(output, 'front-desk-starvation-alarm-11 (missing a recipient): the misconfiguration is warned about exactly once', '11');
+    } else {
+      throw new Error(`front-desk-starvation-alarm-11: unexpected scenario context "${ctx.scenario}"`);
+    }
   });
 }
 
