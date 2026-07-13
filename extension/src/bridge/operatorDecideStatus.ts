@@ -27,6 +27,34 @@ export function selectGateDecision(pendingGates: RoleGateState[]): GateDecision 
   return { action: 'ask-which', roles: pendingGates.map((g) => g.role) };
 }
 
+// BL-325 scope 6: when the caller names a specific backlog item's own
+// ticket (an in-topic reply - targetBacklogId is that item's backlogId),
+// the gate held by the role CURRENTLY HOLDING that ticket is answered
+// directly - never the count-based ask-which, which would ask "which
+// gate?" even though the topic itself already says which ticket. Mirrors
+// conciergeTick.ts's own outbound `roleTicket[gate.role]` lookup, applied
+// in reverse (ticket -> role instead of role -> ticket).
+//
+// Falls back to the ORIGINAL count-based selectGateDecision whenever
+// targetBacklogId is absent (a SUP thread never names a backlogId, so this
+// is automatic - no SUP/BL branch needed) or does not resolve to a
+// currently-gated role (the genuine "this ticket has no pending gate of
+// its own" fallback, scope 6's own wording) - so a SUP thread's existing
+// answer-the-sole-pending-gate/ask-which behavior is completely unchanged.
+export function selectGateDecisionForTicket(
+  pendingGates: RoleGateState[],
+  roleTicket: Record<string, string>,
+  targetBacklogId: string | undefined
+): GateDecision {
+  if (targetBacklogId) {
+    const targetRole = Object.keys(roleTicket).find((role) => roleTicket[role] === targetBacklogId);
+    if (targetRole && pendingGates.some((g) => g.role === targetRole)) {
+      return { action: 'answer', role: targetRole };
+    }
+  }
+  return selectGateDecision(pendingGates);
+}
+
 export interface ApprovalDeps {
   // Mirrors gateAnswerPath.ts's own GateAnswerResult shape - the real
   // wiring passes answerCapturedGateLive here, tests a fake.
@@ -34,13 +62,12 @@ export interface ApprovalDeps {
   reply: (text: string) => void;
 }
 
-// Orchestrates an in-topic approval end to end: select the gate (pure,
-// above), answer it through the injected write path ONLY when exactly one
-// is pending, then always confirm/refuse/ask in the topic via the injected
-// reply adapter - reusing gateAnswerPath.ts's ONE write path, never a
-// second gate-answer surface.
-export function handleApprovalDecision(pendingGates: RoleGateState[], answerText: string, deps: ApprovalDeps): GateDecision {
-  const decision = selectGateDecision(pendingGates);
+// The orchestration shared by both entry points below: answer the DECIDED
+// gate through the injected write path ONLY when exactly one is targeted,
+// then always confirm/refuse/ask in the topic via the injected reply
+// adapter - reusing gateAnswerPath.ts's ONE write path, never a second
+// gate-answer surface.
+function applyGateDecision(decision: GateDecision, answerText: string, deps: ApprovalDeps): GateDecision {
   if (decision.action === 'answer') {
     const result = deps.answerGate(decision.role, answerText);
     deps.reply(
@@ -54,6 +81,25 @@ export function handleApprovalDecision(pendingGates: RoleGateState[], answerText
     deps.reply(`Which gate should I answer - ${decision.roles.join(', ')}?`);
   }
   return decision;
+}
+
+// Orchestrates an in-topic approval end to end via the count-based
+// selector - unchanged since BL-285, the exact behavior a SUP thread (no
+// ticket context of its own) still needs.
+export function handleApprovalDecision(pendingGates: RoleGateState[], answerText: string, deps: ApprovalDeps): GateDecision {
+  return applyGateDecision(selectGateDecision(pendingGates), answerText, deps);
+}
+
+// BL-325 scope 6: the ticket-directed variant - same orchestration, gate
+// selection resolved via selectGateDecisionForTicket above instead.
+export function handleApprovalDecisionForTicket(
+  pendingGates: RoleGateState[],
+  roleTicket: Record<string, string>,
+  targetBacklogId: string | undefined,
+  answerText: string,
+  deps: ApprovalDeps
+): GateDecision {
+  return applyGateDecision(selectGateDecisionForTicket(pendingGates, roleTicket, targetBacklogId), answerText, deps);
 }
 
 // ── status answer (pure + adapter-injected) — decide-status-01/02 ───────
