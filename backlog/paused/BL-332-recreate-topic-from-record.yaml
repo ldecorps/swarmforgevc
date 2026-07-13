@@ -70,6 +70,6 @@ acceptance:
     - "The recreated topic becomes the ticket's live topic"
     - "Recreating reads the record without consuming it"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: medium
