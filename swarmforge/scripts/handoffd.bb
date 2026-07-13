@@ -22,6 +22,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "closing_context_clear_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "standing_rule_violations_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "standing_rule_violations_files.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "stuck_escalation_email_lib.bb")))
 
 (def poll-ms 1000)
 (def wake-message agent-runtime-lib/default-wake-chat-message)
@@ -616,6 +617,55 @@
     (fs/create-dirs (fs/parent file))
     (spit (str file) (str line "\n") :append true)))
 
+;; ── BL-349: stuck-escalation email - the daemon's missing leg ───────────
+;; write-escalation! (chase_sweep_lib.bb) only ever wrote a file; the only
+;; code that EMAILED it lived in the VS Code extension host
+;; (NeedsHumanEmailNotifier), so on a headless box the human was never
+;; told. Reuses daemon_alarm_lib.bb's send-configured-email! exactly as
+;; send-configured-briefing-email! above does, so there is still only ONE
+;; Resend client in the whole swarm. stuck_escalation_email_lib.bb owns
+;; the pure delivery-based arming (BL-345's shape, reapplied per-role) and
+;; the durable per-role state; this is the thin, environment-specific
+;; wiring.
+(defn env-ms [name default]
+  (or (some-> (System/getenv name) parse-long) default))
+
+(def escalation-alarm-retry-config
+  {:max-attempts (env-ms "ESCALATION_ALARM_MAX_ATTEMPTS" 5)
+   :backoff-base-ms (env-ms "ESCALATION_ALARM_BACKOFF_BASE_MS" 60000)
+   :backoff-max-ms (env-ms "ESCALATION_ALARM_BACKOFF_MAX_MS" 1800000)})
+
+;; One-shot per process, same rationale as briefing-missing-key-warned?/
+;; starvation-email-key-warned? - a separate atom because this is a
+;; separate signal (and, for the daemon-vs-runtime split, a separate
+;; process).
+(def escalation-email-missing-key-warned? (atom false))
+
+;; BL-349 E2E test seam, mirroring operator_runtime.bb's own BL-345
+;; OPERATOR_ALARM_FORCE_RESULT convention exactly: when set, short-circuits
+;; the real send entirely and returns this JSON-decoded result instead -
+;; lets the acceptance suite drive the REAL sweep/arming logic (retry
+;; counting, backoff, give-up logging) against a scripted transient-
+;; failure/success sequence without ever reaching daemon-alarm-lib or the
+;; network. Never set in production.
+(defn send-escalation-alarm-email! [subject text]
+  (if-let [forced (System/getenv "ESCALATION_ALARM_FORCE_RESULT")]
+    (json/parse-string forced true)
+    (daemon-alarm-lib/send-configured-email!
+     project-root conf-file subject text
+     {:already-warned?! (fn [] @escalation-email-missing-key-warned?)
+      :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+      :mark-warned! (fn [] (reset! escalation-email-missing-key-warned? true))})))
+
+(defn stuck-escalation-email-sweep! [role escalated? now-ms]
+  (try
+    (stuck-escalation-email-lib/sweep!
+     role escalated? now-ms (str daemon-dir) escalation-alarm-retry-config
+     {:send-email! send-escalation-alarm-email!
+      :log! (fn [& parts] (apply log! parts))})
+    (catch Exception e
+      (log! "stuck-escalation-email-error" role (.getMessage e)))))
+
 (defn chase-sweep! [roles socket]
   (let [now-ms (System/currentTimeMillis)
         adapters {:get-liveness get-liveness
@@ -628,7 +678,9 @@
                                             (catch Exception e (log! "chase-respawn-error" role (.getMessage e)))))
                   :log-dead-letter! (fn [role path] (log! "dead-letter" role (fs/file-name path)))
                   :get-last-activity-ms (fn [role] (get-last-activity-ms (get roles role) socket now-ms))
-                  :on-stuck-escalation! (fn [role escalated?] (chase-sweep-lib/write-escalation! (str daemon-dir) role escalated?))
+                  :on-stuck-escalation! (fn [role escalated?]
+                                          (chase-sweep-lib/write-escalation! (str daemon-dir) role escalated?)
+                                          (stuck-escalation-email-sweep! role escalated? now-ms))
                   ;; BL-208: :provider is the one common, brand-name field
                   ;; every telemetry event now carries (chase_sweep_lib.bb
                   ;; itself stays agent-agnostic - this is the only place
@@ -863,6 +915,25 @@
     :not-done-count-line not-done-count-briefing-line
     :standing-rule-violations-line standing-rule-violations-briefing-line
     :log! (fn [& parts] (apply log! parts))}))
+
+;; BL-339: shells to the compiled notify-recert-batch.js CLI (Babashka has
+;; no way to import compiled TS, same posture as the *-briefing-line fns
+;; above) - reuses computeRecertBatch unchanged, the SAME data the PWA
+;; itself renders, so the Telegram announcement can never disagree with
+;; what the human sees when he follows the link. The CLI itself owns the
+;; edge-triggered arm/disarm decision and the delivery-based state
+;; (BL-345's own "arm on delivery, never on attempt" lesson) - this
+;; adapter only owns invoking it. Any failure (CLI not yet compiled, no
+;; TELEGRAM_BOT_TOKEN in this daemon's env) degrades to a no-op - never
+;; crashes the sweep, never fabricates a sent notification.
+(defn recert-notify-sweep! []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "notify-recert-batch.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit)
+        (log! "recert-notify" (str/trim out))))
+    (catch Exception e
+      (log! "recert-notify-sweep-error" (.getMessage e)))))
 
 ;; BL-258: headless, host-independent morning trigger for briefing
 ;; GENERATION (complements briefing-email-sweep! above, which only handles
@@ -1189,7 +1260,14 @@
                     (try
                       (role-context-clear-sweep! (load-roles) socket)
                       (catch Exception e
-                        (log! "role-context-clear-sweep-error" (.getMessage e)))))
+                        (log! "role-context-clear-sweep-error" (.getMessage e))))
+                    ;; BL-339: recert-notify sweep shares the same cadence -
+                    ;; no separate timeout, same rationale as BL-222/BL-214/
+                    ;; BL-258/BL-309/BL-316 above.
+                    (try
+                      (recert-notify-sweep!)
+                      (catch Exception e
+                        (log! "recert-notify-sweep-error" (.getMessage e)))))
                   (spit (str heartbeat-file) (str (now) "\n"))
                   (when (zero? (mod cycle heartbeat-log-every-cycles))
                     (log! "heartbeat" (str "cycle=" cycle)))
