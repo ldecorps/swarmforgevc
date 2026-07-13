@@ -20,6 +20,8 @@
 ;; ── role-needed? ────────────────────────────────────────────────────────
 (assert-true "warm-core (coordinator) is always needed, even with an empty manifest"
              (role-lifecycle-lib/role-needed? "coordinator" [] []))
+(assert-true "per-role-lifecycle-09: warm-core (specifier) is always needed, even with a manifest that omits it"
+             (role-lifecycle-lib/role-needed? "specifier" ["coder" "QA"] []))
 (assert-true "a role named by the current ticket's manifest is needed"
              (role-lifecycle-lib/role-needed? "coder" ["coder" "QA"] []))
 (assert-true "a role named ONLY by the next queued ticket's manifest is still needed (hysteresis)"
@@ -36,6 +38,16 @@
               (role-lifecycle-lib/parkable? {:role "coder" :idle? true} ["coder" "QA"] []))
 (assert-false "coordinator is never parkable regardless of idleness"
               (role-lifecycle-lib/parkable? {:role "coordinator" :idle? true} [] []))
+(assert-false "per-role-lifecycle-09: specifier is never parkable regardless of idleness or manifest omission"
+              (role-lifecycle-lib/parkable? {:role "specifier" :idle? true} ["coder" "QA"] []))
+(assert-true "specifier IS still parkable-eligible-by-need when a manifest legitimately names it - warm-core and explicit-need are an OR, not exclusive of ordinary parking logic elsewhere"
+             (role-lifecycle-lib/role-needed? "specifier" ["specifier" "coder" "QA"] []))
+
+;; ── per-role-lifecycle-10: a role whose duties are never named by any
+;;    ticket's manifest must never be parked - the GENERAL rule behind
+;;    warm-core-roles, tested via specifier as the concrete instance ──────
+(assert-false "per-role-lifecycle-10: a role with no manifest-expressible route back is never parked into a state only a manifest could reverse"
+              (role-lifecycle-lib/parkable? {:role "specifier" :idle? true} [] []))
 
 ;; ── roles-to-park (per-role-lifecycle-01/03/04/05) ────────────────────────
 (assert= "per-role-lifecycle-01: only the roles the manifest does not need are parked, coordinator excluded"
@@ -44,6 +56,13 @@
           [{:role "coordinator" :idle? true} {:role "specifier" :idle? true} {:role "coder" :idle? true}
            {:role "cleaner" :idle? true} {:role "architect" :idle? true} {:role "QA" :idle? true}]
           ["specifier" "coder" "QA"] []))
+
+(assert= "per-role-lifecycle-09: a manifest that OMITS specifier still never parks it - warm-core, not explicit need"
+         #{"cleaner" "architect"}
+         (role-lifecycle-lib/roles-to-park
+          [{:role "coordinator" :idle? true} {:role "specifier" :idle? true} {:role "coder" :idle? true}
+           {:role "cleaner" :idle? true} {:role "architect" :idle? true} {:role "QA" :idle? true}]
+          ["coder" "QA"] []))
 
 (assert= "per-role-lifecycle-03: a role holding an in-process parcel is NEVER parked, even though its manifest doesn't need it"
          #{}

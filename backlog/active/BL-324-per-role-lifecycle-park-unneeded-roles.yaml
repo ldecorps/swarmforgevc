@@ -83,6 +83,37 @@ notes: |
     - WARM CORE: the coordinator is the dispatcher and the most-woken role; parking it is
       almost certainly never right (it is also the one role no pack can move off Claude
       today — BL-319).
+    - THE WARM CORE IS COORDINATOR **AND SPECIFIER** (corrected 2026-07-13 after the
+      hardener's review of the first build; my original spec named only the coordinator and
+      that was WRONG). `warm-core-roles` is `#{"coordinator"}`, but the specifier IS a member
+      of routing_manifest_lib's standard-chain, so a narrow manifest (`roles: [coder, QA]`)
+      makes an idle specifier parkable — confirmed empirically by the hardener.
+      WHY THIS IS A DEADLOCK, NOT MERELY A STALL. Unparking fires only when a LATER TICKET'S
+      MANIFEST NAMES the role. But every one of the specifier's real duties happens BEFORE a
+      ticket exists: draining the backlog root, draining `.swarmforge/operator/INTAKE-*.md`,
+      reviewing `rule_proposal`s from any role, and writing the specs for tickets not yet
+      written. NONE of that is expressible in a `roles:` manifest, because a manifest can only
+      name the roles needed to BUILD a ticket that already exists — and the specifier's job is
+      to bring tickets INTO existence. So: park the specifier -> no new ticket is written -> no
+      manifest ever names the specifier -> it is never unparked. The swarm silently loses its
+      ability to take in ANY new work, review any rule proposal, or drain any operator
+      directive, while every health surface reads green. This is the same circularity family
+      as BL-318 (hibernate-vs-self-generate), and unlike an interrupted parcel, BL-323's
+      resume-on-start cannot rescue it — a parked role never relaunches.
+      THE GENERAL RULE, not the special case: a role belongs to the warm core when its duties
+      are CONTINUOUS and TICKET-INDEPENDENT — i.e. not expressible in any ticket's manifest,
+      and therefore unreachable by the manifest-driven unpark path. Parking such a role is a
+      ONE-WAY DOOR. Never park a role whose only route back is a trigger its own work can
+      never produce. The other chain roles (cleaner, architect, hardener, documenter) are
+      genuinely per-ticket and remain parkable; coder and QA are always required by BL-317's
+      validator anyway.
+      NOTE FOR THE CODER: scenarios `per-role-lifecycle-09` and `-10` were added to the feature
+      file for this; their step handlers must be wired in the same parcel (BL-233). Add
+      `specifier` to `warm-core-roles`, and update that def's docstring — its current wording
+      claims warm-core roles can "never appear in a ticket's declared roles: manifest", which
+      is true of the coordinator (BL-243) but FALSE of the specifier, which is a standard-chain
+      member. A manifest may legitimately name the specifier; that must keep it alive, never
+      park it.
     - MEASURE, DO NOT ASSUME: use the BL-273 burn-rate meter to compare a warm-idle
       role's real token draw against a cold start, and let that number set the policy.
       Do NOT ship a guessed timeout as if it were a finding. If a park cycle's measured
