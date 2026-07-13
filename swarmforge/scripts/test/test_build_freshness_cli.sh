@@ -160,10 +160,54 @@ else
   fail "02/03(compiled): expected the merge to reach the running process after sync. before=$REPORT_BEFORE after=$REPORT_AFTER"
 fi
 
-# ── merged-code-reaches-daemons-04: a crash respawn after a sync brings up
-#    the current build, never re-arming a stale one (front_desk_supervisor's
-#    own :re-armed event re-stamps build_sha from the CURRENT compiled
-#    artifact on every respawn, not just at initial :started) ────────────
+# ── merged-code-reaches-daemons-04/07: a crash BEFORE any sync has run -
+#    the supervisor is the only actor awake in that window, so ITS OWN
+#    respawn path must check freshness and recompile, never assume a sync
+#    already happened. A separate, self-contained fixture from 02/03
+#    above (which recompiles via sync BEFORE the crash) - that ordering is
+#    exactly the fixture flaw the specifier's amendment called out:
+#    staging a sync before the crash never exercises the merge->crash gap
+#    at all. npm must be stubbed on PATH BEFORE the supervisor is even
+#    launched (it is a long-running process; a PATH change after it
+#    starts is invisible to it) so ITS OWN internal `npm run compile`
+#    call, fired from inside spawn-bridge! at crash-respawn time, is what
+#    picks up the merged sha - never a sync call anywhere in this block ──
+ROOT="$(mk_git_root)"
+LIVE_ROOTS+=("$ROOT")
+OLD_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+mkdir -p "$ROOT/.swarmforge/operator" "$ROOT/extension/out/tools"
+cat > "$ROOT/extension/out/tools/start-bridge-headless.js" <<'EOF'
+console.log('bridge running');
+setInterval(() => {}, 1000);
+EOF
+cat > "$ROOT/extension/out/tools/telegram-front-desk-bot.js" <<'EOF'
+console.log('bot running');
+setInterval(() => {}, 1000);
+EOF
+echo "$OLD_SHA" > "$ROOT/extension/out/BUILD_SHA"
+export TELEGRAM_BOT_TOKEN=x TELEGRAM_CHAT_ID=x TELEGRAM_PRINCIPAL_USER_ID=x
+FAKE_BIN_04="$(mktemp -d)"
+cat > "$FAKE_BIN_04/npm" <<'NPMEOF'
+#!/usr/bin/env bash
+# ensure-current-build! invokes npm with :dir set to <project-root>/extension
+# - CWD here IS that directory, so ".." is the project root regardless of
+# where this stub itself lives.
+ROOT_DIR="$(cd .. && pwd)"
+echo "$(git -C "$ROOT_DIR" rev-parse main 2>/dev/null)" > "out/BUILD_SHA"
+exit 0
+NPMEOF
+chmod +x "$FAKE_BIN_04/npm"
+PATH="$FAKE_BIN_04:$PATH" bash "$LAUNCH_FRONT_DESK" "$ROOT" >/dev/null
+wait_for 5 test -f "$ROOT/.swarmforge/operator/front-desk-supervisor.pid" || fail "04/07 setup: front-desk group did not start"
+
+# The real merge - a real commit, reachable from main - with NO sync call
+# anywhere in this block. extension/out/BUILD_SHA still names OLD_SHA.
+echo "// merged fix" >> "$ROOT/extension/out/tools/start-bridge-headless.js"
+git -C "$ROOT" add -A
+git -C "$ROOT" commit -q -m "merge: fix bridge"
+git -C "$ROOT" branch -f main
+NEW_SHA_04="$(git -C "$ROOT" rev-parse main)"
+
 BRIDGE_PID="$(python3 -c "import json; print(json.load(open('$ROOT/.swarmforge/operator/front-desk-supervisor.status.json'))['bridge']['pid'])")"
 kill -9 "$BRIDGE_PID" 2>/dev/null
 wait_for 10 bash -c "
@@ -171,19 +215,72 @@ wait_for 10 bash -c "
   [[ -n \"\$p\" && \"\$p\" != \"$BRIDGE_PID\" ]]
 "
 sleep 1
-check_04() {
+check_04_07() {
   local sha
   sha="$(python3 -c "import json; print(json.load(open('$ROOT/.swarmforge/operator/front-desk-supervisor.status.json'))['bridge']['build_sha'])")"
-  [[ "$sha" == "$NEW_SHA" ]]
+  [[ "$sha" == "$NEW_SHA_04" ]]
 }
-if check_04; then
-  pass "merged-code-reaches-daemons-04: a supervisor's own crash respawn brings up the current build, the stale build is not re-armed"
+if check_04_07; then
+  pass "merged-code-reaches-daemons-04/07: a crash BEFORE any sync ran still respawns on the current build - the supervisor made the build current itself, the stale build is not re-armed"
 else
-  fail "04: respawned bridge did not carry the current build_sha (expected $NEW_SHA)"
+  fail "04/07: respawned bridge did not carry the current build_sha (expected $NEW_SHA_04), no sync ever ran in this block"
+fi
+final_cleanup
+LIVE_ROOTS=()
+rm -rf "$FAKE_BIN_04"
+
+# ── merged-code-reaches-daemons-08: the current build cannot be produced
+#    (a failing recompile) - the process still comes back up, degraded and
+#    visible, rather than staying down (a dead front desk takes the
+#    human's only channel with it) ──────────────────────────────────────
+ROOT="$(mk_git_root)"
+LIVE_ROOTS+=("$ROOT")
+OLD_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+mkdir -p "$ROOT/.swarmforge/operator" "$ROOT/extension/out/tools"
+cat > "$ROOT/extension/out/tools/start-bridge-headless.js" <<'EOF'
+console.log('bridge running');
+setInterval(() => {}, 1000);
+EOF
+cat > "$ROOT/extension/out/tools/telegram-front-desk-bot.js" <<'EOF'
+console.log('bot running');
+setInterval(() => {}, 1000);
+EOF
+echo "$OLD_SHA" > "$ROOT/extension/out/BUILD_SHA"
+FAKE_BIN_08="$(mktemp -d)"
+cat > "$FAKE_BIN_08/npm" <<'NPMEOF'
+#!/usr/bin/env bash
+exit 1
+NPMEOF
+chmod +x "$FAKE_BIN_08/npm"
+PATH="$FAKE_BIN_08:$PATH" bash "$LAUNCH_FRONT_DESK" "$ROOT" >/dev/null
+wait_for 5 test -f "$ROOT/.swarmforge/operator/front-desk-supervisor.pid" || fail "08 setup: front-desk group did not start"
+
+git -C "$ROOT" commit -q --allow-empty -m "merge: unreachable fix"
+git -C "$ROOT" branch -f main
+
+BRIDGE_PID="$(python3 -c "import json; print(json.load(open('$ROOT/.swarmforge/operator/front-desk-supervisor.status.json'))['bridge']['pid'])")"
+kill -9 "$BRIDGE_PID" 2>/dev/null
+wait_for 10 bash -c "
+  p=\$(python3 -c \"import json; print(json.load(open('$ROOT/.swarmforge/operator/front-desk-supervisor.status.json'))['bridge']['pid'])\" 2>/dev/null)
+  [[ -n \"\$p\" && \"\$p\" != \"$BRIDGE_PID\" ]]
+"
+sleep 1
+check_08() {
+  local newpid
+  newpid="$(python3 -c "import json; print(json.load(open('$ROOT/.swarmforge/operator/front-desk-supervisor.status.json'))['bridge']['pid'])" 2>/dev/null)"
+  [[ -n "$newpid" && "$newpid" != "$BRIDGE_PID" ]] || return 1
+  kill -0 "$newpid" 2>/dev/null || return 1
+  grep -q "degraded-respawn bridge" "$ROOT/.swarmforge/operator/front-desk-supervisor.log"
+}
+if check_08; then
+  pass "merged-code-reaches-daemons-08: a failed recompile still brings the process back up, degraded and loudly logged, never left down"
+else
+  fail "08: expected the process brought back up with a loud degraded-respawn log line even though recompile failed"
 fi
 final_cleanup
 LIVE_ROOTS=()
 unset TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_PRINCIPAL_USER_ID
+rm -rf "$FAKE_BIN_08"
 
 # ── merged-code-reaches-daemons-03(interpreted): the same staleness
 #    coverage for a Babashka daemon, not just the compiled Node ones ──────
