@@ -150,6 +150,45 @@ test('parseBacklogYaml omits description/acceptance when absent', () => {
   assert.equal(Object.prototype.hasOwnProperty.call(item, 'acceptance'), false);
 });
 
+// BL-322: notes: block scalar + the modern nested acceptance.steps[0] -
+// the topic-opening summary's own two derived sources.
+
+test('parseBacklogYaml parses a multi-line notes block scalar', () => {
+  const yaml = 'id: BL-007\ntitle: t\nstatus: active\nnotes: |\n  First paragraph, line one.\n  Line two.\n\n  Second paragraph.\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.notes, 'First paragraph, line one.\nLine two.\n\nSecond paragraph.');
+});
+
+test('parseBacklogYaml reads the FIRST entry of a nested acceptance.steps list', () => {
+  const yaml = [
+    'id: BL-007',
+    'title: t',
+    'status: active',
+    'acceptance:',
+    '  feature: specs/features/BL-007-thing.feature',
+    '  steps:',
+    '    - "The first step"',
+    '    - "The second step"',
+    '',
+  ].join('\n');
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.firstAcceptanceStep, 'The first step');
+});
+
+test('parseBacklogYaml never confuses the nested acceptance.steps schema with the legacy flat acceptance field', () => {
+  const yaml = 'id: BL-007\ntitle: t\nstatus: active\nacceptance: specs/features/BL-007-thing.feature\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.acceptance, 'specs/features/BL-007-thing.feature');
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'firstAcceptanceStep'), false);
+});
+
+test('parseBacklogYaml omits notes/firstAcceptanceStep when absent', () => {
+  const yaml = 'id: BL-007\ntitle: t\nstatus: active\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'notes'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'firstAcceptanceStep'), false);
+});
+
 // ── parseYamlBlockScalar via the LENIENT regex fallback (strict js-yaml
 // throws on a gnarly title first, matching the real BL-093-shaped fixture
 // already covered by BL-129's no-regression test) ──────────────────────────
@@ -165,6 +204,47 @@ test('parseBacklogYaml lenient fallback returns undefined for a missing block-sc
   const yaml = 'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\n';
   const item = parseBacklogYaml(yaml);
   assert.equal(Object.prototype.hasOwnProperty.call(item, 'description'), false);
+});
+
+test('parseBacklogYaml extracts notes: and the first nested acceptance.steps entry via the lenient fallback on a strict-unparsable ticket', () => {
+  const yaml = [
+    'id: BL-093',
+    'title: BUG — colon: breaks strict YAML',
+    'status: done',
+    'notes: |',
+    '  Root cause: something.',
+    '  Second line.',
+    '',
+    '  A new paragraph.',
+    'acceptance:',
+    '  feature: specs/features/BL-093-thing.feature',
+    '  steps:',
+    '    - "The first step"',
+    '    - "The second step"',
+    '',
+  ].join('\n');
+  const item = parseBacklogYaml(yaml);
+  assert.ok(item, 'expected the lenient parser to still surface a ticket');
+  assert.equal(item.notes, 'Root cause: something.\nSecond line.\n\nA new paragraph.');
+  assert.equal(item.firstAcceptanceStep, 'The first step');
+});
+
+// BL-322 hardening: closes a real coverage gap in parseFirstAcceptanceStep
+// (the lenient-path regex counterpart) - a nested acceptance: block that
+// has no steps: sub-key at all (e.g. only feature:) was never covered, so
+// its own "give up gracefully" branch sat untested.
+test('parseBacklogYaml lenient fallback: a nested acceptance: block with no steps: sub-key never surfaces a firstAcceptanceStep', () => {
+  const yaml = [
+    'id: BL-093',
+    'title: BUG — colon: breaks strict YAML',
+    'status: done',
+    'acceptance:',
+    '  feature: specs/features/BL-093-thing.feature',
+    '',
+  ].join('\n');
+  const item = parseBacklogYaml(yaml);
+  assert.ok(item, 'expected the lenient parser to still surface a ticket');
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'firstAcceptanceStep'), false);
 });
 
 test('parseBacklogYaml lenient fallback dedents a block scalar to its own minimum indentation, including a deeper-indented paragraph', () => {
@@ -397,11 +477,19 @@ test('BL-129 strict-path-01: a well-formed ticket parses identically via the str
 });
 
 test('BL-129 strict-path-01: strict parsing does not surface stray keys outside the BacklogItem contract', () => {
-  const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: active\nevidence: some measured evidence\nnotes: internal only\n';
+  const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: active\nevidence: some measured evidence\n';
   const item = parseBacklogYaml(yaml);
   assert.deepEqual(item, { id: 'BL-007', title: 'Backlog panel', status: 'active' });
   assert.equal(Object.prototype.hasOwnProperty.call(item, 'evidence'), false);
-  assert.equal(Object.prototype.hasOwnProperty.call(item, 'notes'), false);
+});
+
+// BL-322: notes: is now a KNOWN field (the topic-opening summary's "what it
+// solves" source) - no longer an example of an excluded stray key, unlike
+// evidence: above.
+test('BL-322: strict parsing reads notes: as a known field', () => {
+  const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: active\nnotes: internal only\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.notes, 'internal only');
 });
 
 // The following BL-129 fallback fixtures are trimmed prefixes of real backlog

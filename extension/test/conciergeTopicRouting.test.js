@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const { decideTopicAction, routeEvent, topicNameForItem, messageTextForEvent, backlogForTopic, completionSummaryText } = require('../out/concierge/topicRouter');
+const { parseBacklogYaml } = require('../out/panel/backlogReader');
 
 function event(overrides = {}) {
   return { type: 'TaskStarted', backlogId: 'BL-123', payload: {}, ...overrides };
@@ -35,6 +36,74 @@ test('BL-325: messageTextForEvent appends a NeedsApproval snippet so the message
 
 test('BL-325: a non-string payload.snippet is ignored, never crashes or leaks [object Object]', () => {
   assert.equal(messageTextForEvent(event({ type: 'NeedsApproval', payload: { snippet: 42 } })), 'NeedsApproval: BL-123');
+});
+
+// BL-322 hardening: the ticket's own E2E procedure insists on a REAL
+// oversized ticket, "not a synthetic short fixture, the bug is precisely
+// about real notes being huge" - but neither the delivered unit tests nor
+// the acceptance suite ever fed a REAL parsed backlog file through
+// messageTextForEvent's own render/truncate path (the acceptance suite's
+// fixtures are hand-built {title, notes, firstAcceptanceStep} objects that
+// bypass backlogReader.ts entirely). This is a verbatim excerpt of a real,
+// large, shipped ticket's own notes: block (BL-324, ~11KB on disk) - real
+// backticks, em-dashes, and nested formatting a synthetic fixture would
+// never produce - parsed by the REAL backlogReader.ts and rendered by the
+// REAL topicRouter.ts end to end, proving the two modules compose
+// correctly against real ticket prose, not just against each other's own
+// synthetic unit fixtures.
+const REAL_OVERSIZED_TICKET_YAML = [
+  'id: BL-324',
+  'title: "Per-role lifecycle: actually park the roles a ticket does not need, and bring them back when it does"',
+  'status: active',
+  'notes: |',
+  '  WHY IT IS ITS OWN TICKET. The dynamic-per-ticket-agent-routing epic has four slices:',
+  '  (1) auto-hibernate on drain — BL-307 shipped, but BL-318 says it can never fire;',
+  '  (2) routing manifest `roles:` field — BL-317, active; (3) per-role lifecycle — THIS,',
+  '  previously not ticketed at all, existing only as a sentence inside BL-317\'s notes;',
+  '  (4) warm-core/break-even tuning — still not ticketed.',
+  '',
+  '  BL-317 records which roles a ticket needs and DELIBERATELY brings nothing up or down.',
+  '  So when BL-317 lands, nothing changes operationally — no agent parked, no token saved.',
+  '  The manifest is INERT without this slice. That is precisely this project\'s own',
+  '  "a foundation slice needs its wiring slice TRACKED, not assumed" rule.',
+  '',
+  '  WHAT IT MUST DO. On promote, read the ticket\'s `roles:` manifest (BL-317) and bring the',
+  '  swarm to exactly that shape: start the roles the ticket needs, park the ones it does',
+  '  not. Park = remove the role from `.swarmforge/roles.tsv` and kill its pane. This is the',
+  '  Operator\'s proven mechanism, not a new one: an absent roster entry means',
+  '  `dead-agent-events` does not fire AGENT_EXITED, so there is no respawn fight.',
+  '',
+  '  REUSE, DO NOT REINVENT: `operator_lib.bb`\'s `role-idle?` (empty inbox/new, nothing',
+  '  in_process); BL-307\'s `hibernate-swarm!` — this is its PER-ROLE SIBLING, not a second',
+  '  mechanism; `.swarmforge/roles.tsv` as the single source of truth for who is expected',
+  '  to be alive.',
+  '',
+  '  HARD DEPENDENCY — DO NOT BUILD BEFORE BL-323 LANDS. This slice systematically creates',
+  '  the exact stall BL-323 fixes. Parking roles on a schedule means killing',
+  '  claimed-but-unfinished parcels AS A MATTER OF ROUTINE; without resume-on-start, that',
+  '  converts a rare accident into a DESIGNED-IN failure mode.',
+  'acceptance:',
+  '  feature: specs/features/BL-324-per-role-lifecycle-park-unneeded-roles.feature',
+  '  steps:',
+  '    - "A ticket\'s manifest shapes the swarm to exactly the roles it needs"',
+  '    - "A parked role comes back when a later ticket needs it"',
+].join('\n');
+
+test('BL-322 real-fixture: a REAL oversized ticket file, parsed by the real backlogReader and rendered by the real topicRouter, truncates correctly end to end', () => {
+  const item = parseBacklogYaml(REAL_OVERSIZED_TICKET_YAML);
+  assert.ok(item.notes.length > 1000, 'expected the real notes: excerpt to genuinely exceed the message cap on its own');
+
+  const text = messageTextForEvent(
+    event({ payload: { title: item.title, notes: item.notes, firstAcceptanceStep: item.firstAcceptanceStep } })
+  );
+
+  assert.ok(text.startsWith(`What it is: ${item.title}`), `expected the real title to lead the message, got: ${text.slice(0, 120)}`);
+  assert.ok(text.includes('…'), 'expected the real oversized notes to be truncated with an ellipsis');
+  assert.ok(text.length < 4096, `expected the rendered message under Telegram's 4096-char limit, got ${text.length}`);
+  assert.ok(
+    !text.includes('DESIGNED-IN failure mode'),
+    'expected only the FIRST paragraph of the real notes, not the whole multi-paragraph block'
+  );
 });
 
 // ── backlogForTopic (pure) — BL-298: the inverse of the forward map ───────

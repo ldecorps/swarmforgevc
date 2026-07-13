@@ -1,0 +1,64 @@
+id: BL-330
+title: "Topic lifecycle is a diff, not a reconciliation — a completion missed while the bot is down is lost permanently"
+milestone: M8
+status: todo
+type: defect
+severity: high
+priority: 5
+direction: expedite
+depends_on: []
+source: "Slice 2 of the archive-then-delete-topics request raised by the human 2026-07-13 via .swarmforge/operator/INTAKE-archive-then-delete-done-topics.md; drained per BL-311's convention. Tagged expedite: it is a live defect (stray un-closed topics exist today), and it is a HARD safety prerequisite for any deletion path."
+
+notes: |
+  THE DEFECT. Completion events are a DIFF, not a reconciliation: diffTaskCompleted
+  (extension/src/events/swarmEventStream.ts:58) compares the PREVIOUS snapshot's done-set with
+  the CURRENT one and emits only the newly-appeared ids. If the bot is down, crash-looping, or
+  running a stale build at the moment a ticket flips to done, that transition is MISSED
+  PERMANENTLY — there is no catch-up pass. The same shape applies to diffTaskStarted.
+
+  IT HAS ALREADY HAPPENED, PROVABLY. BL-328: the front-desk bot was crash-looping (BL-302/303)
+  and then ran a 25-hour-stale build, so it was not listening when tickets completed. Those
+  completions are simply gone — which is why closed-topic bookkeeping does not match reality
+  today.
+
+  WHY IT BLOCKS DELETION — THIS IS THE DATA-LOSS TRAP. For close-only, a missed completion just
+  leaves a stray OPEN topic: annoying, harmless. For ARCHIVE-THEN-DELETE it is far worse. A
+  missed completion means a topic that was never archived. If a later reconciliation/retention
+  sweep then deletes it as "an old done ticket's topic", it destroys an UN-ARCHIVED transcript —
+  permanently, including the human's own words. So this ticket must land BEFORE any deletion path
+  (BL-331), not alongside it. BL-331 additionally refuses to delete anything lacking a VERIFIED
+  archive, but that is defence in depth, not a substitute for fixing the missed events.
+
+  SCOPE:
+    1. Reconcile the topic lifecycle from CURRENT STATE, not from a transition the bot had to be
+       alive to witness: for each ticket, compare where the ticket IS (active/done) against where
+       its topic IS, and bring the topic to the right state. A completion the bot never saw must
+       still be reconciled.
+    2. IDEMPOTENT: reconciling a topic that is already correct must do nothing — never post a
+       second summary, never re-close an already-closed topic. This is what makes a state-based
+       sweep safe to run repeatedly.
+    3. Leave in-flight tickets' topics alone.
+    4. Keep the existing diff path working (it is the fast path when the bot IS up); the
+       reconciliation is the SAFETY NET beneath it, not a replacement that changes normal
+       behavior. Do not build a second, parallel notify mechanism.
+    5. OUT OF SCOPE: archiving, exporting, deleting, retention (BL-331); the transcript store
+       itself (BL-329).
+
+  E2E QA PROCEDURE: take a ticket to done while the bot is genuinely NOT RUNNING (stop it — do
+  not simulate), then start the bot and assert the topic is still brought to its completed state.
+  That is the exact scenario that failed in production, and a fixture that fakes a missed
+  transition proves nothing about the live path. Then assert idempotence by running the
+  reconciliation twice and checking the topic is not posted to or closed a second time, and
+  assert an in-flight ticket's topic is untouched.
+
+acceptance:
+  feature: specs/features/BL-330-topic-lifecycle-reconciliation.feature
+  steps:
+    - "A completion that happened while the bot was down is still reconciled"
+    - "Reconciliation is driven by current state, not by a transition it must have witnessed"
+    - "Reconciliation is idempotent"
+    - "A ticket that is not done is left alone"
+
+human_approval: pending
+
+mutation_cost: medium

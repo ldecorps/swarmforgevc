@@ -1,0 +1,80 @@
+id: BL-329
+title: "Serialise a BL topic's content into the repo — the Telegram topic becomes a projection, not the source of truth"
+milestone: M8
+status: todo
+type: defect
+severity: high
+priority: 5
+direction: expedite
+depends_on: []
+source: "Slice 1 of the human's 2026-07-13 request, RESHAPED by the human mid-spec: 'How about the swarm serialise the topic content, so that it can be recreated from scratch.' Via .swarmforge/operator/INTAKE-archive-then-delete-done-topics.md (re-read after the reshape; the first spec of this ticket was written from the pre-reshape version and has been corrected). Tagged expedite: live data loss today, independent of the deletion feature that surfaced it."
+
+notes: |
+  THE RESHAPED FRAMING — THIS IS THE KEY IDEA, AND IT IS STRONGER THAN "ARCHIVE BEFORE DELETE".
+  The human's ask is not merely "keep a copy so deleting is survivable". It is: SERIALISE the
+  topic's content so the topic can be RECREATED FROM SCRATCH. That inverts the architecture —
+  the Telegram topic stops being the SOURCE OF TRUTH and becomes a PROJECTION of durable state
+  held in the repo. The topic is then DISPOSABLE: delete it freely, because it can always be
+  rebuilt. A destructive, one-way operation becomes a REVERSIBLE one. Everything else in this
+  epic (safe deletion, reopening with context, portability off Telegram, tractable
+  reconciliation) falls out of that one property.
+
+  THE BLOCKER. The swarm stores NO BL-topic content at all. SUP threads have a store
+  (support_thread_store.bb); BL topics have none. Verified precisely (the intake says "persisted
+  nowhere", which is nearly right and the nuance matters):
+    - Inbound human messages ARE appended today — telegram-front-desk-bot.ts:166 calls
+      appendOperatorEvent with a TELEGRAM_BL_TOPIC_MESSAGE record, landing append-only in
+      `.swarmforge/operator/events.jsonl`. But that is NOT a record of the topic: `.swarmforge/`
+      is GITIGNORED local runtime state (not in the repo, not backed up, gone on a fresh
+      checkout), it is a FIREHOSE of every operator event with no per-topic view, and it holds
+      no ordering or authorship structure.
+    - The swarm's OUTBOUND messages (TaskStarted, NeedsApproval, completion summary, replies)
+      are recorded NOWHERE AT ALL.
+  So a topic's content exists only inside Telegram, and deleting one destroys it outright.
+
+  WHY IT IS NEWLY URGENT. BL-298 and BL-325 just made BL topics TWO-WAY. The swarm's own messages
+  are always regenerable from the ticket and git; THE HUMAN'S ARE NOT. They are precisely the
+  irreplaceable content, and nothing durable keeps them.
+
+  SCOPE:
+    1. Serialise EVERY message in a BL topic — inbound AND outbound — as it happens, into a
+       durable, ORDERED record: `{seq, ts, author (swarm role | human), type, text}`. Mirror
+       support_thread_store.bb's existing shape; do NOT invent a second mechanism beside it.
+    2. STORE IT IN THE REPO, keyed by ticket — the record belongs next to the work, not inside a
+       chat app. This is what makes it the source of truth rather than a cache. (It is also what
+       makes the record portable: a different group, or a different channel entirely, can later
+       be replayed from the same serialised form.)
+    3. Preserve ORDER and AUTHORSHIP. BL-332 must be able to replay the conversation faithfully,
+       and Telegram will not let a bot repost as the original author — so author and timestamp
+       have to be IN the record, or they are lost for good.
+    4. Durable across a restart of the writing process (BL-328 shows these processes get
+       restarted, and will be restarted far more often once BL-328 lands).
+    5. BACKFILL what still exists: the human's past BL-topic messages are recoverable from
+       events.jsonl's TELEGRAM_BL_TOPIC_MESSAGE records. Import them rather than starting empty
+       and abandoning the history we do still have.
+    6. OUT OF SCOPE: deleting anything (BL-331); recreating a topic from the record (BL-332);
+       reconciliation of missed completions (BL-330).
+
+  THE EPIC IS NOT DONE UNTIL THE ROUND TRIP IS PROVEN (BL-332): serialise -> delete -> recreate
+  must yield a topic whose content matches the record. That is the acceptance test of the whole
+  design, not an incidental property — and this ticket is what makes it possible.
+
+  E2E QA PROCEDURE: post a real message into a real BL topic as the human and assert it is
+  serialised with order, timestamp, author and text. Then have the SWARM post and assert the
+  OUTBOUND half is serialised too — outbound is the half nothing keeps today, so a test covering
+  only inbound would pass while leaving the gap wide open. Restart the writing process and assert
+  the record survives. Finally run the backfill against the real events.jsonl and assert
+  previously-captured human messages land in the right ticket's record.
+
+acceptance:
+  feature: specs/features/BL-329-serialise-bl-topic-content.feature
+  steps:
+    - "Every message is serialised as it happens, in both directions"
+    - "The record lives in the repository, with the work"
+    - "The record preserves the order messages were sent in"
+    - "The record survives a restart of the process that wrote it"
+    - "Human messages already captured are backfilled, not abandoned"
+
+human_approval: pending
+
+mutation_cost: medium
