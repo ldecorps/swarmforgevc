@@ -99,6 +99,29 @@
 (defn now-iso []
   (.format (java.time.format.DateTimeFormatter/ISO_INSTANT) (java.time.Instant/now)))
 
+;; ── BL-328: build identity (staleness detection) ────────────────────────────
+;; This supervisor's OWN identity (a Babashka process; source loaded fresh
+;; at THIS startup, held in memory until it exits) is captured ONCE here.
+;; The bridge/bot's own identity is DIFFERENT - they are separate Node
+;; processes reading extension/out/BUILD_SHA (compile-time-stamped,
+;; extension/out/ is gitignored) at THEIR OWN startup - read fresh at the
+;; moment each is (re)spawned below, since that is the exact instant a
+;; freshly-spawned child will also read it (nothing else touches
+;; extension/out/ in that window). Never a crash on git being unavailable.
+(defn- capture-supervisor-build-sha! []
+  (try
+    (let [{:keys [exit out]} (process/sh {:continue true :dir project-root} "git" "rev-parse" "HEAD")]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
+(def supervisor-build-sha (capture-supervisor-build-sha!))
+
+(defn- read-node-build-sha! []
+  (try
+    (let [f (fs/path project-root "extension" "out" "BUILD_SHA")]
+      (when (fs/exists? f) (str/trim (slurp (str f)))))
+    (catch Exception _ nil)))
+
 (defn log! [& parts]
   (fs/create-dirs op-dir)
   (spit (str log-file) (str (now-iso) " " (str/join " " parts) "\n") :append true))
@@ -147,7 +170,7 @@
     {}))
 
 (defn write-status! [state]
-  (atomic-spit! status-file (json/generate-string (assoc state :updated_at (now-iso)))))
+  (atomic-spit! status-file (json/generate-string (assoc state :updated_at (now-iso) :supervisor_build_sha supervisor-build-sha))))
 
 ;; BL-303: check-one!'s own state-machine decision now lives in
 ;; front_desk_supervisor_lib.bb (pure, adapter-injected) - this is just the
@@ -162,6 +185,19 @@
     :re-armed (log! "re-armed" (name spec-key) "pid=" (str (:pid entry)))
     nil))
 
+;; BL-328: a fresh spawn (:started or :re-armed - check-one!'s own two
+;; "a NEW process was just started" events) gets ITS build_sha stamped
+;; RIGHT NOW, reading extension/out/BUILD_SHA at the exact moment the
+;; child was spawned - never re-read later, which would report whatever
+;; the CURRENT on-disk build is rather than what that specific child
+;; process actually loaded at its own boot. Every other event (:crashed,
+;; :healthy-reset, nil, ...) leaves the entry's existing build_sha alone -
+;; the still-running child's identity has not changed.
+(defn- stamp-build-sha [entry event]
+  (if (#{:started :re-armed} event)
+    (assoc entry :build_sha (read-node-build-sha!))
+    entry))
+
 (defn tick! []
   (let [prior (read-state)
         now (now-ms)
@@ -169,7 +205,8 @@
                           (map (fn [spec]
                                  (let [entry (merge (front-desk-supervisor-lib/default-entry) (get prior (:key spec)))
                                        {:keys [entry event]} (front-desk-supervisor-lib/check-one!
-                                                               entry now pid-alive? (:spawn-pid! spec) restart-config giveup-config)]
+                                                               entry now pid-alive? (:spawn-pid! spec) restart-config giveup-config)
+                                       entry (stamp-build-sha entry event)]
                                    (log-event! (:key spec) event entry)
                                    [(:key spec) entry])))
                           process-specs)]

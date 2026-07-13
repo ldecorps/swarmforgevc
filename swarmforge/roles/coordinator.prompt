@@ -152,6 +152,26 @@ When QA passes a parcel (`git_handoff` or `note` to you with the approved commit
 and task/backlog id), QA itself lands that commit on `main` and pushes origin
 (see QA.prompt). Your job is backlog bookkeeping ONLY — you run NO git merge and
 NO push:
+0. **Make the merged code actually RUN, before anything else** (BL-328):
+   `bb swarmforge/scripts/build_freshness_cli.bb <project-root> sync`
+   A merge does NOT restart anything. Every long-lived process (bridge, bot,
+   `handoffd`, `handoffd_supervisor`, `front_desk_supervisor`, `operator_runtime`)
+   keeps executing the code it loaded at STARTUP — for days. So a ticket can be
+   built, QA-approved, merged, closed by you, and be **completely inert in
+   production**, silently. It has already happened repeatedly: the front-desk bot
+   ran a 25-hour-stale build while BL-298/BL-320/BL-325 sat merged and dead, and a
+   supervisor respawning a crashed process faithfully re-arms the SAME stale build,
+   so the system self-heals back to broken. This step is what closes that gap, and
+   it is a DELIBERATE, coordinator-invoked action — there is no background poller,
+   by design. If you skip it, the fix does not ship; it only looks like it did.
+   - Run it FIRST, before closing/promoting, so your subsequent bookkeeping
+     handoffs are carried by the freshly-restarted daemon.
+   - Then CONFIRM with `build_freshness_cli.bb <project-root> report` — never
+     assume the sync worked. If anything is still stale, say so loudly rather than
+     closing the ticket in silence: a green ticket over inert code is exactly the
+     lie BL-328 exists to end.
+   - You are the ONLY owner of this step. Do not add a second restart mechanism
+     anywhere; BL-328 chose one owner on purpose.
 1. **Close** the ticket: move its YAML from `backlog/active/` to `backlog/done/`.
 2. **Promote** the next eligible item from `backlog/paused/` into
    `backlog/active/` if below `active_backlog_max_depth`, and recheck the cap.
