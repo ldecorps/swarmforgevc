@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=f9533c6b3ccad7268ea7f306be3ec439569820a3f2f46dd3f497aeb62b153261
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-13T08:40:16.095213008Z","feature_name":"A BL topic's content is serialised into the repo, so the topic is a projection and not the source of truth","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-329-serialise-bl-topic-content.feature","background_hash":"c68ee93f0325e3e5ff7fd7bfecab52a8ed27b8c05412b16fb4142517082808cf","implementation_hash":"unknown","scenarios":[{"index":0,"name":"Every message is serialised as it happens, in both directions","scenario_hash":"f7aa047b98c5cc722f8ae765b0586c3578289abd8546ec5e22b1b3ba6363410e","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-13T08:40:16.095213008Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A BL topic's content is serialised into the repo, so the topic is a projection and not the source of truth
 
 # BL-329: slice 1 of "serialise a topic so it can be recreated from scratch". Today a BL topic's

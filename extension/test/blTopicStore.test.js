@@ -2,7 +2,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { readRecord, appendMessage, recordPath } = require('../out/concierge/blTopicStore');
+const { execFileSync } = require('node:child_process');
+const { readRecord, appendMessage, recordPath, commitTopicRecord } = require('../out/concierge/blTopicStore');
 
 // BL-329: the durable, git-tracked, per-ticket record of every message sent
 // in a BL topic - inbound and outbound - so the Telegram topic becomes a
@@ -97,4 +98,79 @@ test('the record survives a restart of the writing process - a fresh read after 
 test('readRecord tolerates a missing backlog/topics directory entirely (never crashes on a fresh checkout)', () => {
   const targetPath = mkTmp();
   assert.doesNotThrow(() => readRecord(targetPath, 'BL-999'));
+});
+
+// ── commitTopicRecord / appendMessage's own git-durability (architect
+//    bounce, 2026-07-13): a record that is merely NOT gitignored is still
+//    lost on a fresh checkout / disk failure - "durable" requires it is
+//    actually git-committed. Mirrors costHealthSidecar.test.js's own
+//    git-fixture pattern exactly (real `git init` repo, scoped commit,
+//    fail-open when there is nothing to commit or no repo at all). ───────
+
+function git(cwd, args) {
+  execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+function mkGitRepo() {
+  const target = mkTmp();
+  git(target, ['init', '-q']);
+  git(target, ['config', 'user.email', 't@t']);
+  git(target, ['config', 'user.name', 't']);
+  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  return target;
+}
+
+test('commitTopicRecord commits only the record file, scoped, into a real repo', () => {
+  const target = mkGitRepo();
+
+  // An unrelated dirty file must NOT be swept into the record's own commit.
+  fs.writeFileSync(path.join(target, 'unrelated.txt'), 'do not commit me');
+
+  // Write the file directly (never via appendMessage, which already
+  // auto-commits - this test is about commitTopicRecord's OWN contract in
+  // isolation) so the commit attempted below is genuinely a fresh one.
+  const filePath = recordPath(target, 'BL-900');
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify({ id: 'BL-900', messages: [] }));
+  const committed = commitTopicRecord(target, filePath, 'BL-900');
+  assert.equal(committed, true);
+
+  const status = execFileSync('git', ['-C', target, 'status', '--porcelain'], { encoding: 'utf8' });
+  assert.match(status, /unrelated\.txt/, 'the unrelated file must remain uncommitted (still dirty)');
+  assert.doesNotMatch(status, /backlog\/topics/, 'the record itself must no longer show as dirty (it was committed)');
+
+  const log = execFileSync('git', ['-C', target, 'log', '--format=%s', '--', filePath], { encoding: 'utf8' });
+  assert.match(log, /BL-900/);
+});
+
+test('commitTopicRecord returns false (never throws) when there is nothing new to commit', () => {
+  const target = mkGitRepo();
+  appendMessage(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 });
+  const filePath = recordPath(target, 'BL-900');
+  commitTopicRecord(target, filePath, 'BL-900');
+
+  assert.doesNotThrow(() => commitTopicRecord(target, filePath, 'BL-900'));
+  assert.equal(commitTopicRecord(target, filePath, 'BL-900'), false);
+});
+
+test('commitTopicRecord returns false (never throws) when the target is not a git repo at all', () => {
+  const target = mkTmp();
+  appendMessage(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 });
+  const filePath = recordPath(target, 'BL-900');
+  assert.doesNotThrow(() => commitTopicRecord(target, filePath, 'BL-900'));
+  assert.equal(commitTopicRecord(target, filePath, 'BL-900'), false);
+});
+
+test('appendMessage itself commits the record into a real repo - the record actually survives a fresh checkout, not merely a non-gitignored write (architect bounce)', () => {
+  const target = mkGitRepo();
+  appendMessage(target, 'BL-900', { author: 'human', type: 'inbound', text: 'a durable message', ts: 1 });
+  const filePath = recordPath(target, 'BL-900');
+  const log = execFileSync('git', ['-C', target, 'log', '--format=%H', '--', filePath], { encoding: 'utf8' }).trim();
+  assert.notEqual(log, '', 'expected the record file to have at least one real commit touching it');
+});
+
+test('appendMessage never throws even when the target path is not a git repo (fails open, write still succeeds)', () => {
+  const target = mkTmp();
+  assert.doesNotThrow(() => appendMessage(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 }));
+  assert.deepEqual(readRecord(target, 'BL-900').messages.map((m) => m.text), ['hi']);
 });
