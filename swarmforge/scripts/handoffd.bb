@@ -951,6 +951,27 @@
     (catch Exception e
       (log! "dead-letter-notify-sweep-error" (.getMessage e)))))
 
+;; BL-350 (BL-336 finding H1): shells to the compiled sample-resources.js
+;; CLI, same posture as dead-letter-notify-sweep!/recert-notify-sweep!
+;; above - reuses BL-264's startResourceSampler pid-resolution/append path
+;; unchanged, so a swarm running headless (no editor attached) finally
+;; produces the resource_sample telemetry the cost-health sidecar's
+;; resourceAnomalies field has depended on since BL-213 and never received.
+;; The CLI itself owns the "is a sample already due" gate
+;; (shouldSampleThisInterval against the shared telemetry file) - firing
+;; this sweep every cycle like its siblings is safe, since most invocations
+;; no-op until the interval elapses, and an editor's own host-side sampler
+;; recording a sample makes THIS sweep's own next tick no-op too (shared
+;; gate, not two independently-tuned timers).
+(defn resource-sample-sweep! []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "sample-resources.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit)
+        (log! "resource-sample" (str/trim out))))
+    (catch Exception e
+      (log! "resource-sample-sweep-error" (.getMessage e)))))
+
 ;; BL-258: headless, host-independent morning trigger for briefing
 ;; GENERATION (complements briefing-email-sweep! above, which only handles
 ;; the SEND of an already-committed file). Reads the configured morning
@@ -1290,7 +1311,14 @@
                     (try
                       (dead-letter-notify-sweep!)
                       (catch Exception e
-                        (log! "dead-letter-notify-sweep-error" (.getMessage e)))))
+                        (log! "dead-letter-notify-sweep-error" (.getMessage e))))
+                    ;; BL-350: resource-sample sweep shares the same cadence -
+                    ;; no separate timeout, same rationale as BL-222/BL-214/
+                    ;; BL-258/BL-309/BL-316/BL-339/BL-353 above.
+                    (try
+                      (resource-sample-sweep!)
+                      (catch Exception e
+                        (log! "resource-sample-sweep-error" (.getMessage e)))))
                   (spit (str heartbeat-file) (str (now) "\n"))
                   (when (zero? (mod cycle heartbeat-log-every-cycles))
                     (log! "heartbeat" (str "cycle=" cycle)))

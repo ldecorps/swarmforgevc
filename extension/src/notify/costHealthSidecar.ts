@@ -86,6 +86,14 @@ export interface CostHealthSidecar {
   flowBalance: { speccedPerDay: TrendedNumber; closedPerDay: TrendedNumber };
   reliability: ReliabilityCounts;
   resourceAnomalies: ResourceAnomaly[];
+  // BL-350: distinguishes "sampled, found nothing anomalous" from "never
+  // sampled" - both previously rendered as an empty resourceAnomalies array
+  // with no way to tell them apart (the exact defect BL-350 fixes: a quiet
+  // day and a broken sampler looked identical). true once any role has at
+  // least one recorded sample. Optional so a sidecar committed before this
+  // ticket (schemaVersion unchanged, purely additive) reads as absent/falsy
+  // - same "no anomaly section rendered" behavior it always had.
+  resourceSamplesObserved?: boolean;
   // BL-290: additive, optional - suite-test duration is machine-local/
   // gitignored (deliveryMetrics.ts's own computeSuiteDurationTrend reads
   // it live), so this committed snapshot is the ONLY way it can ever reach
@@ -242,6 +250,15 @@ function isAnomalousTrend(trend: TrendResult): boolean {
   return Math.abs(trend.delta / trend.priorValue) >= RESOURCE_ANOMALY_THRESHOLD;
 }
 
+// BL-350: true once ANY tracked role has a recorded sample - independent of
+// whether that sample is anomalous. This is the signal renderAnomalyLines
+// needs to tell a genuinely quiet day (sampled, nothing anomalous) apart
+// from a broken sampler (never sampled at all); computeResourceAnomalies's
+// own anomaly threshold is unchanged by this ticket.
+function computeResourceSamplesObserved(resourceTrendsByRole: Record<string, RoleResourceTrend>): boolean {
+  return Object.values(resourceTrendsByRole).some((trend) => trend.currentRssBytes !== null);
+}
+
 function computeResourceAnomalies(resourceTrendsByRole: Record<string, RoleResourceTrend>): ResourceAnomaly[] {
   const anomalies: ResourceAnomaly[] = [];
   for (const [role, trend] of Object.entries(resourceTrendsByRole)) {
@@ -294,6 +311,7 @@ export function buildCostHealthSidecar(
       daemonRestarts: { value: 0, trend: computeTrend([]) },
     },
     resourceAnomalies: computeResourceAnomalies(resourceTrendsByRole),
+    resourceSamplesObserved: computeResourceSamplesObserved(resourceTrendsByRole),
   };
   if (suiteDurationTrend) {
     sidecar.suiteDurationTrend = suiteDurationTrend;
@@ -377,18 +395,26 @@ function renderReliabilityLine(rel: ReliabilityCounts): string {
   );
 }
 
-function renderAnomalyLines(anomalies: ResourceAnomaly[]): string[] {
-  if (anomalies.length === 0) {
-    return [];
+// BL-350: a quiet day (samplesObserved true, no anomalies) now renders an
+// explicit "none found" line instead of the same silent omission a broken,
+// never-sampled sampler produces (samplesObserved false/absent) - that
+// distinction is the entire point of the ticket (see resourceSamplesObserved
+// above).
+function renderAnomalyLines(anomalies: ResourceAnomaly[], samplesObserved: boolean): string[] {
+  if (anomalies.length > 0) {
+    return [
+      '',
+      '**Resource anomalies:**',
+      ...anomalies.map((a) => {
+        const mb = Math.round(a.rssBytes / (1024 * 1024));
+        return `- ${a.role}: ${mb}MB ${trendArrow(a.rssTrend)}, ${a.cpuPercent.toFixed(1)}% cpu ${trendArrow(a.cpuTrend)}`;
+      }),
+    ];
   }
-  return [
-    '',
-    '**Resource anomalies:**',
-    ...anomalies.map((a) => {
-      const mb = Math.round(a.rssBytes / (1024 * 1024));
-      return `- ${a.role}: ${mb}MB ${trendArrow(a.rssTrend)}, ${a.cpuPercent.toFixed(1)}% cpu ${trendArrow(a.cpuTrend)}`;
-    }),
-  ];
+  if (samplesObserved) {
+    return ['', '**Resource anomalies:** none found.'];
+  }
+  return [];
 }
 
 // Pure: renders the briefing's "Cost & Health" section directly from the
@@ -410,7 +436,7 @@ export function renderCostHealthSection(sidecar: CostHealthSidecar | null): stri
     renderFlowBalanceLine(sidecar.flowBalance),
     '',
     renderReliabilityLine(sidecar.reliability),
-    ...renderAnomalyLines(sidecar.resourceAnomalies),
+    ...renderAnomalyLines(sidecar.resourceAnomalies, sidecar.resourceSamplesObserved === true),
   ];
   return lines.join('\n');
 }
