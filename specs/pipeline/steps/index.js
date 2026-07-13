@@ -129,6 +129,7 @@ const DOMAINS = [
   require('./routingManifestFieldSteps'),
   require('./roleLifecycleParkUnneededSteps'),
   require('./topicOpeningSummarySteps'),
+  require('./mergedCodeReachesDaemonsSteps'),
 ];
 
 function registerSteps(registry) {
