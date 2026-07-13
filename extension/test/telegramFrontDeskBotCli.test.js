@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { parseCliArgs, conciergeTickIntervalMs, readRoleTicket } = require('../out/tools/telegram-front-desk-bot');
+const { parseCliArgs, conciergeTickIntervalMs, readRoleTicket, ensureOperatorTopic } = require('../out/tools/telegram-front-desk-bot');
 
 // parseNextSseRecord's own tests live in telegramFrontDeskBotCore.test.js -
 // its implementation moved there (the testable core); this file re-exports
@@ -149,4 +149,78 @@ test('a missing BRIDGE_CONTROL_TOKEN exits non-zero with a clear message', () =>
   });
   assert.notEqual(result.exitCode, 0);
   assert.match(result.stderr, /BRIDGE_CONTROL_TOKEN is not set/);
+});
+
+// ── ensureOperatorTopic (BL-346 standing-operator-topic-01/06/07) ────────
+
+function mkTmpRoot() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-operator-topic-'));
+}
+
+function topicMapPath(root) {
+  return path.join(root, '.swarmforge', 'operator', 'telegram-topic-map.json');
+}
+
+function readTopicMapFixture(root) {
+  return JSON.parse(fs.readFileSync(topicMapPath(root), 'utf8'));
+}
+
+function writeTopicMapFixture(root, map) {
+  fs.mkdirSync(path.dirname(topicMapPath(root)), { recursive: true });
+  fs.writeFileSync(topicMapPath(root), JSON.stringify(map));
+}
+
+// Mirrors telegramClient.test.js's own fake postFn convention - never a
+// real network call.
+function fakeCreateOk(threadId) {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: { message_thread_id: threadId, name: 'Operator' } } };
+  };
+  return { postFn, calls };
+}
+
+test('BL-346 standing-operator-topic-01: creates the Operator topic and binds it to the reserved subject when the map has no binding yet', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeCreateOk(42);
+  await ensureOperatorTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 1);
+  const map = readTopicMapFixture(root);
+  assert.equal(map['42'], 'OPERATOR');
+});
+
+test('the create call names the topic "Operator"', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeCreateOk(7);
+  await ensureOperatorTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.match(calls[0].url, /createForumTopic$/);
+  assert.match(calls[0].body, /"name":"Operator"/);
+});
+
+test('BL-346 standing-operator-topic-06: a map that already binds the reserved subject never creates a second topic', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'OPERATOR' });
+  const { postFn, calls } = fakeCreateOk(999);
+  await ensureOperatorTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 0);
+  assert.deepEqual(readTopicMapFixture(root), { '42': 'OPERATOR' });
+});
+
+test('BL-346 standing-operator-topic-07: a reserved subject absent from the map is created again, bound to the SAME subject id as before', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '7': 'SUP-1' }); // ordinary support subjects, no Operator binding
+  const { postFn, calls } = fakeCreateOk(55);
+  await ensureOperatorTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 1);
+  const map = readTopicMapFixture(root);
+  assert.equal(map['55'], 'OPERATOR');
+  assert.equal(map['7'], 'SUP-1');
+});
+
+test('a failed create degrades quietly - never throws, never writes a partial binding', async () => {
+  const root = mkTmpRoot();
+  const postFn = async () => ({ ok: false, status: 500, json: { description: 'simulated failure' } });
+  await ensureOperatorTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(fs.existsSync(topicMapPath(root)), false);
 });

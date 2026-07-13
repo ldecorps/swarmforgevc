@@ -67,6 +67,29 @@ export function resolveReplyTopicId(
   return supTopicId !== undefined ? supTopicId : backlogTopicMap[threadId];
 }
 
+// BL-346: the reserved subject a standing "Operator" forum topic is bound
+// to in the SAME {topicId: subjectId} map subjectForTopic/topicForSubject
+// already trust - once bound, an inbound message in that topic resolves
+// through the ORDINARY post-existing branch below like any other SUP-###
+// subject (never allocating a fresh support issue), and a reply tagged
+// with this subject id resolves back through topicForSubject/
+// resolveReplyTopicId exactly like any other reply - no new routing/egress
+// code needed, only the one-time binding itself (decideEnsureOperatorTopicAction).
+export const OPERATOR_SUBJECT_ID = 'OPERATOR';
+export const OPERATOR_TOPIC_NAME = 'Operator';
+
+export type EnsureOperatorTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
+
+// Pure: the reserved-subject twin of topicRouter.ts's decideTopicAction -
+// reuse the topic id already bound to OPERATOR_SUBJECT_ID (topicForSubject,
+// the SAME lookup the reply egress uses), or create if no binding exists
+// yet. Never keyed by the topic's NAME (Telegram topic names are not
+// unique/stable identifiers) - only by the map's own subject-id value.
+export function decideEnsureOperatorTopicAction(topicMap: Record<string, string>): EnsureOperatorTopicAction {
+  const existingTopicId = topicForSubject(topicMap, OPERATOR_SUBJECT_ID);
+  return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
+}
+
 export type BotUpdateDecision =
   | { action: 'post-existing'; subjectId: string; text: string }
   | { action: 'operator-context'; backlogId: string; text: string }

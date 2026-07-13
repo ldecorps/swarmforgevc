@@ -806,10 +806,14 @@
   // first time each relevant render runs, so a LATER re-render (locale
   // toggle, manual "back" navigation) never re-applies it and fights the
   // user's own navigation.
+  // BL-339: a #recert=1 fragment (built by pwaDeepLinks.ts's own
+  // buildRecertDeepLink) lands the human directly on the recert work
+  // (recertSection), not the PWA's front page - Telegram's own
+  // waiting-batch announcement is the real caller.
   var initialHashRoute = (function () {
     var hash = (location.hash || '').replace(/^#/, '');
     var params = new URLSearchParams(hash);
-    return { ticketId: params.get('ticket'), approvalId: params.get('approval') };
+    return { ticketId: params.get('ticket'), approvalId: params.get('approval'), recert: params.get('recert') !== null };
   })();
 
   // BL-263: renders backlog.json's own notDoneCount verbatim - never
@@ -1320,6 +1324,17 @@
     recertBatch = data;
     setRecertAsOfText(data);
     renderRecertContent();
+    // BL-339 deep-link-lands-on-recert-work: consumed (nulled) on first
+    // use, same "never re-apply on a later re-render" contract as the
+    // #ticket/#approval routes above - a locale toggle or manual scroll
+    // away must never snap the human back here.
+    if (initialHashRoute.recert) {
+      initialHashRoute.recert = false;
+      var section = document.getElementById('recertSection');
+      if (section && section.scrollIntoView) {
+        section.scrollIntoView();
+      }
+    }
   }
 
   function registerServiceWorker() {
