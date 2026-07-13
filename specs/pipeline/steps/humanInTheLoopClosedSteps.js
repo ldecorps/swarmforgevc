@@ -20,7 +20,7 @@ const OPERATOR_RUNTIME_BB = path.join(SWARMFORGE_SCRIPTS, 'operator_runtime.bb')
 const OPERATOR_DECIDE_JS = path.join(EXT_DIR, 'out', 'tools', 'operator-decide.js');
 
 const { runConciergeTick } = require(path.join(EXT_DIR, 'out', 'concierge', 'conciergeTick'));
-const { decideUpdateAction, resolveReplyTopicId, relaySseReplies } = require(path.join(EXT_DIR, 'out', 'tools', 'telegramFrontDeskBotCore'));
+const { decideUpdateAction, resolveReplyDelivery, relaySseReplies } = require(path.join(EXT_DIR, 'out', 'tools', 'telegramFrontDeskBotCore'));
 const { backlogForTopic } = require(path.join(EXT_DIR, 'out', 'concierge', 'topicRouter'));
 const { installFakeTmux } = require(path.join(EXT_DIR, 'test', 'helpers', 'fakeTmux'));
 
@@ -354,7 +354,7 @@ function registerSteps(registry) {
         sendReply: async (topicId, text) => {
           ctx.relaySent.push({ topicId, text });
         },
-        topicForSubject: (subjectId) => resolveReplyTopicId({}, ctx.backlogTopicMap, subjectId),
+        resolveDelivery: (subjectId) => resolveReplyDelivery({}, ctx.backlogTopicMap, subjectId),
         ackReply: async () => {},
       },
       new Set()

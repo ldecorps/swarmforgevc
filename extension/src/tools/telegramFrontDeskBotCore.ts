@@ -56,6 +56,14 @@ export function topicForSubject(topicMap: Record<string, string>, subjectId: str
   return found ? Number(found[0]) : undefined;
 }
 
+// BL-355: true when a subject's DM/General-topic origin was ALSO recorded
+// under DEFAULT_SUBJECT_KEY - i.e. General has, at some point, been a live
+// place this subject was discussed from, distinct from whether it ALSO has
+// a real dedicated topic (topicForSubject above).
+export function hasDefaultBinding(topicMap: Record<string, string>, subjectId: string): boolean {
+  return topicMap[DEFAULT_SUBJECT_KEY] === subjectId;
+}
+
 // BL-325: a reply's threadId may name either a SUP-### support subject
 // (topicForSubject's own {topicId: subjectId} map) or a BL-### backlog
 // item (the SEPARATE, forward backlogId->topicId map - no reversal
@@ -75,6 +83,49 @@ export function resolveReplyTopicId(
   const supTopicId = topicForSubject(topicMap, threadId);
   return supTopicId !== undefined ? supTopicId : backlogTopicMap[threadId];
 }
+
+// BL-355: the reply relay's destination decision, replacing a bare topic id
+// with an explicit outcome so "no real topic bound" and "deliver, but ALSO
+// tell General" are distinguishable instead of collapsing to one undefined.
+//
+// A subject bound to a real topic (SUP or, via the backlog map, BL-###)
+// keeps its existing destination - `resolveReplyTopicId`'s own resolution
+// order is unchanged. A subject whose ONLY binding is DEFAULT_SUBJECT_KEY
+// (every reply to it, prior to this ticket, resolved to `undefined` and was
+// silently dropped by relayOneRecord's `if (topicId !== undefined)` guard)
+// now delivers the full reply with no message_thread_id, which Telegram
+// routes to the chat's General topic - the human's own asking thread in
+// that case. And when a subject has BOTH a real topic AND a default
+// binding (the human's reported symptom: a question asked in General
+// answered only in a dedicated SUP/support topic he cannot see), the full
+// reply keeps going to the real topic - preserving that topic's existing
+// conversation history - but `alsoPointerToDefault` tells the relay to
+// additionally post a short pointer into General, so asking from General
+// is never silence again even when the canonical answer lives elsewhere.
+export type ReplyDelivery =
+  | { kind: 'topic'; topicId: number; alsoPointerToDefault: boolean }
+  | { kind: 'default' }
+  | { kind: 'undeliverable' };
+
+export function resolveReplyDelivery(topicMap: Record<string, string>, backlogTopicMap: Record<string, number>, threadId: string): ReplyDelivery {
+  const backlogTopicId = backlogTopicMap[threadId];
+  if (backlogTopicId !== undefined) {
+    return { kind: 'topic', topicId: backlogTopicId, alsoPointerToDefault: false };
+  }
+  const realTopicId = topicForSubject(topicMap, threadId);
+  if (realTopicId !== undefined) {
+    return { kind: 'topic', topicId: realTopicId, alsoPointerToDefault: hasDefaultBinding(topicMap, threadId) };
+  }
+  if (hasDefaultBinding(topicMap, threadId)) {
+    return { kind: 'default' };
+  }
+  return { kind: 'undeliverable' };
+}
+
+// A short pointer, never the full answer - the real answer stays in its
+// canonical topic (preserving that history); this only ever needs to make
+// silence impossible for a human looking at General.
+export const REPLY_POINTER_TEXT = "This was answered — see the reply in this conversation's other topic.";
 
 // BL-346: the reserved subject a standing "Operator" forum topic is bound
 // to in the SAME {topicId: subjectId} map subjectForTopic/topicForSubject
@@ -424,13 +475,36 @@ export interface SseChunkResult {
 
 export interface ReplyRelayAdapters {
   readChunk: () => Promise<SseChunkResult>;
-  sendReply: (topicId: number, text: string) => Promise<void>;
-  topicForSubject: (subjectId: string) => number | undefined;
+  // BL-355: topicId undefined means "send with no message_thread_id", which
+  // Telegram routes to the chat's General topic - a real, first-class
+  // destination now, not a sentinel for "cannot deliver."
+  sendReply: (topicId: number | undefined, text: string) => Promise<void>;
+  resolveDelivery: (threadId: string) => ReplyDelivery;
   // BL-320: confirms this entry's id back to the bridge (POST /reply-ack
   // live-side) - the bridge only advances its own persisted cursor on
   // this, so a dropped connection between relay and ack replays the SAME
   // entry on reconnect rather than silently losing it.
   ackReply: (id: string) => Promise<void>;
+}
+
+// BL-355: executes one resolved delivery decision. A 'topic' delivery keeps
+// the full reply in its canonical topic and, when that subject was ALSO
+// ever asked about from General, additionally posts a short pointer there
+// so General is never left silent. A 'default' delivery (no real topic
+// bound at all) sends the full reply straight to General. 'undeliverable'
+// (no binding resolves at all - e.g. a corrupt/unknown threadId) sends
+// nothing, same as the prior behavior for a genuinely unmapped subject.
+async function deliverReply(delivery: ReplyDelivery, text: string, adapters: ReplyRelayAdapters): Promise<void> {
+  if (delivery.kind === 'topic') {
+    await adapters.sendReply(delivery.topicId, text);
+    if (delivery.alsoPointerToDefault) {
+      await adapters.sendReply(undefined, REPLY_POINTER_TEXT);
+    }
+    return;
+  }
+  if (delivery.kind === 'default') {
+    await adapters.sendReply(undefined, text);
+  }
 }
 
 // BL-320: an entry already in seenIds was already successfully posted to
@@ -439,10 +513,10 @@ export interface ReplyRelayAdapters {
 // connection, and the ack for this one may be exactly what got lost) must
 // re-ack without ever re-posting, or a transient drop between "sent" and
 // "acked" would double-post to Telegram on every reconnect until the ack
-// finally lands. topicForSubject returning undefined (an unmapped
-// threadId) still gets acked - the bridge cannot tell "decided to drop"
-// from "never seen" and would otherwise replay an undeliverable entry on
-// every single reconnect forever.
+// finally lands. An 'undeliverable' resolution still gets acked - the
+// bridge cannot tell "decided to drop" from "never seen" and would
+// otherwise replay an undeliverable entry on every single reconnect
+// forever.
 // One record's worth of relay decision, split out of relaySseReplies below
 // so that function's own branch count stays low.
 async function relayOneRecord(record: SseRecord, adapters: ReplyRelayAdapters, seenIds: Set<string>): Promise<void> {
@@ -451,10 +525,7 @@ async function relayOneRecord(record: SseRecord, adapters: ReplyRelayAdapters, s
   }
   const { id, threadId, text } = JSON.parse(record.data) as { id: string; threadId: string; text: string };
   if (!seenIds.has(id)) {
-    const topicId = adapters.topicForSubject(threadId);
-    if (topicId !== undefined) {
-      await adapters.sendReply(topicId, text);
-    }
+    await deliverReply(adapters.resolveDelivery(threadId), text, adapters);
     seenIds.add(id);
   }
   await adapters.ackReply(id);
