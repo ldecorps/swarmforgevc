@@ -123,13 +123,35 @@ retired. With no direction in force, pull on the ordinary rules (bugs/expedite
 and `human-requested` first, then by priority; orthogonality and the WIP cap
 still apply at promotion time):
 
-1. **BL-322** — `human-requested`, asked for twice. Topic opens with a bare
-   `TaskStarted` instead of a summary. Pull it NEXT; it is orthogonal to BL-324
-   (front-desk render path vs role lifecycle), so it does not have to wait.
-2. BL-324 — in flight; finish it. Amended three times off review findings
-   (TOCTOU park race, warm core, lookahead) and it KILLS PANES, so it must not
-   land until QA has driven a real park/unpark cycle against a live swarm, per
-   its own e2e procedure.
-3. BL-101 — headless secondary swarms. Holds until the human names the next
-   direction; it is the largest of the cost-themed candidates and should not be
-   pulled on inertia.
+**Pull these two NOW, in parallel — they are genuinely orthogonal** (verified by
+file scope, 2026-07-13):
+
+1. **BL-328** — `expedite`, pri 0. Merged code never reaches the running daemons;
+   it DEFEATS QA (a fix can be built, approved, merged, closed and still inert).
+   Touches build/health/supervisor-restart — disjoint from everything below.
+2. **BL-322** — `human-requested`, asked for TWICE. Touches `swarmEventStream.ts`
+   (the `TaskStarted` payload) and the topic render.
+
+**Then the topic-serialisation chain, STRICTLY IN ORDER.** It is serial BY DESIGN,
+not by scheduling failure — do not try to parallelise it:
+
+3. BL-329 — serialise topic content into the repo. Overlaps BL-322 on the bot's
+   message path, so it follows BL-322 rather than running beside it.
+4. BL-330 — state-based reconciliation. Overlaps BL-322 on `swarmEventStream.ts`
+   (BL-322 edits `diffTaskStarted`, BL-330 edits `diffTaskCompleted`), so it waits
+   for BL-322 to clear that file.
+5. BL-331 — delete only after a VERIFIED record. HARD-gated on BL-329 + BL-330:
+   building it early destroys un-serialised transcripts, including the human's own
+   messages. `depends_on` here is a data-loss gate, not a preference.
+6. BL-332 — recreate by replaying the record. Gated on BL-329 + BL-331. The round
+   trip it proves is the acceptance test of the whole chain; until it passes,
+   "deletion is safe" is a claim rather than a fact.
+
+Also in flight:
+
+- BL-324 — amended three times off review findings (TOCTOU park race, warm core,
+  lookahead), and it KILLS PANES. It must not land until QA has driven a real
+  park/unpark cycle against a live swarm, per its own e2e procedure.
+- BL-101 — headless secondary swarms. Holds until the human names the next
+  direction; it is the largest of the cost-themed candidates and should not be
+  pulled on inertia.
