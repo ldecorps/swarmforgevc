@@ -126,6 +126,43 @@
   (fs/create-dirs op-dir)
   (spit (str log-file) (str (now-iso) " " (str/join " " parts) "\n") :append true))
 
+;; ── BL-328 (4b): the respawn path must make the build current ITSELF ────────
+;; The supervisor is the only actor awake in the window between a merge
+;; landing and the coordinator's own step-0 sync running - it cannot
+;; delegate a crash in that window to a sync that has not happened yet.
+;; Checked fresh on every spawn (not just the first): once a recompile
+;; succeeds, extension/out/BUILD_SHA matches main and every later check
+;; in the SAME tick (bridge then bot, in that fixed order) sees "not
+;; stale" and skips - this is what naturally bounds recompiling to once
+;; per merge rather than once per crash, with no separate "did we already
+;; compile this tick" state to track. Tiny duplicate of
+;; build_freshness_lib.bb's own stale? comparison (small deliberate
+;; duplication over a new cross-file coupling, matching this codebase's
+;; own established convention) - never fabricates staleness when either
+;; sha is unresolvable.
+(defn- main-sha! []
+  (try
+    (let [{:keys [exit out]} (process/sh {:continue true :dir project-root} "git" "rev-parse" "main")]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
+(defn- node-build-stale? []
+  (let [running (read-node-build-sha!)
+        main (main-sha!)]
+    (boolean (and (seq running) (seq main) (not= running main)))))
+
+;; Returns nil on success (nothing needed, or recompiled fine) or an error
+;; string on a failed recompile. A failed recompile is deliberately NOT a
+;; reason to refuse the respawn below - a front desk that stays down takes
+;; the human's only channel with it, so the caller still brings the
+;; process up on the stale build and surfaces this loudly instead.
+(defn- ensure-current-build! []
+  (when (node-build-stale?)
+    (log! "stale-build-detected" "recompiling before respawn")
+    (let [{:keys [exit err]} (process/sh {:continue true :dir (str (fs/path project-root "extension"))} "npm" "run" "compile")]
+      (when-not (zero? exit)
+        (str "npm run compile failed: " err)))))
+
 (defn atomic-spit! [path content]
   (fs/create-dirs (fs/parent path))
   (let [tmp (fs/path (fs/parent path) (str "." (fs/file-name path) ".tmp"))]
@@ -145,11 +182,15 @@
 ;; order every tick, never shuffled.
 
 (defn spawn-bridge! []
+  (when-let [err (ensure-current-build!)]
+    (log! "degraded-respawn" "bridge" "stale build re-armed -" err))
   (process/process {:out :inherit :err :inherit
                      :extra-env {"BRIDGE_TOKEN" (System/getenv "BRIDGE_TOKEN")}}
                     "node" (str bridge-entrypoint) project-root (str bridge-port)))
 
 (defn spawn-bot! []
+  (when-let [err (ensure-current-build!)]
+    (log! "degraded-respawn" "bot" "stale build re-armed -" err))
   (process/process {:out :inherit :err :inherit
                      :extra-env {"TELEGRAM_BOT_TOKEN" (System/getenv "TELEGRAM_BOT_TOKEN")
                                  "TELEGRAM_CHAT_ID" (System/getenv "TELEGRAM_CHAT_ID")
