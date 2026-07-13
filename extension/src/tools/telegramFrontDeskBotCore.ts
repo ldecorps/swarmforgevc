@@ -9,6 +9,15 @@
 import { TelegramUpdate, GetUpdatesResult } from '../notify/telegramClient';
 import { computeTelegramRetryBackoffMs } from '../notify/telegramRetry';
 
+// BL-353: moved from the retired notify/telegramInboundRelay.ts (which
+// also carried the legacy single-chat TelegramInboundRelay class, now
+// deleted) - this is a generic getUpdates-offset utility the REAL
+// front-desk bot's own poll loop needs, unrelated to the relay class that
+// used to sit next to it.
+export function nextUpdateOffset(updates: TelegramUpdate[], currentOffset: number): number {
+  return updates.reduce((max, u) => Math.max(max, u.update_id + 1), currentOffset);
+}
+
 export function isFromPrincipal(update: TelegramUpdate, principalUserId: string): boolean {
   const fromId = update.message?.from?.id;
   return fromId !== undefined && String(fromId) === String(principalUserId);
