@@ -66,6 +66,11 @@ test('buildLaunchEnv sets SWARM_RUN_NAME when runName provided', () => {
   assert.equal(env['SWARMFORGE_TERMINAL'], 'none');
 });
 
+test('BL-352: buildLaunchEnv always sets SWARMFORGE_SKIP_SHELL_RUN_RECORD - a VS Code-initiated launch already recorded itself, so ./swarm must not record it again', () => {
+  const env = buildLaunchEnv('fix-auth-bug');
+  assert.equal(env['SWARMFORGE_SKIP_SHELL_RUN_RECORD'], '1');
+});
+
 // --- PATH augmentation: GUI-launched VS Code lacks Homebrew paths where
 //     tmux/bb/claude live, so the swarm launch fails. buildLaunchEnv must
 //     ensure those dirs are on PATH. ---

@@ -50,13 +50,13 @@ import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { getTelegramUpdates, sendTelegramMessage, createForumTopic, closeForumTopic, TelegramUpdate, TelegramPostFn } from '../notify/telegramClient';
-import { nextUpdateOffset } from '../notify/telegramInboundRelay';
 import {
   PollAdapters,
   subjectForTopic,
   resolveReplyTopicId,
   relaySseReplies,
   parseNextSseRecord,
+  nextUpdateOffset,
   DEFAULT_SUBJECT_KEY,
   runPollCycle,
   applyPollCycleResult,
@@ -99,7 +99,10 @@ function topicMapPath(targetPath: string): string {
 // .swarmforge/), never committed. topicId's string key is DEFAULT_SUBJECT_KEY
 // for a DM (no real Telegram topic). Read on every update (no caching) so a
 // mapping openSubjectAndRecord just wrote is visible to the very next poll.
-function readTopicMap(targetPath: string): Record<string, string> {
+// Exported (BL-353) so a second CLI (notify-dead-letters.ts) can resolve
+// BL-346's reserved Operator topic id without a second, drifting
+// implementation of this file's own path/shape.
+export function readTopicMap(targetPath: string): Record<string, string> {
   try {
     return JSON.parse(fs.readFileSync(topicMapPath(targetPath), 'utf8')) as Record<string, string>;
   } catch {

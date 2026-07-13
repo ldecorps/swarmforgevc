@@ -142,6 +142,18 @@ fi
 rm -f "$ROOT/.swarmforge/tmux-socket" "$ROOT/.swarmforge/sessions.tsv"
 log "cleared tmux-socket and sessions.tsv"
 
+# 6.5 (BL-352): complete the run this stop just ended, in the SAME run
+# history swarmforge.sh's own launch recording writes into. VS Code's own
+# stopSwarm command has its own separate, direct tmux teardown (never
+# calls this script), so this can never double-complete a run the VS Code
+# path also completed - there is nothing to skip here, unlike the launch
+# side. Best-effort: a missing/stale compiled CLI must never block a real
+# stop over a history-recording concern.
+RECORD_RUN_CLI="$ROOT/extension/out/tools/record-run.js"
+if [[ -f "$RECORD_RUN_CLI" ]]; then
+  node "$RECORD_RUN_CLI" stop "$ROOT" >/dev/null 2>&1 || true
+fi
+
 # 7. Optional inbox sweep + worktree reset.
 if [[ "$SWEEP_INBOX" -eq 1 ]]; then
   log "sweep_all_inbox"
