@@ -161,6 +161,41 @@ export async function initializeTargetContract(
   );
 }
 
+// BL-344: a negotiation round REVISES an already-existing contract.yaml/
+// CONTRACT.md - writeAndCommitBootstrapPlan's own idempotency is
+// existence-only (it never overwrites a file that is already there), the
+// right behavior for a first proposal but the wrong one for a revision,
+// which must always land. Unconditional write + commit, reusing the SAME
+// buildContractBootstrapFiles rendering so the structured source and the
+// legible view never diverge, exactly as slice 1 already guarantees.
+export async function updateTargetContract(
+  targetPath: string,
+  contract: ProposedContract,
+  commitMessage: string
+): Promise<{ committed: boolean }> {
+  const files = buildContractBootstrapFiles(contract);
+  for (const file of files) {
+    const filePath = path.join(targetPath, file.path);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, file.content, 'utf8');
+  }
+  let committed = false;
+  if (await isGitRepository(targetPath)) {
+    await execFileAsync('git', ['-C', targetPath, 'add', ...files.map((f) => f.path)]);
+    const commitResult = await execFileAsync('git', ['-C', targetPath, 'commit', '-m', commitMessage]).catch(
+      async (error: { stdout?: string; stderr?: string }) => {
+        const message = `${error.stderr ?? ''}\n${error.stdout ?? ''}`.trim();
+        if (!message.includes('nothing to commit')) {
+          throw error;
+        }
+        return undefined;
+      }
+    );
+    committed = Boolean(commitResult);
+  }
+  return { committed };
+}
+
 // BL-269: the target repo's own project.prompt/engineering.prompt,
 // generated from the survey (replaces buildTargetBootstrapFiles's generic
 // placeholder content for the same two paths once this has run - the
