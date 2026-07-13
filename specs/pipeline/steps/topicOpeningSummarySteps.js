@@ -42,6 +42,9 @@ function buildAdapters(ctx) {
         return true;
       },
       closeTopic: async () => true,
+      // BL-329: routeEvent (called by runConciergeTick) calls this
+      // unconditionally after a successful send.
+      recordMessage: () => {},
     },
   };
 }

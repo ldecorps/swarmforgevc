@@ -25,10 +25,13 @@ make_fixture() {
   # BL-306: + operator_ask.bb (the disposable LLM's own one-shot ask CLI).
   # BL-307: + handoff_lib.bb (the shared mailbox-path resolver
   # closing-pass-sweep! uses for per-role inbox/in-process counts).
+  # BL-333: + daemon_alarm_lib.bb (the starvation alarm reuses the SAME
+  # daemon-death email path, never a second notifier).
   cp "$SRC/operator_lib.bb" "$SRC/operator_runtime.bb" "$SRC/telegram_topic_lib.bb" \
      "$SRC/support_lib.bb" "$SRC/support_thread_store.bb" \
      "$SRC/operator_memory_lib.bb" "$SRC/operator_memory_store.bb" \
      "$SRC/ticket_status_lib.bb" "$SRC/operator_ask.bb" "$SRC/handoff_lib.bb" \
+     "$SRC/daemon_alarm_lib.bb" \
      "$d/swarmforge/scripts/"
   printf '%s' "$d"
 }
@@ -477,6 +480,156 @@ OUT24="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
 check "swarm-seed-race-04: stays hibernated with no fresh mail and no promotable work" \
   '[[ -f "$F/.swarmforge/operator/hibernation.json" ]]'
 rm -rf "$F"
+
+# ── BL-333: front-desk starvation observable + alarm ──────────────────────
+# An ATTENDED Operator holds the SAME slot a disposable one would
+# (operator-running? cannot tell them apart) and is instructed never to
+# release it - simulated here with a REAL disposable background process
+# (never a fake pid file: pid-alive? checks a genuine ProcessHandle), whose
+# pid is written to operator.pid exactly as launch_operator.sh's own
+# convention would. Safety net: kill every spawned real pid on exit, even
+# on an early failure.
+STARVATION_PIDS=()
+cleanup_starvation_pids() {
+  local p
+  for p in "${STARVATION_PIDS[@]:-}"; do
+    [[ -n "$p" ]] && kill -9 "$p" 2>/dev/null || true
+  done
+}
+trap cleanup_starvation_pids EXIT
+
+hold_operator_slot() {
+  local f="$1"
+  sleep 300 &
+  local pid=$!
+  STARVATION_PIDS+=("$pid")
+  echo "$pid" > "$f/.swarmforge/operator/operator.pid"
+}
+
+seed_pending_events() {
+  local f="$1" n="$2"
+  local i out=""
+  for (( i = 0; i < n; i++ )); do
+    out+="{\"type\":\"TASK_ARRIVED\"}"$'\n'
+  done
+  printf '%s' "$out" > "$f/.swarmforge/operator/events.jsonl"
+}
+
+configure_email() {
+  local f="$1"
+  mkdir -p "$f/swarmforge"
+  printf 'config notify_email_to human@example.com\nconfig notify_email_from ops@example.com\n' \
+    > "$f/swarmforge/swarmforge.conf"
+}
+
+alarm_count() {
+  local f="$1/.swarmforge/operator/runtime.log"
+  # A fully idle --tick-once run never calls log! at all, so runtime.log may
+  # not exist yet - grep on a missing file prints nothing (not "0") and
+  # would make this a false-failing empty-string comparison, not a real 0.
+  if [[ -f "$f" ]]; then
+    grep -c "starvation-alarm" "$f" || true
+  else
+    echo 0
+  fi
+}
+
+# ── 01: a live Operator consuming nothing is reported as two distinct facts ──
+F="$(make_fixture)"
+hold_operator_slot "$F"
+seed_pending_events "$F" 3
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+tick "$F" >/dev/null
+check "front-desk-starvation-alarm-01: an Operator is reported as running" \
+  '[[ "$(jget "$F/.swarmforge/operator/status.json" ":llm_running")" == true ]]'
+check "front-desk-starvation-alarm-01: the queue is reported as not being consumed" \
+  '[[ "$(jget "$F/.swarmforge/operator/status.json" ":queue_consuming")" == false ]]'
+check "front-desk-starvation-alarm-01: pending_events reflects the real backlog" \
+  '[[ "$(jget "$F/.swarmforge/operator/status.json" ":pending_events")" -ge 3 ]]'
+rm -rf "$F"
+
+# ── 02: over the count limit raises a loud alarm ──────────────────────────
+F="$(make_fixture)"
+configure_email "$F"
+hold_operator_slot "$F"
+seed_pending_events "$F" 9
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+OPERATOR_STARVATION_COUNT_LIMIT=5 tick "$F" >/dev/null
+check "front-desk-starvation-alarm-02: a queue over the count limit raises a starvation alarm" \
+  '[[ "$(alarm_count "$F")" -ge 1 ]]'
+rm -rf "$F"
+
+# ── 03: a short queue that is simply OLD raises the alarm too ────────────
+F="$(make_fixture)"
+configure_email "$F"
+hold_operator_slot "$F"
+seed_pending_events "$F" 1
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+old_marker=$(( ($(date +%s) - 7200) * 1000 ))
+printf '{"backlog-started-at-ms":%s,"armed?":false}' "$old_marker" \
+  > "$F/.swarmforge/operator/starvation.json"
+OPERATOR_STARVATION_COUNT_LIMIT=5 OPERATOR_STARVATION_AGE_MS=3600000 tick "$F" >/dev/null
+check "front-desk-starvation-alarm-03: fewer messages than the count limit" \
+  '[[ "$(jget "$F/.swarmforge/operator/status.json" ":pending_events")" -lt 5 ]]'
+check "front-desk-starvation-alarm-03: a single old message still raises the alarm" \
+  '[[ "$(alarm_count "$F")" -ge 1 ]]'
+rm -rf "$F"
+
+# ── 04: the alarm goes to the email channel, never Telegram ──────────────
+check "front-desk-starvation-alarm-04: the runtime never load-files a Telegram client" \
+  '! grep -q "telegramClient\|sendTelegramMessage" "$SRC/operator_runtime.bb"'
+check "front-desk-starvation-alarm-04: the alarm reuses daemon_alarm_lib's own email path" \
+  'grep -q "daemon-alarm-lib/send-configured-email!" "$SRC/operator_runtime.bb"'
+
+# ── 05/06: one alarm per starvation episode, re-armed after it clears ─────
+F="$(make_fixture)"
+configure_email "$F"
+hold_operator_slot "$F"
+seed_pending_events "$F" 9
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+OPERATOR_STARVATION_COUNT_LIMIT=5 tick "$F" >/dev/null
+first_alarm_count="$(alarm_count "$F")"
+check "front-desk-starvation-alarm-05 setup: the first starving tick alarms" \
+  '[[ "$first_alarm_count" -ge 1 ]]'
+seed_pending_events "$F" 9
+OPERATOR_STARVATION_COUNT_LIMIT=5 tick "$F" >/dev/null
+check "front-desk-starvation-alarm-05: still starving on the NEXT tick raises no further alarm" \
+  '[[ "$(alarm_count "$F")" == "$first_alarm_count" ]]'
+# clear the backlog entirely, then let it starve again
+: > "$F/.swarmforge/operator/events.jsonl"
+OPERATOR_STARVATION_COUNT_LIMIT=5 tick "$F" >/dev/null
+check "front-desk-starvation-alarm-06 setup: no alarm while merely clearing" \
+  '[[ "$(alarm_count "$F")" == "$first_alarm_count" ]]'
+seed_pending_events "$F" 9
+OPERATOR_STARVATION_COUNT_LIMIT=5 tick "$F" >/dev/null
+check "front-desk-starvation-alarm-06: a starvation that clears and returns is alarmed again" \
+  '[[ "$(alarm_count "$F")" -gt "$first_alarm_count" ]]'
+rm -rf "$F"
+
+# ── 07: a healthy front desk (queue draining, or nothing pending) raises no alarm ──
+F="$(make_fixture)"
+configure_email "$F"
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+OPERATOR_STARVATION_COUNT_LIMIT=5 tick "$F" >/dev/null
+check "front-desk-starvation-alarm-07: no Operator holding the slot, no alarm" \
+  '[[ "$(alarm_count "$F")" == 0 ]]'
+rm -rf "$F"
+
+# ── 08: the human's conversation is never hung up on to clear the alarm ──
+F="$(make_fixture)"
+configure_email "$F"
+hold_operator_slot "$F"
+seed_pending_events "$F" 9
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+operator_pid_before="$(cat "$F/.swarmforge/operator/operator.pid")"
+OPERATOR_STARVATION_COUNT_LIMIT=5 tick "$F" >/dev/null
+check "front-desk-starvation-alarm-08: the alarm fired" '[[ "$(alarm_count "$F")" -ge 1 ]]'
+check "front-desk-starvation-alarm-08: the Operator holding the slot is still running" \
+  'kill -0 "$operator_pid_before" 2>/dev/null'
+rm -rf "$F"
+
+cleanup_starvation_pids
+trap - EXIT
 
 # ── 4. launcher assembles a --remote-control command ─────────────────────────
 DRY="$(OPERATOR_LAUNCH_DRYRUN=1 bash "$SRC/launch_operator.sh" "$SRC/.." /tmp/x.jsonl 2>&1 || true)"

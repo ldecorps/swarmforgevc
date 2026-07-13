@@ -188,6 +188,9 @@ function registerSteps(registry) {
           return true;
         },
         closeTopic: async () => true,
+        // BL-329: routeEvent (called by runConciergeTick) calls this
+        // unconditionally after a successful send.
+        recordMessage: () => {},
       },
     };
     ctx.tickResult = await runConciergeTick(adapters);
@@ -393,6 +396,9 @@ function registerSteps(registry) {
           return true;
         },
         closeTopic: async () => true,
+        // BL-329: routeEvent (called by runConciergeTick) calls this
+        // unconditionally after a successful send.
+        recordMessage: () => {},
       },
     };
     await runConciergeTick(adapters);
