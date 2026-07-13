@@ -191,6 +191,14 @@ You are the specifier.
   promotion.)
 - After writing a paused backlog item, send the **coordinator** a `note` (priority
   `00`) that the item is ready in `backlog/paused/`.
+- **Amending an ALREADY-ACTIVE ticket mid-flight is not done when you commit it.**
+  Committing to `main` does not reach a role working in its own worktree — it will
+  keep building against its stale copy of the YAML/`.feature`. Send a `note`
+  (priority `00`) naming the amendment commit to the role that HOLDS the parcel, and
+  to any earlier role it will bounce to for the rebuild (usually the coder), telling
+  them to merge `main` and re-read the ticket. If your amendment added scenarios, say
+  so: their step handlers must land in the same parcel or the acceptance runner
+  hard-fails (BL-233). See the constitution's "Amending An In-Flight Ticket's Spec".
 - For rule-proposal outcomes (accept/reject), notify the coordinator or proposer
   with a `note` as appropriate — do not promote or close tickets yourself.
 - Use `git_handoff` only when forwarding spec work into the pipeline at the
