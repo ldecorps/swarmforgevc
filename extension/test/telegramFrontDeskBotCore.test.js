@@ -18,6 +18,8 @@ const {
   runContainedLoop,
   computeReplyRelayCycleResult,
   applyReplyRelayCycleResult,
+  decideEnsureOperatorTopicAction,
+  OPERATOR_SUBJECT_ID,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
 const PRINCIPAL_ID = 111;
@@ -94,6 +96,21 @@ test('BL-325: resolveReplyTopicId prefers the SUP map when (hypothetically) both
 
 test('BL-325: resolveReplyTopicId returns undefined when neither map has the threadId', () => {
   assert.equal(resolveReplyTopicId({ '7': 'SUP-1' }, { 'BL-1': 2 }, 'BL-999'), undefined);
+});
+
+// ── decideEnsureOperatorTopicAction (pure) — BL-346 standing-operator-topic-01/06/07 ──
+
+test('BL-346: decideEnsureOperatorTopicAction creates when no topic is bound to the reserved subject yet', () => {
+  assert.deepEqual(decideEnsureOperatorTopicAction({}), { kind: 'create' });
+  assert.deepEqual(decideEnsureOperatorTopicAction({ '7': 'SUP-1' }), { kind: 'create' });
+});
+
+test('BL-346: decideEnsureOperatorTopicAction reuses the topic already bound to OPERATOR_SUBJECT_ID', () => {
+  assert.deepEqual(decideEnsureOperatorTopicAction({ '7': 'SUP-1', '42': OPERATOR_SUBJECT_ID }), { kind: 'reuse', topicId: 42 });
+});
+
+test('BL-346: decideEnsureOperatorTopicAction is reserved-subject-specific - an ordinary SUP-### binding never counts as the Operator topic', () => {
+  assert.deepEqual(decideEnsureOperatorTopicAction({ '7': 'SUP-1', '8': 'SUP-2' }), { kind: 'create' });
 });
 
 // ── decideUpdateAction (pure) — BL-281 telegram-topic-01/05, BL-294 auto-open-01..04 ──
