@@ -135,6 +135,7 @@ const DOMAINS = [
   require('./frontDeskStarvationAlarmSteps'),
   require('./restrictedFrontDeskOperatorSteps'),
   require('./shippedButInvisibleSteps'),
+  require('./headlessDarkEmitterAuditSteps'),
 ];
 
 function registerSteps(registry) {
