@@ -45,6 +45,16 @@ function truncate(text: string, maxLength: number): string {
   return text.length <= maxLength ? text : `${text.slice(0, maxLength - 1)}…`;
 }
 
+// An event payload field, when it is a string - the shared shape guard
+// every optional payload field (title, notes, firstAcceptanceStep,
+// snippet) already needed independently below; extracted rather than
+// repeated per field (cleaner review: the repeated inline ternaries also
+// pushed taskStartedText's own CRAP over threshold at real coverage).
+function stringPayloadField(event: SwarmEvent, field: string): string | undefined {
+  const value = event.payload[field];
+  return typeof value === 'string' ? value : undefined;
+}
+
 // The topic-opening summary's own "what it solves" line: just the FIRST
 // paragraph of notes (split on the first blank line), then capped - never
 // the whole notes: block, which can run to dozens of lines on a real
@@ -60,12 +70,12 @@ function firstParagraph(text: string): string {
 // pre-BL-322 bare "TaskStarted: BL-XXX" line, the ONE shape this function
 // can compose with no real data at all.
 function taskStartedText(event: SwarmEvent): string {
-  const title = typeof event.payload.title === 'string' ? event.payload.title : undefined;
+  const title = stringPayloadField(event, 'title');
   if (!title) {
     return `${event.type}: ${event.backlogId}`;
   }
-  const notes = typeof event.payload.notes === 'string' ? event.payload.notes : undefined;
-  const firstAcceptanceStep = typeof event.payload.firstAcceptanceStep === 'string' ? event.payload.firstAcceptanceStep : undefined;
+  const notes = stringPayloadField(event, 'notes');
+  const firstAcceptanceStep = stringPayloadField(event, 'firstAcceptanceStep');
   const lines = [`What it is: ${title}`];
   if (notes) {
     lines.push(`What it solves: ${truncate(firstParagraph(notes), TASK_STARTED_FIELD_MAX_LENGTH)}`);
@@ -96,7 +106,7 @@ export function messageTextForEvent(event: SwarmEvent): string {
     return taskStartedText(event);
   }
   const base = `${event.type}: ${event.backlogId}`;
-  const snippet = typeof event.payload.snippet === 'string' ? event.payload.snippet : undefined;
+  const snippet = stringPayloadField(event, 'snippet');
   return snippet ? `${base} - ${snippet}` : base;
 }
 

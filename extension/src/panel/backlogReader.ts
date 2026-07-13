@@ -222,6 +222,21 @@ function extractRequiredFields(obj: Record<string, unknown>): Pick<BacklogItem, 
   return result;
 }
 
+// A real (non-array, non-null) object - the same shape check
+// parseBacklogYaml's own top-level parsed-YAML guard already needs;
+// shared here rather than duplicated per caller.
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+// The first non-empty string at index 0 of an array-shaped value, or
+// undefined - split out of firstAcceptanceStepFromObject below so that
+// function's own branch count stays low (cleaner review: two independent
+// guard chains pushed it over the CRAP threshold even at full coverage).
+function firstNonEmptyStringAt0(value: unknown): string | undefined {
+  return Array.isArray(value) && typeof value[0] === 'string' && value[0] ? value[0] : undefined;
+}
+
 // BL-322: the strict-parse counterpart to parseFirstAcceptanceStep above -
 // js-yaml parses the modern `acceptance: {steps: [...]}` schema as a real
 // nested object, so this reads obj.acceptance.steps[0] directly rather
@@ -230,11 +245,7 @@ function extractRequiredFields(obj: Record<string, unknown>): Pick<BacklogItem, 
 // absent acceptance: field entirely.
 function firstAcceptanceStepFromObject(obj: Record<string, unknown>): string | undefined {
   const acceptance = obj.acceptance;
-  if (!acceptance || typeof acceptance !== 'object' || Array.isArray(acceptance)) {
-    return undefined;
-  }
-  const steps = (acceptance as Record<string, unknown>).steps;
-  return Array.isArray(steps) && typeof steps[0] === 'string' && steps[0] ? steps[0] : undefined;
+  return isPlainObject(acceptance) ? firstNonEmptyStringAt0(acceptance.steps) : undefined;
 }
 
 function assignOptionalFieldsFromObject(item: BacklogItem, obj: Record<string, unknown>): void {
@@ -284,8 +295,8 @@ function parseBacklogYamlLenient(content: string): BacklogItem | null {
 export function parseBacklogYaml(content: string): BacklogItem | null {
   try {
     const parsed = yaml.load(content);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return buildItemFromParsedObject(parsed as Record<string, unknown>);
+    if (isPlainObject(parsed)) {
+      return buildItemFromParsedObject(parsed);
     }
   } catch {
     // fall through to the lenient extractor below
