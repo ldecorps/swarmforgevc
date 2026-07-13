@@ -778,6 +778,20 @@
     (process/sh {:continue true} "tmux" "-S" (str operator-socket-file)
                 "kill-session" "-t" operator-session)))
 
+(defn archive-inflight-batch!
+  "Move a retired inflight batch file into its own timestamped `-done`
+   subdirectory under op-dir, so a crash never loses the queue permanently
+   and each archived batch gets a unique name. Shared by the unrestricted
+   Operator's and the front-desk Operator's own reap steps — the archival
+   shape (create dir, move with a fresh events-<now-ms>.jsonl name) is
+   identical for both; only which inflight file and which dir differ."
+  [inflight-file done-dir-name]
+  (let [done-dir (fs/path op-dir done-dir-name)]
+    (fs/create-dirs done-dir)
+    (fs/move inflight-file
+             (fs/path done-dir (str "events-" (now-ms) ".jsonl"))
+             {:replace-existing true})))
+
 (defn reap-finished-operator!
   "Retire a completed Operator run. Two triggers:
    1. the Operator wrote operator.done (its instructed last act) — kill its
@@ -792,16 +806,12 @@
     (kill-operator-window!)
     (fs/delete-if-exists done-file))
   (when (and (fs/exists? inflight-file) (not (operator-running?)))
-    (let [done-dir (fs/path op-dir "events-done")]
-      (fs/create-dirs done-dir)
-      (fs/move inflight-file
-               (fs/path done-dir (str "events-" (now-ms) ".jsonl"))
-               {:replace-existing true})
-      (fs/delete-if-exists operator-pid-file)
-      ;; BL-281: a stale reply-context file must never carry over into the
-      ;; NEXT (possibly non-Telegram) run.
-      (fs/delete-if-exists telegram-reply-context-file)
-      (log! "reap-operator" "inflight retired"))))
+    (archive-inflight-batch! inflight-file "events-done")
+    (fs/delete-if-exists operator-pid-file)
+    ;; BL-281: a stale reply-context file must never carry over into the
+    ;; NEXT (possibly non-Telegram) run.
+    (fs/delete-if-exists telegram-reply-context-file)
+    (log! "reap-operator" "inflight retired")))
 
 ;; ── BL-334: the restricted front-desk Operator (launch/reap) ─────────────
 
@@ -863,11 +873,7 @@
                (support-lib/append-message thread support-lib/operator-channel (now-iso) reply)))
             (log! "front-desk-replied" thread-id))
         (when thread-id (log! "front-desk-no-reply" thread-id)))
-      (let [done-dir (fs/path op-dir "front-desk-events-done")]
-        (fs/create-dirs done-dir)
-        (fs/move front-desk-inflight-file
-                 (fs/path done-dir (str "events-" (now-ms) ".jsonl"))
-                 {:replace-existing true}))
+      (archive-inflight-batch! front-desk-inflight-file "front-desk-events-done")
       (fs/delete-if-exists front-desk-pid-file)
       (fs/delete-if-exists front-desk-dispatch-context-file)
       (fs/delete-if-exists front-desk-result-file)
