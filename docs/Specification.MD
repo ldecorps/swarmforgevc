@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 13, 2026 (BL-335)
+**Last Updated:** July 13, 2026 (BL-343)
 
 ## Overview
 
@@ -349,6 +349,16 @@ node extension/out/tools/stage-dwell-report.js [--hours N] [--json]
 ```
 
 Runnable from the repo root or any `.worktrees/<role>/` checkout, same project-root resolution as `swarm-metrics.js`. Defaults to a 24-hour window; pass `--hours` to change it and `--json` for machine-readable output. Reads every pipeline role's completed handoffs (never the coordinator, which sits outside the forward chain), including batch directories a batch role's `done_with_current_batch.sh` moves completed batches into. Fed by the same computation as the bridge's `GET /stage-dwell` endpoint, so the CLI and bridge always report the same numbers.
+
+#### Routing break-even report CLI (BL-343)
+
+A fourth headless CLI answers the question the dynamic-routing epic (auto-hibernate, routing manifest, quiet-period gate, per-role park/unpark) exists to answer: does parking idle roles actually save money?
+
+```sh
+node extension/out/tools/park-cycle-report.js
+```
+
+Runnable from the repo root or any `.worktrees/<role>/` checkout, same project-root resolution as `swarm-metrics.js`. Read-only and headless. It pairs every REAL park/unpark event logged by `role_lifecycle_cli.bb` (`.swarmforge/role-lifecycle/park-cycle-log.jsonl` — one line per real park or unpark, an aborted park that never actually removed a role from service is never logged) into complete cycles, then measures each cycle's real cold-start cost and idle-burn saving from the role's own transcript token usage — never an estimate derived from prompt size. For each role with at least one complete cycle it reports the break-even idle duration (the point below which parking that role is a net loss); `routingSavesMoney` is `null`, not `false`, whenever zero real cycles exist yet, so an unmeasured state is never misreported as a measured negative. Until a role has actually been parked and unparked in production, the report is honestly empty — that is expected, not a bug, and is not tuned away.
 
 ---
 
