@@ -573,6 +573,86 @@
     (assert= "BL-310-04: stays hibernated with no fresh mail and no promotable work" nil (:action result))
     (assert= "BL-310-04: touched no adapter at all" [] @calls)))
 
+;; ── BL-334: the restricted front-desk Operator's launch gate ──────────────
+;; should-launch-front-desk-operator? and should-launch-operator? are read
+;; from the SAME full-operator-running?/llm-running? fact within one tick
+;; (operator_runtime.bb's tick! passes its own single llm-running? local to
+;; both) - they are literal negations of each other on that one input, which
+;; is the structural, provable reason the two Operators can never both claim
+;; the same pending queue in the same tick (restricted-front-desk-operator-06).
+
+(assert-true "front-desk launches when the full Operator holds the slot and a message is pending"
+             (operator-lib/should-launch-front-desk-operator?
+              {:full-operator-running? true :front-desk-running? false
+               :provider-state :available :pending-count 1}))
+(assert-false "front-desk does not launch when the full Operator is NOT running (normal path handles it)"
+              (operator-lib/should-launch-front-desk-operator?
+               {:full-operator-running? false :front-desk-running? false
+                :provider-state :available :pending-count 1}))
+(assert-false "front-desk never double-launches while its own prior run is still in flight"
+              (operator-lib/should-launch-front-desk-operator?
+               {:full-operator-running? true :front-desk-running? true
+                :provider-state :available :pending-count 1}))
+(assert-false "front-desk does not launch with nothing pending"
+              (operator-lib/should-launch-front-desk-operator?
+               {:full-operator-running? true :front-desk-running? false
+                :provider-state :available :pending-count 0}))
+(assert-false "front-desk respects provider cooldown, same as the full Operator"
+              (operator-lib/should-launch-front-desk-operator?
+               {:full-operator-running? true :front-desk-running? false
+                :provider-state :cooldown :pending-count 1}))
+
+;; restricted-front-desk-operator-05/06: mutual exclusivity, proven for every
+;; combination of the shared full-operator-running? fact.
+(doseq [running? [true false]
+        pending [0 1 5]]
+  (let [full (operator-lib/should-launch-operator?
+              {:llm-running? running? :provider-state :available :pending-count pending})
+        front (operator-lib/should-launch-front-desk-operator?
+               {:full-operator-running? running? :front-desk-running? false
+                :provider-state :available :pending-count pending})]
+    (assert-false (str "restricted-front-desk-operator-06: full+front-desk never both eligible "
+                        "(running?=" running? " pending=" pending ")")
+                  (and full front))))
+
+;; ── BL-334: the reply text extracted from the restricted Operator's
+;;    headless `claude -p --output-format json` result - the ONLY channel it
+;;    has to communicate anything, since it holds no tool at all ───────────
+(assert= "front-desk-reply-text: a successful result's text is the reply"
+         "The Operator will get back to you shortly."
+         (operator-lib/front-desk-reply-text
+          {:is_error false :result "The Operator will get back to you shortly."}))
+(assert= "front-desk-reply-text: an errored result has no reply"
+         nil (operator-lib/front-desk-reply-text {:is_error true :result "boom"}))
+(assert= "front-desk-reply-text: a blank result has no reply"
+         nil (operator-lib/front-desk-reply-text {:is_error false :result "  "}))
+(assert= "front-desk-reply-text: no result at all has no reply"
+         nil (operator-lib/front-desk-reply-text {:is_error false}))
+
+;; ── BL-334: the self-contained prompt text for the restricted Operator -
+;;    it has no Read tool, so everything it needs must be inlined here ─────
+(let [prompt (operator-lib/front-desk-reply-prompt
+              {:transcript {:id "SUP-1" :messages [{:channel "telegram" :text "when will BL-1 ship?"}]}
+               :long-term-memory ["the human prefers terse replies"]})]
+  (assert-true "front-desk-reply-prompt: carries the thread's own message text"
+               (clojure.string/includes? prompt "when will BL-1 ship?"))
+  (assert-true "front-desk-reply-prompt: carries the long-term memory facts"
+               (clojure.string/includes? prompt "the human prefers terse replies"))
+  (assert-true "front-desk-reply-prompt: tells it plainly it holds no tool/swarm authority"
+               (clojure.string/includes? prompt "NO tool")))
+
+;; ── BL-334: the front-desk Operator's status is reported ALONGSIDE the
+;;    full Operator's, never overwriting it - render-status stays UNCHANGED
+;;    (restricted-front-desk-operator-07's own "neither has overwritten the
+;;    other" is a property of the SINGLE atomic write in operator_runtime.bb
+;;    nesting both under one map, proven here at the schema level) ─────────
+(assert= "render-front-desk-status matches the restricted schema"
+         {:llm_running true :pending_events 2}
+         (operator-lib/render-front-desk-status {:llm-running? true :pending-count 2}))
+(assert= "render-front-desk-status defaults to idle/zero"
+         {:llm_running false :pending_events 0}
+         (operator-lib/render-front-desk-status {}))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "operator_lib: ALL TESTS PASSED")
