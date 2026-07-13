@@ -75,6 +75,6 @@ acceptance:
     - "The record survives a restart of the process that wrote it"
     - "Human messages already captured are backfilled, not abandoned"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: medium

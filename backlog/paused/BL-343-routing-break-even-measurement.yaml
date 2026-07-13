@@ -1,0 +1,70 @@
+id: BL-343
+title: "Dynamic routing, final slice: MEASURE whether parking roles actually saves money"
+milestone: M8
+status: todo
+type: feature
+severity: medium
+priority: 5
+direction: human-requested
+epic: dynamic-routing
+depends_on: []
+source: ".swarmforge/operator/INTAKE-epic-topics-in-telegram.md — surfaced as an UN-TICKETED slice of the dynamic-routing epic. Ticketed at the coordinator's explicit request (handoff 000307, 2026-07-13). Verified: 'warm-core' and 'break-even' appear in the repo ONLY inside the notes of tickets that are already DONE (BL-324, BL-317, BL-307) — this slice has never had a ticket of its own, which is exactly the failure mode BL-341 exists to make visible."
+
+notes: |
+  WHAT THE EPIC BUILT, AND WHAT IT NEVER CHECKED. The dynamic-routing epic (BL-307 auto-hibernate,
+  BL-317 routing manifest, BL-318 quiet-period gate, BL-324 per-role park/unpark) exists for ONE
+  reason: TO SAVE MONEY by not running roles a ticket does not need. Every slice of it has landed.
+
+  NOBODY HAS EVER MEASURED WHETHER IT DOES.
+
+  THE REASON THIS IS NOT A RHETORICAL WORRY. Parking is not free. A parked role, when unparked,
+  comes back COLD — it re-reads its whole system prompt (constitution, articles, its role prompt,
+  the pipeline docs; on this project that is a large, expensive read, which is precisely why
+  `warm-core-roles` exists in `role_lifecycle_lib.bb:24` at all). So there is a real BREAK-EVEN:
+
+      park a role, and you save its idle burn — but you pay a cold-start cost to bring it back.
+      Park and unpark it often enough, and CHURN COSTS MORE THAN IDLING EVER DID.
+
+  Today BL-324 parks ON A GUESS. `warm-core-roles` — the set of roles held warm regardless — was
+  chosen by judgement, not measurement (and had to be corrected once already during BL-324's own
+  review, when it turned out the specifier could be parked and then never unparked). Nobody knows
+  where the break-even actually is, so nobody knows whether the current set is right, too small,
+  or too large.
+
+  SCOPE:
+    1. MEASURE THE COLD-START COST of unparking a role — what it actually costs, in tokens and in
+       time, to bring a parked role back to useful. Real measurement, on a real role, not an
+       estimate from prompt sizes.
+    2. MEASURE THE IDLE BURN of a warm, unused role — what parking actually saves per unit time.
+    3. DERIVE THE BREAK-EVEN: below what idle duration is parking a LOSS? State it as a number.
+    4. ANSWER THE QUESTION THE EPIC EXISTS TO ANSWER: with the swarm's real churn, does dynamic
+       routing save money, and how much? A HONEST NEGATIVE ANSWER IS A COMPLETELY ACCEPTABLE
+       OUTCOME OF THIS TICKET — arguably the most valuable one, since four slices have already
+       shipped on the assumption. Do not tune the numbers until they say yes.
+    5. TUNE `warm-core-roles` AND ANY PARK THRESHOLD FROM THE MEASUREMENT, not from judgement.
+       If the measurement says a role should never be parked, say so and hold it warm.
+
+  THIS IS THE SLICE THAT MAKES THE EPIC FALSIFIABLE. Related: BL-338 (cost per ticket) is the
+  surface on which this saving — or this loss — will actually become visible to the human, and
+  BL-340 (role benchmarking) shares its cost-measurement substrate. Reuse BL-100/BL-273 telemetry
+  and BL-312's corrected, non-double-counted accounting; an uncorrected figure will overstate the
+  cost of exactly the master-resident roles this decision turns on.
+
+  E2E QA PROCEDURE: the measurement must come from REAL park/unpark cycles against REAL roles with
+  REAL token accounting — a cold-start cost derived by counting characters in a prompt file is not
+  a measurement, it is the same guess in a lab coat. Bounce any figure whose provenance is an
+  estimate rather than an observed run.
+
+acceptance:
+  feature: specs/features/BL-343-routing-break-even-measurement.feature
+  steps:
+    - "The cost of bringing a parked role back is measured from a real unpark"
+    - "The saving from parking an idle role is measured from real idle burn"
+    - "The break-even idle duration is stated as a number"
+    - "Parking a role that is idle for less than the break-even is identified as a loss"
+    - "The set of roles held warm follows the measurement, not a guess"
+    - "A finding that routing does not save money is reported, not tuned away"
+
+human_approval: pending
+
+mutation_cost: medium

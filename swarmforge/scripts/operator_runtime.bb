@@ -58,6 +58,10 @@
 ;; script constructs a mailbox path by hand), for closing-pass-sweep!'s own
 ;; per-role inbox/in-process gathering below.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
+;; BL-333: the starvation alarm reuses the SAME daemon-death email path
+;; (build-alarm-email/send-configured-email!), never a second notifier -
+;; the ticket's own explicit "REUSE IT; do not build a new notifier".
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -142,6 +146,10 @@
 ;; pending, and what the runtime itself times out.
 (def awaiting-answer-file (fs/path op-dir "awaiting-answer.json"))
 
+;; ── BL-333: front-desk starvation - queue-backlog-started-at + alarm-armed,
+;;    persisted cross-tick, same posture as cooldown.json above ────────────
+(def starvation-state-file (fs/path op-dir "starvation.json"))
+
 (defn env-ms [name default]
   (or (some-> (System/getenv name) parse-long) default))
 
@@ -159,6 +167,13 @@
 (def launch-grace-ms (env-ms "OPERATOR_LAUNCH_GRACE_MS" 120000))
 (def heartbeat? (not= "0" (System/getenv "OPERATOR_HEARTBEAT")))
 (def skip-launch? (= "1" (System/getenv "OPERATOR_SKIP_LAUNCH")))
+;; BL-333: starvation thresholds - EITHER trigger alone is starvation (a
+;; short-but-old queue is missed by a count-only check, per the ticket's
+;; own "3 events unread for two days is starvation just as much as 25
+;; events unread for an hour"). Defaults sane, not hardcoded: the real
+;; incident this ticket documents ran pending_events=22-25 for 45.8 hours.
+(def starvation-count-limit (env-ms "OPERATOR_STARVATION_COUNT_LIMIT" 5))
+(def starvation-age-limit-ms (env-ms "OPERATOR_STARVATION_AGE_MS" 3600000))
 
 (defn now-ms [] (System/currentTimeMillis))
 (defn now-iso []
@@ -348,6 +363,29 @@
 
 (defn write-cooldown! [m] (atomic-spit! cooldown-file (json/generate-string m)))
 (defn clear-cooldown! [] (fs/delete-if-exists cooldown-file))
+
+;; ── BL-333: front-desk starvation state (runtime-owned, same posture as
+;;    cooldown above) - {:backlog-started-at-ms :armed?} ────────────────────
+
+(defn read-starvation-state []
+  (or (when (fs/exists? starvation-state-file)
+        (try (json/parse-string (slurp (str starvation-state-file)) true) (catch Exception _ nil)))
+      {}))
+
+(defn write-starvation-state! [m] (atomic-spit! starvation-state-file (json/generate-string m)))
+
+;; BL-215/BL-326's own pattern, mirrored exactly: warn ONCE per process on a
+;; configured-but-keyless alarm, never touch the network from a throwaway
+;; test-fixture root (test-fixture-root? inside send-configured-email!
+;; itself already guards that; this is just the warn-once bookkeeping).
+(def starvation-email-key-warned? (atom false))
+
+(defn send-starvation-alarm-email! [subject text]
+  (daemon-alarm-lib/send-configured-email!
+   project-root conf-file subject text
+   {:already-warned?! (fn [] @starvation-email-key-warned?)
+    :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+    :mark-warned! (fn [] (reset! starvation-email-key-warned? true))}))
 
 ;; ── BL-306: awaiting-answer (runtime-owned, same posture as cooldown) ────────
 
@@ -850,30 +888,65 @@
 
     (let [llm-running? (operator-running?)
           pending (read-events events-file)
+          pending-count (count pending)
           tunnel (read-tunnel-status)
           decision (operator-lib/should-launch-operator?
                     {:llm-running? llm-running?
                      :provider-state provider-state
-                     :pending-count (count pending)})
+                     :pending-count pending-count})
           state (cond
                   (= provider-state :cooldown) :waiting_for_provider
                   llm-running? :operator_running
-                  (pos? (count pending)) :dispatching
+                  (pos? pending-count) :dispatching
                   (already-hibernated?) :hibernated
-                  :else :idle)]
+                  :else :idle)
+          ;; BL-333: starvation detection - tracked every tick regardless of
+          ;; `state` above (a live Operator reads as "healthy" state-wise;
+          ;; starvation is an orthogonal fact overlaid on top of it, never a
+          ;; replacement for the existing state machine).
+          prev-starvation (read-starvation-state)
+          backlog-started-at-ms (operator-lib/queue-backlog-started-at-ms
+                                  (:backlog-started-at-ms prev-starvation) pending-count now)
+          oldest-pending-age-ms (when backlog-started-at-ms (- now backlog-started-at-ms))
+          starving? (operator-lib/front-desk-starving?
+                     {:pending-count pending-count
+                      :oldest-pending-age-ms oldest-pending-age-ms
+                      :count-limit starvation-count-limit
+                      :age-limit-ms starvation-age-limit-ms})
+          {:keys [should-alarm? armed?]} (operator-lib/starvation-alarm-decision
+                                           starving? (:armed? prev-starvation))]
+      (write-starvation-state! {:backlog-started-at-ms backlog-started-at-ms :armed? armed?})
+      (when should-alarm?
+        (log! "starvation-alarm" "pending=" (str pending-count)
+              "oldest-age-ms=" (str oldest-pending-age-ms))
+        (send-starvation-alarm-email!
+         "SwarmForge: front desk starved - Operator holding the slot, queue not draining"
+         (str "The front desk's inbound queue is not being drained: " pending-count
+              " event(s) pending"
+              (when oldest-pending-age-ms
+                (str ", oldest waiting " (quot oldest-pending-age-ms 60000) " minute(s)"))
+              ".\n\n"
+              "An Operator is holding the single-Operator slot - an attended "
+              "(interactive) session holds it indefinitely by design, so no "
+              "disposable Operator can be spawned to read the queue while it "
+              "does. The attended session is NOT being stopped - its longevity "
+              "is a feature, not the bug.\n\n"
+              "This clears on its own once the attended session ends; investigate "
+              "sooner if the waiting messages are time-sensitive.")))
       (write-status! (cond-> (operator-lib/render-status
                               {:state state :llm-running? llm-running?
                                :provider "claude" :provider-state provider-state
                                :agents-running agents-running
-                               :pending-count (count pending)})
+                               :pending-count pending-count
+                               :oldest-pending-age-ms oldest-pending-age-ms})
                        tunnel (assoc :tunnel tunnel)
                        true (assoc :build_sha own-build-sha)))
       (when decision
-        (log! "decision" "launch (pending=" (str (count pending)) ")")
+        (log! "decision" "launch (pending=" (str pending-count) ")")
         (launch-operator!)
         (fs/delete-if-exists command-file))
-      {:state state :launched? decision :pending (count pending)
-       :provider provider-state :agents agents-running})))
+      {:state state :launched? decision :pending pending-count
+       :provider provider-state :agents agents-running :starving? starving?})))
 
 ;; ── main ──────────────────────────────────────────────────────────────────────
 

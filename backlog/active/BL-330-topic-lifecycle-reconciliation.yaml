@@ -59,6 +59,6 @@ acceptance:
     - "Reconciliation is idempotent"
     - "A ticket that is not done is left alone"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: medium
