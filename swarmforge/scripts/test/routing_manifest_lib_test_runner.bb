@@ -107,6 +107,24 @@
 (assert-false "validate-manifest still rejects a present, PARSED-but-invalid list (missing coder) exactly like validate-roles"
               (:valid? (routing-manifest-lib/validate-manifest "id: BL-1\nroles: [QA]\nstatus: todo\n")))
 
+;; ── hardener-added: a block-style list INTERRUPTED mid-block by a stray
+;;    non-dash line must be rejected as malformed, never silently
+;;    truncated to the items before the interruption. Regression guard for
+;;    a real bug found during hardening: an earlier version of
+;;    parse-block-list stopped at the first non-matching line, so a
+;;    truncated-but-still-coder+QA prefix read back as a VALID, narrower
+;;    manifest - silently dropping every role after the interruption with
+;;    no signal, the exact scope-4b defect this ticket bounced twice for
+;;    already, one indentation level deeper. ──────────────────────────────
+(assert= "read-roles: a block list interrupted by a stray non-dash line defaults to the full chain, not a silently truncated prefix"
+         ["specifier" "coder" "cleaner" "architect" "hardender" "documenter" "QA"]
+         (routing-manifest-lib/read-roles
+          "id: BL-1\nroles:\n  - coder\n  - QA\n  some interrupting non-list line\n  - architect\nstatus: todo\n"))
+
+(assert-false "validate-manifest: an interrupted block list is REJECTED, even though its truncated prefix alone would satisfy coder+QA"
+              (:valid? (routing-manifest-lib/validate-manifest
+                        "id: BL-1\nroles:\n  - coder\n  - QA\n  some interrupting non-list line\n  - architect\nstatus: todo\n")))
+
 (if (seq @failures)
   (do (doseq [f @failures] (println f))
       (println (str (count @failures) " FAILURE(S)"))
