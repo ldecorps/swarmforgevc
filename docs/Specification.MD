@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 13, 2026 (BL-338)
+**Last Updated:** July 13, 2026 (BL-350)
 
 ## Overview
 
@@ -317,6 +317,8 @@ A third telemetry layer tracks token spend and per-role resource usage:
 - **Resource usage**: per-role RSS and CPU trends, sampled periodically and bucketed hourly.
 
 Both are available via the `GET /cost-telemetry` bridge endpoint and the CLI (below). Two scenarios from the ticket's own scope — a rolled-up cost briefing paragraph, and surfacing cost telemetry through the phone/Action bridge — are deferred pending infrastructure (BL-099/BL-097) that doesn't exist yet. **The resource-usage sampler is wired into the real swarm lifecycle (BL-264):** `extension/src/swarm/resourceSamplerActivation.ts`'s `resolvePanePid` composes the existing tmux discovery chain (`readTmuxSocket` → `getPaneBaseIndex` → `resolveAgentPaneTarget` → `getPanePid`, the same chain `PaneTailer` already uses — no second discovery mechanism) to resolve each role's pid fresh on every sampler tick (never cached, so a respawned pane's new pid is picked up automatically), and `buildSampledRoles` maps each discovered role into the `SampledRole` shape `startResourceSampler` expects. `extension.ts` starts the sampler (holding its interval handle in the same module-level-state convention as `currentChaserMonitor`) after every launch-success/reattach call site, and stops it in `stopSwarm`/`stopSwarmCompletely`/`deactivate()` alongside the existing chaser-monitor stop — no leaked interval past teardown. This is wiring only: the sampler module, its telemetry format, and every reader (cost sidecar, bridge, CLI) are unchanged — a live swarm's "Resource usage" line now shows real RSS/CPU samples instead of no-samples-yet.
+
+**Resource sampling also runs headless, so `resourceAnomalies` stops being permanently empty (BL-350, BL-336 finding H1).** BL-264's wiring above only ever starts the sampler from `extension.ts`'s `vscode.*`-activation-gated call site, so a swarm running with no editor attached never recorded a single resource sample — the cost-health sidecar's `resourceAnomalies` field was present in the schema and emitted daily, but always empty, with nothing about the sidecar's own existence signalling the gap. `extension/src/tools/sample-resources.ts` is a headless CLI entrypoint that reuses the same tmux-discovery pid resolution and telemetry writer unchanged (`buildSampledRoles`, `sampleRolesOnce`), shelled from `handoffd.bb`'s existing sweep cadence (`resource-sample-sweep!`, the same posture as `recert-notify-sweep!`/`dead-letter-notify-sweep!` — no new scheduling mechanism invented). A new `shouldSampleThisInterval` check compares against the shared telemetry file's own latest sample, so the headless sweep and an attached editor's host-side sampler never double-count the same interval. This also closes the "quiet day looks identical to a broken sampler" gap: the sidecar now carries a `resourceSamplesObserved` flag, and the briefing's Cost & Health section renders an explicit "none found" anomalies line for a genuinely quiet sampled period, distinct from the silent omission a never-sampled sidecar still produces.
 
 #### Agent CLI
 
