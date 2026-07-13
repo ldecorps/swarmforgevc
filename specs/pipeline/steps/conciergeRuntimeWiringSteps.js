@@ -40,6 +40,9 @@ function buildAdapters(ctx) {
         ctx.closed.push(topicId);
         return true;
       },
+      // BL-329: routeEvent (called by runConciergeTick) calls this
+      // unconditionally after a successful send.
+      recordMessage: () => {},
     },
   };
 }
