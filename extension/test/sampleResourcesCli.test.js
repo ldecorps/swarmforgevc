@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawn } = require('node:child_process');
-const { formatSampleResult } = require('../out/tools/sample-resources');
+const { formatSampleResult, main } = require('../out/tools/sample-resources');
 const { installFakeTmux } = require('./helpers/fakeTmux');
 
 // ── formatSampleResult (pure) ────────────────────────────────────────────
@@ -142,6 +142,68 @@ test('the CLI skips sampling when a sample was already recorded within the inter
   );
 
   const output = execFileSync('node', [CLI_PATH], { cwd: root, encoding: 'utf8' });
+  assert.match(output, /^SKIPPED /);
+
+  const lines = readTelemetryLines(root);
+  assert.equal(lines.length, 1, 'expected no additional resource_sample line to have been written');
+});
+
+// ── main() driven in-process (BL-350 hardening: main-thin-wrapper rule) ──
+// The subprocess CLI tests above prove the compiled entrypoint wires up
+// correctly end-to-end, but execFileSync coverage is invisible in-process
+// (the engineering article's CLI main()-thin-wrapper rule / BL-233's CRAP
+// trap: main()'s own branch - sample vs. skip - would otherwise sit at 0%
+// in-process coverage forever). Mirrors notifyDeadLettersCli.test.js's own
+// "call the real main() in-process with process.chdir + a captured
+// console.log" seam.
+function runMainInProcess(root) {
+  const previousCwd = process.cwd();
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (...args) => logs.push(args.join(' '));
+  try {
+    process.chdir(root);
+    main();
+  } finally {
+    console.log = originalLog;
+    process.chdir(previousCwd);
+  }
+  return logs.join('\n');
+}
+
+test('main() records a resource sample in-process with no editor attached', () => {
+  const root = initFixture();
+  writeSessions(root);
+  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)']);
+  const fake = installFakeTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'display-message', exitCode: 0, stdout: `${child.pid}\n` },
+  ]);
+  try {
+    const output = runMainInProcess(root);
+    assert.match(output, /^SAMPLED 1 role\(s\)/);
+
+    const lines = readTelemetryLines(root);
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].type, 'resource_sample');
+    assert.equal(lines[0].role, 'coder');
+  } finally {
+    fake.restore();
+    child.kill();
+  }
+});
+
+test('main() skips sampling in-process when a sample was already recorded within the interval', () => {
+  const root = initFixture();
+  writeSessions(root);
+  fs.mkdirSync(path.dirname(telemetryPath(root)), { recursive: true });
+  fs.writeFileSync(
+    telemetryPath(root),
+    JSON.stringify({ type: 'resource_sample', role: 'coder', rssBytes: 1, cpuPercent: 1, at: new Date().toISOString() }) + '\n'
+  );
+
+  const output = runMainInProcess(root);
   assert.match(output, /^SKIPPED /);
 
   const lines = readTelemetryLines(root);

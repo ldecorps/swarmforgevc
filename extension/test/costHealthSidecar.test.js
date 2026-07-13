@@ -266,6 +266,28 @@ test('a sidecar with no resource samples at all renders no resource-anomalies li
   assert.doesNotMatch(text, /Resource anomalies/);
 });
 
+// BL-350 hardening gap: renderAnomalyLines gained a third branch
+// (anomalies present / none found / never sampled) but no existing test
+// drove the FIRST branch - an actual anomaly rendered as markdown - through
+// renderCostHealthSection; only buildCostHealthSidecar's own
+// resourceAnomalies array was ever asserted directly. Locks the rendered
+// line's shape (role, MB, trend arrow, cpu%) so the refactor did not
+// silently change it.
+test('an actual anomaly renders its role, rss in MB, and cpu percent with trend arrows', () => {
+  const resourceTrendsByRole = {
+    coder: {
+      currentRssBytes: 220_000_000, currentCpuPercent: 7.5,
+      rssTrend: { direction: 'up', delta: 20_000_000, priorValue: 200_000_000, currentValue: 220_000_000, series: [] },
+      cpuTrend: { direction: 'down', delta: -1, priorValue: 8.5, currentValue: 7.5, series: [] },
+    },
+  };
+  const sidecar = buildCostHealthSidecar('2026-07-09', {}, resourceTrendsByRole, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], []);
+  const text = renderCostHealthSection(sidecar);
+  assert.match(text, /\*\*Resource anomalies:\*\*/);
+  assert.match(text, /- coder: 210MB ↑, 7\.5% cpu ↓/);
+  assert.doesNotMatch(text, /none found/);
+});
+
 // ── writeCostHealthSidecar / commitCostHealthSidecar / sidecarPath ──────
 
 function mkTmp() {
