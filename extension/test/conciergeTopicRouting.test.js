@@ -128,11 +128,13 @@ function fakeAdapters(initialMap = {}) {
   const created = [];
   const sent = [];
   const closed = [];
+  const recorded = [];
   return {
     map,
     created,
     sent,
     closed,
+    recorded,
     adapters: {
       getTopicMap: () => map,
       createTopic: async (name) => {
@@ -149,6 +151,9 @@ function fakeAdapters(initialMap = {}) {
       closeTopic: async (topicId) => {
         closed.push(topicId);
         return true;
+      },
+      recordMessage: (backlogId, text) => {
+        recorded.push({ backlogId, text });
       },
     },
   };
@@ -200,6 +205,9 @@ test('a topic-create failure skips the event - never a fallback post', async () 
       sent.push({ topicId, text });
       return true;
     },
+    recordMessage: () => {
+      throw new Error('recordMessage should never be called when create fails');
+    },
   };
   const result = await routeEvent(event(), 'a fine feature', adapters);
   assert.deepEqual(result, { posted: false, skipped: true });
@@ -219,6 +227,9 @@ test('a topic-create success with no topicId also skips (never posts with an und
       sent.push({ topicId, text });
       return true;
     },
+    recordMessage: () => {
+      throw new Error('recordMessage should never be called with no topicId');
+    },
   };
   const result = await routeEvent(event(), 'a fine feature', adapters);
   assert.deepEqual(result, { posted: false, skipped: true });
@@ -226,11 +237,38 @@ test('a topic-create success with no topicId also skips (never posts with an und
 });
 
 test('a failed sendMessage reports posted:false but is not itself a skip (the topic exists, delivery just failed)', async () => {
-  const { adapters, map } = fakeAdapters({ 'BL-123': 42 });
+  const { adapters, map, recorded } = fakeAdapters({ 'BL-123': 42 });
   adapters.sendMessage = async () => false;
   const result = await routeEvent(event(), 'a fine feature', adapters);
   assert.deepEqual(result, { posted: false, skipped: false });
   assert.equal(map['BL-123'], 42);
+  assert.deepEqual(recorded, [], 'a failed send must never be recorded into the ticket\'s own durable record');
+});
+
+// ── recordMessage (BL-329: outbound serialisation) ─────────────────────────
+// Only ever called after a GENUINELY successful sendMessage - mirrors
+// emittedKeys' own "only record what actually posted" convention (BL-322).
+
+test('BL-329: a successful send on the reuse path is recorded with the exact backlogId and text', async () => {
+  const { adapters, recorded } = fakeAdapters({ 'BL-123': 42 });
+  await routeEvent(event(), 'a fine feature', adapters);
+  assert.deepEqual(recorded, [{ backlogId: 'BL-123', text: 'TaskStarted: BL-123' }]);
+});
+
+test('BL-329: a successful send on the create-topic path is ALSO recorded, not just the reuse path', async () => {
+  const { adapters, recorded } = fakeAdapters();
+  await routeEvent(event(), 'a fine feature', adapters);
+  assert.deepEqual(recorded, [{ backlogId: 'BL-123', text: 'TaskStarted: BL-123' }]);
+});
+
+test('BL-329: multiple events for the same ticket are recorded in the order they were routed', async () => {
+  const { adapters, recorded } = fakeAdapters();
+  await routeEvent(event(), 'a fine feature', adapters);
+  await routeEvent(event({ type: 'NeedsApproval' }), 'a fine feature', adapters);
+  assert.deepEqual(recorded, [
+    { backlogId: 'BL-123', text: 'TaskStarted: BL-123' },
+    { backlogId: 'BL-123', text: 'NeedsApproval: BL-123' },
+  ]);
 });
 
 // ── completionSummaryText (pure) — BL-299 ──────────────────────────────────
@@ -242,11 +280,12 @@ test('completionSummaryText names the item and states it is complete', () => {
 // ── routeEvent completion path (adapter-injected) — BL-299 topic-complete-01 ──
 
 test('topic-complete-01 [completion, has a topic]: posts a completion summary naming the item, then closes the topic', async () => {
-  const { adapters, sent, closed } = fakeAdapters({ 'BL-123': 42 });
+  const { adapters, sent, closed, recorded } = fakeAdapters({ 'BL-123': 42 });
   const result = await routeEvent(event({ type: 'TaskCompleted' }), 'a fine feature', adapters);
   assert.deepEqual(sent, [{ topicId: 42, text: 'BL-123 - a fine feature is complete.' }]);
   assert.deepEqual(closed, [42]);
   assert.deepEqual(result, { posted: true, skipped: false });
+  assert.deepEqual(recorded, [{ backlogId: 'BL-123', text: 'BL-123 - a fine feature is complete.' }], 'BL-329: the completion summary must be serialised too, not just posted');
 });
 
 test('topic-complete-01: the summary is posted BEFORE the topic closes (order matters - a closed topic cannot be posted into)', async () => {
@@ -282,9 +321,10 @@ test('topic-complete-01 [completion, has no topic]: posts nothing and closes no 
 });
 
 test('a completed item whose summary post fails is never closed', async () => {
-  const { adapters, closed } = fakeAdapters({ 'BL-123': 42 });
+  const { adapters, closed, recorded } = fakeAdapters({ 'BL-123': 42 });
   adapters.sendMessage = async () => false;
   const result = await routeEvent(event({ type: 'TaskCompleted' }), 'a fine feature', adapters);
   assert.deepEqual(closed, []);
   assert.deepEqual(result, { posted: false, skipped: false });
+  assert.deepEqual(recorded, [], 'a failed completion send must never be recorded either');
 });

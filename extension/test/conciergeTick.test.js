@@ -11,6 +11,7 @@ function fakeAdapters(overrides = {}) {
   const created = [];
   const sent = [];
   const closed = [];
+  const recorded = [];
   let currentFolders = folders();
   let currentGates = [];
   let currentRoleTicket = {};
@@ -20,6 +21,7 @@ function fakeAdapters(overrides = {}) {
     created,
     sent,
     closed,
+    recorded,
     setFolders: (f) => {
       currentFolders = f;
     },
@@ -54,6 +56,9 @@ function fakeAdapters(overrides = {}) {
         closeTopic: async (topicId) => {
           closed.push(topicId);
           return true;
+        },
+        recordMessage: (backlogId, text) => {
+          recorded.push({ backlogId, text });
         },
       },
       ...overrides,
