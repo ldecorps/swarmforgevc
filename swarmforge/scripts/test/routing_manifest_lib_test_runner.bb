@@ -69,6 +69,62 @@
 (assert-true "coder + architect + QA (a legal narrower subset) validates"
              (:valid? (routing-manifest-lib/validate-roles ["coder" "architect" "QA"])))
 
+;; ── BL-317 bounce fix (scope 4b): block-style roles: lists ────────────────
+(assert= "a block-style roles: list is read back exactly as declared"
+         ["coder" "QA"]
+         (routing-manifest-lib/read-roles "id: BL-1\nroles:\n  - coder\n  - QA\nstatus: todo\n"))
+
+(assert= "a block-style list with quoting/extra whitespace is still read back cleanly"
+         ["coder" "cleaner" "QA"]
+         (routing-manifest-lib/read-roles "id: BL-1\nroles:\n  - coder\n  -  \"cleaner\"  \n  - 'QA'\nstatus: todo\n"))
+
+(assert= "an indented block-style example inside notes: is never mistaken for the real field"
+         ["specifier" "coder" "cleaner" "architect" "hardender" "documenter" "QA"]
+         (routing-manifest-lib/read-roles
+          "id: BL-1\nnotes: |\n  roles:\n    - coder\n    - QA\nstatus: todo\n"))
+
+;; ── BL-317 bounce fix (scope 4b): absent vs. present-but-unparseable ──────
+(assert-true "validate-manifest: a genuinely absent roles: field is always valid (defaults to the full chain)"
+             (:valid? (routing-manifest-lib/validate-manifest "id: BL-1\nstatus: todo\n")))
+
+(assert-true "validate-manifest: a well-formed flow-style manifest validates"
+             (:valid? (routing-manifest-lib/validate-manifest "id: BL-1\nroles: [coder, QA]\nstatus: todo\n")))
+
+(assert-true "validate-manifest: a well-formed block-style manifest validates"
+             (:valid? (routing-manifest-lib/validate-manifest "id: BL-1\nroles:\n  - coder\n  - QA\nstatus: todo\n")))
+
+(assert-false "validate-manifest: a present-but-unparseable roles: field is REJECTED, never treated as absent"
+              (:valid? (routing-manifest-lib/validate-manifest "id: BL-1\nroles: coder, QA\nstatus: todo\n")))
+
+(assert= "validate-manifest's rejection reason names the parse failure, distinct from a coder/QA/coordinator reason"
+         "roles: field is present but could not be parsed (expected a flow-style [a, b] or block-style - a / - b list)"
+         (:reason (routing-manifest-lib/validate-manifest "id: BL-1\nroles: coder, QA\nstatus: todo\n")))
+
+(assert= "read-roles still safely defaults an unparseable field to the full chain (validate-manifest is the enforcement point, not read-roles)"
+         ["specifier" "coder" "cleaner" "architect" "hardender" "documenter" "QA"]
+         (routing-manifest-lib/read-roles "id: BL-1\nroles: coder, QA\nstatus: todo\n"))
+
+(assert-false "validate-manifest still rejects a present, PARSED-but-invalid list (missing coder) exactly like validate-roles"
+              (:valid? (routing-manifest-lib/validate-manifest "id: BL-1\nroles: [QA]\nstatus: todo\n")))
+
+;; ── hardener-added: a block-style list INTERRUPTED mid-block by a stray
+;;    non-dash line must be rejected as malformed, never silently
+;;    truncated to the items before the interruption. Regression guard for
+;;    a real bug found during hardening: an earlier version of
+;;    parse-block-list stopped at the first non-matching line, so a
+;;    truncated-but-still-coder+QA prefix read back as a VALID, narrower
+;;    manifest - silently dropping every role after the interruption with
+;;    no signal, the exact scope-4b defect this ticket bounced twice for
+;;    already, one indentation level deeper. ──────────────────────────────
+(assert= "read-roles: a block list interrupted by a stray non-dash line defaults to the full chain, not a silently truncated prefix"
+         ["specifier" "coder" "cleaner" "architect" "hardender" "documenter" "QA"]
+         (routing-manifest-lib/read-roles
+          "id: BL-1\nroles:\n  - coder\n  - QA\n  some interrupting non-list line\n  - architect\nstatus: todo\n"))
+
+(assert-false "validate-manifest: an interrupted block list is REJECTED, even though its truncated prefix alone would satisfy coder+QA"
+              (:valid? (routing-manifest-lib/validate-manifest
+                        "id: BL-1\nroles:\n  - coder\n  - QA\n  some interrupting non-list line\n  - architect\nstatus: todo\n")))
+
 (if (seq @failures)
   (do (doseq [f @failures] (println f))
       (println (str (count @failures) " FAILURE(S)"))
