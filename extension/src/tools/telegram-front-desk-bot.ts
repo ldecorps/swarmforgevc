@@ -221,18 +221,26 @@ function topicMapKey(topicId: number | undefined): string {
 // not thrown) - the rest of the bot (ordinary SUP-###/BL-### routing)
 // must not go down over it, and the next restart retries since the map
 // still lacks the binding.
-export async function ensureOperatorTopic(targetPath: string, botToken: string, chatId: string, postFn?: TelegramPostFn): Promise<void> {
+// BL-358: now RETURNS the resolved topicId (undefined only on a failed
+// create) so topicRouter.ts's RouteAdapters.ensureOperatorTopic can wire
+// straight to this - the SAME reuse-or-create decision the pre-poll-loop
+// call site below already relied on, its return value simply unused there
+// (a void call site is unaffected by a function starting to return
+// something).
+export async function ensureOperatorTopic(targetPath: string, botToken: string, chatId: string, postFn?: TelegramPostFn): Promise<number | undefined> {
   const topicMap = readTopicMap(targetPath);
-  if (decideEnsureOperatorTopicAction(topicMap).kind === 'reuse') {
-    return;
+  const decision = decideEnsureOperatorTopicAction(topicMap);
+  if (decision.kind === 'reuse') {
+    return decision.topicId;
   }
   const created = await createForumTopic(botToken, chatId, OPERATOR_TOPIC_NAME, postFn);
   if (!created.success || created.messageThreadId === undefined) {
     process.stderr.write(`ensureOperatorTopic: failed to create the Operator topic: ${created.error ?? 'no messageThreadId returned'}\n`);
-    return;
+    return undefined;
   }
   topicMap[topicMapKey(created.messageThreadId)] = OPERATOR_SUBJECT_ID;
   writeTopicMap(targetPath, topicMap);
+  return created.messageThreadId;
 }
 
 // BL-294: opens the subject, records the topicId(or DM default)->subjectId
@@ -499,6 +507,7 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
       recordMessage: (backlogId, text) => {
         appendMessage(targetPath, backlogId, { author: 'swarm', type: 'outbound', text });
       },
+      ensureOperatorTopic: () => ensureOperatorTopic(targetPath, botToken, chatId),
     },
   };
 }

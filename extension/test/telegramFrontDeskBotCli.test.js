@@ -224,3 +224,31 @@ test('a failed create degrades quietly - never throws, never writes a partial bi
   await ensureOperatorTopic(root, 'fake-token', 'fake-chat', postFn);
   assert.equal(fs.existsSync(topicMapPath(root)), false);
 });
+
+// BL-358: ensureOperatorTopic now RETURNS the resolved topicId, so
+// topicRouter.ts's RouteAdapters.ensureOperatorTopic can wire straight to
+// it - the pre-poll-loop call site above ignores the return value, this is
+// the NEW caller's own contract.
+
+test('BL-358: a freshly created Operator topic returns its own new topicId', async () => {
+  const root = mkTmpRoot();
+  const { postFn } = fakeCreateOk(42);
+  const topicId = await ensureOperatorTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, 42);
+});
+
+test('BL-358: an already-bound Operator topic returns its existing topicId, without calling create', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'OPERATOR' });
+  const { postFn, calls } = fakeCreateOk(999);
+  const topicId = await ensureOperatorTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, 42);
+  assert.equal(calls.length, 0);
+});
+
+test('BL-358: a failed create returns undefined, never a fabricated topicId', async () => {
+  const root = mkTmpRoot();
+  const postFn = async () => ({ ok: false, status: 500, json: { description: 'simulated failure' } });
+  const topicId = await ensureOperatorTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, undefined);
+});
