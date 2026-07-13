@@ -2,6 +2,8 @@ const assert = require('node:assert/strict');
 const {
   selectGateDecision,
   handleApprovalDecision,
+  selectGateDecisionForTicket,
+  handleApprovalDecisionForTicket,
   composeStatusAnswer,
   handleStatusQuery,
 } = require('../out/bridge/operatorDecideStatus');
@@ -92,6 +94,74 @@ test('a failed gate-answer write still confirms honestly, never claiming success
   handleApprovalDecision([{ role: 'coder', gated: true }], 'y', deps);
   assert.equal(replies.length, 1);
   assert.doesNotMatch(replies[0], /Answered/);
+});
+
+// ── selectGateDecisionForTicket / handleApprovalDecisionForTicket (pure +
+//    adapter-injected) — BL-325 scope 6: an in-topic reply is directed by
+//    the TOPIC'S OWN backlogId, never a count-based guess ─────────────────
+
+test('BL-325: with two gates pending, the ticket-directed selector answers ONLY the role holding the named ticket', () => {
+  const decision = selectGateDecisionForTicket(
+    [
+      { role: 'coder', gated: true },
+      { role: 'cleaner', gated: true },
+    ],
+    { coder: 'BL-100', cleaner: 'BL-200' },
+    'BL-100'
+  );
+  assert.deepEqual(decision, { action: 'answer', role: 'coder' });
+});
+
+test('BL-325: the OTHER gate is never touched by a ticket-directed decision', () => {
+  const decision = selectGateDecisionForTicket(
+    [
+      { role: 'coder', gated: true },
+      { role: 'cleaner', gated: true },
+    ],
+    { coder: 'BL-100', cleaner: 'BL-200' },
+    'BL-200'
+  );
+  assert.deepEqual(decision, { action: 'answer', role: 'cleaner' });
+});
+
+test('BL-325: no targetBacklogId (a SUP thread) falls back to the original count-based selector, unchanged', () => {
+  const decision = selectGateDecisionForTicket(
+    [
+      { role: 'coder', gated: true },
+      { role: 'cleaner', gated: true },
+    ],
+    { coder: 'BL-100', cleaner: 'BL-200' },
+    undefined
+  );
+  assert.deepEqual(decision, { action: 'ask-which', roles: ['coder', 'cleaner'] });
+});
+
+test('BL-325: a targetBacklogId whose own ticket has no pending gate falls back to the count-based selector (genuine fallback)', () => {
+  const decision = selectGateDecisionForTicket([{ role: 'cleaner', gated: true }], { coder: 'BL-100', cleaner: 'BL-200' }, 'BL-100');
+  assert.deepEqual(decision, { action: 'answer', role: 'cleaner' });
+});
+
+test('BL-325: a targetBacklogId held by no role at all falls back to the count-based selector', () => {
+  const decision = selectGateDecisionForTicket([{ role: 'coder', gated: true }], { coder: 'BL-100' }, 'BL-999');
+  assert.deepEqual(decision, { action: 'answer', role: 'coder' });
+});
+
+test('BL-325: handleApprovalDecisionForTicket answers the targeted role and never the other, even with two pending', () => {
+  const { deps, answerCalls, replies } = fakeApprovalDeps();
+  const decision = handleApprovalDecisionForTicket(
+    [
+      { role: 'coder', gated: true },
+      { role: 'cleaner', gated: true },
+    ],
+    { coder: 'BL-100', cleaner: 'BL-200' },
+    'BL-100',
+    'yes, approved',
+    deps
+  );
+  assert.deepEqual(decision, { action: 'answer', role: 'coder' });
+  assert.deepEqual(answerCalls, [{ role: 'coder', answer: 'yes, approved' }]);
+  assert.equal(replies.length, 1);
+  assert.doesNotMatch(replies[0], /which/i);
 });
 
 // ── composeStatusAnswer / handleStatusQuery (pure + adapter-injected) ────
