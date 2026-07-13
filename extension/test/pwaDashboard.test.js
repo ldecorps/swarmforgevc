@@ -483,7 +483,7 @@ test('shows an honest failure message rather than a blank page when the fetch fa
 
 // ── BL-213 cost-06b: cost & health card visibility ──────────────────────
 
-function fakeCostHealth() {
+function fakeCostHealth(overrides = {}) {
   return {
     schemaVersion: 1,
     dateIso: '2026-07-09',
@@ -498,6 +498,7 @@ function fakeCostHealth() {
       daemonRestarts: { value: 0, trend: { direction: 'unknown' } },
     },
     resourceAnomalies: [{ role: 'coder', rssBytes: 250_000_000, cpuPercent: 12.3, rssTrend: { direction: 'up' }, cpuTrend: { direction: 'flat' } }],
+    ...overrides,
   };
 }
 
@@ -531,6 +532,49 @@ test('the cost & health card is hidden entirely when backlog.json carries no cos
   await flush();
   const section = dom.window.document.getElementById('costHealthSection');
   assert.equal(section.style.display, 'none');
+});
+
+// ── BL-338: average cost/ticket diagram + trend on the PWA ──────────────
+
+function fakeCostPerTicket(overrides = {}) {
+  return {
+    average: { value: 4.5, trend: { direction: 'down' } },
+    sampleCount: 6,
+    excludedCount: 1,
+    series: [
+      { periodStart: '2026-06-28T00:00:00.000Z', value: 6 },
+      { periodStart: '2026-07-05T00:00:00.000Z', value: 4.5 },
+    ],
+    basis: 'Includes rework from bounces; excludes unpriced and unattributed usage.',
+    ...overrides,
+  };
+}
+
+test('BL-338: the average cost/ticket figure, trend, diagram, and accounting basis render on the PWA', async () => {
+  const dom = renderDashboard(fakeDashboard({ costHealth: fakeCostHealth({ costPerTicket: fakeCostPerTicket() }) }));
+  await flush();
+  const container = dom.window.document.getElementById('costHealth');
+  assert.match(container.textContent, /\$4\.50/);
+  assert.match(container.textContent, /6/);
+  assert.match(container.textContent, /Includes rework from bounces/);
+  // the diagram itself: a real SVG chart, not just text - reuses barChart,
+  // the SAME dependency-free chart already proven for velocity (dashboard-03).
+  const svgs = container.querySelectorAll('svg');
+  assert.ok(svgs.length > 0, 'expected an SVG chart to render for the cost/ticket trend');
+});
+
+test('BL-338: the average cost/ticket section is hidden when no delivered ticket has a priced cost yet (average null)', async () => {
+  const dom = renderDashboard(fakeDashboard({ costHealth: fakeCostHealth({ costPerTicket: fakeCostPerTicket({ average: null, series: [] }) }) }));
+  await flush();
+  const container = dom.window.document.getElementById('costHealth');
+  assert.doesNotMatch(container.textContent, /Includes rework from bounces/);
+});
+
+test('BL-338: the average cost/ticket section is absent entirely when backlog.json predates this ticket (no costPerTicket field)', async () => {
+  const dom = renderDashboard(fakeDashboard({ costHealth: fakeCostHealth() }));
+  await flush();
+  const container = dom.window.document.getElementById('costHealth');
+  assert.doesNotMatch(container.textContent, /Includes rework from bounces/);
 });
 
 // ── BL-290: suite-test duration on the static PWA ────────────────────────
