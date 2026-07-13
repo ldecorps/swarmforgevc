@@ -308,6 +308,27 @@
   briefing_email_lib.bb x2 from the repo root. Fixed by BL-268: it now
   resolves the repo top-level via `git rev-parse --show-toplevel` and
   normalizes changed-file args to repo-relative paths before matching.)
+- **A flag that suppresses a repeat notification must be set on CONFIRMED DELIVERY, never on
+  a delivery ATTEMPT.** Any "already alarmed / already armed / already notified" state that
+  exists to prevent spam is, by construction, also the thing that can SUPPRESS THE ONLY
+  WARNING ANYONE WILL EVER GET. So: never persist that flag before the send is attempted, and
+  never compute it without consulting the sender's result. A send helper that reports success
+  (this project's `send-configured-email!` returns `{:success bool :reason kw :error str}`)
+  must have that result CONSULTED by its caller — a caller that discards it converts every
+  transient network failure into permanent silence for the whole episode. Distinguish the
+  failure kinds: a TRANSIENT failure (`:success false`, no `:reason`) must NOT arm — retry it,
+  BOUNDED per the retry rule above, and on exhausting the cap arm anyway and log the
+  undelivered alarm loudly; a TERMINAL misconfiguration (`:reason :disabled` /
+  `:missing-api-key`) can never succeed on retry, so warn once (that path already exists) and
+  arm. Failure here is QUIET by design: `default-post!` CATCHES its exceptions and returns
+  `{:success false}`, so nothing throws and a swallowed result is invisible at the call site.
+  (2nd occurrence, and the second is worse than the first. BL-215 fixed exactly this in
+  `daemon_alarm_lib.bb` — its own surviving comment reads "the supervisor caller just
+  swallowed the result." Then BL-333's starvation alarm, a ticket whose entire thesis is "a
+  blocked consumer must never be silent", shipped `operator_runtime.bb:918` persisting
+  `:armed? true` BEFORE the send and discarding its result — so a transient failure at the one
+  tick starvation crosses the threshold silently suppresses the alarm for days. The alarm for
+  a silent failure failed silently. Caught by the architect in review; tracked as BL-345.)
 - A multi-slice emit→route→consume pipeline (an epic whose slices are pure
   foundation modules — a deriver, a router, a store — each landed with no live
   caller) is NOT complete until an explicit runtime-wiring slice CALLS them on a
