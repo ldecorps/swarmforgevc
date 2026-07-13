@@ -157,6 +157,29 @@ if roles_tsv_has "$ROOT" architect && session_alive "$ROOT" swarmforge-architect
 else
   fail "per-role-lifecycle-02: architect was not brought back up"
 fi
+# ── BL-343: this same real park (BL-901's shape) + real unpark (BL-902's
+#    shape) is exactly one complete park/unpark CYCLE - the event log must
+#    record both, in order, with real distinct timestamps, never a fixed/
+#    estimated value.
+PARK_LOG="$ROOT/.swarmforge/role-lifecycle/park-cycle-log.jsonl"
+check_park_cycle_log() {
+  [[ -f "$PARK_LOG" ]] || return 1
+  python3 -c "
+import json
+events = [json.loads(l) for l in open('$PARK_LOG') if l.strip()]
+architect_events = [e for e in events if e['role'] == 'architect']
+assert len(architect_events) == 2, f'expected exactly 2 architect events, got {len(architect_events)}: {architect_events}'
+assert architect_events[0]['event'] == 'park', architect_events
+assert architect_events[1]['event'] == 'unpark', architect_events
+assert isinstance(architect_events[0]['atMs'], int) and architect_events[0]['atMs'] > 0
+assert architect_events[1]['atMs'] >= architect_events[0]['atMs'], 'unpark must be timestamped at or after its own park'
+"
+}
+if check_park_cycle_log; then
+  pass "routing-break-even-01/02 setup: a real park then a real unpark of the same role is recorded, in order, with real timestamps"
+else
+  fail "routing-break-even-01/02 setup: expected the park-cycle-log to record a real park then a real unpark for architect, got: $(cat "$PARK_LOG" 2>/dev/null)"
+fi
 cleanup_root "$ROOT"
 
 # ── per-role-lifecycle-03: a role holding a REAL claimed parcel is never parked ──
@@ -253,10 +276,12 @@ SHAPE_PID=$!
 printf 'from: coder\nto: architect\npriority: 50\ntype: git_handoff\ntask: t\ncommit: abc\n\nbody\n' \
   > "$INPROCESS_DIR/00_raced_claim.handoff"
 wait "$SHAPE_PID" || true
+PARK_LOG_RACE="$ROOT/.swarmforge/role-lifecycle/park-cycle-log.jsonl"
 if roles_tsv_has "$ROOT" architect \
    && session_alive "$ROOT" swarmforge-architect \
-   && [[ -f "$INPROCESS_DIR/00_raced_claim.handoff" ]]; then
-  pass "per-role-lifecycle-07/08: a role that claims work after the batch survey but before its own kill is left alive, roster row restored, parcel never orphaned"
+   && [[ -f "$INPROCESS_DIR/00_raced_claim.handoff" ]] \
+   && { [[ ! -f "$PARK_LOG_RACE" ]] || ! grep -q '"role":"architect"' "$PARK_LOG_RACE"; }; then
+  pass "per-role-lifecycle-07/08: a role that claims work after the batch survey but before its own kill is left alive, roster row restored, parcel never orphaned - and BL-343's own event log never records the aborted attempt as a real park"
 else
   fail "expected the raced role left alive with its parcel intact, got roles.tsv-has=$(roles_tsv_has "$ROOT" architect; echo $?) session=$(session_alive "$ROOT" swarmforge-architect; echo $?) ($(cat /tmp/aps-role-lifecycle-race-out.txt 2>/dev/null))"
 fi
