@@ -200,7 +200,7 @@
     {
       "role": "architect",
       "tokens": {
-        "value": 170926,
+        "value": 172757,
         "trend": {
           "series": [
             {
@@ -221,17 +221,17 @@
             },
             {
               "periodStart": "2026-07-13T00:00:00.000Z",
-              "value": 170926
+              "value": 172757
             }
           ],
-          "currentValue": 170926,
+          "currentValue": 172757,
           "priorValue": 155839,
-          "delta": 15087,
+          "delta": 16918,
           "direction": "up"
         }
       },
       "costUsd": {
-        "value": 90.67783680000002,
+        "value": 90.74427765000003,
         "trend": {
           "series": [
             {
@@ -252,12 +252,12 @@
             },
             {
               "periodStart": "2026-07-13T00:00:00.000Z",
-              "value": 90.67783680000002
+              "value": 90.74427765000003
             }
           ],
-          "currentValue": 90.67783680000002,
+          "currentValue": 90.74427765000003,
           "priorValue": 51.02449995,
-          "delta": 39.653336850000024,
+          "delta": 39.71977770000003,
           "direction": "up"
         }
       }
