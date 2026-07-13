@@ -14,6 +14,14 @@ CLI="$SCRIPT_DIR/../build_freshness_cli.bb"
 LAUNCH_FRONT_DESK="$SCRIPT_DIR/../launch_front_desk.sh"
 START_HANDOFF_DAEMON="$SCRIPT_DIR/../start_handoff_daemon.sh"
 
+# Never the default 8765: this box (self-hosting - project-root IS the live
+# swarm) always has the REAL production bridge bound there. A fixed default
+# would silently collide with it - every launch_front_desk.sh call below
+# passes this instead. Derived from this script's own pid so two runs
+# (this box + any other worktree running the same suite concurrently)
+# don't collide with EACH OTHER either.
+export BRIDGE_PORT=$((20000 + ($$ % 10000)))
+
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "ok   - $*"; }
 
