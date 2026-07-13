@@ -106,6 +106,20 @@
 (def tmux-socket-file (fs/path state-dir "tmux-socket"))
 (def conf-file (fs/path state-dir ".." "swarmforge" "swarmforge.conf"))
 (def launch-operator (fs/path script-dir "launch_operator.sh"))
+;; ── BL-334: the restricted front-desk Operator (own liveness/inflight
+;;    state, own tmux socket - NEVER the unrestricted Operator's own
+;;    operator-socket-file/operator-pid-file above) ────────────────────────
+(def launch-front-desk-operator (fs/path script-dir "launch_front_desk_operator.sh"))
+(def front-desk-inflight-file (fs/path op-dir "front-desk.events.inflight.jsonl"))
+(def front-desk-pid-file (fs/path op-dir "front-desk-operator.pid"))
+(def front-desk-socket-file (fs/path op-dir "front-desk-operator-tmux.sock"))
+(def front-desk-prompt-file (fs/path op-dir "front-desk-prompt.txt"))
+(def front-desk-result-file (fs/path op-dir "front-desk-result.json"))
+;; The one piece of cross-tick state the async launch needs to remember: the
+;; thread id it was dispatched for, so the LATER tick that reaps the result
+;; knows which SUP-### thread to post the reply onto.
+(def front-desk-dispatch-context-file (fs/path op-dir "front-desk-dispatch-context.json"))
+(def front-desk-session "front-desk-operator")
 ;; BL-325: the SAME BL-285 approve relay bl-topic-approval-sweep! below
 ;; shells out to directly - never a second relay.
 (def operator-decide-cli (fs/path project-root "extension" "out" "tools" "operator-decide.js"))
@@ -257,6 +271,17 @@
   []
   (boolean (or (some #{operator-session} (tmux-sessions-on operator-socket-file))
                (pid-alive? (read-pid operator-pid-file)))))
+
+(defn front-desk-operator-running?
+  "Is the restricted front-desk Operator currently alive? Checks its OWN
+   dedicated socket/pid file — NEVER operator-socket-file/operator-pid-file
+   above, which track the UNRESTRICTED Operator. The two must never be
+   conflated: this is the guard that lets should-launch-front-desk-operator?
+   avoid double-launching a second front-desk run while one is still in
+   flight, independent of whatever the unrestricted Operator is doing."
+  []
+  (boolean (or (some #{front-desk-session} (tmux-sessions-on front-desk-socket-file))
+               (pid-alive? (read-pid front-desk-pid-file)))))
 
 ;; ── event queue (jsonl) ───────────────────────────────────────────────────────
 
@@ -778,6 +803,77 @@
       (fs/delete-if-exists telegram-reply-context-file)
       (log! "reap-operator" "inflight retired"))))
 
+;; ── BL-334: the restricted front-desk Operator (launch/reap) ─────────────
+
+(defn launch-front-desk-operator!
+  "Claims AT MOST ONE Telegram subject's worth of front-desk events (never
+   any other event type — the front-desk Operator has no authority over
+   those, see select-front-desk-dispatch-batch), writes them to its OWN
+   inflight file (never events.inflight.jsonl, which belongs to the
+   unrestricted Operator), records which thread it was dispatched for (so
+   the LATER reap step knows where to post the reply), builds the FULL
+   self-contained prompt (it holds no Read tool to fall back on), and spawns
+   the headless, --tools \"\"-restricted claude call on its own tmux socket.
+   Never launches a second one (caller already checked
+   front-desk-operator-running?)."
+  []
+  (let [pending (read-events events-file)
+        {:keys [dispatch remaining]} (telegram-topic-lib/select-front-desk-dispatch-batch pending)
+        thread-id (first (keep :subject dispatch))]
+    (write-events! events-file (vec remaining))
+    (when thread-id
+      (write-events! front-desk-inflight-file dispatch)
+      (atomic-spit! front-desk-dispatch-context-file (json/generate-string {:thread-id thread-id}))
+      (let [transcript (telegram-topic-lib/reply-context-for thread-id (support-thread-store/adapters-for state-dir))
+            memory (operator-memory-lib/facts-for-wake (operator-memory-store/read-store! state-dir))
+            prompt (operator-lib/front-desk-reply-prompt {:transcript transcript :long-term-memory memory})]
+        (atomic-spit! front-desk-prompt-file prompt))
+      (log! "launch-front-desk-operator" "thread=" thread-id)
+      (if skip-launch?
+        (log! "launch-front-desk-operator" "SKIPPED (OPERATOR_SKIP_LAUNCH=1)")
+        (process/process ["bash" (str launch-front-desk-operator) project-root
+                           (str front-desk-prompt-file) (str front-desk-result-file)]
+                          {:out :inherit :err :inherit})))))
+
+(defn reap-finished-front-desk-operator!
+  "Retire a completed front-desk run. Its tmux session/process ends ON ITS
+   OWN once the one-shot `claude -p` call exits (see
+   launch_front_desk_operator.sh) — there is no done-marker or window-kill
+   step, unlike the unrestricted Operator's long-lived RC session. Once it
+   is no longer running: read the captured --output-format json result,
+   post the reply text (if any) to the SAME reply-outbox/thread-transcript
+   path any other Operator reply already uses (never a second delivery
+   path — the SAME reuse discipline as BL-276's idle-nudge-sweep!), then
+   archive the inflight batch and clear the run's cross-tick state."
+  []
+  (when (and (fs/exists? front-desk-inflight-file) (not (front-desk-operator-running?)))
+    (let [context (when (fs/exists? front-desk-dispatch-context-file)
+                    (try (json/parse-string (slurp (str front-desk-dispatch-context-file)) true)
+                         (catch Exception _ nil)))
+          thread-id (:thread-id context)
+          result (when (fs/exists? front-desk-result-file)
+                   (try (json/parse-string (slurp (str front-desk-result-file)) true)
+                        (catch Exception _ nil)))
+          reply (operator-lib/front-desk-reply-text result)]
+      (if (and thread-id reply)
+        (do (append-to-reply-outbox! thread-id reply)
+            (when-let [thread (support-thread-store/read-thread! state-dir thread-id)]
+              (support-thread-store/write-thread!
+               state-dir
+               (support-lib/append-message thread support-lib/operator-channel (now-iso) reply)))
+            (log! "front-desk-replied" thread-id))
+        (when thread-id (log! "front-desk-no-reply" thread-id)))
+      (let [done-dir (fs/path op-dir "front-desk-events-done")]
+        (fs/create-dirs done-dir)
+        (fs/move front-desk-inflight-file
+                 (fs/path done-dir (str "events-" (now-ms) ".jsonl"))
+                 {:replace-existing true}))
+      (fs/delete-if-exists front-desk-pid-file)
+      (fs/delete-if-exists front-desk-dispatch-context-file)
+      (fs/delete-if-exists front-desk-result-file)
+      (fs/delete-if-exists (str front-desk-result-file ".err"))
+      (fs/delete-if-exists front-desk-prompt-file))))
+
 ;; ── status ────────────────────────────────────────────────────────────────────
 
 (defn write-status! [m]
@@ -882,6 +978,7 @@
     (closing-pass-sweep! now)
 
     (reap-finished-operator!)
+    (reap-finished-front-desk-operator!)
 
     ;; keep the resilient remote-access tunnel alive (best-effort, non-blocking)
     (ensure-tunnel!)
@@ -894,6 +991,17 @@
                     {:llm-running? llm-running?
                      :provider-state provider-state
                      :pending-count pending-count})
+          ;; BL-334: the SAME llm-running? read above is passed as
+          ;; :full-operator-running? here — the structural guarantee that the
+          ;; two launch decisions are mutually exclusive within one tick (see
+          ;; should-launch-front-desk-operator?'s own docstring).
+          front-desk-running? (front-desk-operator-running?)
+          front-desk-pending-count (count (filter #(= (:type %) "TELEGRAM_TOPIC_MESSAGE") pending))
+          front-desk-decision (operator-lib/should-launch-front-desk-operator?
+                               {:full-operator-running? llm-running?
+                                :front-desk-running? front-desk-running?
+                                :provider-state provider-state
+                                :pending-count front-desk-pending-count})
           state (cond
                   (= provider-state :cooldown) :waiting_for_provider
                   llm-running? :operator_running
@@ -933,6 +1041,11 @@
               "is a feature, not the bug.\n\n"
               "This clears on its own once the attended session ends; investigate "
               "sooner if the waiting messages are time-sensitive.")))
+      ;; BL-334 restricted-front-desk-operator-07: the front-desk Operator's
+      ;; status is nested under :front_desk in this SAME single write —
+      ;; never a second write-status! call — which is what makes "neither
+      ;; Operator's state has overwritten the other's" a property of the
+      ;; wiring rather than something either status shape has to encode.
       (write-status! (cond-> (operator-lib/render-status
                               {:state state :llm-running? llm-running?
                                :provider "claude" :provider-state provider-state
@@ -940,13 +1053,21 @@
                                :pending-count pending-count
                                :oldest-pending-age-ms oldest-pending-age-ms})
                        tunnel (assoc :tunnel tunnel)
-                       true (assoc :build_sha own-build-sha)))
+                       true (assoc :build_sha own-build-sha)
+                       true (assoc :front_desk
+                                   (operator-lib/render-front-desk-status
+                                    {:llm-running? front-desk-running?
+                                     :pending-count front-desk-pending-count}))))
       (when decision
         (log! "decision" "launch (pending=" (str pending-count) ")")
         (launch-operator!)
         (fs/delete-if-exists command-file))
+      (when front-desk-decision
+        (log! "decision" "launch-front-desk (pending=" (str front-desk-pending-count) ")")
+        (launch-front-desk-operator!))
       {:state state :launched? decision :pending pending-count
-       :provider provider-state :agents agents-running :starving? starving?})))
+       :provider provider-state :agents agents-running :starving? starving?
+       :front_desk_launched? front-desk-decision})))
 
 ;; ── main ──────────────────────────────────────────────────────────────────────
 

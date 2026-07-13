@@ -37,6 +37,7 @@ make_fixture() {
 }
 tick() { OPERATOR_SKIP_LAUNCH=1 bb "$1/swarmforge/scripts/operator_runtime.bb" "$1" --tick-once; }
 jget() { bb -e "(require '[cheshire.core :as j]) (println (get (j/parse-string (slurp \"$1\") true) $2))"; }
+jget_in() { bb -e "(require '[cheshire.core :as j]) (println (get-in (j/parse-string (slurp \"$1\") true) $2))"; }
 
 # ── 1. first tick: timer fires, status published, launch decided ─────────────
 F="$(make_fixture)"
@@ -506,6 +507,14 @@ hold_operator_slot() {
   echo "$pid" > "$f/.swarmforge/operator/operator.pid"
 }
 
+hold_front_desk_slot() {
+  local f="$1"
+  sleep 300 &
+  local pid=$!
+  STARVATION_PIDS+=("$pid")
+  echo "$pid" > "$f/.swarmforge/operator/front-desk-operator.pid"
+}
+
 seed_pending_events() {
   local f="$1" n="$2"
   local i out=""
@@ -630,6 +639,138 @@ rm -rf "$F"
 
 cleanup_starvation_pids
 trap - EXIT
+
+# ── BL-334: the restricted front-desk Operator ────────────────────────────
+# Mirrors the BL-333 section's own real-disposable-background-process
+# technique (never a fake pid file: pid-alive? checks a genuine
+# ProcessHandle). The front-desk Operator's own LLM launch is never
+# actually spawned here (OPERATOR_SKIP_LAUNCH=1, same gate launch-operator!
+# already respects) - these prove the WIRING (claim, prompt, reap, status),
+# not the live claude -p round trip; the launch command's OWN structural
+# restriction is proven separately below via DRYRUN, and the real live
+# proof (an actual Opus call structurally unable to act on the swarm) is
+# QA's own E2E gate per the ticket's explicit "E2E QA PROCEDURE".
+FD_PIDS=()
+cleanup_fd_pids() {
+  local p
+  for p in "${FD_PIDS[@]:-}"; do
+    [[ -n "$p" ]] && kill -9 "$p" 2>/dev/null || true
+  done
+}
+trap cleanup_fd_pids EXIT
+
+# ── 01/02: a message is answered while the full Operator holds the slot,
+#    and that Operator's own interactive session is not cut short ────────
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/support/threads"
+printf '{"id":"SUP-1","status":"open","messages":[{"channel":"telegram","timestamp":"2026-07-13T09:00:00Z","text":"when will BL-1 ship?"}]}' \
+  > "$F/.swarmforge/support/threads/SUP-1.json"
+printf '{"type":"TELEGRAM_TOPIC_MESSAGE","subject":"SUP-1"}\n' > "$F/.swarmforge/operator/events.jsonl"
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+sleep 300 & op_pid=$!; FD_PIDS+=("$op_pid"); echo "$op_pid" > "$F/.swarmforge/operator/operator.pid"
+OUT_FD1="$(tick "$F")"
+check "restricted-front-desk-operator-01: the front desk dispatches even while the full Operator holds the slot" \
+  '[[ "$OUT_FD1" == *"\"front_desk_launched?\":true"* ]]'
+check "restricted-front-desk-operator-01: it claims the message into its OWN inflight file" \
+  '[[ -f "$F/.swarmforge/operator/front-desk.events.inflight.jsonl" ]] && grep -q "SUP-1" "$F/.swarmforge/operator/front-desk.events.inflight.jsonl"'
+check "restricted-front-desk-operator-01: the message leaves the shared queue once claimed" \
+  '[[ ! -s "$F/.swarmforge/operator/events.jsonl" ]]'
+check "restricted-front-desk-operator-06: the unrestricted Operator's OWN inflight file is untouched" \
+  '[[ ! -f "$F/.swarmforge/operator/events.inflight.jsonl" ]]'
+check "restricted-front-desk-operator-01: the dispatch context records the SAME thread" \
+  '[[ "$(jget "$F/.swarmforge/operator/front-desk-dispatch-context.json" ":thread-id")" == SUP-1 ]]'
+check "restricted-front-desk-operator-01: the self-contained prompt carries the human's own message" \
+  'grep -q "when will BL-1 ship?" "$F/.swarmforge/operator/front-desk-prompt.txt"'
+check "restricted-front-desk-operator-02: the attended Operator holding the slot is not cut short" \
+  'kill -0 "$op_pid" 2>/dev/null'
+rm -rf "$F"
+
+# ── 06 control: when the full Operator is NOT running, it (not the front
+#    desk) claims the message - the two decisions never compete because
+#    they read the SAME full-operator-running? fact on complementary sides ─
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/support/threads"
+printf '{"id":"SUP-1","status":"open","messages":[{"channel":"telegram","timestamp":"2026-07-13T09:00:00Z","text":"hello"}]}' \
+  > "$F/.swarmforge/support/threads/SUP-1.json"
+printf '{"type":"TELEGRAM_TOPIC_MESSAGE","subject":"SUP-1"}\n' > "$F/.swarmforge/operator/events.jsonl"
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+tick "$F" >/dev/null
+check "restricted-front-desk-operator-06 control: the full Operator claims it when unattended" \
+  '[[ -f "$F/.swarmforge/operator/events.inflight.jsonl" ]] && grep -q "SUP-1" "$F/.swarmforge/operator/events.inflight.jsonl"'
+check "restricted-front-desk-operator-06 control: the front desk claims nothing in this case" \
+  '[[ ! -f "$F/.swarmforge/operator/front-desk.events.inflight.jsonl" ]]'
+rm -rf "$F"
+
+# ── 04: the reply reaches the human (reap delivers a completed run's
+#    result) - a completed async run is FORGED here (never a real wait on a
+#    live subprocess, matching the no-real-timers rule) exactly the way
+#    reap-finished-operator! is proven elsewhere in this suite ────────────
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/support/threads"
+printf '{"id":"SUP-1","status":"open","messages":[{"channel":"telegram","timestamp":"2026-07-13T09:00:00Z","text":"when will BL-1 ship?"}]}' \
+  > "$F/.swarmforge/support/threads/SUP-1.json"
+printf '{"type":"TELEGRAM_TOPIC_MESSAGE","subject":"SUP-1"}\n' > "$F/.swarmforge/operator/front-desk.events.inflight.jsonl"
+printf '{"thread-id":"SUP-1"}' > "$F/.swarmforge/operator/front-desk-dispatch-context.json"
+printf '{"is_error":false,"result":"BL-1 is targeted for this week."}' > "$F/.swarmforge/operator/front-desk-result.json"
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+tick "$F" >/dev/null
+check "restricted-front-desk-operator-04: the reply reaches the SAME reply-outbox any Operator reply uses" \
+  'grep -q "BL-1 is targeted for this week." "$F/.swarmforge/operator/telegram-reply-outbox.jsonl"'
+check "restricted-front-desk-operator-04: the reply is appended to the thread's own transcript too" \
+  'grep -q "BL-1 is targeted for this week." "$F/.swarmforge/support/threads/SUP-1.json"'
+check "restricted-front-desk-operator-04: the inflight batch is archived, not left dangling" \
+  '[[ ! -f "$F/.swarmforge/operator/front-desk.events.inflight.jsonl" ]] && [[ -n "$(ls "$F/.swarmforge/operator/front-desk-events-done/" 2>/dev/null)" ]]'
+rm -rf "$F"
+
+# ── an errored/blank result never posts garbage to the human ─────────────
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/support/threads"
+printf '{"id":"SUP-1","status":"open","messages":[]}' > "$F/.swarmforge/support/threads/SUP-1.json"
+printf '{"type":"TELEGRAM_TOPIC_MESSAGE","subject":"SUP-1"}\n' > "$F/.swarmforge/operator/front-desk.events.inflight.jsonl"
+printf '{"thread-id":"SUP-1"}' > "$F/.swarmforge/operator/front-desk-dispatch-context.json"
+printf '{"is_error":true,"result":"boom"}' > "$F/.swarmforge/operator/front-desk-result.json"
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+tick "$F" >/dev/null
+check "restricted-front-desk-operator: an errored result posts no reply" \
+  '[[ ! -f "$F/.swarmforge/operator/telegram-reply-outbox.jsonl" ]]'
+check "restricted-front-desk-operator: the inflight is still archived even on error (never left dangling)" \
+  '[[ ! -f "$F/.swarmforge/operator/front-desk.events.inflight.jsonl" ]]'
+rm -rf "$F"
+
+# ── 07: both Operators are reported, one atomic write, neither overwrites
+#    the other ─────────────────────────────────────────────────────────────
+F="$(make_fixture)"
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+sleep 300 & op_pid=$!; FD_PIDS+=("$op_pid"); echo "$op_pid" > "$F/.swarmforge/operator/operator.pid"
+sleep 300 & fd_pid=$!; FD_PIDS+=("$fd_pid"); echo "$fd_pid" > "$F/.swarmforge/operator/front-desk-operator.pid"
+tick "$F" >/dev/null
+check "restricted-front-desk-operator-07: the full Operator is reported running" \
+  '[[ "$(jget "$F/.swarmforge/operator/status.json" ":llm_running")" == true ]]'
+check "restricted-front-desk-operator-07: the front-desk Operator is ALSO reported, nested and distinct" \
+  '[[ "$(jget_in "$F/.swarmforge/operator/status.json" "[:front_desk :llm_running]")" == true ]]'
+rm -rf "$F"
+
+cleanup_fd_pids
+trap - EXIT
+
+# ── 03: the launch command holds NO tool access at all - the structural
+#    restriction the whole ticket depends on. --tools "" removes every tool
+#    from the session (verified empirically 2026-07-13: a --tools ""
+#    session told to run a shell command narrated intent but produced no
+#    filesystem effect - no tool_use, nothing to approve). Never
+#    --dangerously-skip-permissions (that flag exists to bypass exactly
+#    this), never --remote-control (no interactive channel a human could be
+#    talked into approving something through) ──────────────────────────────
+DRY_FD="$(FRONT_DESK_LAUNCH_DRYRUN=1 bash "$SRC/launch_front_desk_operator.sh" "$SRC/.." /tmp/fd-prompt.txt /tmp/fd-result.json 2>&1 || true)"
+FD_TOOLS_EMPTY_PATTERN="--tools ''"
+check "restricted-front-desk-operator-03: the launch command has NO tool access (--tools '')" \
+  '[[ "$DRY_FD" == *"$FD_TOOLS_EMPTY_PATTERN"* ]]'
+check "restricted-front-desk-operator-03: --dangerously-skip-permissions is NEVER passed" \
+  '[[ "$DRY_FD" != *"--dangerously-skip-permissions"* ]]'
+check "restricted-front-desk-operator-03: no interactive --remote-control channel either" \
+  '[[ "$DRY_FD" != *"--remote-control"* ]]'
+check "restricted-front-desk-operator-03: runs headless (print mode), never an interactive session" \
+  '[[ "$DRY_FD" == *"claude -p"* ]]'
 
 # ── 4. launcher assembles a --remote-control command ─────────────────────────
 DRY="$(OPERATOR_LAUNCH_DRYRUN=1 bash "$SRC/launch_operator.sh" "$SRC/.." /tmp/x.jsonl 2>&1 || true)"

@@ -257,8 +257,19 @@ function registerSteps(registry) {
   });
 
   // ── merged-code-reaches-daemons-01 ──────────────────────────────────
+  // BL-334 shares this EXACT step text ("the swarm's health is reported")
+  // for its own restricted-front-desk-operator-07 - the registry resolves
+  // first-match, so whichever module registers this regex first speaks for
+  // every scenario that uses it. Rather than duplicate the collision
+  // silently, this dispatches to ctx.healthReportRunner when an earlier
+  // Given step in the SAME scenario has set one (see
+  // restrictedFrontDeskOperatorSteps.js's own "the front-desk Operator is
+  // running" step) - the same "one shared handler, branch on a ctx flag an
+  // earlier step set" pattern this file already uses for ctx.processKind
+  // below. Absent that flag (every scenario this file itself owns), the
+  // behavior is UNCHANGED.
   registry.define(/^the swarm's health is reported$/, (ctx) => {
-    ctx.output = runFreshnessTest(ctx);
+    ctx.output = (ctx.healthReportRunner || runFreshnessTest)(ctx);
   });
   // Shared with scenario 03 below (a Scenario Outline reuses this exact
   // Then-text for both its compiled and interpreted examples) - one
