@@ -143,6 +143,7 @@ const DOMAINS = [
   require('./stuckEscalationEmailSteps'),
   require('./frontDeskSurvivesRebootSteps'),
   require('./retireLegacyTelegramNarratorSteps'),
+  require('./runHistoryHeadlessSteps'),
 ];
 
 function registerSteps(registry) {
