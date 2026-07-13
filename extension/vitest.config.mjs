@@ -14,7 +14,15 @@ export default defineConfig({
     // `vitest run` would pull in hundreds of files — exclude those here. The
     // runner runs FROM within a sandbox (root = sandbox), where its own tests
     // sit at the root and this exclude does not apply.
-    exclude: [...configDefaults.exclude, '**/.stryker-tmp/**', '**/out/**'],
+    // BL-340: test/fixtures/** holds pinned task fixtures (e.g. the
+    // coder-role benchmark task), which legitimately contain their OWN
+    // *.test.js files run by the harness itself via a real `node --test`
+    // child process - never Vitest's own collector. Without this exclude,
+    // Vitest's default include glob picks the fixture file up as one of
+    // its own suites and fails it ("No test suite found") because the
+    // fixture calls node:test's own test() directly rather than relying
+    // on Vitest's globals.
+    exclude: [...configDefaults.exclude, '**/.stryker-tmp/**', '**/out/**', 'test/fixtures/**'],
     // node --test had no default per-test timeout. paneTailerScrollback (the
     // one 30s+ offender, BL-125) now runs in-process via a spy double, so a
     // normal cap is fine; the rest still spawn a fake-tmux binary and stay
