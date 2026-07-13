@@ -250,6 +250,70 @@
                 (= provider-state :available)
                 (pos? (or pending-count 0)))))
 
+;; ── BL-334: the restricted front-desk Operator's launch gate ──────────────
+;; A SECOND Operator, admitted ALONGSIDE the first, that exists only to
+;; relieve front-desk starvation while the unrestricted Operator holds the
+;; single slot indefinitely (an attended session never releases it, so
+;; should-launch-operator? above can never fire for as long as it runs).
+;; Eligible EXACTLY when the full Operator IS running - the caller passes
+;; the SAME full-operator-running?/llm-running? fact to both this function
+;; and should-launch-operator? in one tick, which makes the two mutually
+;; exclusive by construction (literal negations of one input): they can
+;; never both be eligible to claim the shared pending queue in the same
+;; tick (restricted-front-desk-operator-05/06). When the full Operator is
+;; NOT running, the ordinary should-launch-operator? path already drains
+;; the queue exactly as it does today - this gate never engages then.
+
+(defn should-launch-front-desk-operator?
+  [{:keys [full-operator-running? front-desk-running? provider-state pending-count]}]
+  (boolean (and full-operator-running?
+                (not front-desk-running?)
+                (= provider-state :available)
+                (pos? (or pending-count 0)))))
+
+;; The FULL self-contained prompt for the restricted front-desk Operator - it
+;; holds no Read tool (see should-launch-front-desk-operator?'s docstring),
+;; so everything it could need (the caller's own transcript, durable memory
+;; facts) is inlined here rather than left for a tool it does not have.
+;; Instructs it to reply with the answer text ALONE - the runtime treats the
+;; ENTIRE completion as the reply, verbatim; there is no tool call for it to
+;; structure output through.
+(defn front-desk-reply-prompt
+  [{:keys [transcript long-term-memory]}]
+  (str
+   "You are the front-desk Operator. You have NO tools and NO ability to act "
+   "on the swarm in any way - you can only read what is given below and "
+   "reply in plain text. Another Operator is mid-conversation elsewhere and "
+   "must not be interrupted; your only job is to answer the human's message "
+   "on this thread.\n\n"
+   "Known long-term facts:\n" (pr-str long-term-memory) "\n\n"
+   "Thread so far:\n" (pr-str transcript) "\n\n"
+   "Reply with ONLY the message to send back to the human - no preamble, no "
+   "explanation, just the reply text itself."))
+
+;; The restricted front-desk Operator holds NO tool at all (launched with
+;; `claude -p --tools ""` - see launch_front_desk_operator.sh), so its
+;; completed text IS the whole of what it can communicate; there is no tool
+;; call for it to post a reply through. front-desk-reply-text is the ONE
+;; place that decides whether a captured `claude -p --output-format json`
+;; result is usable - an error or a blank completion never becomes a
+;; "reply", so the runtime never posts empty/garbage text to the human.
+(defn front-desk-reply-text
+  [{:keys [is_error result]}]
+  (when (and (not is_error) (not (str/blank? (or result ""))))
+    result))
+
+;; restricted-front-desk-operator-07: the front-desk Operator's own status,
+;; reported ALONGSIDE (never instead of, never overwriting) the full
+;; Operator's render-status above. operator_runtime.bb nests this under one
+;; :front_desk key inside the SAME status.json write render-status already
+;; produces - one atomic write, so "neither has overwritten the other" is a
+;; property of the wiring, not something either status shape has to encode.
+(defn render-front-desk-status
+  [{:keys [llm-running? pending-count]}]
+  {:llm_running (boolean llm-running?)
+   :pending_events (or pending-count 0)})
+
 ;; ── BL-306: ask + await a clarifying answer ────────────────────────────────
 ;; The disposable Operator LLM can ASK one clarifying question then MUST
 ;; exit (it can never wait); the always-alive runtime holds the

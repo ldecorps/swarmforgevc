@@ -37,6 +37,37 @@
            2 (count (:dispatch result)))
   (assert= "select-dispatch-batch: nothing deferred when only one thread is pending" [] (:deferred result)))
 
+;; ── select-front-desk-dispatch-batch (pure) — BL-334 restricted-front-desk-
+;;    operator-06: the front-desk Operator has no authority over non-human-
+;;    facing events at all, so it claims ONLY TELEGRAM_TOPIC_MESSAGE events
+;;    (at most one subject, same "oldest thread first" ordering as
+;;    select-dispatch-batch) and leaves EVERY other pending event - including
+;;    other Telegram subjects - completely untouched for the full Operator's
+;;    own normal path once it is free ────────────────────────────────────────
+
+(assert= "select-front-desk-dispatch-batch: no telegram events at all -> nothing to dispatch"
+         {:dispatch [] :remaining [{:type "SWARM_CHECK_TIMER"}]}
+         (telegram-topic-lib/select-front-desk-dispatch-batch [{:type "SWARM_CHECK_TIMER"}]))
+
+(let [events [{:type "TELEGRAM_TOPIC_MESSAGE" :subject "SUP-1"}
+              {:type "TELEGRAM_TOPIC_MESSAGE" :subject "SUP-2"}
+              {:type "SWARM_CHECK_TIMER"}]
+      result (telegram-topic-lib/select-front-desk-dispatch-batch events)]
+  (assert= "select-front-desk-dispatch-batch: only the OLDEST telegram thread's events dispatch"
+           [{:type "TELEGRAM_TOPIC_MESSAGE" :subject "SUP-1"}]
+           (:dispatch result))
+  (assert= "select-front-desk-dispatch-batch: non-human-facing events are left untouched, not claimed"
+           [{:type "SWARM_CHECK_TIMER"} {:type "TELEGRAM_TOPIC_MESSAGE" :subject "SUP-2"}]
+           (:remaining result)))
+
+(let [events [{:type "TELEGRAM_TOPIC_MESSAGE" :subject "SUP-1"}
+              {:type "TELEGRAM_TOPIC_MESSAGE" :subject "SUP-1"}]
+      result (telegram-topic-lib/select-front-desk-dispatch-batch events)]
+  (assert= "select-front-desk-dispatch-batch: multiple messages for the SAME thread dispatch together"
+           2 (count (:dispatch result)))
+  (assert= "select-front-desk-dispatch-batch: nothing left over when only one thread is pending"
+           [] (:remaining result)))
+
 ;; ── reply-context-for (adapter-injected) — telegram-topic-03 / -04 ───────
 
 (let [threads {"SUP-1" {:id "SUP-1" :status "open" :messages [{:channel "telegram" :timestamp "2026-07-11T09:00:00Z" :text "about A"}]}
