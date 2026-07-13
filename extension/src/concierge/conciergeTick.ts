@@ -6,12 +6,18 @@
 // Telegram-agnostic in its own imports (it composes topicRouter.ts's
 // RouteAdapters, which is where Telegram-specific adapters actually get
 // wired, in the live wrapper - telegram-front-desk-bot.ts).
-import { EventStreamSnapshot, GateSignal, SwarmEventType, deriveSwarmEvents, swarmEventKey } from '../events/swarmEventStream';
+import { EventStreamSnapshot, GateSignal, SwarmEventType, TicketSummary, deriveSwarmEvents, swarmEventKey } from '../events/swarmEventStream';
 import { RouteAdapters, routeEvent } from './topicRouter';
 
 export interface BacklogFolderItem {
   id: string;
   title: string;
+  // BL-322: the topic-opening summary's own two derived sources (readFolders'
+  // real wrapper - telegram-front-desk-bot.ts's toFoldersSnapshot - reads
+  // these straight off panel/backlogReader.ts's own BacklogItem, never a
+  // second reader).
+  notes?: string;
+  firstAcceptanceStep?: string;
 }
 
 export interface BacklogFoldersSnapshot {
@@ -46,6 +52,17 @@ export interface TickResult {
   routed: number;
 }
 
+// BL-322: only ACTIVE tickets need an entry - TaskStarted only ever fires
+// for an id entering backlog.active (diffTaskStarted), so a paused/done
+// ticket's summary is never read.
+function ticketSummariesFor(active: BacklogFolderItem[]): Record<string, TicketSummary> {
+  const summaries: Record<string, TicketSummary> = {};
+  for (const item of active) {
+    summaries[item.id] = { title: item.title, notes: item.notes, firstAcceptanceStep: item.firstAcceptanceStep };
+  }
+  return summaries;
+}
+
 function toEventStreamSnapshot(folders: BacklogFoldersSnapshot, gates: GateSignal[], roleTicket: Record<string, string>): EventStreamSnapshot {
   return {
     backlog: {
@@ -55,6 +72,7 @@ function toEventStreamSnapshot(folders: BacklogFoldersSnapshot, gates: GateSigna
     },
     gates,
     roleTicket,
+    ticketSummaries: ticketSummariesFor(folders.active),
   };
 }
 

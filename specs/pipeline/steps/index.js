@@ -128,6 +128,7 @@ const DOMAINS = [
   require('./quietPeriodGateCliSteps'),
   require('./routingManifestFieldSteps'),
   require('./roleLifecycleParkUnneededSteps'),
+  require('./topicOpeningSummarySteps'),
 ];
 
 function registerSteps(registry) {
