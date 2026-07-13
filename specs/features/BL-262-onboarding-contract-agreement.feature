@@ -66,3 +66,26 @@ Feature: the swarm surveys a new target repo and proposes an onboarding contract
     Given an agreed contract that currently allows dispatch
     When the operator flips the agreement marker back to pending for a scope change
     Then the build-start gate holds dispatch again until the contract is re-agreed
+
+  # BL-262 negotiation-request-changes-revises-05 (SLICE 2, built by BL-344 - folded in
+  # from the parked BL-262-onboarding-contract-agreement.slice-2-negotiation.feature.draft)
+  Scenario: requesting changes makes the swarm revise and re-propose
+    Given a proposed onboarding contract the swarm has drafted from its repo survey
+    When the operator requests a change to the proposed contract
+    Then the swarm revises the contract and re-proposes it, still awaiting agreement
+    And the requested change is reflected in the revised proposal
+
+  # BL-262 negotiation-gate-held-through-rounds-06 (SLICE 2, built by BL-344)
+  Scenario: the build-start gate stays held across negotiation rounds until agreement
+    Given a proposed onboarding contract the swarm has drafted from its repo survey
+    And the contract has been revised across one or more request-and-revise rounds
+    When the coordinator evaluates the build-start gate before agreement
+    Then the gate holds dispatch
+    And once the operator agrees to a revised contract the gate allows dispatch
+
+  # BL-262 negotiation-revision-is-responsive-07 (SLICE 2, built by BL-344)
+  Scenario: a revision responds to the operator's request rather than discarding it
+    Given a proposed onboarding contract the swarm has drafted from its repo survey
+    And the operator requested a specific change to the proposed scope
+    When the swarm re-proposes the contract
+    Then the re-proposed scope carries the operator's requested change rather than a fresh survey that ignores it

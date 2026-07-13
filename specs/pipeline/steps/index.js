@@ -138,6 +138,7 @@ const DOMAINS = [
   require('./headlessDarkEmitterAuditSteps'),
   require('./routingBreakEvenSteps'),
   require('./standingRuleViolationsSteps'),
+  require('./onboardingNegotiationSteps'),
 ];
 
 function registerSteps(registry) {
