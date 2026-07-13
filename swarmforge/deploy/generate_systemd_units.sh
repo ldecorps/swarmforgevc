@@ -79,7 +79,7 @@ for arg in "$@"; do
 done
 set -- "${POSITIONAL[@]+"${POSITIONAL[@]}"}"
 
-USAGE="Usage: generate_systemd_units.sh <project-root> <pack-name> <linux-user> [output-path] [--unit=swarm|operator]"
+USAGE="Usage: generate_systemd_units.sh <project-root> <pack-name> <linux-user> [output-path] [--unit=swarm|operator|front-desk]"
 PROJECT_ROOT="${1:?$USAGE}"
 PACK_NAME="${2:?$USAGE}"
 LINUX_USER="${3:?$USAGE}"
