@@ -84,6 +84,36 @@ export function buildContractBootstrapFiles(contract: ProposedContract): Bootstr
   ];
 }
 
+// Shared by every caller that writes bootstrap files into a target repo and
+// commits them: BL-262's existence-only first proposal (writes only the
+// missing subset) and BL-344's unconditional revision (always rewrites the
+// whole file set). Both need the identical write + `git add` + commit-
+// tolerating-"nothing to commit" sequence; only which files get passed in
+// differs.
+async function writeFilesAndCommit(targetPath: string, files: BootstrapFile[], commitMessage: string): Promise<boolean> {
+  for (const file of files) {
+    const filePath = path.join(targetPath, file.path);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, file.content, 'utf8');
+  }
+
+  if (files.length === 0 || !(await isGitRepository(targetPath))) {
+    return false;
+  }
+
+  await execFileAsync('git', ['-C', targetPath, 'add', ...files.map((f) => f.path)]);
+  const commitResult = await execFileAsync('git', ['-C', targetPath, 'commit', '-m', commitMessage]).catch(
+    async (error: { stdout?: string; stderr?: string }) => {
+      const message = `${error.stderr ?? ''}\n${error.stdout ?? ''}`.trim();
+      if (!message.includes('nothing to commit')) {
+        throw error;
+      }
+      return undefined;
+    }
+  );
+  return Boolean(commitResult);
+}
+
 async function writeAndCommitBootstrapPlan(
   targetPath: string,
   files: BootstrapFile[],
@@ -106,27 +136,7 @@ async function writeAndCommitBootstrapPlan(
   );
 
   const plan = planTargetBootstrapFiles(existingFiles, files);
-
-  for (const file of plan.filesToCreate) {
-    await fs.mkdir(path.dirname(path.join(targetPath, file.path)), { recursive: true });
-    await fs.writeFile(path.join(targetPath, file.path), file.content, 'utf8');
-  }
-
-  let committed = false;
-  if (plan.filesToCreate.length > 0 && (await isGitRepository(targetPath))) {
-    const createdPaths = plan.filesToCreate.map((f) => f.path);
-    await execFileAsync('git', ['-C', targetPath, 'add', ...createdPaths]);
-    const commitResult = await execFileAsync('git', ['-C', targetPath, 'commit', '-m', commitMessage]).catch(
-      async (error: { stdout?: string; stderr?: string }) => {
-        const message = `${error.stderr ?? ''}\n${error.stdout ?? ''}`.trim();
-        if (!message.includes('nothing to commit')) {
-          throw error;
-        }
-        return undefined;
-      }
-    );
-    committed = Boolean(commitResult);
-  }
+  const committed = await writeFilesAndCommit(targetPath, plan.filesToCreate, commitMessage);
 
   return {
     created: plan.filesToCreate.map((file) => file.path),
@@ -159,6 +169,22 @@ export async function initializeTargetContract(
     buildContractBootstrapFiles(contract),
     'Propose SwarmForge onboarding contract'
   );
+}
+
+// BL-344: a negotiation round REVISES an already-existing contract.yaml/
+// CONTRACT.md - writeAndCommitBootstrapPlan's own idempotency is
+// existence-only (it never overwrites a file that is already there), the
+// right behavior for a first proposal but the wrong one for a revision,
+// which must always land. Unconditional write + commit, reusing the SAME
+// buildContractBootstrapFiles rendering so the structured source and the
+// legible view never diverge, exactly as slice 1 already guarantees.
+export async function updateTargetContract(
+  targetPath: string,
+  contract: ProposedContract,
+  commitMessage: string
+): Promise<{ committed: boolean }> {
+  const committed = await writeFilesAndCommit(targetPath, buildContractBootstrapFiles(contract), commitMessage);
+  return { committed };
 }
 
 // BL-269: the target repo's own project.prompt/engineering.prompt,
