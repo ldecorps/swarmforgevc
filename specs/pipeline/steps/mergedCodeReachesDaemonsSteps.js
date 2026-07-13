@@ -297,20 +297,55 @@ function registerSteps(registry) {
     ctx.output = runFreshnessTest(ctx);
   });
 
-  // ── merged-code-reaches-daemons-04 ──────────────────────────────────
-  registry.define(/^a long-lived process running a stale build crashes$/, (ctx) => {
+  // ── merged-code-reaches-daemons-04/07 ────────────────────────────────
+  // The fixture flaw the specifier's amendment called out: the original
+  // scenario 04 staged a sync BEFORE the crash, so it never exercised the
+  // window this Given now names explicitly - the real shell test's own
+  // 04/07 fixture never calls sync at all, relying entirely on
+  // front_desk_supervisor.bb's own spawn-bridge!/spawn-bot! freshness
+  // check+recompile (ensure-current-build!) to make the build current.
+  registry.define(/^no build sync has run since that merge$/, (ctx) => {
     ctx.output = runFreshnessTest(ctx);
+  });
+  registry.define(/^a long-lived process running a stale build crashes$/, (ctx) => {
+    ctx.output = ctx.output || runFreshnessTest(ctx);
+  });
+  registry.define(/^a long-lived process crashes before any sync could run$/, (ctx) => {
+    ctx.output = ctx.output || runFreshnessTest(ctx);
   });
   registry.define(/^its supervisor respawns it$/, (ctx) => {
     ctx.output = ctx.output || runFreshnessTest(ctx);
   });
   registry.define(/^the respawned process runs the current build$/, (ctx) => {
     const output = ctx.output || runFreshnessTest(ctx);
-    expectLine(output, 'merged-code-reaches-daemons-04: a supervisor', '04');
+    expectLine(output, 'merged-code-reaches-daemons-04/07: a crash BEFORE any sync ran', '04/07');
   });
   registry.define(/^the stale build is not re-armed$/, (ctx) => {
     const output = ctx.output || runFreshnessTest(ctx);
-    expectLine(output, 'merged-code-reaches-daemons-04', '04');
+    expectLine(output, 'merged-code-reaches-daemons-04/07', '04');
+  });
+  registry.define(/^the supervisor makes the build current before it respawns the process$/, (ctx) => {
+    const output = ctx.output || runFreshnessTest(ctx);
+    expectLine(output, 'merged-code-reaches-daemons-04/07', '07');
+  });
+
+  // ── merged-code-reaches-daemons-08 ──────────────────────────────────
+  // A failing recompile must never leave the front desk down - it is the
+  // human's only channel. Driven against the real shell test's own
+  // dedicated fixture (a stubbed npm that always exits 1).
+  registry.define(/^the current build cannot be produced$/, (ctx) => {
+    ctx.output = runFreshnessTest(ctx);
+  });
+  registry.define(/^its supervisor respawns a crashed process$/, (ctx) => {
+    ctx.output = ctx.output || runFreshnessTest(ctx);
+  });
+  registry.define(/^the process is brought back up rather than left down$/, (ctx) => {
+    const output = ctx.output || runFreshnessTest(ctx);
+    expectLine(output, 'merged-code-reaches-daemons-08: a failed recompile', '08');
+  });
+  registry.define(/^its staleness is surfaced loudly$/, (ctx) => {
+    const output = ctx.output || runFreshnessTest(ctx);
+    expectLine(output, 'merged-code-reaches-daemons-08', '08');
   });
 
   // ── merged-code-reaches-daemons-05 ──────────────────────────────────

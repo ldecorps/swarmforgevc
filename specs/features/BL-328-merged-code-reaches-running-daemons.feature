@@ -35,10 +35,27 @@ Scenario Outline: Every long-lived process is covered, whatever language it is w
 
 # BL-328 merged-code-reaches-daemons-04
 Scenario: A supervisor respawn brings up the current build, not the dead process's build
-  Given a long-lived process running a stale build crashes
+  Given no build sync has run since that merge
+  And a long-lived process running a stale build crashes
   When its supervisor respawns it
   Then the respawned process runs the current build
   And the stale build is not re-armed
+
+# BL-328 merged-code-reaches-daemons-07
+Scenario: A crash in the window between a merge and the sync does not re-arm the stale build
+  Given no build sync has run since that merge
+  And a long-lived process crashes before any sync could run
+  When its supervisor respawns it
+  Then the supervisor makes the build current before it respawns the process
+  And the respawned process runs the current build
+
+# BL-328 merged-code-reaches-daemons-08
+Scenario: If the current build cannot be produced, the process still comes back, loudly degraded
+  Given no build sync has run since that merge
+  And the current build cannot be produced
+  When its supervisor respawns a crashed process
+  Then the process is brought back up rather than left down
+  And its staleness is surfaced loudly
 
 # BL-328 merged-code-reaches-daemons-05
 Scenario: A restart loses no messages in either direction
