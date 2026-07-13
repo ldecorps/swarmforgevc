@@ -174,6 +174,38 @@
             :priority (some-> (read-yaml-field content "priority") parse-long)
             :roles (routing-manifest-lib/read-roles content)}))))
 
+;; ── BL-343: real park/unpark event log ──────────────────────────────────
+;; The break-even measurement this ticket asks for needs REAL
+;; (parkedAtMs, unparkedAtMs) pairs, never an estimate - this is the ONLY
+;; place a real park/unpark decision is enacted (SINGLE OWNER, same
+;; posture as build_freshness_cli.bb's own header comment), so it is the
+;; one correct place to record the fact that one happened. Recording is
+;; best-effort and never blocks/aborts a shape pass - a logging failure
+;; must never be why a role fails to park or unpark.
+
+(defn- park-cycle-log-file [project-root]
+  (fs/path project-root ".swarmforge" "role-lifecycle" "park-cycle-log.jsonl"))
+
+(defn- log-park-cycle-event! [project-root event role]
+  (try
+    (let [f (park-cycle-log-file project-root)]
+      (fs/create-dirs (fs/parent f))
+      (spit (str f)
+            (str (json/generate-string {:event event :role role :atMs (System/currentTimeMillis)}) "\n")
+            :append true))
+    (catch Exception _ nil)))
+
+;; Only a GENUINE park (evaluate-role-lifecycle!'s own {:parked role}
+;; without :aborted? true - see role_lifecycle_lib.bb's park-role!
+;; docstring for the per-kill re-check that can abort one) is logged as a
+;; park event; an aborted attempt never removed the role from service, so
+;; recording it would fabricate an idle window that never happened.
+(defn- log-shape-result! [project-root {:keys [parked unparked]}]
+  (doseq [park-entry parked :when (and (:parked park-entry) (not (:aborted? park-entry)))]
+    (log-park-cycle-event! project-root "park" (:parked park-entry)))
+  (doseq [unpark-entry unparked :when (:unparked unpark-entry)]
+    (log-park-cycle-event! project-root "unpark" (:unparked unpark-entry))))
+
 (defn- run-shape! [project-root ticket-path]
   (let [content (try (slurp ticket-path) (catch Exception _ nil))]
     (when (nil? content)
@@ -194,6 +226,7 @@
       (try
         (let [result (role-lifecycle-lib/evaluate-role-lifecycle!
                       roster current-needed next-needed (real-adapters project-root roster))]
+          (log-shape-result! project-root result)
           (println (json/generate-string result))
           (System/exit 0))
         (catch Exception e

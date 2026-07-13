@@ -21,31 +21,14 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
+const { makeEvidenceReader } = require('./lib/evidenceReport');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARMFORGE_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const FRESHNESS_CLI = path.join(SWARMFORGE_SCRIPTS, 'build_freshness_cli.bb');
 const EVIDENCE_DIR = path.join(REPO_ROOT, 'backlog', 'evidence');
 
-function findEvidenceFile() {
-  const candidates = fs
-    .readdirSync(EVIDENCE_DIR)
-    .filter((f) => f.startsWith('BL-335-shipped-but-invisible-to-the-human-') && f.endsWith('.md'));
-  if (candidates.length === 0) {
-    throw new Error(`no BL-335 evidence report found under ${EVIDENCE_DIR}`);
-  }
-  // Most recent by filename (the date suffix sorts lexicographically).
-  candidates.sort();
-  return path.join(EVIDENCE_DIR, candidates[candidates.length - 1]);
-}
-
-function readEvidence(ctx) {
-  if (!ctx.evidence) {
-    ctx.evidencePath = findEvidenceFile();
-    ctx.evidence = fs.readFileSync(ctx.evidencePath, 'utf8');
-  }
-  return ctx.evidence;
-}
+const readEvidence = makeEvidenceReader(EVIDENCE_DIR, 'BL-335-shipped-but-invisible-to-the-human-', 'BL-335');
 
 function runFreshnessReport(ctx) {
   if (ctx.freshnessReport) {
