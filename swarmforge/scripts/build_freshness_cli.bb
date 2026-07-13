@@ -181,7 +181,21 @@
         report (build-freshness-lib/freshness-report processes main-sha)
         stale-names (set (build-freshness-lib/stale-process-names report))
         stale-groups (->> processes (filter #(contains? stale-names (:name %))) (map :group) distinct)
-        node-stale? (some #(and (contains? stale-names (:name %)) (= :front-desk (:group %))) processes)]
+        ;; BL-335: extension/out/ is a SINGLE shared compiled directory, and
+        ;; it is not just the :front-desk group (bridge/bot) that depends on
+        ;; it - handoffd shells out to several of its own
+        ;; extension/out/tools/*.js CLIs (render-briefing-diagrams.js,
+        ;; suite-duration-line.js, emit-cost-health-sidecar.js, ...) and
+        ;; operator_runtime.bb shells to operator-decide.js, so a
+        ;; :handoffd- or :operator-only staleness can equally mean a
+        ;; Node-shelled tool is stale. Scoping the recompile decision to
+        ;; :front-desk alone (the original BL-328 shape) left exactly this
+        ;; gap: restart-handoffd-group!/restart-operator-group! only
+        ;; restart the BABASHKA process, never recompile, so a stale
+        ;; compiled CLI stayed stale forever behind a "successful" sync.
+        ;; Any staleness at all now triggers the one recompile - cheap when
+        ;; unnecessary, and the only way to never silently miss a case.
+        node-stale? (seq stale-names)]
     (when node-stale?
       (recompile-extension! project-root))
     (doseq [group stale-groups]

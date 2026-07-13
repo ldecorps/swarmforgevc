@@ -1,0 +1,1 @@
+{"id":"BL-329","messages":[{"seq":0,"ts":1783932526703,"author":"swarm","type":"outbound","text":"BL-329 - Serialise a BL topic's content into the repo — the Telegram topic becomes a projection, not the source of truth is complete."}]}
