@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { parseArgs, negotiationLogPath } = require('../out/tools/negotiate-onboarding-contract');
+const { parseArgs, negotiationLogPath, readNegotiationState, runObject, runApprove } = require('../out/tools/negotiate-onboarding-contract');
 const { parseContractYaml } = require('../out/onboarding/contractView');
 
 const VALID_FACTS = {
@@ -31,6 +31,66 @@ function mkTargetWithProposedContract() {
 function readContract(targetRepo) {
   return parseContractYaml(fs.readFileSync(path.join(targetRepo, '.swarmforge', 'contract.yaml'), 'utf8'));
 }
+
+// ── readNegotiationState / runObject / runApprove, called in-process ─────
+// (not just via the compiled CLI's subprocess - a subprocess-only smoke test
+// is coverage-invisible for the logic these call, per the engineering
+// article's CLI main()-thin-wrapper rule.)
+
+test('readNegotiationState reconstructs an open negotiation from a freshly-proposed contract', () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const state = readNegotiationState(targetRepo);
+  assert.equal(state.ended, false);
+  assert.equal(state.rounds.length, 0);
+  assert.equal(state.contract.agreement, 'proposed');
+});
+
+test('readNegotiationState on a target with no contract.yaml throws loud, never fabricates one', () => {
+  const targetRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'negotiate-onboarding-contract-state-empty-'));
+  assert.throws(() => readNegotiationState(targetRepo), /ENOENT/);
+});
+
+test('runObject in-process revises the contract, appends a round, and returns it', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const result = await runObject(targetRepo, 'also add accessibility support');
+  assert.equal(result.ended, false);
+  assert.equal(result.round.round, 1);
+  assert.equal(readContract(targetRepo).agreement, 'proposed');
+  assert.ok(readContract(targetRepo).scope.some((s) => s.includes('accessibility support')));
+});
+
+test('runObject in-process refuses once the negotiation has already ended', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  await runApprove(targetRepo);
+  await assert.rejects(() => runObject(targetRepo, 'too late'), /already ended/);
+});
+
+test('runApprove in-process flips agreement to agreed and ends the negotiation', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const result = await runApprove(targetRepo);
+  assert.equal(result.ended, true);
+  assert.equal(result.endedReason, 'approved');
+  assert.equal(readContract(targetRepo).agreement, 'agreed');
+});
+
+test('runApprove in-process refuses once the negotiation has already ended', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  await runApprove(targetRepo);
+  await assert.rejects(() => runApprove(targetRepo), /already ended/);
+});
+
+test('readNegotiationState re-derives round-limit from the persisted marker after the budget is exhausted (in-process)', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  for (let i = 0; i < 5; i++) {
+    await runObject(targetRepo, `objection number ${i}`, 5);
+  }
+  await runObject(targetRepo, 'one too many', 5); // writes the negotiationEndedPath marker
+
+  const state = readNegotiationState(targetRepo);
+
+  assert.equal(state.ended, true);
+  assert.equal(state.endedReason, 'round-limit');
+});
 
 // ── parseArgs ────────────────────────────────────────────────────────────
 

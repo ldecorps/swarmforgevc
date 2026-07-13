@@ -24,7 +24,7 @@ import {
 } from '../onboarding/contractNegotiation';
 import { parseNegotiationLog, renderNegotiationLogLine } from '../onboarding/negotiationLog';
 import { updateTargetContract } from '../config/targetBootstrap';
-import { printJsonToStdout, runCliMain } from './swarm-metrics';
+import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 
 export type ParsedArgs =
   | { targetRepoPath: string; action: 'object'; objection: string }
@@ -131,20 +131,16 @@ export async function runApprove(targetRepoPath: string): Promise<Record<string,
   return { ended: true, endedReason: after.endedReason, rounds: after.rounds.length };
 }
 
-export async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
-  if (!args) {
-    process.stderr.write(
-      'Usage: node negotiate-onboarding-contract.js <target-repo-path> object "<objection text>"\n' +
-        '       node negotiate-onboarding-contract.js <target-repo-path> approve\n'
-    );
-    process.exitCode = 1;
-    return;
+export const main = makeArgsGuardedMain(
+  parseArgs,
+  'Usage: node negotiate-onboarding-contract.js <target-repo-path> object "<objection text>"\n' +
+    '       node negotiate-onboarding-contract.js <target-repo-path> approve\n',
+  async (args) => {
+    const result =
+      args.action === 'object' ? await runObject(args.targetRepoPath, args.objection) : await runApprove(args.targetRepoPath);
+    printJsonToStdout(result);
   }
-  const result =
-    args.action === 'object' ? await runObject(args.targetRepoPath, args.objection) : await runApprove(args.targetRepoPath);
-  printJsonToStdout(result);
-}
+);
 
 if (require.main === module) {
   runCliMain(main);

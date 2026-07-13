@@ -7,22 +7,29 @@ import { NegotiationRound } from './contractNegotiation';
 // park-cycle-log.jsonl). Never rewritten in place, only appended to, so
 // the round history itself can never be silently edited after the fact.
 
+// Split out of parseNegotiationLog so that function's own branch count stays
+// low, same technique as contractView.ts's isContractShape /
+// propose-onboarding-contract.ts's isRepoSurveyFactsShape.
+function parseNegotiationRoundLine(trimmedLine: string): NegotiationRound | null {
+  try {
+    const parsed = JSON.parse(trimmedLine);
+    if (typeof parsed.round === 'number' && typeof parsed.objection === 'string' && Array.isArray(parsed.changedFields)) {
+      return { round: parsed.round, objection: parsed.objection, changedFields: parsed.changedFields };
+    }
+  } catch {
+    // skip a malformed/truncated line rather than losing the rest of the log
+  }
+  return null;
+}
+
 export function parseNegotiationLog(content: string): NegotiationRound[] {
   const rounds: NegotiationRound[] = [];
   for (const line of content.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (
-        typeof parsed.round === 'number' &&
-        typeof parsed.objection === 'string' &&
-        Array.isArray(parsed.changedFields)
-      ) {
-        rounds.push({ round: parsed.round, objection: parsed.objection, changedFields: parsed.changedFields });
-      }
-    } catch {
-      // skip a malformed/truncated line rather than losing the rest of the log
+    const round = parseNegotiationRoundLine(trimmed);
+    if (round) {
+      rounds.push(round);
     }
   }
   return rounds;
