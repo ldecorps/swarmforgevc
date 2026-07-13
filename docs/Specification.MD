@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 13, 2026 (BL-353)
+**Last Updated:** July 13, 2026 (BL-352)
 
 ## Overview
 
@@ -1372,6 +1372,8 @@ runs.log (forge-local)
 ```
 
 The `View Last PR` command uses this log to know which PR to open. A future `SwarmForge: Run History` panel can surface the full log.
+
+**A swarm launched from the shell is now recorded too (BL-352).** Before this, `runs.jsonl` (the same log the bridge's `GET /runlog` above serves) only ever gained an entry through the VS Code launch/stop/openPR/setRunMode commands — but the real swarm, including this project's own self-hosting swarm, is launched via `./swarm`/`swarmforge.sh` directly, so the actual runs never appeared and `/runlog` read stale or empty. `swarmforge.sh`'s own launch path and `kill_all_swarm.sh`'s own stop path now record into the exact same log via a new shared CLI (`record-run.js start|stop <target-path>`), reusing `runLog.ts`'s existing `appendRun`/`updateLastRunForTarget` functions unchanged — no second run-record format. An editor-triggered launch still gets exactly one entry, not two: `swarmLauncher.ts`'s `buildLaunchEnv` (the one function both TS launch paths funnel through before ever spawning `./swarm`) unconditionally sets `SWARMFORGE_SKIP_SHELL_RUN_RECORD=1` on the process it spawns, and `swarmforge.sh` skips its own recording when that flag is present — a genuine shell-only launch never carries the flag, so it records by default. Both new calls degrade silently (best-effort, never blocking a real launch or stop) if the compiled CLI isn't present.
 
 ---
 
