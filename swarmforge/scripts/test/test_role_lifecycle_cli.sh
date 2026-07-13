@@ -130,6 +130,9 @@ check_01() {
   roles_tsv_has "$ROOT" coder || return 1
   roles_tsv_has "$ROOT" QA || return 1
   roles_tsv_has "$ROOT" coordinator || return 1
+  # per-role-lifecycle-09: the manifest ("coder, QA") OMITS specifier -
+  # warm-core must keep it alive anyway, never explicit-need alone.
+  roles_tsv_has "$ROOT" specifier || return 1
   roles_tsv_lacks "$ROOT" cleaner || return 1
   roles_tsv_lacks "$ROOT" architect || return 1
   session_dead "$ROOT" swarmforge-cleaner || return 1
@@ -137,7 +140,7 @@ check_01() {
   session_alive "$ROOT" swarmforge-coder || return 1
   return 0
 }
-if check_01; then pass "per-role-lifecycle-01: exactly the manifest's roles + warm core stay alive, the rest are parked and their panes killed"
+if check_01; then pass "per-role-lifecycle-01/09: exactly the manifest's roles + warm core (coordinator AND specifier) stay alive, the rest are parked and their panes killed"
 else fail "per-role-lifecycle-01: roster/session state did not match the expected shape ($OUT)"; fi
 cleanup_root "$ROOT"
 

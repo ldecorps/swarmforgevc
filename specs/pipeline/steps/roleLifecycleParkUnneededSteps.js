@@ -275,7 +275,14 @@ function registerSteps(registry) {
   registry.define(/^that role is left alive$/, (ctx) => {
     const role = ctx.targetRole;
     if (!rolesTsvHas(ctx.root, role)) throw new Error(`expected the protected role (${role}) left in roles.tsv`);
-    if (!sessionAlive(ctx.root, `swarmforge-${role}`)) throw new Error(`expected the protected role (${role}) left with a real live session`);
+    // coordinator/specifier are master-resident rows this fixture never
+    // launches a REAL session for (nothing here parks/unparks them via a
+    // real tmux dance) - the roles.tsv row alone is the meaningful proof
+    // for them: remove-role-row! is park-role!'s own FIRST action, so a
+    // row still present already proves park was never even attempted.
+    if (REAL_LAUNCH_ROLES.includes(role) && !sessionAlive(ctx.root, `swarmforge-${role}`)) {
+      throw new Error(`expected the protected role (${role}) left with a real live session`);
+    }
   });
 
   registry.define(/^its parcel is not orphaned$/, (ctx) => {
@@ -335,6 +342,37 @@ function registerSteps(registry) {
   registry.define(/^that role is left alive rather than parked and immediately restarted$/, (ctx) => {
     if (!rolesTsvHas(ctx.root, 'architect')) throw new Error('expected architect (needed by the next queued ticket) left in roles.tsv');
     if (!sessionAlive(ctx.root, 'swarmforge-architect')) throw new Error('expected architect left with its ORIGINAL live session, never torn down and rebuilt');
+  });
+
+  // ── per-role-lifecycle-09 (Scenario Outline: coordinator | specifier) ──
+  registry.define(/^(coordinator|specifier) is idle$/, (ctx, role) => {
+    ctx.targetRole = role;
+    // Both are master-resident rows already in roles.tsv from
+    // mkFixtureRoot's own setup (idle - no in_process/new handoffs ever
+    // written for either in this fixture).
+  });
+
+  // ── per-role-lifecycle-10 (specifier as the concrete instance of the
+  //    general rule: a role whose duties are never manifest-expressible) ──
+  registry.define(/^a role whose duties are never named by any ticket's manifest$/, (ctx) => {
+    ctx.targetRole = 'specifier';
+  });
+
+  registry.define(/^that role is idle$/, () => {
+    // Structural - specifier is already idle from fixture setup, same as
+    // per-role-lifecycle-09's own Given above.
+  });
+
+  registry.define(/^it is not parked into a state only a manifest could reverse$/, (ctx) => {
+    // The general INVARIANT this scenario names: warm-core-roles is a
+    // structural exemption (role-needed? OR's it in unconditionally),
+    // never dependent on any manifest ever naming the role again - so
+    // "left alive" (already asserted by the shared "that role is left
+    // alive" step above) already IS the proof; this step just names the
+    // stronger claim explicitly for the record.
+    if (!rolesTsvHas(ctx.root, ctx.targetRole)) {
+      throw new Error(`expected ${ctx.targetRole} never parked into a manifest-only-reversible state - its row is gone`);
+    }
   });
 
   // ── per-role-lifecycle-05 ───────────────────────────────────────────────
