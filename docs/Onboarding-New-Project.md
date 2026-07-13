@@ -74,10 +74,37 @@ its own sign-off — it just gates whether *any* ticket can start at all.
   with no contract yet simply reads as `missing` (hold), so it must be
   surveyed and proposed before any ticket for it can start.
 
-This ships as slice 1 (survey → propose → a single agree/hold decision). An
-iterative negotiate loop (request changes → revise → re-propose, repeating
-until agreed) is designed but not yet built — parked in
-`specs/features/BL-262-onboarding-contract-agreement.slice-2-negotiation.feature.draft`.
+This ships as slice 1 (survey → propose → a single agree/hold decision).
+
+**The negotiation loop (BL-344).** A single proposal is not a negotiation —
+the operator can push back, in his own words, and the swarm revises IN
+RESPONSE rather than re-emitting the same proposal:
+
+```
+node extension/out/tools/negotiate-onboarding-contract.js <target-repo-path> object "<objection text>"
+node extension/out/tools/negotiate-onboarding-contract.js <target-repo-path> approve
+```
+
+- **`object`** revises the committed contract against the operator's own
+  words (`reviseContractFromObjection`,
+  `extension/src/onboarding/contractNegotiation.ts`): "remove/exclude X"
+  moves a matching scope entry to out-of-scope, "add/include X" adds a new
+  scope entry carrying the operator's own text, and anything else is
+  recorded as a new boundary — the objection is always reflected somewhere,
+  never silently dropped. Each round is appended as a durable record
+  (`{round, objection, changedFields}`) to
+  `.swarmforge/onboarding-negotiation.jsonl` in the target repo.
+- **`approve`** flips `.swarmforge/contract.yaml`'s `agreement` field to
+  `agreed` and commits — the same effect as the hand-edit described above,
+  now also reachable as a command.
+- The loop is bounded at `DEFAULT_MAX_NEGOTIATION_ROUNDS` (5): an objection
+  attempted after the budget is exhausted is refused and ends the
+  negotiation without approving anything. Approval remains valid at any
+  point up to and including immediately after the last round in budget.
+- The build-start gate is unchanged: a revision is still just
+  `agreement: proposed`, so the gate holds through every round exactly as
+  it does for the single-round case, and only an actual `approve` releases
+  it.
 
 **The same negotiation also generates `project.prompt`/`engineering.prompt`
 (BL-269, a child slice of this family).** `proposePromptsFromSurvey`

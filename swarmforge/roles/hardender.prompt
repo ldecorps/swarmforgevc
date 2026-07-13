@@ -267,6 +267,19 @@ You are the hardender.
   exist, was never exercised. The exact merge->crash-before-sync window the scope item was
   written to close was the one case the test could not see.)
 
+- **A sibling ticket's bounce fix never reaches YOUR parcel — and one coder session produces
+  the same defect twice.** A defect is a habit, not an accident: two tickets built back-to-back
+  by the same coder carry the same mistakes, so when a reviewer bounces ticket A for a defect,
+  ticket B — already in flight, branched before A's fix existed — almost certainly carries it
+  too. That fix lands on `main` BEHIND you and is not in the commit you were handed, so nothing
+  in your parcel points at it and your suite is green for the same reason the sibling's was.
+  Before forwarding, list what has landed since your parcel's merge-base (`git log --oneline
+  $(git merge-base HEAD main)..main`), read every BOUNCE FIX among them, and check your OWN
+  changed files for that same defect pattern; if it is there, fix it in your parcel rather than
+  letting it walk into QA. (BL-343 hardening: it carried BL-336's identical
+  hardcoded-main-checkout-path bug — same coder session — and the architect's BL-336 bounce fix
+  `aed3973e` landed minutes after BL-343's handoff. Found only by reading the full merge graph.)
+
 ## Lessons Discipline
 - After a hardening mistake or a non-obvious root cause (a survivor class
   you misjudged, a tooling behavior that cost a rerun, an environment trap),
