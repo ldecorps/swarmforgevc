@@ -55,6 +55,27 @@ Scenario: A role needed by the next queued ticket is not parked and re-woken
   When the swarm is brought to that ticket's shape
   Then that role is left alive rather than parked and immediately restarted
 
+# BL-324 per-role-lifecycle-09
+Scenario Outline: A warm-core role is never parked, whatever the manifest says
+  Given <role> is idle
+  And a ticket whose manifest does not name that role
+  When the swarm is brought to that ticket's shape
+  Then that role is left alive
+
+  Examples:
+    | role        |
+    | coordinator |
+    | specifier   |
+
+# BL-324 per-role-lifecycle-10
+Scenario: A role is never parked when nothing could ever bring it back
+  Given a role whose duties are never named by any ticket's manifest
+  And that role is idle
+  And a ticket whose manifest does not name that role
+  When the swarm is brought to that ticket's shape
+  Then that role is left alive
+  And it is not parked into a state only a manifest could reverse
+
 # BL-324 per-role-lifecycle-05
 Scenario: A ticket with no manifest keeps the full chain alive
   Given a promoted ticket that declares no roles: manifest
