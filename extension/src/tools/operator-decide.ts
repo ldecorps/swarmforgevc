@@ -26,9 +26,10 @@ import { computeBacklogDashboard } from '../metrics/backlogDashboard';
 import { computeRoleGateStatesLive, filterPendingGates } from '../bridge/gateSnapshot';
 import { answerCapturedGateLive } from '../bridge/gateAnswerLive';
 import { readSwarmRoles } from '../swarm/tmuxClient';
-import { handleStatusQuery, handleApprovalDecision, StatusProjections, StatusQuery, OperatorStatusProjection } from '../bridge/operatorDecideStatus';
+import { handleStatusQuery, handleApprovalDecisionForTicket, StatusProjections, StatusQuery, OperatorStatusProjection } from '../bridge/operatorDecideStatus';
 import { resolveCliMainWorktreeContext, runCliMain } from './swarm-metrics';
 import { RoleWorktree } from '../metrics/swarmMetrics';
+import { readRoleTicket } from './telegram-front-desk-bot';
 
 const USAGE =
   'Usage: operator-decide.js <thread-id> status-ticket <ticket-id> | status-swarm | status-gates | approve <answer-text>';
@@ -106,7 +107,15 @@ interface RunContext {
 function runApprove(command: Extract<CliCommand, { mode: 'approve' }>, ctx: RunContext): void {
   const roles = readSwarmRoles(ctx.projectRoot).map((r) => r.role);
   const pendingGates = filterPendingGates(computeRoleGateStatesLive(ctx.projectRoot, roles));
-  handleApprovalDecision(pendingGates, command.answerText, {
+  // BL-325 scope 6: threadId names a specific backlog item's own ticket
+  // when this call came from that item's own Telegram topic (bl-topic-
+  // approval-sweep! passes the backlogId as threadId) - resolved via the
+  // SAME role->ticket mapping BL-301's outbound NeedsApproval routing
+  // already uses, applied in reverse. A SUP-### threadId never matches a
+  // roleTicket value, so this falls back to the original count-based
+  // selector automatically - no SUP/BL branch needed here.
+  const roleTicket = readRoleTicket(ctx.projectRoot);
+  handleApprovalDecisionForTicket(pendingGates, roleTicket, command.threadId, command.answerText, {
     answerGate: (role, answer) => answerCapturedGateLive(ctx.projectRoot, { role, answer }),
     reply: ctx.reply,
   });
