@@ -15,6 +15,7 @@ function fakeAdapters(overrides = {}) {
   let currentFolders = folders();
   let currentGates = [];
   let currentRoleTicket = {};
+  let operatorTopicId = 700;
   return {
     state,
     topicMap,
@@ -22,6 +23,9 @@ function fakeAdapters(overrides = {}) {
     sent,
     closed,
     recorded,
+    setOperatorTopicId: (id) => {
+      operatorTopicId = id;
+    },
     setFolders: (f) => {
       currentFolders = f;
     },
@@ -60,6 +64,7 @@ function fakeAdapters(overrides = {}) {
         recordMessage: (backlogId, text) => {
           recorded.push({ backlogId, text });
         },
+        ensureOperatorTopic: async () => operatorTopicId,
       },
       ...overrides,
     },
@@ -218,16 +223,72 @@ test('needs-approval-01 [a backlog item]: a newly-gated role holding a ticket po
   assert.equal(result.routed, 2);
 });
 
-test('needs-approval-01 [no backlog item]: a newly-gated role holding no ticket posts no NeedsApproval anywhere', async () => {
-  const { adapters, setGates, setRoleTicket, created, sent } = fakeAdapters();
+// BL-358: an untagged gate (holds no ticket) used to be dropped entirely -
+// now it reaches the standing Operator topic instead, never a per-ticket
+// topic (no createTopic call at all - there is no ticket to name one after).
+test('needs-approval-01 [no backlog item]: a newly-gated role holding no ticket posts NeedsApproval into the standing Operator topic', async () => {
+  const { adapters, setGates, setRoleTicket, setOperatorTopicId, created, sent } = fakeAdapters();
+  setOperatorTopicId(700);
   setGates([{ role: 'coder', gated: true }]);
   setRoleTicket({}); // coder holds nothing
 
   const result = await runConciergeTick(adapters);
 
-  assert.deepEqual(created, []);
-  assert.deepEqual(sent, []);
+  assert.deepEqual(created, [], 'an untagged gate has no ticket to create a per-item topic for');
+  assert.deepEqual(sent, [{ topicId: 700, text: 'NeedsApproval: coder' }]);
+  assert.equal(result.routed, 1);
+});
+
+test('needs-approval-01 [no backlog item]: the untagged post carries the role\'s own snippet, same as a tagged one', async () => {
+  const { adapters, setGates, setRoleTicket, sent } = fakeAdapters();
+  setGates([{ role: 'specifier', gated: true, snippet: 'Which design should I pick? (1/2/3)' }]);
+  setRoleTicket({});
+
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(sent, [{ topicId: 700, text: 'NeedsApproval: specifier - Which design should I pick? (1/2/3)' }]);
+});
+
+test('needs-approval-01 [no backlog item]: a role that stays gated with no ticket is asked about once, not every tick', async () => {
+  const { adapters, setGates, setRoleTicket, sent } = fakeAdapters();
+  setGates([{ role: 'coder', gated: true }]);
+  setRoleTicket({});
+  await runConciergeTick(adapters);
+  const sentAfterFirst = sent.length;
+
+  const result = await runConciergeTick(adapters); // still gated, still no ticket
+
+  assert.equal(sent.length, sentAfterFirst);
   assert.equal(result.routed, 0);
+});
+
+// BL-358 retry symmetry: mirrors needs-approval-02's tagged-event test below
+// - an untagged NeedsApproval whose post fails must also be retried, not
+// silently and permanently dropped.
+test('needs-approval-02 [no backlog item]: an untagged NeedsApproval whose post fails is retried on the next tick', async () => {
+  const { adapters, setGates, setRoleTicket, state } = fakeAdapters();
+  setGates([{ role: 'coder', gated: true }]);
+  setRoleTicket({});
+  let shouldFail = true;
+  const sent = [];
+  adapters.routeAdapters.sendMessage = async (topicId, text) => {
+    if (shouldFail) {
+      return false;
+    }
+    sent.push({ topicId, text });
+    return true;
+  };
+
+  const first = await runConciergeTick(adapters);
+  assert.equal(first.routed, 0);
+  assert.ok(!state.emittedKeys.includes('NeedsApproval:role:coder'));
+  assert.equal(state.snapshot.gates.find((g) => g.role === 'coder').gated, false);
+
+  shouldFail = false;
+  const second = await runConciergeTick(adapters); // gate still true, unchanged live state
+  assert.equal(second.routed, 1);
+  assert.deepEqual(sent, [{ topicId: 700, text: 'NeedsApproval: coder' }]);
+  assert.ok(state.emittedKeys.includes('NeedsApproval:role:coder'));
 });
 
 test('needs-approval-01: a gate that stays captured across two polls only posts once (no duplicate NeedsApproval)', async () => {

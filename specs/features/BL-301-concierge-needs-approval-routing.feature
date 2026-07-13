@@ -9,6 +9,10 @@ Feature: The Concierge tick routes a NeedsApproval event into the gated item's B
     Given the Concierge tick reads the swarm's live gate state alongside its backlog
 
   # BL-301 needs-approval-01
+  # BL-358: the "no backlog item" row's result was updated from "no NeedsApproval
+  # message is posted anywhere" to "...into the standing Operator topic" - the drop
+  # was correct when there was nowhere untagged to send it; the standing Operator
+  # topic (BL-346) now gives it a real destination.
   Scenario Outline: a newly-gated role holding <holding>
     Given a role newly awaiting a human decision while holding <holding>
     When the tick derives and routes events
@@ -17,7 +21,7 @@ Feature: The Concierge tick routes a NeedsApproval event into the gated item's B
     Examples:
       | holding | result |
       | a backlog item | a NeedsApproval message is posted into that backlog item's topic |
-      | no backlog item | no NeedsApproval message is posted anywhere |
+      | no backlog item | a NeedsApproval message is posted into the standing Operator topic |
 
   # BL-301 needs-approval-02
   Scenario: a NeedsApproval whose post fails is retried on the next tick
