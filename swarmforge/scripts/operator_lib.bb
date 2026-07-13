@@ -345,16 +345,72 @@
 
 ;; ── status document (v2 schema) ───────────────────────────────────────────────
 
+;; BL-333: `state` alone conflates "an Operator process is alive" with
+;; "events are being processed" - it only ever reports the first. An
+;; ATTENDED (interactive) Operator holds the SAME single-Operator slot a
+;; disposable one would (operator-running? cannot tell them apart) and is
+;; instructed never to release it, so should-launch-operator? (which
+;; requires `not llm-running?`) can NEVER fire while it is up - nothing can
+;; drain the queue, however many events pile up behind it. Computed, never
+;; caller-supplied, so render-status can't be handed an inconsistent value.
+(defn queue-consuming?
+  "Is the front desk's inbound queue actively being drained? False exactly
+   when a live Operator holds the slot AND events are pending - that is
+   precisely the state should-launch-operator? can never dispatch from."
+  [llm-running? pending-count]
+  (boolean (not (and llm-running? (pos? (or pending-count 0))))))
+
 (defn render-status
   "Build the status map the runtime publishes to operator.status.json. Pure:
-   the caller stamps :updated_at. Shape matches the Operator v2 spec."
-  [{:keys [state llm-running? provider provider-state agents-running pending-count]}]
+   the caller stamps :updated_at. Shape matches the Operator v2 spec.
+   BL-333: queue_consuming is DERIVED here (never a raw pass-through) so
+   'an Operator alive' and 'consuming nothing' are always reported as two
+   independently-readable, mutually-consistent facts, not one field a
+   reader has to infer the second fact from over multiple ticks."
+  [{:keys [state llm-running? provider provider-state agents-running pending-count oldest-pending-age-ms]}]
   {:state (name (or state :idle))
    :llm_running (boolean llm-running?)
    :provider (or provider "claude")
    :provider_state (name (or provider-state :available))
    :agents_running (or agents-running 0)
-   :pending_events (or pending-count 0)})
+   :pending_events (or pending-count 0)
+   :queue_consuming (queue-consuming? llm-running? pending-count)
+   :oldest_pending_event_age_ms oldest-pending-age-ms})
+
+;; ── BL-333: front-desk starvation detection + edge-triggered alarm ─────────
+;; Both trigger conditions matter independently (the ticket's own words: "3
+;; events unread for two days is starvation just as much as 25 events
+;; unread for an hour, and a count-only trigger misses the slow case").
+
+(defn queue-backlog-started-at-ms
+  "The persisted marker this tick should carry forward: nil once the queue
+   drains to empty (nothing left to age), the SAME marker while it stays
+   non-empty (the age counts from when the CURRENT unbroken backlog began,
+   never resets while events keep piling up), or now-ms the instant it
+   first goes from empty to non-empty."
+  [prev-marker-ms pending-count now-ms]
+  (cond
+    (zero? (or pending-count 0)) nil
+    prev-marker-ms prev-marker-ms
+    :else now-ms))
+
+(defn front-desk-starving?
+  "True when the queue has backed up past EITHER configured limit: too many
+   events waiting, or the oldest one waiting too long. Either alone is
+   starvation - never require both."
+  [{:keys [pending-count oldest-pending-age-ms count-limit age-limit-ms]}]
+  (boolean (or (and count-limit (> (or pending-count 0) count-limit))
+               (and age-limit-ms oldest-pending-age-ms (> oldest-pending-age-ms age-limit-ms)))))
+
+(defn starvation-alarm-decision
+  "Edge-triggered: alarms only on the false->true transition of starving?,
+   never while already-armed? (BL-326: a per-tick alarm on a two-day
+   condition is the accidental-136-emails bug again). Returns the NEXT
+   armed? to persist alongside :should-alarm? - armed? tracks starving?
+   itself, so the moment it clears the next real starvation alarms again."
+  [starving? already-armed?]
+  {:should-alarm? (boolean (and starving? (not already-armed?)))
+   :armed? (boolean starving?)})
 
 ;; ── BL-307: auto-hibernate on drain + mandatory closing pass ────────────────
 ;; The whole-swarm park/relaunch transition a human has done by hand (see

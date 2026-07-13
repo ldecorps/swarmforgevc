@@ -40,6 +40,11 @@ function buildAdapters(ctx) {
       ctx.closed.push(topicId);
       return true;
     },
+    // BL-329: routeEvent calls this unconditionally after a successful
+    // send - defined here for the same reason closeTopic is above (this
+    // feature's own scenarios don't assert on it, but routeEvent would
+    // otherwise crash on a missing adapter).
+    recordMessage: () => {},
   };
 }
 

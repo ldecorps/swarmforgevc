@@ -130,6 +130,9 @@ const DOMAINS = [
   require('./roleLifecycleParkUnneededSteps'),
   require('./topicOpeningSummarySteps'),
   require('./mergedCodeReachesDaemonsSteps'),
+  require('./serialiseBlTopicContentSteps'),
+  require('./topicLifecycleReconciliationSteps'),
+  require('./frontDeskStarvationAlarmSteps'),
 ];
 
 function registerSteps(registry) {

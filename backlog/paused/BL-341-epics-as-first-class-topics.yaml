@@ -1,0 +1,73 @@
+id: BL-341
+title: "An epic is data, not prose — declare it on the slice, give it a topic, post slice progress into it"
+milestone: M8
+status: todo
+type: feature
+severity: medium
+priority: 5
+direction: human-requested
+depends_on: []
+source: ".swarmforge/operator/INTAKE-epic-topics-in-telegram.md — the HUMAN, 2026-07-13: 'i want to follow on epics via telegram... ensure there are topics for these 3' (swarm agent benchmarking, dynamic routing, onboarding a new target repo)."
+
+notes: |
+  THE GAP. Telegram topics are strictly PER-TICKET (`backlog-topic-map.json`: BL-### -> topic_id).
+  There is NO CONCEPT OF AN EPIC anywhere in the topic layer — and, verified: no `epic:` field
+  exists anywhere in the backlog schema or in any ticket. Today an epic lives ONLY AS PROSE inside
+  ticket notes ("slice 2 of the dynamic-per-ticket-agent-routing epic").
+
+  So a multi-slice body of work — WHICH IS HOW MOST REAL WORK HERE IS SHAPED — is invisible as a
+  whole. The human sees BL-307, BL-317, BL-318, BL-324 as four unrelated topics and can never see
+  "Dynamic Routing is 4 of 5 done, and the missing slice is the one that proves it saves money."
+  He can follow atomised slices; he cannot follow the arc.
+
+  THE STOPGAP THAT MUST BE ADOPTED OR REMOVED. The Operator hand-created three topics and seeded
+  them with real status, recorded in `.swarmforge/operator/epic-topic-map.json`:
+      EPIC — Swarm Role Benchmarking      topic 147
+      EPIC — Dynamic Routing              topic 149
+      EPIC — Onboarding a New Target Repo topic 151
+  NOTHING IN THE SWARM KNOWS THESE EXIST. No slice landing will ever post into them. They are a
+  hand-written snapshot of 2026-07-13 and WILL GO STALE IMMEDIATELY — exactly the kind of
+  manually-maintained artifact that rots. This ticket must ADOPT them (take them over as the
+  system's own) or REPLACE them. Leaving them as orphans is not an outcome.
+
+  SCOPE:
+    1. AN EPIC IS A FIRST-CLASS BACKLOG CONCEPT. A slice DECLARES its epic (`epic: dynamic-routing`)
+       so MEMBERSHIP IS DATA, NOT NARRATIVE. Add it to the backlog schema. Absent means no epic —
+       existing tickets stay valid, unchanged.
+    2. AN EPIC HAS A TOPIC, created on its first slice. REUSE THE EXISTING topic-map/routing
+       machinery — do NOT build a second parallel map beside `backlog-topic-map.json`. (The
+       Operator's `epic-topic-map.json` is the hand-made thing being replaced, not a design to
+       copy.)
+    3. SLICE EVENTS POST INTO THE EPIC TOPIC — "BL-324 done — 4 of 5 slices complete; remaining:
+       warm-core/break-even tuning". The epic topic becomes THE ARC; the BL topics stay THE DETAIL.
+       Ride the events that ALREADY drive topic routing (TaskStarted / TaskCompleted); no new
+       trigger, no second mechanism.
+    4. THE EPIC TOPIC STATES THE REMAINING SLICES, INCLUDING ONES NOT YET TICKETED. THIS IS THE
+       WHOLE VALUE OF THE TICKET AND THE EASIEST THING TO GET WRONG. An epic view that listed only
+       EXISTING tickets would have shown all three of the human's epics as "done" and HIDDEN EVERY
+       GAP — because in all three cases the missing slice exists only as a sentence in another
+       ticket's notes. A view that can only see tickets cannot see the omission, which is the one
+       thing he needs it for. (The three gaps this exposed are now BL-340, BL-343 and BL-344 —
+       ticketed precisely BECAUSE this exercise surfaced them.)
+
+  THIS IS [[epic-runtime-wiring-slice-rule]] GENERALISED: a deferred slice that lives only in prose
+  is a slice that WILL be forgotten. The epic topic is what makes the omission visible.
+
+  E2E QA PROCEDURE: against a REAL epic with REAL slices, assert a slice completion posts into the
+  epic topic and that the post states remaining work — then assert an UN-TICKETED remaining slice
+  still appears. A build that passes only when every remaining slice happens to have a ticket has
+  missed the point entirely and must be bounced.
+
+acceptance:
+  feature: specs/features/BL-341-epics-as-first-class-topics.feature
+  steps:
+    - "A slice declares which epic it belongs to, as data"
+    - "An epic gets a topic when its first slice appears"
+    - "A slice completing posts progress into its epic's topic"
+    - "The epic states remaining slices that have no ticket yet"
+    - "The existing per-ticket topic machinery is reused, not duplicated"
+    - "A ticket with no epic behaves exactly as it does today"
+
+human_approval: pending
+
+mutation_cost: medium

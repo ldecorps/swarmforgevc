@@ -145,6 +145,12 @@ export interface RouteAdapters {
   // concrete topicId (NEVER-MAIN-CHAT holds here too - there is no
   // "close the main chat" notion).
   closeTopic: (topicId: number) => Promise<boolean>;
+  // BL-329: serialises this outbound send into the ticket's own durable
+  // record (blTopicStore.ts) - called ONLY after a successful sendMessage,
+  // mirroring emittedKeys' own "only record what genuinely posted"
+  // convention (BL-322). backlogId is always available here directly, no
+  // topic-id reverse lookup needed.
+  recordMessage: (backlogId: string, text: string) => void;
 }
 
 export interface RouteResult {
@@ -164,11 +170,26 @@ async function routeCompletionEvent(event: SwarmEvent, title: string, adapters: 
   if (topicId === undefined) {
     return { posted: false, skipped: true };
   }
-  const ok = await adapters.sendMessage(topicId, completionSummaryText(event, title));
+  const text = completionSummaryText(event, title);
+  const ok = await adapters.sendMessage(topicId, text);
   if (ok) {
+    adapters.recordMessage(event.backlogId, text);
     await adapters.closeTopic(topicId);
   }
   return { posted: ok, skipped: false };
+}
+
+// BL-329: routeEvent's own two branches (reuse an existing topic, or send
+// into a freshly created one) both end with the identical "send, then
+// record only on success" sequence - extracted rather than repeated
+// (cleaner review: the duplication was also what pushed routeEvent's own
+// CRAP over threshold at full coverage).
+async function sendAndRecord(topicId: number, text: string, backlogId: string, adapters: RouteAdapters): Promise<boolean> {
+  const ok = await adapters.sendMessage(topicId, text);
+  if (ok) {
+    adapters.recordMessage(backlogId, text);
+  }
+  return ok;
 }
 
 // Adapter-injected: routes one event end to end. NEVER-MAIN-CHAT is a
@@ -183,7 +204,7 @@ export async function routeEvent(event: SwarmEvent, title: string, adapters: Rou
   }
   const action = decideTopicAction(event, adapters.getTopicMap(), title);
   if (action.kind === 'reuse') {
-    const ok = await adapters.sendMessage(action.topicId, action.text);
+    const ok = await sendAndRecord(action.topicId, action.text, event.backlogId, adapters);
     return { posted: ok, skipped: false };
   }
   const created = await adapters.createTopic(action.topicName);
@@ -191,6 +212,6 @@ export async function routeEvent(event: SwarmEvent, title: string, adapters: Rou
     return { posted: false, skipped: true };
   }
   adapters.recordTopicId(event.backlogId, created.topicId);
-  const ok = await adapters.sendMessage(created.topicId, action.text);
+  const ok = await sendAndRecord(created.topicId, action.text, event.backlogId, adapters);
   return { posted: ok, skipped: false };
 }
