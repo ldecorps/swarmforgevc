@@ -154,7 +154,19 @@ function registerSteps(registry) {
     }
   });
 
+  // BL-352 shares this EXACT step text ("the swarm is stopped") for its
+  // own run-history-headless-02 - the registry resolves first-match, so
+  // whichever module registers this regex first speaks for every scenario
+  // that uses it (see mergedCodeReachesDaemonsSteps.js's own identical
+  // note for "the swarm's health is reported"). Dispatches to
+  // ctx.swarmStopRunner when an earlier Given step in the SAME scenario
+  // has set one; absent that flag (every scenario this file itself owns),
+  // behavior is UNCHANGED.
   registry.define(/^the swarm is stopped$/, (ctx) => {
+    if (ctx.swarmStopRunner) {
+      ctx.swarmStopRunner();
+      return;
+    }
     stopResourceSampler(ctx.currentResourceSampler, ctx.scheduler.clearTick);
     ctx.currentResourceSampler = null;
     // A tick fired after stop must never append - clearTick dropped the

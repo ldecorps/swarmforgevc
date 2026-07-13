@@ -21,7 +21,7 @@ import { hasPriorRunState, shouldOfferResumePrompt } from './swarm/swarmDiscover
 import { stopSwarm, stopSwarmOnExtensionShutdown, stopSwarmCompletely } from './swarm/swarmStopper';
 import { bounceSwarm, buildBounceExtensionCommand } from './swarm/bouncer';
 import { listTmuxSessions } from './swarm/tmuxClient';
-import { resolveRunName } from './run/resolveRunName';
+import { resolveRunName, generateDefaultRunName } from './run/resolveRunName';
 import { startResilientBounceWatcher, BounceType, ResilientWatcherHandle } from './swarm/bounceWatcher';
 import { writeBounceAck, clearBounceAck, BouncePhase } from './swarm/bounceAck';
 import { startChaserMonitor, stopChaserMonitor, buildRoleInboxes } from './watchdog/chaserMonitor';
@@ -187,16 +187,6 @@ function isPidAlive(pid: number): boolean {
   } catch {
     return false;
   }
-}
-
-function generateDefaultRunName(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const hour = String(now.getHours()).padStart(2, '0');
-  const minute = String(now.getMinutes()).padStart(2, '0');
-  return `run-${year}${month}${day}-${hour}${minute}`;
 }
 
 function shouldAutoLaunchOnActivation(context: vscode.ExtensionContext): boolean {
