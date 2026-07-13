@@ -21,6 +21,7 @@ import { readPwaBaseUrl, buildRecertDeepLink } from '../metrics/pwaDeepLinks';
 import { decideRecertAnnouncement, buildRecertAnnouncementText } from '../notify/recertBatchNotifier';
 import { sendTelegramMessage, SendMessageResult } from '../notify/telegramClient';
 import { resolveCliMainWorktreeContext, printJsonToStdout, runCliMain } from './swarm-metrics';
+import { atomicWrite } from '../util/atomicWrite';
 
 interface RecertNotifyState {
   announcedIds: string[];
@@ -40,9 +41,7 @@ function readState(projectRoot: string): RecertNotifyState {
 }
 
 function writeState(projectRoot: string, state: RecertNotifyState): void {
-  const p = statePath(projectRoot);
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, JSON.stringify(state), 'utf8');
+  atomicWrite(statePath(projectRoot), JSON.stringify(state));
 }
 
 // BL-339 E2E test seam: when set, short-circuits the real Telegram send
