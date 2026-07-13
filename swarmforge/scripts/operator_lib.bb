@@ -466,15 +466,83 @@
   (boolean (or (and count-limit (> (or pending-count 0) count-limit))
                (and age-limit-ms oldest-pending-age-ms (> oldest-pending-age-ms age-limit-ms)))))
 
-(defn starvation-alarm-decision
-  "Edge-triggered: alarms only on the false->true transition of starving?,
-   never while already-armed? (BL-326: a per-tick alarm on a two-day
-   condition is the accidental-136-emails bug again). Returns the NEXT
-   armed? to persist alongside :should-alarm? - armed? tracks starving?
-   itself, so the moment it clears the next real starvation alarms again."
-  [starving? already-armed?]
-  {:should-alarm? (boolean (and starving? (not already-armed?)))
-   :armed? (boolean starving?)})
+;; ── BL-345: delivery-based arming ────────────────────────────────────────
+;; BL-333's starvation-alarm-decision above armed on the ATTEMPT (`(boolean
+;; starving?)`, computed and persisted BEFORE the send even ran) and
+;; discarded send-configured-email!'s own result - a transient failure at
+;; the exact tick starvation crossed the threshold silently suppressed the
+;; alarm for the WHOLE episode (days). The engineering article's own rule
+;; (2nd occurrence of BL-215's defect class): a repeat-suppression flag must
+;; be set on CONFIRMED DELIVERY, never on a delivery attempt. These three
+;; functions replace the old edge-triggered-on-attempt decision with
+;; delivery-based arming: armed? now reflects whether the alarm was
+;; actually DELIVERED, or a retry can never help (terminal misconfig) -
+;; never whether a send was merely attempted.
+
+(def terminal-misconfig-reasons
+  "send-configured-email!/send-alarm-email! :reason values for which
+   retrying can never help. :test-fixture-suppressed is included - it must
+   never reach the network and must never be treated as a real delivery
+   failure that would burn a retry attempt (it is not a failure at all,
+   just a test fixture's send being redirected away from the network)."
+  #{:disabled :missing-api-key :test-fixture-suppressed})
+
+(defn classify-delivery-result
+  "Classifies a send result map ({:success bool :reason kw? :error str?})
+   into :delivered, :terminal-misconfig (retrying can never help - warn
+   once, arm), or :transient-failure (a real send attempt failed with no
+   :reason - HTTP non-2xx, DNS, timeout - retry it, bounded)."
+  [{:keys [success reason]}]
+  (cond
+    success :delivered
+    (contains? terminal-misconfig-reasons reason) :terminal-misconfig
+    :else :transient-failure))
+
+(defn compute-alarm-backoff-ms
+  "Exponential backoff capped at backoff-max-ms - same shape as
+   front-desk-supervisor-lib's own compute-backoff-ms (this project's
+   established bounded-retry-with-backoff convention), independently
+   defined here rather than cross-namespace-coupled - same small-
+   duplication rationale as this file's other independent adapters (e.g.
+   operator-runtime.bb's own read-yaml-field)."
+  [attempt {:keys [backoff-base-ms backoff-max-ms]}]
+  (long (min (* backoff-base-ms (Math/pow 2 (max 0 (dec (or attempt 1)))))
+             backoff-max-ms)))
+
+(defn starvation-alarm-should-attempt?
+  "Should THIS tick attempt to send/re-send the starvation alarm? Never
+   once armed? (the anti-spam guard) or once starving? has cleared. The
+   FIRST attempt of a fresh starvation (delivery-attempts zero/nil) is
+   always due; a RETRY after a transient failure is due only once the
+   backoff computed from delivery-attempts has elapsed since
+   last-attempt-at-ms - never hammer the send on every tick."
+  [{:keys [starving? armed? delivery-attempts last-attempt-at-ms now-ms retry-config]}]
+  (boolean
+   (and starving? (not armed?)
+        (or (zero? (or delivery-attempts 0))
+            (nil? last-attempt-at-ms)
+            (>= (- now-ms last-attempt-at-ms)
+                (compute-alarm-backoff-ms delivery-attempts retry-config))))))
+
+(defn next-starvation-alarm-state
+  "Given the outcome of an attempted send this tick, computes the next
+   persisted {:armed? :delivery-attempts :last-attempt-at-ms} plus
+   :gave-up? true when a transient failure just exhausted the retry cap
+   (the caller's cue to log the undelivered alarm loudly). :delivered and
+   :terminal-misconfig both arm immediately - retrying either can never
+   help. :transient-failure never arms; it increments the attempt counter
+   so the next tick's should-attempt? backs off, UNLESS the cap is reached,
+   in which case it arms anyway (never retry forever) and gives up loudly."
+  [outcome {:keys [delivery-attempts]} {:keys [max-attempts]} now-ms]
+  (case outcome
+    (:delivered :terminal-misconfig)
+    {:armed? true :delivery-attempts 0 :last-attempt-at-ms nil :gave-up? false}
+
+    :transient-failure
+    (let [next-attempts (inc (or delivery-attempts 0))]
+      (if (>= next-attempts max-attempts)
+        {:armed? true :delivery-attempts 0 :last-attempt-at-ms nil :gave-up? true}
+        {:armed? false :delivery-attempts next-attempts :last-attempt-at-ms now-ms :gave-up? false}))))
 
 ;; ── BL-307: auto-hibernate on drain + mandatory closing pass ────────────────
 ;; The whole-swarm park/relaunch transition a human has done by hand (see
