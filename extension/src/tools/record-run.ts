@@ -23,7 +23,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { appendRun, updateLastRunForTarget } from '../runs/runLog';
 import { generateDefaultRunName } from '../run/resolveRunName';
-import { runCliMain, printJsonToStdout } from './swarm-metrics';
+import { runCliMain, printJsonToStdout, makeArgsGuardedMain } from './swarm-metrics';
 
 function runLogPath(): string {
   return path.join(os.homedir(), '.swarmforge', 'runs.jsonl');
@@ -40,14 +40,7 @@ export function parseCliArgs(argv: string[]): { mode: 'start' | 'stop'; targetPa
   return { mode, targetPath };
 }
 
-export async function main(): Promise<void> {
-  const args = parseCliArgs(process.argv.slice(2));
-  if (!args) {
-    process.stderr.write('Usage: record-run.js <start|stop> <target-path>\n');
-    process.exitCode = 1;
-    return;
-  }
-
+export const main = makeArgsGuardedMain(parseCliArgs, 'Usage: record-run.js <start|stop> <target-path>\n', async (args) => {
   if (args.mode === 'start') {
     const name = generateDefaultRunName();
     appendRun(runLogPath(), { name, targetPath: args.targetPath, startedAt: new Date().toISOString(), status: 'running' });
@@ -57,7 +50,7 @@ export async function main(): Promise<void> {
 
   updateLastRunForTarget(runLogPath(), args.targetPath, { completedAt: new Date().toISOString(), status: 'stopped' });
   printJsonToStdout({ recorded: 'stop' });
-}
+});
 
 if (require.main === module) {
   runCliMain(main);

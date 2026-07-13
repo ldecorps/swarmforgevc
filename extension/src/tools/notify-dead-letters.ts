@@ -23,6 +23,7 @@ import { sendTelegramMessage, SendMessageResult } from '../notify/telegramClient
 import { resolveCliMainWorktreeContext, printJsonToStdout, runCliMain } from './swarm-metrics';
 import { readTopicMap, resolveLiveRoles } from './telegram-front-desk-bot';
 import { topicForSubject, OPERATOR_SUBJECT_ID } from './telegramFrontDeskBotCore';
+import { atomicWrite } from '../util/atomicWrite';
 
 interface DeadLetterNotifyState {
   announcedFilePaths: string[];
@@ -42,9 +43,7 @@ function readState(projectRoot: string): DeadLetterNotifyState {
 }
 
 function writeState(projectRoot: string, state: DeadLetterNotifyState): void {
-  const p = statePath(projectRoot);
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, JSON.stringify(state), 'utf8');
+  atomicWrite(statePath(projectRoot), JSON.stringify(state));
 }
 
 // BL-353 E2E test seam, mirroring notify-recert-batch.ts's own

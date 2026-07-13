@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { main, parseCliArgs } = require('../out/tools/record-run');
 
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'record-run.js');
 
@@ -15,10 +16,35 @@ function mkTmp(prefix) {
 // directory is what keeps this test from ever touching this box's own
 // REAL ~/.swarmforge/runs.jsonl (the live production swarm's own run
 // history).
-function runCli(args, home) {
+function runCliSubprocess(args, home) {
   const env = { PATH: process.env.PATH, HOME: home };
   const out = execFileSync('node', [CLI, ...args], { encoding: 'utf8', env });
   return JSON.parse(out);
+}
+
+// Runs the REAL main() in-process against a real HOME/argv, so in-process
+// coverage and mutation tooling can see the branches a subprocess-only
+// smoke test cannot (the engineering article's CLI main()-thin-wrapper
+// rule). Same allowlist-env posture as runCliSubprocess above.
+async function runCli(args, home) {
+  const previousHome = process.env.HOME;
+  const previousArgv = process.argv;
+  const writes = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (chunk) => {
+    writes.push(chunk);
+    return true;
+  };
+  try {
+    process.env.HOME = home;
+    process.argv = ['node', CLI, ...args];
+    await main();
+  } finally {
+    process.stdout.write = originalWrite;
+    process.env.HOME = previousHome;
+    process.argv = previousArgv;
+  }
+  return JSON.parse(writes.join(''));
 }
 
 function runsFile(home) {
@@ -40,10 +66,10 @@ function readRuns(home) {
 
 // ── run-history-headless-01 ────────────────────────────────────────────
 
-test('BL-352: "start" appends a run entry naming the target and a running status', () => {
+test('BL-352: "start" appends a run entry naming the target and a running status', async () => {
   const home = mkTmp('sfvc-record-run-home-');
   const target = mkTmp('sfvc-record-run-target-');
-  const result = runCli(['start', target], home);
+  const result = await runCli(['start', target], home);
   assert.equal(result.recorded, 'start');
   const runs = readRuns(home);
   assert.equal(runs.length, 1);
@@ -56,21 +82,21 @@ test('BL-352: "start" appends a run entry naming the target and a running status
 
 // ── run-history-headless-03 ────────────────────────────────────────────
 
-test('BL-352: the recorded run names the target it ran against', () => {
+test('BL-352: the recorded run names the target it ran against', async () => {
   const home = mkTmp('sfvc-record-run-home-');
   const target = mkTmp('sfvc-record-run-target-');
-  runCli(['start', target], home);
+  await runCli(['start', target], home);
   const runs = readRuns(home);
   assert.equal(runs[0].targetPath, target);
 });
 
 // ── run-history-headless-02 ────────────────────────────────────────────
 
-test('BL-352: "stop" completes the most recent run for that target, not a new entry', () => {
+test('BL-352: "stop" completes the most recent run for that target, not a new entry', async () => {
   const home = mkTmp('sfvc-record-run-home-');
   const target = mkTmp('sfvc-record-run-target-');
-  runCli(['start', target], home);
-  const result = runCli(['stop', target], home);
+  await runCli(['start', target], home);
+  const result = await runCli(['stop', target], home);
   assert.equal(result.recorded, 'stop');
   const runs = readRuns(home);
   assert.equal(runs.length, 1, 'expected the SAME run entry updated, not a second one appended');
@@ -78,21 +104,21 @@ test('BL-352: "stop" completes the most recent run for that target, not a new en
   assert.ok(Date.parse(runs[0].completedAt), 'expected a real ISO completedAt timestamp');
 });
 
-test('BL-352: "stop" against a target with no prior run is a safe no-op (never crashes, never fabricates a run)', () => {
+test('BL-352: "stop" against a target with no prior run is a safe no-op (never crashes, never fabricates a run)', async () => {
   const home = mkTmp('sfvc-record-run-home-');
   const target = mkTmp('sfvc-record-run-target-');
-  const result = runCli(['stop', target], home);
+  const result = await runCli(['stop', target], home);
   assert.equal(result.recorded, 'stop');
   assert.deepEqual(readRuns(home), []);
 });
 
-test('BL-352: "stop" only completes the run for the matching target, never a different one', () => {
+test('BL-352: "stop" only completes the run for the matching target, never a different one', async () => {
   const home = mkTmp('sfvc-record-run-home-');
   const targetA = mkTmp('sfvc-record-run-target-a-');
   const targetB = mkTmp('sfvc-record-run-target-b-');
-  runCli(['start', targetA], home);
-  runCli(['start', targetB], home);
-  runCli(['stop', targetA], home);
+  await runCli(['start', targetA], home);
+  await runCli(['start', targetB], home);
+  await runCli(['stop', targetA], home);
   const runs = readRuns(home);
   const runA = runs.find((r) => r.targetPath === targetA);
   const runB = runs.find((r) => r.targetPath === targetB);
@@ -100,7 +126,29 @@ test('BL-352: "stop" only completes the run for the matching target, never a dif
   assert.equal(runB.status, 'running');
 });
 
-// ── usage ─────────────────────────────────────────────────────────────
+// ── parseCliArgs (in-process, so its own validation branches are covered) ──
+
+test('parseCliArgs accepts a valid "start" invocation', () => {
+  assert.deepEqual(parseCliArgs(['start', '/some/target']), { mode: 'start', targetPath: '/some/target' });
+});
+
+test('parseCliArgs accepts a valid "stop" invocation', () => {
+  assert.deepEqual(parseCliArgs(['stop', '/some/target']), { mode: 'stop', targetPath: '/some/target' });
+});
+
+test('parseCliArgs rejects an unknown mode', () => {
+  assert.equal(parseCliArgs(['bogus', '/some/target']), null);
+});
+
+test('parseCliArgs rejects a missing target path', () => {
+  assert.equal(parseCliArgs(['start']), null);
+});
+
+test('parseCliArgs rejects no arguments at all', () => {
+  assert.equal(parseCliArgs([]), null);
+});
+
+// ── usage (the compiled CLI's own subprocess wiring) ────────────────────
 
 test('an unknown mode exits non-zero with a usage message, never a raw crash', () => {
   const home = mkTmp('sfvc-record-run-home-');
