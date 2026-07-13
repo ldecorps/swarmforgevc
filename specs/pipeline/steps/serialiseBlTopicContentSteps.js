@@ -11,6 +11,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
+const { execFileSync } = require('node:child_process');
 
 const { readRecord, appendMessage } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'concierge', 'blTopicStore'));
 const { postOperatorContext } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'tools', 'telegram-front-desk-bot'));
@@ -19,6 +20,19 @@ const { backfillBlTopicStore } = require(path.join(__dirname, '..', '..', '..', 
 
 function mkTmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl329-acceptance-'));
+}
+
+// Architect bounce (2026-07-13): the fixture must be a REAL git repo, not
+// just a plain temp dir, or the durability assertion below (git-tracked
+// status, not merely "exists and isn't gitignored") has nothing real to
+// check against. Mirrors costHealthSidecar.test.js's own git fixture.
+function mkGitRepo() {
+  const target = mkTmp();
+  execFileSync('git', ['init', '-q'], { cwd: target });
+  execFileSync('git', ['config', 'user.email', 't@t'], { cwd: target });
+  execFileSync('git', ['config', 'user.name', 't'], { cwd: target });
+  execFileSync('git', ['commit', '-q', '-m', 'init', '--allow-empty'], { cwd: target });
+  return target;
 }
 
 // Real routeEvent, real recordMessage -> real appendMessage - only
@@ -38,7 +52,7 @@ function realOutboundAdapters(ctx) {
 function registerSteps(registry) {
   // ── Background ───────────────────────────────────────────────────────
   registry.define(/^a backlog ticket that has its own Telegram topic$/, (ctx) => {
-    ctx.target = mkTmp();
+    ctx.target = mkGitRepo();
     ctx.ticketId = 'BL-900';
   });
 
@@ -112,6 +126,19 @@ function registerSteps(registry) {
     }
     if (ctx.readResult.id !== ctx.ticketId) {
       throw new Error(`expected the record's own id to be ${ctx.ticketId}, got ${ctx.readResult.id}`);
+    }
+    // Architect bounce (2026-07-13): "in the repository" means GIT-TRACKED,
+    // not merely "not gitignored" - a file that exists on disk but was
+    // never committed is exactly as lost on a fresh checkout / disk
+    // failure as if this store never existed. Assert a REAL commit touches
+    // this exact file, not just its presence on disk.
+    const log = execFileSync('git', ['-C', ctx.target, 'log', '--format=%H', '--', recordFile], { encoding: 'utf8' }).trim();
+    if (!log) {
+      throw new Error(`expected the record file to be git-committed (durable across a fresh checkout), but git log shows no commit touching ${recordFile}`);
+    }
+    const status = execFileSync('git', ['-C', ctx.target, 'status', '--porcelain', '--', recordFile], { encoding: 'utf8' });
+    if (status.trim()) {
+      throw new Error(`expected the record file to be committed (clean), but git status shows it dirty: ${status}`);
     }
   });
 
