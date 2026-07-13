@@ -13,8 +13,6 @@ import { ParkCycleCostReport, measureParkCycleCost, DEFAULT_BURN_RATE_WINDOW_MS 
 // (measureParkCycleCost) against each cycle's REAL transcript usage -
 // never re-deriving that math.
 
-const MS_PER_HOUR = 60 * 60 * 1000;
-
 export interface ParkCycleEvent {
   event: 'park' | 'unpark';
   role: string;
@@ -27,6 +25,14 @@ export interface ParkCycle {
   unparkedAtMs: number;
 }
 
+function isRealParkCycleEvent(parsed: any): parsed is ParkCycleEvent {
+  return (
+    (parsed.event === 'park' || parsed.event === 'unpark') &&
+    typeof parsed.role === 'string' &&
+    typeof parsed.atMs === 'number'
+  );
+}
+
 // One line per JSON event, malformed/blank lines skipped rather than
 // throwing - a truncated trailing write (a crash mid-append) must never
 // take down every OTHER role's already-durable cycle.
@@ -37,11 +43,7 @@ export function parseParkCycleLog(content: string): ParkCycleEvent[] {
     if (!trimmed) continue;
     try {
       const parsed = JSON.parse(trimmed);
-      if (
-        (parsed.event === 'park' || parsed.event === 'unpark') &&
-        typeof parsed.role === 'string' &&
-        typeof parsed.atMs === 'number'
-      ) {
+      if (isRealParkCycleEvent(parsed)) {
         events.push(parsed);
       }
     } catch {
@@ -51,11 +53,29 @@ export function parseParkCycleLog(content: string): ParkCycleEvent[] {
   return events;
 }
 
+// One role's own chronologically-sorted events paired into complete
+// cycles - a trailing park with no unpark yet, or a leading unpark with no
+// preceding park (state from before this logging existed), is NEVER
+// fabricated into a pair; only a genuinely COMPLETE, real cycle is
+// returned.
+function pairSortedRoleEvents(role: string, sortedEvents: ParkCycleEvent[]): ParkCycle[] {
+  const cycles: ParkCycle[] = [];
+  let pendingParkAtMs: number | null = null;
+  for (const event of sortedEvents) {
+    if (event.event === 'park') {
+      pendingParkAtMs = event.atMs;
+      // event.event is otherwise 'unpark' by ParkCycleEvent's own union type.
+    } else if (pendingParkAtMs !== null) {
+      cycles.push({ role, parkedAtMs: pendingParkAtMs, unparkedAtMs: event.atMs });
+      pendingParkAtMs = null;
+    }
+  }
+  return cycles;
+}
+
 // Pairs each role's own park events with the NEXT unpark event AFTER it,
-// in chronological order - a role still parked (a trailing park with no
-// unpark yet) or a leading unpark with no preceding park (state from
-// before this logging existed) is NEVER fabricated into a pair; only a
-// genuinely COMPLETE, real cycle is returned.
+// in chronological order - see pairSortedRoleEvents for the per-role pairing
+// rule.
 export function pairParkCycles(events: ParkCycleEvent[]): ParkCycle[] {
   const byRole = new Map<string, ParkCycleEvent[]>();
   for (const event of events) {
@@ -69,15 +89,7 @@ export function pairParkCycles(events: ParkCycleEvent[]): ParkCycle[] {
   const cycles: ParkCycle[] = [];
   for (const [role, roleEvents] of byRole) {
     const sorted = [...roleEvents].sort((a, b) => a.atMs - b.atMs);
-    let pendingParkAtMs: number | null = null;
-    for (const event of sorted) {
-      if (event.event === 'park') {
-        pendingParkAtMs = event.atMs;
-      } else if (event.event === 'unpark' && pendingParkAtMs !== null) {
-        cycles.push({ role, parkedAtMs: pendingParkAtMs, unparkedAtMs: event.atMs });
-        pendingParkAtMs = null;
-      }
-    }
+    cycles.push(...pairSortedRoleEvents(role, sorted));
   }
   return cycles;
 }
