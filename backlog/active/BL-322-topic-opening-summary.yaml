@@ -5,7 +5,7 @@ status: todo
 type: feature
 severity: medium
 priority: 30
-direction: non-aligned
+direction: human-requested
 depends_on: []
 source: "Raised by the human 2026-07-13 (screenshot of the Telegram front desk) via .swarmforge/operator/INTAKE-topic-opening-summary-not-just-taskstarted.md; drained per BL-311's convention. Coordinator routed it to the specifier as ~pri30, orthogonal to active work."
 
@@ -42,11 +42,14 @@ notes: |
        UNCHANGED (BL-295/BL-300 wired all three types end to end; this only enriches
        the TaskStarted payload and its render). Not a redesign of the event stream.
 
-  DIRECTION NOTE: classified `non-aligned` honestly — the active STEERING direction is
-  `reliability-first` (through 2026-07-20), whose target metric is QA first-pass rate
-  and open-bug count. This is a front-desk UX enrichment; it serves neither. It is
-  cheap and self-contained, but the coordinator should promote it under STEERING's
-  direction lane, not ahead of aligned reliability work.
+  DIRECTION NOTE (revised 2026-07-13 at the STEERING review): reclassified from
+  `non-aligned` to `human-requested`. The human has now explicitly asked for this ticket
+  TWICE. Under `reliability-first` it was non-aligned, the single non-aligned lane slot was
+  held by BL-324, and so it was structurally unpullable — the policy silently starved an
+  explicit human request. `reliability-first` is now retired (target met, its whole slice
+  closed). Tagging this `expedite` would have been the easy escape and a lie: it is a UX
+  feature, not a defect. It is pullable because the HUMAN ASKED FOR IT, which is the honest
+  reason, and STEERING now carries a class that can say so.
 
   E2E QA PROCEDURE: (a) take a real ticket with title + notes + acceptance steps
   (BL-321 is a good live case) and assert its opening message carries all three lines
