@@ -44,6 +44,18 @@ const SWARM_ACTION_FRAGMENTS = [
   'restricted-front-desk-operator-03: --dangerously-skip-permissions is NEVER passed',
 ];
 
+// Engineering-article Acceptance Pipeline rule: every Scenario Outline
+// Examples column value is validated against an explicit KNOWN_VALUES
+// lookup, never a bare passthrough - a mutated/misspelled example value must
+// fail immediately here rather than silently surviving because the actual
+// check downstream (SWARM_ACTION_FRAGMENTS) is deliberately the same for
+// every row.
+const KNOWN_SWARM_ACTIONS = new Set([
+  'promote a backlog item',
+  'respawn an agent',
+  'merge to the main branch',
+]);
+
 function registerSteps(registry) {
   // ── Background ───────────────────────────────────────────────────────
   registry.define(/^an Operator is mid-conversation with the human and will not exit$/, () => {
@@ -84,6 +96,9 @@ function registerSteps(registry) {
     ctx.output = ctx.output || runRuntimeTickTest(ctx);
   });
   registry.define(/^it attempts to (.+)$/, (ctx, swarmAction) => {
+    if (!KNOWN_SWARM_ACTIONS.has(swarmAction)) {
+      throw new Error(`restricted-front-desk-operator-03: unknown swarm_action example value "${swarmAction}"`);
+    }
     ctx.swarmAction = swarmAction;
   });
   registry.define(/^the action does not happen$/, (ctx) => {
