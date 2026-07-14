@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=89fdb68030a6ec5b863a735a27bd10dd1c16a53eba7c5f1e04f3f0df89727c21
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-14T04:59:48.762642997Z","feature_name":"A launched swarm outlives whatever launched it","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-372-swarm-outlives-its-launcher.feature","background_hash":"a98b7277360daf6e70b4fbcbb06873a796daf81ae98de85418a02215c0cd7342","implementation_hash":"unknown","scenarios":[{"index":0,"name":"The swarm survives however its caller goes away","scenario_hash":"f22c4158b9c48a1fafbba9b84a42575d42f701c029134a1c073195a7cc06868c","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-07-14T04:59:48.762642997Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A launched swarm outlives whatever launched it
 
 # BL-372: twice on 2026-07-14 a swarm launched from a disposable Operator window came up correctly —
