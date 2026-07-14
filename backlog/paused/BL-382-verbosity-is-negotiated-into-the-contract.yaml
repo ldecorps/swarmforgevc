@@ -1,0 +1,73 @@
+id: BL-382
+title: "How verbose the agents are is not negotiable — it should be a term of the contract, like scope"
+milestone: M8
+type: feature
+status: todo
+severity: low
+priority: 6
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-telegram-provisioning-in-onboarding-and-verbosity.md (Ask 2) — the human, 2026-07-14 in SUP-2: 'can we add one more piece of config which will be the verbosity of the agents. Some user will like precise / long messages, others more concise messages.'"
+
+notes: |
+  WHAT ALREADY WORKS — DO NOT REBUILD IT. The contract is ALREADY the prompt-generating surface.
+  `SwarmForgeContract` (`extension/src/onboarding/contractTypes.ts:11-15`) carries
+  scope / outOfScope / boundaries / initialBacklogSummary / agreement, and BL-269's
+  `promptProposal.ts` (the live generator — `buildPromptProposal`, contractTypes.ts:73-74 declares
+  its `projectPrompt` / `engineeringPrompt` result) already derives the target's two prompt files
+  from it. So a negotiated `verbosity` term flows into the generated role prompts through
+  machinery that already exists and already has a live caller. This is a field plus its use, not
+  a new subsystem.
+
+  DECIDED WITH THE HUMAN (2026-07-14): a closed ENUM — `concise | normal | detailed` — not free
+  text. Free text would be unvalidatable and would splice arbitrary text into generated prompts.
+  The enum also earns a real testing property: per the engineering article, a Scenario Outline's
+  Examples column must be LOAD-BEARING — validate the value against an explicit KNOWN_VALUES
+  lookup and FAIL on anything outside it. Never a bare passthrough and never a binary
+  `=== 'concise'` with everything else falling into an else-branch: that lets `gherkin-mutator`
+  mutate an example value into the else branch undetected, so the mutant survives all the way to
+  the hardener's Gherkin-mutation pass instead of failing the scenario immediately. Scenario 02
+  exists precisely to force the lookup.
+
+  ONE HANDLER FOR THE OUTLINE AND THE LITERALS. Scenario 01's `the generated prompts tell the
+  agents to be <verbosity>` and scenarios 03/04's literal `... to be normal` / `... to be detailed`
+  are THE SAME STEP at different values — IR-DRY flags them as near-duplicates and that is
+  expected. Register ONE value-parameterized handler (with the KNOWN_VALUES lookup above) and let
+  every scenario bind to it. Do NOT register a second, literal handler beside it: with overlapping
+  step text the first-registered handler wins, so the two would shadow each other and a scenario
+  would silently assert nothing.
+
+  BACK-COMPAT IS A REAL SCENARIO, NOT A FOOTNOTE. Contracts exist today with no verbosity term at
+  all (there is an agreed CONTRACT.md in this very repo). An absent verbosity must mean `normal`,
+  not a crash and not an empty instruction spliced into a prompt — scenario 03.
+
+  SCOPE. `contractTypes.ts` (the field + its KNOWN_VALUES set, following the
+  `CONTRACT_AGREEMENT_STATES` pattern already in that file — reuse the posture, do not invent a
+  second one) and `promptProposal.ts` (the generator that consumes it). Both are pure and testable
+  with no VS Code, no network, no live swarm.
+
+  RELATED, NOT DUPLICATED — SEQUENCE, DO NOT PARALLELISE. BL-383 is the OTHER half of the same
+  human ask: verbosity driving the front desk's own human-facing replies, which is where the
+  human actually FEELS the preference. BL-383 reads the same contract field this ticket defines,
+  so it depends on this one. They touch different files (this one TypeScript under
+  `extension/src/onboarding/`, BL-383 the Babashka `operator_lib.bb`), but the field must exist
+  before it can be read.
+
+  E2E QA PROCEDURE: negotiate a contract with verbosity `concise`, generate the target's prompts,
+  and assert the generated projectPrompt/engineeringPrompt actually instruct concision — then
+  re-negotiate to `detailed` and assert the regenerated prompts change accordingly. Assert a
+  contract carrying a made-up verbosity is refused rather than silently generating a prompt with
+  a nonsense instruction in it. Assert an existing contract with no verbosity term still generates
+  prompts exactly as it does today.
+
+acceptance:
+  feature: specs/features/BL-382-verbosity-is-negotiated-into-the-contract.feature
+  steps:
+    - "The agreed verbosity reaches the generated prompts"
+    - "A verbosity nobody offered is refused"
+    - "A contract that never mentioned verbosity still works"
+    - "The human can change his mind about verbosity"
+
+human_approval: pending
+
+mutation_cost: low
