@@ -26,7 +26,8 @@ import { startResilientBounceWatcher, BounceType, ResilientWatcherHandle } from 
 import { writeBounceAck, clearBounceAck, BouncePhase } from './swarm/bounceAck';
 import { startChaserMonitor, stopChaserMonitor, buildRoleInboxes } from './watchdog/chaserMonitor';
 import type { ChaserMonitorConfig, ChaserCallbacks } from './watchdog/chaserMonitor';
-import { readTmuxSocket, paneTarget, getPaneBaseIndex, sendKeys, capturePane, readSwarmRoles, sleepSync, respawnAgent } from './swarm/tmuxClient';
+import { readTmuxSocket, paneTarget, getPaneBaseIndex, sendKeys, capturePane, readSwarmRoles, respawnAgent } from './swarm/tmuxClient';
+import { sleepSync } from './swarm/sleepSync';
 import { startResourceSampler, stopResourceSampler } from './metrics/resourceTelemetry';
 import { buildSampledRoles } from './swarm/resourceSamplerActivation';
 import { sendInstructionVerified, sendHandoffWakeUp } from './swarm/verifiedInject';
