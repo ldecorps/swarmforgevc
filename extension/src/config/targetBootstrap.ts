@@ -2,8 +2,9 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { GateDecision, ProposedContract, ProposedPrompts } from '../onboarding/contractTypes';
+import { GateDecision, ProposedContract, ProposedPrompts, UseCaseInventory } from '../onboarding/contractTypes';
 import { generateContractMarkdown, renderContractYaml } from '../onboarding/contractView';
+import { generateUseCaseInventoryMarkdown } from '../onboarding/useCaseInventory';
 
 const execFileAsync = promisify(execFile);
 
@@ -82,6 +83,18 @@ export function buildContractBootstrapFiles(contract: ProposedContract): Bootstr
     { path: path.join('.swarmforge', 'contract.yaml'), content: renderContractYaml(contract) },
     { path: 'CONTRACT.md', content: generateContractMarkdown(contract) },
   ];
+}
+
+// BL-360: the use-case inventory's own hybrid-artifact-free file - a single
+// legible USE-CASES.md at the target repo root, beside CONTRACT.md. No
+// structured sibling: nothing PARSES the inventory the way the build-start
+// gate parses contract.yaml; it exists for the human. Takes NO GateDecision,
+// exactly like buildContractBootstrapFiles above - STRUCTURALLY, not by
+// comment, so the ticket's own trap (an artifact silently gated behind
+// agreement when the human needs it in order to DECIDE on the agreement)
+// cannot be reintroduced by a later edit.
+export function buildUseCaseInventoryBootstrapFiles(inventory: UseCaseInventory): BootstrapFile[] {
+  return [{ path: 'USE-CASES.md', content: generateUseCaseInventoryMarkdown(inventory) }];
 }
 
 // Shared by every caller that writes bootstrap files into a target repo and
@@ -168,6 +181,31 @@ export async function initializeTargetContract(
     targetPath,
     buildContractBootstrapFiles(contract),
     'Propose SwarmForge onboarding contract'
+  );
+}
+
+// BL-360: scaffolds + commits the use-case inventory on target onboarding,
+// reusing the exact same idempotent plan/write/commit seam as
+// initializeTargetContract above - a separate commit from the contract's own
+// (each artifact type gets its own builder+initializer pair, the same
+// composition initializeTargetRepo/initializeTargetContract/
+// initializeTargetPrompts already establish), but run in the SAME proposal
+// step, so the inventory lands "at proposal time, beside CONTRACT.md" per
+// the ticket's own E2E procedure. Never gated on a GateDecision - see
+// buildUseCaseInventoryBootstrapFiles's own header for why that must hold
+// structurally.
+export async function initializeTargetUseCaseInventory(
+  targetPath: string,
+  inventory: UseCaseInventory
+): Promise<{
+  created: string[];
+  skipped: string[];
+  committed: boolean;
+}> {
+  return writeAndCommitBootstrapPlan(
+    targetPath,
+    buildUseCaseInventoryBootstrapFiles(inventory),
+    'Propose SwarmForge target use-case inventory'
   );
 }
 

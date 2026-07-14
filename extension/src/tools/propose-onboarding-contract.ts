@@ -12,8 +12,9 @@
  */
 import * as fs from 'fs';
 import { proposeContractFromSurvey } from '../onboarding/contractSurvey';
+import { deriveUseCaseInventory } from '../onboarding/useCaseInventory';
 import { RepoSurveyFacts } from '../onboarding/contractTypes';
-import { initializeTargetContract } from '../config/targetBootstrap';
+import { initializeTargetContract, initializeTargetUseCaseInventory } from '../config/targetBootstrap';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 
 // Exported (like bakeoff-run.ts's own parseArgs/labelReportCostTiers) so
@@ -29,6 +30,18 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
 }
 
+// BL-360: each raw observation's own shape check, split out the same way
+// isRepoSurveyFactsShape is split from readSurveyFacts below.
+function isUseCaseObservationShape(value: unknown): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as Record<string, unknown>).name === 'string' &&
+    typeof (value as Record<string, unknown>).summary === 'string' &&
+    isStringArray((value as Record<string, unknown>).locations)
+  );
+}
+
 // Split out of readSurveyFacts so that function's own branch count stays
 // low, same technique as contractView.ts's isContractShape. Not a type
 // predicate: RepoSurveyFacts has no index signature, so it cannot narrow a
@@ -39,7 +52,9 @@ function isRepoSurveyFactsShape(value: Record<string, unknown>): boolean {
     typeof value.layoutSummary === 'string' &&
     typeof value.readmeSummary === 'string' &&
     typeof value.seedVision === 'string' &&
-    typeof value.initialBacklogSummary === 'string'
+    typeof value.initialBacklogSummary === 'string' &&
+    Array.isArray(value.useCaseObservations) &&
+    value.useCaseObservations.every(isUseCaseObservationShape)
   );
 }
 
@@ -47,7 +62,7 @@ export function readSurveyFacts(surveyFactsPath: string): RepoSurveyFacts {
   const raw: unknown = JSON.parse(fs.readFileSync(surveyFactsPath, 'utf8'));
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw) || !isRepoSurveyFactsShape(raw as Record<string, unknown>)) {
     throw new Error(
-      `${surveyFactsPath} does not match RepoSurveyFacts (languages: string[], layoutSummary/readmeSummary/seedVision/initialBacklogSummary: string)`
+      `${surveyFactsPath} does not match RepoSurveyFacts (languages: string[], layoutSummary/readmeSummary/seedVision/initialBacklogSummary: string, useCaseObservations: {name, summary, locations: string[]}[])`
     );
   }
   return raw as RepoSurveyFacts;
@@ -59,8 +74,19 @@ export const main = makeArgsGuardedMain(
   async ({ targetRepoPath, surveyFactsPath }) => {
     const facts = readSurveyFacts(surveyFactsPath);
     const contract = proposeContractFromSurvey(facts);
-    const result = await initializeTargetContract(targetRepoPath, contract);
-    printJsonToStdout(result);
+    const contractResult = await initializeTargetContract(targetRepoPath, contract);
+    // BL-360: the inventory rides the SAME ungated path as the contract
+    // (never behind a GateDecision - the human needs it to DECIDE on the
+    // contract) and lands in the SAME proposal step, "at proposal time,
+    // beside CONTRACT.md" - its own separate commit, per
+    // initializeTargetUseCaseInventory's own header.
+    const inventory = deriveUseCaseInventory(facts);
+    const inventoryResult = await initializeTargetUseCaseInventory(targetRepoPath, inventory);
+    printJsonToStdout({
+      created: [...contractResult.created, ...inventoryResult.created],
+      skipped: [...contractResult.skipped, ...inventoryResult.skipped],
+      committed: contractResult.committed || inventoryResult.committed,
+    });
   }
 );
 

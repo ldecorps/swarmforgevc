@@ -15,17 +15,53 @@ export interface ProposedContract {
   agreement: ContractAgreementState;
 }
 
+// BL-360: one capability the surveying agent found evidence of IN THE
+// TARGET'S OWN CODE (never inferred from the README alone - that is the
+// gap this ticket exists to close). `locations` names the place(s) in the
+// target's code that implement it, so a human reading the inventory can
+// go straight to the implementation. `name` is stable so a later change
+// request can cite this entry by name (scenario 05).
+export interface UseCaseObservation {
+  name: string;
+  summary: string;
+  locations: string[];
+}
+
 // Facts an agent gathers by reading the target repo (languages, layout,
 // README) plus any seed vision and initial backlog - the SURVEY itself is
 // swarm/agent behavior (exercised at QA's e2e level), never live I/O in a
 // unit test. This type is the pure boundary: everything past this point is a
 // deterministic function of already-gathered facts.
+//
+// BL-360: useCaseObservations is raw, code-derived evidence gathered in
+// the SAME survey pass as every other field here (one read of the target
+// yields one internally-consistent fact set - a second, independent pass
+// could drift). An empty array is a first-class, legitimate outcome (a
+// target with no discernible use cases), never treated as "the field was
+// omitted" - see deriveUseCaseInventory's own empty-case handling.
 export interface RepoSurveyFacts {
   languages: string[];
   layoutSummary: string;
   readmeSummary: string;
   seedVision: string;
   initialBacklogSummary: string;
+  useCaseObservations: UseCaseObservation[];
+}
+
+// BL-360: the derived, human-facing shape - today a direct carry-over of
+// the raw observations (the derivation's real job is the empty-case
+// handling in generateUseCaseInventoryMarkdown, and keeping this as its
+// own named type/function pair, per proposeContractFromSurvey's own
+// precedent, is what keeps a future, richer derivation from having to
+// touch every caller of the raw facts).
+export interface UseCaseInventoryEntry {
+  name: string;
+  summary: string;
+  locations: string[];
+}
+
+export interface UseCaseInventory {
+  entries: UseCaseInventoryEntry[];
 }
 
 // BL-269: the target repo's own project.prompt/engineering.prompt, generated
