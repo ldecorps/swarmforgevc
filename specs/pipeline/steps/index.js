@@ -169,6 +169,7 @@ const DOMAINS = [
   require('./controlLossIsNotAgentDeathSteps'),
   require('./operatorPassesAQuestionDownSteps'),
   require('./frontDeskLivenessMeansListeningSteps'),
+  require('./alwaysOnOperatorPresenceSteps'),
 ];
 
 function registerSteps(registry) {
