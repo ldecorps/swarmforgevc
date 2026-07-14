@@ -653,3 +653,128 @@ test('BL-290: the suite-duration labels are localized (fr)', async () => {
   const text = dom.window.document.getElementById('suiteDuration').textContent;
   assert.match(text, /Durée de la suite : 45s \(dernière mesure\)/);
 });
+
+// ── BL-347 role-leaderboard-surface: the Role Leaderboard section ───────
+
+function fakeBenchmarkReport(overrides = {}) {
+  return {
+    schemaVersion: 1,
+    generatedAtIso: '2026-07-13T16:26:31.300Z',
+    taskId: 'coder-task-01-word-frequency',
+    qualityThreshold: 0.8,
+    qualityThresholdDescription: 'A model is "cheapest acceptable" only if its mean quality score is >= 0.8.',
+    provenance: 'Each recorded run executes the configured provider CLI headlessly.',
+    models: [
+      {
+        modelId: 'claude-haiku',
+        provider: 'claude',
+        model: 'haiku',
+        label: 'Claude Haiku 4.5',
+        excluded: false,
+        exclusionReason: null,
+        repetitions: 2,
+        meanQuality: 1,
+        qualityStdDev: 0,
+        meanCostUsd: 0.0431,
+        costStdDev: 0.0009,
+        meanDurationMs: 23420,
+        meanTokens: 1762.5,
+        runs: [],
+      },
+      {
+        modelId: 'claude-sonnet',
+        provider: 'claude',
+        model: 'sonnet',
+        label: 'Claude Sonnet 5',
+        excluded: false,
+        exclusionReason: null,
+        repetitions: 2,
+        meanQuality: 0.9,
+        qualityStdDev: 0.05,
+        meanCostUsd: 0.1383,
+        costStdDev: 0.0003,
+        meanDurationMs: 17815,
+        meanTokens: 974,
+        runs: [],
+      },
+    ],
+    ranking: { bestByQuality: 'claude-haiku', bestByValue: 'claude-haiku', cheapestAcceptable: 'claude-sonnet', noAcceptableModelReason: null },
+    ...overrides,
+  };
+}
+
+test('role-leaderboard-surface-01: the leaderboard shows the best, best value, and cheapest acceptable model per role', async () => {
+  const dom = renderDashboard(fakeDashboard({ roleLeaderboard: fakeBenchmarkReport() }));
+  await flush();
+  const section = dom.window.document.getElementById('roleLeaderboardSection');
+  assert.notEqual(section.style.display, 'none');
+  const text = dom.window.document.getElementById('roleLeaderboard').textContent;
+  assert.match(text, /Role: coder/);
+  assert.match(text, /Best/);
+  assert.match(text, /Best value/);
+  assert.match(text, /Cheapest acceptable/);
+  assert.match(text, /Claude Haiku 4\.5/);
+  assert.match(text, /Claude Sonnet 5/);
+});
+
+test('role-leaderboard-surface-02: the quality threshold for cheapest acceptable is stated, not implied', async () => {
+  const dom = renderDashboard(fakeDashboard({ roleLeaderboard: fakeBenchmarkReport() }));
+  await flush();
+  const text = dom.window.document.getElementById('roleLeaderboard').textContent;
+  assert.match(text, /Quality threshold: A model is "cheapest acceptable" only if its mean quality score is >= 0\.8\./);
+});
+
+test('role-leaderboard-surface-03: the reader can tell how old the numbers are', async () => {
+  const dom = renderDashboard(fakeDashboard({ roleLeaderboard: fakeBenchmarkReport() }));
+  await flush();
+  const text = dom.window.document.getElementById('roleLeaderboard').textContent;
+  const expectedDate = new Date('2026-07-13T16:26:31.300Z').toLocaleDateString();
+  assert.match(text, new RegExp('Benchmark run: ' + expectedDate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test('role-leaderboard-surface-04: a difference between models can be told from noise (variance shown alongside the ranking)', async () => {
+  const dom = renderDashboard(fakeDashboard({ roleLeaderboard: fakeBenchmarkReport() }));
+  await flush();
+  const text = dom.window.document.getElementById('roleLeaderboard').textContent;
+  // claude-sonnet (cheapest acceptable here) carries qualityStdDev: 0.05
+  assert.match(text, /90% \(±5%\)/);
+});
+
+test('role-leaderboard-surface-05: the leaderboard is hidden entirely when no benchmark has been committed, not rendered empty', async () => {
+  const dom = renderDashboard(fakeDashboard());
+  await flush();
+  const section = dom.window.document.getElementById('roleLeaderboardSection');
+  assert.equal(section.style.display, 'none');
+});
+
+test('a cheapest-acceptable model that does not exist shows the stated reason, never a blank row', async () => {
+  const dom = renderDashboard(
+    fakeDashboard({
+      roleLeaderboard: fakeBenchmarkReport({
+        ranking: { bestByQuality: 'claude-haiku', bestByValue: 'claude-haiku', cheapestAcceptable: null, noAcceptableModelReason: 'no model cleared the quality threshold' },
+      }),
+    })
+  );
+  await flush();
+  const text = dom.window.document.getElementById('roleLeaderboard').textContent;
+  assert.match(text, /Cheapest acceptable: no model cleared the quality threshold/);
+});
+
+test('role-leaderboard-surface-07: the section is collapsible like every other section', async () => {
+  const dom = renderDashboard(fakeDashboard({ roleLeaderboard: fakeBenchmarkReport() }));
+  await flush();
+  const header = dom.window.document.querySelector('h2[data-i18n="roleLeaderboardHeading"]');
+  const body = header.closest('section').querySelector('.section-body');
+  assert.notEqual(body.style.display, 'none');
+  header.dispatchEvent(new dom.window.Event('click'));
+  assert.equal(body.style.display, 'none');
+});
+
+test('BL-347: the role leaderboard labels are localized (fr)', async () => {
+  const dom = renderDashboard(fakeDashboard({ roleLeaderboard: fakeBenchmarkReport() }));
+  await flush();
+  dom.window.document.getElementById('localeToggle').click();
+  const text = dom.window.document.getElementById('roleLeaderboard').textContent;
+  assert.match(text, /Rôle : coder/);
+  assert.match(text, /Meilleur rapport qualité-prix/);
+});
