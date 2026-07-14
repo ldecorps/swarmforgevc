@@ -62,6 +62,6 @@ acceptance:
     - "A contract that never mentioned verbosity is answered normally"
     - "Changing the agreed verbosity changes the very next reply"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: low

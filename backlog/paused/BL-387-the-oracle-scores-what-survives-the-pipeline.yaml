@@ -56,6 +56,6 @@ acceptance:
     - "Every bounce is counted as rework"
     - "A diff the pipeline never accepts is recorded as not surviving"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: high

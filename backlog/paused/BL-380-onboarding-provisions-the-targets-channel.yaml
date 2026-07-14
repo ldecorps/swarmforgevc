@@ -63,6 +63,6 @@ acceptance:
     - "A half-finished channel is reported, never treated as ready"
     - "A second target is provisioned with its own bot"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: medium

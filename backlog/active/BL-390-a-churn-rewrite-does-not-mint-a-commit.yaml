@@ -50,6 +50,6 @@ acceptance:
     - "A record that genuinely changed is still committed"
     - "Nothing is pushed when nothing was committed"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: low
