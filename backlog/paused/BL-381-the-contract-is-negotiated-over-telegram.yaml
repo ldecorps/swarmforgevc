@@ -58,6 +58,6 @@ acceptance:
     - "Every round survives a restart"
     - "The human's agreement in the topic settles the contract"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: medium

@@ -1,4 +1,5 @@
 import { execFileSync } from 'child_process';
+import { existsSync } from 'fs';
 
 // Shared by commitCostHealthSidecar (costHealthSidecar.ts) and
 // commitTopicRecord (blTopicStore.ts): both commit exactly one file into an
@@ -28,7 +29,24 @@ export function commitScopedFile(targetPath: string, filePath: string, commitMes
 // one path is empty only when the working tree matches what is actually
 // committed. Fails CLOSED (false = "not confirmed committed") on any git
 // error, e.g. not a repo at all - never assume durability it cannot prove.
+//
+// BL-390 hardening: `git status --porcelain -- <path>` prints nothing for a
+// path that is simply ABSENT (never written, never tracked) - the exact
+// same empty output as a path that IS committed with no pending changes.
+// Left unguarded, that collapses "durable" and "never existed" into one
+// return value, in direct contradiction of this function's own fail-closed
+// contract above. No current caller triggers it (every caller here writes
+// the file via atomicWrite before checking it - blTopicStore.ts's
+// appendMessage/commitTopicRecord, repair-bl-topic-records.ts), so this is
+// a latent trap rather than a live defect, but it sits directly upstream of
+// BL-390's own new no-op guard (commitTopicRecord's early
+// `if (isFileCommitted(...)) return true`), so a future check-before-write
+// caller would silently skip minting any commit at all. Check existence
+// first so a missing file can never read as "already durable".
 export function isFileCommitted(targetPath: string, filePath: string): boolean {
+  if (!existsSync(filePath)) {
+    return false;
+  }
   try {
     const status = execFileSync('git', ['-C', targetPath, 'status', '--porcelain', '--', filePath], {
       encoding: 'utf8',

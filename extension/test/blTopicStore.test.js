@@ -200,6 +200,20 @@ test('BL-390 scenario 01: rewriting a record with EXACTLY the content it already
   assert.equal(headAfter, headBefore, 'expected HEAD to be unchanged - no commit minted for identical content');
 });
 
+// BL-390 hardening: commitTopicRecord's own no-op guard is
+// `if (isFileCommitted(...)) return true`. isFileCommitted reads
+// `git status --porcelain` for the path, which prints nothing both when a
+// file IS durably committed and when it was never written at all - so a
+// filePath that does not exist on disk must never short-circuit "already
+// durable" (true) without ever attempting a commit; that would be a silent
+// no-commit-at-all bug for a file that has, in fact, never been persisted.
+test('commitTopicRecord does not report a never-written file as already durable', () => {
+  const target = mkGitRepo();
+  const filePath = recordPath(target, 'BL-900');
+  assert.equal(fs.existsSync(filePath), false);
+  assert.equal(commitTopicRecord(target, filePath, 'BL-900'), false);
+});
+
 test('BL-390 scenario 02: a record that genuinely changed is still committed', () => {
   const target = mkGitRepo();
   appendMessage(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 });
