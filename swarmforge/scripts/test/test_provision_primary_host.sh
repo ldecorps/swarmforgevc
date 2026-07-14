@@ -24,10 +24,18 @@ mk_fixture() {
   printf '%s' "$d"
 }
 
+# Every case below drives the installer with its OWN unit-tmp dir
+# (PROVISION_PRIMARY_UNIT_TMP_DIR) rather than the script's shared /tmp
+# default - this suite runs from several worktrees at once, and a shared
+# filename would let one run's assertions read another run's generated
+# unit (the same shared-global-path hazard the engineering article bans
+# elsewhere in this project).
+
 # ── always-on-operator-presence-03/04: no swarmforge.conf swarm_name -
 #    defaults to "primary" (swarmforge.sh's own single-swarm default) ────
 F="$(mk_fixture)"
-OUT="$(PROVISION_PRIMARY_DRYRUN=1 bash "$INSTALLER" "$F" 2>&1)"
+UNIT_TMP="$(mktemp -d)"
+OUT="$(PROVISION_PRIMARY_UNIT_TMP_DIR="$UNIT_TMP" PROVISION_PRIMARY_DRYRUN=1 bash "$INSTALLER" "$F" 2>&1)"
 
 echo "$OUT" | grep -q "DRYRUN: sudo mv .* /etc/systemd/system/swarmforge-operator-primary.service" \
   || fail "expected the operator unit to be installed under the default 'primary' pack name, got:\n$OUT"
@@ -43,39 +51,40 @@ pass "always-on-operator-presence-04: BOTH the operator unit and the front-desk 
 
 echo "$OUT" | grep -q "DRYRUN: sudo systemctl daemon-reload" || fail "expected a daemon-reload before enabling"
 pass "a daemon-reload runs before the units are enabled"
-rm -rf "$F"
+rm -rf "$F" "$UNIT_TMP"
 
 # ── the generated units carry the actual boot/crash-recovery guarantee -
 #    reuses generate_systemd_units.sh's own rendering, never re-derives it ──
 F="$(mk_fixture)"
-PROVISION_PRIMARY_DRYRUN=1 bash "$INSTALLER" "$F" >/dev/null
-[[ -f /tmp/swarmforge-operator-primary.service ]] || fail "expected the operator unit to actually be generated (even in dry-run mode - only install/enable are skipped)"
-grep -q "^Restart=always$" /tmp/swarmforge-operator-primary.service || fail "expected the generated operator unit to carry Restart=always"
-grep -q "^WantedBy=multi-user.target$" /tmp/swarmforge-operator-primary.service || fail "expected the generated operator unit to carry WantedBy=multi-user.target"
-[[ -f /tmp/swarmforge-front-desk-primary.service ]] || fail "expected the front-desk unit to actually be generated"
-grep -q "^Restart=always$" /tmp/swarmforge-front-desk-primary.service || fail "expected the generated front-desk unit to carry Restart=always"
+UNIT_TMP="$(mktemp -d)"
+PROVISION_PRIMARY_UNIT_TMP_DIR="$UNIT_TMP" PROVISION_PRIMARY_DRYRUN=1 bash "$INSTALLER" "$F" >/dev/null
+[[ -f "$UNIT_TMP/swarmforge-operator-primary.service" ]] || fail "expected the operator unit to actually be generated (even in dry-run mode - only install/enable are skipped)"
+grep -q "^Restart=always$" "$UNIT_TMP/swarmforge-operator-primary.service" || fail "expected the generated operator unit to carry Restart=always"
+grep -q "^WantedBy=multi-user.target$" "$UNIT_TMP/swarmforge-operator-primary.service" || fail "expected the generated operator unit to carry WantedBy=multi-user.target"
+[[ -f "$UNIT_TMP/swarmforge-front-desk-primary.service" ]] || fail "expected the front-desk unit to actually be generated"
+grep -q "^Restart=always$" "$UNIT_TMP/swarmforge-front-desk-primary.service" || fail "expected the generated front-desk unit to carry Restart=always"
 pass "always-on-operator-presence-04: the installed units genuinely carry Restart=always + WantedBy=multi-user.target - the mechanical proof a crash or a reboot recovers with no human"
-rm -f /tmp/swarmforge-operator-primary.service /tmp/swarmforge-front-desk-primary.service
-rm -rf "$F"
+rm -rf "$F" "$UNIT_TMP"
 
 # ── a configured swarm_name overrides the "primary" default ──────────────
 F="$(mk_fixture)"
+UNIT_TMP="$(mktemp -d)"
 cat > "$F/swarmforge/swarmforge.conf" <<'EOF'
 config swarm_name dogfood
 EOF
-OUT="$(PROVISION_PRIMARY_DRYRUN=1 bash "$INSTALLER" "$F" 2>&1)"
+OUT="$(PROVISION_PRIMARY_UNIT_TMP_DIR="$UNIT_TMP" PROVISION_PRIMARY_DRYRUN=1 bash "$INSTALLER" "$F" 2>&1)"
 echo "$OUT" | grep -q "swarmforge-operator-dogfood.service" || fail "expected the configured swarm_name (dogfood) to be used instead of the default, got:\n$OUT"
 pass "an explicit swarmforge.conf swarm_name overrides the 'primary' default"
-rm -rf "$F"
+rm -rf "$F" "$UNIT_TMP"
 
 # ── idempotent: a second run against the same host is a safe no-op shape
 #    (systemctl enable/enable --now are themselves idempotent; this proves
 #    THIS script does not error or duplicate work on a re-run) ───────────
 F="$(mk_fixture)"
-PROVISION_PRIMARY_DRYRUN=1 bash "$INSTALLER" "$F" >/dev/null
-PROVISION_PRIMARY_DRYRUN=1 bash "$INSTALLER" "$F" >/dev/null
+UNIT_TMP="$(mktemp -d)"
+PROVISION_PRIMARY_UNIT_TMP_DIR="$UNIT_TMP" PROVISION_PRIMARY_DRYRUN=1 bash "$INSTALLER" "$F" >/dev/null
+PROVISION_PRIMARY_UNIT_TMP_DIR="$UNIT_TMP" PROVISION_PRIMARY_DRYRUN=1 bash "$INSTALLER" "$F" >/dev/null
 pass "always-on-operator-presence-04: re-running the installer is safe (no error on a second, idempotent run)"
-rm -rf "$F"
-rm -f /tmp/swarmforge-operator-primary.service /tmp/swarmforge-front-desk-primary.service /tmp/swarmforge-operator-dogfood.service /tmp/swarmforge-front-desk-dogfood.service
+rm -rf "$F" "$UNIT_TMP"
 
 echo "provision_primary_host smoke: ALL CHECKS PASSED"

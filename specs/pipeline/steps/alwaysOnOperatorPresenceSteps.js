@@ -182,14 +182,19 @@ function registerSteps(registry) {
   registry.define(/^the presence was started from a terminal session$/, (ctx) => {
     ctx.unitDir = mkTmp('sfvc-bl359-unit-');
     fs.mkdirSync(path.join(ctx.unitDir, 'swarmforge'), { recursive: true });
+    // Own unit-tmp dir per scenario run (PROVISION_PRIMARY_UNIT_TMP_DIR) -
+    // never the installer's shared /tmp default, which several worktrees'
+    // suites can write to at the same moment.
+    const unitTmpDir = path.join(ctx.unitDir, 'units');
+    fs.mkdirSync(unitTmpDir, { recursive: true });
     const out = spawnSync('bash', [INSTALLER, ctx.unitDir], {
-      env: { ...process.env, PROVISION_PRIMARY_DRYRUN: '1' },
+      env: { ...process.env, PROVISION_PRIMARY_DRYRUN: '1', PROVISION_PRIMARY_UNIT_TMP_DIR: unitTmpDir },
       encoding: 'utf8',
     });
     if (out.status !== 0) {
       throw new Error(`setup failed: expected provision_primary_host.sh to succeed, got: ${out.stdout}${out.stderr}`);
     }
-    ctx.unitContent = fs.readFileSync('/tmp/swarmforge-operator-primary.service', 'utf8');
+    ctx.unitContent = fs.readFileSync(path.join(unitTmpDir, 'swarmforge-operator-primary.service'), 'utf8');
   });
 
   registry.define(/^that terminal session ends$/, () => {
@@ -218,15 +223,19 @@ function registerSteps(registry) {
     ctx.mishap = mishap;
     ctx.unitDir = mkTmp('sfvc-bl359-unit-');
     fs.mkdirSync(path.join(ctx.unitDir, 'swarmforge'), { recursive: true });
+    // Own unit-tmp dir per scenario run - see the identical rationale in
+    // always-on-operator-presence-03 above.
+    const unitTmpDir = path.join(ctx.unitDir, 'units');
+    fs.mkdirSync(unitTmpDir, { recursive: true });
     const out = spawnSync('bash', [INSTALLER, ctx.unitDir], {
-      env: { ...process.env, PROVISION_PRIMARY_DRYRUN: '1' },
+      env: { ...process.env, PROVISION_PRIMARY_DRYRUN: '1', PROVISION_PRIMARY_UNIT_TMP_DIR: unitTmpDir },
       encoding: 'utf8',
     });
     if (out.status !== 0) {
       throw new Error(`setup failed: expected provision_primary_host.sh to succeed, got: ${out.stdout}${out.stderr}`);
     }
     ctx.installOutput = out.stdout;
-    ctx.operatorUnit = fs.readFileSync('/tmp/swarmforge-operator-primary.service', 'utf8');
+    ctx.operatorUnit = fs.readFileSync(path.join(unitTmpDir, 'swarmforge-operator-primary.service'), 'utf8');
   });
 
   registry.define(/^the Operator becomes reachable again without a human starting anything$/, (ctx) => {
