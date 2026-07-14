@@ -26,15 +26,19 @@ function runCliSubprocess(root, args = []) {
 // identical seam). main() takes no parameters - it reads process.argv
 // (for --debug) and process.cwd() itself - so both are set to the same
 // shape the subprocess would have received, and restored in finally
-// (Vitest runs every test file in one worker process, so a stray chdir
-// silently corrupts every test that runs after it).
+// (Vitest runs every test file in one worker process, so a stray cwd
+// override silently corrupts every test that runs after it). cwd is a
+// stubbed process.cwd(), never a real process.chdir(): Node disallows
+// chdir() inside a worker thread, and Stryker's vitest-runner always runs
+// tests in one, so a real chdir here would pass under plain `vitest run`
+// but hard-abort every mutation run.
 //
 // queue-status.js prints via console.log, NOT process.stdout.write/
 // printJsonToStdout - under Vitest, console.log does not route through
 // process.stdout.write (Vitest intercepts console separately), so the
 // mock must replace console.log itself or it silently captures nothing.
 async function runCli(root, args = []) {
-  const previousCwd = process.cwd();
+  const originalCwd = process.cwd;
   const previousArgv = process.argv;
   const writes = [];
   const originalLog = console.log;
@@ -43,11 +47,11 @@ async function runCli(root, args = []) {
   };
   try {
     process.argv = ['node', CLI_PATH, ...args];
-    process.chdir(root);
+    process.cwd = () => root;
     await main();
   } finally {
     console.log = originalLog;
-    process.chdir(previousCwd);
+    process.cwd = originalCwd;
     process.argv = previousArgv;
   }
   return writes.join('');

@@ -25,9 +25,19 @@ function runCliSubprocess(args, home) {
 // Runs the REAL main() in-process against a real HOME/argv, so in-process
 // coverage and mutation tooling can see the branches a subprocess-only
 // smoke test cannot (the engineering article's CLI main()-thin-wrapper
-// rule). Same allowlist-env posture as runCliSubprocess above.
+// rule). Same allowlist-env posture as runCliSubprocess above. Also stubs
+// os.homedir() directly (in addition to process.env.HOME): Stryker's
+// vitest-runner always runs tests inside a worker_thread, and Node's
+// os.homedir() reads the real OS environ via a native binding there -
+// worker threads keep their own JS-level process.env overlay, which that
+// native call never sees, so a HOME-only override silently no-ops under
+// Stryker while passing under plain `vitest run` (which defaults to a
+// forked child process, where the two stay in sync). Confirmed by writing
+// runs.jsonl into the real HOME instead of the fixture: this test's own
+// "start" assertion read back 0 entries where 1 was expected.
 async function runCli(args, home) {
   const previousHome = process.env.HOME;
+  const originalHomedir = os.homedir;
   const previousArgv = process.argv;
   const writes = [];
   const originalWrite = process.stdout.write.bind(process.stdout);
@@ -37,11 +47,13 @@ async function runCli(args, home) {
   };
   try {
     process.env.HOME = home;
+    os.homedir = () => home;
     process.argv = ['node', CLI, ...args];
     await main();
   } finally {
     process.stdout.write = originalWrite;
     process.env.HOME = previousHome;
+    os.homedir = originalHomedir;
     process.argv = previousArgv;
   }
   return writes.length > 0 ? JSON.parse(writes.join('')) : null;

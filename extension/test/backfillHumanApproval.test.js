@@ -203,7 +203,7 @@ function runCliSubprocess(cwd, extraArgs = []) {
 // (resolveTargetPath), so argv is set to mimic the exact subprocess shape
 // and restored afterward.
 async function runCli(cwd, extraArgs = []) {
-  const previousCwd = process.cwd();
+  const originalCwd = process.cwd;
   const previousArgv = process.argv;
   const writes = [];
   const originalLog = console.log;
@@ -212,11 +212,11 @@ async function runCli(cwd, extraArgs = []) {
   };
   try {
     process.argv = ['node', CLI, ...extraArgs];
-    process.chdir(cwd);
+    process.cwd = () => cwd;
     await main();
   } finally {
     console.log = originalLog;
-    process.chdir(previousCwd);
+    process.cwd = originalCwd;
     process.argv = previousArgv;
   }
   return writes.join('\n') + '\n';

@@ -94,7 +94,7 @@ test('runRoleBenchmarkCli loads the task, runs the real benchmark, then writes+c
 //    2nd QA bounce's own explicit ask: runRoleBenchmarkCli above proves the
 //    orchestration, but main() itself - argv parsing, defaultDeps() wiring,
 //    the usage/exit-1 guard - was never called by any test until this one,
-//    the same gap notifyDeadLettersCli.test.js's process.chdir/await main()/
+//    the same gap notifyDeadLettersCli.test.js's stubbed-cwd/await main()/
 //    capture-stdout/restore pattern already closes elsewhere) ─────────────
 
 function mkTargetRepo() {
