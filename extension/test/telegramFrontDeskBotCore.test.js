@@ -5,7 +5,9 @@ const {
   messageTextOf,
   subjectForTopic,
   topicForSubject,
+  hasDefaultBinding,
   resolveReplyTopicId,
+  resolveReplyDelivery,
   decideUpdateAction,
   pollAndForward,
   parseNextSseRecord,
@@ -97,6 +99,41 @@ test('BL-325: resolveReplyTopicId prefers the SUP map when (hypothetically) both
 
 test('BL-325: resolveReplyTopicId returns undefined when neither map has the threadId', () => {
   assert.equal(resolveReplyTopicId({ '7': 'SUP-1' }, { 'BL-1': 2 }, 'BL-999'), undefined);
+});
+
+// ── hasDefaultBinding (pure) — BL-355 ────────────────────────────────────
+
+test('hasDefaultBinding is true only when DEFAULT_SUBJECT_KEY maps to that exact subject', () => {
+  const map = { [DEFAULT_SUBJECT_KEY]: 'SUP-1', '7': 'SUP-2' };
+  assert.equal(hasDefaultBinding(map, 'SUP-1'), true);
+  assert.equal(hasDefaultBinding(map, 'SUP-2'), false);
+  assert.equal(hasDefaultBinding(map, 'SUP-999'), false);
+});
+
+// ── resolveReplyDelivery (pure) — BL-355 reply-returns-to-asking-thread ──
+
+test('resolveReplyDelivery: a subject bound only to a real topic delivers there, no pointer', () => {
+  const map = { '7': 'SUP-1' };
+  assert.deepEqual(resolveReplyDelivery(map, {}, 'SUP-1'), { kind: 'topic', topicId: 7, alsoPointerToDefault: false });
+});
+
+test('resolveReplyDelivery: a subject bound ONLY under DEFAULT_SUBJECT_KEY delivers to General, not silently dropped', () => {
+  const map = { [DEFAULT_SUBJECT_KEY]: 'SUP-1' };
+  assert.deepEqual(resolveReplyDelivery(map, {}, 'SUP-1'), { kind: 'default' });
+});
+
+test('resolveReplyDelivery: a subject bound to BOTH a real topic and the default key delivers to the topic with a pointer flagged', () => {
+  const map = { [DEFAULT_SUBJECT_KEY]: 'SUP-2', '7': 'SUP-2' };
+  assert.deepEqual(resolveReplyDelivery(map, {}, 'SUP-2'), { kind: 'topic', topicId: 7, alsoPointerToDefault: true });
+});
+
+test('resolveReplyDelivery: a BL-### threadId resolves through the backlog map, no pointer concept', () => {
+  const backlogMap = { 'BL-316': 62 };
+  assert.deepEqual(resolveReplyDelivery({}, backlogMap, 'BL-316'), { kind: 'topic', topicId: 62, alsoPointerToDefault: false });
+});
+
+test('resolveReplyDelivery: no binding anywhere is undeliverable', () => {
+  assert.deepEqual(resolveReplyDelivery({ '7': 'SUP-1' }, { 'BL-1': 2 }, 'SUP-999'), { kind: 'undeliverable' });
 });
 
 // ── decideEnsureOperatorTopicAction (pure) — BL-346 standing-operator-topic-01/06/07 ──
@@ -430,6 +467,12 @@ function mkChunkReader(chunks) {
   };
 }
 
+function topicDelivery(topicId, alsoPointerToDefault = false) {
+  return { kind: 'topic', topicId, alsoPointerToDefault };
+}
+const DEFAULT_DELIVERY = { kind: 'default' };
+const UNDELIVERABLE = { kind: 'undeliverable' };
+
 test('relaySseReplies posts a telegram-reply record into its mapped topic, then acks it', async () => {
   const sent = [];
   const acked = [];
@@ -440,7 +483,7 @@ test('relaySseReplies posts a telegram-reply record into its mapped topic, then 
       sendReply: async (topicId, text) => {
         sent.push({ topicId, text });
       },
-      topicForSubject: (subjectId) => (subjectId === 'SUP-1' ? 42 : undefined),
+      resolveDelivery: (subjectId) => (subjectId === 'SUP-1' ? topicDelivery(42) : UNDELIVERABLE),
       ackReply: async (id) => {
         acked.push(id);
       },
@@ -451,7 +494,7 @@ test('relaySseReplies posts a telegram-reply record into its mapped topic, then 
   assert.deepEqual(acked, ['r1']);
 });
 
-test('relaySseReplies drops a reply for an unmapped thread id, never throws, but still acks it', async () => {
+test('relaySseReplies sends nothing for a thread id with no resolvable destination at all, never throws, but still acks it', async () => {
   const sent = [];
   const acked = [];
   await relaySseReplies(
@@ -461,7 +504,7 @@ test('relaySseReplies drops a reply for an unmapped thread id, never throws, but
       sendReply: async (topicId, text) => {
         sent.push({ topicId, text });
       },
-      topicForSubject: () => undefined,
+      resolveDelivery: () => UNDELIVERABLE,
       ackReply: async (id) => {
         acked.push(id);
       },
@@ -470,6 +513,66 @@ test('relaySseReplies drops a reply for an unmapped thread id, never throws, but
   );
   assert.deepEqual(sent, []);
   assert.deepEqual(acked, ['r1']);
+});
+
+// ── BL-355: a subject bound only under DEFAULT_SUBJECT_KEY (General/a DM,
+// never a real topic) now delivers instead of being silently dropped ─────
+
+test('relaySseReplies delivers to General (no message_thread_id) when the subject has only a default binding', async () => {
+  const sent = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-1","text":"hello"}\n\n']),
+      sendReply: async (topicId, text) => {
+        sent.push({ topicId, text });
+      },
+      resolveDelivery: () => DEFAULT_DELIVERY,
+      ackReply: async () => {},
+    },
+    new Set()
+  );
+  assert.deepEqual(sent, [{ topicId: undefined, text: 'hello' }]);
+});
+
+// ── BL-355: a subject bound to BOTH a real topic and DEFAULT_SUBJECT_KEY
+// keeps the full reply in its real topic AND sends a pointer to General ──
+
+test('relaySseReplies sends the full reply to the real topic plus a pointer to General when both are bound', async () => {
+  const sent = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-2","text":"the real answer"}\n\n']),
+      sendReply: async (topicId, text) => {
+        sent.push({ topicId, text });
+      },
+      resolveDelivery: () => topicDelivery(42, true),
+      ackReply: async () => {},
+    },
+    new Set()
+  );
+  assert.deepEqual(sent, [
+    { topicId: 42, text: 'the real answer' },
+    { topicId: undefined, text: "This was answered — see the reply in this conversation's other topic." },
+  ]);
+});
+
+test('relaySseReplies sends only the real topic, no pointer, when no default binding exists', async () => {
+  const sent = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-2","text":"the real answer"}\n\n']),
+      sendReply: async (topicId, text) => {
+        sent.push({ topicId, text });
+      },
+      resolveDelivery: () => topicDelivery(42, false),
+      ackReply: async () => {},
+    },
+    new Set()
+  );
+  assert.deepEqual(sent, [{ topicId: 42, text: 'the real answer' }]);
 });
 
 test('relaySseReplies ignores a record that is not a telegram-reply event, and never acks it', () => {
@@ -482,7 +585,7 @@ test('relaySseReplies ignores a record that is not a telegram-reply event, and n
       sendReply: async (topicId, text) => {
         sent.push({ topicId, text });
       },
-      topicForSubject: () => 42,
+      resolveDelivery: () => topicDelivery(42),
       ackReply: async (id) => {
         acked.push(id);
       },
@@ -506,7 +609,7 @@ test('relaySseReplies drains multiple records buffered across chunks before read
       sendReply: async (topicId, text) => {
         sent.push({ topicId, text });
       },
-      topicForSubject: (subjectId) => ({ 'SUP-1': 1, 'SUP-2': 2 })[subjectId],
+      resolveDelivery: (subjectId) => topicDelivery({ 'SUP-1': 1, 'SUP-2': 2 }[subjectId]),
       ackReply: async (id) => {
         acked.push(id);
       },
@@ -528,7 +631,7 @@ test('relaySseReplies returns cleanly once readChunk reports done', async () => 
       sendReply: async () => {
         throw new Error('should never be called');
       },
-      topicForSubject: () => 1,
+      resolveDelivery: () => topicDelivery(1),
       ackReply: async () => {
         throw new Error('should never be called');
       },
@@ -550,7 +653,7 @@ test('relaySseReplies never re-sends a record whose id is already in seenIds, bu
       sendReply: async (topicId, text) => {
         sent.push({ topicId, text });
       },
-      topicForSubject: () => 42,
+      resolveDelivery: () => topicDelivery(42),
       ackReply: async (id) => {
         acked.push(id);
       },
@@ -568,7 +671,7 @@ test('relaySseReplies adds a newly-sent record\'s id to the shared seenIds set s
     {
       readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-1","text":"hello"}\n\n']),
       sendReply: async () => {},
-      topicForSubject: () => 42,
+      resolveDelivery: () => topicDelivery(42),
       ackReply: async () => {},
     },
     seenIds
