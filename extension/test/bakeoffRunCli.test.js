@@ -48,7 +48,7 @@ function runCliSubprocess(cwd, args) {
 // otherwise leak into every later test in this single worker process
 // (BL-363 scenario 05).
 async function runCli(cwd, args) {
-  const previousCwd = process.cwd();
+  const originalCwd = process.cwd;
   const previousArgv = process.argv;
   const previousExitCode = process.exitCode;
   const writes = [];
@@ -60,12 +60,12 @@ async function runCli(cwd, args) {
   process.exitCode = undefined;
   try {
     process.argv = ['node', CLI, ...args];
-    process.chdir(cwd);
+    process.cwd = () => cwd;
     await main();
     return { stdout: writes.join(''), exitCode: process.exitCode };
   } finally {
     process.stdout.write = originalWrite;
-    process.chdir(previousCwd);
+    process.cwd = originalCwd;
     process.argv = previousArgv;
     process.exitCode = previousExitCode;
   }

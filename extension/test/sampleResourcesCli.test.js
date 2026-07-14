@@ -82,20 +82,22 @@ function runCliSubprocess(root) {
 // parameters and reads no CLI args (cwd + the shared telemetry file drive
 // it entirely), and prints via console.log - NOT process.stdout.write, so
 // (per BL-350's own established seam, matching notifyDeadLettersCli.test.js's
-// "call the real main() in-process with process.chdir + a captured
-// console.log" pattern) this intercepts console.log directly rather than
+// "call the real main() in-process with a stubbed process.cwd() + a captured
+// console.log" pattern - a stub, never a real process.chdir(), because Node
+// disallows chdir() inside a worker thread and Stryker's vitest-runner always
+// runs tests in one) this intercepts console.log directly rather than
 // process.stdout.write, which Vitest does not route console output through.
 function runCli(root) {
-  const previousCwd = process.cwd();
+  const originalCwd = process.cwd;
   const logs = [];
   const originalLog = console.log;
   console.log = (...args) => logs.push(args.join(' '));
   try {
-    process.chdir(root);
+    process.cwd = () => root;
     main();
   } finally {
     console.log = originalLog;
-    process.chdir(previousCwd);
+    process.cwd = originalCwd;
   }
   return logs.join('\n');
 }
