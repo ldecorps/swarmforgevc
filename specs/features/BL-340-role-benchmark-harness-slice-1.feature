@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=361e7db60f21a02c48fe86c3d094aa22e43c16d98ffebcc98439441a368b7acd
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-14T01:39:13.598580212Z","feature_name":"Models are benchmarked against a SwarmForge role, not against generic coding","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-340-role-benchmark-harness-slice-1.feature","background_hash":"4b45580ff1941927e7671e41adee4332088ef1a36d456bcfd03cf6386d7f55ac","implementation_hash":"unknown","scenarios":[{"index":1,"name":"Every run records quality, latency and cost","scenario_hash":"6885ee1e631ddc06fe9ec11d71e13f36a2fa2a8d39bce20e644cb4c82712596f","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-07-14T01:39:13.598580212Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Models are benchmarked against a SwarmForge role, not against generic coding
 
 # BL-340: the human's own spec — existing benchmarks measure models as general-purpose
