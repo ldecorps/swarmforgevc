@@ -163,6 +163,7 @@ const DOMAINS = [
   require('./targetUseCaseInventorySteps'),
   require('./desktopVscodeOnWindowsSteps'),
   require('./topicRecordsCompleteAndDurableSteps'),
+  require('./roleLeaderboardSurfaceSteps'),
 ];
 
 function registerSteps(registry) {
