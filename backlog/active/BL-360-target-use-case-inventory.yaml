@@ -2,7 +2,7 @@ id: BL-360
 title: "Onboarding tells us where a target repo's edges are, but never what it DOES — the human asked for a use-case inventory"
 milestone: M8
 type: feature
-status: needs_design
+status: todo
 severity: medium
 priority: 4
 direction: human-requested
@@ -21,56 +21,93 @@ notes: |
   `proposeContractFromSurvey()` maps exactly those five facts into scope / out-of-scope /
   boundaries. Every one of them answers "WHERE ARE THE EDGES of this codebase" — the question you
   need in order to agree a MANDATE. None answers "WHAT DOES THIS APPLICATION DO, feature by
-  feature" — the question you need in order to CHANGE it. So a swarm can today agree a contract on
-  free-email-scanner and generate its `project.prompt`/`engineering.prompt` while still holding no
-  enumerated list of the use cases the app supports. That list is what the human asked for, and it
-  is net-new.
+  feature" — the question you need in order to CHANGE it. That list is what the human asked for, and
+  it is net-new.
 
   WHY THIS MATTERS BEYOND ONE REPO. A human pointing the swarm at an unfamiliar repo almost never
   wants "a scope contract" as the end goal — he wants to know what the thing already does, so he can
-  tweak or extend it. The contract is the vehicle; the capability inventory is the goal. Today the
-  vehicle ships and the goal does not. It also compounds BL-344's argument: if the swarm's first
-  survey misreads the target, the human's recourse is to hand-write the contract himself — and a
-  use-case inventory is the artifact that lets him TELL whether the survey misread it.
+  tweak or extend it. The contract is the vehicle; the capability inventory is the goal.
 
-  ── OPEN DESIGN QUESTIONS — THIS TICKET IS `needs_design`; THE HUMAN/COORDINATOR DECIDES ──────────
-  Both were raised by the intake and neither may be guessed:
-    1. DOES THE INVENTORY EXTEND THE SURVEY OR SIT ALONGSIDE IT? Either one survey gathering richer
-       facts (a sixth field on `RepoSurveyFacts`, flowing through the same pure boundary), or its own
-       pass with its own pure boundary. The survey's pure-function seam works either way, so this is
-       a genuine choice about how much the contract path should carry.
-    2. WHERE DOES THE ARTIFACT GO — the TARGET repo (like CONTRACT.md), or the human only? THE TRAP
-       TO DESIGN AROUND: `ProposedPrompts` are deliberately WITHHELD from the target repo until the
-       contract is agreed. An inventory the human needs in order to DECIDE on the contract must NOT
-       be gated behind agreeing to it. Whatever is chosen must not recreate that ordering.
-  The feature file as written today encodes the ordering constraint (scenario 03) but takes no
-  position on either question; the specifier amends it once they are answered, BEFORE the coder
-  starts.
+  ── BOTH DESIGN QUESTIONS: RESOLVED (2026-07-14). Build to this. ──────────────────────────────────
 
-  SCOPE (once the fork is resolved). `extension/src/onboarding/` — `contractTypes.ts` (the pure
-  boundary), `contractSurvey.ts` (`proposeContractFromSurvey`), `promptProposal.ts` (the withholding
-  precedent), and the CLI `extension/src/tools/propose-onboarding-contract.ts`. Per the CLI thin-main
-  rule, every bit of derivation/formatting stays in exported pure helpers. The survey ITSELF is agent
-  behaviour reading the target's code (never live I/O in a unit test) — the pure boundary is
-  everything downstream of the gathered facts, exactly as `RepoSurveyFacts` already establishes.
+  Q2, WHERE DOES THE ARTIFACT GO — ANSWERED BY THE HUMAN: into the TARGET REPO, like CONTRACT.md.
+  And it must NOT be gated behind agreeing the contract (he needs it in order to DECIDE on the
+  contract). The codebase already draws exactly this line, and the fix is to land on the correct
+  side of it:
+    - `buildContractBootstrapFiles(contract)` (`extension/src/config/targetBootstrap.ts:80-86`)
+      returns `.swarmforge/contract.yaml` + `CONTRACT.md` and takes NO `GateDecision`. Its files are
+      written and committed into the target IMMEDIATELY, marked `agreement: proposed`, precisely "so
+      the human can review/edit it during negotiation" (that file's own comment, :208).
+    - `initializeTargetPrompts(targetPath, prompts, gateDecision)` (:212) DOES take a `GateDecision`
+      and is WITHHELD while it holds — BL-269's "one agreement, whole artifact set".
+    THE INVENTORY RIDES THE FIRST PATH, NEVER THE SECOND. Enforce that STRUCTURALLY, not by comment:
+    the inventory's file builder must take NO `GateDecision` parameter, exactly as
+    `buildContractBootstrapFiles` takes none. Then it is not merely "currently ungated" — it is
+    ungateable, and the trap this ticket warns about cannot be reintroduced by a later edit.
+    Deliver it as a legible `USE-CASES.md` at the target repo root, beside `CONTRACT.md`. No
+    structured sibling (the contract has `contract.yaml` only because the build-start GATE parses it;
+    nothing parses the inventory — it is for the human). Give each entry a stable name so a later
+    change request can cite it (scenario 05).
 
-  RELATED: BL-262 (done — survey + proposed contract; the gap originates there), BL-269 (done —
-  target prompts from the same five facts), BL-344 (active — iterative negotiation loop; adjacent,
-  does not close this). BL-360 touches the same onboarding files as BL-344 — SEQUENCE them, do not
-  run them concurrently.
+  Q1, ONE SURVEY OR A SEPARATE PASS — THE SPECIFIER'S CALL, delegated by the coordinator. DECIDED:
+  ONE SURVEY, RICHER FACTS. Extend `RepoSurveyFacts` with the raw use-case observations gathered
+  while reading the target, and derive the inventory with a new PURE function
+  (`deriveUseCaseInventory(facts)`) sitting alongside the two that already consume that same record.
+  Do NOT build a second survey pass. Reasoning, so this is not re-litigated downstream:
+    1. It is not a choice between "reuse the existing facts" and "gather new ones" — the inventory
+       CANNOT be derived from today's five facts at all (scenario 02 requires code-derived evidence;
+       the five carry only edges, and `readmeSummary` is explicitly not enough). New raw facts are
+       needed EITHER WAY. The only real question is where they land.
+    2. One read of the target yields ONE internally-consistent fact set. Two independent passes can
+       DRIFT — a contract asserting the edges are X beside an inventory describing capabilities
+       inconsistent with X — and they cost two full agent reads of a large target.
+    3. The seam is ALREADY "one `RepoSurveyFacts` → N pure derivations": `proposeContractFromSurvey`
+       and `proposePromptsFromSurvey` both consume it and each ignores the fields it does not need.
+       A third derivation is the established, tested pattern. A second pass invents a parallel
+       boundary with no precedent and no reuse.
+    4. The ordering constraint then falls out FREE: the survey already runs before the proposal, so
+       an inventory derived from it is available before agreement with no new machinery.
+    5. The real "edges vs capabilities" distinction (the survey answers "where are the edges", never
+       "what does it DO") is preserved by keeping the DERIVATIONS separate — not by running two
+       passes. `proposeContractFromSurvey` simply ignores the new field, as it already does for
+       fields it does not use.
+
+  SCOPE. `extension/src/onboarding/contractTypes.ts` (the new field on `RepoSurveyFacts`; the
+  `UseCaseInventory` type), a new pure `deriveUseCaseInventory` + its markdown renderer alongside
+  `contractSurvey.ts`/`promptProposal.ts`, and `extension/src/config/targetBootstrap.ts` to add the
+  inventory to the ungated contract file set. Per the CLI thin-main rule, all derivation/formatting
+  stays in exported pure helpers; `extension/src/tools/propose-onboarding-contract.ts`'s `main()`
+  only wires I/O — and per the engineering rule, test `main()` IN-PROCESS, not only as a subprocess.
+  The SURVEY ITSELF is agent behaviour reading the target's code (never live I/O in a unit test) —
+  the pure boundary is everything downstream of the gathered facts, exactly as `RepoSurveyFacts`
+  already establishes.
+
+  SHAPE OF THE INVENTORY. Each entry: a stable name, a one-line summary of the capability, and the
+  place(s) in the TARGET's code that implement it. The empty case is a first-class outcome, not a
+  blank file: no discernible use cases renders an explicit statement that none were found
+  (scenario 06) — never an invented one, and never an empty document.
+
+  RELATED. BL-262 (done — survey + proposed contract; the gap originates there), BL-269 (done —
+  target prompts, and the withholding precedent this ticket must NOT copy). BL-344 is DONE, not
+  active — the earlier note here claiming it was active and needed sequencing against this ticket is
+  STALE; there is no live conflict. BL-344's revision path deliberately "always rewrites the whole
+  file set" (`targetBootstrap.ts:217-222`), so an inventory that joins the contract file set is kept
+  in place by that loop rather than being orphaned by it — a further reason to put it there.
 
   E2E QA PROCEDURE: point the swarm at the real target (ldecorps/free-email-scanner) and run the
-  onboarding survey. Assert it produces a use-case inventory a human can read: each entry names a
-  capability the app supports today and where in the target's code it lives. Assert the inventory is
-  available to the human BEFORE he agrees the contract (it is not withheld the way ProposedPrompts
-  are). Then take one inventory entry and raise a change request against it, and assert the request
-  can cite that use case as its starting point.
+  onboarding survey. Assert a `USE-CASES.md` is committed into the TARGET repo at proposal time,
+  beside `CONTRACT.md`, while `agreement` is still `proposed` — i.e. the human can read it BEFORE he
+  agrees anything, and it is NOT withheld the way the generated prompts are. Assert each entry names
+  a capability the app supports today and where in the target's code it lives. Then take one entry
+  and raise a change request against it, and assert the request can cite that use case by name as its
+  starting point.
 
 acceptance:
   feature: specs/features/BL-360-target-use-case-inventory.feature
   steps:
     - "Onboarding a target repo produces an inventory of the use cases it supports"
     - "The inventory is derived from the target's own code, not from its README alone"
+    - "The inventory is delivered into the target repo alongside the proposed contract"
     - "The human sees the inventory before he has to decide on the contract"
     - "The inventory is the base for the human's next change request"
     - "A target whose code supports no discernible use case says so plainly"
