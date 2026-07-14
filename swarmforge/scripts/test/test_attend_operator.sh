@@ -57,6 +57,29 @@ wait "$ATTEND_PID" 2>/dev/null || true
 pass "the pid registration is cleaned up when the attended session ends (never a stale slot-holder)"
 rm -rf "$F" "$FAKE_BIN"
 
+# ── cleanup never clobbers a LATER slot-holder's registration ────────────
+# Probes the exact window the script's own cleanup() guards: if a
+# different process (e.g. a disposable run) legitimately claims the pid
+# file AFTER this attended session's own process started but BEFORE its
+# trap fires, the trap must never delete that later registration just
+# because IT is exiting.
+F="$(mk_fixture)"
+FAKE_BIN="$(mk_fake_claude_bin 'sleep 2')"
+PATH="$FAKE_BIN:$PATH" bash "$ATTEND" "$F" &
+ATTEND_PID=$!
+for _ in $(seq 1 50); do
+  [[ -s "$F/.swarmforge/operator/operator.pid" ]] && break
+  sleep 0.1
+done
+[[ -s "$F/.swarmforge/operator/operator.pid" ]] || fail "setup: expected the attended session to register"
+OTHER_PID=$$
+echo "$OTHER_PID" > "$F/.swarmforge/operator/operator.pid"
+wait "$ATTEND_PID" 2>/dev/null || true
+[[ -s "$F/.swarmforge/operator/operator.pid" ]] || fail "expected the LATER slot-holder's registration to survive this session's own cleanup"
+[[ "$(cat "$F/.swarmforge/operator/operator.pid")" == "$OTHER_PID" ]] || fail "expected operator.pid to still name the later slot-holder, got: $(cat "$F/.swarmforge/operator/operator.pid")"
+pass "always-on-operator-presence-06: cleanup never removes a pid file a later slot-holder has already claimed"
+rm -rf "$F" "$FAKE_BIN"
+
 # ── refuses to double-launch when an Operator is already registered ──────
 F="$(mk_fixture)"
 FAKE_BIN="$(mk_fake_claude_bin 'sleep 30')"
