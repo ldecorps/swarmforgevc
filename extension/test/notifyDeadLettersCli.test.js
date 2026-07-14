@@ -61,7 +61,7 @@ function runCliSubprocess(root, overrides = {}) {
 // never {...process.env, ...overrides}.
 const NOTIFY_ENV_KEYS = ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'TELEGRAM_NOTIFY_FORCE_RESULT'];
 async function runCli(root, overrides = {}) {
-  const previousCwd = process.cwd();
+  const originalCwd = process.cwd;
   const previousEnv = Object.fromEntries(NOTIFY_ENV_KEYS.map((k) => [k, process.env[k]]));
   const writes = [];
   const originalWrite = process.stdout.write.bind(process.stdout);
@@ -74,11 +74,11 @@ async function runCli(root, overrides = {}) {
       if (overrides[key] === undefined) delete process.env[key];
       else process.env[key] = overrides[key];
     }
-    process.chdir(root);
+    process.cwd = () => root;
     await main();
   } finally {
     process.stdout.write = originalWrite;
-    process.chdir(previousCwd);
+    process.cwd = originalCwd;
     for (const key of NOTIFY_ENV_KEYS) {
       if (previousEnv[key] === undefined) delete process.env[key];
       else process.env[key] = previousEnv[key];

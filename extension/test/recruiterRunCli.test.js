@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { main } = require('../out/tools/recruiter-run');
 
 // BL-233 QA bounce (ddc0d351ed): the compiled recruiter-run CLI is a thin
 // presenter over orchestrator.ts, wired with the REAL discovery/secret-
@@ -16,7 +17,92 @@ function mkTmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-recruiter-run-'));
 }
 
-test('the compiled CLI discovers, acquires, qualifies, ranks, and prints a per-role report to stdout', () => {
+const CLI = path.join(__dirname, '..', 'out', 'tools', 'recruiter-run.js');
+
+function runCliSubprocess(workDir, args) {
+  return execFileSync('node', [CLI, ...args], { encoding: 'utf8', cwd: workDir });
+}
+
+// Runs the REAL main() in-process against real fixture files, so in-process
+// coverage and mutation tooling can see the branches a subprocess-only
+// smoke test cannot (the engineering article's CLI main()-thin-wrapper
+// rule; mirrors notifyDeadLettersCli.test.js's own identical seam). main()
+// (makeArgsGuardedMain's returned closure) reads its positional args off
+// process.argv.slice(2) directly (no parameters), so the in-process helper
+// must set process.argv to the same shape the subprocess would have
+// received, and stub process.cwd() (never a real process.chdir() - Node
+// disallows chdir() inside a worker thread, which is exactly how Stryker's
+// vitest-runner executes tests, so a real chdir here would pass under plain
+// `vitest run` but hard-abort every mutation run) so the SAME "secrets file
+// must never land inside the working directory" guard (which reads
+// process.cwd()) sees the same cwd.
+async function runCli(workDir, args) {
+  const originalCwd = process.cwd;
+  const previousArgv = process.argv;
+  const previousExitCode = process.exitCode;
+  const writes = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (chunk) => {
+    writes.push(chunk);
+    return true;
+  };
+  let exitCode;
+  try {
+    process.argv = ['node', CLI, ...args];
+    process.exitCode = undefined;
+    process.cwd = () => workDir;
+    await main();
+    exitCode = process.exitCode;
+  } finally {
+    process.stdout.write = originalWrite;
+    process.cwd = originalCwd;
+    process.argv = previousArgv;
+    process.exitCode = previousExitCode;
+  }
+  return { stdout: writes.join(''), exitCode };
+}
+
+test('a wall-blocked candidate is escalated in the report, not fabricated a key', async () => {
+  const fixturesDir = mkTmp();
+  const secretsFile = path.join(mkTmp(), 'secrets.json');
+  const workDir = mkTmp();
+
+  const candidatesFile = path.join(fixturesDir, 'candidates.json');
+  fs.writeFileSync(
+    candidatesFile,
+    JSON.stringify([
+      {
+        model: 'walled-model',
+        provider: 'beta-labs',
+        planCost: { amountUsd: 9, unit: 'monthly' },
+        signupPath: { url: 'https://beta.example/signup', automation: 'payment-wall' },
+      },
+    ])
+  );
+  const signupKeysFile = path.join(fixturesDir, 'signup-keys.json');
+  fs.writeFileSync(signupKeysFile, JSON.stringify({}));
+  const roleTrialsFile = path.join(fixturesDir, 'role-trials.json');
+  fs.writeFileSync(roleTrialsFile, JSON.stringify({}));
+  const currentModelsFile = path.join(fixturesDir, 'current-models.json');
+  fs.writeFileSync(currentModelsFile, JSON.stringify({}));
+
+  const result = await runCli(workDir, [candidatesFile, signupKeysFile, roleTrialsFile, secretsFile, currentModelsFile]);
+
+  const report = JSON.parse(result.stdout);
+  assert.deepEqual(report.escalated, [{ model: 'walled-model', wall: 'payment-wall' }]);
+  assert.deepEqual(report.roles, []);
+  assert.equal(fs.existsSync(secretsFile), false, 'no key was ever acquired, so the secrets file must never be created');
+});
+
+test('the CLI exits non-zero with a usage message when arguments are missing', async () => {
+  const result = await runCli(mkTmp(), []);
+  assert.equal(result.exitCode, 1);
+});
+
+// A single subprocess smoke test locks the compiled CLI's own wiring
+// (require.main === module, real argv/env boundary) - an ADDITION to the
+// in-process tests above, never the only cover for the real logic.
+test('the compiled CLI runs standalone as a subprocess and produces the same result', () => {
   const fixturesDir = mkTmp();
   // A SEPARATE tmpdir, outside the child process's cwd below - satisfies
   // createFileSecretStore's own "outside the target working directory"
@@ -51,12 +137,7 @@ test('the compiled CLI discovers, acquires, qualifies, ranks, and prints a per-r
   const currentModelsFile = path.join(fixturesDir, 'current-models.json');
   fs.writeFileSync(currentModelsFile, JSON.stringify({ hardener: 'incumbent-model', coordinator: 'incumbent-model' }));
 
-  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'recruiter-run.js');
-  const output = execFileSync(
-    'node',
-    [cliPath, candidatesFile, signupKeysFile, roleTrialsFile, secretsFile, currentModelsFile],
-    { encoding: 'utf8', cwd: workDir }
-  );
+  const output = runCliSubprocess(workDir, [candidatesFile, signupKeysFile, roleTrialsFile, secretsFile, currentModelsFile]);
 
   const report = JSON.parse(output);
   assert.equal(report.escalated.length, 0);
@@ -75,46 +156,4 @@ test('the compiled CLI discovers, acquires, qualifies, ranks, and prints a per-r
     const content = fs.readFileSync(path.join(workDir, file), 'utf8');
     assert.equal(content.includes('sk-live-test-only'), false, `the key must never land in the working directory (found in ${file})`);
   }
-});
-
-test('a wall-blocked candidate is escalated in the report, not fabricated a key', () => {
-  const fixturesDir = mkTmp();
-  const secretsFile = path.join(mkTmp(), 'secrets.json');
-  const workDir = mkTmp();
-
-  const candidatesFile = path.join(fixturesDir, 'candidates.json');
-  fs.writeFileSync(
-    candidatesFile,
-    JSON.stringify([
-      {
-        model: 'walled-model',
-        provider: 'beta-labs',
-        planCost: { amountUsd: 9, unit: 'monthly' },
-        signupPath: { url: 'https://beta.example/signup', automation: 'payment-wall' },
-      },
-    ])
-  );
-  const signupKeysFile = path.join(fixturesDir, 'signup-keys.json');
-  fs.writeFileSync(signupKeysFile, JSON.stringify({}));
-  const roleTrialsFile = path.join(fixturesDir, 'role-trials.json');
-  fs.writeFileSync(roleTrialsFile, JSON.stringify({}));
-  const currentModelsFile = path.join(fixturesDir, 'current-models.json');
-  fs.writeFileSync(currentModelsFile, JSON.stringify({}));
-
-  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'recruiter-run.js');
-  const output = execFileSync(
-    'node',
-    [cliPath, candidatesFile, signupKeysFile, roleTrialsFile, secretsFile, currentModelsFile],
-    { encoding: 'utf8', cwd: workDir }
-  );
-
-  const report = JSON.parse(output);
-  assert.deepEqual(report.escalated, [{ model: 'walled-model', wall: 'payment-wall' }]);
-  assert.deepEqual(report.roles, []);
-  assert.equal(fs.existsSync(secretsFile), false, 'no key was ever acquired, so the secrets file must never be created');
-});
-
-test('the CLI exits non-zero with a usage message when arguments are missing', () => {
-  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'recruiter-run.js');
-  assert.throws(() => execFileSync('node', [cliPath], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
 });

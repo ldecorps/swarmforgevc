@@ -9,7 +9,10 @@ const {
   formatBackfillResultLine,
   formatBackfillReport,
   resolveTargetPath,
+  main,
 } = require('../out/tools/backfill-human-approval');
+
+const CLI = path.join(__dirname, '..', 'out', 'tools', 'backfill-human-approval.js');
 
 // BL-251 backfill-seeds-field-05: a one-time, idempotent migration seeding
 // the structured human_approval field on live tickets from their existing
@@ -185,7 +188,41 @@ test('resolveTargetPath falls back to process.cwd() when no path argument is giv
 
 // ── end-to-end: the compiled CLI runs against a REAL fs fixture ──────────
 
-test('the compiled CLI backfills a real target path given as an argument and prints a summary', () => {
+function runCliSubprocess(cwd, extraArgs = []) {
+  return execFileSync('node', [CLI, ...extraArgs], { cwd, encoding: 'utf8' });
+}
+
+// Runs the REAL main() in-process against a real fixture directory, so
+// in-process coverage and mutation tooling can see the branches a
+// subprocess-only smoke test cannot (the CLI main()-thin-wrapper rule;
+// mirrors notifyDeadLettersCli.test.js's own identical seam). main() prints
+// via console.log (not process.stdout.write directly), and Vitest's own
+// console interception (globals: true) rewrites console.log independently
+// of process.stdout - so console.log itself is overridden here to capture
+// the report text. main() reads its target path from process.argv[2]
+// (resolveTargetPath), so argv is set to mimic the exact subprocess shape
+// and restored afterward.
+async function runCli(cwd, extraArgs = []) {
+  const originalCwd = process.cwd;
+  const previousArgv = process.argv;
+  const writes = [];
+  const originalLog = console.log;
+  console.log = (...args) => {
+    writes.push(args.join(' '));
+  };
+  try {
+    process.argv = ['node', CLI, ...extraArgs];
+    process.cwd = () => cwd;
+    await main();
+  } finally {
+    console.log = originalLog;
+    process.cwd = originalCwd;
+    process.argv = previousArgv;
+  }
+  return writes.join('\n') + '\n';
+}
+
+test('the compiled CLI backfills a real target path given as an argument and prints a summary', async () => {
   const targetPath = mkTmp();
   writeTicket(
     path.join(targetPath, 'backlog', 'active'),
@@ -193,15 +230,14 @@ test('the compiled CLI backfills a real target path given as an argument and pri
     'id: BL-900\ntitle: t\n\n# HUMAN APPROVAL: pending human review.\n'
   );
 
-  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'backfill-human-approval.js');
-  const output = execFileSync('node', [cliPath, targetPath], { encoding: 'utf8' });
+  const output = await runCli(targetPath, [targetPath]);
 
   assert.match(output, /seeded \(pending\).*BL-900\.yaml/);
   assert.match(output, /1 ticket\(s\) seeded, 1 checked\./);
   assert.match(fs.readFileSync(path.join(targetPath, 'backlog', 'active', 'BL-900.yaml'), 'utf8'), /human_approval: pending/);
 });
 
-test('the compiled CLI defaults to process.cwd() when no target path argument is given', () => {
+test('the compiled CLI defaults to process.cwd() when no target path argument is given', async () => {
   const targetPath = mkTmp();
   writeTicket(
     path.join(targetPath, 'backlog', 'paused'),
@@ -209,8 +245,24 @@ test('the compiled CLI defaults to process.cwd() when no target path argument is
     'id: BL-901\ntitle: t\n\n# HUMAN APPROVAL: approved by operator.\n'
   );
 
-  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'backfill-human-approval.js');
-  const output = execFileSync('node', [cliPath], { cwd: targetPath, encoding: 'utf8' });
+  const output = await runCli(targetPath);
 
   assert.match(output, /seeded \(approved\).*BL-901\.yaml/);
+});
+
+// A single subprocess smoke test locks the compiled CLI's own wiring
+// (require.main === module, real argv/cwd boundary) - an ADDITION to the
+// in-process tests above, never the only cover for the real logic.
+test('the compiled CLI runs standalone as a subprocess and produces the same result', () => {
+  const targetPath = mkTmp();
+  writeTicket(
+    path.join(targetPath, 'backlog', 'active'),
+    'BL-900.yaml',
+    'id: BL-900\ntitle: t\n\n# HUMAN APPROVAL: pending human review.\n'
+  );
+
+  const output = runCliSubprocess(targetPath, [targetPath]);
+
+  assert.match(output, /seeded \(pending\).*BL-900\.yaml/);
+  assert.match(output, /1 ticket\(s\) seeded, 1 checked\./);
 });
