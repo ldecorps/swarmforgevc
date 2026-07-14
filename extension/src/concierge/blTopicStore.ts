@@ -62,6 +62,28 @@ export function commitTopicRecord(targetPath: string, filePath: string, ticketId
   return commitScopedFile(targetPath, filePath, `BL topic record for ${ticketId}\n\nBy coder.`);
 }
 
+// BL-348: commitTopicRecord fails open by design (never throws, so
+// appendMessage's own write always succeeds regardless of whether the
+// commit does) - but a caller that then DISCARDS the boolean, as
+// appendMessage itself used to, turns every commit failure into
+// PERMANENT SILENCE: 31 of 34 real records were found untracked with no
+// trace of why. "Surfaced, never silently dropped" does not mean throw -
+// throwing here would turn a durability nice-to-have into an outage
+// (recordMessage's own adapter type is a fire-and-forget `void` callback
+// with no caller prepared to catch), it means LOUD by default, with the
+// reporter itself adapter-injected (this codebase's own established
+// testability convention - RouteAdapters, ShellRunFn) so a test can assert
+// the failure was reported without polluting real stderr, and a future
+// caller could route it somewhere richer than stderr without touching
+// appendMessage's own logic.
+export type CommitFailureReporter = (ticketId: string, filePath: string) => void;
+
+export const reportCommitFailureToStderr: CommitFailureReporter = (ticketId, filePath) => {
+  process.stderr.write(
+    `blTopicStore: FAILED to commit topic record for ${ticketId} at ${filePath} - the write succeeded locally but is NOT yet durable (git commit failed). It will be lost on a fresh checkout until a later successful commit.\n`
+  );
+};
+
 // seq is assigned from the CURRENT record's own length at append time - the
 // record is always read fresh immediately before writing (never cached
 // across calls), so this is correct for the single-writer-per-process
@@ -70,7 +92,8 @@ export function commitTopicRecord(targetPath: string, filePath: string, ticketId
 export function appendMessage(
   targetPath: string,
   ticketId: string,
-  message: { author: string; type: TopicMessageDirection; text: string; ts?: number }
+  message: { author: string; type: TopicMessageDirection; text: string; ts?: number },
+  reportCommitFailure: CommitFailureReporter = reportCommitFailureToStderr
 ): TopicMessage {
   const record = readRecord(targetPath, ticketId);
   const entry: TopicMessage = {
@@ -83,6 +106,9 @@ export function appendMessage(
   record.messages.push(entry);
   const filePath = recordPath(targetPath, ticketId);
   atomicWrite(filePath, JSON.stringify(record));
-  commitTopicRecord(targetPath, filePath, ticketId);
+  const committed = commitTopicRecord(targetPath, filePath, ticketId);
+  if (!committed) {
+    reportCommitFailure(ticketId, filePath);
+  }
   return entry;
 }
