@@ -56,7 +56,14 @@ AUDIT="$DAEMON_DIR/kill-all-audit.log"
 source "$SCRIPT_DIR/project_socket_id_lib.sh"
 SOCKET_GLOB="$ROOT/.swarmforge/tmux/"*.sock
 LEGACY_PROJECT_SOCKET_ID="$(project_socket_id "$ROOT")"
-LEGACY_SOCKET="/tmp/swarmforge-${UID}/${LEGACY_PROJECT_SOCKET_ID}.sock"
+# Test-only override, matching swarmforge.sh's own SWARMFORGE_CONFIG
+# convention: never read outside a test fixture. Lets the exact-match
+# scoping below be exercised against a private fixture directory without
+# ever creating or touching a file under the real, live
+# /tmp/swarmforge-${UID}/ this very swarm's own control socket may sit in
+# (see test_swarm_socket_not_in_tmp.sh's legacy-scoping scenario).
+LEGACY_SOCKET_DIR="${SWARMFORGE_LEGACY_SOCKET_DIR:-/tmp/swarmforge-${UID}}"
+LEGACY_SOCKET="$LEGACY_SOCKET_DIR/${LEGACY_PROJECT_SOCKET_ID}.sock"
 
 log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$AUDIT"
