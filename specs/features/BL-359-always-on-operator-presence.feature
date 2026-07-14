@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=43d9657a87fca2c6b5d416f37dbce0922b469bd125a8118bfd3cbf9524d816b0
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-14T10:19:09.296699847Z","feature_name":"The Operator is always reachable, and being reachable never costs the swarm its recovery arm","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-359-always-on-operator-presence.feature","background_hash":"9ef835017808abfb6f23bbc0e2fd0f8300500d574f54f6f8da9183f625322630","implementation_hash":"unknown","scenarios":[{"index":3,"name":"The Operator presence comes back by itself, with no human to restart it","scenario_hash":"7f6e1f507045e1fb4f93431adb1d4eb5e5dd877d53e6b5576cee946db080656c","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-14T10:19:09.296699847Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The Operator is always reachable, and being reachable never costs the swarm its recovery arm
 
 # BL-359: the human asked for "operator up & always on — it keeps dropping". He resolved the design
