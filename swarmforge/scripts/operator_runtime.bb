@@ -266,14 +266,6 @@
         {:reachable? false :sessions []}))
     {:reachable? true :sessions []}))
 
-(defn tmux-live-sessions
-  "Sessions (windows) tmux currently reports on the swarm socket. Empty when
-   the socket is gone or tmux errors. Thin sessions-only view of
-   tmux-control-status above for callers that only need the list, never the
-   reachability distinction."
-  []
-  (:sessions (tmux-control-status)))
-
 (defn capture-pane-on
   "Last -lines of a session's pane on an explicit socket, or nil when the
    socket is absent/dead or the capture fails."
@@ -712,7 +704,7 @@
   "Kills the build-agent tmux sessions on the SWARM socket only - NEVER the
    Operator's own socket (operator-socket-file, a distinct file). A no-op
    when the swarm socket is already gone/absent, same posture as
-   tmux-live-sessions above."
+   tmux-control-status above."
   []
   (when-let [sock (tmux-socket)]
     (process/sh {:continue true} "tmux" "-S" sock "kill-server")))
