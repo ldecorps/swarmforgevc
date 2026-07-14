@@ -11,7 +11,10 @@
 %% synthetic canary round-trip: canaryInjector.ts schedules it and
 %% handoffd.bb's canary-sweep! completes it as part of the daemon's own poll
 %% loop, so transportHealth.ts's health state reflects genuine delivery, not
-%% just daemon process liveness.
+%% just daemon process liveness. BL-356 added push-sweep! to the same daemon
+%% poll loop: it pushes local main to origin on a bounded retry/backoff, and
+%% alarms (never force-pushes) on divergence or exhausted retries, so the
+%% swarm's own work reaches origin without a human remembering to push.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
@@ -93,8 +96,9 @@ flowchart TB
   BACKLOGRW -->|reads/writes\n(atomicWrite)| BACKLOGDIR
 
   PANES -->|read/write| HANDOFFS
-  PANES -->|handoffd.bb: polls outbox,\nperforms chase sweeps,\ncanary sweep,\nnotifies via tmux send-keys| SOCKET
+  PANES -->|handoffd.bb: polls outbox,\nperforms chase sweeps,\ncanary sweep, push sweep,\nnotifies via tmux send-keys| SOCKET
   PANES -->|git commit/merge| TARGETREPO
+  DAEMONDIR -->|handoffd.bb push-sweep!:\ngit push main\n(bounded retry, no force-push)| TARGETREPO
 
   PANEL -->|postMessage: output, stage,\nbadgeUpdate, backlogUpdate, ...| TILES
   TILES -->|postMessage: keystroke,\nclick, command| PANEL
