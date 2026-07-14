@@ -218,7 +218,11 @@ export interface PollAdapters {
   // topicId(or default)->subjectId mapping so later messages in the same
   // context resolve through subjectForTopic instead of opening again, and
   // notifies the Operator the same way an existing-subject post does.
-  openSubjectAndRecord: (topicId: number | undefined, text: string) => Promise<string>;
+  // BL-389 rework (architect bounce): updateId rides this call too - a
+  // redelivered update (offset never advanced) would otherwise mint a
+  // SECOND, duplicate SUP-### for the same original conversation opener;
+  // the real implementation dedupes on it before ever minting anything.
+  openSubjectAndRecord: (topicId: number | undefined, text: string, updateId: number) => Promise<string>;
   // BL-298: looks up a BL-### backlog item's topic (topicRouter.ts's own
   // backlogForTopic, inverted from BL-297's outbound map) - checked before
   // treating an unmapped topic as a fresh support conversation.
@@ -293,7 +297,7 @@ async function processUpdate(update: TelegramUpdate, principalUserId: string, ad
   }
   if (decision.action === 'open-default' || decision.action === 'open-for-topic') {
     const topicId = decision.action === 'open-for-topic' ? decision.topicId : undefined;
-    await adapters.openSubjectAndRecord(topicId, decision.text);
+    await adapters.openSubjectAndRecord(topicId, decision.text, update.update_id);
     return 'posted';
   }
   // decision.action === 'drop': a DECISION, never a delivery attempt at

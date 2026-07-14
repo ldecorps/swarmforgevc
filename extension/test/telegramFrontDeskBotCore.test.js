@@ -302,13 +302,13 @@ test('BL-294 auto-open-01: a DM with no default subject yet opens one via openSu
       throw new Error('postToBridge should not be called for a fresh open - openSubjectAndRecord already delivered it');
     },
     subjectForTopic: () => undefined,
-    openSubjectAndRecord: async (topicId, text) => {
-      opened.push({ topicId, text });
+    openSubjectAndRecord: async (topicId, text, updateId) => {
+      opened.push({ topicId, text, updateId });
       return 'SUP-500';
     },
     nextOffset: (updates, current) => current + updates.length,
   });
-  assert.deepEqual(opened, [{ topicId: undefined, text: 'hello' }]);
+  assert.deepEqual(opened, [{ topicId: undefined, text: 'hello', updateId: 1 }]);
   assert.equal(result.posted, 1);
   assert.equal(result.dropped, 0);
 });
@@ -321,14 +321,34 @@ test('BL-294 auto-open-02: an unmapped topic opens a subject FOR that topic via 
       throw new Error('postToBridge should not be called for a fresh open');
     },
     subjectForTopic: () => undefined,
-    openSubjectAndRecord: async (topicId, text) => {
-      opened.push({ topicId, text });
+    openSubjectAndRecord: async (topicId, text, updateId) => {
+      opened.push({ topicId, text, updateId });
       return 'SUP-501';
     },
     nextOffset: (updates, current) => current + updates.length,
   });
-  assert.deepEqual(opened, [{ topicId: 42, text: 'new topic' }]);
+  assert.deepEqual(opened, [{ topicId: 42, text: 'new topic', updateId: 1 }]);
   assert.equal(result.posted, 1);
+});
+
+// BL-389 rework (architect bounce): openSubjectAndRecord was the one
+// adapter BL-389's own idempotency sweep left unprotected - proves the
+// update's own update_id is actually threaded through to the adapter (the
+// real implementation's own dedup key), not merely accepted and ignored.
+test('BL-389 rework: the open-path threads the update\'s own update_id through to openSubjectAndRecord', async () => {
+  const opened = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    getUpdates: async () => ({ success: true, updates: [{ update_id: 777, message: { message_id: 777, chat: { id: 1 }, from: { id: PRINCIPAL_ID }, text: 'hello' } }] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a fresh open');
+    },
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: async (topicId, text, updateId) => {
+      opened.push(updateId);
+      return 'SUP-777';
+    },
+  });
+  assert.deepEqual(opened, [777]);
 });
 
 test('BL-294 auto-open-03: a second message in an already-mapped context posts to the SAME subject, opening no second one', async () => {

@@ -9,6 +9,7 @@ const {
   computeBacklogDashboard,
   translateBacklogDashboard,
   computeNotDoneCount,
+  normalizeBenchmarkReport,
 } = require('../out/metrics/backlogDashboard');
 const { computeDeliveryMetrics } = require('../out/metrics/deliveryMetrics');
 const { createTranslationSession } = require('../out/i18n/translate');
@@ -417,6 +418,57 @@ test('computeBacklogDashboard omits roleLeaderboard when no benchmark report has
 
   const dashboard = computeBacklogDashboard(repo, [], Date.parse('2026-07-13T12:00:00Z'));
   assert.equal(Object.prototype.hasOwnProperty.call(dashboard, 'roleLeaderboard'), false);
+});
+
+// ── BL-386 architect bounce: docs/benchmarks/2026-07-13.json is a REAL,
+// already-committed report from BEFORE BL-386 changed the schema (taskId:
+// string -> taskIds: string[], + refusedTasks/taskScores) - read as-is, the
+// PWA's own report.taskIds[0] throws on the artifact this repo already
+// ships. normalizeBenchmarkReport is the read-boundary migration that
+// projects the legacy shape into the current one. ─────────────────────────
+
+function legacyBenchmarkReportJson() {
+  return {
+    schemaVersion: 1,
+    generatedAtIso: '2026-07-13T16:26:31.300Z',
+    taskId: 'coder-task-01-word-frequency',
+    qualityThreshold: 0.8,
+    qualityThresholdDescription: 'A model is "cheapest acceptable" only if its mean quality score is >= 0.8.',
+    provenance: 'Each recorded run executes the configured provider CLI headlessly.',
+    models: [
+      { modelId: 'claude-haiku', provider: 'claude', model: 'haiku', label: 'Claude Haiku 4.5', excluded: false, exclusionReason: null, repetitions: 2, meanQuality: 1, qualityStdDev: 0, meanCostUsd: 0.04, costStdDev: 0.001, meanDurationMs: 23000, meanTokens: 1700, runs: [] },
+    ],
+    ranking: { bestByQuality: 'claude-haiku', bestByValue: 'claude-haiku', cheapestAcceptable: 'claude-haiku', noAcceptableModelReason: null },
+  };
+}
+
+test('normalizeBenchmarkReport projects a legacy single-taskId report into the current taskIds/refusedTasks/taskScores shape', () => {
+  const normalized = normalizeBenchmarkReport(legacyBenchmarkReportJson());
+  assert.deepEqual(normalized.taskIds, ['coder-task-01-word-frequency']);
+  assert.deepEqual(normalized.refusedTasks, []);
+  assert.deepEqual(normalized.models[0].taskScores, []);
+  assert.equal(Object.prototype.hasOwnProperty.call(normalized, 'taskId'), false, 'the legacy field must not survive alongside the new one');
+});
+
+test('normalizeBenchmarkReport leaves an already-current-shape report byte-for-byte unchanged', () => {
+  const report = fakeBenchmarkReport();
+  report.models[0].taskScores = [{ taskId: 'coder-task-01-word-frequency', meanQuality: 1, qualityStdDev: 0, repetitions: 2 }];
+  assert.deepEqual(normalizeBenchmarkReport(report), report);
+});
+
+test('normalizeBenchmarkReport passes null through unchanged (no report ever committed)', () => {
+  assert.equal(normalizeBenchmarkReport(null), null);
+});
+
+test('computeBacklogDashboard normalizes a legacy-shape committed report instead of crashing downstream readers (BL-386 architect bounce)', () => {
+  const repo = mkTmp();
+  mkdirp(path.join(repo, 'backlog', 'active'));
+  mkdirp(path.join(repo, 'docs', 'benchmarks'));
+  fs.writeFileSync(path.join(repo, 'docs', 'benchmarks', '2026-07-13.json'), JSON.stringify(legacyBenchmarkReportJson()));
+
+  const dashboard = computeBacklogDashboard(repo, [], Date.parse('2026-07-13T18:00:00Z'));
+  assert.deepEqual(dashboard.roleLeaderboard.taskIds, ['coder-task-01-word-frequency']);
+  assert.deepEqual(dashboard.roleLeaderboard.refusedTasks, []);
 });
 
 // ── translateBacklogDashboard (BL-118) ───────────────────────────────────

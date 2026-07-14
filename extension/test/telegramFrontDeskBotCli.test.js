@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { parseCliArgs, conciergeTickIntervalMs, readRoleTicket, toFoldersSnapshot, ensureOperatorTopic, postOperatorContext, main } = require('../out/tools/telegram-front-desk-bot');
+const { parseCliArgs, conciergeTickIntervalMs, readRoleTicket, toFoldersSnapshot, ensureOperatorTopic, postOperatorContext, openSubjectAndRecord, main } = require('../out/tools/telegram-front-desk-bot');
 const { readRecord: readTopicRecord } = require('../out/concierge/blTopicStore');
 
 // parseNextSseRecord's own tests live in telegramFrontDeskBotCore.test.js -
@@ -251,6 +251,38 @@ test('BL-346 standing-operator-topic-01: creates the Operator topic and binds it
   assert.equal(calls.length, 1);
   const map = readTopicMapFixture(root);
   assert.equal(map['42'], 'OPERATOR');
+});
+
+// ── openSubjectAndRecord idempotency (BL-389 rework, architect bounce) ──
+// A redelivered update (offset never advanced - e.g. a crash between
+// openSubject minting a fresh SUP-### and the topicId mapping being
+// persisted) used to mint a SECOND, duplicate SUP-### for the same
+// original conversation opener. The REDELIVERY case itself never needs to
+// shell out to support_thread.bb at all (it short-circuits on the
+// already-recorded updateId), so it is fully testable here with no real
+// `bb` subprocess involved - proof this returns the EXISTING subjectId and
+// writes nothing new, not merely that it "would" behave that way.
+
+test('BL-389 rework: openSubjectAndRecord returns the EXISTING subjectId for an already-opened updateId, without writing anything new', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '7': 'SUP-500', 'update:900': 'SUP-500' });
+  const before = fs.readFileSync(topicMapPath(root), 'utf8');
+
+  const subjectId = await openSubjectAndRecord(root, 7, 'a redelivered message', 900);
+
+  assert.equal(subjectId, 'SUP-500');
+  assert.equal(fs.readFileSync(topicMapPath(root), 'utf8'), before, 'expected no write at all for an already-opened update');
+});
+
+test('BL-389 rework: a DIFFERENT updateId for the same topic is not short-circuited by an unrelated updateId already on record', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '7': 'SUP-500', 'update:900': 'SUP-500' });
+
+  // A genuinely new updateId (901, never 900) must NOT hit the short-circuit
+  // - it would proceed to mint via the real support_thread.bb CLI, which
+  // this fixture root has none of, so the call is expected to reject rather
+  // than silently return the OTHER update's subjectId.
+  await assert.rejects(() => openSubjectAndRecord(root, 7, 'a genuinely new message', 901));
 });
 
 test('the create call names the topic "Operator"', async () => {
