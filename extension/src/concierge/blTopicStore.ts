@@ -34,6 +34,17 @@ export function recordPath(targetPath: string, ticketId: string): string {
   return path.join(topicsDir(targetPath), `${ticketId}.json`);
 }
 
+// BL-331: the "is this ticket's record verified complete" predicate a
+// safe delete gate needs - extracted from what was previously an inline
+// arrow function local to telegram-front-desk-bot.ts's own
+// isAlreadyReconciled (BL-330), which needs the exact same check: a
+// record only counts as reaching its completed state once the EXACT
+// completion-summary text (topicRouter.ts's completionSummaryText) is
+// present as an outbound message, never merely "some messages exist".
+export function hasCompletionRecord(record: TopicRecord, completionText: string): boolean {
+  return record.messages.some((m) => m.type === 'outbound' && m.text === completionText);
+}
+
 export function readRecord(targetPath: string, ticketId: string): TopicRecord {
   const file = recordPath(targetPath, ticketId);
   try {

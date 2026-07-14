@@ -317,15 +317,114 @@
   (fs/create-dirs (fs/parent path))
   (spit (str path) (str/join "" (map #(str (json/generate-string %) "\n") events))))
 
+;; BL-369: events-file has TWO writers in TWO PROCESSES - the bridge (Node)
+;; appends via extension/src/bridge/operatorEventQueue.ts, this process reads
+;; then rewrites/deletes it on every tick. O_APPEND makes a bare append safe
+;; against another append, but it protects NOTHING against a concurrent
+;; whole-file rewrite: any event the bridge appends between one of the four
+;; read-modify-write sites below's OWN read and its OWN commit is silently
+;; destroyed the instant that commit lands (BL-369's root-cause incident).
+;; Reuses the EXACT mkdir-as-mutex shape swarm_handoff.bb's next-sequence
+;; already establishes for this codebase (mkdir is atomic on POSIX; a second
+;; fs/create-dir on an existing dir throws FileAlreadyExistsException, caught
+;; and treated as "held, retry") - a real filesystem operation, so the SAME
+;; lock directory is honored identically whether acquired from this JVM
+;; process or the bridge's Node process. Bounded (per the engineering
+;; article's own "any retry loop must be bounded" rule) rather than an
+;; infinite spin, so a genuinely stuck/orphaned lock surfaces loudly instead
+;; of hanging every future tick forever.
+(def events-lock-dir (fs/path op-dir "events.jsonl.lock"))
+;; env-overridable (same seam convention as interval-ms/swarm-check-ms above,
+;; and the engineering article's own "give the production timeout the same
+;; env-override seam" rule) so a test can drive the timeout path in
+;; milliseconds instead of the real 5s default - proving it fires without a
+;; slow, real-clock-bound test.
+(def events-lock-retry-delay-ms (env-ms "OPERATOR_EVENTS_LOCK_RETRY_DELAY_MS" 25))
+(def events-lock-max-wait-ms (env-ms "OPERATOR_EVENTS_LOCK_MAX_WAIT_MS" 5000))
+
+(defn- acquire-events-lock! []
+  (fs/create-dirs op-dir)
+  (let [deadline (+ (System/currentTimeMillis) events-lock-max-wait-ms)]
+    (loop []
+      (if (try
+            (fs/create-dir events-lock-dir)
+            true
+            (catch java.nio.file.FileAlreadyExistsException _
+              false))
+        nil
+        (if (>= (System/currentTimeMillis) deadline)
+          (throw (ex-info (str "events lock timed out after " events-lock-max-wait-ms
+                                "ms - a stale lock dir may need manual cleanup")
+                           {:lock-dir (str events-lock-dir)}))
+          (do (Thread/sleep events-lock-retry-delay-ms)
+              (recur)))))))
+
+(defn- release-events-lock! []
+  (fs/delete events-lock-dir))
+
+;; Test-only, defaults to 0 (no-op) in production: holds the lock an extra
+;; fixed duration right after acquiring it, before running the critical
+;; section - lets a test deterministically prove mutual exclusion against a
+;; REAL concurrent writer (the actual compiled bridge process attempting a
+;; real appendOperatorEvent while this hold is in effect) instead of relying
+;; on a real-timer race with no controllable interleaving.
+(def events-lock-test-hold-ms (env-ms "OPERATOR_EVENTS_LOCK_TEST_HOLD_MS" 0))
+
+;; The critical section must stay SHORT (just the events.jsonl read+write) -
+;; never wrap slow work (a subprocess launch, a network call) in this lock,
+;; since the bridge's own appendOperatorEvent blocks on the SAME lock and a
+;; long hold here would stall every inbound Telegram message for its
+;; duration. Each call site below is scoped to exactly its read-modify-write,
+;; nothing more.
+(defn with-events-lock* [f]
+  (acquire-events-lock!)
+  (when (pos? events-lock-test-hold-ms)
+    (Thread/sleep events-lock-test-hold-ms))
+  (try (f) (finally (release-events-lock!))))
+
+(defmacro with-events-lock [& body]
+  `(with-events-lock* (fn [] ~@body)))
+
 (defn enqueue-observed!
   "Append every observed event that survives operator-lib de-dup against what
    is already queued. Returns the number newly enqueued."
   [observed]
-  (let [pending (read-events events-file)
-        merged (operator-lib/merge-events pending observed)
-        added (drop (count pending) merged)]
-    (doseq [e added] (append-event! e))
-    (count added)))
+  (with-events-lock
+    (let [pending (read-events events-file)
+          merged (operator-lib/merge-events pending observed)
+          added (drop (count pending) merged)]
+      (doseq [e added] (append-event! e))
+      (count added))))
+
+;; BL-369 no-inbound-message-is-ever-lost-04: the safety net beneath the
+;; bridge's own retry-on-failure ingest (bridgeServer.ts's own
+;; ingestTelegramInboundMessage) - for whatever still slips through it (a
+;; crash before any retry ever landed, a message hand-planted directly into
+;; a transcript, etc). A thread message with an updateId (came from a real
+;; Telegram update) but no eventQueued flag was recorded but never
+;; confirmed queued - reclaims it by enqueueing the SAME TELEGRAM_TOPIC_
+;; MESSAGE shape the bridge itself would have, then marks it queued.
+;; Idempotent BY CONSTRUCTION: marking eventQueued true is the exact
+;; condition that makes the NEXT sweep see nothing left to reclaim for that
+;; message - the SAME flag the bridge's own ingest sets on success, never a
+;; second, parallel notion of "handled".
+(defn reconcile-unqueued-messages! []
+  (doseq [thread-id (support-thread-store/list-existing-ids! state-dir)]
+    (when-let [thread (support-thread-store/read-thread! state-dir thread-id)]
+      (let [unqueued-ids (->> (:messages thread)
+                               (filter #(and (:updateId %) (not (:eventQueued %))))
+                               (map :updateId)
+                               set)]
+        (when (seq unqueued-ids)
+          (doseq [update-id unqueued-ids]
+            (with-events-lock
+              (append-event! {:type "TELEGRAM_TOPIC_MESSAGE" :subject thread-id :updateId update-id})))
+          (support-thread-store/write-thread!
+           state-dir
+           (update thread :messages
+                   (fn [messages]
+                     (mapv (fn [m] (if (contains? unqueued-ids (:updateId m)) (assoc m :eventQueued true) m)) messages))))
+          (log! "reconcile-unqueued" thread-id (str "reclaimed=" (count unqueued-ids))))))))
 
 ;; BL-281 (reshaped): the runtime no longer touches Telegram, an offset, or
 ;; a topic mapping at all - the Front Desk Bot (a bridge client) owns all
@@ -479,14 +578,23 @@
     (when-not (zero? exit)
       (log! "bl-topic-consume-error" backlogId err))))
 
+;; BL-369: the events-file rewrite happens FIRST, inside the lock, BEFORE the
+;; (potentially slow - each consume shells to a node subprocess) consume
+;; loop - `remaining` only ever depends on the READ snapshot, never on the
+;; consume loop's own outcome, so claiming the rewrite up front and
+;; processing after is behavior-preserving while keeping the locked critical
+;; section to just the read+write (mirrors launch-operator!'s own
+;; claim-then-process ordering below).
 (defn bl-topic-approval-sweep! []
-  (let [pending (read-events events-file)
-        {:keys [to-consume remaining]} (operator-lib/partition-bl-topic-events pending)]
-    (when (seq to-consume)
-      (doseq [event to-consume]
-        (consume-bl-topic-message! event)
-        (log! "bl-topic-consumed" (:backlogId event)))
-      (write-events! events-file (vec remaining)))))
+  (let [to-consume (with-events-lock
+                      (let [pending (read-events events-file)
+                            {:keys [to-consume remaining]} (operator-lib/partition-bl-topic-events pending)]
+                        (when (seq to-consume)
+                          (write-events! events-file (vec remaining)))
+                        to-consume))]
+    (doseq [event to-consume]
+      (consume-bl-topic-message! event)
+      (log! "bl-topic-consumed" (:backlogId event)))))
 
 ;; ── BL-307: auto-hibernate on drain + mandatory closing pass ────────────────
 ;; Reuses the exact hand-proven park/relaunch mechanics (see memory
@@ -792,15 +900,16 @@
    back to events-file for a later tick. When the dispatch batch is a
    Telegram wake, its reply context is pre-fetched and written alongside."
   []
-  (let [pending (read-events events-file)
-        {:keys [dispatch deferred]} (telegram-topic-lib/select-dispatch-batch pending)
-        telegram-subject (dispatch-subject-of dispatch)]
-    (fs/delete-if-exists events-file)
-    (write-events! inflight-file dispatch)
-    (doseq [e deferred] (append-event! e))
-    (if telegram-subject
-      (write-telegram-reply-context! telegram-subject)
-      (fs/delete-if-exists telegram-reply-context-file)))
+  (with-events-lock
+    (let [pending (read-events events-file)
+          {:keys [dispatch deferred]} (telegram-topic-lib/select-dispatch-batch pending)
+          telegram-subject (dispatch-subject-of dispatch)]
+      (fs/delete-if-exists events-file)
+      (write-events! inflight-file dispatch)
+      (doseq [e deferred] (append-event! e))
+      (if telegram-subject
+        (write-telegram-reply-context! telegram-subject)
+        (fs/delete-if-exists telegram-reply-context-file))))
   (log! "launch-operator" "inflight=" (str (when (fs/exists? inflight-file)
                                              (count (read-events inflight-file)))))
   (if skip-launch?
@@ -867,10 +976,12 @@
    Never launches a second one (caller already checked
    front-desk-operator-running?)."
   []
-  (let [pending (read-events events-file)
-        {:keys [dispatch remaining]} (telegram-topic-lib/select-front-desk-dispatch-batch pending)
+  (let [{:keys [dispatch]} (with-events-lock
+                             (let [pending (read-events events-file)
+                                   partitioned (telegram-topic-lib/select-front-desk-dispatch-batch pending)]
+                               (write-events! events-file (vec (:remaining partitioned)))
+                               partitioned))
         thread-id (first (keep :subject dispatch))]
-    (write-events! events-file (vec remaining))
     (when thread-id
       (write-events! front-desk-inflight-file dispatch)
       (atomic-spit! front-desk-dispatch-context-file (json/generate-string {:thread-id thread-id}))
@@ -1071,6 +1182,13 @@
     ;; before the pending count below is even read, so a consumed event
     ;; never also counts toward the LLM-launch decision.
     (bl-topic-approval-sweep!)
+
+    ;; BL-369 no-inbound-message-is-ever-lost-04: reclaim any thread message
+    ;; that was durably recorded but never confirmed queued - BEFORE the
+    ;; pending count below is read, so a message this sweep just reclaimed
+    ;; counts toward THIS tick's launch decision rather than waiting a
+    ;; whole extra interval-ms for the next one.
+    (reconcile-unqueued-messages!)
 
     ;; BL-307: auto-hibernate on drain + mandatory closing pass - same
     ;; "best-effort side action every tick" posture as the sweeps above;

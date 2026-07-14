@@ -228,3 +228,28 @@ export async function closeForumTopic(
   }
   return { success: true };
 }
+
+// BL-331: deletes a forum topic PERMANENTLY (destroys its history) - the
+// verb closeForumTopic's own comment above deliberately avoided until a
+// safe gate existed. This client function is a thin, unconditional
+// wrapper, same posture as every other call in this file - the "only
+// after a verified archive" safety lives in topicDeletion.ts's own
+// decideTopicDeletion, never here.
+export interface DeleteForumTopicResult {
+  success: boolean;
+  error?: string;
+}
+
+export async function deleteForumTopic(
+  token: string,
+  chatId: string,
+  messageThreadId: number,
+  postFn: TelegramPostFn = defaultPost
+): Promise<DeleteForumTopicResult> {
+  const body = JSON.stringify({ chat_id: chatId, message_thread_id: messageThreadId });
+  const result = await callTelegramApi(token, 'deleteForumTopic', body, postFn);
+  if (!result.success) {
+    return { success: false, error: result.error };
+  }
+  return { success: true };
+}

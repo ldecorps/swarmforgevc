@@ -205,7 +205,11 @@ export function decideUpdateAction(
 
 export interface PollAdapters {
   getUpdates: (offset: number) => Promise<GetUpdatesResult>;
-  postToBridge: (subjectId: string, text: string) => Promise<boolean>;
+  // BL-369: updateId (the Telegram update's own update_id) rides every call
+  // so the bridge can dedupe a redelivered message by its natural
+  // idempotency key (scenario 03) - mirrors BL-320's id-based reply-outbox
+  // dedup, reusing the SAME posture rather than inventing a second one.
+  postToBridge: (subjectId: string, text: string, updateId: number) => Promise<boolean>;
   subjectForTopic: (topicId: number | undefined) => string | undefined;
   // BL-294: opens a fresh SUP-### for a not-yet-mapped context (topicId
   // undefined means the DM default) via the support store - the
@@ -223,7 +227,6 @@ export interface PollAdapters {
   // the Operator does with that context is the Operator's own behavior,
   // out of scope here.
   postOperatorContext: (backlogId: string, text: string) => Promise<boolean>;
-  nextOffset: (updates: TelegramUpdate[], currentOffset: number) => number;
 }
 
 export interface PollResult {
@@ -245,7 +248,7 @@ export interface PollResult {
 async function processUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<boolean> {
   const decision = decideUpdateAction(update, principalUserId, adapters.subjectForTopic, adapters.backlogForTopic);
   if (decision.action === 'post-existing') {
-    return adapters.postToBridge(decision.subjectId, decision.text);
+    return adapters.postToBridge(decision.subjectId, decision.text, update.update_id);
   }
   if (decision.action === 'operator-context') {
     return adapters.postOperatorContext(decision.backlogId, decision.text);
@@ -256,6 +259,27 @@ async function processUpdate(update: TelegramUpdate, principalUserId: string, ad
     return true;
   }
   return false;
+}
+
+// BL-369 (bug #1, the keystone defect): the offset must only ever advance
+// past a message whose delivery was CONFIRMED, never past one merely
+// FETCHED. Once Telegram's offset moves, it will NEVER redeliver anything
+// below it - so advancing past an undelivered update is a PERMANENT loss,
+// which is exactly what makes every other failure in this file degrade to
+// a mere retry once this is fixed, instead of a loss. Stops advancing at
+// the FIRST undelivered update in fetch order (never skips over it to ack
+// a later one that happened to succeed) - a later update in the same batch
+// is safely redelivered once the earlier failure clears, safe precisely
+// because bridgeServer.ts's own ingest is idempotent by update_id.
+export function offsetAfterDelivery(updates: TelegramUpdate[], currentOffset: number, delivered: boolean[]): number {
+  let offset = currentOffset;
+  for (let i = 0; i < updates.length; i++) {
+    if (!delivered[i]) {
+      return offset;
+    }
+    offset = updates[i].update_id + 1;
+  }
+  return offset;
 }
 
 // Adapter-injected: one poll-and-forward cycle. Every update decision goes
@@ -269,14 +293,17 @@ export async function pollAndForward(offset: number, principalUserId: string, ad
   }
   let posted = 0;
   let dropped = 0;
+  const delivered: boolean[] = [];
   for (const update of result.updates) {
-    if (await processUpdate(update, principalUserId, adapters)) {
+    const ok = await processUpdate(update, principalUserId, adapters);
+    delivered.push(ok);
+    if (ok) {
       posted += 1;
     } else {
       dropped += 1;
     }
   }
-  return { nextOffset: adapters.nextOffset(result.updates, offset), posted, dropped, ok: true };
+  return { nextOffset: offsetAfterDelivery(result.updates, offset, delivered), posted, dropped, ok: true };
 }
 
 // ── BL-302: poll-loop resilience (bounded backoff, escalation, isolation) ──
@@ -291,6 +318,14 @@ export interface PollBackoffConfig {
   // paneTailer's own "keeps failing... only pushes the message once"
   // posture, not a warning-per-cycle spam once deep into an outage.
   degradedThreshold: number;
+  // BL-369 (scenario 05): consecutive CYCLES the SAME undelivered update has
+  // blocked the offset (offsetAfterDelivery never advances past it) before
+  // escalating directly to the human - distinct from degradedThreshold,
+  // which counts whole-cycle getUpdates FAILURES, not per-message delivery
+  // failures within an otherwise-successful cycle. Each retry is a full
+  // poll cycle (the long-poll's own pacing is the backoff here, never a
+  // real wait inside this file - see runPollCycle's own docstring).
+  stuckRetryLimit: number;
 }
 
 // Reuses telegramRetry.ts's own exponential-capped math directly (the
@@ -315,9 +350,23 @@ export function shouldRaiseDegradedWarning(consecutiveFailures: number, config: 
   return consecutiveFailures === config.degradedThreshold;
 }
 
+// BL-369 (scenario 05): same exactly-once-per-streak shape as
+// shouldRaiseDegradedWarning above, for the distinct "stuck on one
+// undelivered message" signal.
+export function shouldEscalateStuckDelivery(stuckAttempts: number, config: PollBackoffConfig): boolean {
+  return stuckAttempts === config.stuckRetryLimit;
+}
+
 export interface PollLoopState {
   offset: number;
   consecutiveFailures: number;
+  // BL-369: consecutive successful CYCLES in a row where the offset failed
+  // to advance because at least one delivery failed (result.dropped > 0) -
+  // i.e. the SAME head-of-line update keeps failing. Resets to 0 the
+  // instant the offset actually advances again or a cycle has nothing
+  // undelivered; distinct from consecutiveFailures, which counts whole-
+  // cycle getUpdates failures, not per-message ones within an ok cycle.
+  stuckAttempts: number;
 }
 
 export interface PollCycleResult {
@@ -327,6 +376,12 @@ export interface PollCycleResult {
   // ticket's own root-cause analysis).
   delayMs: number;
   degradedWarning: boolean;
+  // BL-369 (scenario 05): true on the exact cycle stuckAttempts crosses
+  // config.stuckRetryLimit - "it has retried up to its limit" (each poll
+  // cycle IS a retry, the offset never having advanced past the stuck
+  // update) - never fires again for the SAME stuck episode, mirroring
+  // degradedWarning's own once-per-streak posture.
+  escalateStuckDelivery: boolean;
 }
 
 // Adapter-injected, ONE cycle: calls pollAndForward, then applies the pure
@@ -343,29 +398,45 @@ export async function runPollCycle(
 ): Promise<PollCycleResult> {
   const result = await pollAndForward(state.offset, principalUserId, adapters);
   if (result.ok) {
-    return { state: { offset: result.nextOffset, consecutiveFailures: 0 }, delayMs: 0, degradedWarning: false };
+    const offsetAdvanced = result.nextOffset !== state.offset;
+    const stuckAttempts = offsetAdvanced || result.dropped === 0 ? 0 : state.stuckAttempts + 1;
+    return {
+      state: { offset: result.nextOffset, consecutiveFailures: 0, stuckAttempts },
+      delayMs: 0,
+      degradedWarning: false,
+      escalateStuckDelivery: shouldEscalateStuckDelivery(stuckAttempts, config),
+    };
   }
   const consecutiveFailures = state.consecutiveFailures + 1;
   return {
-    state: { offset: result.nextOffset, consecutiveFailures },
+    state: { offset: result.nextOffset, consecutiveFailures, stuckAttempts: state.stuckAttempts },
     delayMs: computePollBackoffMs(consecutiveFailures, config),
     degradedWarning: shouldRaiseDegradedWarning(consecutiveFailures, config),
+    escalateStuckDelivery: false,
   };
 }
 
 // Adapter-injected: the per-cycle side effects (the degraded-warning
-// write, the backoff wait) split out of pollLoop's own for(;;) so that
-// loop stays a bare, complexity-1 forever loop - mirroring every other
-// "extract the branch, thin the loop" split in this file. Both decisions
-// (WHETHER to warn, HOW LONG to wait) already live in runPollCycle above;
-// this function only ever sequences the two adapter calls it's handed.
+// write, the escalation, the backoff wait) split out of pollLoop's own
+// for(;;) so that loop stays a bare, complexity-1 forever loop - mirroring
+// every other "extract the branch, thin the loop" split in this file. All
+// three decisions (WHETHER to warn, WHETHER to escalate, HOW LONG to wait)
+// already live in runPollCycle above; this function only ever sequences
+// the adapter calls it's handed. escalate is a REAL notification (BL-369
+// scenario 05: "the failure is escalated to the human"), distinct from
+// writeWarning's local stderr log - defaulted to a no-op so every existing
+// caller/test that has no reason to touch it is unaffected.
 export async function applyPollCycleResult(
   cycle: PollCycleResult,
   writeWarning: (message: string) => void,
-  wait: (ms: number) => Promise<void>
+  wait: (ms: number) => Promise<void>,
+  escalate: () => Promise<void> = async () => {}
 ): Promise<void> {
   if (cycle.degradedWarning) {
     writeWarning(`front-desk bot: poll degraded - ${cycle.state.consecutiveFailures} consecutive failures, still retrying\n`);
+  }
+  if (cycle.escalateStuckDelivery) {
+    await escalate();
   }
   if (cycle.delayMs > 0) {
     await wait(cycle.delayMs);
