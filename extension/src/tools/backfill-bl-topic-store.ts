@@ -14,7 +14,7 @@
 // Usage: backfill-bl-topic-store.js <project-root>
 import * as fs from 'fs';
 import * as path from 'path';
-import { appendMessage, readRecord } from '../concierge/blTopicStore';
+import { appendMessage, readRecord, CommitFailureReporter, reportCommitFailureToStderr } from '../concierge/blTopicStore';
 import { runCliMain } from './swarm-metrics';
 
 interface BacklogTopicMessageEvent {
@@ -53,7 +53,10 @@ export interface BackfillResult {
   skipped: number;
 }
 
-export function backfillBlTopicStore(targetPath: string): BackfillResult {
+export function backfillBlTopicStore(
+  targetPath: string,
+  reportCommitFailure: CommitFailureReporter = reportCommitFailureToStderr
+): BackfillResult {
   const events = readBlTopicMessageEvents(targetPath);
   let imported = 0;
   let skipped = 0;
@@ -64,7 +67,7 @@ export function backfillBlTopicStore(targetPath: string): BackfillResult {
       skipped += 1;
       continue;
     }
-    appendMessage(targetPath, event.backlogId, { author: 'human', type: 'inbound', text: event.text });
+    appendMessage(targetPath, event.backlogId, { author: 'human', type: 'inbound', text: event.text }, reportCommitFailure);
     imported += 1;
   }
   return { imported, skipped };
