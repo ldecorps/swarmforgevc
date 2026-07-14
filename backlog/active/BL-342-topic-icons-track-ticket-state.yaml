@@ -68,6 +68,6 @@ acceptance:
     - "Icon ids are validated against the set Telegram allows"
     - "A bulk backfill that is rate-limited still completes every topic"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: medium
