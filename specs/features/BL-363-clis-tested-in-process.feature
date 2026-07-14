@@ -9,8 +9,17 @@ Feature: A CLI's behavior is proven in-process, with one spawned smoke test to l
 # The rule this retroactively applies is already accepted (99ad07d, 2026-07-13): a CLI's logic must
 # be proven by calling its exported helpers and its main() IN-PROCESS, because logic reachable only
 # by spawning a subprocess is invisible to in-process coverage and mutation — its CRAP sits
-# unmeasured and its mutants survive. `notifyDeadLettersCli.test.js` already shows the working seam
-# (chdir into a fixture root, await main() directly, capture stdout, restore cwd in a finally).
+# unmeasured and its mutants survive. The working seam is `queueStatusCli.test.js` /
+# `recordRunCli.test.js`: STUB the accessors the CLI reads (`process.cwd = () => root`, `process.argv`,
+# and `os.homedir = () => home` where it resolves a home path), await main() directly, capture stdout,
+# restore every stub in a finally.
+#
+# NOT chdir. Reaching the fixture with `process.chdir()` — which the engineering article originally
+# and wrongly prescribed — hard-aborts every mutation run: Stryker's vitest-runner hardcodes
+# `pool: 'threads'`, and Node's chdir() throws inside a worker thread. In that same pool `os.homedir()`
+# ignores a `process.env.HOME` overlay and silently returns the REAL home, so a HOME-override test
+# writes outside its fixture. Both are invisible under a plain `vitest run` (forked-process pool), so
+# a green unit suite does not prove either is absent. See the engineering article's worker-thread rule.
 #
 # LOAD-BEARING CONSTRAINT: the rule is "in-process BY DEFAULT", not "never spawn". Each CLI keeps
 # exactly ONE genuine end-to-end spawn as a smoke test, so the shebang/argv/exit-code wiring stays
