@@ -43,7 +43,7 @@ const capture = { coder: '', qa: '' };
 const originals = {
   capturePane: tmuxClient.capturePane,
   sessionExists: tmuxClient.sessionExists,
-  getPaneCommand: tmuxClient.getPaneCommand,
+  getPanePidAndCommand: tmuxClient.getPanePidAndCommand,
   getPaneBaseIndex: tmuxClient.getPaneBaseIndex,
   resizeWindow: tmuxClient.resizeWindow,
   setHistoryLimit: tmuxClient.setHistoryLimit,
@@ -56,7 +56,7 @@ tmuxClient.capturePane = (_sock, target) => ({
   stderr: '',
 });
 tmuxClient.sessionExists = () => true;
-tmuxClient.getPaneCommand = () => 'claude';
+tmuxClient.getPanePidAndCommand = () => ({ pid: '1', command: 'claude' });
 tmuxClient.getPaneBaseIndex = () => 0;
 tmuxClient.resizeWindow = () => {};
 tmuxClient.setHistoryLimit = () => {};
