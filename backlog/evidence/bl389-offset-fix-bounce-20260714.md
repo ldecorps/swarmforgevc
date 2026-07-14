@@ -63,3 +63,28 @@ pre-fix behavior, on build compiled from post-fix main.
 
 Front desk goes DOWN again immediately (done, ~15:14) and STAYS DOWN until
 a fix demonstrably survives the restart-against-poisoned-offset case.
+
+## Addendum 16:07 — second manifestation: Telegram spam without commits
+
+The bot from the ~15:11 relaunch was still alive at 16:07 (the earlier kill
+either was not executed or did not take). New symptom shape:
+
+- The EPIC — Swarm Role Benchmark topic received "3 of 6 ticketed slice(s)
+  complete." roughly EVERY MINUTE from 15:13 through at least 16:07 (104
+  messages in the topic, 74 unread in the human's client).
+- Git side is QUIET this time: still exactly 213 `BL topic record for
+  BL-359` commits, none after 15:12:08. The replay's commit-minting side
+  effect stopped; its MESSAGING side effect did not.
+
+Two candidate mechanisms for the spec to separate:
+1. The same parked-offset replay, with the BL-389/390 work suppressing the
+   topic-record commit but NOT the epic-progress announcement — i.e. the
+   drop is still not terminal; only one of its side effects got guarded.
+2. An independent BL-341 defect: the epic progress announcer fires per
+   poll/event instead of on PROGRESS CHANGE ("3 of 6" never changed across
+   an hour of messages — a change-gate would have sent zero).
+
+Either way the acceptance bar from this bounce stands and extends: after a
+restart against a poisoned offset, ZERO repeated side effects of ANY kind —
+commits, topic messages, emails — not just zero commits. "3 of 6" said
+once is a feature; said 60 times it is the flood with a friendlier face.
