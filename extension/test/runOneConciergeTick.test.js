@@ -84,6 +84,7 @@ function fakeAdapters({ topicMap = {}, priorSnapshot = null, alreadyReconciled =
       readFolders: () => currentFolders,
       readGates: () => [],
       readRoleTicket: () => ({}),
+      readEpicDefinitions: () => ({}),
       readTickState: () => state,
       writeTickState: (next) => {
         state.snapshot = next.snapshot;

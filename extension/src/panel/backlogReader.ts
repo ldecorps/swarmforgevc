@@ -43,6 +43,23 @@ export interface BacklogItem {
   // (a file path or inline Gherkin string), for the topic-opening
   // summary's own "how it works" line.
   firstAcceptanceStep?: string;
+  // BL-341: which epic (a multi-slice body of work) this slice belongs to,
+  // as DATA - never inferred from notes: prose. Absent means no epic;
+  // every existing ticket stays valid, unchanged. The epic id namespace is
+  // separate from BL-### ticket ids (never a ticket id itself).
+  epic?: string;
+  // BL-341: the backlog's own `type:` field (e.g. "feature", "defect",
+  // "epic") - an ALREADY-LIVE convention this ticket discovered in use
+  // (BL-384's `type: epic`) rather than one it introduces. The one ticket
+  // per epic id carrying `type: epic` IS that epic's own definition
+  // (title + remainingSlices below), distinct from an ordinary slice
+  // merely declaring the same `epic:` id.
+  type?: string;
+  // BL-341: free-text descriptions of work known to belong to this epic
+  // but not yet ticketed - only meaningful on the epic-defining ticket
+  // itself (type: epic). Nothing in the backlog can derive an unticketed
+  // slice's existence on its own; a human/specifier authors this list.
+  remainingSlices?: string[];
 }
 
 const VALID_STATUSES = new Set(['todo', 'active', 'done']);
@@ -152,6 +169,9 @@ function assignOptionalFields(item: BacklogItem, content: string): void {
   assignIfDefined(item, 'humanApproval', normalizeHumanApproval(parseYamlScalar(content, 'human_approval')));
   assignIfTruthy(item, 'notes', parseYamlBlockScalar(content, 'notes'));
   assignIfTruthy(item, 'firstAcceptanceStep', parseFirstAcceptanceStep(content));
+  assignIfTruthy(item, 'epic', parseYamlScalar(content, 'epic'));
+  assignIfTruthy(item, 'type', parseYamlScalar(content, 'type'));
+  assignIfTruthy(item, 'remainingSlices', parseYamlList(content, 'remaining_slices'));
 }
 
 function toOptionalNumber(value: unknown): number | undefined {
@@ -260,6 +280,9 @@ function assignOptionalFieldsFromObject(item: BacklogItem, obj: Record<string, u
   assignIfDefined(item, 'humanApproval', normalizeHumanApproval(toOptionalString(obj.human_approval)));
   assignIfTruthy(item, 'notes', toTrimmedOptionalString(obj.notes));
   assignIfTruthy(item, 'firstAcceptanceStep', firstAcceptanceStepFromObject(obj));
+  assignIfTruthy(item, 'epic', toOptionalString(obj.epic));
+  assignIfTruthy(item, 'type', toOptionalString(obj.type));
+  assignIfTruthy(item, 'remainingSlices', toOptionalStringList(obj.remaining_slices));
 }
 
 function buildItemFromParsedObject(obj: Record<string, unknown>): BacklogItem | null {

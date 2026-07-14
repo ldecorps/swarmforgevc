@@ -422,3 +422,108 @@ test('needs-approval-02: a NeedsApproval whose post fails is retried on the next
   assert.deepEqual(sent, [{ topicId: 42, text: 'NeedsApproval: BL-1' }]);
   assert.ok(state.emittedKeys.includes('NeedsApproval:BL-1'));
 });
+
+// ── epics-as-first-class-topics (BL-341) ──────────────────────────────────
+
+// BL-341: the epic-defining ticket itself - an ALREADY-LIVE convention
+// this ticket discovered (BL-384's `type: epic`), reused rather than a
+// second data source. Kept in the PAUSED folder in every fixture below
+// (mirrors BL-384's own real status: "not directly promotable") so it
+// never itself triggers TaskStarted/TaskCompleted noise that would
+// contaminate assertions about its SLICES' own routing.
+function epicDefTicket(id, title, remainingSlices = []) {
+  return { id: `${id}-epic-ticket`, title, type: 'epic', epic: id, remainingSlices };
+}
+
+test('BL-341 epics-01/02: a slice declaring an epic opens the epic\'s topic on its first appearance', async () => {
+  const { adapters, setFolders, created, sent, topicMap } = fakeAdapters();
+  setFolders(folders({
+    paused: [epicDefTicket('dynamic-routing', 'Dynamic Routing')],
+    active: [{ id: 'BL-1', title: 'a fine feature', epic: 'dynamic-routing' }],
+  }));
+
+  await runConciergeTick(adapters);
+
+  assert.ok(created.includes('EPIC — Dynamic Routing'));
+  assert.ok(topicMap['dynamic-routing'] !== undefined, 'the epic id is recorded in the SAME topic map as ticket ids');
+  assert.ok(sent.some((m) => m.topicId === topicMap['dynamic-routing'] && m.text === 'Epic: Dynamic Routing'));
+});
+
+test('BL-341 epics-03: a second slice for the SAME epic reuses its topic - created once, not once per slice', async () => {
+  const { adapters, setFolders, created, topicMap } = fakeAdapters();
+  const epicTicket = epicDefTicket('dynamic-routing', 'Dynamic Routing');
+  setFolders(folders({ paused: [epicTicket], active: [{ id: 'BL-1', title: 'first slice', epic: 'dynamic-routing' }] }));
+  await runConciergeTick(adapters);
+  const epicTopicId = topicMap['dynamic-routing'];
+  const epicTopicsCreatedAfterFirst = created.filter((name) => name.startsWith('EPIC — ')).length;
+
+  // BL-2 is a brand new ticket, so it DOES get its own per-ticket topic
+  // (created grows by one for that) - the assertion below is scoped to the
+  // EPIC topic specifically, never re-created for BL-2's slice.
+  setFolders(folders({
+    paused: [epicTicket],
+    active: [{ id: 'BL-1', title: 'first slice', epic: 'dynamic-routing' }, { id: 'BL-2', title: 'second slice', epic: 'dynamic-routing' }],
+  }));
+  await runConciergeTick(adapters);
+
+  assert.equal(created.filter((name) => name.startsWith('EPIC — ')).length, epicTopicsCreatedAfterFirst, 'no second epic topic created');
+  assert.equal(topicMap['dynamic-routing'], epicTopicId, 'the same epic topic id is reused');
+});
+
+test('BL-341 epics-04: a slice completing posts progress into its epic\'s topic, stating how many slices remain', async () => {
+  const { adapters, setFolders, sent, topicMap } = fakeAdapters();
+  const epicTicket = epicDefTicket('dynamic-routing', 'Dynamic Routing');
+  setFolders(folders({
+    paused: [epicTicket],
+    active: [{ id: 'BL-1', title: 'a fine feature', epic: 'dynamic-routing' }, { id: 'BL-2', title: 'another slice', epic: 'dynamic-routing' }],
+  }));
+  await runConciergeTick(adapters);
+  const epicTopicId = topicMap['dynamic-routing'];
+
+  setFolders(folders({
+    paused: [epicTicket],
+    active: [{ id: 'BL-2', title: 'another slice', epic: 'dynamic-routing' }],
+    done: [{ id: 'BL-1', title: 'a fine feature', epic: 'dynamic-routing' }],
+  }));
+  await runConciergeTick(adapters);
+
+  assert.ok(sent.some((m) => m.topicId === epicTopicId && m.text === '1 of 2 ticketed slice(s) complete.'));
+});
+
+test('BL-341 epics-05/06: the epic states a remaining slice that has no ticket, and is never reported complete while it exists', async () => {
+  const { adapters, setFolders, sent, topicMap } = fakeAdapters();
+  const epicTicket = epicDefTicket('dynamic-routing', 'Dynamic Routing', ['warm-core/break-even tuning']);
+  setFolders(folders({ paused: [epicTicket], active: [{ id: 'BL-1', title: 'a fine feature', epic: 'dynamic-routing' }] }));
+  await runConciergeTick(adapters);
+  const epicTopicId = topicMap['dynamic-routing'];
+
+  // Every TICKETED slice of the epic completes...
+  setFolders(folders({ paused: [epicTicket], done: [{ id: 'BL-1', title: 'a fine feature', epic: 'dynamic-routing' }] }));
+  await runConciergeTick(adapters);
+
+  const progressMessages = sent.filter((m) => m.topicId === epicTopicId && m.text.includes('ticketed slice'));
+  const last = progressMessages[progressMessages.length - 1];
+  assert.match(last.text, /warm-core\/break-even tuning/, 'the untracked remaining slice is named');
+  assert.equal(last.text.includes('Epic complete'), false, 'never reported complete while an untracked slice remains');
+});
+
+test('BL-341 epics-07: a ticket with no epic behaves exactly as before - no epic topic created or posted into', async () => {
+  const { adapters, setFolders, created, sent } = fakeAdapters();
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature' }] }));
+
+  await runConciergeTick(adapters);
+  setFolders(folders({ done: [{ id: 'BL-1', title: 'a fine feature' }] }));
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(created, ['BL-1 - a fine feature']);
+  assert.ok(!sent.some((m) => m.text.includes('ticketed slice') || m.text.startsWith('Epic:')));
+});
+
+test('BL-341 epics-08: an epic with no defining ticket yet still gets a topic, falling back to its own id as the title', async () => {
+  const { adapters, setFolders, created } = fakeAdapters();
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', epic: 'undocumented-epic' }] }));
+
+  await runConciergeTick(adapters);
+
+  assert.ok(created.includes('EPIC — undocumented-epic'));
+});

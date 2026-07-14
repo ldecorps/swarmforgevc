@@ -472,10 +472,45 @@ async function subscribeReplies(
 // pass through unnarrowed (topic-opening-summary-01's own two derived
 // sources) instead of being dropped the way BL-301's gate snippet used to
 // be before BL-325 fixed that same class of narrowing.
-function toFoldersSnapshot(targetPath: string): BacklogFoldersSnapshot {
+//
+// BL-357/BL-341: humanApproval and epic now pass through too - both were
+// previously dropped here exactly the same way notes/firstAcceptanceStep
+// used to be, which would have left pendingApprovalFor/epicForBacklogId
+// correct in conciergeTick.ts but permanently DARK against the real live
+// backlog (unit tests alone never caught it, since they inject
+// BacklogFolderItem fixtures directly rather than going through this
+// narrowing).
+// BL-341: type/remainingSlices now pass through too, alongside
+// humanApproval/epic (BL-357/BL-341) - all previously dropped here exactly
+// the way notes/firstAcceptanceStep used to be, which would leave
+// epicDefinitionsFor correct in conciergeTick.ts but permanently DARK
+// against the real live backlog (unit tests alone never caught the earlier
+// two, since they inject BacklogFolderItem fixtures directly rather than
+// going through this narrowing).
+export function toFoldersSnapshot(targetPath: string): BacklogFoldersSnapshot {
   const folders = readBacklogFolders(targetPath);
-  const pick = (items: { id: string; title: string; notes?: string; firstAcceptanceStep?: string }[]) =>
-    items.map((item) => ({ id: item.id, title: item.title, notes: item.notes, firstAcceptanceStep: item.firstAcceptanceStep }));
+  const pick = (
+    items: {
+      id: string;
+      title: string;
+      notes?: string;
+      firstAcceptanceStep?: string;
+      humanApproval?: 'pending' | 'approved';
+      epic?: string;
+      type?: string;
+      remainingSlices?: string[];
+    }[]
+  ) =>
+    items.map((item) => ({
+      id: item.id,
+      title: item.title,
+      notes: item.notes,
+      firstAcceptanceStep: item.firstAcceptanceStep,
+      humanApproval: item.humanApproval,
+      epic: item.epic,
+      type: item.type,
+      remainingSlices: item.remainingSlices,
+    }));
   return { active: pick(folders.active), paused: pick(folders.paused), done: pick(folders.done) };
 }
 
