@@ -220,7 +220,7 @@ test('per-parcel mode (a single changed file) reports only violations reachable 
 // architect's own documented "run with no arguments for a full-repo scan"
 // gate procedure - swarmforge/roles/architect.prompt) - see
 // specs/features/BL-362-hot-test-files-stop-waiting.feature and
-// specs/pipeline/steps/dependencyGateWholeProjectSteps.js. Never simply
+// specs/pipeline/steps/hotTestFilesStopWaitingSteps.js. Never simply
 // deleted: the same assertion (the compiled CLI, run for real with no
 // scope args, exits 0 and prints PASSED for the true project tree) still
 // runs, just outside the fast unit suite.
