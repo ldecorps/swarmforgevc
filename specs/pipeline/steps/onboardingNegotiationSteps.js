@@ -25,6 +25,7 @@ const VALID_FACTS = {
   readmeSummary: 'A CLI tool.',
   seedVision: 'Ship the MVP, including the payments integration.',
   initialBacklogSummary: '5 tickets queued.',
+  useCaseObservations: [],
 };
 
 function mkTargetWithProposedContract() {
