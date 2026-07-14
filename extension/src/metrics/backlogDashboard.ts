@@ -248,16 +248,17 @@ export function buildBacklogDashboard(
 
 const SIDECAR_FILENAME_PATTERN = /^\d{4}-\d{2}-\d{2}\.json$/;
 
-// BL-213 cost-06a: the most recently committed docs/briefings/<date>.json
-// sidecar (ISO date filenames sort chronologically). No sidecar ever
-// committed, or a malformed/unreadable one, reads as null rather than
-// throwing - cost-06b's "hidden when absent" is handled entirely by
-// buildBacklogDashboard's own costHealth-omitted-when-null branch above.
-function readLatestCostHealthSidecar(targetPath: string): CostHealthSidecar | null {
-  const briefingsDir = path.join(targetPath, 'docs', 'briefings');
+// BL-213 cost-06a / BL-347: the most recently committed <date>.json sidecar
+// under a given directory (ISO date filenames sort chronologically). No
+// sidecar ever committed, or a malformed/unreadable one, reads as null
+// rather than throwing - the "hidden when absent" posture is handled
+// entirely by buildBacklogDashboard's own omitted-when-null branches, never
+// here. Shared by readLatestCostHealthSidecar and readLatestBenchmarkReport
+// below, which differ only in which committed directory they read.
+function readLatestCommittedSidecar<T>(sidecarDir: string): T | null {
   let files: string[];
   try {
-    files = fs.readdirSync(briefingsDir).filter((f) => SIDECAR_FILENAME_PATTERN.test(f));
+    files = fs.readdirSync(sidecarDir).filter((f) => SIDECAR_FILENAME_PATTERN.test(f));
   } catch {
     return null;
   }
@@ -266,35 +267,19 @@ function readLatestCostHealthSidecar(targetPath: string): CostHealthSidecar | nu
   }
   files.sort();
   try {
-    return JSON.parse(fs.readFileSync(path.join(briefingsDir, files[files.length - 1]), 'utf8'));
+    return JSON.parse(fs.readFileSync(path.join(sidecarDir, files[files.length - 1]), 'utf8'));
   } catch {
     return null;
   }
 }
 
-// BL-347: the most recently committed docs/benchmarks/<date>.json report
-// (ISO date filenames sort chronologically) - mirrors
-// readLatestCostHealthSidecar above exactly. No report ever committed, or a
-// malformed/unreadable one, reads as null rather than throwing; the
-// leaderboard-absent-vs-hidden posture is handled entirely by
-// buildBacklogDashboard's own roleLeaderboard-omitted-when-null branch.
+function readLatestCostHealthSidecar(targetPath: string): CostHealthSidecar | null {
+  return readLatestCommittedSidecar<CostHealthSidecar>(path.join(targetPath, 'docs', 'briefings'));
+}
+
+// BL-347: the most recently committed docs/benchmarks/<date>.json report.
 function readLatestBenchmarkReport(targetPath: string): BenchmarkReport | null {
-  const benchmarksDir = path.join(targetPath, 'docs', 'benchmarks');
-  let files: string[];
-  try {
-    files = fs.readdirSync(benchmarksDir).filter((f) => SIDECAR_FILENAME_PATTERN.test(f));
-  } catch {
-    return null;
-  }
-  if (files.length === 0) {
-    return null;
-  }
-  files.sort();
-  try {
-    return JSON.parse(fs.readFileSync(path.join(benchmarksDir, files[files.length - 1]), 'utf8'));
-  } catch {
-    return null;
-  }
+  return readLatestCommittedSidecar<BenchmarkReport>(path.join(targetPath, 'docs', 'benchmarks'));
 }
 
 // The one impure entry point: reads current backlog state, walks git
