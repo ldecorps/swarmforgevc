@@ -39,21 +39,30 @@ export type TopicDeletionDecision =
   | { action: 'delete'; topicId: number }
   | { action: 'keep'; reason: 'no-topic' | 'unverified' | 'retention-window' };
 
-// Pure: given one done ticket, the current topic mapping, and its OWN
-// serialised record, decides whether the topic is safe to delete right
-// now. "keep" is the default for every unresolved case; "delete" is the
-// one narrow path that survives every check, in order:
+// Pure: given one done ticket, the current topic mapping, its OWN
+// serialised record, and whether that record is CURRENTLY durably
+// committed (git, not merely present on disk), decides whether the topic
+// is safe to delete right now. "keep" is the default for every unresolved
+// case; "delete" is the one narrow path that survives every check, in
+// order:
 //   1. no topic ever mapped -> nothing to delete (a no-op, mirrors
 //      reconciliation's own "never creates a topic just to close it").
-//   2. the record has no verified completion message -> UNVERIFIED, keep
-//      (never delete on an attempted-but-unconfirmed archive - ticket
-//      scope items 2-4).
+//   2. the record has no verified completion message, OR it does but is
+//      NOT durably committed right now -> UNVERIFIED, keep (never delete
+//      on an attempted-but-unconfirmed archive - ticket scope items 2-4).
+//      "Verified" means BOTH the content is right AND it is durable -
+//      appendMessage's own write can succeed while its commit fails
+//      (blTopicStore.ts's own CommitFailureReporter exists for exactly
+//      that window), so content-only verification would pass a record
+//      that is still an uncommitted, losable working-tree file
+//      (architect bounce, BL-331).
 //   3. inside the retention window -> keep (still glanceable in the app -
 //      ticket scope item 6).
 export function decideTopicDeletion(
   ticket: BacklogFolderItem,
   topicMap: BacklogTopicMap,
   record: TopicRecord,
+  recordIsCommitted: boolean,
   nowMs: number,
   retentionWindowMs: number
 ): TopicDeletionDecision {
@@ -62,7 +71,7 @@ export function decideTopicDeletion(
     return { action: 'keep', reason: 'no-topic' };
   }
   const completionText = completionSummaryText(completionEvent(ticket.id), ticket.title);
-  if (!hasCompletionRecord(record, completionText)) {
+  if (!hasCompletionRecord(record, completionText) || !recordIsCommitted) {
     return { action: 'keep', reason: 'unverified' };
   }
   const completedAt = verifiedCompletedAtMs(record, completionText);
@@ -75,6 +84,11 @@ export function decideTopicDeletion(
 export interface TopicDeletionAdapters {
   getTopicMap: () => BacklogTopicMap;
   readRecord: (ticketId: string) => TopicRecord;
+  // BL-331 architect bounce: whether the record file is CURRENTLY durably
+  // committed (no uncommitted changes) - content correctness alone
+  // (hasCompletionRecord) cannot prove durability, since a write can
+  // succeed while its own commit fails.
+  isRecordCommitted: (ticketId: string) => boolean;
   deleteTopic: (topicId: number) => Promise<boolean>;
   // BL-331 scope item 5: drops the mapping so nothing later posts into a
   // dead thread id - the reverse of routeAdapters.recordTopicId, never
@@ -110,7 +124,8 @@ export async function sweepTopicDeletions(
   const topicMap = adapters.getTopicMap();
   for (const ticket of doneTickets) {
     const record = adapters.readRecord(ticket.id);
-    const decision = decideTopicDeletion(ticket, topicMap, record, nowMs, retentionWindowMs);
+    const recordIsCommitted = adapters.isRecordCommitted(ticket.id);
+    const decision = decideTopicDeletion(ticket, topicMap, record, recordIsCommitted, nowMs, retentionWindowMs);
     if (decision.action === 'keep') {
       if (decision.reason === 'unverified') {
         adapters.reportUnverifiedDeletion(ticket.id);
