@@ -153,6 +153,7 @@ const DOMAINS = [
   require('./devHostLauncherSteps'),
   require('./hotTestFilesStopWaitingSteps'),
   require('./systemdUnitsCanStartSteps'),
+  require('./corruptHandoffNeverDispatchedSteps'),
 ];
 
 function registerSteps(registry) {
