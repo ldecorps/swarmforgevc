@@ -1,0 +1,65 @@
+id: BL-392
+title: "The briefing email subject swallows the whole lede — bound and markdown-strip the headline"
+milestone: M8
+type: bug
+status: todo
+severity: medium
+priority: 3
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-briefing-email-presentation.md (Finding 1) — the human (ldecorps), 2026-07-14, from the received morning-briefing email: 'the title is far too long'. Root-caused in code by the relaying Claude Code session. Approach confirmed with the human 2026-07-14: bound/strip the first line (keep the positional contract), NOT an explicit-title contract."
+
+notes: |
+  THE DEFECT, CONFIRMED IN CODE. `build-briefing-subject` (briefing_email_lib.bb:46) appends the
+  briefing's FIRST NON-EMPTY LINE verbatim as the subject headline (BL-099 briefing-03: "subject
+  names the date and the headline"). That contract silently assumed the briefing opens with a short
+  headline. Today's briefing style opens with a multi-sentence lede PARAGRAPH on one markdown line —
+  `docs/briefings/2026-07-14.md` line 1 is ~700 chars including raw `**bold**` markers — so the
+  subject became the entire paragraph. The human's screenshot was a screen-and-a-half of subject.
+
+  THE FIX THE HUMAN CHOSE (of the two the intake offered). Keep the positional "first non-empty line
+  = headline" contract — do NOT couple to an explicit `# heading`/`headline:` line in the briefing
+  author. Just make the derived headline safe: strip markdown markers and bound the length. This is
+  self-contained in the emailer; no change to how briefings are authored.
+
+  THE LIVE SEAM — VERIFIED, NOT ASSUMED. `build-briefing-subject [date-label content]` is a PURE
+  function; `send-unsent-briefings!` (line 175) is its only production caller. Changing the function
+  changes the subject everywhere it is used. `banked_briefing_lib.bb` documents the same first-line
+  coupling but composes the SAME `content`, so fixing the shared function covers both compose paths —
+  no second edit site. Pure in, pure out: fully unit-testable with no live swarm, tmux, or Telegram.
+
+  CONTRACT VALUES (pin these as named constants; the tests assert against the constant).
+  - Headline limit: 80 characters. A headline longer than the limit is truncated at a WORD boundary
+    (never mid-word) and ends with a single-character ellipsis ("…"), so the total is still bounded.
+  - Markdown stripping: remove emphasis/heading markers (`**`, `*`, `_`, backticks, leading `#`) from
+    the headline so a raw marker never appears in a mail client's subject line. The guard the human
+    asked for — "never contains `**`" — falls out of this.
+  - The date-only path is unchanged: a blank/empty briefing still yields `SwarmForge briefing <date>`
+    with NO trailing " - " separator (scenario 04 pins that the separator is not left dangling).
+
+  ON THE TWO INTENTIONAL NEAR-DUPLICATES (IR-DRY flags them). Scenarios 01 and 03 differ only by
+  "longer than" vs "shorter than the headline limit" — that difference is LOAD-BEARING (truncate vs
+  pass-through), not accidental drift, so both stay. Register ONE value-aware handler if convenient,
+  but do not collapse the two Givens into one.
+
+  E2E QA PROCEDURE. Point the headless briefing send at a real committed briefing whose first line is
+  a long lede paragraph containing `**bold**`, and inspect the actual sent subject (or the built
+  subject via the pure function against `docs/briefings/2026-07-14.md`): assert it is
+  `SwarmForge briefing 2026-07-14 - <=80-char headline ending in …>`, contains no `**`, and is not
+  cut mid-word. Assert a short-headline briefing is unchanged, and an empty briefing is date-only.
+
+  ADJACENT, DO NOT DUPLICATE. BL-393 (render the body to HTML) is the OTHER half of this intake and
+  edits the SAME file — it depends on this ticket and must not run concurrently with it. BL-308
+  (banked headless briefing) owns WHO composes; this is only how the result is titled.
+
+acceptance:
+  feature: specs/features/BL-392-briefing-subject-bounded.feature
+  steps:
+    - "A long lede line is truncated to a bounded, word-boundary headline with an ellipsis"
+    - "Markdown emphasis/heading markers are stripped from the headline"
+    - "A headline already within the limit passes through unchanged"
+    - "An empty briefing yields a date-only subject with no dangling separator"
+
+human_approval: pending-review
+
+mutation_cost: low
