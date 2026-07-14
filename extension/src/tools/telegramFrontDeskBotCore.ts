@@ -254,19 +254,28 @@ export interface PollResult {
 // Split out of pollAndForward so that function's own branch count stays
 // low - one update's whole decision -> outcome, true when posted/opened,
 // false when dropped.
+// BL-357: split out of processUpdate below so its own branch count stays at
+// the pre-BL-357 level (cleaner review: the new isApprovalReplyText branch
+// pushed processUpdate's own CRAP over threshold at full coverage - the
+// same class of split messageTextForEvent/routeEvent already use in
+// topicRouter.ts for the identical reason).
+async function deliverOperatorContext(backlogId: string, text: string, adapters: PollAdapters): Promise<boolean> {
+  const posted = await adapters.postOperatorContext(backlogId, text);
+  // BL-357: fires alongside the context post above, never instead of it -
+  // a reply that approves a ticket is still ALSO context for it.
+  if (isApprovalReplyText(text)) {
+    await adapters.recordApprovalReply(backlogId);
+  }
+  return posted;
+}
+
 async function processUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<boolean> {
   const decision = decideUpdateAction(update, principalUserId, adapters.subjectForTopic, adapters.backlogForTopic);
   if (decision.action === 'post-existing') {
     return adapters.postToBridge(decision.subjectId, decision.text, update.update_id);
   }
   if (decision.action === 'operator-context') {
-    const posted = await adapters.postOperatorContext(decision.backlogId, decision.text);
-    // BL-357: fires alongside the context post above, never instead of it -
-    // a reply that approves a ticket is still ALSO context for it.
-    if (isApprovalReplyText(decision.text)) {
-      await adapters.recordApprovalReply(decision.backlogId);
-    }
-    return posted;
+    return deliverOperatorContext(decision.backlogId, decision.text, adapters);
   }
   if (decision.action === 'open-default' || decision.action === 'open-for-topic') {
     const topicId = decision.action === 'open-for-topic' ? decision.topicId : undefined;
