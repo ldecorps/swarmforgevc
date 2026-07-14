@@ -22,7 +22,7 @@ import { createNodeTestQualityEvaluator } from '../benchmark/nodeTestQualityEval
 import { loadTaskSpec } from '../benchmark/taskFixture';
 import { runBenchmark } from '../benchmark/runBenchmark';
 import { writeBenchmarkReport, commitBenchmarkReport } from '../benchmark/reportArtifact';
-import { BenchmarkModelConfig, BenchmarkReport, ExecutorResult, ModelExecutor, QualityEvaluator, TaskSpec } from '../benchmark/types';
+import { BenchmarkModelConfig, BenchmarkReport, ModelExecutor, QualityEvaluator, TaskSpec } from '../benchmark/types';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 
 export interface RunRoleBenchmarkArgs {
@@ -116,29 +116,21 @@ export async function runRoleBenchmarkCli(args: RunRoleBenchmarkArgs, deps: RunR
   deps.print(report);
 }
 
-// BL-340 E2E test seam, mirroring notify-dead-letters.ts's own
-// TELEGRAM_NOTIFY_FORCE_RESULT convention exactly - no real `claude`
-// subprocess is ever spawned under it. The real evaluator/write/commit
-// stay real (a real node:test run against real fixture code, a real git
-// commit against a real repo); only this genuinely external boundary (an
-// LLM actually performing the task) is fakeable, and only via this
-// explicit env seam.
-function resolveExecutor(): ModelExecutor {
-  const forced = process.env.RUN_ROLE_BENCHMARK_EXECUTOR_FORCE_RESULT;
-  if (forced) {
-    const result = JSON.parse(forced) as ExecutorResult;
-    return { async execute() { return result; } };
-  }
-  return createClaudeCliExecutor();
-}
-
+// createClaudeCliExecutor() itself checks RUN_ROLE_BENCHMARK_EXECUTOR_FORCE_RESULT
+// (claudeCliExecutor.ts's own claudeCliForceResultFromEnv, mirroring
+// notify-dead-letters.ts's TELEGRAM_NOTIFY_FORCE_RESULT convention) before
+// ever spawning a real `claude` subprocess - so no separate seam is needed
+// here. The real evaluator/write/commit stay real (a real node:test run
+// against real fixture code, a real git commit against a real repo); only
+// that one genuinely external boundary (an LLM actually performing the
+// task) is fakeable, and only via that explicit env seam.
 function defaultDeps(): RunRoleBenchmarkDeps {
   return {
     loadTask: loadTaskSpec,
     readModels: (modelsFile) => JSON.parse(fs.readFileSync(modelsFile, 'utf8')) as BenchmarkModelConfig[],
     mkScratchRoot: () => fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-benchmark-')),
     nowIso: () => new Date().toISOString(),
-    executor: resolveExecutor(),
+    executor: createClaudeCliExecutor(),
     evaluator: createNodeTestQualityEvaluator(),
     writeReport: writeBenchmarkReport,
     commitReport: commitBenchmarkReport,

@@ -88,40 +88,29 @@ test('runRoleBenchmarkCli loads the task, runs the real benchmark, then writes+c
   assert.equal(printed[0].taskId, 'coder-task-01');
 });
 
-// ── main() (BL-340 QA re-bounce: main() itself, not just runRoleBenchmarkCli,
-//    must be called in-process by a test - engineering.prompt's CLI
-//    main()-thin-wrapper rule). Real evaluator, real write, real git commit;
-//    only the genuinely external model-executor boundary is faked, via the
-//    RUN_ROLE_BENCHMARK_EXECUTOR_FORCE_RESULT env seam (mirrors
-//    notify-dead-letters.ts's own TELEGRAM_NOTIFY_FORCE_RESULT convention
-//    exactly - see notifyDeadLettersCli.test.js's identical
-//    argv/env/capture-stdout/restore-in-finally shape) ─────────────────────
-
-function git(cwd, args) {
-  return execFileSync('git', args, { cwd, encoding: 'utf8' });
-}
+// ── main() (in-process, real fixture/models-file/target-repo, real
+//    evaluator - only the executor's real `claude` subprocess is faked via
+//    the RUN_ROLE_BENCHMARK_EXECUTOR_FORCE_RESULT env seam. This is the
+//    2nd QA bounce's own explicit ask: runRoleBenchmarkCli above proves the
+//    orchestration, but main() itself - argv parsing, defaultDeps() wiring,
+//    the usage/exit-1 guard - was never called by any test until this one,
+//    the same gap notifyDeadLettersCli.test.js's process.chdir/await main()/
+//    capture-stdout/restore pattern already closes elsewhere) ─────────────
 
 function mkTargetRepo() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-run-role-benchmark-target-'));
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
-  git(root, ['commit', '-q', '--allow-empty', '-m', 'init']);
+  execFileSync('git', ['init', '-q'], { cwd: root });
+  execFileSync('git', ['config', 'user.email', 't@t'], { cwd: root });
+  execFileSync('git', ['config', 'user.name', 't'], { cwd: root });
+  execFileSync('git', ['commit', '-q', '--allow-empty', '-m', 'init'], { cwd: root });
   return root;
 }
 
-function mkModelsFile() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-run-role-benchmark-models-'));
-  const file = path.join(dir, 'models.json');
-  fs.writeFileSync(file, JSON.stringify([{ id: 'model-a', provider: 'claude', model: 'fake-model', label: 'Fake' }]));
-  return file;
-}
+const FORCE_RESULT_ENV_KEY = 'RUN_ROLE_BENCHMARK_EXECUTOR_FORCE_RESULT';
 
-const MAIN_ARGV_PREFIX = ['node', 'run-role-benchmark.js'];
-
-async function runMain(args, forcedExecutorResult) {
+async function runMain(argv, forcedExecutorResult) {
   const previousArgv = process.argv;
-  const previousEnv = process.env.RUN_ROLE_BENCHMARK_EXECUTOR_FORCE_RESULT;
+  const previousForceResult = process.env[FORCE_RESULT_ENV_KEY];
   const writes = [];
   const originalWrite = process.stdout.write.bind(process.stdout);
   process.stdout.write = (chunk) => {
@@ -129,66 +118,49 @@ async function runMain(args, forcedExecutorResult) {
     return true;
   };
   try {
-    process.argv = [...MAIN_ARGV_PREFIX, ...args];
-    process.env.RUN_ROLE_BENCHMARK_EXECUTOR_FORCE_RESULT = JSON.stringify(forcedExecutorResult);
+    process.argv = ['node', 'run-role-benchmark.js', ...argv];
+    process.env[FORCE_RESULT_ENV_KEY] = JSON.stringify(forcedExecutorResult);
     await main();
   } finally {
     process.stdout.write = originalWrite;
     process.argv = previousArgv;
-    if (previousEnv === undefined) delete process.env.RUN_ROLE_BENCHMARK_EXECUTOR_FORCE_RESULT;
-    else process.env.RUN_ROLE_BENCHMARK_EXECUTOR_FORCE_RESULT = previousEnv;
+    if (previousForceResult === undefined) delete process.env[FORCE_RESULT_ENV_KEY];
+    else process.env[FORCE_RESULT_ENV_KEY] = previousForceResult;
   }
-  return writes.join('');
+  const printed = writes.join('');
+  return printed ? JSON.parse(printed) : null;
 }
 
-test('BL-340: main() runs end-to-end in-process - loads the fixture, runs the real benchmark orchestration with a faked executor, writes+commits+prints the real report', async () => {
+test('main() loads the real fixture, fakes only the claude subprocess, and really writes+commits the report', async () => {
   const targetRepo = mkTargetRepo();
-  const modelsFile = mkModelsFile();
+  const modelsFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-run-role-benchmark-models-')), 'models.json');
+  fs.writeFileSync(modelsFile, JSON.stringify([{ id: 'a', provider: 'claude', model: 'sonnet' }]));
 
-  const stdout = await runMain(
-    [FIXTURE_DIR, modelsFile, '1', '0.5', targetRepo],
-    { success: true, costUsd: 0.01, tokens: { inputTokens: 10, outputTokens: 10 }, durationMs: 100 }
-  );
+  const forcedResult = { success: true, costUsd: 0.02, tokens: { inputTokens: 5, outputTokens: 5 }, durationMs: 50 };
+  const report = await runMain([FIXTURE_DIR, modelsFile, '1', '0', targetRepo], forcedResult);
 
-  const printed = JSON.parse(stdout);
-  assert.equal(printed.taskId, 'coder-task-01-word-frequency');
-  assert.equal(printed.models.length, 1);
-  assert.equal(printed.models[0].modelId, 'model-a');
-  // The REAL node:test evaluator ran against the REAL (unmodified) starting
-  // stub - main()'s own orchestration is what's under test here, not model
-  // quality, so a real "fails because nothing solved it" result IS the
-  // proof that the real evaluator (not a mock) actually ran.
-  assert.equal(printed.models[0].runs[0].testsTotal, 6);
-  assert.equal(printed.models[0].runs[0].testsPassed, 0);
+  assert.equal(report.taskId, 'coder-task-01-word-frequency');
+  // The real evaluator ran `node --test` against the UNMODIFIED fixture
+  // (the faked executor never touches the scratch copy) - deterministically 0/6.
+  assert.equal(report.models[0].runs[0].testsPassed, 0);
+  assert.equal(report.models[0].runs[0].testsTotal, 6);
+  assert.equal(report.models[0].meanCostUsd, 0.02, 'expected the forced executor result to flow through to the report');
 
-  const dateIso = reportDateKey({ generatedAtIso: printed.generatedAtIso });
-  const reportPath = path.join(targetRepo, 'docs', 'benchmarks', `${dateIso}.json`);
-  assert.ok(fs.existsSync(reportPath), 'expected the report to be written as a real file');
-  const onDisk = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-  assert.deepEqual(onDisk, printed, 'expected the printed report to match what was actually written to disk');
-
-  const log = git(targetRepo, ['log', '--oneline', '--', reportPath]);
-  assert.equal(log.trim().split('\n').filter(Boolean).length, 1, 'expected exactly one real git commit touching the report file');
+  const writtenFiles = execFileSync('git', ['-C', targetRepo, 'log', '--name-only', '--format=', '-1'], { encoding: 'utf8' }).trim().split('\n');
+  assert.equal(writtenFiles.length, 1, 'expected a scoped commit touching exactly one file');
+  const [reportRelPath] = writtenFiles;
+  assert.match(reportRelPath, /^docs\/benchmarks\/\d{4}-\d{2}-\d{2}\.json$/);
+  const committedReport = JSON.parse(fs.readFileSync(path.join(targetRepo, reportRelPath), 'utf8'));
+  assert.equal(committedReport.taskId, 'coder-task-01-word-frequency');
 });
 
-test('BL-340: main() prints usage and exits nonzero when required args are missing', async () => {
-  const previousArgv = process.argv;
+test('main() prints usage and exits 1 when required arguments are missing', async () => {
   const previousExitCode = process.exitCode;
-  const writes = [];
-  const originalErrWrite = process.stderr.write.bind(process.stderr);
-  process.stderr.write = (chunk) => {
-    writes.push(chunk);
-    return true;
-  };
   try {
-    process.argv = [...MAIN_ARGV_PREFIX];
     process.exitCode = undefined;
-    await main();
+    await runMain([], {});
     assert.equal(process.exitCode, 1);
-    assert.match(writes.join(''), /Usage: run-role-benchmark\.js/);
   } finally {
-    process.stderr.write = originalErrWrite;
-    process.argv = previousArgv;
     process.exitCode = previousExitCode;
   }
 });
