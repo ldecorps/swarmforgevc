@@ -180,6 +180,7 @@ const DOMAINS = [
   require('./theHumanIsNeverSentTerminalChromeSteps'),
   require('./dependencyGateTestsParalleliseSteps'),
   require('./respawnBackoffInjectedClockSteps'),
+  require('./tmuxDoubleAnswersInProcessSteps'),
 ];
 
 function registerSteps(registry) {

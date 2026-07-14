@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawn } = require('node:child_process');
 const { formatSampleResult, main } = require('../out/tools/sample-resources');
-const { installFakeTmux } = require('./helpers/fakeTmux');
+const { installFakeTmux, installInProcessTmux } = require('./helpers/fakeTmux');
 
 // ── formatSampleResult (pure) ────────────────────────────────────────────
 
@@ -112,7 +112,11 @@ test('recording a resource sample leaves existing telemetry in the same file int
   fs.writeFileSync(telemetryPath(root), JSON.stringify({ type: 'chase', role: 'coder', at: new Date().toISOString() }) + '\n');
 
   const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)']);
-  const fake = installFakeTmux([
+  // BL-377: runCli() below calls main() IN-PROCESS (never a subprocess), so
+  // the in-process double is the right one here - see the subprocess test
+  // near the bottom of this file (runCliSubprocess) for the ONE case in
+  // this file that genuinely needs the PATH-executable fake instead.
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
     { subcommand: 'display-message', exitCode: 0, stdout: `${child.pid}\n` },
@@ -153,7 +157,8 @@ test('main() records a resource sample in-process with no editor attached', () =
   const root = initFixture();
   writeSessions(root);
   const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)']);
-  const fake = installFakeTmux([
+  // BL-377: in-process double - runCli() calls main() in THIS process.
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
     { subcommand: 'display-message', exitCode: 0, stdout: `${child.pid}\n` },
@@ -211,6 +216,10 @@ test('the compiled CLI runs standalone as a subprocess and produces the same res
   const root = initFixture();
   writeSessions(root);
   const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)']);
+  // BL-377: this ONE test genuinely needs the PATH-executable fake - the
+  // CLI runs as its OWN separate OS process (runCliSubprocess, below),
+  // resolving `tmux` from PATH inside itself. An in-process double in
+  // THIS process cannot reach into that child's own process tree.
   const fake = installFakeTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },

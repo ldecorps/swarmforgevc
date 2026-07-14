@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { startBridge } = require('../out/bridge/bridgeServer');
-const { installFakeTmux } = require('./helpers/fakeTmux');
+const { installInProcessTmux } = require('./helpers/fakeTmux');
 
 const TOKEN = 'test-token-123';
 
@@ -757,7 +757,7 @@ test('lists a gated role with its question snippet and omits a non-gated role', 
   const target = mkTmp();
   writeSessionsTsv(target, [{ role: 'coder' }, { role: 'cleaner' }]);
   writeTmuxSocket(target, '/tmp/fake-bridge.sock');
-  const fake = installFakeTmux(gatedTmuxRules('Proceed with the migration? (y/n)'));
+  const fake = installInProcessTmux(gatedTmuxRules('Proceed with the migration? (y/n)'));
   try {
     await withBridge(target, {}, async (handle) => {
       const res = await fetch(`http://127.0.0.1:${handle.port}/gates`, { headers: { authorization: `Bearer ${TOKEN}` } });
@@ -787,7 +787,7 @@ test('returns a successful empty list when no role is gated', async () => {
   const target = mkTmp();
   writeSessionsTsv(target, [{ role: 'coder' }]);
   writeTmuxSocket(target, '/tmp/fake-bridge.sock');
-  const fake = installFakeTmux(gatedTmuxRules('Compiling... done. [auto] idle'));
+  const fake = installInProcessTmux(gatedTmuxRules('Compiling... done. [auto] idle'));
   try {
     await withBridge(target, {}, async (handle) => {
       const res = await fetch(`http://127.0.0.1:${handle.port}/gates`, { headers: { authorization: `Bearer ${TOKEN}` } });
@@ -804,7 +804,7 @@ test('a read-scoped device can list gates without the control step-up', async ()
   const target = mkTmp();
   writeSessionsTsv(target, [{ role: 'coder' }]);
   writeTmuxSocket(target, '/tmp/fake-bridge.sock');
-  const fake = installFakeTmux(gatedTmuxRules('Proceed? (y/n)'));
+  const fake = installInProcessTmux(gatedTmuxRules('Proceed? (y/n)'));
   try {
     await withBridge(target, {}, async (handle) => {
       const viewer = handle.registerDevice('phone', 'read');
@@ -949,7 +949,7 @@ test('answer-unblocks-01: an authenticated client answers a role\'s captured gat
   const target = mkTmp();
   writeSessionsTsv(target, [{ role: 'coder' }]);
   writeTmuxSocket(target, '/tmp/fake-bridge.sock');
-  const fake = installFakeTmux(gatedTmuxRules('Proceed with the migration? (y/n)'));
+  const fake = installInProcessTmux(gatedTmuxRules('Proceed with the migration? (y/n)'));
   try {
     await withBridge(target, {}, async (handle) => {
       const res = await postGateAnswer(handle.port, controlAuthHeaders(), { role: 'coder', answer: 'y' });
@@ -969,7 +969,7 @@ test('scope-gates-only-02: refuses a control-authenticated attempt against a rol
   const target = mkTmp();
   writeSessionsTsv(target, [{ role: 'coder' }]);
   writeTmuxSocket(target, '/tmp/fake-bridge.sock');
-  const fake = installFakeTmux(gatedTmuxRules('Compiling... done. [auto] idle'));
+  const fake = installInProcessTmux(gatedTmuxRules('Compiling... done. [auto] idle'));
   try {
     await withBridge(target, {}, async (handle) => {
       const res = await postGateAnswer(handle.port, controlAuthHeaders(), { role: 'coder', answer: 'y' });
@@ -987,7 +987,7 @@ test('scope-gates-only-02: a differently-shaped body (not {role, answer}) is ref
   const target = mkTmp();
   writeSessionsTsv(target, [{ role: 'coder' }]);
   writeTmuxSocket(target, '/tmp/fake-bridge.sock');
-  const fake = installFakeTmux(gatedTmuxRules('Proceed? (y/n)'));
+  const fake = installInProcessTmux(gatedTmuxRules('Proceed? (y/n)'));
   try {
     await withBridge(target, {}, async (handle) => {
       const res = await postGateAnswer(handle.port, controlAuthHeaders(), { action: 'shell', command: 'rm -rf /' });
@@ -1005,7 +1005,7 @@ test('BL-241 read-only-cannot-control-03: a bearer-only request (no step-up head
   const target = mkTmp();
   writeSessionsTsv(target, [{ role: 'coder' }]);
   writeTmuxSocket(target, '/tmp/fake-bridge.sock');
-  const fake = installFakeTmux(gatedTmuxRules('Proceed? (y/n)'));
+  const fake = installInProcessTmux(gatedTmuxRules('Proceed? (y/n)'));
   try {
     await withBridge(target, {}, async (handle) => {
       // The same bearer that already grants read access (proven below)
@@ -1026,7 +1026,7 @@ test('BL-241 read-only-cannot-control-03: a read-scoped device can never answer 
   const target = mkTmp();
   writeSessionsTsv(target, [{ role: 'coder' }]);
   writeTmuxSocket(target, '/tmp/fake-bridge.sock');
-  const fake = installFakeTmux(gatedTmuxRules('Proceed? (y/n)'));
+  const fake = installInProcessTmux(gatedTmuxRules('Proceed? (y/n)'));
   try {
     await withBridge(target, {}, async (handle) => {
       const viewer = handle.registerDevice('phone', 'read');
@@ -1049,7 +1049,7 @@ test('BL-241 control-requires-step-up-04: a control-scoped device\'s own two cre
   const target = mkTmp();
   writeSessionsTsv(target, [{ role: 'coder' }]);
   writeTmuxSocket(target, '/tmp/fake-bridge.sock');
-  const fake = installFakeTmux(gatedTmuxRules('Proceed? (y/n)'));
+  const fake = installInProcessTmux(gatedTmuxRules('Proceed? (y/n)'));
   try {
     await withBridge(target, {}, async (handle) => {
       const controller = handle.registerDevice('laptop', 'control');
@@ -1107,7 +1107,7 @@ test('unauthenticated-refused-03: a request with no auth is refused before it ev
   const target = mkTmp();
   writeSessionsTsv(target, [{ role: 'coder' }]);
   writeTmuxSocket(target, '/tmp/fake-bridge.sock');
-  const fake = installFakeTmux(gatedTmuxRules('Proceed? (y/n)'));
+  const fake = installInProcessTmux(gatedTmuxRules('Proceed? (y/n)'));
   try {
     await withBridge(target, {}, async (handle) => {
       const res = await postGateAnswer(handle.port, {}, { role: 'coder', answer: 'y' });
@@ -1123,7 +1123,7 @@ test('unauthenticated-refused-03: a request with the wrong token is refused', as
   const target = mkTmp();
   writeSessionsTsv(target, [{ role: 'coder' }]);
   writeTmuxSocket(target, '/tmp/fake-bridge.sock');
-  const fake = installFakeTmux(gatedTmuxRules('Proceed? (y/n)'));
+  const fake = installInProcessTmux(gatedTmuxRules('Proceed? (y/n)'));
   try {
     await withBridge(target, {}, async (handle) => {
       const res = await postGateAnswer(handle.port, { authorization: 'Bearer wrong' }, { role: 'coder', answer: 'y' });
@@ -1139,7 +1139,7 @@ test('answer-targets-specific-gate-04: answering one of two gated roles leaves t
   const target = mkTmp();
   writeSessionsTsv(target, [{ role: 'coder' }, { role: 'cleaner' }]);
   writeTmuxSocket(target, '/tmp/fake-bridge.sock');
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'capture-pane', exitCode: 0, stdout: 'Proceed? (y/n)' },
@@ -1169,7 +1169,7 @@ test('GET to /gate-answer is not treated as an answer attempt (404, same as any 
   const target = mkTmp();
   writeSessionsTsv(target, [{ role: 'coder' }]);
   writeTmuxSocket(target, '/tmp/fake-bridge.sock');
-  const fake = installFakeTmux(gatedTmuxRules('Proceed? (y/n)'));
+  const fake = installInProcessTmux(gatedTmuxRules('Proceed? (y/n)'));
   try {
     await withBridge(target, {}, async (handle) => {
       const res = await fetch(`http://127.0.0.1:${handle.port}/gate-answer`, {
@@ -1187,7 +1187,7 @@ test('a request body over the size cap is rejected without ever parsing it', asy
   const target = mkTmp();
   writeSessionsTsv(target, [{ role: 'coder' }]);
   writeTmuxSocket(target, '/tmp/fake-bridge.sock');
-  const fake = installFakeTmux(gatedTmuxRules('Proceed? (y/n)'));
+  const fake = installInProcessTmux(gatedTmuxRules('Proceed? (y/n)'));
   try {
     await withBridge(target, {}, async (handle) => {
       const oversized = { role: 'coder', answer: 'y'.repeat(20 * 1024) };

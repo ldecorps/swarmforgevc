@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { AVAILABLE_CLAUDE_MODELS, readCurrentModel, switchRoleModel } = require('../out/swarm/backendSwitch');
 const { installExecutable } = require('./helpers/sharedBin');
-const { installFakeTmux } = require('./helpers/fakeTmux');
+const { installInProcessTmux } = require('./helpers/fakeTmux');
 
 // BL-235 (M5, narrow slice): switching a claude-backed tile's model rewrites
 // only that role's settings-file "model" field (preserving every other
@@ -60,7 +60,7 @@ test('readCurrentModel returns undefined when no settings file exists yet', () =
 test('switchRoleModel rewrites the model field, preserving every other field unchanged', () => {
   const tmp = mkTmp();
   writeRespawnState(tmp, 'coder', { model: 'claude-sonnet-5', effortLevel: 'high', permissions: { defaultMode: 'bypassPermissions' } });
-  const fake = installFakeTmux(successfulRespawnRules());
+  const fake = installInProcessTmux(successfulRespawnRules());
   try {
     const result = switchRoleModel(tmp, 'coder', 'claude-opus-4-8');
     assert.equal(result.success, true);
@@ -81,7 +81,7 @@ test('switchRoleModel respawns only the requested role\'s pane, never any other 
     path.join(tmp, '.swarmforge', 'sessions.tsv'),
     '2\tcleaner\tswarmforge-cleaner\tCleaner\tclaude\n'
   );
-  const fake = installFakeTmux(successfulRespawnRules());
+  const fake = installInProcessTmux(successfulRespawnRules());
   try {
     switchRoleModel(tmp, 'coder', 'claude-opus-4-8');
     const cleanerSettings = JSON.parse(fs.readFileSync(settingsPath(tmp, 'cleaner'), 'utf8'));
@@ -103,7 +103,7 @@ test('switchRoleModel never writes to swarmforge.conf', () => {
   fs.mkdirSync(path.dirname(confPath), { recursive: true });
   const confBefore = 'window coder claude coder --model claude-sonnet-5\n';
   fs.writeFileSync(confPath, confBefore);
-  const fake = installFakeTmux(successfulRespawnRules());
+  const fake = installInProcessTmux(successfulRespawnRules());
   try {
     switchRoleModel(tmp, 'coder', 'claude-opus-4-8');
     assert.equal(fs.readFileSync(confPath, 'utf8'), confBefore, 'swarmforge.conf must be byte-for-byte unchanged');
@@ -115,7 +115,7 @@ test('switchRoleModel never writes to swarmforge.conf', () => {
 test('switchRoleModel rejects an unknown model without touching the settings file or tmux', () => {
   const tmp = mkTmp();
   writeRespawnState(tmp, 'coder', { model: 'claude-sonnet-5' });
-  const fake = installFakeTmux(successfulRespawnRules());
+  const fake = installInProcessTmux(successfulRespawnRules());
   try {
     const result = switchRoleModel(tmp, 'coder', 'gpt-nope');
     assert.equal(result.success, false);
