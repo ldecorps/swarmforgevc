@@ -50,9 +50,17 @@ function writeRolesTsv(target, roles) {
 }
 
 function tick(target) {
+  // BL-359: SWARMFORGE_SKIP_TUNNEL=1 is load-bearing, not cosmetic -
+  // ensure-tunnel! runs unconditionally every tick and, on a host with
+  // tunnel auth already bootstrapped, spawns a REAL network-touching
+  // background process that inherits execFileSync's own piped stdout; a
+  // grandchild that never exits holds that pipe open forever, hanging
+  // the read even after the immediate bb process exits (discovered via a
+  // real hang in alwaysOnOperatorPresenceSteps.js's own tick() helper).
   return execFileSync('bb', [path.join(target, 'swarmforge', 'scripts', 'operator_runtime.bb'), target, '--tick-once'], {
-    env: { ...process.env, OPERATOR_SKIP_LAUNCH: '1' },
+    env: { ...process.env, OPERATOR_SKIP_LAUNCH: '1', SWARMFORGE_SKIP_TUNNEL: '1' },
     encoding: 'utf8',
+    timeout: 15000,
   });
 }
 
