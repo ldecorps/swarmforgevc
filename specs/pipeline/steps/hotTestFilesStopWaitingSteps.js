@@ -162,12 +162,16 @@ function registerSteps(registry) {
     }
   });
 
-  // ── hot-test-files-stop-waiting-05 ───────────────────────────────────────
-  registry.define(/^the pane-tailer's and dependency-gate's files each take a fraction of the time they took before$/, (ctx) => {
+  // ── hot-test-files-stop-waiting-05 (amended 2026-07-14, human-approved:
+  //    narrowed to the dependency-gate's file alone - the pane-tailer's own
+  //    speed guarantee is scenario 01's "no pane-tailer test waits on real
+  //    elapsed time", an absolute, deterministic, and STRONGER statement
+  //    than a duration threshold would be here) ─────────────────────────
+  registry.define(/^the dependency-gate's file takes a fraction of the time it took before$/, (ctx) => {
     // Asserts the MECHANISM that causes the speedup, not a raw duration
     // (a hard wall-clock threshold in a test is exactly the flaky-timing
-    // anti-pattern this ticket removes). dependencyGateCli.test.js: the six
-    // one-rule engine boots are gone, replaced by the merged single-run test.
+    // anti-pattern this ticket removes). The six one-rule engine boots are
+    // gone, replaced by the merged single-run test.
     const depSource = ctx.dependencyGateSource || fs.readFileSync(DEPENDENCY_GATE_TEST_PATH, 'utf8');
     if (!/catches every forbidden-dependency rule, from a single engine run/.test(depSource)) {
       throw new Error('expected the merged single-engine-run test to be present');
@@ -185,14 +189,9 @@ function registerSteps(registry) {
         throw new Error(`expected the standalone one-rule test to be gone (merged), still found: ${name}`);
       }
     }
-    const paneSource = ctx.paneTailerSource || fs.readFileSync(PANE_TAILER_TEST_PATH, 'utf8');
-    const startCalls = paneSource.match(/\.start\([^)]*\)/g) || [];
-    if (startCalls.some((call) => !/,\s*scheduleTick/.test(call))) {
-      throw new Error('expected every pane-tailer start() call to use the injected scheduler');
-    }
   });
 
-  registry.define(/^every behavior those files asserted before is still asserted$/, () => {
+  registry.define(/^every behavior it asserted before is still asserted$/, () => {
     // Verified by construction, not re-derived here: every removed
     // standalone test's specific from/to/rule assertion is reproduced
     // inside the merged test (hot-test-files-stop-waiting-02/03 above
