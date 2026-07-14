@@ -39,6 +39,13 @@ test('states a reason, not a silent null, when nothing meets the threshold', () 
   assert.match(ranking.noAcceptableModelReason, /0\.8/);
 });
 
+test('cheapestAcceptable keeps the running cheapest when a later candidate is not cheaper', () => {
+  const cheap = agg({ modelId: 'cheap', meanQuality: 0.9, meanCostUsd: 0.05 });
+  const pricier = agg({ modelId: 'pricier', meanQuality: 0.9, meanCostUsd: 0.5 });
+  const ranking = rankModels([cheap, pricier], 0.5);
+  assert.equal(ranking.cheapestAcceptable, 'cheap');
+});
+
 test('excluded models are never ranked', () => {
   const excluded = agg({ modelId: 'excluded', excluded: true, meanQuality: 1, meanCostUsd: 0.001 });
   const real = agg({ modelId: 'real', meanQuality: 0.6, meanCostUsd: 0.5 });

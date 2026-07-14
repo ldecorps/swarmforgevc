@@ -5,6 +5,10 @@ test('computeMean of an empty array is 0', () => {
   assert.equal(computeMean([]), 0);
 });
 
+test('computeStdDev of an empty array is 0', () => {
+  assert.equal(computeStdDev([]), 0);
+});
+
 test('computeStdDev is 0 when all values are equal', () => {
   assert.equal(computeStdDev([1, 1, 1]), 0);
 });

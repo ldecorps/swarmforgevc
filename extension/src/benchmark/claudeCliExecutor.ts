@@ -11,6 +11,39 @@ interface ClaudeCliJsonResult {
 
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 
+// Pure: turns the CLI's own JSON stdout into an ExecutorResult. Split out
+// of execute() (mirroring nodeTestQualityEvaluator.ts's own
+// parse-vs-shell split in this same parcel) so the parsing logic - the
+// actual contract this benchmark depends on - is unit-testable without
+// invoking the real `claude` binary; only the execFileSync call itself
+// (the genuine external boundary named in types.ts: an LLM actually
+// performing the task) stays untested.
+export function parseClaudeCliSuccess(stdout: string, fallbackDurationMs: number): ExecutorResult {
+  const parsed = JSON.parse(stdout) as ClaudeCliJsonResult;
+  return {
+    success: parsed.is_error !== true,
+    costUsd: typeof parsed.total_cost_usd === 'number' ? parsed.total_cost_usd : null,
+    tokens: parsed.usage
+      ? { inputTokens: parsed.usage.input_tokens ?? 0, outputTokens: parsed.usage.output_tokens ?? 0 }
+      : null,
+    durationMs: typeof parsed.duration_ms === 'number' ? parsed.duration_ms : fallbackDurationMs,
+    sessionId: parsed.session_id,
+  };
+}
+
+// Pure: normalizes whatever the child process throws (an Error, or not)
+// into a failed ExecutorResult - a model that fails to execute scores 0
+// rather than crashing the benchmark run (see runTrial.ts).
+export function claudeCliFailureResult(error: unknown, durationMs: number): ExecutorResult {
+  return {
+    success: false,
+    costUsd: null,
+    tokens: null,
+    durationMs,
+    error: error instanceof Error ? error.message : String(error),
+  };
+}
+
 // Real, live invocation of the Claude Code CLI in headless print mode -
 // the only ModelExecutor this ticket wires to production
 // (extension/src/tools/run-role-benchmark.ts). `--dangerously-skip-permissions`
@@ -30,24 +63,9 @@ export function createClaudeCliExecutor(timeoutMs: number = DEFAULT_TIMEOUT_MS):
           ['-p', prompt, '--model', model.model, '--output-format', 'json', '--dangerously-skip-permissions'],
           { cwd, encoding: 'utf8', timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024 }
         );
-        const parsed = JSON.parse(stdout) as ClaudeCliJsonResult;
-        return {
-          success: parsed.is_error !== true,
-          costUsd: typeof parsed.total_cost_usd === 'number' ? parsed.total_cost_usd : null,
-          tokens: parsed.usage
-            ? { inputTokens: parsed.usage.input_tokens ?? 0, outputTokens: parsed.usage.output_tokens ?? 0 }
-            : null,
-          durationMs: typeof parsed.duration_ms === 'number' ? parsed.duration_ms : Date.now() - startedAt,
-          sessionId: parsed.session_id,
-        };
+        return parseClaudeCliSuccess(stdout, Date.now() - startedAt);
       } catch (error) {
-        return {
-          success: false,
-          costUsd: null,
-          tokens: null,
-          durationMs: Date.now() - startedAt,
-          error: error instanceof Error ? error.message : String(error),
-        };
+        return claudeCliFailureResult(error, Date.now() - startedAt);
       }
     },
   };

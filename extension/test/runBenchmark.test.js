@@ -177,3 +177,26 @@ test('a run that fails to execute scores 0 and carries its error, rather than be
   assert.equal(modelReport.runs[0].ran, false);
   assert.equal(modelReport.runs[0].error, 'boom');
 });
+
+test('an executed run whose fixture has zero tests scores quality 0, not NaN', async () => {
+  const task = loadTask();
+  const executor = {
+    async execute() {
+      return { success: true, costUsd: 0.01, tokens: { inputTokens: 1, outputTokens: 1 }, durationMs: 10 };
+    },
+  };
+  const evaluator = { async evaluate() { return { passed: 0, total: 0 }; } };
+
+  const report = await runBenchmark({
+    task,
+    models: [{ id: 'a', provider: 'claude', model: 'sonnet' }],
+    repetitions: 1,
+    qualityThreshold: 0.5,
+    generatedAtIso: '2026-07-13T00:00:00Z',
+    deps: { executor, evaluator, scratchRoot: mkScratchRoot('zero-total') },
+  });
+
+  const [modelReport] = report.models;
+  assert.equal(modelReport.runs[0].ran, true);
+  assert.equal(modelReport.runs[0].qualityScore, 0);
+});

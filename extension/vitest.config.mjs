@@ -36,6 +36,22 @@ export default defineConfig({
       reporter: ['json'],
       reportsDirectory: 'coverage',
       include: ['out/**/*.js'],
+      // BL-340: Vitest's OWN built-in coverage.exclude (unset here before,
+      // so its default applied) matches any `*-benchmark.js` file - its
+      // own bench-file heuristic. out/tools/run-role-benchmark.js is a
+      // legitimately-named PRODUCTION CLI (this project's role-benchmark
+      // harness entry point, not a Vitest bench file), so that default
+      // silently dropped it from coverage-final.json entirely - not
+      // under-reported, ABSENT - scoring every function in the file at a
+      // false 0% for CRAP purposes despite dedicated passing unit tests
+      // (confirmed by renaming a byte-identical copy of the same file,
+      // which then appeared normally). `include` above already scopes
+      // collection to compiled output only (rootDir is `src`, so `out/`
+      // never contains a compiled test/spec/bench file to begin with),
+      // which makes Vitest's test/spec/bench-suffix exclusion glob
+      // redundant here anyway - drop it and keep only the excludes that
+      // still make sense for this project's own layout.
+      exclude: ['coverage/**', '**/node_modules/**', '**/*.d.ts'],
       all: false,
     },
   },
