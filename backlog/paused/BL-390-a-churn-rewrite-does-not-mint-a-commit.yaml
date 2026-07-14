@@ -1,0 +1,55 @@
+id: BL-390
+title: "A no-op topic-record rewrite still mints a commit — and the push sweep pushes it, so any upstream loop becomes unbounded git history"
+milestone: M8
+type: bug
+status: todo
+severity: high
+priority: 3
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-front-desk-redelivery-commit-loop.md (suggested scope 2) — Operator, 2026-07-14. Split out of BL-389 at the human's direction: the keystone ships alone, this follows."
+
+notes: |
+  THIS IS THE AMPLIFIER, NOT THE TRIGGER. BL-389 is the bug (a dropped Telegram update parks the
+  offset, so updates are redelivered forever). THIS ticket is what turned that bug into 209 commits
+  on origin/main: the topic-record persister commits on EVERY rewrite, and handoffd's push sweep
+  faithfully pushes each one. Fixing BL-389 stops this particular flood — but the persister would
+  still convert the NEXT upstream loop, wherever it comes from, into unbounded git history. Defence
+  in depth: a component that mints a commit per write is a megaphone bolted to every bug upstream of
+  it.
+
+  IT HAS ALREADY HAPPENED TWICE. The Operator noted the same shape earlier the same day: 6x "Cost &
+  health sidecar for 2026-07-14" churn commits at 07:56-07:57. Two occurrences of the same class in
+  one day means the guard belongs in the PERSISTER, not bolted onto whichever caller happened to
+  misbehave — do not fix this by making the front desk write less.
+
+  WHAT "NO-OP" MEANS. The cheap, honest check: if the serialized record is byte-identical to what is
+  already committed, there is nothing to commit — say so and stop (scenario 01). Do not attempt a
+  semantic "is this change interesting?" judgement; content-identical is a fact, "interesting" is an
+  opinion and would be the wrong thing to encode. Scenario 02 is the neighbour guard: a record that
+  genuinely gained a message must still commit, and the fix must not swallow real changes.
+
+  SCENARIO 03 IS THE ONE THAT MATTERS OPERATIONALLY. The push sweep pushes what is committed. If
+  nothing is committed, nothing reaches origin — that is the whole point of the ticket, and it is
+  worth asserting explicitly rather than assuming it falls out.
+
+  SCOPE. The topic-record persister and its commit path (the writer behind `backlog/topics/*.json`,
+  reached from the concierge tick — BL-329 made these records durably git-committed, so this is a
+  guard ON that path, not a reversal of it). Testable against a fixture repo with no live swarm and
+  no network; do NOT reach the real repo or the real remote in a test.
+
+  E2E QA PROCEDURE: persist a topic record twice with identical content and assert exactly ONE commit
+  exists and nothing was pushed the second time. Append a real message and assert that DOES commit.
+  Then, with BL-389 landed, run the live front desk through a redelivery and assert no `BL topic
+  record` commits appear at all.
+
+acceptance:
+  feature: specs/features/BL-390-a-churn-rewrite-does-not-mint-a-commit.feature
+  steps:
+    - "Rewriting a record with identical content commits nothing"
+    - "A record that genuinely changed is still committed"
+    - "Nothing is pushed when nothing was committed"
+
+human_approval: pending
+
+mutation_cost: low
