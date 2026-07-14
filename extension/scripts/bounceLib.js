@@ -75,4 +75,64 @@ function decideNextStep(state) {
   return { action: 'wait' };
 }
 
-module.exports = { parseMarker, isMarkerFresh, filterDevHostPids, decideNextStep };
+// Ordered platform-specific default install locations to try before falling
+// back to a bare "code" resolved from PATH.
+function platformVsCodeCandidates(platform) {
+  if (platform === 'darwin') {
+    return ['/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code'];
+  }
+  if (platform === 'linux') {
+    return ['/usr/share/code/bin/code', '/snap/bin/code'];
+  }
+  return [];
+}
+
+// Resolves which VS Code CLI binary to launch the dev host with (BL-361).
+// `env.VSCODE_BIN` names an explicit operator override and is authoritative:
+// it is checked alone and never silently replaced by a platform default.
+// Otherwise tries platform-specific default install locations, then a bare
+// "code" (PATH lookup), stopping at the first candidate `isExecutable`
+// confirms can actually run ON THIS HOST. A candidate merely resolving to a
+// path is not enough - the WSL cross-arch trap is a binary that resolves
+// (it is ON PATH) but cannot execute (missing binfmt interop), so
+// `isExecutable` must be an actual execution probe, not a PATH/stat check.
+function resolveVsCodeBinary({ platform, env, isExecutable }) {
+  const override = env && env.VSCODE_BIN;
+  if (override) {
+    if (isExecutable(override)) {
+      return { binary: override };
+    }
+    return {
+      error: 'vscode-not-found',
+      message: `VSCODE_BIN=${override} cannot be executed on this host.`,
+    };
+  }
+  const candidates = [...platformVsCodeCandidates(platform), 'code'];
+  for (const candidate of candidates) {
+    if (isExecutable(candidate)) {
+      return { binary: candidate };
+    }
+  }
+  return {
+    error: 'vscode-not-found',
+    message: `No usable VS Code CLI found (tried: ${candidates.join(', ')}). Set VSCODE_BIN to override.`,
+  };
+}
+
+// Builds the dev-host launch invocation: the editor's own command line, no
+// GUI automation. `code --extensionDevelopmentPath=<extensionDir>
+// <workspacePath>` opens a new Extension Development Host window running
+// the extension in development mode - the same effect as pressing F5 in the
+// editor's own UI, on every supported platform.
+function buildDevHostLaunchCommand(binary, extensionDir, workspacePath) {
+  return { command: binary, args: [`--extensionDevelopmentPath=${extensionDir}`, workspacePath] };
+}
+
+module.exports = {
+  parseMarker,
+  isMarkerFresh,
+  filterDevHostPids,
+  decideNextStep,
+  resolveVsCodeBinary,
+  buildDevHostLaunchCommand,
+};
