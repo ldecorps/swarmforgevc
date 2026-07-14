@@ -160,6 +160,7 @@ const DOMAINS = [
   require('./clisTestedInProcessSteps'),
   require('./wrapperResolvesPathsAgainstCallerSteps'),
   require('./answerPairingAcrossThreadsSteps'),
+  require('./targetUseCaseInventorySteps'),
 ];
 
 function registerSteps(registry) {
