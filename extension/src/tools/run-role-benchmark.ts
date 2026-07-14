@@ -35,19 +35,31 @@ export interface RunRoleBenchmarkArgs {
 
 const USAGE = 'Usage: run-role-benchmark.js <fixture-dir> <models-file> <repetitions> <quality-threshold> <target-repo-path>\n';
 
-// Pure - same "CLI main() stays a thin dispatcher over a testable pure
-// helper" split every other tools/ CLI in this codebase follows.
-export function parseArgs(argv: string[]): RunRoleBenchmarkArgs | null {
-  const [fixtureDir, modelsFile, repetitionsRaw, qualityThresholdRaw, targetPath] = argv;
-  if (!fixtureDir || !modelsFile || !repetitionsRaw || !qualityThresholdRaw || !targetPath) {
-    return null;
-  }
+function hasAllRequiredArgs(fixtureDir: string, modelsFile: string, repetitionsRaw: string, qualityThresholdRaw: string, targetPath: string): boolean {
+  return Boolean(fixtureDir && modelsFile && repetitionsRaw && qualityThresholdRaw && targetPath);
+}
+
+function parseValidatedNumbers(repetitionsRaw: string, qualityThresholdRaw: string): { repetitions: number; qualityThreshold: number } | null {
   const repetitions = Number(repetitionsRaw);
   const qualityThreshold = Number(qualityThresholdRaw);
   if (!Number.isFinite(repetitions) || repetitions < 1 || !Number.isFinite(qualityThreshold)) {
     return null;
   }
-  return { fixtureDir, modelsFile, repetitions, qualityThreshold, targetPath };
+  return { repetitions, qualityThreshold };
+}
+
+// Pure - same "CLI main() stays a thin dispatcher over a testable pure
+// helper" split every other tools/ CLI in this codebase follows.
+export function parseArgs(argv: string[]): RunRoleBenchmarkArgs | null {
+  const [fixtureDir, modelsFile, repetitionsRaw, qualityThresholdRaw, targetPath] = argv;
+  if (!hasAllRequiredArgs(fixtureDir, modelsFile, repetitionsRaw, qualityThresholdRaw, targetPath)) {
+    return null;
+  }
+  const numbers = parseValidatedNumbers(repetitionsRaw, qualityThresholdRaw);
+  if (!numbers) {
+    return null;
+  }
+  return { fixtureDir, modelsFile, ...numbers, targetPath };
 }
 
 export const main = makeArgsGuardedMain(parseArgs, USAGE, async (args) => {
