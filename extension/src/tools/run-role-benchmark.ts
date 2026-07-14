@@ -8,7 +8,7 @@
  * the same atomicWrite + commitScopedFile sidecar pattern
  * notify/costHealthSidecar.ts already established.
  *
- * Usage: node run-role-benchmark.js <fixture-dir> <models-file>
+ * Usage: node run-role-benchmark.js <battery-root> <models-file>
  *          <repetitions> <quality-threshold> <target-repo-path>
  *
  * <models-file> is a JSON array of BenchmarkModelConfig
