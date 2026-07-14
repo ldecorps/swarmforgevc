@@ -26,7 +26,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { listTestFiles, buildRecord, appendRecord } = require('./testDurationRecorderLib');
+const { listTestFiles, buildRecord, appendRecord, computeFinalExitCode } = require('./testDurationRecorderLib');
 
 const ROOT_DIR = path.join(__dirname, '..');
 const TEST_DIR = path.join(ROOT_DIR, 'test');
@@ -61,7 +61,7 @@ function main() {
   const guardResult = fs.existsSync(REPORT_PATH) ? spawnSync('node', [BUDGET_GUARD_CLI, REPORT_PATH], { stdio: 'inherit', cwd: ROOT_DIR }) : null;
   const guardExitCode = guardResult && guardResult.status !== null ? guardResult.status : 0;
 
-  process.exit(testExitCode !== 0 ? testExitCode : guardExitCode);
+  process.exit(computeFinalExitCode(testExitCode, guardExitCode));
 }
 
 main();

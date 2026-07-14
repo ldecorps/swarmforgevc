@@ -31,4 +31,13 @@ function appendRecord(logPath, record) {
   }
 }
 
-module.exports = { listTestFiles, buildRecord, appendRecord };
+// BL-378: a real test failure always wins over the file-budget guard's own
+// exit code (the more urgent signal), so the guard can never mask a
+// genuine test failure by exiting 0. Pulled out of recordTestDuration.js's
+// main() so this decision is covered in-process rather than only by the
+// script's own untested subprocess orchestration.
+function computeFinalExitCode(testExitCode, guardExitCode) {
+  return testExitCode !== 0 ? testExitCode : guardExitCode;
+}
+
+module.exports = { listTestFiles, buildRecord, appendRecord, computeFinalExitCode };
