@@ -763,10 +763,17 @@ sync_worktree_scripts() {
     role_scripts_dir="$worktree_path/swarmforge/scripts"
     role_state_dir="$worktree_path/.swarmforge"
     mkdir -p "$role_scripts_dir"
-    cp -R "$SCRIPT_DIR/." "$role_scripts_dir/"
+    # BL-373: never overwrite a path the destination worktree's OWN git
+    # index tracks - that content is git's to deliver (the role's branch
+    # already has it); the copy is only the delivery mechanism for a
+    # target repo that doesn't track swarmforge/ at all. An unconditional
+    # cp -R here silently reverted merged-but-not-yet-on-main script
+    # changes on every relaunch (the "phantom revert", 6 occurrences on
+    # 2026-07-14) - see sync_worktree_scripts_lib.bb.
+    bb "$SCRIPT_DIR/sync_worktree_scripts.bb" "$SCRIPT_DIR" "$role_scripts_dir" "$worktree_path" "swarmforge/scripts"
     if [[ -d "$SWARM_FORGE_DIR/profiles" ]]; then
       mkdir -p "$worktree_path/swarmforge/profiles"
-      cp -R "$SWARM_FORGE_DIR/profiles/." "$worktree_path/swarmforge/profiles/"
+      bb "$SCRIPT_DIR/sync_worktree_scripts.bb" "$SWARM_FORGE_DIR/profiles" "$worktree_path/swarmforge/profiles" "$worktree_path" "swarmforge/profiles"
     fi
     mkdir -p "$role_state_dir/notify"
     cp "$SESSIONS_FILE" "$role_state_dir/sessions.tsv"
