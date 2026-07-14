@@ -167,6 +167,21 @@ test('getPanePidAndCommand returns empty pid and command when tmux call fails', 
   }
 });
 
+// A successful call whose output is missing the tab separator (no
+// pane_current_command half) is a different case from a failed call - the
+// pid half is still real and must not be discarded just because command
+// could not be split out.
+test('getPanePidAndCommand keeps a real pid and defaults command to empty when the output has no tab separator', () => {
+  const fake = installFakeTmux([
+    { subcommand: 'display-message', exitCode: 0, stdout: '54321\n' },
+  ]);
+  try {
+    assert.deepEqual(getPanePidAndCommand('/tmp/fake.sock', 'sess:0.1'), { pid: '54321', command: '' });
+  } finally {
+    fake.restore();
+  }
+});
+
 test('capturePane returns captured stdout on success', () => {
   const fake = installFakeTmux([
     { subcommand: 'capture-pane', exitCode: 0, stdout: 'hello world\n' },
