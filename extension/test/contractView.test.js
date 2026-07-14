@@ -44,6 +44,31 @@ test('parseContractYaml returns null for a YAML document that is a list, not an 
   assert.equal(parseContractYaml('- one\n- two\n'), null);
 });
 
+// BL-382 bounce (QA evidence 20260715): parseContractYaml built its return
+// object from an explicit field list that never named verbosity, so a
+// negotiated verbosity term silently vanished on parse even though
+// contractTypes.ts's own ProposedContract carries it - the round-trip
+// contract above only proves this for the fields it happens to list.
+test('parseContractYaml carries a present verbosity through the round trip', () => {
+  const yaml = renderContractYaml({ ...FIXTURE_CONTRACT, verbosity: 'concise' });
+  const parsed = parseContractYaml(yaml);
+
+  assert.equal(parsed.verbosity, 'concise');
+});
+
+test('parseContractYaml leaves verbosity absent when the contract never mentioned it', () => {
+  const parsed = parseContractYaml(renderContractYaml(FIXTURE_CONTRACT));
+
+  assert.equal('verbosity' in parsed, false);
+});
+
+test('parseContractYaml passes an out-of-set verbosity value through unchanged (refusal is resolveVerbosity\'s job, not the parser\'s)', () => {
+  const yaml = renderContractYaml({ ...FIXTURE_CONTRACT, verbosity: 'extremely chatty' });
+  const parsed = parseContractYaml(yaml);
+
+  assert.equal(parsed.verbosity, 'extremely chatty');
+});
+
 // BL-262 legible-view-mirrors-source-03
 test('generateContractMarkdown shows the same scope and agreement state as the source', () => {
   const markdown = generateContractMarkdown(FIXTURE_CONTRACT);
