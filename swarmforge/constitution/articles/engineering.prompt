@@ -432,6 +432,27 @@
   `:armed? true` BEFORE the send and discarding its result — so a transient failure at the one
   tick starvation crosses the threshold silently suppresses the alarm for days. The alarm for
   a silent failure failed silently. Caught by the architect in review; tracked as BL-345.)
+- **A script that `cd`s before invoking a tool must absolutize EVERY path argument it
+  accepts, before the `cd` — and absolutizing only some of them is worse than
+  absolutizing none.** A relative path is not a location; it is a location *plus an
+  implied cwd*. The moment a wrapper changes directory, every relative argument it is
+  still holding silently re-points at the new cwd, so the caller's path and the tool's
+  path are two different directories that never disagree loudly — the wrapper creates
+  one, the tool writes into the other, and nothing errors. Partial absolutization is
+  the trap: the args that WERE pinned keep working, which is exactly what makes the
+  one that wasn't look like a caller mistake rather than a wrapper defect. Do not fix
+  this by asking callers to remember to pass absolute paths — the wrapper changed the
+  directory, so the wrapper owns pinning its arguments; a caller-discipline rule leaves
+  the trap armed for the next caller and rots the moment someone reads the usage line
+  and types the obvious relative path. (BL-374:
+  `specs/pipeline/scripts/run_gherkin_mutation.sh` absolutizes FEATURE_FILE and
+  STEPS_MODULE, then `cd`s into the vendored APS dir — so a relative `--work-dir` was
+  `mkdir`ed under the caller's cwd while `bb` wrote the mutation scratch into
+  `swarmforge/vendor/aps/`, a git-tracked, non-gitignored path, leaving an untracked
+  diff for a human to clean up by hand. Raised by the hardender 2026-07-14 as a
+  `role:hardender` rule to always pass an absolute work-dir; rejected as scoped and
+  generalized here, because the burden belongs on the one script, not on every future
+  caller of every future wrapper.)
 - A multi-slice emit→route→consume pipeline (an epic whose slices are pure
   foundation modules — a deriver, a router, a store — each landed with no live
   caller) is NOT complete until an explicit runtime-wiring slice CALLS them on a
