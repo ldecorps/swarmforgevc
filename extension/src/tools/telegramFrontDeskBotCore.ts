@@ -272,15 +272,24 @@ async function deliverOperatorContext(backlogId: string, text: string, updateId:
   return posted;
 }
 
+// Split out of processUpdate below so its own branch count stays at or
+// below the CRAP threshold - the same "extract the ternary into a named,
+// tested helper" split deliverOperatorContext above already uses for the
+// identical reason (BL-357), reapplied here because BL-389's outcome
+// mapping (ok -> 'posted' | 'failed') pushed processUpdate's CRAP to 8.
+function deliveryOutcome(ok: boolean): UpdateDeliveryOutcome {
+  return ok ? 'posted' : 'failed';
+}
+
 async function processUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
   const decision = decideUpdateAction(update, principalUserId, adapters.subjectForTopic, adapters.backlogForTopic);
   if (decision.action === 'post-existing') {
     const ok = await adapters.postToBridge(decision.subjectId, decision.text, update.update_id);
-    return ok ? 'posted' : 'failed';
+    return deliveryOutcome(ok);
   }
   if (decision.action === 'operator-context') {
     const ok = await deliverOperatorContext(decision.backlogId, decision.text, update.update_id, adapters);
-    return ok ? 'posted' : 'failed';
+    return deliveryOutcome(ok);
   }
   if (decision.action === 'open-default' || decision.action === 'open-for-topic') {
     const topicId = decision.action === 'open-for-topic' ? decision.topicId : undefined;
