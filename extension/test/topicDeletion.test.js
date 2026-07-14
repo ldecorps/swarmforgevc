@@ -2,15 +2,21 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const { decideTopicDeletion, sweepTopicDeletions, topicRetentionWindowMs } = require('../out/concierge/topicDeletion');
 const { completionSummaryText } = require('../out/concierge/topicRouter');
-const { readRecord } = require('../out/concierge/blTopicStore');
+const { readRecord, appendMessage, recordPath } = require('../out/concierge/blTopicStore');
 
 // BL-331: slice 3 of archive-then-delete - a done ticket's topic is only
 // ever deleted after its content is VERIFIED serialised into the repo, and
 // only once outside the retention window. Mirrors BL-299's own "close only
 // follows a successful post, never an attempted one" ordering discipline
 // for the far less reversible delete verb.
+// Architect bounce: "verified" means BOTH the content is right AND it is
+// DURABLY committed (git) - not merely present in a working-tree file
+// (appendMessage's own write can succeed while its commit fails). Every
+// decideTopicDeletion call below therefore threads a recordIsCommitted
+// boolean.
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const RETENTION_MS = 7 * ONE_DAY_MS;
@@ -34,18 +40,18 @@ function emptyRecord(t) {
 // ── decideTopicDeletion (pure) ──────────────────────────────────────────
 
 // BL-331 archive-then-delete-01
-test('a topic with a verified record, outside the retention window, is deleted', () => {
+test('a topic with a verified, COMMITTED record, outside the retention window, is deleted', () => {
   const t = ticket();
   const now = RETENTION_MS + ONE_DAY_MS;
   const record = verifiedRecord(t, 0);
-  const decision = decideTopicDeletion(t, { [t.id]: 42 }, record, now, RETENTION_MS);
+  const decision = decideTopicDeletion(t, { [t.id]: 42 }, record, true, now, RETENTION_MS);
   assert.deepEqual(decision, { action: 'delete', topicId: 42 });
 });
 
 test('the record is verified before any deletion is attempted - an unverified record never reaches delete, however old', () => {
   const t = ticket();
   const now = RETENTION_MS + ONE_DAY_MS * 100;
-  const decision = decideTopicDeletion(t, { [t.id]: 42 }, emptyRecord(t), now, RETENTION_MS);
+  const decision = decideTopicDeletion(t, { [t.id]: 42 }, emptyRecord(t), true, now, RETENTION_MS);
   assert.notEqual(decision.action, 'delete');
 });
 
@@ -53,7 +59,7 @@ test('the record is verified before any deletion is attempted - an unverified re
 test('a missing/incomplete serialised record keeps the topic (never delete on an attempted-but-unverified archive)', () => {
   const t = ticket();
   const now = RETENTION_MS + ONE_DAY_MS;
-  const decision = decideTopicDeletion(t, { [t.id]: 42 }, emptyRecord(t), now, RETENTION_MS);
+  const decision = decideTopicDeletion(t, { [t.id]: 42 }, emptyRecord(t), true, now, RETENTION_MS);
   assert.deepEqual(decision, { action: 'keep', reason: 'unverified' });
 });
 
@@ -61,16 +67,27 @@ test('a record with unrelated messages but no verified completion text keeps the
   const t = ticket();
   const now = RETENTION_MS + ONE_DAY_MS;
   const record = { id: t.id, messages: [{ seq: 0, ts: 0, author: 'human', type: 'inbound', text: 'a question' }] };
-  const decision = decideTopicDeletion(t, { [t.id]: 42 }, record, now, RETENTION_MS);
+  const decision = decideTopicDeletion(t, { [t.id]: 42 }, record, true, now, RETENTION_MS);
+  assert.deepEqual(decision, { action: 'keep', reason: 'unverified' });
+});
+
+// Architect bounce (BL-331): content-verified but NOT durably committed -
+// still unverified. A record that reads back complete right now but is an
+// uncommitted working-tree file is lost on a fresh checkout/git clean/disk
+// failure - exactly the window CommitFailureReporter exists to surface.
+test('a content-verified record that is NOT durably committed is still treated as unverified - never deleted on an uncommitted write', () => {
+  const t = ticket();
+  const now = RETENTION_MS + ONE_DAY_MS;
+  const decision = decideTopicDeletion(t, { [t.id]: 42 }, verifiedRecord(t, 0), false, now, RETENTION_MS);
   assert.deepEqual(decision, { action: 'keep', reason: 'unverified' });
 });
 
 // BL-331 archive-then-delete-04
-test('a verified record still inside the retention window keeps the topic', () => {
+test('a verified, committed record still inside the retention window keeps the topic', () => {
   const t = ticket();
   const completedAt = 1000;
   const now = completedAt + RETENTION_MS - 1;
-  const decision = decideTopicDeletion(t, { [t.id]: 42 }, verifiedRecord(t, completedAt), now, RETENTION_MS);
+  const decision = decideTopicDeletion(t, { [t.id]: 42 }, verifiedRecord(t, completedAt), true, now, RETENTION_MS);
   assert.deepEqual(decision, { action: 'keep', reason: 'retention-window' });
 });
 
@@ -78,20 +95,20 @@ test('the retention window boundary is inclusive - exactly the window elapsed is
   const t = ticket();
   const completedAt = 1000;
   const now = completedAt + RETENTION_MS;
-  const decision = decideTopicDeletion(t, { [t.id]: 42 }, verifiedRecord(t, completedAt), now, RETENTION_MS);
+  const decision = decideTopicDeletion(t, { [t.id]: 42 }, verifiedRecord(t, completedAt), true, now, RETENTION_MS);
   assert.deepEqual(decision, { action: 'delete', topicId: 42 });
 });
 
 test('a completed ticket with no topic ever mapped is left alone - never deletes something that does not exist', () => {
   const t = ticket();
   const now = RETENTION_MS + ONE_DAY_MS;
-  const decision = decideTopicDeletion(t, {}, verifiedRecord(t, 0), now, RETENTION_MS);
+  const decision = decideTopicDeletion(t, {}, verifiedRecord(t, 0), true, now, RETENTION_MS);
   assert.deepEqual(decision, { action: 'keep', reason: 'no-topic' });
 });
 
 // ── sweepTopicDeletions (adapter-injected) ──────────────────────────────
 
-function fakeAdapters({ topicMap = {}, records = {} } = {}) {
+function fakeAdapters({ topicMap = {}, records = {}, committed = {} } = {}) {
   const deletedCalls = [];
   const dropped = [];
   const reportedUnverified = [];
@@ -102,6 +119,10 @@ function fakeAdapters({ topicMap = {}, records = {} } = {}) {
     adapters: {
       getTopicMap: () => topicMap,
       readRecord: (ticketId) => records[ticketId] ?? { id: ticketId, messages: [] },
+      // Defaults to committed=true so tests unrelated to durability don't
+      // need to touch this fixture - only the durability-specific tests
+      // below pass `committed: { [id]: false }`.
+      isRecordCommitted: (ticketId) => committed[ticketId] !== false,
       deleteTopic: async (topicId) => {
         deletedCalls.push(topicId);
         return true;
@@ -135,6 +156,21 @@ test('an unverified, eligible-by-age ticket is never deleted and is reported lou
   assert.deepEqual(result, { deleted: [] });
   assert.deepEqual(dropped, []);
   assert.deepEqual(deletedCalls, []);
+  assert.deepEqual(reportedUnverified, [t.id]);
+});
+
+test('a content-verified but NOT-yet-committed record is never deleted, and is reported loudly (same as content-unverified)', async () => {
+  const t = ticket();
+  const now = RETENTION_MS + ONE_DAY_MS;
+  const { adapters, dropped, deletedCalls, reportedUnverified } = fakeAdapters({
+    topicMap: { [t.id]: 42 },
+    records: { [t.id]: verifiedRecord(t, 0) },
+    committed: { [t.id]: false },
+  });
+  const result = await sweepTopicDeletions([t], adapters, now, RETENTION_MS);
+  assert.deepEqual(result, { deleted: [] });
+  assert.deepEqual(dropped, []);
+  assert.deepEqual(deletedCalls, [], 'expected the topic never deleted while its record is uncommitted');
   assert.deepEqual(reportedUnverified, [t.id]);
 });
 
@@ -202,6 +238,66 @@ test('a genuinely unreadable record (real EISDIR, not mocked) is treated as unve
   assert.deepEqual(dropped, []);
   assert.deepEqual(deletedCalls, []);
   assert.deepEqual(reportedUnverified, [t.id]);
+});
+
+// ── real, induced (never mocked) uncommitted-record failure ─────────────
+// Architect bounce: the same "real induced failure, never mocked" posture
+// as the EISDIR test above, but for git durability specifically - a REAL
+// git repo with the record's own write present but genuinely uncommitted.
+function git(cwd, args) {
+  execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+function mkGitRepo() {
+  const target = mkTmp();
+  git(target, ['init', '-q']);
+  git(target, ['config', 'user.email', 't@t']);
+  git(target, ['config', 'user.name', 't']);
+  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  return target;
+}
+
+const { isRecordCommitted } = require('../out/concierge/blTopicStore');
+
+test('a verified record written to a REAL git repo but never committed is never deleted (real induced non-durability, not a mocked boolean)', async () => {
+  const t = ticket({ id: 'BL-778' });
+  const targetPath = mkGitRepo();
+  const filePath = recordPath(targetPath, t.id);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(verifiedRecord(t, 0))); // written directly, deliberately never git-added/committed
+
+  assert.equal(isRecordCommitted(targetPath, t.id), false, 'fixture sanity check: the record must genuinely be uncommitted');
+
+  const now = RETENTION_MS + ONE_DAY_MS;
+  const { adapters, dropped, deletedCalls, reportedUnverified } = fakeAdapters({ topicMap: { [t.id]: 42 } });
+  adapters.readRecord = (ticketId) => readRecord(targetPath, ticketId);
+  adapters.isRecordCommitted = (ticketId) => isRecordCommitted(targetPath, ticketId); // the REAL git check
+
+  const result = await sweepTopicDeletions([t], adapters, now, RETENTION_MS);
+
+  assert.deepEqual(result, { deleted: [] });
+  assert.deepEqual(dropped, []);
+  assert.deepEqual(deletedCalls, []);
+  assert.deepEqual(reportedUnverified, [t.id]);
+});
+
+test('once that SAME record is actually committed, the identical sweep now deletes it (real induced durability, not a mocked boolean)', async () => {
+  const t = ticket({ id: 'BL-779' });
+  const targetPath = mkGitRepo();
+  // appendMessage is the real production write+commit path (blTopicStore.ts).
+  appendMessage(targetPath, t.id, { author: 'swarm', type: 'outbound', text: summaryFor(t), ts: 0 });
+
+  assert.equal(isRecordCommitted(targetPath, t.id), true, 'fixture sanity check: the record must genuinely be committed');
+
+  const now = RETENTION_MS + ONE_DAY_MS;
+  const { adapters, deletedCalls } = fakeAdapters({ topicMap: { [t.id]: 42 } });
+  adapters.readRecord = (ticketId) => readRecord(targetPath, ticketId);
+  adapters.isRecordCommitted = (ticketId) => isRecordCommitted(targetPath, ticketId);
+
+  const result = await sweepTopicDeletions([t], adapters, now, RETENTION_MS);
+
+  assert.deepEqual(result, { deleted: [t.id] });
+  assert.deepEqual(deletedCalls, [42]);
 });
 
 // ── topicRetentionWindowMs (env-var-with-numeric-default, same shape as

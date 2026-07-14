@@ -236,18 +236,35 @@
   (when (fs/exists? tmux-socket-file)
     (str/trim (slurp (str tmux-socket-file)))))
 
-(defn tmux-live-sessions
-  "Sessions (windows) tmux currently reports on the swarm socket. Empty when
-   the socket is gone or tmux errors — the caller treats that as 'no agents'."
+(defn tmux-control-status
+  "Whether the swarm's tmux control channel actually responded just now, and
+   the live session names if so. BL-368: this is the load-bearing
+   distinction the incident exposed - 'tmux answered, here is its (possibly
+   empty) session list' (:reachable? true) is a DIFFERENT fact about the
+   world than 'a control channel that USED TO exist stopped responding'
+   (:reachable? false).
+
+   Only a PRESENT-but-now-failing socket pointer counts as lost control - you
+   cannot lose control of something that was never established. No pointer
+   file at all (tmux-socket returns nil: a swarm that has not launched tmux
+   sessions yet, or a test fixture with no real tmux) is treated as the
+   ordinary empty-sessions case, exactly as before this ticket - dead-agent-
+   events still runs and correctly reports every expected-but-absent role.
+   It is specifically the incident shape - the pointer file is intact and
+   names a real path, but tmux itself errors talking to it (the underlying
+   unix socket was unlinked out from under a running server, BL-367's own
+   incident) - that produces control-lost-event instead of a misleading
+   N x AGENT_EXITED batch."
   []
   (if-let [sock (tmux-socket)]
     (let [{:keys [out exit]} (process/sh {:continue true}
                                          "tmux" "-S" sock "list-windows" "-a"
                                          "-F" "#{session_name}")]
       (if (zero? exit)
-        (->> (str/split-lines out) (map str/trim) (remove str/blank?) distinct vec)
-        []))
-    []))
+        {:reachable? true
+         :sessions (->> (str/split-lines out) (map str/trim) (remove str/blank?) distinct vec)}
+        {:reachable? false :sessions []}))
+    {:reachable? true :sessions []}))
 
 (defn capture-pane-on
   "Last -lines of a session's pane on an explicit socket, or nil when the
@@ -687,7 +704,7 @@
   "Kills the build-agent tmux sessions on the SWARM socket only - NEVER the
    Operator's own socket (operator-socket-file, a distinct file). A no-op
    when the swarm socket is already gone/absent, same posture as
-   tmux-live-sessions above."
+   tmux-control-status above."
   []
   (when-let [sock (tmux-socket)]
     (process/sh {:continue true} "tmux" "-S" sock "kill-server")))
@@ -1120,7 +1137,8 @@
 (defn tick! []
   (when heartbeat? (atomic-spit! heartbeat-file (now-iso)))
   (let [now (now-ms)
-        live-sessions (tmux-live-sessions)
+        control (tmux-control-status)
+        live-sessions (:sessions control)
         agents-running (count (remove #{operator-session} live-sessions))
         roles (operator-lib/parse-roles-tsv
                (when (fs/exists? roles-file) (slurp (str roles-file))))
@@ -1143,7 +1161,22 @@
             (log! "provider" "available (cooldown cleared)"))))
 
     ;; observe events: dead agents, swarm-check timer, human command, new tasks
-    (let [observed (cond-> (operator-lib/dead-agent-events roles live-sessions)
+    ;; BL-368: dead-agent-events is only ever computed from a CONFIRMED-
+    ;; reachable session list - an unreachable control channel produces the
+    ;; single control-lost-event instead, never N x AGENT_EXITED derived
+    ;; from whatever empty/stale session list an unreachable tmux left
+    ;; behind. These are different facts about the world and must never be
+    ;; inferred from one another.
+    (when-not (:reachable? control)
+      ;; BL-368 (scenario 04): logged UNCONDITIONALLY, independent of the
+      ;; disposable LLM Operator ever launching or noticing - "surfaced
+      ;; loudly" must not be load-bearing on an LLM's judgment, same as the
+      ;; misdiagnosis/relaunch guards above. runtime.log is the swarm's own
+      ;; durable, human-checkable audit trail (log! above).
+      (log! "SWARM_CONTROL_LOST" "tmux control channel unreachable - NOT agent death, human attention needed"))
+    (let [observed (cond-> (if (:reachable? control)
+                              (operator-lib/dead-agent-events roles live-sessions)
+                              [(operator-lib/control-lost-event)])
                      (operator-lib/timer-due? (last-swarm-check-ms) now swarm-check-ms)
                      (conj {:type "SWARM_CHECK_TIMER"})
                      (fs/exists? command-file)
