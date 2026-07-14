@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { readRecord, appendMessage, recordPath, commitTopicRecord } = require('../out/concierge/blTopicStore');
+const { readRecord, appendMessage, recordPath, commitTopicRecord, hasCompletionRecord } = require('../out/concierge/blTopicStore');
 
 // BL-329: the durable, git-tracked, per-ticket record of every message sent
 // in a BL topic - inbound and outbound - so the Telegram topic becomes a
@@ -207,4 +207,34 @@ test('appendMessage does NOT report a failure when the commit actually succeeds'
     calls.push({ ticketId, filePath });
   });
   assert.deepEqual(calls, [], 'expected no reporter call on a successful commit');
+});
+
+// ── hasCompletionRecord (BL-331: the shared "is this record verified
+//    complete" predicate, extracted from BL-330's own isAlreadyReconciled) ──
+
+test('hasCompletionRecord is false for an empty record (no messages at all)', () => {
+  assert.equal(hasCompletionRecord({ id: 'BL-900', messages: [] }, 'BL-900 - a fine feature is complete.'), false);
+});
+
+test('hasCompletionRecord is false when the record has messages but none match the exact completion text', () => {
+  const record = { id: 'BL-900', messages: [{ seq: 0, ts: 1, author: 'human', type: 'inbound', text: 'a question' }] };
+  assert.equal(hasCompletionRecord(record, 'BL-900 - a fine feature is complete.'), false);
+});
+
+test('hasCompletionRecord is false when the exact text is present but recorded as INBOUND, never outbound', () => {
+  const text = 'BL-900 - a fine feature is complete.';
+  const record = { id: 'BL-900', messages: [{ seq: 0, ts: 1, author: 'human', type: 'inbound', text }] };
+  assert.equal(hasCompletionRecord(record, text), false);
+});
+
+test('hasCompletionRecord is true once the exact completion text was recorded as an outbound message', () => {
+  const text = 'BL-900 - a fine feature is complete.';
+  const record = {
+    id: 'BL-900',
+    messages: [
+      { seq: 0, ts: 1, author: 'human', type: 'inbound', text: 'a question' },
+      { seq: 1, ts: 2, author: 'swarm', type: 'outbound', text },
+    ],
+  };
+  assert.equal(hasCompletionRecord(record, text), true);
 });

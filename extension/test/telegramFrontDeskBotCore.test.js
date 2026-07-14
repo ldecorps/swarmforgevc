@@ -23,6 +23,8 @@ const {
   decideEnsureOperatorTopicAction,
   OPERATOR_SUBJECT_ID,
   nextUpdateOffset,
+  offsetAfterDelivery,
+  shouldEscalateStuckDelivery,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
 const PRINCIPAL_ID = 111;
@@ -768,8 +770,11 @@ test('poll-resilience-02: retries continue past the degraded threshold (never gi
 
 test('a successful cycle with real updates still advances the offset via runPollCycle', async () => {
   const update = { update_id: 1, message: { message_id: 1, chat: { id: 1 }, from: { id: PRINCIPAL_ID }, text: 'hi' } };
-  const cycle = await runPollCycle({ offset: 0, consecutiveFailures: 2 }, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [update] }), BACKOFF_CONFIG);
-  assert.equal(cycle.state.offset, 1);
+  const cycle = await runPollCycle({ offset: 0, consecutiveFailures: 2, stuckAttempts: 0 }, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [update] }), BACKOFF_CONFIG);
+  // BL-369: the offset is the delivered update's own update_id + 1 (real
+  // Telegram semantics, offsetAfterDelivery), never an injected adapter's
+  // arbitrary arithmetic - update_id:1 delivered means offset advances to 2.
+  assert.equal(cycle.state.offset, 2);
   assert.equal(cycle.state.consecutiveFailures, 0);
 });
 
@@ -971,4 +976,125 @@ test('nextUpdateOffset advances past the highest update_id seen', () => {
 
 test('nextUpdateOffset never regresses when given an empty batch', () => {
   assert.equal(nextUpdateOffset([], 12), 12);
+});
+
+// ── offsetAfterDelivery (pure) — BL-369 bug #1, the keystone defect ─────
+
+function upd(id) {
+  return { update_id: id, message: { message_id: id, chat: { id: 1 }, from: { id: PRINCIPAL_ID }, text: 'x' } };
+}
+
+test('offsetAfterDelivery advances past every update when all were delivered', () => {
+  assert.equal(offsetAfterDelivery([upd(5), upd(6), upd(7)], 0, [true, true, true]), 8);
+});
+
+test('offsetAfterDelivery-no-loss-01: stops BEFORE the first undelivered update, never advancing past it', () => {
+  assert.equal(offsetAfterDelivery([upd(5), upd(6), upd(7)], 0, [true, false, true]), 6);
+});
+
+test('offsetAfterDelivery: a failure on the FIRST update advances the offset not at all', () => {
+  assert.equal(offsetAfterDelivery([upd(5), upd(6)], 3, [false, true]), 3);
+});
+
+test('offsetAfterDelivery: an empty batch leaves the offset unchanged', () => {
+  assert.equal(offsetAfterDelivery([], 9, []), 9);
+});
+
+test('offsetAfterDelivery: a single delivered update advances to its own update_id + 1 (real Telegram semantics)', () => {
+  assert.equal(offsetAfterDelivery([upd(41)], 0, [true]), 42);
+});
+
+// ── shouldEscalateStuckDelivery (pure) — BL-369 scenario 05 ─────────────
+
+const STUCK_CONFIG = { backoffBaseMs: 1000, backoffMaxMs: 8000, degradedThreshold: 3, stuckRetryLimit: 3 };
+
+test('shouldEscalateStuckDelivery fires exactly on the threshold crossing, not before or after', () => {
+  assert.equal(shouldEscalateStuckDelivery(2, STUCK_CONFIG), false);
+  assert.equal(shouldEscalateStuckDelivery(3, STUCK_CONFIG), true);
+  assert.equal(shouldEscalateStuckDelivery(4, STUCK_CONFIG), false);
+});
+
+// ── runPollCycle's stuckAttempts tracking (BL-369 scenario 05) ──────────
+
+function fakeStuckCycleAdapters({ deliver }) {
+  const update = { update_id: 1, message: { message_id: 1, chat: { id: 1 }, from: { id: PRINCIPAL_ID }, text: 'stuck' } };
+  return {
+    getUpdates: async () => ({ success: true, updates: [update] }),
+    postToBridge: async () => deliver,
+    subjectForTopic: () => 'SUP-1',
+    openSubjectAndRecord: async () => 'SUP-1',
+    backlogForTopic: () => undefined,
+    postOperatorContext: async () => true,
+  };
+}
+
+test('BL-369 no-inbound-message-is-ever-lost-05: a cycle whose only update keeps failing increments stuckAttempts each time', async () => {
+  let state = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 };
+  for (let i = 1; i <= 3; i++) {
+    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeStuckCycleAdapters({ deliver: false }), STUCK_CONFIG);
+    state = cycle.state;
+    assert.equal(state.stuckAttempts, i);
+    assert.equal(state.offset, 0, 'the offset must never advance past the still-undelivered update');
+  }
+});
+
+test('BL-369 no-inbound-message-is-ever-lost-05: escalateStuckDelivery fires exactly on the cycle stuckAttempts crosses the limit, never before or again after', async () => {
+  let state = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 };
+  const escalations = [];
+  for (let i = 1; i <= 5; i++) {
+    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeStuckCycleAdapters({ deliver: false }), STUCK_CONFIG);
+    state = cycle.state;
+    escalations.push(cycle.escalateStuckDelivery);
+  }
+  assert.deepEqual(escalations, [false, false, true, false, false]);
+});
+
+test('a delivery success resets stuckAttempts to 0 and lets the offset advance again', async () => {
+  const failing = await runPollCycle({ offset: 0, consecutiveFailures: 0, stuckAttempts: 2 }, PRINCIPAL_ID, fakeStuckCycleAdapters({ deliver: false }), STUCK_CONFIG);
+  assert.equal(failing.state.stuckAttempts, 3);
+  const recovered = await runPollCycle(failing.state, PRINCIPAL_ID, fakeStuckCycleAdapters({ deliver: true }), STUCK_CONFIG);
+  assert.equal(recovered.state.stuckAttempts, 0);
+  assert.equal(recovered.state.offset, 2, 'expected the previously-stuck update to finally be delivered and acked');
+});
+
+test('a whole-cycle getUpdates failure never touches stuckAttempts (a distinct failure mode from a per-message delivery failure)', async () => {
+  const adapters = { getUpdates: async () => ({ success: false, updates: [], error: 'down' }) };
+  const cycle = await runPollCycle({ offset: 0, consecutiveFailures: 0, stuckAttempts: 2 }, PRINCIPAL_ID, adapters, STUCK_CONFIG);
+  assert.equal(cycle.state.stuckAttempts, 2, 'expected stuckAttempts left untouched by a getUpdates-level failure');
+  assert.equal(cycle.escalateStuckDelivery, false);
+});
+
+// ── applyPollCycleResult's escalate callback (BL-369) ────────────────────
+
+test('applyPollCycleResult calls escalate when escalateStuckDelivery is true, and waits/warns independently as usual', async () => {
+  const escalateCalls = [];
+  const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 3 }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: true };
+  await applyPollCycleResult(
+    cycle,
+    () => {
+      throw new Error('no warning expected here');
+    },
+    async () => {},
+    async () => {
+      escalateCalls.push(true);
+    }
+  );
+  assert.equal(escalateCalls.length, 1);
+});
+
+test('applyPollCycleResult never calls escalate when escalateStuckDelivery is false', async () => {
+  const escalateCalls = [];
+  const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: false };
+  await applyPollCycleResult(
+    cycle,
+    () => {},
+    async () => {},
+    async () => escalateCalls.push(true)
+  );
+  assert.deepEqual(escalateCalls, []);
+});
+
+test('applyPollCycleResult defaults escalate to a no-op when the caller does not supply one (back-compat)', async () => {
+  const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 3 }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: true };
+  await assert.doesNotReject(() => applyPollCycleResult(cycle, () => {}, async () => {}));
 });
