@@ -277,9 +277,40 @@ function readLatestCostHealthSidecar(targetPath: string): CostHealthSidecar | nu
   return readLatestCommittedSidecar<CostHealthSidecar>(path.join(targetPath, 'docs', 'briefings'));
 }
 
+// BL-386 architect bounce: docs/benchmarks/2026-07-13.json is a REAL,
+// already-committed report from BEFORE BL-386 changed the schema (taskId:
+// string -> taskIds: string[], plus refusedTasks and per-model taskScores) -
+// readLatestCommittedSidecar's own generic JSON.parse+cast reads it exactly
+// as it is on disk, with none of the new fields, so the PWA's own
+// report.taskIds[0] throws on the artifact this repo already ships. A
+// migration at THIS read boundary (rather than a one-time hand-edit of the
+// committed file) also protects against the same legacy shape reappearing
+// later - a git revert, a stale branch merge. Already-current-shape input
+// passes through unchanged (every field it already carries is kept, never
+// rebuilt), and null (no report ever committed) passes through unchanged too.
+interface LegacyBenchmarkReportShape {
+  taskId?: string;
+}
+
+export function normalizeBenchmarkReport(raw: (BenchmarkReport & LegacyBenchmarkReportShape) | null): BenchmarkReport | null {
+  if (!raw) {
+    return raw;
+  }
+  if (raw.taskIds !== undefined) {
+    return raw;
+  }
+  const { taskId, ...rest } = raw;
+  return {
+    ...rest,
+    taskIds: taskId !== undefined ? [taskId] : [],
+    refusedTasks: raw.refusedTasks ?? [],
+    models: raw.models.map((model) => ({ ...model, taskScores: model.taskScores ?? [] })),
+  };
+}
+
 // BL-347: the most recently committed docs/benchmarks/<date>.json report.
 function readLatestBenchmarkReport(targetPath: string): BenchmarkReport | null {
-  return readLatestCommittedSidecar<BenchmarkReport>(path.join(targetPath, 'docs', 'benchmarks'));
+  return normalizeBenchmarkReport(readLatestCommittedSidecar<BenchmarkReport & LegacyBenchmarkReportShape>(path.join(targetPath, 'docs', 'benchmarks')));
 }
 
 // The one impure entry point: reads current backlog state, walks git
