@@ -12,6 +12,8 @@ function fakeAdapters(overrides = {}) {
   const sent = [];
   const closed = [];
   const recorded = [];
+  const iconsSet = [];
+  const iconOwnership = {};
   let currentFolders = folders();
   let currentGates = [];
   let currentRoleTicket = {};
@@ -23,6 +25,8 @@ function fakeAdapters(overrides = {}) {
     sent,
     closed,
     recorded,
+    iconsSet,
+    iconOwnership,
     setOperatorTopicId: (id) => {
       operatorTopicId = id;
     },
@@ -65,6 +69,22 @@ function fakeAdapters(overrides = {}) {
           recorded.push({ backlogId, text });
         },
         ensureOperatorTopic: async () => operatorTopicId,
+      },
+      // BL-342: an EMPTY sticker list by default - resolveIconStickerId
+      // then never finds a match, so syncTopicIcon safely no-ops
+      // ('skipped-unresolved-icon') for every test that does not care
+      // about icons, never accidentally calling setTopicIcon. Tests that
+      // DO exercise icon sync override iconAdapters.getIconStickers.
+      iconAdapters: {
+        getIconStickers: async () => [],
+        setTopicIcon: async (topicId, iconId) => {
+          iconsSet.push({ topicId, iconId });
+          return true;
+        },
+        readSwarmIconId: (ticketId) => iconOwnership[ticketId],
+        recordSwarmIconId: (ticketId, iconId) => {
+          iconOwnership[ticketId] = iconId;
+        },
       },
       ...overrides,
     },
@@ -588,4 +608,139 @@ test('BL-341 hardening: two epics active in the same tick keep separate topics a
   // count reflects only its OWN epic's slices, never the other's.
   assert.ok(sent.some((m) => m.topicId === routingTopicId && m.text === '1 of 2 ticketed slice(s) complete.'));
   assert.ok(sent.some((m) => m.topicId === benchmarkTopicId && m.text.includes('1 of 1 ticketed slice(s) complete.') && m.text.includes('Epic complete')));
+});
+
+// ── BL-342: topic icons track ticket state - rides the SAME TaskStarted/
+//    TaskCompleted transitions, plus a paused-diff of its own ────────────
+
+const ICON_STICKERS = [
+  { emoji: '✅', customEmojiId: 'id-check' },
+  { emoji: '🦠', customEmojiId: 'id-microbe' },
+  { emoji: '💡', customEmojiId: 'id-bulb' },
+  { emoji: '🔍', customEmojiId: 'id-magnifier' },
+];
+
+test('BL-342 topic-icons-01: a newly-active feature ticket gets the bulb icon on its brand-new topic', async () => {
+  const { adapters, setFolders, iconsSet, iconOwnership, topicMap } = fakeAdapters();
+  adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
+
+  await runConciergeTick(adapters);
+
+  const topicId = topicMap['BL-1'];
+  assert.deepEqual(iconsSet, [{ topicId, iconId: 'id-bulb' }]);
+  assert.equal(iconOwnership['BL-1'], 'id-bulb');
+});
+
+test('BL-342 topic-icons-01: a newly-active bug ticket gets the microbe icon', async () => {
+  const { adapters, setFolders, iconsSet, topicMap } = fakeAdapters();
+  adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
+  setFolders(folders({ active: [{ id: 'BL-2', title: 'a nasty defect', type: 'bug' }] }));
+
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(iconsSet, [{ topicId: topicMap['BL-2'], iconId: 'id-microbe' }]);
+});
+
+test('BL-342 topic-icons-02/03: a ticket the swarm already owns gets the check icon on completion, even though its topic is closed', async () => {
+  const { adapters, setFolders, iconsSet, iconOwnership, topicMap } = fakeAdapters();
+  adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
+  await runConciergeTick(adapters);
+  iconsSet.length = 0;
+  assert.equal(iconOwnership['BL-1'], 'id-bulb', 'expected ownership already established from TaskStarted');
+
+  setFolders(folders({ done: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(iconsSet, [{ topicId: topicMap['BL-1'], iconId: 'id-check' }]);
+  assert.equal(iconOwnership['BL-1'], 'id-check');
+});
+
+test('BL-342 topic-icons-04/05: an existing topic the swarm never set an icon for is left alone on a state change', async () => {
+  const { adapters, setFolders, iconsSet, topicMap } = fakeAdapters();
+  adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
+  // Simulate a topic that already existed (e.g. hand-set by a human, or
+  // pre-dating this ticket) BEFORE any tick ever ran - no ownership marker.
+  topicMap['BL-1'] = 555;
+
+  setFolders(folders({ done: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(iconsSet, [], 'expected the swarm to never call setTopicIcon for a topic it does not own');
+});
+
+test('BL-342 topic-icons-02: a paused ticket promoted into active for the first time gets the bulb icon, reusing its existing topic', async () => {
+  // NOT a done->active bounce: diffTaskStarted's own durable emittedKeys
+  // dedup (swarmEventStream.ts) means a (TaskStarted, backlogId) key, once
+  // emitted, never re-fires even if the ticket later returns to active -
+  // a pre-existing platform characteristic, not something BL-342 changes.
+  // A genuinely fresh promotion is paused -> active (this ticket's own
+  // TaskStarted key has never been emitted before) - the realistic shape
+  // of "promoted -> in flight" the ticket's own convention describes; a
+  // pipeline BOUNCE (QA/architect sending a parcel back) never moves the
+  // ticket's OWN backlog folder at all, so it needs no icon change either.
+  const { adapters, setFolders, iconsSet, iconOwnership, topicMap } = fakeAdapters();
+  adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
+  // A topic already exists for this ticket (opened on an earlier paused
+  // -> active -> paused round-trip) and the swarm already owns its icon.
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
+  await runConciergeTick(adapters);
+  setFolders(folders({ paused: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
+  await runConciergeTick(adapters);
+  assert.equal(iconOwnership['BL-1'], 'id-magnifier');
+  iconsSet.length = 0;
+
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(iconsSet, [{ topicId: topicMap['BL-1'], iconId: 'id-bulb' }]);
+});
+
+test('BL-342 topic-icons-02 [paused]: a ticket newly entering paused gets the magnifier icon (no SwarmEvent needed)', async () => {
+  const { adapters, setFolders, iconsSet, iconOwnership, topicMap } = fakeAdapters();
+  adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
+  await runConciergeTick(adapters);
+  iconsSet.length = 0;
+
+  setFolders(folders({ paused: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(iconsSet, [{ topicId: topicMap['BL-1'], iconId: 'id-magnifier' }]);
+  assert.equal(iconOwnership['BL-1'], 'id-magnifier');
+});
+
+test('BL-342: a ticket newly entering paused with no topic at all yet (never promoted) is a silent no-op', async () => {
+  const { adapters, setFolders, iconsSet } = fakeAdapters();
+  adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
+  setFolders(folders({ paused: [{ id: 'BL-9', title: 'freshly specced, never promoted', type: 'feature' }] }));
+
+  await assert.doesNotReject(() => runConciergeTick(adapters));
+  assert.deepEqual(iconsSet, []);
+});
+
+test('BL-342: the paused diff does not re-fire on a later tick where the ticket is still paused (edge-triggered, not level-triggered)', async () => {
+  const { adapters, setFolders, iconsSet } = fakeAdapters();
+  adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
+  await runConciergeTick(adapters);
+  setFolders(folders({ paused: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
+  await runConciergeTick(adapters);
+  iconsSet.length = 0;
+
+  // Still paused, nothing changed - a second tick must not re-set the icon.
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(iconsSet, []);
+});
+
+test('BL-342 topic-icons-06: an epic-defining ticket is never a target of icon sync at all', async () => {
+  const { adapters, setFolders, iconsSet } = fakeAdapters();
+  adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
+  setFolders(folders({ active: [{ id: 'BL-500', title: 'EPIC — some initiative', type: 'epic', epic: 'some-initiative' }] }));
+
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(iconsSet, [], 'expected an epic-defining ticket to never receive an automated ticket-state icon');
 });

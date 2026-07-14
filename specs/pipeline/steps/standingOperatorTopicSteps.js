@@ -157,7 +157,7 @@ function registerSteps(registry) {
   // ── standing-operator-topic-02 / -05 (shared Given/When) ─────────────
   registry.define(/^the human posts a message in the Operator topic$/, (ctx) => {
     const update = mkUpdateInTopic(ctx.topicId, 'a question for the Operator');
-    ctx.decision = decideUpdateAction(update, PRINCIPAL_ID, (topicId) => subjectForTopic(readTopicMapFixture(ctx.root), topicId));
+    ctx.decision = decideUpdateAction(update, PRINCIPAL_ID, '1', (topicId) => subjectForTopic(readTopicMapFixture(ctx.root), topicId));
   });
 
   registry.define(/^the restricted Operator receives it as a conversation message$/, (ctx) => {

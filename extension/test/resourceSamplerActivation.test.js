@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { buildSampledRoles, resolvePanePid } = require('../out/swarm/resourceSamplerActivation');
-const { installFakeTmux } = require('./helpers/fakeTmux');
+const { installInProcessTmux } = require('./helpers/fakeTmux');
 
 function mkTmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-resource-sampler-activation-'));
@@ -70,7 +70,7 @@ test('resolvePanePid resolves the live pid through readTmuxSocket -> getPaneBase
   const targetPath = mkTmp();
   fs.mkdirSync(path.join(targetPath, '.swarmforge'), { recursive: true });
   fs.writeFileSync(path.join(targetPath, '.swarmforge', 'tmux-socket'), '/tmp/fake.sock\n');
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
     { subcommand: 'display-message', exitCode: 0, stdout: '54321\n' },
@@ -91,7 +91,7 @@ test('resolvePanePid returns null when the tmux pane pid lookup fails', () => {
   const targetPath = mkTmp();
   fs.mkdirSync(path.join(targetPath, '.swarmforge'), { recursive: true });
   fs.writeFileSync(path.join(targetPath, '.swarmforge', 'tmux-socket'), '/tmp/fake.sock\n');
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
     { subcommand: 'display-message', exitCode: 1, stdout: '' },

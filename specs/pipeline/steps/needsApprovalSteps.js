@@ -16,6 +16,15 @@ const path = require('node:path');
 const { buildBacklogDashboard } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'metrics', 'backlogDashboard'));
 const { formatNeedsApprovalSection } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'tools', 'needs-approval-line'));
 const { backfillHumanApprovalText } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'tools', 'backfill-human-approval'));
+// BL-342: "the backfill runs" is a verbatim step-text collision with
+// topicIconsTrackTicketStateSteps.js's own BL-342 scenario 07 - the SAME
+// literal Gherkin text, two unrelated tickets. Registration order means
+// THIS handler always wins (registered earlier in steps/index.js), so it
+// branches on ctx shape rather than letting BL-342's own registration be
+// silently shadowed - the same convention noInboundMessageIsEverLostSteps.js's
+// "the failure is escalated to the human" already uses for this exact
+// class of collision.
+const { runIconBackfill } = require('./topicIconsTrackTicketStateSteps');
 
 function emptyDeliveryMetrics() {
   const emptyTrend = { series: [], currentValue: null, priorValue: null, delta: null, direction: 'unknown' };
@@ -153,8 +162,13 @@ function registerSteps(registry) {
     ctx.rawYaml = `id: BL-900\ntitle: t\n\n# HUMAN APPROVAL: ${comment}.\n`;
   });
 
-  registry.define(/^the backfill runs$/, (ctx) => {
-    ctx.backfillResult = backfillHumanApprovalText(ctx.rawYaml);
+  registry.define(/^the backfill runs$/, async (ctx) => {
+    if (ctx.rawYaml !== undefined) {
+      ctx.backfillResult = backfillHumanApprovalText(ctx.rawYaml);
+      return;
+    }
+    // BL-342 scenario 07 - see this file's own import comment above.
+    await runIconBackfill(ctx);
   });
 
   registry.define(/^its human_approval is set to "([^"]+)"$/, (ctx, expectedValue) => {

@@ -49,7 +49,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { getTelegramUpdates, sendTelegramMessage, createForumTopic, closeForumTopic, deleteForumTopic, TelegramUpdate, TelegramPostFn } from '../notify/telegramClient';
+import {
+  getTelegramUpdates,
+  sendTelegramMessage,
+  createForumTopic,
+  closeForumTopic,
+  deleteForumTopic,
+  editForumTopic,
+  getForumTopicIconStickers,
+  TelegramUpdate,
+  TelegramPostFn,
+} from '../notify/telegramClient';
 import {
   PollAdapters,
   subjectForTopic,
@@ -77,7 +87,8 @@ import { reconcileTopicLifecycle, ReconcileAdapters } from '../concierge/topicRe
 import { sweepTopicDeletions, TopicDeletionAdapters, topicRetentionWindowMs } from '../concierge/topicDeletion';
 import { readBacklogFolders } from '../panel/backlogReader';
 import { appendOperatorEvent } from '../bridge/operatorEventQueue';
-import { appendMessage, readRecord, hasCompletionRecord, isRecordCommitted, hasUpdateId } from '../concierge/blTopicStore';
+import { appendMessage, readRecord, hasCompletionRecord, isRecordCommitted, hasUpdateId, readSwarmIconId, recordSwarmIconId } from '../concierge/blTopicStore';
+import { IconStickerLookup } from '../concierge/topicIcon';
 import { computeRoleGateStatesLive, RoleGateState } from '../bridge/gateSnapshot';
 import { computeCurrentHolders } from '../bridge/holisticProjections';
 import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
@@ -298,8 +309,9 @@ export async function openSubjectAndRecord(targetPath: string, topicId: number |
   return subjectId;
 }
 
-function buildPollAdapters(botToken: string, targetPath: string, bridgeUrl: string, controlToken: string): PollAdapters {
+function buildPollAdapters(botToken: string, targetPath: string, bridgeUrl: string, controlToken: string, chatId: string): PollAdapters {
   return {
+    chatId,
     getUpdates: (offset) => getTelegramUpdates(botToken, offset, POLL_TIMEOUT_SECONDS),
     postToBridge: (subjectId, text, updateId) => postToBridge(bridgeUrl, controlToken, subjectId, text, updateId),
     subjectForTopic: (topicId) => subjectForTopic(readTopicMap(targetPath), topicId),
@@ -341,7 +353,7 @@ async function escalateStuckDelivery(botToken: string, chatId: string): Promise<
 // warning, and (BL-370) the poll-heartbeat write - written on every
 // completed cycle, success or handled failure alike.
 async function pollLoop(botToken: string, principalUserId: string, targetPath: string, bridgeUrl: string, controlToken: string, chatId: string): Promise<void> {
-  const adapters = buildPollAdapters(botToken, targetPath, bridgeUrl, controlToken);
+  const adapters = buildPollAdapters(botToken, targetPath, bridgeUrl, controlToken, chatId);
   let state: PollLoopState = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 };
   for (;;) {
     const cycle = await runPollCycle(state, principalUserId, adapters, POLL_BACKOFF_CONFIG);
@@ -591,6 +603,21 @@ export function readRoleTicket(targetPath: string): Record<string, string> {
   return roleTicket;
 }
 
+// BL-342: Telegram's own valid icon set (getForumTopicIconStickers) rarely
+// changes and a tick can fire the icon sync several times in one pass
+// (several tickets transitioning at once) - fetched once per process and
+// reused, rather than a fresh live call per topic. A restart naturally
+// refreshes it; no TTL needed for a set this stable.
+let cachedIconStickers: IconStickerLookup[] | undefined;
+
+async function iconStickersOnce(botToken: string): Promise<IconStickerLookup[]> {
+  if (cachedIconStickers === undefined) {
+    const result = await getForumTopicIconStickers(botToken);
+    cachedIconStickers = result.success ? result.stickers : [];
+  }
+  return cachedIconStickers;
+}
+
 function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId: string): ConciergeTickAdapters {
   return {
     readFolders: () => toFoldersSnapshot(targetPath),
@@ -615,6 +642,12 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
         appendMessage(targetPath, backlogId, { author: 'swarm', type: 'outbound', text });
       },
       ensureOperatorTopic: () => ensureOperatorTopic(targetPath, botToken, chatId),
+    },
+    iconAdapters: {
+      getIconStickers: () => iconStickersOnce(botToken),
+      setTopicIcon: (topicId, iconCustomEmojiId) => editForumTopic(botToken, chatId, topicId, { iconCustomEmojiId }).then((r) => r.success),
+      readSwarmIconId: (ticketId) => readSwarmIconId(targetPath, ticketId),
+      recordSwarmIconId: (ticketId, iconId) => recordSwarmIconId(targetPath, ticketId, iconId),
     },
   };
 }
