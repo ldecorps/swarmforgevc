@@ -75,7 +75,7 @@ import { reconcileTopicLifecycle, ReconcileAdapters } from '../concierge/topicRe
 import { sweepTopicDeletions, TopicDeletionAdapters, topicRetentionWindowMs } from '../concierge/topicDeletion';
 import { readBacklogFolders } from '../panel/backlogReader';
 import { appendOperatorEvent } from '../bridge/operatorEventQueue';
-import { appendMessage, readRecord, hasCompletionRecord } from '../concierge/blTopicStore';
+import { appendMessage, readRecord, hasCompletionRecord, isRecordCommitted } from '../concierge/blTopicStore';
 import { computeRoleGateStatesLive, RoleGateState } from '../bridge/gateSnapshot';
 import { computeCurrentHolders } from '../bridge/holisticProjections';
 import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
@@ -604,6 +604,7 @@ function buildTopicDeletionAdapters(targetPath: string, botToken: string, chatId
   return {
     getTopicMap: () => readBacklogTopicMap(targetPath),
     readRecord: (ticketId) => readRecord(targetPath, ticketId),
+    isRecordCommitted: (ticketId) => isRecordCommitted(targetPath, ticketId),
     deleteTopic: (topicId) => deleteForumTopic(botToken, chatId, topicId).then((r) => r.success),
     dropTopicMapping: (backlogId) => dropBacklogTopicMapping(targetPath, backlogId),
     reportUnverifiedDeletion: (ticketId) => {
