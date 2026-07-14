@@ -15,8 +15,8 @@
  * Usage: node backfill-human-approval.js <target-path>
  */
 import * as fs from 'fs';
-import * as path from 'path';
 import { runCliMain } from './swarm-metrics';
+import { forEachLiveTicketFile } from '../util/liveTicketFiles';
 
 export type BackfillOutcome = 'seeded' | 'already-set' | 'no-comment-found' | 'undetermined';
 
@@ -75,29 +75,20 @@ export interface BackfillFileResult {
 }
 
 // Live folders only - matches the ticket's own "touches only live items
-// (active + paused), not done/" constraint.
-const LIVE_FOLDERS = ['active', 'paused'];
-
+// (active + paused), not done/" constraint. Walks them via the shared scan
+// forEachLiveTicketFile also uses for pendingApprovalReply.ts's identical
+// folder walk (cleaner review: the two had copy-pasted the same
+// readdir-with-missing-folder-tolerance loop).
 export function runHumanApprovalBackfill(targetPath: string): BackfillFileResult[] {
   const results: BackfillFileResult[] = [];
-  for (const folder of LIVE_FOLDERS) {
-    const dir = path.join(targetPath, 'backlog', folder);
-    let fileNames: string[];
-    try {
-      fileNames = fs.readdirSync(dir).filter((f) => f.endsWith('.yaml'));
-    } catch {
-      continue;
+  forEachLiveTicketFile(targetPath, (filePath) => {
+    const rawText = fs.readFileSync(filePath, 'utf8');
+    const { text, outcome, value } = backfillHumanApprovalText(rawText);
+    if (outcome === 'seeded') {
+      fs.writeFileSync(filePath, text);
     }
-    for (const fileName of fileNames) {
-      const filePath = path.join(dir, fileName);
-      const rawText = fs.readFileSync(filePath, 'utf8');
-      const { text, outcome, value } = backfillHumanApprovalText(rawText);
-      if (outcome === 'seeded') {
-        fs.writeFileSync(filePath, text);
-      }
-      results.push(value !== undefined ? { filePath, outcome, value } : { filePath, outcome });
-    }
-  }
+    results.push(value !== undefined ? { filePath, outcome, value } : { filePath, outcome });
+  });
   return results;
 }
 
