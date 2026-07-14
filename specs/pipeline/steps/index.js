@@ -154,6 +154,7 @@ const DOMAINS = [
   require('./hotTestFilesStopWaitingSteps'),
   require('./systemdUnitsCanStartSteps'),
   require('./corruptHandoffNeverDispatchedSteps'),
+  require('./swarmSocketNotInTmpSteps'),
 ];
 
 function registerSteps(registry) {
