@@ -7,7 +7,9 @@
 (ns handoff-lib
   (:require [babashka.fs :as fs]
             [clojure.java.shell :as sh]
-            [clojure.string :as str]))
+            [clojure.string :as str])
+  (:import [java.nio.channels FileChannel]
+           [java.nio.file OpenOption StandardOpenOption]))
 
 (defn worktree-root
   "Handoff state lives at the worktree root even when invoked from a
@@ -339,6 +341,127 @@
         pane (pane-id socket)
         script (launch-script-path role-name)]
     (sh/sh "tmux" "-S" socket "respawn-pane" "-k" "-t" pane (str "zsh '" script "'"))))
+
+;; ── BL-365: durable install ──────────────────────────────────────────────
+;; A bare `spit` + `fs/move` pair is atomic in ORDERING (the rename is one
+;; syscall) but not in DURABILITY: `spit` does not fsync, so the file's
+;; content can still be sitting in the OS page cache, never written to the
+;; physical device, when a crash/power-loss/WSL-restart happens. The
+;; directory entry (from the rename) can reach stable storage while the
+;; data blocks it points at never do, leaving a correctly-named, zero-length
+;; file that was "written atomically" - exactly the incident this ticket
+;; exists to fix. write-fn!/sync-fn!/rename-fn! are injectable so a test can
+;; assert the ORDER (write, then sync, then rename) without a real crash -
+;; the "honest mechanical proof" the ticket asks for; production always
+;; uses the real defaults.
+(defn- fsync-file!
+  "The standard Java fsync idiom (FileChannel.force) - not
+   FileDescriptor.sync, which Babashka's sandbox does not permit calling
+   reflectively."
+  [path]
+  (with-open [ch (FileChannel/open path (into-array OpenOption [StandardOpenOption/WRITE]))]
+    (.force ch true)))
+
+(defn atomic-write!
+  ([target content] (atomic-write! target content {}))
+  ([target content {:keys [write-fn! sync-fn! rename-fn!]
+                     :or {write-fn! (fn [tmp content] (spit (str tmp) content))
+                          sync-fn! (fn [tmp] (fsync-file! (.toPath (java.io.File. (str tmp)))))
+                          rename-fn! (fn [tmp target]
+                                       (fs/move tmp target {:replace-existing true :atomic-move true}))}}]
+   (fs/create-dirs (fs/parent target))
+   (let [tmp (fs/path (fs/parent target) (str "." (fs/file-name target) "." (System/nanoTime) ".tmp"))]
+     (write-fn! tmp content)
+     (sync-fn! tmp)
+     (rename-fn! tmp target)
+     target)))
+
+;; ── BL-365: corrupt-handoff detection + quarantine ──────────────────────────
+;; A handoff file that is empty, truncated mid-header (missing one of the
+;; required envelope fields), or has headers but no body must never be
+;; promoted as work - there is nothing in it for a role to act on, and the
+;; swarm's own stuck/chase sweeps are blind to this failure mode (the mail
+;; moved perfectly; it just carried nothing). This is a cheap STRUCTURAL
+;; check ("does this parse into a real handoff envelope at all?"),
+;; categorically different from - and not a substitute for - a second
+;; semantic validation pass over header VALUES, which the handoff protocol
+;; deliberately declines in the daemon and stays the sender's own job
+;; (swarm_handoff.bb's validate). Do not "simplify" this check away into
+;; the existing missing-field validation - it must fire even when every
+;; individually-checked field happens to be present but the file is
+;; otherwise corrupt (e.g. headers with no body at all).
+;;
+;; Deliberately NOT "id": id is audit-only metadata (collision-proofing
+;; across worktrees, never read by delivery/dequeue routing), not something
+;; the pipeline actually needs to act on a handoff - and several existing
+;; tests already hand-craft minimal fixture handoffs that omit it, same as
+;; a real operator-authored note might. Requiring it here would flag those
+;; as corrupt for a reason that has nothing to do with dispatchability.
+(def required-envelope-headers ["from" "to" "priority" "type"])
+
+(defn parse-envelope [content]
+  (let [[header body] (str/split content #"\n\n" 2)
+        headers (into {}
+                      (for [line (str/split-lines (or header ""))
+                            :let [[k v] (str/split line #": " 2)]
+                            :when (and k v (not (str/blank? k)) (not (str/blank? v)))]
+                        [k v]))]
+    {:headers headers :body (or body "")}))
+
+(defn corrupt-handoff?
+  "True when content structurally cannot be a real handoff: empty, missing
+   one of the required envelope headers (covers a truncated-mid-header
+   file), or has no body at all (covers a headers-with-no-body file)."
+  [content]
+  (or (str/blank? content)
+      (let [{:keys [headers body]} (parse-envelope content)]
+        (or (boolean (some #(str/blank? (get headers %)) required-envelope-headers))
+            (str/blank? body)))))
+
+;; BL-365 Scenario 03: "a sender cannot install an empty handoff into its
+;; outbox" - the sender's OWN integrity floor. Durably writes content
+;; (atomic-write!), then re-reads what actually LANDED ON DISK (never trusts
+;; the in-memory content - the write path, or the disk under it, is the
+;; untrusted part) and deletes it on any corruption, so a failed write never
+;; leaves a file behind for anything downstream to pick up. write-opts flows
+;; straight through to atomic-write!'s own injectable write-fn!/sync-fn!/
+;; rename-fn! seam, so a test can force a "contents fail to be written" case
+;; deterministically (a write-fn! that installs nothing) rather than needing
+;; a real crash or a filesystem permission-bit trick.
+(defn install-handoff!
+  ([target content] (install-handoff! target content {}))
+  ([target content write-opts]
+   (atomic-write! target content write-opts)
+   (if (corrupt-handoff? (slurp (str target)))
+     (do (fs/delete-if-exists target) nil)
+     target)))
+
+(defn quarantine-corrupt-handoff!
+  "Renames a corrupt handoff file in place to the SAME dead-letter suffix
+   chase_sweep_lib.bb already uses for stuck mail (<name>.handoff.dead) -
+   reusing the existing dead-letter scan/notify path (notify-dead-letters.js,
+   which already alerts a human over Telegram for any *.handoff.dead in
+   inbox/new/) rather than inventing a new quarantine mechanism, so a
+   quarantined parcel is surfaced the same way a stuck one already is.
+   Returns the new path."
+  [file]
+  (let [dead-path (fs/path (fs/parent file) (str (fs/file-name file) ".dead"))]
+    (fs/move file dead-path {:replace-existing false})
+    dead-path))
+
+(defn partition-corrupt
+  "Splits already-dequeueable candidate files into :corrupt (quarantined in
+   place as a side effect - never left for a later sweep to resurrect) and
+   :valid (untouched, still eligible to dequeue). Callers must never
+   promote a :corrupt candidate into in_process/."
+  [candidate-files]
+  (loop [remaining candidate-files corrupt [] valid []]
+    (if-let [f (first remaining)]
+      (if (corrupt-handoff? (slurp (str f)))
+        (do (quarantine-corrupt-handoff! f)
+            (recur (next remaining) (conj corrupt f) valid))
+        (recur (next remaining) corrupt (conj valid f)))
+      {:corrupt corrupt :valid valid})))
 
 (defn print-task [file]
   (let [task-name (header-field file "task")]
