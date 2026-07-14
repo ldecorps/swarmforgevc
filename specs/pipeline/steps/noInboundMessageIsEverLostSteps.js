@@ -285,10 +285,29 @@ function registerSteps(registry) {
     }
   });
 
+  // Reused by BL-370's front-desk-liveness-means-listening-04 scenario -
+  // IDENTICAL step text ("the failure is escalated to the human"), a
+  // different ticket's failure mode entirely (a stalled poll loop giving
+  // up on restart, not a stuck per-message delivery). Branches on which
+  // ticket's ctx shape is present rather than being duplicated/re-
+  // registered (this codebase's own established convention for shared
+  // step text - see operatorPassesAQuestionDownSteps.js's own docstring
+  // for the same pattern with a different shared step).
   registry.define(/^the failure is escalated to the human$/, (ctx) => {
-    if (!ctx.escalations.includes(true)) {
-      throw new Error('expected escalateStuckDelivery to have fired at least once');
+    if (ctx.escalations) {
+      if (!ctx.escalations.includes(true)) {
+        throw new Error('expected escalateStuckDelivery to have fired at least once');
+      }
+      return;
     }
+    if (ctx.logText !== undefined) {
+      const fragment = 'ok   - front-desk-liveness-04: the failure is escalated to the human (logged loudly)';
+      if (!ctx.logText.includes(fragment)) {
+        throw new Error(`BL-370: expected the give-up to be escalated (logged), got: ${ctx.logText}`);
+      }
+      return;
+    }
+    throw new Error('no recognized ctx shape for "the failure is escalated to the human" - neither BL-369\'s ctx.escalations nor BL-370\'s ctx.logText is set');
   });
 
   // "the front desk does not treat that message as received" is also used
