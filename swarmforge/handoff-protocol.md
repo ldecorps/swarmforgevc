@@ -449,6 +449,34 @@ hand-written inbox file), attributed `from: coordinator`. A gap already
 covered by an in-flight, not-yet-delivered auto-routed note (still sitting
 in an outbox) is not re-routed on the next sweep.
 
+### Push sweep
+
+Nothing in the swarm otherwise runs `git push`: publication of local `main`
+to `origin/main` depended entirely on an agent role remembering to run it,
+which twice in one day silently didn't happen — hours of committed,
+QA-approved work sat local while `origin/main` stayed frozen, indistinguishable
+from outside (GitHub, a phone, a remote session) from a dead swarm (BL-356).
+
+On the same sweep cadence, the daemon also runs a push sweep (`push_sweep_lib.bb`)
+against the master checkout's `main` branch:
+
+- **Local ahead, origin not ahead:** push `main` to `origin`, with a bounded,
+  backed-off retry budget. Only once that budget is exhausted does the daemon
+  raise a push-failure alarm.
+- **Origin ahead of (or diverged from) local:** never force-push. Raise a
+  divergence alarm and leave reconciliation to a human or the coordinator.
+- **Origin already has every local commit:** clear all persisted sweep state
+  (backoff, both alarms) — a later failure episode of either kind always
+  starts fresh and alarms again.
+
+Both alarms are delivered via the shared `daemon_alarm_lib.bb` email sender
+and follow the project's delivery-based arming rule: a transient send failure
+never arms the "already alarmed" flag (it retries, bounded), while a terminal
+misconfiguration warns once and arms. The push-failure and divergence alarms
+also clear each other's stale armed flag on transition between the
+`:should-push` and `:diverged` branches, so a resolved episode of one kind
+can never suppress a later, unrelated episode of the other kind.
+
 ## Queue Helper Scripts
 
 Agents should not manually move inbox files. Helper scripts should own queue
