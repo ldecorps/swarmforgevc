@@ -60,6 +60,22 @@ its own sign-off — it just gates whether *any* ticket can start at all.
   target's humans, rendered from that same source
   (`generateContractMarkdown`/`renderContractYaml` in
   `extension/src/onboarding/contractView.ts`) so the two can never diverge.
+- **Use-case inventory (BL-360).** The same survey also answers a different
+  question than the contract: not "where are the edges" but "what does this
+  application actually DO today, feature by feature" — what you need in order
+  to change it, not just to agree a mandate. `deriveUseCaseInventory`
+  (`extension/src/onboarding/useCaseInventory.ts`) is a third pure derivation
+  of the identical `RepoSurveyFacts` the contract and prompts already consume
+  (never a second survey pass), rendered to a legible `USE-CASES.md` at the
+  target repo root, beside `CONTRACT.md` — each entry names a capability, a
+  one-line summary, and where in the target's own code it lives, so a later
+  change request can cite it by name. Unlike the generated
+  `project.prompt`/`engineering.prompt` below, this file is **never gated on
+  agreement**: it is written via `initializeTargetUseCaseInventory`
+  (`extension/src/config/targetBootstrap.ts`), the same ungated path as
+  `CONTRACT.md` itself, because the human needs it in order to *decide* on the
+  contract, not after. A target whose code supports no discernible use case
+  still gets a `USE-CASES.md` that says so plainly, rather than no file at all.
 - **Agree.** The operator reviews `CONTRACT.md` (or the yaml directly) and
   flips `.swarmforge/contract.yaml`'s `agreement` field from `proposed` to
   `agreed` once satisfied. To re-open scope later, flip it back to `pending`
