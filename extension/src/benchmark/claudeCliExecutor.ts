@@ -44,6 +44,20 @@ export function claudeCliFailureResult(error: unknown, durationMs: number): Exec
   };
 }
 
+// BL-340 hardening (2nd QA bounce, main() untested in-process): E2E test
+// seam mirroring notify-dead-letters.ts's/notify-recert-batch.ts's own
+// TELEGRAM_NOTIFY_FORCE_RESULT convention exactly - no real `claude`
+// subprocess is ever spawned under it. Named per-executor-instance (not a
+// blanket "skip everything" flag) so a real main()-in-process test can
+// drive every OTHER real collaborator (task fixture, scratch materialize,
+// the real node-test evaluator, real git write+commit) and fake only the
+// one boundary that is genuinely external: an LLM actually performing the
+// task.
+export function claudeCliForceResultFromEnv(): ExecutorResult | null {
+  const forced = process.env.RUN_ROLE_BENCHMARK_EXECUTOR_FORCE_RESULT;
+  return forced ? (JSON.parse(forced) as ExecutorResult) : null;
+}
+
 // Real, live invocation of the Claude Code CLI in headless print mode -
 // the only ModelExecutor this ticket wires to production
 // (extension/src/tools/run-role-benchmark.ts). `--dangerously-skip-permissions`
@@ -56,6 +70,10 @@ export function claudeCliFailureResult(error: unknown, durationMs: number): Exec
 export function createClaudeCliExecutor(timeoutMs: number = DEFAULT_TIMEOUT_MS): ModelExecutor {
   return {
     async execute(prompt: string, cwd: string, model: BenchmarkModelConfig): Promise<ExecutorResult> {
+      const forced = claudeCliForceResultFromEnv();
+      if (forced) {
+        return forced;
+      }
       const startedAt = Date.now();
       try {
         const stdout = execFileSync(

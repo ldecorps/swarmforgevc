@@ -1,0 +1,95 @@
+id: BL-361
+title: "The extension dev-host launcher is macOS-only, so `./swarm ensure` can never repair the extension on the Linux/WSL host the swarm actually runs on"
+milestone: M8
+type: defect
+status: todo
+severity: high
+priority: 3
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-linux-extension-dev-host-launcher.md — the human, 2026-07-14 ('write up that ticket for the Linux launcher'), after a session found it structurally impossible to start the extension on the WSL box."
+
+notes: |
+  THE DEFECT, VERIFIED IN CODE 2026-07-14. `extension/scripts/start-extension-dev.sh` ->
+  `start-extension-dev.js` is the one and only programmatic way to bring up the Extension Development
+  Host, and every stage of its launch path is macOS-specific:
+    - line 23: `VSCODE_APP` defaults to `/Applications/Visual Studio Code.app`, a macOS bundle path.
+    - lines 67-68: the `vscode-not-found` stage hard-fails when that path is missing, so on Linux the
+      script dies before it ever tries to launch anything.
+    - lines 111-123: `triggerLaunch()` runs `open -a "Visual Studio Code" <workspace>` and then an
+      AppleScript keystroke (`osascript` ... `key code 96` = F5) to fire the "Run Extension" launch
+      config. Neither `open` nor `osascript` exists on Linux.
+  The consequence is not merely a broken convenience script. `swarmforge/scripts/swarm_ensure.bb:47-49`
+  wires `extension-bounce-cmd` straight to this script, so `./swarm ensure`'s extension component can
+  only ever report FAILED on this host — the health probe (`checkExtensionHealth.js`) is already
+  cross-platform and reports honestly; it is the REPAIR half of the loop that is dead. Today the only
+  way to start the extension here is a human opening VS Code and pressing F5 by hand, which defeats
+  the point of a bounce script and blocks any headless or remote-controlled recovery.
+
+  THE SEAM — AND WHY IT IS CHEAPER THAN IT LOOKS. Stop simulating a keypress. VS Code launches an
+  Extension Development Host straight from its own command line
+  (`code --extensionDevelopmentPath=<ext-dir> <workspace-or-folder>`) — no GUI automation, no window
+  focus, no AppleScript. The human chose this path (2026-07-14) over a headless serve-web variant. It
+  should REPLACE the `open`/`osascript` branch on BOTH platforms rather than being duplicated for
+  Linux — one launch mechanism, not two.
+  Two things already in the tree make this land cheaply, both verified today:
+    - `filterDevHostPids` (`extension/scripts/bounceLib.js:37-49`) ALREADY identifies a dev host by
+      matching `--extensionDevelopmentPath=<ext-dir>` on the command line — the exact flag the CLI
+      path passes. So dev-host detection, the "exactly one dev host" property, and
+      `checkExtensionHealth.js` (which reuses the same function) carry over UNCHANGED.
+    - `ps -axo pid=,command=` (used by both scripts) works on Linux procps as well as macOS —
+      confirmed on this box. Do not "fix" it.
+  What is genuinely new is only: resolving WHICH VS Code to launch, per platform, with an override;
+  and replacing `triggerLaunch()`.
+
+  THE TRAP ON THIS EXACT BOX — SCENARIO 04 EXISTS BECAUSE OF IT. A `code` IS on PATH here, but it is
+  the WINDOWS one (`/mnt/c/.../Microsoft VS Code/bin/code`), and WSL's Windows-interop binfmt handler
+  is not registered (`/proc/sys/fs/binfmt_misc/WSLInterop` absent), so executing it dies with
+  `Exec format error`. A naive `command -v code` therefore RESOLVES and then fails at launch — the
+  launcher would sail past its `vscode-not-found` stage and hang until the activation timeout,
+  reporting the wrong stage. Resolution must confirm the binary is actually EXECUTABLE ON THIS HOST
+  and fail at the no-usable-VS-Code stage, fast and by name, when it is not.
+
+  PREREQUISITE — AN OPERATOR STEP, NOT CODER WORK. There is no Linux-native VS Code installed on this
+  box. WSLg IS present (`/mnt/wslg`, `DISPLAY=:0`), so a Linux VS Code will run with a real GUI once
+  installed. The human agreed to a one-time install. The coder does NOT need it (the launch/spawn seam
+  is injectable and unit-tested with doubles), but QA's e2e verification below DOES. If the install has
+  not happened when this reaches QA, QA reports it as blocked-on-operator rather than failing the code.
+
+  SCOPE. `extension/scripts/start-extension-dev.js` (the launch trigger + prerequisite stages) and
+  `extension/scripts/bounceLib.js` (where the new pure resolution helper belongs, alongside the
+  existing `filterDevHostPids`/`decideNextStep`). Per the CLI thin-main rule: platform resolution and
+  the launch-command construction are EXPORTED PURE helpers (platform + env + an injected
+  exists/executable probe in, a command+args or a named failure out), called in-process by tests;
+  `main()` stays argument dispatch and I/O wiring and is itself called in-process by a test, with at
+  most one spawned smoke test. Do NOT weaken BL-058's contract: exit 0 ONLY after a FRESH
+  `.dev-activation.json` marker (never a blind delay), every failure exits non-zero naming its stage,
+  and a successful run ends with exactly one dev host on the freshly compiled build.
+
+  RELATED: BL-058 (the original bounce contract — this extends it to a second platform without
+  weakening it), BL-145 (`./swarm ensure`, whose extension component cannot self-heal here),
+  BL-364 (desktop VS Code on Windows via Remote-WSL — ADJACENT, and both may touch
+  docs/GettingStarted.md; sequence them rather than running them concurrently).
+
+  E2E QA PROCEDURE: on the WSL box, with a Linux VS Code installed and the extension not running:
+  run `./extension/scripts/start-extension-dev.sh` and assert it exits 0, then
+  `node extension/scripts/checkExtensionHealth.js` prints HEALTHY. Run the launcher a SECOND time and
+  assert it terminates the old dev host and still ends with exactly one (BL-058's idempotence). Run
+  `./swarm ensure` and assert the extension component reports HEALTHY/FIXED, not FAILED. Then point
+  the launcher at an unusable VS Code (e.g. the Windows `/mnt/c/...` `code`, which cannot execute
+  here) and assert it fails FAST naming the no-usable-VS-Code stage rather than hanging to the
+  activation timeout. Confirm the macOS path is not regressed.
+
+acceptance:
+  feature: specs/features/BL-361-linux-dev-host-launcher.feature
+  steps:
+    - "The dev host is launched by the editor's own command line on every supported platform"
+    - "Success is declared only once the extension has actually activated"
+    - "Bouncing an already-running dev host still ends with exactly one"
+    - "A VS Code that cannot run on this host fails loudly, and fails fast"
+    - "The operator can name which VS Code to launch"
+    - "The swarm's own repair loop can bring the extension to health on Linux"
+
+human_approval: pending
+
+mutation_cost: medium
