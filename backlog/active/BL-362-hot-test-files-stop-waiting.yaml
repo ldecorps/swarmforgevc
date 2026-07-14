@@ -55,6 +55,16 @@ notes: |
   two do not collide on the same file. They are file-orthogonal as scoped; if either grows to touch a
   shared test helper, sequence them.
 
+  AMENDMENT 2026-07-14 (human-approved, requested by the coder mid-flight). Scenario 05 is NARROWED to
+  dependencyGateCli.test.js alone; it previously also asserted a wall-clock duration drop for
+  paneTailerClass.test.js. Rationale: scenario 01 already asserts "no pane-tailer test waits on real
+  elapsed time" — an absolute, deterministic guarantee of that file's speed win, and a STRONGER
+  statement than a duration threshold (which is itself the kind of real-clock assertion the engineering
+  article's no-real-timers ban exists to keep out of the suite). The dependency-gate keeps its duration
+  assertion because its win comes from consolidating engine boots, which no other scenario captures.
+  No coverage is lost. CODER: scenario 05's NAME changed, so its step handler text changes with it —
+  merge `main` and re-read this ticket and the feature file before continuing.
+
   E2E QA PROCEDURE: run the full unit suite twice and assert it is green both times, that
   paneTailerClass and dependencyGateCli no longer appear near the top of the per-file duration ranking,
   and that total wall clock has dropped materially from the ~13s baseline. Grep both files for any
@@ -71,7 +81,7 @@ acceptance:
     - "Every forbidden-dependency rule is still proven by the real checker against real code"
     - "The rules are proven together, not one engine boot at a time"
     - "The whole-project dependency scan still happens, in the gate rather than in the unit suite"
-    - "The two files get materially faster without losing a single assertion"
+    - "The dependency-gate's file gets materially faster without losing a single assertion"
 
 human_approval: pending
 
