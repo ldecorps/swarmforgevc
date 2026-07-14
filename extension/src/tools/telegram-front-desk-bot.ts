@@ -49,7 +49,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { getTelegramUpdates, sendTelegramMessage, createForumTopic, closeForumTopic, TelegramUpdate, TelegramPostFn } from '../notify/telegramClient';
+import { getTelegramUpdates, sendTelegramMessage, createForumTopic, closeForumTopic, deleteForumTopic, TelegramUpdate, TelegramPostFn } from '../notify/telegramClient';
 import {
   PollAdapters,
   subjectForTopic,
@@ -73,9 +73,10 @@ import {
 import { backlogForTopic } from '../concierge/topicRouter';
 import { runConciergeTick, ConciergeTickAdapters, BacklogFoldersSnapshot, TickState } from '../concierge/conciergeTick';
 import { reconcileTopicLifecycle, ReconcileAdapters } from '../concierge/topicReconciliation';
+import { sweepTopicDeletions, TopicDeletionAdapters, topicRetentionWindowMs } from '../concierge/topicDeletion';
 import { readBacklogFolders } from '../panel/backlogReader';
 import { appendOperatorEvent } from '../bridge/operatorEventQueue';
-import { appendMessage, readRecord } from '../concierge/blTopicStore';
+import { appendMessage, readRecord, hasCompletionRecord } from '../concierge/blTopicStore';
 import { computeRoleGateStatesLive, RoleGateState } from '../bridge/gateSnapshot';
 import { computeCurrentHolders } from '../bridge/holisticProjections';
 import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
@@ -142,6 +143,16 @@ function readBacklogTopicMap(targetPath: string): Record<string, number> {
 function writeBacklogTopicMap(targetPath: string, topicMap: Record<string, number>): void {
   fs.mkdirSync(path.dirname(backlogTopicMapPath(targetPath)), { recursive: true });
   fs.writeFileSync(backlogTopicMapPath(targetPath), JSON.stringify(topicMap));
+}
+
+// BL-331 scope item 5: the missing dropper - recordTopicId (above, via
+// routeAdapters) only ever adds/overwrites a mapping, never removes one.
+// Called only after a topic is genuinely deleted, so nothing later posts
+// into (or reverse-looks-up via backlogForTopic) a dead thread id.
+function dropBacklogTopicMapping(targetPath: string, backlogId: string): void {
+  const map = readBacklogTopicMap(targetPath);
+  delete map[backlogId];
+  writeBacklogTopicMap(targetPath, map);
 }
 
 // BL-300: the tick's own durable state (the prev/curr diff baseline +
@@ -544,9 +555,30 @@ export function conciergeTickIntervalMs(rawEnv: string | undefined = process.env
 function buildReconcileAdapters(targetPath: string, routeAdapters: ConciergeTickAdapters['routeAdapters']): ReconcileAdapters {
   return {
     getTopicMap: routeAdapters.getTopicMap,
-    isAlreadyReconciled: (backlogId, summaryText) =>
-      readRecord(targetPath, backlogId).messages.some((m) => m.type === 'outbound' && m.text === summaryText),
+    // BL-331: shares hasCompletionRecord with the deletion sweep's own
+    // verification gate below - the exact same "is this ticket's record
+    // verified complete" predicate, never a second, drifting notion of it.
+    isAlreadyReconciled: (backlogId, summaryText) => hasCompletionRecord(readRecord(targetPath, backlogId), summaryText),
     routeAdapters,
+  };
+}
+
+// BL-331: the delete-sweep's own I/O adapters - deleteForumTopic is the
+// one genuinely destructive Telegram call in this file, reached only
+// through sweepTopicDeletions' own verified-and-outside-retention gate,
+// never directly. reportUnverifiedDeletion defaults to loud stderr,
+// mirroring blTopicStore.ts's own reportCommitFailureToStderr convention.
+function buildTopicDeletionAdapters(targetPath: string, botToken: string, chatId: string): TopicDeletionAdapters {
+  return {
+    getTopicMap: () => readBacklogTopicMap(targetPath),
+    readRecord: (ticketId) => readRecord(targetPath, ticketId),
+    deleteTopic: (topicId) => deleteForumTopic(botToken, chatId, topicId).then((r) => r.success),
+    dropTopicMapping: (backlogId) => dropBacklogTopicMapping(targetPath, backlogId),
+    reportUnverifiedDeletion: (ticketId) => {
+      process.stderr.write(
+        `topicDeletion: ${ticketId}'s topic is past its retention window but has NO verified completion record - refusing to delete. The topic and its record are left intact; investigate the archive write path for this ticket.\n`
+      );
+    },
   };
 }
 
@@ -557,16 +589,32 @@ function buildReconcileAdapters(targetPath: string, routeAdapters: ConciergeTick
 // this split, a wrong argument here (e.g. reconciling folders.active
 // instead of folders.done, or the wrong adapters object) had zero test
 // coverage - tickLoop itself is never invoked by any test.
-export async function runOneConciergeTick(adapters: ConciergeTickAdapters, reconcileAdapters: ReconcileAdapters): Promise<void> {
+// BL-331: the deletion sweep runs LAST, after both the diff path and the
+// reconciliation safety net - so a ticket that only just reached its
+// completed state THIS tick is considered for deletion with up-to-date
+// mapping/record state, never a stale pre-tick snapshot. nowMs/
+// retentionWindowMs default to the real clock/env-configured window in
+// production; tests always pass them explicitly for a deterministic
+// result (the shared engineering.prompt no-real-timers convention).
+export async function runOneConciergeTick(
+  adapters: ConciergeTickAdapters,
+  reconcileAdapters: ReconcileAdapters,
+  deletionAdapters: TopicDeletionAdapters,
+  nowMs: number = Date.now(),
+  retentionWindowMs: number = topicRetentionWindowMs()
+): Promise<void> {
   await runConciergeTick(adapters);
-  await reconcileTopicLifecycle(adapters.readFolders().done, reconcileAdapters);
+  const doneTickets = adapters.readFolders().done;
+  await reconcileTopicLifecycle(doneTickets, reconcileAdapters);
+  await sweepTopicDeletions(doneTickets, deletionAdapters, nowMs, retentionWindowMs);
 }
 
 async function tickLoop(targetPath: string, botToken: string, chatId: string, intervalMs: number): Promise<void> {
   const adapters = buildConciergeTickAdapters(targetPath, botToken, chatId);
   const reconcileAdapters = buildReconcileAdapters(targetPath, adapters.routeAdapters);
+  const deletionAdapters = buildTopicDeletionAdapters(targetPath, botToken, chatId);
   for (;;) {
-    await runOneConciergeTick(adapters, reconcileAdapters);
+    await runOneConciergeTick(adapters, reconcileAdapters, deletionAdapters);
     await sleep(intervalMs);
   }
 }
