@@ -156,6 +156,7 @@ const DOMAINS = [
   require('./corruptHandoffNeverDispatchedSteps'),
   require('./swarmSocketNotInTmpSteps'),
   require('./swarmOutlivesLauncherSteps'),
+  require('./syncWorktreeScriptsNeverClobbersSteps'),
 ];
 
 function registerSteps(registry) {
