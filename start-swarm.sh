@@ -31,11 +31,20 @@ done
 SOCKET_FILE="$TARGET/.swarmforge/tmux-socket"
 DAEMON_PID_FILE="$TARGET/.swarmforge/daemon/handoffd.pid"
 
+read_socket() {
+  # Prints the tmux socket path from $SOCKET_FILE and returns 0 if it exists
+  # and is non-empty; returns 1 (nothing printed) otherwise. Shared by every
+  # caller that needs to resolve the current socket.
+  [[ -f "$SOCKET_FILE" ]] || return 1
+  local s
+  s="$(cat "$SOCKET_FILE" 2>/dev/null || true)"
+  [[ -n "$s" ]] || return 1
+  printf '%s\n' "$s"
+}
+
 stop_existing() {
   local sock
-  [[ -f "$SOCKET_FILE" ]] || return 0
-  sock="$(cat "$SOCKET_FILE" 2>/dev/null || true)"
-  [[ -n "$sock" ]] || return 0
+  sock="$(read_socket)" || return 0
 
   local sessions
   sessions="$(tmux -S "$sock" list-sessions -F '#{session_name}' 2>/dev/null || true)"
@@ -69,15 +78,12 @@ expected_role_count() {
 wait_for_ready() {
   local want="$1" i sock n
   for ((i = 0; i < 60; i++)); do
-    if [[ -f "$SOCKET_FILE" ]]; then
-      sock="$(cat "$SOCKET_FILE" 2>/dev/null || true)"
-      if [[ -n "$sock" ]]; then
-        n="$(tmux -S "$sock" list-sessions 2>/dev/null | grep -c . || true)"
-        if [[ "${n:-0}" -ge "$want" && "$want" -gt 0 ]]; then
-          echo "SwarmForge is up: $n session(s) on $sock"
-          tmux -S "$sock" list-sessions 2>/dev/null || true
-          return 0
-        fi
+    if sock="$(read_socket)"; then
+      n="$(tmux -S "$sock" list-sessions 2>/dev/null | grep -c . || true)"
+      if [[ "${n:-0}" -ge "$want" && "$want" -gt 0 ]]; then
+        echo "SwarmForge is up: $n session(s) on $sock"
+        tmux -S "$sock" list-sessions 2>/dev/null || true
+        return 0
       fi
     fi
     sleep 2
@@ -93,9 +99,7 @@ check_detached() {
   # silent pass. Decision logic lives in swarm_detach_lib.bb (pure,
   # unit-tested); this is I/O wiring only.
   local sock server_pid
-  [[ -f "$SOCKET_FILE" ]] || { echo "ERROR: no socket file to check detachment against: $SOCKET_FILE" >&2; return 1; }
-  sock="$(cat "$SOCKET_FILE" 2>/dev/null || true)"
-  [[ -n "$sock" ]] || { echo "ERROR: socket file is empty, cannot check detachment" >&2; return 1; }
+  sock="$(read_socket)" || { echo "ERROR: no socket file to check detachment against: $SOCKET_FILE" >&2; return 1; }
   server_pid="$(tmux -S "$sock" display-message -p '#{pid}' 2>/dev/null || true)"
   [[ -n "$server_pid" ]] || { echo "ERROR: could not resolve the tmux server's pid to check detachment" >&2; return 1; }
   bb "$SCRIPT_DIR/swarmforge/scripts/check_swarm_detached.bb" 1 "$server_pid" "$$"
