@@ -179,6 +179,7 @@ const DOMAINS = [
   require('./aChurnRewriteDoesNotMintACommitSteps'),
   require('./theHumanIsNeverSentTerminalChromeSteps'),
   require('./dependencyGateTestsParalleliseSteps'),
+  require('./respawnBackoffInjectedClockSteps'),
 ];
 
 function registerSteps(registry) {
