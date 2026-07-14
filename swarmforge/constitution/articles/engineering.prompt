@@ -69,6 +69,28 @@
   root>)` and named `notifyDeadLettersCli.test.js` as the seam to copy — that
   instruction was wrong and BL-363 dutifully followed it into a hard-aborted
   mutation run; corrected 2026-07-14.)
+- **When you add a branch beside an existing one in a `cond`/`case`/if-else chain, a
+  test must drive BOTH branches' trigger conditions TRUE AT ONCE — testing each one
+  alone leaves the PRIORITY ORDER entirely unproven.** Ordered dispatch encodes two
+  separate decisions: *when* each branch fires, and *which one wins when both apply*.
+  A test per branch, each with only its own condition true, proves the first and says
+  nothing about the second — so a clause-SWAP mutant (reorder the two branches)
+  changes real behavior while every test stays green, and it survives to the
+  hardener's gate. The overlap case is also the one most likely to be a real
+  production state rather than a contrived one, because a new branch is usually added
+  precisely for a condition the existing branches were already half-covering. So: for
+  each newly-adjacent pair, ask "can both hold simultaneously?" — and if they can,
+  write the test that pins which wins. If they genuinely cannot, say so in a comment,
+  because that is a claim a future reader (and a future mutant) will need.
+  (BL-370: `check-one!` in `front_desk_supervisor_lib.bb` gained a `heartbeat-stale?`
+  branch ABOVE the existing `(and (pos? attempts) (healthy-long-enough? ...))` branch.
+  Both hold together in an ordinary state — a bot alive past the healthy-reset window
+  that then stops polling — and the order is load-bearing: first wins means restart
+  the stalled bot, second wins means silently zero its attempt counter and leave it
+  stalled. No test drove both true until the hardener added one. Proposed by the
+  hardender 2026-07-14 scoped `role:hardender`; accepted into the shared article
+  instead — the coder writes the tests, so this binds every test author, not just the
+  role that happens to catch it late.)
 
 ## Test Speed And Isolation
 - Strive to keep the unit suite running in seconds. Speed is a correctness
