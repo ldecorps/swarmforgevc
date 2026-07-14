@@ -6,6 +6,7 @@ import { computeDeliveryMetrics, DeliveryMetrics, VelocityResult, MilestoneBurnd
 import { RoleWorktree } from './swarmMetrics';
 import { readSwarmName } from '../bridge/holisticProjections';
 import { CostHealthSidecar } from '../notify/costHealthSidecar';
+import { BenchmarkReport } from '../benchmark/types';
 import { translateString, TranslationSession } from '../i18n/translate';
 import { TARGET_LOCALES } from '../i18n/targetLocales';
 
@@ -83,6 +84,13 @@ export interface BacklogDashboardData {
   // sidecar has ever been committed; schemaVersion stays unchanged either
   // way since this is a purely additive field.
   costHealth?: CostHealthSidecar;
+  // BL-347: additive, optional - the latest committed docs/benchmarks/
+  // <date>.json role-benchmark report (BL-340), folded in verbatim. Same
+  // "committed sidecar carried as-is across the live/git boundary"
+  // mechanism as costHealth above - a benchmark run is machine-local and
+  // live, so this field is the ONLY way its numbers may reach the PWA.
+  // Absent when no report has ever been committed.
+  roleLeaderboard?: BenchmarkReport;
 }
 
 const UNSPECIFIED_MILESTONE = 'unspecified';
@@ -194,7 +202,8 @@ export function buildBacklogDashboard(
   localSwarmName: string,
   sourceSha: string | null,
   generatedAtIso: string,
-  costHealth: CostHealthSidecar | null = null
+  costHealth: CostHealthSidecar | null = null,
+  roleLeaderboard: BenchmarkReport | null = null
 ): BacklogDashboardData {
   const lifecycleByTicketId = new Map(lifecycles.map((l) => [l.ticketId, l]));
   const p50ByTicketId = new Map(
@@ -231,6 +240,9 @@ export function buildBacklogDashboard(
       dashboard.metrics.suiteDurationTrend = costHealth.suiteDurationTrend;
     }
   }
+  if (roleLeaderboard) {
+    dashboard.roleLeaderboard = roleLeaderboard;
+  }
   return dashboard;
 }
 
@@ -260,6 +272,31 @@ function readLatestCostHealthSidecar(targetPath: string): CostHealthSidecar | nu
   }
 }
 
+// BL-347: the most recently committed docs/benchmarks/<date>.json report
+// (ISO date filenames sort chronologically) - mirrors
+// readLatestCostHealthSidecar above exactly. No report ever committed, or a
+// malformed/unreadable one, reads as null rather than throwing; the
+// leaderboard-absent-vs-hidden posture is handled entirely by
+// buildBacklogDashboard's own roleLeaderboard-omitted-when-null branch.
+function readLatestBenchmarkReport(targetPath: string): BenchmarkReport | null {
+  const benchmarksDir = path.join(targetPath, 'docs', 'benchmarks');
+  let files: string[];
+  try {
+    files = fs.readdirSync(benchmarksDir).filter((f) => SIDECAR_FILENAME_PATTERN.test(f));
+  } catch {
+    return null;
+  }
+  if (files.length === 0) {
+    return null;
+  }
+  files.sort();
+  try {
+    return JSON.parse(fs.readFileSync(path.join(benchmarksDir, files[files.length - 1]), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
 // The one impure entry point: reads current backlog state, walks git
 // history, computes delivery metrics (reusing computeDeliveryMetrics
 // as-is), resolves the source SHA, and reads the latest committed cost/
@@ -271,8 +308,18 @@ export function computeBacklogDashboard(targetPath: string, roles: RoleWorktree[
   const localSwarmName = readSwarmName(targetPath);
   const sourceSha = getCurrentSha(targetPath);
   const costHealth = readLatestCostHealthSidecar(targetPath);
+  const roleLeaderboard = readLatestBenchmarkReport(targetPath);
 
-  return buildBacklogDashboard(folders, lifecycles, deliveryMetrics, localSwarmName, sourceSha, new Date(nowMs).toISOString(), costHealth);
+  return buildBacklogDashboard(
+    folders,
+    lifecycles,
+    deliveryMetrics,
+    localSwarmName,
+    sourceSha,
+    new Date(nowMs).toISOString(),
+    costHealth,
+    roleLeaderboard
+  );
 }
 
 // BL-230: translates summary.title into every configured target locale
