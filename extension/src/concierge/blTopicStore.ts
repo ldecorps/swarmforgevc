@@ -19,11 +19,28 @@ export interface TopicMessage {
   author: string;
   type: TopicMessageDirection;
   text: string;
+  // BL-389: the originating Telegram update's own update_id, when known -
+  // lets a caller dedupe a redelivered update before it appends a second
+  // copy of the same message (see hasUpdateId below). Absent for messages
+  // with no such origin (outbound/swarm-authored text, or records written
+  // before this field existed) - those never match any updateId and so are
+  // never mistaken for a duplicate of anything.
+  updateId?: number;
 }
 
 export interface TopicRecord {
   id: string;
   messages: TopicMessage[];
+}
+
+// BL-389: the idempotency gate that was missing for postOperatorContext -
+// BL-369's own safety argument for offsetAfterDelivery ("safe because
+// bridgeServer.ts's own ingest is idempotent by update_id") covered
+// postToBridge only; this record never had an equivalent check, which is
+// what let a redelivered update (parked offset replaying the same batch
+// every poll) append the identical message hundreds of times.
+export function hasUpdateId(record: TopicRecord, updateId: number | undefined): boolean {
+  return updateId !== undefined && record.messages.some((m) => m.updateId === updateId);
 }
 
 export function topicsDir(targetPath: string): string {
@@ -84,7 +101,23 @@ export function readRecord(targetPath: string, ticketId: string): TopicRecord {
 // open (returns false, never throws) on any git error including "nothing to
 // commit" - appendMessage's own write must succeed regardless of whether
 // this particular commit does.
+// BL-390: checked BEFORE attempting to commit at all - a REWRITE that left
+// the file byte-identical to what is already committed (isFileCommitted
+// above) is not a failure to commit, it is nothing to commit, and minting a
+// commit for it (or reporting one as a durability FAILURE, which
+// commitScopedFile's own "nothing to commit" exit code is indistinguishable
+// from) is exactly the amplifier this ticket exists to close: a persister
+// that commits on every rewrite gets its commit pushed by the push sweep on
+// every rewrite, turning any upstream bug that re-persists unchanged state
+// into unbounded git history. Return true (already durable, nothing more to
+// do) rather than falling through to commitScopedFile - never touches
+// commitScopedFile's own shared semantics (costHealthSidecar's caller relies
+// on ITS false meaning "no-op, do not report EMITTED", which stays exactly
+// as it was).
 export function commitTopicRecord(targetPath: string, filePath: string, ticketId: string): boolean {
+  if (isFileCommitted(targetPath, filePath)) {
+    return true;
+  }
   return commitScopedFile(targetPath, filePath, `BL topic record for ${ticketId}\n\nBy coder.`);
 }
 
@@ -118,7 +151,7 @@ export const reportCommitFailureToStderr: CommitFailureReporter = (ticketId, fil
 export function appendMessage(
   targetPath: string,
   ticketId: string,
-  message: { author: string; type: TopicMessageDirection; text: string; ts?: number },
+  message: { author: string; type: TopicMessageDirection; text: string; ts?: number; updateId?: number },
   reportCommitFailure: CommitFailureReporter = reportCommitFailureToStderr
 ): TopicMessage {
   const record = readRecord(targetPath, ticketId);
@@ -128,6 +161,7 @@ export function appendMessage(
     author: message.author,
     type: message.type,
     text: message.text,
+    updateId: message.updateId,
   };
   record.messages.push(entry);
   const filePath = recordPath(targetPath, ticketId);

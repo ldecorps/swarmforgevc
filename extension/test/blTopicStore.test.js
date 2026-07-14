@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { readRecord, appendMessage, recordPath, commitTopicRecord, hasCompletionRecord, isRecordCommitted } = require('../out/concierge/blTopicStore');
+const { readRecord, appendMessage, recordPath, commitTopicRecord, hasCompletionRecord, isRecordCommitted, hasUpdateId } = require('../out/concierge/blTopicStore');
 
 // BL-329: the durable, git-tracked, per-ticket record of every message sent
 // in a BL topic - inbound and outbound - so the Telegram topic becomes a
@@ -154,14 +154,25 @@ test('commitTopicRecord commits only the record file, scoped, into a real repo',
   assert.match(log, /BL-900/);
 });
 
-test('commitTopicRecord returns false (never throws) when there is nothing new to commit', () => {
+// BL-390: a REWRITE that produces byte-identical content is not a failure to
+// commit - the record is already fully durable, and there is genuinely
+// nothing new to commit. Redefined from "returns false" (indistinguishable
+// from a genuine git failure, which wrongly triggered appendMessage's own
+// commit-failure durability warning for a benign no-op) to an explicit
+// "true, already durable, no commit minted" outcome - and no NEW commit is
+// created for that file at all (the actual defect: a persister that mints a
+// commit, or a false failure report, for a no-op rewrite).
+test('commitTopicRecord returns true (already durable) and mints NO new commit when there is nothing new to commit', () => {
   const target = mkGitRepo();
   appendMessage(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 });
   const filePath = recordPath(target, 'BL-900');
-  commitTopicRecord(target, filePath, 'BL-900');
+  const before = execFileSync('git', ['-C', target, 'log', '--oneline', '--', filePath], { encoding: 'utf8' });
 
   assert.doesNotThrow(() => commitTopicRecord(target, filePath, 'BL-900'));
-  assert.equal(commitTopicRecord(target, filePath, 'BL-900'), false);
+  assert.equal(commitTopicRecord(target, filePath, 'BL-900'), true);
+
+  const after = execFileSync('git', ['-C', target, 'log', '--oneline', '--', filePath], { encoding: 'utf8' });
+  assert.equal(after, before, 'expected no new commit to have been minted for a byte-identical rewrite');
 });
 
 test('commitTopicRecord returns false (never throws) when the target is not a git repo at all', () => {
@@ -170,6 +181,68 @@ test('commitTopicRecord returns false (never throws) when the target is not a gi
   const filePath = recordPath(target, 'BL-900');
   assert.doesNotThrow(() => commitTopicRecord(target, filePath, 'BL-900'));
   assert.equal(commitTopicRecord(target, filePath, 'BL-900'), false);
+});
+
+// ── BL-390: a-churn-rewrite-does-not-mint-a-commit ──────────────────────
+
+test('BL-390 scenario 01: rewriting a record with EXACTLY the content it already had commits nothing', () => {
+  const target = mkGitRepo();
+  appendMessage(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 });
+  const filePath = recordPath(target, 'BL-900');
+  const headBefore = execFileSync('git', ['-C', target, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+
+  // Re-write the exact same bytes already on disk (and already committed) -
+  // simulates any future full-rewrite caller re-persisting unchanged state.
+  fs.writeFileSync(filePath, fs.readFileSync(filePath, 'utf8'));
+  commitTopicRecord(target, filePath, 'BL-900');
+
+  const headAfter = execFileSync('git', ['-C', target, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  assert.equal(headAfter, headBefore, 'expected HEAD to be unchanged - no commit minted for identical content');
+});
+
+// BL-390 hardening: commitTopicRecord's own no-op guard is
+// `if (isFileCommitted(...)) return true`. isFileCommitted reads
+// `git status --porcelain` for the path, which prints nothing both when a
+// file IS durably committed and when it was never written at all - so a
+// filePath that does not exist on disk must never short-circuit "already
+// durable" (true) without ever attempting a commit; that would be a silent
+// no-commit-at-all bug for a file that has, in fact, never been persisted.
+test('commitTopicRecord does not report a never-written file as already durable', () => {
+  const target = mkGitRepo();
+  const filePath = recordPath(target, 'BL-900');
+  assert.equal(fs.existsSync(filePath), false);
+  assert.equal(commitTopicRecord(target, filePath, 'BL-900'), false);
+});
+
+test('BL-390 scenario 02: a record that genuinely changed is still committed', () => {
+  const target = mkGitRepo();
+  appendMessage(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 });
+  const filePath = recordPath(target, 'BL-900');
+  const headBefore = execFileSync('git', ['-C', target, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+
+  append(target, 'BL-900', { author: 'coder', type: 'outbound', text: 'a genuinely new message', ts: 2 });
+
+  const headAfter = execFileSync('git', ['-C', target, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  assert.notEqual(headAfter, headBefore, 'expected a new commit for genuinely changed content');
+});
+
+test('BL-390 scenario 03: nothing is pushed when nothing was committed - HEAD carries no new commit for a fixture remote to receive', () => {
+  const target = mkGitRepo();
+  appendMessage(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 });
+  const filePath = recordPath(target, 'BL-900');
+
+  const remote = mkTmp();
+  git(remote, ['init', '-q', '--bare']);
+  git(target, ['remote', 'add', 'origin', remote]);
+  git(target, ['push', '-q', 'origin', 'HEAD:refs/heads/main']);
+  const remoteHeadBefore = execFileSync('git', ['-C', remote, 'rev-parse', 'main'], { encoding: 'utf8' }).trim();
+
+  fs.writeFileSync(filePath, fs.readFileSync(filePath, 'utf8'));
+  commitTopicRecord(target, filePath, 'BL-900');
+  git(target, ['push', '-q', 'origin', 'HEAD:refs/heads/main']);
+
+  const remoteHeadAfter = execFileSync('git', ['-C', remote, 'rev-parse', 'main'], { encoding: 'utf8' }).trim();
+  assert.equal(remoteHeadAfter, remoteHeadBefore, 'expected nothing new to have been pushed to the remote');
 });
 
 test('appendMessage itself commits the record into a real repo - the record actually survives a fresh checkout, not merely a non-gitignored write (architect bounce)', () => {
@@ -265,4 +338,39 @@ test('isRecordCommitted is false after a SECOND append whose own commit has not 
   record.messages.push({ seq: 1, ts: 2, author: 'human', type: 'inbound', text: 'second, uncommitted' });
   fs.writeFileSync(recordPath(target, 'BL-900'), JSON.stringify(record));
   assert.equal(isRecordCommitted(target, 'BL-900'), false);
+});
+
+// ── hasUpdateId / appendMessage's updateId (BL-389 scenarios 04/05: the
+//    idempotency gate that was missing for postOperatorContext, the exact
+//    adapter whose redelivery flooded a topic record with 209 duplicate
+//    commits) ────────────────────────────────────────────────────────────
+
+test('appendMessage carries the originating updateId through to the stored record', () => {
+  const target = mkTmp();
+  append(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1, updateId: 501 });
+  assert.equal(readRecord(target, 'BL-900').messages[0].updateId, 501);
+});
+
+test('hasUpdateId is false for an empty record', () => {
+  assert.equal(hasUpdateId({ id: 'BL-900', messages: [] }, 501), false);
+});
+
+test('hasUpdateId is false when updateId is undefined, regardless of what is on record (no origin to compare)', () => {
+  const record = { id: 'BL-900', messages: [{ seq: 0, ts: 1, author: 'human', type: 'inbound', text: 'hi', updateId: 501 }] };
+  assert.equal(hasUpdateId(record, undefined), false);
+});
+
+test('hasUpdateId is false when the record holds only OTHER updateIds', () => {
+  const record = { id: 'BL-900', messages: [{ seq: 0, ts: 1, author: 'human', type: 'inbound', text: 'hi', updateId: 501 }] };
+  assert.equal(hasUpdateId(record, 502), false);
+});
+
+test('hasUpdateId is true once a message with that exact updateId is on record', () => {
+  const record = { id: 'BL-900', messages: [{ seq: 0, ts: 1, author: 'human', type: 'inbound', text: 'hi', updateId: 501 }] };
+  assert.equal(hasUpdateId(record, 501), true);
+});
+
+test('hasUpdateId is false for a message with no updateId at all (older records, outbound/swarm text)', () => {
+  const record = { id: 'BL-900', messages: [{ seq: 0, ts: 1, author: 'swarm', type: 'outbound', text: 'hi' }] };
+  assert.equal(hasUpdateId(record, 501), false);
 });

@@ -1,10 +1,11 @@
-import { BenchmarkRanking, BenchmarkReport, ModelAggregate } from './types';
+import { BenchmarkRanking, BenchmarkReport, ModelAggregate, RefusedTask } from './types';
 
 export const BENCHMARK_REPORT_SCHEMA_VERSION = 1;
 
 export interface BuildBenchmarkReportParams {
   generatedAtIso: string;
-  taskId: string;
+  taskIds: string[];
+  refusedTasks: RefusedTask[];
   qualityThreshold: number;
   models: ModelAggregate[];
   ranking: BenchmarkRanking;
@@ -28,7 +29,8 @@ export function buildBenchmarkReport(params: BuildBenchmarkReportParams): Benchm
   return {
     schemaVersion: BENCHMARK_REPORT_SCHEMA_VERSION,
     generatedAtIso: params.generatedAtIso,
-    taskId: params.taskId,
+    taskIds: params.taskIds,
+    refusedTasks: params.refusedTasks,
     qualityThreshold: params.qualityThreshold,
     qualityThresholdDescription: qualityThresholdDescription(params.qualityThreshold),
     provenance: PROVENANCE_STATEMENT,
