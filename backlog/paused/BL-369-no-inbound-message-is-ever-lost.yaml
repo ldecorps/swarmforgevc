@@ -1,0 +1,130 @@
+id: BL-369
+title: "A message the human sends can be destroyed with no trace, and nobody is ever woken for it"
+milestone: M8
+type: defect
+status: todo
+severity: high
+priority: 2
+direction: expedite
+depends_on: []
+source: "backlog/INTAKE-inbound-telegram-message-can-be-dropped.md — the human via Telegram SUP-2, 2026-07-14: 'Receiving a telegram message like this should immediately be picked up by operator, and either answered directly by it, or question should be passed down to the relevant agent.' Slice 1 of 3 (with BL-370, BL-371); the human chose this slicing 2026-07-14."
+
+notes: |
+  THE INCIDENT. On 2026-07-13 the human asked, in SUP-2: "Why is the operator not staying up in
+  attended mode when asked to do so?" It reached the thread transcript (`.swarmforge/support/threads/
+  SUP-2.json`, message 46) and then reached NOBODY — no event on either operator queue, no Operator
+  ever woken, ~9h of silence on a direct question. Inbound recovered only when a human restarted the
+  bot and bridge at 02:40 the next morning. Throughout, the supervisor reported `status: running` /
+  `attempts: 1`. (The health-signal half of that is BL-370; this ticket is the DATA LOSS.)
+
+  ── THE PATH HAS FOUR INDEPENDENT SINGLE-POINTS-OF-LOSS. ALL FOUR VERIFIED IN CODE. ───────────────
+  Do not treat this as one bug with one fix. Any one of these drops the message with no trace, and
+  #1 is what makes every other one PERMANENT rather than merely late.
+
+  1. THE TELEGRAM OFFSET ADVANCES ON FETCH, NOT ON DELIVERY. `pollAndForward`
+     (`extension/src/tools/telegramFrontDeskBotCore.ts`) returns
+     `nextOffset: adapters.nextOffset(result.updates, offset)` — computed from the updates it
+     FETCHED, with no reference to whether `processUpdate` actually delivered them. Delivery failures
+     are counted into a `dropped` tally and THROWN AWAY. Acking an offset to Telegram is
+     irrevocable: once it moves, that message is gone from the server and can never be redelivered.
+     This is the keystone — fix it and every other failure below degrades to a retry instead of a
+     loss.
+  2. THE DELIVERY RESULT IS DISCARDED. `postToBridge` returns `Promise<boolean>`; its caller ignores
+     the `false`.
+  3. THE BRIDGE'S INGEST IS TWO NON-ATOMIC WRITES, IN THE WRONG ORDER, WITH NO ERROR PATH.
+     `handleTelegramInboundRoute` (`extension/src/bridge/bridgeServer.ts:296-297`) writes the thread
+     transcript FIRST and enqueues the operator event SECOND, and the `.then()` chain has NO
+     `.catch()`. A failure between the two leaves EXACTLY the observed signature: the transcript
+     keeps the message, the queue never gets it, nothing reconciles them, and the route may never
+     even respond.
+  4. THE PENDING QUEUE IS A SHARED FILE WITH TWO WRITERS IN TWO PROCESSES AND NO LOCK. The bridge
+     (Node) APPENDS via `appendOperatorEvent` (`operatorEventQueue.ts`, O_APPEND — safe on its own).
+     Meanwhile `swarmforge/scripts/operator_runtime.bb` does FOUR unsynchronized read-modify-writes
+     of that same whole file, every tick:
+       :324 (read + append)   :483 `bl-topic-approval-sweep!` (read + `write-events!` remaining)
+       :775 `launch-operator!` (read + `fs/delete-if-exists` the whole file + re-append deferred)
+       :850 `launch-front-desk-operator!` (read + `write-events!` remaining)
+     Each is `read-events` → whole-file rewrite/delete. ANY event the bridge appends between a read
+     and its rewrite is destroyed. O_APPEND protects appends from each other; it protects nothing
+     from a concurrent whole-file rewrite. There IS lock precedent in this codebase — `swarm_handoff`
+     serializes its sequence counter with an atomic lock (handoff-protocol.md) — so this is a known
+     shape here, not a new mechanism to invent.
+
+  WHY NO EXISTING ALARM CAUGHT IT. BL-345's starvation alarm fires on events PENDING and not
+  draining. This event never existed to be pending, so the alarm was structurally incapable of
+  firing. A dead consumer and an idle one look identical to it. Do not "fix" this by tuning that
+  alarm.
+
+  THE INVARIANT TO BUY. A message the human sends is either durably queued for an Operator, or it is
+  redelivered until it is — and if it can never be, the human is TOLD. Never silently dropped.
+  Concretely that means: the offset only advances past a message whose durable enqueue was
+  CONFIRMED; the bridge reports success only if the event is actually on the queue; the queue's
+  read-modify-writes cannot lose a concurrent append; and a reconciliation sweep catches anything
+  that still slips through by comparing what is in the thread transcripts against what was ever
+  queued (scenario 04 — this is the safety net that would have caught the 16:50 message in one pass).
+
+  IDEMPOTENCY IS REQUIRED, NOT OPTIONAL. The moment redelivery exists (scenario 02), duplicates
+  exist. Telegram's own `update_id` is the natural idempotency key and should ride the inbound
+  request, so a redelivered message is deduped at the bridge — one transcript line, one wake
+  (scenario 03). This mirrors BL-320's existing id-based reply-outbox dedup discipline; reuse that
+  posture rather than inventing a second one.
+
+  SCOPE. `extension/src/tools/telegramFrontDeskBotCore.ts` (the offset/delivery contract),
+  `extension/src/bridge/bridgeServer.ts` (`handleTelegramInboundRoute`),
+  `extension/src/bridge/operatorEventQueue.ts`, and `swarmforge/scripts/operator_runtime.bb` (the four
+  read-modify-write sites above, plus the new reconciliation sweep). Out of scope: the health signal
+  (BL-370) and routing an unanswerable question down to an agent (BL-371).
+
+  ⚠ FILE OVERLAP — THREE TICKETS NOW TOUCH operator_runtime.bb. SEQUENCE, DO NOT RUN CONCURRENTLY.
+  BL-354 (ACTIVE: `write-telegram-reply-context!` + the await lifecycle) and BL-359 (PAUSED:
+  `operator-running?` + the attended launch path) both edit `swarmforge/scripts/operator_runtime.bb`,
+  and so does this ticket (the event-queue claim sites). Different functions, same file — concurrent
+  promotion means a merge conflict. `depends_on` is empty because none BLOCKS another logically; this
+  is a scheduling constraint for the coordinator, per the orthogonality rule. This ticket also shares
+  `telegramFrontDeskBotCore.ts` with BL-370 — same treatment.
+
+  IMPLEMENTATION NOTES FOR THE CODER.
+    - Scenario 02 is a Scenario Outline. Per the engineering rule its `<failure>` column must be
+      LOAD-BEARING: validate against an explicit KNOWN_VALUES lookup ("the bridge cannot be reached",
+      "the event cannot be queued") and throw on anything else — never a binary `===`/ternary that
+      lumps an unmatched value into an `else`, or gherkin-mutator's mutant survives to the hardener.
+    - Scenario 05's Given deliberately instantiates scenario 02's parameterized Given with a concrete
+      value; ONE step handler serves both (see IR-DRY below). That is reuse, not duplication.
+    - Do not prove the concurrency fix with a real-timer race (engineering: the no-real-timers ban
+      covers subprocess and real-daemon tests too). Drive the interleaving through an injected seam so
+      the proof is deterministic and instant.
+    - The reconciliation sweep must be BOUNDED and idempotent: reclaiming the same orphaned message
+      twice must not wake two Operators.
+
+  IR-DRY REVIEW (done at spec time — do not relitigate). Four findings on the first draft; two were
+  genuine wording drift ("an Operator is woken for it" vs "...for that message"; "still does not treat"
+  vs "does not treat") and were NORMALIZED to identical text so each is one handler. ONE residual
+  near-duplicate remains: scenario 02's `<failure>`-parameterized Given vs scenario 05's concrete
+  instantiation of it. That is deliberate and correct — the same handler, with the value captured,
+  serves both. The file is final as written.
+
+  E2E QA PROCEDURE (the evidence here is LIVE — a green unit suite is not what this ticket needs).
+    1. With a live swarm, send a message from Telegram and assert an Operator is woken and replies.
+    2. Stop the bridge. Send a message. Assert the bot does NOT advance past it (nothing is lost).
+       Restart the bridge; assert the message is delivered and answered WITHOUT the human resending.
+    3. Force the enqueue to fail while the transcript write succeeds; assert the bridge does not
+       report success and the message is redelivered rather than stranded.
+    4. Drive an inbound message to land WHILE the runtime is claiming its queue (the read-modify-write
+       window); assert it is still owned and an Operator is woken. Repeat enough times to be
+       convincing — this is the exact race that ate the 16:50 message.
+    5. Hand-plant a message in a thread transcript with no corresponding event; run the reconciliation
+       sweep; assert an Operator is woken for it exactly once, and that a second sweep wakes nobody.
+    6. Deliver the same message twice; assert one transcript line and one wake.
+
+acceptance:
+  feature: specs/features/BL-369-no-inbound-message-is-ever-lost.feature
+  steps:
+    - "A message arriving while the queue is being claimed is still owned"
+    - "A message the front desk could not durably accept is redelivered, never skipped"
+    - "A message delivered twice is only acted on once"
+    - "A message recorded in a thread but never queued is reclaimed"
+    - "A message that can never be accepted is surfaced to the human, never dropped"
+
+human_approval: pending
+
+mutation_cost: high

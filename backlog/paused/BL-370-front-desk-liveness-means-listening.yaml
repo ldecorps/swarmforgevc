@@ -1,0 +1,114 @@
+id: BL-370
+title: "The front desk reports itself healthy while it has stopped listening — a live process is not proof it is consuming"
+milestone: M8
+type: defect
+status: todo
+severity: medium
+priority: 4
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-inbound-telegram-message-can-be-dropped.md — the human via Telegram SUP-2, 2026-07-14. Slice 2 of 3 (with BL-369, BL-371); the human chose this slicing 2026-07-14, and chose alarm + bounded auto-restart over alarm-only."
+
+notes: |
+  THE GAP. Through the ~9h inbound outage of 2026-07-13 (the data-loss half is BL-369),
+  `.swarmforge/operator/front-desk-supervisor.status.json` reported `status: running` /
+  `attempts: 1` the whole way. The health signal tracks PROCESS LIVENESS — "is there a pid" — while
+  the thing that actually matters, "is it still consuming inbound", had stopped. Recovery came only
+  from a human restarting the bot and bridge by hand at 02:40. Nothing self-healed, because nothing
+  knew anything was wrong. The human's words: "A live process is not proof the consumer is
+  consuming."
+
+  WHY BL-345's STARVATION ALARM CANNOT COVER THIS (do not try to fix it by tuning that alarm). That
+  alarm fires on events PENDING and not draining. In this failure mode no event ever ARRIVES to be
+  pending, so it is structurally incapable of firing — a dead consumer and an idle one look
+  identical to it. The signal has to come from the front desk's own PROGRESS, not from its queue
+  depth.
+
+  ── THE LOAD-BEARING DESIGN POINT: WHY THIS IS DETECTABLE AT ALL WITHOUT TRAFFIC. ────────────────
+  The obvious objection to "alarm when inbound goes quiet" is that a quiet night is indistinguishable
+  from a dead consumer — you cannot know a human MEANT to write. The way out: the front desk
+  LONG-POLLS the chat service with a bounded timeout (`POLL_TIMEOUT_SECONDS`), so a HEALTHY front
+  desk completes a poll cycle at least once per timeout EVEN WITH ZERO TRAFFIC. So the signal is not
+  "did a message arrive" (unknowable) but "did a poll cycle COMPLETE" (always true when healthy).
+  "No completed poll within the stall window" therefore means genuinely stuck, never merely quiet.
+  Scenario 02 exists precisely to nail down that false positive — a quiet front desk MUST still read
+  as healthy, or the alarm becomes noise and gets ignored, which is worse than no alarm.
+
+  THE SHAPE. The front desk records a progress heartbeat on every COMPLETED poll cycle (success or
+  handled failure — completing the cycle is the liveness fact, not the outcome of it). The supervisor
+  reads that heartbeat and treats a stale one, on a process that is still alive, as a STALL: it
+  restarts the front desk, bounded, and escalates when it gives up.
+
+  BOUNDEDNESS AND THE ALARM (both are existing constitution rules — obey them, do not re-derive).
+    - The restart loop is BOUNDED with backoff, and exhausting the cap ESCALATES rather than spinning
+      (engineering: bounded-retry). `swarmforge/scripts/front_desk_supervisor.bb` ALREADY has
+      `max-attempts`/backoff/status persistence and BL-303's "running past a window" notion — extend
+      that machinery, do not build a second supervisor beside it.
+    - The escalation is armed only on CONFIRMED DELIVERY, never on an attempt (constitution: "a flag
+      that suppresses a repeat notification must be set on CONFIRMED DELIVERY"). This is the exact
+      rule BL-345 was raised for, and the irony is live: an alarm whose whole purpose is to break a
+      silence must not itself fail silently. `operator_lib.bb` already has
+      `classify-delivery-result` / `next-starvation-alarm-state` / `starvation-alarm-should-attempt?`
+      for precisely this — REUSE them (scenario 05), never a parallel implementation.
+
+  SCOPE. `extension/src/tools/telegram-front-desk-bot.ts` (write the heartbeat from the live poll
+  loop), `extension/src/tools/telegramFrontDeskBotCore.ts` (the pure staleness decision — keep it a
+  pure, injected-clock function in the style of its `shouldRaiseDegradedWarning` neighbour), and
+  `swarmforge/scripts/front_desk_supervisor.bb` (read the heartbeat; treat stale-but-alive as
+  crashed; restart bounded; escalate on give-up). Out of scope: the data-loss defect (BL-369) and
+  routing an unanswerable question down (BL-371).
+
+  ⚠ FILE OVERLAP — SEQUENCE WITH BL-369. Both tickets edit
+  `extension/src/tools/telegramFrontDeskBotCore.ts` (BL-369: the offset/delivery contract in
+  `pollAndForward`; BL-370: the heartbeat + staleness decision around the poll cycle). Same file,
+  adjacent functions — concurrent promotion means a merge conflict. `depends_on` is empty because
+  neither BLOCKS the other logically; this is a scheduling constraint for the coordinator, per the
+  orthogonality rule. Landing BL-369 FIRST is the sensible order (it is the higher-severity defect,
+  and it is what stops messages being destroyed; this ticket stops the silence being invisible).
+
+  IMPLEMENTATION NOTES FOR THE CODER.
+    - NO REAL TIMERS, and this ticket is a magnet for them: every scenario here is about elapsed
+      time. The stall window and the backoff must both be driven through an injected clock/seam — the
+      engineering article's ban explicitly covers subprocess and real-daemon tests, and
+      `front_desk_supervisor.bb` already reads its tunables through `env-long`, which is the seam to
+      use. A test that waits out a real stall window is a defect, not a proof.
+    - The staleness decision is a pure function of (last-heartbeat, now, window). Keep it pure and
+      unit-test it directly; the supervisor's job is only to read, decide, act.
+    - A CLI's `main()` must be a thin wrapper over exported helpers AND be called in-process by a
+      test — this is the 5th-occurrence rule family (engineering); do not add a new spawn-only path.
+
+  IR-DRY REVIEW (done at spec time — do not relitigate). Three `possible-synonym` findings, all
+  medium: "reported as healthy" vs "reported as stalled", and "the front desk is restarted" vs "it
+  stops restarting the front desk". Every one is a DELIBERATE contrast — they are the literal
+  opposites the ticket exists to distinguish, and the shared tokens are inherent to stating both
+  sides of the same predicate. CODER, NOTE THE HAZARD: "reported as healthy" and "reported as
+  stalled" are near-identical in shape and MUST get two distinct step handlers asserting two
+  different outcomes. A single loose regex swallowing both would go green while asserting nothing
+  (cf. the known shared-Background / first-registered-handler-wins trap). The file is final as
+  written.
+
+  E2E QA PROCEDURE (live, not a unit suite).
+    1. With a live swarm, wedge the front desk's poll loop so the process stays alive but stops
+       polling. Assert the supervisor reports it STALLED (today it reports `running`).
+    2. Assert it is then restarted with no human action, and that a message sent from Telegram after
+       the restart is answered.
+    3. Leave the front desk healthy and IDLE (send nothing at all) for longer than the stall window.
+       Assert it is still reported healthy and is NOT restarted — the false-positive guard, and the
+       scenario most likely to be got wrong.
+    4. Make the front desk stall repeatedly. Assert restarts stop at the cap and the give-up is
+       escalated to the human loudly.
+    5. Make the escalation send FAIL. Assert the alarm is NOT armed and is retried — never silently
+       suppressed.
+
+acceptance:
+  feature: specs/features/BL-370-front-desk-liveness-means-listening.feature
+  steps:
+    - "A front desk that has stopped listening is reported unhealthy"
+    - "A quiet front desk is not mistaken for a stalled one"
+    - "A stalled front desk is brought back with no human in the loop"
+    - "Restarts are bounded, and giving up is loud"
+    - "The escalation is only silenced once it has actually reached the human"
+
+human_approval: pending
+
+mutation_cost: medium
