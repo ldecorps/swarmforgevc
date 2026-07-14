@@ -14,7 +14,15 @@ export default defineConfig({
     // `vitest run` would pull in hundreds of files — exclude those here. The
     // runner runs FROM within a sandbox (root = sandbox), where its own tests
     // sit at the root and this exclude does not apply.
-    exclude: [...configDefaults.exclude, '**/.stryker-tmp/**', '**/out/**'],
+    // BL-340: test/fixtures/** holds pinned task fixtures (e.g. the
+    // coder-role benchmark task), which legitimately contain their OWN
+    // *.test.js files run by the harness itself via a real `node --test`
+    // child process - never Vitest's own collector. Without this exclude,
+    // Vitest's default include glob picks the fixture file up as one of
+    // its own suites and fails it ("No test suite found") because the
+    // fixture calls node:test's own test() directly rather than relying
+    // on Vitest's globals.
+    exclude: [...configDefaults.exclude, '**/.stryker-tmp/**', '**/out/**', 'test/fixtures/**'],
     // node --test had no default per-test timeout. paneTailerScrollback (the
     // one 30s+ offender, BL-125) now runs in-process via a spy double, so a
     // normal cap is fine; the rest still spawn a fake-tmux binary and stay
@@ -28,6 +36,22 @@ export default defineConfig({
       reporter: ['json'],
       reportsDirectory: 'coverage',
       include: ['out/**/*.js'],
+      // BL-340: Vitest's OWN built-in coverage.exclude (unset here before,
+      // so its default applied) matches any `*-benchmark.js` file - its
+      // own bench-file heuristic. out/tools/run-role-benchmark.js is a
+      // legitimately-named PRODUCTION CLI (this project's role-benchmark
+      // harness entry point, not a Vitest bench file), so that default
+      // silently dropped it from coverage-final.json entirely - not
+      // under-reported, ABSENT - scoring every function in the file at a
+      // false 0% for CRAP purposes despite dedicated passing unit tests
+      // (confirmed by renaming a byte-identical copy of the same file,
+      // which then appeared normally). `include` above already scopes
+      // collection to compiled output only (rootDir is `src`, so `out/`
+      // never contains a compiled test/spec/bench file to begin with),
+      // which makes Vitest's test/spec/bench-suffix exclusion glob
+      // redundant here anyway - drop it and keep only the excludes that
+      // still make sense for this project's own layout.
+      exclude: ['coverage/**', '**/node_modules/**', '**/*.d.ts'],
       all: false,
     },
   },

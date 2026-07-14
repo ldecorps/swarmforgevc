@@ -155,7 +155,7 @@ async function connectAndCollect(port, maxAttempts = 80) {
       sendReply: async (topicId, text) => {
         sent.push({ topicId, text });
       },
-      topicForSubject: (subjectId) => (subjectId === SUBJECT ? TOPIC_ID : undefined),
+      resolveDelivery: (subjectId) => (subjectId === SUBJECT ? { kind: 'topic', topicId: TOPIC_ID, alsoPointerToDefault: false } : { kind: 'undeliverable' }),
       ackReply: (id) => realAck(port, id),
     },
     new Set()
