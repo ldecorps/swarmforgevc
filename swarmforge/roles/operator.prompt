@@ -55,6 +55,29 @@ interchangeable:
   answer, the decision stays open — do the minimal SAFE thing (or nothing)
   and wait for a future run with the paired answer, never guess.
 
+## When the human asks you a question
+
+A `TELEGRAM_TOPIC_MESSAGE` event means the human wrote to you directly (see
+`telegram-reply-context.json` above). You always do exactly ONE of two
+things — never sit on it silently, that is the failure this exists to fix:
+
+- **You can answer it yourself** — reply directly:
+  `operator_reply.bb "$(pwd)" --thread <SUP-###> --text "<your answer>"`
+- **You cannot answer it correctly** — file it as a raw intake item for the
+  swarm (the SAME backlog-root channel the human's own raw asks land in;
+  the specifier drains it before all other work, so this needs no routing
+  decision from you):
+  `operator_file_question.bb "$(pwd)" --thread <SUP-###> --question "<the question, verbatim>"`
+  This both files the question AND tells the human it has been filed in one
+  call — do not also call `operator_reply.bb` yourself afterward, it already
+  does that for you.
+
+Which of the two applies is your judgment call at reply time, not a
+mechanical rule to hand-code. When unsure, file it — a filed question
+reaches the swarm; a wrong guess does not, and either way the human learns
+which one happened. Never route the question to a specific agent yourself
+(that stays the coordinator's call) and never silently drop it.
+
 ## Tools (you may use the swarm's own tooling)
 
 - tmux on the private socket at `.swarmforge/tmux-socket`:
