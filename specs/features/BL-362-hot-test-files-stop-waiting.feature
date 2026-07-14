@@ -18,6 +18,14 @@ Feature: The unit suite's two slowest files stop paying for time and work they d
 # proven by the real checker over real fixture code, and the full-project scan is moved to the gate
 # path where a full scan belongs, never simply deleted. Every millisecond here is re-paid thousands
 # of times over in a Stryker run.
+#
+# AMENDED 2026-07-14 (human-approved, requested by the coder): scenario 05 is narrowed to the
+# dependency-gate's file ALONE. It previously also asserted a duration drop for the pane-tailer's
+# file, which was redundant AND weaker than what scenario 01 already gives: "no pane-tailer test
+# waits on real elapsed time" is an absolute, deterministic guarantee of the same speed win, whereas
+# a wall-clock duration claim is the sort of real-clock assertion the engineering article bans. The
+# dependency-gate keeps the duration assertion because its win comes from consolidating engine boots,
+# which no other scenario captures. No coverage is lost by the narrowing.
 
 # BL-362 hot-test-files-stop-waiting-01
 Scenario: The pane-tailer's tests drive its tick instead of waiting for it
@@ -45,7 +53,7 @@ Scenario: The whole-project dependency scan still happens, in the gate rather th
   And the gate itself still scans the whole real project
 
 # BL-362 hot-test-files-stop-waiting-05
-Scenario: The two files get materially faster without losing a single assertion
+Scenario: The dependency-gate's file gets materially faster without losing a single assertion
   When the unit suite runs
-  Then the pane-tailer's and dependency-gate's files each take a fraction of the time they took before
-  And every behavior those files asserted before is still asserted
+  Then the dependency-gate's file takes a fraction of the time it took before
+  And every behavior it asserted before is still asserted
