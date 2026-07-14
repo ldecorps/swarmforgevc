@@ -12,9 +12,22 @@
 # BL-304: also renders the OPERATOR-RUNTIME unit (--unit=operator) - a
 # crash/OOM/reboot previously left operator_runtime.bb dead with nothing to
 # respawn it (autostart was manual/external). systemd is the supervisor
-# (Restart=always, boot-enabled, StartLimitIntervalSec=0 so a crash burst
-# never permanently stops the unit - the exact analogue of the BL-303
-# sticky-give-up defect fixed at the front-desk-supervisor layer).
+# (Restart=always, boot-enabled, StartLimitIntervalSec=0 in [Unit] so a
+# crash burst never permanently stops the unit - the exact analogue of the
+# BL-303 sticky-give-up defect fixed at the front-desk-supervisor layer).
+#
+# BL-366: none of the rendered units could actually start. ExecStart=bb ...
+# named a bare command - systemd does not search PATH for ExecStart, so
+# every start failed ("Command bb is not executable"). StartLimitIntervalSec
+# was rendered into [Service], where systemd v230+ silently discards it -
+# the crash-burst guard above was decorative. Fixed by resolving bb's
+# absolute path at generate time (this script runs ON the target host - see
+# provision_secondary_host.sh), moving StartLimitIntervalSec to [Unit] on
+# all three units, and adding an Environment=PATH= (systemd's own minimal
+# PATH excludes ~/.local/bin) so the scripts these units launch can find
+# bb/node/claude too. systemd-analyze verify now gates every rendered unit
+# in test_generate_systemd_units.sh - the check that would have caught both
+# defects in one second.
 #
 # BL-351: also renders the FRONT-DESK unit (--unit=front-desk) - the
 # bridge + Telegram bot, the human's entire phone-card/holistic-UI/
@@ -92,6 +105,39 @@ fi
 
 ENV_FILE="/etc/swarmforge/${PACK_NAME}.env"
 
+# BL-366: systemd does NOT search PATH for ExecStart (unlike a shell), so an
+# ExecStart naming a bare "bb" fails on every start with "Command bb is not
+# executable" - systemd-analyze verify catches this outright. Resolve the
+# absolute path HERE, at generate time (this script runs directly on the
+# target host - see provision_secondary_host.sh), rather than assuming a
+# login PATH that a systemd-launched process never has. Required (not
+# best-effort): the operator unit's ExecStart runs bb directly, so a unit
+# cannot be generated at all if bb cannot be found.
+BB_BIN="$(command -v bb || true)"
+if [[ -z "$BB_BIN" ]]; then
+  echo "generate_systemd_units.sh: cannot resolve an absolute path for 'bb' via PATH on this host - systemd requires an absolute ExecStart and cannot search PATH itself" >&2
+  exit 1
+fi
+
+# BL-366 DEFECT A': one layer down from ExecStart itself. systemd hands units
+# a minimal PATH (/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin)
+# that excludes a user-local bin dir like ~/.local/bin - so even a unit whose
+# OWN ExecStart is already absolute (swarm, front-desk) starts, then dies the
+# moment the script it launches shells out to `bb`/`node`/`claude` and can't
+# find them. Best-effort for node/claude (launched only by the SCRIPTS these
+# units invoke, not by this generator's own ExecStart): if resolvable here,
+# include their directory; if not, this generator does not block on it - a
+# missing interpreter fails later, at the launched script's own boundary.
+MINIMAL_SYSTEMD_PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin"
+EXTRA_PATH_DIRS="$(dirname "$BB_BIN")"
+for interpreter in node claude; do
+  resolved="$(command -v "$interpreter" || true)"
+  if [[ -n "$resolved" ]]; then
+    EXTRA_PATH_DIRS="$EXTRA_PATH_DIRS:$(dirname "$resolved")"
+  fi
+done
+UNIT_PATH="$EXTRA_PATH_DIRS:$MINIMAL_SYSTEMD_PATH"
+
 case "$UNIT_TYPE" in
 swarm)
   UNIT="$(cat <<EOF
@@ -99,6 +145,7 @@ swarm)
 Description=SwarmForge secondary swarm ($PACK_NAME)
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
@@ -106,10 +153,13 @@ RemainAfterExit=yes
 User=$LINUX_USER
 WorkingDirectory=$PROJECT_ROOT
 Environment=SWARMFORGE_TERMINAL=none
+Environment=PATH=$UNIT_PATH
 EnvironmentFile=-$ENV_FILE
 ExecStart=$PROJECT_ROOT/swarm $PROJECT_ROOT --pack $PACK_NAME
 ExecStop=$PROJECT_ROOT/swarm-kill
 TimeoutStartSec=120
+Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
@@ -122,19 +172,20 @@ operator)
 Description=SwarmForge operator runtime ($PACK_NAME)
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
 User=$LINUX_USER
 WorkingDirectory=$PROJECT_ROOT
+Environment=PATH=$UNIT_PATH
 EnvironmentFile=-$ENV_FILE
-ExecStart=bb $PROJECT_ROOT/swarmforge/scripts/operator_runtime.bb $PROJECT_ROOT
+ExecStart=$BB_BIN $PROJECT_ROOT/swarmforge/scripts/operator_runtime.bb $PROJECT_ROOT
 ExecStop=/usr/bin/touch $PROJECT_ROOT/.swarmforge/operator/stop
 KillMode=control-group
 TimeoutStopSec=60
 Restart=always
 RestartSec=5
-StartLimitIntervalSec=0
 
 [Install]
 WantedBy=multi-user.target
@@ -147,11 +198,13 @@ front-desk)
 Description=SwarmForge front desk - bridge + Telegram bot ($PACK_NAME)
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=forking
 User=$LINUX_USER
 WorkingDirectory=$PROJECT_ROOT
+Environment=PATH=$UNIT_PATH
 EnvironmentFile=-$ENV_FILE
 PIDFile=$PROJECT_ROOT/.swarmforge/operator/front-desk-supervisor.pid
 ExecStart=$PROJECT_ROOT/swarmforge/scripts/launch_front_desk.sh $PROJECT_ROOT
@@ -160,7 +213,6 @@ KillMode=control-group
 TimeoutStopSec=60
 Restart=always
 RestartSec=5
-StartLimitIntervalSec=0
 
 [Install]
 WantedBy=multi-user.target
