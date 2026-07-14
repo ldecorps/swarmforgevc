@@ -147,3 +147,33 @@ test('an empty record still gets its reconstruction header - a topic recreated f
   assert.equal(posted.length, 1);
   assert.match(posted[0].text, /reconstructed/i);
 });
+
+// A failed postMessage must never be silently treated as a success - the
+// mapping must not be armed onto a topic that is missing content, or the
+// ticket routes to an incomplete reconstruction with no way to detect it.
+test('a header postMessage failure fails the whole recreate and never records the mapping', async () => {
+  const rec = record([msg({ text: 'first' })]);
+  const { recorded, adapters } = fakeAdapters(rec, {
+    postMessage: async () => false,
+  });
+  const result = await recreateTopicFromRecord('BL-900', 'a fine feature', adapters, Date.parse('2026-07-14T00:00:00Z'));
+  assert.equal(result.success, false);
+  assert.equal(recorded.length, 0);
+});
+
+test('a mid-replay postMessage failure fails the whole recreate and never records the mapping, even though the header succeeded', async () => {
+  const rec = record([msg({ seq: 0, text: 'first' }), msg({ seq: 1, text: 'second' })]);
+  const seen = [];
+  const { recorded, adapters } = fakeAdapters(rec, {
+    postMessage: async (topicId, text) => {
+      seen.push(text);
+      return seen.length !== 2; // header (1st call) succeeds, first replayed message (2nd call) fails
+    },
+  });
+  const result = await recreateTopicFromRecord('BL-900', 'a fine feature', adapters, Date.parse('2026-07-14T00:00:00Z'));
+  assert.equal(result.success, false);
+  assert.equal(recorded.length, 0);
+  // still attempts every message - a transient blip on one post should not
+  // abandon the rest of the replay
+  assert.equal(seen.length, 3);
+});
