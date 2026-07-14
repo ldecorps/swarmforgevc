@@ -131,11 +131,17 @@
 ;;            :send-divergence-alarm! (fn [ahead behind] -> {:success bool :reason kw? :error str?})
 ;;            :log!                   (fn [& parts])}
 ;;
-;; Fully self-healing: once origin catches up (:nothing-to-push) or a push
-;; actually lands (:pushed), all persisted state (push backoff, push alarm,
-;; divergence alarm) is cleared - a LATER failure episode starts fresh and
-;; alarms again, the same "recovers and gets stuck again is escalated again"
-;; shape stuck_escalation_email_lib.bb's own sweep! uses for role recovery.
+;; Fully self-healing across every transition, not only the two terminal
+;; ones: once origin catches up (:nothing-to-push) or a push actually lands
+;; (:pushed), ALL persisted state (push backoff, push alarm, divergence
+;; alarm) is cleared. The two NON-terminal cross-transitions are handled too
+;; (BL-356 architect bounce, 20260714) - entering :diverged clears a stale
+;; :should-push :alarm flag, and returning from :diverged to :should-push
+;; clears a stale :divergence flag - so a flag armed by one episode can
+;; never survive to silently suppress a later, unrelated episode of the
+;; OTHER kind. A LATER failure episode always starts fresh and alarms
+;; again, the same "recovers and gets stuck again is escalated again" shape
+;; stuck_escalation_email_lib.bb's own sweep! uses for role recovery.
 (defn sweep!
   [now-ms daemon-dir retry-config adapters]
   (let [state (read-state daemon-dir)
@@ -148,14 +154,24 @@
         (when (seq state) (write-state! daemon-dir {})))
 
       :diverged
-      (let [alarm-state (or (:divergence state) {})]
+      ;; BL-356 architect bounce: a stale ARMED :alarm (push-failure) flag
+      ;; must not survive into a divergence episode - it belongs to a
+      ;; different, possibly-unrelated failure and must not silently
+      ;; suppress a LATER :should-push alarm once this divergence resolves.
+      ;; Cleared unconditionally on entry (and every tick while diverged,
+      ;; harmlessly idempotent once already {}), never only when this
+      ;; tick's OWN divergence alarm happens to fire.
+      (let [state (if (seq (:alarm state)) (assoc state :alarm {}) state)
+            alarm-state (or (:divergence state) {})]
         (if (alarm-due? alarm-state now-ms retry-config)
           (let [result ((:send-divergence-alarm! adapters) (:ahead counts) (:behind counts))
                 outcome (classify-send-result result)
                 next-alarm (next-alarm-state outcome alarm-state retry-config now-ms)]
             ((:log! adapters) "push-sweep" "diverged" (name outcome))
             (write-state! daemon-dir (assoc state :divergence next-alarm :push {})))
-          ((:log! adapters) "push-sweep" "diverged-already-alarmed")))
+          (do
+            ((:log! adapters) "push-sweep" "diverged-already-alarmed")
+            (write-state! daemon-dir state))))
 
       :should-push
       ;; Two independent cadences, checked on every tick: whether it's time
@@ -164,7 +180,15 @@
       ;; the push retry budget is exhausted (alarm-state's own backoff). A
       ;; tick where the push is still backing off must still be free to
       ;; retry a not-yet-delivered alarm, and vice versa.
-      (let [push-state (or (:push state) {})
+      ;;
+      ;; BL-356 architect bounce: a stale ARMED :divergence flag must not
+      ;; survive a return from :diverged back to :should-push - it belongs
+      ;; to a resolved (or unrelated) divergence episode and must not
+      ;; silently suppress a NEW divergence alarm later. Cleared
+      ;; unconditionally here; every write below persists this cleared
+      ;; value along with whatever :push/:alarm updates this tick makes.
+      (let [state (if (seq (:divergence state)) (assoc state :divergence {}) state)
+            push-state (or (:push state) {})
             push-due? (due? {:attempts (:attempts push-state)
                              :last-attempt-at-ms (:last-attempt-at-ms push-state)
                              :now-ms now-ms :retry-config retry-config})
