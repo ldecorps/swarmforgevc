@@ -342,8 +342,6 @@
         type (get headers "type")
         filename (str priority "_" timestamp-id "_" sequence "_from_" sender "_to_" recipient-slug ".handoff")
         outbox-dir (fs/path (state-dir) "outbox")
-        tmp-dir (fs/path outbox-dir "tmp")
-        tmp-file (fs/path tmp-dir (str filename ".tmp"))
         outbox-file (fs/path outbox-dir filename)
         handoff-body (body type sender canonical-commit (get headers "message")
                            (get headers "scope") (get headers "body") (get headers "rationale"))
@@ -370,10 +368,14 @@
                 (conj (str "created_at: " created-at)
                       ""
                       handoff-body))]
-    (doseq [dir [tmp-dir outbox-dir (fs/path (state-dir) "sent") (fs/path (state-dir) "failed")]]
+    (doseq [dir [outbox-dir (fs/path (state-dir) "sent") (fs/path (state-dir) "failed")]]
       (fs/create-dirs dir))
-    (spit (str tmp-file) (str (str/join "\n" lines) "\n"))
-    (fs/move tmp-file outbox-file)
+    ;; BL-365: durable install (write -> fsync -> rename) PLUS the sender's
+    ;; own integrity floor (delete-and-reject if what actually landed on
+    ;; disk is corrupt) - never a bare spit + fs/move. See
+    ;; handoff-lib/atomic-write!'s and install-handoff!'s own docstrings.
+    (when-not (handoff-lib/install-handoff! outbox-file (str (str/join "\n" lines) "\n"))
+      (exit! 1 "HANDOFF WRITE FAILED: the installed file was corrupt (empty or missing required envelope headers); no handoff was queued."))
     (check-backlog-depth) ; Add backlog depth check after writing handoff
     outbox-file))
 
