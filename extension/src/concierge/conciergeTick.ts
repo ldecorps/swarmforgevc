@@ -18,6 +18,10 @@ export interface BacklogFolderItem {
   // second reader).
   notes?: string;
   firstAcceptanceStep?: string;
+  // BL-357: read straight off the SAME BacklogItem.humanApproval field
+  // backfill-human-approval.ts seeded and backlogReader.ts already parses -
+  // never a second approval-state derivation.
+  humanApproval?: 'pending' | 'approved';
 }
 
 export interface BacklogFoldersSnapshot {
@@ -63,6 +67,19 @@ function ticketSummariesFor(active: BacklogFolderItem[]): Record<string, TicketS
   return summaries;
 }
 
+// BL-357: active-ticket-only, same scope restriction as ticketSummariesFor
+// above and for the same reason - a paused ticket has no topic open yet
+// (one only opens on TaskStarted, i.e. entering active) and most paused
+// tickets default to `pending` pre-promotion regardless of whether anyone
+// is actually waiting to be asked (backfill-human-approval.ts seeds the
+// field "regardless of value"). Asking about those would flood a topic
+// open for every paused ticket before its own work even starts, and the
+// ticket's own notes frame the gap as the 3 ACTIVE pending tickets,
+// explicitly distinct from "9 paused ones".
+function pendingApprovalFor(active: BacklogFolderItem[]): string[] {
+  return active.filter((item) => item.humanApproval === 'pending').map((item) => item.id);
+}
+
 function toEventStreamSnapshot(folders: BacklogFoldersSnapshot, gates: GateSignal[], roleTicket: Record<string, string>): EventStreamSnapshot {
   return {
     backlog: {
@@ -73,6 +90,7 @@ function toEventStreamSnapshot(folders: BacklogFoldersSnapshot, gates: GateSigna
     gates,
     roleTicket,
     ticketSummaries: ticketSummariesFor(folders.active),
+    pendingApproval: pendingApprovalFor(folders.active),
   };
 }
 
@@ -127,6 +145,11 @@ function withRetryableTransitionsHeldBack(curr: EventStreamSnapshot, unrouted: R
       done: curr.backlog.done.filter((id) => !isUnrouted('TaskCompleted', id)),
     },
     gates,
+    // BL-357: same array-filter retry pattern as TaskStarted/TaskCompleted
+    // above - a failed ApprovalRequested post holds its id back out of the
+    // persisted pendingApproval set so the next tick's diff sees it as a
+    // fresh not-pending -> pending transition and retries it.
+    pendingApproval: curr.pendingApproval.filter((id) => !isUnrouted('ApprovalRequested', id)),
   };
 }
 
