@@ -1,0 +1,102 @@
+id: BL-373
+title: "The launcher overwrites git-tracked files in every role worktree on each launch — this is the phantom-revert root cause"
+milestone: M8
+type: defect
+severity: high
+status: todo
+priority: 1
+direction: expedite
+depends_on: []
+source: "rule_proposal from the architect, 2026-07-14 (project scope), after the 4th phantom-revert occurrence. Root-caused on disk by the specifier before speccing — see below."
+
+notes: |
+  THE PHANTOM REVERT IS NOT A MYSTERY ANY MORE. This ticket does not ask anyone to go looking for a
+  mechanism. I found it, and I verified every step of it on disk. Six occurrences on 2026-07-14 alone
+  (architect x2, coder, hardener, cleaner), each one restored by hand, each one filed as "cause
+  unknown, suspected hot-sync/tunnel drift". The suspicion was wrong. It is our own launcher.
+
+  THE MECHANISM. `sync_worktree_scripts()` (swarmforge/scripts/swarmforge.sh:739-762) runs on EVERY
+  launch, from the main launch path (line ~1273). For each role worktree it does:
+
+      cp -R "$SCRIPT_DIR/."                 "$worktree_path/swarmforge/scripts/"   # line 750
+      cp -R "$SWARM_FORGE_DIR/profiles/."   "$worktree_path/swarmforge/profiles/"  # line 753
+
+  `SCRIPT_DIR` is the LAUNCHING checkout's script dir (line 13: `dirname "$0"`), i.e. master's. Both
+  destination paths are GIT-TRACKED in this repo — only `.swarmforge/` is gitignored (.gitignore:4);
+  `git ls-files swarmforge/scripts swarmforge/profiles` lists them. So the launcher reaches into
+  every role worktree and overwrites tracked, branch-managed files with master's bytes, entirely
+  outside git. Nothing merges, nothing commits — the working tree is just quietly rewritten.
+
+  WHY THAT PRESENTS AS A REVERT. A role branch that has merged an in-flight script change now holds
+  content main does not have. The launcher copies main's OLDER version over it. `git status` in that
+  worktree then shows uncommitted modifications that strip the merged feature — byte-identical to the
+  pre-ticket commit, because main's content IS the pre-ticket content.
+
+  VERIFIED, not deduced. BL-365 is still in `backlog/active/` — its code is on the pipeline branches
+  and NOT on main (`git merge-base --is-ancestor a987cec2 main` fails). `swarmforge-architect` has
+  BL-365's `corrupt-handoff?` in handoff_lib.bb; main does not. And for all five files the incident
+  reports name (handoff_lib.bb, handoffd.bb, ready_for_next_task.bb, ready_for_next_batch.bb,
+  swarm_handoff.bb), main's blob is SHA-identical to the pre-BL-365 commit `b3c25dc4^` — which is
+  exactly the content the reverted worktrees were found holding.
+
+  IT EXPLAINS ALL FOUR OBSERVATIONS THAT PREVIOUSLY LOOKED RANDOM:
+    - Byte-identical to the pre-ticket commit — because the source of the copy is main.
+    - NEVER seen in the master checkout — the sync loop explicitly `continue`s when
+      `worktree_path == WORKING_DIR` (line 743). Master is the one tree it skips.
+    - Untracked new files survive (BL-367's resolve_swarm_socket.bb was untouched) — `cp -R`
+      overwrites what the SOURCE has; it never deletes what it lacks.
+    - It recurs — on every relaunch, and 2026-07-14 was a day of repeated swarm restarts.
+
+  Also note it disproves the standing theory: this needs no Operator, no tunnel, and no hot-sync
+  daemon. It is one `cp -R` on the launch path.
+
+  THE FIX, AND THE TRAP IN IT. Do NOT just delete the sync. It exists for a real reason: a foreign
+  TARGET repo does not carry `swarmforge/` at all, and its worktrees genuinely need the scripts
+  copied in to function. That case must keep working — scenario 03 exists to hold you to it.
+
+  The invariant that separates the two cases is one sentence: **the launcher must never overwrite a
+  file that the destination worktree's own git tracks.** Where git owns the content, git delivers it
+  (the role's branch already has it); where git does not, the copy is the only delivery mechanism and
+  stays. Implement that check against the destination worktree's index — not against a hardcoded list
+  of repo names, and not by testing whether the path merely exists.
+
+  Keep the runtime-state copies (lines 756-759: sessions.tsv, roles.tsv, tmux-socket, tmux-env). They
+  land in `.swarmforge/`, which is gitignored local state, not repo content. They are correct and
+  scenario 04 pins them so a fix cannot regress them into silence.
+
+  Be loud, not silent (scenario 05). A launcher that declines to overwrite should SAY it left the
+  tracked paths to git. Silence is how this defect survived six occurrences: the copy printed nothing,
+  so every role read the damage as an inexplicable diff rather than as something the launch just did.
+
+  SCOPE. `swarmforge/scripts/swarmforge.sh` — `sync_worktree_scripts()` and its callers. Out of scope:
+  redesigning worktree provisioning, the fork's upstream-drift policy, and BL-365 itself (this ticket
+  is why BL-365's code kept vanishing; it is not a re-fix of it).
+
+  TESTING NOTE. Per the engineering rules, drive this over a real throwaway git fixture repo (init a
+  repo, add worktrees, run the sync function), not by simulating git with mocks — the whole defect
+  lives in the gap between "the file exists" and "git tracks the file", which only a real index can
+  tell you. No permission-bit tricks and no real timers are needed here. Scenario 01 is a Scenario
+  Outline: per the engineering rules its `tracked_path` column must be LOAD-BEARING — validate the
+  value against an explicit KNOWN_VALUES lookup and fail on anything not in it, never a passthrough,
+  or gherkin-mutator will mutate the path into an else-branch and the mutant will survive to the
+  hardener.
+
+  E2E QA PROCEDURE: in a scratch clone, merge a script change onto a role branch WITHOUT landing it on
+  main (reproduce the real condition), confirm `git status` in that worktree is clean, launch the
+  swarm, then re-run `git status` in every role worktree — it must still be clean and the merged
+  change must still be present. Before the fix this reproduces the phantom revert on demand; that
+  reproduction IS the regression test. Then launch against a target repo that does not track
+  `swarmforge/` and confirm its worktrees still receive runnable scripts.
+
+acceptance:
+  feature: specs/features/BL-373-launcher-never-clobbers-tracked-worktree-files.feature
+  steps:
+    - "Launching a swarm does not modify a git-tracked path in a role worktree"
+    - "Work merged on a role branch but not yet on main survives a relaunch"
+    - "A target repository that does not track the swarm scripts still receives them"
+    - "Local runtime state is still delivered to every role worktree"
+    - "A launch that declines to overwrite a tracked path says so"
+
+human_approval: pending
+
+mutation_cost: low

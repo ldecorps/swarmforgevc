@@ -42,7 +42,21 @@ done
 ROOT="$(cd "${1:-.}" && pwd)"
 DAEMON_DIR="$ROOT/.swarmforge/daemon"
 AUDIT="$DAEMON_DIR/kill-all-audit.log"
-SOCKET_GLOB="/tmp/swarmforge-"*/*.sock
+# BL-367: the control socket now lives under the target root's own
+# .swarmforge/tmux/ (never /tmp) - scoped to $ROOT by construction, so a
+# fixture root used by a test can never match another project's (or the
+# live swarm's) socket. The old /tmp/swarmforge-<uid>/<hash>.sock path is
+# still checked, but as a SINGLE exact match (the same cksum
+# PROJECT_SOCKET_ID swarmforge.sh computes for this root) - never a broad
+# glob across the whole /tmp/swarmforge-<uid>/ directory, which would match
+# every OTHER project's socket for this uid too. (Postmortem: an earlier,
+# unscoped version of this legacy glob, exercised by an isolated test
+# fixture, matched and killed the live swarm's real socket 5 times in one
+# session - see swarmforge/scripts/test/test_swarm_socket_not_in_tmp.sh.)
+source "$SCRIPT_DIR/project_socket_id_lib.sh"
+SOCKET_GLOB="$ROOT/.swarmforge/tmux/"*.sock
+LEGACY_PROJECT_SOCKET_ID="$(project_socket_id "$ROOT")"
+LEGACY_SOCKET="/tmp/swarmforge-${UID}/${LEGACY_PROJECT_SOCKET_ID}.sock"
 
 log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$AUDIT"
@@ -106,8 +120,9 @@ if [[ -f "$ROOT/.swarmforge/tmux-socket" ]]; then
   kill_tmux_socket "$tracked"
 fi
 
-# 2. Every swarmforge tmux socket (stale Jul-8 orphans, etc.).
-for sock in $SOCKET_GLOB; do
+# 2. Every swarmforge tmux socket under this root's own .swarmforge/tmux/
+# (stale orphans, etc.), plus this root's single exact legacy /tmp path.
+for sock in $SOCKET_GLOB "$LEGACY_SOCKET"; do
   [[ -e "$sock" ]] || continue
   kill_tmux_socket "$sock"
 done

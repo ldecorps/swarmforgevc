@@ -288,6 +288,22 @@
   start have hit multiple roles — BL-081, BL-109. Never re-fix from scratch,
   and never use `git stash` for this — see the tracked-but-gitignored
   `scripts/` failure mode.)
+- **The phantom revert in `swarmforge/scripts/` is ROOT-CAUSED — stop
+  re-investigating it (BL-373).** It is not hot-sync drift, not the Operator,
+  and not the tunnel: `sync_worktree_scripts()` in `swarmforge/scripts/
+  swarmforge.sh` `cp -R`s the LAUNCHING checkout's `swarmforge/scripts/` and
+  `swarmforge/profiles/` over every role worktree on EVERY launch. Both paths
+  are git-tracked, so main's bytes silently overwrite branch content outside
+  git. Any script change merged onto your branch but not yet landed on `main`
+  is therefore reverted in your working tree — byte-identical to the pre-ticket
+  commit (main's content IS that content), never in the master checkout (the
+  sync skips it), leaving untracked new files alone (`cp -R` overwrites only
+  what the source has). Two consequences while BL-373 is open: (1) it RE-FIRES
+  on every relaunch, so restoring it once does not make it stay fixed —
+  re-check your worktree after any swarm restart; (2) the restore is still the
+  right move, but it is a recurrence to log, never a defect to re-diagnose.
+  Six roles each burned a session re-deriving this on 2026-07-14; the seventh
+  should not.
 - `extension/out/` (compiled TypeScript output) is gitignored and MUST NOT be
   committed. It was previously tracked-but-gitignored — the exact same class
   of defect as the `scripts/` mismatch above: a `git stash`/`checkout -- .`/

@@ -1,0 +1,100 @@
+id: BL-372
+title: "start-swarm.sh leaves the tmux server in the caller's process group, so the swarm dies with whoever launched it"
+milestone: M8
+type: defect
+severity: high
+status: todo
+priority: 3
+direction: expedite
+depends_on: []
+source: "backlog/INTAKE-start-swarm-not-detached-from-caller.md — observed twice by the Operator, 2026-07-14. Live code path re-verified by the specifier (start-swarm.sh:94, swarmforge.sh:127/:780, start_handoff_daemon.sh:68)."
+
+notes: |
+  WHAT HAPPENED. A swarm launched from a short-lived caller (a disposable Operator window) comes up
+  correctly — 8/8 sessions, panes alive — and then DIES when that caller exits. Minutes later the
+  supervisor sees a fresh 8x AGENT_EXITED storm. The next Operator run relaunches, exits, and it
+  happens again: a relaunch/reap loop. Observed twice on 2026-07-14.
+
+  THE SIGNATURE THAT PROVES IT IS NOT A CRASH. `handoffd` from the SAME launch is still ALIVE and
+  init-parented (PPID 1), because `start_handoff_daemon.sh:68` detaches properly (`nohup … &`) —
+  while the tmux server, which nothing detaches, is simply GONE. The agents never crashed and nothing
+  killed them "externally". The caller's teardown took them.
+
+  WHERE THE FIX GOES — HUMAN DESIGN CALL, DO NOT RELITIGATE. The tmux server is NOT born in
+  `start-swarm.sh`. `start-swarm.sh:94` shells `"$TARGET/swarm"` → `swarmforge/scripts/swarmforge.sh`,
+  and the server is first created there: the probe session in `detect_tmux_base_indexes` (:127) or
+  `create_role_session` (:780), whichever hits an empty socket first. NEITHER uses setsid/nohup/disown.
+  I put the "fix the launcher, cover every caller" option to the human and they chose the WRAPPER
+  ONLY: detach the `./swarm` invocation at `start-swarm.sh:94`. Rationale — `swarmforge/` is a
+  maintained FORK (local-engineering Architecture Rule 2), so touching `swarmforge.sh` is a tracked
+  upstream deviation; the wrapper is ours outright and is the launch path in real use.
+    ACCEPTED, KNOWN LIMITATION of that call: a caller invoking bare `./swarm` (bypassing the wrapper)
+    is still reapable. That is exactly what scenario 02 exists to catch — the self-check makes the
+    exposure LOUD at launch time instead of silent-until-the-storm. Do not "improve" on the decision by
+    editing `swarmforge.sh`; if you believe the wrapper cannot carry the fix, bounce the ticket back
+    rather than widening scope.
+
+  THE SELF-CHECK IS PART OF THIS TICKET, NOT A FOLLOW-UP (human call). After the swarm is up,
+  `start-swarm.sh` must ASSERT the tmux server is detached — its own session, re-parented to init —
+  and FAIL LOUDLY if it is not, naming the defect. Without it the fix has nothing observable to bite
+  on and a regression would be silent again, exactly as it was twice today. An assertion that cannot
+  fail is decoration: scenario 02 requires the failing path to be real and reachable.
+
+  ⚠ CONSTRAINT THE COMPILER WILL NOT CATCH: macOS HAS NO `setsid(1)`. This project targets macOS AND
+  Linux (local-engineering, Tech Stack). A `setsid`-only fix is green on WSL/Linux and broken on
+  macOS — where the swarm was originally developed. The Gherkin deliberately specifies the OBSERVABLE
+  PROPERTY ("the swarm survives however its caller goes away"), not a mechanism, so pick one that
+  holds on both. `start_handoff_daemon.sh:68`'s `nohup … &` is the in-repo model and is portable.
+  Note the two departure modes are NOT the same signal — a hangup reaches the process group, while a
+  killed window/session tears down the session — so verify the chosen mechanism against BOTH
+  (scenario 01's examples), not just a clean exit.
+
+  ⚠ DO NOT BREAK THE READINESS GATE (scenario 03). `wait_for_ready` (start-swarm.sh:69-87) polls the
+  socket and EXITS NON-ZERO when the swarm never comes up. Detaching by simply backgrounding the
+  launch is the obvious way to silently lose that — the wrapper would return 0 having launched
+  nothing. Detaching the SERVER's lifetime and keeping the wrapper's synchronous readiness result are
+  both required; scenario 03 fails you if the second is traded away for the first.
+
+  BUILD IT WITH A TESTABLE SEAM — NOT A POLLING SHELL TEST. The engineering article BANS a test that
+  waits out real time, and says so specifically about shell tests that spawn a real daemon and poll
+  (BL-349). Do not verify this with a 60-second "launch, kill the caller, sleep, check if it's still
+  there" script. Put the DECISIONS behind pure, exported, in-process-testable helpers — "given this
+  process's session id / parent pid, is the server detached?" and "given that, does the launch pass or
+  fail loudly?" — and keep the shell to I/O wiring, per the CLI thin-wrapper rule (and its follow-on:
+  the wrapper itself must be exercised in-process, not only as a subprocess). A subprocess smoke test
+  that locks the wiring is a welcome ADDITION, never the only cover.
+
+  SCOPE. `start-swarm.sh` (the `./swarm` invocation at :94, and a new post-launch detachment
+  assertion after `wait_for_ready`), plus the testable helper module the decisions live in and its
+  tests. OUT of scope: `swarmforge/scripts/swarmforge.sh` (the human's call above), and the
+  DETECTION half — noticing that control was lost after the fact is BL-368.
+
+  RELATION TO SIBLING TICKETS — READ BEFORE PROMOTING. Same incident family, same day, all three
+  distinct: BL-367 (ACTIVE) moves the socket out of `/tmp` and touches `swarmforge.sh` +
+  `kill_all_swarm.sh`; BL-368 (paused) is control-loss-≠-agent-death detection. This ticket is the
+  LIFETIME half and touches `start-swarm.sh`, which neither sibling touches — so it is orthogonal by
+  file and may run concurrently with BL-367. They are nonetheless all reasoning about the same tmux
+  server: if BL-367 lands first, re-read the socket path before asserting on it.
+
+  IR-DRY REVIEW (done at spec time — do not relitigate). Parser + IR-DRY checker run clean: 13 step
+  occurrences, 12 unique, ZERO findings. The one repeated step ("it does not report the swarm as
+  ready") is a genuine shared assertion across scenarios 02 and 03, not drift. The file is final as
+  written.
+
+  E2E QA PROCEDURE. Launch the swarm from a short-lived caller (a subshell, then a tmux window that is
+  then killed) and assert, after the caller is gone, that the tmux server's PPID is 1 and every role
+  session is still listable and controllable — capture a pane, send a nudge. Then invert it: force the
+  un-detached launch (bypass the detach) and assert `start-swarm.sh` FAILS, non-zero, with a message
+  naming the swarm as still owned by its caller — never a silent success. Finally point the wrapper at
+  a target that cannot come up and assert it still exits non-zero (the readiness gate survives).
+
+acceptance:
+  feature: specs/features/BL-372-swarm-outlives-its-launcher.feature
+  steps:
+    - "The swarm survives however its caller goes away"
+    - "A launch that leaves the swarm tied to its caller fails loudly"
+    - "Detaching the swarm does not weaken the readiness gate"
+
+human_approval: pending
+
+mutation_cost: low
