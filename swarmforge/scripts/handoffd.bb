@@ -23,6 +23,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "standing_rule_violations_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "standing_rule_violations_files.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "stuck_escalation_email_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "push_sweep_lib.bb")))
 
 (def poll-ms 1000)
 (def wake-message agent-runtime-lib/default-wake-chat-message)
@@ -972,6 +973,99 @@
     (catch Exception e
       (log! "resource-sample-sweep-error" (.getMessage e)))))
 
+;; BL-356: twice in one day local `main` accumulated hours of committed work
+;; that never reached origin, indistinguishable from a dead swarm from
+;; outside - nothing in the swarm ever pushed; publication depended
+;; entirely on an LLM role remembering to run `git push`. Runs on the same
+;; cadence as the sweeps above (no separate timeout). push_sweep_lib.bb
+;; owns the pure decision/state logic (ahead/behind classification,
+;; bounded push-retry backoff, delivery-based alarm arming); this is the
+;; thin git/network-specific wiring, mirroring stuck-escalation-email-
+;; sweep!'s own posture and reusing the SAME daemon_alarm_lib.bb sender.
+(def push-sweep-retry-config
+  {:max-push-attempts (env-ms "PUSH_SWEEP_MAX_PUSH_ATTEMPTS" 5)
+   :max-alarm-attempts (env-ms "PUSH_SWEEP_MAX_ALARM_ATTEMPTS" 3)
+   :backoff-base-ms (env-ms "PUSH_SWEEP_BACKOFF_BASE_MS" 30000)
+   :backoff-max-ms (env-ms "PUSH_SWEEP_BACKOFF_MAX_MS" 300000)})
+
+;; One-shot per process, same rationale as escalation-email-missing-key-
+;; warned?/briefing-missing-key-warned? above - a separate atom because
+;; this is a separate signal.
+(def push-alarm-email-missing-key-warned? (atom false))
+
+;; BL-356 E2E test seam, mirroring send-escalation-alarm-email!'s own
+;; ESCALATION_ALARM_FORCE_RESULT convention exactly: when set, short-
+;; circuits the real send entirely and returns this JSON-decoded result
+;; instead. Never set in production.
+(defn send-push-alarm-email! [subject text]
+  (if-let [forced (System/getenv "PUSH_ALARM_FORCE_RESULT")]
+    (json/parse-string forced true)
+    (daemon-alarm-lib/send-configured-email!
+     project-root conf-file subject text
+     {:already-warned?! (fn [] @push-alarm-email-missing-key-warned?)
+      :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+      :mark-warned! (fn [] (reset! push-alarm-email-missing-key-warned? true))})))
+
+(defn- git-fetch-origin-main! []
+  (try
+    (process/sh ["git" "fetch" "origin" "main"] {:dir (str project-root)})
+    (catch Exception e
+      (log! "push-sweep-fetch-error" (.getMessage e)))))
+
+;; A fetch failure is logged and swallowed, not treated as "up to date" -
+;; the rev-list below still runs against whatever origin/main ref is
+;; already cached locally (from a prior successful fetch), so `ahead`
+;; (local's own unpublished work) stays accurate even when THIS tick's
+;; fetch failed; a stale view of `behind` self-corrects on the next
+;; successful fetch, and in the meantime a plain push against a truly
+;; advanced origin simply fails and is retried like any other transient
+;; failure - it is never force-pushed.
+(defn push-sweep-rev-counts! []
+  (git-fetch-origin-main!)
+  (let [{:keys [exit out]} (process/sh ["git" "rev-list" "--left-right" "--count" "origin/main...main"]
+                                        {:dir (str project-root)})]
+    (if (zero? exit)
+      (let [[behind ahead] (map parse-long (str/split (str/trim out) #"\s+"))]
+        {:ahead (or ahead 0) :behind (or behind 0)})
+      (do
+        (log! "push-sweep-revcount-error" (str/trim out))
+        {:ahead 0 :behind 0}))))
+
+;; Never --force: a rejected (non-fast-forward) push surfaces as a plain
+;; failed exit here, which push_sweep_lib.bb's own bounded retry treats
+;; like any other transient failure - true divergence is caught BEFORE a
+;; push is ever attempted, by push-sweep-rev-counts! above.
+(defn push-sweep-push! []
+  (let [{:keys [exit err]} (process/sh ["git" "push" "origin" "main"] {:dir (str project-root)})]
+    (if (zero? exit)
+      {:success true}
+      {:success false :error (str/trim (or err ""))})))
+
+(defn push-sweep! []
+  (try
+    (push-sweep-lib/sweep!
+     (System/currentTimeMillis) (str daemon-dir) push-sweep-retry-config
+     {:rev-counts! push-sweep-rev-counts!
+      :push! push-sweep-push!
+      :send-push-alarm!
+      (fn [attempts]
+        (send-push-alarm-email!
+         "SwarmForge: main is not reaching origin"
+         (str "Local `main` has failed to push to origin " attempts " times in a row. "
+              "The swarm's committed work is not reaching origin - check network/auth "
+              "and push by hand if needed.\n")))
+      :send-divergence-alarm!
+      (fn [ahead behind]
+        (send-push-alarm-email!
+         "SwarmForge: main has diverged from origin"
+         (str "Local `main` is " ahead " commit(s) ahead and " behind " commit(s) behind "
+              "origin/main - a plain push would be rejected (non-fast-forward) and was "
+              "NOT attempted. A human needs to reconcile this by hand (fetch, then merge "
+              "or rebase, then push).\n")))
+      :log! (fn [& parts] (apply log! parts))})
+    (catch Exception e
+      (log! "push-sweep-error" (.getMessage e)))))
+
 ;; BL-258: headless, host-independent morning trigger for briefing
 ;; GENERATION (complements briefing-email-sweep! above, which only handles
 ;; the SEND of an already-committed file). Reads the configured morning
@@ -1318,7 +1412,14 @@
                     (try
                       (resource-sample-sweep!)
                       (catch Exception e
-                        (log! "resource-sample-sweep-error" (.getMessage e)))))
+                        (log! "resource-sample-sweep-error" (.getMessage e))))
+                    ;; BL-356: push sweep shares the same cadence - no
+                    ;; separate timeout, same rationale as BL-222/BL-214/
+                    ;; BL-258/BL-309/BL-316/BL-339/BL-353/BL-350 above.
+                    (try
+                      (push-sweep!)
+                      (catch Exception e
+                        (log! "push-sweep-error" (.getMessage e)))))
                   (spit (str heartbeat-file) (str (now) "\n"))
                   (when (zero? (mod cycle heartbeat-log-every-cycles))
                     (log! "heartbeat" (str "cycle=" cycle)))
