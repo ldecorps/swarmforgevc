@@ -88,6 +88,7 @@ const FAILURE_KNOWN_VALUES = {
 
 function fakePollAdapters(ctx, { deliver }) {
   return {
+    chatId: '1',
     getUpdates: async () => ({ success: true, updates: [mkUpdate(ctx.updateId)] }),
     postToBridge: async () => {
       if (ctx.failureKind === 'event-cannot-be-queued') {

@@ -192,6 +192,16 @@ function registerSteps(registry) {
         // unconditionally after a successful send.
         recordMessage: () => {},
       },
+      iconAdapters: {
+      // BL-342: a safe default for fixtures that predate topic icons and
+      // do not exercise them - an empty sticker list means syncTopicIcon
+      // always no-ops (skipped-unresolved-icon), so runConciergeTick's own
+      // icon-sync pass never calls setTopicIcon unexpectedly here.
+      getIconStickers: async () => [],
+      setTopicIcon: async () => true,
+      readSwarmIconId: () => undefined,
+      recordSwarmIconId: () => {},
+    },
     };
     ctx.tickResult = await runConciergeTick(adapters);
   });
@@ -215,6 +225,7 @@ function registerSteps(registry) {
     ctx.decision = decideUpdateAction(
       update,
       PRINCIPAL_ID,
+      '1',
       () => undefined,
       (topicId) => backlogForTopic(ctx.backlogTopicMap, topicId)
     );
@@ -400,6 +411,16 @@ function registerSteps(registry) {
         // unconditionally after a successful send.
         recordMessage: () => {},
       },
+      iconAdapters: {
+      // BL-342: a safe default for fixtures that predate topic icons and
+      // do not exercise them - an empty sticker list means syncTopicIcon
+      // always no-ops (skipped-unresolved-icon), so runConciergeTick's own
+      // icon-sync pass never calls setTopicIcon unexpectedly here.
+      getIconStickers: async () => [],
+      setTopicIcon: async () => true,
+      readSwarmIconId: () => undefined,
+      recordSwarmIconId: () => {},
+    },
     };
     await runConciergeTick(adapters);
     if (!ctx.sent.some((m) => m.text.includes(ctx.snippet))) {
@@ -413,6 +434,7 @@ function registerSteps(registry) {
     ctx.decision = decideUpdateAction(
       update,
       PRINCIPAL_ID,
+      '1',
       () => undefined,
       (topicId) => backlogForTopic(ctx.backlogTopicMap, topicId)
     );
@@ -467,6 +489,7 @@ function registerSteps(registry) {
       ctx.supDecision = decideUpdateAction(
         ctx.supUpdate,
         PRINCIPAL_ID,
+        '1',
         (topicId) => (String(topicId) in ctx.subjectMap ? ctx.subjectMap[String(topicId)] : undefined),
         (topicId) => backlogForTopic(ctx.backlogTopicMap || {}, topicId)
       );

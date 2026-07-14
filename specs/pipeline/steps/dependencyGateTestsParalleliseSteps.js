@@ -47,12 +47,26 @@ const KNOWN_VALUES = {
   'per-parcel-single-file': 'per-parcel mode (a single changed file) reports only violations reachable from that file',
 };
 
-function fileHoldingTitle(files, titleFragment) {
-  const holder = files.find((f) => f.source.includes(titleFragment));
-  if (!holder) {
-    throw new Error(`no dependencyGateCli* file holds a test titled with fragment: ${titleFragment}`);
+// BL-375 architect bounce: the ORIGINAL version of this function located
+// only the FILE holding a test's title and let both Then steps check that
+// whole file's source - so "it runs the real pinned checker" passed for
+// ANY test sharing a file with a genuinely real-engine one, never proving
+// the NAMED test's own body does. Now returns the test's own isolated
+// block (testBlocks' own per-test split, already used by scenario 03) so
+// both checks are scoped to exactly the test scenario 02 names.
+function testBlockHoldingTitle(files, titleFragment) {
+  for (const f of files) {
+    const block = testBlocks(f.source).find((b) => b.includes(titleFragment));
+    if (block) {
+      // BL-375: the scenario's own two Then steps are scoped DIFFERENTLY
+      // by design - "it runs the real pinned checker" is about the named
+      // TEST's own body (block), "nothing in its FILE mocks..." is a
+      // broader, file-wide guarantee (the Gherkin's own literal wording) -
+      // both are carried here so each check reads the right one.
+      return { name: f.name, block, source: f.source };
+    }
   }
-  return holder;
+  throw new Error(`no dependencyGateCli* file holds a test titled with fragment: ${titleFragment}`);
 }
 
 function registerSteps(registry) {
@@ -80,16 +94,18 @@ function registerSteps(registry) {
     if (!Object.prototype.hasOwnProperty.call(KNOWN_VALUES, testSlug)) {
       throw new Error(`dependency-gate-tests-parallelise: unrecognized <test> example value "${testSlug}"`);
     }
-    ctx.holder = fileHoldingTitle(ctx.files, KNOWN_VALUES[testSlug]);
+    ctx.holder = testBlockHoldingTitle(ctx.files, KNOWN_VALUES[testSlug]);
   });
 
   registry.define(/^it runs the real pinned dependency-cruiser against the real project ruleset$/, (ctx) => {
-    if (!REAL_ENGINE_CALL_PATTERN.test(ctx.holder.source)) {
-      throw new Error(`expected ${ctx.holder.name} to contain a genuine runDependencyCruiser(/runGate( call`);
+    if (!REAL_ENGINE_CALL_PATTERN.test(ctx.holder.block)) {
+      throw new Error(`expected the test itself (in ${ctx.holder.name}) to contain a genuine runDependencyCruiser(/runGate( call, not merely live in a file that has one`);
     }
   });
 
   registry.define(/^nothing in its file mocks, stubs, or fakes the dependency-cruiser engine$/, (ctx) => {
+    // Deliberately file-scoped, not test-scoped - the Gherkin's own literal
+    // wording ("nothing in ITS FILE mocks...").
     if (MOCK_PATTERN.test(ctx.holder.source)) {
       throw new Error(`expected ${ctx.holder.name} to contain no mock/stub/fake of the dependency-cruiser engine`);
     }

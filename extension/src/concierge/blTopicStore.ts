@@ -31,6 +31,13 @@ export interface TopicMessage {
 export interface TopicRecord {
   id: string;
   messages: TopicMessage[];
+  // BL-342: the icon id the SWARM itself most recently set on this
+  // ticket's topic - the marker "never override an icon the swarm did not
+  // set" needs. Absent means the swarm has never touched this topic's icon
+  // (a pre-existing/hand-set one, or a topic that predates this field) -
+  // absent is the SAFE default: a caller must treat "no marker" as "leave
+  // it alone", never as "free to set".
+  swarmIconId?: string;
 }
 
 // BL-389: the idempotency gate that was missing for postOperatorContext -
@@ -171,4 +178,33 @@ export function appendMessage(
     reportCommitFailure(ticketId, filePath);
   }
   return entry;
+}
+
+// BL-342: the durable "did the swarm set this topic's CURRENT icon" marker
+// - read before ANY icon update to decide whether the swarm may touch it
+// at all (topicIconSync.ts's own syncTopicIcon). Lives on the SAME
+// git-committed per-ticket record appendMessage already maintains, never a
+// second parallel store. Written even for a topic with no messages yet (a
+// brand-new topic, at creation time) - readRecord/atomicWrite already
+// tolerate an empty `messages` array, so this needs no special case.
+export function readSwarmIconId(targetPath: string, ticketId: string): string | undefined {
+  return readRecord(targetPath, ticketId).swarmIconId;
+}
+
+export function recordSwarmIconId(
+  targetPath: string,
+  ticketId: string,
+  iconId: string,
+  reportCommitFailure: CommitFailureReporter = reportCommitFailureToStderr
+): void {
+  const record = readRecord(targetPath, ticketId);
+  record.swarmIconId = iconId;
+  const filePath = recordPath(targetPath, ticketId);
+  atomicWrite(filePath, JSON.stringify(record));
+  // BL-390: setting the SAME iconId again (no real state change) commits
+  // nothing - commitTopicRecord's own no-op guard, reused here for free.
+  const committed = commitTopicRecord(targetPath, filePath, ticketId);
+  if (!committed) {
+    reportCommitFailure(ticketId, filePath);
+  }
 }

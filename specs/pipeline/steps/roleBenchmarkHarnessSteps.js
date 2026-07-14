@@ -185,8 +185,12 @@ function registerSteps(registry) {
 
   // ── shared When ──────────────────────────────────────────────────────
   registry.define(/^the benchmark is run$/, async (ctx) => {
+    // BL-386: RunBenchmarkParams.tasks is a battery (TaskSpec[]) - was a
+    // single `task`. This slice's own fixture is still exactly one real
+    // task, so a one-element battery preserves every existing scenario's
+    // behavior unchanged.
     ctx.report = await runBenchmark({
-      task: ctx.task,
+      tasks: [ctx.task],
       models: ctx.models,
       repetitions: ctx.repetitions,
       qualityThreshold: ctx.qualityThreshold,
@@ -195,7 +199,7 @@ function registerSteps(registry) {
     });
     ctx.reportDateIso = ctx.report.generatedAtIso.slice(0, 10);
     ctx.reportFilePath = writeBenchmarkReport(ctx.root, ctx.report, ctx.reportDateIso);
-    ctx.reportCommitted = commitBenchmarkReport(ctx.root, ctx.reportFilePath, ctx.report.taskId, ctx.reportDateIso);
+    ctx.reportCommitted = commitBenchmarkReport(ctx.root, ctx.reportFilePath, ctx.report.taskIds, ctx.reportDateIso);
   });
 
   // ── role-benchmark-harness-01 Then ──────────────────────────────────

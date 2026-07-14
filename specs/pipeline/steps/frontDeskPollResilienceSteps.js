@@ -15,6 +15,7 @@ const BACKOFF_CONFIG = { backoffBaseMs: 1000, backoffMaxMs: 30000, degradedThres
 
 function fakeAdapters(getUpdatesResult) {
   return {
+    chatId: '1',
     getUpdates: async () => getUpdatesResult,
     postToBridge: async () => true,
     subjectForTopic: () => undefined,

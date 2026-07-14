@@ -40,7 +40,7 @@ function topicMapKey(topicId) {
 // for an open instead of a fake adapter - the same authoritative id
 // assignment the live bot uses.
 function handleUpdate(ctx, update) {
-  const decision = decideUpdateAction(update, PRINCIPAL_ID, (topicId) => subjectForTopic(ctx.topicMap, topicId));
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', (topicId) => subjectForTopic(ctx.topicMap, topicId));
   ctx.lastAction = decision.action;
   if (decision.action === 'post-existing') {
     ctx.lastSubjectId = decision.subjectId;
