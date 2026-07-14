@@ -20,7 +20,7 @@ test('formatSampleResult reports SKIPPED when null (already sampled this interva
   assert.equal(formatSampleResult(null), 'SKIPPED already sampled this interval');
 });
 
-// ── the compiled CLI end-to-end (BL-350) ─────────────────────────────────
+// ── the compiled CLI (BL-350) ─────────────────────────────────────────────
 
 function mkTmp() {
   return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-sample-resources-cli-')));
@@ -52,7 +52,7 @@ function writeSessions(root, session = 'swarmforge-coder') {
   fs.writeFileSync(path.join(root, '.swarmforge', 'sessions.tsv'), `1\tcoder\t${session}\tCoder\tclaude\n`);
 }
 
-const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'sample-resources.js');
+const CLI = path.join(__dirname, '..', 'out', 'tools', 'sample-resources.js');
 
 function telemetryPath(root) {
   const monthKey = new Date().toISOString().slice(0, 7);
@@ -71,35 +71,34 @@ function readTelemetryLines(root) {
   }
 }
 
-// BL-350 headless-resource-sampling-01: the compiled CLI, with a real
-// disposable child process standing in for the tracked role's tmux pane
-// (fake tmux resolves the pid, real `ps` reads its real rss/cpu - only the
-// discovery hop is faked, per engineering.prompt's "never target the
-// test's own pid" rule), records a resource_sample with no editor/VS Code
-// host involved at all.
-test('the compiled CLI records a resource sample with no editor attached', () => {
-  const root = initFixture();
-  writeSessions(root);
-  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)']);
-  const fake = installFakeTmux([
-    { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
-    { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
-    { subcommand: 'display-message', exitCode: 0, stdout: `${child.pid}\n` },
-  ]);
-  try {
-    const output = execFileSync('node', [CLI_PATH], { cwd: root, encoding: 'utf8' });
-    assert.match(output, /^SAMPLED 1 role\(s\)/);
+function runCliSubprocess(root) {
+  return execFileSync('node', [CLI], { cwd: root, encoding: 'utf8' });
+}
 
-    const lines = readTelemetryLines(root);
-    assert.equal(lines.length, 1);
-    assert.equal(lines[0].type, 'resource_sample');
-    assert.equal(lines[0].role, 'coder');
-    assert.ok(lines[0].rssBytes > 0);
+// Runs the REAL main() in-process, so in-process coverage and mutation
+// tooling can see main()'s own branches (sample vs. skip) that a
+// subprocess-only smoke test cannot (the engineering article's CLI
+// main()-thin-wrapper rule / BL-233's CRAP trap). main() takes no
+// parameters and reads no CLI args (cwd + the shared telemetry file drive
+// it entirely), and prints via console.log - NOT process.stdout.write, so
+// (per BL-350's own established seam, matching notifyDeadLettersCli.test.js's
+// "call the real main() in-process with process.chdir + a captured
+// console.log" pattern) this intercepts console.log directly rather than
+// process.stdout.write, which Vitest does not route console output through.
+function runCli(root) {
+  const previousCwd = process.cwd();
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (...args) => logs.push(args.join(' '));
+  try {
+    process.chdir(root);
+    main();
   } finally {
-    fake.restore();
-    child.kill();
+    console.log = originalLog;
+    process.chdir(previousCwd);
   }
-});
+  return logs.join('\n');
+}
 
 // BL-350 headless-resource-sampling-04: an existing, unrelated telemetry
 // line (e.g. a chase event) must survive the CLI run untouched - the
@@ -117,7 +116,7 @@ test('recording a resource sample leaves existing telemetry in the same file int
     { subcommand: 'display-message', exitCode: 0, stdout: `${child.pid}\n` },
   ]);
   try {
-    execFileSync('node', [CLI_PATH], { cwd: root, encoding: 'utf8' });
+    runCli(root);
     const lines = readTelemetryLines(root);
     assert.equal(lines.length, 2);
     assert.ok(lines.some((l) => l.type === 'chase'));
@@ -141,35 +140,12 @@ test('the CLI skips sampling when a sample was already recorded within the inter
     JSON.stringify({ type: 'resource_sample', role: 'coder', rssBytes: 1, cpuPercent: 1, at: new Date().toISOString() }) + '\n'
   );
 
-  const output = execFileSync('node', [CLI_PATH], { cwd: root, encoding: 'utf8' });
+  const output = runCli(root);
   assert.match(output, /^SKIPPED /);
 
   const lines = readTelemetryLines(root);
   assert.equal(lines.length, 1, 'expected no additional resource_sample line to have been written');
 });
-
-// ── main() driven in-process (BL-350 hardening: main-thin-wrapper rule) ──
-// The subprocess CLI tests above prove the compiled entrypoint wires up
-// correctly end-to-end, but execFileSync coverage is invisible in-process
-// (the engineering article's CLI main()-thin-wrapper rule / BL-233's CRAP
-// trap: main()'s own branch - sample vs. skip - would otherwise sit at 0%
-// in-process coverage forever). Mirrors notifyDeadLettersCli.test.js's own
-// "call the real main() in-process with process.chdir + a captured
-// console.log" seam.
-function runMainInProcess(root) {
-  const previousCwd = process.cwd();
-  const logs = [];
-  const originalLog = console.log;
-  console.log = (...args) => logs.push(args.join(' '));
-  try {
-    process.chdir(root);
-    main();
-  } finally {
-    console.log = originalLog;
-    process.chdir(previousCwd);
-  }
-  return logs.join('\n');
-}
 
 test('main() records a resource sample in-process with no editor attached', () => {
   const root = initFixture();
@@ -181,7 +157,7 @@ test('main() records a resource sample in-process with no editor attached', () =
     { subcommand: 'display-message', exitCode: 0, stdout: `${child.pid}\n` },
   ]);
   try {
-    const output = runMainInProcess(root);
+    const output = runCli(root);
     assert.match(output, /^SAMPLED 1 role\(s\)/);
 
     const lines = readTelemetryLines(root);
@@ -203,7 +179,7 @@ test('main() skips sampling in-process when a sample was already recorded within
     JSON.stringify({ type: 'resource_sample', role: 'coder', rssBytes: 1, cpuPercent: 1, at: new Date().toISOString() }) + '\n'
   );
 
-  const output = runMainInProcess(root);
+  const output = runCli(root);
   assert.match(output, /^SKIPPED /);
 
   const lines = readTelemetryLines(root);
@@ -217,5 +193,38 @@ test('a missing .swarmforge/roles.tsv (no resolvable project root) exits non-zer
   git(root, ['config', 'user.name', 't']);
   git(root, ['commit', '-q', '-m', 'init', '--allow-empty']);
 
-  assert.throws(() => execFileSync('node', [CLI_PATH], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+  assert.throws(() => runCli(root));
+});
+
+// BL-350 headless-resource-sampling-01: the compiled CLI, with a real
+// disposable child process standing in for the tracked role's tmux pane
+// (fake tmux resolves the pid, real `ps` reads its real rss/cpu - only the
+// discovery hop is faked, per engineering.prompt's "never target the
+// test's own pid" rule), records a resource_sample with no editor/VS Code
+// host involved at all. A single subprocess smoke test locks the compiled
+// CLI's own wiring (require.main === module, real argv/env boundary) - an
+// ADDITION to the in-process tests above, never the only cover for the
+// real logic.
+test('the compiled CLI runs standalone as a subprocess and produces the same result', () => {
+  const root = initFixture();
+  writeSessions(root);
+  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)']);
+  const fake = installFakeTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'display-message', exitCode: 0, stdout: `${child.pid}\n` },
+  ]);
+  try {
+    const output = runCliSubprocess(root);
+    assert.match(output, /^SAMPLED 1 role\(s\)/);
+
+    const lines = readTelemetryLines(root);
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].type, 'resource_sample');
+    assert.equal(lines[0].role, 'coder');
+    assert.ok(lines[0].rssBytes > 0);
+  } finally {
+    fake.restore();
+    child.kill();
+  }
 });

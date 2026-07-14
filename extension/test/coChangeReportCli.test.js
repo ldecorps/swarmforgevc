@@ -3,7 +3,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { parseArgs, formatCoChangeReport, toRepoRelativePath } = require('../out/tools/co-change-report');
+const { parseArgs, formatCoChangeReport, toRepoRelativePath, main } = require('../out/tools/co-change-report');
+
+const CLI = path.join(__dirname, '..', 'out', 'tools', 'co-change-report.js');
 
 // BL-255: parseArgs/formatCoChangeReport are pulled out of main() so
 // they're exercised in-process (same "CLI main() run only via execFileSync
@@ -97,7 +99,47 @@ function commitFiles(root, files) {
   git(root, ['commit', '-q', '-m', 'change']);
 }
 
-test('the compiled CLI reports real co-changers from a real git repo, ranked and flagged', () => {
+function runCliSubprocess(cwd, args) {
+  return execFileSync('node', [CLI, ...args], { cwd, encoding: 'utf8' });
+}
+
+// Runs the REAL main() in-process against a real git repo fixture, so
+// in-process coverage and mutation tooling can see the branches a
+// subprocess-only smoke test cannot (the CLI main()-thin-wrapper rule;
+// mirrors notifyDeadLettersCli.test.js's own identical seam). main() is
+// makeArgsGuardedMain(...), which reads its args from
+// process.argv.slice(2), resolves the repo root from process.cwd(), and
+// prints via console.log (not process.stdout.write directly - Vitest's own
+// console interception rewrites console.log independently of
+// process.stdout, so console.log itself is overridden here). On missing
+// args it writes a usage message to stderr and sets process.exitCode = 1
+// (never throws) - exitCode is captured and restored too, since a stray 1
+// would otherwise leak into every later test in this single worker process
+// (BL-363 scenario 05).
+async function runCli(cwd, args) {
+  const previousCwd = process.cwd();
+  const previousArgv = process.argv;
+  const previousExitCode = process.exitCode;
+  const writes = [];
+  const originalLog = console.log;
+  console.log = (...logArgs) => {
+    writes.push(logArgs.join(' '));
+  };
+  process.exitCode = undefined;
+  try {
+    process.argv = ['node', CLI, ...args];
+    process.chdir(cwd);
+    await main();
+    return { stdout: writes.join('\n') + (writes.length ? '\n' : ''), exitCode: process.exitCode };
+  } finally {
+    console.log = originalLog;
+    process.chdir(previousCwd);
+    process.argv = previousArgv;
+    process.exitCode = previousExitCode;
+  }
+}
+
+test('the compiled CLI reports real co-changers from a real git repo, ranked and flagged', async () => {
   const root = mkTmp();
   git(root, ['init', '-q']);
   git(root, ['config', 'user.email', 't@t']);
@@ -107,12 +149,11 @@ test('the compiled CLI reports real co-changers from a real git repo, ranked and
   commitFiles(root, { 'a.ts': '3', 'b.ts': '3' });
   commitFiles(root, { 'a.ts': '4', 'c.ts': '1' });
 
-  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'co-change-report.js');
-  const output = execFileSync('node', [cliPath, '--min-frequency=3', 'a.ts'], { cwd: root, encoding: 'utf8' });
+  const { stdout } = await runCli(root, ['--min-frequency=3', 'a.ts']);
 
-  assert.match(output, /a\.ts/);
-  assert.match(output, /b\.ts: 3 co-change\(s\) \(SUSPECTED COUPLING\)/);
-  assert.match(output, /c\.ts: 1 co-change\(s\)$/m);
+  assert.match(stdout, /a\.ts/);
+  assert.match(stdout, /b\.ts: 3 co-change\(s\) \(SUSPECTED COUPLING\)/);
+  assert.match(stdout, /c\.ts: 1 co-change\(s\)$/m);
 });
 
 // ── BL-268: cross-directory co-changers must not depend on invoker cwd ──
@@ -135,40 +176,52 @@ function mkCrossDirRepo() {
 }
 
 // BL-268 co-change-cwd-independence-01
-test('cross-directory co-changers are reported identically whether run from the repo root or a subdirectory', () => {
+test('cross-directory co-changers are reported identically whether run from the repo root or a subdirectory', async () => {
   const root = mkCrossDirRepo();
-  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'co-change-report.js');
 
-  const fromRoot = execFileSync('node', [cliPath, '--min-frequency=3', 'dirA/target.ts'], { cwd: root, encoding: 'utf8' });
+  const fromRootResult = await runCli(root, ['--min-frequency=3', 'dirA/target.ts']);
   // Addressed cwd-relative ("target.ts" from inside dirA/) - the same file
   // as "dirA/target.ts" from the root, per toRepoRelativePath's own
   // documented cwd-relative contract.
-  const fromSubdir = execFileSync('node', [cliPath, '--min-frequency=3', 'target.ts'], {
-    cwd: path.join(root, 'dirA'),
-    encoding: 'utf8',
-  });
+  const fromSubdirResult = await runCli(path.join(root, 'dirA'), ['--min-frequency=3', 'target.ts']);
 
-  assert.match(fromSubdir, /dirB\/other\.ts: 3 co-change\(s\) \(SUSPECTED COUPLING\)/);
-  assert.equal(fromSubdir, fromRoot);
+  assert.match(fromSubdirResult.stdout, /dirB\/other\.ts: 3 co-change\(s\) \(SUSPECTED COUPLING\)/);
+  assert.equal(fromSubdirResult.stdout, fromRootResult.stdout);
 });
 
 // BL-268 co-change-cwd-independence-02
-test('a changed-file argument written relative to a subdirectory resolves to its repo-relative history path', () => {
+test('a changed-file argument written relative to a subdirectory resolves to its repo-relative history path', async () => {
   const root = mkCrossDirRepo();
-  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'co-change-report.js');
 
   // Run from dirA/, address the target file relative to THAT directory
   // (just "target.ts") rather than the repo-relative "dirA/target.ts".
-  const output = execFileSync('node', [cliPath, '--min-frequency=3', 'target.ts'], {
-    cwd: path.join(root, 'dirA'),
-    encoding: 'utf8',
-  });
+  const { stdout } = await runCli(path.join(root, 'dirA'), ['--min-frequency=3', 'target.ts']);
 
-  assert.match(output, /^dirA\/target\.ts:/m);
-  assert.match(output, /dirB\/other\.ts: 3 co-change\(s\) \(SUSPECTED COUPLING\)/);
+  assert.match(stdout, /^dirA\/target\.ts:/m);
+  assert.match(stdout, /dirB\/other\.ts: 3 co-change\(s\) \(SUSPECTED COUPLING\)/);
 });
 
-test('the CLI exits non-zero with a usage message when no changed files are given', () => {
-  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'co-change-report.js');
-  assert.throws(() => execFileSync('node', [cliPath], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+test('the CLI exits non-zero with a usage message when no changed files are given', async () => {
+  const { exitCode } = await runCli(process.cwd(), []);
+  assert.equal(exitCode, 1);
+});
+
+// A single subprocess smoke test locks the compiled CLI's own wiring
+// (require.main === module, real argv/cwd boundary) - an ADDITION to the
+// in-process tests above, never the only cover for the real logic.
+test('the compiled CLI runs standalone as a subprocess and produces the same result', () => {
+  const root = mkTmp();
+  git(root, ['init', '-q']);
+  git(root, ['config', 'user.email', 't@t']);
+  git(root, ['config', 'user.name', 't']);
+  commitFiles(root, { 'a.ts': '1', 'b.ts': '1' });
+  commitFiles(root, { 'a.ts': '2', 'b.ts': '2' });
+  commitFiles(root, { 'a.ts': '3', 'b.ts': '3' });
+  commitFiles(root, { 'a.ts': '4', 'c.ts': '1' });
+
+  const output = runCliSubprocess(root, ['--min-frequency=3', 'a.ts']);
+
+  assert.match(output, /a\.ts/);
+  assert.match(output, /b\.ts: 3 co-change\(s\) \(SUSPECTED COUPLING\)/);
+  assert.match(output, /c\.ts: 1 co-change\(s\)$/m);
 });
