@@ -183,6 +183,7 @@ const DOMAINS = [
   require('./tmuxDoubleAnswersInProcessSteps'),
   require('./topicIconsTrackTicketStateSteps'),
   require('./frontDeskListensOnlyToItsOwnChatSteps'),
+  require('./verbosityIsNegotiatedIntoTheContractSteps'),
 ];
 
 function registerSteps(registry) {
