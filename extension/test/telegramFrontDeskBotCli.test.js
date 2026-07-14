@@ -3,7 +3,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { parseCliArgs, conciergeTickIntervalMs, readRoleTicket, toFoldersSnapshot, ensureOperatorTopic, main } = require('../out/tools/telegram-front-desk-bot');
+const { parseCliArgs, conciergeTickIntervalMs, readRoleTicket, toFoldersSnapshot, ensureOperatorTopic, postOperatorContext, main } = require('../out/tools/telegram-front-desk-bot');
+const { readRecord: readTopicRecord } = require('../out/concierge/blTopicStore');
 
 // parseNextSseRecord's own tests live in telegramFrontDeskBotCore.test.js -
 // its implementation moved there (the testable core); this file re-exports
@@ -380,4 +381,41 @@ test('toFoldersSnapshot leaves humanApproval/epic/type/remainingSlices undefined
   assert.equal(snapshot.active[0].epic, undefined);
   assert.equal(snapshot.active[0].type, undefined);
   assert.equal(snapshot.active[0].remainingSlices, undefined);
+});
+
+// ── postOperatorContext (BL-389 scenarios 04/05: a message delivered twice
+//    is recorded once and answered once) - this was the exact adapter that
+//    flooded backlog/topics/BL-359.json with 209 duplicate entries once a
+//    dropped update parked the offset and Telegram redelivered the same
+//    batch on every poll. ────────────────────────────────────────────────
+
+function operatorEventCount(target, backlogId) {
+  const file = path.join(target, '.swarmforge', 'operator', 'events.jsonl');
+  if (!fs.existsSync(file)) {
+    return 0;
+  }
+  const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean);
+  return lines.filter((line) => JSON.parse(line).backlogId === backlogId).length;
+}
+
+test('BL-389 scenario 04: the same update delivered twice is recorded only once in the topic record', async () => {
+  const target = mkTmp();
+  await postOperatorContext(target, 'BL-123', 'nothing to approve right now', 501);
+  await postOperatorContext(target, 'BL-123', 'nothing to approve right now', 501);
+  assert.equal(readTopicRecord(target, 'BL-123').messages.length, 1);
+});
+
+test('BL-389 scenario 05: the same update delivered twice raises only one Operator event (answered once, not twice)', async () => {
+  const target = mkTmp();
+  await postOperatorContext(target, 'BL-123', 'nothing to approve right now', 501);
+  await postOperatorContext(target, 'BL-123', 'nothing to approve right now', 501);
+  assert.equal(operatorEventCount(target, 'BL-123'), 1);
+});
+
+test('a DIFFERENT update (different updateId) for the same ticket is recorded as its own, separate message - the dedup key is the update, not the ticket', async () => {
+  const target = mkTmp();
+  await postOperatorContext(target, 'BL-123', 'first reply', 501);
+  await postOperatorContext(target, 'BL-123', 'second reply', 502);
+  assert.equal(readTopicRecord(target, 'BL-123').messages.length, 2);
+  assert.equal(operatorEventCount(target, 'BL-123'), 2);
 });

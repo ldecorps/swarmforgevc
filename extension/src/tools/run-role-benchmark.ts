@@ -8,7 +8,7 @@
  * the same atomicWrite + commitScopedFile sidecar pattern
  * notify/costHealthSidecar.ts already established.
  *
- * Usage: node run-role-benchmark.js <fixture-dir> <models-file>
+ * Usage: node run-role-benchmark.js <battery-root> <models-file>
  *          <repetitions> <quality-threshold> <target-repo-path>
  *
  * <models-file> is a JSON array of BenchmarkModelConfig
@@ -19,24 +19,26 @@ import * as os from 'os';
 import * as path from 'path';
 import { createClaudeCliExecutor } from '../benchmark/claudeCliExecutor';
 import { createNodeTestQualityEvaluator } from '../benchmark/nodeTestQualityEvaluator';
-import { loadTaskSpec } from '../benchmark/taskFixture';
+import { loadTaskBattery } from '../benchmark/taskFixture';
 import { runBenchmark } from '../benchmark/runBenchmark';
 import { writeBenchmarkReport, commitBenchmarkReport } from '../benchmark/reportArtifact';
 import { BenchmarkModelConfig, BenchmarkReport, ModelExecutor, QualityEvaluator, TaskSpec } from '../benchmark/types';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 
 export interface RunRoleBenchmarkArgs {
-  fixtureDir: string;
+  // BL-386: a battery root (one subdirectory per task), not a single
+  // task's own fixture dir.
+  batteryRoot: string;
   modelsFile: string;
   repetitions: number;
   qualityThreshold: number;
   targetPath: string;
 }
 
-const USAGE = 'Usage: run-role-benchmark.js <fixture-dir> <models-file> <repetitions> <quality-threshold> <target-repo-path>\n';
+const USAGE = 'Usage: run-role-benchmark.js <battery-root> <models-file> <repetitions> <quality-threshold> <target-repo-path>\n';
 
-function hasAllRequiredArgs(fixtureDir: string, modelsFile: string, repetitionsRaw: string, qualityThresholdRaw: string, targetPath: string): boolean {
-  return Boolean(fixtureDir && modelsFile && repetitionsRaw && qualityThresholdRaw && targetPath);
+function hasAllRequiredArgs(batteryRoot: string, modelsFile: string, repetitionsRaw: string, qualityThresholdRaw: string, targetPath: string): boolean {
+  return Boolean(batteryRoot && modelsFile && repetitionsRaw && qualityThresholdRaw && targetPath);
 }
 
 function parseValidatedNumbers(repetitionsRaw: string, qualityThresholdRaw: string): { repetitions: number; qualityThreshold: number } | null {
@@ -51,15 +53,15 @@ function parseValidatedNumbers(repetitionsRaw: string, qualityThresholdRaw: stri
 // Pure - same "CLI main() stays a thin dispatcher over a testable pure
 // helper" split every other tools/ CLI in this codebase follows.
 export function parseArgs(argv: string[]): RunRoleBenchmarkArgs | null {
-  const [fixtureDir, modelsFile, repetitionsRaw, qualityThresholdRaw, targetPath] = argv;
-  if (!hasAllRequiredArgs(fixtureDir, modelsFile, repetitionsRaw, qualityThresholdRaw, targetPath)) {
+  const [batteryRoot, modelsFile, repetitionsRaw, qualityThresholdRaw, targetPath] = argv;
+  if (!hasAllRequiredArgs(batteryRoot, modelsFile, repetitionsRaw, qualityThresholdRaw, targetPath)) {
     return null;
   }
   const numbers = parseValidatedNumbers(repetitionsRaw, qualityThresholdRaw);
   if (!numbers) {
     return null;
   }
-  return { fixtureDir, modelsFile, ...numbers, targetPath };
+  return { batteryRoot, modelsFile, ...numbers, targetPath };
 }
 
 // Pure - the same "extract even a one-line derivation into a named,
@@ -81,7 +83,7 @@ export function reportDateKey(report: Pick<BenchmarkReport, 'generatedAtIso'>): 
 // exported function" split recruiter-run.ts/bakeoff-run.ts already
 // established.
 export interface RunRoleBenchmarkDeps {
-  loadTask: (fixtureDir: string) => TaskSpec;
+  loadBattery: (batteryRoot: string) => TaskSpec[];
   readModels: (modelsFile: string) => BenchmarkModelConfig[];
   mkScratchRoot: () => string;
   nowIso: () => string;
@@ -93,12 +95,12 @@ export interface RunRoleBenchmarkDeps {
 }
 
 export async function runRoleBenchmarkCli(args: RunRoleBenchmarkArgs, deps: RunRoleBenchmarkDeps): Promise<void> {
-  const task = deps.loadTask(args.fixtureDir);
+  const tasks = deps.loadBattery(args.batteryRoot);
   const models = deps.readModels(args.modelsFile);
   const scratchRoot = deps.mkScratchRoot();
 
   const report = await runBenchmark({
-    task,
+    tasks,
     models,
     repetitions: args.repetitions,
     qualityThreshold: args.qualityThreshold,
@@ -112,7 +114,7 @@ export async function runRoleBenchmarkCli(args: RunRoleBenchmarkArgs, deps: RunR
 
   const dateIso = reportDateKey(report);
   const filePath = deps.writeReport(args.targetPath, report, dateIso);
-  deps.commitReport(args.targetPath, filePath, report.taskId, dateIso);
+  deps.commitReport(args.targetPath, filePath, report.taskIds, dateIso);
   deps.print(report);
 }
 
@@ -126,7 +128,7 @@ export async function runRoleBenchmarkCli(args: RunRoleBenchmarkArgs, deps: RunR
 // task) is fakeable, and only via that explicit env seam.
 function defaultDeps(): RunRoleBenchmarkDeps {
   return {
-    loadTask: loadTaskSpec,
+    loadBattery: loadTaskBattery,
     readModels: (modelsFile) => JSON.parse(fs.readFileSync(modelsFile, 'utf8')) as BenchmarkModelConfig[],
     mkScratchRoot: () => fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-benchmark-')),
     nowIso: () => new Date().toISOString(),
