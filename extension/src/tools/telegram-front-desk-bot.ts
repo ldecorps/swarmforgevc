@@ -53,7 +53,7 @@ import { getTelegramUpdates, sendTelegramMessage, createForumTopic, closeForumTo
 import {
   PollAdapters,
   subjectForTopic,
-  resolveReplyTopicId,
+  resolveReplyDelivery,
   relaySseReplies,
   parseNextSseRecord,
   nextUpdateOffset,
@@ -350,11 +350,14 @@ async function connectAndRelayReplies(
           }
           return undefined;
         }),
-      // BL-325: falls back to the backlog topic map so a reply whose
+      // BL-355: falls back to the backlog topic map so a reply whose
       // threadId names a BL-### item (operator-decide.js's approve relay,
       // invoked with backlogId as threadId) reaches that item's own topic
-      // - the SAME resolver every SUP-### reply already went through.
-      topicForSubject: (subjectId) => resolveReplyTopicId(readTopicMap(targetPath), readBacklogTopicMap(targetPath), subjectId),
+      // - the SAME resolver every SUP-### reply already went through -
+      // and additionally decides whether General needs its own copy or
+      // pointer (resolveReplyTopicId's own bare-topic-id resolution is
+      // unchanged and still exported for any other caller).
+      resolveDelivery: (subjectId) => resolveReplyDelivery(readTopicMap(targetPath), readBacklogTopicMap(targetPath), subjectId),
       ackReply: (id) => ackReply(bridgeUrl, controlToken, id),
     },
     seenIds
