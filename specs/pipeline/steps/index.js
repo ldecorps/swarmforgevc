@@ -177,6 +177,7 @@ const DOMAINS = [
   require('./topicRecreationSteps'),
   require('./aDroppedMessageMustNotParkTheOffsetSteps'),
   require('./aChurnRewriteDoesNotMintACommitSteps'),
+  require('./theHumanIsNeverSentTerminalChromeSteps'),
 ];
 
 function registerSteps(registry) {

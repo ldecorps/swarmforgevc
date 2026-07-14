@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { detectNeedsHuman, extractQuestionSnippet } = require('../out/panel/needsHumanDetection');
+const { detectNeedsHuman, extractQuestionSnippet, stripTerminalChrome } = require('../out/panel/needsHumanDetection');
 
 test('detectNeedsHuman returns false for empty text', () => {
   assert.equal(detectNeedsHuman(''), false);
@@ -124,4 +124,52 @@ test('extractQuestionSnippet truncates very long snippets with an ellipsis', () 
   const snippet = extractQuestionSnippet(longLine);
   assert.equal(snippet.length, 200);
   assert.ok(snippet.endsWith('…'));
+});
+
+// ── stripTerminalChrome / extractQuestionSnippet ANSI sanitisation (BL-391) ──
+// The real seq-1 text of backlog/topics/BL-359.json - the human's own
+// "can you make these messages more readable?" complaint, verbatim. Built
+// from explicit \x1b escapes (never a raw control byte in source) so the
+// fixture itself stays readable in a diff.
+const ESC = '\x1b';
+const REAL_ANSI_PANE_TEXT =
+  `NeedsApproval: BL-359 - ${ESC}[38;5;246m❯ ${ESC}[39m ${ESC}[38;5;244m` +
+  '─'.repeat(80) +
+  ` ${ESC}[39m  ${ESC}[38;5;211m⏵⏵ bypass permissions on${ESC}[38;5;246m · install gh for PR status · ${ESC}[38;…`;
+
+test('stripTerminalChrome removes ANSI SGR colour escape sequences', () => {
+  assert.equal(stripTerminalChrome(`${ESC}[38;5;246mhello${ESC}[39m world`), 'hello world');
+});
+
+test('stripTerminalChrome removes CSI cursor-movement sequences', () => {
+  assert.equal(stripTerminalChrome(`a${ESC}[2Kb${ESC}[1;1Hc`), 'abc');
+});
+
+test('stripTerminalChrome removes an OSC (operating system command) sequence, e.g. a window-title escape', () => {
+  const BEL = '\x07';
+  assert.equal(stripTerminalChrome(`${ESC}]0;agent-pane-title${BEL}hello`), 'hello');
+});
+
+test('stripTerminalChrome removes a bare C0 control byte that is not part of any escape sequence', () => {
+  assert.equal(stripTerminalChrome('a\x01b'), 'ab');
+});
+
+test('stripTerminalChrome leaves ordinary prose completely unchanged (no escape bytes present)', () => {
+  const prose = 'BL-900 needs your approval: should we deploy to production today?';
+  assert.equal(stripTerminalChrome(prose), prose);
+});
+
+test('stripTerminalChrome leaves an empty string unchanged', () => {
+  assert.equal(stripTerminalChrome(''), '');
+});
+
+test('BL-391 the-human-is-never-sent-terminal-chrome-01/02: extractQuestionSnippet on the REAL BL-359 pane capture carries no escape sequences and keeps the readable prefix', () => {
+  const snippet = extractQuestionSnippet(REAL_ANSI_PANE_TEXT);
+  assert.doesNotMatch(snippet, /\x1b/, 'expected no raw ESC byte anywhere in the snippet');
+  assert.match(snippet, /^NeedsApproval: BL-359 -/, 'expected the readable prefix to survive sanitisation');
+});
+
+test('BL-391 the-human-is-never-sent-terminal-chrome-04: an ordinary multi-line prose pane capture is unaffected by chrome-stripping', () => {
+  const prose = 'Ready to deploy BL-900.\nApprove this change? (y/n)';
+  assert.equal(extractQuestionSnippet(prose), 'Ready to deploy BL-900. Approve this change? (y/n)');
 });
