@@ -329,12 +329,37 @@
 ;; elsewhere in this codebase (see gateSnapshot.ts's own header comment).
 (def ^:private operator-channel-name "operator")
 
-(defn resolve-pending-answer
-  "True when a just-dispatched thread-id is THE SAME thread a pending
-   question was asked in - the unambiguous MVP pairing rule (ONE pending
-   question at a time; the next reply in that one thread is the answer)."
+(defn resolve-inbound-answer
+  "BL-354 Option C (same-thread-clears, human decision 2026-07-14): the
+   three-way decision for an inbound reply against a pending clarifying
+   question. The thread gate stays - a message in a thread OTHER than the
+   one the question is currently homed to is never CONSUMED as the answer
+   - but it is never silently lost either: the question follows the human
+   to wherever he actually replies.
+
+   awaiting = {:question :thread-id :asked-at-ms} or nil (nothing
+   pending). Returns one of:
+     {:outcome :none}                                 - no question pending at all;
+                                                          an ordinary message.
+     {:outcome :pair}                                  - thread-id matches the await's
+                                                          own thread: today's behavior,
+                                                          unchanged - this reply IS the
+                                                          answer.
+     {:outcome :re-home :question ... :asked-at-ms ...} - a question IS pending, in a
+                                                          DIFFERENT thread: not the
+                                                          answer. The caller re-posts
+                                                          :question into thread-id and
+                                                          re-homes the await there,
+                                                          asked-at-ms UNCHANGED (BL-354's
+                                                          own bounded-retry requirement -
+                                                          the deadline runs from the
+                                                          ORIGINAL ask, never reset by a
+                                                          thread hop)."
   [awaiting thread-id]
-  (boolean (and awaiting thread-id (= (:thread-id awaiting) thread-id))))
+  (cond
+    (nil? awaiting) {:outcome :none}
+    (= (:thread-id awaiting) thread-id) {:outcome :pair}
+    :else {:outcome :re-home :question (:question awaiting) :asked-at-ms (:asked-at-ms awaiting)}))
 
 (defn answer-text-from-messages
   "The human's own LATEST reply text out of a thread's messages - the

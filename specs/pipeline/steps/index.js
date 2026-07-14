@@ -158,6 +158,10 @@ const DOMAINS = [
   require('./swarmOutlivesLauncherSteps'),
   require('./syncWorktreeScriptsNeverClobbersSteps'),
   require('./clisTestedInProcessSteps'),
+  require('./wrapperResolvesPathsAgainstCallerSteps'),
+  require('./answerPairingAcrossThreadsSteps'),
+  require('./targetUseCaseInventorySteps'),
+  require('./desktopVscodeOnWindowsSteps'),
 ];
 
 function registerSteps(registry) {
