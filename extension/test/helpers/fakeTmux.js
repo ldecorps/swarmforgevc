@@ -40,6 +40,23 @@ if (result.stderr) process.stderr.write(result.stderr);
 process.exit(result.exitCode ?? 0);
 `;
 
+// BL-377: the ONE rule-matching decision both doubles below must implement
+// identically ("first entry whose subcommand and/or argsInclude match") -
+// the PATH-executable fake's own script text above re-derives it in the
+// spawned subprocess (it cannot require this file, it runs in a separate
+// process); this shared function is what the in-process double calls
+// directly, so the two can never silently drift onto different matching
+// rules for the exact same `rules` array a test hands either one.
+function matchRule(rules, args) {
+  const joined = args.join(' ');
+  for (const rule of rules) {
+    if (rule.subcommand && !args.includes(rule.subcommand)) continue;
+    if (rule.argsInclude && !joined.includes(rule.argsInclude)) continue;
+    return rule;
+  }
+  return undefined;
+}
+
 function installFakeTmux(rules = []) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-fake-tmux-'));
   const rulesFile = path.join(dir, 'rules.json');
@@ -84,4 +101,57 @@ function installFakeTmux(rules = []) {
   };
 }
 
-module.exports = { installFakeTmux };
+// BL-377: an IN-PROCESS double for the common case - code under test that
+// reaches tmux via tmuxClient.ts's own runCommand (child_process.spawnSync)
+// in THIS process. No Node boot, no rules/log file I/O: the rules array and
+// call log are plain in-memory state, and the SAME matchRule() decision the
+// spawned fake's own script text re-derives above is called directly here,
+// so converting a consumer between the two doubles can never silently
+// change what a given rules array matches.
+//
+// Only intercepts a `tmux` command - any other command passed to
+// child_process.spawnSync (there is exactly one other real caller in this
+// suite today, sharedBin.js's own hardlink-install step) is forwarded to
+// the REAL spawnSync unchanged, so this coexists safely with unrelated
+// spawnSync use in the same worker.
+//
+// NOT for a test whose code under test spawns ITS OWN child process that
+// resolves tmux from PATH itself (e.g. swarmLauncher.ts's real `./swarm`
+// subprocess, swarmLauncher.test.js:50) - an in-process stub in THIS
+// process cannot reach into that child's own process tree at all. That
+// case keeps installFakeTmux's real executable-on-PATH fake above.
+function installInProcessTmux(rules = []) {
+  // eslint-disable-next-line global-require
+  const cp = require('node:child_process');
+  const originalSpawnSync = cp.spawnSync;
+  let currentRules = rules;
+  const log = [];
+
+  cp.spawnSync = (command, args, options) => {
+    if (command !== 'tmux') {
+      return originalSpawnSync(command, args, options);
+    }
+    log.push(args);
+    const matched = matchRule(currentRules, args) || { exitCode: 0, stdout: '' };
+    return {
+      error: undefined,
+      status: matched.exitCode ?? 0,
+      stdout: matched.stdout || '',
+      stderr: matched.stderr || '',
+    };
+  };
+
+  return {
+    setRules(newRules) {
+      currentRules = newRules;
+    },
+    calls() {
+      return log.slice();
+    },
+    restore() {
+      cp.spawnSync = originalSpawnSync;
+    },
+  };
+}
+
+module.exports = { installFakeTmux, installInProcessTmux };

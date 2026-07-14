@@ -12,7 +12,7 @@ const {
   switchRoleEffort,
 } = require('../out/swarm/effortDial');
 const { installExecutable } = require('./helpers/sharedBin');
-const { installFakeTmux } = require('./helpers/fakeTmux');
+const { installInProcessTmux } = require('./helpers/fakeTmux');
 
 // BL-236 ("Suggest" tier only): a per-role effort suggestion (advisory,
 // side-effect-free) plus a manual dial reusing BL-235's exact settings-file
@@ -92,7 +92,7 @@ test('suggestRoleEffort has no side effects - it never touches disk or respawns 
 test('switchRoleEffort rewrites effortLevel, preserving every other field, and respawns the role', () => {
   const tmp = mkTmp();
   writeRespawnState(tmp, 'coder', { model: 'claude-sonnet-5', effortLevel: 'low', permissions: { defaultMode: 'bypassPermissions' } });
-  const fake = installFakeTmux(successfulRespawnRules());
+  const fake = installInProcessTmux(successfulRespawnRules());
   try {
     const result = switchRoleEffort(tmp, 'coder', 'xhigh');
     assert.equal(result.success, true);
@@ -110,7 +110,7 @@ test('switchRoleEffort never writes to swarmforge.conf', () => {
   fs.mkdirSync(path.dirname(confPath), { recursive: true });
   const confBefore = 'window coder claude coder --effort low\n';
   fs.writeFileSync(confPath, confBefore);
-  const fake = installFakeTmux(successfulRespawnRules());
+  const fake = installInProcessTmux(successfulRespawnRules());
   try {
     switchRoleEffort(tmp, 'coder', 'xhigh');
     assert.equal(fs.readFileSync(confPath, 'utf8'), confBefore, 'swarmforge.conf must be byte-for-byte unchanged');
@@ -122,7 +122,7 @@ test('switchRoleEffort never writes to swarmforge.conf', () => {
 test('switchRoleEffort rejects an unknown effort level without touching the settings file or tmux', () => {
   const tmp = mkTmp();
   writeRespawnState(tmp, 'coder', { effortLevel: 'low' });
-  const fake = installFakeTmux(successfulRespawnRules());
+  const fake = installInProcessTmux(successfulRespawnRules());
   try {
     const result = switchRoleEffort(tmp, 'coder', 'ludicrous');
     assert.equal(result.success, false);
