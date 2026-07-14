@@ -77,7 +77,7 @@ import { reconcileTopicLifecycle, ReconcileAdapters } from '../concierge/topicRe
 import { sweepTopicDeletions, TopicDeletionAdapters, topicRetentionWindowMs } from '../concierge/topicDeletion';
 import { readBacklogFolders } from '../panel/backlogReader';
 import { appendOperatorEvent } from '../bridge/operatorEventQueue';
-import { appendMessage, readRecord, hasCompletionRecord, isRecordCommitted } from '../concierge/blTopicStore';
+import { appendMessage, readRecord, hasCompletionRecord, isRecordCommitted, hasUpdateId } from '../concierge/blTopicStore';
 import { computeRoleGateStatesLive, RoleGateState } from '../bridge/gateSnapshot';
 import { computeCurrentHolders } from '../bridge/holisticProjections';
 import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
@@ -166,9 +166,19 @@ function writeTickState(targetPath: string, state: TickState): void {
 // TELEGRAM_TOPIC_MESSAGE (SUP-###) events into - a distinct event type
 // carrying backlogId, so the two paths never collide. What the Operator
 // does with this event is the Operator's own behavior (out of scope here).
-export async function postOperatorContext(targetPath: string, backlogId: string, text: string): Promise<boolean> {
+// BL-389: gated on hasUpdateId - the parked-offset incident replayed the
+// same update every poll and THIS was the call that flooded (209 commits,
+// the same two messages answered again each time), because it was the one
+// adapter with no idempotency key at all (postToBridge already had one via
+// BL-369; this one never did). A redelivered updateId is a known no-op:
+// skip both the operator event and the topic-record append entirely,
+// never merely re-appending a message already on record.
+export async function postOperatorContext(targetPath: string, backlogId: string, text: string, updateId: number): Promise<boolean> {
+  if (hasUpdateId(readRecord(targetPath, backlogId), updateId)) {
+    return true;
+  }
   appendOperatorEvent(targetPath, { type: 'TELEGRAM_BL_TOPIC_MESSAGE', backlogId, text });
-  appendMessage(targetPath, backlogId, { author: 'human', type: 'inbound', text });
+  appendMessage(targetPath, backlogId, { author: 'human', type: 'inbound', text, updateId });
   return true;
 }
 
@@ -273,7 +283,7 @@ function buildPollAdapters(botToken: string, targetPath: string, bridgeUrl: stri
     subjectForTopic: (topicId) => subjectForTopic(readTopicMap(targetPath), topicId),
     openSubjectAndRecord: (topicId, text) => openSubjectAndRecord(targetPath, topicId, text),
     backlogForTopic: (topicId) => backlogForTopic(readBacklogTopicMap(targetPath), topicId),
-    postOperatorContext: (backlogId, text) => postOperatorContext(targetPath, backlogId, text),
+    postOperatorContext: (backlogId, text, updateId) => postOperatorContext(targetPath, backlogId, text, updateId),
     recordApprovalReply: (backlogId) => Promise.resolve(recordApprovalReply(targetPath, backlogId)),
   };
 }
