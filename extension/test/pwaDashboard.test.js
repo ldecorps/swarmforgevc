@@ -826,6 +826,29 @@ test('BL-386 architect bounce: a battery where every task was refused renders wi
   assert.match(text, /Role: coder/);
 });
 
+test('BL-386 hardener bounce: a battery with zero tasks total (nothing ran, nothing refused) hides the leaderboard rather than throwing', async () => {
+  const dom = renderDashboard(
+    fakeDashboard({
+      roleLeaderboard: fakeBenchmarkReport({
+        taskIds: [],
+        refusedTasks: [],
+        models: [],
+        ranking: {
+          bestByQuality: null,
+          couldNotDiscriminateReason: null,
+          bestByValue: null,
+          bestByValueRankedByCostAlone: false,
+          cheapestAcceptable: null,
+          noAcceptableModelReason: 'no model produced a scored run',
+        },
+      }),
+    })
+  );
+  await flush();
+  const section = dom.window.document.getElementById('roleLeaderboardSection');
+  assert.equal(section.style.display, 'none');
+});
+
 test('BL-347: the role leaderboard labels are localized (fr)', async () => {
   const dom = renderDashboard(fakeDashboard({ roleLeaderboard: fakeBenchmarkReport() }));
   await flush();
