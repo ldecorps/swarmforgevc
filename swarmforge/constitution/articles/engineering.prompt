@@ -56,14 +56,19 @@
   as in-process coverage and mutation can see — a CLI can pass its subprocess test
   100% while `main()` sits at 0% covered, mutants surviving and CRAP unmeasured,
   which is the same blind spot the thin-wrapper rule above exists to close, one
-  layer up. So test `main()` the way `notifyDeadLettersCli.test.js` already does:
-  `process.chdir(<fixture root>)` into a real fixture, `await main()` directly,
-  capture stdout, restore the previous cwd in a `finally` — and keep the subprocess
-  smoke test alongside it as the wiring lock, never as the substitute.
+  layer up. So point the CLI at a fixture by STUBBING the accessors it reads
+  (`process.cwd = () => root`, `process.argv = [...]`), `await main()` directly,
+  capture stdout, and restore every stub in a `finally` — and keep the subprocess
+  smoke test alongside it as the wiring lock, never as the substitute. Do NOT reach
+  the fixture with `process.chdir()`: see the worker-thread rule below, which this
+  rule's own earlier wording violated.
   (4th occurrence of this family: BL-233, BL-262, BL-272, then BL-350's
   sample-resources.ts `main()`. Proposed by the hardener 2026-07-13 after catching
-  it a 4th time; the working in-process seam to copy already exists in
-  `notifyDeadLettersCli.test.js` and `notifyRecertBatchCli.test.js`.)
+  it a 4th time; the working in-process seam to copy is `queueStatusCli.test.js` /
+  `recordRunCli.test.js`. This rule ORIGINALLY prescribed `process.chdir(<fixture
+  root>)` and named `notifyDeadLettersCli.test.js` as the seam to copy — that
+  instruction was wrong and BL-363 dutifully followed it into a hard-aborted
+  mutation run; corrected 2026-07-14.)
 
 ## Test Speed And Isolation
 - Strive to keep the unit suite running in seconds. Speed is a correctness
@@ -85,6 +90,36 @@
   and never wait on one to be ready; that is what the testable-module boundary
   above exists to enable. Test doubles are the standard practice — use them
   always, not as a fallback.
+- **Reach a fake cwd or HOME by STUBBING `process.cwd()` / `os.homedir()` — never
+  by calling `process.chdir()` or overlaying `process.env.HOME`.** Stryker's
+  vitest-runner HARDCODES `pool: 'threads'` when it constructs Vitest
+  (`@stryker-mutator/vitest-runner`'s `vitest-test-runner.js`, alongside
+  `maxThreads: 1`); `vitest.config.mjs` cannot override it. So every mutation run
+  executes the suite inside a worker thread, where two Node APIs do NOT behave the
+  way they do under a plain `vitest run`:
+  - `process.chdir()` **throws** (`process.chdir() is not supported in workers`). It
+    does not degrade — it aborts, taking the entire mutation run with it.
+  - `os.homedir()` reads the real OS environ through a native binding and **ignores**
+    a `process.env.HOME` overlay (a worker's `process.env` is a JS-side copy). This
+    one fails **silently**, and is by far the more dangerous: nothing errors, the
+    test simply writes its fixture into the developer's REAL home directory. That is
+    a test corrupting a shared global — the same family as the live-runtime-path rule
+    below, and it earns the same absolute ban.
+  Neither failure is visible to a plain `vitest run`, which uses the forked-process
+  pool where `chdir()` works and env overlays hold — so **a green unit suite is not
+  proof**. The breakage surfaces only under mutation, i.e. at the hardener's gate,
+  one stage before QA, and it presents as an unexplained whole-run abort rather than
+  as a failing test. Stub the accessor and restore it in a `finally` instead
+  (`process.cwd = () => root`, `os.homedir = () => home`), as `queueStatusCli.test.js`
+  and `recordRunCli.test.js` now do. A CLI that resolves such a path in a way no stub
+  can reach is reporting a MISSING SEAM — inject the path, per the missing-seam rule
+  below; do not fall back to `chdir`. (BL-363: converting 32 CLI tests to the
+  in-process `main()` seam adopted `process.chdir()` — which the thin-wrapper rule
+  above then literally instructed — and hard-aborted every Stryker run; in the same
+  pool `recordRunCli`'s HOME override silently no-op'd, writing outside its fixture.
+  Proposed by the hardender 2026-07-14 scoped `role:hardender`; accepted into the
+  shared article instead — the coder writes the tests, so this binds every test
+  author, not just the role that happens to catch it.)
 - **A shell test that sources or invokes `swarmforge.sh` must `env -u
   SWARMFORGE_CONFIG` before setting its own fixture conf path**, or the
   caller's own live launch override (now a normal, correct thing to have set
