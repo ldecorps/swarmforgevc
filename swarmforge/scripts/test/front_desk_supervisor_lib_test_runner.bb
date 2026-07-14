@@ -213,6 +213,24 @@
   (assert= "the 6-arg form (no heartbeat-stale? arg) never reports stalled" "running" (:status entry))
   (assert= "the 6-arg form: no event" nil event))
 
+;; hardener (BL-370): heartbeat-stale? and healthy-long-enough? are BOTH
+;; eligible at once - a bot healthy well past the reset window (399000ms
+;; since started-at-ms, past healthy-cfg's 300000ms) that then goes stale.
+;; The two prior tests above only ever exercise one condition at a time
+;; (supervisor-recovery-01 with heartbeat-stale? defaulted false; the
+;; running-entry stale test at attempts=1/started-at-ms=1000/now=5000,
+;; nowhere near the reset window) - a cond-order swap between the
+;; heartbeat-stale? and healthy-long-enough? branches would pass both,
+;; undetected. heartbeat-stale? must win: :status "stalled", attempts left
+;; UNTOUCHED (never silently reset to 0, which would erase the bounded-
+;; restart escalation clock for a bot that only *looked* healthy).
+(let [running-entry {:pid 4242 :attempts 3 :status "running" :crashed-at-ms nil :started-at-ms 1000 :gave-up-at-ms nil}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one! running-entry 400000 alive? fixed-pid! healthy-cfg giveup-cfg true)]
+  (assert= "stale-while-also-past-the-healthy-window: status is stalled, not silently healthy-reset" "stalled" (:status entry))
+  (assert= "stale-while-also-past-the-healthy-window: attempts is untouched, not reset to 0" 3 (:attempts entry))
+  (assert= "stale-while-also-past-the-healthy-window: the stall is timestamped at detection time" 400000 (:crashed-at-ms entry))
+  (assert= "stale-while-also-past-the-healthy-window emits :stalled, never :healthy-reset" :stalled event))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do
