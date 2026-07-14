@@ -1,0 +1,80 @@
+id: BL-368
+title: "Losing the tmux socket is misread as all 8 agents dying — and the scripted recovery would have corrupted the repo"
+milestone: M8
+type: defect
+severity: high
+status: todo
+priority: 2
+direction: expedite
+depends_on: []
+source: "backlog/INTAKE-tmux-socket-in-tmp-decapitates-swarm.md (Defect B) — live incident 2026-07-14 ~02:06 UTC+1. The intake names this the more serious of the pair, and I agree: BL-367 is a fragile location that bit us once; this is a mechanism that, on the same input, would have corrupted the repo."
+
+notes: |
+  WHAT HAPPENED. When the swarm's tmux socket was unlinked (BL-367), the runtime's health sweep read
+  `agents_running: 0` and enqueued EIGHT false `AGENT_EXITED` events — while the tmux server was
+  still alive, still owning all 8 panes, and all 8 role `claude` processes were alive and burning CPU.
+
+  WHY THIS IS THE DANGEROUS HALF. `AGENT_EXITED` is the single most dangerous signal in the system:
+  the scripted recovery for it is to RELAUNCH the role. Acting on those eight events would have
+  spawned a SECOND set of eight agents onto the SAME worktrees as eight still-running ones —
+  concurrent commits, racing merges, duplicated work, on every branch at once. BL-367 (the socket's
+  location) cost us one swarm's context. THIS would have corrupted the repository.
+
+  WE GOT LUCKY, AND LUCK IS NOT A GUARDRAIL. The disposable Operator that picked up those events
+  reasoned its way to the truth — tmux server alive + role pids alive + handoffd heartbeat fresh ⇒
+  the agents are fine, the SOCKET is gone — wrote an incident file, and refused to relaunch. That
+  correctness came from an LLM's judgment on the day. It must not be load-bearing. The whole point of
+  this ticket is to move that reasoning OUT of the model and INTO a mechanism.
+
+  THIS IS ALREADY A KNOWN OPERATIONAL TRAP, WHICH IS WHY IT NEEDS TO BE A CODE ONE. It is recorded as
+  a supervision lesson ("all 8 roles 'exited' but agents alive; check the PROCESSES before ever
+  relaunching") — i.e. a human/Operator is currently expected to remember it every single time. A rule
+  that must be remembered under pressure, at 2am, in the one situation where acting wrongly destroys
+  the repo, is not a rule. Make it unreachable instead.
+
+  THE FIX — TWO INDEPENDENT LAYERS. Build BOTH; either alone leaves the failure reachable.
+    1. DON'T MISDIAGNOSE. `agents_running: 0` must be UNREACHABLE by socket loss alone. A role's
+       liveness is knowable WITHOUT tmux: is the role's `claude` pid alive? is its worktree
+       committing? is the handoffd heartbeat fresh? Socket-unreachable must raise a distinct, loud
+       `SWARM_CONTROL_LOST` — never N× `AGENT_EXITED`. The two states are different facts about the
+       world and must be different signals.
+    2. DON'T ACT DANGEROUSLY EVEN IF MISDIAGNOSED. Every relaunch path (`start-swarm.sh`, `./swarm`,
+       `role_lifecycle.sh unpark`, and any respawn the runtime drives) must REFUSE to start a role
+       whose previous `claude` process is still alive, regardless of what tmux says. A pid check is
+       cheap, and it would have made the dangerous action IMPOSSIBLE rather than merely un-taken. This
+       is the layer that matters: it holds even when the diagnosis is wrong for a reason nobody has
+       thought of yet.
+
+  ⚠ DO NOT BREAK THE REAL PATH (scenario 03 exists for this). A guard that suppresses `AGENT_EXITED`
+  broadly would be WORSE than the bug: a genuinely dead agent would then never be recovered, silently.
+  The distinction must be positive — "this role's process is alive, so it did not exit" — never "we
+  are unsure, so stay quiet". Prove the real detection still fires.
+
+  SCOPE. The health sweep that derives `agents_running` / emits `AGENT_EXITED`, and every relaunch
+  path. VERIFY THE LIVE PATH BEFORE SCOPING: the chase/nudge/sweep DECISIONS moved out of the
+  TypeScript `inboxChaser.ts` into the Babashka daemon (`chase_sweep_lib.bb`, driven by
+  `handoffd.bb`), and the Operator's own health/respawn reasoning lives in `operator_runtime.bb` —
+  grep for who actually emits `AGENT_EXITED` and who actually relaunches a role, and scope to those,
+  not to whichever module merely still exists. Out of scope: WHERE the socket lives (BL-367). The two
+  are deliberately separate: this one is worth fixing even if BL-367 moves the socket somewhere safe,
+  because socket loss is not the only way the control channel can go away.
+
+  E2E QA PROCEDURE: with a live swarm, unlink the tmux socket directory out from under the running
+  server (exactly reproducing the incident). Assert: the swarm reports ONE loud control-lost signal,
+  NOT 8× `AGENT_EXITED`; a human is notified; and no relaunch is attempted. Then, with the socket
+  still gone, explicitly invoke a relaunch path against a role whose `claude` process is alive, and
+  assert it REFUSES and starts no second agent on that worktree. Finally, restore the socket, kill one
+  role's `claude` process for real, and assert that role IS reported exited and IS recovered — the
+  real detection must survive the fix.
+
+acceptance:
+  feature: specs/features/BL-368-control-loss-is-not-agent-death.feature
+  steps:
+    - "Losing the control channel is reported as control lost, not as agents dying"
+    - "A role whose process is still alive is never relaunched"
+    - "A genuinely dead agent is still detected and recovered"
+    - "Losing control of the swarm is surfaced loudly"
+
+human_approval: pending
+
+mutation_cost: medium
