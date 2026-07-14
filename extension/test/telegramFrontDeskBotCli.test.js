@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { parseCliArgs, conciergeTickIntervalMs, readRoleTicket, ensureOperatorTopic, main } = require('../out/tools/telegram-front-desk-bot');
+const { parseCliArgs, conciergeTickIntervalMs, readRoleTicket, toFoldersSnapshot, ensureOperatorTopic, main } = require('../out/tools/telegram-front-desk-bot');
 
 // parseNextSseRecord's own tests live in telegramFrontDeskBotCore.test.js -
 // its implementation moved there (the testable core); this file re-exports
@@ -313,4 +313,42 @@ test('BL-358: a failed create returns undefined, never a fabricated topicId', as
   const postFn = async () => ({ ok: false, status: 500, json: { description: 'simulated failure' } });
   const topicId = await ensureOperatorTopic(root, 'fake-token', 'fake-chat', postFn);
   assert.equal(topicId, undefined);
+});
+
+// ── toFoldersSnapshot (thin fs adapter) ───────────────────────────────────
+// Real backlog/ ticket fixtures, not adapter-injected - conciergeTick.test.js
+// already proves pendingApprovalFor/epicForBacklogId are correct GIVEN a
+// BacklogFolderItem carrying humanApproval/epic, but everything upstream of
+// that (this function) was never itself proven to carry those fields
+// through from the real backlogReader.ts read. BL-357's humanApproval and
+// BL-341's epic were both silently dropped here once already (notes/
+// firstAcceptanceStep were fixed by BL-322 the same way) - caught only by
+// re-reading this function while adding epic, not by any test.
+
+function writeBacklogTicket(targetPath, folder, fileName, content) {
+  const dir = path.join(targetPath, 'backlog', folder);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, fileName), content);
+}
+
+test('toFoldersSnapshot carries humanApproval through from the real ticket file', () => {
+  const target = mkTmp();
+  writeBacklogTicket(target, 'active', 'BL-1.yaml', 'id: BL-1\ntitle: t\nhuman_approval: pending\n');
+  const snapshot = toFoldersSnapshot(target);
+  assert.equal(snapshot.active[0].humanApproval, 'pending');
+});
+
+test('toFoldersSnapshot carries epic through from the real ticket file', () => {
+  const target = mkTmp();
+  writeBacklogTicket(target, 'active', 'BL-1.yaml', 'id: BL-1\ntitle: t\nepic: dynamic-routing\n');
+  const snapshot = toFoldersSnapshot(target);
+  assert.equal(snapshot.active[0].epic, 'dynamic-routing');
+});
+
+test('toFoldersSnapshot leaves humanApproval/epic undefined for a ticket that declares neither', () => {
+  const target = mkTmp();
+  writeBacklogTicket(target, 'active', 'BL-1.yaml', 'id: BL-1\ntitle: t\n');
+  const snapshot = toFoldersSnapshot(target);
+  assert.equal(snapshot.active[0].humanApproval, undefined);
+  assert.equal(snapshot.active[0].epic, undefined);
 });
