@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { parseCliArgs, conciergeTickIntervalMs, readRoleTicket, ensureOperatorTopic, main } = require('../out/tools/telegram-front-desk-bot');
+const { parseCliArgs, conciergeTickIntervalMs, readRoleTicket, toFoldersSnapshot, ensureOperatorTopic, main } = require('../out/tools/telegram-front-desk-bot');
 
 // parseNextSseRecord's own tests live in telegramFrontDeskBotCore.test.js -
 // its implementation moved there (the testable core); this file re-exports
@@ -313,4 +313,71 @@ test('BL-358: a failed create returns undefined, never a fabricated topicId', as
   const postFn = async () => ({ ok: false, status: 500, json: { description: 'simulated failure' } });
   const topicId = await ensureOperatorTopic(root, 'fake-token', 'fake-chat', postFn);
   assert.equal(topicId, undefined);
+});
+
+// ── toFoldersSnapshot (thin fs adapter) ───────────────────────────────────
+// Real backlog/ ticket fixtures, not adapter-injected - conciergeTick.test.js
+// already proves pendingApprovalFor/epicForBacklogId are correct GIVEN a
+// BacklogFolderItem carrying humanApproval/epic, but everything upstream of
+// that (this function) was never itself proven to carry those fields
+// through from the real backlogReader.ts read. BL-357's humanApproval and
+// BL-341's epic were both silently dropped here once already (notes/
+// firstAcceptanceStep were fixed by BL-322 the same way) - caught only by
+// re-reading this function while adding epic, not by any test.
+
+function writeBacklogTicket(targetPath, folder, fileName, content) {
+  const dir = path.join(targetPath, 'backlog', folder);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, fileName), content);
+}
+
+test('toFoldersSnapshot carries humanApproval through from the real ticket file', () => {
+  const target = mkTmp();
+  writeBacklogTicket(target, 'active', 'BL-1.yaml', 'id: BL-1\ntitle: t\nhuman_approval: pending\n');
+  const snapshot = toFoldersSnapshot(target);
+  assert.equal(snapshot.active[0].humanApproval, 'pending');
+});
+
+test('toFoldersSnapshot carries epic through from the real ticket file', () => {
+  const target = mkTmp();
+  writeBacklogTicket(target, 'active', 'BL-1.yaml', 'id: BL-1\ntitle: t\nepic: dynamic-routing\n');
+  const snapshot = toFoldersSnapshot(target);
+  assert.equal(snapshot.active[0].epic, 'dynamic-routing');
+});
+
+// BL-341 hardening: type/remainingSlices were added to the SAME pick()
+// narrowing in the SAME commit as epic above, but neither was ever proven
+// to survive the real-file read - conciergeTick.test.js's
+// epicDefinitionsFor coverage only proves the logic is right GIVEN a
+// BacklogFolderItem that already carries them, exactly the gap this
+// function's own comment says bit epic/humanApproval before it (dropped
+// here silently, invisible to any fixture-injecting test).
+
+test('toFoldersSnapshot carries type through from the real ticket file - the epic-defining ticket depends on it', () => {
+  const target = mkTmp();
+  writeBacklogTicket(target, 'paused', 'BL-1.yaml', 'id: BL-1\ntitle: t\ntype: epic\nepic: dynamic-routing\n');
+  const snapshot = toFoldersSnapshot(target);
+  assert.equal(snapshot.paused[0].type, 'epic');
+});
+
+test('toFoldersSnapshot carries remainingSlices through from the real ticket file', () => {
+  const target = mkTmp();
+  writeBacklogTicket(
+    target,
+    'paused',
+    'BL-1.yaml',
+    'id: BL-1\ntitle: t\ntype: epic\nepic: dynamic-routing\nremaining_slices:\n  - warm-core/break-even tuning\n'
+  );
+  const snapshot = toFoldersSnapshot(target);
+  assert.deepEqual(snapshot.paused[0].remainingSlices, ['warm-core/break-even tuning']);
+});
+
+test('toFoldersSnapshot leaves humanApproval/epic/type/remainingSlices undefined for a ticket that declares none', () => {
+  const target = mkTmp();
+  writeBacklogTicket(target, 'active', 'BL-1.yaml', 'id: BL-1\ntitle: t\n');
+  const snapshot = toFoldersSnapshot(target);
+  assert.equal(snapshot.active[0].humanApproval, undefined);
+  assert.equal(snapshot.active[0].epic, undefined);
+  assert.equal(snapshot.active[0].type, undefined);
+  assert.equal(snapshot.active[0].remainingSlices, undefined);
 });
