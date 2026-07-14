@@ -1,0 +1,124 @@
+id: BL-354
+title: "An answer typed in another topic is silently lost, and the human is then nagged for the answer he already gave"
+milestone: M8
+type: defect
+status: todo
+severity: high
+priority: 3
+direction: expedite
+depends_on: []
+source: "backlog/INTAKE-cross-thread-answer-pairing.md — Operator, live incident 2026-07-13 (not a guess; it fired today)."
+
+notes: |
+  WHAT HAPPENED, VERIFIED IN CODE AND ON DISK. The Operator asked a clarifying question via
+  `operator_ask.bb` in thread SUP-4 ("free-email-scanner is not reachable — tell me 1, 2, or 3") and
+  `awaiting-answer.json` recorded `{question, thread_id: "SUP-4", asked_at_ms}`. 79 seconds later
+  the human answered — "3" — but he typed it in SUP-2, the thread he had been living in all day.
+
+  THE MECHANISM. `resolve-pending-answer` (`swarmforge/scripts/operator_lib.bb:332`) matches the
+  pending question by THREAD ID. Its only live caller is the reply-context writer in
+  `swarmforge/scripts/operator_runtime.bb:751` (`pending? (operator-lib/resolve-pending-answer
+  awaiting thread-id)`). SUP-2 ≠ SUP-4, so `pending?` was false, and two things followed from that
+  one boolean:
+    - the answer was NEVER PAIRED: `telegram-reply-context.json` carried no `:pending-question` /
+      `:answer`, so the woken Operator saw a bare, contextless "3";
+    - `clear-awaiting-answer!` (operator_runtime.bb:753) never fired, so the await state stayed
+      pending and `awaiting-answer-sweep!` (operator_runtime.bb:453) was primed to escalate
+      "[still needed] <question>" back into SUP-4 — nagging the human for an answer he had already
+      given.
+  Worse, a concurrent front-desk reply told him verbatim: "'3' — I can't tell what that's picking.
+  There's no numbered list open on my side right now." We asked him a numbered question and then
+  told him his number was meaningless.
+
+  WHY THIS IS NOT THE REPLY-ROUTING TICKET. BL-355 is about where our REPLIES go. This is about
+  INBOUND ANSWER PAIRING. The human is under no obligation to answer in the topic we happened to ask
+  in, and today he didn't. Humans answer where they are looking.
+
+  ── DESIGN FORK: RESOLVED. The human picked OPTION C — SAME-THREAD-CLEARS (2026-07-14). ─────────
+  Options A (LLM-judged pairing) and B (mechanical pairing on pending-ness) are REJECTED. B would
+  have consumed a cross-thread message as the answer; C refuses to guess. Build C, as specified
+  below; `specs/features/BL-354-answer-pairing-across-threads.feature` has been amended to encode it
+  (it previously encoded B — do not build from a stale copy of that file).
+
+  THE DESIGN (Option C, same-thread-clears; the question follows the human).
+  The thread gate STAYS: only a reply in the thread the question is currently homed to is the
+  answer. A message in any OTHER thread is never CONSUMED as the answer — but it is never silently
+  lost either. Three outcomes, one decision:
+
+    1. PAIR (inbound thread == the await's thread). Today's behavior, unchanged: the reply is the
+       answer — pair it in as `:pending-question`/`:answer` and clear the await.
+
+    2. RE-HOME (a question is pending, inbound thread != the await's thread). The message is NOT the
+       answer:
+         - deliver it to the woken Operator as an ordinary message — `:pending-question` IS carried
+           (so the Operator KNOWS a question of its own is outstanding, and can never again tell the
+           human "there's no numbered list open on my side"), but with NO `:answer` key: an absent
+           `:answer` is precisely "this was not consumed as one";
+         - RE-POST the pending question into the thread the human IS in, over the same reply-outbox
+           egress the escalation sweep already uses (`append-to-reply-outbox!` + append to that
+           thread's transcript — mirror `awaiting-answer-sweep!`, never a second egress path);
+         - RE-HOME the await: rewrite `awaiting-answer.json` with the SAME `question` and the SAME
+           `asked_at_ms`, and `thread_id` = the thread the human is in. The await is not cleared.
+       His next reply in that thread now takes branch 1 and pairs. `thread_id` is the only mutable
+       field of the await record.
+
+    3. NONE (no question pending). Today's behavior, unchanged: an ordinary message, nothing
+       attached.
+
+  BOUNDEDNESS (engineering.prompt's bounded-retry rule — read this before implementing).
+  `asked_at_ms` is NEVER reset by a re-home. The answer deadline runs from the ORIGINAL ask, so the
+  episode cannot be extended indefinitely by a human hopping threads, and `check-awaiting-answer`'s
+  existing escalate-once-then-drop stays exactly as bounded as it is today. One re-post per
+  thread-hop is the cap that falls out of this naturally: once re-homed, the next message in that
+  same thread pairs instead of re-posting. A pleasing side effect: because the await follows him,
+  the "[still needed]" escalation now fires into the thread the human is ACTUALLY in, not the one he
+  abandoned.
+
+  SCOPE. The pure three-way decision replaces the boolean `resolve-pending-answer` in
+  `swarmforge/scripts/operator_lib.bb` (keep it pure + injected-clock, in the style of its
+  `check-awaiting-answer` neighbour). Its caller `write-telegram-reply-context!` and the await
+  lifecycle (`write-awaiting-answer!`, `clear-awaiting-answer!`, `awaiting-answer-sweep!`) live in
+  `swarmforge/scripts/operator_runtime.bb` and move WITH it — pairing the answer, re-posting the
+  question, and clearing/re-homing the await are the same decision, and today they are one boolean.
+  Out of scope: concurrent pending questions (the one-question-at-a-time MVP invariant of
+  `operator_ask.bb:64` stands, and is what makes this decision safe); BL-topic messages, which are
+  consumed by `bl-topic-approval-sweep!` and never reach the reply-context writer; and where our own
+  replies get routed (that is BL-355).
+
+  IR-DRY REVIEW (done at spec time — do not relitigate). The checker reports 6 `possible-synonym`
+  findings, all medium/~0.5. Every one is DELIBERATE contrast, not accidental drift, and the file is
+  final as written: "is still awaiting" vs "stops awaiting" are literal opposites; the three
+  triggers ("replies in the asking thread" / "writes in a different thread" / "replies in that
+  different thread") are the fork the ticket exists to draw; and the three "delivered to the
+  Operator …" assertions are a parallel three-way contrast — nothing attached / the pending question
+  attached but no answer / the answer to the pending question — i.e. exactly the three outcomes of
+  the decision above. CODER, NOTE THE HAZARD IN THAT: those three steps are near-identical in shape
+  and must get THREE DISTINCT step handlers asserting three different payloads. A single loose regex
+  that swallows all three would go green while asserting nothing (cf. the known shared-Background /
+  first-registered-handler-wins trap).
+
+  PRIOR ART / SAME ROOT CAUSE. The memory `cross-thread-reminder-causes-misrouted-reply` already
+  records the human answering in the wrong thread (SUP-3's "A" landing in SUP-4). That was written
+  up as an Operator prompt-discipline rule. It is ALSO a code defect, and this ticket is that half.
+
+  E2E QA PROCEDURE: with a live swarm, drive `operator_ask.bb` to ask a question in one SUP thread,
+  then send an inbound reply in a DIFFERENT SUP thread. Assert (a) the woken Operator's
+  `telegram-reply-context.json` carries `:pending-question` but NO `:answer`; (b) the question text
+  is re-posted into the thread the reply arrived in; (c) `awaiting-answer.json` still exists, with
+  its `thread_id` now the reply's thread and its `asked_at_ms` UNCHANGED. Then reply again in that
+  same thread and assert the context now carries `:answer` and `awaiting-answer.json` is gone. Let
+  the await timeout elapse instead, on a fresh episode, and assert the single "[still needed]"
+  escalation is posted to the RE-HOMED thread, not the original one.
+
+acceptance:
+  feature: specs/features/BL-354-answer-pairing-across-threads.feature
+  steps:
+    - "An answer typed in the asking thread is paired to its question and closes the await"
+    - "A message in another thread is not consumed as the answer, and the question follows the human there"
+    - "The reply in the thread the question followed him to is the answer"
+    - "A message arriving with no question pending is not treated as an answer"
+    - "An unanswered question is chased once, in the thread the human is actually in"
+
+human_approval: pending
+
+mutation_cost: low
