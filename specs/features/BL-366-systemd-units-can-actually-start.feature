@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=020ba8126df1e1616c2e55d792e28cb0cef93bb5c0dc4447b401181e6ade0775
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-14T02:34:40.586228275Z","feature_name":"Every generated systemd unit can actually start, and its crash-burst guard is real","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-366-systemd-units-can-actually-start.feature","background_hash":"d0e20f3654f9f86ec39a14558f313bd11ec7da65b19578a1486cb9e92bf7d9cc","implementation_hash":"unknown","scenarios":[{"index":0,"name":"Every rendered unit is valid systemd","scenario_hash":"45ad7f8525d4b5e6dbafdf51bf557b71fe00c4f102894fe2906f5cfb76c79fa1","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-07-14T02:34:40.586228275Z"},{"index":1,"name":"A unit can find its interpreter under systemd's own minimal PATH","scenario_hash":"ac7b0dd03788aabee90e43988fc7638af9a7d99b45000652c00b0818830466e9","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-07-14T02:34:40.586228275Z"},{"index":2,"name":"A crash burst never permanently stops a unit","scenario_hash":"959c3c7c7baf6c2170932f806d9717371289607604c621d408aec6e70aec087c","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-07-14T02:34:40.586228275Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Every generated systemd unit can actually start, and its crash-burst guard is real
 
 # BL-366: the operator unit renders `ExecStart=bb /path/to/operator_runtime.bb` — but systemd does
