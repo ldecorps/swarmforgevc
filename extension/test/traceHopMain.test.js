@@ -63,7 +63,7 @@ class ProcessExitSignal extends Error {
 // and restored in the finally - non-negotiable, since Vitest runs every
 // test file in one shared worker process.
 function runMainInProcess(args, { role, tracesDir, cwd } = {}) {
-  const previousCwd = process.cwd();
+  const originalCwd = process.cwd;
   const previousRole = process.env.SWARMFORGE_ROLE;
   const previousTracesDir = process.env.SWARMFORGE_TRACES_DIR;
   const previousExit = process.exit;
@@ -85,7 +85,7 @@ function runMainInProcess(args, { role, tracesDir, cwd } = {}) {
   let status = 0;
   try {
     if (cwd) {
-      process.chdir(cwd);
+      process.cwd = () => cwd;
     }
     main(args);
   } catch (error) {
@@ -97,7 +97,7 @@ function runMainInProcess(args, { role, tracesDir, cwd } = {}) {
   } finally {
     console.error = previousConsoleError;
     process.exit = previousExit;
-    process.chdir(previousCwd);
+    process.cwd = originalCwd;
     if (previousRole === undefined) delete process.env.SWARMFORGE_ROLE;
     else process.env.SWARMFORGE_ROLE = previousRole;
     if (previousTracesDir === undefined) delete process.env.SWARMFORGE_TRACES_DIR;

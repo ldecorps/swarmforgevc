@@ -51,18 +51,18 @@ function runCliSubprocess(root) {
 // route through process.stdout.write, so console.log itself must be
 // intercepted or the mock silently captures nothing.
 function runCli(root) {
-  const previousCwd = process.cwd();
+  const originalCwd = process.cwd;
   const chunks = [];
   const originalLog = console.log;
   console.log = (...args) => {
     chunks.push(args.map((a) => (typeof a === 'string' ? a : String(a))).join(' '));
   };
   try {
-    process.chdir(root);
+    process.cwd = () => root;
     main();
   } finally {
     console.log = originalLog;
-    process.chdir(previousCwd);
+    process.cwd = originalCwd;
   }
   return chunks.join('\n').trim();
 }

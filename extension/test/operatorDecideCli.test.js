@@ -126,15 +126,15 @@ function replyOutboxLines(root) {
 // process, so a test that leaves the cwd moved silently corrupts every
 // test that runs after it).
 async function runCli(root, argv) {
-  const previousCwd = process.cwd();
+  const originalCwd = process.cwd;
   const previousArgv = process.argv;
   try {
     process.argv = ['node', CLI_PATH, ...argv];
-    process.chdir(root);
+    process.cwd = () => root;
     await main();
   } finally {
     process.argv = previousArgv;
-    process.chdir(previousCwd);
+    process.cwd = originalCwd;
   }
 }
 

@@ -33,7 +33,7 @@ function runCliSubprocess(root, envOverrides) {
 // printJsonToStdout (process.stdout.write), so cwd/env/stdout are the only
 // state that needs faking and restoring.
 async function runCli(root, envOverrides = {}) {
-  const previousCwd = process.cwd();
+  const originalCwd = process.cwd;
   const previousEnv = Object.fromEntries(Object.keys(envOverrides).map((k) => [k, process.env[k]]));
   const writes = [];
   const originalWrite = process.stdout.write.bind(process.stdout);
@@ -46,11 +46,11 @@ async function runCli(root, envOverrides = {}) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
-    process.chdir(root);
+    process.cwd = () => root;
     await main();
   } finally {
     process.stdout.write = originalWrite;
-    process.chdir(previousCwd);
+    process.cwd = originalCwd;
     for (const key of Object.keys(envOverrides)) {
       if (previousEnv[key] === undefined) delete process.env[key];
       else process.env[key] = previousEnv[key];

@@ -67,18 +67,18 @@ const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'not-done-count-line
 // a test that leaves the cwd moved (or console.log unmocked) silently
 // corrupts every test that runs after it.
 async function runCli(root) {
-  const previousCwd = process.cwd();
+  const originalCwd = process.cwd;
   const writes = [];
   const originalLog = console.log;
   console.log = (...args) => {
     writes.push(args.join(' '));
   };
   try {
-    process.chdir(root);
+    process.cwd = () => root;
     await main();
   } finally {
     console.log = originalLog;
-    process.chdir(previousCwd);
+    process.cwd = originalCwd;
   }
   return writes.join('\n');
 }

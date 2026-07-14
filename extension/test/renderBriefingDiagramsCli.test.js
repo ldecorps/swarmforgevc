@@ -60,7 +60,7 @@ function runCliSubprocess(cwd) {
 // main()-thin-wrapper rule; mirrors notifyDeadLettersCli.test.js's own
 // identical seam). main() takes no parameters and reads no env - only cwd.
 async function runCli(cwd) {
-  const previousCwd = process.cwd();
+  const originalCwd = process.cwd;
   const writes = [];
   const originalWrite = process.stdout.write.bind(process.stdout);
   process.stdout.write = (chunk) => {
@@ -68,11 +68,11 @@ async function runCli(cwd) {
     return true;
   };
   try {
-    process.chdir(cwd);
+    process.cwd = () => cwd;
     await main();
   } finally {
     process.stdout.write = originalWrite;
-    process.chdir(previousCwd);
+    process.cwd = originalCwd;
   }
   return JSON.parse(writes.join(''));
 }
