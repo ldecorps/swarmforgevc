@@ -74,6 +74,6 @@ acceptance:
     - "A restart against unchanged, durably-recorded progress announces nothing"
     - "A repeated opening for an already-opened epic announces nothing"
 
-human_approval: pending-review
+human_approval: approved
 
 mutation_cost: low
