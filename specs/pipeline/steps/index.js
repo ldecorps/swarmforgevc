@@ -162,6 +162,7 @@ const DOMAINS = [
   require('./answerPairingAcrossThreadsSteps'),
   require('./targetUseCaseInventorySteps'),
   require('./desktopVscodeOnWindowsSteps'),
+  require('./topicRecordsCompleteAndDurableSteps'),
 ];
 
 function registerSteps(registry) {

@@ -17,6 +17,17 @@ function mkTmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl-topic-store-'));
 }
 
+// BL-348: appendMessage now reports a commit failure via an injectable
+// reporter (default: loud stderr) rather than silently discarding it -
+// every test below except the ones specifically ABOUT that reporting
+// behavior passes this no-op so a plain (non-git) mkTmp() target, used
+// throughout this file for tests that have nothing to do with git, does
+// not spam real stderr on every run.
+const SILENT = () => {};
+function append(targetPath, ticketId, message) {
+  return appendMessage(targetPath, ticketId, message, SILENT);
+}
+
 test('readRecord returns an empty record for a ticket with no messages yet', () => {
   const targetPath = mkTmp();
   assert.deepEqual(readRecord(targetPath, 'BL-900'), { id: 'BL-900', messages: [] });
@@ -24,7 +35,7 @@ test('readRecord returns an empty record for a ticket with no messages yet', () 
 
 test('appendMessage then readRecord round-trips the exact message', () => {
   const targetPath = mkTmp();
-  appendMessage(targetPath, 'BL-900', { author: 'human', type: 'inbound', text: 'hello', ts: 1000 });
+  append(targetPath, 'BL-900', { author: 'human', type: 'inbound', text: 'hello', ts: 1000 });
   assert.deepEqual(readRecord(targetPath, 'BL-900'), {
     id: 'BL-900',
     messages: [{ seq: 0, ts: 1000, author: 'human', type: 'inbound', text: 'hello' }],
@@ -33,8 +44,8 @@ test('appendMessage then readRecord round-trips the exact message', () => {
 
 test('appendMessage carries order, timestamp, author and text for both directions (BL-329 serialise-topic-01)', () => {
   const targetPath = mkTmp();
-  appendMessage(targetPath, 'BL-900', { author: 'human', type: 'inbound', text: 'a question', ts: 1000 });
-  appendMessage(targetPath, 'BL-900', { author: 'coder', type: 'outbound', text: 'an answer', ts: 2000 });
+  append(targetPath, 'BL-900', { author: 'human', type: 'inbound', text: 'a question', ts: 1000 });
+  append(targetPath, 'BL-900', { author: 'coder', type: 'outbound', text: 'an answer', ts: 2000 });
   const record = readRecord(targetPath, 'BL-900');
   assert.equal(record.messages.length, 2);
   assert.deepEqual(record.messages[0], { seq: 0, ts: 1000, author: 'human', type: 'inbound', text: 'a question' });
@@ -43,16 +54,16 @@ test('appendMessage carries order, timestamp, author and text for both direction
 
 test('appendMessage assigns a monotonically increasing seq regardless of call order across directions', () => {
   const targetPath = mkTmp();
-  appendMessage(targetPath, 'BL-900', { author: 'human', type: 'inbound', text: '1', ts: 1 });
-  appendMessage(targetPath, 'BL-900', { author: 'coder', type: 'outbound', text: '2', ts: 2 });
-  appendMessage(targetPath, 'BL-900', { author: 'human', type: 'inbound', text: '3', ts: 3 });
+  append(targetPath, 'BL-900', { author: 'human', type: 'inbound', text: '1', ts: 1 });
+  append(targetPath, 'BL-900', { author: 'coder', type: 'outbound', text: '2', ts: 2 });
+  append(targetPath, 'BL-900', { author: 'human', type: 'inbound', text: '3', ts: 3 });
   const seqs = readRecord(targetPath, 'BL-900').messages.map((m) => m.seq);
   assert.deepEqual(seqs, [0, 1, 2]);
 });
 
 test('the record lives in the repository, keyed by ticket, not under .swarmforge/ (BL-329 serialise-topic-02)', () => {
   const targetPath = mkTmp();
-  appendMessage(targetPath, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 });
+  append(targetPath, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 });
   const p = recordPath(targetPath, 'BL-900');
   assert.ok(p.includes(`${path.sep}backlog${path.sep}topics${path.sep}`), `expected the record under backlog/topics/, got ${p}`);
   assert.ok(!p.includes('.swarmforge'), `expected the record OUTSIDE the gitignored .swarmforge/ tree, got ${p}`);
@@ -61,8 +72,8 @@ test('the record lives in the repository, keyed by ticket, not under .swarmforge
 
 test('a ticket record contains only that ticket\'s own messages, never another ticket\'s (BL-329 serialise-topic-02)', () => {
   const targetPath = mkTmp();
-  appendMessage(targetPath, 'BL-900', { author: 'human', type: 'inbound', text: 'for 900', ts: 1 });
-  appendMessage(targetPath, 'BL-901', { author: 'human', type: 'inbound', text: 'for 901', ts: 2 });
+  append(targetPath, 'BL-900', { author: 'human', type: 'inbound', text: 'for 900', ts: 1 });
+  append(targetPath, 'BL-901', { author: 'human', type: 'inbound', text: 'for 901', ts: 2 });
   assert.deepEqual(
     readRecord(targetPath, 'BL-900').messages.map((m) => m.text),
     ['for 900']
@@ -75,9 +86,9 @@ test('a ticket record contains only that ticket\'s own messages, never another t
 
 test('the record preserves the order messages were sent in, even out of alphabetical/random text order (BL-329 serialise-topic-03)', () => {
   const targetPath = mkTmp();
-  appendMessage(targetPath, 'BL-900', { author: 'human', type: 'inbound', text: 'third-ish text but sent first', ts: 1 });
-  appendMessage(targetPath, 'BL-900', { author: 'coder', type: 'outbound', text: 'aaa sent second', ts: 2 });
-  appendMessage(targetPath, 'BL-900', { author: 'human', type: 'inbound', text: 'zzz sent third', ts: 3 });
+  append(targetPath, 'BL-900', { author: 'human', type: 'inbound', text: 'third-ish text but sent first', ts: 1 });
+  append(targetPath, 'BL-900', { author: 'coder', type: 'outbound', text: 'aaa sent second', ts: 2 });
+  append(targetPath, 'BL-900', { author: 'human', type: 'inbound', text: 'zzz sent third', ts: 3 });
   assert.deepEqual(
     readRecord(targetPath, 'BL-900').messages.map((m) => m.text),
     ['third-ish text but sent first', 'aaa sent second', 'zzz sent third']
@@ -86,12 +97,12 @@ test('the record preserves the order messages were sent in, even out of alphabet
 
 test('the record survives a restart of the writing process - a fresh read after append sees every prior message (BL-329 serialise-topic-04)', () => {
   const targetPath = mkTmp();
-  appendMessage(targetPath, 'BL-900', { author: 'human', type: 'inbound', text: 'before restart', ts: 1 });
+  append(targetPath, 'BL-900', { author: 'human', type: 'inbound', text: 'before restart', ts: 1 });
   // Simulate a process restart: nothing but the filesystem carries state
   // forward - re-reading from a fresh call must see what was written.
   const afterRestart = readRecord(targetPath, 'BL-900');
   assert.deepEqual(afterRestart.messages.map((m) => m.text), ['before restart']);
-  appendMessage(targetPath, 'BL-900', { author: 'coder', type: 'outbound', text: 'after restart', ts: 2 });
+  append(targetPath, 'BL-900', { author: 'coder', type: 'outbound', text: 'after restart', ts: 2 });
   assert.deepEqual(readRecord(targetPath, 'BL-900').messages.map((m) => m.text), ['before restart', 'after restart']);
 });
 
@@ -155,7 +166,7 @@ test('commitTopicRecord returns false (never throws) when there is nothing new t
 
 test('commitTopicRecord returns false (never throws) when the target is not a git repo at all', () => {
   const target = mkTmp();
-  appendMessage(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 });
+  append(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 });
   const filePath = recordPath(target, 'BL-900');
   assert.doesNotThrow(() => commitTopicRecord(target, filePath, 'BL-900'));
   assert.equal(commitTopicRecord(target, filePath, 'BL-900'), false);
@@ -171,6 +182,29 @@ test('appendMessage itself commits the record into a real repo - the record actu
 
 test('appendMessage never throws even when the target path is not a git repo (fails open, write still succeeds)', () => {
   const target = mkTmp();
-  assert.doesNotThrow(() => appendMessage(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 }));
+  assert.doesNotThrow(() => append(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 }));
   assert.deepEqual(readRecord(target, 'BL-900').messages.map((m) => m.text), ['hi']);
+});
+
+// BL-348: a commit failure must be reported, never silently dropped - proven
+// with a capturing spy (never the real stderr default) so the assertion is
+// on the exact (ticketId, filePath) reported, not merely "did not throw".
+test('appendMessage reports the commit failure (ticketId, filePath) via the injected reporter when the target is not a git repo', () => {
+  const target = mkTmp();
+  const calls = [];
+  appendMessage(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 }, (ticketId, filePath) => {
+    calls.push({ ticketId, filePath });
+  });
+  assert.equal(calls.length, 1, 'expected the reporter to fire exactly once');
+  assert.equal(calls[0].ticketId, 'BL-900');
+  assert.equal(calls[0].filePath, recordPath(target, 'BL-900'));
+});
+
+test('appendMessage does NOT report a failure when the commit actually succeeds', () => {
+  const target = mkGitRepo();
+  const calls = [];
+  appendMessage(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 }, (ticketId, filePath) => {
+    calls.push({ ticketId, filePath });
+  });
+  assert.deepEqual(calls, [], 'expected no reporter call on a successful commit');
 });
