@@ -30,10 +30,14 @@ function runCliSubprocess(workDir, args) {
 // (makeArgsGuardedMain's returned closure) reads its positional args off
 // process.argv.slice(2) directly (no parameters), so the in-process helper
 // must set process.argv to the same shape the subprocess would have
-// received, and chdir so the SAME "secrets file must never land inside the
-// working directory" guard (which reads process.cwd()) sees the same cwd.
+// received, and stub process.cwd() (never a real process.chdir() - Node
+// disallows chdir() inside a worker thread, which is exactly how Stryker's
+// vitest-runner executes tests, so a real chdir here would pass under plain
+// `vitest run` but hard-abort every mutation run) so the SAME "secrets file
+// must never land inside the working directory" guard (which reads
+// process.cwd()) sees the same cwd.
 async function runCli(workDir, args) {
-  const previousCwd = process.cwd();
+  const originalCwd = process.cwd;
   const previousArgv = process.argv;
   const previousExitCode = process.exitCode;
   const writes = [];
@@ -46,12 +50,12 @@ async function runCli(workDir, args) {
   try {
     process.argv = ['node', CLI, ...args];
     process.exitCode = undefined;
-    process.chdir(workDir);
+    process.cwd = () => workDir;
     await main();
     exitCode = process.exitCode;
   } finally {
     process.stdout.write = originalWrite;
-    process.chdir(previousCwd);
+    process.cwd = originalCwd;
     process.argv = previousArgv;
     process.exitCode = previousExitCode;
   }

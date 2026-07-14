@@ -65,18 +65,18 @@ function runCliSubprocess(root) {
 // process.stdout.write (Vitest intercepts console itself), so console.log
 // must be mocked directly here to observe the output.
 async function runCli(root) {
-  const previousCwd = process.cwd();
+  const originalCwd = process.cwd;
   const writes = [];
   const originalLog = console.log;
   console.log = (chunk) => {
     writes.push(chunk);
   };
   try {
-    process.chdir(root);
+    process.cwd = () => root;
     await main();
   } finally {
     console.log = originalLog;
-    process.chdir(previousCwd);
+    process.cwd = originalCwd;
   }
   return writes.join('\n') + (writes.length > 0 ? '\n' : '');
 }

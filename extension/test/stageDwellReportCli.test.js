@@ -211,7 +211,7 @@ function runCliSubprocess(root, args = []) {
 // console.log through process.stdout.write, so both are intercepted
 // independently and whichever one main() actually used is returned.
 function runCli(root, args = []) {
-  const previousCwd = process.cwd();
+  const originalCwd = process.cwd;
   const previousArgv = process.argv;
   const logs = [];
   const originalLog = console.log;
@@ -224,12 +224,12 @@ function runCli(root, args = []) {
   };
   try {
     process.argv = ['node', CLI, ...args];
-    process.chdir(root);
+    process.cwd = () => root;
     main();
   } finally {
     console.log = originalLog;
     process.stdout.write = originalWrite;
-    process.chdir(previousCwd);
+    process.cwd = originalCwd;
     process.argv = previousArgv;
   }
   return writes.length > 0 ? writes.join('') : logs.join('\n');

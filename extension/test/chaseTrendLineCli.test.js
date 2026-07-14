@@ -125,18 +125,18 @@ function runCliSubprocess(cwd) {
 // process.stdout - so console.log itself is overridden here to capture the
 // trend line.
 async function runCli(cwd) {
-  const previousCwd = process.cwd();
+  const originalCwd = process.cwd;
   const writes = [];
   const originalLog = console.log;
   console.log = (...args) => {
     writes.push(args.join(' '));
   };
   try {
-    process.chdir(cwd);
+    process.cwd = () => cwd;
     await main();
   } finally {
     console.log = originalLog;
-    process.chdir(previousCwd);
+    process.cwd = originalCwd;
   }
   return writes.join('\n') + '\n';
 }

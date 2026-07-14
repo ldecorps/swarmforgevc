@@ -29,7 +29,7 @@ function runCliSubprocess(root) {
 // printJsonToStdout (process.stdout.write), so mocking process.stdout.write
 // captures the real output.
 async function runCli(root) {
-  const previousCwd = process.cwd();
+  const originalCwd = process.cwd;
   const writes = [];
   const originalWrite = process.stdout.write.bind(process.stdout);
   process.stdout.write = (chunk) => {
@@ -37,11 +37,11 @@ async function runCli(root) {
     return true;
   };
   try {
-    process.chdir(root);
+    process.cwd = () => root;
     await main();
   } finally {
     process.stdout.write = originalWrite;
-    process.chdir(previousCwd);
+    process.cwd = originalCwd;
   }
   return writes.join('');
 }
