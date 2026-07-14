@@ -145,18 +145,24 @@ function registerSteps(registry) {
   });
 
   // ── swarm-outlives-its-launcher-02 ───────────────────────────────────────
+  // REVISED (architect bounce, 2026-07-14): the check now reads the launch
+  // job's own SIGHUP-ignored bit, not its ppid relative to a "caller" pid
+  // - a real tmux server's ppid/SIGHUP-ignored state is always reparented/
+  // ignored by tmux's own self-daemonizing design regardless of the
+  // launcher's fix, so ppid-vs-caller-pid could never discriminate a
+  // working fix from a broken one (see swarm_detach_lib.bb's header and
+  // backlog/evidence/BL-372-swarm-outlives-its-launcher-20260714-architect-bounce.md).
+  // "Still owned by the caller" here means: never nohup'd at all.
   registry.define(/^the swarm has come up still owned by the caller$/, (ctx) => {
-    // A deliberately UNDETACHED child - a plain background job, still
-    // parented to this very process (ctx.ownerPid), the broken case
-    // scenario 02 must be able to catch.
+    // A deliberately UNDETACHED child - a plain background job, never
+    // nohup'd, the broken case scenario 02 must be able to catch.
     const child = spawn('sleep', ['30'], { stdio: 'ignore' });
     child.unref();
     ctx.childPid = child.pid;
-    ctx.ownerPid = process.pid;
   });
 
   registry.define(/^the launcher checks what owns the swarm$/, (ctx) => {
-    const result = spawnSync('bb', [CHECK_DETACHED, '1', String(ctx.childPid), String(ctx.ownerPid)], { encoding: 'utf8' });
+    const result = spawnSync('bb', [CHECK_DETACHED, '1', String(ctx.childPid)], { encoding: 'utf8' });
     ctx.checkResult = { ok: result.status === 0, stdout: result.stdout || '', stderr: result.stderr || '' };
   });
 
@@ -174,7 +180,7 @@ function registerSteps(registry) {
     if (ctx.checkResult.ok) {
       throw new Error('expected no success/ready report on a failed launch check');
     }
-    if (/is up and its tmux server is detached/i.test(ctx.checkResult.stdout)) {
+    if (/is up and its launch is detached/i.test(ctx.checkResult.stdout)) {
       throw new Error(`expected no ready message on stdout for a failed check, got: ${ctx.checkResult.stdout}`);
     }
   });
@@ -186,9 +192,9 @@ function registerSteps(registry) {
 
   registry.define(/^the launcher reports its result$/, (ctx) => {
     // ready=0 short-circuits decide-launch-outcome before detachment is
-    // even consulted (see swarm_detach_lib.bb) - pid arguments are
+    // even consulted (see swarm_detach_lib.bb) - the pid argument is
     // deliberately nonsense (readiness fails first, unconditionally).
-    const result = spawnSync('bb', [CHECK_DETACHED, ctx.readyFlag, '1', '1'], { encoding: 'utf8' });
+    const result = spawnSync('bb', [CHECK_DETACHED, ctx.readyFlag, '1'], { encoding: 'utf8' });
     ctx.checkResult = { ok: result.status === 0, stdout: result.stdout || '', stderr: result.stderr || '' };
   });
 
