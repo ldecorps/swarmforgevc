@@ -357,6 +357,21 @@ export function shouldEscalateStuckDelivery(stuckAttempts: number, config: PollB
   return stuckAttempts === config.stuckRetryLimit;
 }
 
+// BL-370: the pure staleness decision - "has the front desk completed a
+// poll cycle recently enough to prove it is still consuming". Deliberately
+// NOT "has a message arrived" (unknowable, and unknowable-by-design is the
+// whole reason a healthy front desk long-polls with a bounded timeout in
+// the first place - see the ticket's own load-bearing design point): a
+// quiet night with a fresh heartbeat must read as healthy, never stale.
+// front_desk_supervisor_lib.bb mirrors this exact predicate independently
+// (same "small deliberate duplication over cross-language coupling"
+// convention this codebase already uses for its other dual TS/bb seams)
+// so the REAL restart decision never depends on this process's own event
+// loop being alive to make it.
+export function isPollCycleStale(lastHeartbeatMs: number | undefined, nowMs: number, stallWindowMs: number): boolean {
+  return lastHeartbeatMs === undefined || nowMs - lastHeartbeatMs >= stallWindowMs;
+}
+
 export interface PollLoopState {
   offset: number;
   consecutiveFailures: number;
@@ -426,12 +441,19 @@ export async function runPollCycle(
 // scenario 05: "the failure is escalated to the human"), distinct from
 // writeWarning's local stderr log - defaulted to a no-op so every existing
 // caller/test that has no reason to touch it is unaffected.
+// BL-370: recordHeartbeat runs UNCONDITIONALLY, before any of the other
+// branches - completing the cycle is the liveness fact the supervisor
+// needs (success or a handled failure both count), never the outcome of
+// it. Defaulted to a no-op for the same "existing callers unaffected"
+// reason as escalate above.
 export async function applyPollCycleResult(
   cycle: PollCycleResult,
   writeWarning: (message: string) => void,
   wait: (ms: number) => Promise<void>,
-  escalate: () => Promise<void> = async () => {}
+  escalate: () => Promise<void> = async () => {},
+  recordHeartbeat: () => void = () => {}
 ): Promise<void> {
+  recordHeartbeat();
   if (cycle.degradedWarning) {
     writeWarning(`front-desk bot: poll degraded - ${cycle.state.consecutiveFailures} consecutive failures, still retrying\n`);
   }

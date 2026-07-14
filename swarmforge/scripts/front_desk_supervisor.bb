@@ -33,6 +33,17 @@
 ;; injected); this script only supplies the real now-ms/pid-alive?/spawn!
 ;; and logs whatever :event comes back.
 ;;
+;; BL-370: also reads the bot's own poll-cycle heartbeat
+;; (.swarmforge/operator/front-desk-poll-heartbeat.json, written by
+;; telegram-front-desk-bot.ts on every COMPLETED poll cycle) and treats a
+;; "running" bot whose heartbeat has gone stale as needing the same
+;; bounded restart a crash gets - a live pid is not proof it is still
+;; listening. Restarts stopping at the cap is escalated to the human via
+;; email, reusing operator_lib.bb's own BL-345 delivery-based alarm arming
+;; (classify-delivery-result/starvation-alarm-should-attempt?/
+;; next-starvation-alarm-state) rather than a parallel implementation -
+;; never armed on a mere attempt, only on confirmed delivery.
+;;
 ;; Usage:
 ;;   front_desk_supervisor.bb <project-root> [--check-once]
 ;;
@@ -42,6 +53,14 @@
 ;;   FRONT_DESK_BACKOFF_BASE_MS / FRONT_DESK_BACKOFF_MAX_MS
 ;;   FRONT_DESK_HEALTHY_RESET_MS   continuous-uptime attempt reset (default 600000)
 ;;   FRONT_DESK_GIVEUP_COOLDOWN_MS give-up re-arm cooldown (default 900000)
+;;   FRONT_DESK_STALL_MS           bot poll-heartbeat staleness window (default 90000)
+;;   FRONT_DESK_ESCALATION_MAX_ATTEMPTS bounded retry cap on the give-up
+;;                                 escalation email (default 5)
+;;   FRONT_DESK_ESCALATION_BACKOFF_BASE_MS / FRONT_DESK_ESCALATION_BACKOFF_MAX_MS
+;;   FRONT_DESK_ESCALATION_FORCE_RESULT  test-only: JSON send-result override,
+;;                                 short-circuits the real send entirely
+;;                                 (mirrors operator_runtime.bb's own
+;;                                 OPERATOR_ALARM_FORCE_RESULT seam)
 ;;   BRIDGE_PORT                   fixed port the bridge listens on (default 8765)
 ;;   BRIDGE_TOKEN                  shared bridge token - provisioned by
 ;;                                 launch_front_desk.sh, never generated here
@@ -56,6 +75,8 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "front_desk_supervisor_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -70,6 +91,12 @@
 (def stop-file (fs/path op-dir "front-desk-supervisor.stop"))
 (def status-file (fs/path op-dir "front-desk-supervisor.status.json"))
 (def log-file (fs/path op-dir "front-desk-supervisor.log"))
+;; BL-370: written by telegram-front-desk-bot.ts's pollLoop on every
+;; COMPLETED poll cycle - the SAME path/shape read-poll-heartbeat-ms below
+;; parses.
+(def poll-heartbeat-file (fs/path op-dir "front-desk-poll-heartbeat.json"))
+(def escalation-state-file (fs/path op-dir "front-desk-escalation-alarm.json"))
+(def conf-file (fs/path project-root "swarmforge" "swarmforge.conf"))
 
 (def ext-out-dir (fs/path project-root "extension" "out" "tools"))
 (def bridge-entrypoint (fs/path ext-out-dir "start-bridge-headless.js"))
@@ -94,6 +121,23 @@
 ;; loop), short enough that a healed fault recovers without a human.
 (def giveup-config {:giveup-cooldown-ms (env-long "FRONT_DESK_GIVEUP_COOLDOWN_MS" 900000)})
 (def bridge-port (env-long "BRIDGE_PORT" 8765))
+
+;; BL-370: how long the bot's poll heartbeat can go quiet before it is
+;; treated as stalled. Default 90s - a healthy long-poll (25s timeout,
+;; POLL_TIMEOUT_SECONDS in telegram-front-desk-bot.ts) completes well
+;; inside this window even accounting for network latency; a genuinely
+;; stuck loop misses it by a wide margin.
+(def stall-ms (env-long "FRONT_DESK_STALL_MS" 90000))
+
+;; BL-370 (scenario 05): same bounded-retry-with-backoff shape as
+;; operator_runtime.bb's own alarm-retry-config for the starvation alarm -
+;; independently defined here rather than cross-namespace-coupled, same
+;; small-duplication rationale as this codebase's other independent
+;; adapters.
+(def escalation-retry-config
+  {:max-attempts (env-long "FRONT_DESK_ESCALATION_MAX_ATTEMPTS" 5)
+   :backoff-base-ms (env-long "FRONT_DESK_ESCALATION_BACKOFF_BASE_MS" 60000)
+   :backoff-max-ms (env-long "FRONT_DESK_ESCALATION_BACKOFF_MAX_MS" 1800000)})
 
 (defn now-ms [] (System/currentTimeMillis))
 (defn now-iso []
@@ -173,6 +217,16 @@
   (when pid
     (some-> (java.lang.ProcessHandle/of pid) (.orElse nil) (.isAlive))))
 
+;; BL-370: reads the SAME {lastHeartbeatMs} JSON telegram-front-desk-bot.ts
+;; writes on every completed poll cycle. Never throws on a missing/corrupt
+;; file - front-desk-supervisor-lib/poll-heartbeat-stale? already treats a
+;; nil value as stale, so "the bot has not written one yet" and "the bot
+;; stopped writing one" both correctly read as stalled.
+(defn read-poll-heartbeat-ms []
+  (when (fs/exists? poll-heartbeat-file)
+    (try (:lastHeartbeatMs (json/parse-string (slurp (str poll-heartbeat-file)) true))
+         (catch Exception _ nil))))
+
 ;; ── per-process specs ─────────────────────────────────────────────────────
 ;; A data-driven table (mirrors bridgeServer.ts's own JsonRoute/WriteRoute
 ;; tables and telegram-bridge.ts's ACTIONS table): a third supervised
@@ -180,6 +234,11 @@
 ;; Ordering matters - the bridge must already be listening before the
 ;; bot's first auth attempt, so process-specs is iterated in this exact
 ;; order every tick, never shuffled.
+;;
+;; BL-370: :heartbeat-stale? is a 1-arg (now-ms) predicate, present on
+;; every spec so tick! below can call it uniformly - the bridge has no
+;; poll-heartbeat concept at all, so its own entry is a constant false
+;; rather than a special case in the calling code.
 
 (defn spawn-bridge! []
   (when-let [err (ensure-current-build!)]
@@ -200,8 +259,9 @@
                     "node" (str bot-entrypoint) (str "http://127.0.0.1:" bridge-port) project-root))
 
 (def process-specs
-  [{:key :bridge :spawn-pid! (fn [] (.pid (:proc (spawn-bridge!))))}
-   {:key :bot :spawn-pid! (fn [] (.pid (:proc (spawn-bot!))))}])
+  [{:key :bridge :spawn-pid! (fn [] (.pid (:proc (spawn-bridge!)))) :heartbeat-stale? (constantly false)}
+   {:key :bot :spawn-pid! (fn [] (.pid (:proc (spawn-bot!))))
+    :heartbeat-stale? (fn [now] (front-desk-supervisor-lib/poll-heartbeat-stale? (read-poll-heartbeat-ms) now stall-ms))}])
 
 ;; ── persisted state (JSON: {"bridge": {...}, "bot": {...}}) ───────────────
 
@@ -221,6 +281,11 @@
   (case event
     :started (log! "started" (name spec-key) "pid=" (str (:pid entry)) "attempt=" (str (:attempts entry)))
     :crashed (log! "crashed" (name spec-key) "attempt=" (str (:attempts entry)))
+    ;; BL-370: distinct from :crashed - the pid never died, the poll
+    ;; heartbeat just went stale. Logged separately so a human grepping
+    ;; the log (or the acceptance suite) can tell the two failure modes
+    ;; apart even though they recover through the identical mechanism.
+    :stalled (log! "stalled" (name spec-key) "no poll heartbeat within" (str stall-ms) "ms")
     :healthy-reset (log! "healthy-reset" (name spec-key))
     :gave-up (log! "gave-up" (name spec-key) "after" (str (:attempts entry)) "attempt(s)")
     :re-armed (log! "re-armed" (name spec-key) "pid=" (str (:pid entry)))
@@ -239,19 +304,106 @@
     (assoc entry :build_sha (read-node-build-sha!))
     entry))
 
+;; ── BL-370 (scenarios 04/05): give-up escalation ────────────────────────────
+;; Restarts stopping at the cap must reach a human LOUDLY - and the alarm
+;; whose whole purpose is to break a silence must not itself fail silently
+;; (constitution: a repeat-suppression flag is set on CONFIRMED DELIVERY,
+;; never an attempt). Reuses operator_lib.bb's own BL-345 delivery-based
+;; arming wholesale rather than a parallel implementation.
+
+(defn read-escalation-state []
+  (if (fs/exists? escalation-state-file)
+    (try (json/parse-string (slurp (str escalation-state-file)) true) (catch Exception _ {}))
+    {}))
+
+(defn write-escalation-state! [m]
+  (atomic-spit! escalation-state-file (json/generate-string m)))
+
+;; BL-215/BL-326's own pattern, mirrored exactly: warn ONCE per process on a
+;; configured-but-keyless alarm.
+(def escalation-email-key-warned? (atom false))
+
+(defn- escalation-email-text [spec-key entry]
+  (str "The front desk's " (name spec-key) " process stopped and gave up "
+       "restarting itself after " (:attempts entry) " attempt(s) - it needs "
+       "a human. Check swarmforge/scripts/front_desk_supervisor.bb's log "
+       "(front-desk-supervisor.log) and restart it by hand."))
+
+;; BL-345's own E2E test seam, mirrored: lets the acceptance suite script a
+;; deterministic send outcome (success, transient failure, ...) without
+;; ever reaching daemon-alarm-lib or the network.
+(defn send-escalation-email! [spec-key subject text]
+  (if-let [forced (System/getenv "FRONT_DESK_ESCALATION_FORCE_RESULT")]
+    (json/parse-string forced true)
+    (daemon-alarm-lib/send-configured-email!
+     project-root conf-file subject text
+     {:already-warned?! (fn [] @escalation-email-key-warned?)
+      :log-warning! (fn [msg] (log! "escalation-email-misconfigured" (name spec-key) msg))
+      :mark-warned! (fn [] (reset! escalation-email-key-warned? true))})))
+
+;; Runs every tick over EVERY process's just-computed next-state (not only
+;; the one that gave up THIS tick) - "gave-up" is a persisted status, so a
+;; human must still be told even on a tick where nothing transitioned.
+;; Applies uniformly to bridge and bot alike: "restarts are bounded, and
+;; giving up is loud" is a general property of this supervisor, not
+;; specific to a stall-triggered give-up (a crash-loop give-up is exactly
+;; as urgent - either way the front desk is down).
+;; BL-370 bugfix (caught by this ticket's own scenario 05 test): the
+;; persisted state's keys MUST stay keywords end to end, matching
+;; read-state/write-status!'s own convention - json/parse-string's
+;; keywordize-keys turns "bot" back into :bot on every read, so building
+;; `next` with a STRING key (name (:key spec)) meant every (get prev k {})
+;; lookup silently missed and fell back to {}, resetting delivery-attempts
+;; to 0 (and effectively re-attempting on every tick, forever) instead of
+;; ever seeing what the prior tick actually persisted.
+(defn escalate-gave-up! [state now]
+  (let [prev (read-escalation-state)
+        next (into {}
+                   (map (fn [spec]
+                          (let [k (:key spec)
+                                entry (get state k)
+                                given-up? (= "gave-up" (:status entry))
+                                prev-alarm (get prev k {})]
+                            [k (cond
+                                 (not given-up?)
+                                 {:armed? false :delivery-attempts 0 :last-attempt-at-ms nil}
+
+                                 (not (operator-lib/starvation-alarm-should-attempt?
+                                       {:starving? true :armed? (boolean (:armed? prev-alarm))
+                                        :delivery-attempts (:delivery-attempts prev-alarm)
+                                        :last-attempt-at-ms (:last-attempt-at-ms prev-alarm)
+                                        :now-ms now :retry-config escalation-retry-config}))
+                                 prev-alarm
+
+                                 :else
+                                 (let [result (send-escalation-email!
+                                               k
+                                               (str "SwarmForge: front desk " (name k) " has given up restarting")
+                                               (escalation-email-text k entry))
+                                       outcome (operator-lib/classify-delivery-result result)
+                                       {:keys [armed? delivery-attempts last-attempt-at-ms gave-up?]}
+                                       (operator-lib/next-starvation-alarm-state outcome prev-alarm escalation-retry-config now)]
+                                   (apply log! "escalation" (name k) (name outcome)
+                                          (remove nil? [(when gave-up? "ESCALATION-RETRY-CAP-HIT")]))
+                                   {:armed? armed? :delivery-attempts delivery-attempts :last-attempt-at-ms last-attempt-at-ms}))]))
+                        process-specs))]
+    (write-escalation-state! next)))
+
 (defn tick! []
   (let [prior (read-state)
         now (now-ms)
         next-state (into {}
                           (map (fn [spec]
                                  (let [entry (merge (front-desk-supervisor-lib/default-entry) (get prior (:key spec)))
+                                       heartbeat-stale? ((:heartbeat-stale? spec) now)
                                        {:keys [entry event]} (front-desk-supervisor-lib/check-one!
-                                                               entry now pid-alive? (:spawn-pid! spec) restart-config giveup-config)
+                                                               entry now pid-alive? (:spawn-pid! spec) restart-config giveup-config heartbeat-stale?)
                                        entry (stamp-build-sha entry event)]
                                    (log-event! (:key spec) event entry)
                                    [(:key spec) entry])))
                           process-specs)]
     (write-status! next-state)
+    (escalate-gave-up! next-state now)
     next-state))
 
 ;; ── main ──────────────────────────────────────────────────────────────────

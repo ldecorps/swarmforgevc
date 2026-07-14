@@ -16,16 +16,40 @@ check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi
 make_fixture() {
   local d; d="$(mktemp -d)"
   mkdir -p "$d/.swarmforge/operator" "$d/extension/out/tools"
-  cp "$SRC/front_desk_supervisor.bb" "$SRC/front_desk_supervisor_lib.bb" "$d/"
+  # BL-370: front_desk_supervisor.bb now also load-files operator_lib.bb
+  # (reused BL-345 delivery-based alarm arming) and daemon_alarm_lib.bb
+  # (the email send path) relative to its own dir - both must ship
+  # alongside it in every fixture, or the supervisor fails to even load.
+  cp "$SRC/front_desk_supervisor.bb" "$SRC/front_desk_supervisor_lib.bb" "$SRC/operator_lib.bb" "$SRC/daemon_alarm_lib.bb" "$d/"
   # A fake entrypoint that stays alive forever (mirrors the real bridge/bot
   # processes, which never exit on their own while healthy).
   cat > "$d/extension/out/tools/start-bridge-headless.js" <<'EOF'
 setInterval(() => {}, 1000);
 EOF
-  cat > "$d/extension/out/tools/telegram-front-desk-bot.js" <<'EOF'
-setInterval(() => {}, 1000);
-EOF
+  write_healthy_bot_js "$d"
   printf '%s' "$d"
+}
+
+# BL-370: a "healthy" fake bot must also write the poll heartbeat
+# front_desk_supervisor.bb now reads - without it, a bot that merely stays
+# alive (setInterval-forever, same as before BL-370) reads as stalled
+# (nil heartbeat counts as stale, see poll-heartbeat-stale?'s own
+# docstring), which would falsely trip every "the bot stays running"
+# assertion below. project-root is process.argv[3] (argv[2] is the
+# bridgeUrl the real bot entrypoint is also invoked with).
+write_healthy_bot_js() {
+  cat > "$1/extension/out/tools/telegram-front-desk-bot.js" <<'EOF'
+const fs = require('fs');
+const path = require('path');
+const root = process.argv[3] || '.';
+const hbPath = path.join(root, '.swarmforge', 'operator', 'front-desk-poll-heartbeat.json');
+function beat() {
+  fs.mkdirSync(path.dirname(hbPath), { recursive: true });
+  fs.writeFileSync(hbPath, JSON.stringify({ lastHeartbeatMs: Date.now() }));
+}
+beat();
+setInterval(beat, 200);
+EOF
 }
 
 check_once() {
@@ -121,9 +145,7 @@ FRONT_DESK_MAX_ATTEMPTS=5 FRONT_DESK_BACKOFF_BASE_MS=10 FRONT_DESK_BACKOFF_MAX_M
 check "bl-303 setup: the bot restarted at least once (attempts > 1) before the healthy window" \
   '[[ "$(jget "$F/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :attempts]")" -gt 1 ]]'
 # Now let it stay alive - swap in a fixture that never crashes.
-cat > "$F/extension/out/tools/telegram-front-desk-bot.js" <<'EOF'
-setInterval(() => {}, 1000);
-EOF
+write_healthy_bot_js "$F"
 FRONT_DESK_MAX_ATTEMPTS=5 FRONT_DESK_BACKOFF_BASE_MS=10 FRONT_DESK_BACKOFF_MAX_MS=20 check_once "$F" > /dev/null
 sleep 0.3
 FRONT_DESK_HEALTHY_RESET_MS=100 FRONT_DESK_MAX_ATTEMPTS=5 FRONT_DESK_BACKOFF_BASE_MS=10 FRONT_DESK_BACKOFF_MAX_MS=20 check_once "$F" > /dev/null
@@ -161,9 +183,7 @@ check "bl-303 supervisor-recovery-02 [not elapsed]: still gave-up, not restarted
 
 # Swap in a healthy entrypoint (so the re-armed child does not immediately
 # crash and give up again), wait past the cooldown, then re-check.
-cat > "$F/extension/out/tools/telegram-front-desk-bot.js" <<'EOF'
-setInterval(() => {}, 1000);
-EOF
+write_healthy_bot_js "$F"
 sleep 0.4
 check_once "$F" > /dev/null
 check "bl-303 supervisor-recovery-02 [elapsed]: re-armed to running" \

@@ -801,5 +801,38 @@
 
     :else {:action nil}))
 
+;; ── BL-371: passing a question down (raw intake, backlog root) ───────────
+;; The Operator's only path for a question it cannot answer itself, distinct
+;; from hand-off-to-coordinator! (support_lib.bb) which requires a
+;; PRE-EXISTING ticket - this one has none. Deliberately files into the
+;; SAME backlog-root raw-intake channel a human uses directly (constitution:
+;; Backlog Intake Order), never a new queue/routing authority - the
+;; specifier's existing drain-root-first convention picks it up with zero
+;; new machinery. The Operator FILES only; it never creates/specs/promotes
+;; the resulting ticket itself (same anti-fabrication posture as
+;; hand-off-to-coordinator!).
+
+(defn question-intake-slug
+  "A stable, filename-safe slug for a raw-question intake file - millisecond
+   epoch is sufficient (this is a human-facing filename, not an id anything
+   else joins against; two questions in the same millisecond is not a real
+   scenario for a Telegram round trip)."
+  [now-ms]
+  (str "operator-question-" now-ms))
+
+(defn question-intake-content
+  "The raw intake file's own content - a PROPOSAL only, matching support_
+   lib.bb's build-intake-content wording exactly for the ticket-linked case:
+   the specifier owns turning this into a real spec, this function never
+   drafts acceptance criteria or picks a priority."
+  [question-text now-iso]
+  (str "# Intake: a question the Operator could not answer\n\n"
+       "Filed by the Operator (" now-iso ") - a question came in via Telegram\n"
+       "that the Operator judged it could not answer itself. This is a RAW\n"
+       "ask, not a spec: the specifier drains this like any other backlog-root\n"
+       "item and decides what (if anything) becomes a real ticket.\n\n"
+       "## The question\n\n"
+       question-text "\n"))
+
 ;; Allow `bb operator_lib.bb` to be a no-op load (it is a library).
 (when (= *file* (System/getProperty "babashka.file")) nil)

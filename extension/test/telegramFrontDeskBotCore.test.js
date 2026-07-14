@@ -25,6 +25,7 @@ const {
   nextUpdateOffset,
   offsetAfterDelivery,
   shouldEscalateStuckDelivery,
+  isPollCycleStale,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
 const PRINCIPAL_ID = 111;
@@ -1096,5 +1097,43 @@ test('applyPollCycleResult never calls escalate when escalateStuckDelivery is fa
 
 test('applyPollCycleResult defaults escalate to a no-op when the caller does not supply one (back-compat)', async () => {
   const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 3 }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: true };
+  await assert.doesNotReject(() => applyPollCycleResult(cycle, () => {}, async () => {}));
+});
+
+// ── BL-370: isPollCycleStale (pure) ───────────────────────────────────────
+
+test('front-desk-liveness-01: no completed poll within the stall window is stale', () => {
+  assert.equal(isPollCycleStale(1000, 92000, 90000), true);
+});
+
+test('front-desk-liveness-01: exactly AT the stall window boundary is stale (inclusive, mirrors front_desk_supervisor_lib.bb)', () => {
+  assert.equal(isPollCycleStale(1000, 91000, 90000), true);
+});
+
+test('front-desk-liveness-02: a heartbeat just inside the stall window is NOT stale - a quiet night must never read as dead', () => {
+  assert.equal(isPollCycleStale(1000, 90999, 90000), false);
+});
+
+test('front-desk-liveness-02: a heartbeat from the same instant as now is not stale', () => {
+  assert.equal(isPollCycleStale(50000, 50000, 90000), false);
+});
+
+test('a bot that has never completed a single poll cycle (no heartbeat at all) is stale', () => {
+  assert.equal(isPollCycleStale(undefined, 90000, 90000), true);
+});
+
+// ── BL-370: applyPollCycleResult's recordHeartbeat callback ──────────────
+
+test('applyPollCycleResult calls recordHeartbeat on every completed cycle, success or failure alike', async () => {
+  const beats = [];
+  const okCycle = { state: { offset: 2, consecutiveFailures: 0, stuckAttempts: 0 }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: false };
+  await applyPollCycleResult(okCycle, () => {}, async () => {}, async () => {}, () => beats.push('ok'));
+  const failedCycle = { state: { offset: 0, consecutiveFailures: 1, stuckAttempts: 0 }, delayMs: 2000, degradedWarning: false, escalateStuckDelivery: false };
+  await applyPollCycleResult(failedCycle, () => {}, async () => {}, async () => {}, () => beats.push('failed'));
+  assert.deepEqual(beats, ['ok', 'failed']);
+});
+
+test('applyPollCycleResult defaults recordHeartbeat to a no-op when the caller does not supply one (back-compat)', async () => {
+  const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: false };
   await assert.doesNotReject(() => applyPollCycleResult(cycle, () => {}, async () => {}));
 });
