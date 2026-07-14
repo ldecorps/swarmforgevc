@@ -116,6 +116,14 @@ export async function runRoleBenchmarkCli(args: RunRoleBenchmarkArgs, deps: RunR
   deps.print(report);
 }
 
+// createClaudeCliExecutor() itself checks RUN_ROLE_BENCHMARK_EXECUTOR_FORCE_RESULT
+// (claudeCliExecutor.ts's own claudeCliForceResultFromEnv, mirroring
+// notify-dead-letters.ts's TELEGRAM_NOTIFY_FORCE_RESULT convention) before
+// ever spawning a real `claude` subprocess - so no separate seam is needed
+// here. The real evaluator/write/commit stay real (a real node:test run
+// against real fixture code, a real git commit against a real repo); only
+// that one genuinely external boundary (an LLM actually performing the
+// task) is fakeable, and only via that explicit env seam.
 function defaultDeps(): RunRoleBenchmarkDeps {
   return {
     loadTask: loadTaskSpec,
