@@ -66,16 +66,27 @@ async function drainSseTopics(root, topicMap) {
     // notice buffered from the wait loop above), mirroring how
     // telegram-topic-03's own test bounds a live SSE stream to one drain.
     let readCount = 0;
-    await relaySseReplies(buffer, {
-      readChunk: async () => {
-        readCount += 1;
-        return { done: readCount > 1, chunk: '' };
+    await relaySseReplies(
+      buffer,
+      {
+        readChunk: async () => {
+          readCount += 1;
+          return { done: readCount > 1, chunk: '' };
+        },
+        sendReply: async (topicId, text) => {
+          posted.push({ topicId, text });
+        },
+        resolveDelivery: (subjectId) =>
+          topicMap[subjectId] !== undefined ? { kind: 'topic', topicId: topicMap[subjectId], alsoPointerToDefault: false } : { kind: 'undeliverable' },
+        // Pre-existing gap (predates BL-355): relaySseReplies has required
+        // ackReply/seenIds params since BL-320, but this call site was never
+        // updated, so `seenIds.has(id)` threw the moment a record actually
+        // reached relayOneRecord - surfaced while verifying BL-355 did not
+        // regress this suite, fixed here rather than left broken.
+        ackReply: async () => {},
       },
-      sendReply: async (topicId, text) => {
-        posted.push({ topicId, text });
-      },
-      topicForSubject: (subjectId) => topicMap[subjectId],
-    });
+      new Set()
+    );
   });
   return posted;
 }
