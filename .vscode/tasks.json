@@ -4,6 +4,7 @@
     {
       "type": "npm",
       "script": "watch",
+      "path": "extension",
       "problemMatcher": "$tsc-watch",
       "isBackground": true,
       "presentation": {
@@ -12,7 +13,8 @@
       "group": {
         "kind": "build",
         "isDefault": true
-      }
+      },
+      "label": "npm: watch (extension)"
     }
   ]
 }

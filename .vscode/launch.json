@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension (workspace root)",
+      "type": "extensionHost",
+      "request": "launch",
+      "preLaunchTask": "npm: watch (extension)",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/extension"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/extension/out/**/*.js"
+      ]
+    }
+  ]
+}
