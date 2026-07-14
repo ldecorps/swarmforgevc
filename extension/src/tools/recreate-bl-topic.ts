@@ -10,35 +10,12 @@
 //
 // Usage: recreate-bl-topic.js <project-root> <ticket-id>
 // Env: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-import * as fs from 'fs';
-import * as path from 'path';
 import { readRecord } from '../concierge/blTopicStore';
 import { readBacklogFolders } from '../panel/backlogReader';
 import { decideTopicRestore, recreateTopicFromRecord, TopicRecreationResult } from '../concierge/topicRecreation';
 import { createForumTopic, reopenForumTopic, sendTelegramMessage } from '../notify/telegramClient';
-import { atomicWrite } from '../util/atomicWrite';
+import { readBacklogTopicMap, writeBacklogTopicMap } from '../concierge/backlogTopicMapStore';
 import { runCliMain } from './swarm-metrics';
-
-// Same file/shape telegram-front-desk-bot.ts's own readBacklogTopicMap/
-// writeBacklogTopicMap/dropBacklogTopicMapping already read and write -
-// duplicated here rather than exported from that file, matching this
-// codebase's own established small-duplication-over-cross-file-coupling
-// convention for machine-local, gitignored state paths.
-function backlogTopicMapPath(targetPath: string): string {
-  return path.join(targetPath, '.swarmforge', 'operator', 'backlog-topic-map.json');
-}
-
-function readBacklogTopicMap(targetPath: string): Record<string, number> {
-  try {
-    return JSON.parse(fs.readFileSync(backlogTopicMapPath(targetPath), 'utf8'));
-  } catch {
-    return {};
-  }
-}
-
-function writeBacklogTopicMap(targetPath: string, map: Record<string, number>): void {
-  atomicWrite(backlogTopicMapPath(targetPath), JSON.stringify(map));
-}
 
 // BL-353/notify-dead-letters.ts's own TELEGRAM_NOTIFY_FORCE_RESULT
 // convention, mirrored exactly - no real network call ever happens under

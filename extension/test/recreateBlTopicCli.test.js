@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { recreateBlTopic } = require('../out/tools/recreate-bl-topic');
+const { recreateBlTopic, main } = require('../out/tools/recreate-bl-topic');
 const { appendMessage, recordPath } = require('../out/concierge/blTopicStore');
 
 // BL-332: recreate-bl-topic.js's own main() thin wrapper, exercised
@@ -110,4 +110,57 @@ test('a ticket with no matching backlog entry at all still recreates, using its 
   } finally {
     restoreEnv();
   }
+});
+
+// main() itself - argument dispatch, the usage/exit-code path, and the
+// stdout write - per the CLI main()-thin-wrapper rule: a thin main() is
+// not the same as a COVERED one, and driving only recreateBlTopic (above)
+// leaves main()'s own branches unexercised by any in-process test.
+test('main() exits non-zero with a usage message when the ticket id is missing', async () => {
+  const originalArgv = process.argv;
+  const originalExitCode = process.exitCode;
+  const writes = [];
+  const originalWrite = process.stderr.write;
+  process.stderr.write = (chunk) => {
+    writes.push(chunk);
+    return true;
+  };
+  try {
+    process.argv = ['node', 'recreate-bl-topic.js', '/some/root'];
+    process.exitCode = undefined;
+    await main();
+    assert.equal(process.exitCode, 1);
+    assert.ok(writes.join('').includes('Usage:'));
+  } finally {
+    process.stderr.write = originalWrite;
+    process.argv = originalArgv;
+    process.exitCode = originalExitCode;
+  }
+});
+
+test('main() prints the JSON result to stdout when a target and ticket id are given', async () => {
+  const root = mkFixture();
+  writeTicketYaml(root, 'BL-900', 'a fine feature');
+  writeBacklogTopicMap(root, { 'BL-900': 42 });
+  process.env.TELEGRAM_BOT_TOKEN = 'x';
+  process.env.TELEGRAM_CHAT_ID = 'y';
+  process.env.TELEGRAM_RECREATE_FORCE_RESULT = JSON.stringify({ success: true });
+
+  const originalArgv = process.argv;
+  const writes = [];
+  const originalWrite = process.stdout.write;
+  process.stdout.write = (chunk) => {
+    writes.push(chunk);
+    return true;
+  };
+  try {
+    process.argv = ['node', 'recreate-bl-topic.js', root, 'BL-900'];
+    await main();
+  } finally {
+    process.stdout.write = originalWrite;
+    process.argv = originalArgv;
+    restoreEnv();
+  }
+  const printed = JSON.parse(writes.join(''));
+  assert.deepEqual(printed, { action: 'reopen', success: true, topicId: 42 });
 });
