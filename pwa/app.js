@@ -815,6 +815,123 @@
     }
   }
 
+  // BL-347: taskId's own naming convention, established by BL-340's fixture
+  // (test/fixtures/benchmark/coder-task-01/task.json's own id
+  // "coder-task-01-word-frequency") - the report schema carries no separate
+  // role field, so the role a report covers is read off its taskId prefix,
+  // the same convention docs/backlog-dashboard-schema.md documents.
+  function roleFromTaskId(taskId) {
+    var idx = taskId.indexOf('-task-');
+    return idx === -1 ? taskId : taskId.slice(0, idx);
+  }
+
+  function findBenchmarkModel(models, modelId) {
+    for (var i = 0; i < models.length; i++) {
+      if (models[i].modelId === modelId) {
+        return models[i];
+      }
+    }
+    return null;
+  }
+
+  // Variance (std-dev) rides alongside the mean so a reader can tell a real
+  // difference between models from noise (role-leaderboard-surface-04),
+  // rather than two single numbers that look different but are not.
+  function formatBenchmarkQuality(model) {
+    var mean = (model.meanQuality * 100).toFixed(0) + '%';
+    return model.qualityStdDev ? mean + ' (±' + (model.qualityStdDev * 100).toFixed(0) + '%)' : mean;
+  }
+
+  function formatBenchmarkCost(model) {
+    if (model.meanCostUsd === null) {
+      return tr('roleLeaderboardNoCost');
+    }
+    var mean = '$' + model.meanCostUsd.toFixed(2);
+    return model.costStdDev ? mean + ' (±$' + model.costStdDev.toFixed(2) + ')' : mean;
+  }
+
+  function formatBenchmarkDuration(model) {
+    return Math.round(model.meanDurationMs / 1000) + tr('roleLeaderboardSecondsSuffix');
+  }
+
+  function benchmarkLeaderboardRow(category, modelId, models) {
+    var model = modelId ? findBenchmarkModel(models, modelId) : null;
+    if (!model) {
+      return null;
+    }
+    return el('tr', {}, [
+      el('td', {}, [category]),
+      el('td', {}, [model.label || model.modelId]),
+      el('td', {}, [formatBenchmarkQuality(model)]),
+      el('td', {}, [formatBenchmarkCost(model)]),
+      el('td', {}, [formatBenchmarkDuration(model)]),
+    ]);
+  }
+
+  // BL-347: the PWA's own presentation of BL-340's committed benchmark
+  // report - the Best / Best Value / Cheapest Acceptable table, per role.
+  // Mirrors renderCostHealth's own "hidden entirely, never rendered empty"
+  // contract (role-leaderboard-surface-05): the field's own presence on
+  // backlog.json is the only signal read here.
+  function renderRoleLeaderboard(report) {
+    var section = document.getElementById('roleLeaderboardSection');
+    var container = document.getElementById('roleLeaderboard');
+    if (!report) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = '';
+    container.innerHTML = '';
+
+    var role = roleFromTaskId(report.taskId);
+    container.appendChild(el('p', { class: 'leaderboard-meta' }, [tr('roleLeaderboardRolePrefix') + role]));
+    container.appendChild(
+      el('p', { class: 'leaderboard-meta' }, [tr('roleLeaderboardAsOfPrefix') + new Date(report.generatedAtIso).toLocaleDateString()])
+    );
+    container.appendChild(el('p', { class: 'leaderboard-meta' }, [tr('roleLeaderboardThresholdPrefix') + report.qualityThresholdDescription]));
+
+    var table = el('table', {});
+    table.appendChild(
+      el('thead', {}, [
+        el('tr', {}, [
+          el('th', {}, [tr('roleLeaderboardColCategory')]),
+          el('th', {}, [tr('roleLeaderboardColModel')]),
+          el('th', {}, [tr('roleLeaderboardColQuality')]),
+          el('th', {}, [tr('roleLeaderboardColCost')]),
+          el('th', {}, [tr('roleLeaderboardColDuration')]),
+        ]),
+      ])
+    );
+
+    var tbody = el('tbody', {});
+    var ranking = report.ranking;
+    [
+      { category: tr('roleLeaderboardBest'), modelId: ranking.bestByQuality },
+      { category: tr('roleLeaderboardBestValue'), modelId: ranking.bestByValue },
+    ].forEach(function (r) {
+      var row = benchmarkLeaderboardRow(r.category, r.modelId, report.models);
+      if (row) {
+        tbody.appendChild(row);
+      }
+    });
+    if (ranking.cheapestAcceptable) {
+      var acceptableRow = benchmarkLeaderboardRow(tr('roleLeaderboardCheapestAcceptable'), ranking.cheapestAcceptable, report.models);
+      if (acceptableRow) {
+        tbody.appendChild(acceptableRow);
+      }
+    } else {
+      tbody.appendChild(
+        el('tr', {}, [
+          el('td', { colspan: '5' }, [
+            tr('roleLeaderboardCheapestAcceptable') + tr('roleLeaderboardNoAcceptableSeparator') + (ranking.noAcceptableModelReason || ''),
+          ]),
+        ])
+      );
+    }
+    table.appendChild(tbody);
+    container.appendChild(table);
+  }
+
   // BL-256 deep-links-into-pwa-04: a #ticket=<id> or #approval=<id> URL
   // fragment (built by extension/src/metrics/pwaDeepLinks.ts's
   // buildTicketDeepLink/buildApprovalDeepLink) opens directly to that
@@ -859,6 +976,7 @@
     renderCycleTime(data.metrics.cycleTime);
     renderSuiteDuration(data.metrics.suiteDurationTrend || null);
     renderCostHealth(data.costHealth || null);
+    renderRoleLeaderboard(data.roleLeaderboard || null);
   }
 
   // BL-117: read-only documentation drill-down (vision -> milestone ->

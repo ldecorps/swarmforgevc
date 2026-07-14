@@ -260,6 +260,45 @@ test('BL-290: metrics.suiteDurationTrend is omitted when no sidecar is provided 
   assert.equal(Object.prototype.hasOwnProperty.call(data.metrics, 'suiteDurationTrend'), false);
 });
 
+// ── BL-347 role-leaderboard-surface: roleLeaderboard fold-in ────────────
+
+function fakeBenchmarkReport(overrides = {}) {
+  return {
+    schemaVersion: 1,
+    generatedAtIso: '2026-07-13T16:26:31.300Z',
+    taskId: 'coder-task-01-word-frequency',
+    qualityThreshold: 0.8,
+    qualityThresholdDescription: 'A model is "cheapest acceptable" only if its mean quality score is >= 0.8.',
+    provenance: 'Each recorded run executes the configured provider CLI headlessly.',
+    models: [
+      { modelId: 'claude-haiku', provider: 'claude', model: 'haiku', label: 'Claude Haiku 4.5', excluded: false, exclusionReason: null, repetitions: 2, meanQuality: 1, qualityStdDev: 0, meanCostUsd: 0.04, costStdDev: 0.001, meanDurationMs: 23000, meanTokens: 1700, runs: [] },
+    ],
+    ranking: { bestByQuality: 'claude-haiku', bestByValue: 'claude-haiku', cheapestAcceptable: 'claude-haiku', noAcceptableModelReason: null },
+    ...overrides,
+  };
+}
+
+test('role-leaderboard-surface-06: roleLeaderboard is folded in verbatim when a report is provided', () => {
+  const report = fakeBenchmarkReport();
+  const data = buildBacklogDashboard(
+    { active: [], paused: [], done: [] },
+    [],
+    emptyDeliveryMetrics(),
+    'primary',
+    'abc',
+    '2026-07-09T00:00:00Z',
+    null,
+    report
+  );
+  assert.deepEqual(data.roleLeaderboard, report);
+  assert.equal(data.schemaVersion, BACKLOG_DASHBOARD_SCHEMA_VERSION, 'schemaVersion is unchanged - roleLeaderboard is additive');
+});
+
+test('role-leaderboard-surface-05: roleLeaderboard is omitted entirely (not null) when no report is provided', () => {
+  const data = buildBacklogDashboard({ active: [], paused: [], done: [] }, [], emptyDeliveryMetrics(), 'primary', 'abc', '2026-07-09T00:00:00Z');
+  assert.equal(Object.prototype.hasOwnProperty.call(data, 'roleLeaderboard'), false);
+});
+
 // ── computeBacklogDashboard (impure orchestrator, real git repo) ────────
 
 function mkTmp() {
@@ -343,6 +382,40 @@ test('computeBacklogDashboard folds metrics.suiteDurationTrend in from the lates
 
   const dashboard = computeBacklogDashboard(repo, [], Date.parse('2026-07-09T12:00:00Z'));
   assert.deepEqual(dashboard.metrics.suiteDurationTrend, suiteDurationTrend);
+});
+
+// BL-347 role-leaderboard-surface-01/03: computeBacklogDashboard reads the
+// latest COMMITTED docs/benchmarks/<date>.json report - mirrors the
+// costHealth sidecar tests above exactly (same latest-by-date, same
+// hidden-when-absent posture).
+test('computeBacklogDashboard folds in the most recently committed benchmark report (role-leaderboard-surface-01/03)', () => {
+  const repo = mkTmp();
+  mkdirp(path.join(repo, 'backlog', 'active'));
+  mkdirp(path.join(repo, 'docs', 'benchmarks'));
+  fs.writeFileSync(
+    path.join(repo, 'docs', 'benchmarks', '2026-07-12.json'),
+    JSON.stringify(fakeBenchmarkReport({ generatedAtIso: '2026-07-12T00:00:00Z' }))
+  );
+  fs.writeFileSync(
+    path.join(repo, 'docs', 'benchmarks', '2026-07-13.json'),
+    JSON.stringify(fakeBenchmarkReport({ generatedAtIso: '2026-07-13T16:26:31.300Z' }))
+  );
+
+  const dashboard = computeBacklogDashboard(repo, [], Date.parse('2026-07-13T18:00:00Z'));
+  assert.equal(dashboard.roleLeaderboard.generatedAtIso, '2026-07-13T16:26:31.300Z', 'the latest report by date must win, not just directory order');
+});
+
+// role-leaderboard-surface-05/06: no benchmark report committed at all -
+// and separately, a report present on disk but UNCOMMITTED must not appear
+// either, since computeBacklogDashboard only ever reads from the real
+// filesystem state of a checkout (the constitutional invariant the ticket
+// itself names as the easiest one to break).
+test('computeBacklogDashboard omits roleLeaderboard when no benchmark report has ever been committed (role-leaderboard-surface-05)', () => {
+  const repo = mkTmp();
+  mkdirp(path.join(repo, 'backlog', 'active'));
+
+  const dashboard = computeBacklogDashboard(repo, [], Date.parse('2026-07-13T12:00:00Z'));
+  assert.equal(Object.prototype.hasOwnProperty.call(dashboard, 'roleLeaderboard'), false);
 });
 
 // ── translateBacklogDashboard (BL-118) ───────────────────────────────────
