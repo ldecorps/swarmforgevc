@@ -7,7 +7,7 @@
 // (never a filename-prefix guess) - a "flip pending->approved on a real
 // reply" writer, never a blind seed (that stays backfill's job).
 import * as fs from 'fs';
-import * as path from 'path';
+import { forEachLiveTicketFile } from '../util/liveTicketFiles';
 
 // A simple, deliberate keyword match - not NLP. Mirrors
 // backfill-human-approval.ts's own deriveApprovalFromCommentBlock, which
@@ -31,31 +31,22 @@ export function approveHumanApprovalText(rawText: string): { text: string; chang
   return { text: rawText.replace(HUMAN_APPROVAL_PENDING_PATTERN, 'human_approval: approved'), changed: true };
 }
 
-// Live folders only, same scope as backfill-human-approval.ts and
-// conciergeTick.ts's own pendingApprovalFor - a ticket's approval can only
-// ever be asked/recorded while it is active or paused, never done.
-const LIVE_FOLDERS = ['active', 'paused'];
-
 // Located by the ticket's own `id:` field, never a filename guess - the
-// same identity backlogReader.ts already treats as authoritative.
+// same identity backlogReader.ts already treats as authoritative. Walks the
+// live folders (active + paused, never done) via the shared scan
+// forEachLiveTicketFile already uses for backfill-human-approval.ts's
+// identical folder walk (cleaner review: the two has duplicated the same
+// readdir-with-missing-folder-tolerance loop).
 function findTicketFilePath(targetPath: string, backlogId: string): string | undefined {
-  for (const folder of LIVE_FOLDERS) {
-    const dir = path.join(targetPath, 'backlog', folder);
-    let fileNames: string[];
-    try {
-      fileNames = fs.readdirSync(dir).filter((f) => f.endsWith('.yaml'));
-    } catch {
-      continue;
+  let found: string | undefined;
+  forEachLiveTicketFile(targetPath, (filePath) => {
+    const idMatch = fs.readFileSync(filePath, 'utf8').match(/^id:\s*(.+)$/m);
+    if (idMatch && idMatch[1].trim() === backlogId) {
+      found = filePath;
+      return 'stop';
     }
-    for (const fileName of fileNames) {
-      const filePath = path.join(dir, fileName);
-      const idMatch = fs.readFileSync(filePath, 'utf8').match(/^id:\s*(.+)$/m);
-      if (idMatch && idMatch[1].trim() === backlogId) {
-        return filePath;
-      }
-    }
-  }
-  return undefined;
+  });
+  return found;
 }
 
 // Impure driver: flips the ticket's human_approval to approved if it is

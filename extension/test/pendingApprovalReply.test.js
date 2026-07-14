@@ -98,6 +98,18 @@ test('a backlog id with no matching ticket file is a clean no-op, never a crash'
   assert.equal(changed, false);
 });
 
+test('scans past a non-matching ticket in an earlier folder to find the match in a later one', () => {
+  const targetPath = mkTmp();
+  writeTicket(path.join(targetPath, 'backlog', 'active'), 'BL-904-slug.yaml', 'id: BL-904\ntitle: other\nhuman_approval: pending\n');
+  writeTicket(path.join(targetPath, 'backlog', 'paused'), 'BL-905-slug.yaml', 'id: BL-905\ntitle: t\nhuman_approval: pending\n');
+
+  const changed = recordApprovalReply(targetPath, 'BL-905');
+
+  assert.equal(changed, true);
+  assert.match(fs.readFileSync(path.join(targetPath, 'backlog', 'active', 'BL-904-slug.yaml'), 'utf8'), /human_approval: pending/);
+  assert.match(fs.readFileSync(path.join(targetPath, 'backlog', 'paused', 'BL-905-slug.yaml'), 'utf8'), /human_approval: approved/);
+});
+
 test('never touches backlog/done - a completed ticket is out of scope', () => {
   const targetPath = mkTmp();
   const doneContentBefore = 'id: BL-903\ntitle: t\nhuman_approval: pending\n';
