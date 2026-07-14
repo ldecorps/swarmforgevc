@@ -77,6 +77,27 @@ hardware install) does, in order:
    provisioning script — it retries harmlessly until authentication (step
    3) is in place.
 
+   **BL-366:** every unit this script renders — swarm, operator, and
+   front-desk — could not actually start before this fix.
+   `ExecStart=bb ...` named a bare command, and systemd (unlike a shell)
+   never searches `PATH` for `ExecStart`, so the operator unit failed on
+   every start ("Command bb is not executable"). Separately,
+   `StartLimitIntervalSec=0` was rendered into `[Service]`, where systemd
+   v230+ silently discards it — the crash-burst guard described above did
+   not actually exist. The generator now resolves `bb`'s absolute path at
+   generate time (it runs directly on the target host), renders
+   `StartLimitIntervalSec=0` in `[Unit]` on all three units, and adds an
+   explicit `Environment=PATH=` covering `bb`'s directory (plus `node`'s and
+   `claude`'s, when resolvable) — systemd hands a unit's process a minimal
+   `PATH` that excludes a user-local bin dir like `~/.local/bin`, so a
+   script a unit launches (e.g. `launch_front_desk.sh`) could start and then
+   die immediately on `bb: command not found` even with an already-absolute
+   `ExecStart`. `systemd-analyze verify` now runs in
+   `test_generate_systemd_units.sh` against every rendered unit, so a
+   regression here fails the test suite instead of shipping unnoticed. The
+   swarm unit also gained its own `Restart=on-failure`/`RestartSec=5` in
+   this fix — previously it had no crash-restart behavior at all.
+
 The script prints the remaining **manual** steps at the end (repeated below
 with detail).
 
@@ -201,7 +222,9 @@ phone-card/holistic-UI/Concierge/Telegram surface — did not, because no
 boot unit for it existed at all (a reboot silently took away his only
 channel to the swarm, and nothing brought it back). `generate_systemd_units.sh`
 now has a `--unit=front-desk` branch, mirroring the operator unit's shape
-(`Restart=always`, `StartLimitIntervalSec=0`, `WantedBy=multi-user.target`,
+(`Restart=always`, `StartLimitIntervalSec=0` in `[Unit]`, an explicit
+`Environment=PATH=` so `launch_front_desk.sh` can find `bb` under systemd's
+own minimal `PATH` (BL-366), `WantedBy=multi-user.target`,
 the same `EnvironmentFile=`) but wired to `launch_front_desk.sh` and using
 `Type=forking`/`PIDFile=` rather than `Type=simple`, since that launcher
 forks its supervisor into the background and exits rather than running in

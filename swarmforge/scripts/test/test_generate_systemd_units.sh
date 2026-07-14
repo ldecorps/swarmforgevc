@@ -180,6 +180,22 @@ set -e
 grep -qi "unit" "$ROOT/unit-err.txt" || fail "expected a clear error naming the constraint; got: $(cat "$ROOT/unit-err.txt")"
 pass "an unknown --unit= value is rejected with a clear error"
 
+# ── BL-366: when 'bb' cannot be resolved via PATH at all, generation must
+#    hard-fail with a clear error rather than silently emitting a unit whose
+#    ExecStart would fail systemd's own "Command bb is not executable" check
+#    (the operator unit's ExecStart runs bb directly - required, not
+#    best-effort, unlike node/claude which are only needed by the SCRIPTS
+#    these units launch). Uses a restricted PATH with no 'bb' on it, rather
+#    than mutating the real PATH env var, so this test host's own bb (wherever
+#    it lives) is never actually reachable to the child process. ───────────
+set +e
+env -i PATH=/usr/bin:/bin "$GENERATOR" /home/pi/swarmforgevc pi5 pi >/dev/null 2>"$ROOT/bb-missing-err.txt"
+RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || fail "BL-366: expected a non-zero exit when 'bb' cannot be resolved via PATH"
+grep -qi "bb" "$ROOT/bb-missing-err.txt" || fail "BL-366: expected a clear error naming 'bb'; got: $(cat "$ROOT/bb-missing-err.txt")"
+pass "BL-366: generation hard-fails with a clear error when 'bb' cannot be resolved via PATH"
+
 # ── --unit= interacts correctly with an explicit output path regardless of
 #     argument order ────────────────────────────────────────────────────────
 "$GENERATOR" /home/pi/swarmforgevc pi5 pi "$ROOT/via-path-operator.service" --unit=operator
