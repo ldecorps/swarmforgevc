@@ -56,7 +56,6 @@ import {
   resolveReplyDelivery,
   relaySseReplies,
   parseNextSseRecord,
-  nextUpdateOffset,
   DEFAULT_SUBJECT_KEY,
   runPollCycle,
   applyPollCycleResult,
@@ -195,13 +194,26 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-async function postToBridge(bridgeUrl: string, controlToken: string, subjectId: string, text: string): Promise<boolean> {
-  const res = await fetch(`${bridgeUrl}/telegram-inbound`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${controlToken}`, 'x-control-token': controlToken },
-    body: JSON.stringify({ subjectId, channel: 'telegram', text }),
-  });
-  return res.ok;
+// BL-369 (bug #2 + "the bridge cannot be reached"): a network-level failure
+// (bridge unreachable, connection reset) makes fetch() itself REJECT, not
+// merely return a non-ok response - previously uncaught here, which would
+// have propagated out of processUpdate and aborted the WHOLE poll cycle's
+// remaining updates uncontrolled. Caught and turned into a plain `false`,
+// matching every other adapter in this codebase's own "never throw, return
+// a result" convention (telegramClient.ts's callTelegramApi is the
+// established shape). updateId rides the body as the bridge's own
+// idempotency key for a redelivered message (scenario 03).
+async function postToBridge(bridgeUrl: string, controlToken: string, subjectId: string, text: string, updateId: number): Promise<boolean> {
+  try {
+    const res = await fetch(`${bridgeUrl}/telegram-inbound`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${controlToken}`, 'x-control-token': controlToken },
+      body: JSON.stringify({ subjectId, channel: 'telegram', text, updateId }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 // BL-294: allocates a fresh SUP-### via the support store CLI (the
@@ -271,12 +283,11 @@ async function openSubjectAndRecord(targetPath: string, topicId: number | undefi
 function buildPollAdapters(botToken: string, targetPath: string, bridgeUrl: string, controlToken: string): PollAdapters {
   return {
     getUpdates: (offset) => getTelegramUpdates(botToken, offset, POLL_TIMEOUT_SECONDS),
-    postToBridge: (subjectId, text) => postToBridge(bridgeUrl, controlToken, subjectId, text),
+    postToBridge: (subjectId, text, updateId) => postToBridge(bridgeUrl, controlToken, subjectId, text, updateId),
     subjectForTopic: (topicId) => subjectForTopic(readTopicMap(targetPath), topicId),
     openSubjectAndRecord: (topicId, text) => openSubjectAndRecord(targetPath, topicId, text),
     backlogForTopic: (topicId) => backlogForTopic(readBacklogTopicMap(targetPath), topicId),
     postOperatorContext: (backlogId, text) => postOperatorContext(targetPath, backlogId, text),
-    nextOffset: nextUpdateOffset,
   };
 }
 
@@ -286,19 +297,36 @@ function buildPollAdapters(botToken: string, targetPath: string, bridgeUrl: stri
 // warning after DEGRADED_THRESHOLD consecutive failures but keeps
 // retrying forever at the capped cadence - a chat bot must self-recover
 // when the network returns, never go permanently offline.
-const POLL_BACKOFF_CONFIG = { backoffBaseMs: 2000, backoffMaxMs: 60_000, degradedThreshold: 5 };
+// BL-369: stuckRetryLimit is measured in CYCLES, not attempts-with-backoff -
+// each poll cycle is itself a full retry of the still-undelivered update
+// (its offset never advanced), paced by the long-poll's own cadence.
+const POLL_BACKOFF_CONFIG = { backoffBaseMs: 2000, backoffMaxMs: 60_000, degradedThreshold: 5, stuckRetryLimit: 5 };
+
+// BL-369 (scenario 05): "the failure is escalated to the human" - sent
+// DIRECTLY via Telegram (never through the bridge, which is presumptively
+// the broken half when this fires) straight to the main chat, since the
+// stuck update's own topic/subject may not even be resolvable yet (that
+// resolution is exactly what keeps failing).
+async function escalateStuckDelivery(botToken: string, chatId: string): Promise<void> {
+  await sendTelegramMessage(
+    botToken,
+    chatId,
+    "front-desk bot: a message could not be delivered after repeated attempts (the bridge may be unreachable). It has NOT been dropped - delivery will resume automatically once the underlying issue clears."
+  );
+}
 
 // Polls forever, one batch at a time - every decision (post/open/route,
-// AND now the backoff/warning decision) goes through runPollCycle
-// (adapter-injected, unit-tested); this loop only owns the timing (the
-// actual sleep call) and the stderr write for a degraded warning.
-async function pollLoop(botToken: string, principalUserId: string, targetPath: string, bridgeUrl: string, controlToken: string): Promise<void> {
+// AND now the backoff/warning/escalation decision) goes through
+// runPollCycle (adapter-injected, unit-tested); this loop only owns the
+// timing (the actual sleep call) and the stderr write for a degraded
+// warning.
+async function pollLoop(botToken: string, principalUserId: string, targetPath: string, bridgeUrl: string, controlToken: string, chatId: string): Promise<void> {
   const adapters = buildPollAdapters(botToken, targetPath, bridgeUrl, controlToken);
-  let state: PollLoopState = { offset: 0, consecutiveFailures: 0 };
+  let state: PollLoopState = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 };
   for (;;) {
     const cycle = await runPollCycle(state, principalUserId, adapters, POLL_BACKOFF_CONFIG);
     state = cycle.state;
-    await applyPollCycleResult(cycle, (message) => process.stderr.write(message), sleep);
+    await applyPollCycleResult(cycle, (message) => process.stderr.write(message), sleep, () => escalateStuckDelivery(botToken, chatId));
   }
 }
 
@@ -387,7 +415,11 @@ async function connectAndRelayReplies(
 // that can actually replay - the outer runContainedLoop restart alone
 // would lose seenIds and read a fresh empty buffer with no memory of what
 // was already relayed.
-const REPLY_RECONNECT_BACKOFF_CONFIG: PollBackoffConfig = { backoffBaseMs: 2000, backoffMaxMs: 60_000, degradedThreshold: 5 };
+// stuckRetryLimit is unused here (only runPollCycle's own stuck-delivery
+// tracking reads it) - present only because PollBackoffConfig is shared
+// between the two loop shapes; this loop has no analogous "stuck on one
+// message" concept.
+const REPLY_RECONNECT_BACKOFF_CONFIG: PollBackoffConfig = { backoffBaseMs: 2000, backoffMaxMs: 60_000, degradedThreshold: 5, stuckRetryLimit: 5 };
 
 // Split out of subscribeReplies below so its own for(;;) stays a bare
 // two-statement loop (cleaner review: the inline try/catch here previously
@@ -675,7 +707,7 @@ export async function main(): Promise<void> {
   // reportFatalAndExit would then process.exit(1) - tearing down the other
   // two loops even though nothing was wrong with them.
   await Promise.all([
-    runContainedLoop('poll', () => pollLoop(botToken, principalUserId, targetPath, bridgeUrl, controlToken), sleep, LOOP_RESTART_DELAY_MS, logLoopFault),
+    runContainedLoop('poll', () => pollLoop(botToken, principalUserId, targetPath, bridgeUrl, controlToken, chatId), sleep, LOOP_RESTART_DELAY_MS, logLoopFault),
     runContainedLoop(
       'reply-relay',
       () => subscribeReplies(botToken, chatId, targetPath, bridgeUrl, bridgeToken, controlToken),

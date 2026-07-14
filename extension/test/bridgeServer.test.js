@@ -279,8 +279,13 @@ function readThreadFixture(targetPath, id) {
 }
 
 function readEventsFixture(targetPath) {
-  return fs
-    .readFileSync(path.join(targetPath, '.swarmforge', 'operator', 'events.jsonl'), 'utf8')
+  let content;
+  try {
+    content = fs.readFileSync(path.join(targetPath, '.swarmforge', 'operator', 'events.jsonl'), 'utf8');
+  } catch {
+    return []; // never written yet - a legitimate state (e.g. every enqueue attempt so far failed)
+  }
+  return content
     .trim()
     .split('\n')
     .filter(Boolean)
@@ -357,6 +362,97 @@ test('the inbound POST completes without waiting on any Operator reply (async, n
     // did not (and structurally cannot) depend on one existing.
     assert.equal(fs.existsSync(path.join(target, '.swarmforge', 'operator', 'telegram-reply-outbox.jsonl')), false);
   });
+});
+
+// --- BL-369: idempotent ingest + a real induced failure never hangs or
+//     silently succeeds ---
+
+test('BL-369 no-inbound-message-is-ever-lost-03: redelivering the SAME updateId is a no-op - one transcript line, one queued event', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const first = await postTelegramInbound(handle.port, controlAuthHeaders(), { subjectId: 'SUP-1', channel: 'telegram', text: 'hi', updateId: 42 });
+    assert.equal(first.status, 200);
+    const second = await postTelegramInbound(handle.port, controlAuthHeaders(), { subjectId: 'SUP-1', channel: 'telegram', text: 'hi', updateId: 42 });
+    assert.equal(second.status, 200);
+
+    const thread = readThreadFixture(target, 'SUP-1');
+    assert.equal(thread.messages.length, 1, 'expected exactly one transcript line despite two POSTs with the same updateId');
+
+    const events = readEventsFixture(target);
+    assert.equal(
+      events.filter((e) => e.type === 'TELEGRAM_TOPIC_MESSAGE' && e.subject === 'SUP-1').length,
+      1,
+      'expected exactly one queued wake despite two POSTs with the same updateId'
+    );
+  });
+});
+
+test('BL-369: a DIFFERENT updateId on the same subject is a genuinely new message, never deduped against the first', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    await postTelegramInbound(handle.port, controlAuthHeaders(), { subjectId: 'SUP-1', channel: 'telegram', text: 'first', updateId: 1 });
+    await postTelegramInbound(handle.port, controlAuthHeaders(), { subjectId: 'SUP-1', channel: 'telegram', text: 'second', updateId: 2 });
+    const thread = readThreadFixture(target, 'SUP-1');
+    assert.equal(thread.messages.length, 2);
+  });
+});
+
+test('BL-369: a request with no updateId at all still ingests exactly as before (no dedup key, no regression)', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await postTelegramInbound(handle.port, controlAuthHeaders(), { subjectId: 'SUP-1', channel: 'telegram', text: 'hi' });
+    assert.equal(res.status, 200);
+    const thread = readThreadFixture(target, 'SUP-1');
+    assert.equal(thread.messages.length, 1);
+    assert.equal(Object.prototype.hasOwnProperty.call(thread.messages[0], 'updateId'), false);
+  });
+});
+
+// BL-369 no-inbound-message-is-ever-lost-02: a REAL induced failure (never
+// mocked) - the events.jsonl lock directory is pre-held by "another
+// process" (BL-369's own new cross-process lock, see operatorEventQueue.ts),
+// so the enqueue step genuinely throws (a real bounded lock timeout, driven
+// fast via the SAME env override the lock itself defines).
+test('BL-369 no-inbound-message-is-ever-lost-02 (the event cannot be queued): a real enqueue failure is reported as failure, the transcript is left usable, and a retry succeeds without duplicating it', async () => {
+  const target = mkTmp();
+  const priorMaxWait = process.env.OPERATOR_EVENTS_LOCK_MAX_WAIT_MS;
+  const priorRetryDelay = process.env.OPERATOR_EVENTS_LOCK_RETRY_DELAY_MS;
+  process.env.OPERATOR_EVENTS_LOCK_MAX_WAIT_MS = '30';
+  process.env.OPERATOR_EVENTS_LOCK_RETRY_DELAY_MS = '5';
+  try {
+    await withBridge(target, {}, async (handle) => {
+      const lockDir = path.join(target, '.swarmforge', 'operator', 'events.jsonl.lock');
+      mkdirp(lockDir); // simulate operator_runtime.bb genuinely holding the lock
+
+      const failed = await postTelegramInbound(handle.port, controlAuthHeaders(), { subjectId: 'SUP-1', channel: 'telegram', text: 'hi', updateId: 7 });
+      assert.equal(failed.status, 500);
+      assert.equal((await failed.json()).success, false);
+
+      // The transcript write happened (that step never touches the lock),
+      // but the message must not be treated as received - never queued.
+      const thread = readThreadFixture(target, 'SUP-1');
+      assert.equal(thread.messages.length, 1);
+      assert.equal(thread.messages[0].eventQueued, undefined);
+      assert.equal(readEventsFixture(target).length, 0, 'expected nothing queued while the lock was held');
+
+      fs.rmdirSync(lockDir); // the "other process" releases it
+
+      const retried = await postTelegramInbound(handle.port, controlAuthHeaders(), { subjectId: 'SUP-1', channel: 'telegram', text: 'hi', updateId: 7 });
+      assert.equal(retried.status, 200);
+      const threadAfterRetry = readThreadFixture(target, 'SUP-1');
+      assert.equal(threadAfterRetry.messages.length, 1, 'expected the retry to re-attempt ONLY the enqueue, never a second transcript line');
+      assert.equal(
+        readEventsFixture(target).filter((e) => e.type === 'TELEGRAM_TOPIC_MESSAGE').length,
+        1,
+        'expected exactly one queued wake once the retry succeeded'
+      );
+    });
+  } finally {
+    if (priorMaxWait === undefined) delete process.env.OPERATOR_EVENTS_LOCK_MAX_WAIT_MS;
+    else process.env.OPERATOR_EVENTS_LOCK_MAX_WAIT_MS = priorMaxWait;
+    if (priorRetryDelay === undefined) delete process.env.OPERATOR_EVENTS_LOCK_RETRY_DELAY_MS;
+    else process.env.OPERATOR_EVENTS_LOCK_RETRY_DELAY_MS = priorRetryDelay;
+  }
 });
 
 // --- BL-281 telegram-topic-03: the Operator's reply relays out over SSE ---
