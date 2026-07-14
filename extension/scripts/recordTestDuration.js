@@ -2,15 +2,28 @@
 // BL-078: wraps the real unit-test run to append one duration record per
 // completed run (pass or fail), so suite-duration creep is visible in the
 // METRICS pane/CLI before it throttles the whole pipeline (BL-060 lesson).
-// Recording never changes the suite's own stdout/stderr or exit code:
-// stdio is inherited untouched and the child's exit code is passed through
-// unconditionally, even when appending the record itself fails.
+// Vitest's own stdout/stderr stays inherited and byte-for-byte identical
+// to a bare `vitest run` (one extra "JSON report written to..." line from
+// BL-378's own reporter below - nothing parses this script's stdout, only
+// humans/CI logs read it).
+//
+// BL-378: ALSO runs the per-file duration budget guard against this same
+// run's own JSON reporter output, so a single test file quietly becoming
+// the suite's next wall-clock pole fails this script's exit code even
+// when every individual test in it still passes (the whole-suite trend
+// this script already records cannot see a single-file regression - see
+// check-suite-file-budget.ts). The guard runs whenever the report file
+// was written, including after a genuine test FAILURE (a file already
+// over budget is worth reporting alongside a failing test, not hidden
+// behind it) - a real test failure's own exit code still wins if both
+// occur, since that is the more urgent signal.
 //
 // test_count is the number of test FILES executed, not individual test()
 // cases - a stable, cheap proxy. Counting individual cases would mean
 // intercepting the child's TAP stdout instead of inheriting it directly,
 // which risks altering the byte-for-byte console output existing consumers
 // (CI logs, the coverage/crap scripts) rely on.
+const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { listTestFiles, buildRecord, appendRecord } = require('./testDurationRecorderLib');
@@ -18,6 +31,8 @@ const { listTestFiles, buildRecord, appendRecord } = require('./testDurationReco
 const ROOT_DIR = path.join(__dirname, '..');
 const TEST_DIR = path.join(ROOT_DIR, 'test');
 const LOG_PATH = path.join(ROOT_DIR, '.test-durations.jsonl');
+const REPORT_PATH = path.join(ROOT_DIR, '.vitest-report.json');
+const BUDGET_GUARD_CLI = path.join(ROOT_DIR, 'out', 'tools', 'check-suite-file-budget.js');
 
 function main() {
   const testFiles = listTestFiles(TEST_DIR).map((f) => path.join('test', f));
@@ -26,24 +41,27 @@ function main() {
   // files — they use Vitest globals). Vitest discovers files from its config
   // include, so no file list is passed; testCount below still counts files.
   const vitestBin = path.join(ROOT_DIR, 'node_modules', '.bin', 'vitest');
-  const result = spawnSync(vitestBin, ['run'], {
+  const result = spawnSync(vitestBin, ['run', '--reporter=default', '--reporter=json', `--outputFile=${REPORT_PATH}`], {
     stdio: 'inherit',
     cwd: ROOT_DIR,
   });
   const durationMs = Date.now() - startedAt;
-  const exitCode = result.status === null ? 1 : result.status;
+  const testExitCode = result.status === null ? 1 : result.status;
 
   appendRecord(
     LOG_PATH,
     buildRecord({
       finishedAt: new Date().toISOString(),
       testCount: testFiles.length,
-      exitCode,
+      exitCode: testExitCode,
       durationMs,
     })
   );
 
-  process.exit(exitCode);
+  const guardResult = fs.existsSync(REPORT_PATH) ? spawnSync('node', [BUDGET_GUARD_CLI, REPORT_PATH], { stdio: 'inherit', cwd: ROOT_DIR }) : null;
+  const guardExitCode = guardResult && guardResult.status !== null ? guardResult.status : 0;
+
+  process.exit(testExitCode !== 0 ? testExitCode : guardExitCode);
 }
 
 main();
