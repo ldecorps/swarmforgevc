@@ -156,6 +156,81 @@
   (assert= "supervisor-recovery-02 [elapsed]: gave-up-at-ms is cleared" nil (:gave-up-at-ms entry))
   (assert= "gave-up -> running (re-arm) emits :re-armed" :re-armed event))
 
+;; ── BL-370: poll-heartbeat-stale? (pure) ─────────────────────────────────
+
+(assert= "front-desk-liveness-01: a heartbeat older than the stall window is stale"
+         true
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 92000 90000))
+
+(assert= "front-desk-liveness-01: exactly AT the stall window boundary is stale (inclusive)"
+         true
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 91000 90000))
+
+(assert= "front-desk-liveness-02: a heartbeat just inside the stall window is NOT stale"
+         false
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 90999 90000))
+
+(assert= "a bot that never wrote a heartbeat at all is stale (nil counts as stale)"
+         true
+         (front-desk-supervisor-lib/poll-heartbeat-stale? nil 90000 90000))
+
+;; ── BL-370: check-one! extended with heartbeat-stale? ────────────────────
+
+;; front-desk-liveness-01: running + pid alive + heartbeat stale -> "stalled",
+;; never silently folded into an ordinary crash.
+(let [running-entry {:pid 4242 :attempts 1 :status "running" :crashed-at-ms nil :started-at-ms 1000 :gave-up-at-ms nil}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one! running-entry 5000 alive? fixed-pid! healthy-cfg giveup-cfg true)]
+  (assert= "a stale heartbeat on a live pid transitions running -> stalled" "stalled" (:status entry))
+  (assert= "the stall is timestamped at detection time" 5000 (:crashed-at-ms entry))
+  (assert= "running -> stalled emits :stalled (never :crashed)" :stalled event))
+
+;; front-desk-liveness-02: running + pid alive + heartbeat FRESH -> unchanged,
+;; even with an otherwise-eligible healthy-reset window - the false-positive
+;; guard, proven at the check-one! layer too.
+(let [running-entry {:pid 4242 :attempts 1 :status "running" :crashed-at-ms nil :started-at-ms 1000 :gave-up-at-ms nil}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one! running-entry 5000 alive? fixed-pid! healthy-cfg giveup-cfg false)]
+  (assert= "a fresh heartbeat never reads as stalled" "running" (:status entry))
+  (assert= "a fresh heartbeat: no event" nil event))
+
+;; front-desk-liveness-03: "stalled" reuses the EXACT SAME bounded-backoff/
+;; restart clause "waiting" already has.
+(let [stalled-entry {:pid nil :attempts 1 :status "stalled" :crashed-at-ms 5000 :started-at-ms 1000 :gave-up-at-ms nil}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one! stalled-entry 6001 dead? fixed-pid! healthy-cfg giveup-cfg)]
+  (assert= "backoff due: a stalled entry restarts just like a crashed one" "running" (:status entry))
+  (assert= "the restarted entry's attempts increments" 2 (:attempts entry))
+  (assert= "stalled -> running (restart) emits :started" :started event))
+
+;; front-desk-liveness-04: a repeated stall at the cap still gives up (bound holds).
+(let [stalled-entry {:pid nil :attempts 5 :status "stalled" :crashed-at-ms 5000 :started-at-ms 1000 :gave-up-at-ms nil}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one! stalled-entry 999999 dead? fixed-pid! healthy-cfg giveup-cfg)]
+  (assert= "a repeated stall at the cap reaches gave-up (bound holds)" "gave-up" (:status entry))
+  (assert= "stalled -> gave-up emits :gave-up" :gave-up event))
+
+;; pre-existing callers (6-arg form) are unaffected - heartbeat-stale?
+;; defaults to false.
+(let [running-entry {:pid 4242 :attempts 1 :status "running" :crashed-at-ms nil :started-at-ms 1000 :gave-up-at-ms nil}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one! running-entry 5000 alive? fixed-pid! healthy-cfg giveup-cfg)]
+  (assert= "the 6-arg form (no heartbeat-stale? arg) never reports stalled" "running" (:status entry))
+  (assert= "the 6-arg form: no event" nil event))
+
+;; hardener (BL-370): heartbeat-stale? and healthy-long-enough? are BOTH
+;; eligible at once - a bot healthy well past the reset window (399000ms
+;; since started-at-ms, past healthy-cfg's 300000ms) that then goes stale.
+;; The two prior tests above only ever exercise one condition at a time
+;; (supervisor-recovery-01 with heartbeat-stale? defaulted false; the
+;; running-entry stale test at attempts=1/started-at-ms=1000/now=5000,
+;; nowhere near the reset window) - a cond-order swap between the
+;; heartbeat-stale? and healthy-long-enough? branches would pass both,
+;; undetected. heartbeat-stale? must win: :status "stalled", attempts left
+;; UNTOUCHED (never silently reset to 0, which would erase the bounded-
+;; restart escalation clock for a bot that only *looked* healthy).
+(let [running-entry {:pid 4242 :attempts 3 :status "running" :crashed-at-ms nil :started-at-ms 1000 :gave-up-at-ms nil}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one! running-entry 400000 alive? fixed-pid! healthy-cfg giveup-cfg true)]
+  (assert= "stale-while-also-past-the-healthy-window: status is stalled, not silently healthy-reset" "stalled" (:status entry))
+  (assert= "stale-while-also-past-the-healthy-window: attempts is untouched, not reset to 0" 3 (:attempts entry))
+  (assert= "stale-while-also-past-the-healthy-window: the stall is timestamped at detection time" 400000 (:crashed-at-ms entry))
+  (assert= "stale-while-also-past-the-healthy-window emits :stalled, never :healthy-reset" :stalled event))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do

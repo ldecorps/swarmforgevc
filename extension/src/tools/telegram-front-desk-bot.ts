@@ -81,6 +81,7 @@ import { computeCurrentHolders } from '../bridge/holisticProjections';
 import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
 import { parseRolesTsv } from '../swarm/swarmState';
 import { runCliMain } from './swarm-metrics';
+import { atomicWrite } from '../util/atomicWrite';
 
 const execFileAsync = promisify(execFile);
 
@@ -93,6 +94,18 @@ const POLL_TIMEOUT_SECONDS = 25;
 
 function topicMapPath(targetPath: string): string {
   return path.join(targetPath, '.swarmforge', 'operator', 'telegram-topic-map.json');
+}
+
+// BL-370: front_desk_supervisor.bb reads this SAME file/shape (a plain
+// {lastHeartbeatMs} JSON) to decide whether the poll loop is still
+// listening - "is there a pid" is not proof of that, only a completed
+// poll cycle is.
+function frontDeskPollHeartbeatPath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'front-desk-poll-heartbeat.json');
+}
+
+function writeFrontDeskPollHeartbeat(targetPath: string): void {
+  atomicWrite(frontDeskPollHeartbeatPath(targetPath), JSON.stringify({ lastHeartbeatMs: Date.now() }));
 }
 
 // {topicId: subjectId} - bot-owned, machine-local (gitignored under
@@ -318,15 +331,22 @@ async function escalateStuckDelivery(botToken: string, chatId: string): Promise<
 // Polls forever, one batch at a time - every decision (post/open/route,
 // AND now the backoff/warning/escalation decision) goes through
 // runPollCycle (adapter-injected, unit-tested); this loop only owns the
-// timing (the actual sleep call) and the stderr write for a degraded
-// warning.
+// timing (the actual sleep call), the stderr write for a degraded
+// warning, and (BL-370) the poll-heartbeat write - written on every
+// completed cycle, success or handled failure alike.
 async function pollLoop(botToken: string, principalUserId: string, targetPath: string, bridgeUrl: string, controlToken: string, chatId: string): Promise<void> {
   const adapters = buildPollAdapters(botToken, targetPath, bridgeUrl, controlToken);
   let state: PollLoopState = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 };
   for (;;) {
     const cycle = await runPollCycle(state, principalUserId, adapters, POLL_BACKOFF_CONFIG);
     state = cycle.state;
-    await applyPollCycleResult(cycle, (message) => process.stderr.write(message), sleep, () => escalateStuckDelivery(botToken, chatId));
+    await applyPollCycleResult(
+      cycle,
+      (message) => process.stderr.write(message),
+      sleep,
+      () => escalateStuckDelivery(botToken, chatId),
+      () => writeFrontDeskPollHeartbeat(targetPath)
+    );
   }
 }
 
