@@ -15,6 +15,38 @@
   (when (not= expected actual)
     (swap! failures conj (str "FAIL: " msg "\n  expected: " (pr-str expected) "\n  actual:   " (pr-str actual)))))
 
+;; ── parse-hex ─────────────────────────────────────────────────────────────
+;; check_swarm_detached.bb feeds this both /proc/<pid>/status's SigIgn field
+;; (no 0x prefix) and macOS/BSD's `ps -o sigignore=` output (format
+;; unverified on a real macOS host in this environment - see
+;; swarm_detach_lib.bb's header) - cover both shapes plus the "process
+;; already gone" blank/nil case so this pure parsing step is unit-test-blind
+;; no longer, even though the shell-outs around it still aren't.
+
+(assert= "a bare hex string with no 0x prefix (the /proc/<pid>/status SigIgn shape)"
+         0x7
+         (swarm-detach-lib/parse-hex "7"))
+
+(assert= "a 0x-prefixed hex string (a plausible ps -o sigignore= shape)"
+         0x7
+         (swarm-detach-lib/parse-hex "0x7"))
+
+(assert= "an uppercase 0X prefix is accepted the same way"
+         0x7
+         (swarm-detach-lib/parse-hex "0X7"))
+
+(assert= "surrounding whitespace (a raw ps/cat field) is trimmed before parsing"
+         0x6
+         (swarm-detach-lib/parse-hex "  6\n"))
+
+(assert= "a blank string (the field was empty) parses to nil, never raises"
+         nil
+         (swarm-detach-lib/parse-hex ""))
+
+(assert= "nil input (the process vanished before it could be read) parses to nil, never raises"
+         nil
+         (swarm-detach-lib/parse-hex nil))
+
 ;; ── sighup-ignored? ───────────────────────────────────────────────────────
 ;; Real observed masks from this session: `sleep 30 &` (no nohup) shows
 ;; SigIgn=0x6 (bit 0 clear); `nohup sleep 30 >/dev/null 2>&1 &` shows
