@@ -460,6 +460,12 @@ test('normalizeBenchmarkReport passes null through unchanged (no report ever com
   assert.equal(normalizeBenchmarkReport(null), null);
 });
 
+test('normalizeBenchmarkReport defaults taskIds to an empty array when a legacy report carries neither taskId nor taskIds', () => {
+  const report = legacyBenchmarkReportJson();
+  delete report.taskId;
+  assert.deepEqual(normalizeBenchmarkReport(report).taskIds, []);
+});
+
 test('computeBacklogDashboard normalizes a legacy-shape committed report instead of crashing downstream readers (BL-386 architect bounce)', () => {
   const repo = mkTmp();
   mkdirp(path.join(repo, 'backlog', 'active'));
