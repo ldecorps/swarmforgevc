@@ -151,7 +151,26 @@ function registerSteps(registry) {
   });
 
   // ── swarm-socket-not-in-tmp-02 ───────────────────────────────────────────
+  // "the swarm is running" is ALSO registered by alwaysOnOperatorPresenceSteps.js
+  // (BL-359) as its own Background, with identical literal text - the
+  // registry resolves by first-registration-wins over the whole GLOBAL step
+  // namespace (specs/pipeline/stepRegistry.js), and this file is registered
+  // first in index.js, so THIS handler - not BL-359's narrative no-op -
+  // resolves for every one of BL-359's own scenarios too. Unlike the
+  // "the swarm launches" precedent (coordinatorProviderConfigurableSteps.js),
+  // this handler's real work is not harmless dead code for the shadowed
+  // caller: it spawns resolve_swarm_socket.bb against ctx.projectRoot/
+  // ctx.hash, which BL-359 never sets, and binding a real socket that
+  // nothing then closes hangs the whole acceptance run. ctx.projectRoot is
+  // only ever set by THIS feature's own Background ("the swarm is launched
+  // with a tmux control socket"), which always runs first for this
+  // scenario - its absence means we're resolving as BL-359's inert
+  // Background instead, so no-op exactly like BL-359 intended (same guard
+  // shape as assertStillControllable's BL-372 collision below).
   registry.define(/^the swarm is running$/, async (ctx) => {
+    if (!ctx.projectRoot) {
+      return;
+    }
     ctx.resolveResult = resolveSocket(ctx.projectRoot, ctx.hash, '/run/user/99999-unused');
     if (!ctx.resolveResult.ok) {
       throw new Error(`expected resolve_swarm_socket.bb to succeed, got: ${ctx.resolveResult.stderr}`);

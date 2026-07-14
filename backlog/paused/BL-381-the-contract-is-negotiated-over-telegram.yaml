@@ -1,0 +1,63 @@
+id: BL-381
+title: "The onboarding contract's back-and-forth happens over Telegram, not only over files and the CLI"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+priority: 5
+direction: human-requested
+depends_on: [BL-380]
+source: "backlog/INTAKE-telegram-provisioning-in-onboarding-and-verbosity.md (Ask 1, step 3) — the human, 2026-07-14 in SUP-2: 'set up a new telegram group and everything to carry out the back and forth contract negotiation'"
+
+notes: |
+  WHAT ALREADY WORKS — DO NOT REBUILD IT. Three of the four pieces exist and are live:
+  (1) the negotiation rounds themselves — BL-344's `extension/src/onboarding/contractNegotiation.ts`,
+  with an append-only durable record in `negotiationLog.ts`;
+  (2) the contract and its states — `contractTypes.ts` (`agreement: agreed | proposed | pending`);
+  (3) a human's reply in a Telegram topic reaching the swarm — BL-325's human-in-the-loop loop,
+  live today (the BL-295 concierge routing plus the front desk's reply relay).
+  BL-380 mints the negotiation topic. This ticket is the WIRING slice that joins them: post the
+  contract into that topic, take the human's objection FROM that topic, feed it to the rounds that
+  already exist, and post the revision back. Do not write a second negotiation engine, a second
+  durable log, or a second Telegram client.
+
+  THIS IS THE EPIC'S WIRING TICKET — the engineering article's rule about it applies directly. An
+  emit -> route -> consume epic whose slices are pure modules stays DARK until something calls
+  them on a real trigger. BL-380 provisions and BL-344 reasons; without this ticket neither can
+  ever fire over Telegram. Treat "the loop actually ran end to end against a live group" as the
+  bar, not "the module returns the right value".
+
+  PROVE THE LOOP, NOT THE LEGS. Scenario 02 is the point of the ticket, and it is a Scenario
+  Outline for exactly that reason: the ROUND COUNT is the parameter, and two rounds must work as
+  readily as one. A build that posts a proposal, accepts one objection, and stops is not a
+  negotiation — it is a form. (This is the same failure BL-325 was reshaped to avoid: ship and
+  prove the LOOP.) Bind the `<rounds>` column through an explicit KNOWN_VALUES lookup and fail on
+  anything outside it, per the engineering article — a bare passthrough lets a mutated round count
+  survive to the hardener instead of failing the scenario.
+
+  SCOPE. The inbound half rides the guard from BL-379 and the topic from BL-380 — a message in the
+  target's negotiation topic, from the authorized human, in the right chat. Route it to the
+  existing rounds; append every round to the existing negotiation log (scenario 04 asserts the
+  record, which is what makes the negotiation survive a restart). The human's agreement in the
+  topic flips the contract to `agreed`, which is what the existing build-start gate
+  (`buildStartGate.ts`) already reads — say plainly in the build which writer owns that flip, and
+  make sure it is a REAL writer, not an assumed sibling slice.
+
+  E2E QA PROCEDURE: onboard a target through BL-380 so it has a live group and negotiation topic.
+  Assert the proposed contract appears in that topic. Object to it from the phone; assert a
+  REVISED contract comes back into the same topic. Object to the revision; assert a further
+  revision comes back — this is the loop and it is the acceptance bar. Restart the swarm and
+  assert every round is still in the target's negotiation record. Finally agree in the topic, and
+  assert the contract flips to agreed and the build-start gate opens.
+
+acceptance:
+  feature: specs/features/BL-381-the-contract-is-negotiated-over-telegram.feature
+  steps:
+    - "The proposed contract is put in front of the human"
+    - "The negotiation runs for as many rounds as the human needs"
+    - "Every round survives a restart"
+    - "The human's agreement in the topic settles the contract"
+
+human_approval: pending
+
+mutation_cost: medium
