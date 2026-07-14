@@ -550,12 +550,23 @@ function buildReconcileAdapters(targetPath: string, routeAdapters: ConciergeTick
   };
 }
 
+// BL-330 hardening: the one-tick body pulled out of tickLoop's own for(;;)
+// so the wiring between the diff path (runConciergeTick) and the
+// reconciliation safety net (reconcileTopicLifecycle) is unit-testable
+// in-process, not only reachable by running the live infinite loop. Before
+// this split, a wrong argument here (e.g. reconciling folders.active
+// instead of folders.done, or the wrong adapters object) had zero test
+// coverage - tickLoop itself is never invoked by any test.
+export async function runOneConciergeTick(adapters: ConciergeTickAdapters, reconcileAdapters: ReconcileAdapters): Promise<void> {
+  await runConciergeTick(adapters);
+  await reconcileTopicLifecycle(adapters.readFolders().done, reconcileAdapters);
+}
+
 async function tickLoop(targetPath: string, botToken: string, chatId: string, intervalMs: number): Promise<void> {
   const adapters = buildConciergeTickAdapters(targetPath, botToken, chatId);
   const reconcileAdapters = buildReconcileAdapters(targetPath, adapters.routeAdapters);
   for (;;) {
-    await runConciergeTick(adapters);
-    await reconcileTopicLifecycle(adapters.readFolders().done, reconcileAdapters);
+    await runOneConciergeTick(adapters, reconcileAdapters);
     await sleep(intervalMs);
   }
 }
