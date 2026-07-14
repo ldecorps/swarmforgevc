@@ -41,7 +41,7 @@ Scenario: A message arriving while the queue is being claimed is still owned
 # BL-369 no-inbound-message-is-ever-lost-02
 Scenario Outline: A message the front desk could not durably accept is redelivered, never skipped
   Given the front desk cannot durably accept an inbound message because <failure>
-  When the human sends a message
+  When the human's message is sent
   Then the front desk does not treat that message as received
   And the message is delivered again once the failure clears
   And an Operator is woken for that message
