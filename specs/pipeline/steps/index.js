@@ -149,6 +149,7 @@ const DOMAINS = [
   require('./untaggedGateReachesHumanSteps'),
   require('./roleBenchmarkHarnessSteps'),
   require('./replyReturnsToAskingThreadSteps'),
+  require('./pushSweepSteps'),
 ];
 
 function registerSteps(registry) {
