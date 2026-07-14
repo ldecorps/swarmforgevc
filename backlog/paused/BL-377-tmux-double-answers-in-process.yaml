@@ -1,0 +1,114 @@
+id: BL-377
+title: "The fake tmux is a real executable on PATH, so every tmux call in a test is a process spawn"
+milestone: M8
+type: chore
+status: todo
+severity: medium
+priority: 5
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-split-the-three-test-suite-poles.md — the human via Telegram SUP-2, 2026-07-14 07:12Z, verbatim: 'Splt the poles'. Slice 3 of 4 (with BL-375, BL-376, BL-378). Scope confirmed with the human 2026-07-14: root-cause all three poles rather than split mechanically."
+
+notes: |
+  ⚠ NOT THE TICKET THE INTAKE THOUGHT IT WAS, EITHER. The intake listed `paneTailerClass`
+  (9.8s) as a long pole with a presumed "serial boot in one file" shape, and asked the
+  specifier to verify rather than assume. Verified: it is neither that, nor real timers —
+  BL-362 ALREADY replaced paneTailer's real setInterval with an injected fake tick, and the
+  file's own comments say so. The cost is somewhere else entirely, and it is shared.
+
+  THE GAP, VERIFIED. `extension/test/helpers/fakeTmux.js` installs a REAL Node executable
+  (`FAKE_TMUX_SCRIPT`, a `#!/usr/bin/env node` script) into a temp dir and prepends that dir
+  to `process.env.PATH`. So every tmux call the code under test makes is a genuine
+  child-process spawn — a Node boot, ~30-50ms — that reads a rules JSON file off disk and
+  appends to a log file off disk. A single PaneTailer poll makes 3-4 tmux calls
+  (has-session, capture-pane, display-message, ...), and the tests poll repeatedly. Measured:
+  ~10 paneTailer tests at 190-330ms each, which is the file's 9.8s.
+
+  ⚠ THE WIN IS BIGGER THAN THE TWO POLES. ELEVEN test files install this fake:
+  resourceSamplerActivation, effortDial, bridgeServer, sampleResourcesCli, fitTilePaneToHeight,
+  paneTailerClass, swarmLauncher, backendSwitch, tmuxClient, stop. They all pay the spawn tax.
+  This is why the human chose to root-cause rather than split: a split would have parallelised
+  the spawning and bought nothing for the other 8 files.
+
+  THIS IS NOT "MOCKING IT AWAY". The BL-259 constraint in the intake — do not mock the real
+  dependency-cruiser — is specific to BL-375's cruiser and does not generalise here. tmux IS
+  the environmentally-unsuitable boundary (local-engineering: "live tmux/PTY interaction"), and
+  the engineering rules already say prefer test doubles over real collaborators, always, not as
+  a fallback. An in-process double is BOTH faster AND more compliant than a spawned one. What
+  must not change is the FIDELITY: same rules format, same argv call log, same mid-test rule
+  replacement (scenarios 01-03).
+
+  ⚠ ONE CASE GENUINELY CANNOT USE THE IN-PROCESS DOUBLE — DO NOT BREAK IT. `swarmLauncher`
+  spawns the real `./swarm` script (`cp.spawn(swarmScript, ...)`, swarmLauncher.ts:50) — a
+  separate OS process, which resolves `tmux` from PATH inside ITSELF. An in-process seam cannot
+  reach into a child process. That test keeps the PATH-executable fake, and both doubles must
+  coexist, ideally driven from one shared rules format so they cannot drift. Scenario 04 pins
+  this. Check each of the 11 consumers for the same shape before converting it — the test is
+  "does the code under test spawn a child that resolves tmux itself", not "does it feel like a
+  launcher".
+
+  SCOPE. `extension/test/helpers/fakeTmux.js` (add the in-process double alongside the existing
+  PATH-executable fake), and the consumer test files converted to it. Out of scope: the other
+  two poles (BL-375, BL-376) and the regression guard (BL-378).
+
+  ⚠ SEQUENCING — THIS TICKET AND BL-376 BOTH EDIT `extension/test/tmuxClient.test.js`. Despite
+  `depends_on: []`, they are NOT orthogonal and must not run concurrently (constitution:
+  Concurrent Work Orthogonality). Coordinator: sequence these two, in either order. BL-375 is
+  orthogonal to both and may run alongside either.
+
+  NOT IN SCOPE / DO NOT ASSUME.
+    - Deleting the PATH-executable fake. It stays, for the genuine subprocess boundary
+      (scenario 04) and for `sharedBin.js`'s BL-060 hardlink optimisation, which exists for it.
+    - Converting a consumer whose code under test spawns a child process. Verify per file.
+    - Changing what any consumer test ASSERTS. This ticket changes how tmux is faked, nothing
+      else; a converted test that now asserts something different is a bounce.
+
+  IMPLEMENTATION NOTES FOR THE CODER.
+    - The in-process seam is `cp.spawnSync`, which `runCommand` (tmuxClient.ts:59) calls. Stub
+      it, serve the rules in-process, record the argv in memory. Scenario 05 pins that the seam
+      is restored exactly as found — restore it in a `finally`, never on the happy path only.
+    - Do NOT reach the double by overlaying `process.env.PATH` and hoping. The whole point is
+      that no process is spawned; scenario 01 asserts exactly that, so hold it by counting
+      spawns, not by timing.
+    - Mutation runs execute the suite inside a WORKER THREAD (Stryker's vitest-runner hardcodes
+      `pool: 'threads'`). Reach any fake cwd/HOME by STUBBING `process.cwd()` / `os.homedir()`
+      — never `process.chdir()` (throws in a worker) and never a `process.env.HOME` overlay
+      (silently ignored by `os.homedir()`, so the test writes into the developer's REAL home).
+      A green `vitest run` is not proof; this breaks only under mutation, at the hardener's gate.
+
+  IR-DRY REVIEW (done at spec time — do not relitigate). One finding, medium, DELIBERATE:
+  possible-synonym between "a test installs the in-process tmux double" (scenarios 01, 02, 05)
+  and "a test installs the in-process tmux double reporting a live session" (scenario 03). The
+  latter is a genuine SUPERSET setup — scenario 03 needs a live session to then flip dead.
+  ⚠ CODER, NOTE THE HAZARD: the shorter text is a strict PREFIX of the longer one, so a loose
+  regex on the short form will ALSO match the long one and silently drop "reporting a live
+  session", leaving scenario 03 asserting a state transition from nothing. Anchor the handlers
+  (or register the longer, more specific one first) so each matches only its own step. This is
+  the known first-registered-handler-wins trap; it has bitten this project 5x.
+
+  E2E QA PROCEDURE (live).
+    1. Run the full unit suite clean and record the profile: total wall clock, and the slowest
+       single file with its duration. Compare to the intake's 12.0s / paneTailerClass-9.8s /
+       tmuxClient-8.3s baseline and report both — the intake asks for the new profile explicitly.
+       This is the slice where the big drop should appear.
+    2. Assert all 11 fake-tmux consumer files still pass, and that the 8 non-pole ones got
+       faster too — the whole point of root-causing rather than splitting.
+    3. Assert no child process is spawned by a converted test: count spawns, do not infer from
+       timing.
+    4. Assert swarmLauncher still passes on the PATH-executable fake, i.e. the real spawned
+       ./swarm script still finds tmux. This is the one that would break silently.
+    5. With all four slices landed, confirm no single file bounds the wall clock alone — the
+       intake's actual success criterion.
+
+acceptance:
+  feature: specs/features/BL-377-tmux-double-answers-in-process.feature
+  steps:
+    - "An in-process caller's tmux call is served without spawning anything"
+    - "The double records the exact argv the code under test built"
+    - "Rules can be replaced mid-test to simulate a state change"
+    - "A genuine subprocess boundary keeps the PATH-executable fake"
+    - "The double restores whatever it replaced"
+
+human_approval: pending  # new feature file, authored 2026-07-14 — needs human review
+
+mutation_cost: medium
