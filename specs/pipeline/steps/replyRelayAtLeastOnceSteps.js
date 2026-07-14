@@ -116,7 +116,7 @@ async function connectBotOnce(port, seenIds, sentLog, ackReplyFn) {
       sendReply: async (topicId, text) => {
         sentLog.push({ topicId, text });
       },
-      topicForSubject: (subjectId) => (subjectId === SUBJECT ? TOPIC_ID : undefined),
+      resolveDelivery: (subjectId) => (subjectId === SUBJECT ? { kind: 'topic', topicId: TOPIC_ID, alsoPointerToDefault: false } : { kind: 'undeliverable' }),
       ackReply: (id) => (ackReplyFn || ((ackId) => realAck(port, ackId)))(id),
     },
     seenIds
