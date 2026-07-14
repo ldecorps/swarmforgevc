@@ -4,6 +4,8 @@ const {
   isMarkerFresh,
   filterDevHostPids,
   decideNextStep,
+  resolveVsCodeBinary,
+  buildDevHostLaunchCommand,
 } = require('../scripts/bounceLib');
 
 // --- parseMarker ---
@@ -145,4 +147,81 @@ test('the overall timeout fails at the activation stage even if a host is runnin
 test('a fresh marker wins even at the edge of the overall timeout', () => {
   const step = decideNextStep(state({ markerFresh: true, totalElapsedMs: 60000 }));
   assert.equal(step.action, 'success');
+});
+
+// --- resolveVsCodeBinary (BL-361) ---
+
+test('resolveVsCodeBinary picks the darwin default when it is executable', () => {
+  const result = resolveVsCodeBinary({
+    platform: 'darwin',
+    env: {},
+    isExecutable: (candidate) => candidate === '/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code',
+  });
+  assert.deepEqual(result, { binary: '/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code' });
+});
+
+test('resolveVsCodeBinary falls back to a bare "code" on PATH when no linux default install is found', () => {
+  const result = resolveVsCodeBinary({
+    platform: 'linux',
+    env: {},
+    isExecutable: (candidate) => candidate === 'code',
+  });
+  assert.deepEqual(result, { binary: 'code' });
+});
+
+test('resolveVsCodeBinary prefers a platform default over the bare "code" fallback when both are executable', () => {
+  const result = resolveVsCodeBinary({
+    platform: 'linux',
+    env: {},
+    isExecutable: () => true,
+  });
+  assert.notEqual(result.binary, 'code');
+});
+
+test('BL-361 scenario 05: an operator-named VSCODE_BIN override is authoritative', () => {
+  const result = resolveVsCodeBinary({
+    platform: 'linux',
+    env: { VSCODE_BIN: '/custom/code' },
+    isExecutable: (candidate) => candidate === '/custom/code',
+  });
+  assert.deepEqual(result, { binary: '/custom/code' });
+});
+
+test('an unusable VSCODE_BIN override fails fast instead of silently falling back to a default', () => {
+  const result = resolveVsCodeBinary({
+    platform: 'linux',
+    env: { VSCODE_BIN: '/custom/code' },
+    isExecutable: () => false,
+  });
+  assert.equal(result.error, 'vscode-not-found');
+  assert.match(result.message, /\/custom\/code/);
+});
+
+test('BL-361 scenario 04: the WSL trap — a resolvable but non-executable candidate fails fast naming the no-usable-VS-Code stage', () => {
+  // `command -v code` would succeed here (the Windows binary IS on PATH),
+  // but isExecutable simulates the real ENOEXEC failure from the missing
+  // WSLInterop binfmt handler - resolution must not treat "resolves" as
+  // "usable".
+  const result = resolveVsCodeBinary({
+    platform: 'linux',
+    env: {},
+    isExecutable: () => false,
+  });
+  assert.equal(result.error, 'vscode-not-found');
+  assert.equal(typeof result.then, 'undefined', 'resolution is synchronous - it must not wait out any timeout to fail');
+});
+
+// --- buildDevHostLaunchCommand (BL-361) ---
+
+test('buildDevHostLaunchCommand asks the named VS Code binary to open the extension in development mode', () => {
+  const cmd = buildDevHostLaunchCommand('/path/to/code', '/repo/extension', '/repo/extension/swarmforge-vc.code-workspace');
+  assert.equal(cmd.command, '/path/to/code');
+  assert.deepEqual(cmd.args, ['--extensionDevelopmentPath=/repo/extension', '/repo/extension/swarmforge-vc.code-workspace']);
+});
+
+test('buildDevHostLaunchCommand never uses GUI keystroke automation (no open, no osascript)', () => {
+  const cmd = buildDevHostLaunchCommand('/path/to/code', '/repo/extension', '/repo/extension/swarmforge-vc.code-workspace');
+  assert.notEqual(cmd.command, 'open');
+  assert.notEqual(cmd.command, 'osascript');
+  assert.ok(!cmd.args.some((arg) => /osascript|key code|System Events/.test(arg)));
 });

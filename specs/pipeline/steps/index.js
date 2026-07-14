@@ -150,6 +150,7 @@ const DOMAINS = [
   require('./roleBenchmarkHarnessSteps'),
   require('./replyReturnsToAskingThreadSteps'),
   require('./pushSweepSteps'),
+  require('./devHostLauncherSteps'),
 ];
 
 function registerSteps(registry) {

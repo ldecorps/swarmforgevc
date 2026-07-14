@@ -1,0 +1,73 @@
+id: BL-363
+title: "32 CLI test files spawn a fresh node per test case, paying ~150-200ms of process startup before a single assertion runs"
+milestone: M8
+type: defect
+status: todo
+severity: medium
+priority: 5
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-unit-suite-spawn-tax.md — the human, 2026-07-13 ('13 seconds is far too slow'). Slice B of two; the human chose this slicing 2026-07-14."
+
+notes: |
+  THE DEFECT, VERIFIED 2026-07-14. 33 files under `extension/test/` drive the CLI under test by
+  `execFileSync('node', ...)` / `spawnSync('node', ...)` PER TEST CASE. Node startup is ~150-200ms
+  host-side before any assertion runs, and it is paid once per test, not once per file. This ticket
+  owns 32 of them — dependencyGateCli.test.js is deliberately EXCLUDED because BL-362 rewrites it
+  (keeping the two slices file-orthogonal).
+  The worst case compounds the tax: negotiateOnboardingContractCli.test.js (~2.4s host / 23 tests)
+  also runs `git init` plus two `git config` calls per test — FOUR processes per test case. Hoist that
+  fixture to one `beforeAll` and copy the prepared directory per test.
+
+  THIS IS NOT A NEW RULE — IT IS RETROACTIVE APPLICATION OF AN ACCEPTED ONE. The engineering article
+  already says a CLI's `main()` must be a thin wrapper over exported helpers, AND (accepted 2026-07-13,
+  commit 99ad07d, after the hardener caught the same gap a 4th time) that `main()` itself must be
+  CALLED IN-PROCESS by a test, not merely spawned. The reason is not speed but blindness: logic
+  reachable only by spawning a subprocess is invisible to in-process coverage and mutation, so its CRAP
+  sits unmeasured and its mutants survive — the speed win is a by-product of closing that hole. The
+  working seam already exists in-tree and should be copied, not reinvented:
+  `notifyDeadLettersCli.test.js` / `notifyRecertBatchCli.test.js` — `process.chdir(<fixture root>)`,
+  `await main()` directly, capture stdout, restore the previous cwd in a `finally`.
+
+  THE GUARDRAIL. The rule is "in-process BY DEFAULT", not "never spawn". Each CLI KEEPS exactly ONE
+  genuine end-to-end spawn as a smoke test, so the shebang / argv / exit-code wiring stays locked. A
+  slice that deletes the last spawn has overshot; a slice that leaves a per-test spawn has undershot.
+  Where a CLI's logic is not yet reachable in-process (main() not exported, logic trapped inside it),
+  extracting that seam IS part of this ticket — that is the thin-wrapper rule, and it is why this is
+  worth doing at 32-file scale rather than as a test-only tidy.
+
+  THE HAZARD THIS INTRODUCES, AND MUST CLOSE (scenario 05). In-process CLI tests `chdir` into a fixture
+  root. Vitest workers run files in one process, so a test that exits without restoring the cwd
+  silently corrupts every test after it, in a way that looks like an unrelated flake. Every chdir is
+  paired with a `finally` that restores it — the existing seam already does this; every new one must.
+
+  SCOPE. The 32 spawning test files under `extension/test/` (all of the 33 grep matches EXCEPT
+  dependencyGateCli.test.js), plus any `extension/src/tools/*.ts` CLI whose `main()`/logic is not yet
+  exported for in-process calling. Production BEHAVIOR does not change: what each CLI prints and the
+  code it exits with must still be asserted. A shared in-process CLI test helper is welcome if it falls
+  out naturally; do not build a framework.
+
+  ORTHOGONALITY. BL-362 (the sibling slice) owns paneTailerClass.test.js and dependencyGateCli.test.js
+  and no other file. As scoped these two are file-orthogonal and may run concurrently; if either grows
+  to touch a shared test helper, sequence them instead.
+
+  E2E QA PROCEDURE: run the full unit suite twice; assert green both times and that total wall clock has
+  dropped materially from the ~13s baseline. Grep the 32 files and assert each CLI retains exactly one
+  spawned smoke test and no per-test spawn. Assert coverage/mutation actually SEES the newly in-process
+  logic: run mutation over one converted CLI (e.g. a small one) and confirm mutants inside its `main()`
+  are now killed rather than surviving unmeasured — that is the property the accepted rule exists for,
+  and a green fast suite alone does not prove it. Finally, deliberately break one CLI's argv handling
+  and confirm its surviving spawned smoke test still catches it.
+
+acceptance:
+  feature: specs/features/BL-363-clis-tested-in-process.feature
+  steps:
+    - "A CLI's behavior is proven without spawning a process"
+    - "Each CLI keeps exactly one end-to-end spawn as a wiring smoke test"
+    - "What the CLI prints and the code it exits with are still asserted"
+    - "A test needing a repository fixture builds it once, not once per test"
+    - "A test that leaves the working directory moved is a defect, not a hazard to live with"
+
+human_approval: pending
+
+mutation_cost: high
