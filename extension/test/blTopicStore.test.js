@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { readRecord, appendMessage, recordPath, commitTopicRecord, hasCompletionRecord, isRecordCommitted } = require('../out/concierge/blTopicStore');
+const { readRecord, appendMessage, recordPath, commitTopicRecord, hasCompletionRecord, isRecordCommitted, hasUpdateId } = require('../out/concierge/blTopicStore');
 
 // BL-329: the durable, git-tracked, per-ticket record of every message sent
 // in a BL topic - inbound and outbound - so the Telegram topic becomes a
@@ -265,4 +265,39 @@ test('isRecordCommitted is false after a SECOND append whose own commit has not 
   record.messages.push({ seq: 1, ts: 2, author: 'human', type: 'inbound', text: 'second, uncommitted' });
   fs.writeFileSync(recordPath(target, 'BL-900'), JSON.stringify(record));
   assert.equal(isRecordCommitted(target, 'BL-900'), false);
+});
+
+// ── hasUpdateId / appendMessage's updateId (BL-389 scenarios 04/05: the
+//    idempotency gate that was missing for postOperatorContext, the exact
+//    adapter whose redelivery flooded a topic record with 209 duplicate
+//    commits) ────────────────────────────────────────────────────────────
+
+test('appendMessage carries the originating updateId through to the stored record', () => {
+  const target = mkTmp();
+  append(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1, updateId: 501 });
+  assert.equal(readRecord(target, 'BL-900').messages[0].updateId, 501);
+});
+
+test('hasUpdateId is false for an empty record', () => {
+  assert.equal(hasUpdateId({ id: 'BL-900', messages: [] }, 501), false);
+});
+
+test('hasUpdateId is false when updateId is undefined, regardless of what is on record (no origin to compare)', () => {
+  const record = { id: 'BL-900', messages: [{ seq: 0, ts: 1, author: 'human', type: 'inbound', text: 'hi', updateId: 501 }] };
+  assert.equal(hasUpdateId(record, undefined), false);
+});
+
+test('hasUpdateId is false when the record holds only OTHER updateIds', () => {
+  const record = { id: 'BL-900', messages: [{ seq: 0, ts: 1, author: 'human', type: 'inbound', text: 'hi', updateId: 501 }] };
+  assert.equal(hasUpdateId(record, 502), false);
+});
+
+test('hasUpdateId is true once a message with that exact updateId is on record', () => {
+  const record = { id: 'BL-900', messages: [{ seq: 0, ts: 1, author: 'human', type: 'inbound', text: 'hi', updateId: 501 }] };
+  assert.equal(hasUpdateId(record, 501), true);
+});
+
+test('hasUpdateId is false for a message with no updateId at all (older records, outbound/swarm text)', () => {
+  const record = { id: 'BL-900', messages: [{ seq: 0, ts: 1, author: 'swarm', type: 'outbound', text: 'hi' }] };
+  assert.equal(hasUpdateId(record, 501), false);
 });

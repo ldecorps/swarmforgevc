@@ -175,6 +175,7 @@ const DOMAINS = [
   require('./frontDeskLivenessMeansListeningSteps'),
   require('./alwaysOnOperatorPresenceSteps'),
   require('./topicRecreationSteps'),
+  require('./aDroppedMessageMustNotParkTheOffsetSteps'),
 ];
 
 function registerSteps(registry) {
