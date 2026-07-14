@@ -3,7 +3,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { computeChaseTrend, formatChaseTrendLine, CHASE_TREND_WINDOW_DAYS } = require('../out/tools/chase-trend-line');
+const { computeChaseTrend, formatChaseTrendLine, CHASE_TREND_WINDOW_DAYS, main } = require('../out/tools/chase-trend-line');
+
+const CLI = path.join(__dirname, '..', 'out', 'tools', 'chase-trend-line.js');
 
 function mkFixtureRoot() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chase-trend-test-'));
@@ -110,8 +112,44 @@ test('a role missing from the telemetry map contributes zero, not a crash', () =
 
 // ── end-to-end: the compiled CLI's own real output ────────────────────────
 
-test('the compiled CLI runs against the real repo and prints one line', () => {
-  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'chase-trend-line.js');
-  const output = execFileSync('node', [cliPath], { cwd: path.join(__dirname, '..', '..'), encoding: 'utf8' });
+function runCliSubprocess(cwd) {
+  return execFileSync('node', [CLI], { cwd, encoding: 'utf8' });
+}
+
+// Runs the REAL main() in-process against the real repo, so in-process
+// coverage and mutation tooling can see the branches a subprocess-only
+// smoke test cannot (the CLI main()-thin-wrapper rule; mirrors
+// notifyDeadLettersCli.test.js's own identical seam). main() prints via
+// console.log (not process.stdout.write directly), and Vitest's own console
+// interception (globals: true) rewrites console.log independently of
+// process.stdout - so console.log itself is overridden here to capture the
+// trend line.
+async function runCli(cwd) {
+  const previousCwd = process.cwd();
+  const writes = [];
+  const originalLog = console.log;
+  console.log = (...args) => {
+    writes.push(args.join(' '));
+  };
+  try {
+    process.chdir(cwd);
+    await main();
+  } finally {
+    console.log = originalLog;
+    process.chdir(previousCwd);
+  }
+  return writes.join('\n') + '\n';
+}
+
+test('the compiled CLI runs against the real repo and prints one line', async () => {
+  const output = await runCli(path.join(__dirname, '..', '..'));
+  assert.match(output, /^Chase\/nudge trend: /);
+});
+
+// A single subprocess smoke test locks the compiled CLI's own wiring
+// (require.main === module, real argv/cwd boundary) - an ADDITION to the
+// in-process test above, never the only cover for the real logic.
+test('the compiled CLI runs standalone as a subprocess and produces the same result', () => {
+  const output = runCliSubprocess(path.join(__dirname, '..', '..'));
   assert.match(output, /^Chase\/nudge trend: /);
 });

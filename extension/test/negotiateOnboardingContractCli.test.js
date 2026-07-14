@@ -3,7 +3,16 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { parseArgs, negotiationLogPath, readNegotiationState, runObject, runApprove } = require('../out/tools/negotiate-onboarding-contract');
+const {
+  parseArgs,
+  negotiationLogPath,
+  readNegotiationState,
+  runObject,
+  runApprove,
+  main: negotiateMain,
+} = require('../out/tools/negotiate-onboarding-contract');
+const { main: proposeMain } = require('../out/tools/propose-onboarding-contract');
+const { main: gateMain } = require('../out/tools/onboarding-contract-gate');
 const { parseContractYaml } = require('../out/onboarding/contractView');
 
 const VALID_FACTS = {
@@ -16,15 +25,80 @@ const VALID_FACTS = {
 
 const PROPOSE_CLI = path.join(__dirname, '..', 'out', 'tools', 'propose-onboarding-contract.js');
 const NEGOTIATE_CLI = path.join(__dirname, '..', 'out', 'tools', 'negotiate-onboarding-contract.js');
+const GATE_CLI = path.join(__dirname, '..', 'out', 'tools', 'onboarding-contract-gate.js');
+
+// Runs a CLI's own exported main() in-process (argv-injected, stdout
+// captured), never a subprocess - a subprocess-only smoke test is
+// coverage-invisible for the logic these call (the engineering article's
+// CLI main()-thin-wrapper rule). process.argv/process.exitCode/stdout.write
+// are ALWAYS restored in `finally`, never left leaked into later tests
+// (Vitest runs every test file in one worker process).
+async function runMainInProcess(main, cliPath, argv) {
+  const previousArgv = process.argv;
+  const previousExitCode = process.exitCode;
+  const writes = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (chunk) => {
+    writes.push(chunk);
+    return true;
+  };
+  try {
+    process.argv = ['node', cliPath, ...argv];
+    process.exitCode = undefined;
+    await main();
+    const exitCode = process.exitCode;
+    const raw = writes.join('');
+    return { exitCode, output: raw ? JSON.parse(raw) : null };
+  } finally {
+    process.stdout.write = originalWrite;
+    process.argv = previousArgv;
+    process.exitCode = previousExitCode;
+  }
+}
+
+function runNegotiateCli(argv) {
+  return runMainInProcess(negotiateMain, NEGOTIATE_CLI, argv);
+}
+
+async function runGateCli(targetRepoPath) {
+  const { output } = await runMainInProcess(gateMain, GATE_CLI, [targetRepoPath]);
+  return output;
+}
+
+async function runProposeCli(targetRepoPath, surveyFactsPath) {
+  await runMainInProcess(proposeMain, PROPOSE_CLI, [targetRepoPath, surveyFactsPath]);
+}
+
+// A single subprocess smoke test (at the end of this file) locks the
+// compiled CLI's own wiring (require.main === module, real argv/env
+// boundary) - an ADDITION to the in-process tests above, never the only
+// cover for the real logic.
+function runCliSubprocess(argv) {
+  const output = execFileSync('node', [NEGOTIATE_CLI, ...argv], { encoding: 'utf8' });
+  return JSON.parse(output);
+}
+
+// The git-repo + already-proposed-contract fixture is IDENTICAL for every
+// test in this file - built ONCE here (real `git init`/`git config` +
+// one real propose-CLI run, each genuinely expensive as a subprocess),
+// then each test takes a cheap `fs.cpSync` copy of it instead of
+// re-running git init/config/propose per test (23 tests x 4 processes
+// each, before this change).
+let PREPARED_ROOT;
+
+beforeAll(async () => {
+  PREPARED_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'negotiate-onboarding-contract-prepared-'));
+  execFileSync('git', ['init'], { cwd: PREPARED_ROOT });
+  execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: PREPARED_ROOT });
+  execFileSync('git', ['config', 'user.name', 'Test'], { cwd: PREPARED_ROOT });
+  const surveyPath = path.join(PREPARED_ROOT, 'survey.json');
+  fs.writeFileSync(surveyPath, JSON.stringify(VALID_FACTS));
+  await runProposeCli(PREPARED_ROOT, surveyPath);
+});
 
 function mkTargetWithProposedContract() {
   const targetRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'negotiate-onboarding-contract-target-'));
-  execFileSync('git', ['init'], { cwd: targetRepo });
-  execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: targetRepo });
-  execFileSync('git', ['config', 'user.name', 'Test'], { cwd: targetRepo });
-  const surveyPath = path.join(targetRepo, 'survey.json');
-  fs.writeFileSync(surveyPath, JSON.stringify(VALID_FACTS));
-  execFileSync('node', [PROPOSE_CLI, targetRepo, surveyPath]);
+  fs.cpSync(PREPARED_ROOT, targetRepo, { recursive: true });
   return targetRepo;
 }
 
@@ -118,39 +192,21 @@ test('parseArgs: no arguments returns null', () => {
   assert.equal(parseArgs([]), null);
 });
 
-// ── the compiled CLI's own real output ────────────────────────────────────
+// ── the CLI's own main(), run in-process ──────────────────────────────────
 
-test('BL-344 onboarding-negotiation-01/02: objecting revises the real committed contract and re-proposes it', () => {
+test('BL-344 onboarding-negotiation-07: the negotiation log records the round on disk, real and durable', async () => {
   const targetRepo = mkTargetWithProposedContract();
-  const before = readContract(targetRepo);
-
-  const output = execFileSync('node', [NEGOTIATE_CLI, targetRepo, 'object', 'also add accessibility support'], {
-    encoding: 'utf8',
-  });
-  const result = JSON.parse(output);
-  assert.equal(result.ended, false);
-  assert.equal(result.round.round, 1);
-
-  const after = readContract(targetRepo);
-  assert.equal(after.agreement, 'proposed');
-  assert.notDeepEqual(after, before);
-  assert.ok(after.scope.some((s) => s.includes('accessibility support')));
-});
-
-test('onboarding-negotiation-07: the negotiation log records the round on disk, real and durable', () => {
-  const targetRepo = mkTargetWithProposedContract();
-  execFileSync('node', [NEGOTIATE_CLI, targetRepo, 'object', 'also add accessibility support'], { encoding: 'utf8' });
+  await runNegotiateCli([targetRepo, 'object', 'also add accessibility support']);
   const logContent = fs.readFileSync(negotiationLogPath(targetRepo), 'utf8');
   assert.match(logContent, /accessibility support/);
   assert.match(logContent, /"round":1/);
 });
 
-test('BL-344 onboarding-negotiation-04: approving ends the negotiation and lands agreement: agreed', () => {
+test('BL-344 onboarding-negotiation-04: approving ends the negotiation and lands agreement: agreed', async () => {
   const targetRepo = mkTargetWithProposedContract();
-  execFileSync('node', [NEGOTIATE_CLI, targetRepo, 'object', 'also add accessibility support'], { encoding: 'utf8' });
+  await runNegotiateCli([targetRepo, 'object', 'also add accessibility support']);
 
-  const output = execFileSync('node', [NEGOTIATE_CLI, targetRepo, 'approve'], { encoding: 'utf8' });
-  const result = JSON.parse(output);
+  const { output: result } = await runNegotiateCli([targetRepo, 'approve']);
   assert.equal(result.ended, true);
   assert.equal(result.endedReason, 'approved');
 
@@ -158,51 +214,45 @@ test('BL-344 onboarding-negotiation-04: approving ends the negotiation and lands
   assert.equal(after.agreement, 'agreed');
 });
 
-test('onboarding-negotiation-06: the build-start gate still holds after an objection - nothing is onboarded until approved', () => {
+test('onboarding-negotiation-06: the build-start gate still holds after an objection - nothing is onboarded until approved', async () => {
   const targetRepo = mkTargetWithProposedContract();
-  execFileSync('node', [NEGOTIATE_CLI, targetRepo, 'object', 'also add accessibility support'], { encoding: 'utf8' });
+  await runNegotiateCli([targetRepo, 'object', 'also add accessibility support']);
 
-  const GATE_CLI = path.join(__dirname, '..', 'out', 'tools', 'onboarding-contract-gate.js');
-  const gateOutput = JSON.parse(execFileSync('node', [GATE_CLI, targetRepo], { encoding: 'utf8' }));
+  const gateOutput = await runGateCli(targetRepo);
   assert.equal(gateOutput.decision, 'hold');
 });
 
-test('onboarding-negotiation-06: the gate allows once the contract is approved', () => {
+test('onboarding-negotiation-06: the gate allows once the contract is approved', async () => {
   const targetRepo = mkTargetWithProposedContract();
-  execFileSync('node', [NEGOTIATE_CLI, targetRepo, 'approve'], { encoding: 'utf8' });
+  await runNegotiateCli([targetRepo, 'approve']);
 
-  const GATE_CLI = path.join(__dirname, '..', 'out', 'tools', 'onboarding-contract-gate.js');
-  const gateOutput = JSON.parse(execFileSync('node', [GATE_CLI, targetRepo], { encoding: 'utf8' }));
+  const gateOutput = await runGateCli(targetRepo);
   assert.equal(gateOutput.decision, 'allow');
 });
 
-test('approval is still possible immediately after using the LAST round of the budget, before any over-cap attempt', () => {
+test('approval is still possible immediately after using the LAST round of the budget, before any over-cap attempt', async () => {
   // Regression coverage: using every round successfully must not itself be
   // terminal - only an objection ATTEMPTED after the budget is already
   // exhausted is. Exercises exactly maxRounds real rounds, then approves,
   // never a 6th objection.
   const targetRepo = mkTargetWithProposedContract();
   for (let i = 0; i < 5; i++) {
-    execFileSync('node', [NEGOTIATE_CLI, targetRepo, 'object', `objection number ${i}`], { encoding: 'utf8' });
+    await runNegotiateCli([targetRepo, 'object', `objection number ${i}`]);
   }
-  const approveOutput = JSON.parse(execFileSync('node', [NEGOTIATE_CLI, targetRepo, 'approve'], { encoding: 'utf8' }));
+  const { output: approveOutput } = await runNegotiateCli([targetRepo, 'approve']);
   assert.equal(approveOutput.ended, true);
   assert.equal(approveOutput.endedReason, 'approved');
   assert.equal(readContract(targetRepo).agreement, 'agreed');
 });
 
-test('BL-344 onboarding-negotiation-05: the negotiation ends after the bounded round cap is exhausted via real CLI calls', () => {
+test('BL-344 onboarding-negotiation-05: the negotiation ends after the bounded round cap is exhausted via real CLI calls', async () => {
   const targetRepo = mkTargetWithProposedContract();
   // DEFAULT_MAX_NEGOTIATION_ROUNDS is 5 - drive 5 real rounds, then one more.
   for (let i = 0; i < 5; i++) {
-    const out = JSON.parse(
-      execFileSync('node', [NEGOTIATE_CLI, targetRepo, 'object', `objection number ${i}`], { encoding: 'utf8' })
-    );
+    const { output: out } = await runNegotiateCli([targetRepo, 'object', `objection number ${i}`]);
     assert.equal(out.ended, false, `round ${i + 1} should still be open`);
   }
-  const final = JSON.parse(
-    execFileSync('node', [NEGOTIATE_CLI, targetRepo, 'object', 'one too many'], { encoding: 'utf8' })
-  );
+  const { output: final } = await runNegotiateCli([targetRepo, 'object', 'one too many']);
   assert.equal(final.ended, true);
   assert.equal(final.endedReason, 'round-limit');
 
@@ -210,31 +260,48 @@ test('BL-344 onboarding-negotiation-05: the negotiation ends after the bounded r
   assert.notEqual(contract.agreement, 'agreed');
 });
 
-test('a further objection after the round cap is refused (real CLI exits non-zero)', () => {
+test('a further objection after the round cap is refused (in-process main() rejects)', async () => {
   const targetRepo = mkTargetWithProposedContract();
   for (let i = 0; i < 6; i++) {
     try {
-      execFileSync('node', [NEGOTIATE_CLI, targetRepo, 'object', `objection ${i}`], { encoding: 'utf8' });
+      await runNegotiateCli([targetRepo, 'object', `objection ${i}`]);
     } catch {
-      // the 6th call is expected to throw below; earlier ones should not
+      // the 7th call below is expected to reject; earlier ones should not
     }
   }
-  assert.throws(() => execFileSync('node', [NEGOTIATE_CLI, targetRepo, 'object', 'yet another'], { encoding: 'utf8', stdio: 'pipe' }));
+  await assert.rejects(() => runNegotiateCli([targetRepo, 'object', 'yet another']), /already ended/);
 });
 
-test('approving after the negotiation already ended is refused (real CLI exits non-zero)', () => {
+test('approving after the negotiation already ended is refused (in-process main() rejects)', async () => {
   const targetRepo = mkTargetWithProposedContract();
-  execFileSync('node', [NEGOTIATE_CLI, targetRepo, 'approve'], { encoding: 'utf8' });
-  assert.throws(() => execFileSync('node', [NEGOTIATE_CLI, targetRepo, 'approve'], { encoding: 'utf8', stdio: 'pipe' }));
+  await runNegotiateCli([targetRepo, 'approve']);
+  await assert.rejects(() => runNegotiateCli([targetRepo, 'approve']), /already ended/);
 });
 
-test('negotiating against a target with no proposed contract yet fails loud, never fabricates one', () => {
+test('negotiating against a target with no proposed contract yet fails loud, never fabricates one', async () => {
   const targetRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'negotiate-onboarding-contract-empty-'));
-  assert.throws(() =>
-    execFileSync('node', [NEGOTIATE_CLI, targetRepo, 'object', 'anything'], { encoding: 'utf8', stdio: 'pipe' })
-  );
+  await assert.rejects(() => runNegotiateCli([targetRepo, 'object', 'anything']), /ENOENT/);
 });
 
-test('the compiled CLI prints usage and exits non-zero when arguments are missing', () => {
-  assert.throws(() => execFileSync('node', [NEGOTIATE_CLI], { encoding: 'utf8' }));
+test('the CLI sets a non-zero exit code and prints nothing when arguments are missing (in-process)', async () => {
+  const { exitCode, output } = await runNegotiateCli([]);
+  assert.equal(exitCode, 1);
+  assert.equal(output, null);
+});
+
+// A single subprocess smoke test locks the compiled CLI's own wiring
+// (require.main === module, real argv/env boundary) - an ADDITION to the
+// in-process tests above, never the only cover for the real logic.
+test('the compiled CLI runs standalone as a subprocess and produces the same result', () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const before = readContract(targetRepo);
+
+  const result = runCliSubprocess([targetRepo, 'object', 'also add accessibility support']);
+  assert.equal(result.ended, false);
+  assert.equal(result.round.round, 1);
+
+  const after = readContract(targetRepo);
+  assert.equal(after.agreement, 'proposed');
+  assert.notDeepEqual(after, before);
+  assert.ok(after.scope.some((s) => s.includes('accessibility support')));
 });
