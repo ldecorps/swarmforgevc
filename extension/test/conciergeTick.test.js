@@ -305,6 +305,88 @@ test('needs-approval-01: a gate that stays captured across two polls only posts 
   assert.equal(result.routed, 0);
 });
 
+// ── pending-approval-asks (BL-357) ────────────────────────────────────────
+
+test('BL-357: an active ticket newly pending approval asks for it in its own topic', async () => {
+  const { adapters, setFolders, created, sent, topicMap } = fakeAdapters();
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', humanApproval: 'pending' }] }));
+
+  const result = await runConciergeTick(adapters);
+
+  // TaskStarted (newly active) and ApprovalRequested (newly pending) both
+  // derive on this same first tick and route into BL-1's ONE topic.
+  assert.equal(created.length, 1);
+  assert.equal(topicMap['BL-1'], 801);
+  assert.ok(sent.some((m) => m.text === 'This ticket needs your approval before it can proceed. Reply here with "approve" to approve it.' && m.topicId === 801));
+  assert.equal(result.routed, 2);
+});
+
+test('BL-357: a ticket that stays pending across ticks is asked once, not on every tick', async () => {
+  const { adapters, setFolders, sent } = fakeAdapters();
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', humanApproval: 'pending' }] }));
+  await runConciergeTick(adapters);
+  const sentAfterFirst = sent.length;
+
+  const result = await runConciergeTick(adapters); // still pending, nothing changed
+
+  assert.equal(sent.length, sentAfterFirst);
+  assert.equal(result.routed, 0);
+});
+
+test('BL-357: an active ticket whose approval is not pending is never asked about', async () => {
+  const { adapters, setFolders, sent } = fakeAdapters();
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'no approval needed' }] }));
+
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(sent.filter((m) => m.text.includes('needs your approval')), []);
+});
+
+test('BL-357: a paused ticket defaulted to pending is never asked - only active tickets are in scope', async () => {
+  const { adapters, setFolders, created, sent } = fakeAdapters();
+  setFolders(folders({ paused: [{ id: 'BL-2', title: 'not yet promoted', humanApproval: 'pending' }] }));
+
+  const result = await runConciergeTick(adapters);
+
+  assert.deepEqual(created, []);
+  assert.deepEqual(sent, []);
+  assert.equal(result.routed, 0);
+});
+
+test('BL-357: an ApprovalRequested that fails to post is retried on a later tick', async () => {
+  const { adapters, setFolders, state } = fakeAdapters();
+  // Isolate to ONLY the ApprovalRequested transition: the item already has
+  // a topic and is not newly active this tick, mirroring needs-approval-02.
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', humanApproval: 'pending' }] }));
+  adapters.writeTickState({
+    snapshot: { backlog: { active: ['BL-1'], paused: [], done: [] }, gates: [], roleTicket: {}, ticketSummaries: {}, pendingApproval: [] },
+    emittedKeys: ['TaskStarted:BL-1'],
+  });
+  adapters.routeAdapters.getTopicMap = () => ({ 'BL-1': 42 });
+  let shouldFail = true;
+  const sent = [];
+  adapters.routeAdapters.sendMessage = async (topicId, text) => {
+    if (shouldFail) {
+      return false;
+    }
+    sent.push({ topicId, text });
+    return true;
+  };
+
+  const first = await runConciergeTick(adapters);
+  assert.equal(first.routed, 0);
+  assert.ok(!state.emittedKeys.includes('ApprovalRequested:BL-1'));
+  // The transition must still be pending in the persisted snapshot so the
+  // next tick's diff re-derives + retries it.
+  assert.deepEqual(state.snapshot.pendingApproval, []);
+
+  shouldFail = false;
+  const second = await runConciergeTick(adapters); // still pending, unchanged live state
+  assert.equal(second.routed, 1);
+  assert.deepEqual(sent, [{ topicId: 42, text: 'This ticket needs your approval before it can proceed. Reply here with "approve" to approve it.' }]);
+  assert.ok(state.emittedKeys.includes('ApprovalRequested:BL-1'));
+});
+
 // ── needs-approval-02 — BL-301 retry symmetry ─────────────────────────────
 
 test('needs-approval-02: a NeedsApproval whose post fails is retried on the next tick, not dropped', async () => {

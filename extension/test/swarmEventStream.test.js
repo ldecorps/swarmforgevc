@@ -13,6 +13,7 @@ function snapshot(overrides = {}) {
     gates: [],
     roleTicket: {},
     ticketSummaries: {},
+    pendingApproval: [],
     ...overrides,
   };
 }
@@ -122,6 +123,52 @@ test('BL-358: an untagged gate is idempotent via the durable prior-emitted set, 
   const alreadyEmitted = new Set(first.map(swarmEventKey));
   const second = deriveSwarmEvents(null, curr, alreadyEmitted);
   assert.deepEqual(second, []);
+});
+
+// ── ApprovalRequested (BL-357) ─────────────────────────────────────────────
+
+test('BL-357: a ticket newly pending approval emits ApprovalRequested tagged with it', () => {
+  const prev = snapshot();
+  const curr = snapshot({ pendingApproval: ['BL-500'] });
+  const events = deriveSwarmEvents(prev, curr);
+  assert.deepEqual(events, [{ type: 'ApprovalRequested', backlogId: 'BL-500', payload: {} }]);
+});
+
+test('BL-357: a ticket that stays pending across two polls only emits once (on the not-pending -> pending transition)', () => {
+  const pending = snapshot({ pendingApproval: ['BL-500'] });
+  assert.deepEqual(deriveSwarmEvents(pending, pending), []);
+});
+
+test('BL-357: a ticket whose approval is not pending is never asked about', () => {
+  const prev = snapshot();
+  const curr = snapshot({ backlog: { active: ['BL-500'], paused: [], done: [] } });
+  const events = deriveSwarmEvents(prev, curr);
+  assert.deepEqual(events.filter((e) => e.type === 'ApprovalRequested'), []);
+});
+
+test('BL-357: a ticket already approved (dropped out of pendingApproval) emits nothing new for approval', () => {
+  const prev = snapshot({ pendingApproval: ['BL-500'] });
+  const curr = snapshot({ pendingApproval: [] });
+  const events = deriveSwarmEvents(prev, curr);
+  assert.deepEqual(events, []);
+});
+
+test('BL-357: ApprovalRequested is idempotent via the durable prior-emitted set, same as other event types', () => {
+  const curr = snapshot({ pendingApproval: ['BL-500'] });
+  const first = deriveSwarmEvents(null, curr);
+  assert.deepEqual(first, [{ type: 'ApprovalRequested', backlogId: 'BL-500', payload: {} }]);
+
+  const alreadyEmitted = new Set(first.map(swarmEventKey));
+  const second = deriveSwarmEvents(null, curr, alreadyEmitted);
+  assert.deepEqual(second, []);
+});
+
+test('BL-357: swarmEventKey distinguishes ApprovalRequested from other event types on the same ticket', () => {
+  const a = { type: 'ApprovalRequested', backlogId: 'BL-500', payload: {} };
+  const b = { type: 'TaskStarted', backlogId: 'BL-500', payload: {} };
+  const c = { type: 'NeedsApproval', backlogId: 'BL-500', payload: {} };
+  assert.notEqual(swarmEventKey(a), swarmEventKey(b));
+  assert.notEqual(swarmEventKey(a), swarmEventKey(c));
 });
 
 // ── no-real-transition guards ─────────────────────────────────────────────

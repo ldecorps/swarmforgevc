@@ -53,6 +53,20 @@ test('BL-358: decideTopicAction refuses an untagged event - routeEvent must rout
   assert.throws(() => decideTopicAction(untaggedEvent(), {}, 'irrelevant'), /requires a tagged event/);
 });
 
+// ── BL-357: ApprovalRequested ──────────────────────────────────────────────
+
+test('BL-357: messageTextForEvent renders ApprovalRequested as a plain-language ask, not a bare label', () => {
+  const text = messageTextForEvent(event({ type: 'ApprovalRequested' }));
+  assert.match(text, /needs your approval/i);
+  assert.match(text, /"approve"/);
+});
+
+test('BL-357: the ApprovalRequested ask text matches the exact keyword isApprovalReplyText recognizes', () => {
+  const { isApprovalReplyText } = require('../out/concierge/pendingApprovalReply');
+  const text = messageTextForEvent(event({ type: 'ApprovalRequested' }));
+  assert.equal(isApprovalReplyText(text), true, 'the instruction itself must satisfy its own recognizer');
+});
+
 // BL-322 hardening: the ticket's own E2E procedure insists on a REAL
 // oversized ticket, "not a synthetic short fixture, the bug is precisely
 // about real notes being huge" - but neither the delivered unit tests nor

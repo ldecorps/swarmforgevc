@@ -105,9 +105,19 @@ function taskStartedText(event: SwarmEvent): string {
 // BL-358: an untagged NeedsApproval (backlogId null) names its role instead
 // of a ticket id - "NeedsApproval: coder - <question>" - the ONE formatter
 // every event still goes through, tagged or not.
+// BL-357: an ApprovalRequested's own text is the ask itself, not a bare
+// "ApprovalRequested: BL-XXX" label like the other event types - the human
+// is reading this directly and needs to know what to reply. "approve" is
+// the exact keyword pendingApprovalReply.ts's isApprovalReplyText matches,
+// stated here so the instruction and the recognizer never drift apart.
+const APPROVAL_REQUESTED_TEXT = 'This ticket needs your approval before it can proceed. Reply here with "approve" to approve it.';
+
 export function messageTextForEvent(event: SwarmEvent): string {
   if (event.type === 'TaskStarted') {
     return taskStartedText(event);
+  }
+  if (event.type === 'ApprovalRequested') {
+    return APPROVAL_REQUESTED_TEXT;
   }
   const identity = event.backlogId ?? event.role ?? 'unknown';
   const base = `${event.type}: ${identity}`;
