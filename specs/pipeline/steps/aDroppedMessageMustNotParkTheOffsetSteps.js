@@ -17,6 +17,14 @@ const EXT_OUT = path.join(__dirname, '..', '..', '..', 'extension', 'out');
 const { pollAndForward } = require(path.join(EXT_OUT, 'tools', 'telegramFrontDeskBotCore'));
 const { postOperatorContext } = require(path.join(EXT_OUT, 'tools', 'telegram-front-desk-bot'));
 const { readRecord } = require(path.join(EXT_OUT, 'concierge', 'blTopicStore'));
+// BL-379: "the front desk collects the waiting messages" is VERBATIM
+// identical to this file's own step text below - since this file
+// registers FIRST (index.js order), the registry's first-match-wins
+// resolve() means this handler owns the text for BOTH tickets' scenarios.
+// ctx.updates (set only by THIS file's own Background) distinguishes the
+// two - a BL-379 scenario's ctx never has it, so it delegates rather than
+// crashing on `ctx.updates.map` of undefined.
+const { collectFrontDeskMessages } = require('./frontDeskListensOnlyToItsOwnChatSteps');
 
 const PRINCIPAL_ID = 111;
 
@@ -71,7 +79,14 @@ function registerSteps(registry) {
 
   // ── shared When (01/02/03) ───────────────────────────────────────────
   registry.define(/^the front desk collects the waiting messages$/, async (ctx) => {
+    if (ctx.updates === undefined) {
+      // BL-379's own ctx shape (its Background never sets ctx.updates) -
+      // delegate to that ticket's own logic instead of this file's.
+      await collectFrontDeskMessages(ctx);
+      return;
+    }
     const adapters = {
+      chatId: '1',
       getUpdates: async () => ({ success: true, updates: ctx.updates.map((u) => u.update) }),
       postToBridge: async (subjectId, text, updateId) => {
         const entry = ctx.updates.find((u) => u.update.update_id === updateId);
