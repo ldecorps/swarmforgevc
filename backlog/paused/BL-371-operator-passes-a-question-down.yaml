@@ -1,0 +1,104 @@
+id: BL-371
+title: "The Operator has no way to pass down a question it cannot answer, so it sits on it"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+priority: 4
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-inbound-telegram-message-can-be-dropped.md — the human via Telegram SUP-2, 2026-07-14, verbatim: 'Receiving a telegram message like this should immediately be picked up by operator, and either answered directly by it, or question should be passed down to the relevant agent.' Slice 3 of 3 (with BL-369, BL-370); the human chose this slicing AND this design 2026-07-14."
+
+notes: |
+  THE ASK. The human's requirement has two halves: a message is (a) answered directly by the
+  Operator, or (b) PASSED DOWN to the relevant agent. BL-369 guarantees the message is never lost on
+  the way in, and half (a) already works. Half (b) does not exist at all.
+
+  THE GAP, VERIFIED. `swarmforge/scripts/operator_handoff.bb` requires a pre-existing
+  `--ticket BL-###`. So the Operator can route work ABOUT a ticket that already exists, and has NO
+  path whatsoever for a raw question the human just asked that is not yet a ticket. Its only two
+  options today are to answer it or to sit on it — and sitting on it is exactly what the human
+  noticed and complained about.
+
+  ── THE DESIGN: RESOLVED BY THE HUMAN (2026-07-14), FROM THREE OPTIONS. ──────────────────────────
+  The Operator FILES THE QUESTION AS A RAW INTAKE ITEM in the backlog root, and TELLS THE HUMAN it
+  has been filed. Chosen deliberately because it reuses the channel that ALREADY EXISTS: the backlog
+  root is the human's own raw intake queue, and the specifier already drains it before all other
+  work (constitution: Backlog Intake Order). So this needs no new routing authority, no new queue,
+  and no new drain. It is also precisely what the Operator did BY HAND during the incident — the
+  strongest available evidence it is the right shape.
+    - REJECTED: routing straight to the relevant agent's inbox. Routing is the COORDINATOR's job
+      under the constitution ("Do not make routing decisions — that is the coordinator's job"); an
+      Operator picking the role would put that decision in the wrong hands.
+    - REJECTED: a note to the coordinator. An extra hop that most likely ends with the coordinator
+      filing an intake anyway.
+
+  ⚠ THE FILED ITEM MUST BE COMMITTED, NOT MERELY WRITTEN. This is the failure mode that would
+  silently undo the whole ticket. Every pipeline role reads from its OWN isolated checkout, so a file
+  written into one working tree and never committed is INVISIBLE to the specifier — and the question
+  is lost a second time, in a brand-new way, while everything reports success. This is BL-314's
+  lesson exactly, and it is not hypothetical here: the intake document that SEEDED this very ticket
+  was itself left sitting untracked in the backlog root. Scenario 02 is the assertion that closes
+  this, and it is the one most worth being ruthless about.
+
+  SCOPE. The Operator's pass-down path: `swarmforge/scripts/operator_handoff.bb` (or a sibling CLI —
+  the coder's call, but do NOT bolt a second, divergent egress onto the Operator; reuse the reply
+  path it already has for talking to the human), the Operator's own prompt/decision surface in
+  `swarmforge/scripts/operator_lib.bb`, and the backlog-root writer + its commit. Out of scope: the
+  inbound data-loss defect (BL-369) and the health signal (BL-370).
+
+  NOT IN SCOPE / DO NOT ASSUME.
+    - Deduplicating repeat questions. Ask twice, file twice — the specifier drains and merges. A
+      dedup mechanism here is speculative complexity.
+    - The Operator choosing WHICH agent gets the work. That stays the coordinator's call, by
+      constitutional rule. The Operator files; the swarm routes.
+    - Answering the human's original 16:50 question ("why does the operator not stay up in attended
+      mode?"). That is a SEPARATE, still-unanswered question and the intake explicitly says not to
+      fold it in or guess at it. BL-359 is the ticket that actually addresses attended-mode /
+      always-on presence.
+
+  IMPLEMENTATION NOTES FOR THE CODER.
+    - The decision "can I answer this myself, or must I pass it down?" is the Operator LLM's, made at
+      reply time — it is not a mechanical classifier to be built. What this ticket BUILDS is the
+      capability and the guarantee: a working file-and-tell path, and a promise that the human always
+      learns which of the two happened (scenario 04). Do not spec-drift into writing a question
+      classifier.
+    - A CLI's `main()` must be a THIN wrapper over exported, pure helpers, and must itself be called
+      IN-PROCESS by a test — not only spawned as a subprocess. This is the 5th-occurrence rule family
+      (engineering); `notifyDeadLettersCli.test.js` is the working in-process seam to copy.
+    - Committing from an agent path: keep the commit narrowly scoped to the intake file it just wrote.
+      One bad pathspec stages nothing from that command, and the backlog root routinely carries other
+      untracked files.
+
+  IR-DRY REVIEW (done at spec time — do not relitigate). Two findings, both medium and both
+  DELIBERATE: (1) near-duplicate "the human asks the Operator something it CAN answer itself" vs
+  "...CANNOT answer itself" — these are literal opposites and are the exact fork this ticket exists
+  to draw; (2) possible-synonym between the Given "the Operator has filed a question as a raw intake
+  item" (a precondition) and the Then "the question is filed as a raw intake item in the backlog
+  root" (an assertion). CODER, NOTE THE HAZARD IN BOTH: these pairs are near-identical in shape and
+  MUST get distinct step handlers asserting different things — a single loose regex swallowing a pair
+  would go green while asserting nothing (cf. the known shared-Background / first-registered-handler-
+  wins trap). The file is final as written.
+
+  E2E QA PROCEDURE (live).
+    1. With a live swarm, ask the Operator via Telegram something it plainly cannot answer itself.
+       Assert (a) a raw intake item appears in the backlog root, (b) it is COMMITTED — verify from a
+       DIFFERENT worktree/checkout, not the one that wrote it, since that is the only check that
+       actually proves the specifier can see it — and (c) the human gets a reply naming what was
+       filed.
+    2. Ask the Operator something it can plainly answer itself. Assert it answers, and that NO intake
+       item is filed.
+    3. Assert the specifier's normal backlog-root drain picks the filed item up as ordinary intake,
+       with no special handling.
+
+acceptance:
+  feature: specs/features/BL-371-operator-passes-a-question-down.feature
+  steps:
+    - "A question the Operator cannot answer is filed for the swarm"
+    - "The filed question actually reaches the specifier"
+    - "A question the Operator can answer is answered, not filed"
+    - "The human always learns which of the two happened"
+
+human_approval: pending
+
+mutation_cost: low
