@@ -266,7 +266,8 @@ function fakeBenchmarkReport(overrides = {}) {
   return {
     schemaVersion: 1,
     generatedAtIso: '2026-07-13T16:26:31.300Z',
-    taskId: 'coder-task-01-word-frequency',
+    taskIds: ['coder-task-01-word-frequency'],
+    refusedTasks: [],
     qualityThreshold: 0.8,
     qualityThresholdDescription: 'A model is "cheapest acceptable" only if its mean quality score is >= 0.8.',
     provenance: 'Each recorded run executes the configured provider CLI headlessly.',

@@ -23,7 +23,8 @@ function initRepo() {
 const REPORT = {
   schemaVersion: 1,
   generatedAtIso: '2026-07-13T00:00:00Z',
-  taskId: 't',
+  taskIds: ['t'],
+  refusedTasks: [],
   qualityThreshold: 0.8,
   qualityThresholdDescription: 'd',
   provenance: 'p',
@@ -40,7 +41,7 @@ test('writeBenchmarkReport writes the report and commitBenchmarkReport commits O
   const filePath = writeBenchmarkReport(root, REPORT, '2026-07-13');
   assert.ok(fs.existsSync(filePath));
 
-  const committed = commitBenchmarkReport(root, filePath, REPORT.taskId, '2026-07-13');
+  const committed = commitBenchmarkReport(root, filePath, REPORT.taskIds, '2026-07-13');
   assert.equal(committed, true);
 
   const log = git(root, ['log', '--oneline', '--', filePath]);
@@ -53,7 +54,7 @@ test('writeBenchmarkReport writes the report and commitBenchmarkReport commits O
 test('the report can be read back from repository state alone (round-trips)', () => {
   const root = initRepo();
   const filePath = writeBenchmarkReport(root, REPORT, '2026-07-13');
-  commitBenchmarkReport(root, filePath, REPORT.taskId, '2026-07-13');
+  commitBenchmarkReport(root, filePath, REPORT.taskIds, '2026-07-13');
 
   const readBack = JSON.parse(fs.readFileSync(benchmarkReportPath(root, '2026-07-13'), 'utf8'));
   assert.deepEqual(readBack, REPORT);
@@ -62,9 +63,9 @@ test('the report can be read back from repository state alone (round-trips)', ()
 test('re-writing an unchanged report makes no duplicate commit', () => {
   const root = initRepo();
   const filePath = writeBenchmarkReport(root, REPORT, '2026-07-13');
-  commitBenchmarkReport(root, filePath, REPORT.taskId, '2026-07-13');
+  commitBenchmarkReport(root, filePath, REPORT.taskIds, '2026-07-13');
   writeBenchmarkReport(root, REPORT, '2026-07-13');
-  const committedAgain = commitBenchmarkReport(root, filePath, REPORT.taskId, '2026-07-13');
+  const committedAgain = commitBenchmarkReport(root, filePath, REPORT.taskIds, '2026-07-13');
   assert.equal(committedAgain, false);
   const log = git(root, ['log', '--oneline', '--', filePath]);
   assert.equal(log.trim().split('\n').filter(Boolean).length, 1);

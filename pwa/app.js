@@ -883,7 +883,10 @@
     section.style.display = '';
     container.innerHTML = '';
 
-    var role = roleFromTaskId(report.taskId);
+    // BL-386: taskId became taskIds (a battery), but every task in one
+    // battery is for the same role, so the first id's own prefix still
+    // decides the role - roleFromTaskId's own convention is unchanged.
+    var role = roleFromTaskId(report.taskIds[0]);
     container.appendChild(el('p', { class: 'leaderboard-meta' }, [tr('roleLeaderboardRolePrefix') + role]));
     container.appendChild(
       el('p', { class: 'leaderboard-meta' }, [tr('roleLeaderboardAsOfPrefix') + new Date(report.generatedAtIso).toLocaleDateString()])
