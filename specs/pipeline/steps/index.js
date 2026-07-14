@@ -159,6 +159,7 @@ const DOMAINS = [
   require('./syncWorktreeScriptsNeverClobbersSteps'),
   require('./clisTestedInProcessSteps'),
   require('./wrapperResolvesPathsAgainstCallerSteps'),
+  require('./answerPairingAcrossThreadsSteps'),
 ];
 
 function registerSteps(registry) {
