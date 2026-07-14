@@ -59,6 +59,6 @@ acceptance:
     - "The battery probes what a trivial task cannot"
     - "A task that even a correct solution cannot pass is refused"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: medium

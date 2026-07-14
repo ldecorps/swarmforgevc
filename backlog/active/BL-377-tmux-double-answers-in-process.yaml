@@ -109,6 +109,6 @@ acceptance:
     - "A genuine subprocess boundary keeps the PATH-executable fake"
     - "The double restores whatever it replaced"
 
-human_approval: pending  # new feature file, authored 2026-07-14 — needs human review
+human_approval: approved  # human: "approve everything", 2026-07-14
 
 mutation_cost: medium
