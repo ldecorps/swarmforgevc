@@ -399,12 +399,20 @@
 ;; as corrupt for a reason that has nothing to do with dispatchability.
 (def required-envelope-headers ["from" "to" "priority" "type"])
 
-(defn parse-envelope [content]
+(defn parse-envelope
+  "Splits handoff file content into its header map and body. Shared by
+   corrupt-handoff? here and by handoffd.bb's parse-message (which slurps a
+   path and adds :content) - both need the identical header-block/body
+   split, so this is the one place it lives. A header line with a blank
+   value is kept as-is rather than filtered here: corrupt-handoff? below
+   already treats a missing key and a blank-value key identically via
+   str/blank?, so filtering here would be redundant, not stricter."
+  [content]
   (let [[header body] (str/split content #"\n\n" 2)
         headers (into {}
                       (for [line (str/split-lines (or header ""))
                             :let [[k v] (str/split line #": " 2)]
-                            :when (and k v (not (str/blank? k)) (not (str/blank? v)))]
+                            :when (and k v)]
                         [k v]))]
     {:headers headers :body (or body "")}))
 
@@ -462,6 +470,23 @@
             (recur (next remaining) (conj corrupt f) valid))
         (recur (next remaining) corrupt (conj valid f)))
       {:corrupt corrupt :valid valid})))
+
+(defn resolve-dequeueable-candidates
+  "Shared by ready_for_next_task.bb and ready_for_next_batch.bb: dedups
+   new-dir candidates against the completed/abandoned terminal set, then
+   quarantines any corrupt candidate among what's left (BL-365), printing
+   the SKIPPED/QUARANTINED diagnostic for each as a side effect. Returns
+   the final list of files genuinely eligible to dequeue - both receive
+   modes apply the identical corruption guard this way, rather than each
+   re-deriving it."
+  [new-files completed-basenames abandoned-basenames]
+  (let [{:keys [skipped dequeueable]} (dedup-new-candidates new-files completed-basenames abandoned-basenames)
+        {:keys [corrupt valid]} (partition-corrupt dequeueable)]
+    (doseq [f skipped]
+      (println "SKIPPED already-processed:" (fs/file-name f)))
+    (doseq [f corrupt]
+      (println "QUARANTINED corrupt-handoff:" (fs/file-name f)))
+    valid))
 
 (defn print-task [file]
   (let [task-name (header-field file "task")]

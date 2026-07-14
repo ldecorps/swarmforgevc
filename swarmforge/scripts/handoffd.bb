@@ -127,16 +127,8 @@
                  :receive-mode (or receive-mode "task")}])))
 
 (defn parse-message [path]
-  (let [content (slurp (str path))
-        [header body] (str/split content #"\n\n" 2)
-        headers (into {}
-                      (for [line (str/split-lines header)
-                            :let [[k v] (str/split line #": " 2)]
-                            :when (and k v)]
-                        [k v]))]
-    {:headers headers
-     :body (or body "")
-     :content content}))
+  (let [content (slurp (str path))]
+    (assoc (handoff-lib/parse-envelope content) :content content)))
 
 (defn render-message [headers body]
   (let [preferred ["id" "from" "to" "recipient" "priority" "type" "role" "commit"

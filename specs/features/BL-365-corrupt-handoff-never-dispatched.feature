@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=f849db3862b7cba06cb7bbcd8803007a1cb141acc83cff23bad298bb64b302a4
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-14T03:53:55.880936138Z","feature_name":"A corrupt handoff is quarantined and surfaced, never delivered as work","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-365-corrupt-handoff-never-dispatched.feature","background_hash":"6f0ce5e6a9f8cd29d16822bb207f5db94940a4290de18d00af50e870bd4ceb26","implementation_hash":"unknown","scenarios":[{"index":0,"name":"A corrupt handoff is never dispatched to a role as work","scenario_hash":"a3eec46efcc6398e9da799f2f7cf692482947af70a3a47d7dbc50009ea8b4ff1","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-07-14T03:53:55.880936138Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A corrupt handoff is quarantined and surfaced, never delivered as work
 
 # BL-365: on 2026-07-13 a coder→cleaner git_handoff was emitted as a ZERO-BYTE file
