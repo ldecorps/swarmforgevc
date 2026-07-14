@@ -1,0 +1,105 @@
+id: BL-378
+title: "Nothing stops a single test file quietly becoming the suite's next 10-second pole"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+priority: 6
+direction: human-requested
+depends_on: [BL-375, BL-376, BL-377]
+source: "backlog/INTAKE-split-the-three-test-suite-poles.md — the human via Telegram SUP-2, 2026-07-14 07:12Z, verbatim: 'Splt the poles'. Slice 4 of 4 (with BL-375, BL-376, BL-377); the intake's fourth success criterion, 'a regression guard so a future file cannot silently become a new 10s pole'."
+
+notes: |
+  THE ASK. The intake's own fourth success criterion. BL-375/376/377 fix today's three poles;
+  this is what stops them growing back, or a fourth file becoming the next one.
+
+  WHY THE EXISTING TREND CANNOT DO THIS. BL-078/BL-252 already trend the WHOLE-SUITE duration
+  and surface a regression-warn flag in the daily briefing and the holistic UI
+  (`extension/src/tools/suite-duration-line.ts`, `computeSuiteDurationTrend`). That is exactly
+  the signal that CANNOT catch this: it tells you the suite got slower, never that ONE FILE did
+  it. And because wall clock == "slowest file + ~1s", a single file is the only thing that
+  meaningfully can. Do not extend the whole-suite trend to cover this; it answers a different
+  question. A per-file budget is the new thing.
+
+  THE ARITHMETIC THAT MAKES THIS WORTH A TICKET. 250 files, 3,458 tests, 83s of total file-time
+  compressed into 12.0s wall across 20 workers (~7x parallelism). Median file: 14ms. One file
+  growing to 10s therefore costs as much wall clock as the other 249 combined — and it does so
+  completely silently, because every individual test in it still passes.
+
+  ⚠ DEPENDS ON ALL THREE FIXES, AND THAT ORDER IS LOAD-BEARING. A budget that today's poles
+  already breach would fail the moment it lands. Promote this only after BL-375/376/377 have
+  merged, and set the initial budget from the profile QA reports at that point.
+
+  SCOPE. A per-file duration guard: read per-file durations from a test run (Vitest can emit
+  them; a JSON reporter is the obvious source), compare each against a budget, fail and NAME
+  every offender. Plus the wiring that makes it actually run (scenario 04). Out of scope: the
+  three fixes themselves, and any change to the BL-078/BL-252 whole-suite trend surface.
+
+  ⚠ A GUARD WITH NO CALLER IS A DARK FEATURE. This is the one failure mode that would silently
+  void the whole ticket: a correct, fully-tested guard module that nothing ever invokes is
+  green in CI and useless in life. It is the 3rd-occurrence rule family in the engineering
+  article (a pure module with zero production callers can never fire). Scenario 04 is the
+  assertion that closes it — the guard must run as part of the project's NORMAL verification
+  command, not as a thing someone remembers to type. Do not treat scenario 04 as the optional
+  one; it is the ticket.
+
+  NOT IN SCOPE / DO NOT ASSUME.
+    - A per-TEST budget. The unit of parallelism is the FILE; a slow file is what costs wall
+      clock, and a file of 200 fast tests is perfectly healthy. Budget the file.
+    - Failing the build on a slow whole SUITE. That is BL-078/BL-252's job and it already exists.
+    - Auto-splitting anything. The guard reports; a human or a ticket decides what to do.
+
+  IMPLEMENTATION NOTES FOR THE CODER.
+    - THE BUDGET NUMBER. Do not hardcode a number pulled from the air, and do not scatter it.
+      Put it in ONE named place. Set it from the post-fix profile: today's next-slowest file
+      (after the three poles) is 3.3s, so a budget in the 4-5s band leaves honest headroom while
+      still catching a file heading for 10s. Confirm against the profile QA reports for
+      BL-375/376/377 rather than trusting this estimate — it was made before those landed.
+    - Name the offender, its duration, AND the budget it broke (scenario 01). A guard that says
+      only "too slow" sends the next person back to re-profile from scratch, which is precisely
+      the work this ticket exists to eliminate.
+    - Report EVERY offender, not just the first (scenario 03). Failing on the first one hides
+      the others and turns one fix into N sequential rediscoveries.
+    - A CLI's `main()` must be a THIN wrapper over exported, pure helpers — and must itself be
+      called IN-PROCESS by a test, not only spawned as a subprocess. This is the 5th-occurrence
+      rule family and it is caught late, at the hardener's gate, every time. Copy the working
+      in-process seam in `queueStatusCli.test.js` / `recordRunCli.test.js`. Reach a fixture by
+      STUBBING `process.cwd()` — NEVER `process.chdir()`, which throws inside the worker thread
+      Stryker runs the suite in, aborting the entire mutation run (BL-363 did exactly this).
+
+  IR-DRY REVIEW (done at spec time — do not relitigate). Three findings, all medium and all
+  DELIBERATE: possible-synonym among "the guard sees a test file whose duration exceeds that
+  budget" (01), "the guard sees no test file exceeding that budget" (02), and "the guard sees
+  more than one test file exceeding that budget" (03). These three are the ticket's entire
+  decision table — one offender, none, and many — and collapsing any pair would delete a case.
+  ⚠ CODER, NOTE THE HAZARD, IT IS ACUTE HERE: all three texts share the tail "test file(s)
+  exceeding that budget", so ONE loose regex would swallow all three and go green while
+  asserting nothing at all. They MUST get three distinct, anchored handlers asserting three
+  different outcomes (fail-and-name-one / pass / fail-and-name-all). This is the known
+  shared-cell, first-registered-handler-wins trap and it has bitten this project 5x — treat it
+  as the default expectation here, not a corner case.
+
+  E2E QA PROCEDURE (live).
+    1. Confirm BL-375/376/377 are merged, then run the suite clean and record the profile. The
+       guard's budget must be above the real post-fix slowest file, with headroom. If it is not,
+       the budget is wrong — bounce it rather than weakening a test to fit.
+    2. Artificially make one test file breach the budget (a temporary local delay is fine — this
+       is a throwaway edit, not a committed test). Assert the normal verification command FAILS,
+       and that its output names that file, its duration, and the budget. Revert the edit.
+    3. Make TWO files breach it. Assert both are named, not just the first.
+    4. Assert the guard runs from the project's normal verification command with no extra
+       invocation — this is the dark-feature check and the one most likely to be quietly missed.
+    5. Report the final profile: total wall clock and the slowest single file, against the
+       intake's 12.0s baseline. This is the number the human asked for.
+
+acceptance:
+  feature: specs/features/BL-378-no-single-file-bounds-the-suite.feature
+  steps:
+    - "A file over the budget fails the guard"
+    - "Every file within budget passes"
+    - "Every offender is named, not just the first"
+    - "The guard actually runs, rather than sitting there uncalled"
+
+human_approval: pending  # new feature file, authored 2026-07-14 — needs human review
+
+mutation_cost: low
