@@ -387,6 +387,75 @@ test('BL-298 topic-reply-01: a reply on a backlog item\'s topic routes to postOp
   assert.equal(result.dropped, 0);
 });
 
+// ── BL-357: an approval reply flips the ticket's human_approval field ────
+
+test('BL-357: a reply containing "approve" on a backlog item\'s topic also records the approval, alongside the existing operator-context post', async () => {
+  const contexts = [];
+  const approvals = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'I approve this' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a backlog-item topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for a backlog-item topic reply');
+    },
+    subjectForTopic: () => undefined,
+    backlogForTopic: (topicId) => (topicId === 42 ? 'BL-123' : undefined),
+    postOperatorContext: async (backlogId, text) => {
+      contexts.push({ backlogId, text });
+      return true;
+    },
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return true;
+    },
+  });
+  assert.deepEqual(contexts, [{ backlogId: 'BL-123', text: 'I approve this' }]);
+  assert.deepEqual(approvals, ['BL-123']);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-357: an ordinary reply with no approval keyword posts operator context but never calls recordApprovalReply', async () => {
+  const approvals = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'still working on it' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a backlog-item topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for a backlog-item topic reply');
+    },
+    subjectForTopic: () => undefined,
+    backlogForTopic: (topicId) => (topicId === 42 ? 'BL-123' : undefined),
+    postOperatorContext: async () => true,
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return true;
+    },
+  });
+  assert.deepEqual(approvals, []);
+});
+
+test('BL-357: an approval reply on a SUP-### subject topic (not a backlog item) never calls recordApprovalReply', async () => {
+  const approvals = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'approved' })] }),
+    postToBridge: async () => true,
+    openSubjectAndRecord: async () => 'SUP-500',
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-500' : undefined),
+    backlogForTopic: () => undefined,
+    postOperatorContext: async () => {
+      throw new Error('postOperatorContext should not be called for a SUP-### subject topic');
+    },
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return true;
+    },
+  });
+  assert.deepEqual(approvals, []);
+});
+
 test('BL-298 topic-reply-02: a SUP-### subject\'s topic still posts via postToBridge (no regression), never postOperatorContext', async () => {
   const posted = [];
   const result = await pollAndForward(0, PRINCIPAL_ID, {

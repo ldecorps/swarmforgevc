@@ -8,6 +8,7 @@
 // map) into pollAndForward below.
 import { TelegramUpdate, GetUpdatesResult } from '../notify/telegramClient';
 import { computeTelegramRetryBackoffMs } from '../notify/telegramRetry';
+import { isApprovalReplyText } from '../concierge/pendingApprovalReply';
 
 // BL-353: moved from the retired notify/telegramInboundRelay.ts (which
 // also carried the legacy single-chat TelegramInboundRelay class, now
@@ -227,6 +228,14 @@ export interface PollAdapters {
   // the Operator does with that context is the Operator's own behavior,
   // out of scope here.
   postOperatorContext: (backlogId: string, text: string) => Promise<boolean>;
+  // BL-357: pendingApprovalReply.ts's recordApprovalReply, adapter-injected
+  // - flips the ticket's human_approval field when its topic reply is
+  // recognized as an approval (isApprovalReplyText). A SEPARATE effect from
+  // postOperatorContext above (that one is unconditional context for
+  // whatever's happening with the ticket; this one only fires on the
+  // approval keyword, and writes to the ticket's own YAML, not a gated
+  // pane) - both apply to the same reply, neither replaces the other.
+  recordApprovalReply: (backlogId: string) => Promise<boolean>;
 }
 
 export interface PollResult {
@@ -251,7 +260,13 @@ async function processUpdate(update: TelegramUpdate, principalUserId: string, ad
     return adapters.postToBridge(decision.subjectId, decision.text, update.update_id);
   }
   if (decision.action === 'operator-context') {
-    return adapters.postOperatorContext(decision.backlogId, decision.text);
+    const posted = await adapters.postOperatorContext(decision.backlogId, decision.text);
+    // BL-357: fires alongside the context post above, never instead of it -
+    // a reply that approves a ticket is still ALSO context for it.
+    if (isApprovalReplyText(decision.text)) {
+      await adapters.recordApprovalReply(decision.backlogId);
+    }
+    return posted;
   }
   if (decision.action === 'open-default' || decision.action === 'open-for-topic') {
     const topicId = decision.action === 'open-for-topic' ? decision.topicId : undefined;
