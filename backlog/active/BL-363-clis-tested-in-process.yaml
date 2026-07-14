@@ -26,8 +26,19 @@ notes: |
   reachable only by spawning a subprocess is invisible to in-process coverage and mutation, so its CRAP
   sits unmeasured and its mutants survive — the speed win is a by-product of closing that hole. The
   working seam already exists in-tree and should be copied, not reinvented:
-  `notifyDeadLettersCli.test.js` / `notifyRecertBatchCli.test.js` — `process.chdir(<fixture root>)`,
-  `await main()` directly, capture stdout, restore the previous cwd in a `finally`.
+  `queueStatusCli.test.js` / `recordRunCli.test.js` — STUB the accessors the CLI reads
+  (`process.cwd = () => root`, `process.argv`, and `os.homedir = () => home` where it resolves a home
+  path), `await main()` directly, capture stdout, restore every stub in a `finally`.
+
+  AMENDED 2026-07-14 (comments/notes only — no scenario changed, so no step handler changes).
+  This ticket originally prescribed reaching the fixture with `process.chdir()`, copying the
+  engineering article's own then-wrong wording. That is now BANNED and the article is corrected:
+  Stryker's vitest-runner hardcodes `pool: 'threads'`, where `process.chdir()` THROWS (aborting the
+  whole mutation run) and `os.homedir()` SILENTLY ignores a `process.env.HOME` overlay (writing the
+  fixture into the developer's real home). Neither reproduces under a plain `vitest run`, which uses
+  the forked-process pool — a green unit suite is not proof. The hardener hit both live on this
+  ticket and converted the tests to the stub seam above; this amendment only aligns the ticket's
+  prose with what shipped, so the durable feature file does not teach the trap to the next reader.
 
   THE GUARDRAIL. The rule is "in-process BY DEFAULT", not "never spawn". Each CLI KEEPS exactly ONE
   genuine end-to-end spawn as a smoke test, so the shebang / argv / exit-code wiring stays locked. A
@@ -36,10 +47,11 @@ notes: |
   extracting that seam IS part of this ticket — that is the thin-wrapper rule, and it is why this is
   worth doing at 32-file scale rather than as a test-only tidy.
 
-  THE HAZARD THIS INTRODUCES, AND MUST CLOSE (scenario 05). In-process CLI tests `chdir` into a fixture
-  root. Vitest workers run files in one process, so a test that exits without restoring the cwd
-  silently corrupts every test after it, in a way that looks like an unrelated flake. Every chdir is
-  paired with a `finally` that restores it — the existing seam already does this; every new one must.
+  THE HAZARD THIS INTRODUCES, AND MUST CLOSE (scenario 05). In-process CLI tests point the CLI at a
+  fixture root by overriding what it reads as its cwd/home. Vitest runs every file in one worker
+  process, so a test that exits without restoring that override silently corrupts every test after
+  it, in a way that looks like an unrelated flake. Every override is paired with a `finally` that
+  restores it — the stub seam above already does this; every new one must.
 
   SCOPE. The 32 spawning test files under `extension/test/` (all of the 33 grep matches EXCEPT
   dependencyGateCli.test.js), plus any `extension/src/tools/*.ts` CLI whose `main()`/logic is not yet
