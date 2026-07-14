@@ -8,6 +8,7 @@ const {
   resolveAgentPaneTarget,
   getPaneCommand,
   getPanePid,
+  getPanePidAndCommand,
   capturePane,
   sendKeys,
   sessionExists,
@@ -135,6 +136,32 @@ test('getPanePid returns empty string when tmux call fails', () => {
   ]);
   try {
     assert.equal(getPanePid('/tmp/fake.sock', 'sess:0.1'), '');
+  } finally {
+    fake.restore();
+  }
+});
+
+// BL-362 QA bounce follow-up: one display-message call for both pane_pid and
+// pane_current_command, instead of PaneTailer's poll path spawning two.
+test('getPanePidAndCommand splits pid and command from a single tab-separated call', () => {
+  const fake = installFakeTmux([
+    { subcommand: 'display-message', exitCode: 0, stdout: '54321\tnode\n' },
+  ]);
+  try {
+    assert.deepEqual(getPanePidAndCommand('/tmp/fake.sock', 'sess:0.1'), { pid: '54321', command: 'node' });
+    const call = fake.calls().find((args) => args.includes('display-message'));
+    assert.ok(call.includes('#{pane_pid}\t#{pane_current_command}'), 'expected a single combined format string');
+  } finally {
+    fake.restore();
+  }
+});
+
+test('getPanePidAndCommand returns empty pid and command when tmux call fails', () => {
+  const fake = installFakeTmux([
+    { subcommand: 'display-message', exitCode: 1, stdout: '' },
+  ]);
+  try {
+    assert.deepEqual(getPanePidAndCommand('/tmp/fake.sock', 'sess:0.1'), { pid: '', command: '' });
   } finally {
     fake.restore();
   }

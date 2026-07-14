@@ -26,7 +26,7 @@ let capturedWindow = '';
 beforeEach(() => {
   vi.spyOn(tmuxClient, 'sessionExists').mockReturnValue(true);
   vi.spyOn(tmuxClient, 'getPaneBaseIndex').mockReturnValue(0);
-  vi.spyOn(tmuxClient, 'getPaneCommand').mockReturnValue('claude');
+  vi.spyOn(tmuxClient, 'getPanePidAndCommand').mockReturnValue({ pid: '1', command: 'claude' });
   vi.spyOn(tmuxClient, 'capturePane').mockImplementation(() => ({ stdout: capturedWindow, exitCode: 0, stderr: '' }));
   vi.spyOn(tmuxClient, 'resizeWindow').mockImplementation(() => {});
   vi.spyOn(tmuxClient, 'setHistoryLimit').mockImplementation(() => {});
