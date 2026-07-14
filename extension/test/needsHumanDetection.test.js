@@ -145,6 +145,15 @@ test('stripTerminalChrome removes CSI cursor-movement sequences', () => {
   assert.equal(stripTerminalChrome(`a${ESC}[2Kb${ESC}[1;1Hc`), 'abc');
 });
 
+test('stripTerminalChrome removes an OSC (operating system command) sequence, e.g. a window-title escape', () => {
+  const BEL = '\x07';
+  assert.equal(stripTerminalChrome(`${ESC}]0;agent-pane-title${BEL}hello`), 'hello');
+});
+
+test('stripTerminalChrome removes a bare C0 control byte that is not part of any escape sequence', () => {
+  assert.equal(stripTerminalChrome('a\x01b'), 'ab');
+});
+
 test('stripTerminalChrome leaves ordinary prose completely unchanged (no escape bytes present)', () => {
   const prose = 'BL-900 needs your approval: should we deploy to production today?';
   assert.equal(stripTerminalChrome(prose), prose);
