@@ -62,7 +62,8 @@ CONF
 # ═══════════════════════════════════════════════════════════════════════════
 
 ROOT="$(mktemp -d)"
-trap 'rm -rf "$ROOT"' EXIT
+FOREIGN_ROOT=""
+trap 'rm -rf "$ROOT" "$FOREIGN_ROOT"' EXIT
 
 mk_master_fixture "$ROOT"
 (cd "$ROOT" && git init -q && git_c add -A && git_c commit -q -m init)
@@ -136,12 +137,11 @@ echo "fake-roles" > "$FOREIGN_ROOT/.swarmforge/roles.tsv"
 echo "fake-socket" > "$FOREIGN_ROOT/.swarmforge/tmux-socket"
 echo "fake-env" > "$FOREIGN_ROOT/.swarmforge/tmux-env"
 
-zsh -c "source '$FOREIGN_ROOT/swarmforge/scripts/swarmforge.sh' '$FOREIGN_ROOT'; parse_config; sync_worktree_scripts" >/tmp/bl373-foreign.out 2>&1 || true
+FOREIGN_SYNC_OUT="$FOREIGN_ROOT/sync.out"
+zsh -c "source '$FOREIGN_ROOT/swarmforge/scripts/swarmforge.sh' '$FOREIGN_ROOT'; parse_config; sync_worktree_scripts" >"$FOREIGN_SYNC_OUT" 2>&1 || true
 
 [[ -f "$FOREIGN_ROOT/.worktrees/coder/swarmforge/scripts/foo.bb" ]] \
-  || fail "03: expected a target repo that does not track swarmforge/ to still receive the scripts, got: $(ls "$FOREIGN_ROOT/.worktrees/coder/swarmforge/scripts" 2>&1) / sync output: $(cat /tmp/bl373-foreign.out)"
+  || fail "03: expected a target repo that does not track swarmforge/ to still receive the scripts, got: $(ls "$FOREIGN_ROOT/.worktrees/coder/swarmforge/scripts" 2>&1) / sync output: $(cat "$FOREIGN_SYNC_OUT")"
 pass "03: a target repository that does not git-track the swarm scripts still receives them"
-
-rm -rf "$FOREIGN_ROOT"
 
 echo "ALL PASS"
