@@ -78,6 +78,27 @@ pass "01/05: every corrupt handoff (empty, truncated mid-header, headers-with-no
 
 rm -f "$INBOX/in_process"/*.handoff
 
+# ── when EVERY candidate is corrupt (no valid handoff behind them), the
+#    role must still get a clean NO_TASK - not an error, and nothing
+#    promoted into in_process/ - rather than the "always one valid file
+#    left over" shape the case above exercises ─────────────────────────────
+printf '' > "$INBOX/new/10_allcorrupt-empty_from_specifier_to_coder.handoff"
+printf 'id: x\nfrom: specifier\nto: coder\nrecipient: coder\npriority: 20\ntype: note\n' \
+  > "$INBOX/new/20_allcorrupt-nobody_from_specifier_to_coder.handoff"
+
+OUT="$(cd "$CODER_WT" && SWARMFORGE_ROLE=coder bb "$READY_TASK")"
+grep -q "QUARANTINED corrupt-handoff: 10_allcorrupt-empty_from_specifier_to_coder.handoff" <<< "$OUT" \
+  || fail "01 (all-corrupt): empty handoff was not reported as quarantined; got: $OUT"
+grep -q "QUARANTINED corrupt-handoff: 20_allcorrupt-nobody_from_specifier_to_coder.handoff" <<< "$OUT" \
+  || fail "01 (all-corrupt): headers-with-no-body handoff was not reported as quarantined; got: $OUT"
+grep -q "^NO_TASK$" <<< "$OUT" \
+  || fail "01 (all-corrupt): expected a clean NO_TASK when every candidate was corrupt; got: $OUT"
+[[ -z "$(ls -A "$INBOX/in_process" 2>/dev/null)" ]] \
+  || fail "01 (all-corrupt): nothing should have been promoted into in_process/"
+pass "01 (all-corrupt): when every queued candidate is corrupt, the role gets a clean NO_TASK, not a false task or an error"
+
+rm -f "$INBOX/new"/*.handoff.dead
+
 # ── same guard in batch mode ─────────────────────────────────────────────
 printf '' > "$INBOX/new/10_batch-empty_from_specifier_to_coder.handoff"
 valid_handoff_body "batch-valid" coder 90 > "$INBOX/new/90_batch-valid_from_specifier_to_coder.handoff"
@@ -92,6 +113,21 @@ grep -q "^BATCH: $INBOX/in_process/batch_" <<< "$OUT" \
 [[ ! -e "$INBOX/in_process"/batch_*/*batch-empty* ]] \
   || fail "01 (batch): a corrupt handoff was promoted into the in_process batch"
 pass "01 (batch mode): the same quarantine guard applies to ready_for_next_batch.bb"
+
+rm -rf "$INBOX/in_process"/* "$INBOX/new"/*
+
+# ── batch mode: when EVERY candidate is corrupt, batch mode must also get
+#    a clean NO_TASK rather than an empty/false batch ──────────────────────
+printf '' > "$INBOX/new/10_batch-allcorrupt_from_specifier_to_coder.handoff"
+
+OUT="$(cd "$CODER_WT" && SWARMFORGE_ROLE=coder bb "$READY_BATCH")"
+grep -q "QUARANTINED corrupt-handoff: 10_batch-allcorrupt_from_specifier_to_coder.handoff" <<< "$OUT" \
+  || fail "01 (batch, all-corrupt): empty handoff was not reported as quarantined; got: $OUT"
+grep -q "^NO_TASK$" <<< "$OUT" \
+  || fail "01 (batch, all-corrupt): expected a clean NO_TASK when every candidate was corrupt; got: $OUT"
+[[ -z "$(ls -A "$INBOX/in_process" 2>/dev/null)" ]] \
+  || fail "01 (batch, all-corrupt): nothing should have been promoted into in_process/"
+pass "01 (batch, all-corrupt): when every queued candidate is corrupt, batch mode also gets a clean NO_TASK"
 
 rm -rf "$INBOX/in_process"/* "$INBOX/new"/*
 
