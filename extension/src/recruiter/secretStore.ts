@@ -24,13 +24,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { ModelCandidate, SecretStore } from './candidate';
-
-function isInside(targetPath: string, root: string): boolean {
-  const resolvedRoot = path.resolve(root);
-  const resolvedTarget = path.resolve(targetPath);
-  const relative = path.relative(resolvedRoot, resolvedTarget);
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-}
+import { isPathInside } from '../util/pathContainment';
 
 function secretKeyFor(candidate: ModelCandidate): string {
   return `${candidate.provider}:${candidate.model}`;
@@ -48,7 +42,7 @@ export function createFileSecretStore(
   secretsFilePath: string,
   forbiddenWorkingTreeRoot: string = process.cwd()
 ): SecretStore {
-  if (isInside(secretsFilePath, forbiddenWorkingTreeRoot)) {
+  if (isPathInside(secretsFilePath, forbiddenWorkingTreeRoot)) {
     throw new Error(
       `refusing to store a secret inside the target working directory (${path.resolve(forbiddenWorkingTreeRoot)}) - the host secret store must live outside it`
     );
