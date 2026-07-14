@@ -16,8 +16,11 @@ SwarmForge already does. For the full product vision and roadmap, see
 
 Prerequisites:
 
-- **tmux** — SwarmForge's process substrate. macOS and Linux only; this
-  extension does not support Windows.
+- **tmux** — SwarmForge's process substrate. macOS and Linux only. On
+  Windows, run this extension through Remote-WSL — see
+  [Windows (via Remote-WSL)](#windows-via-remote-wsl) below; tmux does not
+  run natively on Windows, and this extension does not support running the
+  host there directly.
 - **A SwarmForge-enabled target project** — a repo that already has SwarmForge
   set up (a `./swarm` wrapper and `swarmforge/` config). Setting SwarmForge
   itself up in a target repo is outside this extension's scope; see
@@ -35,6 +38,38 @@ npm run compile
 
 Open the `extension/` folder in VS Code and press **F5** (Run Extension) to
 launch an Extension Development Host with SwarmForge VC loaded.
+
+### Windows (via Remote-WSL)
+
+This extension is a **workspace extension** (see `package.json`'s absent
+`extensionKind`, which VS Code defaults to workspace-preferred for a real
+`main`-entry extension like this one): its host process runs next to
+wherever tmux, the swarm socket, and `.swarmforge/` actually live, not
+necessarily next to the UI. SwarmForge depends on tmux, which does not run
+on Windows — so on a Windows machine, run this extension through
+**Remote-WSL**, the same "UI on Windows, host inside Linux" split desktop
+VS Code already uses for any WSL-based project. This is architecturally
+identical to the vscode.dev tunnel already in daily use for this repo.
+
+1. Install [WSL](https://learn.microsoft.com/windows/wsl/install) and a
+   Linux distribution, then install tmux, Node.js, and this repo's other
+   prerequisites **inside WSL** (not on the Windows side — a Windows-side
+   install of these tools is never seen by the extension host).
+2. Install the **Remote - WSL** extension in your Windows desktop VS Code.
+3. Open the repo from inside WSL: run `code .` from a WSL shell, or from
+   Windows VS Code run **WSL: Reopen Folder in WSL** (or **WSL: Connect to
+   WSL**, then open the folder) from the Command Palette.
+4. Confirm the remote indicator in VS Code's bottom-left corner reads
+   **WSL: `<distro name>`**. That indicator is the property that matters:
+   it means the extension host is running inside WSL, beside tmux and the
+   swarm, not on the Windows side where it could not reach either.
+5. From here, follow [Point it at a target and initialize](#2-point-it-at-a-target-and-initialize)
+   onward exactly as written — every command and step works identically
+   once you are remoted into WSL.
+
+Running the extension natively on Windows (outside WSL) is not supported:
+tmux cannot run there, and this extension does not attempt to bridge that
+gap.
 
 ## 2. Point it at a target and initialize
 

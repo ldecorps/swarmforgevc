@@ -741,23 +741,43 @@
    Front Desk Bot owns the topic mapping and resolves it itself once the
    reply reaches it over SSE.
 
-   BL-306 operator-ask-02: when this dispatched subject is the SAME thread
-   a clarifying question is pending on (operator-lib/resolve-pending-
-   answer), the reply IS that question's answer - paired in as
-   :pending-question/:answer, and the runtime's own await state is cleared
-   (this reply has been delivered; nothing left to time out)."
+   BL-306 operator-ask-02 / BL-354 Option C: when this dispatched subject
+   is the SAME thread a clarifying question is pending on
+   (operator-lib/resolve-inbound-answer), the reply IS that question's
+   answer - paired in as :pending-question/:answer, and the runtime's own
+   await state is cleared (this reply has been delivered; nothing left to
+   time out). When a question IS pending but in a DIFFERENT thread, the
+   message is never consumed as the answer: :pending-question is still
+   attached (so the Operator knows a question of its own is outstanding)
+   but WITHOUT :answer, the question is re-posted into this thread over
+   the same reply-outbox egress the escalation sweep already uses, and the
+   await re-homes here - same question, same asked-at-ms (the deadline
+   runs from the ORIGINAL ask, never reset by a thread hop), new
+   thread-id. The next reply in THIS thread then pairs."
   [thread-id]
   (let [awaiting (read-awaiting-answer)
-        pending? (operator-lib/resolve-pending-answer awaiting thread-id)
+        decision (operator-lib/resolve-inbound-answer awaiting thread-id)
         transcript (telegram-topic-lib/reply-context-for thread-id (support-thread-store/adapters-for state-dir))]
-    (when pending? (clear-awaiting-answer!))
+    (case (:outcome decision)
+      :pair (clear-awaiting-answer!)
+      :re-home
+      (let [question (:question decision)]
+        (append-to-reply-outbox! thread-id question)
+        (when-let [thread (support-thread-store/read-thread! state-dir thread-id)]
+          (support-thread-store/write-thread! state-dir (support-lib/append-message thread support-lib/operator-channel (now-iso) question)))
+        (write-awaiting-answer! {:question question :thread-id thread-id :asked-at-ms (:asked-at-ms decision)})
+        (log! "await-re-homed" thread-id))
+      :none nil)
     (atomic-spit! telegram-reply-context-file
                   (json/generate-string
                    (cond-> {:thread-id thread-id
                             :transcript transcript
                             :long-term-memory (operator-memory-lib/facts-for-wake (operator-memory-store/read-store! state-dir))}
-                     pending? (assoc :pending-question (:question awaiting)
-                                      :answer (operator-lib/answer-text-from-messages (:messages transcript))))))))
+                     (= (:outcome decision) :pair)
+                     (assoc :pending-question (:question awaiting)
+                            :answer (operator-lib/answer-text-from-messages (:messages transcript)))
+                     (= (:outcome decision) :re-home)
+                     (assoc :pending-question (:question decision)))))))
 
 (defn launch-operator!
   "Move the pending queue aside so new events accumulate cleanly, then spawn

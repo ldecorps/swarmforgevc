@@ -73,6 +73,7 @@ const VALID_FACTS = {
   readmeSummary: 'A CLI tool.',
   seedVision: 'Ship the MVP.',
   initialBacklogSummary: '5 tickets queued.',
+  useCaseObservations: [],
 };
 
 // ── parseArgs ────────────────────────────────────────────────────────────
