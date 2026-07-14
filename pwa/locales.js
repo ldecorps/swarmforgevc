@@ -133,6 +133,10 @@
       roleLeaderboardColDuration: 'Duration',
       roleLeaderboardBest: 'Best',
       roleLeaderboardBestValue: 'Best value',
+      // BL-385: under a quality tie, best-value reduces to cheapest - this
+      // distinct label says so, rather than presenting it as a quality-
+      // cost judgement quality did nothing to inform.
+      roleLeaderboardBestValueByCostAlone: 'Best value (ranked by cost alone — quality tied)',
       roleLeaderboardCheapestAcceptable: 'Cheapest acceptable',
       roleLeaderboardNoAcceptableSeparator: ': ',
       roleLeaderboardNoCost: 'no priced usage',
@@ -246,6 +250,7 @@
       roleLeaderboardColDuration: 'Durée',
       roleLeaderboardBest: 'Meilleur',
       roleLeaderboardBestValue: 'Meilleur rapport qualité-prix',
+      roleLeaderboardBestValueByCostAlone: 'Meilleur rapport qualité-prix (classé au coût seul — qualité ex æquo)',
       roleLeaderboardCheapestAcceptable: 'Moins cher acceptable',
       roleLeaderboardNoAcceptableSeparator: ' : ',
       roleLeaderboardNoCost: 'pas d\'usage tarifé',

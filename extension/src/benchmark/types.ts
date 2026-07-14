@@ -78,7 +78,17 @@ export interface ModelAggregate {
 
 export interface BenchmarkRanking {
   bestByQuality: string | null;
+  // BL-385: set (non-null) exactly when bestByQuality is null because the
+  // TOP quality score is shared by 2+ candidates - a real tie, distinct
+  // from noAcceptableModelReason below (no candidates at all is a
+  // different condition and must never be reported as a tie).
+  couldNotDiscriminateReason: string | null;
   bestByValue: string | null;
+  // BL-385: true when bestByValue was computed under a quality tie - with
+  // quality identical across the top candidates, "best value" reduces to
+  // cheapest, which is a defensible answer but must be LABELLED as a
+  // ranking on cost alone, never presented as a quality-cost judgement.
+  bestByValueRankedByCostAlone: boolean;
   cheapestAcceptable: string | null;
   noAcceptableModelReason: string | null;
 }
