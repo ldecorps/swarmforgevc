@@ -7,7 +7,7 @@ severity: medium
 priority: 4
 direction: human-requested
 source: "backlog/INTAKE-always-on-operator.md — the human via Telegram SUP-2, 2026-07-13T15:16Z: 'I want operator up & always on. File a bug ticket as it keeps dropping'."
-depends_on: []
+depends_on: [BL-366]
 
 notes: |
   THE ASK. A persistent, always-available Operator the human can talk to at any time — not one that
@@ -53,6 +53,15 @@ notes: |
     - So the deliverable is an installer that actually enables BOTH units on the PRIMARY/dogfood host,
       idempotently and re-runnably, giving restart-on-crash and autostart-on-boot. This is what makes
       "the channel never dies" true rather than merely intended.
+    - ⚠ BLOCKED ON BL-366 — AND IT IS WORSE THAN "NEVER INSTALLED". The units, AS GENERATED TODAY,
+      CANNOT START: the operator unit renders `ExecStart=bb …`, and systemd does not search PATH for
+      ExecStart ("Command bb is not executable"). Its `StartLimitIntervalSec=0` crash-burst guard also
+      sits in `[Service]`, where systemd ignores it, so a crash burst parks the unit in `failed`
+      permanently despite `Restart=always`. Installing these units as they stand would deliver NOTHING
+      — supervision that cannot start is not supervision. BL-366 fixes the generator and adds the
+      `systemd-analyze verify` gate that would have caught both. Land BL-366 FIRST; this ticket then
+      installs units that actually work. (Discovered 2026-07-14 while hand-installing them; the
+      operator layer's ~9h death on 2026-07-13, when Telegram went silent, is this defect's bill.)
 
   THE REAL GAP 2 — THE SINGLE-SLOT INVARIANT IS A FICTION, AND MUST BE MADE HONEST.
     - `operator-running?` (`operator_runtime.bb:278-284`) decides the slot by exactly two things: a
