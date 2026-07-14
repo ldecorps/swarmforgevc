@@ -825,6 +825,17 @@
     return idx === -1 ? taskId : taskId.slice(0, idx);
   }
 
+  // BL-386 architect bounce: taskIds is empty when every task in the
+  // battery was refused (acceptance scenario 05) - report.taskIds[0]
+  // would then be undefined and crash roleFromTaskId. Every task in the
+  // battery lands in EXACTLY one of taskIds/refusedTasks, so falling back
+  // to the first refused task's own id keeps the same "first id's prefix
+  // decides the role" convention with no battery-empty case to handle.
+  function roleForReport(report) {
+    var taskId = report.taskIds.length > 0 ? report.taskIds[0] : report.refusedTasks[0].taskId;
+    return roleFromTaskId(taskId);
+  }
+
   function findBenchmarkModel(models, modelId) {
     for (var i = 0; i < models.length; i++) {
       if (models[i].modelId === modelId) {
@@ -894,7 +905,9 @@
     // BL-386: taskId became taskIds (a battery), but every task in one
     // battery is for the same role, so the first id's own prefix still
     // decides the role - roleFromTaskId's own convention is unchanged.
-    var role = roleFromTaskId(report.taskIds[0]);
+    // BL-386 architect bounce: taskIds can be empty (every task refused),
+    // so the role is derived via roleForReport, not taskIds[0] directly.
+    var role = roleForReport(report);
     container.appendChild(el('p', { class: 'leaderboard-meta' }, [tr('roleLeaderboardRolePrefix') + role]));
     container.appendChild(
       el('p', { class: 'leaderboard-meta' }, [tr('roleLeaderboardAsOfPrefix') + new Date(report.generatedAtIso).toLocaleDateString()])

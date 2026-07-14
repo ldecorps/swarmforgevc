@@ -1,5 +1,14 @@
 const assert = require('node:assert/strict');
-const { sendTelegramMessage, getTelegramUpdates, createForumTopic, closeForumTopic, reopenForumTopic, deleteForumTopic } = require('../out/notify/telegramClient');
+const {
+  sendTelegramMessage,
+  getTelegramUpdates,
+  createForumTopic,
+  closeForumTopic,
+  reopenForumTopic,
+  deleteForumTopic,
+  editForumTopic,
+  getForumTopicIconStickers,
+} = require('../out/notify/telegramClient');
 
 const TOKEN = '123456:test-bot-token';
 const CHAT_ID = '999888777';
@@ -137,6 +146,32 @@ test('createForumTopic reports failure on a non-2xx response without leaking the
   assert.doesNotMatch(result.error, new RegExp(TOKEN));
 });
 
+// ── BL-342: createForumTopic's own optional icon at creation time ───────
+
+test('BL-342: createForumTopic includes icon_custom_emoji_id in the request body when given', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_thread_id: 9 } } };
+  };
+
+  await createForumTopic(TOKEN, CHAT_ID, 'BL-900 - a fine feature', postFn, 'icon-abc');
+
+  assert.deepEqual(JSON.parse(capturedBody), { chat_id: CHAT_ID, name: 'BL-900 - a fine feature', icon_custom_emoji_id: 'icon-abc' });
+});
+
+test('BL-342: createForumTopic omits icon_custom_emoji_id entirely when not given (existing callers unaffected)', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_thread_id: 9 } } };
+  };
+
+  await createForumTopic(TOKEN, CHAT_ID, 'BL-900 - a fine feature', postFn);
+
+  assert.deepEqual(JSON.parse(capturedBody), { chat_id: CHAT_ID, name: 'BL-900 - a fine feature' });
+});
+
 test('BL-299: closeForumTopic posts to the Telegram API with the topic\'s message_thread_id and reports success', async () => {
   const calls = [];
   const postFn = async (url, body) => {
@@ -228,5 +263,114 @@ test('BL-331: deleteForumTopic reports a redacted failure on a thrown network er
   const result = await deleteForumTopic(TOKEN, CHAT_ID, 7, postFn);
 
   assert.equal(result.success, false);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+// ── BL-342: editForumTopic - the wrapper the intake assumed existed ─────
+
+test('BL-342: editForumTopic posts name/icon updates with the topic\'s message_thread_id and reports success', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  const result = await editForumTopic(TOKEN, CHAT_ID, 7, { iconCustomEmojiId: 'icon-abc' }, postFn);
+
+  assert.deepEqual(result, { success: true });
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/editForumTopic`);
+  assert.deepEqual(JSON.parse(calls[0].body), { chat_id: CHAT_ID, message_thread_id: 7, icon_custom_emoji_id: 'icon-abc' });
+});
+
+test('BL-342: editForumTopic includes name when given, alongside or instead of the icon', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  await editForumTopic(TOKEN, CHAT_ID, 7, { name: 'BL-900 - renamed' }, postFn);
+
+  assert.deepEqual(JSON.parse(capturedBody), { chat_id: CHAT_ID, message_thread_id: 7, name: 'BL-900 - renamed' });
+});
+
+test('BL-342: editForumTopic reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'topic not found' } });
+
+  const result = await editForumTopic(TOKEN, CHAT_ID, 7, { iconCustomEmojiId: 'icon-abc' }, postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /topic not found/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('BL-342: editForumTopic reports a redacted failure on a thrown network error', async () => {
+  const postFn = async () => {
+    throw new Error(`connection reset while calling bot${TOKEN}`);
+  };
+
+  const result = await editForumTopic(TOKEN, CHAT_ID, 7, { iconCustomEmojiId: 'icon-abc' }, postFn);
+
+  assert.equal(result.success, false);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+// BL-342: the Operator's own real repro - 26 icon-set calls hit "Too Many
+// Requests: retry after 26" after 19 calls and 7 were silently dropped.
+// editForumTopic must surface retry_after so a caller can honour it,
+// rather than treating a 429 as an ordinary opaque failure.
+test('BL-342: editForumTopic surfaces retryAfterSeconds from a 429 rate-limit response', async () => {
+  const postFn = async () => ({
+    ok: false,
+    status: 429,
+    json: { ok: false, error_code: 429, description: 'Too Many Requests: retry after 26', parameters: { retry_after: 26 } },
+  });
+
+  const result = await editForumTopic(TOKEN, CHAT_ID, 7, { iconCustomEmojiId: 'icon-abc' }, postFn);
+
+  assert.equal(result.success, false);
+  assert.equal(result.retryAfterSeconds, 26);
+});
+
+test('BL-342: editForumTopic leaves retryAfterSeconds undefined for an ordinary (non-429) failure', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'topic not found' } });
+
+  const result = await editForumTopic(TOKEN, CHAT_ID, 7, { iconCustomEmojiId: 'icon-abc' }, postFn);
+
+  assert.equal(result.retryAfterSeconds, undefined);
+});
+
+// ── BL-342: getForumTopicIconStickers - the validated set icon ids must
+//    be resolved against, never a hardcoded id (scenario 06) ─────────────
+
+test('BL-342: getForumTopicIconStickers returns the sticker list with custom_emoji_id and emoji', async () => {
+  const postFn = async () => ({
+    ok: true,
+    status: 200,
+    json: {
+      ok: true,
+      result: [
+        { width: 100, height: 100, emoji: '✅', custom_emoji_id: 'icon-check' },
+        { width: 100, height: 100, emoji: '🐛', custom_emoji_id: 'icon-bug' },
+      ],
+    },
+  });
+
+  const result = await getForumTopicIconStickers(TOKEN, postFn);
+
+  assert.equal(result.success, true);
+  assert.deepEqual(result.stickers, [
+    { emoji: '✅', customEmojiId: 'icon-check' },
+    { emoji: '🐛', customEmojiId: 'icon-bug' },
+  ]);
+});
+
+test('BL-342: getForumTopicIconStickers reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 500, json: { ok: false, description: 'internal error' } });
+
+  const result = await getForumTopicIconStickers(TOKEN, postFn);
+
+  assert.equal(result.success, false);
+  assert.deepEqual(result.stickers, []);
   assert.doesNotMatch(result.error, new RegExp(TOKEN));
 });

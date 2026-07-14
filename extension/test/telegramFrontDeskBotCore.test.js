@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const {
   isFromPrincipal,
+  isFromMyChat,
   topicIdOf,
   messageTextOf,
   subjectForTopic,
@@ -30,8 +31,8 @@ const {
 
 const PRINCIPAL_ID = 111;
 
-function mkUpdate({ fromId, topicId, text } = {}) {
-  return { update_id: 1, message: { message_id: 1, chat: { id: 1 }, from: { id: fromId }, message_thread_id: topicId, text } };
+function mkUpdate({ fromId, topicId, text, chatId } = {}) {
+  return { update_id: 1, message: { message_id: 1, chat: { id: chatId ?? 1 }, from: { id: fromId }, message_thread_id: topicId, text } };
 }
 
 // ── isFromPrincipal / topicIdOf / messageTextOf (pure) ──────────────────
@@ -39,6 +40,17 @@ function mkUpdate({ fromId, topicId, text } = {}) {
 test('isFromPrincipal is true only for the configured principal id', () => {
   assert.equal(isFromPrincipal(mkUpdate({ fromId: PRINCIPAL_ID }), PRINCIPAL_ID), true);
   assert.equal(isFromPrincipal(mkUpdate({ fromId: 999 }), PRINCIPAL_ID), false);
+});
+
+// ── BL-379: isFromMyChat (pure) ──────────────────────────────────────────
+
+test('BL-379: isFromMyChat is true only for the bot\'s own configured chat id', () => {
+  assert.equal(isFromMyChat(mkUpdate({ fromId: PRINCIPAL_ID, chatId: 1 }), '1'), true);
+  assert.equal(isFromMyChat(mkUpdate({ fromId: PRINCIPAL_ID, chatId: 2 }), '1'), false);
+});
+
+test('BL-379: isFromMyChat compares by string value, tolerating a numeric-vs-string mismatch', () => {
+  assert.equal(isFromMyChat(mkUpdate({ fromId: PRINCIPAL_ID, chatId: -1001234567890 }), '-1001234567890'), true);
 });
 
 test('topicIdOf/messageTextOf read message_thread_id/text', () => {
@@ -158,39 +170,64 @@ test('BL-346: decideEnsureOperatorTopicAction is reserved-subject-specific - an 
 
 test('BL-281 telegram-topic-01: a principal message on a MAPPED topic posts under the resolved subjectId', () => {
   const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'any update?' });
-  const decision = decideUpdateAction(update, PRINCIPAL_ID, (topicId) => (topicId === 7 ? 'SUP-1' : undefined));
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', (topicId) => (topicId === 7 ? 'SUP-1' : undefined));
   assert.deepEqual(decision, { action: 'post-existing', subjectId: 'SUP-1', text: 'any update?' });
 });
 
 test('BL-281 telegram-topic-05 / BL-294 auto-open-04: a non-principal message is dropped, never posted or opened', () => {
   const update = mkUpdate({ fromId: 999, topicId: 7, text: 'let me in' });
-  const decision = decideUpdateAction(update, PRINCIPAL_ID, () => 'SUP-1');
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', () => 'SUP-1');
   assert.deepEqual(decision, { action: 'drop', reason: 'not-principal' });
 });
 
 test('BL-294 auto-open-01: a principal DM (no topic) with no default subject yet opens the default subject', () => {
   const update = mkUpdate({ fromId: PRINCIPAL_ID, text: 'hello from a DM' });
-  const decision = decideUpdateAction(update, PRINCIPAL_ID, () => undefined);
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', () => undefined);
   assert.deepEqual(decision, { action: 'open-default', text: 'hello from a DM' });
 });
 
 test('BL-294 auto-open-02: a principal message on an unmapped topic opens a subject FOR that topic', () => {
   const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'new conversation' });
-  const decision = decideUpdateAction(update, PRINCIPAL_ID, () => undefined);
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', () => undefined);
   assert.deepEqual(decision, { action: 'open-for-topic', topicId: 42, text: 'new conversation' });
 });
 
 test('a textless update (e.g. a sticker/photo) is dropped, never posted or opened with undefined text', () => {
   const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7 });
-  const decision = decideUpdateAction(update, PRINCIPAL_ID, () => 'SUP-1');
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', () => 'SUP-1');
   assert.deepEqual(decision, { action: 'drop', reason: 'no-text' });
+});
+
+// ── BL-379 front-desk-listens-only-to-its-own-chat-01: decideUpdateAction's chat guard ──
+
+test('BL-379: a principal message from a FOREIGN chat is dropped as not-my-chat, never taken as work', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, chatId: 2, text: 'hello' });
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', () => undefined);
+  assert.deepEqual(decision, { action: 'drop', reason: 'not-my-chat' });
+});
+
+test('BL-379: a message from the own chat but a non-principal sender is dropped as not-principal, not not-my-chat', () => {
+  const update = mkUpdate({ fromId: 999, chatId: 1, text: 'let me in' });
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', () => undefined);
+  assert.deepEqual(decision, { action: 'drop', reason: 'not-principal' });
+});
+
+// BL-379's own priority-order pin: BOTH drop conditions hold at once (a
+// stranger, in a foreign chat) - proves the chat guard is checked FIRST,
+// not merely that either guard alone can fire. Testing each condition in
+// isolation (the two tests immediately above) would leave this order
+// entirely unproven and let a clause-swap mutant survive.
+test('BL-379: a stranger in a foreign chat is dropped as not-my-chat - the chat guard wins over not-principal when both hold', () => {
+  const update = mkUpdate({ fromId: 999, chatId: 2, text: 'let me in' });
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', () => undefined);
+  assert.deepEqual(decision, { action: 'drop', reason: 'not-my-chat' });
 });
 
 // ── BL-298 topic-reply-01/02/03: BL-### topic replies route as Operator context ──
 
 test('BL-298 topic-reply-01: a reply on a topic mapped to a backlog item routes as operator context, not a support subject', () => {
   const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'here is an update' });
-  const decision = decideUpdateAction(update, PRINCIPAL_ID, () => undefined, (topicId) => (topicId === 42 ? 'BL-123' : undefined));
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', () => undefined, (topicId) => (topicId === 42 ? 'BL-123' : undefined));
   assert.deepEqual(decision, { action: 'operator-context', backlogId: 'BL-123', text: 'here is an update' });
 });
 
@@ -199,6 +236,7 @@ test('BL-298: a topic mapped to BOTH a SUP-### subject and a backlog item resolv
   const decision = decideUpdateAction(
     update,
     PRINCIPAL_ID,
+    '1',
     (topicId) => (topicId === 42 ? 'SUP-1' : undefined),
     (topicId) => (topicId === 42 ? 'BL-123' : undefined)
   );
@@ -210,6 +248,7 @@ test('BL-298 topic-reply-02: a topic mapped to a SUP-### subject still posts to 
   const decision = decideUpdateAction(
     update,
     PRINCIPAL_ID,
+    '1',
     (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
     () => undefined
   );
@@ -218,19 +257,19 @@ test('BL-298 topic-reply-02: a topic mapped to a SUP-### subject still posts to 
 
 test('BL-298 topic-reply-03: a non-principal reply on a backlog item\'s topic is still dropped, never routed as context', () => {
   const update = mkUpdate({ fromId: 999, topicId: 42, text: 'let me in' });
-  const decision = decideUpdateAction(update, PRINCIPAL_ID, () => undefined, () => 'BL-123');
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', () => undefined, () => 'BL-123');
   assert.deepEqual(decision, { action: 'drop', reason: 'not-principal' });
 });
 
 test('an unmapped topic with no backlog mapping either still opens a fresh SUP-### subject (unrelated brand-new topic, unchanged)', () => {
   const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 99, text: 'brand new' });
-  const decision = decideUpdateAction(update, PRINCIPAL_ID, () => undefined, () => undefined);
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', () => undefined, () => undefined);
   assert.deepEqual(decision, { action: 'open-for-topic', topicId: 99, text: 'brand new' });
 });
 
 test('decideUpdateAction called with only 3 args (no backlogForTopic) behaves exactly as before BL-298 - existing callers are unaffected', () => {
   const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 99, text: 'brand new' });
-  const decision = decideUpdateAction(update, PRINCIPAL_ID, () => undefined);
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', () => undefined);
   assert.deepEqual(decision, { action: 'open-for-topic', topicId: 99, text: 'brand new' });
 });
 
@@ -245,6 +284,7 @@ function stubOpenSubjectAndRecord() {
 test('pollAndForward posts each accepted update and counts posted/dropped', async () => {
   const posted = [];
   const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
     getUpdates: async () => ({
       success: true,
       updates: [
@@ -269,6 +309,7 @@ test('pollAndForward posts each accepted update and counts posted/dropped', asyn
 
 test('pollAndForward leaves the offset unchanged when the poll itself fails', async () => {
   const result = await pollAndForward(5, PRINCIPAL_ID, {
+    chatId: '1',
     getUpdates: async () => ({ success: false, updates: [], error: 'network error' }),
     postToBridge: async () => true,
     subjectForTopic: () => undefined,
@@ -281,6 +322,7 @@ test('pollAndForward leaves the offset unchanged when the poll itself fails', as
 
 test('BL-389: pollAndForward counts a failed bridge POST as failed, never dropped or posted', async () => {
   const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
     getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'hi' })] }),
     postToBridge: async () => false,
     subjectForTopic: () => 'SUP-1',
@@ -297,6 +339,7 @@ test('BL-389: pollAndForward counts a failed bridge POST as failed, never droppe
 test('BL-294 auto-open-01: a DM with no default subject yet opens one via openSubjectAndRecord and counts it posted', async () => {
   const opened = [];
   const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
     getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, text: 'hello' })] }),
     postToBridge: async () => {
       throw new Error('postToBridge should not be called for a fresh open - openSubjectAndRecord already delivered it');
@@ -316,6 +359,7 @@ test('BL-294 auto-open-01: a DM with no default subject yet opens one via openSu
 test('BL-294 auto-open-02: an unmapped topic opens a subject FOR that topic via openSubjectAndRecord', async () => {
   const opened = [];
   const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
     getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'new topic' })] }),
     postToBridge: async () => {
       throw new Error('postToBridge should not be called for a fresh open');
@@ -338,6 +382,7 @@ test('BL-294 auto-open-02: an unmapped topic opens a subject FOR that topic via 
 test('BL-389 rework: the open-path threads the update\'s own update_id through to openSubjectAndRecord', async () => {
   const opened = [];
   await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
     getUpdates: async () => ({ success: true, updates: [{ update_id: 777, message: { message_id: 777, chat: { id: 1 }, from: { id: PRINCIPAL_ID }, text: 'hello' } }] }),
     postToBridge: async () => {
       throw new Error('postToBridge should not be called for a fresh open');
@@ -355,6 +400,7 @@ test('BL-294 auto-open-03: a second message in an already-mapped context posts t
   let opens = 0;
   const posted = [];
   const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
     getUpdates: async () => ({
       success: true,
       updates: [
@@ -388,6 +434,7 @@ test('BL-294 auto-open-03: a second message in an already-mapped context posts t
 test('BL-298 topic-reply-01: a reply on a backlog item\'s topic routes to postOperatorContext, never postToBridge/openSubjectAndRecord', async () => {
   const contexts = [];
   const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
     getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'progress update' })] }),
     postToBridge: async () => {
       throw new Error('postToBridge should not be called for a backlog-item topic reply');
@@ -414,6 +461,7 @@ test('BL-357: a reply containing "approve" on a backlog item\'s topic also recor
   const contexts = [];
   const approvals = [];
   const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
     getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'I approve this' })] }),
     postToBridge: async () => {
       throw new Error('postToBridge should not be called for a backlog-item topic reply');
@@ -440,6 +488,7 @@ test('BL-357: a reply containing "approve" on a backlog item\'s topic also recor
 test('BL-357: an ordinary reply with no approval keyword posts operator context but never calls recordApprovalReply', async () => {
   const approvals = [];
   await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
     getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'still working on it' })] }),
     postToBridge: async () => {
       throw new Error('postToBridge should not be called for a backlog-item topic reply');
@@ -461,6 +510,7 @@ test('BL-357: an ordinary reply with no approval keyword posts operator context 
 test('BL-357: an approval reply on a SUP-### subject topic (not a backlog item) never calls recordApprovalReply', async () => {
   const approvals = [];
   await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
     getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'approved' })] }),
     postToBridge: async () => true,
     openSubjectAndRecord: async () => 'SUP-500',
@@ -480,6 +530,7 @@ test('BL-357: an approval reply on a SUP-### subject topic (not a backlog item) 
 test('BL-298 topic-reply-02: a SUP-### subject\'s topic still posts via postToBridge (no regression), never postOperatorContext', async () => {
   const posted = [];
   const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
     getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'any update?' })] }),
     postToBridge: async (subjectId, text) => {
       posted.push({ subjectId, text });
@@ -501,6 +552,7 @@ test('BL-298 topic-reply-02: a SUP-### subject\'s topic still posts via postToBr
 
 test('BL-298 topic-reply-03: a non-principal reply on a backlog item\'s topic is dropped - reaches neither the Operator nor a thread', async () => {
   const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
     getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: 999, topicId: 42, text: 'let me in' })] }),
     postToBridge: async () => {
       throw new Error('postToBridge should not be called for a non-principal reply');
@@ -804,6 +856,7 @@ test('poll-resilience-02: shouldRaiseDegradedWarning fires exactly on the thresh
 
 function fakeCycleAdapters(getUpdatesResult) {
   return {
+    chatId: '1',
     getUpdates: async () => getUpdatesResult,
     postToBridge: async () => true,
     subjectForTopic: () => undefined,
@@ -1130,6 +1183,7 @@ test('shouldEscalateStuckDelivery fires exactly on the threshold crossing, not b
 function fakeStuckCycleAdapters({ deliver }) {
   const update = { update_id: 1, message: { message_id: 1, chat: { id: 1 }, from: { id: PRINCIPAL_ID }, text: 'stuck' } };
   return {
+    chatId: '1',
     getUpdates: async () => ({ success: true, updates: [update] }),
     postToBridge: async () => deliver,
     subjectForTopic: () => 'SUP-1',

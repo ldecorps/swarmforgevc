@@ -41,6 +41,16 @@ test('QA bounce repro: sessionStorage is caught too, and a clean media file is n
   const violations = scanMediaFilesForStorageGlobals(root, ['media']);
 
   assert.deepEqual(violations.map((v) => v.from).sort(), ['media/bad.js']);
+
+  // BL-375 architect bounce: this test's own body must genuinely exercise
+  // the real pinned checker (runGate composes runDependencyCruiser), not
+  // merely live in a file alongside another test that does - a per-file
+  // check is not proof of a per-test claim. Mirrors the localStorage
+  // repro's own full-gate assertion immediately above.
+  const full = runGate(['media'], root, REAL_CONFIG_PATH);
+  assert.equal(full.passed, false);
+  const violation = full.violations.find((v) => v.rule === 'no-webview-storage' && v.from === 'media/bad.js');
+  assert.ok(violation, `expected the real gate to also flag the sessionStorage violation, got: ${JSON.stringify(full.violations)}`);
 });
 
 test('scanMediaFilesForStorageGlobals only scans media/ scope paths - a src/ scope contributes nothing', () => {

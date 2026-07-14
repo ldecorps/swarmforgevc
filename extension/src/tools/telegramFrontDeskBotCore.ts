@@ -24,6 +24,19 @@ export function isFromPrincipal(update: TelegramUpdate, principalUserId: string)
   return fromId !== undefined && String(fromId) === String(principalUserId);
 }
 
+// BL-379: the message's own chat, already parsed and typed
+// (TelegramMessage.chat, telegramClient.ts) - the ONE field
+// decideUpdateAction never consulted before this. Telegram's own
+// getUpdates is scoped to the BOT, not the chat: it returns updates from
+// EVERY chat the bot is in, so filtering on sender alone lets a second
+// project's chat (the bot added to a stray group) silently cross-wire its
+// messages into this project's own support threads via BL-294's
+// auto-adopt - the same loss class as BL-369/370/371.
+export function isFromMyChat(update: TelegramUpdate, chatId: string): boolean {
+  const updateChatId = update.message?.chat?.id;
+  return updateChatId !== undefined && String(updateChatId) === String(chatId);
+}
+
 export function topicIdOf(update: TelegramUpdate): number | undefined {
   return update.message?.message_thread_id;
 }
@@ -156,16 +169,17 @@ export type BotUpdateDecision =
   | { action: 'operator-context'; backlogId: string; text: string }
   | { action: 'open-default'; text: string }
   | { action: 'open-for-topic'; topicId: number; text: string }
-  | { action: 'drop'; reason: 'not-principal' | 'no-text' };
+  | { action: 'drop'; reason: 'not-principal' | 'no-text' | 'not-my-chat' };
 
 // Pure: the bot's whole per-update decision - given the update, the
-// principal's user id, a lookup from topic id -> already-mapped SUP-###
-// subject id (the bot's own persisted mapping), and a lookup from topic id
-// -> a BL-### backlog item's topic (BL-297's own persisted mapping,
-// inverted via topicRouter.ts's backlogForTopic) - decides whether to post
-// under an existing subject, route as Operator context for a backlog item
-// (BL-298), open a new subject (private DM -> the single default subject;
-// an unmapped topic -> a fresh per-topic subject), or drop.
+// principal's user id, the bot's own configured chat id, a lookup from
+// topic id -> already-mapped SUP-### subject id (the bot's own persisted
+// mapping), and a lookup from topic id -> a BL-### backlog item's topic
+// (BL-297's own persisted mapping, inverted via topicRouter.ts's
+// backlogForTopic) - decides whether to post under an existing subject,
+// route as Operator context for a backlog item (BL-298), open a new
+// subject (private DM -> the single default subject; an unmapped topic ->
+// a fresh per-topic subject), or drop.
 //
 // backlogForTopic defaults to a no-op (always undefined) so every existing
 // caller that has no notion of BL-### topics (BL-281/BL-294's own call
@@ -182,9 +196,19 @@ export type BotUpdateDecision =
 export function decideUpdateAction(
   update: TelegramUpdate,
   principalUserId: string,
+  chatId: string,
   subjectForTopic: (topicId: number | undefined) => string | undefined,
   backlogForTopic: (topicId: number | undefined) => string | undefined = () => undefined
 ): BotUpdateDecision {
+  // BL-379: checked FIRST - getUpdates is scoped to the BOT, not the chat,
+  // so a message from a foreign chat is refused regardless of who sent it
+  // (a stranger in a foreign chat is "not-my-chat", never "not-principal" -
+  // the chat guard wins). Both conditions can hold at once (an
+  // unauthorized sender posting in a foreign chat is an ordinary state,
+  // not a contrived one), so this ORDER is load-bearing, not incidental.
+  if (!isFromMyChat(update, chatId)) {
+    return { action: 'drop', reason: 'not-my-chat' };
+  }
   if (!isFromPrincipal(update, principalUserId)) {
     return { action: 'drop', reason: 'not-principal' };
   }
@@ -205,6 +229,13 @@ export function decideUpdateAction(
 }
 
 export interface PollAdapters {
+  // BL-379: the bot's own configured chat id - decideUpdateAction's new
+  // guard against getUpdates' bot-wide (not chat-scoped) result set. Lives
+  // on the adapters object (a plain config value, not a function) rather
+  // than as a new positional parameter threaded through
+  // processUpdate/pollAndForward/runPollCycle, so those signatures - and
+  // their many existing callers - are unaffected.
+  chatId: string;
   getUpdates: (offset: number) => Promise<GetUpdatesResult>;
   // BL-369: updateId (the Telegram update's own update_id) rides every call
   // so the bridge can dedupe a redelivered message by its natural
@@ -286,7 +317,7 @@ function deliveryOutcome(ok: boolean): UpdateDeliveryOutcome {
 }
 
 async function processUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
-  const decision = decideUpdateAction(update, principalUserId, adapters.subjectForTopic, adapters.backlogForTopic);
+  const decision = decideUpdateAction(update, principalUserId, adapters.chatId, adapters.subjectForTopic, adapters.backlogForTopic);
   if (decision.action === 'post-existing') {
     const ok = await adapters.postToBridge(decision.subjectId, decision.text, update.update_id);
     return deliveryOutcome(ok);
