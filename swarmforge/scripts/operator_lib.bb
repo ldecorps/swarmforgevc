@@ -29,6 +29,11 @@
    consumes them; the runtime only produces them."
   #{"AGENT_EXITED"        ; a role's tmux session/pane vanished
     "AGENT_STALLED"       ; a role idle with work it should be doing
+    "SWARM_CONTROL_LOST"  ; BL-368: the tmux control channel itself did not
+                           ; respond (socket gone/unlinked/errored) - a
+                           ; DIFFERENT fact than any role having exited, and
+                           ; must never be inferred FROM an AGENT_EXITED
+                           ; batch or vice versa.
     "SWARM_CHECK_TIMER"   ; the periodic health/progress sweep fell due
     "HUMAN_COMMAND"       ; the operator's human dropped a command file
     "PROVIDER_AVAILABLE"  ; a usage-limit cooldown elapsed
@@ -56,8 +61,10 @@
   "Event types where a second pending copy adds nothing — the LLM will
    re-observe full state anyway, so stacking duplicates just wastes a launch.
    AGENT_EXITED / HUMAN_COMMAND / TASK_ARRIVED are per-subject and are keyed
-   separately (see event-key)."
-  #{"SWARM_CHECK_TIMER" "PROVIDER_AVAILABLE" "PROVIDER_LIMIT_REACHED" "CONFIG_CHANGED"})
+   separately (see event-key). SWARM_CONTROL_LOST has no subject - it is one
+   fact about the whole swarm, not one per role - so it coalesces exactly
+   like SWARM_CHECK_TIMER."
+  #{"SWARM_CHECK_TIMER" "PROVIDER_AVAILABLE" "PROVIDER_LIMIT_REACHED" "CONFIG_CHANGED" "SWARM_CONTROL_LOST"})
 
 (defn event-key
   "Identity used for de-duplication. Coalescing types collapse to their type
@@ -422,7 +429,15 @@
   "Given the sessions roles.tsv expects and the set of sessions tmux
    actually reports live, produce one AGENT_EXITED event per missing role.
    The runtime decides nothing about recovery — that is the LLM's call; this
-   only surfaces the fact."
+   only surfaces the fact.
+
+   BL-368: only ever called when the control channel itself is CONFIRMED
+   reachable (tmux answered, however few sessions it reported) - never on a
+   guess. A caller with an unreachable tmux socket must use
+   control-lost-event below instead, never this function with whatever
+   stale/empty session list it has lying around - the two are DIFFERENT
+   FACTS about the world (agents dead vs. control lost) and must never
+   collapse to the same N x AGENT_EXITED shape."
   [expected-roles live-sessions]
   (let [live (set live-sessions)]
     (->> expected-roles
@@ -431,6 +446,17 @@
                 {:type "AGENT_EXITED" :subject role
                  :detail (str "tmux session " session " not live")}))
          vec)))
+
+;; BL-368: the single loud signal for "the control channel itself did not
+;; respond" (socket file missing, unix socket unlinked, tmux errored) -
+;; deliberately NEVER N x AGENT_EXITED, which the Operator prompt's own
+;; scripted recovery reads as "respawn this role", corrupting the repo if
+;; acted on while every role's claude process is actually still alive (the
+;; live incident this ticket exists to prevent). One event, regardless of
+;; roster size, because this is one fact about the world, not one per role.
+(defn control-lost-event []
+  {:type "SWARM_CONTROL_LOST"
+   :detail "tmux control channel unreachable - this is NOT proof any agent died; do not relaunch based on this alone"})
 
 ;; ── status document (v2 schema) ───────────────────────────────────────────────
 

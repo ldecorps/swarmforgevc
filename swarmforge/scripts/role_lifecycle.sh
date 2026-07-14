@@ -62,8 +62,15 @@ zsh -c "
           fi
           ;;
         unpark)
-          create_role_session \"\${SESSIONS[\$i]}\" \"\${DISPLAY_NAMES[\$i]}\"
-          launch_role \$i
+          # BL-368: create_role_session refuses (nonzero) when this role's
+          # previous claude process is still alive per its own heartbeat pid
+          # - never launch into a session that was refused.
+          if create_role_session \"\${SESSIONS[\$i]}\" \"\${DISPLAY_NAMES[\$i]}\" \"\${ROLES[\$i]}\"; then
+            launch_role \$i
+          else
+            echo \"unpark refused: \${ROLES[\$i]}'s previous claude process is still alive\" >&2
+            exit 1
+          fi
           ;;
       esac
       break
