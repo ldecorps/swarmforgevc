@@ -7,12 +7,28 @@
 export const CONTRACT_AGREEMENT_STATES = ['agreed', 'proposed', 'pending'] as const;
 export type ContractAgreementState = (typeof CONTRACT_AGREEMENT_STATES)[number];
 
+// BL-382: DECIDED WITH THE HUMAN - a closed enum, never free text (free
+// text would be unvalidatable and would splice arbitrary content into
+// generated prompts). Follows the CONTRACT_AGREEMENT_STATES pattern
+// immediately above - same posture, not a second one.
+export const VERBOSITY_LEVELS = ['concise', 'normal', 'detailed'] as const;
+export type Verbosity = (typeof VERBOSITY_LEVELS)[number];
+
+// BL-382: a contract negotiated before this field existed (there is an
+// agreed CONTRACT.md in this very repo) has no verbosity term at all -
+// absence must mean this, never a crash and never an empty instruction
+// spliced into a generated prompt.
+export const DEFAULT_VERBOSITY: Verbosity = 'normal';
+
 export interface ProposedContract {
   scope: string[];
   outOfScope: string[];
   boundaries: string[];
   initialBacklogSummary: string;
   agreement: ContractAgreementState;
+  // BL-382: negotiated like scope/boundaries above, optional for the same
+  // back-compat reason DEFAULT_VERBOSITY exists.
+  verbosity?: Verbosity;
 }
 
 // BL-360: one capability the surveying agent found evidence of IN THE
