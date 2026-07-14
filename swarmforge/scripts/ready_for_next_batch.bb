@@ -62,16 +62,11 @@
           (let [new-files (handoff-lib/handoff-files new-dir)
                 completed-basenames (map fs/file-name (handoff-lib/handoff-files completed-dir))
                 abandoned-basenames (map fs/file-name (handoff-lib/handoff-files abandoned-dir))
-                {:keys [skipped dequeueable]} (handoff-lib/dedup-new-candidates new-files completed-basenames abandoned-basenames)
                 ;; BL-365: same corrupt-candidate quarantine-and-skip as
-                ;; ready_for_next_task.bb - a corrupt file must never be
-                ;; promoted into a batch as work.
-                {:keys [corrupt valid]} (handoff-lib/partition-corrupt dequeueable)
-                dequeueable valid]
-            (doseq [f skipped]
-              (println "SKIPPED already-processed:" (fs/file-name f)))
-            (doseq [f corrupt]
-              (println "QUARANTINED corrupt-handoff:" (fs/file-name f)))
+                ;; ready_for_next_task.bb (shared via
+                ;; resolve-dequeueable-candidates) - a corrupt file must
+                ;; never be promoted into a batch as work.
+                dequeueable (handoff-lib/resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames)]
             (if (empty? dequeueable)
               (do
                 (println "NO_TASK")
