@@ -88,6 +88,16 @@ function connectRealSocket(socketPath) {
 }
 
 async function assertStillControllable(ctx) {
+  if (!ctx.liveServer && !ctx.socketPath) {
+    // "the swarm is still controllable" is textually IDENTICAL to BL-372's
+    // own stand-in-process assertion (swarmOutlivesLauncherSteps.js) - the
+    // global step registry resolves by first-registration-wins (see
+    // stepRegistry.js), so this handler also runs, as dead code, for
+    // BL-372's own scenario, which already did its own real proof one step
+    // earlier and never sets either of this file's own ctx fields. A no-op
+    // here, not a crash on undefined fields, is what makes that survivable.
+    return;
+  }
   if (ctx.liveServer) {
     // Scenario 02: the socket was already bound before the disruption -
     // prove the SAME listener is still reachable, not a freshly-bound one,

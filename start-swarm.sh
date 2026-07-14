@@ -31,11 +31,20 @@ done
 SOCKET_FILE="$TARGET/.swarmforge/tmux-socket"
 DAEMON_PID_FILE="$TARGET/.swarmforge/daemon/handoffd.pid"
 
+read_socket() {
+  # Prints the tmux socket path from $SOCKET_FILE and returns 0 if it exists
+  # and is non-empty; returns 1 (nothing printed) otherwise. Shared by every
+  # caller that needs to resolve the current socket.
+  [[ -f "$SOCKET_FILE" ]] || return 1
+  local s
+  s="$(cat "$SOCKET_FILE" 2>/dev/null || true)"
+  [[ -n "$s" ]] || return 1
+  printf '%s\n' "$s"
+}
+
 stop_existing() {
   local sock
-  [[ -f "$SOCKET_FILE" ]] || return 0
-  sock="$(cat "$SOCKET_FILE" 2>/dev/null || true)"
-  [[ -n "$sock" ]] || return 0
+  sock="$(read_socket)" || return 0
 
   local sessions
   sessions="$(tmux -S "$sock" list-sessions -F '#{session_name}' 2>/dev/null || true)"
@@ -69,15 +78,12 @@ expected_role_count() {
 wait_for_ready() {
   local want="$1" i sock n
   for ((i = 0; i < 60; i++)); do
-    if [[ -f "$SOCKET_FILE" ]]; then
-      sock="$(cat "$SOCKET_FILE" 2>/dev/null || true)"
-      if [[ -n "$sock" ]]; then
-        n="$(tmux -S "$sock" list-sessions 2>/dev/null | grep -c . || true)"
-        if [[ "${n:-0}" -ge "$want" && "$want" -gt 0 ]]; then
-          echo "SwarmForge is up: $n session(s) on $sock"
-          tmux -S "$sock" list-sessions 2>/dev/null || true
-          return 0
-        fi
+    if sock="$(read_socket)"; then
+      n="$(tmux -S "$sock" list-sessions 2>/dev/null | grep -c . || true)"
+      if [[ "${n:-0}" -ge "$want" && "$want" -gt 0 ]]; then
+        echo "SwarmForge is up: $n session(s) on $sock"
+        tmux -S "$sock" list-sessions 2>/dev/null || true
+        return 0
       fi
     fi
     sleep 2
@@ -86,11 +92,40 @@ wait_for_ready() {
   return 1
 }
 
+check_detached() {
+  # BL-372: after the swarm is up, ASSERT its tmux server actually detached
+  # from us (this script), the same way start_handoff_daemon.sh's nohup ...
+  # & idiom already keeps handoffd alive past its own caller - never a
+  # silent pass. Decision logic lives in swarm_detach_lib.bb (pure,
+  # unit-tested); this is I/O wiring only.
+  local sock server_pid
+  sock="$(read_socket)" || { echo "ERROR: no socket file to check detachment against: $SOCKET_FILE" >&2; return 1; }
+  server_pid="$(tmux -S "$sock" display-message -p '#{pid}' 2>/dev/null || true)"
+  [[ -n "$server_pid" ]] || { echo "ERROR: could not resolve the tmux server's pid to check detachment" >&2; return 1; }
+  bb "$SCRIPT_DIR/swarmforge/scripts/check_swarm_detached.bb" 1 "$server_pid" "$$"
+}
+
 echo "Target: $TARGET"
 stop_existing
 
 WANT="$(expected_role_count)"
 echo "Launching headless swarm (expecting $WANT roles) ..."
-SWARMFORGE_TERMINAL=none "$TARGET/swarm" "$TARGET"
+mkdir -p "$TARGET/.swarmforge"
+# BL-372: detach the launch from this wrapper's own session/process group -
+# the same portable nohup ... & idiom start_handoff_daemon.sh already uses
+# for handoffd - so a swarm launched from a short-lived caller (a
+# disposable Operator window) survives however that caller goes away
+# (exiting, its window being killed, a hangup signal), instead of dying
+# with it. wait_for_ready below is unaffected: it polls the socket/session
+# state directly, never the launch subprocess's own exit.
+nohup env SWARMFORGE_TERMINAL=none "$TARGET/swarm" "$TARGET" >> "$TARGET/.swarmforge/start-swarm-launch.log" 2>&1 &
+disown
 
-wait_for_ready "$WANT"
+if ! wait_for_ready "$WANT"; then
+  exit 1
+fi
+
+if ! check_detached; then
+  echo "ERROR: swarm is up but still owned by its caller - it will die when this shell exits" >&2
+  exit 1
+fi
