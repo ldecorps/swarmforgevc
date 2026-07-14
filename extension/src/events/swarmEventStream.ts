@@ -51,9 +51,16 @@ export interface EventStreamSnapshot {
   // never a crash over a degraded topic opener) falls back to just the id
   // in diffTaskStarted below.
   ticketSummaries: Record<string, TicketSummary>;
+  // BL-357: every ticket id whose `human_approval` field currently reads
+  // `pending` - a ticket's structured approval field, distinct from a
+  // role's transient to-human GATE (GateSignal above). diffApprovalRequested
+  // below fires on the not-pending -> pending TRANSITION into this set
+  // (never a per-tick reminder for a ticket that stays pending), the exact
+  // same false->true diff shape diffNeedsApproval already uses for gates.
+  pendingApproval: string[];
 }
 
-export type SwarmEventType = 'TaskStarted' | 'NeedsApproval' | 'TaskCompleted';
+export type SwarmEventType = 'TaskStarted' | 'NeedsApproval' | 'TaskCompleted' | 'ApprovalRequested';
 
 export interface SwarmEvent {
   type: SwarmEventType;
@@ -73,7 +80,7 @@ export interface SwarmEvent {
 }
 
 function emptySnapshot(): EventStreamSnapshot {
-  return { backlog: { active: [], paused: [], done: [] }, gates: [], roleTicket: {}, ticketSummaries: {} };
+  return { backlog: { active: [], paused: [], done: [] }, gates: [], roleTicket: {}, ticketSummaries: {}, pendingApproval: [] };
 }
 
 // BL-322: {} degrades to messageTextForEvent's own title-only fallback -
@@ -95,6 +102,19 @@ function diffTaskCompleted(prev: EventStreamSnapshot, curr: EventStreamSnapshot)
   return curr.backlog.done
     .filter((id) => !prevDone.has(id))
     .map((id): SwarmEvent => ({ type: 'TaskCompleted', backlogId: id, payload: {} }));
+}
+
+// BL-357: fires only on the not-pending -> pending TRANSITION into a
+// ticket's own `human_approval` field (mirrors diffTaskStarted's own
+// prevSet/currSet shape) - a ticket that stays pending across ticks is
+// asked once, never nagged every tick. Always tagged: unlike a role's
+// transient to-human gate, human_approval lives ON the ticket, so there is
+// no "untagged" case to route to the standing Operator topic (BL-358).
+function diffApprovalRequested(prev: EventStreamSnapshot, curr: EventStreamSnapshot): SwarmEvent[] {
+  const prevPending = new Set(prev.pendingApproval);
+  return curr.pendingApproval
+    .filter((id) => !prevPending.has(id))
+    .map((id): SwarmEvent => ({ type: 'ApprovalRequested', backlogId: id, payload: {} }));
 }
 
 // BL-325: split out of diffNeedsApproval below so its own branch count
@@ -149,6 +169,11 @@ export function deriveSwarmEvents(
   alreadyEmitted: ReadonlySet<string> = new Set()
 ): SwarmEvent[] {
   const baseline = prev ?? emptySnapshot();
-  const candidates = [...diffTaskStarted(baseline, curr), ...diffNeedsApproval(baseline, curr), ...diffTaskCompleted(baseline, curr)];
+  const candidates = [
+    ...diffTaskStarted(baseline, curr),
+    ...diffNeedsApproval(baseline, curr),
+    ...diffTaskCompleted(baseline, curr),
+    ...diffApprovalRequested(baseline, curr),
+  ];
   return candidates.filter((event) => !alreadyEmitted.has(swarmEventKey(event)));
 }
