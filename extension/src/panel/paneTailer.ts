@@ -1,7 +1,6 @@
 import {
   capturePane,
-  getPaneCommand,
-  getPanePid,
+  getPanePidAndCommand,
   readSwarmRoles,
   readTmuxSocket,
   resizeWindow,
@@ -538,7 +537,9 @@ export class PaneTailer {
   private captureRoleOutput(role: SwarmRole, updates: TileOutput[]): string | null {
     const target = resolveAgentPaneTarget(this.socketPath, role.session, this.paneBaseIndex);
 
-    const currentPid = getPanePid(this.socketPath, target);
+    // BL-362 QA bounce follow-up: one display-message call for both values
+    // (getPanePidAndCommand), not two separate tmux subprocess spawns.
+    const { pid: currentPid, command: paneCommand } = getPanePidAndCommand(this.socketPath, target);
     if (didPaneRespawn(this.panePids.get(role.role), currentPid)) {
       this.resetRoleRetainedState(role.role);
     }
@@ -555,7 +556,6 @@ export class PaneTailer {
     }
 
     const rawText = stripAnsi(result.stdout);
-    const paneCommand = getPaneCommand(this.socketPath, target);
     this.lastPaneCommand.set(role.role, paneCommand);
     const statusOverlay = agentPaneStatusMessage(paneCommand, rawText, role.agent);
     const effectiveRaw = statusOverlay ?? rawText;
