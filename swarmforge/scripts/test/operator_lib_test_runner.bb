@@ -346,13 +346,16 @@
 
 ;; ── BL-306: ask + await a clarifying answer (pure) ───────────────────────
 
-;; resolve-pending-answer: unambiguous MVP pairing - the SAME thread.
-(assert-true "operator-ask-02: a reply in the awaited thread resolves the pending question"
-             (operator-lib/resolve-pending-answer {:question "which env?" :thread-id "SUP-1" :asked-at-ms 1000} "SUP-1"))
-(assert-false "a reply in a DIFFERENT thread does not resolve an unrelated pending question"
-              (operator-lib/resolve-pending-answer {:question "which env?" :thread-id "SUP-1" :asked-at-ms 1000} "SUP-2"))
-(assert-false "no pending question at all - nothing to resolve"
-              (operator-lib/resolve-pending-answer nil "SUP-1"))
+;; resolve-inbound-answer (BL-354 Option C): the three-way decision.
+(assert= "answer-pairing-across-threads-01/03: a reply in the awaited thread pairs as the answer"
+         {:outcome :pair}
+         (operator-lib/resolve-inbound-answer {:question "which env?" :thread-id "SUP-1" :asked-at-ms 1000} "SUP-1"))
+(assert= "answer-pairing-across-threads-02: a reply in a DIFFERENT thread re-homes, never pairs - question and asked-at-ms carry over UNCHANGED"
+         {:outcome :re-home :question "which env?" :asked-at-ms 1000}
+         (operator-lib/resolve-inbound-answer {:question "which env?" :thread-id "SUP-1" :asked-at-ms 1000} "SUP-2"))
+(assert= "answer-pairing-across-threads-04: no pending question at all - an ordinary message, nothing attached"
+         {:outcome :none}
+         (operator-lib/resolve-inbound-answer nil "SUP-1"))
 
 ;; answer-text-from-messages: the human's own latest reply text.
 (assert= "the human's latest non-operator message is the answer text"
