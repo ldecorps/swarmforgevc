@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=cf29c7357f38d336306b723e940aada00a95deb6753b108891642bd39daacaa4
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-14T23:02:13.290120549Z","feature_name":"Dependency-gate tests parallelise across workers instead of bounding the suite","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-375-dependency-gate-tests-parallelise.feature","background_hash":"6c17c9b108d621a95db0fabbdc88d537cddc306c76ddc1ff696df1512ebbac99","implementation_hash":"unknown","scenarios":[{"index":1,"name":"Every real-engine test still drives the real pinned checker","scenario_hash":"cf209ccd2c4d334b1b9bc5b448b31a413ce69324dff930638e96d5df8a9fddf2","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-07-14T23:02:13.290120549Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Dependency-gate tests parallelise across workers instead of bounding the suite
 
   BL-259 pins the REAL dependency-cruiser against the REAL project ruleset, so these

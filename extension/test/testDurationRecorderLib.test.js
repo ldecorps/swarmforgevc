@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { listTestFiles, buildRecord, appendRecord } = require('../scripts/testDurationRecorderLib');
+const { listTestFiles, buildRecord, appendRecord, computeFinalExitCode } = require('../scripts/testDurationRecorderLib');
 
 function mkTmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-recorder-lib-'));
@@ -56,4 +56,16 @@ test('appendRecord swallows a write failure and reports it without throwing', ()
     const ok = appendRecord(logPath, { a: 1 });
     assert.equal(ok, false);
   });
+});
+
+// BL-378: a real test failure always wins over the file-budget guard's own
+// exit code, so the guard can never mask a genuine test failure.
+test('computeFinalExitCode prefers a non-zero test exit code over the guard\'s', () => {
+  assert.equal(computeFinalExitCode(1, 0), 1);
+  assert.equal(computeFinalExitCode(2, 1), 2);
+});
+
+test('computeFinalExitCode falls back to the guard exit code when the tests passed', () => {
+  assert.equal(computeFinalExitCode(0, 1), 1);
+  assert.equal(computeFinalExitCode(0, 0), 0);
 });
