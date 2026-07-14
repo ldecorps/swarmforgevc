@@ -30,6 +30,7 @@ if [[ -z "$WORK_DIR" ]]; then
   WORK_DIR="$(mktemp -d)"
 fi
 mkdir -p "$WORK_DIR"
+WORK_DIR="$(cd "$WORK_DIR" && pwd)"
 
 cd "$VENDOR_DIR"
 exec bb gherkin-mutator \
