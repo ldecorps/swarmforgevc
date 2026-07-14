@@ -147,6 +147,6 @@ acceptance:
     - "An always-on Operator never suspends the swarm's own recovery"
     - "An interactive Operator session can never go unseen by the swarm"
 
-human_approval: pending
+human_approval: approved  # human, Telegram SUP-2 2026-07-14T06:40:06Z: "Promote all, pick the order" — see .swarmforge/operator/PROMOTE-ALL-9.md
 
 mutation_cost: medium
