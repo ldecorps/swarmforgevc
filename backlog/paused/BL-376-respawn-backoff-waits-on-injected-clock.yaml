@@ -1,0 +1,97 @@
+id: BL-376
+title: "respawnAgent's retry backoff blocks on a real Atomics.wait, so four tests each burn 0.78s of wall clock"
+milestone: M8
+type: bug
+status: todo
+severity: medium
+priority: 5
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-split-the-three-test-suite-poles.md — the human via Telegram SUP-2, 2026-07-14 07:12Z, verbatim: 'Splt the poles'. Slice 2 of 4 (with BL-375, BL-377, BL-378)."
+
+notes: |
+  ⚠ THIS IS NOT THE TICKET THE INTAKE THOUGHT IT WAS — AND THAT MATTERS. The intake listed
+  `tmuxClient` (8.3s) as a long pole and hypothesised it had the same "serial boot inside one
+  file" shape as dependencyGateCli, while explicitly asking the specifier to VERIFY per file
+  rather than assume. Verified: it does not. tmuxClient is slow because it WAITS ON THE REAL
+  CLOCK. Splitting the file would have parallelised the sleeping and HIDDEN a live violation
+  of the constitution's absolute no-real-timers ban. Fix the sleep; do not split around it.
+
+  THE GAP, VERIFIED. `extension/src/swarm/tmuxClient.ts:435` hardcodes `wait: sleepSync` into
+  the options it hands the verified-inject retry loop. `sleepSync` (tmuxClient.ts:340) is
+  `Atomics.wait(...)` — a REAL blocking wait. `respawnAgent(targetPath, role)` takes no wait
+  parameter, so no test can reach the seam, and every test that drives a respawn down the
+  retry path blocks for real. Measured, in isolation: four tests at 783ms, 793ms, 792ms, and
+  a fourth in the same band — roughly 3.2s of the file's 8.3s spent asleep, doing nothing.
+
+  The seam ALREADY EXISTS one layer down: verifiedInject accepts `wait` in its options object
+  and calls it for each backoff. respawnAgent simply never exposed it upward. This is the
+  "missing seam" the engineering article names: the fix is to inject the path, not to work
+  around it.
+
+  ⚠ DO NOT BUY SPEED BY DELETING THE RETRIES. The bounded, backed-off retry is itself required
+  behavior (engineering: any retry-after-failure loop must be bounded, spaced with a backoff,
+  and escalate on exhausting the cap). A "fix" that removes the wait by removing the retry
+  swaps a slow test for a real regression. Scenario 03 exists solely to pin this and is the
+  one most worth being ruthless about.
+
+  SCOPE. `extension/src/swarm/tmuxClient.ts` (expose the `wait` seam on respawnAgent, defaulting
+  to the real sleepSync in production) and `extension/test/tmuxClient.test.js` (inject a fake
+  wait in every respawn test). Out of scope: the other two poles (BL-375, BL-377) and the
+  regression guard (BL-378).
+
+  ⚠ SEQUENCING — THIS TICKET AND BL-377 BOTH EDIT `extension/test/tmuxClient.test.js`. Despite
+  `depends_on: []`, they are NOT orthogonal and must not run concurrently (constitution:
+  Concurrent Work Orthogonality; an in-flight coder task cannot be preempted, so two parcels
+  editing one file means a merge conflict and rework). Coordinator: sequence these two, in
+  either order. BL-375 IS orthogonal to both and may run alongside either.
+
+  NOT IN SCOPE / DO NOT ASSUME.
+    - Changing the production backoff schedule or the retry cap. This ticket makes the existing
+      behavior TESTABLE without real time; it does not retune it.
+    - Removing sleepSync. It stays as the production default (scenario 02).
+
+  IMPLEMENTATION NOTES FOR THE CODER.
+    - After this lands, tmuxClient.test.js should still be a fair way above the 14ms median,
+      because it ALSO pays the spawned-fake-tmux tax that BL-377 removes. Both are needed; do
+      not chase BL-377's cost here.
+    - Scenario 04 ("no test in the respawn suite waits on the wall clock") is a file-wide
+      assertion, not a per-test one — the cheapest honest way to hold it is to assert the real
+      sleepSync is never invoked during the suite, e.g. by spying the export. Do NOT hold it by
+      asserting on elapsed wall time; that reintroduces a real-clock dependency into the very
+      test that exists to forbid one.
+
+  IR-DRY REVIEW (done at spec time — do not relitigate). One finding, medium, DELIBERATE:
+  near-duplicate between "respawnAgent runs with an injected wait" (scenarios 01, 03) and
+  "respawnAgent runs with no wait injected" (scenario 02). These are literal opposites and are
+  the exact fork this ticket draws: injected clock in tests, real clock in production.
+  ⚠ CODER, NOTE THE HAZARD: these two step texts are near-identical in shape and MUST get
+  DISTINCT handlers asserting different things. A single loose regex (e.g. /respawnAgent runs
+  with .* wait/) would swallow both and go green while asserting nothing — the known
+  shared-cell / first-registered-handler-wins trap, which has now bitten this project 5x. The
+  repeated "runs with an injected wait" across scenarios 01 and 03 IS the same action and is
+  correctly served by ONE handler; it is the OPPOSITE pair that must never share one.
+
+  E2E QA PROCEDURE (live).
+    1. Run the full unit suite clean and record the profile: total wall clock, and the slowest
+       single file with its duration. Compare to the 12.0s / tmuxClient-8.3s baseline in the
+       intake, and report both — the intake asks for the new profile explicitly.
+    2. Assert every respawn test still passes and that none of them sleeps: with the real
+       sleepSync spied, it must record zero calls across the whole test run.
+    3. Assert production is unchanged: respawnAgent called with no injected wait still uses the
+       real sleepSync.
+    4. Prove the retry is still bounded and backed off — drive a pane that never confirms and
+       assert the cap is respected and the delays are non-decreasing. A test that passes because
+       the retries vanished is a bounce, not a win.
+
+acceptance:
+  feature: specs/features/BL-376-respawn-backoff-waits-on-injected-clock.feature
+  steps:
+    - "A test drives the whole retry loop with no real time passing"
+    - "Production still waits on the real clock"
+    - "The retry loop stays bounded and backed off"
+    - "No test in the respawn suite waits on the wall clock"
+
+human_approval: pending  # new feature file, authored 2026-07-14 — needs human review
+
+mutation_cost: low

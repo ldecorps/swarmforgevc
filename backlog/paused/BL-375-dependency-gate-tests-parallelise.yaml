@@ -1,0 +1,98 @@
+id: BL-375
+title: "The dependency-gate tests boot the real engine serially in one file, so that file alone is the suite's wall clock"
+milestone: M8
+type: chore
+status: todo
+severity: medium
+priority: 5
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-split-the-three-test-suite-poles.md — the human via Telegram SUP-2, 2026-07-14 07:12Z, verbatim: 'Splt the poles'. Slice 1 of 4 (with BL-376, BL-377, BL-378)."
+
+notes: |
+  THE ASK. Split the three long-pole unit-test files so the suite's wall clock drops. The
+  Operator profiled it (clean run, 2026-07-14 ~07:03Z): 250 files, 3,458 tests, 83s of
+  file-time compressed into 12.0s wall across 20 workers. Median file: 14ms. The body of
+  the suite is genuinely fast. Wall clock == "slowest file + ~1s".
+
+  ⚠ THE POLES ARE NOT ONE PHENOMENON. The intake hypothesised the same shape for all three
+  and explicitly asked the specifier to verify per file rather than assume. It does not
+  hold — the specifier profiled each and found THREE DIFFERENT causes, so they are three
+  tickets, not one:
+    - dependencyGateCli 10.0s — THIS TICKET. Genuinely irreducible work, exactly as the
+      intake said. A split is the right and only lever.
+    - tmuxClient 8.3s — NOT serial boot. Real blocking Atomics.wait sleeps. See BL-376.
+    - paneTailerClass 9.8s — NOT timers (BL-362 already fixed those). A spawned fake tmux
+      binary. See BL-377.
+  Splitting only one pole promotes the next, so all four slices must land for the win to
+  be non-zero. That is the intake's own finding and it still stands.
+
+  THE GAP, VERIFIED. `extension/test/dependencyGateCli.test.js` holds 12 tests, 6 of which
+  boot the REAL dependency-cruiser engine against the REAL project ruleset. Measured, in a
+  three-file isolation run: 0.44s, 0.47s, 0.85s, 0.91s, 0.45s (+ one more). They run
+  SERIALLY because Vitest's unit of parallelism is the FILE — one file is one worker. The
+  other 249 files finish entirely inside this file's shadow: it runs +1.0s to +11.0s of a
+  12.0s run.
+
+  ⚠ THE CONSTRAINT — DO NOT MOCK THE CRUISER. This file is slow ON PURPOSE. BL-259 pins the
+  real dependency-cruiser against the real ruleset precisely so the gate cannot go green
+  against a fake. Mocking, stubbing, or fixture-ing the engine away would defeat BL-259's
+  entire point and is an automatic bounce, no matter what it does to the number. The lever
+  is ONLY the file boundary: the same real assertions, spread across files so the worker
+  pool can run them concurrently. Scenario 02 is the assertion that closes this and is the
+  one most worth being ruthless about.
+
+  SCOPE. `extension/test/dependencyGateCli.test.js` and the new sibling files it splits
+  into. No production source changes are expected. Out of scope: the other two poles
+  (BL-376, BL-377) and the regression guard (BL-378).
+
+  NOT IN SCOPE / DO NOT ASSUME.
+    - Speeding up the cruiser itself, caching its engine run, or sharing one engine boot
+      across tests. Scenario 02 forbids anything that makes the assertions less real; a
+      shared cached run also couples the tests, and the byte-identical-reports test exists
+      precisely to prove two independent runs agree.
+    - Deleting or merging any of the 12 tests. Scenario 01 pins the count.
+
+  IMPLEMENTATION NOTES FOR THE CODER.
+    - The 6 real-engine tests are the expensive ones; the 6 parseArgs/scan tests are cheap.
+      Grouping the cheap ones together and spreading the expensive ones is what makes the
+      split pay. Scenario 03 caps it at 2 real-engine tests per file — that lands each new
+      file around 1.5-1.8s, comfortably under the 3.3s next-slowest file, so this file stops
+      bounding anything.
+    - Keep the split files' names discoverable as a family (e.g. a shared
+      `dependencyGateCli*` prefix) — BL-378's guard and any future profiling both want to
+      find them without a hardcoded list.
+
+  IR-DRY REVIEW (done at spec time — do not relitigate). Clean: no duplicate or
+  near-duplicate step findings.
+
+  ⚠ SCENARIO-OUTLINE STEP HANDLER — KNOWN_VALUES, NOT A PASSTHROUGH. Scenario 02's `<test>`
+  column must be validated against an explicit KNOWN_VALUES lookup of the six accepted
+  slugs, failing on any value not in it. A bare passthrough — or a binary `===` that treats
+  one value specially and lumps every other into an `else` — lets gherkin-mutator mutate a
+  column value undetected, so the mutant SURVIVES to the hardener's Gherkin-mutation pass
+  instead of failing the scenario immediately. This has now been confirmed 5x across
+  BL-250/252/253; treat it as the default expectation, not a corner case.
+
+  E2E QA PROCEDURE (live).
+    1. Run the full unit suite clean and record the profile: total wall clock, and the
+       slowest single file with its duration. Compare against the 12.0s / 10.0s baseline in
+       the intake. Report both numbers — the intake asks for the new profile explicitly.
+    2. Assert the dependency-gate tests still number 12 in total across the split files, and
+       that all 12 pass.
+    3. Grep the split files for any mock/stub/fake of dependency-cruiser. There must be
+       none — the real engine must still be doing the work.
+    4. Note that the wall clock will NOT drop to the split file's own new duration until
+       BL-376 and BL-377 also land: whichever pole remains highest becomes the new bound.
+       A modest wall-clock drop here is the expected, correct result, not a failure.
+
+acceptance:
+  feature: specs/features/BL-375-dependency-gate-tests-parallelise.feature
+  steps:
+    - "The split loses no test"
+    - "Every real-engine test still drives the real pinned checker"
+    - "No single file carries enough real-engine tests to bound the suite alone"
+
+human_approval: pending  # new feature file, authored 2026-07-14 — needs human review
+
+mutation_cost: low
