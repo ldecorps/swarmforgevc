@@ -166,6 +166,7 @@ const DOMAINS = [
   require('./roleLeaderboardSurfaceSteps'),
   require('./topicDeletionSteps'),
   require('./noInboundMessageIsEverLostSteps'),
+  require('./controlLossIsNotAgentDeathSteps'),
 ];
 
 function registerSteps(registry) {

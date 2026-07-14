@@ -99,6 +99,11 @@ function fakeAdapters({ topicMap = {}, priorSnapshot = null, alreadyReconciled =
     deletionAdapters: {
       getTopicMap: () => topicMap,
       readRecord: (ticketId) => recordFor(ticketId),
+      // BL-331 architect bounce: this fixture's records are all treated as
+      // durably committed - the durability check itself is unit-tested in
+      // topicDeletion.test.js/blTopicStore.test.js; this file is about the
+      // tick's own wiring, not re-proving that check.
+      isRecordCommitted: () => true,
       deleteTopic: async (topicId) => {
         deletedTopics.push(topicId);
         return true;

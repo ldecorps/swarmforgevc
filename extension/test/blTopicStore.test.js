@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { readRecord, appendMessage, recordPath, commitTopicRecord, hasCompletionRecord } = require('../out/concierge/blTopicStore');
+const { readRecord, appendMessage, recordPath, commitTopicRecord, hasCompletionRecord, isRecordCommitted } = require('../out/concierge/blTopicStore');
 
 // BL-329: the durable, git-tracked, per-ticket record of every message sent
 // in a BL topic - inbound and outbound - so the Telegram topic becomes a
@@ -237,4 +237,32 @@ test('hasCompletionRecord is true once the exact completion text was recorded as
     ],
   };
   assert.equal(hasCompletionRecord(record, text), true);
+});
+
+// ── isRecordCommitted (BL-331 architect bounce: content correctness alone
+//    cannot prove durability - appendMessage's own write can succeed while
+//    its commit fails) ───────────────────────────────────────────────────
+
+test('isRecordCommitted is true once appendMessage has actually committed the record into a real repo', () => {
+  const target = mkGitRepo();
+  appendMessage(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 });
+  assert.equal(isRecordCommitted(target, 'BL-900'), true);
+});
+
+test('isRecordCommitted is false when the record was written but the commit failed (not a git repo at all)', () => {
+  const target = mkTmp();
+  append(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 });
+  assert.equal(isRecordCommitted(target, 'BL-900'), false, "the write succeeded (readRecord round-trips it) but it is not durable - never treat this as verified");
+});
+
+test('isRecordCommitted is false after a SECOND append whose own commit has not happened yet is simulated (a real uncommitted write on top of a committed one)', () => {
+  const target = mkGitRepo();
+  appendMessage(target, 'BL-900', { author: 'human', type: 'inbound', text: 'first', ts: 1 }); // committed
+  // Simulate a second write landing without its commit succeeding, by
+  // writing directly (bypassing appendMessage's own auto-commit) - the
+  // exact shape of the crash window CommitFailureReporter documents.
+  const record = readRecord(target, 'BL-900');
+  record.messages.push({ seq: 1, ts: 2, author: 'human', type: 'inbound', text: 'second, uncommitted' });
+  fs.writeFileSync(recordPath(target, 'BL-900'), JSON.stringify(record));
+  assert.equal(isRecordCommitted(target, 'BL-900'), false);
 });

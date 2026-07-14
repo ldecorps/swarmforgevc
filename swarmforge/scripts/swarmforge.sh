@@ -796,9 +796,36 @@ check_backend_dependencies() {
   done
 }
 
+# BL-368 layer 2: refuses to treat "tmux reports nothing here" as proof a
+# role is actually dead. A role's own heartbeat file (extension/src/tools/
+# heartbeat.ts's writeHeartbeat, refreshed by the claude process itself on
+# every tool call - entirely tmux-independent) carries the LAST pid that
+# process reported. If that pid is still alive right now, the role is NOT
+# dead regardless of what the control channel says - creating a fresh
+# session and launching into it would spawn a SECOND agent onto the SAME
+# worktree as the one still running, racing commits on every branch at
+# once (the exact corruption this ticket exists to make unreachable). This
+# guard is unconditional - it holds even when the caller's own diagnosis of
+# "why" is wrong for a reason nobody has thought of yet.
+role_claude_pid_alive() {
+  local role="$1"
+  local heartbeat_file="$WORKING_DIR/.swarmforge/heartbeat/${role}.yaml"
+  [[ -f "$heartbeat_file" ]] || return 1
+  local pid
+  pid="$(grep '^pid:' "$heartbeat_file" 2>/dev/null | awk '{print $2}')"
+  [[ -n "$pid" && "$pid" == <-> ]] || return 1
+  kill -0 "$pid" 2>/dev/null
+}
+
 create_role_session() {
   local session="$1"
   local title="$2"
+  local role="${3:-}"
+
+  if [[ -n "$role" ]] && role_claude_pid_alive "$role"; then
+    echo -e "${YELLOW}Refusing to (re)create a session for ${role}: its previous claude process (pid recorded in its heartbeat) is still alive. Not relaunching - this would spawn a second agent onto the same worktree as the one still running.${RESET}" >&2
+    return 1
+  fi
 
   tmux -S "$TMUX_SOCKET" new-session -d -s "$session" -n "$AGENT_WINDOW"
   tmux -S "$TMUX_SOCKET" rename-window -t "$session:$AGENT_WINDOW" "$title"
@@ -1289,8 +1316,17 @@ echo -e "${CYAN}Pack size: $(pack_size) role(s) (coordinator excluded)${RESET}"
 # EFFECTIVE_MAX_DEPTH was already resolved by prepare_workspace's call to
 # write_swarm_identity_file above - reused here, not recomputed.
 echo -e "${CYAN}active_backlog_max_depth: ${EFFECTIVE_MAX_DEPTH} (from ${CONFIG_FILE})${RESET}"
+# BL-368: create_role_session refuses (return 1) a role whose previous
+# claude process is still alive per its own heartbeat pid - track which
+# indices were refused so the launch loop below never respawns into a
+# session that was never (re)created for exactly that role, which would
+# otherwise silently target/kill whatever unrelated pane already sits at
+# that session name.
+typeset -A REFUSED_ROLE_INDICES
 for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
-  create_role_session "${SESSIONS[$i]}" "${DISPLAY_NAMES[$i]}"
+  if ! create_role_session "${SESSIONS[$i]}" "${DISPLAY_NAMES[$i]}" "${ROLES[$i]}"; then
+    REFUSED_ROLE_INDICES[$i]=1
+  fi
 done
 write_tmux_env_file
 sync_worktree_scripts
@@ -1300,6 +1336,7 @@ copilot_trust_swarm_paths
 
 echo -e "${GREEN}Starting agents...${RESET}"
 for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
+  [[ -n "${REFUSED_ROLE_INDICES[$i]:-}" ]] && continue
   launch_role "$i"
 done
 

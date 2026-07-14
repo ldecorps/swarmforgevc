@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { commitScopedFile } = require('../out/util/gitCommitScopedFile');
+const { commitScopedFile, isFileCommitted } = require('../out/util/gitCommitScopedFile');
 
 // Shared by costHealthSidecar.ts's commitCostHealthSidecar and
 // blTopicStore.ts's commitTopicRecord - see cleaner DRY extraction, 2026-07-13.
@@ -59,4 +59,49 @@ test('commitScopedFile returns false (never throws) when the target is not a git
 
   assert.doesNotThrow(() => commitScopedFile(target, filePath, 'commit'));
   assert.equal(commitScopedFile(target, filePath, 'commit'), false);
+});
+
+// ── isFileCommitted (BL-331 architect bounce: content-verified is not the
+//    same as DURABLY verified - a caller gating an irreversible action must
+//    check this too) ─────────────────────────────────────────────────────
+
+test('isFileCommitted is true once commitScopedFile has actually committed the file', () => {
+  const target = mkGitRepo();
+  const filePath = path.join(target, 'tracked.txt');
+  fs.writeFileSync(filePath, 'content');
+  commitScopedFile(target, filePath, 'commit it');
+  assert.equal(isFileCommitted(target, filePath), true);
+});
+
+test('isFileCommitted is false for a file written directly, never committed (the exact crash window CommitFailureReporter exists for)', () => {
+  const target = mkGitRepo();
+  const filePath = path.join(target, 'tracked.txt');
+  fs.writeFileSync(filePath, 'content'); // written, but never git add/commit
+  assert.equal(isFileCommitted(target, filePath), false);
+});
+
+test('isFileCommitted is false when the file was committed once, then modified again without a follow-up commit', () => {
+  const target = mkGitRepo();
+  const filePath = path.join(target, 'tracked.txt');
+  fs.writeFileSync(filePath, 'v1');
+  commitScopedFile(target, filePath, 'v1 commit');
+  fs.writeFileSync(filePath, 'v2'); // a later write with no follow-up commit
+  assert.equal(isFileCommitted(target, filePath), false);
+});
+
+test('isFileCommitted is false (fails closed, never throws) when the target is not a git repo at all', () => {
+  const target = mkTmp();
+  const filePath = path.join(target, 'tracked.txt');
+  fs.writeFileSync(filePath, 'content');
+  assert.doesNotThrow(() => isFileCommitted(target, filePath));
+  assert.equal(isFileCommitted(target, filePath), false);
+});
+
+test('isFileCommitted is unaffected by an UNRELATED dirty file elsewhere in the same repo', () => {
+  const target = mkGitRepo();
+  const filePath = path.join(target, 'tracked.txt');
+  fs.writeFileSync(filePath, 'content');
+  commitScopedFile(target, filePath, 'commit it');
+  fs.writeFileSync(path.join(target, 'unrelated.txt'), 'some other dirty file');
+  assert.equal(isFileCommitted(target, filePath), true, 'expected the check scoped to exactly the one file, not the whole repo status');
 });
