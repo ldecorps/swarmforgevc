@@ -154,14 +154,25 @@ test('commitTopicRecord commits only the record file, scoped, into a real repo',
   assert.match(log, /BL-900/);
 });
 
-test('commitTopicRecord returns false (never throws) when there is nothing new to commit', () => {
+// BL-390: a REWRITE that produces byte-identical content is not a failure to
+// commit - the record is already fully durable, and there is genuinely
+// nothing new to commit. Redefined from "returns false" (indistinguishable
+// from a genuine git failure, which wrongly triggered appendMessage's own
+// commit-failure durability warning for a benign no-op) to an explicit
+// "true, already durable, no commit minted" outcome - and no NEW commit is
+// created for that file at all (the actual defect: a persister that mints a
+// commit, or a false failure report, for a no-op rewrite).
+test('commitTopicRecord returns true (already durable) and mints NO new commit when there is nothing new to commit', () => {
   const target = mkGitRepo();
   appendMessage(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 });
   const filePath = recordPath(target, 'BL-900');
-  commitTopicRecord(target, filePath, 'BL-900');
+  const before = execFileSync('git', ['-C', target, 'log', '--oneline', '--', filePath], { encoding: 'utf8' });
 
   assert.doesNotThrow(() => commitTopicRecord(target, filePath, 'BL-900'));
-  assert.equal(commitTopicRecord(target, filePath, 'BL-900'), false);
+  assert.equal(commitTopicRecord(target, filePath, 'BL-900'), true);
+
+  const after = execFileSync('git', ['-C', target, 'log', '--oneline', '--', filePath], { encoding: 'utf8' });
+  assert.equal(after, before, 'expected no new commit to have been minted for a byte-identical rewrite');
 });
 
 test('commitTopicRecord returns false (never throws) when the target is not a git repo at all', () => {
@@ -170,6 +181,54 @@ test('commitTopicRecord returns false (never throws) when the target is not a gi
   const filePath = recordPath(target, 'BL-900');
   assert.doesNotThrow(() => commitTopicRecord(target, filePath, 'BL-900'));
   assert.equal(commitTopicRecord(target, filePath, 'BL-900'), false);
+});
+
+// ── BL-390: a-churn-rewrite-does-not-mint-a-commit ──────────────────────
+
+test('BL-390 scenario 01: rewriting a record with EXACTLY the content it already had commits nothing', () => {
+  const target = mkGitRepo();
+  appendMessage(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 });
+  const filePath = recordPath(target, 'BL-900');
+  const headBefore = execFileSync('git', ['-C', target, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+
+  // Re-write the exact same bytes already on disk (and already committed) -
+  // simulates any future full-rewrite caller re-persisting unchanged state.
+  fs.writeFileSync(filePath, fs.readFileSync(filePath, 'utf8'));
+  commitTopicRecord(target, filePath, 'BL-900');
+
+  const headAfter = execFileSync('git', ['-C', target, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  assert.equal(headAfter, headBefore, 'expected HEAD to be unchanged - no commit minted for identical content');
+});
+
+test('BL-390 scenario 02: a record that genuinely changed is still committed', () => {
+  const target = mkGitRepo();
+  appendMessage(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 });
+  const filePath = recordPath(target, 'BL-900');
+  const headBefore = execFileSync('git', ['-C', target, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+
+  append(target, 'BL-900', { author: 'coder', type: 'outbound', text: 'a genuinely new message', ts: 2 });
+
+  const headAfter = execFileSync('git', ['-C', target, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  assert.notEqual(headAfter, headBefore, 'expected a new commit for genuinely changed content');
+});
+
+test('BL-390 scenario 03: nothing is pushed when nothing was committed - HEAD carries no new commit for a fixture remote to receive', () => {
+  const target = mkGitRepo();
+  appendMessage(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 });
+  const filePath = recordPath(target, 'BL-900');
+
+  const remote = mkTmp();
+  git(remote, ['init', '-q', '--bare']);
+  git(target, ['remote', 'add', 'origin', remote]);
+  git(target, ['push', '-q', 'origin', 'HEAD:refs/heads/main']);
+  const remoteHeadBefore = execFileSync('git', ['-C', remote, 'rev-parse', 'main'], { encoding: 'utf8' }).trim();
+
+  fs.writeFileSync(filePath, fs.readFileSync(filePath, 'utf8'));
+  commitTopicRecord(target, filePath, 'BL-900');
+  git(target, ['push', '-q', 'origin', 'HEAD:refs/heads/main']);
+
+  const remoteHeadAfter = execFileSync('git', ['-C', remote, 'rev-parse', 'main'], { encoding: 'utf8' }).trim();
+  assert.equal(remoteHeadAfter, remoteHeadBefore, 'expected nothing new to have been pushed to the remote');
 });
 
 test('appendMessage itself commits the record into a real repo - the record actually survives a fresh checkout, not merely a non-gitignored write (architect bounce)', () => {
