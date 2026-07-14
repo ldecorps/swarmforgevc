@@ -53,9 +53,9 @@ AUDIT="$DAEMON_DIR/kill-all-audit.log"
 # unscoped version of this legacy glob, exercised by an isolated test
 # fixture, matched and killed the live swarm's real socket 5 times in one
 # session - see swarmforge/scripts/test/test_swarm_socket_not_in_tmp.sh.)
+source "$SCRIPT_DIR/project_socket_id_lib.sh"
 SOCKET_GLOB="$ROOT/.swarmforge/tmux/"*.sock
-LEGACY_PROJECT_SOCKET_ID="$(printf '%s' "$ROOT" | cksum)"
-LEGACY_PROJECT_SOCKET_ID="${LEGACY_PROJECT_SOCKET_ID%% *}"
+LEGACY_PROJECT_SOCKET_ID="$(project_socket_id "$ROOT")"
 LEGACY_SOCKET="/tmp/swarmforge-${UID}/${LEGACY_PROJECT_SOCKET_ID}.sock"
 
 log() {

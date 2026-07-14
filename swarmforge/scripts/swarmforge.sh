@@ -54,8 +54,8 @@ ROLES_FILE="$STATE_DIR/roles.tsv"
 PROMPTS_DIR="$STATE_DIR/prompts"
 DAEMON_DIR="$STATE_DIR/daemon"
 HANDOFF_DAEMON_LOG="$DAEMON_DIR/handoffd.log"
-PROJECT_SOCKET_ID="$(printf '%s' "$WORKING_DIR" | cksum)"
-PROJECT_SOCKET_ID="${PROJECT_SOCKET_ID%% *}"
+source "$SCRIPT_DIR/project_socket_id_lib.sh"
+PROJECT_SOCKET_ID="$(project_socket_id "$WORKING_DIR")"
 # BL-367: the control socket must never live in /tmp - shared scratch space
 # subject to reaping by anything on the box, and a unix socket cannot be
 # re-linked once unlinked. resolve_swarm_socket.bb owns the actual decision
