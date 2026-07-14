@@ -4,6 +4,7 @@ import * as path from 'path';
 import { sendInstructionVerified, VerifiedInjectResult } from './verifiedInject';
 import { isPaneActivelyProcessing } from '../panel/agentPaneState';
 import { classifyProviderError, ForgeErrorCategory } from './providerErrorTaxonomy';
+import * as realClock from './sleepSync';
 
 export interface TmuxRunResult {
   stdout: string;
@@ -333,14 +334,6 @@ function respawnFailure(message: string): RespawnResult {
   return { success: false, message, category: classifyProviderError(message).category };
 }
 
-// Synchronous backoff wait for the retry loop below. The extension host is
-// single-threaded and blocking here is deliberate and bounded (a few hundred
-// ms, only on a verification retry) - the same tradeoff runCommand already
-// makes with its blocking spawnSync calls.
-export function sleepSync(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
 /**
  * Kills whatever is running in the pane and relaunches the role's launch
  * script directly in place, bypassing send-keys entirely. This is the only
@@ -363,7 +356,17 @@ export function respawnPaneForced(
   ]);
 }
 
-export function respawnAgent(targetPath: string, role: string): RespawnResult {
+// BL-376: `wait` is the SAME backoff seam sendInstructionVerified already
+// accepts one layer down - respawnAgent simply never exposed it upward, so
+// no test could reach it and every wedged-pane retry blocked on a REAL
+// Atomics.wait (~800ms apiece). Optional and defaulted to the real
+// sleepSync (now its own module, ./sleepSync - see that file's own comment
+// for why a same-file default would not have been spy-able) so every
+// existing production call site (extension.ts, swarmPanel.ts,
+// coordinatorLossTrigger.ts, claudeSettingsFile.ts) is unaffected; a test
+// drives the whole retry loop with an injected fake instead, with zero
+// real time spent.
+export function respawnAgent(targetPath: string, role: string, wait?: (ms: number) => void): RespawnResult {
   const launchScript = path.join(targetPath, '.swarmforge', 'launch', `${role}.sh`);
   if (!fs.existsSync(launchScript)) {
     return respawnFailure(`No launch script found for role "${role}" at ${launchScript}`);
@@ -385,7 +388,7 @@ export function respawnAgent(targetPath: string, role: string): RespawnResult {
   // freezing the whole extension, and leave the agent outside tmux where no
   // tile can see it.
   const target = resolveAgentPaneTarget(socketPath, roleEntry.session, getPaneBaseIndex(socketPath));
-  return performVerifiedRespawn(socketPath, target, launchScript, role);
+  return performVerifiedRespawn(socketPath, target, launchScript, role, wait ?? realClock.sleepSync);
 }
 
 // BL-093: split out of respawnAgent (CRAP) - type-and-verify first (works
@@ -394,7 +397,7 @@ export function respawnAgent(targetPath: string, role: string): RespawnResult {
 // retries - i.e. the pane is a WEDGED live TUI that send-keys cannot reach -
 // never on a healthy pane (a healthy pane confirms delivery on the first
 // attempt).
-function performVerifiedRespawn(socketPath: string, target: string, launchScript: string, role: string): RespawnResult {
+function performVerifiedRespawn(socketPath: string, target: string, launchScript: string, role: string, wait: (ms: number) => void): RespawnResult {
   // BL-137 live repro: a chaser's liveness/activity signal can be stale and
   // misjudge a genuinely busy agent as stuck, escalating to a forced
   // respawn - which then typed a shell command into a coordinator pane that
@@ -432,7 +435,7 @@ function performVerifiedRespawn(socketPath: string, target: string, launchScript
       sendEnter: () => {
         sendKeys(socketPath, target, 'Enter');
       },
-      wait: sleepSync,
+      wait,
     },
     command
   );
