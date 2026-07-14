@@ -106,6 +106,29 @@ test('returns an empty result when backlog/topics does not exist at all', () => 
   assert.deepEqual(repairBlTopicRecords(target), { outcomes: [] });
 });
 
+// BL-348: "a record that cannot be committed is reported, never silently
+// dropped" applies to the repair tool's own write too, not just the live
+// appendMessage path (already covered in blTopicStore.test.js) - proven
+// with a capturing spy, mirroring that same test's pattern exactly.
+test('repairBlTopicRecords reports (never silently drops) a commit failure via the injected reporter', () => {
+  const target = mkTmp();
+  writeDoneTicket(target, 'BL-900', 'Fix the thing');
+  writeTopicRecord(target, 'BL-900', {
+    id: 'BL-900',
+    messages: [{ seq: 0, ts: 1000, author: 'swarm', type: 'outbound', text: 'BL-900 - Fix the thing is complete.' }],
+  });
+
+  const calls = [];
+  const result = repairBlTopicRecords(target, (ticketId, filePath) => {
+    calls.push({ ticketId, filePath });
+  });
+
+  assert.deepEqual(result.outcomes, [{ backlogId: 'BL-900', repaired: true, reason: 'missing-opener-repaired' }]);
+  assert.equal(calls.length, 1, 'expected the reporter to fire exactly once (target is not a git repo, so the commit fails)');
+  assert.equal(calls[0].ticketId, 'BL-900');
+  assert.equal(calls[0].filePath, recordPath(target, 'BL-900'));
+});
+
 test('repairs multiple offending records independently, in the same run', () => {
   const target = mkGitRepo();
   writeDoneTicket(target, 'BL-900', 'First ticket');
