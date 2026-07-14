@@ -178,6 +178,7 @@ const DOMAINS = [
   require('./aDroppedMessageMustNotParkTheOffsetSteps'),
   require('./aChurnRewriteDoesNotMintACommitSteps'),
   require('./theHumanIsNeverSentTerminalChromeSteps'),
+  require('./dependencyGateTestsParalleliseSteps'),
 ];
 
 function registerSteps(registry) {

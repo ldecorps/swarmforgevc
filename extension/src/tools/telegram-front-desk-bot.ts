@@ -229,6 +229,19 @@ function topicMapKey(topicId: number | undefined): string {
   return topicId === undefined ? DEFAULT_SUBJECT_KEY : String(topicId);
 }
 
+// BL-389 rework (architect bounce): openSubjectAndRecord was the one
+// adapter BL-389's own idempotency sweep left unprotected - a redelivered
+// update (offset never advanced, e.g. the process crashes between
+// openSubject minting a fresh SUP-### and this function persisting the
+// topicId mapping) would mint a SECOND, duplicate SUP-### for the same
+// original conversation opener. Shares the SAME topicMap file/write as
+// topicMapKey above (never a second parallel store) with a distinct key
+// namespace, so the update-id check and the topicId mapping land in ONE
+// atomic write together.
+function updateOpenKey(updateId: number): string {
+  return `update:${updateId}`;
+}
+
 // BL-346: creates the standing "Operator" forum topic and binds it to the
 // reserved OPERATOR_SUBJECT_ID in the SAME map subjectForTopic/
 // topicForSubject already trust - BEFORE the poll loop ever starts, so no
@@ -267,10 +280,19 @@ export async function ensureOperatorTopic(targetPath: string, botToken: string, 
 // does (appendOperatorEvent - the bridge's own /telegram-inbound handler
 // does this identically for a resolved subjectId; this is the open-path's
 // equivalent, not a second notification mechanism).
-async function openSubjectAndRecord(targetPath: string, topicId: number | undefined, text: string): Promise<string> {
+// BL-389 rework: gated on updateOpenKey FIRST - a redelivered update whose
+// prior attempt already minted a subject returns that SAME subjectId
+// without ever calling openSubject (and therefore never externally
+// minting a second SUP-###) or re-notifying the Operator a second time.
+export async function openSubjectAndRecord(targetPath: string, topicId: number | undefined, text: string, updateId: number): Promise<string> {
+  const already = readTopicMap(targetPath)[updateOpenKey(updateId)];
+  if (already !== undefined) {
+    return already;
+  }
   const subjectId = await openSubject(targetPath, text);
   const topicMap = readTopicMap(targetPath);
   topicMap[topicMapKey(topicId)] = subjectId;
+  topicMap[updateOpenKey(updateId)] = subjectId;
   writeTopicMap(targetPath, topicMap);
   appendOperatorEvent(targetPath, { type: 'TELEGRAM_TOPIC_MESSAGE', subject: subjectId });
   return subjectId;
@@ -281,7 +303,7 @@ function buildPollAdapters(botToken: string, targetPath: string, bridgeUrl: stri
     getUpdates: (offset) => getTelegramUpdates(botToken, offset, POLL_TIMEOUT_SECONDS),
     postToBridge: (subjectId, text, updateId) => postToBridge(bridgeUrl, controlToken, subjectId, text, updateId),
     subjectForTopic: (topicId) => subjectForTopic(readTopicMap(targetPath), topicId),
-    openSubjectAndRecord: (topicId, text) => openSubjectAndRecord(targetPath, topicId, text),
+    openSubjectAndRecord: (topicId, text, updateId) => openSubjectAndRecord(targetPath, topicId, text, updateId),
     backlogForTopic: (topicId) => backlogForTopic(readBacklogTopicMap(targetPath), topicId),
     postOperatorContext: (backlogId, text, updateId) => postOperatorContext(targetPath, backlogId, text, updateId),
     recordApprovalReply: (backlogId) => Promise.resolve(recordApprovalReply(targetPath, backlogId)),
