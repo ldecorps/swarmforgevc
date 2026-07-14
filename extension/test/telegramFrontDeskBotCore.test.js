@@ -279,7 +279,7 @@ test('pollAndForward leaves the offset unchanged when the poll itself fails', as
   assert.equal(result.posted, 0);
 });
 
-test('pollAndForward counts a failed bridge POST as dropped, not posted', async () => {
+test('BL-389: pollAndForward counts a failed bridge POST as failed, never dropped or posted', async () => {
   const result = await pollAndForward(0, PRINCIPAL_ID, {
     getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'hi' })] }),
     postToBridge: async () => false,
@@ -288,7 +288,8 @@ test('pollAndForward counts a failed bridge POST as dropped, not posted', async 
     nextOffset: (updates, current) => current + updates.length,
   });
   assert.equal(result.posted, 0);
-  assert.equal(result.dropped, 1);
+  assert.equal(result.dropped, 0);
+  assert.equal(result.failed, 1);
 });
 
 // ── pollAndForward open-and-record path — BL-294 auto-open-01/02/03 ──────
@@ -1054,24 +1055,44 @@ function upd(id) {
   return { update_id: id, message: { message_id: id, chat: { id: 1 }, from: { id: PRINCIPAL_ID }, text: 'x' } };
 }
 
-test('offsetAfterDelivery advances past every update when all were delivered', () => {
-  assert.equal(offsetAfterDelivery([upd(5), upd(6), upd(7)], 0, [true, true, true]), 8);
+test('offsetAfterDelivery advances past every update when all were posted', () => {
+  assert.equal(offsetAfterDelivery([upd(5), upd(6), upd(7)], 0, ['posted', 'posted', 'posted']), 8);
 });
 
-test('offsetAfterDelivery-no-loss-01: stops BEFORE the first undelivered update, never advancing past it', () => {
-  assert.equal(offsetAfterDelivery([upd(5), upd(6), upd(7)], 0, [true, false, true]), 6);
+test('offsetAfterDelivery-no-loss-01: stops BEFORE the first FAILED update, never advancing past it', () => {
+  assert.equal(offsetAfterDelivery([upd(5), upd(6), upd(7)], 0, ['posted', 'failed', 'posted']), 6);
 });
 
 test('offsetAfterDelivery: a failure on the FIRST update advances the offset not at all', () => {
-  assert.equal(offsetAfterDelivery([upd(5), upd(6)], 3, [false, true]), 3);
+  assert.equal(offsetAfterDelivery([upd(5), upd(6)], 3, ['failed', 'posted']), 3);
 });
 
 test('offsetAfterDelivery: an empty batch leaves the offset unchanged', () => {
   assert.equal(offsetAfterDelivery([], 9, []), 9);
 });
 
-test('offsetAfterDelivery: a single delivered update advances to its own update_id + 1 (real Telegram semantics)', () => {
-  assert.equal(offsetAfterDelivery([upd(41)], 0, [true]), 42);
+test('offsetAfterDelivery: a single posted update advances to its own update_id + 1 (real Telegram semantics)', () => {
+  assert.equal(offsetAfterDelivery([upd(41)], 0, ['posted']), 42);
+});
+
+// ── BL-389 the-battery-.../a-dropped-message-must-not-park-the-offset ────
+// scenarios 01-03: a DROP is terminal (never retried), a FAILURE is
+// retryable (never skipped) - the antonym pair IS the fix.
+
+test('BL-389 scenario 01: a message dropped on purpose is never fetched again - the offset advances PAST it', () => {
+  assert.equal(offsetAfterDelivery([upd(5)], 0, ['dropped']), 6);
+});
+
+test('BL-389 scenario 02: a message whose delivery failed is fetched again - the offset does NOT move past it', () => {
+  assert.equal(offsetAfterDelivery([upd(5)], 0, ['failed']), 0);
+});
+
+test('BL-389 scenario 03: a dropped message ahead of a failed one does not shield it - offset advances past the drop, then stops at the failure', () => {
+  assert.equal(offsetAfterDelivery([upd(5), upd(6), upd(7)], 0, ['dropped', 'failed', 'posted']), 6);
+});
+
+test('BL-389 scenario 03 (converse): a dropped message AFTER a failure is never reached - offset still stops at the failure, advancing not at all', () => {
+  assert.equal(offsetAfterDelivery([upd(5), upd(6), upd(7)], 0, ['failed', 'dropped', 'posted']), 0);
 });
 
 // ── shouldEscalateStuckDelivery (pure) — BL-369 scenario 05 ─────────────

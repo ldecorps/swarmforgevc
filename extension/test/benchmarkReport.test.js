@@ -7,15 +7,18 @@ test('qualityThresholdDescription states the numeric threshold', () => {
 
 test('buildBenchmarkReport assembles every field the acceptance contract needs', () => {
   const ranking = { bestByQuality: 'a', bestByValue: 'a', cheapestAcceptable: 'a', noAcceptableModelReason: null };
+  const refusedTasks = [{ taskId: 't-2', reason: 'reference solution failed' }];
   const report = buildBenchmarkReport({
     generatedAtIso: '2026-07-13T00:00:00Z',
-    taskId: 't-1',
+    taskIds: ['t-1'],
+    refusedTasks,
     qualityThreshold: 0.8,
     models: [],
     ranking,
   });
   assert.equal(report.schemaVersion, BENCHMARK_REPORT_SCHEMA_VERSION);
-  assert.equal(report.taskId, 't-1');
+  assert.deepEqual(report.taskIds, ['t-1']);
+  assert.deepEqual(report.refusedTasks, refusedTasks);
   assert.equal(report.qualityThreshold, 0.8);
   assert.match(report.qualityThresholdDescription, /0\.8/);
   assert.ok(report.provenance.length > 0);

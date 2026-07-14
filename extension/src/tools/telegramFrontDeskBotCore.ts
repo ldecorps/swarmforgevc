@@ -227,7 +227,12 @@ export interface PollAdapters {
   // NOT the support-thread path (postToBridge/openSubjectAndRecord). What
   // the Operator does with that context is the Operator's own behavior,
   // out of scope here.
-  postOperatorContext: (backlogId: string, text: string) => Promise<boolean>;
+  // BL-389: updateId rides this call too, so the implementation can dedupe
+  // a redelivered update - THIS adapter is the one that actually flooded
+  // (backlog/topics/<id>.json gained 209 duplicate entries and the
+  // Operator answered the same reply every ~15s) once a dropped update
+  // parked the offset and Telegram kept redelivering the same batch.
+  postOperatorContext: (backlogId: string, text: string, updateId: number) => Promise<boolean>;
   // BL-357: pendingApprovalReply.ts's recordApprovalReply, adapter-injected
   // - flips the ticket's human_approval field when its topic reply is
   // recognized as an approval (isApprovalReplyText). A SEPARATE effect from
@@ -235,32 +240,30 @@ export interface PollAdapters {
   // whatever's happening with the ticket; this one only fires on the
   // approval keyword, and writes to the ticket's own YAML, not a gated
   // pane) - both apply to the same reply, neither replaces the other.
+  // Naturally idempotent on its own (a ticket already `approved` simply
+  // no-ops on a second flip attempt), so it needs no updateId of its own.
   recordApprovalReply: (backlogId: string) => Promise<boolean>;
 }
 
-export interface PollResult {
-  nextOffset: number;
-  posted: number;
-  dropped: number;
-  // BL-302: surfaces the poll CYCLE's own success/failure (getUpdates'
-  // own result.success) - distinct from posted/dropped, which describe
-  // per-update OUTCOMES within a successful cycle. A failed cycle has
-  // posted:0/dropped:0 too, which was previously indistinguishable from a
-  // legitimately-empty successful cycle - the caller (pollLoop) needs to
-  // tell these apart to back off only on a real failure.
-  ok: boolean;
-}
+// BL-389: the keystone fix. A DROP is a DECISION (the code looked at the
+// update and chose not to act - not-principal, no-text) and can NEVER
+// succeed on retry; a FAILURE is a transient delivery problem that MAY
+// succeed on retry. Collapsing both into one boolean is exactly what
+// parked the Telegram offset forever on a deliberately-dropped update (a
+// photo, a sticker, a service message) - a drop must let the offset past
+// it, a failure must not. See the engineering article's own "a deliberate
+// DROP is terminal, never a retryable failure" rule.
+export type UpdateDeliveryOutcome = 'posted' | 'dropped' | 'failed';
 
 // Split out of pollAndForward so that function's own branch count stays
-// low - one update's whole decision -> outcome, true when posted/opened,
-// false when dropped.
+// low - one update's whole decision -> outcome.
 // BL-357: split out of processUpdate below so its own branch count stays at
 // the pre-BL-357 level (cleaner review: the new isApprovalReplyText branch
 // pushed processUpdate's own CRAP over threshold at full coverage - the
 // same class of split messageTextForEvent/routeEvent already use in
 // topicRouter.ts for the identical reason).
-async function deliverOperatorContext(backlogId: string, text: string, adapters: PollAdapters): Promise<boolean> {
-  const posted = await adapters.postOperatorContext(backlogId, text);
+async function deliverOperatorContext(backlogId: string, text: string, updateId: number, adapters: PollAdapters): Promise<boolean> {
+  const posted = await adapters.postOperatorContext(backlogId, text, updateId);
   // BL-357: fires alongside the context post above, never instead of it -
   // a reply that approves a ticket is still ALSO context for it.
   if (isApprovalReplyText(text)) {
@@ -269,41 +272,74 @@ async function deliverOperatorContext(backlogId: string, text: string, adapters:
   return posted;
 }
 
-async function processUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<boolean> {
+// Split out of processUpdate below so its own branch count stays at or
+// below the CRAP threshold - the same "extract the ternary into a named,
+// tested helper" split deliverOperatorContext above already uses for the
+// identical reason (BL-357), reapplied here because BL-389's outcome
+// mapping (ok -> 'posted' | 'failed') pushed processUpdate's CRAP to 8.
+function deliveryOutcome(ok: boolean): UpdateDeliveryOutcome {
+  return ok ? 'posted' : 'failed';
+}
+
+async function processUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
   const decision = decideUpdateAction(update, principalUserId, adapters.subjectForTopic, adapters.backlogForTopic);
   if (decision.action === 'post-existing') {
-    return adapters.postToBridge(decision.subjectId, decision.text, update.update_id);
+    const ok = await adapters.postToBridge(decision.subjectId, decision.text, update.update_id);
+    return deliveryOutcome(ok);
   }
   if (decision.action === 'operator-context') {
-    return deliverOperatorContext(decision.backlogId, decision.text, adapters);
+    const ok = await deliverOperatorContext(decision.backlogId, decision.text, update.update_id, adapters);
+    return deliveryOutcome(ok);
   }
   if (decision.action === 'open-default' || decision.action === 'open-for-topic') {
     const topicId = decision.action === 'open-for-topic' ? decision.topicId : undefined;
     await adapters.openSubjectAndRecord(topicId, decision.text);
-    return true;
+    return 'posted';
   }
-  return false;
+  // decision.action === 'drop': a DECISION, never a delivery attempt at
+  // all - the offset must advance past it (see offsetAfterDelivery below).
+  return 'dropped';
 }
 
-// BL-369 (bug #1, the keystone defect): the offset must only ever advance
-// past a message whose delivery was CONFIRMED, never past one merely
-// FETCHED. Once Telegram's offset moves, it will NEVER redeliver anything
-// below it - so advancing past an undelivered update is a PERMANENT loss,
-// which is exactly what makes every other failure in this file degrade to
-// a mere retry once this is fixed, instead of a loss. Stops advancing at
-// the FIRST undelivered update in fetch order (never skips over it to ack
-// a later one that happened to succeed) - a later update in the same batch
-// is safely redelivered once the earlier failure clears, safe precisely
-// because bridgeServer.ts's own ingest is idempotent by update_id.
-export function offsetAfterDelivery(updates: TelegramUpdate[], currentOffset: number, delivered: boolean[]): number {
+// BL-369 (bug #1, the keystone defect) / BL-389 (the fix for the fix): the
+// offset must only ever STOP at a message whose delivery genuinely FAILED
+// - never at one that was merely FETCHED (BL-369's own original framing),
+// and never at one that was deliberately DROPPED either (BL-389: a drop is
+// terminal, so refusing to advance past it is an unbounded retry of
+// something that can never succeed - the exact mechanism that parked the
+// offset forever and let Telegram redeliver the same batch every poll).
+// Stops advancing at the FIRST 'failed' outcome in fetch order (never
+// skips over it to ack a later one that happened to succeed) - a later
+// update in the same batch is safely redelivered once the earlier failure
+// clears, safe precisely because bridgeServer.ts's own ingest is
+// idempotent by update_id (and, as of BL-389, so is postOperatorContext).
+export function offsetAfterDelivery(updates: TelegramUpdate[], currentOffset: number, outcomes: UpdateDeliveryOutcome[]): number {
   let offset = currentOffset;
   for (let i = 0; i < updates.length; i++) {
-    if (!delivered[i]) {
+    if (outcomes[i] === 'failed') {
       return offset;
     }
     offset = updates[i].update_id + 1;
   }
   return offset;
+}
+
+export interface PollResult {
+  nextOffset: number;
+  posted: number;
+  dropped: number;
+  // BL-389: a genuine delivery FAILURE, distinct from a deliberate DROP -
+  // only `failed` blocks the offset (offsetAfterDelivery above); `dropped`
+  // never does. Previously conflated into one `dropped` counter.
+  failed: number;
+  // BL-302: surfaces the poll CYCLE's own success/failure (getUpdates'
+  // own result.success) - distinct from posted/dropped/failed, which
+  // describe per-update OUTCOMES within a successful cycle. A failed cycle
+  // has posted:0/dropped:0/failed:0 too, which was previously
+  // indistinguishable from a legitimately-empty successful cycle - the
+  // caller (pollLoop) needs to tell these apart to back off only on a
+  // real failure.
+  ok: boolean;
 }
 
 // Adapter-injected: one poll-and-forward cycle. Every update decision goes
@@ -313,21 +349,24 @@ export function offsetAfterDelivery(updates: TelegramUpdate[], currentOffset: nu
 export async function pollAndForward(offset: number, principalUserId: string, adapters: PollAdapters): Promise<PollResult> {
   const result = await adapters.getUpdates(offset);
   if (!result.success) {
-    return { nextOffset: offset, posted: 0, dropped: 0, ok: false };
+    return { nextOffset: offset, posted: 0, dropped: 0, failed: 0, ok: false };
   }
   let posted = 0;
   let dropped = 0;
-  const delivered: boolean[] = [];
+  let failed = 0;
+  const outcomes: UpdateDeliveryOutcome[] = [];
   for (const update of result.updates) {
-    const ok = await processUpdate(update, principalUserId, adapters);
-    delivered.push(ok);
-    if (ok) {
+    const outcome = await processUpdate(update, principalUserId, adapters);
+    outcomes.push(outcome);
+    if (outcome === 'posted') {
       posted += 1;
-    } else {
+    } else if (outcome === 'dropped') {
       dropped += 1;
+    } else {
+      failed += 1;
     }
   }
-  return { nextOffset: offsetAfterDelivery(result.updates, offset, delivered), posted, dropped, ok: true };
+  return { nextOffset: offsetAfterDelivery(result.updates, offset, outcomes), posted, dropped, failed, ok: true };
 }
 
 // ── BL-302: poll-loop resilience (bounded backoff, escalation, isolation) ──
@@ -400,11 +439,14 @@ export interface PollLoopState {
   offset: number;
   consecutiveFailures: number;
   // BL-369: consecutive successful CYCLES in a row where the offset failed
-  // to advance because at least one delivery failed (result.dropped > 0) -
-  // i.e. the SAME head-of-line update keeps failing. Resets to 0 the
-  // instant the offset actually advances again or a cycle has nothing
-  // undelivered; distinct from consecutiveFailures, which counts whole-
-  // cycle getUpdates failures, not per-message ones within an ok cycle.
+  // to advance because at least one delivery genuinely FAILED
+  // (result.failed > 0) - i.e. the SAME head-of-line update keeps failing.
+  // Resets to 0 the instant the offset actually advances again or a cycle
+  // has nothing undelivered; distinct from consecutiveFailures, which
+  // counts whole-cycle getUpdates failures, not per-message ones within an
+  // ok cycle. BL-389: deliberately keys off `failed`, NOT `dropped` - a
+  // drop already let the offset past it (offsetAfterDelivery), so a
+  // dropped-only cycle is never "stuck" in the first place.
   stuckAttempts: number;
 }
 
@@ -438,7 +480,7 @@ export async function runPollCycle(
   const result = await pollAndForward(state.offset, principalUserId, adapters);
   if (result.ok) {
     const offsetAdvanced = result.nextOffset !== state.offset;
-    const stuckAttempts = offsetAdvanced || result.dropped === 0 ? 0 : state.stuckAttempts + 1;
+    const stuckAttempts = offsetAdvanced || result.failed === 0 ? 0 : state.stuckAttempts + 1;
     return {
       state: { offset: result.nextOffset, consecutiveFailures: 0, stuckAttempts },
       delayMs: 0,

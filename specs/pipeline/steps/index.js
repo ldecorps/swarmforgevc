@@ -108,6 +108,7 @@ const DOMAINS = [
   require('./pendingApprovalAsksInTopicSteps'),
   require('./epicsAsFirstClassTopicsSteps'),
   require('./aTieIsReportedAsATieSteps'),
+  require('./theBatteryCanActuallySeparateModelsSteps'),
   require('./frontDeskPollResilienceSteps'),
   require('./frontDeskSupervisorRecoverySteps'),
   require('./operatorSystemdSupervisionSteps'),
@@ -174,6 +175,8 @@ const DOMAINS = [
   require('./frontDeskLivenessMeansListeningSteps'),
   require('./alwaysOnOperatorPresenceSteps'),
   require('./topicRecreationSteps'),
+  require('./aDroppedMessageMustNotParkTheOffsetSteps'),
+  require('./aChurnRewriteDoesNotMintACommitSteps'),
 ];
 
 function registerSteps(registry) {

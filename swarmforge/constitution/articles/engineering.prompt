@@ -526,3 +526,29 @@
   callers and backlog-topic-map.json has no writer — verified by grep — so
   BL-298's new inbound branch can never fire live. The BL-295 epic plan lacked a
   wiring slice; add one before calling the epic complete.)
+- **A deliberate DROP is a TERMINAL outcome — never feed it into an ack/commit/advance gate that
+  exists to protect against FAILURE.** These are opposite things wearing the same boolean.
+  A FAILURE is retryable: it may succeed next time, so refusing to advance past it is correct and
+  is how you avoid losing the item. A DROP is a DECISION: the code looked at the item and chose not
+  to act on it, so it will NEVER "succeed" — and refusing to advance past it is therefore an
+  unbounded retry of something that can never complete, i.e. an infinite loop by construction. The
+  tell is a function that returns `false` for BOTH "I couldn't" and "I wouldn't", whose caller then
+  feeds that one boolean to a gate that only understands "I couldn't". Give the gate three-way
+  information (delivered / dropped / failed), not a boolean — and note that the counters are often
+  already there: the shape of this bug is a codebase that ALREADY distinguishes the two for
+  reporting, then collapses them for control flow.
+  And because a redelivery/retry of any kind can then happen, every SIDE-EFFECTING path it can
+  re-run must be idempotent on the item's natural key. Partial idempotency is the trap: it looks
+  correct precisely on the path someone thought about.
+  (BL-389, a CRITICAL live incident, 2026-07-14. `processUpdate` returned `false` for a deliberate
+  drop (`not-principal` / `no-text`); `pollAndForward` pushed that straight into `delivered[]`; and
+  `offsetAfterDelivery` — BL-369's anti-message-loss guard, which is CORRECT about failures — parked
+  the Telegram offset at the first `!delivered[i]`. So any dropped update (a photo, a sticker, a
+  service message, a stranger's message) parked the offset FOREVER and Telegram redelivered it and
+  everything after it on every poll. `PollResult` already counted `posted` vs `dropped` separately —
+  the distinction existed and was simply not used where it mattered. The amplifier was partial
+  idempotency: BL-369's own comment justifies the guard as "safe precisely because bridgeServer.ts's
+  own ingest is idempotent by update_id" — true for `postToBridge`, which takes an `updateId`, but
+  `postOperatorContext` / `openSubjectAndRecord` / `recordApprovalReply` were never given one. The
+  result: the same two human messages replayed into a 209-message topic record and ~8 commits/min,
+  every one of them pushed to origin/main, until a human stopped the bot.)
