@@ -169,7 +169,42 @@ else
   fi
   pass "04b: a real tmux launch chain launched via nohup reads as detached - the same shape start-swarm.sh uses in production"
 
+  # Kill the fixture's tmux servers BEFORE removing the directory their
+  # sockets live in: kill-server needs the socket path to still exist to
+  # connect. The `trap cleanup EXIT` below also targets these sockets, but
+  # by then rm -rf will already have unlinked the path, so kill-server
+  # silently fails to connect and the servers (and their sleep 30 panes)
+  # are left running for their own full duration instead of dying with the
+  # test - a real, if bounded, orphaned-process leak on every run.
+  tmux -S "$SOCK_A" kill-server 2>/dev/null || true
+  tmux -S "$SOCK_B" kill-server 2>/dev/null || true
   rm -rf "$TMUX_FIXTURE_BASE"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Scenario 04c (coverage gap closed): check_swarm_detached.bb's sig-ignore-mask
+# reads /proc/<pid>/status when it exists (scenarios 01-04 above all exercise
+# that path, since every stand-in pid is alive on this Linux host) but falls
+# back to `ps -o sigignore=` when it does not - a routing branch every prior
+# scenario leaves at 0% coverage. A pid that never existed hits exactly that
+# fallback (fs/exists? on its /proc entry is false), and the ps fallback then
+# also fails (no such process) - proving the whole missing-mask path resolves
+# to "not detached" rather than crashing or silently passing, matching the
+# already-unit-tested swarm_detach_lib/sighup-ignored? nil case in
+# swarm_detach_lib_test_runner.bb, but here through the REAL I/O wrapper
+# instead of the pure function directly.
+# ═══════════════════════════════════════════════════════════════════════════
+
+NEVER_EXISTED_PID=999999999
+if [[ -e "/proc/$NEVER_EXISTED_PID" ]]; then
+  echo "SKIP: 04c - pid $NEVER_EXISTED_PID unexpectedly exists on this host"
+else
+  if bb "$CHECK_DETACHED" 1 "$NEVER_EXISTED_PID" >/tmp/check-detached-no-proc-entry.out 2>&1; then
+    fail "04c: expected a pid with no /proc entry (ps fallback also finds nothing) to read as not detached, got: $(cat /tmp/check-detached-no-proc-entry.out)"
+  fi
+  grep -qi "still owned by the caller" /tmp/check-detached-no-proc-entry.out \
+    || fail "04c: expected a diagnostic naming the launch as still owned by the caller, got: $(cat /tmp/check-detached-no-proc-entry.out)"
+  pass "04c: a pid with no /proc entry falls through to the ps fallback, which also finds nothing, and is reported as not detached rather than crashing"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════
