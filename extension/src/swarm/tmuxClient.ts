@@ -158,6 +158,32 @@ export function getPanePid(socketPath: string, target: string): string {
   return result.stdout.trim();
 }
 
+// BL-362 QA bounce follow-up: PaneTailer's hot poll path queried pane_pid and
+// pane_current_command as two separate `display-message` subprocess spawns
+// per role per tick - a real, measured cost (each tmux invocation is a real
+// process spawn), not just a test-mocking artifact. tmux's own
+// `display-message -p` format string can return several placeholders from a
+// SINGLE call, so both values are fetched together here, halving that
+// specific per-role-per-tick spawn count. getPanePid/getPaneCommand above are
+// kept unchanged (still independently used/tested) for any caller that only
+// needs one value.
+export function getPanePidAndCommand(socketPath: string, target: string): { pid: string; command: string } {
+  const result = runCommand('tmux', [
+    '-S',
+    socketPath,
+    'display-message',
+    '-p',
+    '-t',
+    target,
+    '#{pane_pid}\t#{pane_current_command}',
+  ]);
+  if (result.exitCode !== 0) {
+    return { pid: '', command: '' };
+  }
+  const [pid, command] = result.stdout.trim().split('\t');
+  return { pid: pid ?? '', command: command ?? '' };
+}
+
 export function capturePane(
   socketPath: string,
   target: string,
