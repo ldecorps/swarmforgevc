@@ -120,6 +120,23 @@
       suiteDurationLabelWarn: 'Suite duration (WARN): ',
       suiteDurationLatestSuffix: 's latest',
       suiteDurationNoData: 'no local data',
+      // BL-347: the Role Leaderboard - BL-340's committed benchmark report,
+      // presented as Best / Best Value / Cheapest Acceptable per role.
+      roleLeaderboardHeading: 'Role Leaderboard',
+      roleLeaderboardRolePrefix: 'Role: ',
+      roleLeaderboardAsOfPrefix: 'Benchmark run: ',
+      roleLeaderboardThresholdPrefix: 'Quality threshold: ',
+      roleLeaderboardColCategory: 'Category',
+      roleLeaderboardColModel: 'Model',
+      roleLeaderboardColQuality: 'Quality',
+      roleLeaderboardColCost: 'Cost',
+      roleLeaderboardColDuration: 'Duration',
+      roleLeaderboardBest: 'Best',
+      roleLeaderboardBestValue: 'Best value',
+      roleLeaderboardCheapestAcceptable: 'Cheapest acceptable',
+      roleLeaderboardNoAcceptableSeparator: ': ',
+      roleLeaderboardNoCost: 'no priced usage',
+      roleLeaderboardSecondsSuffix: 's',
     },
     fr: {
       pageTitle: 'SwarmForge — tableau de bord',
@@ -215,6 +232,24 @@
       suiteDurationLabelWarn: 'Durée de la suite (ALERTE) : ',
       suiteDurationLatestSuffix: 's (dernière mesure)',
       suiteDurationNoData: 'aucune donnée locale',
+      // BL-347: le classement par rôle - le rapport de benchmark commité de
+      // BL-340, présenté comme Meilleur / Meilleur rapport qualité-prix /
+      // Moins cher acceptable, par rôle.
+      roleLeaderboardHeading: 'Classement par rôle',
+      roleLeaderboardRolePrefix: 'Rôle : ',
+      roleLeaderboardAsOfPrefix: 'Benchmark exécuté : ',
+      roleLeaderboardThresholdPrefix: 'Seuil de qualité : ',
+      roleLeaderboardColCategory: 'Catégorie',
+      roleLeaderboardColModel: 'Modèle',
+      roleLeaderboardColQuality: 'Qualité',
+      roleLeaderboardColCost: 'Coût',
+      roleLeaderboardColDuration: 'Durée',
+      roleLeaderboardBest: 'Meilleur',
+      roleLeaderboardBestValue: 'Meilleur rapport qualité-prix',
+      roleLeaderboardCheapestAcceptable: 'Moins cher acceptable',
+      roleLeaderboardNoAcceptableSeparator: ' : ',
+      roleLeaderboardNoCost: 'pas d\'usage tarifé',
+      roleLeaderboardSecondsSuffix: 's',
     },
   };
 })();

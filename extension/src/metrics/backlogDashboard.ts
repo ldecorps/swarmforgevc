@@ -6,6 +6,7 @@ import { computeDeliveryMetrics, DeliveryMetrics, VelocityResult, MilestoneBurnd
 import { RoleWorktree } from './swarmMetrics';
 import { readSwarmName } from '../bridge/holisticProjections';
 import { CostHealthSidecar } from '../notify/costHealthSidecar';
+import { BenchmarkReport } from '../benchmark/types';
 import { translateString, TranslationSession } from '../i18n/translate';
 import { TARGET_LOCALES } from '../i18n/targetLocales';
 
@@ -83,6 +84,13 @@ export interface BacklogDashboardData {
   // sidecar has ever been committed; schemaVersion stays unchanged either
   // way since this is a purely additive field.
   costHealth?: CostHealthSidecar;
+  // BL-347: additive, optional - the latest committed docs/benchmarks/
+  // <date>.json role-benchmark report (BL-340), folded in verbatim. Same
+  // "committed sidecar carried as-is across the live/git boundary"
+  // mechanism as costHealth above - a benchmark run is machine-local and
+  // live, so this field is the ONLY way its numbers may reach the PWA.
+  // Absent when no report has ever been committed.
+  roleLeaderboard?: BenchmarkReport;
 }
 
 const UNSPECIFIED_MILESTONE = 'unspecified';
@@ -194,7 +202,8 @@ export function buildBacklogDashboard(
   localSwarmName: string,
   sourceSha: string | null,
   generatedAtIso: string,
-  costHealth: CostHealthSidecar | null = null
+  costHealth: CostHealthSidecar | null = null,
+  roleLeaderboard: BenchmarkReport | null = null
 ): BacklogDashboardData {
   const lifecycleByTicketId = new Map(lifecycles.map((l) => [l.ticketId, l]));
   const p50ByTicketId = new Map(
@@ -231,21 +240,25 @@ export function buildBacklogDashboard(
       dashboard.metrics.suiteDurationTrend = costHealth.suiteDurationTrend;
     }
   }
+  if (roleLeaderboard) {
+    dashboard.roleLeaderboard = roleLeaderboard;
+  }
   return dashboard;
 }
 
 const SIDECAR_FILENAME_PATTERN = /^\d{4}-\d{2}-\d{2}\.json$/;
 
-// BL-213 cost-06a: the most recently committed docs/briefings/<date>.json
-// sidecar (ISO date filenames sort chronologically). No sidecar ever
-// committed, or a malformed/unreadable one, reads as null rather than
-// throwing - cost-06b's "hidden when absent" is handled entirely by
-// buildBacklogDashboard's own costHealth-omitted-when-null branch above.
-function readLatestCostHealthSidecar(targetPath: string): CostHealthSidecar | null {
-  const briefingsDir = path.join(targetPath, 'docs', 'briefings');
+// BL-213 cost-06a / BL-347: the most recently committed <date>.json sidecar
+// under a given directory (ISO date filenames sort chronologically). No
+// sidecar ever committed, or a malformed/unreadable one, reads as null
+// rather than throwing - the "hidden when absent" posture is handled
+// entirely by buildBacklogDashboard's own omitted-when-null branches, never
+// here. Shared by readLatestCostHealthSidecar and readLatestBenchmarkReport
+// below, which differ only in which committed directory they read.
+function readLatestCommittedSidecar<T>(sidecarDir: string): T | null {
   let files: string[];
   try {
-    files = fs.readdirSync(briefingsDir).filter((f) => SIDECAR_FILENAME_PATTERN.test(f));
+    files = fs.readdirSync(sidecarDir).filter((f) => SIDECAR_FILENAME_PATTERN.test(f));
   } catch {
     return null;
   }
@@ -254,10 +267,19 @@ function readLatestCostHealthSidecar(targetPath: string): CostHealthSidecar | nu
   }
   files.sort();
   try {
-    return JSON.parse(fs.readFileSync(path.join(briefingsDir, files[files.length - 1]), 'utf8'));
+    return JSON.parse(fs.readFileSync(path.join(sidecarDir, files[files.length - 1]), 'utf8'));
   } catch {
     return null;
   }
+}
+
+function readLatestCostHealthSidecar(targetPath: string): CostHealthSidecar | null {
+  return readLatestCommittedSidecar<CostHealthSidecar>(path.join(targetPath, 'docs', 'briefings'));
+}
+
+// BL-347: the most recently committed docs/benchmarks/<date>.json report.
+function readLatestBenchmarkReport(targetPath: string): BenchmarkReport | null {
+  return readLatestCommittedSidecar<BenchmarkReport>(path.join(targetPath, 'docs', 'benchmarks'));
 }
 
 // The one impure entry point: reads current backlog state, walks git
@@ -271,8 +293,18 @@ export function computeBacklogDashboard(targetPath: string, roles: RoleWorktree[
   const localSwarmName = readSwarmName(targetPath);
   const sourceSha = getCurrentSha(targetPath);
   const costHealth = readLatestCostHealthSidecar(targetPath);
+  const roleLeaderboard = readLatestBenchmarkReport(targetPath);
 
-  return buildBacklogDashboard(folders, lifecycles, deliveryMetrics, localSwarmName, sourceSha, new Date(nowMs).toISOString(), costHealth);
+  return buildBacklogDashboard(
+    folders,
+    lifecycles,
+    deliveryMetrics,
+    localSwarmName,
+    sourceSha,
+    new Date(nowMs).toISOString(),
+    costHealth,
+    roleLeaderboard
+  );
 }
 
 // BL-230: translates summary.title into every configured target locale
