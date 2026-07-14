@@ -21,8 +21,22 @@ const { execFileSync } = require('node:child_process');
 
 const EXT_DIR = path.join(__dirname, '..', '..', '..', 'extension');
 const PANE_TAILER_TEST_PATH = path.join(EXT_DIR, 'test', 'paneTailerClass.test.js');
-const DEPENDENCY_GATE_TEST_PATH = path.join(EXT_DIR, 'test', 'dependencyGateCli.test.js');
+const TEST_DIR = path.join(EXT_DIR, 'test');
 const REAL_CONFIG_PATH = path.join(EXT_DIR, '.dependency-cruiser.cjs');
+
+// BL-375: the dependency-gate's own tests split from one file into a
+// dependencyGateCli* family (one file alone was serialising 12 tests -
+// wall clock bound - into a single Vitest worker). Discovered by prefix,
+// never a hardcoded single path, per BL-375's own "any future profiling
+// wants to find them without a hardcoded list" - this file is exactly that
+// future consumer.
+function dependencyGateFamilySource() {
+  return fs
+    .readdirSync(TEST_DIR)
+    .filter((name) => name.startsWith('dependencyGateCli') && name.endsWith('.test.js'))
+    .map((name) => fs.readFileSync(path.join(TEST_DIR, name), 'utf8'))
+    .join('\n');
+}
 
 const { runDependencyCruiser } = require(path.join(EXT_DIR, 'out', 'tools', 'dependency-gate'));
 const { parseDependencyCruiserOutput } = require(path.join(EXT_DIR, 'out', 'quality', 'dependencyGate'));
@@ -83,7 +97,7 @@ function registerSteps(registry) {
 
   // ── hot-test-files-stop-waiting-02/03 ────────────────────────────────────
   registry.define(/^the dependency-gate's tests$/, (ctx) => {
-    ctx.dependencyGateSource = fs.readFileSync(DEPENDENCY_GATE_TEST_PATH, 'utf8');
+    ctx.dependencyGateSource = dependencyGateFamilySource();
     ctx.fixtureRoot = mkFixtureRoot();
     writeFixtureTsconfig(ctx.fixtureRoot);
     writeFile(ctx.fixtureRoot, 'src/quality/bad.ts', "import * as fs from 'fs';\nexport function bad() { return fs.existsSync('.'); }\n");
@@ -142,7 +156,7 @@ function registerSteps(registry) {
 
   // ── hot-test-files-stop-waiting-04 ───────────────────────────────────────
   registry.define(/^the unit suite runs$/, (ctx) => {
-    ctx.dependencyGateSource = ctx.dependencyGateSource || fs.readFileSync(DEPENDENCY_GATE_TEST_PATH, 'utf8');
+    ctx.dependencyGateSource = ctx.dependencyGateSource || dependencyGateFamilySource();
   });
 
   registry.define(/^no test scans the whole real project$/, (ctx) => {
@@ -172,7 +186,7 @@ function registerSteps(registry) {
     // (a hard wall-clock threshold in a test is exactly the flaky-timing
     // anti-pattern this ticket removes). The six one-rule engine boots are
     // gone, replaced by the merged single-run test.
-    const depSource = ctx.dependencyGateSource || fs.readFileSync(DEPENDENCY_GATE_TEST_PATH, 'utf8');
+    const depSource = ctx.dependencyGateSource || dependencyGateFamilySource();
     if (!/catches every forbidden-dependency rule, from a single engine run/.test(depSource)) {
       throw new Error('expected the merged single-engine-run test to be present');
     }
