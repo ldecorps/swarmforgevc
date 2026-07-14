@@ -125,6 +125,6 @@ acceptance:
     - "A message recorded in a thread but never queued is reclaimed"
     - "A message that can never be accepted is surfaced to the human, never dropped"
 
-human_approval: pending
+human_approval: approved  # human, Telegram SUP-2 2026-07-14T06:40:06Z: "Promote all, pick the order" — see .swarmforge/operator/PROMOTE-ALL-9.md
 
 mutation_cost: high

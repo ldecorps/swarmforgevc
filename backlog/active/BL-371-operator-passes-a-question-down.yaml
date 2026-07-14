@@ -99,6 +99,6 @@ acceptance:
     - "A question the Operator can answer is answered, not filed"
     - "The human always learns which of the two happened"
 
-human_approval: pending
+human_approval: approved  # human, Telegram SUP-2 2026-07-14T06:40:06Z: "Promote all, pick the order" — see .swarmforge/operator/PROMOTE-ALL-9.md
 
 mutation_cost: low
