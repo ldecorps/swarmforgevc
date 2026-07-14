@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { appendOperatorEvent, readNewReplyOutboxEntries } = require('../out/bridge/operatorEventQueue');
+const { appendOperatorEvent, readNewReplyOutboxEntries, withEventsLock } = require('../out/bridge/operatorEventQueue');
 
 // BL-281: the bridge's hand-off files into/out-of the Operator runtime
 // (Babashka) - events.jsonl (bridge writes, runtime reads) and the reply
@@ -31,6 +31,65 @@ test('appendOperatorEvent appends (never overwrites) across multiple calls', () 
   assert.equal(lines.length, 2);
   assert.match(lines[0], /SUP-1/);
   assert.match(lines[1], /SUP-2/);
+});
+
+// ── withEventsLock / appendOperatorEvent's own lock (BL-369) ────────────
+
+const LOCK_ENV = { OPERATOR_EVENTS_LOCK_RETRY_DELAY_MS: '5', OPERATOR_EVENTS_LOCK_MAX_WAIT_MS: '50' };
+
+function withLockEnv(fn) {
+  const prior = { ...process.env };
+  Object.assign(process.env, LOCK_ENV);
+  try {
+    return fn();
+  } finally {
+    process.env = prior;
+  }
+}
+
+function lockDirFor(targetPath) {
+  return path.join(targetPath, '.swarmforge', 'operator', 'events.jsonl.lock');
+}
+
+test('withEventsLock creates the lock directory for the duration of fn, then removes it', () => {
+  const targetPath = mkTmp();
+  let existedDuring = false;
+  withEventsLock(targetPath, () => {
+    existedDuring = fs.existsSync(lockDirFor(targetPath));
+  });
+  assert.equal(existedDuring, true);
+  assert.equal(fs.existsSync(lockDirFor(targetPath)), false);
+});
+
+test('withEventsLock releases the lock even when fn throws (finally)', () => {
+  const targetPath = mkTmp();
+  assert.throws(() =>
+    withEventsLock(targetPath, () => {
+      throw new Error('boom');
+    })
+  );
+  assert.equal(fs.existsSync(lockDirFor(targetPath)), false);
+});
+
+test('withEventsLock throws a bounded timeout error (never hangs forever) when the lock dir is already held', () => {
+  const targetPath = mkTmp();
+  fs.mkdirSync(lockDirFor(targetPath), { recursive: true }); // simulate another process already holding it
+  withLockEnv(() => {
+    assert.throws(() => withEventsLock(targetPath, () => 'unreachable'), /events lock timed out/);
+  });
+  // The lock this process never acquired must be left exactly as found -
+  // never deleted out from under whichever real holder created it.
+  assert.equal(fs.existsSync(lockDirFor(targetPath)), true);
+});
+
+test('appendOperatorEvent refuses to write while the lock is already held by someone else, rather than silently racing past it', () => {
+  const targetPath = mkTmp();
+  fs.mkdirSync(lockDirFor(targetPath), { recursive: true });
+  withLockEnv(() => {
+    assert.throws(() => appendOperatorEvent(targetPath, { type: 'X' }), /events lock timed out/);
+  });
+  const file = path.join(targetPath, '.swarmforge', 'operator', 'events.jsonl');
+  assert.equal(fs.existsSync(file), false, 'expected no partial/racing write while the lock was held elsewhere');
 });
 
 test('readNewReplyOutboxEntries returns nothing (and totalLines unchanged) when the outbox file does not exist yet', () => {

@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { readThread, writeThread, appendMessage } = require('../out/bridge/supportThreadStore');
+const { readThread, writeThread, appendMessage, messageForUpdateId, withEventQueued } = require('../out/bridge/supportThreadStore');
 
 // BL-281: the bridge-side (TS) read/write for the SAME SUP-### thread
 // store support_thread_store.bb (Babashka) owns - proves the two sides
@@ -48,4 +48,44 @@ test('writeThread persists under the SAME path support_thread_store.bb reads (.s
   writeThread(targetPath, { id: 'SUP-3', status: 'open', messages: [] });
   const expectedPath = path.join(targetPath, '.swarmforge', 'support', 'threads', 'SUP-3.json');
   assert.ok(fs.existsSync(expectedPath), `expected the thread file at ${expectedPath}`);
+});
+
+// ── updateId / messageForUpdateId / withEventQueued (BL-369) ────────────
+
+test('appendMessage carries updateId when given one', () => {
+  const thread = appendMessage(null, 'SUP-1', 'telegram', 't1', 'hi', 42);
+  assert.equal(thread.messages[0].updateId, 42);
+});
+
+test('appendMessage omits updateId entirely (never writes an explicit undefined) when none is given, matching every pre-BL-369 message shape', () => {
+  const thread = appendMessage(null, 'SUP-1', 'telegram', 't1', 'hi');
+  assert.equal(Object.prototype.hasOwnProperty.call(thread.messages[0], 'updateId'), false);
+});
+
+test('messageForUpdateId finds the message with the exact matching update_id', () => {
+  const thread = { id: 'SUP-1', status: 'open', messages: [{ channel: 'telegram', timestamp: 't1', text: 'a', updateId: 10 }] };
+  assert.equal(messageForUpdateId(thread, 10).text, 'a');
+});
+
+test('messageForUpdateId returns undefined for a null thread (never crashes on a brand-new subject)', () => {
+  assert.equal(messageForUpdateId(null, 10), undefined);
+});
+
+test('messageForUpdateId returns undefined when no message carries that update_id', () => {
+  const thread = { id: 'SUP-1', status: 'open', messages: [{ channel: 'telegram', timestamp: 't1', text: 'a', updateId: 10 }] };
+  assert.equal(messageForUpdateId(thread, 999), undefined);
+});
+
+test('withEventQueued flips eventQueued on ONLY the message with the matching update_id, leaving others untouched', () => {
+  const thread = {
+    id: 'SUP-1',
+    status: 'open',
+    messages: [
+      { channel: 'telegram', timestamp: 't1', text: 'a', updateId: 10 },
+      { channel: 'telegram', timestamp: 't2', text: 'b', updateId: 11 },
+    ],
+  };
+  const updated = withEventQueued(thread, 11);
+  assert.equal(updated.messages[0].eventQueued, undefined);
+  assert.equal(updated.messages[1].eventQueued, true);
 });
