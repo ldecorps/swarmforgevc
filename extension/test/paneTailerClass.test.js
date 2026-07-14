@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { PaneTailer, STALL_THRESHOLD_MS, WORKING_INDICATOR_MS, didPaneRespawn } = require('../out/panel/paneTailer');
-const { installFakeTmux } = require('./helpers/fakeTmux');
+const { installInProcessTmux } = require('./helpers/fakeTmux');
 
 function mkTmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-panetailer-'));
@@ -43,7 +43,7 @@ function fakeScheduler() {
 test('refreshState reads roles and socket path from target state', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ exitCode: 0, stdout: '' }]);
   try {
     const tailer = new PaneTailer(targetPath, () => {});
     tailer.refreshState();
@@ -57,7 +57,7 @@ test('refreshState reads roles and socket path from target state', () => {
 test('start/poll reports pane output for a live session, stop halts further polling', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'has-session', exitCode: 0 },
     { subcommand: 'capture-pane', exitCode: 0, stdout: 'agent output' },
     { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
@@ -85,7 +85,7 @@ test('start/poll reports pane output for a live session, stop halts further poll
 test('poll reports a dead session and fires onDead once, then revives it', async () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([{ subcommand: 'has-session', exitCode: 1 }]);
+  const fake = installInProcessTmux([{ subcommand: 'has-session', exitCode: 1 }]);
   try {
     const updates = [];
     const deadEvents = [];
@@ -125,7 +125,7 @@ test('poll reports a dead session and fires onDead once, then revives it', async
 test('poll reports a capture failure with a readable-pane error message', async () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'has-session', exitCode: 0 },
     { subcommand: 'capture-pane', exitCode: 1 },
     { exitCode: 0, stdout: '' },
@@ -166,7 +166,7 @@ test('didPaneRespawn is false when the current pid could not be resolved (captur
 test('a pane respawn (pid change, same session) resets retained history instead of merging old content into the new capture', async () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'has-session', exitCode: 0 },
     // BL-362: pid and command now come from ONE display-message call
     // (getPanePidAndCommand), tab-separated.
@@ -205,7 +205,7 @@ test('a pane respawn (pid change, same session) resets retained history instead 
 test('an unchanged pid across polls keeps accumulating history normally (no false respawn reset)', async () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'has-session', exitCode: 0 },
     { subcommand: 'display-message', exitCode: 0, stdout: '111\tclaude\n' },
     { subcommand: 'capture-pane', exitCode: 0, stdout: 'LINE A' },
@@ -236,7 +236,7 @@ test('an unchanged pid across polls keeps accumulating history normally (no fals
 test('a session that stays not-running across repeated polls only pushes the message once', async () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([{ subcommand: 'has-session', exitCode: 1 }]);
+  const fake = installInProcessTmux([{ subcommand: 'has-session', exitCode: 1 }]);
   try {
     const updates = [];
     const tailer = new PaneTailer(targetPath, (u) => updates.push(...u));
@@ -257,7 +257,7 @@ test('a session that stays not-running across repeated polls only pushes the mes
 test('a pane that keeps failing to capture across repeated polls only pushes the message once', async () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'has-session', exitCode: 0 },
     { subcommand: 'capture-pane', exitCode: 1 },
     { exitCode: 0, stdout: '' },
@@ -285,7 +285,7 @@ test('a pane that keeps failing to capture across repeated polls only pushes the
 test('poll notifies onRoles when a role is added between polls', async () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'has-session', exitCode: 0 },
     { subcommand: 'capture-pane', exitCode: 0, stdout: '' },
     { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
@@ -322,7 +322,7 @@ test('poll notifies onRoles when a role is added between polls', async () => {
 test('forwardInput no-ops for an unknown role', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ exitCode: 0, stdout: '' }]);
   try {
     const tailer = new PaneTailer(targetPath, () => {});
     tailer.refreshState();
@@ -337,7 +337,7 @@ test('forwardInput no-ops for an unknown role', () => {
 test('forwardInput sends mapped keys to tmux and logs the keystroke', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ exitCode: 0, stdout: '' }]);
   try {
     const tailer = new PaneTailer(targetPath, () => {});
     tailer.refreshState();
@@ -360,7 +360,7 @@ test('forwardInput sends mapped keys to tmux and logs the keystroke', () => {
 test('forwardSpecialKey sends the mapped tmux key name for a known key', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ exitCode: 0, stdout: '' }]);
   try {
     const tailer = new PaneTailer(targetPath, () => {});
     tailer.refreshState();
@@ -376,7 +376,7 @@ test('forwardSpecialKey sends the mapped tmux key name for a known key', () => {
 test('forwardSpecialKey no-ops for an unmapped key', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ exitCode: 0, stdout: '' }]);
   try {
     const tailer = new PaneTailer(targetPath, () => {});
     tailer.refreshState();
@@ -396,7 +396,7 @@ test('forwardSpecialKey no-ops for an unmapped key', () => {
 test('a failed input-log write does not throw and keystroke delivery continues', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ exitCode: 0, stdout: '' }]);
   try {
     const tailer = new PaneTailer(targetPath, () => {});
     tailer.refreshState();
@@ -418,7 +418,7 @@ test('a failed input-log write does not throw and keystroke delivery continues',
 test('onStall fires stalled then unstalled as pane output ages and then changes', async () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'has-session', exitCode: 0 },
     { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
     { exitCode: 0, stdout: '' },
@@ -474,7 +474,7 @@ test('onStall fires stalled then unstalled as pane output ages and then changes'
 test('onNeedsHuman fires true when a pane shows a question, then false once it resumes, with no duplicate events', async () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'has-session', exitCode: 0 },
     { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
     { exitCode: 0, stdout: '' },
@@ -535,7 +535,7 @@ test('onNeedsHuman fires true when a pane shows a question, then false once it r
 test('onActivity fires working then not-working as the pane enters and leaves an active-work state, with no duplicate while unchanged', async () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'has-session', exitCode: 0 },
     { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
     { exitCode: 0, stdout: '' },
