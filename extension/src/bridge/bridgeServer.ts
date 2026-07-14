@@ -13,7 +13,7 @@ import { getHolisticUiHtml } from './holisticUiHtml';
 import { answerCapturedGateLive } from './gateAnswerLive';
 import { computeRoleGateStatesLive, filterPendingGates } from './gateSnapshot';
 import { readSwarmRoles } from '../swarm/tmuxClient';
-import { readThread, writeThread, appendMessage, messageForUpdateId, withEventQueued } from './supportThreadStore';
+import { readThread, writeThread, appendMessage, messageForUpdateId, withEventQueued, SupportThread, ThreadMessage } from './supportThreadStore';
 import { appendOperatorEvent, readNewReplyOutboxEntries } from './operatorEventQueue';
 import { readPersistedCursor, writePersistedCursor, advanceCursorOnAck } from './replyRelayCursor';
 import {
@@ -251,6 +251,13 @@ function handleGateAnswerRoute(req: http.IncomingMessage, res: http.ServerRespon
   });
 }
 
+// Split out of isTelegramInboundRequestShape below to keep that function's
+// own CRAP under the project's cap (cleaner pass, BL-369): updateId is
+// optional, so a missing one is as valid as a numeric one.
+function isValidOptionalUpdateId(value: unknown): boolean {
+  return value === undefined || typeof value === 'number';
+}
+
 // BL-281: {subjectId, channel, text} - the Front Desk Bot has ALREADY
 // resolved which SUP-### thread this belongs to (topic<->SUP-### mapping
 // is entirely bot-owned); the bridge only ever ingests an already-resolved
@@ -258,18 +265,46 @@ function handleGateAnswerRoute(req: http.IncomingMessage, res: http.ServerRespon
 // update_id) is optional so an older/other caller with no update behind it
 // still ingests exactly as before - dedup is simply unavailable without it.
 function isTelegramInboundRequestShape(value: unknown): value is { subjectId: string; channel: string; text: string; updateId?: number } {
-  return (
-    !!value &&
-    typeof value === 'object' &&
-    typeof (value as Record<string, unknown>).subjectId === 'string' &&
-    typeof (value as Record<string, unknown>).channel === 'string' &&
-    typeof (value as Record<string, unknown>).text === 'string' &&
-    ((value as Record<string, unknown>).updateId === undefined || typeof (value as Record<string, unknown>).updateId === 'number')
-  );
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const v = value as Record<string, unknown>;
+  return typeof v.subjectId === 'string' && typeof v.channel === 'string' && typeof v.text === 'string' && isValidOptionalUpdateId(v.updateId);
 }
 
 function isTelegramInboundRoute(req: http.IncomingMessage, url: string): boolean {
   return req.method === 'POST' && url === '/telegram-inbound';
+}
+
+// Split out of ingestTelegramInboundMessage below (cleaner pass, BL-369) to
+// keep that function's own CRAP under the project's cap: a redelivered
+// updateId only ever resolves against an already-read thread, never a null
+// one, so this stays a plain lookup with no thread-nullability branch of
+// its own.
+function findExistingMessage(thread: SupportThread | null, updateId: number | undefined): ThreadMessage | undefined {
+  return thread && updateId !== undefined ? messageForUpdateId(thread, updateId) : undefined;
+}
+
+// Split out of ingestTelegramInboundMessage below: resolves the thread and
+// message this update maps to, appending a fresh transcript entry only when
+// no message for this updateId is already recorded. The returned thread is
+// always the up-to-date, non-null one - the caller never needs its own
+// null-thread branch.
+function resolveInboundMessage(
+  targetPath: string,
+  subjectId: string,
+  channel: string,
+  text: string,
+  updateId: number | undefined
+): { thread: SupportThread; message: ThreadMessage } {
+  const existing = readThread(targetPath, subjectId);
+  const found = findExistingMessage(existing, updateId);
+  if (existing && found) {
+    return { thread: existing, message: found };
+  }
+  const thread = appendMessage(existing, subjectId, channel, new Date().toISOString(), text, updateId);
+  writeThread(targetPath, thread);
+  return { thread, message: thread.messages[thread.messages.length - 1] };
 }
 
 // BL-369: the bridge's own durable-accept gate. Two writes - the SUP-###
@@ -280,6 +315,7 @@ function isTelegramInboundRoute(req: http.IncomingMessage, url: string): boolean
 //   1. Dedup by updateId FIRST (scenario 03) - a redelivered message whose
 //      transcript line AND queued event are both already confirmed is a
 //      pure no-op (still reports success, since it genuinely WAS handled).
+//      resolveInboundMessage above owns steps 1-2.
 //   2. The transcript write happens only if no message for this updateId
 //      exists yet - never twice for the same update.
 //   3. The event enqueue is attempted whether the message is fresh or was
@@ -301,18 +337,12 @@ export function ingestTelegramInboundMessage(
   updateId: number | undefined
 ): { success: boolean; reason?: string } {
   try {
-    let thread = readThread(targetPath, subjectId);
-    let message = updateId === undefined ? undefined : messageForUpdateId(thread, updateId);
-    if (!message) {
-      thread = appendMessage(thread, subjectId, channel, new Date().toISOString(), text, updateId);
-      writeThread(targetPath, thread);
-      message = thread.messages[thread.messages.length - 1];
-    }
+    const { thread, message } = resolveInboundMessage(targetPath, subjectId, channel, text, updateId);
     if (message.eventQueued) {
       return { success: true };
     }
     appendOperatorEvent(targetPath, { type: 'TELEGRAM_TOPIC_MESSAGE', subject: subjectId, updateId });
-    if (updateId !== undefined && thread) {
+    if (updateId !== undefined) {
       writeThread(targetPath, withEventQueued(thread, updateId));
     }
     return { success: true };
