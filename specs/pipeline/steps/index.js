@@ -152,6 +152,7 @@ const DOMAINS = [
   require('./pushSweepSteps'),
   require('./devHostLauncherSteps'),
   require('./hotTestFilesStopWaitingSteps'),
+  require('./systemdUnitsCanStartSteps'),
 ];
 
 function registerSteps(registry) {
