@@ -18,6 +18,18 @@ export interface BootstrapPlan {
   alreadyPresent: string[];
 }
 
+// The result shape shared by every bootstrap initializer below
+// (writeAndCommitBootstrapPlan and its callers) - extracted so a new
+// artifact type's initializer (like BL-360's use-case inventory) states
+// its return type once instead of repeating the same three-field object
+// literal. initializeTargetPrompts extends this with its own `withheld`
+// field rather than repeating the three shared fields.
+export interface BootstrapWriteResult {
+  created: string[];
+  skipped: string[];
+  committed: boolean;
+}
+
 export function buildTargetBootstrapFiles(): BootstrapFile[] {
   return [
     {
@@ -131,11 +143,7 @@ async function writeAndCommitBootstrapPlan(
   targetPath: string,
   files: BootstrapFile[],
   commitMessage: string
-): Promise<{
-  created: string[];
-  skipped: string[];
-  committed: boolean;
-}> {
+): Promise<BootstrapWriteResult> {
   const existingFiles = new Set<string>();
   await Promise.all(
     files.map(async (file) => {
@@ -158,11 +166,7 @@ async function writeAndCommitBootstrapPlan(
   };
 }
 
-export async function initializeTargetRepo(targetPath: string): Promise<{
-  created: string[];
-  skipped: string[];
-  committed: boolean;
-}> {
+export async function initializeTargetRepo(targetPath: string): Promise<BootstrapWriteResult> {
   return writeAndCommitBootstrapPlan(targetPath, buildTargetBootstrapFiles(), 'Initialize SwarmForge target prompts');
 }
 
@@ -172,11 +176,7 @@ export async function initializeTargetRepo(targetPath: string): Promise<{
 export async function initializeTargetContract(
   targetPath: string,
   contract: ProposedContract
-): Promise<{
-  created: string[];
-  skipped: string[];
-  committed: boolean;
-}> {
+): Promise<BootstrapWriteResult> {
   return writeAndCommitBootstrapPlan(
     targetPath,
     buildContractBootstrapFiles(contract),
@@ -197,11 +197,7 @@ export async function initializeTargetContract(
 export async function initializeTargetUseCaseInventory(
   targetPath: string,
   inventory: UseCaseInventory
-): Promise<{
-  created: string[];
-  skipped: string[];
-  committed: boolean;
-}> {
+): Promise<BootstrapWriteResult> {
   return writeAndCommitBootstrapPlan(
     targetPath,
     buildUseCaseInventoryBootstrapFiles(inventory),
@@ -251,12 +247,7 @@ export async function initializeTargetPrompts(
   targetPath: string,
   prompts: ProposedPrompts,
   gateDecision: GateDecision
-): Promise<{
-  created: string[];
-  skipped: string[];
-  committed: boolean;
-  withheld: boolean;
-}> {
+): Promise<BootstrapWriteResult & { withheld: boolean }> {
   if (gateDecision.decision !== 'allow') {
     return { created: [], skipped: [], committed: false, withheld: true };
   }
