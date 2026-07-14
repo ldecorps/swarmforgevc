@@ -275,7 +275,7 @@ If a window uses `master` as its worktree name, SwarmForge does not create `.wor
 
 ## tmux Behavior
 
-SwarmForge uses a project-specific tmux socket recorded in `.swarmforge/tmux-socket`, so each project swarm is isolated from other tmux sessions. It also honors tmux `base-index` and `pane-base-index` settings when launching agents and sending notifications, so configurations that number windows or panes from `1` work without requiring users to change their tmux preferences.
+SwarmForge uses a project-specific tmux socket recorded in `.swarmforge/tmux-socket`, so each project swarm is isolated from other tmux sessions. The socket file itself lives under the project's own `.swarmforge/tmux/` directory, never in `/tmp` — `/tmp` is shared scratch space subject to reaping by unrelated cleanup tools, and once a unix socket is unlinked out from under a live tmux server, that server cannot be rebound to a new path for the rest of its life. If the resolved path would overrun the ~108-byte unix-socket path limit (possible for a deeply-nested checkout), SwarmForge falls back to `$XDG_RUNTIME_DIR` and fails with a clear error — never a blind bind — if neither location fits. It also honors tmux `base-index` and `pane-base-index` settings when launching agents and sending notifications, so configurations that number windows or panes from `1` work without requiring users to change their tmux preferences.
 
 ## Terminal Behavior
 
