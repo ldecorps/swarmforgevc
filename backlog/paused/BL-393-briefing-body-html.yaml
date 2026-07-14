@@ -1,0 +1,79 @@
+id: BL-393
+title: "The briefing email buries its observables — render the markdown body to HTML for the email"
+milestone: M8
+type: bug
+status: todo
+severity: medium
+priority: 3
+direction: human-requested
+depends_on: [BL-392]
+source: "backlog/INTAKE-briefing-email-presentation.md (Finding 2 + the 'verify byte-complete' note) — the human (ldecorps), 2026-07-14, from the received briefing email: 'the content too thin. it has lost all the technical observables about the swarm runtime'. Root-caused as a PRESENTATION loss (the data is in the document) by the relaying Claude Code session."
+
+notes: |
+  THE DEFECT IS PRESENTATION, NOT DATA LOSS. `docs/briefings/2026-07-14.md` on main DOES contain the
+  full Delivery-metrics / Agent-business / Optimizer / Process-hiccups sections (velocity, cycle time,
+  suite duration, per-role token cost, stage-dwell, pending approvals). But `send-unsent-briefings!`
+  (briefing_email_lib.bb:176-184) sends that markdown as the PLAIN-TEXT body only. On a phone mail
+  client `##` headings, `|` table pipes and `**bold**` collapse into an undifferentiated wall, so the
+  metrics disappear into it — the human reasonably read it as "thin".
+
+  THE PLUMBING ALREADY EXISTS — this is about WHAT rides the html part, not adding a transport.
+  `send-alarm-email!`/`send-configured-email!` (daemon_alarm_lib.bb) already accept an optional `:html`
+  and Resend sends multipart/alternative (html + text) itself. TODAY `:html` carries ONLY the diagram
+  `<div>` (build-diagram-section), and is NIL when there are no diagrams — which is exactly the run the
+  human saw: no diagrams → html nil → his client showed the plain-text markdown wall. The fix: render
+  the full assembled `content` to simple HTML and send THAT as the html part, keeping the markdown as
+  the plain-text alternative. No new prose generation — presentation only (the human's words).
+
+  RENDER THE ASSEMBLED CONTENT, NOT THE RAW FILE (this covers the intake's third "verify byte-complete"
+  concern for free). `content` at line 175 is already the FULL document PLUS every appended computed
+  block (apply-optional-sections: suite-duration trend, needs-approval, stage-dwell, etc.) PLUS the
+  diagram note-line. Render that same `content` value, so the html body is byte-complete by
+  construction — scenario 03 pins that the appended sections appear in the rendered HTML, not a
+  lede-only variant.
+
+  THE CRITICAL INTERACTION — DIAGRAMS MUST COEXIST WITH THE BODY (scenario 04). Once `:html` carries
+  the rendered body, the existing diagram html must be MERGED into it, not replaced: the html part must
+  contain BOTH the rendered briefing body AND the diagram `<img cid:...>` references, and the body must
+  not clobber the diagrams nor vice-versa. `:attachments` (BL-286 cid inline images) is unchanged and
+  still passed alongside `:html`.
+
+  ⚠ THIS CHANGES A SHIPPED ACCEPTANCE CONTRACT — UPDATE IT IN THIS SAME PARCEL. Today the `:else`
+  branch (no diagram-section) calls `:send-email!` with just `subject content` (2-arg, no html), and
+  BL-286's shipped feature `specs/features/BL-286-briefing-diagram-cid-attachments.feature` scenario
+  `diagram-cid-05` asserts "the send payload has neither an attachments field nor an html field." After
+  this ticket, html is ALWAYS present (rendered body), so that scenario's "no html field" clause is no
+  longer true. The coder MUST update BL-286's diagram-cid-05 (and its step handler) in THIS parcel so
+  the acceptance runner does not fail on the changed invariant — the "no diagram section" case now
+  carries html (the body) but STILL no attachments. Do not leave the two feature files disagreeing.
+  (Verified 2026-07-14: BL-286 diagram-cid-05 is the only shipped scenario that asserts absence of the
+  html field; BL-214 brief-01 does not assert arg count. Re-grep before editing.)
+
+  THE LIVE SEAM. `send-unsent-briefings! [briefings-dir adapters]` and its pure helpers
+  (build-diagram-section, apply-optional-sections) are the whole surface — testable with an injected
+  `:send-email!` fake, no real network (BL-214's pattern). A minimal markdown→HTML renderer is fine;
+  keep it a pure, injectable/exported helper so the render is unit- and mutation-testable directly.
+
+  E2E QA PROCEDURE. Send a real briefing to the human's REAL email (BL-335's standard: a passing test
+  is what this already had — evidence from a test is a bounce). On a phone mail client confirm the
+  metrics tables/sections are VISUALLY DISTINCT (headings, table, bold rendered), that the diagrams
+  still appear inline when available, and that the plain-text part is still the full markdown for a
+  plaintext-only client. Confirm the SENT body is byte-complete (includes the appended computed
+  blocks), not a truncated or lede-only variant.
+
+  ADJACENT, DO NOT DUPLICATE. BL-392 (bound the subject) is the OTHER half of this intake and edits the
+  SAME function — `depends_on: [BL-392]`, serial, never concurrent. BL-391 (never send terminal chrome)
+  is the same human-grade-rendering spirit for Telegram.
+
+acceptance:
+  feature: specs/features/BL-393-briefing-body-html.feature
+  steps:
+    - "The body is sent as a rendered HTML part alongside the plain-text markdown"
+    - "Markdown headings, tables, and bold render as distinct HTML elements"
+    - "Appended computed sections are included in the rendered HTML, not only the lede"
+    - "Available diagrams appear in the HTML part together with the rendered body"
+    - "A run with no diagrams still sends the rendered body as HTML"
+
+human_approval: pending-review
+
+mutation_cost: medium
