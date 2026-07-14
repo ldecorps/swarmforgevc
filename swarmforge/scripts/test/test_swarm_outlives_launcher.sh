@@ -90,6 +90,20 @@ fi
 pass "02: check_swarm_detached.bb correctly classifies the reparented child as detached from its (now-exited) caller"
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Scenario: the CLI wrapper's own ready-flag parsing (not just the pure lib)
+# reports "not ready" first, even when detachment would otherwise look fine -
+# closes the one branch of check_swarm_detached.bb's -main that scenarios 01/02
+# above never exercise (they only ever pass ready-flag "1").
+# ═══════════════════════════════════════════════════════════════════════════
+
+if bb "$CHECK_DETACHED" 0 "$CHILD_PID" "$CALLER_PID" >/tmp/check-detached-notready.out 2>&1; then
+  fail "02b: expected check_swarm_detached.bb to fail when ready-flag is 0, got: $(cat /tmp/check-detached-notready.out)"
+fi
+grep -qi "did not become ready" /tmp/check-detached-notready.out \
+  || fail "02b: expected a diagnostic naming the swarm as not ready, got: $(cat /tmp/check-detached-notready.out)"
+pass "02b: check_swarm_detached.bb's CLI ready-flag parsing reports not-ready even with a detached server"
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Scenario: start-swarm.sh's own source actually uses the detach mechanism
 # (structural proof the wrapper is wired to what scenarios 01/02 above
 # prove works - a full tmux swarm launch is QA's own E2E procedure)
