@@ -391,21 +391,20 @@ export function respawnAgent(targetPath: string, role: string, wait?: (ms: numbe
   return performVerifiedRespawn(socketPath, target, launchScript, role, wait ?? realClock.sleepSync);
 }
 
-// BL-093: split out of respawnAgent (CRAP) - type-and-verify first (works
-// for the common case: an idle/dead shell pane waiting to reattach). Only
-// escalate to a forced pane kill+relaunch when verification exhausts its
-// retries - i.e. the pane is a WEDGED live TUI that send-keys cannot reach -
-// never on a healthy pane (a healthy pane confirms delivery on the first
-// attempt).
-function performVerifiedRespawn(socketPath: string, target: string, launchScript: string, role: string, wait: (ms: number) => void): RespawnResult {
-  // BL-137 live repro: a chaser's liveness/activity signal can be stale and
-  // misjudge a genuinely busy agent as stuck, escalating to a forced
-  // respawn - which then typed a shell command into a coordinator pane that
-  // was actually mid-turn. A fresh capture right before injecting anything
-  // is the only way this function can independently confirm the caller's
-  // assumption; "esc to interrupt" is Claude Code's own busy footer, so its
-  // presence overrides the caller and refuses the respawn outright, without
-  // typing or force-killing the pane.
+// BL-137 live repro: a chaser's liveness/activity signal can be stale and
+// misjudge a genuinely busy agent as stuck, escalating to a forced respawn -
+// which then typed a shell command into a coordinator pane that was actually
+// mid-turn. A fresh capture right before injecting anything is the only way
+// performVerifiedRespawn can independently confirm the caller's assumption;
+// "esc to interrupt" is Claude Code's own busy footer, so its presence
+// overrides the caller and refuses the respawn outright, without typing or
+// force-killing the pane.
+// BL-376 CRAP split: pulled out of performVerifiedRespawn (complexity 7,
+// same "split for CRAP" reason as BL-093 below) so the precheck's own
+// if+&& decision point no longer counts against the retry-loop wiring.
+// Returns the skip result when the pane is busy, undefined when clear to
+// proceed.
+function checkPaneBusy(socketPath: string, target: string, role: string): RespawnResult | undefined {
   const precheck = capturePane(socketPath, target);
   if (precheck.exitCode === 0 && isPaneActivelyProcessing(precheck.stdout)) {
     return {
@@ -413,6 +412,20 @@ function performVerifiedRespawn(socketPath: string, target: string, launchScript
       skippedBusy: true,
       message: `Skipped respawn for "${role}": pane is actively processing a turn (esc to interrupt) - not stuck.`,
     };
+  }
+  return undefined;
+}
+
+// BL-093: split out of respawnAgent (CRAP) - type-and-verify first (works
+// for the common case: an idle/dead shell pane waiting to reattach). Only
+// escalate to a forced pane kill+relaunch when verification exhausts its
+// retries - i.e. the pane is a WEDGED live TUI that send-keys cannot reach -
+// never on a healthy pane (a healthy pane confirms delivery on the first
+// attempt).
+function performVerifiedRespawn(socketPath: string, target: string, launchScript: string, role: string, wait: (ms: number) => void): RespawnResult {
+  const busy = checkPaneBusy(socketPath, target, role);
+  if (busy) {
+    return busy;
   }
 
   const command = `bash ${launchScript}`;
