@@ -137,6 +137,32 @@
   stray-daemon check grepped `ps` for `handoffd.bb` + `/tmp/tmp.` and passed only
   because unrelated coder-worktree orphans happened to be gone at that moment —
   same class as BL-112, for `ps` rather than a directory listing.)
+- **A LIVE shared runtime path is the third shared global — and the only one a test can
+  DESTROY rather than merely flake on. Reach it through a redirectable env seam, never
+  directly.** The two rules above are about shared state CORRUPTING a test; this one is about
+  a test corrupting the shared state. Code that resolves a live, uid-scoped runtime path
+  (`/tmp/swarmforge-$UID/`, the tmux socket dir, any socket/daemon root a RUNNING swarm owns)
+  must read it through a `${SWARMFORGE_...:-<default>}` override — the seam convention
+  `swarmforge.sh` already uses for `SWARMFORGE_CONFIG`, `SWARMFORGE_SKIP_DAEMON`, and
+  `SWARMFORGE_MAILBOX_ONLY` — so a test can point it at its own temp root and exercise the
+  real logic against a path nothing else owns. A test must never create, glob, `rm`, or
+  `kill` inside the real one. The stakes are categorically worse than a flake: the running
+  swarm's tmux socket lives there, a unix socket cannot be re-linked once unlinked, and tmux
+  cannot rebind a live server to a new path — so such a test DECAPITATES the swarm
+  (server and every agent still alive, permanently uncontrollable) instead of failing.
+- **"I could not test it, because testing it would have been dangerous" is a report of a
+  MISSING SEAM — never an acceptable disposition.** Exactly like the retry-the-flaky-test
+  disposition rejected above, shipping the fix untested is not the way out: add the override
+  to the production path in the SAME parcel, then write the test through it. Otherwise the
+  most dangerous code in the tree is the one code that is permanently exempt from testing —
+  which is precisely how the defect that made it dangerous got in.
+  (BL-367: `swarmforge.sh:57`'s `TMUX_SOCKET_DIR="/tmp/swarmforge-${UID}"` and
+  `kill_all_swarm.sh:45`'s `SOCKET_GLOB="/tmp/swarmforge-"*/*.sock` are both bare literals
+  with no seam. An unscoped form of that glob killed the LIVE swarm ~5 times in one session;
+  the hardener then had to ship the exact-match fix with NO test, because the only way to
+  exercise it was to write into the very directory the running swarm's socket sits in.
+  Proposed by the hardener 2026-07-14 scoped `role:hardender`; accepted into the shared
+  article instead — the coder writes tests first, so this binds every test author.)
 - **Never seed a test fixture from the real clock when the code under test
   reads the real clock too.** The no-real-timers ban above covers not just
   `setTimeout`/`sleep` but any `new Date()` / `Date.now()` used to BUILD fixture
