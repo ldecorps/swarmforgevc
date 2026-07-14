@@ -147,6 +147,7 @@ const DOMAINS = [
   require('./costPerTicketDiagramSteps'),
   require('./headlessResourceSamplingSteps'),
   require('./untaggedGateReachesHumanSteps'),
+  require('./roleBenchmarkHarnessSteps'),
 ];
 
 function registerSteps(registry) {
