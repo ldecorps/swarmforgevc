@@ -830,10 +830,19 @@
   // would then be undefined and crash roleFromTaskId. Every task in the
   // battery lands in EXACTLY one of taskIds/refusedTasks, so falling back
   // to the first refused task's own id keeps the same "first id's prefix
-  // decides the role" convention with no battery-empty case to handle.
+  // decides the role" convention - unless the battery held no tasks at
+  // all (BL-386 hardener bounce: taskIds AND refusedTasks both empty,
+  // e.g. an empty battery root), in which case no id exists to derive a
+  // role from and the caller must treat the report as having nothing to
+  // show.
   function roleForReport(report) {
-    var taskId = report.taskIds.length > 0 ? report.taskIds[0] : report.refusedTasks[0].taskId;
-    return roleFromTaskId(taskId);
+    if (report.taskIds.length > 0) {
+      return roleFromTaskId(report.taskIds[0]);
+    }
+    if (report.refusedTasks.length > 0) {
+      return roleFromTaskId(report.refusedTasks[0].taskId);
+    }
+    return null;
   }
 
   function findBenchmarkModel(models, modelId) {
@@ -895,7 +904,13 @@
   function renderRoleLeaderboard(report) {
     var section = document.getElementById('roleLeaderboardSection');
     var container = document.getElementById('roleLeaderboard');
-    if (!report) {
+    // BL-386 hardener bounce: a report with zero tasks total (taskIds AND
+    // refusedTasks both empty - e.g. an empty battery root) carries no id
+    // to derive a role from. There is nothing meaningful to show, so it is
+    // hidden the same as a wholly-absent report (the section's own
+    // established "hidden entirely, never rendered empty" contract).
+    var role = report ? roleForReport(report) : null;
+    if (!report || role === null) {
       section.style.display = 'none';
       return;
     }
@@ -907,7 +922,6 @@
     // decides the role - roleFromTaskId's own convention is unchanged.
     // BL-386 architect bounce: taskIds can be empty (every task refused),
     // so the role is derived via roleForReport, not taskIds[0] directly.
-    var role = roleForReport(report);
     container.appendChild(el('p', { class: 'leaderboard-meta' }, [tr('roleLeaderboardRolePrefix') + role]));
     container.appendChild(
       el('p', { class: 'leaderboard-meta' }, [tr('roleLeaderboardAsOfPrefix') + new Date(report.generatedAtIso).toLocaleDateString()])
