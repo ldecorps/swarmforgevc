@@ -801,6 +801,31 @@ test('role-leaderboard-surface-07: the section is collapsible like every other s
   assert.equal(body.style.display, 'none');
 });
 
+test('BL-386 architect bounce: a battery where every task was refused renders without throwing, deriving the role from refusedTasks', async () => {
+  const dom = renderDashboard(
+    fakeDashboard({
+      roleLeaderboard: fakeBenchmarkReport({
+        taskIds: [],
+        refusedTasks: [{ taskId: 'coder-task-01-word-frequency', reason: "the task's own reference solution failed its own tests" }],
+        models: [],
+        ranking: {
+          bestByQuality: null,
+          couldNotDiscriminateReason: null,
+          bestByValue: null,
+          bestByValueRankedByCostAlone: false,
+          cheapestAcceptable: null,
+          noAcceptableModelReason: 'no model produced a scored run',
+        },
+      }),
+    })
+  );
+  await flush();
+  const section = dom.window.document.getElementById('roleLeaderboardSection');
+  assert.notEqual(section.style.display, 'none');
+  const text = dom.window.document.getElementById('roleLeaderboard').textContent;
+  assert.match(text, /Role: coder/);
+});
+
 test('BL-347: the role leaderboard labels are localized (fr)', async () => {
   const dom = renderDashboard(fakeDashboard({ roleLeaderboard: fakeBenchmarkReport() }));
   await flush();
