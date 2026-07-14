@@ -9,6 +9,8 @@
 import { EventStreamSnapshot, GateSignal, SwarmEvent, SwarmEventType, TicketSummary, deriveSwarmEvents, swarmEventKey } from '../events/swarmEventStream';
 import { RouteAdapters, TopicAction, decideEpicTopicAction, routeEvent } from './topicRouter';
 import { EpicDefinition, computeEpicProgress, epicOpeningText, epicProgressText } from './epicProgress';
+import { resolveIconState, ICON_EMOJI } from './topicIcon';
+import { TopicIconAdapters, syncTopicIcon } from './topicIconSync';
 
 export interface BacklogFolderItem {
   id: string;
@@ -65,6 +67,12 @@ export interface ConciergeTickAdapters {
   readTickState: () => TickState;
   writeTickState: (state: TickState) => void;
   routeAdapters: RouteAdapters;
+  // BL-342: a topic's icon tracks its ticket's state - rides the SAME
+  // TaskStarted/TaskCompleted transitions above (no new trigger), plus one
+  // additional folder-membership diff for the paused transition, which has
+  // no SwarmEvent of its own (an icon update posts no chat message, so it
+  // needs none of that machinery).
+  iconAdapters: TopicIconAdapters;
 }
 
 export interface TickResult {
@@ -118,6 +126,69 @@ function toEventStreamSnapshot(folders: BacklogFoldersSnapshot, gates: GateSigna
 function titleForBacklogId(folders: BacklogFoldersSnapshot, backlogId: string): string {
   const all = [...folders.active, ...folders.paused, ...folders.done];
   return all.find((item) => item.id === backlogId)?.title ?? backlogId;
+}
+
+// BL-342: which folder (active/paused/done) currently holds a ticket -
+// resolveIconState's own required input, alongside the ticket's type. An
+// id absent from all three folders (should not happen within one tick, the
+// same invariant titleForBacklogId above relies on) resolves to undefined,
+// never a guessed folder.
+function folderForBacklogId(folders: BacklogFoldersSnapshot, backlogId: string): 'active' | 'paused' | 'done' | undefined {
+  if (folders.active.some((item) => item.id === backlogId)) return 'active';
+  if (folders.paused.some((item) => item.id === backlogId)) return 'paused';
+  if (folders.done.some((item) => item.id === backlogId)) return 'done';
+  return undefined;
+}
+
+function typeForBacklogId(folders: BacklogFoldersSnapshot, backlogId: string): string | undefined {
+  const all = [...folders.active, ...folders.paused, ...folders.done];
+  return all.find((item) => item.id === backlogId)?.type;
+}
+
+// BL-342: the one call site every icon-state transition (TaskStarted,
+// TaskCompleted, and the paused-diff below) funnels through - resolves the
+// ticket's CURRENT folder+type into a desired icon and hands it to
+// syncTopicIcon, which owns the "never touch an icon the swarm did not
+// set" rule. An epic-defining ticket (type: 'epic') is never a target here
+// at all - epic icons (trophy/lightning/folder) are hand-assigned and
+// entirely out of this ticket's scope. A ticket with no topic yet
+// (topicId undefined - most commonly the paused-diff firing for a ticket
+// that has never been promoted) is a no-op: there is no topic to update.
+async function syncIconForBacklogId(
+  backlogId: string,
+  folders: BacklogFoldersSnapshot,
+  topicId: number | undefined,
+  isNewTopic: boolean,
+  iconAdapters: TopicIconAdapters
+): Promise<void> {
+  const folder = folderForBacklogId(folders, backlogId);
+  const type = typeForBacklogId(folders, backlogId);
+  if (folder === undefined || type === 'epic' || topicId === undefined) {
+    return;
+  }
+  const state = resolveIconState(folder, type);
+  await syncTopicIcon(backlogId, topicId, ICON_EMOJI[state], isNewTopic, iconAdapters);
+}
+
+// BL-342: icon sync deliberately does NOT ride deriveSwarmEvents' own
+// TaskStarted/TaskCompleted stream - it rides the SAME prev/curr
+// folder-membership snapshot this tick already computes, but through its
+// OWN, independent diff, never gated by emittedKeys. The two need
+// DIFFERENT dedup semantics: a ticket's chat-message opener must post only
+// ONCE EVER (emittedKeys' whole job, swarmEventStream.ts), but its icon is
+// a silent, idempotent signal that must track EVERY re-entry into a
+// folder - including a ticket re-promoted after being paused, which
+// reuses an EXISTING topic and would otherwise never get its icon flipped
+// back, since diffTaskStarted's own (TaskStarted, backlogId) key was
+// already durably marked emitted the FIRST time this ticket went active
+// and never fires again (confirmed: this is exactly the bug a first draft
+// of this wiring shipped with, piggybacking on the event stream directly -
+// caught by a re-promotion test). Mirrors diffTaskStarted/diffTaskCompleted's
+// own "newly appearing in this folder" shape (swarmEventStream.ts) exactly,
+// generalized to all three folders since all three need it here.
+function newlyEnteredIds(prevIds: string[] | undefined, currIds: string[]): string[] {
+  const prevSet = new Set(prevIds ?? []);
+  return currIds.filter((id) => !prevSet.has(id));
 }
 
 // BL-341: which epic (if any) the triggering ticket declares - the SAME
@@ -287,6 +358,14 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters): Promise
   const alreadyEmitted = new Set(state.emittedKeys);
   const events = deriveSwarmEvents(state.snapshot, curr, alreadyEmitted);
 
+  // BL-342: snapshot which tickets already had a topic BEFORE this tick's
+  // own event loop runs (which may CREATE fresh ones below) - the ONLY
+  // reliable way to tell "this transition's topic is brand new" (always
+  // free to set its initial icon) apart from "this topic already existed"
+  // (only update if the swarm's own marker shows it owns the icon) for the
+  // icon sync pass further down.
+  const topicIdsBeforeTick = new Set(Object.keys(adapters.routeAdapters.getTopicMap()));
+
   let routed = 0;
   const unrouted = new Set<string>();
   for (const event of events) {
@@ -303,6 +382,27 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters): Promise
       unrouted.add(swarmEventKey(event));
     }
     await postEpicUpdateIfApplicable(event, folders, epicDefinitions, adapters.routeAdapters);
+  }
+
+  // BL-342: icon sync rides the SAME prev/curr folder-membership diff this
+  // tick already computes, but through its own independent pass over ALL
+  // THREE folders - never gated by emittedKeys (see newlyEnteredIds' own
+  // comment for why). Runs AFTER the event loop above so a brand-new
+  // topic created this same tick is already in the topic map. A failed
+  // icon call is not specially retried (the same best-effort posture
+  // postEpicUpdateIfApplicable already documents for its own side effect);
+  // the next genuine re-entry into that folder tries again.
+  const folderTransitions: Array<{ folder: 'active' | 'paused' | 'done'; ids: string[] }> = [
+    { folder: 'active', ids: newlyEnteredIds(state.snapshot?.backlog.active, curr.backlog.active) },
+    { folder: 'paused', ids: newlyEnteredIds(state.snapshot?.backlog.paused, curr.backlog.paused) },
+    { folder: 'done', ids: newlyEnteredIds(state.snapshot?.backlog.done, curr.backlog.done) },
+  ];
+  for (const { ids } of folderTransitions) {
+    for (const backlogId of ids) {
+      const topicId = adapters.routeAdapters.getTopicMap()[backlogId];
+      const isNewTopic = !topicIdsBeforeTick.has(backlogId);
+      await syncIconForBacklogId(backlogId, folders, topicId, isNewTopic, adapters.iconAdapters);
+    }
   }
 
   const persistedSnapshot = withRetryableTransitionsHeldBack(curr, unrouted);

@@ -41,6 +41,24 @@ interface TelegramApiCallResult {
   success: boolean;
   json?: unknown;
   error?: string;
+  // BL-342: set only on a genuine 429 rate-limit response carrying
+  // parameters.retry_after (Telegram's own told-you-so wait, in SECONDS) -
+  // the Operator's own hand backfill hit exactly this ("Too Many Requests:
+  // retry after 26") after 19 calls and silently dropped the remaining 7.
+  // A caller that needs to honour it (editForumTopic's own bulk backfill)
+  // reads this rather than treating a 429 as an ordinary opaque failure.
+  retryAfterSeconds?: number;
+}
+
+// BL-342: split out of extractDescription's own shape guard (the SAME
+// `json.parameters` envelope carries retry_after on a 429) rather than
+// re-deriving the object-shape check a second time.
+function extractRetryAfterSeconds(json: unknown): number | undefined {
+  if (json && typeof json === 'object' && typeof (json as Record<string, unknown>).parameters === 'object') {
+    const parameters = (json as Record<string, unknown>).parameters as Record<string, unknown>;
+    return typeof parameters.retry_after === 'number' ? parameters.retry_after : undefined;
+  }
+  return undefined;
 }
 
 // Shared by sendTelegramMessage/getTelegramUpdates/createForumTopic below -
@@ -53,7 +71,11 @@ async function callTelegramApi(token: string, method: string, body: string, post
     const res = await postFn(apiUrl(token, method), body);
     if (!res.ok) {
       const description = extractDescription(res.json);
-      return { success: false, error: redactToken(`Telegram API responded with status ${res.status}${description ? `: ${description}` : ''}`, token) };
+      return {
+        success: false,
+        error: redactToken(`Telegram API responded with status ${res.status}${description ? `: ${description}` : ''}`, token),
+        retryAfterSeconds: extractRetryAfterSeconds(res.json),
+      };
     }
     return { success: true, json: res.json };
   } catch (err) {
@@ -193,13 +215,22 @@ function extractMessageThreadId(json: unknown): number | undefined {
 // discussion gets its own topic so parallel subjects never bleed context
 // (BL-281). The returned messageThreadId is the id every later
 // sendTelegramMessage call for that subject routes into.
+// BL-342: iconCustomEmojiId added LAST (after postFn, so every existing
+// positional call site keeps its exact prior behavior unchanged) - the
+// topic's initial icon, resolved and validated by the caller against
+// getForumTopicIconStickers below before ever reaching here.
 export async function createForumTopic(
   token: string,
   chatId: string,
   name: string,
-  postFn: TelegramPostFn = defaultPost
+  postFn: TelegramPostFn = defaultPost,
+  iconCustomEmojiId?: string
 ): Promise<CreateForumTopicResult> {
-  const body = JSON.stringify({ chat_id: chatId, name });
+  const body = JSON.stringify({
+    chat_id: chatId,
+    name,
+    ...(iconCustomEmojiId !== undefined ? { icon_custom_emoji_id: iconCustomEmojiId } : {}),
+  });
   const result = await callTelegramApi(token, 'createForumTopic', body, postFn);
   if (!result.success) {
     return { success: false, error: result.error };
@@ -278,4 +309,82 @@ export async function deleteForumTopic(
     return { success: false, error: result.error };
   }
   return { success: true };
+}
+
+// BL-342: renames and/or re-icons an EXISTING forum topic - the wrapper the
+// ticket's own intake assumed already existed (it does not; only
+// createForumTopic/closeForumTopic were wrapped before this). Verified by
+// the Operator to still succeed on a CLOSED topic, so a done ticket's icon
+// can still be updated after its topic closes (BL-299's own close-on-
+// completion is never a barrier here). retryAfterSeconds rides the shared
+// TelegramApiCallResult (see callTelegramApi above) so a bulk backfill can
+// honour a 429's own told-you-so wait instead of treating it as an
+// ordinary opaque failure.
+export interface EditForumTopicUpdate {
+  name?: string;
+  iconCustomEmojiId?: string;
+}
+
+export interface EditForumTopicResult {
+  success: boolean;
+  error?: string;
+  retryAfterSeconds?: number;
+}
+
+export async function editForumTopic(
+  token: string,
+  chatId: string,
+  messageThreadId: number,
+  update: EditForumTopicUpdate,
+  postFn: TelegramPostFn = defaultPost
+): Promise<EditForumTopicResult> {
+  const body = JSON.stringify({
+    chat_id: chatId,
+    message_thread_id: messageThreadId,
+    ...(update.name !== undefined ? { name: update.name } : {}),
+    ...(update.iconCustomEmojiId !== undefined ? { icon_custom_emoji_id: update.iconCustomEmojiId } : {}),
+  });
+  const result = await callTelegramApi(token, 'editForumTopic', body, postFn);
+  if (!result.success) {
+    return { success: false, error: result.error, retryAfterSeconds: result.retryAfterSeconds };
+  }
+  return { success: true };
+}
+
+// BL-342: the ONLY valid source of a topic icon id - Telegram accepts icon
+// ids ONLY from this set (112 today), never a hardcoded/guessed one (an
+// unvalidated id fails at call time, on a live topic). Callers resolve a
+// semantic icon (e.g. "which of these has the ✅ emoji") against this list,
+// never construct or remember an id independently of it.
+export interface ForumTopicIconSticker {
+  emoji?: string;
+  customEmojiId: string;
+}
+
+export interface GetForumTopicIconStickersResult {
+  success: boolean;
+  stickers: ForumTopicIconSticker[];
+  error?: string;
+}
+
+function extractIconStickers(json: unknown): ForumTopicIconSticker[] {
+  const result = json && typeof json === 'object' ? (json as Record<string, unknown>).result : undefined;
+  if (!Array.isArray(result)) {
+    return [];
+  }
+  return result.map((sticker) => ({
+    emoji: typeof sticker?.emoji === 'string' ? sticker.emoji : undefined,
+    customEmojiId: String(sticker?.custom_emoji_id ?? ''),
+  }));
+}
+
+export async function getForumTopicIconStickers(
+  token: string,
+  postFn: TelegramPostFn = defaultPost
+): Promise<GetForumTopicIconStickersResult> {
+  const result = await callTelegramApi(token, 'getForumTopicIconStickers', JSON.stringify({}), postFn);
+  if (!result.success) {
+    return { success: false, stickers: [], error: result.error };
+  }
+  return { success: true, stickers: extractIconStickers(result.json) };
 }

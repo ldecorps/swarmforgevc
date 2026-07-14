@@ -192,6 +192,16 @@ function registerSteps(registry) {
         // unconditionally after a successful send.
         recordMessage: () => {},
       },
+      iconAdapters: {
+      // BL-342: a safe default for fixtures that predate topic icons and
+      // do not exercise them - an empty sticker list means syncTopicIcon
+      // always no-ops (skipped-unresolved-icon), so runConciergeTick's own
+      // icon-sync pass never calls setTopicIcon unexpectedly here.
+      getIconStickers: async () => [],
+      setTopicIcon: async () => true,
+      readSwarmIconId: () => undefined,
+      recordSwarmIconId: () => {},
+    },
     };
     ctx.tickResult = await runConciergeTick(adapters);
   });
@@ -400,6 +410,16 @@ function registerSteps(registry) {
         // unconditionally after a successful send.
         recordMessage: () => {},
       },
+      iconAdapters: {
+      // BL-342: a safe default for fixtures that predate topic icons and
+      // do not exercise them - an empty sticker list means syncTopicIcon
+      // always no-ops (skipped-unresolved-icon), so runConciergeTick's own
+      // icon-sync pass never calls setTopicIcon unexpectedly here.
+      getIconStickers: async () => [],
+      setTopicIcon: async () => true,
+      readSwarmIconId: () => undefined,
+      recordSwarmIconId: () => {},
+    },
     };
     await runConciergeTick(adapters);
     if (!ctx.sent.some((m) => m.text.includes(ctx.snippet))) {

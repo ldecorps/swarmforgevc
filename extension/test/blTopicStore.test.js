@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { readRecord, appendMessage, recordPath, commitTopicRecord, hasCompletionRecord, isRecordCommitted, hasUpdateId } = require('../out/concierge/blTopicStore');
+const { readRecord, appendMessage, recordPath, commitTopicRecord, hasCompletionRecord, isRecordCommitted, hasUpdateId, readSwarmIconId, recordSwarmIconId } = require('../out/concierge/blTopicStore');
 
 // BL-329: the durable, git-tracked, per-ticket record of every message sent
 // in a BL topic - inbound and outbound - so the Telegram topic becomes a
@@ -373,4 +373,54 @@ test('hasUpdateId is true once a message with that exact updateId is on record',
 test('hasUpdateId is false for a message with no updateId at all (older records, outbound/swarm text)', () => {
   const record = { id: 'BL-900', messages: [{ seq: 0, ts: 1, author: 'swarm', type: 'outbound', text: 'hi' }] };
   assert.equal(hasUpdateId(record, 501), false);
+});
+
+// ── readSwarmIconId / recordSwarmIconId (BL-342: the "did the swarm set
+//    this topic's icon" marker - absent means never touch it) ───────────
+
+test('readSwarmIconId is undefined for a ticket with no topic record at all', () => {
+  const target = mkTmp();
+  assert.equal(readSwarmIconId(target, 'BL-900'), undefined);
+});
+
+test('recordSwarmIconId then readSwarmIconId round-trips the exact icon id', () => {
+  const target = mkTmp();
+  recordSwarmIconId(target, 'BL-900', 'icon-check', SILENT);
+  assert.equal(readSwarmIconId(target, 'BL-900'), 'icon-check');
+});
+
+test('recordSwarmIconId works on a brand-new topic with no messages yet (set at creation time)', () => {
+  const target = mkTmp();
+  recordSwarmIconId(target, 'BL-900', 'icon-bulb', SILENT);
+  const record = readRecord(target, 'BL-900');
+  assert.deepEqual(record.messages, []);
+  assert.equal(record.swarmIconId, 'icon-bulb');
+});
+
+test('recordSwarmIconId does not disturb existing messages on the same record', () => {
+  const target = mkTmp();
+  append(target, 'BL-900', { author: 'human', type: 'inbound', text: 'hi', ts: 1 });
+  recordSwarmIconId(target, 'BL-900', 'icon-check', SILENT);
+  const record = readRecord(target, 'BL-900');
+  assert.equal(record.messages.length, 1);
+  assert.equal(record.swarmIconId, 'icon-check');
+});
+
+test('recordSwarmIconId overwrites a prior swarm-set icon id (a genuine state change)', () => {
+  const target = mkTmp();
+  recordSwarmIconId(target, 'BL-900', 'icon-bulb', SILENT);
+  recordSwarmIconId(target, 'BL-900', 'icon-check', SILENT);
+  assert.equal(readSwarmIconId(target, 'BL-900'), 'icon-check');
+});
+
+test('BL-390: recordSwarmIconId mints no new commit when the icon id is unchanged (a no-op rewrite)', () => {
+  const target = mkGitRepo();
+  recordSwarmIconId(target, 'BL-900', 'icon-check');
+  const filePath = recordPath(target, 'BL-900');
+  const headBefore = execFileSync('git', ['-C', target, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+
+  recordSwarmIconId(target, 'BL-900', 'icon-check');
+
+  const headAfter = execFileSync('git', ['-C', target, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  assert.equal(headAfter, headBefore, 'expected no new commit for re-setting the identical icon id');
 });

@@ -181,6 +181,7 @@ const DOMAINS = [
   require('./dependencyGateTestsParalleliseSteps'),
   require('./respawnBackoffInjectedClockSteps'),
   require('./tmuxDoubleAnswersInProcessSteps'),
+  require('./topicIconsTrackTicketStateSteps'),
 ];
 
 function registerSteps(registry) {
