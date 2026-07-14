@@ -25,7 +25,7 @@ const {
 } = tmuxClient;
 const { installExecutable } = require('./helpers/sharedBin');
 
-const { installFakeTmux } = require('./helpers/fakeTmux');
+const { installInProcessTmux } = require('./helpers/fakeTmux');
 
 function mkTmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-tmuxclient-'));
@@ -36,7 +36,7 @@ test('paneTarget builds session:window.paneIndex', () => {
 });
 
 test('getPaneBaseIndex parses numeric stdout from tmux', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
   ]);
   try {
@@ -47,7 +47,7 @@ test('getPaneBaseIndex parses numeric stdout from tmux', () => {
 });
 
 test('getPaneBaseIndex returns 0 when tmux output is not numeric', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: 'not-a-number\n' },
   ]);
   try {
@@ -58,7 +58,7 @@ test('getPaneBaseIndex returns 0 when tmux output is not numeric', () => {
 });
 
 test('resolveAgentPaneTarget uses the first window index from tmux', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n3\n' },
   ]);
   try {
@@ -72,7 +72,7 @@ test('resolveAgentPaneTarget uses the first window index from tmux', () => {
 });
 
 test('resolveAgentPaneTarget falls back to window 0 when tmux call fails', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'list-windows', exitCode: 1, stdout: '' },
   ]);
   try {
@@ -86,7 +86,7 @@ test('resolveAgentPaneTarget falls back to window 0 when tmux call fails', () =>
 });
 
 test('resolveAgentPaneTarget falls back to window 0 when tmux returns empty stdout', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'list-windows', exitCode: 0, stdout: '' },
   ]);
   try {
@@ -100,7 +100,7 @@ test('resolveAgentPaneTarget falls back to window 0 when tmux returns empty stdo
 });
 
 test('getPaneCommand returns trimmed pane command on success', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'display-message', exitCode: 0, stdout: 'node\n' },
   ]);
   try {
@@ -111,7 +111,7 @@ test('getPaneCommand returns trimmed pane command on success', () => {
 });
 
 test('getPaneCommand returns empty string when tmux call fails', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'display-message', exitCode: 1, stdout: '' },
   ]);
   try {
@@ -122,7 +122,7 @@ test('getPaneCommand returns empty string when tmux call fails', () => {
 });
 
 test('getPanePid returns trimmed pane pid on success', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'display-message', exitCode: 0, stdout: '54321\n' },
   ]);
   try {
@@ -133,7 +133,7 @@ test('getPanePid returns trimmed pane pid on success', () => {
 });
 
 test('getPanePid returns empty string when tmux call fails', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'display-message', exitCode: 1, stdout: '' },
   ]);
   try {
@@ -146,7 +146,7 @@ test('getPanePid returns empty string when tmux call fails', () => {
 // BL-362 QA bounce follow-up: one display-message call for both pane_pid and
 // pane_current_command, instead of PaneTailer's poll path spawning two.
 test('getPanePidAndCommand splits pid and command from a single tab-separated call', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'display-message', exitCode: 0, stdout: '54321\tnode\n' },
   ]);
   try {
@@ -159,7 +159,7 @@ test('getPanePidAndCommand splits pid and command from a single tab-separated ca
 });
 
 test('getPanePidAndCommand returns empty pid and command when tmux call fails', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'display-message', exitCode: 1, stdout: '' },
   ]);
   try {
@@ -174,7 +174,7 @@ test('getPanePidAndCommand returns empty pid and command when tmux call fails', 
 // pid half is still real and must not be discarded just because command
 // could not be split out.
 test('getPanePidAndCommand keeps a real pid and defaults command to empty when the output has no tab separator', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'display-message', exitCode: 0, stdout: '54321\n' },
   ]);
   try {
@@ -185,7 +185,7 @@ test('getPanePidAndCommand keeps a real pid and defaults command to empty when t
 });
 
 test('capturePane returns captured stdout on success', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'capture-pane', exitCode: 0, stdout: 'hello world\n' },
   ]);
   try {
@@ -198,7 +198,7 @@ test('capturePane returns captured stdout on success', () => {
 });
 
 test('capturePane includes a start-line flag when startLine is provided', () => {
-  const fake = installFakeTmux([{ subcommand: 'capture-pane', exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ subcommand: 'capture-pane', exitCode: 0, stdout: '' }]);
   try {
     capturePane('/tmp/fake.sock', 'sess:0.1', -500);
     const call = fake.calls().find((args) => args.includes('capture-pane'));
@@ -210,7 +210,7 @@ test('capturePane includes a start-line flag when startLine is provided', () => 
 });
 
 test('sendKeys sends a named key non-literally', () => {
-  const fake = installFakeTmux([{ subcommand: 'send-keys', exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ subcommand: 'send-keys', exitCode: 0, stdout: '' }]);
   try {
     sendKeys('/tmp/fake.sock', 'sess:0.1', 'Enter', false);
     const call = fake.calls().find((args) => args.includes('send-keys'));
@@ -221,7 +221,7 @@ test('sendKeys sends a named key non-literally', () => {
 });
 
 test('sendKeys sends literal text with -l --', () => {
-  const fake = installFakeTmux([{ subcommand: 'send-keys', exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ subcommand: 'send-keys', exitCode: 0, stdout: '' }]);
   try {
     sendKeys('/tmp/fake.sock', 'sess:0.1', 'hello', true);
     const call = fake.calls().find((args) => args.includes('send-keys'));
@@ -241,7 +241,7 @@ test('sendKeys sends literal text with -l --', () => {
 });
 
 test('sessionExists returns true when tmux has-session succeeds', () => {
-  const fake = installFakeTmux([{ subcommand: 'has-session', exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ subcommand: 'has-session', exitCode: 0, stdout: '' }]);
   try {
     assert.equal(sessionExists('/tmp/fake.sock', 'swarmforge-coder'), true);
   } finally {
@@ -250,7 +250,7 @@ test('sessionExists returns true when tmux has-session succeeds', () => {
 });
 
 test('sessionExists returns false when tmux has-session fails', () => {
-  const fake = installFakeTmux([{ subcommand: 'has-session', exitCode: 1, stdout: '' }]);
+  const fake = installInProcessTmux([{ subcommand: 'has-session', exitCode: 1, stdout: '' }]);
   try {
     assert.equal(sessionExists('/tmp/fake.sock', 'swarmforge-coder'), false);
   } finally {
@@ -359,7 +359,7 @@ function writeRespawnState(tmp, role = 'coder') {
 test('respawnAgent sends the launch script into the role pane, never running it in-host', () => {
   const tmp = mkTmp();
   const { script, marker } = writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'send-keys', exitCode: 0, stdout: '' },
@@ -415,7 +415,7 @@ test('respawnAgent fails when no tmux socket is recorded', () => {
 test('respawnAgent fails when the role has no session in sessions.tsv', () => {
   const tmp = mkTmp();
   writeRespawnState(tmp, 'coder');
-  const fake = installFakeTmux([]);
+  const fake = installInProcessTmux([]);
   try {
     const result = respawnAgent(tmp, 'cleaner');
     assert.equal(result.success, false);
@@ -434,7 +434,7 @@ test('respawnAgent fails when the role has no session in sessions.tsv', () => {
 test('respawnAgent reports failure when tmux send-keys fails', () => {
   const tmp = mkTmp();
   writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'send-keys', exitCode: 1, stderr: 'no such session' },
@@ -457,7 +457,7 @@ test('respawnAgent reports failure when tmux send-keys fails', () => {
 test('respawnAgent wedged-respawn-04: escalates to a forced pane respawn when the pane never confirms submission', () => {
   const tmp = mkTmp();
   const { script } = writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'send-keys', exitCode: 0, stdout: '' },
@@ -494,7 +494,7 @@ test('respawnAgent wedged-respawn-04: escalates to a forced pane respawn when th
 //     every wedged-pane retry blocked on a real Atomics.wait. ---
 
 function wedgedFixture(tmp, script) {
-  return installFakeTmux([
+  return installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'send-keys', exitCode: 0, stdout: '' },
@@ -561,7 +561,7 @@ test('BL-376 respawn-backoff-injected-clock-02: production still falls back to t
 test('respawnAgent wedged-respawn-05: never forces a pane respawn when send-keys is confirmed delivered', () => {
   const tmp = mkTmp();
   writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'send-keys', exitCode: 0, stdout: '' },
@@ -582,7 +582,7 @@ test('respawnAgent wedged-respawn-05: never forces a pane respawn when send-keys
 test('respawnAgent reports failure when both verified send-keys and the forced pane respawn fail', () => {
   const tmp = mkTmp();
   const { script } = writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'send-keys', exitCode: 0, stdout: '' },
@@ -610,7 +610,7 @@ test('respawnAgent reports failure when both verified send-keys and the forced p
 test('respawnAgent refuses to type into a pane that is actively processing a turn (BL-137 misfire guard)', () => {
   const tmp = mkTmp();
   writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'capture-pane', exitCode: 0, stdout: '  auto mode on · esc to interrupt' },
@@ -639,7 +639,7 @@ test('respawnAgent refuses to type into a pane that is actively processing a tur
 test('respawnAgent types the launch command in literal mode, not tmux key-name mode', () => {
   const tmp = mkTmp();
   const { script } = writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'send-keys', exitCode: 0, stdout: '' },
@@ -666,7 +666,7 @@ test('respawnAgent never sends a follow-up Enter after send-keys itself fails at
   // literal-text one.
   const tmp = mkTmp();
   writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'send-keys', exitCode: 1, stderr: 'no such session' },
@@ -683,7 +683,7 @@ test('respawnAgent never sends a follow-up Enter after send-keys itself fails at
 test('respawnAgent falls back to reporting the exit code when send-keys fails with no stderr/stdout', () => {
   const tmp = mkTmp();
   writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'send-keys', exitCode: 17 },
@@ -705,7 +705,7 @@ test('respawnAgent discards capture-pane output when the capture itself failed, 
   // something already there.
   const tmp = mkTmp();
   const { script } = writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'send-keys', exitCode: 0, stdout: '' },
@@ -726,7 +726,7 @@ test('respawnAgent discards capture-pane output when the capture itself failed, 
 test('respawnAgent falls back to reporting the exit code when the forced pane respawn fails with no stderr/stdout', () => {
   const tmp = mkTmp();
   const { script } = writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'send-keys', exitCode: 0, stdout: '' },
