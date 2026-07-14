@@ -92,6 +92,6 @@ acceptance:
     - "The retry loop stays bounded and backed off"
     - "No test in the respawn suite waits on the wall clock"
 
-human_approval: pending  # new feature file, authored 2026-07-14 — needs human review
+human_approval: approved  # human: "approve everything", 2026-07-14
 
 mutation_cost: low
