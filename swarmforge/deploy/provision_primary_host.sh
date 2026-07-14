@@ -80,8 +80,12 @@ run() {
 
 OPERATOR_UNIT_NAME="swarmforge-operator-${PACK_NAME}.service"
 FRONT_DESK_UNIT_NAME="swarmforge-front-desk-${PACK_NAME}.service"
-OPERATOR_UNIT_TMP="/tmp/${OPERATOR_UNIT_NAME}"
-FRONT_DESK_UNIT_TMP="/tmp/${FRONT_DESK_UNIT_NAME}"
+# Overridable so concurrent test runs (this script's own suite, run from
+# several worktrees at once) never share the same /tmp filename - the
+# default is unchanged for the real, single-host install path.
+UNIT_TMP_DIR="${PROVISION_PRIMARY_UNIT_TMP_DIR:-/tmp}"
+OPERATOR_UNIT_TMP="${UNIT_TMP_DIR}/${OPERATOR_UNIT_NAME}"
+FRONT_DESK_UNIT_TMP="${UNIT_TMP_DIR}/${FRONT_DESK_UNIT_NAME}"
 
 "$GENERATOR" "$PROJECT_ROOT" "$PACK_NAME" "$LINUX_USER" "$OPERATOR_UNIT_TMP" --unit=operator
 "$GENERATOR" "$PROJECT_ROOT" "$PACK_NAME" "$LINUX_USER" "$FRONT_DESK_UNIT_TMP" --unit=front-desk
