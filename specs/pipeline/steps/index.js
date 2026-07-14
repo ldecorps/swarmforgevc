@@ -161,6 +161,7 @@ const DOMAINS = [
   require('./wrapperResolvesPathsAgainstCallerSteps'),
   require('./answerPairingAcrossThreadsSteps'),
   require('./targetUseCaseInventorySteps'),
+  require('./desktopVscodeOnWindowsSteps'),
 ];
 
 function registerSteps(registry) {
