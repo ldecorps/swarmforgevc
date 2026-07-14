@@ -167,6 +167,7 @@ const DOMAINS = [
   require('./topicDeletionSteps'),
   require('./noInboundMessageIsEverLostSteps'),
   require('./controlLossIsNotAgentDeathSteps'),
+  require('./operatorPassesAQuestionDownSteps'),
 ];
 
 function registerSteps(registry) {

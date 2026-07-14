@@ -703,6 +703,21 @@
          {:llm_running false :pending_events 0}
          (operator-lib/render-front-desk-status {}))
 
+;; ── BL-371: question-intake-slug/question-intake-content (pure) ─────────
+
+(assert= "question-intake-slug is stable and filename-safe"
+         "operator-question-1000" (operator-lib/question-intake-slug 1000))
+
+(let [content (operator-lib/question-intake-content "why is X broken?" "2026-07-14T00:00:00Z")]
+  (assert-true "question-intake-content carries the question text verbatim"
+               (clojure.string/includes? content "why is X broken?"))
+  (assert-true "question-intake-content carries the filing timestamp"
+               (clojure.string/includes? content "2026-07-14T00:00:00Z"))
+  (assert-true "question-intake-content marks itself a PROPOSAL, never a spec the Operator authored"
+               (clojure.string/includes? content "RAW"))
+  (assert-false "question-intake-content never fabricates acceptance criteria"
+                (clojure.string/includes? content "acceptance:")))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "operator_lib: ALL TESTS PASSED")
