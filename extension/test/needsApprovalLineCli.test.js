@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { formatNeedsApprovalSection } = require('../out/tools/needs-approval-line');
+const { formatNeedsApprovalSection, main } = require('../out/tools/needs-approval-line');
 
 // BL-251: the compiled needs-approval-line CLI is what briefing_email_lib.bb
 // shells out to (Babashka cannot import compiled TS) - reuses
@@ -54,7 +54,53 @@ function commitAll(root, message) {
   git(root, ['commit', '-q', '-m', message]);
 }
 
-test('the compiled CLI reports real pending tickets from a real repo\'s backlog', () => {
+const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'needs-approval-line.js');
+
+function runCliSubprocess(root) {
+  return execFileSync('node', [CLI_PATH], { cwd: root, encoding: 'utf8' });
+}
+
+// Runs the REAL main() in-process against a real fixture repo, so
+// in-process coverage and mutation tooling can see the branches a
+// subprocess-only smoke test cannot (mirrors notifyDeadLettersCli.test.js's
+// own identical seam). main() takes no arguments and reads process.cwd()
+// internally (via resolveCliMainWorktreeContext). It prints via
+// console.log (not printJsonToStdout/process.stdout.write) - under Vitest,
+// console.log is NOT routed through process.stdout.write (Vitest
+// intercepts console itself), so console.log must be mocked directly here
+// to observe the output.
+async function runCli(root) {
+  const previousCwd = process.cwd();
+  const writes = [];
+  const originalLog = console.log;
+  console.log = (chunk) => {
+    writes.push(chunk);
+  };
+  try {
+    process.chdir(root);
+    await main();
+  } finally {
+    console.log = originalLog;
+    process.chdir(previousCwd);
+  }
+  return writes.join('\n') + (writes.length > 0 ? '\n' : '');
+}
+
+test("the compiled CLI shows the nothing-awaiting-approval line when no ticket is pending", async () => {
+  const root = mkTmp();
+  initRepo(root);
+  writeRolesTsv(root);
+  commitAll(root, 'empty backlog');
+
+  const output = await runCli(root);
+
+  assert.match(output, /nothing awaiting approval/i);
+});
+
+// A single subprocess smoke test locks the compiled CLI's own wiring
+// (require.main === module, real argv/env boundary) - an ADDITION to the
+// in-process test above, never the only cover for the real logic.
+test('the compiled CLI runs standalone as a subprocess and reports real pending tickets from a real repo\'s backlog', () => {
   const root = mkTmp();
   initRepo(root);
   writeRolesTsv(root);
@@ -69,21 +115,8 @@ test('the compiled CLI reports real pending tickets from a real repo\'s backlog'
   );
   commitAll(root, 'seed backlog');
 
-  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'needs-approval-line.js');
-  const output = execFileSync('node', [cliPath], { cwd: root, encoding: 'utf8' });
+  const output = runCliSubprocess(root);
 
   assert.match(output, /BL-100: Needs review/);
   assert.doesNotMatch(output, /BL-101/);
-});
-
-test('the compiled CLI shows the nothing-awaiting-approval line when no ticket is pending', () => {
-  const root = mkTmp();
-  initRepo(root);
-  writeRolesTsv(root);
-  commitAll(root, 'empty backlog');
-
-  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'needs-approval-line.js');
-  const output = execFileSync('node', [cliPath], { cwd: root, encoding: 'utf8' });
-
-  assert.match(output, /nothing awaiting approval/i);
 });

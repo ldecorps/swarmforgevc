@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { parseArgs, buildStatusQuery } = require('../out/tools/operator-decide');
+const { parseArgs, buildStatusQuery, main } = require('../out/tools/operator-decide');
 
 // ── parseArgs (pure) ─────────────────────────────────────────────────────
 
@@ -116,17 +116,46 @@ function replyOutboxLines(root) {
     .map((l) => JSON.parse(l));
 }
 
-test('the compiled CLI answers a swarm-liveness status query and appends it to the reply outbox', () => {
+// Runs the REAL main() in-process (argv + cwd injected), so in-process
+// coverage and mutation tooling can see the wiring a subprocess-only smoke
+// test cannot (the engineering article's CLI main()-thin-wrapper rule).
+// main() prints nothing on success (it only appends to the reply outbox
+// file) and throws synchronously on a usage error, so no stdout mock is
+// needed here - only process.argv/process.cwd(), ALWAYS restored in
+// `finally` (non-negotiable: Vitest runs every test file in one worker
+// process, so a test that leaves the cwd moved silently corrupts every
+// test that runs after it).
+async function runCli(root, argv) {
+  const previousCwd = process.cwd();
+  const previousArgv = process.argv;
+  try {
+    process.argv = ['node', CLI_PATH, ...argv];
+    process.chdir(root);
+    await main();
+  } finally {
+    process.argv = previousArgv;
+    process.chdir(previousCwd);
+  }
+}
+
+function runCliSubprocess(root, argv) {
+  return execFileSync('node', [CLI_PATH, ...argv], { cwd: root, encoding: 'utf8' });
+}
+
+test('the CLI exits non-zero with a usage message when args are missing (in-process main() rejects)', async () => {
   const root = initFixture();
-  execFileSync('node', [CLI_PATH, 'SUP-1', 'status-swarm'], { cwd: root, encoding: 'utf8' });
+  await assert.rejects(() => runCli(root, []), /Usage/);
+});
+
+// A single subprocess smoke test locks the compiled CLI's own wiring
+// (require.main === module, real argv/env boundary) - an ADDITION to the
+// in-process test above, never the only cover for the real logic.
+test('the compiled CLI runs standalone as a subprocess and produces the same result (swarm-liveness status appended to the reply outbox)', () => {
+  const root = initFixture();
+  runCliSubprocess(root, ['SUP-1', 'status-swarm']);
   const lines = replyOutboxLines(root);
   assert.equal(lines.length, 1);
   assert.equal(lines[0].threadId, 'SUP-1');
   assert.match(lines[0].text, /dispatching/);
   assert.match(lines[0].text, /2/);
-});
-
-test('the compiled CLI exits non-zero with a usage message when args are missing', () => {
-  const root = initFixture();
-  assert.throws(() => execFileSync('node', [CLI_PATH], { cwd: root, encoding: 'utf8' }), /Usage/);
 });
