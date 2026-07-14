@@ -58,6 +58,6 @@ acceptance:
     - "The leaderboard shows the human the rework-aware answer"
     - "Models that still cannot be told apart are still reported as a tie"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: medium

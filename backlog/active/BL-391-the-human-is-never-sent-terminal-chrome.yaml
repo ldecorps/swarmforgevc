@@ -53,6 +53,6 @@ acceptance:
     - "The record kept for a ticket is readable too"
     - "A message that was never terminal output is left alone"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: low

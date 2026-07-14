@@ -73,6 +73,6 @@ acceptance:
     - "A refused message never opens a support thread"
     - "An unmapped topic in the front desk's own chat still opens a support thread"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: low

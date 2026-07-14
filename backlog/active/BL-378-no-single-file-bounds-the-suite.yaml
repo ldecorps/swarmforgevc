@@ -100,6 +100,6 @@ acceptance:
     - "Every offender is named, not just the first"
     - "The guard actually runs, rather than sitting there uncalled"
 
-human_approval: pending  # new feature file, authored 2026-07-14 — needs human review
+human_approval: approved  # human: "approve everything", 2026-07-14
 
 mutation_cost: low
