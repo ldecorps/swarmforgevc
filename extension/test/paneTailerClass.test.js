@@ -60,7 +60,7 @@ test('start/poll reports pane output for a live session, stop halts further poll
   const fake = installFakeTmux([
     { subcommand: 'has-session', exitCode: 0 },
     { subcommand: 'capture-pane', exitCode: 0, stdout: 'agent output' },
-    { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+    { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
     { exitCode: 0, stdout: '' },
   ]);
   try {
@@ -168,8 +168,9 @@ test('a pane respawn (pid change, same session) resets retained history instead 
   writeState(targetPath);
   const fake = installFakeTmux([
     { subcommand: 'has-session', exitCode: 0 },
-    { argsInclude: 'pane_pid', exitCode: 0, stdout: '111\n' },
-    { argsInclude: 'pane_current_command', exitCode: 0, stdout: 'claude\n' },
+    // BL-362: pid and command now come from ONE display-message call
+    // (getPanePidAndCommand), tab-separated.
+    { subcommand: 'display-message', exitCode: 0, stdout: '111\tclaude\n' },
     { subcommand: 'capture-pane', exitCode: 0, stdout: 'OLD LINE 1\nOLD LINE 2' },
   ]);
   try {
@@ -184,8 +185,7 @@ test('a pane respawn (pid change, same session) resets retained history instead 
     // entirely unrelated fresh process.
     fake.setRules([
       { subcommand: 'has-session', exitCode: 0 },
-      { argsInclude: 'pane_pid', exitCode: 0, stdout: '222\n' },
-      { argsInclude: 'pane_current_command', exitCode: 0, stdout: 'claude\n' },
+      { subcommand: 'display-message', exitCode: 0, stdout: '222\tclaude\n' },
       { subcommand: 'capture-pane', exitCode: 0, stdout: 'NEW LINE 1\nNEW LINE 2' },
     ]);
     tailer.poll();
@@ -207,8 +207,7 @@ test('an unchanged pid across polls keeps accumulating history normally (no fals
   writeState(targetPath);
   const fake = installFakeTmux([
     { subcommand: 'has-session', exitCode: 0 },
-    { argsInclude: 'pane_pid', exitCode: 0, stdout: '111\n' },
-    { argsInclude: 'pane_current_command', exitCode: 0, stdout: 'claude\n' },
+    { subcommand: 'display-message', exitCode: 0, stdout: '111\tclaude\n' },
     { subcommand: 'capture-pane', exitCode: 0, stdout: 'LINE A' },
   ]);
   try {
@@ -219,8 +218,7 @@ test('an unchanged pid across polls keeps accumulating history normally (no fals
 
     fake.setRules([
       { subcommand: 'has-session', exitCode: 0 },
-      { argsInclude: 'pane_pid', exitCode: 0, stdout: '111\n' },
-      { argsInclude: 'pane_current_command', exitCode: 0, stdout: 'claude\n' },
+      { subcommand: 'display-message', exitCode: 0, stdout: '111\tclaude\n' },
       { subcommand: 'capture-pane', exitCode: 0, stdout: 'LINE B' },
     ]);
     tailer.poll();
@@ -290,7 +288,7 @@ test('poll notifies onRoles when a role is added between polls', async () => {
   const fake = installFakeTmux([
     { subcommand: 'has-session', exitCode: 0 },
     { subcommand: 'capture-pane', exitCode: 0, stdout: '' },
-    { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+    { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
     { exitCode: 0, stdout: '' },
   ]);
   try {
@@ -422,7 +420,7 @@ test('onStall fires stalled then unstalled as pane output ages and then changes'
   writeState(targetPath);
   const fake = installFakeTmux([
     { subcommand: 'has-session', exitCode: 0 },
-    { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+    { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
     { exitCode: 0, stdout: '' },
   ]);
   const realDateNow = Date.now;
@@ -440,7 +438,7 @@ test('onStall fires stalled then unstalled as pane output ages and then changes'
     fake.setRules([
       { subcommand: 'has-session', exitCode: 0 },
       { subcommand: 'capture-pane', exitCode: 0, stdout: captureOutput },
-      { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+      { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
       { exitCode: 0, stdout: '' },
     ]);
     // BL-362: start() is driven by an injected fake tick rather than the
@@ -461,7 +459,7 @@ test('onStall fires stalled then unstalled as pane output ages and then changes'
     fake.setRules([
       { subcommand: 'has-session', exitCode: 0 },
       { subcommand: 'capture-pane', exitCode: 0, stdout: captureOutput },
-      { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+      { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
       { exitCode: 0, stdout: '' },
     ]);
     tailer.poll();
@@ -478,7 +476,7 @@ test('onNeedsHuman fires true when a pane shows a question, then false once it r
   writeState(targetPath);
   const fake = installFakeTmux([
     { subcommand: 'has-session', exitCode: 0 },
-    { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+    { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
     { exitCode: 0, stdout: '' },
   ]);
   try {
@@ -498,7 +496,7 @@ test('onNeedsHuman fires true when a pane shows a question, then false once it r
     fake.setRules([
       { subcommand: 'has-session', exitCode: 0 },
       { subcommand: 'capture-pane', exitCode: 0, stdout: 'working on it...' },
-      { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+      { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
       { exitCode: 0, stdout: '' },
     ]);
     const { scheduleTick, clearTick } = fakeScheduler();
@@ -509,7 +507,7 @@ test('onNeedsHuman fires true when a pane shows a question, then false once it r
     fake.setRules([
       { subcommand: 'has-session', exitCode: 0 },
       { subcommand: 'capture-pane', exitCode: 0, stdout: 'Continue? (y/n)' },
-      { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+      { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
       { exitCode: 0, stdout: '' },
     ]);
     tailer.poll();
@@ -523,7 +521,7 @@ test('onNeedsHuman fires true when a pane shows a question, then false once it r
     fake.setRules([
       { subcommand: 'has-session', exitCode: 0 },
       { subcommand: 'capture-pane', exitCode: 0, stdout: 'resumed working' },
-      { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+      { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
       { exitCode: 0, stdout: '' },
     ]);
     tailer.poll();
@@ -539,7 +537,7 @@ test('onActivity fires working then not-working as the pane enters and leaves an
   writeState(targetPath);
   const fake = installFakeTmux([
     { subcommand: 'has-session', exitCode: 0 },
-    { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+    { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
     { exitCode: 0, stdout: '' },
   ]);
   const realDateNow = Date.now;
@@ -564,7 +562,7 @@ test('onActivity fires working then not-working as the pane enters and leaves an
     fake.setRules([
       { subcommand: 'has-session', exitCode: 0 },
       { subcommand: 'capture-pane', exitCode: 0, stdout: 'Thinking… (esc to interrupt)' },
-      { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+      { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
       { exitCode: 0, stdout: '' },
     ]);
     const { scheduleTick, clearTick } = fakeScheduler();
@@ -582,7 +580,7 @@ test('onActivity fires working then not-working as the pane enters and leaves an
     fake.setRules([
       { subcommand: 'has-session', exitCode: 0 },
       { subcommand: 'capture-pane', exitCode: 0, stdout: 'idle output' },
-      { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+      { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
       { exitCode: 0, stdout: '' },
     ]);
     tailer.poll();
