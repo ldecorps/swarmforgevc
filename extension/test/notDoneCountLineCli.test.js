@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { formatNotDoneCountLine } = require('../out/tools/not-done-count-line');
+const { formatNotDoneCountLine, main } = require('../out/tools/not-done-count-line');
 
 // BL-263: the compiled not-done-count-line CLI is what briefing_email_lib.bb
 // shells out to (Babashka cannot import compiled TS) - reuses
@@ -52,7 +52,58 @@ function commitAll(root, message) {
   git(root, ['commit', '-q', '-m', message]);
 }
 
-test('the compiled CLI reports the real not-done total (active + paused, excluding done) from a real repo\'s backlog', () => {
+const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'not-done-count-line.js');
+
+// Runs the REAL main() in-process against a real fixture repo, so
+// in-process coverage and mutation tooling can see the logic a
+// subprocess-only smoke test cannot (the engineering article's CLI
+// main()-thin-wrapper rule). main() takes no arguments - it reads
+// process.cwd() directly - so this only needs to move + restore cwd, never
+// process.argv. main() prints via console.log (not process.stdout.write
+// directly) and Vitest intercepts console.* separately from
+// process.stdout.write - mocking stdout.write here would silently capture
+// nothing, so console.log itself is mocked instead. The `finally` restore
+// is non-negotiable: Vitest runs every test file in one worker process, so
+// a test that leaves the cwd moved (or console.log unmocked) silently
+// corrupts every test that runs after it.
+async function runCli(root) {
+  const previousCwd = process.cwd();
+  const writes = [];
+  const originalLog = console.log;
+  console.log = (...args) => {
+    writes.push(args.join(' '));
+  };
+  try {
+    process.chdir(root);
+    await main();
+  } finally {
+    console.log = originalLog;
+    process.chdir(previousCwd);
+  }
+  return writes.join('\n');
+}
+
+function runCliSubprocess(root) {
+  return execFileSync('node', [CLI_PATH], { cwd: root, encoding: 'utf8' });
+}
+
+test('the compiled CLI reports zero when every ticket is done', async () => {
+  const root = mkTmp();
+  initRepo(root);
+  writeRolesTsv(root);
+  fs.mkdirSync(path.join(root, 'backlog', 'done'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'backlog', 'done', 'BL-100.yaml'), 'id: BL-100\ntitle: Done one\nstatus: done\n');
+  commitAll(root, 'all-done backlog');
+
+  const output = await runCli(root);
+
+  assert.equal(output.trim(), 'Not done: 0 tickets');
+});
+
+// A single subprocess smoke test locks the compiled CLI's own wiring
+// (require.main === module, real argv/env boundary) - an ADDITION to the
+// in-process test above, never the only cover for the real logic.
+test('the compiled CLI runs standalone as a subprocess and produces the same result (active + paused, excluding done)', () => {
   const root = mkTmp();
   initRepo(root);
   writeRolesTsv(root);
@@ -64,22 +115,7 @@ test('the compiled CLI reports the real not-done total (active + paused, excludi
   fs.writeFileSync(path.join(root, 'backlog', 'done', 'BL-102.yaml'), 'id: BL-102\ntitle: Done one\nstatus: done\n');
   commitAll(root, 'seed backlog');
 
-  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'not-done-count-line.js');
-  const output = execFileSync('node', [cliPath], { cwd: root, encoding: 'utf8' });
+  const output = runCliSubprocess(root);
 
   assert.equal(output.trim(), 'Not done: 2 tickets');
-});
-
-test('the compiled CLI reports zero when every ticket is done', () => {
-  const root = mkTmp();
-  initRepo(root);
-  writeRolesTsv(root);
-  fs.mkdirSync(path.join(root, 'backlog', 'done'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'backlog', 'done', 'BL-100.yaml'), 'id: BL-100\ntitle: Done one\nstatus: done\n');
-  commitAll(root, 'all-done backlog');
-
-  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'not-done-count-line.js');
-  const output = execFileSync('node', [cliPath], { cwd: root, encoding: 'utf8' });
-
-  assert.equal(output.trim(), 'Not done: 0 tickets');
 });

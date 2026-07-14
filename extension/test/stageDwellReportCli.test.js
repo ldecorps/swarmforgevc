@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { formatStageDwellReport, parseArgs } = require('../out/tools/stage-dwell-report');
+const { formatStageDwellReport, parseArgs, main } = require('../out/tools/stage-dwell-report');
 
 // BL-102 dwell-05: the presenter for computeStageDwellReportForRoles -
 // resolveProjectRoot/roles.tsv wiring is exercised by swarm-metrics.ts's own
@@ -193,20 +193,51 @@ function makeFixtureRoot() {
   return root;
 }
 
-test('the compiled stage-dwell-report CLI runs from a worktree and prints a plain-text report', () => {
-  const root = makeFixtureRoot();
-  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'stage-dwell-report.js');
-  const output = execFileSync('node', [cliPath], { cwd: root, encoding: 'utf8' });
+const CLI = path.join(__dirname, '..', 'out', 'tools', 'stage-dwell-report.js');
 
-  assert.match(output, /Stage dwell \(24h window/);
-  assert.match(output, /coder: 1 parcel\(s\)/);
-  assert.doesNotMatch(output, /NaN|Infinity|undefined/);
-});
+function runCliSubprocess(root, args = []) {
+  return execFileSync('node', [CLI, ...args], { cwd: root, encoding: 'utf8' });
+}
+
+// Runs the REAL main() in-process, so in-process coverage and mutation
+// tooling can see main()'s own branches (plain-text vs. --json) that a
+// subprocess-only smoke test cannot (the engineering article's CLI
+// main()-thin-wrapper rule; mirrors notifyDeadLettersCli.test.js's own
+// identical seam). main() takes no parameters and reads its flags off
+// process.argv.slice(2) directly, so the in-process helper must set
+// process.argv to the same shape the subprocess would have received. The
+// plain-text path prints via console.log while the --json path prints via
+// printJsonToStdout (process.stdout.write) - Vitest does not route
+// console.log through process.stdout.write, so both are intercepted
+// independently and whichever one main() actually used is returned.
+function runCli(root, args = []) {
+  const previousCwd = process.cwd();
+  const previousArgv = process.argv;
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (...a) => logs.push(a.join(' '));
+  const writes = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (chunk) => {
+    writes.push(chunk);
+    return true;
+  };
+  try {
+    process.argv = ['node', CLI, ...args];
+    process.chdir(root);
+    main();
+  } finally {
+    console.log = originalLog;
+    process.stdout.write = originalWrite;
+    process.chdir(previousCwd);
+    process.argv = previousArgv;
+  }
+  return writes.length > 0 ? writes.join('') : logs.join('\n');
+}
 
 test('the compiled stage-dwell-report CLI emits the same figures as structured JSON with --json (dwell-05)', () => {
   const root = makeFixtureRoot();
-  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'stage-dwell-report.js');
-  const output = execFileSync('node', [cliPath, '--json'], { cwd: root, encoding: 'utf8' });
+  const output = runCli(root, ['--json']);
 
   const parsed = JSON.parse(output);
   assert.equal(parsed.windowHours, 24);
@@ -218,9 +249,20 @@ test('the compiled stage-dwell-report CLI emits the same figures as structured J
 
 test('the compiled stage-dwell-report CLI honors --hours to narrow the window', () => {
   const root = makeFixtureRoot();
-  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'stage-dwell-report.js');
-  const output = execFileSync('node', [cliPath, '--hours', '1', '--json'], { cwd: root, encoding: 'utf8' });
+  const output = runCli(root, ['--hours', '1', '--json']);
 
   const parsed = JSON.parse(output);
   assert.equal(parsed.windowHours, 1);
+});
+
+// A single subprocess smoke test locks the compiled CLI's own wiring
+// (require.main === module, real argv/env boundary) - an ADDITION to the
+// in-process tests above, never the only cover for the real logic.
+test('the compiled CLI runs standalone as a subprocess and produces the same result', () => {
+  const root = makeFixtureRoot();
+  const output = runCliSubprocess(root);
+
+  assert.match(output, /Stage dwell \(24h window/);
+  assert.match(output, /coder: 1 parcel\(s\)/);
+  assert.doesNotMatch(output, /NaN|Infinity|undefined/);
 });
