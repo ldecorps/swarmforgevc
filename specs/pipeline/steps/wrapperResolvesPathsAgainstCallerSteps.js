@@ -86,8 +86,14 @@ function registerSteps(registry) {
     ctx.report = JSON.parse(result.stdout);
   });
 
-  registry.define(/^the mutation scratch is written to (.+)$/, (ctx, resolvedLocation) => {
-    if (resolvedLocation.includes("caller's working directory")) {
+  // Exact-match KNOWN_VALUES lookup (not a substring/prefix check): the
+  // engineering rule requires every Examples value to be LOAD-BEARING, and
+  // an `.includes()` against only a trailing fragment of each phrase left
+  // the leading words free for gherkin-mutator to mutate undetected (e.g.
+  // "that path beNeath the caller's..." still matched a check that only
+  // looked for "caller's working directory").
+  const RESOLVED_LOCATIONS = {
+    "that path beneath the caller's working directory": (ctx) => {
       const dir = ctx.expectedWorkDir;
       if (!fs.existsSync(dir)) {
         throw new Error(`expected the mutation scratch directory to exist at ${dir}, beneath the caller's own cwd`);
@@ -95,11 +101,13 @@ function registerSteps(registry) {
       if (fs.readdirSync(dir).length === 0) {
         throw new Error(`expected ${dir} to actually contain mutation scratch, not sit empty`);
       }
-    } else if (resolvedLocation.includes('exactly the path the caller named')) {
+    },
+    'exactly the path the caller named': (ctx) => {
       if (fs.readdirSync(ctx.expectedWorkDir).length === 0) {
         throw new Error(`expected ${ctx.expectedWorkDir} to contain mutation scratch`);
       }
-    } else if (resolvedLocation.includes('fresh private temporary directory')) {
+    },
+    'a fresh private temporary directory': () => {
       // No specific path is knowable ahead of time for the omitted case -
       // the property that matters is that it never fell back to the
       // vendor dir, checked structurally by the sibling scenario below.
@@ -107,9 +115,15 @@ function registerSteps(registry) {
       if (afterStatus !== '') {
         throw new Error(`expected an omitted work-dir to never leave scratch under the vendored tool directory, got: ${afterStatus}`);
       }
-    } else {
+    },
+  };
+
+  registry.define(/^the mutation scratch is written to (.+)$/, (ctx, resolvedLocation) => {
+    const assertLocation = RESOLVED_LOCATIONS[resolvedLocation];
+    if (!assertLocation) {
       throw new Error(`unrecognized resolved-location in Examples table: "${resolvedLocation}"`);
     }
+    assertLocation(ctx);
     fs.rmSync(ctx.fixtureDir, { recursive: true, force: true });
     if (ctx.callerCwd) fs.rmSync(ctx.callerCwd, { recursive: true, force: true });
     cleanVendorTmpPollution();

@@ -42,6 +42,13 @@ function isUseCaseObservationShape(value: unknown): boolean {
   );
 }
 
+// Split out of isRepoSurveyFactsShape so that function's own branch count
+// stays under the CRAP threshold (adding this check as two more inline `&&`
+// conjuncts pushed isRepoSurveyFactsShape's own complexity to 7).
+function isUseCaseObservationArrayShape(value: unknown): boolean {
+  return Array.isArray(value) && value.every(isUseCaseObservationShape);
+}
+
 // Split out of readSurveyFacts so that function's own branch count stays
 // low, same technique as contractView.ts's isContractShape. Not a type
 // predicate: RepoSurveyFacts has no index signature, so it cannot narrow a
@@ -53,8 +60,7 @@ function isRepoSurveyFactsShape(value: Record<string, unknown>): boolean {
     typeof value.readmeSummary === 'string' &&
     typeof value.seedVision === 'string' &&
     typeof value.initialBacklogSummary === 'string' &&
-    Array.isArray(value.useCaseObservations) &&
-    value.useCaseObservations.every(isUseCaseObservationShape)
+    isUseCaseObservationArrayShape(value.useCaseObservations)
   );
 }
 
