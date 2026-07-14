@@ -170,6 +170,7 @@ const DOMAINS = [
   require('./operatorPassesAQuestionDownSteps'),
   require('./frontDeskLivenessMeansListeningSteps'),
   require('./alwaysOnOperatorPresenceSteps'),
+  require('./topicRecreationSteps'),
 ];
 
 function registerSteps(registry) {

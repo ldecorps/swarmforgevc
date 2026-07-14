@@ -1,0 +1,68 @@
+id: BL-380
+title: "Onboarding a target repo provisions its own Telegram bot and group, so the contract can be negotiated there"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+priority: 4
+direction: human-requested
+depends_on: [BL-379]
+source: "backlog/INTAKE-telegram-provisioning-in-onboarding-and-verbosity.md (Ask 1) — the human, 2026-07-14 in SUP-2: 'when onboarding a new target repo, set up a new telegram group and everything to carry out the back and forth contract negotiation?'"
+
+notes: |
+  WHAT ALREADY WORKS — DO NOT REBUILD IT. Topic creation is already automated and reusable:
+  `createForumTopic` (`extension/src/notify/telegramClient.ts:196`) mints a topic, and
+  `ensureOperatorTopic` (`extension/src/tools/telegram-front-desk-bot.ts:253`) already shows the
+  mint-and-register pattern. The onboarding contract, its survey, its rounds and its generated
+  prompts all exist (`extension/src/onboarding/`: contractTypes.ts, contractSurvey.ts,
+  contractNegotiation.ts, negotiationLog.ts, promptProposal.ts). What does NOT exist is any link
+  between the two: verified by grep, there is no reference to Telegram anywhere under
+  `extension/src/onboarding/`. This ticket builds that link's FOUNDATION — the channel itself.
+  Actually negotiating over it is BL-381.
+
+  ONE BOT PER TARGET — THIS IS THE LOAD-BEARING DECISION (settled with the human 2026-07-14).
+  Two swarms CANNOT share one bot token. Telegram's `getUpdates` is long-polling scoped to the
+  bot, and it answers a second concurrent poller on the same token with `409 Conflict:
+  terminated by other getUpdates request`. Worse, the confirm-offset is per-token and global
+  across chats: whichever process polls first CONSUMES the update and advances the offset, so the
+  project the message was actually for never sees it. A chat filter alone (BL-379) would convert
+  cross-project misrouting into silent LOSS, not fix it. Per-target bots make the isolation
+  structural — separate tokens cannot see each other's chats at all. Do not "optimise" this back
+  into a shared bot.
+
+  THE IRREDUCIBLE MANUAL STEP. The Bot API has no create-bot method (BotFather is the only way)
+  and no create-group / enable-topics method; `createForumTopic` requires a supergroup that is
+  ALREADY a forum. The code says so itself at telegramClient.ts:192-194. So the human must, once
+  per target: create a bot with BotFather, create the group, enable Topics, add the bot as admin.
+  Everything either side of that is automated. The shape the human chose: emit the exact steps
+  plus a `t.me/<bot>?startgroup=true` deep link, then DETECT the new chat and take over — never
+  ask him to paste a chat id (scenario 02). Detection is cheap because the target's bot is brand
+  new: the first chat its `getUpdates` reports IS the target's group.
+
+  SCOPE. A new onboarding module alongside the existing ones, reusing `telegramClient.ts`'s
+  `createForumTopic` — do not hand-roll a second Telegram client. It persists the target's
+  botToken + chatId into the target's own config (secrets rule, local-engineering article: tokens
+  live in the extension-host environment, NEVER written into the target working directory or any
+  commit — persist the chat id in the target's config and keep the token in host-held state).
+  Scenario 04 is the guard against a half-provisioned channel being treated as ready; scenario 05
+  is the guard against the shared-token regression above.
+
+  E2E QA PROCEDURE: onboard a fresh target repo. Assert onboarding prints usable steps and a
+  working add-to-group deep link. Complete the human step by hand (BotFather bot, forum group,
+  bot as admin). Assert the swarm detects the group WITHOUT being told its id, remembers it
+  against that target, and opens a "Contract negotiation" topic in it. Then onboard a SECOND
+  target and assert it is given a different bot, that the first target's group is untouched, and
+  that both front desks keep working concurrently — no 409, no messages lost from either.
+
+acceptance:
+  feature: specs/features/BL-380-onboarding-provisions-the-targets-channel.feature
+  steps:
+    - "Onboarding tells the human exactly how to create the channel"
+    - "The new group is detected, not typed in"
+    - "The contract's negotiation topic is opened in the new group"
+    - "A half-finished channel is reported, never treated as ready"
+    - "A second target is provisioned with its own bot"
+
+human_approval: pending
+
+mutation_cost: medium
