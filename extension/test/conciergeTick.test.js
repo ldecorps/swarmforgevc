@@ -610,6 +610,135 @@ test('BL-341 hardening: two epics active in the same tick keep separate topics a
   assert.ok(sent.some((m) => m.topicId === benchmarkTopicId && m.text.includes('1 of 1 ticketed slice(s) complete.') && m.text.includes('Epic complete')));
 });
 
+// ── BL-394: epic-progress announcements are change-gated ──────────────────
+//
+// The live incident: an epic's own message has no dedup of its own, so
+// whenever its TRIGGERING ticket event re-derives - e.g. a held-back retry
+// after that ticket's OWN per-ticket post fails - the epic side effect
+// tags along and reposts the identical, unchanged text every such retry.
+// Every test below forces exactly that re-derivation (a ticket-level post
+// that keeps failing) to prove the epic's OWN durable, content-based dedup
+// actually suppresses the repeat - a fixture with no retry at all would
+// pass even on the old, unfixed code, since the outer event-level dedup
+// already prevents re-derivation when nothing is retrying.
+
+test('BL-394 epic-gate-01: an unchanged epic progress is announced only once, even while its own ticket post keeps retrying', async () => {
+  const { adapters, setFolders, sent } = fakeAdapters();
+  const epicTicket = epicDefTicket('dynamic-routing', 'Dynamic Routing');
+  setFolders(folders({
+    paused: [epicTicket],
+    active: [{ id: 'BL-1', title: 'first slice', epic: 'dynamic-routing' }, { id: 'BL-2', title: 'second slice', epic: 'dynamic-routing' }],
+  }));
+  await runConciergeTick(adapters);
+
+  // BL-1's own per-ticket completion post is stuck retrying (mirrors the
+  // real incident) - its TaskCompleted event keeps re-deriving every tick,
+  // dragging the epic side-effect along, while the epic's own progress
+  // text stays unchanged across every one of these retries.
+  adapters.routeAdapters.sendMessage = async (topicId, text) => {
+    sent.push({ topicId, text });
+    return text !== 'BL-1 - first slice is complete.';
+  };
+  setFolders(folders({
+    paused: [epicTicket],
+    active: [{ id: 'BL-2', title: 'second slice', epic: 'dynamic-routing' }],
+    done: [{ id: 'BL-1', title: 'first slice', epic: 'dynamic-routing' }],
+  }));
+  await runConciergeTick(adapters);
+  await runConciergeTick(adapters);
+  await runConciergeTick(adapters);
+
+  assert.equal(sent.filter((m) => m.text.includes('ticketed slice')).length, 1, 'an unchanged epic progress must not repost on repeated retried ticks');
+});
+
+test('BL-394 epic-gate-02: a real progress change is announced exactly once and recorded as announced', async () => {
+  const { adapters, setFolders, sent, state } = fakeAdapters();
+  const epicTicket = epicDefTicket('dynamic-routing', 'Dynamic Routing');
+  setFolders(folders({
+    paused: [epicTicket],
+    active: [{ id: 'BL-1', title: 'first slice', epic: 'dynamic-routing' }, { id: 'BL-2', title: 'second slice', epic: 'dynamic-routing' }],
+  }));
+  await runConciergeTick(adapters);
+
+  setFolders(folders({
+    paused: [epicTicket],
+    active: [{ id: 'BL-2', title: 'second slice', epic: 'dynamic-routing' }],
+    done: [{ id: 'BL-1', title: 'first slice', epic: 'dynamic-routing' }],
+  }));
+  await runConciergeTick(adapters);
+
+  const progressMessages = sent.filter((m) => m.text.includes('ticketed slice'));
+  assert.equal(progressMessages.length, 1, 'exactly one epic-progress message carries the new progress');
+  assert.equal(progressMessages[0].text, '1 of 2 ticketed slice(s) complete.');
+  assert.ok(
+    state.emittedKeys.some((k) => k.includes('1 of 2 ticketed slice(s) complete.')),
+    'the new progress is durably recorded as announced'
+  );
+
+  // A subsequent, genuinely unchanged tick must not repeat it.
+  await runConciergeTick(adapters);
+  assert.equal(sent.filter((m) => m.text.includes('ticketed slice')).length, 1);
+});
+
+test('BL-394 epic-gate-03: a restart against unchanged, durably-recorded progress announces nothing', async () => {
+  const first = fakeAdapters();
+  const epicTicket = epicDefTicket('dynamic-routing', 'Dynamic Routing');
+  // BL-1's own per-ticket completion post is stuck retrying, same as
+  // epic-gate-01, so its TaskCompleted event keeps re-deriving across
+  // ticks AND across the simulated restart below.
+  first.adapters.routeAdapters.sendMessage = async (topicId, text) => {
+    first.sent.push({ topicId, text });
+    return text !== 'BL-1 - a fine feature is complete.';
+  };
+  first.setFolders(folders({ paused: [epicTicket], active: [{ id: 'BL-1', title: 'a fine feature', epic: 'dynamic-routing' }] }));
+  await runConciergeTick(first.adapters);
+  first.setFolders(folders({ paused: [epicTicket], done: [{ id: 'BL-1', title: 'a fine feature', epic: 'dynamic-routing' }] }));
+  await runConciergeTick(first.adapters);
+  assert.equal(first.sent.filter((m) => m.text.includes('ticketed slice')).length, 1);
+
+  // "Restart": a BRAND NEW adapters instance, seeded only with the
+  // persisted snapshot + emittedKeys the prior process wrote to disk -
+  // exactly what a real relaunch rehydrates from, never the in-memory Set
+  // (runConciergeTick already rebuilds alreadyEmitted from state.emittedKeys
+  // on every call, so this is the honest way to prove durability rather
+  // than relying on JS object continuity within one fakeAdapters instance).
+  const restarted = fakeAdapters();
+  restarted.state.snapshot = first.state.snapshot;
+  restarted.state.emittedKeys = [...first.state.emittedKeys];
+  Object.assign(restarted.topicMap, first.topicMap);
+  restarted.adapters.routeAdapters.sendMessage = async (topicId, text) => {
+    restarted.sent.push({ topicId, text });
+    return text !== 'BL-1 - a fine feature is complete.';
+  };
+  restarted.setFolders(folders({ paused: [epicTicket], done: [{ id: 'BL-1', title: 'a fine feature', epic: 'dynamic-routing' }] }));
+
+  await runConciergeTick(restarted.adapters);
+
+  assert.equal(
+    restarted.sent.filter((m) => m.text.includes('ticketed slice')).length,
+    0,
+    'a restart against unchanged, durably-recorded progress must not repost'
+  );
+});
+
+test('BL-394 epic-gate-04: a repeated opening for an already-opened epic announces nothing', async () => {
+  const { adapters, setFolders, sent } = fakeAdapters();
+  const epicTicket = epicDefTicket('dynamic-routing', 'Dynamic Routing');
+  // BL-1's own per-ticket opening post is stuck retrying; the epic's own
+  // one-time opening line must still fire exactly once despite that.
+  adapters.routeAdapters.sendMessage = async (topicId, text) => {
+    sent.push({ topicId, text });
+    return text !== 'What it is: a fine feature';
+  };
+  setFolders(folders({ paused: [epicTicket], active: [{ id: 'BL-1', title: 'a fine feature', epic: 'dynamic-routing' }] }));
+
+  await runConciergeTick(adapters);
+  await runConciergeTick(adapters);
+  await runConciergeTick(adapters);
+
+  assert.equal(sent.filter((m) => m.text === 'Epic: Dynamic Routing').length, 1, 'the epic opening must not repeat on a retried tick');
+});
+
 // ── BL-342: topic icons track ticket state - rides the SAME TaskStarted/
 //    TaskCompleted transitions, plus a paused-diff of its own ────────────
 

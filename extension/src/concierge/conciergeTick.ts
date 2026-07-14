@@ -8,7 +8,7 @@
 // wired, in the live wrapper - telegram-front-desk-bot.ts).
 import { EventStreamSnapshot, GateSignal, SwarmEvent, SwarmEventType, TicketSummary, deriveSwarmEvents, swarmEventKey } from '../events/swarmEventStream';
 import { RouteAdapters, TopicAction, decideEpicTopicAction, routeEvent } from './topicRouter';
-import { EpicDefinition, computeEpicProgress, epicOpeningText, epicProgressText } from './epicProgress';
+import { EpicDefinition, computeEpicProgress, epicAnnouncementKey, epicOpeningText, epicProgressText } from './epicProgress';
 import { resolveIconState, ICON_EMOJI } from './topicIcon';
 import { TopicIconAdapters, syncTopicIcon } from './topicIconSync';
 
@@ -248,17 +248,20 @@ function epicUpdateText(event: SwarmEvent, folders: BacklogFoldersSnapshot, epic
 // topicRouter.ts's own reuse-or-create shape (routeEvent/sendAndRecord),
 // keyed by epic id rather than backlogId since an epic topic has no
 // recordMessage (blTopicStore is per-ticket only, see RouteAdapters).
-async function postEpicAction(action: TopicAction, epicId: string, routeAdapters: RouteAdapters): Promise<void> {
+// BL-394: now reports whether the send actually succeeded, so the caller
+// can gate its durable "already announced" key on a SUCCESSFUL post only -
+// mirrors sendAndRecord's/routeEvent's own "only record what genuinely
+// posted" contract (topicRouter.ts).
+async function postEpicAction(action: TopicAction, epicId: string, routeAdapters: RouteAdapters): Promise<boolean> {
   if (action.kind === 'reuse') {
-    await routeAdapters.sendMessage(action.topicId, action.text);
-    return;
+    return routeAdapters.sendMessage(action.topicId, action.text);
   }
   const created = await routeAdapters.createTopic(action.topicName);
   if (!created.success || created.topicId === undefined) {
-    return;
+    return false;
   }
   routeAdapters.recordTopicId(epicId, created.topicId);
-  await routeAdapters.sendMessage(created.topicId, action.text);
+  return routeAdapters.sendMessage(created.topicId, action.text);
 }
 
 // BL-341: rides the SAME TaskStarted/TaskCompleted transitions that already
@@ -274,11 +277,23 @@ async function postEpicAction(action: TopicAction, epicId: string, routeAdapters
 // withRetryableTransitionsHeldBack owns: this is a side effect layered on
 // an ALREADY-successfully-routed ticket event, not a new SwarmEventType of
 // its own to diff/dedupe. A failed epic post is not specially retried here.
+//
+// BL-394: that independence cuts both ways - the SAME ticket event can be
+// RE-DERIVED (e.g. a held-back retry after the ticket's own post failed)
+// with the epic's own aggregate completely unchanged, and this side effect
+// used to have no memory of its own, reposting the identical text every
+// such retry (the live incident: an unrelated per-ticket post stuck
+// retrying flooded its epic's topic with an unchanging progress line on
+// every tick). So it now carries its OWN durable, content-based dedup
+// (epicAnnouncementKey), recorded in the SAME alreadyEmitted set/tick
+// state the ticket-level events use - checked before posting and added
+// only after a SUCCESSFUL post, exactly mirroring routeEvent's contract.
 async function postEpicUpdateIfApplicable(
   event: SwarmEvent,
   folders: BacklogFoldersSnapshot,
   epicDefinitions: Record<string, EpicDefinition>,
-  routeAdapters: RouteAdapters
+  routeAdapters: RouteAdapters,
+  alreadyEmitted: Set<string>
 ): Promise<void> {
   if ((event.type !== 'TaskStarted' && event.type !== 'TaskCompleted') || event.backlogId === null) {
     return;
@@ -289,8 +304,15 @@ async function postEpicUpdateIfApplicable(
   }
   const definition = epicDefinitions[epicId] ?? { id: epicId, title: epicId, remainingSlices: [] };
   const text = epicUpdateText(event, folders, epicId, definition);
+  const key = epicAnnouncementKey(epicId, text);
+  if (alreadyEmitted.has(key)) {
+    return;
+  }
   const action = decideEpicTopicAction(epicId, definition.title, routeAdapters.getTopicMap(), text);
-  await postEpicAction(action, epicId, routeAdapters);
+  const posted = await postEpicAction(action, epicId, routeAdapters);
+  if (posted) {
+    alreadyEmitted.add(key);
+  }
 }
 
 // A failed-to-post event's backlogId is held back out of the PERSISTED
@@ -381,7 +403,7 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters): Promise
     } else {
       unrouted.add(swarmEventKey(event));
     }
-    await postEpicUpdateIfApplicable(event, folders, epicDefinitions, adapters.routeAdapters);
+    await postEpicUpdateIfApplicable(event, folders, epicDefinitions, adapters.routeAdapters, alreadyEmitted);
   }
 
   // BL-342: icon sync rides the SAME prev/curr folder-membership diff this
