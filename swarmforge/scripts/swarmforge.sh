@@ -54,10 +54,26 @@ ROLES_FILE="$STATE_DIR/roles.tsv"
 PROMPTS_DIR="$STATE_DIR/prompts"
 DAEMON_DIR="$STATE_DIR/daemon"
 HANDOFF_DAEMON_LOG="$DAEMON_DIR/handoffd.log"
-TMUX_SOCKET_DIR="/tmp/swarmforge-${UID}"
-PROJECT_SOCKET_ID="$(printf '%s' "$WORKING_DIR" | cksum)"
-PROJECT_SOCKET_ID="${PROJECT_SOCKET_ID%% *}"
-TMUX_SOCKET="$TMUX_SOCKET_DIR/$PROJECT_SOCKET_ID.sock"
+source "$SCRIPT_DIR/project_socket_id_lib.sh"
+PROJECT_SOCKET_ID="$(project_socket_id "$WORKING_DIR")"
+# BL-367: the control socket must never live in /tmp - shared scratch space
+# subject to reaping by anything on the box, and a unix socket cannot be
+# re-linked once unlinked. resolve_swarm_socket.bb owns the actual decision
+# (project-private .swarmforge/tmux/, XDG_RUNTIME_DIR fallback only when the
+# primary path overruns the unix-socket path limit, never a blind bind past
+# that limit) - see swarm_socket_lib.bb.
+if ! TMUX_SOCKET="$(bb "$SCRIPT_DIR/resolve_swarm_socket.bb" "$WORKING_DIR" "$PROJECT_SOCKET_ID" 2>&1)"; then
+  echo -e "${RED}Error:${RESET} $TMUX_SOCKET"
+  exit 1
+fi
+TMUX_SOCKET_DIR="$(dirname "$TMUX_SOCKET")"
+# The old /tmp/swarmforge-${UID} directory was, in practice, almost always
+# already present (shared across every project for this uid, created once
+# and reused). The new project-private directory has no such lucky
+# pre-existence, and callers as early as `tmux -S "$TMUX_SOCKET" ...` need
+# it to exist - create it here, at resolution time, rather than leaving it
+# to whichever later function happens to mkdir it first.
+mkdir -p "$TMUX_SOCKET_DIR"
 TMUX_SOCKET_FILE="$STATE_DIR/tmux-socket"
 TMUX_ENV_FILE="$STATE_DIR/tmux-env"
 TERMINAL_BACKEND=""
