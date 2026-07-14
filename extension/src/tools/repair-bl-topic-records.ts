@@ -15,7 +15,7 @@
 //
 // Usage: repair-bl-topic-records.js <project-root>
 import * as fs from 'fs';
-import { topicsDir, recordPath, readRecord, commitTopicRecord, reportCommitFailureToStderr } from '../concierge/blTopicStore';
+import { topicsDir, recordPath, readRecord, commitTopicRecord, reportCommitFailureToStderr, CommitFailureReporter } from '../concierge/blTopicStore';
 import { readBacklogFolders } from '../panel/backlogReader';
 import { recordMissingOpener, regeneratedOpenerText, withRestoredOpener } from '../concierge/topicRecordRepair';
 import { atomicWrite } from '../util/atomicWrite';
@@ -31,7 +31,10 @@ export interface RepairResult {
   outcomes: RepairOutcome[];
 }
 
-export function repairBlTopicRecords(targetPath: string): RepairResult {
+export function repairBlTopicRecords(
+  targetPath: string,
+  reportCommitFailure: CommitFailureReporter = reportCommitFailureToStderr
+): RepairResult {
   const dir = topicsDir(targetPath);
   const outcomes: RepairOutcome[] = [];
   if (!fs.existsSync(dir)) {
@@ -57,7 +60,7 @@ export function repairBlTopicRecords(targetPath: string): RepairResult {
     atomicWrite(filePath, JSON.stringify(repaired));
     const committed = commitTopicRecord(targetPath, filePath, backlogId);
     if (!committed) {
-      reportCommitFailureToStderr(backlogId, filePath);
+      reportCommitFailure(backlogId, filePath);
     }
     outcomes.push({ backlogId, repaired: true, reason: 'missing-opener-repaired' });
   }
