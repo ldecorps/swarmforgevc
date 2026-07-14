@@ -18,10 +18,6 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "swarm_detach_lib.bb")))
 
-(defn- parse-hex [s]
-  (when-not (str/blank? s)
-    (Long/parseLong (str/replace (str/trim s) #"(?i)^0x" "") 16)))
-
 (defn- sig-ignore-mask [pid]
   (let [proc-status (str "/proc/" pid "/status")]
     (if (fs/exists? proc-status)
@@ -35,10 +31,10 @@
                     str/split-lines
                     (some #(when (str/starts-with? % "SigIgn:") %))
                     (#(some-> % (str/split #"\s+") second))
-                    parse-hex)))
+                    swarm-detach-lib/parse-hex)))
       (let [result (sh/sh "ps" "-o" "sigignore=" "-p" (str pid))]
         (when (zero? (:exit result))
-          (parse-hex (:out result)))))))
+          (swarm-detach-lib/parse-hex (:out result)))))))
 
 (defn -main [ready-flag pid]
   (let [ready? (= "1" ready-flag)

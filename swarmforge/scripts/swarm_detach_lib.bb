@@ -41,7 +41,18 @@
 ;; `sleep 30 &` shows SigIgn missing bit 0 (SIGHUP not ignored);
 ;; `nohup sleep 30 >/dev/null 2>&1 &` shows bit 0 set.
 
-(ns swarm-detach-lib)
+(ns swarm-detach-lib
+  (:require [clojure.string :as str]))
+
+(defn parse-hex
+  "Parses a hex ignored-signals mask as read from /proc/<pid>/status's
+   SigIgn line or `ps -o sigignore=` (both conventionally hex, with or
+   without a leading 0x) into a long. Blank/nil input (the process vanished
+   before it could be read, or the field was empty) parses to nil rather
+   than raising, since callers treat a missing mask as never ignored."
+  [s]
+  (when-not (str/blank? s)
+    (Long/parseLong (str/replace (str/trim s) #"(?i)^0x" "") 16)))
 
 (defn sighup-ignored?
   "Does this raw ignored-signals bitmask (as read from a process's
