@@ -1,4 +1,4 @@
-import { BenchmarkModelConfig, ModelAggregate, TrialOutcome } from './types';
+import { BenchmarkModelConfig, ModelAggregate, TaskScore, TrialOutcome } from './types';
 
 export function computeMean(values: number[]): number {
   return values.length > 0 ? values.reduce((sum, v) => sum + v, 0) / values.length : 0;
@@ -18,6 +18,27 @@ export function computeStdDev(values: number[]): number {
 
 function tokenTotal(outcome: TrialOutcome): number | null {
   return outcome.tokens ? outcome.tokens.inputTokens + outcome.tokens.outputTokens : null;
+}
+
+// BL-386: the model's showing on EACH task separately (acceptance scenario
+// 02) - grouped via a Map to preserve the runs' own encounter order
+// (battery order), never object-key iteration order. meanQuality here is
+// scoped to one task, distinct from ModelAggregate's own meanQuality
+// (across the WHOLE battery, scenario 03).
+function taskScoresFrom(runs: TrialOutcome[]): TaskScore[] {
+  const byTask = new Map<string, TrialOutcome[]>();
+  for (const run of runs) {
+    const existing = byTask.get(run.taskId);
+    if (existing) {
+      existing.push(run);
+    } else {
+      byTask.set(run.taskId, [run]);
+    }
+  }
+  return [...byTask.entries()].map(([taskId, taskRuns]) => {
+    const qualities = taskRuns.map((r) => r.qualityScore);
+    return { taskId, meanQuality: computeMean(qualities), qualityStdDev: computeStdDev(qualities), repetitions: taskRuns.length };
+  });
 }
 
 // Repeated runs of the SAME model (acceptance scenario 06) collapse into
@@ -44,6 +65,7 @@ export function aggregateModelTrials(model: BenchmarkModelConfig, runs: TrialOut
     costStdDev: costs.length > 0 ? computeStdDev(costs) : null,
     meanDurationMs: computeMean(durations),
     meanTokens: tokens.length > 0 ? computeMean(tokens) : null,
+    taskScores: taskScoresFrom(runs),
     runs,
   };
 }
@@ -66,6 +88,7 @@ export function excludedModelAggregate(model: BenchmarkModelConfig, reason: stri
     costStdDev: null,
     meanDurationMs: 0,
     meanTokens: null,
+    taskScores: [],
     runs: [],
   };
 }

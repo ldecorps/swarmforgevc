@@ -108,6 +108,7 @@ const DOMAINS = [
   require('./pendingApprovalAsksInTopicSteps'),
   require('./epicsAsFirstClassTopicsSteps'),
   require('./aTieIsReportedAsATieSteps'),
+  require('./theBatteryCanActuallySeparateModelsSteps'),
   require('./frontDeskPollResilienceSteps'),
   require('./frontDeskSupervisorRecoverySteps'),
   require('./operatorSystemdSupervisionSteps'),

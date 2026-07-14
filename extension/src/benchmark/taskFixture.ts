@@ -14,6 +14,40 @@ export function loadTaskSpec(fixtureDir: string): TaskSpec {
   return { id: parsed.id, fixtureDir, promptFile: parsed.promptFile, testFile: parsed.testFile };
 }
 
+// BL-386: a battery is every task subdirectory under batteryRoot (each
+// carrying its own task.json, loaded via loadTaskSpec above) - sorted by
+// directory name for a deterministic run order, never directory-listing
+// order (which is not guaranteed across platforms).
+export function loadTaskBattery(batteryRoot: string): TaskSpec[] {
+  return fs
+    .readdirSync(batteryRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+    .map((name) => loadTaskSpec(path.join(batteryRoot, name)));
+}
+
+// BL-386: a task's OWN known-correct solution, kept as a `reference/`
+// subtree inside its fixture dir mirroring the paths a real solution
+// would occupy (e.g. `reference/src/wordFrequency.js` overlays `src/
+// wordFrequency.js`) - never given to a model, only used to validate a
+// task fixture is actually solvable before any model is scored against it
+// (taskSoundness.ts).
+export function referenceSolutionDir(task: TaskSpec): string {
+  return path.join(task.fixtureDir, 'reference');
+}
+
+export function hasReferenceSolution(task: TaskSpec): boolean {
+  return fs.existsSync(referenceSolutionDir(task));
+}
+
+// Overlays the reference solution onto an already-materialized fixture
+// copy (never the pinned fixtureDir itself) - a plain recursive copy, so
+// the reference tree's own relative paths decide what gets overwritten.
+export function overlayReferenceSolution(task: TaskSpec, materializedDir: string): void {
+  fs.cpSync(referenceSolutionDir(task), materializedDir, { recursive: true });
+}
+
 export function loadTaskPrompt(task: TaskSpec): string {
   return fs.readFileSync(path.join(task.fixtureDir, task.promptFile), 'utf8');
 }

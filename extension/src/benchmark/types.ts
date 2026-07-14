@@ -46,6 +46,10 @@ export interface QualityEvaluator {
 }
 
 export interface TrialOutcome {
+  // BL-386: which battery task this trial ran - a model's runs[] now spans
+  // every task in the battery, not implicitly "the one task", so each run
+  // must say which task it belongs to.
+  taskId: string;
   modelId: string;
   repetition: number;
   ran: boolean;
@@ -59,6 +63,17 @@ export interface TrialOutcome {
   error?: string;
 }
 
+// BL-386: a model's own showing on ONE task within the battery - the
+// per-task breakdown acceptance scenario 02 requires, distinct from the
+// ACROSS-THE-WHOLE-BATTERY meanQuality/qualityStdDev on ModelAggregate
+// below (scenario 03).
+export interface TaskScore {
+  taskId: string;
+  meanQuality: number;
+  qualityStdDev: number;
+  repetitions: number;
+}
+
 export interface ModelAggregate {
   modelId: string;
   provider: string;
@@ -67,13 +82,26 @@ export interface ModelAggregate {
   excluded: boolean;
   exclusionReason: string | null;
   repetitions: number;
+  // BL-386: reflects the model's showing across EVERY task in the battery
+  // (computed over all runs, not one task's) - the ticket's own load-
+  // bearing requirement (scenario 03).
   meanQuality: number;
   qualityStdDev: number;
   meanCostUsd: number | null;
   costStdDev: number | null;
   meanDurationMs: number;
   meanTokens: number | null;
+  taskScores: TaskScore[];
   runs: TrialOutcome[];
+}
+
+// BL-386: a task whose OWN reference solution does not pass its OWN tests
+// is unsound and never scored against any model (acceptance scenario 05) -
+// recorded here so a refused task is visible on the report, never a
+// silent drop.
+export interface RefusedTask {
+  taskId: string;
+  reason: string;
 }
 
 export interface BenchmarkRanking {
@@ -96,7 +124,9 @@ export interface BenchmarkRanking {
 export interface BenchmarkReport {
   schemaVersion: number;
   generatedAtIso: string;
-  taskId: string;
+  // BL-386: a battery of several tasks, not one - was a single taskId.
+  taskIds: string[];
+  refusedTasks: RefusedTask[];
   qualityThreshold: number;
   qualityThresholdDescription: string;
   provenance: string;
