@@ -151,6 +151,7 @@ const DOMAINS = [
   require('./replyReturnsToAskingThreadSteps'),
   require('./pushSweepSteps'),
   require('./devHostLauncherSteps'),
+  require('./hotTestFilesStopWaitingSteps'),
 ];
 
 function registerSteps(registry) {
