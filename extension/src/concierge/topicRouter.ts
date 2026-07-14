@@ -162,6 +162,22 @@ export function decideTopicAction(event: SwarmEvent, topicMap: BacklogTopicMap, 
   return { kind: 'create', topicName: topicNameForItem(backlogId, title), text };
 }
 
+// BL-341: an epic's topic is looked up through the SAME BacklogTopicMap a
+// ticket topic uses - never a second parallel map (the ticket's own
+// explicit instruction; mirrors decideTopicAction's own reuse-or-create
+// shape, keyed by the epic's own id instead of a BL-### id, the same
+// posture BL-358's standing Operator topic already established for a
+// non-ticket key sharing this map). "EPIC — " prefixes the created topic's
+// name so it reads distinctly from a per-ticket topic in Telegram's own
+// topic list.
+export function decideEpicTopicAction(epicId: string, epicTitle: string, topicMap: BacklogTopicMap, text: string): TopicAction {
+  const existingTopicId = topicMap[epicId];
+  if (existingTopicId !== undefined) {
+    return { kind: 'reuse', topicId: existingTopicId, text };
+  }
+  return { kind: 'create', topicName: `EPIC — ${epicTitle}`, text };
+}
+
 export interface RouteAdapters {
   getTopicMap: () => BacklogTopicMap;
   createTopic: (name: string) => Promise<{ success: boolean; topicId?: number }>;

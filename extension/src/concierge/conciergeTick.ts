@@ -6,8 +6,9 @@
 // Telegram-agnostic in its own imports (it composes topicRouter.ts's
 // RouteAdapters, which is where Telegram-specific adapters actually get
 // wired, in the live wrapper - telegram-front-desk-bot.ts).
-import { EventStreamSnapshot, GateSignal, SwarmEventType, TicketSummary, deriveSwarmEvents, swarmEventKey } from '../events/swarmEventStream';
-import { RouteAdapters, routeEvent } from './topicRouter';
+import { EventStreamSnapshot, GateSignal, SwarmEvent, SwarmEventType, TicketSummary, deriveSwarmEvents, swarmEventKey } from '../events/swarmEventStream';
+import { RouteAdapters, decideEpicTopicAction, routeEvent } from './topicRouter';
+import { EpicDefinition, computeEpicProgress, epicOpeningText, epicProgressText } from './epicProgress';
 
 export interface BacklogFolderItem {
   id: string;
@@ -22,6 +23,20 @@ export interface BacklogFolderItem {
   // backfill-human-approval.ts seeded and backlogReader.ts already parses -
   // never a second approval-state derivation.
   humanApproval?: 'pending' | 'approved';
+  // BL-341: which epic this slice belongs to, as DATA - read straight off
+  // BacklogItem.epic (backlogReader.ts), never inferred from notes: prose.
+  epic?: string;
+  // BL-341: an ALREADY-LIVE convention this ticket discovered in use
+  // (BL-384's `type: epic`), not one it introduces. The one ticket per
+  // epic id carrying `type: 'epic'` IS that epic's own definition (its
+  // title + remainingSlices below), distinct from an ordinary slice that
+  // merely declares the same `epic:` id.
+  type?: string;
+  // BL-341: free-text descriptions of work known to belong to this epic
+  // but not yet ticketed - only meaningful on the epic-defining ticket
+  // (type: 'epic'). Nothing in the backlog can derive an unticketed
+  // slice's existence on its own; a human/specifier authors this list.
+  remainingSlices?: string[];
 }
 
 export interface BacklogFoldersSnapshot {
@@ -105,6 +120,90 @@ function titleForBacklogId(folders: BacklogFoldersSnapshot, backlogId: string): 
   return all.find((item) => item.id === backlogId)?.title ?? backlogId;
 }
 
+// BL-341: which epic (if any) the triggering ticket declares - the SAME
+// all-folders lookup titleForBacklogId above already needs, for the same
+// reason (a TaskCompleted event's ticket has just moved into folders.done).
+function epicForBacklogId(folders: BacklogFoldersSnapshot, backlogId: string): string | undefined {
+  const all = [...folders.active, ...folders.paused, ...folders.done];
+  return all.find((item) => item.id === backlogId)?.epic;
+}
+
+// Every SLICE (across all three folders) declaring this epic - never the
+// epic-defining ticket itself, which also carries the SAME `epic: <id>`
+// self-referentially (mirrors BL-384's own real convention: its own notes
+// count only its CHILDREN as slices, e.g. "the role-benchmarking epic
+// already shipped two slices - BL-340 ... and BL-347", never itself).
+// done means the slice sits in folders.done right now, the same live-state
+// read diffTaskCompleted itself fires from, so a just-completed slice
+// already counts as done here in the SAME tick its TaskCompleted event
+// derives.
+function epicSlicesFor(folders: BacklogFoldersSnapshot, epicId: string) {
+  const isSlice = (item: BacklogFolderItem) => item.epic === epicId && item.type !== 'epic';
+  const notDone = [...folders.active, ...folders.paused].filter(isSlice).map(() => ({ done: false }));
+  const done = folders.done.filter(isSlice).map(() => ({ done: true }));
+  return [...notDone, ...done];
+}
+
+// BL-341: every epic's own definition, derived DIRECTLY from the already-
+// read folders snapshot - no separate adapter/reader needed. Reuses the
+// EXISTING, already-live ticket convention this ticket discovered rather
+// than inventing a second data source: the one ticket per epic id carrying
+// `type: 'epic'` IS that epic's definition (its own title + remainingSlices
+// fields), found across all three folders (an epic's own umbrella ticket
+// can itself be active, paused, or done).
+function epicDefinitionsFor(folders: BacklogFoldersSnapshot): Record<string, EpicDefinition> {
+  const all = [...folders.active, ...folders.paused, ...folders.done];
+  const definitions: Record<string, EpicDefinition> = {};
+  for (const item of all) {
+    if (item.type === 'epic' && item.epic) {
+      definitions[item.epic] = { id: item.epic, title: item.title, remainingSlices: item.remainingSlices ?? [] };
+    }
+  }
+  return definitions;
+}
+
+// BL-341: rides the SAME TaskStarted/TaskCompleted transitions that already
+// drive per-ticket topic routing - no new trigger, no second mechanism, per
+// the ticket's own explicit instruction. Posts the epic's opening line on a
+// slice's FIRST appearance (TaskStarted) and its progress line on a slice
+// completing (TaskCompleted), through the SAME create/reuse topic map a
+// ticket's own topic uses (decideEpicTopicAction). A ticket declaring no
+// epic is a no-op here - epics-07's own "behaves exactly as today"
+// regression guard.
+//
+// Deliberately NOT part of the transition-held-back retry mechanism
+// withRetryableTransitionsHeldBack owns: this is a side effect layered on
+// an ALREADY-successfully-routed ticket event, not a new SwarmEventType of
+// its own to diff/dedupe. A failed epic post is not specially retried here.
+async function postEpicUpdateIfApplicable(
+  event: SwarmEvent,
+  folders: BacklogFoldersSnapshot,
+  epicDefinitions: Record<string, EpicDefinition>,
+  routeAdapters: RouteAdapters
+): Promise<void> {
+  if ((event.type !== 'TaskStarted' && event.type !== 'TaskCompleted') || event.backlogId === null) {
+    return;
+  }
+  const epicId = epicForBacklogId(folders, event.backlogId);
+  if (!epicId) {
+    return;
+  }
+  const definition = epicDefinitions[epicId] ?? { id: epicId, title: epicId, remainingSlices: [] };
+  const text =
+    event.type === 'TaskStarted' ? epicOpeningText(definition.title) : epicProgressText(computeEpicProgress(definition, epicSlicesFor(folders, epicId)));
+  const action = decideEpicTopicAction(epicId, definition.title, routeAdapters.getTopicMap(), text);
+  if (action.kind === 'reuse') {
+    await routeAdapters.sendMessage(action.topicId, action.text);
+    return;
+  }
+  const created = await routeAdapters.createTopic(action.topicName);
+  if (!created.success || created.topicId === undefined) {
+    return;
+  }
+  routeAdapters.recordTopicId(epicId, created.topicId);
+  await routeAdapters.sendMessage(created.topicId, action.text);
+}
+
 // A failed-to-post event's backlogId is held back out of the PERSISTED
 // snapshot's active/done list (never out of `curr` itself, which still
 // reflects real backlog state) - so the next tick's prev/curr diff still
@@ -165,6 +264,7 @@ function withRetryableTransitionsHeldBack(curr: EventStreamSnapshot, unrouted: R
 export async function runConciergeTick(adapters: ConciergeTickAdapters): Promise<TickResult> {
   const folders = adapters.readFolders();
   const curr = toEventStreamSnapshot(folders, adapters.readGates(), adapters.readRoleTicket());
+  const epicDefinitions = epicDefinitionsFor(folders);
   const state = adapters.readTickState();
   const alreadyEmitted = new Set(state.emittedKeys);
   const events = deriveSwarmEvents(state.snapshot, curr, alreadyEmitted);
@@ -184,6 +284,7 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters): Promise
     } else {
       unrouted.add(swarmEventKey(event));
     }
+    await postEpicUpdateIfApplicable(event, folders, epicDefinitions, adapters.routeAdapters);
   }
 
   const persistedSnapshot = withRetryableTransitionsHeldBack(curr, unrouted);
