@@ -527,3 +527,65 @@ test('BL-341 epics-08: an epic with no defining ticket yet still gets a topic, f
 
   assert.ok(created.includes('EPIC — undocumented-epic'));
 });
+
+// An epic topic's own createTopic failure is a no-op here, never a
+// fallback post anywhere else - it is deliberately NOT part of the
+// transition-held-back retry mechanism (that mechanism retries the
+// TICKET's own TaskStarted/TaskCompleted transition, which still posts
+// into the ticket's own topic independently of the epic side effect).
+test('BL-341: an epic topic that fails to create is not posted into', async () => {
+  const { adapters, setFolders, created, sent } = fakeAdapters();
+  adapters.routeAdapters.createTopic = async (name) => {
+    created.push(name);
+    return name.startsWith('EPIC — ') ? { success: false } : { success: true, topicId: 800 + created.length };
+  };
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', epic: 'undocumented-epic' }] }));
+
+  await runConciergeTick(adapters);
+
+  assert.ok(created.includes('EPIC — undocumented-epic'));
+  assert.ok(!sent.some((m) => m.text === 'Epic: undocumented-epic'));
+});
+
+// Hardening gap: every epics-0x test above ran with exactly ONE epic in
+// play. epicDefinitionsFor/epicSlicesFor key everything off epicId, but
+// that keying was never proven with two DIFFERENT epics active in the
+// SAME tick - a wrong filter (e.g. matching on type: 'epic' alone, or
+// counting slices without checking which epic they declare) would still
+// pass every single-epic test above yet silently blend one epic's slice
+// count into the other's. Per the hardener's own standing rule: a
+// selector is only proven at 2+ concurrent candidates.
+test('BL-341 hardening: two epics active in the same tick keep separate topics and separate slice counts, never blended', async () => {
+  const { adapters, setFolders, sent, topicMap } = fakeAdapters();
+  const routingEpic = epicDefTicket('dynamic-routing', 'Dynamic Routing');
+  const benchmarkEpic = epicDefTicket('role-benchmarking', 'Role Benchmarking');
+  setFolders(folders({
+    paused: [routingEpic, benchmarkEpic],
+    active: [
+      { id: 'BL-1', title: 'routing slice one', epic: 'dynamic-routing' },
+      { id: 'BL-2', title: 'routing slice two', epic: 'dynamic-routing' },
+      { id: 'BL-3', title: 'benchmark slice one', epic: 'role-benchmarking' },
+    ],
+  }));
+  await runConciergeTick(adapters);
+  const routingTopicId = topicMap['dynamic-routing'];
+  const benchmarkTopicId = topicMap['role-benchmarking'];
+  assert.notEqual(routingTopicId, benchmarkTopicId, 'each epic gets its OWN topic');
+
+  // Complete one of routing's two slices, and benchmark's only slice, in
+  // the same tick.
+  setFolders(folders({
+    paused: [routingEpic, benchmarkEpic],
+    active: [{ id: 'BL-2', title: 'routing slice two', epic: 'dynamic-routing' }],
+    done: [
+      { id: 'BL-1', title: 'routing slice one', epic: 'dynamic-routing' },
+      { id: 'BL-3', title: 'benchmark slice one', epic: 'role-benchmarking' },
+    ],
+  }));
+  await runConciergeTick(adapters);
+
+  // Routing: 1 of 2 done. Benchmark: 1 of 1 done, epic complete - each
+  // count reflects only its OWN epic's slices, never the other's.
+  assert.ok(sent.some((m) => m.topicId === routingTopicId && m.text === '1 of 2 ticketed slice(s) complete.'));
+  assert.ok(sent.some((m) => m.topicId === benchmarkTopicId && m.text.includes('1 of 1 ticketed slice(s) complete.') && m.text.includes('Epic complete')));
+});
