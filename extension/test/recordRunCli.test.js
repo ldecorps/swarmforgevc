@@ -25,9 +25,19 @@ function runCliSubprocess(args, home) {
 // Runs the REAL main() in-process against a real HOME/argv, so in-process
 // coverage and mutation tooling can see the branches a subprocess-only
 // smoke test cannot (the engineering article's CLI main()-thin-wrapper
-// rule). Same allowlist-env posture as runCliSubprocess above.
+// rule). Same allowlist-env posture as runCliSubprocess above. Also stubs
+// os.homedir() directly (in addition to process.env.HOME): Stryker's
+// vitest-runner always runs tests inside a worker_thread, and Node's
+// os.homedir() reads the real OS environ via a native binding there -
+// worker threads keep their own JS-level process.env overlay, which that
+// native call never sees, so a HOME-only override silently no-ops under
+// Stryker while passing under plain `vitest run` (which defaults to a
+// forked child process, where the two stay in sync). Confirmed by writing
+// runs.jsonl into the real HOME instead of the fixture: this test's own
+// "start" assertion read back 0 entries where 1 was expected.
 async function runCli(args, home) {
   const previousHome = process.env.HOME;
+  const originalHomedir = os.homedir;
   const previousArgv = process.argv;
   const writes = [];
   const originalWrite = process.stdout.write.bind(process.stdout);
@@ -37,14 +47,16 @@ async function runCli(args, home) {
   };
   try {
     process.env.HOME = home;
+    os.homedir = () => home;
     process.argv = ['node', CLI, ...args];
     await main();
   } finally {
     process.stdout.write = originalWrite;
     process.env.HOME = previousHome;
+    os.homedir = originalHomedir;
     process.argv = previousArgv;
   }
-  return JSON.parse(writes.join(''));
+  return writes.length > 0 ? JSON.parse(writes.join('')) : null;
 }
 
 function runsFile(home) {
@@ -148,18 +160,48 @@ test('parseCliArgs rejects no arguments at all', () => {
   assert.equal(parseCliArgs([]), null);
 });
 
-// ── usage (the compiled CLI's own subprocess wiring) ────────────────────
+// ── usage (in-process - makeArgsGuardedMain sets process.exitCode = 1 and
+//    writes usage to stderr on a guard failure, it never throws, so these
+//    run through the real main() rather than a subprocess) ────────────────
 
-test('an unknown mode exits non-zero with a usage message, never a raw crash', () => {
+test('an unknown mode exits non-zero with a usage message, never a raw crash', async () => {
   const home = mkTmp('sfvc-record-run-home-');
-  assert.throws(() => {
-    execFileSync('node', [CLI, 'bogus', '/some/target'], { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: home } });
-  }, /Usage: record-run\.js/);
+  const previousExitCode = process.exitCode;
+  try {
+    process.exitCode = undefined;
+    const result = await runCli(['bogus', '/some/target'], home);
+    assert.equal(result, null);
+    assert.equal(process.exitCode, 1);
+  } finally {
+    process.exitCode = previousExitCode;
+  }
 });
 
-test('a missing target path exits non-zero with a usage message', () => {
+test('a missing target path exits non-zero with a usage message', async () => {
   const home = mkTmp('sfvc-record-run-home-');
-  assert.throws(() => {
-    execFileSync('node', [CLI, 'start'], { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: home } });
-  }, /Usage: record-run\.js/);
+  const previousExitCode = process.exitCode;
+  try {
+    process.exitCode = undefined;
+    const result = await runCli(['start'], home);
+    assert.equal(result, null);
+    assert.equal(process.exitCode, 1);
+  } finally {
+    process.exitCode = previousExitCode;
+  }
+});
+
+// A single subprocess smoke test locks the compiled CLI's own wiring
+// (require.main === module, real argv/env boundary) - an ADDITION to the
+// in-process tests above, never the only cover for the real logic.
+test('the compiled CLI runs standalone as a subprocess and produces the same result', () => {
+  const home = mkTmp('sfvc-record-run-home-');
+  const target = mkTmp('sfvc-record-run-target-');
+
+  const result = runCliSubprocess(['start', target], home);
+
+  assert.equal(result.recorded, 'start');
+  const runs = readRuns(home);
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0].targetPath, target);
+  assert.equal(runs[0].status, 'running');
 });

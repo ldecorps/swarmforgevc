@@ -12,6 +12,39 @@ const {
   parseRecertEmailTo,
   readRecertEmailTo,
 } = require('../out/docs/recertificationStore');
+const { main } = require('../out/tools/generate-recert-batch');
+
+const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'generate-recert-batch.js');
+
+function runCliSubprocess(root) {
+  return execFileSync('node', [CLI_PATH], { cwd: root, encoding: 'utf8' });
+}
+
+// Runs the REAL main() in-process against a real fixture repo/cwd, so
+// in-process coverage and mutation tooling can see the branches a
+// subprocess-only smoke test cannot (the engineering article's CLI
+// main()-thin-wrapper rule; mirrors notifyDeadLettersCli.test.js's own
+// identical seam). main() takes no parameters - it reads process.cwd()
+// itself (via resolveCliMainWorktreeContext) - and prints via
+// printJsonToStdout (process.stdout.write), so mocking process.stdout.write
+// captures the real output.
+async function runCli(root) {
+  const originalCwd = process.cwd;
+  const writes = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (chunk) => {
+    writes.push(chunk);
+    return true;
+  };
+  try {
+    process.cwd = () => root;
+    await main();
+  } finally {
+    process.stdout.write = originalWrite;
+    process.cwd = originalCwd;
+  }
+  return writes.join('');
+}
 
 // BL-150: the impure filesystem layer for the durable recert-state.json
 // store and the recert_proposals/<yyyy-MM>.jsonl queue.
@@ -165,7 +198,7 @@ test('computeRecertBatch reflects a configured recert_email_to override (future 
   assert.equal(batch.recertEmailTo, 'recert@inbound.musicalsifu.com');
 });
 
-test('the compiled generate-recert-batch CLI prints a valid, schema-versioned recert-batch.json to stdout', () => {
+function mkGenerateRecertBatchFixture() {
   const root = mkTmp();
   git(root, ['init', '-q']);
   git(root, ['config', 'user.email', 't@t']);
@@ -180,9 +213,28 @@ test('the compiled generate-recert-batch CLI prints a valid, schema-versioned re
   git(root, ['commit', '-q', '-m', 'init']);
   mkdirp(path.join(root, '.swarmforge'));
   fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), `specifier\tmaster\t${root}\tswarmforge-specifier\tSpecifier\tclaude\ttask\n`);
+  return root;
+}
 
-  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'generate-recert-batch.js');
-  const output = execFileSync('node', [cliPath], { cwd: root, encoding: 'utf8' });
+test('the compiled generate-recert-batch CLI prints a valid, schema-versioned recert-batch.json to stdout', async () => {
+  const root = mkGenerateRecertBatchFixture();
+
+  const output = await runCli(root);
+
+  assert.doesNotMatch(output, /NaN|Infinity|undefined/);
+  const data = JSON.parse(output);
+  assert.equal(typeof data.schemaVersion, 'number');
+  assert.equal(data.batch.length, 1);
+  assert.equal(data.batch[0].id, 'BL-901/scen-01');
+});
+
+// A single subprocess smoke test locks the compiled CLI's own wiring
+// (require.main === module, real argv/env boundary) - an ADDITION to the
+// in-process test above, never the only cover for the real logic.
+test('the compiled CLI runs standalone as a subprocess and produces the same result', () => {
+  const root = mkGenerateRecertBatchFixture();
+
+  const output = runCliSubprocess(root);
 
   assert.doesNotMatch(output, /NaN|Infinity|undefined/);
   const data = JSON.parse(output);

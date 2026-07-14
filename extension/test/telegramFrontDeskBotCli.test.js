@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { parseCliArgs, conciergeTickIntervalMs, readRoleTicket, ensureOperatorTopic } = require('../out/tools/telegram-front-desk-bot');
+const { parseCliArgs, conciergeTickIntervalMs, readRoleTicket, ensureOperatorTopic, main } = require('../out/tools/telegram-front-desk-bot');
 
 // parseNextSseRecord's own tests live in telegramFrontDeskBotCore.test.js -
 // its implementation moved there (the testable core); this file re-exports
@@ -114,11 +114,15 @@ test('readRoleTicket returns an empty map when roles.tsv is missing (never a cra
   assert.deepEqual(readRoleTicket(target), {});
 });
 
-// ── subprocess: main() wiring (no real network - fails before any request) ──
+// ── main() wiring (no real network - every case below fails before any
+// request, well before main()'s own Promise.all of three forever-loops:
+// each requiredEnv() check runs strictly before ensureOperatorTopic() and
+// the poll/reply-relay/concierge-tick loops, so none of these ever reach a
+// real network call or an unbounded await - safe to run in-process) ────────
 
 const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'telegram-front-desk-bot.js');
 
-function runCli(args, env) {
+function runCliSubprocess(args, env) {
   try {
     const out = execFileSync('node', [CLI_PATH, ...args], { encoding: 'utf8', env: { ...process.env, ...env }, timeout: 5000 });
     return { exitCode: 0, stdout: out };
@@ -127,20 +131,78 @@ function runCli(args, env) {
   }
 }
 
-test('no args: exits non-zero and prints usage to stderr', () => {
-  const result = runCli([], {});
+// Runs the REAL main() in-process, so in-process coverage and mutation
+// tooling can see the argv/env guard branches a subprocess-only smoke test
+// cannot (the engineering article's CLI main()-thin-wrapper rule). main()
+// reads process.argv directly (no parameters) and writes its usage message
+// via process.stderr.write directly (not console.error, so no Vitest
+// console-interception gap on that branch); a later requiredEnv() throw is
+// caught here and folded into the SAME "Fatal error: <message>" shape
+// runCliMain's own reportFatalAndExit would have produced on stderr for a
+// real standalone run. An explicit ALLOWLIST env, never {...process.env,
+// ...overrides} - this box's own shell exports the REAL Telegram bot token
+// globally.
+const ENV_KEYS = ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'TELEGRAM_PRINCIPAL_USER_ID', 'BRIDGE_TOKEN', 'BRIDGE_CONTROL_TOKEN'];
+async function runCli(args, overrides = {}) {
+  const previousArgv = process.argv;
+  const previousEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
+  const previousExitCode = process.exitCode;
+  const stdoutChunks = [];
+  const stderrChunks = [];
+  const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+  const originalStderrWrite = process.stderr.write.bind(process.stderr);
+  process.stdout.write = (chunk) => {
+    stdoutChunks.push(chunk);
+    return true;
+  };
+  process.stderr.write = (chunk) => {
+    stderrChunks.push(chunk);
+    return true;
+  };
+  process.argv = ['node', CLI_PATH, ...args];
+  for (const key of ENV_KEYS) {
+    if (overrides[key] === undefined) delete process.env[key];
+    else process.env[key] = overrides[key];
+  }
+  process.exitCode = undefined;
+
+  let exitCode = 0;
+  try {
+    await main();
+    exitCode = process.exitCode ?? 0;
+  } catch (error) {
+    stderrChunks.push(`Fatal error: ${error instanceof Error ? error.message : String(error)}\n`);
+    exitCode = 1;
+  } finally {
+    process.stdout.write = originalStdoutWrite;
+    process.stderr.write = originalStderrWrite;
+    process.argv = previousArgv;
+    process.exitCode = previousExitCode;
+    for (const key of ENV_KEYS) {
+      if (previousEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = previousEnv[key];
+    }
+  }
+  return { exitCode, stdout: stdoutChunks.join(''), stderr: stderrChunks.join('') };
+}
+
+test('no args: exits non-zero and prints usage to stderr', async () => {
+  const result = await runCli([], {});
   assert.notEqual(result.exitCode, 0);
   assert.match(result.stderr, /Usage: telegram-front-desk-bot\.js/);
 });
 
-test('a missing TELEGRAM_BOT_TOKEN exits non-zero with a clear message, never a raw network error', () => {
-  const result = runCli(['http://127.0.0.1:1', '/tmp/nonexistent-target'], { TELEGRAM_BOT_TOKEN: '' });
+test('a missing TELEGRAM_BOT_TOKEN exits non-zero with a clear message, never a raw network error', async () => {
+  const result = await runCli(['http://127.0.0.1:1', '/tmp/nonexistent-target'], { TELEGRAM_BOT_TOKEN: '' });
   assert.notEqual(result.exitCode, 0);
   assert.match(result.stderr, /TELEGRAM_BOT_TOKEN is not set/);
 });
 
-test('a missing BRIDGE_CONTROL_TOKEN exits non-zero with a clear message', () => {
-  const result = runCli(['http://127.0.0.1:1', '/tmp/nonexistent-target'], {
+// A single subprocess smoke test locks the compiled CLI's own wiring
+// (require.main === module, real argv/env boundary) - an ADDITION to the
+// in-process tests above, never the only cover for the real logic.
+test('the compiled CLI runs standalone as a subprocess and produces the same result: a missing BRIDGE_CONTROL_TOKEN exits non-zero with a clear message', () => {
+  const result = runCliSubprocess(['http://127.0.0.1:1', '/tmp/nonexistent-target'], {
     TELEGRAM_BOT_TOKEN: 'fake',
     TELEGRAM_CHAT_ID: 'fake',
     TELEGRAM_PRINCIPAL_USER_ID: '111',

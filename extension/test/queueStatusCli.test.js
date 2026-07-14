@@ -3,7 +3,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { formatQueueStatus, formatRoleStatus } = require('../out/tools/queue-status');
+const { main, formatQueueStatus, formatRoleStatus } = require('../out/tools/queue-status');
+
+const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'queue-status.js');
 
 function mkTmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-queue-status-cli-'));
@@ -11,6 +13,48 @@ function mkTmp() {
 
 function git(cwd, args) {
   execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+function runCliSubprocess(root, args = []) {
+  return execFileSync('node', [CLI_PATH, ...args], { cwd: root, encoding: 'utf8' });
+}
+
+// Runs the REAL main() in-process against a real fixture repo/cwd, so
+// in-process coverage and mutation tooling can see the branches a
+// subprocess-only smoke test cannot (the engineering article's CLI
+// main()-thin-wrapper rule; mirrors notifyDeadLettersCli.test.js's own
+// identical seam). main() takes no parameters - it reads process.argv
+// (for --debug) and process.cwd() itself - so both are set to the same
+// shape the subprocess would have received, and restored in finally
+// (Vitest runs every test file in one worker process, so a stray cwd
+// override silently corrupts every test that runs after it). cwd is a
+// stubbed process.cwd(), never a real process.chdir(): Node disallows
+// chdir() inside a worker thread, and Stryker's vitest-runner always runs
+// tests in one, so a real chdir here would pass under plain `vitest run`
+// but hard-abort every mutation run.
+//
+// queue-status.js prints via console.log, NOT process.stdout.write/
+// printJsonToStdout - under Vitest, console.log does not route through
+// process.stdout.write (Vitest intercepts console separately), so the
+// mock must replace console.log itself or it silently captures nothing.
+async function runCli(root, args = []) {
+  const originalCwd = process.cwd;
+  const previousArgv = process.argv;
+  const writes = [];
+  const originalLog = console.log;
+  console.log = (chunk) => {
+    writes.push(chunk);
+  };
+  try {
+    process.argv = ['node', CLI_PATH, ...args];
+    process.cwd = () => root;
+    await main();
+  } finally {
+    console.log = originalLog;
+    process.cwd = originalCwd;
+    process.argv = previousArgv;
+  }
+  return writes.join('');
 }
 
 function mkView({ role, newPayloads = [], inProcessPayloads = [], sidecars = [] }) {
@@ -68,7 +112,7 @@ test('formatQueueStatus in debug mode omits the sidecar suffix for a role with n
 
 // --- end-to-end: the compiled CLI actually runs headless and exits 0 ---
 
-test('the compiled queue-status CLI runs from a worktree, defaults to payload-only counts', () => {
+function mkPayloadOnlyFixture() {
   const root = mkTmp();
   git(root, ['init', '-q']);
   git(root, ['config', 'user.email', 't@t']);
@@ -88,21 +132,25 @@ test('the compiled queue-status CLI runs from a worktree, defaults to payload-on
   fs.mkdirSync(inboxNew, { recursive: true });
   fs.writeFileSync(path.join(inboxNew, '00_a.handoff'), 'id: t\nfrom: a\nto: coder\npriority: 50\ntype: note\n\nbody\n');
   fs.writeFileSync(path.join(inboxNew, '00_a.handoff.chase.json'), '{}');
+  return root;
+}
 
-  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'queue-status.js');
-  const output = execFileSync('node', [cliPath], { cwd: root, encoding: 'utf8' });
+test('the compiled queue-status CLI runs from a worktree, defaults to payload-only counts', async () => {
+  const root = mkPayloadOnlyFixture();
+
+  const output = await runCli(root);
 
   assert.match(output, /\[coder\] 1 new pending/);
   assert.doesNotMatch(output, /chase-sidecar/);
 
-  const debugOutput = execFileSync('node', [cliPath, '--debug'], { cwd: root, encoding: 'utf8' });
+  const debugOutput = await runCli(root, ['--debug']);
   assert.match(debugOutput, /\[coder\] 1 new pending \| sidecars \(debug\): 00_a\.handoff\.chase\.json \(chase-sidecar\)/);
 });
 
 // BL-323: the exact real-incident shape - new/ empty, in_process holds an
 // orphaned claim - must read distinctly from a genuinely idle role, from
 // the compiled CLI end to end, not just the pure formatter.
-test('BL-323: the compiled queue-status CLI reports "claimed by nobody" for an in_process-only role, distinct from idle', () => {
+test('BL-323: the compiled queue-status CLI reports "claimed by nobody" for an in_process-only role, distinct from idle', async () => {
   const root = mkTmp();
   git(root, ['init', '-q']);
   git(root, ['config', 'user.email', 't@t']);
@@ -126,9 +174,20 @@ test('BL-323: the compiled queue-status CLI reports "claimed by nobody" for an i
     'id: t\nfrom: coordinator\nto: coder\npriority: 20\ntype: note\ndequeued_at: 2026-07-12T17:18:24Z\n\nbody\n'
   );
 
-  const cliPath = path.join(__dirname, '..', 'out', 'tools', 'queue-status.js');
-  const output = execFileSync('node', [cliPath], { cwd: root, encoding: 'utf8' });
+  const output = await runCli(root);
 
   assert.match(output, /\[coder\] work claimed by nobody \(1 in_process, 0 new\)/);
   assert.match(output, /\[cleaner\] no work pending/);
+});
+
+// A single subprocess smoke test locks the compiled CLI's own wiring
+// (require.main === module, real argv/env boundary) - an ADDITION to the
+// in-process tests above, never the only cover for the real logic.
+test('the compiled CLI runs standalone as a subprocess and produces the same result', () => {
+  const root = mkPayloadOnlyFixture();
+
+  const output = runCliSubprocess(root);
+
+  assert.match(output, /\[coder\] 1 new pending/);
+  assert.doesNotMatch(output, /chase-sidecar/);
 });

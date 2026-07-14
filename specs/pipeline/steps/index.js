@@ -157,6 +157,7 @@ const DOMAINS = [
   require('./swarmSocketNotInTmpSteps'),
   require('./swarmOutlivesLauncherSteps'),
   require('./syncWorktreeScriptsNeverClobbersSteps'),
+  require('./clisTestedInProcessSteps'),
 ];
 
 function registerSteps(registry) {
