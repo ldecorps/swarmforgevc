@@ -2,6 +2,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const tmuxClient = require('../out/swarm/tmuxClient');
+const sleepSyncModule = require('../out/swarm/sleepSync');
 const {
   getPaneBaseIndex,
   paneTarget,
@@ -20,7 +22,7 @@ const {
   shapeRunResult,
   hasRequiredRoleFields,
   parseRoleLine,
-} = require('../out/swarm/tmuxClient');
+} = tmuxClient;
 const { installExecutable } = require('./helpers/sharedBin');
 
 const { installFakeTmux } = require('./helpers/fakeTmux');
@@ -465,7 +467,10 @@ test('respawnAgent wedged-respawn-04: escalates to a forced pane respawn when th
     { subcommand: 'respawn-pane', exitCode: 0, stdout: '' },
   ]);
   try {
-    const result = respawnAgent(tmp, 'coder');
+    // BL-376: an injected no-op wait, never the real Atomics.wait - this
+    // test drives the retry loop to exhaustion and must do so with zero
+    // real time spent.
+    const result = respawnAgent(tmp, 'coder', () => {});
     assert.equal(result.success, true);
     assert.match(result.message, /wedged/i);
     const respawnCalls = fake.calls().filter((args) => args.includes('respawn-pane'));
@@ -480,6 +485,76 @@ test('respawnAgent wedged-respawn-04: escalates to a forced pane respawn when th
     );
   } finally {
     fake.restore();
+  }
+});
+
+// --- BL-376: respawnAgent's retry backoff waits on an INJECTED clock, never
+//     the real one. verifiedInject's own `wait` seam existed one layer down;
+//     respawnAgent never exposed it upward, so no test could reach it and
+//     every wedged-pane retry blocked on a real Atomics.wait. ---
+
+function wedgedFixture(tmp, script) {
+  return installFakeTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
+    { subcommand: 'send-keys', exitCode: 0, stdout: '' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: `❯ bash ${script}` },
+    { subcommand: 'respawn-pane', exitCode: 0, stdout: '' },
+  ]);
+}
+
+test('BL-376 respawn-backoff-injected-clock-01/03: every backoff is served by the injected wait, and the real blocking sleep is never called', () => {
+  const tmp = mkTmp();
+  const { script } = writeRespawnState(tmp);
+  const sleepSpy = vi.spyOn(sleepSyncModule, 'sleepSync');
+  const fake = wedgedFixture(tmp, script);
+  const waits = [];
+  try {
+    const result = respawnAgent(tmp, 'coder', (ms) => waits.push(ms));
+    assert.equal(result.success, true, 'the retry loop must still run to exhaustion and escalate, unchanged');
+    assert.ok(waits.length > 0, 'expected the retry loop to actually ask for at least one backoff');
+    assert.equal(sleepSpy.mock.calls.length, 0, 'expected the real blocking sleep to never be called when a wait is injected');
+  } finally {
+    fake.restore();
+    sleepSpy.mockRestore();
+  }
+});
+
+test('BL-376 respawn-backoff-injected-clock-03: the injected wait is called once per retry up to the cap, with non-decreasing delays', () => {
+  const tmp = mkTmp();
+  const { script } = writeRespawnState(tmp);
+  const fake = wedgedFixture(tmp, script);
+  const waits = [];
+  try {
+    respawnAgent(tmp, 'coder', (ms) => waits.push(ms));
+    // The bounded retry (maxRetries=3, verifiedInject.ts's own default) is
+    // itself required behavior - a "fix" that removed the wait by removing
+    // the retry would swap a slow test for a real regression. This must
+    // still see the SAME bounded, backed-off schedule as production.
+    assert.ok(waits.length > 0 && waits.length < 10, `expected a small, bounded number of waits, got ${waits.length}`);
+    for (let i = 1; i < waits.length; i++) {
+      assert.ok(waits[i] >= waits[i - 1], `expected each delay to be no shorter than the one before it, got ${JSON.stringify(waits)}`);
+    }
+  } finally {
+    fake.restore();
+  }
+});
+
+test('BL-376 respawn-backoff-injected-clock-02: production still falls back to the real blocking sleep, unchanged, when no wait is injected', () => {
+  const tmp = mkTmp();
+  const { script } = writeRespawnState(tmp);
+  // mockImplementation replaces the REAL Atomics.wait with a no-op so this
+  // test proves the wiring (the real sleepSync IS reached) without paying
+  // for it in real elapsed time.
+  const sleepSpy = vi.spyOn(sleepSyncModule, 'sleepSync').mockImplementation(() => {});
+  const fake = wedgedFixture(tmp, script);
+  try {
+    const result = respawnAgent(tmp, 'coder');
+    assert.equal(result.success, true);
+    assert.ok(sleepSpy.mock.calls.length > 0, 'expected respawnAgent with no wait argument to fall back to the real sleepSync');
+  } finally {
+    fake.restore();
+    sleepSpy.mockRestore();
   }
 });
 
@@ -515,7 +590,8 @@ test('respawnAgent reports failure when both verified send-keys and the forced p
     { subcommand: 'respawn-pane', exitCode: 1, stderr: 'no such pane' },
   ]);
   try {
-    const result = respawnAgent(tmp, 'coder');
+    // BL-376: injected no-op wait - see the wedged-respawn-04 test above.
+    const result = respawnAgent(tmp, 'coder', () => {});
     assert.equal(result.success, false);
     assert.match(result.message, /no such pane/);
   } finally {
@@ -658,7 +734,8 @@ test('respawnAgent falls back to reporting the exit code when the forced pane re
     { subcommand: 'respawn-pane', exitCode: 23 },
   ]);
   try {
-    const result = respawnAgent(tmp, 'coder');
+    // BL-376: injected no-op wait - see the wedged-respawn-04 test above.
+    const result = respawnAgent(tmp, 'coder', () => {});
     assert.equal(result.success, false);
     assert.match(result.message, /exit 23/);
   } finally {
