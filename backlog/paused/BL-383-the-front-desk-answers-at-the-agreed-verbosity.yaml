@@ -1,0 +1,67 @@
+id: BL-383
+title: "The verbosity the human negotiated should govern the messages he actually reads — the front desk's replies"
+milestone: M8
+type: feature
+status: todo
+severity: low
+priority: 6
+direction: human-requested
+depends_on: [BL-382]
+source: "backlog/INTAKE-telegram-provisioning-in-onboarding-and-verbosity.md (Ask 2) — the human, 2026-07-14 in SUP-2. Scope confirmed with the human 2026-07-14: verbosity drives BOTH the generated agent prompts (BL-382) AND the front desk's human-facing replies (this ticket)."
+
+notes: |
+  WHY THIS IS A SEPARATE TICKET FROM BL-382. BL-382 puts `verbosity` in the contract and feeds it
+  to the AGENTS' generated prompts — genuinely useful, but the agents' internal chatter is not what
+  the human reads. The messages he actually reads are the front desk's replies to him on Telegram.
+  That is where the preference is felt, and it is a different codebase (Babashka, not TypeScript),
+  so it is its own slice. The intake said this plainly and the human confirmed it: BOTH.
+
+  THE LIVE SEAM — VERIFIED, NOT ASSUMED. The front desk's replies are composed by
+  `front-desk-reply-prompt` (`swarmforge/scripts/operator_lib.bb:288`), a PURE function over a map
+  (`{:transcript ... :long-term-memory ...}`). `operator_runtime.bb:1007` calls it and writes the
+  result to the front-desk operator's prompt file, which `launch_front_desk_operator.sh` feeds to a
+  tool-less `claude -p` (BL-334). So the whole change is: read the target's agreed verbosity, pass
+  it into that map, and have the composer emit the matching style directive. Pure function in, pure
+  function out — testable with no live swarm, no Telegram, no tmux.
+
+  THE RESTART-FREE PROPERTY IS FREE, BUT MUST BE PROVED. The front-desk operator is DISPOSABLE: it
+  is re-prompted per event, and the prompt file is rewritten on every wake (operator_runtime.bb:1008).
+  So a re-negotiated verbosity takes effect on the very next reply with no swarm restart. That falls
+  out of the existing design rather than needing to be built — but scenario 03 pins it, because a
+  build that reads the verbosity ONCE at launch and caches it would pass every other scenario in
+  this file while silently breaking the property.
+
+  REUSE THE ENUM, DO NOT RESTATE IT. The levels are BL-382's `concise | normal | detailed` and its
+  KNOWN_VALUES set is the single source. This ticket READS that agreed value; it does not define a
+  second vocabulary, and it must not accept a level BL-382 would reject. An absent verbosity means
+  `normal` here for the same reason it does there (scenario 02) — existing contracts have no such
+  term.
+
+  ONE HANDLER FOR THE OUTLINE AND THE LITERALS. Scenario 01's `the front desk's reply follows the
+  <verbosity> level` and scenarios 02/03's literal `... the normal level` / `... the concise level`
+  are THE SAME STEP at different values — IR-DRY flags them as near-duplicates and that is expected.
+  Register ONE value-parameterized handler, binding `<verbosity>` through BL-382's KNOWN_VALUES set
+  and failing on anything outside it; do NOT add a second literal handler beside it, because with
+  overlapping step text the first-registered handler wins and one would silently shadow the other.
+
+  A LIVE DATA DEPENDENCY, NOT A CODE ONE (specifier's own spec-time rule). This ticket READS the
+  contract's verbosity field. Its real WRITER is BL-382 — that is why `depends_on: [BL-382]` and not
+  a vaguer "a sibling slice writes it". Do not build this against a fake: without BL-382 landed
+  there is no field to read and the behaviour stays dark however green the tests are.
+
+  E2E QA PROCEDURE: with an agreed contract at verbosity `detailed`, ask the front desk a question
+  from the phone and observe a full, explanatory reply. Re-negotiate the verbosity to `concise`
+  WITHOUT restarting the swarm, ask an equivalent question, and assert the next reply is materially
+  terser — this restart-free transition is the acceptance bar. Assert an existing contract with no
+  verbosity term produces replies indistinguishable from today's.
+
+acceptance:
+  feature: specs/features/BL-383-the-front-desk-answers-at-the-agreed-verbosity.feature
+  steps:
+    - "The front desk answers at the agreed level"
+    - "A contract that never mentioned verbosity is answered normally"
+    - "Changing the agreed verbosity changes the very next reply"
+
+human_approval: pending
+
+mutation_cost: low

@@ -70,6 +70,7 @@ import {
   OPERATOR_SUBJECT_ID,
 } from './telegramFrontDeskBotCore';
 import { backlogForTopic } from '../concierge/topicRouter';
+import { readBacklogTopicMap, writeBacklogTopicMap, dropBacklogTopicMapping } from '../concierge/backlogTopicMapStore';
 import { runConciergeTick, ConciergeTickAdapters, BacklogFoldersSnapshot, TickState } from '../concierge/conciergeTick';
 import { reconcileTopicLifecycle, ReconcileAdapters } from '../concierge/topicReconciliation';
 import { sweepTopicDeletions, TopicDeletionAdapters, topicRetentionWindowMs } from '../concierge/topicDeletion';
@@ -131,41 +132,12 @@ function writeTopicMap(targetPath: string, topicMap: Record<string, string>): vo
   fs.writeFileSync(topicMapPath(targetPath), JSON.stringify(topicMap));
 }
 
-// BL-298: BL-297's own backlogId->topicId map (topicRouter.ts's own
-// BacklogTopicMap shape) - a SEPARATE, reverse-keyed file from
-// readTopicMap's {topicId: subjectId} above, never a repurposing of it.
-// Read-only here: this slice only consumes the mapping BL-297's own
-// outbound routing writes, it never creates a BL-### topic itself.
-function backlogTopicMapPath(targetPath: string): string {
-  return path.join(targetPath, '.swarmforge', 'operator', 'backlog-topic-map.json');
-}
-
-function readBacklogTopicMap(targetPath: string): Record<string, number> {
-  try {
-    return JSON.parse(fs.readFileSync(backlogTopicMapPath(targetPath), 'utf8')) as Record<string, number>;
-  } catch {
-    return {};
-  }
-}
-
-// BL-300: the missing writer - modelled on writeTopicMap's own shape.
-// recordTopicId (topicRouter.ts's own RouteAdapters field) is wired to
-// this, so a topic created by the outbound tick becomes visible to
-// BL-298's own inbound readBacklogTopicMap on the very next poll.
-function writeBacklogTopicMap(targetPath: string, topicMap: Record<string, number>): void {
-  fs.mkdirSync(path.dirname(backlogTopicMapPath(targetPath)), { recursive: true });
-  fs.writeFileSync(backlogTopicMapPath(targetPath), JSON.stringify(topicMap));
-}
-
-// BL-331 scope item 5: the missing dropper - recordTopicId (above, via
-// routeAdapters) only ever adds/overwrites a mapping, never removes one.
-// Called only after a topic is genuinely deleted, so nothing later posts
-// into (or reverse-looks-up via backlogForTopic) a dead thread id.
-function dropBacklogTopicMapping(targetPath: string, backlogId: string): void {
-  const map = readBacklogTopicMap(targetPath);
-  delete map[backlogId];
-  writeBacklogTopicMap(targetPath, map);
-}
+// BL-298/300/331/332: readBacklogTopicMap/writeBacklogTopicMap/
+// dropBacklogTopicMapping (backlogId->topicId, topicRouter.ts's own
+// BacklogTopicMap shape - a SEPARATE, reverse-keyed file from
+// readTopicMap's {topicId: subjectId} above) now live in
+// concierge/backlogTopicMapStore.ts, shared with recreate-bl-topic.ts,
+// which had accreted an identical copy (jscpd-flagged clone).
 
 // BL-300: the tick's own durable state (the prev/curr diff baseline +
 // the DURABLE emitted-keys dedup set) - a restart must not lose either,
