@@ -107,6 +107,7 @@ const DOMAINS = [
   require('./conciergeNeedsApprovalSteps'),
   require('./pendingApprovalAsksInTopicSteps'),
   require('./epicsAsFirstClassTopicsSteps'),
+  require('./aTieIsReportedAsATieSteps'),
   require('./frontDeskPollResilienceSteps'),
   require('./frontDeskSupervisorRecoverySteps'),
   require('./operatorSystemdSupervisionSteps'),
