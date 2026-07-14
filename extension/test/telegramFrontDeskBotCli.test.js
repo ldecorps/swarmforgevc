@@ -345,10 +345,39 @@ test('toFoldersSnapshot carries epic through from the real ticket file', () => {
   assert.equal(snapshot.active[0].epic, 'dynamic-routing');
 });
 
-test('toFoldersSnapshot leaves humanApproval/epic undefined for a ticket that declares neither', () => {
+// BL-341 hardening: type/remainingSlices were added to the SAME pick()
+// narrowing in the SAME commit as epic above, but neither was ever proven
+// to survive the real-file read - conciergeTick.test.js's
+// epicDefinitionsFor coverage only proves the logic is right GIVEN a
+// BacklogFolderItem that already carries them, exactly the gap this
+// function's own comment says bit epic/humanApproval before it (dropped
+// here silently, invisible to any fixture-injecting test).
+
+test('toFoldersSnapshot carries type through from the real ticket file - the epic-defining ticket depends on it', () => {
+  const target = mkTmp();
+  writeBacklogTicket(target, 'paused', 'BL-1.yaml', 'id: BL-1\ntitle: t\ntype: epic\nepic: dynamic-routing\n');
+  const snapshot = toFoldersSnapshot(target);
+  assert.equal(snapshot.paused[0].type, 'epic');
+});
+
+test('toFoldersSnapshot carries remainingSlices through from the real ticket file', () => {
+  const target = mkTmp();
+  writeBacklogTicket(
+    target,
+    'paused',
+    'BL-1.yaml',
+    'id: BL-1\ntitle: t\ntype: epic\nepic: dynamic-routing\nremaining_slices:\n  - warm-core/break-even tuning\n'
+  );
+  const snapshot = toFoldersSnapshot(target);
+  assert.deepEqual(snapshot.paused[0].remainingSlices, ['warm-core/break-even tuning']);
+});
+
+test('toFoldersSnapshot leaves humanApproval/epic/type/remainingSlices undefined for a ticket that declares none', () => {
   const target = mkTmp();
   writeBacklogTicket(target, 'active', 'BL-1.yaml', 'id: BL-1\ntitle: t\n');
   const snapshot = toFoldersSnapshot(target);
   assert.equal(snapshot.active[0].humanApproval, undefined);
   assert.equal(snapshot.active[0].epic, undefined);
+  assert.equal(snapshot.active[0].type, undefined);
+  assert.equal(snapshot.active[0].remainingSlices, undefined);
 });

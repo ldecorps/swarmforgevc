@@ -148,6 +148,27 @@ test('parseBacklogYaml omits remainingSlices when the field is absent', () => {
   assert.equal(Object.prototype.hasOwnProperty.call(item, 'remainingSlices'), false);
 });
 
+// BL-341 hardening: type/epic/remainingSlices each need a lenient-fallback
+// test on a strict-unparsable ticket, the same coverage epic/human_approval
+// already got above (a colon-breaking title forces yaml.load to throw and
+// fall through to the regex-based extractor) - type and remainingSlices
+// were added in the same commit but only ever exercised via the strict
+// js-yaml path, leaving parseYamlScalar('type')/parseYamlList
+// ('remaining_slices') uncovered and any mutant there undetected.
+
+test('parseBacklogYaml parses the type field via the lenient fallback on a strict-unparsable ticket', () => {
+  const yaml = 'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\ntype: epic\nepic: role-benchmarking\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.type, 'epic');
+});
+
+test('parseBacklogYaml parses remaining_slices via the lenient fallback on a strict-unparsable ticket', () => {
+  const yaml =
+    'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\ntype: epic\nepic: role-benchmarking\nremaining_slices:\n  - some untracked slice\n  - another one\n';
+  const item = parseBacklogYaml(yaml);
+  assert.deepEqual(item.remainingSlices, ['some untracked slice', 'another one']);
+});
+
 // BL-117: prose description + acceptance reference, for the docs
 // drill-down explorer's ticket and Gherkin levels.
 
