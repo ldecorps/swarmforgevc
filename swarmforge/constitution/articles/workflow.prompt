@@ -127,6 +127,38 @@
   verified work, and QA approved a parcel whose code never existed in its
   tree.)
 
+## A Prior QA Bounce Is Not In Your Worktree — Check It Against `main` (BL-340)
+- Before you PASS, approve, or forward a parcel, check whether the ticket has
+  ALREADY been bounced once for a defect that is still unfixed. A reviewer's PASS
+  is only as good as the bounce history it knew about, and a stage can review a
+  parcel whose known-defect record it has never seen.
+- **Read that history from the `main` REF, never from your own checkout's files.** QA
+  writes bounce evidence to `backlog/evidence/<TICKET-ID>-*.md` and commits it to
+  `main`, but you work from a parcel whose ancestry does not contain that commit — so
+  the file is simply ABSENT from your worktree and a filesystem grep of
+  `backlog/evidence/` finds nothing and silently passes. Every worktree shares this
+  repo's refs, so query the `main` ref directly — no fetch, and do NOT use
+  `origin/main`, which routinely lags local `main` by many commits (QA pushes in
+  batches) and would reintroduce the same stale read:
+
+```sh
+git log --oneline main -- 'backlog/evidence/<TICKET-ID>*'
+git show main:backlog/evidence/<file>.md    # read the bounce
+```
+
+- If prior bounce evidence exists, confirm the defect it names is actually fixed in
+  the commit you hold — the ticket's stage history is not proof, because a stage may
+  have run BEFORE the bounce was raised. If it is not fixed, do not pass: bounce it
+  back rather than forwarding a parcel with a known-open defect.
+- (BL-340, 2026-07-14: QA bounced `run-role-benchmark`'s `main()` as never called
+  in-process. The coder's fix `da812efe12` extracted a helper but never called
+  `main()`, and the architect PASSed at `b971c825` — and NEITHER commit has the
+  bounce evidence `b37567a2` as an ancestor, so neither could see it. QA re-bounced
+  the identical gap, the 5th occurrence of the CLI-`main()` defect class the
+  engineering article's thin-wrapper rule exists to stop. Proposed by the hardener
+  as a worktree grep; corrected to an `origin/main` query, because in this very
+  incident the worktree grep would have found nothing.)
+
 ## QA merge-up broadcast (worktree roles)
 - Pipeline worktree roles (`coder`, `cleaner`, `architect`, `hardender`,
   `documenter`) may receive a `note` from QA after final verification passes,
