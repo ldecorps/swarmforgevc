@@ -93,16 +93,19 @@ wait_for_ready() {
 }
 
 check_detached() {
-  # BL-372: after the swarm is up, ASSERT its tmux server actually detached
-  # from us (this script), the same way start_handoff_daemon.sh's nohup ...
-  # & idiom already keeps handoffd alive past its own caller - never a
-  # silent pass. Decision logic lives in swarm_detach_lib.bb (pure,
+  # BL-372: ASSERT the launch job we just backgrounded actually detached
+  # from us (this script) - never a silent pass. Checked against OUR OWN
+  # launch job's pid, right after backgrounding it (LAUNCH_PID, still
+  # captured below), not against the eventual tmux server: an architect
+  # review (2026-07-14) reproduced, twice, that a real tmux server's own
+  # process always self-daemonizes (reparented, SIGHUP already ignored)
+  # regardless of whether the launcher used nohup - checking the SERVER
+  # can never discriminate a working fix from a broken one. Checking OUR
+  # OWN launch job's SIGHUP disposition (nohup's own direct, immediate
+  # effect) does. Decision logic lives in swarm_detach_lib.bb (pure,
   # unit-tested); this is I/O wiring only.
-  local sock server_pid
-  sock="$(read_socket)" || { echo "ERROR: no socket file to check detachment against: $SOCKET_FILE" >&2; return 1; }
-  server_pid="$(tmux -S "$sock" display-message -p '#{pid}' 2>/dev/null || true)"
-  [[ -n "$server_pid" ]] || { echo "ERROR: could not resolve the tmux server's pid to check detachment" >&2; return 1; }
-  bb "$SCRIPT_DIR/swarmforge/scripts/check_swarm_detached.bb" 1 "$server_pid" "$$"
+  local pid="$1"
+  bb "$SCRIPT_DIR/swarmforge/scripts/check_swarm_detached.bb" 1 "$pid"
 }
 
 echo "Target: $TARGET"
@@ -119,13 +122,20 @@ mkdir -p "$TARGET/.swarmforge"
 # with it. wait_for_ready below is unaffected: it polls the socket/session
 # state directly, never the launch subprocess's own exit.
 nohup env SWARMFORGE_TERMINAL=none "$TARGET/swarm" "$TARGET" >> "$TARGET/.swarmforge/start-swarm-launch.log" 2>&1 &
+LAUNCH_PID=$!
 disown
 
-if ! wait_for_ready "$WANT"; then
+# Checked right away, not after wait_for_ready: nohup's effect (SIGHUP set
+# to ignored) takes hold before the wrapped command even execs, so there is
+# no race to wait out - and the launch job may well have already exited
+# (normally - it just finishes provisioning and returns) by the time
+# wait_for_ready succeeds, at which point its own state is no longer
+# checkable at all.
+if ! check_detached "$LAUNCH_PID"; then
+  echo "ERROR: swarm launch is still owned by the caller - it will die when this shell exits" >&2
   exit 1
 fi
 
-if ! check_detached; then
-  echo "ERROR: swarm is up but still owned by its caller - it will die when this shell exits" >&2
+if ! wait_for_ready "$WANT"; then
   exit 1
 fi
