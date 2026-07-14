@@ -176,6 +176,7 @@ const DOMAINS = [
   require('./alwaysOnOperatorPresenceSteps'),
   require('./topicRecreationSteps'),
   require('./aDroppedMessageMustNotParkTheOffsetSteps'),
+  require('./aChurnRewriteDoesNotMintACommitSteps'),
 ];
 
 function registerSteps(registry) {
