@@ -127,16 +127,8 @@
                  :receive-mode (or receive-mode "task")}])))
 
 (defn parse-message [path]
-  (let [content (slurp (str path))
-        [header body] (str/split content #"\n\n" 2)
-        headers (into {}
-                      (for [line (str/split-lines header)
-                            :let [[k v] (str/split line #": " 2)]
-                            :when (and k v)]
-                        [k v]))]
-    {:headers headers
-     :body (or body "")
-     :content content}))
+  (let [content (slurp (str path))]
+    (assoc (handoff-lib/parse-envelope content) :content content)))
 
 (defn render-message [headers body]
   (let [preferred ["id" "from" "to" "recipient" "priority" "type" "role" "commit"
@@ -308,27 +300,40 @@
         (spit (str path ".error") (str reason "\n"))))))
 
 (defn deliver! [roles socket sender-role path]
-  (let [filename (fs/file-name path)
-        message (parse-message path)
-        headers (:headers message)
-        recipients (some-> (get headers "to") (str/split #",") seq)]
-    (if-not recipients
-      (fail! path "missing to header")
-      (do
-        (doseq [recipient recipients]
-          (let [role-info (get roles recipient)]
-            (when-not role-info
-              (throw (ex-info (str "unknown recipient " recipient) {:recipient recipient})))
-            (let [target (target-path role-info filename recipient)
-                  delivered (add-delivery-headers message recipient)]
-              (fs/create-dirs (fs/parent target))
-              (when-not (fs/exists? target)
-                (spit (str target) (render-message (:headers delivered) (:body delivered))))
-              (maybe-notify! socket (:session role-info) recipient (str target) (:agent role-info)))))
-        (when (= "rule_proposal" (get headers "type"))
-          (append-rule-proposal! headers))
-        (move-with-collision path (sent-dir (get roles sender-role)))
-        (log! "delivered" (str path))))))
+  (let [filename (fs/file-name path)]
+    ;; BL-365: a corrupt outbox file (empty, truncated mid-header, or
+    ;; headers with no body) must be quarantined here, at the delivery hop,
+    ;; rather than copied onward into a recipient's inbox as if it were real
+    ;; work - the protocol already asks the daemon for exactly this cheap
+    ;; structural check ("move malformed or undeliverable files to failed/
+    ;; with useful diagnostics"), distinct from the semantic re-validation
+    ;; the daemon deliberately declines.
+    (if (handoff-lib/corrupt-handoff? (slurp (str path)))
+      (fail! path "corrupt handoff (empty, truncated, or missing required envelope headers)")
+      (let [message (parse-message path)
+            headers (:headers message)
+            recipients (some-> (get headers "to") (str/split #",") seq)]
+        (if-not recipients
+          (fail! path "missing to header")
+          (do
+            (doseq [recipient recipients]
+              (let [role-info (get roles recipient)]
+                (when-not role-info
+                  (throw (ex-info (str "unknown recipient " recipient) {:recipient recipient})))
+                (let [target (target-path role-info filename recipient)
+                      delivered (add-delivery-headers message recipient)]
+                  (fs/create-dirs (fs/parent target))
+                  (when-not (fs/exists? target)
+                    ;; BL-365: durable write - the recipient's inbox copy is
+                    ;; a SEPARATE file from the sender's own outbox/sent
+                    ;; copy, and carries the identical crash-durability gap
+                    ;; if written with a bare spit.
+                    (handoff-lib/atomic-write! target (render-message (:headers delivered) (:body delivered))))
+                  (maybe-notify! socket (:session role-info) recipient (str target) (:agent role-info)))))
+            (when (= "rule_proposal" (get headers "type"))
+              (append-rule-proposal! headers))
+            (move-with-collision path (sent-dir (get roles sender-role)))
+            (log! "delivered" (str path))))))))
 
 (defn inbox-new-files [role-info]
   (let [new-dir (handoff-lib/mailbox-dir role-info :new)]

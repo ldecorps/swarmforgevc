@@ -345,6 +345,51 @@ Atomic outbound write sequence:
 The daemon should ignore `outbox/tmp/` and process only final `.handoff` files
 that appear directly under `outbox/`.
 
+### Durable install and corrupt-handoff quarantine (BL-365)
+
+A plain `write` + `rename` is atomic in *ordering* only, not *durability*: the
+rename can land on disk while the file's own contents have not yet been
+flushed, so a crash or restart in that window can leave a correctly-named,
+zero-byte "atomically installed" handoff. This happened once in production
+(a coder→cleaner `git_handoff` was dispatched as a contentless task,
+silently losing the parcel — the stuck/chase sweeps never fired because the
+mail moved perfectly).
+
+The install path is now `write` → `fsync` → `rename` (`atomic-write!` in
+`handoff_lib.bb`), used by both `swarm_handoff.bb`'s outbox install and
+`handoffd.bb`'s recipient-inbox copy.
+
+On top of the durability fix, every hop that can observe a corrupt handoff
+file (empty, missing a required envelope header, or headers with no body —
+`corrupt-handoff?` in `handoff_lib.bb`) now refuses to pass it on as work:
+
+- `swarm_handoff.bb` re-reads what actually landed on disk after installing
+  and deletes it if corrupt, so a failed write never leaves a file in
+  `outbox/` for anything downstream to pick up.
+- `handoffd.bb`'s `deliver!` checks for a corrupt outbox file before parsing
+  recipients, and if corrupt routes it to the existing `fail!` path — moved
+  to `failed/` with a diagnostic `.error` stub — instead of copying it into
+  a recipient's inbox. This is the same "move malformed or undeliverable
+  files to `failed/`" behavior the protocol already asked for above; the
+  corrupt-handoff check just makes it actually catch a zero-byte file.
+- `ready_for_next_task.bb` / `ready_for_next_batch.bb` (via the shared
+  `resolve-dequeueable-candidates` in `handoff_lib.bb`) quarantine a corrupt
+  `inbox/new/` candidate before it can be promoted into `in_process/`,
+  falling through to the next genuinely-dequeueable file. If every queued
+  candidate is corrupt, the result is a clean `NO_TASK`/empty batch rather
+  than a promoted contentless task. This quarantine reuses the existing
+  dead-letter mechanism rather than inventing a new one: the corrupt file is
+  renamed in place to the same `<name>.handoff.dead` suffix
+  `chase_sweep_lib.bb` already uses for stuck mail, so it is picked up by
+  the same `notify-dead-letters.js` sweep that already alerts a human over
+  Telegram for any `*.handoff.dead` file — a quarantined parcel is surfaced,
+  never just silently moved aside.
+
+This is a cheap structural check — "does this parse into a real handoff
+envelope at all?" — not the semantic re-validation of header values the
+protocol deliberately declines to repeat in the daemon; that stays the
+sender's job.
+
 Reserved headers:
 
 ```text
