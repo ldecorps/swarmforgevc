@@ -70,6 +70,34 @@
   (assert-true "the error message names the OS unix-socket path limit constraint, not an opaque errno"
                (boolean (re-find #"unix-socket path limit" (:message result)))))
 
+;; ── resolve-socket-path: exact boundary at max-safe-socket-path-len (100) ──
+;; The comparison is `<=`, not `<` - a mutant flipping that operator would
+;; pass every test above (which only exercise clearly-under and clearly-over
+;; cases) while silently rejecting a project root that fits EXACTLY at the
+;; limit, or accepting one that overruns it by one byte. Pin both sides of
+;; the boundary explicitly.
+
+;; suffix = "/.swarmforge/tmux/" (18) + hash (5) + ".sock" (5) = 28 chars.
+;; working-dir of 72 chars -> primary path of exactly 100 chars (the limit).
+(def boundary-working-dir-at-limit (str "/home/carillon/" (apply str (repeat 57 "a"))))
+(assert= "boundary-working-dir-at-limit is exactly 72 chars (test fixture sanity check)"
+         72 (count boundary-working-dir-at-limit))
+
+(let [result (swarm-socket-lib/resolve-socket-path
+              {:working-dir boundary-working-dir-at-limit :hash "12345" :xdg-runtime-dir "/run/user/1000"})]
+  (assert= "a primary path of EXACTLY 100 chars (the limit) still resolves to primary, never falls back or errors"
+           {:path (str boundary-working-dir-at-limit "/.swarmforge/tmux/12345.sock") :source :primary}
+           result))
+
+;; One byte over the limit (73-char working-dir -> 101-char primary path)
+;; must NOT resolve to primary - it must fall back (or error with no fallback).
+(def boundary-working-dir-over-limit (str "/home/carillon/" (apply str (repeat 58 "a"))))
+(let [result (swarm-socket-lib/resolve-socket-path
+              {:working-dir boundary-working-dir-over-limit :hash "12345" :xdg-runtime-dir "/run/user/1000"})]
+  (assert= "a primary path ONE BYTE over the limit (101 chars) falls back, proving the boundary is <=, not < or unbounded"
+           {:path "/run/user/1000/swarmforge/12345.sock" :source :xdg-fallback}
+           result))
+
 ;; A pathologically long XDG_RUNTIME_DIR (the fallback's own length depends
 ;; on IT, not on working-dir) can itself overrun the limit too.
 (def absurdly-long-xdg-runtime-dir (str "/run/user/" (apply str (repeat 200 "a"))))
