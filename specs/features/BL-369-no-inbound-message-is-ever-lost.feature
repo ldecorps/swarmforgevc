@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=aa570b225490f4b61bb9ad22759d7c62bbd0e5a223f46a43746ab4d91d22f81d
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-14T07:48:03.024651750Z","feature_name":"A message the human sends is never silently lost","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-369-no-inbound-message-is-ever-lost.feature","background_hash":"f9b8a21baf1a767106ce9f7aab16a85fdea23dffca6eab2e79d39e067594b00b","implementation_hash":"unknown","scenarios":[{"index":1,"name":"A message the front desk could not durably accept is redelivered, never skipped","scenario_hash":"c0445b378396870ca4b2bfa540641bf54cf8cc10af5dc177d3975b1fae95aad8","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-14T07:48:03.024651750Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A message the human sends is never silently lost
 
 # BL-369: on 2026-07-13 the human asked "Why is the operator not staying up in attended mode when
