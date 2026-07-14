@@ -136,6 +136,24 @@ written), and only once the contract is `agreed` does the same command
 actually write and commit both files into the target repo. Re-running it
 after the operator flips `agreement` to `agreed` is what releases them.
 
+**Verbosity is a negotiated contract term too (BL-382).** How chatty the
+agents should be — precise and long, or terse — is not fixed; it rides the
+same `.swarmforge/contract.yaml` as scope and boundaries. `ProposedContract`
+carries an optional `verbosity` field restricted to a closed set —
+`concise` / `normal` / `detailed` (`VERBOSITY_LEVELS`,
+`extension/src/onboarding/contractTypes.ts`) — never free text, so a typo or
+an out-of-band value can't splice arbitrary instructions into a generated
+prompt. `proposePromptsFromSurvey` (`extension/src/onboarding/promptProposal.ts`)
+resolves the contract's negotiated term via `resolveVerbosity` and appends an
+explicit "Be `<verbosity>` in your responses and explanations." instruction to
+both generated `project.prompt` and `engineering.prompt`. An offered value
+outside the closed set is refused outright rather than silently accepted; a
+contract that never mentions verbosity at all — every contract negotiated
+before this term existed, including this repo's own agreed `CONTRACT.md` —
+defaults to `normal` rather than crashing or leaving a blank instruction.
+Change your mind later the same way as any other contract term: object,
+revise, re-approve, and re-run the prompt-proposal command above.
+
 ## 3. The acceptance contract
 
 This is the part the operator asked about specifically.
