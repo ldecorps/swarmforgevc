@@ -41,9 +41,18 @@
           (let [new-files (handoff-lib/my-handoff-files new-dir)
                 completed-basenames (map fs/file-name (handoff-lib/handoff-files completed-dir))
                 abandoned-basenames (map fs/file-name (handoff-lib/handoff-files abandoned-dir))
-                {:keys [skipped dequeueable]} (handoff-lib/dedup-new-candidates new-files completed-basenames abandoned-basenames)]
+                {:keys [skipped dequeueable]} (handoff-lib/dedup-new-candidates new-files completed-basenames abandoned-basenames)
+                ;; BL-365: a corrupt candidate must never be promoted into
+                ;; in_process/ as a task - quarantine-and-skip it (renamed
+                ;; to *.handoff.dead in place, the same suffix the existing
+                ;; dead-letter sweep already scans and alerts a human on)
+                ;; and fall through to the next genuinely-dequeueable file.
+                {:keys [corrupt valid]} (handoff-lib/partition-corrupt dequeueable)
+                dequeueable valid]
             (doseq [f skipped]
               (println "SKIPPED already-processed:" (fs/file-name f)))
+            (doseq [f corrupt]
+              (println "QUARANTINED corrupt-handoff:" (fs/file-name f)))
             (if (empty? dequeueable)
               (do
                 (println "NO_TASK")
