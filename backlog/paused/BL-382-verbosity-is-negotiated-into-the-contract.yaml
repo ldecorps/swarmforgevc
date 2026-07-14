@@ -68,6 +68,6 @@ acceptance:
     - "A contract that never mentioned verbosity still works"
     - "The human can change his mind about verbosity"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: low

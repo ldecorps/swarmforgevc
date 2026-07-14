@@ -78,6 +78,6 @@ acceptance:
     - "The leaderboard says the benchmark could not discriminate"
     - "The reported result does not depend on the order the models were listed in"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: low

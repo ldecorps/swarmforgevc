@@ -90,6 +90,6 @@ acceptance:
     - "The operator can name which VS Code to launch"
     - "The swarm's own repair loop can bring the extension to health on Linux"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: medium

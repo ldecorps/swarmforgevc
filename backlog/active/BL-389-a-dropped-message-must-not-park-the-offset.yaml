@@ -90,6 +90,6 @@ acceptance:
     - "A message delivered twice is only recorded once"
     - "A message delivered twice is only answered once"
 
-human_approval: pending
+human_approval: approved
 
 mutation_cost: medium

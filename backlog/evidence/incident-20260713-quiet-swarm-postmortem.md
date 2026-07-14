@@ -79,3 +79,21 @@ Every one of the five is now fixed, active, or ticketed.
    Windows half; disable host sleep.
 3. Approve/promote BL-359 (always-on operator presence) and consider an
    intake for parked-vs-dead visibility.
+
+## Addendum 2026-07-14: history-rewrite decision REVERSED — the 209 flood commits stay
+
+During the BL-389 redelivery incident the human initially answered the
+specifier's fork with "Rewrite history, force-push". That decision is
+REVERSED as of 2026-07-14 ~15:00, by the human, informed by measurement:
+the flood's 209 one-line commits are braided through 118 legitimate
+commits and 121 merges, so removal requires a full filter-repo rewrite of
+everything after 10:54 — invalidating every commit SHA cited in tickets,
+QA approvals and evidence since then, and force-pushing against tooling
+(push_sweep_lib.bb) that treats divergence as an incident by design.
+
+STANDING DECISION: origin/main history is append-only; the flood commits
+remain. Prevention is BL-390 (a churn rewrite does not mint a commit).
+Log-noise mitigation for humans:
+`git log --invert-grep --grep='BL topic record for BL-359'`.
+No role or Operator should re-raise or act on the earlier "force-push"
+answer — this addendum supersedes it.
