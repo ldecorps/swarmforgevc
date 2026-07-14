@@ -22,7 +22,7 @@ import { createNodeTestQualityEvaluator } from '../benchmark/nodeTestQualityEval
 import { loadTaskSpec } from '../benchmark/taskFixture';
 import { runBenchmark } from '../benchmark/runBenchmark';
 import { writeBenchmarkReport, commitBenchmarkReport } from '../benchmark/reportArtifact';
-import { BenchmarkModelConfig } from '../benchmark/types';
+import { BenchmarkModelConfig, BenchmarkReport, ModelExecutor, QualityEvaluator, TaskSpec } from '../benchmark/types';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 
 export interface RunRoleBenchmarkArgs {
@@ -62,29 +62,75 @@ export function parseArgs(argv: string[]): RunRoleBenchmarkArgs | null {
   return { fixtureDir, modelsFile, ...numbers, targetPath };
 }
 
-export const main = makeArgsGuardedMain(parseArgs, USAGE, async (args) => {
-  const task = loadTaskSpec(args.fixtureDir);
-  const models = JSON.parse(fs.readFileSync(args.modelsFile, 'utf8')) as BenchmarkModelConfig[];
-  const scratchRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-benchmark-'));
+// Pure - the same "extract even a one-line derivation into a named,
+// tested export" CLI main()-thin-wrapper rule this codebase's other
+// tools/ CLIs follow (an inline one-liner inside main() is coverage-
+// invisible there, however small - BL-256's own CRAP-gap lesson).
+export function reportDateKey(report: Pick<BenchmarkReport, 'generatedAtIso'>): string {
+  return report.generatedAtIso.slice(0, 10);
+}
+
+// Injectable seam for main()'s own orchestration - the only piece of this
+// CLI that was genuinely untestable in-process before this fix, since its
+// real deps (executor, evaluator) spawn a REAL `claude` CLI subprocess per
+// trial and commitReport makes a REAL git commit. A unit test supplies
+// fakes for exactly these, exercising the SAME sequencing main() runs
+// (load task -> parse models -> run the benchmark -> write + commit +
+// print the report) without ever touching a real subprocess or git -
+// same "keep main() a thin dispatcher, push logic into a testable
+// exported function" split recruiter-run.ts/bakeoff-run.ts already
+// established.
+export interface RunRoleBenchmarkDeps {
+  loadTask: (fixtureDir: string) => TaskSpec;
+  readModels: (modelsFile: string) => BenchmarkModelConfig[];
+  mkScratchRoot: () => string;
+  nowIso: () => string;
+  executor: ModelExecutor;
+  evaluator: QualityEvaluator;
+  writeReport: typeof writeBenchmarkReport;
+  commitReport: typeof commitBenchmarkReport;
+  print: (data: unknown) => void;
+}
+
+export async function runRoleBenchmarkCli(args: RunRoleBenchmarkArgs, deps: RunRoleBenchmarkDeps): Promise<void> {
+  const task = deps.loadTask(args.fixtureDir);
+  const models = deps.readModels(args.modelsFile);
+  const scratchRoot = deps.mkScratchRoot();
 
   const report = await runBenchmark({
     task,
     models,
     repetitions: args.repetitions,
     qualityThreshold: args.qualityThreshold,
-    generatedAtIso: new Date().toISOString(),
+    generatedAtIso: deps.nowIso(),
     deps: {
-      executor: createClaudeCliExecutor(),
-      evaluator: createNodeTestQualityEvaluator(),
+      executor: deps.executor,
+      evaluator: deps.evaluator,
       scratchRoot,
     },
   });
 
-  const dateIso = report.generatedAtIso.slice(0, 10);
-  const filePath = writeBenchmarkReport(args.targetPath, report, dateIso);
-  commitBenchmarkReport(args.targetPath, filePath, report.taskId, dateIso);
-  printJsonToStdout(report);
-});
+  const dateIso = reportDateKey(report);
+  const filePath = deps.writeReport(args.targetPath, report, dateIso);
+  deps.commitReport(args.targetPath, filePath, report.taskId, dateIso);
+  deps.print(report);
+}
+
+function defaultDeps(): RunRoleBenchmarkDeps {
+  return {
+    loadTask: loadTaskSpec,
+    readModels: (modelsFile) => JSON.parse(fs.readFileSync(modelsFile, 'utf8')) as BenchmarkModelConfig[],
+    mkScratchRoot: () => fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-benchmark-')),
+    nowIso: () => new Date().toISOString(),
+    executor: createClaudeCliExecutor(),
+    evaluator: createNodeTestQualityEvaluator(),
+    writeReport: writeBenchmarkReport,
+    commitReport: commitBenchmarkReport,
+    print: printJsonToStdout,
+  };
+}
+
+export const main = makeArgsGuardedMain(parseArgs, USAGE, (args) => runRoleBenchmarkCli(args, defaultDeps()));
 
 if (require.main === module) {
   runCliMain(main);
