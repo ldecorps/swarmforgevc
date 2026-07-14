@@ -311,6 +311,29 @@
   (BL-128's post-merge/pre-migration window resurrected an already-completed QA
   handoff as fresh in_process mail: a redelivery loop that masked live work.
   Fix: BL-218.)
+- A durable queue message that cannot be parsed into its required headers — a
+  zero-byte file, a truncated one, headers with no body — is QUARANTINED and
+  SURFACED, never delivered onward and never dispatched as work. Enforce this at
+  EVERY hop that can observe the corruption, not just one: `swarm_handoff` must
+  not install an empty/incomplete file into `outbox/`, `handoffd` must move it to
+  `failed/` with a diagnostic instead of copying it to an inbox, and the
+  `ready_for_next` helpers must refuse to promote it into `in_process/`. The
+  reason it needs all three is that this failure is SILENT: a parcel arriving with
+  no `from`/`type`/`task`/`commit` carries nothing for the receiving role to act
+  on, so the work is simply lost — and no stuck-detection fires, because from the
+  outside mail DID move. This integrity floor is NOT the "second full validation
+  pass" the handoff protocol deliberately declines: that decision is about not
+  re-checking SEMANTICS the sender already validated, whereas "is this file
+  non-empty and parseable" is a cheap corruption check the protocol ALREADY
+  requires of the daemon ("move malformed or undeliverable files to `failed/`").
+  Durability is the other half: an atomic install is `write` → **fsync** →
+  `rename`, and a `rename` without the fsync is atomic in ORDERING only, never in
+  DURABILITY — the directory entry can reach disk while the file's contents never
+  do, which is precisely how a crash yields a 0-byte file that was "written
+  atomically". (BL-355: a coder→cleaner `git_handoff` was emitted as a 0-BYTE file
+  — every sibling handoff was ~280 bytes — then copied onward and dequeued as a
+  contentless task; recovering the lost commit required cross-referencing the
+  coder's git log by timestamp. Fix: BL-365.)
 - GitHub Actions: never interpolate a `${{ }}` expression — especially
   `github.event.*` and `steps.*.outputs.*` (issue/PR titles, bodies, branch
   names, changed filenames are all attacker-influenceable) — directly inside a
