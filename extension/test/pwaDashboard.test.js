@@ -760,6 +760,36 @@ test('a cheapest-acceptable model that does not exist shows the stated reason, n
   assert.match(text, /Cheapest acceptable: no model cleared the quality threshold/);
 });
 
+test('BL-385: a quality tie shows a stated reason instead of a false "Best" row, and labels best-value as ranked by cost alone', async () => {
+  const dom = renderDashboard(
+    fakeDashboard({
+      roleLeaderboard: fakeBenchmarkReport({
+        ranking: {
+          bestByQuality: null,
+          couldNotDiscriminateReason: 'every scored model reached the same top quality score - the benchmark could not discriminate a winner',
+          bestByValue: 'claude-haiku',
+          bestByValueRankedByCostAlone: true,
+          cheapestAcceptable: 'claude-sonnet',
+          noAcceptableModelReason: null,
+        },
+      }),
+    })
+  );
+  await flush();
+  const text = dom.window.document.getElementById('roleLeaderboard').textContent;
+  assert.match(text, /Best: every scored model reached the same top quality score - the benchmark could not discriminate a winner/);
+  assert.doesNotMatch(text, /Best: Claude/);
+  assert.match(text, /Best value \(ranked by cost alone — quality tied\)/);
+});
+
+test('BL-385: best-value is labelled plain "Best value" (never "ranked by cost alone") when quality genuinely discriminates', async () => {
+  const dom = renderDashboard(fakeDashboard({ roleLeaderboard: fakeBenchmarkReport() }));
+  await flush();
+  const text = dom.window.document.getElementById('roleLeaderboard').textContent;
+  assert.match(text, /Best value/);
+  assert.doesNotMatch(text, /ranked by cost alone/);
+});
+
 test('role-leaderboard-surface-07: the section is collapsible like every other section', async () => {
   const dom = renderDashboard(fakeDashboard({ roleLeaderboard: fakeBenchmarkReport() }));
   await flush();

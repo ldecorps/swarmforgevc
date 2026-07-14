@@ -68,6 +68,6 @@ acceptance:
     - "The existing per-ticket topic machinery is reused, not duplicated"
     - "A ticket with no epic behaves exactly as it does today"
 
-human_approval: pending
+human_approval: approved  # human, Telegram SUP-2 2026-07-14T06:40:06Z: "Promote all, pick the order" — see .swarmforge/operator/PROMOTE-ALL-9.md
 
 mutation_cost: medium
