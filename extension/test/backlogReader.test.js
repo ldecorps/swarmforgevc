@@ -1,8 +1,8 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const yamlLib = require('js-yaml');
 const { parseBacklogYaml, readBacklog } = require('../out/panel/backlogReader');
 
 function mkTmp() {
@@ -38,14 +38,20 @@ test('parseBacklogYaml returns null when title is missing', () => {
   assert.equal(parseBacklogYaml(yaml), null);
 });
 
-test('parseBacklogYaml returns null when status is missing', () => {
+// BL-234: status is folder-derived, never a required/gating field - a
+// missing or unrecognized status no longer drops the ticket.
+test('parseBacklogYaml parses a ticket with no status field, leaving status undefined', () => {
   const yaml = 'id: BL-007\ntitle: Backlog panel\n';
-  assert.equal(parseBacklogYaml(yaml), null);
+  const item = parseBacklogYaml(yaml);
+  assert.deepEqual(item, { id: 'BL-007', title: 'Backlog panel' });
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'status'), false);
 });
 
-test('parseBacklogYaml returns null for invalid status value', () => {
+test('parseBacklogYaml parses a ticket with an unrecognized status value, normalizing status to undefined', () => {
   const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: in-progress\n';
-  assert.equal(parseBacklogYaml(yaml), null);
+  const item = parseBacklogYaml(yaml);
+  assert.deepEqual(item, { id: 'BL-007', title: 'Backlog panel' });
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'status'), false);
 });
 
 test('parseBacklogYaml parses known optional fields (milestone, priority)', () => {
@@ -54,11 +60,283 @@ test('parseBacklogYaml parses known optional fields (milestone, priority)', () =
   assert.deepEqual(item, { id: 'BL-007', title: 'Backlog panel', status: 'done', milestone: 'M1', priority: 5 });
 });
 
+// BL-094: swarm assignment field (BL-090's own convention) - absent by
+// default in live ticket YAML, callers apply the "primary" fallback.
+test('parseBacklogYaml parses the swarm field when present', () => {
+  const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: active\nswarm: secondary-1\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.swarm, 'secondary-1');
+});
+
+test('parseBacklogYaml omits swarm when absent, never defaulting it itself', () => {
+  const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: active\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'swarm'), false);
+});
+
+// BL-251: the structured human_approval field (single source of truth for
+// the needs-approval list, never the free-text "# HUMAN APPROVAL:" comment
+// - see backfillHumanApproval.ts for the one-time migration off that
+// comment). Mirrors normalizeStatus's own "known value or undefined" shape.
+
+test('parseBacklogYaml parses human_approval: pending', () => {
+  const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: active\nhuman_approval: pending\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.humanApproval, 'pending');
+});
+
+test('parseBacklogYaml parses human_approval: approved', () => {
+  const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: active\nhuman_approval: approved\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.humanApproval, 'approved');
+});
+
+test('parseBacklogYaml omits humanApproval when the field is absent, never defaulting it itself', () => {
+  const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: active\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'humanApproval'), false);
+});
+
+test('parseBacklogYaml normalizes an unrecognized human_approval value to undefined, mirroring status', () => {
+  const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: active\nhuman_approval: maybe\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'humanApproval'), false);
+});
+
+test('parseBacklogYaml parses human_approval via the lenient fallback on a strict-unparsable ticket', () => {
+  const yaml = 'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\nhuman_approval: pending\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.humanApproval, 'pending');
+});
+
+// BL-341: which epic (a multi-slice body of work) a slice belongs to, as
+// DATA - never inferred from notes: prose.
+
+test('parseBacklogYaml parses the epic field', () => {
+  const yaml = 'id: BL-500\ntitle: t\nstatus: active\nepic: dynamic-routing\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.epic, 'dynamic-routing');
+});
+
+test('parseBacklogYaml omits epic when the field is absent - a ticket with no epic behaves exactly as it does today', () => {
+  const yaml = 'id: BL-500\ntitle: t\nstatus: active\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'epic'), false);
+});
+
+test('parseBacklogYaml parses epic via the lenient fallback on a strict-unparsable ticket', () => {
+  const yaml = 'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\nepic: dynamic-routing\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.epic, 'dynamic-routing');
+});
+
+test('parseBacklogYaml parses the type field - the epic-defining ticket carries type: epic', () => {
+  const yaml = 'id: BL-384\ntitle: t\ntype: epic\nepic: role-benchmarking\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.type, 'epic');
+});
+
+test('parseBacklogYaml parses remaining_slices as a list', () => {
+  const yaml = 'id: BL-384\ntitle: t\ntype: epic\nepic: role-benchmarking\nremaining_slices:\n  - some untracked slice\n  - another one\n';
+  const item = parseBacklogYaml(yaml);
+  assert.deepEqual(item.remainingSlices, ['some untracked slice', 'another one']);
+});
+
+test('parseBacklogYaml omits remainingSlices when the field is absent', () => {
+  const yaml = 'id: BL-384\ntitle: t\ntype: epic\nepic: role-benchmarking\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'remainingSlices'), false);
+});
+
+// BL-341 hardening: type/epic/remainingSlices each need a lenient-fallback
+// test on a strict-unparsable ticket, the same coverage epic/human_approval
+// already got above (a colon-breaking title forces yaml.load to throw and
+// fall through to the regex-based extractor) - type and remainingSlices
+// were added in the same commit but only ever exercised via the strict
+// js-yaml path, leaving parseYamlScalar('type')/parseYamlList
+// ('remaining_slices') uncovered and any mutant there undetected.
+
+test('parseBacklogYaml parses the type field via the lenient fallback on a strict-unparsable ticket', () => {
+  const yaml = 'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\ntype: epic\nepic: role-benchmarking\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.type, 'epic');
+});
+
+test('parseBacklogYaml parses remaining_slices via the lenient fallback on a strict-unparsable ticket', () => {
+  const yaml =
+    'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\ntype: epic\nepic: role-benchmarking\nremaining_slices:\n  - some untracked slice\n  - another one\n';
+  const item = parseBacklogYaml(yaml);
+  assert.deepEqual(item.remainingSlices, ['some untracked slice', 'another one']);
+});
+
+// BL-117: prose description + acceptance reference, for the docs
+// drill-down explorer's ticket and Gherkin levels.
+
+test('parseBacklogYaml parses a multi-line description block scalar', () => {
+  const yaml = 'id: BL-007\ntitle: t\nstatus: active\ndescription: |\n  First line.\n  Second line.\n\n  A new paragraph.\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.description, 'First line.\nSecond line.\n\nA new paragraph.');
+});
+
+test('parseBacklogYaml parses an acceptance file-path reference', () => {
+  const yaml = 'id: BL-007\ntitle: t\nstatus: active\nacceptance: specs/features/BL-007-thing.feature\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.acceptance, 'specs/features/BL-007-thing.feature');
+});
+
+test('parseBacklogYaml parses an inline Gherkin acceptance block (pre-BL-111 form)', () => {
+  const yaml = [
+    'id: BL-007',
+    'title: t',
+    'status: active',
+    'acceptance: |',
+    '  Feature: a thing',
+    '',
+    '  Scenario: it works',
+    '    Given a precondition',
+    '    When an action happens',
+    '    Then an outcome is observed',
+    '',
+  ].join('\n');
+  const item = parseBacklogYaml(yaml);
+  assert.match(item.acceptance, /Feature: a thing/);
+  assert.match(item.acceptance, /Scenario: it works/);
+});
+
+test('parseBacklogYaml omits description/acceptance when absent', () => {
+  const yaml = 'id: BL-007\ntitle: t\nstatus: active\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'description'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'acceptance'), false);
+});
+
+// BL-322: notes: block scalar + the modern nested acceptance.steps[0] -
+// the topic-opening summary's own two derived sources.
+
+test('parseBacklogYaml parses a multi-line notes block scalar', () => {
+  const yaml = 'id: BL-007\ntitle: t\nstatus: active\nnotes: |\n  First paragraph, line one.\n  Line two.\n\n  Second paragraph.\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.notes, 'First paragraph, line one.\nLine two.\n\nSecond paragraph.');
+});
+
+test('parseBacklogYaml reads the FIRST entry of a nested acceptance.steps list', () => {
+  const yaml = [
+    'id: BL-007',
+    'title: t',
+    'status: active',
+    'acceptance:',
+    '  feature: specs/features/BL-007-thing.feature',
+    '  steps:',
+    '    - "The first step"',
+    '    - "The second step"',
+    '',
+  ].join('\n');
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.firstAcceptanceStep, 'The first step');
+});
+
+test('parseBacklogYaml never confuses the nested acceptance.steps schema with the legacy flat acceptance field', () => {
+  const yaml = 'id: BL-007\ntitle: t\nstatus: active\nacceptance: specs/features/BL-007-thing.feature\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.acceptance, 'specs/features/BL-007-thing.feature');
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'firstAcceptanceStep'), false);
+});
+
+test('parseBacklogYaml omits notes/firstAcceptanceStep when absent', () => {
+  const yaml = 'id: BL-007\ntitle: t\nstatus: active\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'notes'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'firstAcceptanceStep'), false);
+});
+
+// ── parseYamlBlockScalar via the LENIENT regex fallback (strict js-yaml
+// throws on a gnarly title first, matching the real BL-093-shaped fixture
+// already covered by BL-129's no-regression test) ──────────────────────────
+
+test('parseBacklogYaml extracts a description block scalar via the lenient fallback on a strict-unparsable ticket', () => {
+  const yaml = 'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\ndescription: |\n  Root cause: something.\n  Second line.\n';
+  const item = parseBacklogYaml(yaml);
+  assert.ok(item, 'expected the lenient parser to still surface a ticket');
+  assert.equal(item.description, 'Root cause: something.\nSecond line.');
+});
+
+test('parseBacklogYaml lenient fallback returns undefined for a missing block-scalar field', () => {
+  const yaml = 'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'description'), false);
+});
+
+test('parseBacklogYaml extracts notes: and the first nested acceptance.steps entry via the lenient fallback on a strict-unparsable ticket', () => {
+  const yaml = [
+    'id: BL-093',
+    'title: BUG — colon: breaks strict YAML',
+    'status: done',
+    'notes: |',
+    '  Root cause: something.',
+    '  Second line.',
+    '',
+    '  A new paragraph.',
+    'acceptance:',
+    '  feature: specs/features/BL-093-thing.feature',
+    '  steps:',
+    '    - "The first step"',
+    '    - "The second step"',
+    '',
+  ].join('\n');
+  const item = parseBacklogYaml(yaml);
+  assert.ok(item, 'expected the lenient parser to still surface a ticket');
+  assert.equal(item.notes, 'Root cause: something.\nSecond line.\n\nA new paragraph.');
+  assert.equal(item.firstAcceptanceStep, 'The first step');
+});
+
+// BL-322 hardening: closes a real coverage gap in parseFirstAcceptanceStep
+// (the lenient-path regex counterpart) - a nested acceptance: block that
+// has no steps: sub-key at all (e.g. only feature:) was never covered, so
+// its own "give up gracefully" branch sat untested.
+test('parseBacklogYaml lenient fallback: a nested acceptance: block with no steps: sub-key never surfaces a firstAcceptanceStep', () => {
+  const yaml = [
+    'id: BL-093',
+    'title: BUG — colon: breaks strict YAML',
+    'status: done',
+    'acceptance:',
+    '  feature: specs/features/BL-093-thing.feature',
+    '',
+  ].join('\n');
+  const item = parseBacklogYaml(yaml);
+  assert.ok(item, 'expected the lenient parser to still surface a ticket');
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'firstAcceptanceStep'), false);
+});
+
+test('parseBacklogYaml lenient fallback dedents a block scalar to its own minimum indentation, including a deeper-indented paragraph', () => {
+  const yaml =
+    'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\ndescription: |\n  Top level.\n    More indented.\n  Back to top.\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.description, 'Top level.\n  More indented.\nBack to top.');
+});
+
+test('parseBacklogYaml lenient fallback treats an all-blank block scalar as absent', () => {
+  const yaml = 'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\ndescription: |\n\n\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'description'), false);
+});
+
 test('parseBacklogYaml handles title with colons in value', () => {
   const yaml = 'id: BL-007\ntitle: Named runs — branch and PR named after work item\nstatus: active\n';
   const item = parseBacklogYaml(yaml);
   assert.ok(item);
   assert.equal(item.title, 'Named runs — branch and PR named after work item');
+});
+
+test('parseBacklogYaml parses a pinned pack list (BL-064)', () => {
+  const yaml = 'id: BL-064\ntitle: Lean pack\nstatus: active\npack:\n  - coder\n  - cleaner\n  - documenter\n';
+  const item = parseBacklogYaml(yaml);
+  assert.deepEqual(item.pack, ['coder', 'cleaner', 'documenter']);
+});
+
+test('parseBacklogYaml omits pack when the ticket has no pin (BL-064)', () => {
+  const yaml = 'id: BL-064\ntitle: Unpinned\nstatus: active\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'pack'), false);
 });
 
 test('parseBacklogYaml handles done status', () => {
@@ -92,6 +370,45 @@ test('readBacklog reads items from active directory', () => {
   assert.equal(items[0].id, 'BL-007');
 });
 
+test('readBacklog marks active-folder items as active even when yaml status says todo', () => {
+  const tmp = mkTmp();
+  const activeDir = path.join(tmp, 'backlog', 'active');
+  mkdirp(activeDir);
+  fs.writeFileSync(
+    path.join(activeDir, 'BL-053.yaml'),
+    'id: BL-053\ntitle: Promoted item\nstatus: todo\nassigned_to: coder\n'
+  );
+  const items = readBacklog(tmp);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].status, 'active');
+});
+
+// BL-234: readBacklog shares backlogReader.ts's parse seam with
+// readBacklogFolders - a status-less/unrecognized-status ticket in
+// active/done used to be dropped before its own overrideStatus ever got a
+// chance to apply (readYamlFiles only overrides a non-null parse result).
+test('BL-234: readBacklog no longer drops a status-less ticket in active/, overriding it to active', () => {
+  const tmp = mkTmp();
+  const activeDir = path.join(tmp, 'backlog', 'active');
+  mkdirp(activeDir);
+  fs.writeFileSync(path.join(activeDir, 'BL-233.yaml'), 'id: BL-233\ntitle: Recruiter\n');
+  const items = readBacklog(tmp);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].id, 'BL-233');
+  assert.equal(items[0].status, 'active');
+});
+
+test('BL-234: readBacklog no longer drops a ticket with an unrecognized status in done/, overriding it to done', () => {
+  const tmp = mkTmp();
+  const doneDir = path.join(tmp, 'backlog', 'done');
+  mkdirp(doneDir);
+  fs.writeFileSync(path.join(doneDir, 'BL-101.yaml'), 'id: BL-101\ntitle: Blocked thing\nstatus: blocked\n');
+  const items = readBacklog(tmp);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].id, 'BL-101');
+  assert.equal(items[0].status, 'done');
+});
+
 test('readBacklog reads items from done directory', () => {
   const tmp = mkTmp();
   const doneDir = path.join(tmp, 'backlog', 'done');
@@ -100,6 +417,77 @@ test('readBacklog reads items from done directory', () => {
   const items = readBacklog(tmp);
   assert.equal(items.length, 1);
   assert.equal(items[0].status, 'done');
+});
+
+// --- BL-062: done/ is grouped into per-milestone subfolders ---
+
+test('readBacklog reads done items one level deep in milestone subfolders', () => {
+  const tmp = mkTmp();
+  const m2 = path.join(tmp, 'backlog', 'done', 'M2');
+  mkdirp(m2);
+  fs.writeFileSync(path.join(m2, 'BL-010.yaml'), 'id: BL-010\ntitle: Old item\nstatus: todo\n');
+  const items = readBacklog(tmp);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].id, 'BL-010');
+  assert.equal(items[0].status, 'done');
+});
+
+test('readBacklog surfaces the subfolder slug as the done item milestone', () => {
+  const tmp = mkTmp();
+  // subfolder names are opaque slugs, not bare M-numbers; the folder is
+  // canonical even when the yaml disagrees
+  const m4 = path.join(tmp, 'backlog', 'done', 'M4-governance-backlog-sync');
+  mkdirp(m4);
+  fs.writeFileSync(path.join(m4, 'BL-011.yaml'), 'id: BL-011\ntitle: Moved item\nstatus: done\nmilestone: M1\n');
+  const items = readBacklog(tmp);
+  assert.equal(items[0].milestone, 'M4-governance-backlog-sync');
+});
+
+test('flat done files keep their yaml milestone field', () => {
+  const tmp = mkTmp();
+  const doneDir = path.join(tmp, 'backlog', 'done');
+  mkdirp(doneDir);
+  fs.writeFileSync(path.join(doneDir, 'BL-015.yaml'), 'id: BL-015\ntitle: Flat\nstatus: done\nmilestone: M2\n');
+  const items = readBacklog(tmp);
+  assert.equal(items[0].milestone, 'M2');
+});
+
+test('readBacklog still reads flat done files during the transition', () => {
+  const tmp = mkTmp();
+  const doneDir = path.join(tmp, 'backlog', 'done');
+  mkdirp(path.join(doneDir, 'M1'));
+  fs.writeFileSync(path.join(doneDir, 'BL-012.yaml'), 'id: BL-012\ntitle: Flat done\nstatus: done\n');
+  fs.writeFileSync(path.join(doneDir, 'M1', 'BL-013.yaml'), 'id: BL-013\ntitle: Grouped done\nstatus: done\n');
+  const items = readBacklog(tmp);
+  assert.deepEqual(items.map((i) => i.id).sort(), ['BL-012', 'BL-013']);
+  assert.ok(items.every((i) => i.status === 'done'));
+});
+
+test('readBacklog ignores non-yaml entries and two-level-deep yamls under done/', () => {
+  const tmp = mkTmp();
+  const m3 = path.join(tmp, 'backlog', 'done', 'M3');
+  mkdirp(path.join(m3, 'nested'));
+  fs.writeFileSync(path.join(m3, 'README.md'), '# notes');
+  fs.writeFileSync(path.join(m3, 'nested', 'BL-014.yaml'), 'id: BL-014\ntitle: Too deep\nstatus: done\n');
+  const items = readBacklog(tmp);
+  assert.equal(items.length, 0);
+});
+
+test('dependency gating counts a subfoldered done ticket as satisfied', () => {
+  const { nextEligibleItem } = require('../out/swarm/backlogLoop');
+  const tmp = mkTmp();
+  const m3 = path.join(tmp, 'backlog', 'done', 'M3');
+  const activeDir = path.join(tmp, 'backlog', 'active');
+  mkdirp(m3);
+  mkdirp(activeDir);
+  fs.writeFileSync(path.join(m3, 'BL-020.yaml'), 'id: BL-020\ntitle: Done dep\nstatus: done\n');
+  fs.writeFileSync(
+    path.join(activeDir, 'BL-021.yaml'),
+    'id: BL-021\ntitle: Blocked until dep done\nstatus: active\ndepends_on:\n  - BL-020\n'
+  );
+  const next = nextEligibleItem(readBacklog(tmp));
+  assert.ok(next, 'the dependent item must be eligible once its dep is done in a subfolder');
+  assert.equal(next.id, 'BL-021');
 });
 
 test('readBacklog reads items from both active and done directories', () => {
@@ -132,16 +520,116 @@ test('readBacklog skips malformed yaml files', () => {
   assert.equal(items.length, 1);
 });
 
+// --- BL-129: strict js-yaml load() first, lenient regex fallback on failure ---
+
+test('BL-129 strict-path-01: a well-formed ticket parses identically via the strict path', () => {
+  const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: active\nassigned_to: coder\nmilestone: M1\npriority: 5\npack:\n  - coder\n  - cleaner\n';
+  const item = parseBacklogYaml(yaml);
+  assert.deepEqual(item, {
+    id: 'BL-007',
+    title: 'Backlog panel',
+    status: 'active',
+    assignedTo: 'coder',
+    milestone: 'M1',
+    priority: 5,
+    pack: ['coder', 'cleaner'],
+  });
+});
+
+test('BL-129 strict-path-01: strict parsing does not surface stray keys outside the BacklogItem contract', () => {
+  const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: active\nevidence: some measured evidence\n';
+  const item = parseBacklogYaml(yaml);
+  assert.deepEqual(item, { id: 'BL-007', title: 'Backlog panel', status: 'active' });
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'evidence'), false);
+});
+
+// BL-322: notes: is now a KNOWN field (the topic-opening summary's "what it
+// solves" source) - no longer an example of an excluded stray key, unlike
+// evidence: above.
+test('BL-322: strict parsing reads notes: as a known field', () => {
+  const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: active\nnotes: internal only\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.notes, 'internal only');
+});
+
+// The following BL-129 fallback fixtures are trimmed prefixes of real backlog
+// tickets (measured 2026-07-06 to throw under strict js-yaml load() with the
+// message noted) — not synthetic strings, so the reproduction matches what
+// adopting js-yaml actually does to the live backlog.
+
+test('BL-129 fallback-02: an unquoted colon-space in a free-form title throws strict js-yaml but the ticket still surfaces (BL-093 shape)', () => {
+  const content = 'id: BL-093\ntitle: BUG — pane input injection is unreliable: instructions sit typed-but-unsubmitted, no seam verifies delivery, and a wedged TUI is unrecoverable by send-keys\nstatus: done\n';
+  assert.throws(() => yamlLib.load(content), /bad indentation/);
+  const item = parseBacklogYaml(content);
+  assert.ok(item, 'the ticket must not be dropped');
+  assert.equal(item.id, 'BL-093');
+  assert.equal(item.status, 'done');
+});
+
+test('BL-129 fallback-02: bad indentation of a mapping entry throws strict js-yaml but the ticket still surfaces (BL-097 shape)', () => {
+  const content = 'id: BL-097\ntitle: backlog dashboard PWA — serverless read-only projection of backlog/ via Action-rendered backlog.json on Pages\nmilestone: M6\nstatus: todo\npriority: 02\nsource: operator spec request 2026-07-04 ("Backlog dashboard app: read-only projection of backlog/ from git")\n';
+  assert.throws(() => yamlLib.load(content), /bad indentation/);
+  const item = parseBacklogYaml(content);
+  assert.ok(item, 'the ticket must not be dropped');
+  assert.equal(item.id, 'BL-097');
+  assert.equal(item.milestone, 'M6');
+});
+
+test('BL-129 fallback-02: a multiline implicit key throws strict js-yaml but the ticket still surfaces (BL-128 shape)', () => {
+  const content = 'id: BL-128\ntitle: give coordinator and specifier their own physical mailbox instead of sharing the master-worktree inbox\nmilestone: M3\nstatus: todo\npriority: 01\n\nheld (coordinator, 2026-07-05): not promoted yet despite priority 01 — Concurrent\nWork Orthogonality. BL-121/122 (handoff transport detection/recovery, top\npriority) are mid-pipeline right now (hardener stage) and touch the same\n';
+  assert.throws(() => yamlLib.load(content), /multiline key/);
+  const item = parseBacklogYaml(content);
+  assert.ok(item, 'the ticket must not be dropped');
+  assert.equal(item.id, 'BL-128');
+  assert.equal(item.priority, 1);
+});
+
+test('BL-129 no-regression-03: every real gnarly ticket the lenient parser already reads still parses after adopting js-yaml', () => {
+  const gnarlyFixtures = [
+    'id: BL-093\ntitle: BUG — pane input injection is unreliable: instructions sit typed-but-unsubmitted, no seam verifies delivery, and a wedged TUI is unrecoverable by send-keys\nstatus: done\n',
+    'id: BL-097\ntitle: backlog dashboard PWA — serverless read-only projection of backlog/ via Action-rendered backlog.json on Pages\nmilestone: M6\nstatus: todo\npriority: 02\nsource: operator spec request 2026-07-04 ("Backlog dashboard app: read-only projection of backlog/ from git")\n',
+    'id: BL-128\ntitle: give coordinator and specifier their own physical mailbox instead of sharing the master-worktree inbox\nmilestone: M3\nstatus: todo\npriority: 01\n\nheld (coordinator, 2026-07-05): not promoted yet despite priority 01 — Concurrent\nWork Orthogonality. BL-121/122 (handoff transport detection/recovery, top\npriority) are mid-pipeline right now (hardener stage) and touch the same\n',
+  ];
+  for (const fixture of gnarlyFixtures) {
+    const item = parseBacklogYaml(fixture);
+    assert.ok(item, `expected a ticket to surface for fixture: ${fixture}`);
+  }
+});
+
+test('BL-129: a strict-parseable object missing a required field (id) yields null (no lenient retry within the strict branch)', () => {
+  const item = parseBacklogYaml('title: missing id\nstatus: active\n');
+  assert.equal(item, null);
+});
+
+// BL-234: status is no longer a gate - an invalid/absent status enum value
+// still yields a ticket via the strict path, with status simply omitted.
+test('BL-129/BL-234: a strict-parseable object with an invalid status enum value still yields a ticket, status omitted', () => {
+  const item = parseBacklogYaml('id: BL-999\ntitle: bad status\nstatus: cancelled\n');
+  assert.deepEqual(item, { id: 'BL-999', title: 'bad status' });
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'status'), false);
+});
+
+test('BL-129: a quoted numeric priority string is coerced to a number via the strict path', () => {
+  const item = parseBacklogYaml('id: BL-007\ntitle: quoted priority\nstatus: todo\npriority: "5"\n');
+  assert.equal(item.priority, 5);
+});
+
+test('BL-129: an empty assigned_to/milestone string is omitted, not kept as ""', () => {
+  const item = parseBacklogYaml('id: BL-007\ntitle: empty optional fields\nstatus: todo\nassigned_to: ""\nmilestone: ""\n');
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'assignedTo'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'milestone'), false);
+});
+
 test('readBacklog handles read errors gracefully', () => {
   const tmp = mkTmp();
   const activeDir = path.join(tmp, 'backlog', 'active');
   mkdirp(activeDir);
-  const yamlFile = path.join(activeDir, 'BL-007.yaml');
-  fs.writeFileSync(yamlFile, 'id: BL-007\ntitle: Backlog panel\nstatus: active\n');
-  fs.chmodSync(yamlFile, 0o000);
+  // A directory where a .yaml file is expected forces a deterministic read
+  // failure (EISDIR) regardless of user/filesystem - unlike chmod 0000,
+  // which root and WSL/mounted filesystems can silently ignore (BL-219).
+  fs.mkdirSync(path.join(activeDir, 'BL-007.yaml'));
   const items = readBacklog(tmp);
   assert.equal(items.length, 0);
-  fs.chmodSync(yamlFile, 0o644);
 });
 
 test('readBacklog overrides done folder items to status done regardless of YAML', () => {
@@ -152,4 +640,37 @@ test('readBacklog overrides done folder items to status done regardless of YAML'
   const items = readBacklog(tmp);
   assert.equal(items.length, 1);
   assert.equal(items[0].status, 'done');
+});
+
+// --- BL-034: disk -> panel direction. readBacklog re-parses fresh from disk
+// on every call with no caching, so any external edit or move is visible on
+// the very next call - the same call the host's 2s poll makes every tick.
+// These pin that contract directly against this ticket's scenarios. ---
+
+test('BL-034: an external title edit on disk is reflected on the next read', () => {
+  const tmp = mkTmp();
+  const activeDir = path.join(tmp, 'backlog', 'active');
+  mkdirp(activeDir);
+  const filePath = path.join(activeDir, 'BL-200.yaml');
+  fs.writeFileSync(filePath, 'id: BL-200\ntitle: old title\nstatus: active\n');
+  assert.equal(readBacklog(tmp).find((i) => i.id === 'BL-200').title, 'old title');
+
+  fs.writeFileSync(filePath, 'id: BL-200\ntitle: new title\nstatus: active\n');
+
+  assert.equal(readBacklog(tmp).find((i) => i.id === 'BL-200').title, 'new title');
+});
+
+test('BL-034: an external move from active/ to done/<milestone>/ is reflected on the next read', () => {
+  const tmp = mkTmp();
+  const activeDir = path.join(tmp, 'backlog', 'active');
+  mkdirp(activeDir);
+  const filePath = path.join(activeDir, 'BL-201.yaml');
+  fs.writeFileSync(filePath, 'id: BL-201\ntitle: moving item\nstatus: active\nmilestone: M4\n');
+  assert.equal(readBacklog(tmp).find((i) => i.id === 'BL-201').status, 'active');
+
+  const doneDir = path.join(tmp, 'backlog', 'done', 'M4');
+  mkdirp(doneDir);
+  fs.renameSync(filePath, path.join(doneDir, 'BL-201.yaml'));
+
+  assert.equal(readBacklog(tmp).find((i) => i.id === 'BL-201').status, 'done');
 });

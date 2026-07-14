@@ -27,32 +27,90 @@ export interface Badge {
 
 export interface BadgeWithHolder extends Badge {
   holder?: string;
+  // Set when this tile's role holds more than one active parcel (e.g. a
+  // hardender batch): the count of parcels NOT shown as the primary badge
+  // (BL-068). Omitted (not zero) for a single-parcel holder.
+  extraCount?: number;
+  // BL-139: every ticket id this holder currently has, numerically sorted —
+  // the full set the tile's multi-ticket rainbow indicator renders one
+  // color segment per entry for. Always present, even for a single-parcel
+  // holder (a one-element array), so callers don't need a separate
+  // single-vs-multi branch to find the held set.
+  heldTicketIds: string[];
+}
+
+function compareTicketIds(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true });
+}
+
+function resolveItemHolder(item: BacklogItem, targetPath?: string): string | null {
+  if (!item.assignedTo) {
+    return null;
+  }
+  // When live routing is requested (targetPath given), findLiveHolder is
+  // the sole source of truth — the same resolver the backlog row's
+  // holderMap uses. Falling back to the static assignedTo YAML field
+  // when it resolves to null resurfaced a phantom tile badge for a
+  // ticket whose parcel already left every stage inbox (dropped after
+  // completion, or never routed at all), disagreeing with the backlog
+  // row's "queued" state for the same ticket (BL-079). Only skip live
+  // resolution entirely — and fall back to assignedTo — when no
+  // targetPath is given at all.
+  if (!targetPath) {
+    return item.assignedTo;
+  }
+  const liveHolder = findLiveHolder(targetPath, item.id);
+  return liveHolder || null;
+}
+
+function groupItemsByHolder(
+  items: BacklogItem[],
+  targetPath?: string
+): Map<string, { item: BacklogItem; holder: string }[]> {
+  const byHolder = new Map<string, { item: BacklogItem; holder: string }[]>();
+  for (const item of items) {
+    if (item.status !== 'active') {
+      continue;
+    }
+    const holder = resolveItemHolder(item, targetPath);
+    if (!holder) {
+      continue;
+    }
+    const bucket = byHolder.get(holder) ?? [];
+    bucket.push({ item, holder });
+    byHolder.set(holder, bucket);
+  }
+  return byHolder;
+}
+
+function formatBadgeEntry(
+  entries: { item: BacklogItem; holder: string }[]
+): BadgeWithHolder {
+  entries.sort((a, b) => compareTicketIds(a.item.id, b.item.id));
+  const [primary, ...rest] = entries;
+  return {
+    id: primary.item.id,
+    summary: truncateSummary(primary.item.title),
+    holder: primary.holder,
+    heldTicketIds: entries.map((e) => e.item.id),
+    ...(rest.length > 0 ? { extraCount: rest.length } : {}),
+  };
 }
 
 export function buildBadgeMap(
   items: BacklogItem[],
   targetPath?: string
 ): Record<string, BadgeWithHolder> {
-  const badges: Record<string, BadgeWithHolder> = {};
-  for (const item of items) {
-    if (item.status === 'active' && item.assignedTo) {
-      // For active items, find the live holder (current role holding the parcel)
-      // For todo items, use the intended assignee
-      let holder = item.assignedTo;
-      let liveHolder: string | null = null;
-      if (targetPath && item.status === 'active') {
-        liveHolder = findLiveHolder(targetPath, item.id);
-        if (liveHolder) {
-          holder = liveHolder;
-        }
-      }
+  // A tile's role can hold more than one active parcel at once (e.g. a
+  // hardender batch); grouping first — rather than writing straight into
+  // the result map — avoids each item silently overwriting the previous
+  // one for the same holder (BL-068 regression: only the last item
+  // processed ever survived, and the rest just vanished from the tile).
+  const byHolder = groupItemsByHolder(items, targetPath);
 
-      badges[holder] = {
-        id: item.id,
-        summary: truncateSummary(item.title),
-        holder: liveHolder || item.assignedTo,
-      };
-    }
+  const badges: Record<string, BadgeWithHolder> = {};
+  for (const [tileRole, entries] of byHolder) {
+    badges[tileRole] = formatBadgeEntry(entries);
   }
   return badges;
 }

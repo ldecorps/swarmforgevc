@@ -1,0 +1,69 @@
+id: BL-235
+title: "Per-tile backend/model switch-on-the-fly: respawn one role on a new backend, in-memory only"
+direction: feature
+milestone: M5
+priority: 40
+mutation_cost: medium
+source: "coordinator roadmap-gap-scan 2026-07-10 (operator: fill paused from the roadmap); gap #1, top-ranked. Spec.MD 'Change an agent's backend/model on the fly' (575-661), M5 roadmap bullet."
+
+description: |
+  Roadmap gap #1 (top-ranked). A per-tile backend/model dropdown lets the
+  operator drop one struggling agent onto a stronger model for a tricky slice,
+  then switch back — without touching any other agent or the swarm topology.
+
+  This is explicitly an M5 item and is a PAUSED proposal, not Milestone-1 work
+  (M1's project.prompt excludes per-tile respawn and model-switch controls). The
+  backend/provider abstraction it rides on is already done (BL-130, BL-142,
+  BL-206-208); this adds the live per-tile switch control on top.
+
+  Wanted behavior (observable, from Spec.MD 575-661):
+    - Picking a different backend/model from a tile's dropdown respawns ONLY that
+      role's agent on the new choice, in its existing worktree; no other agent is
+      affected and the pack/role topology is otherwise unchanged.
+    - "Switch model" and "switch backend" are the SAME operation: rewrite that one
+      window's launch command (swap the backend argument) and re-issue it on
+      respawn (kill the running backend PID, re-launch).
+    - The swap lives in the IN-MEMORY config only — swarmforge.conf on disk is
+      NOT modified (the switch is live/ephemeral, not persisted).
+    - Because role prompts + constitution are re-read at launch, the respawned
+      agent re-reads its instructions and resumes its durable in-process task
+      (the task is not lost by the respawn).
+    - The dropdown lists the swarm's configured/available backends and models
+      (external CLI backends and the in-process vscode.lm runtime).
+
+  Constraints:
+    - IN-MEMORY only: never write the swap into swarmforge.conf or any commit
+      (matches the "rewrites the in-memory config" spec and M1's no-persist posture).
+    - Reuse the existing InteractiveProcess/backend abstraction and the role ->
+      (backend PID, worktree, current backend) mapping; do not add a new provider
+      integration (Spec.MD "Agent Backends").
+    - Respawn = kill PID + re-issue the SAME launch command the orchestrator uses
+      for that role, backend arg swapped; same worktree. Bounded/safe respawn per
+      the engineering bounded-retry rule.
+    - Testable boundary: the dropdown is webview UI (the unsuitable boundary); the
+      switch/respawn logic is a host-side module driven without booting VS Code.
+
+  Scope: extension host — the per-role backend/current-backend mapping, the
+  in-memory launch-command rewrite + respawn, and the webview tile dropdown that
+  posts the switch to the host. No swarmforge.conf writes.
+
+  Related paused sibling: BL-236 (effort dial, per-role reasoning-effort) depends
+  on this switch/respawn control — spec to follow.
+
+acceptance: specs/features/BL-235-per-tile-backend-model-switch.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (host-side switch module; UI seam faked):
+  1. With a swarm of >=2 roles, switch one role's tile from model A to model B;
+     assert that role's agent respawned on B and NO other role's agent respawned.
+  2. Switch a role from a CLI backend to the in-process vscode.lm runtime; assert
+     the respawn used the swapped backend (same operation as a model switch).
+  3. After a switch, assert swarmforge.conf on disk is byte-for-byte unchanged and
+     the swap is reflected only in the in-memory config/mapping.
+  4. Give a role an in-process task, switch its model; assert the respawned agent
+     re-reads constitution+role and its in-process task is still present (resumed,
+     not lost).
+  5. Open a tile's dropdown; assert it lists the configured backends/models.
+
+# HUMAN APPROVAL: feature file specs/features/BL-235-...feature is a new draft
+# authored by the specifier and is pending human review.

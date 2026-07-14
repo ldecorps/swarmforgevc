@@ -2,10 +2,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const test = require('node:test');
-
-const { PaneTailer, STALL_THRESHOLD_MS } = require('../out/panel/paneTailer');
-const { installFakeTmux } = require('./helpers/fakeTmux');
+const { PaneTailer, STALL_THRESHOLD_MS, WORKING_INDICATOR_MS, didPaneRespawn } = require('../out/panel/paneTailer');
+const { installInProcessTmux } = require('./helpers/fakeTmux');
 
 function mkTmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-panetailer-'));
@@ -18,28 +16,34 @@ function writeState(targetPath, roleLines = '1\tcoder\tswarmforge-coder\tCoder\t
   fs.writeFileSync(path.join(stateDir, 'sessions.tsv'), roleLines);
 }
 
-function waitUntil(predicate, timeoutMs = 2000, intervalMs = 10) {
-  return new Promise((resolve, reject) => {
-    const deadline = Date.now() + timeoutMs;
-    const check = () => {
-      if (predicate()) {
-        resolve();
-        return;
+// BL-131/BL-362: captures start()'s interval callback instead of scheduling
+// it for real (same injection point chaserMonitor.ts/waitForSwarmReady
+// already use) - fire() runs one poll() cycle synchronously (poll() itself
+// is synchronous), so a test drives N polls with zero real wall-clock wait.
+// Every test in this file that calls start() uses this instead of the real
+// setInterval/clearInterval default.
+function fakeScheduler() {
+  let tick = null;
+  return {
+    scheduleTick: (fn) => {
+      tick = fn;
+      return {};
+    },
+    clearTick: () => {
+      tick = null;
+    },
+    fire: () => {
+      if (tick) {
+        tick();
       }
-      if (Date.now() >= deadline) {
-        reject(new Error('waitUntil timed out'));
-        return;
-      }
-      setTimeout(check, intervalMs);
-    };
-    check();
-  });
+    },
+  };
 }
 
 test('refreshState reads roles and socket path from target state', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ exitCode: 0, stdout: '' }]);
   try {
     const tailer = new PaneTailer(targetPath, () => {});
     tailer.refreshState();
@@ -50,26 +54,28 @@ test('refreshState reads roles and socket path from target state', () => {
   }
 });
 
-test('start/poll reports pane output for a live session, stop halts further polling', async () => {
+test('start/poll reports pane output for a live session, stop halts further polling', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'has-session', exitCode: 0 },
     { subcommand: 'capture-pane', exitCode: 0, stdout: 'agent output' },
-    { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+    { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
     { exitCode: 0, stdout: '' },
   ]);
   try {
     const updates = [];
     const tailer = new PaneTailer(targetPath, (u) => updates.push(...u));
-    tailer.start(15);
-    await waitUntil(() => updates.length > 0);
+    const { scheduleTick, clearTick, fire } = fakeScheduler();
+    tailer.start(15, scheduleTick, clearTick);
+    // start() already runs one poll() synchronously, before the (fake)
+    // interval is even relevant.
     assert.equal(updates[0].role, 'coder');
     assert.match(updates[0].text, /agent output/);
 
-    tailer.stop();
+    tailer.stop(clearTick);
     const countAfterStop = updates.length;
-    await new Promise((resolve) => setTimeout(resolve, 60));
+    fire(); // a tick "firing" after stop must be a no-op (clearTick took effect)
     assert.equal(updates.length, countAfterStop, 'no further polls should fire after stop()');
   } finally {
     fake.restore();
@@ -79,16 +85,18 @@ test('start/poll reports pane output for a live session, stop halts further poll
 test('poll reports a dead session and fires onDead once, then revives it', async () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([{ subcommand: 'has-session', exitCode: 1 }]);
+  const fake = installInProcessTmux([{ subcommand: 'has-session', exitCode: 1 }]);
   try {
     const updates = [];
     const deadEvents = [];
     const tailer = new PaneTailer(targetPath, (u) => updates.push(...u), undefined, (e) => deadEvents.push(...e));
-    // start(huge pollMs) runs refreshState() + one poll() synchronously and
-    // never lets the interval fire before stop(); further poll()s are driven
-    // directly so refreshState() doesn't reset dead/live tracking in between.
-    tailer.start(1_000_000);
-    tailer.stop();
+    // BL-362: start() is driven by an injected fake tick, never the real
+    // setInterval, so no test in this file waits on the wall clock. Further
+    // poll()s are driven directly so refreshState() doesn't reset dead/live
+    // tracking in between.
+    const { scheduleTick, clearTick } = fakeScheduler();
+    tailer.start(1_000_000, scheduleTick, clearTick);
+    tailer.stop(clearTick);
 
     assert.equal(updates.length, 1);
     assert.match(updates[0].text, /is not running/);
@@ -117,7 +125,7 @@ test('poll reports a dead session and fires onDead once, then revives it', async
 test('poll reports a capture failure with a readable-pane error message', async () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'has-session', exitCode: 0 },
     { subcommand: 'capture-pane', exitCode: 1 },
     { exitCode: 0, stdout: '' },
@@ -125,10 +133,150 @@ test('poll reports a capture failure with a readable-pane error message', async 
   try {
     const updates = [];
     const tailer = new PaneTailer(targetPath, (u) => updates.push(...u));
-    tailer.start(1_000_000);
-    tailer.stop();
+    const { scheduleTick, clearTick } = fakeScheduler();
+    tailer.start(1_000_000, scheduleTick, clearTick);
+    tailer.stop(clearTick);
     assert.equal(updates.length, 1);
     assert.match(updates[0].text, /Could not read tmux pane/);
+  } finally {
+    fake.restore();
+  }
+});
+
+// --- BL-120: a respawned pane (same session/socket, new process) must not
+//     keep merging fresh content against retained state from the process
+//     that used to be there ---
+
+test('didPaneRespawn is false on a role’s first-ever capture (no previous pid yet)', () => {
+  assert.equal(didPaneRespawn(undefined, '111'), false);
+});
+
+test('didPaneRespawn is false when the pid is unchanged', () => {
+  assert.equal(didPaneRespawn('111', '111'), false);
+});
+
+test('didPaneRespawn is true when a previously known pid changes', () => {
+  assert.equal(didPaneRespawn('111', '222'), true);
+});
+
+test('didPaneRespawn is false when the current pid could not be resolved (capture failure, not a respawn)', () => {
+  assert.equal(didPaneRespawn('111', ''), false);
+});
+
+test('a pane respawn (pid change, same session) resets retained history instead of merging old content into the new capture', async () => {
+  const targetPath = mkTmp();
+  writeState(targetPath);
+  const fake = installInProcessTmux([
+    { subcommand: 'has-session', exitCode: 0 },
+    // BL-362: pid and command now come from ONE display-message call
+    // (getPanePidAndCommand), tab-separated.
+    { subcommand: 'display-message', exitCode: 0, stdout: '111\tclaude\n' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: 'OLD LINE 1\nOLD LINE 2' },
+  ]);
+  try {
+    const updates = [];
+    const tailer = new PaneTailer(targetPath, (u) => updates.push(...u));
+    const { scheduleTick } = fakeScheduler();
+    tailer.start(1_000_000, scheduleTick);
+    assert.match(updates[updates.length - 1].text, /OLD LINE 1/);
+
+    // Same session, same socket - only the pane's pid changes, as a real
+    // `tmux respawn-pane` produces - and the capture now reflects an
+    // entirely unrelated fresh process.
+    fake.setRules([
+      { subcommand: 'has-session', exitCode: 0 },
+      { subcommand: 'display-message', exitCode: 0, stdout: '222\tclaude\n' },
+      { subcommand: 'capture-pane', exitCode: 0, stdout: 'NEW LINE 1\nNEW LINE 2' },
+    ]);
+    tailer.poll();
+
+    const latest = updates[updates.length - 1].text;
+    assert.match(latest, /NEW LINE 1/);
+    assert.doesNotMatch(
+      latest,
+      /OLD LINE/,
+      'retained history from before the respawn leaked into the post-respawn tile content'
+    );
+  } finally {
+    fake.restore();
+  }
+});
+
+test('an unchanged pid across polls keeps accumulating history normally (no false respawn reset)', async () => {
+  const targetPath = mkTmp();
+  writeState(targetPath);
+  const fake = installInProcessTmux([
+    { subcommand: 'has-session', exitCode: 0 },
+    { subcommand: 'display-message', exitCode: 0, stdout: '111\tclaude\n' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: 'LINE A' },
+  ]);
+  try {
+    const updates = [];
+    const tailer = new PaneTailer(targetPath, (u) => updates.push(...u));
+    const { scheduleTick } = fakeScheduler();
+    tailer.start(1_000_000, scheduleTick);
+
+    fake.setRules([
+      { subcommand: 'has-session', exitCode: 0 },
+      { subcommand: 'display-message', exitCode: 0, stdout: '111\tclaude\n' },
+      { subcommand: 'capture-pane', exitCode: 0, stdout: 'LINE B' },
+    ]);
+    tailer.poll();
+
+    const latest = updates[updates.length - 1].text;
+    assert.match(latest, /LINE A/, 'same-pid history should still retain earlier content');
+    assert.match(latest, /LINE B/);
+  } finally {
+    fake.restore();
+  }
+});
+
+// --- BL-048: pushFullTextIfChanged dedup guard, shared by both error branches ---
+
+test('a session that stays not-running across repeated polls only pushes the message once', async () => {
+  const targetPath = mkTmp();
+  writeState(targetPath);
+  const fake = installInProcessTmux([{ subcommand: 'has-session', exitCode: 1 }]);
+  try {
+    const updates = [];
+    const tailer = new PaneTailer(targetPath, (u) => updates.push(...u));
+    const { scheduleTick, clearTick } = fakeScheduler();
+    tailer.start(1_000_000, scheduleTick, clearTick);
+    assert.equal(updates.length, 1, 'first poll must report the not-running message');
+
+    fake.setRules([{ subcommand: 'has-session', exitCode: 1 }]);
+    tailer.poll();
+
+    tailer.stop(clearTick);
+    assert.equal(updates.length, 1, 'polling again with the same not-running state must not re-push identical text');
+  } finally {
+    fake.restore();
+  }
+});
+
+test('a pane that keeps failing to capture across repeated polls only pushes the message once', async () => {
+  const targetPath = mkTmp();
+  writeState(targetPath);
+  const fake = installInProcessTmux([
+    { subcommand: 'has-session', exitCode: 0 },
+    { subcommand: 'capture-pane', exitCode: 1 },
+    { exitCode: 0, stdout: '' },
+  ]);
+  try {
+    const updates = [];
+    const tailer = new PaneTailer(targetPath, (u) => updates.push(...u));
+    const { scheduleTick, clearTick } = fakeScheduler();
+    tailer.start(1_000_000, scheduleTick, clearTick);
+    assert.equal(updates.length, 1, 'first poll must report the capture-failure message');
+
+    fake.setRules([
+      { subcommand: 'has-session', exitCode: 0 },
+      { subcommand: 'capture-pane', exitCode: 1 },
+    ]);
+    tailer.poll();
+
+    tailer.stop(clearTick);
+    assert.equal(updates.length, 1, 'polling again with the same capture failure must not re-push identical text');
   } finally {
     fake.restore();
   }
@@ -137,10 +285,10 @@ test('poll reports a capture failure with a readable-pane error message', async 
 test('poll notifies onRoles when a role is added between polls', async () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'has-session', exitCode: 0 },
     { subcommand: 'capture-pane', exitCode: 0, stdout: '' },
-    { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+    { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
     { exitCode: 0, stdout: '' },
   ]);
   try {
@@ -154,8 +302,9 @@ test('poll notifies onRoles when a role is added between polls', async () => {
       undefined,
       (roles) => roleUpdates.push(roles)
     );
-    tailer.start(1_000_000);
-    tailer.stop();
+    const { scheduleTick, clearTick } = fakeScheduler();
+    tailer.start(1_000_000, scheduleTick, clearTick);
+    tailer.stop(clearTick);
     assert.equal(roleUpdates.length, 0, 'role set unchanged after refreshState + first poll');
 
     writeState(
@@ -173,7 +322,7 @@ test('poll notifies onRoles when a role is added between polls', async () => {
 test('forwardInput no-ops for an unknown role', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ exitCode: 0, stdout: '' }]);
   try {
     const tailer = new PaneTailer(targetPath, () => {});
     tailer.refreshState();
@@ -188,7 +337,7 @@ test('forwardInput no-ops for an unknown role', () => {
 test('forwardInput sends mapped keys to tmux and logs the keystroke', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ exitCode: 0, stdout: '' }]);
   try {
     const tailer = new PaneTailer(targetPath, () => {});
     tailer.refreshState();
@@ -211,7 +360,7 @@ test('forwardInput sends mapped keys to tmux and logs the keystroke', () => {
 test('forwardSpecialKey sends the mapped tmux key name for a known key', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ exitCode: 0, stdout: '' }]);
   try {
     const tailer = new PaneTailer(targetPath, () => {});
     tailer.refreshState();
@@ -227,7 +376,7 @@ test('forwardSpecialKey sends the mapped tmux key name for a known key', () => {
 test('forwardSpecialKey no-ops for an unmapped key', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ exitCode: 0, stdout: '' }]);
   try {
     const tailer = new PaneTailer(targetPath, () => {});
     tailer.refreshState();
@@ -247,7 +396,7 @@ test('forwardSpecialKey no-ops for an unmapped key', () => {
 test('a failed input-log write does not throw and keystroke delivery continues', () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ exitCode: 0, stdout: '' }]);
   try {
     const tailer = new PaneTailer(targetPath, () => {});
     tailer.refreshState();
@@ -269,9 +418,9 @@ test('a failed input-log write does not throw and keystroke delivery continues',
 test('onStall fires stalled then unstalled as pane output ages and then changes', async () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'has-session', exitCode: 0 },
-    { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+    { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
     { exitCode: 0, stdout: '' },
   ]);
   const realDateNow = Date.now;
@@ -289,14 +438,15 @@ test('onStall fires stalled then unstalled as pane output ages and then changes'
     fake.setRules([
       { subcommand: 'has-session', exitCode: 0 },
       { subcommand: 'capture-pane', exitCode: 0, stdout: captureOutput },
-      { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+      { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
       { exitCode: 0, stdout: '' },
     ]);
-    // start(huge pollMs) runs refreshState() + one poll() synchronously; every
-    // subsequent step drives poll() directly so refreshState() doesn't reset
-    // lastChangedAt/stalledRoles in between.
-    tailer.start(1_000_000);
-    tailer.stop();
+    // BL-362: start() is driven by an injected fake tick rather than the
+    // real setInterval; every subsequent step drives poll() directly so
+    // refreshState() doesn't reset lastChangedAt/stalledRoles in between.
+    const { scheduleTick, clearTick } = fakeScheduler();
+    tailer.start(1_000_000, scheduleTick, clearTick);
+    tailer.stop(clearTick);
     assert.equal(stallEvents.length, 0);
 
     mockedNow += STALL_THRESHOLD_MS + 1;
@@ -309,7 +459,7 @@ test('onStall fires stalled then unstalled as pane output ages and then changes'
     fake.setRules([
       { subcommand: 'has-session', exitCode: 0 },
       { subcommand: 'capture-pane', exitCode: 0, stdout: captureOutput },
-      { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+      { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
       { exitCode: 0, stdout: '' },
     ]);
     tailer.poll();
@@ -324,9 +474,9 @@ test('onStall fires stalled then unstalled as pane output ages and then changes'
 test('onNeedsHuman fires true when a pane shows a question, then false once it resumes, with no duplicate events', async () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'has-session', exitCode: 0 },
-    { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+    { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
     { exitCode: 0, stdout: '' },
   ]);
   try {
@@ -346,17 +496,18 @@ test('onNeedsHuman fires true when a pane shows a question, then false once it r
     fake.setRules([
       { subcommand: 'has-session', exitCode: 0 },
       { subcommand: 'capture-pane', exitCode: 0, stdout: 'working on it...' },
-      { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+      { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
       { exitCode: 0, stdout: '' },
     ]);
-    tailer.start(1_000_000);
-    tailer.stop();
+    const { scheduleTick, clearTick } = fakeScheduler();
+    tailer.start(1_000_000, scheduleTick, clearTick);
+    tailer.stop(clearTick);
     assert.equal(needsHumanEvents.length, 0, 'plain output must not fire needsHuman');
 
     fake.setRules([
       { subcommand: 'has-session', exitCode: 0 },
       { subcommand: 'capture-pane', exitCode: 0, stdout: 'Continue? (y/n)' },
-      { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+      { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
       { exitCode: 0, stdout: '' },
     ]);
     tailer.poll();
@@ -370,13 +521,78 @@ test('onNeedsHuman fires true when a pane shows a question, then false once it r
     fake.setRules([
       { subcommand: 'has-session', exitCode: 0 },
       { subcommand: 'capture-pane', exitCode: 0, stdout: 'resumed working' },
-      { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
+      { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
       { exitCode: 0, stdout: '' },
     ]);
     tailer.poll();
     assert.equal(needsHumanEvents.length, 2);
     assert.deepEqual(needsHumanEvents[1], { role: 'coder', needsHuman: false });
   } finally {
+    fake.restore();
+  }
+});
+
+test('onActivity fires working then not-working as the pane enters and leaves an active-work state, with no duplicate while unchanged', async () => {
+  const targetPath = mkTmp();
+  writeState(targetPath);
+  const fake = installInProcessTmux([
+    { subcommand: 'has-session', exitCode: 0 },
+    { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
+    { exitCode: 0, stdout: '' },
+  ]);
+  const realDateNow = Date.now;
+  let mockedNow = realDateNow();
+  Date.now = () => mockedNow;
+  try {
+    const activityEvents = [];
+    const tailer = new PaneTailer(
+      targetPath,
+      () => {},
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (events) => activityEvents.push(...events)
+    );
+
+    fake.setRules([
+      { subcommand: 'has-session', exitCode: 0 },
+      { subcommand: 'capture-pane', exitCode: 0, stdout: 'Thinking… (esc to interrupt)' },
+      { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
+      { exitCode: 0, stdout: '' },
+    ]);
+    const { scheduleTick, clearTick } = fakeScheduler();
+    tailer.start(1_000_000, scheduleTick, clearTick);
+    tailer.stop(clearTick);
+    assert.equal(activityEvents.length, 1);
+    assert.deepEqual(activityEvents[0], { role: 'coder', working: true });
+
+    // Same active-work text again: still working, must not refire.
+    tailer.poll();
+    assert.equal(activityEvents.length, 1, 'unchanged working state must not refire');
+
+    // Text goes idle, but a just-changed pane still reads as working via the
+    // WORKING_INDICATOR_MS recency window - no event yet.
+    fake.setRules([
+      { subcommand: 'has-session', exitCode: 0 },
+      { subcommand: 'capture-pane', exitCode: 0, stdout: 'idle output' },
+      { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
+      { exitCode: 0, stdout: '' },
+    ]);
+    tailer.poll();
+    assert.equal(activityEvents.length, 1, 'a freshly-changed pane stays "working" via recency alone');
+
+    // Once idle output holds and the recency window elapses, working flips false.
+    mockedNow += WORKING_INDICATOR_MS + 1;
+    tailer.poll();
+    assert.equal(activityEvents.length, 2);
+    assert.deepEqual(activityEvents[1], { role: 'coder', working: false });
+  } finally {
+    Date.now = realDateNow;
     fake.restore();
   }
 });

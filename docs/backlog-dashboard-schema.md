@@ -1,0 +1,74 @@
+# backlog.json schema
+
+BL-097: `backlog.json` is a stable, versioned data contract published to
+GitHub Pages by `.github/workflows/backlog-dashboard.yml`. It is generated
+by `node out/tools/generate-backlog-dashboard.js` (source:
+`extension/src/metrics/backlogDashboard.ts`), which is a thin presenter over
+the same `computeDeliveryMetrics` the `swarm-metrics` CLI and the bridge's
+`/metrics` endpoint use — the numbers here always agree with those surfaces
+at the same commit.
+
+Additive evolution only within `schemaVersion` 1: new optional fields may be
+added without a version bump; removing or repurposing a field requires
+bumping `schemaVersion` and documenting the change here.
+
+## Top level
+
+| Field | Type | Notes |
+|---|---|---|
+| `schemaVersion` | number | Currently `1`. |
+| `generatedAtIso` | string (ISO 8601) | When this file was generated. |
+| `sourceSha` | string \| null | The commit this projection was generated from. `null` only if `git rev-parse HEAD` itself failed (should not happen in the Action). |
+| `board` | object | See **Board** below. |
+| `notDoneCount` | number | BL-263: `board.active.length + board.paused.length` — the total of live (not-done) tickets, excluding `done`. Always present (`0` when every ticket is done, never blank/omitted). The SAME number the daily briefing composes (`not-done-count-line.js` calls `computeBacklogDashboard`'s identical `computeNotDoneCount`), so the two surfaces can never disagree. |
+| `metrics` | object | See **Metrics** below. Test-suite duration is deliberately absent: its records (`extension/.test-durations.jsonl`, BL-078) are gitignored/machine-local, so no git-derived projection can see them. |
+| `costHealth` | `CostHealthSidecar` (optional) | BL-213: the most recently committed `docs/briefings/<date>.json` sidecar, folded in verbatim. Absent when no sidecar has ever been committed — additive field, `schemaVersion` unchanged either way. See `extension/src/notify/costHealthSidecar.ts`'s own `CostHealthSidecar` interface for the exact shape (per-agent tokens/cost, top expensive tickets, flow balance, reliability counts, resource anomalies — each figure carrying a BL-096 trend). |
+| `roleLeaderboard` | `BenchmarkReport` (optional) | BL-347: the most recently committed `docs/benchmarks/<date>.json` role-benchmark report (BL-340), folded in verbatim — same committed-sidecar mechanism as `costHealth`, since a benchmark run is machine-local/live and this is the only sanctioned way its numbers reach the PWA. Absent when no report has ever been committed (the PWA hides the section entirely, never renders it empty). See `extension/src/benchmark/types.ts`'s own `BenchmarkReport` interface for the exact shape (per-model quality/cost/duration means and std-dev, a `ranking` of `bestByQuality`/`bestByValue`/`cheapestAcceptable` model ids, the stated `qualityThreshold`). The role a report covers is derived from its `taskId`'s own `<role>-task-...` naming convention (established by BL-340's fixture, e.g. `coder-task-01-word-frequency` → `coder`) — the schema itself carries no separate `role` field. BL-385: `ranking.bestByQuality` is `null` whenever 2+ models share the top quality score (a real tie, never resolved by array order) — `ranking.couldNotDiscriminateReason` is non-null exactly then, and the PWA renders a reason row in place of a "Best" row. `ranking.bestByValueRankedByCostAlone` is `true` when `bestByValue` was computed under such a tie, so the PWA can label it a ranking on cost alone rather than a quality-cost judgement. |
+
+## Board
+
+| Field | Type | Notes |
+|---|---|---|
+| `board.active` | `TicketSummary[]` | Tickets currently in `backlog/active/`. |
+| `board.paused` | `TicketSummary[]` | Tickets currently in `backlog/paused/`. |
+| `board.doneByMilestone` | `Record<string, TicketSummary[]>` | Tickets in `backlog/done/`, grouped by milestone; a ticket with no `milestone:` field is grouped under the key `"unspecified"`. |
+
+### TicketSummary
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | e.g. `"BL-097"`. |
+| `title` | string | |
+| `titleTranslations` | `Record<string, { title: string; untranslated?: boolean }>` (optional) | BL-230: per-configured-target-locale machine-translated title, keyed by locale code (see `extension/src/i18n/targetLocales.ts`'s `TARGET_LOCALES`; French (`fr`) is the first delivered target). Supersedes BL-118's fixed `titleFr`/`titleFrUntranslated` pair — adding a target locale is a new key in this map, not a new field pair, so no per-language code change is needed (only `translateBacklogDashboard` populates this; `buildBacklogDashboard`/`computeBacklogDashboard` alone never set it). Each entry's `untranslated: true` means `title` is untranslated English (MT engine unavailable/failed), not an actual translation; absent (not `false`) when translation succeeded. A locale with no entry falls back to the ticket's source `title`. |
+| `status` | `"active" \| "paused" \| "done"` | The folder this ticket currently sits in (authoritative over any `status:` field inside the ticket YAML). |
+| `swarm` | string | The ticket's `swarm:` field (BL-090), defaulting to `"primary"` when absent. |
+| `milestone` | string (optional) | Absent if the ticket has no milestone. |
+| `priority` | number (optional) | Absent if the ticket has no priority. |
+| `specDateIso` | string (optional) | Earliest git-recorded arrival of this ticket's file anywhere under `backlog/`. Absent if git history doesn't show one (e.g. not yet committed). |
+| `closeDateIso` | string (optional) | Earliest git-recorded arrival under `backlog/done/`. Present only once a ticket has actually closed. |
+| `p50Iso` / `p85Iso` | string (optional) | Delivery-date forecast (BL-096) for a still-open ticket, count-based estimates. Absent for closed tickets, and absent for any ticket the forecaster has no data for (e.g. zero historical throughput). |
+
+## Metrics
+
+Each field is the corresponding `DeliveryMetrics` field from
+`extension/src/metrics/deliveryMetrics.ts`, passed through unmodified:
+
+| Field | Type | Notes |
+|---|---|---|
+| `metrics.velocity` | `VelocityResult` | Weekly closed-ticket series, trend (BL-096's shared trend function), and a trailing-window rolling count. |
+| `metrics.burndown` | `MilestoneBurndownResult[]` | Per-milestone remaining-count series reconstructed from git history; the final point always matches the current backlog folder state. |
+| `metrics.cycleTime` | `CycleTimeResult` | Median/p85 spec-to-close duration over the recent closed set, plus a weekly series and trend. |
+| `metrics.forecasts` | `ForecastResult` | Per-ticket and per-milestone p50/p85 delivery-date estimates (trailing throughput + historical cycle-time distribution, depends_on-aware — see `deliveryMetrics.ts`'s own comments for the method). |
+
+See `extension/src/metrics/trend.ts`'s `TrendResult` and
+`extension/src/metrics/deliveryMetrics.ts`'s own exported interfaces for the
+exact nested shapes (`TrendSeriesPoint`, `MilestoneBurndownResult`, etc.) —
+this document tracks the top-level contract; the TypeScript interfaces are
+the source of truth for nested field names.
+
+## What is NOT in this file
+
+- Test-suite duration trend (gitignored/local-only — see above).
+- Raw per-role CPU/RAM/token/resource telemetry (BL-100) — only the daily
+  aggregates a committed cost-health sidecar carries ever reach
+  `backlog.json`; raw transcript/resource telemetry stays local.

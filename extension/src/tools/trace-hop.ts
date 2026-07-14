@@ -20,6 +20,9 @@ export const PHASE_MAP: Record<string, string> = {
   specifier: 'specifying',
   coder: 'coding',
   cleaner: 'verifying',
+  architect: 'architecting',
+  hardender: 'hardening',
+  documenter: 'documenting',
   QA: 'qa-verifying',
 };
 
@@ -58,8 +61,7 @@ export function countPriorRetries(logPath: string, role: string): number {
   try {
     const content = fs.readFileSync(logPath, 'utf-8');
     let count = 0;
-    // Escape role for regex: role is a fixed constant (coordinator/specifier/coder/cleaner)
-    // but defensive escaping prevents logic errors if that changes.
+    // Escape role for regex to prevent injection in subsequent operations.
     const escapedRole = role.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const pattern = new RegExp(`^RETRY ${escapedRole} `);
     for (const line of content.split('\n')) {
@@ -79,12 +81,17 @@ export function resolveTracesDir(envDir: string | null, cwd?: string): string {
     return envDir;
   }
   try {
+    const resolvedCwd = cwd ?? process.cwd();
     const gitCommonDir = execSync('git rev-parse --git-common-dir', {
-      cwd: cwd ?? process.cwd(),
+      cwd: resolvedCwd,
       encoding: 'utf-8',
     }).trim();
-    // git-common-dir is inside the worktree; go up to the repo root
-    const repoRoot = path.resolve(gitCommonDir, '..', '..');
+    // git-common-dir is relative (".git") in a plain repo but absolute in a
+    // linked worktree (it points at the main repo's .git) - resolve it
+    // against resolvedCwd (not process.cwd()) so a relative result lands in
+    // the right place; path.resolve discards the leading segment when a
+    // later one is already absolute, so this handles both cases.
+    const repoRoot = path.resolve(resolvedCwd, gitCommonDir, '..');
     return path.join(repoRoot, '.swarmforge', 'traces');
   } catch (error) {
     const details = error instanceof Error ? error.message : String(error);

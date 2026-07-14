@@ -1,0 +1,19 @@
+id: BL-001
+title: Remove dead orchestrator code and surface dogfood checkpoint
+milestone: M1
+status: done
+priority: 1
+
+description: >
+  The standalone-orchestrator modules (AgentRunner, SwarmOrchestrator, InteractiveProcess,
+  MessageBus, WorktreeManager) were built under the now-archived bootstrap-brief and are
+  unused. Remove them. Also surface the dogfood checkpoint notification the first time the
+  panel opens after a successful launch.
+
+acceptance:
+  - All five orchestrator modules and their exclusive tests deleted
+  - npm run compile passes with no errors
+  - A one-time VS Code info notification appears when the panel first opens post-launch
+  - Notification does not reappear on subsequent opens in the same session
+
+assigned_to: coder

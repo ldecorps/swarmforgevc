@@ -6,6 +6,12 @@ Do not spend any money on a bankrbot SWARM token.
 
 **A disciplined tmux-based agent orchestration platform that turns swarms of AI agents into reliable, professional software engineers.**
 
+New to the **SwarmForge VC** VS Code extension in this repo? Start with
+[Getting Started](docs/GettingStarted.md) — install, point it at a target,
+run a swarm, and get a PR. Plugging the swarm into a **new/greenfield**
+project? See [Onboarding a New Project](docs/Onboarding-New-Project.md),
+which covers the acceptance contract that drives what the swarm builds.
+
 ## Intent
 
 This `main` branch is documentary: it explains the system and carries the shared operational scripts and default constitution articles. The runnable workflow branches carry the project-facing configurations, role prompts, and local constitution articles that define specific workflows.
@@ -38,9 +44,9 @@ The normal flow is `specifier` -> `coder` -> `refactorer` -> `architect` -> `spe
 - `cleaner` performs local behavior-preserving cleanup, coverage improvement, CRAP and DRY review, and mutation-site scans.
 - `architect` reviews module structure, boundaries, dependency direction, and property-test coverage.
 - `hardender` performs mutation hardening, language mutation, CRAP and DRY verification, and soft Gherkin mutation.
-- `QA` converts the specifier's QA procedures into executable scripts, runs final user-interface verification, checks handoff consistency, and sends completion notifications.
+- `QA` converts the specifier's QA procedures into executable scripts, runs final user-interface verification, checks handoff consistency, broadcasts merge-up to worktree roles, then lands the approved commit on `main` itself and pushes before notifying the coordinator to bookkeep the backlog.
 
-The normal flow is `specifier` -> `coder` -> `cleaner` -> `architect` -> `hardender` -> `QA` -> completion. Use this branch when you want each review and verification concern owned by a separate agent.
+The normal flow is `specifier` -> `coder` -> `cleaner` -> `architect` -> `hardender` -> `QA` (integrate) -> coordinator (bookkeep). Use this branch when you want each review and verification concern owned by a separate agent.
 
 ## Prerequisites
 
@@ -269,7 +275,7 @@ If a window uses `master` as its worktree name, SwarmForge does not create `.wor
 
 ## tmux Behavior
 
-SwarmForge uses a project-specific tmux socket recorded in `.swarmforge/tmux-socket`, so each project swarm is isolated from other tmux sessions. It also honors tmux `base-index` and `pane-base-index` settings when launching agents and sending notifications, so configurations that number windows or panes from `1` work without requiring users to change their tmux preferences.
+SwarmForge uses a project-specific tmux socket recorded in `.swarmforge/tmux-socket`, so each project swarm is isolated from other tmux sessions. The socket file itself lives under the project's own `.swarmforge/tmux/` directory, never in `/tmp` — `/tmp` is shared scratch space subject to reaping by unrelated cleanup tools, and once a unix socket is unlinked out from under a live tmux server, that server cannot be rebound to a new path for the rest of its life. If the resolved path would overrun the ~108-byte unix-socket path limit (possible for a deeply-nested checkout), SwarmForge falls back to `$XDG_RUNTIME_DIR` and fails with a clear error — never a blind bind — if neither location fits. It also honors tmux `base-index` and `pane-base-index` settings when launching agents and sending notifications, so configurations that number windows or panes from `1` work without requiring users to change their tmux preferences.
 
 ## Terminal Behavior
 

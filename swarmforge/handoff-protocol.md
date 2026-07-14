@@ -35,11 +35,25 @@ Each agent worktree owns this structure:
     new/
     in_process/
     completed/
+    abandoned/
 ```
 
 The daemon consumes `outbox/`. Agents consume `inbox/new/` through helper
 scripts. The `sent`, `failed`, `in_process`, and `completed` directories provide
 the audit trail and restart state.
+
+**Master-resident roles get their own mailbox subdirectory.** Any role whose
+`swarmforge.conf` window line uses worktree name `master` (typically
+`coordinator` and `specifier`) shares one physical checkout with every other
+master-resident role, so it does not get the physical separation a dedicated
+`.worktrees/<role>` checkout provides. For those roles only, the layout above
+lives one level deeper, under `.swarmforge/handoffs/<role>/` — e.g.
+`.swarmforge/handoffs/coordinator/inbox/new/`. Every role with its own
+dedicated worktree keeps the flat layout shown above unchanged. All mailbox
+paths are resolved through one shared function (`mailbox-dir`/
+`mailbox-base-dir` in `handoff_lib.bb`, callable from shell via
+`mailbox_dir.bb`; mirrored in the extension's `swarmState.ts`) — no script
+constructs a mailbox path by hand.
 
 ## Role Receive Mode
 
@@ -124,7 +138,7 @@ identifies the specific recipient copy.
 
 ## Message Types
 
-Agents may request only three message types.
+Agents may request only four message types.
 
 ### `awake`
 
@@ -173,9 +187,21 @@ before queuing the handoff. The task name is a short, stable human-readable
 name that follows the work through downstream git handoffs for the same task.
 
 A role must not send or forward a `git_handoff` when the received commit
-produces no functional project change. Manifest-only, audit-only, generated
-metadata, formatting-only, and other non-functional churn is no forwardable
-change; the role should complete the inbound task instead.
+produces no functional project change. This exemption is narrow and covers
+only meta churn: manifest-only, audit-only, generated metadata,
+formatting-only, and other non-functional changes. It does NOT cover a real
+deliverable that satisfies its ticket's acceptance criteria — docs-only and
+config-only parcels are functional changes and must keep moving down the
+chain like any other parcel, even when the current stage has nothing of its
+own to add to them (nothing to mutation-test, nothing to restructure,
+nothing to document further). "Nothing of MY OWN to add" is not the same
+test as "no functional project change"; a stage with nothing to add still
+forwards the received commit to the next stage. (BL-075: a hardener batch
+silently dropped a docs-only parcel this way — completed its own step but
+never forwarded, leaving the ticket holder-less with nothing in
+`inbox/in_process` anywhere, so BL-067's stuck-detection could not see the
+stall either. Batch roles: apply this per-item — every parcel in the batch
+gets its own forward decision.)
 
 ### `note`
 
@@ -206,6 +232,81 @@ Waiting on QA result before merging cleanup branch.
 
 The `message` value must be a single line no longer than 80 characters.
 
+### QA approval and merge-up (full pack)
+
+After the final QA gate passes on a parcel:
+
+1. **QA → worktree roles:** `note` broadcast to
+   `coder,cleaner,architect,hardender,documenter` with priority `00`, instructing
+   each recipient to merge its own worktree branch up to QA's approved commit
+   (not to `main`). Example message:
+   `BL-042 QA-approved a1b2c3d4e5 — merge your branch up to QA's`.
+2. **QA lands `main`:** QA's approved commit is the verified, integrated result,
+   so QA merges/fast-forwards `main` to it and pushes origin (same session; never
+   force-push), and closes the GitHub issue for a `GH-`-seeded ticket
+   (`issue_done.sh`). QA is the integration point (BL-247).
+3. **QA → coordinator:** `git_handoff` or `note` with priority `00`, the
+   QA-approved commit (10-char abbrev), and stable task/backlog id, so the
+   coordinator does the backlog bookkeeping.
+4. **Worktree roles:** on receiving the merge-up `note`, run
+   `git merge <qa-commit>` (or `--no-ff`) in your worktree, resolve conflicts
+   if any, then `done_with_current.sh`. Do not forward the parcel — QA already
+   closed the pipeline chain.
+5. **Coordinator:** on receiving QA approval, move the ticket from
+   `backlog/active/` to `backlog/done/` and promote the next paused item if below
+   `active_backlog_max_depth`. The coordinator runs NO git merge or push (BL-247).
+
+The **specifier** is excluded from the merge-up broadcast and does not perform
+integration merges — it specifies only.
+
+See `swarmforge/PIPELINE.md` and `swarmforge/roles/QA.prompt` /
+`swarmforge/roles/coordinator.prompt` for role-specific wording.
+
+### `rule_proposal`
+
+Used when an agent (coordinator, cleaner, coder, or any other role) observes
+a pattern that should be written into the constitution or a role prompt, but
+has no other structured way to surface it (BL-035). The specifier is the
+sole writer of constitution/prompt files: on receiving a `rule_proposal` it
+reviews the proposal and either accepts it (appends the rule to the
+relevant file and commits) or rejects it (sends a `note` back to the
+proposer with the reason). That review is prompt/agent behavior, not
+scriptable machinery.
+
+Draft:
+
+```text
+type: rule_proposal
+to: specifier
+priority: 50
+scope: constitution
+body: Batch roles must forward every parcel in a batch, not just their own step.
+rationale: BL-075 — a hardener batch completed its step but never forwarded a docs-only parcel.
+```
+
+Generated body:
+
+```text
+Re-read your role and constitution.
+
+Rule proposal (constitution) from cleaner: Batch roles must forward every parcel in a batch, not just their own step.
+Rationale: BL-075 — a hardener batch completed its step but never forwarded a docs-only parcel.
+```
+
+Fields:
+
+- `scope` must be one of `constitution`, `engineering`, `project`, or
+  `role:<rolename>` (proposing a change to one specific role's prompt).
+- `body` is the proposed rule text: one crisp sentence, at most 200
+  characters.
+- `rationale` is why the rule was observed as necessary, at most 200
+  characters.
+
+Every delivered `rule_proposal` is appended as one JSON line to
+`.swarmforge/rule_proposals/YYYY-MM.jsonl` (scope, body, rationale,
+proposer, and delivery timestamp) for durable audit, regardless of the
+specifier's eventual accept/reject decision.
+
 ## `swarm_handoff.sh`
 
 `swarm_handoff.sh` should be the strict outbound protocol gate.
@@ -227,7 +328,7 @@ Responsibilities:
 - Serialize sequence updates with an atomic lock so concurrent handoff creation
   in one worktree cannot reuse the same sequence.
 - Validate `priority` as `00` through `99`.
-- Validate `type` as `awake`, `git_handoff`, or `note`.
+- Validate `type` as `awake`, `git_handoff`, `note`, or `rule_proposal`.
 - Validate `git_handoff` commits as real, unambiguous commits.
 - Canonicalize valid commit abbreviations.
 - Generate `role` from the current sender role for `git_handoff`.
@@ -243,6 +344,51 @@ Atomic outbound write sequence:
 
 The daemon should ignore `outbox/tmp/` and process only final `.handoff` files
 that appear directly under `outbox/`.
+
+### Durable install and corrupt-handoff quarantine (BL-365)
+
+A plain `write` + `rename` is atomic in *ordering* only, not *durability*: the
+rename can land on disk while the file's own contents have not yet been
+flushed, so a crash or restart in that window can leave a correctly-named,
+zero-byte "atomically installed" handoff. This happened once in production
+(a coder→cleaner `git_handoff` was dispatched as a contentless task,
+silently losing the parcel — the stuck/chase sweeps never fired because the
+mail moved perfectly).
+
+The install path is now `write` → `fsync` → `rename` (`atomic-write!` in
+`handoff_lib.bb`), used by both `swarm_handoff.bb`'s outbox install and
+`handoffd.bb`'s recipient-inbox copy.
+
+On top of the durability fix, every hop that can observe a corrupt handoff
+file (empty, missing a required envelope header, or headers with no body —
+`corrupt-handoff?` in `handoff_lib.bb`) now refuses to pass it on as work:
+
+- `swarm_handoff.bb` re-reads what actually landed on disk after installing
+  and deletes it if corrupt, so a failed write never leaves a file in
+  `outbox/` for anything downstream to pick up.
+- `handoffd.bb`'s `deliver!` checks for a corrupt outbox file before parsing
+  recipients, and if corrupt routes it to the existing `fail!` path — moved
+  to `failed/` with a diagnostic `.error` stub — instead of copying it into
+  a recipient's inbox. This is the same "move malformed or undeliverable
+  files to `failed/`" behavior the protocol already asked for above; the
+  corrupt-handoff check just makes it actually catch a zero-byte file.
+- `ready_for_next_task.bb` / `ready_for_next_batch.bb` (via the shared
+  `resolve-dequeueable-candidates` in `handoff_lib.bb`) quarantine a corrupt
+  `inbox/new/` candidate before it can be promoted into `in_process/`,
+  falling through to the next genuinely-dequeueable file. If every queued
+  candidate is corrupt, the result is a clean `NO_TASK`/empty batch rather
+  than a promoted contentless task. This quarantine reuses the existing
+  dead-letter mechanism rather than inventing a new one: the corrupt file is
+  renamed in place to the same `<name>.handoff.dead` suffix
+  `chase_sweep_lib.bb` already uses for stuck mail, so it is picked up by
+  the same `notify-dead-letters.js` sweep that already alerts a human over
+  Telegram for any `*.handoff.dead` file — a quarantined parcel is surfaced,
+  never just silently moved aside.
+
+This is a cheap structural check — "does this parse into a real handoff
+envelope at all?" — not the semantic re-validation of header values the
+protocol deliberately declines to repeat in the daemon; that stays the
+sender's job.
 
 Reserved headers:
 
@@ -319,11 +465,62 @@ Responsibilities:
 The tmux message should not name the delivered file. It should avoid biasing the
 recipient toward one file and should force queue-order processing.
 
-Example tmux wake-up:
+This message is a shared constant (`HANDOFF_WAKE_MESSAGE`) defined once in the
+extension's `extension/src/swarm/verifiedInject.ts` and referenced by both
+`handoffd.bb` (daemon wake path) and the extension's chaser/recovery wake paths.
+Never duplicate the literal; both implementations reference the single shared source.
+
+Example tmux wake-up (from the shared constant):
 
 ```text
 You have new handoff mail. If idle, run ready_for_next.sh.
 ```
+
+### Dispatch-gap sweep
+
+The daemon's existing chase/nudge sweep only watches inbox mail (queued or
+in-process handoffs), so a `backlog/active/` item that never received a
+routing handoff at all — no inbox mail ever existed for it — was invisible
+to that sweep and could sit indefinitely with its assignee idle and no
+alert (BL-217 sat this way roughly 3 hours before being noticed manually).
+
+On the same sweep cadence, the daemon now also scans every active backlog
+item against every role's outbox/sent/completed/in_process/new handoff
+trail (by ticket id, read from a `git_handoff`'s `task` header or a
+`note`'s leading ticket id). Any active item with **no** trail anywhere is a
+dispatch gap: the daemon auto-routes it by sending a `note` to the
+coordinator via the normal `swarm_handoff.bb` outbound path (not a
+hand-written inbox file), attributed `from: coordinator`. A gap already
+covered by an in-flight, not-yet-delivered auto-routed note (still sitting
+in an outbox) is not re-routed on the next sweep.
+
+### Push sweep
+
+Nothing in the swarm otherwise runs `git push`: publication of local `main`
+to `origin/main` depended entirely on an agent role remembering to run it,
+which twice in one day silently didn't happen — hours of committed,
+QA-approved work sat local while `origin/main` stayed frozen, indistinguishable
+from outside (GitHub, a phone, a remote session) from a dead swarm (BL-356).
+
+On the same sweep cadence, the daemon also runs a push sweep (`push_sweep_lib.bb`)
+against the master checkout's `main` branch:
+
+- **Local ahead, origin not ahead:** push `main` to `origin`, with a bounded,
+  backed-off retry budget. Only once that budget is exhausted does the daemon
+  raise a push-failure alarm.
+- **Origin ahead of (or diverged from) local:** never force-push. Raise a
+  divergence alarm and leave reconciliation to a human or the coordinator.
+- **Origin already has every local commit:** clear all persisted sweep state
+  (backoff, both alarms) — a later failure episode of either kind always
+  starts fresh and alarms again.
+
+Both alarms are delivered via the shared `daemon_alarm_lib.bb` email sender
+and follow the project's delivery-based arming rule: a transient send failure
+never arms the "already alarmed" flag (it retries, bounded), while a terminal
+misconfiguration warns once and arms. The push-failure and divergence alarms
+also clear each other's stale armed flag on transition between the
+`:should-push` and `:diverged` branches, so a resolved episode of one kind
+can never suppress a later, unrelated episode of the other kind.
 
 ## Queue Helper Scripts
 
@@ -359,11 +556,17 @@ Responsibilities:
 - If an in-process file exists, report that it must be resumed or completed
   before accepting new work.
 - If no in-process file exists, select the first file in `inbox/new/` by sorted
-  filename order.
+  filename order, skipping any candidate whose basename already exists in
+  `inbox/completed/` or `inbox/abandoned/` — a stale duplicate left behind in
+  `new/` (e.g. by a layout migration or interrupted delivery) is logged as
+  `SKIPPED already-processed: <basename>` rather than resurrected as fresh
+  work, and the next genuinely-new candidate behind it is dequeued instead
+  (BL-218).
 - Atomically move that file to `inbox/in_process/`.
 - Add or update `dequeued_at`.
 - Print the accepted task path, sender, message type, priority, and payload.
-- Print `NO_TASK` if no inbox item is available.
+- Print `NO_TASK` if no inbox item is available (including when every `new/`
+  candidate was skipped as already-processed).
 - Refuse ambiguous states, such as multiple in-process files, unless an explicit
   repair is made outside the helper.
 
@@ -409,7 +612,9 @@ Responsibilities:
 - If an in-process batch exists, print that batch.
 - Refuse to run if a single in-process task exists.
 - If no in-process work exists, select the first file in `inbox/new/` by sorted
-  filename order.
+  filename order, applying the same already-processed skip against
+  `inbox/completed/` and `inbox/abandoned/` as `ready_for_next_task.sh`
+  (BL-218).
 - Select every queued handoff with the same priority as that first file.
 - Move those files into one `inbox/in_process/batch_<timestamp>_<suffix>/`
   directory.

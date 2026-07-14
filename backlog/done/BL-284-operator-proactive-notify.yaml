@@ -1,0 +1,83 @@
+id: BL-284
+title: "Operator Notify: proactively ping the RIGHT subject topic on a status change, over the built reply-outbox egress (Talk slice 3)"
+milestone: M8
+status: todo
+priority: 30
+direction: non-aligned
+assigned_to: coder
+depends_on: [BL-281]
+parent_epic: BL-274
+source: "BL-274 front-desk framing (.swarmforge/operator/INTAKE-telegram-front-desk-bl274.md), NOTIFY slice (slice 3). Epic intent: the desk proactively pings the RIGHT topic when a status changes / something needs the human; generalize BL-239 narration. Specced by specifier 2026-07-11 against the now-LANDED BL-281 egress."
+
+description: |
+  Slice 3 (Notify) of the refocused BL-274 front desk. The desk should PROACTIVELY
+  (unsolicited — no inbound message first) post a notice into the RIGHT subject's
+  Telegram topic when something about that subject changes.
+
+  KEY REUSE (verified 2026-07-11 — BL-281 LANDED, so this is real, not projected):
+  the proactive-into-topic PIPE ALREADY EXISTS and is already used for the BL-276
+  idle nudge. So this slice adds the proactive TRIGGER + right-subject routing on top
+  of the built egress, not a new comms path.
+    - operator_runtime.bb `append-to-reply-outbox! [thread-id text]` (~L248) appends
+      {threadId, text} to .swarmforge/operator/telegram-reply-outbox.jsonl. The BL-276
+      idle nudge already calls it (~L264) — an unsolicited notice — proving the pipe
+      carries proactive messages, not just replies.
+    - extension/src/bridge/operatorEventQueue.ts `readNewReplyOutboxEntries` streams new
+      outbox entries; bridgeServer.ts emits them as SSE `telegram-reply` records.
+    - extension/src/tools/telegramFrontDeskBotCore.ts `relayOneRecord` maps threadId ->
+      topic via `topicForSubject` and posts with `sendReply(topicId, text)`. A notice is
+      just an outbound-to-topic message; the bot relays it exactly like a reply.
+
+  NET-NEW (small): a PROACTIVE-NOTICE DECISION — given a status change concerning a
+  subject (and the subject's topic state), decide whether to emit a notice and its text
+  — wired to append-to-reply-outbox! with that subject's threadId. Mirror the BL-276
+  idle-nudge decision: a PURE, adapter-injected function (support_lib-style) over
+  provided inputs + an injected clock; the runtime does the append. The notice is
+  routed by the SUBJECT it concerns (threadId = that SUP-###), so it lands only in that
+  subject's topic.
+
+  Wanted behavior (see the feature file):
+    - A proactive notice for a subject is delivered into ONLY that subject's topic, with
+      no inbound message first, and never into another subject's topic.
+    - The notice travels the built reply-outbox -> SSE -> bot egress (runtime makes no
+      direct Telegram call), exactly like a reply.
+    - A status change concerning a subject triggers exactly one proactive notice; when
+      nothing relevant changed, the runtime stays silent (no spurious pings).
+
+  Scope boundary (keep the slice small; avoid premature net-new infra):
+    - This slice routes notices to EXISTING subject topics (each notice concerns a
+      SUP-###). A designated GENERAL/ops topic for subject-less swarm-wide notices, and
+      the full rehoming of BL-239 run-narration (stage-transition/gate/dead-letter/
+      pr-link into topics) are DEFERRED — they need a general-topic provisioning
+      decision. BL-239's own per-run narration thread keeps working unchanged meanwhile.
+    - Gate approvals / status QUERIES from a topic are the Decide+Status slice (BL-285);
+      coordinator handoff is BL-283; lifecycle/close is BL-276. This slice is the
+      proactive OUTBOUND ping only.
+
+  Constraints / testability:
+    - The notify decision is a PURE function over provided inputs (a status-change
+      descriptor + the subject/topic state + an injected clock); the only impure edge is
+      the reply-outbox append and it reuses the built seam. NO real Telegram, NO real
+      network, NO real timers. Never seed a fixture timestamp from the real clock while
+      the code reads its own clock (de0991e).
+    - Right-subject routing is a hard contract: a notice for subject A appends with A's
+      threadId and never reaches subject B's topic. A test drives two subjects and
+      asserts only the intended topic receives it (reuse relayOneRecord/topicForSubject
+      with fake sendReply, the BL-281 test shape).
+    - No spurious pings: assert exactly-one-notice on a real change and zero on no
+      change (idempotent/quiet), so the desk never spams the human.
+    - Any CLI keeps main()/dispatch a THIN wrapper over exported pure helpers, with a
+      subprocess test in ADDITION (engineering "CLI main() must be a thin wrapper").
+    - The reply outbox stays machine-local (gitignored), never committed.
+
+  QA e2e procedure (fake outbox/relay + injected clock; no real network):
+    - Raise a proactive notice for subject A (two subjects mapped); drain the outbox
+      through relayOneRecord with a fake sendReply/topicForSubject; assert A's topic gets
+      the text and B's topic gets nothing, with no inbound fed first.
+    - Assert the emit path appends to the reply outbox (threadId=A) and makes no direct
+      Telegram call.
+    - Feed a status-change descriptor for a subject; assert exactly one notice is
+      produced. Feed an unchanged descriptor; assert none.
+
+acceptance: specs/features/BL-284-operator-proactive-notify.feature
+mutation_cost: medium

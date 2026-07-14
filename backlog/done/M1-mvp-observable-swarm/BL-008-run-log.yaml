@@ -1,0 +1,26 @@
+id: BL-008
+title: Named runs — branch and PR named after work item, local run log
+milestone: M1
+status: done
+priority: 8
+
+description: >
+  When the user launches a swarm run, prompt for a short work-item name (e.g.
+  "add-login-flow"). The extension uses that name to: (a) pass it to the swarm
+  so branches are named `swarm/<name>`, and (b) append an entry to a local
+  JSON-lines run log at `~/.swarmforge/runs.jsonl` recording: timestamp, target
+  repo path, work-item name, and swarm PID. The run log is read back and shown
+  as a "Recent runs" list in the panel (name, target, date, status).
+  This is M1 item 5 ("Named runs") from project.prompt.
+
+acceptance:
+  - Launching the swarm prompts for a work-item name (VS Code input box);
+    can be left blank to use a timestamp-based default
+  - Branch created by the swarm is `swarm/<name>` (passed via swarm config or
+    env var — consult swarmforge.conf mechanism)
+  - Each launch appends one JSON line to `~/.swarmforge/runs.jsonl`
+  - Panel shows a "Recent runs" section listing up to 10 runs (newest first)
+    with name, target path, date, and a "running / stopped" status badge
+  - Run log file is created on first launch if absent
+
+assigned_to: coder

@@ -1,5 +1,4 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
 const fs = require('node:fs');
 const path = require('node:path');
 const { getNonce, getWebviewHtml, getWorkTreeHtml } = require('../out/panel/webviewHtml');
@@ -55,6 +54,27 @@ test('getWorkTreeHtml inline script listens for update messages', () => {
   assert(html.includes("getElementById('content').innerHTML"));
 });
 
+// --- getWorkTreeHtml: BL-238 accessibility ---
+
+test('getWorkTreeHtml active rows are keyboard-focusable, labeled, and have a button role', () => {
+  const html = getWorkTreeHtml('n');
+  assert(html.includes('tabindex="0"'), 'active rows must be focusable');
+  assert(html.includes('role="button"'), 'active rows must expose a button role');
+  assert(html.includes('aria-label="Highlight '), 'active rows must carry an accessible name');
+});
+
+test('getWorkTreeHtml wires an onkeydown handler that activates the row like a click', () => {
+  const html = getWorkTreeHtml('n');
+  assert(html.includes('onkeydown="onRowKey(event'), 'active rows must be keyboard-operable, not mouse-only');
+  assert(html.includes('function onRowKey(event, role)'));
+  assert(html.includes("event.key === 'Enter' || event.key === ' '"));
+});
+
+test('getWorkTreeHtml gives active rows a visible focus indicator', () => {
+  const html = getWorkTreeHtml('n');
+  assert(html.includes('tr.active:focus'), 'active rows must define a focus style, not rely on UA default alone');
+});
+
 // --- getWebviewHtml: external script (VS Code 1.126 blocks inline scripts) ---
 
 test('getWebviewHtml loads script via external src, not inline nonce', () => {
@@ -93,6 +113,28 @@ test('getWebviewHtml contains backlog section element', () => {
 test('getWebviewHtml backlog section is hidden by default', () => {
   const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
   assert(html.includes('id="backlog"') && html.includes('display:none'));
+});
+
+// --- getWebviewHtml: BL-238 accessibility ---
+
+test('getWebviewHtml collapse toggle buttons carry an accessible name, expanded state, and controls target', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  for (const id of ['runs-toggle', 'backlog-toggle', 'metrics-toggle']) {
+    const button = html.match(new RegExp(`<button[^>]*id="${id}"[^>]*>`))[0];
+    assert(button.includes('aria-label='), `${id} must have an aria-label (an icon-only glyph is not an accessible name)`);
+    assert(button.includes('aria-expanded="true"'), `${id} must expose its initial expanded state`);
+    assert(button.includes('aria-controls='), `${id} must reference the section it controls`);
+  }
+});
+
+test('getWebviewHtml carries a tile status badge, for a textual status equivalent to the border-color cues', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  assert(html.includes('.tile-status-badge'), 'status must have a text equivalent to color-only liveness cues');
+});
+
+test('getWebviewHtml gives the (keyboard-focusable) tile header an explicit visible focus style', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  assert(html.includes('.tile-header:focus-visible'), 'a bare div with tabindex needs an explicit focus style, not an assumed UA default');
 });
 
 test('getWebviewHtml contains CSS styling', () => {
@@ -184,6 +226,55 @@ test('panel.js has restart button that posts restartAgent', () => {
   assert(panelJs.includes('restartAgent'));
 });
 
+// --- panel.js: BL-238 accessibility ---
+
+test('panel.js gives the nudge/restart buttons a role-disambiguating accessible name', () => {
+  assert(panelJs.includes("nudgeBtn.setAttribute('aria-label', 'Nudge ' + displayName)"));
+  assert(panelJs.includes("restartBtn.setAttribute('aria-label', 'Restart ' + displayName)"));
+});
+
+test('panel.js labels the model and effort dropdowns', () => {
+  assert(panelJs.includes("modelSelect.setAttribute('aria-label',"));
+  assert(panelJs.includes("effortSelect.setAttribute('aria-label',"));
+});
+
+test('panel.js makes the tile header keyboard-operable as a button, not mouse-only', () => {
+  assert(panelJs.includes("header.setAttribute('role', 'button')"));
+  assert(panelJs.includes('header.tabIndex = 0'));
+  assert(panelJs.includes("header.addEventListener('keydown'"));
+  assert(panelJs.includes("e.key === 'Enter' || e.key === ' '"), 'must handle both Enter and Space, the two native activation keys for role="button"');
+});
+
+test('panel.js reflects the collapse/expand state via aria-expanded, not just the glyph swap', () => {
+  // BL-238/cleaner: the 3 section toggles are wired through one shared
+  // wireCollapseToggle helper (jscpd flagged the original 3 near-identical
+  // click handlers as duplication) - assert its body syncs aria-expanded,
+  // and that all 3 sections actually call it, rather than matching the
+  // pre-refactor per-button click-handler shape.
+  const helperBody = panelJs.match(/function wireCollapseToggle\([^)]*\)\s*\{[\s\S]*?\n\}/);
+  assert(helperBody, 'expected a wireCollapseToggle helper');
+  assert(helperBody[0].includes("setAttribute('aria-expanded'"), `toggle helper missing aria-expanded sync: ${helperBody[0]}`);
+  const callSites = panelJs.match(/wireCollapseToggle\(\w+,\s*\w+\);/g) || [];
+  assert.equal(callSites.length, 3, 'expected exactly 3 section toggles wired through the helper');
+});
+
+test('panel.js names and roles the live output pane for a screen reader', () => {
+  assert(panelJs.includes("output.setAttribute('role', 'log')"));
+  assert(panelJs.includes("output.setAttribute('aria-label', displayName + ' output')"));
+});
+
+test('panel.js derives a textual status badge from liveness, not color alone, on every status event', () => {
+  assert(panelJs.includes('function updateStatusBadge(entry)'));
+  // Every one of the four liveness-mutating cases must call it, so the
+  // badge never goes stale relative to the class it derives from.
+  const cases = ['dead', 'stall', 'activity', 'needsHuman'];
+  for (const c of cases) {
+    const caseBlock = panelJs.match(new RegExp(`case '${c}':[\\s\\S]*?break;`));
+    assert(caseBlock, `expected a case '${c}' handler`);
+    assert(caseBlock[0].includes('updateStatusBadge(entry)'), `case '${c}' must refresh the status badge`);
+  }
+});
+
 test('panel.js renders recent runs with running badge', () => {
   assert(panelJs.includes('renderRecentRuns'));
   assert(panelJs.includes('run-badge-running'));
@@ -205,6 +296,20 @@ test('panel.js backlog done items in details element', () => {
 
 test('panel.js handles backlogUpdate message', () => {
   assert(panelJs.includes("case 'backlogUpdate'"));
+});
+
+// --- BL-062: done rows surface their milestone (the done/ subfolder name) ---
+
+test('panel.js surfaces the milestone on done backlog rows', () => {
+  assert(
+    /status === 'done'[\s\S]{0,200}bl-milestone/.test(panelJs),
+    'done rows must render a bl-milestone badge from item.milestone'
+  );
+});
+
+test('webview CSS styles the milestone badge', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  assert(html.includes('.bl-milestone'), 'must style the milestone badge');
 });
 
 test('panel.js sends refresh on load', () => {
@@ -244,6 +349,7 @@ test('getWebviewHtml panels have collapse toggle buttons', () => {
   const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
   assert(html.includes('id="runs-toggle"'), 'missing runs-toggle button');
   assert(html.includes('id="backlog-toggle"'), 'missing backlog-toggle button');
+  assert(html.includes('id="metrics-toggle"'), 'missing metrics-toggle button (BL-071)');
 });
 
 test('panel.js collapses section on toggle button click', () => {
@@ -374,6 +480,70 @@ test('getWebviewHtml CSS applies needs-human blink to tiles', () => {
   assert(html.includes('animation:') || html.includes('animation :'), 'must apply animation to needs-human tiles');
 });
 
+// --- BL-054: the pulse is border-only; content never blinks ---
+
+function needsHumanKeyframesBlock(html) {
+  // Extract the full brace-balanced block, not just up to the first inner
+  // "}" — the keyframes body itself contains nested rule blocks (0%,100% and
+  // 50%), so a non-greedy "up to the first }" regex silently truncates after
+  // the first inner rule and the 50% frame is never actually inspected.
+  const start = html.indexOf('@keyframes needs-human-blink');
+  assert(start !== -1, 'must define needs-human-blink keyframes');
+  const openBrace = html.indexOf('{', start);
+  let depth = 0;
+  for (let i = openBrace; i < html.length; i++) {
+    if (html[i] === '{') depth++;
+    if (html[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        return html.slice(openBrace + 1, i);
+      }
+    }
+  }
+  throw new Error('unbalanced braces in needs-human-blink keyframes');
+}
+
+test('needs-human pulse animates a border property, not whole-tile opacity', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  const keyframes = needsHumanKeyframesBlock(html);
+  assert(
+    !/opacity/.test(keyframes),
+    'the pulse must not animate opacity — that fades the tile TEXT along with the border'
+  );
+  assert(
+    /border/.test(keyframes),
+    'the pulse must be carried by a border property'
+  );
+});
+
+test('needs-human pulse is RED and keeps the gentle cadence (BL-059)', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  const keyframes = needsHumanKeyframesBlock(html);
+  assert(/e53935|229,\s*57,\s*53/.test(keyframes), 'the pulse color must be red — asking-a-question reads as urgent');
+  assert(!/00a8e8|0,\s*168,\s*232/.test(keyframes), 'the old blue accent must be gone');
+  assert(/needs-human-blink 1\.5s ease-in-out infinite/.test(html), 'the 1.5s ease-in-out cadence must remain');
+});
+
+test('the 50% keyframe is visibly dimmed, not just a same-color no-op pulse', () => {
+  // Pinning presence of the color channels alone would let a mutant set the
+  // dimmed alpha to 1 (or drop the rgba() entirely) and still pass — the
+  // blink (cycling to/from red) is what distinguishes "asking a question"
+  // from the SOLID red of a dead tile.
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  const keyframes = needsHumanKeyframesBlock(html);
+  const dimmedMatch = keyframes.match(/rgba\(\s*229,\s*57,\s*53,\s*([\d.]+)\s*\)/);
+  assert(dimmedMatch, 'the 50% frame must dim the red via rgba() alpha');
+  const alpha = Number(dimmedMatch[1]);
+  assert(alpha > 0 && alpha < 0.7, `dimmed alpha ${alpha} must be a visible reduction, not near-full opacity`);
+});
+
+test('the needs-human rule itself does not dim tile content', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  const rule = html.match(/\.tile\.needs-human:not\(\.dead\)\s*{([\s\S]*?)}/);
+  assert(rule, 'must keep the .tile.needs-human:not(.dead) rule with the dead guard');
+  assert(!/opacity/.test(rule[1]), 'the needs-human rule must not touch opacity');
+});
+
 test('getWebviewHtml CSS suppresses blink when tile is dead', () => {
   const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
   assert(html.includes(':not(.dead)'), 'animation must not apply when dead class is present');
@@ -396,4 +566,15 @@ test('panel.js removes stalled class when needs-human is active (precedence)', (
 
 test('panel.js removes needs-human class when event needsHuman becomes false', () => {
   assert(panelJs.includes("classList.remove('needs-human')"), 'must remove needs-human class when false');
+});
+
+test('getWebviewHtml CSS defines working-beam animation for active agents', () => {
+  const html = getWebviewHtml(SCRIPT_URI, CSP_SOURCE);
+  assert(html.includes('@keyframes working-beam'), 'must define working-beam animation');
+  assert(html.includes('.tile.working:not(.needs-human):not(.dead):not(.stalled)'), 'working pulse must defer to alarm states');
+});
+
+test('panel.js handles activity message type for working border pulse', () => {
+  assert(panelJs.includes("case 'activity'"), 'must handle activity message');
+  assert(panelJs.includes("classList.toggle('working'"), 'must toggle working class');
 });

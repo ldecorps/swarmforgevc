@@ -1,12 +1,26 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { LivenessState } from '../watchdog/liveness';
+import { isCoolingDown, shouldWakeOnExpiry } from './cooldownScheduler';
 
 export interface InboxChaserConfig {
   chaseIntervalSeconds: number;
   chaseTimeoutSeconds: number;
   maxChases: number;
   stuckInProcessTimeoutSeconds: number;
+  /** Minimum time (seconds) between two respawns of the same role, so a
+   * repeated liveness misjudgment can never re-trigger respawn on every
+   * sweep (BL-087). */
+  respawnCooldownSeconds: number;
+  /** BL-135: base backoff interval (seconds) between successive chases of a
+   * recipient that is showing recent activity (busy, not stuck). Doubles
+   * per chase already sent, capped at chaseBackoffMaxSeconds, so a long
+   * busy turn is chased with growing gaps instead of every sweep tick.
+   * Defaults to chaseIntervalSeconds when omitted. */
+  chaseBackoffBaseSeconds?: number;
+  /** BL-135: upper bound (seconds) on the backoff interval above. Defaults
+   * to stuckInProcessTimeoutSeconds when omitted. */
+  chaseBackoffMaxSeconds?: number;
 }
 
 export type ChaserAction = 'chased' | 'respawned' | 'dead-lettered' | 'skipped';
@@ -15,6 +29,7 @@ export interface InboxItem {
   filePath: string;
   mtimeMs: number;
   chaseCount: number;
+  lastChasedAtMs: number | null;
 }
 
 export function sidecarPath(handoffFilePath: string): string {
@@ -23,6 +38,57 @@ export function sidecarPath(handoffFilePath: string): string {
 
 export function deadLetterPath(handoffFilePath: string): string {
   return `${handoffFilePath}.dead`;
+}
+
+// BL-109 dead-letter-visible-03: a dead-lettered handoff was previously
+// invisible debris - renamed to `<name>.handoff.dead` next to a
+// `.chase.json` sidecar nothing read back, indistinguishable from success to
+// the sender. Parses the header block any handoff file carries (see
+// handoff-protocol.md) so a listing can show who it was for and what it was.
+export function parseHandoffHeaderField(content: string, field: string): string | undefined {
+  const match = content.match(new RegExp(`^${field}:\\s*(.+)$`, 'm'));
+  return match ? match[1].trim() : undefined;
+}
+
+export interface DeadLetterInfo {
+  role: string;
+  filePath: string;
+  from?: string;
+  recipient?: string;
+  type?: string;
+  task?: string;
+  chaseCount: number;
+}
+
+// The recipient a dead-lettered file was originally destined for is the
+// role whose inbox/new it was found in - deadLetterPath renames it in place,
+// it never moves out of that role's own directory tree.
+export function listDeadLettersForRole(role: string, inboxNewDir: string): DeadLetterInfo[] {
+  if (!fs.existsSync(inboxNewDir)) {
+    return [];
+  }
+  const found: DeadLetterInfo[] = [];
+  for (const entry of fs.readdirSync(inboxNewDir)) {
+    if (!entry.endsWith('.handoff.dead')) {
+      continue;
+    }
+    const filePath = path.join(inboxNewDir, entry);
+    const content = fs.readFileSync(filePath, 'utf-8');
+    found.push({
+      role,
+      filePath,
+      from: parseHandoffHeaderField(content, 'from'),
+      recipient: parseHandoffHeaderField(content, 'recipient'),
+      type: parseHandoffHeaderField(content, 'type'),
+      task: parseHandoffHeaderField(content, 'task'),
+      chaseCount: readChaseCount(filePath),
+    });
+  }
+  return found;
+}
+
+export function listDeadLetters(roleInboxes: Pick<RoleInbox, 'role' | 'inboxNewDir'>[]): DeadLetterInfo[] {
+  return roleInboxes.flatMap(({ role, inboxNewDir }) => listDeadLettersForRole(role, inboxNewDir));
 }
 
 export function readChaseCount(handoffFilePath: string): number {
@@ -35,8 +101,53 @@ export function readChaseCount(handoffFilePath: string): number {
   }
 }
 
-export function writeChaseCount(handoffFilePath: string, count: number): void {
-  fs.writeFileSync(sidecarPath(handoffFilePath), JSON.stringify({ chaseCount: count }), 'utf-8');
+export function readLastChasedAtMs(handoffFilePath: string): number | null {
+  const sc = sidecarPath(handoffFilePath);
+  try {
+    const data = JSON.parse(fs.readFileSync(sc, 'utf-8'));
+    return typeof data.lastChasedAtMs === 'number' ? data.lastChasedAtMs : null;
+  } catch {
+    return null;
+  }
+}
+
+// BL-135: writeChaseCount also carries the wall-clock time of the chase it
+// records, so the next sweep can compute a backoff interval. lastChasedAtMs
+// is optional so existing chaseCount-only callers keep working; when
+// omitted, any previously-recorded timestamp is preserved rather than lost.
+export function writeChaseCount(handoffFilePath: string, count: number, lastChasedAtMs?: number): void {
+  const resolvedLastChasedAtMs = lastChasedAtMs ?? readLastChasedAtMs(handoffFilePath);
+  const state: { chaseCount: number; lastChasedAtMs?: number } = { chaseCount: count };
+  if (resolvedLastChasedAtMs !== null) {
+    state.lastChasedAtMs = resolvedLastChasedAtMs;
+  }
+  fs.writeFileSync(sidecarPath(handoffFilePath), JSON.stringify(state), 'utf-8');
+}
+
+// BL-087: rate-limits respawns per role so a repeated misjudgment cannot
+// loop. Stored one level up from inbox/new, sibling to inbox/in_process,
+// since a respawn cooldown is a per-ROLE fact, not tied to any one item file.
+export function respawnCooldownPath(inboxNewDir: string): string {
+  return path.join(path.dirname(inboxNewDir), 'respawn-cooldown.json');
+}
+
+// The explicit 'utf-8' encoding argument on the read/write pair below is
+// unkillable by mutation to '' for this JSON-of-a-number payload: Node's
+// Buffer-to-string coercion (which JSON.parse and the writeFileSync string
+// path both fall back to) already defaults to utf8, so both encodings
+// produce byte-identical results here. Kept for explicitness, not
+// testability.
+export function readRespawnCooldownUntilMs(inboxNewDir: string): number | null {
+  try {
+    const data = JSON.parse(fs.readFileSync(respawnCooldownPath(inboxNewDir), 'utf-8'));
+    return typeof data.untilMs === 'number' ? data.untilMs : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeRespawnCooldownUntilMs(inboxNewDir: string, untilMs: number): void {
+  fs.writeFileSync(respawnCooldownPath(inboxNewDir), JSON.stringify({ untilMs }), 'utf-8');
 }
 
 export function scanInboxNew(inboxNewDir: string): InboxItem[] {
@@ -54,9 +165,42 @@ export function scanInboxNew(inboxNewDir: string): InboxItem[] {
       filePath,
       mtimeMs: stat.mtimeMs,
       chaseCount: readChaseCount(filePath),
+      lastChasedAtMs: readLastChasedAtMs(filePath),
     });
   }
   return items;
+}
+
+// BL-135: how long to wait before re-chasing a recipient that is showing
+// recent activity (busy, not stuck) — doubles per chase already sent so a
+// long-running turn is nudged with growing gaps instead of every sweep tick.
+export function computeChaseBackoffSeconds(chaseCount: number, config: InboxChaserConfig): number {
+  const base = config.chaseBackoffBaseSeconds ?? config.chaseIntervalSeconds;
+  const max = config.chaseBackoffMaxSeconds ?? config.stuckInProcessTimeoutSeconds;
+  return Math.min(base * Math.pow(2, chaseCount), max);
+}
+
+// BL-087: absence of heartbeat evidence must never, by itself, justify a
+// respawn — the heartbeat file this reads from routinely does not exist, so
+// liveness alone reported 'unknown' for every role and respawned it on the
+// FIRST stale sweep, with no chase ever attempted first. Recent pane/outbox
+// activity is positive proof of life and overrides liveness entirely; absent
+// that, a role is chased across successive sweeps and only escalates to a
+// respawn once chase attempts are exhausted (maxChases) AND liveness itself
+// is not the explicit 'alive' state (which, like fresh activity, is treated
+// as positive evidence and dead-letters instead of respawning).
+function isUnresponsiveLiveness(liveness: LivenessState): boolean {
+  return liveness === 'dead' || liveness === 'unknown' || liveness === 'stuck';
+}
+
+// Split out of decideItemAction (CRAP): the chase-exhausted decision once a
+// role shows no recent activity - respawn only for a liveness reading that
+// is itself evidence of unresponsiveness, dead-letter otherwise.
+function decideStaleItemAction(chaseCount: number, config: InboxChaserConfig, liveness: LivenessState): ChaserAction {
+  if (chaseCount < config.maxChases) {
+    return 'chased';
+  }
+  return isUnresponsiveLiveness(liveness) ? 'respawned' : 'dead-lettered';
 }
 
 export function decideItemAction(
@@ -64,19 +208,35 @@ export function decideItemAction(
   chaseCount: number,
   nowMs: number,
   config: InboxChaserConfig,
-  liveness: LivenessState
+  liveness: LivenessState,
+  lastActivityMs: number,
+  lastChasedAtMs: number | null = null
 ): ChaserAction {
   const ageSeconds = (nowMs - itemMtimeMs) / 1000;
   if (ageSeconds < config.chaseTimeoutSeconds) {
     return 'skipped';
   }
-  if (chaseCount >= config.maxChases) {
-    return 'dead-lettered';
+
+  const idleSeconds = (nowMs - lastActivityMs) / 1000;
+  const hasRecentActivity = idleSeconds < config.stuckInProcessTimeoutSeconds;
+
+  // BL-109: a recipient actively generating for a long turn must never have
+  // its own queued mail dead-lettered out from under it - the recipient's
+  // own idle-time ready_for_next.sh sees the mail once the turn actually
+  // ends. BL-135: but that must not mean hammering the pane with a wake-up
+  // on every sweep tick either (98 nudges in ~16min while genuinely busy) -
+  // once a chase has already been sent, back off with a growing interval
+  // instead of re-chasing on the raw sweep tick.
+  if (hasRecentActivity) {
+    if (lastChasedAtMs === null) {
+      return 'chased';
+    }
+    const secondsSinceLastChase = (nowMs - lastChasedAtMs) / 1000;
+    const backoffSeconds = computeChaseBackoffSeconds(chaseCount, config);
+    return secondsSinceLastChase >= backoffSeconds ? 'chased' : 'skipped';
   }
-  if (liveness === 'dead' || liveness === 'unknown' || liveness === 'stuck') {
-    return 'respawned';
-  }
-  return 'chased';
+
+  return decideStaleItemAction(chaseCount, config, liveness);
 }
 
 // ── in_process reconciler ──────────────────────────────────────────────────
@@ -129,13 +289,16 @@ export function scanInProcess(inProcessDir: string): InProcessItem[] {
 }
 
 export function decideStuckAction(
-  itemMtimeMs: number,
+  lastActivityMs: number,
   nudgeCount: number,
   nowMs: number,
   config: InboxChaserConfig
 ): StuckAction {
-  const ageSeconds = (nowMs - itemMtimeMs) / 1000;
-  if (ageSeconds < config.stuckInProcessTimeoutSeconds) {
+  // Stuck is judged by AGENT INACTIVITY while holding work, not by how long
+  // the item has been held: an agent legitimately working a parcel for hours
+  // shows pane/outbox activity and must never be chased (BL-067).
+  const idleSeconds = (nowMs - lastActivityMs) / 1000;
+  if (idleSeconds < config.stuckInProcessTimeoutSeconds) {
     return 'skipped';
   }
   return nudgeCount >= config.maxChases ? 'alert' : 'nudge';
@@ -163,11 +326,150 @@ export interface ChaserAdapters {
   sendWakeUp: (role: string) => void;
   triggerRespawn: (role: string) => void;
   logDeadLetter: (role: string, filePath: string) => void;
+  /** Timestamp of the role's last observed activity (pane output changing,
+   * outbox writes). Drives the in_process stuck decision (BL-067). */
+  getLastActivityMs: (role: string) => number;
+  /** Surfaces (or clears) the visible needs-human escalation for a role whose
+   * chases were exhausted without recovery. */
+  onStuckEscalation: (role: string, escalated: boolean) => void;
+  /** Absolute epoch ms until which the role is cooling down (token exhaustion
+   * reset time), or null/undefined when the role has no active cooldown
+   * (BL-082). Optional so callers without cooldown scheduling are unaffected. */
+  getCooldownUntilMs?: (role: string) => number | null | undefined;
+  /** Epoch ms of the cooldown window this role was last woken for, or
+   * null/undefined if no wake has been recorded yet (BL-082). */
+  getCooldownWokenMarker?: (role: string) => number | null | undefined;
+  /** Records that a wake was sent for this cooldown expiry, so the next
+   * sweep does not re-wake for the same window (BL-082). */
+  onCooldownExpired?: (role: string, cooldownUntilMs: number) => void;
 }
 
 export interface RoleInbox {
   role: string;
   inboxNewDir: string;
+  inProcessDir: string;
+}
+
+// A role that HOLDS in_process work (single task file or batch directory)
+// while showing no activity gets chased; after maxChases without recovery it
+// escalates visibly instead of being chased forever (BL-067).
+function applyStuckNudge(role: string, held: InProcessItem[], adapters: ChaserAdapters): void {
+  adapters.sendWakeUp(role);
+  for (const item of held) {
+    writeNudgeCount(item.filePath, item.nudgeCount + 1);
+  }
+  adapters.onStuckEscalation(role, false);
+}
+
+function clearStaleNudgeCounts(held: InProcessItem[]): void {
+  for (const item of held) {
+    if (item.nudgeCount > 0) {
+      writeNudgeCount(item.filePath, 0);
+    }
+  }
+}
+
+function sweepInProcess(
+  role: string,
+  inProcessDir: string,
+  nowMs: number,
+  config: InboxChaserConfig,
+  adapters: ChaserAdapters
+): void {
+  const held = scanInProcess(inProcessDir);
+  if (held.length === 0) {
+    adapters.onStuckEscalation(role, false);
+    return;
+  }
+
+  const nudgeCount = Math.max(...held.map((item) => item.nudgeCount));
+  const action = decideStuckAction(adapters.getLastActivityMs(role), nudgeCount, nowMs, config);
+
+  if (action === 'nudge') {
+    applyStuckNudge(role, held, adapters);
+  } else if (action === 'alert') {
+    adapters.onStuckEscalation(role, true);
+  } else {
+    // active again: clear stale counts so a future stall re-chases from zero
+    clearStaleNudgeCounts(held);
+    adapters.onStuckEscalation(role, false);
+  }
+}
+
+function maybeWakeOnCooldownExpiry(
+  role: string,
+  cooldownUntilMs: number | null,
+  nowMs: number,
+  adapters: ChaserAdapters
+): void {
+  if (cooldownUntilMs == null) {
+    return;
+  }
+  if (!shouldWakeOnExpiry(cooldownUntilMs, nowMs, adapters.getCooldownWokenMarker?.(role) ?? null)) {
+    return;
+  }
+  adapters.sendWakeUp(role);
+  adapters.onCooldownExpired?.(role, cooldownUntilMs);
+}
+
+function applyInboxItemAction(
+  role: string,
+  item: InboxItem,
+  action: ChaserAction,
+  adapters: ChaserAdapters,
+  nowMs: number
+): void {
+  if (action === 'chased') {
+    adapters.sendWakeUp(role);
+    writeChaseCount(item.filePath, item.chaseCount + 1, nowMs);
+  } else if (action === 'respawned') {
+    adapters.triggerRespawn(role);
+  } else if (action === 'dead-lettered') {
+    const dead = deadLetterPath(item.filePath);
+    fs.renameSync(item.filePath, dead);
+    const sc = sidecarPath(item.filePath);
+    if (fs.existsSync(sc)) {
+      fs.renameSync(sc, sidecarPath(dead));
+    }
+    adapters.logDeadLetter(role, item.filePath);
+  }
+  // 'skipped' → no-op
+}
+
+function sweepRoleInbox(
+  role: string,
+  inboxNewDir: string,
+  nowMs: number,
+  config: InboxChaserConfig,
+  adapters: ChaserAdapters
+): void {
+  const items = scanInboxNew(inboxNewDir);
+  const liveness = adapters.getLiveness(role);
+  const lastActivityMs = adapters.getLastActivityMs(role);
+  const respawnCooldownUntilMs = readRespawnCooldownUntilMs(inboxNewDir);
+
+  for (const item of items) {
+    let action = decideItemAction(
+      item.mtimeMs,
+      item.chaseCount,
+      nowMs,
+      config,
+      liveness,
+      lastActivityMs,
+      item.lastChasedAtMs
+    );
+    // BL-087: a respawn decision made while still cooling down from the
+    // last respawn of this role is downgraded to a chase instead - never
+    // silently dropped, so a genuinely still-unresponsive role keeps
+    // getting wake-up attempts rather than going quiet.
+    if (action === 'respawned' && isCoolingDown(respawnCooldownUntilMs, nowMs)) {
+      action = 'chased';
+    }
+    applyInboxItemAction(role, item, action, adapters, nowMs);
+    if (action === 'respawned') {
+      writeRespawnCooldownUntilMs(inboxNewDir, nowMs + config.respawnCooldownSeconds * 1000);
+    }
+  }
 }
 
 export function runSweep(
@@ -176,28 +478,17 @@ export function runSweep(
   config: InboxChaserConfig,
   adapters: ChaserAdapters
 ): void {
-  for (const { role, inboxNewDir } of roleInboxes) {
-    const items = scanInboxNew(inboxNewDir);
-    const liveness = adapters.getLiveness(role);
+  for (const { role, inboxNewDir, inProcessDir } of roleInboxes) {
+    const cooldownUntilMs = adapters.getCooldownUntilMs?.(role) ?? null;
 
-    for (const item of items) {
-      const action = decideItemAction(item.mtimeMs, item.chaseCount, nowMs, config, liveness);
-
-      if (action === 'chased') {
-        adapters.sendWakeUp(role);
-        writeChaseCount(item.filePath, item.chaseCount + 1);
-      } else if (action === 'respawned') {
-        adapters.triggerRespawn(role);
-      } else if (action === 'dead-lettered') {
-        const dead = deadLetterPath(item.filePath);
-        fs.renameSync(item.filePath, dead);
-        const sc = sidecarPath(item.filePath);
-        if (fs.existsSync(sc)) {
-          fs.renameSync(sc, sidecarPath(dead));
-        }
-        adapters.logDeadLetter(role, item.filePath);
-      }
-      // 'skipped' → no-op
+    // While cooling down, suppress all wake/chase/respawn/nudge activity for
+    // this role only; other roles in the same pass proceed normally (BL-082).
+    if (isCoolingDown(cooldownUntilMs, nowMs)) {
+      continue;
     }
+
+    maybeWakeOnCooldownExpiry(role, cooldownUntilMs, nowMs, adapters);
+    sweepInProcess(role, inProcessDir, nowMs, config, adapters);
+    sweepRoleInbox(role, inboxNewDir, nowMs, config, adapters);
   }
 }

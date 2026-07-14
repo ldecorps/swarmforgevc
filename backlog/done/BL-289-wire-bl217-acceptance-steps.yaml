@@ -1,0 +1,78 @@
+id: BL-289
+title: "Wire BL-217's acceptance step handlers: its recert-receiver feature runs 0/5 (unregistered steps) on main"
+milestone: M8
+status: todo
+priority: 20
+direction: non-aligned
+assigned_to: coder
+depends_on: []
+source: "QA rule_proposal -> specifier 2026-07-11: BL-217's own acceptance feature has zero registered step handlers (pre-existing, not caused by BL-288). Specifier verified the gap and scoped this."
+
+description: |
+  BL-217's acceptance feature
+  (specs/features/BL-217-inbound-email-webhook-serverless-recert-receiver.feature,
+  5 scenarios) has NO registered step handlers, so run_acceptance.sh fails it 0/5
+  silently on main. Only BL-217's UNIT tests actually run; its acceptance contract
+  has never executed. (This surfaced when BL-288 built the serverless wrapper and
+  assumed BL-217's acceptance coverage was solid.)
+
+  VERIFIED 2026-07-11 (specifier): grep for BL-217's distinctive steps
+  ("a serverless inbound receiver configured with the Resend signing secret",
+  "the inbound receiver processes it", "exactly one recertification proposal is
+  committed to the review queue", ...) finds ZERO handlers in specs/pipeline/steps/.
+  BL-288's recertInboundServerlessHandlerSteps.js uses DIFFERENT step text (it drives
+  the WRAPPER), so it does not cover BL-217's CORE steps. Running
+  `run_acceptance.sh specs/features/BL-217-...feature` yields pass 0 / fail 1.
+
+  NO NEW FEATURE — the deliverable is making the EXISTING BL-217 feature executable +
+  green. Write the missing step handlers (e.g. recertInboundWebhookSteps.js) that
+  register every Given/When/Then in that feature and drive the REAL BL-217 core, then
+  add the module to the DOMAINS list in specs/pipeline/steps/index.js. Acceptance for
+  THIS ticket = BL-217's 5 scenarios pass via run_acceptance.sh (0/5 -> 5/5).
+
+  The 5 BL-217 scenarios the steps must drive (against the real core, fakes only at the
+  signature/commit/network edges — mirror BL-288's step pattern):
+    - update-outcome signed email -> exactly one proposal committed carrying the
+      scenario id, outcome, and new text.
+    - invalid signature -> rejected, no proposal.
+    - validly-signed non-recert body -> no proposal, failure logged without crashing.
+    - delete-outcome signed email -> a delete proposal committed; the scenario is NOT
+      removed until the specifier accepts it.
+    - a committed proposal -> the host bridge picks it up into the same durable review
+      queue BL-150's seam feeds.
+
+  Reuse (verified 2026-07-11): recertInboundWebhook.ts handleInboundEmailWebhook
+  (the core under test); svixSignature.ts + the existing webhookSecretFixtureSteps.js /
+  recertSenderAllowlistSteps.js fixtures for a valid/invalid signature and an allowed
+  sender; recertification.ts parse/propose; recertProposalRepoCommit.ts (fake the
+  PutFn / commit adapter so no real GitHub write); the recert store / BL-150 review-queue
+  seam for the pickup scenario. recertInboundServerlessHandlerSteps.js (BL-288) is the
+  nearest step-file pattern to copy.
+
+  Constraints / testability:
+    - Step handlers drive the real core with fakes ONLY at the signature/commit/network
+      edges — no real Telegram/Resend/GitHub/network, no real timers. Never seed a
+      fixture timestamp from the real clock while the code reads its own clock (de0991e).
+    - Keep any helper a THIN wrapper over exported pure helpers where a CLI/dispatch is
+      involved (engineering "CLI main() must be a thin wrapper").
+    - Do not weaken or edit BL-217's feature to make it pass — wire handlers to the
+      steps AS WRITTEN. If a step is genuinely unimplementable as phrased, STOP and flag
+      it back rather than rewording the contract.
+    - Register the new module in steps/index.js DOMAINS (an unregistered step file still
+      leaves the feature at 0/N — the exact bug this fixes); confirm run_acceptance.sh
+      reports 5/5 before handoff.
+
+  Note (systemic, for the coordinator): per the known acceptance-step-gap pattern,
+  BL-217 is unlikely to be the only feature whose steps were never wired (run_acceptance
+  fails such features 0/N without loud CI signal). A broader sweep to (a) wire remaining
+  unregistered acceptance features and/or (b) make an unregistered step FAIL LOUDLY may
+  be worth a separate item — out of scope here; this ticket fixes BL-217 specifically.
+
+  QA e2e procedure:
+    - Run `run_acceptance.sh specs/features/BL-217-inbound-email-webhook-serverless-
+      recert-receiver.feature`; assert all 5 scenarios pass (was 0/5).
+    - Spot-check that the handlers exercise the real core (a mutation to the core's
+      accept/reject branch should fail a scenario), not just assert on fakes.
+
+acceptance: specs/features/BL-217-inbound-email-webhook-serverless-recert-receiver.feature
+mutation_cost: low

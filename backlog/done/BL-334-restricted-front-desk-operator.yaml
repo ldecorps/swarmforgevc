@@ -1,0 +1,85 @@
+id: BL-334
+title: "A restricted front-desk Operator: the human is answered even while an Operator holds the slot"
+milestone: M8
+status: todo
+type: defect
+severity: high
+priority: 3
+direction: expedite
+depends_on: [BL-333]
+source: ".swarmforge/operator/INTAKE-interactive-operator-starves-the-front-desk.md. The intake explicitly refused to let an agent choose the fix ('needs a design decision — do not let the coordinator invent one') and offered three options. THE HUMAN CHOSE, 2026-07-13: option (2), a second restricted front-desk-only Operator, PLUS the option (3) alarm (BL-333). Options (1) and (3)-alone were considered and REJECTED. Do not re-litigate this."
+
+notes: |
+  DEPENDS ON BL-333 AND MUST NOT BE BUILT IN PARALLEL WITH IT: both tickets change
+  `operator_runtime.bb`'s tick and its status output, and this project has been bitten before by
+  two roles editing one file concurrently. BL-333 lands the observable (an Operator alive vs.
+  events actually being consumed, as two separate facts) — this ticket is what makes that second
+  fact become TRUE again.
+
+  THE BUG (verified against the running system; see BL-333's notes for the full mechanism).
+  `operator-running?` (operator_runtime.bb:238) is a SINGLE-OPERATOR guard keyed on a tmux session
+  name. An attended/interactive Operator sits on the same socket under the same session name and
+  is instructed never to exit ("do NOT touch operator.done and do NOT exit until the human
+  explicitly dismisses you"). It therefore holds the only slot, permanently and by design, and no
+  disposable Operator is ever spawned to read the front desk. Two days of the human's messages
+  went unread — including a complete spec he hand-wrote into a channel nobody was listening to.
+
+  THE HUMAN'S CHOSEN SHAPE. Allow a SECOND Operator that exists ONLY to serve the front desk:
+  it reads inbound events, answers the human, and does NOTHING ELSE. The `llm_running` guard was
+  built to stop two Operators taking conflicting ACTIONS ON THE SWARM. A front-desk Operator with
+  no authority to act on the swarm cannot take a conflicting action, so the risk the guard exists
+  to prevent simply does not arise — which is precisely why this is safe and option (1) was not.
+
+  SCOPE:
+    1. A SECOND OPERATOR, ADMITTED ALONGSIDE THE FIRST, restricted to front-desk work. Its
+       existence must not be gated on `operator-running?` being false — that is the whole point.
+       The full Operator's guard stays exactly as it is: still at most ONE unrestricted Operator.
+    2. RESTRICTION IS THE LOAD-BEARING PROPERTY, AND IT MUST BE STRUCTURAL. It may read the event
+       queue and reply to the human. It MUST NOT be able to act on the swarm: no respawn, no kill,
+       no park/unpark, no promote, no merge, no backlog mutation, no git write. Enforce this so it
+       CANNOT do those things, not so it is merely TOLD not to — a prompt instruction is not a
+       permission boundary, and this project has already learned (BL-285, BL-283) that the right
+       proof of a restriction is that the capability is absent, not unused. Restrict at the
+       narrowest place that actually holds: what the process is given, not what it is asked.
+    3. THE TWO OPERATORS MUST NOT TRAMPLE EACH OTHER. They will now be concurrent. Whatever the
+       single-Operator guard was protecting must STILL be protected — state it explicitly, then
+       show it holds. In particular they must not both consume the same event (the queue's
+       claim/inflight handling is the seam: `select-dispatch-batch` + the inflight file), and
+       they must not both write `status.json` over one another.
+    4. THE STARVATION CASE IS THE ACCEPTANCE CASE. With an attended Operator running for hours,
+       an inbound Telegram message must still be READ AND ANSWERED. Everything else is secondary.
+    5. OUT OF SCOPE: the alarm (BL-333 — it stays, as the safety net for whatever this misses);
+       changing attended mode's longevity (it is a feature — the human is mid-conversation);
+       giving the front-desk Operator any swarm authority "just for now".
+
+  TRAP — THE RESTRICTED OPERATOR IS STILL AN LLM WITH A SHELL. Restricting it by prompt alone
+  gives an agent that can run `git`, `tmux` and the role CLIs and has been TOLD not to. That is
+  not a boundary. If the substrate makes a true capability restriction impossible, SAY SO
+  EXPLICITLY and bounce this back rather than shipping a prompt-only restriction and calling it
+  restricted — a restriction believed but not held is worse than none, because it will be relied
+  on.
+
+  E2E QA PROCEDURE — THE LIVE PATH IS THE ONLY ONE THAT PROVES ANYTHING. The entire bug is that
+  the live path never runs, so a fixture test here is worth almost nothing.
+    (a) Start a REAL long-lived attended-shaped Operator session (one that does not exit). While
+        it is still running, send a REAL inbound front-desk message, and assert the human GETS AN
+        ANSWER. That is the ticket.
+    (b) Prove the restriction by ATTEMPTING a forbidden action as the front-desk Operator (a
+        promote, a respawn) and asserting it is structurally unable to perform it — assert against
+        real state (the backlog files, the running sessions) before and after, not against a log
+        line saying it declined.
+    (c) With both Operators live, assert no event is processed twice and neither corrupts the
+        other's status.
+
+acceptance:
+  feature: specs/features/BL-334-restricted-front-desk-operator.feature
+  steps:
+    - "A message sent while an Operator is mid-conversation is still answered"
+    - "The front-desk Operator cannot act on the swarm"
+    - "Only one unrestricted Operator can run at a time, as before"
+    - "Two concurrent Operators never process the same message twice"
+    - "The human's interactive session is not cut short to serve the front desk"
+
+human_approval: pending
+
+mutation_cost: high

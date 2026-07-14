@@ -1,0 +1,61 @@
+id: BL-318
+title: "Auto-hibernate fires when backlog is drained — coordinator must not self-generate during quiescence"
+description: |
+  BL-307's auto-hibernation (should-hibernate? → hibernate-swarm! in operator_lib.bb) is
+  structurally unreachable on this repo. The hibernation trigger requires a drained
+  backlog AND all roles quiescent. But the coordinator treats a drained backlog as
+  a cue to write itself new tickets (BL-311, BL-314-317 all surfaced this way), making
+  the two conditions mutually exclusive. The swarm therefore never parks, burning quota
+  on unrequested work while the intended cost-control sits dead.
+  
+  This ticket makes hibernation reachable by preventing the coordinator from promoting
+  self-generated tickets when the backlog is drained and all roles are quiescent.
+  It also fixes a provenance bug where the coordinator's self-generated tickets
+  falsely claimed human origin (BL-314 source field), making self-generated scope
+  indistinguishable from human directives on review.
+
+  Three fixes together:
+  1. Provenance-honest source field: a ticket's source must record who actually raised
+     it. "self" (coordinator) is a legitimate value; falsely claiming "human" is not.
+  2. Quiet-period gate: the coordinator may not promote a self-generated ticket while
+     the backlog is drained. Drained + quiescent → hibernate wins over self-promotion.
+  3. Human-only promote lane (stretch): self-generated tickets could land in paused/ and
+     require explicit human/Operator promote, making the swarm propose-only, never
+     self-queue. This slice implements (1) and (2); (3) is a future enhancement.
+
+  Scope: operator_lib.bb (hibernation trigger + source validation), the coordinator's
+  promotion logic in coordinator.prompt, and the backlog YAML schema validator for
+  source field honesty. Does NOT change the hibernation mechanism itself.
+
+  mutation_cost: low
+  direction: aligned
+  type: defect
+  severity: high
+milestone: M8
+priority: 10
+direction: aligned
+status: todo
+type: defect
+source: "Raised by Operator 2026-07-12 via .swarmforge/operator/INTAKE-autopark-unreachable-coordinator-self-generates.md"
+depends_on: []
+notes: |
+  RELATED: BL-307 (auto-hibernate base feature), BL-311 (intake archive hygiene),
+  BL-314-317 (coordinator self-generated tickets that revealed the defect).
+  
+  PROVENANCE BUG: BL-314's source field claimed "Raised by the human 2026-07-12 after
+  reviewing the Cost & Health panel" when the human did not raise it — it traces to
+  the Operator's cost analysis. Without honest provenance, self-generated scope is
+  indistinguishable from human directives.
+  
+  MEASUREMENT: after this lands, assert that hibernation fires within the configured
+  threshold when: backlog/active is empty, all roles have empty inbox/new and no
+  in_process, and the coordinator has no self-generated ticket eligible for promotion.
+  Use the BL-273 burn-rate meter to verify the swarm stops consuming tokens.
+
+acceptance:
+  feature: specs/features/BL-318-autopark-coordinator-self-generates.feature
+  steps:
+    - "Hibernation fires when backlog is drained and all roles are idle"
+    - "Self-generated ticket carries honest provenance in source field"
+    - "Human-raised ticket wakes hibernated swarm"
+    - "Quiet-period gate blocks coordinator self-promotion when drained"

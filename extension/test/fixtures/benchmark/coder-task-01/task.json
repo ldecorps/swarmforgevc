@@ -1,0 +1,5 @@
+{
+  "id": "coder-task-01-word-frequency",
+  "promptFile": "TASK.md",
+  "testFile": "test/wordFrequency.test.js"
+}

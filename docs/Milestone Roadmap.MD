@@ -1,5 +1,7 @@
 # SwarmForge VS Code Extension — Milestone Roadmap
 
+**Last Updated:** July 10, 2026
+
 A phased plan from a true MVP to the full spec. The guiding principle: **each milestone is independently useful and shippable** — you could stop after any one and have something worth running. Later milestones add reach, reliability, and intelligence, but the core value (drive a disciplined swarm from VS Code, get a reviewable PR) lands in the MVP.
 
 The slicing follows the spec's own seams: the filesystem is the source of truth, the swarm runs as orchestrator-spawned agent processes (the extension is a **standalone orchestrator**, not a driver of SwarmForge or tmux), and everything else is a projection or a control surface over that. So the MVP is "a good window onto a swarm the extension itself runs," and each later milestone is an additive layer that doesn't re-architect what came before.
@@ -119,10 +121,10 @@ Tick each — these are the seams the whole spec depends on. Built and proven fr
 
 **Goal:** spend less per delivered item, and run any agent.
 
-- **Backend abstraction** — formalize the `InteractiveProcess` launch contract; per-tile **backend/model switch on the fly**; mixed backends per role. The in-process `vscode.lm` backend already exists from M0; this milestone adds **external CLI backends** (Claude Code, Codex, Copilot CLI — the latter offering multi-model behind one auth) as alternative `InteractiveProcess` implementations, and generalizes model selection beyond the bootstrap's single `copilot` vendor.
+- **Backend abstraction** — formalize the `InteractiveProcess` launch contract; per-tile **backend/model switch on the fly**; mixed backends per role. This milestone adds **external CLI backends** (Claude Code, Codex, Copilot CLI — the latter offering multi-model behind one auth) as alternative `InteractiveProcess` implementations, and generalizes model selection beyond the bootstrap's single `copilot` vendor. Per-tile **model** switch for Claude-backed roles landed (BL-235); the `InteractiveProcess` abstraction and an in-process `vscode.lm` backend — despite an earlier claim here that the latter "already exists from M0" — do not exist in `extension/src` yet, so cross-backend switching remains future work on top of this milestone's own abstraction, not something to build on top of an already-landed one.
 - **Load measurement** — per-role active time, time-in-stage, rework load, surfaced in the Work Tree
 - **Cost-aware selection** — Suggest tier first (per-role recommendations + rationale), then opt-in Adapt; per-run budget cap as the backstop
-- **Effort dial** where backends expose it
+- **Effort dial** where backends expose it — Suggest-tier landed for Claude-backed roles (BL-236): per-role effort suggestion + rationale at run start, manual dial reusing BL-235's respawn mechanism; Adapt/Auto tiers still deferred
 
 **Why here:** cost intelligence is built on the load signals (M2 heartbeats + M3 reroute/rework data), so it can only be as good as those layers. Deliberately late because it's an optimization, not a foundation — and the "just don't run everything on the top model" default captures most savings cheaply even before the smart logic.
 
@@ -135,9 +137,9 @@ Tick each — these are the seams the whole spec depends on. Built and proven fr
 **Goal:** monitor and unblock the swarm from anywhere.
 
 - **Tier-2 bridge** — projects the same on-disk state over an authenticated tunnel; read projection + small control surface; holds no authoritative state
-- **Phone app or chat adapter** — glanceable status, push notifications, **answer `to: human` gates remotely** (the headline remote feature), simple controls
-- **Chat adapter** (Telegram easiest; Signal/WhatsApp/Teams per context) — human channel only, per-run thread as activity feed; agents never coordinate through it
-- **Remote security** — threat model: token rotation, read-only vs. control scope, device revocation, stronger auth for control actions
+- **Phone app or chat adapter** — glanceable status, push notifications, **answer `to: human` gates remotely** (the headline remote feature — the bridge's gate-answer write path landed, BL-240; a phone app/chat adapter client consuming it is still to come), simple controls
+- **Chat adapter** (Telegram easiest; Signal/WhatsApp/Teams per context) — human channel only, per-run thread as activity feed; agents never coordinate through it. Telegram landed (BL-239): narrates stage transitions/gates/dead-letters/PR link, relays a gate reply via BL-240 (answer-only, no stop/respawn commands); other platforms not built.
+- **Remote security** — threat model: token rotation, read-only vs. control scope, device revocation, stronger auth for control actions — landed (BL-241) as a host-side device-registry module; no dedicated per-device registration command/UI yet, the bootstrap "Start Bridge" flow still mints one bootstrap token
 
 **Why last:** it's the only piece that genuinely needs new networked infrastructure, and the spec shows it's cleanly deferrable (the filesystem already decouples the swarm from the UI). Everything it exposes already exists as state by M5; the bridge is a projection, not a re-architecture. Answering gates from your phone is the standout payoff and a natural capstone.
 
@@ -149,7 +151,7 @@ Tick each — these are the seams the whole spec depends on. Built and proven fr
 
 These don't get their own milestone; they're applied continuously:
 
-- **Cross-platform** (native Windows, macOS, and Linux) — the orchestrator's process backend is the same API on all three; Windows is first-class, and supporting it natively is precisely why the extension owns orchestration rather than depending on tmux
+- **macOS/Linux only** — tmux (SwarmForge's process substrate) has no native Windows implementation; a Windows-hosted swarm runs via WSL2 (a real Linux userland), never natively (BL-091)
 - **Secrets handling** — keep tokens/keys in the extension host, never in the worktree or commits (lightweight from M1, formalized as backends multiply in M5)
 - **Accessibility** — completion never color-only; keyboard nav; screen-reader labels
 - **Observability** — durable run log and transcript export, growing as features land

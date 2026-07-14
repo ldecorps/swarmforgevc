@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# BL-105: shared pre-commit hook, installed repo-wide via
+# `git config core.hooksPath swarmforge/git-hooks` (set once by
+# swarmforge.sh at launch - see ensure_commit_size_guard). Every role
+# worktree shares this same physical .git dir, so one install covers all
+# of them. Delegates to check_commit_size.sh so the guard logic itself
+# stays testable as a standalone script.
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+exec "$REPO_ROOT/swarmforge/scripts/check_commit_size.sh" 50

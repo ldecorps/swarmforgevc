@@ -1,0 +1,51 @@
+id: BL-209
+title: "Wire BL-082 cooldownScheduler to real rate-limit detection so agents resume at reset, not blind-retry"
+milestone: M3
+status: todo
+priority: 05
+direction: reliability
+assigned_to: coder
+source: "coordinator rule_proposal (scope engineering, filed as ticket) 2026-07-09: cooldownScheduler built+tested but unwired."
+
+description: |
+  COORDINATOR (2026-07-09): BL-082 (done/M3) built and unit-tested
+  extension/src/swarm/cooldownScheduler.ts — parseResetTime(signalText, nowMs),
+  recordCooldown, isCoolingDown, shouldWakeOnExpiry, getCooldownUntilMs — but it
+  is not wired to anything real:
+  - Nothing parses agent pane output for a provider "usage limit reached /
+    resets at <time>" message, so parseResetTime is never fed and recordCooldown
+    is never called in production (only tests call them).
+  - Its onCooldownExpired output is wired only into inboxChaser.ts's runSweep —
+    the TypeScript sweep BL-146 RETIRED from production (the live chase/wake
+    sweep is now the Babashka daemon chase_sweep_lib.bb / handoffd.bb).
+  Net effect: a rate-limited agent isn't reading its inbox, so the live daemon
+  chase blind-retries it every ~5 min into the rate limit instead of pausing
+  until the reset time. No ticket tracks this gap.
+
+  Wanted behavior (close the loop; deliver value, not another unwired half):
+  - DETECT + RECORD (extension, which is what tails pane output): when a role's
+    agent pane emits a provider usage-limit message stating a reset time, parse
+    it via cooldownScheduler.parseResetTime and recordCooldown(role, untilMs) to
+    the cooldown state file. Reuse cooldownScheduler.ts — do not rebuild it.
+  - ENFORCE + RESUME (the LIVE wake path — the daemon sweep chase_sweep_lib.bb,
+    NOT inboxChaser.runSweep): before chasing/waking a role, read the rate-limit
+    cooldown state (mirroring how it already reads respawn-cooldown.json) and
+    skip the wake while the role is cooling down; once past the reset time, wake
+    the role once to resume and clear/mark the cooldown so it does not
+    re-trigger.
+
+  Scope / constraints:
+  - Reuse BL-082's cooldownScheduler.ts API; the extension writes the cooldown
+    state file, the daemon reads it (same file-as-interface pattern as
+    respawn-cooldown.json).
+  - Enforcement MUST land in the live daemon sweep, not the retired TS
+    inboxChaser.runSweep (verify the live layer — same lesson as BL-146/BL-098).
+  - Per-role cooldown (matches cooldownScheduler's existing per-role API).
+    Account-wide propagation across roles sharing one provider/account is a
+    NON-GOAL for this slice (each role that hits the limit records its own).
+  - Provider-specific message patterns: cover the current provider(s); a
+    descriptor-driven approach can follow BL-142 later — do not block on it.
+  - Tests use an injected/fake clock; no real timers (engineering rule).
+
+acceptance: specs/features/BL-209-wire-rate-limit-cooldown-detection.feature
+mutation_cost: medium

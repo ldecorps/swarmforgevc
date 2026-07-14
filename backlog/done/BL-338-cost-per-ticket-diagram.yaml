@@ -1,0 +1,68 @@
+id: BL-338
+title: "A diagram of average cost per ticket — the number the human intends to reduce"
+milestone: M8
+status: todo
+type: feature
+severity: medium
+priority: 6
+direction: human-requested
+depends_on: []
+source: ".swarmforge/operator/INTAKE-cost-per-ticket-diagram.md — the HUMAN, verbatim, 2026-07-12T21:01Z: 'I also need a diagram showing the average cost / ticket (which I intend to reduce !)'. Went unread for two days (BL-333/BL-334)."
+
+notes: |
+  WHY HE WANTS IT: his stated intent is to REDUCE it. Right now THERE IS NO NUMBER TO REDUCE. Cost
+  is visible per-role and per-hour, but never per unit of DELIVERED WORK. Without cost/ticket,
+  every efficiency decision on this project — park idle roles (BL-324), clear context (BL-309),
+  cheaper models per role (BL-314, BL-340) — is argued from intuition instead of measurement. This
+  ticket is what makes the whole efficiency programme falsifiable.
+
+  REUSE, DO NOT REBUILD. All the raw material exists:
+    - BL-100 — token/cost telemetry.
+    - BL-273 — live burn-rate meter, tokens/hr per role.
+    - BL-272 — headless cost-health sidecar.
+    - BL-312 — fixed the master-resident DOUBLE-COUNT (coordinator + specifier were counted
+      twice). ANY per-ticket figure MUST use the corrected accounting or it will overstate. This
+      is not optional; an uncorrected figure is simply wrong.
+    - Ticket lifecycle timestamps live in the backlog YAML + git history, so "which spend belongs
+      to which ticket" is derivable from when a ticket was active and which roles held it.
+
+  ATTRIBUTION IS THE HARD PART — AND IT IS WHERE THIS TICKET WILL GO WRONG IF UNGUARDED. Roles are
+  re-poked, run concurrently, and a STALLED swarm burns tokens against a ticket while doing
+  nothing. So DECIDE EXPLICITLY, and STATE ON THE SURFACE, what "the cost of a ticket" includes:
+  only its own build? its bounces? the coordinator's bookkeeping? idle burn while it was the
+  active item? There is no single right answer — but there IS a wrong one:
+
+    A NUMBER THAT QUIETLY EXCLUDES BOUNCE REWORK WILL FLATTER THE SWARM BADLY. The measured bounce
+    rate is ~58%. Rework is plausibly the single largest waste in the pipeline. A cost/ticket that
+    hides it is not merely incomplete — it is MISLEADING, and it will steer the human's reduction
+    effort away from the biggest cost he has. INCLUDE BOUNCE REWORK, or state its exclusion
+    LOUDLY, on the surface itself, where he reads the number.
+
+  SCOPE:
+    1. An average-cost-per-ticket figure AND ITS TREND (he wants to watch it fall; a single number
+       cannot show that).
+    2. Visible on a REAL HUMAN SURFACE — he asked for a DIAGRAM. Likely homes: the PWA (which
+       already has velocity/burndown charts, BL-287) and/or the daily briefing email (BL-260
+       renders diagrams via the local Mermaid pipeline — reuse it). If it goes in the email, NOTE
+       BL-286: images MUST be cid inline attachments, NOT data-URIs.
+    3. THE ACCOUNTING BASIS IS STATED EXPLICITLY ON THE SURFACE — what is in the number and what
+       is out. A cost figure whose basis is undocumented is a number nobody can act on.
+    4. Uses BL-312's corrected, non-double-counted totals.
+
+  E2E QA PROCEDURE: verify the figure against real usage data, not a fixture — and specifically
+  assert the double-count is not present (compute a known ticket's cost by hand and compare). Then
+  verify the diagram is visible on the surface THE HUMAN ACTUALLY OPENS (see BL-335 — three
+  "done" tickets were closed while invisible to him).
+
+acceptance:
+  feature: specs/features/BL-338-cost-per-ticket-diagram.feature
+  steps:
+    - "An average cost per ticket is derived from real usage"
+    - "The figure does not double-count the master-resident roles"
+    - "Rework from bounces is included, or its exclusion is stated on the surface"
+    - "The accounting basis is stated where the human reads the number"
+    - "The trend over time is visible, not just a single figure"
+
+human_approval: pending
+
+mutation_cost: medium

@@ -1,0 +1,121 @@
+id: BL-250
+title: "Model bake-off: run all available Claude/Mistral/GPT models through the compliance battery and rank best-value per role, flagging paid-only"
+direction: tooling
+priority: 40
+mutation_cost: medium
+depends_on: [BL-233]  # needs BL-233 qualify (slice 3) + best-value ranking (slice 4); transitively BL-231 battery (done) + provider abstraction BL-206-209 (done)
+source: "operator chat request 2026-07-10: 'companion to BL-233: let's put Claude, mistral and gpt models to the test.'"
+
+description: |
+  A companion to BL-233 (the recruiter). Instead of BL-233's open web-discovery of
+  arbitrary cheap plans, this is a CURATED bake-off over a FIXED three-provider
+  candidate set: every agent-capable (chat/completion) model that Claude
+  (Anthropic), Mistral, and GPT (OpenAI) expose that we can access. It drives that
+  roster through the recruiter/battery pipeline and produces a per-role best-value
+  leaderboard across all three providers — so we learn which model is best for
+  which role, and which are paid-only.
+
+  Operator decisions (2026-07-10, via specifier questions):
+    1. SCOPE: FULL best-value leaderboard — compliance PLUS capability-per-cost
+       ranking PLUS a recommended swarmforge.conf --model per role. Not
+       compliance-only. This reuses BL-233 qualify (slice 3) + rank (slice 4) and
+       therefore DEPENDS on those slices being built.
+    2. ROSTER: test the WHOLE available roster per provider — enumerate every
+       agent-capable text model each provider's API exposes that we have access
+       to; do not hand-pick a subset. Non-chat endpoints (embeddings, image,
+       audio, moderation) are excluded — they cannot act as swarm agents.
+    3. COST LABELING: the report FLAGS each candidate's cost tier, marking
+       PAID-ONLY candidates (no free/eval tier) distinctly from free/eval-tier
+       ones, alongside plan cost. Plan cost remains the value denominator for the
+       best-value ranking.
+
+  Pipeline: enumerate the fixed Claude/Mistral/GPT roster (agent-capable models +
+  provider + plan cost + paid-only flag) -> acquire access (reuse BL-233: free-tier
+  auto-signup where automatable, escalate at a wall; paid models via operator keys
+  in the host secret store) -> qualify each accessible candidate through the BL-231
+  battery (per-role scorecard) -> rank compliant candidates per role by best value
+  against the current model as reference -> report the leaderboard with cost-tier
+  labels and a recommended conf change.
+
+  Wanted behavior (observable):
+    - The roster lists, for Claude, Mistral, and GPT, each agent-capable model's
+      provider, model id, plan cost, and a paid-only-vs-free/eval-tier label;
+      non-chat endpoints are excluded.
+    - Each accessible rostered candidate is scored by the BL-231 battery (per-role
+      scorecard); non-compliant candidates are excluded from a role's ranking.
+    - Per role: a best-value leaderboard over compliant candidates across all three
+      providers, ordered by capability weighted against plan cost (cheapest breaks
+      ties), with the current model for that role shown as the reference baseline
+      and one recommended pick.
+    - The report labels every candidate paid-only or free/eval-tier with its plan
+      cost.
+    - A candidate that could not be accessed (no key, no free tier, wall not
+      cleared) is listed as untested with the reason — never silently dropped.
+    - The report includes a suggested swarmforge.conf --model change per role; the
+      bake-off changes no live config and does not bounce the swarm (recommend-only,
+      per BL-233).
+
+  Constraints (inherit the BL-231/BL-233 out-of-band posture):
+    - SECRETS (local-engineering rule): any provider API key lives in the host
+      secret store only — never written into the working tree, the repo,
+      .swarmforge/, or any commit. QA greps the tree + git diff/log -p to prove
+      non-leak.
+    - ACCESS, BOUNDED + SAFE (engineering bounded-retry rule): reuse BL-233's
+      acquire path — auto free-tier signup only where a no-payment plan permits it,
+      escalate to a human at a payment/captcha/manual-ToS wall; paid models use
+      operator-provided keys. Never defeat anti-automation controls or accept
+      ToS/payment on the human's behalf. Any signup/qualify retry is capped with
+      backoff, then escalates.
+    - REUSE, don't reimplement: drive candidates through the BL-231 battery and the
+      provider abstraction (BL-206-209); reuse BL-233's acquire/secret-store,
+      battery-orchestration, best-value ranker, and report writer. This item adds
+      only a FIXED three-provider roster source (agent-capable models + cost +
+      paid-only flag) and the paid-only report label. Do not fork the battery,
+      ranker, or report writer.
+    - TESTABLE boundary (engineering test-double rules): provider roster
+      enumeration, signup, and battery/model invocation sit behind injectable seams
+      (faked/recorded in unit tests); no real network, signup, secret writes, or
+      live model calls in tests.
+    - OUT-OF-BAND: leaves backlog/ and mailbox state untouched (BL-231/233
+      scratch-worktree posture); no agent self-scheduling.
+
+  Scope: extend the BL-233 recruiter host-side tool (e.g. extension/src/recruiter/
+  + extension/src/tools/) with (a) a curated three-provider roster adapter that
+  enumerates agent-capable models with provider, model id, plan cost, and a
+  paid-only flag for Anthropic/Mistral/OpenAI, and (b) a paid-only cost-tier label
+  in the report writer. Reuse the acquire/secret-store, battery-orchestration,
+  best-value ranker, and report writer unchanged. Verify the live recruiter code
+  path (the recruiter tool + provider abstraction) actually runs before naming
+  files in the built slice's Scope.
+
+  DELIVERY: DEPENDS on BL-233 slices 3-4 (qualify + best-value ranking) — schedule
+  after they land. If built in slices, scope the live acceptance feature file to
+  BUILT slices only and park not-yet-built scenarios in a
+  BL-250-*.feature.draft companion (BL-233 slice-scoping rule); never ship a
+  feature file whose scenarios outrun the built code.
+
+acceptance: specs/features/BL-250-model-bakeoff-claude-mistral-gpt.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (all external seams faked/recorded — no real
+  network, signup, secret writes, or live model calls):
+  1. Run roster enumeration for Claude/Mistral/GPT against recorded provider
+     catalogs; assert each candidate lists provider, model id, and plan cost, is
+     marked paid-only or free/eval-tier, and that non-chat endpoints are excluded.
+  2. Qualify a rostered, accessible candidate via a fake battery seam; assert the
+     BL-231 battery is invoked and a per-role scorecard recorded; a non-compliant
+     candidate is excluded from ranking.
+  3. Rank a role given >=2 compliant candidates across >=2 providers plus the
+     incumbent model; assert only compliant candidates are ranked, ordering is
+     value-based (on ~equal capability the cheaper wins), the incumbent shows as
+     reference, and a best-value pick is named.
+  4. Assert the report labels each candidate paid-only vs free/eval-tier with its
+     plan cost, and lists any inaccessible candidate as untested-with-reason (not
+     dropped).
+  5. Assert the report contains a suggested swarmforge.conf --model line per role
+     AND that swarmforge.conf is byte-for-byte unchanged and no bounce fired.
+  6. Grep the working tree + `git diff`/`git log -p` to prove no API key text
+     appears in the tree or history.
+
+# HUMAN APPROVAL: APPROVED by operator 2026-07-10. Held in paused pending BL-233
+# completion (depends_on BL-233 slices 3-4); coordinator promotes once BL-233 closes.

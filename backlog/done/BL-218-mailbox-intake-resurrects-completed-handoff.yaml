@@ -1,0 +1,61 @@
+id: BL-218
+title: "Mailbox intake resurrects an already-completed handoff as fresh in_process mail (BL-128 migration window)"
+milestone: M2
+status: todo
+priority: 04
+direction: reliability
+assigned_to: coder
+depends_on: [BL-128]
+source: "coordinator rule_proposal (engineering scope, filed as ticket) 2026-07-09, corroborated by specifier live evidence: ready_for_next_task.bb's migration fallback re-promoted an already-completed handoff after the BL-128 mailbox split."
+
+description: |
+  COORDINATOR (2026-07-09): during BL-128's mailbox split (shared master
+  inbox -> per-role mailboxes), ready_for_next.sh run post-merge/pre-migration
+  copied a QA handoff already in inbox/completed/ into a new per-role
+  in_process/ with a fresh dequeued_at — a real duplicate.
+
+  SPECIFIER live corroboration (same session): the coder note 000034, already
+  in the specifier's completed/, was re-served into in_process/ repeatedly;
+  done_with_current.sh refused with AMBIGUOUS_TASK_STATE ("completed file
+  already exists"), and the stuck duplicate MASKED two real queued items (a
+  coordinator task + a coder note), since ready_for_next checks in_process
+  first. Cleared by moving the duplicate aside; this ticket fixes the cause.
+
+  Root cause (verified against live code):
+    - handoff_lib.bb my-mailbox-base-dir (line ~238) resolves the per-role
+      mailbox via SWARMFORGE_ROLE + roles.tsv, but FALLS BACK to the pre-BL-128
+      flat worktree-root layout when load-role-info returns nil (role/roles.tsv
+      not yet resolvable — exactly the post-merge/pre-migration window). So the
+      queue helpers can read a different physical mailbox than the one where
+      completion was recorded.
+    - ready_for_next_task.bb (lines ~45-51) promotes the first new/ file into
+      in_process/ and stamps a fresh dequeued_at, guarding ONLY against an
+      existing in_process TARGET (AMBIGUOUS_TASK_STATE). It never checks whether
+      that handoff id is already in completed/ (or abandoned/). So a stale copy
+      lingering in new/ (or surfaced by the base-dir fallback flip) is
+      resurrected as brand-new work.
+
+  Wanted behavior:
+  - Mailbox intake is idempotent: before promoting a new/ file into in_process/
+    with a fresh dequeued_at, dedup by handoff id/basename against the
+    completed/ AND abandoned/ sets. If the handoff is already completed or
+    abandoned, DO NOT resurrect it — discard/park it with a logged line
+    ("already-processed, skipped"), and move on to the next genuinely-new file.
+  - Harden the layout fallback so intake and completion cannot read different
+    physical mailboxes for the same role: when per-role mailboxes exist, do not
+    silently fall back to the flat layout mid-swarm. (At minimum, the
+    idempotency guard above must hold across whichever layout is resolved.)
+  - No behavior change for genuinely-new mail: a fresh handoff not present in
+    completed/abandoned dequeues exactly as today.
+
+  Constraints:
+  - Babashka; the dedup check is a pure function over provided directory
+    listings (fixtures) — no real mailbox I/O, no network, no real timers in
+    tests. Cover: (1) a new item whose id is already in completed/ is skipped,
+    not resurrected; (2) a genuinely-new item still dequeues; (3) the
+    flat<->per-role fallback does not resurrect a completed item.
+  - This encodes the engineering.prompt Guardrail added 2026-07-09 ("Mailbox
+    intake is idempotent ...").
+
+acceptance: specs/features/BL-218-mailbox-intake-resurrects-completed-handoff.feature
+mutation_cost: low

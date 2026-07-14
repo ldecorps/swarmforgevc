@@ -1,0 +1,62 @@
+id: BL-221
+title: "Stryker sandbox omits sibling pwa/; mutation dry run ENOENTs on pwa/index.html, blocking the hardener gate for every ticket"
+milestone: M2
+status: todo
+priority: 03
+direction: reliability
+assigned_to: coder
+source: "coordinator rule_proposal (engineering scope) 2026-07-09, confirmed during BL-132 QA verification and independently by BL-132's coder; corroborated by specifier against live config (extension/stryker.config.json has no files scope; pwa/ is a repo-root sibling outside extension/)."
+
+description: |
+  COORDINATOR (2026-07-09): the Stryker sandbox never copies the sibling pwa/
+  directory, so every mutation dry run fails ENOENT on pwa/index.html. This
+  blocks the hardener's no-surviving-mutants gate for EVERY ticket, not just
+  ones that touch pwa/ — the dry run aborts before any mutant is evaluated.
+  Systemic, not ticket-specific.
+
+  Root cause (verified against live code):
+    - extension/stryker.config.json runs from extension/ and declares no `files`
+      scope, so Stryker sandboxes only the extension/ project directory.
+    - pwa/ is a sibling at the REPO ROOT (pwa/index.html, pwa/app.js,
+      pwa/locales.js, ...), outside extension/. Tests that load a pwa asset by
+      path resolve it fine in a normal run (asset present in the tree) but ENOENT
+      inside the Stryker sandbox, which only contains the copied extension/ dir.
+    - Because the failure is in the dry run (sandbox setup / initial test run),
+      the whole mutation gate aborts rather than reporting surviving mutants.
+
+  Wanted behavior:
+  - The Stryker mutation dry run resolves runtime-loaded pwa/ assets: a test that
+    reads pwa/index.html (or any pwa/ file it needs at run time) passes inside
+    the sandbox exactly as in a normal run — no ENOENT on any pwa/ path.
+  - The hardener's no-surviving-mutants gate reaches mutant evaluation instead of
+    aborting in the dry run.
+  - No change to the mutation SCOPE: only out/**/*.js is mutated; making pwa/
+    assets available to the sandbox must not add pwa/ files to the mutated set.
+
+  Implementation latitude (coder chooses the mechanism):
+  - The naive "add pwa/**/ to `files`" may not suffice because pwa/ is OUTSIDE the
+    project root Stryker sandboxes; verify how Stryker resolves paths outside the
+    working directory before settling on `files`. Acceptable mechanisms include a
+    Stryker `files`/sandbox-scope entry that reaches the sibling, a symlink or
+    copy of the needed pwa/ assets into the sandbox, running Stryker from a root
+    that contains both extension/ and pwa/, or a plugin/setup hook — whichever
+    keeps the mutate set at out/**/*.js and the sandbox self-contained. Encode the
+    engineering-article rule added 2026-07-09 ("The Stryker sandbox copies only
+    the mutated project directory ... runtime-loaded sibling assets must be made
+    available inside the sandbox").
+
+  Constraints:
+  - Do not edit mutation manifests by hand; the tools own those.
+  - A green local test run that reads the asset in place is NOT proof the
+    sandboxed dry run resolves it — verify against the actual sandbox.
+  - Keep the unit suite fast and isolated per the engineering article (no real
+    timers, no waiting on real time).
+
+  QA e2e procedure (live swarm):
+  - In a worktree with pwa/ present, run the hardener's Stryker command scoped to
+    a changed out/**/*.js file whose covering test reads a pwa/ asset.
+  - Confirm the dry run completes (no ENOENT on pwa/*), the run reaches mutant
+    evaluation, and the mutate set remains out/**/*.js only.
+
+acceptance: specs/features/BL-221-stryker-sandbox-missing-pwa-assets.feature
+mutation_cost: low

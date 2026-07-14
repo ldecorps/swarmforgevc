@@ -1,0 +1,79 @@
+id: BL-094
+title: holistic dev-state web UI on the BL-065 bridge (phase 2) — one view of swarms, parcels, backlog, agents
+milestone: M6
+status: todo
+priority: 01
+direction: non-aligned
+source: operator requirement 2026-07-04 ("expose a webui showing a holistic view of the dev state"; revises the web-UI phase deferred by BL-065)
+
+description: |
+  **HOLD RELEASED (operator, 2026-07-09 16:xx local):** the stated condition
+  (extension/src overlap with BL-121/BL-122's live files) resolved when both
+  merged. Operator directive: phone app comes right behind daily briefing
+  (BL-100) - promoting now so it queues behind BL-100 in the coder's task
+  queue, not blocked on it finishing. This is a scoped exception to the
+  general promotion hold (Claude availability pressure) in effect since
+  2026-07-09 15:13 - same mechanism as the earlier BL-100 exception.
+
+  Prior hold history (BL-153, superseded above): paused while BL-154 handoff
+  resilience work was in flight; reaffirmed 2026-07-09 pending BL-121's
+  chain, priority raised 02->01 ahead of same-tier siblings. Kept for audit.
+
+  Phase 2 of the remote-visibility track. BL-065 (merged) built the
+  read-only localhost REST+SSE bridge and explicitly deferred "the web UI
+  itself" to a later ticket — this is that ticket, revised per the
+  operator's 2026-07-04 requirement: the extension serves a browser web UI
+  giving a HOLISTIC view of development state, and the multi-swarm bring-up
+  (BL-091) is gated on it so a second swarm is never run without this view.
+
+  Operator-confirmed decisions (2026-07-04):
+    - Transport/security posture unchanged from BL-065: the UI is served by
+      the same opt-in localhost bridge (bearer token, no LAN exposure, no
+      tunneling). Every extension instance (each machine) can serve it.
+    - Cross-swarm state is GIT-DERIVED: backlog board, ticket assignments
+      (BL-090 swarm: field), parcel/stage positions, and run/merge history
+      come from the repo, which is already the multi-swarm transport — so
+      the holistic picture is visible from EITHER machine without opening
+      ports. Live pane-level agent detail (tails, liveness) remains
+      local-swarm-only, clearly labeled as such in the UI.
+
+  Behaviors:
+    - Serving: the bridge serves the UI at its root URL when started;
+      stopping the bridge stops the UI. No always-on server.
+    - Holistic view, one page: (a) backlog board — root intake count,
+      paused, active (with swarm assignment + stage position per parcel),
+      done-by-milestone; (b) per-swarm panel — each known swarm's roles
+      with local liveness/last-activity where local, git-derived last-known
+      state where remote; (c) pipeline flow — where every in-flight parcel
+      sits in the specifier..QA chain; (d) recent activity — merges to
+      main, closed tickets, current run identity.
+    - Read-only in phase 2: no control actions (no respawn, no gate
+      answers, no stop). Control endpoints remain a later phase, as
+      BL-065 already scoped.
+    - Live updates via the existing SSE stream — no page reload to see a
+      parcel advance; degraded gracefully to manual refresh if SSE drops.
+    - The UI is a static asset bundle served by the bridge (no build-time
+      network fetch, no CDN — self-contained, matching webview asset
+      practice). Browser-side code holds no secrets beyond the
+      user-supplied bearer token.
+
+  Architecture guardrails: the bridge stays a pure projection of
+  `.swarmforge/` + `backlog/` + git metadata (stateless, killable); UI code
+  is presentation only — every fact it shows must come from a bridge
+  endpoint, never from browser-side scraping or storage
+  (no localStorage/sessionStorage, consistent with webview rules).
+
+  Scope: extension/src (bridge endpoints extended for the git-derived
+  holistic projection: assignments, per-swarm state, done-by-milestone),
+  static UI assets under the extension, tests for every new projection
+  endpoint through the existing testable-module seams. The UI rendering
+  layer itself is presentation (unsuitable-boundary); its data contracts
+  are what get tested.
+
+  Sequencing: needs BL-090's swarm: assignment field to exist to show
+  multi-swarm assignment (single-swarm view works before that with
+  everything implicitly primary). BL-091 (second-swarm bring-up) DEPENDS ON
+  this ticket per operator decision.
+
+acceptance: specs/features/BL-094-holistic-dev-state-web-ui.feature
+mutation_cost: medium

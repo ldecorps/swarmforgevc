@@ -1,0 +1,72 @@
+id: BL-101
+title: headless secondary swarms on small Linux hosts — Raspberry Pi and VPS bring-up (systemd, headless auth, throughput-aware assignment)
+milestone: M6
+status: blocked
+
+blocked_notes: |
+  CORRECTION (coordinator, 2026-07-10): first closed this to done/, then
+  QA sent an explicit follow-up note: "do NOT close to done/ - no HW
+  verify yet." Reverted — parked here in paused/ instead, NOT done/.
+
+  All pipeline/code work IS complete and already on main: QA passed
+  everything code-side (unit tests, mutation coverage, systemd unit
+  generation, provisioning scripts, docs) and it's merged (coordinator,
+  cb2b0632c6). What remains is exclusively a human action outside the
+  swarm: the ticket's acceptance feature has real-hardware-only scenarios
+  (actual Pi 5 / VPS bring-up) that QA cannot execute itself (same
+  precedent as BL-091's feature file).
+  OPERATOR ACTION NEEDED: run the manual verification checklist in
+  docs/runbooks/BL-101-pi-vps-secondary-swarm-bringup.md against real
+  hardware, then move this ticket to done/ (no further pipeline routing
+  needed — do not re-promote/re-route through coder/cleaner/etc., there
+  is nothing left for any role to do on it).
+priority: 05
+direction: non-aligned
+source: operator request 2026-07-04 (Pi feasibility confirmed; operator also has an idle VPS)
+depends_on: BL-090, BL-091, BL-092 (mode + assignment, remote bring-up learnings, wake-up bridge)
+
+description: |
+  Turn any always-on headless Linux box into a fire-and-forget secondary
+  swarm ("throughput brick"). Two concrete reference targets, one recipe:
+    - Raspberry Pi 5 (ARM64; 8GB minimum, NVMe/USB-SSD storage REQUIRED —
+      SD cards are excluded for durability and speed).
+    - The operator's existing VPS (x86_64; 4GB+ RAM for a full 7-role
+      pack, fewer roles on smaller instances).
+
+  Behaviors:
+    - Bring-up doc + a small provisioning script: install pinned substrate
+      (tmux, babashka aarch64/x86_64, Node + claude CLI, git, gh, the
+      GitHub Actions self-hosted runner for that arch), clone the repo,
+      write the secondary-mode conf (BL-090: swarm_mode secondary
+      <primary>, swarm_name unique per box), register the runner with a
+      per-host label so BL-092 workflows target the right box.
+    - systemd units: one for the swarm (launch at boot, clean stop on
+      shutdown via the existing stop path), one for the Actions runner.
+      A crashed/rebooted box resumes as a working secondary with no human
+      attention; durable queue state (git + inboxes) makes reboot loss-free.
+    - Headless auth: the claude CLI authenticates via environment/config
+      on the box (no interactive browser login required after initial
+      provisioning); git push auth via a credential scoped to THIS repo
+      only (fine-grained PAT or deploy key) — never a broad account token.
+    - Security posture (VPS especially, it is internet-facing): the swarm
+      needs OUTBOUND connections only (Claude API, git/GitHub, runner
+      long-poll). The provisioning script must not open any inbound port;
+      document that SSH is the only inbound service and key-only. Secrets
+      (API key, PAT) live in the unit environment/root-owned files, never
+      in the repo clone.
+    - Throughput-aware assignment guidance (coordinator prompt note, this
+      parcel): small hosts run CPU-bound gates (full suite, mutation) 2-4x
+      slower, while API-bound stages run at full speed — so the
+      coordinator SHOULD prefer assigning mutation-heavy/hardener-long
+      tickets to the fastest swarm and ordinary tickets to the bricks.
+      Guidance, not a hard rule; assignment stays the coordinator's call.
+    - Verified on both reference targets before close: one parcel worked
+      end-to-end (assignment -> pipeline -> QA -> push) on the Pi and one
+      on the VPS.
+
+  Scope: docs (bring-up guide extending BL-091's), provisioning script +
+  systemd unit files under swarmforge/deploy/ (new, script-tested where
+  logic exists), coordinator prompt guidance line, no extension changes.
+
+acceptance: specs/features/BL-101-headless-secondary-swarm-pi-vps.feature
+mutation_cost: high

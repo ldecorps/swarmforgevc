@@ -1,0 +1,96 @@
+id: BL-275
+title: "Support MVP (slice 1): SUP-### thread store + support_runtime.bb skeleton + disposable LLM wake, over RC + outbound email echo"
+milestone: M8
+status: todo
+priority: 20
+direction: non-aligned
+assigned_to: coder
+depends_on: []
+parent_epic: BL-274
+source: "BL-274 Support-role epic, slice 1 (.swarmforge/operator/INTAKE-support-role.md). Standalone MVP; carries the epic's locked decisions."
+
+description: |
+  First slice of the Support role epic (BL-274): a working front-desk MVP proven
+  over remote control (RC) with an outbound email echo. Later slices add the daily
+  reminder/close clock (BL-276), Telegram (BL-277), inbound email (BL-278), and the
+  coordinator-intake bridge (BL-279) — NOT in this slice.
+
+  Support runs OUTSIDE the swarm workflow (front desk, like the Operator); it never
+  builds/specs/promotes/closes BL-### tickets. See BL-274 for the full locked
+  decisions; the ones this slice realizes:
+    - SUP-### threads are SEPARATE from build BL-### tickets; the runtime assigns the
+      id and persists the full thread (each message tagged channel + timestamp +
+      status).
+    - Email is the SYSTEM OF RECORD: after every interaction, Support emails the
+      caller — subject carrying the SUP-### id + a short title — a body that (1)
+      summarizes the conversation so far, (2) states the next step, (3) lists the
+      options.
+    - Support never closes a thread of its own will (the autonomous 3-strike close is
+      BL-276; not built here).
+
+  Scope of THIS slice:
+    - The SUP-### thread STORE: create a thread (assign next id), append a message
+      (channel + timestamp + status), read a thread. Persisted under a Support state
+      dir mirroring the Operator's (e.g. .swarmforge/support/), gitignored machine-
+      local state (never committed).
+    - support_runtime.bb SKELETON mirroring operator_runtime.bb: heartbeat,
+      support/status.json, an event queue, and waking a DISPOSABLE Support LLM per
+      event with the thread context. (Reminder timers are stubbed/absent here — that
+      clock is BL-276.)
+    - RC channel: open a discussion and follow up over an agent remote-control
+      session; both land on the SAME SUP-### thread.
+    - OUTBOUND email echo: compose + send the [SUP-###] email after an interaction,
+      reusing the existing Resend send path (resendClient.ts /
+      extension/src/util/authenticatedPost.ts, as briefing_email_lib.bb does).
+
+  Live integration seams (verified 2026-07-11 — reuse; do not reinvent):
+    - swarmforge/scripts/operator_runtime.bb — the runtime pattern to mirror
+      (timers/heartbeat/event-queue + disposable-LLM wake). Support is external to
+      the swarm, so like the Operator it is NOT added to swarmforge.conf's pipeline
+      window list; it runs its own session/socket (operator precedent:
+      .swarmforge/operator/operator-tmux.sock).
+    - Outbound email: resendClient.ts + extension/src/util/authenticatedPost.ts;
+      briefing_email_lib.bb shows the send convention. RESEND_API_KEY stays an
+      operator-provided env var (see BL-214/BL-215) — do not add a key store.
+    - RC: agent remote-control sessions (--remote-control,
+      list_remote_control_sessions.sh).
+
+  Wanted behavior (see the feature file):
+    - Opening a discussion over RC creates a new SUP-### thread with its own id and
+      stores the message under its channel + timestamp, status open.
+    - The email echo's subject carries the ticket id + a short title; its body
+      summarizes the conversation, states the next step, and lists the options.
+    - A follow-up over RC is appended to the same thread.
+    - Support does not close a thread on its own (no autonomous close in this slice).
+
+  Constraints / testability:
+    - Keep the TESTABLE host-side core pure: the thread store operations (create/
+      append/read, id assignment, status) and the email-echo COMPOSITION (subject +
+      the 3-part body) are pure functions over provided inputs — mirror
+      briefing_email_lib.bb's body-builder split. The actual Resend send and RC/tmux
+      I/O are the untested boundary; drive the composition + store directly in tests.
+    - Any CLI entry point keeps main() a THIN wrapper over exported pure helpers
+      (engineering "CLI main() must be a thin wrapper" rule); cover main() wiring with
+      a subprocess test in ADDITION, never as the only cover for logic.
+    - The support_runtime.bb decision (event -> wake / due -> act) is adapter-injected
+      and testable with fakes + an injected clock — NO real timers, NO real tmux, NO
+      real email in unit/acceptance tests (engineering no-real-timers rule); and never
+      seed a fixture timestamp from the real clock while the code reads its own clock
+      (de0991e).
+    - SUP thread state is machine-local (gitignored), never committed to git.
+
+  Role prompt: the specifier lands swarmforge/roles/support.prompt (refined from the
+  intake's draft) WITH this slice's integration — a specifier-owned prompt file,
+  sequenced through the pipeline, not hot-edited into a live role.
+
+  QA e2e procedure:
+    - Open a discussion over an RC session; assert a SUP-### thread is created and the
+      message persisted (channel + timestamp, open).
+    - Trigger the email echo; assert the subject carries the SUP-### id + title and the
+      body has the summary + next step + options (compose-level; a real send is the
+      boundary, exercised with the operator-provided key only in a manual check).
+    - Follow up over RC; assert it appends to the same thread.
+    - Assert Support does not close the thread on a non-close interaction.
+
+acceptance: specs/features/BL-275-support-thread-store-rc-email-echo.feature
+mutation_cost: medium

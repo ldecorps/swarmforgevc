@@ -1,6 +1,10 @@
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { sendInstructionVerified, VerifiedInjectResult } from './verifiedInject';
+import { isPaneActivelyProcessing } from '../panel/agentPaneState';
+import { classifyProviderError, ForgeErrorCategory } from './providerErrorTaxonomy';
+import * as realClock from './sleepSync';
 
 export interface TmuxRunResult {
   stdout: string;
@@ -16,21 +20,50 @@ export interface SwarmRole {
   agent: string;
 }
 
+// runCommand is synchronous and runs on the extension host's only JS thread:
+// a child that never exits wedges the entire extension (tiles, webview
+// messages, every timer). All callers are sub-second tmux commands, so a
+// bounded default timeout turns any hang into a failed result instead.
+export const DEFAULT_RUN_COMMAND_TIMEOUT_MS = 10_000;
+
+// BL-104: split out of runCommand (complexity 8 -> under threshold). Pure
+// and unit-tested directly, independent of an actual spawnSync call.
+export function isTimedOut(error: NodeJS.ErrnoException | undefined): boolean {
+  return error !== undefined && error.code === 'ETIMEDOUT';
+}
+
+// BL-104: split out of runCommand alongside isTimedOut. Shapes a raw
+// spawnSync-like result into the TmuxRunResult the rest of the codebase
+// depends on (timeout stderr message, exit-code fallback).
+export function shapeRunResult(
+  raw: { error?: NodeJS.ErrnoException; stdout: string | null; stderr: string | null; status: number | null },
+  command: string,
+  timeoutMs: number
+): TmuxRunResult {
+  const timedOut = isTimedOut(raw.error);
+  const stderr = (raw.stderr ?? '').trimEnd();
+
+  return {
+    stdout: (raw.stdout ?? '').trimEnd(),
+    stderr: timedOut
+      ? [stderr, `${command} timed out after ${timeoutMs}ms`].filter(Boolean).join('\n')
+      : stderr,
+    exitCode: timedOut ? 1 : raw.status ?? 1,
+  };
+}
+
 export function runCommand(
   command: string,
   args: string[],
   options: cp.SpawnSyncOptionsWithStringEncoding = { encoding: 'utf8' }
 ): TmuxRunResult {
   const result = cp.spawnSync(command, args, {
+    timeout: DEFAULT_RUN_COMMAND_TIMEOUT_MS,
     ...options,
     encoding: 'utf8',
   });
 
-  return {
-    stdout: (result.stdout ?? '').trimEnd(),
-    stderr: (result.stderr ?? '').trimEnd(),
-    exitCode: result.status ?? 1,
-  };
+  return shapeRunResult(result, command, options.timeout ?? DEFAULT_RUN_COMMAND_TIMEOUT_MS);
 }
 
 export function readTmuxSocket(targetPath: string): string | undefined {
@@ -103,6 +136,53 @@ export function getPaneCommand(socketPath: string, target: string): string {
     return '';
   }
   return result.stdout.trim();
+}
+
+// BL-120: a `tmux respawn-pane` reuses the same socket and session name, so
+// neither changes when a pane's agent process is relaunched - the pane's
+// PID does, though, since respawn replaces the process running in it. Used
+// to detect a respawn the tailer would otherwise treat as "nothing changed"
+// and keep diffing fresh post-respawn content against stale retained state.
+export function getPanePid(socketPath: string, target: string): string {
+  const result = runCommand('tmux', [
+    '-S',
+    socketPath,
+    'display-message',
+    '-p',
+    '-t',
+    target,
+    '#{pane_pid}',
+  ]);
+  if (result.exitCode !== 0) {
+    return '';
+  }
+  return result.stdout.trim();
+}
+
+// BL-362 QA bounce follow-up: PaneTailer's hot poll path queried pane_pid and
+// pane_current_command as two separate `display-message` subprocess spawns
+// per role per tick - a real, measured cost (each tmux invocation is a real
+// process spawn), not just a test-mocking artifact. tmux's own
+// `display-message -p` format string can return several placeholders from a
+// SINGLE call, so both values are fetched together here, halving that
+// specific per-role-per-tick spawn count. getPanePid/getPaneCommand above are
+// kept unchanged (still independently used/tested) for any caller that only
+// needs one value.
+export function getPanePidAndCommand(socketPath: string, target: string): { pid: string; command: string } {
+  const result = runCommand('tmux', [
+    '-S',
+    socketPath,
+    'display-message',
+    '-p',
+    '-t',
+    target,
+    '#{pane_pid}\t#{pane_current_command}',
+  ]);
+  if (result.exitCode !== 0) {
+    return { pid: '', command: '' };
+  }
+  const [pid, command] = result.stdout.trim().split('\t');
+  return { pid: pid ?? '', command: command ?? '' };
 }
 
 export function capturePane(
@@ -190,6 +270,33 @@ export function sendKeys(
   return runCommand('tmux', args);
 }
 
+// BL-104: split out of readSwarmRoles (complexity 9 -> under threshold).
+// Pure and unit-tested directly, independent of the file-reading loop.
+export function hasRequiredRoleFields(role?: string, session?: string, displayName?: string): boolean {
+  return Boolean(role) && Boolean(session) && Boolean(displayName);
+}
+
+// BL-104: split out alongside hasRequiredRoleFields — parses one
+// sessions.tsv line into a SwarmRole, or undefined for a blank/malformed
+// line. fallbackIndex mirrors the original's `roles.length + 1` (computed
+// by the caller before the push, since a skipped line never increments it).
+export function parseRoleLine(line: string, fallbackIndex: number): SwarmRole | undefined {
+  if (!line.trim()) {
+    return undefined;
+  }
+  const [indexStr, role, session, displayName, agent] = line.split('\t');
+  if (!hasRequiredRoleFields(role, session, displayName)) {
+    return undefined;
+  }
+  return {
+    index: parseInt(indexStr, 10) || fallbackIndex,
+    role,
+    session,
+    displayName,
+    agent: agent ?? 'unknown',
+  };
+}
+
 export function readSwarmRoles(targetPath: string): SwarmRole[] {
   const sessionsFile = path.join(targetPath, '.swarmforge', 'sessions.tsv');
   if (!fs.existsSync(sessionsFile)) {
@@ -200,20 +307,10 @@ export function readSwarmRoles(targetPath: string): SwarmRole[] {
   const roles: SwarmRole[] = [];
 
   for (const line of lines) {
-    if (!line.trim()) {
-      continue;
+    const parsed = parseRoleLine(line, roles.length + 1);
+    if (parsed) {
+      roles.push(parsed);
     }
-    const [indexStr, role, session, displayName, agent] = line.split('\t');
-    if (!role || !session || !displayName) {
-      continue;
-    }
-    roles.push({
-      index: parseInt(indexStr, 10) || roles.length + 1,
-      role,
-      session,
-      displayName,
-      agent: agent ?? 'unknown',
-    });
   }
 
   return roles;
@@ -222,18 +319,168 @@ export function readSwarmRoles(targetPath: string): SwarmRole[] {
 export interface RespawnResult {
   success: boolean;
   message: string;
+  // Set when performVerifiedRespawn's busy-pane precheck refused the
+  // respawn outright (BL-147): the pane was never touched, so callers that
+  // bound automatic respawn attempts must not count this as a used attempt.
+  skippedBusy?: boolean;
+  // BL-207: the stable Forge error category message's raw detail
+  // classifies to - never set on success, or on skippedBusy (a deliberate
+  // safety skip, not a backend failure to categorize). Orchestration/UI can
+  // branch on this instead of parsing message text.
+  category?: ForgeErrorCategory;
 }
 
-export function respawnAgent(targetPath: string, role: string): RespawnResult {
+function respawnFailure(message: string): RespawnResult {
+  return { success: false, message, category: classifyProviderError(message).category };
+}
+
+/**
+ * Kills whatever is running in the pane and relaunches the role's launch
+ * script directly in place, bypassing send-keys entirely. This is the only
+ * recovery that works on a WEDGED TUI (process alive, all input ignored):
+ * send-keys types into a dead input box and can never submit there.
+ */
+export function respawnPaneForced(
+  socketPath: string,
+  target: string,
+  launchScript: string
+): TmuxRunResult {
+  return runCommand('tmux', [
+    '-S',
+    socketPath,
+    'respawn-pane',
+    '-k',
+    '-t',
+    target,
+    `bash ${launchScript}`,
+  ]);
+}
+
+// BL-376: `wait` is the SAME backoff seam sendInstructionVerified already
+// accepts one layer down - respawnAgent simply never exposed it upward, so
+// no test could reach it and every wedged-pane retry blocked on a REAL
+// Atomics.wait (~800ms apiece). Optional and defaulted to the real
+// sleepSync (now its own module, ./sleepSync - see that file's own comment
+// for why a same-file default would not have been spy-able) so every
+// existing production call site (extension.ts, swarmPanel.ts,
+// coordinatorLossTrigger.ts, claudeSettingsFile.ts) is unaffected; a test
+// drives the whole retry loop with an injected fake instead, with zero
+// real time spent.
+export function respawnAgent(targetPath: string, role: string, wait?: (ms: number) => void): RespawnResult {
   const launchScript = path.join(targetPath, '.swarmforge', 'launch', `${role}.sh`);
   if (!fs.existsSync(launchScript)) {
-    return { success: false, message: `No launch script found for role "${role}" at ${launchScript}` };
+    return respawnFailure(`No launch script found for role "${role}" at ${launchScript}`);
   }
-  const result = runCommand('bash', [launchScript]);
-  if (result.exitCode !== 0) {
-    return { success: false, message: `Failed to respawn "${role}": ${result.stderr || result.stdout || `exit ${result.exitCode}`}` };
+
+  const socketPath = readTmuxSocket(targetPath);
+  if (!socketPath) {
+    return respawnFailure(`Cannot respawn "${role}": no tmux socket recorded (is the swarm running?)`);
   }
-  return { success: true, message: `Agent "${role}" restarted.` };
+
+  const roleEntry = readSwarmRoles(targetPath).find((entry) => entry.role === role);
+  if (!roleEntry) {
+    return respawnFailure(`Cannot respawn "${role}": role not found in sessions.tsv`);
+  }
+
+  // The launch script runs `claude` in the foreground and only exits when the
+  // agent does. It must run INSIDE the role's tmux pane — executing it here
+  // would block the extension host's single JS thread until the agent exits,
+  // freezing the whole extension, and leave the agent outside tmux where no
+  // tile can see it.
+  const target = resolveAgentPaneTarget(socketPath, roleEntry.session, getPaneBaseIndex(socketPath));
+  return performVerifiedRespawn(socketPath, target, launchScript, role, wait ?? realClock.sleepSync);
+}
+
+// BL-137 live repro: a chaser's liveness/activity signal can be stale and
+// misjudge a genuinely busy agent as stuck, escalating to a forced respawn -
+// which then typed a shell command into a coordinator pane that was actually
+// mid-turn. A fresh capture right before injecting anything is the only way
+// performVerifiedRespawn can independently confirm the caller's assumption;
+// "esc to interrupt" is Claude Code's own busy footer, so its presence
+// overrides the caller and refuses the respawn outright, without typing or
+// force-killing the pane.
+// BL-376 CRAP split: pulled out of performVerifiedRespawn (complexity 7,
+// same "split for CRAP" reason as BL-093 below) so the precheck's own
+// if+&& decision point no longer counts against the retry-loop wiring.
+// Returns the skip result when the pane is busy, undefined when clear to
+// proceed.
+function checkPaneBusy(socketPath: string, target: string, role: string): RespawnResult | undefined {
+  const precheck = capturePane(socketPath, target);
+  if (precheck.exitCode === 0 && isPaneActivelyProcessing(precheck.stdout)) {
+    return {
+      success: false,
+      skippedBusy: true,
+      message: `Skipped respawn for "${role}": pane is actively processing a turn (esc to interrupt) - not stuck.`,
+    };
+  }
+  return undefined;
+}
+
+// BL-093: split out of respawnAgent (CRAP) - type-and-verify first (works
+// for the common case: an idle/dead shell pane waiting to reattach). Only
+// escalate to a forced pane kill+relaunch when verification exhausts its
+// retries - i.e. the pane is a WEDGED live TUI that send-keys cannot reach -
+// never on a healthy pane (a healthy pane confirms delivery on the first
+// attempt).
+function performVerifiedRespawn(socketPath: string, target: string, launchScript: string, role: string, wait: (ms: number) => void): RespawnResult {
+  const busy = checkPaneBusy(socketPath, target, role);
+  if (busy) {
+    return busy;
+  }
+
+  const command = `bash ${launchScript}`;
+  let typeFailure: TmuxRunResult | undefined;
+
+  const result = sendInstructionVerified(
+    {
+      capturePane: () => {
+        const captured = capturePane(socketPath, target);
+        return captured.exitCode === 0 ? captured.stdout : '';
+      },
+      sendLiteral: (text: string) => {
+        const typed = sendKeys(socketPath, target, text, true);
+        if (typed.exitCode !== 0) {
+          typeFailure = typed;
+          return false;
+        }
+        return true;
+      },
+      sendEnter: () => {
+        sendKeys(socketPath, target, 'Enter');
+      },
+      wait,
+    },
+    command
+  );
+
+  if (typeFailure) {
+    return respawnFailure(`Failed to respawn "${role}": ${typeFailure.stderr || typeFailure.stdout || `exit ${typeFailure.exitCode}`}`);
+  }
+
+  if (result.status === 'delivered') {
+    return { success: true, message: `Agent "${role}" restarted in pane ${target}.` };
+  }
+
+  return escalateToForcedRespawn(socketPath, target, launchScript, role, result);
+}
+
+function escalateToForcedRespawn(
+  socketPath: string,
+  target: string,
+  launchScript: string,
+  role: string,
+  result: VerifiedInjectResult
+): RespawnResult {
+  const forced = respawnPaneForced(socketPath, target, launchScript);
+  if (forced.exitCode !== 0) {
+    return respawnFailure(
+      `Failed to respawn "${role}": send-keys did not submit (${result.reason}), and forced pane respawn also failed: ${forced.stderr || forced.stdout || `exit ${forced.exitCode}`}`
+    );
+  }
+  return {
+    success: true,
+    message: `Agent "${role}" was wedged (send-keys did not submit); forced a pane respawn in ${target}.`,
+  };
 }
 
 export function sessionExists(socketPath: string, session: string): boolean {

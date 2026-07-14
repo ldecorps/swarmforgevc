@@ -1,0 +1,21 @@
+id: BL-B
+title: "Dogfood Checkpoint B — Tiled agent panel"
+milestone: M1
+status: done
+priority: 2
+
+description: >
+  A VS Code webview panel showing one live terminal tile per agent role, each
+  tailing its tmux pane output in real time and accepting keyboard input
+  forwarded back to that pane. This is the second half of the dogfood-critical
+  pair. Together with the launch command it allows the developer to watch the
+  swarm work on its own further development without leaving the editor.
+
+acceptance:
+  - Panel shows one tile per configured role from swarmforge.conf
+  - Each tile streams live output from the role's tmux pane (poll or tail)
+  - Developer can click a tile and type; keystrokes are forwarded to that pane
+  - Panel opens automatically after a successful launch or on demand via command
+  - DOGFOOD CHECKPOINT message is surfaced once when the panel first opens post-launch
+
+assigned_to: coder

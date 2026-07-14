@@ -1,0 +1,119 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+const { commitScopedFile, isFileCommitted } = require('../out/util/gitCommitScopedFile');
+
+// Shared by costHealthSidecar.ts's commitCostHealthSidecar and
+// blTopicStore.ts's commitTopicRecord - see cleaner DRY extraction, 2026-07-13.
+
+function mkTmp() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-git-commit-scoped-'));
+}
+
+function git(cwd, args) {
+  execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+function mkGitRepo() {
+  const target = mkTmp();
+  git(target, ['init', '-q']);
+  git(target, ['config', 'user.email', 't@t']);
+  git(target, ['config', 'user.name', 't']);
+  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  return target;
+}
+
+test('commitScopedFile commits only the named file, leaving other dirty state untouched', () => {
+  const target = mkGitRepo();
+  fs.writeFileSync(path.join(target, 'unrelated.txt'), 'do not commit me');
+  const filePath = path.join(target, 'tracked.txt');
+  fs.writeFileSync(filePath, 'content');
+
+  const committed = commitScopedFile(target, filePath, 'test commit');
+  assert.equal(committed, true);
+
+  const status = execFileSync('git', ['-C', target, 'status', '--porcelain'], { encoding: 'utf8' });
+  assert.match(status, /unrelated\.txt/, 'the unrelated file must remain uncommitted (still dirty)');
+  assert.doesNotMatch(status, /tracked\.txt/, 'the named file must no longer show as dirty (it was committed)');
+
+  const log = execFileSync('git', ['-C', target, 'log', '--format=%s', '--', filePath], { encoding: 'utf8' });
+  assert.match(log, /test commit/);
+});
+
+test('commitScopedFile returns false (never throws) when there is nothing new to commit', () => {
+  const target = mkGitRepo();
+  const filePath = path.join(target, 'tracked.txt');
+  fs.writeFileSync(filePath, 'content');
+  commitScopedFile(target, filePath, 'first commit');
+
+  assert.doesNotThrow(() => commitScopedFile(target, filePath, 'second commit'));
+  assert.equal(commitScopedFile(target, filePath, 'second commit'), false);
+});
+
+test('commitScopedFile returns false (never throws) when the target is not a git repo at all', () => {
+  const target = mkTmp();
+  const filePath = path.join(target, 'tracked.txt');
+  fs.writeFileSync(filePath, 'content');
+
+  assert.doesNotThrow(() => commitScopedFile(target, filePath, 'commit'));
+  assert.equal(commitScopedFile(target, filePath, 'commit'), false);
+});
+
+// ── isFileCommitted (BL-331 architect bounce: content-verified is not the
+//    same as DURABLY verified - a caller gating an irreversible action must
+//    check this too) ─────────────────────────────────────────────────────
+
+test('isFileCommitted is true once commitScopedFile has actually committed the file', () => {
+  const target = mkGitRepo();
+  const filePath = path.join(target, 'tracked.txt');
+  fs.writeFileSync(filePath, 'content');
+  commitScopedFile(target, filePath, 'commit it');
+  assert.equal(isFileCommitted(target, filePath), true);
+});
+
+test('isFileCommitted is false for a file written directly, never committed (the exact crash window CommitFailureReporter exists for)', () => {
+  const target = mkGitRepo();
+  const filePath = path.join(target, 'tracked.txt');
+  fs.writeFileSync(filePath, 'content'); // written, but never git add/commit
+  assert.equal(isFileCommitted(target, filePath), false);
+});
+
+test('isFileCommitted is false when the file was committed once, then modified again without a follow-up commit', () => {
+  const target = mkGitRepo();
+  const filePath = path.join(target, 'tracked.txt');
+  fs.writeFileSync(filePath, 'v1');
+  commitScopedFile(target, filePath, 'v1 commit');
+  fs.writeFileSync(filePath, 'v2'); // a later write with no follow-up commit
+  assert.equal(isFileCommitted(target, filePath), false);
+});
+
+test('isFileCommitted is false (fails closed, never throws) when the target is not a git repo at all', () => {
+  const target = mkTmp();
+  const filePath = path.join(target, 'tracked.txt');
+  fs.writeFileSync(filePath, 'content');
+  assert.doesNotThrow(() => isFileCommitted(target, filePath));
+  assert.equal(isFileCommitted(target, filePath), false);
+});
+
+test('isFileCommitted is unaffected by an UNRELATED dirty file elsewhere in the same repo', () => {
+  const target = mkGitRepo();
+  const filePath = path.join(target, 'tracked.txt');
+  fs.writeFileSync(filePath, 'content');
+  commitScopedFile(target, filePath, 'commit it');
+  fs.writeFileSync(path.join(target, 'unrelated.txt'), 'some other dirty file');
+  assert.equal(isFileCommitted(target, filePath), true, 'expected the check scoped to exactly the one file, not the whole repo status');
+});
+
+// BL-390 hardening: `git status --porcelain -- <path>` prints nothing for a
+// path that was never written at all - the same empty output as a path
+// that IS committed with no pending changes. A file that does not exist on
+// disk can never be "durably committed"; fail closed rather than reading
+// silence as durability.
+test('isFileCommitted is false for a path that was never written at all (fails closed, not a true-by-silence false positive)', () => {
+  const target = mkGitRepo();
+  const filePath = path.join(target, 'never-written.txt');
+  assert.equal(fs.existsSync(filePath), false);
+  assert.equal(isFileCommitted(target, filePath), false);
+});

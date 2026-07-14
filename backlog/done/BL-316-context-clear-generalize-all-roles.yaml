@@ -1,0 +1,87 @@
+id: BL-316
+title: "Every current-roster role's context is cleared at its own safe idle boundary, not just the coordinator's"
+milestone: M8
+status: todo
+type: feature
+priority: 20
+direction: aligned
+depends_on: ["BL-309"]
+source: "Remaining scope of .swarmforge/operator/INTAKE-auto-clear-context-at-ticket-boundary.md, drained from .swarmforge/operator/ per BL-311's convention. BL-309 explicitly built the coordinator-only slice and named extending to other roles as a future ticket."
+
+notes: |
+  BL-309 shipped the coordinator-only slice of this intake and explicitly
+  left the rest for later: "Write the idle/safe-boundary predicate
+  generically (reusable), but wire and verify only the coordinator's
+  clear-after-close in this ticket — extending to other roles is a future
+  ticket, not this one." This is that ticket.
+
+  GENERALIZED TRIGGER (reuses existing per-role primitives, no new
+  boundary concept needed): BL-309's trigger was coordinator-specific — a
+  new `backlog/done/` entry, since "bookkeeping close" is only a
+  well-defined event for the coordinator. Every OTHER role's equivalent
+  "just finished my involvement in a ticket" event is already durable and
+  generic: a new entry appearing in that role's own
+  `inbox/completed/` (written by `done_with_current_task.sh` /
+  `done_with_current_batch.sh` for batch roles — both already exist and
+  already resolve the correct mailbox path per role via
+  `handoff_lib.bb`'s `mailbox-dir`, including the master-resident
+  specifier/coordinator split). So: for every role in the CURRENT roster
+  (read from `.swarmforge/roles.tsv`, never hardcoded — same posture as
+  BL-307's roster-idle? check), watch its own `inbox/completed/` for a new
+  entry; when one appears AND that role is now idle (empty `inbox/new`,
+  no `inbox/in_process` — reuse `operator_lib.bb`'s existing `role-idle?`
+  predicate, do not reinvent it), inject `/clear` into that role's pane
+  followed by the startup re-read instruction, exactly the same injection
+  call BL-309 already uses (`agent_runtime_inject.bb`'s `notify-agent!`).
+  A BATCH role's (cleaner, hardener) trigger is its whole batch directory
+  landing in `inbox/completed/`, not a per-item event within the batch.
+
+  SAFE-BOUNDARY GUARDRAIL (unchanged from BL-309, now applied per-role):
+  never clear a role holding an in-process task; both the fresh-completion
+  signal and the idle check are evaluated together at sweep time, not
+  inferred from each other.
+
+  DEDUP MARKER: extend BL-309's existing "which close was last cleared"
+  durable marker to be keyed per-role (it is presumably already a single
+  coordinator-only marker file today — this ticket makes it a per-role
+  map/keyed-by-role-name marker) so a daemon restart never replays a clear
+  for a completion already handled, for ANY role, not just the
+  coordinator.
+
+  A role simply ABSENT from the current roster (e.g. lean-drain has no
+  architect/hardener/documenter/cleaner) is never watched — mirrors
+  BL-307's roster-idle? absent-role handling.
+
+  OUT OF SCOPE: a full session recycle/respawn (still belongs to the
+  deferred dynamic-per-ticket-routing epic, not this ticket); any change
+  to WHICH roles exist in a pack.
+
+  MEASUREMENT (not a Gherkin scenario — a live observation): after this
+  lands, compare each generalized role's per-poke input-token reading
+  before vs after its next clear via the BL-273 burn-rate meter, same
+  posture as BL-309's own measurement note.
+
+  E2E QA PROCEDURE (fixture-driven, injected roster/completion-event/clear-
+  marker state and an injected clock — no real /clear sent to a live role
+  during unit-level verification): (a) feed a fixture where a non-
+  coordinator role (e.g. coder) just completed a task and is idle ->
+  assert a clear fires for THAT role's pane; (b) same fixture but the role
+  holds an in-process task -> assert no clear; (c) same fixture but the
+  role has a pending inbox item -> assert no clear; (d) a batch role
+  (cleaner) whose whole batch just landed in `inbox/completed/` and is
+  idle -> assert a clear fires; (e) a role absent from the current roster
+  -> assert it is never watched/cleared; (f) a clear already recorded for
+  a role's most recent completion -> assert no second clear for that same
+  completion, but a later completion by that role (or by a different role)
+  triggers a clear again once idle.
+
+acceptance:
+  feature: specs/features/BL-316-context-clear-generalize-all-roles.feature
+  steps:
+    - "Any current-roster role that just completed a task/batch and is idle gets a /clear injected followed by the startup re-read instruction"
+    - "No clear is injected for a role holding an in-process task or a pending inbox item"
+    - "A batch role's trigger is its whole batch landing in inbox/completed/, not a per-item event"
+    - "A role absent from the current roster is never watched or cleared"
+    - "A clear already issued for a role's most recent completion is never issued again for that same completion"
+
+mutation_cost: medium

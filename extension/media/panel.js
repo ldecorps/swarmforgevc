@@ -3,10 +3,16 @@ const grid = document.getElementById('grid');
 const status = document.getElementById('status');
 const stageEl = document.getElementById('stage');
 const placeholder = document.getElementById('placeholder');
+const transportHealthEl = document.getElementById('transport-health');
+const daemonStatusEl = document.getElementById('daemon-status');
 const tiles = new Map();
 let activeRole = null;
 let selectedRole = null;
 const openPrBtn = document.getElementById('open-pr-btn');
+const bounceDrainBanner = document.getElementById('bounce-drain-banner');
+const bounceDrainText = document.getElementById('bounce-drain-text');
+const drainCancelBtn = document.getElementById('drain-cancel-btn');
+const drainForceBtn = document.getElementById('drain-force-btn');
 const bottomRowEl = document.getElementById('bottom-row');
 const recentRunsEl = document.getElementById('recent-runs');
 const runsListEl = document.getElementById('runs-list');
@@ -14,24 +20,104 @@ const runsToggleBtn = document.getElementById('runs-toggle');
 const backlogEl = document.getElementById('backlog');
 const backlogListEl = document.getElementById('backlog-list');
 const backlogToggleBtn = document.getElementById('backlog-toggle');
+const metricsEl = document.getElementById('metrics');
+const metricsListEl = document.getElementById('metrics-list');
+const metricsToggleBtn = document.getElementById('metrics-toggle');
 const SCROLL_THRESHOLD = 8;
 const holderMap = {};
 let lastBacklogItems = [];
+let resizeDebounceTimers = new Map();
+const RESIZE_DEBOUNCE_MS = 300;
 
 function updateBottomRow() {
   const hasRuns = recentRunsEl.style.display !== 'none';
   const hasBacklog = backlogEl.style.display !== 'none';
-  bottomRowEl.style.display = (hasRuns || hasBacklog) ? '' : 'none';
+  const hasMetrics = metricsEl.style.display !== 'none';
+  bottomRowEl.style.display = (hasRuns || hasBacklog || hasMetrics) ? '' : 'none';
 }
 
-runsToggleBtn.addEventListener('click', () => {
-  recentRunsEl.classList.toggle('collapsed');
-  runsToggleBtn.textContent = recentRunsEl.classList.contains('collapsed') ? '▸' : '▾';
+function measureTilePaneRows(tile, output) {
+  if (!tile || !output) {
+    return null;
+  }
+
+  const rect = output.getBoundingClientRect();
+  const pixelHeight = rect.height;
+
+  if (pixelHeight <= 0) {
+    return null;
+  }
+
+  const style = window.getComputedStyle(output);
+  const lineHeightStr = style.lineHeight;
+  const fontSizeStr = style.fontSize;
+
+  let lineHeight;
+  if (lineHeightStr === 'normal') {
+    const fontSize = parseFloat(fontSizeStr);
+    lineHeight = fontSize * 1.35;
+  } else if (lineHeightStr.endsWith('px')) {
+    lineHeight = parseFloat(lineHeightStr);
+  } else {
+    const fontSize = parseFloat(fontSizeStr);
+    const lineHeightMultiplier = parseFloat(lineHeightStr);
+    lineHeight = fontSize * lineHeightMultiplier;
+  }
+
+  if (lineHeight <= 0) {
+    return null;
+  }
+
+  const paneRows = Math.floor(pixelHeight / lineHeight);
+  return Math.max(1, paneRows);
+}
+
+function debouncedSendTilePaneSize(role, tile, output) {
+  if (resizeDebounceTimers.has(role)) {
+    clearTimeout(resizeDebounceTimers.get(role));
+  }
+
+  const timer = setTimeout(() => {
+    const paneRows = measureTilePaneRows(tile, output);
+    if (paneRows !== null) {
+      vscode.postMessage({ type: 'fitTilePaneToHeight', role, paneRows });
+    }
+    resizeDebounceTimers.delete(role);
+  }, RESIZE_DEBOUNCE_MS);
+
+  resizeDebounceTimers.set(role, timer);
+}
+
+// BL-238: aria-expanded tracks the same collapsed/expanded state the glyph
+// swap already conveys visually, so a screen reader announces the current
+// state of a native <button> it already reads as keyboard-operable for free.
+function wireCollapseToggle(button, panel) {
+  button.addEventListener('click', () => {
+    panel.classList.toggle('collapsed');
+    const collapsed = panel.classList.contains('collapsed');
+    button.textContent = collapsed ? '▸' : '▾';
+    button.setAttribute('aria-expanded', String(!collapsed));
+  });
+}
+
+wireCollapseToggle(runsToggleBtn, recentRunsEl);
+wireCollapseToggle(backlogToggleBtn, backlogEl);
+wireCollapseToggle(metricsToggleBtn, metricsEl);
+
+// BL-034: delegated on the stable list container, not per-row, since
+// renderBacklog replaces backlogListEl's innerHTML on every poll.
+backlogListEl.addEventListener('click', (event) => {
+  const button = event.target.closest('.bl-mark-done');
+  if (button) {
+    vscode.postMessage({ type: 'markBacklogDone', id: button.dataset.id });
+  }
 });
 
-backlogToggleBtn.addEventListener('click', () => {
-  backlogEl.classList.toggle('collapsed');
-  backlogToggleBtn.textContent = backlogEl.classList.contains('collapsed') ? '▸' : '▾';
+backlogListEl.addEventListener('change', (event) => {
+  const select = event.target.closest('.bl-assignee-select');
+  if (select) {
+    vscode.postMessage({ type: 'setBacklogAssignee', id: select.dataset.id, assignedTo: select.value });
+  }
 });
 
 function renderRecentRuns(runs) {
@@ -54,13 +140,177 @@ function renderRecentRuns(runs) {
   updateBottomRow();
 }
 
+// BL-071: mirrors metrics/swarmMetrics.ts's formatDurationMs. The webview
+// cannot import the host's TS module (two-layer rule — host and webview
+// communicate only by message passing), so the tiny formatting helper is
+// duplicated here; the VALUES themselves always come from that one module.
+function formatDurationMs(ms) {
+  const totalMinutes = Math.round(ms / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours === 0 ? minutes + 'm' : hours + 'h ' + minutes + 'm';
+}
+
+// BL-078: mirrors metrics/swarmMetrics.ts's formatSuiteDurationMs, same
+// reason formatDurationMs above is duplicated here (two-layer rule).
+function formatSuiteDurationMs(ms) {
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes === 0 ? seconds + 's' : minutes + 'm ' + seconds + 's';
+}
+
+function suiteDurationLineHtml(suite) {
+  if (suite.latestMs === null) {
+    return '<div class="metric-row"><span class="metric-label">Suite duration</span><span class="metric-value">—</span></div>';
+  }
+  const valueClass = suite.warn ? 'metric-value metric-value-warn' : 'metric-value';
+  const label = suite.warn ? 'Suite duration (WARN)' : 'Suite duration';
+  return '<div class="metric-row"><span class="metric-label">' + label + '</span><span class="' + valueClass + '">' +
+    formatSuiteDurationMs(suite.latestMs) + ' / mean ' + formatSuiteDurationMs(suite.meanMs) +
+    ' over ' + suite.sampleCount + ' run(s)</span></div>';
+}
+
+function renderMetrics(metrics, roles) {
+  metricsEl.style.display = '';
+  const meanLine = metrics.meanTicketTimeMs === null
+    ? '<div class="metric-row"><span class="metric-label">Mean ticket time</span><span class="metric-value">—</span></div>'
+    : '<div class="metric-row"><span class="metric-label">Mean ticket time</span><span class="metric-value">' +
+      formatDurationMs(metrics.meanTicketTimeMs) + ' / ' + metrics.ticketSampleCount + ' tickets</span></div>';
+
+  const busynessLines = (roles || []).map((role) => {
+    const pct = Math.round((metrics.busyness[role] || 0) * 100);
+    return '<div class="metric-row"><span class="metric-label">' + role + '</span><span class="metric-value">' + pct + '%</span></div>';
+  }).join('');
+
+  const retryLine = '<div class="metric-row"><span class="metric-label">Retries</span><span class="metric-value">' +
+    metrics.retryTotal + '</span></div>';
+
+  const suiteLine = suiteDurationLineHtml(metrics.suiteDuration);
+
+  metricsListEl.innerHTML = meanLine + busynessLines + retryLine + suiteLine;
+  updateBottomRow();
+}
+
+// BL-077: one stable color class per pipeline stage, plus neutral classes
+// for "queued" (promoted, unrouted) and "done". Kept for the surfaces that
+// still mean STAGE, not ticket identity: the done-row milestone chip below.
+// BL-139 deprecates this for ticket identity surfaces (the active backlog
+// row chip and the tile badge) in favor of ticketColorFor/ticketColorSegments
+// — see the comment there for why. Keyed lowercase so 'QA' and 'qa' (and any
+// other holder-string casing) resolve to the same class. The map is inlined
+// (not a module-level const) so the function is self-contained for
+// extractPanelFunction-based unit tests.
+function stageColorClass(holder) {
+  const STAGE_COLOR_CLASSES = {
+    specifier: 'stage-color-specifier',
+    coder: 'stage-color-coder',
+    cleaner: 'stage-color-cleaner',
+    architect: 'stage-color-architect',
+    hardender: 'stage-color-hardender',
+    documenter: 'stage-color-documenter',
+    qa: 'stage-color-qa',
+    coordinator: 'stage-color-coordinator',
+    queued: 'stage-color-queued',
+    done: 'stage-color-done',
+  };
+  const key = (holder || 'queued').toLowerCase();
+  return STAGE_COLOR_CLASSES[key] || STAGE_COLOR_CLASSES.queued;
+}
+
+// BL-139: mirrors src/panel/ticketColors.ts's ticketColorFor/ticketColorSegments.
+// The webview cannot import the host's TS module (two-layer rule — host and
+// webview communicate only by message passing), so this tiny pure color
+// assignment is duplicated here, same reason formatDurationMs/
+// formatSuiteDurationMs above are duplicated (BL-071/BL-078). Color is a
+// function of the ticket id ALONE so a ticket keeps the same color across
+// every stage transition and in both the backlog row and the tile badge.
+const TICKET_COLOR_PALETTE = [
+  { background: '#e6194b', color: '#fff' },
+  { background: '#3cb44b', color: '#000' },
+  { background: '#ffe119', color: '#000' },
+  { background: '#4363d8', color: '#fff' },
+  { background: '#f58231', color: '#000' },
+  { background: '#911eb4', color: '#fff' },
+  { background: '#46f0f0', color: '#000' },
+  { background: '#f032e6', color: '#000' },
+  { background: '#bcf60c', color: '#000' },
+  { background: '#008080', color: '#fff' },
+  { background: '#9a6324', color: '#fff' },
+  // Mirrors ticketColors.ts's fix: '#fff' text here fails WCAG AA contrast
+  // for normal-size badge/chip text (4.20:1, needs 4.5:1); '#000' clears it
+  // at 5.01:1 (hardener finding, 2026-07-06).
+  { background: '#808000', color: '#000' },
+];
+
+function ticketColorFor(ticketId) {
+  let hash = 0;
+  for (let i = 0; i < ticketId.length; i++) {
+    hash = (hash * 31 + ticketId.charCodeAt(i)) >>> 0;
+  }
+  return TICKET_COLOR_PALETTE[hash % TICKET_COLOR_PALETTE.length];
+}
+
+function ticketColorSegments(ticketIds) {
+  const uniqueIds = [...new Set(ticketIds)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  return uniqueIds.map((id) => ({ id, color: ticketColorFor(id) }));
+}
+
+// A single ticket renders as a flat swatch; two or more (a role holding
+// multiple parcels at once) render as a left-to-right rainbow of equal-width
+// segments, one per held ticket, in the same deterministic order every
+// render (BL-139 ticket-color-04/05). White text with a dark shadow stays
+// legible regardless of which hues land in the mix, so ticket id/holder text
+// (added by the caller) is never lost against the background (ticket-color-06).
+function ticketChipStyle(ticketIds) {
+  const segments = ticketColorSegments(ticketIds);
+  if (segments.length <= 1) {
+    const bg = segments[0] ? segments[0].color.background : TICKET_COLOR_PALETTE[0].background;
+    const fg = segments[0] ? segments[0].color.color : TICKET_COLOR_PALETTE[0].color;
+    return 'background:' + bg + ';color:' + fg + ';';
+  }
+  const stepPct = 100 / segments.length;
+  const stops = segments.map((seg, i) => {
+    const start = (i * stepPct).toFixed(2) + '%';
+    const end = ((i + 1) * stepPct).toFixed(2) + '%';
+    return seg.color.background + ' ' + start + ', ' + seg.color.background + ' ' + end;
+  }).join(', ');
+  return 'background:linear-gradient(to right, ' + stops + ');color:#fff;text-shadow:0 1px 2px rgba(0,0,0,0.8);';
+}
+
 function backlogRowHtml(item) {
   let assignedDisplay = '';
+  let controls = '';
   if (item.status === 'done') {
-    assignedDisplay = '';
-  } else if (item.status === 'active' && holderMap[item.id]) {
-    // For active items, show the live holder (current role holding the parcel)
-    assignedDisplay = '<span class="bl-assigned">' + holderMap[item.id] + '</span>';
+    // Done rows show their milestone, tinted "done"-neutral (BL-077).
+    assignedDisplay = item.milestone
+      ? '<span class="bl-milestone ' + stageColorClass('done') + '">' + item.milestone + '</span>'
+      : '';
+  } else if (item.status === 'active') {
+    // Active rows show LIVE traceability only: the role actually holding the
+    // parcel, or "queued" when it is promoted but not yet routed. Never fall
+    // back to the static assignedTo YAML field here — that fallback was
+    // exactly the misleading display reported (BL-072): a promoted-but-
+    // unrouted ticket showed its intake-time assignee as if it were holding
+    // the parcel.
+    const holder = holderMap[item.id] || 'queued';
+    // BL-139: tint the chip with the TICKET's identity color, not the
+    // holder's stage color — color now means "which ticket", so it must
+    // match the tile badge for this same ticket id regardless of which
+    // stage currently holds it (ticket-color-02).
+    assignedDisplay = '<span class="bl-assigned" style="' + ticketChipStyle([item.id]) + '">' + holder + '</span>';
+    // BL-034: field-level panel -> disk writes. assigned_to here is the
+    // static YAML field (separate from the live holder above), and marking
+    // done is a folder move the host performs; both go through the
+    // extension host, never touching the filesystem from the webview.
+    const assigneeOptions = [...tiles.keys()].map((role) =>
+      '<option value="' + role + '"' + (role === item.assignedTo ? ' selected' : '') + '>' + role + '</option>'
+    ).join('');
+    // BL-238: per-row aria-labels disambiguate these otherwise-identical
+    // "Done" buttons / unlabeled selects once there is more than one
+    // active row on screen.
+    controls = '<select class="bl-assignee-select" data-id="' + item.id + '" aria-label="Assignee for ' + item.id + '">' + assigneeOptions + '</select>' +
+      '<button class="bl-mark-done" data-id="' + item.id + '" aria-label="Mark ' + item.id + ' done">Done</button>';
   } else if (item.assignedTo) {
     // For todo items, show the intended assignee
     assignedDisplay = '<span class="bl-assigned">' + item.assignedTo + '</span>';
@@ -68,7 +318,7 @@ function backlogRowHtml(item) {
   return '<div class="backlog-row">' +
     '<span class="bl-id">' + item.id + '</span>' +
     '<span class="bl-title">' + item.title + '</span>' +
-    assignedDisplay + '</div>';
+    assignedDisplay + controls + '</div>';
 }
 
 function filterByStatus(items, status) {
@@ -174,8 +424,10 @@ function isAtBottom(el, contentText) {
   }
 
   // With footer: check if we're showing the live content just above the footer
-  // The "bottom" is now the footer height away from the actual scroll bottom
-  const lineHeight = el.clientHeight / (contentText ? contentText.split('\n').length : 1);
+  // The "bottom" is now the footer height away from the actual scroll bottom.
+  // Line height comes from the rendered content (scrollHeight), not the
+  // viewport (clientHeight), or the band is sized wrong (BL-055).
+  const lineHeight = el.scrollHeight / (contentText ? contentText.split('\n').length : 1);
   const footerPixelHeight = footerLines * lineHeight;
   const liveContentBottom = el.scrollHeight - footerPixelHeight;
   const viewportBottom = el.scrollTop + el.clientHeight;
@@ -193,7 +445,7 @@ function scrollToBottom(el, contentText) {
 
   // With footer: scroll so the last live line is visible just above the footer
   const lines = (contentText || '').split('\n');
-  const lineHeight = el.clientHeight / (lines.length || 1);
+  const lineHeight = el.scrollHeight / (lines.length || 1);
   const footerPixelHeight = footerLines * lineHeight;
   const liveContentBottom = el.scrollHeight - footerPixelHeight;
   const targetScrollTop = Math.max(0, liveContentBottom - el.clientHeight + lineHeight);
@@ -202,10 +454,29 @@ function scrollToBottom(el, contentText) {
 }
 
 function updateTileOutput(entry) {
-  entry.output.textContent = entry.text;
+  const el = entry.output;
+  const priorScrollTop = el.scrollTop;
+  el.textContent = entry.text;
   if (entry.tailLocked) {
-    scrollToBottom(entry.output, entry.text);
+    scrollToBottom(el, entry.text);
+  } else {
+    // The reader scrolled up: keep their place across the repaint (replacing
+    // textContent can reset scrollTop; the browser clamps if content shrank).
+    el.scrollTop = priorScrollTop;
   }
+  // Remember where this update put the view, so the scroll event it fires is
+  // not mistaken for the user scrolling (BL-055).
+  entry.expectedScrollTop = el.scrollTop;
+}
+
+function handleTileScroll(entry, el) {
+  if (entry.expectedScrollTop !== undefined && Math.abs(el.scrollTop - entry.expectedScrollTop) <= 1) {
+    // A scroll event at the position the last output update produced is
+    // content-driven, not the user; it must not toggle tail-lock.
+    return;
+  }
+  entry.expectedScrollTop = undefined;
+  entry.tailLocked = isAtBottom(el, entry.text);
 }
 
 function updateGridLayout(agentCount, roles) {
@@ -242,6 +513,14 @@ openPrBtn.addEventListener('click', () => {
   vscode.postMessage({ type: 'openPR' });
 });
 
+drainCancelBtn.addEventListener('click', () => {
+  vscode.postMessage({ type: 'cancelBounceDrain' });
+});
+
+drainForceBtn.addEventListener('click', () => {
+  vscode.postMessage({ type: 'forceBounceNow' });
+});
+
 document.addEventListener('keydown', (e) => {
   if (!activeRole) { return; }
   // Let copy/paste/select shortcuts pass through so text can be selected and copied
@@ -262,7 +541,23 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-function ensureTile(role, displayName, agent) {
+// BL-238 status-not-color-only-04: derives one text label from a tile's
+// liveness classes (priority: dead > needs-human > stalled > working),
+// so the border-color-only cues above always have a textual equivalent.
+// Idle (none of the four classes) intentionally clears the badge rather
+// than showing a fifth "idle" label - the absence of a flag IS idle.
+function updateStatusBadge(entry) {
+  const cls = entry.tile.classList;
+  const label = cls.contains('dead') ? 'Dead'
+    : cls.contains('needs-human') ? 'Needs human'
+    : cls.contains('stalled') ? 'Stalled'
+    : cls.contains('working') ? 'Working'
+    : '';
+  entry.statusBadge.textContent = label;
+  entry.statusBadge.classList.toggle('visible', label !== '');
+}
+
+function ensureTile(role, displayName, agent, currentModel, availableModels, currentEffort, availableEfforts, suggestedEffort, effortRationale) {
   if (tiles.has(role)) {
     return tiles.get(role);
   }
@@ -278,6 +573,7 @@ function ensureTile(role, displayName, agent) {
   const nudgeBtn = document.createElement('button');
   nudgeBtn.className = 'nudge-btn';
   nudgeBtn.textContent = 'Nudge';
+  nudgeBtn.setAttribute('aria-label', 'Nudge ' + displayName);
   nudgeBtn.addEventListener('click', () => {
     tile.classList.remove('stalled');
     vscode.postMessage({ type: 'input', role, data: '\n' });
@@ -286,6 +582,7 @@ function ensureTile(role, displayName, agent) {
   const restartBtn = document.createElement('button');
   restartBtn.className = 'restart-btn';
   restartBtn.textContent = 'Restart';
+  restartBtn.setAttribute('aria-label', 'Restart ' + displayName);
   restartBtn.addEventListener('click', () => {
     tile.classList.remove('dead');
     vscode.postMessage({ type: 'restartAgent', role });
@@ -294,14 +591,98 @@ function ensureTile(role, displayName, agent) {
   const blBadge = document.createElement('span');
   blBadge.className = 'tile-bl-badge';
 
+  // BL-238 status-not-color-only-04: liveness (needs-human/dead/stalled/
+  // working) was conveyed only by a border color/animation - text here
+  // gives the same information to a screen reader and a color-blind user.
+  const statusBadge = document.createElement('span');
+  statusBadge.className = 'tile-status-badge';
+
   const header = document.createElement('div');
   header.className = 'tile-header';
   header.innerHTML = '<span>' + displayName + '</span><span class="tile-agent">' + agent + '</span>';
   header.appendChild(blBadge);
+  header.appendChild(statusBadge);
+
+  // BL-235 (M5, narrow slice): a model dropdown only for claude-backed
+  // roles (the only agent this switch mechanism supports so far) - picking
+  // a different model respawns ONLY this tile's agent on it, in memory
+  // only (swarmforge.conf is never touched).
+  let modelSelect;
+  if (Array.isArray(availableModels) && availableModels.length > 0) {
+    modelSelect = document.createElement('select');
+    modelSelect.className = 'model-select';
+    modelSelect.setAttribute('aria-label', displayName + ' model');
+    availableModels.forEach((model) => {
+      const option = document.createElement('option');
+      option.value = model;
+      option.textContent = model;
+      option.selected = model === currentModel;
+      modelSelect.appendChild(option);
+    });
+    modelSelect.addEventListener('click', (e) => e.stopPropagation());
+    modelSelect.addEventListener('change', () => {
+      vscode.postMessage({ type: 'switchModel', role, model: modelSelect.value });
+    });
+    header.appendChild(modelSelect);
+  }
+
+  // BL-236 ("Suggest" tier only): an effort dial alongside the model
+  // dropdown, same claude-only availability gate. suggestedEffort/
+  // effortRationale are advisory (shown as the dial's title tooltip) -
+  // nothing is ever applied automatically; picking a value is the only
+  // thing that posts switchEffort. A role with no availableEfforts (a
+  // non-claude backend) gets no dial at all, i.e. shown unavailable.
+  let effortSelect;
+  if (Array.isArray(availableEfforts) && availableEfforts.length > 0) {
+    effortSelect = document.createElement('select');
+    effortSelect.className = 'effort-select';
+    effortSelect.setAttribute('aria-label', displayName + ' reasoning effort' + (effortRationale ? ' - ' + effortRationale : ''));
+    if (effortRationale) {
+      effortSelect.title = effortRationale;
+    }
+    availableEfforts.forEach((effort) => {
+      const option = document.createElement('option');
+      option.value = effort;
+      option.textContent = effort === suggestedEffort ? effort + ' (suggested)' : effort;
+      option.selected = effort === currentEffort;
+      effortSelect.appendChild(option);
+    });
+    effortSelect.addEventListener('click', (e) => e.stopPropagation());
+    effortSelect.addEventListener('change', () => {
+      vscode.postMessage({ type: 'switchEffort', role, effort: effortSelect.value });
+    });
+    header.appendChild(effortSelect);
+  }
+
   header.appendChild(nudgeBtn);
   header.appendChild(restartBtn);
+
+  // BL-238: the header selects/expands this tile on click - previously
+  // mouse-only. tabindex + role="button" + a keydown handler for
+  // Enter/Space give it the same keyboard/screen-reader affordance a real
+  // <button> gets for free, without changing its existing click behavior
+  // or the child controls' own independent interaction (guarded the same
+  // way the click handler already guards them).
+  header.tabIndex = 0;
+  header.setAttribute('role', 'button');
+  header.setAttribute('aria-label', 'Select ' + displayName + ' tile');
+
+  const onHeaderControl = (target) => {
+    const onDropdown = (select) => select && (target === select || select.contains(target));
+    return (
+      target === nudgeBtn || nudgeBtn.contains(target) ||
+      target === restartBtn || restartBtn.contains(target) ||
+      onDropdown(modelSelect) || onDropdown(effortSelect)
+    );
+  };
   header.addEventListener('click', (e) => {
-    if (e.target !== nudgeBtn && e.target !== restartBtn && !nudgeBtn.contains(e.target) && !restartBtn.contains(e.target)) {
+    if (!onHeaderControl(e.target)) {
+      selectTile(role);
+    }
+  });
+  header.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && !onHeaderControl(e.target)) {
+      e.preventDefault();
       selectTile(role);
     }
   });
@@ -310,16 +691,43 @@ function ensureTile(role, displayName, agent) {
   output.className = 'tile-output';
   output.tabIndex = 0;
   output.dataset.role = role;
+  // BL-238: names and roles the live terminal feed for a screen reader.
+  // No aria-live here deliberately - a continuously-streaming pane would
+  // announce every update, which is worse than silence for a fast-moving
+  // agent transcript; Tab-focus + the tile header's own status text
+  // (needs-human/stalled/dead below) are the accessible entry points.
+  output.setAttribute('role', 'log');
+  output.setAttribute('aria-label', displayName + ' output');
 
-  const entry = { tile, output, blBadge, text: '', tailLocked: true };
+  const entry = { tile, output, blBadge, statusBadge, text: '', tailLocked: true };
 
   output.addEventListener('focus', () => {
     activeRole = role;
   });
 
+  // Clicking the output area is the operator's only way to target a tile
+  // for keyboard input since BL-046 removed the per-tile input bar. Do not
+  // rely solely on the browser's default click-to-focus behavior for a
+  // tabIndex div (BL-085) - focus explicitly so a click always activates
+  // the tile, which also fires the 'focus' listener above.
+  output.addEventListener('click', () => {
+    output.focus();
+  });
+
   output.addEventListener('scroll', () => {
-    entry.tailLocked = isAtBottom(output, entry.text);
+    handleTileScroll(entry, output);
   }, { passive: true });
+
+  // Watch for tile resizes and send new pane size to host
+  const resizeObserver = new ResizeObserver(() => {
+    debouncedSendTilePaneSize(role, tile, output);
+  });
+  resizeObserver.observe(output);
+
+  // Send initial tile size
+  setTimeout(() => {
+    debouncedSendTilePaneSize(role, tile, output);
+  }, 100);
 
   tile.appendChild(header);
   tile.appendChild(output);
@@ -334,7 +742,10 @@ window.addEventListener('message', (event) => {
   switch (message.type) {
     case 'roles':
       status.textContent = message.roles.length + ' agent(s)';
-      message.roles.forEach((r) => ensureTile(r.role, r.displayName, r.agent));
+      message.roles.forEach((r) => ensureTile(
+        r.role, r.displayName, r.agent, r.currentModel, r.availableModels,
+        r.currentEffort, r.availableEfforts, r.suggestedEffort, r.effortRationale
+      ));
       updateGridLayout(message.roles.length, message.roles);
       break;
     case 'output':
@@ -366,6 +777,7 @@ window.addEventListener('message', (event) => {
           } else {
             entry.tile.classList.remove('dead');
           }
+          updateStatusBadge(entry);
         }
       });
       break;
@@ -375,9 +787,20 @@ window.addEventListener('message', (event) => {
         if (entry) {
           if (e.stalled) {
             entry.tile.classList.add('stalled');
+            entry.tile.classList.remove('working');
           } else {
             entry.tile.classList.remove('stalled');
           }
+          updateStatusBadge(entry);
+        }
+      });
+      break;
+    case 'activity':
+      message.events.forEach((e) => {
+        const entry = tiles.get(e.role);
+        if (entry) {
+          entry.tile.classList.toggle('working', e.working);
+          updateStatusBadge(entry);
         }
       });
       break;
@@ -388,9 +811,11 @@ window.addEventListener('message', (event) => {
           if (e.needsHuman) {
             entry.tile.classList.add('needs-human');
             entry.tile.classList.remove('stalled');
+            entry.tile.classList.remove('working');
           } else {
             entry.tile.classList.remove('needs-human');
           }
+          updateStatusBadge(entry);
         }
       });
       break;
@@ -404,7 +829,17 @@ window.addEventListener('message', (event) => {
       lastBacklogItems = message.items;
       renderBacklog(message.items);
       break;
+    case 'metricsUpdate':
+      renderMetrics(message.metrics, message.roles);
+      break;
     case 'holderUpdate':
+      // Replace, not merge: the host recomputes the full live-holder set
+      // every poll and only includes an id when a holder actually resolves,
+      // so a ticket that becomes unrouted again must lose its stale entry
+      // here too, not keep showing whoever held it last (BL-072).
+      for (const key of Object.keys(holderMap)) {
+        delete holderMap[key];
+      }
       Object.assign(holderMap, message.holders);
       // Re-render backlog to update "Assigned" labels with live holders
       if (backlogEl.style.display !== 'none') {
@@ -419,16 +854,79 @@ window.addEventListener('message', (event) => {
         }
       });
       break;
+    case 'daemonProcessStatus':
+      if (daemonStatusEl) {
+        const daemon = message.status || {};
+        const phase = daemon.phase || 'dead';
+        daemonStatusEl.className = 'daemon-status ' + phase;
+        daemonStatusEl.textContent = daemon.label || 'handoffd unknown';
+        daemonStatusEl.title = daemon.detail
+          ? String(daemon.detail)
+          : daemon.heartbeatAgeMs != null
+            ? 'heartbeat age: ' + daemon.heartbeatAgeMs + 'ms'
+            : '';
+      }
+      break;
+    case 'transportHealth':
+      if (transportHealthEl) {
+        // BL-121: health.state now reflects DELIVERY, not just daemon
+        // process liveness — 'broken'/'delivery-degraded' can fire even
+        // while the daemon heartbeats healthy (a dead-lettered or stalled
+        // parcel, or a missed canary).
+        const health = message.health || {};
+        const offending = health.offending || [];
+        const detail = offending.length
+          ? ' (' + offending.map((o) => o.route + ': ' + o.reason).join(', ') + ')'
+          : '';
+        transportHealthEl.classList.remove('warn', 'down');
+        if (health.state === 'broken') {
+          transportHealthEl.classList.add('down');
+          transportHealthEl.textContent = '✖ handoff transport DOWN' + detail;
+        } else if (health.state === 'delivery-degraded') {
+          transportHealthEl.classList.add('warn');
+          transportHealthEl.textContent = '⚠ handoff transport degraded' + detail;
+        } else {
+          // healthy or unknown: no alarm
+          transportHealthEl.textContent = '';
+        }
+      }
+      break;
+    case 'bounceDrain':
+      if (message.draining) {
+        const busy = message.busyRoles || [];
+        bounceDrainBanner.classList.add('visible');
+        bounceDrainText.textContent =
+          'Draining: ' + busy.length + ' of ' + (message.totalRoles || 0) + ' agent(s) still busy';
+        tiles.forEach((entry, role) => {
+          entry.tile.classList.toggle('drain-idle', !busy.includes(role));
+        });
+      } else {
+        bounceDrainBanner.classList.remove('visible');
+        tiles.forEach((entry) => entry.tile.classList.remove('drain-idle'));
+      }
+      break;
     case 'badgeUpdate':
       tiles.forEach((entry, role) => {
         const badge = message.badges[role];
         if (badge) {
           entry.tile.classList.add('bl-active');
-          const badgeText = badge.summary ? `${badge.id} · ${badge.summary}` : badge.id || badge;
-          entry.blBadge.textContent = badgeText;
+          const idSummary = badge.summary ? `${badge.id} · ${badge.summary}` : badge.id || badge;
+          // A role holding more than one active parcel (e.g. a hardender
+          // batch) shows the lowest ticket ID plus a +N count for the rest
+          // instead of silently dropping them (BL-068).
+          entry.blBadge.textContent = badge.extraCount ? `${idSummary} +${badge.extraCount}` : idSummary;
+          // BL-139: color now identifies the ticket(s) held, not the stage
+          // holding them. A single held ticket is a flat swatch; a role
+          // holding several at once (e.g. a hardender batch) renders a
+          // rainbow of one segment per held ticket id, same colors and
+          // order the backlog row chip uses for those same ids.
+          entry.blBadge.className = 'tile-bl-badge';
+          entry.blBadge.setAttribute('style', ticketChipStyle(badge.heldTicketIds || [badge.id]));
         } else {
           entry.tile.classList.remove('bl-active');
           entry.blBadge.textContent = '';
+          entry.blBadge.className = 'tile-bl-badge';
+          entry.blBadge.removeAttribute('style');
         }
       });
       break;

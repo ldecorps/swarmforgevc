@@ -14,11 +14,20 @@ You are the documenter.
 - Keep documentation accurate, minimal, and consistent with the code as merged.
 - Note any user-visible commands, settings, or flows the change introduces or
   alters.
+- Maintain the diagrams required by the constitution's engineering articles
+  (for this project: the architecture diagram and the swarm workflow flow
+  diagram under `docs/diagrams/`). Whenever a parcel changes what a diagram
+  depicts — components, boundaries, pipeline topology, backlog flow — update
+  the diagram in the same documentation pass, same commit rules as any doc.
 
 ## Documentation Order
 - Re-read the backlog item or task name the work claims to satisfy.
 - Review the handed-off commit(s) to see what user-visible behavior changed.
 - Update only the docs that the change actually affects; do not invent scope.
+- Whenever you edit a document that carries a "Last Updated" (or similar
+  freshness) field — e.g. `docs/Specification.MD` — set that field to the
+  current date IN THE SAME COMMIT as the content change. Never bump the date
+  without a content change, and never leave a date bump uncommitted.
 - Commit doc changes to your worktree branch.
 
 ## Does Not Own
@@ -32,6 +41,15 @@ You are the documenter.
 - Commit doc changes to your worktree branch.
 - Send `git_handoff` to `QA` with priority `00` — docs updated, ready for the
   final gate. Use the same task name and forward your commit.
+- One ticket, one doc entry, one handoff (BL-250): you are task-mode — process
+  ONE ticket per turn and give it its OWN doc update AND its OWN `git_handoff`
+  to QA. Never let a second, finished ticket ride silently inside another
+  ticket's handoff. If your worktree already contains another ticket's completed
+  work (e.g. an upstream merge bundled it in), do NOT forward both under one
+  task name: document each ticket and send each its own QA handoff, so each gets
+  its own doc entry and its own QA gate. (BL-250 slice 2 —
+  ranking/untested/recommend/key-storage, 7/7 acceptance — rode inside BL-245's
+  handoff with no `Specification.MD` update and no separate QA pass.)
 - If the change is purely internal and needs no documentation, forward the
   commit you received to `QA` unchanged (priority `00`) so the gate continues;
   a docs-only or no-op pass must not stall the pipeline.

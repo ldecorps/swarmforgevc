@@ -2,10 +2,10 @@
  * BL-021: trace-hop CLI — unit tests.
  */
 const assert = require('node:assert/strict');
-const test = require('node:test');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { execSync } = require('node:child_process');
 
 // We test the CLI logic by requiring its exported helpers directly.
 // The CLI entry point (main) is exercised indirectly via those helpers.
@@ -42,6 +42,18 @@ test('roleToPhase maps cleaner to verifying', () => {
 
 test('roleToPhase maps QA to qa-verifying', () => {
   assert.equal(roleToPhase('QA'), 'qa-verifying');
+});
+
+test('roleToPhase maps architect to architecting', () => {
+  assert.equal(roleToPhase('architect'), 'architecting');
+});
+
+test('roleToPhase maps hardender to hardening', () => {
+  assert.equal(roleToPhase('hardender'), 'hardening');
+});
+
+test('roleToPhase maps documenter to documenting', () => {
+  assert.equal(roleToPhase('documenter'), 'documenting');
 });
 
 test('roleToPhase throws for unknown role', () => {
@@ -117,6 +129,38 @@ test('resolveTracesDir throws when env unset and git common dir fails', () => {
   assert.throws(() => resolveTracesDir(null, '/nonexistent/not-a-repo'), /cannot resolve/i);
 });
 
+// Regression coverage for the off-by-one repo-root fix (`resolveTracesDir`
+// used to go up TWO levels from git-common-dir instead of one, landing one
+// directory above the real repo root - this passed on a non-worktree repo
+// where the extra ".." happened to be harmless-looking but broke every
+// linked worktree, i.e. every actual pipeline role's working directory).
+
+test('resolveTracesDir resolves to <repoRoot>/.swarmforge/traces in a plain (non-worktree) repo', () => {
+  const repoRoot = fs.realpathSync(mkTmp());
+  execSync('git init -q', { cwd: repoRoot });
+
+  const tracesDir = resolveTracesDir(null, repoRoot);
+
+  assert.equal(tracesDir, path.join(repoRoot, '.swarmforge', 'traces'));
+});
+
+test('resolveTracesDir resolves to the MAIN repo root from inside a linked worktree', () => {
+  const mainRepo = fs.realpathSync(mkTmp());
+  execSync('git init -q', { cwd: mainRepo });
+  execSync('git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init', { cwd: mainRepo });
+  const worktreesParent = fs.realpathSync(mkTmp());
+  const worktreePath = path.join(worktreesParent, 'linked-worktree');
+  execSync(`git worktree add -q -b sfvc-test-worktree "${worktreePath}"`, { cwd: mainRepo });
+
+  const tracesDir = resolveTracesDir(null, worktreePath);
+
+  assert.equal(
+    tracesDir,
+    path.join(mainRepo, '.swarmforge', 'traces'),
+    'a linked worktree must resolve traces under the MAIN repo root, not one level above it'
+  );
+});
+
 // ── countPriorRetries: error handling ──────────────────────────────────────
 
 test('countPriorRetries escapes regex metacharacters in role', () => {
@@ -133,11 +177,12 @@ test('countPriorRetries escapes regex metacharacters in role', () => {
   assert.equal(countPriorRetries(logPath, 'coder'), 1);
 });
 
-test('countPriorRetries throws when log exists but unreadable', () => {
+test('countPriorRetries throws when the log path exists but is not a readable file', () => {
   const tmp = mkTmp();
   const logPath = path.join(tmp, 'trace-abc.log');
-  fs.writeFileSync(logPath, 'RETRY coder 2026-06-30T00:00:01.000Z attempt=1 reason="test"', 'utf-8');
-  fs.chmodSync(logPath, 0o000);  // Remove all permissions
-  assert.throws(() => countPriorRetries(logPath, 'coder'), /failed to append|permission denied|cannot read/i);
-  fs.chmodSync(logPath, 0o644);  // Restore for cleanup
+  // A directory where a file is expected forces a deterministic read
+  // failure (EISDIR) regardless of user/filesystem - unlike chmod 0000,
+  // which root and WSL/mounted filesystems can silently ignore (BL-219).
+  fs.mkdirSync(logPath);
+  assert.throws(() => countPriorRetries(logPath, 'coder'), (err) => err.code === 'EISDIR');
 });

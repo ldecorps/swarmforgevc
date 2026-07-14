@@ -5,19 +5,35 @@ const SWARMFORGE_DIR = '.swarmforge';
 const HANDOFF_EXTENSION = '.handoff';
 const INBOX_SUBDIRS = ['new', 'in_process'];
 const TSV_ROLE_INDEX = 0;
+const TSV_WORKTREE_NAME_INDEX = 1;
 const TSV_WORKTREE_INDEX = 2;
 const TSV_DISPLAY_NAME_INDEX = 4;
+const TSV_AGENT_INDEX = 5;
 
 export interface RoleEntry {
   role: string;
+  worktreeName: string;
   worktreePath: string;
   displayName: string;
+  // BL-208: the configured agent/provider brand (claude/aider/grok/codex/
+  // copilot/mock - agent_runtime_lib.bb's supported-agents), the one
+  // common field cross-provider readers group telemetry by. Undefined for
+  // a TSV row shorter than expected, never a crash.
+  agent?: string;
 }
 
 export interface PipelineStage {
   role: string;
   displayName: string;
   status: 'active' | 'idle';
+}
+
+// Split out of parseRolesTsv so each function stays under the CRAP<=6 gate
+// - the agent field is only present on the entry when the TSV row actually
+// carried one (an `agent?: undefined` property would fail the ticket's own
+// "omitted, not present-but-undefined" role-entry shape elsewhere).
+function buildRoleEntry(role: string, worktreeName: string, worktreePath: string, displayName: string, agent: string): RoleEntry {
+  return agent ? { role, worktreeName, worktreePath, displayName, agent } : { role, worktreeName, worktreePath, displayName };
 }
 
 export function parseRolesTsv(tsv: string): RoleEntry[] {
@@ -28,20 +44,35 @@ export function parseRolesTsv(tsv: string): RoleEntry[] {
     }
     const parts = line.split('\t');
     const role = parts[TSV_ROLE_INDEX];
+    const worktreeName = parts[TSV_WORKTREE_NAME_INDEX];
     const worktreePath = parts[TSV_WORKTREE_INDEX];
     const displayName = parts[TSV_DISPLAY_NAME_INDEX];
     if (role && worktreePath && displayName) {
-      entries.push({ role, worktreePath, displayName });
+      entries.push(buildRoleEntry(role, worktreeName, worktreePath, displayName, parts[TSV_AGENT_INDEX]));
     }
   }
   return entries;
 }
 
-export function readHandoffInboxStatus(worktreePath: string): 'active' | 'idle' {
-  const inboxBase = path.join(worktreePath, SWARMFORGE_DIR, 'handoffs', 'inbox');
+// BL-128: the one shared, role-keyed mailbox path resolver on the
+// TypeScript side, mirroring handoff_lib.bb's mailbox-base-dir/mailbox-dir.
+// Coordinator and specifier both run on the shared `master` worktree, so
+// they get their own <role> subdirectory; every other role's own dedicated
+// worktree already provides physical separation and keeps the flat layout.
+export function mailboxBaseDir(entry: Pick<RoleEntry, 'role' | 'worktreeName' | 'worktreePath'>): string {
+  if (entry.worktreeName === 'master') {
+    return path.join(entry.worktreePath, SWARMFORGE_DIR, 'handoffs', entry.role);
+  }
+  return path.join(entry.worktreePath, SWARMFORGE_DIR, 'handoffs');
+}
 
+export function mailboxDir(entry: Pick<RoleEntry, 'role' | 'worktreeName' | 'worktreePath'>, ...segments: string[]): string {
+  return path.join(mailboxBaseDir(entry), ...segments);
+}
+
+export function readHandoffInboxStatus(entry: Pick<RoleEntry, 'role' | 'worktreeName' | 'worktreePath'>): 'active' | 'idle' {
   for (const subdir of INBOX_SUBDIRS) {
-    const dir = path.join(inboxBase, subdir);
+    const dir = mailboxDir(entry, 'inbox', subdir);
     if (!fs.existsSync(dir)) {
       continue;
     }
@@ -82,7 +113,7 @@ export function readPipelineStages(targetPath: string): PipelineStage[] {
   return parseRolesTsv(tsv).map((entry) => ({
     role: entry.role,
     displayName: entry.displayName,
-    status: readHandoffInboxStatus(entry.worktreePath),
+    status: readHandoffInboxStatus(entry),
   }));
 }
 

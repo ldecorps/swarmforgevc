@@ -1,0 +1,69 @@
+id: BL-248
+title: "Recert inbound-email webhook: sender allowlist (only allowlisted senders can commit proposals)"
+direction: security
+type: bug
+priority: 15
+mutation_cost: low
+source: "operator request 2026-07-10 (relayed via architect): add sender allowlist for email Gherkin-recert intake webhook."
+
+description: |
+  Authorization gap on the live recert inbound-email webhook. Today
+  handleInboundEmailWebhook (extension/src/notify/recertInboundWebhook.ts)
+  verifies the svix signature + timestamp freshness (proving the delivery came
+  from Resend) and then parses subject/body — but never checks WHO sent the
+  email. So any email that reaches the recert address (recert_email_to =
+  recert@tolokarooo.resend.app) and parses as a recertification email commits an
+  update/delete proposal into the durable queue. A sender allowlist is the missing
+  authorization layer: only emails from allowlisted senders may commit proposals.
+
+  Wanted behavior (observable):
+    - A validly-signed, fresh recert email from an ALLOWLISTED sender still commits
+      a proposal (existing happy path unchanged).
+    - A recert email from a NON-allowlisted sender is rejected: no proposal is
+      committed, and the rejection is logged.
+    - Sender matching is case-insensitive on the email address.
+    - An empty or missing allowlist rejects every sender (FAIL CLOSED).
+
+  Design (grounded in the live handler):
+    - The allowlist is a new dep on HandleInboundEmailWebhookDeps (e.g.
+      senderAllowlist: string[]), populated from the serverless env exactly like
+      the svix `secret` — the deployment-agnostic core cannot read this host's
+      .swarmforge/ (BL-217). The allowlist VALUE is operator-configured where the
+      serverless function's env is set.
+    - The sender is extracted from the inbound payload (Resend inbound `data.from`),
+      extending extractEmailFields (best-effort field name, same caveat that
+      function already carries; the only place to change if Resend differs).
+    - The check runs AFTER svix signature + freshness authentication and BEFORE any
+      proposal is committed.
+
+  FLAGS FOR HUMAN REVIEW:
+    - FAIL-CLOSED on empty/missing allowlist is a deliberate secure default that
+      CHANGES today's accept-all behavior. If the operator wants fail-open when
+      unconfigured, redirect at review — but an allowlist that fails open is not a
+      control.
+    - Reject status code: 403 ("sender not allowed") vs a quiet 200 "ignored"
+      (consistent with the handler's other non-proposal exits) — architect call.
+    - Optionally mirror the allowlist in swarmforge.conf for host-side visibility
+      (like recert_email_to), separate from the serverless env value — confirm if
+      wanted.
+
+  Scope: extension/src/notify/recertInboundWebhook.ts (sender extraction +
+  allowlist check + new dep), and the serverless env wiring where `secret` is
+  supplied (add the allowlist env var). No change to the parse/commit core.
+
+acceptance: specs/features/BL-248-recert-webhook-sender-allowlist.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (host-side core; deps injected, no live network):
+  1. Validly-signed fresh recert email from an allowlisted sender; assert a
+     proposal is committed.
+  2. Same email from a non-allowlisted sender; assert NO proposal committed and a
+     rejection is logged.
+  3. Allowlist "ops@example.com"; send from "OPS@Example.com"; assert accepted
+     (case-insensitive); send from "evil@example.com"; assert rejected.
+  4. Empty/missing allowlist; assert every sender is rejected (fail closed).
+  5. Regression: a bad-signature or stale request is still rejected at auth,
+     before any allowlist check.
+
+# HUMAN APPROVAL: new specifier draft feature file, pending human review — in
+# particular the fail-closed default and the reject status code.

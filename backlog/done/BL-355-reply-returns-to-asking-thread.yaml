@@ -1,0 +1,65 @@
+id: BL-355
+title: "A reply lands in a different topic than the human asked in, so an answered question looks like a dead swarm"
+milestone: M8
+type: defect
+status: todo
+severity: high
+priority: 3
+direction: expedite
+depends_on: []
+source: "backlog/INTAKE-replies-return-to-asking-thread.md — the human (ldecorps), 2026-07-13, relayed via the recovery session at his request."
+
+notes: |
+  THE DEFECT AS THE HUMAN EXPERIENCED IT. He asked questions in the group's General topic five times
+  across one day (08:53, 09:54, 11:08, 13:05, then "So?" at 15:41) and saw total silence, concluding
+  repeatedly that the swarm was dead. It was not. The front desk received every message, the
+  Operator processed them and replied — the replies just landed in a DIFFERENT topic than the one he
+  typed in.
+
+  THE MECHANISM (verified in code during the incident). In `telegramFrontDeskBotCore.ts` (BL-294) a
+  message with no `message_thread_id` — which includes EVERY message posted in a forum supergroup's
+  General topic, not just DMs — resolves through `DEFAULT_SUBJECT_KEY` to the single default support
+  subject (SUP-2 today). The reply relay then routes the answer to the topic mapped to that SUBJECT
+  (`topicForSubject`), i.e. the SUP support topic — never back to General. Question in General,
+  answer in SUP; the human sees neither the answer nor the connection.
+
+  THE ASK. A reply to a human message must be delivered to the thread the human posted in, General
+  included. General is not a special case in Telegram's model — it is the ordinary thread-id-0 /
+  thread-id-absent case, and it CAN be replied into. If some thread genuinely cannot be replied into,
+  then at minimum a pointer must be posted in the asking thread ("answered in <topic>") so that
+  SILENCE IS IMPOSSIBLE. The invariant worth pinning in a test, and the one the human actually cares
+  about: for every inbound human message, SOME visible response lands in the SAME thread within the
+  reply window.
+
+  WHAT THIS IS NOT — DO NOT DUPLICATE:
+    - BL-354 is the INBOUND half (an answer the human types in the wrong thread is not paired to the
+      question). This ticket is the OUTBOUND half (our reply does not go back where he asked). They
+      share the front-desk/relay surface, so SEQUENCE them rather than running them concurrently.
+    - BL-346's standing Operator topic reduces how often he uses General; it does not fix the
+      routing dishonesty for the threads still affected.
+    - BL-333/BL-345 (starvation alarms) cover events never being CONSUMED. This is the opposite:
+      consumed, answered, misdelivered.
+
+  SCOPE. The subject/thread resolution in `extension/src/tools/telegramFrontDeskBotCore.ts`
+  (`DEFAULT_SUBJECT_KEY`, `topicForSubject`) and the reply relay that consumes
+  `.swarmforge/operator/telegram-reply-outbox.jsonl` and resolves its destination topic. The reply's
+  destination must be derived from the ORIGINATING message's thread, not from the subject it was
+  filed under. Preserve the existing subject/transcript filing — this changes where the reply is
+  DELIVERED, not how the conversation is stored.
+
+  E2E QA PROCEDURE: against the live Telegram group, post a message in the General topic and assert
+  a visible reply appears in General (not only in the SUP topic). Repeat from a SUP topic and from a
+  BL-### ticket topic and assert each reply comes back in its own thread. Then force the reply to a
+  thread to fail and assert a pointer to where it was answered is posted in the asking thread — no
+  inbound message may end in silence.
+
+acceptance:
+  feature: specs/features/BL-355-reply-returns-to-asking-thread.feature
+  steps:
+    - "The reply is delivered to the thread the message came from"
+    - "An answer delivered elsewhere still leaves a pointer in the asking thread"
+    - "Every inbound human message gets a visible response in its own thread"
+
+human_approval: pending
+
+mutation_cost: medium

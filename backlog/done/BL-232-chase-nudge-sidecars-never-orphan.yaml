@@ -1,0 +1,76 @@
+id: BL-232
+title: "BUG: chase/nudge sidecars orphan in inbox/new/ on dequeue and accumulate unbounded"
+direction: reliability
+type: bug
+priority: 20
+mutation_cost: low
+source: "coordinator note 2026-07-10: '.chase.json/.nudge sidecars never cleaned from inbox/new/ (100+)'. Specifier confirmed the live mechanism (see below)."
+
+description: |
+  A chase/nudge sidecar is written next to a queued handoff in inbox/new/ by the
+  daemon sweep (swarmforge/scripts/chase_sweep_lib.bb write-chase-count! /
+  write-nudge-count!, file named <handoff>.chase.json or <handoff>.nudge). When
+  the handoff is dequeued, ready_for_next_task.bb:55 (and the batch equivalent)
+  moves ONLY the .handoff file from inbox/new/ to inbox/in_process/ — the sidecar
+  is left behind in new/. The single cleanup that exists,
+  handoff_lib.bb remove-sidecars-of!, is called from done_with_current_task.bb
+  against the handoff's completed-location path, so it never matches the copy
+  stranded in new/. Result: sidecars accumulate in inbox/new/ without bound.
+  (The dead-letter path, chase_sweep_lib.bb:231-234, DOES move the sidecar along
+  with the handoff — that path is correct; the normal dequeue path is the leak.)
+
+  Confirmed live 2026-07-10: 14 orphaned .chase.json files across inbox/new/
+  dirs, several in the flat pre-BL-128 layout referencing coordinator/specifier
+  recipients — i.e. the BL-128 mailbox migration also stranded sidecars.
+
+  Why it matters: unbounded growth clutters inbox scans and inbox-count views,
+  and orphaned sidecars in new/ are exactly the kind of leftover BL-119 warned
+  could "wedge later stuck-parcel checks"; they can also confuse the
+  dispatch-gap / chase sweep that scans new/.
+
+  Wanted behavior (observable invariant): a chase/nudge sidecar must never
+  outlive its parent .handoff's presence in an inbox/new/ directory.
+    - When a handoff is dequeued from new/ (task OR batch mode), no orphaned
+      .chase.json/.nudge sidecar for it remains in new/.
+    - An orphaned sidecar already in new/ (no matching .handoff present) is
+      reaped on the sweep — this clears the 14 existing strays and any future
+      ones, including flat-layout leftovers from the BL-128 migration.
+    - A sidecar whose parent handoff is still waiting in new/ is preserved (its
+      chase/nudge state is still live) — the reaper must not delete active state.
+    - Only files with a sidecar suffix (.chase.json, .nudge) are ever removed;
+      any other unexpected file in new/ is left untouched (never deleted, and it
+      must not make dequeue fail).
+
+  Constraints:
+    - Mechanism (move-the-sidecar-along-on-dequeue vs delete-on-dequeue vs
+      sweep-reap-of-orphans, or a combination) is an architect/coder choice;
+      the spec fixes the observable invariant, not the implementation.
+    - Reuse the existing sidecar-suffix definition (handoff_lib.bb
+      sidecar-suffixes) — do not hardcode a second copy of the suffix list.
+
+  Scope: swarmforge/scripts/ready_for_next_task.bb and the batch dequeue path
+  (ready_for_next_batch.bb) — do not strand the sidecar on dequeue;
+  swarmforge/scripts/chase_sweep_lib.bb and/or swarmforge/scripts/handoffd.bb —
+  reap orphaned sidecars in new/ on the sweep; swarmforge/scripts/handoff_lib.bb
+  — the shared sidecar-suffix + removal helpers to reuse.
+
+acceptance: specs/features/BL-232-chase-nudge-sidecars-never-orphan.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs against a live (or fixtured) mailbox:
+  1. Place a handoff in a role's inbox/new/ and write a .chase.json sidecar
+     beside it (simulate a chase). Dequeue via ready_for_next.sh (task mode).
+     Assert the .handoff moved to in_process/ AND no .chase.json for it remains
+     in new/. Repeat with a .nudge sidecar, and with a batch-mode role.
+  2. Drop a .chase.json (and a .nudge) into new/ with NO matching .handoff; run
+     the sweep; assert both orphans are gone from new/.
+  3. Place a handoff + .chase.json in new/ and do NOT dequeue; run the sweep;
+     assert both the handoff and its sidecar remain (live chase state preserved).
+  4. Put a non-sidecar file (e.g. notes.txt) in new/; dequeue and run the sweep;
+     assert notes.txt still exists and dequeue did not error on it.
+  5. Regression: confirm the existing dead-letter path still moves a sidecar
+     along with its handoff (chase_sweep_lib.bb dead-letter), unchanged.
+
+# HUMAN APPROVAL: feature file specs/features/BL-232-...feature is a new draft
+# authored by the specifier and is pending human review before this item is
+# treated as a final acceptance contract.

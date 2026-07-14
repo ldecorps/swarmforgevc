@@ -140,7 +140,8 @@ Tile badge (per agent tile): `N sent · M received`
 
 ## Run-start archival
 
-On each new run start (when `swarmforge.run` is called):
+On each **explicit new swarm launch** (operator runs **Launch Swarm** / `./swarm`
+when no live swarm exists — *not* on extension reload/reattach):
 
 1. Move all `.log` files from `.swarmforge/messages/` to
    `.swarmforge/messages/archive/<run-id>/`.
@@ -149,7 +150,9 @@ On each new run start (when `swarmforge.run` is called):
    they remain in the archive for audit.
 
 This keeps the live messages directory small and ensures the panel only shows
-messages from the current run.
+messages from the current run. Extension reattach to a live tmux swarm does
+**not** trigger run-start archival and does **not** restart agent processes.
+See `docs/specs/headless-reattach-doctrine.md`.
 
 ---
 

@@ -11,6 +11,11 @@ export function buildBounceExtensionCommand(): string {
   return 'workbench.action.reloadWindow';
 }
 
+/**
+ * Bounce = stop + launch. The stop phase is advisory: a swarm that is already
+ * dead or half-dead must not prevent the relaunch (that is precisely when a
+ * bounce is most needed). The bounce fails only if the launch fails.
+ */
 export async function bounceSwarm(
   targetPath: string,
   runName: string,
@@ -21,26 +26,22 @@ export async function bounceSwarm(
   const launch = launchFn || launchSwarm;
 
   const stopResult = stop(targetPath);
-  if (!stopResult.success) {
-    return {
-      success: false,
-      message: `Failed to stop swarm: ${stopResult.message}`,
-      targetPath,
-    };
-  }
+  const stopNote = stopResult.success
+    ? stopResult.message
+    : `Stop phase reported: ${stopResult.message} — proceeding to launch`;
 
   const launchResult = await launch(targetPath, runName);
   if (!launchResult.success) {
     return {
       success: false,
-      message: `Failed to launch swarm: ${launchResult.message}`,
+      message: `${stopNote}; failed to launch swarm: ${launchResult.message}`,
       targetPath,
     };
   }
 
   return {
     success: true,
-    message: `${stopResult.message}; ${launchResult.message}`,
+    message: `${stopNote}; ${launchResult.message}`,
     targetPath,
   };
 }

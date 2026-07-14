@@ -1,0 +1,16 @@
+id: BL-020
+title: Tracing Bullet - work item lifecycle tracking
+status: done
+milestone: M3
+priority: 5
+assignedTo: coder
+dependsOn: [BL-017, BL-018, BL-019]
+description: |
+  Tracer infrastructure for work item lifecycle.
+  - generateTraceId: trace-YYYYMMDDTHHMMSSZ format with counter
+  - isTRACENote: detect TRACE notes by prefix
+  - createTraceLog/appendTraceHop: atomic trace log management
+  - parseTraceLog: extract HOP records with timestamps
+  - computeTraceReport: verify hop presence, compute latencies
+  - 19 unit tests, 274 total passing
+completedAt: 2026-06-30T07:12:00Z

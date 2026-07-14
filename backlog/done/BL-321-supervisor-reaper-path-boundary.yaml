@@ -1,0 +1,80 @@
+id: BL-321
+title: "handoffd supervisor's reaper substring-matches the project root, killing nested and sibling-project daemons"
+milestone: M8
+status: todo
+type: defect
+severity: high
+priority: 10
+direction: aligned
+depends_on: []
+source: "Raised by the hardender 2026-07-12 via a rule_proposal (scope role:hardender) after BL-316's daemon-wiring test flaked ~50%. The proposal asked only for a prompt rule; the specifier accepted that rule (commit 1ff4e49) and, on verifying it, found the underlying production defect specced here. Ticket opened at the human's explicit direction 2026-07-12 — NOT coordinator/specifier self-generated scope (cf. BL-318)."
+
+notes: |
+  ROOT CAUSE (verified in the live tree, not inferred). handoffd_supervisor.bb's
+  `handoffd-pids-for-root` decides what to kill with a bare substring test over the
+  whole process command line (swarmforge/scripts/handoffd_supervisor.bb:195):
+
+      (and (str/includes? cmd "handoffd.bb")
+           (not (str/includes? cmd "handoffd_supervisor.bb"))
+           (str/includes? cmd project-root))     ; <-- no path boundary
+
+  Matched pids are TERM'd, then SIGKILL'd if they do not exit (kill-and-confirm!).
+  Because the root is matched as a SUBSTRING of the command line rather than
+  compared as a path, two classes of daemon that are NOT this root's are reaped:
+
+    1. NESTED ROOTS. Any handoffd.bb whose root lies beneath the project root
+       (e.g. `<repo>/tmp/fixture-root`) has the project root as a substring of its
+       command line, so it matches. This is what killed BL-316's daemon-wiring test
+       fixtures on the supervisor's ~30-60s cadence, flaking that test ~50% and
+       costing the cleaner, the architect and the hardener an independent
+       rediscovery each. It is firing constantly today: 175 `reap-orphan` lines in
+       .swarmforge/daemon/handoffd-supervisor.log.
+
+    2. SIBLING-PREFIX ROOTS. A separate project whose path merely EXTENDS this root
+       (`/home/carillon/swarmforgevc-2` contains `/home/carillon/swarmforgevc`)
+       also matches, so this swarm's supervisor will TERM/KILL a DIFFERENT swarm's
+       daemon. This directly contradicts the function's own docstring, which claims
+       it "Never matches ... another project's daemon". It is a live hazard for
+       BL-101 (headless secondary swarm) and for any onboarding target repo checked
+       out beneath a parent root.
+
+  NOT A STALE COPY. The running supervisor (verified: pid 242028, `bb
+  .../handoffd_supervisor.bb /home/carillon/swarmforgevc`) is executing CURRENT
+  main. The file's last commit is 679486a (BL-214, 2026-07-10, unrelated); no fix
+  for the substring match has ever landed. Do not go looking for one.
+
+  SCOPE:
+    1. `handoffd-pids-for-root` must identify a daemon by its ROOT ARGUMENT, not by
+       a substring of the command line: parse the root the daemon was started with,
+       canonicalize both sides (resolve symlinks / trailing slashes), and match on
+       path EQUALITY. A daemon is this root's daemon only when its root IS this
+       root — never merely because the root appears somewhere in its argv.
+    2. Preserve every behavior the reaper exists for: a genuine untracked orphan for
+       THIS exact root is still discovered by scanning the process table (BL-081 —
+       the pid file alone cannot find orphans) and still reaped, and the supervisor
+       still never matches itself.
+    3. Fix the docstring's now-true claim about other projects, and keep the BL-081
+       single-bulk-`ps` performance property (no per-pid subprocess spawn).
+    4. OUT OF SCOPE: reap-orphaned-job-processes! (the BL-108 mutation/test-batch
+       group reaper) — a different matcher with a different signature; untouched.
+
+  E2E QA PROCEDURE: (a) start a handoffd.bb rooted at `<repo>/tmp/<fixture>` while
+  the live supervisor runs, wait past two sweep cadences (~2 min), assert the
+  fixture daemon is STILL ALIVE and no new `reap-orphan` line names its pid — this
+  is the exact scenario that flaked BL-316; (b) create a sibling checkout whose path
+  extends this root as a prefix, start its daemon, assert this root's supervisor
+  leaves it alive; (c) start a second, untracked handoffd.bb for THIS exact root and
+  assert it IS still reaped and logged, proving the fix did not simply disable the
+  reaper; (d) confirm the supervisor never reaps itself.
+
+acceptance:
+  feature: specs/features/BL-321-supervisor-reaper-path-boundary.feature
+  steps:
+    - "Only a daemon whose root IS the project root is reaped"
+    - "Reaping a genuine orphan records it in the supervisor log"
+    - "A spared daemon is left able to keep delivering handoffs"
+    - "The supervisor never reaps itself"
+
+human_approval: approved
+
+mutation_cost: low

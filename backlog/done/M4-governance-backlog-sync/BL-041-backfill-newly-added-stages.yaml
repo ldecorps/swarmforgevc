@@ -1,0 +1,30 @@
+id: BL-041
+title: backfill newly-added pipeline stages across all done tickets
+milestone: M4
+status: done
+priority: 41
+assigned_to: architect
+
+description: |
+  The pipeline recently gained a new tail: architect -> hardener -> documenter
+  -> QA (these roles were added 2026-07-01). Every ticket already in
+  backlog/done/ (BL-001..BL-038, BL-A, BL-B) was completed BEFORE those stages
+  existed, so none of them ever received an architecture review, mutation
+  hardening, a documentation pass, or the final QA gate.
+
+  Backfill those stages across all done tickets:
+  1. The architect applies its architectural review to all done tickets.
+  2. The architect then passes the task DOWN the chain (hardener -> documenter
+     -> QA) so each newly-added role applies its own stage to all done tickets.
+
+  Each role records findings. Anything that needs actual rework (e.g. the
+  already-known case of BL-011 watchdog / BL-012 chase being implemented but
+  never wired into activate()) becomes its own follow-up ticket rather than
+  being silently fixed inside this backfill.
+
+acceptance: |
+  - Architect, hardener, documenter, and QA have each reviewed every ticket in
+    backlog/done/ through their own stage.
+  - Findings are captured as follow-up tickets, not silent fixes.
+  - The task was passed down the full chain (not stopped at the architect).
+  - This ticket is closed only after QA (the last stage) completes its pass.

@@ -1,0 +1,31 @@
+id: BL-113
+title: "APS realignment stage 3: Gherkin acceptance mutation for the hardender"
+milestone: M5
+status: todo
+priority: 12
+direction: aligned
+assigned_to: coder
+source: "root intake BL-055-aps-stage3-gherkin-mutation (renumbered: id BL-055 already used by done/M4 scroll-up-autoscroll ticket). Depends on BL-112."
+
+description: |
+  Depends on BL-112 (executable acceptance pipeline must exist first).
+
+  - Install gherkin-mutator from the pinned APS ref (same pin as BL-111,
+    recorded in swarmforge.lock.json); wire it into the pipeline
+    (feature -> parser -> base IR -> mutator -> mutated IRs -> runs).
+  - hardender.prompt gains soft Gherkin mutation: mutate Examples values
+    in the IR and verify mutants are caught (proving example data is
+    actually connected to the system under test). Distinct from language
+    mutation (Stryker), which the hardender keeps.
+  - Mutation runs must emit periodic progress/status so the extension's
+    stall detection can tell long work from a hang (aligns with the tile
+    heartbeat last_tool display).
+  - Mutation manifests are tool-owned: never hand-edited (shared
+    Guardrails rule).
+  - This satisfies the hardender's standing "no tooling configured -> do
+    not improvise" guard for the acceptance side; revisit the cleaner's
+    language-mutation duties once Stryker duties settle, per the
+    model-tier decision.
+
+acceptance: specs/features/BL-113-aps-stage3-gherkin-mutation.feature
+mutation_cost: low

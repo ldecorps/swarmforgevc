@@ -1,0 +1,49 @@
+id: BL-238
+title: "Accessibility pass: keyboard nav of tiles + tree and screen-reader labels (webview + PWA)"
+direction: accessibility
+milestone: M6
+priority: 35
+mutation_cost: medium
+source: "coordinator roadmap-gap-scan 2026-07-10 (spec next: accessibility first). Spec.MD 1438 accessibility 'need a pass'. BL-220 added only a font-size control."
+
+description: |
+  A systematic accessibility pass across the webview and the PWA. Today only a
+  font-size control exists (BL-220); keyboard navigation of the tiles and the
+  work/backlog tree, and screen-reader labels, are missing.
+
+  Wanted behavior (observable):
+    - Every interactive tile control is keyboard-focusable and operable without a
+      mouse, with a visible focus indicator.
+    - The work/backlog tree is fully keyboard navigable (expand/collapse/activate
+      nodes without a mouse).
+    - Tiles, tree nodes, and status controls expose an accessible name and role to
+      a screen reader rather than being unlabeled controls.
+    - Agent/completion status is conveyed by text or shape too, not color alone
+      (the '%' text already helps; extend to liveness/status indicators).
+    - The PWA views meet the same keyboard + labelling bar.
+
+  Constraints:
+    - Testable seam: the generated webview markup (extension/src/panel/
+      webviewHtml.ts) and the PWA markup (pwa/) are inspectable host-side
+      (DOM/axe) — labels, roles, tabindex, key handlers assert there. Full
+      interactive keyboard nav may add a browser-driven check; the coder/architect
+      picks the approach. Do not require booting VS Code for the markup checks.
+    - Additive: do not change behavior, only accessibility of existing controls.
+
+  Scope: extension/src/panel/webviewHtml.ts (tiles + tree markup, ARIA, key
+  handlers), the tree view, and pwa/ (status + work-tree views). Non-color status
+  cues on liveness/completion indicators.
+
+acceptance: specs/features/BL-238-accessibility-keyboard-and-labels.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs:
+  1. Inspect the generated webview markup; assert each tile/tree/status control
+     has an accessible name + role and a keyboard affordance (tabindex/handler).
+  2. Keyboard-only walkthrough of tiles and tree; assert every control is
+     reachable/operable and shows a visible focus ring.
+  3. Assert liveness/completion status carries a text/shape cue, not color alone.
+  4. Repeat the markup + keyboard checks against the PWA views.
+
+# HUMAN APPROVAL: feature file specs/features/BL-238-...feature is a new draft
+# authored by the specifier and is pending human review.

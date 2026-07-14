@@ -3,11 +3,17 @@ import { resolveTargetPath, WorkspaceFolderLike } from './targetPath';
 
 export function getTargetPath(): string | undefined {
   const config = vscode.workspace.getConfiguration('swarmforge');
-  return resolveTargetPath({
+  const fromSettings = resolveTargetPath({
     configuredTargetPath: config.get<string>('targetPath'),
     workspaceFolders:
       vscode.workspace.workspaceFolders as WorkspaceFolderLike[] | undefined,
   });
+  if (fromSettings) {
+    return fromSettings;
+  }
+
+  const fromEnv = process.env['SWARMFORGE_TARGET_PATH']?.trim();
+  return fromEnv || undefined;
 }
 
 export async function setTargetPath(

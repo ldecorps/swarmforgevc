@@ -1,0 +1,5 @@
+{
+  "id": "coder-task-02-inventory-reservation",
+  "promptFile": "TASK.md",
+  "testFile": "test/reservations.test.js"
+}

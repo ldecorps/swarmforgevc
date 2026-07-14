@@ -1,0 +1,23 @@
+id: BL-007
+title: Backlog panel — show work items in the webview
+milestone: M3
+status: done
+priority: 7
+
+description: >
+  Add a backlog section to the SwarmForge panel that lists all work items from
+  `backlog/active/*.yaml` and `backlog/done/*.yaml` in the target repo.
+  Each item shows its id, title, status (todo/active/done), and assigned_to
+  field. The list is read on panel open and refreshed every 5 seconds (same
+  cadence as pipeline status). Items are grouped: active first, then todo,
+  then done (collapsed by default). No editing; this is a read-only view.
+
+acceptance:
+  - Panel shows a "Backlog" section below the agent tiles
+  - Active items appear at the top, todo below, done collapsed at the bottom
+  - Each item shows: id, title, status badge, assigned_to (if set)
+  - List refreshes automatically (≤5s lag when a YAML file changes on disk)
+  - Section is visible only when a target path is configured and the backlog
+    directory exists; otherwise the section is hidden
+
+assigned_to: coder
