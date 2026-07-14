@@ -9,7 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { atomicWrite } from '../util/atomicWrite';
-import { commitScopedFile } from '../util/gitCommitScopedFile';
+import { commitScopedFile, isFileCommitted } from '../util/gitCommitScopedFile';
 
 export type TopicMessageDirection = 'inbound' | 'outbound';
 
@@ -43,6 +43,21 @@ export function recordPath(targetPath: string, ticketId: string): string {
 // present as an outbound message, never merely "some messages exist".
 export function hasCompletionRecord(record: TopicRecord, completionText: string): boolean {
   return record.messages.some((m) => m.type === 'outbound' && m.text === completionText);
+}
+
+// BL-331 architect bounce: hasCompletionRecord alone only proves the
+// completion text PARSES from whatever is on disk right now - it says
+// nothing about whether that content is actually git-committed (durable).
+// appendMessage's own write can succeed while its commit fails (this
+// file's own CommitFailureReporter exists for exactly that window), so a
+// record can read back "complete" while still being an uncommitted
+// working-tree file, lost on a fresh checkout/git clean/disk failure. A
+// caller gating an IRREVERSIBLE action (deleting the Telegram topic that
+// projection exists to make disposable) on "verified" must check BOTH:
+// the content is right (hasCompletionRecord) AND it is durably committed
+// (this function) - never one without the other.
+export function isRecordCommitted(targetPath: string, ticketId: string): boolean {
+  return isFileCommitted(targetPath, recordPath(targetPath, ticketId));
 }
 
 export function readRecord(targetPath: string, ticketId: string): TopicRecord {

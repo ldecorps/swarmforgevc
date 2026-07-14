@@ -26,6 +26,11 @@ function mkAdapters(ctx) {
   return {
     getTopicMap: () => ctx.topicMap,
     readRecord: () => ctx.record,
+    // The feature's own scenarios are about CONTENT verification; git
+    // durability is a separate, unit-tested concern (topicDeletion.test.js/
+    // blTopicStore.test.js, against real git repos) - always committed here
+    // so this suite keeps testing exactly what it always tested.
+    isRecordCommitted: () => true,
     deleteTopic: async (topicId) => {
       ctx.deletedTopics.push(topicId);
       return true;
