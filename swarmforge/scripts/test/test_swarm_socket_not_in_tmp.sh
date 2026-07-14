@@ -116,4 +116,66 @@ pass "kill_all_swarm.sh's socket glob follows the new .swarmforge/tmux/ location
 kill -9 "$SOCKET_HOLDER_PID" 2>/dev/null || true
 rm -rf "$SWARM_ROOT"
 
+# ═══════════════════════════════════════════════════════════════════════════
+# kill_all_swarm.sh's legacy /tmp lookup must be a SINGLE EXACT match on this
+# root's own project_socket_id, never a broad glob that could touch another
+# project's socket sharing this uid's legacy directory. This is the literal
+# defect that matched and killed the LIVE swarm's real socket 5 times in one
+# session before BL-367 (see this ticket's notes) - the regression this test
+# exists to close.
+#
+# Exercised via SWARMFORGE_LEGACY_SOCKET_DIR, a test-only override matching
+# swarmforge.sh's own SWARMFORGE_CONFIG convention, so this scenario NEVER
+# creates or touches a file under the real, live /tmp/swarmforge-${UID}/
+# this very swarm's own control socket may sit in.
+# ═══════════════════════════════════════════════════════════════════════════
+
+LEGACY_DIR="$(mktemp -d "$FIXTURE_BASE/legacy.XXXXXXXX")"
+ROOT_A="$(cd "$(mktemp -d "$FIXTURE_BASE/proj-a.XXXXXXXX")" && pwd -P)"
+ROOT_B="$(cd "$(mktemp -d "$FIXTURE_BASE/proj-b.XXXXXXXX")" && pwd -P)"
+mkdir -p "$ROOT_A/.swarmforge/daemon"
+
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../project_socket_id_lib.sh"
+ID_A="$(project_socket_id "$ROOT_A")"
+ID_B="$(project_socket_id "$ROOT_B")"
+[[ "$ID_A" != "$ID_B" ]] \
+  || fail "legacy-scoping setup: two distinct fixture roots produced the same project_socket_id ($ID_A) - test fixture is broken, not the code under test"
+
+LEGACY_SOCK_A="$LEGACY_DIR/$ID_A.sock"
+LEGACY_SOCK_B="$LEGACY_DIR/$ID_B.sock"
+
+bind_fake_socket() {
+  local sock="$1"
+  bb -e "
+(import '[java.net UnixDomainSocketAddress StandardProtocolFamily] '[java.nio.channels ServerSocketChannel])
+(def ch (ServerSocketChannel/open StandardProtocolFamily/UNIX))
+(.bind ch (UnixDomainSocketAddress/of (java.nio.file.Path/of \"$sock\" (make-array String 0))))
+(Thread/sleep 30000)
+" &
+  echo $!
+}
+
+PID_A="$(bind_fake_socket "$LEGACY_SOCK_A")"
+PID_B="$(bind_fake_socket "$LEGACY_SOCK_B")"
+for _ in $(seq 1 20); do
+  [[ -S "$LEGACY_SOCK_A" && -S "$LEGACY_SOCK_B" ]] && break
+  sleep 0.1
+done
+[[ -S "$LEGACY_SOCK_A" && -S "$LEGACY_SOCK_B" ]] \
+  || { kill -9 "$PID_A" "$PID_B" 2>/dev/null || true; fail "legacy-scoping setup: fake legacy sockets were never created"; }
+
+SWARMFORGE_LEGACY_SOCKET_DIR="$LEGACY_DIR" bash "$KILL_ALL" "$ROOT_A" >/dev/null 2>&1 || true
+
+AUDIT_A="$ROOT_A/.swarmforge/daemon/kill-all-audit.log"
+grep -q "$LEGACY_SOCK_A" "$AUDIT_A" \
+  || fail "expected kill_all_swarm.sh (run against ROOT_A) to attempt ROOT_A's own legacy socket; got: $(cat "$AUDIT_A" 2>/dev/null)"
+if grep -q "$LEGACY_SOCK_B" "$AUDIT_A"; then
+  fail "kill_all_swarm.sh (run against ROOT_A) touched ROOT_B's DIFFERENT legacy socket - exact-match scoping regressed to a broad glob"
+fi
+pass "kill_all_swarm.sh's legacy /tmp lookup is a single exact match on this root's own project_socket_id, never a different project's socket sharing the same legacy directory"
+
+kill -9 "$PID_A" "$PID_B" 2>/dev/null || true
+rm -rf "$LEGACY_DIR" "$ROOT_A" "$ROOT_B"
+
 echo "ALL PASS"
