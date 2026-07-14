@@ -75,6 +75,6 @@ acceptance:
     - "A genuinely dead agent is still detected and recovered"
     - "Losing control of the swarm is surfaced loudly"
 
-human_approval: pending
+human_approval: approved  # human, Telegram SUP-2 2026-07-14T06:40:06Z: "Promote all, pick the order" — see .swarmforge/operator/PROMOTE-ALL-9.md
 
 mutation_cost: medium
