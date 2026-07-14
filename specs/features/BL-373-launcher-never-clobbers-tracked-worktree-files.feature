@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=973974f44fcb3de62597f371f44435c4e9357a842ea08150248b5f8919ab1c04
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-14T05:06:30.062745127Z","feature_name":"The launcher never overwrites git-tracked files in a role worktree","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-373-launcher-never-clobbers-tracked-worktree-files.feature","background_hash":"3bd24c828e62c1b5b65d51845f123fab7b8f2a85808ee69fc24389c1a40ab529","implementation_hash":"unknown","scenarios":[{"index":0,"name":"Launching a swarm does not modify a git-tracked path in a role worktree","scenario_hash":"486c8de7df476a49f39efc01e95c2130532457a207219148c131c6662e64efe2","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-14T05:06:30.062745127Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The launcher never overwrites git-tracked files in a role worktree
 
 # BL-373: the "phantom revert" mechanism, ROOT-CAUSED (6 occurrences on 2026-07-14 alone, across

@@ -28,8 +28,30 @@ const { execFileSync, spawnSync } = require('node:child_process');
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const REAL_SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 
+// Safety net: every fixture root is a FULL COPY of this repo's real
+// swarmforge/scripts/ (hundreds of files, see file header), so leaving
+// even one behind on a thrown assertion leaks unboundedly across repeated
+// acceptance runs. This DSL has no per-scenario teardown hook (see
+// daemonWorkflowSteps.js's own comment on the same gap), so every root is
+// tracked here and swept on process exit - the same liveFixtureRoots Set +
+// process.on('exit', ...) pattern already used in
+// roleLifecycleParkUnneededSteps.js and mergedCodeReachesDaemonsSteps.js.
+const liveFixtureRoots = new Set();
+
+process.on('exit', () => {
+  for (const root of liveFixtureRoots) {
+    try {
+      fs.rmSync(root, { recursive: true, force: true });
+    } catch {
+      // best-effort - the process is already exiting
+    }
+  }
+});
+
 function mkTmp(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  liveFixtureRoots.add(root);
+  return root;
 }
 
 function mkdirp(p) {
