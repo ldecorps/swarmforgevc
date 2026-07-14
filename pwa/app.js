@@ -868,6 +868,14 @@
     ]);
   }
 
+  // Shared by both leaderboard categories that can report a stated reason
+  // instead of a winning model (BL-347's cheapestAcceptable/
+  // noAcceptableModelReason, BL-385's bestByQuality/couldNotDiscriminateReason):
+  // a single full-width row, category-prefixed, never a silent blank.
+  function benchmarkLeaderboardReasonRow(category, reason) {
+    return el('tr', {}, [el('td', { colspan: '5' }, [category + tr('roleLeaderboardNoAcceptableSeparator') + (reason || '')])]);
+  }
+
   // BL-347: the PWA's own presentation of BL-340's committed benchmark
   // report - the Best / Best Value / Cheapest Acceptable table, per role.
   // Mirrors renderCostHealth's own "hidden entirely, never rendered empty"
@@ -919,13 +927,7 @@
         tbody.appendChild(bestRow);
       }
     } else {
-      tbody.appendChild(
-        el('tr', {}, [
-          el('td', { colspan: '5' }, [
-            tr('roleLeaderboardBest') + tr('roleLeaderboardNoAcceptableSeparator') + (ranking.couldNotDiscriminateReason || ''),
-          ]),
-        ])
-      );
+      tbody.appendChild(benchmarkLeaderboardReasonRow(tr('roleLeaderboardBest'), ranking.couldNotDiscriminateReason));
     }
     // BL-385: under a quality tie, best-value reduces to cheapest - a
     // defensible answer, but never presented as a quality-cost judgement;
@@ -941,13 +943,7 @@
         tbody.appendChild(acceptableRow);
       }
     } else {
-      tbody.appendChild(
-        el('tr', {}, [
-          el('td', { colspan: '5' }, [
-            tr('roleLeaderboardCheapestAcceptable') + tr('roleLeaderboardNoAcceptableSeparator') + (ranking.noAcceptableModelReason || ''),
-          ]),
-        ])
-      );
+      tbody.appendChild(benchmarkLeaderboardReasonRow(tr('roleLeaderboardCheapestAcceptable'), ranking.noAcceptableModelReason));
     }
     table.appendChild(tbody);
     container.appendChild(table);
