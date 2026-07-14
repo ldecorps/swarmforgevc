@@ -83,4 +83,28 @@ NOT_A_REPO_OUTBOX="$NOT_A_REPO/.swarmforge/operator/telegram-reply-outbox.jsonl"
 pass "a commit failure is reported loudly (non-zero exit, no false success) and the human is never told a lie"
 rm -rf "$NOT_A_REPO"
 
+# ── the commit can succeed while telling the human fails - the filing must
+# still stand, reported honestly as told_human:false (never silently
+# swallowed, never downgraded to a filing failure) ─────────────────────────
+ROOT2="$(git_repo)"
+trap 'rm -rf "$ROOT2"' EXIT
+# Force operator_reply.bb's own write to fail deterministically - pre-create
+# .swarmforge as a plain FILE so its fs/create-dirs hits an existing
+# non-directory path component (ENOTDIR), never a permission-bit trick.
+: > "$ROOT2/.swarmforge"
+
+set +e
+OUT3="$(bb "$CLI" "$ROOT2" --thread SUP-1 --question "will reply fail?" 2>&1)"
+CODE3=$?
+set -e
+[[ "$CODE3" -eq 0 ]] || fail "expected success (filing/commit are what matter) even when telling the human fails, got exit $CODE3: $OUT3"
+echo "$OUT3" | grep -q '"committed":true' || fail "expected committed:true even when telling the human fails, got: $OUT3"
+echo "$OUT3" | grep -q '"told_human":false' || fail "expected told_human:false when the reply subprocess fails, got: $OUT3"
+FILED_REL2="$(echo "$OUT3" | grep -oE '"filed":"[^"]+"' | sed -E 's/"filed":"([^"]+)"/\1/')"
+LOG2="$(git -C "$ROOT2" log --oneline -- "$FILED_REL2")"
+[[ -n "$LOG2" ]] || fail "expected the intake to still be committed even though telling the human failed"
+pass "a reply failure after a successful commit is reported honestly (told_human:false), never masked as a filing failure"
+rm -rf "$ROOT2"
+trap - EXIT
+
 echo "ALL PASS"
