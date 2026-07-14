@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { decideTopicAction, routeEvent, topicNameForItem, messageTextForEvent, backlogForTopic, completionSummaryText } = require('../out/concierge/topicRouter');
+const { decideTopicAction, routeEvent, topicNameForItem, messageTextForEvent, backlogForTopic, completionSummaryText, decideEpicTopicAction } = require('../out/concierge/topicRouter');
 const { parseBacklogYaml } = require('../out/panel/backlogReader');
 
 function event(overrides = {}) {
@@ -65,6 +65,31 @@ test('BL-357: the ApprovalRequested ask text matches the exact keyword isApprova
   const { isApprovalReplyText } = require('../out/concierge/pendingApprovalReply');
   const text = messageTextForEvent(event({ type: 'ApprovalRequested' }));
   assert.equal(isApprovalReplyText(text), true, 'the instruction itself must satisfy its own recognizer');
+});
+
+// ── BL-341: decideEpicTopicAction reuses the SAME topic mapping ───────────
+
+test('BL-341: decideEpicTopicAction creates a topic named "EPIC — <title>" when the epic has no mapping yet', () => {
+  const action = decideEpicTopicAction('dynamic-routing', 'Dynamic Routing', {}, 'opening text');
+  assert.deepEqual(action, { kind: 'create', topicName: 'EPIC — Dynamic Routing', text: 'opening text' });
+});
+
+test('BL-341: decideEpicTopicAction reuses the mapped topic id when one already exists - created once, not once per slice', () => {
+  const action = decideEpicTopicAction('dynamic-routing', 'Dynamic Routing', { 'dynamic-routing': 42 }, 'progress text');
+  assert.deepEqual(action, { kind: 'reuse', topicId: 42, text: 'progress text' });
+});
+
+test('BL-341: decideEpicTopicAction is looked up through the SAME BacklogTopicMap a ticket topic uses - no second map', () => {
+  // The exact map shape decideTopicAction already reads BL-### ids from -
+  // an epic id and a BL-### id share the one map, never colliding in
+  // practice (same posture as SUP-### vs BL-### in BL-325).
+  const sharedMap = { 'BL-123': 99, 'dynamic-routing': 42 };
+  const ticketAction = decideTopicAction({ type: 'TaskStarted', backlogId: 'BL-123', payload: {} }, sharedMap, 'a fine feature');
+  const epicAction = decideEpicTopicAction('dynamic-routing', 'Dynamic Routing', sharedMap, 'progress text');
+  assert.equal(ticketAction.kind, 'reuse');
+  assert.equal(ticketAction.topicId, 99);
+  assert.equal(epicAction.kind, 'reuse');
+  assert.equal(epicAction.topicId, 42);
 });
 
 // BL-322 hardening: the ticket's own E2E procedure insists on a REAL
