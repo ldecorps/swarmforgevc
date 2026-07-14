@@ -1,0 +1,78 @@
+id: BL-379
+title: "The front desk ingests any chat the bot can see — it filters on the sender, never on the chat"
+milestone: M8
+type: bug
+status: todo
+severity: high
+priority: 2
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-telegram-provisioning-in-onboarding-and-verbosity.md (Ask 1, prerequisite) — the human, 2026-07-14 in SUP-2: 'roll telegram group setup into contract negotiation'. Sequencing confirmed with the human 2026-07-14: this guard ships FIRST, alone, ahead of the provisioning epic."
+
+notes: |
+  THE DEFECT (verified in code, not assumed). `decideUpdateAction`
+  (`extension/src/tools/telegramFrontDeskBotCore.ts:181`) is the live inbound decision function.
+  It filters on the SENDER only — `isFromPrincipal(update, principalUserId)` compares
+  `message.from.id` against `TELEGRAM_PRINCIPAL_USER_ID` — and then, for any topic it does not
+  recognise, AUTO-ADOPTS the message into a fresh SUP-### (BL-294's `open-for-topic` /
+  `open-default`). There is NO chat check anywhere on the inbound path. The message's own chat is
+  already parsed and typed (`TelegramMessage.chat`, `extension/src/notify/telegramClient.ts:137`)
+  — the decision function simply never consults it.
+
+  WHY IT MATTERS. Telegram's `getUpdates` is scoped to the BOT, not the chat: it returns updates
+  from every chat the bot is in. Today exactly one group exists, so nothing misroutes and this is
+  latent. The moment the bot is in a second group — which is precisely what the provisioning epic
+  (BL-380) sets out to do — project A's front desk ingests project B's messages and auto-adopts
+  them into its own support threads. That is the same silent cross-wiring loss class as
+  BL-369/370/371.
+
+  THIS IS THE FLOOR, NOT THE WHOLE ANSWER. Per-project BOTS (BL-380, decided with the human
+  2026-07-14) make the isolation structural — separate tokens cannot see each other's chats at
+  all. This guard is still required as defence in depth: a bot can be added to a stray group, and
+  a guard in a pure decision function is cheap. Do NOT rely on this filter to make one shared bot
+  token serve several projects — it cannot (see BL-380's notes: Telegram answers a second
+  concurrent poller on the same token with 409 Conflict, and the confirm-offset is per-token, so
+  a filter would turn misrouting into silent LOSS).
+
+  SCOPE. The guard belongs in `decideUpdateAction` — it is already a pure function over an
+  update, so this is testable in-process with no network and no live bot. It needs the bot's own
+  chat id passed in (the process already holds it: `TELEGRAM_CHAT_ID`, read at
+  `extension/src/tools/telegram-front-desk-bot.ts:711` and already threaded through `pollLoop`
+  as `chatId`). Compare against `update.message.chat.id`. Drop with a distinct reason
+  (`not-my-chat`), alongside the existing `not-principal` / `no-text` drops.
+
+  PRIORITY ORDER IS LOAD-BEARING (engineering article, cond-branch rule). The new chat guard sits
+  BESIDE the existing `not-principal` check and BOTH conditions can hold at once — an unauthorized
+  sender posting in a foreign chat is an ordinary state, not a contrived one. Scenario 03 exists to
+  pin which one wins; a test per branch with only its own condition true proves nothing about the
+  order and lets a clause-swap mutant survive. Scenario 04 guards the NEIGHBOUR behaviour: an
+  unmapped topic in the bot's OWN chat must still auto-adopt (BL-294), so the guard must not be
+  written so broadly that it also kills legitimate adoption.
+
+  STEP REGISTRY — ONE HANDLER, EXPLICIT LOOKUP. Scenario 01 is a Scenario Outline and every column
+  is load-bearing: bind `<sender>`, `<chat>` and `<outcome>` through an explicit KNOWN_VALUES
+  lookup (sender: the human | a stranger; chat: its own | another; outcome: taken as work |
+  refused as foreign) and FAIL on any value outside it. A bare passthrough, or a binary `===` that
+  lumps every other value into an else-branch, lets `gherkin-mutator` mutate a cell undetected and
+  the mutant survives to the hardener's gate instead of failing the scenario immediately. Note also
+  that scenarios 02 and 03 assert OPPOSITE things about the same subject ("no support thread is
+  opened" / "a support thread is opened") — the IR-DRY checker flags them as near-duplicates and
+  they are deliberately kept. Register them as two DISTINCT, exactly-matched handlers; a substring
+  or loose match would let one shadow the other and silently pass both.
+
+  E2E QA PROCEDURE: in a live swarm, post in the swarm's own group topic and assert it reaches the
+  front desk as work, as today. Then add the bot to a second, unrelated group, post there as the
+  same authorized human, and assert (a) the message is NOT ingested, (b) no new SUP-### thread is
+  opened, and (c) the swarm's own group is still fully functional afterwards. Assert the drop is
+  visible in the front-desk log rather than silent.
+
+acceptance:
+  feature: specs/features/BL-379-front-desk-listens-only-to-its-own-chat.feature
+  steps:
+    - "The front desk takes work only from its own chat"
+    - "A refused message never opens a support thread"
+    - "An unmapped topic in the front desk's own chat still opens a support thread"
+
+human_approval: pending
+
+mutation_cost: low
