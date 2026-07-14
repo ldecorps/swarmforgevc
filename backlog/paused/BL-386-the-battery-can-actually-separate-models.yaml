@@ -1,0 +1,64 @@
+id: BL-386
+title: "The battery is one trivial task, so every model scores 6/6 — the benchmark has nothing to discriminate on"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+epic: role-benchmarking
+priority: 4
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-benchmark-scoring-cannot-discriminate.md (critique 3, the task-difficulty ceiling) — the human, 2026-07-14 in SUP-3: 'If none of the battery items require holding an unstated invariant across three files, Haiku's weak spot never gets probed.' Slice 2 of BL-384."
+
+notes: |
+  THE ROOT CAUSE OF THE WHOLE EPIC. BL-385 stops the benchmark REPORTING a false winner; this slice
+  is what gives it something true to report. The single battery item today,
+  `coder-task-01-word-frequency`, is one exported function in ONE file (`src/wordFrequency.js`),
+  against a provided test file, with no dependencies. It holds no unstated invariant, spans no
+  files, and every model one-shot it in ~20s for 1-2k output tokens. That is precisely the human's
+  "tasks small enough that any model passes" — and it is why haiku, sonnet and opus all landed on
+  `meanQuality: 1` with `qualityStdDev: 0`.
+
+  DO NOT "FIX" THE METRIC — IT IS NOT BROKEN. Quality is already fractional
+  (`testsPassed / testsTotal`, `nodeTestQualityEvaluator.ts`). It saturates because the task is
+  easy, not because it is binary. Raising the ceiling makes the EXISTING metric spread out on its
+  own. (Widening the signal further — scoring the rework a diff causes — is BL-387/BL-388, and is a
+  separate axis, not a replacement for this one.)
+
+  THE BATTERY IS A SET, AND TODAY IT IS NOT. The committed report
+  (`docs/benchmarks/2026-07-13.json`) carries a SINGLE top-level `taskId` — the harness runs exactly
+  one task. So "a battery with a difficulty ceiling" is not just new fixture content: the run, the
+  aggregate and the report shape all have to become per-task (scenarios 01-03). Check
+  `runBenchmark.ts` / `aggregate.ts` / `report.ts` / `reportArtifact.ts` — and note that BL-347's
+  leaderboard reads the report, so a shape change reaches it.
+
+  WHAT MAKES A TASK DISCRIMINATING (scenario 04). The human named the two properties and they are
+  the acceptance bar: a solution that SPANS SEVERAL FILES, and a task that depends on an INVARIANT
+  ITS TESTS NEVER STATE (so passing the tests is not the same as being correct — which is exactly
+  the failure mode a cheap model exhibits and a trivial task can never expose). Keep the existing
+  easy task in the battery as a floor; the point is to add a ceiling, not to remove the baseline.
+
+  SCENARIO 05 IS THE FIXTURE-SANITY GUARD, AND IT IS NOT OPTIONAL. A task whose own reference
+  solution cannot pass its tests would score EVERY model at zero — the mirror image of the bug this
+  epic exists to fix (a metric that discriminates nothing, this time by flooring instead of by
+  saturating), and it would look exactly like "all the models failed". Refuse such a task before any
+  model is run, so a broken fixture can never be mistaken for a finding about the models.
+
+  E2E QA PROCEDURE: run the battery against the three Claude models and assert the report carries a
+  per-task score for each. Assert the models' overall qualities are NO LONGER identical — that
+  `qualityStdDev` is non-zero, which is the whole point of the slice and the thing the committed run
+  could not produce. Deliberately break a task fixture's reference solution and assert the task is
+  refused as unsound rather than scoring every model at zero.
+
+acceptance:
+  feature: specs/features/BL-386-the-battery-can-actually-separate-models.feature
+  steps:
+    - "Every task in the battery is run, not just the first"
+    - "Each task is scored in its own right"
+    - "A model's overall quality is its showing across the whole battery"
+    - "The battery probes what a trivial task cannot"
+    - "A task that even a correct solution cannot pass is refused"
+
+human_approval: pending
+
+mutation_cost: medium
