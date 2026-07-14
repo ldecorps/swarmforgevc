@@ -21,6 +21,7 @@ const VALID_FACTS = {
   readmeSummary: 'A CLI tool.',
   seedVision: 'Ship the MVP.',
   initialBacklogSummary: '5 tickets queued.',
+  useCaseObservations: [],
 };
 
 const PROPOSE_CLI = path.join(__dirname, '..', 'out', 'tools', 'propose-onboarding-contract.js');

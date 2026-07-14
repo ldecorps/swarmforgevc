@@ -50,6 +50,9 @@ const VALID_FACTS = {
   readmeSummary: 'A CLI tool.',
   seedVision: 'Ship the MVP.',
   initialBacklogSummary: '5 tickets queued.',
+  useCaseObservations: [
+    { name: 'CLI argument parsing', summary: 'Parses flags from argv.', locations: ['src/cli.ts'] },
+  ],
 };
 
 // ── parseArgs ────────────────────────────────────────────────────────────
@@ -96,6 +99,28 @@ test('readSurveyFacts throws when the JSON is an array, not an object', () => {
   assert.throws(() => readSurveyFacts(filePath), /does not match RepoSurveyFacts/);
 });
 
+test('readSurveyFacts throws when useCaseObservations is missing', () => {
+  const { useCaseObservations, ...withoutObservations } = VALID_FACTS;
+  const filePath = mkTmpFile('survey.json', JSON.stringify(withoutObservations));
+
+  assert.throws(() => readSurveyFacts(filePath), /does not match RepoSurveyFacts/);
+});
+
+test('readSurveyFacts throws when a useCaseObservations entry is malformed', () => {
+  const filePath = mkTmpFile(
+    'survey.json',
+    JSON.stringify({ ...VALID_FACTS, useCaseObservations: [{ name: 'missing summary and locations' }] })
+  );
+
+  assert.throws(() => readSurveyFacts(filePath), /does not match RepoSurveyFacts/);
+});
+
+test('readSurveyFacts accepts an empty useCaseObservations array (a legitimate outcome, not malformed)', () => {
+  const filePath = mkTmpFile('survey.json', JSON.stringify({ ...VALID_FACTS, useCaseObservations: [] }));
+
+  assert.deepEqual(readSurveyFacts(filePath), { ...VALID_FACTS, useCaseObservations: [] });
+});
+
 // ── the compiled CLI's own real output ────────────────────────────────────
 
 test('the compiled CLI scaffolds a proposed contract from survey facts into a fresh target', async () => {
@@ -107,12 +132,22 @@ test('the compiled CLI scaffolds a proposed contract from survey facts into a fr
 
   const result = await runCli([targetRepo, surveyPath]);
 
-  assert.deepEqual(result.created.sort(), [path.join('.swarmforge', 'contract.yaml'), 'CONTRACT.md'].sort());
+  assert.deepEqual(
+    result.created.sort(),
+    [path.join('.swarmforge', 'contract.yaml'), 'CONTRACT.md', 'USE-CASES.md'].sort()
+  );
   assert.equal(result.committed, true);
 
   const contract = parseContractYaml(fs.readFileSync(path.join(targetRepo, '.swarmforge', 'contract.yaml'), 'utf8'));
   assert.equal(contract.agreement, 'proposed');
   assert.match(contract.scope.join(' '), /Ship the MVP\./);
+
+  // BL-360: the inventory is delivered ungated, alongside the contract,
+  // while agreement is still "proposed" - never withheld the way the
+  // generated prompts are.
+  const inventoryMarkdown = fs.readFileSync(path.join(targetRepo, 'USE-CASES.md'), 'utf8');
+  assert.match(inventoryMarkdown, /CLI argument parsing/);
+  assert.match(inventoryMarkdown, /src\/cli\.ts/);
 });
 
 test('main() prints usage and exits non-zero when a required argument is missing', async () => {
@@ -139,7 +174,10 @@ test('the compiled CLI runs standalone as a subprocess and produces the same res
 
   const result = runCliSubprocess([targetRepo, surveyPath]);
 
-  assert.deepEqual(result.created.sort(), [path.join('.swarmforge', 'contract.yaml'), 'CONTRACT.md'].sort());
+  assert.deepEqual(
+    result.created.sort(),
+    [path.join('.swarmforge', 'contract.yaml'), 'CONTRACT.md', 'USE-CASES.md'].sort()
+  );
   assert.equal(result.committed, true);
 });
 
