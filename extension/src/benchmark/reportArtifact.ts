@@ -19,6 +19,6 @@ export function writeBenchmarkReport(targetPath: string, report: BenchmarkReport
   return filePath;
 }
 
-export function commitBenchmarkReport(targetPath: string, filePath: string, taskId: string, dateIso: string): boolean {
-  return commitScopedFile(targetPath, filePath, `Role benchmark report for ${taskId} (${dateIso})\n\nBy coder (BL-340 slice 1).`);
+export function commitBenchmarkReport(targetPath: string, filePath: string, taskIds: string[], dateIso: string): boolean {
+  return commitScopedFile(targetPath, filePath, `Role benchmark report for ${taskIds.join(', ')} (${dateIso})\n\nBy coder (BL-340 slice 1).`);
 }

@@ -23,6 +23,7 @@ export async function runTrial(
 
   if (!execResult.success) {
     return {
+      taskId: task.id,
       modelId: model.id,
       repetition,
       ran: false,
@@ -39,6 +40,7 @@ export async function runTrial(
 
   const { passed, total } = await deps.evaluator.evaluate(scratchDir, task);
   return {
+    taskId: task.id,
     modelId: model.id,
     repetition,
     ran: true,
