@@ -154,6 +154,44 @@ defaults to `normal` rather than crashing or leaving a blank instruction.
 Change your mind later the same way as any other contract term: object,
 revise, re-approve, and re-run the prompt-proposal command above.
 
+**Each target gets its own Telegram bot and group to negotiate the contract in
+(BL-380).** Two targets can never share one Telegram bot: `getUpdates` is
+long-polling scoped to the bot token, so a second concurrent poller on the
+same token gets `409 Conflict`, and the update offset that acknowledges
+messages is per-token and global across chats — whichever process polls first
+silently consumes the update, so the *other* target never sees a message
+meant for it. Provisioning one bot per onboarded target makes the isolation
+structural rather than a chat-id filter layered on top.
+
+The Bot API has no create-bot or create-group/enable-topics method, so one
+manual step per target is irreducible:
+
+```
+node extension/out/tools/provision-onboarding-telegram-channel.js <target-repo-path> <bot-token> <bot-username> <host-secrets-file-path>
+```
+
+Run it and it prints the exact steps plus a `t.me/<bot>?startgroup=true`
+add-to-group link:
+
+1. Message [@BotFather](https://t.me/BotFather) and run `/newbot` to create
+   this target's own bot — note the token it hands you.
+2. Create a new Telegram group for this target repo.
+3. Open the group's settings and enable **Topics**, so it becomes a
+   forum-enabled supergroup.
+4. Add the bot to the group as an admin via the printed link.
+
+You are never asked to paste a chat id. Because the bot is brand new and
+scoped to this one target, the first chat its own `getUpdates` reports back
+*is* the target's group — the command detects it and opens a "Contract
+negotiation" topic there automatically. A half-finished setup (bot created
+but not yet added to a Topics-enabled group) reports not-ready rather than
+opening a topic, and re-running the same command once setup is finished picks
+up where it left off. The bot token is stored host-side (outside the target's
+working directory and never committed, one entry per target so a second
+target's token can never collide with the first's); the group's chat id and
+negotiation topic id are the only things persisted into the target's own
+`.swarmforge/operator/telegram-channel.json`.
+
 ## 3. The acceptance contract
 
 This is the part the operator asked about specifically.
