@@ -182,6 +182,7 @@ const DOMAINS = [
   require('./respawnBackoffInjectedClockSteps'),
   require('./tmuxDoubleAnswersInProcessSteps'),
   require('./topicIconsTrackTicketStateSteps'),
+  require('./frontDeskListensOnlyToItsOwnChatSteps'),
 ];
 
 function registerSteps(registry) {

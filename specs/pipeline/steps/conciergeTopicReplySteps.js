@@ -27,6 +27,7 @@ function routeReply(ctx) {
   const decision = decideUpdateAction(
     ctx.update,
     PRINCIPAL_ID,
+    '1',
     (topicId) => subjectForTopic(ctx.subjectMap, topicId),
     (topicId) => backlogForTopic(ctx.backlogTopicMap, topicId)
   );

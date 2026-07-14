@@ -209,7 +209,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the Front Desk Bot processes updates$/, (ctx) => {
-    ctx.decision = decideUpdateAction(ctx.update, PRINCIPAL_ID, (topicId) => ctx.topicMap[String(topicId)]);
+    ctx.decision = decideUpdateAction(ctx.update, PRINCIPAL_ID, '1', (topicId) => ctx.topicMap[String(topicId)]);
   });
 
   registry.define(/^the message is not posted to the bridge$/, (ctx) => {

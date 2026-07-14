@@ -309,8 +309,9 @@ export async function openSubjectAndRecord(targetPath: string, topicId: number |
   return subjectId;
 }
 
-function buildPollAdapters(botToken: string, targetPath: string, bridgeUrl: string, controlToken: string): PollAdapters {
+function buildPollAdapters(botToken: string, targetPath: string, bridgeUrl: string, controlToken: string, chatId: string): PollAdapters {
   return {
+    chatId,
     getUpdates: (offset) => getTelegramUpdates(botToken, offset, POLL_TIMEOUT_SECONDS),
     postToBridge: (subjectId, text, updateId) => postToBridge(bridgeUrl, controlToken, subjectId, text, updateId),
     subjectForTopic: (topicId) => subjectForTopic(readTopicMap(targetPath), topicId),
@@ -352,7 +353,7 @@ async function escalateStuckDelivery(botToken: string, chatId: string): Promise<
 // warning, and (BL-370) the poll-heartbeat write - written on every
 // completed cycle, success or handled failure alike.
 async function pollLoop(botToken: string, principalUserId: string, targetPath: string, bridgeUrl: string, controlToken: string, chatId: string): Promise<void> {
-  const adapters = buildPollAdapters(botToken, targetPath, bridgeUrl, controlToken);
+  const adapters = buildPollAdapters(botToken, targetPath, bridgeUrl, controlToken, chatId);
   let state: PollLoopState = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 };
   for (;;) {
     const cycle = await runPollCycle(state, principalUserId, adapters, POLL_BACKOFF_CONFIG);

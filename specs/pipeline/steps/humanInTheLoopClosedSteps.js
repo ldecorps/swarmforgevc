@@ -225,6 +225,7 @@ function registerSteps(registry) {
     ctx.decision = decideUpdateAction(
       update,
       PRINCIPAL_ID,
+      '1',
       () => undefined,
       (topicId) => backlogForTopic(ctx.backlogTopicMap, topicId)
     );
@@ -433,6 +434,7 @@ function registerSteps(registry) {
     ctx.decision = decideUpdateAction(
       update,
       PRINCIPAL_ID,
+      '1',
       () => undefined,
       (topicId) => backlogForTopic(ctx.backlogTopicMap, topicId)
     );
@@ -487,6 +489,7 @@ function registerSteps(registry) {
       ctx.supDecision = decideUpdateAction(
         ctx.supUpdate,
         PRINCIPAL_ID,
+        '1',
         (topicId) => (String(topicId) in ctx.subjectMap ? ctx.subjectMap[String(topicId)] : undefined),
         (topicId) => backlogForTopic(ctx.backlogTopicMap || {}, topicId)
       );
