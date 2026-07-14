@@ -79,13 +79,18 @@
   (str (fs/create-temp-dir {:prefix "sfvc-push-sweep-"})))
 
 (defn fake-adapters [{:keys [counts push-results alarm-results divergence-results]}]
-  (let [push-calls (atom 0)
+  (let [counts-atom (atom counts)
+        push-calls (atom 0)
         alarm-calls (atom 0)
         divergence-calls (atom 0)
         logs (atom [])]
     {:calls {:push push-calls :alarm alarm-calls :divergence divergence-calls :logs logs}
+     ;; Lets a test simulate the real world changing between sweep! ticks
+     ;; (e.g. a human merging directly to origin mid-episode) without
+     ;; losing the running call counters a fresh fake-adapters would reset.
+     :set-counts! (fn [new-counts] (reset! counts-atom new-counts))
      :adapters
-     {:rev-counts! (fn [] counts)
+     {:rev-counts! (fn [] @counts-atom)
       :push! (fn []
                (swap! push-calls inc)
                (let [r (nth push-results (dec @push-calls) (last push-results))]
@@ -166,6 +171,57 @@
   ;; A later sweep, still diverged, does not spam a second divergence alert.
   (push-sweep-lib/sweep! 200000 dir retry-cfg adapters)
   (assert= "04: no repeat divergence alert once already delivered" 1 @(:divergence calls)))
+
+;; BL-356 architect bounce (20260714): a stale ARMED alarm flag from one
+;; episode must not survive into, and silently suppress, a LATER episode of
+;; the OTHER kind - entering :diverged must clear a stale push-failure
+;; :alarm, and returning to :should-push must clear a stale :divergence.
+(let [dir (mk-fixture-dir)
+      {:keys [calls adapters set-counts!]}
+      (fake-adapters {:counts {:ahead 2 :behind 0}
+                      ;; A FINITE repeat, not an infinite lazy seq: fake-adapters'
+                      ;; own `(nth push-results (dec @push-calls) (last push-results))`
+                      ;; eagerly evaluates `last` as an ordinary argument on every
+                      ;; call, which never terminates against an infinite sequence.
+                      :push-results (vec (repeat 10 {:success false :error "persistent failure"}))
+                      :alarm-results [{:success true}]
+                      :divergence-results [{:success true}]})]
+  ;; Episode 1: should-push exhausts its bounded push retries and arms the
+  ;; push-failure alarm.
+  (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
+  (push-sweep-lib/sweep! 101000 dir retry-cfg adapters)
+  (push-sweep-lib/sweep! 103000 dir retry-cfg adapters)
+  (assert= "cross-episode: episode 1 exhausts 3 bounded push attempts" 3 @(:push calls))
+  (assert-true "cross-episode: episode 1's push alarm is armed"
+               (get-in (push-sweep-lib/read-state dir) [:alarm :armed?]))
+  (assert= "cross-episode: exactly one push alarm so far" 1 @(:alarm calls))
+
+  ;; Episode 2: origin gains a commit mid-episode (a human merges directly)
+  ;; -> diverged. The divergence alarm fires and delivers.
+  (set-counts! {:ahead 2 :behind 1})
+  (push-sweep-lib/sweep! 110000 dir retry-cfg adapters)
+  (assert-true "cross-episode: the divergence alarm is armed"
+               (get-in (push-sweep-lib/read-state dir) [:divergence :armed?]))
+  (assert= "cross-episode: exactly one divergence alarm" 1 @(:divergence calls))
+  (assert= "cross-episode: entering :diverged clears episode 1's stale push-alarm flag"
+           {} (:alarm (push-sweep-lib/read-state dir)))
+
+  ;; Episode 3: a human reconciles the divergence by hand (no push yet) ->
+  ;; should-push again. The ORIGINAL push-failure cause was never actually
+  ;; fixed, so this episode exhausts and must alarm AGAIN - not be silently
+  ;; swallowed by episode 1's stale armed flag (the exact bug reported).
+  (set-counts! {:ahead 2 :behind 0})
+  (push-sweep-lib/sweep! 120000 dir retry-cfg adapters)
+  (push-sweep-lib/sweep! 121000 dir retry-cfg adapters)
+  (push-sweep-lib/sweep! 123000 dir retry-cfg adapters)
+  (assert= "cross-episode: episode 3 exhausts its own 3 bounded push attempts"
+           6 @(:push calls))
+  (assert= "cross-episode: episode 3's push alarm fires AGAIN, not suppressed by episode 1's stale flag"
+           2 @(:alarm calls))
+  (assert-true "cross-episode: episode 3's push alarm is armed"
+               (get-in (push-sweep-lib/read-state dir) [:alarm :armed?]))
+  (assert= "cross-episode: returning to :should-push clears the resolved :divergence flag"
+           {} (:divergence (push-sweep-lib/read-state dir))))
 
 ;; BL-356 swarm-pushes-main-to-origin-05: an already-published main is left
 ;; alone - nothing pushed, no alarm.

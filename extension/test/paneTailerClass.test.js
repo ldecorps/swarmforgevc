@@ -16,10 +16,12 @@ function writeState(targetPath, roleLines = '1\tcoder\tswarmforge-coder\tCoder\t
   fs.writeFileSync(path.join(stateDir, 'sessions.tsv'), roleLines);
 }
 
-// BL-131: captures start()'s interval callback instead of scheduling it for
-// real (same injection point chaserMonitor.ts/waitForSwarmReady already
-// use) - fire() runs one poll() cycle synchronously (poll() itself is
-// synchronous), so a test drives N polls with zero real wall-clock wait.
+// BL-131/BL-362: captures start()'s interval callback instead of scheduling
+// it for real (same injection point chaserMonitor.ts/waitForSwarmReady
+// already use) - fire() runs one poll() cycle synchronously (poll() itself
+// is synchronous), so a test drives N polls with zero real wall-clock wait.
+// Every test in this file that calls start() uses this instead of the real
+// setInterval/clearInterval default.
 function fakeScheduler() {
   let tick = null;
   return {
@@ -88,11 +90,13 @@ test('poll reports a dead session and fires onDead once, then revives it', async
     const updates = [];
     const deadEvents = [];
     const tailer = new PaneTailer(targetPath, (u) => updates.push(...u), undefined, (e) => deadEvents.push(...e));
-    // start(huge pollMs) runs refreshState() + one poll() synchronously and
-    // never lets the interval fire before stop(); further poll()s are driven
-    // directly so refreshState() doesn't reset dead/live tracking in between.
-    tailer.start(1_000_000);
-    tailer.stop();
+    // BL-362: start() is driven by an injected fake tick, never the real
+    // setInterval, so no test in this file waits on the wall clock. Further
+    // poll()s are driven directly so refreshState() doesn't reset dead/live
+    // tracking in between.
+    const { scheduleTick, clearTick } = fakeScheduler();
+    tailer.start(1_000_000, scheduleTick, clearTick);
+    tailer.stop(clearTick);
 
     assert.equal(updates.length, 1);
     assert.match(updates[0].text, /is not running/);
@@ -129,8 +133,9 @@ test('poll reports a capture failure with a readable-pane error message', async 
   try {
     const updates = [];
     const tailer = new PaneTailer(targetPath, (u) => updates.push(...u));
-    tailer.start(1_000_000);
-    tailer.stop();
+    const { scheduleTick, clearTick } = fakeScheduler();
+    tailer.start(1_000_000, scheduleTick, clearTick);
+    tailer.stop(clearTick);
     assert.equal(updates.length, 1);
     assert.match(updates[0].text, /Could not read tmux pane/);
   } finally {
@@ -170,7 +175,8 @@ test('a pane respawn (pid change, same session) resets retained history instead 
   try {
     const updates = [];
     const tailer = new PaneTailer(targetPath, (u) => updates.push(...u));
-    tailer.start(1_000_000);
+    const { scheduleTick } = fakeScheduler();
+    tailer.start(1_000_000, scheduleTick);
     assert.match(updates[updates.length - 1].text, /OLD LINE 1/);
 
     // Same session, same socket - only the pane's pid changes, as a real
@@ -208,7 +214,8 @@ test('an unchanged pid across polls keeps accumulating history normally (no fals
   try {
     const updates = [];
     const tailer = new PaneTailer(targetPath, (u) => updates.push(...u));
-    tailer.start(1_000_000);
+    const { scheduleTick } = fakeScheduler();
+    tailer.start(1_000_000, scheduleTick);
 
     fake.setRules([
       { subcommand: 'has-session', exitCode: 0 },
@@ -235,15 +242,14 @@ test('a session that stays not-running across repeated polls only pushes the mes
   try {
     const updates = [];
     const tailer = new PaneTailer(targetPath, (u) => updates.push(...u));
-    tailer.start(1_000_000);
+    const { scheduleTick, clearTick } = fakeScheduler();
+    tailer.start(1_000_000, scheduleTick, clearTick);
     assert.equal(updates.length, 1, 'first poll must report the not-running message');
 
     fake.setRules([{ subcommand: 'has-session', exitCode: 1 }]);
     tailer.poll();
-    fake.setRules([{ subcommand: 'has-session', exitCode: 1 }]);
-    tailer.poll();
 
-    tailer.stop();
+    tailer.stop(clearTick);
     assert.equal(updates.length, 1, 'polling again with the same not-running state must not re-push identical text');
   } finally {
     fake.restore();
@@ -261,7 +267,8 @@ test('a pane that keeps failing to capture across repeated polls only pushes the
   try {
     const updates = [];
     const tailer = new PaneTailer(targetPath, (u) => updates.push(...u));
-    tailer.start(1_000_000);
+    const { scheduleTick, clearTick } = fakeScheduler();
+    tailer.start(1_000_000, scheduleTick, clearTick);
     assert.equal(updates.length, 1, 'first poll must report the capture-failure message');
 
     fake.setRules([
@@ -269,13 +276,8 @@ test('a pane that keeps failing to capture across repeated polls only pushes the
       { subcommand: 'capture-pane', exitCode: 1 },
     ]);
     tailer.poll();
-    fake.setRules([
-      { subcommand: 'has-session', exitCode: 0 },
-      { subcommand: 'capture-pane', exitCode: 1 },
-    ]);
-    tailer.poll();
 
-    tailer.stop();
+    tailer.stop(clearTick);
     assert.equal(updates.length, 1, 'polling again with the same capture failure must not re-push identical text');
   } finally {
     fake.restore();
@@ -302,8 +304,9 @@ test('poll notifies onRoles when a role is added between polls', async () => {
       undefined,
       (roles) => roleUpdates.push(roles)
     );
-    tailer.start(1_000_000);
-    tailer.stop();
+    const { scheduleTick, clearTick } = fakeScheduler();
+    tailer.start(1_000_000, scheduleTick, clearTick);
+    tailer.stop(clearTick);
     assert.equal(roleUpdates.length, 0, 'role set unchanged after refreshState + first poll');
 
     writeState(
@@ -440,11 +443,12 @@ test('onStall fires stalled then unstalled as pane output ages and then changes'
       { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
       { exitCode: 0, stdout: '' },
     ]);
-    // start(huge pollMs) runs refreshState() + one poll() synchronously; every
-    // subsequent step drives poll() directly so refreshState() doesn't reset
-    // lastChangedAt/stalledRoles in between.
-    tailer.start(1_000_000);
-    tailer.stop();
+    // BL-362: start() is driven by an injected fake tick rather than the
+    // real setInterval; every subsequent step drives poll() directly so
+    // refreshState() doesn't reset lastChangedAt/stalledRoles in between.
+    const { scheduleTick, clearTick } = fakeScheduler();
+    tailer.start(1_000_000, scheduleTick, clearTick);
+    tailer.stop(clearTick);
     assert.equal(stallEvents.length, 0);
 
     mockedNow += STALL_THRESHOLD_MS + 1;
@@ -497,8 +501,9 @@ test('onNeedsHuman fires true when a pane shows a question, then false once it r
       { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
       { exitCode: 0, stdout: '' },
     ]);
-    tailer.start(1_000_000);
-    tailer.stop();
+    const { scheduleTick, clearTick } = fakeScheduler();
+    tailer.start(1_000_000, scheduleTick, clearTick);
+    tailer.stop(clearTick);
     assert.equal(needsHumanEvents.length, 0, 'plain output must not fire needsHuman');
 
     fake.setRules([
@@ -562,8 +567,9 @@ test('onActivity fires working then not-working as the pane enters and leaves an
       { subcommand: 'display-message', exitCode: 0, stdout: 'claude' },
       { exitCode: 0, stdout: '' },
     ]);
-    tailer.start(1_000_000);
-    tailer.stop();
+    const { scheduleTick, clearTick } = fakeScheduler();
+    tailer.start(1_000_000, scheduleTick, clearTick);
+    tailer.stop(clearTick);
     assert.equal(activityEvents.length, 1);
     assert.deepEqual(activityEvents[0], { role: 'coder', working: true });
 
