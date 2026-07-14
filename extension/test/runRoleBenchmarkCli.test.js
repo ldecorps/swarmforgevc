@@ -20,8 +20,8 @@ test('parseArgs rejects fewer than one repetition', () => {
 });
 
 test('parseArgs accepts a valid full argument set', () => {
-  const args = parseArgs(['fixtureDir', 'models.json', '3', '0.8', '/target']);
-  assert.deepEqual(args, { fixtureDir: 'fixtureDir', modelsFile: 'models.json', repetitions: 3, qualityThreshold: 0.8, targetPath: '/target' });
+  const args = parseArgs(['batteryRoot', 'models.json', '3', '0.8', '/target']);
+  assert.deepEqual(args, { batteryRoot: 'batteryRoot', modelsFile: 'models.json', repetitions: 3, qualityThreshold: 0.8, targetPath: '/target' });
 });
 
 // ── reportDateKey ─────────────────────────────────────────────────────────
@@ -55,9 +55,9 @@ test('runRoleBenchmarkCli loads the task, runs the real benchmark, then writes+c
   const printed = [];
 
   await runRoleBenchmarkCli(
-    { fixtureDir: FIXTURE_DIR, modelsFile: 'unused-models-file-path', repetitions: 1, qualityThreshold: 0.5, targetPath: '/fake/target' },
+    { batteryRoot: 'unused-battery-root', modelsFile: 'unused-models-file-path', repetitions: 1, qualityThreshold: 0.5, targetPath: '/fake/target' },
     {
-      loadTask: (fixtureDir) => ({ id: 'coder-task-01', fixtureDir, promptFile: 'TASK.md', testFile: 'test/wordFrequency.test.js' }),
+      loadBattery: (batteryRoot) => [{ id: 'coder-task-01', fixtureDir: FIXTURE_DIR, promptFile: 'TASK.md', testFile: 'test/wordFrequency.test.js' }],
       readModels: () => [{ id: 'a', provider: 'claude', model: 'sonnet' }],
       mkScratchRoot,
       nowIso: () => '2026-07-13T10:20:30.000Z',
@@ -67,8 +67,8 @@ test('runRoleBenchmarkCli loads the task, runs the real benchmark, then writes+c
         writeCalls.push({ targetPath, report, dateIso });
         return '/fake/target/docs/benchmarks/2026-07-13.json';
       },
-      commitReport: (targetPath, filePath, taskId, dateIso) => {
-        commitCalls.push({ targetPath, filePath, taskId, dateIso });
+      commitReport: (targetPath, filePath, taskIds, dateIso) => {
+        commitCalls.push({ targetPath, filePath, taskIds, dateIso });
         return true;
       },
       print: (data) => printed.push(data),
@@ -79,13 +79,13 @@ test('runRoleBenchmarkCli loads the task, runs the real benchmark, then writes+c
   assert.equal(writeCalls.length, 1);
   assert.equal(writeCalls[0].targetPath, '/fake/target');
   assert.equal(writeCalls[0].dateIso, '2026-07-13', 'expected the date key derived from the injected nowIso');
-  assert.equal(writeCalls[0].report.taskId, 'coder-task-01');
+  assert.deepEqual(writeCalls[0].report.taskIds, ['coder-task-01']);
   assert.equal(commitCalls.length, 1);
   assert.equal(commitCalls[0].filePath, '/fake/target/docs/benchmarks/2026-07-13.json');
-  assert.equal(commitCalls[0].taskId, 'coder-task-01');
+  assert.deepEqual(commitCalls[0].taskIds, ['coder-task-01']);
   assert.equal(commitCalls[0].dateIso, '2026-07-13');
   assert.equal(printed.length, 1);
-  assert.equal(printed[0].taskId, 'coder-task-01');
+  assert.deepEqual(printed[0].taskIds, ['coder-task-01']);
 });
 
 // ── main() (in-process, real fixture/models-file/target-repo, real
@@ -96,6 +96,17 @@ test('runRoleBenchmarkCli loads the task, runs the real benchmark, then writes+c
 //    the usage/exit-1 guard - was never called by any test until this one,
 //    the same gap notifyDeadLettersCli.test.js's stubbed-cwd/await main()/
 //    capture-stdout/restore pattern already closes elsewhere) ─────────────
+
+// The real defaultDeps() wire loadBattery to the real loadTaskBattery,
+// which reads every subdirectory of the given root - a battery root
+// containing ONLY a copy of coder-task-01 keeps this test isolated from
+// however many other fixtures live under fixtures/benchmark/ (e.g. BL-386's
+// own coder-task-02), never entangled with the shared directory's contents.
+function mkBatteryRootWithCoderTask01() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-run-role-benchmark-battery-'));
+  fs.cpSync(FIXTURE_DIR, path.join(root, 'coder-task-01'), { recursive: true });
+  return root;
+}
 
 function mkTargetRepo() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-run-role-benchmark-target-'));
@@ -137,9 +148,10 @@ test('main() loads the real fixture, fakes only the claude subprocess, and reall
   fs.writeFileSync(modelsFile, JSON.stringify([{ id: 'a', provider: 'claude', model: 'sonnet' }]));
 
   const forcedResult = { success: true, costUsd: 0.02, tokens: { inputTokens: 5, outputTokens: 5 }, durationMs: 50 };
-  const report = await runMain([FIXTURE_DIR, modelsFile, '1', '0', targetRepo], forcedResult);
+  const batteryRoot = mkBatteryRootWithCoderTask01();
+  const report = await runMain([batteryRoot, modelsFile, '1', '0', targetRepo], forcedResult);
 
-  assert.equal(report.taskId, 'coder-task-01-word-frequency');
+  assert.deepEqual(report.taskIds, ['coder-task-01-word-frequency']);
   // The real evaluator ran `node --test` against the UNMODIFIED fixture
   // (the faked executor never touches the scratch copy) - deterministically 0/6.
   assert.equal(report.models[0].runs[0].testsPassed, 0);
@@ -151,7 +163,7 @@ test('main() loads the real fixture, fakes only the claude subprocess, and reall
   const [reportRelPath] = writtenFiles;
   assert.match(reportRelPath, /^docs\/benchmarks\/\d{4}-\d{2}-\d{2}\.json$/);
   const committedReport = JSON.parse(fs.readFileSync(path.join(targetRepo, reportRelPath), 'utf8'));
-  assert.equal(committedReport.taskId, 'coder-task-01-word-frequency');
+  assert.deepEqual(committedReport.taskIds, ['coder-task-01-word-frequency']);
 });
 
 test('main() prints usage and exits 1 when required arguments are missing', async () => {

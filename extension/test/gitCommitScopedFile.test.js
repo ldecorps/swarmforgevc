@@ -105,3 +105,15 @@ test('isFileCommitted is unaffected by an UNRELATED dirty file elsewhere in the 
   fs.writeFileSync(path.join(target, 'unrelated.txt'), 'some other dirty file');
   assert.equal(isFileCommitted(target, filePath), true, 'expected the check scoped to exactly the one file, not the whole repo status');
 });
+
+// BL-390 hardening: `git status --porcelain -- <path>` prints nothing for a
+// path that was never written at all - the same empty output as a path
+// that IS committed with no pending changes. A file that does not exist on
+// disk can never be "durably committed"; fail closed rather than reading
+// silence as durability.
+test('isFileCommitted is false for a path that was never written at all (fails closed, not a true-by-silence false positive)', () => {
+  const target = mkGitRepo();
+  const filePath = path.join(target, 'never-written.txt');
+  assert.equal(fs.existsSync(filePath), false);
+  assert.equal(isFileCommitted(target, filePath), false);
+});
