@@ -184,6 +184,7 @@ const DOMAINS = [
   require('./topicIconsTrackTicketStateSteps'),
   require('./frontDeskListensOnlyToItsOwnChatSteps'),
   require('./verbosityIsNegotiatedIntoTheContractSteps'),
+  require('./noSingleFileBoundsTheSuiteSteps'),
 ];
 
 function registerSteps(registry) {
