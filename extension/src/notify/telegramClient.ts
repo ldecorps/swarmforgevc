@@ -229,6 +229,32 @@ export async function closeForumTopic(
   return { success: true };
 }
 
+// BL-332: reopens a CLOSED (never deleted) forum topic - history and the
+// original thread id are both intact, so this is the cheap, high-fidelity
+// path topicRecreation.ts's decideTopicRestore prefers whenever the topic
+// still exists at all; recreate+replay is the fallback only once it is
+// genuinely gone (deleteForumTopic makes the thread id permanently
+// unusable, which reopen cannot undo). Mirrors closeForumTopic's own
+// shape exactly - the same request, the opposite direction.
+export interface ReopenForumTopicResult {
+  success: boolean;
+  error?: string;
+}
+
+export async function reopenForumTopic(
+  token: string,
+  chatId: string,
+  messageThreadId: number,
+  postFn: TelegramPostFn = defaultPost
+): Promise<ReopenForumTopicResult> {
+  const body = JSON.stringify({ chat_id: chatId, message_thread_id: messageThreadId });
+  const result = await callTelegramApi(token, 'reopenForumTopic', body, postFn);
+  if (!result.success) {
+    return { success: false, error: result.error };
+  }
+  return { success: true };
+}
+
 // BL-331: deletes a forum topic PERMANENTLY (destroys its history) - the
 // verb closeForumTopic's own comment above deliberately avoided until a
 // safe gate existed. This client function is a thin, unconditional
