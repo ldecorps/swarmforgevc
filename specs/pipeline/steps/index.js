@@ -164,6 +164,7 @@ const DOMAINS = [
   require('./desktopVscodeOnWindowsSteps'),
   require('./topicRecordsCompleteAndDurableSteps'),
   require('./roleLeaderboardSurfaceSteps'),
+  require('./topicDeletionSteps'),
 ];
 
 function registerSteps(registry) {
