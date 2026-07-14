@@ -527,3 +527,22 @@ test('BL-341 epics-08: an epic with no defining ticket yet still gets a topic, f
 
   assert.ok(created.includes('EPIC — undocumented-epic'));
 });
+
+// An epic topic's own createTopic failure is a no-op here, never a
+// fallback post anywhere else - it is deliberately NOT part of the
+// transition-held-back retry mechanism (that mechanism retries the
+// TICKET's own TaskStarted/TaskCompleted transition, which still posts
+// into the ticket's own topic independently of the epic side effect).
+test('BL-341: an epic topic that fails to create is not posted into', async () => {
+  const { adapters, setFolders, created, sent } = fakeAdapters();
+  adapters.routeAdapters.createTopic = async (name) => {
+    created.push(name);
+    return name.startsWith('EPIC — ') ? { success: false } : { success: true, topicId: 800 + created.length };
+  };
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', epic: 'undocumented-epic' }] }));
+
+  await runConciergeTick(adapters);
+
+  assert.ok(created.includes('EPIC — undocumented-epic'));
+  assert.ok(!sent.some((m) => m.text === 'Epic: undocumented-epic'));
+});

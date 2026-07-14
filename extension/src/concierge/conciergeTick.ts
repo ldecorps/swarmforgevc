@@ -7,7 +7,7 @@
 // RouteAdapters, which is where Telegram-specific adapters actually get
 // wired, in the live wrapper - telegram-front-desk-bot.ts).
 import { EventStreamSnapshot, GateSignal, SwarmEvent, SwarmEventType, TicketSummary, deriveSwarmEvents, swarmEventKey } from '../events/swarmEventStream';
-import { RouteAdapters, decideEpicTopicAction, routeEvent } from './topicRouter';
+import { RouteAdapters, TopicAction, decideEpicTopicAction, routeEvent } from './topicRouter';
 import { EpicDefinition, computeEpicProgress, epicOpeningText, epicProgressText } from './epicProgress';
 
 export interface BacklogFolderItem {
@@ -162,6 +162,34 @@ function epicDefinitionsFor(folders: BacklogFoldersSnapshot): Record<string, Epi
   return definitions;
 }
 
+// BL-341: the opening line on a slice's FIRST appearance (TaskStarted) vs
+// the progress line on a slice completing (TaskCompleted) - extracted from
+// postEpicUpdateIfApplicable below purely to keep that function's own CRAP
+// under threshold (cleaner review).
+function epicUpdateText(event: SwarmEvent, folders: BacklogFoldersSnapshot, epicId: string, definition: EpicDefinition): string {
+  return event.type === 'TaskStarted'
+    ? epicOpeningText(definition.title)
+    : epicProgressText(computeEpicProgress(definition, epicSlicesFor(folders, epicId)));
+}
+
+// The reuse-or-create posting half of postEpicUpdateIfApplicable below,
+// extracted for the same CRAP reason as epicUpdateText above - mirrors
+// topicRouter.ts's own reuse-or-create shape (routeEvent/sendAndRecord),
+// keyed by epic id rather than backlogId since an epic topic has no
+// recordMessage (blTopicStore is per-ticket only, see RouteAdapters).
+async function postEpicAction(action: TopicAction, epicId: string, routeAdapters: RouteAdapters): Promise<void> {
+  if (action.kind === 'reuse') {
+    await routeAdapters.sendMessage(action.topicId, action.text);
+    return;
+  }
+  const created = await routeAdapters.createTopic(action.topicName);
+  if (!created.success || created.topicId === undefined) {
+    return;
+  }
+  routeAdapters.recordTopicId(epicId, created.topicId);
+  await routeAdapters.sendMessage(created.topicId, action.text);
+}
+
 // BL-341: rides the SAME TaskStarted/TaskCompleted transitions that already
 // drive per-ticket topic routing - no new trigger, no second mechanism, per
 // the ticket's own explicit instruction. Posts the epic's opening line on a
@@ -189,19 +217,9 @@ async function postEpicUpdateIfApplicable(
     return;
   }
   const definition = epicDefinitions[epicId] ?? { id: epicId, title: epicId, remainingSlices: [] };
-  const text =
-    event.type === 'TaskStarted' ? epicOpeningText(definition.title) : epicProgressText(computeEpicProgress(definition, epicSlicesFor(folders, epicId)));
+  const text = epicUpdateText(event, folders, epicId, definition);
   const action = decideEpicTopicAction(epicId, definition.title, routeAdapters.getTopicMap(), text);
-  if (action.kind === 'reuse') {
-    await routeAdapters.sendMessage(action.topicId, action.text);
-    return;
-  }
-  const created = await routeAdapters.createTopic(action.topicName);
-  if (!created.success || created.topicId === undefined) {
-    return;
-  }
-  routeAdapters.recordTopicId(epicId, created.topicId);
-  await routeAdapters.sendMessage(created.topicId, action.text);
+  await postEpicAction(action, epicId, routeAdapters);
 }
 
 // A failed-to-post event's backlogId is held back out of the PERSISTED
