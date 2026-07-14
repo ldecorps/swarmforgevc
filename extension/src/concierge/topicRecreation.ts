@@ -69,6 +69,13 @@ export interface TopicRecreationResult {
 // order - blTopicStore.ts's appendMessage always pushes, never reorders).
 // A createTopic failure is a clean no-op: nothing is recorded, the record
 // itself is untouched, and the caller can simply retry.
+//
+// The mapping is only ARMED onto a topic whose content actually arrived: if
+// any postMessage fails, recordTopicId is skipped, so the ticket stays
+// unmapped and a later retry can recreate again, rather than routing to a
+// topic silently missing part of its history. Every message is still
+// attempted even after a failure - a transient blip on one post should not
+// abandon the rest of the replay.
 export async function recreateTopicFromRecord(
   ticketId: string,
   title: string,
@@ -80,9 +87,13 @@ export async function recreateTopicFromRecord(
   if (topicId === undefined) {
     return { success: false };
   }
-  await adapters.postMessage(topicId, reconstructionHeaderText(nowMs));
+  let allPosted = await adapters.postMessage(topicId, reconstructionHeaderText(nowMs));
   for (const message of record.messages) {
-    await adapters.postMessage(topicId, renderedMessageText(message));
+    const posted = await adapters.postMessage(topicId, renderedMessageText(message));
+    allPosted = allPosted && posted;
+  }
+  if (!allPosted) {
+    return { success: false, topicId };
   }
   adapters.recordTopicId(ticketId, topicId);
   return { success: true, topicId };
