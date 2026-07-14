@@ -1,0 +1,71 @@
+id: BL-364
+title: "Running the extension in desktop VS Code on Windows is expected to work through Remote-WSL, but nobody has proven it or written it down"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+priority: 5
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-desktop-consolidated-swarm-view.md — the human, 2026-07-13/14: 'would it be possible to run the extension on the Windows VS Code?'. The human scoped this to the VERIFY-AND-DOCUMENT half on 2026-07-14 and deferred the role-grid half."
+
+notes: |
+  THE ASK, AS SCOPED. The intake had two halves; the human chose only this one. The second half (an
+  "Open Role Grid" command opening one VS Code terminal per live role, and/or promoting the existing
+  webview panel to THE consolidated view) is NOT in scope for this ticket and is not specced. If it is
+  wanted later it comes back as its own item — with the viewer-never-owner rule below carried over.
+
+  WHY IT IS EXPECTED TO ALREADY WORK. The extension is a WORKSPACE extension, so under VS Code remoting
+  (Remote-WSL's "Open Folder in WSL", or a Remote-Tunnel into the existing `swarmforge-ops` tunnel) its
+  extension host runs INSIDE WSL — next to tmux, the swarm socket, `.swarmforge/` and the daemons —
+  while only the UI is native Windows. That is architecturally identical to the vscode.dev tunnel
+  already in daily use. So the deliverable is VERIFICATION, not new plumbing: if it works, prove it and
+  write it down; if something breaks, the breakage is the work.
+
+  THE LOAD-BEARING PROPERTY (scenario 01). WHERE THE EXTENSION HOST LANDS. If the host were ever to run
+  on the Windows side, it would be severed from tmux, the socket and `.swarmforge/` — every I/O the
+  extension does. Anything that could push it there (an `extensionKind` declaring a UI-side split, a
+  UI/host code split) is a regression of this property, not a feature. Note the same box's WSL Windows-
+  interop binfmt handler is NOT registered, so a Windows `.exe` cannot be executed from the WSL shell at
+  all (`Exec format error`) — a host-side code path that shells out to a Windows binary cannot work here
+  even in principle.
+
+  WHAT TO ACTUALLY DO. Open the repo via Remote-WSL in desktop VS Code and exercise it: the panel opens,
+  tiles stream, typing into a tile reaches the agent, and the launch/stop/bounce commands run. Fix the
+  small assumptions that break — the candidates named by the intake are hardcoded absolute paths,
+  anything that shells out expecting an interactive login shell, and `extensionKind` — then document the
+  setup as a Windows-host section in `docs/GettingStarted.md`. Do not invent fixes for problems that do
+  not reproduce: if it all works, the deliverable is the docs plus the drift test that keeps them true.
+
+  SCOPE. `docs/GettingStarted.md` (the new Windows-host section) and the existing drift test that keeps
+  it honest (`extension/test/gettingStartedDrift.test.js` — note this file reads a repo-root sibling and
+  is one of the four paths already registered in the Stryker sandbox `SIBLING_NAMES` list; extending
+  what it asserts is fine, do not move the file). Plus whatever host-side assumption verification turns
+  up broken; that is unknown until run, so keep the code half small and report anything larger as its
+  own item rather than growing this one.
+
+  ADJACENT. BL-361 (the Linux/WSL dev-host launcher) is the same "the human lives on Windows, the swarm
+  lives in WSL" reality and may also touch `docs/GettingStarted.md` — SEQUENCE the two, do not run them
+  concurrently. BL-351 + `swarmforge/deploy/windows/` are the same reality on the boot-units side.
+  `swarmforge/scripts/swarm_dashboard.sh` already proves the viewer-only tmux dashboard the deferred
+  half would build on.
+
+  E2E QA PROCEDURE: on the human's Windows machine, open this repo in desktop VS Code via Remote-WSL and
+  confirm the remote indicator shows WSL. Open the panel: assert tiles stream live, that typing into a
+  tile reaches the agent in that role's pane, and that launch/stop/bounce run without error. Assert the
+  extension host process is running INSIDE WSL (it appears in the WSL process table, not the Windows
+  one) — that is the property scenario 01 pins and the one whose failure would be silent. Then follow
+  the new Getting Started Windows section verbatim, from a clean VS Code, and assert a developer who has
+  never seen this repo can reach a working panel using only what it says.
+
+acceptance:
+  feature: specs/features/BL-364-desktop-vscode-on-windows.feature
+  steps:
+    - "The extension host runs beside the swarm, never on the UI side"
+    - "A Windows developer is told how to set this up"
+    - "The documented setup keeps naming things that really exist"
+    - "Nothing in the extension's host path assumes one developer's machine"
+
+human_approval: pending
+
+mutation_cost: low

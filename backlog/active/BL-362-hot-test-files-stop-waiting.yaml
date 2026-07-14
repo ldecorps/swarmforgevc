@@ -1,0 +1,78 @@
+id: BL-362
+title: "The unit suite's two slowest files burn seconds on real timers and repeated engine boots, not on testing"
+milestone: M8
+type: defect
+status: todo
+severity: medium
+priority: 4
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-unit-suite-spawn-tax.md — the human, 2026-07-13 ('13 seconds is far too slow'), after a session profiled the suite per-file. Slice A of two; the human chose this slicing 2026-07-14 and excluded the pool/isolate experiment entirely."
+
+notes: |
+  THE MEASUREMENT. A profiled `vitest run` (3337 tests / 235 files) puts 68% of total test time in 20
+  files. Two dominate, and both waste it on something other than testing (times are host-scaled from a
+  ~5.5x-slower container):
+    - paneTailerClass.test.js — ~1.8s for 21 tests.
+    - dependencyGateCli.test.js — ~3.3s for 18 tests.
+
+  MECHANISM 1: paneTailerClass IGNORES ITS OWN INJECTION POINT — VERIFIED. `PaneTailer.start()`
+  (`extension/src/panel/paneTailer.ts:231-232`) takes injectable `scheduleTick`/`clearTick` precisely
+  so tests never wait on the wall clock (BL-131 put them there). The test file even DEFINES a
+  `fakeScheduler` (paneTailerClass.test.js:26) — and then uses it in exactly ONE of its ~20 tests
+  (line 68). Every other test constructs a tailer with the real `setInterval` and awaits real elapsed
+  intervals, 420-1016ms apiece. This is the engineering article's absolute no-real-timers ban being
+  violated in the very file that most needs it. Inject the tick everywhere; the file should drop to
+  milliseconds.
+
+  MECHANISM 2: dependencyGateCli RE-BOOTS THE REAL ENGINE PER TEST — VERIFIED. It boots the real
+  pinned dependency-cruiser (~1s each) once per test, and SIX of those tests each prove exactly one
+  forbidden-dependency rule (no-io-from-policy, view-not-import-host-io, no-process-spawn-from-view,
+  core-not-vscode-api, no-webview-storage, acyclic) over near-identical fixture trees. A seventh test
+  spawns the compiled CLI over the WHOLE real project inside the unit suite. Merge the six one-rule
+  fixtures into ONE fixture carrying all six violations and assert all six from a SINGLE engine run;
+  move the whole-real-project scan out of the unit suite into the gate/acceptance path where a full
+  scan already belongs.
+
+  THE GUARDRAIL THAT MUST NOT BE TRADED AWAY (BL-259). Those tests exist to prove the REAL pinned
+  checker against the REAL project ruleset (`.dependency-cruiser.cjs`) over real fixture code — no
+  mocked checker, no canned JSON. Sharing one engine run must not weaken that: every rule stays proven
+  by the real checker, and the full-project scan is RELOCATED, never deleted. If relocating it is not
+  straightforward, say so rather than dropping the coverage.
+
+  WHY THIS MATTERS BEYOND FEEL. The same waits and boots are re-paid thousands of times inside a
+  Stryker run (coverage-aware perTest still re-runs the covering tests per mutant), so every
+  millisecond here multiplies. This is the "why" underneath the duration-creep that the BL-078/BL-252
+  machinery (`.test-durations.jsonl`, the suite-duration trend line) can only observe.
+
+  SCOPE. `extension/test/paneTailerClass.test.js` and `extension/test/dependencyGateCli.test.js`, plus
+  whatever pure seam the dependency-gate fixture consolidation needs in
+  `extension/src/quality/dependencyGate.ts`. Production behavior does not change — this is a test-side
+  defect. NOT IN SCOPE: any change to `vitest.config.mjs` pool/isolation (the human excluded it), and
+  the other 32 spawning CLI test files (BL-363 owns those).
+
+  ORTHOGONALITY. BL-363 is the sibling slice and deliberately EXCLUDES dependencyGateCli.test.js so the
+  two do not collide on the same file. They are file-orthogonal as scoped; if either grows to touch a
+  shared test helper, sequence them.
+
+  E2E QA PROCEDURE: run the full unit suite twice and assert it is green both times, that
+  paneTailerClass and dependencyGateCli no longer appear near the top of the per-file duration ranking,
+  and that total wall clock has dropped materially from the ~13s baseline. Grep both files for any
+  remaining real-clock wait (a `setTimeout`/`setInterval`/awaited real interval) and assert there is
+  none. Confirm each of the six forbidden-dependency rules still FAILS a genuinely violating fixture
+  (break one deliberately and watch the gate catch it — a green suite alone does not prove the checker
+  still has teeth). Confirm the whole-project scan still runs somewhere: run the gate itself and assert
+  it scans the real project. Finally, run a small Stryker pass and confirm it is not slower.
+
+acceptance:
+  feature: specs/features/BL-362-hot-test-files-stop-waiting.feature
+  steps:
+    - "The pane-tailer's tests drive its tick instead of waiting for it"
+    - "Every forbidden-dependency rule is still proven by the real checker against real code"
+    - "The rules are proven together, not one engine boot at a time"
+    - "The whole-project dependency scan still happens, in the gate rather than in the unit suite"
+    - "The two files get materially faster without losing a single assertion"
+
+human_approval: pending
+
+mutation_cost: medium
