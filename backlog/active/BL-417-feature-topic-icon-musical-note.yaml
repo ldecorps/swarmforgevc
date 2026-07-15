@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 severity: low
-priority: 6
+priority: 3
 direction: human-requested
 depends_on: []
 source: "backlog/INTAKE-orchestra-emoji-topic-remap.md — human design session 2026-07-15 (full record docs/branding/icon-system.md §5a). Ticket-level half of the orchestra remap; the standing-topic half is split out as BL-418."

@@ -8,7 +8,7 @@
 // map) into pollAndForward below.
 import { TelegramUpdate, GetUpdatesResult } from '../notify/telegramClient';
 import { computeTelegramRetryBackoffMs } from '../notify/telegramRetry';
-import { isApprovalReplyText } from '../concierge/pendingApprovalReply';
+import { classifyApprovalReplyAction } from '../concierge/pendingApprovalReply';
 
 // BL-353: moved from the retired notify/telegramInboundRelay.ts (which
 // also carried the legacy single-chat TelegramInboundRelay class, now
@@ -270,14 +270,19 @@ export interface PollAdapters {
   postOperatorContext: (backlogId: string, text: string, updateId: number) => Promise<boolean>;
   // BL-357: pendingApprovalReply.ts's recordApprovalReply, adapter-injected
   // - flips the ticket's human_approval field when its topic reply is
-  // recognized as an approval (isApprovalReplyText). A SEPARATE effect from
-  // postOperatorContext above (that one is unconditional context for
-  // whatever's happening with the ticket; this one only fires on the
-  // approval keyword, and writes to the ticket's own YAML, not a gated
+  // recognized as an approval (classifyApprovalReplyAction). A SEPARATE
+  // effect from postOperatorContext above (that one is unconditional
+  // context for whatever's happening with the ticket; this one only fires
+  // on the approve verb, and writes to the ticket's own YAML, not a gated
   // pane) - both apply to the same reply, neither replaces the other.
   // Naturally idempotent on its own (a ticket already `approved` simply
   // no-ops on a second flip attempt), so it needs no updateId of its own.
   recordApprovalReply: (backlogId: string) => Promise<boolean>;
+  // BL-409: pendingApprovalReply.ts's recordRejectionReply, the reject
+  // verb's sibling effect - same posture as recordApprovalReply (a separate
+  // effect alongside the unconditional context post, naturally idempotent,
+  // no updateId needed).
+  recordRejectionReply: (backlogId: string, reason: string) => Promise<boolean>;
 }
 
 // BL-389: the keystone fix. A DROP is a DECISION (the code looked at the
@@ -297,12 +302,23 @@ export type UpdateDeliveryOutcome = 'posted' | 'dropped' | 'failed';
 // pushed processUpdate's own CRAP over threshold at full coverage - the
 // same class of split messageTextForEvent/routeEvent already use in
 // topicRouter.ts for the identical reason).
+// BL-409: extended to the three-verb dispatch (approve/reject/amend). An
+// amend posts only its extracted NOTE as context (per the ticket's own
+// "post the note" wording) and changes no approval state - it is not a
+// resolution, so the context text is exactly what the specifier needs to
+// see, not the "amend " verb prefix. approve/reject/none keep posting the
+// raw reply text unchanged (no scenario asks otherwise), and only ONE of
+// approve/reject's own record* effect ever fires per reply.
 async function deliverOperatorContext(backlogId: string, text: string, updateId: number, adapters: PollAdapters): Promise<boolean> {
-  const posted = await adapters.postOperatorContext(backlogId, text, updateId);
-  // BL-357: fires alongside the context post above, never instead of it -
-  // a reply that approves a ticket is still ALSO context for it.
-  if (isApprovalReplyText(text)) {
+  const action = classifyApprovalReplyAction(text);
+  const contextText = action.kind === 'amend' ? action.note : text;
+  const posted = await adapters.postOperatorContext(backlogId, contextText, updateId);
+  // BL-357/BL-409: fires alongside the context post above, never instead of
+  // it - a reply that resolves a ticket is still ALSO context for it.
+  if (action.kind === 'approve') {
     await adapters.recordApprovalReply(backlogId);
+  } else if (action.kind === 'reject') {
+    await adapters.recordRejectionReply(backlogId, action.reason);
   }
   return posted;
 }

@@ -79,6 +79,6 @@ qa_e2e: |
      /clear the pane and confirm the same menu in the tile flips to RESOLVED and
      no longer reads as actionable, while the transcript text remains visible.
 
-human_approval: pending
+human_approval: approved  # human via Operator relay, 2026-07-15: "OK'd, promote"
 
 mutation_cost: low
