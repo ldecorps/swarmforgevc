@@ -90,17 +90,16 @@ function ticketSummariesFor(active: BacklogFolderItem[]): Record<string, TicketS
   return summaries;
 }
 
-// BL-357: active-ticket-only, same scope restriction as ticketSummariesFor
-// above and for the same reason - a paused ticket has no topic open yet
-// (one only opens on TaskStarted, i.e. entering active) and most paused
-// tickets default to `pending` pre-promotion regardless of whether anyone
-// is actually waiting to be asked (backfill-human-approval.ts seeds the
-// field "regardless of value"). Asking about those would flood a topic
-// open for every paused ticket before its own work even starts, and the
-// ticket's own notes frame the gap as the 3 ACTIVE pending tickets,
-// explicitly distinct from "9 paused ones".
-function pendingApprovalFor(active: BacklogFolderItem[]): string[] {
-  return active.filter((item) => item.humanApproval === 'pending').map((item) => item.id);
+// BL-408: scan active AND paused for pending-approval tickets. Tickets awaiting
+// human review sit in paused/ until promotion, per constitution Article 3. The
+// approval request must fire for BOTH, not just active ones.
+// BL-394: change-gate via emittedKeys prevents re-posting when a ticket stays
+// pending - diffApprovalRequested fires only on not-pending->pending transitions
+// (the same shape diffTaskStarted uses), so a ticket asked once is not re-asked
+// on each tick, regardless of folder.
+function pendingApprovalFor(active: BacklogFolderItem[], paused: BacklogFolderItem[]): string[] {
+  const all = [...active, ...paused];
+  return all.filter((item) => item.humanApproval === 'pending').map((item) => item.id);
 }
 
 function toEventStreamSnapshot(folders: BacklogFoldersSnapshot, gates: GateSignal[], roleTicket: Record<string, string>): EventStreamSnapshot {
@@ -113,7 +112,7 @@ function toEventStreamSnapshot(folders: BacklogFoldersSnapshot, gates: GateSigna
     gates,
     roleTicket,
     ticketSummaries: ticketSummariesFor(folders.active),
-    pendingApproval: pendingApprovalFor(folders.active),
+    pendingApproval: pendingApprovalFor(folders.active, folders.paused),
   };
 }
 

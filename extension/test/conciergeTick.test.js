@@ -362,15 +362,20 @@ test('BL-357: an active ticket whose approval is not pending is never asked abou
   assert.deepEqual(sent.filter((m) => m.text.includes('needs your approval')), []);
 });
 
-test('BL-357: a paused ticket defaulted to pending is never asked - only active tickets are in scope', async () => {
-  const { adapters, setFolders, created, sent } = fakeAdapters();
-  setFolders(folders({ paused: [{ id: 'BL-2', title: 'not yet promoted', humanApproval: 'pending' }] }));
+// BL-408: paused tickets awaiting approval are now asked too - they sit in
+// paused/ until promotion. Only done/ tickets are out of scope.
+test('BL-408: a paused ticket pending approval IS asked in its own topic', async () => {
+  const { adapters, setFolders, created, sent, topicMap } = fakeAdapters();
+  setFolders(folders({ paused: [{ id: 'BL-2', title: 'awaiting promotion', humanApproval: 'pending' }] }));
 
   const result = await runConciergeTick(adapters);
 
-  assert.deepEqual(created, []);
-  assert.deepEqual(sent, []);
-  assert.equal(result.routed, 0);
+  // Approval request for paused ticket fires (no TaskStarted since not yet
+  // active), so only ApprovalRequested routes - creates the topic on demand.
+  assert.equal(created.length, 1);
+  assert.equal(topicMap['BL-2'], 801);
+  assert.ok(sent.some((m) => m.text === 'This ticket needs your approval before it can proceed. Reply here with "approve" to approve it.' && m.topicId === 801));
+  assert.equal(result.routed, 1);
 });
 
 test('BL-357: an ApprovalRequested that fails to post is retried on a later tick', async () => {
