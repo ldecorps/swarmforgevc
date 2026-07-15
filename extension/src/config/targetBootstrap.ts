@@ -113,8 +113,25 @@ export function buildUseCaseInventoryBootstrapFiles(inventory: UseCaseInventory)
 // commits them: BL-262's existence-only first proposal (writes only the
 // missing subset) and BL-344's unconditional revision (always rewrites the
 // whole file set). Both need the identical write + `git add` + commit-
-// tolerating-"nothing to commit" sequence; only which files get passed in
-// differs.
+// only-if-changed sequence; only which files get passed in differs.
+//
+// BL-382 2nd bounce follow-up: whether there is anything TO commit is
+// decided with `git diff --cached --quiet`, scoped to exactly the files
+// this call wrote, BEFORE ever invoking `git commit` - not by attempting
+// the commit and pattern-matching its failure text. Git phrases "nothing
+// happened" differently depending on what else is going on in the repo:
+// "nothing to commit, working tree clean" when the working tree is
+// otherwise clean, but "nothing added to commit but untracked files
+// present" the moment ANY other untracked path exists anywhere in the
+// repo (e.g. a contract.yaml this same onboarding flow writes but does not
+// commit through this path) - a real target repo commonly has such paths.
+// Matching only the first string made re-running initializeTargetPrompts
+// with unchanged content THROW instead of reporting committed:false the
+// moment a target repo had any unrelated untracked file, which the
+// unconditional-write fix above makes an every-regeneration occurrence
+// rather than a first-run edge case. Scoping the diff to `files` also means
+// unrelated staged/untracked changes elsewhere in the repo can never affect
+// this decision either way.
 async function writeFilesAndCommit(targetPath: string, files: BootstrapFile[], commitMessage: string): Promise<boolean> {
   for (const file of files) {
     const filePath = path.join(targetPath, file.path);
@@ -126,24 +143,31 @@ async function writeFilesAndCommit(targetPath: string, files: BootstrapFile[], c
     return false;
   }
 
-  await execFileAsync('git', ['-C', targetPath, 'add', ...files.map((f) => f.path)]);
-  const commitResult = await execFileAsync('git', ['-C', targetPath, 'commit', '-m', commitMessage]).catch(
-    async (error: { stdout?: string; stderr?: string }) => {
-      const message = `${error.stderr ?? ''}\n${error.stdout ?? ''}`.trim();
-      if (!message.includes('nothing to commit')) {
-        throw error;
+  const filePaths = files.map((f) => f.path);
+  await execFileAsync('git', ['-C', targetPath, 'add', ...filePaths]);
+
+  const hasStagedChanges = await execFileAsync('git', ['-C', targetPath, 'diff', '--cached', '--quiet', '--', ...filePaths]).then(
+    () => false,
+    (error: { code?: number }) => {
+      if (error.code === 1) {
+        return true;
       }
-      return undefined;
+      throw error;
     }
   );
-  return Boolean(commitResult);
+  if (!hasStagedChanges) {
+    return false;
+  }
+
+  await execFileAsync('git', ['-C', targetPath, 'commit', '-m', commitMessage]);
+  return true;
 }
 
-async function writeAndCommitBootstrapPlan(
-  targetPath: string,
-  files: BootstrapFile[],
-  commitMessage: string
-): Promise<BootstrapWriteResult> {
+// Shared by every caller that needs to know, before writing, which of a
+// file list is already present in the target repo (writeAndCommitBootstrapPlan's
+// existence-only plan, and initializeTargetPrompts's created-vs-refreshed
+// reporting for its unconditional write).
+async function detectExistingFilePaths(targetPath: string, files: BootstrapFile[]): Promise<Set<string>> {
   const existingFiles = new Set<string>();
   await Promise.all(
     files.map(async (file) => {
@@ -151,11 +175,19 @@ async function writeAndCommitBootstrapPlan(
         await fs.access(path.join(targetPath, file.path));
         existingFiles.add(file.path);
       } catch {
-        // file does not exist — will be created
+        // file does not exist yet
       }
     })
   );
+  return existingFiles;
+}
 
+async function writeAndCommitBootstrapPlan(
+  targetPath: string,
+  files: BootstrapFile[],
+  commitMessage: string
+): Promise<BootstrapWriteResult> {
+  const existingFiles = await detectExistingFilePaths(targetPath, files);
   const plan = planTargetBootstrapFiles(existingFiles, files);
   const committed = await writeFilesAndCommit(targetPath, plan.filesToCreate, commitMessage);
 
@@ -243,6 +275,19 @@ export function buildGeneratedPromptBootstrapFiles(prompts: ProposedPrompts): Bo
 // review/edit it during negotiation), these prose files simply do not
 // exist in the target repo until agreement - BL-269's own explicit
 // "withheld from... released for commit to" contract.
+//
+// BL-382 2nd bounce: once agreed, this must behave like updateTargetContract
+// (BL-344) - an UNCONDITIONAL write, not the existence-only idempotency
+// writeAndCommitBootstrapPlan gives every other bootstrap artifact. A
+// negotiated term (verbosity, or anything else the contract carries into
+// the generated prompts) can change AFTER the first release, and re-running
+// this CLI is the target's only path to pick that up; existence-only
+// idempotency permanently froze the first-ever generation, silently
+// discarding every later change-of-mind. Content that happens to be
+// unchanged still produces no commit - writeFilesAndCommit's `git commit`
+// is itself a no-op on identical content, so this stays idempotent in the
+// sense that matters (no spurious commits), just not in the
+// leave-existing-files-untouched sense that was the actual defect.
 export async function initializeTargetPrompts(
   targetPath: string,
   prompts: ProposedPrompts,
@@ -251,12 +296,16 @@ export async function initializeTargetPrompts(
   if (gateDecision.decision !== 'allow') {
     return { created: [], skipped: [], committed: false, withheld: true };
   }
-  const result = await writeAndCommitBootstrapPlan(
-    targetPath,
-    buildGeneratedPromptBootstrapFiles(prompts),
-    'Commit onboarding-generated target prompts'
-  );
-  return { ...result, withheld: false };
+  const files = buildGeneratedPromptBootstrapFiles(prompts);
+  const preExisting = await detectExistingFilePaths(targetPath, files);
+  const committed = await writeFilesAndCommit(targetPath, files, 'Commit onboarding-generated target prompts');
+
+  return {
+    created: files.map((file) => file.path).filter((filePath) => !preExisting.has(filePath)),
+    skipped: [],
+    committed,
+    withheld: false,
+  };
 }
 
 async function isGitRepository(targetPath: string): Promise<boolean> {

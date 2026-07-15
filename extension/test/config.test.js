@@ -352,7 +352,7 @@ test('initializeTargetPrompts releases the prompts for commit to the target repo
   assert.match(log, /Commit onboarding-generated target prompts/);
 });
 
-test('initializeTargetPrompts is idempotent: re-running after release does not re-write existing content', async () => {
+test('initializeTargetPrompts is idempotent: re-running with unchanged content commits nothing', async () => {
   const tmp = mkTmpDir();
   execSync('git init', { cwd: tmp });
   execSync('git config user.email "test@test.com"', { cwd: tmp });
@@ -362,6 +362,52 @@ test('initializeTargetPrompts is idempotent: re-running after release does not r
   const secondResult = await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'allow' });
 
   assert.deepEqual(secondResult.created, []);
-  assert.deepEqual(secondResult.skipped.sort(), ['engineering.prompt', 'project.prompt']);
+  assert.deepEqual(secondResult.skipped, []);
+  assert.equal(secondResult.committed, false, 'identical content is a git no-op, not a fresh commit');
+  assert.equal(fs.readFileSync(path.join(tmp, 'project.prompt'), 'utf8'), FIXTURE_PROMPTS.projectPrompt);
+});
+
+// Regenerating with unchanged content must not THROW just because some
+// OTHER, unrelated path in the target repo happens to be untracked - git
+// phrases "nothing to commit" differently ("nothing added to commit but
+// untracked files present") the moment any other untracked path exists
+// anywhere in the repo, which a real target repo (e.g. an unrelated
+// contract.yaml this same onboarding flow writes but never commits through
+// this path) commonly has.
+test('initializeTargetPrompts re-run with unchanged content does not throw when the repo has an unrelated untracked file', async () => {
+  const tmp = mkTmpDir();
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+
+  await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'allow' });
+  fs.writeFileSync(path.join(tmp, 'unrelated-untracked.txt'), 'never committed');
+
+  const secondResult = await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'allow' });
+
   assert.equal(secondResult.committed, false);
+});
+
+// BL-382 2nd bounce (backlog/evidence/BL-382-...-bounce-20260715b.md):
+// re-running after a contract change-of-mind must actually refresh the
+// already-materialized prompt content, not permanently freeze it at its
+// first-ever generation.
+test('initializeTargetPrompts overwrites already-materialized content when the prompts change (change-of-mind)', async () => {
+  const tmp = mkTmpDir();
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+
+  await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'allow' });
+  const revisedPrompts = {
+    projectPrompt: '# Project\nBe detailed in your responses and explanations.\n',
+    engineeringPrompt: '# Tech Stack\nBe detailed in your responses and explanations.\n',
+  };
+
+  const secondResult = await initializeTargetPrompts(tmp, revisedPrompts, { decision: 'allow' });
+
+  assert.deepEqual(secondResult.created, [], 'both files already existed - not freshly created');
+  assert.equal(secondResult.committed, true, 'changed content must produce a real commit');
+  assert.equal(fs.readFileSync(path.join(tmp, 'project.prompt'), 'utf8'), revisedPrompts.projectPrompt);
+  assert.equal(fs.readFileSync(path.join(tmp, 'engineering.prompt'), 'utf8'), revisedPrompts.engineeringPrompt);
 });
