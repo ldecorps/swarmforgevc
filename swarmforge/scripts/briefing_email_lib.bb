@@ -40,15 +40,54 @@
            vec))
     []))
 
+;; BL-392: the headline's positional contract ("first non-empty line") is
+;; unchanged, but a briefing's first line can be a whole markdown-laden lede
+;; paragraph rather than a short title - unbounded, that swallowed the
+;; entire subject line in a mail client. Pinned as a named constant so the
+;; tests assert against it, not a magic number.
+(def briefing-subject-headline-limit 80)
+
+;; Strips markdown emphasis/heading markers so a raw `**`/`_`/backtick/`#`
+;; never reaches a subject line. Order-independent: every marker character
+;; is removed globally, so a broken pair (e.g. bounding cuts through a
+;; `**bold**` span) can never leave a stray single marker behind - this
+;; always runs BEFORE bound-headline for exactly that reason.
+(defn strip-markdown-emphasis [s]
+  (-> s
+      (str/replace #"^#+\s*" "")
+      (str/replace #"\*\*" "")
+      (str/replace #"\*" "")
+      (str/replace #"_" "")
+      (str/replace #"`" "")))
+
+;; Truncates to briefing-subject-headline-limit total characters (ellipsis
+;; included), cutting at the last word boundary within budget rather than
+;; mid-word - a single character reserved for the ellipsis, per the
+;; ticket's "single-character ellipsis" contract. A pathological headline
+;; with no space within budget (one unbroken long token) falls back to a
+;; hard cut - there is no word boundary to prefer.
+(defn bound-headline [s]
+  (if (<= (count s) briefing-subject-headline-limit)
+    s
+    (let [budget (dec briefing-subject-headline-limit)
+          truncated (subs s 0 budget)
+          last-space (str/last-index-of truncated " ")
+          word-bounded (if (and last-space (pos? last-space)) (subs truncated 0 last-space) truncated)]
+      (str (str/trimr word-bounded) "…"))))
+
 ;; First non-empty line of the briefing, matching briefingEmailWatcher.ts's
 ;; buildBriefingSubject exactly (BL-099 briefing-03: subject names the date
-;; and the headline).
+;; and the headline). BL-392: the headline is markdown-stripped then bounded
+;; before it rides the subject - a headline that strips down to nothing
+;; (markdown syntax with no real text) is treated the same as no headline at
+;; all, so the date-only "no dangling separator" contract holds either way.
 (defn build-briefing-subject [date-label content]
-  (let [headline (->> (str/split-lines (or content ""))
-                       (map str/trim)
-                       (filter seq)
-                       first)]
-    (str "SwarmForge briefing " date-label (when headline (str " - " headline)))))
+  (let [raw-headline (->> (str/split-lines (or content ""))
+                           (map str/trim)
+                           (filter seq)
+                           first)
+        headline (some-> raw-headline strip-markdown-emphasis str/trim bound-headline)]
+    (str "SwarmForge briefing " date-label (when-not (str/blank? headline) (str " - " headline)))))
 
 ;; BL-252 (generalized for BL-251): appends a computed content block - the
 ;; suite-duration trend + BL-078 regression flag (BL-252), the

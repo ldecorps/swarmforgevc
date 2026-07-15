@@ -31,6 +31,77 @@
          "SwarmForge briefing 2026-07-09 - Real headline"
          (briefing-email-lib/build-briefing-subject "2026-07-09" "\n  \nReal headline\nmore"))
 
+;; ── BL-392: the headline is bounded and markdown-stripped ────────────────
+
+(def long-lede
+  (str "This sentence is intentionally long enough that it will need to be "
+       "truncated at eighty characters or fewer for the subject line to stay "
+       "readable in an inbox."))
+
+(let [subject (briefing-email-lib/build-briefing-subject "2026-07-14" (str long-lede "\n\nDetails..."))
+      headline (subs subject (count "SwarmForge briefing 2026-07-14 - "))
+      without-ellipsis (subs headline 0 (dec (count headline)))]
+  (assert= "BL-392 subject-bound-01: subject still names the briefing date"
+           true
+           (str/starts-with? subject "SwarmForge briefing 2026-07-14 - "))
+  (assert= "BL-392 subject-bound-01: a long lede's headline is bounded to <=80 chars"
+           true
+           (<= (count headline) 80))
+  (assert= "BL-392 subject-bound-01: the bounded headline ends with a single-character ellipsis"
+           true
+           (str/ends-with? headline "…"))
+  (assert= "BL-392 subject-bound-01: the truncated text is an unaltered prefix of the source line"
+           true
+           (str/starts-with? long-lede without-ellipsis))
+  (assert= "BL-392 subject-bound-01: the cut lands right before a space in the source - a word boundary, not mid-word"
+           true
+           (or (= (count without-ellipsis) (count long-lede))
+               (= \space (.charAt long-lede (count without-ellipsis))))))
+
+;; bound-headline's own docstring names a second branch this scenario never
+;; exercises: "a pathological headline with no space within budget (one
+;; unbroken long token) falls back to a hard cut - there is no word boundary
+;; to prefer." subject-bound-01 above always has clean word boundaries, so
+;; the `(and last-space (pos? last-space))` check's ELSE arm - the hard-cut
+;; fallback - had zero coverage until now.
+(let [one-long-token (apply str (repeat 100 "a"))
+      subject (briefing-email-lib/build-briefing-subject "2026-07-14" one-long-token)
+      headline (subs subject (count "SwarmForge briefing 2026-07-14 - "))]
+  (assert= "BL-392 bound-headline hard-cut: a single unbroken token with no word boundary is still bounded to <=80 chars"
+           true
+           (<= (count headline) 80))
+  (assert= "BL-392 bound-headline hard-cut: it still ends with a single-character ellipsis"
+           true
+           (str/ends-with? headline "…"))
+  (assert= "BL-392 bound-headline hard-cut: falls back to a hard cut at the budget boundary (79 chars + ellipsis), not a word-boundary cut"
+           (str (apply str (repeat 79 "a")) "…")
+           headline))
+
+(assert= "BL-392 subject-bound-02: bold/heading markdown markers are stripped from the headline"
+         "SwarmForge briefing 2026-07-14 - Ship the release"
+         (briefing-email-lib/build-briefing-subject "2026-07-14" "# **Ship the release**\n\nDetails..."))
+
+(assert= "BL-392 subject-bound-02: backtick and underscore emphasis markers are stripped too"
+         "SwarmForge briefing 2026-07-14 - Ship code and italics"
+         (briefing-email-lib/build-briefing-subject "2026-07-14" "Ship `code` and _italics_\n\nDetails..."))
+
+(assert= "BL-392 subject-bound-03: a headline already within the limit passes through unchanged"
+         "SwarmForge briefing 2026-07-14 - Shipped BL-215"
+         (briefing-email-lib/build-briefing-subject "2026-07-14" "Shipped BL-215\n\nDetails..."))
+
+(let [subject (briefing-email-lib/build-briefing-subject "2026-07-14" "Shipped BL-215\n\nDetails...")]
+  (assert= "BL-392 subject-bound-03: a short headline carries no ellipsis"
+           false
+           (str/includes? subject "…")))
+
+(assert= "BL-392 subject-bound-04: an empty briefing still yields a date-only subject, no dangling separator"
+         "SwarmForge briefing 2026-07-14"
+         (briefing-email-lib/build-briefing-subject "2026-07-14" ""))
+
+(assert= "BL-392: a headline that is markdown syntax only strips down to nothing - no dangling separator"
+         "SwarmForge briefing 2026-07-14"
+         (briefing-email-lib/build-briefing-subject "2026-07-14" "**  **\n\nDetails..."))
+
 ;; ── append-content-block (pure, BL-252, generalized for BL-251) ──────────
 ;; Appends a computed content block (suite-duration trend + BL-078 flag,
 ;; the needs-approval section, or any future one) after the existing

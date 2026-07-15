@@ -14,14 +14,27 @@
  * Usage:
  *   node relay-onboarding-negotiation-telegram.js <target-repo-path> <host-secrets-file-path> post-proposal
  *   node relay-onboarding-negotiation-telegram.js <target-repo-path> <host-secrets-file-path> poll
+ *   node relay-onboarding-negotiation-telegram.js <target-repo-path> <host-secrets-file-path> poll-loop
  *
  * Env:
  *   TELEGRAM_PRINCIPAL_USER_ID   the one authorized sender (BL-379 guard) -
- *                                 required for `poll`, unused by `post-proposal`.
+ *                                 required for `poll`/`poll-loop`, unused by
+ *                                 `post-proposal`.
  *
  * The bot token itself is never taken on argv (it would leak via `ps`) -
  * it is read from the host secrets file BL-380's provisioning step already
  * wrote it into (telegramChannelSecretStore.ts), keyed by target repo path.
+ *
+ * BL-381 QA bounce (2026-07-15): `poll` alone is a one-shot CLI call - fine
+ * for `post-proposal` (BL-380's own provisioning CLI is legitimately
+ * one-shot too), but nothing calling `poll` repeatedly means a human's
+ * objection/agreement in the negotiation topic is never actually picked up
+ * without a human running this command by hand. `poll-loop` is the live
+ * trigger: it runs `poll` forever, one getUpdates cycle after another
+ * (Telegram's own long-poll already paces it - no extra sleep needed on the
+ * happy path), and is the process `swarmforge/scripts/
+ * negotiation_relay_supervisor.bb` spawns and supervises with bounded
+ * restart, mirroring `front_desk_supervisor.bb`'s own bridge/bot pattern.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -34,8 +47,11 @@ import { formatContractForTelegram } from '../onboarding/negotiationTelegramRout
 import { NegotiationRelayAdapters, relayNegotiationUpdates, NegotiationRelayResult } from '../onboarding/negotiationTelegramRelay';
 import { runObject, runApprove } from './negotiate-onboarding-contract';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
+import { runContainedLoop } from './telegramFrontDeskBotCore';
+import { atomicWrite } from '../util/atomicWrite';
 
 const POLL_TIMEOUT_SECONDS = 25;
+const LOOP_RESTART_DELAY_MS = 5000;
 
 function operatorDir(targetRepoPath: string): string {
   return path.join(targetRepoPath, '.swarmforge', 'operator');
@@ -43,6 +59,19 @@ function operatorDir(targetRepoPath: string): string {
 
 function proposalPostedMarkerPath(targetRepoPath: string): string {
   return path.join(operatorDir(targetRepoPath), 'negotiation-topic-posted.json');
+}
+
+// BL-381 QA bounce: negotiation_relay_supervisor.bb reads this SAME
+// {lastHeartbeatMs} JSON shape - mirroring front-desk-poll-heartbeat.json -
+// to tell "the poll-loop process has a pid" apart from "the poll-loop
+// process is still actually completing cycles" (front_desk_supervisor_lib's
+// own poll-heartbeat-stale? lesson: a live pid is not proof of that).
+function pollHeartbeatPath(targetRepoPath: string): string {
+  return path.join(operatorDir(targetRepoPath), 'negotiation-relay-poll-heartbeat.json');
+}
+
+function writeNegotiationRelayPollHeartbeat(targetRepoPath: string): void {
+  atomicWrite(pollHeartbeatPath(targetRepoPath), JSON.stringify({ lastHeartbeatMs: Date.now() }));
 }
 
 function relayOffsetPath(targetRepoPath: string): string {
@@ -199,33 +228,81 @@ export async function runPoll(targetRepoPath: string, hostSecretsFilePath: strin
   return result;
 }
 
+// BL-381 QA bounce: the live trigger for `poll` - runs it forever, one
+// getUpdates cycle after another. Telegram's own long-poll (POLL_TIMEOUT_SECONDS)
+// already paces the happy path; a thrown failure (e.g. a network error) is
+// left to propagate out of the loop entirely, same as runPoll's own
+// "surface, never swallow" contract - the CALLER (main(), via
+// runContainedLoop) owns restart-with-delay, mirroring telegram-front-desk-
+// bot.ts's own pollLoop/runContainedLoop split. Thin by design: the one
+// real per-cycle decision this file owns (runPoll) is already covered by
+// its own tests above; this loop shell has no branching of its own to test,
+// matching this codebase's established pollLoop/tickLoop convention.
+export async function pollLoop(targetRepoPath: string, hostSecretsFilePath: string, principalUserId: string, postFn?: TelegramPostFn): Promise<never> {
+  for (;;) {
+    await runPoll(targetRepoPath, hostSecretsFilePath, principalUserId, postFn);
+    writeNegotiationRelayPollHeartbeat(targetRepoPath);
+  }
+}
+
 export type ParsedArgs =
   | { targetRepoPath: string; hostSecretsFilePath: string; action: 'post-proposal' }
-  | { targetRepoPath: string; hostSecretsFilePath: string; action: 'poll'; principalUserId: string };
+  | { targetRepoPath: string; hostSecretsFilePath: string; action: 'poll'; principalUserId: string }
+  | { targetRepoPath: string; hostSecretsFilePath: string; action: 'poll-loop'; principalUserId: string };
 
-function parsePollArgs(targetRepoPath: string, hostSecretsFilePath: string): ParsedArgs | null {
+function parsePollArgs(
+  targetRepoPath: string,
+  hostSecretsFilePath: string,
+  action: 'poll' | 'poll-loop'
+): ParsedArgs | null {
   const principalUserId = process.env.TELEGRAM_PRINCIPAL_USER_ID;
   if (!principalUserId) return null;
-  return { targetRepoPath, hostSecretsFilePath, action: 'poll', principalUserId };
+  return { targetRepoPath, hostSecretsFilePath, action, principalUserId };
 }
+
+// Dispatch table rather than a growing if-chain: BL-381's own prior cleaner
+// pass already extracted parsePollArgs once to hold CRAP <= 6, and adding
+// this QA-bounce fix's third action (poll-loop) as a fourth sequential `if`
+// pushed the same function back over threshold. A table entry per action
+// keeps parseArgs's own complexity flat as actions are added.
+const ACTION_BUILDERS: Record<string, (targetRepoPath: string, hostSecretsFilePath: string) => ParsedArgs | null> = {
+  'post-proposal': (targetRepoPath, hostSecretsFilePath) => ({ targetRepoPath, hostSecretsFilePath, action: 'post-proposal' }),
+  poll: (targetRepoPath, hostSecretsFilePath) => parsePollArgs(targetRepoPath, hostSecretsFilePath, 'poll'),
+  'poll-loop': (targetRepoPath, hostSecretsFilePath) => parsePollArgs(targetRepoPath, hostSecretsFilePath, 'poll-loop'),
+};
 
 export function parseArgs(argv: string[]): ParsedArgs | null {
   const [targetRepoPath, hostSecretsFilePath, action] = argv;
   if (!targetRepoPath || !hostSecretsFilePath || !action) return null;
-  if (action === 'post-proposal') {
-    return { targetRepoPath, hostSecretsFilePath, action };
-  }
-  if (action === 'poll') {
-    return parsePollArgs(targetRepoPath, hostSecretsFilePath);
-  }
-  return null;
+  const build = ACTION_BUILDERS[action];
+  return build ? build(targetRepoPath, hostSecretsFilePath) : null;
+}
+
+function logPollLoopFault(name: string, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  process.stderr.write(`relay-onboarding-negotiation-telegram: ${name} loop faulted (restarting): ${message}\n`);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export const main = makeArgsGuardedMain(
   parseArgs,
   'Usage: node relay-onboarding-negotiation-telegram.js <target-repo-path> <host-secrets-file-path> post-proposal\n' +
-    '       node relay-onboarding-negotiation-telegram.js <target-repo-path> <host-secrets-file-path> poll   (TELEGRAM_PRINCIPAL_USER_ID env required)\n',
+    '       node relay-onboarding-negotiation-telegram.js <target-repo-path> <host-secrets-file-path> poll        (TELEGRAM_PRINCIPAL_USER_ID env required)\n' +
+    '       node relay-onboarding-negotiation-telegram.js <target-repo-path> <host-secrets-file-path> poll-loop   (TELEGRAM_PRINCIPAL_USER_ID env required; runs forever)\n',
   async (args) => {
+    if (args.action === 'poll-loop') {
+      await runContainedLoop(
+        'negotiation-relay-poll',
+        () => pollLoop(args.targetRepoPath, args.hostSecretsFilePath, args.principalUserId),
+        sleep,
+        LOOP_RESTART_DELAY_MS,
+        logPollLoopFault
+      );
+      return;
+    }
     const result =
       args.action === 'post-proposal'
         ? await runPostProposal(args.targetRepoPath, args.hostSecretsFilePath)

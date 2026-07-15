@@ -8,6 +8,7 @@ const {
   buildRelayAdapters,
   runPostProposal,
   runPoll,
+  pollLoop,
   readRelayOffset,
   writeRelayOffset,
   main: relayMain,
@@ -364,6 +365,65 @@ test('runPoll surfaces a getUpdates failure as a thrown error, never silently sw
   await assert.rejects(() => runPoll(targetRepo, secretsFile, PRINCIPAL_ID, failingPostFn), /Unauthorized|401/);
 });
 
+// ── pollLoop (BL-381 QA bounce: the live trigger for `poll`) ──────────────
+
+test('pollLoop calls runPoll repeatedly, one getUpdates cycle per iteration, until a cycle fails', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const secretsFile = mkSecretsPath();
+  provisionChannelAndToken(targetRepo, secretsFile);
+  let getUpdatesCalls = 0;
+  const postFn = async (url) => {
+    if (url.endsWith('/getUpdates')) {
+      getUpdatesCalls += 1;
+      if (getUpdatesCalls >= 3) {
+        return { ok: false, status: 401, json: { description: 'Unauthorized' } };
+      }
+      return { ok: true, status: 200, json: { result: [] } };
+    }
+    return { ok: true, status: 200, json: { result: { message_id: 1 } } };
+  };
+
+  await assert.rejects(() => pollLoop(targetRepo, secretsFile, PRINCIPAL_ID, postFn), /Unauthorized|401/);
+
+  assert.equal(getUpdatesCalls, 3);
+});
+
+test('pollLoop writes a heartbeat after every successful cycle, so a supervisor can tell it is still alive', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const secretsFile = mkSecretsPath();
+  provisionChannelAndToken(targetRepo, secretsFile);
+  const heartbeatPath = path.join(targetRepo, '.swarmforge', 'operator', 'negotiation-relay-poll-heartbeat.json');
+  let getUpdatesCalls = 0;
+  const postFn = async (url) => {
+    if (url.endsWith('/getUpdates')) {
+      getUpdatesCalls += 1;
+      if (getUpdatesCalls >= 2) {
+        return { ok: false, status: 401, json: { description: 'Unauthorized' } };
+      }
+      return { ok: true, status: 200, json: { result: [] } };
+    }
+    return { ok: true, status: 200, json: { result: { message_id: 1 } } };
+  };
+  assert.equal(fs.existsSync(heartbeatPath), false);
+
+  await assert.rejects(() => pollLoop(targetRepo, secretsFile, PRINCIPAL_ID, postFn));
+
+  const heartbeat = JSON.parse(fs.readFileSync(heartbeatPath, 'utf8'));
+  assert.equal(typeof heartbeat.lastHeartbeatMs, 'number');
+});
+
+test('pollLoop never writes a heartbeat for a cycle that failed - only completed cycles count as alive', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const secretsFile = mkSecretsPath();
+  provisionChannelAndToken(targetRepo, secretsFile);
+  const heartbeatPath = path.join(targetRepo, '.swarmforge', 'operator', 'negotiation-relay-poll-heartbeat.json');
+  const failingPostFn = async () => ({ ok: false, status: 401, json: { description: 'Unauthorized' } });
+
+  await assert.rejects(() => pollLoop(targetRepo, secretsFile, PRINCIPAL_ID, failingPostFn));
+
+  assert.equal(fs.existsSync(heartbeatPath), false);
+});
+
 // ── readRelayOffset / writeRelayOffset ─────────────────────────────────
 
 test('readRelayOffset returns 0 when no offset has ever been written', () => {
@@ -415,6 +475,32 @@ test('parseArgs rejects a poll command when TELEGRAM_PRINCIPAL_USER_ID is unset'
   delete process.env.TELEGRAM_PRINCIPAL_USER_ID;
   try {
     assert.equal(parseArgs(['/target', '/secrets.json', 'poll']), null);
+  } finally {
+    if (previous !== undefined) process.env.TELEGRAM_PRINCIPAL_USER_ID = previous;
+  }
+});
+
+test('parseArgs accepts a poll-loop command when TELEGRAM_PRINCIPAL_USER_ID is set', () => {
+  const previous = process.env.TELEGRAM_PRINCIPAL_USER_ID;
+  process.env.TELEGRAM_PRINCIPAL_USER_ID = '111';
+  try {
+    assert.deepEqual(parseArgs(['/target', '/secrets.json', 'poll-loop']), {
+      targetRepoPath: '/target',
+      hostSecretsFilePath: '/secrets.json',
+      action: 'poll-loop',
+      principalUserId: '111',
+    });
+  } finally {
+    if (previous === undefined) delete process.env.TELEGRAM_PRINCIPAL_USER_ID;
+    else process.env.TELEGRAM_PRINCIPAL_USER_ID = previous;
+  }
+});
+
+test('parseArgs rejects a poll-loop command when TELEGRAM_PRINCIPAL_USER_ID is unset', () => {
+  const previous = process.env.TELEGRAM_PRINCIPAL_USER_ID;
+  delete process.env.TELEGRAM_PRINCIPAL_USER_ID;
+  try {
+    assert.equal(parseArgs(['/target', '/secrets.json', 'poll-loop']), null);
   } finally {
     if (previous !== undefined) process.env.TELEGRAM_PRINCIPAL_USER_ID = previous;
   }

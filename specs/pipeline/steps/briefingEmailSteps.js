@@ -91,8 +91,12 @@ function registerSteps(registry) {
     // BL-260 widened this function (a new 5-arg html-carrying arity plus its
     // own docstring) past the old 800-char window before reaching the
     // notify_email_to/RESEND_API_KEY/send-alarm-email! lines this check
-    // greps for - bumped to comfortably cover both arities' bodies.
-    const sharedBody = definedFunctionBody(alarmLibSrc, 'send-configured-email!', 1400);
+    // greps for - bumped to comfortably cover both arities' bodies. BL-326's
+    // own docstring growth (the test-fixture-root? paragraph) then pushed
+    // the REAL `(System/getenv "RESEND_API_KEY")` call past 1400 - the
+    // window only ever grows as the docstring does, so this is bumped with
+    // a wide safety margin rather than trimmed to the current exact fit.
+    const sharedBody = definedFunctionBody(alarmLibSrc, 'send-configured-email!', 2600);
     if (!sharedBody) {
       throw new Error('expected daemon_alarm_lib.bb to define the shared send-configured-email!');
     }
