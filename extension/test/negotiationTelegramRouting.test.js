@@ -1,5 +1,10 @@
 const assert = require('node:assert/strict');
-const { isAgreementText, decideNegotiationUpdateAction, formatContractForTelegram } = require('../out/onboarding/negotiationTelegramRouting');
+const {
+  isAgreementText,
+  isAmbiguousIntentText,
+  decideNegotiationUpdateAction,
+  formatContractForTelegram,
+} = require('../out/onboarding/negotiationTelegramRouting');
 
 const PRINCIPAL_ID = 111;
 const CHAT_ID = '-100123';
@@ -23,6 +28,34 @@ test('isAgreementText is false for an objection that merely mentions the word "a
 
 test('isAgreementText is false for ordinary objection text', () => {
   assert.equal(isAgreementText('also add accessibility support'), false);
+});
+
+// BL-442: the first real FES onboarding run replied "All agreed" - the
+// original single-word anchor failed this and misrouted it as an objection.
+test('isAgreementText recognizes common natural-language approvals broadened by BL-442', () => {
+  for (const text of ['All agreed', 'all agreed', 'Ok', 'ok', 'okay', 'OK.', 'All Approve!']) {
+    assert.equal(isAgreementText(text), true, `expected "${text}" to be recognized as agreement`);
+  }
+});
+
+test('isAgreementText is still false for an objection that merely mentions "agree" even with "all" nearby', () => {
+  assert.equal(isAgreementText('all agreed except remove the PWA work'), false);
+});
+
+// ── isAmbiguousIntentText ────────────────────────────────────────────────
+
+test('isAmbiguousIntentText recognizes a small set of genuinely uncertain replies', () => {
+  for (const text of ['not sure', 'Not Sure', 'unsure', 'maybe', 'hmm', 'hmmm', "I don't know", 'idk', '?', '???']) {
+    assert.equal(isAmbiguousIntentText(text), true, `expected "${text}" to be recognized as ambiguous`);
+  }
+});
+
+test('isAmbiguousIntentText is false for a real objection, even one that mentions uncertainty inline', () => {
+  assert.equal(isAmbiguousIntentText('not sure about the PWA work, please remove it'), false);
+});
+
+test('isAmbiguousIntentText is false for an approval', () => {
+  assert.equal(isAmbiguousIntentText('agreed'), false);
 });
 
 // ── decideNegotiationUpdateAction ──────────────────────────────────────
@@ -64,6 +97,20 @@ test('an agreement reply in the negotiation topic from the principal is an agree
   const update = mkUpdate({ text: 'agree' });
   const decision = decideNegotiationUpdateAction(update, String(PRINCIPAL_ID), CHAT_ID, NEGOTIATION_TOPIC_ID);
   assert.deepEqual(decision, { action: 'agree' });
+});
+
+// BL-442: the two-word reply that started this ticket - must classify as
+// agreement, not fall through to the objection path.
+test('a "All agreed" reply in the negotiation topic is an agreement, not an objection', () => {
+  const update = mkUpdate({ text: 'All agreed' });
+  const decision = decideNegotiationUpdateAction(update, String(PRINCIPAL_ID), CHAT_ID, NEGOTIATION_TOPIC_ID);
+  assert.deepEqual(decision, { action: 'agree' });
+});
+
+test('a genuinely ambiguous reply in the negotiation topic asks rather than objects', () => {
+  const update = mkUpdate({ text: 'not sure' });
+  const decision = decideNegotiationUpdateAction(update, String(PRINCIPAL_ID), CHAT_ID, NEGOTIATION_TOPIC_ID);
+  assert.deepEqual(decision, { action: 'ask' });
 });
 
 // BL-381: the chat guard must win over every later reason, same ordering

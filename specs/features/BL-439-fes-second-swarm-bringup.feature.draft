@@ -1,0 +1,43 @@
+Feature: The FES second swarm stands up as a 2-pack with proven Telegram separation and a distinct fleet identity
+
+# BL-439 (feature/runbook, epic BL-435 slice 4 — the epic's E2E acceptance, PARKED behind BL-436+BL-437):
+# turn "fleet of one, in theory" into "fleet of two, for real". A runbook stands up a real second swarm
+# against free-email-scanner (local repo C:\Users\Carillon\source\repos\free-email-scanner) as a 2-pack
+# (the 15GB host holds ONE full swarm, so FES is minimal), launched from the Windows-side swarmforge
+# checkout (target on /mnt/c, where Linux-side tmux sockets are unreliable), with its own bot+group. The
+# forcing-function acceptance: the FES swarm's inbound never steals the primary's (Telegram separation,
+# per BL-436), and both swarms appear as distinct identities in the fleet console (per BL-437). Scenarios
+# live in this .feature.draft until BL-436 + BL-437 land and this ticket is promoted.
+#
+# Scope (verify at build time): a runbook under docs/ for the FES 2-pack bring-up, plus the E2E
+# acceptance that exercises BL-436 (per-swarm creds) and BL-437 (fleet status publish) against a real
+# second swarm. This slice also exercises the full onboarding ceremony end to end (BL-262/344/380/381/382)
+# as its real-world acceptance.
+
+Background:
+  Given the primary swarm is running with its own bot and group
+
+# BL-439 fes-second-swarm-bringup-01
+Scenario: Following the runbook stands up the FES swarm as a 2-pack with its own swarm_name
+  When the FES bring-up runbook is followed
+  Then a second swarm named "fes" runs as a 2-pack
+  And it is launched from the Windows-side checkout against the /mnt/c target
+
+# BL-439 fes-second-swarm-bringup-02
+Scenario: The FES swarm resolves its own bot token from its fleet creds file
+  Given the FES swarm has its own fleet creds file
+  When the FES front desk resolves its Telegram creds
+  Then it uses the FES bot token, not the primary's
+
+# BL-439 fes-second-swarm-bringup-03
+Scenario: Neither swarm's inbound is consumed by the other
+  Given both the primary and FES swarms are polling their own bots
+  When a message is sent to the primary's bot
+  Then the FES swarm does not consume it
+  And when a message is sent to the FES bot the primary swarm does not consume it
+
+# BL-439 fes-second-swarm-bringup-04
+Scenario: Both swarms appear as distinct identities in the fleet console
+  Given both the primary and FES swarms publish their status.json
+  When the fleet console reads the fleet
+  Then it renders the primary and "fes" as two distinct swarms

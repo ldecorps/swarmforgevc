@@ -14,15 +14,34 @@ import { ProposedContract } from './contractTypes';
 // agree with most of this but remove the PWA work") is never misread as
 // approval. Mirrors pendingApprovalReply.ts's own posture: agreement is a
 // reply that IS the agreement word, not one that merely mentions it.
-const AGREEMENT_PATTERN = /^\s*(agree|agreed|approve|approved|lgtm|yes)[.!]?\s*$/i;
+// BL-442: broadened to also accept a leading "all" and "ok"/"okay" - the
+// exact failure this ticket fixes ("All agreed" failed this anchor and fell
+// through to the objection path). Still whole-message anchored (^...$), so
+// the guard above is unchanged: an objection merely containing "agree"
+// still fails this pattern and is never misread as approval.
+const AGREEMENT_PATTERN = /^\s*(all\s+)?(agree|agreed|approve|approved|lgtm|yes|ok|okay)[.!]?\s*$/i;
+
+// BL-442: a reply whose intent is genuinely uncertain - the human is unsure
+// or asking a question back, rather than either approving or making a
+// concrete objection. Deliberately narrow and separate from the objection
+// fallthrough below, so this can never reclassify a real objection as
+// merely ambiguous: only this small, explicit, whole-message set of
+// non-committal replies routes to 'ask' - anything else still falls
+// through to 'objection', exactly as before this ticket.
+const AMBIGUOUS_INTENT_PATTERN = /^\s*(not sure|unsure|no idea|maybe|i don'?t know|idk|hmm+|huh\??|what\??|\?+)\s*$/i;
 
 export function isAgreementText(text: string): boolean {
   return AGREEMENT_PATTERN.test(text);
 }
 
+export function isAmbiguousIntentText(text: string): boolean {
+  return AMBIGUOUS_INTENT_PATTERN.test(text);
+}
+
 export type NegotiationUpdateDecision =
   | { action: 'objection'; text: string }
   | { action: 'agree' }
+  | { action: 'ask' }
   | { action: 'drop'; reason: 'not-my-chat' | 'not-principal' | 'not-negotiation-topic' | 'no-text' };
 
 // Pure: the negotiation relay's whole per-update decision. Order mirrors
@@ -50,7 +69,13 @@ export function decideNegotiationUpdateAction(
   if (!text) {
     return { action: 'drop', reason: 'no-text' };
   }
-  return isAgreementText(text) ? { action: 'agree' } : { action: 'objection', text };
+  if (isAgreementText(text)) {
+    return { action: 'agree' };
+  }
+  if (isAmbiguousIntentText(text)) {
+    return { action: 'ask' };
+  }
+  return { action: 'objection', text };
 }
 
 function renderBulletList(entries: string[]): string {

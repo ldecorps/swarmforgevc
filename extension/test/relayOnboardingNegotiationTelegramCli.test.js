@@ -143,13 +143,27 @@ test('buildRelayAdapters.objectToContract reports round-limit once the round cap
   const targetRepo = mkTargetWithProposedContract();
   const adapters = buildRelayAdapters(targetRepo, 'unused-token', CHAT_ID, NEGOTIATION_TOPIC_ID);
   for (let round = 1; round <= 5; round += 1) {
-    const result = await adapters.objectToContract(`objection round ${round}`);
+    const result = await adapters.objectToContract(`also add feature ${round}`);
     assert.equal(result.outcome, 'revised');
   }
 
   const result = await adapters.objectToContract('one objection past the cap');
 
   assert.deepEqual(result, { outcome: 'round-limit' });
+});
+
+// BL-442: an objection that is a real objection but from which no concrete
+// change can be derived must never be reported as 'revised' - the contract
+// on disk stays byte-identical to before.
+test('buildRelayAdapters.objectToContract reports not-derived when no concrete change can be derived, and the contract on disk is untouched', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const before = readContract(targetRepo);
+  const adapters = buildRelayAdapters(targetRepo, 'unused-token', CHAT_ID, NEGOTIATION_TOPIC_ID);
+
+  const result = await adapters.objectToContract('I am wary of this direction');
+
+  assert.deepEqual(result, { outcome: 'not-derived' });
+  assert.deepEqual(readContract(targetRepo), before);
 });
 
 test('buildRelayAdapters.objectToContract propagates a non-already-ended error rather than swallowing it', async () => {

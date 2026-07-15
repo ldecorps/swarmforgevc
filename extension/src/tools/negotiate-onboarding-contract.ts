@@ -116,13 +116,22 @@ export async function runObject(
     await fs.promises.writeFile(negotiationEndedPath(targetRepoPath), JSON.stringify({ reason: after.endedReason }), 'utf8');
     return { ended: true, endedReason: after.endedReason, round: null };
   }
-  await updateTargetContract(targetRepoPath, after.contract, `Revise SwarmForge onboarding contract (round ${after.rounds.length})`);
+  const lastRound = after.rounds[after.rounds.length - 1];
+  // BL-442: a round whose changedFields is empty derived no concrete
+  // contract change (reviseContractFromObjection's own "nothing could be
+  // derived" signal) - the round is still logged so the round-cap budget
+  // it consumed survives a restart, but the contract itself is byte-
+  // identical to `before`, so there is nothing new to write/commit.
+  const derived = lastRound.changedFields.length > 0;
+  if (derived) {
+    await updateTargetContract(targetRepoPath, after.contract, `Revise SwarmForge onboarding contract (round ${after.rounds.length})`);
+  }
   await appendRound(targetRepoPath, after);
   // BL-381: `contract` rides the result so a caller relaying the revision
   // elsewhere (the Telegram negotiation topic) can post it without a
   // separate re-read of contract.yaml - additive only, every existing
   // caller reading only ended/endedReason/round is unaffected.
-  return { ended: false, endedReason: null, round: after.rounds[after.rounds.length - 1], contract: after.contract };
+  return { ended: false, endedReason: null, round: lastRound, contract: after.contract, derived };
 }
 
 export async function runApprove(targetRepoPath: string): Promise<Record<string, unknown>> {

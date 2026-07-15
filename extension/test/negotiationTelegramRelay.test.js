@@ -4,6 +4,8 @@ const {
   relayNegotiationUpdates,
   CONTRACT_AGREED_MESSAGE,
   ROUND_LIMIT_MESSAGE,
+  CLARIFY_INTENT_MESSAGE,
+  COULD_NOT_DERIVE_CHANGE_MESSAGE,
 } = require('../out/onboarding/negotiationTelegramRelay');
 
 const PRINCIPAL_ID = '111';
@@ -104,6 +106,39 @@ test('an objection that exhausts the round budget posts the round-limit notice i
 
   assert.equal(outcome, 'posted');
   assert.deepEqual(adapters.posts, [ROUND_LIMIT_MESSAGE]);
+});
+
+// BL-442: an ambiguous reply must never reach objectToContract at all - the
+// contract must be left completely alone while the human is asked to
+// disambiguate.
+test('an ambiguous reply asks for clarification and never calls objectToContract or approveContract', async () => {
+  const update = mkUpdate({ text: 'not sure' });
+  const adapters = mkAdapters({
+    objectToContract: async () => {
+      throw new Error('must not be called');
+    },
+    approveContract: async () => {
+      throw new Error('must not be called');
+    },
+  });
+
+  const outcome = await processNegotiationUpdate(update, PRINCIPAL_ID, CHAT_ID, NEGOTIATION_TOPIC_ID, adapters);
+
+  assert.equal(outcome, 'posted');
+  assert.deepEqual(adapters.posts, [CLARIFY_INTENT_MESSAGE]);
+});
+
+// BL-442: an objection that is definitely an objection, but from which no
+// concrete change could be derived, posts the rephrase message rather than
+// re-posting the (unchanged) contract as if it were a real revision.
+test('an objection from which no change could be derived posts the rephrase notice, not the contract', async () => {
+  const update = mkUpdate({ text: 'I am wary of this direction' });
+  const adapters = mkAdapters({ objectToContract: async () => ({ outcome: 'not-derived' }) });
+
+  const outcome = await processNegotiationUpdate(update, PRINCIPAL_ID, CHAT_ID, NEGOTIATION_TOPIC_ID, adapters);
+
+  assert.equal(outcome, 'posted');
+  assert.deepEqual(adapters.posts, [COULD_NOT_DERIVE_CHANGE_MESSAGE]);
 });
 
 // ── relayNegotiationUpdates (BL-381 scenario 02: as many rounds as needed) ─

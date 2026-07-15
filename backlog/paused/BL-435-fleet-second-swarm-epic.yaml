@@ -1,0 +1,74 @@
+id: BL-435
+title: "EPIC — beef up the baton/fleet layer with a real second swarm (free-email-scanner) as the guinea pig; tracks children, do not promote directly"
+milestone: M8
+type: epic
+status: todo
+epic: fleet-second-swarm
+priority: 40
+direction: human-requested
+depends_on: []
+decomposes_into: [BL-436, BL-437, BL-438, BL-439]
+source: "INTAKE-fleet-beefup-second-swarm-fes-guinea-pig.md — a live brainstorm with the human, 2026-07-15, of BL-242's deferred decisions. The Baton fleet epic (BL-242, children BL-243-247) is code-complete but has only ever run as a fleet of one. The human wants a real second swarm against free-email-scanner as the forcing function that turns 'fleet of one, in theory' into 'fleet of two, for real'."
+
+notes: |
+  UMBRELLA / tracking item, not directly promotable. The actionable work is its children (BL-436..439).
+
+  WHY THIS EPIC EXISTS. BL-242's fleet layer works in theory but has never carried a second swarm, so its
+  thin/deferred parts are untested. Standing up a real 2-pack swarm against free-email-scanner (local
+  repo `C:\Users\Carillon\source\repos\free-email-scanner`, launched from the Windows-side swarmforge
+  checkout because the target is on /mnt/c where Linux-side tmux sockets are unreliable) is the forcing
+  function that exercises them. Constraints already decided with the human: the host is a 15GB box that
+  OOM-crashed today and holds ONE full swarm, so FES runs as a 2-pack (minimal); the FIRST proof-point is
+  Telegram channel separation — the FES swarm with its own bot+group never steals the primary's inbound.
+
+  SETTLED DESIGN (from the brainstorm; the children implement these).
+    1. `swarm_name` is the fleet-wide primary key (already exists, BL-090: parsed by swarmforge.sh,
+       default `primary`). Everything per-swarm keys off it: creds, bridge port, topic map, published
+       status. Resolves the "how is a swarm named" half of BL-242's deferred decision (a).
+    2. One rendezvous dir per swarm, owned by the extension-host: `~/.swarmforge/fleet/<swarm_name>/`
+       (under host $HOME, NEVER inside the target working tree — honors the secrets rule). The fleet
+       roster is "whatever subdirs exist here" — no hand-maintained fleet-config JSON.
+    3. Telegram separation = per-swarm creds file (decision B):
+       `~/.swarmforge/fleet/<swarm_name>/telegram.json` = { botToken, chatId, bridgePort }. Makes the
+       token a property of the SWARM, not of whatever shell launched it — killing the launch-boundary
+       footgun where a second supervisor inherits the primary's exported token. -> BL-436.
+    4. Publish format = each swarm publishes its own rolled-up status (Option 2):
+       `~/.swarmforge/fleet/<swarm_name>/status.json` — identity/status/health/children-rollup/needs-human/
+       updated_at. The fleet console becomes dumb: enumerate the rendezvous dir -> read each status.json ->
+       merge. Flips today's backwards coupling (console RECONSTRUCTS status from roles.tsv + per-role
+       heartbeat + handoffd.status.json). -> BL-437.
+    5. Author = handoffd, folding in the blocked flag. The always-on, zero-token daemon writes the
+       derivable rollup every cycle; the coordinator/needs-human reconciler contributes the needs-human
+       semantic for handoffd to fold in. -> BL-437 (publish) + BL-438 (needs-human).
+    6. Coordinator-lost = stale updated_at (reuse BL-245 state + watchdog/liveness.ts). -> BL-437.
+    7. Transport = poll-on-disk now; format transport-agnostic. When a swarm goes remote (BL-101, blocked)
+       it publishes to the same rendezvous over the bridge — additive, no format change. Cleanly DEFERS
+       BL-242's "reuse bridge vs Pi relay" transport binding.
+
+  SIDE-EFFECT WINS. Closes the `isBlocked` always-false gap in fleet-console.ts / compositeNode.ts
+  (needs-human becomes a field the swarm owns, not pane text the console sniffs) — BL-438. Gives the
+  fleet console a real identity to render (`swarm_name`) — BL-437.
+
+  RELATED / ALREADY RESOLVED. BL-242's other two parked decisions: (b) disconnected human<->coordinator
+  protocol is now its own track — INTAKE-offline-answer-files-git-return-path.md -> BL-440/441; (c)
+  onboarding/contract ceremony is already resolved by shipped work (BL-262/344/380/381/382) — the FES
+  bring-up (BL-439) exercises it end to end and is its real-world acceptance.
+
+  DONE WHEN: BL-436..439 all land and the FES swarm runs as a real second swarm with proven Telegram
+  separation and a distinct identity in the fleet console. Do NOT close this epic until BL-439's E2E
+  bring-up passes.
+
+  Existing surfaces (reference): extension/src/swarm/compositeNode.ts, fleetNode.ts,
+  extension/src/tools/fleet-console.ts, swarmforge/scripts/front_desk_supervisor.bb,
+  extension/src/tools/telegram-front-desk-bot.ts, extension/src/onboarding/telegramChannelProvisioning.ts,
+  extension/src/tools/provision-onboarding-telegram-channel.ts. Tickets: BL-242/243/244/245/246/247,
+  BL-090/091, BL-380/381, BL-405, BL-101 (blocked).
+
+human_approval: >
+  approved (umbrella) 2026-07-15 (coordinator session, full-batch confirmation via Operator relay). The
+  design decisions were settled with the human 2026-07-15 (recorded in the intake); the human then
+  approved the full batch including all children (BL-436..439). This remains a tracking item — not
+  directly promotable regardless of approval status; the children carry their own approval and
+  promotion eligibility.
+
+mutation_cost: n/a
