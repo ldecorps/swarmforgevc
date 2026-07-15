@@ -23,7 +23,15 @@ pass() { echo "PASS: $*"; }
 
 # ── fixture: coordinator+specifier share master; coder has its own worktree ──
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
-trap 'rm -rf "$ROOT"' EXIT
+export SWARMFORGE_ALLOW_TMP_DAEMON=1  # BL-406: opt in - this ROOT is an intentional throwaway test root
+DAEMON_PID=""
+cleanup() {
+  # BL-406: kill the daemon as a backstop even if an earlier assertion exits
+  # this script before the normal stop-file+wait sequence runs.
+  [[ -n "$DAEMON_PID" ]] && kill "$DAEMON_PID" 2>/dev/null || true
+  rm -rf "$ROOT"
+}
+trap cleanup EXIT
 
 SOCK="$ROOT/fake.sock"
 touch "$SOCK"

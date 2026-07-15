@@ -137,7 +137,10 @@ function registerSteps(registry) {
   registry.define(/^the handoff daemon processes it$/, (ctx) => {
     execFileSync('bb', [HANDOFFD, ctx.daemonRoot, '--poll-once'], {
       encoding: 'utf8',
-      env: { ...processEnvAllowlist(), PATH: `${ctx.fakeBin}:${process.env.PATH}` },
+      // BL-406: explicit opt-in - ctx.daemonRoot is an intentional throwaway
+      // test root, so handoffd.bb's front-door refuse-tmp-root guard must
+      // be told this run is deliberate.
+      env: { ...processEnvAllowlist(), PATH: `${ctx.fakeBin}:${process.env.PATH}`, SWARMFORGE_ALLOW_TMP_DAEMON: '1' },
     });
   });
 

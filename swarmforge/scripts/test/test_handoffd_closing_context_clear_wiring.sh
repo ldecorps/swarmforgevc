@@ -17,7 +17,19 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
-trap 'rm -rf "$ROOT"' EXIT
+export SWARMFORGE_ALLOW_TMP_DAEMON=1  # BL-406: opt in - this ROOT is an intentional throwaway test root
+DAEMON_PID=""
+DAEMON_PID2=""
+ROOT2=""
+cleanup() {
+  # BL-406: kill the daemon(s) as a backstop even if an earlier assertion
+  # exits this script before the normal stop-file+wait sequence runs.
+  [[ -n "$DAEMON_PID" ]] && kill "$DAEMON_PID" 2>/dev/null || true
+  [[ -n "$DAEMON_PID2" ]] && kill "$DAEMON_PID2" 2>/dev/null || true
+  rm -rf "$ROOT"
+  [[ -n "$ROOT2" ]] && rm -rf "$ROOT2"
+}
+trap cleanup EXIT
 
 TODAY_DAY_KEY="$(date -u +%Y-%m-%d)"
 
@@ -124,7 +136,5 @@ grep -q "closing-context-clear-skip-mailbox-only" "$LOG_FILE2" || fail "05: expe
 grep -q "closing-context-clear-fired" "$LOG_FILE2" && fail "05: expected NO clear to be recorded under SWARMFORGE_MAILBOX_ONLY=1; got: $(cat "$LOG_FILE2")"
 [[ -f "$ROOT2/.swarmforge/coordinator-context-clear.json" ]] && fail "05: expected the marker to NEVER be written when nothing was actually injected"
 pass "05: SWARMFORGE_MAILBOX_ONLY=1 skips the whole sweep - no clear recorded when nothing was injected"
-
-rm -rf "$ROOT2"
 
 echo "ALL PASS"

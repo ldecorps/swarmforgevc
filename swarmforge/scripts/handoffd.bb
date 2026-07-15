@@ -51,6 +51,29 @@
 (def project-root
   (or (first *command-line-args*) (usage)))
 
+;; BL-406: refuse to run at all against a throwaway test/temp project root
+;; unless the caller explicitly opts in - checked here, before this daemon
+;; claims a pid file, loads roles, or starts a single sweep, so a leaked
+;; test daemon can never come alive to leak in the first place (root cause:
+;; six /tmp acceptance-sandbox daemons orphaned by a killed test, alive
+;; 9-11h, each independently sweeping and sending real briefing email -
+;; test-fixture-root?'s send-path suppression in daemon_alarm_lib.bb is a
+;; second, narrower layer, not a substitute for this one). Every wiring
+;; test that intentionally runs a real daemon under a temp root sets this
+;; env var; a leaked/mistaken invocation without it exits immediately
+;; instead of running unsupervised for hours.
+(def allow-tmp-daemon-env-var "SWARMFORGE_ALLOW_TMP_DAEMON")
+
+(defn refuse-tmp-root! [root]
+  (binding [*out* *err*]
+    (println (str "handoffd.bb: refusing to start against a throwaway test/temp project root (" root ") "
+                   "without " allow-tmp-daemon-env-var "=1 set (BL-406). If this is an intentional "
+                   "test fixture, export " allow-tmp-daemon-env-var "=1 before starting the daemon.")))
+  (System/exit 1))
+
+(when (daemon-alarm-lib/refuse-tmp-daemon-start? project-root (System/getenv allow-tmp-daemon-env-var))
+  (refuse-tmp-root! project-root))
+
 (def script-dir (str (fs/parent (fs/canonicalize *file*))))
 (def state-dir (fs/path project-root ".swarmforge"))
 (def daemon-dir (fs/path state-dir "daemon"))
