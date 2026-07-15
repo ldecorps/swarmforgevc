@@ -605,3 +605,16 @@
   `postOperatorContext` / `openSubjectAndRecord` / `recordApprovalReply` were never given one. The
   result: the same two human messages replayed into a 209-message topic record and ~8 commits/min,
   every one of them pushed to origin/main, until a human stopped the bot.)
+- **External text embedded into a structured file (a YAML comment, a value, any generated line)
+  must have its newlines — and any structural delimiter of the target format — stripped or escaped
+  BEFORE it is written; an unescaped newline breaks out of its intended syntactic slot.** A trailing
+  `# <text>` comment only comments to the end of ONE line: a multi-line external string injects its
+  second line onward as LIVE content, corrupting the file. This is the structured-file sibling of the
+  GitHub-Actions `${{ }}` interpolation rule above — the same "raw external value spliced into text
+  that is then parsed" class, in a data file rather than a shell. Collapse the value to a single line
+  (replace/strip `\n`), or quote/escape it per the target format, before it reaches the file; never
+  write an externally-sourced reply, title, or note into a structured file verbatim. The value is
+  attacker/human-influenceable, so treat corruption as a when-not-if. (BL-409: `rejectHumanApprovalText`
+  embeds a Telegram reply — obtained from `messageTextOf`, which returns `update.message?.text` with
+  newlines intact — as a trailing YAML comment on the ticket, so a multi-line reject reason injects new
+  YAML lines and corrupts the backlog file. Proposed by the cleaner 2026-07-15 scoped `engineering`.)
