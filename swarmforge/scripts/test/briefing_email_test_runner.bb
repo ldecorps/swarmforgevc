@@ -169,7 +169,7 @@
   (let [sent (briefing-email-lib/send-unsent-briefings!
               dir
               {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
-               :send-email! (fn [_subject _text] {:success true})
+               :send-email! (fn [_subject _text & _] {:success true})
                :log! (fake-log! calls)})]
     (assert= "brief-01: the newly committed briefing is sent" ["2026-07-09.md"] sent)
     (assert= "brief-01: the briefing is marked sent durably"
@@ -188,7 +188,7 @@
   (briefing-email-lib/send-unsent-briefings!
    dir
    {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
-    :send-email! (fn [_subject text] (swap! sent-texts conj text) {:success true})
+    :send-email! (fn [_subject text & _] (swap! sent-texts conj text) {:success true})
     :suite-duration-line (fn [] "WARN Suite duration trend: 300s latest ▲")
     :log! (fn [& _] nil)})
   (assert= "BL-252: the suite-duration line reaches the actual sent content"
@@ -206,7 +206,7 @@
   (briefing-email-lib/send-unsent-briefings!
    dir
    {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
-    :send-email! (fn [_subject text] (swap! sent-texts conj text) {:success true})
+    :send-email! (fn [_subject text & _] (swap! sent-texts conj text) {:success true})
     :log! (fn [& _] nil)})
   (assert= "BL-252: no :suite-duration-line adapter -> content is unchanged (backward compatible)"
            "Headline\n"
@@ -222,7 +222,7 @@
   (briefing-email-lib/send-unsent-briefings!
    dir
    {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
-    :send-email! (fn [_subject text] (swap! sent-texts conj text) {:success true})
+    :send-email! (fn [_subject text & _] (swap! sent-texts conj text) {:success true})
     :needs-approval-section (fn [] "Needs approval:\n  - BL-100: A ticket")
     :log! (fn [& _] nil)})
   (assert= "BL-251: the needs-approval section reaches the actual sent content"
@@ -237,7 +237,7 @@
   (briefing-email-lib/send-unsent-briefings!
    dir
    {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
-    :send-email! (fn [_subject text] (swap! sent-texts conj text) {:success true})
+    :send-email! (fn [_subject text & _] (swap! sent-texts conj text) {:success true})
     :not-done-count-line (fn [] "Not done: 7 tickets")
     :log! (fn [& _] nil)})
   (assert= "BL-263: the not-done-count line reaches the actual sent content"
@@ -253,7 +253,7 @@
   (briefing-email-lib/send-unsent-briefings!
    dir
    {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
-    :send-email! (fn [_subject text] (swap! sent-texts conj text) {:success true})
+    :send-email! (fn [_subject text & _] (swap! sent-texts conj text) {:success true})
     :not-done-count-line (fn [] nil)
     :log! (fn [& _] nil)})
   (assert= "BL-263: a nil-returning :not-done-count-line adapter leaves content unchanged"
@@ -269,7 +269,7 @@
   (briefing-email-lib/send-unsent-briefings!
    dir
    {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
-    :send-email! (fn [_subject text] (swap! sent-texts conj text) {:success true})
+    :send-email! (fn [_subject text & _] (swap! sent-texts conj text) {:success true})
     :standing-rule-violations-line (fn [] "Standing-rule violations: 111 cited recurrence(s) across 73 rule(s).")
     :log! (fn [& _] nil)})
   (assert= "BL-337: the standing-rule-violations line reaches the actual sent content"
@@ -285,7 +285,7 @@
   (briefing-email-lib/send-unsent-briefings!
    dir
    {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
-    :send-email! (fn [_subject text] (swap! sent-texts conj text) {:success true})
+    :send-email! (fn [_subject text & _] (swap! sent-texts conj text) {:success true})
     :standing-rule-violations-line (fn [] nil)
     :log! (fn [& _] nil)})
   (assert= "BL-337: a nil-returning :standing-rule-violations-line adapter leaves content unchanged"
@@ -300,7 +300,7 @@
   (briefing-email-lib/send-unsent-briefings!
    dir
    {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
-    :send-email! (fn [_subject text] (swap! sent-texts conj text) {:success true})
+    :send-email! (fn [_subject text & _] (swap! sent-texts conj text) {:success true})
     :suite-duration-line (fn [] "Suite duration trend: 5s latest")
     :needs-approval-section (fn [] "Needs approval:\n  - BL-100: A ticket")
     :log! (fn [& _] nil)})
@@ -318,7 +318,7 @@
   (briefing-email-lib/send-unsent-briefings!
    dir
    {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
-    :send-email! (fn [_subject text] (swap! sent-texts conj text) {:success true})
+    :send-email! (fn [_subject text & _] (swap! sent-texts conj text) {:success true})
     :needs-approval-section (fn [] nil)
     :log! (fn [& _] nil)})
   (assert= "BL-251: a nil-returning :needs-approval-section adapter leaves content unchanged"
@@ -334,7 +334,7 @@
   (let [sent (briefing-email-lib/send-unsent-briefings!
               dir
               {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
-               :send-email! (fn [_s _t] (swap! send-calls inc) {:success true})
+               :send-email! (fn [_s _t & _] (swap! send-calls inc) {:success true})
                :log! (fn [& _] nil)})]
     (assert= "brief-02: no second email is sent for an already-sent briefing" [] sent)
     (assert= "brief-02: send-email! is never even called for an already-sent briefing" 0 @send-calls)))
@@ -347,7 +347,7 @@
   (let [sent (briefing-email-lib/send-unsent-briefings!
               dir
               {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
-               :send-email! (fn [_s _t] {:success false :reason :missing-api-key :error "email not configured (missing RESEND_API_KEY)"})
+               :send-email! (fn [_s _t & _] {:success false :reason :missing-api-key :error "email not configured (missing RESEND_API_KEY)"})
                :log! (fake-log! calls)})]
     (assert= "brief-03: nothing is sent when unconfigured" [] sent)
     (assert= "brief-03: the briefing is NOT marked sent (retried next sweep)"
@@ -363,7 +363,7 @@
   (briefing-email-lib/send-unsent-briefings!
    dir
    {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
-    :send-email! (fn [_s _t] {:success false :reason :disabled :error "email not configured (notify_email_to unset)"})
+    :send-email! (fn [_s _t & _] {:success false :reason :disabled :error "email not configured (notify_email_to unset)"})
     :log! (fake-log! calls)})
   (assert= "brief-03: a disabled (no recipient) skip is logged distinctly"
            true
@@ -376,7 +376,7 @@
   (briefing-email-lib/send-unsent-briefings!
    dir
    {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
-    :send-email! (fn [_s _t] {:success false :error "network error"})
+    :send-email! (fn [_s _t & _] {:success false :error "network error"})
     :log! (fn [& _] nil)})
   (assert= "a real send failure is not marked sent - retried next sweep"
            #{}
@@ -456,6 +456,9 @@
   (assert= "the diagram html reaches the actual :send-email! call, referencing the cid"
            true
            (str/includes? (first @sent-html) "cid:architecture-diagram"))
+  (assert= "BL-393 body-html-04: the html also carries the rendered briefing body alongside the diagram - neither replaces the other"
+           true
+           (str/includes? (first @sent-html) "<p>Headline</p>"))
   (assert= "the diagram attachments reach the actual :send-email! call"
            [{:filename "architecture-diagram.png" :content-id "architecture-diagram" :base64 "QUJD"}]
            (first @sent-attachments))
@@ -465,9 +468,12 @@
                 (str/includes? (first @sent-texts) "rendered inline above"))))
 
 ;; BL-286 diagram-cid-04 (wiring): a :diagram-section adapter that reports
-;; unavailable still sends - html is nil, no attachments are passed (only
-;; the 3-arg :send-email! call is made, matching build-diagram-section's own
+;; unavailable still sends - no attachments are passed (only the 3-arg
+;; :send-email! call is made, matching build-diagram-section's own
 ;; no-:attachments-key contract), and the plaintext note says so.
+;; BL-393 body-html-05: html is no longer nil here - it now carries the
+;; rendered briefing body (there is simply no diagram content to merge into
+;; it), so a run with no diagrams still sends the rendered body as html.
 (let [dir (mk-tmp)
       sent-texts (atom [])
       sent-args (atom [])
@@ -486,16 +492,21 @@
   (assert= "diagram-cid-04: its send payload carries no attachments - only html (3-arg) is passed"
            3
            (count (first @sent-args)))
-  (assert= "render-unavailable-degradation-04: html is nil - a plaintext-only send, exactly as before this ticket"
-           nil
+  (assert= "BL-393 body-html-05: html carries the rendered body (plus the plaintext-mirrored no-diagram note) even with no diagrams available"
+           "<p>Headline</p><p>Architecture diagrams: unavailable this run (renderer not installed) - see docs/diagrams/ in the repo.</p>"
            (nth (first @sent-args) 2))
+  (assert= "BL-393: no diagram reference leaks into the html when rendering is unavailable"
+           false
+           (str/includes? (nth (first @sent-args) 2) "cid:"))
   (assert= "render-unavailable-degradation-04: the plaintext part carries the clear no-diagram note"
            true
            (str/includes? (first @sent-texts) "unavailable")))
 
-;; diagram-cid-05: no :diagram-section adapter at all (every pre-BL-260
-;; caller/test) -> the exact 2-arg :send-email! call, unaffected - no
-;; :html/:attachments args at all, no diagram note appended.
+;; BL-393 diagram-cid-05 (updated - the shipped contract this ticket named
+;; explicitly): no :diagram-section adapter at all -> the send payload now
+;; ALWAYS carries html (the rendered body) as a 3rd arg, but still never
+;; carries attachments. The old "neither html nor attachments" claim
+;; predates BL-393; html is no longer conditional on a diagram section.
 (let [dir (mk-tmp)
       sent-texts (atom [])
       sent-args (atom [])]
@@ -508,9 +519,16 @@
   (assert= "BL-260: no :diagram-section adapter -> content is unchanged (backward compatible)"
            "Headline\n"
            (first @sent-texts))
-  (assert= "diagram-cid-05: no :diagram-section adapter -> the send payload has neither html nor attachments args"
-           2
-           (count (first @sent-args))))
+  (assert= "diagram-cid-05: no :diagram-section adapter -> the send payload carries html (the rendered body) but no attachments arg"
+           3
+           (count (first @sent-args)))
+  (assert= "diagram-cid-05: the html arg is the rendered body, not nil"
+           "<p>Headline</p>"
+           (nth (first @sent-args) 2)))
+
+;; render-markdown-to-html's own pure tests live in
+;; markdown_to_html_test_runner.bb (BL-393 cleaner extraction) - it moved to
+;; its own module (markdown_to_html_lib.bb), so its tests moved with it.
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)

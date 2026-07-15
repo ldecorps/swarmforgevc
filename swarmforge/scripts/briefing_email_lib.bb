@@ -6,10 +6,15 @@
 ;; same as that module's own docstring promised. Reuses daemon_alarm_lib.bb's
 ;; send-alarm-email! for the actual POST - no second Resend client - so this
 ;; module owns only the briefing-specific scanning/marker/subject logic.
+;; BL-393 (cleaner extraction): generic markdown->HTML rendering lives in
+;; markdown_to_html_lib.bb, not here - this module only merges that render
+;; with its own diagram-html concern (merge-diagram-html below).
 (ns briefing-email-lib
   (:require [babashka.fs :as fs]
             [cheshire.core :as json]
             [clojure.string :as str]))
+
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "markdown_to_html_lib.bb")))
 
 (defn sent-state-path [briefings-dir]
   (str (fs/path briefings-dir ".sent.json")))
@@ -173,6 +178,15 @@
     {:html nil
      :note-line "Architecture diagrams: unavailable this run (renderer not installed) - see docs/diagrams/ in the repo."}))
 
+;; BL-393: the diagram section's own html (a <div> of <h3>/<img> per
+;; diagram) must coexist with the rendered body, never replace it -
+;; appended after the body so both remain intact and neither clobbers the
+;; other (the critical interaction the ticket calls out explicitly).
+(defn- merge-diagram-html [body-html diagram-html]
+  (if diagram-html
+    (str body-html diagram-html)
+    body-html))
+
 (defn send-unsent-briefings!
   "Sends each not-yet-sent committed briefing exactly once via the injected
    send-email! adapter (daemon_alarm_lib.bb's send-alarm-email!). A file is
@@ -190,17 +204,17 @@
 
    BL-260: an optional :diagram-section adapter (zero-arg fn returning
    build-diagram-section's {:html :note-line} shape) appends :note-line to
-   the plaintext content exactly like the other optional sections, and -
-   only when present - passes :html as a 3rd arg to :send-email!. An absent
-   :diagram-section adapter keeps the exact 2-arg :send-email! call every
-   earlier caller/test already uses, so this is fully backward compatible.
+   the plaintext content exactly like the other optional sections.
 
-   BL-286: when the diagram section also carries :attachments (available
-   diagrams, not the renderer-unavailable/no-diagrams branch), it is passed
-   as a 4th arg to :send-email! alongside :html. A diagram section with no
-   :attachments key (nothing to attach) keeps the exact 3-arg call, and no
-   :diagram-section adapter at all keeps the exact 2-arg call - both
-   pre-BL-286 shapes are unaffected."
+   BL-393: :html is now ALWAYS passed to :send-email! (a 3rd arg, minimum),
+   rendered from the exact same `content` that rides the plain-text part -
+   so the html body is byte-complete by construction, including every
+   appended optional section. When a :diagram-section adapter also carries
+   :html (available diagrams), that html is merged into the rendered body
+   rather than replacing it. A diagram section with :attachments (available
+   diagrams, not the renderer-unavailable/no-diagrams branch) is passed as
+   a 4th arg alongside :html; every other case - including no
+   :diagram-section adapter at all - keeps the 3-arg call, html and all."
   [briefings-dir adapters]
   (let [sent-now (atom [])]
     (doseq [file-name (find-unsent-briefings briefings-dir)]
@@ -212,15 +226,10 @@
                       content)
             date-label (str/replace file-name #"\.md$" "")
             subject (build-briefing-subject date-label content)
-            result (cond
-                     (seq (:attachments diagram-section))
-                     ((:send-email! adapters) subject content (:html diagram-section) (:attachments diagram-section))
-
-                     diagram-section
-                     ((:send-email! adapters) subject content (:html diagram-section))
-
-                     :else
-                     ((:send-email! adapters) subject content))]
+            html (merge-diagram-html (markdown-to-html-lib/render-markdown-to-html content) (:html diagram-section))
+            result (if (seq (:attachments diagram-section))
+                     ((:send-email! adapters) subject content html (:attachments diagram-section))
+                     ((:send-email! adapters) subject content html))]
         (cond
           (:success result)
           (do

@@ -30,8 +30,9 @@ Feature: Briefing diagrams survive Gmail — sent as cid attachments, not data-U
     Then the email sends with the unavailable-diagrams plaintext note
     And its send payload carries no attachments
 
-  # BL-286 diagram-cid-05
-  Scenario: a briefing with no diagram section sends the prior payload unchanged
+  # BL-286 diagram-cid-05 (updated by BL-393: html is now always the rendered body)
+  Scenario: a briefing with no diagram section still carries no attachments
     Given a briefing send that has no diagram section at all
     When the briefing email is sent
-    Then the send payload has neither an attachments field nor an html field
+    Then the send payload carries an html field with the rendered body
+    And the send payload has no attachments field
