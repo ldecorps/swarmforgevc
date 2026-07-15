@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { computeEpicProgress, epicProgressText, epicOpeningText } = require('../out/concierge/epicProgress');
+const { computeEpicProgress, epicProgressText, epicOpeningText, epicAnnouncementKey } = require('../out/concierge/epicProgress');
 
 // BL-341: an epic's slices are TICKETED (real backlog items) or
 // REMAINING-UNTRACKED (declared only in the epic's own definition, no
@@ -70,4 +70,25 @@ test('an incomplete epic with no untracked remaining slice states only the count
 
 test('the epic topic opening names the epic by its title', () => {
   assert.equal(epicOpeningText('Dynamic Routing'), 'Epic: Dynamic Routing');
+});
+
+// ── epicAnnouncementKey (pure, BL-394) ─────────────────────────────────────
+
+test('the same epic id and text always produce the same key', () => {
+  assert.equal(
+    epicAnnouncementKey('dynamic-routing', '1 of 2 ticketed slice(s) complete.'),
+    epicAnnouncementKey('dynamic-routing', '1 of 2 ticketed slice(s) complete.')
+  );
+});
+
+test('a changed text produces a different key for the same epic', () => {
+  const before = epicAnnouncementKey('dynamic-routing', '1 of 2 ticketed slice(s) complete.');
+  const after = epicAnnouncementKey('dynamic-routing', '2 of 2 ticketed slice(s) complete.');
+  assert.notEqual(before, after);
+});
+
+test('the same text produces a different key for a different epic', () => {
+  const routing = epicAnnouncementKey('dynamic-routing', 'Epic: Dynamic Routing');
+  const benchmarking = epicAnnouncementKey('role-benchmarking', 'Epic: Dynamic Routing');
+  assert.notEqual(routing, benchmarking);
 });
