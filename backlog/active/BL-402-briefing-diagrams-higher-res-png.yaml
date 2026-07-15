@@ -1,0 +1,68 @@
+id: BL-402
+title: "Daily briefing diagrams look blurry — render the cid-PNGs at higher resolution (not SVG)"
+milestone: M8
+type: enhancement
+status: todo
+severity: low
+priority: 4
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-daily-briefing-diagrams-svg-not-png.md — the human (ldecorps), 2026-07-15, relayed via the documenter after viewing docs/diagrams/*.mmd rendered: 'daily briefing to switch to embedding SVG instead of PNG'. Clarified by the specifier 2026-07-15 (see notes)."
+
+notes: |
+  WHAT THE HUMAN ACTUALLY WANTS: crisp diagrams. The intake asked to switch PNG->SVG, but the
+  specifier asked why (2026-07-15) and the human answered the PNGs "look blurry" and chose "keep the
+  Gmail-safe cid-PNG pipeline but render at higher resolution" over switching to SVG. So THIS TICKET
+  DOES NOT SWITCH TO SVG — do not embed inline <svg>, a data:image/svg+xml URI, or a cid-referenced
+  image/svg+xml. Gmail (the human's mail client, ldecorps@gmail.com) strips/blocks SVG in ALL of those
+  forms; BL-286 moved to cid-PNG precisely for that reason. Switching to SVG would regress the diagrams
+  to blank in Gmail — the exact defect class BL-286 fixed.
+
+  THE LIVE SEAM (verified): production renders through
+  handoffd.bb (briefing-diagrams-json) -> extension/out/tools/render-briefing-diagrams.js ->
+  renderBriefingDiagrams -> renderMermaidToPng in extension/src/diagrams/mermaidRender.ts. That
+  function calls `new Resvg(svg, { fitTo: { mode: 'width', value: 1600 }, background: 'white' })`.
+  resvg rasterizes the vector at the requested output width, so raising `value` produces a genuinely
+  higher-resolution PNG (true resolution, not an upscaled raster) — which displays crisp on high-DPI
+  screens.
+
+  THE CHANGE: raise the render width from 1600 to AT LEAST 3200 (double). Prefer exporting it as a
+  named constant (e.g. DIAGRAM_RENDER_WIDTH) that the Resvg call reads, so it is referenceable and
+  unit/mutation-testable directly rather than a bare literal buried in the call.
+
+  MUST NOT REGRESS (three invariants this ticket rides on top of, unchanged):
+    1. cid-PNG transport (BL-286): still a PNG attached by content-id, referenced by <img src="cid:...">.
+       No SVG in any form.
+    2. Layout: the composed <img> keeps `style="max-width:100%;height:auto"` (briefing_email_lib.bb
+       build-diagram-section), so the higher-res PNG DISPLAYS at the email column width and simply
+       renders at higher pixel density — it must not blow out the layout. Do not remove max-width.
+    3. Determinism (BL-260 local-deterministic): the same Mermaid source must still render byte-identical
+       output at the new resolution. renderMermaidToPng stays local, pinned, no network.
+
+  EMAIL SIZE CAVEAT (QA to confirm, not a hard Gherkin assertion): Gmail visually clips a message body
+  over ~102KB. Two line-art architecture/flow PNGs at 3200px base64 still compress small (line art, not
+  photos), but the QA e2e below must confirm the REAL briefing email is not clipped. If a future denser
+  diagram ever pushes the email over the clip threshold, that is a separate ticket (e.g. tune width or
+  PNG compression), not a reason to regress to SVG.
+
+  ADJACENT, DO NOT DUPLICATE: BL-260 (renders diagrams inline) and BL-286 (cid-PNG transport) own the
+  render+transport this builds on; BL-392/BL-393 edit the briefing COMPOSE path (subject/body html) —
+  different concern, same file family (briefing_email_lib.bb). This ticket touches only mermaidRender.ts
+  (the render width); it should not need to edit briefing_email_lib.bb at all except to NOT regress
+  max-width. Coordinator: keep it orthogonal to any in-flight briefing-compose ticket.
+
+  E2E QA PROCEDURE: send a real briefing to the human's REAL email (BL-335 standard — a passing unit
+  test is evidence, not proof). Open it in Gmail (web + phone) and confirm the architecture and
+  swarm-flow diagrams (a) still appear inline, (b) look visibly CRISPER than before on a high-DPI
+  screen, (c) are not oversized/overflowing the body, and (d) the message is not clipped by Gmail.
+
+acceptance:
+  feature: specs/features/BL-402-briefing-diagrams-higher-res-png.feature
+  steps:
+    - "A rendered diagram PNG is at least 3200 pixels wide (up from 1600)"
+    - "The higher-resolution render stays byte-identical for the same source (determinism preserved)"
+    - "The inline diagram image keeps max-width:100% so it displays at the email column width"
+
+human_approval: approved  # human (ldecorps), 2026-07-15: "approved" — reviewed the 3 scenarios
+
+mutation_cost: low
