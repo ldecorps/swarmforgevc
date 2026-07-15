@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 15, 2026 (BL-406 — a leaked `/tmp`-rooted `handoffd.bb` daemon can no longer send a real briefing email)
+**Last Updated:** July 15, 2026 (BL-422 — vitest worker pool and per-worker heap are capped so a test run cannot OOM-spiral the swarm)
 
 ## Overview
 
@@ -588,6 +588,28 @@ independently of the heartbeat mechanism above:
   built-in `clear-text`/`progress` reporters in
   `extension/stryker.config.json`) that taps Stryker's own reporter
   lifecycle rather than re-implementing its progress/ETA math.
+
+### Bounded test-run memory footprint (BL-422)
+
+A plain `vitest run` used to size its worker pool to the host CPU count with
+no per-worker heap limit. One run ballooned four workers to ~13GB on a 15GB
+host and drove the kernel OOM-killer into a death-spiral that killed swarm
+agents twice in one day plus a half-launch — the test suite itself, not a
+runaway agent, was the OOM source.
+
+- `extension/vitest.config.mjs` now sets `pool: 'forks'` with
+  `poolOptions.forks.maxForks`/`execArgv` (a `--max-old-space-size` per
+  worker), so a run's worst-case footprint is a fixed, small number instead
+  of scaling with host CPU count.
+- The cap numbers (`MAX_WORKERS`, `PER_WORKER_HEAP_MB`,
+  `SAFE_HOST_RAM_FRACTION`) and the pure `computeWorkerMemoryBudget`
+  predicate live in `extension/src/tools/vitest-worker-memory-budget.ts` — a
+  shared module value the config and its unit test both read, mirroring
+  `check-suite-file-budget.ts`'s pattern, rather than a number buried only
+  inside the config where nothing can assert on it.
+- Stryker's own vitest-runner hardcodes `pool: 'threads'` + `maxThreads: 1`
+  (the worker-thread rule below) and overrides these caps entirely, so
+  mutation runs are unaffected by this cap.
 
 ## Per-Agent Lifecycle Control
 
