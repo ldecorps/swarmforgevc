@@ -51,6 +51,26 @@ test('stripAgeSuffix removes a stale-bucket suffix', () => {
   assert.equal(stripAgeSuffix('BL-999 do a thing · 3d+ ago'), 'BL-999 do a thing');
 });
 
+// Every case above uses a single-digit count; the pattern's own \d+ must
+// match MULTIPLE digits too, or a double-digit count (an entirely ordinary
+// case - any ticket idle 10+ hours or 10+ days) only strips the last digit,
+// leaving a corrupted base title like "BL-999 do a thing · 1" behind.
+test('stripAgeSuffix removes a multi-digit hours-bucket suffix in full', () => {
+  assert.equal(stripAgeSuffix('BL-999 do a thing · 23h ago'), 'BL-999 do a thing');
+});
+
+test('stripAgeSuffix removes a multi-digit day-bucket suffix in full', () => {
+  assert.equal(stripAgeSuffix('BL-999 do a thing · 12d ago'), 'BL-999 do a thing');
+});
+
+// The pattern is anchored to the END of the string - suffix-shaped text
+// that is NOT the title's own tail must never be stripped as if it were
+// the age suffix.
+test('stripAgeSuffix never strips suffix-shaped text that is not at the very end of the title', () => {
+  const title = 'BL-999 do a thing · 3h ago (a literal title, not a real suffix) extra';
+  assert.equal(stripAgeSuffix(title), title);
+});
+
 test('composeTitleWithAge for the fresh bucket returns the bare base title (no suffix)', () => {
   assert.equal(composeTitleWithAge('BL-999 do a thing', 'fresh', 30 * 60 * 1000), 'BL-999 do a thing');
 });
