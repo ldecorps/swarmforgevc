@@ -4,7 +4,7 @@ const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
 const { execFileSync } = require('node:child_process');
-const { main, parseArgs, buildAdapters } = require('../out/tools/provision-onboarding-telegram-channel');
+const { main, parseArgs, buildAdapters, readProvisioningOffset, writeProvisioningOffset } = require('../out/tools/provision-onboarding-telegram-channel');
 
 const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'provision-onboarding-telegram-channel.js');
 
@@ -77,6 +77,69 @@ test('buildAdapters.persistBotToken writes the token to the host secrets file, k
 
   const written = JSON.parse(fs.readFileSync(secretsFilePath, 'utf8'));
   assert.equal(written[targetRepoPath], 'good-token');
+});
+
+// ── BL-444: the confirm offset is the one piece of state this CLI owns ────
+
+test('readProvisioningOffset returns 0 when no offset has ever been persisted', () => {
+  const targetRepoPath = mkTmpDir('provision-onboarding-telegram-channel-target-');
+  assert.equal(readProvisioningOffset(targetRepoPath), 0);
+});
+
+test('writeProvisioningOffset then readProvisioningOffset round-trips the persisted value', () => {
+  const targetRepoPath = mkTmpDir('provision-onboarding-telegram-channel-target-');
+
+  writeProvisioningOffset(targetRepoPath, 143744673);
+
+  assert.equal(readProvisioningOffset(targetRepoPath), 143744673);
+});
+
+test('BL-444: buildAdapters.getUpdates reads the persisted offset instead of a hardcoded 0', async () => {
+  const targetRepoPath = mkTmpDir('provision-onboarding-telegram-channel-target-');
+  writeProvisioningOffset(targetRepoPath, 143744673);
+  const seenBodies = [];
+  const postFn = async (_url, body) => {
+    seenBodies.push(JSON.parse(body));
+    return { ok: true, status: 200, json: { result: [] } };
+  };
+  const adapters = buildAdapters(targetRepoPath, 'good-token', mkTmpSecretsPath(), postFn);
+
+  await adapters.getUpdates();
+
+  assert.equal(seenBodies[0].offset, 143744673, `expected the persisted offset to be sent, got: ${JSON.stringify(seenBodies)}`);
+});
+
+test('BL-444: buildAdapters.persistConfirmOffset writes the offset that getUpdates will next read', () => {
+  const targetRepoPath = mkTmpDir('provision-onboarding-telegram-channel-target-');
+  const adapters = buildAdapters(targetRepoPath, 'good-token', mkTmpSecretsPath());
+
+  adapters.persistConfirmOffset(143744673);
+
+  assert.equal(readProvisioningOffset(targetRepoPath), 143744673);
+});
+
+test('BL-444: buildAdapters.createNegotiationTopic surfaces migrateToChatId as a string when Telegram reports the supergroup upgrade', async () => {
+  const migratePostFn = async () => ({
+    ok: false,
+    status: 400,
+    json: { description: 'Bad Request: group chat was upgraded to a supergroup chat', parameters: { migrate_to_chat_id: -1003886489685 } },
+  });
+  const adapters = buildAdapters('/unused-target', 'good-token', mkTmpSecretsPath(), migratePostFn);
+
+  const result = await adapters.createNegotiationTopic('-5274683022');
+
+  assert.equal(result.success, false);
+  assert.equal(result.migrateToChatId, '-1003886489685');
+});
+
+test('buildAdapters.createNegotiationTopic reports no migrateToChatId on an ordinary failure', async () => {
+  const failingPostFn = async () => ({ ok: false, status: 400, json: { description: 'Bad Request: chat not found' } });
+  const adapters = buildAdapters('/unused-target', 'good-token', mkTmpSecretsPath(), failingPostFn);
+
+  const result = await adapters.createNegotiationTopic('-100123');
+
+  assert.equal(result.success, false);
+  assert.equal(result.migrateToChatId, undefined);
 });
 
 // ── parseArgs ────────────────────────────────────────────────────────────
