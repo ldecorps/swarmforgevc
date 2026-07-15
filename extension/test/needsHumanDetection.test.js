@@ -220,3 +220,49 @@ test('extractQuestionSnippet does not drop a real line just because it also cont
   const prose = 'Please accept edits for agents once you review the diff.';
   assert.equal(extractQuestionSnippet(prose), prose);
 });
+
+// Anchor-precision guards (mutation-hardening): the chrome-line patterns must
+// require the WHOLE line to be chrome, not just a chrome-shaped prefix or
+// suffix - a real question sharing a line with a rule/prompt fragment must
+// survive.
+test('extractQuestionSnippet keeps real text that ends a line with trailing box-rule characters', () => {
+  const prose = 'Ready to deploy? ────';
+  assert.equal(extractQuestionSnippet(prose), prose);
+});
+
+test('extractQuestionSnippet keeps real text that follows leading box-rule characters on the same line', () => {
+  const prose = '── Ready to deploy this change?';
+  assert.equal(extractQuestionSnippet(prose), prose);
+});
+
+test('extractQuestionSnippet keeps a real question that ends its line with a bare prompt marker', () => {
+  const prose = 'Ready to deploy? ❯';
+  assert.equal(extractQuestionSnippet(prose), prose);
+});
+
+test('extractQuestionSnippet keeps a real multiple-choice line that starts with the prompt marker', () => {
+  const prose = '❯ 1) Deploy now';
+  assert.equal(extractQuestionSnippet(prose), prose);
+});
+
+test('extractQuestionSnippet treats a bare prompt with the "type" placeholder as chrome regardless of trailing space', () => {
+  const pane = [QUESTION, '❯ type'].join('\n');
+  assert.equal(extractQuestionSnippet(pane), QUESTION);
+
+  const paneWithTrailingSpace = [QUESTION, '❯ type '].join('\n');
+  assert.equal(extractQuestionSnippet(paneWithTrailingSpace), QUESTION);
+});
+
+test('extractQuestionSnippet excludes the permission-mode footer even without the trailing "on"', () => {
+  const pane = [QUESTION, '⏵⏵ bypass permissions (shift+tab to cycle) · ← for agents'].join('\n');
+  assert.equal(extractQuestionSnippet(pane), QUESTION);
+});
+
+// Lines are trimmed before the chrome check, so trailing whitespace after the
+// placeholder word never reaches BARE_PROMPT_LINE_PATTERN - the anchor that
+// actually earns its keep is the one rejecting real content glued directly
+// onto the placeholder word with no separating space.
+test('extractQuestionSnippet keeps a prompt line where real text is glued directly onto the placeholder word', () => {
+  const pane = [QUESTION, '❯ typewriter'].join('\n');
+  assert.equal(extractQuestionSnippet(pane), `${QUESTION} ❯ typewriter`);
+});
