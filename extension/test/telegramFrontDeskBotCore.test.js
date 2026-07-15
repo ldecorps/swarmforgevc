@@ -836,6 +836,34 @@ test('BL-410: every recognized-chat/principal tap answers the spinner, even a no
 
 // ── deliverOperatorContext: pending Reject/Amend follow-up consumption ───
 
+// BL-410: clearPendingButtonAction must only ever fire when a marker was
+// actually pending - an ordinary reply with nothing pending must never call
+// it, even speculatively (it would otherwise write the pending-actions file
+// on every single reply, not just the one-shot follow-up it exists for).
+test('BL-410: an ordinary reply with nothing pending never calls clearPendingButtonAction', async () => {
+  const cleared = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'still working on it' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a backlog-item topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for a backlog-item topic reply');
+    },
+    subjectForTopic: () => undefined,
+    backlogForTopic: (topicId) => (topicId === 42 ? 'BL-123' : undefined),
+    postOperatorContext: async () => true,
+    recordApprovalReply: async () => true,
+    recordRejectionReply: async () => true,
+    getPendingButtonAction: async () => undefined,
+    clearPendingButtonAction: async (backlogId) => {
+      cleared.push(backlogId);
+    },
+  });
+  assert.deepEqual(cleared, []);
+});
+
 test('BL-410: a bare reply while a Reject tap is pending is treated as the rejection reason, same effect as typed "reject <reason>"', async () => {
   const contexts = [];
   const rejections = [];
@@ -910,6 +938,78 @@ test('BL-410: a bare reply while an Amend tap is pending is treated as the amend
   assert.deepEqual(approvals, []);
   assert.deepEqual(rejections, []);
   assert.deepEqual(pending, {}, 'the one-shot pending marker must be cleared once consumed');
+});
+
+// BL-410: the two tests above both use reply text with no leading/trailing
+// whitespace, so classifyWithPendingButton's own text.trim() is a no-op for
+// them and cannot prove it runs. A reply padded with whitespace (an
+// ordinary thing to type) must have that whitespace stripped before it
+// becomes the stored reason/note - never leaking into the ticket file
+// (rejectHumanApprovalText's own sink) or the posted operator-context text.
+test('BL-410: a padded bare reply while a Reject tap is pending has its whitespace trimmed before it becomes the reason', async () => {
+  const rejections = [];
+  const pending = { 'BL-123': 'reject' };
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({
+      success: true,
+      updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: '  bad scope  ' })],
+    }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a backlog-item topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for a backlog-item topic reply');
+    },
+    subjectForTopic: () => undefined,
+    backlogForTopic: (topicId) => (topicId === 42 ? 'BL-123' : undefined),
+    postOperatorContext: async () => true,
+    recordApprovalReply: async () => true,
+    recordRejectionReply: async (backlogId, reason) => {
+      rejections.push({ backlogId, reason });
+      return true;
+    },
+    getPendingButtonAction: async (backlogId) => pending[backlogId],
+    clearPendingButtonAction: async (backlogId) => {
+      delete pending[backlogId];
+    },
+  });
+  assert.deepEqual(rejections, [{ backlogId: 'BL-123', reason: 'bad scope' }]);
+});
+
+test('BL-410: a padded bare reply while an Amend tap is pending has its whitespace trimmed before it becomes the note', async () => {
+  const contexts = [];
+  const pending = { 'BL-123': 'amend' };
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({
+      success: true,
+      updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: '  tighten the acceptance criteria  ' })],
+    }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a backlog-item topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for a backlog-item topic reply');
+    },
+    subjectForTopic: () => undefined,
+    backlogForTopic: (topicId) => (topicId === 42 ? 'BL-123' : undefined),
+    postOperatorContext: async (backlogId, text) => {
+      contexts.push({ backlogId, text });
+      return true;
+    },
+    recordApprovalReply: async () => true,
+    recordRejectionReply: async () => true,
+    getPendingButtonAction: async (backlogId) => pending[backlogId],
+    clearPendingButtonAction: async (backlogId) => {
+      delete pending[backlogId];
+    },
+  });
+  // contextText for amend is action.note (BL-409's own dispatch) - if
+  // action.kind were ever anything other than 'amend', deliverOperatorContext
+  // would fall back to the RAW (unpadded) text instead, which this assertion
+  // also catches.
+  assert.deepEqual(contexts, [{ backlogId: 'BL-123', text: 'tighten the acceptance criteria' }]);
 });
 
 test('BL-410: an explicit "approve" reply wins over a pending Reject tap, and still clears the stale marker', async () => {
