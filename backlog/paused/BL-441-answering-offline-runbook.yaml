@@ -33,7 +33,7 @@ acceptance:
     - "The runbook states the stale-premise (arrived-late) behaviour"
 
 human_approval: >
-  PENDING. A docs slice of the human-settled BL-440 work. Held on depends_on: [BL-440] until that lands.
-  Flag the feature file for review before promotion.
+  approved 2026-07-15 (coordinator session, full-batch confirmation via Operator relay). A docs slice of
+  the human-settled BL-440 work. Still held on depends_on: [BL-440] until that lands.
 
 mutation_cost: low

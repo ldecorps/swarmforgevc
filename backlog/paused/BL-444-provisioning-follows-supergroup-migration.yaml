@@ -67,9 +67,10 @@ acceptance:
     - "A re-run after the migration is idempotent and does not re-fail on the dead id"
 
 human_approval: >
-  PENDING. Reported by the external supervisor from the live FES run; root cause confirmed in code. Which
-  of the three migration-handling mechanisms to implement (prefer-migrated-id vs. newest-join vs.
-  error-redirect — likely all three) is the coder's call within the acceptance contract, but has not
-  been human-reviewed. Flag the feature file for review before promotion.
+  approved 2026-07-15 (coordinator session, full-batch confirmation via Operator relay). Reported by the
+  external supervisor from the live FES run; root cause confirmed in code. The human approved promotion
+  as-is; which of the three migration-handling mechanisms to implement (prefer-migrated-id vs.
+  newest-join vs. error-redirect — likely all three) remains the coder's call within the acceptance
+  contract.
 
 mutation_cost: low

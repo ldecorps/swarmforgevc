@@ -71,9 +71,10 @@ acceptance:
     - "A re-run when artifacts are already present and committed is a clean no-op with no empty commit"
 
 human_approval: >
-  PENDING. Reported by the external supervisor from the live FES run; all three root causes confirmed in
-  code. Open for review: the exact fallback git identity to commit under when the target has none
-  (defect 3) — the spec recommends a swarm committer identity and logging it, but the human may prefer a
-  fail-with-instructions posture instead. Flag the feature file for review before promotion.
+  approved 2026-07-15 (coordinator session, full-batch confirmation via Operator relay). Reported by the
+  external supervisor from the live FES run; all three root causes confirmed in code. The human approved
+  promotion as-is, accepting the exact fallback git identity (defect 3) be resolved during build rather
+  than blocking promotion — the spec's recommended swarm-committer identity is the default absent
+  further direction.
 
 mutation_cost: low

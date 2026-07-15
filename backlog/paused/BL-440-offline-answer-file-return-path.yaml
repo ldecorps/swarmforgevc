@@ -73,10 +73,10 @@ acceptance:
     - "An answer whose reference cannot be resolved is surfaced, not silently dropped"
 
 human_approval: >
-  PENDING. The channel (ANSWER-*.md), the stale-premise gate, and archive-not-delete were all settled by
-  the human 2026-07-15 (recorded in the intake). Open for review: the exact ANSWER-*.md schema (the
-  intake leaves it to the specifier), and whether ingestion runs on a specifier drain turn vs. a daemon
-  sweep — the live integration point must be re-verified at build time. Flag the feature file for review
-  before promotion.
+  approved 2026-07-15 (coordinator session, full-batch confirmation via Operator relay). The channel
+  (ANSWER-*.md), the stale-premise gate, and archive-not-delete were all settled by the human 2026-07-15
+  (recorded in the intake); the human then approved promotion as-is, accepting the exact ANSWER-*.md
+  schema and the specifier-drain-turn-vs-daemon-sweep integration point be resolved during build rather
+  than blocking promotion.
 
 mutation_cost: medium

@@ -68,9 +68,10 @@ acceptance:
     - "The console reads the published status purely by field, not by reconstructing internal role files"
 
 human_approval: >
-  PENDING. The publish-your-own-status design (handoffd author, console enumerates, stale updated_at =
-  coordinator lost, transport-agnostic doc) was settled with the human 2026-07-15 (recorded in the
-  intake). The exact status.json schema and handoffd's access to the rollup inputs must be re-verified at
-  build time. Flag the feature file for review before promotion.
+  approved 2026-07-15 (coordinator session, full-batch confirmation via Operator relay). The
+  publish-your-own-status design (handoffd author, console enumerates, stale updated_at = coordinator
+  lost, transport-agnostic doc) was settled with the human 2026-07-15 (recorded in the intake); the human
+  then approved promotion as-is, accepting the exact status.json schema and handoffd's access to the
+  rollup inputs be re-verified during build rather than blocking promotion.
 
 mutation_cost: medium

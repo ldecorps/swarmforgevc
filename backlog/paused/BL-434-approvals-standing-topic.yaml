@@ -72,10 +72,11 @@ acceptance:
     - "Once acted on, a ticket no longer appears in the Approvals topic's pending set"
 
 human_approval: >
-  PENDING. The aggregation SHAPE ("act in the Approvals topic") was chosen by the human via
-  AskUserQuestion 2026-07-15, but the concrete details have not been reviewed: the exact reply grammar
-  ("approve BL-433" vs. other phrasings), whether the roster is one edited message vs. one message per
-  ticket, and whether the per-ticket topic-icon awaiting-approval signal stays or is dropped now that the
-  ask is centralized. Flag the feature file for review before promotion.
+  approved 2026-07-15 (coordinator session, full-batch confirmation via Operator relay). The aggregation
+  SHAPE ("act in the Approvals topic") was chosen by the human via AskUserQuestion 2026-07-15; the human
+  then approved promotion as-is, accepting the exact reply grammar, roster message shape, and the
+  topic-icon interplay be resolved during build rather than blocking promotion. Held on promotion for a
+  separate reason: overlaps BOTH active BL-414's conciergeTick.ts work and active BL-425's
+  telegramFrontDeskBotCore.ts work — sequence behind them, not a human-approval gate.
 
 mutation_cost: medium

@@ -65,8 +65,10 @@ notes: |
   BL-090/091, BL-380/381, BL-405, BL-101 (blocked).
 
 human_approval: >
-  PENDING (umbrella). The design decisions were settled with the human 2026-07-15 (recorded in the
-  intake). This is a tracking item — approve/review the CHILD feature files (BL-436..439) individually
-  before promotion. Not directly promotable.
+  approved (umbrella) 2026-07-15 (coordinator session, full-batch confirmation via Operator relay). The
+  design decisions were settled with the human 2026-07-15 (recorded in the intake); the human then
+  approved the full batch including all children (BL-436..439). This remains a tracking item — not
+  directly promotable regardless of approval status; the children carry their own approval and
+  promotion eligibility.
 
 mutation_cost: n/a

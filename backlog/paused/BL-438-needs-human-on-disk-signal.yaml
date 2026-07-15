@@ -48,8 +48,9 @@ acceptance:
     - "When the human answers, the needs-human signal clears and status reflects not-blocked"
 
 human_approval: >
-  PENDING. Design settled with the human 2026-07-15 (recorded in the intake). Held on depends_on:
-  [BL-437] until status.json publishing lands. The live needs-human reconciler and existing durable
-  blocked-marker must be re-verified at build time. Flag the feature file for review before promotion.
+  approved 2026-07-15 (coordinator session, full-batch confirmation via Operator relay). Design settled
+  with the human 2026-07-15 (recorded in the intake); the human then approved promotion as-is. Still held
+  on depends_on: [BL-437] until status.json publishing lands. The live needs-human reconciler and
+  existing durable blocked-marker must be re-verified at build time.
 
 mutation_cost: low

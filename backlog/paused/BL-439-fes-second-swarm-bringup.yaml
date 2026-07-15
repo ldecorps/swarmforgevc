@@ -56,9 +56,10 @@ acceptance:
     - "Both swarms appear as distinct identities in the fleet console"
 
 human_approval: >
-  PENDING. The bring-up constraints (2-pack, Windows-side launch, own bot+group, separation-first) were
-  settled with the human 2026-07-15 (recorded in the intake). Held on depends_on: [BL-436, BL-437] until
-  both land. How much of the acceptance is executable vs. a recorded live procedure must be settled at
-  build time. Flag the feature file for review before promotion.
+  approved 2026-07-15 (coordinator session, full-batch confirmation via Operator relay). The bring-up
+  constraints (2-pack, Windows-side launch, own bot+group, separation-first) were settled with the human
+  2026-07-15 (recorded in the intake); the human then approved promotion as-is. Still held on depends_on:
+  [BL-436, BL-437] until both land. How much of the acceptance is executable vs. a recorded live
+  procedure must be settled at build time.
 
 mutation_cost: low

@@ -60,8 +60,9 @@ acceptance:
     - "No revision ever writes the raw objection text as a contract boundary line"
 
 human_approval: >
-  PENDING. Reported by the external supervisor from the live FES run; root cause confirmed in code. The
-  exact set of accepted natural-language approvals and the ambiguity threshold (when to ASK vs. treat as
-  objection) have not been human-reviewed. Flag the feature file for review before promotion.
+  approved 2026-07-15 (coordinator session, full-batch confirmation via Operator relay). Reported by the
+  external supervisor from the live FES run; root cause confirmed in code. The human approved promotion
+  as-is, accepting the exact set of accepted natural-language approvals and the ambiguity threshold be
+  resolved during build rather than blocking promotion.
 
 mutation_cost: low
