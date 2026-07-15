@@ -6,7 +6,7 @@
 // untested-boundary process that injects the real adapters (real
 // getUpdates, a real fetch POST to the bridge, the real persisted topic
 // map) into pollAndForward below.
-import { TelegramUpdate, GetUpdatesResult } from '../notify/telegramClient';
+import { TelegramUpdate, TelegramCallbackQuery, GetUpdatesResult } from '../notify/telegramClient';
 import { computeTelegramRetryBackoffMs } from '../notify/telegramRetry';
 import { classifyApprovalReplyAction } from '../concierge/pendingApprovalReply';
 
@@ -283,6 +283,25 @@ export interface PollAdapters {
   // effect alongside the unconditional context post, naturally idempotent,
   // no updateId needed).
   recordRejectionReply: (backlogId: string, reason: string) => Promise<boolean>;
+  // BL-410: a Reject/Amend button tap has no reason/note text of its own -
+  // it stashes which verb is awaited for this ticket, then the NEXT bare
+  // (unverbed) reply in that ticket's topic is read as the reason/note
+  // (deliverOperatorContext below). Optional so every PollAdapters fixture
+  // written before BL-410 keeps working unchanged - a missing adapter here
+  // means "no button-triggered follow-up is ever pending", exactly the
+  // behavior this codebase had before buttons existed (mirrors this file's
+  // own established "new adapter defaults to a no-op, existing callers
+  // unaffected" convention, e.g. escalate/recordHeartbeat below).
+  getPendingButtonAction?: (backlogId: string) => Promise<'reject' | 'amend' | undefined>;
+  clearPendingButtonAction?: (backlogId: string) => Promise<void>;
+  // BL-410: only ever reached via a real callback_query update (never
+  // constructed by any pre-BL-410 PollAdapters fixture), so these two stay
+  // required - unlike the two above, there is no legacy call site to stay
+  // compatible with.
+  setPendingButtonAction: (backlogId: string, kind: 'reject' | 'amend') => Promise<void>;
+  // BL-410: clears the tapped button's Telegram loading spinner - called for
+  // every recognized callback_query, even a no-op (stale/unknown data).
+  answerCallbackQuery: (callbackQueryId: string) => Promise<void>;
 }
 
 // BL-389: the keystone fix. A DROP is a DECISION (the code looked at the
@@ -309,8 +328,35 @@ export type UpdateDeliveryOutcome = 'posted' | 'dropped' | 'failed';
 // see, not the "amend " verb prefix. approve/reject/none keep posting the
 // raw reply text unchanged (no scenario asks otherwise), and only ONE of
 // approve/reject's own record* effect ever fires per reply.
+// BL-410: a Reject/Amend button tap carries no reason/note text, so it
+// leaves a pending "which verb is this ticket awaiting a follow-up for"
+// marker instead of firing its effect immediately. When the NEXT reply in
+// that ticket's topic carries no verb of its own (classifyApprovalReplyAction
+// returns 'none'), it is read as that pending verb's reason/note - the exact
+// text BL-409's typed "reject <reason>"/"amend <note>" path would have
+// captured, had the human typed the verb prefix themselves. An explicit
+// verb-prefixed reply (or a plain "approve") always wins over a stale
+// pending marker (checked first, via classifyApprovalReplyAction), and any
+// reply at all - however it resolves - clears the pending marker, since the
+// "awaiting a follow-up" window is a one-shot prompt, not a standing state.
+function classifyWithPendingButton(
+  text: string,
+  pending: 'reject' | 'amend' | undefined
+): ReturnType<typeof classifyApprovalReplyAction> {
+  const classified = classifyApprovalReplyAction(text);
+  if (classified.kind !== 'none' || !pending) {
+    return classified;
+  }
+  const trimmed = text.trim();
+  return pending === 'reject' ? { kind: 'reject', reason: trimmed } : { kind: 'amend', note: trimmed };
+}
+
 async function deliverOperatorContext(backlogId: string, text: string, updateId: number, adapters: PollAdapters): Promise<boolean> {
-  const action = classifyApprovalReplyAction(text);
+  const pending = await adapters.getPendingButtonAction?.(backlogId);
+  const action = classifyWithPendingButton(text, pending);
+  if (pending) {
+    await adapters.clearPendingButtonAction?.(backlogId);
+  }
   const contextText = action.kind === 'amend' ? action.note : text;
   const posted = await adapters.postOperatorContext(backlogId, contextText, updateId);
   // BL-357/BL-409: fires alongside the context post above, never instead of
@@ -323,6 +369,79 @@ async function deliverOperatorContext(backlogId: string, text: string, updateId:
   return posted;
 }
 
+// BL-410: the callback-query twin of decideUpdateAction above - given a
+// tapped inline-keyboard button, decides whether to act on it at all (the
+// SAME my-chat-then-principal guard order as decideUpdateAction, and for
+// the identical reason: a foreign chat is refused before who-sent-it is
+// even considered) and, if so, which of the three buttons was tapped.
+// Pure: no I/O, directly testable with a plain fixture callback_query.
+export type CallbackButtonDecision =
+  | { action: 'approve'; backlogId: string }
+  | { action: 'await-followup'; backlogId: string; kind: 'reject' | 'amend' }
+  | { action: 'drop'; reason: 'not-my-chat' | 'not-principal' | 'unrecognized-data' };
+
+const CALLBACK_DATA_PATTERN = /^(approve|reject|amend):(.+)$/;
+
+// The callback_query twins of isFromMyChat/isFromPrincipal above - same
+// checks, read off TelegramCallbackQuery's own from/message.chat fields
+// instead of TelegramUpdate's - split out (rather than inlined as compound
+// `||` conditions) so decideCallbackQueryAction's own branch count stays at
+// or below the CRAP threshold, the same "extract the ternary/guard into a
+// named, tested helper" split this file already uses (see deliveryOutcome).
+function isCallbackFromMyChat(callbackQuery: TelegramCallbackQuery, chatId: string): boolean {
+  const cqChatId = callbackQuery.message?.chat?.id;
+  return cqChatId !== undefined && String(cqChatId) === String(chatId);
+}
+
+function isCallbackFromPrincipal(callbackQuery: TelegramCallbackQuery, principalUserId: string): boolean {
+  const fromId = callbackQuery.from?.id;
+  return fromId !== undefined && String(fromId) === String(principalUserId);
+}
+
+export function decideCallbackQueryAction(
+  callbackQuery: TelegramCallbackQuery,
+  principalUserId: string,
+  chatId: string
+): CallbackButtonDecision {
+  if (!isCallbackFromMyChat(callbackQuery, chatId)) {
+    return { action: 'drop', reason: 'not-my-chat' };
+  }
+  if (!isCallbackFromPrincipal(callbackQuery, principalUserId)) {
+    return { action: 'drop', reason: 'not-principal' };
+  }
+  const match = callbackQuery.data?.match(CALLBACK_DATA_PATTERN);
+  if (!match) {
+    return { action: 'drop', reason: 'unrecognized-data' };
+  }
+  const [, kind, backlogId] = match;
+  return kind === 'approve' ? { action: 'approve', backlogId } : { action: 'await-followup', backlogId, kind: kind as 'reject' | 'amend' };
+}
+
+// BL-410: a legitimate tap (right chat, right principal) always clears its
+// own spinner, even when its data is unrecognized/stale - only a
+// not-my-chat/not-principal tap is answered never (mirrors the ordinary
+// message path's own silent drop for the same two reasons). An Approve tap
+// fires recordApprovalReply immediately (nothing else to gather); a
+// Reject/Amend tap has no reason/note in hand yet, so it only ever stashes
+// the pending marker deliverOperatorContext above consults on the next
+// reply - never reimplementing recordRejectionReply/the amend effect here.
+async function processCallbackQuery(callbackQuery: TelegramCallbackQuery, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
+  const decision = decideCallbackQueryAction(callbackQuery, principalUserId, adapters.chatId);
+  if (decision.action === 'drop' && (decision.reason === 'not-my-chat' || decision.reason === 'not-principal')) {
+    return 'dropped';
+  }
+  await adapters.answerCallbackQuery(callbackQuery.id);
+  if (decision.action === 'drop') {
+    return 'dropped';
+  }
+  if (decision.action === 'approve') {
+    await adapters.recordApprovalReply(decision.backlogId);
+  } else {
+    await adapters.setPendingButtonAction(decision.backlogId, decision.kind);
+  }
+  return 'posted';
+}
+
 // Split out of processUpdate below so its own branch count stays at or
 // below the CRAP threshold - the same "extract the ternary into a named,
 // tested helper" split deliverOperatorContext above already uses for the
@@ -332,7 +451,21 @@ function deliveryOutcome(ok: boolean): UpdateDeliveryOutcome {
   return ok ? 'posted' : 'failed';
 }
 
+// BL-410: a callback_query update carries no `message` of its own (they are
+// mutually exclusive Telegram update shapes) - routed to its own decision
+// path before decideUpdateAction (which reads update.message) is reached.
+// Split out as its own dispatcher (rather than an early return inside
+// processMessageUpdate below) so THAT function's own branch count stays
+// exactly at its pre-BL-410 baseline, the same "extract so branch count
+// stays at or below the CRAP threshold" reasoning as deliveryOutcome above.
 async function processUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
+  if (update.callback_query) {
+    return processCallbackQuery(update.callback_query, principalUserId, adapters);
+  }
+  return processMessageUpdate(update, principalUserId, adapters);
+}
+
+async function processMessageUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
   const decision = decideUpdateAction(update, principalUserId, adapters.chatId, adapters.subjectForTopic, adapters.backlogForTopic);
   if (decision.action === 'post-existing') {
     const ok = await adapters.postToBridge(decision.subjectId, decision.text, update.update_id);

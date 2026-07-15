@@ -10,6 +10,7 @@
 // needs both SwarmEvent (events/) and the Telegram client (notify/), so it
 // is its own layer, never folded into either.
 import { SwarmEvent } from '../events/swarmEventStream';
+import { InlineKeyboardButton } from '../notify/telegramClient';
 
 // backlogId -> Telegram forum topic id (message_thread_id) - the reverse
 // key direction of the Front Desk Bot's own {topicId: subjectId} map
@@ -125,6 +126,28 @@ export function messageTextForEvent(event: SwarmEvent): string {
   return snippet ? `${base} - ${snippet}` : base;
 }
 
+// BL-410: an ApprovalRequested message's one-tap alternative to typing a
+// reply - Approve/Amend/Reject, callback_data-tagged with the SAME verb
+// telegramFrontDeskBotCore.ts's decideCallbackQueryAction parses, so the tap
+// routes to the identical recordApprovalReply/recordRejectionReply/pending-
+// amend effects a typed reply already triggers, never a second effect path.
+// Every other event type gets no buttons (undefined) - decideTopicAction
+// below only attaches this field to its TopicAction when non-undefined, so
+// every existing TaskStarted/NeedsApproval/TaskCompleted shape is unaffected.
+function approvalRequestedButtons(backlogId: string): InlineKeyboardButton[][] {
+  return [
+    [
+      { text: 'Approve', callbackData: `approve:${backlogId}` },
+      { text: 'Amend', callbackData: `amend:${backlogId}` },
+      { text: 'Reject', callbackData: `reject:${backlogId}` },
+    ],
+  ];
+}
+
+function messageButtonsForEvent(event: SwarmEvent): InlineKeyboardButton[][] | undefined {
+  return event.type === 'ApprovalRequested' && event.backlogId !== null ? approvalRequestedButtons(event.backlogId) : undefined;
+}
+
 // BL-299: distinct from messageTextForEvent's generic progress line - the
 // final message posted into a topic before it closes, naming the item.
 // Kept lean/swarm-agnostic (event + title only) - richer content (PR link,
@@ -139,8 +162,8 @@ export function completionSummaryText(event: SwarmEvent, title: string): string 
 }
 
 export type TopicAction =
-  | { kind: 'reuse'; topicId: number; text: string }
-  | { kind: 'create'; topicName: string; text: string };
+  | { kind: 'reuse'; topicId: number; text: string; buttons?: InlineKeyboardButton[][] }
+  | { kind: 'create'; topicName: string; text: string; buttons?: InlineKeyboardButton[][] };
 
 // Pure: given the event, the CURRENT backlog_id->topic map, and the item's
 // title, decides whether to reuse an already-mapped topic or create a new
@@ -155,11 +178,12 @@ export function decideTopicAction(event: SwarmEvent, topicMap: BacklogTopicMap, 
     throw new Error('decideTopicAction requires a tagged event - route an untagged NeedsApproval via routeUntaggedGateEvent instead');
   }
   const text = messageTextForEvent(event);
+  const buttons = messageButtonsForEvent(event);
   const existingTopicId = topicMap[backlogId];
   if (existingTopicId !== undefined) {
-    return { kind: 'reuse', topicId: existingTopicId, text };
+    return { kind: 'reuse', topicId: existingTopicId, text, ...(buttons ? { buttons } : {}) };
   }
-  return { kind: 'create', topicName: topicNameForItem(backlogId, title), text };
+  return { kind: 'create', topicName: topicNameForItem(backlogId, title), text, ...(buttons ? { buttons } : {}) };
 }
 
 // BL-341: an epic's topic is looked up through the SAME BacklogTopicMap a
@@ -182,7 +206,7 @@ export interface RouteAdapters {
   getTopicMap: () => BacklogTopicMap;
   createTopic: (name: string) => Promise<{ success: boolean; topicId?: number }>;
   recordTopicId: (backlogId: string, topicId: number) => void;
-  sendMessage: (topicId: number, text: string) => Promise<boolean>;
+  sendMessage: (topicId: number, text: string, buttons?: InlineKeyboardButton[][]) => Promise<boolean>;
   // BL-299: closes a topic (read-only, history preserved - never delete,
   // which would destroy the summary just posted). Only ever called with a
   // concrete topicId (NEVER-MAIN-CHAT holds here too - there is no
@@ -261,8 +285,14 @@ async function routeUntaggedGateEvent(event: SwarmEvent, adapters: RouteAdapters
 // record only on success" sequence - extracted rather than repeated
 // (cleaner review: the duplication was also what pushed routeEvent's own
 // CRAP over threshold at full coverage).
-async function sendAndRecord(topicId: number, text: string, backlogId: string, adapters: RouteAdapters): Promise<boolean> {
-  const ok = await adapters.sendMessage(topicId, text);
+async function sendAndRecord(
+  topicId: number,
+  text: string,
+  backlogId: string,
+  adapters: RouteAdapters,
+  buttons?: InlineKeyboardButton[][]
+): Promise<boolean> {
+  const ok = await adapters.sendMessage(topicId, text, buttons);
   if (ok) {
     adapters.recordMessage(backlogId, text);
   }
@@ -288,7 +318,7 @@ export async function routeEvent(event: SwarmEvent, title: string, adapters: Rou
   }
   const action = decideTopicAction(event, adapters.getTopicMap(), title);
   if (action.kind === 'reuse') {
-    const ok = await sendAndRecord(action.topicId, action.text, backlogId, adapters);
+    const ok = await sendAndRecord(action.topicId, action.text, backlogId, adapters, action.buttons);
     return { posted: ok, skipped: false };
   }
   const created = await adapters.createTopic(action.topicName);
@@ -296,6 +326,6 @@ export async function routeEvent(event: SwarmEvent, title: string, adapters: Rou
     return { posted: false, skipped: true };
   }
   adapters.recordTopicId(backlogId, created.topicId);
-  const ok = await sendAndRecord(created.topicId, action.text, backlogId, adapters);
+  const ok = await sendAndRecord(created.topicId, action.text, backlogId, adapters, action.buttons);
   return { posted: ok, skipped: false };
 }

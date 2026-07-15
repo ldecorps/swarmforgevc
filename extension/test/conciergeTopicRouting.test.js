@@ -67,6 +67,40 @@ test('BL-357: the ApprovalRequested ask text matches the exact keyword isApprova
   assert.equal(isApprovalReplyText(text), true, 'the instruction itself must satisfy its own recognizer');
 });
 
+// ── BL-410: ApprovalRequested carries Approve/Amend/Reject buttons ───────
+
+test('BL-410: decideTopicAction attaches Approve/Amend/Reject inline-keyboard buttons for ApprovalRequested', () => {
+  const action = decideTopicAction(event({ type: 'ApprovalRequested' }), {}, 'a fine feature');
+  assert.deepEqual(action.buttons, [
+    [
+      { text: 'Approve', callbackData: 'approve:BL-123' },
+      { text: 'Amend', callbackData: 'amend:BL-123' },
+      { text: 'Reject', callbackData: 'reject:BL-123' },
+    ],
+  ]);
+});
+
+test('BL-410: decideTopicAction attaches buttons on the reuse path too, not only create', () => {
+  const action = decideTopicAction(event({ type: 'ApprovalRequested' }), { 'BL-123': 42 }, 'a fine feature');
+  assert.deepEqual(action, {
+    kind: 'reuse',
+    topicId: 42,
+    text: messageTextForEvent(event({ type: 'ApprovalRequested' })),
+    buttons: [
+      [
+        { text: 'Approve', callbackData: 'approve:BL-123' },
+        { text: 'Amend', callbackData: 'amend:BL-123' },
+        { text: 'Reject', callbackData: 'reject:BL-123' },
+      ],
+    ],
+  });
+});
+
+test('BL-410: decideTopicAction attaches no buttons key at all for other event types (existing shapes unaffected)', () => {
+  const action = decideTopicAction(event({ type: 'TaskStarted' }), {}, 'a fine feature');
+  assert.equal(Object.prototype.hasOwnProperty.call(action, 'buttons'), false);
+});
+
 // ── BL-341: decideEpicTopicAction reuses the SAME topic mapping ───────────
 
 test('BL-341: decideEpicTopicAction creates a topic named "EPIC — <title>" when the epic has no mapping yet', () => {
@@ -204,8 +238,13 @@ function fakeAdapters(initialMap = {}) {
       recordTopicId: (backlogId, topicId) => {
         map[backlogId] = topicId;
       },
-      sendMessage: async (topicId, text) => {
-        sent.push({ topicId, text });
+      // BL-410: buttons only appears on the pushed record when actually
+      // given, so every pre-existing exact-shape `assert.deepEqual(sent,
+      // [{topicId, text}])` below stays unaffected (an explicit `buttons:
+      // undefined` key would make those fail - see topicRouter.ts's own
+      // conditional-spread TopicAction for the identical reason).
+      sendMessage: async (topicId, text, buttons) => {
+        sent.push(buttons !== undefined ? { topicId, text, buttons } : { topicId, text });
         return true;
       },
       closeTopic: async (topicId) => {
@@ -258,6 +297,24 @@ test('topic-routing-03: the posted message states the event\'s type', async () =
   const { adapters, sent } = fakeAdapters();
   await routeEvent(event({ type: 'NeedsApproval' }), 'a fine feature', adapters);
   assert.match(sent[0].text, /NeedsApproval/);
+});
+
+// ── BL-410: routeEvent threads decideTopicAction's buttons through to sendMessage ──
+
+test('BL-410: routeEvent passes ApprovalRequested\'s buttons through to sendMessage', async () => {
+  const { adapters, sent } = fakeAdapters();
+  await routeEvent(event({ type: 'ApprovalRequested' }), 'a fine feature', adapters);
+  assert.ok(Array.isArray(sent[0].buttons), 'expected sendMessage to receive the buttons array');
+  assert.deepEqual(
+    sent[0].buttons.flat().map((b) => b.text),
+    ['Approve', 'Amend', 'Reject']
+  );
+});
+
+test('BL-410: routeEvent passes undefined buttons for a non-ApprovalRequested event (no regression)', async () => {
+  const { adapters, sent } = fakeAdapters();
+  await routeEvent(event({ type: 'TaskStarted' }), 'a fine feature', adapters);
+  assert.equal(sent[0].buttons, undefined);
 });
 
 test('a topic-create failure skips the event - never a fallback post', async () => {
