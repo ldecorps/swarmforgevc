@@ -16,6 +16,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
+export SWARMFORGE_ALLOW_TMP_DAEMON=1  # BL-406: opt in - this ROOT is an intentional throwaway test root
 DAEMON_PID=""
 # Any exit path (including a failing assertion's `exit 1`) must stop the
 # daemon FIRST, before removing $ROOT - deleting a still-running daemon's
