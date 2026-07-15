@@ -35,8 +35,17 @@
  * happy path), and is the process `swarmforge/scripts/
  * negotiation_relay_supervisor.bb` spawns and supervises with bounded
  * restart, mirroring `front_desk_supervisor.bb`'s own bridge/bot pattern.
+ *
+ * BL-381 architect bounce (2026-07-15): the supervisor above still had no
+ * live caller - `swarmforge/scripts/launch_negotiation_relay.sh` existed
+ * but nothing ever ran it, so a human still had to remember a THIRD manual
+ * step. A successful `post-proposal` (the moment a human can first reply)
+ * now launches it automatically (see runPostProposal/defaultLaunchRelaySupervisor
+ * below) - `poll`/`poll-loop` stay reachable directly for manual/recovery use.
  */
+import * as cp from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { getTelegramUpdates, sendTelegramMessage, TelegramPostFn } from '../notify/telegramClient';
 import { readTelegramChannel } from '../onboarding/telegramChannelStore';
@@ -184,10 +193,93 @@ export interface PostProposalOutcome {
   posted: boolean;
 }
 
+// BL-381 architect bounce (2026-07-15): launch_negotiation_relay.sh - the
+// supervisor that keeps poll-loop alive - existed but nothing in the live
+// swarm ever called it, the same "dark feature" gap the QA bounce above
+// closed one layer down for `poll` itself. post-proposal is the operator's
+// one manual step for a target (idempotent, like BL-380's own provisioning
+// CLI); this is the moment a human can first reply in the topic, so it is
+// also the natural moment to start listening for that reply - closing the
+// loop end to end without adding a SECOND manual step the docs would need
+// to keep reminding the operator to run.
+//
+// child_process.spawn is real, untested-boundary I/O (this codebase's
+// established DI shape - mirrors swarmLauncher.ts's own SwarmSpawnFn/
+// defaultSwarmSpawn split): an injectable adapter with a real default, so
+// runPostProposal's own decision - launch exactly once, only after a REAL
+// first post, never on the idempotent no-op or a throw - stays covered by a
+// fake in tests, and only the actual spawn call itself is unverified here.
+export type LaunchRelaySupervisorFn = (targetRepoPath: string, hostSecretsFilePath: string) => void;
+
+// Exported so a test can lock the "3 levels up from extension/out/tools"
+// path math (an easy off-by-one) against the REAL file on disk, without
+// needing to trigger an actual spawn.
+export function launchNegotiationRelayScriptPath(): string {
+  const repoRoot = path.join(__dirname, '..', '..', '..');
+  return path.join(repoRoot, 'swarmforge', 'scripts', 'launch_negotiation_relay.sh');
+}
+
+// Mirrors daemon_alarm_lib.bb's own test-fixture-root? exactly (same
+// rationale, applied to a real detached process spawn instead of a real
+// email send): a target repo path that resolves under the system temp
+// directory is, by construction, a throwaway test/acceptance fixture, never
+// a real onboarded target - so this is the safety net for a test author who
+// forgets to inject a fake launchRelaySupervisor (as this file's own tests
+// did until this defect surfaced live: a fixture-only bug leaked several
+// real bounded-restart-forever supervisor processes polling the real
+// Telegram API with a fake token during this ticket's own acceptance runs).
+// Never throws on an unresolvable/relative path.
+// Exported so a test can drive tryRealpath's ENOENT fallback directly - the
+// only path defaultLaunchRelaySupervisor's own tests (which always pass an
+// already-created target dir) can never reach.
+export function isTestFixtureRoot(targetRepoPath: string): boolean {
+  const tmpDir = process.env.TMPDIR || os.tmpdir();
+  const canonicalTmp = tryRealpath(tmpDir);
+  const canonicalRoot = tryRealpath(targetRepoPath);
+  return canonicalRoot.startsWith(canonicalTmp);
+}
+
+function tryRealpath(p: string): string {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
+// The launcher's own idempotent pid-alive guard (launch_negotiation_relay.sh)
+// makes a redundant call here harmless - never double-supervises a target.
+// Output is captured to a log rather than 'ignore' so a launch failure
+// (missing compiled entrypoint, missing TELEGRAM_PRINCIPAL_USER_ID in this
+// process's own env) is diagnosable instead of silently lost - the same
+// posture launch_negotiation_relay.sh already gives its OWN supervisor
+// child via `>> "$LOG" 2>&1`.
+const defaultLaunchRelaySupervisor: LaunchRelaySupervisorFn = (targetRepoPath, hostSecretsFilePath) => {
+  if (isTestFixtureRoot(targetRepoPath)) {
+    return;
+  }
+  fs.mkdirSync(operatorDir(targetRepoPath), { recursive: true });
+  const logFd = fs.openSync(path.join(operatorDir(targetRepoPath), 'negotiation-relay-auto-launch.log'), 'a');
+  try {
+    cp.spawn('bash', [launchNegotiationRelayScriptPath(), targetRepoPath, hostSecretsFilePath], {
+      detached: true,
+      stdio: ['ignore', logFd, logFd],
+    }).unref();
+  } finally {
+    fs.closeSync(logFd);
+  }
+};
+
 // BL-381 scenario 01. Idempotent like BL-380's own provisioning step: a
 // second call after a successful post is a no-op (posted: false), never a
-// duplicate announcement in the topic.
-export async function runPostProposal(targetRepoPath: string, hostSecretsFilePath: string, postFn?: TelegramPostFn): Promise<PostProposalOutcome> {
+// duplicate announcement in the topic - and never a second supervisor
+// launch attempt either, since the launch only fires on a REAL first post.
+export async function runPostProposal(
+  targetRepoPath: string,
+  hostSecretsFilePath: string,
+  postFn?: TelegramPostFn,
+  launchRelaySupervisor: LaunchRelaySupervisorFn = defaultLaunchRelaySupervisor
+): Promise<PostProposalOutcome> {
   const channel = requireChannel(targetRepoPath);
   if (fs.existsSync(proposalPostedMarkerPath(targetRepoPath))) {
     return { posted: false };
@@ -204,6 +296,7 @@ export async function runPostProposal(targetRepoPath: string, hostSecretsFilePat
   }
   fs.mkdirSync(operatorDir(targetRepoPath), { recursive: true });
   fs.writeFileSync(proposalPostedMarkerPath(targetRepoPath), JSON.stringify({ posted: true }));
+  launchRelaySupervisor(targetRepoPath, hostSecretsFilePath);
   return { posted: true };
 }
 

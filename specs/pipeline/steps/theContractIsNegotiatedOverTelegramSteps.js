@@ -79,6 +79,13 @@ function buildFakePostFn(ctx) {
   };
 }
 
+// BL-381 architect bounce: runPostProposal now launches
+// negotiation_relay_supervisor.bb (a real detached bash spawn) as a side
+// effect of a successful post - never exercised for real here, the same
+// injected-noop convention relayOnboardingNegotiationTelegramCli.test.js
+// uses for its own success-path tests.
+function noopLaunchRelaySupervisor() {}
+
 function mkUpdate(updateId, text) {
   return { update_id: updateId, message: { message_id: updateId, chat: { id: CHAT_ID }, from: { id: 111 }, message_thread_id: NEGOTIATION_TOPIC_ID, text } };
 }
@@ -109,7 +116,7 @@ function registerSteps(registry) {
 
   // ── the-contract-is-negotiated-over-telegram-01 ─────────────────────
   registry.define(/^the contract is proposed to the human$/, async (ctx) => {
-    ctx.postProposalOutcome = await runPostProposal(ctx.targetRepo, ctx.hostSecretsFile, buildFakePostFn(ctx));
+    ctx.postProposalOutcome = await runPostProposal(ctx.targetRepo, ctx.hostSecretsFile, buildFakePostFn(ctx), noopLaunchRelaySupervisor);
   });
   registry.define(/^the proposed contract appears in the target's negotiation topic$/, (ctx) => {
     assert.equal(ctx.postProposalOutcome.posted, true, `expected the proposal to be posted, got: ${JSON.stringify(ctx.postProposalOutcome)}`);
