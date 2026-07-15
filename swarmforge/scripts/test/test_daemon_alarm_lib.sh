@@ -275,4 +275,29 @@ env -u RESEND_API_KEY bb "$ROOT/suppressed_still_warns_test.bb" | grep -q "suppr
   || fail "BL-326 test-suite-never-emails-04: a configured-but-keyless test-fixture-root daemon must still warn loudly (BL-215 behavior preserved)"
 pass "BL-326 test-suite-never-emails-04: a configured-but-keyless daemon still warns loudly even when its root is a test fixture, and does not send an email"
 
+# ── BL-406: refuse-tmp-daemon-start? - the front-door guard handoffd.bb's
+#    own startup checks, before test-fixture-root?'s send-path fail-safe
+#    is ever reached ──────────────────────────────────────────────────────
+cat > "$ROOT/refuse_tmp_daemon_start_test.bb" <<EOF
+(load-file "$SCRIPT_DIR/../daemon_alarm_lib.bb")
+(assert (true? (daemon-alarm-lib/refuse-tmp-daemon-start? "$ROOT/nested/fixture" nil))
+  "01: a temp-directory root with no allow flag must be refused")
+(assert (true? (daemon-alarm-lib/refuse-tmp-daemon-start? "$ROOT/nested/fixture" ""))
+  "02: a temp-directory root with a blank allow flag must be refused")
+(assert (false? (daemon-alarm-lib/refuse-tmp-daemon-start? "$ROOT/nested/fixture" "1"))
+  "03: a temp-directory root WITH an explicit allow flag must NOT be refused")
+(assert (false? (daemon-alarm-lib/refuse-tmp-daemon-start? "/home/carillon/swarmforgevc" nil))
+  "04: a real, non-temp project root must NOT be refused even with no allow flag")
+(assert (false? (daemon-alarm-lib/refuse-tmp-daemon-start? "/srv/swarm" nil))
+  "05: an arbitrary non-temp root must NOT be refused")
+(assert (true? (daemon-alarm-lib/refuse-tmp-daemon-start? "$ROOT/nested/fixture" "   "))
+  "06: a whitespace-only allow flag is blank and must still be refused")
+(assert (false? (daemon-alarm-lib/refuse-tmp-daemon-start? "$ROOT/nested/fixture" "0"))
+  "07: ANY non-blank flag value opts in by design, including \"0\" - never inferred as falsy")
+(println "refuse-tmp-daemon-start-ok")
+EOF
+bb "$ROOT/refuse_tmp_daemon_start_test.bb" | grep -q "refuse-tmp-daemon-start-ok" \
+  || fail "BL-406: refuse-tmp-daemon-start? did not gate correctly on root shape + explicit allow flag"
+pass "BL-406: refuse-tmp-daemon-start? refuses a temp-directory root by default, only allowing it with an explicit opt-in flag, and never refuses a real project root"
+
 echo "ALL PASS"

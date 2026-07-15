@@ -171,6 +171,26 @@
         canonical-root (try (str (fs/canonicalize project-root)) (catch Exception _ (str project-root)))]
     (str/starts-with? canonical-root canonical-tmp)))
 
+;; BL-406: the SEND-path fail-safe above (test-fixture-root? -> suppressed-post!)
+;; is per-email and only as strong as every current AND future caller
+;; remembering to route through send-configured-email! - it does nothing for
+;; a daemon side effect that never reaches that one function (push-sweep's
+;; `git push`, an operator/Telegram relay, a GitHub issue close). A leaked
+;; /tmp-rooted daemon (a killed test's background `bb handoffd.bb $ROOT &`,
+;; orphaned rather than reaped - BL-406's own root cause: six stale
+;; acceptance-sandbox daemons alive 9-11h, each independently sweeping and
+;; sending) is safer stopped at the front door than trusted to have every
+;; side effect individually guarded. This predicate is the front-door check:
+;; true means the caller (handoffd.bb's own startup, before it does
+;; anything else - claims no pid file, starts no sweep) must refuse to run
+;; at all. allow-flag-value is the raw env var string (nil/blank when unset,
+;; matching System/getenv's own shape) - any non-blank value is explicit,
+;; deliberate opt-in from a test author who intends a real daemon under a
+;; throwaway root, never inferred from the root's shape alone.
+(defn refuse-tmp-daemon-start?
+  [project-root allow-flag-value]
+  (and (test-fixture-root? project-root) (str/blank? allow-flag-value)))
+
 ;; BL-326: intercepts ONLY the actual network POST, never the decision path
 ;; above it - a test-fixture root with a configured recipient but a MISSING
 ;; key must still fall through send-alarm-email!'s existing :missing-api-key
