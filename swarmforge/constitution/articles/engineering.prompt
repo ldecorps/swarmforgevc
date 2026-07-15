@@ -92,6 +92,26 @@
   instead — the coder writes the tests, so this binds every test author, not just the
   role that happens to catch it late.)
 
+- **A wiring test that adds a NEW on-disk input must PLACE that file in its fixture and prove
+  the read is load-bearing — a pure function's own unit tests never exercise the path→read hop.**
+  When a slice wires a pure function to a real disk input (a config/contract/state file the wiring
+  now reads/`slurp`s), the pure function can sit at 100% coverage while the WIRING test never
+  actually reads the file: if the wiring test's fixture OMITS it, the read silently returns
+  empty/default, the pure function runs happily over that empty input, and the suite passes green —
+  the new path→read hop is dark, exercised for the first time only in production. A green wiring
+  suite whose fixture never contained the file is NOT proof the wiring reads it. So a wiring test
+  for a new disk input must (1) place that file in the fixture with real content, and (2) prove the
+  read is load-bearing by break-then-fix: remove or blank the fixture file and confirm the test
+  FAILS, then restore it — the same discipline the missing-seam and in-process-`main()` rules apply
+  one layer down. This is the disk-input sibling of the specifier's spec-time "a slice that READS a
+  shared store has a live DATA dependency — confirm a real WRITER exists" rule: the same "green over
+  a path that never runs" blind spot, checked at test-authoring time. (BL-383:
+  `compose-front-desk-reply-prompt` was fully unit-tested, but every `operator_runtime.bb` tick
+  fixture lacked `contract.yaml`, so the real path→slurp hop went unexercised until the hardener
+  added the fixture. Proposed by the hardender 2026-07-15 scoped `role:hardender`; accepted into the
+  shared article instead — the coder writes the tests, so this binds every test author, not just the
+  role that happens to catch it late.)
+
 ## Test Speed And Isolation
 - Strive to keep the unit suite running in seconds. Speed is a correctness
   property, not a nicety: a slow suite gets skipped, and a test that waits on
