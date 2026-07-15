@@ -382,17 +382,31 @@ export type CallbackButtonDecision =
 
 const CALLBACK_DATA_PATTERN = /^(approve|reject|amend):(.+)$/;
 
+// The callback_query twins of isFromMyChat/isFromPrincipal above - same
+// checks, read off TelegramCallbackQuery's own from/message.chat fields
+// instead of TelegramUpdate's - split out (rather than inlined as compound
+// `||` conditions) so decideCallbackQueryAction's own branch count stays at
+// or below the CRAP threshold, the same "extract the ternary/guard into a
+// named, tested helper" split this file already uses (see deliveryOutcome).
+function isCallbackFromMyChat(callbackQuery: TelegramCallbackQuery, chatId: string): boolean {
+  const cqChatId = callbackQuery.message?.chat?.id;
+  return cqChatId !== undefined && String(cqChatId) === String(chatId);
+}
+
+function isCallbackFromPrincipal(callbackQuery: TelegramCallbackQuery, principalUserId: string): boolean {
+  const fromId = callbackQuery.from?.id;
+  return fromId !== undefined && String(fromId) === String(principalUserId);
+}
+
 export function decideCallbackQueryAction(
   callbackQuery: TelegramCallbackQuery,
   principalUserId: string,
   chatId: string
 ): CallbackButtonDecision {
-  const cqChatId = callbackQuery.message?.chat?.id;
-  if (cqChatId === undefined || String(cqChatId) !== String(chatId)) {
+  if (!isCallbackFromMyChat(callbackQuery, chatId)) {
     return { action: 'drop', reason: 'not-my-chat' };
   }
-  const fromId = callbackQuery.from?.id;
-  if (fromId === undefined || String(fromId) !== String(principalUserId)) {
+  if (!isCallbackFromPrincipal(callbackQuery, principalUserId)) {
     return { action: 'drop', reason: 'not-principal' };
   }
   const match = callbackQuery.data?.match(CALLBACK_DATA_PATTERN);
@@ -437,13 +451,21 @@ function deliveryOutcome(ok: boolean): UpdateDeliveryOutcome {
   return ok ? 'posted' : 'failed';
 }
 
+// BL-410: a callback_query update carries no `message` of its own (they are
+// mutually exclusive Telegram update shapes) - routed to its own decision
+// path before decideUpdateAction (which reads update.message) is reached.
+// Split out as its own dispatcher (rather than an early return inside
+// processMessageUpdate below) so THAT function's own branch count stays
+// exactly at its pre-BL-410 baseline, the same "extract so branch count
+// stays at or below the CRAP threshold" reasoning as deliveryOutcome above.
 async function processUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
-  // BL-410: a callback_query update carries no `message` of its own (they are
-  // mutually exclusive Telegram update shapes) - routed to its own decision
-  // path before decideUpdateAction (which reads update.message) is reached.
   if (update.callback_query) {
     return processCallbackQuery(update.callback_query, principalUserId, adapters);
   }
+  return processMessageUpdate(update, principalUserId, adapters);
+}
+
+async function processMessageUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
   const decision = decideUpdateAction(update, principalUserId, adapters.chatId, adapters.subjectForTopic, adapters.backlogForTopic);
   if (decision.action === 'post-existing') {
     const ok = await adapters.postToBridge(decision.subjectId, decision.text, update.update_id);
