@@ -90,6 +90,16 @@ export interface SendMessageResult {
   error?: string;
 }
 
+// BL-410: a row-of-rows of tappable buttons attached to a message via
+// Telegram's reply_markup.inline_keyboard - callbackData rides back on the
+// callback_query update a tap generates (Telegram's own wire field is
+// callback_data; camelCased here to match this project's own naming, and
+// translated at the one call site that builds the request body below).
+export interface InlineKeyboardButton {
+  text: string;
+  callbackData: string;
+}
+
 function extractDescription(json: unknown): string | undefined {
   if (json && typeof json === 'object' && typeof (json as Record<string, unknown>).description === 'string') {
     return (json as Record<string, unknown>).description as string;
@@ -128,19 +138,26 @@ function extractMessageId(json: unknown): number | undefined {
 // FORUM TOPIC (message_thread_id), the per-subject SUP-### hosting this
 // ticket adds. Independent of replyToMessageId - a topic reply can also
 // reply-chain within that topic.
+// BL-410: buttons added LAST again (after messageThreadId), same
+// existing-callers-unaffected posture - an ApprovalRequested message is the
+// only caller that ever passes one.
 export async function sendTelegramMessage(
   token: string,
   chatId: string,
   text: string,
   replyToMessageId?: number,
   postFn: TelegramPostFn = defaultPost,
-  messageThreadId?: number
+  messageThreadId?: number,
+  buttons?: InlineKeyboardButton[][]
 ): Promise<SendMessageResult> {
   const body = JSON.stringify({
     chat_id: chatId,
     text,
     ...(replyToMessageId !== undefined ? { reply_to_message_id: replyToMessageId } : {}),
     ...(messageThreadId !== undefined ? { message_thread_id: messageThreadId } : {}),
+    ...(buttons
+      ? { reply_markup: { inline_keyboard: buttons.map((row) => row.map((b) => ({ text: b.text, callback_data: b.callbackData }))) } }
+      : {}),
   });
 
   const result = await callTelegramApi(token, 'sendMessage', body, postFn);
@@ -165,9 +182,23 @@ export interface TelegramMessage {
   message_thread_id?: number;
 }
 
+// BL-410: the update shape a tapped inline-keyboard button generates -
+// distinct from an ordinary message update (mutually exclusive with
+// `message` on a real TelegramUpdate). `data` carries the tapped button's
+// own callback_data verbatim; `message` here is the ORIGINATING message the
+// keyboard is attached to (its chat/topic), never the tap itself, which has
+// no text of its own.
+export interface TelegramCallbackQuery {
+  id: string;
+  data?: string;
+  from?: { id: number | string };
+  message?: { chat?: TelegramChat; message_thread_id?: number };
+}
+
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
+  callback_query?: TelegramCallbackQuery;
 }
 
 export interface GetUpdatesResult {
@@ -196,6 +227,29 @@ export async function getTelegramUpdates(
     return { success: false, updates: [], error: result.error };
   }
   return { success: true, updates: extractUpdates(result.json) };
+}
+
+// BL-410: clears a tapped inline-keyboard button's loading spinner. Must be
+// called for every callback_query the bot recognizes as one of its own
+// buttons, even a no-op (unknown/stale callback data) - Telegram's UI hangs
+// on the tap otherwise. Mirrors closeForumTopic's own shape exactly (a
+// single required id, no other body fields).
+export interface AnswerCallbackQueryResult {
+  success: boolean;
+  error?: string;
+}
+
+export async function answerCallbackQuery(
+  token: string,
+  callbackQueryId: string,
+  postFn: TelegramPostFn = defaultPost
+): Promise<AnswerCallbackQueryResult> {
+  const body = JSON.stringify({ callback_query_id: callbackQueryId });
+  const result = await callTelegramApi(token, 'answerCallbackQuery', body, postFn);
+  if (!result.success) {
+    return { success: false, error: result.error };
+  }
+  return { success: true };
 }
 
 // ── BL-281: forum-topic support ─────────────────────────────────────────
