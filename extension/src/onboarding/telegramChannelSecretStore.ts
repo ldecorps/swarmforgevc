@@ -22,6 +22,14 @@ function readExisting(secretsFilePath: string): Record<string, string> {
   }
 }
 
+// BL-381: the read counterpart storeTelegramBotToken never needed until the
+// negotiation relay must send AS the target's own bot - reuses the exact
+// same readExisting seam storeTelegramBotToken already reads through, so the
+// two can never disagree about the file's shape.
+export function readTelegramBotToken(secretsFilePath: string, targetRepoPath: string): string | undefined {
+  return readExisting(secretsFilePath)[targetRepoPath];
+}
+
 export function storeTelegramBotToken(secretsFilePath: string, targetRepoPath: string, botToken: string): void {
   if (isPathInside(secretsFilePath, targetRepoPath)) {
     throw new Error(
