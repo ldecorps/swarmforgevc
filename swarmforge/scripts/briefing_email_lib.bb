@@ -173,6 +173,90 @@
     {:html nil
      :note-line "Architecture diagrams: unavailable this run (renderer not installed) - see docs/diagrams/ in the repo."}))
 
+;; BL-393: THE BODY loses its structure as an undifferentiated plain-text
+;; wall on a phone mail client (headings/tables/bold all collapse to raw
+;; markdown syntax) - a minimal, pure, exported markdown->HTML renderer so
+;; the SAME assembled `content` that already rides the plain-text part can
+;; also ride the html part. Deliberately minimal: headings, GFM-style pipe
+;; tables, and **bold** emphasis are the structural elements the intake
+;; actually named; every other non-blank line becomes its own paragraph.
+(defn- escape-html [s]
+  (-> s
+      (str/replace "&" "&amp;")
+      (str/replace "<" "&lt;")
+      (str/replace ">" "&gt;")))
+
+(defn- render-inline-markdown [s]
+  (str/replace s #"\*\*(.+?)\*\*" "<strong>$1</strong>"))
+
+(defn- heading-line [line]
+  (re-matches #"(#{1,6})\s+(.*)" line))
+
+(defn- table-row-line? [line]
+  (str/includes? line "|"))
+
+(defn- table-separator-line? [line]
+  (boolean (re-matches #"\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*" line)))
+
+(defn- split-table-cells [line]
+  (->> (-> line
+           str/trim
+           (str/replace #"^\|" "")
+           (str/replace #"\|$" ""))
+       (#(str/split % #"\|"))
+       (map str/trim)
+       vec))
+
+(defn- render-table-cell [tag text]
+  (str "<" tag ">" (render-inline-markdown (escape-html text)) "</" tag ">"))
+
+(defn- render-table-row-html [cells tag]
+  (str "<tr>" (str/join "" (map #(render-table-cell tag %) cells)) "</tr>"))
+
+(defn- render-table-block [lines]
+  (str "<table>"
+       (render-table-row-html (split-table-cells (first lines)) "th")
+       (str/join "" (map #(render-table-row-html (split-table-cells %) "td") (drop 2 lines)))
+       "</table>"))
+
+(defn render-markdown-to-html
+  "Minimal pure markdown->HTML renderer (BL-393): headings become
+   <h1>-<h6>, a GFM-style pipe table becomes <table>/<tr>/<th|td>, and
+   **bold** spans become <strong>. Every other non-blank line becomes its
+   own <p>. Blank lines are separators only, never rendered. HTML-special
+   characters are escaped before any markup is generated, so raw content
+   can never inject stray markup into the email."
+  [markdown]
+  (loop [lines (str/split-lines (or markdown ""))
+         out []]
+    (if (empty? lines)
+      (str/join "" out)
+      (let [line (first lines)]
+        (cond
+          (str/blank? line)
+          (recur (rest lines) out)
+
+          (and (table-row-line? line) (second lines) (table-separator-line? (second lines)))
+          (let [table-lines (take-while table-row-line? lines)]
+            (recur (drop (count table-lines) lines) (conj out (render-table-block table-lines))))
+
+          (heading-line line)
+          (let [[_ hashes text] (heading-line line)]
+            (recur (rest lines)
+                   (conj out (str "<h" (count hashes) ">" (render-inline-markdown (escape-html text)) "</h" (count hashes) ">"))))
+
+          :else
+          (recur (rest lines) (conj out (str "<p>" (render-inline-markdown (escape-html line)) "</p>"))))))))
+
+;; BL-393: the diagram section's own html (a <div> of <h3>/<img> per
+;; diagram) must coexist with the rendered body, never replace it -
+;; appended after the body so both remain intact and neither clobbers the
+;; other (the critical interaction the ticket calls out explicitly).
+(defn- merge-diagram-html [body-html diagram-html]
+  (if diagram-html
+    (str body-html diagram-html)
+    body-html))
+
 (defn send-unsent-briefings!
   "Sends each not-yet-sent committed briefing exactly once via the injected
    send-email! adapter (daemon_alarm_lib.bb's send-alarm-email!). A file is
@@ -190,17 +274,17 @@
 
    BL-260: an optional :diagram-section adapter (zero-arg fn returning
    build-diagram-section's {:html :note-line} shape) appends :note-line to
-   the plaintext content exactly like the other optional sections, and -
-   only when present - passes :html as a 3rd arg to :send-email!. An absent
-   :diagram-section adapter keeps the exact 2-arg :send-email! call every
-   earlier caller/test already uses, so this is fully backward compatible.
+   the plaintext content exactly like the other optional sections.
 
-   BL-286: when the diagram section also carries :attachments (available
-   diagrams, not the renderer-unavailable/no-diagrams branch), it is passed
-   as a 4th arg to :send-email! alongside :html. A diagram section with no
-   :attachments key (nothing to attach) keeps the exact 3-arg call, and no
-   :diagram-section adapter at all keeps the exact 2-arg call - both
-   pre-BL-286 shapes are unaffected."
+   BL-393: :html is now ALWAYS passed to :send-email! (a 3rd arg, minimum),
+   rendered from the exact same `content` that rides the plain-text part -
+   so the html body is byte-complete by construction, including every
+   appended optional section. When a :diagram-section adapter also carries
+   :html (available diagrams), that html is merged into the rendered body
+   rather than replacing it. A diagram section with :attachments (available
+   diagrams, not the renderer-unavailable/no-diagrams branch) is passed as
+   a 4th arg alongside :html; every other case - including no
+   :diagram-section adapter at all - keeps the 3-arg call, html and all."
   [briefings-dir adapters]
   (let [sent-now (atom [])]
     (doseq [file-name (find-unsent-briefings briefings-dir)]
@@ -212,15 +296,10 @@
                       content)
             date-label (str/replace file-name #"\.md$" "")
             subject (build-briefing-subject date-label content)
-            result (cond
-                     (seq (:attachments diagram-section))
-                     ((:send-email! adapters) subject content (:html diagram-section) (:attachments diagram-section))
-
-                     diagram-section
-                     ((:send-email! adapters) subject content (:html diagram-section))
-
-                     :else
-                     ((:send-email! adapters) subject content))]
+            html (merge-diagram-html (render-markdown-to-html content) (:html diagram-section))
+            result (if (seq (:attachments diagram-section))
+                     ((:send-email! adapters) subject content html (:attachments diagram-section))
+                     ((:send-email! adapters) subject content html))]
         (cond
           (:success result)
           (do

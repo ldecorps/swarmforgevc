@@ -44,18 +44,21 @@
 
     nil))
 
+;; BL-393: :send-email! is now always called with html (a 3rd arg, minimum -
+;; see briefing_email_lib.bb's send-unsent-briefings!), so every mode below
+;; accepts and captures it, not only the diagram-specific ones.
 (def send-email!
   (case mode
-    "success" (fn [_subject text] (swap! emails-sent inc) (reset! last-sent-text text) {:success true})
-    "missing-api-key" (fn [_s _t] {:success false :reason :missing-api-key :error "email not configured (missing RESEND_API_KEY)"})
-    "disabled" (fn [_s _t] {:success false :reason :disabled :error "email not configured (notify_email_to unset)"})
-    ("diagram-available" "diagram-unavailable")
+    ("success" "diagram-available" "diagram-unavailable")
     (fn [_subject text html & [attachments]]
       (swap! emails-sent inc)
       (reset! last-sent-text text)
       (reset! last-sent-html html)
       (reset! last-sent-attachments attachments)
-      {:success true})))
+      {:success true})
+
+    "missing-api-key" (fn [_s _t & _] {:success false :reason :missing-api-key :error "email not configured (missing RESEND_API_KEY)"})
+    "disabled" (fn [_s _t & _] {:success false :reason :disabled :error "email not configured (notify_email_to unset)"})))
 
 (def base-adapters
   {:read-briefing-content (fn [f] (slurp (str (fs/path briefings-dir f))))
