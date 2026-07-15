@@ -32,6 +32,15 @@ test('flips a pending ticket to approved', () => {
   assert.match(result.text, /^human_approval: approved$/m);
 });
 
+// BL-408: pending-review is also flipped to approved (BL-408 fixes the
+// approveHumanApprovalText regex to match both pending and pending-review).
+test('flips a pending-review ticket to approved', () => {
+  const raw = 'id: BL-901\ntitle: t\nhuman_approval: pending-review\n';
+  const result = approveHumanApprovalText(raw);
+  assert.equal(result.changed, true);
+  assert.match(result.text, /^human_approval: approved$/m);
+});
+
 test('a ticket already approved is left untouched (idempotent)', () => {
   const raw = 'id: BL-900\ntitle: t\nhuman_approval: approved\n';
   const result = approveHumanApprovalText(raw);
