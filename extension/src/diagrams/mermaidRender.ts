@@ -164,6 +164,15 @@ export async function renderMermaidToFlatSvg(
   return flattenMermaidThemeVars(raw, theme);
 }
 
+// BL-402: the human found the prior 1600px render blurry on high-DPI
+// screens. resvg rasterizes the vector AT this width - true resolution, not
+// an upscaled raster - so doubling it produces a genuinely crisper PNG.
+// Named so it is referenceable and unit/mutation-testable directly, rather
+// than a bare literal buried in the Resvg call below. Stays cid-PNG, never
+// SVG: Gmail strips/blocks SVG in every embedding form, which is exactly
+// why BL-286 moved to cid-PNG in the first place.
+export const DIAGRAM_RENDER_WIDTH = 3200;
+
 // Deterministic: identical `source`/`theme` produce a byte-identical PNG
 // (verified across separate process invocations, not just repeated
 // in-process calls - BL-260 local-deterministic-02). Async only because of
@@ -173,6 +182,6 @@ export async function renderMermaidToPng(
   theme: MermaidDiagramTheme = DEFAULT_DIAGRAM_THEME
 ): Promise<Buffer> {
   const svg = await renderMermaidToFlatSvg(source, theme);
-  const resvg = new Resvg(svg, { fitTo: { mode: 'width', value: 1600 }, background: 'white' });
+  const resvg = new Resvg(svg, { fitTo: { mode: 'width', value: DIAGRAM_RENDER_WIDTH }, background: 'white' });
   return resvg.render().asPng();
 }
