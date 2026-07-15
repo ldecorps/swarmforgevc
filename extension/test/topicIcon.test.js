@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { ICON_EMOJI, resolveIconState, resolveIconStickerId } = require('../out/concierge/topicIcon');
+const { ICON_EMOJI, resolveIconState, resolveIconStickerId, STANDING_TOPIC_ICON } = require('../out/concierge/topicIcon');
 
 // BL-342: pure icon-state resolution - the ticket's own convention:
 // check = done/shipped; microbe = defect in flight; musical note (BL-417,
@@ -58,4 +58,17 @@ test('resolveIconStickerId returns undefined for an emoji not present in the fet
 
 test('resolveIconStickerId returns undefined for an empty sticker list', () => {
   assert.equal(resolveIconStickerId([], '✅'), undefined);
+});
+
+// ── STANDING_TOPIC_ICON (BL-418 standing-topic-icons-01) ─────────────────
+// The orchestra remap's harder half: the standing NON-ticket topics get
+// their own icons, human-decided 2026-07-15 - support/intake is the box
+// office, the Operator topic is the opera house.
+
+test('STANDING_TOPIC_ICON: support/intake resolves to the box-office ticket emoji', () => {
+  assert.equal(STANDING_TOPIC_ICON['support/intake'], '🎟');
+});
+
+test('STANDING_TOPIC_ICON: operator resolves to the opera-house emoji', () => {
+  assert.equal(STANDING_TOPIC_ICON.operator, '🏛');
 });

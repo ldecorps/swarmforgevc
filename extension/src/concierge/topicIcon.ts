@@ -53,3 +53,32 @@ export interface IconStickerLookup {
 export function resolveIconStickerId(stickers: IconStickerLookup[], emoji: string): string | undefined {
   return stickers.find((s) => s.emoji === emoji)?.customEmojiId;
 }
+
+// BL-418: the orchestra remap's harder half - icons for the STANDING
+// non-ticket topics (support/intake, the Operator), extending BL-342's
+// mapping beyond ticket-state icons. A separate table from ICON_EMOJI
+// above: these two keys are never a ticket's folder/type, so they get
+// their own type rather than growing TopicIconState with unrelated
+// members. support/intake is the box office (🎟); the Operator standing
+// topic is the opera house (🏛) - both human-decided 2026-07-15, within
+// Telegram's free sticker set (docs/branding/icon-system.md).
+export type StandingTopicKey = 'support/intake' | 'operator';
+
+export const STANDING_TOPIC_ICON: Record<StandingTopicKey, string> = {
+  'support/intake': '🎟',
+  operator: '🏛',
+};
+
+// A single standing topic the concierge tick's icon sync targets - either
+// the one Operator topic or one of potentially many open support subjects
+// (every SUP-### thread the human is only ever the one who creates, by
+// messaging into an unbound topic - the swarm never mints these itself,
+// unlike a ticket's own topic). `id` is the durable ownership-marker key
+// (blTopicStore's readSwarmIconId/recordSwarmIconId, reused generically -
+// never a second parallel store); `topicId` is the real Telegram topic to
+// set the icon on.
+export interface StandingTopicTarget {
+  id: string;
+  topicId: number;
+  iconKey: StandingTopicKey;
+}
