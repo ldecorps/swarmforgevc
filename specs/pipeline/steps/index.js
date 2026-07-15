@@ -20,6 +20,7 @@ const DOMAINS = [
   require('./briefingDuplicateInconsistentSteps'),
   require('./vitestWorkerMemoryBudgetSteps'),
   require('./bl409ApproveRejectAmendSteps'),
+  require('./bl417FeatureTopicIconMusicalNoteSteps'),
   require('./briefingDiagramSteps'),
   require('./briefingSubjectBoundedSteps'),
   require('./briefingBodyHtmlSteps'),

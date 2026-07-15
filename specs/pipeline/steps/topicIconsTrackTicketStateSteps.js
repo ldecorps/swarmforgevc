@@ -18,10 +18,11 @@ const { runConciergeTick } = require(path.join(EXT_OUT, 'concierge', 'conciergeT
 const { resolveIconStickerId } = require(path.join(EXT_OUT, 'concierge', 'topicIcon'));
 const { backfillTopicIcons } = require(path.join(EXT_OUT, 'tools', 'backfill-topic-icons'));
 
+// BL-417: feature-in-flight remapped from the bulb to the musical note.
 const STICKERS = [
   { emoji: '✅', customEmojiId: 'id-check' },
   { emoji: '🦠', customEmojiId: 'id-microbe' },
-  { emoji: '💡', customEmojiId: 'id-bulb' },
+  { emoji: '🎵', customEmojiId: 'id-note' },
   { emoji: '🔍', customEmojiId: 'id-magnifier' },
 ];
 
@@ -108,15 +109,15 @@ function registerSteps(registry) {
 
   registry.define(/^the topic has an icon reflecting the ticket's state$/, (ctx) => {
     const icon = iconFor(ctx.fixture, TICKET_ID);
-    if (icon !== 'id-bulb') {
-      throw new Error(`expected the new topic's icon to reflect its in-flight feature state (id-bulb), got ${icon}`);
+    if (icon !== 'id-note') {
+      throw new Error(`expected the new topic's icon to reflect its in-flight feature state (id-note), got ${icon}`);
     }
   });
 
   // ── topic-icons-track-ticket-state-02 (Scenario Outline) ─────────────
   const KNOWN_STATES = {
     done: { folders: { done: [{ id: TICKET_ID, title: 't', type: 'feature' }] }, expectedIcon: 'id-check' },
-    'in flight': { folders: { active: [{ id: TICKET_ID, title: 't', type: 'feature' }] }, expectedIcon: 'id-bulb' },
+    'in flight': { folders: { active: [{ id: TICKET_ID, title: 't', type: 'feature' }] }, expectedIcon: 'id-note' },
     paused: { folders: { paused: [{ id: TICKET_ID, title: 't', type: 'feature' }] }, expectedIcon: 'id-magnifier' },
   };
 
