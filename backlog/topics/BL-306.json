@@ -1,0 +1,1 @@
+{"id":"BL-306","messages":[{"seq":0,"ts":1784077570445,"author":"swarm","type":"outbound","text":"BL-306 - Enh: Operator can ask the human a clarifying question in the front-desk SUP thread and hold a runtime-owned awaiting-answer state (bounded: escalate once then drop; never blocks emergencies; never guesses) is complete."}]}
