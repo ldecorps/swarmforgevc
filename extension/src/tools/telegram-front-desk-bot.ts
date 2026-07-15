@@ -88,7 +88,7 @@ import { reconcileTopicLifecycle, ReconcileAdapters } from '../concierge/topicRe
 import { sweepTopicDeletions, TopicDeletionAdapters, topicRetentionWindowMs } from '../concierge/topicDeletion';
 import { readBacklogFolders } from '../panel/backlogReader';
 import { appendOperatorEvent } from '../bridge/operatorEventQueue';
-import { appendMessage, readRecord, hasCompletionRecord, isRecordCommitted, hasUpdateId, readSwarmIconId, recordSwarmIconId } from '../concierge/blTopicStore';
+import { appendMessage, readRecord, hasCompletionRecord, isRecordCommitted, hasUpdateId, readSwarmIconId, recordSwarmIconId, lastActivityMs } from '../concierge/blTopicStore';
 import { IconStickerLookup, StandingTopicTarget } from '../concierge/topicIcon';
 import { computeRoleGateStatesLive, RoleGateState } from '../bridge/gateSnapshot';
 import { computeCurrentHolders } from '../bridge/holisticProjections';
@@ -733,6 +733,15 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
       recordSwarmIconId: (ticketId, iconId) => recordSwarmIconId(targetPath, ticketId, iconId),
     },
     readStandingTopics: () => standingTopicTargets(targetPath),
+    // BL-414: last activity comes from the SAME per-ticket record
+    // appendMessage/blTopicStore.ts already maintains - never a second
+    // store. setTopicTitle edits only the name, leaving the icon field
+    // untouched (a bare editForumTopic({ name }) call, same shape as the
+    // icon adapter's own editForumTopic({ iconCustomEmojiId }) call above).
+    titleAdapters: {
+      readLastActivityMs: (ticketId) => lastActivityMs(readRecord(targetPath, ticketId)),
+      setTopicTitle: (topicId, title) => editForumTopic(botToken, chatId, topicId, { name: title }).then((r) => r.success),
+    },
   };
 }
 
@@ -814,7 +823,7 @@ export async function runOneConciergeTick(
   nowMs: number = Date.now(),
   retentionWindowMs: number = topicRetentionWindowMs()
 ): Promise<void> {
-  await runConciergeTick(adapters);
+  await runConciergeTick(adapters, nowMs);
   const doneTickets = adapters.readFolders().done;
   await reconcileTopicLifecycle(doneTickets, reconcileAdapters);
   await sweepTopicDeletions(doneTickets, deletionAdapters, nowMs, retentionWindowMs);

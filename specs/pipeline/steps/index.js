@@ -208,7 +208,10 @@ const DOMAINS = [
   require('./bl418StandingTopicIconsSteps'),
   require('./bl416ApprovalReplyConfirmsSuccessSteps'),
   require('./bl424AwaitingApprovalTopicIconSteps'),
-  require('./bl410ApprovalInlineKeyboardButtonsSteps')
+  require('./bl410ApprovalInlineKeyboardButtonsSteps'),
+  require('./bl414TopicTitleAgeSuffixSteps'),
+  require('./bl427ProfileMutationWorkerRssSteps'),
+  require('./bl430ReworkObservatorySteps')
 ];
 
 function registerSteps(registry) {

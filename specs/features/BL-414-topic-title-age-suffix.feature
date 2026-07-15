@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=27cb891ac7b42a90365ccca20f8be848f39adcd9f4ba15a24ab6a3cc1a213bd9
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-15T20:21:07.543705602Z","feature_name":"a topic's title shows how long ago it was last updated","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-414-topic-title-age-suffix.feature","background_hash":"c929cd30b544070f052c80e24b5a119600c54fd6dac8be184cfe7b1825dad118","implementation_hash":"unknown","scenarios":[{"index":0,"name":"crossing into a staler bucket renames the title once with that bucket's suffix","scenario_hash":"3f4cc66a8df5d3614cc3aacfc61f2b71b4a44e5d56e20610fdc59e2ffe9e0c00","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-07-15T20:21:07.543705602Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a topic's title shows how long ago it was last updated
 
   # Operator-relayed request: a glanceable cue for topic staleness. Telegram
