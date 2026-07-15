@@ -1,0 +1,153 @@
+id: BL-426
+title: "Audio conversation mode with the coordinator over Telegram: transcribe inbound voice notes (STT) and reply with synthesized voice notes (TTS), coordinator-first; other roles are an explicit follow-up slice"
+milestone: M8
+type: feature
+status: todo
+severity: low
+priority: 3
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-audio-conversation-mode-agents.md — human raw ask, filed by the coordinator 2026-07-15: 'add audio conversation mode to agents, starting with coordinator'. Drained 2026-07-15 (AskUserQuestion, specifier session): (1) INTENT = a HUMAN voice channel to converse with the coordinator (not the coordinator gaining domain audio, not inter-agent voice); (2) INTERACTION = continuous two-way conversation, NOT one-shot commands; (3) CHANNEL = the existing Telegram front desk; (4) 'starting with coordinator' = coordinator-only first slice, other roles an explicit tracked follow-up. Follow-up AskUserQuestion resolved a hard platform contradiction: the Telegram BOT API (what the front desk runs on) cannot join live voice CALLS — it can only send/receive voice MESSAGES (audio files). Human chose VOICE-NOTE CONVERSATION: multi-turn spoken back-and-forth via voice messages, STT in / TTS out, context carried across turns, over the existing bridge — NOT true live-call audio."
+
+notes: |
+  EPIC — VOICE I/O ON THE EXISTING COORDINATOR CONVERSATION. This does NOT give
+  the coordinator new domain responsibilities and does NOT change the coordinator
+  role at all. The audio I/O lives ENTIRELY in the front-desk bot (extension host,
+  tools/telegramFrontDeskBotCore.ts + tools/telegram-front-desk-bot.ts): the bot
+  transcribes an inbound voice note to text BEFORE delivering it to the coordinator
+  on the existing Operator-topic path, and synthesizes the coordinator's outbound
+  TEXT reply to a voice note on the way back. The coordinator keeps conversing in
+  text exactly as today; it never touches audio, never gains a mic/speaker, and its
+  "never self-schedule polling" posture is untouched (the front-desk bot already
+  owns the poll loop — no new polling anywhere).
+
+  WHY THIS IS THE RIGHT LAYER (verified against live code, not memory):
+    - Inbound today: telegramFrontDeskBotCore.ts's messageTextOf(update) returns
+      ONLY update.message?.text; a voice note (update.message?.voice, a file_id)
+      carries no .text, so processUpdate today classifies it 'dropped' and the
+      offset advances past it (the BL-389 drop path). This slice ADDS a branch
+      BEFORE that drop: a voice message in the coordinator's Operator topic is
+      routed to STT and its transcript becomes the delivered text.
+    - Outbound today: replies relay back to the topic as TEXT (sendMessage). This
+      slice ADDS: when the inbound that opened/continued the thread was a voice
+      note, synthesize the coordinator's reply text to an OGG/Opus voice note and
+      sendVoice it to the same topic (with the text transcript alongside for
+      skimmability — FLAGGED below).
+    - "Continuous two-way / conversation mode" is INHERENT to the topic thread: the
+      Operator topic already retains multi-turn context per topic, so a follow-up
+      voice note in the same topic is simply the next turn of the same
+      conversation. No new session/state machine is needed for continuity — the
+      slice is voice I/O bolted onto an already-conversational text channel.
+
+  TESTABILITY (mirror bridge/operatorDecideStatus.ts + the existing
+  telegramFrontDeskBotCore pure-decision/adapter split):
+    - The inbound handling is ONE PURE host-side decision: given (update,
+      principal, topic-id, coordinator-topic-id) -> ignore | transcribe-then-deliver
+      (fileId) | deliver-text (unchanged) | refuse. Unit-tested over fixtures.
+    - STT, TTS, Telegram getFile (download the voice OGG), and sendVoice are
+      ADAPTER-INJECTED seams (like the existing PollAdapters). Unit tests assert the
+      pure decision resolved the right intent and that the correct adapter was
+      invoked with the right file_id/text — NEVER a real provider call, real
+      network, or real Telegram (engineering shared-global + test-double rules).
+    - Any CLI/tool entry keeps main() a thin wrapper over exported pure helpers,
+      called IN-PROCESS by a test, not only spawned (thin-wrapper + in-process-main).
+
+  STT/TTS FAILURE POSTURE (BL-389 is the load-bearing precedent):
+    - A TRANSIENT STT/TTS failure (provider timeout/5xx) is a FAILURE, not a drop:
+      it must NOT advance the offset past the voice note, and it must be retried
+      BOUNDED with backoff, then dead-lettered/surfaced on exhaustion (retry rule +
+      the deliberate-drop-vs-failure rule). It must NEVER be collapsed into the same
+      boolean as a deliberate drop.
+    - A voice note that is structurally un-processable (empty/zero-duration, wrong
+      mime) is a DELIBERATE DROP: the offset advances (a drop must let the offset
+      past — BL-389), never parking Telegram redelivery forever.
+    - Any side-effecting post that a retry can re-run stays idempotent on the
+      update_id (BL-389 amplifier: postToBridge takes updateId; the coordinator
+      context/record posts must too if this path can re-run them).
+
+  ---- SLICE 1 (this ticket) — COORDINATOR VOICE-NOTE ROUND-TRIP ----
+  Scope: ONLY the coordinator's Operator topic. Inbound voice -> STT -> delivered as
+  today's Operator text; the coordinator's text reply -> TTS -> voice note back to
+  the Operator topic. This IS the epic's runtime-wiring slice (multi-slice-wiring
+  rule): it lands with a LIVE caller in the front-desk poll loop and the STT/TTS
+  adapters actually wired to a provider (behind the injectable seam), not a dark
+  module. Voice in a NON-coordinator topic is untouched by this slice.
+
+  ---- SLICE 2 (parked; NOT built here) — THE OTHER SEVEN ROLES ----
+  This is the explicit, TRACKED "and then the other roles" follow-up the intake
+  asked the specifier to make visible rather than leave an implicit gap (epic
+  runtime-wiring-slice rule). Extends voice I/O to the other 7 roles' topics: a
+  voice note in role R's topic is transcribed and delivered to role R (as BL-425's
+  QUESTION/REDIRECT), and role R's answer is synthesized back as a voice note.
+    - HARD DEPENDENCY on BL-425 (per-agent Telegram steering topics): voice to the
+      other roles requires the per-role topics BL-425 provisions and its
+      principal-guarded role->topic routing. Slice 2 must not be promoted before
+      BL-425 lands; recorded here so the coordinator sequences it.
+    - Slice 2's scenarios are materialized into the live feature only WHEN built,
+      with step handlers in the same parcel (BL-233); until then they stay out of
+      any *.feature glob.
+
+  OPEN DECISIONS — FLAGGED FOR HUMAN REVIEW BEFORE BUILD (do not guess these):
+    1. STT/TTS PROVIDER. Which provider(s), and whether one multimodal
+       audio-capable LLM does both vs dedicated STT + TTS services. Keys/tokens
+       stay in the EXTENSION-HOST ENVIRONMENT only — never written into the target
+       working dir or any commit (local-engineering secrets rule 4). The injectable
+       adapter seam keeps the provider swappable and the decision reversible.
+    2. VOICE-OUT DEFAULT. Proposed: when the human addressed the coordinator by
+       voice, reply with a voice note AND a short text transcript (voice for the
+       phone, text for skimming/search). Confirm, or voice-only.
+    3. LANGUAGE/ACCENT config — proposed deferred (English default) unless the
+       human wants it in slice 1.
+
+  DEPENDENCY POSTURE: slice 1 has no hard code depends_on — the front-desk poll
+  loop, principal filter, Operator-topic delivery/reply path, and getFile/sendVoice
+  are all reachable on main; only the STT/TTS provider adapter is net-new. The front
+  desk must be RUNNING for the live e2e (an operational QA precondition, not a code
+  dependency; front desk was PARKED 2026-07-14 per memory — confirm its state at
+  promotion). Slice 2 hard-depends on BL-425.
+
+  OUT OF SCOPE: true live-call / open-mic audio (investigated, dropped — Bot API
+  cannot do it; would force a different channel); audio for any role other than the
+  coordinator in slice 1; giving the coordinator its own mic/speaker or any
+  domain-audio capability; changing per-ticket BL topic or Operator topic text
+  behavior.
+
+acceptance:
+  feature: specs/features/BL-426-audio-voice-note-coordinator.feature
+  steps:
+    - "A principal's voice note in the coordinator's Operator topic is transcribed and delivered to the coordinator as text"
+    - "The coordinator's text reply to a voice-originated turn is synthesized and sent back as a voice note in the same topic"
+    - "A text message in the coordinator topic still delivers as text with no transcription (no regression)"
+    - "A voice note from a non-principal is ignored (principal guard)"
+    - "A transient STT failure does not advance the offset and is retried bounded, never dropped"
+    - "A structurally un-processable voice note is dropped and the offset advances (never parked forever)"
+
+qa_e2e: |
+  1. Unit (host-side, no Telegram/network/provider): drive the pure inbound-decide
+     function over fixtures — a principal voice note in the coordinator topic ->
+     transcribe-then-deliver(fileId); a principal TEXT message -> deliver-text
+     unchanged; a non-principal voice note -> refuse; a voice note in a non-coordinator
+     topic -> ignore (slice 1). Assert the STT adapter was invoked with the voice
+     file_id and the transcript was delivered on the Operator path; assert the TTS
+     adapter synthesized the coordinator's reply text and sendVoice was invoked to the
+     same topic. Failure posture: an injected transient STT failure leaves the offset
+     un-advanced and increments a bounded retry; an un-processable note advances the
+     offset. All over injected seams — never a real provider/network/Telegram.
+  2. Live (real swarm + real Telegram forum, authorised human, front desk running,
+     provider configured host-side): send a VOICE note into the Operator topic asking
+     the coordinator a question; confirm the coordinator receives it as text, answers,
+     and a spoken voice note (plus transcript, if confirmed in decision 2) comes back
+     into the Operator topic. Send a FOLLOW-UP voice note; confirm it continues the
+     same conversation with prior context. Send a TEXT message; confirm the text path
+     is unchanged. Guards: a non-principal voice note does nothing; a voice note in a
+     BL-ticket topic does nothing in slice 1.
+
+human_approval: >
+  PENDING. High-level intent, interaction model, channel, and the voice-note (not
+  live-call) realization were confirmed by the human via AskUserQuestion in the
+  specifier session 2026-07-15. The DETAILED feature scenarios and the three flagged
+  open decisions (STT/TTS provider, voice-out default, language) have NOT yet been
+  human-reviewed — this feature file is a draft (parked as .feature.draft) until a
+  human reviews it; the specifier materializes the live .feature from the draft at
+  promotion, with the coder wiring step handlers in the same parcel (BL-233).
+mutation_cost: high

@@ -44,16 +44,27 @@ notes: |
   models actually lives — and the harness is structurally unable to see it.
 
   SLICES.
-    BL-385  A tie is reported AS a tie, and the leaderboard says so. Ships FIRST — it is the
-            integrity fix, and until it lands a shipped surface keeps telling the human something
-            untrue. Also kills the array-order bug.
-    BL-386  A battery with a real difficulty ceiling: several tasks, cross-file, holding invariants
-            the tests never state. Also makes the report per-task (today it carries a single
-            top-level `taskId` — the harness runs exactly ONE task).
-    BL-387  The oracle runs each trial's diff through the REAL pipeline and scores what survives,
-            counting each bounce as rework.
-    BL-388  THE WIRING SLICE — the scoring function, the report and the leaderboard actually CONSUME
-            survival + rework cost.
+    BL-385  [SHIPPED] A tie is reported AS a tie, and the leaderboard says so. Shipped FIRST — it was
+            the integrity fix, and until it landed a shipped surface kept telling the human something
+            untrue. Also killed the array-order bug.
+    BL-386  [SHIPPED] A battery with a real difficulty ceiling: several tasks, cross-file, holding
+            invariants the tests never state. Also makes the report per-task (previously it carried a
+            single top-level `taskId` — the harness ran exactly ONE task).
+    BL-387  [ACTIVE — in flight] The oracle runs each trial's diff through the REAL pipeline and
+            scores what survives, counting each bounce as rework.
+    BL-388  [PAUSED — mandatory wiring slice] THE WIRING SLICE — the scoring function, the report and
+            the leaderboard actually CONSUME survival + rework cost. depends_on [BL-385, BL-387].
+
+  SLICE STATUS (as of 2026-07-15).
+    BL-385  DONE — backlog/done/, QA-approved aa2438a8bf, closed 8da3cff1.
+    BL-386  DONE — backlog/done/, QA-approved 052e86dd7b, merged 67e615e7.
+    BL-387  ACTIVE — backlog/active/, promoted after BL-386 closed (1a139379); the survival/rework
+            oracle is the in-flight slice.
+    BL-388  PAUSED — the epic's mandatory wiring slice; still gates epic completion (see below).
+    Two of four slices have landed; the epic is HALF DARK. The leaderboard already reports ties
+    honestly (BL-385) over a battery that can separate models (BL-386), but it still ranks on
+    first-pass survival-blind counts until BL-388 consumes the oracle's survival + rework output.
+    Do NOT close this epic on BL-385/386 having shipped, nor on BL-387 landing green.
 
   BL-388 IS THE EPIC'S MANDATORY WIRING SLICE, AND IT IS NAMED HERE ON PURPOSE. Per the engineering
   article: an emit -> route -> consume epic whose slices are pure modules stays DARK until a slice

@@ -10,6 +10,7 @@ const {
   classifyApprovalReplyAction,
   rejectHumanApprovalText,
   recordRejectionReply,
+  isTicketPendingApproval,
 } = require('../out/concierge/pendingApprovalReply');
 
 // BL-357: the human's reply in a ticket's own topic RECORDS the approval
@@ -289,4 +290,48 @@ test('a backlog id with no matching ticket file is a clean no-op for reject too'
   const targetPath = mkTmp();
   const changed = recordRejectionReply(targetPath, 'BL-999', 'bad scope');
   assert.equal(changed, false);
+});
+
+// ── isTicketPendingApproval (read-only, real fs) - BL-416 ─────────────────
+
+test('a ticket with human_approval: pending is reported pending', () => {
+  const targetPath = mkTmp();
+  writeTicket(path.join(targetPath, 'backlog', 'active'), 'BL-930-slug.yaml', 'id: BL-930\ntitle: t\nhuman_approval: pending\n');
+  assert.equal(isTicketPendingApproval(targetPath, 'BL-930'), true);
+});
+
+test('a ticket with human_approval: pending-review is reported pending too', () => {
+  const targetPath = mkTmp();
+  writeTicket(path.join(targetPath, 'backlog', 'paused'), 'BL-931-slug.yaml', 'id: BL-931\ntitle: t\nhuman_approval: pending-review\n');
+  assert.equal(isTicketPendingApproval(targetPath, 'BL-931'), true);
+});
+
+test('an approved ticket is reported not pending', () => {
+  const targetPath = mkTmp();
+  writeTicket(path.join(targetPath, 'backlog', 'active'), 'BL-932-slug.yaml', 'id: BL-932\ntitle: t\nhuman_approval: approved\n');
+  assert.equal(isTicketPendingApproval(targetPath, 'BL-932'), false);
+});
+
+test('a ticket with no human_approval field at all is reported not pending', () => {
+  const targetPath = mkTmp();
+  writeTicket(path.join(targetPath, 'backlog', 'active'), 'BL-933-slug.yaml', 'id: BL-933\ntitle: t\n');
+  assert.equal(isTicketPendingApproval(targetPath, 'BL-933'), false);
+});
+
+test('a backlog id with no matching ticket file at all is reported not pending, never a crash', () => {
+  const targetPath = mkTmp();
+  assert.equal(isTicketPendingApproval(targetPath, 'BL-999'), false);
+});
+
+// BL-416 scenario 03: the pending determination is scoped to THIS ticket's
+// own id, not a global/first-match answer - a pending ticket and a
+// not-pending ticket coexisting in the same fixture must each report their
+// own state independently.
+test('pending determination is scoped per-ticket - a pending ticket and a non-pending ticket in the same fixture each report their own state', () => {
+  const targetPath = mkTmp();
+  writeTicket(path.join(targetPath, 'backlog', 'active'), 'BL-934-slug.yaml', 'id: BL-934\ntitle: t\nhuman_approval: pending\n');
+  writeTicket(path.join(targetPath, 'backlog', 'active'), 'BL-935-slug.yaml', 'id: BL-935\ntitle: t\nhuman_approval: approved\n');
+
+  assert.equal(isTicketPendingApproval(targetPath, 'BL-934'), true);
+  assert.equal(isTicketPendingApproval(targetPath, 'BL-935'), false);
 });
