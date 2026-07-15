@@ -186,7 +186,11 @@ scoped to this one target, the first chat its own `getUpdates` reports back
 negotiation" topic there automatically. A half-finished setup (bot created
 but not yet added to a Topics-enabled group) reports not-ready rather than
 opening a topic, and re-running the same command once setup is finished picks
-up where it left off. The bot token is stored host-side (outside the target's
+up where it left off. If the printed result instead carries an `error` field,
+the problem isn't the group/Topics/admin setup — it's the bot token itself
+(mistyped, revoked, or a network/rate-limit failure talking to Telegram);
+double-check the token you pasted from BotFather and re-run. The bot token is
+stored host-side (outside the target's
 working directory and never committed, one entry per target so a second
 target's token can never collide with the first's); the group's chat id and
 negotiation topic id are the only things persisted into the target's own
