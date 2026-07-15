@@ -31,7 +31,11 @@ export interface BackfillIconOutcome {
   outcome: IconSyncOutcome;
 }
 
-function requiredEnv(name: string): string {
+// Exported so backfill-standing-topic-icons.ts (BL-418, the same one-time
+// maintenance-pass shape for the standing topics) can share this rather
+// than duplicating it - mirrors that file's own import of
+// setTopicIconWithRateLimitRetry below.
+export function requiredEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
     throw new Error(`${name} is not set in the environment`);
@@ -39,7 +43,7 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-function defaultWait(ms: number): Promise<void> {
+export function defaultWait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -69,6 +73,32 @@ export async function setTopicIconWithRateLimitRetry(
   }
 }
 
+// Exported so backfill-standing-topic-icons.ts (BL-418) shares this rather
+// than duplicating it - both backfills build the SAME "always eligible"
+// TopicIconAdapters shape (see the comment on readSwarmIconId below), only
+// ever varying by which live target/topic-id pairs they loop over.
+export function buildAlwaysEligibleIconAdapters(
+  targetPath: string,
+  botToken: string,
+  chatId: string,
+  stickers: IconStickerLookup[],
+  wait: (ms: number) => Promise<void>,
+  postFn?: TelegramPostFn
+): TopicIconAdapters {
+  return {
+    getIconStickers: async () => stickers,
+    setTopicIcon: (topicId, iconId) => setTopicIconWithRateLimitRetry(botToken, chatId, topicId, iconId, wait, postFn),
+    // BL-342/418: the backfill's own "always eligible" posture (see this
+    // file's header) - never consults the real marker, so isNewTopic=true
+    // on every call below is what actually grants that eligibility;
+    // readSwarmIconId here exists only to satisfy the shared interface and
+    // is never reached, since syncTopicIcon short-circuits its own
+    // ownership check whenever isNewTopic is true.
+    readSwarmIconId: (id) => readSwarmIconId(targetPath, id),
+    recordSwarmIconId: (id, iconId) => recordSwarmIconId(targetPath, id, iconId),
+  };
+}
+
 interface FolderedItem {
   item: BacklogItem;
   folder: 'active' | 'paused' | 'done';
@@ -96,19 +126,7 @@ export async function backfillTopicIcons(
   const topicMap = readBacklogTopicMap(targetPath);
   const iconStickersResult = await getForumTopicIconStickers(botToken, postFn);
   const stickers: IconStickerLookup[] = iconStickersResult.success ? iconStickersResult.stickers : [];
-
-  const adapters: TopicIconAdapters = {
-    getIconStickers: async () => stickers,
-    setTopicIcon: (topicId, iconId) => setTopicIconWithRateLimitRetry(botToken, chatId, topicId, iconId, wait, postFn),
-    // BL-342: the backfill's own "always eligible" posture (see this
-    // file's header) - never consults the real marker, so isNewTopic=true
-    // on every call below is what actually grants that eligibility;
-    // readSwarmIconId here exists only to satisfy the shared interface and
-    // is never reached, since syncTopicIcon short-circuits its own
-    // ownership check whenever isNewTopic is true.
-    readSwarmIconId: (ticketId) => readSwarmIconId(targetPath, ticketId),
-    recordSwarmIconId: (ticketId, iconId) => recordSwarmIconId(targetPath, ticketId, iconId),
-  };
+  const adapters = buildAlwaysEligibleIconAdapters(targetPath, botToken, chatId, stickers, wait, postFn);
 
   const outcomes: BackfillIconOutcome[] = [];
   for (const { item, folder } of allTicketsByFolder(targetPath)) {

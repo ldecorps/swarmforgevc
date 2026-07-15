@@ -19,28 +19,15 @@
 //
 // Usage: node backfill-standing-topic-icons.js <target-repo-path>
 import { getForumTopicIconStickers, TelegramPostFn } from '../notify/telegramClient';
-import { readSwarmIconId, recordSwarmIconId } from '../concierge/blTopicStore';
 import { STANDING_TOPIC_ICON, IconStickerLookup } from '../concierge/topicIcon';
-import { syncTopicIcon, IconSyncOutcome, TopicIconAdapters } from '../concierge/topicIconSync';
+import { syncTopicIcon, IconSyncOutcome } from '../concierge/topicIconSync';
 import { standingTopicTargets, readTickState, writeTickState } from './telegram-front-desk-bot';
-import { setTopicIconWithRateLimitRetry } from './backfill-topic-icons';
+import { requiredEnv, defaultWait, buildAlwaysEligibleIconAdapters } from './backfill-topic-icons';
 import { runCliMain } from './swarm-metrics';
 
 export interface BackfillStandingIconOutcome {
   id: string;
   outcome: IconSyncOutcome;
-}
-
-function requiredEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`${name} is not set in the environment`);
-  }
-  return value;
-}
-
-function defaultWait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export async function backfillStandingTopicIcons(
@@ -53,19 +40,7 @@ export async function backfillStandingTopicIcons(
   const targets = standingTopicTargets(targetPath);
   const iconStickersResult = await getForumTopicIconStickers(botToken, postFn);
   const stickers: IconStickerLookup[] = iconStickersResult.success ? iconStickersResult.stickers : [];
-
-  const adapters: TopicIconAdapters = {
-    getIconStickers: async () => stickers,
-    setTopicIcon: (topicId, iconId) => setTopicIconWithRateLimitRetry(botToken, chatId, topicId, iconId, wait, postFn),
-    // BL-342/418: the backfill's own "always eligible" posture (see this
-    // file's header) - never consults the real marker, so isNewTopic=true
-    // on every call below is what actually grants that eligibility;
-    // readSwarmIconId here exists only to satisfy the shared interface and
-    // is never reached, since syncTopicIcon short-circuits its own
-    // ownership check whenever isNewTopic is true.
-    readSwarmIconId: (id) => readSwarmIconId(targetPath, id),
-    recordSwarmIconId: (id, iconId) => recordSwarmIconId(targetPath, id, iconId),
-  };
+  const adapters = buildAlwaysEligibleIconAdapters(targetPath, botToken, chatId, stickers, wait, postFn);
 
   const outcomes: BackfillStandingIconOutcome[] = [];
   for (const target of targets) {
