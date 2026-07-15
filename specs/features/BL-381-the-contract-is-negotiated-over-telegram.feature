@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=da06cf0bf7df067bab5243027a3af3e02a499995076dde142c5e9c25e73f6154
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-15T03:15:27.881781385Z","feature_name":"The onboarding contract is negotiated with the human over Telegram","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-381-the-contract-is-negotiated-over-telegram.feature","background_hash":"5128087c51b85b9c682513c1d3d1eb55c0b0abcf4c96f2afe0f1ce8ab8cb0e28","implementation_hash":"unknown","scenarios":[{"index":1,"name":"The negotiation runs for as many rounds as the human needs","scenario_hash":"96caae0d100980c5265eb9f3b7e4d81ee5fe9628220033ced30a6d9d3f5e020b","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-15T03:15:27.881781385Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The onboarding contract is negotiated with the human over Telegram
 
 # BL-381: BL-344 already runs the contract's rounds — propose, take an objection, revise, record —
