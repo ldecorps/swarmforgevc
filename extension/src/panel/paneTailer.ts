@@ -16,7 +16,7 @@ import { appendInputEntry } from '../swarm/inputLog';
 import { recordHumanInput } from '../swarm/humanInputTracker';
 import { agentPaneStatusMessage, isAgentActivelyWorking } from './agentPaneState';
 import { stripAnsi } from './ansi';
-import { detectNeedsHuman } from './needsHumanDetection';
+import { classifyDecisionStatus, detectNeedsHuman, DecisionStatus } from './needsHumanDetection';
 import { accumulatePaneHistory } from './paneHistory';
 
 const DEFAULT_POLL_INTERVAL_MS = 200;
@@ -154,6 +154,11 @@ export interface NeedsHumanEvent {
   needsHuman: boolean;
 }
 
+export interface DecisionStatusEvent {
+  role: string;
+  status: DecisionStatus;
+}
+
 export interface ActivityEvent {
   role: string;
   working: boolean;
@@ -173,6 +178,10 @@ export class PaneTailer {
   private workingRoles = new Set<string>();
   private deadRoles = new Set<string>();
   private needsHumanRoles = new Set<string>();
+  // BL-421: last-emitted decision status per role, so an unchanged
+  // classification (e.g. two consecutive polls both 'resolved') never
+  // refires the event - mirrors needsHumanRoles' own dedup above.
+  private decisionStatusRoles = new Map<string, DecisionStatus>();
   private liveRoles = new Set<string>();
   private paneBaseIndex = 0;
   private roles: SwarmRole[] = [];
@@ -199,7 +208,8 @@ export class PaneTailer {
     paneRows?: number,
     private readonly onNeedsHuman?: (events: NeedsHumanEvent[]) => void,
     private readonly onPollError?: (message: string) => void,
-    private readonly onActivity?: (events: ActivityEvent[]) => void
+    private readonly onActivity?: (events: ActivityEvent[]) => void,
+    private readonly onDecisionStatus?: (events: DecisionStatusEvent[]) => void
   ) {
     this.historyLines = normalizeHistoryLines(historyLines);
     this.paneRows = normalizePaneRows(paneRows);
@@ -318,6 +328,7 @@ export class PaneTailer {
     this.emitStallEvents();
     this.emitActivityEvents();
     this.emitNeedsHumanEvents();
+    this.emitDecisionStatusEvents();
   }
 
   // Captures every role's pane for this tick, isolating one role's thrown
@@ -425,6 +436,31 @@ export class PaneTailer {
     }
     if (needsHumanEvents.length > 0) {
       this.onNeedsHuman(needsHumanEvents);
+    }
+  }
+
+  // BL-421: classifies each role's decision-menu status from the CURRENT
+  // capture (lastRawText, the same input emitNeedsHumanEvents reasons about
+  // above) and the reconstructed transcript (lastText, BL-070's accumulated
+  // history) so a resolved AskUserQuestion menu is marked historical instead
+  // of reading as an actionable live prompt.
+  private emitDecisionStatusEvents(): void {
+    if (!this.onDecisionStatus) {
+      return;
+    }
+    const events: DecisionStatusEvent[] = [];
+    for (const role of this.roles) {
+      const currentFrame = this.lastRawText.get(role.role);
+      const transcript = this.lastText.get(role.role);
+      const status = classifyDecisionStatus(currentFrame, transcript);
+      const previous = this.decisionStatusRoles.get(role.role);
+      if (status !== previous) {
+        this.decisionStatusRoles.set(role.role, status);
+        events.push({ role: role.role, status });
+      }
+    }
+    if (events.length > 0) {
+      this.onDecisionStatus(events);
     }
   }
 

@@ -533,6 +533,70 @@ test('onNeedsHuman fires true when a pane shows a question, then false once it r
   }
 });
 
+// BL-421: an agent tile marks a decision menu LIVE only while the pane is
+// actually awaiting an answer. Drives the REAL BL-070 history accumulation
+// (not a hand-rolled transcript) across two polls: a pending AskUserQuestion
+// menu, then a cleared prompt - proving the reconstructed transcript still
+// carries the menu (so it reads RESOLVED, not just absent) and that
+// liveness came from the current frame, not the transcript.
+test('onDecisionStatus fires live for a pending decision menu, then resolved once the frame clears but the transcript still shows it', async () => {
+  const targetPath = mkTmp();
+  writeState(targetPath);
+  // BL-070's detectFooterLineCount finds its footer by scanning backward for
+  // the LAST `❯`/`>`-prefixed line, so the menu's own selected-option marker
+  // must NOT be that bottommost line - a real captured pane still has its
+  // own (separate, blank) input box below the menu options, which is what
+  // makes the menu's lines retained CONTENT rather than ephemeral footer.
+  const DECISION_MENU =
+    'Options:\n❯ 1) Two tickets (Recommended)\n  2) One ticket\n  3) Ask for more detail\n\n❯ ';
+  const CLEARED_PROMPT = 'sonnet-4.5\n❯ ';
+  const fake = installInProcessTmux([
+    { subcommand: 'has-session', exitCode: 0 },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: DECISION_MENU },
+    { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
+    { exitCode: 0, stdout: '' },
+  ]);
+  try {
+    const decisionStatusEvents = [];
+    const tailer = new PaneTailer(
+      targetPath,
+      () => {},
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (events) => decisionStatusEvents.push(...events)
+    );
+
+    const { scheduleTick, clearTick } = fakeScheduler();
+    tailer.start(1_000_000, scheduleTick, clearTick);
+    tailer.stop(clearTick);
+    assert.equal(decisionStatusEvents.length, 1);
+    assert.deepEqual(decisionStatusEvents[0], { role: 'coder', status: 'live' });
+
+    // Unchanged frame/transcript must not refire the event.
+    tailer.poll();
+    assert.equal(decisionStatusEvents.length, 1, 'unchanged decision status must not refire');
+
+    fake.setRules([
+      { subcommand: 'has-session', exitCode: 0 },
+      { subcommand: 'capture-pane', exitCode: 0, stdout: CLEARED_PROMPT },
+      { subcommand: 'display-message', exitCode: 0, stdout: '1\tclaude' },
+      { exitCode: 0, stdout: '' },
+    ]);
+    tailer.poll();
+    assert.equal(decisionStatusEvents.length, 2);
+    assert.deepEqual(decisionStatusEvents[1], { role: 'coder', status: 'resolved' });
+  } finally {
+    fake.restore();
+  }
+});
+
 test('onActivity fires working then not-working as the pane enters and leaves an active-work state, with no duplicate while unchanged', async () => {
   const targetPath = mkTmp();
   writeState(targetPath);

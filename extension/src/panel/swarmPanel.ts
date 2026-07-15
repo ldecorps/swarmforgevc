@@ -257,6 +257,9 @@ export class SwarmPanel {
       },
       (events) => {
         this.panel.webview.postMessage({ type: 'activity', events });
+      },
+      (events) => {
+        this.panel.webview.postMessage({ type: 'decisionStatus', events });
       }
     );
     this.tailer.start();
