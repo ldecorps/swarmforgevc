@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=060564f36453b1a19bbddaae31e5907d72c5593d855c3b8ad2ec18416e7c163f
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-15T18:53:47.629660544Z","feature_name":"a paused ticket awaiting the human's approval gets a distinct topic icon","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-424-awaiting-approval-topic-icon.feature","background_hash":"0a2d6fdd570f8706f807f30c19ef778a7af8dc50890b17000b5d7a8533727ce9","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the icon state reflects both the folder and pending approval","scenario_hash":"dd95819311feb8777a277bab243c568177173f6900242c2c5a0d00f6beb59b12","mutation_count":20,"result":{"Total":20,"Killed":20,"Survived":0,"Errors":0},"tested_at":"2026-07-15T18:53:41.229249238Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a paused ticket awaiting the human's approval gets a distinct topic icon
 
   # A paused ticket blocked ONLY on human_approval: pending (actionable by the
