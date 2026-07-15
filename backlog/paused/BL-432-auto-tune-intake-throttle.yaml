@@ -61,9 +61,11 @@ acceptance:
     - "Every change to the effective cap is logged"
 
 human_approval: >
-  PENDING. Shape (auto-tune only the Article 3.5 throttle; min(configured, recommended); restore on
-  recovery) was confirmed by the human via AskUserQuestion 2026-07-15. The degraded/severe thresholds
-  and the exact write target on the coordinator promotion path have NOT been human-reviewed, and the
-  live integration point must be re-verified at build time. Draft feature file; flag for review.
+  approved 2026-07-15 (coordinator session, AskUserQuestion confirmation). Shape (auto-tune only the
+  Article 3.5 throttle; min(configured, recommended); restore on recovery) was confirmed by the human
+  via AskUserQuestion 2026-07-15; the human then approved promotion as-is in the coordinator session
+  the same day, accepting the degraded/severe thresholds and exact write target be resolved during
+  build rather than blocking promotion (the live integration point must still be re-verified at build
+  time). Still held on its own depends_on: [BL-430, BL-431] until both ship.
 
 mutation_cost: medium

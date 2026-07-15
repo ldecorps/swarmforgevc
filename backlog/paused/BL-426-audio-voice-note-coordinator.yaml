@@ -143,11 +143,15 @@ qa_e2e: |
      BL-ticket topic does nothing in slice 1.
 
 human_approval: >
-  PENDING. High-level intent, interaction model, channel, and the voice-note (not
-  live-call) realization were confirmed by the human via AskUserQuestion in the
-  specifier session 2026-07-15. The DETAILED feature scenarios and the three flagged
-  open decisions (STT/TTS provider, voice-out default, language) have NOT yet been
-  human-reviewed — this feature file is a draft (parked as .feature.draft) until a
-  human reviews it; the specifier materializes the live .feature from the draft at
-  promotion, with the coder wiring step handlers in the same parcel (BL-233).
+  approved 2026-07-15 (coordinator session, AskUserQuestion confirmation). High-level
+  intent, interaction model, channel, and the voice-note (not live-call) realization
+  were confirmed by the human via AskUserQuestion in the specifier session 2026-07-15;
+  the human then approved promotion as-is in the coordinator session the same day,
+  accepting the three flagged open decisions (STT/TTS provider, voice-out default,
+  language) be resolved during build rather than blocking promotion. The specifier
+  materializes the live .feature from the draft at promotion, with the coder wiring
+  step handlers in the same parcel (BL-233). Held on promotion for a separate reason:
+  overlaps the front-desk poll-loop file cluster (telegramFrontDeskBotCore.ts /
+  telegram-front-desk-bot.ts) with active BL-410 and paused BL-425 — sequence behind
+  them, not a human-approval gate.
 mutation_cost: high
