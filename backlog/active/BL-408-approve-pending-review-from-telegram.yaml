@@ -83,6 +83,6 @@ acceptance:
     - "An already-requested approval is not re-posted on every tick"
     - "A done ticket never gets an approval request"
 
-human_approval: pending-review
+human_approval: approved  # human, direct in Claude Code session with the coordinator, 2026-07-15: confirmed the SUP-6 ASAP request applies to this ticket, promoting despite the approve-from-Telegram mechanism itself being what's broken (chicken-and-egg — see notes)
 
 mutation_cost: low
