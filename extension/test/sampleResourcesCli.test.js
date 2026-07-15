@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -23,7 +24,7 @@ test('formatSampleResult reports SKIPPED when null (already sampled this interva
 // ── the compiled CLI (BL-350) ─────────────────────────────────────────────
 
 function mkTmp() {
-  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-sample-resources-cli-')));
+  return fs.realpathSync(mkTmpDir('sfvc-sample-resources-cli-'));
 }
 
 function git(cwd, args) {

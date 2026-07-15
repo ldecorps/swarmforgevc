@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -9,7 +10,7 @@ const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const FIXTURE_MMD = fs.readFileSync(path.join(__dirname, 'fixtures', 'sample-diagram.mmd'), 'utf8');
 
 function mkFixtureProjectRoot() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'render-briefing-diagrams-test-'));
+  const root = mkTmpDir('render-briefing-diagrams-test-');
   const diagramsDir = path.join(root, 'docs', 'diagrams');
   fs.mkdirSync(diagramsDir, { recursive: true });
   fs.writeFileSync(path.join(diagramsDir, 'architecture.mmd'), FIXTURE_MMD);

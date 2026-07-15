@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -10,7 +11,7 @@ const { deriveHoldingWindows, readRoleHoldingWindows } = require('../out/metrics
 // the thin fs adapter.
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-holding-windows-'));
+  return mkTmpDir('sfvc-holding-windows-');
 }
 
 test('deriveHoldingWindows extracts a completed ticket\'s start/end from dequeued_at/completed_at', () => {

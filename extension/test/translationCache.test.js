@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -10,7 +11,7 @@ const {
 } = require('../out/i18n/translationCache');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-i18n-cache-'));
+  return mkTmpDir('sfvc-i18n-cache-');
 }
 
 test('hashSourceText is deterministic for the same input', () => {

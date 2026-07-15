@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -38,7 +39,7 @@ test('reportDateKey slices the ISO timestamp down to just the date', () => {
 const FIXTURE_DIR = path.join(__dirname, 'fixtures', 'benchmark', 'coder-task-01');
 
 function mkScratchRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-run-role-benchmark-'));
+  return mkTmpDir('sfvc-run-role-benchmark-');
 }
 
 test('runRoleBenchmarkCli loads the task, runs the real benchmark, then writes+commits+prints the report', async () => {
@@ -103,13 +104,13 @@ test('runRoleBenchmarkCli loads the task, runs the real benchmark, then writes+c
 // however many other fixtures live under fixtures/benchmark/ (e.g. BL-386's
 // own coder-task-02), never entangled with the shared directory's contents.
 function mkBatteryRootWithCoderTask01() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-run-role-benchmark-battery-'));
+  const root = mkTmpDir('sfvc-run-role-benchmark-battery-');
   fs.cpSync(FIXTURE_DIR, path.join(root, 'coder-task-01'), { recursive: true });
   return root;
 }
 
 function mkTargetRepo() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-run-role-benchmark-target-'));
+  const root = mkTmpDir('sfvc-run-role-benchmark-target-');
   execFileSync('git', ['init', '-q'], { cwd: root });
   execFileSync('git', ['config', 'user.email', 't@t'], { cwd: root });
   execFileSync('git', ['config', 'user.name', 't'], { cwd: root });
@@ -144,7 +145,7 @@ async function runMain(argv, forcedExecutorResult) {
 
 test('main() loads the real fixture, fakes only the claude subprocess, and really writes+commits the report', async () => {
   const targetRepo = mkTargetRepo();
-  const modelsFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-run-role-benchmark-models-')), 'models.json');
+  const modelsFile = path.join(mkTmpDir('sfvc-run-role-benchmark-models-'), 'models.json');
   fs.writeFileSync(modelsFile, JSON.stringify([{ id: 'a', provider: 'claude', model: 'sonnet' }]));
 
   const forcedResult = { success: true, costUsd: 0.02, tokens: { inputTokens: 5, outputTokens: 5 }, durationMs: 50 };

@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -71,7 +72,7 @@ test('only the human_approval line changes - every other line is preserved verba
 // ── recordApprovalReply (impure, real fs) ─────────────────────────────────
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-approval-reply-'));
+  return mkTmpDir('sfvc-approval-reply-');
 }
 
 function writeTicket(dir, fileName, content) {

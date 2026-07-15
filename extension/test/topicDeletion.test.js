@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -219,7 +220,7 @@ test('multiple done tickets are each swept independently, in order', async () =>
 // technique this repo already uses (backlogReader.test.js) instead of
 // chmod, which root/WSL can silently ignore (BL-219).
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-topic-deletion-'));
+  return mkTmpDir('sfvc-topic-deletion-');
 }
 
 test('a genuinely unreadable record (real EISDIR, not mocked) is treated as unverified and blocks deletion loudly', async () => {

@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -12,7 +13,7 @@ const { installInProcessTmux } = require('./helpers/fakeTmux');
 // swarmforge.conf and the launch script itself are never touched.
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-backend-switch-'));
+  return mkTmpDir('sfvc-backend-switch-');
 }
 
 function settingsPath(tmp, role) {

@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -39,14 +40,14 @@ async function runCli(args) {
 }
 
 function mkTmpFile(name, content) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'propose-onboarding-prompts-test-'));
+  const dir = mkTmpDir('propose-onboarding-prompts-test-');
   const filePath = path.join(dir, name);
   fs.writeFileSync(filePath, content);
   return filePath;
 }
 
 function mkTargetRepo() {
-  const targetRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'propose-onboarding-prompts-target-'));
+  const targetRepo = mkTmpDir('propose-onboarding-prompts-target-');
   execFileSync('git', ['init'], { cwd: targetRepo });
   execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: targetRepo });
   execFileSync('git', ['config', 'user.name', 'Test'], { cwd: targetRepo });

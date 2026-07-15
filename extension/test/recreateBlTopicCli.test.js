@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -18,7 +19,7 @@ const { appendMessage, recordPath } = require('../out/concierge/blTopicStore');
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'recreate-bl-topic.js');
 
 function mkFixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl332-'));
+  const root = mkTmpDir('sfvc-bl332-');
   fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
   fs.mkdirSync(path.join(root, 'backlog', 'topics'), { recursive: true });
   fs.mkdirSync(path.join(root, '.swarmforge', 'operator'), { recursive: true });

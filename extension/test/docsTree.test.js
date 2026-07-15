@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -155,7 +156,7 @@ test('an empty backlog produces an empty, valid, non-throwing tree', () => {
 // ── computeDocsTree (impure orchestrator, real fs + real feature files) ─
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-docs-tree-'));
+  return mkTmpDir('sfvc-docs-tree-');
 }
 
 function mkdirp(dir) {

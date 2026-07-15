@@ -798,11 +798,12 @@ test('BL-394 epic-gate-05: a failed epic post is not recorded as announced, and 
 const ICON_STICKERS = [
   { emoji: '✅', customEmojiId: 'id-check' },
   { emoji: '🦠', customEmojiId: 'id-microbe' },
-  { emoji: '💡', customEmojiId: 'id-bulb' },
+  { emoji: '🎵', customEmojiId: 'id-note' },
   { emoji: '🔍', customEmojiId: 'id-magnifier' },
 ];
 
-test('BL-342 topic-icons-01: a newly-active feature ticket gets the bulb icon on its brand-new topic', async () => {
+// BL-417: feature-in-flight remapped from the bulb to the musical note.
+test('BL-417/BL-342 topic-icons-01: a newly-active feature ticket gets the musical-note icon on its brand-new topic', async () => {
   const { adapters, setFolders, iconsSet, iconOwnership, topicMap } = fakeAdapters();
   adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
@@ -810,8 +811,21 @@ test('BL-342 topic-icons-01: a newly-active feature ticket gets the bulb icon on
   await runConciergeTick(adapters);
 
   const topicId = topicMap['BL-1'];
-  assert.deepEqual(iconsSet, [{ topicId, iconId: 'id-bulb' }]);
-  assert.equal(iconOwnership['BL-1'], 'id-bulb');
+  assert.deepEqual(iconsSet, [{ topicId, iconId: 'id-note' }]);
+  assert.equal(iconOwnership['BL-1'], 'id-note');
+});
+
+// BL-417 feature-topic-icon-musical-note-03: a live sticker set lacking the
+// musical note skips the icon (topicIconSync.ts's existing scenario-06
+// unresolved-icon path) rather than crashing the tick.
+test('BL-417 feature-topic-icon-musical-note-03: a live sticker set without the musical note skips the icon without failing the tick', async () => {
+  const { adapters, setFolders, iconsSet } = fakeAdapters();
+  adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS.filter((s) => s.emoji !== '🎵');
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
+
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(iconsSet, [], 'expected no icon to be set when the musical note is absent from the live sticker set');
 });
 
 test('BL-342 topic-icons-01: a newly-active bug ticket gets the microbe icon', async () => {
@@ -830,7 +844,7 @@ test('BL-342 topic-icons-02/03: a ticket the swarm already owns gets the check i
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
   await runConciergeTick(adapters);
   iconsSet.length = 0;
-  assert.equal(iconOwnership['BL-1'], 'id-bulb', 'expected ownership already established from TaskStarted');
+  assert.equal(iconOwnership['BL-1'], 'id-note', 'expected ownership already established from TaskStarted');
 
   setFolders(folders({ done: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
   await runConciergeTick(adapters);
@@ -852,7 +866,7 @@ test('BL-342 topic-icons-04/05: an existing topic the swarm never set an icon fo
   assert.deepEqual(iconsSet, [], 'expected the swarm to never call setTopicIcon for a topic it does not own');
 });
 
-test('BL-342 topic-icons-02: a paused ticket promoted into active for the first time gets the bulb icon, reusing its existing topic', async () => {
+test('BL-342 topic-icons-02: a paused ticket promoted into active for the first time gets the musical-note icon, reusing its existing topic', async () => {
   // NOT a done->active bounce: diffTaskStarted's own durable emittedKeys
   // dedup (swarmEventStream.ts) means a (TaskStarted, backlogId) key, once
   // emitted, never re-fires even if the ticket later returns to active -
@@ -876,7 +890,7 @@ test('BL-342 topic-icons-02: a paused ticket promoted into active for the first 
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
   await runConciergeTick(adapters);
 
-  assert.deepEqual(iconsSet, [{ topicId: topicMap['BL-1'], iconId: 'id-bulb' }]);
+  assert.deepEqual(iconsSet, [{ topicId: topicMap['BL-1'], iconId: 'id-note' }]);
 });
 
 test('BL-342 topic-icons-02 [paused]: a ticket newly entering paused gets the magnifier icon (no SwarmEvent needed)', async () => {

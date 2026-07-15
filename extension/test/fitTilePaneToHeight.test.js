@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -6,7 +7,7 @@ const { PaneTailer, normalizePaneRows } = require('../out/panel/paneTailer');
 const { installInProcessTmux } = require('./helpers/fakeTmux');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-fitpane-'));
+  return mkTmpDir('sfvc-fitpane-');
 }
 
 function writeState(targetPath, roleLines = '1\tcoder\tswarmforge-coder\tCoder\tclaude\n') {

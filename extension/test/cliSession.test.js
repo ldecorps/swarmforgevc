@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -6,7 +7,7 @@ const { createCliTranslationSession, persistCliTranslationSession } = require('.
 const { translationCacheFile } = require('../out/i18n/translationCache');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-cli-session-'));
+  return mkTmpDir('sfvc-cli-session-');
 }
 
 test('with no MT_API_KEY set, createCliTranslationSession falls back to an engine that always fails (never throws)', async () => {

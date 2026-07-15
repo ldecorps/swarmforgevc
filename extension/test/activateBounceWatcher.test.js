@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -23,7 +24,7 @@ function fakeScheduler() {
 
 // Test for startBounceWatcher with .swarmforge directory
 test('startBounceWatcher creates watcher when .swarmforge exists', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-watcher-'));
+  const tmpDir = mkTmpDir('sfvc-watcher-');
   const swarmforgeDir = path.join(tmpDir, '.swarmforge');
   fs.mkdirSync(swarmforgeDir);
 
@@ -43,7 +44,7 @@ test('startBounceWatcher creates watcher when .swarmforge exists', () => {
 });
 
 test('startBounceWatcher returns null when .swarmforge does not exist', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-watcher-'));
+  const tmpDir = mkTmpDir('sfvc-watcher-');
 
   const watcher = startBounceWatcher(
     tmpDir,
@@ -62,7 +63,7 @@ test('startBounceWatcher returns null when .swarmforge does not exist', () => {
 // watch event arrives (event-driven, not a real-clock wait), then fires the
 // debounce synchronously. No fixed-ms setTimeout anywhere.
 test('startBounceWatcher detects bounce file creation', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-watcher-'));
+  const tmpDir = mkTmpDir('sfvc-watcher-');
   const swarmforgeDir = path.join(tmpDir, '.swarmforge');
   fs.mkdirSync(swarmforgeDir);
 
@@ -98,7 +99,7 @@ test('startBounceWatcher detects bounce file creation', async () => {
 // BL-131: no real fs.watch event needed at all - the guard that ignores
 // non-bounce filenames is exercised directly, synchronously.
 test('handleWatchEvent ignores non-bounce file changes', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-watcher-'));
+  const tmpDir = mkTmpDir('sfvc-watcher-');
   const swarmforgeDir = path.join(tmpDir, '.swarmforge');
   fs.mkdirSync(swarmforgeDir);
   const bounceFilePath = path.join(swarmforgeDir, 'bounce');

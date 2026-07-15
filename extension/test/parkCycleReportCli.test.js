@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -13,7 +14,7 @@ const { parkCycleLogPath, resolveRoleWorktreePath } = require('../out/tools/park
 // does, as an ADDITION, never the only cover.
 
 function mkTmp() {
-  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-parkcycle-cli-')));
+  return fs.realpathSync(mkTmpDir('sfvc-parkcycle-cli-'));
 }
 
 function mkdirp(dir) {

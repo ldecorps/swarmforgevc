@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -12,7 +13,7 @@ const { main } = require('../out/tools/fleet-console');
 // today, not just a tested-in-isolation rollup module.
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-fleet-console-cli-'));
+  return mkTmpDir('sfvc-fleet-console-cli-');
 }
 
 function writeRolesTsv(targetPath, rows) {

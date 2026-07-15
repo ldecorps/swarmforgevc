@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -8,7 +9,7 @@ const { installExecutable } = require('./helpers/sharedBin');
 const { getCurrentBranch, buildPrArgs, openPullRequest } = require('../out/swarm/prCreator');
 
 function mkTmpGitRepo(branchName) {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-pr-'));
+  const tmp = mkTmpDir('sfvc-pr-');
   cp.execSync('git init', { cwd: tmp, stdio: 'ignore' });
   cp.execSync('git commit --allow-empty -m init', { cwd: tmp, stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@t' } });
   if (branchName) {
@@ -29,7 +30,7 @@ test('getCurrentBranch returns undefined for a detached HEAD', () => {
 });
 
 test('getCurrentBranch returns undefined for non-git directory', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-nogit-'));
+  const tmp = mkTmpDir('sfvc-nogit-');
   assert.equal(getCurrentBranch(tmp), undefined);
 });
 
@@ -53,14 +54,14 @@ test('buildPrArgs includes --fill flag', () => {
 });
 
 test('openPullRequest reports failure when gh is not available', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-pr-fail-'));
+  const tmp = mkTmpDir('sfvc-pr-fail-');
   const result = openPullRequest(tmp, 'Test PR');
   assert.equal(result.success, false);
   assert.ok(result.message.includes('Failed to create PR'));
 });
 
 function withFakeGh(scriptBody, fn) {
-  const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-fake-gh-'));
+  const binDir = mkTmpDir('sfvc-fake-gh-');
   const ghMock = path.join(binDir, 'gh');
   installExecutable(ghMock, `#!/bin/sh\n${scriptBody}\n`);
   const originalPath = process.env.PATH;
