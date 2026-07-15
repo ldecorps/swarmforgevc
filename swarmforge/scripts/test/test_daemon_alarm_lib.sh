@@ -290,6 +290,10 @@ cat > "$ROOT/refuse_tmp_daemon_start_test.bb" <<EOF
   "04: a real, non-temp project root must NOT be refused even with no allow flag")
 (assert (false? (daemon-alarm-lib/refuse-tmp-daemon-start? "/srv/swarm" nil))
   "05: an arbitrary non-temp root must NOT be refused")
+(assert (true? (daemon-alarm-lib/refuse-tmp-daemon-start? "$ROOT/nested/fixture" "   "))
+  "06: a whitespace-only allow flag is blank and must still be refused")
+(assert (false? (daemon-alarm-lib/refuse-tmp-daemon-start? "$ROOT/nested/fixture" "0"))
+  "07: ANY non-blank flag value opts in by design, including \"0\" - never inferred as falsy")
 (println "refuse-tmp-daemon-start-ok")
 EOF
 bb "$ROOT/refuse_tmp_daemon_start_test.bb" | grep -q "refuse-tmp-daemon-start-ok" \
