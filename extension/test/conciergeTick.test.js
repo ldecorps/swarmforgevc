@@ -47,6 +47,7 @@ function fakeAdapters(overrides = {}) {
       writeTickState: (next) => {
         state.snapshot = next.snapshot;
         state.emittedKeys = next.emittedKeys;
+        state.standingIconSeenIds = next.standingIconSeenIds;
       },
       routeAdapters: {
         getTopicMap: () => topicMap,
@@ -86,6 +87,9 @@ function fakeAdapters(overrides = {}) {
           iconOwnership[ticketId] = iconId;
         },
       },
+      // BL-418: no standing topics by default - tests that exercise the
+      // standing-topic icon sync override this via `overrides`.
+      readStandingTopics: () => [],
       ...overrides,
     },
   };
@@ -939,4 +943,135 @@ test('BL-342 topic-icons-06: an epic-defining ticket is never a target of icon s
   await runConciergeTick(adapters);
 
   assert.deepEqual(iconsSet, [], 'expected an epic-defining ticket to never receive an automated ticket-state icon');
+});
+
+// ── BL-418: the standing (non-ticket) topics' own icon sync ──────────────
+
+const STANDING_ICON_STICKERS = [
+  { emoji: '🎟', customEmojiId: 'id-ticket' },
+  { emoji: '🏛', customEmojiId: 'id-opera-house' },
+];
+
+// BL-418 standing-topic-icons-01
+test('BL-418 standing-topic-icons-01: the support/intake topic gets the box-office icon and the Operator topic gets the opera-house icon', async () => {
+  const { adapters, iconsSet, iconOwnership } = fakeAdapters({
+    readStandingTopics: () => [
+      { id: 'SUP-001', topicId: 801, iconKey: 'support/intake' },
+      { id: 'OPERATOR', topicId: 701, iconKey: 'operator' },
+    ],
+  });
+  adapters.iconAdapters.getIconStickers = async () => STANDING_ICON_STICKERS;
+
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(
+    iconsSet.sort((a, b) => a.topicId - b.topicId),
+    [
+      { topicId: 701, iconId: 'id-opera-house' },
+      { topicId: 801, iconId: 'id-ticket' },
+    ]
+  );
+  assert.equal(iconOwnership['SUP-001'], 'id-ticket');
+  assert.equal(iconOwnership['OPERATOR'], 'id-opera-house');
+});
+
+// BL-418 standing-topic-icons-02 (wiring level): a standing topic already
+// known BEFORE this feature's first tick (simulating one that pre-dates
+// BL-418 and may already carry a human-customised icon - the backfill
+// script is what seeds this set for anything genuinely pre-existing) is
+// never touched, even though the swarm has no ownership marker for it.
+test('BL-418 standing-topic-icons-02: a standing topic already in the seen-set with no ownership marker is left untouched (never overwrites a human-customised icon)', async () => {
+  const { adapters, iconsSet } = fakeAdapters({
+    readStandingTopics: () => [{ id: 'SUP-999', topicId: 999, iconKey: 'support/intake' }],
+  });
+  adapters.iconAdapters.getIconStickers = async () => STANDING_ICON_STICKERS;
+  // Simulates the backfill (or a prior tick) having already seen this topic.
+  adapters.readTickState().standingIconSeenIds = ['SUP-999'];
+
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(iconsSet, [], 'expected no icon to be set for an already-seen, not-swarm-owned standing topic');
+});
+
+// BL-418 standing-topic-icons-03
+test('BL-418 standing-topic-icons-03: a live sticker set lacking a standing topic\'s icon skips it without failing the tick', async () => {
+  const { adapters, iconsSet } = fakeAdapters({
+    readStandingTopics: () => [{ id: 'OPERATOR', topicId: 701, iconKey: 'operator' }],
+  });
+  adapters.iconAdapters.getIconStickers = async () => STANDING_ICON_STICKERS.filter((s) => s.emoji !== '🏛');
+
+  await assert.doesNotReject(() => runConciergeTick(adapters));
+  assert.deepEqual(iconsSet, [], 'expected no icon to be set when the opera-house sticker is absent from the live set');
+});
+
+// A standing topic's id is added to the durable seen-set unconditionally on
+// its first appearance, regardless of whether setTopicIcon itself actually
+// succeeded - the same best-effort, no-dedicated-retry posture this module
+// already documents for per-ticket icon sync and epic-progress posts
+// (syncStandingTopicIcons' own docstring: "isNewTopic is always true...
+// correct precisely because... this ticket's own definition of 'genuinely
+// new'"). Unlike the sticker-absent skip above (permanent by construction -
+// a nonexistent sticker can never resolve), this is a TRANSIENT failure
+// (e.g. a Telegram API error) that the live tick will never retry, since
+// the seen-set has no removal path - only the backfill script's own
+// always-eligible pass (backfill-standing-topic-icons.ts) can recover it.
+// Previously unproven: every prior standing-topic test had setTopicIcon
+// return true.
+test('BL-418: a setTopicIcon failure on a standing topic\'s first tick still marks it seen - the live tick never retries it', async () => {
+  const { adapters, iconsSet, iconOwnership, state } = fakeAdapters({
+    readStandingTopics: () => [{ id: 'OPERATOR', topicId: 701, iconKey: 'operator' }],
+  });
+  adapters.iconAdapters.getIconStickers = async () => STANDING_ICON_STICKERS;
+  adapters.iconAdapters.setTopicIcon = async () => false;
+
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(iconsSet, [], 'setTopicIcon returning false means nothing was actually recorded as set');
+  assert.equal(iconOwnership.OPERATOR, undefined, 'a failed set never records ownership');
+  assert.deepEqual(state.standingIconSeenIds, ['OPERATOR'], 'the id is marked seen despite the failure');
+
+  // A later tick, even with a now-working setTopicIcon, never retries -
+  // the seen-set gate has no memory of the earlier failure.
+  adapters.iconAdapters.setTopicIcon = async (topicId, iconId) => {
+    iconsSet.push({ topicId, iconId });
+    return true;
+  };
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(iconsSet, [], 'a standing topic already in the seen-set is never retried, even after a prior failure');
+});
+
+// qa_e2e item 2: fires once, then change-gated on the very next tick.
+test('BL-418 wiring: a standing topic is synced once on its first tick, then never re-set on a later tick', async () => {
+  const { adapters, iconsSet } = fakeAdapters({
+    readStandingTopics: () => [{ id: 'OPERATOR', topicId: 701, iconKey: 'operator' }],
+  });
+  adapters.iconAdapters.getIconStickers = async () => STANDING_ICON_STICKERS;
+
+  await runConciergeTick(adapters);
+  assert.deepEqual(iconsSet, [{ topicId: 701, iconId: 'id-opera-house' }]);
+  iconsSet.length = 0;
+
+  await runConciergeTick(adapters);
+  assert.deepEqual(iconsSet, [], 'expected the second tick to be a no-op - the standing topic is already in the seen-set');
+});
+
+test('BL-418 wiring: standingIconSeenIds persists and grows across ticks rather than being clobbered', async () => {
+  const { adapters, state } = fakeAdapters({
+    readStandingTopics: () => [{ id: 'OPERATOR', topicId: 701, iconKey: 'operator' }],
+  });
+  adapters.iconAdapters.getIconStickers = async () => STANDING_ICON_STICKERS;
+  await runConciergeTick(adapters);
+  assert.deepEqual(state.standingIconSeenIds, ['OPERATOR']);
+
+  // A new support topic appears on a later tick alongside the already-seen
+  // Operator topic - both must end up in the persisted seen-set, and only
+  // the genuinely new one gets its icon set.
+  adapters.readStandingTopics = () => [
+    { id: 'OPERATOR', topicId: 701, iconKey: 'operator' },
+    { id: 'SUP-001', topicId: 801, iconKey: 'support/intake' },
+  ];
+  await runConciergeTick(adapters);
+
+  assert.deepEqual([...state.standingIconSeenIds].sort(), ['OPERATOR', 'SUP-001']);
 });
