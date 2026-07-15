@@ -193,7 +193,7 @@ const DOMAINS = [
   require('./frontDeskListensOnlyToItsOwnChatSteps'),
   require('./verbosityIsNegotiatedIntoTheContractSteps'),
   require('./noSingleFileBoundsTheSuiteSteps'),
-  require('./bl408PendingReviewApprovalsSteps'),
+  require('./bl403SupervisorKillsSupersededChildSteps'),
 ];
 
 function registerSteps(registry) {
