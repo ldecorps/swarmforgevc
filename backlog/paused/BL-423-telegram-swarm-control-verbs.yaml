@@ -107,6 +107,5 @@ qa_e2e: |
      a /restart in a non-control topic and confirm neither acts. Force a half-launch
      and confirm the topic reports `failed`, not `done`.
 
-human_approval: pending
-
+human_approval: approved
 mutation_cost: medium
