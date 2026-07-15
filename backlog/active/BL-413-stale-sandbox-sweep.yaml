@@ -98,6 +98,6 @@ qa_e2e: |
      drops without the live swarm losing its socket (swarm stays controllable);
      re-measure df to confirm reclaimed space.
 
-human_approval: pending
+human_approval: approved  # human via Operator relay (OPERATOR thread), 2026-07-15T12:43Z: "Approved all" to the 5-ticket list (BL-411 413 414 415 418)
 
 mutation_cost: medium
