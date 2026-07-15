@@ -1,5 +1,10 @@
 const assert = require('node:assert/strict');
 const { runConciergeTick } = require('../out/concierge/conciergeTick');
+// BL-414 hardener bounce: only the one rate-limit wiring test below needs
+// the REAL Telegram-facing retry function - conciergeTick.ts itself stays
+// Telegram-agnostic (see its own header comment); every other test in this
+// file uses the plain always-succeeds titlesSet stub from fakeAdapters.
+const { editForumTopicWithRateLimitRetry } = require('../out/notify/telegramClient');
 
 function folders(overrides = {}) {
   return { active: [], paused: [], done: [], ...overrides };
@@ -1257,4 +1262,56 @@ test('BL-414: omitting titleAdapters entirely leaves the tick unaffected - exist
   const result = await runConciergeTick(adapters, 5 * TITLE_AGE_HOUR_MS);
 
   assert.equal(result.routed, 0);
+});
+
+// ── BL-414 hardener bounce (2026-07-15): the FIRST tick this sync ever
+// runs transitions EVERY existing ticket's bucket from unset to real at
+// once - syncAllTitleAgeBuckets loops one editForumTopic call per ticket,
+// back-to-back, gated only by decideTitleAge's steady-state bucket-equality
+// check (which does nothing on this very first tick). Unthrottled, that
+// reproduces BL-342's own live repro ("Too Many Requests: retry after 26"
+// after 19 of 26 calls, 7 silently dropped) - at 2026-07-15's tracked-topic
+// count (113), roughly 4x the volume that already tripped the limit once.
+// 30 tickets here mirrors the backfill's own "N > the historical trip
+// threshold (26)" scale (backfillTopicIconsCli.test.js's 26-topic test),
+// with the SAME rate-limit hit partway through. This wires the REAL
+// editForumTopicWithRateLimitRetry as titleAdapters.setTopicTitle - proving
+// not just that the loop calls setTopicTitle once per ticket (that much is
+// true by construction), but that the PRODUCTION retry mechanism actually
+// waits out a 429 rather than the sync treating it as an ordinary,
+// unrecoverable failure.
+test('BL-414 hardener bounce: a first-tick mass fan-out over many tickets honours a mid-batch 429 and drops none', async () => {
+  const TICKET_COUNT = 30;
+  const { adapters, setFolders, topicMap, setLastActivityMs, state } = fakeAdapters();
+  const items = [];
+  for (let i = 1; i <= TICKET_COUNT; i++) {
+    const id = `BL-${i}`;
+    items.push({ id, title: `ticket ${i}` });
+    topicMap[id] = 100 + i;
+    setLastActivityMs(id, 0); // real activity - every ticket's bucket starts unset
+  }
+  setFolders(folders({ active: items }));
+  state.titleAgeBuckets = {}; // first tick this sync has ever run: no prior buckets
+
+  let editCalls = 0;
+  const waits = [];
+  const postFn = async () => {
+    editCalls += 1;
+    if (editCalls === 20) {
+      // matches BL-342's own live repro: hit the limit AFTER 19 calls.
+      return { ok: false, status: 429, json: { ok: false, description: 'retry after 26', parameters: { retry_after: 26 } } };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+  adapters.titleAdapters.setTopicTitle = (topicId, title) =>
+    editForumTopicWithRateLimitRetry('fake-token', 'fake-chat', topicId, { name: title }, async (ms) => waits.push(ms), postFn);
+
+  await runConciergeTick(adapters, 5 * TITLE_AGE_HOUR_MS);
+
+  assert.equal(editCalls, TICKET_COUNT + 1, 'expected the rate-limited call to be retried once, never dropped');
+  assert.deepEqual(waits, [26000], 'expected exactly one rate-limit wait, honouring the server-told duration');
+  assert.equal(Object.keys(state.titleAgeBuckets).length, TICKET_COUNT, 'expected every ticket to end up with an announced bucket, none silently dropped');
+  for (const { id } of items) {
+    assert.equal(state.titleAgeBuckets[id], 'hours', `expected ${id}'s bucket to be persisted, not left unset`);
+  }
 });

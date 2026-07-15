@@ -37,10 +37,23 @@ test('onboarding-negotiation-02: an addition objection adds a new scope entry ca
   assert.deepEqual(changedFields, ['scope']);
 });
 
-test('onboarding-negotiation-02/07: an objection matching neither pattern is still reflected, as a new boundary', () => {
-  const { contract, changedFields } = reviseContractFromObjection(BASE_CONTRACT, 'I am not sure this is the right approach');
-  assert.ok(contract.boundaries.some((b) => b.includes('I am not sure this is the right approach')));
-  assert.deepEqual(changedFields, ['boundaries']);
+test('BL-442: an objection matching neither removal nor addition intent derives no change (never fabricates a boundary from raw text)', () => {
+  const { contract, changedFields } = reviseContractFromObjection(BASE_CONTRACT, 'I am wary of this direction');
+  assert.deepEqual(contract, BASE_CONTRACT);
+  assert.deepEqual(changedFields, []);
+});
+
+test('BL-442: a multi-line objection is collapsed to one line before being embedded in the contract (an addition)', () => {
+  const { contract } = reviseContractFromObjection(BASE_CONTRACT, 'also add support for\nmulti-line replies');
+  const added = contract.scope[contract.scope.length - 1];
+  assert.ok(!added.includes('\n'), `expected no embedded newline, got: ${JSON.stringify(added)}`);
+  assert.ok(added.includes('multi-line replies'));
+});
+
+test('BL-442: a multi-line removal objection is collapsed to one line before being embedded in the contract', () => {
+  const { contract } = reviseContractFromObjection(BASE_CONTRACT, 'remove the\nTypeScript codebase work');
+  const added = contract.outOfScope[contract.outOfScope.length - 1];
+  assert.ok(!added.includes('\n'), `expected no embedded newline, got: ${JSON.stringify(added)}`);
 });
 
 test('BL-344 onboarding-negotiation-03: the revised contract is never identical to the previous one for a real objection', () => {
@@ -54,11 +67,10 @@ test('a blank objection changes nothing (never fabricates a change from silence)
   assert.deepEqual(changedFields, []);
 });
 
-test('a removal objection naming something NOT in scope falls back to a boundary note, never silently drops nothing', () => {
+test('BL-442: a removal objection naming something NOT in scope derives no change (never falls back to a fabricated boundary note)', () => {
   const { contract, changedFields } = reviseContractFromObjection(BASE_CONTRACT, 'remove the unrelated payments integration');
-  assert.equal(contract.scope.length, BASE_CONTRACT.scope.length);
-  assert.ok(contract.boundaries.some((b) => b.includes('payments integration')));
-  assert.deepEqual(changedFields, ['boundaries']);
+  assert.deepEqual(contract, BASE_CONTRACT);
+  assert.deepEqual(changedFields, []);
 });
 
 test('every revision path marks the contract "proposed" again (a revision is never silently pre-agreed)', () => {
@@ -103,6 +115,15 @@ test('objectToContract records a new round with the objection and what changed',
   assert.equal(next.rounds[0].round, 1);
   assert.equal(next.rounds[0].objection, 'also add logging support');
   assert.deepEqual(next.rounds[0].changedFields, ['scope']);
+  assert.equal(next.ended, false);
+});
+
+test('BL-442: a non-derivable objection still consumes a round (the round-cap budget is unchanged by this ticket), but leaves the contract untouched', () => {
+  const state = startNegotiation(BASE_CONTRACT);
+  const next = objectToContract(state, 'I am wary of this direction');
+  assert.equal(next.rounds.length, 1);
+  assert.deepEqual(next.rounds[0].changedFields, []);
+  assert.deepEqual(next.contract, BASE_CONTRACT);
   assert.equal(next.ended, false);
 });
 

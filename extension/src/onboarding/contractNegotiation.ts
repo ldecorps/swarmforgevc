@@ -36,6 +36,16 @@ function phraseOverlap(objectionLower: string, scopeEntryLower: string): boolean
   return words.some((w) => scopeEntryLower.includes(w));
 }
 
+// BL-442, sibling of BL-409's "external text into a structured file must be
+// sanitized first": a revision that DOES derive a real change still embeds
+// the human's own raw reply text into a contract entry, and
+// generateContractMarkdown renders each entry as one plain `- <entry>`
+// bullet line - an embedded newline would break that entry onto its own
+// unmarked line. Collapse to a single line before it's spliced in.
+function sanitizeForContractLine(text: string): string {
+  return text.replace(/[\r\n]+/g, ' ').trim();
+}
+
 // BL-344 onboarding-negotiation-02/03/07: revises a proposed contract IN
 // RESPONSE to the operator's own objection text - keyword-driven, not an
 // LLM call, so this stays a pure, fast, deterministic, unit-testable
@@ -44,12 +54,13 @@ function phraseOverlap(objectionLower: string, scopeEntryLower: string): boolean
 //     currently IN scope moves that exact scope entry to outOfScope.
 //   - "add/include/also <X>" adds a new scope entry carrying the
 //     operator's own words.
-//   - anything else is recorded as a new boundary, so the operator's own
-//     objection text is ALWAYS reflected somewhere in the revised
-//     contract even when it matches neither pattern - "the revision
-//     responds" is guaranteed structurally, never left to a pattern match
-//     that might silently miss the objection (onboarding-negotiation-03:
-//     re-emitting the same proposal is never acceptable).
+//   - anything else derives NO change (BL-442): the prior behaviour here
+//     recorded a new boundary from the raw text unconditionally, which is
+//     exactly how a misclassified approval ("All agreed") landed as a
+//     fabricated contract clause. changedFields: [] tells the caller
+//     (objectToContract, and runObject above it) that nothing could be
+//     derived, so it can ask the human to rephrase instead of presenting a
+//     "revision" that never actually happened.
 export function reviseContractFromObjection(previous: ProposedContract, objection: string): RevisionResult {
   const trimmed = objection.trim();
   if (!trimmed) {
@@ -59,6 +70,7 @@ export function reviseContractFromObjection(previous: ProposedContract, objectio
   const lower = trimmed.toLowerCase();
   const removalIntent = /\b(remove|exclude|drop|don'?t include|never)\b/.test(lower);
   const additionIntent = /\b(add|include|also)\b/.test(lower);
+  const sanitized = sanitizeForContractLine(trimmed);
 
   if (removalIntent) {
     const matchIndex = previous.scope.findIndex((entry) => phraseOverlap(lower, entry.toLowerCase()));
@@ -68,7 +80,7 @@ export function reviseContractFromObjection(previous: ProposedContract, objectio
         contract: {
           ...previous,
           scope: previous.scope.filter((_, i) => i !== matchIndex),
-          outOfScope: [...previous.outOfScope, `${removed} (removed per operator objection: "${trimmed}")`],
+          outOfScope: [...previous.outOfScope, `${removed} (removed per operator objection: "${sanitized}")`],
           agreement: 'proposed',
         },
         changedFields: ['scope', 'outOfScope'],
@@ -80,21 +92,23 @@ export function reviseContractFromObjection(previous: ProposedContract, objectio
     return {
       contract: {
         ...previous,
-        scope: [...previous.scope, `Per operator request: ${trimmed}`],
+        scope: [...previous.scope, `Per operator request: ${sanitized}`],
         agreement: 'proposed',
       },
       changedFields: ['scope'],
     };
   }
 
-  return {
-    contract: {
-      ...previous,
-      boundaries: [...previous.boundaries, `Per operator objection: ${trimmed}`],
-      agreement: 'proposed',
-    },
-    changedFields: ['boundaries'],
-  };
+  // BL-442: neither pattern derived a concrete change. The previous
+  // behaviour here blind-appended the raw objection text as a fabricated
+  // boundary clause - the root cause of this ticket (a natural-language
+  // approval like "All agreed", misclassified upstream as an objection,
+  // landed as a junk contract line). No code path may fabricate a contract
+  // line from text it could not actually interpret: leave the contract
+  // untouched and let the caller ask the human to rephrase.
+  // changedFields: [] is the "nothing could be derived" signal
+  // objectToContract's own caller (runObject) relies on.
+  return { contract: previous, changedFields: [] };
 }
 
 export function startNegotiation(contract: ProposedContract): NegotiationState {

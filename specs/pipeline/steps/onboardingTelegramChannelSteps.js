@@ -45,6 +45,11 @@ function buildFakeAdapters(ctx) {
       },
       persistChannel: (chatId, negotiationTopicId) => writeTelegramChannel(ctx.targetRoot, { chatId, negotiationTopicId }),
       persistBotToken: () => storeTelegramBotToken(ctx.hostSecretsFile, ctx.targetRoot, ctx.botToken),
+      // BL-444: this feature's own scenarios don't exercise offset
+      // persistence (see bl444ProvisioningFollowsSupergroupMigrationSteps.js
+      // for that) - a no-op keeps provisionTelegramChannel's now-mandatory
+      // adapter call satisfied here.
+      persistConfirmOffset: () => {},
     },
   };
 }
