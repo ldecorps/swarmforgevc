@@ -62,6 +62,9 @@
 ;; (build-alarm-email/send-configured-email!), never a second notifier -
 ;; the ticket's own explicit "REUSE IT; do not build a new notifier".
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
+;; BL-412: pure disk-space-alert decision logic, wired below by
+;; disk-space-sweep!.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "disk_space_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -506,6 +509,81 @@
                  :post-notice! (fn [tid text] (append-to-reply-outbox! tid text))
                  :write-thread! #(support-thread-store/write-thread! state-dir %)}))
           (log! "linked-ticket-status-posted" thread-id linked-id current))))))
+
+;; ── BL-412: disk-space early-warning sweep ─────────────────────────────────
+;; Two independently-evaluated filesystems (disk_space_lib.bb's own header
+;; explains the VHDX-on-C: mechanism this exists to catch: WSL can report
+;; plenty of free space while the Windows C: volume backing the
+;; dynamically-growing VHDX is nearly full). Delivered via the SAME
+;; reply-outbox reply-relay path idle-nudge-sweep! above already uses, with
+;; the reserved "OPERATOR" threadId (support_thread_store's
+;; OPERATOR_SUBJECT_ID mirror - the standing Operator topic every other
+;; ticket-less system alert already routes through, e.g. the human-approved
+;; disk_alert.sh stopgap this ticket replaces). df reads go through an
+;; injectable seam (DISK_ALERT_<MOUNT>_FORCE_RESULT, the SAME test-only
+;; JSON-override convention as OPERATOR_ALARM_FORCE_RESULT/
+;; FRONT_DESK_ESCALATION_FORCE_RESULT) so a wiring test can drive a full
+;; --tick-once run with a scripted reading, never a real df call or a real
+;; read of /mnt/c.
+(def disk-space-state-file (fs/path op-dir "disk-space-state.json"))
+
+(defn read-disk-space-state []
+  ;; NOT keywordized (unlike read-starvation-state above) - disk-space-lib's
+  ;; own disk-space-decision looks up prior state by STRING mount name
+  ;; ((name mount)), since the map round-trips through persisted JSON.
+  (or (when (fs/exists? disk-space-state-file)
+        (try (json/parse-string (slurp (str disk-space-state-file)) false) (catch Exception _ nil)))
+      {}))
+
+(defn write-disk-space-state! [m] (atomic-spit! disk-space-state-file (json/generate-string m)))
+
+(defn- df-numeric-field!
+  "Shells `df <df-args>`, returning the LAST non-blank line's one numeric
+   field as a double, or nil if the command fails or prints nothing
+   parseable. df --output=<field> always prints a header line first."
+  [df-args]
+  (let [{:keys [out exit]} (apply process/sh {:continue true} "df" df-args)]
+    (when (zero? exit)
+      (when-let [line (last (remove str/blank? (str/split-lines out)))]
+        (try (Double/parseDouble (str/trim (str/replace line #"[^0-9.]" ""))) (catch Exception _ nil))))))
+
+(defn- read-mount!
+  "Real read for one mount path: absolute free GB + percent used, via two
+   `df --output=<field>` calls (mirrors the human-approved disk_alert.sh
+   stopgap's own already-validated invocation on this host). Never reached
+   by a test - see read-mnt-c!/read-wsl-root!'s own FORCE_RESULT seam."
+  [path]
+  (let [free-gb (df-numeric-field! ["-BG" "--output=avail" path])
+        used-pct (df-numeric-field! ["--output=pcent" path])]
+    (when (and free-gb used-pct) {:free-gb free-gb :used-pct used-pct})))
+
+(defn- forced-mount-reading [env-name]
+  (when-let [forced (System/getenv env-name)]
+    (let [parsed (json/parse-string forced true)]
+      {:free-gb (double (:free_gb parsed)) :used-pct (double (:used_pct parsed))})))
+
+(defn read-mnt-c! []
+  (or (forced-mount-reading "DISK_ALERT_MNT_C_FORCE_RESULT") (read-mount! "/mnt/c")))
+
+(defn read-wsl-root! []
+  (or (forced-mount-reading "DISK_ALERT_WSL_ROOT_FORCE_RESULT") (read-mount! "/")))
+
+(defn disk-space-sweep!
+  "adapters is {:read-mnt-c! fn :read-wsl-root! fn}, defaulting to the real
+   df reads above. A mount whose read fails/returns nil is simply left out
+   of this tick's readings (and out of next-state) - never a crash, retried
+   next tick same as any other transient read failure in this file."
+  ([] (disk-space-sweep! {:read-mnt-c! read-mnt-c! :read-wsl-root! read-wsl-root!}))
+  ([adapters]
+   (let [readings (into {} (filter (comp some? val)
+                                    {:mnt-c ((:read-mnt-c! adapters))
+                                     :wsl-root ((:read-wsl-root! adapters))}))
+         prior (read-disk-space-state)
+         {:keys [messages next-state]} (disk-space-lib/disk-space-decision readings prior (disk-space-lib/thresholds))]
+     (doseq [{:keys [text]} messages]
+       (append-to-reply-outbox! "OPERATOR" text)
+       (log! "disk-space-alert" text))
+     (write-disk-space-state! (merge prior next-state)))))
 
 ;; ── cooldown / provider state ─────────────────────────────────────────────────
 
@@ -1210,6 +1288,11 @@
     ;; never a wake worth an Operator LLM launch" posture as the idle
     ;; nudge above.
     (linked-ticket-status-sweep!)
+
+    ;; BL-412: disk-space early-warning check - cheap (two `df` calls),
+    ;; same "best-effort side action every tick" posture as the sweeps
+    ;; here; never gates the launch decision below.
+    (disk-space-sweep!)
 
     ;; BL-306: bounded escalate-once-then-drop on an unanswered clarifying
     ;; question - same "best-effort side action every tick" posture as the
