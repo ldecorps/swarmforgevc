@@ -110,6 +110,57 @@ test('backfillTopicIcons gives a paused pending-approval ticket the distinct eye
   assert.deepEqual(edits.map((e) => e.icon_custom_emoji_id), ['id-eyes']);
 });
 
+// BL-424: proves the fallbackEmoji wiring itself is load-bearing - a
+// sticker set missing the eyes glyph must fall back to the plain paused
+// icon (id-magnifier), never skip the topic outright. The prior test alone
+// only proves the PRIMARY glyph resolves when present; this is the only
+// test in this file that actually exercises the fallback being USED.
+test('backfillTopicIcons falls back to the plain paused icon when the eyes glyph is absent from the live sticker set', async () => {
+  const target = mkGitRepo();
+  writeTicket(target, 'paused', 'BL-4', 'a paused one awaiting approval', 'feature', 'pending');
+  writeTopicMap(target, { 'BL-4': 104 });
+
+  const stickersWithoutEyes = { ok: true, result: STICKERS_JSON.result.filter((s) => s.emoji !== '👀') };
+  const edits = [];
+  const postFn = async (url, body) => {
+    if (url.endsWith('/getForumTopicIconStickers')) {
+      return { ok: true, status: 200, json: stickersWithoutEyes };
+    }
+    edits.push(JSON.parse(body));
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  const outcomes = await backfillTopicIcons(target, TOKEN, CHAT_ID, async () => {}, postFn);
+
+  assert.deepEqual(outcomes.map((o) => o.outcome), ['updated']);
+  assert.deepEqual(edits.map((e) => e.icon_custom_emoji_id), ['id-magnifier']);
+});
+
+// BL-424: the fallback must stay undefined for every state OTHER than
+// awaiting-approval - a done ticket's own primary icon (the check) being
+// unresolvable must skip the topic, never silently fall back to the plain
+// paused icon just because paused/id-magnifier happens to be resolvable.
+test('backfillTopicIcons never applies the paused-icon fallback outside the awaiting-approval state', async () => {
+  const target = mkGitRepo();
+  writeTicket(target, 'done', 'BL-5', 'a shipped one', 'feature');
+  writeTopicMap(target, { 'BL-5': 105 });
+
+  const stickersWithoutCheck = { ok: true, result: STICKERS_JSON.result.filter((s) => s.emoji !== '✅') };
+  const edits = [];
+  const postFn = async (url, body) => {
+    if (url.endsWith('/getForumTopicIconStickers')) {
+      return { ok: true, status: 200, json: stickersWithoutCheck };
+    }
+    edits.push(JSON.parse(body));
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  const outcomes = await backfillTopicIcons(target, TOKEN, CHAT_ID, async () => {}, postFn);
+
+  assert.deepEqual(outcomes.map((o) => o.outcome), ['skipped-unresolved-icon']);
+  assert.deepEqual(edits, []);
+});
+
 test('backfillTopicIcons skips an epic-defining ticket entirely, even if it has a topic', async () => {
   const target = mkGitRepo();
   writeTicket(target, 'active', 'BL-500', 'EPIC — some initiative', 'epic');

@@ -19,6 +19,20 @@ export interface TopicIconAdapters {
 
 export type IconSyncOutcome = 'updated' | 'skipped-not-owned' | 'skipped-unresolved-icon' | 'failed';
 
+// BL-424: resolves the desired emoji against the live set, falling back to
+// a second emoji (the plain paused icon) only when one was supplied and the
+// primary is absent - split out of syncTopicIcon so that function's own
+// branch count stays low (CRAP threshold), mirroring the same "each split
+// out of main() so that function's own branch count stays low" pattern
+// already used in operator-decide.ts.
+function resolveIconIdWithFallback(stickers: IconStickerLookup[], desiredEmoji: string, fallbackEmoji?: string): string | undefined {
+  const desiredId = resolveIconStickerId(stickers, desiredEmoji);
+  if (desiredId !== undefined || fallbackEmoji === undefined) {
+    return desiredId;
+  }
+  return resolveIconStickerId(stickers, fallbackEmoji);
+}
+
 // BL-342 scenarios 01/03/04/05: a BRAND NEW topic (isNewTopic) is always
 // free to have its initial icon set - there is nothing to protect yet.
 // An EXISTING topic may only be updated when the swarm's own marker shows
@@ -47,7 +61,7 @@ export async function syncTopicIcon(
     return 'skipped-not-owned';
   }
   const stickers = await adapters.getIconStickers();
-  const iconId = resolveIconStickerId(stickers, desiredEmoji) ?? (fallbackEmoji !== undefined ? resolveIconStickerId(stickers, fallbackEmoji) : undefined);
+  const iconId = resolveIconIdWithFallback(stickers, desiredEmoji, fallbackEmoji);
   if (iconId === undefined) {
     // BL-342 scenario 06: never call the Telegram API with an id that was
     // not just validated against the live sticker set.
