@@ -32,6 +32,8 @@ export interface BacklogItem {
   // for the needs-approval list (never re-derived from the free-text
   // "# HUMAN APPROVAL:" comment). Absent means not applicable (no approval
   // needed, or a legacy ticket the one-time backfill hasn't reached).
+  // BL-408: pending-review is the primary pending state (written by specifier);
+  // read as 'pending' here for normalization.
   humanApproval?: 'pending' | 'approved';
   // BL-322: the ticket's full notes: block scalar, for the topic-opening
   // summary's own "what it solves" line (topicOpeningSummary.ts takes just
@@ -210,13 +212,17 @@ function normalizeStatus(statusRaw: string | undefined): BacklogItem['status'] {
   return statusRaw !== undefined && VALID_STATUSES.has(statusRaw) ? (statusRaw as BacklogItem['status']) : undefined;
 }
 
-const VALID_HUMAN_APPROVALS = new Set(['pending', 'approved']);
+const VALID_HUMAN_APPROVALS = new Set(['pending', 'pending-review', 'approved']);
 
 // BL-251: mirrors normalizeStatus's own "known value or undefined" shape -
 // an unrecognized/absent value reads as undefined rather than storing raw
 // text or gating the ticket.
+// BL-408: 'pending-review' is normalized to 'pending' for internal consistency.
 function normalizeHumanApproval(raw: string | undefined): BacklogItem['humanApproval'] {
-  return raw !== undefined && VALID_HUMAN_APPROVALS.has(raw) ? (raw as BacklogItem['humanApproval']) : undefined;
+  if (raw === undefined || !VALID_HUMAN_APPROVALS.has(raw)) {
+    return undefined;
+  }
+  return raw === 'pending-review' ? 'pending' : (raw as BacklogItem['humanApproval']);
 }
 
 // Builds a BacklogItem from a strictly-parsed js-yaml document. Reads only

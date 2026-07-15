@@ -112,6 +112,7 @@ const DOMAINS = [
   require('./conciergeTopicCompletionSteps'),
   require('./conciergeNeedsApprovalSteps'),
   require('./pendingApprovalAsksInTopicSteps'),
+  require('./bl408PendingReviewApprovalsSteps'),
   require('./epicsAsFirstClassTopicsSteps'),
   require('./epicProgressChangeGateSteps'),
   require('./aTieIsReportedAsATieSteps'),
