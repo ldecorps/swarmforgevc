@@ -112,6 +112,7 @@ const DOMAINS = [
   require('./conciergeTopicCompletionSteps'),
   require('./conciergeNeedsApprovalSteps'),
   require('./pendingApprovalAsksInTopicSteps'),
+  require('./bl408PendingReviewApprovalsSteps'),
   require('./epicsAsFirstClassTopicsSteps'),
   require('./epicProgressChangeGateSteps'),
   require('./aTieIsReportedAsATieSteps'),
@@ -192,6 +193,7 @@ const DOMAINS = [
   require('./frontDeskListensOnlyToItsOwnChatSteps'),
   require('./verbosityIsNegotiatedIntoTheContractSteps'),
   require('./noSingleFileBoundsTheSuiteSteps'),
+  require('./bl408PendingReviewApprovalsSteps'),
 ];
 
 function registerSteps(registry) {

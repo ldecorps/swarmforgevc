@@ -19,11 +19,13 @@ export function isApprovalReplyText(text: string): boolean {
   return APPROVAL_KEYWORD_PATTERN.test(text);
 }
 
-const HUMAN_APPROVAL_PENDING_PATTERN = /^human_approval:\s*pending\s*$/m;
+const HUMAN_APPROVAL_PENDING_PATTERN = /^human_approval:\s*(pending|pending-review)\s*$/m;
 
-// Pure text transform - only ever flips a LITERAL `human_approval: pending`
-// line, never a ticket already approved or one with no field at all (never
-// invents the field - that stays backfill-human-approval.ts's job).
+// Pure text transform - only ever flips a LITERAL `human_approval: pending` or
+// `human_approval: pending-review` line, never a ticket already approved or one
+// with no field at all (never invents the field - that stays
+// backfill-human-approval.ts's job). Always normalizes to `approved`.
+// BL-408: accept both pending and pending-review.
 export function approveHumanApprovalText(rawText: string): { text: string; changed: boolean } {
   if (!HUMAN_APPROVAL_PENDING_PATTERN.test(rawText)) {
     return { text: rawText, changed: false };
