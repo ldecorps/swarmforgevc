@@ -108,6 +108,7 @@ const DOMAINS = [
   require('./conciergeNeedsApprovalSteps'),
   require('./pendingApprovalAsksInTopicSteps'),
   require('./epicsAsFirstClassTopicsSteps'),
+  require('./epicProgressChangeGateSteps'),
   require('./aTieIsReportedAsATieSteps'),
   require('./theBatteryCanActuallySeparateModelsSteps'),
   require('./frontDeskPollResilienceSteps'),

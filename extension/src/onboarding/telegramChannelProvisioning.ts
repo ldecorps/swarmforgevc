@@ -1,4 +1,4 @@
-import { TelegramUpdate } from '../notify/telegramClient';
+import { GetUpdatesResult, TelegramUpdate } from '../notify/telegramClient';
 
 // BL-380: gives each onboarded target its OWN Telegram bot and forum group,
 // so the contract can later be negotiated there (BL-381). The Bot API has no
@@ -59,7 +59,12 @@ export interface CreateNegotiationTopicOutcome {
 }
 
 export interface ChannelProvisioningAdapters {
-  getUpdates: () => Promise<TelegramUpdate[]>;
+  // BL-380 bounce: was `() => Promise<TelegramUpdate[]>` - discarding
+  // success/error collapsed a fetch FAILURE (bad token, network error) into
+  // the same empty-array shape as "no updates yet", so provisionTelegramChannel
+  // could never tell the two apart. Reuses telegramClient.ts's own
+  // GetUpdatesResult rather than inventing a second success/error shape.
+  getUpdates: () => Promise<GetUpdatesResult>;
   createNegotiationTopic: (chatId: string) => Promise<CreateNegotiationTopicOutcome>;
   persistChannel: (chatId: string, negotiationTopicId: number) => void | Promise<void>;
   persistBotToken: () => void | Promise<void>;
@@ -73,6 +78,29 @@ export interface ChannelProvisioningOutcome {
   error?: string;
 }
 
+type ChatDetectionOutcome = { ready: false; error?: string } | { ready: true; chatId: string };
+
+// Split out of provisionTelegramChannel (BL-394 hardening: CRAP was 8 on the
+// unsplit function) so the fetch/detect decision points and the
+// topic-open/persist decision points are counted, and covered, separately.
+// Behavior-preserving: the branch shapes below are copied verbatim from the
+// original inline code, including the not-ready branch's bare `{ ready:
+// false }` (no `error` key) so a caller that spreads this result never gains
+// an `error: undefined` key the pre-split code never produced.
+async function detectReadyChatId(adapters: ChannelProvisioningAdapters): Promise<ChatDetectionOutcome> {
+  const updatesResult = await adapters.getUpdates();
+  if (!updatesResult.success) {
+    // BL-380 bounce: distinguishable from the legitimate not-ready-yet
+    // outcome below (which carries no `error` field) by the presence of one.
+    return { ready: false, error: updatesResult.error ?? 'failed to fetch updates' };
+  }
+  const detection = decideChannelDetection(updatesResult.updates);
+  if (!detection.ready || detection.chatId === undefined) {
+    return { ready: false };
+  }
+  return { ready: true, chatId: detection.chatId };
+}
+
 // BL-380 scenario 04's guard lives here structurally: createNegotiationTopic
 // is only ever called once decideChannelDetection has already reported
 // ready, so a half-finished channel can never open a topic.
@@ -83,10 +111,9 @@ export async function provisionTelegramChannel(
   const instructions = buildChannelProvisioningInstructions(botUsername);
   await adapters.persistBotToken();
 
-  const updates = await adapters.getUpdates();
-  const detection = decideChannelDetection(updates);
-  if (!detection.ready || detection.chatId === undefined) {
-    return { instructions, ready: false };
+  const detection = await detectReadyChatId(adapters);
+  if (!detection.ready) {
+    return { instructions, ...detection };
   }
 
   const topic = await adapters.createNegotiationTopic(detection.chatId);
