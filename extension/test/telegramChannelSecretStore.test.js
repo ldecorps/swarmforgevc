@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { storeTelegramBotToken } = require('../out/onboarding/telegramChannelSecretStore');
+const { storeTelegramBotToken, readTelegramBotToken } = require('../out/onboarding/telegramChannelSecretStore');
 
 // Every test writes into an os.tmpdir() fixture standing in for a host-level
 // path (never a path inside any target repo) - mirrors
@@ -92,4 +92,40 @@ test('does not throw for a path outside the given target working directory', () 
   const secretsFile = path.join(mkTmp(), 'telegram-bot-tokens.json'); // a SIBLING tmpdir, not under targetRepo
 
   assert.doesNotThrow(() => storeTelegramBotToken(secretsFile, targetRepo, 'sk-bot-token-a'));
+});
+
+// ── readTelegramBotToken (BL-381) ──────────────────────────────────────
+
+test('readTelegramBotToken reads back a token stored for that target repo path', () => {
+  const targetRepo = mkTmp();
+  const secretsFile = path.join(mkTmp(), 'telegram-bot-tokens.json');
+  storeTelegramBotToken(secretsFile, targetRepo, 'sk-bot-token-a');
+
+  assert.equal(readTelegramBotToken(secretsFile, targetRepo), 'sk-bot-token-a');
+});
+
+test('readTelegramBotToken returns undefined for a target that was never stored', () => {
+  const targetRepo = mkTmp();
+  const secretsFile = path.join(mkTmp(), 'telegram-bot-tokens.json');
+  storeTelegramBotToken(secretsFile, mkTmp(), 'sk-other-target');
+
+  assert.equal(readTelegramBotToken(secretsFile, targetRepo), undefined);
+});
+
+test('readTelegramBotToken returns undefined when the secrets file does not exist yet', () => {
+  const targetRepo = mkTmp();
+  const secretsFile = path.join(mkTmp(), 'never-written.json');
+
+  assert.equal(readTelegramBotToken(secretsFile, targetRepo), undefined);
+});
+
+test('readTelegramBotToken keeps two targets separate', () => {
+  const targetRepoA = mkTmp();
+  const targetRepoB = mkTmp();
+  const secretsFile = path.join(mkTmp(), 'telegram-bot-tokens.json');
+  storeTelegramBotToken(secretsFile, targetRepoA, 'sk-bot-token-a');
+  storeTelegramBotToken(secretsFile, targetRepoB, 'sk-bot-token-b');
+
+  assert.equal(readTelegramBotToken(secretsFile, targetRepoA), 'sk-bot-token-a');
+  assert.equal(readTelegramBotToken(secretsFile, targetRepoB), 'sk-bot-token-b');
 });
