@@ -1,0 +1,1 @@
+{"id":"BL-443","messages":[{"seq":0,"ts":1784148705193,"author":"swarm","type":"outbound","text":"What it is: propose-onboarding-contract commit step fails on ignored .swarmforge/, missing git identity, and never commits after a partial failure\nHow it works: The contract commits even when the target ignores .swarmforge/ (force-add the exact contract paths)"}]}
