@@ -58,6 +58,25 @@
            (or (= (count without-ellipsis) (count long-lede))
                (= \space (.charAt long-lede (count without-ellipsis))))))
 
+;; bound-headline's own docstring names a second branch this scenario never
+;; exercises: "a pathological headline with no space within budget (one
+;; unbroken long token) falls back to a hard cut - there is no word boundary
+;; to prefer." subject-bound-01 above always has clean word boundaries, so
+;; the `(and last-space (pos? last-space))` check's ELSE arm - the hard-cut
+;; fallback - had zero coverage until now.
+(let [one-long-token (apply str (repeat 100 "a"))
+      subject (briefing-email-lib/build-briefing-subject "2026-07-14" one-long-token)
+      headline (subs subject (count "SwarmForge briefing 2026-07-14 - "))]
+  (assert= "BL-392 bound-headline hard-cut: a single unbroken token with no word boundary is still bounded to <=80 chars"
+           true
+           (<= (count headline) 80))
+  (assert= "BL-392 bound-headline hard-cut: it still ends with a single-character ellipsis"
+           true
+           (str/ends-with? headline "…"))
+  (assert= "BL-392 bound-headline hard-cut: falls back to a hard cut at the budget boundary (79 chars + ellipsis), not a word-boundary cut"
+           (str (apply str (repeat 79 "a")) "…")
+           headline))
+
 (assert= "BL-392 subject-bound-02: bold/heading markdown markers are stripped from the headline"
          "SwarmForge briefing 2026-07-14 - Ship the release"
          (briefing-email-lib/build-briefing-subject "2026-07-14" "# **Ship the release**\n\nDetails..."))
