@@ -8,6 +8,7 @@ const {
   computeMeanTicketTime,
   computeBusyness,
   computeRetries,
+  computeReworkEvents,
   computeSwarmMetrics,
   computeChaserTelemetry,
   computeProviderTelemetry,
@@ -244,6 +245,72 @@ test('computeRetries ignores unknown role names', () => {
   const { total } = computeRetries([{ role: 'unknown_role', worktreePath: unknownWt }]);
 
   assert.equal(total, 0);
+});
+
+// --- computeReworkEvents (BL-430) ---
+
+test('computeReworkEvents records the sender role and timestamp of each backward handoff', () => {
+  const target = mkTmp();
+  const architectWt = path.join(target, 'architect-wt');
+
+  writeHandoff(path.join(architectWt, '.swarmforge', 'handoffs', 'sent'), '00_a.handoff', {
+    type: 'git_handoff',
+    from: 'architect',
+    to: 'coder',
+    task: 'BL-201-fix',
+    created_at: '2026-07-10T12:00:00Z',
+  });
+
+  const events = computeReworkEvents([{ role: 'architect', worktreePath: architectWt }]);
+
+  assert.deepEqual(events, [{ ticketId: 'BL-201', fromRole: 'architect', atMs: Date.parse('2026-07-10T12:00:00Z') }]);
+});
+
+test('computeReworkEvents emits one event per backward recipient, same as computeRetries', () => {
+  const target = mkTmp();
+  const qaWt = path.join(target, 'qa-wt');
+
+  writeHandoff(path.join(qaWt, '.swarmforge', 'handoffs', 'sent'), '00_multi.handoff', {
+    type: 'git_handoff',
+    from: 'QA',
+    to: 'coder, cleaner',
+    task: 'BL-202-multi',
+    created_at: '2026-07-10T09:00:00Z',
+  });
+
+  const events = computeReworkEvents([{ role: 'QA', worktreePath: qaWt }]);
+
+  assert.equal(events.length, 2);
+  assert.ok(events.every((e) => e.ticketId === 'BL-202' && e.fromRole === 'QA'));
+});
+
+test('computeReworkEvents ignores a forward handoff, mirroring computeRetries', () => {
+  const target = mkTmp();
+  const coderWt = path.join(target, 'coder-wt');
+
+  writeHandoff(path.join(coderWt, '.swarmforge', 'handoffs', 'sent'), '00_fwd.handoff', {
+    type: 'git_handoff',
+    from: 'coder',
+    to: 'cleaner',
+    task: 'BL-203-forward',
+    created_at: '2026-07-10T09:00:00Z',
+  });
+
+  assert.deepEqual(computeReworkEvents([{ role: 'coder', worktreePath: coderWt }]), []);
+});
+
+test('computeReworkEvents drops a backward handoff with no parseable created_at rather than fabricating a timestamp', () => {
+  const target = mkTmp();
+  const architectWt = path.join(target, 'architect-wt');
+
+  writeHandoff(path.join(architectWt, '.swarmforge', 'handoffs', 'sent'), '00_notime.handoff', {
+    type: 'git_handoff',
+    from: 'architect',
+    to: 'coder',
+    task: 'BL-204-notime',
+  });
+
+  assert.deepEqual(computeReworkEvents([{ role: 'architect', worktreePath: architectWt }]), []);
 });
 
 test('computeBusyness handles missing directories gracefully', () => {
