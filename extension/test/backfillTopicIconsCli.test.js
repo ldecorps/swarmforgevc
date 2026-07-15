@@ -39,12 +39,13 @@ function writeTopicMap(targetPath, map) {
   fs.writeFileSync(path.join(dir, 'backlog-topic-map.json'), JSON.stringify(map));
 }
 
+// BL-417: feature-in-flight remapped from the bulb to the musical note.
 const STICKERS_JSON = {
   ok: true,
   result: [
     { emoji: '✅', custom_emoji_id: 'id-check' },
     { emoji: '🦠', custom_emoji_id: 'id-microbe' },
-    { emoji: '💡', custom_emoji_id: 'id-bulb' },
+    { emoji: '🎵', custom_emoji_id: 'id-note' },
     { emoji: '🔍', custom_emoji_id: 'id-magnifier' },
   ],
 };
@@ -77,9 +78,9 @@ test('backfillTopicIcons sets the computed icon for every non-epic ticket that h
   );
   assert.deepEqual(
     edits.map((e) => e.icon_custom_emoji_id).sort(),
-    ['id-bulb', 'id-check', 'id-magnifier', 'id-microbe']
+    ['id-check', 'id-magnifier', 'id-microbe', 'id-note']
   );
-  assert.equal(readSwarmIconId(target, 'BL-1'), 'id-bulb');
+  assert.equal(readSwarmIconId(target, 'BL-1'), 'id-note');
   assert.equal(readSwarmIconId(target, 'BL-4'), 'id-check');
 });
 
