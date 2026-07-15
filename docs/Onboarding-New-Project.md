@@ -217,7 +217,8 @@ node extension/out/tools/relay-onboarding-negotiation-telegram.js <target-repo-p
   negotiation topic as a plain-text summary (scope / out-of-scope /
   boundaries) with instructions to reply in the topic to object, or reply
   "agree" to approve. Idempotent like BL-380's own provisioning step: running
-  it again after a successful post is a no-op.
+  it again after a successful post is a no-op. **It now also starts the live
+  poll trigger for you** (see below) — nothing further to run by hand.
 - **`poll`** reads one batch of updates from that topic. A reply that is
   exactly "agree"/"agreed"/"approve"/"approved"/"lgtm"/"yes" (whole reply,
   not a substring — "I agree with most of this but remove the PWA work" is
@@ -238,6 +239,29 @@ node extension/out/tools/relay-onboarding-negotiation-telegram.js <target-repo-p
 - The bot token is read from the same host-side secrets file BL-380's
   provisioning step wrote it into — never taken as a CLI argument, so it
   never leaks via `ps`.
+
+**`poll` runs live, supervised, with no manual step (BL-381 follow-up fixes).**
+A one-shot `poll` only checks the topic once, and nothing in a running swarm
+ever called it repeatedly — a human's reply was invisible until someone
+happened to run the CLI again by hand. Two fixes closed that gap:
+
+- A `poll-loop` action runs `poll` forever, paced by Telegram's own
+  long-poll and writing a heartbeat each cycle. `negotiation_relay_supervisor.bb`
+  supervises it per target — spawn, crash-detect, bounded restart,
+  heartbeat-stall detection, give-up escalation — reusing
+  `front_desk_supervisor.bb`'s own state machine rather than a second
+  implementation. `swarmforge/scripts/launch_negotiation_relay.sh
+  <target-repo-path> <host-secrets-file-path>` starts it (requires
+  `TELEGRAM_PRINCIPAL_USER_ID`; supports `NEGOTIATION_RELAY_LAUNCH_DRYRUN=1`
+  to print the assembled command without starting anything).
+- That launcher still had to be run by hand as a third manual step after
+  `post-proposal`. `post-proposal` now spawns it automatically (detached,
+  via an injectable `LaunchRelaySupervisorFn`) the moment the proposal is
+  posted — the first moment a human could reply — so nothing further is
+  needed once the target's channel is provisioned and the proposal sent. A
+  target repo under the system temp dir never triggers a real spawn
+  regardless (a test-fixture safety net), and `poll-loop`/`poll` both stay
+  directly runnable for manual recovery.
 
 ## 3. The acceptance contract
 
