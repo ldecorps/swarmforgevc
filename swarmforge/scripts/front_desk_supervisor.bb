@@ -129,6 +129,11 @@
 ;; stuck loop misses it by a wide margin.
 (def stall-ms (env-long "FRONT_DESK_STALL_MS" 90000))
 
+;; BL-403: grace period for graceful process termination (SIGTERM -> SIGKILL).
+;; Default 2s - time to flush logs/state before SIGKILL. Must be shorter than
+;; FRONT_DESK_INTERVAL_MS to avoid blocking the supervisor loop.
+(def kill-grace-ms (env-long "FRONT_DESK_KILL_GRACE_MS" 2000))
+
 ;; BL-370 (scenario 05): same bounded-retry-with-backoff shape as
 ;; operator_runtime.bb's own alarm-retry-config for the starvation alarm -
 ;; independently defined here rather than cross-namespace-coupled, same
@@ -216,6 +221,24 @@
 (defn pid-alive? [pid]
   (when pid
     (some-> (java.lang.ProcessHandle/of pid) (.orElse nil) (.isAlive))))
+
+;; BL-403: gracefully terminate a pid with bounded grace period for cleanup.
+;; Sends SIGTERM, waits up to kill-grace-ms for graceful exit, then SIGKILL if needed.
+(defn kill-pid! [pid]
+  (when pid
+    (when-let [handle (some-> (java.lang.ProcessHandle/of pid) (.orElse nil))]
+      (when (.isAlive handle)
+        ;; SIGTERM for graceful shutdown
+        (.destroy handle)
+        ;; Wait for graceful exit within the grace period
+        (let [start (now-ms)]
+          (while (and (.isAlive handle) (< (- (now-ms) start) kill-grace-ms))
+            (Thread/sleep 10)))
+        ;; SIGKILL if still alive after grace period
+        (when (.isAlive handle)
+          (.destroyForcibly handle))
+        ;; Wait for the kill to propagate
+        (Thread/sleep 10)))))
 
 ;; BL-370: reads the SAME {lastHeartbeatMs} JSON telegram-front-desk-bot.ts
 ;; writes on every completed poll cycle. Never throws on a missing/corrupt
@@ -397,7 +420,7 @@
                                  (let [entry (merge (front-desk-supervisor-lib/default-entry) (get prior (:key spec)))
                                        heartbeat-stale? ((:heartbeat-stale? spec) now)
                                        {:keys [entry event]} (front-desk-supervisor-lib/check-one!
-                                                               entry now pid-alive? (:spawn-pid! spec) restart-config giveup-config heartbeat-stale?)
+                                                               entry now pid-alive? (:spawn-pid! spec) restart-config giveup-config heartbeat-stale? kill-pid!)
                                        entry (stamp-build-sha entry event)]
                                    (log-event! (:key spec) event entry)
                                    [(:key spec) entry])))

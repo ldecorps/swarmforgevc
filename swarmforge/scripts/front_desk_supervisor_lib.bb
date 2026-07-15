@@ -80,12 +80,18 @@
   (boolean (or (nil? last-heartbeat-ms) (>= (- now-ms last-heartbeat-ms) stall-ms))))
 
 ;; One process's whole check-and-react, pure/adapter-injected: now-ms,
-;; pid-alive?, and spawn! (returns a fresh pid) are ALL explicit params -
-;; no real clock or process I/O happens inside this function itself, so it
-;; is directly testable with fixture entries/adapters and no real timer.
-;; Returns {:entry <next-entry> :event <keyword-or-nil>} - the event is
-;; the caller's own cue for what (if anything) to log; it never re-derives
-;; a transition by diffing before/after itself.
+;; pid-alive?, spawn!, and kill-pid! (returns a fresh pid) are ALL
+;; explicit params - no real clock or process I/O happens inside this
+;; function itself, so it is directly testable with fixture entries/adapters
+;; and no real timer. Returns {:entry <next-entry> :event <keyword-or-nil>}
+;; - the event is the caller's own cue for what (if anything) to log; it
+;; never re-derives a transition by diffing before/after itself.
+;;
+;; BL-403: kill-pid! (optional, defaults to no-op) is called with the old
+;; pid before spawning a replacement in "waiting"/"stalled" restart cases.
+;; This ensures the old process is terminated with bounded grace period
+;; (SIGTERM -> SIGKILL) before the replacement spawns, so exactly one bot
+;; process is ever alive per supervisor at a time.
 ;;
 ;; BL-370: heartbeat-stale? (optional, defaults false so every pre-existing
 ;; 6-arg caller/test is unaffected - the bridge process has no poll
@@ -100,8 +106,10 @@
 ;; reported differently.
 (defn check-one!
   ([entry now-ms pid-alive? spawn! restart-config giveup-config]
-   (check-one! entry now-ms pid-alive? spawn! restart-config giveup-config false))
+   (check-one! entry now-ms pid-alive? spawn! restart-config giveup-config false (fn [_] nil)))
   ([entry now-ms pid-alive? spawn! restart-config giveup-config heartbeat-stale?]
+   (check-one! entry now-ms pid-alive? spawn! restart-config giveup-config heartbeat-stale? (fn [_] nil)))
+  ([entry now-ms pid-alive? spawn! restart-config giveup-config heartbeat-stale? kill-pid!]
    (case (:status entry)
      "not-started"
      {:entry (started-entry entry now-ms (spawn!)) :event :started}
@@ -125,7 +133,9 @@
        (if (< now-ms due-ms)
          {:entry entry :event nil}
          (if (= :restart (decide-restart-action (:attempts entry) restart-config))
-           {:entry (started-entry entry now-ms (spawn!)) :event :started}
+           (do
+             (when (:pid entry) (kill-pid! (:pid entry)))
+             {:entry (started-entry entry now-ms (spawn!)) :event :started})
            {:entry (assoc entry :status "gave-up" :gave-up-at-ms now-ms) :event :gave-up})))
 
      "gave-up"
