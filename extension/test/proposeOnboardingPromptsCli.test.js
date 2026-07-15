@@ -175,6 +175,32 @@ test('BL-382: a contract verbosity outside the offered set is refused through th
   assert.ok(!fs.existsSync(path.join(targetRepo, 'engineering.prompt')));
 });
 
+// BL-382 QA 2nd bounce (backlog/evidence/BL-382-...-bounce-20260715b.md):
+// the first generation correctly picked up the negotiated verbosity, but
+// re-running the CLI after the human changed his mind (a new negotiation
+// round revising the contract's verbosity) silently kept the FIRST
+// verbosity forever - initializeTargetPrompts skipped any prompt file that
+// already existed, with no path to force a refresh.
+test('BL-382: re-running after the contract\'s verbosity changes regenerates the already-materialized prompts', async () => {
+  const targetRepo = mkTargetRepo();
+  writeContract(targetRepo, 'agreed', 'concise');
+  const surveyPath = mkTmpFile('survey.json', JSON.stringify(VALID_FACTS));
+
+  await runCli([targetRepo, surveyPath]);
+  assert.match(fs.readFileSync(path.join(targetRepo, 'project.prompt'), 'utf8'), /Be concise/);
+
+  writeContract(targetRepo, 'agreed', 'detailed');
+  const secondResult = await runCli([targetRepo, surveyPath]);
+
+  assert.equal(secondResult.withheld, false);
+  assert.equal(secondResult.committed, true);
+  const projectPrompt = fs.readFileSync(path.join(targetRepo, 'project.prompt'), 'utf8');
+  assert.match(projectPrompt, /Be detailed/);
+  assert.doesNotMatch(projectPrompt, /Be concise/);
+  const engineeringPrompt = fs.readFileSync(path.join(targetRepo, 'engineering.prompt'), 'utf8');
+  assert.match(engineeringPrompt, /Be detailed/);
+});
+
 test('main() prints usage and exits non-zero when a required argument is missing', async () => {
   const previousExitCode = process.exitCode;
   try {
