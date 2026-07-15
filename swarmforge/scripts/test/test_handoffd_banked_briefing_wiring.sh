@@ -28,9 +28,14 @@ TODAY_DAY_KEY="$(date -u +%Y-%m-%d)"
 grep -q '^config briefing_morning_time_utc ' "$REAL_CONF" || fail "setup: expected swarmforge.conf to already declare briefing_morning_time_utc"
 
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
+export SWARMFORGE_ALLOW_TMP_DAEMON=1  # BL-406: opt in - this ROOT is an intentional throwaway test root
+DAEMON_PID=""
 CONF_BACKUP="$(mktemp)"
 cp "$REAL_CONF" "$CONF_BACKUP"
 cleanup() {
+  # BL-406: kill the daemon as a backstop even if an earlier assertion exits
+  # this script before the normal stop-file+wait sequence runs.
+  [[ -n "$DAEMON_PID" ]] && kill "$DAEMON_PID" 2>/dev/null || true
   cp "$CONF_BACKUP" "$REAL_CONF"
   rm -f "$CONF_BACKUP"
   rm -rf "$ROOT"
