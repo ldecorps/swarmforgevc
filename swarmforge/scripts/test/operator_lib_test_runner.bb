@@ -689,7 +689,66 @@
   (assert-true "front-desk-reply-prompt: carries the long-term memory facts"
                (clojure.string/includes? prompt "the human prefers terse replies"))
   (assert-true "front-desk-reply-prompt: tells it plainly it holds no tool/swarm authority"
-               (clojure.string/includes? prompt "NO tool")))
+               (clojure.string/includes? prompt "NO tool"))
+  (assert-true "front-desk-reply-prompt: defaults to the normal verbosity directive when no verbosity is given"
+               (clojure.string/includes? prompt "Be normal in your responses")))
+
+;; ── BL-383: resolve-front-desk-verbosity - reads the target's agreed
+;;    verbosity off its RAW contract.yaml text, never a level BL-382 would
+;;    reject ──────────────────────────────────────────────────────────────
+(assert= "resolve-front-desk-verbosity: reads a present, known value"
+         "concise"
+         (operator-lib/resolve-front-desk-verbosity "scope: []\nverbosity: concise\nagreement: agreed\n"))
+(assert= "resolve-front-desk-verbosity: reads the detailed level"
+         "detailed"
+         (operator-lib/resolve-front-desk-verbosity "verbosity: detailed\n"))
+(assert= "resolve-front-desk-verbosity: an absent field defaults to normal"
+         "normal"
+         (operator-lib/resolve-front-desk-verbosity "scope: []\nagreement: agreed\n"))
+(assert= "resolve-front-desk-verbosity: nil content (no contract.yaml at all) defaults to normal"
+         "normal"
+         (operator-lib/resolve-front-desk-verbosity nil))
+(assert= "resolve-front-desk-verbosity: an unrecognized value defaults to normal, never passed through"
+         "normal"
+         (operator-lib/resolve-front-desk-verbosity "verbosity: extremely chatty\n"))
+
+;; ── BL-383: front-desk-reply-prompt's own verbosity directive, per level ──
+(doseq [level ["concise" "normal" "detailed"]]
+  (let [prompt (operator-lib/front-desk-reply-prompt
+                {:transcript {:id "SUP-1" :messages []} :long-term-memory [] :verbosity level})]
+    (assert-true (str "front-desk-reply-prompt: carries the " level " style directive")
+                 (clojure.string/includes? prompt (str "Be " level " in your responses")))))
+
+;; ── BL-383: compose-front-desk-reply-prompt - the ONE seam both the real
+;;    launch and this feature's acceptance steps call, so it must resolve
+;;    verbosity from the RAW contract.yaml content itself, never a
+;;    pre-resolved value ───────────────────────────────────────────────────
+(let [prompt (operator-lib/compose-front-desk-reply-prompt
+              {:contract-yaml-content "verbosity: concise\nagreement: agreed\n"
+               :transcript {:id "SUP-1" :messages [{:channel "telegram" :text "status?"}]}
+               :long-term-memory []})]
+  (assert-true "compose-front-desk-reply-prompt: reflects the contract's own concise verbosity"
+               (clojure.string/includes? prompt "Be concise in your responses"))
+  (assert-true "compose-front-desk-reply-prompt: still carries the transcript"
+               (clojure.string/includes? prompt "status?")))
+
+(let [prompt (operator-lib/compose-front-desk-reply-prompt
+              {:contract-yaml-content nil :transcript {:id "SUP-1" :messages []} :long-term-memory []})]
+  (assert-true "compose-front-desk-reply-prompt: a target with no contract.yaml at all defaults to normal, never crashes"
+               (clojure.string/includes? prompt "Be normal in your responses")))
+
+;; BL-383 scenario 03 (restart-free): two composes in a row with DIFFERENT
+;; raw contract content produce DIFFERENT directives - nothing here is
+;; cached across calls, which is what makes the live wiring's "re-read on
+;; every wake" restart-free by construction rather than by accident.
+(let [first-prompt (operator-lib/compose-front-desk-reply-prompt
+                     {:contract-yaml-content "verbosity: detailed\n" :transcript {} :long-term-memory []})
+      second-prompt (operator-lib/compose-front-desk-reply-prompt
+                     {:contract-yaml-content "verbosity: concise\n" :transcript {} :long-term-memory []})]
+  (assert-true "compose-front-desk-reply-prompt: first call reflects detailed"
+               (clojure.string/includes? first-prompt "Be detailed in your responses"))
+  (assert-true "compose-front-desk-reply-prompt: very next call reflects concise, no restart needed"
+               (clojure.string/includes? second-prompt "Be concise in your responses")))
 
 ;; ── BL-334: the front-desk Operator's status is reported ALONGSIDE the
 ;;    full Operator's, never overwriting it - render-status stays UNCHANGED
