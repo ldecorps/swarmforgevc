@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { readRecord, appendMessage, recordPath, commitTopicRecord, hasCompletionRecord, isRecordCommitted, hasUpdateId, readSwarmIconId, recordSwarmIconId } = require('../out/concierge/blTopicStore');
+const { readRecord, appendMessage, recordPath, commitTopicRecord, hasCompletionRecord, isRecordCommitted, hasUpdateId, readSwarmIconId, recordSwarmIconId, lastActivityMs } = require('../out/concierge/blTopicStore');
 
 // BL-329: the durable, git-tracked, per-ticket record of every message sent
 // in a BL topic - inbound and outbound - so the Telegram topic becomes a
@@ -424,4 +424,27 @@ test('BL-390: recordSwarmIconId mints no new commit when the icon id is unchange
 
   const headAfter = execFileSync('git', ['-C', target, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   assert.equal(headAfter, headBefore, 'expected no new commit for re-setting the identical icon id');
+});
+
+// ── lastActivityMs (BL-414: the topic-title age suffix's "last updated"
+//    source, reusing this existing per-topic record rather than a new one) ─
+
+test('lastActivityMs returns undefined for a ticket with no messages yet', () => {
+  assert.equal(lastActivityMs({ id: 'BL-900', messages: [] }), undefined);
+});
+
+test('lastActivityMs returns the single message\'s ts', () => {
+  assert.equal(lastActivityMs({ id: 'BL-900', messages: [{ seq: 0, ts: 1000, author: 'human', type: 'inbound', text: 'hi' }] }), 1000);
+});
+
+test('lastActivityMs returns the MOST RECENT ts across messages, regardless of direction or array order', () => {
+  const record = {
+    id: 'BL-900',
+    messages: [
+      { seq: 0, ts: 5000, author: 'swarm', type: 'outbound', text: 'a' },
+      { seq: 1, ts: 1000, author: 'human', type: 'inbound', text: 'b' },
+      { seq: 2, ts: 3000, author: 'human', type: 'inbound', text: 'c' },
+    ],
+  };
+  assert.equal(lastActivityMs(record), 5000);
 });

@@ -370,52 +370,92 @@ function ticketFromHeaders(headers: Record<string, string>): string | null {
   return headers.task ? extractTicketId(headers.task) : null;
 }
 
-function countBackwardHandoffs(headers: Record<string, string>): Array<{ ticket: string | null }> {
+// BL-430: carries fromRole/createdAtIso alongside ticket - computeRetries
+// itself only needs ticket, but computeReworkEvents below needs the two
+// dimensions (who bounced it, when) computeRetries has always discarded.
+function countBackwardHandoffs(
+  headers: Record<string, string>
+): Array<{ ticket: string | null; fromRole: string; createdAtIso: string | null }> {
   if (!isGitHandoff(headers)) {
     return [];
   }
-  const fromIdx = pipelineIndex(headers.from ?? '');
+  const fromRole = headers.from ?? '';
+  const fromIdx = pipelineIndex(fromRole);
   if (fromIdx === -1) {
     return [];
   }
   const ticket = ticketFromHeaders(headers);
+  const createdAtIso = headers.created_at ?? null;
   return getRecipients(headers.to)
     .filter((recipient) => isBackwardRecipient(fromIdx, recipient))
-    .map(() => ({ ticket }));
+    .map(() => ({ ticket, fromRole, createdAtIso }));
+}
+
+// Walks every role's sent/ (the delivered original, one copy regardless of
+// recipient count, so a broadcast is not double-counted per recipient),
+// parsing each handoff's headers. Shared by computeRetries and
+// computeReworkEvents so both read the exact same backward-handoff scan
+// rather than keeping two independent walks of the same files.
+function forEachSentHandoffHeaders(roles: RoleWorktree[], onHeaders: (headers: Record<string, string>) => void): void {
+  for (const role of roles) {
+    const sentDir = path.join(role.worktreePath, '.swarmforge', 'handoffs', 'sent');
+    for (const file of readHandoffFiles(sentDir)) {
+      let headers: Record<string, string>;
+      try {
+        headers = parseHandoffHeaders(fs.readFileSync(path.join(sentDir, file), 'utf8'));
+      } catch {
+        continue;
+      }
+      onHeaders(headers);
+    }
+  }
 }
 
 // Counts git_handoff files whose sender sits later in the pipeline chain
-// than the recipient. Scans each role's sent/ (the delivered original, one
-// copy regardless of recipient count) rather than inbox/completed copies,
-// so a broadcast is not double-counted per recipient.
-function processSentFile(sentDir: string, file: string, perTicket: Record<string, number>): number {
-  let headers: Record<string, string>;
-  try {
-    headers = parseHandoffHeaders(fs.readFileSync(path.join(sentDir, file), 'utf8'));
-  } catch {
-    return 0;
-  }
-  const backwardHandoffs = countBackwardHandoffs(headers);
-  for (const handoff of backwardHandoffs) {
-    if (handoff.ticket) {
-      perTicket[handoff.ticket] = (perTicket[handoff.ticket] ?? 0) + 1;
-    }
-  }
-  return backwardHandoffs.length;
-}
-
+// than the recipient.
 export function computeRetries(roles: RoleWorktree[]): RetryCounts {
   let total = 0;
   const perTicket: Record<string, number> = {};
 
-  for (const role of roles) {
-    const sentDir = path.join(role.worktreePath, '.swarmforge', 'handoffs', 'sent');
-    for (const file of readHandoffFiles(sentDir)) {
-      total += processSentFile(sentDir, file, perTicket);
+  forEachSentHandoffHeaders(roles, (headers) => {
+    const backwardHandoffs = countBackwardHandoffs(headers);
+    total += backwardHandoffs.length;
+    for (const handoff of backwardHandoffs) {
+      if (handoff.ticket) {
+        perTicket[handoff.ticket] = (perTicket[handoff.ticket] ?? 0) + 1;
+      }
     }
-  }
+  });
 
   return { total, perTicket };
+}
+
+export interface ReworkEvent {
+  ticketId: string;
+  fromRole: string;
+  atMs: number;
+}
+
+// BL-430: reuses the exact same backward-handoff scan computeRetries relies
+// on (rather than re-parsing sent/ a second way), keeping the role and
+// timestamp computeRetries itself discards - the two dimensions the rework
+// observatory attributes rework to. A handoff missing a resolvable ticket
+// id or a parseable created_at contributes no event, never a fabricated one.
+export function computeReworkEvents(roles: RoleWorktree[]): ReworkEvent[] {
+  const events: ReworkEvent[] = [];
+  forEachSentHandoffHeaders(roles, (headers) => {
+    for (const handoff of countBackwardHandoffs(headers)) {
+      if (!handoff.ticket || !handoff.createdAtIso) {
+        continue;
+      }
+      const atMs = Date.parse(handoff.createdAtIso);
+      if (Number.isNaN(atMs)) {
+        continue;
+      }
+      events.push({ ticketId: handoff.ticket, fromRole: handoff.fromRole, atMs });
+    }
+  });
+  return events;
 }
 
 export interface SuiteDurationStats {

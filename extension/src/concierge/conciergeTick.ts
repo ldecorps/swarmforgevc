@@ -7,10 +7,12 @@
 // RouteAdapters, which is where Telegram-specific adapters actually get
 // wired, in the live wrapper - telegram-front-desk-bot.ts).
 import { EventStreamSnapshot, GateSignal, SwarmEvent, SwarmEventType, TicketSummary, deriveSwarmEvents, swarmEventKey } from '../events/swarmEventStream';
-import { RouteAdapters, TopicAction, decideEpicTopicAction, routeEvent } from './topicRouter';
+import { BacklogTopicMap, RouteAdapters, TopicAction, decideEpicTopicAction, routeEvent } from './topicRouter';
 import { EpicDefinition, computeEpicProgress, epicAnnouncementKey, epicOpeningText, epicProgressText } from './epicProgress';
 import { resolveIconState, ICON_EMOJI, STANDING_TOPIC_ICON, StandingTopicTarget } from './topicIcon';
 import { TopicIconAdapters, syncTopicIcon } from './topicIconSync';
+import { StalenessBucket } from './topicTitleAge';
+import { TopicTitleAdapters, syncTopicTitle } from './topicTitleSync';
 
 export interface BacklogFolderItem {
   id: string;
@@ -70,6 +72,12 @@ export interface TickState {
   // tick for anything that already exists, mirroring BL-342's own backfill
   // precedent for pre-existing ticket topics.
   standingIconSeenIds?: string[];
+  // BL-414: each ticket's durably last-announced title-age bucket - the
+  // change-gate the title-age suffix needs, mirroring standingIconSeenIds'
+  // own "durable across restarts" posture. Absent/missing entry means "no
+  // bucket announced yet for this ticket", so its very first tick always
+  // counts as a transition and edits once.
+  titleAgeBuckets?: Record<string, StalenessBucket>;
 }
 
 export interface ConciergeTickAdapters {
@@ -102,6 +110,13 @@ export interface ConciergeTickAdapters {
   // this field existed - keeps working unchanged rather than needing an
   // update just to satisfy a capability its own ticket never touches.
   readStandingTopics?: () => StandingTopicTarget[];
+  // BL-414: optional (defaults to no title-age sync) for the same reason
+  // readStandingTopics above is optional - every existing adapters fixture
+  // across this codebase's own acceptance step handlers was built before
+  // this field existed, and must keep working unchanged rather than
+  // needing an update just to satisfy a capability its own ticket never
+  // touches.
+  titleAdapters?: TopicTitleAdapters;
 }
 
 export interface TickResult {
@@ -210,6 +225,59 @@ async function syncIconForBacklogId(
   const state = resolveIconState(folder, type, humanApproval);
   const fallbackEmoji = state === 'awaiting-approval' ? ICON_EMOJI.paused : undefined;
   await syncTopicIcon(backlogId, topicId, ICON_EMOJI[state], isNewTopic, iconAdapters, fallbackEmoji);
+}
+
+// BL-414: the title-age sibling of syncIconForBacklogId above - but unlike
+// icon sync (which fires only on a folder-membership TRANSITION), this
+// runs for every ticket with a topic on EVERY tick, because elapsed time
+// keeps moving regardless of folder membership; the change-gate lives
+// inside syncTopicTitle/decideTitleAge instead (bucket-equality, not
+// entry-into-a-folder). An epic-defining ticket is never a target, same
+// exclusion as the icon sync. Returns the bucket to persist (unchanged
+// from prevBucket on any skip/no-op case).
+async function syncTitleAgeForBacklogId(
+  backlogId: string,
+  folders: BacklogFoldersSnapshot,
+  topicId: number | undefined,
+  nowMs: number,
+  prevBucket: StalenessBucket | undefined,
+  titleAdapters: TopicTitleAdapters
+): Promise<StalenessBucket | undefined> {
+  const type = typeForBacklogId(folders, backlogId);
+  if (topicId === undefined || type === 'epic') {
+    return prevBucket;
+  }
+  const rawTitle = titleForBacklogId(folders, backlogId);
+  const result = await syncTopicTitle(backlogId, topicId, rawTitle, nowMs, prevBucket, titleAdapters);
+  return result.bucket;
+}
+
+// BL-414: loops syncTitleAgeForBacklogId above over every ticket across all
+// three folders - extracted out of runConciergeTick so THAT function's own
+// branch count stays at or below the CRAP threshold, the same "extract so
+// branch count stays at or below the CRAP threshold" reasoning as
+// deliveryOutcome/syncStandingTopicIcons elsewhere in this codebase.
+// Returns undefined (skip entirely) when no titleAdapters were injected -
+// the caller then leaves the prior tick's bucket map untouched.
+async function syncAllTitleAgeBuckets(
+  folders: BacklogFoldersSnapshot,
+  topicMap: BacklogTopicMap,
+  nowMs: number,
+  prevBuckets: Record<string, StalenessBucket> | undefined,
+  titleAdapters: TopicTitleAdapters | undefined
+): Promise<Record<string, StalenessBucket>> {
+  const titleAgeBuckets: Record<string, StalenessBucket> = { ...(prevBuckets ?? {}) };
+  if (!titleAdapters) {
+    return titleAgeBuckets;
+  }
+  const allTicketIds = [...folders.active, ...folders.paused, ...folders.done].map((item) => item.id);
+  for (const backlogId of allTicketIds) {
+    const bucket = await syncTitleAgeForBacklogId(backlogId, folders, topicMap[backlogId], nowMs, prevBuckets?.[backlogId], titleAdapters);
+    if (bucket !== undefined) {
+      titleAgeBuckets[backlogId] = bucket;
+    }
+  }
+  return titleAgeBuckets;
 }
 
 // BL-418: the standing-topic sibling of syncIconForBacklogId above. Only
@@ -483,7 +551,13 @@ async function processConciergeEvent(
   return result.posted;
 }
 
-export async function runConciergeTick(adapters: ConciergeTickAdapters): Promise<TickResult> {
+// BL-414: nowMs defaults to the real clock in production (mirrors
+// runOneConciergeTick's own nowMs default in telegram-front-desk-bot.ts);
+// tests always pass it explicitly for a deterministic result, per the
+// no-real-timers convention. Unused whenever adapters.titleAdapters is
+// absent, so existing callers/tests that never touch title-age sync are
+// completely unaffected by this default.
+export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: number = Date.now()): Promise<TickResult> {
   const folders = adapters.readFolders();
   const curr = toEventStreamSnapshot(folders, adapters.readGates(), adapters.readRoleTicket());
   const epicDefinitions = epicDefinitionsFor(folders);
@@ -540,7 +614,13 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters): Promise
     adapters.iconAdapters
   );
 
+  // BL-414: runs over every ticket across all three folders on every tick
+  // (never gated on newlyEnteredIds - see syncTitleAgeForBacklogId's own
+  // comment for why), starting from the prior tick's durable bucket map so
+  // a skip/failure leaves an untouched entry rather than dropping it.
+  const titleAgeBuckets = await syncAllTitleAgeBuckets(folders, adapters.routeAdapters.getTopicMap(), nowMs, state.titleAgeBuckets, adapters.titleAdapters);
+
   const persistedSnapshot = withRetryableTransitionsHeldBack(curr, unrouted);
-  adapters.writeTickState({ snapshot: persistedSnapshot, emittedKeys: [...alreadyEmitted], standingIconSeenIds });
+  adapters.writeTickState({ snapshot: persistedSnapshot, emittedKeys: [...alreadyEmitted], standingIconSeenIds, titleAgeBuckets });
   return { routed };
 }
