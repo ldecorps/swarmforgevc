@@ -804,6 +804,7 @@ const ICON_STICKERS = [
   { emoji: '🦠', customEmojiId: 'id-microbe' },
   { emoji: '🎵', customEmojiId: 'id-note' },
   { emoji: '🔍', customEmojiId: 'id-magnifier' },
+  { emoji: '👀', customEmojiId: 'id-eyes' },
 ];
 
 // BL-417: feature-in-flight remapped from the bulb to the musical note.
@@ -918,6 +919,83 @@ test('BL-342: a ticket newly entering paused with no topic at all yet (never pro
 
   await assert.doesNotReject(() => runConciergeTick(adapters));
   assert.deepEqual(iconsSet, []);
+});
+
+// ── BL-424 approval-icon-state-01/02: the icon-sync caller now reads
+//    human_approval off the same folders snapshot and passes it through to
+//    resolveIconState - a paused ticket blocked ONLY on the human's
+//    approval gets a distinct icon from any other paused hold ────────────
+
+test('BL-424: a ticket newly entering paused with human_approval pending gets the eyes icon, not the plain magnifier', async () => {
+  const { adapters, setFolders, iconsSet, iconOwnership, topicMap } = fakeAdapters();
+  adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
+  await runConciergeTick(adapters);
+  iconsSet.length = 0;
+
+  setFolders(folders({ paused: [{ id: 'BL-1', title: 'a fine feature', type: 'feature', humanApproval: 'pending' }] }));
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(iconsSet, [{ topicId: topicMap['BL-1'], iconId: 'id-eyes' }]);
+  assert.equal(iconOwnership['BL-1'], 'id-eyes');
+});
+
+// BL-424: proves the wiring actually READS human_approval off the fixture
+// (the "wiring test that adds a new on-disk input" engineering rule) -
+// break-then-fix: blank the field on an otherwise-identical fixture and
+// confirm the icon reverts to the plain paused magnifier, then restore it.
+test('BL-424: a paused ticket with no human_approval field gets the plain magnifier icon, not the eyes icon (break-then-fix)', async () => {
+  const { adapters, setFolders, iconsSet, topicMap } = fakeAdapters();
+  adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
+  await runConciergeTick(adapters);
+  iconsSet.length = 0;
+
+  // BROKEN: human_approval blanked/absent on this fixture.
+  setFolders(folders({ paused: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
+  await runConciergeTick(adapters);
+  assert.deepEqual(
+    iconsSet,
+    [{ topicId: topicMap['BL-1'], iconId: 'id-magnifier' }],
+    'expected the plain paused icon when human_approval is absent from the fixture'
+  );
+  iconsSet.length = 0;
+
+  // FIXED: a fresh ticket restores human_approval: pending and gets the
+  // distinct eyes icon - proving the earlier magnifier result above was
+  // really driven by the field's absence, not some other cause.
+  setFolders(folders({ paused: [{ id: 'BL-2', title: 'another feature', type: 'feature', humanApproval: 'pending' }] }));
+  await runConciergeTick(adapters);
+  assert.deepEqual(iconsSet, [{ topicId: topicMap['BL-2'], iconId: 'id-eyes' }]);
+});
+
+test('BL-424: a paused ticket that is approved (not pending) keeps the plain magnifier icon', async () => {
+  const { adapters, setFolders, iconsSet, topicMap } = fakeAdapters();
+  adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
+  await runConciergeTick(adapters);
+  iconsSet.length = 0;
+
+  setFolders(folders({ paused: [{ id: 'BL-1', title: 'a fine feature', type: 'feature', humanApproval: 'approved' }] }));
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(iconsSet, [{ topicId: topicMap['BL-1'], iconId: 'id-magnifier' }]);
+});
+
+// BL-424 approval-icon-fallback-02: the eyes glyph absent from the live set
+// falls back to the plain paused icon rather than skipping the topic.
+test('BL-424: a live sticker set without the eyes glyph falls back to the plain magnifier icon for an awaiting-approval ticket', async () => {
+  const { adapters, setFolders, iconsSet, topicMap } = fakeAdapters();
+  adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS.filter((s) => s.emoji !== '👀');
+
+  setFolders(folders({ paused: [{ id: 'BL-1', title: 'a fine feature', type: 'feature', humanApproval: 'pending' }] }));
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(
+    iconsSet,
+    [{ topicId: topicMap['BL-1'], iconId: 'id-magnifier' }],
+    'expected the fallback to the plain paused icon rather than skipping the topic entirely'
+  );
 });
 
 test('BL-342: the paused diff does not re-fire on a later tick where the ticket is still paused (edge-triggered, not level-triggered)', async () => {

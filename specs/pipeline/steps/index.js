@@ -206,7 +206,8 @@ const DOMAINS = [
   require('./bl412DiskSpaceEarlyWarningAlertSteps'),
   require('./bl421TileLiveVsResolvedDecisionSteps'),
   require('./bl418StandingTopicIconsSteps'),
-  require('./bl416ApprovalReplyConfirmsSuccessSteps')
+  require('./bl416ApprovalReplyConfirmsSuccessSteps'),
+  require('./bl424AwaitingApprovalTopicIconSteps')
 ];
 
 function registerSteps(registry) {
