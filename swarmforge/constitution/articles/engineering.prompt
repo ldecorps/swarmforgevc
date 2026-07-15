@@ -504,6 +504,23 @@
   briefing_email_lib.bb x2 from the repo root. Fixed by BL-268: it now
   resolves the repo top-level via `git rev-parse --show-toplevel` and
   normalizes changed-file args to repo-relative paths before matching.)
+- **When a change to a SHARED component (a daemon, a new guard/refuse predicate, an opt-in
+  flag, a spawn helper) fans out to its call sites, ENUMERATE those sites with `grep`, never
+  from a remembered count.** A prose "updated N call sites / hardened N wiring tests" tally is
+  a claim about your memory, not about the tree — and nothing re-checks a count, so the one
+  spawn it silently omits is exactly the one that breaks. This is the call-site sibling of the
+  co-change and Stryker-sandbox sweep rules above: the tool knows every caller; you do not.
+  Before handing off a change that alters how a shared component is invoked, `grep -rl` for
+  that component (and for the new flag/predicate name) across `src`, `swarmforge/scripts`, and
+  every `*/test/` tree, then reconcile the returned list against what you actually touched — a
+  green suite is NOT proof you found them all, because the call site you missed is precisely
+  the one whose test you never updated, so it was never re-run. (BL-406: the coder swept 8
+  `handoffd.bb` wiring tests for a new opt-in flag but missed a 9th real spawn —
+  `test_handoffd_supervisor_reaper_path_boundary.sh` scenario 03 — and broke it; the hardener
+  caught it one stage later. Proposed by the hardender 2026-07-15 scoped `role:coder`;
+  accepted into the shared article instead — the hardener and cleaner modify shared daemons
+  and their call sites too, so this binds every author who fans a change across call sites, not
+  only the coder.)
 - **A flag that suppresses a repeat notification must be set on CONFIRMED DELIVERY, never on
   a delivery ATTEMPT.** Any "already alarmed / already armed / already notified" state that
   exists to prevent spam is, by construction, also the thing that can SUPPRESS THE ONLY
@@ -588,3 +605,16 @@
   `postOperatorContext` / `openSubjectAndRecord` / `recordApprovalReply` were never given one. The
   result: the same two human messages replayed into a 209-message topic record and ~8 commits/min,
   every one of them pushed to origin/main, until a human stopped the bot.)
+- **External text embedded into a structured file (a YAML comment, a value, any generated line)
+  must have its newlines — and any structural delimiter of the target format — stripped or escaped
+  BEFORE it is written; an unescaped newline breaks out of its intended syntactic slot.** A trailing
+  `# <text>` comment only comments to the end of ONE line: a multi-line external string injects its
+  second line onward as LIVE content, corrupting the file. This is the structured-file sibling of the
+  GitHub-Actions `${{ }}` interpolation rule above — the same "raw external value spliced into text
+  that is then parsed" class, in a data file rather than a shell. Collapse the value to a single line
+  (replace/strip `\n`), or quote/escape it per the target format, before it reaches the file; never
+  write an externally-sourced reply, title, or note into a structured file verbatim. The value is
+  attacker/human-influenceable, so treat corruption as a when-not-if. (BL-409: `rejectHumanApprovalText`
+  embeds a Telegram reply — obtained from `messageTextOf`, which returns `update.message?.text` with
+  newlines intact — as a trailing YAML comment on the ticket, so a multi-line reject reason injects new
+  YAML lines and corrupts the backlog file. Proposed by the cleaner 2026-07-15 scoped `engineering`.)
