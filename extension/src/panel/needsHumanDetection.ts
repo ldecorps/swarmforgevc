@@ -19,6 +19,44 @@ export function stripTerminalChrome(text: string): string {
   return text.replace(ANSI_ESCAPE_PATTERN, '').replace(OTHER_CONTROL_BYTES_PATTERN, '');
 }
 
+// BL-395: VISIBLE terminal chrome - box-drawing rule lines, the Claude Code
+// permission-mode/shortcut footer, and a bare input-box prompt - survives
+// BL-391's invisible-byte strip because it is printable text, not an escape
+// code. A line is dropped only when it is UNAMBIGUOUSLY chrome; a line
+// containing real words is never chrome, even alongside a dash (the
+// neighbour guard - BL-391's own posture toward visible text).
+//
+// Box-drawing (U+2500-257F), block elements (U+2580-259F), geometric shapes
+// incl. the tofu placeholder ▯ (U+25A0-25FF), and braille spinner glyphs
+// (U+2800-28FF) - a line is chrome only when it consists ENTIRELY of these
+// plus whitespace, never merely containing one alongside real text.
+const BOX_RULE_OR_PLACEHOLDER_LINE_PATTERN = /^[\s─-╿▀-▟■-◿⠀-⣿]+$/;
+
+// A bare prompt marker with only placeholder text - mirrors
+// detectNeedsHuman's own standard-input-box regex below.
+const BARE_PROMPT_LINE_PATTERN = /^[❯>]\s*(type|message)?\s*$/i;
+
+// Known Claude Code footer phrases. Matched by STRIPPING them out of the
+// line and checking that only connector punctuation (·, arrows, parens,
+// whitespace) is left - never a plain substring "includes" check, which
+// would misclassify ordinary prose that happens to contain "for agents" or
+// "accept edits" as chrome (both are unremarkable English phrases).
+const FOOTER_PHRASES_PATTERN = /(bypass permissions(?: on)?|shift\+tab to cycle|accept edits|for agents|⏵+)/gi;
+const FOOTER_CONNECTOR_ONLY_PATTERN = /^[\s·←→()]*$/;
+
+function isFooterFurnitureLine(line: string): boolean {
+  const withoutPhrases = line.replace(FOOTER_PHRASES_PATTERN, '');
+  return withoutPhrases.length !== line.length && FOOTER_CONNECTOR_ONLY_PATTERN.test(withoutPhrases);
+}
+
+function isVisibleChromeLine(line: string): boolean {
+  return (
+    BOX_RULE_OR_PLACEHOLDER_LINE_PATTERN.test(line) ||
+    BARE_PROMPT_LINE_PATTERN.test(line) ||
+    isFooterFurnitureLine(line)
+  );
+}
+
 // Short quote of the detected prompt for the BL-073 email body: the last few
 // non-empty lines, trimmed and capped, so the human can recognize the
 // question without opening the tile. BL-391: sanitised of terminal chrome
@@ -31,7 +69,7 @@ export function extractQuestionSnippet(paneText: string | null | undefined): str
   const lines = stripTerminalChrome(paneText)
     .split('\n')
     .map((l) => l.trim())
-    .filter((l) => l.length > 0);
+    .filter((l) => l.length > 0 && !isVisibleChromeLine(l));
   const snippet = lines.slice(-3).join(' ').trim();
   if (snippet.length <= SNIPPET_MAX_LENGTH) {
     return snippet;
