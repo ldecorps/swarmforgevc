@@ -196,6 +196,43 @@ target's token can never collide with the first's); the group's chat id and
 negotiation topic id are the only things persisted into the target's own
 `.swarmforge/operator/telegram-channel.json`.
 
+**The negotiation itself can run in that topic instead of the CLI (BL-381).**
+BL-380 above only provisions the channel and topic; this is the wiring that
+actually carries the back-and-forth over Telegram, reusing the same
+negotiation rounds and durable log as the CLI form above — never a second
+negotiation engine:
+
+```
+node extension/out/tools/relay-onboarding-negotiation-telegram.js <target-repo-path> <host-secrets-file-path> post-proposal
+node extension/out/tools/relay-onboarding-negotiation-telegram.js <target-repo-path> <host-secrets-file-path> poll
+```
+
+- **`post-proposal`** posts the current `.swarmforge/contract.yaml` into the
+  negotiation topic as a plain-text summary (scope / out-of-scope /
+  boundaries) with instructions to reply in the topic to object, or reply
+  "agree" to approve. Idempotent like BL-380's own provisioning step: running
+  it again after a successful post is a no-op.
+- **`poll`** reads one batch of updates from that topic. A reply that is
+  exactly "agree"/"agreed"/"approve"/"approved"/"lgtm"/"yes" (whole reply,
+  not a substring — "I agree with most of this but remove the PWA work" is
+  read as an objection, not approval) flips the contract to `agreed` the
+  same way `negotiate-onboarding-contract.js approve` does, which is what
+  releases the build-start gate. Anything else non-empty is fed to the same
+  `object` round the CLI uses, and the revised contract is posted back into
+  the topic. Only messages from the target's own chat, its negotiation
+  topic, and the one authorized human (`TELEGRAM_PRINCIPAL_USER_ID`, the
+  BL-379 guard) are ever acted on — everything else is silently dropped.
+  `poll` requires that env var; `post-proposal` does not.
+- Each round is appended to the same `.swarmforge/onboarding-negotiation.jsonl`
+  the CLI form writes, so the negotiation survives a restart regardless of
+  which form carried a given round. The relay's own poll cursor is persisted
+  separately (`.swarmforge/operator/negotiation-relay-offset.json`) so a
+  restarted relay never re-applies an already-handled reply as a duplicate
+  round.
+- The bot token is read from the same host-side secrets file BL-380's
+  provisioning step wrote it into — never taken as a CLI argument, so it
+  never leaks via `ps`.
+
 ## 3. The acceptance contract
 
 This is the part the operator asked about specifically.
