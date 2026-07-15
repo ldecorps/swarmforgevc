@@ -25,13 +25,29 @@ function makeFixtureRoot() {
   return root;
 }
 
+// Explicit allowlist, never `{...process.env}`: this dev box exports REAL
+// live Telegram credentials globally, and launch_front_desk.sh is exactly
+// the script a stray spread once leaked them into (see
+// frontDeskSurvivesRebootSteps.js's own fixtureEnv(), the established
+// pattern for this same script family).
+function fixtureEnv(extra) {
+  return {
+    PATH: process.env.PATH,
+    HOME: process.env.HOME,
+    TELEGRAM_BOT_TOKEN: 'bl404-fixture-fake-bot-token',
+    TELEGRAM_CHAT_ID: 'bl404-fixture-fake-chat-id',
+    TELEGRAM_PRINCIPAL_USER_ID: 'bl404-fixture-fake-user-id',
+    ...extra,
+  };
+}
+
 // launch_front_desk.sh writes its PARKED message to stderr; execFileSync's
 // plain return value is stdout only on success, silently dropping it.
 // spawnSync captures both streams regardless of exit code.
 function run(script, args, extraEnv) {
   const result = spawnSync('bash', [script, ...args], {
     encoding: 'utf8',
-    env: { ...process.env, ...extraEnv },
+    env: fixtureEnv(extraEnv),
   });
   return { code: result.status, output: (result.stdout || '') + (result.stderr || '') };
 }

@@ -64,10 +64,25 @@ check "a missing compiled bridge entrypoint fails the real launch, not silently"
 rm -rf "$F"
 
 # ── 4. missing Telegram env fails loudly before spawning anything ───────────
+# `env -u` guarantees these are actually absent regardless of the calling
+# shell's own exported vars (a dev box routinely has real TELEGRAM_BOT_TOKEN
+# etc. set globally) - without it this check silently passes THROUGH to a
+# real launch using real live credentials instead of exercising the
+# missing-env guard at all.
 F="$(make_fixture)"
-OUT="$(bash "$LAUNCHER" "$F" 2>&1)" && rc=0 || rc=$?
+OUT="$(env -u TELEGRAM_BOT_TOKEN -u TELEGRAM_CHAT_ID -u TELEGRAM_PRINCIPAL_USER_ID bash "$LAUNCHER" "$F" 2>&1)" && rc=0 || rc=$?
 check "a missing TELEGRAM_BOT_TOKEN fails the real launch with a clear message" \
   '[[ "$rc" -ne 0 && "$OUT" == *"TELEGRAM_BOT_TOKEN"* ]]'
+# Safety net: if the guard above ever regresses (or another leaked var masks
+# it again), do not leave a live supervisor running against a fixture dir
+# this test is about to rm -rf.
+if [[ -f "$F/.swarmforge/operator/front-desk-supervisor.pid" ]]; then
+  spawned_pid="$(< "$F/.swarmforge/operator/front-desk-supervisor.pid")"
+  if [[ "$spawned_pid" =~ ^[0-9]+$ ]]; then
+    spawned_pgid="$(ps -o pgid= -p "$spawned_pid" 2>/dev/null | tr -d ' ')"
+    [[ -n "$spawned_pgid" ]] && kill -- "-$spawned_pgid" 2>/dev/null || true
+  fi
+fi
 rm -rf "$F"
 
 # ── 5. BL-404: front-desk-PARKED.md refuses the launch, even with zero env ──
