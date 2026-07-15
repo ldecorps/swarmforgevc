@@ -181,14 +181,12 @@ qa_e2e: |
      keep their existing behavior.
 
 human_approval: >
-  SUPERSEDED-AND-AMENDED 2026-07-15. The coordinator recorded a human approval for
-  the ORIGINAL slice-1-inbound-only design (62920cfa). The human then amended the
-  design in the specifier session (the /btw follow-up + two AskUserQuestion answers:
-  questions AND redirects; prioritise the round-trip). Slice 1 (provision + inbound
-  interrupting redirect) is UNCHANGED by the amendment, so its recorded approval
-  still stands. Slice 2 was MATERIALLY changed — from a bare "answer-back" into a
-  full non-disruptive QUESTION mode (mailbox-note delivery, round-trip, mode
-  selector, /btw dropped) — so slice 2's design and the mode-marker choice need a
-  FRESH human read before slice 2 is built or promoted. Feature files remain
-  specifier drafts until that read.
+  approved 2026-07-15. Slice 1 (provision + inbound interrupting redirect) approved
+  in the original design (62920cfa) and unchanged by the amendment. Slice 2's amended
+  design (non-disruptive QUESTION mode via mailbox note, round-trip answer back to
+  the topic; explicit-marker REDIRECT vs unmarked QUESTION) confirmed fresh by the
+  human via AskUserQuestion in the coordinator session, including the mode marker:
+  a leading `!` marks REDIRECT, unmarked = QUESTION. Both slices are approved; slice
+  1 still awaits promotion behind BL-409 (file overlap, see coordinator commit
+  62920cfa) and slice 2 is a build-when-slice-1-lands follow-up per the epic notes.
 mutation_cost: high
