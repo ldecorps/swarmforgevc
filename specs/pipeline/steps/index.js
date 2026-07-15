@@ -212,7 +212,8 @@ const DOMAINS = [
   require('./bl414TopicTitleAgeSuffixSteps'),
   require('./bl427ProfileMutationWorkerRssSteps'),
   require('./bl430ReworkObservatorySteps'),
-  require('./bl442NegotiationApprovalNotObjectionSteps')
+  require('./bl442NegotiationApprovalNotObjectionSteps'),
+  require('./bl443ProposeContractCommitRobustnessSteps')
 ];
 
 function registerSteps(registry) {
