@@ -40,6 +40,21 @@ export function epicOpeningText(title: string): string {
   return `Epic: ${title}`;
 }
 
+// BL-394: the epic announcement's own durable dedup key - content-based
+// (epicId + the exact announced text) so ANY change in what would be
+// announced (progress advancing, or the one-time opening line) is a new
+// key that announces once, while an unchanged announcement is deduped
+// forever regardless of how many times its triggering event re-derives.
+// Mirrors swarmEventKey's "stable identity" contract (swarmEventStream.ts)
+// but keyed on content rather than event type, because an event key alone
+// does not capture whether what it would announce actually changed - the
+// live incident this fixes was an unrelated per-ticket post stuck
+// retrying every tick, dragging an unchanged epic announcement along with
+// it despite the aggregate never moving.
+export function epicAnnouncementKey(epicId: string, text: string): string {
+  return `EpicUpdate:${epicId}:${text}`;
+}
+
 // Never claims completion while an untracked remaining slice exists - every
 // ticketed slice being done must not read as "the epic is done" when real
 // remaining work is recorded only in the epic's own definition.

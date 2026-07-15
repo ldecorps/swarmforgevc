@@ -34,7 +34,10 @@ function buildFakeAdapters(ctx) {
   return {
     calls: { createTopicCalls },
     adapters: {
-      getUpdates: async () => ctx.fakeUpdates ?? [],
+      // BL-380 bounce: getUpdates now reports success/error (never a bare
+      // array) so a fetch failure can't collapse into "no updates yet" -
+      // see backlog/evidence/BL-380-...-bounce-20260715.md.
+      getUpdates: async () => ({ success: true, updates: ctx.fakeUpdates ?? [] }),
       createNegotiationTopic: async (chatId) => {
         createTopicCalls.push(chatId);
         ctx.nextTopicId = (ctx.nextTopicId || 900) + 1;
