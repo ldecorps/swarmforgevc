@@ -1,0 +1,54 @@
+id: BL-405
+title: "Run onboarding negotiation against ldecorps/free-email-scanner"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+priority: 3
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-operator-question-1784089879396.md and backlog/INTAKE-operator-question-1784090164417.md — Operator-relayed Telegram questions, 2026-07-15T04:31Z and 2026-07-15T04:36Z. Human: 'Create an epic for onboarding free-email-scanner' then 'human wants to START the onboarding now. Repo: https://github.com/ldecorps/free-email-scanner'. Drained with the human 2026-07-15: scope is running the existing onboarding-negotiation machinery against this target only — a separate morning-briefing email and a distinct dedicated swarm instance for this repo were raised in the same message but are OUT of scope for this ticket (no ticket written for them yet; raise separately if still wanted)."
+
+notes: |
+  The onboarding-negotiation machinery already exists and is shipped:
+  BL-269 (onboarding generates target prompts), BL-344 (iterative negotiation
+  loop), BL-360 (target use-case inventory), BL-382 (verbosity negotiated
+  into the contract) — see extension/src/tools/negotiate-onboarding-contract.ts,
+  propose-onboarding-contract.ts, propose-onboarding-prompts.ts, and
+  extension/src/onboarding/*.
+
+  This ticket is the FIRST REAL RUN of that machinery against a concrete
+  target: github.com/ldecorps/free-email-scanner (the swarm's own prior
+  onboarding test target per the operator's memory of the project). Survey
+  the target repo, propose a negotiable scope contract (per BL-262's
+  "swarm proposes" contract, and BL-360's use-case-inventory posture — this
+  answers "where are the edges", not "what does this app do"), and drive it
+  through the negotiation loop (BL-344) to a human-approved contract.
+
+  OUT OF SCOPE for this ticket (explicitly deferred, not silently dropped):
+  - A separate morning-briefing email distinguishing this project from
+    swarmforge's own daily briefing.
+  - A second, dedicated swarm instance for this repo, which per the memory
+    of prior multi-swarm work needs its OWN Telegram bot token + forum group
+    (inbound is not chat-scoped; a shared group would steal messages from
+    the swarmforge swarm). Raise a follow-up ticket for either if the human
+    still wants them once this negotiation is approved.
+
+  E2E QA PROCEDURE: run the onboarding CLI/tooling pointed at
+  https://github.com/ldecorps/free-email-scanner, confirm a proposed
+  contract is produced and reaches the negotiation loop, and confirm the
+  human can approve/amend it through the existing negotiation channel
+  (Telegram relay per negotiationTelegramRelay.ts) rather than needing a new
+  UI.
+
+acceptance:
+  feature: specs/features/BL-405-onboard-free-email-scanner.feature
+  steps:
+    - "Surveying the target repo produces a proposed scope contract"
+    - "The proposed contract is delivered through the existing negotiation loop"
+    - "The human can approve or amend the contract via the existing channel"
+    - "A negotiated contract is not treated as approved until the human confirms"
+
+human_approval: pending-review
+
+mutation_cost: low
