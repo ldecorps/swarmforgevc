@@ -19,6 +19,43 @@ export function isApprovalReplyText(text: string): boolean {
   return APPROVAL_KEYWORD_PATTERN.test(text);
 }
 
+// BL-409: the remaining two verbs from the original "approve/amend/reject an
+// action" ask. Anchored verb PREFIXES (never a bare substring like
+// isApprovalReplyText's own "approve" match), so a reason/note that happens
+// to mention "approve" internally ("reject needs a second approve from ops")
+// still classifies by its own leading verb, not the word buried inside it.
+const REJECT_PATTERN = /^reject\s+([\s\S]+)$/i;
+const AMEND_PATTERN = /^amend\s+([\s\S]+)$/i;
+
+export type ApprovalReplyAction =
+  | { kind: 'approve' }
+  | { kind: 'reject'; reason: string }
+  | { kind: 'amend'; note: string }
+  | { kind: 'none' };
+
+// Pure: the whole three-verb dispatch table. Checked in this order -
+// reject/amend (anchored, specific) before approve (unanchored, the older
+// and more permissive match) - so a reject/amend reply is never misread as
+// an approval just because its own payload text contains the word
+// "approve". A caller that only cared about the old boolean keeps using
+// isApprovalReplyText directly; this is the new three-way sibling the
+// ticket asks for, not a replacement of the old return shape.
+export function classifyApprovalReplyAction(text: string): ApprovalReplyAction {
+  const trimmed = text.trim();
+  const rejectMatch = trimmed.match(REJECT_PATTERN);
+  if (rejectMatch) {
+    return { kind: 'reject', reason: rejectMatch[1].trim() };
+  }
+  const amendMatch = trimmed.match(AMEND_PATTERN);
+  if (amendMatch) {
+    return { kind: 'amend', note: amendMatch[1].trim() };
+  }
+  if (isApprovalReplyText(trimmed)) {
+    return { kind: 'approve' };
+  }
+  return { kind: 'none' };
+}
+
 const HUMAN_APPROVAL_PENDING_PATTERN = /^human_approval:\s*(pending|pending-review)\s*$/m;
 
 // Pure text transform - only ever flips a LITERAL `human_approval: pending` or
@@ -31,6 +68,17 @@ export function approveHumanApprovalText(rawText: string): { text: string; chang
     return { text: rawText, changed: false };
   }
   return { text: rawText.replace(HUMAN_APPROVAL_PENDING_PATTERN, 'human_approval: approved'), changed: true };
+}
+
+// BL-409: same targeted-line-replace shape as approveHumanApprovalText, but
+// records WHY as a trailing comment on the same line - the reason rides the
+// ticket file itself (no second store), matching this project's convention
+// of humanApproval as a plain `key: value  # comment` YAML line.
+export function rejectHumanApprovalText(rawText: string, reason: string): { text: string; changed: boolean } {
+  if (!HUMAN_APPROVAL_PENDING_PATTERN.test(rawText)) {
+    return { text: rawText, changed: false };
+  }
+  return { text: rawText.replace(HUMAN_APPROVAL_PENDING_PATTERN, `human_approval: rejected  # ${reason}`), changed: true };
 }
 
 // Located by the ticket's own `id:` field, never a filename guess - the
@@ -62,6 +110,23 @@ export function recordApprovalReply(targetPath: string, backlogId: string): bool
   }
   const rawText = fs.readFileSync(filePath, 'utf8');
   const { text, changed } = approveHumanApprovalText(rawText);
+  if (changed) {
+    fs.writeFileSync(filePath, text);
+  }
+  return changed;
+}
+
+// BL-409: same shape as recordApprovalReply, for the reject verb. A ticket
+// not currently pending (already approved, already rejected, or no matching
+// file) is left untouched, reported as no-op - rejecting is a resolution
+// exactly once, same idempotency posture as approve.
+export function recordRejectionReply(targetPath: string, backlogId: string, reason: string): boolean {
+  const filePath = findTicketFilePath(targetPath, backlogId);
+  if (!filePath) {
+    return false;
+  }
+  const rawText = fs.readFileSync(filePath, 'utf8');
+  const { text, changed } = rejectHumanApprovalText(rawText, reason);
   if (changed) {
     fs.writeFileSync(filePath, text);
   }

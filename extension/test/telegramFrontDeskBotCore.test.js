@@ -507,6 +507,106 @@ test('BL-357: an ordinary reply with no approval keyword posts operator context 
   assert.deepEqual(approvals, []);
 });
 
+// ── BL-409: reject/amend extend the approval reply chain ─────────────────
+
+test('BL-409: a "reject <reason>" reply records the rejection reason, alongside the existing operator-context post', async () => {
+  const contexts = [];
+  const rejections = [];
+  const approvals = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'reject bad scope' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a backlog-item topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for a backlog-item topic reply');
+    },
+    subjectForTopic: () => undefined,
+    backlogForTopic: (topicId) => (topicId === 42 ? 'BL-123' : undefined),
+    postOperatorContext: async (backlogId, text) => {
+      contexts.push({ backlogId, text });
+      return true;
+    },
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return true;
+    },
+    recordRejectionReply: async (backlogId, reason) => {
+      rejections.push({ backlogId, reason });
+      return true;
+    },
+  });
+  assert.deepEqual(contexts, [{ backlogId: 'BL-123', text: 'reject bad scope' }]);
+  assert.deepEqual(rejections, [{ backlogId: 'BL-123', reason: 'bad scope' }]);
+  assert.deepEqual(approvals, []);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-409: an "amend <note>" reply posts only the note as operator context and changes no approval state', async () => {
+  const contexts = [];
+  const rejections = [];
+  const approvals = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({
+      success: true,
+      updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'amend tighten the acceptance criteria' })],
+    }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a backlog-item topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for a backlog-item topic reply');
+    },
+    subjectForTopic: () => undefined,
+    backlogForTopic: (topicId) => (topicId === 42 ? 'BL-123' : undefined),
+    postOperatorContext: async (backlogId, text) => {
+      contexts.push({ backlogId, text });
+      return true;
+    },
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return true;
+    },
+    recordRejectionReply: async (backlogId, reason) => {
+      rejections.push({ backlogId, reason });
+      return true;
+    },
+  });
+  assert.deepEqual(contexts, [{ backlogId: 'BL-123', text: 'tighten the acceptance criteria' }]);
+  assert.deepEqual(approvals, []);
+  assert.deepEqual(rejections, []);
+});
+
+test('BL-409: an approve reply still never calls recordRejectionReply (priority-order regression guard)', async () => {
+  const rejections = [];
+  const approvals = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'approve' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a backlog-item topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for a backlog-item topic reply');
+    },
+    subjectForTopic: () => undefined,
+    backlogForTopic: (topicId) => (topicId === 42 ? 'BL-123' : undefined),
+    postOperatorContext: async () => true,
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return true;
+    },
+    recordRejectionReply: async (backlogId, reason) => {
+      rejections.push({ backlogId, reason });
+      return true;
+    },
+  });
+  assert.deepEqual(approvals, ['BL-123']);
+  assert.deepEqual(rejections, []);
+});
+
 test('BL-357: an approval reply on a SUP-### subject topic (not a backlog item) never calls recordApprovalReply', async () => {
   const approvals = [];
   await pollAndForward(0, PRINCIPAL_ID, {
