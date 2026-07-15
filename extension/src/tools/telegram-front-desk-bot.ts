@@ -80,7 +80,7 @@ import {
   OPERATOR_SUBJECT_ID,
 } from './telegramFrontDeskBotCore';
 import { backlogForTopic } from '../concierge/topicRouter';
-import { recordApprovalReply } from '../concierge/pendingApprovalReply';
+import { recordApprovalReply, recordRejectionReply } from '../concierge/pendingApprovalReply';
 import { readBacklogTopicMap, writeBacklogTopicMap, dropBacklogTopicMapping } from '../concierge/backlogTopicMapStore';
 import { runConciergeTick, ConciergeTickAdapters, BacklogFoldersSnapshot, TickState } from '../concierge/conciergeTick';
 import { reconcileTopicLifecycle, ReconcileAdapters } from '../concierge/topicReconciliation';
@@ -319,6 +319,7 @@ function buildPollAdapters(botToken: string, targetPath: string, bridgeUrl: stri
     backlogForTopic: (topicId) => backlogForTopic(readBacklogTopicMap(targetPath), topicId),
     postOperatorContext: (backlogId, text, updateId) => postOperatorContext(targetPath, backlogId, text, updateId),
     recordApprovalReply: (backlogId) => Promise.resolve(recordApprovalReply(targetPath, backlogId)),
+    recordRejectionReply: (backlogId, reason) => Promise.resolve(recordRejectionReply(targetPath, backlogId, reason)),
   };
 }
 
