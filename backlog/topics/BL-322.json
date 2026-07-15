@@ -1,0 +1,1 @@
+{"id":"BL-322","messages":[{"seq":0,"ts":1783927594716,"author":"swarm","type":"outbound","text":"BL-322 - A new BL topic opens with a short what-it-is / what-it-solves / how-it-works summary, not a bare TaskStarted line is complete."}]}

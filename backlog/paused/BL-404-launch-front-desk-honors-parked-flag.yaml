@@ -36,6 +36,6 @@ acceptance:
     - "Launch proceeds normally once the park flag is removed"
     - "An explicit unpark script removes the flag"
 
-human_approval: pending-review
+human_approval: approved  # human via Operator relay to coordinator, 2026-07-15: "Human OK'd, promote: BL-403 404 406 409 395 405 407 410"
 
 mutation_cost: low
