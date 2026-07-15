@@ -70,6 +70,37 @@ check "a missing TELEGRAM_BOT_TOKEN fails the real launch with a clear message" 
   '[[ "$rc" -ne 0 && "$OUT" == *"TELEGRAM_BOT_TOKEN"* ]]'
 rm -rf "$F"
 
+# ── 5. BL-404: front-desk-PARKED.md refuses the launch, even with zero env ──
+#      set and no compiled entrypoints - the park check must win before any
+#      of the earlier guards get a chance to fail for a different reason.
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/operator"
+printf 'DO NOT RESTART\n' > "$F/.swarmforge/operator/front-desk-PARKED.md"
+touch "$F/.swarmforge/operator/front-desk-supervisor.stop"
+OUT="$(bash "$LAUNCHER" "$F" 2>&1)" && rc=0 || rc=$?
+check "PARKED launch exits 0"                                '[[ "$rc" -eq 0 ]]'
+check "PARKED launch logs a clear PARKED message"            '[[ "$OUT" == *"PARKED"* ]]'
+check "PARKED launch does not spawn a supervisor (no pid file)" \
+  '[[ ! -f "$F/.swarmforge/operator/front-desk-supervisor.pid" ]]'
+rm -rf "$F"
+
+# ── 6. the park flag and .stop file are left untouched by a refused launch ──
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/operator"
+printf 'DO NOT RESTART\n' > "$F/.swarmforge/operator/front-desk-PARKED.md"
+touch "$F/.swarmforge/operator/front-desk-supervisor.stop"
+bash "$LAUNCHER" "$F" > /dev/null 2>&1 || true
+check "PARKED launch leaves the park flag in place"          '[[ -f "$F/.swarmforge/operator/front-desk-PARKED.md" ]]'
+check "PARKED launch does not remove front-desk-supervisor.stop" \
+  '[[ -f "$F/.swarmforge/operator/front-desk-supervisor.stop" ]]'
+rm -rf "$F"
+
+# ── 7. once the park flag is gone, launch proceeds normally again ──────────
+F="$(make_fixture)"
+DRY="$(FRONT_DESK_LAUNCH_DRYRUN=1 bash "$LAUNCHER" "$F" 2>&1)"
+check "no park flag: dry-run launches normally"              '[[ "$DRY" == *"DRYRUN bridge cmd:"* ]]'
+rm -rf "$F"
+
 if [[ "$fail" -eq 0 ]]; then
   echo "launch_front_desk smoke: ALL CHECKS PASSED"
 else

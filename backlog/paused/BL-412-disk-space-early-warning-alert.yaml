@@ -1,0 +1,98 @@
+id: BL-412
+title: "Proactive Telegram alert before the swarm's disk fills (ENOSPC early warning)"
+milestone: M8
+type: feature
+status: todo
+severity: high
+priority: 2
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-disk-space-low-alert.md — human-requested via Claude Code session, 2026-07-15, priority high. Overnight 2026-07-14/15 ENOSPC took the whole swarm down."
+
+notes: |
+  WHY: A full disk is the failure the swarm cannot self-heal from — agents
+  crash mid-write, handoff parcels / topic records / concierge state get
+  truncated, git fails, and the logs that would explain it can't be written.
+  The ask is a cheap periodic early warning, BEFORE the cliff.
+
+  WHAT TO MONITOR (both — the mechanism is a VHDX-on-C:):
+  df inside WSL can report hundreds of GB free while the Windows C: volume
+  backing the dynamically-growing VHDX is nearly full, and a write then fails
+  ENOSPC anyway. So watch TWO filesystems:
+    1. the swarm root's own filesystem inside WSL (/, i.e. /home/carillon/swarmforgevc's mount)
+    2. /mnt/c (the Windows host volume backing the VHDX) — likely the one that actually matters
+  Evaluate each filesystem INDEPENDENTLY (one may alert while the other is healthy).
+
+  THRESHOLDS (match the human-approved stopgap already running):
+    - /mnt/c (absolute, since the VHDX grows in large increments):
+        WARN  < 40 GB free, CRITICAL < 15 GB free
+    - WSL root (percent): WARN >= 90% used, CRITICAL >= 95% used
+  Make each threshold value LOAD-BEARING in the step handler (KNOWN_VALUES
+  lookup per the engineering acceptance rule), never a bare passthrough.
+  Prefer reading the thresholds from config/env with these as defaults so a
+  human can retune without a code change.
+
+  CHANGE-GATED (BL-394 lesson): announce only on a LEVEL TRANSITION for a
+  filesystem (healthy->warn, warn->critical, and recovery back down). Persist
+  the last-announced level per filesystem and NEVER re-announce an unchanged
+  level every tick. Reuse BL-394's change-gate posture (record last-emitted
+  state, emit only on change); a long re-arm window is optional, not required.
+
+  DELIVERY: the existing human channel — the operator notify path
+  (swarmforge/scripts/operator_notify.bb, which appends to the operator
+  telegram-reply-outbox). Message includes: the mount, free bytes and free
+  percent, the crossed level, and — if cheap — the top few space consumers as
+  hints (du of .swarmforge/ logs, .worktrees/, /tmp, node_modules). Do not make
+  the du block-or-fail the alert; it is a best-effort hint.
+
+  HOST LOOP: reuse an existing always-alive loop, do NOT add a new daemon.
+  operator_runtime.bb's tick! (interval-ms default 30s, while-not-stop-file
+  loop) is the intended host; a df check per tick is cheap. Confirm at build
+  time that operator_runtime is the live always-alive tick before wiring there.
+
+  TESTABILITY: put the decision in a PURE function — given the per-filesystem
+  df readings, thresholds, and prior last-announced state, return
+  {transitions, messages, next-state} — unit-tested with fixture readings and
+  NO real df/clock. The tick is a thin wiring slice: read df through an
+  injectable seam (so the test never shells real df and never reads the real
+  /mnt/c), call the pure function, deliver via operator_notify, persist state.
+  This is a runtime-wiring slice: prove the wiring reads df and delivers, and
+  that the pure decision is load-bearing (break-then-fix the threshold).
+
+  ON SHIP — REMOVE THE STOPGAP (final acceptance step): a human-approved interim
+  alert runs via cron every 10 min at .swarmforge/operator/disk_alert.sh. When
+  this ships, delete that script AND its crontab line:
+    crontab -l | grep -v disk_alert | crontab -
+  (These are .swarmforge/ local runtime + host crontab, not git operations; the
+  QA/operator does the removal as the go-live step — note it in the QA e2e.)
+
+  OUT OF SCOPE (separate slices/tickets): CRITICAL additionally PAUSING new work
+  intake (optional future slice, not this ticket); the /tmp sandbox-leak cleanup
+  (its own companion ticket BL-413). This ticket is the ALERT only.
+
+acceptance:
+  feature: specs/features/BL-412-disk-space-early-warning-alert.feature
+  steps:
+    - "Free space crossing WARN/CRITICAL downward delivers exactly one alert for that level, naming the mount + free amount + percent"
+    - "An unchanged level is not re-announced on the next check (change-gated on last-announced level per filesystem)"
+    - "Recovering above the warn threshold delivers one recovery alert and resets the last-announced level to healthy"
+    - "WSL root and /mnt/c are evaluated independently — one may alert while the other stays silent"
+
+qa_e2e: |
+  1. Unit: drive the pure decision over fixture df readings for both mounts
+     across healthy/warn/critical and prior-state combinations; assert exactly
+     the transition messages, and that an unchanged level yields no message.
+     Break-then-fix a threshold constant to prove it is load-bearing.
+  2. Wiring: with an injected df seam returning a scripted low-space reading
+     for /mnt/c, run one operator_runtime tick against a fixture state root and
+     confirm a CRITICAL message lands in the operator telegram-reply-outbox and
+     the persisted last-announced state advances; a second tick at the same
+     reading produces NO new message.
+  3. Live go-live: point at the real host, observe one real tick reads df for
+     both mounts without error; then REMOVE the stopgap script and its crontab
+     line and confirm the real alert still fires when thresholds are crossed
+     (temporarily tighten a threshold via env to force a transition safely).
+
+human_approval: pending
+
+mutation_cost: low
