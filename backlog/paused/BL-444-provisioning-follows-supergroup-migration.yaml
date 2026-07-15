@@ -1,0 +1,75 @@
+id: BL-444
+title: "BL-380 channel provisioning latches the dead pre-migration group id and never follows the group-to-supergroup migration"
+milestone: M8
+type: bug
+status: todo
+severity: high
+epic: ""
+priority: 10
+direction: human-reported
+depends_on: [BL-380]
+source: "INTAKE-provisioning-does-not-follow-supergroup-migration.md — first real run of provision-onboarding-telegram-channel against free-email-scanner, 2026-07-15 ~18:17-18:25 BST with @fes_swarm_bot. Provisioning ultimately succeeded (chatId -1003886489685, negotiationTopicId 2) only after manual getUpdates?offset= surgery. Child finding of the FES guinea-pig track."
+
+description: |
+  Telegram channel provisioning must follow a group-to-supergroup migration instead of latching the
+  first (dead, pre-migration) chat id — otherwise every onboarding re-run re-fails identically and never
+  converges.
+
+  ROOT CAUSE (confirmed in code 2026-07-15).
+    `extension/src/onboarding/telegramChannelProvisioning.ts` `decideChannelDetection` selects the FIRST
+    chat any update carries (`updates.find((u) => u.message?.chat?.id !== undefined)`; its own comment
+    calls this "the load-bearing decision"). When the human follows the CLI's own emitted instructions —
+    "create a group ... THEN enable Topics" — Telegram silently upgrades the basic group to a supergroup
+    with a NEW id and emits `migrate_to_chat_id` updates. The getUpdates queue still begins with the
+    pre-migration group's updates, so detection latches the DEAD id and provisioning fails: first
+    "400: the chat is not a forum" (pre-Topics), then "400: group chat was upgraded to a supergroup chat"
+    (post-migration) — forever. The confirm-offset never advances (offset 0 every run), so the stale
+    pre-migration updates poison every re-run.
+
+  WHY EVERY FUTURE ONBOARDING HITS THIS. The CLI instructs the human to cause exactly this migration;
+  only a group created as a forum from the start (rare) avoids it. This is the documented happy path,
+  not an edge case.
+
+  DESIRED BEHAVIOUR (any/all of these; the mechanism is the coder's call).
+    - Honor `migrate_to_chat_id` / `migrate_from_chat_id` when present: follow the migration to the new
+      id instead of latching the old one. Prefer the migrated-to id (or the newest `my_chat_member`
+      join) over the first chat seen.
+    - Treat a "group chat was upgraded to a supergroup chat" 400 — Telegram includes the new id in the
+      error's `parameters.migrate_to_chat_id` — as a REDIRECT to the new id, not a terminal failure.
+    - On success, advance the confirm-offset past consumed updates so stale pre-provisioning noise can't
+      confuse a later re-run (today it never advances).
+
+  Also worth a scenario (not blocking): the race where Topics is toggled between detection and
+  createForumTopic (observed live: `is_forum` flipped true seconds after a "not a forum" 400) — the
+  idempotent re-run already covers it once the migration latch above is fixed.
+
+  Constraints:
+    - Keep the "detection never needs, and never accepts, a human-supplied chat id" property (BL-380).
+    - Do not regress the existing bad-token-vs-no-updates detection blind spot BL-380 already fixed.
+
+  Scope (verify at build time): `extension/src/onboarding/telegramChannelProvisioning.ts` —
+  `decideChannelDetection` (migration-aware selection) and the getUpdates offset handling
+  (`detectReadyChatId` / the adapters' getUpdates). The `createForumTopic` error-handling path also
+  needs the redirect treatment.
+
+  E2E QA PROCEDURE: replay the live update queue (ids 143744666-669 -> -5274683022 dead;
+  143744670-671 -> -1003886489685 live supergroup; 143744672 -> dead id migrate notice) through the
+  detection adapters and assert the live supergroup id is chosen; simulate the "upgraded to a supergroup"
+  400 with parameters.migrate_to_chat_id and assert the redirect; assert the offset advances so a re-run
+  over the same queue does not re-see the stale updates.
+
+acceptance:
+  feature: specs/features/BL-444-provisioning-follows-supergroup-migration.feature
+  steps:
+    - "Detection selects the migrated supergroup id, not the pre-migration group id"
+    - "An 'upgraded to a supergroup' error carrying the new id is followed as a redirect, not a failure"
+    - "The confirm offset advances past consumed updates after a successful provisioning"
+    - "A re-run after the migration is idempotent and does not re-fail on the dead id"
+
+human_approval: >
+  PENDING. Reported by the external supervisor from the live FES run; root cause confirmed in code. Which
+  of the three migration-handling mechanisms to implement (prefer-migrated-id vs. newest-join vs.
+  error-redirect — likely all three) is the coder's call within the acceptance contract, but has not
+  been human-reviewed. Flag the feature file for review before promotion.
+
+mutation_cost: low

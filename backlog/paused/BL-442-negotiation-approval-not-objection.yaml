@@ -1,0 +1,67 @@
+id: BL-442
+title: "Negotiation relay misreads a natural-language approval as an objection and blind-appends it into the contract as a boundary clause"
+milestone: M8
+type: bug
+status: todo
+severity: high
+epic: ""
+priority: 8
+direction: human-reported
+depends_on: []
+source: "INTAKE-onboarding-ceremony-real-run-findings.md (defect 1 of 4, the worst) — first real end-to-end FES onboarding run 2026-07-15. Human replied 'All agreed'; the relay classified it as an objection, revised, and objectToContract appended '- Per operator objection: All agreed' as a contract boundary (FES commit 4b6f32b). Junk clause stripped by hand (329d101)."
+
+description: |
+  The onboarding negotiation relay must treat a natural-language approval as approval, and a revision
+  must never write raw objection text into the contract.
+
+  ROOT CAUSE (confirmed in code 2026-07-15).
+    - `extension/src/onboarding/negotiationTelegramRouting.ts` classifies a reply with an anchored
+      single-word pattern `AGREEMENT_PATTERN = /^\s*(agree|agreed|approve|approved|lgtm|yes)[.!]?\s*$/i`.
+      A two-word approval like "All agreed" fails the `^...$` anchor, so `classifyNegotiationReply`
+      falls through to `{action:'objection', text}` and runs a revision round the human never asked for.
+    - `objectToContract` (in `extension/src/onboarding/contractNegotiation.ts`) then BLIND-APPENDS the
+      objection text as a new boundary line, so the contract the human just approved carries a fabricated
+      clause built from the approval itself.
+
+  DESIRED BEHAVIOUR (two independent fixes, both in scope).
+    (a) Approval-intent detection must recognize common natural-language approvals ("agreed", "all
+        agreed", "ok", "approve", "lgtm") and end the negotiation without a revision round. When a
+        reply's intent cannot be confidently classified, ASK in the topic ("did you mean to approve, or
+        is this an objection?") rather than defaulting to the mutate-the-contract path. Keep the existing
+        guard that an objection merely CONTAINING an approval word (e.g. "I don't agree that ...") is
+        still an objection — broaden the approval match without swallowing genuine objections.
+    (b) The revision step must never verbatim-append objection text as a contract boundary/clause. A
+        revision that cannot derive a concrete contract change from the objection posts back "couldn't
+        derive a change from this — rephrase?" in the topic and leaves the contract unchanged. No code
+        path may write the raw reply text as a contract line.
+
+  Constraints:
+    - Do not weaken the anti-false-approval guard: an objection that contains the substring "agree" must
+      still be an objection (the existing comment in negotiationTelegramRouting.ts documents this).
+    - This ticket is a correctness fix to classification + revision; it does not change the bounded-round
+      negotiation loop (BL-344) or the approval-recording path (that leg worked unaided, FES f62d85b).
+
+  Scope (verify at build time): `extension/src/onboarding/negotiationTelegramRouting.ts`
+  (`AGREEMENT_PATTERN` / `isAgreementText` / `classifyNegotiationReply`) and
+  `extension/src/onboarding/contractNegotiation.ts` (`objectToContract` must not append raw objection
+  text). Also see the sibling engineering rule BL-409 (external text into a structured file must be
+  sanitized) — a revision that DOES derive a real change must still not inject unescaped reply text.
+
+  E2E QA PROCEDURE: drive the negotiation routing over a fixture contract; send "All agreed" and assert
+  the run ends approved with the contract byte-identical (no appended boundary). Send an
+  uninterpretable objection and assert a "rephrase?" reply is posted and the contract is unchanged.
+
+acceptance:
+  feature: specs/features/BL-442-negotiation-approval-not-objection.feature
+  steps:
+    - "A common natural-language approval ('All agreed', 'ok', 'lgtm', ...) is classified as approval and runs no revision round"
+    - "An ambiguous reply is asked about in the topic rather than mutating the contract"
+    - "A revision that cannot derive a change posts back to rephrase and appends nothing"
+    - "No revision ever writes the raw objection text as a contract boundary line"
+
+human_approval: >
+  PENDING. Reported by the external supervisor from the live FES run; root cause confirmed in code. The
+  exact set of accepted natural-language approvals and the ambiguity threshold (when to ASK vs. treat as
+  objection) have not been human-reviewed. Flag the feature file for review before promotion.
+
+mutation_cost: low

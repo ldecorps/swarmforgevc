@@ -1,0 +1,79 @@
+id: BL-443
+title: "propose-onboarding-contract commit step fails on ignored .swarmforge/, missing git identity, and never commits after a partial failure"
+milestone: M8
+type: bug
+status: todo
+severity: high
+epic: ""
+priority: 12
+direction: human-reported
+depends_on: []
+source: "INTAKE-onboarding-ceremony-real-run-findings.md (defects 2, 3, 4 of 4) — first real end-to-end FES onboarding run 2026-07-15. Each defect was worked around by hand (rewrote .git/info/exclude to whitelist contract.yaml; set repo-local git identity; manual git add + git commit --only). FES commits d798a791 (propose, manual commit)."
+
+description: |
+  The propose-onboarding-contract commit step must reliably land the contract in an arbitrary target
+  repo — the first onboarding of a foreign checkout must not require manual git surgery. Three related
+  defects, all in the shared commit seam `extension/src/config/targetBootstrap.ts` (`writeFilesAndCommit`
+  at ~line 135, `writeAndCommitBootstrapPlan`), reached from
+  `extension/src/tools/propose-onboarding-contract.ts` via `initializeTargetContract` /
+  `initializeTargetUseCaseInventory`.
+
+  DEFECT 2 — cannot commit through an ignored `.swarmforge/`.
+    `git add .swarmforge/contract.yaml CONTRACT.md` (targetBootstrap.ts ~line 147) hard-fails ("paths
+    ignored by one of your .gitignore files") when the target's `.git/info/exclude` or `.gitignore`
+    ignores `.swarmforge/`. FES carried a June swarm-era `.swarmforge/` exclude. The contract is DESIGNED
+    to be git-tracked in the target (hybrid artifact, BL-262) and the onboarding gate reads it from the
+    checkout, so an ignored contract silently re-holds every fresh clone — the exact hazard already on
+    record for swarmforgevc itself (memory: contract-gate-holds-self-target).
+    FIX: force-add the exact contract paths (`git add -f -- .swarmforge/contract.yaml CONTRACT.md`) so an
+    ignore rule cannot silently drop the tracked contract. (Scope the `-f` to exactly the contract files
+    this call wrote — never a broad `add -f`.)
+
+  DEFECT 3 — assumes a git identity exists in the target.
+    `git commit` (targetBootstrap.ts ~line 162) dies "Author identity unknown / empty ident name" when
+    the target checkout has no `user.name`/`user.email` — common on a brand-new or foreign target (the
+    WSL side had none). FIX: commit with an explicit fallback identity via
+    `git -c user.name=... -c user.email=... commit` when none is configured, and log that a fallback was
+    used. (Recommended default identity: the swarm's own committer, e.g. "SwarmForge
+    <noreply@swarmforge>"; the human may prefer a different fallback — see human_approval.)
+
+  DEFECT 4 — existence-only idempotency never commits after a partial failure.
+    After defects 2/3 aborted the commit, the artifacts existed on disk but were uncommitted; the re-run
+    reported `created:[], skipped:[all], committed:false` because the idempotency check (`alreadyPresent`
+    at ~lines 75-85 / `writeAndCommitBootstrapPlan` at ~lines 167-176) treats written-but-never-committed
+    as done. So NO number of re-runs ever produces the commit. FIX: the idempotency check must be
+    existence-AND-committed — a file that exists but is not committed (query `git ls-files` / status for
+    exactly these paths) is NOT "done"; the commit step runs for skipped-but-uncommitted artifacts.
+    Preserve BL-382's staged-diff guard (`git diff --cached --quiet` on exactly the written files) so a
+    genuinely-already-committed re-run stays a clean no-op and never creates an empty commit.
+
+  Constraints:
+    - Reuse the single shared seam; do not fork a second write/commit path for the contract vs. the
+      use-case inventory (they already share `writeFilesAndCommit`).
+    - Keep BL-382's "decide there is something to commit BEFORE invoking git commit" posture — do not
+      pattern-match git's failure text.
+
+  Scope (verify at build time): `extension/src/config/targetBootstrap.ts` only (the three fixes above);
+  `extension/src/tools/propose-onboarding-contract.ts` is the caller and should need no change beyond
+  surfacing the committed/skipped result honestly.
+
+  E2E QA PROCEDURE: over a throwaway target repo fixture — (a) ignore `.swarmforge/`, run propose, assert
+  the contract is committed; (b) strip the target's git identity, run propose, assert the commit lands
+  with a fallback author; (c) simulate artifacts-written-but-uncommitted, re-run, assert committed:true;
+  (d) run once more clean and assert a no-op with no empty commit.
+
+acceptance:
+  feature: specs/features/BL-443-propose-contract-commit-robustness.feature
+  steps:
+    - "The contract commits even when the target ignores .swarmforge/ (force-add the exact contract paths)"
+    - "The commit succeeds with an explicit fallback identity when the target has no git identity"
+    - "A re-run after a partial failure that left artifacts uncommitted actually produces the commit"
+    - "A re-run when artifacts are already present and committed is a clean no-op with no empty commit"
+
+human_approval: >
+  PENDING. Reported by the external supervisor from the live FES run; all three root causes confirmed in
+  code. Open for review: the exact fallback git identity to commit under when the target has none
+  (defect 3) — the spec recommends a swarm committer identity and logging it, but the human may prefer a
+  fail-with-instructions posture instead. Flag the feature file for review before promotion.
+
+mutation_cost: low

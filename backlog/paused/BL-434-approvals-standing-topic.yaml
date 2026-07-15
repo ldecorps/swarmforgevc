@@ -1,0 +1,81 @@
+id: BL-434
+title: "One standing 'Approvals' Telegram topic aggregates every pending approval and is where the human approves/rejects"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+epic: ""
+priority: 30
+direction: human-requested
+depends_on: []
+source: "INTAKE-operator-question-1784138658520.md — feature request from the human via Telegram (OPERATOR thread, 2026-07-15): a single dedicated 'Approvals' standing topic aggregating every ticket awaiting approval into one place. Shape confirmed by the human via AskUserQuestion 2026-07-15: 'Act in the Approvals topic' — the ask is posted into the one topic and the human approves/rejects there, rather than approvals staying scattered across each ticket's BL topic."
+
+description: |
+  Give the human ONE place to see and act on the whole pending-approval queue. Today each ticket's
+  approval ask lives in that ticket's own BL topic, so the human must hunt across topics to find what is
+  waiting. Introduce a single standing "Approvals" topic that aggregates every ticket currently awaiting
+  the human's approval, and route approve/reject actions THROUGH that topic.
+
+  CHOSEN SHAPE (human, AskUserQuestion 2026-07-15): "Act in the Approvals topic." Each pending ticket's
+  approval ask is posted into the one Approvals topic, and the human approves/rejects by replying there.
+  Per-ticket BL topics no longer carry the approval ask.
+
+  GROUNDING (confirmed in code 2026-07-15).
+    - `extension/src/concierge/conciergeTick.ts` already computes the full pending set
+      (`pendingApprovalFor`: active+paused items with `humanApproval == 'pending'`) and already fires
+      `diffApprovalRequested` only on not-pending -> pending transitions. It already manages STANDING
+      topics (the Operator topic, `standingTopicIds`) alongside per-ticket BL topics.
+    - `extension/src/tools/telegramFrontDeskBotCore.ts` today routes an approval reply by
+      `backlogForTopic(topicId)` — the ticket is INFERRED from which topic the reply landed in — then
+      calls `recordApprovalReply(backlogId)` / `recordRejectionReply(backlogId, reason)`
+      (`classifyApprovalReplyAction` in `pendingApprovalReply.ts` is the three-way verb classifier).
+
+  THE ONE GENUINELY NEW MECHANISM. Because one topic now carries MANY tickets, a reply must NAME the
+  ticket it acts on ("approve BL-433" / "reject BL-433 <reason>"); `backlogForTopic(topicId)` no longer
+  identifies a single ticket in the shared Approvals topic. Parse the ticket id from the reply and route
+  it to that exact ticket. A reply naming an id that is not currently pending approval must be SURFACED
+  back to the human ("BL-999 isn't awaiting approval"), never silently applied — memory:
+  front-desk-operator-fabricates-backlog-state. Reuse the existing verb classifier and
+  record/reject adapters; do not invent a second approval-recording path.
+
+  Lifecycle: when a ticket is approved/rejected its `humanApproval` moves off `pending`, so the existing
+  diff machinery already removes it from the pending set on the next tick — the Approvals roster reflects
+  exactly `pendingApprovalFor`. The Approvals topic is created once as a standing topic, the same way the
+  Operator topic is (idempotent create; never re-created per tick — conciergeTick.ts BL-418 standing-topic
+  handling).
+
+  Constraints:
+    - Do not change the underlying humanApproval YAML field or how approval is RECORDED
+      (recordApprovalReply / recordRejectionReply / BL-409 reject-reason sanitization are unchanged) —
+      this ticket changes WHERE the ask is posted and HOW a reply is routed to a ticket.
+    - Keep the per-ticket topic-icon awaiting-approval state working (BL-424) even though the ask itself
+      now lives in the Approvals topic — the icon is a separate signal from the ask.
+
+  Scope (verify at build time): `extension/src/concierge/conciergeTick.ts` (post the pending-approval ask
+  to the standing Approvals topic, not the per-ticket BL topic) and
+  `extension/src/tools/telegramFrontDeskBotCore.ts` (recognize an Approvals-topic reply, parse the ticket
+  id, route to record/reject for that id, and surface an id-with-no-pending-ask reply). The standing
+  Approvals topic creation sits alongside the Operator topic creation.
+
+  E2E QA PROCEDURE: with the concierge running, move a ticket to humanApproval: pending and assert its ask
+  appears in the Approvals topic (and not in its BL topic); reply "approve <id>" in the Approvals topic and
+  assert the ticket's humanApproval becomes approved and it leaves the roster; reply "reject <id> <reason>"
+  for another and assert rejection with the reason; reply "approve <id>" for a non-pending id and assert it
+  is surfaced, not applied.
+
+acceptance:
+  feature: specs/features/BL-434-approvals-standing-topic.feature
+  steps:
+    - "A newly pending ticket's approval ask is posted into the standing Approvals topic (not its BL topic) and names the ticket id"
+    - "A reply naming a pending ticket records approve/reject for that exact ticket"
+    - "A reply naming a ticket that is not currently pending is surfaced, not applied"
+    - "Once acted on, a ticket no longer appears in the Approvals topic's pending set"
+
+human_approval: >
+  PENDING. The aggregation SHAPE ("act in the Approvals topic") was chosen by the human via
+  AskUserQuestion 2026-07-15, but the concrete details have not been reviewed: the exact reply grammar
+  ("approve BL-433" vs. other phrasings), whether the roster is one edited message vs. one message per
+  ticket, and whether the per-ticket topic-icon awaiting-approval signal stays or is dropped now that the
+  ask is centralized. Flag the feature file for review before promotion.
+
+mutation_cost: medium

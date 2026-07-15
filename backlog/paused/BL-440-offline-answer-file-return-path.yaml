@@ -1,0 +1,82 @@
+id: BL-440
+title: "Offline human->swarm return path: git-committed ANSWER-*.md files drained through a stale-premise gate"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+epic: ""
+priority: 25
+direction: human-requested
+depends_on: []
+source: "INTAKE-offline-answer-files-git-return-path.md — banks the live brainstorm (human, 2026-07-15) that resolved BL-242's deferred decision (b): a disconnected human<->coordinator protocol, offline compose, git sync on reconnect. Settled decisions recorded below."
+
+description: |
+  Close the offline asymmetry in the human-in-the-loop. The swarm->human direction is already durable
+  offline (asks live in git-committed BL topics per BL-329; the PWA + committed backlog/topics/*.json are
+  a checkout-only read surface; unanswered asks PARK rather than spin, BL-306). The human->swarm
+  direction has NO offline path: away from Telegram, the human's only recourse today is hand-editing
+  ticket YAML. Give the human a first-class offline answer channel.
+
+  SETTLED DECISIONS (human, 2026-07-15).
+    1. Compose channel = git answer files. `ANSWER-*.md` at the backlog root, symmetric with the existing
+       `INTAKE-*.md` convention: the human composes offline, commits, pushes; on reconnect/pull the swarm
+       drains them through the SAME specifier-drain routing intake already uses. Authenticated by push
+       access; zero new infra. An answer file references what it answers (BL id / topic / ask id) and
+       carries the human's words. The exact schema is the specifier's call — keep it FORGIVING (composed
+       by a human on a plane, not a machine). (Not chosen now: a PWA compose surface writing the same
+       wire format — a possible later UI slice on top; email inbound — parsing path + go-live still an
+       operator step.)
+    2. Stale-premise gate = re-validate, act only if live. Ingestion checks the referenced ask/ticket is
+       still OPEN and its premise UNCHANGED before ANY execution. If the premise moved on (ticket
+       shipped, question retracted, decision superseded), the answer is NOT acted on; it is surfaced back
+       as "arrived late, not executed — here's what changed since." NEVER blind-execute a late answer.
+       WHY the strictness: two recorded incidents — an escalation re-sent an already-retracted question
+       and the human answered stale text; the front desk once fabricated backlog state the human then
+       authorised acting on. Late answers are the premise-drift hot path.
+    3. Archive like intake. A drained ANSWER-*.md is ARCHIVED, not deleted (mirror BL-311 intake-archive
+       hygiene: an un-archived answer file reliably signals an undrained answer).
+
+  This slice delivers decisions 1 + 2 + 3 together — the drain wiring is unsafe without the gate (the
+  whole point is that a late answer is not blindly executed), so they ship as one parcel, not separately.
+  The "arrived late" report goes to the referenced ask's Telegram topic when connected, and as a
+  committed note otherwise (both surfaces already exist).
+
+  INTEGRATION POINT — VERIFY THE LIVE PATH (specifier rule). The backlog-root drain that already handles
+  `INTAKE-*.md` (the specifier's drain-the-root routine, and the daemon's dispatch-gap awareness) is the
+  path to extend to `ANSWER-*.md`; confirm at build time which component actually reads the backlog root
+  and routes intake, and whether ingestion runs on a specifier turn (on pull) or a daemon sweep — do not
+  assume. The ask-liveness signal must read a REAL source of "is this ask still open" (the ticket's
+  status/humanApproval and the topic/ask record), not a fabricated snapshot.
+
+  Constraints:
+    - Do not build the PWA compose surface or email inbound here (explicitly deferred).
+    - Reuse the existing specifier-drain + archive conventions; do not fork a parallel intake mechanism.
+    - The gate is mandatory: there is no code path that executes an answer without first confirming the
+      premise is live.
+
+  Scope (verify at build time): the backlog-root drain/routing that handles INTAKE-*.md, extended to
+  ANSWER-*.md; the ask/ticket liveness + premise-unchanged check; the "arrived late, not executed"
+  report (topic when connected, committed note otherwise); the archive move.
+
+  E2E QA PROCEDURE: commit an ANSWER-*.md referencing an open ask, drain it, assert the answer routes to
+  that ask and the file is archived. Commit an ANSWER-*.md referencing an already-shipped ticket, drain
+  it, assert it is NOT acted on and an "arrived late — here's what changed" report is produced. Commit
+  one with an unresolvable reference and assert it is surfaced, not silently dropped.
+
+acceptance:
+  feature: specs/features/BL-440-offline-answer-file-return-path.feature
+  steps:
+    - "An answer to a still-open ask is drained and routed to that ask and acted on"
+    - "An answer whose premise moved on (shipped/retracted/superseded) is not executed and is reported arrived-late"
+    - "A drained answer file is archived, not deleted"
+    - "A forgiving answer with a resolvable reference and human text is still ingested"
+    - "An answer whose reference cannot be resolved is surfaced, not silently dropped"
+
+human_approval: >
+  PENDING. The channel (ANSWER-*.md), the stale-premise gate, and archive-not-delete were all settled by
+  the human 2026-07-15 (recorded in the intake). Open for review: the exact ANSWER-*.md schema (the
+  intake leaves it to the specifier), and whether ingestion runs on a specifier drain turn vs. a daemon
+  sweep — the live integration point must be re-verified at build time. Flag the feature file for review
+  before promotion.
+
+mutation_cost: medium
