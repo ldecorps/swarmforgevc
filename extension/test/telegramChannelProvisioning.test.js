@@ -112,6 +112,17 @@ test('provisionTelegramChannel reports a getUpdates fetch failure as an error, d
   assert.equal(calls.createNegotiationTopicCalls.length, 0, 'expected no negotiation topic to be opened when the update fetch itself failed');
 });
 
+test('provisionTelegramChannel falls back to a generic error when a getUpdates failure carries no error string', async () => {
+  const { adapters } = fakeAdapters({
+    getUpdates: async () => ({ success: false, updates: [] }),
+  });
+
+  const outcome = await provisionTelegramChannel('sfvc_target_bot', adapters);
+
+  assert.equal(outcome.ready, false);
+  assert.equal(outcome.error, 'failed to fetch updates');
+});
+
 test('provisionTelegramChannel still persists the bot token even when the getUpdates fetch fails', async () => {
   const { adapters, calls } = fakeAdapters({
     getUpdates: async () => ({ success: false, updates: [], error: 'Unauthorized' }),

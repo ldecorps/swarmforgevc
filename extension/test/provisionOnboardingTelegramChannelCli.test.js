@@ -40,6 +40,44 @@ test('buildAdapters.getUpdates returns the fetched updates on success', async ()
   assert.deepEqual(result.updates, [{ update_id: 1 }]);
 });
 
+// buildAdapters' other three adapter methods were newly exported by this
+// same BL-380 bounce fix but never directly driven - only .getUpdates had a
+// test above, so createNegotiationTopic/persistChannel/persistBotToken's own
+// wiring (which real telegramClient.ts/telegramChannelStore.ts/
+// telegramChannelSecretStore.ts function each closes over) stayed untested
+// at the unit level even after buildAdapters became a testable export.
+
+test('buildAdapters.createNegotiationTopic opens a topic via the injected postFn, no live network', async () => {
+  const okPostFn = async () => ({ ok: true, status: 200, json: { result: { message_thread_id: 42 } } });
+  const adapters = buildAdapters('/unused-target', 'good-token', mkTmpSecretsPath(), okPostFn);
+
+  const result = await adapters.createNegotiationTopic('-100123');
+
+  assert.equal(result.success, true);
+  assert.equal(result.messageThreadId, 42);
+});
+
+test('buildAdapters.persistChannel writes the chat id and topic id under the target repo path', () => {
+  const targetRepoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'provision-onboarding-telegram-channel-target-'));
+  const adapters = buildAdapters(targetRepoPath, 'good-token', mkTmpSecretsPath());
+
+  adapters.persistChannel('-100123', 42);
+
+  const written = JSON.parse(fs.readFileSync(path.join(targetRepoPath, '.swarmforge', 'operator', 'telegram-channel.json'), 'utf8'));
+  assert.deepEqual(written, { chatId: '-100123', negotiationTopicId: 42 });
+});
+
+test('buildAdapters.persistBotToken writes the token to the host secrets file, keyed by target repo path', () => {
+  const targetRepoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'provision-onboarding-telegram-channel-target-'));
+  const secretsFilePath = mkTmpSecretsPath();
+  const adapters = buildAdapters(targetRepoPath, 'good-token', secretsFilePath);
+
+  adapters.persistBotToken();
+
+  const written = JSON.parse(fs.readFileSync(secretsFilePath, 'utf8'));
+  assert.equal(written[targetRepoPath], 'good-token');
+});
+
 // ── parseArgs ────────────────────────────────────────────────────────────
 
 test('parseArgs returns all four positional args when given', () => {
