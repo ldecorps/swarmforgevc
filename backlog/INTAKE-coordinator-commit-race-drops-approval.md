@@ -38,6 +38,32 @@ because QA's own downstream commit for BL-357 (with `ddcea974` as an ancestor)
 also carried `pending`. Recovered the same way: re-edit, re-commit, re-verify
 with `git show` (`e77d9f62`).
 
+## Third occurrence, SAME SESSION (12:19 BST) — root cause caught directly, no longer a hypothesis
+
+Committing an unrelated single-file edit (`git add
+backlog/INTAKE-approval-reply-wrong-confirmation.md` — one explicit path, no
+`-A`, no `-a`) with `git commit -m "..."` produced a commit containing SEVEN
+files, not one: the specifier's own concurrently-staged work (BL-416, BL-417,
+BL-418 backlog YAMLs + their `.feature` files) rode along, because `git
+commit` with no pathspec commits the WHOLE INDEX, not just what the caller
+just `git add`ed. `git status` immediately after was clean — the specifier's
+work had already been fully staged (all 6 files) at the moment this process's
+`git commit` ran, so nothing was lost, but it landed under this process's
+unrelated commit message and SHA, and the specifier's own commit (if it was
+about to make one) would find nothing left to commit.
+
+This directly confirms the mechanism guessed at below: two roles
+(coordinator, specifier — both `worktree master` per `swarmforge.conf`,
+literally the same checkout and the same `.git/index`) run `git add` /
+`git commit` concurrently with no coordination, so whichever one commits
+next captures whatever the OTHER has staged at that instant — sometimes
+that means the committer's own edit goes missing from ITS commit (if a
+third party's commit lands between this process's `add` and `commit`,
+clearing the index of this process's own staged change along with it —
+occurrences 1 and 2 above), sometimes it means someone else's staged work
+gets swept into the wrong commit (this occurrence). Same root cause,
+two visible symptoms.
+
 ## Why this matters / suspected shape
 
 Both occurrences are on `main`, the coordinator's own live worktree, which
