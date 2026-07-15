@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -6,7 +7,7 @@ const yamlLib = require('js-yaml');
 const { parseBacklogYaml, readBacklog } = require('../out/panel/backlogReader');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-backlog-test-'));
+  return mkTmpDir('sfvc-backlog-test-');
 }
 
 function mkdirp(dir) {

@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -17,7 +18,7 @@ const {
 } = require('../out/metrics/resourceTelemetry');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-resource-telemetry-'));
+  return mkTmpDir('sfvc-resource-telemetry-');
 }
 
 function rawEvent(overrides = {}) {

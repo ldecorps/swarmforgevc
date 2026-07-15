@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -11,7 +12,7 @@ const { checkTaskSoundness } = require('../out/benchmark/taskSoundness');
 // saturating) this ticket's mechanism must never let through silently.
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-task-soundness-'));
+  return mkTmpDir('sfvc-task-soundness-');
 }
 
 function writeTaskDir(root, name, taskJson, files) {

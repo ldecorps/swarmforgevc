@@ -19,6 +19,12 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // BL-420: registers ONE afterEach (at collection time, per test file -
+    // the only time Vitest allows it) that sweeps every os.tmpdir() mkdtemp
+    // dir the shared test/helpers/tmpDir.js handed out during that file's
+    // tests - the single place cleanup happens instead of ~147 hand-rolled
+    // variants, and it fires on the throw path too (afterEach always runs).
+    setupFiles: ['./test/helpers/tmpDirSetup.js'],
     // BL-422: an unbounded `vitest run` sizes its worker pool to the CPU
     // count (20 on the reference host) with no per-worker heap limit - one
     // run ballooned four workers to ~13GB and drove the kernel OOM-killer

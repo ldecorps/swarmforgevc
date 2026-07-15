@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -17,7 +18,7 @@ const {
 } = require('../out/swarm/bounceDrain');
 
 function mkTarget() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bounce-drain-'));
+  return mkTmpDir('sfvc-bounce-drain-');
 }
 
 // BL-131: captures the interval callback instead of scheduling it for real -

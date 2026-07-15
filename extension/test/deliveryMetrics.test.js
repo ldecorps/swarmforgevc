@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const {
   computeVelocity,
@@ -320,7 +321,7 @@ test('a machine without a local .test-durations.jsonl reports "no local data" wi
   const os = require('node:os');
   const fs = require('node:fs');
   const path = require('node:path');
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-suite-trend-'));
+  const tmpDir = mkTmpDir('sfvc-suite-trend-');
   const result = computeSuiteDurationTrend(tmpDir, [], Date.now());
   assert.equal(result.hasLocalData, false);
   assert.deepEqual(result.dailySeries, []);
@@ -330,7 +331,7 @@ test('suite duration trend is derived from the local records and reports a trend
   const os = require('node:os');
   const fs = require('node:fs');
   const path = require('node:path');
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-suite-trend-'));
+  const tmpDir = mkTmpDir('sfvc-suite-trend-');
   fs.mkdirSync(path.join(tmpDir, 'extension'), { recursive: true });
   const lines = [
     { finished_at: '2026-01-01T00:00:00Z', test_count: 10, result: 'pass', duration_ms: 1000 },
@@ -355,7 +356,7 @@ test('no local data reports warn: false, never a crash', () => {
   const os = require('node:os');
   const fs = require('node:fs');
   const path = require('node:path');
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-suite-trend-'));
+  const tmpDir = mkTmpDir('sfvc-suite-trend-');
   const result = computeSuiteDurationTrend(tmpDir, [], Date.now());
   assert.equal(result.warn, false);
 });
@@ -364,7 +365,7 @@ test('a latest run under the warn floor and under 2x the baseline mean reports w
   const os = require('node:os');
   const fs = require('node:fs');
   const path = require('node:path');
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-suite-trend-'));
+  const tmpDir = mkTmpDir('sfvc-suite-trend-');
   fs.mkdirSync(path.join(tmpDir, 'extension'), { recursive: true });
   const lines = [
     { finished_at: '2026-01-01T00:00:00Z', test_count: 10, result: 'pass', duration_ms: 1000 },
@@ -382,7 +383,7 @@ test('a latest run over 2x the baseline mean reports warn: true, sourced from co
   const os = require('node:os');
   const fs = require('node:fs');
   const path = require('node:path');
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-suite-trend-'));
+  const tmpDir = mkTmpDir('sfvc-suite-trend-');
   fs.mkdirSync(path.join(tmpDir, 'extension'), { recursive: true });
   const lines = [
     { finished_at: '2026-01-01T00:00:00Z', test_count: 10, result: 'pass', duration_ms: 1000 },

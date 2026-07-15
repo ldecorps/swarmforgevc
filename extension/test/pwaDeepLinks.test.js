@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const {
   parsePwaBaseUrl,
@@ -26,12 +27,12 @@ test('parsePwaBaseUrl returns undefined when the key is absent', () => {
 });
 
 test('readPwaBaseUrl returns undefined when swarmforge.conf itself is missing, never a crash', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pwa-deep-links-test-'));
+  const dir = mkTmpDir('pwa-deep-links-test-');
   assert.equal(readPwaBaseUrl(dir), undefined);
 });
 
 test('readPwaBaseUrl reads the real conf file shape', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pwa-deep-links-test-'));
+  const dir = mkTmpDir('pwa-deep-links-test-');
   fs.mkdirSync(path.join(dir, 'swarmforge'));
   fs.writeFileSync(path.join(dir, 'swarmforge', 'swarmforge.conf'), 'config pwa_base_url https://example.github.io/dashboard/\n');
   assert.equal(readPwaBaseUrl(dir), 'https://example.github.io/dashboard/');

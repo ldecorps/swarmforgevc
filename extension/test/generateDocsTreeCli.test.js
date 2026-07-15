@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -6,7 +7,7 @@ const { execFileSync } = require('node:child_process');
 const { main } = require('../out/tools/generate-docs-tree');
 
 function mkTmp() {
-  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-docs-tree-cli-')));
+  return fs.realpathSync(mkTmpDir('sfvc-docs-tree-cli-'));
 }
 
 function mkdirp(dir) {

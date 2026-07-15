@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -9,7 +10,7 @@ const CLI = path.join(__dirname, '..', 'out', 'tools', 'notify-recert-batch.js')
 const STATE_PATH = (root) => path.join(root, '.swarmforge', 'operator', 'recert-notify-state.json');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-notify-recert-'));
+  return mkTmpDir('sfvc-notify-recert-');
 }
 function git(cwd, args) {
   execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });

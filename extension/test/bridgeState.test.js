@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -16,7 +17,7 @@ function git(cwd, args, dateIso) {
 }
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bridge-state-'));
+  return mkTmpDir('sfvc-bridge-state-');
 }
 
 function mkdirp(dir) {

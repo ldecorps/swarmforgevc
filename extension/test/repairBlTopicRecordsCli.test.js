@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -13,7 +14,7 @@ const { readRecord, recordPath } = require('../out/concierge/blTopicStore');
 // covers the filesystem/backlog wiring and the commit.
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-repair-bl-topics-'));
+  return mkTmpDir('sfvc-repair-bl-topics-');
 }
 
 function git(cwd, args) {

@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -27,7 +28,7 @@ test('loadTaskPrompt reads the prompt file verbatim', () => {
 
 test('materializeTaskFixture copies the pinned starting state into a fresh directory each call', () => {
   const task = loadTaskSpec(FIXTURE_DIR);
-  const scratchRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-benchmark-materialize-'));
+  const scratchRoot = mkTmpDir('sfvc-benchmark-materialize-');
   const first = materializeTaskFixture(task, scratchRoot);
   const second = materializeTaskFixture(task, scratchRoot);
   assert.notEqual(first, second);
@@ -40,7 +41,7 @@ test('materializeTaskFixture copies the pinned starting state into a fresh direc
 // ── BL-386: loadTaskBattery / reference solution overlay ──────────────────
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-battery-'));
+  return mkTmpDir('sfvc-battery-');
 }
 
 function writeTaskDir(root, name, taskJson, extraFiles = {}) {

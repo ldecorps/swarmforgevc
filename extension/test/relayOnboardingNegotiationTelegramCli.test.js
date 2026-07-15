@@ -1,3 +1,4 @@
+const { mkTmpDir, mkSharedTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -82,7 +83,7 @@ function runRelayCli(argv, env) {
 let PREPARED_ROOT;
 
 beforeAll(async () => {
-  PREPARED_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-onboarding-negotiation-prepared-'));
+  PREPARED_ROOT = mkSharedTmpDir('relay-onboarding-negotiation-prepared-');
   execFileSync('git', ['init'], { cwd: PREPARED_ROOT });
   execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: PREPARED_ROOT });
   execFileSync('git', ['config', 'user.name', 'Test'], { cwd: PREPARED_ROOT });
@@ -92,13 +93,13 @@ beforeAll(async () => {
 });
 
 function mkTargetWithProposedContract() {
-  const targetRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-onboarding-negotiation-target-'));
+  const targetRepo = mkTmpDir('relay-onboarding-negotiation-target-');
   fs.cpSync(PREPARED_ROOT, targetRepo, { recursive: true });
   return targetRepo;
 }
 
 function mkSecretsPath() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-onboarding-negotiation-secrets-'));
+  const dir = mkTmpDir('relay-onboarding-negotiation-secrets-');
   return path.join(dir, 'secrets.json');
 }
 
@@ -386,7 +387,7 @@ test('runPostProposal, using the REAL default launcher, never actually spawns fo
 // fixture root via the raw (unresolved) path prefix match, so the fallback
 // fails safe (never spawns) rather than failing open.
 test('isTestFixtureRoot still reports true for a not-yet-created path under the system temp dir (tryRealpath ENOENT fallback)', () => {
-  const tmpParent = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-onboarding-negotiation-fixture-root-'));
+  const tmpParent = mkTmpDir('relay-onboarding-negotiation-fixture-root-');
   const notYetCreated = path.join(tmpParent, 'does-not-exist-yet');
 
   assert.equal(fs.existsSync(notYetCreated), false);
@@ -539,18 +540,18 @@ test('pollLoop never writes a heartbeat for a cycle that failed - only completed
 // ── readRelayOffset / writeRelayOffset ─────────────────────────────────
 
 test('readRelayOffset returns 0 when no offset has ever been written', () => {
-  const targetRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-onboarding-negotiation-offset-'));
+  const targetRepo = mkTmpDir('relay-onboarding-negotiation-offset-');
   assert.equal(readRelayOffset(targetRepo), 0);
 });
 
 test('writeRelayOffset then readRelayOffset round-trips the value', () => {
-  const targetRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-onboarding-negotiation-offset-'));
+  const targetRepo = mkTmpDir('relay-onboarding-negotiation-offset-');
   writeRelayOffset(targetRepo, 17);
   assert.equal(readRelayOffset(targetRepo), 17);
 });
 
 test('readRelayOffset returns 0 when the persisted offset is not a number', () => {
-  const targetRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-onboarding-negotiation-offset-'));
+  const targetRepo = mkTmpDir('relay-onboarding-negotiation-offset-');
   fs.mkdirSync(path.join(targetRepo, '.swarmforge', 'operator'), { recursive: true });
   fs.writeFileSync(path.join(targetRepo, '.swarmforge', 'operator', 'negotiation-relay-offset.json'), JSON.stringify({ offset: 'not-a-number' }));
   assert.equal(readRelayOffset(targetRepo), 0);

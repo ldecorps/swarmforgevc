@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -87,7 +88,7 @@ test('matching is case-insensitive (real tickets use both "PENDING"/"pending" an
 // ── runHumanApprovalBackfill (impure, real fs, idempotent) ────────────────
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-backfill-'));
+  return mkTmpDir('sfvc-backfill-');
 }
 
 function writeTicket(dir, fileName, content) {

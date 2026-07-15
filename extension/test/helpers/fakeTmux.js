@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./tmpDir');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -58,7 +59,7 @@ function matchRule(rules, args) {
 }
 
 function installFakeTmux(rules = []) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-fake-tmux-'));
+  const dir = mkTmpDir('sfvc-fake-tmux-');
   const rulesFile = path.join(dir, 'rules.json');
   const logFile = path.join(dir, 'calls.log');
   fs.writeFileSync(rulesFile, JSON.stringify(rules));

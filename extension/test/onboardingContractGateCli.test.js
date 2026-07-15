@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -7,7 +8,7 @@ const { parseArgs, readContractYaml, main } = require('../out/tools/onboarding-c
 const { renderContractYaml } = require('../out/onboarding/contractView');
 
 function mkTargetRepo() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'onboarding-contract-gate-test-'));
+  return mkTmpDir('onboarding-contract-gate-test-');
 }
 
 // ── parseArgs ────────────────────────────────────────────────────────────
