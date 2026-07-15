@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -109,7 +110,7 @@ test('attributeUsageToTickets with no records reports an empty result, not an er
 // ── computeCostTelemetry (impure orchestrator, real fs) ─────────────────
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-cost-telemetry-'));
+  return mkTmpDir('sfvc-cost-telemetry-');
 }
 
 test('computeCostTelemetry wires transcripts + holding windows + pricing together for a role', () => {

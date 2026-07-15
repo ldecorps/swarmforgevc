@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -5,7 +6,7 @@ const path = require('node:path');
 const { listTestFiles, buildRecord, appendRecord, computeFinalExitCode } = require('../scripts/testDurationRecorderLib');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-recorder-lib-'));
+  return mkTmpDir('sfvc-recorder-lib-');
 }
 
 test('listTestFiles returns only .test.js files, sorted', () => {

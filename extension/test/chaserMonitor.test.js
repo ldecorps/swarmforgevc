@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -6,7 +7,7 @@ const os = require('node:os');
 const { startChaserMonitor, stopChaserMonitor, readChaseEscalations, syncStuckEscalations } = require('../out/watchdog/chaserMonitor');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-chaser-monitor-'));
+  return mkTmpDir('sfvc-chaser-monitor-');
 }
 
 // Handoff inboxes are resolved from roles.tsv (per-worktree layout), not a

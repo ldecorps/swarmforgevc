@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -176,7 +177,7 @@ test('an empty fleet (no swarms registered) reports idle status and zeroed healt
 // ── real integration: composes with the REAL createSwarmNode (BL-244), not just fakes ──
 
 function mkTarget() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-fleet-node-'));
+  return mkTmpDir('sfvc-fleet-node-');
 }
 
 function role(targetPath, name, worktreeName = name) {

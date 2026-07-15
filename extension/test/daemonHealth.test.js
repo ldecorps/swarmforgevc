@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -12,7 +13,7 @@ const { getWebviewHtml } = require('../out/panel/webviewHtml');
 // daemon process.
 
 function mkTarget(statusJson) {
-  const target = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-daemon-health-'));
+  const target = mkTmpDir('sfvc-daemon-health-');
   if (statusJson !== undefined) {
     const dir = path.join(target, '.swarmforge', 'daemon');
     fs.mkdirSync(dir, { recursive: true });

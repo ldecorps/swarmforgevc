@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 /**
  * BL-143: coordinator-facing queue visibility defaults to real .handoff
  * payloads only; sidecars (.chase.json/.nudge) are hidden unless debug is
@@ -11,7 +12,7 @@ const path = require('node:path');
 const { listSidecars, computeRoleQueueView } = require('../out/swarm/inboxVisibility');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-inbox-visibility-'));
+  return mkTmpDir('sfvc-inbox-visibility-');
 }
 
 function writeHandoff(dir, name) {

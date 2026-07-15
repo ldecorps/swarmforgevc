@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 /**
  * BL-122: automatic agent-driven handoff recovery — unit tests.
  *
@@ -27,7 +28,7 @@ const { computeLiveTransportHealth } = require('../out/swarm/transportHealth');
 const CFG = { maxRecoveryAttempts: 3 };
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-handoff-recovery-'));
+  return mkTmpDir('sfvc-handoff-recovery-');
 }
 
 function writeDeadLetter(inboxNewDir, name, headers) {

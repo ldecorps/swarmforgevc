@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 /**
  * trace-hop CLI entry point (main) — main() takes argv directly (no
  * process.argv reading) but calls process.exit() on every error path, with
@@ -26,7 +27,7 @@ const { main } = require('../out/tools/trace-hop');
 const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'trace-hop.js');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-tracehop-cli-'));
+  return mkTmpDir('sfvc-tracehop-cli-');
 }
 
 function runCliSubprocess(args, envOverrides) {

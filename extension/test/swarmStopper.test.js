@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const cp = require('node:child_process');
 const fs = require('node:fs');
@@ -12,7 +13,7 @@ const {
 } = require('../out/swarm/swarmStopper');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-stop-'));
+  return mkTmpDir('sfvc-stop-');
 }
 
 // A disposable child process to use as "a real running process" in tests.

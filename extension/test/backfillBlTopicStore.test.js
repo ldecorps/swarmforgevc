@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -10,7 +11,7 @@ const { readRecord, appendMessage: appendMessageRaw } = require('../out/concierg
 // before this feature shipped must be backfilled, not abandoned.
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl-topic-backfill-'));
+  return mkTmpDir('sfvc-bl-topic-backfill-');
 }
 
 // BL-348: these fixtures are never real git repos, so appendMessage's (and

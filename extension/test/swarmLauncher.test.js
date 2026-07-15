@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -16,7 +17,7 @@ const { installExecutable } = require('./helpers/sharedBin');
 const { readTrackedJobs } = require('../out/swarm/childJobRegistry');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-launch-'));
+  return mkTmpDir('sfvc-launch-');
 }
 
 function writeReadyState(targetPath, roleLines = '1\tcoder\tswarmforge-coder\tCoder\tclaude\n') {

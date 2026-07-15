@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -8,7 +9,7 @@ const { main, formatQueueStatus, formatRoleStatus } = require('../out/tools/queu
 const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'queue-status.js');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-queue-status-cli-'));
+  return mkTmpDir('sfvc-queue-status-cli-');
 }
 
 function git(cwd, args) {

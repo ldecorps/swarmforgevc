@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const os = require('node:os');
@@ -16,7 +17,7 @@ const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'provision-onboardin
 // (no live network), mirroring QA's own repro command.
 
 function mkTmpSecretsPath() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'provision-onboarding-telegram-channel-test-'));
+  const dir = mkTmpDir('provision-onboarding-telegram-channel-test-');
   return path.join(dir, 'secrets.json');
 }
 
@@ -58,7 +59,7 @@ test('buildAdapters.createNegotiationTopic opens a topic via the injected postFn
 });
 
 test('buildAdapters.persistChannel writes the chat id and topic id under the target repo path', () => {
-  const targetRepoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'provision-onboarding-telegram-channel-target-'));
+  const targetRepoPath = mkTmpDir('provision-onboarding-telegram-channel-target-');
   const adapters = buildAdapters(targetRepoPath, 'good-token', mkTmpSecretsPath());
 
   adapters.persistChannel('-100123', 42);
@@ -68,7 +69,7 @@ test('buildAdapters.persistChannel writes the chat id and topic id under the tar
 });
 
 test('buildAdapters.persistBotToken writes the token to the host secrets file, keyed by target repo path', () => {
-  const targetRepoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'provision-onboarding-telegram-channel-target-'));
+  const targetRepoPath = mkTmpDir('provision-onboarding-telegram-channel-target-');
   const secretsFilePath = mkTmpSecretsPath();
   const adapters = buildAdapters(targetRepoPath, 'good-token', secretsFilePath);
 

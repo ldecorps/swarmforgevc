@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 /**
  * BL-121: canary injector — sends periodic synthetic handoffs through the
  * real delivery pipeline to detect transport-level breakage independent of
@@ -26,7 +27,7 @@ const {
 const NOW = new Date('2026-07-05T22:00:00Z').getTime();
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-canary-'));
+  return mkTmpDir('sfvc-canary-');
 }
 
 // ── sendCanary ─────────────────────────────────────────────────────────────

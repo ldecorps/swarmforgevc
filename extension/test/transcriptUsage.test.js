@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -133,7 +134,7 @@ test('projectSlug replaces path separators and dots with dashes, matching the re
 // ── readTranscriptUsage (thin fs adapter) ───────────────────────────────
 
 test('readTranscriptUsage reads and concatenates every .jsonl file under the worktree\'s slug directory', () => {
-  const projectsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-claude-projects-'));
+  const projectsDir = mkTmpDir('sfvc-claude-projects-');
   const worktreePath = '/fake/worktree/coder';
   const slugDir = path.join(projectsDir, projectSlug(worktreePath));
   fs.mkdirSync(slugDir, { recursive: true });
@@ -147,12 +148,12 @@ test('readTranscriptUsage reads and concatenates every .jsonl file under the wor
 });
 
 test('readTranscriptUsage returns an empty array when the role never ran here (no slug directory)', () => {
-  const projectsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-claude-projects-'));
+  const projectsDir = mkTmpDir('sfvc-claude-projects-');
   assert.deepEqual(readTranscriptUsage('/never/ran/here', projectsDir), []);
 });
 
 test('readTranscriptUsage dedups a message.id that recurs across two different files, not just within one', () => {
-  const projectsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-claude-projects-'));
+  const projectsDir = mkTmpDir('sfvc-claude-projects-');
   const worktreePath = '/fake/worktree/coder';
   const slugDir = path.join(projectsDir, projectSlug(worktreePath));
   fs.mkdirSync(slugDir, { recursive: true });

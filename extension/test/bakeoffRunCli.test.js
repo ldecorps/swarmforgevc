@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -17,7 +18,7 @@ const { main } = require('../out/tools/bakeoff-run');
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'bakeoff-run.js');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bakeoff-run-'));
+  return mkTmpDir('sfvc-bakeoff-run-');
 }
 
 function chatEntry(overrides = {}) {

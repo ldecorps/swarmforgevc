@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const os = require('node:os');
@@ -39,7 +40,7 @@ test('runLogPath resolves under the user home, matching extension.ts\'s own swar
 const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'start-bridge-headless.js');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-start-bridge-headless-'));
+  return mkTmpDir('sfvc-start-bridge-headless-');
 }
 
 // Runs the REAL main() in-process, so in-process coverage and mutation

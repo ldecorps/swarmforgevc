@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -14,7 +15,7 @@ test('parseNodeTestTapSummary with no summary footer scores 0 of 0, never crashi
 });
 
 function mkTmp() {
-  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-benchmark-eval-')));
+  return fs.realpathSync(mkTmpDir('sfvc-benchmark-eval-'));
 }
 
 test('the real evaluator scores a fully-passing suite as passed === total', async () => {

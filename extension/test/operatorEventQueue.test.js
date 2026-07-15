@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -11,7 +12,7 @@ const { appendOperatorEvent, readNewReplyOutboxEntries, withEventsLock } = requi
 // runtime.bb's own append-event!/read-events shape exactly.
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-operator-event-queue-'));
+  return mkTmpDir('sfvc-operator-event-queue-');
 }
 
 test('appendOperatorEvent writes one JSON line to events.jsonl, matching operator_runtime.bb\'s own read-events format', () => {

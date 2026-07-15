@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -21,7 +22,7 @@ function candidate(model) {
 }
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-recruiter-signup-'));
+  return mkTmpDir('sfvc-recruiter-signup-');
 }
 
 test('resolves the API key recorded for a candidate model', async () => {
