@@ -48,17 +48,32 @@ interface TelegramApiCallResult {
   // A caller that needs to honour it (editForumTopic's own bulk backfill)
   // reads this rather than treating a 429 as an ordinary opaque failure.
   retryAfterSeconds?: number;
+  // BL-444: set only when a group-to-supergroup migration has invalidated
+  // the chat id a call was made with - Telegram's own "group chat was
+  // upgraded to a supergroup chat" 400 carries parameters.migrate_to_chat_id,
+  // the new id. A REDIRECT to retry against, never a terminal failure.
+  migrateToChatId?: number;
 }
 
 // BL-342: split out of extractDescription's own shape guard (the SAME
-// `json.parameters` envelope carries retry_after on a 429) rather than
-// re-deriving the object-shape check a second time.
-function extractRetryAfterSeconds(json: unknown): number | undefined {
+// `json.parameters` envelope carries retry_after on a 429, and BL-444's
+// migrate_to_chat_id on a "upgraded to a supergroup" 400) rather than
+// re-deriving the object-shape check a second time per field.
+function extractParameters(json: unknown): Record<string, unknown> | undefined {
   if (json && typeof json === 'object' && typeof (json as Record<string, unknown>).parameters === 'object') {
-    const parameters = (json as Record<string, unknown>).parameters as Record<string, unknown>;
-    return typeof parameters.retry_after === 'number' ? parameters.retry_after : undefined;
+    return (json as Record<string, unknown>).parameters as Record<string, unknown>;
   }
   return undefined;
+}
+
+function extractRetryAfterSeconds(json: unknown): number | undefined {
+  const parameters = extractParameters(json);
+  return typeof parameters?.retry_after === 'number' ? parameters.retry_after : undefined;
+}
+
+function extractMigrateToChatId(json: unknown): number | undefined {
+  const parameters = extractParameters(json);
+  return typeof parameters?.migrate_to_chat_id === 'number' ? parameters.migrate_to_chat_id : undefined;
 }
 
 // Shared by sendTelegramMessage/getTelegramUpdates/createForumTopic below -
@@ -75,6 +90,7 @@ async function callTelegramApi(token: string, method: string, body: string, post
         success: false,
         error: redactToken(`Telegram API responded with status ${res.status}${description ? `: ${description}` : ''}`, token),
         retryAfterSeconds: extractRetryAfterSeconds(res.json),
+        migrateToChatId: extractMigrateToChatId(res.json),
       };
     }
     return { success: true, json: res.json };
@@ -180,6 +196,14 @@ export interface TelegramMessage {
   // BL-281: present on a message posted inside a forum topic - the SAME id
   // sendTelegramMessage's messageThreadId routes a reply back into.
   message_thread_id?: number;
+  // BL-444: a service message Telegram posts in the OLD (pre-migration)
+  // chat the instant a basic group is upgraded to a supergroup, carrying
+  // the new chat's id - the group's own messages never route through the
+  // old id again after this.
+  migrate_to_chat_id?: number;
+  // BL-444: the mirror service message posted in the NEW (post-migration)
+  // supergroup, carrying the id it migrated FROM.
+  migrate_from_chat_id?: number;
 }
 
 // BL-410: the update shape a tapped inline-keyboard button generates -
@@ -258,6 +282,10 @@ export interface CreateForumTopicResult {
   success: boolean;
   messageThreadId?: number;
   error?: string;
+  // BL-444: set when the failure is "group chat was upgraded to a
+  // supergroup chat" - the caller's chat id has migrated, and this is the
+  // new one to retry against, never a terminal failure.
+  migrateToChatId?: number;
 }
 
 function extractMessageThreadId(json: unknown): number | undefined {
@@ -287,7 +315,7 @@ export async function createForumTopic(
   });
   const result = await callTelegramApi(token, 'createForumTopic', body, postFn);
   if (!result.success) {
-    return { success: false, error: result.error };
+    return { success: false, error: result.error, migrateToChatId: result.migrateToChatId };
   }
   return { success: true, messageThreadId: extractMessageThreadId(result.json) };
 }

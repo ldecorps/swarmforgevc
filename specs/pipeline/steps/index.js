@@ -213,7 +213,8 @@ const DOMAINS = [
   require('./bl427ProfileMutationWorkerRssSteps'),
   require('./bl430ReworkObservatorySteps'),
   require('./bl442NegotiationApprovalNotObjectionSteps'),
-  require('./bl443ProposeContractCommitRobustnessSteps')
+  require('./bl443ProposeContractCommitRobustnessSteps'),
+  require('./bl444ProvisioningFollowsSupergroupMigrationSteps')
 ];
 
 function registerSteps(registry) {

@@ -218,6 +218,31 @@ test('createForumTopic reports failure on a non-2xx response without leaking the
   assert.doesNotMatch(result.error, new RegExp(TOKEN));
 });
 
+// BL-444: "group chat was upgraded to a supergroup chat" carries the new id
+// in parameters.migrate_to_chat_id - a REDIRECT the caller should follow,
+// not an ordinary opaque failure.
+test('BL-444: createForumTopic surfaces migrateToChatId from a "upgraded to a supergroup" failure', async () => {
+  const postFn = async () => ({
+    ok: false,
+    status: 400,
+    json: { ok: false, description: 'Bad Request: group chat was upgraded to a supergroup chat', parameters: { migrate_to_chat_id: -1003886489685 } },
+  });
+
+  const result = await createForumTopic(TOKEN, CHAT_ID, 'Contract negotiation', postFn);
+
+  assert.equal(result.success, false);
+  assert.equal(result.migrateToChatId, -1003886489685);
+  assert.match(result.error, /upgraded to a supergroup/);
+});
+
+test('BL-444: createForumTopic leaves migrateToChatId undefined for an ordinary (non-migration) failure', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'Topics are not enabled' } });
+
+  const result = await createForumTopic(TOKEN, CHAT_ID, 'billing question', postFn);
+
+  assert.equal(result.migrateToChatId, undefined);
+});
+
 // ── BL-342: createForumTopic's own optional icon at creation time ───────
 
 test('BL-342: createForumTopic includes icon_custom_emoji_id in the request body when given', async () => {

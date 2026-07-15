@@ -1,4 +1,5 @@
 import { GetUpdatesResult, TelegramUpdate } from '../notify/telegramClient';
+import { nextUpdateOffset } from '../tools/telegramFrontDeskBotCore';
 
 // BL-380: gives each onboarded target its OWN Telegram bot and forum group,
 // so the contract can later be negotiated there (BL-381). The Bot API has no
@@ -44,18 +45,41 @@ export interface ChannelDetectionResult {
 // group (the bot is brand new and per-target - see the ticket's own
 // load-bearing decision) - so detection never needs, and never accepts, a
 // human-supplied chat id.
+//
+// BL-444: the CLI's own documented happy path ("create a group ... THEN
+// enable Topics") CAUSES Telegram to silently upgrade the basic group to a
+// supergroup with a NEW id, emitting migrate_to_chat_id/migrate_from_chat_id
+// service messages - so "the first chat any update carries" is, on every
+// real onboarding, the DEAD pre-migration id. Scan every update (never stop
+// at the first) and follow the newest migration signal seen, so the live
+// post-migration id always wins over the stale first-seen one, regardless of
+// where in the batch the migration notice happens to land.
 export function decideChannelDetection(updates: TelegramUpdate[]): ChannelDetectionResult {
-  const withChat = updates.find((update) => update.message?.chat?.id !== undefined);
-  if (!withChat?.message) {
+  const withChat = updates.filter((update) => update.message?.chat?.id !== undefined);
+  if (withChat.length === 0) {
     return { ready: false };
   }
-  return { ready: true, chatId: String(withChat.message.chat.id) };
+
+  let chatId = String(withChat[0].message!.chat.id);
+  for (const update of withChat) {
+    const message = update.message!;
+    if (message.migrate_to_chat_id !== undefined) {
+      chatId = String(message.migrate_to_chat_id);
+    } else if (message.migrate_from_chat_id !== undefined) {
+      chatId = String(message.chat.id);
+    }
+  }
+  return { ready: true, chatId };
 }
 
 export interface CreateNegotiationTopicOutcome {
   success: boolean;
   messageThreadId?: number;
   error?: string;
+  // BL-444: set when the target's chat id has migrated (Telegram's own
+  // "group chat was upgraded to a supergroup chat" error carries the new
+  // id) - a REDIRECT to retry against, never a terminal failure.
+  migrateToChatId?: string;
 }
 
 export interface ChannelProvisioningAdapters {
@@ -68,6 +92,13 @@ export interface ChannelProvisioningAdapters {
   createNegotiationTopic: (chatId: string) => Promise<CreateNegotiationTopicOutcome>;
   persistChannel: (chatId: string, negotiationTopicId: number) => void | Promise<void>;
   persistBotToken: () => void | Promise<void>;
+  // BL-444: called with the getUpdates offset to confirm once provisioning
+  // has FULLY succeeded (chat detected AND the negotiation topic opened) -
+  // advances the CLI's own persisted offset past every update this run
+  // consumed, so a later re-run never re-fetches the stale pre-migration
+  // queue that poisoned every prior re-run (this ticket's own root cause:
+  // "the confirm-offset never advances").
+  persistConfirmOffset: (offset: number) => void | Promise<void>;
 }
 
 export interface ChannelProvisioningOutcome {
@@ -78,7 +109,12 @@ export interface ChannelProvisioningOutcome {
   error?: string;
 }
 
-type ChatDetectionOutcome = { ready: false; error?: string } | { ready: true; chatId: string };
+type ChatDetectionOutcome =
+  | { ready: false; error?: string }
+  // BL-444: nextOffset is the offset a caller should confirm once the WHOLE
+  // provisioning outcome (not just detection) has succeeded - computed here
+  // because this is the one place that still has the raw update list.
+  | { ready: true; chatId: string; nextOffset: number };
 
 // Split out of provisionTelegramChannel (BL-394 hardening: CRAP was 8 on the
 // unsplit function) so the fetch/detect decision points and the
@@ -98,7 +134,7 @@ async function detectReadyChatId(adapters: ChannelProvisioningAdapters): Promise
   if (!detection.ready || detection.chatId === undefined) {
     return { ready: false };
   }
-  return { ready: true, chatId: detection.chatId };
+  return { ready: true, chatId: detection.chatId, nextOffset: nextUpdateOffset(updatesResult.updates, 0) };
 }
 
 // BL-380 scenario 04's guard lives here structurally: createNegotiationTopic
@@ -106,23 +142,44 @@ async function detectReadyChatId(adapters: ChannelProvisioningAdapters): Promise
 // ready, so a half-finished channel can never open a topic. Split out of
 // provisionTelegramChannel so that function's own branch count reflects only
 // the getUpdates/detection stages, not this separate topic-creation stage.
+//
+// BL-444: "group chat was upgraded to a supergroup chat" is a REDIRECT to the
+// new id Telegram includes in that same error (migrateToChatId), not a
+// terminal failure - retried exactly once against the new id (never chases a
+// chain of retries; a second migration within the SAME call is not a real
+// scenario this needs to survive).
 async function finalizeChannelProvisioning(
   chatId: string,
   instructions: ChannelProvisioningInstructions,
   adapters: ChannelProvisioningAdapters
 ): Promise<ChannelProvisioningOutcome> {
   const topic = await adapters.createNegotiationTopic(chatId);
-  if (!topic.success || topic.messageThreadId === undefined) {
+  if (topic.success && topic.messageThreadId !== undefined) {
+    await adapters.persistChannel(chatId, topic.messageThreadId);
+    return { instructions, ready: true, chatId, negotiationTopicId: topic.messageThreadId };
+  }
+
+  if (topic.migrateToChatId !== undefined) {
+    const redirectedChatId = topic.migrateToChatId;
+    const retriedTopic = await adapters.createNegotiationTopic(redirectedChatId);
+    if (retriedTopic.success && retriedTopic.messageThreadId !== undefined) {
+      await adapters.persistChannel(redirectedChatId, retriedTopic.messageThreadId);
+      return { instructions, ready: true, chatId: redirectedChatId, negotiationTopicId: retriedTopic.messageThreadId };
+    }
     return {
       instructions,
       ready: true,
-      chatId,
-      error: topic.error ?? 'failed to open the negotiation topic',
+      chatId: redirectedChatId,
+      error: retriedTopic.error ?? 'failed to open the negotiation topic after following the supergroup migration',
     };
   }
 
-  await adapters.persistChannel(chatId, topic.messageThreadId);
-  return { instructions, ready: true, chatId, negotiationTopicId: topic.messageThreadId };
+  return {
+    instructions,
+    ready: true,
+    chatId,
+    error: topic.error ?? 'failed to open the negotiation topic',
+  };
 }
 
 export async function provisionTelegramChannel(
@@ -137,5 +194,13 @@ export async function provisionTelegramChannel(
     return { instructions, ...detection };
   }
 
-  return finalizeChannelProvisioning(detection.chatId, instructions, adapters);
+  const outcome = await finalizeChannelProvisioning(detection.chatId, instructions, adapters);
+  if (outcome.negotiationTopicId !== undefined) {
+    // BL-444: only a FULLY successful provisioning confirms the offset - a
+    // topic-open failure leaves the stale updates available to a retry,
+    // rather than risking hiding real diagnostic updates behind a
+    // half-succeeded confirm.
+    await adapters.persistConfirmOffset(detection.nextOffset);
+  }
+  return outcome;
 }
