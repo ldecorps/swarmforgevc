@@ -278,6 +278,46 @@
                 (= provider-state :available)
                 (pos? (or pending-count 0)))))
 
+;; BL-383: the SAME "field: " line-prefix scan already established as
+;; read-yaml-field in ticket_status_lib.bb (and duplicated again in
+;; role_lifecycle_lib.bb) - kept as its own small private copy here rather
+;; than cross-namespace-coupled, this codebase's own convention for a
+;; one-line YAML field read.
+(defn- yaml-field [content field]
+  (let [prefix (str field ": ")]
+    (some (fn [line] (when (str/starts-with? line prefix) (str/trim (subs line (count prefix)))))
+          (str/split-lines (or content "")))))
+
+;; BL-382's own closed enum (contractTypes.ts's VERBOSITY_LEVELS/
+;; DEFAULT_VERBOSITY), duplicated here rather than cross-language coupled -
+;; a Babashka script cannot import a TypeScript constant, and this is a
+;; three-value literal, not worth inventing a shared mechanism for. Reading
+;; this value must NEVER accept a level BL-382 itself would reject (its own
+;; resolveVerbosity throws on anything outside this exact set) - so an
+;; unrecognized raw value here resolves to the same default as an ABSENT
+;; one, never a level BL-382 could not have produced.
+(def front-desk-verbosity-levels #{"concise" "normal" "detailed"})
+(def default-front-desk-verbosity "normal")
+
+;; BL-383: resolves the target's agreed verbosity from its contract.yaml's
+;; own raw text. An absent field (a contract negotiated before this field
+;; existed) and an unrecognized one both resolve to
+;; default-front-desk-verbosity - never a crash, and never a raw,
+;; unvalidated value spliced into a generated prompt (the same posture
+;; contractTypes.ts's own DEFAULT_VERBOSITY comment documents for the
+;; TypeScript side of this exact field).
+(defn resolve-front-desk-verbosity [contract-yaml-content]
+  (let [raw (yaml-field contract-yaml-content "verbosity")]
+    (if (contains? front-desk-verbosity-levels raw) raw default-front-desk-verbosity)))
+
+;; Mirrors promptProposal.ts's own verbosityInstruction wording exactly -
+;; the human is negotiating ONE verbosity term that governs both the
+;; agents' generated prompts (BL-382) and the front desk's own replies
+;; (this ticket); the same phrasing keeps the two halves feeling like one
+;; property, not two independently-invented ones.
+(defn- verbosity-style-directive [verbosity]
+  (str "Be " verbosity " in your responses and explanations."))
+
 ;; The FULL self-contained prompt for the restricted front-desk Operator - it
 ;; holds no Read tool (see should-launch-front-desk-operator?'s docstring),
 ;; so everything it could need (the caller's own transcript, durable memory
@@ -285,18 +325,37 @@
 ;; Instructs it to reply with the answer text ALONE - the runtime treats the
 ;; ENTIRE completion as the reply, verbatim; there is no tool call for it to
 ;; structure output through.
+;; BL-383: verbosity rides this SAME map, defaulting to
+;; default-front-desk-verbosity when the key is absent entirely - additive,
+;; so this stays backward compatible with every existing caller.
 (defn front-desk-reply-prompt
-  [{:keys [transcript long-term-memory]}]
+  [{:keys [transcript long-term-memory verbosity]}]
   (str
    "You are the front-desk Operator. You have NO tools and NO ability to act "
    "on the swarm in any way - you can only read what is given below and "
    "reply in plain text. Another Operator is mid-conversation elsewhere and "
    "must not be interrupted; your only job is to answer the human's message "
    "on this thread.\n\n"
+   (verbosity-style-directive (or verbosity default-front-desk-verbosity)) "\n\n"
    "Known long-term facts:\n" (pr-str long-term-memory) "\n\n"
    "Thread so far:\n" (pr-str transcript) "\n\n"
    "Reply with ONLY the message to send back to the human - no preamble, no "
    "explanation, just the reply text itself."))
+
+;; BL-383: the wiring composition - resolves the target's verbosity from its
+;; RAW contract.yaml content, then builds the full front-desk reply prompt.
+;; Pure, and the ONE seam both operator_runtime.bb's real launch and this
+;; feature's acceptance steps call, so the acceptance run proves the exact
+;; same composition the live wiring uses rather than a re-derivation that
+;; could silently drift from it. contract-yaml-content is nil for a target
+;; with no contract.yaml at all (never onboarded through the negotiated-
+;; contract flow) - resolve-front-desk-verbosity already treats that the
+;; same as a present-but-termless contract, so this never crashes either.
+(defn compose-front-desk-reply-prompt
+  [{:keys [contract-yaml-content transcript long-term-memory]}]
+  (front-desk-reply-prompt {:transcript transcript
+                             :long-term-memory long-term-memory
+                             :verbosity (resolve-front-desk-verbosity contract-yaml-content)}))
 
 ;; The restricted front-desk Operator holds NO tool at all (launched with
 ;; `claude -p --tools ""` - see launch_front_desk_operator.sh), so its
