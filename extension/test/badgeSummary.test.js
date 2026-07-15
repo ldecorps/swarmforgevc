@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -7,7 +8,7 @@ const { buildBadgeMap, truncateSummary } = require('../out/panel/badgeSummary');
 const { readBacklog } = require('../out/panel/backlogReader');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-badge-'));
+  return mkTmpDir('sfvc-badge-');
 }
 
 function mkdirp(dir) {

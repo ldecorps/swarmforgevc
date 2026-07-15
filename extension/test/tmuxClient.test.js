@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -28,7 +29,7 @@ const { installExecutable } = require('./helpers/sharedBin');
 const { installInProcessTmux } = require('./helpers/fakeTmux');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-tmuxclient-'));
+  return mkTmpDir('sfvc-tmuxclient-');
 }
 
 test('paneTarget builds session:window.paneIndex', () => {

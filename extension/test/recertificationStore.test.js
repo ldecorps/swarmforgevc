@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -50,7 +51,7 @@ async function runCli(root) {
 // store and the recert_proposals/<yyyy-MM>.jsonl queue.
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-recert-'));
+  return mkTmpDir('sfvc-recert-');
 }
 
 function git(cwd, args) {

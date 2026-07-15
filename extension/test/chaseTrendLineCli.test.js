@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -8,7 +9,7 @@ const { computeChaseTrend, formatChaseTrendLine, CHASE_TREND_WINDOW_DAYS, main }
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'chase-trend-line.js');
 
 function mkFixtureRoot() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chase-trend-test-'));
+  const dir = mkTmpDir('chase-trend-test-');
   fs.mkdirSync(path.join(dir, '.swarmforge', 'telemetry'), { recursive: true });
   return dir;
 }

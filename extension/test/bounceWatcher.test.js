@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -95,7 +96,7 @@ test('parseBounceFile rejects whitespace-only content', () => {
 // --- processBounceFile ---
 
 test('processBounceFile reads and deletes valid swarm file', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bounce-'));
+  const tmpDir = mkTmpDir('sfvc-bounce-');
   const bounceFile = path.join(tmpDir, 'bounce');
   fs.writeFileSync(bounceFile, 'swarm\n');
 
@@ -109,7 +110,7 @@ test('processBounceFile reads and deletes valid swarm file', () => {
 });
 
 test('processBounceFile reads and deletes valid extension file', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bounce-'));
+  const tmpDir = mkTmpDir('sfvc-bounce-');
   const bounceFile = path.join(tmpDir, 'bounce');
   fs.writeFileSync(bounceFile, 'extension\n');
 
@@ -123,7 +124,7 @@ test('processBounceFile reads and deletes valid extension file', () => {
 });
 
 test('processBounceFile reads and deletes valid all file', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bounce-'));
+  const tmpDir = mkTmpDir('sfvc-bounce-');
   const bounceFile = path.join(tmpDir, 'bounce');
   fs.writeFileSync(bounceFile, 'all\n');
 
@@ -137,7 +138,7 @@ test('processBounceFile reads and deletes valid all file', () => {
 });
 
 test('processBounceFile handles invalid content and deletes file', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bounce-'));
+  const tmpDir = mkTmpDir('sfvc-bounce-');
   const bounceFile = path.join(tmpDir, 'bounce');
   fs.writeFileSync(bounceFile, 'invalid\n');
 
@@ -175,7 +176,7 @@ test('processBounceFile reports file read errors', () => {
 });
 
 test('processBounceFile with whitespace content reports error', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bounce-'));
+  const tmpDir = mkTmpDir('sfvc-bounce-');
   const bounceFile = path.join(tmpDir, 'bounce');
   fs.writeFileSync(bounceFile, '   \n');
 
@@ -193,7 +194,7 @@ test('processBounceFile with whitespace content reports error', () => {
 });
 
 test('processBounceFile with invalid content and no onError does not throw', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bounce-'));
+  const tmpDir = mkTmpDir('sfvc-bounce-');
   const bounceFile = path.join(tmpDir, 'bounce');
   fs.writeFileSync(bounceFile, 'invalid\n');
 
@@ -208,7 +209,7 @@ test('processBounceFile with a read error and no onError does not throw', () => 
 // --- startBounceWatcher ---
 
 test('BL-204: startBounceWatcher returns null and creates nothing when .swarmforge is missing', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
+  const tmpDir = mkTmpDir('sfvc-bouncewatch-');
   const bounces = [];
   const watcher = startBounceWatcher(tmpDir, (type) => bounces.push(type));
   assert.equal(watcher, null, '.swarmforge is created by the launcher, not the watcher - no swarm dir means no watcher');
@@ -223,7 +224,7 @@ test('BL-204: startBounceWatcher returns null and creates nothing when .swarmfor
 // startBounceWatcher scenario below now drives handleWatchEvent directly
 // and needs no real fs.watch event or real wait at all.
 test('startBounceWatcher wires real fs.watch events into the debounce', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
+  const tmpDir = mkTmpDir('sfvc-bouncewatch-');
   fs.mkdirSync(path.join(tmpDir, '.swarmforge'), { recursive: true });
 
   const bounces = [];
@@ -259,7 +260,7 @@ test('handleWatchEvent ignores events for unrelated files', () => {
 });
 
 test('handleWatchEvent ignores an unrelated file even when a real bounce file is already sitting on disk', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
+  const tmpDir = mkTmpDir('sfvc-bouncewatch-');
   const swarmforgeDir = path.join(tmpDir, '.swarmforge');
   fs.mkdirSync(swarmforgeDir, { recursive: true });
   // Present BEFORE the event, so an untouched pre-existing bounce file
@@ -277,7 +278,7 @@ test('handleWatchEvent ignores an unrelated file even when a real bounce file is
 });
 
 test('handleWatchEvent does not process a bounce file that is gone by the time its delayed check runs', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
+  const tmpDir = mkTmpDir('sfvc-bouncewatch-');
   const swarmforgeDir = path.join(tmpDir, '.swarmforge');
   fs.mkdirSync(swarmforgeDir, { recursive: true });
   const bounceFilePath = path.join(swarmforgeDir, 'bounce');
@@ -300,7 +301,7 @@ test('handleWatchEvent does not process a bounce file that is gone by the time i
 // real fs.FSWatcher (an EventEmitter) rather than waiting on a genuine OS
 // failure, since a watcher error is inherently not reproducible on demand.
 test('BL-115 bounce-watch-04: a watcher error calls onWatcherLost, naming the error', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
+  const tmpDir = mkTmpDir('sfvc-bouncewatch-');
   fs.mkdirSync(path.join(tmpDir, '.swarmforge'), { recursive: true });
 
   const lostReasons = [];
@@ -324,7 +325,7 @@ test('BL-115 bounce-watch-04: a watcher error calls onWatcherLost, naming the er
 // closeBounceWatcher) must also call onWatcherLost - e.g. the underlying
 // platform watch tearing itself down when .swarmforge/ is removed.
 test('BL-115 bounce-watch-04: an unexpected close calls onWatcherLost', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
+  const tmpDir = mkTmpDir('sfvc-bouncewatch-');
   fs.mkdirSync(path.join(tmpDir, '.swarmforge'), { recursive: true });
 
   const lostReasons = [];
@@ -347,7 +348,7 @@ test('BL-115 bounce-watch-04: an unexpected close calls onWatcherLost', async ()
 // watcher) must NEVER be mistaken for a lost watcher and re-trigger a
 // redundant re-establish.
 test('BL-115: closeBounceWatcher does not call onWatcherLost for a deliberate close', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
+  const tmpDir = mkTmpDir('sfvc-bouncewatch-');
   fs.mkdirSync(path.join(tmpDir, '.swarmforge'), { recursive: true });
 
   const lostReasons = [];
@@ -374,7 +375,7 @@ test('closeBounceWatcher is a no-op for null/undefined', () => {
 // an 'error' event - a real.fs.watch is monkeypatched here since that
 // failure mode can't be reproduced on demand any other way.
 test('BL-115: a synchronous fs.watch failure (e.g. ENOSPC) calls onWatcherLost and returns null', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
+  const tmpDir = mkTmpDir('sfvc-bouncewatch-');
   fs.mkdirSync(path.join(tmpDir, '.swarmforge'), { recursive: true });
 
   const realWatch = fs.watch;
@@ -555,7 +556,7 @@ test('BL-115: an onLost callback firing after close() is a no-op (not just the s
 });
 
 test('handleWatchEvent reports invalid bounce file content via onError', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
+  const tmpDir = mkTmpDir('sfvc-bouncewatch-');
   const swarmforgeDir = path.join(tmpDir, '.swarmforge');
   fs.mkdirSync(swarmforgeDir, { recursive: true });
   const bounceFilePath = path.join(swarmforgeDir, 'bounce');

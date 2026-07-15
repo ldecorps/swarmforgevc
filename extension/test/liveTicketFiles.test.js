@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 import { strict as assert } from 'node:assert';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -5,7 +6,7 @@ import * as os from 'os';
 import { forEachLiveTicketFile, LIVE_BACKLOG_FOLDERS } from '../out/util/liveTicketFiles.js';
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'live-ticket-files-'));
+  return mkTmpDir('live-ticket-files-');
 }
 
 function writeTicket(dir, fileName, content = 'id: X\n') {

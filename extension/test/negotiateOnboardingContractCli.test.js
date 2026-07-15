@@ -1,3 +1,4 @@
+const { mkTmpDir, mkSharedTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -88,7 +89,7 @@ function runCliSubprocess(argv) {
 let PREPARED_ROOT;
 
 beforeAll(async () => {
-  PREPARED_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'negotiate-onboarding-contract-prepared-'));
+  PREPARED_ROOT = mkSharedTmpDir('negotiate-onboarding-contract-prepared-');
   execFileSync('git', ['init'], { cwd: PREPARED_ROOT });
   execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: PREPARED_ROOT });
   execFileSync('git', ['config', 'user.name', 'Test'], { cwd: PREPARED_ROOT });
@@ -98,7 +99,7 @@ beforeAll(async () => {
 });
 
 function mkTargetWithProposedContract() {
-  const targetRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'negotiate-onboarding-contract-target-'));
+  const targetRepo = mkTmpDir('negotiate-onboarding-contract-target-');
   fs.cpSync(PREPARED_ROOT, targetRepo, { recursive: true });
   return targetRepo;
 }
@@ -121,7 +122,7 @@ test('readNegotiationState reconstructs an open negotiation from a freshly-propo
 });
 
 test('readNegotiationState on a target with no contract.yaml throws loud, never fabricates one', () => {
-  const targetRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'negotiate-onboarding-contract-state-empty-'));
+  const targetRepo = mkTmpDir('negotiate-onboarding-contract-state-empty-');
   assert.throws(() => readNegotiationState(targetRepo), /ENOENT/);
 });
 
@@ -295,7 +296,7 @@ test('approving after the negotiation already ended is refused (in-process main(
 });
 
 test('negotiating against a target with no proposed contract yet fails loud, never fabricates one', async () => {
-  const targetRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'negotiate-onboarding-contract-empty-'));
+  const targetRepo = mkTmpDir('negotiate-onboarding-contract-empty-');
   await assert.rejects(() => runNegotiateCli([targetRepo, 'object', 'anything']), /ENOENT/);
 });
 

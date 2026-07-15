@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -15,7 +16,7 @@ const { ensureStrykerSandboxSiblingLink, ensureStrykerSandboxSiblingLinks } = re
 // name - not just pwa.
 
 function mkFixture(siblingName) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-stryker-sandbox-'));
+  const root = mkTmpDir('sfvc-stryker-sandbox-');
   const extensionDir = path.join(root, 'extension');
   const siblingDir = path.join(root, siblingName);
   fs.mkdirSync(extensionDir, { recursive: true });
@@ -111,7 +112,7 @@ test('does not disturb a sibling sandbox-<id> directory already present in the t
 // BL-267: the whole point of generalizing - one call links every sibling
 // in the list, so covering the NEXT one is an added name, not a new call site.
 test('ensureStrykerSandboxSiblingLinks links every sibling in the given list, independently', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-stryker-sandbox-'));
+  const root = mkTmpDir('sfvc-stryker-sandbox-');
   const extensionDir = path.join(root, 'extension');
   fs.mkdirSync(extensionDir, { recursive: true });
   const names = ['pwa', 'swarmforge', '.github', 'docs'];
@@ -133,7 +134,7 @@ test('ensureStrykerSandboxSiblingLinks links every sibling in the given list, in
 });
 
 test('ensureStrykerSandboxSiblingLinks does not disturb one sibling link while creating another', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-stryker-sandbox-'));
+  const root = mkTmpDir('sfvc-stryker-sandbox-');
   const extensionDir = path.join(root, 'extension');
   fs.mkdirSync(extensionDir, { recursive: true });
   fs.mkdirSync(path.join(root, 'pwa'), { recursive: true });

@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -17,7 +18,7 @@ const { coordinatorLossStatePath } = require('../out/swarm/coordinatorLossRecove
 // supplies them from that same live state; tests supply fakes directly.
 
 function mkTarget() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-composite-node-'));
+  return mkTmpDir('sfvc-composite-node-');
 }
 
 // Mirrors this project's own real layout: master-resident roles

@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -14,7 +15,7 @@ const { main } = require('../out/tools/recruiter-run');
 // actually exists and actually runs end-to-end, not just its pieces.
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-recruiter-run-'));
+  return mkTmpDir('sfvc-recruiter-run-');
 }
 
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'recruiter-run.js');

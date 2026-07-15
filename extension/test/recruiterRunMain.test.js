@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -14,7 +15,7 @@ const { parseArgs, readCurrentModelByRole } = require('../out/tools/recruiter-ru
 // end-to-end.
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-recruiter-run-main-'));
+  return mkTmpDir('sfvc-recruiter-run-main-');
 }
 
 // ── parseArgs ────────────────────────────────────────────────────────────

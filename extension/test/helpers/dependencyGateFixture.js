@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./tmpDir');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -12,7 +13,7 @@ const path = require('node:path');
 const REAL_CONFIG_PATH = path.join(__dirname, '..', '..', '.dependency-cruiser.cjs');
 
 function mkFixtureRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-depgate-fixture-'));
+  return mkTmpDir('sfvc-depgate-fixture-');
 }
 
 function writeFixtureTsconfig(root) {

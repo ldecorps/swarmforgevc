@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -29,7 +30,7 @@ test('formats zero explicitly, not a blank line', () => {
 // ── end-to-end: the compiled CLI runs against a REAL git repo ────────────
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-not-done-count-cli-'));
+  return mkTmpDir('sfvc-not-done-count-cli-');
 }
 
 function git(cwd, args) {

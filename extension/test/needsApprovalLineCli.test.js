@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -31,7 +32,7 @@ test('an empty list renders an explicit nothing-awaiting-approval line, not a bl
 // ── end-to-end: the compiled CLI runs against a REAL git repo ────────────
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-needs-approval-cli-'));
+  return mkTmpDir('sfvc-needs-approval-cli-');
 }
 
 function git(cwd, args) {
