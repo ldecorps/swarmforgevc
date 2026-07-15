@@ -76,3 +76,23 @@ diverge from the tool's actual grammar.
   `backlog/active/` to `backlog/done/` and promotes the next paused item if a
   slot is open. It runs no git merge or push (BL-247).
 - The **specifier** does not perform integration merges — it specifies only.
+
+## 2.6 Multi-Ticket Batch Forwards Carry Every Ticket ID
+- A `git_handoff` names ONE ticket in its `task` field. When a batch role
+  (cleaner, hardener) processes several parcels together and its committed work
+  satisfies MORE THAN ONE ticket, it must forward EACH satisfied ticket as its
+  own `git_handoff` under that ticket's own stable task name — never collapse
+  several tickets under a single task name. This is the same per-item forward
+  discipline batch roles already apply to the no-op rule (BL-075): every parcel
+  in the batch gets its own forward decision AND its own forwarded handoff, so
+  each ticket's identity travels the chain end to end.
+- Correspondingly, when QA approves a commit that satisfied more than one ticket,
+  its coordinator bookkeeping handoff/`note` must name EVERY satisfied ticket ID,
+  and the coordinator must move ALL of them to `backlog/done/` — not only the one
+  task name QA happened to be forwarded under. A ticket whose work merged but
+  whose ID never reached the coordinator note stays in `backlog/active/` forever.
+- (BL-417/BL-420, 2026-07-15: a cleaner batch forwarded commit `002a0d5c88` —
+  which bundled BL-420's ~147-file `/tmp`-cleanup migration together with
+  BL-417's one-line icon change — under the single task name BL-417, so
+  bookkeeping would have closed only BL-417 and left BL-420 active
+  indefinitely.)
