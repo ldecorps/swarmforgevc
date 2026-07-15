@@ -12,6 +12,7 @@ const {
   readRelayOffset,
   writeRelayOffset,
   launchNegotiationRelayScriptPath,
+  isTestFixtureRoot,
   main: relayMain,
 } = require('../out/tools/relay-onboarding-negotiation-telegram');
 const { main: proposeMain } = require('../out/tools/propose-onboarding-contract');
@@ -375,6 +376,21 @@ test('runPostProposal, using the REAL default launcher, never actually spawns fo
 
   assert.equal(outcome.posted, true);
   assert.equal(fs.existsSync(autoLaunchLog), false, 'expected no real spawn (and therefore no auto-launch log) for a temp-dir fixture');
+});
+
+// isTestFixtureRoot's own tryRealpath fallback (targetRepoPath does not
+// exist yet, so fs.realpathSync throws ENOENT) is unreachable through
+// runPostProposal - by the time it calls the real launcher, the target dir
+// has already been created by the post-proposal write path above. Drive it
+// directly: a not-yet-created child of a real temp dir still resolves as a
+// fixture root via the raw (unresolved) path prefix match, so the fallback
+// fails safe (never spawns) rather than failing open.
+test('isTestFixtureRoot still reports true for a not-yet-created path under the system temp dir (tryRealpath ENOENT fallback)', () => {
+  const tmpParent = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-onboarding-negotiation-fixture-root-'));
+  const notYetCreated = path.join(tmpParent, 'does-not-exist-yet');
+
+  assert.equal(fs.existsSync(notYetCreated), false);
+  assert.equal(isTestFixtureRoot(notYetCreated), true);
 });
 
 // ── runPoll (BL-381 scenarios 02/04) ───────────────────────────────────

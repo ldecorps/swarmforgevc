@@ -229,7 +229,10 @@ export function launchNegotiationRelayScriptPath(): string {
 // real bounded-restart-forever supervisor processes polling the real
 // Telegram API with a fake token during this ticket's own acceptance runs).
 // Never throws on an unresolvable/relative path.
-function isTestFixtureRoot(targetRepoPath: string): boolean {
+// Exported so a test can drive tryRealpath's ENOENT fallback directly - the
+// only path defaultLaunchRelaySupervisor's own tests (which always pass an
+// already-created target dir) can never reach.
+export function isTestFixtureRoot(targetRepoPath: string): boolean {
   const tmpDir = process.env.TMPDIR || os.tmpdir();
   const canonicalTmp = tryRealpath(tmpDir);
   const canonicalRoot = tryRealpath(targetRepoPath);
