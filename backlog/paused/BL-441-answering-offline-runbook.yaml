@@ -1,0 +1,39 @@
+id: BL-441
+title: "Docs: an 'answering offline' runbook — where the human reads pending questions and how to compose ANSWER files"
+milestone: M8
+type: docs
+status: todo
+severity: low
+epic: ""
+priority: 42
+direction: human-requested
+depends_on: [BL-440]
+source: "INTAKE-offline-answer-files-git-return-path.md (suggested slice 3). The offline read surfaces already exist (BL-329 committed topics, PWA); this slice documents them plus the ANSWER-*.md compose convention BL-440 introduces."
+
+notes: |
+  PARKED behind BL-440 — there is nothing to document until the ANSWER-*.md return path exists. Scenarios
+  live in the specs/features/BL-441-answering-offline-runbook.feature.draft companion until BL-440 lands
+  and this ticket is promoted; at promotion the draft's scenarios move into the real .feature and the
+  documenter wires the doc.
+
+  WHAT IT DOCUMENTS. A short, text-based runbook under docs/: (1) where the human READS pending questions
+  when away from Telegram — the git-committed BL topics / backlog/topics/*.json and the PWA dashboard, all
+  readable from a plain checkout; (2) how to COMPOSE an answer — an ANSWER-*.md at the backlog root
+  referencing a BL id / topic / ask id plus the human's words, commit, push; (3) the stale-premise caveat
+  — a late answer may be reported "arrived late, not executed" if the referenced premise has moved on.
+
+  Scope (verify at build time): a new runbook under docs/ (documenter-owned). No code. Keep it short; the
+  mechanism is BL-440's.
+
+acceptance:
+  feature: specs/features/BL-441-answering-offline-runbook.feature
+  steps:
+    - "The runbook explains composing an ANSWER-*.md that references an ask"
+    - "The runbook points to the committed BL topics and PWA as the offline read surfaces"
+    - "The runbook states the stale-premise (arrived-late) behaviour"
+
+human_approval: >
+  approved 2026-07-15 (coordinator session, full-batch confirmation via Operator relay). A docs slice of
+  the human-settled BL-440 work. Still held on depends_on: [BL-440] until that lands.
+
+mutation_cost: low

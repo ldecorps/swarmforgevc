@@ -1,0 +1,77 @@
+id: BL-437
+title: "Each swarm publishes its own rolled-up status.json (authored by handoffd); the fleet console enumerates the rendezvous dir and merges"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+epic: fleet-second-swarm
+priority: 34
+direction: human-requested
+depends_on: []
+source: "INTAKE-fleet-beefup-second-swarm-fes-guinea-pig.md (epic BL-435, suggested slice 2; settled decisions 4, 5, 6, 7). Flips today's backwards coupling where the console reconstructs each swarm's status from the swarm's internal files, back to BL-242's principle: the swarm rolls up its own pack; the console merges."
+
+description: |
+  Make each swarm publish its own rolled-up status document, and make the fleet console a dumb merger
+  that enumerates the rendezvous dir. This is the fleet-observability half of the second-swarm epic
+  (BL-435).
+
+  TODAY'S BACKWARDS COUPLING. `extension/src/tools/fleet-console.ts` RECONSTRUCTS each swarm's status from
+  that swarm's internal `roles.tsv` + per-role `heartbeat/<role>` + `handoffd.status.json`, and needs a
+  hand-authored `SwarmRegistration` to even know a swarm exists (zero have ever been authored). That is
+  the console reaching into another swarm's guts.
+
+  SETTLED DESIGN (human, 2026-07-15).
+    - Publish format = each swarm publishes its own rolled-up status (Option 2):
+      `~/.swarmforge/fleet/<swarm_name>/status.json` — an enriched heartbeat:
+      identity / status / health / children-rollup / needs-human / updated_at.
+    - Author = handoffd, folding in the blocked flag. The always-on, zero-token daemon writes the
+      DERIVABLE rollup (per-role liveness, backlog state, updated_at) every cycle — robust, survives
+      coordinator death, reliably fresh. It is a natural extension of the existing `handoffd.status.json`
+      (`{"state":"healthy","updated_at":...}`). The `needs-human` semantic is contributed by the
+      coordinator/needs-human reconciler and folded in — that half is BL-438; until it lands, needs-human
+      is absent/false and this slice publishes the derivable rollup.
+    - The fleet console becomes dumb: enumerate the rendezvous dir -> read each `status.json` -> merge.
+      The roster is "whatever subdirs exist here" — no hand-maintained fleet-config/registration.
+    - Coordinator-lost = stale `updated_at`. Beyond the existing liveness threshold, the console infers
+      `stopped (coordinator lost)` — reusing BL-245's already-computed state and `watchdog/liveness.ts`.
+      A dead handoffd -> stale doc -> the swarm reads down.
+    - Transport = poll-on-disk now; the format is transport-agnostic. When a swarm goes remote (BL-101,
+      blocked) it publishes to the same rendezvous over the bridge — additive, no format change. Keep the
+      console reading the doc purely by FIELD so nothing local-only leaks into rendering.
+
+  INTEGRATION POINT — VERIFY THE LIVE PATH (specifier rule). Confirm at build time that handoffd has (or
+  can derive) the per-role liveness + backlog rollup it needs, and that the fleet console's current
+  reconstruction path is the one that actually runs. `swarm_name` gives the console a real identity to
+  render instead of an ad-hoc registration name.
+
+  Constraints:
+    - handoffd must remain the low-cost, always-on author — do not push this onto a coordinator LLM turn.
+    - Rendezvous dir is under host $HOME, never the target working tree (secrets rule).
+    - Do not break the existing single-swarm console view (the primary swarm publishes its own status.json
+      too).
+
+  Scope (verify at build time): `swarmforge/scripts/handoffd.bb` (write the fleet status.json each
+  cycle), `extension/src/tools/fleet-console.ts` (enumerate + merge instead of reconstruct + hand-authored
+  registration), `extension/src/swarm/compositeNode.ts`, `fleetNode.ts`.
+
+  E2E QA PROCEDURE: run two swarms (primary + FES), assert each writes its own
+  ~/.swarmforge/fleet/<name>/status.json each handoffd cycle, and that the fleet console renders both by
+  enumerating the dir with no registration file. Stop one swarm's handoffd and assert its status goes
+  stale and the console renders it stopped (coordinator lost).
+
+acceptance:
+  feature: specs/features/BL-437-fleet-status-publish.feature
+  steps:
+    - "handoffd publishes a rolled-up status.json (identity/status/children-rollup/updated_at) each cycle"
+    - "The fleet console renders one swarm per published status.json, with no hand-maintained registration"
+    - "A swarm with a stale updated_at renders as stopped (coordinator lost)"
+    - "The console reads the published status purely by field, not by reconstructing internal role files"
+
+human_approval: >
+  approved 2026-07-15 (coordinator session, full-batch confirmation via Operator relay). The
+  publish-your-own-status design (handoffd author, console enumerates, stale updated_at = coordinator
+  lost, transport-agnostic doc) was settled with the human 2026-07-15 (recorded in the intake); the human
+  then approved promotion as-is, accepting the exact status.json schema and handoffd's access to the
+  rollup inputs be re-verified during build rather than blocking promotion.
+
+mutation_cost: medium
