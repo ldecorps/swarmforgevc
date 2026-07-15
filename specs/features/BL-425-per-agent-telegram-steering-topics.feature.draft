@@ -1,0 +1,32 @@
+# NOT EXECUTABLE — parked follow-up slice (slice 2). The .feature.draft suffix
+# keeps these scenarios out of every *.feature glob and the acceptance runner
+# (specs/pipeline/runtime.js), so they cannot hard-fail the hardener's gate
+# before their step handlers exist (BL-233 slice-scoping). Promote each scenario
+# into the live BL-425 .feature file only when slice 2 is actually built.
+#
+# Slice 2 — SCOPED ANSWER-BACK. Slice 1 (the live feature) is inbound-only: the
+# human steers, the agent hears it, but nothing flows back to Telegram. This
+# slice adds the return channel the human asked for: the agent's ANSWER to a
+# steering message is posted back into that role's steering topic — and ONLY the
+# answer, never the agent's ordinary business-as-usual activity. The sanctioned
+# design (do not over-prescribe in the scenarios) reuses the operator ask/await +
+# reply-relay path (BL-306; operator_reply.bb): the steer is injected wrapped so
+# the agent replies through the reply path, which posts to the topic; BAU never
+# calls that path, so BAU never reaches the topic.
+
+Feature: an agent's answer to a Telegram steer flows back to its topic, not its activity
+
+  Background:
+    Given a running swarm with per-agent steering topics and the authorised human
+
+  # BL-425 answer-back-to-steering-topic-06
+  Scenario: an agent's answer to a steer is posted back into that role's topic
+    Given the authorised human has steered the "coder" role via its steering topic
+    When the "coder" role answers that steer
+    Then the answer is posted back into the "coder" role's steering topic
+
+  # BL-425 answer-back-excludes-bau-07
+  Scenario: an agent's ordinary activity is not posted to its steering topic
+    Given the "coder" role is doing ordinary pipeline work with no pending steer to answer
+    When the "coder" role produces its normal pane activity
+    Then nothing is posted to the "coder" role's steering topic
