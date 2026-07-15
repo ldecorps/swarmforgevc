@@ -92,6 +92,34 @@ test('formatContractForTelegram renders the agreement state, scope, out-of-scope
   assert.match(text, /No production data access/);
 });
 
+test('formatContractForTelegram renders the exact expected layout, labels, and reply instructions', () => {
+  const text = formatContractForTelegram({
+    scope: ['Ship the login flow'],
+    outOfScope: ['Payments'],
+    boundaries: ['No production data access'],
+    initialBacklogSummary: '5 tickets queued',
+    agreement: 'proposed',
+  });
+  assert.equal(
+    text,
+    [
+      'SwarmForge onboarding contract',
+      'Agreement: proposed',
+      '',
+      'Scope:',
+      '- Ship the login flow',
+      '',
+      'Out of scope:',
+      '- Payments',
+      '',
+      'Boundaries:',
+      '- No production data access',
+      '',
+      'Reply in this topic to object, or reply "agree" to approve.',
+    ].join('\n')
+  );
+});
+
 test('formatContractForTelegram renders an empty scope/outOfScope/boundaries list without crashing', () => {
   const text = formatContractForTelegram({
     scope: [],
