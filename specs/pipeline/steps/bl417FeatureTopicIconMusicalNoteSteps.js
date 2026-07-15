@@ -12,6 +12,10 @@ const { resolveIconState, ICON_EMOJI } = require(path.join(EXT_OUT, 'concierge',
 const { runConciergeTick } = require(path.join(EXT_OUT, 'concierge', 'conciergeTick'));
 
 const KNOWN_ICONS = { '✅': 'done', '🦠': 'defect', '🎵': 'feature', '🔍': 'paused' };
+// resolveIconState's own signature/branches - epic is deliberately excluded
+// (topicIcon.ts: an epic topic is never a target of this resolution).
+const KNOWN_FOLDERS = new Set(['active', 'paused', 'done']);
+const KNOWN_TYPES = new Set(['bug', 'defect', 'chore', 'enhancement', 'feature']);
 
 const TICKET_ID = 'BL-417-fixture';
 
@@ -94,6 +98,12 @@ function registerSteps(registry) {
 
   // ── feature-topic-icon-musical-note-02 (Scenario Outline) ──────────────
   registry.define(/^a ticket in folder "([^"]*)" whose type is "([^"]*)"$/, (ctx, folder, type) => {
+    if (!KNOWN_FOLDERS.has(folder)) {
+      throw new Error(`feature-topic-icon-musical-note-02: unrecognized <folder> example value "${folder}"`);
+    }
+    if (!KNOWN_TYPES.has(type)) {
+      throw new Error(`feature-topic-icon-musical-note-02: unrecognized <type> example value "${type}"`);
+    }
     ctx.folder = folder;
     ctx.type = type;
   });
