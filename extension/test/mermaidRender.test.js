@@ -7,10 +7,17 @@ const {
   renderMermaidToFlatSvg,
   renderMermaidToPng,
   DEFAULT_DIAGRAM_THEME,
+  DIAGRAM_RENDER_WIDTH,
 } = require('../out/diagrams/mermaidRender');
 
 const FIXTURE_MMD = fs.readFileSync(path.join(__dirname, 'fixtures', 'sample-diagram.mmd'), 'utf8');
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+// PNG signature (8 bytes) + IHDR chunk length (4) + type "IHDR" (4), then
+// width as a big-endian uint32 (RFC 2083 section 11.2.2 - the IHDR chunk).
+function pngWidth(png) {
+  return png.readUInt32BE(16);
+}
 
 test('flattenMermaidThemeVars resolves every var(--name) reference to a literal hex color', () => {
   const svg = '<svg style="--bg:#ffffff;--fg:#101010"><style>@import url(x); text{}</style><rect fill="var(--_node-fill)" stroke="var(--bg)"/></svg>';
@@ -61,4 +68,18 @@ test('renderMermaidToPng differs for different diagram sources (not a constant/s
 test('DEFAULT_DIAGRAM_THEME provides bg and fg suitable for a white email background', () => {
   assert.equal(DEFAULT_DIAGRAM_THEME.bg, '#ffffff');
   assert.equal(typeof DEFAULT_DIAGRAM_THEME.fg, 'string');
+});
+
+// BL-402: the human found the prior 1600px render blurry on high-DPI
+// screens; the fix doubles the resvg rasterization width.
+test('DIAGRAM_RENDER_WIDTH is at least 3200 (double the prior 1600)', () => {
+  assert.ok(DIAGRAM_RENDER_WIDTH >= 3200, `expected DIAGRAM_RENDER_WIDTH >= 3200, got ${DIAGRAM_RENDER_WIDTH}`);
+});
+
+// BL-402 high-dpi-render-width-01
+test('renderMermaidToPng renders at least 3200 pixels wide', async () => {
+  const png = await renderMermaidToPng(FIXTURE_MMD);
+  const width = pngWidth(png);
+
+  assert.ok(width >= 3200, `expected the rendered PNG to be at least 3200px wide, got ${width}`);
 });
