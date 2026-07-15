@@ -1,0 +1,58 @@
+id: BL-417
+title: "Remap feature-in-flight topic icon from bulb to musical note (orchestra icons)"
+milestone: M8
+type: feature
+status: todo
+severity: low
+priority: 3
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-orchestra-emoji-topic-remap.md — human design session 2026-07-15 (full record docs/branding/icon-system.md §5a). Ticket-level half of the orchestra remap; the standing-topic half is split out as BL-418."
+
+notes: |
+  WHAT: within Telegram's free getForumTopicIconStickers set (live-checked
+  2026-07-15: 112 stickers, performance emoji but NO instruments/notation),
+  remap the ONE ticket-level state that has a musical stand-in:
+    - feature-in-flight: 💡 -> 🎵 ("a passage being played")
+  UNCHANGED (no musical stand-in beats them): ✅ done, 🦠 defect-in-flight,
+  🔍 paused. So this is effectively a one-value change to ICON_EMOJI.feature.
+
+  SCOPE (tiny, reuses BL-342's shipped machinery — NOT new machinery):
+  extension/src/concierge/topicIcon.ts's ICON_EMOJI table (feature: '💡' ->
+  '🎵'); resolveIconState is unchanged. Plus its tests, and one backfill run via
+  extension/src/tools/backfill-topic-icons.ts to reglyph existing feature topics.
+
+  PRESERVE BL-342 POSTURE: resolve-or-skip against the LIVE sticker set (never
+  hardcode a custom-emoji id — the set can change); the ownership rule (never
+  touch an icon the swarm did not set) is unchanged. 🎵 was present in the
+  2026-07-15 live set, but keep the skip-if-absent path so a future set change
+  degrades gracefully.
+
+  OVERLAP CLUSTER (serialize — do not run concurrently with other topic-hook
+  work): topicIcon.ts / conciergeTick.ts are the known overlap cluster. BL-414
+  (topic title age suffix) and BL-418 (standing-topic icons) touch the same
+  area, and BL-342/BL-409 are related. Coordinator: serialize these; do not
+  promote two topic-hook tickets into active concurrently.
+
+  OUT OF SCOPE: standing non-ticket topics (support/intake 🎟, Operator 🏛) —
+  that needs new non-ticket icon wiring and is BL-418; the wider PWA-only
+  orchestra glyph system (dynamics, freshness fade, role instruments).
+
+acceptance:
+  feature: specs/features/BL-417-feature-topic-icon-musical-note.feature
+  steps:
+    - "An active non-bug (feature) ticket resolves to the 🎵 musical-note icon"
+    - "done ✅, defect 🦠, and paused 🔍 icons are unchanged"
+    - "A 🎵 absent from the live sticker set skips the icon rather than crashing the tick"
+
+qa_e2e: |
+  1. Unit: resolveIconState + ICON_EMOJI yields 🎵 for active/feature and the
+     unchanged glyphs for done/defect/paused; a stubbed live set lacking 🎵
+     yields a skip.
+  2. Wiring: a concierge tick over a fixture feature topic calls setTopicIcon
+     with the 🎵 sticker id (resolved from the live set).
+  3. Live: run the backfill once against the real forum group and confirm
+     existing feature topics show 🎵 while done/defect/paused are untouched.
+
+human_approval: approved
+mutation_cost: low
