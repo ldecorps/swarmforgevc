@@ -143,6 +143,27 @@ test('runObject in-process returns the revised contract itself, matching what wa
   assert.deepEqual(result.contract, readContract(targetRepo));
 });
 
+// BL-442: a real, derivable objection reports derived: true, so a caller
+// (the Telegram relay) knows to present the result as an actual revision.
+test('runObject in-process reports derived: true for an objection that derives a concrete change', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const result = await runObject(targetRepo, 'also add accessibility support');
+  assert.equal(result.derived, true);
+});
+
+// BL-442: an objection from which no concrete change can be derived reports
+// derived: false, never mutates contract.yaml, but still consumes a round
+// (the round-cap budget this ticket leaves unchanged).
+test('runObject in-process reports derived: false and leaves contract.yaml untouched when no change can be derived', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const before = readContract(targetRepo);
+  const result = await runObject(targetRepo, 'I am wary of this direction');
+  assert.equal(result.derived, false);
+  assert.equal(result.round.round, 1);
+  assert.deepEqual(result.contract, before);
+  assert.deepEqual(readContract(targetRepo), before);
+});
+
 test('runApprove in-process returns the agreed contract itself, matching what was written to disk', async () => {
   const targetRepo = mkTargetWithProposedContract();
   const result = await runApprove(targetRepo);
