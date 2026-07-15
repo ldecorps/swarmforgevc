@@ -154,6 +154,12 @@ defaults to `normal` rather than crashing or leaving a blank instruction.
 Change your mind later the same way as any other contract term: object,
 revise, re-approve, and re-run the prompt-proposal command above.
 
+The same verbosity also governs the front desk's own Telegram replies to
+you, not just the generated agent prompts (BL-383) — that's the messages
+you actually read. The front-desk Operator re-reads the target's
+`contract.yaml` on every reply, so a re-negotiated verbosity takes effect
+immediately on the very next reply, with no swarm restart needed.
+
 **Each target gets its own Telegram bot and group to negotiate the contract in
 (BL-380).** Two targets can never share one Telegram bot: `getUpdates` is
 long-polling scoped to the bot token, so a second concurrent poller on the
