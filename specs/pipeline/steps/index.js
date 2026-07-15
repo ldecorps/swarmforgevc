@@ -204,7 +204,8 @@ const DOMAINS = [
   require('./bl405OnboardFreeEmailScannerSteps'),
   require('./bl407VerifiedCompletionRecordWritePathGapSteps'),
   require('./bl412DiskSpaceEarlyWarningAlertSteps'),
-  require('./bl421TileLiveVsResolvedDecisionSteps')
+  require('./bl421TileLiveVsResolvedDecisionSteps'),
+  require('./bl418StandingTopicIconsSteps')
 ];
 
 function registerSteps(registry) {
