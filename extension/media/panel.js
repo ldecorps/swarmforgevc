@@ -546,6 +546,24 @@ document.addEventListener('keydown', (e) => {
 // so the border-color-only cues above always have a textual equivalent.
 // Idle (none of the four classes) intentionally clears the badge rather
 // than showing a fifth "idle" label - the absence of a flag IS idle.
+// BL-421: renders the LIVE / RESOLVED decision-menu banner from the host's
+// pure classification (needsHumanDetection.ts's classifyDecisionStatus) -
+// this function only maps a status string to markup, it makes no liveness
+// decision of its own.
+function updateDecisionBanner(entry, status) {
+  const el = entry.decisionBanner;
+  el.classList.remove('live', 'resolved', 'visible');
+  if (status === 'live') {
+    el.classList.add('live', 'visible');
+    el.textContent = '⚠ Awaiting your answer';
+  } else if (status === 'resolved') {
+    el.classList.add('resolved', 'visible');
+    el.textContent = '✓ Decision already resolved — not actionable';
+  } else {
+    el.textContent = '';
+  }
+}
+
 function updateStatusBadge(entry) {
   const cls = entry.tile.classList;
   const label = cls.contains('dead') ? 'Dead'
@@ -687,6 +705,13 @@ function ensureTile(role, displayName, agent, currentModel, availableModels, cur
     }
   });
 
+  // BL-421: a loud banner directly above the transcript marking a decision
+  // menu LIVE (still awaiting an answer) or RESOLVED (historical, already
+  // answered/cleared) - see updateDecisionBanner. Hidden (no 'visible'
+  // class) whenever the tile has no decision menu in view.
+  const decisionBanner = document.createElement('div');
+  decisionBanner.className = 'tile-decision-banner';
+
   const output = document.createElement('div');
   output.className = 'tile-output';
   output.tabIndex = 0;
@@ -699,7 +724,7 @@ function ensureTile(role, displayName, agent, currentModel, availableModels, cur
   output.setAttribute('role', 'log');
   output.setAttribute('aria-label', displayName + ' output');
 
-  const entry = { tile, output, blBadge, statusBadge, text: '', tailLocked: true };
+  const entry = { tile, output, blBadge, statusBadge, decisionBanner, text: '', tailLocked: true };
 
   output.addEventListener('focus', () => {
     activeRole = role;
@@ -730,6 +755,7 @@ function ensureTile(role, displayName, agent, currentModel, availableModels, cur
   }, 100);
 
   tile.appendChild(header);
+  tile.appendChild(decisionBanner);
   tile.appendChild(output);
   grid.appendChild(tile);
 
@@ -816,6 +842,14 @@ window.addEventListener('message', (event) => {
             entry.tile.classList.remove('needs-human');
           }
           updateStatusBadge(entry);
+        }
+      });
+      break;
+    case 'decisionStatus':
+      message.events.forEach((e) => {
+        const entry = tiles.get(e.role);
+        if (entry) {
+          updateDecisionBanner(entry, e.status);
         }
       });
       break;

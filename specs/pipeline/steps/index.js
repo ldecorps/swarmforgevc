@@ -203,7 +203,8 @@ const DOMAINS = [
   require('./bl395ApprovalSnippetVisibleChromeSteps'),
   require('./bl405OnboardFreeEmailScannerSteps'),
   require('./bl407VerifiedCompletionRecordWritePathGapSteps'),
-  require('./bl412DiskSpaceEarlyWarningAlertSteps')
+  require('./bl412DiskSpaceEarlyWarningAlertSteps'),
+  require('./bl421TileLiveVsResolvedDecisionSteps')
 ];
 
 function registerSteps(registry) {
