@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -6,7 +7,7 @@ const { buildSampledRoles, resolvePanePid } = require('../out/swarm/resourceSamp
 const { installInProcessTmux } = require('./helpers/fakeTmux');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-resource-sampler-activation-'));
+  return mkTmpDir('sfvc-resource-sampler-activation-');
 }
 
 function swarmRole(overrides = {}) {

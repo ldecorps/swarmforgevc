@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -17,7 +18,7 @@ const {
 // drain status) - not fabricated, not just unit-tested in isolation.
 
 function mkTarget() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-coordinator-loss-trigger-'));
+  return mkTmpDir('sfvc-coordinator-loss-trigger-');
 }
 
 // ── isCoordinatorDeadEvent (pure decision) ────────────────────────────────

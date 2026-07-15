@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -10,7 +11,7 @@ const { storeTelegramBotToken, readTelegramBotToken } = require('../out/onboardi
 // "host state outside the working tree" shape.
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-telegram-channel-secrets-'));
+  return mkTmpDir('sfvc-telegram-channel-secrets-');
 }
 
 test('storeTelegramBotToken writes the token to the secrets file, keyed by target repo path', () => {

@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -83,7 +84,7 @@ test('stampCacheName throws when the placeholder is missing (never silently no-o
 // ── stampPwaCacheNameInPlace (real fs, temp dirs - the BL-249 acceptance shape) ──
 
 function mkSiteDir(overrides = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-pwa-cache-stamp-'));
+  const dir = mkTmpDir('aps-pwa-cache-stamp-');
   fs.writeFileSync(path.join(dir, 'sw.js'), overrides.swJs ?? SW_JS_SOURCE);
   fs.writeFileSync(path.join(dir, 'index.html'), overrides.indexHtml ?? '<html>shell</html>');
   fs.writeFileSync(path.join(dir, 'app.js'), overrides.appJs ?? 'console.log("app");');

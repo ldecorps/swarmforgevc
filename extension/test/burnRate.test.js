@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -80,7 +81,7 @@ test('the default window is 15 minutes', () => {
 // ── computeBurnRateForRoles (impure orchestrator) ───────────────────────
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-burn-rate-'));
+  return mkTmpDir('sfvc-burn-rate-');
 }
 
 function writeTranscript(projectsDir, worktreePath, records) {

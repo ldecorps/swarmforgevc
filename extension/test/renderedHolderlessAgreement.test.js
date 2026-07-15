@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -22,7 +23,7 @@ const { findLiveHolder } = require('../out/swarm/swarmState');
 // filesystem fixture, not a hand-copied restatement of either.
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-holderless-'));
+  return mkTmpDir('sfvc-holderless-');
 }
 
 function mkdirp(dir) {

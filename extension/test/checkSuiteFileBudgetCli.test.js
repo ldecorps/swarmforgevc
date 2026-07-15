@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -14,7 +15,7 @@ const {
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'check-suite-file-budget.js');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-suite-file-budget-'));
+  return mkTmpDir('sfvc-suite-file-budget-');
 }
 
 function writeReport(root, testResults) {

@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -15,7 +16,7 @@ const { main } = require('../out/tools/suite-duration-line');
 const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'suite-duration-line.js');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-suite-duration-line-cli-'));
+  return mkTmpDir('sfvc-suite-duration-line-cli-');
 }
 
 function git(cwd, args) {

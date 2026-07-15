@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -7,7 +8,7 @@ const { writeHeartbeat, readHeartbeat } = require('../out/tools/heartbeat');
 const { withHeartbeat, resetBeatCount } = require('../out/tools/toolDecorator');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-hb-'));
+  return mkTmpDir('sfvc-hb-');
 }
 
 // ── writeHeartbeat / readHeartbeat ────────────────────────────────────────

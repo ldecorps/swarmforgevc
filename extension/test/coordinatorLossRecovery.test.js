@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -17,7 +18,7 @@ const {
 // polling always runs on an injected fake sleep, never a real timer.
 
 function mkTarget() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-coordinator-loss-'));
+  return mkTmpDir('sfvc-coordinator-loss-');
 }
 
 function fakeSleep(calls) {

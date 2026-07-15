@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 /**
  * BL-021: trace-hop CLI — unit tests.
  */
@@ -19,7 +20,7 @@ const {
 } = require('../out/tools/trace-hop');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-tracehop-test-'));
+  return mkTmpDir('sfvc-tracehop-test-');
 }
 
 // ── roleToPhase ───────────────────────────────────────────────────────────────

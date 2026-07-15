@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -11,7 +12,7 @@ function loadTask() {
 }
 
 function mkScratchRoot(name) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), `sfvc-runbenchmark-${name}-`));
+  return mkTmpDir(`sfvc-runbenchmark-${name}-`);
 }
 
 test('runs every configured model from the same starting task and records quality/latency/cost/tokens', async () => {
@@ -204,7 +205,7 @@ test('an executed run whose fixture has zero tests scores quality 0, not NaN', a
 // ── BL-386: a battery of several tasks, not one ───────────────────────────
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-battery-'));
+  return mkTmpDir('sfvc-battery-');
 }
 
 function fakeTask(id) {

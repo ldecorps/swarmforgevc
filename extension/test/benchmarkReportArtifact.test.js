@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -6,7 +7,7 @@ const { execFileSync } = require('node:child_process');
 const { benchmarkReportPath, writeBenchmarkReport, commitBenchmarkReport } = require('../out/benchmark/reportArtifact');
 
 function mkTmp() {
-  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-benchmark-artifact-')));
+  return fs.realpathSync(mkTmpDir('sfvc-benchmark-artifact-'));
 }
 function git(cwd, args) {
   return execFileSync('git', args, { cwd, encoding: 'utf8' });

@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 /**
  * BL-023: Reconciler (in_process-stuck + done-but-undelivered) — unit tests.
  */
@@ -24,7 +25,7 @@ const STALE_MS = NOW - (STUCK_TIMEOUT + 60) * 1000; // past stuck timeout
 const FRESH_MS = NOW - 60_000; // 1 minute — still within timeout
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-reconciler-'));
+  return mkTmpDir('sfvc-reconciler-');
 }
 
 // ── nudgePath ──────────────────────────────────────────────────────────────────

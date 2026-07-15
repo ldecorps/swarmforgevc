@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -16,7 +17,7 @@ test('formatEmitResult reports NOOP when the sidecar was unchanged', () => {
 });
 
 function mkTmp() {
-  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-cost-health-cli-')));
+  return fs.realpathSync(mkTmpDir('sfvc-cost-health-cli-'));
 }
 
 function mkdirp(dir) {

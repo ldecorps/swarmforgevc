@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -11,7 +12,7 @@ const { readSwarmIconId } = require('../out/concierge/blTopicStore');
 // after 26" after 19 of 26 calls and silently dropped the remaining 7.
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-backfill-icons-'));
+  return mkTmpDir('sfvc-backfill-icons-');
 }
 
 function git(cwd, args) {

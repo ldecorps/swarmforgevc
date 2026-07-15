@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -12,7 +13,7 @@ const { computeDeliveryMetrics } = require('../out/metrics/deliveryMetrics');
 // history in deliveryMetrics.test.js; this file only proves the wiring.
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-delivery-metrics-'));
+  return mkTmpDir('sfvc-delivery-metrics-');
 }
 
 function mkdirp(dir) {

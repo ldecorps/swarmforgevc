@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 /**
  * BL-017/018/019: Work Tree panel, item completion loop, traceability tags.
  */
@@ -12,7 +13,7 @@ const { nextEligibleItem } = require('../out/swarm/backlogLoop');
 const { lastCommitForItem } = require('../out/panel/gitTracer');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-wt-test-'));
+  return mkTmpDir('sfvc-wt-test-');
 }
 function mkdirp(dir) {
   fs.mkdirSync(dir, { recursive: true });
