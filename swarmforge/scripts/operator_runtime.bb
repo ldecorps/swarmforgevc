@@ -1004,7 +1004,15 @@
       (atomic-spit! front-desk-dispatch-context-file (json/generate-string {:thread-id thread-id}))
       (let [transcript (telegram-topic-lib/reply-context-for thread-id (support-thread-store/adapters-for state-dir))
             memory (operator-memory-lib/facts-for-wake (operator-memory-store/read-store! state-dir))
-            prompt (operator-lib/front-desk-reply-prompt {:transcript transcript :long-term-memory memory})]
+            ;; BL-383: re-read fresh on EVERY launch (never cached across
+            ;; wakes) - this IS the restart-free property scenario 03 pins:
+            ;; a re-negotiated verbosity is picked up by the very next reply
+            ;; with no swarm restart, because nothing here remembers the
+            ;; PREVIOUS read.
+            contract-yaml-path (fs/path project-root ".swarmforge" "contract.yaml")
+            contract-yaml-content (when (fs/exists? contract-yaml-path) (slurp (str contract-yaml-path)))
+            prompt (operator-lib/compose-front-desk-reply-prompt
+                    {:contract-yaml-content contract-yaml-content :transcript transcript :long-term-memory memory})]
         (atomic-spit! front-desk-prompt-file prompt))
       (log! "launch-front-desk-operator" "thread=" thread-id)
       (if skip-launch?

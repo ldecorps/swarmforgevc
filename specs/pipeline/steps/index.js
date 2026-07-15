@@ -67,6 +67,8 @@ const DOMAINS = [
   require('./pwaEnrichmentSteps'),
   require('./onboardingContractSteps'),
   require('./onboardingTelegramChannelSteps'),
+  require('./theContractIsNegotiatedOverTelegramSteps'),
+  require('./theFrontDeskAnswersAtTheAgreedVerbositySteps'),
   require('./notDoneCountSteps'),
   require('./coChangeCwdSteps'),
   require('./resourceSamplerActivationSteps'),
