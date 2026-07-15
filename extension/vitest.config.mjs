@@ -1,13 +1,39 @@
+import { createRequire } from 'node:module';
 import { defineConfig, configDefaults } from 'vitest/config';
 
 // BL-124: Vitest replaces `node --test` so Stryker can run coverage-aware
 // (perTest) mutation. globals:true keeps the 88 migrated files working with a
 // bare `test(...)` call (node:test module-as-function style) — no per-test
 // import churn. Assertions stay on node:assert/strict, which Vitest runs as-is.
+
+// BL-422: the pool/heap caps below are read from the SAME compiled module
+// vitestWorkerMemoryBudget.test.js unit-tests, not a second copy of the
+// numbers - this file is ESM, the caps module is CommonJS (tsconfig's
+// "commonjs" output), hence createRequire. `npm test`/`npm run coverage`
+// always run `tsc` before Vitest (see package.json), so out/ already exists
+// by the time this config loads.
+const require = createRequire(import.meta.url);
+const { MAX_WORKERS, PER_WORKER_HEAP_MB } = require('./out/tools/vitest-worker-memory-budget');
+
 export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // BL-422: an unbounded `vitest run` sizes its worker pool to the CPU
+    // count (20 on the reference host) with no per-worker heap limit - one
+    // run ballooned four workers to ~13GB and drove the kernel OOM-killer
+    // into a death-spiral that killed swarm agents twice in one day. Caps
+    // the DEFAULT forked-process pool only; Stryker's vitest-runner
+    // hardcodes pool:'threads'+maxThreads:1 and overrides both of these
+    // (engineering.prompt's worker-thread rule), so mutation runs are
+    // unaffected.
+    pool: 'forks',
+    poolOptions: {
+      forks: {
+        maxForks: MAX_WORKERS,
+        execArgv: [`--max-old-space-size=${PER_WORKER_HEAP_MB}`],
+      },
+    },
     // Keep Vitest's DEFAULT include: an explicit include gets mangled to [] by
     // the Stryker vitest-runner ("no tests found"). But the default glob also
     // matches the test copies under .stryker-tmp/sandbox-*/, so a standalone

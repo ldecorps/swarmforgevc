@@ -1,0 +1,87 @@
+id: BL-422
+title: "Cap the vitest worker pool and per-worker heap so a test run cannot OOM-spiral the swarm"
+milestone: M8
+type: bug
+status: todo
+severity: high
+priority: 2
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-runaway-test-worker-ram-oom-watchdog.md — external-supervisor-filed 2026-07-15 ~13:25 BST after the human flagged an unstable swarm. Verified live: four `node (vitest N)` workers held ~13GB on a 15GB box (149Mi free), the parent agent had been OOM-killed and its workers reparented to init, and the kernel OOM-killer death-spiralled the swarm (two full swarm deaths 08:56Z/10:24Z + a half-launch ~12:05Z the same day). Disk was fine throughout (3% used). Drained with the human 2026-07-15: of the three candidate directions, spec ONLY direction 1 — bound the blast radius at the source; the memory/orphan watchdog and RAM-aware health sweep were NOT selected."
+
+notes: |
+  WHAT / WHY. A plain `vitest run` (and the acceptance runs that shell it) sizes
+  its worker pool to the host CPU count and sets no per-worker heap limit
+  (extension/vitest.config.mjs today caps NOTHING — no pool, no poolOptions, no
+  --max-old-space-size). One run ballooned to ~13GB and started an OOM-spiral
+  that killed swarm agents. Capping the pool and the per-worker heap makes a
+  single test run's worst-case footprint bounded and small, so it can never
+  start that spiral.
+
+  SCOPE IS THE DEFAULT POOL, NOT MUTATION. Stryker's vitest-runner already
+  HARDCODES pool:'threads' + maxThreads:1 (engineering.prompt's worker-thread
+  rule), so mutation runs are single-worker and were never the offender. The
+  ballooning happens on the DEFAULT forked-process pool that a normal
+  `vitest run` / acceptance run uses — that is what must be capped.
+
+  BEHAVIOR WANTED (see the feature file):
+    - the vitest config sets an explicit FINITE maximum worker count (not the
+      CPU-count default);
+    - each worker runs with an explicit per-worker heap cap
+      (--max-old-space-size via the pool's execArgv / NODE_OPTIONS);
+    - the worst-case footprint (max workers x per-worker heap) stays within a
+      safe fraction of the smallest supported host RAM (a pure, testable
+      budget predicate).
+
+  TESTABILITY. Expose the caps (max workers, per-worker heap MB) as a shared,
+  exported module value the vitest config consumes AND a unit test asserts on —
+  do not leave them buried only inside the runner config where no test can see
+  them (mirrors the existing check-suite-file-budget.ts guard pattern). Add a
+  PURE predicate computeWorkerMemoryBudget({maxWorkers, perWorkerHeapMB,
+  hostRamMB}) -> { totalMB, withinBudget } and unit-test it with the two
+  Examples rows (a bounded config is within budget; an unbounded/oversized one
+  is over). No real timers, no real subprocess memory measurement in the unit
+  test.
+
+  TUNING (coder's call, verified against a green suite). Pick values that keep
+  the full ~1150-test suite passing while bounding the worst case well under the
+  15GB reference host — a sensible starting point is a small maxForks (e.g. 2)
+  with a per-worker --max-old-space-size around 2GB, then confirm green and that
+  peak RSS during a real run stays bounded. The exact numbers are an
+  implementation detail; the CONTRACT is "finite pool cap + finite per-worker
+  heap cap + worst-case within the host budget".
+
+  Scope: extension/vitest.config.mjs (pool + poolOptions + per-worker execArgv),
+  a small exported caps/budget module, and its unit test. Confirm Stryker's
+  mutation run still works (its runner overrides the pool, so the cap must not
+  break perTest mutation) — run a scoped `--mutate` sanity check.
+
+  OUT OF SCOPE (explicitly deferred by the human, not selected from the intake):
+  a memory/orphan-process watchdog + reaper (supervisor duty); a RAM-aware
+  health sweep for Operator visibility. Also out of scope: the disk-side
+  siblings BL-412 (ENOSPC alert) / BL-413 (stale /tmp sandbox sweep) / BL-420
+  (test-helper /tmp cleanup) — those are disk, this is RAM.
+
+acceptance:
+  feature: specs/features/BL-422-cap-vitest-worker-pool-heap.feature
+  steps:
+    - "The vitest configuration exposes an explicit finite maximum worker count rather than the CPU-count default"
+    - "The vitest configuration sets an explicit per-worker max-old-space-size heap cap"
+    - "The worst-case footprint of max workers times per-worker heap is reported within the host's safe budget for a bounded config and over budget for an unbounded one"
+
+qa_e2e: |
+  1. Unit: assert the exported caps are present and finite (a maximum worker
+     count that is not the CPU-count default; a per-worker heap MB that is set),
+     and drive computeWorkerMemoryBudget over the two Examples rows (2 x 2048 on
+     15360 MB -> within; 8 x 4096 on 15360 MB -> over).
+  2. Suite regression: run the full unit suite under the capped config and
+     confirm it passes (no functional regression, no timeouts).
+  3. Mutation sanity: run a scoped `--mutate` on a changed file and confirm the
+     Stryker vitest-runner still completes (its hardcoded threads/maxThreads:1
+     pool overrides the config cap, so mutation must be unaffected).
+  4. Live: run the suite on the host once and observe (e.g. /usr/bin/time -v or
+     watching RSS) that peak combined worker memory stays bounded well below the
+     box's RAM, so no OOM pressure builds.
+
+human_approval: approved
+mutation_cost: low
