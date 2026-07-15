@@ -1,0 +1,67 @@
+id: BL-428
+title: "Standing tracker: bring the ~88 pre-existing high-CRAP (>6) functions under threshold OPPORTUNISTICALLY (on-touch / small module slices), never as a big-bang sweep"
+milestone: M8
+type: chore
+severity: low
+priority: 5
+direction: swarm-proposed
+depends_on: []
+source: "backlog/INTAKE-operator-question-1784129181700.md — the hardener asked via Telegram (Operator SUP, 2026-07-15) whether to file a follow-up tech-debt ticket to decrap the ~88 pre-existing high-CRAP functions its CRAP run flagged during BL-417 (the changed file itself was in bounds: resolveIconState CRAP=4.00, resolveIconStickerId CRAP=1.00, both <=6). Delegated to the specifier to evaluate whether a dedicated decrap ticket is worth scoping and at what priority. Specifier disposition 2026-07-15: file THIS low-priority standing tracker; do NOT scope a big-bang 88-function sweep."
+
+notes: |
+  DISPOSITION — WHY A TRACKER, NOT A BIG-BANG DECRAP EPIC:
+    - The 88 flagged functions are PRE-EXISTING and OUTSIDE any current parcel's
+      scope, so they block nothing: the hardener's CRAP<=6 gate (article 4.1)
+      applies to a parcel's CHANGED files, not the whole tree. New high-CRAP code is
+      already prevented, and any of these 88 is FORCED under threshold the moment a
+      parcel touches its file — decrap-on-touch is the existing, cheaper mechanism.
+    - A single "decrap all 88" parcel would be a high-risk, behavior-preserving mass
+      refactor with ZERO observable value, and mutation-heavy 88 times over — exactly
+      the shape the constitution's "smallest slice that delivers observable value"
+      and mutation-heavy-overnight scheduling rules push against. Not worth scoping.
+    - But the observation has value and would otherwise be lost when BL-417's
+      hardener run scrolls away, so this ticket PRESERVES it as visible, low-priority
+      tech debt.
+
+  POLICY THIS TICKET STANDS FOR:
+    1. ON-TOUCH: when any parcel changes a file containing one of these functions,
+       bring that function to CRAP<=6 in the SAME parcel (the hardener gate already
+       requires this for changed files — this ticket just names it as the primary
+       drain path).
+    2. OPTIONAL SMALL SLICES: if the swarm has spare LOW-priority capacity, a decrap
+       slice may be actively scoped, but only MODULE-SCOPED and small — one module's
+       functions per parcel, each with the full behavior-preserving test/mutation
+       gate — never the whole list at once. Each such slice is its own ticket the
+       specifier writes when it is actually taken up.
+    3. REGENERATE THE LIST, don't trust the stale count: the "~88" figure is as of
+       BL-417's run; the current set is whatever `extension/scripts/crapReport.js`
+       (over `extension/scripts/crapLib.js`) reports as CRAP>6 today. Any active
+       decrap slice starts by regenerating the list, not from this number.
+
+  OUT OF SCOPE: a single parcel that decraps all 88; changing the CRAP threshold;
+  decrapping functions no current work touches just to zero the count (churn with no
+  observable value). This tracker is deliberately not promoted as one unit of work —
+  it is the standing home for the debt and the source the on-touch/module slices
+  draw from.
+
+acceptance: |
+  No net-new testable behavior of its own — the acceptance criterion for any decrap
+  work drawn from this tracker is the EXISTING hardener gate applied to that slice's
+  changed functions: each touched function ends at CRAP<=6 with 100% coverage, no
+  surviving mutants, and NO behavior change (a pure refactor: the function's existing
+  acceptance/unit tests still pass unchanged). A module-scoped decrap slice, when
+  actually taken up, gets its own concrete feature file at that time; this standing
+  tracker does not carry one.
+
+qa_e2e: |
+  Per decrap slice (not for the tracker as a whole): regenerate the CRAP>6 list via
+  extension/scripts/crapReport.js, confirm the slice's targeted functions were on it
+  and now report CRAP<=6, and confirm the module's existing behavior tests pass
+  unchanged (pure refactor — no acceptance scenario changed). The tracker itself is
+  "done" only when the CRAP>6 set is empty, reached incrementally, never in one pass.
+
+human_approval: >
+  Not required to FILE (a low-priority tracker, swarm-proposed in answer to the
+  hardener's delegated question). Any actively-scoped decrap slice drawn from it
+  follows the normal spec + human-review flow at that time.
+mutation_cost: low
