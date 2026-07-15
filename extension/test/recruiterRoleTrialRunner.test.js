@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -21,7 +22,7 @@ function candidate(model) {
 }
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-recruiter-trials-'));
+  return mkTmpDir('sfvc-recruiter-trials-');
 }
 
 test('resolves the recorded per-role gate args for a candidate model', async () => {

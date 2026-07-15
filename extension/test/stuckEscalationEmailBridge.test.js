@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 /**
  * BL-148: proves the full composition extension.ts wires together -
  * syncStuckEscalations (chaserMonitor.ts) feeding a NeedsHumanEmailNotifier
@@ -30,7 +31,7 @@ const { syncStuckEscalations } = require('../out/watchdog/chaserMonitor');
 const { NeedsHumanEmailNotifier } = require('../out/notify/needsHumanEmailNotifier');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-stuck-escalation-bridge-'));
+  return mkTmpDir('sfvc-stuck-escalation-bridge-');
 }
 
 function writeEscalations(targetPath, escalations) {

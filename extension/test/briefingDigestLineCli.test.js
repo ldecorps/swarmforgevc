@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -8,7 +9,7 @@ const { sinceLastBriefingMs, formatMergedBlockedDigest, main } = require('../out
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'briefing-digest-line.js');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'briefing-digest-test-'));
+  return mkTmpDir('briefing-digest-test-');
 }
 
 // ── sinceLastBriefingMs ─────────────────────────────────────────────────

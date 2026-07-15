@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -155,7 +156,7 @@ test('parseArgs combines --json and --hours regardless of order', () => {
 // ── end-to-end: the compiled CLI, plain-text and --json (dwell-05) ──────
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-stage-dwell-cli-'));
+  return mkTmpDir('sfvc-stage-dwell-cli-');
 }
 
 function mkdirp(dir) {

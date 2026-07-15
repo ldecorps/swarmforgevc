@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -6,7 +7,7 @@ const path = require('node:path');
 const { loadRuns, appendRun, updateLastRunForTarget } = require('../out/runs/runLog');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-runs-'));
+  return mkTmpDir('sfvc-runs-');
 }
 
 test('loadRuns returns empty array when file does not exist', () => {

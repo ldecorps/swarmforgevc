@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -65,14 +66,14 @@ const os = require('node:os');
 const { stopSwarm, clearSwarmStateFiles } = require('../out/swarm/swarmStopper');
 
 test('stopSwarm on a target with no swarm state is a success (idempotent)', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-stop-'));
+  const dir = mkTmpDir('sf-stop-');
   const result = stopSwarm(dir);
   assert.equal(result.success, true);
   assert.equal(result.sessionsKilled.length, 0);
 });
 
 test('stopSwarm clears stale tmux-socket and sessions.tsv from a crashed run', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-stop-'));
+  const dir = mkTmpDir('sf-stop-');
   const state = path.join(dir, '.swarmforge');
   fs.mkdirSync(state, { recursive: true });
   const socketFile = path.join(state, 'tmux-socket');
@@ -88,6 +89,6 @@ test('stopSwarm clears stale tmux-socket and sessions.tsv from a crashed run', (
 });
 
 test('clearSwarmStateFiles is safe when files are absent', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-clear-'));
+  const dir = mkTmpDir('sf-clear-');
   assert.doesNotThrow(() => clearSwarmStateFiles(dir));
 });

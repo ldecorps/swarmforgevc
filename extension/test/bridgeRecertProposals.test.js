@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -19,7 +20,7 @@ function writeInboxFile(targetPath, name, content) {
 }
 
 function withTempDir(fn) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-recert-bridge-'));
+  const dir = mkTmpDir('aps-recert-bridge-');
   try {
     return fn(dir);
   } finally {

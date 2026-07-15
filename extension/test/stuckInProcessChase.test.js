@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -21,7 +22,7 @@ const CONFIG = {
 };
 
 function mkWorktree() {
-  const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-stuck-'));
+  const wt = mkTmpDir('sfvc-stuck-');
   fs.mkdirSync(path.join(wt, '.swarmforge', 'handoffs', 'inbox', 'new'), { recursive: true });
   fs.mkdirSync(path.join(wt, '.swarmforge', 'handoffs', 'inbox', 'in_process'), { recursive: true });
   return wt;
@@ -176,7 +177,7 @@ test('REGRESSION: the 2026-07-02 overnight stall is caught without human help', 
 // --- root cause 2: the monitor must sweep the REAL per-worktree inboxes ---
 
 test('REGRESSION: buildRoleInboxes resolves per-worktree inbox paths from roles.tsv', () => {
-  const target = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-target-'));
+  const target = mkTmpDir('sfvc-target-');
   const wt = path.join(target, '.worktrees', 'coder');
   fs.mkdirSync(path.join(target, '.swarmforge'), { recursive: true });
   fs.writeFileSync(
@@ -199,12 +200,12 @@ test('REGRESSION: buildRoleInboxes resolves per-worktree inbox paths from roles.
 });
 
 test('buildRoleInboxes returns an empty list when roles.tsv is missing, instead of throwing', () => {
-  const target = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-target-'));
+  const target = mkTmpDir('sfvc-target-');
   assert.deepEqual(buildRoleInboxes(target, ['specifier', 'coder']), []);
 });
 
 test('buildRoleInboxes only includes roles present in rolesList, even if roles.tsv has more', () => {
-  const target = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-target-'));
+  const target = mkTmpDir('sfvc-target-');
   fs.mkdirSync(path.join(target, '.swarmforge'), { recursive: true });
   fs.writeFileSync(
     path.join(target, '.swarmforge', 'roles.tsv'),

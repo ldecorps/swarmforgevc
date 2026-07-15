@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -14,7 +15,7 @@ const { readRecord, appendMessage, recordPath, commitTopicRecord, hasCompletionR
 // topics/, alongside the ticket itself.
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl-topic-store-'));
+  return mkTmpDir('sfvc-bl-topic-store-');
 }
 
 // BL-348: appendMessage now reports a commit failure via an injectable

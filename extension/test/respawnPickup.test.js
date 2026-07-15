@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 'use strict';
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -8,7 +9,7 @@ const { createMessage, claimMessage, completeMessage, appendEventRaw } = require
 const { pickupPendingMessages } = require('../out/swarm/respawnPickup');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-respawn-'));
+  return mkTmpDir('sfvc-respawn-');
 }
 
 // ── pickupPendingMessages ──────────────────────────────────────────────────

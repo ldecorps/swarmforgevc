@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -15,10 +16,6 @@ const {
   updateTargetContract,
 } = require('../out/config/targetBootstrap');
 const { resolveTargetPath } = require('../out/config/targetPath');
-
-function mkTmpDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bootstrap-'));
-}
 
 const FIXTURE_CONTRACT = {
   scope: ['Build the thing.'],
@@ -104,7 +101,7 @@ test('resolveTargetPath returns undefined when path is whitespace only', () => {
 });
 
 test('initializeTargetRepo creates both prompt files in a non-git directory', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
   const result = await initializeTargetRepo(tmp);
   assert.deepEqual(result.created.sort(), ['engineering.prompt', 'project.prompt']);
   assert.deepEqual(result.skipped, []);
@@ -114,7 +111,7 @@ test('initializeTargetRepo creates both prompt files in a non-git directory', as
 });
 
 test('initializeTargetRepo skips files that already exist', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
   fs.writeFileSync(path.join(tmp, 'project.prompt'), 'existing content');
   const result = await initializeTargetRepo(tmp);
   assert.deepEqual(result.created, ['engineering.prompt']);
@@ -123,7 +120,7 @@ test('initializeTargetRepo skips files that already exist', async () => {
 });
 
 test('initializeTargetRepo skips commit when all files already present', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
   fs.writeFileSync(path.join(tmp, 'project.prompt'), 'x');
   fs.writeFileSync(path.join(tmp, 'engineering.prompt'), 'x');
   const result = await initializeTargetRepo(tmp);
@@ -137,7 +134,7 @@ test('initializeTargetRepo skips commit when all files already present', async (
 // `git commit` calls entirely on an empty file list rather than attempting
 // a no-pathspec `git add` (which git itself errors on).
 test('initializeTargetRepo skips commit when all files already present, in a git repository', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
   execSync('git init', { cwd: tmp });
   execSync('git config user.email "test@test.com"', { cwd: tmp });
   execSync('git config user.name "Test"', { cwd: tmp });
@@ -149,7 +146,7 @@ test('initializeTargetRepo skips commit when all files already present, in a git
 });
 
 test('initializeTargetRepo commits new files in a git repository', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
   execSync('git init', { cwd: tmp });
   execSync('git config user.email "test@test.com"', { cwd: tmp });
   execSync('git config user.name "Test"', { cwd: tmp });
@@ -167,7 +164,7 @@ test('initializeTargetRepo commits new files in a git repository', async () => {
 // Treated as a quiet non-error, not a crash: `committed: false`, still
 // reported as created since it was freshly written to disk.
 test('initializeTargetRepo does not throw when re-creating a file whose content is unchanged from HEAD (nothing to commit)', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
   execSync('git init', { cwd: tmp });
   execSync('git config user.email "test@test.com"', { cwd: tmp });
   execSync('git config user.name "Test"', { cwd: tmp });
@@ -205,7 +202,7 @@ test('planTargetBootstrapFiles generalizes over an explicit file list (BL-262: n
 });
 
 test('initializeTargetContract creates both contract files (including the nested .swarmforge/ dir) in a non-git directory', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
   const result = await initializeTargetContract(tmp, FIXTURE_CONTRACT);
 
   assert.deepEqual(result.created.sort(), ['CONTRACT.md', path.join('.swarmforge', 'contract.yaml')].sort());
@@ -216,7 +213,7 @@ test('initializeTargetContract creates both contract files (including the nested
 });
 
 test('initializeTargetContract skips a contract file that already exists (idempotent scaffold)', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
   fs.mkdirSync(path.join(tmp, '.swarmforge'), { recursive: true });
   fs.writeFileSync(path.join(tmp, '.swarmforge', 'contract.yaml'), 'agreement: agreed\n');
 
@@ -228,7 +225,7 @@ test('initializeTargetContract skips a contract file that already exists (idempo
 });
 
 test('initializeTargetContract commits new contract files in a git repository with a distinct commit message', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
   execSync('git init', { cwd: tmp });
   execSync('git config user.email "test@test.com"', { cwd: tmp });
   execSync('git config user.name "Test"', { cwd: tmp });
@@ -241,7 +238,7 @@ test('initializeTargetContract commits new contract files in a git repository wi
 });
 
 test('initializeTargetContract and initializeTargetRepo compose without interfering (both run on the same target)', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
 
   const promptResult = await initializeTargetRepo(tmp);
   const contractResult = await initializeTargetContract(tmp, FIXTURE_CONTRACT);
@@ -255,7 +252,7 @@ test('initializeTargetContract and initializeTargetRepo compose without interfer
 // ── BL-344: unconditional revision write, reusing writeFilesAndCommit ───────
 
 test('updateTargetContract rewrites both contract files unconditionally, even though they already exist', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
   await initializeTargetContract(tmp, FIXTURE_CONTRACT);
   const revised = { ...FIXTURE_CONTRACT, scope: [...FIXTURE_CONTRACT.scope, 'Per operator request: add logging'] };
 
@@ -267,7 +264,7 @@ test('updateTargetContract rewrites both contract files unconditionally, even th
 });
 
 test('updateTargetContract commits a real content change in a git repository', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
   execSync('git init', { cwd: tmp });
   execSync('git config user.email "test@test.com"', { cwd: tmp });
   execSync('git config user.name "Test"', { cwd: tmp });
@@ -282,7 +279,7 @@ test('updateTargetContract commits a real content change in a git repository', a
 });
 
 test('updateTargetContract returns committed:false when the content is unchanged from HEAD (nothing to commit)', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
   execSync('git init', { cwd: tmp });
   execSync('git config user.email "test@test.com"', { cwd: tmp });
   execSync('git config user.name "Test"', { cwd: tmp });
@@ -297,7 +294,7 @@ test('updateTargetContract returns committed:false when the content is unchanged
 // error than "nothing to commit" and must propagate, not be silently
 // swallowed by the same catch that tolerates the no-op case above.
 test('updateTargetContract propagates a real git commit failure instead of swallowing it', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
   execSync('git init', { cwd: tmp });
 
   await assert.rejects(() => updateTargetContract(tmp, FIXTURE_CONTRACT, 'Revise contract'));
@@ -315,7 +312,7 @@ test('buildGeneratedPromptBootstrapFiles returns project.prompt and engineering.
 
 // BL-269 onboarding-generated-prompts-03 (proposed/pending rows)
 test('initializeTargetPrompts withholds the prompts from the target repo when the gate holds (proposed)', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
 
   const result = await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'hold', reason: 'proposed: not yet agreed' });
 
@@ -327,7 +324,7 @@ test('initializeTargetPrompts withholds the prompts from the target repo when th
 });
 
 test('initializeTargetPrompts withholds the prompts from the target repo when the gate holds (pending)', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
 
   const result = await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'hold', reason: 'pending: not yet agreed' });
 
@@ -337,7 +334,7 @@ test('initializeTargetPrompts withholds the prompts from the target repo when th
 
 // BL-269 onboarding-generated-prompts-03 (agreed row)
 test('initializeTargetPrompts releases the prompts for commit to the target repo when the gate allows (agreed)', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
   execSync('git init', { cwd: tmp });
   execSync('git config user.email "test@test.com"', { cwd: tmp });
   execSync('git config user.name "Test"', { cwd: tmp });
@@ -353,7 +350,7 @@ test('initializeTargetPrompts releases the prompts for commit to the target repo
 });
 
 test('initializeTargetPrompts is idempotent: re-running with unchanged content commits nothing', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
   execSync('git init', { cwd: tmp });
   execSync('git config user.email "test@test.com"', { cwd: tmp });
   execSync('git config user.name "Test"', { cwd: tmp });
@@ -375,7 +372,7 @@ test('initializeTargetPrompts is idempotent: re-running with unchanged content c
 // contract.yaml this same onboarding flow writes but never commits through
 // this path) commonly has.
 test('initializeTargetPrompts re-run with unchanged content does not throw when the repo has an unrelated untracked file', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
   execSync('git init', { cwd: tmp });
   execSync('git config user.email "test@test.com"', { cwd: tmp });
   execSync('git config user.name "Test"', { cwd: tmp });
@@ -393,7 +390,7 @@ test('initializeTargetPrompts re-run with unchanged content does not throw when 
 // already-materialized prompt content, not permanently freeze it at its
 // first-ever generation.
 test('initializeTargetPrompts overwrites already-materialized content when the prompts change (change-of-mind)', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
   execSync('git init', { cwd: tmp });
   execSync('git config user.email "test@test.com"', { cwd: tmp });
   execSync('git config user.name "Test"', { cwd: tmp });

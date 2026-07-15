@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=e5849753513d697ea8957f849da846b05a7e4d3b74464a7a87980aacc707ad87
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-15T15:20:05.519280731Z","feature_name":"a feature-in-flight topic shows the musical-note icon","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-417-feature-topic-icon-musical-note.feature","background_hash":"77128d743a75e26489d42c92a27aa56d984244bf36a0d8f45eb9ae9364436f89","implementation_hash":"unknown","scenarios":[{"index":1,"name":"the other ticket-level states keep their existing icons","scenario_hash":"afd454b3c64a3b4bdd3211263d51ee0c80dc7a2fa6eaf51c04f49773f41f8dfe","mutation_count":9,"result":{"Total":9,"Killed":9,"Survived":0,"Errors":0},"tested_at":"2026-07-15T15:20:05.519280731Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a feature-in-flight topic shows the musical-note icon
 
   # Part of the orchestra icon remap: within Telegram's free topic-icon sticker

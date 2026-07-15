@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -55,7 +56,7 @@ test('conciergeTickIntervalMs falls back to the default for a non-positive value
 // computeCurrentHolders, all themselves tested against real fs elsewhere.
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-role-ticket-'));
+  return mkTmpDir('sfvc-role-ticket-');
 }
 
 function writeRolesTsv(targetPath, roles) {
@@ -217,7 +218,7 @@ test('the compiled CLI runs standalone as a subprocess and produces the same res
 // ── ensureOperatorTopic (BL-346 standing-operator-topic-01/06/07) ────────
 
 function mkTmpRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-operator-topic-'));
+  return mkTmpDir('sfvc-operator-topic-');
 }
 
 function topicMapPath(root) {
