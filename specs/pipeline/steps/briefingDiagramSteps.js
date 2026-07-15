@@ -145,8 +145,11 @@ function registerSteps(registry) {
     if (ctx.result.emailsSent !== 1 || !ctx.result.sent.includes(FILE_NAME)) {
       throw new Error(`expected the briefing to still send once despite the renderer being unavailable; got: ${JSON.stringify(ctx.result)}`);
     }
-    if (ctx.result.lastSentHtml) {
-      throw new Error(`expected no html body when rendering is unavailable; got: ${ctx.result.lastSentHtml}`);
+    // BL-393: html is now always the rendered briefing body, even when no
+    // diagram is available - only the diagram-specific cid reference is
+    // absent (asserted separately by BL-393's own body-html-05 scenario).
+    if (/cid:/.test(ctx.result.lastSentHtml || '')) {
+      throw new Error(`expected no diagram image reference in the html when rendering is unavailable; got: ${ctx.result.lastSentHtml}`);
     }
     if (!/unavailable/.test(ctx.result.lastSentText || '')) {
       throw new Error(`expected a clear no-diagram note in the sent text; got: ${ctx.result.lastSentText}`);

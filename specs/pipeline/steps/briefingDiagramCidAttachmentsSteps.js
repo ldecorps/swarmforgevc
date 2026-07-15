@@ -147,10 +147,16 @@ function registerSteps(registry) {
     writeBriefing(ensureBriefingsDir(ctx));
   });
 
-  registry.define(/^the send payload has neither an attachments field nor an html field$/, (ctx) => {
-    if (Object.prototype.hasOwnProperty.call(ctx.result, 'lastSentHtml') && ctx.result.lastSentHtml != null) {
-      throw new Error(`expected no html field in the send payload; got: ${JSON.stringify(ctx.result)}`);
+  // BL-393: html is no longer conditional on a diagram section - it now
+  // always carries the rendered briefing body, so the shipped "neither
+  // html nor attachments" claim no longer holds. Attachments remain absent.
+  registry.define(/^the send payload carries an html field with the rendered body$/, (ctx) => {
+    if (!ctx.result.lastSentHtml) {
+      throw new Error(`expected an html field carrying the rendered body in the send payload; got: ${JSON.stringify(ctx.result)}`);
     }
+  });
+
+  registry.define(/^the send payload has no attachments field$/, (ctx) => {
     if (Object.prototype.hasOwnProperty.call(ctx.result, 'lastSentAttachments') && ctx.result.lastSentAttachments != null) {
       throw new Error(`expected no attachments field in the send payload; got: ${JSON.stringify(ctx.result)}`);
     }
