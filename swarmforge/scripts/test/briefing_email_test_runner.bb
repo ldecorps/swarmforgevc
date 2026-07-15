@@ -526,44 +526,9 @@
            "<p>Headline</p>"
            (nth (first @sent-args) 2)))
 
-;; ── render-markdown-to-html (pure, BL-393) ───────────────────────────────
-
-(assert= "body-html-02: a heading renders as an HTML heading element"
-         "<h2>Section</h2>"
-         (briefing-email-lib/render-markdown-to-html "## Section"))
-
-(assert= "body-html-02: a level-1 heading renders as h1"
-         "<h1>Title</h1>"
-         (briefing-email-lib/render-markdown-to-html "# Title"))
-
-(assert= "body-html-02: bold text renders as HTML emphasis"
-         "<p>This is <strong>bold</strong> text.</p>"
-         (briefing-email-lib/render-markdown-to-html "This is **bold** text."))
-
-(assert= "body-html-02: a markdown table renders as HTML table markup"
-         (str "<table><tr><th>A</th><th>B</th></tr>"
-              "<tr><td>1</td><td>2</td></tr></table>")
-         (briefing-email-lib/render-markdown-to-html "| A | B |\n| --- | --- |\n| 1 | 2 |"))
-
-(assert= "body-html-01: plain text renders as its own paragraph"
-         "<p>Hello world</p>"
-         (briefing-email-lib/render-markdown-to-html "Hello world"))
-
-(assert= "render-markdown-to-html: blank lines separate paragraphs but are never rendered themselves"
-         "<p>One</p><p>Two</p>"
-         (briefing-email-lib/render-markdown-to-html "One\n\n\nTwo"))
-
-(assert= "render-markdown-to-html: nil input renders to an empty string, never a crash"
-         ""
-         (briefing-email-lib/render-markdown-to-html nil))
-
-(assert= "render-markdown-to-html: HTML-special characters are escaped so raw markup can't leak through"
-         "<p>a &lt;script&gt; &amp; more</p>"
-         (briefing-email-lib/render-markdown-to-html "a <script> & more"))
-
-(assert= "body-html-03: heading, paragraph, and a later appended section all render, not only the lede"
-         "<h2>Lede</h2><p>Intro.</p><h2>Appended section</h2><p>Detail.</p>"
-         (briefing-email-lib/render-markdown-to-html "## Lede\n\nIntro.\n\n## Appended section\n\nDetail."))
+;; render-markdown-to-html's own pure tests live in
+;; markdown_to_html_test_runner.bb (BL-393 cleaner extraction) - it moved to
+;; its own module (markdown_to_html_lib.bb), so its tests moved with it.
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
