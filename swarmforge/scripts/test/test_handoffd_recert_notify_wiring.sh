@@ -21,6 +21,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
+export SWARMFORGE_ALLOW_TMP_DAEMON=1  # BL-406: opt in - this ROOT is an intentional throwaway test root
 DAEMON_PID=""
 cleanup() {
   if [[ -n "$DAEMON_PID" ]]; then

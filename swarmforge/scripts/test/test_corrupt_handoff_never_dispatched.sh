@@ -33,6 +33,7 @@ valid_handoff_body() {
 # ═══════════════════════════════════════════════════════════════════════════
 
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
+export SWARMFORGE_ALLOW_TMP_DAEMON=1  # BL-406: opt in - this ROOT is an intentional throwaway test root
 trap 'rm -rf "$ROOT"' EXIT
 
 git -C "$ROOT" init -q

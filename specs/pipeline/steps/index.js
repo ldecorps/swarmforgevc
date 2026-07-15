@@ -17,6 +17,7 @@ const DOMAINS = [
   require('./rateLimitCooldownSteps'),
   require('./emailMissingKeySteps'),
   require('./briefingEmailSteps'),
+  require('./briefingDuplicateInconsistentSteps'),
   require('./briefingDiagramSteps'),
   require('./briefingSubjectBoundedSteps'),
   require('./briefingBodyHtmlSteps'),

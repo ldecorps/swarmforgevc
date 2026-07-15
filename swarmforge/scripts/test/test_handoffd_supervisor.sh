@@ -57,6 +57,7 @@ failure_log_path() {
 
 make_fixture() {
   ROOT="$(cd "$(mktemp -d)" && pwd -P)"
+  export SWARMFORGE_ALLOW_TMP_DAEMON=1  # BL-406: opt in - this ROOT is an intentional throwaway test root
   DAEMON_DIR="$ROOT/.swarmforge/daemon"
   CODER_WT="$ROOT/.worktrees/coder"
   mkdir -p "$DAEMON_DIR" "$CODER_WT/.swarmforge/handoffs/outbox" "$CODER_WT/.swarmforge/handoffs/inbox/new"
@@ -146,6 +147,19 @@ wait_for "relaunched daemon heartbeat" test -f "$DAEMON_DIR/handoffd.heartbeat"
 check_once
 [[ "$(status_field state)" == "healthy" ]] || fail "recovered daemon not marked healthy after human relaunch"
 pass "recovered daemon marked healthy in status file once a human clears the halt and relaunches it"
+
+# BL-406: this is a REAL, persistent daemon (line 145, no --poll-once/
+# --check-once) started with no captured PID variable of its own - the only
+# way to reach it is $DAEMON_DIR/handoffd.pid (its own self-written pid
+# file), and the very next make_fixture below REASSIGNS $DAEMON_DIR/$ROOT
+# and replaces the EXIT trap, permanently orphaning it: stop_daemon can
+# then never find it again, and its own $ROOT is never rm -rf'd either.
+# Confirmed leaking (empirically reproduced independent of any BL-406 code
+# change) via the BL-326 acceptance feature's "no daemon outlives the test
+# run" scenario, which drives this file end to end. Stop it and clear its
+# root here, while $DAEMON_DIR/$ROOT still point at it.
+stop_daemon
+rm -rf "$ROOT"
 
 # ── 02: lingering pid with stalled delivery also triggers alarm+halt ────────
 make_fixture
