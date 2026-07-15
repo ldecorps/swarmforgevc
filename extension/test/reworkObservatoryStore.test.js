@@ -47,3 +47,20 @@ test('persistReworkSignal recovers from a corrupt/unparseable existing file rath
 
   assert.deepEqual(readSignals(target), [{ kind: 'rework-rate', version: 1, computedAtIso: '2026-07-15T00:00:00Z' }]);
 });
+
+// Sibling of the corrupt/unparseable case above - this one IS valid JSON
+// (JSON.parse succeeds) but not the expected {signals: [...]} shape, which
+// is a distinct guard (Array.isArray(parsed.signals)) from the try/catch
+// around JSON.parse itself. Without this test, a mutant collapsing that
+// guard to `if (true)` survives - the wrong-shape file would then reach
+// `file.signals.filter(...)` on a non-array and crash instead of starting
+// fresh.
+test('persistReworkSignal recovers from a valid-JSON file with the wrong shape rather than crashing', () => {
+  const target = mkTmp();
+  fs.mkdirSync(path.dirname(observatorySignalsPath(target)), { recursive: true });
+  fs.writeFileSync(observatorySignalsPath(target), JSON.stringify({ notSignals: true }));
+
+  persistReworkSignal(target, { kind: 'rework-rate', version: 1, computedAtIso: '2026-07-15T00:00:00Z' });
+
+  assert.deepEqual(readSignals(target), [{ kind: 'rework-rate', version: 1, computedAtIso: '2026-07-15T00:00:00Z' }]);
+});

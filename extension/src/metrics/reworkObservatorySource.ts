@@ -43,24 +43,40 @@ export function latestReworkRoleByTicket(events: ReworkEvent[]): Map<string, str
   return roles;
 }
 
-export function loadCompletedTicketRecords(targetPath: string, roles: RoleWorktree[]): CompletedTicketRecord[] {
-  const lifecycles = deriveTicketLifecycles(runGitLog(targetPath, 'backlog', 'main'));
-
+// Split out of loadCompletedTicketRecords below so that function's own
+// branch count stays at or below the CRAP threshold - the same "extract so
+// branch count stays at or below the CRAP threshold" reasoning already
+// applied elsewhere in this codebase (see conciergeTick.ts's
+// syncAllTitleAgeBuckets/syncStandingTopicIcons). One entry per done
+// ticket's own mutation_cost class, first-seen wins (a ticket appearing at
+// more than one path in the tree is not expected, but never overwritten if
+// it did).
+function classesByTicket(targetPath: string, ref: string): Map<string, string | null> {
   const classByTicket = new Map<string, string | null>();
-  for (const filePath of listGitTreeFiles(targetPath, 'main', 'backlog/done')) {
+  for (const filePath of listGitTreeFiles(targetPath, ref, 'backlog/done')) {
     const ticketId = extractTicketId(path.basename(filePath));
     if (ticketId && !classByTicket.has(ticketId)) {
-      classByTicket.set(ticketId, ticketClassAtRef(targetPath, 'main', filePath));
+      classByTicket.set(ticketId, ticketClassAtRef(targetPath, ref, filePath));
     }
   }
+  return classByTicket;
+}
 
-  const evidenceTicketIds = new Set(
-    listGitTreeFiles(targetPath, 'main', 'backlog/evidence')
+// Same extraction reasoning as classesByTicket above - the set of ticket
+// ids that carry committed QA bounce evidence on the given ref.
+function evidenceTicketIdSet(targetPath: string, ref: string): Set<string> {
+  return new Set(
+    listGitTreeFiles(targetPath, ref, 'backlog/evidence')
       .map((filePath) => extractTicketId(path.basename(filePath)))
       .filter((id): id is string => id !== null)
       .map((id) => id.toUpperCase())
   );
+}
 
+export function loadCompletedTicketRecords(targetPath: string, roles: RoleWorktree[]): CompletedTicketRecord[] {
+  const lifecycles = deriveTicketLifecycles(runGitLog(targetPath, 'backlog', 'main'));
+  const classByTicket = classesByTicket(targetPath, 'main');
+  const evidenceTicketIds = evidenceTicketIdSet(targetPath, 'main');
   const roleByTicket = latestReworkRoleByTicket(computeReworkEvents(roles));
 
   const records: CompletedTicketRecord[] = [];
