@@ -19,14 +19,26 @@ notes: |
   re-sends the whole ticket to the human's Telegram topic and makes them doubt
   their approval landed.
 
-  SUSPECTED SHAPE (hypothesis, not caught in the act): the master checkout has
-  many concurrent writers sharing ONE git index (.git/index): coordinator
-  bookkeeping (git mv + git commit), the high-frequency "BL topic record for
-  BL-XXX" commits (~8/min observed), QA's main fast-forward/push, the specifier's
-  own spec commits, operator_file_question.bb. Between a writer's `git add`/`git
-  mv` and its `git commit`, another process's `git add -A`/`git commit` can grab
-  the shared index and capture/commit a different tree than the one just staged.
-  Two separate git invocations do not hold the index lock across the gap.
+  CONFIRMED MECHANISM (caught directly 2026-07-15 12:19 BST, 3rd occurrence — no
+  longer a hypothesis): the master checkout has many concurrent writers sharing
+  ONE git index (.git/index): coordinator bookkeeping (git mv + git commit), the
+  high-frequency "BL topic record for BL-XXX" commits (~8/min observed), QA's
+  main fast-forward/push, the specifier's own spec commits, operator_file_question.bb.
+  A `git commit` with NO pathspec commits the WHOLE INDEX, and two separate git
+  invocations do not hold the index lock across the add->commit gap, so whichever
+  writer commits next captures whatever the OTHER has staged at that instant. One
+  root cause, TWO observed symptoms:
+    - the committer's OWN edit goes missing from ITS commit — a third party's
+      commit lands between this process's add and commit and clears the index of
+      this process's staged change (occurrences 1 & 2: BL-357/341 and BL-412
+      committed as `pending` despite staged `approved`);
+    - someone ELSE's staged work is swept into the wrong commit — occurrence 3:
+      the coordinator's single-file intake commit (949d9b4b/b9d0a384) swept in
+      the specifier's 6 concurrently-staged BL-416/417/418 files, landing them
+      under the coordinator's unrelated SHA/message.
+  Caught because `git status` was clean immediately after a bare single-file
+  `git add` + `git commit` produced a 7-file commit. The coordinator used
+  `git commit --only <path>` to work around it that time.
 
   FIX DIRECTIONS (behavioral acceptance is mechanism-agnostic — architect picks;
   recommend BOTH, systemic first + defense-in-depth):
@@ -90,6 +102,5 @@ qa_e2e: |
      committed content is `approved` (the field is not dropped) — repeat under
      load to build confidence, without a timing-based unit test.
 
-human_approval: pending
-
+human_approval: approved
 mutation_cost: medium
