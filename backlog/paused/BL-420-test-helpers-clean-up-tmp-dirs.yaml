@@ -68,6 +68,5 @@ qa_e2e: |
      for a sampled set of tests are gone afterward (checking each sampled test's
      OWN recorded path, not a /tmp count), so the suite no longer leaks.
 
-human_approval: pending
-
+human_approval: approved
 mutation_cost: medium
