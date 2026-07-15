@@ -20,6 +20,7 @@ const DOMAINS = [
   require('./briefingDiagramSteps'),
   require('./briefingSubjectBoundedSteps'),
   require('./briefingBodyHtmlSteps'),
+  require('./briefingDiagramRenderWidthSteps'),
   require('./recertAddressSteps'),
   require('./webhookSecretFixtureSteps'),
   require('./providerErrorTaxonomySteps'),

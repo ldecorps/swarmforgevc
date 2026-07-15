@@ -133,6 +133,17 @@ You are the hardender.
   thin wrapper, BEFORE checking CRAP — so the CRAP number reflects real, tested
   complexity. A sibling CLI that passes this way is luck of low complexity, not
   safety. (BL-233 recruiter-run.ts main() hit CRAP=42 at 0% coverage.)
+- CRAP scopes to `src/*.ts`, NOT compiled `out/*.js` — the opposite of Stryker
+  (BL-381). `crapReport.js` looks up each target file's coverage as
+  `coverage[absFile]`, and `coverage/coverage-final.json` is keyed by absolute
+  SOURCE paths (`.../extension/src/foo.ts`). Pass an `out/*.js` path and the
+  lookup misses (`undefined`), so EVERY function reports 0% coverage and an
+  inflated, flagged CRAP — silently, with no error, even for code with dozens of
+  passing tests. This is the exact inverse of the Stryker `--mutate` scope, which
+  correctly targets compiled `out/**/*.js`; do not carry that habit over to CRAP.
+  Always run `crapReport.js` (and `npm run crap`) against `src/*.ts` paths.
+  (BL-381: `out/.../relay-onboarding-negotiation-telegram.js` showed 9 CRAP-flagged
+  functions — some with 47 passing tests — while the `.ts` path showed all <= 6.)
 - Then run the DRY tool and reduce duplication where reasonable.
 - Fix what each tool finds before running the next one.
 - Verify by running the unit and acceptance suites; they must stay green.
