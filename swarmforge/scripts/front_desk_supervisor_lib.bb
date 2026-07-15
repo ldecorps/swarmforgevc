@@ -88,10 +88,14 @@
 ;; never re-derives a transition by diffing before/after itself.
 ;;
 ;; BL-403: kill-pid! (optional, defaults to no-op) is called with the old
-;; pid before spawning a replacement in "waiting"/"stalled" restart cases.
-;; This ensures the old process is terminated with bounded grace period
-;; (SIGTERM -> SIGKILL) before the replacement spawns, so exactly one bot
-;; process is ever alive per supervisor at a time.
+;; pid before spawning a replacement in "waiting"/"stalled" restart cases,
+;; AND in the "gave-up" -> re-armed cooldown case - a gave-up entry's pid
+;; can still be alive ("stalled" is entered from "running" without ever
+;; checking pid-alive?), so the re-arm spawn needs the same guard the
+;; ordinary restart path has. This ensures the old process is terminated
+;; with bounded grace period (SIGTERM -> SIGKILL) before the replacement
+;; spawns, so exactly one bot process is ever alive per supervisor at a
+;; time.
 ;;
 ;; BL-370: heartbeat-stale? (optional, defaults false so every pre-existing
 ;; 6-arg caller/test is unaffected - the bridge process has no poll
@@ -140,7 +144,9 @@
 
      "gave-up"
      (if (cooldown-elapsed? (:gave-up-at-ms entry) now-ms giveup-config)
-       {:entry (started-entry (assoc entry :attempts 0) now-ms (spawn!)) :event :re-armed}
+       (do
+         (when (:pid entry) (kill-pid! (:pid entry)))
+         {:entry (started-entry (assoc entry :attempts 0) now-ms (spawn!)) :event :re-armed})
        {:entry entry :event nil})
 
      {:entry entry :event nil})))
