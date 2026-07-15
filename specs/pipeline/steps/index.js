@@ -205,7 +205,8 @@ const DOMAINS = [
   require('./bl407VerifiedCompletionRecordWritePathGapSteps'),
   require('./bl412DiskSpaceEarlyWarningAlertSteps'),
   require('./bl421TileLiveVsResolvedDecisionSteps'),
-  require('./bl418StandingTopicIconsSteps')
+  require('./bl418StandingTopicIconsSteps'),
+  require('./bl416ApprovalReplyConfirmsSuccessSteps')
 ];
 
 function registerSteps(registry) {

@@ -1,0 +1,29 @@
+# DRAFT — parked out of the *.feature glob until human review + build
+# (BL-233/BL-314). Single slice: the PURE recommendation function and the RSS
+# sample parser. The live measurement run is a QA/human step (see qa_e2e), not a
+# scenario here. Materialized into the live .feature at build, handlers in the
+# same parcel.
+
+Feature: recommend a mutation-run worker concurrency from free-RAM headroom
+
+  # BL-427 profile-mutation-worker-rss-01
+  Scenario Outline: concurrency is the RAM headroom divided by per-worker peak, clamped
+    Given <free_mb> MB of free RAM
+    And a reserve margin of <reserve_mb> MB
+    And a measured peak per-worker RSS of <peak_mb> MB
+    And <cores> CPU cores
+    When the recommended mutation concurrency is computed
+    Then the recommendation is <workers> workers
+
+    Examples:
+      | free_mb | reserve_mb | peak_mb | cores | workers |
+      | 3000    | 1000       | 4000    | 20    | 1       |
+      | 9000    | 1000       | 4000    | 20    | 2       |
+      | 13000   | 1000       | 4000    | 20    | 3       |
+      | 90000   | 1000       | 4000    | 20    | 20      |
+
+  # BL-427 profile-mutation-worker-rss-02
+  Scenario: the RSS sample parser records each worker's peak over its lifetime
+    Given a stream of per-worker RSS samples over a run
+    When the samples are reduced to a per-worker figure
+    Then each worker's recorded RSS is the maximum sample seen for that worker
