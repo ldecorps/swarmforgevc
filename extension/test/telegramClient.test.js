@@ -8,6 +8,7 @@ const {
   deleteForumTopic,
   editForumTopic,
   getForumTopicIconStickers,
+  answerCallbackQuery,
 } = require('../out/notify/telegramClient');
 
 const TOKEN = '123456:test-bot-token';
@@ -120,6 +121,76 @@ test('sendTelegramMessage omits message_thread_id entirely when not given (exist
   await sendTelegramMessage(TOKEN, CHAT_ID, 'no topic', undefined, postFn);
 
   assert.equal(Object.prototype.hasOwnProperty.call(JSON.parse(capturedBody), 'message_thread_id'), false);
+});
+
+// ── BL-410: inline-keyboard buttons + answerCallbackQuery ────────────────
+
+test('sendTelegramMessage attaches reply_markup.inline_keyboard when buttons are given, translating callbackData to callback_data', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 46 } } };
+  };
+
+  await sendTelegramMessage(TOKEN, CHAT_ID, 'needs your approval', undefined, postFn, 7, [
+    [
+      { text: 'Approve', callbackData: 'approve:BL-410' },
+      { text: 'Amend', callbackData: 'amend:BL-410' },
+      { text: 'Reject', callbackData: 'reject:BL-410' },
+    ],
+  ]);
+
+  assert.deepEqual(JSON.parse(capturedBody), {
+    chat_id: CHAT_ID,
+    text: 'needs your approval',
+    message_thread_id: 7,
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: 'Approve', callback_data: 'approve:BL-410' },
+          { text: 'Amend', callback_data: 'amend:BL-410' },
+          { text: 'Reject', callback_data: 'reject:BL-410' },
+        ],
+      ],
+    },
+  });
+});
+
+test('sendTelegramMessage omits reply_markup entirely when no buttons are given (existing callers unaffected)', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 47 } } };
+  };
+
+  await sendTelegramMessage(TOKEN, CHAT_ID, 'no buttons', undefined, postFn, 7);
+
+  assert.equal(Object.prototype.hasOwnProperty.call(JSON.parse(capturedBody), 'reply_markup'), false);
+});
+
+test('answerCallbackQuery posts the callback_query_id to the Telegram API and reports success', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  const result = await answerCallbackQuery(TOKEN, 'cbq-1', postFn);
+
+  assert.deepEqual(result, { success: true });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`);
+  assert.deepEqual(JSON.parse(calls[0].body), { callback_query_id: 'cbq-1' });
+});
+
+test('answerCallbackQuery reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'query is too old' } });
+
+  const result = await answerCallbackQuery(TOKEN, 'cbq-2', postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /query is too old/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
 });
 
 test('createForumTopic posts to the Telegram API and reports the new topic\'s message_thread_id', async () => {

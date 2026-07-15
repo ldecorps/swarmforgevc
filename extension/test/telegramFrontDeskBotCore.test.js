@@ -27,12 +27,19 @@ const {
   offsetAfterDelivery,
   shouldEscalateStuckDelivery,
   isPollCycleStale,
+  decideCallbackQueryAction,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
 const PRINCIPAL_ID = 111;
 
 function mkUpdate({ fromId, topicId, text, chatId } = {}) {
   return { update_id: 1, message: { message_id: 1, chat: { id: chatId ?? 1 }, from: { id: fromId }, message_thread_id: topicId, text } };
+}
+
+// BL-410: a tapped inline-keyboard button's own update shape - mutually
+// exclusive with `message` above.
+function mkCallbackUpdate({ fromId, data, chatId, callbackId } = {}) {
+  return { update_id: 1, callback_query: { id: callbackId ?? 'cbq-1', data, from: { id: fromId }, message: { chat: { id: chatId ?? 1 } } } };
 }
 
 // ── isFromPrincipal / topicIdOf / messageTextOf (pure) ──────────────────
@@ -669,6 +676,402 @@ test('BL-298 topic-reply-03: a non-principal reply on a backlog item\'s topic is
   });
   assert.equal(result.posted, 0);
   assert.equal(result.dropped, 1);
+});
+
+// ── BL-410: inline-keyboard buttons extend the approval-reply chain ──────
+
+// ── decideCallbackQueryAction (pure) ─────────────────────────────────────
+
+test('BL-410: decideCallbackQueryAction resolves an Approve tap', () => {
+  const cq = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'approve:BL-123' }).callback_query;
+  assert.deepEqual(decideCallbackQueryAction(cq, PRINCIPAL_ID, '1'), { action: 'approve', backlogId: 'BL-123' });
+});
+
+test('BL-410: decideCallbackQueryAction resolves a Reject tap as awaiting a follow-up reason', () => {
+  const cq = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'reject:BL-123' }).callback_query;
+  assert.deepEqual(decideCallbackQueryAction(cq, PRINCIPAL_ID, '1'), { action: 'await-followup', backlogId: 'BL-123', kind: 'reject' });
+});
+
+test('BL-410: decideCallbackQueryAction resolves an Amend tap as awaiting a follow-up note', () => {
+  const cq = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'amend:BL-123' }).callback_query;
+  assert.deepEqual(decideCallbackQueryAction(cq, PRINCIPAL_ID, '1'), { action: 'await-followup', backlogId: 'BL-123', kind: 'amend' });
+});
+
+test('BL-410: decideCallbackQueryAction drops a tap from a foreign chat as not-my-chat', () => {
+  const cq = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'approve:BL-123', chatId: 2 }).callback_query;
+  assert.deepEqual(decideCallbackQueryAction(cq, PRINCIPAL_ID, '1'), { action: 'drop', reason: 'not-my-chat' });
+});
+
+test('BL-410: decideCallbackQueryAction drops a tap from a non-principal sender as not-principal', () => {
+  const cq = mkCallbackUpdate({ fromId: 999, data: 'approve:BL-123' }).callback_query;
+  assert.deepEqual(decideCallbackQueryAction(cq, PRINCIPAL_ID, '1'), { action: 'drop', reason: 'not-principal' });
+});
+
+test('BL-410: decideCallbackQueryAction checks not-my-chat before not-principal, same guard order as decideUpdateAction, when both hold', () => {
+  const cq = mkCallbackUpdate({ fromId: 999, data: 'approve:BL-123', chatId: 2 }).callback_query;
+  assert.deepEqual(decideCallbackQueryAction(cq, PRINCIPAL_ID, '1'), { action: 'drop', reason: 'not-my-chat' });
+});
+
+test('BL-410: decideCallbackQueryAction drops unrecognized/stale callback data as unrecognized-data', () => {
+  const cq = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'snooze:BL-123' }).callback_query;
+  assert.deepEqual(decideCallbackQueryAction(cq, PRINCIPAL_ID, '1'), { action: 'drop', reason: 'unrecognized-data' });
+});
+
+test('BL-410: decideCallbackQueryAction drops a callback with no data at all', () => {
+  const cq = mkCallbackUpdate({ fromId: PRINCIPAL_ID }).callback_query;
+  assert.deepEqual(decideCallbackQueryAction(cq, PRINCIPAL_ID, '1'), { action: 'drop', reason: 'unrecognized-data' });
+});
+
+// ── pollAndForward: callback_query dispatch (adapter-injected) ───────────
+
+function callbackFixtureAdapters(overrides = {}) {
+  return {
+    chatId: '1',
+    getUpdates: async () => ({
+      success: true,
+      updates: [mkCallbackUpdate(overrides.update ?? { fromId: PRINCIPAL_ID, data: overrides.data })],
+    }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a callback_query');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for a callback_query');
+    },
+    subjectForTopic: () => undefined,
+    backlogForTopic: () => undefined,
+    postOperatorContext: async () => {
+      throw new Error('postOperatorContext should not be called for a bare callback_query (no reply text)');
+    },
+    recordApprovalReply: overrides.recordApprovalReply ?? (async () => true),
+    recordRejectionReply: overrides.recordRejectionReply ?? (async () => true),
+    setPendingButtonAction: overrides.setPendingButtonAction ?? (async () => {}),
+    answerCallbackQuery: overrides.answerCallbackQuery ?? (async () => {}),
+  };
+}
+
+test('BL-410: an Approve tap records the approval and answers the callback, counted as posted', async () => {
+  const approvals = [];
+  const answered = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'approve:BL-123',
+      recordApprovalReply: async (backlogId) => {
+        approvals.push(backlogId);
+        return true;
+      },
+      answerCallbackQuery: async (id) => {
+        answered.push(id);
+      },
+    })
+  );
+  assert.deepEqual(approvals, ['BL-123']);
+  assert.deepEqual(answered, ['cbq-1']);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-410: a Reject tap stashes the pending reason-awaited marker, never calling recordRejectionReply itself', async () => {
+  const pending = [];
+  const rejections = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'reject:BL-123',
+      setPendingButtonAction: async (backlogId, kind) => {
+        pending.push({ backlogId, kind });
+      },
+      recordRejectionReply: async (backlogId, reason) => {
+        rejections.push({ backlogId, reason });
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(pending, [{ backlogId: 'BL-123', kind: 'reject' }]);
+  assert.deepEqual(rejections, [], 'the reason is not in hand yet - only a typed/pending-derived follow-up reply may call recordRejectionReply');
+});
+
+test('BL-410: an Amend tap stashes the pending note-awaited marker', async () => {
+  const pending = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'amend:BL-123',
+      setPendingButtonAction: async (backlogId, kind) => {
+        pending.push({ backlogId, kind });
+      },
+    })
+  );
+  assert.deepEqual(pending, [{ backlogId: 'BL-123', kind: 'amend' }]);
+});
+
+test('BL-410: a non-principal tap is dropped and NEVER answered (its spinner is not this bot\'s to clear)', async () => {
+  const answered = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      update: { fromId: 999, data: 'approve:BL-123' },
+      answerCallbackQuery: async (id) => answered.push(id),
+    })
+  );
+  assert.deepEqual(answered, []);
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-410: every recognized-chat/principal tap answers the spinner, even a no-op/unrecognized one (the "never hangs" requirement)', async () => {
+  const answered = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'snooze:BL-123',
+      answerCallbackQuery: async (id) => answered.push(id),
+    })
+  );
+  assert.deepEqual(answered, ['cbq-1']);
+});
+
+// ── deliverOperatorContext: pending Reject/Amend follow-up consumption ───
+
+// BL-410: clearPendingButtonAction must only ever fire when a marker was
+// actually pending - an ordinary reply with nothing pending must never call
+// it, even speculatively (it would otherwise write the pending-actions file
+// on every single reply, not just the one-shot follow-up it exists for).
+test('BL-410: an ordinary reply with nothing pending never calls clearPendingButtonAction', async () => {
+  const cleared = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'still working on it' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a backlog-item topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for a backlog-item topic reply');
+    },
+    subjectForTopic: () => undefined,
+    backlogForTopic: (topicId) => (topicId === 42 ? 'BL-123' : undefined),
+    postOperatorContext: async () => true,
+    recordApprovalReply: async () => true,
+    recordRejectionReply: async () => true,
+    getPendingButtonAction: async () => undefined,
+    clearPendingButtonAction: async (backlogId) => {
+      cleared.push(backlogId);
+    },
+  });
+  assert.deepEqual(cleared, []);
+});
+
+test('BL-410: a bare reply while a Reject tap is pending is treated as the rejection reason, same effect as typed "reject <reason>"', async () => {
+  const contexts = [];
+  const rejections = [];
+  const pending = { 'BL-123': 'reject' };
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'bad scope' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a backlog-item topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for a backlog-item topic reply');
+    },
+    subjectForTopic: () => undefined,
+    backlogForTopic: (topicId) => (topicId === 42 ? 'BL-123' : undefined),
+    postOperatorContext: async (backlogId, text) => {
+      contexts.push({ backlogId, text });
+      return true;
+    },
+    recordApprovalReply: async () => true,
+    recordRejectionReply: async (backlogId, reason) => {
+      rejections.push({ backlogId, reason });
+      return true;
+    },
+    getPendingButtonAction: async (backlogId) => pending[backlogId],
+    clearPendingButtonAction: async (backlogId) => {
+      delete pending[backlogId];
+    },
+  });
+  assert.deepEqual(rejections, [{ backlogId: 'BL-123', reason: 'bad scope' }]);
+  assert.deepEqual(contexts, [{ backlogId: 'BL-123', text: 'bad scope' }]);
+  assert.deepEqual(pending, {}, 'the one-shot pending marker must be cleared once consumed');
+});
+
+test('BL-410: a bare reply while an Amend tap is pending is treated as the amendment note, same effect as typed "amend <note>"', async () => {
+  const contexts = [];
+  const approvals = [];
+  const rejections = [];
+  const pending = { 'BL-123': 'amend' };
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({
+      success: true,
+      updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'tighten the acceptance criteria' })],
+    }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a backlog-item topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for a backlog-item topic reply');
+    },
+    subjectForTopic: () => undefined,
+    backlogForTopic: (topicId) => (topicId === 42 ? 'BL-123' : undefined),
+    postOperatorContext: async (backlogId, text) => {
+      contexts.push({ backlogId, text });
+      return true;
+    },
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return true;
+    },
+    recordRejectionReply: async (backlogId, reason) => {
+      rejections.push({ backlogId, reason });
+      return true;
+    },
+    getPendingButtonAction: async (backlogId) => pending[backlogId],
+    clearPendingButtonAction: async (backlogId) => {
+      delete pending[backlogId];
+    },
+  });
+  assert.deepEqual(contexts, [{ backlogId: 'BL-123', text: 'tighten the acceptance criteria' }]);
+  assert.deepEqual(approvals, []);
+  assert.deepEqual(rejections, []);
+  assert.deepEqual(pending, {}, 'the one-shot pending marker must be cleared once consumed');
+});
+
+// BL-410: the two tests above both use reply text with no leading/trailing
+// whitespace, so classifyWithPendingButton's own text.trim() is a no-op for
+// them and cannot prove it runs. A reply padded with whitespace (an
+// ordinary thing to type) must have that whitespace stripped before it
+// becomes the stored reason/note - never leaking into the ticket file
+// (rejectHumanApprovalText's own sink) or the posted operator-context text.
+test('BL-410: a padded bare reply while a Reject tap is pending has its whitespace trimmed before it becomes the reason', async () => {
+  const rejections = [];
+  const pending = { 'BL-123': 'reject' };
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({
+      success: true,
+      updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: '  bad scope  ' })],
+    }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a backlog-item topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for a backlog-item topic reply');
+    },
+    subjectForTopic: () => undefined,
+    backlogForTopic: (topicId) => (topicId === 42 ? 'BL-123' : undefined),
+    postOperatorContext: async () => true,
+    recordApprovalReply: async () => true,
+    recordRejectionReply: async (backlogId, reason) => {
+      rejections.push({ backlogId, reason });
+      return true;
+    },
+    getPendingButtonAction: async (backlogId) => pending[backlogId],
+    clearPendingButtonAction: async (backlogId) => {
+      delete pending[backlogId];
+    },
+  });
+  assert.deepEqual(rejections, [{ backlogId: 'BL-123', reason: 'bad scope' }]);
+});
+
+test('BL-410: a padded bare reply while an Amend tap is pending has its whitespace trimmed before it becomes the note', async () => {
+  const contexts = [];
+  const pending = { 'BL-123': 'amend' };
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({
+      success: true,
+      updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: '  tighten the acceptance criteria  ' })],
+    }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a backlog-item topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for a backlog-item topic reply');
+    },
+    subjectForTopic: () => undefined,
+    backlogForTopic: (topicId) => (topicId === 42 ? 'BL-123' : undefined),
+    postOperatorContext: async (backlogId, text) => {
+      contexts.push({ backlogId, text });
+      return true;
+    },
+    recordApprovalReply: async () => true,
+    recordRejectionReply: async () => true,
+    getPendingButtonAction: async (backlogId) => pending[backlogId],
+    clearPendingButtonAction: async (backlogId) => {
+      delete pending[backlogId];
+    },
+  });
+  // contextText for amend is action.note (BL-409's own dispatch) - if
+  // action.kind were ever anything other than 'amend', deliverOperatorContext
+  // would fall back to the RAW (unpadded) text instead, which this assertion
+  // also catches.
+  assert.deepEqual(contexts, [{ backlogId: 'BL-123', text: 'tighten the acceptance criteria' }]);
+});
+
+test('BL-410: an explicit "approve" reply wins over a pending Reject tap, and still clears the stale marker', async () => {
+  const approvals = [];
+  const rejections = [];
+  const pending = { 'BL-123': 'reject' };
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'approve' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a backlog-item topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for a backlog-item topic reply');
+    },
+    subjectForTopic: () => undefined,
+    backlogForTopic: (topicId) => (topicId === 42 ? 'BL-123' : undefined),
+    postOperatorContext: async () => true,
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return true;
+    },
+    recordRejectionReply: async (backlogId, reason) => {
+      rejections.push({ backlogId, reason });
+      return true;
+    },
+    getPendingButtonAction: async (backlogId) => pending[backlogId],
+    clearPendingButtonAction: async (backlogId) => {
+      delete pending[backlogId];
+    },
+  });
+  assert.deepEqual(approvals, ['BL-123']);
+  assert.deepEqual(rejections, []);
+  assert.deepEqual(pending, {}, 'any reply resolves the one-shot pending prompt, whether consumed as the pending verb or not');
+});
+
+test('BL-410: deliverOperatorContext works unchanged when getPendingButtonAction/clearPendingButtonAction are absent (pre-BL-410 fixtures keep working)', async () => {
+  const contexts = [];
+  const approvals = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'approve' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a backlog-item topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for a backlog-item topic reply');
+    },
+    subjectForTopic: () => undefined,
+    backlogForTopic: (topicId) => (topicId === 42 ? 'BL-123' : undefined),
+    postOperatorContext: async (backlogId, text) => {
+      contexts.push({ backlogId, text });
+      return true;
+    },
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return true;
+    },
+    recordRejectionReply: async () => true,
+  });
+  assert.deepEqual(approvals, ['BL-123']);
+  assert.deepEqual(contexts, [{ backlogId: 'BL-123', text: 'approve' }]);
 });
 
 // ── parseNextSseRecord (pure) ────────────────────────────────────────────
