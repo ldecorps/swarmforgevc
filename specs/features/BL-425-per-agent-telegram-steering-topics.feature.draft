@@ -1,32 +1,52 @@
 # NOT EXECUTABLE — parked follow-up slice (slice 2). The .feature.draft suffix
 # keeps these scenarios out of every *.feature glob and the acceptance runner
-# (specs/pipeline/runtime.js), so they cannot hard-fail the hardener's gate
-# before their step handlers exist (BL-233 slice-scoping). Promote each scenario
-# into the live BL-425 .feature file only when slice 2 is actually built.
+# (specs/pipeline/runtime.js), so they cannot hard-fail the hardener's gate before
+# their step handlers exist (BL-233 slice-scoping). Promote each scenario into the
+# live BL-425 .feature file only when slice 2 is actually built, with its step
+# handlers in the same parcel.
 #
-# Slice 2 — SCOPED ANSWER-BACK. Slice 1 (the live feature) is inbound-only: the
-# human steers, the agent hears it, but nothing flows back to Telegram. This
-# slice adds the return channel the human asked for: the agent's ANSWER to a
-# steering message is posted back into that role's steering topic — and ONLY the
-# answer, never the agent's ordinary business-as-usual activity. The sanctioned
-# design (do not over-prescribe in the scenarios) reuses the operator ask/await +
-# reply-relay path (BL-306; operator_reply.bb): the steer is injected wrapped so
-# the agent replies through the reply path, which posts to the topic; BAU never
-# calls that path, so BAU never reaches the topic.
+# Slice 2 — NON-DISRUPTIVE QUESTION MODE (the /btw-motivated path; the human's
+# emphasised ask). Slice 1 is the disruptive REDIRECT (interrupting pane inject).
+# Slice 2 adds the DEFAULT mode: a plain (un-marked) message in a role's topic is a
+# QUESTION — the agent is NOT pulled off its task; it is handed the question as a
+# mailbox NOTE it dequeues at its next natural break (when it finishes its current
+# task), answers, and posts the answer BACK into that role's topic. Only the ANSWER
+# reaches the topic, never the agent's ordinary activity — structural, because BAU
+# never runs the reply command the note instructs. /btw itself is NOT used: it is a
+# read-only side question whose answer lands in an ephemeral overlay with no tool
+# access, so it cannot round-trip to the phone (see the ticket's /btw investigation).
+# Mode selector: default = question; a leading `!` marks a redirect (slice 1).
 
-Feature: an agent's answer to a Telegram steer flows back to its topic, not its activity
+Feature: a plain Telegram message asks an agent a question without disturbing it, and the answer comes back
 
   Background:
-    Given a running swarm with per-agent steering topics and the authorised human
+    Given a running swarm with per-agent Telegram topics and the authorised human
 
-  # BL-425 answer-back-to-steering-topic-06
-  Scenario: an agent's answer to a steer is posted back into that role's topic
-    Given the authorised human has steered the "coder" role via its steering topic
-    When the "coder" role answers that steer
-    Then the answer is posted back into the "coder" role's steering topic
+  # BL-425 question-is-queued-not-interrupting-06
+  Scenario: a plain message in a role's topic is queued to that role, not injected into its pane
+    Given the "coder" role is mid-task and the authorised human posts a plain message in the coder topic
+    When the message is handled
+    Then it is delivered to the coder role as a mailbox note and the coder's pane is not interrupted
 
-  # BL-425 answer-back-excludes-bau-07
-  Scenario: an agent's ordinary activity is not posted to its steering topic
-    Given the "coder" role is doing ordinary pipeline work with no pending steer to answer
-    When the "coder" role produces its normal pane activity
-    Then nothing is posted to the "coder" role's steering topic
+  # BL-425 question-answer-returns-to-topic-07
+  Scenario: an agent answers a queued question back into its own topic at its next break
+    Given the "coder" role has a queued human-question note carrying the coder topic id
+    When the coder role finishes its current task and answers the note
+    Then the answer is posted back into the coder topic
+
+  # BL-425 question-excludes-bau-08
+  Scenario: an agent's ordinary activity is not posted to its topic
+    Given the "coder" role is doing ordinary pipeline work with no queued human question
+    When the coder role produces its normal pane activity
+    Then nothing is posted to the coder topic
+
+  # BL-425 mode-selector-marker-picks-redirect-09
+  Scenario Outline: the leading marker chooses redirect versus question
+    Given the authorised human posts "<message>" in the coder topic
+    When the message is handled
+    Then it is treated as a "<mode>"
+
+    Examples:
+      | message                    | mode     |
+      | !stop and fix the lint     | redirect |
+      | what are you working on?   | question |

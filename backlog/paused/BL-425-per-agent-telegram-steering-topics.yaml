@@ -1,151 +1,194 @@
 id: BL-425
-title: "Per-agent Telegram steering topics: a principal message in a role's own forum topic is injected as a verified nudge into that role's live pane (all 8 roles), guarded to the principal and topic-scoped"
+title: "Per-agent Telegram topics, two delivery modes: a non-disruptive QUESTION (queued to the agent as a mailbox note it answers back to the topic) and an explicit REDIRECT (interrupting verified nudge into the pane); all 8 roles, principal-guarded, topic-scoped"
 milestone: M8
 type: feature
 status: todo
 priority: 3
 direction: human-requested
 depends_on: []
-source: "Operator/human raw intake in the specifier session, 2026-07-15: 'add a trlegram [Telegram] topic for each agent, so I can steer them from telegram'. Drained with the human 2026-07-15 (AskUserQuestion): (1) STEER MECHANISM = inject the message straight into that agent's live tmux pane as a nudge (the existing verifiedInject path), NOT a mailbox note — a live steer, not a queued work item; (2) DIRECTION = the agent's ANSWER to my question should come back to the topic, but NOT its ordinary business-as-usual activity (human's exact words: 'only to answer my question, not their bau activity'); (3) WHICH ROLES = all 8 (the 7-pack specifier/coder/cleaner/architect/hardender/documenter/QA plus the coordinator)."
+source: "Operator/human raw intake in the specifier session, 2026-07-15: 'add a trlegram [Telegram] topic for each agent, so I can steer them from telegram'. Drained 2026-07-15 (AskUserQuestion): (1) mechanism = inject into the agent's live pane; (2) direction = the agent's ANSWER to my question comes back to the topic, NOT its ordinary business-as-usual activity ('only to answer my question, not their bau activity'); (3) all 8 roles. AMENDED 2026-07-15 (human follow-up): 'can my questions via telegram be passed to the agent via /btw so as to not disturb them in their task'. Amendment drained 2026-07-15 (AskUserQuestion, after verifying /btw against the Claude Code docs): (a) CHANNEL PURPOSE = QUESTIONS **AND** REDIRECTS — two modes, a non-disruptive question channel plus an explicit interrupting redirect; (b) ANSWER DELIVERY = PRIORITISE THE ROUND-TRIP — the answer must reach my phone, even at the cost of dropping literal /btw. See the /btw investigation in notes: /btw is a real Claude Code command but is a READ-ONLY side question (no tool access, answer lands in an ephemeral on-screen overlay that never enters history), so it cannot round-trip an answer to Telegram; the human, told this, chose the round-trip. The non-disruptive question path is therefore realised with the swarm's OWN native queued channel (a mailbox note), not /btw."
 
 notes: |
-  EPIC — TWO SLICES. This generalizes the standing "Operator" topic (BL-346,
+  EPIC — TWO MODES, TWO SLICES. Generalises the standing "Operator" topic (BL-346,
   telegramFrontDeskBotCore.ts's ensure-Operator-topic + OPERATOR_TOPIC_NAME) from
-  ONE shared steering channel into ONE-PER-AGENT steering topics, sitting alongside
-  the existing per-ticket BL topics and the Operator topic — a NEW class of topic,
-  not a repurposing of either.
+  ONE shared channel into ONE-PER-AGENT topics for all 8 roles, alongside the
+  existing per-ticket BL topics — a NEW class of topic, not a repurposing of either.
+  Each role's topic accepts an authorised principal's message and delivers it to
+  that role in ONE OF TWO MODES:
 
-  SLICE 1 (this ticket's LIVE feature file) — PROVISION + INBOUND STEER. Ship this
-  first; it is the atomic value ("steer them from Telegram") and is fully buildable
-  over existing pieces:
+    - QUESTION mode (default; NON-DISRUPTIVE; round-trips to the phone) — the human
+      asks the agent something without pulling it off its task, and the answer comes
+      back into that topic. Realised via the swarm's native mailbox `note` channel,
+      NOT /btw (see the /btw finding below).
+    - REDIRECT mode (explicit marker; DISRUPTIVE; one-way) — the human interrupts the
+      agent to change its course. Realised via the existing verified pane inject.
+
+  MODE SELECTOR. Default (no marker) = QUESTION (the common, safe case: ask without
+  disturbing). An explicit leading marker = REDIRECT (a deliberate opt-in to
+  interrupt, mirroring BL-423's "a single mis-tap must never tear things down"
+  caution). Proposed marker: a leading `!` (e.g. `!focus on the edge case first`);
+  a slash prefix is avoided because Telegram may intercept `/...` as a bot command.
+  FLAGGED for the human to confirm the exact marker before build.
+
+  ---- THE /btw INVESTIGATION (why the question path is a note, not /btw) ----
+  The human asked for /btw specifically. Verified against the Claude Code docs
+  (Interactive Mode — Side questions with /btw, v2.1.187+): /btw IS a real command
+  and IS non-interrupting, BUT it is a READ-ONLY side question — the agent answers
+  only from already-visible context, has NO tool access during it, and the answer
+  appears in a DISMISSIBLE ON-SCREEN OVERLAY that never enters the conversation.
+  Consequences: (1) the agent cannot itself send that answer to Telegram (no tools),
+  and (2) the answer is not durable pane output to scrape reliably. So /btw cannot
+  deliver the human's answer to their phone. Told this, the human chose the
+  ROUND-TRIP over literal /btw. The swarm already owns a documented, built, testable
+  non-disruptive channel that DOES round-trip: the mailbox `note`. A busy agent
+  ignores the tmux wake and only dequeues the note when it FINISHES its current task
+  (handoff-protocol "if a wake-up arrives while already working, ignore it; on task
+  completion, accept the next"), with FULL tool access — so it can answer back. That
+  is the faithful realisation of the human's chosen "queued message the agent handles
+  at a natural break, and it CAN reply" option. (Plain typed-into-the-pane text was
+  rejected as the mechanism: its queue-vs-interrupt semantics are UNDOCUMENTED for
+  interactive mode — only slash-commands are documented to queue — so it is not a
+  spec-able non-disruptive path; the mailbox note is.)
+
+  ---- SLICE 1 (this ticket's LIVE feature file) — PROVISION + REDIRECT ----
+  Foundational and simplest; ships immediate steering value and matches the slice-1
+  scope the coordinator already recorded human approval for (62920cfa):
     - Provision: ensure a forum topic per role, named for the role, on first sight;
-      persist a role -> topic-id map (a NET-NEW machine-local map mirroring
-      concierge/backlogTopicMapStore.ts's shape — role->topicId, the inverse-lookup
-      sibling of topicRouter.ts's backlogForTopic). Runtime state under
-      `.swarmforge/` (gitignored host-persisted marker, local-engineering rule 5),
-      reached through a redirectable env seam so no test touches a live swarm's dir.
-    - Inbound steer: a principal message whose message_thread_id maps to role R's
-      steering topic is injected into role R's LIVE pane as a VERIFIED nudge via
-      swarm/verifiedInject.ts `sendInstructionVerified` (the same confirmed-submit
-      path the extension's tiles and the chaser nudge use — never a bare unverified
+      persist a role -> topic-id map (NET-NEW machine-local map mirroring
+      concierge/backlogTopicMapStore.ts — role->topicId, the inverse-lookup sibling
+      of topicRouter.ts's backlogForTopic). Runtime state under `.swarmforge/`
+      (gitignored host-persisted marker, local-engineering rule 5), reached through a
+      redirectable env seam so no test touches a live swarm's dir.
+    - REDIRECT execution: a principal message whose message_thread_id maps to role
+      R's topic is injected into role R's LIVE pane as a VERIFIED, INTERRUPTING nudge
+      via swarm/verifiedInject.ts `sendInstructionVerified` (never a bare unverified
       Enter, BL-152), targeting role R's session/pane through swarm/tmuxClient.ts
-      (`swarmforge-<role>` session + paneTarget). The inject runs in the EXTENSION
-      HOST on the SWARM tmux socket (`.swarmforge/tmux-socket`) — the same seam
-      extension.ts/tmuxClient.ts already inject through — NOT the restricted
-      front-desk operator's own socket (BL-334).
-    - This slice IS the epic's runtime-wiring slice (engineering "a multi-slice
-      emit->route->consume pipeline needs an explicit runtime-wiring ticket" rule):
-      it lands with a LIVE caller in the front-desk bot poll loop
+      (`swarmforge-<role>` + paneTarget). Runs in the EXTENSION HOST on the SWARM
+      tmux socket (`.swarmforge/tmux-socket`) — the same seam extension.ts/
+      tmuxClient.ts already inject through — NOT the restricted front-desk operator's
+      own socket (BL-334).
+    - In slice 1 (before the mode selector exists) an inbound steering message is
+      treated as a REDIRECT. The default FLIPS to QUESTION when slice 2 lands the
+      selector — an acceptable default-change for an unreleased feature; call it out
+      in slice 2's parcel.
+    - This slice IS the epic's runtime-wiring slice (engineering multi-slice-wiring
+      rule): it lands with a LIVE caller in the front-desk bot poll loop
       (tools/telegram-front-desk-bot.ts) and a real WRITER of the role->topic map.
-      No dark modules.
 
-  SLICE 2 (parked in specs/features/BL-425-...feature.draft; NOT in the live glob) —
-  SCOPED ANSWER-BACK. Slice 1 is inbound-only. Slice 2 adds the return channel the
-  human asked for: the agent's ANSWER to a steering message is posted back into that
-  role's steering topic, and ONLY the answer — never the agent's ordinary activity.
-  Sanctioned design (leave the mechanism to the builder, but this is the reuse
-  target): the operator ask/await + reply-relay path (BL-306; operator_reply.bb) —
-  the steer is injected WRAPPED so the agent replies through the reply path, which
-  posts to the topic; BAU never calls that path, so BAU never reaches the topic.
-  This keeps the "answer, not bau" boundary structural, not a fragile pane-delta
-  heuristic. Promote slice 2's two scenarios into the live feature file WHEN it is
-  built, with their step handlers in the same parcel (BL-233); until then they stay
-  in the .draft so the acceptance runner cannot hard-fail on unhandled scenarios.
+  ---- SLICE 2 (parked in the companion .feature.draft; NOT in the live glob) —
+       QUESTION MODE (non-disruptive note + round-trip) ----
+  This is the /btw-motivated path and the human's EMPHASISED ask. Harder (a
+  round-trip), so deferred behind slice 1 — but fully designed here:
+    - Mode selector: default = question; `!`-marked = redirect (slice 1's inject).
+    - QUESTION delivery: the front-desk bot (host) sends role R a mailbox `note` via
+      swarm_handoff.bb marking it a HUMAN QUESTION and carrying role R's topic id.
+      The busy agent finishes its current task, then dequeues the note through its
+      normal ready_for_next loop (non-disruptive by construction).
+    - 80-CHAR NOTE CAP: a `note`'s message field is a single line <=80 chars (memory:
+      note-handoff-80-char-cap). A real question exceeds that, so write the question
+      body to a file under role R's mailbox / `.swarmforge/` and send a SHORT POINTER
+      note (the established long-instruction pattern) — do NOT cram the question into
+      the 80-char field.
+    - ROUND-TRIP: the note is SELF-DESCRIBING (like a TRACE bullet or a QA merge-up
+      note — agents already act on note instructions, so NO per-role prompt change is
+      required): it instructs the agent to answer by running a provided reply command
+      that posts the answer into role R's steering topic. Reuse the operator reply
+      path (operator_reply.bb / the front-desk topic-post primitive) wrapped as a
+      role->topic reply. Because the answer is a discrete note-task response and BAU
+      never runs that reply command, only the ANSWER reaches the topic, never BAU —
+      the "answer, not bau" boundary is STRUCTURAL, not a fragile pane-delta heuristic.
+    - Promote slice 2's scenarios into the live feature WHEN built, step handlers in
+      the same parcel (BL-233); until then they stay in the .draft so the acceptance
+      runner cannot hard-fail on unhandled scenarios.
 
-  GUARDS (slice 1, both mandatory — reuse existing machinery, do not reinvent):
-    1. AUTHORISED PRINCIPAL ONLY — reuse the same principal-only inbound filter the
-       front-desk bot already applies (BL-239/240); an unauthorised sender's message
-       in a steering topic injects nothing.
-    2. TOPIC-SCOPED — a message is a steer ONLY when its topic is one of the eight
-       role steering topics. The same text in a BL-ticket topic, the Operator topic,
-       or any other topic is NOT a steer and those topics keep their existing
-       behavior (this must NOT hijack the per-ticket routing or the Operator
-       channel). Routing is EXACT: role R's topic -> role R's pane, never another
-       role's.
+  GUARDS (both modes, both slices — reuse existing machinery):
+    1. AUTHORISED PRINCIPAL ONLY — reuse the front-desk bot's principal-only inbound
+       filter (BL-239/240); an unauthorised sender's message does nothing (no inject,
+       no note).
+    2. TOPIC-SCOPED + EXACT ROUTING — a message acts ONLY when its topic is one of
+       the eight role topics; the same text in a BL-ticket topic, the Operator topic,
+       or any other topic does nothing and those topics keep their existing behavior.
+       Role R's topic -> role R only, never another role.
 
-  TESTABILITY (mirror bridge/operatorDecideStatus.ts — the pattern BL-423 also
-  follows):
-    - The inbound DECISION is ONE PURE host-side function: given (inbound message,
-      principal, topic-id, role->topic map) -> decide ignore | steer(role, text) |
-      refuse. Unit-tested with fixtures — no Telegram, no tmux, no real socket.
-    - verifiedInject (`sendInstructionVerified`) and the tmux pane target are
-      ADAPTER-INJECTED: inject the inject-seam and assert the pure decision resolved
-      the correct role/text and that the adapter was called for role R's pane and NO
-      other — never drive a real tmux server, never assert over the real process
-      table or a real socket dir (engineering shared-global rules).
-    - Provisioning + the role->topic map read/write use the redirectable env seam
-      for the runtime dir; a wiring test that reads the map must PLACE it in its
-      fixture and prove the read is load-bearing by break-then-fix (engineering
-      "a wiring test that adds a NEW on-disk input must prove the read is
-      load-bearing" rule): with the map present the steer routes to role R; blank/
-      remove it and the steer cannot resolve a role (no misroute to a default).
-    - The CLI/tool entry (if any is added) keeps `main()` a thin wrapper over
-      exported pure helpers, called IN-PROCESS by a test, not only spawned
-      (thin-wrapper + in-process-main rules).
+  TESTABILITY (mirror bridge/operatorDecideStatus.ts):
+    - The inbound DECISION is ONE PURE host-side function: given (message, principal,
+      topic-id, role->topic map, mode-marker) -> ignore | redirect(role, text) |
+      question(role, text) | refuse. Unit-tested with fixtures — no Telegram, no
+      tmux, no real socket, no real mailbox.
+    - REDIRECT execution (verifiedInject) and QUESTION execution (swarm_handoff note
+      + the role->topic reply post) are ADAPTER-INJECTED: assert the pure decision
+      resolved the right role/mode/text and that the correct adapter was invoked for
+      role R and NO other — never a real tmux server, real ps/socket scan, or real
+      outbound handoff (engineering shared-global rules).
+    - Provisioning + the role->topic map read use the redirectable env seam; a wiring
+      test that reads the map must PLACE it in its fixture and prove the read is
+      load-bearing by break-then-fix (engineering new-on-disk-input rule): map
+      present -> routes to role R; blank/removed -> no role resolves (no default
+      misroute).
+    - Any CLI/tool entry keeps `main()` a thin wrapper over exported pure helpers,
+      called IN-PROCESS by a test, not only spawned (thin-wrapper + in-process-main).
 
   IR-DRY — INTENTIONAL PARALLEL PHRASINGS (do NOT collapse). The live feature's
-  IR-DRY pass reports 5 MEDIUM-confidence near-duplicate/possible-synonym findings
-  and ZERO high-confidence exact duplicates; every one is a deliberate parallel or
-  contrast, not accidental drift:
-    - the topic-exists precondition appears once parameterized (`"<role>"`) and once
-      concrete (`"coder"`) — same handler, intentionally shared;
-    - the steer-in-topic step appears parameterized ("that topic") and concrete
-      ("the coder topic") because the routing-exactness scenario needs TWO named
-      topics at once;
-    - the non-steering-topic Given ("a message in an ordinary <topic-kind> topic")
-      is the deliberate NEGATIVE contrast to the positive "a steering message in
-      that topic" — the guard's whole point;
-    - the two "no nudge is injected into any pane" Thens differ by the trailing
-      "and that topic keeps its existing behavior" clause, which is load-bearing
-      ONLY for the non-steering-topic guard (proves BL/Operator topics are not
-      hijacked).
+  IR-DRY pass reports MEDIUM-confidence near-duplicate/possible-synonym findings and
+  ZERO high-confidence exact duplicates; every one is a deliberate parallel or
+  contrast (parameterised-vs-concrete topic-exists precondition; the routing-
+  exactness scenario needing two named topics at once; the non-steering-topic
+  negative contrast; the load-bearing trailing "keeps its existing behavior" clause).
 
-  OUT OF SCOPE: slice 2's answer-back (parked, follow-up); mirroring an agent's
-  full pane/BAU activity into its topic (the human explicitly excluded it);
-  changing the per-ticket BL topic routing or the Operator topic; any control verb
-  (that is BL-423); steering via a mailbox note (the human chose live pane inject).
+  OUT OF SCOPE: literal /btw delivery (investigated, dropped — cannot round-trip);
+  mirroring an agent's full pane/BAU activity into its topic (human excluded it);
+  changing per-ticket BL topic routing or the Operator topic; any control verb (that
+  is BL-423); a fragile pane-overlay scrape for the answer (rejected in favour of the
+  note round-trip).
 
   DEPENDENCY POSTURE: no hard depends_on — provisioning (createForumTopic), the
-  principal filter, verifiedInject, and role->session targeting are all already on
-  main. The front desk must be RUNNING for the live e2e (no park marker present at
-  spec time, 2026-07-15); that is an operational precondition for QA, not a code
-  dependency.
+  principal filter, verifiedInject, role->session targeting, and the mailbox note +
+  operator reply path are all already on main. The front desk must be RUNNING for the
+  live e2e (no park marker present at spec time, 2026-07-15); an operational QA
+  precondition, not a code dependency.
 
 acceptance:
   feature: specs/features/BL-425-per-agent-telegram-steering-topics.feature
   steps:
-    - "Every swarm role has its own steering topic named for that role"
-    - "An authorised message in a role's steering topic is injected as a verified nudge into that role's live pane"
-    - "A steer reaches only the addressed role's pane, not another role's"
-    - "An unauthorised sender's message in a steering topic injects nothing into any pane"
-    - "An authorised message in a non-steering topic (BL-ticket or Operator) is not a steer and that topic keeps its existing behavior"
+    - "Every swarm role has its own topic named for that role"
+    - "An authorised redirect message in a role's topic is injected as an interrupting verified nudge into that role's live pane"
+    - "A redirect reaches only the addressed role's pane, not another role's"
+    - "An unauthorised sender's message in a role's topic does nothing"
+    - "An authorised message in a non-role topic (BL-ticket or Operator) does nothing and that topic keeps its existing behavior"
 
 qa_e2e: |
-  1. Unit (host-side, no Telegram/tmux/real socket): drive the pure inbound-decide
-     function over fixtures — an authorised message whose topic-id maps to role R ->
-     steer(R, text); the same text with an unauthorised sender -> refuse (no steer);
-     the same text in a topic-id that is a BL topic or the Operator topic -> ignore
-     (no steer). Assert the inject ADAPTER was invoked for role R's pane target and
-     NOT for any other role's, over an injected inject-seam — never a real tmux
-     server, never a real ps/socket scan. Provisioning: ensure-topics over an
-     injected createForumTopic-seam creates one topic per role named for the role
-     and records each topic id in the role->topic map (redirectable env dir). Prove
-     the map read is load-bearing by break-then-fix: with the map present a steer
-     routes to role R; blank/remove it and no role resolves (no default misroute).
+  1. Unit (host-side, no Telegram/tmux/real socket/real mailbox): drive the pure
+     inbound-decide function over fixtures — an authorised `!`-marked message whose
+     topic maps to role R -> redirect(R, text); an authorised unmarked message ->
+     question(R, text) [slice 2]; an unauthorised sender -> refuse; a BL/Operator
+     topic -> ignore. Assert the REDIRECT inject adapter was invoked for role R's
+     pane and NO other, over an injected seam; assert the QUESTION adapter emitted a
+     mailbox note to role R carrying the topic id and a short pointer to the
+     question-body file (never the >80-char body in the note field) [slice 2].
+     Provisioning: ensure-topics over an injected createForumTopic seam creates one
+     topic per role named for the role and records each id in the role->topic map;
+     prove the map read is load-bearing by break-then-fix.
   2. Live (real swarm + real Telegram forum, authorised human, front desk running):
-     confirm eight role-named steering topics appear (specifier, coder, cleaner,
-     architect, hardender, documenter, QA, coordinator). Post a nudge in the coder
-     topic and watch it land verbatim in the coder's live pane (in the extension
-     tile / `tmux capture-pane`); post another in the QA topic and watch it land in
-     QA's pane and NOT the coder's. Post from an unauthorised account in a steering
-     topic and confirm no pane receives anything. Post the same text in a BL-ticket
-     topic and in the Operator topic and confirm neither becomes a pane steer and
-     both topics keep their existing behavior.
+     confirm eight role-named topics appear (specifier, coder, cleaner, architect,
+     hardender, documenter, QA, coordinator). REDIRECT: post `!<text>` in the coder
+     topic, watch it land verbatim in the coder's live pane and interrupt it; post in
+     the QA topic, watch it land in QA's pane and NOT the coder's. QUESTION [slice 2]:
+     post a plain question in the coder topic while the coder is mid-task, confirm the
+     coder is NOT interrupted, that it answers after finishing its current task, and
+     that the answer appears back in the coder topic (and nothing else from its BAU
+     does). Guards: an unauthorised account's message in a role topic does nothing;
+     the same text in a BL-ticket topic and the Operator topic does nothing and both
+     keep their existing behavior.
 
 human_approval: >
-  approved 2026-07-15. Final read confirmed by the human via AskUserQuestion in the
-  coordinator session: design approved as specced (8 per-role topics, live pane
-  inject via the existing verified-nudge path, principal- and topic-scoped), and
-  slice 2's answer-back stays deferred as a follow-up — ship slice 1 (inbound-only)
-  first, do not fold the round-trip in now.
-mutation_cost: medium
+  SUPERSEDED-AND-AMENDED 2026-07-15. The coordinator recorded a human approval for
+  the ORIGINAL slice-1-inbound-only design (62920cfa). The human then amended the
+  design in the specifier session (the /btw follow-up + two AskUserQuestion answers:
+  questions AND redirects; prioritise the round-trip). Slice 1 (provision + inbound
+  interrupting redirect) is UNCHANGED by the amendment, so its recorded approval
+  still stands. Slice 2 was MATERIALLY changed — from a bare "answer-back" into a
+  full non-disruptive QUESTION mode (mailbox-note delivery, round-trip, mode
+  selector, /btw dropped) — so slice 2's design and the mode-marker choice need a
+  FRESH human read before slice 2 is built or promoted. Feature files remain
+  specifier drafts until that read.
+mutation_cost: high
