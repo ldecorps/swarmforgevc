@@ -70,6 +70,6 @@ qa_e2e: |
   3. Live: against the real forum group, confirm the standing topics show 🎟/🏛
      and a hand-set icon on a standing topic is preserved.
 
-human_approval: pending
+human_approval: approved  # human via Operator relay (OPERATOR thread), 2026-07-15T12:43Z: "Approved all" to the 5-ticket list (BL-411 413 414 415 418)
 
 mutation_cost: low

@@ -84,6 +84,6 @@ qa_e2e: |
      live pid — never two getUpdates pollers on the token (no HTTP 409 in the
      relay log).
 
-human_approval: pending
+human_approval: approved  # human via Operator relay (OPERATOR thread), 2026-07-15T12:43Z: "Approved all" to the 5-ticket list (BL-411 413 414 415 418)
 
 mutation_cost: low
