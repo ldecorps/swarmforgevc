@@ -135,6 +135,27 @@ test('buildRelayAdapters.objectToContract reports already-ended rather than thro
   assert.deepEqual(result, { outcome: 'already-ended' });
 });
 
+test('buildRelayAdapters.objectToContract reports round-limit once the round cap is exhausted', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const adapters = buildRelayAdapters(targetRepo, 'unused-token', CHAT_ID, NEGOTIATION_TOPIC_ID);
+  for (let round = 1; round <= 5; round += 1) {
+    const result = await adapters.objectToContract(`objection round ${round}`);
+    assert.equal(result.outcome, 'revised');
+  }
+
+  const result = await adapters.objectToContract('one objection past the cap');
+
+  assert.deepEqual(result, { outcome: 'round-limit' });
+});
+
+test('buildRelayAdapters.objectToContract propagates a non-already-ended error rather than swallowing it', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const adapters = buildRelayAdapters(targetRepo, 'unused-token', CHAT_ID, NEGOTIATION_TOPIC_ID);
+  fs.writeFileSync(path.join(targetRepo, '.swarmforge', 'contract.yaml'), 'not: a-valid-contract-shape\n');
+
+  await assert.rejects(() => adapters.objectToContract('too late for a missing contract'), /missing or malformed/);
+});
+
 test('buildRelayAdapters.approveContract agrees the real contract via runApprove and returns it', async () => {
   const targetRepo = mkTargetWithProposedContract();
   const adapters = buildRelayAdapters(targetRepo, 'unused-token', CHAT_ID, NEGOTIATION_TOPIC_ID);
@@ -154,6 +175,14 @@ test('buildRelayAdapters.approveContract reports already-ended rather than throw
   const result = await adapters.approveContract();
 
   assert.deepEqual(result, { outcome: 'already-ended' });
+});
+
+test('buildRelayAdapters.approveContract propagates a non-already-ended error rather than swallowing it', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const adapters = buildRelayAdapters(targetRepo, 'unused-token', CHAT_ID, NEGOTIATION_TOPIC_ID);
+  fs.writeFileSync(path.join(targetRepo, '.swarmforge', 'contract.yaml'), 'not: a-valid-contract-shape\n');
+
+  await assert.rejects(() => adapters.approveContract(), /missing or malformed/);
 });
 
 test('buildRelayAdapters.postToTopic sends the text via the injected postFn to the negotiation topic', async () => {
@@ -216,6 +245,24 @@ test('runPostProposal is idempotent - a second call is a no-op, no second post',
 
   assert.equal(second.posted, false);
   assert.equal(calls.length, 1);
+});
+
+test('runPostProposal throws when contract.yaml is missing or malformed', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const secretsFile = mkSecretsPath();
+  provisionChannelAndToken(targetRepo, secretsFile);
+  fs.writeFileSync(path.join(targetRepo, '.swarmforge', 'contract.yaml'), 'not: a-valid-contract-shape\n');
+
+  await assert.rejects(() => runPostProposal(targetRepo, secretsFile), /missing or malformed/);
+});
+
+test('runPostProposal throws when the Telegram send fails', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const secretsFile = mkSecretsPath();
+  provisionChannelAndToken(targetRepo, secretsFile);
+  const failingPostFn = async () => ({ ok: false, status: 401, json: { description: 'Unauthorized' } });
+
+  await assert.rejects(() => runPostProposal(targetRepo, secretsFile, failingPostFn), /Unauthorized|401/);
 });
 
 test('runPostProposal throws when no channel has been provisioned yet', async () => {
@@ -330,6 +377,13 @@ test('writeRelayOffset then readRelayOffset round-trips the value', () => {
   assert.equal(readRelayOffset(targetRepo), 17);
 });
 
+test('readRelayOffset returns 0 when the persisted offset is not a number', () => {
+  const targetRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-onboarding-negotiation-offset-'));
+  fs.mkdirSync(path.join(targetRepo, '.swarmforge', 'operator'), { recursive: true });
+  fs.writeFileSync(path.join(targetRepo, '.swarmforge', 'operator', 'negotiation-relay-offset.json'), JSON.stringify({ offset: 'not-a-number' }));
+  assert.equal(readRelayOffset(targetRepo), 0);
+});
+
 // ── parseArgs ────────────────────────────────────────────────────────────
 
 test('parseArgs accepts a post-proposal command', () => {
@@ -374,6 +428,18 @@ test('parseArgs returns null when arguments are missing', () => {
   assert.equal(parseArgs([]), null);
 });
 
+test('parseArgs returns null when only the target repo path is missing', () => {
+  assert.equal(parseArgs([undefined, '/secrets.json', 'post-proposal']), null);
+});
+
+test('parseArgs returns null when only the host secrets file path is missing', () => {
+  assert.equal(parseArgs(['/target', undefined, 'post-proposal']), null);
+});
+
+test('parseArgs returns null when only the action is missing', () => {
+  assert.equal(parseArgs(['/target', '/secrets.json']), null);
+});
+
 // ── the CLI's own main(), run in-process ──────────────────────────────────
 
 // Drives main()'s real 'post-proposal' dispatch branch in-process, with no
@@ -393,6 +459,31 @@ test("main() post-proposal dispatches to runPostProposal and prints its outcome"
 
   assert.equal(exitCode, undefined);
   assert.deepEqual(output, { posted: false });
+});
+
+test("main() poll dispatches to runPoll and prints its outcome", async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const secretsFile = mkSecretsPath();
+  provisionChannelAndToken(targetRepo, secretsFile);
+  // main()'s poll branch calls runPoll with no injected postFn, so it goes
+  // through the real network seam (defaultPost's global fetch) - monkeypatch
+  // it the same way recertWebhookVercelHandler.test.js does to keep this
+  // in-process test network-free while still exercising main() itself.
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => ({
+    ok: true,
+    status: 200,
+    json: async () => (String(url).includes('/getUpdates') ? { result: [] } : { result: { message_id: 1 } }),
+  });
+  let result;
+  try {
+    result = await runRelayCli([targetRepo, secretsFile, 'poll'], { TELEGRAM_PRINCIPAL_USER_ID: PRINCIPAL_ID });
+  } finally {
+    global.fetch = originalFetch;
+  }
+
+  assert.equal(result.exitCode, undefined);
+  assert.deepEqual(result.output, { nextOffset: 0, posted: 0, dropped: 0 });
 });
 
 test('main() sets a non-zero exit code and prints nothing when arguments are missing', async () => {

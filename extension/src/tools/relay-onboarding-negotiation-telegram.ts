@@ -203,6 +203,12 @@ export type ParsedArgs =
   | { targetRepoPath: string; hostSecretsFilePath: string; action: 'post-proposal' }
   | { targetRepoPath: string; hostSecretsFilePath: string; action: 'poll'; principalUserId: string };
 
+function parsePollArgs(targetRepoPath: string, hostSecretsFilePath: string): ParsedArgs | null {
+  const principalUserId = process.env.TELEGRAM_PRINCIPAL_USER_ID;
+  if (!principalUserId) return null;
+  return { targetRepoPath, hostSecretsFilePath, action: 'poll', principalUserId };
+}
+
 export function parseArgs(argv: string[]): ParsedArgs | null {
   const [targetRepoPath, hostSecretsFilePath, action] = argv;
   if (!targetRepoPath || !hostSecretsFilePath || !action) return null;
@@ -210,9 +216,7 @@ export function parseArgs(argv: string[]): ParsedArgs | null {
     return { targetRepoPath, hostSecretsFilePath, action };
   }
   if (action === 'poll') {
-    const principalUserId = process.env.TELEGRAM_PRINCIPAL_USER_ID;
-    if (!principalUserId) return null;
-    return { targetRepoPath, hostSecretsFilePath, action, principalUserId };
+    return parsePollArgs(targetRepoPath, hostSecretsFilePath);
   }
   return null;
 }
