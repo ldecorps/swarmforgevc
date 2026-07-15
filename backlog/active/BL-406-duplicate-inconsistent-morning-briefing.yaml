@@ -43,3 +43,14 @@ acceptance:
 human_approval: approved  # human via Operator relay to coordinator, 2026-07-15: "Human OK'd, promote: BL-403 404 406 409 395 405 407 410"
 
 mutation_cost: low
+# --- evidence appended 2026-07-15 (Claude Code session, human-reported flood) ---
+# ROOT CAUSE FOUND: the briefing is not sent "3-4x by one sender" — there were
+# SEVEN handoffd.bb daemons alive at send time: the legitimate project-rooted
+# one plus SIX leaked from stale /tmp acceptance sandboxes (pids 349563,
+# 368054, 384333, 2198971, 2221090, 2239471, all `handoffd.bb /tmp/tmp.*`,
+# alive 9-11h, unsupervised). Each fired its own briefing -> inbox flood
+# (screenshots show duplicate "SwarmForge briefing" threads, 12:15).
+# FIX SHAPE: (a) acceptance runners must tear down the daemons they start
+# (trap on exit), and (b) handoffd.bb should refuse to run with a /tmp-rooted
+# project unless an explicit test flag is set — defense in depth so a leaked
+# test daemon can never email the human.
