@@ -171,6 +171,30 @@ test('latestReworkRoleByTicket keeps the most recent event\'s role when a ticket
   assert.equal(roles.get('BL-1'), 'QA');
 });
 
+// The test above processes events in chronological array order, so it
+// cannot tell "picks the later timestamp" apart from "picks whichever was
+// processed last" - both produce the same result there. Reversing the
+// array order pins the actual comparison (event.atMs > current.atMs), not
+// insertion order.
+test('latestReworkRoleByTicket picks the later timestamp regardless of array order', () => {
+  const roles = latestReworkRoleByTicket([
+    { ticketId: 'BL-1', fromRole: 'QA', atMs: 2000 },
+    { ticketId: 'BL-1', fromRole: 'architect', atMs: 1000 },
+  ]);
+  assert.equal(roles.get('BL-1'), 'QA');
+});
+
+// Pins the strict > boundary (never >=): on a genuine tie, the
+// first-PROCESSED event keeps its role, since a later event only
+// overwrites when it is STRICTLY newer.
+test('latestReworkRoleByTicket keeps the first-processed event on a timestamp tie', () => {
+  const roles = latestReworkRoleByTicket([
+    { ticketId: 'BL-1', fromRole: 'architect', atMs: 1000 },
+    { ticketId: 'BL-1', fromRole: 'QA', atMs: 1000 },
+  ]);
+  assert.equal(roles.get('BL-1'), 'architect');
+});
+
 test('latestReworkRoleByTicket tracks each ticket independently', () => {
   const roles = latestReworkRoleByTicket([
     { ticketId: 'BL-1', fromRole: 'architect', atMs: 1000 },

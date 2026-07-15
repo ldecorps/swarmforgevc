@@ -157,6 +157,22 @@ async function hasGitIdentityConfigured(targetPath: string): Promise<boolean> {
   }
 }
 
+// Split out of writeFilesAndCommit below so that function's own branch
+// count stays at or below the CRAP threshold - the same "extract so branch
+// count stays at or below the CRAP threshold" reasoning applied elsewhere
+// in this codebase. Logs the fallback-identity warning as a side effect of
+// resolving it (not a separate caller-driven step), since every caller of
+// this helper needs both together.
+async function resolveCommitIdentityOverrides(targetPath: string): Promise<string[]> {
+  if (await hasGitIdentityConfigured(targetPath)) {
+    return [];
+  }
+  process.stderr.write(
+    `targetBootstrap: no git identity configured in ${targetPath} - committing with fallback identity ${FALLBACK_GIT_AUTHOR_NAME} <${FALLBACK_GIT_AUTHOR_EMAIL}>\n`
+  );
+  return ['-c', `user.name=${FALLBACK_GIT_AUTHOR_NAME}`, '-c', `user.email=${FALLBACK_GIT_AUTHOR_EMAIL}`];
+}
+
 async function writeFilesAndCommit(targetPath: string, files: BootstrapFile[], commitMessage: string): Promise<boolean> {
   for (const file of files) {
     const filePath = path.join(targetPath, file.path);
@@ -190,15 +206,7 @@ async function writeFilesAndCommit(targetPath: string, files: BootstrapFile[], c
     return false;
   }
 
-  const hasIdentity = await hasGitIdentityConfigured(targetPath);
-  const identityOverrides = hasIdentity
-    ? []
-    : ['-c', `user.name=${FALLBACK_GIT_AUTHOR_NAME}`, '-c', `user.email=${FALLBACK_GIT_AUTHOR_EMAIL}`];
-  if (!hasIdentity) {
-    process.stderr.write(
-      `targetBootstrap: no git identity configured in ${targetPath} - committing with fallback identity ${FALLBACK_GIT_AUTHOR_NAME} <${FALLBACK_GIT_AUTHOR_EMAIL}>\n`
-    );
-  }
+  const identityOverrides = await resolveCommitIdentityOverrides(targetPath);
   await execFileAsync('git', ['-C', targetPath, ...identityOverrides, 'commit', '-m', commitMessage]);
   return true;
 }

@@ -27,12 +27,12 @@ function writeRolesTsv(targetPath, rows) {
   fs.writeFileSync(path.join(targetPath, '.swarmforge', 'roles.tsv'), rows.map((r) => r.join('\t')).join('\n') + '\n');
 }
 
-function writeHeartbeat(targetPath, role, lastBeatIso) {
+function writeHeartbeat(targetPath, role, lastBeatIso, inFlight = false) {
   const dir = path.join(targetPath, '.swarmforge', 'heartbeat');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(
     path.join(dir, `${role}.yaml`),
-    `role: ${role}\npid: 1\nlast_beat: "${lastBeatIso}"\nlast_tool: Read\nphase: exit\nin_flight: false\nbeat_count: 1\n`
+    `role: ${role}\npid: 1\nlast_beat: "${lastBeatIso}"\nlast_tool: Read\nphase: exit\nin_flight: ${inFlight}\nbeat_count: 1\n`
   );
 }
 
@@ -87,6 +87,19 @@ test('heartbeatIsSessionAlive reports dead for a stale (long past dead-timeout) 
   const isAlive = heartbeatIsSessionAlive(targetPath);
 
   assert.equal(isAlive({ role: 'coder' }), false);
+});
+
+// Both 'alive' and 'stuck' count as alive here (a stuck role is still a
+// live process, just wedged on a tool call) - without this test, only the
+// 'alive' disjunct is ever exercised, so a mutant collapsing `=== 'stuck'`
+// away survives undetected.
+test('heartbeatIsSessionAlive reports alive for a stuck (in-flight past the in-flight timeout) heartbeat', () => {
+  const targetPath = mkTmp();
+  writeHeartbeat(targetPath, 'coder', new Date(Date.now() - 90 * 1000).toISOString(), true);
+
+  const isAlive = heartbeatIsSessionAlive(targetPath);
+
+  assert.equal(isAlive({ role: 'coder' }), true);
 });
 
 // ── buildFleetStatusDoc / emitFleetStatus ────────────────────────────────
