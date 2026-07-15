@@ -1,0 +1,44 @@
+id: BL-407
+title: "26+ done tickets' Telegram topics can't be cleaned up — no verified completion record"
+milestone: M8
+type: bug
+status: todo
+severity: medium
+priority: 3
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-topic-deletion-blocked-no-verified-completion-record.md — human-requested via Claude Code session, 2026-07-15. Observed 2026-07-15T07:39Z: 26 distinct BLs (BL-305..328, BL-333, BL-334) are past their retention window with no verified completion record, so topicDeletion correctly refuses to delete their Telegram topics."
+
+notes: |
+  The refusal itself (topicDeletion.ts) is CORRECT as a safety guard and
+  should be left intact — this ticket is about the upstream gap: closed/done
+  tickets from the BL-305..334 era have topic records that were never
+  written with a verified-completion message, so every concierge tick
+  re-logs 26+ refusal lines (log noise + wasted work), and the underlying
+  completion-record write path may be broken for other consumers too.
+
+  INVESTIGATE: extension/src/concierge/topicDeletion.ts (the refusal guard)
+  and whatever writes the verified-completion record on ticket close / QA
+  approval — did that write path regress, or were these 26 tickets closed
+  by a path that skips the record write entirely (e.g. a bookkeeping
+  shortcut, a pre-BL-329 durability gap, or a manual close)?
+
+  DECIDE handling for the existing 26 topics once the root cause is known:
+  backfill a verified-completion record for tickets legitimately done, vs. a
+  one-time manual archive for ones where backfilling isn't sound (e.g. no
+  reliable record of what "done" meant at the time).
+
+  Distinct from BL-394 (front-desk spam, fixed) and BL-403 (supervisor
+  orphan-bot) — this is specifically the completion-record/archive-write-path
+  gap, not process lifecycle or message delivery.
+
+acceptance:
+  feature: specs/features/BL-407-verified-completion-record-write-path-gap.feature
+  steps:
+    - "The write path for verified completion records is identified and fixed for future closes"
+    - "The 26 affected topics are reconciled: backfilled or archived, not left to relog forever"
+    - "The refusal guard in topicDeletion.ts is left unchanged"
+
+human_approval: pending-review
+
+mutation_cost: medium
