@@ -1,111 +1,233 @@
 id: BL-423
-title: "Drive swarm /stop and /restart from a guarded Telegram control topic (confirm-gated, owning-context executor)"
+title: "Drive swarm stop (drain/emergency), restart, and timed-pause from a guarded Telegram control topic (confirm-gated for stop/restart, owning-context executor)"
 milestone: M8
 type: feature
 status: todo
 priority: 3
 direction: human-requested
 depends_on: [BL-410]
-source: "backlog/INTAKE-operator-question-1784120536117.md — Operator-relayed Telegram feature request, 2026-07-15T13:02Z: drive swarm stop/start from the phone via guarded /stop and /restart in a dedicated control topic, without needing the VS Code extension/master context; /stop must be a clean teardown (no orphaned tmux windows/vitest workers) and /restart a full relaunch that actually bootstraps all agents (the 12:05Z windows-without-bootstrap half-launch is the failure mode to avoid). Drained with the human 2026-07-15 (AskUserQuestion): (1) ONE deliverable, both verbs together — do NOT ship /stop alone and strand the human; (2) the extension host MAY run headless — reuse the existing bounce executor, no need to survive a fully-absent extension; (3) REQUIRE an explicit confirmation before executing."
+source: "backlog/INTAKE-operator-question-1784120536117.md — Operator-relayed Telegram feature request, 2026-07-15T13:02Z: drive swarm stop/start from the phone via guarded /stop and /restart in a dedicated control topic, without needing the VS Code extension/master context; /stop must be a clean teardown (no orphaned tmux windows/vitest workers) and /restart a full relaunch that actually bootstraps all agents (the 12:05Z windows-without-bootstrap half-launch is the failure mode to avoid). Drained with the human 2026-07-15 (AskUserQuestion): (1) ONE deliverable, both verbs together — do NOT ship /stop alone and strand the human; (2) the extension host MAY run headless — reuse the existing bounce executor, no need to survive a fully-absent extension; (3) REQUIRE an explicit confirmation before executing. AMENDED 2026-07-15 (backlog/INTAKE-bl423-amendment-pause-and-emergency-stop.md — human voice-to-text follow-up: '15 min... like dropbox does. As well as stop gracefully (drain) or emergency stop'). Amendment drained with the human 2026-07-15 (AskUserQuestion): (a) PAUSE semantics = freeze new-work intake (agents stay alive, in-flight finishes, no new promotion), auto-resume on the timer — NOT a process suspend and NOT a timed stop+restart; (b) STOP modes exposed as ONE /stop verb whose confirmation offers 'Drain & stop' and 'Emergency stop' (plus Cancel), not two separate verbs; (c) DRAIN wait is BOUNDED — drain until the pipeline is empty OR a drain timeout elapses, then force teardown and report it forced; (d) PAUSE needs NO separate yes/no confirm — the duration pick IS the action; durations 15 min / 1 hr / 4 hr / until-I-resume, resume is a single tap."
 
 notes: |
-  DELIVER BOTH VERBS AS ONE PARCEL. The human explicitly chose atomic delivery
-  ("never stranded") over the repo's incremental epic pattern: /stop and
-  /restart ship together. Do NOT split /stop out as a standalone shippable
-  ticket. Internal build order is fine (control-topic + guard + confirm gate
-  first, then wire /stop teardown, then /restart relaunch), but the parcel lands
-  as a unit with both verbs working.
+  DELIVER STOP + RESTART AS ONE PARCEL; PAUSE FOLDED INTO THE SAME PARCEL.
+  The human explicitly chose atomic delivery ("never stranded") for the /stop +
+  /restart pair over the repo's incremental epic pattern: they ship together, and
+  /stop is NOT split out as a standalone shippable ticket. The 2026-07-15 amendment
+  (drain/emergency stop split + timed pause) folds into THIS ticket in place — it
+  was still unpromoted and held by no role, so there is no holder to notify and no
+  in-flight-amendment merge-up is required. Internal build order is fine (control
+  topic + principal/topic guard + confirm state machine first; then /stop with both
+  modes; then /restart relaunch; then /pause + resume), but the parcel lands as a
+  unit with all verbs working. This is now a LARGER parcel than the original — size
+  it accordingly.
 
+  ---- STOP: TWO MODES BEHIND ONE VERB (amendment, 2026-07-15) ----
+  /stop posts ONE confirmation offering two action buttons plus cancel (built on
+  BL-410's inline keyboard): [Drain & stop] [Emergency stop] [Cancel]. Executing
+  nothing until a button is tapped; Cancel leaves the swarm running. The mode is
+  chosen at confirm time — do NOT add a second /forcestop verb.
+    - EMERGENCY stop: immediate teardown, no drain wait — the original /stop
+      behaviour. Reaps every swarm-owned process at once.
+    - DRAIN stop: wait for in-flight work to finish FIRST (no parcel in any role's
+      inbox/in_process), THEN teardown. The wait is BOUNDED by a drain timeout: if
+      the pipeline has not drained when the timeout elapses, FORCE the teardown and
+      report the stop as `forced` (not `drained`). A clean drain reports `drained`.
+    - BOTH modes must reap EVERY swarm-owned process with no orphaned tmux windows
+      and no orphaned vitest workers (the exact orphan class behind the BL-422
+      OOM-spiral: a killed parent leaves reparented `node (vitest N)` workers).
+      Drive the reap through kill_all_swarm.sh's socket-scoped path. The ONLY
+      difference between the modes is whether teardown waits for the drain first.
+
+  ---- PAUSE: TIMED, DROPBOX-STYLE, FREEZES INTAKE (amendment, 2026-07-15) ----
+  /pause posts a duration menu (BL-410 inline keyboard): [15 min] [1 hr] [4 hr]
+  [Until I resume]. The human's chosen semantic is FREEZE NEW-WORK INTAKE, not a
+  teardown and not a process suspend: agents stay alive, in-flight parcels finish,
+  and NO new paused item is promoted while paused. A timed pick auto-resumes when
+  its duration elapses; "Until I resume" has no timer and stays frozen until an
+  explicit Resume. Picking a duration IS the action — NO separate yes/no confirm
+  (it is cheap and auto-reverting, unlike the destructive stop/restart). While
+  paused, show a [Resume now] button; Resume restores intake immediately and clears
+  any pending auto-resume.
+
+  PAUSE ENFORCEMENT — WIRE A REAL READER, NOT A DARK MARKER. The freeze must ride a
+  lever the coordinator's promotion path ALREADY consults live, or the pause is a
+  marker nobody reads (the specifier's "a consumer can be green over a store nothing
+  writes" trap, inverted: here the bot WRITES a pause marker and a real READER must
+  honour it). The sanctioned lever is the shared effective active-backlog depth in
+  `swarmforge/scripts/backlog_depth_lib.bb` (`read-max-depth` / `under-depth-cap?`),
+  which the coordinator's pre-promotion gate and `ready_for_next.bb`'s no-promotion
+  check already read before every promotion (this is the SAME primitive the
+  circuit-breaker uses to drop the cap to 0). Make that effective-depth computation
+  return 0 while a LIVE (unexpired) pause marker exists, so an existing consumer
+  freezes promotion with no new agent-prompt behaviour required. CODER: per the
+  shared-component fan-out rule, `grep -rl` every reader of the effective depth /
+  every promotion-gate call site across `swarmforge/scripts` and `extension/src`
+  and reconcile the list against what you wired — a pause honoured by only SOME
+  depth reads is a partial freeze that leaks promotions. The pause marker is
+  runtime state: write it under `.swarmforge/` (gitignored host-persisted marker,
+  per local-engineering rule 5 — NOT the git-tracked swarmforge.conf, and NOT the
+  static backlog.json projection), reached through a redirectable env seam so no
+  test touches a live swarm's runtime dir. Auto-resume detection + the "resumed"
+  post to the control topic ride the daemon's existing sweep cadence
+  (`chase_sweep_lib.bb` / handoffd), evaluated against an INJECTED clock.
+
+  ---- RESTART (unchanged from the base ticket) ----
   REUSE THE SANCTIONED BOUNCE PATH — DO NOT INVENT A RESTART MECHANISM. The
   constitution already forbids naive external respawn (coordinator.prompt
-  "Requesting A Bounce", BL-107): `remote_bounce.sh` writes the
-  `.swarmforge/bounce` sentinel; the owning-context executor
-  (extension host: bounceWatcher.ts / bounceDrain.ts / bounceAck.ts) consumes
-  it, runs stop -> relaunch -> verify-ready, and writes `.swarmforge/bounce-ack.json`
-  with a `phase` (draining/stopping/relaunching/done/failed). That IS the
-  "owning-context, not a naive respawn" primitive the intake asks for. Wiring:
+  "Requesting A Bounce", BL-107): `remote_bounce.sh` writes the `.swarmforge/bounce`
+  sentinel; the owning-context executor (extension host: bounceWatcher.ts /
+  bounceDrain.ts / bounceAck.ts) consumes it, runs stop -> relaunch -> verify-ready,
+  and writes `.swarmforge/bounce-ack.json` with a `phase`
+  (draining/stopping/relaunching/done/failed). That IS the "owning-context, not a
+  naive respawn" primitive the intake asks for. Wiring:
     - the front-desk Telegram bot (swarm-side) parses the guarded verb, runs the
-      confirm gate, and on confirm WRITES the bounce sentinel (bounce type
-      `swarm` for /restart; a clean stop for /stop);
-    - it then STREAMS the bounce-ack phases back to the control topic so the
-      human sees draining -> stopping -> relaunching -> done (or failed).
+      confirm gate, and on confirm WRITES the bounce sentinel (bounce type `swarm`
+      for /restart; a clean stop for /stop);
+    - it then STREAMS the bounce-ack phases back to the control topic so the human
+      sees draining -> stopping -> relaunching -> done (or failed).
   Executor context (human's answer): the extension host MAY be running headless —
-  reuse its bounce watcher; this ticket does NOT need a new swarm-external
-  executor daemon that survives a fully-absent extension (explicitly out of scope).
-
-  GUARDS (all three, per the human):
-    1. AUTHORISED HUMAN ONLY — reuse the same principal guard BL-408/409 use for
-       Telegram verbs; an unauthorised sender's verb is refused, no action.
-    2. DEDICATED CONTROL TOPIC — a verb only acts when sent in the dedicated
-       control topic; the same text in any other topic is ignored (a standing
-       control topic, sibling to Approvals/SUP/recert).
-    3. EXPLICIT CONFIRMATION — the verb posts an inline-button confirm (built on
-       BL-410's inline-keyboard mechanism — the depends_on) and executes ONLY on
-       the confirm tap; cancel leaves the swarm untouched. A single mis-tap must
-       never tear the swarm down.
-
-  /stop CLEANLINESS. The teardown must reap EVERY swarm-owned process it started —
-  no orphaned tmux windows and no orphaned vitest workers (the exact orphan class
-  behind the BL-422 OOM-spiral: a killed parent leaves reparented `node (vitest N)`
-  workers). Drive the reap through kill_all_swarm.sh's socket-scoped path;
-  confirm no swarm-owned process survives.
+  reuse its bounce watcher; this ticket does NOT need a new swarm-external executor
+  daemon that survives a fully-absent extension (explicitly out of scope).
 
   /restart BOOTSTRAP VERIFICATION. A relaunch that creates the tmux windows but
   never bootstraps agents into them (the 12:05Z SWARM_CONTROL_LOST half-launch)
   must be reported FAILED, not done — reuse the bounce-ack `relaunching`->`done`
-  verify-ready step, which must actually check agents bootstrapped (pane_current_command
-  / pgrep), not merely that windows exist. Report `failed` back to the topic.
+  verify-ready step, which must actually check agents bootstrapped
+  (pane_current_command / pgrep), not merely that windows exist.
 
-  TESTABILITY.
-    - The verb parse + guard (authorised? control-topic? confirm-pending?) + the
-      confirm state machine are a PURE host-side module (mirror
-      operatorDecideStatus.ts): given (message, principal, topic, pending-confirm
-      state) -> decide ignore | prompt-confirm | execute-stop | execute-restart |
-      cancel. Unit-tested with fixtures, no Telegram, no tmux.
-    - Sentinel write + bounce-ack phase reporting + teardown reap are
-      adapter-injected: inject the process-list / sentinel-write / ack-read seams.
-      NEVER assert cleanliness by scanning the real process table or globbing the
-      real /tmp — that is the shared-global process-table trap (engineering
+  ---- GUARDS (all verbs, per the human) ----
+    1. AUTHORISED HUMAN ONLY — reuse the same principal guard BL-408/409 use for
+       Telegram verbs; an unauthorised sender's verb is refused, no action.
+    2. DEDICATED CONTROL TOPIC — a verb only acts when sent in the dedicated
+       control topic; the same text in any other topic is ignored (a standing
+       control topic, sibling to Approvals/SUP/recert). Applies to stop, restart,
+       AND pause.
+    3. EXPLICIT CONFIRMATION — for the DESTRUCTIVE verbs (stop, restart) only: the
+       verb posts an inline-button confirm and executes ONLY on a confirm tap;
+       cancel leaves the swarm untouched. A single mis-tap must never tear the
+       swarm down. Pause is NON-destructive and auto-reverting, so it skips this
+       gate — the duration pick is its commit.
+    4. CALLBACK RE-GUARD — inline-button taps (a stop-mode confirm, a pause-duration
+       pick, a Resume) RE-APPLY the principal + topic guards. Anyone in a Telegram
+       group can tap another human's inline button, so an unauthorised tap on a
+       control button must be refused with no swarm action.
+
+  ---- TESTABILITY ----
+    - The verb/callback parse + guard (authorised? control-topic? confirm-pending?)
+      + the confirm state machine + the pause state machine are ONE PURE host-side
+      module (mirror operatorDecideStatus.ts): given (message-or-callback,
+      principal, topic, pending-confirm state, pause state, now) -> decide
+      ignore | prompt-stop-modes | prompt-restart-confirm | execute-emergency-stop |
+      execute-drain-stop | execute-restart | cancel | post-pause-menu |
+      apply-pause(duration) | auto-resume | resume-now | refuse. Unit-tested with
+      fixtures, no Telegram, no tmux.
+    - Sentinel write + bounce-ack phase reporting + teardown reap + pause-marker
+      write/clear + effective-depth freeze are ADAPTER-INJECTED: inject the
+      process-list / sentinel-write / ack-read / marker-read-write / depth-read
+      seams. NEVER assert cleanliness by scanning the real process table or globbing
+      the real /tmp — that is the shared-global process-table trap (engineering
       "PROCESS TABLE is a shared global" rule); assert over the injected process
       list / the exact pids the teardown recorded, and use the redirectable env
-      seams for any runtime path so no test touches a live swarm's socket dir.
+      seams for any runtime path so no test touches a live swarm's socket dir or
+      pause-marker dir.
+    - DRAIN TIMEOUT + AUTO-RESUME are TIME-DEPENDENT: obey the no-real-timers ban.
+      The drain wait must NOT poll the real inbox dirs with real sleeps — inject the
+      in-flight-count seam and an injected clock, and give the drain timeout an
+      ENV-OVERRIDE seam (per engineering's "a hardcoded production timeout needs the
+      same env seam the file already uses for its other tunables" rule) so a test
+      drives it small and deterministic. Auto-resume is evaluated against the same
+      injected clock, never a real elapsed 15 minutes. The default drain timeout is
+      the specifier's to pick a sane value for (order ~10 min so a mid-run hardener
+      mutation pass can finish); confirm the final value with the human if it
+      matters operationally.
+    - PAUSE WIRING PROOF (engineering "a wiring test that adds a NEW on-disk input
+      must PLACE that file and prove the read is load-bearing" rule): the test that
+      wires the effective-depth freeze must place a live pause marker in its fixture
+      and prove the freeze is load-bearing by break-then-fix — with the marker
+      present the effective depth reads 0 (promotion frozen); remove/expire it and
+      the effective depth returns to its configured value (promotion resumes).
 
-  NOTE FOR HARDENER/CODER: the feature file's IR-DRY pass flags three
-  medium-confidence possible-synonyms — "confirmed stop"/"confirmed restart" and
-  the control-topic/non-control-topic Givens. These are INTENTIONAL parallel and
-  contrasting phrasings across the two verbs and the topic-guard, not accidental
-  drift; do not collapse them.
+  NOTE FOR HARDENER/CODER — INTENTIONAL PARALLEL PHRASINGS (IR-DRY). The feature
+  file's IR-DRY pass reports 20 medium-confidence near-duplicate/possible-synonym
+  findings and ZERO high-confidence exact duplicates; every one is a DELIBERATE
+  parallel or contrast, not accidental drift — do NOT collapse them:
+    - the three verb Givens (stop / restart / pause) are intentionally parallel;
+    - the guard OUTCOMES are intentionally distinct — unauthorised sender is
+      "refused", a wrong-topic verb is "ignored", an unauthorised button tap is
+      "the tap is refused" — same "no swarm control action is taken" tail, three
+      different entry points;
+    - the two drain Givens (work "finishes within" vs "does not finish within" the
+      drain window) and their two Thens ("drained" vs "forced") are the contrasting
+      pair the bounded-then-force decision turns on;
+    - the three stop reaps (emergency "immediately with no drain wait", drain
+      "waits ... then reaps", timeout "forces ... after the drain window") are three
+      distinct outcomes;
+    - the timed-pause Then ("frozen ... auto-resume scheduled") vs the until-resume
+      Then ("frozen with no auto-resume scheduled") is the timer/no-timer contrast.
 
-  OUT OF SCOPE: a swarm-external bounce-executor daemon that runs with the
-  extension fully closed (human deferred it); any control verb beyond stop/restart;
-  changing the bounce mechanism itself (reuse remote_bounce + bounce-ack as-is).
+  OUT OF SCOPE: a swarm-external bounce-executor daemon that runs with the extension
+  fully closed (human deferred it); any control verb beyond stop/restart/pause;
+  changing the bounce mechanism itself (reuse remote_bounce + bounce-ack as-is);
+  a process-suspend (SIGSTOP) pause or a teardown+relaunch pause (human chose the
+  intake-freeze semantic); a second /forcestop verb (emergency is a confirm-time
+  mode of /stop).
 
 acceptance:
   feature: specs/features/BL-423-telegram-swarm-control-verbs.feature
   steps:
-    - "An authorised stop or restart verb in the control topic posts a confirmation and executes nothing until confirmed"
-    - "Cancelling a pending confirmation leaves the swarm running"
-    - "An unauthorised sender's verb, or any verb outside the control topic, is refused or ignored with no swarm action"
-    - "A confirmed stop reaps every swarm-owned process, leaving no orphaned tmux windows or vitest workers"
+    - "An authorised restart verb in the control topic posts a confirmation and executes nothing until confirmed"
+    - "An authorised stop verb posts a confirmation offering both a drain-and-stop and an emergency-stop choice, executing nothing yet"
+    - "Cancelling a pending stop or restart confirmation leaves the swarm running"
+    - "An unauthorised sender's stop, restart, or pause verb is refused with no swarm action"
+    - "A stop, restart, or pause verb outside the control topic is ignored with no swarm action"
+    - "An unauthorised tap on a control button is refused with no swarm action"
+    - "A confirmed emergency stop reaps every swarm-owned process immediately, no orphaned tmux windows or vitest workers"
+    - "A confirmed drain stop waits for in-flight work to finish, then reaps every process cleanly and reports the stop drained"
+    - "A drain stop whose work outlasts the drain window forces teardown, reaps every process cleanly, and reports the stop forced"
     - "A confirmed restart relaunches through the owning-context executor and reports each bounce phase back to the control topic"
     - "A relaunch that creates windows but bootstraps no agents is reported failed, not done"
+    - "An authorised pause verb posts a duration menu and freezes nothing until a duration is picked"
+    - "Picking a timed pause duration freezes new-work intake, keeps in-flight parcels running, and schedules auto-resume after that duration"
+    - "Picking until-I-resume freezes new-work intake with no timer, until an explicit resume"
+    - "A timed pause auto-resumes when its duration elapses and reports the resume to the control topic"
+    - "An authorised resume restores new-work intake immediately, clearing any pending auto-resume"
 
 qa_e2e: |
-  1. Unit (host-side, no Telegram/tmux): drive the pure verb/guard/confirm state
-     machine over fixtures — authorised stop in the control topic -> prompt-confirm;
-     confirm -> execute-stop; cancel -> no action; unauthorised sender -> ignore;
-     restart verb in a non-control topic -> ignore; pending-confirm + confirm tap ->
-     execute-restart. Assert the teardown reap over an INJECTED process list (the
-     exact pids it recorded are gone; a reparented vitest-worker fixture pid is
-     reaped), never a real ps scan. Assert the failed-bootstrap path over an
-     injected bounce-ack whose relaunch verify finds windows-without-agents.
-  2. Live (real swarm + real control topic, authorised human): send /stop, confirm
-     the inline button, watch the topic report the teardown and verify (from the
-     host) no swarm tmux windows or vitest workers survive. Send /restart, confirm,
-     and watch the bounce phases stream back to the topic ending in `done` with all
-     agents actually bootstrapped into their windows. Send an unauthorised /stop and
-     a /restart in a non-control topic and confirm neither acts. Force a half-launch
-     and confirm the topic reports `failed`, not `done`.
+  1. Unit (host-side, no Telegram/tmux): drive the pure verb/callback/guard/confirm/
+     pause state machine over fixtures — authorised stop in the control topic ->
+     prompt-stop-modes; tap Drain & stop -> execute-drain-stop; tap Emergency stop ->
+     execute-emergency-stop; cancel -> no action; restart verb -> prompt-confirm ->
+     confirm -> execute-restart; unauthorised sender -> ignore; any verb in a
+     non-control topic -> ignore; unauthorised tap on a pending control button ->
+     refuse. Pause: /pause -> post-pause-menu (nothing frozen); pick 15 min -> freeze
+     intake + schedule auto-resume (injected clock); pick Until I resume -> freeze
+     with no timer; advance the injected clock past a timed pause -> auto-resume +
+     report; Resume now -> restore intake. Assert the teardown reap over an INJECTED
+     process list (the exact pids it recorded are gone; a reparented vitest-worker
+     fixture pid is reaped), never a real ps scan; assert the emergency vs drain
+     difference is the drain WAIT (drive the drain timeout via its env seam to a
+     small value: work-finishes -> drained; work-outlasts -> forced). Assert the
+     pause freeze is load-bearing by break-then-fix over the effective-depth read
+     (marker present -> depth 0; marker absent/expired -> configured depth). Assert
+     the failed-bootstrap path over an injected bounce-ack whose relaunch verify
+     finds windows-without-agents.
+  2. Live (real swarm + real control topic, authorised human): send /stop, tap
+     Emergency stop, confirm the topic reports the teardown and (from the host) no
+     swarm tmux windows or vitest workers survive. Relaunch, send /stop, tap
+     Drain & stop, watch it wait for in-flight work then report `drained`. Send
+     /restart, confirm, watch the bounce phases stream back ending in `done` with
+     all agents actually bootstrapped. Send /pause, tap 15 min, confirm new tickets
+     stop being promoted while agents keep working on in-flight parcels, then confirm
+     it auto-resumes ~15 min later with a "resumed" post; repeat with Until I resume
+     + a Resume-now tap. Send an unauthorised /stop, a /pause in a non-control topic,
+     and an unauthorised tap on a pending confirm button, and confirm none act. Force
+     a half-launch and confirm the topic reports `failed`, not `done`.
 
-human_approval: approved
-mutation_cost: medium
+human_approval: >
+  Base ticket approved 2026-07-15 (AskUserQuestion: atomic stop+restart, headless-OK
+  executor reuse, explicit confirm). Amendment design approved 2026-07-15 by the human
+  via AskUserQuestion (pause = freeze intake / one /stop verb with drain+emergency
+  confirm buttons / bounded-then-force drain / duration-pick-is-the-action with
+  15m-1h-4h-until-resume). Amended feature file + spec written by the specifier from
+  those answers; flagged for the human's final read before promotion.
+mutation_cost: high
