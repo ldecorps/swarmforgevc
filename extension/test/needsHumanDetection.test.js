@@ -301,6 +301,15 @@ test('transcriptShowsDecisionMenu returns false when no line matches the choice-
   assert.equal(transcriptShowsDecisionMenu(NO_MENU_OUTPUT), false);
 });
 
+// isChoiceOptionLine's own pattern is anchored to the start of the line, so
+// a transcript line carrying leading whitespace before the marker (e.g. a
+// captured line padded during reconstruction) only matches after trimming -
+// pins that transcriptShowsDecisionMenu's per-line trim() is load-bearing,
+// not redundant.
+test('transcriptShowsDecisionMenu finds a choice-option line even with leading whitespace before the marker', () => {
+  assert.equal(transcriptShowsDecisionMenu('  ❯ 1) Two tickets (Recommended)'), true);
+});
+
 // BL-421 tile-decision-status-01
 test('classifyDecisionStatus marks LIVE when the current frame is a pending decision menu', () => {
   assert.equal(classifyDecisionStatus(DECISION_MENU, DECISION_MENU), 'live');

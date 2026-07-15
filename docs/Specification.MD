@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 15, 2026 (BL-417 — feature-in-flight topic icon remapped from 💡 to 🎵)
+**Last Updated:** July 15, 2026 (BL-421 — Specifier tile decision menu marked LIVE vs RESOLVED instead of lingering as if still actionable)
 
 ## Overview
 
@@ -135,6 +135,7 @@ Spawning agent processes from TypeScript **is** the intended design — that is 
   - **Active** (blue) — agent currently producing output
   - *Precedence: dead > needs-human > stalled > normal. A needs-human border suppresses the stalled color, so you can see when an agent is waiting for you to respond.*
 - Tile header shows the role name and (when active) a badge with the backlog item ID and short summary (e.g., "BL-038 · tile header active ticket"); when a role holds multiple parcels, the badge shows the lowest ticket ID plus a "+N" count for the others (e.g., "BL-036 · redo_from tool +1"), so you can see at a glance what each agent is working on
+- **Decision-menu LIVE / RESOLVED banner (BL-421).** A rendered decision menu (e.g. an `AskUserQuestion` prompt with numbered options and a highlighted "Recommended" choice) stays visible in a tile's reconstructed transcript long after the pane has moved on, because the retained scrollback (see below) is never purged — so a human could mistake a long-settled decision for one still awaiting an answer. The tile now banners the menu block itself: `⚠ Awaiting your answer` while the pane's current captured frame is still the pending prompt (LIVE), or `✓ Decision already resolved — not actionable` once the frame has moved on but the menu still appears earlier in the transcript (RESOLVED). Liveness is judged only from the current frame, never by pattern-matching the transcript, so a resolved menu that is byte-identical to a live one is still marked RESOLVED. No marker is shown when neither the current frame nor the transcript contains a decision menu.
 - Each tile is always a live embedded terminal — you click into any tile and type directly, exactly as you would in a real terminal attached to that agent
 - No expand needed; all tiles are simultaneously interactive, one live terminal per role
 
