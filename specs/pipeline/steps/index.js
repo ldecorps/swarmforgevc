@@ -214,7 +214,8 @@ const DOMAINS = [
   require('./bl430ReworkObservatorySteps'),
   require('./bl442NegotiationApprovalNotObjectionSteps'),
   require('./bl443ProposeContractCommitRobustnessSteps'),
-  require('./bl444ProvisioningFollowsSupergroupMigrationSteps')
+  require('./bl444ProvisioningFollowsSupergroupMigrationSteps'),
+  require('./bl437FleetStatusPublishSteps')
 ];
 
 function registerSteps(registry) {
