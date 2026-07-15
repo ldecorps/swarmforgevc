@@ -44,11 +44,17 @@ export function classifyApprovalReplyAction(text: string): ApprovalReplyAction {
   const trimmed = text.trim();
   const rejectMatch = trimmed.match(REJECT_PATTERN);
   if (rejectMatch) {
-    return { kind: 'reject', reason: rejectMatch[1].trim() };
+    // No .trim() here: `trimmed` already has no leading/trailing whitespace
+    // (the outer text.trim() above), and the greedy `\s+` in REJECT_PATTERN
+    // consumes any whitespace between the verb and the capture group, so
+    // rejectMatch[1] can never itself have leading/trailing whitespace to
+    // strip - confirmed by mutation testing (the .trim() mutant survived).
+    return { kind: 'reject', reason: rejectMatch[1] };
   }
   const amendMatch = trimmed.match(AMEND_PATTERN);
   if (amendMatch) {
-    return { kind: 'amend', note: amendMatch[1].trim() };
+    // Same reasoning as the reject branch above.
+    return { kind: 'amend', note: amendMatch[1] };
   }
   if (isApprovalReplyText(trimmed)) {
     return { kind: 'approve' };
