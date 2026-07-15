@@ -764,6 +764,26 @@ check "restricted-front-desk-operator-02: the attended Operator holding the slot
   'kill -0 "$op_pid" 2>/dev/null'
 rm -rf "$F"
 
+# ── BL-383: launch-front-desk-operator! itself resolves the target's REAL
+#    contract.yaml off disk and threads its verbosity into the written
+#    prompt - operator_lib_test_runner.bb proves compose-front-desk-reply-
+#    prompt is correct in isolation, but every existing wiring tick fixture
+#    above has NO contract.yaml at all, so the actual project-root -> path
+#    -> fs/exists? -> slurp hop inside operator_runtime.bb itself was never
+#    exercised with real content on disk until this check.
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/support/threads"
+printf '{"id":"SUP-1","status":"open","messages":[{"channel":"telegram","timestamp":"2026-07-13T09:00:00Z","text":"when will BL-1 ship?"}]}' \
+  > "$F/.swarmforge/support/threads/SUP-1.json"
+printf 'scope: []\nagreement: agreed\nverbosity: concise\n' > "$F/.swarmforge/contract.yaml"
+printf '{"type":"TELEGRAM_TOPIC_MESSAGE","subject":"SUP-1"}\n' > "$F/.swarmforge/operator/events.jsonl"
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+sleep 300 & op_pid=$!; FD_PIDS+=("$op_pid"); echo "$op_pid" > "$F/.swarmforge/operator/operator.pid"
+tick "$F" > /dev/null
+check "front-desk-verbosity-wiring: the real contract.yaml's concise verbosity reaches the written prompt" \
+  'grep -q "Be concise in your responses" "$F/.swarmforge/operator/front-desk-prompt.txt"'
+rm -rf "$F"
+
 # ── 06 control: when the full Operator is NOT running, it (not the front
 #    desk) claims the message - the two decisions never compete because
 #    they read the SAME full-operator-running? fact on complementary sides ─
