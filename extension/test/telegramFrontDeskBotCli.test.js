@@ -4,7 +4,19 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { parseCliArgs, conciergeTickIntervalMs, readRoleTicket, toFoldersSnapshot, ensureOperatorTopic, postOperatorContext, openSubjectAndRecord, standingTopicTargets, main } = require('../out/tools/telegram-front-desk-bot');
+const {
+  parseCliArgs,
+  conciergeTickIntervalMs,
+  readRoleTicket,
+  toFoldersSnapshot,
+  ensureOperatorTopic,
+  postOperatorContext,
+  openSubjectAndRecord,
+  standingTopicTargets,
+  iconStickersOnce,
+  __resetIconStickersCacheForTest,
+  main,
+} = require('../out/tools/telegram-front-desk-bot');
 const { readRecord: readTopicRecord } = require('../out/concierge/blTopicStore');
 
 // parseNextSseRecord's own tests live in telegramFrontDeskBotCore.test.js -
@@ -504,4 +516,38 @@ test('standingTopicTargets returns an empty list when the map file does not exis
   const root = mkTmpRoot();
 
   assert.deepEqual(standingTopicTargets(root), []);
+});
+
+// ── iconStickersOnce (BL-342: fetch-once-per-process cache) ───────────────
+
+test('iconStickersOnce fetches from Telegram on a cache miss, then reuses the cache without a second call', async () => {
+  __resetIconStickersCacheForTest();
+  let calls = 0;
+  const postFn = async () => {
+    calls += 1;
+    return { ok: true, status: 200, json: { ok: true, result: [{ emoji: '✅', custom_emoji_id: 'id-check' }] } };
+  };
+
+  const first = await iconStickersOnce('123:test-token', postFn);
+  const second = await iconStickersOnce('123:test-token', postFn);
+
+  assert.deepEqual(first, [{ emoji: '✅', customEmojiId: 'id-check' }]);
+  assert.deepEqual(second, first);
+  assert.equal(calls, 1);
+});
+
+test('iconStickersOnce caches an empty list (not undefined) when the fetch fails, so a failed first call does not retry forever', async () => {
+  __resetIconStickersCacheForTest();
+  let calls = 0;
+  const postFn = async () => {
+    calls += 1;
+    return { ok: false, status: 500, json: { ok: false, description: 'boom' } };
+  };
+
+  const first = await iconStickersOnce('123:test-token', postFn);
+  const second = await iconStickersOnce('123:test-token', postFn);
+
+  assert.deepEqual(first, []);
+  assert.deepEqual(second, []);
+  assert.equal(calls, 1);
 });

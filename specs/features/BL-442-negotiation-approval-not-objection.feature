@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-15T23:56:58.564592796Z","feature_name":"A natural-language approval ends the negotiation and never mutates the contract","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-442-negotiation-approval-not-objection.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: A natural-language approval ends the negotiation and never mutates the contract
 
 # BL-442 (bug): the first real FES onboarding run, 2026-07-15. The human replied "All agreed" in the
@@ -17,6 +21,17 @@ Feature: A natural-language approval ends the negotiation and never mutates the 
 # raw objection text). This is a correctness fix to the classification and the revision, not a new
 # feature. BL-344 is the parent feature; its own spec named this exact failure class.
 
+# Hardener (BL-234 equivalent-mutant note): a soft Gherkin mutation pass over
+# this outline's <reply> examples casing-flips one character of each value
+# ("All agreed" -> "AlL agreed", "ok" -> "oK", etc.) and every mutant SURVIVES
+# - by design, not a gap. AGREEMENT_PATTERN (negotiationTelegramRouting.ts) is
+# case-insensitive (`/i`), so isAgreementText provably treats every casing of
+# a recognized word identically; no assertion could ever differentiate the
+# mutant from the original without penalizing a real human typing "OK"
+# instead of "ok". Verified: all 5 example values, all 5 survivors are pure
+# casing mutations of an already-recognized word (confirmed via the tool's
+# own mutation descriptions). Recorded here per the equivalent-mutant carve-
+# out rather than forced into an artificial kill.
 # BL-442 negotiation-approval-not-objection-01
 Scenario Outline: A common natural-language approval ends the negotiation and runs no revision round
   Given a contract is out for negotiation in the topic

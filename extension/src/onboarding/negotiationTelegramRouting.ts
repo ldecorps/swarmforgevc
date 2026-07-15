@@ -44,31 +44,49 @@ export type NegotiationUpdateDecision =
   | { action: 'ask' }
   | { action: 'drop'; reason: 'not-my-chat' | 'not-principal' | 'not-negotiation-topic' | 'no-text' };
 
-// Pure: the negotiation relay's whole per-update decision. Order mirrors
-// decideUpdateAction's own (chat guard first, per BL-379 - a stranger in a
+type DropReason = 'not-my-chat' | 'not-principal' | 'not-negotiation-topic' | 'no-text';
+
+// The four early-exit eligibility checks, factored out of
+// decideNegotiationUpdateAction so its own branch count reflects only the
+// agree/ask/objection classification below - order mirrors
+// decideUpdateAction's own (chat guard first, per BL-379: a stranger in a
 // foreign chat is "not-my-chat", never any later reason), with the
-// negotiation-topic check added as this module's own extra guard: a message
-// anywhere else in the target's group (there may be other topics) is never
-// mistaken for a negotiation reply.
+// negotiation-topic check as this module's own extra guard.
+function negotiationDropReason(
+  update: TelegramUpdate,
+  principalUserId: string,
+  chatId: string,
+  negotiationTopicId: number
+): DropReason | undefined {
+  if (!isFromMyChat(update, chatId)) {
+    return 'not-my-chat';
+  }
+  if (!isFromPrincipal(update, principalUserId)) {
+    return 'not-principal';
+  }
+  if (topicIdOf(update) !== negotiationTopicId) {
+    return 'not-negotiation-topic';
+  }
+  if (!messageTextOf(update)) {
+    return 'no-text';
+  }
+  return undefined;
+}
+
+// Pure: the negotiation relay's whole per-update decision.
 export function decideNegotiationUpdateAction(
   update: TelegramUpdate,
   principalUserId: string,
   chatId: string,
   negotiationTopicId: number
 ): NegotiationUpdateDecision {
-  if (!isFromMyChat(update, chatId)) {
-    return { action: 'drop', reason: 'not-my-chat' };
+  const dropReason = negotiationDropReason(update, principalUserId, chatId, negotiationTopicId);
+  if (dropReason) {
+    return { action: 'drop', reason: dropReason };
   }
-  if (!isFromPrincipal(update, principalUserId)) {
-    return { action: 'drop', reason: 'not-principal' };
-  }
-  if (topicIdOf(update) !== negotiationTopicId) {
-    return { action: 'drop', reason: 'not-negotiation-topic' };
-  }
-  const text = messageTextOf(update);
-  if (!text) {
-    return { action: 'drop', reason: 'no-text' };
-  }
+  // negotiationDropReason already confirmed a non-empty text via its own
+  // 'no-text' check above.
+  const text = messageTextOf(update) as string;
   if (isAgreementText(text)) {
     return { action: 'agree' };
   }

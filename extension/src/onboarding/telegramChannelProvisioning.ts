@@ -148,13 +148,21 @@ async function detectReadyChatId(adapters: ChannelProvisioningAdapters): Promise
 // terminal failure - retried exactly once against the new id (never chases a
 // chain of retries; a second migration within the SAME call is not a real
 // scenario this needs to survive).
+// Named so the two call sites below (the original chat id, then the
+// migrateToChatId redirect) share one predicate instead of each repeating
+// the same two-part condition - shaves the caller's branch count and gives
+// this specific "did the topic actually open" check its own direct test.
+function isOpenedTopic(topic: CreateNegotiationTopicOutcome): topic is CreateNegotiationTopicOutcome & { success: true; messageThreadId: number } {
+  return topic.success && topic.messageThreadId !== undefined;
+}
+
 async function finalizeChannelProvisioning(
   chatId: string,
   instructions: ChannelProvisioningInstructions,
   adapters: ChannelProvisioningAdapters
 ): Promise<ChannelProvisioningOutcome> {
   const topic = await adapters.createNegotiationTopic(chatId);
-  if (topic.success && topic.messageThreadId !== undefined) {
+  if (isOpenedTopic(topic)) {
     await adapters.persistChannel(chatId, topic.messageThreadId);
     return { instructions, ready: true, chatId, negotiationTopicId: topic.messageThreadId };
   }
@@ -162,7 +170,7 @@ async function finalizeChannelProvisioning(
   if (topic.migrateToChatId !== undefined) {
     const redirectedChatId = topic.migrateToChatId;
     const retriedTopic = await adapters.createNegotiationTopic(redirectedChatId);
-    if (retriedTopic.success && retriedTopic.messageThreadId !== undefined) {
+    if (isOpenedTopic(retriedTopic)) {
       await adapters.persistChannel(redirectedChatId, retriedTopic.messageThreadId);
       return { instructions, ready: true, chatId: redirectedChatId, negotiationTopicId: retriedTopic.messageThreadId };
     }
