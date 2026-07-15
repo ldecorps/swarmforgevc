@@ -12,6 +12,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
 ROOT="$(mktemp -d)"
+export SWARMFORGE_ALLOW_TMP_DAEMON=1  # BL-406: opt in - this ROOT is an intentional throwaway test root
 trap 'rm -rf "$ROOT"' EXIT
 
 git -C "$ROOT" init -q
