@@ -19,6 +19,20 @@ export interface TopicIconAdapters {
 
 export type IconSyncOutcome = 'updated' | 'skipped-not-owned' | 'skipped-unresolved-icon' | 'failed';
 
+// BL-424: resolves the desired emoji against the live set, falling back to
+// a second emoji (the plain paused icon) only when one was supplied and the
+// primary is absent - split out of syncTopicIcon so that function's own
+// branch count stays low (CRAP threshold), mirroring the same "each split
+// out of main() so that function's own branch count stays low" pattern
+// already used in operator-decide.ts.
+function resolveIconIdWithFallback(stickers: IconStickerLookup[], desiredEmoji: string, fallbackEmoji?: string): string | undefined {
+  const desiredId = resolveIconStickerId(stickers, desiredEmoji);
+  if (desiredId !== undefined || fallbackEmoji === undefined) {
+    return desiredId;
+  }
+  return resolveIconStickerId(stickers, fallbackEmoji);
+}
+
 // BL-342 scenarios 01/03/04/05: a BRAND NEW topic (isNewTopic) is always
 // free to have its initial icon set - there is nothing to protect yet.
 // An EXISTING topic may only be updated when the swarm's own marker shows
@@ -28,18 +42,26 @@ export type IconSyncOutcome = 'updated' | 'skipped-not-owned' | 'skipped-unresol
 // leave it alone. This is the one rule this ticket exists to enforce, so
 // it is a single, un-overridable early return, never a flag a caller could
 // bypass.
+// BL-424: an optional fallbackEmoji covers the one icon state (awaiting-
+// approval) whose glyph is freshly chosen rather than long-established in
+// the live set, per the ticket's own posture - if the primary is absent,
+// resolve the fallback (the plain paused icon) instead of skipping the
+// topic outright, so the worst case is indistinguishable from an ordinary
+// paused ticket. Every other caller simply never passes one, and behaves
+// exactly as before.
 export async function syncTopicIcon(
   ticketId: string,
   topicId: number,
   desiredEmoji: string,
   isNewTopic: boolean,
-  adapters: TopicIconAdapters
+  adapters: TopicIconAdapters,
+  fallbackEmoji?: string
 ): Promise<IconSyncOutcome> {
   if (!isNewTopic && adapters.readSwarmIconId(ticketId) === undefined) {
     return 'skipped-not-owned';
   }
   const stickers = await adapters.getIconStickers();
-  const iconId = resolveIconStickerId(stickers, desiredEmoji);
+  const iconId = resolveIconIdWithFallback(stickers, desiredEmoji, fallbackEmoji);
   if (iconId === undefined) {
     // BL-342 scenario 06: never call the Telegram API with an id that was
     // not just validated against the live sticker set.

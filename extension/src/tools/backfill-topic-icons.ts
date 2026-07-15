@@ -134,8 +134,12 @@ export async function backfillTopicIcons(
     if (topicId === undefined) {
       continue;
     }
-    const state = resolveIconState(folder, item.type);
-    const outcome = await syncTopicIcon(item.id, topicId, ICON_EMOJI[state], true, adapters);
+    // BL-424: same paused-scoped awaiting-approval state + fallback as the
+    // live tick's syncIconForBacklogId - item.humanApproval is already
+    // parsed off the ticket YAML by readBacklogFolders/BacklogItem.
+    const state = resolveIconState(folder, item.type, item.humanApproval);
+    const fallbackEmoji = state === 'awaiting-approval' ? ICON_EMOJI.paused : undefined;
+    const outcome = await syncTopicIcon(item.id, topicId, ICON_EMOJI[state], true, adapters, fallbackEmoji);
     outcomes.push({ backlogId: item.id, outcome });
   }
   return outcomes;
