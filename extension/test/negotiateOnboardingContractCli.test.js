@@ -134,6 +134,21 @@ test('runObject in-process revises the contract, appends a round, and returns it
   assert.ok(readContract(targetRepo).scope.some((s) => s.includes('accessibility support')));
 });
 
+// BL-381: the revised contract rides the result so a caller (the Telegram
+// negotiation relay) can post it without a separate re-read of contract.yaml.
+test('runObject in-process returns the revised contract itself, matching what was written to disk', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const result = await runObject(targetRepo, 'also add accessibility support');
+  assert.deepEqual(result.contract, readContract(targetRepo));
+});
+
+test('runApprove in-process returns the agreed contract itself, matching what was written to disk', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const result = await runApprove(targetRepo);
+  assert.deepEqual(result.contract, readContract(targetRepo));
+  assert.equal(result.contract.agreement, 'agreed');
+});
+
 test('runObject in-process refuses once the negotiation has already ended', async () => {
   const targetRepo = mkTargetWithProposedContract();
   await runApprove(targetRepo);
