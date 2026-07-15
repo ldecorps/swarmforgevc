@@ -1,0 +1,1 @@
+{"id":"BL-316","messages":[{"seq":0,"ts":1783927581748,"author":"swarm","type":"outbound","text":"BL-316 - Every current-roster role's context is cleared at its own safe idle boundary, not just the coordinator's is complete."}]}

@@ -74,6 +74,6 @@ acceptance:
     - "An ordinary prose message is left unchanged (neighbour guard)"
     - "The ticket's topic record is free of the chrome too"
 
-human_approval: pending-review
+human_approval: approved  # human via Operator relay to coordinator, 2026-07-15: "Human OK'd, promote: BL-403 404 406 409 395 405 407 410"
 
 mutation_cost: low
