@@ -103,6 +103,14 @@ test('parseBacklogYaml normalizes an unrecognized human_approval value to undefi
   assert.equal(Object.prototype.hasOwnProperty.call(item, 'humanApproval'), false);
 });
 
+// BL-408: pending-review is the primary pending state (written by specifier);
+// reads as 'pending' for normalization.
+test('parseBacklogYaml normalizes human_approval: pending-review to pending', () => {
+  const yaml = 'id: BL-008\ntitle: Backlog panel\nstatus: active\nhuman_approval: pending-review\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.humanApproval, 'pending');
+});
+
 test('parseBacklogYaml parses human_approval via the lenient fallback on a strict-unparsable ticket', () => {
   const yaml = 'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\nhuman_approval: pending\n';
   const item = parseBacklogYaml(yaml);
