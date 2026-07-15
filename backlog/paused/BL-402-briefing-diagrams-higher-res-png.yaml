@@ -63,6 +63,6 @@ acceptance:
     - "The higher-resolution render stays byte-identical for the same source (determinism preserved)"
     - "The inline diagram image keeps max-width:100% so it displays at the email column width"
 
-human_approval: pending  # NEW feature file — specifier drafted 2026-07-15; flag for human review before coder build
+human_approval: approved  # human (ldecorps), 2026-07-15: "approved" — reviewed the 3 scenarios
 
 mutation_cost: low
