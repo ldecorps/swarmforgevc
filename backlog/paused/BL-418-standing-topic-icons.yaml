@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 severity: low
-priority: 7
+priority: 4
 direction: human-requested
 depends_on: []
 source: "backlog/INTAKE-orchestra-emoji-topic-remap.md — human design session 2026-07-15 (docs/branding/icon-system.md §5a). The 'grows beyond a table edit' half the intake handed to the specifier to scope; split from the ticket-level remap BL-417."
