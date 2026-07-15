@@ -288,6 +288,30 @@
   (assert= "7-arg form: restart still works with kill-pid! defaulted to no-op" "running" (:status entry))
   (assert= "7-arg form: replacement pid recorded" 4242 (:pid entry)))
 
+;; supervisor-kills-superseded-child-04 [BOUNCE, BL-403]: "gave-up" is reached
+;; ONLY from "waiting"/"stalled" when decide-restart-action is NOT :restart -
+;; the "stalled" arm of that case is entered from "running" via
+;; heartbeat-stale?, which never touches pid-alive?, so a gave-up entry's
+;; :pid can be a process that is STILL ALIVE (a hung/unresponsive bot, never
+;; a crashed one). check-one!'s existing "gave-up -> re-armed" fixtures
+;; (supervisor-recovery-02 above) all use :pid nil, which trivially satisfies
+;; "no live pid to kill" without ever exercising this branch - see the
+;; hardener's own "check the fixture hasn't already satisfied the condition"
+;; rule. A non-nil, still-alive pid here reproduces the exact production
+;; incident this ticket exists to prevent (BL-403 source: supervisor left
+;; orphan attempt-1 alive after judging it unhealthy and spawning attempt-2),
+;; just via the gave-up/re-arm path rather than the waiting/stalled restart
+;; path the coder's fix covers.
+(let [kill-calls (atom [])
+      kill-pid-tracking! (fn [pid] (swap! kill-calls conj pid))
+      gave-up-entry {:pid 1881442 :attempts 5 :status "gave-up" :crashed-at-ms 5000 :started-at-ms 1000 :gave-up-at-ms 1000000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              gave-up-entry 1900000 dead? fixed-pid! healthy-cfg giveup-cfg false kill-pid-tracking!)]
+  (assert= "supervisor-kills-superseded-child-04: re-arms to running" "running" (:status entry))
+  (assert= "supervisor-kills-superseded-child-04: a fresh pid is recorded" 4242 (:pid entry))
+  (assert= "supervisor-kills-superseded-child-04: the still-alive gave-up pid is killed before re-arm spawns its replacement"
+           [1881442] @kill-calls))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do
