@@ -1,0 +1,95 @@
+id: BL-419
+title: "Commits on the shared master checkout must carry the caller's staged content (race)"
+milestone: M8
+type: bug
+status: todo
+severity: high
+priority: 2
+direction: swarm-proposed
+depends_on: []
+source: "backlog/INTAKE-coordinator-commit-race-drops-approval.md — coordinator-filed 2026-07-15, 2nd occurrence. Occurrence 1 (2026-07-14): commit ddcea974 landed human_approval:pending on BL-357+BL-341 despite staged approved (confirmed via git show + QA's descendant commit also carried pending). Occurrence 2 (2026-07-15): commit 83564b2d landed BL-412 human_approval:pending despite staged approved; front desk then re-asked the human ~24s later."
+
+notes: |
+  THE BUG (silent staged-content loss on a shared checkout): a writer stages an
+  edit to a YAML on `main` (the coordinator's own live master checkout, shared
+  with NO isolation) and commits; `git show <new-sha>:<path>` afterward reads the
+  PRE-edit content — the staged change was dropped from the very commit that
+  claimed to carry it. Human-visible harm: a just-approved ticket committed as
+  `pending` re-triggers the front desk's not-approved->pending detection, which
+  re-sends the whole ticket to the human's Telegram topic and makes them doubt
+  their approval landed.
+
+  SUSPECTED SHAPE (hypothesis, not caught in the act): the master checkout has
+  many concurrent writers sharing ONE git index (.git/index): coordinator
+  bookkeeping (git mv + git commit), the high-frequency "BL topic record for
+  BL-XXX" commits (~8/min observed), QA's main fast-forward/push, the specifier's
+  own spec commits, operator_file_question.bb. Between a writer's `git add`/`git
+  mv` and its `git commit`, another process's `git add -A`/`git commit` can grab
+  the shared index and capture/commit a different tree than the one just staged.
+  Two separate git invocations do not hold the index lock across the gap.
+
+  FIX DIRECTIONS (behavioral acceptance is mechanism-agnostic — architect picks;
+  recommend BOTH, systemic first + defense-in-depth):
+  1. SYSTEMIC — serialize the stage->commit window. A shared commit helper that
+     every writer to the master checkout routes through, holding an flock over
+     the whole add/mv -> commit (-> verify) sequence on a shared lockfile, so no
+     two writers interleave. This removes the race at its source; it requires all
+     writers to cooperate (coordinator, BL-topic-record writer, QA push,
+     specifier, operator_file_question).
+  2. DEFENSE-IN-DEPTH — verify-and-retry-once. After committing, the writer runs
+     `git show <new-sha>:<path>` for each path it staged and compares against the
+     content it staged; on mismatch it re-stages and re-commits within a BOUNDED
+     retry budget (per the bounded-retry rule), and on exhausting it FAILS LOUDLY
+     (non-zero / surfaced) rather than reporting success on a dropped edit. This
+     is the same `git show`-after-commit discipline the coordinator now does by
+     hand (memory: 'verify with git show <sha>:<path> after any YAML-field
+     commit') — this ticket makes it automatic and enforced.
+
+  Prefer scoping commits to explicit pathspecs (`git commit -- <path>`) so a
+  commit carries only the intended path's staged content regardless of what else
+  sits in the shared index — a cheap partial mitigation the coordinator's bare
+  `git commit` lacked (operator_file_question.bb already does path-scoped add +
+  commit).
+
+  TESTABILITY: the race is timing-dependent, so do NOT write a sleep/poll test
+  (no-real-timers rule, incl. subprocess/daemon tests). Prove the two
+  deterministic halves instead: (a) the verify step — given a commit whose
+  `git show` content differs from the staged content, the helper detects the
+  mismatch and retries, and fails loudly after the cap (drive via injected
+  git-show/commit seams returning a scripted mismatch, no real concurrency); (b)
+  the pathspec-scoped commit carries only the intended path even when an
+  unrelated path is also staged in the index (a real, deterministic git fixture:
+  stage two paths, commit one by pathspec, assert the other is not in the
+  commit).
+
+  Scope: a shared commit-integrity helper (locked, pathspec-scoped, verify+
+  retry) and routing the master-checkout writers through it — coordinator
+  bookkeeping first (the observed victim), then the other writers. Confirm the
+  live writers at build time.
+
+  OUT OF SCOPE: the wrong-confirmation-message bug (BL-416) and the front desk's
+  re-ask-on-pending-transition (working as designed; it was fed a bad commit).
+
+acceptance:
+  feature: specs/features/BL-419-shared-checkout-commit-integrity.feature
+  steps:
+    - "A commit carries the caller's own staged content for its path even when an unrelated commit lands in the stage-to-commit window"
+    - "A post-commit content mismatch is detected and retried within a bounded budget"
+    - "A mismatch persisting past the retry cap fails loudly (non-zero) and is never reported as a successful commit"
+
+qa_e2e: |
+  1. Unit (deterministic, no real concurrency): inject a git-show seam returning
+     content != staged; assert detect -> bounded retry -> loud non-zero after the
+     cap. Assert a pathspec-scoped commit over a two-path staged index carries
+     only the named path.
+  2. Wiring: run the coordinator bookkeeping path through the helper over a
+     fixture master checkout and confirm `git show <sha>:<path>` matches the
+     staged human_approval value.
+  3. Live: on the real master checkout under concurrent BL-topic-record commit
+     pressure, promote a ticket with a freshly-approved field and confirm the
+     committed content is `approved` (the field is not dropped) — repeat under
+     load to build confidence, without a timing-based unit test.
+
+human_approval: pending
+
+mutation_cost: medium

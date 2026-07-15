@@ -1,0 +1,73 @@
+id: BL-416
+title: "Telegram approval reply confirms success, not 'Nothing to approve right now'"
+milestone: M8
+type: bug
+status: todo
+severity: medium
+priority: 3
+direction: human-requested
+depends_on: [BL-409]
+source: "backlog/INTAKE-approval-reply-wrong-confirmation.md — coordinator-filed 2026-07-15 from a human screenshot of the BL-412 topic: bot asked for approval, human replied 'Approved', bot answered 'Nothing to approve right now' even though human_approval WAS flipped pending->approved (verified via git diff + backlog/topics/BL-412.json seq 0-2, updateId 765184561)."
+
+notes: |
+  THE BUG (write succeeds, confirmation lies): the approval reply correctly
+  flips human_approval to approved, but the confirmation text tells the human
+  the opposite ("Nothing to approve right now"). From the Telegram thread alone
+  the human cannot tell their approval landed — the natural response is to
+  distrust the mechanism or resend. This is a CONFIRMATION-MESSAGE defect, not
+  an approval-processing defect (the field write is correct).
+
+  SUSPECTED SHAPE (from the intake's analysis): the confirmation re-checks "is
+  there still a pending approval for this ticket" AFTER the write already
+  flipped the field, so the same pending-check used to DECIDE whether to act is
+  reused post-write to decide what to CONFIRM — and by then it correctly reads
+  "not pending anymore" and falls to the generic "nothing to approve" text. Fix:
+  capture "there WAS a pending approval and this reply just satisfied it" as its
+  own outcome BEFORE the write, and confirm from that (a dedicated success
+  message, e.g. "Approved BL-412."), never re-derived from post-write state.
+
+  OVERLAP — SERIALIZED AFTER BL-409 (depends_on): BL-409 (ACTIVE) reworks this
+  exact path — it extends isApprovalReplyText and the approve/reject/amend
+  confirmation flow in extension/src/concierge/pendingApprovalReply.ts and
+  extension/src/tools/telegram-front-desk-bot.ts. Speccing a CONCURRENT third
+  ticket that edits the same files would violate the concurrent-work
+  orthogonality rule (and the intake explicitly warned against a third
+  overlapping ticket). So this depends_on BL-409 and runs AFTER it lands, never
+  alongside it.
+
+  VERIFY-THEN-FIX (may already be a no-op): BL-409 adds reject/amend verbs, each
+  needing its OWN correct confirmation — so a correct implementation of BL-409
+  may already emit a correct post-approve success message and thereby fix this.
+  The coder must FIRST check the post-BL-409 code: if a successful approve
+  already confirms success by name, close BL-416 as already-fixed (no functional
+  change) rather than re-fixing. Only if the wrong-confirmation persists after
+  BL-409 does this ticket do work. (Coordinator has been noted so BL-409's
+  implementer is aware and can fix it in-place if cheap.)
+
+  Scope: extension/src/concierge/pendingApprovalReply.ts (capture the pre-write
+  "was-pending / just-satisfied" outcome and drive the confirmation from it) and
+  the confirmation-composition in telegram-front-desk-bot.ts — as they exist
+  AFTER BL-409. Keep the genuine no-pending case saying "nothing to approve".
+
+acceptance:
+  feature: specs/features/BL-416-approval-reply-confirms-success.feature
+  steps:
+    - "Approving a genuinely-pending ticket confirms the approval by name and never emits the generic 'nothing to approve' text"
+    - "The confirmation is decided from the pre-write pending state, not re-read from post-write approval state"
+    - "An 'approve' reply with nothing actually pending still emits the generic 'nothing to approve' text"
+
+qa_e2e: |
+  1. Precondition: confirm against post-BL-409 code whether the bug still
+     reproduces; if not, this is a no-op close.
+  2. Unit: drive the reply processor over (pending + 'approve') and assert the
+     confirmation is the by-name success and NOT the generic text; over
+     (no-pending + 'approve') assert the generic text. Prove the success is
+     captured pre-write by making the post-write state read 'not pending' and
+     confirming the message is STILL success.
+  3. Live: in a real ticket topic with a pending approval, reply 'approve' and
+     confirm the bot answers with a success naming the ticket, and the field is
+     approved.
+
+human_approval: pending
+
+mutation_cost: low
