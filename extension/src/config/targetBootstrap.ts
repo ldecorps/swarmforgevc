@@ -163,11 +163,11 @@ async function writeFilesAndCommit(targetPath: string, files: BootstrapFile[], c
   return true;
 }
 
-async function writeAndCommitBootstrapPlan(
-  targetPath: string,
-  files: BootstrapFile[],
-  commitMessage: string
-): Promise<BootstrapWriteResult> {
+// Shared by every caller that needs to know, before writing, which of a
+// file list is already present in the target repo (writeAndCommitBootstrapPlan's
+// existence-only plan, and initializeTargetPrompts's created-vs-refreshed
+// reporting for its unconditional write).
+async function detectExistingFilePaths(targetPath: string, files: BootstrapFile[]): Promise<Set<string>> {
   const existingFiles = new Set<string>();
   await Promise.all(
     files.map(async (file) => {
@@ -175,11 +175,19 @@ async function writeAndCommitBootstrapPlan(
         await fs.access(path.join(targetPath, file.path));
         existingFiles.add(file.path);
       } catch {
-        // file does not exist — will be created
+        // file does not exist yet
       }
     })
   );
+  return existingFiles;
+}
 
+async function writeAndCommitBootstrapPlan(
+  targetPath: string,
+  files: BootstrapFile[],
+  commitMessage: string
+): Promise<BootstrapWriteResult> {
+  const existingFiles = await detectExistingFilePaths(targetPath, files);
   const plan = planTargetBootstrapFiles(existingFiles, files);
   const committed = await writeFilesAndCommit(targetPath, plan.filesToCreate, commitMessage);
 
@@ -289,18 +297,7 @@ export async function initializeTargetPrompts(
     return { created: [], skipped: [], committed: false, withheld: true };
   }
   const files = buildGeneratedPromptBootstrapFiles(prompts);
-  const preExisting = new Set<string>();
-  await Promise.all(
-    files.map(async (file) => {
-      try {
-        await fs.access(path.join(targetPath, file.path));
-        preExisting.add(file.path);
-      } catch {
-        // not yet materialized in the target repo
-      }
-    })
-  );
-
+  const preExisting = await detectExistingFilePaths(targetPath, files);
   const committed = await writeFilesAndCommit(targetPath, files, 'Commit onboarding-generated target prompts');
 
   return {
