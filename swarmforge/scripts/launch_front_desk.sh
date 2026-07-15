@@ -31,6 +31,20 @@ BOT_ENTRYPOINT="$ROOT/extension/out/tools/telegram-front-desk-bot.js"
 
 mkdir -p "$OP_DIR"
 
+PARKED_FILE="$OP_DIR/front-desk-PARKED.md"
+
+# ── park flag (BL-404): a human's explicit "do not restart" decision must
+#    survive host sleep and daemon restarts until a human runs
+#    unpark_front_desk.sh. Checked before dry-run, token provisioning, and
+#    env validation - the same idempotent early-return posture as the
+#    already-running guard below, but earlier, so a parked front desk never
+#    touches front-desk-supervisor.stop or spawns anything, regardless of
+#    caller or mode. ────────────────────────────────────────────────────────
+if [[ -f "$PARKED_FILE" ]]; then
+  echo "launch_front_desk: front desk is PARKED ($PARKED_FILE exists); not launching" >&2
+  exit 0
+fi
+
 # ── token provisioning: generate once, persist machine-local (gitignored
 #    under .swarmforge/, mode 600), reused across restarts so a respawned
 #    bridge/bot pair still shares the same credential - never regenerated
