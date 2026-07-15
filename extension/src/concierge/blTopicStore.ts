@@ -84,6 +84,20 @@ export function isRecordCommitted(targetPath: string, ticketId: string): boolean
   return isFileCommitted(targetPath, recordPath(targetPath, ticketId));
 }
 
+// BL-414: the topic-title age suffix's "last updated" source - the most
+// recent message's own ts, across both directions (an inbound reply is
+// activity just as much as an outbound post). Reuses this existing
+// per-topic record rather than inventing a new store, per the ticket's own
+// instruction. Undefined for a topic with no messages recorded yet (a
+// topic that predates blTopicStore, or has had none appended) - the
+// caller's safe default is to leave the title alone, never guess a time.
+export function lastActivityMs(record: TopicRecord): number | undefined {
+  if (record.messages.length === 0) {
+    return undefined;
+  }
+  return Math.max(...record.messages.map((m) => m.ts));
+}
+
 export function readRecord(targetPath: string, ticketId: string): TopicRecord {
   const file = recordPath(targetPath, ticketId);
   try {
