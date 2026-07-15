@@ -1,0 +1,87 @@
+id: BL-429
+title: "EPIC — The swarm observes where it is suboptimal and acts on it: a closed observe -> diagnose -> act loop, auto-tuning the safe knobs and escalating the rest; tracks children, do not promote directly"
+milestone: M8
+status: todo
+type: epic
+epic: swarm-self-optimization
+priority: 40
+depends_on: []
+decomposes_into: [BL-430, BL-431, BL-432]
+source: "The human, 2026-07-15 (specifier session, AskUserQuestion): 'optimize the swarm workflow / beef up the self-healing aspect / the swarm has to be capable of observing where it's suboptimal.' Three decisions settled the same turn: (1) response = BOTH diagnose + auto-tune (full feedback loop, auto-remediate the safe knobs, escalate the rest); (2) emphasis = BOTH a new self-diagnosis layer AND hardened self-healing, framed as one epic; (3) first signal = QA bounce / rework rate. Marked low priority by the human."
+
+notes: |
+  UMBRELLA / tracking item, not directly promotable. The actionable work is its children.
+
+  WHY THIS EPIC EXISTS — THE GAP IS THE CLOSED LOOP, NOT THE RAW DATA.
+  The swarm already OBSERVES a great deal and already SELF-HEALS a great deal; the two just never
+  meet. Confirmed in code 2026-07-15:
+    - OBSERVE (exists): `extension/src/metrics/swarmMetrics.ts` computes mean ticket-time per role,
+      per-role busyness, retry/bounce counts (`computeRetries`), suite-duration warnings, and reads
+      chaser telemetry (`.swarmforge/telemetry/chaser-*.jsonl`). `briefingDigest.ts` rolls
+      blocked/stalled tickets into a daily briefing.
+    - SELF-HEAL (exists): `chase_sweep_lib.bb` / `push_sweep_lib.bb` nudge stale handoffs and sweep
+      inboxes; `daemonHealth.ts` / `transportHealth.ts` watch transport; front-desk supervisor does
+      degraded-respawn.
+    - THE MISSING MIDDLE: nothing turns the observed metrics into a DIAGNOSIS ("my bottleneck is the
+      hardener; bounce rate is climbing past baseline; rework concentrates on mutation-heavy tickets")
+      and nothing ACTS on that diagnosis. The metrics flow to a human briefing and stop. The swarm
+      cannot currently say where it is suboptimal, and cannot tune itself when it is.
+
+  THE ARTICLE 3.5 KNOB IS DOCUMENTED BUT UNWIRED — AND THAT IS THE AUTO-TUNE TARGET.
+  Constitution Article 3.5 ("Health-Based Intake Throttling / Circuit Breaker") already SANCTIONS the
+  coordinator lowering `active_backlog_max_depth` to 1 (degraded) or 0 (severe) when health signals
+  spike, and restoring it on recovery. But it is a BEHAVIOURAL rule only: grep confirms no code
+  automates it (2026-07-15) — today it depends on a coordinator LLM turn hand-editing config. The
+  effective cap is consumed by the coordinator's promotion path via `backlog-depth-lib/under-depth-cap?`
+  (`swarmforge/scripts/backlog_depth_lib.bb`), and the effective value is persisted into the launch
+  identity at launch time (BL-313), not only read from `swarmforge.conf`. So there is a real, live,
+  non-dark integration point for the ACT slice to write into — the auto-tune knob already exists and is
+  already legitimate; it has simply never been closed into a loop.
+
+  DESIGN GUARDRAIL — THIS DOES NOT VIOLATE BL-318 ("the swarm must not self-generate work").
+  Auto-tuning an existing, constitutionally-sanctioned knob (the intake throttle) is NOT the swarm
+  inventing new tickets for itself. The two are kept apart on purpose: the ACT slice may ONLY move a
+  knob the constitution already lets the coordinator move; anything that would require a new ticket, a
+  respawn policy change, a reroute, or a code change is ESCALATE-ONLY — surfaced to the human as a
+  diagnosis with a recommended action, never auto-applied. The safe-knob / escalate boundary is the
+  epic's central safety contract, and every slice must respect it.
+
+  SLICES (observe -> diagnose -> act).
+    BL-430  [OBSERVE — first, foundational] The rework observatory. Compute a rolling QA-bounce /
+            rework rate from the signals that already exist (retry/bounce counts + chaser telemetry +
+            backlog/evidence bounce files), attributed per role and per ticket-class, against a
+            trailing baseline. Persist a machine-readable signal file. Pure compute over existing
+            data; no VS Code / tmux / network; a lone deliverable a human can read via a CLI.
+    BL-431  [DIAGNOSE + ESCALATE] Turn the observatory signal into a ranked verdict — "here is where I
+            am suboptimal, the likely cause, and the recommended action" — emitted only when the rate
+            is meaningfully above baseline, and surfaced through the EXISTING daily briefing (and/or a
+            Telegram note). Non-safe remediations are escalate-only. depends_on BL-430.
+    BL-432  [ACT — MANDATORY WIRING SLICE] Close the loop on the ONE safe knob: wire the diagnosis to
+            Article 3.5's throttle so the coordinator's promotion path applies an effective cap =
+            min(configured cap, recommended cap), dropping to 1 (degraded) / 0 (severe) when the
+            rework diagnosis fires and restoring on recovery, logging every change. Integration point:
+            `backlog-depth-lib/under-depth-cap?` + the BL-313 identity-persisted effective cap.
+            depends_on BL-430, BL-431.
+
+  BL-432 IS THE EPIC'S MANDATORY WIRING SLICE, NAMED HERE ON PURPOSE (engineering article). BL-430 and
+  BL-431 can BOTH land, fully green, while the swarm still promotes at full depth into a pipeline it has
+  just diagnosed as thrashing — observe + diagnose with no act is a report, not a loop. Do NOT close
+  this epic until BL-432 lands. A diagnosis nothing consumes is exactly the dark-pipeline shape the
+  wiring-slice rule exists to prevent.
+
+  FIRST SIGNAL IS QA BOUNCE / REWORK BY THE HUMAN'S CHOICE, but the observatory schema must be additive
+  so later signals (bottleneck-stage dwell, idle/stall waste) can join the same loop without a rewrite
+  — the same additive discipline swarmMetrics already follows for chaser telemetry.
+
+  SLICE STATUS (as of 2026-07-15).
+    BL-430  PAUSED — not yet promoted. The foundational observe slice; promote first.
+    BL-431  PAUSED — blocked on BL-430 (reads its signal file).
+    BL-432  PAUSED — blocked on BL-430 + BL-431; the mandatory wiring slice that makes the epic real.
+    Nothing built yet. Feature files for BL-431/432 are parked as non-executable `.feature.draft`
+    companions (slice-scoping rule, BL-233) so the up-front design is preserved without the acceptance
+    runner hard-failing on unbuilt scenarios; each becomes a live `.feature` when its slice is promoted.
+
+  HUMAN APPROVAL PENDING: this whole epic and BL-430's feature file are a fresh specifier draft and are
+  NOT yet human-reviewed. Flag for review before promotion.
+
+mutation_cost: medium

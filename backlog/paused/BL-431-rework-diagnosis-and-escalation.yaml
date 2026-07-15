@@ -1,0 +1,48 @@
+id: BL-431
+title: "DIAGNOSE + ESCALATE — turn the rework signal into a ranked 'here is where I am suboptimal + likely cause + recommended action' verdict, surfaced to the human when the rate is meaningfully above baseline"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+epic: swarm-self-optimization
+priority: 42
+direction: human-requested
+depends_on: [BL-430]
+source: "Slice 2 of BL-429. The human, 2026-07-15: the swarm must OBSERVE where it is suboptimal — and (Q1) surface a diagnosis as well as auto-tune. This is the surface/escalate half."
+
+description: |
+  BL-430 persists a raw rework signal; on its own that is data, not a diagnosis. This slice reads that
+  signal and, ONLY when the current rate is meaningfully above the trailing baseline (Article 3.5's own
+  test — a fixed absolute threshold is wrong because baselines drift), emits a ranked verdict: where the
+  rework concentrates (which role, which ticket-class), the likely cause drawn from the attribution, and
+  a recommended action. It surfaces that verdict through the surfaces that already reach the human — the
+  daily briefing (`briefingDigest.ts`) and/or a Telegram note — so a human can see the swarm's own
+  read of its health without opening a metrics file.
+
+  The recommended action is classified: a SAFE-KNOB action (lower the intake throttle) is handed to the
+  ACT slice (BL-432); anything else (respawn a chronically-slow role, reroute, a code fix) is
+  ESCALATE-ONLY — named in the verdict as a recommendation for the human, never auto-applied. This
+  classification IS the epic's safety contract (BL-429): the diagnosis may recommend anything, but only
+  the sanctioned knob may ever be moved without a human.
+
+  When the rate is at or below baseline the slice emits nothing — no false alarms, no briefing noise on
+  a healthy pipeline.
+
+  PARKED until BL-430 lands (it reads BL-430's signal file — a real producer must exist first, per the
+  specifier's read-a-store rule). Scenarios live in the .feature.draft companion until promotion.
+
+acceptance:
+  feature: specs/features/BL-431-rework-diagnosis-and-escalation.feature
+  steps:
+    - "A rate meaningfully above baseline produces a ranked suboptimality verdict"
+    - "A rate at or below baseline produces no verdict"
+    - "The verdict names the likely cause from the attribution"
+    - "A safe-knob remediation is marked for auto-tuning; anything else is escalate-only"
+    - "The verdict reaches the human through the existing briefing/notification surface"
+
+human_approval: >
+  PENDING. Shape (diagnose + escalate, safe-knob vs escalate-only split) was confirmed by the human via
+  AskUserQuestion 2026-07-15. The exact 'meaningfully above baseline' test and the surface (briefing vs
+  Telegram vs both) have NOT been human-reviewed. Draft feature file; flag for review before promotion.
+
+mutation_cost: medium

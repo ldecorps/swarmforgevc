@@ -123,6 +123,22 @@ function findTicketFilePath(targetPath: string, backlogId: string): string | und
   return found;
 }
 
+// BL-416: read-only counterpart to the writers below - whether THIS
+// backlog id's own ticket currently carries a pending human_approval,
+// scoped by its own id: field exactly like every reader/writer in this
+// file (never a global/all-tickets scan). Lets a caller distinguish "this
+// ticket's own sign-off is still open" from "there is nothing pending
+// here at all" - operator-decide.ts's old role-gate-only fallback
+// collapsed both into one generic "nothing to approve" reply, false for a
+// still-pending ticket (BL-416).
+export function isTicketPendingApproval(targetPath: string, backlogId: string): boolean {
+  const filePath = findTicketFilePath(targetPath, backlogId);
+  if (!filePath) {
+    return false;
+  }
+  return HUMAN_APPROVAL_PENDING_PATTERN.test(fs.readFileSync(filePath, 'utf8'));
+}
+
 // Impure driver: flips the ticket's human_approval to approved if it is
 // currently pending. Returns whether it actually changed, so the live
 // wiring can tell a real flip from a no-op (already approved, or the
