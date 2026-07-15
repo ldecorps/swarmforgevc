@@ -1004,6 +1004,43 @@ test('BL-418 standing-topic-icons-03: a live sticker set lacking a standing topi
   assert.deepEqual(iconsSet, [], 'expected no icon to be set when the opera-house sticker is absent from the live set');
 });
 
+// A standing topic's id is added to the durable seen-set unconditionally on
+// its first appearance, regardless of whether setTopicIcon itself actually
+// succeeded - the same best-effort, no-dedicated-retry posture this module
+// already documents for per-ticket icon sync and epic-progress posts
+// (syncStandingTopicIcons' own docstring: "isNewTopic is always true...
+// correct precisely because... this ticket's own definition of 'genuinely
+// new'"). Unlike the sticker-absent skip above (permanent by construction -
+// a nonexistent sticker can never resolve), this is a TRANSIENT failure
+// (e.g. a Telegram API error) that the live tick will never retry, since
+// the seen-set has no removal path - only the backfill script's own
+// always-eligible pass (backfill-standing-topic-icons.ts) can recover it.
+// Previously unproven: every prior standing-topic test had setTopicIcon
+// return true.
+test('BL-418: a setTopicIcon failure on a standing topic\'s first tick still marks it seen - the live tick never retries it', async () => {
+  const { adapters, iconsSet, iconOwnership, state } = fakeAdapters({
+    readStandingTopics: () => [{ id: 'OPERATOR', topicId: 701, iconKey: 'operator' }],
+  });
+  adapters.iconAdapters.getIconStickers = async () => STANDING_ICON_STICKERS;
+  adapters.iconAdapters.setTopicIcon = async () => false;
+
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(iconsSet, [], 'setTopicIcon returning false means nothing was actually recorded as set');
+  assert.equal(iconOwnership.OPERATOR, undefined, 'a failed set never records ownership');
+  assert.deepEqual(state.standingIconSeenIds, ['OPERATOR'], 'the id is marked seen despite the failure');
+
+  // A later tick, even with a now-working setTopicIcon, never retries -
+  // the seen-set gate has no memory of the earlier failure.
+  adapters.iconAdapters.setTopicIcon = async (topicId, iconId) => {
+    iconsSet.push({ topicId, iconId });
+    return true;
+  };
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(iconsSet, [], 'a standing topic already in the seen-set is never retried, even after a prior failure');
+});
+
 // qa_e2e item 2: fires once, then change-gated on the very next tick.
 test('BL-418 wiring: a standing topic is synced once on its first tick, then never re-set on a later tick', async () => {
   const { adapters, iconsSet } = fakeAdapters({
