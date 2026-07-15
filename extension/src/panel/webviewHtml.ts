@@ -450,6 +450,30 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
     .tile.needs-human:not(.dead) {
       animation: needs-human-blink 1.5s ease-in-out infinite;
     }
+    /* BL-421: a resolved AskUserQuestion decision menu lingers in the tile's
+       reconstructed transcript indistinguishable from a live one - the
+       existing needs-human border alone is "far too subtle" against a
+       fully-rendered menu (the ticket's own words), so this is a loud banner
+       directly above the transcript, not another small corner badge. */
+    .tile-decision-banner {
+      display: none;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      border-bottom: 1px solid var(--vscode-panel-border);
+    }
+    .tile-decision-banner.visible {
+      display: block;
+    }
+    .tile-decision-banner.live {
+      background: #e53935;
+      color: #fff;
+    }
+    .tile-decision-banner.resolved {
+      background: var(--vscode-badge-background, #555);
+      color: var(--vscode-badge-foreground, #fff);
+      opacity: 0.85;
+    }
     .restart-btn {
       display: none;
       margin-left: 6px;

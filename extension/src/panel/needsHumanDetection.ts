@@ -77,6 +77,16 @@ export function extractQuestionSnippet(paneText: string | null | undefined): str
   return `${snippet.slice(0, SNIPPET_MAX_LENGTH - 1)}…`;
 }
 
+// BL-421: the specific "choice/decision menu" line shape within
+// detectNeedsHuman's own last-5-lines check (a highlighted `❯`-prefixed
+// option, e.g. an AskUserQuestion menu's selected choice) - extracted so the
+// tile decision-status classifier below can look for the SAME shape across
+// an entire reconstructed transcript, not just a live capture's last few
+// lines.
+function isChoiceOptionLine(line: string): boolean {
+  return /^[❯>]\s+[0-9a-z\(\)\[\]]/.test(line);
+}
+
 export function detectNeedsHuman(paneText: string | null | undefined): boolean {
   if (!paneText) return false;
 
@@ -109,7 +119,7 @@ export function detectNeedsHuman(paneText: string | null | undefined): boolean {
     }
 
     // Look for choice prompts with numbers, letters, or symbols
-    if (/^[❯>]\s+[0-9a-z\(\)\[\]]/.test(line)) {
+    if (isChoiceOptionLine(line)) {
       return true;
     }
 
@@ -120,4 +130,40 @@ export function detectNeedsHuman(paneText: string | null | undefined): boolean {
   }
 
   return false;
+}
+
+// BL-421: a resolved AskUserQuestion decision menu lingers in the
+// host-RECONSTRUCTED transcript (BL-070) long after the pane itself moves
+// on - the accumulated history keeps a menu's lines wherever they first
+// appeared, with any later content (a clear, a new response) appended
+// AFTER them, often well past detectNeedsHuman's fixed trailing-line
+// window. So a "does the transcript still contain a decision menu"
+// check must scan the WHOLE text for the choice-option line shape, not
+// just its tail.
+export function transcriptShowsDecisionMenu(text: string | null | undefined): boolean {
+  if (!text) return false;
+  return text.split('\n').some((line) => isChoiceOptionLine(line.trim()));
+}
+
+export type DecisionStatus = 'live' | 'resolved' | 'none';
+
+// BL-421: classifies a tile's decision-menu status from two independent
+// inputs - the CURRENT captured frame and the reconstructed transcript.
+// Liveness is judged from the current frame ONLY, never by pattern-matching
+// the transcript (a resolved menu can be byte-identical to a live one): a
+// pending prompt on the current frame is LIVE regardless of what the
+// transcript holds; once the current frame moves on, a decision menu that
+// still appears anywhere in the transcript is RESOLVED / historical rather
+// than presented as actionable.
+export function classifyDecisionStatus(
+  currentFrameText: string | null | undefined,
+  transcriptText: string | null | undefined
+): DecisionStatus {
+  if (detectNeedsHuman(currentFrameText)) {
+    return 'live';
+  }
+  if (transcriptShowsDecisionMenu(transcriptText)) {
+    return 'resolved';
+  }
+  return 'none';
 }
