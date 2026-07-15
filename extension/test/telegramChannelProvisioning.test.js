@@ -54,7 +54,7 @@ function fakeAdapters(overrides = {}) {
   return {
     calls: { persistBotTokenCalls, persistChannelCalls, createNegotiationTopicCalls },
     adapters: {
-      getUpdates: async () => [],
+      getUpdates: async () => ({ success: true, updates: [] }),
       createNegotiationTopic: async (chatId) => {
         createNegotiationTopicCalls.push(chatId);
         return { success: true, messageThreadId: 42 };
@@ -75,18 +75,47 @@ test('provisionTelegramChannel always returns the provisioning instructions', as
 });
 
 test('provisionTelegramChannel reports not ready and never opens a topic when the group has not been detected yet', async () => {
-  const { adapters, calls } = fakeAdapters({ getUpdates: async () => [] });
+  const { adapters, calls } = fakeAdapters({ getUpdates: async () => ({ success: true, updates: [] }) });
 
   const outcome = await provisionTelegramChannel('sfvc_target_bot', adapters);
 
   assert.equal(outcome.ready, false);
+  assert.equal(outcome.error, undefined, 'expected no error field for the legitimate not-ready-yet case');
   assert.equal(outcome.chatId, undefined);
   assert.equal(outcome.negotiationTopicId, undefined);
   assert.equal(calls.createNegotiationTopicCalls.length, 0, 'expected no negotiation topic to be opened for a half-finished channel');
 });
 
 test('provisionTelegramChannel still persists the bot token even when the channel is not ready yet', async () => {
-  const { adapters, calls } = fakeAdapters({ getUpdates: async () => [] });
+  const { adapters, calls } = fakeAdapters({ getUpdates: async () => ({ success: true, updates: [] }) });
+
+  await provisionTelegramChannel('sfvc_target_bot', adapters);
+
+  assert.equal(calls.persistBotTokenCalls.length, 1);
+});
+
+// BL-380 QA bounce (backlog/evidence/BL-380-...-bounce-20260715.md): a
+// getUpdates FETCH FAILURE (bad token, network error, rate limit) was
+// silently collapsed into the exact same {ready:false} result as the
+// legitimate "human hasn't finished creating the group yet" case above -
+// indistinguishable to whoever is running onboarding. Mirrors how
+// createNegotiationTopic's own failure is already surfaced below.
+test('provisionTelegramChannel reports a getUpdates fetch failure as an error, distinguishable from not-ready-yet, and never opens a topic', async () => {
+  const { adapters, calls } = fakeAdapters({
+    getUpdates: async () => ({ success: false, updates: [], error: 'Unauthorized' }),
+  });
+
+  const outcome = await provisionTelegramChannel('sfvc_target_bot', adapters);
+
+  assert.equal(outcome.ready, false);
+  assert.match(outcome.error, /Unauthorized/);
+  assert.equal(calls.createNegotiationTopicCalls.length, 0, 'expected no negotiation topic to be opened when the update fetch itself failed');
+});
+
+test('provisionTelegramChannel still persists the bot token even when the getUpdates fetch fails', async () => {
+  const { adapters, calls } = fakeAdapters({
+    getUpdates: async () => ({ success: false, updates: [], error: 'Unauthorized' }),
+  });
 
   await provisionTelegramChannel('sfvc_target_bot', adapters);
 
@@ -95,7 +124,7 @@ test('provisionTelegramChannel still persists the bot token even when the channe
 
 test('provisionTelegramChannel opens the negotiation topic in the detected chat and persists the channel once ready', async () => {
   const detectedUpdates = [{ update_id: 1, message: { message_id: 1, chat: { id: 555666777 }, text: 'added' } }];
-  const { adapters, calls } = fakeAdapters({ getUpdates: async () => detectedUpdates });
+  const { adapters, calls } = fakeAdapters({ getUpdates: async () => ({ success: true, updates: detectedUpdates }) });
 
   const outcome = await provisionTelegramChannel('sfvc_target_bot', adapters);
 
@@ -116,7 +145,7 @@ test('provisionTelegramChannel names the negotiation topic using the shared NEGO
 test('provisionTelegramChannel reports the failure and withholds negotiationTopicId when opening the topic fails, without persisting a partial channel', async () => {
   const detectedUpdates = [{ update_id: 1, message: { message_id: 1, chat: { id: 555666777 }, text: 'added' } }];
   const { adapters, calls } = fakeAdapters({
-    getUpdates: async () => detectedUpdates,
+    getUpdates: async () => ({ success: true, updates: detectedUpdates }),
     createNegotiationTopic: async () => ({ success: false, error: 'Telegram API responded with status 400' }),
   });
 
