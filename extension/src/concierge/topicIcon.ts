@@ -16,25 +16,42 @@
 // ever fires from ticket-level TaskStarted/TaskCompleted/pause
 // transitions - an epic topic is simply never a target of it.
 
-export type TopicIconState = 'done' | 'defect' | 'feature' | 'paused';
+// BL-424: a paused ticket blocked ONLY on the human's own approval
+// (actionable by him right now) is otherwise indistinguishable by icon from
+// a paused ticket held for any other reason (a dependency, an overlap hold,
+// a deliberate park) - 'awaiting-approval' is a fifth, paused-scoped state
+// so the human can glance the topic list and see which paused tickets need
+// him specifically. Eyes (👀) reads as "needs a look" and is a stand-in for
+// the human's OWN attention, distinct from the other four states'
+// established conventions (see the header comment above).
+export type TopicIconState = 'done' | 'defect' | 'feature' | 'paused' | 'awaiting-approval';
 
 export const ICON_EMOJI: Record<TopicIconState, string> = {
   done: '✅',
   defect: '🦠',
   feature: '🎵',
   paused: '🔍',
+  'awaiting-approval': '👀',
 };
 
 // Folder membership is authoritative over the ticket's own `type:` for
 // done/paused - a paused bug still shows the magnifier, a shipped bug
 // still shows the check. Only the active/in-flight case actually branches
 // on type.
-export function resolveIconState(folder: 'active' | 'paused' | 'done', type: string | undefined): TopicIconState {
+// BL-424: humanApproval only ever matters for the paused branch - an
+// active or done ticket keeps its existing icon even if its approval field
+// were somehow pending, since the marker exists to flag a paused hold the
+// human can clear, not the field's raw value.
+export function resolveIconState(
+  folder: 'active' | 'paused' | 'done',
+  type: string | undefined,
+  humanApproval?: 'pending' | 'approved'
+): TopicIconState {
   if (folder === 'done') {
     return 'done';
   }
   if (folder === 'paused') {
-    return 'paused';
+    return humanApproval === 'pending' ? 'awaiting-approval' : 'paused';
   }
   return type === 'bug' ? 'defect' : 'feature';
 }
