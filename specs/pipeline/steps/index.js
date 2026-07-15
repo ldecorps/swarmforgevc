@@ -194,7 +194,8 @@ const DOMAINS = [
   require('./verbosityIsNegotiatedIntoTheContractSteps'),
   require('./noSingleFileBoundsTheSuiteSteps'),
   require('./bl403SupervisorKillsSupersededChildSteps'),
-  require('./bl404LaunchFrontDeskHonorsParkedFlagSteps')
+  require('./bl404LaunchFrontDeskHonorsParkedFlagSteps'),
+  require('./bl395ApprovalSnippetVisibleChromeSteps')
 ];
 
 function registerSteps(registry) {
