@@ -380,6 +380,34 @@ function withRetryableTransitionsHeldBack(curr: EventStreamSnapshot, unrouted: R
 // prev must always advance to curr) - EXCEPT for a transition whose event
 // failed to post, which stays out of the persisted snapshot so it is
 // retried next tick (see withRetryableTransitionsHeldBack above).
+// Split out of runConciergeTick's event loop (BL-394 hardening: CRAP was 7 on
+// the unsplit function, all pre-existing complexity this ticket's one-line
+// alreadyEmitted-threading change happened to surface) so the per-event
+// title lookup and post/epic-update decision points are counted separately
+// from the tick's two outer loops. Mutates `alreadyEmitted` in place -
+// mirrors postEpicUpdateIfApplicable's own contract on the same set -
+// and returns whether the event's OWN post succeeded, for the caller's
+// routed/unrouted bookkeeping.
+async function processConciergeEvent(
+  event: SwarmEvent,
+  folders: BacklogFoldersSnapshot,
+  epicDefinitions: Record<string, EpicDefinition>,
+  routeAdapters: RouteAdapters,
+  alreadyEmitted: Set<string>
+): Promise<boolean> {
+  // BL-358: an untagged event has no ticket to look a title up for -
+  // routeEvent never uses `title` on that branch (routeUntaggedGateEvent
+  // takes no title at all), so the role name is passed through purely for
+  // a harmless, honest value rather than a lookup that could never match.
+  const title = event.backlogId ? titleForBacklogId(folders, event.backlogId) : (event.role ?? 'unknown');
+  const result = await routeEvent(event, title, routeAdapters);
+  if (result.posted) {
+    alreadyEmitted.add(swarmEventKey(event));
+  }
+  await postEpicUpdateIfApplicable(event, folders, epicDefinitions, routeAdapters, alreadyEmitted);
+  return result.posted;
+}
+
 export async function runConciergeTick(adapters: ConciergeTickAdapters): Promise<TickResult> {
   const folders = adapters.readFolders();
   const curr = toEventStreamSnapshot(folders, adapters.readGates(), adapters.readRoleTicket());
@@ -399,19 +427,12 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters): Promise
   let routed = 0;
   const unrouted = new Set<string>();
   for (const event of events) {
-    // BL-358: an untagged event has no ticket to look a title up for -
-    // routeEvent never uses `title` on that branch (routeUntaggedGateEvent
-    // takes no title at all), so the role name is passed through purely for
-    // a harmless, honest value rather than a lookup that could never match.
-    const title = event.backlogId ? titleForBacklogId(folders, event.backlogId) : (event.role ?? 'unknown');
-    const result = await routeEvent(event, title, adapters.routeAdapters);
-    if (result.posted) {
-      alreadyEmitted.add(swarmEventKey(event));
+    const posted = await processConciergeEvent(event, folders, epicDefinitions, adapters.routeAdapters, alreadyEmitted);
+    if (posted) {
       routed += 1;
     } else {
       unrouted.add(swarmEventKey(event));
     }
-    await postEpicUpdateIfApplicable(event, folders, epicDefinitions, adapters.routeAdapters, alreadyEmitted);
   }
 
   // BL-342: icon sync rides the SAME prev/curr folder-membership diff this
