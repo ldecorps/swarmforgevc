@@ -1,0 +1,62 @@
+# DRAFT — parked out of the *.feature glob until human review + slice-1 build
+# (BL-233/BL-314). Slice 1 only: coordinator Operator-topic voice-note round-trip.
+# The front-desk bot (extension host) does all audio I/O via injected STT/TTS/
+# getFile/sendVoice adapters; the coordinator is unchanged and stays text-only.
+
+Feature: the coordinator converses over Telegram voice notes (STT in, TTS out)
+
+  Background:
+    Given the front-desk bot is polling the Telegram forum
+    And the coordinator's Operator topic exists
+    And an authorised principal
+
+  # BL-426 audio-voice-note-coordinator-01
+  Scenario: an inbound voice note is transcribed and delivered as text
+    Given the principal sends a voice note in the coordinator's Operator topic
+    When the front-desk bot processes the update
+    Then the voice audio is fetched and sent to speech-to-text
+    And the transcript is delivered to the coordinator on the Operator text path
+    And the update offset advances past the delivered voice note
+
+  # BL-426 audio-voice-note-coordinator-02
+  Scenario: the coordinator's text reply is synthesized back as a voice note
+    Given the coordinator's turn was opened by a voice note
+    When the coordinator's text reply is relayed back to the Operator topic
+    Then the reply text is synthesized to a voice note
+    And the voice note is sent to the same Operator topic
+
+  # BL-426 audio-voice-note-coordinator-03
+  Scenario: a text message still delivers as text with no transcription
+    Given the principal sends a text message in the coordinator's Operator topic
+    When the front-desk bot processes the update
+    Then the message is delivered to the coordinator as text
+    And speech-to-text is not invoked
+
+  # BL-426 audio-voice-note-coordinator-04
+  Scenario: a voice note from a non-principal is ignored
+    Given a non-principal sends a voice note in the coordinator's Operator topic
+    When the front-desk bot processes the update
+    Then the voice note is ignored
+    And speech-to-text is not invoked
+
+  # BL-426 audio-voice-note-coordinator-05
+  Scenario: a transient speech-to-text failure is retried, never dropped
+    Given the principal sends a voice note in the coordinator's Operator topic
+    And speech-to-text fails transiently
+    When the front-desk bot processes the update
+    Then the update offset does not advance past the voice note
+    And the transcription is retried within a bounded budget
+
+  # BL-426 audio-voice-note-coordinator-06
+  Scenario: a structurally un-processable voice note is dropped and the offset advances
+    Given the principal sends a voice note with no decodable audio
+    When the front-desk bot processes the update
+    Then the voice note is dropped
+    And the update offset advances past it
+
+# ---- SLICE 2 (the other seven roles) — parked, HARD-DEPENDS on BL-425 ----
+# Not built here. When built, each scenario gets its step handler in the same
+# parcel (BL-233) and moves into the live feature.
+#
+# Scenario: a voice note in role R's topic is transcribed and delivered to role R
+# Scenario: role R's answer is synthesized back as a voice note in role R's topic
