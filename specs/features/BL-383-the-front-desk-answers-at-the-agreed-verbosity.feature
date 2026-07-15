@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=3210e56ddab468e448c87601cdbdc4daa2015080cba4754eafabf62816b1cc78
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-15T03:22:17.451138914Z","feature_name":"The front desk answers the human at the verbosity he agreed to","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-383-the-front-desk-answers-at-the-agreed-verbosity.feature","background_hash":"138715b37392566fa02b9570ffc563d6e9ea2a152f1cd49632dac8fd827aefe5","implementation_hash":"unknown","scenarios":[{"index":0,"name":"The front desk answers at the agreed level","scenario_hash":"4190fceda0d437554e9f48190a4ca8a02a4333150bfb51868f88378841c197ff","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-07-15T03:22:14.053788270Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The front desk answers the human at the verbosity he agreed to
 
 # BL-383: the other half of the human's verbosity ask, and the half he actually feels. BL-382 makes
