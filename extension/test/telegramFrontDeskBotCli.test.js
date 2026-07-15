@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { parseCliArgs, conciergeTickIntervalMs, readRoleTicket, toFoldersSnapshot, ensureOperatorTopic, postOperatorContext, openSubjectAndRecord, main } = require('../out/tools/telegram-front-desk-bot');
+const { parseCliArgs, conciergeTickIntervalMs, readRoleTicket, toFoldersSnapshot, ensureOperatorTopic, postOperatorContext, openSubjectAndRecord, standingTopicTargets, main } = require('../out/tools/telegram-front-desk-bot');
 const { readRecord: readTopicRecord } = require('../out/concierge/blTopicStore');
 
 // parseNextSseRecord's own tests live in telegramFrontDeskBotCore.test.js -
@@ -451,4 +451,57 @@ test('a DIFFERENT update (different updateId) for the same ticket is recorded as
   await postOperatorContext(target, 'BL-123', 'second reply', 502);
   assert.equal(readTopicRecord(target, 'BL-123').messages.length, 2);
   assert.equal(operatorEventCount(target, 'BL-123'), 2);
+});
+
+// ── standingTopicTargets (BL-418) ─────────────────────────────────────────
+// Classifies the front-desk bot's own {topicId: subjectId} map into the
+// standing-topic targets conciergeTick.ts's icon sync wants - reads the
+// SAME file ensureOperatorTopic/openSubjectAndRecord already maintain, no
+// second store.
+
+test('standingTopicTargets classifies the Operator subject as "operator" and every other real topic as "support/intake"', () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { 701: 'OPERATOR', 801: 'SUP-001', 802: 'SUP-002' });
+
+  const targets = standingTopicTargets(root);
+
+  assert.deepEqual(
+    targets.sort((a, b) => a.topicId - b.topicId),
+    [
+      { id: 'OPERATOR', topicId: 701, iconKey: 'operator' },
+      { id: 'SUP-001', topicId: 801, iconKey: 'support/intake' },
+      { id: 'SUP-002', topicId: 802, iconKey: 'support/intake' },
+    ]
+  );
+});
+
+test('standingTopicTargets excludes the DEFAULT_SUBJECT_KEY binding (a DM/General origin has no real Telegram topic to iconize)', () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { __default__: 'SUP-003', 801: 'SUP-001' });
+
+  const targets = standingTopicTargets(root);
+
+  assert.deepEqual(targets, [{ id: 'SUP-001', topicId: 801, iconKey: 'support/intake' }]);
+});
+
+test('standingTopicTargets excludes openSubjectAndRecord\'s own update:<id> idempotency keys, which share this same map/file', () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { 'update:900': 'SUP-500', 7: 'SUP-500' });
+
+  const targets = standingTopicTargets(root);
+
+  assert.deepEqual(targets, [{ id: 'SUP-500', topicId: 7, iconKey: 'support/intake' }]);
+});
+
+test('standingTopicTargets returns an empty list when the map has no bindings yet', () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, {});
+
+  assert.deepEqual(standingTopicTargets(root), []);
+});
+
+test('standingTopicTargets returns an empty list when the map file does not exist at all', () => {
+  const root = mkTmpRoot();
+
+  assert.deepEqual(standingTopicTargets(root), []);
 });
