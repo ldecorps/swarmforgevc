@@ -6,10 +6,15 @@
 ;; same as that module's own docstring promised. Reuses daemon_alarm_lib.bb's
 ;; send-alarm-email! for the actual POST - no second Resend client - so this
 ;; module owns only the briefing-specific scanning/marker/subject logic.
+;; BL-393 (cleaner extraction): generic markdown->HTML rendering lives in
+;; markdown_to_html_lib.bb, not here - this module only merges that render
+;; with its own diagram-html concern (merge-diagram-html below).
 (ns briefing-email-lib
   (:require [babashka.fs :as fs]
             [cheshire.core :as json]
             [clojure.string :as str]))
+
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "markdown_to_html_lib.bb")))
 
 (defn sent-state-path [briefings-dir]
   (str (fs/path briefings-dir ".sent.json")))
@@ -173,81 +178,6 @@
     {:html nil
      :note-line "Architecture diagrams: unavailable this run (renderer not installed) - see docs/diagrams/ in the repo."}))
 
-;; BL-393: THE BODY loses its structure as an undifferentiated plain-text
-;; wall on a phone mail client (headings/tables/bold all collapse to raw
-;; markdown syntax) - a minimal, pure, exported markdown->HTML renderer so
-;; the SAME assembled `content` that already rides the plain-text part can
-;; also ride the html part. Deliberately minimal: headings, GFM-style pipe
-;; tables, and **bold** emphasis are the structural elements the intake
-;; actually named; every other non-blank line becomes its own paragraph.
-(defn- escape-html [s]
-  (-> s
-      (str/replace "&" "&amp;")
-      (str/replace "<" "&lt;")
-      (str/replace ">" "&gt;")))
-
-(defn- render-inline-markdown [s]
-  (str/replace s #"\*\*(.+?)\*\*" "<strong>$1</strong>"))
-
-(defn- heading-line [line]
-  (re-matches #"(#{1,6})\s+(.*)" line))
-
-(defn- table-row-line? [line]
-  (str/includes? line "|"))
-
-(defn- table-separator-line? [line]
-  (boolean (re-matches #"\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*" line)))
-
-(defn- split-table-cells [line]
-  (->> (-> line
-           str/trim
-           (str/replace #"^\|" "")
-           (str/replace #"\|$" ""))
-       (#(str/split % #"\|"))
-       (map str/trim)
-       vec))
-
-(defn- render-table-cell [tag text]
-  (str "<" tag ">" (render-inline-markdown (escape-html text)) "</" tag ">"))
-
-(defn- render-table-row-html [cells tag]
-  (str "<tr>" (str/join "" (map #(render-table-cell tag %) cells)) "</tr>"))
-
-(defn- render-table-block [lines]
-  (str "<table>"
-       (render-table-row-html (split-table-cells (first lines)) "th")
-       (str/join "" (map #(render-table-row-html (split-table-cells %) "td") (drop 2 lines)))
-       "</table>"))
-
-(defn render-markdown-to-html
-  "Minimal pure markdown->HTML renderer (BL-393): headings become
-   <h1>-<h6>, a GFM-style pipe table becomes <table>/<tr>/<th|td>, and
-   **bold** spans become <strong>. Every other non-blank line becomes its
-   own <p>. Blank lines are separators only, never rendered. HTML-special
-   characters are escaped before any markup is generated, so raw content
-   can never inject stray markup into the email."
-  [markdown]
-  (loop [lines (str/split-lines (or markdown ""))
-         out []]
-    (if (empty? lines)
-      (str/join "" out)
-      (let [line (first lines)]
-        (cond
-          (str/blank? line)
-          (recur (rest lines) out)
-
-          (and (table-row-line? line) (second lines) (table-separator-line? (second lines)))
-          (let [table-lines (take-while table-row-line? lines)]
-            (recur (drop (count table-lines) lines) (conj out (render-table-block table-lines))))
-
-          (heading-line line)
-          (let [[_ hashes text] (heading-line line)]
-            (recur (rest lines)
-                   (conj out (str "<h" (count hashes) ">" (render-inline-markdown (escape-html text)) "</h" (count hashes) ">"))))
-
-          :else
-          (recur (rest lines) (conj out (str "<p>" (render-inline-markdown (escape-html line)) "</p>"))))))))
-
 ;; BL-393: the diagram section's own html (a <div> of <h3>/<img> per
 ;; diagram) must coexist with the rendered body, never replace it -
 ;; appended after the body so both remain intact and neither clobbers the
@@ -296,7 +226,7 @@
                       content)
             date-label (str/replace file-name #"\.md$" "")
             subject (build-briefing-subject date-label content)
-            html (merge-diagram-html (render-markdown-to-html content) (:html diagram-section))
+            html (merge-diagram-html (markdown-to-html-lib/render-markdown-to-html content) (:html diagram-section))
             result (if (seq (:attachments diagram-section))
                      ((:send-email! adapters) subject content html (:attachments diagram-section))
                      ((:send-email! adapters) subject content html))]
