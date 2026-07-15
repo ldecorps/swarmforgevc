@@ -1,1 +1,1 @@
-{"id":"BL-412","messages":[{"seq":0,"ts":1784112808027,"author":"swarm","type":"outbound","text":"This ticket needs your approval before it can proceed. Reply here with \"approve\" to approve it."}]}
+{"id":"BL-412","messages":[{"seq":0,"ts":1784112808027,"author":"swarm","type":"outbound","text":"This ticket needs your approval before it can proceed. Reply here with \"approve\" to approve it."},{"seq":1,"ts":1784113653713,"author":"human","type":"inbound","text":"Approved","updateId":765184561}]}
