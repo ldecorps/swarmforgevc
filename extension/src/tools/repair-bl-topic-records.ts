@@ -38,6 +38,33 @@ export interface RepairResult {
   outcomes: RepairOutcome[];
 }
 
+// Shared by both the opener-repair and the commit-only-backfill paths below:
+// each writes/regenerates a record then must commit it, reporting (never
+// throwing) on a commit failure exactly the same way either time.
+function commitOrReport(
+  targetPath: string,
+  filePath: string,
+  backlogId: string,
+  reportCommitFailure: CommitFailureReporter
+): void {
+  if (!commitTopicRecord(targetPath, filePath, backlogId)) {
+    reportCommitFailure(backlogId, filePath);
+  }
+}
+
+// BL-407: the durability-only backfill described in the file header above.
+function backfillUncommittedRecord(
+  targetPath: string,
+  backlogId: string,
+  reportCommitFailure: CommitFailureReporter
+): RepairOutcome {
+  if (isRecordCommitted(targetPath, backlogId)) {
+    return { backlogId, repaired: false, reason: 'opener-already-present' };
+  }
+  commitOrReport(targetPath, recordPath(targetPath, backlogId), backlogId, reportCommitFailure);
+  return { backlogId, repaired: false, reason: 'backfilled-commit' };
+}
+
 export function repairBlTopicRecords(
   targetPath: string,
   reportCommitFailure: CommitFailureReporter = reportCommitFailureToStderr
@@ -58,26 +85,14 @@ export function repairBlTopicRecords(
     }
     const record = readRecord(targetPath, backlogId);
     if (!recordMissingOpener(record, ticket.title)) {
-      if (isRecordCommitted(targetPath, backlogId)) {
-        outcomes.push({ backlogId, repaired: false, reason: 'opener-already-present' });
-        continue;
-      }
-      const filePath = recordPath(targetPath, backlogId);
-      const committed = commitTopicRecord(targetPath, filePath, backlogId);
-      if (!committed) {
-        reportCommitFailure(backlogId, filePath);
-      }
-      outcomes.push({ backlogId, repaired: false, reason: 'backfilled-commit' });
+      outcomes.push(backfillUncommittedRecord(targetPath, backlogId, reportCommitFailure));
       continue;
     }
     const openerText = regeneratedOpenerText(ticket);
     const repaired = withRestoredOpener(record, openerText);
     const filePath = recordPath(targetPath, backlogId);
     atomicWrite(filePath, JSON.stringify(repaired));
-    const committed = commitTopicRecord(targetPath, filePath, backlogId);
-    if (!committed) {
-      reportCommitFailure(backlogId, filePath);
-    }
+    commitOrReport(targetPath, filePath, backlogId, reportCommitFailure);
     outcomes.push({ backlogId, repaired: true, reason: 'missing-opener-repaired' });
   }
   return { outcomes };
