@@ -115,3 +115,63 @@ test('syncTopicIcon reports failure and does NOT record ownership when setTopicI
   assert.equal(outcome, 'failed');
   assert.deepEqual(recordCalls, [], 'expected no ownership recorded for a failed set - the swarm never actually got to set it');
 });
+
+// ── BL-424 approval-icon-fallback-02: a caller-provided fallback emoji is
+//    used when the primary is absent from the live sticker set, rather than
+//    skipping the topic entirely ──────────────────────────────────────────
+
+test('syncTopicIcon falls back to the caller-provided fallback emoji when the primary is absent from the live set', async () => {
+  const setCalls = [];
+  const outcome = await syncTopicIcon(
+    'BL-900',
+    42,
+    '👀', // not in fakeAdapters()'s default sticker list
+    true,
+    fakeAdapters({
+      setTopicIcon: async (topicId, iconId) => {
+        setCalls.push({ topicId, iconId });
+        return true;
+      },
+    }),
+    '🔍' // fallback - present in the default sticker list
+  );
+
+  assert.equal(outcome, 'updated');
+  assert.deepEqual(setCalls, [{ topicId: 42, iconId: 'id-magnifier' }]);
+});
+
+test('syncTopicIcon prefers the primary emoji over the fallback when both are present', async () => {
+  const outcome = await syncTopicIcon(
+    'BL-900',
+    42,
+    '✅',
+    true,
+    fakeAdapters({
+      setTopicIcon: async (topicId, iconId) => {
+        assert.equal(iconId, 'id-check', 'expected the primary emoji\'s id, never the fallback\'s, when the primary resolves');
+        return true;
+      },
+    }),
+    '🔍'
+  );
+  assert.equal(outcome, 'updated');
+});
+
+test('syncTopicIcon still skips when neither the primary nor the fallback emoji resolves', async () => {
+  const setCalls = [];
+  const outcome = await syncTopicIcon(
+    'BL-900',
+    42,
+    '👀',
+    true,
+    fakeAdapters({
+      setTopicIcon: async (...args) => {
+        setCalls.push(args);
+        return true;
+      },
+    }),
+    '🏆' // also absent from the default sticker list
+  );
+  assert.equal(outcome, 'skipped-unresolved-icon');
+  assert.deepEqual(setCalls, []);
+});

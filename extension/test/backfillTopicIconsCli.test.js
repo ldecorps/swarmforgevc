@@ -28,10 +28,11 @@ function mkGitRepo() {
   return target;
 }
 
-function writeTicket(targetPath, folder, id, title, type) {
+function writeTicket(targetPath, folder, id, title, type, humanApproval) {
   const dir = path.join(targetPath, 'backlog', folder);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, `${id}.yaml`), `id: ${id}\ntitle: ${title}\ntype: ${type}\n`);
+  const approvalLine = humanApproval ? `human_approval: ${humanApproval}\n` : '';
+  fs.writeFileSync(path.join(dir, `${id}.yaml`), `id: ${id}\ntitle: ${title}\ntype: ${type}\n${approvalLine}`);
 }
 
 function writeTopicMap(targetPath, map) {
@@ -48,6 +49,7 @@ const STICKERS_JSON = {
     { emoji: '🦠', custom_emoji_id: 'id-microbe' },
     { emoji: '🎵', custom_emoji_id: 'id-note' },
     { emoji: '🔍', custom_emoji_id: 'id-magnifier' },
+    { emoji: '👀', custom_emoji_id: 'id-eyes' },
   ],
 };
 
@@ -83,6 +85,29 @@ test('backfillTopicIcons sets the computed icon for every non-epic ticket that h
   );
   assert.equal(readSwarmIconId(target, 'BL-1'), 'id-note');
   assert.equal(readSwarmIconId(target, 'BL-4'), 'id-check');
+});
+
+// BL-424: the backfill's own resolveIconState call site also reads
+// human_approval off the ticket (BacklogItem.humanApproval), same as the
+// live tick's caller.
+test('backfillTopicIcons gives a paused pending-approval ticket the distinct eyes icon', async () => {
+  const target = mkGitRepo();
+  writeTicket(target, 'paused', 'BL-3', 'a paused one awaiting approval', 'feature', 'pending');
+  writeTopicMap(target, { 'BL-3': 103 });
+
+  const edits = [];
+  const postFn = async (url, body) => {
+    if (url.endsWith('/getForumTopicIconStickers')) {
+      return { ok: true, status: 200, json: STICKERS_JSON };
+    }
+    edits.push(JSON.parse(body));
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  const outcomes = await backfillTopicIcons(target, TOKEN, CHAT_ID, async () => {}, postFn);
+
+  assert.deepEqual(outcomes.map((o) => o.outcome), ['updated']);
+  assert.deepEqual(edits.map((e) => e.icon_custom_emoji_id), ['id-eyes']);
 });
 
 test('backfillTopicIcons skips an epic-defining ticket entirely, even if it has a topic', async () => {

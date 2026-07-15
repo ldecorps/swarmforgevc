@@ -30,11 +30,40 @@ test('resolveIconState: an active feature or chore ticket is "feature"', () => {
   assert.equal(resolveIconState('active', undefined), 'feature');
 });
 
-test('ICON_EMOJI carries the exact emoji for each of the four states, per the convention', () => {
+test('ICON_EMOJI carries the exact emoji for each of the five states, per the convention', () => {
   assert.equal(ICON_EMOJI.done, '✅');
   assert.equal(ICON_EMOJI.defect, '🦠');
   assert.equal(ICON_EMOJI.feature, '🎵');
   assert.equal(ICON_EMOJI.paused, '🔍');
+  assert.equal(ICON_EMOJI['awaiting-approval'], '👀');
+});
+
+// ── BL-424 approval-icon-state-01: a paused ticket blocked ONLY on the
+//    human's approval gets its own icon state, distinct from any other
+//    paused hold ─────────────────────────────────────────────────────────
+
+test('resolveIconState: a paused ticket with human_approval pending is "awaiting-approval"', () => {
+  assert.equal(resolveIconState('paused', 'feature', 'pending'), 'awaiting-approval');
+});
+
+test('resolveIconState: a paused ticket that is approved keeps the plain "paused" state', () => {
+  assert.equal(resolveIconState('paused', 'feature', 'approved'), 'paused');
+});
+
+test('resolveIconState: a paused ticket with no human_approval field at all keeps the plain "paused" state', () => {
+  assert.equal(resolveIconState('paused', 'feature', undefined), 'paused');
+});
+
+// The "both branches true at once" engineering rule: an ACTIVE ticket with
+// human_approval pending must stay "feature", proving the FOLDER gates the
+// awaiting-approval state, not the approval field alone.
+test('resolveIconState: an active ticket with human_approval pending is unaffected - the marker is paused-scoped', () => {
+  assert.equal(resolveIconState('active', 'feature', 'pending'), 'feature');
+  assert.equal(resolveIconState('active', 'bug', 'pending'), 'defect');
+});
+
+test('resolveIconState: a done ticket is unaffected by human_approval', () => {
+  assert.equal(resolveIconState('done', 'feature', 'pending'), 'done');
 });
 
 // ── resolveIconStickerId (BL-342 scenario 06: validated against the REAL

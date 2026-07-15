@@ -173,6 +173,14 @@ function typeForBacklogId(folders: BacklogFoldersSnapshot, backlogId: string): s
   return all.find((item) => item.id === backlogId)?.type;
 }
 
+// BL-424: resolveIconState's new third input - read straight off the SAME
+// BacklogFolderItem.humanApproval field pendingApprovalFor above already
+// reads, never a second approval-state derivation.
+function humanApprovalForBacklogId(folders: BacklogFoldersSnapshot, backlogId: string): 'pending' | 'approved' | undefined {
+  const all = [...folders.active, ...folders.paused, ...folders.done];
+  return all.find((item) => item.id === backlogId)?.humanApproval;
+}
+
 // BL-342: the one call site every icon-state transition (TaskStarted,
 // TaskCompleted, and the paused-diff below) funnels through - resolves the
 // ticket's CURRENT folder+type into a desired icon and hands it to
@@ -194,8 +202,14 @@ async function syncIconForBacklogId(
   if (folder === undefined || type === 'epic' || topicId === undefined) {
     return;
   }
-  const state = resolveIconState(folder, type);
-  await syncTopicIcon(backlogId, topicId, ICON_EMOJI[state], isNewTopic, iconAdapters);
+  // BL-424: humanApproval feeds resolveIconState's new paused-scoped
+  // awaiting-approval state; the fallback only ever applies to that one
+  // state, since it is the only glyph not already long-established in the
+  // live set (see topicIconSync.ts's own comment on syncTopicIcon).
+  const humanApproval = humanApprovalForBacklogId(folders, backlogId);
+  const state = resolveIconState(folder, type, humanApproval);
+  const fallbackEmoji = state === 'awaiting-approval' ? ICON_EMOJI.paused : undefined;
+  await syncTopicIcon(backlogId, topicId, ICON_EMOJI[state], isNewTopic, iconAdapters, fallbackEmoji);
 }
 
 // BL-418: the standing-topic sibling of syncIconForBacklogId above. Only

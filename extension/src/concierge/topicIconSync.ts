@@ -28,18 +28,26 @@ export type IconSyncOutcome = 'updated' | 'skipped-not-owned' | 'skipped-unresol
 // leave it alone. This is the one rule this ticket exists to enforce, so
 // it is a single, un-overridable early return, never a flag a caller could
 // bypass.
+// BL-424: an optional fallbackEmoji covers the one icon state (awaiting-
+// approval) whose glyph is freshly chosen rather than long-established in
+// the live set, per the ticket's own posture - if the primary is absent,
+// resolve the fallback (the plain paused icon) instead of skipping the
+// topic outright, so the worst case is indistinguishable from an ordinary
+// paused ticket. Every other caller simply never passes one, and behaves
+// exactly as before.
 export async function syncTopicIcon(
   ticketId: string,
   topicId: number,
   desiredEmoji: string,
   isNewTopic: boolean,
-  adapters: TopicIconAdapters
+  adapters: TopicIconAdapters,
+  fallbackEmoji?: string
 ): Promise<IconSyncOutcome> {
   if (!isNewTopic && adapters.readSwarmIconId(ticketId) === undefined) {
     return 'skipped-not-owned';
   }
   const stickers = await adapters.getIconStickers();
-  const iconId = resolveIconStickerId(stickers, desiredEmoji);
+  const iconId = resolveIconStickerId(stickers, desiredEmoji) ?? (fallbackEmoji !== undefined ? resolveIconStickerId(stickers, fallbackEmoji) : undefined);
   if (iconId === undefined) {
     // BL-342 scenario 06: never call the Telegram API with an id that was
     // not just validated against the live sticker set.
