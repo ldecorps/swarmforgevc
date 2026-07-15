@@ -43,11 +43,22 @@ notes: |
     - Bound any work per sweep so a huge backlog (880k entries) does not stall
       the host loop's tick — cap entries handled per pass and continue next tick.
 
-  SECONDARY (best-effort hygiene, NOT the core): where a small number of hot
+  STOCK vs FLOW — THIS SWEEP IS NOT SUFFICIENT ALONE (2026-07-15T11:40Z
+  follow-up finding): the /tmp generator is now measured at ~42 dirs/sec while
+  the suite runs (~1M entries/day), so /tmp regrows to the same inode-count
+  degradation BETWEEN sweeps even after a full sweep. This sweep bounds the
+  STOCK (accumulated + crash-orphaned sandboxes a source-fix can never catch);
+  the FLOW must be stopped at the source by the companion BL-420 (make the
+  extension test helpers clean up their own mkdtemp dirs). Both are required and
+  touch different files, so they can proceed in parallel. (This corrects the
+  earlier "the sweep is what actually bounds growth" note — the sweep bounds the
+  stock; BL-420 bounds the rate.)
+
+  SECONDARY (best-effort hygiene): where a small number of hot NON-unit-test
   sandbox creators can cheaply add trap-based cleanup on runner exit (e.g.
   specs/pipeline/scripts/run_gherkin_mutation.sh's mktemp -d work-dir, the
-  recruiter/benchmark sfvc- roots), do so — but do not attempt to retrofit
-  hundreds of unit-test mktemp sites; the sweep is what actually bounds growth.
+  recruiter/benchmark sfvc- roots), do so. The ~147 unit-test mkdtemp sites are
+  BL-420's scope (a shared auto-cleanup helper), not this ticket's.
 
   HOST LOOP: reuse an existing always-alive loop (operator_runtime.bb tick or a
   daemon sweep already on that cadence); do NOT add a new daemon. The disk
