@@ -146,7 +146,8 @@ echo "/dev/null" > "$SIBLING_ROOT/.swarmforge/tmux-socket"
 : > "$SUP_LOG"
 
 SIBLING_HANDOFFD_PID=""
-env -u RESEND_API_KEY bb "$SCRIPT_DIR/../handoffd.bb" "$SIBLING_ROOT" >/dev/null 2>&1 &
+# BL-406: opt in - SIBLING_ROOT is an intentional throwaway test root.
+SWARMFORGE_ALLOW_TMP_DAEMON=1 env -u RESEND_API_KEY bb "$SCRIPT_DIR/../handoffd.bb" "$SIBLING_ROOT" >/dev/null 2>&1 &
 SIBLING_HANDOFFD_PID=$!
 FAKE_PIDS+=("$SIBLING_HANDOFFD_PID")
 
