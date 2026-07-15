@@ -231,6 +231,87 @@
   (assert= "stale-while-also-past-the-healthy-window: the stall is timestamped at detection time" 400000 (:crashed-at-ms entry))
   (assert= "stale-while-also-past-the-healthy-window emits :stalled, never :healthy-reset" :stalled event))
 
+;; ── BL-403: kill-pid! on restart ──────────────────────────────────────────
+
+;; supervisor-kills-superseded-child-01: restarting an unhealthy bot terminates
+;; the prior pid before spawning the replacement.
+(let [kill-calls (atom [])
+      kill-pid-tracking! (fn [pid] (swap! kill-calls conj pid))
+      waiting-entry {:pid 1881442 :attempts 1 :status "waiting" :crashed-at-ms 5000 :started-at-ms 1000 :gave-up-at-ms nil}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one! waiting-entry 6001 dead? fixed-pid! healthy-cfg giveup-cfg false kill-pid-tracking!)]
+  (assert= "supervisor-kills-superseded-child-01: backoff due, under the cap: restarts" "running" (:status entry))
+  (assert= "supervisor-kills-superseded-child-01: kill-pid! is called with the old pid" [1881442] @kill-calls)
+  (assert= "supervisor-kills-superseded-child-01: waiting -> running (restart) emits :started" :started event))
+
+;; supervisor-kills-superseded-child-02: the replacement is not spawned while the
+;; prior pid is confirmed still alive - kill-pid! is the adapter that handles
+;; this synchronously (SIGTERM -> wait for grace -> SIGKILL).
+(let [kill-calls (atom [])
+      kill-pid-tracking! (fn [pid] (swap! kill-calls conj pid))
+      spawn-calls (atom 0)
+      spawn-after-kill! (fn []
+        (swap! spawn-calls inc)
+        (if (empty? @kill-calls)
+          (swap! failures conj "spawn! called before kill-pid!")
+          4242))
+      waiting-entry {:pid 1881442 :attempts 1 :status "waiting" :crashed-at-ms 5000 :started-at-ms 1000 :gave-up-at-ms nil}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one! waiting-entry 6001 dead? spawn-after-kill! healthy-cfg giveup-cfg false kill-pid-tracking!)]
+  (assert= "supervisor-kills-superseded-child-02: kill-pid! called before spawn" 1 @spawn-calls)
+  (assert= "supervisor-kills-superseded-child-02: the new entry records the replacement pid" 4242 (:pid entry)))
+
+;; supervisor-kills-superseded-child-03: status.json reflects exactly one live bot
+;; pid after a forced restart - the old pid is dead, the new one is alive.
+(let [kill-calls (atom [])
+      kill-pid-tracking! (fn [pid] (swap! kill-calls conj pid))
+      waiting-entry {:pid 1881442 :attempts 1 :status "waiting" :crashed-at-ms 5000 :started-at-ms 1000 :gave-up-at-ms nil}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one! waiting-entry 6001 dead? fixed-pid! healthy-cfg giveup-cfg false kill-pid-tracking!)]
+  (assert= "supervisor-kills-superseded-child-03: exactly one pid after restart, the replacement" 4242 (:pid entry))
+  (assert= "supervisor-kills-superseded-child-03: old pid was killed" [1881442] @kill-calls))
+
+;; multiple successive restarts each kill the previous pid.
+;; Scenario: crash restart (kill old pid) -> spawn new one -> it stalls -> restart again (kill new pid).
+(let [kill-calls (atom [])
+      kill-pid-tracking! (fn [pid] (swap! kill-calls conj pid))
+      ;; First restart: crash with attempts=1, backoff due at 5000 + 1000 = 6000, now=6001
+      waiting1 {:pid 1881442 :attempts 1 :status "waiting" :crashed-at-ms 5000 :started-at-ms 1000 :gave-up-at-ms nil}
+      {:keys [entry entry1]} (front-desk-supervisor-lib/check-one! waiting1 6001 dead? fixed-pid! healthy-cfg giveup-cfg false kill-pid-tracking!)
+      ;; Second stall restart: attempts=2, backoff due at 7000 + 2000 = 9000, now=9001
+      stalled2 {:pid 4242 :attempts 2 :status "stalled" :crashed-at-ms 7000 :started-at-ms 6001 :gave-up-at-ms nil}
+      {:keys [entry entry3]} (front-desk-supervisor-lib/check-one! stalled2 9001 dead? fixed-pid! healthy-cfg giveup-cfg false kill-pid-tracking!)]
+  (assert= "multiple restarts: first old pid killed" 1881442 (first @kill-calls))
+  (assert= "multiple restarts: second old pid killed" 4242 (second @kill-calls))
+  (assert= "multiple restarts: both old pids were killed in order" 2 (count @kill-calls)))
+
+;; 7-arg form still works (backward compat) - kill-pid! defaults to no-op.
+(let [waiting-entry {:pid 1881442 :attempts 1 :status "waiting" :crashed-at-ms 5000 :started-at-ms 1000 :gave-up-at-ms nil}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one! waiting-entry 6001 dead? fixed-pid! healthy-cfg giveup-cfg false)]
+  (assert= "7-arg form: restart still works with kill-pid! defaulted to no-op" "running" (:status entry))
+  (assert= "7-arg form: replacement pid recorded" 4242 (:pid entry)))
+
+;; supervisor-kills-superseded-child-04 [BOUNCE, BL-403]: "gave-up" is reached
+;; ONLY from "waiting"/"stalled" when decide-restart-action is NOT :restart -
+;; the "stalled" arm of that case is entered from "running" via
+;; heartbeat-stale?, which never touches pid-alive?, so a gave-up entry's
+;; :pid can be a process that is STILL ALIVE (a hung/unresponsive bot, never
+;; a crashed one). check-one!'s existing "gave-up -> re-armed" fixtures
+;; (supervisor-recovery-02 above) all use :pid nil, which trivially satisfies
+;; "no live pid to kill" without ever exercising this branch - see the
+;; hardener's own "check the fixture hasn't already satisfied the condition"
+;; rule. A non-nil, still-alive pid here reproduces the exact production
+;; incident this ticket exists to prevent (BL-403 source: supervisor left
+;; orphan attempt-1 alive after judging it unhealthy and spawning attempt-2),
+;; just via the gave-up/re-arm path rather than the waiting/stalled restart
+;; path the coder's fix covers.
+(let [kill-calls (atom [])
+      kill-pid-tracking! (fn [pid] (swap! kill-calls conj pid))
+      gave-up-entry {:pid 1881442 :attempts 5 :status "gave-up" :crashed-at-ms 5000 :started-at-ms 1000 :gave-up-at-ms 1000000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              gave-up-entry 1900000 dead? fixed-pid! healthy-cfg giveup-cfg false kill-pid-tracking!)]
+  (assert= "supervisor-kills-superseded-child-04: re-arms to running" "running" (:status entry))
+  (assert= "supervisor-kills-superseded-child-04: a fresh pid is recorded" 4242 (:pid entry))
+  (assert= "supervisor-kills-superseded-child-04: the still-alive gave-up pid is killed before re-arm spawns its replacement"
+           [1881442] @kill-calls))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do

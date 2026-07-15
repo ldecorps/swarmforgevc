@@ -1,0 +1,1 @@
+{"id":"BL-317","messages":[{"seq":0,"ts":1783927581869,"author":"swarm","type":"outbound","text":"BL-317 - A backlog ticket can declare its required role set (routing manifest), defaulting to the full chain when omitted is complete."}]}

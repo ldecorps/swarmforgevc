@@ -41,6 +41,6 @@ acceptance:
     - "The replacement is not spawned while the prior pid is confirmed still alive"
     - "status.json reflects exactly one live bot pid after a forced restart"
 
-human_approval: pending-review
+human_approval: approved  # human via Operator relay to coordinator, 2026-07-15: "Human OK'd, promote: BL-403 404 406 409 395 405 407 410"
 
 mutation_cost: low
