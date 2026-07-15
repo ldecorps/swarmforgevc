@@ -1,5 +1,11 @@
 const assert = require('node:assert/strict');
-const { detectNeedsHuman, extractQuestionSnippet, stripTerminalChrome } = require('../out/panel/needsHumanDetection');
+const {
+  detectNeedsHuman,
+  extractQuestionSnippet,
+  stripTerminalChrome,
+  transcriptShowsDecisionMenu,
+  classifyDecisionStatus,
+} = require('../out/panel/needsHumanDetection');
 
 test('detectNeedsHuman returns false for empty text', () => {
   assert.equal(detectNeedsHuman(''), false);
@@ -265,4 +271,80 @@ test('extractQuestionSnippet excludes the permission-mode footer even without th
 test('extractQuestionSnippet keeps a prompt line where real text is glued directly onto the placeholder word', () => {
   const pane = [QUESTION, '❯ typewriter'].join('\n');
   assert.equal(extractQuestionSnippet(pane), `${QUESTION} ❯ typewriter`);
+});
+
+// ── transcriptShowsDecisionMenu / classifyDecisionStatus (BL-421) ───────────
+// A specifier tile keeps showing a long-resolved AskUserQuestion decision
+// menu as if it were still live (the reconstructed transcript retains it
+// indefinitely - BL-070). Liveness must come from the CURRENT captured frame
+// only; the transcript is checked separately, and can hold the menu anywhere
+// in its scrollback, not just its tail.
+
+const DECISION_MENU =
+  'How should I split this into tickets?\n❯ 1) Two tickets (Recommended)\n  2) One ticket\n  3) Ask for more detail';
+const CLEARED_PROMPT = 'sonnet-4.5\n❯ ';
+const UNRELATED_LATER_OUTPUT = 'Implemented the split.\nRunning tests...\n❯ ';
+const NO_MENU_OUTPUT = 'Just some normal agent output.\nNothing to see here.\n❯ ';
+
+test('transcriptShowsDecisionMenu returns false for empty/null/undefined text', () => {
+  assert.equal(transcriptShowsDecisionMenu(''), false);
+  assert.equal(transcriptShowsDecisionMenu(null), false);
+  assert.equal(transcriptShowsDecisionMenu(undefined), false);
+});
+
+test('transcriptShowsDecisionMenu finds a choice-option line anywhere in a long transcript, not only its tail', () => {
+  const transcript = `${DECISION_MENU}\n${CLEARED_PROMPT}\n${UNRELATED_LATER_OUTPUT}`;
+  assert.equal(transcriptShowsDecisionMenu(transcript), true);
+});
+
+test('transcriptShowsDecisionMenu returns false when no line matches the choice-option shape', () => {
+  assert.equal(transcriptShowsDecisionMenu(NO_MENU_OUTPUT), false);
+});
+
+// isChoiceOptionLine's own pattern is anchored to the start of the line, so
+// a transcript line carrying leading whitespace before the marker (e.g. a
+// captured line padded during reconstruction) only matches after trimming -
+// pins that transcriptShowsDecisionMenu's per-line trim() is load-bearing,
+// not redundant.
+test('transcriptShowsDecisionMenu finds a choice-option line even with leading whitespace before the marker', () => {
+  assert.equal(transcriptShowsDecisionMenu('  ❯ 1) Two tickets (Recommended)'), true);
+});
+
+// BL-421 tile-decision-status-01
+test('classifyDecisionStatus marks LIVE when the current frame is a pending decision menu', () => {
+  assert.equal(classifyDecisionStatus(DECISION_MENU, DECISION_MENU), 'live');
+});
+
+// BL-421 tile-decision-status-02
+test('classifyDecisionStatus marks RESOLVED when the frame cleared but the transcript still shows the menu', () => {
+  const transcript = `${DECISION_MENU}\n${CLEARED_PROMPT}`;
+  assert.equal(classifyDecisionStatus(CLEARED_PROMPT, transcript), 'resolved');
+});
+
+// BL-421 tile-decision-status-03: liveness must come from the current frame,
+// never from pattern-matching the transcript - a transcript menu identical
+// to a live one is still RESOLVED once the frame has moved on.
+test('classifyDecisionStatus marks RESOLVED rather than LIVE when only the transcript still ends with the menu', () => {
+  assert.equal(classifyDecisionStatus(UNRELATED_LATER_OUTPUT, DECISION_MENU), 'resolved');
+});
+
+// BL-421 tile-decision-status-04
+test('classifyDecisionStatus shows no marker when neither the frame nor the transcript contains a decision menu', () => {
+  assert.equal(classifyDecisionStatus(NO_MENU_OUTPUT, NO_MENU_OUTPUT), 'none');
+});
+
+// Priority-order hardening (engineering.prompt's ordered-branch rule): both
+// the live check and the resolved check can be true at once (the current
+// frame IS a pending menu AND the transcript ALSO contains a - possibly
+// different - decision menu). LIVE must win; a clause-swap mutant that
+// checked the transcript first would silently downgrade an actionable
+// prompt to a historical badge.
+test('classifyDecisionStatus prefers LIVE over RESOLVED when both the current frame and transcript contain a decision menu', () => {
+  const olderMenuInTranscript = `${DECISION_MENU}\n${CLEARED_PROMPT}`;
+  assert.equal(classifyDecisionStatus(DECISION_MENU, olderMenuInTranscript), 'live');
+});
+
+test('classifyDecisionStatus treats a null/undefined transcript as containing no menu', () => {
+  assert.equal(classifyDecisionStatus(NO_MENU_OUTPUT, null), 'none');
+  assert.equal(classifyDecisionStatus(NO_MENU_OUTPUT, undefined), 'none');
 });
