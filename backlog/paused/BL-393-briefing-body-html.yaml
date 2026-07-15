@@ -74,6 +74,6 @@ acceptance:
     - "Available diagrams appear in the HTML part together with the rendered body"
     - "A run with no diagrams still sends the rendered body as HTML"
 
-human_approval: pending-review
+human_approval: approved  # human (ldecorps), 2026-07-15: "ok for both" — reviewed scenarios
 
 mutation_cost: medium

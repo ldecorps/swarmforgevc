@@ -60,6 +60,6 @@ acceptance:
     - "A headline already within the limit passes through unchanged"
     - "An empty briefing yields a date-only subject with no dangling separator"
 
-human_approval: pending-review
+human_approval: approved  # human (ldecorps), 2026-07-15: "ok for both" — reviewed scenarios
 
 mutation_cost: low

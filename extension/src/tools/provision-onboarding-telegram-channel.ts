@@ -10,7 +10,7 @@
  *
  * Usage: node provision-onboarding-telegram-channel.js <target-repo-path> <bot-token> <bot-username> <host-secrets-file-path>
  */
-import { getTelegramUpdates, createForumTopic } from '../notify/telegramClient';
+import { getTelegramUpdates, createForumTopic, TelegramPostFn } from '../notify/telegramClient';
 import {
   provisionTelegramChannel,
   NEGOTIATION_TOPIC_NAME,
@@ -34,14 +34,22 @@ export function parseArgs(argv: string[]): ProvisionOnboardingTelegramChannelArg
     : null;
 }
 
-function buildAdapters(
+// BL-380 bounce: this getUpdates line was the actual defect location - it
+// discarded the fetch's own success/error and handed provisionTelegramChannel
+// only `.updates`, so a bad/revoked token was indistinguishable from "no
+// updates yet". Exported (with an injectable postFn, matching this
+// codebase's established telegramClient.ts DI pattern - see
+// backfillTopicIcons's identical seam) so this exact wiring is covered by an
+// in-process test, not only the live network path.
+export function buildAdapters(
   targetRepoPath: string,
   botToken: string,
-  hostSecretsFilePath: string
+  hostSecretsFilePath: string,
+  postFn?: TelegramPostFn
 ): ChannelProvisioningAdapters {
   return {
-    getUpdates: async () => (await getTelegramUpdates(botToken, 0, 0)).updates,
-    createNegotiationTopic: (chatId) => createForumTopic(botToken, chatId, NEGOTIATION_TOPIC_NAME),
+    getUpdates: () => getTelegramUpdates(botToken, 0, 0, postFn),
+    createNegotiationTopic: (chatId) => createForumTopic(botToken, chatId, NEGOTIATION_TOPIC_NAME, postFn),
     persistChannel: (chatId, negotiationTopicId) => writeTelegramChannel(targetRepoPath, { chatId, negotiationTopicId }),
     persistBotToken: () => storeTelegramBotToken(hostSecretsFilePath, targetRepoPath, botToken),
   };

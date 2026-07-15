@@ -1,4 +1,4 @@
-import { TelegramUpdate } from '../notify/telegramClient';
+import { GetUpdatesResult, TelegramUpdate } from '../notify/telegramClient';
 
 // BL-380: gives each onboarded target its OWN Telegram bot and forum group,
 // so the contract can later be negotiated there (BL-381). The Bot API has no
@@ -59,7 +59,12 @@ export interface CreateNegotiationTopicOutcome {
 }
 
 export interface ChannelProvisioningAdapters {
-  getUpdates: () => Promise<TelegramUpdate[]>;
+  // BL-380 bounce: was `() => Promise<TelegramUpdate[]>` - discarding
+  // success/error collapsed a fetch FAILURE (bad token, network error) into
+  // the same empty-array shape as "no updates yet", so provisionTelegramChannel
+  // could never tell the two apart. Reuses telegramClient.ts's own
+  // GetUpdatesResult rather than inventing a second success/error shape.
+  getUpdates: () => Promise<GetUpdatesResult>;
   createNegotiationTopic: (chatId: string) => Promise<CreateNegotiationTopicOutcome>;
   persistChannel: (chatId: string, negotiationTopicId: number) => void | Promise<void>;
   persistBotToken: () => void | Promise<void>;
@@ -83,8 +88,13 @@ export async function provisionTelegramChannel(
   const instructions = buildChannelProvisioningInstructions(botUsername);
   await adapters.persistBotToken();
 
-  const updates = await adapters.getUpdates();
-  const detection = decideChannelDetection(updates);
+  const updatesResult = await adapters.getUpdates();
+  if (!updatesResult.success) {
+    // BL-380 bounce: distinguishable from the legitimate not-ready-yet
+    // outcome below (which carries no `error` field) by the presence of one.
+    return { instructions, ready: false, error: updatesResult.error ?? 'failed to fetch updates' };
+  }
+  const detection = decideChannelDetection(updatesResult.updates);
   if (!detection.ready || detection.chatId === undefined) {
     return { instructions, ready: false };
   }
