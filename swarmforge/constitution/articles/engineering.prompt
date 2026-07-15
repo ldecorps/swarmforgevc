@@ -504,6 +504,23 @@
   briefing_email_lib.bb x2 from the repo root. Fixed by BL-268: it now
   resolves the repo top-level via `git rev-parse --show-toplevel` and
   normalizes changed-file args to repo-relative paths before matching.)
+- **When a change to a SHARED component (a daemon, a new guard/refuse predicate, an opt-in
+  flag, a spawn helper) fans out to its call sites, ENUMERATE those sites with `grep`, never
+  from a remembered count.** A prose "updated N call sites / hardened N wiring tests" tally is
+  a claim about your memory, not about the tree — and nothing re-checks a count, so the one
+  spawn it silently omits is exactly the one that breaks. This is the call-site sibling of the
+  co-change and Stryker-sandbox sweep rules above: the tool knows every caller; you do not.
+  Before handing off a change that alters how a shared component is invoked, `grep -rl` for
+  that component (and for the new flag/predicate name) across `src`, `swarmforge/scripts`, and
+  every `*/test/` tree, then reconcile the returned list against what you actually touched — a
+  green suite is NOT proof you found them all, because the call site you missed is precisely
+  the one whose test you never updated, so it was never re-run. (BL-406: the coder swept 8
+  `handoffd.bb` wiring tests for a new opt-in flag but missed a 9th real spawn —
+  `test_handoffd_supervisor_reaper_path_boundary.sh` scenario 03 — and broke it; the hardener
+  caught it one stage later. Proposed by the hardender 2026-07-15 scoped `role:coder`;
+  accepted into the shared article instead — the hardener and cleaner modify shared daemons
+  and their call sites too, so this binds every author who fans a change across call sites, not
+  only the coder.)
 - **A flag that suppresses a repeat notification must be set on CONFIRMED DELIVERY, never on
   a delivery ATTEMPT.** Any "already alarmed / already armed / already notified" state that
   exists to prevent spam is, by construction, also the thing that can SUPPRESS THE ONLY
