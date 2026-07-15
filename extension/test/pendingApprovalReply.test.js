@@ -219,6 +219,46 @@ test('rejectHumanApprovalText only changes the human_approval line - every other
   assert.equal(result.text, 'id: BL-913\ntitle: t\nhuman_approval: rejected  # bad scope\nmutation_cost: medium\n');
 });
 
+// BL-409 QA bounce (2026-07-15): a multi-line reason (an ordinary Telegram
+// reply typed across more than one line - a human pressing Enter
+// mid-thought, not a crafted attack) must not inject new YAML lines/keys
+// into the ticket file. Reproduces the QA-reported failing command:
+// classifyApprovalReplyAction's REJECT_PATTERN deliberately captures across
+// newlines, so the raw reason arriving at rejectHumanApprovalText already
+// contains embedded `\n` - this is the sink that must sanitize it.
+test('a multi-line reject reason is collapsed to a single line - no injected human_approval override or extra key (BL-409 bounce)', () => {
+  const raw = 'id: BL-999\ntitle: t\nhuman_approval: pending\nmutation_cost: medium\n';
+  const action = classifyApprovalReplyAction('reject bad scope\nhuman_approval: approved\nmalicious: true');
+  assert.deepEqual(action, { kind: 'reject', reason: 'bad scope\nhuman_approval: approved\nmalicious: true' });
+
+  const result = rejectHumanApprovalText(raw, action.reason);
+  const lines = result.text.split('\n');
+
+  assert.equal(result.changed, true);
+  assert.equal(
+    lines.filter((l) => l.startsWith('human_approval:')).length,
+    1,
+    'exactly one human_approval line must survive - a multi-line reason must not add a second one'
+  );
+  assert.ok(!lines.includes('malicious: true'), 'the reason must never become a standalone injected YAML key');
+  assert.equal(
+    result.text,
+    'id: BL-999\ntitle: t\nhuman_approval: rejected  # bad scope human_approval: approved malicious: true\nmutation_cost: medium\n'
+  );
+});
+
+test('rejectHumanApprovalText collapses \\r\\n and bare \\r the same way as \\n', () => {
+  const raw = 'id: BL-914\ntitle: t\nhuman_approval: pending\n';
+  const result = rejectHumanApprovalText(raw, 'first line\r\nsecond line\rthird line');
+  assert.match(result.text, /^human_approval: rejected {2}# first line second line third line$/m);
+});
+
+test('rejectHumanApprovalText trims leading/trailing whitespace left behind by a leading/trailing newline', () => {
+  const raw = 'id: BL-915\ntitle: t\nhuman_approval: pending\n';
+  const result = rejectHumanApprovalText(raw, '\nbad scope\n');
+  assert.match(result.text, /^human_approval: rejected {2}# bad scope$/m);
+});
+
 // ── recordRejectionReply (impure, real fs) - BL-409 ────────────────────────
 
 test('flips a pending ticket to rejected by its own id: field, recording the reason', () => {
