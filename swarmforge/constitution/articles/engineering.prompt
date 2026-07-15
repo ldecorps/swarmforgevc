@@ -174,6 +174,22 @@
   `test_coordinator_provisioned_infrastructure.sh`'s 2-pack check and
   false-failed it; confirmed still failing today under that same
   environment — tracked as BL-315.)
+- **A shell test asserting a missing-required-env GUARD FIRES must `env -u` every
+  variable that guard checks (or run under a scrubbed env) before invoking the code
+  under test.** A developer shell now routinely exports the real creds (a normal,
+  correct thing to have set), so without `env -u` the guard sees them PRESENT: the
+  "guard blocks the launch" assertion passes for the wrong reason, and — far worse —
+  the not-guarded path actually SPAWNS A REAL SUBPROCESS with real credentials. This
+  is the env-leak sibling of the `env -u SWARMFORGE_CONFIG` rule above: there a leaked
+  var silently REPLACED a fixture; here a leaked var silently DEFEATS a guard and
+  launches live. Unset every var the guard tests (`env -u VAR1 -u VAR2 ... <cmd>`), as
+  `test_launch_front_desk.sh` now does for its Telegram/bridge creds. (BL-404: check 4
+  asserted the missing-Telegram-creds guard blocks the real launch, but the tester's
+  own exported `TELEGRAM_BOT_TOKEN` et al. passed the guard and spawned a live
+  `front_desk_supervisor.bb` with real credentials against a since-deleted fixture dir.
+  Proposed by the hardender 2026-07-15 scoped `role:hardender`; accepted into the
+  shared article instead — the coder writes the tests, so this binds every test
+  author, not just the role that catches it late.)
 - **Never target the test's own process from code under test.** Never pass a
   test's own `process.pid` (or the test runner's PID) to `kill()`-style code
   under test; spawn a disposable child process and target that instead, so a

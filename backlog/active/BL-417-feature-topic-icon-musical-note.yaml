@@ -54,6 +54,5 @@ qa_e2e: |
   3. Live: run the backfill once against the real forum group and confirm
      existing feature topics show 🎵 while done/defect/paused are untouched.
 
-human_approval: pending
-
+human_approval: approved
 mutation_cost: low

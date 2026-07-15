@@ -1,5 +1,5 @@
 id: BL-416
-title: "Telegram approval reply confirms success, not 'Nothing to approve right now'"
+title: "Ticket-topic reply falsely says 'Nothing to approve' for any non-keyword input"
 milestone: M8
 type: bug
 status: todo
@@ -7,67 +7,95 @@ severity: medium
 priority: 3
 direction: human-requested
 depends_on: [BL-409]
-source: "backlog/INTAKE-approval-reply-wrong-confirmation.md — coordinator-filed 2026-07-15 from a human screenshot of the BL-412 topic: bot asked for approval, human replied 'Approved', bot answered 'Nothing to approve right now' even though human_approval WAS flipped pending->approved (verified via git diff + backlog/topics/BL-412.json seq 0-2, updateId 765184561)."
+source: "backlog/INTAKE-approval-reply-wrong-confirmation.md (updated in place by the coordinator at commit b9d0a384, 12:18 BST — original post-write-race theory DISPROVEN). Occurrence 1 (BL-412, updateId 765184561): 'Approved' -> 'Nothing to approve right now' after a successful approve. Occurrence 2 (BL-414, updateId 765184564): a real unrelated question on a STILL-pending ticket -> the same 'Nothing to approve right now', with no write at all."
 
 notes: |
-  THE BUG (write succeeds, confirmation lies): the approval reply correctly
-  flips human_approval to approved, but the confirmation text tells the human
-  the opposite ("Nothing to approve right now"). From the Telegram thread alone
-  the human cannot tell their approval landed — the natural response is to
-  distrust the mechanism or resend. This is a CONFIRMATION-MESSAGE defect, not
-  an approval-processing defect (the field write is correct).
+  ACCEPTANCE REVISED POST-APPROVAL (2026-07-15): the human approved this ticket,
+  then the coordinator caught a second occurrence (BL-414) that DISPROVED the
+  original post-write-race theory and directed the specifier (priority-00 note)
+  to re-spec before build. The user-visible defect is the SAME ("Nothing to
+  approve right now" is wrong), so the approval is preserved; the acceptance
+  below is broadened to the correct root cause. Flagged here so a reviewer knows
+  the contract changed after the tick.
 
-  SUSPECTED SHAPE (from the intake's analysis): the confirmation re-checks "is
-  there still a pending approval for this ticket" AFTER the write already
-  flipped the field, so the same pending-check used to DECIDE whether to act is
-  reused post-write to decide what to CONFIRM — and by then it correctly reads
-  "not pending anymore" and falls to the generic "nothing to approve" text. Fix:
-  capture "there WAS a pending approval and this reply just satisfied it" as its
-  own outcome BEFORE the write, and confirm from that (a dedicated success
-  message, e.g. "Approved BL-412."), never re-derived from post-write state.
+  THE BUG (broader than first theorised): the front desk funnels ANY inbound
+  message in a per-ticket topic that isn't an exact approve/reject/amend keyword
+  straight to ONE static fallback string ("Nothing to approve right now"),
+  without consulting THIS topic's ticket's own pending state. Wrong on two
+  independent counts, each demonstrated:
+    - Occurrence 1 (BL-412): a SUCCESSFUL approve got the generic "nothing"
+      instead of a success confirmation — the human cannot tell their approval
+      landed and re-sends / distrusts the mechanism.
+    - Occurrence 2 (BL-414): a real question ("Where is the introducting
+      summary?") on a ticket genuinely STILL pending got the same "Nothing to
+      approve right now" — factually FALSE (there IS something to approve: this
+      exact ticket), and it ignores the question entirely.
+
+  WHY THE ORIGINAL THEORY IS WRONG: the first write-up guessed a post-write
+  re-check (confirmation re-reads pending state AFTER the approve flipped the
+  field). That cannot explain occurrence 2 — no write happened there, the ticket
+  was still pending, yet the same string fired. The common thread is the static
+  fallback, not a post-write race.
+
+  LIKELY SHAPE (coder to confirm against live code): the handler recognises one
+  narrow keyword and dumps everything else to the fallback; and it may check "is
+  there a GLOBALLY pending approval to act on" rather than "is THIS topic's
+  ticket pending" — a single global pending slot rather than per-topic state.
+  Same subsystem as pendingApprovalReply.ts / needsHumanDetection.ts / the
+  Telegram front-desk bot.
+
+  FIX (behavioral; mechanism for coder/architect):
+    1. A successful approve of this topic's pending ticket confirms success BY
+       NAME, never the generic fallback.
+    2. A non-keyword message in a topic whose ticket is STILL pending must NOT
+       claim "nothing to approve" — respond in a way that reflects the ticket is
+       still awaiting approval (e.g. re-prompt with the approve instruction),
+       because "nothing to approve" is factually false there.
+    3. The pending determination is scoped to THIS topic's ticket (per-topic),
+       never a single global slot.
+    4. Only a topic whose ticket is genuinely NOT pending may use a "nothing to
+       approve" style response.
 
   OVERLAP — SERIALIZED AFTER BL-409 (depends_on): BL-409 (ACTIVE) reworks this
-  exact path — it extends isApprovalReplyText and the approve/reject/amend
-  confirmation flow in extension/src/concierge/pendingApprovalReply.ts and
-  extension/src/tools/telegram-front-desk-bot.ts. Speccing a CONCURRENT third
-  ticket that edits the same files would violate the concurrent-work
-  orthogonality rule (and the intake explicitly warned against a third
-  overlapping ticket). So this depends_on BL-409 and runs AFTER it lands, never
-  alongside it.
+  exact path (isApprovalReplyText + the approve/reject/amend confirmation flow in
+  pendingApprovalReply.ts and telegram-front-desk-bot.ts). Do NOT run a
+  concurrent same-file ticket (the intake explicitly warns against a 4th
+  overlapping ticket). This depends_on BL-409 and runs AFTER it lands. BL-409
+  adds keyword RECOGNITION but not necessarily fallback CORRECTNESS or per-topic
+  pending scoping, so this broader bug likely persists after BL-409 — the coder
+  verifies against post-BL-409 code and does only the residual work (if BL-409
+  already satisfies all four points, close as no-op).
 
-  VERIFY-THEN-FIX (may already be a no-op): BL-409 adds reject/amend verbs, each
-  needing its OWN correct confirmation — so a correct implementation of BL-409
-  may already emit a correct post-approve success message and thereby fix this.
-  The coder must FIRST check the post-BL-409 code: if a successful approve
-  already confirms success by name, close BL-416 as already-fixed (no functional
-  change) rather than re-fixing. Only if the wrong-confirmation persists after
-  BL-409 does this ticket do work. (Coordinator has been noted so BL-409's
-  implementer is aware and can fix it in-place if cheap.)
+  Scope: extension/src/concierge/pendingApprovalReply.ts (per-topic pending
+  determination + a correct non-keyword fallback) and the confirmation/fallback
+  composition in telegram-front-desk-bot.ts — as they exist AFTER BL-409.
 
-  Scope: extension/src/concierge/pendingApprovalReply.ts (capture the pre-write
-  "was-pending / just-satisfied" outcome and drive the confirmation from it) and
-  the confirmation-composition in telegram-front-desk-bot.ts — as they exist
-  AFTER BL-409. Keep the genuine no-pending case saying "nothing to approve".
+  OUT OF SCOPE: making the front desk ANSWER arbitrary free-text questions
+  (a conversational-front-desk capability, separate concern) — this ticket only
+  requires the fallback to stop being false and to confirm real approvals; the
+  commit-race that dropped BL-412's approved field (BL-419) and the front desk's
+  re-ask-on-pending-transition (working as designed).
 
 acceptance:
   feature: specs/features/BL-416-approval-reply-confirms-success.feature
   steps:
-    - "Approving a genuinely-pending ticket confirms the approval by name and never emits the generic 'nothing to approve' text"
-    - "The confirmation is decided from the pre-write pending state, not re-read from post-write approval state"
-    - "An 'approve' reply with nothing actually pending still emits the generic 'nothing to approve' text"
+    - "Approving a genuinely-pending ticket confirms success by name and never emits the generic 'nothing to approve' text"
+    - "A non-keyword reply on a still-pending ticket is not told 'nothing to approve' — it reflects the ticket is still awaiting approval"
+    - "The pending determination is scoped to this topic's own ticket, not a global slot"
+    - "A reply in a topic whose ticket is genuinely not pending may use the generic 'nothing to approve' response"
 
 qa_e2e: |
-  1. Precondition: confirm against post-BL-409 code whether the bug still
-     reproduces; if not, this is a no-op close.
-  2. Unit: drive the reply processor over (pending + 'approve') and assert the
-     confirmation is the by-name success and NOT the generic text; over
-     (no-pending + 'approve') assert the generic text. Prove the success is
-     captured pre-write by making the post-write state read 'not pending' and
-     confirming the message is STILL success.
-  3. Live: in a real ticket topic with a pending approval, reply 'approve' and
-     confirm the bot answers with a success naming the ticket, and the field is
-     approved.
+  1. Precondition: confirm against post-BL-409 code which of the four points
+     still fail; do only the residual work (no-op close if all pass).
+  2. Unit: over (this-topic pending + 'approve') assert by-name success and NOT
+     the generic text; over (this-topic pending + free-text question) assert the
+     response reflects still-awaiting-approval and is NOT the generic text; over
+     (this-topic NOT pending + free-text) assert the generic text is allowed.
+     Prove per-topic scoping: a pending topic A and a non-pending topic B, a
+     reply in A is judged on A's state, not B's / a global slot.
+  3. Live: in a real pending ticket topic, (a) reply 'approve' -> success named;
+     (b) ask an unrelated question -> a still-pending response, not 'nothing to
+     approve'.
 
-human_approval: pending
-
+human_approval: approved
 mutation_cost: low
