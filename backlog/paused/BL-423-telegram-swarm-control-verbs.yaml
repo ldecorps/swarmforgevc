@@ -1,0 +1,112 @@
+id: BL-423
+title: "Drive swarm /stop and /restart from a guarded Telegram control topic (confirm-gated, owning-context executor)"
+milestone: M8
+type: feature
+status: todo
+priority: 3
+direction: human-requested
+depends_on: [BL-410]
+source: "backlog/INTAKE-operator-question-1784120536117.md — Operator-relayed Telegram feature request, 2026-07-15T13:02Z: drive swarm stop/start from the phone via guarded /stop and /restart in a dedicated control topic, without needing the VS Code extension/master context; /stop must be a clean teardown (no orphaned tmux windows/vitest workers) and /restart a full relaunch that actually bootstraps all agents (the 12:05Z windows-without-bootstrap half-launch is the failure mode to avoid). Drained with the human 2026-07-15 (AskUserQuestion): (1) ONE deliverable, both verbs together — do NOT ship /stop alone and strand the human; (2) the extension host MAY run headless — reuse the existing bounce executor, no need to survive a fully-absent extension; (3) REQUIRE an explicit confirmation before executing."
+
+notes: |
+  DELIVER BOTH VERBS AS ONE PARCEL. The human explicitly chose atomic delivery
+  ("never stranded") over the repo's incremental epic pattern: /stop and
+  /restart ship together. Do NOT split /stop out as a standalone shippable
+  ticket. Internal build order is fine (control-topic + guard + confirm gate
+  first, then wire /stop teardown, then /restart relaunch), but the parcel lands
+  as a unit with both verbs working.
+
+  REUSE THE SANCTIONED BOUNCE PATH — DO NOT INVENT A RESTART MECHANISM. The
+  constitution already forbids naive external respawn (coordinator.prompt
+  "Requesting A Bounce", BL-107): `remote_bounce.sh` writes the
+  `.swarmforge/bounce` sentinel; the owning-context executor
+  (extension host: bounceWatcher.ts / bounceDrain.ts / bounceAck.ts) consumes
+  it, runs stop -> relaunch -> verify-ready, and writes `.swarmforge/bounce-ack.json`
+  with a `phase` (draining/stopping/relaunching/done/failed). That IS the
+  "owning-context, not a naive respawn" primitive the intake asks for. Wiring:
+    - the front-desk Telegram bot (swarm-side) parses the guarded verb, runs the
+      confirm gate, and on confirm WRITES the bounce sentinel (bounce type
+      `swarm` for /restart; a clean stop for /stop);
+    - it then STREAMS the bounce-ack phases back to the control topic so the
+      human sees draining -> stopping -> relaunching -> done (or failed).
+  Executor context (human's answer): the extension host MAY be running headless —
+  reuse its bounce watcher; this ticket does NOT need a new swarm-external
+  executor daemon that survives a fully-absent extension (explicitly out of scope).
+
+  GUARDS (all three, per the human):
+    1. AUTHORISED HUMAN ONLY — reuse the same principal guard BL-408/409 use for
+       Telegram verbs; an unauthorised sender's verb is refused, no action.
+    2. DEDICATED CONTROL TOPIC — a verb only acts when sent in the dedicated
+       control topic; the same text in any other topic is ignored (a standing
+       control topic, sibling to Approvals/SUP/recert).
+    3. EXPLICIT CONFIRMATION — the verb posts an inline-button confirm (built on
+       BL-410's inline-keyboard mechanism — the depends_on) and executes ONLY on
+       the confirm tap; cancel leaves the swarm untouched. A single mis-tap must
+       never tear the swarm down.
+
+  /stop CLEANLINESS. The teardown must reap EVERY swarm-owned process it started —
+  no orphaned tmux windows and no orphaned vitest workers (the exact orphan class
+  behind the BL-422 OOM-spiral: a killed parent leaves reparented `node (vitest N)`
+  workers). Drive the reap through kill_all_swarm.sh's socket-scoped path;
+  confirm no swarm-owned process survives.
+
+  /restart BOOTSTRAP VERIFICATION. A relaunch that creates the tmux windows but
+  never bootstraps agents into them (the 12:05Z SWARM_CONTROL_LOST half-launch)
+  must be reported FAILED, not done — reuse the bounce-ack `relaunching`->`done`
+  verify-ready step, which must actually check agents bootstrapped (pane_current_command
+  / pgrep), not merely that windows exist. Report `failed` back to the topic.
+
+  TESTABILITY.
+    - The verb parse + guard (authorised? control-topic? confirm-pending?) + the
+      confirm state machine are a PURE host-side module (mirror
+      operatorDecideStatus.ts): given (message, principal, topic, pending-confirm
+      state) -> decide ignore | prompt-confirm | execute-stop | execute-restart |
+      cancel. Unit-tested with fixtures, no Telegram, no tmux.
+    - Sentinel write + bounce-ack phase reporting + teardown reap are
+      adapter-injected: inject the process-list / sentinel-write / ack-read seams.
+      NEVER assert cleanliness by scanning the real process table or globbing the
+      real /tmp — that is the shared-global process-table trap (engineering
+      "PROCESS TABLE is a shared global" rule); assert over the injected process
+      list / the exact pids the teardown recorded, and use the redirectable env
+      seams for any runtime path so no test touches a live swarm's socket dir.
+
+  NOTE FOR HARDENER/CODER: the feature file's IR-DRY pass flags three
+  medium-confidence possible-synonyms — "confirmed stop"/"confirmed restart" and
+  the control-topic/non-control-topic Givens. These are INTENTIONAL parallel and
+  contrasting phrasings across the two verbs and the topic-guard, not accidental
+  drift; do not collapse them.
+
+  OUT OF SCOPE: a swarm-external bounce-executor daemon that runs with the
+  extension fully closed (human deferred it); any control verb beyond stop/restart;
+  changing the bounce mechanism itself (reuse remote_bounce + bounce-ack as-is).
+
+acceptance:
+  feature: specs/features/BL-423-telegram-swarm-control-verbs.feature
+  steps:
+    - "An authorised stop or restart verb in the control topic posts a confirmation and executes nothing until confirmed"
+    - "Cancelling a pending confirmation leaves the swarm running"
+    - "An unauthorised sender's verb, or any verb outside the control topic, is refused or ignored with no swarm action"
+    - "A confirmed stop reaps every swarm-owned process, leaving no orphaned tmux windows or vitest workers"
+    - "A confirmed restart relaunches through the owning-context executor and reports each bounce phase back to the control topic"
+    - "A relaunch that creates windows but bootstraps no agents is reported failed, not done"
+
+qa_e2e: |
+  1. Unit (host-side, no Telegram/tmux): drive the pure verb/guard/confirm state
+     machine over fixtures — authorised stop in the control topic -> prompt-confirm;
+     confirm -> execute-stop; cancel -> no action; unauthorised sender -> ignore;
+     restart verb in a non-control topic -> ignore; pending-confirm + confirm tap ->
+     execute-restart. Assert the teardown reap over an INJECTED process list (the
+     exact pids it recorded are gone; a reparented vitest-worker fixture pid is
+     reaped), never a real ps scan. Assert the failed-bootstrap path over an
+     injected bounce-ack whose relaunch verify finds windows-without-agents.
+  2. Live (real swarm + real control topic, authorised human): send /stop, confirm
+     the inline button, watch the topic report the teardown and verify (from the
+     host) no swarm tmux windows or vitest workers survive. Send /restart, confirm,
+     and watch the bounce phases stream back to the topic ending in `done` with all
+     agents actually bootstrapped into their windows. Send an unauthorised /stop and
+     a /restart in a non-control topic and confirm neither acts. Force a half-launch
+     and confirm the topic reports `failed`, not `done`.
+
+human_approval: pending
+
+mutation_cost: medium
