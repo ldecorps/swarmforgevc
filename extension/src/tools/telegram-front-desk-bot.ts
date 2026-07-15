@@ -57,6 +57,7 @@ import {
   deleteForumTopic,
   editForumTopic,
   getForumTopicIconStickers,
+  answerCallbackQuery,
   TelegramUpdate,
   TelegramPostFn,
 } from '../notify/telegramClient';
@@ -142,6 +143,30 @@ export function readTopicMap(targetPath: string): Record<string, string> {
 function writeTopicMap(targetPath: string, topicMap: Record<string, string>): void {
   fs.mkdirSync(path.dirname(topicMapPath(targetPath)), { recursive: true });
   fs.writeFileSync(topicMapPath(targetPath), JSON.stringify(topicMap));
+}
+
+// BL-410: {backlogId: 'reject' | 'amend'} - which ticket(s) are awaiting a
+// follow-up reason/note after a Reject/Amend button tap. Bot-owned,
+// machine-local (gitignored under .swarmforge/, same posture as
+// telegram-topic-map.json above), never committed - a restart with a
+// pending tap simply forgets it (the human just taps again), same
+// "no durability promise beyond one process lifetime" posture as
+// concierge-tick-state.json.
+function pendingButtonActionsPath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'telegram-pending-button-actions.json');
+}
+
+function readPendingButtonActions(targetPath: string): Record<string, 'reject' | 'amend'> {
+  try {
+    return JSON.parse(fs.readFileSync(pendingButtonActionsPath(targetPath), 'utf8')) as Record<string, 'reject' | 'amend'>;
+  } catch {
+    return {};
+  }
+}
+
+function writePendingButtonActions(targetPath: string, actions: Record<string, 'reject' | 'amend'>): void {
+  fs.mkdirSync(path.dirname(pendingButtonActionsPath(targetPath)), { recursive: true });
+  fs.writeFileSync(pendingButtonActionsPath(targetPath), JSON.stringify(actions));
 }
 
 // BL-298/300/331/332: readBacklogTopicMap/writeBacklogTopicMap/
@@ -313,6 +338,18 @@ export async function openSubjectAndRecord(targetPath: string, topicId: number |
   return subjectId;
 }
 
+// BL-410: same never-throw posture as postToBridge above (a network-level
+// failure must never abort the rest of the poll cycle) - a failed answer
+// just leaves the human's spinner spinning a little longer; the next tap
+// (or this same one, on a future retry path) can still succeed.
+async function answerCallbackQueryQuietly(botToken: string, callbackQueryId: string): Promise<void> {
+  try {
+    await answerCallbackQuery(botToken, callbackQueryId);
+  } catch {
+    // swallowed - see comment above.
+  }
+}
+
 function buildPollAdapters(botToken: string, targetPath: string, bridgeUrl: string, controlToken: string, chatId: string): PollAdapters {
   return {
     chatId,
@@ -324,6 +361,20 @@ function buildPollAdapters(botToken: string, targetPath: string, bridgeUrl: stri
     postOperatorContext: (backlogId, text, updateId) => postOperatorContext(targetPath, backlogId, text, updateId),
     recordApprovalReply: (backlogId) => Promise.resolve(recordApprovalReply(targetPath, backlogId)),
     recordRejectionReply: (backlogId, reason) => Promise.resolve(recordRejectionReply(targetPath, backlogId, reason)),
+    getPendingButtonAction: (backlogId) => Promise.resolve(readPendingButtonActions(targetPath)[backlogId]),
+    clearPendingButtonAction: (backlogId) => {
+      const actions = readPendingButtonActions(targetPath);
+      delete actions[backlogId];
+      writePendingButtonActions(targetPath, actions);
+      return Promise.resolve();
+    },
+    setPendingButtonAction: (backlogId, kind) => {
+      const actions = readPendingButtonActions(targetPath);
+      actions[backlogId] = kind;
+      writePendingButtonActions(targetPath, actions);
+      return Promise.resolve();
+    },
+    answerCallbackQuery: (callbackQueryId) => answerCallbackQueryQuietly(botToken, callbackQueryId),
   };
 }
 
@@ -668,7 +719,7 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
         map[backlogId] = topicId;
         writeBacklogTopicMap(targetPath, map);
       },
-      sendMessage: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then((r) => r.success),
+      sendMessage: (topicId, text, buttons) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId, buttons).then((r) => r.success),
       closeTopic: (topicId) => closeForumTopic(botToken, chatId, topicId).then((r) => r.success),
       recordMessage: (backlogId, text) => {
         appendMessage(targetPath, backlogId, { author: 'swarm', type: 'outbound', text });

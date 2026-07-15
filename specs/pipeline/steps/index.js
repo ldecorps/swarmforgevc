@@ -207,7 +207,8 @@ const DOMAINS = [
   require('./bl421TileLiveVsResolvedDecisionSteps'),
   require('./bl418StandingTopicIconsSteps'),
   require('./bl416ApprovalReplyConfirmsSuccessSteps'),
-  require('./bl424AwaitingApprovalTopicIconSteps')
+  require('./bl424AwaitingApprovalTopicIconSteps'),
+  require('./bl410ApprovalInlineKeyboardButtonsSteps')
 ];
 
 function registerSteps(registry) {
