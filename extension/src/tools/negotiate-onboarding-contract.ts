@@ -118,7 +118,11 @@ export async function runObject(
   }
   await updateTargetContract(targetRepoPath, after.contract, `Revise SwarmForge onboarding contract (round ${after.rounds.length})`);
   await appendRound(targetRepoPath, after);
-  return { ended: false, endedReason: null, round: after.rounds[after.rounds.length - 1] };
+  // BL-381: `contract` rides the result so a caller relaying the revision
+  // elsewhere (the Telegram negotiation topic) can post it without a
+  // separate re-read of contract.yaml - additive only, every existing
+  // caller reading only ended/endedReason/round is unaffected.
+  return { ended: false, endedReason: null, round: after.rounds[after.rounds.length - 1], contract: after.contract };
 }
 
 export async function runApprove(targetRepoPath: string): Promise<Record<string, unknown>> {
@@ -128,7 +132,8 @@ export async function runApprove(targetRepoPath: string): Promise<Record<string,
   }
   const after = approveContract(before);
   await updateTargetContract(targetRepoPath, after.contract, 'Approve SwarmForge onboarding contract');
-  return { ended: true, endedReason: after.endedReason, rounds: after.rounds.length };
+  // BL-381: same additive `contract` field as runObject above.
+  return { ended: true, endedReason: after.endedReason, rounds: after.rounds.length, contract: after.contract };
 }
 
 export const main = makeArgsGuardedMain(
