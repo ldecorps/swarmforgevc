@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-15T13:31:39.952144585Z","feature_name":"the vitest worker pool and per-worker heap are capped so a test run cannot OOM the box","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-422-cap-vitest-worker-pool-heap.feature","background_hash":"fcc1faf2f73c3718bc5a91c213702403bcb449af2bbde09948feea1fdd0095b2","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: the vitest worker pool and per-worker heap are capped so a test run cannot OOM the box
 
   # A plain `vitest run` / acceptance run sizes its worker pool to the CPU count
