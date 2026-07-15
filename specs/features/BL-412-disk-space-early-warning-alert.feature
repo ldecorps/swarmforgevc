@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-15T12:37:11.022726735Z","feature_name":"proactive Telegram alert before the swarm's disk fills","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-412-disk-space-early-warning-alert.feature","background_hash":"916310616c5c8d5643e1d32d946d6c8aa238e12527feddffc2034e270b497fdc","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: proactive Telegram alert before the swarm's disk fills
 
   # An overnight ENOSPC took the whole swarm down (agents crash mid-write,
