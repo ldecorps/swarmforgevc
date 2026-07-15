@@ -76,6 +76,20 @@ export function approveHumanApprovalText(rawText: string): { text: string; chang
   return { text: rawText.replace(HUMAN_APPROVAL_PENDING_PATTERN, 'human_approval: approved'), changed: true };
 }
 
+// BL-409 bounce (QA, 2026-07-15): `reason` is raw human Telegram text - an
+// ordinary reply typed across more than one line (a human pressing Enter
+// mid-thought) embeds real `\r`/`\n` bytes. Splicing that verbatim into a
+// trailing `# <reason>` YAML comment only comments to the end of the FIRST
+// line: every line after the first becomes LIVE YAML content, which can
+// inject a bogus second `human_approval:` line (silently overriding the
+// rejection back to whatever it says) or an arbitrary new key. Collapse to a
+// single line BEFORE it reaches the file - the same "external text into a
+// structured file must have its newlines stripped/escaped first" rule as the
+// GitHub Actions `${{ }}` interpolation guardrail, applied to this sink.
+function sanitizeForYamlComment(text: string): string {
+  return text.replace(/[\r\n]+/g, ' ').trim();
+}
+
 // BL-409: same targeted-line-replace shape as approveHumanApprovalText, but
 // records WHY as a trailing comment on the same line - the reason rides the
 // ticket file itself (no second store), matching this project's convention
@@ -84,7 +98,11 @@ export function rejectHumanApprovalText(rawText: string, reason: string): { text
   if (!HUMAN_APPROVAL_PENDING_PATTERN.test(rawText)) {
     return { text: rawText, changed: false };
   }
-  return { text: rawText.replace(HUMAN_APPROVAL_PENDING_PATTERN, `human_approval: rejected  # ${reason}`), changed: true };
+  const sanitizedReason = sanitizeForYamlComment(reason);
+  return {
+    text: rawText.replace(HUMAN_APPROVAL_PENDING_PATTERN, `human_approval: rejected  # ${sanitizedReason}`),
+    changed: true,
+  };
 }
 
 // Located by the ticket's own `id:` field, never a filename guess - the
