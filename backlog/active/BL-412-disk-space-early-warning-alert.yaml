@@ -93,6 +93,5 @@ qa_e2e: |
      line and confirm the real alert still fires when thresholds are crossed
      (temporarily tighten a threshold via env to force a transition safely).
 
-human_approval: pending
-
+human_approval: approved
 mutation_cost: low
