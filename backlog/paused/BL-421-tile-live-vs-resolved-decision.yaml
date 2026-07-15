@@ -1,0 +1,84 @@
+id: BL-421
+title: "Specifier tile shows a long-resolved decision menu as if still live — mark LIVE vs RESOLVED"
+milestone: M8
+type: bug
+status: todo
+severity: medium
+priority: 3
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-extension-stale-specifier-decision-tile.md — coordinator-filed 2026-07-15T12:47 BST after the human screenshotted the extension's Specifier tile showing an AskUserQuestion decision menu ('How should I split this into tickets?', options + a highlighted Recommended) that was ALREADY resolved (the split had long since shipped as BL-412/BL-413). The live pane was a bare cleared prompt; the tile still rendered the menu, indistinguishable from a live actionable prompt. Drained with the human 2026-07-15: remediation = label live vs resolved (keep the transcript, badge the decision), NOT purge-on-clear."
+
+notes: |
+  WHAT / WHY. An agent tile renders a host-RECONSTRUCTED transcript, not the
+  raw tmux pane, because the Claude CLI runs an alternate-screen TUI that keeps
+  no tmux scrollback (paneTailer.ts, BL-070 — paneHistory / lastText). So a
+  resolved AskUserQuestion decision menu stays visible in the tile long after
+  the pane moved on (the agent answered, or /cleared), fully rendered with
+  numbered options and a highlighted "Recommended" choice — a human cannot tell
+  it apart from a live prompt and may "answer" a question nobody is listening
+  for. The human chose: keep the transcript, but visibly mark a shown decision
+  menu LIVE (the pane is still awaiting an answer) vs RESOLVED / HISTORICAL.
+
+  THE LIVE SIGNAL ALREADY EXISTS — this is presentational, not new detection.
+  paneTailer.emitNeedsHumanEvents() already runs detectNeedsHuman() against the
+  CURRENT captured frame (lastRawText), NOT the accumulated transcript, exactly
+  so "a resolved question from earlier in history must not keep matching"
+  (its own BL-070 comment). That per-role needs-human state is already posted to
+  the webview (swarmPanel.ts -> type:'needsHuman'; the tile has a needs-human
+  border + .tile-status-badge). What is MISSING is marking the decision-menu
+  BLOCK inside the transcript itself: today only a small border/badge flips off
+  when the pane clears, which is far too subtle against a fully-rendered menu.
+
+  BEHAVIOR WANTED (see the feature file). Classify a tile's decision status from
+  two inputs — the CURRENT frame and the reconstructed transcript:
+    - current frame IS a pending decision prompt (detectNeedsHuman on the
+      current frame) -> the shown menu is LIVE, badged "awaiting input";
+    - current frame is NOT a pending prompt but the transcript still shows a
+      decision menu -> that menu is RESOLVED / HISTORICAL, visibly marked and
+      NOT presented as actionable;
+    - no decision menu in view -> no marker.
+  Liveness MUST be judged from the current frame, never by pattern-matching the
+  transcript (a resolved menu can be byte-identical to a live one) — this is the
+  same "detect against the current capture, not the growing history" property
+  BL-070 already relies on, applied to the tile's own rendering.
+
+  VERIFIED LIVE PATH / SCOPE:
+    - extension/src/panel/needsHumanDetection.ts — reuse detectNeedsHuman for
+      the choice-menu signature; add the small PURE classifier
+      (currentFrameText, transcriptText) -> 'live' | 'resolved' | 'none'. Keep
+      it a testable host-side module (no VS Code / webview import).
+    - extension/src/panel/paneTailer.ts — compute the per-role decision status
+      from lastRawText (current frame) + the retained transcript and include it
+      in the tile update / an event (alongside the existing needsHuman event).
+    - extension/src/panel/webviewHtml.ts — render the LIVE / RESOLVED marker on
+      the decision block (the webview is the unsuitable boundary; the decision
+      logic lives in the pure classifier above).
+
+  OUT OF SCOPE: purge-on-clear (the human explicitly chose label-over-purge, to
+  preserve scrollback); any change to the needs-human email/notify path; any new
+  detection heuristic beyond the existing choice-menu signature.
+
+acceptance:
+  feature: specs/features/BL-421-tile-live-vs-resolved-decision.feature
+  steps:
+    - "A decision menu present in the pane's current captured frame is classified LIVE"
+    - "A decision menu that survives only in the reconstructed transcript, with the current frame cleared or moved on, is classified RESOLVED"
+    - "Liveness is judged from the current frame, so a transcript menu identical to a live one is still RESOLVED when the frame is not awaiting"
+    - "A tile whose current frame and transcript contain no decision menu shows neither a LIVE nor a RESOLVED marker"
+
+qa_e2e: |
+  1. Unit (host-side, no VS Code): drive the pure classifier over fixtures — a
+     current-frame pending choice menu (LIVE); a cleared frame with the menu only
+     in the transcript (RESOLVED); a transcript menu byte-identical to a live one
+     with a non-pending current frame (RESOLVED, proving liveness comes from the
+     frame); and a transcript/frame with no menu (none). Reuse the captured-pane
+     fixtures already used by needsHumanDetection tests.
+  2. Live: in the extension against a real swarm, get the specifier pane into an
+     AskUserQuestion state and confirm the tile badges the menu LIVE; answer or
+     /clear the pane and confirm the same menu in the tile flips to RESOLVED and
+     no longer reads as actionable, while the transcript text remains visible.
+
+human_approval: pending
+
+mutation_cost: low
