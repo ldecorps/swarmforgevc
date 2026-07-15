@@ -3,7 +3,13 @@
 // decision anything else in the swarm depends on). The Operator applied
 // this exact convention by hand across 26 ticket topics:
 //   check (✅) = done/shipped; microbe (🦠) = defect in flight;
-//   bulb (💡) = feature in flight; magnifier (🔍) = paused/held.
+//   musical note (🎵) = feature in flight; magnifier (🔍) = paused/held.
+// BL-417: feature-in-flight remapped from the bulb (💡) to the musical note
+// (🎵) - the orchestra icon remap's one ticket-level change, within
+// Telegram's free sticker set (no instruments/notation available, so the
+// note is the closest musical stand-in - "a passage being played"). The
+// other three states have no musical stand-in that beats their existing
+// icon and are unchanged.
 // Epic icons (trophy/lightning/folder) are OUT of scope here entirely -
 // they were hand-assigned to specific named epics, never derived from a
 // ticket's own type/state, and the automated sync this module feeds only
@@ -15,7 +21,7 @@ export type TopicIconState = 'done' | 'defect' | 'feature' | 'paused';
 export const ICON_EMOJI: Record<TopicIconState, string> = {
   done: '✅',
   defect: '🦠',
-  feature: '💡',
+  feature: '🎵',
   paused: '🔍',
 };
 

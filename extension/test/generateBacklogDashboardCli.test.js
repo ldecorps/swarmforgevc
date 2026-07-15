@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -5,7 +6,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 function mkTmp() {
-  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-dashboard-cli-')));
+  return fs.realpathSync(mkTmpDir('sfvc-dashboard-cli-'));
 }
 
 function mkdirp(dir) {

@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -11,7 +12,7 @@ const { readSwarmIconId } = require('../out/concierge/blTopicStore');
 // after 26" after 19 of 26 calls and silently dropped the remaining 7.
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-backfill-icons-'));
+  return mkTmpDir('sfvc-backfill-icons-');
 }
 
 function git(cwd, args) {
@@ -39,12 +40,13 @@ function writeTopicMap(targetPath, map) {
   fs.writeFileSync(path.join(dir, 'backlog-topic-map.json'), JSON.stringify(map));
 }
 
+// BL-417: feature-in-flight remapped from the bulb to the musical note.
 const STICKERS_JSON = {
   ok: true,
   result: [
     { emoji: '✅', custom_emoji_id: 'id-check' },
     { emoji: '🦠', custom_emoji_id: 'id-microbe' },
-    { emoji: '💡', custom_emoji_id: 'id-bulb' },
+    { emoji: '🎵', custom_emoji_id: 'id-note' },
     { emoji: '🔍', custom_emoji_id: 'id-magnifier' },
   ],
 };
@@ -77,9 +79,9 @@ test('backfillTopicIcons sets the computed icon for every non-epic ticket that h
   );
   assert.deepEqual(
     edits.map((e) => e.icon_custom_emoji_id).sort(),
-    ['id-bulb', 'id-check', 'id-magnifier', 'id-microbe']
+    ['id-check', 'id-magnifier', 'id-microbe', 'id-note']
   );
-  assert.equal(readSwarmIconId(target, 'BL-1'), 'id-bulb');
+  assert.equal(readSwarmIconId(target, 'BL-1'), 'id-note');
   assert.equal(readSwarmIconId(target, 'BL-4'), 'id-check');
 });
 

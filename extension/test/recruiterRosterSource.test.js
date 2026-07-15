@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -11,7 +12,7 @@ const { createFileRosterSource } = require('../out/recruiter/rosterSource');
 // regardless; no real network in tests).
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-recruiter-roster-'));
+  return mkTmpDir('sfvc-recruiter-roster-');
 }
 
 function catalogPath(dir) {

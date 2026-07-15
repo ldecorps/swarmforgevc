@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -11,7 +12,7 @@ const { readPersistedCursor, writePersistedCursor, advanceCursorOnAck } = requir
 // next unacked entry" decision.
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-reply-relay-cursor-'));
+  return mkTmpDir('sfvc-reply-relay-cursor-');
 }
 
 test('readPersistedCursor defaults to ackedIndex 0 when no cursor file exists yet', () => {

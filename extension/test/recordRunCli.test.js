@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -8,7 +9,7 @@ const { main, parseCliArgs } = require('../out/tools/record-run');
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'record-run.js');
 
 function mkTmp(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  return mkTmpDir(prefix);
 }
 
 // os.homedir() (runLogPath's own resolution) honors the HOME env var on

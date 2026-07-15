@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -11,7 +12,7 @@ const { readThread, writeThread, appendMessage, messageForUpdateId, withEventQue
 // verified separately by BL-275's acceptance suite).
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-support-thread-store-'));
+  return mkTmpDir('sfvc-support-thread-store-');
 }
 
 test('appendMessage opens a fresh thread (status open) when none exists yet', () => {

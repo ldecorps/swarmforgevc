@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -9,7 +10,7 @@ const { commitScopedFile, isFileCommitted } = require('../out/util/gitCommitScop
 // blTopicStore.ts's commitTopicRecord - see cleaner DRY extraction, 2026-07-13.
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-git-commit-scoped-'));
+  return mkTmpDir('sfvc-git-commit-scoped-');
 }
 
 function git(cwd, args) {

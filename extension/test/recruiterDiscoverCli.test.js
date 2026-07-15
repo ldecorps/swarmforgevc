@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -10,7 +11,7 @@ const { main } = require('../out/tools/recruiter-discover');
 // battery posture), no worktree/mailbox/backlog state touched.
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-recruiter-cli-'));
+  return mkTmpDir('sfvc-recruiter-cli-');
 }
 
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'recruiter-discover.js');

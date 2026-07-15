@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -38,7 +39,7 @@ async function runCli(args) {
 }
 
 function mkTmpFile(name, content) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'propose-onboarding-contract-test-'));
+  const dir = mkTmpDir('propose-onboarding-contract-test-');
   const filePath = path.join(dir, name);
   fs.writeFileSync(filePath, content);
   return filePath;
@@ -124,7 +125,7 @@ test('readSurveyFacts accepts an empty useCaseObservations array (a legitimate o
 // ── the compiled CLI's own real output ────────────────────────────────────
 
 test('the compiled CLI scaffolds a proposed contract from survey facts into a fresh target', async () => {
-  const targetRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'propose-onboarding-contract-target-'));
+  const targetRepo = mkTmpDir('propose-onboarding-contract-target-');
   execFileSync('git', ['init'], { cwd: targetRepo });
   execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: targetRepo });
   execFileSync('git', ['config', 'user.name', 'Test'], { cwd: targetRepo });
@@ -166,7 +167,7 @@ test('main() prints usage and exits non-zero when a required argument is missing
 // (require.main === module, real argv/env boundary) - an ADDITION to the
 // in-process tests above, never the only cover for the real logic.
 test('the compiled CLI runs standalone as a subprocess and produces the same result', () => {
-  const targetRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'propose-onboarding-contract-target-'));
+  const targetRepo = mkTmpDir('propose-onboarding-contract-target-');
   execFileSync('git', ['init'], { cwd: targetRepo });
   execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: targetRepo });
   execFileSync('git', ['config', 'user.name', 'Test'], { cwd: targetRepo });

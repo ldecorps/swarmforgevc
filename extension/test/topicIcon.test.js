@@ -2,11 +2,12 @@ const assert = require('node:assert/strict');
 const { ICON_EMOJI, resolveIconState, resolveIconStickerId } = require('../out/concierge/topicIcon');
 
 // BL-342: pure icon-state resolution - the ticket's own convention:
-// check = done/shipped; microbe = defect in flight; bulb = feature in
-// flight; magnifier = paused/held. Folder membership is authoritative over
-// the ticket's own `type:` field for done/paused (a paused bug still shows
-// the magnifier, a shipped bug still shows the check) - only the
-// active/in-flight case actually branches on type.
+// check = done/shipped; microbe = defect in flight; musical note (BL-417,
+// was the bulb) = feature in flight; magnifier = paused/held. Folder
+// membership is authoritative over the ticket's own `type:` field for
+// done/paused (a paused bug still shows the magnifier, a shipped bug still
+// shows the check) - only the active/in-flight case actually branches on
+// type.
 
 test('resolveIconState: a done ticket is always "done", regardless of type', () => {
   assert.equal(resolveIconState('done', 'bug'), 'done');
@@ -32,7 +33,7 @@ test('resolveIconState: an active feature or chore ticket is "feature"', () => {
 test('ICON_EMOJI carries the exact emoji for each of the four states, per the convention', () => {
   assert.equal(ICON_EMOJI.done, '✅');
   assert.equal(ICON_EMOJI.defect, '🦠');
-  assert.equal(ICON_EMOJI.feature, '💡');
+  assert.equal(ICON_EMOJI.feature, '🎵');
   assert.equal(ICON_EMOJI.paused, '🔍');
 });
 
@@ -48,8 +49,11 @@ test('resolveIconStickerId returns the matching sticker\'s own id', () => {
   assert.equal(resolveIconStickerId(STICKERS, '✅'), 'id-check');
 });
 
+// BL-417 feature-topic-icon-musical-note-03: the musical note absent from
+// the live sticker set resolves to undefined (skip), never a crash or a
+// hardcoded fallback id.
 test('resolveIconStickerId returns undefined for an emoji not present in the fetched set - never a hardcoded fallback', () => {
-  assert.equal(resolveIconStickerId(STICKERS, '💡'), undefined);
+  assert.equal(resolveIconStickerId(STICKERS, '🎵'), undefined);
 });
 
 test('resolveIconStickerId returns undefined for an empty sticker list', () => {
