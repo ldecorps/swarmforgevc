@@ -260,16 +260,22 @@ function parsePollArgs(
   return { targetRepoPath, hostSecretsFilePath, action, principalUserId };
 }
 
+// Dispatch table rather than a growing if-chain: BL-381's own prior cleaner
+// pass already extracted parsePollArgs once to hold CRAP <= 6, and adding
+// this QA-bounce fix's third action (poll-loop) as a fourth sequential `if`
+// pushed the same function back over threshold. A table entry per action
+// keeps parseArgs's own complexity flat as actions are added.
+const ACTION_BUILDERS: Record<string, (targetRepoPath: string, hostSecretsFilePath: string) => ParsedArgs | null> = {
+  'post-proposal': (targetRepoPath, hostSecretsFilePath) => ({ targetRepoPath, hostSecretsFilePath, action: 'post-proposal' }),
+  poll: (targetRepoPath, hostSecretsFilePath) => parsePollArgs(targetRepoPath, hostSecretsFilePath, 'poll'),
+  'poll-loop': (targetRepoPath, hostSecretsFilePath) => parsePollArgs(targetRepoPath, hostSecretsFilePath, 'poll-loop'),
+};
+
 export function parseArgs(argv: string[]): ParsedArgs | null {
   const [targetRepoPath, hostSecretsFilePath, action] = argv;
   if (!targetRepoPath || !hostSecretsFilePath || !action) return null;
-  if (action === 'post-proposal') {
-    return { targetRepoPath, hostSecretsFilePath, action };
-  }
-  if (action === 'poll' || action === 'poll-loop') {
-    return parsePollArgs(targetRepoPath, hostSecretsFilePath, action);
-  }
-  return null;
+  const build = ACTION_BUILDERS[action];
+  return build ? build(targetRepoPath, hostSecretsFilePath) : null;
 }
 
 function logPollLoopFault(name: string, error: unknown): void {
