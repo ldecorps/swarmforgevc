@@ -405,6 +405,42 @@ export async function editForumTopic(
   return { success: true };
 }
 
+function defaultWaitMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// BL-414 hardener bounce: generalizes backfill-topic-icons.ts's own
+// setTopicIconWithRateLimitRetry loop to ANY editForumTopic update (a name
+// edit as much as an icon edit), so a caller that fires MANY edits in a
+// tight loop - the one-time icon backfill, and now the live concierge
+// tick's title-age sync on its own first-tick mass fan-out - can honour a
+// 429's told-you-so retry_after instead of treating it as an ordinary,
+// unrecoverable failure. Unbounded retry is deliberate here (mirrors the
+// backfill's own precedent): the wait is a SERVER-TOLD, finite duration,
+// never an open-ended guess, so retrying it forever cannot spin - the
+// alternative (giving up) is exactly the "19 of 26 succeeded, 7 silently
+// dropped" failure this exists to close. A genuine (non-429) failure
+// returns false immediately, same as the backfill's own contract.
+export async function editForumTopicWithRateLimitRetry(
+  token: string,
+  chatId: string,
+  topicId: number,
+  update: EditForumTopicUpdate,
+  wait: (ms: number) => Promise<void> = defaultWaitMs,
+  postFn: TelegramPostFn = defaultPost
+): Promise<boolean> {
+  for (;;) {
+    const result = await editForumTopic(token, chatId, topicId, update, postFn);
+    if (result.success) {
+      return true;
+    }
+    if (result.retryAfterSeconds === undefined) {
+      return false;
+    }
+    await wait(result.retryAfterSeconds * 1000);
+  }
+}
+
 // BL-342: the ONLY valid source of a topic icon id - Telegram accepts icon
 // ids ONLY from this set (112 today), never a hardcoded/guessed one (an
 // unvalidated id fails at call time, on a live topic). Callers resolve a

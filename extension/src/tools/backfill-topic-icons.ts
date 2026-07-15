@@ -20,7 +20,7 @@
 // Usage: node backfill-topic-icons.js <target-repo-path>
 import { readBacklogFolders, BacklogItem } from '../panel/backlogReader';
 import { readBacklogTopicMap } from '../concierge/backlogTopicMapStore';
-import { editForumTopic, getForumTopicIconStickers, TelegramPostFn } from '../notify/telegramClient';
+import { editForumTopicWithRateLimitRetry, getForumTopicIconStickers, TelegramPostFn } from '../notify/telegramClient';
 import { readSwarmIconId, recordSwarmIconId } from '../concierge/blTopicStore';
 import { resolveIconState, ICON_EMOJI, IconStickerLookup } from '../concierge/topicIcon';
 import { syncTopicIcon, IconSyncOutcome, TopicIconAdapters } from '../concierge/topicIconSync';
@@ -52,7 +52,12 @@ export function defaultWait(ms: number): Promise<void> {
 // because the alternative (giving up) is precisely the "7 of 26 silently
 // dropped" failure this ticket exists to close. A genuine (non-429)
 // failure returns false immediately rather than looping forever on
-// something that can never succeed.
+// something that can never succeed. BL-414: the retry loop itself now
+// lives in telegramClient.ts's editForumTopicWithRateLimitRetry (generalized
+// to any editForumTopic update, not just an icon) so the live concierge
+// tick's title-age sync can reuse it too, rather than a second copy of this
+// same loop; this function keeps its own name/signature as the icon-shaped
+// call every existing caller/test already uses.
 export async function setTopicIconWithRateLimitRetry(
   botToken: string,
   chatId: string,
@@ -61,16 +66,7 @@ export async function setTopicIconWithRateLimitRetry(
   wait: (ms: number) => Promise<void> = defaultWait,
   postFn?: TelegramPostFn
 ): Promise<boolean> {
-  for (;;) {
-    const result = await editForumTopic(botToken, chatId, topicId, { iconCustomEmojiId }, postFn);
-    if (result.success) {
-      return true;
-    }
-    if (result.retryAfterSeconds === undefined) {
-      return false;
-    }
-    await wait(result.retryAfterSeconds * 1000);
-  }
+  return editForumTopicWithRateLimitRetry(botToken, chatId, topicId, { iconCustomEmojiId }, wait, postFn);
 }
 
 // Exported so backfill-standing-topic-icons.ts (BL-418) shares this rather

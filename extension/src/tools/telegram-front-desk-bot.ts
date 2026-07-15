@@ -56,6 +56,7 @@ import {
   closeForumTopic,
   deleteForumTopic,
   editForumTopic,
+  editForumTopicWithRateLimitRetry,
   getForumTopicIconStickers,
   answerCallbackQuery,
   TelegramUpdate,
@@ -736,11 +737,19 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
     // BL-414: last activity comes from the SAME per-ticket record
     // appendMessage/blTopicStore.ts already maintains - never a second
     // store. setTopicTitle edits only the name, leaving the icon field
-    // untouched (a bare editForumTopic({ name }) call, same shape as the
-    // icon adapter's own editForumTopic({ iconCustomEmojiId }) call above).
+    // untouched.
+    // BL-414 hardener bounce: a bare, non-retrying edit here reproduces
+    // BL-342's "19 of 26 succeeded, 7 silently dropped" rate-limit storm on
+    // THIS sync's own first-tick mass fan-out (every existing topic's
+    // bucket transitions from unset to real at once, so syncAllTitleAgeBuckets
+    // fires one editForumTopic call per topic back-to-back). Reuses the
+    // SAME 429/retry_after-honouring mechanism the icon backfill already
+    // relies on (editForumTopicWithRateLimitRetry, telegramClient.ts) rather
+    // than the bare call the icon adapter above still uses for its own,
+    // narrower (transition-gated, not all-at-once) update volume.
     titleAdapters: {
       readLastActivityMs: (ticketId) => lastActivityMs(readRecord(targetPath, ticketId)),
-      setTopicTitle: (topicId, title) => editForumTopic(botToken, chatId, topicId, { name: title }).then((r) => r.success),
+      setTopicTitle: (topicId, title) => editForumTopicWithRateLimitRetry(botToken, chatId, topicId, { name: title }),
     },
   };
 }

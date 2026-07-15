@@ -7,6 +7,7 @@ const {
   reopenForumTopic,
   deleteForumTopic,
   editForumTopic,
+  editForumTopicWithRateLimitRetry,
   getForumTopicIconStickers,
   answerCallbackQuery,
 } = require('../out/notify/telegramClient');
@@ -409,6 +410,63 @@ test('BL-342: editForumTopic leaves retryAfterSeconds undefined for an ordinary 
   const result = await editForumTopic(TOKEN, CHAT_ID, 7, { iconCustomEmojiId: 'icon-abc' }, postFn);
 
   assert.equal(result.retryAfterSeconds, undefined);
+});
+
+// ── BL-414 hardener bounce: editForumTopicWithRateLimitRetry - the shared
+//    retry-loop generalization of backfill-topic-icons.ts's own
+//    setTopicIconWithRateLimitRetry (BL-342), so a NAME edit (title-age
+//    sync) can honour a 429's retry_after the same way an ICON edit (the
+//    backfill) already does. Mirrors that file's own test shapes exactly.
+
+test('BL-414: editForumTopicWithRateLimitRetry waits exactly retry_after seconds and retries the SAME topic on a 429', async () => {
+  let calls = 0;
+  const postFn = async () => {
+    calls += 1;
+    if (calls === 1) {
+      return { ok: false, status: 429, json: { ok: false, description: 'Too Many Requests: retry after 26', parameters: { retry_after: 26 } } };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+  const waits = [];
+
+  const result = await editForumTopicWithRateLimitRetry(TOKEN, CHAT_ID, 101, { name: 'BL-900 - renamed' }, async (ms) => waits.push(ms), postFn);
+
+  assert.equal(result, true);
+  assert.equal(calls, 2, 'expected the rate-limited call to be retried, never dropped');
+  assert.deepEqual(waits, [26000], 'expected the wait to be EXACTLY retry_after seconds, in ms, never a generic guess');
+});
+
+test('BL-414: editForumTopicWithRateLimitRetry keeps retrying through MULTIPLE consecutive rate-limit responses until it succeeds', async () => {
+  let calls = 0;
+  const postFn = async () => {
+    calls += 1;
+    if (calls <= 3) {
+      return { ok: false, status: 429, json: { ok: false, description: 'retry after 5', parameters: { retry_after: 5 } } };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+  const waits = [];
+
+  const result = await editForumTopicWithRateLimitRetry(TOKEN, CHAT_ID, 101, { name: 'BL-900 - renamed' }, async (ms) => waits.push(ms), postFn);
+
+  assert.equal(result, true);
+  assert.equal(calls, 4);
+  assert.deepEqual(waits, [5000, 5000, 5000]);
+});
+
+test('BL-414: editForumTopicWithRateLimitRetry does NOT retry a genuine (non-429) failure - returns false immediately', async () => {
+  let calls = 0;
+  const postFn = async () => {
+    calls += 1;
+    return { ok: false, status: 400, json: { ok: false, description: 'topic not found' } };
+  };
+  const waits = [];
+
+  const result = await editForumTopicWithRateLimitRetry(TOKEN, CHAT_ID, 101, { name: 'BL-900 - renamed' }, async (ms) => waits.push(ms), postFn);
+
+  assert.equal(result, false);
+  assert.equal(calls, 1);
+  assert.deepEqual(waits, []);
 });
 
 // ── BL-342: getForumTopicIconStickers - the validated set icon ids must
