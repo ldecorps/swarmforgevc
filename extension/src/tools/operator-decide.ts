@@ -26,7 +26,16 @@ import { computeBacklogDashboard } from '../metrics/backlogDashboard';
 import { computeRoleGateStatesLive, filterPendingGates } from '../bridge/gateSnapshot';
 import { answerCapturedGateLive } from '../bridge/gateAnswerLive';
 import { readSwarmRoles } from '../swarm/tmuxClient';
-import { handleStatusQuery, handleApprovalDecisionForTicket, StatusProjections, StatusQuery, OperatorStatusProjection } from '../bridge/operatorDecideStatus';
+import {
+  handleStatusQuery,
+  handleApprovalDecisionForTicket,
+  selectGateDecisionForTicket,
+  GateDecision,
+  StatusProjections,
+  StatusQuery,
+  OperatorStatusProjection,
+} from '../bridge/operatorDecideStatus';
+import { classifyApprovalReplyAction, isTicketPendingApproval, ApprovalReplyAction } from '../concierge/pendingApprovalReply';
 import { resolveCliMainWorktreeContext, runCliMain } from './swarm-metrics';
 import { RoleWorktree } from '../metrics/swarmMetrics';
 import { readRoleTicket } from './telegram-front-desk-bot';
@@ -103,6 +112,44 @@ interface RunContext {
   reply: (text: string) => void;
 }
 
+// BL-416: composes the ticket-scoped reply for a backlog item's OWN
+// human_approval sign-off, which selectGateDecisionForTicket's role-gate
+// fallback knows nothing about - that selector only ever answers a ROLE
+// currently live-gated on a tmux prompt, and falls back to a GLOBAL,
+// ticket-blind "nothing pending anywhere" count whenever no such role
+// exists for this exact ticket. A ticket awaiting its own sign-off (BL-357/
+// 408/409's `human_approval: pending`) is neither of those things, so that
+// fallback fired "Nothing to approve right now." for BOTH a successful
+// approve (BL-412) and a genuine question on a still-pending ticket
+// (BL-414) - false in both cases. Returns undefined when there is no
+// ticket-scoped override to apply, so the caller falls through to the
+// ORIGINAL role-gate composition unchanged - this never touches
+// gateDecision's own 'answer'/'ask-which' behavior (BL-325 scope 6).
+export function composeTicketApprovalOverride(
+  gateDecision: GateDecision,
+  replyActionKind: ApprovalReplyAction['kind'],
+  ticketPending: boolean,
+  backlogId: string
+): string | undefined {
+  if (gateDecision.action !== 'nothing') {
+    return undefined;
+  }
+  if (replyActionKind === 'approve') {
+    // The separate poll-cycle path (telegramFrontDeskBotCore.ts's
+    // deliverOperatorContext) already flipped - or found already-flipped -
+    // this exact ticket's own human_approval field on the SAME reply;
+    // confirm BY NAME rather than the generic, ticket-blind fallback.
+    return `${backlogId} approved.`;
+  }
+  if (replyActionKind === 'none' && ticketPending) {
+    // A non-keyword reply (a question, a comment) on a ticket that is
+    // STILL pending must never claim there is nothing to approve - that
+    // claim is factually false for this exact ticket.
+    return `${backlogId} is still awaiting approval - reply "approve" to confirm.`;
+  }
+  return undefined;
+}
+
 // Each split out of main() so that function's own branch count stays low.
 function runApprove(command: Extract<CliCommand, { mode: 'approve' }>, ctx: RunContext): void {
   const roles = readSwarmRoles(ctx.projectRoot).map((r) => r.role);
@@ -115,6 +162,16 @@ function runApprove(command: Extract<CliCommand, { mode: 'approve' }>, ctx: RunC
   // roleTicket value, so this falls back to the original count-based
   // selector automatically - no SUP/BL branch needed here.
   const roleTicket = readRoleTicket(ctx.projectRoot);
+  const override = composeTicketApprovalOverride(
+    selectGateDecisionForTicket(pendingGates, roleTicket, command.threadId),
+    classifyApprovalReplyAction(command.answerText).kind,
+    isTicketPendingApproval(ctx.projectRoot, command.threadId),
+    command.threadId
+  );
+  if (override !== undefined) {
+    ctx.reply(override);
+    return;
+  }
   handleApprovalDecisionForTicket(pendingGates, roleTicket, command.threadId, command.answerText, {
     answerGate: (role, answer) => answerCapturedGateLive(ctx.projectRoot, { role, answer }),
     reply: ctx.reply,
