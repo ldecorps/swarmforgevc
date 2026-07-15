@@ -278,6 +278,17 @@ async function postEpicAction(action: TopicAction, epicId: string, routeAdapters
 // an ALREADY-successfully-routed ticket event, not a new SwarmEventType of
 // its own to diff/dedupe. A failed epic post is not specially retried here.
 //
+// A ticket declaring no epic, or an event type this side effect doesn't
+// apply to, resolves to undefined - split out of postEpicUpdateIfApplicable
+// so that function's own branch count reflects only the BL-394 dedup logic,
+// not this unrelated applicability guard.
+function applicableEpicId(event: SwarmEvent, folders: BacklogFoldersSnapshot): string | undefined {
+  if ((event.type !== 'TaskStarted' && event.type !== 'TaskCompleted') || event.backlogId === null) {
+    return undefined;
+  }
+  return epicForBacklogId(folders, event.backlogId);
+}
+
 // BL-394: that independence cuts both ways - the SAME ticket event can be
 // RE-DERIVED (e.g. a held-back retry after the ticket's own post failed)
 // with the epic's own aggregate completely unchanged, and this side effect
@@ -295,10 +306,7 @@ async function postEpicUpdateIfApplicable(
   routeAdapters: RouteAdapters,
   alreadyEmitted: Set<string>
 ): Promise<void> {
-  if ((event.type !== 'TaskStarted' && event.type !== 'TaskCompleted') || event.backlogId === null) {
-    return;
-  }
-  const epicId = epicForBacklogId(folders, event.backlogId);
+  const epicId = applicableEpicId(event, folders);
   if (!epicId) {
     return;
   }
