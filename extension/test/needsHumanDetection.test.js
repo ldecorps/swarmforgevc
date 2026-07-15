@@ -173,3 +173,50 @@ test('BL-391 the-human-is-never-sent-terminal-chrome-04: an ordinary multi-line 
   const prose = 'Ready to deploy BL-900.\nApprove this change? (y/n)';
   assert.equal(extractQuestionSnippet(prose), 'Ready to deploy BL-900. Approve this change? (y/n)');
 });
+
+// ── extractQuestionSnippet: VISIBLE terminal chrome (BL-395) ────────────────
+// BL-391 stripped INVISIBLE control bytes only, by design (see its own
+// header comment above). The box-rule lines, permission-mode footer, and
+// bare input-box prompt are printable text and survive that strip - this is
+// the follow-on that excludes those specific, unambiguous chrome LINES
+// before the last-3-lines heuristic picks the snippet.
+const QUESTION = 'Should I deploy BL-900 to production?';
+
+// BL-395 approval-chrome-01
+test('extractQuestionSnippet excludes input-box border rule lines', () => {
+  const pane = [QUESTION, '─'.repeat(60), '❯ '].join('\n');
+  const snippet = extractQuestionSnippet(pane);
+  assert.doesNotMatch(snippet, /─/, 'expected no box-rule characters in the snippet');
+  assert.equal(snippet, QUESTION);
+});
+
+// BL-395 approval-chrome-02
+test('extractQuestionSnippet excludes the permission-mode and shortcut footer', () => {
+  const pane = [QUESTION, '⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents'].join('\n');
+  const snippet = extractQuestionSnippet(pane);
+  assert.doesNotMatch(snippet, /bypass permissions/i, 'expected no footer furniture in the snippet');
+  assert.equal(snippet, QUESTION);
+});
+
+// BL-395 approval-chrome-03
+test('extractQuestionSnippet keeps the real question when it sits above the input box and footer', () => {
+  const pane = [
+    QUESTION,
+    '─'.repeat(60),
+    '❯ ',
+    '⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents',
+  ].join('\n');
+  assert.equal(extractQuestionSnippet(pane), QUESTION);
+});
+
+// BL-395 approval-chrome-04 (neighbour guard: real words are never chrome,
+// even alongside a dash or a bare-glyph-looking char)
+test('extractQuestionSnippet leaves a real sentence containing a dash unchanged (neighbour guard)', () => {
+  const prose = 'This is a well-formed sentence - with a dash - should it proceed?';
+  assert.equal(extractQuestionSnippet(prose), prose);
+});
+
+test('extractQuestionSnippet does not drop a real line just because it also contains footer-like words in prose', () => {
+  const prose = 'Please accept edits for agents once you review the diff.';
+  assert.equal(extractQuestionSnippet(prose), prose);
+});

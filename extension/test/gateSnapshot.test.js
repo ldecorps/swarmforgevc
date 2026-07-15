@@ -25,6 +25,24 @@ test('computeRoleGateStates never includes a snippet field for a non-gated role'
   assert.equal('snippet' in states[0], false);
 });
 
+// BL-395 approval-chrome-05: extractQuestionSnippet is the SINGLE source
+// feeding both the Telegram send and the git-committed topic record - this
+// locks that the chrome filter reaches the snippet recorded here too, not
+// just extractQuestionSnippet in isolation.
+test('computeRoleGateStates records a snippet free of box-rule and footer chrome', () => {
+  const pane = [
+    'Should I deploy BL-900 to production?',
+    '─'.repeat(60),
+    '❯ ',
+    '⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents',
+  ].join('\n');
+  const states = computeRoleGateStates(['coder'], () => pane);
+
+  assert.deepEqual(states, [
+    { role: 'coder', gated: true, snippet: 'Should I deploy BL-900 to production?' },
+  ]);
+});
+
 // ── filterPendingGates (pure, BL-265) ─────────────────────────────────────
 
 // BL-265 gates-list-pending-01
