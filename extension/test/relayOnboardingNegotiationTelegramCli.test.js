@@ -11,6 +11,7 @@ const {
   pollLoop,
   readRelayOffset,
   writeRelayOffset,
+  launchNegotiationRelayScriptPath,
   main: relayMain,
 } = require('../out/tools/relay-onboarding-negotiation-telegram');
 const { main: proposeMain } = require('../out/tools/propose-onboarding-contract');
@@ -213,6 +214,12 @@ test('buildRelayAdapters.postToTopic does not throw when the send fails - it onl
 
 // ── runPostProposal (BL-381 scenario 01) ───────────────────────────────
 
+// Every success-path test below injects this no-op in place of the real
+// defaultLaunchRelaySupervisor (a real `child_process.spawn` of a bash
+// script) - the "does it actually launch" wiring is its own dedicated test
+// block further down, never exercised as a side effect of an unrelated test.
+const noopLaunchRelaySupervisor = () => {};
+
 test('runPostProposal posts the proposed contract into the negotiation topic', async () => {
   const targetRepo = mkTargetWithProposedContract();
   const secretsFile = mkSecretsPath();
@@ -223,7 +230,7 @@ test('runPostProposal posts the proposed contract into the negotiation topic', a
     return { ok: true, status: 200, json: { result: { message_id: 1 } } };
   };
 
-  const outcome = await runPostProposal(targetRepo, secretsFile, postFn);
+  const outcome = await runPostProposal(targetRepo, secretsFile, postFn, noopLaunchRelaySupervisor);
 
   assert.equal(outcome.posted, true);
   assert.equal(calls.length, 1);
@@ -241,8 +248,8 @@ test('runPostProposal is idempotent - a second call is a no-op, no second post',
     return { ok: true, status: 200, json: { result: { message_id: 1 } } };
   };
 
-  await runPostProposal(targetRepo, secretsFile, postFn);
-  const second = await runPostProposal(targetRepo, secretsFile, postFn);
+  await runPostProposal(targetRepo, secretsFile, postFn, noopLaunchRelaySupervisor);
+  const second = await runPostProposal(targetRepo, secretsFile, postFn, noopLaunchRelaySupervisor);
 
   assert.equal(second.posted, false);
   assert.equal(calls.length, 1);
@@ -254,7 +261,7 @@ test('runPostProposal throws when contract.yaml is missing or malformed', async 
   provisionChannelAndToken(targetRepo, secretsFile);
   fs.writeFileSync(path.join(targetRepo, '.swarmforge', 'contract.yaml'), 'not: a-valid-contract-shape\n');
 
-  await assert.rejects(() => runPostProposal(targetRepo, secretsFile), /missing or malformed/);
+  await assert.rejects(() => runPostProposal(targetRepo, secretsFile, undefined, noopLaunchRelaySupervisor), /missing or malformed/);
 });
 
 test('runPostProposal throws when the Telegram send fails', async () => {
@@ -263,7 +270,7 @@ test('runPostProposal throws when the Telegram send fails', async () => {
   provisionChannelAndToken(targetRepo, secretsFile);
   const failingPostFn = async () => ({ ok: false, status: 401, json: { description: 'Unauthorized' } });
 
-  await assert.rejects(() => runPostProposal(targetRepo, secretsFile, failingPostFn), /Unauthorized|401/);
+  await assert.rejects(() => runPostProposal(targetRepo, secretsFile, failingPostFn, noopLaunchRelaySupervisor), /Unauthorized|401/);
 });
 
 test('runPostProposal throws when no channel has been provisioned yet', async () => {
@@ -279,6 +286,95 @@ test('runPostProposal throws when no bot token has been stored for this target',
   writeTelegramChannel(targetRepo, { chatId: CHAT_ID, negotiationTopicId: NEGOTIATION_TOPIC_ID });
 
   await assert.rejects(() => runPostProposal(targetRepo, secretsFile), /no Telegram bot token found/);
+});
+
+// ── runPostProposal launches the negotiation-relay supervisor (BL-381
+//    architect bounce: launch_negotiation_relay.sh had no live caller) ────
+
+function poisonLaunchRelaySupervisor() {
+  return () => {
+    throw new Error('launchRelaySupervisor must not be called on this path');
+  };
+}
+
+const successfulPostFn = async (url, body) => ({ ok: true, status: 200, json: { result: { message_id: 1 } } });
+
+test('runPostProposal launches the relay supervisor exactly once, with the target repo path and secrets file path, after a real first post', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const secretsFile = mkSecretsPath();
+  provisionChannelAndToken(targetRepo, secretsFile);
+  const launchCalls = [];
+
+  const outcome = await runPostProposal(targetRepo, secretsFile, successfulPostFn, (...args) => launchCalls.push(args));
+
+  assert.equal(outcome.posted, true);
+  assert.deepEqual(launchCalls, [[targetRepo, secretsFile]]);
+});
+
+test('runPostProposal does NOT launch the relay supervisor a second time on the idempotent no-op path', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const secretsFile = mkSecretsPath();
+  provisionChannelAndToken(targetRepo, secretsFile);
+  const launchCalls = [];
+
+  await runPostProposal(targetRepo, secretsFile, successfulPostFn, (...args) => launchCalls.push(args));
+  const second = await runPostProposal(targetRepo, secretsFile, successfulPostFn, (...args) => launchCalls.push(args));
+
+  assert.equal(second.posted, false);
+  assert.equal(launchCalls.length, 1);
+});
+
+test('runPostProposal does NOT launch the relay supervisor when the contract is missing or malformed', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const secretsFile = mkSecretsPath();
+  provisionChannelAndToken(targetRepo, secretsFile);
+  fs.writeFileSync(path.join(targetRepo, '.swarmforge', 'contract.yaml'), 'not: a-valid-contract-shape\n');
+
+  await assert.rejects(() => runPostProposal(targetRepo, secretsFile, undefined, poisonLaunchRelaySupervisor()));
+});
+
+test('runPostProposal does NOT launch the relay supervisor when the Telegram send fails', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const secretsFile = mkSecretsPath();
+  provisionChannelAndToken(targetRepo, secretsFile);
+  const failingPostFn = async () => ({ ok: false, status: 401, json: { description: 'Unauthorized' } });
+
+  await assert.rejects(() => runPostProposal(targetRepo, secretsFile, failingPostFn, poisonLaunchRelaySupervisor()));
+});
+
+test('runPostProposal does NOT launch the relay supervisor when no channel has been provisioned', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const secretsFile = mkSecretsPath();
+
+  await assert.rejects(() => runPostProposal(targetRepo, secretsFile, undefined, poisonLaunchRelaySupervisor()));
+});
+
+test('launchNegotiationRelayScriptPath resolves to the real launch_negotiation_relay.sh on disk (locks the __dirname math)', () => {
+  const resolved = launchNegotiationRelayScriptPath();
+  assert.equal(path.basename(resolved), 'launch_negotiation_relay.sh');
+  assert.ok(fs.existsSync(resolved), `expected ${resolved} to exist`);
+});
+
+// A live incident during THIS ticket's own acceptance runs (before the
+// steps file was fixed to inject a noop) leaked several real, bounded-
+// restart-forever supervisor processes polling the real Telegram API with
+// a fake token - the fixture's target repo lived under os.tmpdir() and
+// nothing stopped the REAL defaultLaunchRelaySupervisor from firing. This
+// test drives the REAL default adapter (no injected fake) against exactly
+// that kind of fixture and proves the test-fixture-root safety net
+// (mirroring daemon_alarm_lib.bb's own test-fixture-root?) suppresses it:
+// no auto-launch log ever appears, which is what a real spawn would have
+// written first.
+test('runPostProposal, using the REAL default launcher, never actually spawns for a target repo under the system temp dir', async () => {
+  const targetRepo = mkTargetWithProposedContract();
+  const secretsFile = mkSecretsPath();
+  provisionChannelAndToken(targetRepo, secretsFile);
+  const autoLaunchLog = path.join(targetRepo, '.swarmforge', 'operator', 'negotiation-relay-auto-launch.log');
+
+  const outcome = await runPostProposal(targetRepo, secretsFile, successfulPostFn);
+
+  assert.equal(outcome.posted, true);
+  assert.equal(fs.existsSync(autoLaunchLog), false, 'expected no real spawn (and therefore no auto-launch log) for a temp-dir fixture');
 });
 
 // ── runPoll (BL-381 scenarios 02/04) ───────────────────────────────────
