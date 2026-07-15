@@ -739,6 +739,54 @@ test('BL-394 epic-gate-04: a repeated opening for an already-opened epic announc
   assert.equal(sent.filter((m) => m.text === 'Epic: Dynamic Routing').length, 1, 'the epic opening must not repeat on a retried tick');
 });
 
+test('BL-394 epic-gate-05: a failed epic post is not recorded as announced, and retries once it succeeds', async () => {
+  const { adapters, setFolders, sent, state } = fakeAdapters();
+  const epicTicket = epicDefTicket('dynamic-routing', 'Dynamic Routing');
+  setFolders(folders({
+    paused: [epicTicket],
+    active: [{ id: 'BL-1', title: 'first slice', epic: 'dynamic-routing' }, { id: 'BL-2', title: 'second slice', epic: 'dynamic-routing' }],
+  }));
+  await runConciergeTick(adapters);
+
+  // Every prior epic-gate test above fails only the TICKET-level post and
+  // always lets the epic's OWN post through - none of them prove
+  // postEpicUpdateIfApplicable's own "record only after a SUCCESSFUL post"
+  // contract. Here the ticket-level post keeps failing (forcing the same
+  // TaskCompleted event to re-derive every tick, same mechanism as
+  // epic-gate-01) AND the epic's own progress post fails on its first
+  // attempt too.
+  let epicPostAttempts = 0;
+  adapters.routeAdapters.sendMessage = async (topicId, text) => {
+    sent.push({ topicId, text });
+    if (text.includes('ticketed slice')) {
+      epicPostAttempts += 1;
+      return epicPostAttempts > 1;
+    }
+    return false;
+  };
+  setFolders(folders({
+    paused: [epicTicket],
+    active: [{ id: 'BL-2', title: 'second slice', epic: 'dynamic-routing' }],
+    done: [{ id: 'BL-1', title: 'first slice', epic: 'dynamic-routing' }],
+  }));
+  await runConciergeTick(adapters);
+  assert.ok(
+    !state.emittedKeys.some((k) => k.includes('1 of 2 ticketed slice(s) complete.')),
+    'a failed epic post must not be durably recorded as announced'
+  );
+
+  await runConciergeTick(adapters);
+  assert.equal(
+    sent.filter((m) => m.text === '1 of 2 ticketed slice(s) complete.').length,
+    2,
+    'the same unchanged progress is retried after a failed post and announced once it succeeds'
+  );
+  assert.ok(
+    state.emittedKeys.some((k) => k.includes('1 of 2 ticketed slice(s) complete.')),
+    'the successful retry is durably recorded as announced'
+  );
+});
+
 // ── BL-342: topic icons track ticket state - rides the SAME TaskStarted/
 //    TaskCompleted transitions, plus a paused-diff of its own ────────────
 
