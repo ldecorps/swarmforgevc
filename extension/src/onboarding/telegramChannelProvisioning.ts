@@ -80,7 +80,28 @@ export interface ChannelProvisioningOutcome {
 
 // BL-380 scenario 04's guard lives here structurally: createNegotiationTopic
 // is only ever called once decideChannelDetection has already reported
-// ready, so a half-finished channel can never open a topic.
+// ready, so a half-finished channel can never open a topic. Split out of
+// provisionTelegramChannel so that function's own branch count reflects only
+// the getUpdates/detection stages, not this separate topic-creation stage.
+async function finalizeChannelProvisioning(
+  chatId: string,
+  instructions: ChannelProvisioningInstructions,
+  adapters: ChannelProvisioningAdapters
+): Promise<ChannelProvisioningOutcome> {
+  const topic = await adapters.createNegotiationTopic(chatId);
+  if (!topic.success || topic.messageThreadId === undefined) {
+    return {
+      instructions,
+      ready: true,
+      chatId,
+      error: topic.error ?? 'failed to open the negotiation topic',
+    };
+  }
+
+  await adapters.persistChannel(chatId, topic.messageThreadId);
+  return { instructions, ready: true, chatId, negotiationTopicId: topic.messageThreadId };
+}
+
 export async function provisionTelegramChannel(
   botUsername: string,
   adapters: ChannelProvisioningAdapters
@@ -99,16 +120,5 @@ export async function provisionTelegramChannel(
     return { instructions, ready: false };
   }
 
-  const topic = await adapters.createNegotiationTopic(detection.chatId);
-  if (!topic.success || topic.messageThreadId === undefined) {
-    return {
-      instructions,
-      ready: true,
-      chatId: detection.chatId,
-      error: topic.error ?? 'failed to open the negotiation topic',
-    };
-  }
-
-  await adapters.persistChannel(detection.chatId, topic.messageThreadId);
-  return { instructions, ready: true, chatId: detection.chatId, negotiationTopicId: topic.messageThreadId };
+  return finalizeChannelProvisioning(detection.chatId, instructions, adapters);
 }
