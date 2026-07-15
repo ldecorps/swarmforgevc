@@ -84,6 +84,5 @@ qa_e2e: |
      reverts to the normal state; confirm other paused tickets held for non-approval
      reasons still show 🔍 and active/done topics are untouched.
 
-human_approval: pending
-
+human_approval: approved
 mutation_cost: low
