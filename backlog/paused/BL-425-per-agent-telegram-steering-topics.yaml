@@ -143,10 +143,9 @@ qa_e2e: |
      both topics keep their existing behavior.
 
 human_approval: >
-  Design approved 2026-07-15 by the human via AskUserQuestion (pane-inject steer /
-  answer-back-not-bau / all 8 roles). Feature file + spec written by the specifier
-  from those answers; the live slice-1 feature file and the parked slice-2 draft are
-  flagged for the human's final read before promotion. The answer-back return
-  channel is deliberately deferred to slice 2 — if the human wants the round-trip in
-  the first shippable unit, say so and it folds into slice 1.
+  approved 2026-07-15. Final read confirmed by the human via AskUserQuestion in the
+  coordinator session: design approved as specced (8 per-role topics, live pane
+  inject via the existing verified-nudge path, principal- and topic-scoped), and
+  slice 2's answer-back stays deferred as a follow-up — ship slice 1 (inbound-only)
+  first, do not fold the round-trip in now.
 mutation_cost: medium
