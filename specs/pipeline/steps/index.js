@@ -196,7 +196,8 @@ const DOMAINS = [
   require('./bl403SupervisorKillsSupersededChildSteps'),
   require('./bl404LaunchFrontDeskHonorsParkedFlagSteps'),
   require('./bl395ApprovalSnippetVisibleChromeSteps'),
-  require('./bl405OnboardFreeEmailScannerSteps')
+  require('./bl405OnboardFreeEmailScannerSteps'),
+  require('./bl407VerifiedCompletionRecordWritePathGapSteps')
 ];
 
 function registerSteps(registry) {

@@ -1,13 +1,10 @@
 import { execFileSync } from 'child_process';
 import { existsSync } from 'fs';
 
-// Shared by commitCostHealthSidecar (costHealthSidecar.ts) and
-// commitTopicRecord (blTopicStore.ts): both commit exactly one file into an
-// already-checked-out repo, scoped so no other dirty state in the worktree
-// is swept in, and fail open (never throw) so the caller's own write always
-// succeeds regardless of whether this particular commit does — including
-// the "nothing to commit" case (e.g. an identical re-run).
-export function commitScopedFile(targetPath: string, filePath: string, commitMessage: string): boolean {
+export type CommitAttemptFn = (targetPath: string, filePath: string, commitMessage: string) => boolean;
+export type SleepFn = (ms: number) => void;
+
+function defaultAttemptCommit(targetPath: string, filePath: string, commitMessage: string): boolean {
   try {
     execFileSync('git', ['-C', targetPath, 'add', '--', filePath], { stdio: 'ignore' });
     execFileSync('git', ['-C', targetPath, 'commit', '-m', commitMessage, '--', filePath], { stdio: 'ignore' });
@@ -15,6 +12,54 @@ export function commitScopedFile(targetPath: string, filePath: string, commitMes
   } catch {
     return false;
   }
+}
+
+// A real, short SYNCHRONOUS wait (commitScopedFile's callers all depend on
+// its synchronous boolean-return contract, so the retry loop below cannot
+// go async) - never used by a test, which injects its own no-op sleep
+// instead (this codebase's no-real-timers-in-tests rule is about tests,
+// not this bounded production backoff).
+function defaultSleep(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+const DEFAULT_MAX_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 25;
+
+// Shared by commitCostHealthSidecar (costHealthSidecar.ts) and
+// commitTopicRecord (blTopicStore.ts): both commit exactly one file into an
+// already-checked-out repo, scoped so no other dirty state in the worktree
+// is swept in, and fail open (never throw) so the caller's own write always
+// succeeds regardless of whether this particular commit does — including
+// the "nothing to commit" case (e.g. an identical re-run).
+//
+// BL-407: a single attempt turned a TRANSIENT failure (confirmed live: two
+// processes sharing one physical worktree - e.g. the front-desk bot and a
+// concurrent coordinator commit - racing on .git/index.lock) into a
+// PERMANENT durability gap, since nothing ever retried the commit and
+// topicDeletion.ts correctly refuses to delete an unverified topic forever.
+// Retries a small, BOUNDED number of times with backoff (this codebase's
+// own established retry convention - see the engineering article's
+// bounded-retry rule) before giving up and returning false exactly as
+// before. attemptCommit/sleep are injected so a test can prove the retry
+// and its bound without a real git race or a real wall-clock wait.
+export function commitScopedFile(
+  targetPath: string,
+  filePath: string,
+  commitMessage: string,
+  attemptCommit: CommitAttemptFn = defaultAttemptCommit,
+  sleep: SleepFn = defaultSleep,
+  maxAttempts: number = DEFAULT_MAX_ATTEMPTS
+): boolean {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (attemptCommit(targetPath, filePath, commitMessage)) {
+      return true;
+    }
+    if (attempt < maxAttempts) {
+      sleep(RETRY_DELAY_MS * attempt);
+    }
+  }
+  return false;
 }
 
 // BL-331 architect bounce: "verified" must mean DURABLY serialised, never

@@ -73,7 +73,7 @@ test('a repaired record is actually committed (durable), not just written to dis
   assert.notEqual(log, '', 'expected the repaired record to have a real commit touching it');
 });
 
-test('a record that already has a real opener is left untouched', () => {
+test('a record that already has a real opener AND is already durably committed is left fully untouched', () => {
   const target = mkGitRepo();
   writeDoneTicket(target, 'BL-900', 'Fix the thing');
   const original = {
@@ -84,10 +84,62 @@ test('a record that already has a real opener is left untouched', () => {
     ],
   };
   writeTopicRecord(target, 'BL-900', original);
+  git(target, ['add', '--', recordPath(target, 'BL-900')]);
+  git(target, ['commit', '-q', '-m', 'pre-committed']);
 
   const result = repairBlTopicRecords(target);
   assert.deepEqual(result.outcomes, [{ backlogId: 'BL-900', repaired: false, reason: 'opener-already-present' }]);
   assert.deepEqual(readRecord(target, 'BL-900'), original);
+});
+
+// BL-407: a record whose CONTENT is already correct (opener + completion,
+// or completion-only) but was never durably committed - the exact shape of
+// BL-334 among the 26 real affected tickets, distinct from BL-348's own
+// missing-opener shape (25 of the 26 needed an opener too; this covers the
+// one that didn't, and every future case where only the commit itself is
+// missing). topicDeletion.ts refuses to delete on this forever without a
+// backfill - the write path's own retry (gitCommitScopedFile.ts) closes the
+// gap for FUTURE closes; this closes it for records already stuck.
+test('a record with a real opener that was never committed is backfilled (durably committed now, content untouched)', () => {
+  const target = mkGitRepo();
+  writeDoneTicket(target, 'BL-900', 'Fix the thing');
+  const original = {
+    id: 'BL-900',
+    messages: [
+      { seq: 0, ts: 1000, author: 'swarm', type: 'outbound', text: 'What it is: Fix the thing' },
+      { seq: 1, ts: 2000, author: 'swarm', type: 'outbound', text: 'BL-900 - Fix the thing is complete.' },
+    ],
+  };
+  writeTopicRecord(target, 'BL-900', original); // written but never committed
+
+  const result = repairBlTopicRecords(target);
+  assert.deepEqual(result.outcomes, [{ backlogId: 'BL-900', repaired: false, reason: 'backfilled-commit' }]);
+  assert.deepEqual(readRecord(target, 'BL-900'), original, 'expected content to be byte-identical - only durability changed');
+
+  const filePath = recordPath(target, 'BL-900');
+  const log = execFileSync('git', ['-C', target, 'log', '--format=%H', '--', filePath], { encoding: 'utf8' }).trim();
+  assert.notEqual(log, '', 'expected the backfilled record to now have a real commit touching it');
+});
+
+test('a backfill-commit failure is reported (never silently dropped), same as the opener-repair path', () => {
+  const target = mkTmp(); // never a git repo at all - commitTopicRecord fails closed
+  writeDoneTicket(target, 'BL-900', 'Fix the thing');
+  writeTopicRecord(target, 'BL-900', {
+    id: 'BL-900',
+    messages: [
+      { seq: 0, ts: 1000, author: 'swarm', type: 'outbound', text: 'What it is: Fix the thing' },
+      { seq: 1, ts: 2000, author: 'swarm', type: 'outbound', text: 'BL-900 - Fix the thing is complete.' },
+    ],
+  });
+
+  const calls = [];
+  const result = repairBlTopicRecords(target, (ticketId, filePath) => {
+    calls.push({ ticketId, filePath });
+  });
+
+  assert.deepEqual(result.outcomes, [{ backlogId: 'BL-900', repaired: false, reason: 'backfilled-commit' }]);
+  assert.equal(calls.length, 1, 'expected the reporter to fire exactly once (target is not a git repo, so the commit fails)');
+  assert.equal(calls[0].ticketId, 'BL-900');
 });
 
 test('a topic record with no matching .done ticket is left untouched (nothing to regenerate an opener from)', () => {

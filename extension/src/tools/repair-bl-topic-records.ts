@@ -13,9 +13,16 @@
 // entry left at all) is left untouched - there is nothing to regenerate an
 // opener FROM.
 //
+// BL-407: also backfills the DURABILITY gap alone, for a record whose
+// content needs no opener repair but was simply never git-committed (a
+// transient commitScopedFile failure - see gitCommitScopedFile.ts's own
+// retry, which fixes this for future closes - can still leave an
+// already-written record stuck exactly like this until something repairs
+// it). Content stays byte-identical; only the commit is attempted.
+//
 // Usage: repair-bl-topic-records.js <project-root>
 import * as fs from 'fs';
-import { topicsDir, recordPath, readRecord, commitTopicRecord, reportCommitFailureToStderr, CommitFailureReporter } from '../concierge/blTopicStore';
+import { topicsDir, recordPath, readRecord, commitTopicRecord, isRecordCommitted, reportCommitFailureToStderr, CommitFailureReporter } from '../concierge/blTopicStore';
 import { readBacklogFolders } from '../panel/backlogReader';
 import { recordMissingOpener, regeneratedOpenerText, withRestoredOpener } from '../concierge/topicRecordRepair';
 import { atomicWrite } from '../util/atomicWrite';
@@ -24,7 +31,7 @@ import { runCliMain } from './swarm-metrics';
 export interface RepairOutcome {
   backlogId: string;
   repaired: boolean;
-  reason: 'missing-opener-repaired' | 'no-matching-done-ticket' | 'opener-already-present';
+  reason: 'missing-opener-repaired' | 'no-matching-done-ticket' | 'opener-already-present' | 'backfilled-commit';
 }
 
 export interface RepairResult {
@@ -51,7 +58,16 @@ export function repairBlTopicRecords(
     }
     const record = readRecord(targetPath, backlogId);
     if (!recordMissingOpener(record, ticket.title)) {
-      outcomes.push({ backlogId, repaired: false, reason: 'opener-already-present' });
+      if (isRecordCommitted(targetPath, backlogId)) {
+        outcomes.push({ backlogId, repaired: false, reason: 'opener-already-present' });
+        continue;
+      }
+      const filePath = recordPath(targetPath, backlogId);
+      const committed = commitTopicRecord(targetPath, filePath, backlogId);
+      if (!committed) {
+        reportCommitFailure(backlogId, filePath);
+      }
+      outcomes.push({ backlogId, repaired: false, reason: 'backfilled-commit' });
       continue;
     }
     const openerText = regeneratedOpenerText(ticket);
