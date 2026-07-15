@@ -18,6 +18,7 @@
  */
 import { proposePromptsFromSurvey } from '../onboarding/promptProposal';
 import { evaluateBuildStartGate } from '../onboarding/buildStartGate';
+import { parseContractYaml } from '../onboarding/contractView';
 import { initializeTargetPrompts } from '../config/targetBootstrap';
 import { parseArgs, readSurveyFacts } from './propose-onboarding-contract';
 import { readContractYaml } from './onboarding-contract-gate';
@@ -30,8 +31,14 @@ export const main = makeArgsGuardedMain(
   'Usage: node propose-onboarding-prompts.js <target-repo-path> <survey-facts-json-path>\n',
   async ({ targetRepoPath, surveyFactsPath }) => {
     const facts = readSurveyFacts(surveyFactsPath);
-    const prompts = proposePromptsFromSurvey(facts);
-    const gateDecision = evaluateBuildStartGate(readContractYaml(targetRepoPath));
+    const rawContractYaml = readContractYaml(targetRepoPath);
+    // BL-382 bounce: this was the missing real caller - the contract's own
+    // negotiated verbosity was parsed for the gate decision below but never
+    // extracted and passed to proposePromptsFromSurvey, so every target got
+    // the DEFAULT_VERBOSITY fallback regardless of what was agreed.
+    const contract = rawContractYaml ? parseContractYaml(rawContractYaml) : null;
+    const prompts = proposePromptsFromSurvey(facts, contract?.verbosity);
+    const gateDecision = evaluateBuildStartGate(rawContractYaml);
     const result = await initializeTargetPrompts(targetRepoPath, prompts, gateDecision);
     printJsonToStdout(result);
   }

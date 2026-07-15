@@ -44,13 +44,21 @@ export function parseContractYaml(raw: string): ProposedContract | null {
   }
   const candidate = parsed as unknown as ProposedContract;
 
-  return {
+  const contract: ProposedContract = {
     scope: candidate.scope,
     outOfScope: candidate.outOfScope,
     boundaries: candidate.boundaries,
     initialBacklogSummary: candidate.initialBacklogSummary,
     agreement: candidate.agreement,
   };
+  // BL-382 bounce: verbosity was missing from this field list, so a
+  // negotiated verbosity term silently vanished on every parse. Carried
+  // through as-is (unvalidated) - resolveVerbosity's KNOWN_VALUES lookup,
+  // not this parser, is where an out-of-set value is refused.
+  if (candidate.verbosity !== undefined) {
+    contract.verbosity = candidate.verbosity;
+  }
+  return contract;
 }
 
 // dump-then-load round-trips byte-for-byte through js-yaml's own canonical

@@ -53,18 +53,19 @@ function mkTargetRepo() {
   return targetRepo;
 }
 
-function writeContract(targetRepo, agreement) {
+function writeContract(targetRepo, agreement, verbosity) {
   fs.mkdirSync(path.join(targetRepo, '.swarmforge'), { recursive: true });
-  fs.writeFileSync(
-    path.join(targetRepo, '.swarmforge', 'contract.yaml'),
-    renderContractYaml({
-      scope: ['Build the thing.'],
-      outOfScope: ['Rewrite the stack.'],
-      boundaries: ['Respect the README.'],
-      initialBacklogSummary: '3 tickets queued.',
-      agreement,
-    })
-  );
+  const contract = {
+    scope: ['Build the thing.'],
+    outOfScope: ['Rewrite the stack.'],
+    boundaries: ['Respect the README.'],
+    initialBacklogSummary: '3 tickets queued.',
+    agreement,
+  };
+  if (verbosity !== undefined) {
+    contract.verbosity = verbosity;
+  }
+  fs.writeFileSync(path.join(targetRepo, '.swarmforge', 'contract.yaml'), renderContractYaml(contract));
 }
 
 const VALID_FACTS = {
@@ -131,6 +132,47 @@ test('releases and commits the generated, survey-populated prompts once the cont
   assert.match(projectPrompt, /Ship the MVP\./);
   const engineeringPrompt = fs.readFileSync(path.join(targetRepo, 'engineering.prompt'), 'utf8');
   assert.match(engineeringPrompt, /TypeScript/);
+});
+
+// BL-382 QA bounce (backlog/evidence/BL-382-...-bounce-20260715.md): the
+// contract's own negotiated verbosity never reached the real generated
+// prompts through this CLI - resolveVerbosity/proposePromptsFromSurvey were
+// correct in isolation, but this entry point never read the contract's
+// verbosity at all, so every target got the DEFAULT_VERBOSITY fallback
+// regardless of what was agreed.
+test('BL-382: the contract\'s agreed verbosity reaches the generated prompts through the real CLI', async () => {
+  const targetRepo = mkTargetRepo();
+  writeContract(targetRepo, 'agreed', 'concise');
+  const surveyPath = mkTmpFile('survey.json', JSON.stringify(VALID_FACTS));
+
+  await runCli([targetRepo, surveyPath]);
+
+  const projectPrompt = fs.readFileSync(path.join(targetRepo, 'project.prompt'), 'utf8');
+  assert.match(projectPrompt, /Be concise/);
+  const engineeringPrompt = fs.readFileSync(path.join(targetRepo, 'engineering.prompt'), 'utf8');
+  assert.match(engineeringPrompt, /Be concise/);
+});
+
+test('BL-382: a contract with no verbosity term still generates prompts, defaulting to normal, through the real CLI', async () => {
+  const targetRepo = mkTargetRepo();
+  writeContract(targetRepo, 'agreed');
+  const surveyPath = mkTmpFile('survey.json', JSON.stringify(VALID_FACTS));
+
+  await runCli([targetRepo, surveyPath]);
+
+  const projectPrompt = fs.readFileSync(path.join(targetRepo, 'project.prompt'), 'utf8');
+  assert.match(projectPrompt, /Be normal/);
+});
+
+test('BL-382: a contract verbosity outside the offered set is refused through the real CLI, no prompts written', async () => {
+  const targetRepo = mkTargetRepo();
+  writeContract(targetRepo, 'agreed', 'extremely chatty');
+  const surveyPath = mkTmpFile('survey.json', JSON.stringify(VALID_FACTS));
+
+  await assert.rejects(() => runCli([targetRepo, surveyPath]), /invalid contract verbosity "extremely chatty"/);
+
+  assert.ok(!fs.existsSync(path.join(targetRepo, 'project.prompt')));
+  assert.ok(!fs.existsSync(path.join(targetRepo, 'engineering.prompt')));
 });
 
 test('main() prints usage and exits non-zero when a required argument is missing', async () => {
