@@ -9,7 +9,7 @@
 import { EventStreamSnapshot, GateSignal, SwarmEvent, SwarmEventType, TicketSummary, deriveSwarmEvents, swarmEventKey } from '../events/swarmEventStream';
 import { RouteAdapters, TopicAction, decideEpicTopicAction, routeEvent } from './topicRouter';
 import { EpicDefinition, computeEpicProgress, epicAnnouncementKey, epicOpeningText, epicProgressText } from './epicProgress';
-import { resolveIconState, ICON_EMOJI } from './topicIcon';
+import { resolveIconState, ICON_EMOJI, STANDING_TOPIC_ICON, StandingTopicTarget } from './topicIcon';
 import { TopicIconAdapters, syncTopicIcon } from './topicIconSync';
 
 export interface BacklogFolderItem {
@@ -53,6 +53,23 @@ export interface BacklogFoldersSnapshot {
 export interface TickState {
   snapshot: EventStreamSnapshot | null;
   emittedKeys: string[];
+  // BL-418: every standing-topic id (a support subject, or the Operator's
+  // own sentinel id) this tick has EVER seen before, across every past
+  // tick/restart - the standing-topic sibling of the ticket-icon sync's
+  // own topicIdsBeforeTick check above. A standing topic is never created
+  // BY this tick (a human creates a support topic by messaging into it;
+  // the Operator topic is created once, before this loop starts), so there
+  // is no in-tick "just created it" signal to lean on the way ticket
+  // topics have via routeEvent's own createTopic step - this durable seen-
+  // set is what tells apart a GENUINELY NEW appearance (free to set its
+  // initial icon) from a topic that predates this feature and may already
+  // carry a human-customised icon (never touch it - scenario 02). Absent
+  // on an old/fresh TickState file, treated as empty (every currently-known
+  // standing topic looks "newly entered" on the very first tick after this
+  // ships) - the backfill script exists to seed this ahead of that first
+  // tick for anything that already exists, mirroring BL-342's own backfill
+  // precedent for pre-existing ticket topics.
+  standingIconSeenIds?: string[];
 }
 
 export interface ConciergeTickAdapters {
@@ -73,6 +90,18 @@ export interface ConciergeTickAdapters {
   // no SwarmEvent of its own (an icon update posts no chat message, so it
   // needs none of that machinery).
   iconAdapters: TopicIconAdapters;
+  // BL-418: every standing (non-ticket) topic the icon sync should consider
+  // this tick - the Operator's one topic plus every currently-open support
+  // subject's topic, already classified by iconKey. Live-wired to read the
+  // front-desk bot's OWN {topicId: subjectId} map (never backlogTopicMap,
+  // which is ticket topics only) - conciergeTick.ts itself stays unaware of
+  // that map's Telegram-specific sentinel keys (DEFAULT_SUBJECT_KEY,
+  // OPERATOR_SUBJECT_ID); the live wrapper does that classification.
+  // Optional (defaults to no standing topics) so every existing adapters
+  // fixture across this codebase's acceptance step handlers - built before
+  // this field existed - keeps working unchanged rather than needing an
+  // update just to satisfy a capability its own ticket never touches.
+  readStandingTopics?: () => StandingTopicTarget[];
 }
 
 export interface TickResult {
@@ -167,6 +196,39 @@ async function syncIconForBacklogId(
   }
   const state = resolveIconState(folder, type);
   await syncTopicIcon(backlogId, topicId, ICON_EMOJI[state], isNewTopic, iconAdapters);
+}
+
+// BL-418: the standing-topic sibling of syncIconForBacklogId above. Only
+// EVER calls syncTopicIcon for a target that is NEWLY entering
+// standingIconSeenIds (newlyEnteredIds, the SAME "first time this id is
+// seen" diff the ticket-folder transitions above already use) - a target
+// already in the seen-set is left completely untouched, whether or not it
+// is swarm-owned, which is what makes this "change-gated" (BL-418's own
+// wording): unlike the ownership check syncTopicIcon runs internally (which
+// only ever protects an EXISTING, not-owned topic from being overwritten),
+// this outer gate is what stops an ALREADY-owned standing topic from being
+// re-set on every subsequent tick, since syncTopicIcon itself has no
+// "already at the desired value" short-circuit of its own. Returns the
+// updated seen-set (a strict superset) to persist. isNewTopic is always
+// true for a newly-entered target - correct precisely because "newly
+// entering the durable seen-set" IS this ticket's own definition of
+// "genuinely new", by construction (see standingIconSeenIds' own docstring
+// for why that must be tracked independently rather than inferred from the
+// ownership marker itself).
+async function syncStandingTopicIcons(
+  targets: StandingTopicTarget[],
+  prevSeenIds: string[] | undefined,
+  iconAdapters: TopicIconAdapters
+): Promise<string[]> {
+  const currIds = targets.map((t) => t.id);
+  const newlyEntered = new Set(newlyEnteredIds(prevSeenIds, currIds));
+  for (const target of targets) {
+    if (!newlyEntered.has(target.id)) {
+      continue;
+    }
+    await syncTopicIcon(target.id, target.topicId, STANDING_TOPIC_ICON[target.iconKey], true, iconAdapters);
+  }
+  return [...new Set([...(prevSeenIds ?? []), ...currIds])];
 }
 
 // BL-342: icon sync deliberately does NOT ride deriveSwarmEvents' own
@@ -455,7 +517,16 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters): Promise
     }
   }
 
+  // BL-418: the standing (non-ticket) topics' own icon sync - see
+  // syncStandingTopicIcons' own docstring for why this needs its own
+  // durable seen-set rather than reusing topicIdsBeforeTick's approach.
+  const standingIconSeenIds = await syncStandingTopicIcons(
+    adapters.readStandingTopics?.() ?? [],
+    state.standingIconSeenIds,
+    adapters.iconAdapters
+  );
+
   const persistedSnapshot = withRetryableTransitionsHeldBack(curr, unrouted);
-  adapters.writeTickState({ snapshot: persistedSnapshot, emittedKeys: [...alreadyEmitted] });
+  adapters.writeTickState({ snapshot: persistedSnapshot, emittedKeys: [...alreadyEmitted], standingIconSeenIds });
   return { routed };
 }

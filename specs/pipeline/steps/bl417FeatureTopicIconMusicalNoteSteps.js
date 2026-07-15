@@ -108,7 +108,20 @@ function registerSteps(registry) {
     ctx.type = type;
   });
 
+  // BL-418: "the icon is \"...\"" is a verbatim step-text collision with
+  // bl418StandingTopicIconsSteps.js's own Scenario Outline (standing-topic
+  // icons 🎟/🏛, never a member of this ticket's own KNOWN_ICONS) - the same
+  // "registered earlier always wins, so branch on ctx shape rather than
+  // silently shadow the other registration" convention needsApprovalSteps.js
+  // already uses for its own "the backfill runs" collision. ctx.topicKey is
+  // BL-418's own Given step's marker, never set on this ticket's path.
   registry.define(/^the icon is "([^"]*)"$/, (ctx, icon) => {
+    if (ctx.topicKey !== undefined) {
+      if (ctx.resolvedIcon !== icon) {
+        throw new Error(`expected the "${ctx.topicKey}" standing topic's icon to be "${icon}", got "${ctx.resolvedIcon}"`);
+      }
+      return;
+    }
     if (!Object.prototype.hasOwnProperty.call(KNOWN_ICONS, icon)) {
       throw new Error(`feature-topic-icon-musical-note-02: unrecognized <icon> example value "${icon}"`);
     }
@@ -132,12 +145,17 @@ function registerSteps(registry) {
     }
   });
 
+  // BL-418: also a verbatim collision with bl418StandingTopicIconsSteps.js's
+  // own scenario 03 Then step - the check itself (no throw, no icon set)
+  // applies identically to either ticket's ctx.fixture/ctx.tickError shape,
+  // so this one handler serves both without branching; only the message
+  // stays ticket-neutral rather than naming "the musical note" specifically.
   registry.define(/^no icon is set for that topic and the tick does not fail$/, (ctx) => {
     if (ctx.tickError) {
       throw new Error(`expected the tick to complete without throwing, got: ${ctx.tickError.stack || ctx.tickError}`);
     }
     if (ctx.fixture.iconsSet.length !== 0) {
-      throw new Error(`expected no icon to be set when the musical note is absent from the live sticker set, got: ${JSON.stringify(ctx.fixture.iconsSet)}`);
+      throw new Error(`expected no icon to be set when its sticker is absent from the live sticker set, got: ${JSON.stringify(ctx.fixture.iconsSet)}`);
     }
   });
 }

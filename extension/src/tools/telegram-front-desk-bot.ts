@@ -88,7 +88,7 @@ import { sweepTopicDeletions, TopicDeletionAdapters, topicRetentionWindowMs } fr
 import { readBacklogFolders } from '../panel/backlogReader';
 import { appendOperatorEvent } from '../bridge/operatorEventQueue';
 import { appendMessage, readRecord, hasCompletionRecord, isRecordCommitted, hasUpdateId, readSwarmIconId, recordSwarmIconId } from '../concierge/blTopicStore';
-import { IconStickerLookup } from '../concierge/topicIcon';
+import { IconStickerLookup, StandingTopicTarget } from '../concierge/topicIcon';
 import { computeRoleGateStatesLive, RoleGateState } from '../bridge/gateSnapshot';
 import { computeCurrentHolders } from '../bridge/holisticProjections';
 import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
@@ -159,7 +159,11 @@ function tickStatePath(targetPath: string): string {
   return path.join(targetPath, '.swarmforge', 'operator', 'concierge-tick-state.json');
 }
 
-function readTickState(targetPath: string): TickState {
+// Exported (mirrors readTopicMap above) so the standing-topic icon backfill
+// (backfill-standing-topic-icons.ts) can seed standingIconSeenIds ahead of
+// the live tick's own first run, without a second reader/writer of this
+// same file.
+export function readTickState(targetPath: string): TickState {
   try {
     return JSON.parse(fs.readFileSync(tickStatePath(targetPath), 'utf8')) as TickState;
   } catch {
@@ -167,7 +171,7 @@ function readTickState(targetPath: string): TickState {
   }
 }
 
-function writeTickState(targetPath: string, state: TickState): void {
+export function writeTickState(targetPath: string, state: TickState): void {
   fs.mkdirSync(path.dirname(tickStatePath(targetPath)), { recursive: true });
   fs.writeFileSync(tickStatePath(targetPath), JSON.stringify(state));
 }
@@ -619,6 +623,33 @@ async function iconStickersOnce(botToken: string): Promise<IconStickerLookup[]> 
   return cachedIconStickers;
 }
 
+// BL-418: classifies the front-desk bot's OWN {topicId: subjectId} map
+// (readTopicMap, above - never backlogTopicMap, which is ticket topics
+// only) into the standing-topic targets conciergeTick.ts's icon sync wants:
+// the one Operator topic, plus every currently-open support subject's own
+// topic. A key that is not a real numeric topic id - DEFAULT_SUBJECT_KEY
+// (a DM/General binding, no real Telegram topic to iconize) or an
+// `update:<id>` idempotency-guard key (openSubjectAndRecord's own, sharing
+// this same map/file rather than a second store) - is skipped by the
+// Number.isFinite check alone, with no separate name-list of keys to keep
+// in sync.
+export function standingTopicTargets(targetPath: string): StandingTopicTarget[] {
+  const topicMap = readTopicMap(targetPath);
+  const targets: StandingTopicTarget[] = [];
+  for (const [key, subjectId] of Object.entries(topicMap)) {
+    const topicId = Number(key);
+    if (!Number.isFinite(topicId)) {
+      continue;
+    }
+    targets.push({
+      id: subjectId,
+      topicId,
+      iconKey: subjectId === OPERATOR_SUBJECT_ID ? 'operator' : 'support/intake',
+    });
+  }
+  return targets;
+}
+
 function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId: string): ConciergeTickAdapters {
   return {
     readFolders: () => toFoldersSnapshot(targetPath),
@@ -650,6 +681,7 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
       readSwarmIconId: (ticketId) => readSwarmIconId(targetPath, ticketId),
       recordSwarmIconId: (ticketId, iconId) => recordSwarmIconId(targetPath, ticketId, iconId),
     },
+    readStandingTopics: () => standingTopicTargets(targetPath),
   };
 }
 
