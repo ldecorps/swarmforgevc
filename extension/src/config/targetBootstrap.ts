@@ -132,6 +132,31 @@ export function buildUseCaseInventoryBootstrapFiles(inventory: UseCaseInventory)
 // rather than a first-run edge case. Scoping the diff to `files` also means
 // unrelated staged/untracked changes elsewhere in the repo can never affect
 // this decision either way.
+// BL-443 defect 3: the recommended swarm-committer identity, used ONLY when
+// the target has no user.name/user.email configured anywhere (local, global,
+// or system) - a brand-new or foreign target commonly has none. Scoped to
+// this one invocation via `git -c`, never written to the target's own git
+// config.
+const FALLBACK_GIT_AUTHOR_NAME = 'SwarmForge';
+const FALLBACK_GIT_AUTHOR_EMAIL = 'noreply@swarmforge';
+
+// Queries the EFFECTIVE identity the same way `git commit` itself would
+// resolve it (local, then global, then system config) - never pattern-
+// matches the commit's own failure text, the same decide-before-acting
+// posture BL-382 already established for whether there is anything staged
+// to commit.
+async function hasGitIdentityConfigured(targetPath: string): Promise<boolean> {
+  try {
+    const [{ stdout: name }, { stdout: email }] = await Promise.all([
+      execFileAsync('git', ['-C', targetPath, 'config', 'user.name']),
+      execFileAsync('git', ['-C', targetPath, 'config', 'user.email']),
+    ]);
+    return name.trim().length > 0 && email.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function writeFilesAndCommit(targetPath: string, files: BootstrapFile[], commitMessage: string): Promise<boolean> {
   for (const file of files) {
     const filePath = path.join(targetPath, file.path);
@@ -144,7 +169,13 @@ async function writeFilesAndCommit(targetPath: string, files: BootstrapFile[], c
   }
 
   const filePaths = files.map((f) => f.path);
-  await execFileAsync('git', ['-C', targetPath, 'add', ...filePaths]);
+  // BL-443 defect 2: force past a target-side ignore rule (.gitignore /
+  // .git/info/exclude) on exactly these paths. The contract is DESIGNED to
+  // be git-tracked in the target (BL-262's hybrid artifact) and the
+  // build-start gate reads it from the checkout, so a target's own ignore
+  // rule (e.g. a stale `.swarmforge/` exclude) must never silently drop it.
+  // Scoped to exactly the paths this call wrote - never a broad `add -f`.
+  await execFileAsync('git', ['-C', targetPath, 'add', '-f', '--', ...filePaths]);
 
   const hasStagedChanges = await execFileAsync('git', ['-C', targetPath, 'diff', '--cached', '--quiet', '--', ...filePaths]).then(
     () => false,
@@ -159,7 +190,16 @@ async function writeFilesAndCommit(targetPath: string, files: BootstrapFile[], c
     return false;
   }
 
-  await execFileAsync('git', ['-C', targetPath, 'commit', '-m', commitMessage]);
+  const hasIdentity = await hasGitIdentityConfigured(targetPath);
+  const identityOverrides = hasIdentity
+    ? []
+    : ['-c', `user.name=${FALLBACK_GIT_AUTHOR_NAME}`, '-c', `user.email=${FALLBACK_GIT_AUTHOR_EMAIL}`];
+  if (!hasIdentity) {
+    process.stderr.write(
+      `targetBootstrap: no git identity configured in ${targetPath} - committing with fallback identity ${FALLBACK_GIT_AUTHOR_NAME} <${FALLBACK_GIT_AUTHOR_EMAIL}>\n`
+    );
+  }
+  await execFileAsync('git', ['-C', targetPath, ...identityOverrides, 'commit', '-m', commitMessage]);
   return true;
 }
 
@@ -182,13 +222,48 @@ async function detectExistingFilePaths(targetPath: string, files: BootstrapFile[
   return existingFiles;
 }
 
+async function isCommittedAtHead(targetPath: string, filePath: string): Promise<boolean> {
+  try {
+    await execFileAsync('git', ['-C', targetPath, 'cat-file', '-e', `HEAD:${filePath}`]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// BL-443 defect 4: `detectExistingFilePaths`'s existence-only idempotency
+// treats a file that was WRITTEN but never committed - e.g. a prior run that
+// aborted mid-commit on defect 2 or 3 above - as "already done", so no
+// number of re-runs would ever actually produce the commit. A file counts as
+// done here only when it is BOTH on disk AND committed at the current HEAD;
+// the committed check queries git directly, never a filesystem-only
+// existence check, so a partial prior failure is repaired by the very next
+// run. Only meaningful inside a real git repository - a non-git target has
+// no concept of "committed", so existence alone still counts as done there,
+// exactly as before this ticket.
+async function detectCommittedFilePaths(targetPath: string, files: BootstrapFile[]): Promise<Set<string>> {
+  const existingFiles = await detectExistingFilePaths(targetPath, files);
+  if (!(await isGitRepository(targetPath))) {
+    return existingFiles;
+  }
+  const committedFiles = new Set<string>();
+  await Promise.all(
+    Array.from(existingFiles).map(async (filePath) => {
+      if (await isCommittedAtHead(targetPath, filePath)) {
+        committedFiles.add(filePath);
+      }
+    })
+  );
+  return committedFiles;
+}
+
 async function writeAndCommitBootstrapPlan(
   targetPath: string,
   files: BootstrapFile[],
   commitMessage: string
 ): Promise<BootstrapWriteResult> {
-  const existingFiles = await detectExistingFilePaths(targetPath, files);
-  const plan = planTargetBootstrapFiles(existingFiles, files);
+  const committedFiles = await detectCommittedFilePaths(targetPath, files);
+  const plan = planTargetBootstrapFiles(committedFiles, files);
   const committed = await writeFilesAndCommit(targetPath, plan.filesToCreate, commitMessage);
 
   return {
