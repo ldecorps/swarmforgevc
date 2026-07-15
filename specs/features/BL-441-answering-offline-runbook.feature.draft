@@ -1,0 +1,29 @@
+Feature: A short "answering offline" runbook tells the human how to answer the swarm from a checkout
+
+# BL-441 (docs, PARKED behind BL-440): once the ANSWER-*.md offline return path (BL-440) exists, the
+# human needs a short runbook covering where pending questions are READ offline and how to compose
+# answers. Scenarios live in this .feature.draft companion until BL-440 lands and this ticket is promoted
+# (engineering slice-scoping rule: a paused/blocked ticket parks its Gherkin in a non-executable draft so
+# the acceptance runner never hits unbuilt handlers).
+#
+# Scope (verify at build time): docs under docs/ (a text-based runbook), pointing at the read surfaces
+# that already exist (git-committed BL topics / backlog/topics/*.json, the PWA dashboard) and the
+# ANSWER-*.md compose convention from BL-440. Documenter-owned once built.
+
+# BL-441 answering-offline-runbook-01
+Scenario: The runbook explains composing an ANSWER-*.md that references an ask
+  Given the "answering offline" runbook
+  When the human reads it
+  Then it explains composing an ANSWER-*.md at the backlog root that references a BL id, topic, or ask id
+
+# BL-441 answering-offline-runbook-02
+Scenario: The runbook points to where pending questions are read offline
+  Given the "answering offline" runbook
+  When the human reads it
+  Then it points to the committed BL topics and PWA dashboard as the offline read surfaces
+
+# BL-441 answering-offline-runbook-03
+Scenario: The runbook states the stale-premise behaviour
+  Given the "answering offline" runbook
+  When the human reads it
+  Then it states that a late answer may be reported not-executed if the premise has moved on

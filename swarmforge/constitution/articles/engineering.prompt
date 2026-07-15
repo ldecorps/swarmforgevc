@@ -618,3 +618,22 @@
   embeds a Telegram reply — obtained from `messageTextOf`, which returns `update.message?.text` with
   newlines intact — as a trailing YAML comment on the ticket, so a multi-line reject reason injects new
   YAML lines and corrupts the backlog file. Proposed by the cleaner 2026-07-15 scoped `engineering`.)
+- **A change-gated per-tick sync still has a FIRST-PASS mass transition over the whole existing set — that
+  backfill must honor the external rate limit (a 429's own `retry_after`) the way BL-342's icon sync does,
+  and be proven safe at first-tick volume, before it ships.** A sync that edits a rate-limited external
+  surface (Telegram `editForumTopic` — topic icons, titles, age suffixes) ONLY when some persisted
+  per-topic bucket/key CHANGES is safe in steady state, but that same gate FIRES FOR EVERY TOPIC AT ONCE on
+  the first live tick — or on any run over an already-populated set before the per-topic state has been
+  persisted — because every topic transitions together from "no persisted value" to its current one. That
+  simultaneous fan-out is exactly the backfill storm BL-342 documented: `backfill-topic-icons.ts` hit
+  "Too Many Requests: retry after 26" after 19 of 26 calls and dropped the rest. The change-gate protects
+  the steady state, NOT the first pass — so a green steady-state test (one bucket flips) is not proof the
+  first tick is safe (all buckets flip). Any new per-topic sync over a rate-limited surface must reuse the
+  same 429-safe mechanism the backfill tool already has — honor the 429's told-you-so `retry_after` (wait
+  exactly that long, then continue) rather than fanning out unthrottled — and demonstrate the
+  first-tick/backfill volume is bounded before handoff. This is the spec-and-code sibling of the operational
+  memory note "Icon backfill vs stale concierge tick" (run the backfill only after the daemon is on the new
+  build, or the mass edit war/storm reappears). (Proposed by the architect 2026-07-15 reviewing BL-414's
+  title-age sync: its own spec is change-gated "do NOT rename every tick" exactly like BL-342's icon
+  change-gate, which protects steady state but leaves the first-tick mass transition over all existing
+  topics unthrottled — the precedent to copy is `backfill-topic-icons.ts`'s `retry_after` honoring, BL-342.)
