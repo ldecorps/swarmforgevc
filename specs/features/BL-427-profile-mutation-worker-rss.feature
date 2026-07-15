@@ -1,9 +1,3 @@
-# DRAFT — parked out of the *.feature glob until human review + build
-# (BL-233/BL-314). Single slice: the PURE recommendation function and the RSS
-# sample parser. The live measurement run is a QA/human step (see qa_e2e), not a
-# scenario here. Materialized into the live .feature at build, handlers in the
-# same parcel.
-
 Feature: recommend a mutation-run worker concurrency from free-RAM headroom
 
   # BL-427 profile-mutation-worker-rss-01

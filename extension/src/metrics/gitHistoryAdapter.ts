@@ -47,12 +47,17 @@ export function parseGitLog(output: string): GitLogEntry[] {
 // done, active -> paused -> active, done -> done/<milestone>) shows as one
 // R change rather than a D+A pair that would otherwise look like the
 // ticket file was deleted and a different one created.
-export function runGitLog(targetPath: string, pathspec: string): GitLogEntry[] {
+//
+// ref defaults to HEAD (the caller's own checked-out branch, matching every
+// existing call site's behavior unchanged). BL-430 passes 'main' explicitly:
+// a role's own worktree branch can lag commits already landed on main
+// (BL-340), so reading THIS worktree's HEAD would undercount.
+export function runGitLog(targetPath: string, pathspec: string, ref: string = 'HEAD'): GitLogEntry[] {
   let output: string;
   try {
     output = execFileSync(
       'git',
-      ['-C', targetPath, 'log', '--format=COMMIT%x09%H%x09%cI', '--name-status', '-M', '--reverse', '--', pathspec],
+      ['-C', targetPath, 'log', ref, '--format=COMMIT%x09%H%x09%cI', '--name-status', '-M', '--reverse', '--', pathspec],
       { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
     );
   } catch {
@@ -179,6 +184,36 @@ export function getCurrentSha(targetPath: string): string | null {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
     }).trim();
+  } catch {
+    return null;
+  }
+}
+
+// BL-430: lists tracked file paths under a pathspec at a given ref - thin
+// adapters with no pure half to split out, same as getCurrentSha above.
+// Lets a caller check "does this file exist at ref X" (BL-340: main, not
+// the caller's own worktree checkout) without a fetch or a checkout.
+export function listGitTreeFiles(targetPath: string, ref: string, pathspec: string): string[] {
+  try {
+    const output = execFileSync('git', ['-C', targetPath, 'ls-tree', '-r', '--name-only', ref, '--', pathspec], {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    return output ? output.split('\n') : [];
+  } catch {
+    return [];
+  }
+}
+
+// BL-430: reads a tracked file's content at a given ref (`git show
+// ref:path`) - null when the ref/path does not resolve, never a thrown
+// error propagated into a caller composing a best-effort signal.
+export function readFileAtRef(targetPath: string, ref: string, filePath: string): string | null {
+  try {
+    return execFileSync('git', ['-C', targetPath, 'show', `${ref}:${filePath}`], {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
   } catch {
     return null;
   }
