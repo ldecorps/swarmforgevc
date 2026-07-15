@@ -1,0 +1,89 @@
+id: BL-424
+title: "Distinct topic icon for a paused ticket awaiting the human's approval"
+milestone: M8
+type: feature
+status: todo
+priority: 4
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-topic-icon-needs-approval-visual-cue.md — coordinator-filed 2026-07-15, the human's own words appended to his BL-421/422/423 approval replies: 'Also: visual cue on the BL icons that need approval.' Drained by the specifier 2026-07-15: the human said 'on the icons', so this is an icon-state cue (not a title suffix); scoped to paused + human_approval:pending, the only state where his approval is the blocker."
+
+notes: |
+  WHAT / WHY. The per-topic icon (topicIcon.ts, BL-342/417/418) maps a ticket's
+  FOLDER + TYPE to one icon (✅ done, 🦠 defect-in-flight, 💡 feature-in-flight,
+  🔍 paused). resolveIconState does NOT consult human_approval today, so a paused
+  ticket blocked ONLY on the human's approval (actionable by him NOW) looks
+  identical in the topic list to a paused ticket held for any other reason (a
+  dependency like BL-410/416 waiting on BL-409, an overlap hold, a deliberate
+  park like BL-101). The human wants to glance the list and see which paused
+  tickets need HIM.
+
+  BEHAVIOR WANTED (see the feature file). Add ONE new paused-scoped icon state:
+    - folder == paused AND human_approval == pending -> a distinct
+      "awaiting-approval" icon (a dedicated glyph, e.g. 👀 / ⏳ / 🆕 — final glyph
+      resolved against the LIVE free set, see below);
+    - folder == paused AND human_approval != pending (approved, or field absent)
+      -> the plain paused icon 🔍, exactly as today;
+    - active / done tickets are UNAFFECTED — the approval marker is
+      paused-scoped, so an active ticket keeps its feature/defect icon even if
+      its approval field were somehow pending. (This paused-AND-pending pair is
+      load-bearing: the active+pending example row proves the FOLDER gates it,
+      not the approval field alone — the "test both branch triggers true at once"
+      engineering rule.)
+
+  RESOLVE-OR-SKIP AGAINST THE LIVE SET (BL-342 posture). Telegram allows only the
+  emojis getForumTopicIconStickers actually returns (~112, and the set can
+  change). resolveIconStickerId already returns undefined for an absent emoji.
+  The chosen awaiting-approval glyph MUST be resolved against the live set; if it
+  is absent, FALL BACK to the plain paused icon 🔍 (never a blank/failed icon) —
+  so the worst case is "looks like a normal paused ticket", no regression. Pick a
+  primary glyph that is actually in the live set; do not hardcode an unvalidated id.
+
+  SCOPE / LIVE PATH:
+    - extension/src/concierge/topicIcon.ts — extend TopicIconState +
+      ICON_EMOJI with the awaiting-approval state; resolveIconState grows a
+      human_approval argument (pure, trivially unit-tested over the example
+      rows); resolveIconStickerId / the caller add the paused-icon fallback.
+    - the caller (conciergeTick.ts, the icon-sync path) must now READ
+      human_approval from the ticket YAML and pass it in. A wiring test that adds
+      this new on-disk input MUST place a fixture ticket carrying
+      human_approval:pending and prove the read is load-bearing by break-then-fix
+      (blank the field -> the icon reverts to plain paused -> restore) — a green
+      wiring suite whose fixture never set the field is not proof the wiring reads
+      it (engineering "wiring test that adds a NEW on-disk input" rule).
+
+  COORDINATOR SERIALISATION. This overlaps the topic-hook cluster
+  (topicIcon.ts / conciergeTick.ts) shared with BL-414 (title-age-suffix),
+  BL-417 (music-note icon), BL-418 (standing-topic icons). depends_on is empty,
+  but these are NOT orthogonal — do not run BL-424 concurrently with any of them;
+  sequence them (they edit the same files). Flagged per the known overlap-cluster
+  hazard.
+
+  OUT OF SCOPE (per the intake): any change to how human_approval is SET; any new
+  approval workflow; a title-suffix cue (the human asked for an icon). This is
+  the visual cue only.
+
+acceptance:
+  feature: specs/features/BL-424-awaiting-approval-topic-icon.feature
+  steps:
+    - "A paused ticket with human_approval pending resolves to a distinct awaiting-approval icon state"
+    - "A paused ticket that is not pending approval keeps the plain paused icon state"
+    - "An active or done ticket is unaffected by the approval field"
+    - "An awaiting-approval glyph absent from the live icon set falls back to the plain paused icon"
+
+qa_e2e: |
+  1. Unit (host-side, no Telegram): drive resolveIconState over the example rows
+     (paused+pending -> awaiting-approval; paused+approved -> paused;
+     active+pending -> feature; active+bug -> defect; done -> done). Drive the
+     sticker fallback: awaiting-approval glyph absent + paused glyph present ->
+     the paused sticker id is used. Add the wiring break-then-fix test proving the
+     caller actually reads human_approval from the fixture YAML.
+  2. Live: against the real forum group, take a paused pending-approval ticket
+     (e.g. a freshly-specced one) and confirm its topic icon shows the distinct
+     awaiting-approval glyph; approve it (or promote it) and confirm the icon
+     reverts to the normal state; confirm other paused tickets held for non-approval
+     reasons still show 🔍 and active/done topics are untouched.
+
+human_approval: pending
+
+mutation_cost: low
