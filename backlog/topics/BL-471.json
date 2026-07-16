@@ -1,0 +1,1 @@
+{"id":"BL-471","messages":[{"seq":0,"ts":1784242720064,"author":"swarm","type":"outbound","text":"What it is: Pipeline-board stage map: canonicalize ticket-id casing so a differently-cased id in a note/task header can't silently drop an active ticket\nHow it works: A ticket the coder works after a note-based promotion appears at the coder stage"}]}
