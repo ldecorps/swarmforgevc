@@ -95,6 +95,23 @@ export function buildAlwaysEligibleIconAdapters(
   };
 }
 
+// Exported so every one-time backfill (this file, backfill-standing-topic-
+// icons.ts, backfill-epic-topic-icons.ts) shares the SAME "fetch the live
+// sticker set, fall back to empty on failure, then build the always-eligible
+// adapters" sequence rather than each carrying its own copy (BL-449 tripled
+// what was already a 2-file duplication into 3 identical copies).
+export async function fetchAlwaysEligibleIconAdapters(
+  targetPath: string,
+  botToken: string,
+  chatId: string,
+  wait: (ms: number) => Promise<void> = defaultWait,
+  postFn?: TelegramPostFn
+): Promise<TopicIconAdapters> {
+  const iconStickersResult = await getForumTopicIconStickers(botToken, postFn);
+  const stickers: IconStickerLookup[] = iconStickersResult.success ? iconStickersResult.stickers : [];
+  return buildAlwaysEligibleIconAdapters(targetPath, botToken, chatId, stickers, wait, postFn);
+}
+
 interface FolderedItem {
   item: BacklogItem;
   folder: 'active' | 'paused' | 'done';
@@ -120,9 +137,7 @@ export async function backfillTopicIcons(
   postFn?: TelegramPostFn
 ): Promise<BackfillIconOutcome[]> {
   const topicMap = readBacklogTopicMap(targetPath);
-  const iconStickersResult = await getForumTopicIconStickers(botToken, postFn);
-  const stickers: IconStickerLookup[] = iconStickersResult.success ? iconStickersResult.stickers : [];
-  const adapters = buildAlwaysEligibleIconAdapters(targetPath, botToken, chatId, stickers, wait, postFn);
+  const adapters = await fetchAlwaysEligibleIconAdapters(targetPath, botToken, chatId, wait, postFn);
 
   const outcomes: BackfillIconOutcome[] = [];
   for (const { item, folder } of allTicketsByFolder(targetPath)) {

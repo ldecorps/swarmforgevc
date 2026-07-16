@@ -602,6 +602,182 @@ test('BL-341: an epic topic that fails to create is not posted into', async () =
   assert.ok(!sent.some((m) => m.text === 'Epic: undocumented-epic'));
 });
 
+// ── BL-449: a newly-created epic topic gets its musical-form icon ─────────
+
+const EPIC_STICKERS = [
+  { emoji: '🎙', customEmojiId: 'id-mic' },
+  { emoji: '🎭', customEmojiId: 'id-masks' },
+  { emoji: '🎬', customEmojiId: 'id-clapper' },
+  { emoji: '🎤', customEmojiId: 'id-mic2' },
+];
+
+test('BL-449: a brand-new epic topic is assigned its resolved musical-form icon on creation', async () => {
+  const { adapters, setFolders, topicMap, iconsSet, iconOwnership } = fakeAdapters({
+    iconAdapters: {
+      getIconStickers: async () => EPIC_STICKERS,
+      setTopicIcon: async (topicId, iconId) => {
+        iconsSet.push({ topicId, iconId });
+        return true;
+      },
+      readSwarmIconId: (id) => iconOwnership[id],
+      recordSwarmIconId: (id, iconId) => {
+        iconOwnership[id] = iconId;
+      },
+    },
+  });
+  setFolders(folders({
+    paused: [epicDefTicket('role-benchmarking', 'Swarm Role Benchmarking')],
+    active: [{ id: 'BL-1', title: 'a fine feature', epic: 'role-benchmarking' }],
+  }));
+
+  await runConciergeTick(adapters);
+
+  const epicTopicId = topicMap['role-benchmarking'];
+  assert.ok(iconsSet.some((s) => s.topicId === epicTopicId && s.iconId === 'id-mic'), `expected the epic topic's icon to be set to id-mic, got: ${JSON.stringify(iconsSet)}`);
+  assert.equal(iconOwnership['role-benchmarking'], 'id-mic');
+});
+
+test('BL-449: two different new epics created in the same tick get distinct pool icons', async () => {
+  const { adapters, setFolders, iconsSet } = fakeAdapters({
+    iconAdapters: {
+      getIconStickers: async () => EPIC_STICKERS,
+      setTopicIcon: async (topicId, iconId) => {
+        iconsSet.push({ topicId, iconId });
+        return true;
+      },
+      readSwarmIconId: () => undefined,
+      recordSwarmIconId: () => {},
+    },
+  });
+  setFolders(folders({
+    active: [
+      { id: 'BL-1', title: 'routing slice', epic: 'undocumented-epic-a' },
+      { id: 'BL-2', title: 'benchmark slice', epic: 'undocumented-epic-b' },
+    ],
+  }));
+
+  await runConciergeTick(adapters);
+
+  assert.equal(iconsSet.length, 2);
+  assert.notEqual(iconsSet[0].iconId, iconsSet[1].iconId, 'expected two distinct epics created in one tick to get distinct pool icons');
+});
+
+test('BL-449: reusing an already-created epic topic for a second slice never re-sets its icon', async () => {
+  const { adapters, setFolders, iconsSet } = fakeAdapters({
+    iconAdapters: {
+      getIconStickers: async () => EPIC_STICKERS,
+      setTopicIcon: async (topicId, iconId) => {
+        iconsSet.push({ topicId, iconId });
+        return true;
+      },
+      readSwarmIconId: () => 'id-mic',
+      recordSwarmIconId: () => {},
+    },
+  });
+  const epicTicket = epicDefTicket('dynamic-routing', 'Dynamic Routing');
+  setFolders(folders({ paused: [epicTicket], active: [{ id: 'BL-1', title: 'first slice', epic: 'dynamic-routing' }] }));
+  await runConciergeTick(adapters);
+  const iconSetCountAfterFirst = iconsSet.length;
+
+  setFolders(folders({
+    paused: [epicTicket],
+    active: [{ id: 'BL-1', title: 'first slice', epic: 'dynamic-routing' }, { id: 'BL-2', title: 'second slice', epic: 'dynamic-routing' }],
+  }));
+  await runConciergeTick(adapters);
+
+  assert.equal(iconsSet.length, iconSetCountAfterFirst, 'expected no further setTopicIcon call for a REUSED epic topic');
+});
+
+test('BL-449: a failed epic-topic creation never attempts to set an icon', async () => {
+  const { adapters, setFolders, created, iconsSet } = fakeAdapters({
+    iconAdapters: {
+      getIconStickers: async () => EPIC_STICKERS,
+      setTopicIcon: async (topicId, iconId) => {
+        iconsSet.push({ topicId, iconId });
+        return true;
+      },
+      readSwarmIconId: () => undefined,
+      recordSwarmIconId: () => {},
+    },
+  });
+  adapters.routeAdapters.createTopic = async (name) => {
+    created.push(name);
+    return name.startsWith('EPIC — ') ? { success: false } : { success: true, topicId: 800 + created.length };
+  };
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', epic: 'undocumented-epic' }] }));
+
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(iconsSet, []);
+});
+
+test('BL-449: an epic emoji absent from the live sticker set is skipped without failing the tick or the epic post', async () => {
+  const { adapters, setFolders, sent, iconsSet, topicMap } = fakeAdapters({
+    iconAdapters: {
+      getIconStickers: async () => [], // no stickers at all - every resolution is unresolved
+      setTopicIcon: async (topicId, iconId) => {
+        iconsSet.push({ topicId, iconId });
+        return true;
+      },
+      readSwarmIconId: () => undefined,
+      recordSwarmIconId: () => {},
+    },
+  });
+  setFolders(folders({
+    paused: [epicDefTicket('role-benchmarking', 'Swarm Role Benchmarking')],
+    active: [{ id: 'BL-1', title: 'a fine feature', epic: 'role-benchmarking' }],
+  }));
+
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(iconsSet, [], 'expected no setTopicIcon call when the desired emoji is absent from the live set');
+  assert.ok(topicMap['role-benchmarking'] !== undefined, 'the epic topic itself is still created');
+  assert.ok(sent.some((m) => m.text === 'Epic: Swarm Role Benchmarking'), 'the epic opening message still posts - icon resolution failure is best-effort, never blocking');
+});
+
+test('BL-449: exhausting the epic icon pool within one tick logs a reuse warning and still assigns an icon', async () => {
+  // Every pool icon needs its own sticker so resolveIconStickerId can match
+  // it and setTopicIcon actually fires for all 11 epics below - EPIC_STICKERS
+  // only covers 4 of the pool's 10 icons, not enough to exhaust it.
+  const FULL_POOL_STICKERS = ['🎙', '🎭', '🎬', '🎤', '🎨', '🎩', '🕺', '💃', '✍️', '📚'].map((emoji, i) => ({
+    emoji,
+    customEmojiId: `id-${i}`,
+  }));
+  const { adapters, setFolders, iconsSet } = fakeAdapters({
+    iconAdapters: {
+      getIconStickers: async () => FULL_POOL_STICKERS,
+      setTopicIcon: async (topicId, iconId) => {
+        iconsSet.push({ topicId, iconId });
+        return true;
+      },
+      readSwarmIconId: () => undefined,
+      recordSwarmIconId: () => {},
+    },
+  });
+  // EPIC_ICON_POOL has 10 icons; an 11th distinct epic in the same tick
+  // must fall back to reusing the pool's last icon rather than crashing.
+  const active = Array.from({ length: 11 }, (_, i) => ({
+    id: `BL-${i}`,
+    title: `slice ${i}`,
+    epic: `undocumented-epic-${i}`,
+  }));
+  setFolders(folders({ active }));
+  const originalErrorWrite = process.stderr.write;
+  const errors = [];
+  process.stderr.write = (chunk) => {
+    errors.push(chunk);
+    return true;
+  };
+  try {
+    await runConciergeTick(adapters);
+  } finally {
+    process.stderr.write = originalErrorWrite;
+  }
+
+  assert.equal(iconsSet.length, 11, 'expected every one of the 11 epics to still get an icon assigned');
+  assert.ok(errors.some((e) => e.includes('epic icon pool exhausted')), `expected a pool-exhaustion warning, got: ${JSON.stringify(errors)}`);
+});
+
 // Hardening gap: every epics-0x test above ran with exactly ONE epic in
 // play. epicDefinitionsFor/epicSlicesFor key everything off epicId, but
 // that keying was never proven with two DIFFERENT epics active in the

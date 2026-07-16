@@ -225,7 +225,8 @@ const DOMAINS = [
   require('./bl411NegotiationRelayKillsSupersededChildSteps'),
   require('./bl445SuiteDurationBudgetSteps'),
   require('./bl446MutationGateZeroKillSteps'),
-  require('./bl425RoleSteeringTopicsSteps')
+  require('./bl425RoleSteeringTopicsSteps'),
+  require('./bl449EpicTopicMusicalFormIconsSteps')
 ];
 
 function registerSteps(registry) {

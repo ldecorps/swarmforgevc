@@ -62,6 +62,16 @@ shared article remains in force.
    speccing; "put it on the phone app" does not automatically mean the static
    PWA. (Recurred 3x in 2026-07-10: BL-252 suite-duration trend, BL-265
    gate-answer view, BL-257 slices 3-4 changed-since-visit + live trends.)
+6. Epics have icons representing musical forms. An epic is a large-scale
+   musical FORM, so its icon is drawn from that vocabulary, on TWO distinct
+   surfaces with two distinct realisations — never one implementation
+   assumed to cover both: the PWA/fleet-console/bot-avatar surfaces carry the
+   owned orchestra FORM marks (Symphony/Concerto/Suite/Fugue/Overture —
+   `docs/branding/icon-system.md` §4d); Telegram topic icons stand in with
+   the closest stock PERFORMANCE sticker instead, because the platform wall
+   is real — `getForumTopicIconStickers` offers no notation/instrument
+   glyphs, so an SVG form mark can never be pushed onto a Telegram topic
+   icon, only approximated by a performance emoji (BL-449).
 
 ## Diagrams (this project)
 Per the shared Diagrams rule, the diagrams this project maintains are:
