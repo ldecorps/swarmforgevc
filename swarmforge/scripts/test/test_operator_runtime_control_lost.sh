@@ -7,6 +7,7 @@
 # and a role's session is genuinely gone (the ticket's own "do not break the
 # real path" requirement).
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$SCRIPT_DIR/.."
@@ -16,6 +17,7 @@ check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi
 
 make_fixture() {
   local d; d="$(mktemp -d)"
+  register_tmp_dir "$d"
   mkdir -p "$d/.swarmforge/operator" "$d/swarmforge/scripts" "$d/swarmforge/roles"
   cp "$SRC/operator_lib.bb" "$SRC/operator_runtime.bb" "$SRC/telegram_topic_lib.bb" \
      "$SRC/support_lib.bb" "$SRC/support_thread_store.bb" \
@@ -86,6 +88,7 @@ rm -rf "$F2"
 F3="$(make_fixture)"
 write_roles_tsv "$F3"
 SOCK_DIR="$(mktemp -d)"
+register_tmp_dir "$SOCK_DIR"
 SOCK="$SOCK_DIR/bl368.sock"
 tmux -S "$SOCK" new-session -d -s swarmforge-coder -n agent 2>/dev/null
 tmux -S "$SOCK" new-session -d -s swarmforge-QA -n agent 2>/dev/null

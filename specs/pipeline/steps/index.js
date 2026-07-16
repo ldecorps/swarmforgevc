@@ -234,7 +234,8 @@ const DOMAINS = [
   require('./bl456DivioDocsReorgSteps'),
   require('./bl455PipelineBoardSteps'),
   require('./bl413StaleSandboxSweepSteps'),
-  require('./bl458AcceptanceFixtureProcessLeakSteps')
+  require('./bl458AcceptanceFixtureProcessLeakSteps'),
+  require('./bl459ShellBbTempdirCleanupTrapSteps')
 ];
 
 function registerSteps(registry) {
