@@ -59,20 +59,32 @@
 ;; sitting dirty in the backlog root at the time (engineering.prompt: "a
 ;; script that cd's..."/one-bad-pathspec-stages-nothing guardrails apply
 ;; here in spirit - stay narrowly scoped to exactly the file this CLI
-;; itself just wrote). Returns false (never throws) on any git failure -
-;; the caller decides how loudly to report it.
+;; itself just wrote). Returns the filing commit's sha on success, nil
+;; (never throws) on any git failure - the caller decides how loudly to
+;; report it.
 (defn write-and-commit-intake! [abs-path content]
   (fs/create-dirs (fs/parent abs-path))
   (spit (str abs-path) content)
   (try
     (let [add (process/sh ["git" "-C" project-root "add" "--" (str abs-path)])]
-      (if-not (zero? (:exit add))
-        false
+      (when (zero? (:exit add))
         (let [commit (process/sh ["git" "-C" project-root "commit" "-m"
                                    "Operator: file a question as raw intake for the swarm\n\nBy operator."
                                    "--" (str abs-path)])]
-          (zero? (:exit commit)))))
-    (catch Exception _ false)))
+          (when (zero? (:exit commit))
+            (let [rev (process/sh ["git" "-C" project-root "rev-parse" "HEAD"])]
+              (when (zero? (:exit rev)) (str/trim (:out rev))))))))
+    (catch Exception _ nil)))
+
+;; BL-415: the origin remote, when there is one - a permalink is a
+;; convenience layered on top of the (already durably committed) filing, so
+;; a missing/errored remote lookup falls back to nil rather than failing
+;; the whole command.
+(defn origin-remote-url []
+  (try
+    (let [res (process/sh ["git" "-C" project-root "remote" "get-url" "origin"])]
+      (when (zero? (:exit res)) (str/trim (:out res))))
+    (catch Exception _ nil)))
 
 (defn -main []
   (let [question (:question opts)
@@ -81,14 +93,14 @@
         content (operator-lib/question-intake-content question (now-iso))
         rel-path (str "backlog/INTAKE-" slug ".md")
         abs-path (fs/path project-root rel-path)
-        committed? (write-and-commit-intake! abs-path content)]
-    (if-not committed?
+        sha (write-and-commit-intake! abs-path content)]
+    (if-not sha
       (do
         (binding [*out* *err*]
           (println (str "operator_file_question: FAILED to commit " rel-path
                          " - the question is NOT durably filed, refusing to report success or tell the human it was filed.")))
         (System/exit 1))
-      (let [reply-text (str "Filed for the swarm: " rel-path)
+      (let [reply-text (operator-lib/filed-intake-confirmation-text rel-path sha (origin-remote-url))
             reply (process/sh ["bb" (str (fs/path script-dir "operator_reply.bb")) project-root
                                 "--thread" thread-id "--text" reply-text])]
         (when-not (zero? (:exit reply))
