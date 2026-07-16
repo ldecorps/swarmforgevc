@@ -34,21 +34,23 @@ export interface PipelineBoardSyncResult {
   outcome: PipelineBoardSyncOutcome;
 }
 
-export async function syncPipelineBoard(
-  rows: PipelineBoardRow[],
+// The topic id is created ONCE then reused - split out of syncPipelineBoard
+// purely to keep that function's own CRAP under threshold (same reasoning
+// as this codebase's other extract-for-CRAP splits, e.g. conciergeTick.ts's
+// syncAllTitleAgeBuckets).
+function resolveBoardTopicId(prevState: PipelineBoardState | undefined, adapters: PipelineBoardAdapters): Promise<number | undefined> {
+  return Promise.resolve(prevState?.topicId ?? adapters.ensureBoardTopic());
+}
+
+// Only a SUCCESSFUL post/edit may advance renderedText/messageId - see this
+// module's own PipelineBoardSyncResult docstring for why. Extracted for the
+// same CRAP reason as resolveBoardTopicId above.
+async function postOrEditBoard(
+  topicId: number,
+  text: string,
   prevState: PipelineBoardState | undefined,
   adapters: PipelineBoardAdapters
 ): Promise<PipelineBoardSyncResult> {
-  const text = renderPipelineBoard(rows);
-  if (text === prevState?.renderedText) {
-    return { state: prevState ?? {}, outcome: 'skipped-unchanged' };
-  }
-
-  const topicId = prevState?.topicId ?? (await adapters.ensureBoardTopic());
-  if (topicId === undefined) {
-    return { state: prevState ?? {}, outcome: 'failed-no-topic' };
-  }
-
   if (prevState?.messageId === undefined) {
     const messageId = await adapters.postMessage(topicId, text);
     if (messageId === undefined) {
@@ -62,4 +64,22 @@ export async function syncPipelineBoard(
     return { state: prevState, outcome: 'failed-edit' };
   }
   return { state: { topicId, messageId: prevState.messageId, renderedText: text }, outcome: 'edited' };
+}
+
+export async function syncPipelineBoard(
+  rows: PipelineBoardRow[],
+  prevState: PipelineBoardState | undefined,
+  adapters: PipelineBoardAdapters
+): Promise<PipelineBoardSyncResult> {
+  const text = renderPipelineBoard(rows);
+  if (text === prevState?.renderedText) {
+    return { state: prevState ?? {}, outcome: 'skipped-unchanged' };
+  }
+
+  const topicId = await resolveBoardTopicId(prevState, adapters);
+  if (topicId === undefined) {
+    return { state: prevState ?? {}, outcome: 'failed-no-topic' };
+  }
+
+  return postOrEditBoard(topicId, text, prevState, adapters);
 }

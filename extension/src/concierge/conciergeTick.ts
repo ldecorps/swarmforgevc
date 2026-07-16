@@ -302,6 +302,28 @@ async function syncAllTitleAgeBuckets(
   return titleAgeBuckets;
 }
 
+// BL-452: the pipeline board's own sync - runs on EVERY tick (never gated on
+// a folder-membership transition, same posture as the title-age sync above),
+// because the change-gate that matters is the rendered TEXT, not any one
+// ticket's transition; syncPipelineBoard owns that gate. Extracted out of
+// runConciergeTick so THAT function's own branch count stays at or below the
+// CRAP threshold, the same reasoning as syncAllTitleAgeBuckets above. Absent
+// adapters (boardAdapters/readRoleHeldTickets both optional, same posture as
+// titleAdapters) leaves the prior tick's board state untouched.
+async function syncBoardIfWired(
+  folders: BacklogFoldersSnapshot,
+  prevBoard: PipelineBoardState | undefined,
+  boardAdapters: PipelineBoardAdapters | undefined,
+  readRoleHeldTickets: (() => Record<string, string[]>) | undefined
+): Promise<PipelineBoardState | undefined> {
+  if (!boardAdapters || !readRoleHeldTickets) {
+    return prevBoard;
+  }
+  const rows = computePipelineBoardRows(readRoleHeldTickets(), folders.paused);
+  const result = await syncPipelineBoard(rows, prevBoard, boardAdapters);
+  return result.state;
+}
+
 // BL-418: the standing-topic sibling of syncIconForBacklogId above. Only
 // EVER calls syncTopicIcon for a target that is NEWLY entering
 // standingIconSeenIds (newlyEnteredIds, the SAME "first time this id is
@@ -710,12 +732,7 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
   // gated on a folder-membership transition, same posture as the title-age
   // sync above), because the change-gate that matters is the rendered TEXT,
   // not any one ticket's transition; syncPipelineBoard owns that gate.
-  let pipelineBoard = state.pipelineBoard;
-  if (adapters.boardAdapters && adapters.readRoleHeldTickets) {
-    const rows = computePipelineBoardRows(adapters.readRoleHeldTickets(), folders.paused);
-    const result = await syncPipelineBoard(rows, state.pipelineBoard, adapters.boardAdapters);
-    pipelineBoard = result.state;
-  }
+  const pipelineBoard = await syncBoardIfWired(folders, state.pipelineBoard, adapters.boardAdapters, adapters.readRoleHeldTickets);
 
   const persistedSnapshot = withRetryableTransitionsHeldBack(curr, unrouted);
   adapters.writeTickState({ snapshot: persistedSnapshot, emittedKeys: [...alreadyEmitted], standingIconSeenIds, titleAgeBuckets, pipelineBoard });
