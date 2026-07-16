@@ -567,18 +567,36 @@ async function processSteeringUpdate(
   return 'posted';
 }
 
+// BL-425 slice 1 (cleaner): the readRoleTopicMap/redirectToRole optional-pair
+// guard ahead of processSteeringUpdate above, split out so
+// processMessageUpdate's own branch count stays at or below the CRAP
+// threshold - adding this guard is exactly what pushed it over (same
+// "extract so branch count stays low" reasoning this file already applies
+// throughout). Returns undefined both when steering isn't wired at all AND
+// when processSteeringUpdate itself says 'ignore' (not a role topic) - the
+// caller treats both identically: fall through to the pre-BL-425 routing.
+async function attemptSteeringDelivery(
+  update: TelegramUpdate,
+  principalUserId: string,
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome | undefined> {
+  if (!adapters.readRoleTopicMap || !adapters.redirectToRole) {
+    return undefined;
+  }
+  return processSteeringUpdate(update, principalUserId, adapters.chatId, adapters.readRoleTopicMap(), adapters.redirectToRole);
+}
+
+// Pure: which topic id (if any) an 'open-default'/'open-for-topic' decision
+// opens - split out of processMessageUpdate below for the same CRAP-budget
+// reason as attemptSteeringDelivery above.
+function openTopicIdFor(decision: BotUpdateDecision): number | undefined {
+  return decision.action === 'open-for-topic' ? decision.topicId : undefined;
+}
+
 async function processMessageUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
-  if (adapters.readRoleTopicMap && adapters.redirectToRole) {
-    const steeringOutcome = await processSteeringUpdate(
-      update,
-      principalUserId,
-      adapters.chatId,
-      adapters.readRoleTopicMap(),
-      adapters.redirectToRole
-    );
-    if (steeringOutcome) {
-      return steeringOutcome;
-    }
+  const steeringOutcome = await attemptSteeringDelivery(update, principalUserId, adapters);
+  if (steeringOutcome) {
+    return steeringOutcome;
   }
   const decision = decideUpdateAction(update, principalUserId, adapters.chatId, adapters.subjectForTopic, adapters.backlogForTopic);
   if (decision.action === 'post-existing') {
@@ -590,8 +608,7 @@ async function processMessageUpdate(update: TelegramUpdate, principalUserId: str
     return deliveryOutcome(ok);
   }
   if (decision.action === 'open-default' || decision.action === 'open-for-topic') {
-    const topicId = decision.action === 'open-for-topic' ? decision.topicId : undefined;
-    await adapters.openSubjectAndRecord(topicId, decision.text, update.update_id);
+    await adapters.openSubjectAndRecord(openTopicIdFor(decision), decision.text, update.update_id);
     return 'posted';
   }
   // decision.action === 'drop': a DECISION, never a delivery attempt at

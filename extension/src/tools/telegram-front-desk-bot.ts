@@ -321,6 +321,35 @@ export async function ensureOperatorTopic(targetPath: string, botToken: string, 
   return created.messageThreadId;
 }
 
+// BL-425 slice 1 (cleaner): one role's own provision decision + effect,
+// split out of ensureRoleTopics below so that function's own loop stays a
+// thin sequencer and its branch count stays at or below the CRAP threshold -
+// the same "extract so branch count stays low" reasoning this file already
+// applies throughout (e.g. deliverOperatorContext/checkUpdateEligibility in
+// telegramFrontDeskBotCore.ts). Mutates topicMap in place (the same object
+// ensureRoleTopics holds) and returns whether it gained a new binding, so
+// the caller writes the map to disk only once, after the whole batch, iff
+// ANY role actually changed.
+async function provisionRoleTopic(
+  topicMap: Record<string, number>,
+  role: string,
+  botToken: string,
+  chatId: string,
+  postFn?: TelegramPostFn
+): Promise<boolean> {
+  const decision = decideEnsureRoleTopicAction(topicMap, role);
+  if (decision.kind === 'reuse') {
+    return false;
+  }
+  const created = await createForumTopic(botToken, chatId, role, postFn);
+  if (!created.success || created.messageThreadId === undefined) {
+    process.stderr.write(`ensureRoleTopics: failed to create the "${role}" topic: ${created.error ?? 'no messageThreadId returned'}\n`);
+    return false;
+  }
+  topicMap[role] = created.messageThreadId;
+  return true;
+}
+
 // BL-425 slice 1: creates each swarm role's own standing forum topic (named
 // for the role) and binds it in role-topic-map.json, mirroring
 // ensureOperatorTopic's reuse-or-create/idempotent-across-restarts shape
@@ -339,17 +368,9 @@ export async function ensureRoleTopics(
   const topicMap = readRoleTopicMap(targetPath);
   let changed = false;
   for (const role of roles) {
-    const decision = decideEnsureRoleTopicAction(topicMap, role);
-    if (decision.kind === 'reuse') {
-      continue;
+    if (await provisionRoleTopic(topicMap, role, botToken, chatId, postFn)) {
+      changed = true;
     }
-    const created = await createForumTopic(botToken, chatId, role, postFn);
-    if (!created.success || created.messageThreadId === undefined) {
-      process.stderr.write(`ensureRoleTopics: failed to create the "${role}" topic: ${created.error ?? 'no messageThreadId returned'}\n`);
-      continue;
-    }
-    topicMap[role] = created.messageThreadId;
-    changed = true;
   }
   if (changed) {
     writeRoleTopicMap(targetPath, topicMap);

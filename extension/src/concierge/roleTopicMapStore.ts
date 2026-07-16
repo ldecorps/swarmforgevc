@@ -9,6 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { atomicWrite } from '../util/atomicWrite';
+import { keyForId } from '../util/inverseLookup';
 import { PIPELINE_CHAIN } from '../swarm/rolePack';
 
 // The coordinator sits outside PIPELINE_CHAIN's forward parcel chain (it is
@@ -37,11 +38,9 @@ export function writeRoleTopicMap(targetPath: string, topicMap: Record<string, n
 // given a topic id (an inbound message's message_thread_id), which role (if
 // any) owns that topic. undefined topicId (a DM, no real Telegram topic)
 // short-circuits to undefined - a role steering topic is never the DM
-// default.
+// default. Delegates to the shared keyForId (util/inverseLookup.ts) rather
+// than re-carrying its own copy of the same 4-line body - jscpd flagged
+// this and topicRouter.ts's backlogForTopic as an exact clone.
 export function roleForTopic(topicMap: Record<string, number>, topicId: number | undefined): string | undefined {
-  if (topicId === undefined) {
-    return undefined;
-  }
-  const found = Object.entries(topicMap).find(([, tid]) => tid === topicId);
-  return found ? found[0] : undefined;
+  return keyForId(topicMap, topicId);
 }
