@@ -30,12 +30,21 @@ const {
   decideCallbackQueryAction,
   decideSteeringAction,
   decideEnsureRoleTopicAction,
+  decideVoiceUpdateAction,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
 const PRINCIPAL_ID = 111;
 
 function mkUpdate({ fromId, topicId, text, chatId } = {}) {
   return { update_id: 1, message: { message_id: 1, chat: { id: chatId ?? 1 }, from: { id: fromId }, message_thread_id: topicId, text } };
+}
+
+// BL-426: a voice-note update - mutually exclusive with `text` above.
+function mkVoiceUpdate({ fromId, topicId, chatId, fileId, updateId } = {}) {
+  return {
+    update_id: updateId ?? 1,
+    message: { message_id: 1, chat: { id: chatId ?? 1 }, from: { id: fromId }, message_thread_id: topicId, voice: { file_id: fileId ?? 'file-1', duration: 3 } },
+  };
 }
 
 // BL-410: a tapped inline-keyboard button's own update shape - mutually
@@ -337,6 +346,40 @@ test('BL-425: a textless update (sticker/photo) in a role\'s topic is ignored, n
   assert.deepEqual(decideSteeringAction(update, PRINCIPAL_ID, '1', { coder: 42 }), { kind: 'ignore' });
 });
 
+// ── decideVoiceUpdateAction (pure) — BL-426 slice 1 ──────────────────────
+
+function operatorSubjectForTopic(topicId) {
+  return topicId === 7 ? OPERATOR_SUBJECT_ID : undefined;
+}
+
+test('BL-426 audio-voice-note-coordinator-01: a principal voice note in the Operator topic decides to transcribe', () => {
+  const update = mkVoiceUpdate({ fromId: PRINCIPAL_ID, chatId: 1, topicId: 7, fileId: 'file-abc' });
+  assert.deepEqual(decideVoiceUpdateAction(update, PRINCIPAL_ID, '1', operatorSubjectForTopic), {
+    kind: 'transcribe',
+    fileId: 'file-abc',
+  });
+});
+
+test('BL-426: a text message is not-applicable to the voice decision (no voice field at all)', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, chatId: 1, topicId: 7, text: 'hello' });
+  assert.deepEqual(decideVoiceUpdateAction(update, PRINCIPAL_ID, '1', operatorSubjectForTopic), { kind: 'not-applicable' });
+});
+
+test('BL-426: a voice note in a non-Operator topic is not-applicable (out of scope for slice 1)', () => {
+  const update = mkVoiceUpdate({ fromId: PRINCIPAL_ID, chatId: 1, topicId: 99 });
+  assert.deepEqual(decideVoiceUpdateAction(update, PRINCIPAL_ID, '1', operatorSubjectForTopic), { kind: 'not-applicable' });
+});
+
+test('BL-426 audio-voice-note-coordinator-04: a voice note from a non-principal in the Operator topic is refused', () => {
+  const update = mkVoiceUpdate({ fromId: 999, chatId: 1, topicId: 7 });
+  assert.deepEqual(decideVoiceUpdateAction(update, PRINCIPAL_ID, '1', operatorSubjectForTopic), { kind: 'refuse' });
+});
+
+test('BL-426: a voice note from the principal but a foreign chat is refused (not-my-chat also fails)', () => {
+  const update = mkVoiceUpdate({ fromId: PRINCIPAL_ID, chatId: 2, topicId: 7 });
+  assert.deepEqual(decideVoiceUpdateAction(update, PRINCIPAL_ID, '1', operatorSubjectForTopic), { kind: 'refuse' });
+});
+
 // ── pollAndForward (adapter-injected) ────────────────────────────────────
 
 function stubOpenSubjectAndRecord() {
@@ -457,6 +500,114 @@ test('BL-425: pollAndForward behaves exactly as before when readRoleTopicMap/red
   });
   assert.equal(result.posted, 1);
   assert.equal(posted.length, 0, 'expected the open-for-topic path (no subject mapped), not postToBridge');
+});
+
+// ── pollAndForward wiring — BL-426 slice 1 coordinator voice round-trip ──
+
+test('BL-426 audio-voice-note-coordinator-01: a principal voice note in the Operator topic is transcribed and delivered as text', async () => {
+  const posted = [];
+  const marked = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkVoiceUpdate({ fromId: PRINCIPAL_ID, topicId: 7, fileId: 'file-abc' })] }),
+    postToBridge: async (subjectId, text) => {
+      posted.push({ subjectId, text });
+      return true;
+    },
+    subjectForTopic: operatorSubjectForTopic,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    transcribeVoice: async (fileId) => {
+      assert.equal(fileId, 'file-abc');
+      return { kind: 'ok', transcript: 'what is the status of BL-400' };
+    },
+    markVoiceOriginatedTurn: async (subjectId) => {
+      marked.push(subjectId);
+    },
+  });
+  assert.deepEqual(posted, [{ subjectId: OPERATOR_SUBJECT_ID, text: 'what is the status of BL-400' }]);
+  assert.deepEqual(marked, [OPERATOR_SUBJECT_ID]);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-426 audio-voice-note-coordinator-03: a text message in the Operator topic still delivers as text, never invoking transcribeVoice', async () => {
+  const posted = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'what is the status' })] }),
+    postToBridge: async (subjectId, text) => {
+      posted.push({ subjectId, text });
+      return true;
+    },
+    subjectForTopic: operatorSubjectForTopic,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    transcribeVoice: async () => {
+      throw new Error('transcribeVoice should not be called for a text message');
+    },
+  });
+  assert.deepEqual(posted, [{ subjectId: OPERATOR_SUBJECT_ID, text: 'what is the status' }]);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-426 audio-voice-note-coordinator-04: a voice note from a non-principal is dropped, never invoking transcribeVoice', async () => {
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkVoiceUpdate({ fromId: 999, topicId: 7 })] }),
+    postToBridge: async () => true,
+    subjectForTopic: operatorSubjectForTopic,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    transcribeVoice: async () => {
+      throw new Error('transcribeVoice should not be called for a non-principal sender');
+    },
+  });
+  assert.equal(result.posted, 0);
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-426 audio-voice-note-coordinator-05: a transient STT failure does not advance the offset past the voice note, and is never dropped', async () => {
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkVoiceUpdate({ fromId: PRINCIPAL_ID, topicId: 7, updateId: 5 })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called when STT fails transiently');
+    },
+    subjectForTopic: operatorSubjectForTopic,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    transcribeVoice: async () => ({ kind: 'transient-failure' }),
+  });
+  assert.equal(result.nextOffset, 0, 'the offset must stay parked at the unadvanced voice note');
+  assert.equal(result.failed, 1);
+  assert.equal(result.dropped, 0);
+  assert.equal(result.posted, 0);
+});
+
+test('BL-426 audio-voice-note-coordinator-06: a structurally un-processable voice note is dropped and the offset advances past it', async () => {
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkVoiceUpdate({ fromId: PRINCIPAL_ID, topicId: 7, updateId: 5 })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for an unprocessable voice note');
+    },
+    subjectForTopic: operatorSubjectForTopic,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    transcribeVoice: async () => ({ kind: 'unprocessable' }),
+  });
+  assert.equal(result.nextOffset, 6, 'the offset must advance past a deliberately dropped, un-processable voice note');
+  assert.equal(result.dropped, 1);
+  assert.equal(result.failed, 0);
+});
+
+test('BL-426: a voice note in the Operator topic behaves as a pre-BL-426 no-text drop when transcribeVoice is absent (pre-BL-426 fixtures keep working)', async () => {
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkVoiceUpdate({ fromId: PRINCIPAL_ID, topicId: 7 })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called - voice is not wired');
+    },
+    subjectForTopic: operatorSubjectForTopic,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+  });
+  assert.equal(result.dropped, 1);
+  assert.equal(result.posted, 0);
 });
 
 test('BL-389: pollAndForward counts a failed bridge POST as failed, never dropped or posted', async () => {
@@ -1416,6 +1567,109 @@ test('relaySseReplies sends only the real topic, no pointer, when no default bin
     new Set()
   );
   assert.deepEqual(sent, [{ topicId: 42, text: 'the real answer' }]);
+});
+
+// ── relaySseReplies / deliverReply — BL-426 slice 1 outbound voice synthesis ──
+
+test('BL-426 audio-voice-note-coordinator-02: a voice-originated turn\'s reply is synthesized to a voice note in the same topic, alongside the text', async () => {
+  const sent = [];
+  const synthesized = [];
+  const voiceSent = [];
+  const cleared = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"OPERATOR","text":"BL-400 is in QA"}\n\n']),
+      sendReply: async (topicId, text) => {
+        sent.push({ topicId, text });
+      },
+      resolveDelivery: () => topicDelivery(7),
+      ackReply: async () => {},
+      isVoiceOriginatedTurn: async (threadId) => threadId === 'OPERATOR',
+      clearVoiceOriginatedTurn: async (threadId) => {
+        cleared.push(threadId);
+      },
+      synthesizeVoice: async (text) => {
+        synthesized.push(text);
+        return { kind: 'ok', audio: Buffer.from('synth-audio') };
+      },
+      sendVoice: async (topicId, audio) => {
+        voiceSent.push({ topicId, audio });
+      },
+    },
+    new Set()
+  );
+  assert.deepEqual(sent, [{ topicId: 7, text: 'BL-400 is in QA' }], 'the text transcript must still be sent (voice + transcript, never voice-only)');
+  assert.deepEqual(synthesized, ['BL-400 is in QA']);
+  assert.deepEqual(voiceSent, [{ topicId: 7, audio: Buffer.from('synth-audio') }]);
+  assert.deepEqual(cleared, ['OPERATOR'], 'the one-shot marker must be cleared so the NEXT reply defaults back to text-only');
+});
+
+test('BL-426: an ordinary (non-voice-originated) reply never synthesizes or sends voice', async () => {
+  const voiceSent = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"OPERATOR","text":"a plain text answer"}\n\n']),
+      sendReply: async () => {},
+      resolveDelivery: () => topicDelivery(7),
+      ackReply: async () => {},
+      isVoiceOriginatedTurn: async () => false,
+      clearVoiceOriginatedTurn: async () => {
+        throw new Error('clearVoiceOriginatedTurn should not be called when the turn is not voice-originated');
+      },
+      synthesizeVoice: async () => {
+        throw new Error('synthesizeVoice should not be called when the turn is not voice-originated');
+      },
+      sendVoice: async (topicId, audio) => {
+        voiceSent.push({ topicId, audio });
+      },
+    },
+    new Set()
+  );
+  assert.deepEqual(voiceSent, []);
+});
+
+test('BL-426: a TTS failure degrades to the text reply already sent, never blocking or crashing the relay', async () => {
+  const sent = [];
+  const voiceSent = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"OPERATOR","text":"BL-400 is in QA"}\n\n']),
+      sendReply: async (topicId, text) => {
+        sent.push({ topicId, text });
+      },
+      resolveDelivery: () => topicDelivery(7),
+      ackReply: async () => {},
+      isVoiceOriginatedTurn: async () => true,
+      clearVoiceOriginatedTurn: async () => {},
+      synthesizeVoice: async () => ({ kind: 'failure' }),
+      sendVoice: async (topicId, audio) => {
+        voiceSent.push({ topicId, audio });
+      },
+    },
+    new Set()
+  );
+  assert.deepEqual(sent, [{ topicId: 7, text: 'BL-400 is in QA' }]);
+  assert.deepEqual(voiceSent, [], 'sendVoice must never be called when synthesis failed');
+});
+
+test('BL-426: relaySseReplies behaves exactly as before when the voice adapters are absent (pre-BL-426 fixtures keep working)', async () => {
+  const sent = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-1","text":"hello"}\n\n']),
+      sendReply: async (topicId, text) => {
+        sent.push({ topicId, text });
+      },
+      resolveDelivery: () => topicDelivery(42),
+      ackReply: async () => {},
+    },
+    new Set()
+  );
+  assert.deepEqual(sent, [{ topicId: 42, text: 'hello' }]);
 });
 
 test('relaySseReplies ignores a record that is not a telegram-reply event, and never acks it', () => {
