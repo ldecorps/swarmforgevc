@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=d62af66b6c33336e3a89f5db85c7cb9e215d9b560a10b39fb33f5ef988659ee9
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-16T16:27:40.327695127Z","feature_name":"shell and babashka test harnesses clean up the temp dirs they create","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-459-shell-bb-tempdir-cleanup-trap.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a test harness removes its temp root on both clean and failing exit","scenario_hash":"74e063f60a81055287eb34b796ffd8ecef897d050f8e3d60ec177df05439adf2","mutation_count":8,"result":{"Total":8,"Killed":8,"Survived":0,"Errors":0},"tested_at":"2026-07-16T16:27:40.327695127Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: shell and babashka test harnesses clean up the temp dirs they create
 
   # BL-420 made the EXTENSION Vitest suite self-clean its mkdtemp dirs via a
