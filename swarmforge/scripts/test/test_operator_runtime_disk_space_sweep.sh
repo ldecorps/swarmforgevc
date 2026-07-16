@@ -19,7 +19,7 @@ make_fixture() {
      "$SRC/support_lib.bb" "$SRC/support_thread_store.bb" \
      "$SRC/operator_memory_lib.bb" "$SRC/operator_memory_store.bb" \
      "$SRC/ticket_status_lib.bb" "$SRC/operator_ask.bb" "$SRC/handoff_lib.bb" \
-     "$SRC/daemon_alarm_lib.bb" "$SRC/disk_space_lib.bb" "$SRC/sandbox_sweep_lib.bb" \
+     "$SRC/daemon_alarm_lib.bb" "$SRC/disk_space_lib.bb" "$SRC/sandbox_sweep_lib.bb" "$SRC/fixture_reaper_lib.bb" "$SRC/fixture_reaper_sweep_lib.bb" \
      "$d/swarmforge/scripts/"
   printf '%s' "$d"
 }
@@ -29,9 +29,16 @@ CRITICAL_MNT_C='{"free_gb":10,"used_pct":97}'
 
 tick() {
   local root="$1" mnt_c="$2" wsl_root="$3"
+  # Isolates this disk-space-only test from BL-413/BL-458's own real-/tmp
+  # sweeps - neither var's path is ever created under this test's own
+  # fixture root, so both sweeps see a missing root and no-op, never
+  # touching the real /tmp as a side effect of a test that is not ABOUT
+  # sweeping.
   OPERATOR_SKIP_LAUNCH=1 \
     DISK_ALERT_MNT_C_FORCE_RESULT="$mnt_c" \
     DISK_ALERT_WSL_ROOT_FORCE_RESULT="$wsl_root" \
+    SWARMFORGE_SANDBOX_SWEEP_ROOT="$root/.no-sandbox-sweep" \
+    SWARMFORGE_FIXTURE_REAP_ROOT="$root/.no-fixture-reap" \
     bb "$root/swarmforge/scripts/operator_runtime.bb" "$root" --tick-once > /dev/null
 }
 

@@ -68,6 +68,10 @@
 ;; BL-413: pure stale-sandbox-sweep decision logic, wired below by
 ;; sandbox-sweep!.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "sandbox_sweep_lib.bb")))
+;; BL-458: the orphaned acceptance-test-fixture process reaper (kills stale
+;; supervisor/bridge/bot/tmux trees a crashed acceptance run left behind) -
+;; loads its own pure decision lib via load-file internally.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "fixture_reaper_sweep_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -1420,6 +1424,15 @@
     ;; never gates the launch decision below. Can share this loop with
     ;; BL-412 per that ticket's own note (orthogonal decision, same host).
     (sandbox-sweep!)
+
+    ;; BL-458: orphaned acceptance-test-fixture process reaper - kills stale
+    ;; supervisor/bridge/bot/tmux trees a crashed acceptance run left
+    ;; behind, ORDERED BEFORE sandbox-sweep! ran above only in the sense
+    ;; that killing a live process is what lets a LATER sandbox-sweep! tick
+    ;; remove the now-empty root (sandbox-sweep! itself already skips any
+    ;; dir with a live process rooted in it) - same "best-effort side
+    ;; action every tick" posture, never gates the launch decision below.
+    (fixture-reaper-sweep-lib/sweep!)
 
     ;; BL-306: bounded escalate-once-then-drop on an unanswered clarifying
     ;; question - same "best-effort side action every tick" posture as the

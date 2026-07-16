@@ -145,6 +145,11 @@ function registerSteps(registry) {
           OPERATOR_SKIP_LAUNCH: '1',
           SWARMFORGE_SANDBOX_SWEEP_ROOT: ctx.sweptRoot,
           SWARMFORGE_SANDBOX_STALE_HOURS: '1',
+          // Isolates BL-458's own sweep, wired into the SAME tick - a
+          // nonexistent path under this scenario's own throwaway project
+          // root, so it no-ops rather than touching the real /tmp as a
+          // side effect of a scenario that is only about sandbox-sweep!.
+          SWARMFORGE_FIXTURE_REAP_ROOT: path.join(ctx.projectRoot, '.no-fixture-reap'),
         },
       });
     };

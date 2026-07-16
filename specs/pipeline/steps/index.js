@@ -233,7 +233,8 @@ const DOMAINS = [
   require('./bl454QaBounceMetricSteps'),
   require('./bl456DivioDocsReorgSteps'),
   require('./bl455PipelineBoardSteps'),
-  require('./bl413StaleSandboxSweepSteps')
+  require('./bl413StaleSandboxSweepSteps'),
+  require('./bl458AcceptanceFixtureProcessLeakSteps')
 ];
 
 function registerSteps(registry) {
