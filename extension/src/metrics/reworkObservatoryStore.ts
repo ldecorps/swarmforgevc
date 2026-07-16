@@ -41,3 +41,12 @@ export function persistReworkSignal(targetPath: string, entry: Record<string, un
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(updated, null, 2) + '\n');
 }
+
+// BL-431: the diagnosis slice's read side of persistReworkSignal above -
+// the missing/corrupt/wrong-shape file and wrong-kind cases all resolve to
+// null (never a crash, never a fabricated entry), matching
+// readSignalsFile's own "start fresh" posture.
+export function readReworkSignalEntry(targetPath: string): Record<string, unknown> | null {
+  const file = readSignalsFile(targetPath);
+  return file.signals.find((s) => s.kind === 'rework-rate') ?? null;
+}
