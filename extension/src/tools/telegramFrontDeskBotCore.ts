@@ -9,6 +9,7 @@
 import { TelegramUpdate, TelegramCallbackQuery, GetUpdatesResult } from '../notify/telegramClient';
 import { computeTelegramRetryBackoffMs } from '../notify/telegramRetry';
 import { classifyApprovalReplyAction, classifyApprovalsTopicReply } from '../concierge/pendingApprovalReply';
+import { classifyRecertTopicReply } from '../concierge/recertTopicReply';
 import { roleForTopic } from '../concierge/roleTopicMapStore';
 
 // BL-353: moved from the retired notify/telegramInboundRelay.ts (which
@@ -183,6 +184,25 @@ export function decideEnsureApprovalsTopicAction(topicMap: Record<string, string
   return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
 }
 
+// BL-450: the reserved subject a standing "Recert" forum topic is bound to -
+// the SAME {topicId: subjectId} map OPERATOR_SUBJECT_ID/APPROVALS_SUBJECT_ID
+// above share, so an inbound message there resolves through subjectForTopic
+// exactly like any other bound subject (decideUpdateAction below intercepts
+// it ahead of the ordinary post-existing branch, since a reply here must be
+// PARSED for the scenario id + verb it names, never just forwarded as a
+// subject post).
+export const RECERT_SUBJECT_ID = 'RECERT';
+export const RECERT_TOPIC_NAME = 'Recert';
+
+export type EnsureRecertTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
+
+// Pure: the Recert-topic twin of decideEnsureApprovalsTopicAction above -
+// identical reuse-or-create shape, keyed by its own reserved subject id.
+export function decideEnsureRecertTopicAction(topicMap: Record<string, string>): EnsureRecertTopicAction {
+  const existingTopicId = topicForSubject(topicMap, RECERT_SUBJECT_ID);
+  return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
+}
+
 export type EnsureRoleTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
 
 // BL-425 slice 1: the per-role twin of decideEnsureOperatorTopicAction
@@ -207,6 +227,20 @@ export type BotUpdateDecision =
   // all - never silently dropped as a subject post (front-desk-operator-
   // fabricates-backlog-state memory); the orchestration layer surfaces it.
   | { action: 'approvals-topic-unrecognized'; text: string }
+  // BL-450: a reply in the standing Recert topic - the scenario id is
+  // PARSED from the reply text (classifyRecertTopicReply), never inferred
+  // from which topic it landed in (only one topic exists, but many
+  // scenarios pass through it over time).
+  | { action: 'recert-validate'; scenarioId: string; text: string }
+  | { action: 'recert-amend'; scenarioId: string; newText: string; text: string }
+  | { action: 'recert-delete'; scenarioId: string; text: string }
+  | { action: 'recert-confirm-delete'; text: string }
+  // A reply in the Recert topic that names no recognizable verb+id (and is
+  // not a bare "confirm") at all - never silently dropped (same
+  // front-desk-operator-fabricates-backlog-state posture as the Approvals
+  // topic's own unrecognized variant above); the orchestration layer
+  // surfaces it.
+  | { action: 'recert-unrecognized'; text: string }
   | { action: 'open-default'; text: string }
   | { action: 'open-for-topic'; topicId: number; text: string }
   | { action: 'drop'; reason: 'not-principal' | 'no-text' | 'not-my-chat' };
@@ -275,6 +309,43 @@ function decideApprovalsTopicReplyAction(text: string): BotUpdateDecision {
   return { action: 'approvals-topic-unrecognized', text };
 }
 
+// BL-450: pure - which of the Recert-topic decision variants a reply's own
+// text resolves to. Split out for the same CRAP-budget reason as
+// decideApprovalsTopicReplyAction above.
+function decideRecertTopicReplyAction(text: string): BotUpdateDecision {
+  const parsed = classifyRecertTopicReply(text);
+  if (parsed.kind === 'validate') {
+    return { action: 'recert-validate', scenarioId: parsed.scenarioId, text };
+  }
+  if (parsed.kind === 'amend') {
+    return { action: 'recert-amend', scenarioId: parsed.scenarioId, newText: parsed.newText, text };
+  }
+  if (parsed.kind === 'delete') {
+    return { action: 'recert-delete', scenarioId: parsed.scenarioId, text };
+  }
+  if (parsed.kind === 'confirm-delete') {
+    return { action: 'recert-confirm-delete', text };
+  }
+  return { action: 'recert-unrecognized', text };
+}
+
+// Which reserved standing-topic subject id (Approvals, Recert, ...) a reply
+// landed in, if any - collapsed into one lookup so decideUpdateAction's own
+// branch count does not grow one-for-one with every new reserved subject
+// (the same CRAP-budget reason decideApprovalsTopicReplyAction/
+// decideRecertTopicReplyAction above were split out in the first place).
+// undefined means the subject is not a reserved one - the caller falls
+// through to its own ordinary post-existing/open handling.
+function decideReservedSubjectReplyAction(subjectId: string | undefined, text: string): BotUpdateDecision | undefined {
+  if (subjectId === APPROVALS_SUBJECT_ID) {
+    return decideApprovalsTopicReplyAction(text);
+  }
+  if (subjectId === RECERT_SUBJECT_ID) {
+    return decideRecertTopicReplyAction(text);
+  }
+  return undefined;
+}
+
 export function decideUpdateAction(
   update: TelegramUpdate,
   principalUserId: string,
@@ -289,11 +360,13 @@ export function decideUpdateAction(
   const { text } = eligibility;
   const topicId = topicIdOf(update);
   const subjectId = subjectForTopic(topicId);
-  // BL-434: checked BEFORE the ordinary post-existing branch below - a reply
-  // in the Approvals topic must be PARSED for the ticket id it names, never
-  // forwarded as a plain subject post the way every other bound subject is.
-  if (subjectId === APPROVALS_SUBJECT_ID) {
-    return decideApprovalsTopicReplyAction(text);
+  // BL-434/BL-450: checked BEFORE the ordinary post-existing branch below -
+  // a reply in a reserved standing topic (Approvals, Recert) must be PARSED
+  // for the ticket/scenario id it names, never forwarded as a plain subject
+  // post the way every other bound subject is.
+  const reserved = decideReservedSubjectReplyAction(subjectId, text);
+  if (reserved) {
+    return reserved;
   }
   if (subjectId) {
     return { action: 'post-existing', subjectId, text };
@@ -455,6 +528,36 @@ export interface PollAdapters {
   // than a crash, mirroring this file's own established optional-adapter
   // convention (e.g. getPendingButtonAction above).
   notifyApprovalsTopic?: (topicId: number | undefined, text: string) => Promise<boolean>;
+  // BL-450: recertificationStore.ts's own read-check-write functions,
+  // adapter-injected. Each already refuses (returns false, writes nothing)
+  // when the named scenarioId is not the one currently up for recert - the
+  // SAME "the writer itself is the check" posture recordApprovalReply/
+  // recordRejectionReply above already established, never a separate
+  // check-then-write pair that could race. All optional - missing means
+  // "recert not wired", the same "every existing PollAdapters fixture keeps
+  // working unchanged" posture BL-410/BL-425/BL-426's own optional adapters
+  // above already established; the delivery layer treats a missing writer
+  // as "did not apply" (never a crash), since decideUpdateAction only ever
+  // reaches the Recert branch for a topic id actually bound to
+  // RECERT_SUBJECT_ID - no pre-BL-450 fixture's topicMap can produce that.
+  recordRecertValidate?: (scenarioId: string) => Promise<boolean>;
+  queueRecertAmendProposal?: (scenarioId: string, newText: string) => Promise<boolean>;
+  queueRecertDeleteProposal?: (scenarioId: string) => Promise<boolean>;
+  // BL-450: a delete reply is a two-step gate (BL-150 recert-04) - "delete
+  // <id>" itself writes nothing yet, so it needs a read-only check (never
+  // recordRecertValidate/queueRecert*Proposal's own check-and-write shape)
+  // to decide whether to arm the confirmation marker below or surface
+  // "not up for recert" immediately. The confirm step re-checks via
+  // queueRecertDeleteProposal's own internal check instead, since the named
+  // scenario could have moved on (e.g. validated away) between the two
+  // replies.
+  isScenarioUpForRecert?: (scenarioId: string) => Promise<boolean>;
+  getPendingRecertDelete?: () => Promise<string | undefined>;
+  setPendingRecertDelete?: (scenarioId: string) => Promise<void>;
+  clearPendingRecertDelete?: () => Promise<void>;
+  // BL-450: the Recert-topic reply's own surfacing channel - same optional,
+  // degrades-to-silent-drop posture as notifyApprovalsTopic above.
+  notifyRecertTopic?: (topicId: number | undefined, text: string) => Promise<boolean>;
   // BL-410: a Reject/Amend button tap has no reason/note text of its own -
   // it stashes which verb is awaited for this ticket, then the NEXT bare
   // (unverbed) reply in that ticket's topic is read as the reason/note
@@ -603,6 +706,119 @@ async function deliverApprovalsTopicReply(decision: ApprovalsTopicReplyDecision,
     return 'dropped';
   }
   return 'posted';
+}
+
+// The five Recert-topic-reply variants of BotUpdateDecision, narrowed out so
+// deliverRecertTopicReply's own internal `decision.action` guards actually
+// narrow `decision` down for the compiler - same reason
+// ApprovalsTopicReplyDecision exists above.
+type RecertTopicReplyDecision = Extract<
+  BotUpdateDecision,
+  { action: 'recert-validate' | 'recert-amend' | 'recert-delete' | 'recert-confirm-delete' | 'recert-unrecognized' }
+>;
+
+// Collapses the five-way OR below into one call - same CRAP-budget reason as
+// isApprovalsTopicReplyDecision above.
+function isRecertTopicReplyDecision(decision: BotUpdateDecision): decision is RecertTopicReplyDecision {
+  return (
+    decision.action === 'recert-validate' ||
+    decision.action === 'recert-amend' ||
+    decision.action === 'recert-delete' ||
+    decision.action === 'recert-confirm-delete' ||
+    decision.action === 'recert-unrecognized'
+  );
+}
+
+// recert-telegram-06: resolves a bare "confirm" reply against whichever
+// scenario's delete is currently pending (getPendingRecertDelete) - no
+// pending delete at all is a silent drop (nothing to confirm, never a
+// "not awaiting recertification" surfacing, since no scenario id was even
+// named in THIS reply). Clears the pending marker before queuing so a
+// stale double-confirm can never queue twice. Split out of
+// deliverRecertTopicReply below for the same CRAP-budget reason
+// deliverApprovalsTopicReply's own extraction pattern already establishes
+// throughout this file.
+async function deliverRecertConfirmDelete(topicId: number | undefined, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
+  const pendingId = await adapters.getPendingRecertDelete?.();
+  if (!pendingId) {
+    return 'dropped';
+  }
+  await adapters.clearPendingRecertDelete?.();
+  const queued = await adapters.queueRecertDeleteProposal?.(pendingId);
+  if (!queued) {
+    await adapters.notifyRecertTopic?.(topicId, `${pendingId} isn't awaiting recertification.`);
+    return 'dropped';
+  }
+  return 'posted';
+}
+
+// recert-telegram-05: "delete <id>" never queues a proposal itself - it only
+// ever ARMS the confirmation gate (BL-150 recert-04), after checking the
+// named scenario is genuinely up for recert (never arming a confirmation
+// for a fabricated/stale id - front-desk-operator-fabricates-backlog-state
+// memory). Split out for the same CRAP-budget reason as
+// deliverRecertConfirmDelete above.
+async function deliverRecertDeleteRequest(scenarioId: string, topicId: number | undefined, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
+  const upForRecert = await adapters.isScenarioUpForRecert?.(scenarioId);
+  if (!upForRecert) {
+    await adapters.notifyRecertTopic?.(topicId, `${scenarioId} isn't awaiting recertification.`);
+    return 'dropped';
+  }
+  await adapters.setPendingRecertDelete?.(scenarioId);
+  await adapters.notifyRecertTopic?.(topicId, `Reply "confirm" to delete ${scenarioId}, or anything else to cancel.`);
+  return 'posted';
+}
+
+// BL-450: the Recert-topic reply's own delivery - reuses the EXISTING
+// recordRecertValidate/queueRecertAmendProposal/queueRecertDeleteProposal
+// adapters (never a second recording path, per the ticket's own
+// instruction) and their own boolean result to distinguish "this id really
+// was up for recert, now recorded/queued" from "this id was not up for
+// recert" - the SAME "the writer is the check" posture
+// deliverApprovalsTopicReply already established. An unrecognized reply and
+// a not-currently-up-for-recert id are both DELIBERATE DROPS, never
+// delivery FAILURES (the engineering article's own drop-vs-failure rule) -
+// the offset must advance past either.
+async function deliverRecertTopicReply(decision: RecertTopicReplyDecision, topicId: number | undefined, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
+  if (decision.action === 'recert-unrecognized') {
+    return 'dropped';
+  }
+  if (decision.action === 'recert-confirm-delete') {
+    return deliverRecertConfirmDelete(topicId, adapters);
+  }
+  if (decision.action === 'recert-delete') {
+    return deliverRecertDeleteRequest(decision.scenarioId, topicId, adapters);
+  }
+  const { scenarioId } = decision;
+  const changed =
+    decision.action === 'recert-validate'
+      ? await adapters.recordRecertValidate?.(scenarioId)
+      : await adapters.queueRecertAmendProposal?.(scenarioId, decision.newText);
+  if (!changed) {
+    await adapters.notifyRecertTopic?.(topicId, `${scenarioId} isn't awaiting recertification.`);
+    return 'dropped';
+  }
+  return 'posted';
+}
+
+// Which reserved standing-topic's own delivery a decision resolves to, if
+// any - collapsed into one dispatch so processMessageUpdate's own branch
+// count does not grow one-for-one with every new reserved subject (the
+// same CRAP-budget reason the decide* split above exists). undefined means
+// the decision is not a reserved-subject reply at all - the caller falls
+// through to its own ordinary post-existing/open handling.
+async function deliverReservedSubjectReply(
+  decision: BotUpdateDecision,
+  topicId: number | undefined,
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome | undefined> {
+  if (isApprovalsTopicReplyDecision(decision)) {
+    return deliverApprovalsTopicReply(decision, topicId, adapters);
+  }
+  if (isRecertTopicReplyDecision(decision)) {
+    return deliverRecertTopicReply(decision, topicId, adapters);
+  }
+  return undefined;
 }
 
 // BL-410: the callback-query twin of decideUpdateAction above - given a
@@ -840,8 +1056,9 @@ async function processMessageUpdate(update: TelegramUpdate, principalUserId: str
     const ok = await deliverOperatorContext(decision.backlogId, decision.text, update.update_id, adapters);
     return deliveryOutcome(ok);
   }
-  if (isApprovalsTopicReplyDecision(decision)) {
-    return deliverApprovalsTopicReply(decision, topicIdOf(update), adapters);
+  const reserved = await deliverReservedSubjectReply(decision, topicIdOf(update), adapters);
+  if (reserved) {
+    return reserved;
   }
   if (isOpenDecision(decision)) {
     await adapters.openSubjectAndRecord(openTopicIdFor(decision), decision.text, update.update_id);
