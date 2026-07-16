@@ -9,6 +9,7 @@
 import { EventStreamSnapshot, GateSignal, SwarmEvent, SwarmEventType, TicketSummary, deriveSwarmEvents, swarmEventKey } from '../events/swarmEventStream';
 import { BacklogTopicMap, RouteAdapters, TopicAction, decideEpicTopicAction, routeEvent } from './topicRouter';
 import { EpicDefinition, computeEpicProgress, epicAnnouncementKey, epicOpeningText, epicProgressText } from './epicProgress';
+import { resolveEpicIcon } from './epicIcon';
 import { resolveIconState, ICON_EMOJI, STANDING_TOPIC_ICON, StandingTopicTarget } from './topicIcon';
 import { TopicIconAdapters, syncTopicIcon } from './topicIconSync';
 import { StalenessBucket } from './topicTitleAge';
@@ -342,6 +343,48 @@ function epicForBacklogId(folders: BacklogFoldersSnapshot, backlogId: string): s
   return all.find((item) => item.id === backlogId)?.epic;
 }
 
+// BL-449: every distinct epic id currently declared by ANY item across all
+// three folders (a defining ticket via `type: 'epic'`, or a plain slice via
+// its own `epic:` field) - epicDefinitionsFor above only ever covers the
+// FORMER, but epics-08's own regression (an epic with no defining ticket yet
+// still gets a topic) means the icon pool must consider the latter too, or
+// two undocumented epics created in the same tick could collide. Order is
+// stable within one tick (folder traversal: active, paused, done) so
+// resolveAllEpicIcons below assigns pool icons deterministically.
+function allEpicIdsFor(folders: BacklogFoldersSnapshot): string[] {
+  const all = [...folders.active, ...folders.paused, ...folders.done];
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const item of all) {
+    if (item.epic && !seen.has(item.epic)) {
+      seen.add(item.epic);
+      ids.push(item.epic);
+    }
+  }
+  return ids;
+}
+
+// BL-449: resolves every known epic's icon ONCE per tick, threading each
+// resolution's own icon into the next call's alreadyAssignedIcons so two
+// epics created in the same tick never collide (resolveEpicIcon itself is
+// pure and knows nothing of "this tick's other epics" - that sequencing is
+// this function's own job). Pool exhaustion (distinctness is best-effort
+// beyond pool size, per resolveEpicIcon's own contract) is logged here,
+// never inside the pure resolver, which has no I/O of its own.
+function resolveAllEpicIcons(epicIds: string[]): Record<string, string> {
+  const assigned: Record<string, string> = {};
+  const used: string[] = [];
+  for (const id of epicIds) {
+    const icon = resolveEpicIcon(id, used);
+    if (used.includes(icon)) {
+      process.stderr.write(`runConciergeTick: epic icon pool exhausted - reusing "${icon}" for epic "${id}"\n`);
+    }
+    assigned[id] = icon;
+    used.push(icon);
+  }
+  return assigned;
+}
+
 // Every SLICE (across all three folders) declaring this epic - never the
 // epic-defining ticket itself, which also carries the SAME `epic: <id>`
 // self-referentially (mirrors BL-384's own real convention: its own notes
@@ -395,7 +438,20 @@ function epicUpdateText(event: SwarmEvent, folders: BacklogFoldersSnapshot, epic
 // can gate its durable "already announced" key on a SUCCESSFUL post only -
 // mirrors sendAndRecord's/routeEvent's own "only record what genuinely
 // posted" contract (topicRouter.ts).
-async function postEpicAction(action: TopicAction, epicId: string, routeAdapters: RouteAdapters): Promise<boolean> {
+// BL-449: a REUSED epic topic never touches its icon - only a genuinely
+// NEW topic (the 'create' branch) is free to set its initial icon, the
+// SAME "isNewTopic" posture syncIconForBacklogId already applies to ticket
+// topics. A failed icon call is best-effort here too (syncTopicIcon's own
+// outcome is intentionally ignored) - never blocks the epic's opening
+// message from posting, mirroring this module's existing "a failed icon
+// call is not specially retried" convention.
+async function postEpicAction(
+  action: TopicAction,
+  epicId: string,
+  routeAdapters: RouteAdapters,
+  iconAdapters: TopicIconAdapters,
+  desiredIcon: string
+): Promise<boolean> {
   if (action.kind === 'reuse') {
     return routeAdapters.sendMessage(action.topicId, action.text);
   }
@@ -404,6 +460,7 @@ async function postEpicAction(action: TopicAction, epicId: string, routeAdapters
     return false;
   }
   routeAdapters.recordTopicId(epicId, created.topicId);
+  await syncTopicIcon(epicId, created.topicId, desiredIcon, true, iconAdapters);
   return routeAdapters.sendMessage(created.topicId, action.text);
 }
 
@@ -447,6 +504,8 @@ async function postEpicUpdateIfApplicable(
   folders: BacklogFoldersSnapshot,
   epicDefinitions: Record<string, EpicDefinition>,
   routeAdapters: RouteAdapters,
+  iconAdapters: TopicIconAdapters,
+  epicIcons: Record<string, string>,
   alreadyEmitted: Set<string>
 ): Promise<void> {
   const epicId = applicableEpicId(event, folders);
@@ -460,7 +519,7 @@ async function postEpicUpdateIfApplicable(
     return;
   }
   const action = decideEpicTopicAction(epicId, definition.title, routeAdapters.getTopicMap(), text);
-  const posted = await postEpicAction(action, epicId, routeAdapters);
+  const posted = await postEpicAction(action, epicId, routeAdapters, iconAdapters, epicIcons[epicId]);
   if (posted) {
     alreadyEmitted.add(key);
   }
@@ -536,6 +595,8 @@ async function processConciergeEvent(
   folders: BacklogFoldersSnapshot,
   epicDefinitions: Record<string, EpicDefinition>,
   routeAdapters: RouteAdapters,
+  iconAdapters: TopicIconAdapters,
+  epicIcons: Record<string, string>,
   alreadyEmitted: Set<string>
 ): Promise<boolean> {
   // BL-358: an untagged event has no ticket to look a title up for -
@@ -547,7 +608,7 @@ async function processConciergeEvent(
   if (result.posted) {
     alreadyEmitted.add(swarmEventKey(event));
   }
-  await postEpicUpdateIfApplicable(event, folders, epicDefinitions, routeAdapters, alreadyEmitted);
+  await postEpicUpdateIfApplicable(event, folders, epicDefinitions, routeAdapters, iconAdapters, epicIcons, alreadyEmitted);
   return result.posted;
 }
 
@@ -561,6 +622,10 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
   const folders = adapters.readFolders();
   const curr = toEventStreamSnapshot(folders, adapters.readGates(), adapters.readRoleTicket());
   const epicDefinitions = epicDefinitionsFor(folders);
+  // BL-449: resolved ONCE per tick (never per-event) so two epics newly
+  // created within the SAME tick still see each other in
+  // alreadyAssignedIcons and get distinct pool icons.
+  const epicIcons = resolveAllEpicIcons(allEpicIdsFor(folders));
   const state = adapters.readTickState();
   const alreadyEmitted = new Set(state.emittedKeys);
   const events = deriveSwarmEvents(state.snapshot, curr, alreadyEmitted);
@@ -576,7 +641,7 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
   let routed = 0;
   const unrouted = new Set<string>();
   for (const event of events) {
-    const posted = await processConciergeEvent(event, folders, epicDefinitions, adapters.routeAdapters, alreadyEmitted);
+    const posted = await processConciergeEvent(event, folders, epicDefinitions, adapters.routeAdapters, adapters.iconAdapters, epicIcons, alreadyEmitted);
     if (posted) {
       routed += 1;
     } else {
