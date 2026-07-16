@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=a19f7510f83db08fbfb243f548fe4971c88cae4e8f2409398dbcfe9abab0e0d8
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-16T23:05:58.242005066Z","feature_name":"The mutation gate excludes structurally-unkillable CLI-entrypoint boilerplate but never real logic","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-447-mutation-gate-entrypoint-boilerplate-survivors.feature","background_hash":"d080525dccd8474b6f8fda5e745d9a911d5fc4fb98f0c2bd14555bcb302569c3","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a candidate mutant is excluded only when it lands on structurally-unkillable boilerplate","scenario_hash":"02454aebb30f83657830dbd33cbf55c5fbbf586d9982b0bdcf30df233ba3e7cf","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-07-16T23:05:58.242005066Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The mutation gate excludes structurally-unkillable CLI-entrypoint boilerplate but never real logic
 
 # BL-447 (feature, cleaner rule_proposal 2026-07-16 during BL-445's mutation pass): every tools/CLI
