@@ -7,6 +7,7 @@
 # Covers acceptance scenarios BL-119 sidecar-tolerant-completion-01..03.
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DONE_TASK="$SCRIPT_DIR/../done_with_current_task.bb"
@@ -17,6 +18,7 @@ pass() { echo "PASS: $*"; }
 
 mk_root() {
   local root; root="$(cd "$(mktemp -d)" && pwd -P)"
+  register_tmp_dir "$root"
   git -C "$root" init -q
   git -C "$root" -c user.email=test@test -c user.name=test commit -q --allow-empty -m init
   echo "$root"

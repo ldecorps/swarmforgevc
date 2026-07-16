@@ -6,6 +6,7 @@
 # credentials) but for this supervisor's single :relay process-spec instead
 # of front-desk's :bridge/:bot pair.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$SCRIPT_DIR/.."
@@ -15,6 +16,7 @@ check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi
 
 make_fixture() {
   local d; d="$(mktemp -d)"
+  register_tmp_dir "$d"
   mkdir -p "$d/swarm/extension/out/tools" "$d/target/.swarmforge/operator"
   cp "$SRC/negotiation_relay_supervisor.bb" "$SRC/front_desk_supervisor_lib.bb" "$SRC/operator_lib.bb" "$SRC/daemon_alarm_lib.bb" "$d/swarm/"
   write_healthy_relay_js "$d"

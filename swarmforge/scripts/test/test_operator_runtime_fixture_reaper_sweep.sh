@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# BL-458: wiring smoke test for operator_runtime.bb's fixture-reaper-sweep!
+# (via fixture_reaper_sweep_lib.bb). Points the sweep at a PRIVATE fixture
+# directory via SWARMFORGE_FIXTURE_REAP_ROOT and the legacy socket-dir
+# guardrail at SWARMFORGE_LEGACY_SOCKET_DIR - the same test-only override
+# convention kill_all_swarm.sh / BL-413's own sandbox-sweep test already
+# established for this exact guardrail. NEVER runs against the real /tmp or
+# a live swarm (the engineering "LIVE shared runtime path" rule).
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC="$SCRIPT_DIR/.."
+fail=0
+note() { printf '%s\n' "$*"; }
+check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi; }
+
+make_project_fixture() {
+  local d; d="$(mktemp -d)"
+  mkdir -p "$d/.swarmforge/operator" "$d/swarmforge/scripts" "$d/swarmforge/roles"
+  cp "$SRC/operator_lib.bb" "$SRC/operator_runtime.bb" "$SRC/telegram_topic_lib.bb" \
+     "$SRC/support_lib.bb" "$SRC/support_thread_store.bb" \
+     "$SRC/operator_memory_lib.bb" "$SRC/operator_memory_store.bb" \
+     "$SRC/ticket_status_lib.bb" "$SRC/operator_ask.bb" "$SRC/handoff_lib.bb" \
+     "$SRC/daemon_alarm_lib.bb" "$SRC/disk_space_lib.bb" "$SRC/sandbox_sweep_lib.bb" \
+     "$SRC/fixture_reaper_lib.bb" "$SRC/fixture_reaper_sweep_lib.bb" \
+     "$d/swarmforge/scripts/"
+  printf '%s' "$d"
+}
+
+LIVE_PIDS=()
+cleanup() {
+  for p in "${LIVE_PIDS[@]:-}"; do
+    [[ -n "$p" ]] && kill -TERM "$p" 2>/dev/null || true
+  done
+}
+trap cleanup EXIT
+
+PROJECT="$(make_project_fixture)"
+REAP_ROOT="$(mktemp -d)"
+
+old_mtime() { touch -d "2 hours ago" "$1"; }
+
+STALE_ORPHAN="$REAP_ROOT/aps-stale-orphan"
+FRESH="$REAP_ROOT/aps-fresh"
+UNKNOWN_STALE="$REAP_ROOT/tmp.unknown-stale"
+SOCKET_ROOT="$REAP_ROOT/swarmforge-9999"
+
+mkdir -p "$STALE_ORPHAN" "$FRESH" "$UNKNOWN_STALE" "$SOCKET_ROOT"
+
+# A disposable orphan process (never the test's own PID) rooted in
+# STALE_ORPHAN - the reaper must kill it, not just remove the directory.
+(cd "$STALE_ORPHAN" && exec sleep 30) &
+ORPHAN_PID=$!
+LIVE_PIDS+=("$ORPHAN_PID")
+
+# A disposable process rooted in the socket root - must survive untouched,
+# regardless of matching a known prefix or being stale (it never does match
+# a known prefix here, but the socket-root guardrail must hold even if it
+# somehow did - defense in depth, mirrors the pure predicate's own test).
+(cd "$SOCKET_ROOT" && exec sleep 30) &
+SOCKET_PID=$!
+LIVE_PIDS+=("$SOCKET_PID")
+
+# A real tmux server whose socket lives under STALE_ORPHAN - the reaper
+# must kill the tmux server too (fixture-process-leak-02's own "no tmux
+# server for that fixture's socket survives" claim). Created BEFORE the
+# old_mtime calls below - adding a file to a directory bumps ITS OWN mtime,
+# so setting the fixture's age first and creating the socket after would
+# silently un-stale it again.
+TMUX_SOCK="$STALE_ORPHAN/role.sock"
+tmux -S "$TMUX_SOCK" new-session -d -s reaper-test-session
+
+for _ in 1 2 3 4 5; do
+  [[ -e "/proc/$ORPHAN_PID/cwd" && -e "/proc/$SOCKET_PID/cwd" ]] && break
+  sleep 0.1
+done
+
+# Ages set LAST, after every fixture-creating step above (mkdir/tmux) that
+# would otherwise bump these directories' own mtimes back to "now".
+old_mtime "$STALE_ORPHAN"
+old_mtime "$UNKNOWN_STALE"
+old_mtime "$SOCKET_ROOT"
+# FRESH keeps its just-created mtime.
+
+# ── run one reaper tick ───────────────────────────────────────────────────────
+SWARMFORGE_FIXTURE_REAP_ROOT="$REAP_ROOT" \
+  SWARMFORGE_LEGACY_SOCKET_DIR="$SOCKET_ROOT" \
+  SWARMFORGE_FIXTURE_REAP_STALE_HOURS=1 \
+  SWARMFORGE_SANDBOX_SWEEP_ROOT="$PROJECT/.no-sandbox-sweep" \
+  OPERATOR_SKIP_LAUNCH=1 \
+  bb "$PROJECT/swarmforge/scripts/operator_runtime.bb" "$PROJECT" --tick-once > /dev/null
+
+sleep 0.3 # let SIGKILL delivery + tmux server exit settle
+
+# ── assertions ─────────────────────────────────────────────────────────────────
+check "the orphaned process rooted in the stale known-prefix root is killed" \
+  '! kill -0 "$ORPHAN_PID" 2>/dev/null'
+check "the stale known-prefix root itself is removed" \
+  '[[ ! -e "$STALE_ORPHAN" ]]'
+check "the tmux server whose socket lived under the reaped root is killed" \
+  '! tmux -S "$TMUX_SOCK" list-sessions 2>/dev/null'
+check "a fresh known-prefix root is kept (not stale)" \
+  '[[ -e "$FRESH" ]]'
+check "a stale UNKNOWN-prefix entry is kept (allowlist-only)" \
+  '[[ -e "$UNKNOWN_STALE" ]]'
+check "the swarm's legacy socket root directory is kept regardless of age" \
+  '[[ -e "$SOCKET_ROOT" ]]'
+check "the process rooted in the socket root survives untouched" \
+  'kill -0 "$SOCKET_PID" 2>/dev/null'
+
+kill -TERM "$SOCKET_PID" 2>/dev/null || true
+LIVE_PIDS=()
+rm -rf "$PROJECT" "$REAP_ROOT"
+
+if [[ "$fail" -eq 0 ]]; then
+  echo "operator_runtime fixture-reaper-sweep smoke: ALL CHECKS PASSED"
+else
+  echo "operator_runtime fixture-reaper-sweep smoke: FAILURES"; exit 1
+fi

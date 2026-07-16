@@ -12,6 +12,7 @@
 # present recommendation would in production.
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLI="$SCRIPT_DIR/../effective_backlog_depth_cli.bb"
@@ -23,6 +24,7 @@ mk_fixture() {
   local cap="$1"
   local root
   root="$(mktemp -d)"
+  register_tmp_dir "$root"
   mkdir -p "$root/swarmforge"
   printf 'config active_backlog_max_depth %s\n' "$cap" > "$root/swarmforge/swarmforge.conf"
   echo "$root"

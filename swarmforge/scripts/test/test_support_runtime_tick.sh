@@ -7,6 +7,7 @@
 # Asserts the command-file -> event -> dispatch -> reap cycle and the
 # status.json schema.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$SCRIPT_DIR/.."
@@ -16,6 +17,7 @@ check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi
 
 make_fixture() {
   local d; d="$(mktemp -d)"
+  register_tmp_dir "$d"
   mkdir -p "$d/.swarmforge/support" "$d/swarmforge/scripts"
   cp "$SRC/support_lib.bb" "$SRC/support_runtime.bb" "$SRC/launch_support.sh" "$d/swarmforge/scripts/"
   printf '%s' "$d"
@@ -59,6 +61,7 @@ rm -rf "$F"
 # fixture root (not $SRC/..'s real repo path) so this is never accidentally
 # green just because the real file happens to exist by the time this runs.
 NOPROMPT_ROOT="$(mktemp -d)"
+register_tmp_dir "$NOPROMPT_ROOT"
 DRY="$(SUPPORT_LAUNCH_DRYRUN=1 bash "$SRC/launch_support.sh" "$NOPROMPT_ROOT" /tmp/x.jsonl 2>&1 || true)"
 check "support named 'Support' (not a swarm agent)"  '[[ "$DRY" == *"--remote-control Support"* ]]'
 check "support NOT named SwarmForge-Support"         '[[ "$DRY" != *"SwarmForge-Support"* ]]'
@@ -68,6 +71,7 @@ rm -rf "$NOPROMPT_ROOT"
 # When the prompt DOES exist (once the specifier lands it), the launcher
 # must pick it up automatically - a regression guard for that future state.
 WITHPROMPT_ROOT="$(mktemp -d)"
+register_tmp_dir "$WITHPROMPT_ROOT"
 mkdir -p "$WITHPROMPT_ROOT/swarmforge/roles"
 echo "You are Support." > "$WITHPROMPT_ROOT/swarmforge/roles/support.prompt"
 DRY2="$(SUPPORT_LAUNCH_DRYRUN=1 bash "$SRC/launch_support.sh" "$WITHPROMPT_ROOT" /tmp/x.jsonl 2>&1 || true)"
