@@ -221,7 +221,8 @@ const DOMAINS = [
   require('./bl440OfflineAnswerFileReturnPathSteps'),
   require('./bl432AutoTuneIntakeThrottleSteps'),
   require('./bl441AnsweringOfflineRunbookSteps'),
-  require('./bl415IntakeReplyGithubPermalinkSteps')
+  require('./bl415IntakeReplyGithubPermalinkSteps'),
+  require('./bl411NegotiationRelayKillsSupersededChildSteps')
 ];
 
 function registerSteps(registry) {
