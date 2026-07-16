@@ -18,8 +18,14 @@ import { decideNegotiationUpdateAction, formatContractForTelegram } from './nego
 // 'revised'/'agreed' success outcomes without throwing, so a stale or
 // replayed update can never re-run BL-344's own already-ended guard as an
 // uncaught exception that would abort the whole poll cycle.
+// BL-442: 'not-derived' is the outcome for an objection from which no
+// concrete contract change could be derived - the revision step must never
+// fabricate a boundary clause from raw text it could not interpret, so this
+// is a distinct terminal-for-this-round outcome, not a variant of 'revised'
+// (the contract rides back unchanged, never re-posted as if it were new).
 export type ObjectToContractResult =
   | { outcome: 'revised'; contract: ProposedContract }
+  | { outcome: 'not-derived' }
   | { outcome: 'round-limit' }
   | { outcome: 'already-ended' };
 
@@ -33,10 +39,46 @@ export interface NegotiationRelayAdapters {
 
 export const CONTRACT_AGREED_MESSAGE = 'The contract is agreed. Onboarding will continue.';
 export const ROUND_LIMIT_MESSAGE = 'The negotiation has reached its round limit. Please reach out directly to continue.';
+// BL-442: posted when routing cannot confidently classify a reply as either
+// approval or objection - asks the human to disambiguate in the topic
+// instead of defaulting to the mutate-the-contract path.
+export const CLARIFY_INTENT_MESSAGE = 'Did you mean to approve the contract, or is this an objection? Reply "agree" to approve, or restate your objection.';
+// BL-442: posted when an objection is definitely an objection but no
+// concrete contract change could be derived from it - never a fabricated
+// boundary clause built from the raw text.
+export const COULD_NOT_DERIVE_CHANGE_MESSAGE = "Couldn't derive a change from this - could you rephrase your objection?";
 
-// Split out of relayNegotiationUpdates so that function's own branch count
-// stays low, the same technique this codebase uses throughout (e.g.
-// telegramFrontDeskBotCore's processUpdate/deliverOperatorContext split).
+// The 'agree' and 'objection' branches each carry their own already-ended/
+// terminal-outcome handling, factored out here so processNegotiationUpdate's
+// own branch count reflects only the drop/ask/agree/objection dispatch below
+// - same split technique as telegramFrontDeskBotCore's processUpdate/
+// deliverOperatorContext.
+async function handleAgreement(adapters: NegotiationRelayAdapters): Promise<'posted' | 'dropped'> {
+  const result = await adapters.approveContract();
+  if (result.outcome === 'already-ended') {
+    return 'dropped';
+  }
+  await adapters.postToTopic(CONTRACT_AGREED_MESSAGE);
+  return 'posted';
+}
+
+async function handleObjection(text: string, adapters: NegotiationRelayAdapters): Promise<'posted' | 'dropped'> {
+  const result = await adapters.objectToContract(text);
+  if (result.outcome === 'already-ended') {
+    return 'dropped';
+  }
+  if (result.outcome === 'round-limit') {
+    await adapters.postToTopic(ROUND_LIMIT_MESSAGE);
+    return 'posted';
+  }
+  if (result.outcome === 'not-derived') {
+    await adapters.postToTopic(COULD_NOT_DERIVE_CHANGE_MESSAGE);
+    return 'posted';
+  }
+  await adapters.postToTopic(formatContractForTelegram(result.contract));
+  return 'posted';
+}
+
 // Returns 'posted' for anything genuinely acted on (including the
 // round-limit notice - the human still needs to see it), 'dropped' for a
 // pure decision-drop OR an already-ended negotiation - neither can ever
@@ -54,24 +96,14 @@ export async function processNegotiationUpdate(
   if (decision.action === 'drop') {
     return 'dropped';
   }
+  if (decision.action === 'ask') {
+    await adapters.postToTopic(CLARIFY_INTENT_MESSAGE);
+    return 'posted';
+  }
   if (decision.action === 'agree') {
-    const result = await adapters.approveContract();
-    if (result.outcome === 'already-ended') {
-      return 'dropped';
-    }
-    await adapters.postToTopic(CONTRACT_AGREED_MESSAGE);
-    return 'posted';
+    return handleAgreement(adapters);
   }
-  const result = await adapters.objectToContract(decision.text);
-  if (result.outcome === 'already-ended') {
-    return 'dropped';
-  }
-  if (result.outcome === 'round-limit') {
-    await adapters.postToTopic(ROUND_LIMIT_MESSAGE);
-    return 'posted';
-  }
-  await adapters.postToTopic(formatContractForTelegram(result.contract));
-  return 'posted';
+  return handleObjection(decision.text, adapters);
 }
 
 export interface NegotiationRelayResult {

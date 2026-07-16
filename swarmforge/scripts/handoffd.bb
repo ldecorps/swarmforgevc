@@ -1094,6 +1094,29 @@
     (catch Exception e
       (log! "push-sweep-error" (.getMessage e)))))
 
+;; BL-437: shells to the compiled emit-fleet-status.js CLI (Babashka has no
+;; way to import compiled TS) - reuses createSwarmNode/rollupStatus
+;; unchanged, the exact same rollup fleet-console.ts used to reconstruct for
+;; a single swarm before this ticket, so a published doc can never disagree
+;; with what a live in-process reconstruction would say. Publishes THIS
+;; swarm's own rolled-up status.json into the fleet rendezvous dir under
+;; the operator host's $HOME, flipping BL-246's backwards coupling back to
+;; BL-242's own principle: the swarm rolls up its own pack, the fleet
+;; console just merges. Shares the chase-sweep cadence (no separate
+;; timeout), same rationale as every other *-sweep! sharing it above. Any
+;; failure (CLI not yet compiled, etc.) degrades to a logged skip - never
+;; crashes the sweep; a status.json that simply stops updating is exactly
+;; what fleet-console.ts is designed to notice and report as "stopped
+;; (coordinator lost)".
+(defn fleet-status-sweep! []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "emit-fleet-status.js"))
+          {:keys [exit err]} (process/sh ["node" cli-path (str project-root)] {:dir (str project-root)})]
+      (when-not (zero? exit)
+        (log! "fleet-status-sweep-error" (str "exit=" exit " " (str/trim (or err ""))))))
+    (catch Exception e
+      (log! "fleet-status-sweep-error" (.getMessage e)))))
+
 ;; BL-258: headless, host-independent morning trigger for briefing
 ;; GENERATION (complements briefing-email-sweep! above, which only handles
 ;; the SEND of an already-committed file). Reads the configured morning
@@ -1447,7 +1470,19 @@
                     (try
                       (push-sweep!)
                       (catch Exception e
-                        (log! "push-sweep-error" (.getMessage e)))))
+                        (log! "push-sweep-error" (.getMessage e))))
+                    ;; BL-437: fleet-status sweep shares the same cadence -
+                    ;; no separate timeout, same rationale as BL-222/BL-214/
+                    ;; BL-258/BL-309/BL-316/BL-339/BL-353/BL-350/BL-356
+                    ;; above. fleet-status-sweep! already carries its own
+                    ;; try/catch (mirroring the shell-out CLIs' own
+                    ;; degrade-never-crash posture), but wrapped again here
+                    ;; for the same belt-and-suspenders reason every sibling
+                    ;; sweep in this cadence block is.
+                    (try
+                      (fleet-status-sweep!)
+                      (catch Exception e
+                        (log! "fleet-status-sweep-error" (.getMessage e)))))
                   (spit (str heartbeat-file) (str (now) "\n"))
                   (when (zero? (mod cycle heartbeat-log-every-cycles))
                     (log! "heartbeat" (str "cycle=" cycle)))
