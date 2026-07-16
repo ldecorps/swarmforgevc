@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-16T17:42:36.836818655Z","feature_name":"One standing Approvals topic indexes every pending approval and is where the human acts","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-434-approvals-standing-topic.feature","background_hash":"b548618ab8c1439a021954037f7dee41c1fe7e5d4a74aabaa58991494e456ceb","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: One standing Approvals topic indexes every pending approval and is where the human acts
 
 # BL-434 (feature, human-requested via Operator/Telegram 2026-07-15): approvals are scattered - each

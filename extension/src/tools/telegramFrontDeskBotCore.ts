@@ -569,6 +569,15 @@ async function deliverOperatorContext(backlogId: string, text: string, updateId:
 // cannot narrow that way.
 type ApprovalsTopicReplyDecision = Extract<BotUpdateDecision, { action: 'approvals-topic-approve' | 'approvals-topic-reject' | 'approvals-topic-unrecognized' }>;
 
+// Narrows AND collapses the three-way OR below into one call - split out so
+// processMessageUpdate's own branch count (one decision point per `if`, plus
+// one per `||`) stays at or below this file's CRAP threshold, the same
+// "extract to keep CRAP down" convention this file already applies (e.g.
+// openTopicIdFor for the open-default/open-for-topic pair above).
+function isApprovalsTopicReplyDecision(decision: BotUpdateDecision): decision is ApprovalsTopicReplyDecision {
+  return decision.action === 'approvals-topic-approve' || decision.action === 'approvals-topic-reject' || decision.action === 'approvals-topic-unrecognized';
+}
+
 // BL-434: the Approvals-topic reply's own delivery - reuses the EXISTING
 // recordApprovalReply/recordRejectionReply adapters (never a second
 // approval-recording path, per the ticket's own instruction) and their own
@@ -744,6 +753,14 @@ function openTopicIdFor(decision: BotUpdateDecision): number | undefined {
   return decision.action === 'open-for-topic' ? decision.topicId : undefined;
 }
 
+// Collapses the open-default/open-for-topic OR into one call - same
+// CRAP-budget reason as isApprovalsTopicReplyDecision above. A type guard
+// (not a plain boolean) so the narrowed `decision.text` access below the
+// call site still type-checks.
+function isOpenDecision(decision: BotUpdateDecision): decision is Extract<BotUpdateDecision, { action: 'open-default' | 'open-for-topic' }> {
+  return decision.action === 'open-default' || decision.action === 'open-for-topic';
+}
+
 // BL-426 slice 1: the voice-note twin of attemptSteeringDelivery above -
 // optional adapter, defaults to "voice not wired" so every PollAdapters
 // fixture written before BL-426 keeps working unchanged (same convention as
@@ -823,10 +840,10 @@ async function processMessageUpdate(update: TelegramUpdate, principalUserId: str
     const ok = await deliverOperatorContext(decision.backlogId, decision.text, update.update_id, adapters);
     return deliveryOutcome(ok);
   }
-  if (decision.action === 'approvals-topic-approve' || decision.action === 'approvals-topic-reject' || decision.action === 'approvals-topic-unrecognized') {
+  if (isApprovalsTopicReplyDecision(decision)) {
     return deliverApprovalsTopicReply(decision, topicIdOf(update), adapters);
   }
-  if (decision.action === 'open-default' || decision.action === 'open-for-topic') {
+  if (isOpenDecision(decision)) {
     await adapters.openSubjectAndRecord(openTopicIdFor(decision), decision.text, update.update_id);
     return 'posted';
   }
