@@ -1,0 +1,116 @@
+id: BL-462
+title: "Pipeline-board refinement: wider slug, an updated-at footer bumped only on content change, and repost-at-bottom so the board is the latest topic message"
+milestone: M8
+type: feature
+severity: low
+status: todo
+epic: ""
+priority: 3
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-operator-question-1784222028953.md + backlog/INTAKE-operator-question-1784222592328.md — ldecorps via the Telegram front desk, relayed by the Operator 2026-07-16. Two intakes for the SAME surface (the shipped BL-452/BL-455 pipeline board), plus the specifier's clarifying answers (2026-07-16), folded into one coupled ticket because all three asks edit the same two files."
+
+description: |
+  Three further refinements to the live pipeline board (the monospace kanban grid posted in the
+  dedicated Pipeline Board Telegram topic, shipped by BL-452 and refined by BL-455). All three come
+  from the human via the front desk; the specifier asked three clarifying questions and the human
+  chose:
+    1. SHOW MORE description — "longer slug, same line": widen the existing per-ticket SLUG so more of
+       the title fits on the ticket's own grid row. NOT a second line, NOT dropping the aligned grid.
+    2. An "updated at MMM DD HH:MM" FOOTER on the board — with the explicit constraint "don't refresh
+       the board every minute or every tick; when new data is updated on the board, then update the
+       timestamp." The footer time is bumped ONLY when the board's DATA CONTENT changes, never on the
+       wall clock alone.
+    3. The board must be the LATEST message in the topic — "only on content change": when the content
+       changes, REPOST the board at the bottom (delete the old board message, post a fresh one) instead
+       of editing it in place; when content is unchanged, leave the existing message where it is (no
+       repost, no delete).
+
+  This is one coupled deliverable, not three tickets: asks 1-3 all edit the same two files
+  (pipelineBoard.ts + pipelineBoardSync.ts), and asks 2 and 3 are the same mechanism (the content-vs-
+  clock change-gate that decides both when to repost and when to bump the stamp). Splitting them would
+  thrash the same files.
+
+  Scope (live paths VERIFIED in code 2026-07-16 — grep-confirm again at build before editing):
+    - extension/src/concierge/pipelineBoard.ts (pure renderer): widen PIPELINE_BOARD_SLUG_MAX_LENGTH
+      from 24 to a wider phone-fitting bound (deriveTicketSlug already truncates + strips newlines —
+      keep that; just raise the cap). Add an "updated at" FOOTER line to renderPipelineBoard, fed a
+      formatted label. The label is a PURE function of an INJECTED epoch-ms — no bare new Date() /
+      Date.now() in the renderer or its formatter (engineering no-real-clock rule; the format/timezone
+      is a build detail but must be deterministic and testable by pinning the injected instant).
+    - extension/src/concierge/pipelineBoardSync.ts: STOP delegating to syncEditInPlaceMessage. The
+      board now (a) computes a CONTENT SIGNATURE = the rendered grid + parked list, i.e. everything
+      EXCEPT the footer timestamp; (b) if the signature equals the persisted one, does NOTHING (no
+      repost, no delete, no stamp change — the existing message stays where it is); (c) if it changed,
+      records the injected instant as the new last-change time, renders content + footer, DELETES the
+      old board message (if any) and POSTS a fresh one at the bottom. State (in conciergeTick.ts's
+      TickState.pipelineBoard) carries topicId, messageId, the content signature, and the last-change
+      instant/label.
+    - extension/src/notify/telegramClient.ts + the board adapters in
+      extension/src/concierge/conciergeTick.ts (syncBoardIfWired / boardAdapters): add a
+      deleteMessage(chatId, messageId) wrapper over the Bot API deleteMessage method (the client today
+      has sendMessage / editMessageText / deleteForumTopic but no single-message delete), wire it as a
+      board adapter, and thread the injected clock into syncBoardIfWired so the last-change instant is
+      deterministic. editMessage is no longer used by the board (it may stay on the adapter interface
+      if the roster path shares it, but the board takes the delete+post path).
+
+  Constraints:
+    - DO NOT change extension/src/concierge/editInPlaceMessageSync.ts's behavior. It is SHARED with
+      extension/src/concierge/approvalsRosterSync.ts, which MUST keep editing its roster message IN
+      PLACE. Only the board moves to repost-at-bottom. Do not "DRY" the roster into the board's new
+      repost path; if a new shared "repost-at-bottom" helper is extracted, the roster must not be
+      pointed at it.
+    - INHERITED from BL-452/BL-455 and unchanged: READ-ONLY / side-effect-free (nothing in the swarm
+      depends on the board); ONE board message in ONE topic; EDGE-TRIGGERED on the CONTENT SIGNATURE —
+      never repost/delete on an unchanged tick (anti-storm / Telegram rate-limit rule; memory
+      backfill-vs-stale-tick-icon-revert). The content signature + all ordering stay DETERMINISTIC so
+      the edge-trigger comparison is stable tick over tick — the footer timestamp is deliberately
+      EXCLUDED from the signature so a fresh clock read alone never triggers a repost.
+    - Keep the renderer, the slug/footer formatters, and the sync decision pure/testable (the unit +
+      acceptance seam); the Telegram Bot API and tmux stay the untested boundary. Reach any fixture
+      cwd/HOME by STUBBING accessors, never chdir / HOME overlay (engineering worker-thread rule).
+    - Pin BOTH the fixture instant and the code's clock to one injected value in tests — never seed the
+      footer from the real clock while the sync reads its own (engineering real-clock-fixture rule).
+
+  Sequencing (NOT a hard depends_on — repo file-overlap-via-notes convention, memory:
+  standing-topic-feature-overlap-cluster): edits extension/src/concierge/pipelineBoard.ts and
+  extension/src/concierge/conciergeTick.ts — the SAME standing-topic / front-desk / concierge files as
+  BL-434, BL-450, BL-452, BL-455, and any in-flight BL-414 / BL-424 / BL-425 / BL-449. Human-requested
+  but NOT orthogonal to an ACTIVE ticket on those files: serialize against any in-flight
+  conciergeTick.ts / pipelineBoard.ts ticket rather than running concurrent, and build on whatever
+  board scaffolding is on main at build time (BL-455's wider-row/slug render is the base this extends).
+
+  E2E QA PROCEDURE: with the swarm running and active tickets on the board, (1) assert each ticket row
+  shows a LONGER slug than before (more of the title) on a single line that still fits a phone; (2)
+  assert the board ends with an "updated at MMM DD HH:MM" footer; (3) move a ticket to a new stage
+  (content change) and assert the OLD board message is gone and a NEW board message appears at the
+  BOTTOM of the topic (it is now the latest message) with a BUMPED footer time; (4) let a tick pass
+  with NO content change and assert the board is NOT reposted and the footer time is UNCHANGED — it did
+  not refresh on the clock alone; (5) confirm the Approvals Roster message (if present) still edits in
+  place and did NOT start reposting; (6) assert rendering/posting writes no ticket/handoff/backlog
+  state. Verify against the REAL Telegram surface, not a fixture (BL-335).
+
+acceptance:
+  feature: specs/features/BL-462-pipeline-board-wider-slug-updated-at-repost.feature
+  steps:
+    - "A longer title fills the wider slug on the same row"
+    - "A title longer than the wider limit is truncated to one line"
+    - "The board carries an updated-at footer showing the last content-change time"
+    - "The board reposts at the bottom and bumps its footer only when its content changes"
+    - "The first board post has nothing to delete; a later content change deletes the old message before reposting"
+    - "An unchanged board keeps the same footer time even as the clock advances"
+    - "Rendering and syncing the board modifies no swarm state"
+
+human_approval: >
+  Human-requested via the Telegram front desk, relayed by the Operator 2026-07-16 (two intakes:
+  -1784222028953 and -1784222592328), with the design decisions taken directly from the human's
+  answers to the specifier's clarifying questions (2026-07-16): wider slug on the same line; an
+  "updated at MMM DD HH:MM" footer bumped ONLY on content change (explicitly NOT every tick/minute);
+  repost-at-bottom on content change so the board is the latest message. Those three behaviors are the
+  firm contract. Build-time / cosmetic details NOT gating promotion: the exact widened slug length,
+  the footer's exact glyphs and timezone (UTC vs local), and grid width. HARD constraint: the shared
+  edit-in-place mechanism must keep the Approvals Roster editing in place — only the board reposts.
+  Serialize against any active conciergeTick.ts / pipelineBoard.ts ticket rather than running
+  concurrent on those shared files.
+
+mutation_cost: medium
