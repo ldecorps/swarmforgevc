@@ -482,9 +482,18 @@
 ;; never close a thread (thread-lifecycle-01).
 (def reply-outbox-file (fs/path op-dir "telegram-reply-outbox.jsonl"))
 
-(defn append-to-reply-outbox! [thread-id text]
+(defn append-to-reply-outbox!
+  "BL-466: extra (a map, e.g. {\"agentQuestion\" true \"options\" [...]}) is
+   merged into the generated entry - used only by the ask/await call sites
+   below (escalate, re-home) that are continuing an agent's OWN pending
+   question; every other caller here (idle-nudge, linked-ticket-status,
+   disk-space, the front-desk-operator's own reply) keeps calling with 2
+   args and stays completely unaffected."
+  [thread-id text & [extra]]
   (fs/create-dirs (fs/parent reply-outbox-file))
-  (spit (str reply-outbox-file) (str (json/generate-string {"threadId" thread-id "text" text}) "\n") :append true))
+  (spit (str reply-outbox-file)
+        (str (json/generate-string (merge {"threadId" thread-id "text" text} extra)) "\n")
+        :append true))
 
 (defn idle-nudge-sweep!
   "For every OPEN thread in the unified store, evaluates support-lib/idle-
@@ -803,12 +812,12 @@
   (when (fs/exists? awaiting-answer-file)
     (try
       (let [m (json/parse-string (slurp (str awaiting-answer-file)) true)]
-        {:question (:question m) :thread-id (:thread_id m) :asked-at-ms (:asked_at_ms m)})
+        {:question (:question m) :thread-id (:thread_id m) :asked-at-ms (:asked_at_ms m) :options (:options m)})
       (catch Exception _ nil))))
 
-(defn write-awaiting-answer! [{:keys [question thread-id asked-at-ms]}]
+(defn write-awaiting-answer! [{:keys [question thread-id asked-at-ms options]}]
   (atomic-spit! awaiting-answer-file
-                (json/generate-string {:question question :thread_id thread-id :asked_at_ms asked-at-ms})))
+                (json/generate-string {:question question :thread_id thread-id :asked_at_ms asked-at-ms :options options})))
 
 (defn clear-awaiting-answer! [] (fs/delete-if-exists awaiting-answer-file))
 
@@ -819,7 +828,7 @@
   (let [{:keys [event question thread-id]} (operator-lib/check-awaiting-answer (read-awaiting-answer) now await-timeout-ms)]
     (when (= event :escalate-and-drop)
       (let [text (str "[still needed] " question)]
-        (append-to-reply-outbox! thread-id text)
+        (append-to-reply-outbox! thread-id text {"agentQuestion" true})
         (when-let [thread (support-thread-store/read-thread! state-dir thread-id)]
           (support-thread-store/write-thread! state-dir (support-lib/append-message thread support-lib/operator-channel (now-iso) text))))
       (clear-awaiting-answer!)
@@ -1136,10 +1145,11 @@
       :pair (clear-awaiting-answer!)
       :re-home
       (let [question (:question decision)]
-        (append-to-reply-outbox! thread-id question)
+        (append-to-reply-outbox! thread-id question (cond-> {"agentQuestion" true}
+                                                       (:options decision) (assoc "options" (:options decision))))
         (when-let [thread (support-thread-store/read-thread! state-dir thread-id)]
           (support-thread-store/write-thread! state-dir (support-lib/append-message thread support-lib/operator-channel (now-iso) question)))
-        (write-awaiting-answer! {:question question :thread-id thread-id :asked-at-ms (:asked-at-ms decision)})
+        (write-awaiting-answer! {:question question :thread-id thread-id :asked-at-ms (:asked-at-ms decision) :options (:options decision)})
         (log! "await-re-homed" thread-id))
       :none nil)
     (atomic-spit! telegram-reply-context-file
