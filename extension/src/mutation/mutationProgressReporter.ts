@@ -15,6 +15,7 @@ import {
   recordMutantTested,
 } from './mutationProgress';
 import { defaultProgressFilePath, writeProgressRecord } from './mutationProgressFile';
+import { buildMutationGateHealthVerdict, formatMutationGateHealthVerdict } from './mutationGateHealth';
 
 const RUN_PLAN = 'Run';
 
@@ -24,6 +25,10 @@ export interface MutationProgressReporterDeps {
   filePath?: string;
   write?: (filePath: string, record: ReturnType<typeof buildProgressRecord>) => void;
   mutateFile?: string;
+  // BL-446: surfaces the mutation-gate health verdict at run completion.
+  // Injectable so tests never touch the real process.stderr; defaults to it
+  // in production (defaultSurfaceGateHealth below).
+  surface?: (message: string) => void;
 }
 
 // role has its own two-hop fallback (explicit dep, then env var, then a
@@ -40,6 +45,16 @@ export interface ResolvedReporterConfig {
   filePath: string;
   write: (filePath: string, record: ReturnType<typeof buildProgressRecord>) => void;
   mutateFile: string | undefined;
+  surface: (message: string) => void;
+}
+
+// BL-446: default surfacing writes to stderr (visible in a live `stryker
+// run`'s own terminal output, regardless of TTY - unlike the `progress`
+// reporter package this project already worked around once for the same
+// reason, see the file-level comment above) rather than only persisting the
+// health verdict into the durable JSON progress file.
+function defaultSurfaceGateHealth(message: string): void {
+  process.stderr.write(`${message}\n`);
 }
 
 // Pure: resolves every constructor dependency from explicit overrides, then
@@ -57,6 +72,7 @@ export function resolveReporterConfig(
     filePath: deps.filePath ?? defaultProgressFilePath(repoRoot, role),
     write: deps.write ?? writeProgressRecord,
     mutateFile: deps.mutateFile ?? env.STRYKER_MUTATE_FILE,
+    surface: deps.surface ?? defaultSurfaceGateHealth,
   };
 }
 
@@ -66,6 +82,7 @@ export class MutationProgressReporter implements Reporter {
   private readonly filePath: string;
   private readonly write: (filePath: string, record: ReturnType<typeof buildProgressRecord>) => void;
   private readonly mutateFile: string | undefined;
+  private readonly surface: (message: string) => void;
 
   constructor(deps: MutationProgressReporterDeps = {}) {
     // Compiled to out/mutation/mutationProgressReporter.js: out -> extension -> repo root.
@@ -75,6 +92,7 @@ export class MutationProgressReporter implements Reporter {
     this.filePath = config.filePath;
     this.write = config.write;
     this.mutateFile = config.mutateFile;
+    this.surface = config.surface;
   }
 
   public onMutationTestingPlanReady(event: MutationTestingPlanReadyEvent): void {
@@ -96,6 +114,14 @@ export class MutationProgressReporter implements Reporter {
       return;
     }
     this.flush(this.state, 'done');
+    // BL-446: surface a non-healthy gate (zero-kill-suspect or no-mutants) at
+    // completion - a healthy run stays quiet, since Stryker's own clear-text
+    // reporter already reports the normal killed/survived counts and a
+    // redundant "healthy" line every run would just be noise.
+    const verdict = buildMutationGateHealthVerdict(this.state.killed, this.state.survived);
+    if (verdict.health !== 'healthy') {
+      this.surface(formatMutationGateHealthVerdict(verdict));
+    }
   }
 
   // Takes the already-narrowed state as an explicit parameter rather than
