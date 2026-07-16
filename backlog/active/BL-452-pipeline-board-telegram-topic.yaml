@@ -1,0 +1,106 @@
+id: BL-452
+title: "A live pipeline-board grid in a dedicated Telegram topic: active BL tickets x roles, a mark at each ticket's current stage, realtime + read-only"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+epic: ""
+priority: 2
+direction: human-requested
+depends_on: []
+source: ".swarmforge/operator/INTAKE-pipeline-board-telegram-topic.md — human/Operator directive relayed by ldecorps 2026-07-16, routed to the specifier by the coordinator as PRIORITY ('spec now, jumps queue on promote'). FIRM (Operator): dedicated Telegram topic + realtime updates; lives inside the front-desk bot; rides the concierge tick + telegramClient. Data-source contradiction (/pipeline carries no per-ticket stage) surfaced and settled with the human via AskUserQuestion 2026-07-16: ENRICH the pipeline state with the current held ticket id."
+
+description: |
+  A lowkey kanban board in a DEDICATED standing Telegram topic: a small monospace grid with active BL
+  tickets on the Y axis and pipeline roles on the X axis, a single mark (X) at each ticket's current
+  stage. Glanceable, REALTIME (reflects a stage change within a tick), READ-ONLY. Lives INSIDE the
+  front-desk bot (no separate service); rides the existing concierge event tick + telegramClient (the
+  createForumTopic + edit-in-place pattern the topic-icon sync already uses). Sibling of the Operator /
+  Recert (BL-450) / Approvals (BL-434) standing topics.
+
+  PRIORITY: the coordinator promotes this to backlog/active/ ahead of the current paused queue as soon as
+  it is specced, overriding normal priority-order promotion for this one item (Operator directive). BUT it
+  is NOT orthogonal to the in-flight standing-topic work — see the sequencing note below.
+
+  DATA-SOURCE RESOLUTION (the intake's named "one real design decision", settled with the human via
+  AskUserQuestion 2026-07-16 after the specifier VERIFIED the code):
+    - The Operator asked for the bridge /pipeline state and explicitly NOT the handoff "hop-log".
+    - Verified: /pipeline (readPipelineStages, extension/src/swarm/swarmState.ts) reports only each ROLE
+      as busy/idle — it carries NO per-ticket data, so it cannot render a ticket-by-role grid as-is. The
+      only existing per-ticket->stage source (findLiveHolder / the /holistic `assignments` computation) is
+      derived from handoff holding-windows (the hop-log family the Operator rejected) AND walks git
+      history (too heavy for a frequent tick). There is no durable coordinator stage-map to read.
+    - CHOSEN (human): ENRICH the pipeline state so each role stage carries its CURRENT in_process held
+      ticket id(s) — a cheap current-STATE read (parseHandoffTask on the role's in_process handoff; batch
+      roles may hold several), NOT the stale hop HISTORY, and NOT the expensive /holistic git-walk. Read
+      the backlog folders (active/paused + human_approval) for the parked / awaiting-approval status
+      columns so every active ticket lands in exactly one cell. Honors "use the pipeline state", stays
+      realtime-cheap on the concierge tick.
+
+  ANTI-STORM (engineering editForumTopic 429 rule; memory: backfill-vs-stale-tick-icon-revert): the board
+  is ONE message edited in place in ONE topic — a single-message edit, not a per-topic fan-out — so it
+  does not trigger the first-tick mass-edit storm. Keep it EDGE-TRIGGERED anyway: only re-render+edit when
+  the rendered grid TEXT changes (durable last-rendered marker, the posture recert-notify-state.json /
+  standingIconSeenIds already model); never edit on an unchanged tick.
+
+  Scope (verify the LIVE path at build time before naming files):
+    - Enrich readPipelineStages / PipelineStage (extension/src/swarm/swarmState.ts) and the /pipeline
+      state (extension/src/bridge/bridgeState.ts) to carry each role's current in_process held ticket
+      id(s). Cheap read; no git-history walk. (This is the minimal wiring the chosen data source needs.)
+    - A PURE, testable board renderer: (active-ticket rows) x (role columns in PIPELINE.md order —
+      specifier, coder, cleaner, architect, hardender, documenter, QA, coordinator — + parked +
+      awaiting-approval status columns) -> monospace grid text (Telegram code block, ~width fits a phone).
+      This is the unit/acceptance-testable seam; the Telegram API + tmux are the untested boundary.
+    - Post/edit the board into a standing "Pipeline Board" topic from the concierge tick
+      (extension/src/concierge/conciergeTick.ts), created once alongside the Operator topic
+      (extension/src/tools/telegram-front-desk-bot.ts ensureOperatorTopic / standingTopicTargets, BL-418),
+      edit-in-place, edge-triggered on rendered-text change.
+
+  Constraints:
+    - READ-ONLY / side-effect-free: pure render + post; nothing in the swarm depends on the board's state
+      (a UI signal, like the topic-icon resolver).
+    - Edge-triggered single-message edit; never re-edit when unchanged.
+    - Every active ticket lands in exactly ONE cell (a role column, or the parked / awaiting-approval
+      status column) — no empty rows.
+    - Keep the renderer + the stage enrichment pure/testable; reach any fixture cwd/HOME by STUBBING
+      accessors, never chdir/HOME overlay (engineering worker-thread rule). If the enrichment adds a new
+      on-disk read, place that input in the wiring fixture and prove the read is load-bearing
+      (break-then-fix, engineering BL-383 rule).
+
+  Sequencing (NOT a hard depends_on — repo file-overlap-via-notes convention, memory:
+  cost-substrate-and-topic-hook-overlap-clusters): edits extension/src/concierge/conciergeTick.ts,
+  extension/src/tools/telegram-front-desk-bot.ts and extension/src/swarm/swarmState.ts — the SAME
+  standing-topic + front-desk files as BL-434, BL-450 and active BL-414 / BL-425. It jumps the PAUSED
+  queue per the Operator's priority directive, but it is NOT orthogonal to an ACTIVE ticket on those
+  files: serialize against any in-flight conciergeTick.ts / telegram-front-desk-bot.ts ticket rather than
+  running concurrent, and reuse whichever standing-topic scaffolding lands first.
+
+  E2E QA PROCEDURE: with the swarm running and tickets at various stages, assert the board appears in a
+  dedicated Pipeline Board Telegram topic as a monospace grid with one row per active ticket and a single
+  mark at each ticket's current stage column; move a ticket to the next stage and assert the SAME board
+  message is edited in place (not re-posted) to show the new column within a tick; run a tick with no
+  stage change and assert the message is NOT edited; assert a parked ticket shows in the parked column and
+  an awaiting-approval ticket in its column (no empty row); assert rendering/posting the board writes no
+  ticket/handoff/backlog state. Verify against real surfaces, not a fixture (BL-335).
+
+acceptance:
+  feature: specs/features/BL-452-pipeline-board-telegram-topic.feature
+  steps:
+    - "Each active ticket is a row marked only at its current stage"
+    - "A ticket is marked in exactly the column for its current state"
+    - "The board is posted once to the Pipeline Board topic, then edited in place on a stage change"
+    - "The board is not re-edited when no ticket's stage has changed"
+    - "Rendering and posting the board modifies no swarm state"
+
+human_approval: >
+  Directive relayed by the human/Operator 2026-07-16; the data-source design fork (the intake's named
+  "one real design decision") was surfaced by the specifier after verifying /pipeline carries no
+  per-ticket stage, and settled by the human via AskUserQuestion 2026-07-16: ENRICH the pipeline state
+  with each role's current in_process held ticket id (cheap current-state read, not the hop-log history,
+  not the expensive /holistic git-walk); backlog folders feed the parked / awaiting-approval columns. The
+  grid layout, exact column glyphs, and edge-trigger marker shape are build-time details, not a promotion
+  gate. PRIORITY: promote ahead of the paused queue, but serialize against any ACTIVE conciergeTick.ts /
+  front-desk-bot ticket (BL-414 / BL-425 / BL-434 / BL-450) — jumps the queue, does not run concurrent on
+  the shared files.
+
+mutation_cost: medium
