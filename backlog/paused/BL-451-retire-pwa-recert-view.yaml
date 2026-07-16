@@ -1,0 +1,67 @@
+id: BL-451
+title: "Retire the PWA recert view and BL-339's now-dead deep-link notify (the RETIRE half of the full move to Telegram)"
+milestone: M8
+type: chore
+severity: low
+status: todo
+epic: recert-telegram-move
+priority: 40
+direction: human-requested
+depends_on:
+  - BL-450
+source: "backlog/INTAKE-operator-question-1784195243074.md — the human asked for recert moved FULLY OUT of the PWA (Telegram OPERATOR thread 2026-07-16). PWA-fate settled via AskUserQuestion 2026-07-16: RETIRE the PWA recert view. This is the removal half; BL-450 is the build half."
+
+description: |
+  The RETIRE half of the "move recert fully out of the PWA" directive (BL-450 is the build half).
+  Once the standing Recert Telegram topic (BL-450) carries recertification, the PWA recert surface is
+  redundant and its supporting notify is dead. This ticket removes those DEAD/redundant surfaces only.
+
+  DEPENDS ON BL-450 landing first — do NOT remove the old path before the new one works.
+
+  Remove (verify each by grep for remaining readers before deleting — engineering call-site-sweep rule):
+    - The PWA recert view + verbs: pwa/app.js `renderRecertContent` recert branch, `recertMailtoHref`
+      and the update-textarea / delete-gate mailto flow, the BL-271 Listen-on-recert control usage, the
+      BL-280 backlog-context on the recert card, and the recert strings in pwa/locales.js. Also the
+      recert render test scripts (extension/scripts/render-recert-mailto.js, render-recert-listen.js,
+      render-recert-backlog-context.js) and their tests.
+    - BL-339's notify: extension/src/tools/notify-recert-batch.ts, extension/src/notify/recertBatchNotifier.ts,
+      the handoffd.bb `recert-notify-sweep!` invocation, the `.swarmforge/operator/recert-notify-state.json`
+      handling, and the `buildRecertDeepLink` / `#recert=1` recert deep link (extension/src/notify/pwaDeepLinks.ts).
+      Its link target (the PWA recert view) is being removed, so the nudge would 404 — retire it, do not
+      leave it pointing at a deleted surface.
+    - The recert-batch.json publish (`.github/workflows/backlog-dashboard.yml` node generate-recert-batch step)
+      and the extension/src/tools/generate-recert-batch.ts CLI, which exist ONLY to feed the PWA recert
+      view. BL-450 reads `computeRecertBatch` server-side, NOT the published artifact — but GREP-CONFIRM
+      nothing else reads recert-batch.json before deleting it.
+
+  Keep (do NOT remove — BL-450 depends on them): `computeRecertBatch`, the recert store modules
+  (extension/src/docs/recertification.ts, recertificationStore.ts), and the inbound-email recert path
+  (api/recert-webhook.js, recertInboundWebhook.ts) unless a follow-up explicitly retires it — that
+  inbound path is orthogonal to the PWA view and out of this ticket's scope.
+
+  Constraints:
+    - Removal only; must not delete the recert store modules the Telegram loop uses, and must not change
+      recert BEHAVIOR beyond the surface move (BL-450 owns the behavior).
+    - After removal, the suite/build stays green with no dangling imports or dead references; grep-verify
+      no remaining reader of anything deleted (the tool knows every caller; a remembered count does not).
+
+  E2E QA PROCEDURE: load the PWA against a recert-batch that has scenarios and assert NO recert view or
+  Confirm/Update/Delete controls render; run the recert notify sweep against a waiting batch and assert
+  NO deep-link message is sent to Telegram; confirm recertification is still reachable via the Recert
+  Telegram topic (BL-450 path unbroken); build + full suite green with no dangling recert-view/notify
+  references.
+
+acceptance:
+  feature: specs/features/BL-451-retire-pwa-recert-view.feature
+  steps:
+    - "The phone PWA no longer presents a recert view or its verbs"
+    - "The redundant BL-339 recert deep-link notification is no longer sent"
+    - "Recertification is still reachable, now in the Recert Telegram topic"
+
+human_approval: >
+  PWA-fate fork settled by the human via AskUserQuestion 2026-07-16: RETIRE the PWA recert view (full
+  move). This ticket carries out that removal plus the dead BL-339 deep-link notify (its link target is
+  removed). Depends on BL-450; sequence after it and after the BL-450-overlapping tickets
+  (BL-434/BL-414/BL-425) since removal touches pwa/app.js and the notify path.
+
+mutation_cost: low
