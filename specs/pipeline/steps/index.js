@@ -242,7 +242,8 @@ const DOMAINS = [
   require('./bl461StartSwarmEnsureFullStackSteps'),
   require('./bl462PipelineBoardRefinementsSteps'),
   require('./bl463MutationCooldownIgnoresOwnParcelSteps'),
-  require('./bl466AgentQuestionsAsTelegramPollsSteps')
+  require('./bl466AgentQuestionsAsTelegramPollsSteps'),
+  require('./bl464PipelineBoardAuthoritativeStageSourceSteps')
 ];
 
 function registerSteps(registry) {
