@@ -65,6 +65,24 @@
 
 (assert= "empty input yields an empty map" {} (pipeline-stage-lib/reconcile-stage-map [] ROLE-ORDER))
 
+;; A role absent from role-order ranks as least-downstream (-1 in the doc
+;; comment) so it must never beat a recognized role, in either arrival
+;; order - the guarantee the rank fn's own comment names. In production this
+;; can never actually arise (role-order is built from the very same roles
+;; list role-ticket-pairs-for draws its :role values from), but the
+;; guarantee is exactly what the code comment claims, so pin it directly
+;; rather than leaving it proven only by construction.
+(assert= "an unrecognized role never wins over a recognized one, unknown observed first"
+         {"BL-1" "coder"}
+         (pipeline-stage-lib/reconcile-stage-map
+          [{:role "ghost-role" :ticket-id "BL-1"} {:role "coder" :ticket-id "BL-1"}]
+          ROLE-ORDER))
+(assert= "an unrecognized role never wins over a recognized one, unknown observed second"
+         {"BL-1" "coder"}
+         (pipeline-stage-lib/reconcile-stage-map
+          [{:role "coder" :ticket-id "BL-1"} {:role "ghost-role" :ticket-id "BL-1"}]
+          ROLE-ORDER))
+
 ;; ── filter-active: drop any ticket not in the active set ─────────────────
 (assert= "drops a stale/closed ticket no longer active"
          {"BL-1" "coder"}
