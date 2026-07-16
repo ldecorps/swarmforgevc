@@ -1,0 +1,81 @@
+id: BL-446
+title: "Stryker kills zero mutants repo-wide - restore the kill mechanism and ratchet against a silent zero-kill pass"
+milestone: M8
+type: bug
+status: todo
+severity: high
+epic: ""
+priority: 2
+direction: swarm-proposed
+depends_on: []
+source: "cleaner rule_proposal (engineering) 2026-07-16, id 20260716T025936Z_000305: 'Stryker mutation testing is broken repo-wide: mutants never get killed, even with coverageAnalysis off + full-suite runs. Likely regressed by BL-422.' Confirmed by the cleaner via isolated + control runs (94 mutants, 2 files, 0 killed) during BL-431 cleanup; manual mutation IS caught by plain vitest, so only Stryker's activation is broken. Specifier disposition: not a durable rule (a transient tool defect), specced as this fix ticket instead of appended to engineering.prompt."
+
+notes: |
+  CRITICAL - the mutation quality floor is compromised. Stryker reports ZERO mutants killed across
+  a run (cleaner saw 94 mutants / 2 files / 0 killed) even with coverageAnalysis off and
+  full-suite-per-mutant runs, while the same mutations ARE caught by a plain `vitest run`. So the
+  tests work; only Stryker's kill/activation mechanism is broken. Consequence: the hardener's
+  no-surviving-mutants gate has been VACUOUS since the regression - a wholly-untested file and a
+  perfectly-tested one both produce "no survivors" and pass. Flag to the coordinator: work hardened
+  since BL-422 landed (~2026-07-15) may have passed a meaningless mutation gate.
+
+  DELIVERABLE HAS TWO PARTS, verified differently (mirrors BL-445):
+    1. THE FIX (operational, the real gate): root-cause and repair the regression so Stryker kills
+       detectable mutants again. Prove it with a FRESH, cache-deleted, non-incremental scoped
+       Stryker run showing a non-zero kill count and a Killed verdict for a mutant a plain
+       `vitest run` catches. Do NOT rely on any incremental-cached verdict.
+    2. THE RATCHET (durable, the .feature scenarios): a pure mutation-gate health verdict that
+       classifies a run's killed/survived counts and SURFACES a zero-kill run as broken/suspect
+       instead of a silent clean pass. Root-cause-agnostic - guards against ANY future recurrence,
+       not just this mechanism. Wire it into the hardener's mutation-result path so a real zero-kill
+       run is actually surfaced (a pure predicate with no live caller is a dark feature -
+       engineering.prompt's wiring rule).
+
+  DO NOT BLINDLY REVERT BL-422 (specifier constraint - the cleaner's "likely BL-422" is a
+  hypothesis, not a root cause). The installed vitest-runner
+  (node_modules/@stryker-mutator/vitest-runner/dist/src/vitest-test-runner.js:36-49) STILL forces
+  `pool:'threads'` + `maxThreads:1`, overriding vitest.config.mjs's BL-422 `pool:'forks'` - so
+  BL-422 most likely never reaches the mutation path. Investigate the more probable causes FIRST,
+  each confirmed against a fresh non-incremental run:
+    - the incremental cache: `incremental:true` + stryker-incremental.json (stryker.config.json).
+      This is KNOWN in this repo to report stale Killed/Survived verdicts until deleted (operational
+      memory: "Stryker incremental cache showed a stale Survived"). Delete it before trusting ANY
+      verdict - including a "killing works now" one, which could equally be a stale cached kill.
+    - the activation plugin path: `appendPlugins: ["./out/mutation/stryker-plugin.js"]`
+      (extension/src/mutation/stryker-plugin.ts) and the per-worker stryker-setup that carries the
+      active-mutant signal into the test run.
+    - the vitest config load: the top-level
+      `require('./out/tools/vitest-worker-memory-budget')` in extension/vitest.config.mjs resolving
+      (or failing) inside the copied Stryker sandbox (.stryker-tmp/sandbox-*).
+  Whatever the cause, PRESERVE BL-422's OOM protection for plain `vitest run` (the capped forked
+  pool that stopped the ~13GB/15GB OOM death-spiral) - the fix must not reintroduce the unbounded
+  worker pool. Also re-verify the engineering.prompt worker-thread rule still describes reality; if
+  the runner's override behavior has drifted, note it (the fix or a rule_proposal), do not silently
+  work around it.
+
+  Scope (verify the live path at build time before scoping - specifier rule): extension/vitest.config.mjs
+  and extension/stryker.config.json (the config surface); extension/src/mutation/stryker-plugin.ts and
+  the stryker-setup/activation path; stryker-incremental.json (delete-and-verify, gitignored - never
+  commit it, BL-105); and the hardener's mutation-result consumer where the new health verdict wires in
+  (extension/src/mutation/mutationProgress*.ts / scripts/quality/mutationProgress*.ts - CONFIRM which
+  path the hardener actually reads pass/fail from and wire the verdict THERE, not into dead-in-production
+  code). The health-verdict predicate is a pure, in-process-testable module in the shape the project
+  already uses (computeWorkerMemoryBudget / check-suite-file-budget).
+
+  E2E QA PROCEDURE: (1) delete stryker-incremental.json; (2) run a scoped Stryker mutation pass
+  (`--mutate` a well-tested file with a known-detectable mutant) with a cleared cache; confirm the
+  run reports a NON-ZERO kill count and the known mutant as Killed - the 0-killed symptom does not
+  reproduce. (3) Feed a synthetic mutation summary of 0 killed / N survived to the health verdict and
+  confirm it is reported zero-kill-suspect and surfaced with its counts, not passed as a clean gate;
+  feed a summary with kills and confirm it reads healthy. Confirm the plain `vitest run` worker pool
+  is still capped (BL-422 OOM protection intact).
+
+acceptance:
+  feature: specs/features/BL-446-mutation-gate-zero-kill-broken.feature
+  steps:
+    - "A mutation run's killed/survived counts are classified as healthy, zero-kill-suspect, or no-mutants"
+    - "A zero-kill run is surfaced as a suspect gate with its counts, not a silent clean pass"
+
+human_approval: pending
+
+mutation_cost: low
