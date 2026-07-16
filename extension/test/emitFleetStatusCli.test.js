@@ -227,6 +227,35 @@ test('buildFleetStatusDoc reflects a recovered role (its key removed from chase-
   assert.notEqual(recoveredDoc.children[0].status, 'blocked');
 });
 
+// A present-but-malformed chase-escalations.json (corrupt syntax, or valid
+// JSON that isn't a role->bool record) must be REJECTED back to "nobody
+// escalated", never crash and never be misread as an escalation - the same
+// absent-vs-malformed distinction the engineering article requires of every
+// optional on-disk input reader.
+test('buildFleetStatusDoc reports needs_human false (never crashes) when chase-escalations.json is not valid JSON', () => {
+  const targetPath = mkTmp();
+  writeRolesTsv(targetPath, [['coordinator', 'master', targetPath, 'session', 'Coordinator', 'claude']]);
+  const dir = path.join(targetPath, '.swarmforge', 'daemon');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'chase-escalations.json'), '{not valid json');
+
+  const doc = buildFleetStatusDoc(targetPath);
+
+  assert.equal(doc.needs_human, false);
+});
+
+test('buildFleetStatusDoc reports needs_human false when chase-escalations.json parses to a JSON array, not a role record', () => {
+  const targetPath = mkTmp();
+  writeRolesTsv(targetPath, [['coordinator', 'master', targetPath, 'session', 'Coordinator', 'claude']]);
+  const dir = path.join(targetPath, '.swarmforge', 'daemon');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'chase-escalations.json'), '["coordinator"]');
+
+  const doc = buildFleetStatusDoc(targetPath);
+
+  assert.equal(doc.needs_human, false);
+});
+
 test('buildFleetStatusDoc defaults the swarm name to "primary" when no swarm_name is configured', () => {
   const targetPath = mkTmp();
   writeRolesTsv(targetPath, [['coordinator', 'master', targetPath, 'session', 'Coordinator', 'claude']]);
