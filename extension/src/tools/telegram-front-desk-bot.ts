@@ -126,7 +126,7 @@ import { IconStickerLookup, StandingTopicTarget } from '../concierge/topicIcon';
 import { computeRoleGateStatesLive, RoleGateState } from '../bridge/gateSnapshot';
 import { computeCurrentHolders } from '../bridge/holisticProjections';
 import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
-import { parseRolesTsv, readPipelineStages } from '../swarm/swarmState';
+import { parseRolesTsv, readTicketStageMap, invertTicketStageToRoleHeldTickets } from '../swarm/swarmState';
 import { wrapPipelineBoardHtml } from '../concierge/pipelineBoard';
 import { readTmuxSocket, readSwarmRoles, paneTarget, getPaneBaseIndex, capturePane, sendKeys } from '../swarm/tmuxClient';
 import { sendInstructionVerified } from '../swarm/verifiedInject';
@@ -1288,11 +1288,16 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
       readLastActivityMs: (ticketId) => lastActivityMs(readRecord(targetPath, ticketId)),
       setTopicTitle: (topicId, title) => editForumTopicWithRateLimitRetry(botToken, chatId, topicId, { name: title }),
     },
-    // BL-452: each role's CURRENTLY held ticket id(s) - straight off the
-    // enriched PipelineStage (swarmState.ts), never readRoleTicket above
-    // (that one's holding-window mechanism is the hop-log family this
-    // feature's own data-source decision explicitly rejected).
-    readRoleHeldTickets: () => Object.fromEntries(readPipelineStages(targetPath).map((s) => [s.role, s.heldTicketIds])),
+    // BL-464: each role's CURRENTLY held ticket id(s), from the coordinator-
+    // fed AUTHORITATIVE ticket->stage store (readTicketStageMap, written by
+    // `pipeline_stage_cli.bb sync`) - replacing BL-452's own
+    // readPipelineStages(...).heldTicketIds in_process/task-header scrape,
+    // which was blind to a note-only kickoff (BL-434/450 never showed on
+    // the board) and could observe the same ticket at two roles at once
+    // during a transition. Never readRoleTicket above either (that one's
+    // holding-window mechanism is the hop-log family this feature's own
+    // data-source decision explicitly rejected).
+    readRoleHeldTickets: () => invertTicketStageToRoleHeldTickets(readTicketStageMap(targetPath)),
     // BL-452: the standing "Pipeline Board" topic is created ONCE - the
     // ticket's own durable TickState.pipelineBoard.topicId marker is what
     // makes this idempotent across ticks/restarts (syncPipelineBoard only

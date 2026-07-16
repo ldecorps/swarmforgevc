@@ -4,7 +4,16 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { readHandoffInboxStatus, parseRolesTsv, currentStageLabel, readPipelineStages, mailboxDir, mailboxBaseDir } = require('../out/swarm/swarmState');
+const {
+  readHandoffInboxStatus,
+  parseRolesTsv,
+  currentStageLabel,
+  readPipelineStages,
+  mailboxDir,
+  mailboxBaseDir,
+  readTicketStageMap,
+  invertTicketStageToRoleHeldTickets,
+} = require('../out/swarm/swarmState');
 
 function mkTmp() {
   return mkTmpDir('sfvc-test-');
@@ -306,4 +315,38 @@ test('readPipelineStages resolves each master-resident role to its own <role> su
   const byRole = Object.fromEntries(stages.map((s) => [s.role, s.status]));
   assert.equal(byRole.coordinator, 'active');
   assert.equal(byRole.specifier, 'idle');
+});
+
+// ── readTicketStageMap / invertTicketStageToRoleHeldTickets — BL-464 ─────
+
+test('BL-464: readTicketStageMap returns an empty map when the store file does not exist yet (no sync has ever run)', () => {
+  const tmp = mkTmp();
+  assert.deepEqual(readTicketStageMap(tmp), {});
+});
+
+test('BL-464: readTicketStageMap returns an empty map for a corrupt/unparseable store file, never a crash', () => {
+  const tmp = mkTmp();
+  const dir = path.join(tmp, '.swarmforge', 'board');
+  mkdirp(dir);
+  fs.writeFileSync(path.join(dir, 'ticket-stage-map.json'), 'not valid json{{{');
+  assert.deepEqual(readTicketStageMap(tmp), {});
+});
+
+test('BL-464: readTicketStageMap reads the coordinator-persisted {ticketId: role} store', () => {
+  const tmp = mkTmp();
+  const dir = path.join(tmp, '.swarmforge', 'board');
+  mkdirp(dir);
+  fs.writeFileSync(path.join(dir, 'ticket-stage-map.json'), JSON.stringify({ 'BL-434': 'coder', 'BL-450': 'specifier' }));
+  assert.deepEqual(readTicketStageMap(tmp), { 'BL-434': 'coder', 'BL-450': 'specifier' });
+});
+
+test('BL-464: invertTicketStageToRoleHeldTickets groups ticket ids under their role, one role per ticket by construction', () => {
+  assert.deepEqual(invertTicketStageToRoleHeldTickets({ 'BL-1': 'coder', 'BL-2': 'coder', 'BL-3': 'cleaner' }), {
+    coder: ['BL-1', 'BL-2'],
+    cleaner: ['BL-3'],
+  });
+});
+
+test('BL-464: invertTicketStageToRoleHeldTickets returns an empty map for an empty stage map', () => {
+  assert.deepEqual(invertTicketStageToRoleHeldTickets({}), {});
 });
