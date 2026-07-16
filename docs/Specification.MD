@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 16, 2026 (BL-411 — negotiation relay supervisor now kills a superseded relay child before respawning)
+**Last Updated:** July 16, 2026 (BL-445 — whole-suite duration budget verdict + widened vitest worker cap within the existing memory budget)
 
 ## Overview
 
@@ -653,6 +653,28 @@ runaway agent, was the OOM source.
 - Stryker's own vitest-runner hardcodes `pool: 'threads'` + `maxThreads: 1`
   (the worker-thread rule below) and overrides these caps entirely, so
   mutation runs are unaffected by this cap.
+- **Widened within the same RAM budget (BL-445).** Profiling traced the
+  recorded whole-suite wall-clock (10-13s, over the operator's 10s target)
+  to this cap serializing 292 test files onto just 2 forked workers on a
+  20-core host. `MAX_WORKERS`/`PER_WORKER_HEAP_MB` moved from `2`/`2048` to
+  `6`/`1280` — worst-case footprint stays inside the unchanged
+  `SAFE_HOST_RAM_FRACTION` ceiling (7680MB on the 15360MB reference host);
+  only the worker-pool shape changed, not `test_count` or coverage.
+
+### Whole-suite duration budget verdict (BL-445)
+
+`extension/src/tools/check-suite-duration-budget.ts` is the whole-suite
+sibling of `check-suite-file-budget.ts`'s per-file guard: it classifies one
+recorded run's `duration_ms` against the operator's 10-second target
+(`SUITE_DURATION_BUDGET_MS`, `>=` counts as over-budget) and prints a
+`within-budget`/`over-budget` verdict naming the measured duration, wired
+in-process into `recordTestDuration.js` right after the duration is
+measured. It surfaces an over-budget run rather than hard-failing the
+build — the recorded duration jitters under swarm load, and a hard fail at
+the 10000ms boundary would flake on that jitter; the per-file 7s guard
+remains the hard gate. This is the durable ratchet against the target
+creeping back unnoticed; the existing suite-duration trend
+(`swarmMetrics.ts`) still only reports relative "slower than before".
 
 ### Mutation-run worker RSS profiling (BL-427, measure-first)
 
