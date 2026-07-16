@@ -65,6 +65,9 @@
 ;; BL-412: pure disk-space-alert decision logic, wired below by
 ;; disk-space-sweep!.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "disk_space_lib.bb")))
+;; BL-413: pure stale-sandbox-sweep decision logic, wired below by
+;; sandbox-sweep!.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "sandbox_sweep_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -584,6 +587,124 @@
        (append-to-reply-outbox! "OPERATOR" text)
        (log! "disk-space-alert" text))
      (write-disk-space-state! (merge prior next-state)))))
+
+;; ── BL-413: stale acceptance-test sandbox sweep ─────────────────────────────
+;; Bounds the STOCK of never-cleaned acceptance-test sandboxes under /tmp
+;; (879,887 entries / 37 GB measured 2026-07-15) - the companion BL-420 bounds
+;; the FLOW by fixing the extension test helpers at the source. GUARDRAILS
+;; live mostly in sandbox-sweep-lib/removable? (allowlist-only prefixes,
+;; staleness, no live process rooted in the entry); this wiring adds its own
+;; explicit exclusion of the swarm's legacy /tmp socket dir before the pure
+;; predicate is even consulted.
+;;
+;; Every real filesystem/process read goes through an injectable adapter, the
+;; SAME "thin wiring slice" posture as disk-space-sweep! above, so a wiring
+;; test can point the whole sweep at a private fixture directory and NEVER
+;; touch the real /tmp (the engineering "LIVE shared runtime path" rule - a
+;; test that would have to write into the real /tmp is a missing seam, not an
+;; acceptable risk).
+
+(defn sandbox-sweep-root []
+  (or (System/getenv "SWARMFORGE_SANDBOX_SWEEP_ROOT") "/tmp"))
+
+;; SAME env seam kill_all_swarm.sh already established for this exact path
+;; (LEGACY_SOCKET_DIR="${SWARMFORGE_LEGACY_SOCKET_DIR:-/tmp/swarmforge-${UID}}")
+;; - never a second name for the same guardrail. `id -u` (not System/getenv
+;; "UID") because UID is a bash builtin, not exported to a child process's
+;; environment. A failed uid lookup returns nil, not a fabricated path -
+;; sandbox-sweep! then simply never matches any entry as the socket dir,
+;; which is safe: the allowlist-only design already excludes a
+;; "swarmforge-*" name (it matches neither sfvc- nor aps-), so this
+;; explicit check is defense-in-depth, not the only guard.
+(defn- current-uid! []
+  (try
+    (let [{:keys [exit out]} (process/sh {:continue true} "id" "-u")]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
+(defn sandbox-legacy-socket-dir []
+  (or (System/getenv "SWARMFORGE_LEGACY_SOCKET_DIR")
+      (when-let [uid (current-uid!)] (str "/tmp/swarmforge-" uid))))
+
+(defn sandbox-stale-threshold-ms []
+  (let [hours (or (some-> (System/getenv "SWARMFORGE_SANDBOX_STALE_HOURS") (Double/parseDouble)) 24.0)]
+    (long (* hours 3600000))))
+
+;; Caps how many candidate entries ONE tick evaluates/removes, so an 880k-
+;; entry historical backlog cannot stall the host loop - the remainder is
+;; picked up over subsequent ticks (removed entries simply drop out of the
+;; next listing, so coverage advances tick over tick).
+(defn sandbox-sweep-max-per-tick []
+  (or (some-> (System/getenv "SWARMFORGE_SANDBOX_SWEEP_MAX_PER_TICK") (parse-long)) 500))
+
+(defn- sandbox-sweep-list-entries! [root]
+  (try (mapv fs/file-name (fs/list-dir root)) (catch Exception _ [])))
+
+(defn- sandbox-sweep-entry-age-ms! [entry-path]
+  (try (- (System/currentTimeMillis) (.toMillis (fs/last-modified-time entry-path))) (catch Exception _ 0)))
+
+;; The set of REAL absolute paths every live process's cwd currently resolves
+;; to, read via /proc/<pid>/cwd (Linux/WSL - this whole ticket exists because
+;; of a WSL2/VHDX-on-C: host). Read ONCE per sweep pass, not once per
+;; candidate entry - iterating /proc is the only non-trivial cost here;
+;; membership testing afterward is a cheap set lookup per entry. Returns an
+;; empty set (never throws) when /proc is unavailable (e.g. macOS) - paired
+;; with live-process-rooted-in?'s own "cannot determine -> not live" default,
+;; which is the SAFE direction only because the allowlist/staleness checks
+;; still gate removal independently; liveness alone is never the only guard.
+(defn- live-process-cwds! []
+  (try
+    (->> (fs/list-dir "/proc")
+         (keep (fn [p]
+                 (try
+                   (let [cwd-link (fs/path p "cwd")]
+                     (when (fs/exists? cwd-link)
+                       (str (fs/real-path cwd-link))))
+                   (catch Exception _ nil))))
+         set)
+    (catch Exception _ #{})))
+
+(defn- live-process-rooted-in? [cwds entry-path]
+  (let [entry-str (str entry-path)]
+    (boolean (some #(or (= % entry-str) (str/starts-with? % (str entry-str "/"))) cwds))))
+
+(defn- sandbox-sweep-remove-entry! [entry-path]
+  (try
+    (fs/delete-tree entry-path {:force true})
+    (log! "sandbox-sweep" (str "removed stale sandbox: " entry-path))
+    (catch Exception e
+      (log! "sandbox-sweep-error" (str "failed to remove " entry-path ": " (.getMessage e))))))
+
+(defn sandbox-sweep!
+  "adapters is {:list-entries! fn :entry-age-ms! fn :live-process-rooted-in?
+   fn :remove-entry! fn}, defaulting to the real /tmp reads/deletes above. A
+   listing failure (root missing/unreadable) is simply zero entries this
+   tick, never a crash. Bounded to sandbox-sweep-max-per-tick entries per
+   call."
+  ([]
+   (let [cwds (live-process-cwds!)]
+     (sandbox-sweep!
+      {:list-entries! sandbox-sweep-list-entries!
+       :entry-age-ms! sandbox-sweep-entry-age-ms!
+       :live-process-rooted-in? (fn [entry-path] (live-process-rooted-in? cwds entry-path))
+       :remove-entry! sandbox-sweep-remove-entry!})))
+  ([adapters]
+   (let [root (sandbox-sweep-root)
+         legacy-socket-dir (sandbox-legacy-socket-dir)
+         threshold-ms (sandbox-stale-threshold-ms)
+         max-per-tick (sandbox-sweep-max-per-tick)]
+     (when (fs/exists? root)
+       (doseq [name (take max-per-tick ((:list-entries! adapters) root))]
+         (let [entry-path (fs/path root name)
+               socket-dir? (= (str entry-path) legacy-socket-dir)
+               age-ms ((:entry-age-ms! adapters) entry-path)
+               live? (boolean (when-not socket-dir? ((:live-process-rooted-in? adapters) entry-path)))]
+           (when (sandbox-sweep-lib/removable?
+                  {:known-sandbox-prefix? (sandbox-sweep-lib/known-sandbox-prefix? name)
+                   :stale? (>= age-ms threshold-ms)
+                   :has-live-process? live?
+                   :socket-dir? socket-dir?})
+             ((:remove-entry! adapters) entry-path))))))))
 
 ;; ── cooldown / provider state ─────────────────────────────────────────────────
 
@@ -1293,6 +1414,12 @@
     ;; same "best-effort side action every tick" posture as the sweeps
     ;; here; never gates the launch decision below.
     (disk-space-sweep!)
+
+    ;; BL-413: stale acceptance-test sandbox sweep - bounded per tick, same
+    ;; "best-effort side action every tick" posture as the sweeps here;
+    ;; never gates the launch decision below. Can share this loop with
+    ;; BL-412 per that ticket's own note (orthogonal decision, same host).
+    (sandbox-sweep!)
 
     ;; BL-306: bounded escalate-once-then-drop on an unanswered clarifying
     ;; question - same "best-effort side action every tick" posture as the
