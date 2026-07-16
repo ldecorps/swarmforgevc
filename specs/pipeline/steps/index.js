@@ -238,7 +238,8 @@ const DOMAINS = [
   require('./bl459ShellBbTempdirCleanupTrapSteps'),
   require('./bl434ApprovalsStandingTopicSteps'),
   require('./bl460TmpSweepsBoundDeletesSteps'),
-  require('./bl450RecertStandingTopicSteps')
+  require('./bl450RecertStandingTopicSteps'),
+  require('./bl461StartSwarmEnsureFullStackSteps')
 ];
 
 function registerSteps(registry) {

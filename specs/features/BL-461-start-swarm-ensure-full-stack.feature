@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=94e89e638a6546bec64af67da370cbbca0e187ca5211cd580dbe5a2c4c249778
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-16T19:47:46.302494790Z","feature_name":"start-swarm and ensure bring the full stack up, pass the swarm gates, and are documented","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-461-start-swarm-ensure-full-stack.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":2,"name":"The front desk is checked only when Telegram is configured or a prior front-desk pid exists","scenario_hash":"a3eaf2f71589d9db4aa4b648f69ebc874ef96f6bae892248416f62035dc6a7fb","mutation_count":9,"result":{"Total":9,"Killed":9,"Survived":0,"Errors":0},"tested_at":"2026-07-16T19:47:46.302494790Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: start-swarm and ensure bring the full stack up, pass the swarm gates, and are documented
 
   # BL-461 (chore, human-requested via Cursor chat 2026-07-16 — ldecorps, after a WSL reboot killed
