@@ -1,0 +1,1 @@
+{"id":"BL-468","messages":[{"seq":0,"ts":1784243657896,"author":"swarm","type":"outbound","text":"What it is: Pipeline board: post the new message BEFORE deleting the old one, so there is always at least one board to look at\nHow it works: On a content change the new message is posted before the old one is deleted"}]}
