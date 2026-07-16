@@ -1,127 +1,169 @@
 const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const {
   parseArgs,
-  readFleetConfig,
-  heartbeatIsSessionAlive,
-  buildSwarmNode,
+  isStaleUpdatedAt,
+  enumeratePublishedSwarms,
+  publishedSwarmToNode,
   renderFleet,
+  STALE_AFTER_MS,
 } = require('../out/tools/fleet-console');
-const { createFleetNode } = require('../out/swarm/fleetNode');
 
-// BL-246: parseArgs/readFleetConfig/heartbeatIsSessionAlive/buildSwarmNode/
-// renderFleet are pulled out of main() so they're exercised in-process -
-// same "CLI main() run only via execFileSync is coverage-invisible" lesson
-// recruiter-run.ts's/bakeoff-run.ts's own hardener passes already
-// established for this codebase.
+// BL-437: the fleet console is now a dumb merger - parseArgs/
+// enumeratePublishedSwarms/publishedSwarmToNode/renderFleet are pulled out
+// of main() so they're exercised in-process (the same "CLI main() run only
+// via execFileSync is coverage-invisible" lesson recruiter-run.ts's/
+// bakeoff-run.ts's own hardener passes already established for this
+// codebase), against REAL published status.json docs on disk - never a
+// hand-authored SwarmRegistration (BL-246's original design, removed by
+// this ticket).
 
 function mkTmp() {
   return mkTmpDir('sfvc-fleet-console-');
 }
 
+function publishStatus(rendezvousDir, swarmName, doc) {
+  const dir = path.join(rendezvousDir, swarmName);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'status.json'), JSON.stringify(doc));
+}
+
+function fixtureDoc(overrides = {}) {
+  return {
+    identity: { name: 'fes', project: 'free-email-scanner', kind: 'swarm', coordinatorAddress: 'fes/coordinator' },
+    status: 'active',
+    health: { expected_panes: 4, live_panes: 4, coordinator_alive: true },
+    children: [
+      { identity: { name: 'coder', project: 'free-email-scanner', kind: 'agent', coordinatorAddress: 'fes/coordinator' }, status: 'active', health: { expected_panes: 1, live_panes: 1, coordinator_alive: true } },
+    ],
+    needs_human: false,
+    updated_at: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
 // ── parseArgs ────────────────────────────────────────────────────────────
 
-test('parseArgs returns the config file when present', () => {
-  assert.deepEqual(parseArgs(['fleet.json']), { configFile: 'fleet.json' });
+test('parseArgs uses the given positional rendezvous dir when present', () => {
+  assert.deepEqual(parseArgs(['/tmp/some-fleet-dir']), { rendezvousDir: '/tmp/some-fleet-dir' });
 });
 
-test('parseArgs returns null when no arguments are given', () => {
-  assert.equal(parseArgs([]), null);
+test('parseArgs defaults to the SWARMFORGE_FLEET_DIR env override when no positional arg is given', () => {
+  assert.deepEqual(parseArgs([], { SWARMFORGE_FLEET_DIR: '/tmp/env-fleet-dir' }), { rendezvousDir: '/tmp/env-fleet-dir' });
 });
 
-// ── readFleetConfig ──────────────────────────────────────────────────────
-
-test('readFleetConfig parses a JSON array of swarm registrations', () => {
-  const dir = mkTmp();
-  const configFile = path.join(dir, 'fleet.json');
-  fs.writeFileSync(
-    configFile,
-    JSON.stringify([
-      { name: 'alpha', project: 'proj-a', targetPath: '/tmp/alpha' },
-      { name: 'beta', project: 'proj-b', targetPath: '/tmp/beta' },
-    ])
-  );
-
-  const registrations = readFleetConfig(configFile);
-
-  assert.equal(registrations.length, 2);
-  assert.equal(registrations[0].name, 'alpha');
-  assert.equal(registrations[1].name, 'beta');
+test('parseArgs never fails on missing arguments - there is no required config file any more', () => {
+  const result = parseArgs([], {});
+  assert.equal(typeof result.rendezvousDir, 'string');
+  assert.ok(result.rendezvousDir.length > 0);
 });
 
-// ── heartbeatIsSessionAlive ────────────────────────────────────────────────
+// ── isStaleUpdatedAt ─────────────────────────────────────────────────────
 
-function writeHeartbeatFixture(targetPath, role, lastBeatIso) {
-  const dir = path.join(targetPath, '.swarmforge', 'heartbeat');
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(
-    path.join(dir, `${role}.yaml`),
-    `role: ${role}\npid: 123\nlast_beat: "${lastBeatIso}"\nlast_tool: Read\nphase: exit\nin_flight: false\nbeat_count: 1\n`
-  );
-}
-
-test('heartbeatIsSessionAlive reports alive for a fresh heartbeat', () => {
-  const targetPath = mkTmp();
-  writeHeartbeatFixture(targetPath, 'coder', new Date().toISOString());
-
-  const isAlive = heartbeatIsSessionAlive(targetPath);
-
-  assert.equal(isAlive({ role: 'coder' }), true);
+test('isStaleUpdatedAt is false for a recent timestamp', () => {
+  const now = Date.now();
+  assert.equal(isStaleUpdatedAt(new Date(now - 1000).toISOString(), now), false);
 });
 
-test('heartbeatIsSessionAlive reports dead for a role with no heartbeat file at all', () => {
-  const targetPath = mkTmp();
-
-  const isAlive = heartbeatIsSessionAlive(targetPath);
-
-  assert.equal(isAlive({ role: 'coder' }), false);
+test('isStaleUpdatedAt is true once the age exceeds the threshold', () => {
+  const now = Date.now();
+  assert.equal(isStaleUpdatedAt(new Date(now - STALE_AFTER_MS - 1000).toISOString(), now), true);
 });
 
-test('heartbeatIsSessionAlive reports dead for a stale (long past dead-timeout) heartbeat', () => {
-  const targetPath = mkTmp();
-  writeHeartbeatFixture(targetPath, 'coder', new Date(Date.now() - 10 * 60 * 1000).toISOString());
-
-  const isAlive = heartbeatIsSessionAlive(targetPath);
-
-  assert.equal(isAlive({ role: 'coder' }), false);
+test('isStaleUpdatedAt is true for a malformed timestamp (never silently treated as fresh)', () => {
+  assert.equal(isStaleUpdatedAt('not-a-date', Date.now()), true);
 });
 
-// ── buildSwarmNode + renderFleet (real composition, one swarm) ───────────
+// ── enumeratePublishedSwarms ─────────────────────────────────────────────
 
-function writeRolesTsv(targetPath, rows) {
-  fs.mkdirSync(path.join(targetPath, '.swarmforge'), { recursive: true });
-  fs.writeFileSync(path.join(targetPath, '.swarmforge', 'roles.tsv'), rows.map((r) => r.join('\t')).join('\n') + '\n');
-}
+test('enumeratePublishedSwarms returns one doc per published status.json', () => {
+  const rendezvousDir = mkTmp();
+  publishStatus(rendezvousDir, 'fes', fixtureDoc());
+  publishStatus(rendezvousDir, 'primary', fixtureDoc({ identity: { name: 'primary', project: 'swarmforgevc', kind: 'swarm', coordinatorAddress: 'primary/coordinator' } }));
 
-test('buildSwarmNode composes a real CompositeNode from a registration, readable by renderFleet', () => {
-  const targetPath = mkTmp();
-  writeRolesTsv(targetPath, [
-    ['coordinator', 'master', targetPath, 'session', 'Coordinator', 'claude'],
-    ['coder', 'coder', targetPath, 'session', 'Coder', 'claude'],
-  ]);
-  writeHeartbeatFixture(targetPath, 'coordinator', new Date().toISOString());
-  writeHeartbeatFixture(targetPath, 'coder', new Date().toISOString());
+  const docs = enumeratePublishedSwarms(rendezvousDir);
 
-  const swarm = buildSwarmNode({ name: 'alpha', project: 'proj-a', targetPath });
+  assert.equal(docs.length, 2);
+  assert.deepEqual(docs.map((d) => d.identity.name).sort(), ['fes', 'primary']);
+});
 
-  assert.deepEqual(swarm.identity(), { name: 'alpha', project: 'proj-a', kind: 'swarm', coordinatorAddress: 'alpha/coordinator' });
-  assert.equal(swarm.health().live_panes, 2);
+test('enumeratePublishedSwarms returns an empty list when the rendezvous dir does not exist yet', () => {
+  assert.deepEqual(enumeratePublishedSwarms(path.join(mkTmp(), 'does-not-exist')), []);
+});
 
-  const fleet = createFleetNode({ fleetName: 'fleet', swarms: [swarm] });
-  const rendered = renderFleet(fleet);
+test('enumeratePublishedSwarms skips a subdir with no status.json, never crashing the whole enumeration', () => {
+  const rendezvousDir = mkTmp();
+  fs.mkdirSync(path.join(rendezvousDir, 'half-provisioned'), { recursive: true });
+  publishStatus(rendezvousDir, 'fes', fixtureDoc());
+
+  const docs = enumeratePublishedSwarms(rendezvousDir);
+
+  assert.equal(docs.length, 1);
+  assert.equal(docs[0].identity.name, 'fes');
+});
+
+test('enumeratePublishedSwarms skips a malformed status.json, never crashing the whole enumeration', () => {
+  const rendezvousDir = mkTmp();
+  fs.mkdirSync(path.join(rendezvousDir, 'corrupt'), { recursive: true });
+  fs.writeFileSync(path.join(rendezvousDir, 'corrupt', 'status.json'), 'not json');
+  publishStatus(rendezvousDir, 'fes', fixtureDoc());
+
+  const docs = enumeratePublishedSwarms(rendezvousDir);
+
+  assert.equal(docs.length, 1);
+  assert.equal(docs[0].identity.name, 'fes');
+});
+
+// ── publishedSwarmToNode ─────────────────────────────────────────────────
+
+test('publishedSwarmToNode reads identity/status/health/children purely from the doc when fresh', () => {
+  const doc = fixtureDoc();
+  const node = publishedSwarmToNode(doc, Date.parse(doc.updated_at) + 1000);
+
+  assert.deepEqual(node.identity(), doc.identity);
+  assert.equal(node.status(), 'active');
+  assert.deepEqual(node.health(), doc.health);
+  assert.equal(node.children().length, 1);
+  assert.equal(node.children()[0].identity().name, 'coder');
+});
+
+test('publishedSwarmToNode overrides status to "stopped (coordinator lost)" once updated_at is stale', () => {
+  const doc = fixtureDoc({ updated_at: new Date(Date.now() - STALE_AFTER_MS - 60_000).toISOString(), status: 'active' });
+
+  const node = publishedSwarmToNode(doc, Date.now());
+
+  assert.equal(node.status(), 'stopped (coordinator lost)');
+});
+
+// ── renderFleet (real composition over published docs) ──────────────────
+
+test('renderFleet enumerates the rendezvous dir and renders one swarm per published status.json, with no registration file', () => {
+  const rendezvousDir = mkTmp();
+  publishStatus(rendezvousDir, 'fes', fixtureDoc());
+  publishStatus(rendezvousDir, 'primary', fixtureDoc({ identity: { name: 'primary', project: 'swarmforgevc', kind: 'swarm', coordinatorAddress: 'primary/coordinator' } }));
+
+  const rendered = renderFleet(rendezvousDir);
+
   assert.equal(rendered.identity.kind, 'fleet');
-  assert.equal(rendered.swarms.length, 1);
-  assert.equal(rendered.swarms[0].identity.name, 'alpha');
+  assert.deepEqual(rendered.swarms.map((s) => s.identity.name).sort(), ['fes', 'primary']);
 });
 
-test('buildSwarmNode defaults coordinatorAddress from the swarm name when not given', () => {
-  const targetPath = mkTmp();
-  writeRolesTsv(targetPath, [['coordinator', 'master', targetPath, 'session', 'Coordinator', 'claude']]);
+test('renderFleet renders a swarm with a stale updated_at as stopped (coordinator lost)', () => {
+  const rendezvousDir = mkTmp();
+  const staleDoc = fixtureDoc({ updated_at: new Date(0).toISOString(), status: 'active' });
+  publishStatus(rendezvousDir, 'fes', staleDoc);
 
-  const swarm = buildSwarmNode({ name: 'beta', project: 'proj-b', targetPath });
+  const rendered = renderFleet(rendezvousDir, Date.now());
 
-  assert.equal(swarm.identity().coordinatorAddress, 'beta/coordinator');
+  assert.equal(rendered.swarms[0].status, 'stopped (coordinator lost)');
+});
+
+test('renderFleet on an empty rendezvous dir is an empty, idle fleet - never a crash', () => {
+  const rendered = renderFleet(mkTmp());
+
+  assert.equal(rendered.identity.kind, 'fleet');
+  assert.deepEqual(rendered.swarms, []);
+  assert.equal(rendered.status, 'idle');
 });

@@ -1,114 +1,131 @@
 #!/usr/bin/env node
 /**
  * BL-246 (Baton fleet epic, BL-242 child): the fleet console. Two swarms,
- * two projects, one console - lists every registered swarm with its
- * status, rolls up fleet status(), and traverses children() fleet -> swarm
- * -> agent, all through fleetNode.ts's createFleetNode composed over one
- * createSwarmNode (BL-244) per registered swarm.
+ * two projects, one console.
+ *
+ * BL-437: the console is now a DUMB merger. Each swarm publishes its own
+ * rolled-up status.json (emit-fleet-status.ts, run by that swarm's own
+ * handoffd every cycle) into the rendezvous dir under the operator host's
+ * $HOME; this CLI enumerates that dir, reads each published doc, and
+ * merges - it never again reaches into another swarm's roles.tsv/heartbeat
+ * files to reconstruct status (BL-246's original design, which needed a
+ * hand-authored SwarmRegistration nobody ever actually authored). The
+ * roster is "whatever subdirs exist here", not a config file.
+ *
+ * A swarm whose handoffd has died leaves its published doc's `updated_at`
+ * stale - beyond the SAME liveness threshold BL-245 already uses
+ * (watchdog/liveness.ts), this console infers 'stopped (coordinator lost)'
+ * regardless of whatever status the frozen doc still claims (it was
+ * written before the daemon died and can never update itself).
  *
  * PoC transport is POLL ("when the console refreshes"): every call reads
- * fresh on-disk (and heartbeat) state, so "refresh" is simply running this
- * CLI again. True push (Observer) is @m2, deferred per the ticket's own
- * scope - see BL-246-fleet-console-composite-of-swarms.push.feature.draft.
+ * fresh on-disk state, so "refresh" is simply running this CLI again.
+ * True push (Observer) is @m2, deferred per the ticket's own scope.
  *
- * isSessionAlive is wired to the SAME heartbeat-based liveness check
- * (heartbeat.ts + watchdog/liveness.ts) coordinatorLossTrigger.ts's own
- * production wiring already established for "is this role alive, headless"
- * (BL-245) - not a live tmux session query, since that has no on-disk
- * representation a headless multi-project console can read without a VS
- * Code/live-pane dependency. isBlocked ("needs human") is PaneTailer/
- * needsHumanReconciler-only (per BL-244) with no on-disk signal at all, so
- * it is out of @poc scope here and always reads false.
- *
- * Usage: node fleet-console.js <fleet-config-file>
- *
- * fleet-config-file: JSON array of swarm registrations, see
- * SwarmRegistration - each targetPath is that swarm's own project root
- * (its own .swarmforge/roles.tsv), independent of this tool's own cwd.
+ * Usage: node fleet-console.js [rendezvous-dir]
+ * (rendezvous-dir defaults to ~/.swarmforge/fleet; override only for
+ * tests or an alternate host - never for a real fleet view.)
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { CompositeNode, createSwarmNode } from '../swarm/compositeNode';
+import { CompositeNode, NodeHealth, NodeIdentity, NodeStatus } from '../swarm/compositeNode';
 import { createFleetNode } from '../swarm/fleetNode';
-import { RoleEntry } from '../swarm/swarmState';
-import { readHeartbeat } from './heartbeat';
-import { computeLiveness, WatchdogConfig } from '../watchdog/liveness';
-import { loadRoles, makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
-
-export interface SwarmRegistration {
-  name: string;
-  project: string;
-  targetPath: string;
-  coordinatorAddress?: string;
-}
+import { PublishedNode, PublishedSwarmStatus, fleetRendezvousDir } from './emit-fleet-status';
+import { printJsonToStdout, runCliMain } from './swarm-metrics';
 
 export interface FleetConsoleArgs {
-  configFile: string;
+  rendezvousDir: string;
 }
 
-const USAGE = 'Usage: fleet-console.js <fleet-config-file>\n';
-
-// Pure - same "keep main() a thin dispatcher over a testable pure helper"
-// split this codebase's other CLIs (recruiter-run.ts, bakeoff-run.ts)
-// already established, so a subprocess-only test would never leave this
-// logic coverage-invisible.
-export function parseArgs(argv: string[]): FleetConsoleArgs | null {
-  const [configFile] = argv;
-  return configFile ? { configFile } : null;
+// No required arg any more (BL-437 removed the hand-authored registration
+// file this ticket existed to eliminate) - a bare `node fleet-console.js`
+// is now the ordinary, complete invocation.
+export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env): FleetConsoleArgs {
+  return { rendezvousDir: argv[0] || fleetRendezvousDir(env) };
 }
 
-export function readFleetConfig(configFile: string): SwarmRegistration[] {
-  return JSON.parse(fs.readFileSync(configFile, 'utf8'));
+// BL-245's own liveness dead-timeout, reused as the staleness threshold
+// here rather than a second, independently-tuned constant for the same
+// underlying question ("has this daemon stopped updating its own state").
+export const STALE_AFTER_MS = 120_000;
+
+export function isStaleUpdatedAt(updatedAtIso: string, nowMs: number, staleAfterMs: number = STALE_AFTER_MS): boolean {
+  const ageMs = nowMs - Date.parse(updatedAtIso);
+  return !Number.isFinite(ageMs) || ageMs > staleAfterMs;
 }
 
-// Matches extension.ts's own BL-069 bounce-drain watchdog thresholds, the
-// same constant coordinatorLossTrigger.ts's production wiring already
-// mirrors (not re-exported from there today) for this identical need.
-const WATCHDOG_CONFIG: WatchdogConfig = {
-  staleTimeoutSeconds: 30,
-  inFlightTimeoutSeconds: 60,
-  deadTimeoutSeconds: 120,
-};
+// BL-437 scenario 02/04: enumerates the rendezvous dir - each subdir IS a
+// swarm's own name, and its status.json (or its absence/corruption) is the
+// ONLY thing consulted. A missing or malformed doc for one swarm is
+// skipped, never crashing the whole fleet render.
+export function enumeratePublishedSwarms(rendezvousDir: string): PublishedSwarmStatus[] {
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(rendezvousDir);
+  } catch {
+    return [];
+  }
+  const docs: PublishedSwarmStatus[] = [];
+  for (const entry of entries) {
+    try {
+      const raw = fs.readFileSync(path.join(rendezvousDir, entry, 'status.json'), 'utf8');
+      docs.push(JSON.parse(raw));
+    } catch {
+      // no status.json published yet for this subdir, or it is unreadable/
+      // malformed - never let one bad swarm doc crash the whole fleet view.
+    }
+  }
+  return docs;
+}
 
-export function heartbeatIsSessionAlive(targetPath: string): (role: RoleEntry) => boolean {
-  const heartbeatDir = path.join(targetPath, '.swarmforge', 'heartbeat');
-  return (role) => {
-    const hb = readHeartbeat(heartbeatDir, role.role);
-    const liveness = computeLiveness(hb, Date.now(), WATCHDOG_CONFIG, hb !== undefined);
-    return liveness.state === 'alive' || liveness.state === 'stuck';
+function leafNode(node: PublishedNode): CompositeNode {
+  return {
+    identity: () => node.identity,
+    status: () => node.status,
+    health: () => node.health,
+    children: () => [],
   };
 }
 
-export function buildSwarmNode(registration: SwarmRegistration): CompositeNode {
-  return createSwarmNode({
-    targetPath: registration.targetPath,
-    swarmName: registration.name,
-    project: registration.project,
-    coordinatorAddress: registration.coordinatorAddress ?? `${registration.name}/coordinator`,
-    roles: loadRoles(registration.targetPath),
-    isSessionAlive: heartbeatIsSessionAlive(registration.targetPath),
-  });
+// BL-437 scenario 04: every rendered value here is read from a field of
+// the published doc - nothing calls back into the swarm's own internal
+// role files. The only DERIVED value is the staleness override itself,
+// computed purely from the doc's own updated_at field.
+export function publishedSwarmToNode(doc: PublishedSwarmStatus, nowMs: number): CompositeNode {
+  const stale = isStaleUpdatedAt(doc.updated_at, nowMs);
+  const status: NodeStatus = stale ? 'stopped (coordinator lost)' : doc.status;
+  return {
+    identity: () => doc.identity,
+    status: () => status,
+    health: () => doc.health,
+    children: () => doc.children.map(leafNode),
+  };
 }
 
-export function renderFleet(fleet: CompositeNode) {
+export interface RenderedNode {
+  identity: NodeIdentity;
+  status: NodeStatus;
+  health: NodeHealth;
+}
+
+export function renderFleet(rendezvousDir: string, nowMs: number = Date.now()) {
+  const swarms = enumeratePublishedSwarms(rendezvousDir).map((doc) => publishedSwarmToNode(doc, nowMs));
+  const fleet = createFleetNode({ fleetName: 'fleet', swarms });
   return {
     identity: fleet.identity(),
     status: fleet.status(),
     health: fleet.health(),
-    swarms: fleet.children().map((swarm) => ({
-      identity: swarm.identity(),
-      status: swarm.status(),
-      health: swarm.health(),
-    })),
+    swarms: fleet.children().map(
+      (swarm): RenderedNode => ({ identity: swarm.identity(), status: swarm.status(), health: swarm.health() })
+    ),
   };
 }
 
-export const main = makeArgsGuardedMain(parseArgs, USAGE, async (args) => {
-  const registrations = readFleetConfig(args.configFile);
-  const fleet = createFleetNode({ fleetName: 'fleet', swarms: registrations.map(buildSwarmNode) });
-  printJsonToStdout(renderFleet(fleet));
-});
+export const main = async () => {
+  const args = parseArgs(process.argv.slice(2));
+  printJsonToStdout(renderFleet(args.rendezvousDir));
+};
 
 if (require.main === module) {
   runCliMain(main);

@@ -7,6 +7,7 @@ const {
   reopenForumTopic,
   deleteForumTopic,
   editForumTopic,
+  editForumTopicWithRateLimitRetry,
   getForumTopicIconStickers,
   answerCallbackQuery,
 } = require('../out/notify/telegramClient');
@@ -217,6 +218,31 @@ test('createForumTopic reports failure on a non-2xx response without leaking the
   assert.doesNotMatch(result.error, new RegExp(TOKEN));
 });
 
+// BL-444: "group chat was upgraded to a supergroup chat" carries the new id
+// in parameters.migrate_to_chat_id - a REDIRECT the caller should follow,
+// not an ordinary opaque failure.
+test('BL-444: createForumTopic surfaces migrateToChatId from a "upgraded to a supergroup" failure', async () => {
+  const postFn = async () => ({
+    ok: false,
+    status: 400,
+    json: { ok: false, description: 'Bad Request: group chat was upgraded to a supergroup chat', parameters: { migrate_to_chat_id: -1003886489685 } },
+  });
+
+  const result = await createForumTopic(TOKEN, CHAT_ID, 'Contract negotiation', postFn);
+
+  assert.equal(result.success, false);
+  assert.equal(result.migrateToChatId, -1003886489685);
+  assert.match(result.error, /upgraded to a supergroup/);
+});
+
+test('BL-444: createForumTopic leaves migrateToChatId undefined for an ordinary (non-migration) failure', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'Topics are not enabled' } });
+
+  const result = await createForumTopic(TOKEN, CHAT_ID, 'billing question', postFn);
+
+  assert.equal(result.migrateToChatId, undefined);
+});
+
 // ── BL-342: createForumTopic's own optional icon at creation time ───────
 
 test('BL-342: createForumTopic includes icon_custom_emoji_id in the request body when given', async () => {
@@ -409,6 +435,63 @@ test('BL-342: editForumTopic leaves retryAfterSeconds undefined for an ordinary 
   const result = await editForumTopic(TOKEN, CHAT_ID, 7, { iconCustomEmojiId: 'icon-abc' }, postFn);
 
   assert.equal(result.retryAfterSeconds, undefined);
+});
+
+// ── BL-414 hardener bounce: editForumTopicWithRateLimitRetry - the shared
+//    retry-loop generalization of backfill-topic-icons.ts's own
+//    setTopicIconWithRateLimitRetry (BL-342), so a NAME edit (title-age
+//    sync) can honour a 429's retry_after the same way an ICON edit (the
+//    backfill) already does. Mirrors that file's own test shapes exactly.
+
+test('BL-414: editForumTopicWithRateLimitRetry waits exactly retry_after seconds and retries the SAME topic on a 429', async () => {
+  let calls = 0;
+  const postFn = async () => {
+    calls += 1;
+    if (calls === 1) {
+      return { ok: false, status: 429, json: { ok: false, description: 'Too Many Requests: retry after 26', parameters: { retry_after: 26 } } };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+  const waits = [];
+
+  const result = await editForumTopicWithRateLimitRetry(TOKEN, CHAT_ID, 101, { name: 'BL-900 - renamed' }, async (ms) => waits.push(ms), postFn);
+
+  assert.equal(result, true);
+  assert.equal(calls, 2, 'expected the rate-limited call to be retried, never dropped');
+  assert.deepEqual(waits, [26000], 'expected the wait to be EXACTLY retry_after seconds, in ms, never a generic guess');
+});
+
+test('BL-414: editForumTopicWithRateLimitRetry keeps retrying through MULTIPLE consecutive rate-limit responses until it succeeds', async () => {
+  let calls = 0;
+  const postFn = async () => {
+    calls += 1;
+    if (calls <= 3) {
+      return { ok: false, status: 429, json: { ok: false, description: 'retry after 5', parameters: { retry_after: 5 } } };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+  const waits = [];
+
+  const result = await editForumTopicWithRateLimitRetry(TOKEN, CHAT_ID, 101, { name: 'BL-900 - renamed' }, async (ms) => waits.push(ms), postFn);
+
+  assert.equal(result, true);
+  assert.equal(calls, 4);
+  assert.deepEqual(waits, [5000, 5000, 5000]);
+});
+
+test('BL-414: editForumTopicWithRateLimitRetry does NOT retry a genuine (non-429) failure - returns false immediately', async () => {
+  let calls = 0;
+  const postFn = async () => {
+    calls += 1;
+    return { ok: false, status: 400, json: { ok: false, description: 'topic not found' } };
+  };
+  const waits = [];
+
+  const result = await editForumTopicWithRateLimitRetry(TOKEN, CHAT_ID, 101, { name: 'BL-900 - renamed' }, async (ms) => waits.push(ms), postFn);
+
+  assert.equal(result, false);
+  assert.equal(calls, 1);
+  assert.deepEqual(waits, []);
 });
 
 // ── BL-342: getForumTopicIconStickers - the validated set icon ids must

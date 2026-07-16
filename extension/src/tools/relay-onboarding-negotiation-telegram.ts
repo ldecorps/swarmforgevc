@@ -153,6 +153,9 @@ export function buildRelayAdapters(
         if (result.ended) {
           return { outcome: 'round-limit' };
         }
+        if (!result.derived) {
+          return { outcome: 'not-derived' };
+        }
         return { outcome: 'revised', contract: result.contract as ProposedContract };
       } catch (err) {
         if (isAlreadyEndedError(err)) {
