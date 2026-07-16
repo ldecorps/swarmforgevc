@@ -1,0 +1,91 @@
+id: BL-469
+title: "Per-agent Telegram steering-topic icons: give each of the 8 role topics its own human-chosen icon so they're tellable apart at a glance"
+milestone: M8
+type: feature
+severity: low
+status: todo
+epic: ""
+priority: 3
+direction: human-requested
+depends_on: []
+source: "human (ldecorps) via Operator front-desk intake INTAKE-operator-question-1784237909142 (2026-07-16): replied to the icon proposal picking concrete literal icons per role. Verbatim: 'OK: coder as keyboard / Specifier as note taker / Architect as grue (fr) ... / Cleaner as broom / Hardender, first choice / QA ok for magnifier / Documenter as books'. Coordinator icon (not named in the reply) resolved 2026-07-16 by specifier clarifying question: the proposed 🎼 is a notation glyph absent from Telegram's forum-topic sticker set; human chose 🧭 (compass). Folds into the BL-425 per-agent-steering-topic cluster (BL-425 shipped the topics; this adds their icons)."
+
+description: |
+  BL-425 shipped a per-agent Telegram steering topic for each of the 8 roles, but they are visually
+  identical in the topic list. The human wants each role's topic to carry a distinct, human-chosen icon so
+  he can tell them apart at a glance. This is icon-only — no change to how the steering topics route
+  questions/redirects (BL-425).
+
+  FIRM mapping (role token -> icon), keyed by the canonical swarm role tokens (roleTopicMapStore's
+  ALL_SWARM_ROLES; note the baked-in 'hardender' spelling and uppercase 'QA'):
+    - coordinator -> 🧭  (compass; the coordinator routes/navigates parcels. Chosen 2026-07-16 after the
+      proposed 🎼 was flagged as a notation glyph Telegram does not offer as a topic icon.)
+    - specifier   -> 📝  (note taker)
+    - architect   -> 🏗  ('grue' = FR construction crane)
+    - coder       -> ⌨️  (keyboard)
+    - cleaner     -> 🧹  (broom)
+    - hardender   -> 🛡  (shield; the human's first choice)
+    - QA          -> 🔍  (magnifier)
+    - documenter  -> 📚  (books)
+
+  Scope (grep-confirmed live path 2026-07-16):
+    - extension/src/concierge/topicIcon.ts: add a new ROLE_TOPIC_ICON table (Record<role-token,string>)
+      with the 8 mappings above, plus its own key type — a THIRD table alongside ICON_EMOJI (ticket
+      state) and STANDING_TOPIC_ICON (standing topics); do NOT overload either existing table. Key it on
+      the canonical role tokens from roleTopicMapStore.ALL_SWARM_ROLES.
+    - extension/src/concierge/conciergeTick.ts: build per-agent topic icon targets from BL-425's
+      roleTopicMapStore.readRoleTopicMap (role -> topicId) and sync each NEWLY-OWNED per-agent topic's
+      icon via the EXISTING topicIconSync.syncTopicIcon — mirroring syncStandingTopicIcons exactly
+      (the newly-entering-only call posture). REUSE the sync; do NOT build a second icon path.
+    - No new Telegram adapter and no renderer change: syncTopicIcon (live-set validation via
+      resolveIconStickerId, ownership guard, best-effort), editForumTopic, and getForumTopicIconStickers
+      all already exist and are unchanged.
+
+  Constraints:
+    - Reuse topicIconSync.syncTopicIcon and inherit its guarantees unchanged: it validates the desired
+      emoji against Telegram's LIVE getForumTopicIconStickers set, never touches an icon the swarm did
+      not set (ownership), and is best-effort. An emoji absent from the live set surfaces as the existing
+      'skipped-unresolved-icon' outcome (logged) — never a silent overwrite and never a hard crash. QA
+      verifies all 8 actually resolve on the real surface.
+    - Set the icon ONCE, when a per-agent topic is newly owned (mirror standing-topic sync's
+      newly-entering-only call) — NOT every tick. 8 topics is well within Telegram's rate limit, but
+      reuse the change-gated / newly-owned posture regardless, per the first-tick-mass-transition rule
+      (engineering, BL-342/BL-414): do not re-edit icons on a steady-state tick.
+    - Known collision, accepted: QA's 🔍 equals ICON_EMOJI.paused (the paused ticket-state icon). These
+      are DIFFERENT topic classes — a per-agent QA steering topic vs a paused ticket's own topic — and
+      🔍 is the human's firm pick, so this is documented, not a defect. No other mapping collides with an
+      existing table.
+    - Do NOT touch the board files (pipelineBoardSync.ts / editInPlaceMessageSync.ts) or BL-425's
+      question/redirect routing. Icon-only.
+
+  Sequencing: touches topicIcon.ts + conciergeTick.ts — the standing-topic cluster's shared files
+  ([[standing-topic-feature-overlap-cluster]]). Serialize on those files against any in-flight cluster
+  ticket — notably BL-453 (active, conciergeTick.ts). Do NOT run concurrently with a cluster ticket that
+  edits conciergeTick.ts or topicIcon.ts. Self-contained, additive change.
+
+  E2E QA PROCEDURE: on the real Telegram surface (BL-335, not a fixture), confirm each of the 8 per-agent
+  steering topics shows its mapped icon (coordinator 🧭, specifier 📝, architect 🏗, coder ⌨️, cleaner
+  🧹, hardender 🛡, QA 🔍, documenter 📚). If Telegram's live set does not offer one of them, confirm it is
+  LOGGED as 'skipped-unresolved-icon' (surfaced, not silently blank). Force a steady-state tick and
+  confirm no icon is re-edited (no editForumTopic churn).
+
+acceptance:
+  feature: specs/features/BL-469-per-agent-steering-topic-icons.feature
+  steps:
+    - "Each role's steering topic shows its mapped icon"
+    - "An icon Telegram does not offer is surfaced (skipped-unresolved-icon), not applied, and does not block the other roles"
+    - "A steady-state tick does not re-edit an already-set per-agent topic icon"
+
+human_approval: >
+  Mapping is the human's decision. Seven roles are the human's verbatim 2026-07-16 reply
+  (specifier 📝, architect 🏗 'grue', coder ⌨️, cleaner 🧹, hardender 🛡 'first choice', QA 🔍,
+  documenter 📚). Coordinator 🧭 (compass) chosen by the human 2026-07-16 via a specifier clarifying
+  question, after the earlier proposal 🎼 was flagged as a notation glyph Telegram does not offer as a
+  forum-topic icon. FIRM contract: the 8 role->icon pairs and that an unavailable icon is surfaced
+  (skipped-unresolved-icon), never silently applied. Build-time details NOT gating: the exact table
+  name/location, log wording, exact call structure. Icon-only (no BL-425 routing change, no board file
+  change). Serialize on topicIcon.ts + conciergeTick.ts against BL-453 and the standing-topic cluster.
+  NEW feature file specs/features/BL-469-per-agent-steering-topic-icons.feature — FLAGGED for human
+  review before build.
+
+mutation_cost: low
