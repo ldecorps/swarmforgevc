@@ -77,8 +77,17 @@ export function resolveIconStickerId(stickers: IconStickerLookup[], emoji: strin
 // above: these two keys are never a ticket's folder/type, so they get
 // their own type rather than growing TopicIconState with unrelated
 // members. support/intake is the box office (🎟); the Operator standing
-// topic is the opera house (🏛) - both human-decided 2026-07-15, within
+// topic was the opera house (🏛), human-decided 2026-07-15, within
 // Telegram's free sticker set (docs/branding/icon-system.md).
+// BL-453: the Operator->Concierge rebrand supersedes the opera-house choice
+// with the bell-hop desk bell (🛎, human-chosen 2026-07-16: "The bell is
+// fine") - the live-tick change-gate (conciergeTick.ts's
+// syncStandingTopicIcons) never re-touches an already-seen topic on its
+// own, so making this constant's new value reach the ALREADY-bound
+// front-desk topic is a one-time `backfill-standing-topic-icons.js` run
+// (the same operational step BL-342/BL-418 already established), not new
+// wiring - this table is the one thing both the live tick and the backfill
+// already read.
 // BL-434: 'approvals' extends the standing-topic icon set for the new
 // standing Approvals topic - a clipboard (📋) reads as "items awaiting
 // sign-off", distinct from the Operator's opera house and support/intake's
@@ -92,7 +101,7 @@ export type StandingTopicKey = 'support/intake' | 'operator' | 'approvals' | 're
 
 export const STANDING_TOPIC_ICON: Record<StandingTopicKey, string> = {
   'support/intake': '🎟',
-  operator: '🏛',
+  operator: '🛎',
   approvals: '📋',
   recert: '📜',
 };

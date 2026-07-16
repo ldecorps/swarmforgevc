@@ -1330,11 +1330,11 @@ test('BL-342 topic-icons-06: an epic-defining ticket is never a target of icon s
 
 const STANDING_ICON_STICKERS = [
   { emoji: '🎟', customEmojiId: 'id-ticket' },
-  { emoji: '🏛', customEmojiId: 'id-opera-house' },
+  { emoji: '🛎', customEmojiId: 'id-bell' },
 ];
 
 // BL-418 standing-topic-icons-01
-test('BL-418 standing-topic-icons-01: the support/intake topic gets the box-office icon and the Operator topic gets the opera-house icon', async () => {
+test('BL-418 standing-topic-icons-01: the support/intake topic gets the box-office icon and the Operator topic gets the bell icon', async () => {
   const { adapters, iconsSet, iconOwnership } = fakeAdapters({
     readStandingTopics: () => [
       { id: 'SUP-001', topicId: 801, iconKey: 'support/intake' },
@@ -1348,12 +1348,12 @@ test('BL-418 standing-topic-icons-01: the support/intake topic gets the box-offi
   assert.deepEqual(
     iconsSet.sort((a, b) => a.topicId - b.topicId),
     [
-      { topicId: 701, iconId: 'id-opera-house' },
+      { topicId: 701, iconId: 'id-bell' },
       { topicId: 801, iconId: 'id-ticket' },
     ]
   );
   assert.equal(iconOwnership['SUP-001'], 'id-ticket');
-  assert.equal(iconOwnership['OPERATOR'], 'id-opera-house');
+  assert.equal(iconOwnership['OPERATOR'], 'id-bell');
 });
 
 // BL-418 standing-topic-icons-02 (wiring level): a standing topic already
@@ -1379,10 +1379,10 @@ test('BL-418 standing-topic-icons-03: a live sticker set lacking a standing topi
   const { adapters, iconsSet } = fakeAdapters({
     readStandingTopics: () => [{ id: 'OPERATOR', topicId: 701, iconKey: 'operator' }],
   });
-  adapters.iconAdapters.getIconStickers = async () => STANDING_ICON_STICKERS.filter((s) => s.emoji !== '🏛');
+  adapters.iconAdapters.getIconStickers = async () => STANDING_ICON_STICKERS.filter((s) => s.emoji !== '🛎');
 
   await assert.doesNotReject(() => runConciergeTick(adapters));
-  assert.deepEqual(iconsSet, [], 'expected no icon to be set when the opera-house sticker is absent from the live set');
+  assert.deepEqual(iconsSet, [], 'expected no icon to be set when the bell sticker is absent from the live set');
 });
 
 // A standing topic's id is added to the durable seen-set unconditionally on
@@ -1430,7 +1430,7 @@ test('BL-418 wiring: a standing topic is synced once on its first tick, then nev
   adapters.iconAdapters.getIconStickers = async () => STANDING_ICON_STICKERS;
 
   await runConciergeTick(adapters);
-  assert.deepEqual(iconsSet, [{ topicId: 701, iconId: 'id-opera-house' }]);
+  assert.deepEqual(iconsSet, [{ topicId: 701, iconId: 'id-bell' }]);
   iconsSet.length = 0;
 
   await runConciergeTick(adapters);

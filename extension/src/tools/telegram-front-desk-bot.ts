@@ -89,6 +89,7 @@ import {
   computeReplyRelayCycleResult,
   applyReplyRelayCycleResult,
   decideEnsureOperatorTopicAction,
+  decideStandingTopicTitleSync,
   decideEnsureRoleTopicAction,
   OPERATOR_TOPIC_NAME,
   OPERATOR_SUBJECT_ID,
@@ -366,6 +367,56 @@ function updateOpenKey(updateId: number): string {
   return `update:${updateId}`;
 }
 
+// BL-453: {subjectId: title} - the last title this process is known to have
+// SET on a standing topic, so a rebrand's own rename (unlike creation,
+// which always gets the current OPERATOR_TOPIC_NAME for free) is applied
+// exactly once rather than on every restart. Bot-owned, machine-local
+// (gitignored under .swarmforge/), same posture as every other file in
+// this directory - the same "never re-edit an already-correct topic" gate
+// topicTitleSync.ts's own lastAnnouncedBucket already established for
+// per-ticket topics, generalized here to any standing (non-ticket) topic.
+function standingTopicTitlesPath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'telegram-standing-topic-titles.json');
+}
+
+function readStandingTopicTitles(targetPath: string): Record<string, string> {
+  try {
+    return JSON.parse(fs.readFileSync(standingTopicTitlesPath(targetPath), 'utf8')) as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+function writeStandingTopicTitles(targetPath: string, titles: Record<string, string>): void {
+  atomicWrite(standingTopicTitlesPath(targetPath), JSON.stringify(titles));
+}
+
+// BL-453: renames an already-bound standing topic to desiredTitle when (and
+// only when) the recorded title actually differs (decideStandingTopicTitleSync) -
+// the rebrand's own "single-topic single edit, never every tick" constraint.
+// A failed edit is logged and left unrecorded, so the NEXT call (next
+// restart) retries rather than silently giving up forever.
+async function syncStandingTopicTitleIfNeeded(
+  targetPath: string,
+  subjectId: string,
+  topicId: number,
+  desiredTitle: string,
+  botToken: string,
+  chatId: string,
+  postFn?: TelegramPostFn
+): Promise<void> {
+  const titles = readStandingTopicTitles(targetPath);
+  if (decideStandingTopicTitleSync(titles[subjectId], desiredTitle) === 'unchanged') {
+    return;
+  }
+  const result = await editForumTopic(botToken, chatId, topicId, { name: desiredTitle }, postFn);
+  if (!result.success) {
+    process.stderr.write(`syncStandingTopicTitleIfNeeded: failed to rename "${subjectId}" to "${desiredTitle}": ${result.error}\n`);
+    return;
+  }
+  writeStandingTopicTitles(targetPath, { ...titles, [subjectId]: desiredTitle });
+}
+
 // BL-346: creates the standing "Operator" forum topic and binds it to the
 // reserved OPERATOR_SUBJECT_ID in the SAME map subjectForTopic/
 // topicForSubject already trust - BEFORE the poll loop ever starts, so no
@@ -387,6 +438,11 @@ export async function ensureOperatorTopic(targetPath: string, botToken: string, 
   const topicMap = readTopicMap(targetPath);
   const decision = decideEnsureOperatorTopicAction(topicMap);
   if (decision.kind === 'reuse') {
+    // BL-453: the Operator->Concierge rebrand's live-topic rename - a fresh
+    // create (below) always gets the current name for free, but an already-
+    // bound topic (every pre-BL-453 install) needs its title actually
+    // edited to catch up.
+    await syncStandingTopicTitleIfNeeded(targetPath, OPERATOR_SUBJECT_ID, decision.topicId, OPERATOR_TOPIC_NAME, botToken, chatId, postFn);
     return decision.topicId;
   }
   const created = await createForumTopic(botToken, chatId, OPERATOR_TOPIC_NAME, postFn);
@@ -396,6 +452,9 @@ export async function ensureOperatorTopic(targetPath: string, botToken: string, 
   }
   topicMap[topicMapKey(created.messageThreadId)] = OPERATOR_SUBJECT_ID;
   writeTopicMap(targetPath, topicMap);
+  // Records the title it was JUST created with, so a later restart's
+  // reuse-branch check above never fires an unnecessary rename edit.
+  writeStandingTopicTitles(targetPath, { ...readStandingTopicTitles(targetPath), [OPERATOR_SUBJECT_ID]: OPERATOR_TOPIC_NAME });
   return created.messageThreadId;
 }
 
