@@ -145,6 +145,38 @@ test('runScenario throws an error naming the scenario and failing step when a ha
   );
 });
 
+// BL-425: runScenario already has `feature` in scope - it passes
+// feature.name through to registry.resolve as the scope, so a
+// registry.defineScoped registration pinned to THIS feature's own name is
+// preferred over an unrelated, earlier-registered generic handler that
+// happens to share the exact same step text (see stepRegistry.test.js's own
+// BL-425 tests for the resolution rule itself).
+test("runScenario resolves a step using the feature's own name as scope, preferring a same-feature scoped handler", async () => {
+  const calls = [];
+  const registry = createStepRegistry();
+  registry.define(/^ambiguous step$/, () => calls.push('generic'));
+  registry.defineScoped(/^ambiguous step$/, () => calls.push('scoped-for-this-feature'), 'My Feature');
+  const feature = { name: 'My Feature' };
+  const scenario = { name: 'demo', steps: [step('When', 'ambiguous step')] };
+
+  await runScenario(registry, feature, scenario);
+
+  assert.deepEqual(calls, ['scoped-for-this-feature']);
+});
+
+test('runScenario falls back to the generic handler when the scoped registration belongs to a DIFFERENT feature', async () => {
+  const calls = [];
+  const registry = createStepRegistry();
+  registry.define(/^ambiguous step$/, () => calls.push('generic'));
+  registry.defineScoped(/^ambiguous step$/, () => calls.push('scoped-for-other-feature'), 'Other Feature');
+  const feature = { name: 'My Feature' };
+  const scenario = { name: 'demo', steps: [step('When', 'ambiguous step')] };
+
+  await runScenario(registry, feature, scenario);
+
+  assert.deepEqual(calls, ['generic']);
+});
+
 test('runScenario awaits async handlers before moving to the next step', async () => {
   const order = [];
   const registry = createStepRegistry();

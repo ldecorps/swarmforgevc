@@ -19,7 +19,7 @@ async function runScenario(registry, feature, scenario, exampleRow) {
   const context = {};
   for (const step of scenarioSteps(feature, scenario)) {
     const text = substitute(step.text, exampleRow);
-    const resolved = registry.resolve(text);
+    const resolved = registry.resolve(text, feature.name);
     if (!resolved) {
       throw new Error(`Scenario "${scenario.name}": no step handler matched "${step.keyword} ${text}"`);
     }
