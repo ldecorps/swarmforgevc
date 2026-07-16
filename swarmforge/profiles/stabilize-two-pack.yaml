@@ -1,5 +1,5 @@
 # Swarm profile: stabilize two-pack with daemon on.
-# A profile = pack topology + backend + per-role model/effort tier (see docs/Specification.MD §Cost-aware backend selection).
+# A profile = pack topology + backend + per-role model/effort tier (see docs/reference/Specification.MD §Cost-aware backend selection).
 id: stabilize-two-pack
 name: Stabilize (two-pack · daemon on)
 description: >

@@ -5,7 +5,7 @@
 #
 # Covers acceptance scenario BL-091 wsl2-swarm-01 (the conf side of it -
 # actually launching tmux panes/agents is real infrastructure bring-up, out
-# of a unit test's reach; see docs/runbooks/BL-091-wsl2-second-swarm-bringup.md).
+# of a unit test's reach; see docs/how-to/BL-091-wsl2-second-swarm-bringup.md).
 
 set -euo pipefail
 

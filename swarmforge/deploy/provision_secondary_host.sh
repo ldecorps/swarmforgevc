@@ -5,7 +5,7 @@
 # (SSH access already established, a GitHub PAT/deploy key, the one-time
 # `claude` login, the GitHub Actions runner registration token) are called
 # out loudly and are NOT attempted here - see
-# docs/runbooks/BL-101-pi-vps-secondary-swarm-bringup.md for the full
+# docs/how-to/BL-101-pi-vps-secondary-swarm-bringup.md for the full
 # walkthrough this script is one half of.
 #
 # Usage: provision_secondary_host.sh <swarm-name> <repo-clone-url> [project-root]

@@ -1,7 +1,7 @@
 # BL-427: mutation-run worker RSS measurement report
 
 Measure-first slice (BL-427). This report is the live-measurement artifact
-`docs/Specification.MD`'s BL-427 section and the `mutation_cost`-adaptive
+`docs/reference/Specification.MD`'s BL-427 section and the `mutation_cost`-adaptive
 follow-up ticket are built on. It records what a real Stryker mutation run
 actually costs in RSS per worker on the reference host, and what
 `recommendMutationConcurrency` (`extension/src/metrics/mutationWorkerRss.ts`)
