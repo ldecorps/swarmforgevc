@@ -1,0 +1,73 @@
+id: BL-466
+title: "Surface an agent's clarifying question directly on Telegram — as a native poll when options are discrete (start with the specifier)"
+milestone: M8
+type: feature
+severity: low
+status: todo
+epic: ""
+priority: 4
+direction: human-requested
+depends_on: []
+source: "human (ldecorps) via the Operator front desk 2026-07-16 — INTAKE-operator-question-1784230533165, plus the specifier's Q3 answer 2026-07-16 (Telegram poll form). Builds on shipped BL-325 (human-in-the-loop ask/answer/unblock)."
+
+description: |
+  BL-325 (human-in-the-loop ask/answer/unblock) already shipped, but a specifier clarifying question
+  currently reaches the human only INDIRECTLY through the Concierge. The human wants the question
+  surfaced DIRECTLY on Telegram in a dedicated agent-questions topic, and — his Q3 choice — rendered as
+  a NATIVE TELEGRAM POLL when the question has discrete options ("in an effort to maintain
+  iso-functionality" with the in-editor AskUserQuestion), with a free-text message fallback for
+  open-ended questions. The human's selection/reply flows back to the asking agent via BL-325's existing
+  answer-return path.
+
+  Start with the SPECIFIER as the first producer (its clarifying questions are the immediate need); the
+  mechanism should generalize to any agent ask.
+
+  Scope (grep-confirm at build — verified ask subsystem; confirm the exact relay function):
+    - swarmforge/scripts/operator_ask.bb / operator_runtime.bb / operator_lib.bb — the agent ask->human
+      relay and its awaiting-answer store. Route a discrete-option question to a poll; an open-ended one
+      to a plain message. Map the answer back through BL-325's awaiting-answer / unblock machinery — do
+      NOT build a parallel answer path.
+    - extension/src/notify/telegramClient.ts — today has sendMessage / editMessageText / getUpdates but
+      NO sendPoll: add a sendPoll wrapper (Bot API sendPoll) and read poll answers from getUpdates
+      (poll / poll_answer updates).
+    - The question is posted to a dedicated agent-questions Telegram topic.
+
+  Constraints:
+    - Reuse BL-325's answer-return machinery; the poll's selected option (or the free-text reply)
+      becomes the returned answer.
+    - A poll needs 2+ discrete options; a question with none falls back to a plain message the human
+      replies to in-thread.
+    - Bounded await + escalate-once-then-drop is inherited from BL-306/BL-325 — an unanswered poll
+      follows the same timeout/escalation posture, never blocks the agent forever.
+    - Telegram creds / bridge remain the untested boundary; keep the question->poll construction and the
+      answer->return mapping pure/testable behind that boundary. A guard-fires test must env -u the
+      Telegram creds so it never spawns a live bridge (engineering rule).
+
+  Orthogonality: touches the operator ask path + telegramClient, NOT the board files — orthogonal to the
+  BL-462/464/465 board cluster; can run concurrent with them.
+
+  E2E QA PROCEDURE: from the specifier, ask a discrete-option question and assert a native Telegram poll
+  appears in the agent-questions topic with the right options; select an option and assert the specifier
+  receives that option as its answer and unblocks; ask an open-ended question and assert a plain message
+  (not a poll) appears and an in-thread reply returns to the specifier; leave a question unanswered past
+  the await window and assert the inherited escalate-once-then-proceed fires (no permanent block).
+  Verify against the real Telegram surface (BL-335).
+
+acceptance:
+  feature: specs/features/BL-466-agent-questions-as-telegram-polls.feature
+  steps:
+    - "A discrete-option question is surfaced as a Telegram poll"
+    - "The human's poll selection returns to the asking agent"
+    - "An open-ended question falls back to a plain message"
+    - "An unanswered question follows the bounded-await escalation, never blocking forever"
+
+human_approval: >
+  Human-requested via the Operator front desk 2026-07-16; he chose the Telegram-poll form (Q3) for
+  iso-functionality with the in-editor question UI, free-text fallback for open questions, starting with
+  the specifier. Firm contract: discrete-option questions render as native Telegram polls in a dedicated
+  agent-questions topic; the selection returns to the asking agent via BL-325's answer path; open
+  questions fall back to a plain message; unanswered questions follow the inherited bounded-await
+  escalation. Build-time details NOT gating: topic naming, poll anonymity/settings, exact message
+  wording. Orthogonal to the board cluster.
+
+mutation_cost: medium
