@@ -153,8 +153,68 @@ test('renderFleet surfaces a blocked swarm rolled up from a published doc, uncha
   assert.equal(rendered.swarms[0].status, 'blocked');
 });
 
+// BL-438 architect bounce 2026-07-16: needs_human must ITSELF drive the
+// override - the two tests above pass even with needs_human completely
+// unread, because doc.status was ALREADY 'blocked' directly on the fixture.
+// This is the actual regression guard: doc.status is something else
+// entirely (the coordinator is excluded from the pack rollup that produces
+// it, so it can never say 'blocked' for this reason on its own) and only
+// needs_human makes the rendered status 'blocked'.
+test('publishedSwarmToNode overrides an otherwise-unblocked status to "blocked" when needs_human is true', () => {
+  const doc = fixtureDoc({ status: 'active', needs_human: true });
+
+  const node = publishedSwarmToNode(doc, Date.parse(doc.updated_at) + 1000);
+
+  assert.equal(node.status(), 'blocked');
+});
+
+test('publishedSwarmToNode leaves status untouched when needs_human is false', () => {
+  const doc = fixtureDoc({ status: 'active', needs_human: false });
+
+  const node = publishedSwarmToNode(doc, Date.parse(doc.updated_at) + 1000);
+
+  assert.equal(node.status(), 'active');
+});
+
+// Both a pack-level failure (degraded) and a coordinator awaiting a human
+// (needs_human) can be true AT ONCE - the engineering article's own
+// adjacent-branch rule: a test must drive both trigger conditions
+// simultaneously to prove which one wins, not just that each fires alone.
+// 'degraded' outranks 'blocked' in compositeNode.ts's own STATUS_PRIORITY
+// (a dead pane is worse than merely waiting on a human), so it must still
+// win here.
+test('publishedSwarmToNode keeps "degraded" over needs_human\'s "blocked" - a dead pane outranks merely waiting on a human', () => {
+  const doc = fixtureDoc({ status: 'degraded', needs_human: true });
+
+  const node = publishedSwarmToNode(doc, Date.parse(doc.updated_at) + 1000);
+
+  assert.equal(node.status(), 'degraded');
+});
+
+test('renderFleet overrides status to "blocked" from needs_human even when the published status is unrelated', () => {
+  const rendezvousDir = mkTmp();
+  const doc = fixtureDoc({ status: 'active', needs_human: true });
+  publishStatus(rendezvousDir, 'fes', doc);
+
+  const rendered = renderFleet(rendezvousDir, Date.parse(doc.updated_at) + 1000);
+
+  assert.equal(rendered.swarms[0].status, 'blocked');
+});
+
 test('publishedSwarmToNode overrides status to "stopped (coordinator lost)" once updated_at is stale', () => {
   const doc = fixtureDoc({ updated_at: new Date(Date.now() - STALE_AFTER_MS - 60_000).toISOString(), status: 'active' });
+
+  const node = publishedSwarmToNode(doc, Date.now());
+
+  assert.equal(node.status(), 'stopped (coordinator lost)');
+});
+
+// Staleness and needs_human can also both be true at once (a frozen doc
+// from a dead handoffd that happened to publish needs_human: true right
+// before dying) - staleness must still win, since a doc this old cannot be
+// trusted to still be waiting on a human at all.
+test('publishedSwarmToNode keeps "stopped (coordinator lost)" over needs_human\'s "blocked" once stale', () => {
+  const doc = fixtureDoc({ updated_at: new Date(Date.now() - STALE_AFTER_MS - 60_000).toISOString(), status: 'active', needs_human: true });
 
   const node = publishedSwarmToNode(doc, Date.now());
 
