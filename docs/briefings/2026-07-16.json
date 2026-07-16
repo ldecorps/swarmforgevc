@@ -5,7 +5,7 @@
     {
       "role": "coordinator+specifier",
       "tokens": {
-        "value": 396567,
+        "value": 397337,
         "trend": {
           "series": [
             {
@@ -38,17 +38,17 @@
             },
             {
               "periodStart": "2026-07-16T00:00:00.000Z",
-              "value": 396567
+              "value": 397337
             }
           ],
-          "currentValue": 396567,
+          "currentValue": 397337,
           "priorValue": 2182611,
-          "delta": -1786044,
+          "delta": -1785274,
           "direction": "down"
         }
       },
       "costUsd": {
-        "value": 94.12009094999995,
+        "value": 94.33057724999995,
         "trend": {
           "series": [
             {
@@ -81,12 +81,12 @@
             },
             {
               "periodStart": "2026-07-16T00:00:00.000Z",
-              "value": 94.12009094999995
+              "value": 94.33057724999995
             }
           ],
-          "currentValue": 94.12009094999995,
+          "currentValue": 94.33057724999995,
           "priorValue": 601.3370728499993,
-          "delta": -507.2169818999994,
+          "delta": -507.0064955999994,
           "direction": "down"
         }
       }
@@ -450,7 +450,7 @@
     {
       "role": "documenter",
       "tokens": {
-        "value": 91217,
+        "value": 91939,
         "trend": {
           "series": [
             {
@@ -483,17 +483,17 @@
             },
             {
               "periodStart": "2026-07-16T00:00:00.000Z",
-              "value": 91217
+              "value": 91939
             }
           ],
-          "currentValue": 91217,
+          "currentValue": 91939,
           "priorValue": 240413,
-          "delta": -149196,
+          "delta": -148474,
           "direction": "down"
         }
       },
       "costUsd": {
-        "value": 20.06237804999999,
+        "value": 20.332534199999987,
         "trend": {
           "series": [
             {
@@ -526,12 +526,12 @@
             },
             {
               "periodStart": "2026-07-16T00:00:00.000Z",
-              "value": 20.06237804999999
+              "value": 20.332534199999987
             }
           ],
-          "currentValue": 20.06237804999999,
+          "currentValue": 20.332534199999987,
           "priorValue": 57.45718000999998,
-          "delta": -37.394801959999995,
+          "delta": -37.12464580999999,
           "direction": "down"
         }
       }
@@ -539,7 +539,7 @@
     {
       "role": "QA",
       "tokens": {
-        "value": 247948,
+        "value": 248005,
         "trend": {
           "series": [
             {
@@ -572,17 +572,17 @@
             },
             {
               "periodStart": "2026-07-16T00:00:00.000Z",
-              "value": 247948
+              "value": 248005
             }
           ],
-          "currentValue": 247948,
+          "currentValue": 248005,
           "priorValue": 591971,
-          "delta": -344023,
+          "delta": -343966,
           "direction": "down"
         }
       },
       "costUsd": {
-        "value": 49.37646630000001,
+        "value": 49.67172825000001,
         "trend": {
           "series": [
             {
@@ -615,12 +615,12 @@
             },
             {
               "periodStart": "2026-07-16T00:00:00.000Z",
-              "value": 49.37646630000001
+              "value": 49.67172825000001
             }
           ],
-          "currentValue": 49.37646630000001,
+          "currentValue": 49.67172825000001,
           "priorValue": 83.74883245000005,
-          "delta": -34.37236615000004,
+          "delta": -34.07710420000004,
           "direction": "down"
         }
       }
