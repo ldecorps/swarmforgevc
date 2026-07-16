@@ -62,6 +62,42 @@ export function classifyApprovalReplyAction(text: string): ApprovalReplyAction {
   return { kind: 'none' };
 }
 
+// BL-434: the standing Approvals topic's own reply grammar - because ONE
+// topic now carries MANY tickets, a reply must NAME the ticket it acts on
+// ("approve BL-433" / "reject BL-433 <reason>"), unlike
+// classifyApprovalReplyAction above, which assumes single-ticket-per-topic
+// and never looks for an id. A SEPARATE, narrower parser - never a merge
+// into classifyApprovalReplyAction's own three-way dispatch, since the two
+// topics have genuinely different reply grammars (bare "approve" vs
+// "approve <id>") and conflating them would make an ordinary per-ticket-
+// topic "approve" reply require an id it was never meant to carry.
+const APPROVALS_TOPIC_REJECT_PATTERN = /^reject\s+(\S+)(?:\s+([\s\S]+))?$/i;
+const APPROVALS_TOPIC_APPROVE_PATTERN = /^approve\s+(\S+)\s*$/i;
+
+export type ApprovalsTopicReplyAction =
+  | { kind: 'approve'; backlogId: string }
+  | { kind: 'reject'; backlogId: string; reason: string }
+  | { kind: 'none' };
+
+// Pure: reject checked before approve (mirrors classifyApprovalReplyAction's
+// own specific-before-permissive ordering). Unlike isApprovalReplyText's
+// bare substring match, a reply here must lead with the verb and name an id,
+// or it falls through to 'none' - the caller surfaces that as "not acted
+// on", never silently ignored (front-desk-operator-fabricates-backlog-state
+// memory: a fabricated/guessed id must never be applied).
+export function classifyApprovalsTopicReply(text: string): ApprovalsTopicReplyAction {
+  const trimmed = text.trim();
+  const rejectMatch = trimmed.match(APPROVALS_TOPIC_REJECT_PATTERN);
+  if (rejectMatch) {
+    return { kind: 'reject', backlogId: rejectMatch[1], reason: (rejectMatch[2] ?? '').trim() };
+  }
+  const approveMatch = trimmed.match(APPROVALS_TOPIC_APPROVE_PATTERN);
+  if (approveMatch) {
+    return { kind: 'approve', backlogId: approveMatch[1] };
+  }
+  return { kind: 'none' };
+}
+
 const HUMAN_APPROVAL_PENDING_PATTERN = /^human_approval:\s*(pending|pending-review)\s*$/m;
 
 // Pure text transform - only ever flips a LITERAL `human_approval: pending` or
