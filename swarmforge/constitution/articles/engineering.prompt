@@ -416,7 +416,7 @@
     - repo-root `.github/` (`.github/workflows/backlog-dashboard.yml`), read by
       `extension/test/backlogDashboardWorkflowCacheStamp.test.js`. Surfaced by
       QA verifying BL-260.
-    - repo-root `docs/` (`docs/GettingStarted.md`), read by
+    - repo-root `docs/` (`docs/tutorials/GettingStarted.md`), read by
       `extension/test/gettingStartedDrift.test.js`. Surfaced by a specifier
       sweep 2026-07-11.
   All four resolve today as a single shared symlink each at
