@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { main, parseArgs } = require('../out/tools/record-qa-bounce');
-const { readQaBounceRecords } = require('../out/quality/qaBounceStore');
+const { readQaBounceRecords } = require('../out/metrics/qaBounceStore');
 
 // BL-454: the go-forward writer CLI QA runs at bounce time. Flag contract
 // (--ticket/--role/--type/--class/--commit) matches swarmforge/roles/

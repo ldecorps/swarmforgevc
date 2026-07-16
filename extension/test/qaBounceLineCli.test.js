@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { formatQaBounceLine, main } = require('../out/tools/qa-bounce-line');
-const { appendQaBounceRecordIfNew, qaBouncesDir } = require('../out/quality/qaBounceStore');
+const { appendQaBounceRecordIfNew, qaBouncesDir } = require('../out/metrics/qaBounceStore');
 
 // BL-454: the daily-briefing line CLI briefing_email_lib.bb shells out to.
 
