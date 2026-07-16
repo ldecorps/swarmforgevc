@@ -2,6 +2,8 @@ const assert = require('node:assert/strict');
 const {
   computePipelineBoard,
   renderPipelineBoard,
+  renderPipelineBoardBody,
+  formatUpdatedAtLabel,
   wrapPipelineBoardHtml,
   deriveTicketSlug,
   PIPELINE_BOARD_COLUMN_ORDER,
@@ -145,6 +147,20 @@ test('deriveTicketSlug: a long title is truncated to the bound, never returned v
   assert.notEqual(slug, longTitle);
 });
 
+// BL-462 pipeline-board-refine-01: the slug bound widened 24 -> 40 ("longer
+// slug, same line" - the human's own answer to the specifier's clarifying
+// question). A title that would have overflowed the OLD bound but fits the
+// new one now renders in full, still on a single line.
+const PREVIOUS_SLUG_MAX_LENGTH = 24;
+
+test('deriveTicketSlug: a title longer than the previous slug limit but within the wider limit now fits in full', () => {
+  const title = 'a'.repeat(PREVIOUS_SLUG_MAX_LENGTH + 10);
+  assert.ok(title.length > PREVIOUS_SLUG_MAX_LENGTH && title.length <= PIPELINE_BOARD_SLUG_MAX_LENGTH);
+  const slug = deriveTicketSlug(title);
+  assert.equal(slug, title, 'expected the full title to fit under the widened bound, not truncated');
+  assert.ok(!slug.includes('\n'), 'expected a single line');
+});
+
 test('computePipelineBoard: a role-held ticket with a title gets its derived slug', () => {
   const { rows } = computePipelineBoard({ coder: ['BL-1'] }, [], { 'BL-1': { title: 'fix the widget' } });
   assert.equal(rows[0].slug, 'fix the widget');
@@ -159,24 +175,24 @@ test('computePipelineBoard: a paused ticket with a title gets its derived slug',
 // column (parked/awaiting-approval are no longer grid columns); each data
 // row marks exactly one role column, every other role column stays blank.
 
-test('renderPipelineBoard: header lists every pipeline role column, plus TICKET and SLUG', () => {
-  const header = renderPipelineBoard({ rows: [], parked: [] });
+test('renderPipelineBoardBody: header lists every pipeline role column, plus TICKET and SLUG', () => {
+  const header = renderPipelineBoardBody({ rows: [], parked: [] });
   for (const column of PIPELINE_BOARD_COLUMN_ORDER) {
     assert.ok(header.length > 0, `expected the header to render for role ${column}`);
   }
-  assert.equal(renderPipelineBoard({ rows: [], parked: [] }), header);
+  assert.equal(renderPipelineBoardBody({ rows: [], parked: [] }), header);
 });
 
-test('renderPipelineBoard: an empty board is just the header line', () => {
-  const text = renderPipelineBoard({ rows: [], parked: [] });
+test('renderPipelineBoardBody: an empty board is just the header line', () => {
+  const text = renderPipelineBoardBody({ rows: [], parked: [] });
   assert.equal(text.split('\n').length, 1);
 });
 
-test('renderPipelineBoard: a row is marked only in its own column', () => {
+test('renderPipelineBoardBody: a row is marked only in its own column', () => {
   // A non-empty slug ('x') guarantees the slug cell survives whitespace-split
   // parsing below as its own token - an empty slug collapses into the
   // surrounding padding and would silently misalign this test's column check.
-  const text = renderPipelineBoard({ rows: [{ id: 'BL-387', column: 'coder', slug: 'x' }], parked: [] });
+  const text = renderPipelineBoardBody({ rows: [{ id: 'BL-387', column: 'coder', slug: 'x' }], parked: [] });
   const lines = text.split('\n');
   // line 0: header, line 1: epic heading ("-- (no epic) --"), line 2: data row.
   assert.equal(lines.length, 3);
@@ -191,8 +207,8 @@ test('renderPipelineBoard: a row is marked only in its own column', () => {
   });
 });
 
-test('renderPipelineBoard: two tickets in different columns each mark only their own', () => {
-  const text = renderPipelineBoard({
+test('renderPipelineBoardBody: two tickets in different columns each mark only their own', () => {
+  const text = renderPipelineBoardBody({
     rows: [
       { id: 'BL-387', column: 'coder', slug: '' },
       { id: 'BL-413', column: 'QA', slug: '' },
@@ -204,8 +220,8 @@ test('renderPipelineBoard: two tickets in different columns each mark only their
   assert.ok(lines.some((l) => l.startsWith('BL-413')));
 });
 
-test('renderPipelineBoard: ticket-id column widens to fit the longest id without breaking alignment', () => {
-  const text = renderPipelineBoard({
+test('renderPipelineBoardBody: ticket-id column widens to fit the longest id without breaking alignment', () => {
+  const text = renderPipelineBoardBody({
     rows: [
       { id: 'BL-9', column: 'coder', slug: '' },
       { id: 'BL-123456', column: 'QA', slug: '' },
@@ -219,16 +235,16 @@ test('renderPipelineBoard: ticket-id column widens to fit the longest id without
   }
 });
 
-test('renderPipelineBoard: rendering is a pure function of its data - same input, same text', () => {
+test('renderPipelineBoardBody: rendering is a pure function of its data - same input, same text', () => {
   const data = { rows: [{ id: 'BL-1', column: 'coder', slug: '' }], parked: [] };
-  assert.equal(renderPipelineBoard(data), renderPipelineBoard(data));
+  assert.equal(renderPipelineBoardBody(data), renderPipelineBoardBody(data));
 });
 
 // BL-455 pipeline-board-epic-01/05: rows are grouped by epic under a
 // heading; a no-epic bucket is grouped together too.
 
-test('renderPipelineBoard: rows sharing an epic render under one heading', () => {
-  const text = renderPipelineBoard({
+test('renderPipelineBoardBody: rows sharing an epic render under one heading', () => {
+  const text = renderPipelineBoardBody({
     rows: [
       { id: 'BL-1', column: 'coder', epic: 'Alpha', slug: '' },
       { id: 'BL-2', column: 'QA', epic: 'Alpha', slug: '' },
@@ -242,8 +258,8 @@ test('renderPipelineBoard: rows sharing an epic render under one heading', () =>
   assert.ok(lines[headingIndex + 2].startsWith('BL-2'));
 });
 
-test('renderPipelineBoard: a no-epic row renders under its own heading, distinct from a named epic', () => {
-  const text = renderPipelineBoard({
+test('renderPipelineBoardBody: a no-epic row renders under its own heading, distinct from a named epic', () => {
+  const text = renderPipelineBoardBody({
     rows: [
       { id: 'BL-1', column: 'coder', epic: 'Alpha', slug: '' },
       { id: 'BL-2', column: 'QA', slug: '' },
@@ -260,13 +276,13 @@ test('renderPipelineBoard: a no-epic row renders under its own heading, distinct
 // BL-455 pipeline-board-epic-02/03: parked/awaiting-approval tickets render
 // in a below-grid list, never as stage-grid rows.
 
-test('renderPipelineBoard: an empty parked list renders no below-grid section', () => {
-  const text = renderPipelineBoard({ rows: [{ id: 'BL-1', column: 'coder', slug: '' }], parked: [] });
+test('renderPipelineBoardBody: an empty parked list renders no below-grid section', () => {
+  const text = renderPipelineBoardBody({ rows: [{ id: 'BL-1', column: 'coder', slug: '' }], parked: [] });
   assert.ok(!text.includes('PARKED'));
 });
 
-test('renderPipelineBoard: parked entries render below the grid, not as grid rows', () => {
-  const text = renderPipelineBoard({
+test('renderPipelineBoardBody: parked entries render below the grid, not as grid rows', () => {
+  const text = renderPipelineBoardBody({
     rows: [{ id: 'BL-1', column: 'coder', slug: '' }],
     parked: [{ id: 'BL-436', slug: 'stalled work', status: 'parked' }],
   });
@@ -279,8 +295,8 @@ test('renderPipelineBoard: parked entries render below the grid, not as grid row
   assert.ok(belowLines.some((l) => l.includes('BL-436') && l.includes('stalled work')));
 });
 
-test('renderPipelineBoard: an awaiting-approval entry is distinguishable from a plain parked one below the grid', () => {
-  const text = renderPipelineBoard({
+test('renderPipelineBoardBody: an awaiting-approval entry is distinguishable from a plain parked one below the grid', () => {
+  const text = renderPipelineBoardBody({
     rows: [],
     parked: [
       { id: 'BL-436', slug: '', status: 'parked' },
@@ -304,4 +320,47 @@ test('wrapPipelineBoardHtml: wraps the grid text in a <pre> block', () => {
 
 test('wrapPipelineBoardHtml: escapes HTML-significant characters', () => {
   assert.equal(wrapPipelineBoardHtml('a & b < c > d'), '<pre>a &amp; b &lt; c &gt; d</pre>');
+});
+
+// BL-462 pipeline-board-refine-03: an "updated at" footer, fed a pure
+// formatter over an injected instant - never a bare new Date()/Date.now()
+// in the renderer or its formatter.
+
+test('formatUpdatedAtLabel: formats an injected epoch-ms as "Mon DD HH:MM" in UTC', () => {
+  const epochMs = Date.UTC(2026, 6, 16, 20, 5); // Jul 16 2026, 20:05 UTC
+  assert.equal(formatUpdatedAtLabel(epochMs), 'Jul 16 20:05');
+});
+
+test('formatUpdatedAtLabel: pads single-digit day/hour/minute', () => {
+  const epochMs = Date.UTC(2026, 0, 5, 3, 7); // Jan 5 2026, 03:07 UTC
+  assert.equal(formatUpdatedAtLabel(epochMs), 'Jan 05 03:07');
+});
+
+test('formatUpdatedAtLabel: is a pure function of its input - same epoch, same label', () => {
+  const epochMs = 1752696300000;
+  assert.equal(formatUpdatedAtLabel(epochMs), formatUpdatedAtLabel(epochMs));
+});
+
+test('renderPipelineBoard: appends an "updated at" footer showing the injected instant', () => {
+  const data = { rows: [{ id: 'BL-1', column: 'coder', slug: '' }], parked: [] };
+  const epochMs = Date.UTC(2026, 6, 16, 20, 5);
+  const text = renderPipelineBoard(data, epochMs);
+  const lines = text.split('\n');
+  assert.equal(lines[lines.length - 1], `updated at ${formatUpdatedAtLabel(epochMs)}`);
+});
+
+test('renderPipelineBoard: the footer is appended after the body - renderPipelineBoardBody is unaffected', () => {
+  const data = { rows: [{ id: 'BL-1', column: 'coder', slug: '' }], parked: [] };
+  const withFooter = renderPipelineBoard(data, 1234567890);
+  const body = renderPipelineBoardBody(data);
+  assert.ok(withFooter.startsWith(body), 'expected the body to render identically, footer only appended after it');
+  assert.notEqual(withFooter, body);
+});
+
+test('renderPipelineBoard: two different lastChangeMs values a minute apart produce two different footers over the identical body', () => {
+  const data = { rows: [], parked: [] };
+  const first = renderPipelineBoard(data, Date.UTC(2026, 6, 16, 20, 5));
+  const second = renderPipelineBoard(data, Date.UTC(2026, 6, 16, 20, 6));
+  assert.notEqual(first, second);
+  assert.equal(renderPipelineBoardBody(data), renderPipelineBoardBody(data), 'expected the content-only body to stay identical regardless of the clock');
 });

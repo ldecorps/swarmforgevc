@@ -239,7 +239,8 @@ const DOMAINS = [
   require('./bl434ApprovalsStandingTopicSteps'),
   require('./bl460TmpSweepsBoundDeletesSteps'),
   require('./bl450RecertStandingTopicSteps'),
-  require('./bl461StartSwarmEnsureFullStackSteps')
+  require('./bl461StartSwarmEnsureFullStackSteps'),
+  require('./bl462PipelineBoardRefinementsSteps')
 ];
 
 function registerSteps(registry) {
