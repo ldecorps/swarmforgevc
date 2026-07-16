@@ -28,7 +28,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
-import { appendMessage } from '../concierge/blTopicStore';
+import { appendMessage, readRecord, hasRetractedPendingQuestion } from '../concierge/blTopicStore';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 
 export interface DrainAnswerFilesArgs {
@@ -101,12 +101,13 @@ export function findTicketFile(repoRoot: string, ticketId: string): FoundTicket 
 export type PremiseCheck = { live: true } | { live: false; reason: string };
 
 // BL-440's own gate: NEVER blind-execute a late answer. A ticket only
-// counts as "still open" when it is found outside backlog/done/ AND its
-// own status field is not already "done" - the single real signal this
-// slice checks (no fabricated "retracted"/"superseded" state exists
-// anywhere in this codebase to check against instead; both narratively
-// collapse to "this ticket is no longer awaiting the input" just as much
-// as "shipped" does).
+// counts as "still open" when it is found outside backlog/done/, its own
+// status field is not already "done", AND its topic record's own most
+// recent message has not since retracted/superseded the pending question
+// (BL-440 QA bounce: a ticket can stay active/todo throughout while a
+// SPECIFIC question on it moves on - ticket-level status/folder alone
+// cannot tell "still awaiting this exact question" apart from "moved on
+// without shipping").
 export function checkPremiseLive(repoRoot: string, ticketId: string): PremiseCheck {
   const found = findTicketFile(repoRoot, ticketId);
   if (!found) {
@@ -117,6 +118,9 @@ export function checkPremiseLive(repoRoot: string, ticketId: string): PremiseChe
   }
   if (found.status === 'done') {
     return { live: false, reason: `${ticketId}'s own status is already "done"` };
+  }
+  if (hasRetractedPendingQuestion(readRecord(repoRoot, ticketId))) {
+    return { live: false, reason: `${ticketId}'s pending question has since been retracted or superseded` };
   }
   return { live: true };
 }

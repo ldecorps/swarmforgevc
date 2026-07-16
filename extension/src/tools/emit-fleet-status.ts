@@ -20,12 +20,14 @@
  * shell-to-node-and-degrade-on-failure pattern handoffd.bb already uses
  * for its other *-line.js/emit-*-sidecar.js CLIs.
  *
- * needs_human is absent/false in this slice - BL-438 folds in the real
- * signal (the coordinator/needs-human reconciler's own on-disk record)
- * once it lands.
+ * needs_human/isBlocked (BL-438) fold in the real signal: chase_sweep_lib.bb's
+ * own durable chase-escalations.json (`.swarmforge/daemon/`), which the
+ * daemon already writes/clears on every chase-sweep cycle - never a pane-text
+ * guess, and never a second, parallel needs-human store.
  *
  * Usage: node emit-fleet-status.js <target-repo-path>
  */
+import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { CompositeNode, createSwarmNode } from '../swarm/compositeNode';
@@ -100,8 +102,45 @@ function projectLabel(targetRepoPath: string): string {
   return path.basename(targetRepoPath);
 }
 
+// BL-438: the durable, on-disk needs-human signal - chase_sweep_lib.bb's
+// own write-escalation! (called from handoffd.bb's chase-sweep adapters on
+// every cycle) keyed this file by role, ADDING a role's key when it becomes
+// stuck-escalated and DISSOC'ing it the moment it recovers - never setting
+// it to false. That dissoc-on-recovery behavior is exactly the "the signal
+// must CLEAR on resolution" requirement, already built into the file this
+// slice reads, not something this slice needs to implement itself. This is
+// the daemon-side (headless, no-tmux-required) counterpart to the VS Code
+// extension's in-memory NeedsHumanReconciler - the swarm's own coordination
+// layer, not a pane-text guess, per the "fold the EXISTING signal in rather
+// than inventing a parallel one" instruction.
+function chaseEscalationsPath(targetRepoPath: string): string {
+  return path.join(targetRepoPath, '.swarmforge', 'daemon', 'chase-escalations.json');
+}
+
+function readChaseEscalations(targetRepoPath: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(chaseEscalationsPath(targetRepoPath), 'utf8'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+// Pure given the raw parsed record - never trusts a present-but-non-true
+// value as escalated, in case a future writer ever sets a key to false
+// instead of removing it (chase_sweep_lib.bb's own convention is to
+// dissoc, but this reader must not silently misclassify if that changes).
+export function isRoleEscalated(escalations: Record<string, unknown>, role: string): boolean {
+  return escalations[role] === true;
+}
+
+export function needsHumanFromEscalations(escalations: Record<string, unknown>): boolean {
+  return Object.values(escalations).some((value) => value === true);
+}
+
 export function buildFleetStatusDoc(targetRepoPath: string, nowMs: number = Date.now()): PublishedSwarmStatus {
   const swarm = readSwarmName(targetRepoPath);
+  const escalations = readChaseEscalations(targetRepoPath);
   const node = createSwarmNode({
     targetPath: targetRepoPath,
     swarmName: swarm,
@@ -109,11 +148,12 @@ export function buildFleetStatusDoc(targetRepoPath: string, nowMs: number = Date
     coordinatorAddress: `${swarm}/coordinator`,
     roles: loadRoles(targetRepoPath),
     isSessionAlive: heartbeatIsSessionAlive(targetRepoPath),
+    isBlocked: (role) => isRoleEscalated(escalations, role.role),
   });
   return {
     ...renderNode(node),
     children: node.children().map(renderNode),
-    needs_human: false,
+    needs_human: needsHumanFromEscalations(escalations),
     updated_at: new Date(nowMs).toISOString(),
   };
 }

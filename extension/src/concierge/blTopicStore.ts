@@ -26,6 +26,14 @@ export interface TopicMessage {
   // before this field existed) - those never match any updateId and so are
   // never mistaken for a duplicate of anything.
   updateId?: number;
+  // BL-440 QA bounce: set true on an OUTBOUND message that voids any
+  // still-unanswered question this ticket's topic was awaiting - the
+  // swarm retracting a question, or a decision moving on without one. The
+  // one real, structured per-question signal drain-answer-files.ts's
+  // checkPremiseLive gate needs to tell "still awaiting this exact
+  // question" apart from "moved on without shipping" (which ticket-level
+  // status/folder alone cannot). Absent/false for every ordinary message.
+  retractsPendingQuestion?: boolean;
 }
 
 export interface TopicRecord {
@@ -96,6 +104,20 @@ export function lastActivityMs(record: TopicRecord): number | undefined {
     return undefined;
   }
   return Math.max(...record.messages.map((m) => m.ts));
+}
+
+// BL-440 QA bounce: is the LATEST message (by seq, never insertion order,
+// since a record is always read-then-appended fresh) an outbound retraction/
+// supersession? Only the most recent message can void a pending question -
+// an EARLIER retraction followed by a later ordinary message means the
+// swarm moved past the retraction itself (e.g. asked again), so this must
+// never scan the whole history for ANY retraction ever posted.
+export function hasRetractedPendingQuestion(record: TopicRecord): boolean {
+  if (record.messages.length === 0) {
+    return false;
+  }
+  const latest = record.messages.reduce((a, b) => (b.seq > a.seq ? b : a));
+  return latest.type === 'outbound' && latest.retractsPendingQuestion === true;
 }
 
 export function readRecord(targetPath: string, ticketId: string): TopicRecord {
@@ -172,7 +194,14 @@ export const reportCommitFailureToStderr: CommitFailureReporter = (ticketId, fil
 export function appendMessage(
   targetPath: string,
   ticketId: string,
-  message: { author: string; type: TopicMessageDirection; text: string; ts?: number; updateId?: number },
+  message: {
+    author: string;
+    type: TopicMessageDirection;
+    text: string;
+    ts?: number;
+    updateId?: number;
+    retractsPendingQuestion?: boolean;
+  },
   reportCommitFailure: CommitFailureReporter = reportCommitFailureToStderr
 ): TopicMessage {
   const record = readRecord(targetPath, ticketId);
@@ -183,6 +212,7 @@ export function appendMessage(
     type: message.type,
     text: message.text,
     updateId: message.updateId,
+    retractsPendingQuestion: message.retractsPendingQuestion,
   };
   record.messages.push(entry);
   const filePath = recordPath(targetPath, ticketId);

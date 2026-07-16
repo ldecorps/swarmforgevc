@@ -4,7 +4,19 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { readRecord, appendMessage, recordPath, commitTopicRecord, hasCompletionRecord, isRecordCommitted, hasUpdateId, readSwarmIconId, recordSwarmIconId, lastActivityMs } = require('../out/concierge/blTopicStore');
+const {
+  readRecord,
+  appendMessage,
+  recordPath,
+  commitTopicRecord,
+  hasCompletionRecord,
+  isRecordCommitted,
+  hasUpdateId,
+  hasRetractedPendingQuestion,
+  readSwarmIconId,
+  recordSwarmIconId,
+  lastActivityMs,
+} = require('../out/concierge/blTopicStore');
 
 // BL-329: the durable, git-tracked, per-ticket record of every message sent
 // in a BL topic - inbound and outbound - so the Telegram topic becomes a
@@ -374,6 +386,72 @@ test('hasUpdateId is true once a message with that exact updateId is on record',
 test('hasUpdateId is false for a message with no updateId at all (older records, outbound/swarm text)', () => {
   const record = { id: 'BL-900', messages: [{ seq: 0, ts: 1, author: 'swarm', type: 'outbound', text: 'hi' }] };
   assert.equal(hasUpdateId(record, 501), false);
+});
+
+// ── hasRetractedPendingQuestion (BL-440 QA bounce: the real per-question
+//    retraction/supersession signal checkPremiseLive needs) ────────────────
+
+test('appendMessage carries retractsPendingQuestion through to the stored record', () => {
+  const target = mkTmp();
+  append(target, 'BL-100', { author: 'swarm', type: 'outbound', text: 'never mind, going with plan C', retractsPendingQuestion: true });
+  assert.equal(readRecord(target, 'BL-100').messages[0].retractsPendingQuestion, true);
+});
+
+test('hasRetractedPendingQuestion is false for an empty record', () => {
+  assert.equal(hasRetractedPendingQuestion({ id: 'BL-100', messages: [] }), false);
+});
+
+test('hasRetractedPendingQuestion is false when no message retracts anything', () => {
+  const record = {
+    id: 'BL-100',
+    messages: [
+      { seq: 0, ts: 1, author: 'swarm', type: 'outbound', text: 'Q1: A or B?' },
+      { seq: 1, ts: 2, author: 'human', type: 'inbound', text: 'A' },
+    ],
+  };
+  assert.equal(hasRetractedPendingQuestion(record), false);
+});
+
+test('hasRetractedPendingQuestion is true when the LATEST message is an outbound retraction', () => {
+  const record = {
+    id: 'BL-100',
+    messages: [
+      { seq: 0, ts: 1, author: 'swarm', type: 'outbound', text: 'Q1: A or B?' },
+      { seq: 1, ts: 2, author: 'swarm', type: 'outbound', text: 'never mind, going with C', retractsPendingQuestion: true },
+    ],
+  };
+  assert.equal(hasRetractedPendingQuestion(record), true);
+});
+
+test('hasRetractedPendingQuestion is false when a retraction exists but is NOT the latest message (the swarm moved past it, e.g. asked again)', () => {
+  const record = {
+    id: 'BL-100',
+    messages: [
+      { seq: 0, ts: 1, author: 'swarm', type: 'outbound', text: 'Q1: A or B?' },
+      { seq: 1, ts: 2, author: 'swarm', type: 'outbound', text: 'never mind, going with C', retractsPendingQuestion: true },
+      { seq: 2, ts: 3, author: 'swarm', type: 'outbound', text: 'actually, one more question: D or E?' },
+    ],
+  };
+  assert.equal(hasRetractedPendingQuestion(record), false);
+});
+
+test('hasRetractedPendingQuestion is false when the retraction flag is on an INBOUND message (only the swarm can retract its own question)', () => {
+  const record = {
+    id: 'BL-100',
+    messages: [{ seq: 0, ts: 1, author: 'human', type: 'inbound', text: 'never mind', retractsPendingQuestion: true }],
+  };
+  assert.equal(hasRetractedPendingQuestion(record), false);
+});
+
+test('hasRetractedPendingQuestion reads the latest message by seq, not array/insertion order', () => {
+  const record = {
+    id: 'BL-100',
+    messages: [
+      { seq: 1, ts: 2, author: 'swarm', type: 'outbound', text: 'never mind, going with C', retractsPendingQuestion: true },
+      { seq: 0, ts: 1, author: 'swarm', type: 'outbound', text: 'Q1: A or B?' },
+    ],
+  };
+  assert.equal(hasRetractedPendingQuestion(record), true);
 });
 
 // ── readSwarmIconId / recordSwarmIconId (BL-342: the "did the swarm set
