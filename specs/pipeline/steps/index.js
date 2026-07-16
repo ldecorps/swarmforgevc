@@ -212,6 +212,7 @@ const DOMAINS = [
   require('./bl414TopicTitleAgeSuffixSteps'),
   require('./bl427ProfileMutationWorkerRssSteps'),
   require('./bl430ReworkObservatorySteps'),
+  require('./bl431ReworkDiagnosisSteps'),
   require('./bl442NegotiationApprovalNotObjectionSteps'),
   require('./bl443ProposeContractCommitRobustnessSteps'),
   require('./bl444ProvisioningFollowsSupergroupMigrationSteps'),

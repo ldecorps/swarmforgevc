@@ -2,7 +2,7 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { observatorySignalsPath, persistReworkSignal } = require('../out/metrics/reworkObservatoryStore');
+const { observatorySignalsPath, persistReworkSignal, readReworkSignalEntry } = require('../out/metrics/reworkObservatoryStore');
 
 function mkTmp() {
   return mkTmpDir('sfvc-observatory-store-');
@@ -63,4 +63,32 @@ test('persistReworkSignal recovers from a valid-JSON file with the wrong shape r
   persistReworkSignal(target, { kind: 'rework-rate', version: 1, computedAtIso: '2026-07-15T00:00:00Z' });
 
   assert.deepEqual(readSignals(target), [{ kind: 'rework-rate', version: 1, computedAtIso: '2026-07-15T00:00:00Z' }]);
+});
+
+// ── readReworkSignalEntry (BL-431's read side) ──────────────────────────────
+
+test('readReworkSignalEntry returns the persisted rework-rate entry', () => {
+  const target = mkTmp();
+  persistReworkSignal(target, { kind: 'rework-rate', version: 1, computedAtIso: '2026-07-15T00:00:00Z', signal: { reworkRate: 0.4 } });
+  const entry = readReworkSignalEntry(target);
+  assert.equal(entry.kind, 'rework-rate');
+  assert.deepEqual(entry.signal, { reworkRate: 0.4 });
+});
+
+test('readReworkSignalEntry returns null when no signals file exists yet', () => {
+  const target = mkTmp();
+  assert.equal(readReworkSignalEntry(target), null);
+});
+
+test('readReworkSignalEntry returns null when the file has other kinds but no rework-rate entry', () => {
+  const target = mkTmp();
+  persistReworkSignal(target, { kind: 'bottleneck-dwell', version: 1, computedAtIso: '2026-07-15T00:00:00Z' });
+  assert.equal(readReworkSignalEntry(target), null);
+});
+
+test('readReworkSignalEntry returns null rather than crashing on a corrupt file', () => {
+  const target = mkTmp();
+  fs.mkdirSync(path.dirname(observatorySignalsPath(target)), { recursive: true });
+  fs.writeFileSync(observatorySignalsPath(target), 'not json');
+  assert.equal(readReworkSignalEntry(target), null);
 });

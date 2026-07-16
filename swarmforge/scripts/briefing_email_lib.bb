@@ -122,9 +122,12 @@
 ;; a rule that silently stops holding"; derived purely from the citation
 ;; trail already committed to the constitution/role prompts, never a new
 ;; counter.
+;; BL-431: :suboptimality-verdict-line - the swarm's own diagnosis of where
+;; it is suboptimal (BL-430's rework signal, read only when meaningfully
+;; above baseline), so a human sees it without opening a metrics file.
 (def optional-section-adapter-keys
   [:suite-duration-line :needs-approval-section :merged-blocked-digest :stage-dwell-section :chase-trend-section
-   :not-done-count-line :standing-rule-violations-line])
+   :not-done-count-line :standing-rule-violations-line :suboptimality-verdict-line])
 
 (defn- apply-optional-sections [content adapters]
   (reduce

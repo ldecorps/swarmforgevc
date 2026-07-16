@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 16, 2026 (BL-427 — mutation-worker RSS sampler now walks the full descendant process tree so npm/npx-wrapped Stryker invocations are measured correctly)
+**Last Updated:** July 16, 2026 (BL-431 — rework-signal diagnosis and safe-knob/escalate-only verdict surfaced through the daily briefing)
 
 ## Overview
 
@@ -387,6 +387,20 @@ node extension/out/tools/rework-observatory.js
 Runnable from the repo root or any `.worktrees/<role>/` checkout, same project-root resolution as `swarm-metrics.js`. It reports the QA-bounce/rework rate over a trailing 14-day window against a trailing 14-day baseline, attributed to the role and ticket-class where rework concentrates most, and persists the signal (versioned, additive schema) for the diagnosis slice (BL-431) to read. An empty window reports `NO_SAMPLE` rather than a divide-by-zero or a fabricated rate; a baseline period with no completed tickets independently reports a null baseline without blocking the main window's own rate. Bounce evidence is read from the `main` ref (BL-340), never a role's own worktree checkout, since evidence files committed by QA are absent from any parcel's ancestry.
 
 This is the concrete signal source for Article 3.5's health-based intake throttling circuit breaker: "QA-bounce rate ... rising meaningfully above their trend baseline" is exactly what this CLI's `reworkRate` vs `baselineRate` comparison measures.
+
+#### Suboptimality diagnosis + escalation (BL-431, epic BL-429 slice 2 — DIAGNOSE + ESCALATE)
+
+BL-430 only persists a raw rework signal; on its own that is data, not a diagnosis. `reworkDiagnosis.ts` reads that signal and, only when the current rework rate is more than 2x the trailing baseline (the same relative-creep idiom `computeSuiteDuration`/BL-078 already uses for "meaningfully above" — a fixed absolute threshold is wrong because baselines drift), emits a ranked suboptimality verdict: the rework rate and baseline, the likely cause (the role and/or ticket-class where rework concentrates, from BL-430's own attribution — falling back to "no single role or ticket-class dominates" when neither is identifiable), and a recommended action. A rate at or below 2x baseline, or no sample/baseline yet, produces no verdict at all — no false alarms on a healthy or not-yet-measurable pipeline.
+
+The recommended action is classified against an allowlist (`classifyRemediationDisposition`): only `"lower the intake throttle"` — the coordinator's Article 3.5 intake-throttle knob, the one the ACT slice (BL-432) is authorized to move automatically — is `auto-tunable`. Every other recommendation, including any future remediation type nobody has classified yet, defaults to `escalate-only`: named in the verdict for a human to act on, never auto-applied. This split is the epic's safety contract (BL-429).
+
+The verdict reaches the human through the existing daily briefing, not a new channel. A headless CLI shells out to read BL-430's persisted signal and print one line when (and only when) a verdict exists:
+
+```sh
+node extension/out/tools/suboptimality-verdict-line.js
+```
+
+`briefing_email_lib.bb`'s `:suboptimality-verdict-line` optional section (`swarmforge/scripts/handoffd.bb`) wires this CLI into the daily briefing the same way every other optional section works — a blank block (no verdict) leaves the briefing untouched rather than appending a fabricated "all clear" line.
 
 ---
 
