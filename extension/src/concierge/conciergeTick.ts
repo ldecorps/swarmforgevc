@@ -17,6 +17,8 @@ import { TopicTitleAdapters, syncTopicTitle } from './topicTitleSync';
 import { PipelineBoardTicketMeta, computePipelineBoard } from './pipelineBoard';
 import { PipelineBoardAdapters, PipelineBoardState, syncPipelineBoard } from './pipelineBoardSync';
 import { ApprovalsRosterAdapters, ApprovalsRosterState, syncApprovalsRoster } from './approvalsRosterSync';
+import { RecertPostingAdapters, RecertPostingState, syncRecertPosting } from './recertPostingSync';
+import { RecertifiableScenario } from '../docs/recertification';
 
 export interface BacklogFolderItem {
   id: string;
@@ -93,6 +95,10 @@ export interface TickState {
   // TickState file, treated as "no roster posted yet" (the first tick after
   // this ships creates the standing topic and posts the first roster).
   approvalsRoster?: ApprovalsRosterState;
+  // BL-450: the Recert topic's own durable "last rendered/posted" marker -
+  // same posture as approvalsRoster above. Absent on an old/fresh TickState
+  // file, treated as "no scenario posted yet".
+  recertPosted?: RecertPostingState;
 }
 
 export interface ConciergeTickAdapters {
@@ -151,6 +157,16 @@ export interface ConciergeTickAdapters {
   // this codebase's own acceptance step handlers was built before this
   // field existed.
   rosterAdapters?: ApprovalsRosterAdapters;
+  // BL-450: the current oldest-unreviewed recert scenario (or undefined
+  // when none needs recertification) - live-wired from
+  // recertificationStore.ts's computeRecertBatch(targetPath, 1), never a
+  // second selection computed here. Optional (defaults to no recert
+  // posting), same posture as readRoleHeldTickets/rosterAdapters above.
+  readRecertScenario?: () => RecertifiableScenario | undefined;
+  // BL-450: the standing Recert topic's own posting-sync adapters -
+  // optional (defaults to no recert posting), same posture as
+  // rosterAdapters above.
+  recertPostingAdapters?: RecertPostingAdapters;
 }
 
 export interface TickResult {
@@ -370,6 +386,26 @@ async function syncApprovalsRosterIfWired(
   }
   const tickets = pendingApproval.map((id) => ({ id, title: titleForBacklogId(folders, id) }));
   const result = await syncApprovalsRoster(tickets, prevRoster, rosterAdapters);
+  return result.state;
+}
+
+// BL-450: the standing Recert topic's own posting sync - unlike the
+// pipeline-board/roster syncs above (which run on EVERY tick and always
+// render SOMETHING), this is guarded on recertPostingAdapters being wired
+// AND a scenario actually being current - syncRecertPosting itself already
+// short-circuits on an undefined scenario (never posting a placeholder for
+// an empty queue, recert-telegram-08), so this wrapper only adds the
+// "not wired at all" guard, the same posture as syncBoardIfWired/
+// syncApprovalsRosterIfWired above.
+async function syncRecertPostingIfWired(
+  scenario: RecertifiableScenario | undefined,
+  prevState: RecertPostingState | undefined,
+  recertPostingAdapters: RecertPostingAdapters | undefined
+): Promise<RecertPostingState | undefined> {
+  if (!recertPostingAdapters) {
+    return prevState;
+  }
+  const result = await syncRecertPosting(scenario, prevState, recertPostingAdapters);
   return result.state;
 }
 
@@ -798,6 +834,11 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
   // never a second pending-approval computation.
   const approvalsRoster = await syncApprovalsRosterIfWired(folders, curr.pendingApproval, state.approvalsRoster, adapters.rosterAdapters);
 
+  // BL-450: the Recert topic's own live posting - fed off
+  // adapters.readRecertScenario() (recertificationStore.ts's own
+  // computeRecertBatch(1) selection), never a second derivation.
+  const recertPosted = await syncRecertPostingIfWired(adapters.readRecertScenario?.(), state.recertPosted, adapters.recertPostingAdapters);
+
   const persistedSnapshot = withRetryableTransitionsHeldBack(curr, unrouted);
   adapters.writeTickState({
     snapshot: persistedSnapshot,
@@ -806,6 +847,7 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
     titleAgeBuckets,
     pipelineBoard,
     approvalsRoster,
+    recertPosted,
   });
   return { routed };
 }
