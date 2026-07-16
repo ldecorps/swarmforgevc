@@ -222,7 +222,8 @@ const DOMAINS = [
   require('./bl432AutoTuneIntakeThrottleSteps'),
   require('./bl441AnsweringOfflineRunbookSteps'),
   require('./bl415IntakeReplyGithubPermalinkSteps'),
-  require('./bl411NegotiationRelayKillsSupersededChildSteps')
+  require('./bl411NegotiationRelayKillsSupersededChildSteps'),
+  require('./bl445SuiteDurationBudgetSteps')
 ];
 
 function registerSteps(registry) {

@@ -51,6 +51,5 @@ acceptance:
     - "A recorded suite run is classified within-budget or over-budget against the 10-second target"
     - "An over-budget run is surfaced with its measured duration, not silently accepted"
 
-human_approval: pending
-
+human_approval: approved
 mutation_cost: low
