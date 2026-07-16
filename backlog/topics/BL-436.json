@@ -1,0 +1,1 @@
+{"id":"BL-436","messages":[{"seq":0,"ts":1784185687355,"author":"swarm","type":"outbound","text":"What it is: Per-swarm Telegram creds: front_desk_supervisor.bb resolves botToken/chatId/bridgePort by swarm_name from a fleet creds file, env fallback for primary\nHow it works: A non-primary swarm resolves its bot token and chat id from its fleet creds file, not the environment"}]}
