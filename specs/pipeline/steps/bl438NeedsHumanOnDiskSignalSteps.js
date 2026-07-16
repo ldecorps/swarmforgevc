@@ -4,12 +4,19 @@
 // needs-human state on disk and the fleet console reads it as a field".
 // Drives the REAL compiled emit-fleet-status.js and fleet-console.js
 // against a real target repo fixture and a real (tmp, redirected)
-// rendezvous dir, same posture as bl437FleetStatusPublishSteps.js. The
-// on-disk needs-human WRITER (chase_sweep_lib.bb's write-escalation!,
-// wired live from handoffd.bb's chase-sweep adapters) is out of this
-// ticket's scope - already shipped, covered by its own bb test runner -
-// so these scenarios establish that file's exact shape as a fixture
-// precondition rather than re-driving the Babashka writer.
+// rendezvous dir, same posture as bl437FleetStatusPublishSteps.js.
+//
+// Architect bounce (2026-07-16): the needs-human reconciler this ticket's
+// own text names is the coordinator's BL-306 ask+await state
+// (awaiting-answer.json, operator_runtime.bb) - NOT chase_sweep_lib.bb's
+// per-role chase-escalations.json (a role can be chase-escalated with no
+// pending human question at all, and a coordinator parked awaiting an
+// answer is specifically NOT chased - BL-306's whole point is to park
+// rather than spin). The on-disk WRITER (operator_runtime.bb's
+// write-awaiting-answer!/clear-awaiting-answer!) is out of this ticket's
+// scope - already shipped, covered by its own bb test runner - so these
+// scenarios establish that file's exact shape as a fixture precondition
+// rather than re-driving the Babashka writer.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -42,27 +49,28 @@ function writeSwarmName(targetPath, name) {
   fs.writeFileSync(path.join(targetPath, 'swarmforge', 'swarmforge.conf'), `config swarm_name ${name}\n`);
 }
 
-// The exact path/shape chase_sweep_lib.bb's write-escalation! reads/writes
-// (`.swarmforge/daemon/chase-escalations.json`, keyed by role, dissoc'd on
-// recovery) - emit-fleet-status.ts's own readChaseEscalations reads this
-// SAME file, so a fixture written here is exactly what the real daemon
-// would have produced.
-function chaseEscalationsPath(targetRepo) {
-  return path.join(targetRepo, '.swarmforge', 'daemon', 'chase-escalations.json');
+// The exact path/shape operator_runtime.bb's write-awaiting-answer!/
+// clear-awaiting-answer! reads/writes (`.swarmforge/operator/
+// awaiting-answer.json`) - emit-fleet-status.ts's own
+// needsHumanFromAwaitingAnswer reads this SAME file by presence alone, so a
+// fixture written/removed here is exactly what the real runtime would have
+// produced.
+function awaitingAnswerPath(targetRepo) {
+  return path.join(targetRepo, '.swarmforge', 'operator', 'awaiting-answer.json');
 }
 
-function readChaseEscalationsFixture(targetRepo) {
-  try {
-    return JSON.parse(fs.readFileSync(chaseEscalationsPath(targetRepo), 'utf8'));
-  } catch {
-    return {};
-  }
+function awaitingAnswerExists(targetRepo) {
+  return fs.existsSync(awaitingAnswerPath(targetRepo));
 }
 
-function writeChaseEscalationsFixture(targetRepo, escalations) {
-  const dir = path.join(targetRepo, '.swarmforge', 'daemon');
+function writeAwaitingAnswerFixture(targetRepo) {
+  const dir = path.join(targetRepo, '.swarmforge', 'operator');
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(chaseEscalationsPath(targetRepo), JSON.stringify(escalations));
+  fs.writeFileSync(awaitingAnswerPath(targetRepo), JSON.stringify({ question: 'q', thread_id: 'SUP-1', asked_at_ms: 0 }));
+}
+
+function clearAwaitingAnswerFixture(targetRepo) {
+  fs.rmSync(awaitingAnswerPath(targetRepo), { force: true });
 }
 
 function registerSteps(registry) {
@@ -83,22 +91,21 @@ function registerSteps(registry) {
 
   // ── needs-human-on-disk-signal-01 ─────────────────────────────────────
   registry.define(/^the coordinator is blocked waiting on a human answer$/, (ctx) => {
-    writeChaseEscalationsFixture(ctx.targetRepo, { coordinator: true });
+    writeAwaitingAnswerFixture(ctx.targetRepo);
   });
   registry.define(/^the needs-human reconciler runs$/, () => {
-    // The reconciler (chase_sweep_lib.bb's write-escalation!, live-wired
-    // from handoffd.bb) already ran as part of the Given step above - its
-    // own writer behavior is covered by its own bb test runner, not
-    // re-driven here.
+    // The reconciler (operator_runtime.bb's write-awaiting-answer!, BL-306's
+    // ask+await) already ran as part of the Given step above - its own
+    // writer behavior is covered by its own bb test runner, not re-driven
+    // here.
   });
   registry.define(/^an on-disk needs-human signal is written for swarm "[^"]+"$/, (ctx) => {
-    const escalations = readChaseEscalationsFixture(ctx.targetRepo);
-    assert.equal(escalations.coordinator, true, `expected an on-disk needs-human signal, got: ${JSON.stringify(escalations)}`);
+    assert.equal(awaitingAnswerExists(ctx.targetRepo), true, 'expected an on-disk needs-human signal (awaiting-answer.json) to exist');
   });
 
   // ── needs-human-on-disk-signal-02 ─────────────────────────────────────
   registry.define(/^an on-disk needs-human signal exists for swarm "[^"]+"$/, (ctx) => {
-    writeChaseEscalationsFixture(ctx.targetRepo, { coder: true });
+    writeAwaitingAnswerFixture(ctx.targetRepo);
   });
   // "handoffd completes a cycle" is the SAME text bl437FleetStatusPublish
   // Steps.js already registers (specs/pipeline/steps/index.js loads that
@@ -112,7 +119,7 @@ function registerSteps(registry) {
   registry.define(/^status\.json for swarm "[^"]+" reports needs-human true$/, (ctx) => {
     const statusPath = path.join(ctx.rendezvousDir, ctx.swarmName, 'status.json');
     if (!fs.existsSync(statusPath)) {
-      writeChaseEscalationsFixture(ctx.targetRepo, { coder: true });
+      writeAwaitingAnswerFixture(ctx.targetRepo);
       ctx.publishedDoc = emitFleetStatus(ctx.targetRepo, Date.now(), ctx.env);
     }
     const doc = JSON.parse(fs.readFileSync(statusPath, 'utf8'));
@@ -138,14 +145,14 @@ function registerSteps(registry) {
 
   // ── needs-human-on-disk-signal-04 ─────────────────────────────────────
   registry.define(/^the human answers and the block is resolved$/, (ctx) => {
-    // chase_sweep_lib.bb's write-escalation! DISSOC's the role's key the
-    // moment it is no longer escalated - never sets it false.
-    writeChaseEscalationsFixture(ctx.targetRepo, {});
+    // operator_runtime.bb's clear-awaiting-answer! deletes the file outright
+    // the moment the answer pairs with the pending question - never leaves
+    // a false/cleared value behind.
+    clearAwaitingAnswerFixture(ctx.targetRepo);
     ctx.publishedDoc = emitFleetStatus(ctx.targetRepo, Date.now(), ctx.env);
   });
   registry.define(/^the needs-human signal clears$/, (ctx) => {
-    const escalations = readChaseEscalationsFixture(ctx.targetRepo);
-    assert.deepEqual(escalations, {}, `expected the escalation entry cleared, got: ${JSON.stringify(escalations)}`);
+    assert.equal(awaitingAnswerExists(ctx.targetRepo), false, 'expected awaiting-answer.json to be gone');
   });
   registry.define(/^status\.json for swarm "[^"]+" reports needs-human false$/, (ctx) => {
     const doc = JSON.parse(fs.readFileSync(path.join(ctx.rendezvousDir, ctx.swarmName, 'status.json'), 'utf8'));

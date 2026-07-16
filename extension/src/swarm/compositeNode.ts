@@ -6,11 +6,18 @@
 // authoritative store.
 //
 // isSessionAlive/isBlocked are injectable: pane liveness (a live tmux
-// query, for the webview's own live tile rendering) and "needs human" -
-// which, for the HEADLESS fleet-status publisher (emit-fleet-status.ts,
-// BL-438), is now sourced from the daemon's own durable
+// query, for the webview's own live tile rendering) and a PACK ROLE's own
+// stuck-mailbox state - which, for the HEADLESS fleet-status publisher
+// (emit-fleet-status.ts, BL-438), is sourced from the daemon's own durable
 // chase-escalations.json instead of any pane read. Tests supply fakes
 // directly, matching acquire.ts's/qualify.ts's own posture in BL-233.
+//
+// isBlocked here is NOT "needs human": it is scoped to packRoles below,
+// which excludes the coordinator by construction, so it structurally can
+// never carry the coordinator's own blocked-on-a-human state. That signal
+// (BL-438's needs_human) is a separate, swarm-wide field computed outside
+// this rollup entirely (emit-fleet-status.ts's needsHumanFromAwaitingAnswer)
+// and merged in by its own caller - never routed through isBlocked/status.
 
 import * as fs from 'fs';
 import * as path from 'path';
