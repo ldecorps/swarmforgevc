@@ -56,6 +56,18 @@ export interface BuildProgressRecordOptions {
   status?: 'running' | 'done';
 }
 
+// Extracted so buildProgressRecord's own branch count doesn't compound with
+// classifyMutationGateHealth's (BL-446 pushed buildProgressRecord to CRAP
+// 7.00 at 100% coverage) - same split pattern as
+// mutationProgressReporter.ts's resolveRole/resolveReporterConfig.
+function resolveRecordHealth(
+  status: 'running' | 'done',
+  killed: number,
+  survived: number
+): MutationGateHealth | undefined {
+  return status === 'done' ? classifyMutationGateHealth(killed, survived) : undefined;
+}
+
 // eta_s is a simple average-pace projection (elapsed / tested * remaining) -
 // the same shape Stryker's own progress reporter uses internally, applied
 // here to plain mutant counts rather than duration-weighted ticks, since
@@ -89,6 +101,6 @@ export function buildProgressRecord(
     eta_s: etaSeconds,
     updated_at: new Date(nowMs).toISOString(),
     status,
-    health: status === 'done' ? classifyMutationGateHealth(state.killed, state.survived) : undefined,
+    health: resolveRecordHealth(status, state.killed, state.survived),
   };
 }

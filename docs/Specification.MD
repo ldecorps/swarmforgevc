@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 16, 2026 (BL-445 — whole-suite duration budget verdict + widened vitest worker cap within the existing memory budget)
+**Last Updated:** July 16, 2026 (BL-446 — mutation gate zero-kill health verdict, ratcheting against a silently-clean zero-kill mutation run)
 
 ## Overview
 
@@ -708,6 +708,33 @@ named follow-up will size concurrency from live free RAM.
   recommendation is a named follow-up ticket, not this one — until it
   lands, the mutation run still uses the fixed `4` and this module is a
   correct-but-dark measurement tool run on demand.
+
+### Mutation gate zero-kill health verdict (BL-446)
+
+A mutation run reporting zero killed mutants reads identically to a clean
+pass — "no survivors" — whether every mutant was genuinely killed or
+Stryker's own kill mechanism produced nothing at all. That ambiguity let a
+transient stale-incremental-cache read look like a healthy hardener gate.
+
+- `extension/src/mutation/mutationGateHealth.ts` classifies a completed
+  run's `killed`/`survived` counts into `healthy` (any mutant killed),
+  `zero-kill-suspect` (zero killed, but mutants existed to kill), or
+  `no-mutants` (nothing in scope) — a pure, root-cause-agnostic predicate
+  that guards against any future recurrence of this failure mode, not just
+  the one incident that prompted it.
+- Wired into `MutationProgressReporter.onMutationTestReportReady()`
+  (`extension/src/mutation/mutationProgressReporter.ts`): a non-healthy
+  verdict is printed to stderr at run completion, visible in a live
+  `stryker run` regardless of TTY, alongside the existing progress
+  reporting.
+- `mutationProgress.ts`'s run state/record now also tracks `killed`
+  alongside the existing `survived`/`timedOut` counters, since the health
+  verdict needs it.
+- This incident's actual root cause was a stale `stryker-incremental.json`
+  read, not a broken kill mechanism — a fresh, cache-cleared run killed
+  mutants normally. The health verdict is the durable ratchet regardless of
+  cause: a genuine future zero-kill run can no longer be silently read as a
+  clean gate pass.
 
 ## Per-Agent Lifecycle Control
 
