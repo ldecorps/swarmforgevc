@@ -26,6 +26,10 @@
 ;; whichever of this file's own two callers (operator_runtime.bb,
 ;; reap_stale_test_fixtures.bb) gets there first in a given process.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "proc_fd_scan_lib.bb")))
+;; BL-460: the shared bounded-DELETE windowing (see its own header comment
+;; for the bounded-scan wedge this replaces) - the sandbox-sweep! sibling in
+;; operator_runtime.bb uses the SAME lib.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "bounded_delete_sweep_lib.bb")))
 
 (defn sweep-root []
   (or (System/getenv "SWARMFORGE_FIXTURE_REAP_ROOT") "/tmp"))
@@ -55,8 +59,30 @@
 (defn max-per-tick []
   (or (some-> (System/getenv "SWARMFORGE_FIXTURE_REAP_MAX_PER_TICK") (parse-long)) 100))
 
+;; BL-460: the persisted bounded-delete cursor/streak - default paths sit
+;; INSIDE the swept root itself (so a test overriding SWARMFORGE_FIXTURE_REAP_ROOT
+;; automatically isolates these too, no second env var required), named as
+;; dotfiles that never match known-fixture-prefix? (belt-and-suspenders on
+;; top of the explicit exclusion in list-entries! below - see its own
+;; comment). Each independently overridable for a test that wants its own
+;; state file separate from its fixture root.
+(defn cursor-file []
+  (or (System/getenv "SWARMFORGE_FIXTURE_REAP_CURSOR_FILE")
+      (str (fs/path (sweep-root) ".swarmforge-fixture-reap-cursor"))))
+
+(defn nothing-streak-file []
+  (or (System/getenv "SWARMFORGE_FIXTURE_REAP_NOTHING_STREAK_FILE")
+      (str (fs/path (sweep-root) ".swarmforge-fixture-reap-nothing-streak"))))
+
+;; How many consecutive nothing-reaped ticks between "scanned, found
+;; nothing" log lines - periodic, never per-tick-spammy (BL-460
+;; tmp-sweep-bounded-deletes-05). Small enough to drive from a test.
+(defn nothing-log-period []
+  (or (some-> (System/getenv "SWARMFORGE_FIXTURE_REAP_NOTHING_LOG_PERIOD") (parse-long)) 20))
+
 (defn- list-entries! [root]
-  (try (mapv fs/file-name (fs/list-dir root)) (catch Exception _ [])))
+  (let [own #{(fs/file-name (cursor-file)) (fs/file-name (nothing-streak-file))}]
+    (try (->> (fs/list-dir root) (mapv fs/file-name) (remove own) vec) (catch Exception _ []))))
 
 (defn- entry-age-ms! [entry-path]
   (try (- (System/currentTimeMillis) (.toMillis (fs/last-modified-time entry-path))) (catch Exception _ 0)))
@@ -114,35 +140,61 @@
         (try (process/sh {:continue true} "tmux" "-S" (str f) "kill-server") (catch Exception _ nil))))
     (catch Exception _ nil)))
 
+(defn- default-log! [msg] (println (str "fixture-reaper-sweep: " msg)))
+
+(defn default-adapters
+  "The real reads/actions sweep! uses when called with no arguments - exposed
+   so a caller (operator_runtime.bb) that wants its OWN :log! (writing into
+   its own runtime.log instead of stdout) can override just that one key
+   without hand-duplicating every other real adapter here."
+  []
+  {:list-entries! list-entries!
+   :entry-age-ms! entry-age-ms!
+   :pid->paths (live-process-paths!)
+   :kill-pid! kill-pid!
+   :kill-tmux-sockets-under! kill-tmux-sockets-under!
+   :delete-tree! (fn [p] (fs/delete-tree p {:force true}))
+   :log! default-log!})
+
 (defn sweep!
   "adapters is {:list-entries! fn :entry-age-ms! fn :pid->paths map
-   :kill-pid! fn :kill-tmux-sockets-under! fn :delete-tree! fn}, defaulting
-   to the real reads/actions above. Bounded to max-per-tick entries per
-   call - the remainder is picked up on a later call (removed roots simply
-   drop out of the next listing)."
-  ([]
-   (sweep!
-    {:list-entries! list-entries!
-     :entry-age-ms! entry-age-ms!
-     :pid->paths (live-process-paths!)
-     :kill-pid! kill-pid!
-     :kill-tmux-sockets-under! kill-tmux-sockets-under!
-     :delete-tree! (fn [p] (fs/delete-tree p {:force true}))}))
+   :kill-pid! fn :kill-tmux-sockets-under! fn :delete-tree! fn :log! fn},
+   defaulting to the real reads/actions in default-adapters. BL-460: bounds
+   DELETES per tick via bounded-delete-sweep-lib's persisted cursor, not the
+   scan - a reapable entry ordered after the per-tick cap is still reaped
+   within a bounded number of ticks (the window advances and wraps every
+   call, regardless of how many examined entries turn out non-reapable),
+   never re-scanning the same dead window forever."
+  ([] (sweep! (default-adapters)))
   ([adapters]
    (let [root (sweep-root)
          socket-dir (legacy-socket-dir)
          threshold-ms (stale-threshold-ms)
-         cap (max-per-tick)]
+         cap (max-per-tick)
+         log! (or (:log! adapters) default-log!)]
      (when (fs/exists? root)
-       (doseq [name (take cap ((:list-entries! adapters) root))]
-         (let [entry-path (fs/path root name)
-               socket-root? (= (str entry-path) socket-dir)
-               age-ms ((:entry-age-ms! adapters) entry-path)]
-           (when (fixture-reaper-lib/reapable?
-                  {:known-fixture-prefix? (fixture-reaper-lib/known-fixture-prefix? name)
-                   :stale? (>= age-ms threshold-ms)
-                   :socket-root? socket-root?})
-             (doseq [pid (pids-rooted-in (:pid->paths adapters) entry-path)]
-               ((:kill-pid! adapters) pid))
-             ((:kill-tmux-sockets-under! adapters) entry-path)
-             (try ((:delete-tree! adapters) entry-path) (catch Exception _ nil)))))))))
+       (let [names ((:list-entries! adapters) root)
+             cursor (bounded-delete-sweep-lib/read-cursor (cursor-file))
+             {:keys [window next-cursor]} (bounded-delete-sweep-lib/next-window names cursor cap)
+             reaped (atom 0)]
+         (doseq [name window]
+           (let [entry-path (fs/path root name)
+                 socket-root? (= (str entry-path) socket-dir)
+                 age-ms ((:entry-age-ms! adapters) entry-path)]
+             (when (fixture-reaper-lib/reapable?
+                    {:known-fixture-prefix? (fixture-reaper-lib/known-fixture-prefix? name)
+                     :stale? (>= age-ms threshold-ms)
+                     :socket-root? socket-root?})
+               (doseq [pid (pids-rooted-in (:pid->paths adapters) entry-path)]
+                 ((:kill-pid! adapters) pid))
+               ((:kill-tmux-sockets-under! adapters) entry-path)
+               (try ((:delete-tree! adapters) entry-path) (catch Exception _ nil))
+               (swap! reaped inc))))
+         (bounded-delete-sweep-lib/write-cursor! (cursor-file) next-cursor)
+         (if (pos? @reaped)
+           (do (log! (str "reaped " @reaped " of " (count window) " scanned"))
+               (bounded-delete-sweep-lib/write-count! (nothing-streak-file) 0))
+           (let [streak (inc (bounded-delete-sweep-lib/read-count (nothing-streak-file)))]
+             (bounded-delete-sweep-lib/write-count! (nothing-streak-file) streak)
+             (when (or (= streak 1) (zero? (mod streak (nothing-log-period))))
+               (log! (str "scanned " (count window) ", nothing reaped (streak " streak ")"))))))))))
