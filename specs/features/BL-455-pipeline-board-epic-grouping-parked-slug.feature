@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-16T16:28:13.243688845Z","feature_name":"The pipeline board groups tickets by epic, lists parked tickets below the grid, and shows a slug per ticket","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-455-pipeline-board-epic-grouping-parked-slug.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: The pipeline board groups tickets by epic, lists parked tickets below the grid, and shows a slug per ticket
 
   # BL-455 (feature, human-requested via Telegram SUP-7, relayed by the Operator 2026-07-16, PRIORITIZED):
