@@ -85,18 +85,20 @@ Feature: A live pipeline-board grid in a dedicated Telegram topic shows where ea
       | BL-387 | held by the coder | coder  |
       | BL-413 | held by QA        | QA     |
 
-  # BL-452 pipeline-board-03
-  Scenario: The board is posted once to the Pipeline Board topic, then edited in place on a stage change
-    Given the board has already been posted in the Pipeline Board topic
-    When a ticket moves to the next stage and the board is rendered again
-    Then the existing board message is edited in place to show the ticket's new stage
-    And no new board message is posted
-
-  # BL-452 pipeline-board-04
-  Scenario: The board is not re-edited when no ticket's stage has changed
-    Given the board has been posted and no ticket's stage has changed
-    When the concierge tick runs again
-    Then the board message is not edited
+  # BL-452 pipeline-board-03/04 RETIRED (2026-07-16, specifier): these two scenarios asserted the
+  # ORIGINAL edit-in-place update mechanism (a stage change edits the existing board message in place;
+  # an unchanged tick does not re-edit). BL-462 deliberately REPLACED that mechanism with
+  # delete-old + post-fresh-at-the-bottom on a content change (pipelineBoardSync.ts), so the
+  # edit-in-place premise no longer holds and pipeline-board-03 failed honestly (0 edits, 1 fresh
+  # post) rather than being quietly rewritten under the coder's hand (a spec change is the
+  # specifier's lane). The repost/no-repost behavior is now the durable contract of
+  # specs/features/BL-462-pipeline-board-wider-slug-updated-at-repost.feature —
+  # pipeline-board-refine-04 (reposts at the bottom / left in place, per content change),
+  # -refine-05 (first post deletes nothing; a later change deletes the old before reposting) and
+  # -refine-06 (an unchanged board is not reposted and keeps its footer time). Re-wording these two
+  # here would only DUPLICATE that contract (one-scenario-per-behaviour / IR-DRY), so they are
+  # retired, not moved. BL-452's remaining scenarios (the grid rows, the stage-column marking, and
+  # the no-swarm-state-modification guarantee) are unaffected by the update mechanism and stay.
 
   # BL-452 pipeline-board-05
   Scenario: Rendering and posting the board modifies no swarm state
