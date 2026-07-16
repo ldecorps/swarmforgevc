@@ -15,7 +15,7 @@ const EXT_OUT = path.join(__dirname, '..', '..', '..', 'extension', 'out');
 const { isKnownProducingRole, isKnownTicketType, isKnownFailureClass, computeQaBounceTally } = require(
   path.join(EXT_OUT, 'quality', 'qaBounce')
 );
-const { appendQaBounceRecordIfNew, readQaBounceRecords } = require(path.join(EXT_OUT, 'quality', 'qaBounceStore'));
+const { appendQaBounceRecordIfNew, readQaBounceRecords } = require(path.join(EXT_OUT, 'metrics', 'qaBounceStore'));
 const { backfillQaBounces } = require(path.join(EXT_OUT, 'tools', 'backfill-qa-bounces'));
 
 function mkTmpTarget() {

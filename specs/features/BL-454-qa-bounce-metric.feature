@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-16T16:34:17.638986023Z","feature_name":"QA bounces are recorded with structured attribution so which agent bounces most from QA becomes answerable","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-454-qa-bounce-metric.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: QA bounces are recorded with structured attribution so which agent bounces most from QA becomes answerable
 
   # BL-454 (feature, human-requested via Telegram 2026-07-16): 'which agent causes the most bounce-back from

@@ -15,7 +15,7 @@
  * Usage: node qa-bounce-line.js
  */
 import { computeQaBounceTally, QaBounceTally } from '../quality/qaBounce';
-import { readQaBounceRecords } from '../quality/qaBounceStore';
+import { readQaBounceRecords } from '../metrics/qaBounceStore';
 import { resolveCliMainWorktreeContext, runCliMain } from './swarm-metrics';
 
 export function formatQaBounceLine(tally: QaBounceTally): string {

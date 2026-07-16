@@ -15,7 +15,7 @@
  * Flag contract matches swarmforge/roles/QA.prompt's own caller exactly.
  */
 import { isKnownFailureClass, isKnownProducingRole, isKnownTicketType, QaBounceRecord } from '../quality/qaBounce';
-import { appendQaBounceRecordIfNew } from '../quality/qaBounceStore';
+import { appendQaBounceRecordIfNew } from '../metrics/qaBounceStore';
 import { makeArgsGuardedMain, printJsonToStdout, resolveCliMainWorktreeContext, runCliMain } from './swarm-metrics';
 
 const TICKET_PATTERN = /^BL-\d+$/i;
