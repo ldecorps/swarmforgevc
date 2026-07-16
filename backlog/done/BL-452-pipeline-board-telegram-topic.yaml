@@ -109,9 +109,12 @@ acceptance:
   steps:
     - "Each active ticket is a row marked only at its current stage"
     - "A ticket is marked in exactly the column for its current state"
-    - "The board is posted once to the Pipeline Board topic, then edited in place on a stage change"
-    - "The board is not re-edited when no ticket's stage has changed"
     - "Rendering and posting the board modifies no swarm state"
+    # RETIRED 2026-07-16 (specifier): the two edit-in-place update scenarios
+    # (pipeline-board-03/04) were superseded by BL-462, which replaced edit-in-place with
+    # delete-old + post-fresh-at-bottom. That repost/no-repost behaviour is now owned by
+    # specs/features/BL-462-pipeline-board-wider-slug-updated-at-repost.feature
+    # (refine-04/-05/-06); re-wording them here would only duplicate that contract.
 
 human_approval: >
   Directive relayed by the human/Operator 2026-07-16; the data-source design fork (the intake's named
