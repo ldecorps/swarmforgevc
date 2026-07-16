@@ -212,7 +212,8 @@ test('computeDocsTree tolerates a dangling feature-file reference (file missing)
 test('computeDocsTree reads the vision docs that exist and skips any that are missing', () => {
   const target = mkTmp();
   mkdirp(path.join(target, 'docs', 'diagrams'));
-  fs.writeFileSync(path.join(target, 'docs', 'Specification.MD'), '# Spec content');
+  mkdirp(path.join(target, 'docs', 'reference'));
+  fs.writeFileSync(path.join(target, 'docs', 'reference', 'Specification.MD'), '# Spec content');
   fs.writeFileSync(path.join(target, 'docs', 'diagrams', 'architecture.mmd'), 'graph TD; A-->B;');
   // GettingStarted.md, Milestone Roadmap.MD, swarm-flow.mmd intentionally absent.
 

@@ -108,7 +108,8 @@ test('the compiled CLI runs standalone as a subprocess and prints a valid, schem
 
   mkdirp(path.join(root, 'backlog', 'active'));
   mkdirp(path.join(root, 'docs', 'diagrams'));
-  fs.writeFileSync(path.join(root, 'docs', 'Specification.MD'), '# Spec');
+  mkdirp(path.join(root, 'docs', 'reference'));
+  fs.writeFileSync(path.join(root, 'docs', 'reference', 'Specification.MD'), '# Spec');
   fs.writeFileSync(
     path.join(root, 'backlog', 'active', 'BL-900.yaml'),
     'id: BL-900\ntitle: t\nstatus: active\nmilestone: M1\ndescription: |\n  Some prose.\nacceptance: |\n  Scenario: works\n    Given a\n'

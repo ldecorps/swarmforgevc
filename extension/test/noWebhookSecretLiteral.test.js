@@ -18,8 +18,8 @@ const REPO_ROOT = path.join(__dirname, '..', '..');
 // Stryker (extension/stryker.config.json) sandboxes only the extension/
 // subtree it mutates - the repo root (and everything outside extension/)
 // genuinely does not exist there, same guard as gettingStartedDrift.test.js
-// uses for docs/GettingStarted.md.
-const repoRootAvailable = fs.existsSync(path.join(REPO_ROOT, 'docs', 'GettingStarted.md'));
+// uses for docs/tutorials/GettingStarted.md.
+const repoRootAvailable = fs.existsSync(path.join(REPO_ROOT, 'docs', 'tutorials', 'GettingStarted.md'));
 
 test('BL-225 no-literal-secret-01: no tracked file embeds a whsec_ high-entropy secret literal', (t) => {
   if (!repoRootAvailable) {

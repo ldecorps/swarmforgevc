@@ -1,0 +1,94 @@
+id: BL-456
+title: "Reorganize and rewrite the project docs into the Divio Documentation System's four modes (tutorials / how-to / reference / explanation) with a classified docs index"
+milestone: M8
+type: docs
+severity: low
+status: todo
+epic: ""
+priority: 8
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-operator-question-1784205981854.md — human via Telegram SUP-7, relayed by the Operator 2026-07-16 (the human was already told at 12:42Z it would be picked up on the intake thread). A documentation-structure directive for the documenter role. Scope fork settled with the human via AskUserQuestion 2026-07-16: FULL migration + rewrite (not just structure + an index)."
+
+description: |
+  WHAT / WHY: Organize the project documentation following the Divio Documentation System — its four modes,
+  each serving a distinct reader need: TUTORIALS (learning-oriented, a guided first experience), HOW-TO
+  GUIDES (task-oriented, recipes to accomplish a specific goal), REFERENCE (information-oriented, dry and
+  exhaustive descriptions of how things are), and EXPLANATION (understanding-oriented, discursive background
+  and rationale). Today docs/ is a flat pile with no index/landing page and no mode separation. Human
+  directive, human-requested.
+
+  SCOPE DECISION (settled with the human via AskUserQuestion 2026-07-16): FULL migration + rewrite — not
+  merely establishing the structure and an index over the docs as they are, but reorganizing AND rewriting
+  the existing authored docs so each one actually fits the mode it lands in (e.g. splitting reference-heavy
+  pages, extracting task recipes into how-to guides, adding the missing tutorial front door, moving
+  rationale into explanation). Documenter-led per the directive.
+
+  Design:
+    - Establish the four Divio mode directories under docs/: docs/tutorials/, docs/how-to/, docs/reference/,
+      docs/explanation/.
+    - Add a top-level docs INDEX / landing page (docs/index.md — none exists today) that names the four
+      modes, states each mode's reader orientation, and links every authored doc under its mode so nothing
+      is orphaned. This index is the single navigable entry point.
+    - MIGRATE + REWRITE the existing authored prose into the right mode (natural buckets verified 2026-07-16
+      — confirm at build):
+        * TUTORIALS  <- GettingStarted.md, Onboarding-New-Project.md (guided first-run / first-project).
+        * HOW-TO     <- docs/runbooks/* (operational task recipes) and any task-specific how-to prose.
+        * REFERENCE  <- Specification.MD, docs/specs/*, docs/*-schema.md (docs-tree-schema.md,
+                       backlog-dashboard-schema.md), the architecture/flow diagram references.
+        * EXPLANATION<- the doctrine files (docs/specs/headless-reattach-doctrine.md,
+                       docs/specs/handoff-dual-path.md), Milestone Roadmap.MD (why/where-it-is-going).
+      Rewrite each moved doc so it reads as its target mode (a tutorial teaches step by step; a how-to is a
+      terse goal-recipe; reference is exhaustive and neutral; explanation is discursive) — preserve the
+      information, do not silently drop content.
+    - OUT OF SCOPE for the four-mode split (leave in place, may be LINKED from reference/how-to but not
+      rewritten): generated / asset directories — docs/archive/, docs/briefings/, docs/benchmarks/,
+      docs/branding/, docs/i18n/, docs/roles-future/, docs/diagrams/ (Mermaid sources stay where the
+      briefing + diagram tooling reads them).
+
+  Constraints:
+    - PRESERVE all internal and external LINKS: when a doc moves, update every reference to its old path.
+      Several code paths pin doc locations — e.g. extension/test/gettingStartedDrift.test.js reads
+      docs/GettingStarted.md, docs-tree-schema.md + the docs-tree generator describe the layout, and the
+      Stryker sandbox symlinks repo-root docs/ (engineering Stryker-sandbox-siblings note). ENUMERATE every
+      code/test/config reference to a moved doc path with grep and update it in the SAME parcel (engineering
+      call-site-sweep rule); a moved doc with a stale path reference is a broken build, not a doc nicety.
+    - The docs INDEX must be the exhaustive, orphan-free map: every authored doc is reachable from it.
+    - Keep the acceptance seam a small, testable docs-structure validator (a host-side module that reads
+      docs/index.md + the mode dirs — the pattern docs-tree-schema.md / the docs-tree generator already
+      establishes), driven by the acceptance step handlers; the prose QUALITY of each rewritten doc is the
+      documenter's + the human's judgment (the E2E QA review), not a machine assertion.
+    - Reach any fixture cwd/HOME by STUBBING accessors, never chdir/HOME overlay (engineering worker-thread
+      rule); resolve docs/ via the repo top-level, not a cwd-relative path (engineering repo-scoped-path
+      rule), so the validator works from any worktree.
+
+  Sequencing: largely orthogonal to the standing-topic / front-desk cluster (it edits docs/ + a docs-
+  structure validator, not conciergeTick.ts / the bot). The one caution is path references: coordinate with
+  any in-flight ticket that reads a doc path being moved. Documenter-led substantive rewrite; flows the
+  normal specifier -> coder -> ... -> documenter -> QA chain (the coder builds the validator + step handlers
+  and the initial structural move; the documenter does the mode-fitting rewrite).
+
+  E2E QA PROCEDURE: assert docs/ has the four Divio mode directories (tutorials, how-to, reference,
+  explanation), each containing at least one document; assert docs/index.md exists, names all four modes
+  with their orientation, and links every authored doc so none is orphaned; spot-check that each moved doc
+  reads as its target mode (a tutorial teaches, a how-to is a task recipe, reference is exhaustive, an
+  explanation gives rationale) — the qualitative human/QA review; assert no code/test path reference to a
+  moved doc is broken (build + suite green). Verify against the real docs tree, not a fixture (BL-335).
+
+acceptance:
+  feature: specs/features/BL-456-divio-docs-reorg.feature
+  steps:
+    - "The four Divio mode directories exist under docs"
+    - "The docs index names each mode with its reader orientation"
+    - "Every authored doc is reachable from the docs index"
+    - "Each Divio mode directory contains at least one document"
+
+human_approval: >
+  Human-requested via Telegram SUP-7, relayed by the Operator 2026-07-16 (the human was already told it
+  would be picked up). The scope fork was settled by the human via AskUserQuestion 2026-07-16: FULL
+  migration + REWRITE (reorganize AND rewrite existing docs to fit each Divio mode), not just structure + an
+  index. The four modes + a classified, orphan-free index are the firm contract; the exact per-doc split
+  and rewritten wording are the documenter's craft, reviewed qualitatively by the human/QA, not a promotion
+  gate. Note: FULL rewrite is documenter-heavy and may reasonably be sliced by mode — flag at promotion.
+
+mutation_cost: low

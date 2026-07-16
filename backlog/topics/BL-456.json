@@ -1,0 +1,1 @@
+{"id":"BL-456","messages":[{"seq":0,"ts":1784207928521,"author":"swarm","type":"outbound","text":"What it is: Reorganize and rewrite the project docs into the Divio Documentation System's four modes (tutorials / how-to / reference / explanation) with a classified docs index\nHow it works: The four Divio mode directories exist under docs"}],"swarmIconId":"5310045076531978942"}

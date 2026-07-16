@@ -125,9 +125,13 @@
 ;; BL-431: :suboptimality-verdict-line - the swarm's own diagnosis of where
 ;; it is suboptimal (BL-430's rework signal, read only when meaningfully
 ;; above baseline), so a human sees it without opening a metrics file.
+;; BL-454: :qa-bounce-line - which role's work bounces most from QA, and the
+;; per-ticket-type breakdown, derived from the durable qa_bounces log
+;; (record-qa-bounce.js's go-forward writes plus backfill-qa-bounces.js's
+;; one-time seed from the evidence corpus).
 (def optional-section-adapter-keys
   [:suite-duration-line :needs-approval-section :merged-blocked-digest :stage-dwell-section :chase-trend-section
-   :not-done-count-line :standing-rule-violations-line :suboptimality-verdict-line])
+   :not-done-count-line :standing-rule-violations-line :suboptimality-verdict-line :qa-bounce-line])
 
 (defn- apply-optional-sections [content adapters]
   (reduce

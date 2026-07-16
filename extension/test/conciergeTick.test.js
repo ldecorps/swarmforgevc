@@ -791,6 +791,60 @@ test('BL-449: exhausting the epic icon pool within one tick logs a reuse warning
   assert.ok(errors.some((e) => e.includes('epic icon pool exhausted')), `expected a pool-exhaustion warning, got: ${JSON.stringify(errors)}`);
 });
 
+test('BL-457: known epics reserve their pinned glyphs before unknown epics draw from the pool - no spurious "pool exhausted" warning, no duplicate icons', async () => {
+  // Same full sticker set as the exhaustion test so setTopicIcon fires for
+  // every pool glyph - the only icons that resolve here are the epic ones
+  // (ticket-state glyphs are absent from this set), so iconsSet is exactly
+  // one entry per epic topic.
+  const FULL_POOL_STICKERS = ['🎙', '🎭', '🎬', '🎤', '🎨', '🎩', '🕺', '💃', '✍️', '📚'].map((emoji, i) => ({
+    emoji,
+    customEmojiId: `id-${i}`,
+  }));
+  const { adapters, setFolders, iconsSet } = fakeAdapters({
+    iconAdapters: {
+      getIconStickers: async () => FULL_POOL_STICKERS,
+      setTopicIcon: async (topicId, iconId) => {
+        iconsSet.push({ topicId, iconId });
+        return true;
+      },
+      readSwarmIconId: () => undefined,
+      recordSwarmIconId: () => {},
+    },
+  });
+  // Mirrors the live backlog that produced the false warning: three KNOWN
+  // epics (fixed glyphs 🎙/🎭/🎬) and three unknown epics, with the unknowns
+  // traversed FIRST. Pre-fix the unknowns greedily grabbed the knowns' pinned
+  // glyphs, so every known epic then "collided" and warned each tick - though
+  // only 6 of the pool's 10 slots are ever in play.
+  const knownEpics = ['role-benchmarking', 'dynamic-routing', 'onboarding-target-repo'];
+  const unknownEpics = ['fleet-second-swarm', 'recert-telegram-move', 'swarm-self-optimization'];
+  setFolders(folders({
+    active: [
+      ...unknownEpics.map((epic, i) => ({ id: `BL-U${i}`, title: `unknown slice ${i}`, epic })),
+      ...knownEpics.map((epic, i) => ({ id: `BL-K${i}`, title: `known slice ${i}`, epic })),
+    ],
+  }));
+  const originalErrorWrite = process.stderr.write;
+  const errors = [];
+  process.stderr.write = (chunk) => {
+    errors.push(chunk);
+    return true;
+  };
+  try {
+    await runConciergeTick(adapters);
+  } finally {
+    process.stderr.write = originalErrorWrite;
+  }
+
+  assert.ok(
+    !errors.some((e) => e.includes('epic icon pool exhausted')),
+    `expected NO pool-exhaustion warning for 6 epics in a 10-slot pool, got: ${JSON.stringify(errors)}`,
+  );
+  assert.equal(iconsSet.length, 6, 'expected each of the six epic topics to receive an icon');
+  const iconIds = iconsSet.map((s) => s.iconId);
+  assert.equal(new Set(iconIds).size, iconIds.length, `expected every epic topic to get a DISTINCT icon, got: ${JSON.stringify(iconsSet)}`);
+});
+
 // Hardening gap: every epics-0x test above ran with exactly ONE epic in
 // play. epicDefinitionsFor/epicSlicesFor key everything off epicId, but
 // that keying was never proven with two DIFFERENT epics active in the
