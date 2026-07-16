@@ -13,7 +13,7 @@ note() { printf '%s\n' "$*"; }
 check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi; }
 
 ROOT=""
-cleanup() { [[ -n "$ROOT" && -d "$ROOT" ]] && rm -rf "$ROOT"; }
+cleanup() { [[ -n "$ROOT" ]] && rm -rf "$ROOT"; }
 trap cleanup EXIT
 
 mk_fixture() {
