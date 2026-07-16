@@ -222,23 +222,12 @@
   (when pid
     (some-> (java.lang.ProcessHandle/of pid) (.orElse nil) (.isAlive))))
 
-;; BL-403: gracefully terminate a pid with bounded grace period for cleanup.
-;; Sends SIGTERM, waits up to kill-grace-ms for graceful exit, then SIGKILL if needed.
-(defn kill-pid! [pid]
-  (when pid
-    (when-let [handle (some-> (java.lang.ProcessHandle/of pid) (.orElse nil))]
-      (when (.isAlive handle)
-        ;; SIGTERM for graceful shutdown
-        (.destroy handle)
-        ;; Wait for graceful exit within the grace period
-        (let [start (now-ms)]
-          (while (and (.isAlive handle) (< (- (now-ms) start) kill-grace-ms))
-            (Thread/sleep 10)))
-        ;; SIGKILL if still alive after grace period
-        (when (.isAlive handle)
-          (.destroyForcibly handle))
-        ;; Wait for the kill to propagate
-        (Thread/sleep 10)))))
+;; BL-403/BL-411: gracefully terminate a pid with bounded grace period for
+;; cleanup (SIGTERM, wait up to kill-grace-ms, then SIGKILL). The
+;; implementation itself is shared with negotiation_relay_supervisor.bb via
+;; front-desk-supervisor-lib/make-kill-pid! - see that function's own
+;; docstring for why this is the one copy.
+(def kill-pid! (front-desk-supervisor-lib/make-kill-pid! kill-grace-ms))
 
 ;; BL-370: reads the SAME {lastHeartbeatMs} JSON telegram-front-desk-bot.ts
 ;; writes on every completed poll cycle. Never throws on a missing/corrupt
