@@ -15,7 +15,15 @@ const path = require('node:path');
 
 const EXT_OUT = path.join(__dirname, '..', '..', '..', 'extension', 'out');
 const { runConciergeTick } = require(path.join(EXT_OUT, 'concierge', 'conciergeTick'));
-const { renderPipelineBoard } = require(path.join(EXT_OUT, 'concierge', 'pipelineBoard'));
+const { renderPipelineBoard, renderPipelineBoardBody } = require(path.join(EXT_OUT, 'concierge', 'pipelineBoard'));
+
+// BL-462: every scenario below drives runConciergeTick with nowMs=0 (see the
+// "the pipeline board is rendered"/"the concierge tick runs again" steps),
+// so every expected-text recomputation below passes the SAME fixed instant
+// as the second renderPipelineBoard argument - never a bare real clock read,
+// which would make a byte-for-byte comparison against the real sync's own
+// footer flaky by construction.
+const FIXED_NOW_MS = 0;
 
 // BL-421/engineering.prompt Scenario Outline rule: every Examples: column
 // value must be validated against an explicit KNOWN_VALUES lookup, never a
@@ -50,7 +58,13 @@ function fakeConciergeAdapters() {
   const state = { snapshot: null, emittedKeys: [] };
   const topicMap = {};
   const posted = [];
+  // BL-462: the board no longer edits in place - `edited` stays permanently
+  // empty (no adapter populates it anymore) so any OLDER step below that
+  // still reads it fails an honest "expected 1, got 0" rather than
+  // crashing on a renamed/missing field. See the SUPERSEDED comment on the
+  // "edited in place" Then-step further down.
   const edited = [];
+  const deleted = [];
   const recordedTopicIds = [];
   const recordedMessages = [];
   let currentFolders = folders();
@@ -60,6 +74,7 @@ function fakeConciergeAdapters() {
     topicMap,
     posted,
     edited,
+    deleted,
     recordedTopicIds,
     recordedMessages,
     setFolders: (f) => {
@@ -109,8 +124,8 @@ function fakeConciergeAdapters() {
           posted.push({ topicId, text });
           return 1;
         },
-        editMessage: async (topicId, messageId, text) => {
-          edited.push({ topicId, messageId, text });
+        deleteMessage: async (topicId, messageId) => {
+          deleted.push({ topicId, messageId });
           return true;
         },
       },
@@ -155,7 +170,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^each active ticket is a row in the board$/, (ctx) => {
-    const expected = renderPipelineBoard(ctx.expectedBoard);
+    const expected = renderPipelineBoard(ctx.expectedBoard, FIXED_NOW_MS);
     const actual = lastRendered(ctx.fixture);
     if (actual !== expected) {
       throw new Error(`expected board:\n${expected}\ngot:\n${actual}`);
@@ -163,7 +178,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^each ticket's row has a single mark in the column for its current stage$/, (ctx) => {
-    const expected = renderPipelineBoard(ctx.expectedBoard);
+    const expected = renderPipelineBoard(ctx.expectedBoard, FIXED_NOW_MS);
     const actual = lastRendered(ctx.fixture);
     if (actual !== expected) {
       throw new Error(`expected board:\n${expected}\ngot:\n${actual}`);
@@ -171,7 +186,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^a role holding no ticket shows no mark in that ticket's row$/, (ctx) => {
-    const expected = renderPipelineBoard(ctx.expectedBoard);
+    const expected = renderPipelineBoard(ctx.expectedBoard, FIXED_NOW_MS);
     const actual = lastRendered(ctx.fixture);
     if (actual !== expected) {
       throw new Error(`expected board:\n${expected}\ngot:\n${actual}`);
@@ -191,7 +206,7 @@ function registerSteps(registry) {
     if (!KNOWN_COLUMNS.has(column)) {
       throw new Error(`pipeline-board-02: unrecognized <column> example value "${column}"`);
     }
-    const expected = renderPipelineBoard(boardData([{ id, column }]));
+    const expected = renderPipelineBoard(boardData([{ id, column }]), FIXED_NOW_MS);
     const actual = lastRendered(ctx.fixture);
     if (actual !== expected) {
       throw new Error(`expected board:\n${expected}\ngot:\n${actual}`);
@@ -199,13 +214,29 @@ function registerSteps(registry) {
   });
 
   // ── pipeline-board-03 ──────────────────────────────────────────────────
+  // BL-462 SUPERSEDED: this scenario's own premise (a stage change edits the
+  // existing board message IN PLACE) no longer holds - BL-462 replaced the
+  // board's edit-in-place mechanism with delete-old + post-fresh-at-the-
+  // bottom (pipelineBoardSync.ts), while approvalsRosterSync.ts keeps
+  // editing in place unchanged. The two Then-steps below now fail HONESTLY
+  // (0 edits, 1 new post) rather than being rewritten to quietly assert the
+  // new behavior under old Gherkin wording - retiring/amending this
+  // scenario's text is a spec change (specifier/Gherkin), outside the
+  // coder's lane (constitution Article 1.9 / engineering.prompt). The prior-
+  // state SEED below is still kept in the NEW state shape
+  // (contentSignature/lastChangeMs, not the old renderedText) purely so the
+  // change-gate itself behaves correctly (a stage change is correctly
+  // detected as a real content change) rather than accidentally always
+  // "changed" (undefined contentSignature never equals a real one), which
+  // would have let a real regression hide behind a mis-shaped fixture.
   registry.define(/^the board has already been posted in the Pipeline Board topic$/, (ctx) => {
     ctx.fixture = fakeConciergeAdapters();
     ctx.fixture.setRoleHeldTickets({ coder: ['BL-1'] });
     ctx.fixture.state.pipelineBoard = {
       topicId: 900,
       messageId: 1,
-      renderedText: renderPipelineBoard(boardData([{ id: 'BL-1', column: 'coder' }])),
+      contentSignature: renderPipelineBoardBody(boardData([{ id: 'BL-1', column: 'coder' }])),
+      lastChangeMs: FIXED_NOW_MS,
     };
   });
 
@@ -222,7 +253,7 @@ function registerSteps(registry) {
     if (edit.topicId !== 900 || edit.messageId !== 1) {
       throw new Error(`expected the edit to target the existing topic 900 / message 1, got topicId=${edit.topicId} messageId=${edit.messageId}`);
     }
-    const expected = renderPipelineBoard(boardData([{ id: 'BL-1', column: 'QA' }]));
+    const expected = renderPipelineBoard(boardData([{ id: 'BL-1', column: 'QA' }]), FIXED_NOW_MS);
     if (edit.text !== expected) {
       throw new Error(`expected the edited text to show BL-1 in QA:\n${expected}\ngot:\n${edit.text}`);
     }
@@ -241,7 +272,8 @@ function registerSteps(registry) {
     ctx.fixture.state.pipelineBoard = {
       topicId: 900,
       messageId: 1,
-      renderedText: renderPipelineBoard(boardData([{ id: 'BL-1', column: 'coder' }])),
+      contentSignature: renderPipelineBoardBody(boardData([{ id: 'BL-1', column: 'coder' }])),
+      lastChangeMs: FIXED_NOW_MS,
     };
   });
 

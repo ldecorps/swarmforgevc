@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=2002927447147117c1b0565fa5a4610d2452a220919940437642b6a99b1947ec
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-16T20:41:38.131728414Z","feature_name":"The pipeline board shows a wider slug, an updated-at footer bumped only on content change, and reposts at the bottom when its content changes","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-462-pipeline-board-wider-slug-updated-at-repost.feature","background_hash":"7df86acdb51ee5925e90ea4c73c2644b6839428dacf7661e5ab79d642e8bd126","implementation_hash":"unknown","scenarios":[{"index":3,"name":"The board reposts at the bottom and bumps its footer only when its content changes","scenario_hash":"b322b0f273e694c8589d0c5252b6d2631597f465f5b5f04ebb6eab7738e7fc70","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-07-16T20:41:38.131728414Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The pipeline board shows a wider slug, an updated-at footer bumped only on content change, and reposts at the bottom when its content changes
 
   # BL-462 (feature, human-requested via the Operator front desk, relayed 2026-07-16 from two

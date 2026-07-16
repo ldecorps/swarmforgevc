@@ -38,7 +38,11 @@ function fakeConciergeAdapters() {
   const state = { snapshot: null, emittedKeys: [] };
   const topicMap = {};
   const posted = [];
+  // BL-462: the board no longer edits in place - `edited` stays permanently
+  // empty (nothing populates it), kept only so lastRendered's own fallback
+  // logic below stays unchanged.
   const edited = [];
+  const deleted = [];
   const recordedTopicIds = [];
   const recordedMessages = [];
   let currentFolders = folders();
@@ -48,6 +52,7 @@ function fakeConciergeAdapters() {
     topicMap,
     posted,
     edited,
+    deleted,
     recordedTopicIds,
     recordedMessages,
     setFolders: (f) => {
@@ -97,8 +102,8 @@ function fakeConciergeAdapters() {
           posted.push({ topicId, text });
           return 1;
         },
-        editMessage: async (topicId, messageId, text) => {
-          edited.push({ topicId, messageId, text });
+        deleteMessage: async (topicId, messageId) => {
+          deleted.push({ topicId, messageId });
           return true;
         },
       },
