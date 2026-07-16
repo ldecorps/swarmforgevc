@@ -240,7 +240,8 @@ const DOMAINS = [
   require('./bl460TmpSweepsBoundDeletesSteps'),
   require('./bl450RecertStandingTopicSteps'),
   require('./bl461StartSwarmEnsureFullStackSteps'),
-  require('./bl462PipelineBoardRefinementsSteps')
+  require('./bl462PipelineBoardRefinementsSteps'),
+  require('./bl463MutationCooldownIgnoresOwnParcelSteps')
 ];
 
 function registerSteps(registry) {
