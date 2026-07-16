@@ -15,12 +15,22 @@
 // still-tracked root - reap() itself is idempotent (untracks first), so a
 // scenario's own inline teardown calling reap() directly and then the
 // process exiting normally never double-reaps.
+//
+// track()/reap() assume the front-desk pidfile/status.json shape. A fixture
+// with its OWN kill logic (e.g. a pkill -f pattern matching everything
+// rooted at a path) needs the SAME exit/SIGINT/SIGTERM coverage without
+// adopting that shape - onAbnormalExit(fn) is the generic primitive both
+// track() and any such file build on, so "only a process.on('exit')
+// handler, which does not fire on SIGTERM/SIGINT" (BL-458's own finding
+// against 3 of the 4 named offender files) has one shared fix, not four
+// hand-rolled ones.
 const fs = require('node:fs');
 const path = require('node:path');
 const { execSync } = require('node:child_process');
 
 const tracked = new Set();
-let handlersInstalled = false;
+const abnormalExitCallbacks = [];
+let globalHandlersInstalled = false;
 
 function killPid(pid) {
   if (!pid) {
@@ -91,29 +101,60 @@ function reapAllTracked() {
   }
 }
 
+function runAbnormalExitCallbacks() {
+  for (const fn of abnormalExitCallbacks) {
+    try {
+      fn();
+    } catch {
+      // a callback's own failure must never block the others, or the
+      // process's own exit, especially when running from a signal handler
+    }
+  }
+}
+
 // process.on('exit', ...) handlers may only do SYNCHRONOUS work - every
-// read/kill above already is. SIGINT/SIGTERM do NOT fire Node's 'exit'
-// handlers on their own (the default action terminates the process
-// immediately without unwinding) - registering an explicit handler is what
-// makes reap-on-signal possible at all; it then re-raises the same outcome
-// itself via process.exit().
-function installHandlersOnce() {
-  if (handlersInstalled) {
+// callback registered here is expected to be too. SIGINT/SIGTERM do NOT
+// fire Node's 'exit' handlers on their own (the default action terminates
+// the process immediately without unwinding) - registering an explicit
+// handler is what makes cleanup-on-signal possible at all; it then
+// re-raises the same outcome itself via process.exit(). Installed ONCE per
+// process regardless of how many files/roots register a callback, so N
+// callers never produce N redundant signal listeners.
+function installGlobalHandlersOnce() {
+  if (globalHandlersInstalled) {
     return;
   }
-  handlersInstalled = true;
-  process.on('exit', reapAllTracked);
+  globalHandlersInstalled = true;
+  process.on('exit', runAbnormalExitCallbacks);
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, () => {
-      reapAllTracked();
+      runAbnormalExitCallbacks();
       process.exit(1);
     });
   }
 }
 
+// Lets a step file register its OWN cleanup logic against the SAME
+// exit/SIGINT/SIGTERM coverage track()/reap() use, for a fixture shape
+// track()/reap() do not already know how to kill (e.g. a pkill -f pattern
+// matching everything rooted at a path, rather than the front-desk
+// pidfile/status.json shape). fn is called with no arguments and must be
+// synchronous and idempotent - it may run at process exit, on a signal, or
+// (if the caller also calls it inline for the happy path) both.
+function onAbnormalExit(fn) {
+  installGlobalHandlersOnce();
+  abnormalExitCallbacks.push(fn);
+}
+
+let trackedReaperRegistered = false;
+
 function track(root) {
-  installHandlersOnce();
+  installGlobalHandlersOnce();
+  if (!trackedReaperRegistered) {
+    trackedReaperRegistered = true;
+    abnormalExitCallbacks.push(reapAllTracked);
+  }
   tracked.add(root);
 }
 
-module.exports = { track, reap };
+module.exports = { track, reap, onAbnormalExit };
