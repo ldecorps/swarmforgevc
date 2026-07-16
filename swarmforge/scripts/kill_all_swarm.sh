@@ -89,8 +89,62 @@ kill_tmux_socket() {
   tmux -S "$sock" kill-server 2>/dev/null || true
 }
 
+# BL-423: the orphaned-vitest-worker reap (the exact class behind the
+# BL-422 OOM-spiral - a killed parent leaves reparented `node (vitest N)`
+# workers, since tmux kill-server only SIGHUPs a pane's own direct child,
+# never a detached/double-forked grandchild). Snapshotting the FULL
+# descendant tree of every pane on THIS root's own tracked socket, before
+# any teardown happens, then force-killing whichever of those EXACT pids
+# are still alive afterward, is what keeps this scoped to this root alone -
+# unlike a `pgrep -f vitest` name/pattern match, which cannot tell this
+# worktree's vitest run from a sibling worktree's concurrent one (their own
+# renamed `node (vitest N)` titles are indistinguishable once reparented -
+# the process-table-is-a-shared-global trap this project's engineering
+# rules warn about). A pid list gathered from a controlled, known-good
+# starting point (this root's own pane pids) is exact where a name pattern
+# is only ever a guess.
+collect_descendant_pids() {
+  local pid="$1"
+  local children
+  children="$(pgrep -P "$pid" 2>/dev/null || true)"
+  local child
+  for child in $children; do
+    echo "$child"
+    collect_descendant_pids "$child"
+  done
+}
+
+snapshot_pane_descendants() {
+  [[ -f "$ROOT/.swarmforge/tmux-socket" ]] || return 0
+  local tracked
+  tracked="$(< "$ROOT/.swarmforge/tmux-socket")"
+  [[ -S "$tracked" ]] || return 0
+  local pane_pid
+  while IFS= read -r pane_pid; do
+    [[ "$pane_pid" =~ ^[0-9]+$ ]] || continue
+    collect_descendant_pids "$pane_pid"
+  done < <(tmux -S "$tracked" list-panes -a -F '#{pane_pid}' 2>/dev/null || true)
+}
+
+reap_orphaned_pane_descendants() {
+  local pids="$1"
+  [[ -n "$pids" ]] || { log "no pane descendants recorded - nothing to reap"; return 0; }
+  local pid
+  local reaped=0
+  for pid in $pids; do
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -KILL "$pid" 2>/dev/null && { log "reaped orphaned pane descendant pid=$pid"; reaped=1; }
+    fi
+  done
+  [[ "$reaped" -eq 1 ]] || log "no orphaned pane descendants survived teardown"
+}
+
 mkdir -p "$DAEMON_DIR"
 log "kill_all_swarm begin root=$ROOT sweep_inbox=$SWEEP_INBOX reset_worktrees=$RESET_WORKTREES"
+
+# Captured BEFORE any teardown below - pgrep -P only sees live parent/child
+# links, so this MUST run while the swarm's own process tree is still intact.
+PANE_DESCENDANT_PIDS="$(snapshot_pane_descendants)"
 
 # 0. Graceful agent shutdown FIRST. `tmux kill-server` below sends SIGHUP, which
 # kills each role's `claude` before it can deregister its --remote-control
@@ -133,6 +187,11 @@ for sock in $SOCKET_GLOB "$LEGACY_SOCKET"; do
   [[ -e "$sock" ]] || continue
   kill_tmux_socket "$sock"
 done
+
+# 2.5. Reap whatever pane descendants (vitest workers included) survived
+# the tmux teardown above - the exact orphan class the snapshot at the top
+# of this script recorded before teardown began.
+reap_orphaned_pane_descendants "$PANE_DESCENDANT_PIDS"
 
 # 3. handoffd + supervisor (supervisor first — same order as extension stop).
 signal_pid_file "$DAEMON_DIR/handoffd-supervisor.pid"

@@ -1176,6 +1176,23 @@
     (catch Exception e
       (log! "answer-file-drain-sweep-error" (.getMessage e)))))
 
+;; BL-423: shells to the compiled resume-expired-pauses.js CLI, same
+;; posture as dead-letter-notify-sweep!/recert-notify-sweep! above - the
+;; ticket's own "ride the daemon's existing sweep cadence" instruction for
+;; the timed-pause auto-resume + its Control-topic announcement. The CLI
+;; itself owns the pause-expiry decision (decidePauseAutoResume, an
+;; injected-clock pure function) and the marker clear/announce; this
+;; adapter only owns invoking it.
+(defn pause-auto-resume-sweep! []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "resume-expired-pauses.js"))
+          {:keys [exit out err]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (if (zero? exit)
+        (log! "pause-auto-resume" (str/trim out))
+        (log! "pause-auto-resume-sweep-error" (str "exit=" exit " " (str/trim (or err ""))))))
+    (catch Exception e
+      (log! "pause-auto-resume-sweep-error" (.getMessage e)))))
+
 ;; BL-258: headless, host-independent morning trigger for briefing
 ;; GENERATION (complements briefing-email-sweep! above, which only handles
 ;; the SEND of an already-committed file). Reads the configured morning
@@ -1549,7 +1566,15 @@
                     (try
                       (answer-file-drain-sweep!)
                       (catch Exception e
-                        (log! "answer-file-drain-sweep-error" (.getMessage e)))))
+                        (log! "answer-file-drain-sweep-error" (.getMessage e))))
+                    ;; BL-423: pause-auto-resume sweep shares the same
+                    ;; cadence - no separate timeout, same rationale as
+                    ;; BL-222/BL-214/BL-258/BL-309/BL-316/BL-339/BL-353/
+                    ;; BL-350/BL-356/BL-437/BL-440 above.
+                    (try
+                      (pause-auto-resume-sweep!)
+                      (catch Exception e
+                        (log! "pause-auto-resume-sweep-error" (.getMessage e)))))
                   (spit (str heartbeat-file) (str (now) "\n"))
                   (when (zero? (mod cycle heartbeat-log-every-cycles))
                     (log! "heartbeat" (str "cycle=" cycle)))
