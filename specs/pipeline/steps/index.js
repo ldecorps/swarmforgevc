@@ -245,7 +245,8 @@ const DOMAINS = [
   require('./bl466AgentQuestionsAsTelegramPollsSteps'),
   require('./bl464PipelineBoardAuthoritativeStageSourceSteps'),
   require('./bl447MutationGateEntrypointBoilerplateSurvivorsSteps'),
-  require('./bl453ConciergeFrontDeskIconLabelSteps')
+  require('./bl453ConciergeFrontDeskIconLabelSteps'),
+  require('./bl433BuildFreshnessOperatorRestartRaceSteps')
 ];
 
 function registerSteps(registry) {
