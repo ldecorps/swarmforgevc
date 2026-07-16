@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 16, 2026 (BL-464 pipeline board authoritative stage source)
+**Last Updated:** July 17, 2026 (BL-447 mutation gate entrypoint-boilerplate survivors)
 
 ## Overview
 
@@ -777,6 +777,49 @@ transient stale-incremental-cache read look like a healthy hardener gate.
   mutants normally. The health verdict is the durable ratchet regardless of
   cause: a genuine future zero-kill run can no longer be silently read as a
   clean gate pass.
+
+### Mutation gate entrypoint-boilerplate survivors (BL-447)
+
+Distinct from BL-446 above (that was the gate reading ZERO kills as clean;
+this is the opposite failure mode, surfacing once kills work again): every
+`tools/*.ts` CLI ends with the shared `if (require.main === module) {
+runCliMain(main); }` guard (~52 call sites) and tsc emits a
+`Object.defineProperty(exports, "__esModule", ...)` header at the top of
+every compiled file — and neither line can ever be killed by any test. An
+in-process `main()` test never executes the guard line itself (it calls
+`main()` directly), so it reads as `NoCoverage`; a subprocess smoke test
+spawns a fresh `node` process that never carries Stryker's in-memory
+`activeMutant`/coverage globals, so it can't register a kill for anything it
+runs, guard included. A module that follows every existing thin-wrapper/
+in-process-`main()` rule perfectly (`check-suite-duration-budget.ts`) still
+showed 9/42 unkillable survivors purely from this fixed residue.
+
+- `extension/src/mutation/entrypointBoilerplateIgnorer.ts`'s
+  `classifyMutantLocation` is a pure, coverage-blind predicate: it decides
+  `excluded`/`kept` from STRUCTURAL LOCATION alone (never from whether a
+  mutant has coverage or survived), so an untested mutant in real exported
+  logic structurally cannot be classified as boilerplate — only the two
+  named shapes are ever excluded. `isRequireMainGuardNode`/
+  `isEsModuleBoilerplateNode` recognize the guard's `require.main ===
+  module` `IfStatement` and tsc's `__esModule` `Object.defineProperty`
+  call by AST shape.
+- Wired into `extension/src/mutation/stryker-plugin.ts` as
+  `EntrypointBoilerplateIgnorer`, a `PluginKind.Ignore` plugin alongside the
+  existing Reporter. The first wiring attempt registered the plugin via
+  `appendPlugins` alone and shipped silently inert — Stryker only invokes an
+  Ignore-kind plugin whose name also appears in the separate `ignorers`
+  config array, so without `"ignorers": ["entrypoint-boilerplate"]` in
+  `extension/stryker.config.json` the plugin ran zero times and every
+  boilerplate mutant still reported Survived. Fixed by adding that config
+  entry plus a regression test pinning the registered plugin name against
+  the config's activation list, so the two can't drift apart silently again.
+- A fresh, cache-cleared Stryker run scoped to
+  `check-suite-duration-budget.js` confirms the fix is surgical: the
+  `require.main` guard and `__esModule` boilerplate mutants are now reported
+  Ignored, and the file's 25 real-logic mutants are still fully mutated and
+  killed — the exclusion did not leak into tested-or-not real code. No
+  human-facing command or setting; this is internal mutation-gate tooling
+  that only changes what the hardener's own gate reports.
 
 ## Per-Agent Lifecycle Control
 
