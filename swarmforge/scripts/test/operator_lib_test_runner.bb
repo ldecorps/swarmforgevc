@@ -357,6 +357,32 @@
          {:outcome :none}
          (operator-lib/resolve-inbound-answer nil "SUP-1"))
 
+;; BL-466: a re-home carries the pending question's :options along - the
+;; poll's discrete options must survive a thread hop unchanged, same as
+;; :question/:asked-at-ms already do.
+(assert= "BL-466: re-home carries :options through unchanged when the pending question has them"
+         {:outcome :re-home :question "which env?" :asked-at-ms 1000 :options ["staging" "prod"]}
+         (operator-lib/resolve-inbound-answer
+          {:question "which env?" :thread-id "SUP-1" :asked-at-ms 1000 :options ["staging" "prod"]}
+          "SUP-2"))
+
+;; BL-466: poll-options - normalizes raw ask options to nil (fall back to a
+;; plain message) or a vector of 2+ trimmed, non-blank options (a poll).
+(assert= "2 clean options pass through unchanged"
+         ["A" "B"]
+         (operator-lib/poll-options ["A" "B"]))
+(assert= "3 clean options pass through unchanged"
+         ["A" "B" "C"]
+         (operator-lib/poll-options ["A" "B" "C"]))
+(assert= "whitespace is trimmed and blank entries are dropped before counting"
+         ["A" "B"]
+         (operator-lib/poll-options ["  A  " "" "   " "B"]))
+(assert= "exactly 1 option after normalization falls back to nil (plain message, needs 2+)"
+         nil
+         (operator-lib/poll-options ["A"]))
+(assert= "0 options falls back to nil" nil (operator-lib/poll-options []))
+(assert= "nil raw options falls back to nil" nil (operator-lib/poll-options nil))
+
 ;; answer-text-from-messages: the human's own latest reply text.
 (assert= "the human's latest non-operator message is the answer text"
          "use staging"
@@ -388,6 +414,10 @@
 (assert= "operator-ask-03: window elapsed -> escalate AND drop together, exactly once (never a second, later timeout)"
          {:event :escalate-and-drop :question "which env?" :thread-id "SUP-1"}
          (operator-lib/check-awaiting-answer {:question "which env?" :thread-id "SUP-1" :asked-at-ms 1000} 11000 10000))
+(assert= "BL-466: check-awaiting-answer is unaffected by a pending question that also carries :options"
+         {:event :escalate-and-drop :question "which env?" :thread-id "SUP-1"}
+         (operator-lib/check-awaiting-answer
+          {:question "which env?" :thread-id "SUP-1" :asked-at-ms 1000 :options ["staging" "prod"]} 11000 10000))
 
 ;; ── BL-307: auto-hibernate on drain + mandatory closing pass ─────────────
 

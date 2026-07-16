@@ -6,7 +6,7 @@
 // untested-boundary process that injects the real adapters (real
 // getUpdates, a real fetch POST to the bridge, the real persisted topic
 // map) into pollAndForward below.
-import { TelegramUpdate, TelegramCallbackQuery, GetUpdatesResult } from '../notify/telegramClient';
+import { TelegramUpdate, TelegramCallbackQuery, TelegramPollAnswer, GetUpdatesResult } from '../notify/telegramClient';
 import { computeTelegramRetryBackoffMs } from '../notify/telegramRetry';
 import { classifyApprovalReplyAction, classifyApprovalsTopicReply } from '../concierge/pendingApprovalReply';
 import { classifyRecertTopicReply } from '../concierge/recertTopicReply';
@@ -200,6 +200,26 @@ export type EnsureRecertTopicAction = { kind: 'reuse'; topicId: number } | { kin
 // identical reuse-or-create shape, keyed by its own reserved subject id.
 export function decideEnsureRecertTopicAction(topicMap: Record<string, string>): EnsureRecertTopicAction {
   const existingTopicId = topicForSubject(topicMap, RECERT_SUBJECT_ID);
+  return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
+}
+
+// BL-466: the reserved subject a standing "Agent Questions" forum topic is
+// bound to - the SAME {topicId: subjectId} map every other reserved subject
+// above shares. Unlike Operator/Approvals/Recert, an inbound reply in THIS
+// topic is never routed through the ordinary subjectForTopic/post-existing
+// path at all (see decideAgentQuestionsReplyAction below) - it exists purely
+// so ensureAgentQuestionsTopic (telegram-front-desk-bot.ts) has the SAME
+// idempotent reuse-or-create mechanism every other standing topic already
+// gets, never a second one invented for this ticket.
+export const AGENT_QUESTIONS_SUBJECT_ID = 'AGENT_QUESTIONS';
+export const AGENT_QUESTIONS_TOPIC_NAME = 'Agent Questions';
+
+export type EnsureAgentQuestionsTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
+
+// Pure: identical reuse-or-create shape to decideEnsureOperatorTopicAction
+// above, keyed by its own reserved subject id.
+export function decideEnsureAgentQuestionsTopicAction(topicMap: Record<string, string>): EnsureAgentQuestionsTopicAction {
+  const existingTopicId = topicForSubject(topicMap, AGENT_QUESTIONS_SUBJECT_ID);
   return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
 }
 
@@ -461,6 +481,59 @@ export function decideVoiceUpdateAction(
   return { kind: 'transcribe', fileId: voice.file_id };
 }
 
+// BL-466: an agent's clarifying question always lands in the dedicated
+// Agent Questions topic (operator_ask.bb's own reply-outbox entries are
+// marked agentQuestion - see deliverAgentQuestion below), regardless of
+// which topic the asking SUP-### thread is otherwise bound to. So an
+// inbound reply THERE never goes through the ordinary subjectForTopic/
+// post-existing routing at all - it is ALWAYS either the answer to
+// whichever question is currently pending (BL-306's own "one at a time"
+// MVP constraint means there is never more than one to disambiguate
+// between), or - no question pending at all - a drop, never a fresh
+// SUP-### opened the way an ordinary unmapped topic would (this topic is
+// reserved, not an ordinary conversation starter).
+export type AgentQuestionsReplyDecision = { kind: 'deliver'; text: string } | { kind: 'refuse' } | { kind: 'not-applicable' };
+
+export function decideAgentQuestionsReplyAction(
+  update: TelegramUpdate,
+  principalUserId: string,
+  chatId: string,
+  agentQuestionsTopicId: number | undefined
+): AgentQuestionsReplyDecision {
+  if (agentQuestionsTopicId === undefined || topicIdOf(update) !== agentQuestionsTopicId) {
+    return { kind: 'not-applicable' };
+  }
+  if (!isFromMyChat(update, chatId) || !isFromPrincipal(update, principalUserId)) {
+    return { kind: 'refuse' };
+  }
+  const text = messageTextOf(update);
+  if (!text) {
+    return { kind: 'refuse' };
+  }
+  return { kind: 'deliver', text };
+}
+
+// BL-466: a vote on a native poll carries no chat/topic/thread info at all
+// (Telegram's poll_answer object is just {poll_id, option_ids, user}), so it
+// cannot be filtered by isFromMyChat (there is no chat here to check) - only
+// by the voter's own user id, which sendTelegramPoll's is_anonymous:false
+// choice guarantees is present. option_ids is empty (never absent) when the
+// voter RETRACTS their vote - a deliberate drop, never a delivery failure,
+// same "retraction is a decision, not a failure" posture as every other
+// deliberate-drop in this file.
+export type PollAnswerDecision = { kind: 'answer'; pollId: string; optionIndex: number } | { kind: 'drop'; reason: 'not-principal' | 'no-selection' };
+
+export function decidePollAnswerAction(pollAnswer: TelegramPollAnswer, principalUserId: string): PollAnswerDecision {
+  if (pollAnswer.user === undefined || String(pollAnswer.user.id) !== String(principalUserId)) {
+    return { kind: 'drop', reason: 'not-principal' };
+  }
+  const optionIndex = pollAnswer.option_ids[0];
+  if (optionIndex === undefined) {
+    return { kind: 'drop', reason: 'no-selection' };
+  }
+  return { kind: 'answer', pollId: pollAnswer.poll_id, optionIndex };
+}
+
 export interface PollAdapters {
   // BL-379: the bot's own configured chat id - decideUpdateAction's new
   // guard against getUpdates' bot-wide (not chat-scoped) result set. Lives
@@ -597,6 +670,24 @@ export interface PollAdapters {
   // knows to synthesize it back to a voice note instead of staying
   // text-only. One-shot - consumed and cleared by the reply-relay path.
   markVoiceOriginatedTurn?: (subjectId: string) => Promise<void>;
+  // BL-466: the standing Agent Questions topic's own id (ensureAgentQuestions
+  // Topic, telegram-front-desk-bot.ts) - optional so every PollAdapters
+  // fixture written before BL-466 keeps working unchanged, same posture as
+  // every other optional adapter in this file; missing means "agent
+  // questions not wired", never a crash.
+  agentQuestionsTopicId?: () => Promise<number | undefined>;
+  // BL-466: the SUP-### thread id of whichever agent question is currently
+  // pending (operator_runtime.bb's own awaiting-answer.json, read-only from
+  // this side - never a second, parallel record of the same fact) - nil
+  // means no question pending, so an in-topic reply is a deliberate drop
+  // rather than a guess at what it might be answering.
+  getPendingAgentQuestionThread?: () => Promise<string | undefined>;
+  // BL-466: resolves a native poll's own id (sendTelegramPoll's returned
+  // pollId, recorded by recordPollMapping at send time - ReplyRelayAdapters
+  // below) back to the SUP-### thread that asked it plus its own options,
+  // so a poll_answer - which carries no thread/topic info at all - can
+  // still map its selected option INDEX to the option's actual TEXT.
+  resolvePollThread?: (pollId: string) => Promise<{ threadId: string; options: string[] } | undefined>;
 }
 
 // BL-389: the keystone fix. A DROP is a DECISION (the code looked at the
@@ -903,6 +994,38 @@ function deliveryOutcome(ok: boolean): UpdateDeliveryOutcome {
   return ok ? 'posted' : 'failed';
 }
 
+// BL-466: a poll_answer resolves via resolvePollThread (poll id -> the
+// SUP-### thread that asked it + its own options - recorded by
+// recordPollMapping at send time, ReplyRelayAdapters below), then the
+// selected option's TEXT is fed back through postToBridge exactly as if the
+// human had typed it as an ordinary reply - the ticket's own hard
+// constraint ("do NOT build a parallel answer path"), reusing BL-325's
+// existing awaiting-answer/unblock machinery unchanged. Every branch here is
+// a deliberate DROP (not wired, unknown/stale poll id, a selected index the
+// recorded options no longer has) - never a delivery FAILURE, since none of
+// these can ever succeed on retry.
+async function processPollAnswer(
+  pollAnswer: TelegramPollAnswer,
+  principalUserId: string,
+  updateId: number,
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome> {
+  const decision = decidePollAnswerAction(pollAnswer, principalUserId);
+  if (decision.kind === 'drop' || !adapters.resolvePollThread) {
+    return 'dropped';
+  }
+  const resolved = await adapters.resolvePollThread(decision.pollId);
+  if (!resolved) {
+    return 'dropped';
+  }
+  const selectedText = resolved.options[decision.optionIndex];
+  if (selectedText === undefined) {
+    return 'dropped';
+  }
+  const ok = await adapters.postToBridge(resolved.threadId, selectedText, updateId);
+  return deliveryOutcome(ok);
+}
+
 // BL-410: a callback_query update carries no `message` of its own (they are
 // mutually exclusive Telegram update shapes) - routed to its own decision
 // path before decideUpdateAction (which reads update.message) is reached.
@@ -910,9 +1033,15 @@ function deliveryOutcome(ok: boolean): UpdateDeliveryOutcome {
 // processMessageUpdate below) so THAT function's own branch count stays
 // exactly at its pre-BL-410 baseline, the same "extract so branch count
 // stays at or below the CRAP threshold" reasoning as deliveryOutcome above.
+// BL-466: a poll_answer update is the third, mutually-exclusive update
+// shape (alongside callback_query/message) - checked here, ahead of the
+// ordinary message path, for the same structural reason as callback_query.
 async function processUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
   if (update.callback_query) {
     return processCallbackQuery(update.callback_query, principalUserId, adapters);
+  }
+  if (update.poll_answer) {
+    return processPollAnswer(update.poll_answer, principalUserId, update.update_id, adapters);
   }
   return processMessageUpdate(update, principalUserId, adapters);
 }
@@ -1024,12 +1153,50 @@ async function attemptVoiceDelivery(
   return deliveryOutcome(posted);
 }
 
+// BL-466: the Agent Questions topic's own side channel - optional adapter
+// (agentQuestionsTopicId), defaults to "not wired" so every PollAdapters
+// fixture written before BL-466 keeps working unchanged, same convention as
+// attemptVoiceDelivery/attemptSteeringDelivery above. A message in that
+// topic never falls through to the ordinary decideUpdateAction routing
+// below (see decideAgentQuestionsReplyAction's own comment) - 'refuse'
+// (wrong chat/principal/no text) and "no question currently pending" both
+// drop here, never open a fresh SUP-### the way an ordinary unmapped topic
+// would.
+async function attemptAgentQuestionsTopicDelivery(
+  update: TelegramUpdate,
+  principalUserId: string,
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome | undefined> {
+  if (!adapters.agentQuestionsTopicId) {
+    return undefined;
+  }
+  const topicId = await adapters.agentQuestionsTopicId();
+  const decision = decideAgentQuestionsReplyAction(update, principalUserId, adapters.chatId, topicId);
+  if (decision.kind === 'not-applicable') {
+    return undefined;
+  }
+  if (decision.kind === 'refuse') {
+    return 'dropped';
+  }
+  const pendingThreadId = await adapters.getPendingAgentQuestionThread?.();
+  if (!pendingThreadId) {
+    return 'dropped';
+  }
+  const ok = await adapters.postToBridge(pendingThreadId, decision.text, update.update_id);
+  return deliveryOutcome(ok);
+}
+
 // Split out of processMessageUpdate below for the same CRAP-budget reason as
 // attemptSteeringDelivery's own comment documents - composing the steering
 // and voice side-channel attempts here (rather than as two separate ifs in
 // processMessageUpdate) is that same precedent applied a second time: adding
 // attemptVoiceDelivery as a third inline check is exactly what would push it
 // over again.
+// BL-466: the Agent Questions topic side channel is attempted LAST - it is
+// the narrowest (topic-scoped) of the three, and ordering among the three
+// never overlaps in practice (a role-steering topic, the coordinator's
+// Operator topic, and the Agent Questions topic are three different bound
+// topics), so this is a plain composition, never a priority decision.
 async function attemptSideChannelDelivery(
   update: TelegramUpdate,
   principalUserId: string,
@@ -1039,7 +1206,11 @@ async function attemptSideChannelDelivery(
   if (steeringOutcome) {
     return steeringOutcome;
   }
-  return attemptVoiceDelivery(update, principalUserId, adapters);
+  const voiceOutcome = await attemptVoiceDelivery(update, principalUserId, adapters);
+  if (voiceOutcome) {
+    return voiceOutcome;
+  }
+  return attemptAgentQuestionsTopicDelivery(update, principalUserId, adapters);
 }
 
 async function processMessageUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
@@ -1432,6 +1603,21 @@ export interface ReplyRelayAdapters {
   clearVoiceOriginatedTurn?: (threadId: string) => Promise<void>;
   synthesizeVoice?: (text: string) => Promise<TtsResult>;
   sendVoice?: (topicId: number | undefined, audio: Buffer) => Promise<void>;
+  // BL-466: sends a native poll instead of an ordinary sendReply when the
+  // outbound record carries 2+ discrete options (see deliverAgentQuestion
+  // below) - returns the poll's own id (undefined on a failed send) so the
+  // caller can record the poll->thread mapping a later poll_answer needs to
+  // resolve back to this SUP-### thread (PollAdapters.resolvePollThread).
+  sendPoll?: (topicId: number | undefined, question: string, options: string[]) => Promise<{ pollId?: string }>;
+  // BL-466: persists the poll id -> {threadId, options} mapping at send
+  // time - the ONLY place this mapping is ever written; resolvePollThread
+  // (PollAdapters above) only ever reads it.
+  recordPollMapping?: (pollId: string, threadId: string, options: string[]) => Promise<void>;
+  // BL-466: the standing Agent Questions topic's own id - every agentQuestion
+  // record (poll or plain fallback) routes HERE, never through resolveDelivery
+  // (see deliverAgentQuestion's own comment for why the ordinary per-subject
+  // topic resolution does not apply to an agent's question).
+  agentQuestionsTopicId?: () => Promise<number | undefined>;
 }
 
 // BL-426 slice 1: when the delivery's threadId is marked voice-originated,
@@ -1499,6 +1685,30 @@ async function deliverReply(
   }
 }
 
+// BL-466: an agent's clarifying question is delivered to the dedicated
+// Agent Questions topic instead of adapters.resolveDelivery's own
+// per-subject resolution - the routing exception the ticket calls for
+// (every agent question lands in ONE standing topic regardless of which
+// topic its SUP-### thread would otherwise resolve to). 2+ options renders
+// a native poll (its own id recorded so a later poll_answer can resolve
+// back to threadId); anything else - no options, or sendPoll not wired -
+// falls back to an ordinary message in that same topic, matching the
+// ticket's own "a poll needs 2+ discrete options; anything else falls back
+// to a plain message" contract (operator-lib/poll-options already enforces
+// this on the SENDING side too - this is the belt-and-braces receiving
+// side of the same rule).
+async function deliverAgentQuestion(threadId: string, text: string, options: string[] | undefined, adapters: ReplyRelayAdapters): Promise<void> {
+  const topicId = await adapters.agentQuestionsTopicId?.();
+  if (options && options.length >= 2 && adapters.sendPoll) {
+    const { pollId } = await adapters.sendPoll(topicId, text, options);
+    if (pollId) {
+      await adapters.recordPollMapping?.(pollId, threadId, options);
+    }
+    return;
+  }
+  await adapters.sendReply(topicId, text);
+}
+
 // BL-320: an entry already in seenIds was already successfully posted to
 // Telegram earlier in THIS process's lifetime - a redelivery after a
 // reconnect (the bridge replays every unacked entry on a fresh
@@ -1515,14 +1725,23 @@ async function relayOneRecord(record: SseRecord, adapters: ReplyRelayAdapters, s
   if (record.event !== 'telegram-reply' || !record.data) {
     return;
   }
-  const { id, threadId, text, retractsPendingQuestion } = JSON.parse(record.data) as {
+  const { id, threadId, text, retractsPendingQuestion, agentQuestion, options } = JSON.parse(record.data) as {
     id: string;
     threadId: string;
     text: string;
     retractsPendingQuestion?: boolean;
+    // BL-466: set by operator_ask.bb/operator_runtime.bb (see
+    // deliverAgentQuestion's own comment) - every other, ordinary reply
+    // record omits it and is completely unaffected.
+    agentQuestion?: boolean;
+    options?: string[];
   };
   if (!seenIds.has(id)) {
-    await deliverReply(threadId, adapters.resolveDelivery(threadId), text, adapters, retractsPendingQuestion);
+    if (agentQuestion) {
+      await deliverAgentQuestion(threadId, text, options, adapters);
+    } else {
+      await deliverReply(threadId, adapters.resolveDelivery(threadId), text, adapters, retractsPendingQuestion);
+    }
     seenIds.add(id);
   }
   await adapters.ackReply(id);
