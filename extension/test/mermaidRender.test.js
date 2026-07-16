@@ -13,6 +13,23 @@ const {
 const FIXTURE_MMD = fs.readFileSync(path.join(__dirname, 'fixtures', 'sample-diagram.mmd'), 'utf8');
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
+// BL-445: renderMermaidToPng's real elkjs-layout + resvg-rasterize cost is
+// this file's own biggest contributor to the suite's wall-clock (profiled,
+// not guessed - see vitest.config.mjs's isolate note for the bigger pole).
+// Three separate assertions below (well-formed, byte-identical's "first"
+// call, and render-width) only need SOME real render of FIXTURE_MMD to
+// inspect, not three independent ones, so they share one memoized render.
+// The determinism assertion still performs its own SECOND, independent
+// render to compare against - collapsing that one into the cache would make
+// it compare a buffer to itself and prove nothing.
+let canonicalFixturePngPromise;
+function renderFixturePngOnce() {
+  if (!canonicalFixturePngPromise) {
+    canonicalFixturePngPromise = renderMermaidToPng(FIXTURE_MMD);
+  }
+  return canonicalFixturePngPromise;
+}
+
 // PNG signature (8 bytes) + IHDR chunk length (4) + type "IHDR" (4), then
 // width as a big-endian uint32 (RFC 2083 section 11.2.2 - the IHDR chunk).
 function pngWidth(png) {
@@ -44,7 +61,7 @@ test('renderMermaidToFlatSvg produces a well-formed SVG with no unresolved theme
 
 // BL-260 render-fixture-well-formed-05
 test('renderMermaidToPng renders a fixture diagram to a non-empty, well-formed PNG', async () => {
-  const png = await renderMermaidToPng(FIXTURE_MMD);
+  const png = await renderFixturePngOnce();
 
   assert.ok(png.length > 0, 'the produced image must be non-empty');
   assert.ok(png.subarray(0, 8).equals(PNG_MAGIC), 'the produced bytes must be a well-formed PNG (correct magic header)');
@@ -52,7 +69,7 @@ test('renderMermaidToPng renders a fixture diagram to a non-empty, well-formed P
 
 // BL-260 local-deterministic-02
 test('renderMermaidToPng is byte-identical for the same source across repeated calls', async () => {
-  const first = await renderMermaidToPng(FIXTURE_MMD);
+  const first = await renderFixturePngOnce();
   const second = await renderMermaidToPng(FIXTURE_MMD);
 
   assert.ok(first.equals(second), 'rendering the same Mermaid source twice must produce byte-identical output');
@@ -78,7 +95,7 @@ test('DIAGRAM_RENDER_WIDTH is at least 3200 (double the prior 1600)', () => {
 
 // BL-402 high-dpi-render-width-01
 test('renderMermaidToPng renders at least 3200 pixels wide', async () => {
-  const png = await renderMermaidToPng(FIXTURE_MMD);
+  const png = await renderFixturePngOnce();
   const width = pngWidth(png);
 
   assert.ok(width >= 3200, `expected the rendered PNG to be at least 3200px wide, got ${width}`);
