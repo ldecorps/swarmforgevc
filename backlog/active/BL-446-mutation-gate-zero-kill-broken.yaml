@@ -76,6 +76,5 @@ acceptance:
     - "A mutation run's killed/survived counts are classified as healthy, zero-kill-suspect, or no-mutants"
     - "A zero-kill run is surfaced as a suspect gate with its counts, not a silent clean pass"
 
-human_approval: pending
-
+human_approval: approved
 mutation_cost: low
