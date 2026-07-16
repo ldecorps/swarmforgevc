@@ -11,6 +11,9 @@ const {
   getForumTopicIconStickers,
   answerCallbackQuery,
   editMessageText,
+  getFile,
+  downloadTelegramFile,
+  sendVoiceNote,
 } = require('../out/notify/telegramClient');
 
 const TOKEN = '123456:test-bot-token';
@@ -602,5 +605,122 @@ test('editMessageText reports failure on a non-2xx response without leaking the 
 
   assert.equal(result.success, false);
   assert.match(result.error, /message to edit not found/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+// ── BL-426: getFile / downloadTelegramFile / sendVoiceNote ───────────────
+
+test('BL-426: getFile resolves a file_id to its file_path', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: { file_id: 'abc', file_path: 'voice/file_1.oga' } } };
+  };
+
+  const result = await getFile(TOKEN, 'abc', postFn);
+
+  assert.deepEqual(result, { success: true, filePath: 'voice/file_1.oga' });
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/getFile`);
+  assert.deepEqual(JSON.parse(calls[0].body), { file_id: 'abc' });
+});
+
+test('BL-426: getFile reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'file not found' } });
+
+  const result = await getFile(TOKEN, 'abc', postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /file not found/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('BL-426: getFile reports failure when the response has no file_path', async () => {
+  const postFn = async () => ({ ok: true, status: 200, json: { ok: true, result: {} } });
+
+  const result = await getFile(TOKEN, 'abc', postFn);
+
+  assert.equal(result.success, false);
+});
+
+test('BL-426: downloadTelegramFile fetches the resolved path and returns its bytes', async () => {
+  const calls = [];
+  const download = async (url) => {
+    calls.push(url);
+    return { ok: true, status: 200, bytes: Buffer.from('audio-bytes') };
+  };
+
+  const result = await downloadTelegramFile(TOKEN, 'voice/file_1.oga', download);
+
+  assert.equal(result.success, true);
+  assert.deepEqual(result.bytes, Buffer.from('audio-bytes'));
+  assert.deepEqual(calls, [`https://api.telegram.org/file/bot${TOKEN}/voice/file_1.oga`]);
+});
+
+test('BL-426: downloadTelegramFile reports a redacted failure on a non-2xx response', async () => {
+  const download = async () => ({ ok: false, status: 404, bytes: Buffer.alloc(0) });
+
+  const result = await downloadTelegramFile(TOKEN, 'voice/file_1.oga', download);
+
+  assert.equal(result.success, false);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('BL-426: downloadTelegramFile reports a redacted failure on a thrown network error', async () => {
+  const download = async () => {
+    throw new Error(`network down (token ${TOKEN})`);
+  };
+
+  const result = await downloadTelegramFile(TOKEN, 'voice/file_1.oga', download);
+
+  assert.equal(result.success, false);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('BL-426: sendVoiceNote uploads the audio as multipart form data with chat_id and message_thread_id', async () => {
+  const calls = [];
+  const postVoiceFn = async (url, form) => {
+    calls.push({ url, form });
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 7 } } };
+  };
+
+  const result = await sendVoiceNote(TOKEN, CHAT_ID, Buffer.from('synth-audio'), 42, postVoiceFn);
+
+  assert.deepEqual(result, { success: true });
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/sendVoice`);
+  assert.equal(calls[0].form.get('chat_id'), CHAT_ID);
+  assert.equal(calls[0].form.get('message_thread_id'), '42');
+  assert.ok(calls[0].form.get('voice'));
+});
+
+test('BL-426: sendVoiceNote omits message_thread_id when not given', async () => {
+  const calls = [];
+  const postVoiceFn = async (url, form) => {
+    calls.push(form);
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 7 } } };
+  };
+
+  await sendVoiceNote(TOKEN, CHAT_ID, Buffer.from('synth-audio'), undefined, postVoiceFn);
+
+  assert.equal(calls[0].has('message_thread_id'), false);
+});
+
+test('BL-426: sendVoiceNote reports failure on a non-2xx response without leaking the token', async () => {
+  const postVoiceFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'VOICE_INVALID' } });
+
+  const result = await sendVoiceNote(TOKEN, CHAT_ID, Buffer.from('synth-audio'), undefined, postVoiceFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /VOICE_INVALID/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('BL-426: sendVoiceNote reports a redacted failure on a thrown network error', async () => {
+  const postVoiceFn = async () => {
+    throw new Error(`network down (token ${TOKEN})`);
+  };
+
+  const result = await sendVoiceNote(TOKEN, CHAT_ID, Buffer.from('synth-audio'), undefined, postVoiceFn);
+
+  assert.equal(result.success, false);
   assert.doesNotMatch(result.error, new RegExp(TOKEN));
 });

@@ -228,7 +228,8 @@ const DOMAINS = [
   require('./bl425RoleSteeringTopicsSteps'),
   require('./bl449EpicTopicMusicalFormIconsSteps'),
   require('./bl452PipelineBoardSteps'),
-  require('./bl448MonoRotatePackSteps')
+  require('./bl448MonoRotatePackSteps'),
+  require('./bl426AudioVoiceNoteCoordinatorSteps')
 ];
 
 function registerSteps(registry) {
