@@ -249,6 +249,42 @@ test('readPipelineStages collects every ticket id a batch role holds in_process'
   assert.deepEqual([...stages[0].heldTicketIds].sort(), ['BL-100', 'BL-101']);
 });
 
+// A handoff with no task field at all (absent) names no ticket - distinct
+// from the malformed case below, which is PRESENT but does not parse.
+test('readPipelineStages omits an in_process handoff with no task field', () => {
+  const tmp = mkTmp();
+  const swarmDir = path.join(tmp, '.swarmforge');
+  mkdirp(swarmDir);
+  const tsv = `coder\tcoder\t${tmp}\tswarmforge-coder\tCoder\tclaude\ttask\n`;
+  fs.writeFileSync(path.join(swarmDir, 'roles.tsv'), tsv);
+
+  const inProcessDir = path.join(swarmDir, 'handoffs', 'inbox', 'in_process');
+  mkdirp(inProcessDir);
+  fs.writeFileSync(path.join(inProcessDir, '00_work.handoff'), 'from: specifier\nto: coder\ntype: note\nmessage: hello\n');
+
+  const stages = readPipelineStages(tmp);
+  assert.deepEqual(stages[0].heldTicketIds, []);
+});
+
+// A task field that is PRESENT but does not start with a "Word-Number"
+// ticket id (extractTicketId returns null) names no ticket either - the
+// present-but-unparseable case must not be silently conflated with a real
+// id the way an absent field is, but it must still be dropped, not thrown.
+test('readPipelineStages omits an in_process handoff whose task field does not parse to a ticket id', () => {
+  const tmp = mkTmp();
+  const swarmDir = path.join(tmp, '.swarmforge');
+  mkdirp(swarmDir);
+  const tsv = `coder\tcoder\t${tmp}\tswarmforge-coder\tCoder\tclaude\ttask\n`;
+  fs.writeFileSync(path.join(swarmDir, 'roles.tsv'), tsv);
+
+  const inProcessDir = path.join(swarmDir, 'handoffs', 'inbox', 'in_process');
+  mkdirp(inProcessDir);
+  fs.writeFileSync(path.join(inProcessDir, '00_work.handoff'), 'from: specifier\nto: coder\ntype: git_handoff\ntask: no-ticket-prefix-here\n');
+
+  const stages = readPipelineStages(tmp);
+  assert.deepEqual(stages[0].heldTicketIds, []);
+});
+
 test('readPipelineStages resolves each master-resident role to its own <role> subdirectory, not a shared one', () => {
   const tmp = mkTmp();
   const swarmDir = path.join(tmp, '.swarmforge');
