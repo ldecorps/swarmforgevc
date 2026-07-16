@@ -21,9 +21,20 @@
 ;; cross-namespace-coupled to chase_sweep_lib.bb's private (defn-) helpers -
 ;; this codebase's own established "small live-glue duplicated across
 ;; independent pure libs" posture (see operator_lib.bb's yaml-field comment).
+;;
+;; BL-471: canonicalized to upper-case here, at the ONE point every header-
+;; extracted id passes through - active-ticket-ids (pipeline_stage_cli.bb)
+;; reads backlog/active/*.yaml's own canonical (always upper-case) `id:`
+;; field verbatim, so filter-active's case-SENSITIVE membership test only
+;; ever agrees with a header id if both sides already share that same
+;; upper-case form. Without this, a note/task header leading with a
+;; differently-cased id (freeform text is exactly the "when-not-if"
+;; external-influence surface, not a hypothetical) would extract, reconcile,
+;; and then silently fail the active-set join - the ticket vanishes from the
+;; board with no error.
 (defn extract-ticket-id [text]
   (when text
-    (second (re-find #"^([A-Za-z]+-\d+)" text))))
+    (some-> (re-find #"^([A-Za-z]+-\d+)" text) second str/upper-case)))
 
 ;; A handoff file's own ticket reference for board-tracking purposes: its
 ;; task header (git_handoff) if present, else its message header (note) -
