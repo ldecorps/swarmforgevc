@@ -190,11 +190,11 @@
                ((:kill-tmux-sockets-under! adapters) entry-path)
                (try ((:delete-tree! adapters) entry-path) (catch Exception _ nil))
                (swap! reaped inc))))
-         (bounded-delete-sweep-lib/write-cursor! (cursor-file) next-cursor)
-         (if (pos? @reaped)
-           (do (log! (str "reaped " @reaped " of " (count window) " scanned"))
-               (bounded-delete-sweep-lib/write-count! (nothing-streak-file) 0))
-           (let [streak (inc (bounded-delete-sweep-lib/read-count (nothing-streak-file)))]
-             (bounded-delete-sweep-lib/write-count! (nothing-streak-file) streak)
-             (when (or (= streak 1) (zero? (mod streak (nothing-log-period))))
-               (log! (str "scanned " (count window) ", nothing reaped (streak " streak ")"))))))))))
+         (bounded-delete-sweep-lib/record-tick!
+          {:cursor-file (cursor-file)
+           :next-cursor next-cursor
+           :nothing-streak-file (nothing-streak-file)
+           :nothing-log-period (nothing-log-period)
+           :reaped @reaped
+           :window window
+           :log! log!}))))))

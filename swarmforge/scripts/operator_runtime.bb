@@ -747,14 +747,14 @@
                      :socket-dir? socket-dir?})
                (when ((:remove-entry! adapters) entry-path)
                  (swap! reaped inc)))))
-         (bounded-delete-sweep-lib/write-cursor! (str sandbox-sweep-cursor-file) next-cursor)
-         (if (pos? @reaped)
-           (do (log! "sandbox-sweep" (str "reaped " @reaped " of " (count window) " scanned"))
-               (bounded-delete-sweep-lib/write-count! (str sandbox-sweep-nothing-streak-file) 0))
-           (let [streak (inc (bounded-delete-sweep-lib/read-count (str sandbox-sweep-nothing-streak-file)))]
-             (bounded-delete-sweep-lib/write-count! (str sandbox-sweep-nothing-streak-file) streak)
-             (when (or (= streak 1) (zero? (mod streak (sandbox-sweep-nothing-log-period))))
-               (log! "sandbox-sweep" (str "scanned " (count window) ", nothing reaped (streak " streak ")"))))))))))
+         (bounded-delete-sweep-lib/record-tick!
+          {:cursor-file (str sandbox-sweep-cursor-file)
+           :next-cursor next-cursor
+           :nothing-streak-file (str sandbox-sweep-nothing-streak-file)
+           :nothing-log-period (sandbox-sweep-nothing-log-period)
+           :reaped @reaped
+           :window window
+           :log! (fn [msg] (log! "sandbox-sweep" msg))}))))))
 
 ;; ── cooldown / provider state ─────────────────────────────────────────────────
 
