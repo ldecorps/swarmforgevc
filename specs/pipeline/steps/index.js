@@ -218,7 +218,8 @@ const DOMAINS = [
   require('./bl443ProposeContractCommitRobustnessSteps'),
   require('./bl444ProvisioningFollowsSupergroupMigrationSteps'),
   require('./bl437FleetStatusPublishSteps'),
-  require('./bl440OfflineAnswerFileReturnPathSteps')
+  require('./bl440OfflineAnswerFileReturnPathSteps'),
+  require('./bl432AutoTuneIntakeThrottleSteps')
 ];
 
 function registerSteps(registry) {

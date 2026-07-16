@@ -2,7 +2,10 @@ const assert = require('node:assert/strict');
 const {
   diagnoseReworkSignal,
   classifyRemediationDisposition,
+  classifyThrottleSeverity,
+  recommendedCapForSeverity,
   ABOVE_BASELINE_MULTIPLIER,
+  SEVERE_BASELINE_MULTIPLIER,
 } = require('../out/metrics/reworkDiagnosis');
 
 function signal(overrides) {
@@ -122,4 +125,58 @@ test('classifyRemediationDisposition marks every other remediation escalate-only
   assert.equal(classifyRemediationDisposition('change a routing rule'), 'escalate-only');
   assert.equal(classifyRemediationDisposition('Lower The Intake Throttle'), 'escalate-only');
   assert.equal(classifyRemediationDisposition(''), 'escalate-only');
+});
+
+// ── classifyThrottleSeverity (BL-432 - epic BL-429 slice 3, ACT) ──────────
+
+test('classifyThrottleSeverity is null when there is no verdict at all', () => {
+  assert.equal(classifyThrottleSeverity(null), null);
+});
+
+test('classifyThrottleSeverity is null for a concentrated, escalate-only verdict - never auto-throttled', () => {
+  const verdict = diagnoseReworkSignal(signal({ topRole: 'hardener', reworkRate: 10, baselineRate: 0.1 }));
+  assert.equal(verdict.disposition, 'escalate-only');
+  assert.equal(classifyThrottleSeverity(verdict), null);
+});
+
+test('classifyThrottleSeverity is "degraded" for a safe-knob verdict between 2x and 4x baseline', () => {
+  const verdict = diagnoseReworkSignal(signal({ topRole: null, topTicketClass: null, reworkRate: 0.3, baselineRate: 0.1 }));
+  assert.equal(verdict.disposition, 'auto-tunable');
+  assert.equal(classifyThrottleSeverity(verdict), 'degraded');
+});
+
+test('classifyThrottleSeverity is "severe" once the rate exceeds the SEVERE_BASELINE_MULTIPLIER', () => {
+  const verdict = diagnoseReworkSignal(signal({ topRole: null, topTicketClass: null, reworkRate: 0.5, baselineRate: 0.1 }));
+  assert.equal(verdict.disposition, 'auto-tunable');
+  assert.equal(classifyThrottleSeverity(verdict), 'severe');
+});
+
+test('classifyThrottleSeverity boundary: exactly SEVERE_BASELINE_MULTIPLIER x baseline is still "degraded" (> not >=)', () => {
+  const baselineRate = 0.1;
+  const verdict = diagnoseReworkSignal(
+    signal({ topRole: null, topTicketClass: null, reworkRate: baselineRate * SEVERE_BASELINE_MULTIPLIER, baselineRate })
+  );
+  assert.equal(classifyThrottleSeverity(verdict), 'degraded');
+});
+
+test('classifyThrottleSeverity boundary: just above SEVERE_BASELINE_MULTIPLIER x baseline is "severe"', () => {
+  const baselineRate = 0.1;
+  const verdict = diagnoseReworkSignal(
+    signal({ topRole: null, topTicketClass: null, reworkRate: baselineRate * SEVERE_BASELINE_MULTIPLIER + 0.001, baselineRate })
+  );
+  assert.equal(classifyThrottleSeverity(verdict), 'severe');
+});
+
+// ── recommendedCapForSeverity (BL-432, acceptance scenarios 01/02/03) ─────
+
+test('recommendedCapForSeverity maps "severe" to zero (freeze intake entirely)', () => {
+  assert.equal(recommendedCapForSeverity('severe'), 0);
+});
+
+test('recommendedCapForSeverity maps "degraded" to one (stabilize one ticket at a time)', () => {
+  assert.equal(recommendedCapForSeverity('degraded'), 1);
+});
+
+test('recommendedCapForSeverity maps null (no throttle) to null - the caller applies the configured cap unchanged', () => {
+  assert.equal(recommendedCapForSeverity(null), null);
 });

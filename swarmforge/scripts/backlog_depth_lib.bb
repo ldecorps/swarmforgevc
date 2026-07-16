@@ -16,6 +16,7 @@
 
 (ns backlog-depth-lib
   (:require [babashka.fs :as fs]
+            [cheshire.core :as json]
             [clojure.string :as str]))
 
 ;; BL-313: conf-file-path used to hardcode the tracked default config,
@@ -107,3 +108,60 @@
   [project-root]
   (parse-max-depth
    (try (slurp (str (conf-file-path project-root))) (catch Exception _ nil))))
+
+;; ── BL-432 (epic BL-429 slice 3 - ACT): the auto-throttle EFFECTIVE cap ────
+;; Article 3.5 already sanctions the coordinator lowering active_backlog_max_depth
+;; on a health spike and restoring it on recovery; this is the code that
+;; automates it against BL-431's rework diagnosis instead of a coordinator LLM
+;; turn remembering to do it by hand.
+
+(def throttle-recommendation-relpath
+  "The JSON sidecar extension/src/tools/emit-throttle-recommendation.ts (BL-432)
+   writes on every call - .swarmforge/coordinator/throttle-recommendation.json.
+   Babashka has no way to import compiled TS, so this reads the TS CLI's own
+   persisted output rather than re-deriving the diagnosis here."
+  [".swarmforge" "coordinator" "throttle-recommendation.json"])
+
+(defn throttle-recommendation-path [project-root]
+  (apply fs/path project-root throttle-recommendation-relpath))
+
+(defn read-recommended-cap
+  "The impure fs-reading half of the recommendation: nil (no throttle
+   recommended - the caller applies the configured cap unchanged) for a
+   missing/unreadable/malformed file, EXACTLY the same degrade-never-crash
+   posture read-max-depth above uses for its own config file. A present but
+   non-numeric recommendedCap (a future field-shape drift) also degrades to
+   nil rather than propagating a bad value into the promotion gate."
+  [project-root]
+  (try
+    (let [parsed (json/parse-string (slurp (str (throttle-recommendation-path project-root))) true)
+          cap (:recommendedCap parsed)]
+      (when (int? cap) cap))
+    (catch Exception _ nil)))
+
+(defn effective-max-depth
+  "Pure: the promotion gate's actual ceiling - min(configured, recommended),
+   with two guards neither ticket text nor a bare `min` alone gets right:
+   (1) nil recommended (no throttle in effect) leaves configured completely
+   untouched - never coerced through min at all. (2) a NO-LIMIT configured
+   cap (-1, `no-limit?` above) is not a real number to `min` against; a
+   negative sentinel would always 'win' a bare min and permanently lock the
+   swarm at -1 regardless of any recommendation, so an unlimited configured
+   cap resolves straight to the recommendation instead - the ticket's own
+   'a cap of -1 is respected as no configured ceiling, but the recommendation
+   can still impose a temporary finite effective ceiling' contract. Every
+   other case is an ordinary min, which already guarantees the 'never raises
+   above configured' contract (acceptance scenario 04) for free."
+  [configured recommended]
+  (cond
+    (nil? recommended) configured
+    (no-limit? configured) recommended
+    :else (min configured recommended)))
+
+(defn read-effective-max-depth
+  "The impure end-to-end read: configured cap (read-max-depth) folded with
+   the currently-recommended throttle (read-recommended-cap) via
+   effective-max-depth above - the ONE value the coordinator's promotion
+   decision should ever compare an active count against."
+  [project-root]
+  (effective-max-depth (read-max-depth project-root) (read-recommended-cap project-root)))

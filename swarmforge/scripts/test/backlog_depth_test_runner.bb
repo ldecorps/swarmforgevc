@@ -3,7 +3,8 @@
 ;; provided conf text/counts, plus fixture-based tests for the impure
 ;; read-max-depth (real fs I/O against a temp dir, no live swarm).
 (ns backlog-depth-test-runner
-  (:require [babashka.fs :as fs]))
+  (:require [babashka.fs :as fs]
+            [cheshire.core :as json]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "backlog_depth_lib.bb")))
 
@@ -139,6 +140,91 @@
   (assert= "depth-cap-override-02b: a pre-BL-313 identity file with no persisted conf path falls back to the default"
            3
            (backlog-depth-lib/read-max-depth root)))
+
+;; ── effective-max-depth (pure, BL-432) ──────────────────────────────────
+
+(assert= "no recommendation leaves the configured cap completely untouched"
+         3
+         (backlog-depth-lib/effective-max-depth 3 nil))
+
+(assert= "a degraded recommendation (1) lowers a higher configured cap"
+         1
+         (backlog-depth-lib/effective-max-depth 3 1))
+
+(assert= "a severe recommendation (0) lowers a higher configured cap"
+         0
+         (backlog-depth-lib/effective-max-depth 3 0))
+
+(assert= "acceptance-04: a recommendation ABOVE the configured cap never raises it - min() alone already guarantees this"
+         2
+         (backlog-depth-lib/effective-max-depth 2 5))
+
+(assert= "an unlimited (-1) configured cap resolves straight to the recommendation - a bare min would wrongly keep -1 forever"
+         1
+         (backlog-depth-lib/effective-max-depth -1 1))
+
+(assert= "an unlimited configured cap with NO recommendation stays unlimited"
+         -1
+         (backlog-depth-lib/effective-max-depth -1 nil))
+
+(assert= "a recommendation exactly equal to the configured cap is a no-op either way"
+         3
+         (backlog-depth-lib/effective-max-depth 3 3))
+
+;; ── read-recommended-cap / read-effective-max-depth (fixture-based fs I/O) ──
+
+(defn write-throttle-recommendation! [root recommended-cap]
+  (fs/create-dirs (fs/path root ".swarmforge" "coordinator"))
+  (spit (str (backlog-depth-lib/throttle-recommendation-path root))
+        (json/generate-string {:recommendedCap recommended-cap :severity (when recommended-cap "degraded")})))
+
+(let [root (mk-tmp)]
+  (assert= "read-recommended-cap degrades to nil when no recommendation file has ever been written (never a crash)"
+           nil
+           (backlog-depth-lib/read-recommended-cap root)))
+
+(let [root (mk-tmp)]
+  (write-throttle-recommendation! root 1)
+  (assert= "read-recommended-cap reads a real persisted recommendation"
+           1
+           (backlog-depth-lib/read-recommended-cap root)))
+
+(let [root (mk-tmp)]
+  (write-throttle-recommendation! root 0)
+  (assert= "read-recommended-cap reads a severe (zero) recommendation"
+           0
+           (backlog-depth-lib/read-recommended-cap root)))
+
+(let [root (mk-tmp)]
+  (write-throttle-recommendation! root nil)
+  (assert= "read-recommended-cap reads an explicit null recommendedCap as nil (no throttle), never a crash on JSON null"
+           nil
+           (backlog-depth-lib/read-recommended-cap root)))
+
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root ".swarmforge" "coordinator"))
+  (spit (str (backlog-depth-lib/throttle-recommendation-path root)) "not json")
+  (assert= "read-recommended-cap degrades to nil for a malformed/corrupt recommendation file"
+           nil
+           (backlog-depth-lib/read-recommended-cap root)))
+
+;; Break-then-fix (the wiring-test-with-a-new-on-disk-input rule): prove the
+;; end-to-end read is genuinely load-bearing, not just a default that
+;; happens to match with no fixture at all.
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf")) "config active_backlog_max_depth 3\n")
+  (assert= "read-effective-max-depth-01: BEFORE any recommendation exists, the effective cap is just the configured one"
+           3
+           (backlog-depth-lib/read-effective-max-depth root))
+  (write-throttle-recommendation! root 1)
+  (assert= "read-effective-max-depth-02: AFTER a degraded recommendation is written, the effective cap drops to it - the read is load-bearing"
+           1
+           (backlog-depth-lib/read-effective-max-depth root))
+  (write-throttle-recommendation! root nil)
+  (assert= "read-effective-max-depth-03: once the recommendation clears, the effective cap restores to the configured value"
+           3
+           (backlog-depth-lib/read-effective-max-depth root)))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
