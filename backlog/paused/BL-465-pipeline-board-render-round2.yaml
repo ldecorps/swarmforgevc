@@ -1,0 +1,79 @@
+id: BL-465
+title: "Pipeline-board render round 2: wider descriptions (landscape), drop redundant PK, distinct parked/paused/intake/recently-closed sections, and a GitHub link list below the grid"
+milestone: M8
+type: feature
+severity: low
+status: todo
+epic: ""
+priority: 3
+direction: human-requested
+depends_on: []
+source: "human (ldecorps) via the Operator front desk 2026-07-16 — INTAKE-operator-question-1784230021148, plus the specifier's clarifying answers (Q1 2026-07-16: links ride a list below the grid). Follow-on rendering refinements to the BL-452/455/462 board."
+
+description: |
+  Rendering refinements to the pipeline board, from the human's clarifications (he reads it mainly in
+  LANDSCAPE, so more horizontal width is acceptable):
+    1. Show MORE of each ticket's description in the grid AND in the below-grid lists — wider than
+       BL-462's widened slug; landscape gives the room.
+    2. Drop the redundant per-line "PK" label in the parked list (the section header already says it is
+       parked); keep the awaiting-approval distinction.
+    3. Add the PAUSED backlog items and the ROOT-INTAKE items (raw backlog/ root asks) as their OWN
+       sections alongside the parked area.
+    4. Add a RECENTLY-CLOSED section.
+    5. Hyperlink each ticket id (grid rows + the parked/paused/intake sections + recently-closed) to its
+       backlog item on GitHub. Telegram does NOT render links inside a <pre> block (same platform wall
+       as BL-449's icon glyphs), so — the human's Q1 choice — the links ride a TAPPABLE LINK LIST BELOW
+       the grid, leaving the aligned monospace grid intact.
+
+  Scope (grep-confirm at build):
+    - extension/src/concierge/pipelineBoard.ts (render): widen the slug in the grid AND the below-grid
+      lists; drop the PK label; add distinct parked / paused / root-intake / recently-closed sections;
+      emit a below-grid link list keyed by ticket id. Keep the widened slug a single delimiter-safe line
+      (strip newlines — external-text-into-structured-output rule).
+    - extension/src/concierge/conciergeTick.ts (caller): supply the paused list, the root-intake list
+      (raw backlog/ root files), the recently-closed list, and the repo base URL. These are live
+      local/git data on the LIVE Telegram surface — read them in the tick from the backlog folders + git;
+      they are NOT limited to the git-SHA static PWA projection (local-engineering two-surface rule: the
+      board is the live holistic surface, so live/local data is fine here).
+    - GitHub URL: derive the base from the origin remote (git@github.com:ldecorps/swarmforgevc.git ->
+      https://github.com/ldecorps/swarmforgevc); link an active ticket to backlog/active/<file>, a paused
+      one to backlog/paused/<file>, a closed one to backlog/done/<file> (on a stable ref, e.g. main).
+
+  Constraints:
+    - INHERITED and unchanged: READ-ONLY board; edge-triggered on rendered content; deterministic
+      ordering; keep the renderer pure/testable, Telegram API + tmux the untested boundary.
+    - The aligned monospace grid must stay a <pre> block with NO links inside it — links only in the
+      below-grid list.
+    - Exact widened width, section headers, and link-line format are build-time cosmetic details, not a
+      promotion gate.
+
+  Sequencing: same board files as BL-462 / BL-464 — serialize after them; build on whatever board
+  scaffolding is on main at build time. Best sequenced AFTER BL-464 so the richer sections render over
+  the authoritative data source, but the render changes are otherwise independent.
+
+  E2E QA PROCEDURE: on the real Telegram board, assert grid rows and below-grid entries show MORE title
+  than before on a single line; assert the parked list no longer repeats "PK" while awaiting-approval is
+  still distinguished; assert separate PAUSED, ROOT-INTAKE, and RECENTLY-CLOSED sections appear with the
+  right items; tap a link in the below-grid list and confirm it opens the ticket's backlog file on
+  GitHub (active/paused/done path correct); confirm the grid itself remains an aligned monospace block
+  with no inline links. Verify against the real surface, not a fixture (BL-335).
+
+acceptance:
+  feature: specs/features/BL-465-pipeline-board-render-round2.feature
+  steps:
+    - "A ticket's description is shown wider in both the grid and the below-grid lists"
+    - "The parked list drops the redundant PK label"
+    - "The board lists parked, paused, root-intake, and recently-closed items in their own sections"
+    - "A tappable link list below the grid links each ticket id to its GitHub backlog item"
+    - "The aligned monospace grid is preserved"
+
+human_approval: >
+  Human-requested via the Operator front desk 2026-07-16 with a follow-up clarification round; links
+  ride a below-grid list per his Q1 choice (Telegram cannot render links inside the <pre> grid). Firm
+  contract: wider descriptions in grid + lists; no redundant PK label; distinct parked / paused /
+  root-intake / recently-closed sections; a tappable GitHub link list below the grid; aligned grid
+  preserved. Build-time details NOT gating: exact width, headers, link-line format, and the precise
+  "recently-closed" window. Serialize on the board files after in-flight BL-462 and ideally after
+  BL-464 (authoritative data source).
+
+mutation_cost: medium
