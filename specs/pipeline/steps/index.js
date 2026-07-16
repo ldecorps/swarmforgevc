@@ -224,7 +224,8 @@ const DOMAINS = [
   require('./bl415IntakeReplyGithubPermalinkSteps'),
   require('./bl411NegotiationRelayKillsSupersededChildSteps'),
   require('./bl445SuiteDurationBudgetSteps'),
-  require('./bl446MutationGateZeroKillSteps')
+  require('./bl446MutationGateZeroKillSteps'),
+  require('./bl425RoleSteeringTopicsSteps')
 ];
 
 function registerSteps(registry) {

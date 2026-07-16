@@ -78,12 +78,14 @@ import {
   computeReplyRelayCycleResult,
   applyReplyRelayCycleResult,
   decideEnsureOperatorTopicAction,
+  decideEnsureRoleTopicAction,
   OPERATOR_TOPIC_NAME,
   OPERATOR_SUBJECT_ID,
 } from './telegramFrontDeskBotCore';
 import { backlogForTopic } from '../concierge/topicRouter';
 import { recordApprovalReply, recordRejectionReply } from '../concierge/pendingApprovalReply';
 import { readBacklogTopicMap, writeBacklogTopicMap, dropBacklogTopicMapping } from '../concierge/backlogTopicMapStore';
+import { ALL_SWARM_ROLES, readRoleTopicMap, writeRoleTopicMap } from '../concierge/roleTopicMapStore';
 import { runConciergeTick, ConciergeTickAdapters, BacklogFoldersSnapshot, TickState } from '../concierge/conciergeTick';
 import { reconcileTopicLifecycle, ReconcileAdapters } from '../concierge/topicReconciliation';
 import { sweepTopicDeletions, TopicDeletionAdapters, topicRetentionWindowMs } from '../concierge/topicDeletion';
@@ -95,6 +97,9 @@ import { computeRoleGateStatesLive, RoleGateState } from '../bridge/gateSnapshot
 import { computeCurrentHolders } from '../bridge/holisticProjections';
 import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
 import { parseRolesTsv } from '../swarm/swarmState';
+import { readTmuxSocket, readSwarmRoles, paneTarget, getPaneBaseIndex, capturePane, sendKeys } from '../swarm/tmuxClient';
+import { sendInstructionVerified } from '../swarm/verifiedInject';
+import { sleepSync } from '../swarm/sleepSync';
 import { runCliMain } from './swarm-metrics';
 import { atomicWrite } from '../util/atomicWrite';
 
@@ -316,6 +321,95 @@ export async function ensureOperatorTopic(targetPath: string, botToken: string, 
   return created.messageThreadId;
 }
 
+// BL-425 slice 1: creates each swarm role's own standing forum topic (named
+// for the role) and binds it in role-topic-map.json, mirroring
+// ensureOperatorTopic's reuse-or-create/idempotent-across-restarts shape
+// above. Called once, BEFORE the poll loop starts (same ordering rationale
+// as ensureOperatorTopic: no inbound message can reach an unbound role
+// topic and be misrouted while it is still unbound). A single role's
+// failed create is logged and skipped - it never blocks provisioning the
+// remaining roles or the rest of the bot from coming up.
+export async function ensureRoleTopics(
+  targetPath: string,
+  botToken: string,
+  chatId: string,
+  roles: readonly string[] = ALL_SWARM_ROLES,
+  postFn?: TelegramPostFn
+): Promise<void> {
+  const topicMap = readRoleTopicMap(targetPath);
+  let changed = false;
+  for (const role of roles) {
+    const decision = decideEnsureRoleTopicAction(topicMap, role);
+    if (decision.kind === 'reuse') {
+      continue;
+    }
+    const created = await createForumTopic(botToken, chatId, role, postFn);
+    if (!created.success || created.messageThreadId === undefined) {
+      process.stderr.write(`ensureRoleTopics: failed to create the "${role}" topic: ${created.error ?? 'no messageThreadId returned'}\n`);
+      continue;
+    }
+    topicMap[role] = created.messageThreadId;
+    changed = true;
+  }
+  if (changed) {
+    writeRoleTopicMap(targetPath, topicMap);
+  }
+}
+
+// BL-425 slice 1: resolves role R's live tmux pane target on the SWARM's own
+// socket (.swarmforge/tmux-socket) - never the restricted front-desk
+// operator's own socket (BL-334) - mirroring extension.ts's own inline
+// paneTargetFor pattern (readTmuxSocket + readSwarmRoles(...).find +
+// paneTarget), the identical seam the daily-briefing/idle-clear nudges
+// already inject through. undefined when the swarm isn't up or the role
+// has no live session, so a redirect against a not-yet-running swarm
+// degrades to a logged no-op instead of throwing.
+export function resolveRolePaneTarget(targetPath: string, role: string): { socketPath: string; target: string } | undefined {
+  const socketPath = readTmuxSocket(targetPath);
+  if (!socketPath) {
+    return undefined;
+  }
+  const roleEntry = readSwarmRoles(targetPath).find((r) => r.role === role);
+  if (!roleEntry) {
+    return undefined;
+  }
+  return { socketPath, target: paneTarget(roleEntry.session, roleEntry.displayName, getPaneBaseIndex(socketPath)) };
+}
+
+// BL-425 slice 1: REDIRECT execution - an authorised, topic-scoped steering
+// message is injected into role R's live pane as a VERIFIED, INTERRUPTING
+// nudge (sendInstructionVerified, never a bare unverified Enter - BL-152),
+// the same seam extension.ts's daily-briefing/idle-clear nudges already
+// inject through. A failed resolve/delivery is logged and swallowed - never
+// thrown - matching this file's own established "a live-network/pane
+// adapter never throws out of the poll cycle" convention (postToBridge,
+// answerCallbackQueryQuietly above).
+export async function redirectToRole(targetPath: string, role: string, text: string): Promise<void> {
+  const resolved = resolveRolePaneTarget(targetPath, role);
+  if (!resolved) {
+    process.stderr.write(`redirectToRole: no live pane resolved for role "${role}" - is the swarm running?\n`);
+    return;
+  }
+  const { socketPath, target } = resolved;
+  const result = sendInstructionVerified(
+    {
+      capturePane: () => {
+        const captured = capturePane(socketPath, target);
+        return captured.exitCode === 0 ? captured.stdout : '';
+      },
+      sendLiteral: (literalText: string) => sendKeys(socketPath, target, literalText, true).exitCode === 0,
+      sendEnter: () => {
+        sendKeys(socketPath, target, 'Enter');
+      },
+      wait: sleepSync,
+    },
+    text
+  );
+  if (result.status !== 'delivered') {
+    process.stderr.write(`redirectToRole: failed to deliver redirect to "${role}": ${result.reason ?? 'unknown'}\n`);
+  }
+}
+
 // BL-294: opens the subject, records the topicId(or DM default)->subjectId
 // mapping, and notifies the Operator the SAME way an existing-subject post
 // does (appendOperatorEvent - the bridge's own /telegram-inbound handler
@@ -376,6 +470,8 @@ function buildPollAdapters(botToken: string, targetPath: string, bridgeUrl: stri
       return Promise.resolve();
     },
     answerCallbackQuery: (callbackQueryId) => answerCallbackQueryQuietly(botToken, callbackQueryId),
+    readRoleTopicMap: () => readRoleTopicMap(targetPath),
+    redirectToRole: (role, text) => redirectToRole(targetPath, role, text),
   };
 }
 
@@ -908,6 +1004,12 @@ export async function main(): Promise<void> {
   // trap this ordering avoids). A failed create here must never block the
   // rest of the bot's ordinary routing from coming up.
   await ensureOperatorTopic(targetPath, botToken, chatId);
+
+  // BL-425 slice 1: bind each swarm role's own standing steering topic
+  // BEFORE any loop starts polling too - same ordering rationale as
+  // ensureOperatorTopic just above (an unbound role topic must never be
+  // reachable by an inbound message).
+  await ensureRoleTopics(targetPath, botToken, chatId);
 
   // BL-302 LOOP ISOLATION: each of the three forever-loops runs inside its
   // own runContainedLoop - a fault (thrown exception) in one is caught,
