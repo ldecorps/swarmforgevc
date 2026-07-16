@@ -14,43 +14,86 @@ import { ProposedContract } from './contractTypes';
 // agree with most of this but remove the PWA work") is never misread as
 // approval. Mirrors pendingApprovalReply.ts's own posture: agreement is a
 // reply that IS the agreement word, not one that merely mentions it.
-const AGREEMENT_PATTERN = /^\s*(agree|agreed|approve|approved|lgtm|yes)[.!]?\s*$/i;
+// BL-442: broadened to also accept a leading "all" and "ok"/"okay" - the
+// exact failure this ticket fixes ("All agreed" failed this anchor and fell
+// through to the objection path). Still whole-message anchored (^...$), so
+// the guard above is unchanged: an objection merely containing "agree"
+// still fails this pattern and is never misread as approval.
+const AGREEMENT_PATTERN = /^\s*(all\s+)?(agree|agreed|approve|approved|lgtm|yes|ok|okay)[.!]?\s*$/i;
+
+// BL-442: a reply whose intent is genuinely uncertain - the human is unsure
+// or asking a question back, rather than either approving or making a
+// concrete objection. Deliberately narrow and separate from the objection
+// fallthrough below, so this can never reclassify a real objection as
+// merely ambiguous: only this small, explicit, whole-message set of
+// non-committal replies routes to 'ask' - anything else still falls
+// through to 'objection', exactly as before this ticket.
+const AMBIGUOUS_INTENT_PATTERN = /^\s*(not sure|unsure|no idea|maybe|i don'?t know|idk|hmm+|huh\??|what\??|\?+)\s*$/i;
 
 export function isAgreementText(text: string): boolean {
   return AGREEMENT_PATTERN.test(text);
 }
 
+export function isAmbiguousIntentText(text: string): boolean {
+  return AMBIGUOUS_INTENT_PATTERN.test(text);
+}
+
 export type NegotiationUpdateDecision =
   | { action: 'objection'; text: string }
   | { action: 'agree' }
+  | { action: 'ask' }
   | { action: 'drop'; reason: 'not-my-chat' | 'not-principal' | 'not-negotiation-topic' | 'no-text' };
 
-// Pure: the negotiation relay's whole per-update decision. Order mirrors
-// decideUpdateAction's own (chat guard first, per BL-379 - a stranger in a
+type DropReason = 'not-my-chat' | 'not-principal' | 'not-negotiation-topic' | 'no-text';
+
+// The four early-exit eligibility checks, factored out of
+// decideNegotiationUpdateAction so its own branch count reflects only the
+// agree/ask/objection classification below - order mirrors
+// decideUpdateAction's own (chat guard first, per BL-379: a stranger in a
 // foreign chat is "not-my-chat", never any later reason), with the
-// negotiation-topic check added as this module's own extra guard: a message
-// anywhere else in the target's group (there may be other topics) is never
-// mistaken for a negotiation reply.
+// negotiation-topic check as this module's own extra guard.
+function negotiationDropReason(
+  update: TelegramUpdate,
+  principalUserId: string,
+  chatId: string,
+  negotiationTopicId: number
+): DropReason | undefined {
+  if (!isFromMyChat(update, chatId)) {
+    return 'not-my-chat';
+  }
+  if (!isFromPrincipal(update, principalUserId)) {
+    return 'not-principal';
+  }
+  if (topicIdOf(update) !== negotiationTopicId) {
+    return 'not-negotiation-topic';
+  }
+  if (!messageTextOf(update)) {
+    return 'no-text';
+  }
+  return undefined;
+}
+
+// Pure: the negotiation relay's whole per-update decision.
 export function decideNegotiationUpdateAction(
   update: TelegramUpdate,
   principalUserId: string,
   chatId: string,
   negotiationTopicId: number
 ): NegotiationUpdateDecision {
-  if (!isFromMyChat(update, chatId)) {
-    return { action: 'drop', reason: 'not-my-chat' };
+  const dropReason = negotiationDropReason(update, principalUserId, chatId, negotiationTopicId);
+  if (dropReason) {
+    return { action: 'drop', reason: dropReason };
   }
-  if (!isFromPrincipal(update, principalUserId)) {
-    return { action: 'drop', reason: 'not-principal' };
+  // negotiationDropReason already confirmed a non-empty text via its own
+  // 'no-text' check above.
+  const text = messageTextOf(update) as string;
+  if (isAgreementText(text)) {
+    return { action: 'agree' };
   }
-  if (topicIdOf(update) !== negotiationTopicId) {
-    return { action: 'drop', reason: 'not-negotiation-topic' };
+  if (isAmbiguousIntentText(text)) {
+    return { action: 'ask' };
   }
-  const text = messageTextOf(update);
-  if (!text) {
-    return { action: 'drop', reason: 'no-text' };
-  }
-  return isAgreementText(text) ? { action: 'agree' } : { action: 'objection', text };
+  return { action: 'objection', text };
 }
 
 function renderBulletList(entries: string[]): string {
