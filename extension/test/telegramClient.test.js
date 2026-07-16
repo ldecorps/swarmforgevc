@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const {
   sendTelegramMessage,
+  sendTelegramPoll,
   getTelegramUpdates,
   createForumTopic,
   closeForumTopic,
@@ -172,6 +173,63 @@ test('sendTelegramMessage omits reply_markup entirely when no buttons are given 
   await sendTelegramMessage(TOKEN, CHAT_ID, 'no buttons', undefined, postFn, 7);
 
   assert.equal(Object.prototype.hasOwnProperty.call(JSON.parse(capturedBody), 'reply_markup'), false);
+});
+
+// ── BL-466: sendTelegramPoll ──────────────────────────────────────────────
+
+test('sendTelegramPoll posts a native poll to the Telegram API and reports success with the poll id', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 50, poll: { id: 'poll-1' } } } };
+  };
+
+  const result = await sendTelegramPoll(TOKEN, CHAT_ID, 'which environment?', ['staging', 'prod'], 7, postFn);
+
+  assert.deepEqual(result, { success: true, pollId: 'poll-1', messageId: 50 });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/sendPoll`);
+  const parsed = JSON.parse(calls[0].body);
+  assert.deepEqual(parsed, {
+    chat_id: CHAT_ID,
+    question: 'which environment?',
+    options: [{ text: 'staging' }, { text: 'prod' }],
+    message_thread_id: 7,
+    is_anonymous: false,
+  });
+});
+
+test('sendTelegramPoll omits message_thread_id entirely when not given (existing callers unaffected)', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 51, poll: { id: 'poll-2' } } } };
+  };
+
+  await sendTelegramPoll(TOKEN, CHAT_ID, 'which environment?', ['staging', 'prod'], undefined, postFn);
+
+  assert.equal(Object.prototype.hasOwnProperty.call(JSON.parse(capturedBody), 'message_thread_id'), false);
+});
+
+test('sendTelegramPoll reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'Bad Request: poll must have at least 2 options' } });
+
+  const result = await sendTelegramPoll(TOKEN, CHAT_ID, 'which environment?', ['staging'], undefined, postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /400/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('sendTelegramPoll catches a thrown/network error and redacts the token', async () => {
+  const postFn = async () => {
+    throw new Error(`ECONNREFUSED for https://api.telegram.org/bot${TOKEN}/sendPoll`);
+  };
+
+  const result = await sendTelegramPoll(TOKEN, CHAT_ID, 'which environment?', ['staging', 'prod'], undefined, postFn);
+
+  assert.equal(result.success, false);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
 });
 
 test('answerCallbackQuery posts the callback_query_id to the Telegram API and reports success', async () => {

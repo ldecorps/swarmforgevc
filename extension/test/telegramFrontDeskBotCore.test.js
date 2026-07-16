@@ -35,6 +35,10 @@ const {
   decideSteeringAction,
   decideEnsureRoleTopicAction,
   decideVoiceUpdateAction,
+  decideEnsureAgentQuestionsTopicAction,
+  AGENT_QUESTIONS_SUBJECT_ID,
+  decideAgentQuestionsReplyAction,
+  decidePollAnswerAction,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
 const PRINCIPAL_ID = 111;
@@ -201,6 +205,79 @@ test('BL-434: decideEnsureApprovalsTopicAction reuses the topic already bound to
 
 test('BL-434: decideEnsureApprovalsTopicAction is reserved-subject-specific - the Operator topic\'s own binding never counts as the Approvals topic', () => {
   assert.deepEqual(decideEnsureApprovalsTopicAction({ '42': OPERATOR_SUBJECT_ID }), { kind: 'create' });
+});
+
+// ── decideEnsureAgentQuestionsTopicAction (pure) — BL-466 ─────────────────
+
+test('BL-466: decideEnsureAgentQuestionsTopicAction creates when no topic is bound to the reserved subject yet', () => {
+  assert.deepEqual(decideEnsureAgentQuestionsTopicAction({}), { kind: 'create' });
+  assert.deepEqual(decideEnsureAgentQuestionsTopicAction({ '7': 'SUP-1' }), { kind: 'create' });
+});
+
+test('BL-466: decideEnsureAgentQuestionsTopicAction reuses the topic already bound to AGENT_QUESTIONS_SUBJECT_ID', () => {
+  assert.deepEqual(decideEnsureAgentQuestionsTopicAction({ '7': 'SUP-1', '42': AGENT_QUESTIONS_SUBJECT_ID }), { kind: 'reuse', topicId: 42 });
+});
+
+test('BL-466: decideEnsureAgentQuestionsTopicAction is reserved-subject-specific - another reserved subject\'s binding never counts', () => {
+  assert.deepEqual(decideEnsureAgentQuestionsTopicAction({ '42': OPERATOR_SUBJECT_ID }), { kind: 'create' });
+});
+
+// ── decideAgentQuestionsReplyAction (pure) — BL-466 ───────────────────────
+
+test('BL-466: decideAgentQuestionsReplyAction is not-applicable when the topic id is not the Agent Questions topic', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 5, text: 'staging' });
+  assert.deepEqual(decideAgentQuestionsReplyAction(update, PRINCIPAL_ID, '1', 42), { kind: 'not-applicable' });
+});
+
+test('BL-466: decideAgentQuestionsReplyAction is not-applicable when no Agent Questions topic is bound at all', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'staging' });
+  assert.deepEqual(decideAgentQuestionsReplyAction(update, PRINCIPAL_ID, '1', undefined), { kind: 'not-applicable' });
+});
+
+test('BL-466: decideAgentQuestionsReplyAction refuses a reply from a foreign chat or a non-principal', () => {
+  const foreignChat = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'staging', chatId: 2 });
+  assert.deepEqual(decideAgentQuestionsReplyAction(foreignChat, PRINCIPAL_ID, '1', 42), { kind: 'refuse' });
+  const stranger = mkUpdate({ fromId: 999, topicId: 42, text: 'staging' });
+  assert.deepEqual(decideAgentQuestionsReplyAction(stranger, PRINCIPAL_ID, '1', 42), { kind: 'refuse' });
+});
+
+test('BL-466: decideAgentQuestionsReplyAction refuses a text-less message in the Agent Questions topic', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42 });
+  assert.deepEqual(decideAgentQuestionsReplyAction(update, PRINCIPAL_ID, '1', 42), { kind: 'refuse' });
+});
+
+test('BL-466: decideAgentQuestionsReplyAction delivers the principal\'s reply text in the Agent Questions topic', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'staging' });
+  assert.deepEqual(decideAgentQuestionsReplyAction(update, PRINCIPAL_ID, '1', 42), { kind: 'deliver', text: 'staging' });
+});
+
+// ── decidePollAnswerAction (pure) — BL-466 ────────────────────────────────
+
+function mkPollAnswer({ pollId, optionIds, userId } = {}) {
+  return { poll_id: pollId ?? 'poll-1', option_ids: optionIds ?? [0], ...(userId === undefined ? {} : { user: { id: userId } }) };
+}
+
+test('BL-466: decidePollAnswerAction resolves the principal\'s selected option index', () => {
+  assert.deepEqual(decidePollAnswerAction(mkPollAnswer({ pollId: 'poll-1', optionIds: [1], userId: PRINCIPAL_ID }), PRINCIPAL_ID), {
+    kind: 'answer',
+    pollId: 'poll-1',
+    optionIndex: 1,
+  });
+});
+
+test('BL-466: decidePollAnswerAction drops a vote with no user at all (an anonymous poll would never identify the voter)', () => {
+  assert.deepEqual(decidePollAnswerAction(mkPollAnswer({ userId: undefined }), PRINCIPAL_ID), { kind: 'drop', reason: 'not-principal' });
+});
+
+test('BL-466: decidePollAnswerAction drops a vote from someone other than the principal', () => {
+  assert.deepEqual(decidePollAnswerAction(mkPollAnswer({ userId: 999 }), PRINCIPAL_ID), { kind: 'drop', reason: 'not-principal' });
+});
+
+test('BL-466: decidePollAnswerAction drops a retraction (empty option_ids) as a deliberate drop, never a failure', () => {
+  assert.deepEqual(decidePollAnswerAction(mkPollAnswer({ optionIds: [], userId: PRINCIPAL_ID }), PRINCIPAL_ID), {
+    kind: 'drop',
+    reason: 'no-selection',
+  });
 });
 
 // ── decideEnsureRoleTopicAction (pure) — BL-425 provision-role-topics-01 ──
@@ -1602,6 +1679,157 @@ test('BL-410: every recognized-chat/principal tap answers the spinner, even a no
   assert.deepEqual(answered, ['cbq-1']);
 });
 
+// ── pollAndForward: Agent Questions topic reply + poll_answer dispatch — BL-466 ──
+
+function agentQuestionsPollAdapters(overrides = {}) {
+  return {
+    chatId: '1',
+    agentQuestionsTopicId: overrides.agentQuestionsTopicId ?? (async () => 42),
+    getPendingAgentQuestionThread: overrides.getPendingAgentQuestionThread ?? (async () => 'SUP-1'),
+    postToBridge: overrides.postToBridge ?? (async () => true),
+    subjectForTopic: () => undefined,
+    backlogForTopic: () => undefined,
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should never open a fresh subject for the reserved Agent Questions topic');
+    },
+    postOperatorContext: async () => {
+      throw new Error('postOperatorContext should not be called for an Agent Questions topic reply');
+    },
+    ...overrides,
+  };
+}
+
+test('BL-466 agent-question-poll-03: a reply in the Agent Questions topic is delivered as the pending question\'s answer', async () => {
+  const posted = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    agentQuestionsPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'staging' })] }),
+      postToBridge: async (subjectId, text, updateId) => {
+        posted.push({ subjectId, text, updateId });
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(posted, [{ subjectId: 'SUP-1', text: 'staging', updateId: 1 }]);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-466: a reply in the Agent Questions topic with no question currently pending is dropped, never opens a fresh subject', async () => {
+  const posted = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    agentQuestionsPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'staging' })] }),
+      getPendingAgentQuestionThread: async () => undefined,
+      postToBridge: async (subjectId, text) => {
+        posted.push({ subjectId, text });
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(posted, []);
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-466: a non-principal reply in the Agent Questions topic is dropped, never delivered', async () => {
+  const posted = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    agentQuestionsPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: 999, topicId: 42, text: 'staging' })] }),
+      postToBridge: async (subjectId, text) => {
+        posted.push({ subjectId, text });
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(posted, []);
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-466: a reply outside the Agent Questions topic is unaffected - falls through to ordinary routing', async () => {
+  const posted = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    agentQuestionsPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'any update?' })] }),
+      subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-2' : undefined),
+      postToBridge: async (subjectId, text) => {
+        posted.push({ subjectId, text });
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(posted, [{ subjectId: 'SUP-2', text: 'any update?' }]);
+  assert.equal(result.posted, 1);
+});
+
+function mkPollAnswerUpdate({ pollId, optionIds, userId, updateId } = {}) {
+  return { update_id: updateId ?? 1, poll_answer: mkPollAnswer({ pollId, optionIds, userId }) };
+}
+
+test('BL-466 agent-question-poll-02: a poll vote resolves the selected option and delivers it as the answer', async () => {
+  const posted = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkPollAnswerUpdate({ pollId: 'poll-1', optionIds: [1], userId: PRINCIPAL_ID })] }),
+    resolvePollThread: async (pollId) => (pollId === 'poll-1' ? { threadId: 'SUP-1', options: ['staging', 'prod'] } : undefined),
+    postToBridge: async (subjectId, text, updateId) => {
+      posted.push({ subjectId, text, updateId });
+      return true;
+    },
+  });
+  assert.deepEqual(posted, [{ subjectId: 'SUP-1', text: 'prod', updateId: 1 }]);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-466: a poll vote for an unknown/stale poll id is dropped, never delivered', async () => {
+  const posted = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkPollAnswerUpdate({ pollId: 'stale-poll', userId: PRINCIPAL_ID })] }),
+    resolvePollThread: async () => undefined,
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for an unresolvable poll');
+    },
+  });
+  assert.deepEqual(posted, []);
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-466: a poll-vote retraction (empty option_ids) is dropped, never delivered', async () => {
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkPollAnswerUpdate({ optionIds: [], userId: PRINCIPAL_ID })] }),
+    resolvePollThread: async () => {
+      throw new Error('resolvePollThread should not be called for a retraction - there is no selection to resolve');
+    },
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a retraction');
+    },
+  });
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-466: a poll vote from a non-principal is dropped, never delivered', async () => {
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkPollAnswerUpdate({ userId: 999 })] }),
+    resolvePollThread: async () => {
+      throw new Error('resolvePollThread should not be called for a non-principal vote');
+    },
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a non-principal vote');
+    },
+  });
+  assert.equal(result.dropped, 1);
+});
+
 // ── deliverOperatorContext: pending Reject/Amend follow-up consumption ───
 
 // BL-410: clearPendingButtonAction must only ever fire when a marker was
@@ -2179,6 +2407,112 @@ test('BL-426: relaySseReplies behaves exactly as before when the voice adapters 
     new Set()
   );
   assert.deepEqual(sent, [{ topicId: 42, text: 'hello' }]);
+});
+
+// ── relaySseReplies / deliverAgentQuestion — BL-466 ───────────────────────
+
+test('BL-466 agent-question-poll-01: an agentQuestion record with 2+ options sends a native poll into the Agent Questions topic and records the poll mapping', async () => {
+  const polled = [];
+  const recorded = [];
+  const sentReplies = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader([
+        'event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-1","text":"which environment?","agentQuestion":true,"options":["staging","prod"]}\n\n',
+      ]),
+      sendReply: async (topicId, text) => {
+        sentReplies.push({ topicId, text });
+      },
+      sendPoll: async (topicId, question, options) => {
+        polled.push({ topicId, question, options });
+        return { pollId: 'poll-1' };
+      },
+      recordPollMapping: async (pollId, threadId, options) => {
+        recorded.push({ pollId, threadId, options });
+      },
+      agentQuestionsTopicId: async () => 42,
+      resolveDelivery: () => {
+        throw new Error('resolveDelivery should never be consulted for an agentQuestion record - it always routes to the Agent Questions topic');
+      },
+      ackReply: async () => {},
+    },
+    new Set()
+  );
+  assert.deepEqual(polled, [{ topicId: 42, question: 'which environment?', options: ['staging', 'prod'] }]);
+  assert.deepEqual(recorded, [{ pollId: 'poll-1', threadId: 'SUP-1', options: ['staging', 'prod'] }]);
+  assert.deepEqual(sentReplies, [], 'a 2+-option agentQuestion must never ALSO send an ordinary reply');
+});
+
+test('BL-466 agent-question-poll-03: an agentQuestion record with no options falls back to a plain message in the Agent Questions topic', async () => {
+  const polled = [];
+  const sentReplies = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-1","text":"anything else?","agentQuestion":true}\n\n']),
+      sendReply: async (topicId, text) => {
+        sentReplies.push({ topicId, text });
+      },
+      sendPoll: async (topicId, question, options) => {
+        polled.push({ topicId, question, options });
+        return { pollId: 'poll-1' };
+      },
+      agentQuestionsTopicId: async () => 42,
+      resolveDelivery: () => {
+        throw new Error('resolveDelivery should never be consulted for an agentQuestion record');
+      },
+      ackReply: async () => {},
+    },
+    new Set()
+  );
+  assert.deepEqual(sentReplies, [{ topicId: 42, text: 'anything else?' }]);
+  assert.deepEqual(polled, [], 'an open-ended agentQuestion must never send a poll');
+});
+
+test('BL-466: a poll send that fails (no pollId returned) records no mapping, never crashes the relay', async () => {
+  const recorded = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader([
+        'event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-1","text":"which environment?","agentQuestion":true,"options":["staging","prod"]}\n\n',
+      ]),
+      sendReply: async () => {},
+      sendPoll: async () => ({}),
+      recordPollMapping: async (pollId, threadId, options) => {
+        recorded.push({ pollId, threadId, options });
+      },
+      agentQuestionsTopicId: async () => 42,
+      resolveDelivery: () => ({ kind: 'undeliverable' }),
+      ackReply: async () => {},
+    },
+    new Set()
+  );
+  assert.deepEqual(recorded, []);
+});
+
+test('BL-466: an ordinary (non-agentQuestion) record is completely unaffected - still resolved/delivered the pre-BL-466 way', async () => {
+  const sent = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-1","text":"hello"}\n\n']),
+      sendReply: async (topicId, text) => {
+        sent.push({ topicId, text });
+      },
+      sendPoll: async () => {
+        throw new Error('sendPoll should never be called for an ordinary reply');
+      },
+      agentQuestionsTopicId: async () => {
+        throw new Error('agentQuestionsTopicId should never be consulted for an ordinary reply');
+      },
+      resolveDelivery: (subjectId) => (subjectId === 'SUP-1' ? topicDelivery(7) : UNDELIVERABLE),
+      ackReply: async () => {},
+    },
+    new Set()
+  );
+  assert.deepEqual(sent, [{ topicId: 7, text: 'hello' }]);
 });
 
 test('relaySseReplies ignores a record that is not a telegram-reply event, and never acks it', () => {

@@ -13,6 +13,7 @@ const {
   ensureOperatorTopic,
   ensureApprovalsTopic,
   ensureRecertTopic,
+  ensureAgentQuestionsTopic,
   ensureRoleTopics,
   resolveRolePaneTarget,
   redirectToRole,
@@ -480,6 +481,63 @@ test('BL-450: an already-bound Recert topic returns its existing topicId, withou
   writeTopicMapFixture(root, { '42': 'RECERT' });
   const { postFn, calls } = fakeCreateOk(999);
   const topicId = await ensureRecertTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, 42);
+  assert.equal(calls.length, 0);
+});
+
+// ── ensureAgentQuestionsTopic (BL-466, mirrors ensureRecertTopic above) ──
+
+test('BL-466: creates the Agent Questions topic and binds it to the reserved subject when the map has no binding yet', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeCreateOk(42);
+  await ensureAgentQuestionsTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 1);
+  const map = readTopicMapFixture(root);
+  assert.equal(map['42'], 'AGENT_QUESTIONS');
+});
+
+test('BL-466: the create call names the topic "Agent Questions"', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeCreateOk(7);
+  await ensureAgentQuestionsTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.match(calls[0].url, /createForumTopic$/);
+  assert.match(calls[0].body, /"name":"Agent Questions"/);
+});
+
+test('BL-466: a map that already binds the reserved Agent Questions subject never creates a second topic', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'AGENT_QUESTIONS' });
+  const { postFn, calls } = fakeCreateOk(999);
+  await ensureAgentQuestionsTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 0);
+  assert.deepEqual(readTopicMapFixture(root), { '42': 'AGENT_QUESTIONS' });
+});
+
+test('BL-466: the Agent Questions topic and the Recert topic bind independently in the SAME map, never colliding', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'RECERT' });
+  const { postFn, calls } = fakeCreateOk(55);
+  const topicId = await ensureAgentQuestionsTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 1);
+  assert.equal(topicId, 55);
+  const map = readTopicMapFixture(root);
+  assert.equal(map['55'], 'AGENT_QUESTIONS');
+  assert.equal(map['42'], 'RECERT');
+});
+
+test('BL-466: a failed create degrades quietly - never throws, never writes a partial binding', async () => {
+  const root = mkTmpRoot();
+  const postFn = async () => ({ ok: false, status: 500, json: { description: 'simulated failure' } });
+  const topicId = await ensureAgentQuestionsTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, undefined);
+  assert.equal(fs.existsSync(topicMapPath(root)), false);
+});
+
+test('BL-466: an already-bound Agent Questions topic returns its existing topicId, without calling create', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'AGENT_QUESTIONS' });
+  const { postFn, calls } = fakeCreateOk(999);
+  const topicId = await ensureAgentQuestionsTopic(root, 'fake-token', 'fake-chat', postFn);
   assert.equal(topicId, 42);
   assert.equal(calls.length, 0);
 });
