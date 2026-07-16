@@ -62,6 +62,7 @@ human_approval: >
   and state semantics otherwise unchanged from BL-462. Build-time details NOT gating: log wording, exact
   branch structure. Board-only (no editInPlaceMessageSync change). Serialize on the board files against
   BL-464/BL-465/BL-467. NEW feature file specs/features/BL-468-pipeline-board-post-before-delete.feature
-  — flagged for human review before build.
+  — APPROVED as-specced by the human (ldecorps) directly 2026-07-16; feature file reviewed, no changes
+  requested. Ready for promotion.
 
 mutation_cost: low
