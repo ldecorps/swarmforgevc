@@ -44,34 +44,70 @@ const FAILURE_CLASS_INLINE = /\*\*failure\s*class:?\*\*:?\s*/i;
 const HEADING_SCAN_WINDOW = 5;
 const BOUNCE_TO_PATTERN = /bounces?(?:d)?\s*(?:back\s*)?to\s+(coder|cleaner|architect|hardener|hardender|documenter)/i;
 
-// Two shapes cover the corpus: a heading ("## Failure class" / "## 4. Failure
-// Class") followed within a few lines by the value (bare, backtick-quoted, or
-// bold), or an inline bold label on the same line as the value ("4. **Failure
-// class**: `compile`."). A value present but outside the closed set (e.g. a
-// real file's own "scope" - not one of compile/unit/integration/acceptance/
-// behavior) is treated as NOT FOUND, never recorded raw. A THIRD shape has no
-// dedicated field at all: a design/correctness bounce whose only classification
-// is an explicit "bounce(d) to <role>" verdict line - every real example of
-// this shape found in the corpus is a correctness/design defect (never a
-// compile error or a failing test), so it defaults to 'behavior', the SAME
-// catch-all class every other file in the corpus already uses for "not a
-// compile/unit/integration/acceptance failure."
+// A "resolved" search step - split out of parseFailureClassFromEvidence below
+// to keep that function's own branch count at or below the project's CRAP
+// threshold (same "extract so branch count stays low" reasoning the front-desk
+// bot files already apply throughout). `done: true` means the caller must
+// return `value` immediately (a value found within the known set, OR a value
+// found but rejected as unknown - either way, decisive); `done: false` means
+// "nothing conclusive on this line, keep scanning."
+interface FailureClassSearchStep {
+  done: boolean;
+  value: QaBounceFailureClass | null;
+}
+
+const NOT_FOUND: FailureClassSearchStep = { done: false, value: null };
+
+function resolveCandidate(candidate: string | null): FailureClassSearchStep {
+  if (!candidate) {
+    return NOT_FOUND;
+  }
+  return { done: true, value: isKnownFailureClass(candidate) ? candidate : null };
+}
+
+// The inline shape: a bold label on the same line as the value ("4. **Failure
+// class**: `compile`.").
+function matchInlineFailureClass(line: string): FailureClassSearchStep {
+  const inlineMatch = line.match(FAILURE_CLASS_INLINE);
+  if (!inlineMatch || typeof inlineMatch.index !== 'number') {
+    return NOT_FOUND;
+  }
+  return resolveCandidate(extractFirstWord(line.slice(inlineMatch.index + inlineMatch[0].length)));
+}
+
+// The heading shape: a heading ("## Failure class" / "## 4. Failure Class")
+// followed within a few lines by the value (bare, backtick-quoted, or bold).
+function matchHeadingFailureClass(lines: string[], headingIndex: number): FailureClassSearchStep {
+  for (let j = headingIndex + 1; j < lines.length && j <= headingIndex + HEADING_SCAN_WINDOW; j++) {
+    const step = resolveCandidate(extractFirstWord(lines[j]));
+    if (step.done) {
+      return step;
+    }
+  }
+  return NOT_FOUND;
+}
+
+// Two shapes cover the corpus, tried per line via matchInlineFailureClass/
+// matchHeadingFailureClass above. A value present but outside the closed set
+// (e.g. a real file's own "scope" - not one of compile/unit/integration/
+// acceptance/behavior) is treated as NOT FOUND, never recorded raw. A THIRD
+// shape has no dedicated field at all: a design/correctness bounce whose only
+// classification is an explicit "bounce(d) to <role>" verdict line - every
+// real example of this shape found in the corpus is a correctness/design
+// defect (never a compile error or a failing test), so it defaults to
+// 'behavior', the SAME catch-all class every other file in the corpus
+// already uses for "not a compile/unit/integration/acceptance failure."
 export function parseFailureClassFromEvidence(content: string): QaBounceFailureClass | null {
   const lines = content.split('\n');
   for (let i = 0; i < lines.length; i++) {
-    const inlineMatch = lines[i].match(FAILURE_CLASS_INLINE);
-    if (inlineMatch && typeof inlineMatch.index === 'number') {
-      const candidate = extractFirstWord(lines[i].slice(inlineMatch.index + inlineMatch[0].length));
-      if (candidate) {
-        return isKnownFailureClass(candidate) ? candidate : null;
-      }
+    const inline = matchInlineFailureClass(lines[i]);
+    if (inline.done) {
+      return inline.value;
     }
     if (FAILURE_CLASS_HEADING.test(lines[i])) {
-      for (let j = i + 1; j < lines.length && j <= i + HEADING_SCAN_WINDOW; j++) {
-        const candidate = extractFirstWord(lines[j]);
-        if (candidate) {
-          return isKnownFailureClass(candidate) ? candidate : null;
-        }
+      const heading = matchHeadingFailureClass(lines, i);
+      if (heading.done) {
+        return heading.value;
       }
     }
   }
@@ -111,32 +147,38 @@ function detectReporterRole(text: string): string | null {
   return token.startsWith('qa') ? 'qa' : normalizeProducingRole(token);
 }
 
-// Priority order: (1) an explicit "bounce(d) to <role>" verdict line - the
-// most authoritative signal when present, since it names who must act on the
-// defect directly, not who merely reported it, so it is used AS the
-// producing role with no further mapping; (2) failing that, the reporting
-// role named in the filename, or failing that the document's own first
-// line/heading, mapped to the pipeline stage immediately before it via
-// PRODUCING_ROLE_BEFORE_REPORTER above. A role mentioned only deep in prose
-// (not the verdict, filename, or heading) is NOT trusted - too easy to pick
-// up an unrelated mention (e.g. an ancestry/lineage list naming every role).
-export function parseProducingRoleFromEvidence(content: string, filename: string): QaBounceProducingRole | null {
+// The most authoritative signal when present: an explicit "bounce(d) to
+// <role>" verdict line names who must act on the defect directly, not who
+// merely reported it, so it is used AS the producing role with no further
+// mapping. Split out of parseProducingRoleFromEvidence below for the same
+// CRAP-budget reason as the failure-class helpers above.
+function explicitProducingRole(content: string): QaBounceProducingRole | null {
   const explicit = content.match(BOUNCE_TO_PATTERN);
-  if (explicit) {
-    const normalized = normalizeProducingRole(explicit[1]);
-    if (isKnownProducingRole(normalized)) {
-      return normalized;
-    }
+  if (!explicit) {
+    return null;
   }
+  const normalized = normalizeProducingRole(explicit[1]);
+  return isKnownProducingRole(normalized) ? normalized : null;
+}
+
+// Fallback signal: the reporting role named in the filename, or failing that
+// the document's own first line/heading, mapped to the pipeline stage
+// immediately before it via PRODUCING_ROLE_BEFORE_REPORTER above. A role
+// mentioned only deep in prose (not the verdict, filename, or heading) is NOT
+// trusted - too easy to pick up an unrelated mention (e.g. an
+// ancestry/lineage list naming every role).
+function inferredProducingRoleFromReporter(content: string, filename: string): QaBounceProducingRole | null {
   const firstLine = content.split('\n', 1)[0] ?? '';
   const reporter = detectReporterRole(filename) ?? detectReporterRole(firstLine);
-  if (reporter) {
-    const produced = PRODUCING_ROLE_BEFORE_REPORTER[reporter];
-    if (produced && isKnownProducingRole(produced)) {
-      return produced;
-    }
+  if (!reporter) {
+    return null;
   }
-  return null;
+  const produced = PRODUCING_ROLE_BEFORE_REPORTER[reporter];
+  return produced && isKnownProducingRole(produced) ? produced : null;
+}
+
+export function parseProducingRoleFromEvidence(content: string, filename: string): QaBounceProducingRole | null {
+  return explicitProducingRole(content) ?? inferredProducingRoleFromReporter(content, filename);
 }
 
 const COMMIT_HASH_PATTERN = /\b[0-9a-f]{10,40}\b/i;

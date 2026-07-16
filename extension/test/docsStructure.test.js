@@ -65,6 +65,24 @@ test('divio-docs-02: a mode missing its orientation word in the index is flagged
   assert.deepEqual(report.modesWithoutOrientation, ['how-to']);
 });
 
+// Same shape as the "how-to" case above, for every mode - each mode's own
+// orientation word is an independent value in DIVIO_MODE_ORIENTATIONS, so a
+// single mode's negative test does not exercise the others' equality checks.
+const ORIENTATION_PHRASE_BY_MODE = {
+  tutorials: '*Learning-oriented: a guided first experience.*',
+  'how-to': '*Task-oriented: recipes.*',
+  reference: '*Information-oriented: exhaustive descriptions.*',
+  explanation: '*Understanding-oriented: rationale.*',
+};
+
+for (const mode of DIVIO_MODES) {
+  test(`divio-docs-02: a missing orientation word flags only the "${mode}" mode, never a sibling`, () => {
+    const index = fullIndex().replace(ORIENTATION_PHRASE_BY_MODE[mode], '*(no orientation stated)*');
+    const report = computeDocsStructureReport({ modes: emptyModes(), indexContent: index });
+    assert.deepEqual(report.modesWithoutOrientation, [mode]);
+  });
+}
+
 test('divio-docs-02: an incidental earlier mention of a mode name in prose does not fool the classifier away from its real heading', () => {
   // Regression: docs/index.md's own intro prose mentions "Reference" (linking
   // the diagrams "from Reference below") before the real "## Reference"

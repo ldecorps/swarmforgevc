@@ -22,22 +22,40 @@ function qaBounceFilePath(targetPath: string, isoDate: string): string {
   return path.join(qaBouncesDir(targetPath), `${monthOf(isoDate)}.jsonl`);
 }
 
+// Split out of isQaBounceRecord below for the same CRAP-budget reason the
+// qaBounceEvidenceParser helpers document - a flat 9-clause boolean chain
+// pushed the type guard's own branch count well over the project's CRAP
+// threshold. Reordering to "all shape checks, then all closed-set checks"
+// (rather than interleaved per-field) is behavior-preserving: every predicate
+// here is a pure, side-effect-free check over independent fields, so `&&`
+// commutativity guarantees the same final boolean for every input.
+function hasQaBounceRecordShape(candidate: Partial<QaBounceRecord>): boolean {
+  return (
+    typeof candidate.ticket === 'string' &&
+    typeof candidate.producingRole === 'string' &&
+    typeof candidate.ticketType === 'string' &&
+    typeof candidate.failureClass === 'string' &&
+    typeof candidate.commit === 'string' &&
+    typeof candidate.at === 'string'
+  );
+}
+
+// Only called once hasQaBounceRecordShape has confirmed every field below is
+// a string, so the casts are safe.
+function hasKnownQaBounceValues(candidate: Partial<QaBounceRecord>): boolean {
+  return (
+    isKnownProducingRole(candidate.producingRole as string) &&
+    isKnownTicketType(candidate.ticketType as string) &&
+    isKnownFailureClass(candidate.failureClass as string)
+  );
+}
+
 function isQaBounceRecord(value: unknown): value is QaBounceRecord {
   if (!value || typeof value !== 'object') {
     return false;
   }
   const candidate = value as Partial<QaBounceRecord>;
-  return (
-    typeof candidate.ticket === 'string' &&
-    typeof candidate.producingRole === 'string' &&
-    isKnownProducingRole(candidate.producingRole) &&
-    typeof candidate.ticketType === 'string' &&
-    isKnownTicketType(candidate.ticketType) &&
-    typeof candidate.failureClass === 'string' &&
-    isKnownFailureClass(candidate.failureClass) &&
-    typeof candidate.commit === 'string' &&
-    typeof candidate.at === 'string'
-  );
+  return hasQaBounceRecordShape(candidate) && hasKnownQaBounceValues(candidate);
 }
 
 // A malformed or unrecognized line is skipped, never a crash - same
