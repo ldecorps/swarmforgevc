@@ -39,16 +39,25 @@
     (mutation-cooldown-lib/parse-conf (try (slurp (str conf-file)) (catch Exception _ "")))))
 
 (defn last-committed-ms
-  "The file's last COMMITTED touch, ignoring the change at hand: `git log`
-   only ever sees committed history, so any uncommitted/in-flight diff is
-   already excluded by construction. A file with no commit history yet
-   (brand new, still churning) has no meaningful cooldown clock - treat it
-   as freshly modified right now, which always fails the cooldown check."
-  [now-ms]
-  (let [{:keys [exit out]} (process/sh "git" "-C" project-root "log" "-1" "--format=%at" "--" target-file)]
+  "The file's last COMMITTED touch on the INTEGRATED `main` branch, ignoring
+   the in-flight parcel's own branch commits (BL-463): every role commits
+   its work and forwards it via git_handoff before the hardener's stage ever
+   sees the file, so `git log` against the CURRENT (role) branch/HEAD would
+   return the parcel's OWN just-made commit and vacuously reset the cooldown
+   clock on nearly every parcel. `main` never contains those role-branch
+   commits until QA lands them at the very end (constitution: QA is the
+   integration point), so querying `main` directly excludes the in-flight
+   parcel's commits by construction while still catching genuine churn
+   already integrated by OTHER recent tickets. A file with no history on
+   `main` yet (brand new, only ever committed on the in-flight branch) has
+   no integrated baseline to measure against - epoch (0) makes its age
+   enormous, so it is eligible to run (subject only to the host-business
+   check), never skip-cooldown."
+  []
+  (let [{:keys [exit out]} (process/sh "git" "-C" project-root "log" "-1" "--format=%at" "main" "--" target-file)]
     (if (and (zero? exit) (not (str/blank? out)))
       (* 1000 (parse-long (str/trim out)))
-      now-ms)))
+      0)))
 
 (defn real-load-avg []
   (if-let [forced (System/getenv "SWARMFORGE_MUTATION_GATE_FORCE_LOAD_AVG")]
@@ -79,7 +88,7 @@
         conf (read-conf)
         days (mutation-cooldown-lib/cooldown-days conf)
         multiplier (mutation-cooldown-lib/busy-load-multiplier conf)
-        last-modified-ms (last-committed-ms now-ms)
+        last-modified-ms (last-committed-ms)
         load-avg (real-load-avg)
         cores (real-core-count)
         busy (mutation-cooldown-lib/host-busy? load-avg cores multiplier)
