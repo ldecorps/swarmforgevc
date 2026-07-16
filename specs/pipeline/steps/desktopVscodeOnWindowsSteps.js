@@ -17,7 +17,7 @@ const path = require('node:path');
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXT_DIR = path.join(REPO_ROOT, 'extension');
 const PACKAGE_JSON_PATH = path.join(EXT_DIR, 'package.json');
-const GUIDE_PATH = path.join(REPO_ROOT, 'docs', 'GettingStarted.md');
+const GUIDE_PATH = path.join(REPO_ROOT, 'docs', 'tutorials', 'GettingStarted.md');
 
 function readPackageJson() {
   return JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, 'utf8'));

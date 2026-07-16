@@ -10,7 +10,7 @@
   ],
   "incremental": true,
   "incrementalFile": "stryker-incremental.json",
-  "concurrency": 4,
+  "concurrency": 8,
   "timeoutMS": 60000,
   "timeoutFactor": 3,
   "coverageAnalysis": "perTest",

@@ -172,7 +172,7 @@ crontab -e
 ```
 
 Kill the swarm the same way as any other SwarmForge instance — see
-`docs/GettingStarted.md`'s troubleshooting section for the general recovery
+`docs/tutorials/GettingStarted.md`'s troubleshooting section for the general recovery
 command; there is nothing WSL2-specific about stopping a swarm once it's up.
 
 ## If something breaks specifically under WSL2

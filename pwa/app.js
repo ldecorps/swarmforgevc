@@ -819,7 +819,7 @@
   // (test/fixtures/benchmark/coder-task-01/task.json's own id
   // "coder-task-01-word-frequency") - the report schema carries no separate
   // role field, so the role a report covers is read off its taskId prefix,
-  // the same convention docs/backlog-dashboard-schema.md documents.
+  // the same convention docs/reference/backlog-dashboard-schema.md documents.
   function roleFromTaskId(taskId) {
     var idx = taskId.indexOf('-task-');
     return idx === -1 ? taskId : taskId.slice(0, idx);

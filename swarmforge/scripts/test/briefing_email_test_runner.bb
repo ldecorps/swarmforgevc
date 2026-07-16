@@ -563,6 +563,40 @@
 ;; markdown_to_html_test_runner.bb (BL-393 cleaner extraction) - it moved to
 ;; its own module (markdown_to_html_lib.bb), so its tests moved with it.
 
+;; BL-454: the qa-bounce line reaches the actual sent content too, the same
+;; real-production-caller wiring bar established above for every other
+;; optional section.
+(let [dir (mk-tmp)
+      sent-texts (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text & _] (swap! sent-texts conj text) {:success true})
+    :qa-bounce-line (fn [] "QA bounces: 3 total - by role: coder x2, architect x1 - by ticket type: feature x2, bug x1")
+    :log! (fn [& _] nil)})
+  (assert= "BL-454: the qa-bounce line reaches the actual sent content"
+           true
+           (str/includes? (first @sent-texts) "QA bounces: 3 total")))
+
+;; A nil-returning (or absent) :qa-bounce-line adapter degrades to the
+;; original content unchanged - same graceful-degrade contract as every
+;; other optional section (and the CLI itself returns nothing when there
+;; are no recorded bounces yet, so this is also the everyday pre-backfill
+;; path).
+(let [dir (mk-tmp)
+      sent-texts (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text & _] (swap! sent-texts conj text) {:success true})
+    :qa-bounce-line (fn [] nil)
+    :log! (fn [& _] nil)})
+  (assert= "BL-454: a nil-returning :qa-bounce-line adapter leaves content unchanged"
+           "Headline\n"
+           (first @sent-texts)))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do

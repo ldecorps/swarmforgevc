@@ -911,6 +911,23 @@
       (when (zero? exit) (str/trim out)))
     (catch Exception _ nil)))
 
+;; BL-454: shells to the compiled qa-bounce-line.js CLI, same shell-out
+;; pattern as the *-briefing-line fns above - reuses computeQaBounceTally
+;; unchanged, fed by the SAME durable qa_bounces log record-qa-bounce.js
+;; (the go-forward writer) and backfill-qa-bounces.js (the one-time seed
+;; from the evidence corpus) both write, so the briefing can never disagree
+;; with either. The CLI itself prints nothing (empty stdout) when there are
+;; no recorded bounces yet, so `str/trim out` naturally degrades to a blank
+;; block (no briefing noise) in that case, same as every sibling section
+;; here; any other failure (CLI not yet compiled, etc.) degrades identically
+;; - never crashes the sweep.
+(defn qa-bounce-briefing-line []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "qa-bounce-line.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
 (defn standing-rule-violations-briefing-line []
   (try
     (let [files (for [f (standing-rule-violations-files/rule-source-files project-root)]
@@ -959,6 +976,7 @@
     :not-done-count-line not-done-count-briefing-line
     :standing-rule-violations-line standing-rule-violations-briefing-line
     :suboptimality-verdict-line suboptimality-verdict-briefing-line
+    :qa-bounce-line qa-bounce-briefing-line
     :log! (fn [& parts] (apply log! parts))}))
 
 ;; BL-339: shells to the compiled notify-recert-batch.js CLI (Babashka has

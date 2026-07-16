@@ -9,7 +9,7 @@
 import { EventStreamSnapshot, GateSignal, SwarmEvent, SwarmEventType, TicketSummary, deriveSwarmEvents, swarmEventKey } from '../events/swarmEventStream';
 import { BacklogTopicMap, RouteAdapters, TopicAction, decideEpicTopicAction, routeEvent } from './topicRouter';
 import { EpicDefinition, computeEpicProgress, epicAnnouncementKey, epicOpeningText, epicProgressText } from './epicProgress';
-import { resolveEpicIcon } from './epicIcon';
+import { resolveEpicIcon, isKnownEpic } from './epicIcon';
 import { resolveIconState, ICON_EMOJI, STANDING_TOPIC_ICON, StandingTopicTarget } from './topicIcon';
 import { TopicIconAdapters, syncTopicIcon } from './topicIconSync';
 import { StalenessBucket } from './topicTitleAge';
@@ -414,10 +414,20 @@ function allEpicIdsFor(folders: BacklogFoldersSnapshot): string[] {
 // this function's own job). Pool exhaustion (distinctness is best-effort
 // beyond pool size, per resolveEpicIcon's own contract) is logged here,
 // never inside the pure resolver, which has no I/O of its own.
+//
+// BL-457: known epics (fixed pinned glyphs) are resolved FIRST so their
+// glyphs are reserved into `used` before any unknown epic draws from the
+// pool. Without this ordering an unknown epic earlier in folder order grabs
+// a pool icon that is a known epic's pinned glyph, and the known epic then
+// "collides" with it - firing a spurious "pool exhausted" warning every
+// tick (the pool is NOT full) and, worse, handing a NEW unknown-epic topic a
+// duplicate icon. Reserving the pinned glyphs up front makes the warning
+// fire only on genuine exhaustion (more distinct epics than pool slots).
 function resolveAllEpicIcons(epicIds: string[]): Record<string, string> {
   const assigned: Record<string, string> = {};
   const used: string[] = [];
-  for (const id of epicIds) {
+  const knownFirst = [...epicIds.filter(isKnownEpic), ...epicIds.filter((id) => !isKnownEpic(id))];
+  for (const id of knownFirst) {
     const icon = resolveEpicIcon(id, used);
     if (used.includes(icon)) {
       process.stderr.write(`runConciergeTick: epic icon pool exhausted - reusing "${icon}" for epic "${id}"\n`);

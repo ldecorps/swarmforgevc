@@ -3,7 +3,7 @@ name: Second swarm wake-up bridge
 # BL-092: an event-driven replacement for manual/periodic `git pull` on the
 # second (secondary-mode) swarm. Runs ONLY on the self-hosted runner
 # registered from inside that swarm's own WSL2 environment
-# (docs/runbooks/BL-091-wsl2-second-swarm-bringup.md) - no inbound ports,
+# (docs/how-to/BL-091-wsl2-second-swarm-bringup.md) - no inbound ports,
 # tunnels, or firewall changes needed on either machine, since a self-hosted
 # runner holds an outbound long-poll connection to GitHub.
 #
