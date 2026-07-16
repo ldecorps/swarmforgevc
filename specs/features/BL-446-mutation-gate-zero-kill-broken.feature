@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-16T09:16:32.332463285Z","feature_name":"A mutation run that kills no mutants is surfaced as a broken gate, not accepted as a clean pass","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-446-mutation-gate-zero-kill-broken.feature","background_hash":"657b637fa0ba42fa34b6838e4bb9d4c9f75e009c8af3f94acb4f0a70f8d5caf5","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: A mutation run that kills no mutants is surfaced as a broken gate, not accepted as a clean pass
 
 # BL-446 (bug, cleaner-reported rule_proposal 2026-07-16): Stryker mutation testing was observed
