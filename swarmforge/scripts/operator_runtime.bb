@@ -68,6 +68,10 @@
 ;; BL-413: pure stale-sandbox-sweep decision logic, wired below by
 ;; sandbox-sweep!.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "sandbox_sweep_lib.bb")))
+;; BL-413/BL-458: shared /proc cwd+fd scan, the ONE real implementation of
+;; "is any live process rooted in this directory" that both sandbox-sweep!
+;; below and fixture_reaper_sweep_lib.bb's sweep! load - never reimplement.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "proc_fd_scan_lib.bb")))
 ;; BL-458: the orphaned acceptance-test-fixture process reaper (kills stale
 ;; supervisor/bridge/bot/tmux trees a crashed acceptance run left behind) -
 ;; loads its own pure decision lib via load-file internally.
@@ -647,30 +651,36 @@
 (defn- sandbox-sweep-entry-age-ms! [entry-path]
   (try (- (System/currentTimeMillis) (.toMillis (fs/last-modified-time entry-path))) (catch Exception _ 0)))
 
-;; The set of REAL absolute paths every live process's cwd currently resolves
-;; to, read via /proc/<pid>/cwd (Linux/WSL - this whole ticket exists because
-;; of a WSL2/VHDX-on-C: host). Read ONCE per sweep pass, not once per
-;; candidate entry - iterating /proc is the only non-trivial cost here;
-;; membership testing afterward is a cheap set lookup per entry. Returns an
-;; empty set (never throws) when /proc is unavailable (e.g. macOS) - paired
-;; with live-process-rooted-in?'s own "cannot determine -> not live" default,
-;; which is the SAFE direction only because the allowlist/staleness checks
-;; still gate removal independently; liveness alone is never the only guard.
-(defn- live-process-cwds! []
+;; Architect bounce: liveness checked only cwd - a process with a file open
+;; INSIDE a candidate root (a log it writes to, a lockfile, a socket file on
+;; disk) but whose cwd sits elsewhere is exactly as "rooted in it" as one
+;; that cd'd there, and removing the root out from under an open fd is the
+;; same class of danger this whole ticket exists to prevent. The set below
+;; is every REAL absolute path any live process's cwd OR any of its open
+;; file descriptors currently resolves to, read via proc-fd-scan-lib (Linux/
+;; WSL - this whole ticket exists because of a WSL2/VHDX-on-C: host). Read
+;; ONCE per sweep pass, not once per candidate entry - iterating /proc is
+;; the only non-trivial cost here; membership testing afterward is a cheap
+;; set lookup per entry. A non-file fd (a socket/pipe - /proc's own
+;; "socket:[12345]"/"pipe:[12345]" pseudo-target) never matches a real
+;; directory prefix, so it is harmless noise, not a false positive. Returns
+;; an empty set (never throws) when /proc is unavailable (e.g. macOS) -
+;; paired with live-process-rooted-in?'s own "cannot determine -> not live"
+;; default, which is the SAFE direction only because the allowlist/
+;; staleness checks still gate removal independently; liveness alone is
+;; never the only guard.
+(defn- live-process-paths! []
   (try
     (->> (fs/list-dir "/proc")
-         (keep (fn [p]
-                 (try
-                   (let [cwd-link (fs/path p "cwd")]
-                     (when (fs/exists? cwd-link)
-                       (str (fs/real-path cwd-link))))
-                   (catch Exception _ nil))))
+         (mapcat (fn [pid-dir] (cons (proc-fd-scan-lib/process-cwd-path pid-dir)
+                                     (proc-fd-scan-lib/process-open-paths pid-dir))))
+         (remove nil?)
          set)
     (catch Exception _ #{})))
 
-(defn- live-process-rooted-in? [cwds entry-path]
+(defn- live-process-rooted-in? [paths entry-path]
   (let [entry-str (str entry-path)]
-    (boolean (some #(or (= % entry-str) (str/starts-with? % (str entry-str "/"))) cwds))))
+    (boolean (some #(or (= % entry-str) (str/starts-with? % (str entry-str "/"))) paths))))
 
 (defn- sandbox-sweep-remove-entry! [entry-path]
   (try
@@ -686,11 +696,11 @@
    tick, never a crash. Bounded to sandbox-sweep-max-per-tick entries per
    call."
   ([]
-   (let [cwds (live-process-cwds!)]
+   (let [paths (live-process-paths!)]
      (sandbox-sweep!
       {:list-entries! sandbox-sweep-list-entries!
        :entry-age-ms! sandbox-sweep-entry-age-ms!
-       :live-process-rooted-in? (fn [entry-path] (live-process-rooted-in? cwds entry-path))
+       :live-process-rooted-in? (fn [entry-path] (live-process-rooted-in? paths entry-path))
        :remove-entry! sandbox-sweep-remove-entry!})))
   ([adapters]
    (let [root (sandbox-sweep-root)
