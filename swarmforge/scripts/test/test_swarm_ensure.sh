@@ -22,6 +22,13 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
 make_fixture() {
+  # BL-461: scrub ambient Telegram creds so every scenario starts from a
+  # clean slate regardless of the calling shell's own exported vars (a dev
+  # box routinely has real TELEGRAM_BOT_TOKEN/CHAT_ID/PRINCIPAL_USER_ID set,
+  # per the engineering guard-fires rule) - scenarios that need Telegram
+  # configured (05b) export it explicitly AFTER calling make_fixture.
+  unset TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_PRINCIPAL_USER_ID || true
+
   ROOT="$(cd "$(mktemp -d)" && pwd -P)"
   mkdir -p "$ROOT/.swarmforge/daemon" "$ROOT/.swarmforge/operator" \
            "$ROOT/.swarmforge/launch" "$ROOT/.worktrees/coder"
