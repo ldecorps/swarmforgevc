@@ -236,7 +236,8 @@ const DOMAINS = [
   require('./bl413StaleSandboxSweepSteps'),
   require('./bl458AcceptanceFixtureProcessLeakSteps'),
   require('./bl459ShellBbTempdirCleanupTrapSteps'),
-  require('./bl434ApprovalsStandingTopicSteps')
+  require('./bl434ApprovalsStandingTopicSteps'),
+  require('./bl460TmpSweepsBoundDeletesSteps')
 ];
 
 function registerSteps(registry) {
