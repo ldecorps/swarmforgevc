@@ -16,7 +16,8 @@ description: |
     1. Show MORE of each ticket's description in the grid AND in the below-grid lists — wider than
        BL-462's widened slug; landscape gives the room.
     2. Drop the redundant per-line "PK" label in the parked list (the section header already says it is
-       parked); keep the awaiting-approval distinction.
+       parked); keep the awaiting-approval distinction by giving it its OWN "AWAITING APPROVAL:" section
+       (drop the per-line "AA" label too) — human's decision 2026-07-16.
     3. Add the PAUSED backlog items and the ROOT-INTAKE items (raw backlog/ root asks) as their OWN
        sections alongside the parked area.
     4. Add a RECENTLY-CLOSED section.
@@ -63,16 +64,17 @@ acceptance:
   steps:
     - "A ticket's description is shown wider in both the grid and the below-grid lists"
     - "The parked list drops the redundant PK label"
-    - "The board lists parked, paused, root-intake, and recently-closed items in their own sections"
+    - "The board lists parked, awaiting-approval, paused, root-intake, and recently-closed items in their own sections"
     - "A tappable link list below the grid links each ticket id to its GitHub backlog item"
     - "The aligned monospace grid is preserved"
 
 human_approval: >
   Human-requested via the Operator front desk 2026-07-16 with a follow-up clarification round; links
   ride a below-grid list per his Q1 choice (Telegram cannot render links inside the <pre> grid). Firm
-  contract: wider descriptions in grid + lists; no redundant PK label; distinct parked / paused /
-  root-intake / recently-closed sections; a tappable GitHub link list below the grid; aligned grid
-  preserved. Build-time details NOT gating: exact width, headers, link-line format, and the precise
+  contract: wider descriptions in grid + lists; no redundant PK label; distinct parked /
+  awaiting-approval / paused / root-intake / recently-closed sections (awaiting-approval is its OWN
+  section, no per-line "AA" label — human's decision 2026-07-16); a tappable GitHub link list below the
+  grid; aligned grid preserved. Build-time details NOT gating: exact width, headers, link-line format, and the precise
   "recently-closed" window. Serialize on the board files after in-flight BL-462 and ideally after
   BL-464 (authoritative data source).
 

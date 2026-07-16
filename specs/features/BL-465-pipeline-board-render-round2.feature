@@ -7,7 +7,8 @@ Feature: The pipeline board shows wider descriptions, distinct sections for park
   #   1. Show MORE of each ticket's description in the grid AND in the below-grid lists (wider than
   #      BL-462's widened slug — landscape gives the room).
   #   2. Drop the redundant per-line "PK" label in the parked list (the section already says it is
-  #      parked); keep the awaiting-approval distinction.
+  #      parked); keep the awaiting-approval distinction by giving it its OWN "AWAITING APPROVAL:"
+  #      section (no per-line "AA" label either) — human's decision 2026-07-16.
   #   3. Add the PAUSED backlog items and the ROOT-INTAKE items (raw backlog/ root asks) as their own
   #      sections alongside the parked area.
   #   4. Add a RECENTLY-CLOSED section.
@@ -49,20 +50,21 @@ Feature: The pipeline board shows wider descriptions, distinct sections for park
     Given a parked ticket in the parked section
     When the pipeline board is rendered
     Then the parked entry does not repeat a per-line "PK" label
-    And an awaiting-approval ticket is still distinguished from a plain parked one
+    And an awaiting-approval ticket is distinguished by its own section, not a per-line label
 
   # BL-465 board-round2-03
-  Scenario Outline: The board lists parked, paused, root-intake, and recently-closed items in their own sections
+  Scenario Outline: The board lists parked, awaiting-approval, paused, root-intake, and recently-closed items in their own sections
     Given a "<kind>" item exists
     When the pipeline board is rendered
     Then the board shows it under the "<kind>" section
 
     Examples:
-      | kind            |
-      | parked          |
-      | paused          |
-      | root-intake     |
-      | recently-closed |
+      | kind              |
+      | parked            |
+      | awaiting-approval |
+      | paused            |
+      | root-intake       |
+      | recently-closed   |
 
   # BL-465 board-round2-04
   Scenario: A tappable link list below the grid links each ticket id to its GitHub backlog item
