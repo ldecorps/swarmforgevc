@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=ff247019e74ccd28a734993534e196ce92aab75eac927be680c17ee40283c230
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-16T06:23:57.280615130Z","feature_name":"the filed-intake confirmation links to the file's GitHub location","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-415-intake-reply-github-permalink.feature","background_hash":"407650f8b3ac0a995ff5a668c2359b06b6c4bf214f8bc5416d782df726487a3e","implementation_hash":"unknown","scenarios":[{"index":1,"name":"the GitHub base is derived from either origin remote URL form","scenario_hash":"aaa0833b15e1a94ded731500d14f40d79ec31c52a6e8438dfc1668ade8eed52f","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-16T06:23:57.280615130Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the filed-intake confirmation links to the file's GitHub location
 
   # Operator-relayed request: when the Operator files a human's question as a raw
