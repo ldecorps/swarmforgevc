@@ -821,7 +821,13 @@ export interface ReplyRelayAdapters {
   // BL-355: topicId undefined means "send with no message_thread_id", which
   // Telegram routes to the chat's General topic - a real, first-class
   // destination now, not a sentinel for "cannot deliver."
-  sendReply: (topicId: number | undefined, text: string) => Promise<void>;
+  // BL-440: the optional third param rides a reply record's own
+  // retractsPendingQuestion flag (operator-decide.ts's runApprove, on a
+  // successful gate answer) through to the real wiring's blTopicStore
+  // append, so the resulting outbound message is recorded as voiding the
+  // ticket's pending question - the real production writer BL-440's own
+  // premise-live gate needs. Absent for every ordinary reply.
+  sendReply: (topicId: number | undefined, text: string, retractsPendingQuestion?: boolean) => Promise<void>;
   resolveDelivery: (threadId: string) => ReplyDelivery;
   // BL-320: confirms this entry's id back to the bridge (POST /reply-ack
   // live-side) - the bridge only advances its own persisted cursor on
@@ -837,16 +843,21 @@ export interface ReplyRelayAdapters {
 // bound at all) sends the full reply straight to General. 'undeliverable'
 // (no binding resolves at all - e.g. a corrupt/unknown threadId) sends
 // nothing, same as the prior behavior for a genuinely unmapped subject.
-async function deliverReply(delivery: ReplyDelivery, text: string, adapters: ReplyRelayAdapters): Promise<void> {
+// BL-440: retractsPendingQuestion rides ONLY the actual answer send (the
+// 'topic' branch's primary send, and the 'default' branch's - the two
+// deliveries that carry the real reply text) - never the pointer notice
+// (a distinct, unrelated message pointing at the real topic, not itself an
+// answer to anything).
+async function deliverReply(delivery: ReplyDelivery, text: string, adapters: ReplyRelayAdapters, retractsPendingQuestion?: boolean): Promise<void> {
   if (delivery.kind === 'topic') {
-    await adapters.sendReply(delivery.topicId, text);
+    await adapters.sendReply(delivery.topicId, text, retractsPendingQuestion);
     if (delivery.alsoPointerToDefault) {
       await adapters.sendReply(undefined, REPLY_POINTER_TEXT);
     }
     return;
   }
   if (delivery.kind === 'default') {
-    await adapters.sendReply(undefined, text);
+    await adapters.sendReply(undefined, text, retractsPendingQuestion);
   }
 }
 
@@ -866,9 +877,14 @@ async function relayOneRecord(record: SseRecord, adapters: ReplyRelayAdapters, s
   if (record.event !== 'telegram-reply' || !record.data) {
     return;
   }
-  const { id, threadId, text } = JSON.parse(record.data) as { id: string; threadId: string; text: string };
+  const { id, threadId, text, retractsPendingQuestion } = JSON.parse(record.data) as {
+    id: string;
+    threadId: string;
+    text: string;
+    retractsPendingQuestion?: boolean;
+  };
   if (!seenIds.has(id)) {
-    await deliverReply(adapters.resolveDelivery(threadId), text, adapters);
+    await deliverReply(adapters.resolveDelivery(threadId), text, adapters, retractsPendingQuestion);
     seenIds.add(id);
   }
   await adapters.ackReply(id);
