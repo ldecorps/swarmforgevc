@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 16, 2026 (BL-427 — mutation-worker RSS sampler now walks the full descendant process tree so npm/npx-wrapped Stryker invocations are measured correctly)
+**Last Updated:** July 16, 2026 (BL-431 — rework-signal diagnosis and safe-knob/escalate-only verdict surfaced through the daily briefing)
 
 ## Overview
 
@@ -387,6 +387,20 @@ node extension/out/tools/rework-observatory.js
 Runnable from the repo root or any `.worktrees/<role>/` checkout, same project-root resolution as `swarm-metrics.js`. It reports the QA-bounce/rework rate over a trailing 14-day window against a trailing 14-day baseline, attributed to the role and ticket-class where rework concentrates most, and persists the signal (versioned, additive schema) for the diagnosis slice (BL-431) to read. An empty window reports `NO_SAMPLE` rather than a divide-by-zero or a fabricated rate; a baseline period with no completed tickets independently reports a null baseline without blocking the main window's own rate. Bounce evidence is read from the `main` ref (BL-340), never a role's own worktree checkout, since evidence files committed by QA are absent from any parcel's ancestry.
 
 This is the concrete signal source for Article 3.5's health-based intake throttling circuit breaker: "QA-bounce rate ... rising meaningfully above their trend baseline" is exactly what this CLI's `reworkRate` vs `baselineRate` comparison measures.
+
+#### Suboptimality diagnosis + escalation (BL-431, epic BL-429 slice 2 — DIAGNOSE + ESCALATE)
+
+BL-430 only persists a raw rework signal; on its own that is data, not a diagnosis. `reworkDiagnosis.ts` reads that signal and, only when the current rework rate is more than 2x the trailing baseline (the same relative-creep idiom `computeSuiteDuration`/BL-078 already uses for "meaningfully above" — a fixed absolute threshold is wrong because baselines drift), emits a ranked suboptimality verdict: the rework rate and baseline, the likely cause (the role and/or ticket-class where rework concentrates, from BL-430's own attribution — falling back to "no single role or ticket-class dominates" when neither is identifiable), and a recommended action. A rate at or below 2x baseline, or no sample/baseline yet, produces no verdict at all — no false alarms on a healthy or not-yet-measurable pipeline.
+
+The recommended action is classified against an allowlist (`classifyRemediationDisposition`): only `"lower the intake throttle"` — the coordinator's Article 3.5 intake-throttle knob, the one the ACT slice (BL-432) is authorized to move automatically — is `auto-tunable`. Every other recommendation, including any future remediation type nobody has classified yet, defaults to `escalate-only`: named in the verdict for a human to act on, never auto-applied. This split is the epic's safety contract (BL-429).
+
+The verdict reaches the human through the existing daily briefing, not a new channel. A headless CLI shells out to read BL-430's persisted signal and print one line when (and only when) a verdict exists:
+
+```sh
+node extension/out/tools/suboptimality-verdict-line.js
+```
+
+`briefing_email_lib.bb`'s `:suboptimality-verdict-line` optional section (`swarmforge/scripts/handoffd.bb`) wires this CLI into the daily briefing the same way every other optional section works — a blank block (no verdict) leaves the briefing untouched rather than appending a fabricated "all clear" line.
 
 ---
 
@@ -848,11 +862,11 @@ Before the user launches a run, the extension analyzes the target to recommend a
 3. Apply heuristic (all packs preserve pipeline order; smaller packs omit middle stages):
    - Trivial / single-file fix → **2-pack** (coder, cleaner) — Uncle Bob's quick backend flow
    - Moderate, needs specs → **4-pack** (specifier, coder, cleaner, architect)
-   - Major work, full quality gates → **7-pack** (specifier, coder, cleaner, architect, documenter, QA + coordinator) — this extension's default
+   - Major work, full quality gates → **7-pack** (specifier, coder, cleaner, architect, hardener, documenter, QA + coordinator) — this extension's default
 4. Present recommendation with one-line rationale in the UI
 5. User accepts or manually selects a different pack from the dropdown
 
-The pack shapes echo SwarmForge's well-known configurations (two-/four-/six-pack); the 7-pack is this extension's own variant (six-pack minus hardener, plus documenter). All packs are defined by this repo's role prompts and pack config — they are not fetched runnable branches.
+The pack shapes echo SwarmForge's well-known configurations (two-/four-/six-pack); the 7-pack is this extension's own variant (six-pack plus a documenter — the hardener is retained). All packs are defined by this repo's role prompts and pack config — they are not fetched runnable branches.
 
 ---
 
@@ -862,7 +876,7 @@ The swarm is a **sequential pipeline**: a work item visits each role in a fixed 
 
 ### The 7-pack (this extension's default)
 
-Built on Uncle Bob's six-pack, with two deviations: **hardener is dropped**, and a **documenter** is added (placed just before QA, so docs are verified too). Canonical six-pack is specifier → coder → cleaner → architect → hardener → QA → completion; this extension uses:
+Built on Uncle Bob's six-pack, with one addition: a **documenter** is added (placed just before QA, so docs are verified too — the hardener is retained, not dropped). Canonical six-pack is specifier → coder → cleaner → architect → hardener → QA → completion; this extension uses:
 
 | # | Role | Responsibility |
 |---|---|---|
@@ -870,15 +884,16 @@ Built on Uncle Bob's six-pack, with two deviations: **hardener is dropped**, and
 | 2 | **coder** | Implements approved behavior slices with TDD, unit tests, generated acceptance tests. |
 | 3 | **cleaner** | Behavior-preserving cleanup, coverage improvement, CRAP & DRY review, mutation-site scans. |
 | 4 | **architect** | Reviews module structure, boundaries, dependency direction, property-test coverage. |
-| 5 | **documenter** | Updates docs for humans: high-level docs plus a doc for the piece just developed. |
-| 6 | **QA** | Converts the specifier's QA procedures into executable scripts, runs final UI verification, checks handoff consistency. As the last stage, it's the convergence point: broadcasts merge-up to worktree roles, then lands the approved commit on `main` itself and pushes origin (BL-247 — QA is the integration point) before notifying the **coordinator**. |
+| 5 | **hardener** | Mutation hardening: improves test coverage, kills surviving mutants, reduces CRAP. Owns the no-surviving-mutants quality gate — its exclusive stage, run before the documenter. |
+| 6 | **documenter** | Updates docs for humans: high-level docs plus a doc for the piece just developed. |
+| 7 | **QA** | Converts the specifier's QA procedures into executable scripts, runs final UI verification, checks handoff consistency. As the last stage, it's the convergence point: broadcasts merge-up to worktree roles, then lands the approved commit on `main` itself and pushes origin (BL-247 — QA is the integration point) before notifying the **coordinator**. |
 
-(The coordinator is the 7th role — it owns orchestration on `main` but performs no git merge or push after QA; its post-approval job is backlog bookkeeping only: move the ticket to `done/`, promote the next item (BL-247).)
+(The coordinator is the +1 infrastructure role, not one of the seven — it owns orchestration on `main` but performs no git merge or push after QA; its post-approval job is backlog bookkeeping only: move the ticket to `done/`, promote the next item (BL-247).)
 
 ### The pipeline flow
 
 ```
-specifier ──► coder ──► cleaner ──► architect ──► documenter ──► QA (integrate) ──► coordinator (bookkeep)
+specifier ──► coder ──► cleaner ──► architect ──► hardener ──► documenter ──► QA (integrate) ──► coordinator (bookkeep)
 ```
 
 Stage by stage:
@@ -886,9 +901,10 @@ Stage by stage:
 1. **Specifier** writes the Gherkin and hands the parcel to the coder.
 2. **Coder** merges the dev branch ("main" of the swarm) into its own branch, does TDD-style development, then hands to the cleaner when done.
 3. **Cleaner** cleans up, then hands to the architect.
-4. **Architect** reviews structure, then hands to the documenter.
-5. **Documenter** updates the human-facing docs (high-level + the just-developed piece), then hands to QA.
-6. **QA**, when done, **forces every pipeline worktree role to merge its own branch up to QA's verified commit** — this is the integration convergence point (see below) — then **lands that approved commit on `main` itself and pushes origin** (closing the GitHub issue for a `GH-`-seeded ticket), and notifies the **coordinator** with the approved commit so the coordinator can move the ticket to `done/` and promote the next backlog item (BL-247: the coordinator runs no git merge or push).
+4. **Architect** reviews structure, then hands to the hardener.
+5. **Hardener** hardens the parcel — improves coverage, kills surviving mutants, reduces CRAP (its exclusive mutation gate) — then hands to the documenter.
+6. **Documenter** updates the human-facing docs (high-level + the just-developed piece), then hands to QA.
+7. **QA**, when done, **forces every pipeline worktree role to merge its own branch up to QA's verified commit** — this is the integration convergence point (see below) — then **lands that approved commit on `main` itself and pushes origin** (closing the GitHub issue for a `GH-`-seeded ticket), and notifies the **coordinator** with the approved commit so the coordinator can move the ticket to `done/` and promote the next backlog item (BL-247: the coordinator runs no git merge or push).
 
 Putting the documenter **before** QA means the docs are covered by QA's final verification pass, rather than landing after the swarm has already converged.
 
