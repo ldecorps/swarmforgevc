@@ -61,6 +61,7 @@ function fakeAdapters(overrides = {}) {
         state.emittedKeys = next.emittedKeys;
         state.standingIconSeenIds = next.standingIconSeenIds;
         state.titleAgeBuckets = next.titleAgeBuckets;
+        state.pipelineBoard = next.pipelineBoard;
       },
       routeAdapters: {
         getTopicMap: () => topicMap,
@@ -115,6 +116,18 @@ function fakeAdapters(overrides = {}) {
           titlesSet.push({ topicId, title });
           return true;
         },
+      },
+      // BL-452: no role holds any ticket by default, and ensureBoardTopic
+      // resolves to undefined ('failed-no-topic', a harmless no-op) - the
+      // same safe-default posture as iconAdapters' empty sticker list and
+      // titleAdapters' undefined activity above, so every existing test
+      // that never touches the board is completely unaffected. Tests that
+      // DO exercise the board override readRoleHeldTickets/boardAdapters.
+      readRoleHeldTickets: () => ({}),
+      boardAdapters: {
+        ensureBoardTopic: async () => undefined,
+        postMessage: async () => undefined,
+        editMessage: async () => true,
       },
       ...overrides,
     },
@@ -1490,4 +1503,90 @@ test('BL-414 hardener bounce: a first-tick mass fan-out over many tickets honour
   for (const { id } of items) {
     assert.equal(state.titleAgeBuckets[id], 'hours', `expected ${id}'s bucket to be persisted, not left unset`);
   }
+});
+
+// ── BL-452: pipeline board wiring ────────────────────────────────────────
+
+test('BL-452: the pipeline board is posted once, then edited in place on a stage change, and skipped when unchanged', async () => {
+  const { adapters, state } = fakeAdapters();
+  const ensured = [];
+  const posted = [];
+  const edited = [];
+  adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
+  adapters.boardAdapters = {
+    ensureBoardTopic: async () => {
+      ensured.push(true);
+      return 900;
+    },
+    postMessage: async (topicId, text) => {
+      posted.push({ topicId, text });
+      return 42;
+    },
+    editMessage: async (topicId, messageId, text) => {
+      edited.push({ topicId, messageId, text });
+      return true;
+    },
+  };
+
+  await runConciergeTick(adapters);
+
+  assert.equal(ensured.length, 1);
+  assert.equal(posted.length, 1);
+  assert.equal(posted[0].topicId, 900);
+  assert.ok(posted[0].text.includes('BL-1'));
+  assert.equal(state.pipelineBoard.topicId, 900);
+  assert.equal(state.pipelineBoard.messageId, 42);
+
+  // The ticket moves from coder to QA - same topic/message, edited in place.
+  adapters.readRoleHeldTickets = () => ({ QA: ['BL-1'] });
+  await runConciergeTick(adapters);
+
+  assert.equal(ensured.length, 1, 'expected the topic to be created only once');
+  assert.equal(posted.length, 1, 'expected no second message ever posted');
+  assert.equal(edited.length, 1);
+  assert.equal(edited[0].topicId, 900);
+  assert.equal(edited[0].messageId, 42);
+
+  // No stage change this tick - the message is not re-edited.
+  await runConciergeTick(adapters);
+  assert.equal(edited.length, 1, 'expected no re-edit when no ticket stage changed');
+});
+
+test('BL-452: a paused ticket awaiting human approval renders in the awaiting-approval column, a plain paused ticket in parked', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  const posted = [];
+  adapters.boardAdapters.postMessage = async (topicId, text) => {
+    posted.push(text);
+    return 1;
+  };
+  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  setFolders(
+    folders({
+      paused: [
+        { id: 'BL-2', title: 'blocked', humanApproval: 'pending' },
+        { id: 'BL-3', title: 'on hold' },
+      ],
+    })
+  );
+
+  await runConciergeTick(adapters);
+
+  const lines = posted[0].split('\n');
+  const header = lines[0].trim().split(/\s+/);
+  const pkIndex = header.indexOf('PK');
+  const aaIndex = header.indexOf('AA');
+  const bl2Row = lines.find((l) => l.startsWith('BL-2')).trim().split(/\s+/);
+  const bl3Row = lines.find((l) => l.startsWith('BL-3')).trim().split(/\s+/);
+  assert.equal(bl2Row[aaIndex], 'X');
+  assert.equal(bl3Row[pkIndex], 'X');
+});
+
+test('BL-452: omitting readRoleHeldTickets/boardAdapters entirely leaves the tick unaffected - existing adapters fixtures built before this field existed keep working unchanged', async () => {
+  const { adapters, state } = fakeAdapters();
+  delete adapters.readRoleHeldTickets;
+  delete adapters.boardAdapters;
+
+  await runConciergeTick(adapters);
+
+  assert.equal(state.pipelineBoard, undefined);
 });

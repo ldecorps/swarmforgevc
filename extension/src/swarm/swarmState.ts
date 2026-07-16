@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { readHandoffHeaderRecordsWithBatches, extractTicketId } from '../metrics/swarmMetrics';
 
 const SWARMFORGE_DIR = '.swarmforge';
 const HANDOFF_EXTENSION = '.handoff';
@@ -26,6 +27,15 @@ export interface PipelineStage {
   role: string;
   displayName: string;
   status: 'active' | 'idle';
+  // BL-452: the pipeline board's own data source - ticket id(s) this role is
+  // CURRENTLY holding, right now, in in_process (never inbox/new, which is
+  // merely queued; never completed history) - a cheap, one-directory read,
+  // no git walk. A batch role (cleaner/hardener) may hold several at once.
+  // Distinct from telegram-front-desk-bot.ts's own readRoleTicket (BL-301),
+  // which derives "current holder" from completed+in_process holding
+  // WINDOWS - the hop-log-shaped mechanism the Operator explicitly rejected
+  // as this feature's data source (BL-452 ticket notes).
+  heldTicketIds: string[];
 }
 
 // Split out of parseRolesTsv so each function stays under the CRAP<=6 gate
@@ -103,6 +113,20 @@ function hasHandoffFiles(dir: string): boolean {
   return false;
 }
 
+// BL-452: every distinct ticket id this role's in_process handoff(s) name -
+// reuses the SAME batch-aware handoff-header reader ticketHoldingWindows.ts
+// already relies on (readHandoffHeaderRecordsWithBatches) and the shared
+// ticket-id extraction (extractTicketId), rather than re-deriving either.
+// Deduped since a role should not report the same held ticket twice even if
+// an anomaly left more than one handoff naming it.
+function readInProcessTicketIds(entry: Pick<RoleEntry, 'role' | 'worktreeName' | 'worktreePath'>): string[] {
+  const dir = mailboxDir(entry, 'inbox', 'in_process');
+  const ids = readHandoffHeaderRecordsWithBatches(dir)
+    .map((headers) => (headers.task ? extractTicketId(headers.task) : null))
+    .filter((id): id is string => id !== null);
+  return [...new Set(ids)];
+}
+
 export function readPipelineStages(targetPath: string): PipelineStage[] {
   const rolesFile = path.join(targetPath, SWARMFORGE_DIR, 'roles.tsv');
   if (!fs.existsSync(rolesFile)) {
@@ -114,6 +138,7 @@ export function readPipelineStages(targetPath: string): PipelineStage[] {
     role: entry.role,
     displayName: entry.displayName,
     status: readHandoffInboxStatus(entry),
+    heldTicketIds: readInProcessTicketIds(entry),
   }));
 }
 

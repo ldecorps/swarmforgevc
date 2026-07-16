@@ -157,6 +157,10 @@ function extractMessageId(json: unknown): number | undefined {
 // BL-410: buttons added LAST again (after messageThreadId), same
 // existing-callers-unaffected posture - an ApprovalRequested message is the
 // only caller that ever passes one.
+// BL-452: parseMode added LAST again (after buttons) - the pipeline board is
+// the first caller that needs Telegram to render its text as anything other
+// than plain (its monospace grid rides an HTML <pre> block); every existing
+// positional call site keeps its exact prior behavior unchanged.
 export async function sendTelegramMessage(
   token: string,
   chatId: string,
@@ -164,7 +168,8 @@ export async function sendTelegramMessage(
   replyToMessageId?: number,
   postFn: TelegramPostFn = defaultPost,
   messageThreadId?: number,
-  buttons?: InlineKeyboardButton[][]
+  buttons?: InlineKeyboardButton[][],
+  parseMode?: 'HTML'
 ): Promise<SendMessageResult> {
   const body = JSON.stringify({
     chat_id: chatId,
@@ -174,6 +179,7 @@ export async function sendTelegramMessage(
     ...(buttons
       ? { reply_markup: { inline_keyboard: buttons.map((row) => row.map((b) => ({ text: b.text, callback_data: b.callbackData }))) } }
       : {}),
+    ...(parseMode !== undefined ? { parse_mode: parseMode } : {}),
   });
 
   const result = await callTelegramApi(token, 'sendMessage', body, postFn);
@@ -181,6 +187,37 @@ export async function sendTelegramMessage(
     return { success: false, error: result.error };
   }
   return { success: true, messageId: extractMessageId(result.json) };
+}
+
+// BL-452: edits an EXISTING message's text in place - the pipeline board's
+// own edit-in-place mechanism (a single standing message, never re-posted).
+// Distinct from editForumTopic below: that edits a TOPIC's name/icon
+// (message_thread_id-addressed); this edits a MESSAGE's text
+// (message_id-addressed) - the first caller in this codebase to need it.
+export interface EditMessageTextResult {
+  success: boolean;
+  error?: string;
+}
+
+export async function editMessageText(
+  token: string,
+  chatId: string,
+  messageId: number,
+  text: string,
+  parseMode?: 'HTML',
+  postFn: TelegramPostFn = defaultPost
+): Promise<EditMessageTextResult> {
+  const body = JSON.stringify({
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+    ...(parseMode !== undefined ? { parse_mode: parseMode } : {}),
+  });
+  const result = await callTelegramApi(token, 'editMessageText', body, postFn);
+  if (!result.success) {
+    return { success: false, error: result.error };
+  }
+  return { success: true };
 }
 
 export interface TelegramChat {
