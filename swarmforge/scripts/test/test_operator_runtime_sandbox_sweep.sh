@@ -20,15 +20,19 @@ make_project_fixture() {
      "$SRC/support_lib.bb" "$SRC/support_thread_store.bb" \
      "$SRC/operator_memory_lib.bb" "$SRC/operator_memory_store.bb" \
      "$SRC/ticket_status_lib.bb" "$SRC/operator_ask.bb" "$SRC/handoff_lib.bb" \
-     "$SRC/daemon_alarm_lib.bb" "$SRC/disk_space_lib.bb" "$SRC/sandbox_sweep_lib.bb" "$SRC/fixture_reaper_lib.bb" "$SRC/fixture_reaper_sweep_lib.bb" \
+     "$SRC/daemon_alarm_lib.bb" "$SRC/disk_space_lib.bb" "$SRC/sandbox_sweep_lib.bb" "$SRC/proc_fd_scan_lib.bb" "$SRC/fixture_reaper_lib.bb" "$SRC/fixture_reaper_sweep_lib.bb" \
      "$d/swarmforge/scripts/"
   printf '%s' "$d"
 }
 
 LIVE_CHILD_PID=""
+OPEN_FD_CHILD_PID=""
 cleanup() {
   if [[ -n "$LIVE_CHILD_PID" ]]; then
     kill -TERM "$LIVE_CHILD_PID" 2>/dev/null || true
+  fi
+  if [[ -n "$OPEN_FD_CHILD_PID" ]]; then
+    kill -TERM "$OPEN_FD_CHILD_PID" 2>/dev/null || true
   fi
 }
 trap cleanup EXIT
@@ -42,12 +46,15 @@ old_mtime() { touch -d "2 hours ago" "$1"; }
 STALE_IDLE="$SANDBOX_ROOT/sfvc-stale-idle"
 FRESH="$SANDBOX_ROOT/sfvc-fresh"
 STALE_LIVE="$SANDBOX_ROOT/sfvc-stale-live"
+STALE_OPEN_FD="$SANDBOX_ROOT/sfvc-stale-open-fd"
 UNKNOWN_STALE="$SANDBOX_ROOT/tmp.unknown-stale"
 SOCKET_DIR="$SANDBOX_ROOT/swarmforge-9999"
 
-mkdir -p "$STALE_IDLE" "$FRESH" "$STALE_LIVE" "$UNKNOWN_STALE" "$SOCKET_DIR"
+mkdir -p "$STALE_IDLE" "$FRESH" "$STALE_LIVE" "$STALE_OPEN_FD" "$UNKNOWN_STALE" "$SOCKET_DIR"
+echo placeholder > "$STALE_OPEN_FD/logfile"
 old_mtime "$STALE_IDLE"
 old_mtime "$STALE_LIVE"
+old_mtime "$STALE_OPEN_FD"
 old_mtime "$UNKNOWN_STALE"
 old_mtime "$SOCKET_DIR"
 # FRESH keeps its just-created mtime.
@@ -56,9 +63,17 @@ old_mtime "$SOCKET_DIR"
 # rooted in STALE_LIVE, so live-process-rooted-in? finds it via /proc/<pid>/cwd.
 (cd "$STALE_LIVE" && exec sleep 30) &
 LIVE_CHILD_PID=$!
-# Give /proc a moment to reflect the new process's cwd.
+
+# Architect bounce: liveness must also catch a process whose CWD sits
+# elsewhere entirely but that holds a FILE OPEN inside the candidate root -
+# `tail -f` keeps its target file's fd open for as long as it runs, with cwd
+# fixed at /tmp, never STALE_OPEN_FD itself.
+(cd /tmp && exec tail -f "$STALE_OPEN_FD/logfile") &
+OPEN_FD_CHILD_PID=$!
+
+# Give /proc a moment to reflect both new processes' cwd/fd state.
 for _ in 1 2 3 4 5; do
-  [[ -e "/proc/$LIVE_CHILD_PID/cwd" ]] && break
+  [[ -e "/proc/$LIVE_CHILD_PID/cwd" && -e "/proc/$OPEN_FD_CHILD_PID/cwd" ]] && break
   sleep 0.1
 done
 
@@ -81,13 +96,16 @@ check "a fresh known-prefix sandbox is kept (not stale)" \
   '[[ -e "$FRESH" ]]'
 check "a stale known-prefix sandbox with a live process rooted in it is kept" \
   '[[ -e "$STALE_LIVE" ]]'
+check "a stale known-prefix sandbox with a live process holding an OPEN FILE inside it (cwd elsewhere) is kept" \
+  '[[ -e "$STALE_OPEN_FD" ]]'
 check "a stale UNKNOWN-prefix entry is kept (allowlist-only)" \
   '[[ -e "$UNKNOWN_STALE" ]]'
 check "the swarm's legacy socket directory is kept regardless of age" \
   '[[ -e "$SOCKET_DIR" ]]'
 
-kill -TERM "$LIVE_CHILD_PID" 2>/dev/null || true
+kill -TERM "$LIVE_CHILD_PID" "$OPEN_FD_CHILD_PID" 2>/dev/null || true
 LIVE_CHILD_PID=""
+OPEN_FD_CHILD_PID=""
 rm -rf "$PROJECT" "$SANDBOX_ROOT"
 
 if [[ "$fail" -eq 0 ]]; then

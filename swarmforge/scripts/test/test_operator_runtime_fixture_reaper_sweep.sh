@@ -21,7 +21,7 @@ make_project_fixture() {
      "$SRC/support_lib.bb" "$SRC/support_thread_store.bb" \
      "$SRC/operator_memory_lib.bb" "$SRC/operator_memory_store.bb" \
      "$SRC/ticket_status_lib.bb" "$SRC/operator_ask.bb" "$SRC/handoff_lib.bb" \
-     "$SRC/daemon_alarm_lib.bb" "$SRC/disk_space_lib.bb" "$SRC/sandbox_sweep_lib.bb" \
+     "$SRC/daemon_alarm_lib.bb" "$SRC/disk_space_lib.bb" "$SRC/sandbox_sweep_lib.bb" "$SRC/proc_fd_scan_lib.bb" \
      "$SRC/fixture_reaper_lib.bb" "$SRC/fixture_reaper_sweep_lib.bb" \
      "$d/swarmforge/scripts/"
   printf '%s' "$d"
@@ -42,16 +42,28 @@ old_mtime() { touch -d "2 hours ago" "$1"; }
 
 STALE_ORPHAN="$REAP_ROOT/aps-stale-orphan"
 FRESH="$REAP_ROOT/aps-fresh"
+STALE_OPEN_FD="$REAP_ROOT/aps-stale-open-fd"
 UNKNOWN_STALE="$REAP_ROOT/tmp.unknown-stale"
 SOCKET_ROOT="$REAP_ROOT/swarmforge-9999"
 
-mkdir -p "$STALE_ORPHAN" "$FRESH" "$UNKNOWN_STALE" "$SOCKET_ROOT"
+mkdir -p "$STALE_ORPHAN" "$FRESH" "$STALE_OPEN_FD" "$UNKNOWN_STALE" "$SOCKET_ROOT"
+echo placeholder > "$STALE_OPEN_FD/logfile"
 
 # A disposable orphan process (never the test's own PID) rooted in
 # STALE_ORPHAN - the reaper must kill it, not just remove the directory.
 (cd "$STALE_ORPHAN" && exec sleep 30) &
 ORPHAN_PID=$!
 LIVE_PIDS+=("$ORPHAN_PID")
+
+# Architect bounce (on this scan's BL-413 sibling): liveness/kill coverage
+# must also catch a process whose CWD sits elsewhere entirely but that holds
+# a FILE OPEN inside the candidate root - `tail -f` keeps its target file's
+# fd open for as long as it runs, with cwd fixed at /tmp, never
+# STALE_OPEN_FD itself. The reaper must still find and kill it via the open
+# fd, not just cwd.
+(cd /tmp && exec tail -f "$STALE_OPEN_FD/logfile") &
+OPEN_FD_PID=$!
+LIVE_PIDS+=("$OPEN_FD_PID")
 
 # A disposable process rooted in the socket root - must survive untouched,
 # regardless of matching a known prefix or being stale (it never does match
@@ -71,13 +83,14 @@ TMUX_SOCK="$STALE_ORPHAN/role.sock"
 tmux -S "$TMUX_SOCK" new-session -d -s reaper-test-session
 
 for _ in 1 2 3 4 5; do
-  [[ -e "/proc/$ORPHAN_PID/cwd" && -e "/proc/$SOCKET_PID/cwd" ]] && break
+  [[ -e "/proc/$ORPHAN_PID/cwd" && -e "/proc/$OPEN_FD_PID/cwd" && -e "/proc/$SOCKET_PID/cwd" ]] && break
   sleep 0.1
 done
 
 # Ages set LAST, after every fixture-creating step above (mkdir/tmux) that
 # would otherwise bump these directories' own mtimes back to "now".
 old_mtime "$STALE_ORPHAN"
+old_mtime "$STALE_OPEN_FD"
 old_mtime "$UNKNOWN_STALE"
 old_mtime "$SOCKET_ROOT"
 # FRESH keeps its just-created mtime.
@@ -99,6 +112,10 @@ check "the stale known-prefix root itself is removed" \
   '[[ ! -e "$STALE_ORPHAN" ]]'
 check "the tmux server whose socket lived under the reaped root is killed" \
   '! tmux -S "$TMUX_SOCK" list-sessions 2>/dev/null'
+check "a process with cwd elsewhere but an OPEN FILE inside a reaped root is killed too" \
+  '! kill -0 "$OPEN_FD_PID" 2>/dev/null'
+check "the root that process's open file lived under is removed" \
+  '[[ ! -e "$STALE_OPEN_FD" ]]'
 check "a fresh known-prefix root is kept (not stale)" \
   '[[ -e "$FRESH" ]]'
 check "a stale UNKNOWN-prefix entry is kept (allowlist-only)" \
@@ -108,8 +125,13 @@ check "the swarm's legacy socket root directory is kept regardless of age" \
 check "the process rooted in the socket root survives untouched" \
   'kill -0 "$SOCKET_PID" 2>/dev/null'
 
-kill -TERM "$SOCKET_PID" 2>/dev/null || true
-LIVE_PIDS=()
+# Deliberately NOT clearing LIVE_PIDS or killing SOCKET_PID here - the EXIT
+# trap's cleanup() already kills every entry in LIVE_PIDS (a no-op against
+# one the reaper already killed) and would silently leak SOCKET_PID here if
+# it ever ran with an empty array first. That gap bit this test's own
+# reviewer: a deliberate break-then-fix run (reaper unfixed, so ORPHAN_PID's
+# sibling OPEN_FD_PID survived) leaked a real `tail -f` process because this
+# line used to blank LIVE_PIDS before the trap could reach it.
 rm -rf "$PROJECT" "$REAP_ROOT"
 
 if [[ "$fail" -eq 0 ]]; then
