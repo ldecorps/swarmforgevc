@@ -1,8 +1,8 @@
 Feature: The swarm auto-throttles its own intake when it diagnoses too much rework
 
-# BL-432 (epic BL-429, slice 3 — ACT, the mandatory wiring slice). DRAFT: parked until BL-430 + BL-431
-# land, because these scenarios consume BL-431's diagnosis and drive the coordinator promotion path. Not
-# picked up by any *.feature glob or the acceptance runner while it carries the .draft suffix (BL-233).
+# BL-432 (epic BL-429, slice 3 — ACT, the mandatory wiring slice). Promoted (BL-430 + BL-431 both
+# landed): materialized verbatim from the human-approved .feature.draft companion (BL-233's own
+# not-picked-up-while-.draft convention) now that its dependencies are satisfied.
 #
 # This is the slice that closes the observe -> diagnose -> act loop. It moves exactly ONE knob — the
 # Article 3.5 intake throttle — as an effective cap = min(configured, recommended). Scenario 03 (restore
