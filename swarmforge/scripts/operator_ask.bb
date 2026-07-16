@@ -76,6 +76,23 @@
     (spit (str tmp) content)
     (fs/move tmp path {:replace-existing true :atomic-move true})))
 
+(defn parse-options
+  "BL-466 hardening: --options must degrade to nil (this ticket's own
+   plain-message-fallback contract for 'no usable discrete options') on ANY
+   malformed input - invalid JSON, or valid JSON that is not an array of
+   strings (a number, an object, an array of non-strings) - never crash the
+   ask CLI. A crash here would silently lose the agent's question entirely
+   (never even reaching the plain-message fallback the ticket already
+   specifies for the no-options case), which is strictly worse."
+  [raw]
+  (when raw
+    (try
+      (operator-lib/poll-options (json/parse-string raw))
+      (catch Exception e
+        (binding [*out* *err*]
+          (println (str "operator_ask.bb: --options was not a usable JSON array of strings (" (.getMessage e) ") - falling back to a plain message")))
+        nil))))
+
 (defn -main []
   (if (fs/exists? awaiting-answer-file)
     (do
@@ -84,8 +101,7 @@
       (println (json/generate-string {:asked false :reason "already-pending"})))
     (let [thread-id (:thread opts)
           question (:question opts)
-          raw-options (when-let [raw (:options opts)] (json/parse-string raw))
-          resolved-options (operator-lib/poll-options raw-options)
+          resolved-options (parse-options (:options opts))
           adapters (support-thread-store/adapters-for state-dir)
           existing ((:read-thread! adapters) thread-id)
           updated (if existing
