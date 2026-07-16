@@ -1,0 +1,68 @@
+id: BL-457
+title: "Reserve known epics' pinned glyphs before pool assignment - kills the every-tick false 'epic icon pool exhausted' warning and the unknown-epic icon collision"
+milestone: M8
+type: bug
+status: done
+severity: low
+epic: ""
+priority: 3
+direction: human-requested
+depends_on: []
+source: >
+  Operator-directed hotfix relayed by ldecorps 2026-07-16 while investigating the live
+  front-desk supervisor log (.swarmforge/operator/front-desk-supervisor.log), which was
+  emitting "runConciergeTick: epic icon pool exhausted - reusing ..." on EVERY 30s concierge
+  tick (278 occurrences at time of report: 139x dynamic-routing=🎭, 139x onboarding-target-repo=🎬).
+  Feature that introduced the pool: BL-449 (epic-topic musical-form icons). Not pipeline-routed -
+  fixed directly at the human's request, with the standard break-then-fix regression proof (BL-383).
+
+description: |
+  BUG. resolveAllEpicIcons (extension/src/concierge/conciergeTick.ts) assigned epic-topic icons
+  greedily in backlog-traversal order WITHOUT first reserving the fixed, pinned glyphs of the
+  three "known" epics (KNOWN_EPIC_ICON in extension/src/concierge/epicIcon.ts:
+  role-benchmarking=🎙, dynamic-routing=🎭, onboarding-target-repo=🎬). So an UNKNOWN epic
+  appearing earlier in folder order grabbed a pool icon that is a known epic's pinned glyph;
+  when the known epic was then resolved it returned its (now already-used) pinned glyph and the
+  reuse-detection branch fired the "pool exhausted" warning - every tick, forever.
+
+  The message was a MISNOMER: the pool was never exhausted (6 distinct epics live, 10 pool slots).
+  Two real defects:
+    1. False warning spamming stderr / the supervisor log on every 30s tick (grows unbounded).
+    2. Latent icon collision: the two unknown epics that stole the glyphs (fleet-second-swarm=🎭,
+       recert-telegram-move=🎬) would hand a NEW epic topic a duplicate icon on creation
+       (icons are only pushed to Telegram on new-topic creation, so existing topics were never
+       visually wrong - blast radius stayed small, which is why this was low severity).
+
+  Observed reproduction (traversal order role-benchmarking, fleet-second-swarm, recert-telegram-move,
+  swarm-self-optimization, dynamic-routing, onboarding-target-repo):
+    role-benchmarking(known)->🎙; fleet-second-swarm->first free=🎭; recert-telegram-move->🎬;
+    swarm-self-optimization->🎤; dynamic-routing(known)->🎭 already used -> WARN;
+    onboarding-target-repo(known)->🎬 already used -> WARN.
+
+  FIX (implemented): resolveAllEpicIcons now resolves KNOWN epics FIRST (so their pinned glyphs are
+  reserved into `used`) before any unknown epic draws from the pool. New exported helper
+  isKnownEpic(epicId) in epicIcon.ts marks which epics carry a fixed glyph. After the fix the six
+  live epics get six distinct icons and the "pool exhausted" warning fires ONLY on genuine
+  exhaustion (more distinct epics than the 10 pool slots). Expanding the pool would NOT have fixed
+  this - size was never the problem.
+
+  Files:
+    - extension/src/concierge/epicIcon.ts (new exported isKnownEpic)
+    - extension/src/concierge/conciergeTick.ts (resolveAllEpicIcons: known-first ordering)
+    - extension/test/conciergeTick.test.js (new BL-457 regression test)
+
+  VERIFICATION (break-then-fix, BL-383): the new regression test - three known + three unknown
+  epics, unknowns traversed first - FAILS without the ordering change (reproduces the exact three
+  production warnings for role-benchmarking/dynamic-routing/onboarding-target-repo) and PASSES with
+  it, asserting no "pool exhausted" warning and six DISTINCT epic icons. Full conciergeTick suite:
+  70/70 green. TS rebuilt (out/) so the running supervisor picks up the fixed build on its next
+  re-arm.
+
+acceptance:
+  steps:
+    - "Known epics resolve their pinned glyphs before any unknown epic draws from the pool"
+    - "No 'epic icon pool exhausted' warning fires when distinct epics <= pool size"
+    - "Every live epic topic receives a distinct icon"
+    - "The warning still fires only on genuine exhaustion (more distinct epics than pool slots)"
+
+mutation_cost: low
