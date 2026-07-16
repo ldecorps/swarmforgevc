@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-16T07:45:58.817335824Z","feature_name":"The unit suite runs below the 10-second target and an over-budget run is surfaced","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-445-unit-suite-below-10s.feature","background_hash":"9dbd23ebca795055bc906906bc3085e00f82a8d06f258a7c7fb096bfd853769c","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: The unit suite runs below the 10-second target and an over-budget run is surfaced
 
 # BL-445 (feature, operator "next absolute priority" 2026-07-16): the recorded whole-suite
