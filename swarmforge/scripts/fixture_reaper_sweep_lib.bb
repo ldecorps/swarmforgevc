@@ -20,6 +20,12 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "fixture_reaper_lib.bb")))
+;; BL-413/BL-458: shared /proc cwd+fd scan - the same technique
+;; operator_runtime.bb's sandbox-sweep! sibling uses to DETECT a live
+;; process; here the result KILLS it. ONE real implementation, loaded by
+;; whichever of this file's own two callers (operator_runtime.bb,
+;; reap_stale_test_fixtures.bb) gets there first in a given process.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "proc_fd_scan_lib.bb")))
 
 (defn sweep-root []
   (or (System/getenv "SWARMFORGE_FIXTURE_REAP_ROOT") "/tmp"))
@@ -68,25 +74,10 @@
 ;; root (a log it writes to, a lockfile, a socket file on disk) but whose cwd
 ;; sits elsewhere is exactly as "rooted in it" as one that cd'd there. Each
 ;; pid below maps to the set of every REAL absolute path its cwd OR any of
-;; its open file descriptors currently resolves to. A non-file fd (a
-;; socket/pipe - /proc's own "socket:[12345]"/"pipe:[12345]" pseudo-target)
-;; never matches a real directory prefix, so it is harmless noise, not a
-;; false positive.
-(defn- process-open-paths [pid-dir]
-  (try
-    (let [fd-dir (fs/path pid-dir "fd")]
-      (if (fs/exists? fd-dir)
-        (keep (fn [fd] (try (str (fs/real-path fd)) (catch Exception _ nil))) (fs/list-dir fd-dir))
-        []))
-    (catch Exception _ [])))
-
-(defn- process-cwd-path [pid-dir]
-  (try
-    (let [cwd-link (fs/path pid-dir "cwd")]
-      (when (fs/exists? cwd-link)
-        (str (fs/real-path cwd-link))))
-    (catch Exception _ nil)))
-
+;; its open file descriptors currently resolves to, via proc-fd-scan-lib. A
+;; non-file fd (a socket/pipe - /proc's own "socket:[12345]"/"pipe:[12345]"
+;; pseudo-target) never matches a real directory prefix, so it is harmless
+;; noise, not a false positive.
 (defn- live-process-paths! []
   (try
     (->> (fs/list-dir "/proc")
@@ -94,7 +85,8 @@
                  (try
                    (let [pid (try (Long/parseLong (fs/file-name p)) (catch Exception _ nil))]
                      (when pid
-                       [pid (set (remove nil? (cons (process-cwd-path p) (process-open-paths p))))]))
+                       [pid (set (remove nil? (cons (proc-fd-scan-lib/process-cwd-path p)
+                                                     (proc-fd-scan-lib/process-open-paths p))))]))
                    (catch Exception _ nil))))
          (into {}))
     (catch Exception _ {})))
