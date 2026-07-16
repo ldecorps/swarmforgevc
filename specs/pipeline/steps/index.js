@@ -220,7 +220,8 @@ const DOMAINS = [
   require('./bl437FleetStatusPublishSteps'),
   require('./bl440OfflineAnswerFileReturnPathSteps'),
   require('./bl432AutoTuneIntakeThrottleSteps'),
-  require('./bl441AnsweringOfflineRunbookSteps')
+  require('./bl441AnsweringOfflineRunbookSteps'),
+  require('./bl415IntakeReplyGithubPermalinkSteps')
 ];
 
 function registerSteps(registry) {
