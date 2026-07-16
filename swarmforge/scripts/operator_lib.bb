@@ -893,5 +893,51 @@
        "## The question\n\n"
        question-text "\n"))
 
+;; ── BL-415: GitHub permalink for a filed intake's confirmation ───────────
+;; The filing commit's sha is already known at reply time (write-and-commit-
+;; intake! just made it) - turn it into a clickable, non-expiring GitHub
+;; permalink rather than the plain repo-relative path the human cannot
+;; click. A commit-sha link (never blob/main) is deliberate: the specifier
+;; DRAINS (git rm's) the intake file within the hour of it being specced, so
+;; a branch-relative link would 404 shortly after; the permalink keeps
+;; resolving to the file as filed.
+
+(defn github-base-from-remote-url
+  "Normalize a git origin remote URL (SSH or HTTPS form) to
+   https://github.com/<owner>/<repo>, trailing .git stripped. Returns nil
+   for a blank, missing, or non-GitHub remote - the caller falls back to
+   the plain path rather than failing."
+  [remote-url]
+  (when-not (str/blank? remote-url)
+    (let [trimmed (str/trim remote-url)
+          strip-dot-git #(str/replace % #"\.git$" "")]
+      (cond
+        (str/starts-with? trimmed "git@github.com:")
+        (str "https://github.com/" (strip-dot-git (subs trimmed (count "git@github.com:"))))
+
+        (str/starts-with? trimmed "https://github.com/")
+        (str "https://github.com/" (strip-dot-git (subs trimmed (count "https://github.com/"))))
+
+        :else nil))))
+
+(defn github-permalink
+  "A commit-sha GitHub blob permalink for rel-path, or nil when github-base
+   is nil (no GitHub origin to link against)."
+  [github-base sha rel-path]
+  (when github-base
+    (str github-base "/blob/" sha "/" rel-path)))
+
+(defn filed-intake-confirmation-text
+  "The human-facing confirmation for a just-filed-and-committed intake file.
+   Carries a clickable GitHub permalink at the filing commit's sha when the
+   origin is a GitHub remote; falls back to the plain repo-relative path
+   otherwise - composing this must never fail or block the (already
+   durably-committed) filing."
+  [rel-path sha remote-url]
+  (let [permalink (github-permalink (github-base-from-remote-url remote-url) sha rel-path)]
+    (if permalink
+      (str "Filed for the swarm: " rel-path " — " permalink)
+      (str "Filed for the swarm: " rel-path))))
+
 ;; Allow `bb operator_lib.bb` to be a no-op load (it is a library).
 (when (= *file* (System/getProperty "babashka.file")) nil)
