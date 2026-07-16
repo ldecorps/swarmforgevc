@@ -12,12 +12,14 @@ import { atomicAppend, atomicWrite } from '../util/atomicWrite';
 import { parseConfigValue, readConfigValue } from '../util/swarmforgeConfig';
 import { computeDocsTree } from './docsTree';
 import {
+  confirmScenario,
   emptyRecertStore,
   RecertifiableScenario,
   recertifiableScenariosFrom,
   RecertProposal,
   RecertStoreData,
   selectForRecertification,
+  toRecertProposal,
 } from './recertification';
 
 function recertStateFile(targetPath: string): string {
@@ -107,4 +109,66 @@ export function computeRecertBatch(
     recertEmailTo: readRecertEmailTo(targetPath),
     batch: selectForRecertification(pool, store, batchSize),
   };
+}
+
+// BL-450: the standing Recert Telegram topic's own read/write surface - the
+// FIRST live callers of confirmScenario/writeRecertStore/appendRecertProposal
+// (recertification.ts had zero production callers before this ticket, per
+// its own header comment). "Currently up for recertification" is never a
+// second posted-scenario marker of its own to keep in sync with the chat -
+// it is always whatever computeRecertBatch(targetPath, 1, ...) would select
+// right now, the SAME oldest-first computation the Telegram posting side
+// (conciergeTick.ts) already drives its own edit-in-place message from, so
+// the reply-verification side and the posting side can never drift apart.
+export function currentRecertScenarioId(targetPath: string, nowMs: number = Date.now()): string | undefined {
+  return computeRecertBatch(targetPath, 1, nowMs).batch[0]?.id;
+}
+
+// A reply naming any OTHER scenario id - a stale one already validated away,
+// or an outright fabricated/ghost one - is never applied (front-desk-
+// operator-fabricates-backlog-state memory); the caller surfaces it instead.
+export function isScenarioUpForRecert(targetPath: string, scenarioId: string, nowMs: number = Date.now()): boolean {
+  return currentRecertScenarioId(targetPath, nowMs) === scenarioId;
+}
+
+// recert-telegram-03: validate applies DIRECTLY (a last-reviewed timestamp
+// bump, low risk) - reuses confirmScenario/writeRecertStore exactly as the
+// (still-dark, pre-this-ticket) inbound-email path would have. Returns
+// false, writing nothing, when the scenario is not the one currently up for
+// recert.
+export function recordRecertValidate(targetPath: string, scenarioId: string, nowMs: number = Date.now()): boolean {
+  if (!isScenarioUpForRecert(targetPath, scenarioId, nowMs)) {
+    return false;
+  }
+  const nowIso = new Date(nowMs).toISOString();
+  writeRecertStore(targetPath, confirmScenario(readRecertStore(targetPath), scenarioId, nowIso));
+  return true;
+}
+
+// recert-telegram-04: amend never edits the .feature file directly - it
+// queues an "update" proposal (toRecertProposal/appendRecertProposal, the
+// SAME durable queue the still-unwired bridge-recert-proposals.ts CLI reads)
+// for the specifier's own review. Returns false, queuing nothing, when the
+// scenario is not currently up for recert.
+export function queueRecertAmendProposal(targetPath: string, scenarioId: string, newText: string, nowMs: number = Date.now()): boolean {
+  if (!isScenarioUpForRecert(targetPath, scenarioId, nowMs)) {
+    return false;
+  }
+  appendRecertProposal(targetPath, toRecertProposal({ scenarioId, outcome: 'update', newText }, new Date(nowMs).toISOString()), nowMs);
+  return true;
+}
+
+// recert-telegram-06: a CONFIRMED delete (the confirmation gate itself lives
+// one layer up, in telegramFrontDeskBotCore.ts's delivery adapters - this
+// function is only ever called once that gate has already resolved) queues
+// a "delete" proposal the same way amend queues an "update" one. Returns
+// false, queuing nothing, when the scenario is no longer the one currently
+// up for recert (e.g. it was validated away between the delete request and
+// its confirmation).
+export function queueRecertDeleteProposal(targetPath: string, scenarioId: string, nowMs: number = Date.now()): boolean {
+  if (!isScenarioUpForRecert(targetPath, scenarioId, nowMs)) {
+    return false;
+  }
+  appendRecertProposal(targetPath, toRecertProposal({ scenarioId, outcome: 'delete' }, new Date(nowMs).toISOString()), nowMs);
+  return true;
 }
