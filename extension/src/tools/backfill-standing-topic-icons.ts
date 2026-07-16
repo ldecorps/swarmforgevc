@@ -18,11 +18,11 @@
 // automatically by the live tick's own diff.
 //
 // Usage: node backfill-standing-topic-icons.js <target-repo-path>
-import { getForumTopicIconStickers, TelegramPostFn } from '../notify/telegramClient';
-import { STANDING_TOPIC_ICON, IconStickerLookup } from '../concierge/topicIcon';
+import { TelegramPostFn } from '../notify/telegramClient';
+import { STANDING_TOPIC_ICON } from '../concierge/topicIcon';
 import { syncTopicIcon, IconSyncOutcome } from '../concierge/topicIconSync';
 import { standingTopicTargets, readTickState, writeTickState } from './telegram-front-desk-bot';
-import { requiredEnv, defaultWait, buildAlwaysEligibleIconAdapters } from './backfill-topic-icons';
+import { requiredEnv, defaultWait, fetchAlwaysEligibleIconAdapters } from './backfill-topic-icons';
 import { runCliMain } from './swarm-metrics';
 
 export interface BackfillStandingIconOutcome {
@@ -38,9 +38,7 @@ export async function backfillStandingTopicIcons(
   postFn?: TelegramPostFn
 ): Promise<BackfillStandingIconOutcome[]> {
   const targets = standingTopicTargets(targetPath);
-  const iconStickersResult = await getForumTopicIconStickers(botToken, postFn);
-  const stickers: IconStickerLookup[] = iconStickersResult.success ? iconStickersResult.stickers : [];
-  const adapters = buildAlwaysEligibleIconAdapters(targetPath, botToken, chatId, stickers, wait, postFn);
+  const adapters = await fetchAlwaysEligibleIconAdapters(targetPath, botToken, chatId, wait, postFn);
 
   const outcomes: BackfillStandingIconOutcome[] = [];
   for (const target of targets) {

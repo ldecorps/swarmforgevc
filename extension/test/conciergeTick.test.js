@@ -735,6 +735,49 @@ test('BL-449: an epic emoji absent from the live sticker set is skipped without 
   assert.ok(sent.some((m) => m.text === 'Epic: Swarm Role Benchmarking'), 'the epic opening message still posts - icon resolution failure is best-effort, never blocking');
 });
 
+test('BL-449: exhausting the epic icon pool within one tick logs a reuse warning and still assigns an icon', async () => {
+  // Every pool icon needs its own sticker so resolveIconStickerId can match
+  // it and setTopicIcon actually fires for all 11 epics below - EPIC_STICKERS
+  // only covers 4 of the pool's 10 icons, not enough to exhaust it.
+  const FULL_POOL_STICKERS = ['🎙', '🎭', '🎬', '🎤', '🎨', '🎩', '🕺', '💃', '✍️', '📚'].map((emoji, i) => ({
+    emoji,
+    customEmojiId: `id-${i}`,
+  }));
+  const { adapters, setFolders, iconsSet } = fakeAdapters({
+    iconAdapters: {
+      getIconStickers: async () => FULL_POOL_STICKERS,
+      setTopicIcon: async (topicId, iconId) => {
+        iconsSet.push({ topicId, iconId });
+        return true;
+      },
+      readSwarmIconId: () => undefined,
+      recordSwarmIconId: () => {},
+    },
+  });
+  // EPIC_ICON_POOL has 10 icons; an 11th distinct epic in the same tick
+  // must fall back to reusing the pool's last icon rather than crashing.
+  const active = Array.from({ length: 11 }, (_, i) => ({
+    id: `BL-${i}`,
+    title: `slice ${i}`,
+    epic: `undocumented-epic-${i}`,
+  }));
+  setFolders(folders({ active }));
+  const originalErrorWrite = process.stderr.write;
+  const errors = [];
+  process.stderr.write = (chunk) => {
+    errors.push(chunk);
+    return true;
+  };
+  try {
+    await runConciergeTick(adapters);
+  } finally {
+    process.stderr.write = originalErrorWrite;
+  }
+
+  assert.equal(iconsSet.length, 11, 'expected every one of the 11 epics to still get an icon assigned');
+  assert.ok(errors.some((e) => e.includes('epic icon pool exhausted')), `expected a pool-exhaustion warning, got: ${JSON.stringify(errors)}`);
+});
+
 // Hardening gap: every epics-0x test above ran with exactly ONE epic in
 // play. epicDefinitionsFor/epicSlicesFor key everything off epicId, but
 // that keying was never proven with two DIFFERENT epics active in the

@@ -21,11 +21,10 @@
 // Usage: node backfill-epic-topic-icons.js <target-repo-path>
 import { readEpicTopicMap } from '../concierge/epicTopicMapStore';
 import { readBacklogTopicMap, writeBacklogTopicMap } from '../concierge/backlogTopicMapStore';
-import { getForumTopicIconStickers, TelegramPostFn } from '../notify/telegramClient';
-import { IconStickerLookup } from '../concierge/topicIcon';
+import { TelegramPostFn } from '../notify/telegramClient';
 import { resolveEpicIcon } from '../concierge/epicIcon';
 import { syncTopicIcon, IconSyncOutcome } from '../concierge/topicIconSync';
-import { requiredEnv, defaultWait, buildAlwaysEligibleIconAdapters } from './backfill-topic-icons';
+import { requiredEnv, defaultWait, fetchAlwaysEligibleIconAdapters } from './backfill-topic-icons';
 import { runCliMain } from './swarm-metrics';
 
 export interface BackfillEpicIconOutcome {
@@ -61,9 +60,7 @@ export async function backfillEpicTopicIcons(
   const epicTopicMap = readEpicTopicMap(targetPath);
   seedBacklogTopicMap(targetPath, epicTopicMap);
 
-  const iconStickersResult = await getForumTopicIconStickers(botToken, postFn);
-  const stickers: IconStickerLookup[] = iconStickersResult.success ? iconStickersResult.stickers : [];
-  const adapters = buildAlwaysEligibleIconAdapters(targetPath, botToken, chatId, stickers, wait, postFn);
+  const adapters = await fetchAlwaysEligibleIconAdapters(targetPath, botToken, chatId, wait, postFn);
 
   const outcomes: BackfillEpicIconOutcome[] = [];
   const usedIcons: string[] = [];
