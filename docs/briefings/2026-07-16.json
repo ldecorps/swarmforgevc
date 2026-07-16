@@ -5,7 +5,7 @@
     {
       "role": "coordinator+specifier",
       "tokens": {
-        "value": 403189,
+        "value": 404189,
         "trend": {
           "series": [
             {
@@ -38,17 +38,17 @@
             },
             {
               "periodStart": "2026-07-16T00:00:00.000Z",
-              "value": 403189
+              "value": 404189
             }
           ],
-          "currentValue": 403189,
+          "currentValue": 404189,
           "priorValue": 2182611,
-          "delta": -1779422,
+          "delta": -1778422,
           "direction": "down"
         }
       },
       "costUsd": {
-        "value": 96.43763204999995,
+        "value": 96.74507324999996,
         "trend": {
           "series": [
             {
@@ -81,12 +81,12 @@
             },
             {
               "periodStart": "2026-07-16T00:00:00.000Z",
-              "value": 96.43763204999995
+              "value": 96.74507324999996
             }
           ],
-          "currentValue": 96.43763204999995,
+          "currentValue": 96.74507324999996,
           "priorValue": 601.3370728499993,
-          "delta": -504.8994407999994,
+          "delta": -504.5919995999994,
           "direction": "down"
         }
       }
@@ -539,7 +539,7 @@
     {
       "role": "QA",
       "tokens": {
-        "value": 252088,
+        "value": 253047,
         "trend": {
           "series": [
             {
@@ -572,17 +572,17 @@
             },
             {
               "periodStart": "2026-07-16T00:00:00.000Z",
-              "value": 252088
+              "value": 253047
             }
           ],
-          "currentValue": 252088,
+          "currentValue": 253047,
           "priorValue": 591971,
-          "delta": -339883,
+          "delta": -338924,
           "direction": "down"
         }
       },
       "costUsd": {
-        "value": 49.956390000000006,
+        "value": 50.04749265,
         "trend": {
           "series": [
             {
@@ -615,12 +615,12 @@
             },
             {
               "periodStart": "2026-07-16T00:00:00.000Z",
-              "value": 49.956390000000006
+              "value": 50.04749265
             }
           ],
-          "currentValue": 49.956390000000006,
+          "currentValue": 50.04749265,
           "priorValue": 83.74883245000005,
-          "delta": -33.792442450000046,
+          "delta": -33.70133980000005,
           "direction": "down"
         }
       }
