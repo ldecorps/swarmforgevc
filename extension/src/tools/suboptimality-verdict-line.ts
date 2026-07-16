@@ -12,8 +12,7 @@
  *
  * Usage: node suboptimality-verdict-line.js
  */
-import { readReworkSignalEntry } from '../metrics/reworkObservatoryStore';
-import { ReworkSignal } from '../metrics/reworkObservatory';
+import { readReworkSignal } from '../metrics/reworkObservatoryStore';
 import { diagnoseReworkSignal, SuboptimalityVerdict } from '../metrics/reworkDiagnosis';
 import { resolveCliMainWorktreeContext, runCliMain } from './swarm-metrics';
 
@@ -29,20 +28,9 @@ export function formatSuboptimalityVerdictLine(verdict: SuboptimalityVerdict): s
   );
 }
 
-// Reads the entry's nested `signal` field directly rather than trusting its
-// shape blindly - a missing/malformed entry (no producer has run yet, or a
-// hand-edited file) degrades to "no signal" the same way a missing file
-// does, never a crash reading `.signal` off null/undefined.
-function extractSignal(entry: Record<string, unknown> | null): ReworkSignal | null {
-  if (!entry || typeof entry.signal !== 'object' || entry.signal === null) {
-    return null;
-  }
-  return entry.signal as ReworkSignal;
-}
-
 export function main(): void {
   const { mainWorktreePath } = resolveCliMainWorktreeContext();
-  const signal = extractSignal(readReworkSignalEntry(mainWorktreePath));
+  const signal = readReworkSignal(mainWorktreePath);
   if (signal === null) {
     return;
   }
