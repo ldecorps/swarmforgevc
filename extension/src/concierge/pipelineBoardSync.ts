@@ -7,8 +7,12 @@
 // thin apply step) - the one, honest difference is a topic ID here is
 // create-ONCE-then-reused (ensureBoardTopic is only ever called while no
 // topicId is yet persisted), where a title/icon sync always targets an
-// already-existing ticket topic.
+// already-existing ticket topic. The create-once/post-or-edit control flow
+// itself lives in editInPlaceMessageSync.ts, shared with
+// approvalsRosterSync.ts (cleaner, BL-434 pass: the two were duplicating it
+// byte-for-byte).
 import { PipelineBoardData, renderPipelineBoard } from './pipelineBoard';
+import { EditInPlaceMessageResult, EditInPlaceMessageState, syncEditInPlaceMessage } from './editInPlaceMessageSync';
 
 export interface PipelineBoardAdapters {
   ensureBoardTopic: () => Promise<number | undefined>;
@@ -16,55 +20,8 @@ export interface PipelineBoardAdapters {
   editMessage: (topicId: number, messageId: number, text: string) => Promise<boolean>;
 }
 
-export interface PipelineBoardState {
-  topicId?: number;
-  messageId?: number;
-  renderedText?: string;
-}
-
-export type PipelineBoardSyncOutcome = 'posted' | 'edited' | 'skipped-unchanged' | 'failed-no-topic' | 'failed-post' | 'failed-edit';
-
-export interface PipelineBoardSyncResult {
-  // Only a SUCCESSFUL post/edit may advance renderedText/messageId - the
-  // same "only a SUCCESSFUL apply may advance persisted state" contract
-  // syncTopicTitle and conciergeTick's own retry machinery already keep, so
-  // a failure is naturally retried against the same stale text next tick
-  // rather than silently marked caught-up.
-  state: PipelineBoardState;
-  outcome: PipelineBoardSyncOutcome;
-}
-
-// The topic id is created ONCE then reused - split out of syncPipelineBoard
-// purely to keep that function's own CRAP under threshold (same reasoning
-// as this codebase's other extract-for-CRAP splits, e.g. conciergeTick.ts's
-// syncAllTitleAgeBuckets).
-function resolveBoardTopicId(prevState: PipelineBoardState | undefined, adapters: PipelineBoardAdapters): Promise<number | undefined> {
-  return Promise.resolve(prevState?.topicId ?? adapters.ensureBoardTopic());
-}
-
-// Only a SUCCESSFUL post/edit may advance renderedText/messageId - see this
-// module's own PipelineBoardSyncResult docstring for why. Extracted for the
-// same CRAP reason as resolveBoardTopicId above.
-async function postOrEditBoard(
-  topicId: number,
-  text: string,
-  prevState: PipelineBoardState | undefined,
-  adapters: PipelineBoardAdapters
-): Promise<PipelineBoardSyncResult> {
-  if (prevState?.messageId === undefined) {
-    const messageId = await adapters.postMessage(topicId, text);
-    if (messageId === undefined) {
-      return { state: { ...prevState, topicId }, outcome: 'failed-post' };
-    }
-    return { state: { topicId, messageId, renderedText: text }, outcome: 'posted' };
-  }
-
-  const ok = await adapters.editMessage(topicId, prevState.messageId, text);
-  if (!ok) {
-    return { state: prevState, outcome: 'failed-edit' };
-  }
-  return { state: { topicId, messageId: prevState.messageId, renderedText: text }, outcome: 'edited' };
-}
+export type PipelineBoardState = EditInPlaceMessageState;
+export type PipelineBoardSyncResult = EditInPlaceMessageResult;
 
 export async function syncPipelineBoard(
   data: PipelineBoardData,
@@ -72,14 +29,5 @@ export async function syncPipelineBoard(
   adapters: PipelineBoardAdapters
 ): Promise<PipelineBoardSyncResult> {
   const text = renderPipelineBoard(data);
-  if (text === prevState?.renderedText) {
-    return { state: prevState ?? {}, outcome: 'skipped-unchanged' };
-  }
-
-  const topicId = await resolveBoardTopicId(prevState, adapters);
-  if (topicId === undefined) {
-    return { state: prevState ?? {}, outcome: 'failed-no-topic' };
-  }
-
-  return postOrEditBoard(topicId, text, prevState, adapters);
+  return syncEditInPlaceMessage(text, prevState, { ensureTopic: adapters.ensureBoardTopic, postMessage: adapters.postMessage, editMessage: adapters.editMessage });
 }

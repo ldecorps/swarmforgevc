@@ -119,8 +119,9 @@ function taskStartedText(event: SwarmEvent): string {
 // is the exact recognizer for this id-qualified grammar (the Approvals
 // topic's own sibling of isApprovalReplyText above, which still governs the
 // per-ticket-topic reply grammar unchanged elsewhere).
-function approvalRequestedText(backlogId: string): string {
-  return `${backlogId} needs your approval before it can proceed. Reply here with "approve ${backlogId}" (or "reject ${backlogId} <reason>") to act.`;
+function approvalRequestedText(backlogId: string | null): string {
+  const id = backlogId ?? 'unknown';
+  return `${id} needs your approval before it can proceed. Reply here with "approve ${id}" (or "reject ${id} <reason>") to act.`;
 }
 
 export function messageTextForEvent(event: SwarmEvent): string {
@@ -128,7 +129,7 @@ export function messageTextForEvent(event: SwarmEvent): string {
     return taskStartedText(event);
   }
   if (event.type === 'ApprovalRequested') {
-    return approvalRequestedText(event.backlogId ?? 'unknown');
+    return approvalRequestedText(event.backlogId);
   }
   const identity = event.backlogId ?? event.role ?? 'unknown';
   const base = `${event.type}: ${identity}`;
@@ -363,6 +364,32 @@ async function routeApprovalRequestedEvent(event: SwarmEvent, title: string, ada
   return { posted: ok, skipped: false };
 }
 
+// BL-358/BL-434 (cleaner review): the remaining default path - an
+// ordinary tagged event, or an untagged NeedsApproval - split out of
+// routeEvent so that dispatcher's own branch count (one per event kind)
+// stays flat as new kinds (BL-358's untagged gate, BL-434's Approvals
+// topic) keep getting their own routing path; this is the SAME
+// decideTopicAction-driven reuse-or-create logic routeEvent always ran for
+// the non-TaskCompleted case, unchanged in behavior.
+async function routeTaggedOrUntaggedEvent(event: SwarmEvent, title: string, adapters: RouteAdapters): Promise<RouteResult> {
+  const { backlogId } = event;
+  if (backlogId === null) {
+    return routeUntaggedGateEvent(event, adapters);
+  }
+  const action = decideTopicAction(event, adapters.getTopicMap(), title);
+  if (action.kind === 'reuse') {
+    const ok = await sendAndRecord(action.topicId, action.text, backlogId, adapters, action.buttons);
+    return { posted: ok, skipped: false };
+  }
+  const created = await adapters.createTopic(action.topicName);
+  if (!created.success || created.topicId === undefined) {
+    return { posted: false, skipped: true };
+  }
+  adapters.recordTopicId(backlogId, created.topicId);
+  const ok = await sendAndRecord(created.topicId, action.text, backlogId, adapters, action.buttons);
+  return { posted: ok, skipped: false };
+}
+
 // Adapter-injected: routes one event end to end. NEVER-MAIN-CHAT is a
 // structural guarantee, not a runtime check - sendMessage's own signature
 // requires a concrete topicId, so there is no code path in this function
@@ -380,23 +407,5 @@ export async function routeEvent(event: SwarmEvent, title: string, adapters: Rou
   if (event.type === 'ApprovalRequested') {
     return routeApprovalRequestedEvent(event, title, adapters);
   }
-  // BL-358: an untagged NeedsApproval has no ticket to reuse/create a topic
-  // for at all - routed to the standing Operator topic instead, before
-  // decideTopicAction (which requires a tagged event) is ever reached.
-  const { backlogId } = event;
-  if (backlogId === null) {
-    return routeUntaggedGateEvent(event, adapters);
-  }
-  const action = decideTopicAction(event, adapters.getTopicMap(), title);
-  if (action.kind === 'reuse') {
-    const ok = await sendAndRecord(action.topicId, action.text, backlogId, adapters, action.buttons);
-    return { posted: ok, skipped: false };
-  }
-  const created = await adapters.createTopic(action.topicName);
-  if (!created.success || created.topicId === undefined) {
-    return { posted: false, skipped: true };
-  }
-  adapters.recordTopicId(backlogId, created.topicId);
-  const ok = await sendAndRecord(created.topicId, action.text, backlogId, adapters, action.buttons);
-  return { posted: ok, skipped: false };
+  return routeTaggedOrUntaggedEvent(event, title, adapters);
 }
