@@ -62,23 +62,48 @@
 ;; safe: the tree walk + fs/delete-tree still runs, so a stale root with NO
 ;; live process (the common case - a crash, not a still-running orphan)
 ;; still gets cleaned up.
-(defn- live-process-cwds! []
+;;
+;; Architect bounce (on this same scan's BL-413 sibling in operator_runtime.bb):
+;; liveness checked only cwd - a process with a file open INSIDE a candidate
+;; root (a log it writes to, a lockfile, a socket file on disk) but whose cwd
+;; sits elsewhere is exactly as "rooted in it" as one that cd'd there. Each
+;; pid below maps to the set of every REAL absolute path its cwd OR any of
+;; its open file descriptors currently resolves to. A non-file fd (a
+;; socket/pipe - /proc's own "socket:[12345]"/"pipe:[12345]" pseudo-target)
+;; never matches a real directory prefix, so it is harmless noise, not a
+;; false positive.
+(defn- process-open-paths [pid-dir]
+  (try
+    (let [fd-dir (fs/path pid-dir "fd")]
+      (if (fs/exists? fd-dir)
+        (keep (fn [fd] (try (str (fs/real-path fd)) (catch Exception _ nil))) (fs/list-dir fd-dir))
+        []))
+    (catch Exception _ [])))
+
+(defn- process-cwd-path [pid-dir]
+  (try
+    (let [cwd-link (fs/path pid-dir "cwd")]
+      (when (fs/exists? cwd-link)
+        (str (fs/real-path cwd-link))))
+    (catch Exception _ nil)))
+
+(defn- live-process-paths! []
   (try
     (->> (fs/list-dir "/proc")
          (keep (fn [p]
                  (try
-                   (let [pid (try (Long/parseLong (fs/file-name p)) (catch Exception _ nil))
-                         cwd-link (fs/path p "cwd")]
-                     (when (and pid (fs/exists? cwd-link))
-                       [pid (str (fs/real-path cwd-link))]))
+                   (let [pid (try (Long/parseLong (fs/file-name p)) (catch Exception _ nil))]
+                     (when pid
+                       [pid (set (remove nil? (cons (process-cwd-path p) (process-open-paths p))))]))
                    (catch Exception _ nil))))
          (into {}))
     (catch Exception _ {})))
 
-(defn- pids-rooted-in [pid->cwd entry-path]
-  (let [entry-str (str entry-path)]
-    (->> pid->cwd
-         (filter (fn [[_ cwd]] (or (= cwd entry-str) (str/starts-with? cwd (str entry-str "/")))))
+(defn- pids-rooted-in [pid->paths entry-path]
+  (let [entry-str (str entry-path)
+        rooted? (fn [path] (or (= path entry-str) (str/starts-with? path (str entry-str "/"))))]
+    (->> pid->paths
+         (filter (fn [[_ paths]] (some rooted? paths)))
          (map first))))
 
 (defn- kill-pid! [pid]
@@ -98,7 +123,7 @@
     (catch Exception _ nil)))
 
 (defn sweep!
-  "adapters is {:list-entries! fn :entry-age-ms! fn :pid->cwd map
+  "adapters is {:list-entries! fn :entry-age-ms! fn :pid->paths map
    :kill-pid! fn :kill-tmux-sockets-under! fn :delete-tree! fn}, defaulting
    to the real reads/actions above. Bounded to max-per-tick entries per
    call - the remainder is picked up on a later call (removed roots simply
@@ -107,7 +132,7 @@
    (sweep!
     {:list-entries! list-entries!
      :entry-age-ms! entry-age-ms!
-     :pid->cwd (live-process-cwds!)
+     :pid->paths (live-process-paths!)
      :kill-pid! kill-pid!
      :kill-tmux-sockets-under! kill-tmux-sockets-under!
      :delete-tree! (fn [p] (fs/delete-tree p {:force true}))}))
@@ -125,7 +150,7 @@
                   {:known-fixture-prefix? (fixture-reaper-lib/known-fixture-prefix? name)
                    :stale? (>= age-ms threshold-ms)
                    :socket-root? socket-root?})
-             (doseq [pid (pids-rooted-in (:pid->cwd adapters) entry-path)]
+             (doseq [pid (pids-rooted-in (:pid->paths adapters) entry-path)]
                ((:kill-pid! adapters) pid))
              ((:kill-tmux-sockets-under! adapters) entry-path)
              (try ((:delete-tree! adapters) entry-path) (catch Exception _ nil)))))))))
