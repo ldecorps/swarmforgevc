@@ -2,7 +2,7 @@ id: BL-420
 title: "Extension test helpers must clean up their /tmp mkdtemp dirs (the leak's source)"
 milestone: M8
 type: bug
-status: todo
+status: done  # reconciled 2026-07-16 (BL-459 intake): folder already done, field was stale
 severity: high
 priority: 2
 direction: human-requested
