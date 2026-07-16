@@ -51,6 +51,16 @@ test('no sample produces no verdict, never a crash on null rates', () => {
   assert.equal(verdict, null);
 });
 
+test('hasSample false alone (valid, non-null rates) still produces no verdict - the !hasSample clause is load-bearing on its own, not only in combination with null rates', () => {
+  const verdict = diagnoseReworkSignal(signal({ hasSample: false, reworkRate: 0.9, baselineRate: 0.1 }));
+  assert.equal(verdict, null);
+});
+
+test('a null reworkRate alone (hasSample true, a valid baseline) still produces no verdict - the reworkRate === null clause is load-bearing on its own', () => {
+  const verdict = diagnoseReworkSignal(signal({ hasSample: true, reworkRate: null, baselineRate: 0.2 }));
+  assert.equal(verdict, null);
+});
+
 test('a null baseline (no baseline-period sample) produces no verdict - cannot be "meaningfully above" an unknown baseline', () => {
   const verdict = diagnoseReworkSignal(signal({ reworkRate: 0.9, baselineRate: null }));
   assert.equal(verdict, null);
