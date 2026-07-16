@@ -14,6 +14,8 @@ function fakeAdapters(overrides = {}) {
   const recorded = [];
   const iconsSet = [];
   const iconOwnership = {};
+  const titlesSet = [];
+  const lastActivityByTicket = {};
   let currentFolders = folders();
   let currentGates = [];
   let currentRoleTicket = {};
@@ -27,6 +29,11 @@ function fakeAdapters(overrides = {}) {
     recorded,
     iconsSet,
     iconOwnership,
+    titlesSet,
+    lastActivityByTicket,
+    setLastActivityMs: (ticketId, ms) => {
+      lastActivityByTicket[ticketId] = ms;
+    },
     setOperatorTopicId: (id) => {
       operatorTopicId = id;
     },
@@ -48,6 +55,7 @@ function fakeAdapters(overrides = {}) {
         state.snapshot = next.snapshot;
         state.emittedKeys = next.emittedKeys;
         state.standingIconSeenIds = next.standingIconSeenIds;
+        state.titleAgeBuckets = next.titleAgeBuckets;
       },
       routeAdapters: {
         getTopicMap: () => topicMap,
@@ -90,6 +98,19 @@ function fakeAdapters(overrides = {}) {
       // BL-418: no standing topics by default - tests that exercise the
       // standing-topic icon sync override this via `overrides`.
       readStandingTopics: () => [],
+      // BL-414: no recorded activity by default (readLastActivityMs
+      // undefined -> 'skipped-no-activity') - a safe, always-no-op default
+      // exactly like iconAdapters' own empty sticker list above, so every
+      // existing test that never calls setLastActivityMs is completely
+      // unaffected. Tests that DO exercise title-age sync call
+      // setLastActivityMs to seed a real ms value.
+      titleAdapters: {
+        readLastActivityMs: (ticketId) => lastActivityByTicket[ticketId],
+        setTopicTitle: async (topicId, title) => {
+          titlesSet.push({ topicId, title });
+          return true;
+        },
+      },
       ...overrides,
     },
   };
@@ -1152,4 +1173,88 @@ test('BL-418 wiring: standingIconSeenIds persists and grows across ticks rather 
   await runConciergeTick(adapters);
 
   assert.deepEqual([...state.standingIconSeenIds].sort(), ['OPERATOR', 'SUP-001']);
+});
+
+// ── BL-414: topic-title age suffix ────────────────────────────────────────
+
+const TITLE_AGE_HOUR_MS = 60 * 60 * 1000;
+
+// BL-414 topic-title-age-suffix-01/02
+test('BL-414 wiring: crossing into a staler bucket edits the title once; an unchanged bucket does not re-edit', async () => {
+  const { adapters, setFolders, topicMap, titlesSet, setLastActivityMs, state } = fakeAdapters();
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature' }] }));
+  topicMap['BL-1'] = 900;
+  state.titleAgeBuckets = { 'BL-1': 'fresh' };
+  setLastActivityMs('BL-1', 0);
+
+  await runConciergeTick(adapters, 3 * TITLE_AGE_HOUR_MS);
+  assert.deepEqual(titlesSet, [{ topicId: 900, title: 'a fine feature · 3h ago' }]);
+  assert.equal(state.titleAgeBuckets['BL-1'], 'hours');
+
+  titlesSet.length = 0;
+  await runConciergeTick(adapters, 5 * TITLE_AGE_HOUR_MS); // still within the "hours" bucket
+  assert.deepEqual(titlesSet, [], 'expected no re-edit while the bucket stays unchanged');
+  assert.equal(state.titleAgeBuckets['BL-1'], 'hours');
+});
+
+// BL-414 topic-title-age-suffix-03
+test('BL-414 wiring: new activity resets the suffix to the freshest bucket on the next tick', async () => {
+  const { adapters, setFolders, topicMap, titlesSet, setLastActivityMs, state } = fakeAdapters();
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature' }] }));
+  topicMap['BL-1'] = 900;
+  state.titleAgeBuckets = { 'BL-1': 'stale' };
+  const nowMs = 100 * TITLE_AGE_HOUR_MS;
+  // New activity landed 30 minutes before "now" - a fresh elapsed time.
+  setLastActivityMs('BL-1', nowMs - 30 * 60 * 1000);
+
+  await runConciergeTick(adapters, nowMs);
+
+  assert.deepEqual(titlesSet, [{ topicId: 900, title: 'a fine feature' }], 'expected the fresh edit to strip the stale-looking suffix');
+  assert.equal(state.titleAgeBuckets['BL-1'], 'fresh');
+});
+
+test('BL-414: an epic-defining ticket is never a target of title-age sync', async () => {
+  const { adapters, setFolders, topicMap, titlesSet, setLastActivityMs } = fakeAdapters();
+  setFolders(folders({ active: [{ id: 'EPIC-1', title: 'an epic', type: 'epic', epic: 'EPIC-1' }] }));
+  topicMap['EPIC-1'] = 900;
+  setLastActivityMs('EPIC-1', 0);
+
+  await runConciergeTick(adapters, 5 * TITLE_AGE_HOUR_MS);
+
+  assert.deepEqual(titlesSet, []);
+});
+
+test('BL-414: a ticket with no topic yet is a silent no-op for title-age sync', async () => {
+  // paused (never active) so no SwarmEvent fires and no topic is created by
+  // the event-routing path this tick also runs - the same "never promoted"
+  // shape topicIconsTrackTicketStateSteps.js's own no-topic-yet test uses.
+  const { adapters, setFolders, titlesSet, setLastActivityMs } = fakeAdapters();
+  setFolders(folders({ paused: [{ id: 'BL-1', title: 'a fine feature' }] }));
+  setLastActivityMs('BL-1', 0);
+
+  await runConciergeTick(adapters, 5 * TITLE_AGE_HOUR_MS);
+
+  assert.deepEqual(titlesSet, []);
+});
+
+test('BL-414: a ticket whose topic has no recorded activity yet is left alone (no crash, no edit)', async () => {
+  const { adapters, setFolders, topicMap, titlesSet } = fakeAdapters();
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature' }] }));
+  topicMap['BL-1'] = 900;
+  // setLastActivityMs deliberately never called - readLastActivityMs returns undefined.
+
+  await runConciergeTick(adapters, 5 * TITLE_AGE_HOUR_MS);
+
+  assert.deepEqual(titlesSet, []);
+});
+
+test('BL-414: omitting titleAdapters entirely leaves the tick unaffected - existing adapters fixtures built before this field existed keep working unchanged', async () => {
+  const { adapters, setFolders, topicMap } = fakeAdapters();
+  delete adapters.titleAdapters;
+  setFolders(folders({ paused: [{ id: 'BL-1', title: 'a fine feature' }] }));
+  topicMap['BL-1'] = 900;
+
+  const result = await runConciergeTick(adapters, 5 * TITLE_AGE_HOUR_MS);
+
+  assert.equal(result.routed, 0);
 });

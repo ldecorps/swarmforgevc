@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 15, 2026 (BL-410 — Approve/Amend/Reject inline-keyboard buttons on the ApprovalRequested Telegram message)
+**Last Updated:** July 15, 2026 (BL-430 — rework observatory: rolling QA-bounce/rework rate CLI)
 
 ## Overview
 
@@ -376,6 +376,18 @@ bb swarmforge/scripts/standing_rule_violations_cli.bb <project-root> for-ticket 
 
 The daily briefing email's `:standing-rule-violations-line` section (`swarmforge/scripts/handoffd.bb`, composed the same way as every other optional briefing line) surfaces the `report` total on every send, e.g. `Standing-rule violations: 38 cited recurrence(s) across 458 rule(s) since they landed (top: "..." x3, "..." x3, "..." x3)`.
 
+#### Rework observatory CLI (BL-430, epic BL-429 slice 1 — OBSERVE)
+
+A read-only CLI computes the swarm's first self-observed health signal: how much of the pipeline's work is rework. It composes ingredients the pipeline already records — backward-handoff bounces, each ticket's own `mutation_cost`, QA bounce evidence committed to `main` — into one rolling rework rate, without moving any knob or changing promotion behaviour.
+
+```sh
+node extension/out/tools/rework-observatory.js
+```
+
+Runnable from the repo root or any `.worktrees/<role>/` checkout, same project-root resolution as `swarm-metrics.js`. It reports the QA-bounce/rework rate over a trailing 14-day window against a trailing 14-day baseline, attributed to the role and ticket-class where rework concentrates most, and persists the signal (versioned, additive schema) for the diagnosis slice (BL-431) to read. An empty window reports `NO_SAMPLE` rather than a divide-by-zero or a fabricated rate; a baseline period with no completed tickets independently reports a null baseline without blocking the main window's own rate. Bounce evidence is read from the `main` ref (BL-340), never a role's own worktree checkout, since evidence files committed by QA are absent from any parcel's ancestry.
+
+This is the concrete signal source for Article 3.5's health-based intake throttling circuit breaker: "QA-bounce rate ... rising meaningfully above their trend baseline" is exactly what this CLI's `reworkRate` vs `baselineRate` comparison measures.
+
 ---
 
 ## Inter-Agent Communication
@@ -611,6 +623,33 @@ runaway agent, was the OOM source.
 - Stryker's own vitest-runner hardcodes `pool: 'threads'` + `maxThreads: 1`
   (the worker-thread rule below) and overrides these caps entirely, so
   mutation runs are unaffected by this cap.
+
+### Mutation-run worker RSS profiling (BL-427, measure-first)
+
+`extension/stryker.config.json`'s `"concurrency": 4` is a fixed, RAM-blind
+number — the mutation-run equivalent of the gap BL-422 closed for the unit
+suite, but BL-422 explicitly does not touch mutation runs (previous
+section). This ticket measures rather than wires an adaptive default; a
+named follow-up will size concurrency from live free RAM.
+
+- `node extension/out/tools/profile-mutation-workers.js [--interval-ms N]
+  [--reserve-mb N] -- <command> [args...]` wraps an already-configured
+  mutation command, samples its child worker processes' RSS at a fixed
+  interval (default 5000ms) until it exits, and prints each worker's peak
+  RSS plus a concurrency recommendation sized from current free RAM
+  (default reserve: 2048MB).
+- `extension/src/metrics/mutationWorkerRss.ts` holds the two pure pieces:
+  `computePeakRssPerWorker` reduces raw RSS samples to each worker's peak
+  (max, never last/average) over its lifetime, and
+  `recommendMutationConcurrency({freeRamBytes, peakRssPerWorkerBytes,
+  coreCount, reserveBytes})` recommends
+  `clamp(floor((freeRamBytes - reserveBytes) / peakRssPerWorkerBytes), 1,
+  coreCount)` — floored at 1 (never zero workers), capped at the core count
+  (RAM headroom can't buy more parallelism than the host has cores).
+- Actually changing `stryker.config.json`'s concurrency to this
+  recommendation is a named follow-up ticket, not this one — until it
+  lands, the mutation run still uses the fixed `4` and this module is a
+  correct-but-dark measurement tool run on demand.
 
 ## Per-Agent Lifecycle Control
 
