@@ -180,6 +180,75 @@ test('readPipelineStages returns active status when handoff is in inbox/new', ()
   assert.equal(stages[0].status, 'active');
 });
 
+test('readPipelineStages reports no held ticket ids when in_process is empty', () => {
+  const tmp = mkTmp();
+  mkdirp(path.join(tmp, '.swarmforge'));
+  const tsv = `coder\tcoder\t${tmp}\tswarmforge-coder\tCoder\tclaude\ttask\n`;
+  fs.writeFileSync(path.join(tmp, '.swarmforge', 'roles.tsv'), tsv);
+
+  const stages = readPipelineStages(tmp);
+  assert.deepEqual(stages[0].heldTicketIds, []);
+});
+
+// BL-452: the pipeline board's own data source - each role's CURRENTLY held
+// ticket id(s), read straight off the in_process handoff's task field. A
+// task name that carries a suffix past the bare ticket id (the normal
+// "short-stable-task-name" shape, e.g. a slug) still resolves to just the
+// ticket id.
+test('readPipelineStages extracts the ticket id from the in_process handoff task field', () => {
+  const tmp = mkTmp();
+  const swarmDir = path.join(tmp, '.swarmforge');
+  mkdirp(swarmDir);
+  const tsv = `coder\tcoder\t${tmp}\tswarmforge-coder\tCoder\tclaude\ttask\n`;
+  fs.writeFileSync(path.join(swarmDir, 'roles.tsv'), tsv);
+
+  const inProcessDir = path.join(swarmDir, 'handoffs', 'inbox', 'in_process');
+  mkdirp(inProcessDir);
+  fs.writeFileSync(
+    path.join(inProcessDir, '00_work.handoff'),
+    'from: specifier\nto: coder\ntype: git_handoff\ntask: BL-452-pipeline-board-telegram-topic\n'
+  );
+
+  const stages = readPipelineStages(tmp);
+  assert.deepEqual(stages[0].heldTicketIds, ['BL-452']);
+});
+
+// A handoff sitting in inbox/new (queued, not yet picked up) is not a
+// CURRENT hold - only in_process counts, distinguishing this reader from
+// readHandoffInboxStatus's own new+in_process status check above.
+test('readPipelineStages does not count a queued inbox/new handoff as a held ticket', () => {
+  const tmp = mkTmp();
+  const swarmDir = path.join(tmp, '.swarmforge');
+  mkdirp(swarmDir);
+  const tsv = `coder\tcoder\t${tmp}\tswarmforge-coder\tCoder\tclaude\ttask\n`;
+  fs.writeFileSync(path.join(swarmDir, 'roles.tsv'), tsv);
+
+  const newDir = path.join(swarmDir, 'handoffs', 'inbox', 'new');
+  mkdirp(newDir);
+  fs.writeFileSync(path.join(newDir, '50_work.handoff'), 'from: helper\nto: coder\ntask: BL-900\n');
+
+  const stages = readPipelineStages(tmp);
+  assert.deepEqual(stages[0].heldTicketIds, []);
+});
+
+// A batch role (cleaner/hardener) may hold several parcels at once, filed
+// under in_process/batch_<...>/ subdirectories - every one of them counts.
+test('readPipelineStages collects every ticket id a batch role holds in_process', () => {
+  const tmp = mkTmp();
+  const swarmDir = path.join(tmp, '.swarmforge');
+  mkdirp(swarmDir);
+  const tsv = `cleaner\tcleaner\t${tmp}\tswarmforge-cleaner\tCleaner\tclaude\tbatch\n`;
+  fs.writeFileSync(path.join(swarmDir, 'roles.tsv'), tsv);
+
+  const batchDir = path.join(swarmDir, 'handoffs', 'inbox', 'in_process', 'batch_20260716');
+  mkdirp(batchDir);
+  fs.writeFileSync(path.join(batchDir, '00_a.handoff'), 'from: coder\nto: cleaner\ntask: BL-100\n');
+  fs.writeFileSync(path.join(batchDir, '01_b.handoff'), 'from: coder\nto: cleaner\ntask: BL-101-a-slug\n');
+
+  const stages = readPipelineStages(tmp);
+  assert.deepEqual([...stages[0].heldTicketIds].sort(), ['BL-100', 'BL-101']);
+});
+
 test('readPipelineStages resolves each master-resident role to its own <role> subdirectory, not a shared one', () => {
   const tmp = mkTmp();
   const swarmDir = path.join(tmp, '.swarmforge');

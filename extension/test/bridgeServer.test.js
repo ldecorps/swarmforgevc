@@ -97,7 +97,7 @@ test('serves the pipeline endpoint matching on-disk state for an authorized requ
     });
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.deepEqual(body, [{ role: 'coder', displayName: 'Coder', status: 'active' }]);
+    assert.deepEqual(body, [{ role: 'coder', displayName: 'Coder', status: 'active', heldTicketIds: [] }]);
   });
 });
 
@@ -1230,7 +1230,7 @@ test('stopping the bridge leaves the swarm state on disk unaffected and a new br
       headers: { authorization: `Bearer ${TOKEN}` },
     });
     const body = await res.json();
-    assert.deepEqual(body, [{ role: 'coder', displayName: 'Coder', status: 'active' }]);
+    assert.deepEqual(body, [{ role: 'coder', displayName: 'Coder', status: 'active', heldTicketIds: [] }]);
   } finally {
     second.stop();
   }

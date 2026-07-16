@@ -59,6 +59,7 @@ import {
   editForumTopicWithRateLimitRetry,
   getForumTopicIconStickers,
   answerCallbackQuery,
+  editMessageText,
   TelegramUpdate,
   TelegramPostFn,
 } from '../notify/telegramClient';
@@ -96,7 +97,8 @@ import { IconStickerLookup, StandingTopicTarget } from '../concierge/topicIcon';
 import { computeRoleGateStatesLive, RoleGateState } from '../bridge/gateSnapshot';
 import { computeCurrentHolders } from '../bridge/holisticProjections';
 import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
-import { parseRolesTsv } from '../swarm/swarmState';
+import { parseRolesTsv, readPipelineStages } from '../swarm/swarmState';
+import { wrapPipelineBoardHtml } from '../concierge/pipelineBoard';
 import { readTmuxSocket, readSwarmRoles, paneTarget, getPaneBaseIndex, capturePane, sendKeys } from '../swarm/tmuxClient';
 import { sendInstructionVerified } from '../swarm/verifiedInject';
 import { sleepSync } from '../swarm/sleepSync';
@@ -880,6 +882,28 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
     titleAdapters: {
       readLastActivityMs: (ticketId) => lastActivityMs(readRecord(targetPath, ticketId)),
       setTopicTitle: (topicId, title) => editForumTopicWithRateLimitRetry(botToken, chatId, topicId, { name: title }),
+    },
+    // BL-452: each role's CURRENTLY held ticket id(s) - straight off the
+    // enriched PipelineStage (swarmState.ts), never readRoleTicket above
+    // (that one's holding-window mechanism is the hop-log family this
+    // feature's own data-source decision explicitly rejected).
+    readRoleHeldTickets: () => Object.fromEntries(readPipelineStages(targetPath).map((s) => [s.role, s.heldTicketIds])),
+    // BL-452: the standing "Pipeline Board" topic is created ONCE - the
+    // ticket's own durable TickState.pipelineBoard.topicId marker is what
+    // makes this idempotent across ticks/restarts (syncPipelineBoard only
+    // ever calls ensureBoardTopic while that marker is unset), so no
+    // separate topic-map file/reuse-lookup is needed the way
+    // ensureOperatorTopic's own reuse-or-create needs one.
+    boardAdapters: {
+      ensureBoardTopic: async () => {
+        const created = await createForumTopic(botToken, chatId, 'Pipeline Board');
+        return created.success ? created.messageThreadId : undefined;
+      },
+      postMessage: (topicId, text) =>
+        sendTelegramMessage(botToken, chatId, wrapPipelineBoardHtml(text), undefined, undefined, topicId, undefined, 'HTML').then((r) =>
+          r.success ? r.messageId : undefined
+        ),
+      editMessage: (topicId, messageId, text) => editMessageText(botToken, chatId, messageId, wrapPipelineBoardHtml(text), 'HTML').then((r) => r.success),
     },
   };
 }
