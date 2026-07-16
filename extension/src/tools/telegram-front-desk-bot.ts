@@ -44,6 +44,11 @@
  *   BRIDGE_TOKEN                            bridge bearer token (read)
  *   BRIDGE_CONTROL_TOKEN                    bridge X-Control-Token (write)
  *   CONCIERGE_TICK_INTERVAL_MS              optional, defaults to 30000
+ *   OPENAI_API_KEY                          BL-426 slice 1: optional - when
+ *                                            absent, voice I/O is simply not
+ *                                            wired (the coordinator's
+ *                                            Operator topic stays text-only,
+ *                                            the exact pre-BL-426 behavior)
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -60,6 +65,9 @@ import {
   getForumTopicIconStickers,
   answerCallbackQuery,
   editMessageText,
+  getFile,
+  downloadTelegramFile,
+  sendVoiceNote,
   TelegramUpdate,
   TelegramPostFn,
 } from '../notify/telegramClient';
@@ -82,6 +90,9 @@ import {
   decideEnsureRoleTopicAction,
   OPERATOR_TOPIC_NAME,
   OPERATOR_SUBJECT_ID,
+  SttResult,
+  TtsResult,
+  ReplyRelayAdapters,
 } from './telegramFrontDeskBotCore';
 import { backlogForTopic } from '../concierge/topicRouter';
 import { recordApprovalReply, recordRejectionReply } from '../concierge/pendingApprovalReply';
@@ -175,6 +186,29 @@ function readPendingButtonActions(targetPath: string): Record<string, 'reject' |
 function writePendingButtonActions(targetPath: string, actions: Record<string, 'reject' | 'amend'>): void {
   fs.mkdirSync(path.dirname(pendingButtonActionsPath(targetPath)), { recursive: true });
   fs.writeFileSync(pendingButtonActionsPath(targetPath), JSON.stringify(actions));
+}
+
+// BL-426 slice 1: {subjectId: true} - which subject's NEXT reply should be
+// synthesized back to a voice note (markVoiceOriginatedTurn/
+// isVoiceOriginatedTurn/clearVoiceOriginatedTurn, telegramFrontDeskBotCore.ts).
+// Same "bot-owned, machine-local, gitignored, no durability promise beyond
+// one process lifetime" posture as telegram-pending-button-actions.json
+// above - a restart mid-turn simply drops back to text-only for that one
+// reply, never a correctness issue.
+function voiceTurnsPath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'telegram-voice-turns.json');
+}
+
+function readVoiceTurns(targetPath: string): Record<string, boolean> {
+  try {
+    return JSON.parse(fs.readFileSync(voiceTurnsPath(targetPath), 'utf8')) as Record<string, boolean>;
+  } catch {
+    return {};
+  }
+}
+
+function writeVoiceTurns(targetPath: string, turns: Record<string, boolean>): void {
+  atomicWrite(voiceTurnsPath(targetPath), JSON.stringify(turns));
 }
 
 // BL-298/300/331/332: readBacklogTopicMap/writeBacklogTopicMap/
@@ -468,7 +502,109 @@ async function answerCallbackQueryQuietly(botToken: string, callbackQueryId: str
   }
 }
 
-function buildPollAdapters(botToken: string, targetPath: string, bridgeUrl: string, controlToken: string, chatId: string): PollAdapters {
+// ── BL-426 slice 1: OpenAI STT/TTS - the human-approved provider choice ──
+
+const OPENAI_STT_MODEL = 'whisper-1';
+const OPENAI_TTS_MODEL = 'tts-1';
+const OPENAI_TTS_VOICE = 'alloy';
+
+type VoiceAudioResolution = { kind: 'ok'; bytes: Buffer } | { kind: 'transient-failure' } | { kind: 'unprocessable' };
+
+// Resolves a voice note's file_id to its downloaded audio bytes (Telegram's
+// own two-step getFile -> plain GET, telegramClient.ts). Split out of
+// transcribeVoiceNote below to keep that function's own branch count at or
+// below the project's CRAP threshold (same "extract so branch count stays
+// low" reasoning telegramFrontDeskBotCore.ts already applies throughout) -
+// this half owns the Telegram-side transient-vs-unprocessable distinction
+// (an empty download is structurally unprocessable, never retryable), the
+// other half owns OpenAI's.
+async function resolveVoiceAudio(botToken: string, fileId: string): Promise<VoiceAudioResolution> {
+  const fileResult = await getFile(botToken, fileId);
+  if (!fileResult.success || !fileResult.filePath) {
+    return { kind: 'transient-failure' };
+  }
+  const download = await downloadTelegramFile(botToken, fileResult.filePath);
+  if (!download.success || !download.bytes) {
+    return { kind: 'transient-failure' };
+  }
+  if (download.bytes.length === 0) {
+    return { kind: 'unprocessable' };
+  }
+  return { kind: 'ok', bytes: download.bytes };
+}
+
+// Classifies OpenAI's transcription response into the same
+// transient-vs-unprocessable distinction resolveVoiceAudio applies to the
+// Telegram side - split out for the same CRAP-budget reason. A 4xx means
+// OpenAI looked at the file and rejected it (bad/undecodable audio) -
+// terminal, never retryable. A 5xx/other is a provider-side failure that
+// may succeed on retry. A 2xx with no transcript text is also terminal -
+// nothing to retry into a different result.
+function classifyTranscriptionResponse(status: number, ok: boolean, text: string | undefined): SttResult {
+  if (!ok) {
+    return status >= 400 && status < 500 ? { kind: 'unprocessable' } : { kind: 'transient-failure' };
+  }
+  return text ? { kind: 'ok', transcript: text } : { kind: 'unprocessable' };
+}
+
+// Downloads the voice note's audio and sends it to OpenAI's transcription
+// endpoint. Distinguishes a TRANSIENT failure (Telegram/network/OpenAI 5xx
+// or timeout - retryable, must NOT drop) from a STRUCTURALLY
+// un-processable file (empty download, or OpenAI's own 4xx rejecting the
+// audio as undecodable - a deliberate, terminal drop) per the ticket's own
+// failure posture and the engineering article's deliberate-drop-vs-failure
+// rule - collapsing these into one outcome is exactly the mistake BL-389
+// had to fix for ordinary drops elsewhere in this file.
+export async function transcribeVoiceNote(botToken: string, openaiApiKey: string, fileId: string): Promise<SttResult> {
+  const audio = await resolveVoiceAudio(botToken, fileId);
+  if (audio.kind !== 'ok') {
+    return audio;
+  }
+  try {
+    const form = new FormData();
+    form.append('file', new Blob([audio.bytes]), 'voice.oga');
+    form.append('model', OPENAI_STT_MODEL);
+    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${openaiApiKey}` },
+      body: form,
+    });
+    const json = res.ok ? ((await res.json()) as { text?: string }) : undefined;
+    return classifyTranscriptionResponse(res.status, res.ok, json?.text);
+  } catch {
+    return { kind: 'transient-failure' };
+  }
+}
+
+// Synthesizes the coordinator's text reply to OGG/Opus audio via OpenAI's
+// TTS endpoint. A failure here is NOT retried (deliverReply's own
+// synthesizeVoiceReplyIfNeeded already degrades gracefully to the
+// text-only reply already sent - see telegramFrontDeskBotCore.ts) - unlike
+// STT, a missed voice-out enrichment never loses the answer itself.
+export async function synthesizeVoiceReply(openaiApiKey: string, text: string): Promise<TtsResult> {
+  try {
+    const res = await fetch('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${openaiApiKey}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ model: OPENAI_TTS_MODEL, voice: OPENAI_TTS_VOICE, input: text, response_format: 'opus' }),
+    });
+    if (!res.ok) {
+      return { kind: 'failure' };
+    }
+    return { kind: 'ok', audio: Buffer.from(await res.arrayBuffer()) };
+  } catch {
+    return { kind: 'failure' };
+  }
+}
+
+function buildPollAdapters(
+  botToken: string,
+  targetPath: string,
+  bridgeUrl: string,
+  controlToken: string,
+  chatId: string,
+  openaiApiKey: string | undefined
+): PollAdapters {
   return {
     chatId,
     getUpdates: (offset) => getTelegramUpdates(botToken, offset, POLL_TIMEOUT_SECONDS),
@@ -480,6 +616,20 @@ function buildPollAdapters(botToken: string, targetPath: string, bridgeUrl: stri
     recordApprovalReply: (backlogId) => Promise.resolve(recordApprovalReply(targetPath, backlogId)),
     recordRejectionReply: (backlogId, reason) => Promise.resolve(recordRejectionReply(targetPath, backlogId, reason)),
     getPendingButtonAction: (backlogId) => Promise.resolve(readPendingButtonActions(targetPath)[backlogId]),
+    // BL-426 slice 1: absent (openaiApiKey unset) means "voice not wired" -
+    // the exact pre-BL-426 behavior, same optional-adapter convention as
+    // BL-410/BL-425 above.
+    ...(openaiApiKey
+      ? {
+          transcribeVoice: (fileId: string) => transcribeVoiceNote(botToken, openaiApiKey, fileId),
+          markVoiceOriginatedTurn: (subjectId: string) => {
+            const turns = readVoiceTurns(targetPath);
+            turns[subjectId] = true;
+            writeVoiceTurns(targetPath, turns);
+            return Promise.resolve();
+          },
+        }
+      : {}),
     clearPendingButtonAction: (backlogId) => {
       const actions = readPendingButtonActions(targetPath);
       delete actions[backlogId];
@@ -528,8 +678,16 @@ async function escalateStuckDelivery(botToken: string, chatId: string): Promise<
 // timing (the actual sleep call), the stderr write for a degraded
 // warning, and (BL-370) the poll-heartbeat write - written on every
 // completed cycle, success or handled failure alike.
-async function pollLoop(botToken: string, principalUserId: string, targetPath: string, bridgeUrl: string, controlToken: string, chatId: string): Promise<void> {
-  const adapters = buildPollAdapters(botToken, targetPath, bridgeUrl, controlToken, chatId);
+async function pollLoop(
+  botToken: string,
+  principalUserId: string,
+  targetPath: string,
+  bridgeUrl: string,
+  controlToken: string,
+  chatId: string,
+  openaiApiKey: string | undefined
+): Promise<void> {
+  const adapters = buildPollAdapters(botToken, targetPath, bridgeUrl, controlToken, chatId, openaiApiKey);
   let state: PollLoopState = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 };
   for (;;) {
     const cycle = await runPollCycle(state, principalUserId, adapters, POLL_BACKOFF_CONFIG);
@@ -568,6 +726,30 @@ async function ackReply(bridgeUrl: string, controlToken: string, id: string): Pr
 // relaySseReplies (adapter-injected, unit-tested), mirroring pollLoop/
 // pollAndForward's own thin-wrapper/tested-core split above. seenIds is
 // threaded in from subscribeReplies below so it survives a reconnect.
+type VoiceReplyAdapters = Partial<Pick<ReplyRelayAdapters, 'isVoiceOriginatedTurn' | 'clearVoiceOriginatedTurn' | 'synthesizeVoice' | 'sendVoice'>>;
+
+// BL-426 slice 1: absent (openaiApiKey unset) means "voice not wired" - the
+// exact pre-BL-426 text-only behavior, same optional-adapter convention
+// buildPollAdapters above uses. Split out of connectAndRelayReplies below to
+// keep that function's own branch/statement count at or below the project's
+// CRAP threshold (same "extract so branch count stays low" reasoning
+// telegramFrontDeskBotCore.ts already applies throughout).
+function buildVoiceReplyAdapters(openaiApiKey: string | undefined, botToken: string, chatId: string, targetPath: string): VoiceReplyAdapters {
+  return openaiApiKey
+    ? {
+        isVoiceOriginatedTurn: (threadId: string) => Promise.resolve(readVoiceTurns(targetPath)[threadId] === true),
+        clearVoiceOriginatedTurn: (threadId: string) => {
+          const turns = readVoiceTurns(targetPath);
+          delete turns[threadId];
+          writeVoiceTurns(targetPath, turns);
+          return Promise.resolve();
+        },
+        synthesizeVoice: (text: string) => synthesizeVoiceReply(openaiApiKey, text),
+        sendVoice: (topicId: number | undefined, audio: Buffer) => sendVoiceNote(botToken, chatId, audio, topicId).then(() => undefined),
+      }
+    : {};
+}
+
 async function connectAndRelayReplies(
   botToken: string,
   chatId: string,
@@ -575,7 +757,8 @@ async function connectAndRelayReplies(
   bridgeUrl: string,
   bridgeToken: string,
   controlToken: string,
-  seenIds: Set<string>
+  seenIds: Set<string>,
+  openaiApiKey: string | undefined
 ): Promise<void> {
   const res = await fetch(`${bridgeUrl}/events`, { headers: { authorization: `Bearer ${bridgeToken}` } });
   if (!res.body) {
@@ -617,6 +800,7 @@ async function connectAndRelayReplies(
       // unchanged and still exported for any other caller).
       resolveDelivery: (subjectId) => resolveReplyDelivery(readTopicMap(targetPath), readBacklogTopicMap(targetPath), subjectId),
       ackReply: (id) => ackReply(bridgeUrl, controlToken, id),
+      ...buildVoiceReplyAdapters(openaiApiKey, botToken, chatId, targetPath),
     },
     seenIds
   );
@@ -655,10 +839,11 @@ async function attemptReplyRelayConnection(
   bridgeUrl: string,
   bridgeToken: string,
   controlToken: string,
-  seenIds: Set<string>
+  seenIds: Set<string>,
+  openaiApiKey: string | undefined
 ): Promise<string | undefined> {
   try {
-    await connectAndRelayReplies(botToken, chatId, targetPath, bridgeUrl, bridgeToken, controlToken, seenIds);
+    await connectAndRelayReplies(botToken, chatId, targetPath, bridgeUrl, bridgeToken, controlToken, seenIds, openaiApiKey);
     return undefined;
   } catch (error) {
     return describeError(error);
@@ -677,12 +862,13 @@ async function subscribeReplies(
   targetPath: string,
   bridgeUrl: string,
   bridgeToken: string,
-  controlToken: string
+  controlToken: string,
+  openaiApiKey: string | undefined
 ): Promise<void> {
   const seenIds = new Set<string>();
   let state: ReplyRelayLoopState = { consecutiveFailures: 0 };
   for (;;) {
-    const errorMessage = await attemptReplyRelayConnection(botToken, chatId, targetPath, bridgeUrl, bridgeToken, controlToken, seenIds);
+    const errorMessage = await attemptReplyRelayConnection(botToken, chatId, targetPath, bridgeUrl, bridgeToken, controlToken, seenIds, openaiApiKey);
     const cycle = computeReplyRelayCycleResult(state, errorMessage === undefined, REPLY_RECONNECT_BACKOFF_CONFIG);
     state = cycle.state;
     await applyReplyRelayCycleResult(cycle, errorMessage, (message) => process.stderr.write(message), sleep);
@@ -1042,6 +1228,9 @@ export async function main(): Promise<void> {
   const principalUserId = requiredEnv('TELEGRAM_PRINCIPAL_USER_ID');
   const bridgeToken = requiredEnv('BRIDGE_TOKEN');
   const controlToken = requiredEnv('BRIDGE_CONTROL_TOKEN');
+  // BL-426 slice 1: optional - absent means voice I/O is simply not wired
+  // (see buildPollAdapters/connectAndRelayReplies), never a startup failure.
+  const openaiApiKey = process.env.OPENAI_API_KEY;
 
   // BL-346: bind the standing Operator topic BEFORE any loop starts
   // polling, so no inbound message can ever reach it while it is still
@@ -1064,10 +1253,16 @@ export async function main(): Promise<void> {
   // reportFatalAndExit would then process.exit(1) - tearing down the other
   // two loops even though nothing was wrong with them.
   await Promise.all([
-    runContainedLoop('poll', () => pollLoop(botToken, principalUserId, targetPath, bridgeUrl, controlToken, chatId), sleep, LOOP_RESTART_DELAY_MS, logLoopFault),
+    runContainedLoop(
+      'poll',
+      () => pollLoop(botToken, principalUserId, targetPath, bridgeUrl, controlToken, chatId, openaiApiKey),
+      sleep,
+      LOOP_RESTART_DELAY_MS,
+      logLoopFault
+    ),
     runContainedLoop(
       'reply-relay',
-      () => subscribeReplies(botToken, chatId, targetPath, bridgeUrl, bridgeToken, controlToken),
+      () => subscribeReplies(botToken, chatId, targetPath, bridgeUrl, bridgeToken, controlToken, openaiApiKey),
       sleep,
       LOOP_RESTART_DELAY_MS,
       logLoopFault
