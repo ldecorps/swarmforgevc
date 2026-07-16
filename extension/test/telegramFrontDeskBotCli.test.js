@@ -791,6 +791,51 @@ test('BL-426: transcribeVoiceNote reports a transient failure when Telegram\'s o
   });
 });
 
+test('BL-426: transcribeVoiceNote reports a transient failure when the file download itself fails (getFile succeeded)', async () => {
+  await withFetch(async (url) => {
+    if (String(url).includes('/getFile')) {
+      return { ok: true, status: 200, json: async () => ({ ok: true, result: { file_path: 'voice/file_1.oga' } }) };
+    }
+    if (String(url).includes('/file/bot')) {
+      return { ok: false, status: 500, json: async () => ({}) };
+    }
+    throw new Error('OpenAI should not be called once the download fails');
+  }, async () => {
+    const result = await transcribeVoiceNote(BOT_TOKEN, OPENAI_KEY, 'file-abc');
+    assert.deepEqual(result, { kind: 'transient-failure' });
+  });
+});
+
+test('BL-426: transcribeVoiceNote reports unprocessable when OpenAI returns 2xx with no transcript text', async () => {
+  await withFetch(async (url) => {
+    if (String(url).includes('/getFile')) {
+      return { ok: true, status: 200, json: async () => ({ ok: true, result: { file_path: 'voice/file_1.oga' } }) };
+    }
+    if (String(url).includes('/file/bot')) {
+      return { ok: true, status: 200, arrayBuffer: async () => toArrayBuffer('audio-bytes'), json: async () => { throw new Error('not json'); } };
+    }
+    return { ok: true, status: 200, json: async () => ({}) };
+  }, async () => {
+    const result = await transcribeVoiceNote(BOT_TOKEN, OPENAI_KEY, 'file-abc');
+    assert.deepEqual(result, { kind: 'unprocessable' });
+  });
+});
+
+test('BL-426: transcribeVoiceNote reports a transient failure on a thrown network error', async () => {
+  await withFetch(async (url) => {
+    if (String(url).includes('/getFile')) {
+      return { ok: true, status: 200, json: async () => ({ ok: true, result: { file_path: 'voice/file_1.oga' } }) };
+    }
+    if (String(url).includes('/file/bot')) {
+      return { ok: true, status: 200, arrayBuffer: async () => toArrayBuffer('audio-bytes'), json: async () => { throw new Error('not json'); } };
+    }
+    throw new Error('network down');
+  }, async () => {
+    const result = await transcribeVoiceNote(BOT_TOKEN, OPENAI_KEY, 'file-abc');
+    assert.deepEqual(result, { kind: 'transient-failure' });
+  });
+});
+
 test('BL-426: synthesizeVoiceReply returns the synthesized audio bytes on the happy path', async () => {
   await withFetch(async (url, opts) => {
     assert.equal(url, 'https://api.openai.com/v1/audio/speech');

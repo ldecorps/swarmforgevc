@@ -661,6 +661,14 @@ function openTopicIdFor(decision: BotUpdateDecision): number | undefined {
 // mechanism - the same voice note is simply redelivered by Telegram on the
 // next poll cycle since the offset never advanced past it, and each such
 // redelivery IS the bounded retry.
+// Split out of attemptVoiceDelivery below for the same CRAP-budget reason
+// as attemptSteeringDelivery/openTopicIdFor above - maps a non-'ok' SttResult
+// to its delivery outcome (transient -> 'failed', reusing the bounded-retry
+// machinery per the comment below; unprocessable -> 'dropped').
+function sttFailureOutcome(stt: Exclude<SttResult, { kind: 'ok' }>): UpdateDeliveryOutcome {
+  return stt.kind === 'transient-failure' ? 'failed' : 'dropped';
+}
+
 async function attemptVoiceDelivery(
   update: TelegramUpdate,
   principalUserId: string,
@@ -677,11 +685,8 @@ async function attemptVoiceDelivery(
     return 'dropped';
   }
   const stt = await adapters.transcribeVoice(decision.fileId);
-  if (stt.kind === 'transient-failure') {
-    return 'failed';
-  }
-  if (stt.kind === 'unprocessable') {
-    return 'dropped';
+  if (stt.kind !== 'ok') {
+    return sttFailureOutcome(stt);
   }
   const posted = await adapters.postToBridge(OPERATOR_SUBJECT_ID, stt.transcript, update.update_id);
   if (posted) {
@@ -690,14 +695,28 @@ async function attemptVoiceDelivery(
   return deliveryOutcome(posted);
 }
 
-async function processMessageUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
+// Split out of processMessageUpdate below for the same CRAP-budget reason as
+// attemptSteeringDelivery's own comment documents - composing the steering
+// and voice side-channel attempts here (rather than as two separate ifs in
+// processMessageUpdate) is that same precedent applied a second time: adding
+// attemptVoiceDelivery as a third inline check is exactly what would push it
+// over again.
+async function attemptSideChannelDelivery(
+  update: TelegramUpdate,
+  principalUserId: string,
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome | undefined> {
   const steeringOutcome = await attemptSteeringDelivery(update, principalUserId, adapters);
   if (steeringOutcome) {
     return steeringOutcome;
   }
-  const voiceOutcome = await attemptVoiceDelivery(update, principalUserId, adapters);
-  if (voiceOutcome) {
-    return voiceOutcome;
+  return attemptVoiceDelivery(update, principalUserId, adapters);
+}
+
+async function processMessageUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
+  const sideChannelOutcome = await attemptSideChannelDelivery(update, principalUserId, adapters);
+  if (sideChannelOutcome) {
+    return sideChannelOutcome;
   }
   const decision = decideUpdateAction(update, principalUserId, adapters.chatId, adapters.subjectForTopic, adapters.backlogForTopic);
   if (decision.action === 'post-existing') {

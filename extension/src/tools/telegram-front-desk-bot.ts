@@ -92,6 +92,7 @@ import {
   OPERATOR_SUBJECT_ID,
   SttResult,
   TtsResult,
+  ReplyRelayAdapters,
 } from './telegramFrontDeskBotCore';
 import { backlogForTopic } from '../concierge/topicRouter';
 import { recordApprovalReply, recordRejectionReply } from '../concierge/pendingApprovalReply';
@@ -507,16 +508,17 @@ const OPENAI_STT_MODEL = 'whisper-1';
 const OPENAI_TTS_MODEL = 'tts-1';
 const OPENAI_TTS_VOICE = 'alloy';
 
-// Downloads the voice note's audio (Telegram's own two-step getFile ->
-// plain GET, telegramClient.ts) and sends it to OpenAI's transcription
-// endpoint. Distinguishes a TRANSIENT failure (Telegram/network/OpenAI 5xx
-// or timeout - retryable, must NOT drop) from a STRUCTURALLY
-// un-processable file (empty download, or OpenAI's own 4xx rejecting the
-// audio as undecodable - a deliberate, terminal drop) per the ticket's own
-// failure posture and the engineering article's deliberate-drop-vs-failure
-// rule - collapsing these into one outcome is exactly the mistake BL-389
-// had to fix for ordinary drops elsewhere in this file.
-export async function transcribeVoiceNote(botToken: string, openaiApiKey: string, fileId: string): Promise<SttResult> {
+type VoiceAudioResolution = { kind: 'ok'; bytes: Buffer } | { kind: 'transient-failure' } | { kind: 'unprocessable' };
+
+// Resolves a voice note's file_id to its downloaded audio bytes (Telegram's
+// own two-step getFile -> plain GET, telegramClient.ts). Split out of
+// transcribeVoiceNote below to keep that function's own branch count at or
+// below the project's CRAP threshold (same "extract so branch count stays
+// low" reasoning telegramFrontDeskBotCore.ts already applies throughout) -
+// this half owns the Telegram-side transient-vs-unprocessable distinction
+// (an empty download is structurally unprocessable, never retryable), the
+// other half owns OpenAI's.
+async function resolveVoiceAudio(botToken: string, fileId: string): Promise<VoiceAudioResolution> {
   const fileResult = await getFile(botToken, fileId);
   if (!fileResult.success || !fileResult.filePath) {
     return { kind: 'transient-failure' };
@@ -528,23 +530,47 @@ export async function transcribeVoiceNote(botToken: string, openaiApiKey: string
   if (download.bytes.length === 0) {
     return { kind: 'unprocessable' };
   }
+  return { kind: 'ok', bytes: download.bytes };
+}
+
+// Classifies OpenAI's transcription response into the same
+// transient-vs-unprocessable distinction resolveVoiceAudio applies to the
+// Telegram side - split out for the same CRAP-budget reason. A 4xx means
+// OpenAI looked at the file and rejected it (bad/undecodable audio) -
+// terminal, never retryable. A 5xx/other is a provider-side failure that
+// may succeed on retry. A 2xx with no transcript text is also terminal -
+// nothing to retry into a different result.
+function classifyTranscriptionResponse(status: number, ok: boolean, text: string | undefined): SttResult {
+  if (!ok) {
+    return status >= 400 && status < 500 ? { kind: 'unprocessable' } : { kind: 'transient-failure' };
+  }
+  return text ? { kind: 'ok', transcript: text } : { kind: 'unprocessable' };
+}
+
+// Downloads the voice note's audio and sends it to OpenAI's transcription
+// endpoint. Distinguishes a TRANSIENT failure (Telegram/network/OpenAI 5xx
+// or timeout - retryable, must NOT drop) from a STRUCTURALLY
+// un-processable file (empty download, or OpenAI's own 4xx rejecting the
+// audio as undecodable - a deliberate, terminal drop) per the ticket's own
+// failure posture and the engineering article's deliberate-drop-vs-failure
+// rule - collapsing these into one outcome is exactly the mistake BL-389
+// had to fix for ordinary drops elsewhere in this file.
+export async function transcribeVoiceNote(botToken: string, openaiApiKey: string, fileId: string): Promise<SttResult> {
+  const audio = await resolveVoiceAudio(botToken, fileId);
+  if (audio.kind !== 'ok') {
+    return audio;
+  }
   try {
     const form = new FormData();
-    form.append('file', new Blob([download.bytes]), 'voice.oga');
+    form.append('file', new Blob([audio.bytes]), 'voice.oga');
     form.append('model', OPENAI_STT_MODEL);
     const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: { authorization: `Bearer ${openaiApiKey}` },
       body: form,
     });
-    if (!res.ok) {
-      // A 4xx means OpenAI looked at the file and rejected it (bad/
-      // undecodable audio) - terminal, never retryable. A 5xx/other is a
-      // provider-side failure that may succeed on retry.
-      return res.status >= 400 && res.status < 500 ? { kind: 'unprocessable' } : { kind: 'transient-failure' };
-    }
-    const json = (await res.json()) as { text?: string };
-    return json.text ? { kind: 'ok', transcript: json.text } : { kind: 'unprocessable' };
+    const json = res.ok ? ((await res.json()) as { text?: string }) : undefined;
+    return classifyTranscriptionResponse(res.status, res.ok, json?.text);
   } catch {
     return { kind: 'transient-failure' };
   }
@@ -700,6 +726,30 @@ async function ackReply(bridgeUrl: string, controlToken: string, id: string): Pr
 // relaySseReplies (adapter-injected, unit-tested), mirroring pollLoop/
 // pollAndForward's own thin-wrapper/tested-core split above. seenIds is
 // threaded in from subscribeReplies below so it survives a reconnect.
+type VoiceReplyAdapters = Partial<Pick<ReplyRelayAdapters, 'isVoiceOriginatedTurn' | 'clearVoiceOriginatedTurn' | 'synthesizeVoice' | 'sendVoice'>>;
+
+// BL-426 slice 1: absent (openaiApiKey unset) means "voice not wired" - the
+// exact pre-BL-426 text-only behavior, same optional-adapter convention
+// buildPollAdapters above uses. Split out of connectAndRelayReplies below to
+// keep that function's own branch/statement count at or below the project's
+// CRAP threshold (same "extract so branch count stays low" reasoning
+// telegramFrontDeskBotCore.ts already applies throughout).
+function buildVoiceReplyAdapters(openaiApiKey: string | undefined, botToken: string, chatId: string, targetPath: string): VoiceReplyAdapters {
+  return openaiApiKey
+    ? {
+        isVoiceOriginatedTurn: (threadId: string) => Promise.resolve(readVoiceTurns(targetPath)[threadId] === true),
+        clearVoiceOriginatedTurn: (threadId: string) => {
+          const turns = readVoiceTurns(targetPath);
+          delete turns[threadId];
+          writeVoiceTurns(targetPath, turns);
+          return Promise.resolve();
+        },
+        synthesizeVoice: (text: string) => synthesizeVoiceReply(openaiApiKey, text),
+        sendVoice: (topicId: number | undefined, audio: Buffer) => sendVoiceNote(botToken, chatId, audio, topicId).then(() => undefined),
+      }
+    : {};
+}
+
 async function connectAndRelayReplies(
   botToken: string,
   chatId: string,
@@ -750,22 +800,7 @@ async function connectAndRelayReplies(
       // unchanged and still exported for any other caller).
       resolveDelivery: (subjectId) => resolveReplyDelivery(readTopicMap(targetPath), readBacklogTopicMap(targetPath), subjectId),
       ackReply: (id) => ackReply(bridgeUrl, controlToken, id),
-      // BL-426 slice 1: absent (openaiApiKey unset) means "voice not wired" -
-      // the exact pre-BL-426 text-only behavior, same optional-adapter
-      // convention buildPollAdapters above uses.
-      ...(openaiApiKey
-        ? {
-            isVoiceOriginatedTurn: (threadId: string) => Promise.resolve(readVoiceTurns(targetPath)[threadId] === true),
-            clearVoiceOriginatedTurn: (threadId: string) => {
-              const turns = readVoiceTurns(targetPath);
-              delete turns[threadId];
-              writeVoiceTurns(targetPath, turns);
-              return Promise.resolve();
-            },
-            synthesizeVoice: (text: string) => synthesizeVoiceReply(openaiApiKey, text),
-            sendVoice: (topicId: number | undefined, audio: Buffer) => sendVoiceNote(botToken, chatId, audio, topicId).then(() => undefined),
-          }
-        : {}),
+      ...buildVoiceReplyAdapters(openaiApiKey, botToken, chatId, targetPath),
     },
     seenIds
   );

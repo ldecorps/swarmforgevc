@@ -76,6 +76,23 @@ function extractMigrateToChatId(json: unknown): number | undefined {
   return typeof parameters?.migrate_to_chat_id === 'number' ? parameters.migrate_to_chat_id : undefined;
 }
 
+// Shared by callTelegramApi/downloadTelegramFile/sendVoiceNote below - a
+// non-ok response becomes this same "status[: description]" text, redacted.
+// Split out so the multipart sendVoice/download paths (which cannot go
+// through callTelegramApi's JSON-body request) still format identically to
+// it, rather than re-deriving the same template.
+function formatApiFailureError(status: number, json: unknown, token: string): string {
+  const description = extractDescription(json);
+  return redactToken(`Telegram API responded with status ${status}${description ? `: ${description}` : ''}`, token);
+}
+
+// Shared by the same three callers as formatApiFailureError above - a
+// thrown request becomes this same redacted "<prefix>: <detail>" text.
+function formatNetworkError(prefix: string, err: unknown, token: string): string {
+  const detail = err instanceof Error ? err.message : 'unknown error';
+  return redactToken(`${prefix}: ${detail}`, token);
+}
+
 // Shared by sendTelegramMessage/getTelegramUpdates/createForumTopic below -
 // each POSTs a different method + body but interprets the response/error
 // identically (a non-ok status becomes a description-carrying error, a
@@ -85,18 +102,16 @@ async function callTelegramApi(token: string, method: string, body: string, post
   try {
     const res = await postFn(apiUrl(token, method), body);
     if (!res.ok) {
-      const description = extractDescription(res.json);
       return {
         success: false,
-        error: redactToken(`Telegram API responded with status ${res.status}${description ? `: ${description}` : ''}`, token),
+        error: formatApiFailureError(res.status, res.json, token),
         retryAfterSeconds: extractRetryAfterSeconds(res.json),
         migrateToChatId: extractMigrateToChatId(res.json),
       };
     }
     return { success: true, json: res.json };
   } catch (err) {
-    const detail = err instanceof Error ? err.message : 'unknown error';
-    return { success: false, error: redactToken(`Telegram request failed: ${detail}`, token) };
+    return { success: false, error: formatNetworkError('Telegram request failed', err, token) };
   }
 }
 
@@ -604,8 +619,7 @@ export async function downloadTelegramFile(
     }
     return { success: true, bytes: res.bytes };
   } catch (err) {
-    const detail = err instanceof Error ? err.message : 'unknown error';
-    return { success: false, error: redactToken(`Telegram file download failed: ${detail}`, token) };
+    return { success: false, error: formatNetworkError('Telegram file download failed', err, token) };
   }
 }
 
@@ -649,12 +663,10 @@ export async function sendVoiceNote(
   try {
     const res = await postVoiceFn(apiUrl(token, 'sendVoice'), form);
     if (!res.ok) {
-      const description = extractDescription(res.json);
-      return { success: false, error: redactToken(`Telegram API responded with status ${res.status}${description ? `: ${description}` : ''}`, token) };
+      return { success: false, error: formatApiFailureError(res.status, res.json, token) };
     }
     return { success: true };
   } catch (err) {
-    const detail = err instanceof Error ? err.message : 'unknown error';
-    return { success: false, error: redactToken(`Telegram request failed: ${detail}`, token) };
+    return { success: false, error: formatNetworkError('Telegram request failed', err, token) };
   }
 }
