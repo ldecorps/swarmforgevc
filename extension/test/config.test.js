@@ -17,6 +17,33 @@ const {
 } = require('../out/config/targetBootstrap');
 const { resolveTargetPath } = require('../out/config/targetPath');
 
+// BL-443 QA bounce: hasGitIdentityConfigured/resolveCommitIdentityOverrides
+// (targetBootstrap.ts) resolve the identity the same way `git commit` itself
+// would - local, then GLOBAL, then SYSTEM config - so a fixture that only
+// omits the LOCAL identity ("no git identity configured") still silently
+// leaks whatever global/system identity the machine running the suite
+// happens to have; that machine having none is incidental, not something
+// the fixture enforces. GIT_CONFIG_GLOBAL/GIT_CONFIG_SYSTEM (real git env
+// vars, honored since git 2.32) redirect git's own global/system config
+// lookup to a path that can never exist, so this holds on every machine -
+// an explicit allowlist restore in `finally`, same posture as this
+// codebase's other env-isolation helpers (notifyDeadLettersCli.test.js).
+const GIT_IDENTITY_ISOLATION_ENV_KEYS = ['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM'];
+async function withNoGitIdentityAnywhere(fn) {
+  const previous = Object.fromEntries(GIT_IDENTITY_ISOLATION_ENV_KEYS.map((k) => [k, process.env[k]]));
+  try {
+    for (const key of GIT_IDENTITY_ISOLATION_ENV_KEYS) {
+      process.env[key] = '/dev/null';
+    }
+    return await fn();
+  } finally {
+    for (const key of GIT_IDENTITY_ISOLATION_ENV_KEYS) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
+}
+
 const FIXTURE_CONTRACT = {
   scope: ['Build the thing.'],
   outOfScope: ['Rewrite the stack.'],
@@ -423,14 +450,46 @@ test('BL-443 defect 2: the contract commits even when the target ignores .swarmf
 });
 
 test('BL-443 defect 3: the commit succeeds with a fallback author identity when the target has no git identity configured', async () => {
-  const tmp = mkTmpDir('sfvc-bootstrap-');
-  execSync('git init', { cwd: tmp });
+  await withNoGitIdentityAnywhere(async () => {
+    const tmp = mkTmpDir('sfvc-bootstrap-');
+    execSync('git init', { cwd: tmp });
 
-  const result = await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+    const result = await initializeTargetContract(tmp, FIXTURE_CONTRACT);
 
-  assert.equal(result.committed, true);
-  const authorLine = execSync("git log -1 --format='%an <%ae>'", { cwd: tmp }).toString().trim();
-  assert.equal(authorLine, 'SwarmForge <noreply@swarmforge>');
+    assert.equal(result.committed, true);
+    const authorLine = execSync("git log -1 --format='%an <%ae>'", { cwd: tmp }).toString().trim();
+    assert.equal(authorLine, 'SwarmForge <noreply@swarmforge>');
+  });
+});
+
+// A break-then-fix proof that GIT_CONFIG_GLOBAL/GIT_CONFIG_SYSTEM above
+// actually redirect what git resolves, rather than the test above passing
+// "by accident" the same way the ORIGINAL bounce did (a box that merely
+// happens to have no identity). With a REAL global identity present at the
+// redirected path, the target (which has no LOCAL identity) resolves to
+// THAT identity, and the fallback path is never engaged - proving the
+// isolation mechanism genuinely controls what git sees, on this box.
+test('BL-443 defect 3 (isolation mechanism check): a real global identity at the redirected path is what git actually resolves, not the fallback', async () => {
+  const fakeGlobalConfig = path.join(mkTmpDir('sfvc-fake-home-'), '.gitconfig');
+  fs.writeFileSync(fakeGlobalConfig, '[user]\n\tname = Developer\n\temail = dev@example.com\n');
+  const previous = { GIT_CONFIG_GLOBAL: process.env.GIT_CONFIG_GLOBAL, GIT_CONFIG_SYSTEM: process.env.GIT_CONFIG_SYSTEM };
+  try {
+    process.env.GIT_CONFIG_GLOBAL = fakeGlobalConfig;
+    process.env.GIT_CONFIG_SYSTEM = '/dev/null';
+    const tmp = mkTmpDir('sfvc-bootstrap-');
+    execSync('git init', { cwd: tmp });
+
+    const result = await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+
+    assert.equal(result.committed, true);
+    const authorLine = execSync("git log -1 --format='%an <%ae>'", { cwd: tmp }).toString().trim();
+    assert.equal(authorLine, 'Developer <dev@example.com>');
+  } finally {
+    for (const key of Object.keys(previous)) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
 });
 
 test('BL-443 defect 4: a re-run after a partial failure that left the contract written but uncommitted actually commits it', async () => {

@@ -87,14 +87,23 @@ function replyOutboxFile(projectRoot: string): string {
   return path.join(projectRoot, '.swarmforge', 'operator', 'telegram-reply-outbox.jsonl');
 }
 
-export function appendToReplyOutbox(projectRoot: string, threadId: string, text: string): void {
+// BL-440: retractsPendingQuestion is OMITTED from the written line (never
+// written as `false`) for every ordinary reply - operator_runtime.bb's own
+// direct writer (the idle-nudge/awaiting-answer escalation) never sets this
+// key at all, and readNewReplyOutboxEntries' own absent-means-no-retraction
+// contract must hold for both writers alike.
+export function appendToReplyOutbox(projectRoot: string, threadId: string, text: string, retractsPendingQuestion?: boolean): void {
   const file = replyOutboxFile(projectRoot);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   // String keys (not the TS field names) so JSON.stringify prints EXACTLY
   // {"threadId":...,"text":...} - operatorEventQueue.ts's
   // readNewReplyOutboxEntries and operator_runtime.bb's own writer both
   // read/write these two field names verbatim.
-  fs.appendFileSync(file, JSON.stringify({ threadId, text }) + '\n');
+  const entry: Record<string, unknown> = { threadId, text };
+  if (retractsPendingQuestion) {
+    entry.retractsPendingQuestion = true;
+  }
+  fs.appendFileSync(file, JSON.stringify(entry) + '\n');
 }
 
 function readOperatorStatus(projectRoot: string): OperatorStatusProjection | undefined {
@@ -109,7 +118,10 @@ interface RunContext {
   projectRoot: string;
   mainWorktreePath: string;
   roleWorktrees: RoleWorktree[];
-  reply: (text: string) => void;
+  // BL-440: the optional second param is unused by status replies and the
+  // human_approval override below - only ApprovalDeps.reply's 'answer'
+  // branch (runApprove below) ever passes it.
+  reply: (text: string, retractsPendingQuestion?: boolean) => void;
 }
 
 // BL-416: composes the ticket-scoped reply for a backlog item's OWN
@@ -205,7 +217,7 @@ export function main(): void {
     projectRoot,
     mainWorktreePath,
     roleWorktrees,
-    reply: (text) => appendToReplyOutbox(projectRoot, command.threadId, text),
+    reply: (text, retractsPendingQuestion) => appendToReplyOutbox(projectRoot, command.threadId, text, retractsPendingQuestion),
   };
 
   if (command.mode === 'approve') {
