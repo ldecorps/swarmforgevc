@@ -27,6 +27,13 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { spawnSync, execFileSync } = require('node:child_process');
+// BL-458: this file's own process.on('exit', ...) handler (below) does NOT
+// fire on SIGTERM/SIGINT/timeout/OOM - one of the ticket's own 3 named
+// "exit-only" offenders. onAbnormalExit gives it the SAME exit/SIGINT/
+// SIGTERM coverage frontDeskHeadlessLauncherSteps.js's track()/reap() use,
+// without adopting that pidfile shape - this file's own pkill -f/pidfile
+// kill logic stays exactly as it was.
+const { onAbnormalExit } = require('./lib/fixtureReaper');
 
 const SWARMFORGE_SCRIPTS = path.join(__dirname, '..', '..', '..', 'swarmforge', 'scripts');
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -190,11 +197,12 @@ function waitFor(timeoutMs, predicate) {
 
 // Safety net mirroring test_role_lifecycle_cli.sh's own trap-based
 // final_cleanup: if a scenario throws before reaching its own cleanup
-// step (stopFixture, below), this still tears down whatever real
-// processes it spawned when the test process itself exits - never leaves
-// a real spawned bridge/bot/supervisor running past the test run.
+// step (stopFixture, below), or the runner itself is killed (SIGTERM/
+// SIGINT), this still tears down whatever real processes it spawned
+// (onAbnormalExit below, BL-458) - never leaves a real spawned
+// bridge/bot/supervisor running past the test run.
 const liveFixtureRoots = new Set();
-process.on('exit', () => {
+onAbnormalExit(() => {
   for (const root of liveFixtureRoots) {
     try {
       spawnSync('pkill', ['-9', '-f', path.join(root, 'extension', 'out', 'tools')]);
