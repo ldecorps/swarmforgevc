@@ -505,6 +505,20 @@ test('BL-434: a non-ApprovalRequested tagged event still routes through the ordi
   assert.equal(ensureApprovalsTopicCalls.length, 0, 'a non-ApprovalRequested event must never touch the Approvals topic');
 });
 
+// Defensive-only branch: swarmEventStream.ts never emits ApprovalRequested
+// untagged in practice (unlike NeedsApproval, which genuinely can be), but
+// routeApprovalRequestedEvent still guards against it rather than assuming
+// the invariant - this pins that guard actually skips cleanly instead of
+// crashing on a null backlogId, so the untested branch doesn't silently rot
+// if the invariant is ever loosened upstream.
+test('BL-434: an untagged ApprovalRequested (backlogId null) is skipped, never crashes and never touches the Approvals topic', async () => {
+  const { adapters, sent, ensureApprovalsTopicCalls } = fakeAdapters();
+  const result = await routeEvent(event({ type: 'ApprovalRequested', backlogId: null }), 'a fine feature', adapters);
+  assert.deepEqual(result, { posted: false, skipped: true });
+  assert.deepEqual(sent, []);
+  assert.equal(ensureApprovalsTopicCalls.length, 0);
+});
+
 // ── recordMessage (BL-329: outbound serialisation) ─────────────────────────
 // Only ever called after a GENUINELY successful sendMessage - mirrors
 // emittedKeys' own "only record what actually posted" convention (BL-322).
