@@ -9,7 +9,7 @@ const {
   fleetStatusPath,
   heartbeatIsSessionAlive,
   isRoleEscalated,
-  needsHumanFromEscalations,
+  needsHumanFromAwaitingAnswer,
   buildFleetStatusDoc,
   emitFleetStatus,
   main,
@@ -52,6 +52,21 @@ function writeChaseEscalations(targetPath, escalations) {
   const dir = path.join(targetPath, '.swarmforge', 'daemon');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'chase-escalations.json'), JSON.stringify(escalations));
+}
+
+// BL-438 architect bounce: the coordinator's own ask+await state
+// (operator_runtime.bb's awaiting-answer-file) - a clarifying question is
+// outstanding for as long as this file exists; operator_runtime.bb deletes
+// it outright (never writes a false/cleared value) the moment an answer
+// pairs with it or the escalate-and-drop timeout fires.
+function writeAwaitingAnswer(targetPath, record = { question: 'q', thread_id: 'SUP-1', asked_at_ms: 0 }) {
+  const dir = path.join(targetPath, '.swarmforge', 'operator');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'awaiting-answer.json'), JSON.stringify(record));
+}
+
+function removeAwaitingAnswer(targetPath) {
+  fs.rmSync(path.join(targetPath, '.swarmforge', 'operator', 'awaiting-answer.json'), { force: true });
 }
 
 // ── parseArgs ────────────────────────────────────────────────────────────
@@ -115,7 +130,7 @@ test('heartbeatIsSessionAlive reports alive for a stuck (in-flight past the in-f
   assert.equal(isAlive({ role: 'coder' }), true);
 });
 
-// ── isRoleEscalated / needsHumanFromEscalations (pure, BL-438) ───────────
+// ── isRoleEscalated (pure, BL-438 - PACK-role stuck-mailbox signal) ──────
 
 test('isRoleEscalated is true only for a role whose value is exactly true', () => {
   const escalations = { coder: true, architect: false };
@@ -127,16 +142,18 @@ test('isRoleEscalated is false for a role absent from the record', () => {
   assert.equal(isRoleEscalated({}, 'coder'), false);
 });
 
-test('needsHumanFromEscalations is true when at least one role is escalated', () => {
-  assert.equal(needsHumanFromEscalations({ coder: true }), true);
+// ── needsHumanFromAwaitingAnswer (BL-438 architect bounce - the REAL
+//    needs_human signal: the coordinator's own BL-306 ask+await state,
+//    never chase-escalations.json) ───────────────────────────────────────
+
+test('needsHumanFromAwaitingAnswer is true when awaiting-answer.json exists', () => {
+  const targetPath = mkTmp();
+  writeAwaitingAnswer(targetPath);
+  assert.equal(needsHumanFromAwaitingAnswer(targetPath), true);
 });
 
-test('needsHumanFromEscalations is false for an empty record (nobody escalated)', () => {
-  assert.equal(needsHumanFromEscalations({}), false);
-});
-
-test('needsHumanFromEscalations is false when every present value is falsy, never a fabricated true', () => {
-  assert.equal(needsHumanFromEscalations({ coder: false }), false);
+test('needsHumanFromAwaitingAnswer is false when awaiting-answer.json does not exist (never a crash)', () => {
+  assert.equal(needsHumanFromAwaitingAnswer(mkTmp()), false);
 });
 
 // ── buildFleetStatusDoc / emitFleetStatus ────────────────────────────────
@@ -167,8 +184,10 @@ test('buildFleetStatusDoc carries identity, status, health, children, needs_huma
 
 // BL-438: the isBlocked-always-false gap - a role the daemon has marked
 // stuck-escalated in chase-escalations.json must roll up to a 'blocked'
-// AGENT status, and the swarm-level needs_human field must reflect it.
-test('buildFleetStatusDoc reports needs_human true and rolls the escalated role up to blocked, when chase-escalations.json marks it', () => {
+// AGENT status. This is the PACK-role signal, deliberately distinct from
+// needs_human below (architect bounce 2026-07-16): a role can be
+// chase-escalated with no pending human question at all.
+test('buildFleetStatusDoc rolls the escalated role up to blocked, but chase-escalations alone never sets needs_human', () => {
   const targetPath = mkTmp();
   writeRolesTsv(targetPath, [
     ['coordinator', 'master', targetPath, 'session', 'Coordinator', 'claude'],
@@ -180,28 +199,9 @@ test('buildFleetStatusDoc reports needs_human true and rolls the escalated role 
 
   const doc = buildFleetStatusDoc(targetPath);
 
-  assert.equal(doc.needs_human, true);
   assert.equal(doc.children[0].identity.name, 'coder');
   assert.equal(doc.children[0].status, 'blocked');
-});
-
-test('buildFleetStatusDoc reports needs_human false when chase-escalations.json has no entries (nobody escalated)', () => {
-  const targetPath = mkTmp();
-  writeRolesTsv(targetPath, [['coordinator', 'master', targetPath, 'session', 'Coordinator', 'claude']]);
-  writeChaseEscalations(targetPath, {});
-
-  const doc = buildFleetStatusDoc(targetPath);
-
-  assert.equal(doc.needs_human, false);
-});
-
-test('buildFleetStatusDoc reports needs_human false when chase-escalations.json does not exist at all (never a crash)', () => {
-  const targetPath = mkTmp();
-  writeRolesTsv(targetPath, [['coordinator', 'master', targetPath, 'session', 'Coordinator', 'claude']]);
-
-  const doc = buildFleetStatusDoc(targetPath);
-
-  assert.equal(doc.needs_human, false);
+  assert.equal(doc.needs_human, false, 'a stuck mailbox is not a pending human question');
 });
 
 // The signal must CLEAR on resolution: chase_sweep_lib.bb dissoc's a
@@ -218,42 +218,94 @@ test('buildFleetStatusDoc reflects a recovered role (its key removed from chase-
   writeHeartbeat(targetPath, 'coder', new Date().toISOString());
   writeChaseEscalations(targetPath, { coder: true });
   const blockedDoc = buildFleetStatusDoc(targetPath);
-  assert.equal(blockedDoc.needs_human, true);
+  assert.equal(blockedDoc.children[0].status, 'blocked');
 
   writeChaseEscalations(targetPath, {}); // recovered - daemon dissoc'd the key
 
   const recoveredDoc = buildFleetStatusDoc(targetPath);
-  assert.equal(recoveredDoc.needs_human, false);
   assert.notEqual(recoveredDoc.children[0].status, 'blocked');
 });
 
+// ── buildFleetStatusDoc needs_human (BL-438 architect bounce - the ticket's
+//    own named E2E scenario: block the coordinator on a human answer) ────
+
+test('buildFleetStatusDoc reports needs_human true when the coordinator is awaiting a human answer (awaiting-answer.json exists)', () => {
+  const targetPath = mkTmp();
+  writeRolesTsv(targetPath, [['coordinator', 'master', targetPath, 'session', 'Coordinator', 'claude']]);
+  writeAwaitingAnswer(targetPath);
+
+  const doc = buildFleetStatusDoc(targetPath);
+
+  assert.equal(doc.needs_human, true);
+});
+
+test('buildFleetStatusDoc reports needs_human false when no awaiting-answer.json exists at all (never a crash)', () => {
+  const targetPath = mkTmp();
+  writeRolesTsv(targetPath, [['coordinator', 'master', targetPath, 'session', 'Coordinator', 'claude']]);
+
+  const doc = buildFleetStatusDoc(targetPath);
+
+  assert.equal(doc.needs_human, false);
+});
+
+// The signal must CLEAR on resolution (BL-306's own await-pairing/
+// escalate-and-drop, operator_runtime.bb) - break-then-fix on the real
+// on-disk input per the engineering article's own wiring-test rule: proves
+// the read is load-bearing, not merely that the fixture happens to be
+// empty by default.
+test('buildFleetStatusDoc reflects the human answering (awaiting-answer.json removed) as needs_human false again', () => {
+  const targetPath = mkTmp();
+  writeRolesTsv(targetPath, [['coordinator', 'master', targetPath, 'session', 'Coordinator', 'claude']]);
+  writeAwaitingAnswer(targetPath);
+  const blockedDoc = buildFleetStatusDoc(targetPath);
+  assert.equal(blockedDoc.needs_human, true);
+
+  removeAwaitingAnswer(targetPath); // answered/paired, or escalate-and-drop fired
+
+  const clearedDoc = buildFleetStatusDoc(targetPath);
+  assert.equal(clearedDoc.needs_human, false);
+});
+
+// ── readChaseEscalations malformed input (isBlocked's per-role rollup,
+//    UNCHANGED by the architect bounce above - only needs_human's source
+//    moved to awaiting-answer.json) ───────────────────────────────────────
 // A present-but-malformed chase-escalations.json (corrupt syntax, or valid
 // JSON that isn't a role->bool record) must be REJECTED back to "nobody
 // escalated", never crash and never be misread as an escalation - the same
 // absent-vs-malformed distinction the engineering article requires of every
 // optional on-disk input reader.
-test('buildFleetStatusDoc reports needs_human false (never crashes) when chase-escalations.json is not valid JSON', () => {
+test('buildFleetStatusDoc never crashes and blocks no role when chase-escalations.json is not valid JSON', () => {
   const targetPath = mkTmp();
-  writeRolesTsv(targetPath, [['coordinator', 'master', targetPath, 'session', 'Coordinator', 'claude']]);
+  writeRolesTsv(targetPath, [
+    ['coordinator', 'master', targetPath, 'session', 'Coordinator', 'claude'],
+    ['coder', 'coder', targetPath, 'session', 'Coder', 'claude'],
+  ]);
+  writeHeartbeat(targetPath, 'coordinator', new Date().toISOString());
+  writeHeartbeat(targetPath, 'coder', new Date().toISOString());
   const dir = path.join(targetPath, '.swarmforge', 'daemon');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'chase-escalations.json'), '{not valid json');
 
   const doc = buildFleetStatusDoc(targetPath);
 
-  assert.equal(doc.needs_human, false);
+  assert.notEqual(doc.children[0].status, 'blocked');
 });
 
-test('buildFleetStatusDoc reports needs_human false when chase-escalations.json parses to a JSON array, not a role record', () => {
+test('buildFleetStatusDoc never crashes and blocks no role when chase-escalations.json parses to a JSON array, not a role record', () => {
   const targetPath = mkTmp();
-  writeRolesTsv(targetPath, [['coordinator', 'master', targetPath, 'session', 'Coordinator', 'claude']]);
+  writeRolesTsv(targetPath, [
+    ['coordinator', 'master', targetPath, 'session', 'Coordinator', 'claude'],
+    ['coder', 'coder', targetPath, 'session', 'Coder', 'claude'],
+  ]);
+  writeHeartbeat(targetPath, 'coordinator', new Date().toISOString());
+  writeHeartbeat(targetPath, 'coder', new Date().toISOString());
   const dir = path.join(targetPath, '.swarmforge', 'daemon');
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'chase-escalations.json'), '["coordinator"]');
+  fs.writeFileSync(path.join(dir, 'chase-escalations.json'), '["coder"]');
 
   const doc = buildFleetStatusDoc(targetPath);
 
-  assert.equal(doc.needs_human, false);
+  assert.notEqual(doc.children[0].status, 'blocked');
 });
 
 test('buildFleetStatusDoc defaults the swarm name to "primary" when no swarm_name is configured', () => {
