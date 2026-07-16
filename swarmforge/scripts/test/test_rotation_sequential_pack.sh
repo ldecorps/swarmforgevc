@@ -59,6 +59,7 @@ zsh -c "
   is_sequential_dormant 2 && echo 'DORMANT:2' || echo 'RESIDENT:2'
   is_sequential_dormant 3 && echo 'DORMANT:3' || echo 'RESIDENT:3'
   is_sequential_dormant 4 && echo 'DORMANT:4' || echo 'RESIDENT:4'
+  is_sequential_dormant 5 && echo 'DORMANT:5' || echo 'RESIDENT:5'
   is_sequential_dormant \${#ROLES[@]} && echo 'DORMANT:last' || echo 'RESIDENT:last'
   print -l -- \"\${ROLES[@]}\" > '$OUT_DIR/roles.txt'
 " > "$OUT_DIR/dormancy.txt"
@@ -70,6 +71,15 @@ grep -qx "DORMANT:2" "$OUT_DIR/dormancy.txt" || fail "01: expected index 2 (clea
 grep -qx "DORMANT:3" "$OUT_DIR/dormancy.txt" || fail "01: expected index 3 (architect) to be sequential-dormant"
 grep -qx "DORMANT:4" "$OUT_DIR/dormancy.txt" || fail "01: expected index 4 (hardener) to be sequential-dormant"
 pass "01: every middle pipeline role is sequential-dormant (no session of its own)"
+
+# Boundary case adjacent to the "coordinator is never dormant" check below:
+# index 5 (QA) is the LAST pipeline role, directly abutting the coordinator
+# (index 6, always resident) on the other side of is_sequential_dormant's
+# `i < ${#ROLES[@]}` upper bound. Indices 2-4 alone cannot catch an off-by-one
+# there (e.g. `i < ${#ROLES[@]} - 1`), which would wrongly make QA resident
+# while still passing every other assertion in this scenario.
+grep -qx "DORMANT:5" "$OUT_DIR/dormancy.txt" || fail "01: expected index 5 (QA, the last pipeline role) to be sequential-dormant"
+pass "01: the last pipeline role (QA), immediately adjacent to the coordinator, is sequential-dormant too"
 
 grep -qx "RESIDENT:last" "$OUT_DIR/dormancy.txt" || fail "01: expected the coordinator (last-registered role) to never be dormant"
 pass "01: the coordinator is never sequential-dormant - it stays reserved, separately-provisioned infrastructure"
