@@ -9,6 +9,11 @@ import {
   readSwarmRoles,
   readTmuxSocket,
   sessionExists,
+  SwarmRole,
+  getPaneBaseIndex,
+  resolveAgentPaneTarget,
+  getPanePid,
+  hasLivePaneChild,
 } from './tmuxClient';
 import { stopSwarm } from './swarmStopper';
 import { spawnTrackedJob } from './childJobRegistry';
@@ -94,7 +99,30 @@ function persistLaunchLog(targetPath: string, record: LaunchAttemptRecord): void
   }
 }
 
-export function isSwarmReady(targetPath: string): boolean {
+// BL-423: the actual-bootstrap check reusing isSwarmReady's own
+// window-exists chain (getPaneBaseIndex -> resolveAgentPaneTarget ->
+// getPanePid, the exact discovery resourceSamplerActivation.ts's
+// resolvePanePid already uses) plus hasLivePaneChild's "any live child at
+// all" signal - agent-agnostic, so it doesn't need to know claude/aider/
+// copilot's own process name.
+export function defaultRoleBootstrapped(socketPath: string, role: SwarmRole): boolean {
+  const target = resolveAgentPaneTarget(socketPath, role.session, getPaneBaseIndex(socketPath));
+  return hasLivePaneChild(getPanePid(socketPath, target));
+}
+
+// checkRoleBootstrapped is OPTIONAL and undefined by default - isSwarmReady's
+// own pre-BL-423 contract (window/session existence only) is preserved
+// unchanged for every existing caller (launchSwarm's polling loop,
+// waitForSwarmReady, swarmOrchestrator.ts) so none of them slow down or
+// risk a false "not ready" from a slow-to-fork agent process during an
+// ordinary launch's own settle window. Only a caller that explicitly wants
+// the stronger "agents actually bootstrapped" guarantee (BL-423's own
+// restart-verification step, reusing this SAME function rather than a
+// parallel readiness mechanism) passes defaultRoleBootstrapped above.
+export function isSwarmReady(
+  targetPath: string,
+  checkRoleBootstrapped?: (socketPath: string, role: SwarmRole) => boolean
+): boolean {
   const socket = readTmuxSocket(targetPath);
   if (!socket) {
     return false;
@@ -109,7 +137,7 @@ export function isSwarmReady(targetPath: string): boolean {
     return false;
   }
 
-  return roles.every((role) => sessionExists(socket, role.session));
+  return roles.every((role) => sessionExists(socket, role.session) && (!checkRoleBootstrapped || checkRoleBootstrapped(socket, role)));
 }
 
 // Dirs where tmux, bb (babashka), claude, and aider are commonly installed.

@@ -14,6 +14,30 @@ const {
   ensureApprovalsTopic,
   ensureRecertTopic,
   ensureAgentQuestionsTopic,
+  ensureControlTopic,
+  controlDrainTimeoutMs,
+  controlRestartAckTimeoutMs,
+  controlPauseStatePath,
+  readControlPauseState,
+  writeControlPauseState,
+  pendingControlConfirmPath,
+  readPendingControlConfirm,
+  writePendingControlConfirm,
+  humanizePauseDurationMs,
+  stopModesButtons,
+  restartConfirmButtons,
+  pauseMenuButtons,
+  resumeNowButtons,
+  isPipelineEmpty,
+  killAllSwarmScriptPath,
+  runKillAllSwarm,
+  bounceSentinelPath,
+  writeBounceSentinel,
+  postControlMessage,
+  executeStop,
+  executeRestart,
+  applyPause,
+  resumeNow,
   readPollMap,
   writePollMap,
   pollMapPath,
@@ -623,6 +647,453 @@ test('BL-466: an already-bound Agent Questions topic returns its existing topicI
   const topicId = await ensureAgentQuestionsTopic(root, 'fake-token', 'fake-chat', postFn);
   assert.equal(topicId, 42);
   assert.equal(calls.length, 0);
+});
+
+// ── ensureControlTopic (BL-423, mirrors ensureAgentQuestionsTopic above) ──
+
+test('BL-423: creates the Control topic and binds it to the reserved subject when the map has no binding yet', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeCreateOk(42);
+  await ensureControlTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 1);
+  const map = readTopicMapFixture(root);
+  assert.equal(map['42'], 'CONTROL');
+});
+
+test('BL-423: the create call names the topic "Control"', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeCreateOk(7);
+  await ensureControlTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.match(calls[0].url, /createForumTopic$/);
+  assert.match(calls[0].body, /"name":"Control"/);
+});
+
+test('BL-423: a map that already binds the reserved Control subject never creates a second topic', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'CONTROL' });
+  const { postFn, calls } = fakeCreateOk(999);
+  await ensureControlTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 0);
+  assert.deepEqual(readTopicMapFixture(root), { '42': 'CONTROL' });
+});
+
+test('BL-423: the Control topic and the Agent Questions topic bind independently in the SAME map, never colliding', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'AGENT_QUESTIONS' });
+  const { postFn, calls } = fakeCreateOk(55);
+  const topicId = await ensureControlTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 1);
+  assert.equal(topicId, 55);
+  const map = readTopicMapFixture(root);
+  assert.equal(map['55'], 'CONTROL');
+  assert.equal(map['42'], 'AGENT_QUESTIONS');
+});
+
+test('BL-423: a failed create degrades quietly - never throws, never writes a partial binding', async () => {
+  const root = mkTmpRoot();
+  const postFn = async () => ({ ok: false, status: 500, json: { description: 'simulated failure' } });
+  const topicId = await ensureControlTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, undefined);
+  assert.equal(fs.existsSync(topicMapPath(root)), false);
+});
+
+test('BL-423: an already-bound Control topic returns its existing topicId, without calling create', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'CONTROL' });
+  const { postFn, calls } = fakeCreateOk(999);
+  const topicId = await ensureControlTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, 42);
+  assert.equal(calls.length, 0);
+});
+
+// ── controlDrainTimeoutMs / controlRestartAckTimeoutMs (BL-423, pure, mirrors conciergeTickIntervalMs) ──
+
+test('controlDrainTimeoutMs defaults to 10 minutes when the env var is unset', () => {
+  assert.equal(controlDrainTimeoutMs(undefined), 10 * 60 * 1000);
+});
+
+test('controlDrainTimeoutMs uses a valid positive override', () => {
+  assert.equal(controlDrainTimeoutMs('5000'), 5000);
+});
+
+test('controlDrainTimeoutMs falls back to the default for a non-numeric or non-positive value', () => {
+  assert.equal(controlDrainTimeoutMs('not-a-number'), 10 * 60 * 1000);
+  assert.equal(controlDrainTimeoutMs('0'), 10 * 60 * 1000);
+  assert.equal(controlDrainTimeoutMs('-5'), 10 * 60 * 1000);
+});
+
+test('controlRestartAckTimeoutMs defaults to 5 minutes when the env var is unset', () => {
+  assert.equal(controlRestartAckTimeoutMs(undefined), 5 * 60 * 1000);
+});
+
+test('controlRestartAckTimeoutMs uses a valid positive override', () => {
+  assert.equal(controlRestartAckTimeoutMs('1500'), 1500);
+});
+
+// ── readControlPauseState / writeControlPauseState (BL-423 pause marker) ──
+// backlog_depth_lib.bb's own read-pause-state reads this EXACT file on the
+// Babashka side - the cross-language contract this proves.
+
+test('readControlPauseState degrades to inactive when no marker has ever been written', () => {
+  const root = mkTmpRoot();
+  assert.deepEqual(readControlPauseState(root), { active: false });
+});
+
+test('readControlPauseState degrades to inactive for a malformed marker file, never a crash', () => {
+  const root = mkTmpRoot();
+  fs.mkdirSync(path.dirname(controlPauseStatePath(root)), { recursive: true });
+  fs.writeFileSync(controlPauseStatePath(root), 'not json');
+  assert.deepEqual(readControlPauseState(root), { active: false });
+});
+
+test('writeControlPauseState/readControlPauseState round-trips a timed pause', () => {
+  const root = mkTmpRoot();
+  writeControlPauseState(root, { active: true, untilMs: 1784300000000 });
+  assert.deepEqual(readControlPauseState(root), { active: true, untilMs: 1784300000000 });
+});
+
+test('writeControlPauseState/readControlPauseState round-trips an "until I resume" pause (no untilMs)', () => {
+  const root = mkTmpRoot();
+  writeControlPauseState(root, { active: true, untilMs: undefined });
+  assert.deepEqual(readControlPauseState(root), { active: true, untilMs: undefined });
+});
+
+test('writeControlPauseState/readControlPauseState round-trips an explicit inactive (post-resume) state', () => {
+  const root = mkTmpRoot();
+  writeControlPauseState(root, { active: true, untilMs: 1000 });
+  writeControlPauseState(root, { active: false });
+  assert.deepEqual(readControlPauseState(root), { active: false });
+});
+
+// ── readPendingControlConfirm / writePendingControlConfirm (BL-423) ───────
+
+test('readPendingControlConfirm is undefined when no marker has ever been written', () => {
+  const root = mkTmpRoot();
+  assert.equal(readPendingControlConfirm(root), undefined);
+});
+
+test('readPendingControlConfirm is undefined for a malformed marker file, never a crash', () => {
+  const root = mkTmpRoot();
+  fs.mkdirSync(path.dirname(pendingControlConfirmPath(root)), { recursive: true });
+  fs.writeFileSync(pendingControlConfirmPath(root), 'not json');
+  assert.equal(readPendingControlConfirm(root), undefined);
+});
+
+test('writePendingControlConfirm/readPendingControlConfirm round-trips a stop-modes confirm', () => {
+  const root = mkTmpRoot();
+  writePendingControlConfirm(root, { kind: 'stop-modes' });
+  assert.deepEqual(readPendingControlConfirm(root), { kind: 'stop-modes' });
+});
+
+test('writePendingControlConfirm/readPendingControlConfirm round-trips a restart-confirm', () => {
+  const root = mkTmpRoot();
+  writePendingControlConfirm(root, { kind: 'restart-confirm' });
+  assert.deepEqual(readPendingControlConfirm(root), { kind: 'restart-confirm' });
+});
+
+test('writePendingControlConfirm(undefined) clears an armed confirm entirely (the marker file is removed)', () => {
+  const root = mkTmpRoot();
+  writePendingControlConfirm(root, { kind: 'stop-modes' });
+  writePendingControlConfirm(root, undefined);
+  assert.equal(fs.existsSync(pendingControlConfirmPath(root)), false);
+  assert.equal(readPendingControlConfirm(root), undefined);
+});
+
+test('writePendingControlConfirm(undefined) is a safe no-op when no marker exists yet', () => {
+  const root = mkTmpRoot();
+  fs.mkdirSync(root, { recursive: true });
+  assert.doesNotThrow(() => writePendingControlConfirm(root, undefined));
+});
+
+// ── humanizePauseDurationMs (BL-423, pure) ────────────────────────────────
+
+test('humanizePauseDurationMs renders a sub-hour duration in minutes', () => {
+  assert.equal(humanizePauseDurationMs(15 * 60 * 1000), 'for 15 min');
+});
+
+test('humanizePauseDurationMs renders an hour-plus duration in hours', () => {
+  assert.equal(humanizePauseDurationMs(60 * 60 * 1000), 'for 1 hr');
+  assert.equal(humanizePauseDurationMs(4 * 60 * 60 * 1000), 'for 4 hr');
+});
+
+// ── button builders (BL-423, pure - just the shape Telegram's own inline
+//    keyboard expects, callback_data drawn from telegramControlCore.ts's
+//    own CONTROL_CALLBACK_DATA so a tap always round-trips through the
+//    SAME parser that built it) ─────────────────────────────────────────
+
+test('stopModesButtons offers Drain & stop / Emergency stop on one row and Cancel on its own row', () => {
+  assert.deepEqual(stopModesButtons(), [
+    [
+      { text: 'Drain & stop', callbackData: 'control:drain-stop' },
+      { text: 'Emergency stop', callbackData: 'control:emergency-stop' },
+    ],
+    [{ text: 'Cancel', callbackData: 'control:cancel' }],
+  ]);
+});
+
+test('restartConfirmButtons offers Confirm restart and Cancel on one row', () => {
+  assert.deepEqual(restartConfirmButtons(), [
+    [
+      { text: 'Confirm restart', callbackData: 'control:confirm-restart' },
+      { text: 'Cancel', callbackData: 'control:cancel' },
+    ],
+  ]);
+});
+
+test('pauseMenuButtons offers 15 min / 1 hr / 4 hr on one row and Until I resume on its own row', () => {
+  assert.deepEqual(pauseMenuButtons(), [
+    [
+      { text: '15 min', callbackData: 'control:pause-15m' },
+      { text: '1 hr', callbackData: 'control:pause-1h' },
+      { text: '4 hr', callbackData: 'control:pause-4h' },
+    ],
+    [{ text: 'Until I resume', callbackData: 'control:pause-until-resume' }],
+  ]);
+});
+
+test('resumeNowButtons offers a single Resume now button', () => {
+  assert.deepEqual(resumeNowButtons(), [[{ text: 'Resume now', callbackData: 'control:resume-now' }]]);
+});
+
+// ── postControlMessage (BL-423) ───────────────────────────────────────────
+
+function fakeSendOk(messageId) {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: messageId } } };
+  };
+  return { postFn, calls };
+}
+
+test('postControlMessage sends nothing at all when the Control topic is not yet bound (controlTopicId undefined)', async () => {
+  const { postFn, calls } = fakeSendOk(1);
+  await postControlMessage('fake-token', 'fake-chat', undefined, 'hello', undefined, postFn);
+  assert.equal(calls.length, 0);
+});
+
+test('postControlMessage sends into the given Control topic id, with buttons when given', async () => {
+  const { postFn, calls } = fakeSendOk(1);
+  await postControlMessage('fake-token', 'fake-chat', 900, 'Stop the swarm how?', stopModesButtons(), postFn);
+  assert.equal(calls.length, 1);
+  const body = JSON.parse(calls[0].body);
+  assert.equal(body.message_thread_id, 900);
+  assert.equal(body.text, 'Stop the swarm how?');
+  assert.deepEqual(body.reply_markup.inline_keyboard[1], [{ text: 'Cancel', callback_data: 'control:cancel' }]);
+});
+
+// ── isPipelineEmpty (BL-423) ───────────────────────────────────────────────
+
+// Column order per swarmState.ts's own parseRolesTsv: role, worktreeName,
+// worktreePath, <unused>, displayName, agent.
+function writeRolesTsvFixture(root, roleName, worktreePath) {
+  fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, '.swarmforge', 'roles.tsv'),
+    `${roleName}\t${roleName}\t${worktreePath}\t_\t${roleName}\tclaude\n`
+  );
+}
+
+test('isPipelineEmpty is true when no role has any inbox/new or in_process work', () => {
+  const root = mkTmpRoot();
+  writeRolesTsvFixture(root, 'coder', root);
+  fs.mkdirSync(path.join(root, '.swarmforge', 'handoffs', 'inbox', 'new'), { recursive: true });
+  fs.mkdirSync(path.join(root, '.swarmforge', 'handoffs', 'inbox', 'in_process'), { recursive: true });
+  assert.equal(isPipelineEmpty(root), true);
+});
+
+test('isPipelineEmpty is false when a role has a queued inbox/new handoff', () => {
+  const root = mkTmpRoot();
+  writeRolesTsvFixture(root, 'coder', root);
+  const newDir = path.join(root, '.swarmforge', 'handoffs', 'inbox', 'new');
+  fs.mkdirSync(newDir, { recursive: true });
+  fs.mkdirSync(path.join(root, '.swarmforge', 'handoffs', 'inbox', 'in_process'), { recursive: true });
+  fs.writeFileSync(path.join(newDir, 'BL-1.handoff'), 'type: note\nto: coder\npriority: 50\n\nhi\n');
+  assert.equal(isPipelineEmpty(root), false);
+});
+
+test('isPipelineEmpty is false when a role has in-flight (in_process) work', () => {
+  const root = mkTmpRoot();
+  writeRolesTsvFixture(root, 'coder', root);
+  fs.mkdirSync(path.join(root, '.swarmforge', 'handoffs', 'inbox', 'new'), { recursive: true });
+  const inProcessDir = path.join(root, '.swarmforge', 'handoffs', 'inbox', 'in_process');
+  fs.mkdirSync(inProcessDir, { recursive: true });
+  fs.writeFileSync(path.join(inProcessDir, 'BL-1.handoff'), 'type: note\nto: coder\npriority: 50\n\nhi\n');
+  assert.equal(isPipelineEmpty(root), false);
+});
+
+// ── runKillAllSwarm / executeStop (BL-423) ─────────────────────────────────
+
+function writeFakeKillAllSwarm(root, body) {
+  const scriptPath = killAllSwarmScriptPath(root);
+  fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
+  fs.writeFileSync(scriptPath, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+}
+
+test('runKillAllSwarm reports ok on a successful teardown script', async () => {
+  const root = mkTmpRoot();
+  writeFakeKillAllSwarm(root, 'echo "SwarmForge stopped and cleaned."; exit 0');
+  const result = await runKillAllSwarm(root);
+  assert.equal(result.ok, true);
+  assert.match(result.output, /stopped and cleaned/);
+});
+
+test('runKillAllSwarm degrades to ok:false, never throws, when the teardown script fails', async () => {
+  const root = mkTmpRoot();
+  writeFakeKillAllSwarm(root, 'echo "survivors remain" >&2; exit 1');
+  const result = await runKillAllSwarm(root);
+  assert.equal(result.ok, false);
+});
+
+test('BL-423: executeStop in emergency mode tears down immediately with no drain wait, and reports it', async () => {
+  const root = mkTmpRoot();
+  writeFakeKillAllSwarm(root, 'exit 0');
+  const { postFn, calls } = fakeSendOk(1);
+  await executeStop(root, 'fake-token', 'fake-chat', 900, 'emergency', postFn);
+  const texts = calls.map((c) => JSON.parse(c.body).text);
+  assert.ok(texts.some((t) => /Emergency stop/.test(t)));
+  assert.ok(texts.some((t) => /Stop complete: stopped \(emergency\)/.test(t)));
+});
+
+test('BL-423: executeStop in drain mode reports drained once the pipeline is already empty', async () => {
+  const root = mkTmpRoot();
+  writeRolesTsvFixture(root, 'coder', root);
+  fs.mkdirSync(path.join(root, '.swarmforge', 'handoffs', 'inbox', 'new'), { recursive: true });
+  fs.mkdirSync(path.join(root, '.swarmforge', 'handoffs', 'inbox', 'in_process'), { recursive: true });
+  writeFakeKillAllSwarm(root, 'exit 0');
+  const { postFn, calls } = fakeSendOk(1);
+  await executeStop(root, 'fake-token', 'fake-chat', 900, 'drain', postFn);
+  const texts = calls.map((c) => JSON.parse(c.body).text);
+  assert.ok(texts.some((t) => /Draining in-flight work/.test(t)));
+  assert.ok(texts.some((t) => /Stop complete: drained/.test(t)));
+  assert.ok(!texts.some((t) => /forcing teardown/.test(t)));
+});
+
+test('BL-423: executeStop in drain mode forces teardown and reports forced once the drain window elapses with work still in flight', async () => {
+  const root = mkTmpRoot();
+  writeRolesTsvFixture(root, 'coder', root);
+  const newDir = path.join(root, '.swarmforge', 'handoffs', 'inbox', 'new');
+  fs.mkdirSync(newDir, { recursive: true });
+  fs.mkdirSync(path.join(root, '.swarmforge', 'handoffs', 'inbox', 'in_process'), { recursive: true });
+  // Never drains - a queued item sits in inbox/new for the whole test.
+  fs.writeFileSync(path.join(newDir, 'BL-1.handoff'), 'type: note\nto: coder\npriority: 50\n\nhi\n');
+  writeFakeKillAllSwarm(root, 'exit 0');
+  const originalEnv = process.env.SWARMFORGE_CONTROL_DRAIN_TIMEOUT_MS;
+  process.env.SWARMFORGE_CONTROL_DRAIN_TIMEOUT_MS = '10';
+  try {
+    const { postFn, calls } = fakeSendOk(1);
+    await executeStop(root, 'fake-token', 'fake-chat', 900, 'drain', postFn);
+    const texts = calls.map((c) => JSON.parse(c.body).text);
+    assert.ok(texts.some((t) => /forcing teardown/.test(t)));
+    assert.ok(texts.some((t) => /Stop complete: forced/.test(t)));
+  } finally {
+    if (originalEnv === undefined) {
+      delete process.env.SWARMFORGE_CONTROL_DRAIN_TIMEOUT_MS;
+    } else {
+      process.env.SWARMFORGE_CONTROL_DRAIN_TIMEOUT_MS = originalEnv;
+    }
+  }
+});
+
+// ── writeBounceSentinel / executeRestart (BL-423) ─────────────────────────
+
+test('writeBounceSentinel writes the "swarm" bounce type - reuses the sanctioned bounce sentinel, never a second mechanism', () => {
+  const root = mkTmpRoot();
+  fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
+  writeBounceSentinel(root);
+  assert.equal(fs.readFileSync(bounceSentinelPath(root), 'utf8'), 'swarm');
+});
+
+function writeBounceAckFixture(root, phase, message) {
+  fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, '.swarmforge', 'bounce-ack.json'),
+    JSON.stringify({ bounceType: 'swarm', phase, updatedAt: new Date().toISOString(), message })
+  );
+}
+
+test('BL-423: executeRestart reports success once the bounce-ack reports done AND bootstrap actually verifies', async () => {
+  const root = mkTmpRoot();
+  fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
+  writeBounceAckFixture(root, 'done');
+  const { postFn, calls } = fakeSendOk(1);
+  await executeRestart(root, 'fake-token', 'fake-chat', 900, postFn, () => true);
+  const texts = calls.map((c) => JSON.parse(c.body).text);
+  assert.ok(texts.some((t) => /Restart complete - every agent bootstrapped/.test(t)));
+  assert.equal(fs.readFileSync(bounceSentinelPath(root), 'utf8'), 'swarm');
+});
+
+test('BL-423: a relaunch that creates windows but bootstraps no agents is reported failed, not done', async () => {
+  const root = mkTmpRoot();
+  fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
+  writeBounceAckFixture(root, 'done');
+  const { postFn, calls } = fakeSendOk(1);
+  await executeRestart(root, 'fake-token', 'fake-chat', 900, postFn, () => false);
+  const texts = calls.map((c) => JSON.parse(c.body).text);
+  assert.ok(texts.some((t) => /reporting failed/.test(t)));
+  assert.ok(!texts.some((t) => /Restart complete/.test(t)));
+});
+
+test('BL-423: executeRestart stops streaming once the bounce-ack reports failed, without ever claiming success', async () => {
+  const root = mkTmpRoot();
+  fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
+  writeBounceAckFixture(root, 'failed', 'launch failed');
+  const { postFn, calls } = fakeSendOk(1);
+  await executeRestart(root, 'fake-token', 'fake-chat', 900, postFn, () => true);
+  const texts = calls.map((c) => JSON.parse(c.body).text);
+  assert.ok(texts.some((t) => /Restart: failed - launch failed/.test(t)));
+  assert.ok(!texts.some((t) => /Restart complete/.test(t)));
+});
+
+test('BL-423: executeRestart times out and reports it when the bounce-ack never arrives', async () => {
+  const root = mkTmpRoot();
+  fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
+  const originalEnv = process.env.SWARMFORGE_CONTROL_RESTART_ACK_TIMEOUT_MS;
+  process.env.SWARMFORGE_CONTROL_RESTART_ACK_TIMEOUT_MS = '10';
+  try {
+    const { postFn, calls } = fakeSendOk(1);
+    await executeRestart(root, 'fake-token', 'fake-chat', 900, postFn, () => true);
+    const texts = calls.map((c) => JSON.parse(c.body).text);
+    assert.ok(texts.some((t) => /timed out/.test(t)));
+  } finally {
+    if (originalEnv === undefined) {
+      delete process.env.SWARMFORGE_CONTROL_RESTART_ACK_TIMEOUT_MS;
+    } else {
+      process.env.SWARMFORGE_CONTROL_RESTART_ACK_TIMEOUT_MS = originalEnv;
+    }
+  }
+});
+
+// ── applyPause / resumeNow (BL-423) ────────────────────────────────────────
+
+test('BL-423: applyPause writes a timed pause marker and announces it with a Resume now button', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeSendOk(1);
+  await applyPause(root, 'fake-token', 'fake-chat', 900, 15 * 60 * 1000, postFn);
+  const state = readControlPauseState(root);
+  assert.equal(state.active, true);
+  assert.ok(state.untilMs > Date.now());
+  const body = JSON.parse(calls[0].body);
+  assert.match(body.text, /Paused - new work will not be promoted for 15 min/);
+  assert.deepEqual(body.reply_markup.inline_keyboard, [[{ text: 'Resume now', callback_data: 'control:resume-now' }]]);
+});
+
+test('BL-423: applyPause with no duration writes an "until I resume" pause (no untilMs, no auto-expiry)', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeSendOk(1);
+  await applyPause(root, 'fake-token', 'fake-chat', 900, undefined, postFn);
+  assert.deepEqual(readControlPauseState(root), { active: true, untilMs: undefined });
+  const body = JSON.parse(calls[0].body);
+  assert.match(body.text, /until you resume/);
+});
+
+test('BL-423: resumeNow clears the pause marker and announces it', async () => {
+  const root = mkTmpRoot();
+  writeControlPauseState(root, { active: true, untilMs: Date.now() + 60000 });
+  const { postFn, calls } = fakeSendOk(1);
+  await resumeNow(root, 'fake-token', 'fake-chat', 900, postFn);
+  assert.deepEqual(readControlPauseState(root), { active: false });
+  assert.match(JSON.parse(calls[0].body).text, /Resumed/);
 });
 
 // ── readPollMap / writePollMap (BL-466, the resolvePollThread/recordPollMapping
