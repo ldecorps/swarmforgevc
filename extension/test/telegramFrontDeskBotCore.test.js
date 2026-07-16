@@ -35,6 +35,7 @@ const {
   decideSteeringAction,
   decideEnsureRoleTopicAction,
   decideVoiceUpdateAction,
+  decideStandingTopicTitleSync,
   decideEnsureAgentQuestionsTopicAction,
   AGENT_QUESTIONS_SUBJECT_ID,
   decideAgentQuestionsReplyAction,
@@ -205,6 +206,20 @@ test('BL-434: decideEnsureApprovalsTopicAction reuses the topic already bound to
 
 test('BL-434: decideEnsureApprovalsTopicAction is reserved-subject-specific - the Operator topic\'s own binding never counts as the Approvals topic', () => {
   assert.deepEqual(decideEnsureApprovalsTopicAction({ '42': OPERATOR_SUBJECT_ID }), { kind: 'create' });
+});
+
+// ── decideStandingTopicTitleSync (pure) — BL-453 concierge-icon-02/03 ────
+
+test('BL-453: decideStandingTopicTitleSync updates when no title has ever been recorded (a pre-BL-453 install)', () => {
+  assert.equal(decideStandingTopicTitleSync(undefined, 'Concierge'), 'update');
+});
+
+test('BL-453: decideStandingTopicTitleSync updates when the recorded title differs from the desired one', () => {
+  assert.equal(decideStandingTopicTitleSync('Operator', 'Concierge'), 'update');
+});
+
+test('BL-453: decideStandingTopicTitleSync is unchanged once the recorded title already matches - never re-edits', () => {
+  assert.equal(decideStandingTopicTitleSync('Concierge', 'Concierge'), 'unchanged');
 });
 
 // ── decideEnsureAgentQuestionsTopicAction (pure) — BL-466 ─────────────────
