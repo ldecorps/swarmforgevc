@@ -114,7 +114,8 @@ the target's main branch. Review and merge it in GitHub like any other PR.
 ## Troubleshooting: Bring the swarm to a known-good state
 
 If the swarm is stuck, unresponsive, or you need to restart a component (the
-extension host, individual agents, or the daemon), use the recovery command:
+extension host, individual agents, the daemon, the operator runtime, or the
+Telegram front desk), use the recovery command:
 
 ```sh
 ./swarm ensure
@@ -124,11 +125,20 @@ This idempotent command checks and repairs:
 1. **Extension host** — Is VS Code with the SwarmForge extension running?
 2. **Agent panes** — Is each configured agent pane present in tmux with a live process?
 3. **Daemon** — Is the handoff daemon running?
+4. **Operator runtime** — Is the operator process running? (Skip with
+   `SWARMFORGE_SKIP_OPERATOR=1`.)
+5. **Front desk (Telegram bridge + bot)** — Checked only when
+   `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `TELEGRAM_PRINCIPAL_USER_ID`
+   are all set in the launching shell, or a prior front-desk pid file already
+   exists (so a previously-enabled desk still gets repaired). Otherwise it is
+   omitted, not reported failed. Skip explicitly with
+   `SWARMFORGE_SKIP_FRONT_DESK=1`.
 
 For each component, it reports one of:
 - **HEALTHY** — No repair needed.
 - **FIXED** — It repaired the component and names what it did (e.g., "started
-  extension", "respawned coder pane", "restarted daemon").
+  extension", "respawned coder pane", "restarted daemon", "restarted the
+  operator runtime", "restarted the Telegram front desk (bridge + bot)").
 - **FAILED** — It attempted repair but failed; check the error details. When the failure can be classified, the line also names a stable category in brackets (`auth`, `unavailable`, `protocol`, `timeout`, `launch-failed`, or `unknown`) alongside the raw detail — e.g. `agent:coder: FAILED [launch-failed] (no tmux socket found for this project root)` — so you can tell at a glance whether it's a credentials problem, a backend outage, or something else, without parsing provider-specific prose.
 
 On an already-healthy swarm, `./swarm ensure` is a fast no-op that changes
@@ -137,6 +147,37 @@ they all run and are reported together.
 
 Exit with status 0 if all components are healthy; non-zero if anything could
 not be brought to health.
+
+### Restarting the whole stack on a headless/WSL host
+
+On a headless or WSL host — where this repo runs as its own self-hosted swarm
+rather than as a target driven by the VS Code extension — `./start-swarm.sh`
+is the one restart command. It stops any swarm already on the project's tmux
+socket, launches a fresh one, waits for every configured agent session to come
+up, then runs `./swarm ensure` so the daemon, operator runtime, and (when
+configured) the Telegram front desk are started or repaired alongside the
+agents. An ancillary that fails to start is reported but never aborts the
+agent launch.
+
+```sh
+./start-swarm.sh [target-path]   # defaults to this repo's root
+```
+
+The Telegram front desk needs these three variables set in the shell that
+runs `./start-swarm.sh` (or `./swarm ensure`):
+
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
+- `TELEGRAM_PRINCIPAL_USER_ID`
+
+Without them (and with no prior front-desk pid file), the front desk is
+skipped rather than reported failed. Each ancillary also has its own skip
+flag, honored by both `./start-swarm.sh`'s cold launch and `./swarm ensure`:
+
+- `SWARMFORGE_SKIP_DAEMON=1` — skip the handoff daemon.
+- `SWARMFORGE_SKIP_OPERATOR=1` — skip the operator runtime.
+- `SWARMFORGE_SKIP_FRONT_DESK=1` — skip the Telegram front desk even when
+  configured.
 
 ---
 
