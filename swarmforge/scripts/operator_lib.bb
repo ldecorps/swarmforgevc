@@ -425,7 +425,19 @@
   (cond
     (nil? awaiting) {:outcome :none}
     (= (:thread-id awaiting) thread-id) {:outcome :pair}
-    :else {:outcome :re-home :question (:question awaiting) :asked-at-ms (:asked-at-ms awaiting)}))
+    :else (cond-> {:outcome :re-home :question (:question awaiting) :asked-at-ms (:asked-at-ms awaiting)}
+            (:options awaiting) (assoc :options (:options awaiting)))))
+
+;; BL-466: normalizes a raw ask's options to either nil (falls back to a
+;; plain message - the ticket's own "a poll needs 2+ discrete options; a
+;; question with none falls back to a plain message" contract) or a vector
+;; of 2+ trimmed, non-blank option strings (a poll). Trimming/blank-dropping
+;; happens BEFORE the 2+ count check, so e.g. ["A" "" "  "] correctly falls
+;; back to a plain message rather than a 1-option "poll" Telegram itself
+;; would reject.
+(defn poll-options [raw-options]
+  (let [trimmed (->> raw-options (map str/trim) (remove str/blank?) vec)]
+    (when (>= (count trimmed) 2) trimmed)))
 
 (defn answer-text-from-messages
   "The human's own LATEST reply text out of a thread's messages - the

@@ -13,6 +13,11 @@ const {
   ensureOperatorTopic,
   ensureApprovalsTopic,
   ensureRecertTopic,
+  ensureAgentQuestionsTopic,
+  readPollMap,
+  writePollMap,
+  pollMapPath,
+  readAwaitingAnswer,
   ensureRoleTopics,
   resolveRolePaneTarget,
   redirectToRole,
@@ -482,6 +487,138 @@ test('BL-450: an already-bound Recert topic returns its existing topicId, withou
   const topicId = await ensureRecertTopic(root, 'fake-token', 'fake-chat', postFn);
   assert.equal(topicId, 42);
   assert.equal(calls.length, 0);
+});
+
+// ── ensureAgentQuestionsTopic (BL-466, mirrors ensureRecertTopic above) ──
+
+test('BL-466: creates the Agent Questions topic and binds it to the reserved subject when the map has no binding yet', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeCreateOk(42);
+  await ensureAgentQuestionsTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 1);
+  const map = readTopicMapFixture(root);
+  assert.equal(map['42'], 'AGENT_QUESTIONS');
+});
+
+test('BL-466: the create call names the topic "Agent Questions"', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeCreateOk(7);
+  await ensureAgentQuestionsTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.match(calls[0].url, /createForumTopic$/);
+  assert.match(calls[0].body, /"name":"Agent Questions"/);
+});
+
+test('BL-466: a map that already binds the reserved Agent Questions subject never creates a second topic', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'AGENT_QUESTIONS' });
+  const { postFn, calls } = fakeCreateOk(999);
+  await ensureAgentQuestionsTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 0);
+  assert.deepEqual(readTopicMapFixture(root), { '42': 'AGENT_QUESTIONS' });
+});
+
+test('BL-466: the Agent Questions topic and the Recert topic bind independently in the SAME map, never colliding', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'RECERT' });
+  const { postFn, calls } = fakeCreateOk(55);
+  const topicId = await ensureAgentQuestionsTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 1);
+  assert.equal(topicId, 55);
+  const map = readTopicMapFixture(root);
+  assert.equal(map['55'], 'AGENT_QUESTIONS');
+  assert.equal(map['42'], 'RECERT');
+});
+
+test('BL-466: a failed create degrades quietly - never throws, never writes a partial binding', async () => {
+  const root = mkTmpRoot();
+  const postFn = async () => ({ ok: false, status: 500, json: { description: 'simulated failure' } });
+  const topicId = await ensureAgentQuestionsTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, undefined);
+  assert.equal(fs.existsSync(topicMapPath(root)), false);
+});
+
+test('BL-466: an already-bound Agent Questions topic returns its existing topicId, without calling create', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'AGENT_QUESTIONS' });
+  const { postFn, calls } = fakeCreateOk(999);
+  const topicId = await ensureAgentQuestionsTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, 42);
+  assert.equal(calls.length, 0);
+});
+
+// ── readPollMap / writePollMap (BL-466, the resolvePollThread/recordPollMapping
+//    on-disk backing) — hardener: a NEW on-disk input this ticket introduces,
+//    proven load-bearing with a real fixture file (never only exercised through
+//    module-private buildPollAdapters/connectAndRelayReplies, which no test
+//    reaches) ───────────────────────────────────────────────────────────────
+
+test('BL-466: readPollMap returns {} when the poll map file does not exist yet', () => {
+  const root = mkTmpRoot();
+  assert.deepEqual(readPollMap(root), {});
+});
+
+test('BL-466: readPollMap returns {} when the poll map file is present but not valid JSON (present-but-malformed degrades, never crashes)', () => {
+  const root = mkTmpRoot();
+  fs.mkdirSync(path.dirname(pollMapPath(root)), { recursive: true });
+  fs.writeFileSync(pollMapPath(root), 'not json');
+  assert.deepEqual(readPollMap(root), {});
+});
+
+test('BL-466: writePollMap persists to disk and readPollMap reads back the SAME content - proves the read is load-bearing, not a hardcoded default', () => {
+  const root = mkTmpRoot();
+  const map = { 'poll-1': { threadId: 'SUP-1', options: ['staging', 'prod'] } };
+  writePollMap(root, map);
+  assert.deepEqual(JSON.parse(fs.readFileSync(pollMapPath(root), 'utf8')), map);
+  assert.deepEqual(readPollMap(root), map);
+});
+
+test('BL-466: writePollMap overwrites a prior mapping in place - readPollMap sees only the latest write, never a stale one', () => {
+  const root = mkTmpRoot();
+  writePollMap(root, { 'poll-1': { threadId: 'SUP-1', options: ['a', 'b'] } });
+  writePollMap(root, { 'poll-1': { threadId: 'SUP-1', options: ['a', 'b'] }, 'poll-2': { threadId: 'SUP-2', options: ['c', 'd'] } });
+  assert.deepEqual(readPollMap(root), {
+    'poll-1': { threadId: 'SUP-1', options: ['a', 'b'] },
+    'poll-2': { threadId: 'SUP-2', options: ['c', 'd'] },
+  });
+});
+
+// ── readAwaitingAnswer (BL-466, getPendingAgentQuestionThread's on-disk
+//    backing - read-only from this side, operator_runtime.bb/operator_ask.bb
+//    own the writes) — hardener: same fixture-proof discipline as
+//    readPollMap above ─────────────────────────────────────────────────────
+
+function awaitingAnswerPath(root) {
+  return path.join(root, '.swarmforge', 'operator', 'awaiting-answer.json');
+}
+
+function writeAwaitingAnswerFixture(root, contents) {
+  fs.mkdirSync(path.dirname(awaitingAnswerPath(root)), { recursive: true });
+  fs.writeFileSync(awaitingAnswerPath(root), contents);
+}
+
+test('BL-466: readAwaitingAnswer returns undefined when no question is pending (file absent)', () => {
+  const root = mkTmpRoot();
+  assert.equal(readAwaitingAnswer(root), undefined);
+});
+
+test('BL-466: readAwaitingAnswer resolves the pending question\'s thread id from a real fixture file - proves the read is load-bearing', () => {
+  const root = mkTmpRoot();
+  writeAwaitingAnswerFixture(root, JSON.stringify({ question: 'which env?', thread_id: 'SUP-1', asked_at_ms: 1000 }));
+  assert.deepEqual(readAwaitingAnswer(root), { threadId: 'SUP-1' });
+});
+
+test('BL-466: readAwaitingAnswer break-then-fix - removing the fixture file flips the result from a thread id back to undefined', () => {
+  const root = mkTmpRoot();
+  writeAwaitingAnswerFixture(root, JSON.stringify({ question: 'which env?', thread_id: 'SUP-1', asked_at_ms: 1000 }));
+  assert.deepEqual(readAwaitingAnswer(root), { threadId: 'SUP-1' }, 'sanity: the fixture is read while present');
+  fs.rmSync(awaitingAnswerPath(root));
+  assert.equal(readAwaitingAnswer(root), undefined, 'once removed, the read must no longer resolve a thread id');
+});
+
+test('BL-466: readAwaitingAnswer degrades to undefined on a malformed fixture file, never crashes (present-but-malformed)', () => {
+  const root = mkTmpRoot();
+  writeAwaitingAnswerFixture(root, 'not json');
+  assert.equal(readAwaitingAnswer(root), undefined);
 });
 
 // ── ensureRoleTopics (BL-425 slice 1 provision-role-topics-01) ───────────
