@@ -138,6 +138,9 @@ function registerSteps(registry) {
   // once, reused by both (the same shared-Background convention documented
   // in engineering.prompt's Gherkin-step-registry note).
   registry.define(/^the topic for the "([^"]*)" role exists$/, (ctx, role) => {
+    if (!ALL_SWARM_ROLES.includes(role)) {
+      throw new Error(`unrecognized role fixture: ${role}`);
+    }
     const topicId = ctx.nextTopicId++;
     ctx.topicIdForRole[role] = topicId;
     ctx.lastRole = role;
