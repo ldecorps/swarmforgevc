@@ -150,3 +150,30 @@
        {:entry entry :event nil})
 
      {:entry entry :event nil})))
+
+;; BL-411: kill-pid! itself (as opposed to WHEN check-one! calls it, decided
+;; above) is real process I/O - SIGTERM, a bounded busy-wait, then SIGKILL -
+;; unlike every function above this comment, which is pure and takes now-ms/
+;; pid-alive?/spawn!/kill-pid! as injected params. front_desk_supervisor.bb
+;; (BL-403) and negotiation_relay_supervisor.bb (BL-411) each supervise a
+;; single child process with the IDENTICAL termination semantics, differing
+;; only in their configured grace period, so this constructor is the one
+;; shared copy both callers build their kill-pid! adapter from - a second,
+;; hand-rolled ProcessHandle SIGTERM/SIGKILL copy in the relay supervisor
+;; would silently drift from this one the next time either needs a fix.
+(defn make-kill-pid! [grace-ms]
+  (fn [pid]
+    (when pid
+      (when-let [handle (some-> (java.lang.ProcessHandle/of pid) (.orElse nil))]
+        (when (.isAlive handle)
+          ;; SIGTERM for graceful shutdown
+          (.destroy handle)
+          ;; Wait for graceful exit within the grace period
+          (let [start (System/currentTimeMillis)]
+            (while (and (.isAlive handle) (< (- (System/currentTimeMillis) start) grace-ms))
+              (Thread/sleep 10)))
+          ;; SIGKILL if still alive after grace period
+          (when (.isAlive handle)
+            (.destroyForcibly handle))
+          ;; Wait for the kill to propagate
+          (Thread/sleep 10))))))

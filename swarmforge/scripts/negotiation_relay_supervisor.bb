@@ -43,6 +43,7 @@
 ;;   NEGOTIATION_RELAY_ESCALATION_BACKOFF_BASE_MS / NEGOTIATION_RELAY_ESCALATION_BACKOFF_MAX_MS
 ;;   NEGOTIATION_RELAY_ESCALATION_FORCE_RESULT  test-only: JSON send-result override,
 ;;                                         short-circuits the real send entirely
+;;   NEGOTIATION_RELAY_KILL_GRACE_MS       SIGTERM->SIGKILL grace period, ms (default 2000)
 
 (ns negotiation-relay-supervisor
   (:require [babashka.fs :as fs]
@@ -98,6 +99,18 @@
   {:max-attempts (env-long "NEGOTIATION_RELAY_ESCALATION_MAX_ATTEMPTS" 5)
    :backoff-base-ms (env-long "NEGOTIATION_RELAY_ESCALATION_BACKOFF_BASE_MS" 60000)
    :backoff-max-ms (env-long "NEGOTIATION_RELAY_ESCALATION_BACKOFF_MAX_MS" 1800000)})
+
+;; BL-411: this supervisor is check-one!'s OTHER caller (front_desk_supervisor.bb,
+;; BL-403, is the first) and had never passed a kill-pid! adapter, so a
+;; restart never terminated the prior relay poll-loop child - two children
+;; then long-poll Telegram getUpdates on the SAME bot token at once (HTTP
+;; 409, unreliable/duplicated/dropped delivery). The kill semantics
+;; themselves are shared with front_desk_supervisor.bb via
+;; front-desk-supervisor-lib/make-kill-pid! (see its own docstring) so
+;; there is exactly one SIGTERM->grace->SIGKILL implementation, not two
+;; drifting copies.
+(def kill-grace-ms (env-long "NEGOTIATION_RELAY_KILL_GRACE_MS" 2000))
+(def kill-pid! (front-desk-supervisor-lib/make-kill-pid! kill-grace-ms))
 
 (defn now-ms [] (System/currentTimeMillis))
 (defn now-iso []
@@ -213,8 +226,16 @@
                           (map (fn [spec]
                                  (let [entry (merge (front-desk-supervisor-lib/default-entry) (get prior (:key spec)))
                                        heartbeat-stale? ((:heartbeat-stale? spec) now)
+                                       ;; BL-411: kill-pid! (the 9th arg) is
+                                       ;; the fix - without it, check-one!'s
+                                       ;; own bounded-restart clause defaults
+                                       ;; to a no-op and never terminates the
+                                       ;; superseded relay child before
+                                       ;; spawning its replacement (proven by
+                                       ;; test_negotiation_relay_supervisor_tick.sh's
+                                       ;; real-subprocess old-pid-is-dead check).
                                        {:keys [entry event]} (front-desk-supervisor-lib/check-one!
-                                                               entry now pid-alive? (:spawn-pid! spec) restart-config giveup-config heartbeat-stale?)]
+                                                               entry now pid-alive? (:spawn-pid! spec) restart-config giveup-config heartbeat-stale? kill-pid!)]
                                    (log-event! (:key spec) event entry)
                                    [(:key spec) entry])))
                           process-specs)]
