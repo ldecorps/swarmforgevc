@@ -1,0 +1,1 @@
+{"id":"BL-452","messages":[{"seq":0,"ts":1784202085554,"author":"swarm","type":"outbound","text":"What it is: A live pipeline-board grid in a dedicated Telegram topic: active BL tickets x roles, a mark at each ticket's current stage, realtime + read-only\nHow it works: Each active ticket is a row marked only at its current stage"}]}
