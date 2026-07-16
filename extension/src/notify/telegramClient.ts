@@ -235,6 +235,26 @@ export async function editMessageText(
   return { success: true };
 }
 
+// BL-462: deletes a single MESSAGE (message_id-addressed, like
+// editMessageText above) - distinct from deleteForumTopic, which deletes an
+// entire TOPIC (message_thread_id-addressed). The pipeline board's own
+// repost-at-bottom mechanism is the first caller: it deletes the previously
+// posted board message before posting a fresh one, rather than editing in
+// place.
+export interface DeleteMessageResult {
+  success: boolean;
+  error?: string;
+}
+
+export async function deleteMessage(token: string, chatId: string, messageId: number, postFn: TelegramPostFn = defaultPost): Promise<DeleteMessageResult> {
+  const body = JSON.stringify({ chat_id: chatId, message_id: messageId });
+  const result = await callTelegramApi(token, 'deleteMessage', body, postFn);
+  if (!result.success) {
+    return { success: false, error: result.error };
+  }
+  return { success: true };
+}
+
 export interface TelegramChat {
   id: number | string;
 }

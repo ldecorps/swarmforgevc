@@ -11,6 +11,7 @@ const {
   getForumTopicIconStickers,
   answerCallbackQuery,
   editMessageText,
+  deleteMessage,
   getFile,
   downloadTelegramFile,
   sendVoiceNote,
@@ -605,6 +606,44 @@ test('editMessageText reports failure on a non-2xx response without leaking the 
 
   assert.equal(result.success, false);
   assert.match(result.error, /message to edit not found/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+// ── BL-462: deleteMessage - the pipeline board's own repost-at-bottom ────
+
+test('deleteMessage posts message_id to the Telegram API and reports success', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  const result = await deleteMessage(TOKEN, CHAT_ID, 42, postFn);
+
+  assert.deepEqual(result, { success: true });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/deleteMessage`);
+  assert.deepEqual(JSON.parse(calls[0].body), { chat_id: CHAT_ID, message_id: 42 });
+});
+
+test('deleteMessage reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'message to delete not found' } });
+
+  const result = await deleteMessage(TOKEN, CHAT_ID, 42, postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /message to delete not found/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('deleteMessage reports a redacted failure on a thrown network error', async () => {
+  const postFn = async () => {
+    throw new Error(`connection reset while calling bot${TOKEN}`);
+  };
+
+  const result = await deleteMessage(TOKEN, CHAT_ID, 42, postFn);
+
+  assert.equal(result.success, false);
   assert.doesNotMatch(result.error, new RegExp(TOKEN));
 });
 

@@ -69,8 +69,11 @@ const NO_EPIC_LABEL = '(no epic)';
 const PARKED_SECTION_HEADER = 'PARKED:';
 
 // A build-time detail, not a promotion gate (BL-455's own human_approval
-// note) - bounds a slug to a single short, phone-width line.
-export const PIPELINE_BOARD_SLUG_MAX_LENGTH = 24;
+// note) - bounds a slug to a single short, phone-width line. Widened by
+// BL-462 (24 -> 40, "longer slug, same line") per the human's own answer to
+// the specifier's clarifying question - still a build-time/cosmetic bound,
+// never a promotion gate.
+export const PIPELINE_BOARD_SLUG_MAX_LENGTH = 40;
 
 // BL-455: a short, single-line, delimiter-safe projection of a ticket's
 // title - never the raw title verbatim (engineering external-text-into-
@@ -191,7 +194,12 @@ function renderParkedSection(parked: PipelineBoardParkedEntry[]): string[] {
   return lines;
 }
 
-export function renderPipelineBoard(data: PipelineBoardData): string {
+// BL-462: the grid + parked list only, EXCLUDING the footer timestamp -
+// pipelineBoardSync.ts's own content signature is this text (never the
+// full renderPipelineBoard output below), so a fresh clock read alone can
+// never look like a content change. Exported so the sync module never
+// re-derives the grid/parked rendering rules a second time.
+export function renderPipelineBoardBody(data: PipelineBoardData): string {
   const idWidth = idColumnWidth(data.rows);
   const slugWidth = slugColumnWidth(data.rows);
   const lines = [
@@ -200,6 +208,34 @@ export function renderPipelineBoard(data: PipelineBoardData): string {
     ...renderParkedSection(data.parked),
   ];
   return lines.join('\n');
+}
+
+const MONTH_LABELS: readonly string[] = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// BL-462: a pure function of an injected epoch-ms - never a bare
+// new Date()/Date.now() (engineering no-real-clock rule). UTC throughout so
+// the label is deterministic regardless of the host's local timezone; exact
+// glyphs/timezone are a build-time detail, not a promotion gate (the
+// ticket's own human_approval note).
+export function formatUpdatedAtLabel(epochMs: number): string {
+  const d = new Date(epochMs);
+  const month = MONTH_LABELS[d.getUTCMonth()];
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  const hours = String(d.getUTCHours()).padStart(2, '0');
+  const minutes = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${month} ${day} ${hours}:${minutes}`;
+}
+
+function renderUpdatedAtFooter(lastChangeMs: number): string {
+  return `updated at ${formatUpdatedAtLabel(lastChangeMs)}`;
+}
+
+// BL-462: the full board - the pure grid/parked body plus an "updated at"
+// footer stamped with the last CONTENT-change instant (never the current
+// clock - the caller, pipelineBoardSync.ts, only ever passes the instant it
+// recorded for the last actual content change, per its own change-gate).
+export function renderPipelineBoard(data: PipelineBoardData, lastChangeMs: number): string {
+  return [renderPipelineBoardBody(data), '', renderUpdatedAtFooter(lastChangeMs)].join('\n');
 }
 
 // Telegram's own HTML parse_mode requires only these three characters
