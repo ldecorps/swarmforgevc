@@ -17,8 +17,8 @@
 // per-worker heap keeps the full suite green while bounding the worst case
 // well under the reference 15360MB host - see vitestWorkerMemoryBudget.test.js's
 // own "the exported caps stay within budget" assertion.
-export const MAX_WORKERS = 2;
-export const PER_WORKER_HEAP_MB = 2048;
+export const MAX_WORKERS = 6;
+export const PER_WORKER_HEAP_MB = 1280;
 
 // Worst-case footprint must stay within this fraction of the host's total
 // RAM, leaving headroom for the OS and every other swarm agent process
