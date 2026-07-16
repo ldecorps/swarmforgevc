@@ -777,6 +777,43 @@
   (assert-false "question-intake-content never fabricates acceptance criteria"
                 (clojure.string/includes? content "acceptance:")))
 
+;; ── BL-415: github-base-from-remote-url/github-permalink/
+;;    filed-intake-confirmation-text (pure) ──────────────────────────────
+
+(assert= "SSH remote form normalizes to the https github base, .git stripped"
+         "https://github.com/ldecorps/swarmforgevc"
+         (operator-lib/github-base-from-remote-url "git@github.com:ldecorps/swarmforgevc.git"))
+(assert= "HTTPS remote form normalizes the same way"
+         "https://github.com/ldecorps/swarmforgevc"
+         (operator-lib/github-base-from-remote-url "https://github.com/ldecorps/swarmforgevc.git"))
+(assert= "a non-GitHub remote yields no base"
+         nil (operator-lib/github-base-from-remote-url "git@gitlab.com:ldecorps/swarmforgevc.git"))
+(assert= "a blank/missing remote yields no base" nil (operator-lib/github-base-from-remote-url nil))
+(assert= "an empty-string remote yields no base" nil (operator-lib/github-base-from-remote-url ""))
+
+(assert= "github-permalink composes blob/<sha>/<rel-path> off a real base"
+         "https://github.com/ldecorps/swarmforgevc/blob/abc123/backlog/INTAKE-x.md"
+         (operator-lib/github-permalink "https://github.com/ldecorps/swarmforgevc" "abc123" "backlog/INTAKE-x.md"))
+(assert= "github-permalink is nil when there is no base to link against"
+         nil (operator-lib/github-permalink nil "abc123" "backlog/INTAKE-x.md"))
+
+(assert= "filed-intake-confirmation-text carries a commit-sha permalink for a GitHub origin"
+         "Filed for the swarm: backlog/INTAKE-x.md — https://github.com/ldecorps/swarmforgevc/blob/abc123/backlog/INTAKE-x.md"
+         (operator-lib/filed-intake-confirmation-text
+          "backlog/INTAKE-x.md" "abc123" "git@github.com:ldecorps/swarmforgevc.git"))
+(assert-true "filed-intake-confirmation-text's permalink uses the commit sha, not a mutable branch name"
+             (clojure.string/includes?
+              (operator-lib/filed-intake-confirmation-text
+               "backlog/INTAKE-x.md" "abc123" "git@github.com:ldecorps/swarmforgevc.git")
+              "/blob/abc123/"))
+(assert= "filed-intake-confirmation-text falls back to the plain path for a missing origin"
+         "Filed for the swarm: backlog/INTAKE-x.md"
+         (operator-lib/filed-intake-confirmation-text "backlog/INTAKE-x.md" "abc123" nil))
+(assert= "filed-intake-confirmation-text falls back to the plain path for a non-GitHub origin"
+         "Filed for the swarm: backlog/INTAKE-x.md"
+         (operator-lib/filed-intake-confirmation-text
+          "backlog/INTAKE-x.md" "abc123" "git@gitlab.com:ldecorps/swarmforgevc.git"))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "operator_lib: ALL TESTS PASSED")

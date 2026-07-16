@@ -107,4 +107,37 @@ pass "a reply failure after a successful commit is reported honestly (told_human
 rm -rf "$ROOT2"
 trap - EXIT
 
+# ── BL-415: the confirmation carries a real GitHub permalink at the ACTUAL
+# filing commit's sha, proven against a real git origin - not just the pure
+# helper in isolation ────────────────────────────────────────────────────
+ROOT3="$(git_repo)"
+trap 'rm -rf "$ROOT3"' EXIT
+git -C "$ROOT3" remote add origin git@github.com:ldecorps/swarmforgevc.git
+
+OUT4="$(bb "$CLI" "$ROOT3" --thread SUP-1 --question "does the link work?")"
+echo "$OUT4" | grep -q '"committed":true' || fail "expected committed:true, got: $OUT4"
+FILED_REL3="$(echo "$OUT4" | grep -oE '"filed":"[^"]+"' | sed -E 's/"filed":"([^"]+)"/\1/')"
+SHA3="$(git -C "$ROOT3" rev-parse HEAD)"
+OUTBOX3="$ROOT3/.swarmforge/operator/telegram-reply-outbox.jsonl"
+[[ -f "$OUTBOX3" ]] || fail "expected the reply outbox to exist"
+grep -q "https://github.com/ldecorps/swarmforgevc/blob/$SHA3/$FILED_REL3" "$OUTBOX3" \
+  || fail "expected the outbox to carry a permalink at the real filing commit's sha, got: $(cat "$OUTBOX3")"
+pass "BL-415: the confirmation carries a real GitHub permalink at the actual filing commit's sha"
+rm -rf "$ROOT3"
+trap - EXIT
+
+# ── BL-415: no origin configured still falls back to the plain path, and
+# filing still succeeds ─────────────────────────────────────────────────
+ROOT4="$(git_repo)"
+trap 'rm -rf "$ROOT4"' EXIT
+OUT5="$(bb "$CLI" "$ROOT4" --thread SUP-1 --question "no origin here")"
+echo "$OUT5" | grep -q '"committed":true' || fail "expected committed:true with no origin configured, got: $OUT5"
+FILED_REL4="$(echo "$OUT5" | grep -oE '"filed":"[^"]+"' | sed -E 's/"filed":"([^"]+)"/\1/')"
+OUTBOX4="$ROOT4/.swarmforge/operator/telegram-reply-outbox.jsonl"
+grep -q "Filed for the swarm: $FILED_REL4" "$OUTBOX4" || fail "expected the plain-path fallback text, got: $(cat "$OUTBOX4")"
+grep -q "github.com" "$OUTBOX4" && fail "expected NO permalink when there is no GitHub origin, got: $(cat "$OUTBOX4")"
+pass "BL-415: a missing origin falls back to the plain path without failing the filing"
+rm -rf "$ROOT4"
+trap - EXIT
+
 echo "ALL PASS"
