@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=d584c000474dd864e76954fd4b3ce5bbd4d4ba5ee7f426b5cca37e7c1538052b
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-16T16:22:47.976203259Z","feature_name":"The project docs are organized into the Divio four modes with a classified index","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-456-divio-docs-reorg.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":1,"name":"Each Divio mode is classified with its reader orientation in the index","scenario_hash":"b962bc83938cfda58d3d4898a1657ffe137acedbc60c85450aff0729748d62b0","mutation_count":8,"result":{"Total":8,"Killed":8,"Survived":0,"Errors":0},"tested_at":"2026-07-16T16:19:47.036197369Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The project docs are organized into the Divio four modes with a classified index
 
   # BL-456 (docs, human-requested via Telegram SUP-7, relayed by the Operator 2026-07-16): organize the
