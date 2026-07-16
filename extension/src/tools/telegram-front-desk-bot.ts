@@ -90,6 +90,9 @@ import {
   decideEnsureRoleTopicAction,
   OPERATOR_TOPIC_NAME,
   OPERATOR_SUBJECT_ID,
+  decideEnsureApprovalsTopicAction,
+  APPROVALS_TOPIC_NAME,
+  APPROVALS_SUBJECT_ID,
   SttResult,
   TtsResult,
   ReplyRelayAdapters,
@@ -357,6 +360,30 @@ export async function ensureOperatorTopic(targetPath: string, botToken: string, 
   return created.messageThreadId;
 }
 
+// BL-434: the Approvals-topic twin of ensureOperatorTopic above - identical
+// reuse-or-create/idempotent-across-restarts shape, sharing the SAME
+// {topicId: subjectId} map, just keyed by its own reserved subject id.
+// Called once BEFORE the poll loop starts (same ordering rationale as
+// ensureOperatorTopic) and wired straight into topicRouter.ts's
+// RouteAdapters.ensureApprovalsTopic and approvalsRosterSync.ts's own
+// ApprovalsRosterAdapters.ensureApprovalsTopic - both resolve to this ONE
+// standing topic, never a second Approvals-topic notion.
+export async function ensureApprovalsTopic(targetPath: string, botToken: string, chatId: string, postFn?: TelegramPostFn): Promise<number | undefined> {
+  const topicMap = readTopicMap(targetPath);
+  const decision = decideEnsureApprovalsTopicAction(topicMap);
+  if (decision.kind === 'reuse') {
+    return decision.topicId;
+  }
+  const created = await createForumTopic(botToken, chatId, APPROVALS_TOPIC_NAME, postFn);
+  if (!created.success || created.messageThreadId === undefined) {
+    process.stderr.write(`ensureApprovalsTopic: failed to create the Approvals topic: ${created.error ?? 'no messageThreadId returned'}\n`);
+    return undefined;
+  }
+  topicMap[topicMapKey(created.messageThreadId)] = APPROVALS_SUBJECT_ID;
+  writeTopicMap(targetPath, topicMap);
+  return created.messageThreadId;
+}
+
 // BL-425 slice 1 (cleaner): one role's own provision decision + effect,
 // split out of ensureRoleTopics below so that function's own loop stays a
 // thin sequencer and its branch count stays at or below the CRAP threshold -
@@ -615,6 +642,7 @@ function buildPollAdapters(
     postOperatorContext: (backlogId, text, updateId) => postOperatorContext(targetPath, backlogId, text, updateId),
     recordApprovalReply: (backlogId) => Promise.resolve(recordApprovalReply(targetPath, backlogId)),
     recordRejectionReply: (backlogId, reason) => Promise.resolve(recordRejectionReply(targetPath, backlogId, reason)),
+    notifyApprovalsTopic: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then((r) => r.success),
     getPendingButtonAction: (backlogId) => Promise.resolve(readPendingButtonActions(targetPath)[backlogId]),
     // BL-426 slice 1: absent (openaiApiKey unset) means "voice not wired" -
     // the exact pre-BL-426 behavior, same optional-adapter convention as
@@ -1003,6 +1031,21 @@ export function __resetIconStickersCacheForTest(): void {
 // this same map/file rather than a second store) - is skipped by the
 // Number.isFinite check alone, with no separate name-list of keys to keep
 // in sync.
+// BL-434: the Operator/Approvals reserved subjects each get their own
+// iconKey; every other bound subject (an ordinary SUP-### support thread)
+// falls back to 'support/intake' - split out so standingTopicTargets' own
+// loop body stays a flat push, the same "extract so branch count/nesting
+// stays low" convention this file already applies throughout.
+function standingTopicIconKeyFor(subjectId: string): StandingTopicTarget['iconKey'] {
+  if (subjectId === OPERATOR_SUBJECT_ID) {
+    return 'operator';
+  }
+  if (subjectId === APPROVALS_SUBJECT_ID) {
+    return 'approvals';
+  }
+  return 'support/intake';
+}
+
 export function standingTopicTargets(targetPath: string): StandingTopicTarget[] {
   const topicMap = readTopicMap(targetPath);
   const targets: StandingTopicTarget[] = [];
@@ -1011,11 +1054,7 @@ export function standingTopicTargets(targetPath: string): StandingTopicTarget[] 
     if (!Number.isFinite(topicId)) {
       continue;
     }
-    targets.push({
-      id: subjectId,
-      topicId,
-      iconKey: subjectId === OPERATOR_SUBJECT_ID ? 'operator' : 'support/intake',
-    });
+    targets.push({ id: subjectId, topicId, iconKey: standingTopicIconKeyFor(subjectId) });
   }
   return targets;
 }
@@ -1044,6 +1083,7 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
         appendMessage(targetPath, backlogId, { author: 'swarm', type: 'outbound', text });
       },
       ensureOperatorTopic: () => ensureOperatorTopic(targetPath, botToken, chatId),
+      ensureApprovalsTopic: () => ensureApprovalsTopic(targetPath, botToken, chatId),
     },
     iconAdapters: {
       getIconStickers: () => iconStickersOnce(botToken),
@@ -1090,6 +1130,15 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
           r.success ? r.messageId : undefined
         ),
       editMessage: (topicId, messageId, text) => editMessageText(botToken, chatId, messageId, wrapPipelineBoardHtml(text), 'HTML').then((r) => r.success),
+    },
+    // BL-434: the standing "Approvals" topic's own roster sync - shares the
+    // SAME ensureApprovalsTopic the ask-routing RouteAdapters above uses
+    // (never a second Approvals-topic notion), so the roster and every
+    // ticket's ask always land in the one topic.
+    rosterAdapters: {
+      ensureApprovalsTopic: () => ensureApprovalsTopic(targetPath, botToken, chatId),
+      postMessage: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then((r) => (r.success ? r.messageId : undefined)),
+      editMessage: (topicId, messageId, text) => editMessageText(botToken, chatId, messageId, text).then((r) => r.success),
     },
   };
 }
@@ -1238,6 +1287,12 @@ export async function main(): Promise<void> {
   // trap this ordering avoids). A failed create here must never block the
   // rest of the bot's ordinary routing from coming up.
   await ensureOperatorTopic(targetPath, botToken, chatId);
+
+  // BL-434: bind the standing Approvals topic BEFORE any loop starts
+  // polling too - same ordering rationale as ensureOperatorTopic just
+  // above (an inbound reply must never reach an unbound Approvals topic
+  // and be misrouted as an ordinary support-thread post).
+  await ensureApprovalsTopic(targetPath, botToken, chatId);
 
   // BL-425 slice 1: bind each swarm role's own standing steering topic
   // BEFORE any loop starts polling too - same ordering rationale as

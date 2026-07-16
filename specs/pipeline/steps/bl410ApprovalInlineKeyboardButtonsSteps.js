@@ -88,6 +88,7 @@ function buildConciergeAdapters(ctx) {
       closeTopic: async () => true,
       recordMessage: () => {},
       ensureOperatorTopic: async () => 700,
+      ensureApprovalsTopic: async () => 750,
     },
     iconAdapters: {
       getIconStickers: async () => [],

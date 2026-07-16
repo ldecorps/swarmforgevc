@@ -23,6 +23,8 @@ const {
   applyReplyRelayCycleResult,
   decideEnsureOperatorTopicAction,
   OPERATOR_SUBJECT_ID,
+  decideEnsureApprovalsTopicAction,
+  APPROVALS_SUBJECT_ID,
   nextUpdateOffset,
   offsetAfterDelivery,
   shouldEscalateStuckDelivery,
@@ -184,6 +186,21 @@ test('BL-346: decideEnsureOperatorTopicAction is reserved-subject-specific - an 
   assert.deepEqual(decideEnsureOperatorTopicAction({ '7': 'SUP-1', '8': 'SUP-2' }), { kind: 'create' });
 });
 
+// ── decideEnsureApprovalsTopicAction (pure) — BL-434 ──────────────────────
+
+test('BL-434: decideEnsureApprovalsTopicAction creates when no topic is bound to the reserved subject yet', () => {
+  assert.deepEqual(decideEnsureApprovalsTopicAction({}), { kind: 'create' });
+  assert.deepEqual(decideEnsureApprovalsTopicAction({ '7': 'SUP-1' }), { kind: 'create' });
+});
+
+test('BL-434: decideEnsureApprovalsTopicAction reuses the topic already bound to APPROVALS_SUBJECT_ID', () => {
+  assert.deepEqual(decideEnsureApprovalsTopicAction({ '7': 'SUP-1', '42': APPROVALS_SUBJECT_ID }), { kind: 'reuse', topicId: 42 });
+});
+
+test('BL-434: decideEnsureApprovalsTopicAction is reserved-subject-specific - the Operator topic\'s own binding never counts as the Approvals topic', () => {
+  assert.deepEqual(decideEnsureApprovalsTopicAction({ '42': OPERATOR_SUBJECT_ID }), { kind: 'create' });
+});
+
 // ── decideEnsureRoleTopicAction (pure) — BL-425 provision-role-topics-01 ──
 
 test('BL-425: decideEnsureRoleTopicAction creates when the role has no topic bound yet', () => {
@@ -294,6 +311,32 @@ test('an unmapped topic with no backlog mapping either still opens a fresh SUP-#
   const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 99, text: 'brand new' });
   const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', () => undefined, () => undefined);
   assert.deepEqual(decision, { action: 'open-for-topic', topicId: 99, text: 'brand new' });
+});
+
+// ── BL-434 approvals-standing-topic-01/02/03: Approvals-topic replies ────
+
+test('BL-434: a reply "approve <id>" in the Approvals topic is parsed into an approvals-topic-approve decision naming that exact id', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: 'approve BL-433' });
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined));
+  assert.deepEqual(decision, { action: 'approvals-topic-approve', backlogId: 'BL-433', text: 'approve BL-433' });
+});
+
+test('BL-434: a reply "reject <id> <reason>" in the Approvals topic is parsed into an approvals-topic-reject decision', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: 'reject BL-433 no good' });
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined));
+  assert.deepEqual(decision, { action: 'approvals-topic-reject', backlogId: 'BL-433', reason: 'no good', text: 'reject BL-433 no good' });
+});
+
+test('BL-434: a reply in the Approvals topic naming no recognizable verb+id is neither post-existing nor operator-context, but a distinct unrecognized decision', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: 'what is happening here' });
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined));
+  assert.deepEqual(decision, { action: 'approvals-topic-unrecognized', text: 'what is happening here' });
+});
+
+test('BL-434: a reply on an ORDINARY SUP-### topic (not the Approvals topic) still posts as an ordinary subject post - no regression', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'approve BL-433' });
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', (topicId) => (topicId === 7 ? 'SUP-1' : undefined));
+  assert.deepEqual(decision, { action: 'post-existing', subjectId: 'SUP-1', text: 'approve BL-433' });
 });
 
 test('decideUpdateAction called with only 3 args (no backlogForTopic) behaves exactly as before BL-298 - existing callers are unaffected', () => {
@@ -955,6 +998,161 @@ test('BL-357: an approval reply on a SUP-### subject topic (not a backlog item) 
     },
   });
   assert.deepEqual(approvals, []);
+});
+
+// ── BL-434 approvals-standing-topic-01/02/03: Approvals-topic reply delivery ──
+
+test('BL-434 approvals-standing-topic-02: "approve <id>" in the Approvals topic records approve for that exact ticket', async () => {
+  const approvals = [];
+  const notified = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: 'approve BL-433' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for an Approvals-topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for an Approvals-topic reply');
+    },
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    postOperatorContext: async () => {
+      throw new Error('postOperatorContext should not be called for an Approvals-topic reply');
+    },
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return true;
+    },
+    recordRejectionReply: async () => {
+      throw new Error('recordRejectionReply should not be called for an approve reply');
+    },
+    notifyApprovalsTopic: async (topicId, text) => {
+      notified.push({ topicId, text });
+      return true;
+    },
+  });
+  assert.deepEqual(approvals, ['BL-433']);
+  assert.deepEqual(notified, [], 'a successful approve needs no surfacing reply');
+  assert.equal(result.posted, 1);
+  assert.equal(result.dropped, 0);
+});
+
+test('BL-434 approvals-standing-topic-02: "reject <id> <reason>" in the Approvals topic records reject for that exact ticket, with the reason', async () => {
+  const rejections = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: 'reject BL-433 no good' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for an Approvals-topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for an Approvals-topic reply');
+    },
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    postOperatorContext: async () => {
+      throw new Error('postOperatorContext should not be called for an Approvals-topic reply');
+    },
+    recordApprovalReply: async () => {
+      throw new Error('recordApprovalReply should not be called for a reject reply');
+    },
+    recordRejectionReply: async (backlogId, reason) => {
+      rejections.push({ backlogId, reason });
+      return true;
+    },
+  });
+  assert.deepEqual(rejections, [{ backlogId: 'BL-433', reason: 'no good' }]);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-434 approvals-standing-topic-03: "approve <id>" for a ticket that is NOT currently pending is surfaced, never applied', async () => {
+  const approvals = [];
+  const notified = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: 'approve BL-999' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for an Approvals-topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for an Approvals-topic reply');
+    },
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    postOperatorContext: async () => {
+      throw new Error('postOperatorContext should not be called for an Approvals-topic reply');
+    },
+    // recordApprovalReply's own no-op contract: false means "not pending / no
+    // matching ticket" - never a second pending-check adapter.
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return false;
+    },
+    notifyApprovalsTopic: async (topicId, text) => {
+      notified.push({ topicId, text });
+      return true;
+    },
+  });
+  assert.deepEqual(approvals, ['BL-999'], 'recordApprovalReply IS called - it is the one that determines pending-ness, but its write is a no-op');
+  assert.equal(notified.length, 1);
+  assert.equal(notified[0].topicId, 750);
+  assert.match(notified[0].text, /BL-999/);
+  assert.match(notified[0].text, /isn't awaiting approval/);
+  assert.equal(result.posted, 0);
+  assert.equal(result.dropped, 1, 'a not-currently-pending id is a deliberate drop, never a retryable failure');
+  assert.equal(result.failed, 0);
+});
+
+test('BL-434 approvals-standing-topic-01: a reply in the Approvals topic naming no recognizable verb+id is dropped, never crashes, never calls record*', async () => {
+  const approvals = [];
+  const rejections = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: 'what is happening here' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for an Approvals-topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for an Approvals-topic reply');
+    },
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    postOperatorContext: async () => {
+      throw new Error('postOperatorContext should not be called for an Approvals-topic reply');
+    },
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return true;
+    },
+    recordRejectionReply: async (backlogId, reason) => {
+      rejections.push({ backlogId, reason });
+      return true;
+    },
+  });
+  assert.deepEqual(approvals, []);
+  assert.deepEqual(rejections, []);
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-434: an Approvals-topic reply degrades to a silent drop when notifyApprovalsTopic is not wired (optional-adapter convention)', async () => {
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: 'approve BL-999' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for an Approvals-topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for an Approvals-topic reply');
+    },
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    postOperatorContext: async () => {
+      throw new Error('postOperatorContext should not be called for an Approvals-topic reply');
+    },
+    recordApprovalReply: async () => false,
+    // notifyApprovalsTopic deliberately omitted.
+  });
+  assert.equal(result.dropped, 1);
 });
 
 test('BL-298 topic-reply-02: a SUP-### subject\'s topic still posts via postToBridge (no regression), never postOperatorContext', async () => {

@@ -81,6 +81,7 @@ function fakeConciergeAdapters() {
           recordedMessages.push({ backlogId, text });
         },
         ensureOperatorTopic: async () => 700,
+        ensureApprovalsTopic: async () => 750,
       },
       iconAdapters: {
         getIconStickers: async () => [],
