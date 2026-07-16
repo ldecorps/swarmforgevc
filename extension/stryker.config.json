@@ -15,6 +15,7 @@
   "timeoutFactor": 3,
   "coverageAnalysis": "perTest",
   "appendPlugins": ["./out/mutation/stryker-plugin.js"],
+  "ignorers": ["entrypoint-boilerplate"],
   "reporters": ["clear-text", "progress", "mutation-progress"],
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true
