@@ -20,6 +20,7 @@
 # which rc files a login shell would have sourced).
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SWARMFORGE_SH="$SCRIPT_DIR/../swarmforge.sh"
@@ -30,6 +31,7 @@ pass() { echo "PASS: $*"; }
 mk_fixture_root() {
   local root
   root="$(cd "$(mktemp -d)" && pwd -P)"
+  register_tmp_dir "$root"
   mkdir -p "$root/swarmforge/roles" "$root/.swarmforge/launch" "$root/.swarmforge/prompts" "$root/.worktrees/coder/swarmforge/scripts"
   touch "$root/swarmforge/constitution.prompt"
   for role in specifier coder; do
@@ -64,6 +66,7 @@ run_launch_script_capture_claude_arg() {
   local root="$1"
   local fake_bin call_log
   fake_bin="$(mktemp -d)"
+  register_tmp_dir "$fake_bin"
   call_log="$(mktemp)"
   cat > "$fake_bin/claude" <<EOF
 #!/usr/bin/env bash

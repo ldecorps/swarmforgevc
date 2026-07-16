@@ -68,8 +68,21 @@
 ;; ── sweep! (adapter-injected orchestration, real state-file fixture,
 ;;    fake send-email!) - BL-349's own 7 acceptance scenarios ────────────
 
+(def created-temp-dirs (atom []))
+;; BL-459: every temp dir this runner creates is tracked here and removed by
+;; a JVM shutdown hook, registered ONCE below - fires on both a clean run
+;; and an uncaught assertion/exception propagating out of this script
+;; (verified empirically: Runtime/addShutdownHook runs on System/exit and on
+;; an uncaught throwable unwinding to the top level), never on SIGKILL/OOM
+;; (BL-413's periodic /tmp sweep is the backstop for that - out of scope
+;; here).
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
 (defn mk-fixture-dir []
-  (str (fs/create-temp-dir {:prefix "sfvc-stuck-escalation-email-"})))
+  (let [d (str (fs/create-temp-dir {:prefix "sfvc-stuck-escalation-email-"}))]
+    (swap! created-temp-dirs conj d)
+    d))
 
 (defn fake-adapters [outcomes-atom calls-atom]
   {:send-email! (fn [subject text]

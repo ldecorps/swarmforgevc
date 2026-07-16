@@ -16,6 +16,7 @@
 # every role it declares.
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SWARMFORGE_SH="$SCRIPT_DIR/../swarmforge.sh"
@@ -49,6 +50,7 @@ for conf in "${SHIPPED_CONFS[@]}"; do
   # specific conf actually declares (packs vary widely: 2-pack vs 7-pack,
   # aider vs claude vs copilot) - not a fixed role list.
   fixture_root="$(mktemp -d)"
+  register_tmp_dir "$fixture_root"
   mkdir -p "$fixture_root/swarmforge/roles" "$fixture_root/.swarmforge"
   touch "$fixture_root/swarmforge/constitution.prompt"
   while IFS= read -r role; do

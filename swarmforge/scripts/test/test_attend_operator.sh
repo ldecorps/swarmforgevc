@@ -8,6 +8,7 @@
 # never a hand-rolled substitute for attend_operator.sh's own real pid
 # registration/cleanup logic), real pid liveness.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$SCRIPT_DIR/.."
@@ -18,6 +19,7 @@ pass() { echo "PASS: $*"; }
 
 mk_fixture() {
   local d; d="$(mktemp -d)"
+  register_tmp_dir "$d"
   mkdir -p "$d/.swarmforge/operator" "$d/swarmforge/roles"
   touch "$d/swarmforge/roles/operator.prompt"
   printf '%s' "$d"
@@ -25,6 +27,7 @@ mk_fixture() {
 
 mk_fake_claude_bin() {
   local dir behavior; dir="$(mktemp -d)"; behavior="$1"
+  register_tmp_dir "$dir"
   cat > "$dir/claude" <<EOF
 #!/usr/bin/env bash
 $behavior
