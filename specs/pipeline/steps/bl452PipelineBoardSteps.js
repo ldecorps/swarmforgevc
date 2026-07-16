@@ -27,18 +27,11 @@ const KNOWN_STATES = {
   'awaiting approval': (id, fixture) => fixture.setFolders(folders({ paused: [{ id, humanApproval: 'pending' }] })),
 };
 
-const KNOWN_COLUMNS = new Set([
-  'specifier',
-  'coder',
-  'cleaner',
-  'architect',
-  'hardender',
-  'documenter',
-  'QA',
-  'coordinator',
-  'parked',
-  'awaiting-approval',
-]);
+// BL-455: 'parked'/'awaiting-approval' are no longer grid columns (they
+// moved to the below-grid list) - dropped from the known-values set so a
+// Gherkin mutation into either string is correctly treated as unrecognized,
+// not silently accepted as a once-real column.
+const KNOWN_COLUMNS = new Set(['specifier', 'coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA', 'coordinator']);
 
 function folders(overrides = {}) {
   return { active: [], paused: [], done: [], ...overrides };
@@ -124,6 +117,17 @@ function fakeConciergeAdapters() {
   };
 }
 
+// BL-455 widened PipelineBoardRow with epic/slug and renderPipelineBoard's
+// own input from a bare row array to { rows, parked }. This suite's own
+// fixtures never set a ticket title/epic (KNOWN_STATES only calls
+// setRoleHeldTickets/setFolders), so every expected row here carries the
+// same epic: undefined, slug: '' the real join would also produce for an id
+// with no matching backlog item - never a hand-rolled substitute for
+// computePipelineBoard's own (separately unit-tested) defaults.
+function boardData(rows) {
+  return { rows: rows.map((r) => ({ epic: undefined, slug: '', ...r })), parked: [] };
+}
+
 function lastRendered(fixture) {
   if (fixture.edited.length > 0) {
     return fixture.edited[fixture.edited.length - 1].text;
@@ -139,10 +143,10 @@ function registerSteps(registry) {
   registry.define(/^active tickets are at various pipeline stages$/, (ctx) => {
     ctx.fixture = fakeConciergeAdapters();
     ctx.fixture.setRoleHeldTickets({ coder: ['BL-1'], QA: ['BL-2'] });
-    ctx.expectedRows = [
+    ctx.expectedBoard = boardData([
       { id: 'BL-1', column: 'coder' },
       { id: 'BL-2', column: 'QA' },
-    ];
+    ]);
   });
 
   registry.define(/^the pipeline board is rendered$/, async (ctx) => {
@@ -150,7 +154,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^each active ticket is a row in the board$/, (ctx) => {
-    const expected = renderPipelineBoard(ctx.expectedRows);
+    const expected = renderPipelineBoard(ctx.expectedBoard);
     const actual = lastRendered(ctx.fixture);
     if (actual !== expected) {
       throw new Error(`expected board:\n${expected}\ngot:\n${actual}`);
@@ -158,7 +162,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^each ticket's row has a single mark in the column for its current stage$/, (ctx) => {
-    const expected = renderPipelineBoard(ctx.expectedRows);
+    const expected = renderPipelineBoard(ctx.expectedBoard);
     const actual = lastRendered(ctx.fixture);
     if (actual !== expected) {
       throw new Error(`expected board:\n${expected}\ngot:\n${actual}`);
@@ -166,7 +170,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^a role holding no ticket shows no mark in that ticket's row$/, (ctx) => {
-    const expected = renderPipelineBoard(ctx.expectedRows);
+    const expected = renderPipelineBoard(ctx.expectedBoard);
     const actual = lastRendered(ctx.fixture);
     if (actual !== expected) {
       throw new Error(`expected board:\n${expected}\ngot:\n${actual}`);
@@ -186,7 +190,7 @@ function registerSteps(registry) {
     if (!KNOWN_COLUMNS.has(column)) {
       throw new Error(`pipeline-board-02: unrecognized <column> example value "${column}"`);
     }
-    const expected = renderPipelineBoard([{ id, column }]);
+    const expected = renderPipelineBoard(boardData([{ id, column }]));
     const actual = lastRendered(ctx.fixture);
     if (actual !== expected) {
       throw new Error(`expected board:\n${expected}\ngot:\n${actual}`);
@@ -200,7 +204,7 @@ function registerSteps(registry) {
     ctx.fixture.state.pipelineBoard = {
       topicId: 900,
       messageId: 1,
-      renderedText: renderPipelineBoard([{ id: 'BL-1', column: 'coder' }]),
+      renderedText: renderPipelineBoard(boardData([{ id: 'BL-1', column: 'coder' }])),
     };
   });
 
@@ -217,7 +221,7 @@ function registerSteps(registry) {
     if (edit.topicId !== 900 || edit.messageId !== 1) {
       throw new Error(`expected the edit to target the existing topic 900 / message 1, got topicId=${edit.topicId} messageId=${edit.messageId}`);
     }
-    const expected = renderPipelineBoard([{ id: 'BL-1', column: 'QA' }]);
+    const expected = renderPipelineBoard(boardData([{ id: 'BL-1', column: 'QA' }]));
     if (edit.text !== expected) {
       throw new Error(`expected the edited text to show BL-1 in QA:\n${expected}\ngot:\n${edit.text}`);
     }
@@ -236,7 +240,7 @@ function registerSteps(registry) {
     ctx.fixture.state.pipelineBoard = {
       topicId: 900,
       messageId: 1,
-      renderedText: renderPipelineBoard([{ id: 'BL-1', column: 'coder' }]),
+      renderedText: renderPipelineBoard(boardData([{ id: 'BL-1', column: 'coder' }])),
     };
   });
 
