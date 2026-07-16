@@ -151,8 +151,11 @@ export const REPLY_POINTER_TEXT = "This was answered — see the reply in this c
 // with this subject id resolves back through topicForSubject/
 // resolveReplyTopicId exactly like any other reply - no new routing/egress
 // code needed, only the one-time binding itself (decideEnsureOperatorTopicAction).
+// BL-453: OPERATOR_SUBJECT_ID stays UNCHANGED (the durable binding/ownership
+// key - changing it would re-mint or orphan the already-bound topic); only
+// the display name is rebranded, from "Operator" to "Concierge".
 export const OPERATOR_SUBJECT_ID = 'OPERATOR';
-export const OPERATOR_TOPIC_NAME = 'Operator';
+export const OPERATOR_TOPIC_NAME = 'Concierge';
 
 export type EnsureOperatorTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
 
@@ -164,6 +167,20 @@ export type EnsureOperatorTopicAction = { kind: 'reuse'; topicId: number } | { k
 export function decideEnsureOperatorTopicAction(topicMap: Record<string, string>): EnsureOperatorTopicAction {
   const existingTopicId = topicForSubject(topicMap, OPERATOR_SUBJECT_ID);
   return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
+}
+
+// BL-453: the front-desk topic already exists and is bound (the Operator ->
+// Concierge rebrand supersedes only its display name/icon, never its
+// binding), so a fresh install's create-time name alone cannot reach it -
+// the live topic's title must also be RENAMED. Pure decision, mirroring
+// topicTitleSync.ts's own "only apply when the recorded value actually
+// differs" change-gate (never re-edit an already-correct topic): undefined
+// (no marker recorded yet, e.g. a pre-BL-453 install) counts as "differs",
+// same as any other stale value.
+export type StandingTopicTitleSyncAction = 'update' | 'unchanged';
+
+export function decideStandingTopicTitleSync(recordedTitle: string | undefined, desiredTitle: string): StandingTopicTitleSyncAction {
+  return recordedTitle === desiredTitle ? 'unchanged' : 'update';
 }
 
 // BL-434: the reserved subject a standing "Approvals" forum topic is bound

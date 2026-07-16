@@ -260,6 +260,20 @@ function writeTopicMapFixture(root, map) {
   fs.writeFileSync(topicMapPath(root), JSON.stringify(map));
 }
 
+// BL-453: the {subjectId: title} rename change-gate marker.
+function standingTopicTitlesPath(root) {
+  return path.join(root, '.swarmforge', 'operator', 'telegram-standing-topic-titles.json');
+}
+
+function writeStandingTopicTitlesFixture(root, titles) {
+  fs.mkdirSync(path.dirname(standingTopicTitlesPath(root)), { recursive: true });
+  fs.writeFileSync(standingTopicTitlesPath(root), JSON.stringify(titles));
+}
+
+function readStandingTopicTitlesFixture(root) {
+  return JSON.parse(fs.readFileSync(standingTopicTitlesPath(root), 'utf8'));
+}
+
 // Mirrors telegramClient.test.js's own fake postFn convention - never a
 // real network call.
 function fakeCreateOk(threadId) {
@@ -312,17 +326,22 @@ test('BL-389 rework: a DIFFERENT updateId for the same topic is not short-circui
   await assert.rejects(() => openSubjectAndRecord(root, 7, 'a genuinely new message', 901));
 });
 
-test('the create call names the topic "Operator"', async () => {
+// BL-453: the Operator standing topic is rebranded "Concierge".
+test('the create call names the topic "Concierge"', async () => {
   const root = mkTmpRoot();
   const { postFn, calls } = fakeCreateOk(7);
   await ensureOperatorTopic(root, 'fake-token', 'fake-chat', postFn);
   assert.match(calls[0].url, /createForumTopic$/);
-  assert.match(calls[0].body, /"name":"Operator"/);
+  assert.match(calls[0].body, /"name":"Concierge"/);
 });
 
 test('BL-346 standing-operator-topic-06: a map that already binds the reserved subject never creates a second topic', async () => {
   const root = mkTmpRoot();
   writeTopicMapFixture(root, { '42': 'OPERATOR' });
+  // BL-453: the title is already recorded as current, so the rename
+  // change-gate is also a no-op here - this test's own concern is
+  // create-avoidance, not the rename behavior (covered separately below).
+  writeStandingTopicTitlesFixture(root, { OPERATOR: 'Concierge' });
   const { postFn, calls } = fakeCreateOk(999);
   await ensureOperatorTopic(root, 'fake-token', 'fake-chat', postFn);
   assert.equal(calls.length, 0);
@@ -362,6 +381,7 @@ test('BL-358: a freshly created Operator topic returns its own new topicId', asy
 test('BL-358: an already-bound Operator topic returns its existing topicId, without calling create', async () => {
   const root = mkTmpRoot();
   writeTopicMapFixture(root, { '42': 'OPERATOR' });
+  writeStandingTopicTitlesFixture(root, { OPERATOR: 'Concierge' }); // BL-453: rename already up to date too
   const { postFn, calls } = fakeCreateOk(999);
   const topicId = await ensureOperatorTopic(root, 'fake-token', 'fake-chat', postFn);
   assert.equal(topicId, 42);
@@ -373,6 +393,65 @@ test('BL-358: a failed create returns undefined, never a fabricated topicId', as
   const postFn = async () => ({ ok: false, status: 500, json: { description: 'simulated failure' } });
   const topicId = await ensureOperatorTopic(root, 'fake-token', 'fake-chat', postFn);
   assert.equal(topicId, undefined);
+});
+
+// ── BL-453: Operator -> Concierge rebrand renames the already-bound topic ──
+
+test('BL-453 concierge-icon-02/03: an already-bound topic with no title recorded yet (a pre-BL-453 install) is renamed to Concierge', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'OPERATOR' });
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: {} } };
+  };
+  const topicId = await ensureOperatorTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /editForumTopic$/);
+  assert.match(calls[0].body, /"message_thread_id":42/);
+  assert.match(calls[0].body, /"name":"Concierge"/);
+  assert.equal(readStandingTopicTitlesFixture(root).OPERATOR, 'Concierge');
+  assert.equal(topicId, 42, 'the durable binding id is unchanged - the same topic is reused, never re-created');
+});
+
+test('BL-453: an already-bound topic with a STALE recorded title ("Operator") is renamed to Concierge', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'OPERATOR' });
+  writeStandingTopicTitlesFixture(root, { OPERATOR: 'Operator' });
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: {} } };
+  };
+  await ensureOperatorTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /editForumTopic$/);
+  assert.equal(readStandingTopicTitlesFixture(root).OPERATOR, 'Concierge');
+});
+
+test('BL-453: a rename that fails degrades quietly - never throws, never records the marker (retries next time)', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'OPERATOR' });
+  const postFn = async () => ({ ok: false, status: 500, json: { description: 'simulated failure' } });
+  const topicId = await ensureOperatorTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, 42, 'the rename failing must never lose the resolved topicId');
+  assert.equal(fs.existsSync(standingTopicTitlesPath(root)), false);
+});
+
+test('BL-453: a freshly created topic records its own title, so an immediate later reuse never fires a redundant rename', async () => {
+  const root = mkTmpRoot();
+  const { postFn: createPostFn } = fakeCreateOk(77);
+  await ensureOperatorTopic(root, 'fake-token', 'fake-chat', createPostFn);
+  assert.equal(readStandingTopicTitlesFixture(root).OPERATOR, 'Concierge');
+
+  const calls = [];
+  const reusePostFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: {} } };
+  };
+  const topicId = await ensureOperatorTopic(root, 'fake-token', 'fake-chat', reusePostFn);
+  assert.equal(topicId, 77);
+  assert.equal(calls.length, 0, 'expected no rename call - the create-time title is already correct');
 });
 
 // ── ensureApprovalsTopic (BL-434, mirrors ensureOperatorTopic above) ─────

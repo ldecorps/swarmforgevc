@@ -244,7 +244,8 @@ const DOMAINS = [
   require('./bl463MutationCooldownIgnoresOwnParcelSteps'),
   require('./bl466AgentQuestionsAsTelegramPollsSteps'),
   require('./bl464PipelineBoardAuthoritativeStageSourceSteps'),
-  require('./bl447MutationGateEntrypointBoilerplateSurvivorsSteps')
+  require('./bl447MutationGateEntrypointBoilerplateSurvivorsSteps'),
+  require('./bl453ConciergeFrontDeskIconLabelSteps')
 ];
 
 function registerSteps(registry) {
