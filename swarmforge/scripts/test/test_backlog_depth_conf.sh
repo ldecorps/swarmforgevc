@@ -6,6 +6,7 @@
 # own project root/backlog).
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SWARM_HANDOFF="$SCRIPT_DIR/../swarm_handoff.bb"
@@ -18,6 +19,7 @@ mk_fixture() {
   local cap="$1"
   local root
   root="$(cd "$(mktemp -d)" && pwd -P)"
+  register_tmp_dir "$root"
   git -C "$root" init -q
   git -C "$root" -c user.email=test@test -c user.name=test commit -q --allow-empty -m init
   mkdir -p "$root/.swarmforge" "$root/swarmforge" "$root/backlog/active" "$root/backlog/paused"
@@ -94,6 +96,7 @@ rm -rf "$ROOT"
 # ── depth-04: an absent config degrades gracefully (no crash, no spurious
 #     over-cap warning) ───────────────────────────────────────────────────
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
+register_tmp_dir "$ROOT"
 git -C "$ROOT" init -q
 git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q --allow-empty -m init
 mkdir -p "$ROOT/.swarmforge" "$ROOT/backlog/active"

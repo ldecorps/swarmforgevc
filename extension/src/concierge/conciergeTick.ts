@@ -14,7 +14,7 @@ import { resolveIconState, ICON_EMOJI, STANDING_TOPIC_ICON, StandingTopicTarget 
 import { TopicIconAdapters, syncTopicIcon } from './topicIconSync';
 import { StalenessBucket } from './topicTitleAge';
 import { TopicTitleAdapters, syncTopicTitle } from './topicTitleSync';
-import { computePipelineBoardRows } from './pipelineBoard';
+import { PipelineBoardTicketMeta, computePipelineBoard } from './pipelineBoard';
 import { PipelineBoardAdapters, PipelineBoardState, syncPipelineBoard } from './pipelineBoardSync';
 
 export interface BacklogFolderItem {
@@ -302,14 +302,29 @@ async function syncAllTitleAgeBuckets(
   return titleAgeBuckets;
 }
 
-// BL-452: the pipeline board's own sync - runs on EVERY tick (never gated on
-// a folder-membership transition, same posture as the title-age sync above),
-// because the change-gate that matters is the rendered TEXT, not any one
-// ticket's transition; syncPipelineBoard owns that gate. Extracted out of
-// runConciergeTick so THAT function's own branch count stays at or below the
-// CRAP threshold, the same reasoning as syncAllTitleAgeBuckets above. Absent
-// adapters (boardAdapters/readRoleHeldTickets both optional, same posture as
-// titleAdapters) leaves the prior tick's board state untouched.
+// BL-455: joins role-held/paused ticket ids to their backlog item's
+// epic/title, read straight off the folders this tick already loaded - no
+// git-history walk. Both active and paused items are indexed: a role-held
+// id is always an active ticket, a parked/awaiting-approval id is always a
+// paused one, so this single lookup covers computePipelineBoard's own two
+// inputs (roleHeldTickets, paused) without a second read.
+function buildTicketMetaLookup(folders: BacklogFoldersSnapshot): Record<string, PipelineBoardTicketMeta> {
+  const lookup: Record<string, PipelineBoardTicketMeta> = {};
+  for (const item of [...folders.active, ...folders.paused]) {
+    lookup[item.id] = { epic: item.epic, title: item.title };
+  }
+  return lookup;
+}
+
+// BL-452/BL-455: the pipeline board's own sync - runs on EVERY tick (never
+// gated on a folder-membership transition, same posture as the title-age
+// sync above), because the change-gate that matters is the rendered TEXT,
+// not any one ticket's transition; syncPipelineBoard owns that gate.
+// Extracted out of runConciergeTick so THAT function's own branch count
+// stays at or below the CRAP threshold, the same reasoning as
+// syncAllTitleAgeBuckets above. Absent adapters (boardAdapters/
+// readRoleHeldTickets both optional, same posture as titleAdapters) leaves
+// the prior tick's board state untouched.
 async function syncBoardIfWired(
   folders: BacklogFoldersSnapshot,
   prevBoard: PipelineBoardState | undefined,
@@ -319,8 +334,8 @@ async function syncBoardIfWired(
   if (!boardAdapters || !readRoleHeldTickets) {
     return prevBoard;
   }
-  const rows = computePipelineBoardRows(readRoleHeldTickets(), folders.paused);
-  const result = await syncPipelineBoard(rows, prevBoard, boardAdapters);
+  const data = computePipelineBoard(readRoleHeldTickets(), folders.paused, buildTicketMetaLookup(folders));
+  const result = await syncPipelineBoard(data, prevBoard, boardAdapters);
   return result.state;
 }
 

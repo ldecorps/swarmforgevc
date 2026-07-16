@@ -54,18 +54,26 @@ Feature: A live pipeline-board grid in a dedicated Telegram topic shows where ea
 
   # Hardener (BL-234 equivalent-mutant note): a soft Gherkin mutation pass over this
   # outline's <id> examples mangles one character of each value (BL-387 -> BLx387,
-  # BL-413 -> Bl-413, BL-436 -> BL-43x, BL-449 -> BL-4x9) and every one of those 4
-  # mutants SURVIVES - by design, not a gap. The SAME <id> substitution value drives
-  # BOTH the Given step (ticket "<id>" is "<state>") and the Then step (ticket "<id>"
-  # is marked only in the "<column>" column), so the step handlers always assert a
-  # mutated id round-trips to itself - a self-consistency check that no id mutation
-  # could ever fail. renderPipelineBoard (pipelineBoard.ts) treats a ticket id as an
-  # opaque passthrough string (row.id.padEnd(idWidth)), never validated against a
-  # closed set the way <state>/<column> are (KNOWN_STATES/KNOWN_COLUMNS in
-  # bl452PipelineBoardSteps.js, which is exactly why every <state>/<column> mutant in
-  # this same outline IS killed). The id-rendering behavior itself (padding, column
-  # alignment, widening to the longest id) is already exhaustively covered by
-  # pipelineBoard.test.js. No artificial assertion was added to force these 4 to die.
+  # BL-413 -> Bl-413) and both mutants SURVIVE - by design, not a gap. The SAME <id>
+  # substitution value drives BOTH the Given step (ticket "<id>" is "<state>") and the
+  # Then step (ticket "<id>" is marked only in the "<column>" column), so the step
+  # handlers always assert a mutated id round-trips to itself - a self-consistency
+  # check that no id mutation could ever fail. renderPipelineBoard (pipelineBoard.ts)
+  # treats a ticket id as an opaque passthrough string (row.id.padEnd(idWidth)), never
+  # validated against a closed set the way <state>/<column> are (KNOWN_STATES/
+  # KNOWN_COLUMNS in bl452PipelineBoardSteps.js, which is exactly why every <state>/
+  # <column> mutant in this same outline IS killed). The id-rendering behavior itself
+  # (padding, column alignment, widening to the longest id) is already exhaustively
+  # covered by pipelineBoard.test.js. No artificial assertion was added to force these
+  # 2 to die.
+  # BL-455 RECONCILIATION (2026-07-16): parked/awaiting-approval are no longer grid
+  # COLUMNS - BL-455 moves them to a below-grid list instead, so this outline dropped
+  # its BL-436 ("parked" -> "parked") and BL-449 ("awaiting approval" ->
+  # "awaiting-approval") examples entirely (they never reach this outline's <column>
+  # Then step now). Where those two states render is now asserted by
+  # specs/features/BL-455-pipeline-board-epic-grouping-parked-slug.feature's own
+  # pipeline-board-epic-02 outline ("<placement>": "below-grid parked list"). This
+  # outline keeps only the two states that are still real grid columns.
   # BL-452 pipeline-board-02
   Scenario Outline: A ticket is marked in exactly the column for its current state
     Given ticket "<id>" is "<state>"
@@ -73,11 +81,9 @@ Feature: A live pipeline-board grid in a dedicated Telegram topic shows where ea
     Then ticket "<id>" is marked only in the "<column>" column
 
     Examples:
-      | id     | state             | column            |
-      | BL-387 | held by the coder | coder             |
-      | BL-413 | held by QA        | QA                |
-      | BL-436 | parked            | parked            |
-      | BL-449 | awaiting approval | awaiting-approval |
+      | id     | state             | column |
+      | BL-387 | held by the coder | coder  |
+      | BL-413 | held by QA        | QA     |
 
   # BL-452 pipeline-board-03
   Scenario: The board is posted once to the Pipeline Board topic, then edited in place on a stage change

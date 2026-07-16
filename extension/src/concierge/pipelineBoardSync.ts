@@ -8,7 +8,7 @@
 // create-ONCE-then-reused (ensureBoardTopic is only ever called while no
 // topicId is yet persisted), where a title/icon sync always targets an
 // already-existing ticket topic.
-import { PipelineBoardRow, renderPipelineBoard } from './pipelineBoard';
+import { PipelineBoardData, renderPipelineBoard } from './pipelineBoard';
 
 export interface PipelineBoardAdapters {
   ensureBoardTopic: () => Promise<number | undefined>;
@@ -67,11 +67,11 @@ async function postOrEditBoard(
 }
 
 export async function syncPipelineBoard(
-  rows: PipelineBoardRow[],
+  data: PipelineBoardData,
   prevState: PipelineBoardState | undefined,
   adapters: PipelineBoardAdapters
 ): Promise<PipelineBoardSyncResult> {
-  const text = renderPipelineBoard(rows);
+  const text = renderPipelineBoard(data);
   if (text === prevState?.renderedText) {
     return { state: prevState ?? {}, outcome: 'skipped-unchanged' };
   }

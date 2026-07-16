@@ -17,6 +17,15 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { execFileSync, execSync } = require('node:child_process');
+// BL-458: this file was the worst offender for the acceptance-fixture
+// process-leak incident - no safety net at all beyond the inline
+// stopFrontDesk() calls in terminal Then steps below, so any earlier throw
+// (or the runner itself being SIGTERM'd/timed out/OOM-killed) leaked the
+// whole detached tree permanently. track() registers each fixture root the
+// moment it exists; reap() (called both by stopFrontDesk's own happy path
+// AND, via track()'s installed signal/exit handlers, on ANY abnormal exit)
+// is what actually kills it.
+const { track, reap } = require('./lib/fixtureReaper');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -69,50 +78,22 @@ function readBridgeToken(root) {
   return fs.readFileSync(path.join(root, '.swarmforge', 'operator', 'bridge-token'), 'utf8');
 }
 
-function readSupervisorPid(root) {
-  const file = path.join(root, '.swarmforge', 'operator', 'front-desk-supervisor.pid');
-  return fs.existsSync(file) ? Number(fs.readFileSync(file, 'utf8').trim()) : null;
-}
-
 // Immediate, synchronous cleanup so a scenario never leaks its own spawned
 // supervisor/bridge/bot processes onto the test host, and never leaves them
 // alive to accumulate across the acceptance run - this pipeline framework
 // has no per-scenario teardown hook, so each scenario's own terminal Then
-// step calls this itself. Kills the pids DIRECTLY rather than only writing
-// the stop-file and waiting out the supervisor's own poll interval - the
-// stop-file is still written too (so a supervisor that outlives its
+// step calls this itself (the HAPPY-PATH cleanup; track()'s own signal/exit
+// handlers, installed above, are what catch every ABNORMAL exit instead).
+// Kills the pids DIRECTLY (via the shared reap() - BL-458) rather than only
+// writing the stop-file and waiting out the supervisor's own poll interval -
+// the stop-file is still written too (so a supervisor that outlives its
 // children's kill signals still winds itself down), but the actual
 // processes are gone before this function returns, not "soon".
-function killPidsFromStatus(root) {
-  const file = path.join(root, '.swarmforge', 'operator', 'front-desk-supervisor.status.json');
-  if (fs.existsSync(file)) {
-    const status = JSON.parse(fs.readFileSync(file, 'utf8'));
-    for (const key of ['bridge', 'bot']) {
-      const pid = status[key] && status[key].pid;
-      if (pid) {
-        try {
-          process.kill(pid, 'SIGKILL');
-        } catch {
-          // already dead - fine, that's the point of cleanup
-        }
-      }
-    }
-  }
-  const supervisorPid = readSupervisorPid(root);
-  if (supervisorPid) {
-    try {
-      process.kill(supervisorPid, 'SIGKILL');
-    } catch {
-      // already dead
-    }
-  }
-}
-
 function stopFrontDesk(root) {
   const stopFile = path.join(root, '.swarmforge', 'operator', 'front-desk-supervisor.stop');
   fs.mkdirSync(path.dirname(stopFile), { recursive: true });
   fs.writeFileSync(stopFile, '');
-  killPidsFromStatus(root);
+  reap(root);
 }
 
 async function waitFor(predicate, timeoutMs = 5000) {
@@ -135,6 +116,7 @@ function registerSteps(registry) {
   // ── headless-frontdesk-01 ────────────────────────────────────────────
   registry.define(/^the headless launcher runs$/, (ctx) => {
     ctx.root = mkTmp();
+    track(ctx.root);
     linkCompiledOut(ctx.root);
     ctx.port = freePort();
   });
@@ -173,6 +155,7 @@ function registerSteps(registry) {
   // ── headless-frontdesk-02 ────────────────────────────────────────────
   registry.define(/^the bridge is running with its provisioned tokens$/, async (ctx) => {
     ctx.root = mkTmp();
+    track(ctx.root);
     linkCompiledOut(ctx.root);
     ctx.port = freePort();
     launch(ctx.root, ctx.port);
@@ -243,6 +226,7 @@ function registerSteps(registry) {
 
   registry.define(/^a supervised front-desk process that has crashed$/, (ctx) => {
     ctx.root = mkTmp();
+    track(ctx.root);
     fs.mkdirSync(path.join(ctx.root, 'extension', 'out', 'tools'), { recursive: true });
     fs.writeFileSync(path.join(ctx.root, 'extension', 'out', 'tools', 'start-bridge-headless.js'), 'setInterval(() => {}, 1000);\n');
     // A bot that always crashes on start - this scenario is about the
@@ -263,7 +247,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^it restarts the process with backoff up to a bounded limit and then gives up$/, (ctx) => {
-    killPidsFromStatus(ctx.root);
+    reap(ctx.root);
     if (!ctx.gaveUp) {
       throw new Error(`expected the bot to eventually give up after its bounded restart cap, got: ${JSON.stringify(ctx.finalStatus)}`);
     }
@@ -275,6 +259,7 @@ function registerSteps(registry) {
   // ── headless-frontdesk-04 ────────────────────────────────────────────
   registry.define(/^the front desk is already running$/, async (ctx) => {
     ctx.root = mkTmp();
+    track(ctx.root);
     linkCompiledOut(ctx.root);
     ctx.port = freePort();
     launch(ctx.root, ctx.port);
@@ -308,6 +293,7 @@ function registerSteps(registry) {
   // ── headless-frontdesk-05 ────────────────────────────────────────────
   registry.define(/^the headless front desk is up$/, async (ctx) => {
     ctx.root = mkTmp();
+    track(ctx.root);
     linkCompiledOut(ctx.root);
     ctx.port = freePort();
     launch(ctx.root, ctx.port);
