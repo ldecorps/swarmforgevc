@@ -5,10 +5,19 @@
 // recert_proposals/<yyyy-MM>.jsonl and handoffd.bb's chaser-<yyyy-MM>.jsonl -
 // gitignored, never committed, host-side only (local-engineering rule 5:
 // this is live/machine-local data, never the static backlog PWA).
+//
+// Architect bounce: lives under metrics/, not quality/, alongside the same
+// pure/impure split reworkObservatory.ts + reworkObservatoryStore.ts already
+// establish there - .dependency-cruiser.cjs's own no-io-from-policy rule
+// forbids ANY fs/child_process/network import from src/quality/ (that
+// directory is the one genuine pure-policy zone in this repo today), and
+// this file's real fs reads/writes are exactly what the rule exists to keep
+// out of it. The pure policy module it depends on (qaBounce.ts: the closed-
+// set vocabulary, record shape, and tally aggregator) stays in quality/.
 import * as fs from 'fs';
 import * as path from 'path';
 import { atomicAppend } from '../util/atomicWrite';
-import { hasQaBounceRecord, isKnownFailureClass, isKnownProducingRole, isKnownTicketType, QaBounceRecord } from './qaBounce';
+import { hasQaBounceRecord, isKnownFailureClass, isKnownProducingRole, isKnownTicketType, QaBounceRecord } from '../quality/qaBounce';
 
 export function qaBouncesDir(targetPath: string): string {
   return path.join(targetPath, '.swarmforge', 'qa_bounces');
