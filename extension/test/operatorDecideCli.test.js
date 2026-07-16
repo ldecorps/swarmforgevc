@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { parseArgs, buildStatusQuery, composeTicketApprovalOverride, main } = require('../out/tools/operator-decide');
+const { parseArgs, buildStatusQuery, composeTicketApprovalOverride, appendToReplyOutbox, main } = require('../out/tools/operator-decide');
 
 // ── parseArgs (pure) ─────────────────────────────────────────────────────
 
@@ -159,6 +159,37 @@ test('the compiled CLI runs standalone as a subprocess and produces the same res
   assert.equal(lines[0].threadId, 'SUP-1');
   assert.match(lines[0].text, /dispatching/);
   assert.match(lines[0].text, /2/);
+});
+
+// ── appendToReplyOutbox (real fs) - BL-440 ────────────────────────────────
+// The unit tests in operatorDecideStatus.test.js/operatorEventQueue.test.js
+// prove a FAKE reply callback receives the right flag, and that the wire
+// format round-trips through a hand-written outbox fixture - neither
+// proves this REAL writer (the one production call site QA's two bounces
+// were about) actually puts the field on disk. Drive it directly.
+
+test('appendToReplyOutbox writes retractsPendingQuestion:true on disk when passed true', () => {
+  const root = initFixture();
+  appendToReplyOutbox(root, 'BL-100', "Answered coder's gate: y.", true);
+  const lines = replyOutboxLines(root);
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].retractsPendingQuestion, true);
+});
+
+test('appendToReplyOutbox omits retractsPendingQuestion for an ordinary reply, never defaulting it to false', () => {
+  const root = initFixture();
+  appendToReplyOutbox(root, 'SUP-1', 'hello');
+  const lines = replyOutboxLines(root);
+  assert.equal(lines.length, 1);
+  assert.ok(!('retractsPendingQuestion' in lines[0]));
+});
+
+test('appendToReplyOutbox omits retractsPendingQuestion when explicitly passed false, never writing the key false', () => {
+  const root = initFixture();
+  appendToReplyOutbox(root, 'SUP-1', 'hello', false);
+  const lines = replyOutboxLines(root);
+  assert.equal(lines.length, 1);
+  assert.ok(!('retractsPendingQuestion' in lines[0]));
 });
 
 // ── composeTicketApprovalOverride (pure) - BL-416 ─────────────────────────
