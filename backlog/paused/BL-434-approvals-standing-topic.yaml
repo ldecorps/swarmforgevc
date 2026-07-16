@@ -16,9 +16,19 @@ description: |
   waiting. Introduce a single standing "Approvals" topic that aggregates every ticket currently awaiting
   the human's approval, and route approve/reject actions THROUGH that topic.
 
-  CHOSEN SHAPE (human, AskUserQuestion 2026-07-15): "Act in the Approvals topic." Each pending ticket's
-  approval ask is posted into the one Approvals topic, and the human approves/rejects by replying there.
-  Per-ticket BL topics no longer carry the approval ask.
+  CHOSEN SHAPE (human, AskUserQuestion 2026-07-15, then CORRECTED via Operator/Telegram 2026-07-15
+  20:50Z): "BOTH — index + act." The design fork the specifier raised had three options (1 = live index
+  only; 2 = act in the topic; 3 = BOTH). The human's considered answer is option 3, BOTH. The Approvals
+  topic does TWO things:
+    (a) INDEX — it maintains a single live roster/index message listing every ticket currently awaiting
+        approval (the whole `pendingApprovalFor` set at a glance), kept current as tickets enter and
+        leave pending; and
+    (b) ACT — each pending ticket's approval ask is also posted into that one topic, and the human
+        approves/rejects by replying there.
+  Per-ticket BL topics no longer carry the approval ask. (The specifier first self-unblocked into the
+  NARROWER option 2, "act only", and the human's later batch "Approve all" promoted it as-specced without
+  re-opening the shape; the human's considered answer is BOTH — the delta from act-only is the added live
+  INDEX. Source: operator note BL-434-approvals-shape-human.md, coordinator re-spec directive 2026-07-15.)
 
   GROUNDING (confirmed in code 2026-07-15).
     - `extension/src/concierge/conciergeTick.ts` already computes the full pending set
@@ -38,11 +48,20 @@ description: |
   front-desk-operator-fabricates-backlog-state. Reuse the existing verb classifier and
   record/reject adapters; do not invent a second approval-recording path.
 
+  THE LIVE INDEX (the added requirement for BOTH). Maintain ONE roster/index message in the Approvals
+  topic that lists the current `pendingApprovalFor` set at a glance, updated as tickets enter and leave
+  pending. Drive it off the SAME conciergeTick diff machinery that already computes the set — when the
+  pending set changes, refresh the roster message; when it does not, leave it untouched (do not re-post
+  every tick). This is a SINGLE maintained message in the ONE Approvals topic (edit-in-place), NOT a
+  per-topic fan-out across many topics, so it does not trigger the first-tick change-gated mass-edit
+  storm the engineering article warns about (backfill-topic-icons / editForumTopic rate-limit) — but keep
+  the refresh to genuine set-changes so it stays a low-volume single-message edit.
+
   Lifecycle: when a ticket is approved/rejected its `humanApproval` moves off `pending`, so the existing
-  diff machinery already removes it from the pending set on the next tick — the Approvals roster reflects
-  exactly `pendingApprovalFor`. The Approvals topic is created once as a standing topic, the same way the
-  Operator topic is (idempotent create; never re-created per tick — conciergeTick.ts BL-418 standing-topic
-  handling).
+  diff machinery already removes it from the pending set on the next tick — the Approvals roster then
+  reflects exactly `pendingApprovalFor`. The Approvals topic is created once as a standing topic, the same
+  way the Operator topic is (idempotent create; never re-created per tick — conciergeTick.ts BL-418
+  standing-topic handling).
 
   Constraints:
     - Do not change the underlying humanApproval YAML field or how approval is RECORDED
@@ -50,18 +69,22 @@ description: |
       this ticket changes WHERE the ask is posted and HOW a reply is routed to a ticket.
     - Keep the per-ticket topic-icon awaiting-approval state working (BL-424) even though the ask itself
       now lives in the Approvals topic — the icon is a separate signal from the ask.
+    - The live index is ONE maintained roster message edited in place, refreshed only on genuine
+      pending-set changes — not a fresh post every tick, and not a per-topic fan-out.
 
   Scope (verify at build time): `extension/src/concierge/conciergeTick.ts` (post the pending-approval ask
-  to the standing Approvals topic, not the per-ticket BL topic) and
+  to the standing Approvals topic, not the per-ticket BL topic, AND maintain the single live roster/index
+  message of the current pendingApprovalFor set in that topic) and
   `extension/src/tools/telegramFrontDeskBotCore.ts` (recognize an Approvals-topic reply, parse the ticket
   id, route to record/reject for that id, and surface an id-with-no-pending-ask reply). The standing
   Approvals topic creation sits alongside the Operator topic creation.
 
-  E2E QA PROCEDURE: with the concierge running, move a ticket to humanApproval: pending and assert its ask
-  appears in the Approvals topic (and not in its BL topic); reply "approve <id>" in the Approvals topic and
-  assert the ticket's humanApproval becomes approved and it leaves the roster; reply "reject <id> <reason>"
-  for another and assert rejection with the reason; reply "approve <id>" for a non-pending id and assert it
-  is surfaced, not applied.
+  E2E QA PROCEDURE: with the concierge running, move a ticket to humanApproval: pending and assert (a) its
+  ask appears in the Approvals topic (and not in its BL topic) AND (b) it appears in the Approvals topic's
+  live roster/index; move a SECOND ticket to pending and assert the roster now lists BOTH; reply
+  "approve <id>" in the Approvals topic and assert the ticket's humanApproval becomes approved and it
+  leaves the roster; reply "reject <id> <reason>" for another and assert rejection with the reason; reply
+  "approve <id>" for a non-pending id and assert it is surfaced, not applied.
 
 acceptance:
   feature: specs/features/BL-434-approvals-standing-topic.feature
@@ -69,14 +92,18 @@ acceptance:
     - "A newly pending ticket's approval ask is posted into the standing Approvals topic (not its BL topic) and names the ticket id"
     - "A reply naming a pending ticket records approve/reject for that exact ticket"
     - "A reply naming a ticket that is not currently pending is surfaced, not applied"
-    - "Once acted on, a ticket no longer appears in the Approvals topic's pending set"
+    - "The Approvals topic maintains a live roster of every currently-pending ticket"
+    - "Once acted on, a ticket is removed from the Approvals topic roster"
 
 human_approval: >
-  approved 2026-07-15 (coordinator session, full-batch confirmation via Operator relay). The aggregation
-  SHAPE ("act in the Approvals topic") was chosen by the human via AskUserQuestion 2026-07-15; the human
-  then approved promotion as-is, accepting the exact reply grammar, roster message shape, and the
-  topic-icon interplay be resolved during build rather than blocking promotion. Held on promotion for a
-  separate reason: overlaps BOTH active BL-414's conciergeTick.ts work and active BL-425's
-  telegramFrontDeskBotCore.ts work — sequence behind them, not a human-approval gate.
+  approved 2026-07-15 (coordinator session, full-batch confirmation via Operator relay), THEN shape
+  CORRECTED 2026-07-15 20:50Z. The aggregation shape is "BOTH — index + act" (option 3), chosen by the
+  human at the design fork the specifier raised via AskUserQuestion; an earlier self-unblock had baked the
+  narrower "act only" (option 2) into the spec, corrected here per the coordinator re-spec directive and
+  operator note BL-434-approvals-shape-human.md. The human already approved the BOTH shape — the exact
+  reply grammar, roster/index message shape, and the topic-icon interplay are to be resolved during build
+  rather than blocking promotion. Held on promotion for a separate reason: overlaps BOTH active BL-414's
+  conciergeTick.ts work and active BL-425's telegramFrontDeskBotCore.ts work — sequence behind them, not a
+  human-approval gate.
 
 mutation_cost: medium
