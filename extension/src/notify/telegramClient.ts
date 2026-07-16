@@ -204,6 +204,57 @@ export async function sendTelegramMessage(
   return { success: true, messageId: extractMessageId(result.json) };
 }
 
+// BL-466: native Telegram poll - sendPoll's own request shape differs from
+// sendMessage's (question/options instead of text, and Telegram's Bot API
+// wants each option as an {text} object, not a bare string). is_anonymous is
+// hardcoded false: a poll_answer update (the ONLY way this codebase can learn
+// who selected what, since Telegram never includes voter identity on an
+// anonymous poll) requires it.
+export interface SendPollResult {
+  success: boolean;
+  pollId?: string;
+  messageId?: number;
+  error?: string;
+}
+
+function extractPollId(json: unknown): string | undefined {
+  if (
+    json &&
+    typeof json === 'object' &&
+    (json as Record<string, unknown>).result &&
+    typeof (json as Record<string, unknown>).result === 'object'
+  ) {
+    const poll = ((json as Record<string, unknown>).result as Record<string, unknown>).poll;
+    if (poll && typeof poll === 'object' && typeof (poll as Record<string, unknown>).id === 'string') {
+      return (poll as Record<string, unknown>).id as string;
+    }
+  }
+  return undefined;
+}
+
+export async function sendTelegramPoll(
+  token: string,
+  chatId: string,
+  question: string,
+  options: string[],
+  messageThreadId?: number,
+  postFn: TelegramPostFn = defaultPost
+): Promise<SendPollResult> {
+  const body = JSON.stringify({
+    chat_id: chatId,
+    question,
+    options: options.map((text) => ({ text })),
+    ...(messageThreadId !== undefined ? { message_thread_id: messageThreadId } : {}),
+    is_anonymous: false,
+  });
+
+  const result = await callTelegramApi(token, 'sendPoll', body, postFn);
+  if (!result.success) {
+    return { success: false, error: result.error };
+  }
+  return { success: true, pollId: extractPollId(result.json), messageId: extractMessageId(result.json) };
+}
+
 // BL-452: edits an EXISTING message's text in place - the pipeline board's
 // own edit-in-place mechanism (a single standing message, never re-posted).
 // Distinct from editForumTopic below: that edits a TOPIC's name/icon
@@ -295,10 +346,23 @@ export interface TelegramCallbackQuery {
   message?: { chat?: TelegramChat; message_thread_id?: number };
 }
 
+// BL-466: the update shape a vote on a non-anonymous poll generates -
+// mutually exclusive with `message`/`callback_query` on a real
+// TelegramUpdate. `user` is present because sendTelegramPoll always creates
+// polls with is_anonymous: false (an anonymous poll's poll_answer carries no
+// voter identity at all, which this codebase has no use for). option_ids is
+// empty when the voter RETRACTS their vote, never absent.
+export interface TelegramPollAnswer {
+  poll_id: string;
+  option_ids: number[];
+  user?: { id: number | string };
+}
+
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
   callback_query?: TelegramCallbackQuery;
+  poll_answer?: TelegramPollAnswer;
 }
 
 export interface GetUpdatesResult {

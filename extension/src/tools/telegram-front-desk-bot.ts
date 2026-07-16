@@ -57,6 +57,7 @@ import { promisify } from 'util';
 import {
   getTelegramUpdates,
   sendTelegramMessage,
+  sendTelegramPoll,
   createForumTopic,
   closeForumTopic,
   deleteForumTopic,
@@ -97,6 +98,9 @@ import {
   decideEnsureRecertTopicAction,
   RECERT_TOPIC_NAME,
   RECERT_SUBJECT_ID,
+  decideEnsureAgentQuestionsTopicAction,
+  AGENT_QUESTIONS_TOPIC_NAME,
+  AGENT_QUESTIONS_SUBJECT_ID,
   SttResult,
   TtsResult,
   ReplyRelayAdapters,
@@ -442,6 +446,72 @@ export async function ensureRecertTopic(targetPath: string, botToken: string, ch
   return created.messageThreadId;
 }
 
+// BL-466: the Agent Questions-topic twin of ensureRecertTopic above -
+// identical reuse-or-create/idempotent-across-restarts shape, sharing the
+// SAME {topicId: subjectId} map. Called once BEFORE the poll loop starts
+// (same ordering rationale as ensureOperatorTopic/ensureApprovalsTopic/
+// ensureRecertTopic) - every agent-asked question (poll or plain-message
+// fallback) and every reply to one routes through this ONE standing topic,
+// never resolved per-subject the way an ordinary SUP-### reply is.
+export async function ensureAgentQuestionsTopic(targetPath: string, botToken: string, chatId: string, postFn?: TelegramPostFn): Promise<number | undefined> {
+  const topicMap = readTopicMap(targetPath);
+  const decision = decideEnsureAgentQuestionsTopicAction(topicMap);
+  if (decision.kind === 'reuse') {
+    return decision.topicId;
+  }
+  const created = await createForumTopic(botToken, chatId, AGENT_QUESTIONS_TOPIC_NAME, postFn);
+  if (!created.success || created.messageThreadId === undefined) {
+    process.stderr.write(`ensureAgentQuestionsTopic: failed to create the Agent Questions topic: ${created.error ?? 'no messageThreadId returned'}\n`);
+    return undefined;
+  }
+  topicMap[topicMapKey(created.messageThreadId)] = AGENT_QUESTIONS_SUBJECT_ID;
+  writeTopicMap(targetPath, topicMap);
+  return created.messageThreadId;
+}
+
+// BL-466: {pollId: {threadId, options}} - the poll id -> SUP-### thread
+// mapping sendTelegramPoll's own send-time result needs to survive until a
+// later poll_answer arrives (which carries no thread/topic info at all - see
+// resolvePollThread/PollAdapters in telegramFrontDeskBotCore.ts). Bot-owned,
+// machine-local (gitignored under .swarmforge/), same posture as every other
+// file in this directory - and the SOLE writer/reader pair for this mapping
+// (operator_runtime.bb never touches it), so there is no cross-process write
+// race the way a shared Babashka/TS file would risk.
+function pollMapPath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'telegram-poll-map.json');
+}
+
+type PollMap = Record<string, { threadId: string; options: string[] }>;
+
+function readPollMap(targetPath: string): PollMap {
+  try {
+    return JSON.parse(fs.readFileSync(pollMapPath(targetPath), 'utf8')) as PollMap;
+  } catch {
+    return {};
+  }
+}
+
+function writePollMap(targetPath: string, map: PollMap): void {
+  atomicWrite(pollMapPath(targetPath), JSON.stringify(map));
+}
+
+// BL-466: read-only from this side - operator_runtime.bb/operator_ask.bb own
+// writing awaiting-answer.json exclusively; this never writes it, so there is
+// no cross-process write race the way a shared read-modify-write would risk.
+// Used only to resolve "which SUP-### thread is the CURRENTLY pending agent
+// question on" for an in-topic plain-message reply (BL-306's own "one
+// pending question at a time" MVP constraint means this is never ambiguous).
+function readAwaitingAnswer(targetPath: string): { threadId?: string } | undefined {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(targetPath, '.swarmforge', 'operator', 'awaiting-answer.json'), 'utf8')) as {
+      thread_id?: string;
+    };
+    return { threadId: parsed.thread_id };
+  } catch {
+    return undefined;
+  }
+}
+
 // BL-425 slice 1 (cleaner): one role's own provision decision + effect,
 // split out of ensureRoleTopics below so that function's own loop stays a
 // thin sequencer and its branch count stays at or below the CRAP threshold -
@@ -749,6 +819,9 @@ function buildPollAdapters(
     answerCallbackQuery: (callbackQueryId) => answerCallbackQueryQuietly(botToken, callbackQueryId),
     readRoleTopicMap: () => readRoleTopicMap(targetPath),
     redirectToRole: (role, text) => redirectToRole(targetPath, role, text),
+    agentQuestionsTopicId: () => ensureAgentQuestionsTopic(targetPath, botToken, chatId),
+    getPendingAgentQuestionThread: () => Promise.resolve(readAwaitingAnswer(targetPath)?.threadId),
+    resolvePollThread: (pollId) => Promise.resolve(readPollMap(targetPath)[pollId]),
   };
 }
 
@@ -904,6 +977,19 @@ async function connectAndRelayReplies(
       // unchanged and still exported for any other caller).
       resolveDelivery: (subjectId) => resolveReplyDelivery(readTopicMap(targetPath), readBacklogTopicMap(targetPath), subjectId),
       ackReply: (id) => ackReply(bridgeUrl, controlToken, id),
+      // BL-466: sendPoll/recordPollMapping/agentQuestionsTopicId - the
+      // outbound half of the agent-question round trip (deliverAgentQuestion,
+      // telegramFrontDeskBotCore.ts). agentQuestionsTopicId reuses the SAME
+      // ensureAgentQuestionsTopic the inbound side (buildPollAdapters above)
+      // and main()'s own pre-loop binding call use - never a second lookup.
+      sendPoll: (topicId, question, options) => sendTelegramPoll(botToken, chatId, question, options, topicId).then((r) => ({ pollId: r.pollId })),
+      recordPollMapping: (pollId, threadId, options) => {
+        const map = readPollMap(targetPath);
+        map[pollId] = { threadId, options };
+        writePollMap(targetPath, map);
+        return Promise.resolve();
+      },
+      agentQuestionsTopicId: () => ensureAgentQuestionsTopic(targetPath, botToken, chatId),
       ...buildVoiceReplyAdapters(openaiApiKey, botToken, chatId, targetPath),
     },
     seenIds
@@ -1406,6 +1492,13 @@ export async function main(): Promise<void> {
   // just above (an inbound reply must never reach an unbound Recert topic
   // and be misrouted as an ordinary support-thread post).
   await ensureRecertTopic(targetPath, botToken, chatId);
+
+  // BL-466: bind the standing Agent Questions topic BEFORE any loop starts
+  // polling too - same ordering rationale as ensureOperatorTopic/
+  // ensureApprovalsTopic/ensureRecertTopic just above (an unbound Agent
+  // Questions topic must never be reachable by an inbound reply before the
+  // binding decideAgentQuestionsReplyAction depends on exists).
+  await ensureAgentQuestionsTopic(targetPath, botToken, chatId);
 
   // BL-425 slice 1: bind each swarm role's own standing steering topic
   // BEFORE any loop starts polling too - same ordering rationale as
