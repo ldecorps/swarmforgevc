@@ -19,7 +19,7 @@ Feature: approving a pending-review ticket from Telegram actually works
   Scenario: a paused ticket's approval request is posted, not just an active one's
     Given a ticket sitting in backlog/paused/ with human_approval pending-review
     When a concierge tick runs
-    Then an ApprovalRequested event is posted into that ticket's topic
+    Then an ApprovalRequested event is posted for that ticket
 
   # BL-408 approve-from-telegram-04
   Scenario: an already-requested approval is not re-posted on every tick

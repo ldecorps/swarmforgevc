@@ -101,3 +101,8 @@ test('STANDING_TOPIC_ICON: support/intake resolves to the box-office ticket emoj
 test('STANDING_TOPIC_ICON: operator resolves to the opera-house emoji', () => {
   assert.equal(STANDING_TOPIC_ICON.operator, '🏛');
 });
+
+// BL-434: the standing Approvals topic's own icon.
+test('STANDING_TOPIC_ICON: approvals resolves to the clipboard emoji', () => {
+  assert.equal(STANDING_TOPIC_ICON.approvals, '📋');
+});

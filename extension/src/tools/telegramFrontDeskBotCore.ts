@@ -8,7 +8,7 @@
 // map) into pollAndForward below.
 import { TelegramUpdate, TelegramCallbackQuery, GetUpdatesResult } from '../notify/telegramClient';
 import { computeTelegramRetryBackoffMs } from '../notify/telegramRetry';
-import { classifyApprovalReplyAction } from '../concierge/pendingApprovalReply';
+import { classifyApprovalReplyAction, classifyApprovalsTopicReply } from '../concierge/pendingApprovalReply';
 import { roleForTopic } from '../concierge/roleTopicMapStore';
 
 // BL-353: moved from the retired notify/telegramInboundRelay.ts (which
@@ -165,6 +165,24 @@ export function decideEnsureOperatorTopicAction(topicMap: Record<string, string>
   return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
 }
 
+// BL-434: the reserved subject a standing "Approvals" forum topic is bound
+// to - the SAME {topicId: subjectId} map OPERATOR_SUBJECT_ID above shares,
+// so an inbound message there resolves through subjectForTopic exactly like
+// any other bound subject (decideUpdateAction below intercepts it ahead of
+// the ordinary post-existing branch, since a reply here must be PARSED for
+// the ticket id it names, never just forwarded as a subject post).
+export const APPROVALS_SUBJECT_ID = 'APPROVALS';
+export const APPROVALS_TOPIC_NAME = 'Approvals';
+
+export type EnsureApprovalsTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
+
+// Pure: the Approvals-topic twin of decideEnsureOperatorTopicAction above -
+// identical reuse-or-create shape, keyed by its own reserved subject id.
+export function decideEnsureApprovalsTopicAction(topicMap: Record<string, string>): EnsureApprovalsTopicAction {
+  const existingTopicId = topicForSubject(topicMap, APPROVALS_SUBJECT_ID);
+  return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
+}
+
 export type EnsureRoleTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
 
 // BL-425 slice 1: the per-role twin of decideEnsureOperatorTopicAction
@@ -179,6 +197,16 @@ export function decideEnsureRoleTopicAction(roleTopicMap: Record<string, number>
 export type BotUpdateDecision =
   | { action: 'post-existing'; subjectId: string; text: string }
   | { action: 'operator-context'; backlogId: string; text: string }
+  // BL-434: a reply in the standing Approvals topic naming a ticket - the
+  // id is PARSED from the reply text (classifyApprovalsTopicReply), never
+  // inferred from which topic it landed in (backlogForTopic's own trick,
+  // which no longer identifies a single ticket once one topic carries many).
+  | { action: 'approvals-topic-approve'; backlogId: string; text: string }
+  | { action: 'approvals-topic-reject'; backlogId: string; reason: string; text: string }
+  // A reply in the Approvals topic that names no recognizable verb+id at
+  // all - never silently dropped as a subject post (front-desk-operator-
+  // fabricates-backlog-state memory); the orchestration layer surfaces it.
+  | { action: 'approvals-topic-unrecognized'; text: string }
   | { action: 'open-default'; text: string }
   | { action: 'open-for-topic'; topicId: number; text: string }
   | { action: 'drop'; reason: 'not-principal' | 'no-text' | 'not-my-chat' };
@@ -232,6 +260,21 @@ function checkUpdateEligibility(update: TelegramUpdate, principalUserId: string,
 // checked BEFORE falling through to "open a new SUP-### subject here" -
 // a reply in a BL-### topic must never be misfiled as a fresh support
 // conversation.
+// BL-434: pure - which of the Approvals-topic decision variants a reply's
+// own text resolves to. Split out so decideUpdateAction's own branch count
+// stays at the same CRAP-budget posture this file already enforces
+// throughout (e.g. checkUpdateEligibility/deliveryOutcome).
+function decideApprovalsTopicReplyAction(text: string): BotUpdateDecision {
+  const parsed = classifyApprovalsTopicReply(text);
+  if (parsed.kind === 'approve') {
+    return { action: 'approvals-topic-approve', backlogId: parsed.backlogId, text };
+  }
+  if (parsed.kind === 'reject') {
+    return { action: 'approvals-topic-reject', backlogId: parsed.backlogId, reason: parsed.reason, text };
+  }
+  return { action: 'approvals-topic-unrecognized', text };
+}
+
 export function decideUpdateAction(
   update: TelegramUpdate,
   principalUserId: string,
@@ -246,6 +289,12 @@ export function decideUpdateAction(
   const { text } = eligibility;
   const topicId = topicIdOf(update);
   const subjectId = subjectForTopic(topicId);
+  // BL-434: checked BEFORE the ordinary post-existing branch below - a reply
+  // in the Approvals topic must be PARSED for the ticket id it names, never
+  // forwarded as a plain subject post the way every other bound subject is.
+  if (subjectId === APPROVALS_SUBJECT_ID) {
+    return decideApprovalsTopicReplyAction(text);
+  }
   if (subjectId) {
     return { action: 'post-existing', subjectId, text };
   }
@@ -394,6 +443,18 @@ export interface PollAdapters {
   // effect alongside the unconditional context post, naturally idempotent,
   // no updateId needed).
   recordRejectionReply: (backlogId: string, reason: string) => Promise<boolean>;
+  // BL-434: the Approvals-topic reply's own surfacing channel - a reply
+  // naming an id that turns out not to be pending (recordApprovalReply/
+  // recordRejectionReply's own `changed` result reports false) is told so
+  // directly in the topic, never silently dropped (front-desk-operator-
+  // fabricates-backlog-state memory). A SEPARATE channel from
+  // postOperatorContext (that one posts into the TICKET's own context
+  // stream, not a reply the human sees back in the Approvals topic itself).
+  // Optional so every existing PollAdapters fixture keeps working unchanged
+  // - missing means the surfacing reply degrades to a silent no-op rather
+  // than a crash, mirroring this file's own established optional-adapter
+  // convention (e.g. getPendingButtonAction above).
+  notifyApprovalsTopic?: (topicId: number | undefined, text: string) => Promise<boolean>;
   // BL-410: a Reject/Amend button tap has no reason/note text of its own -
   // it stashes which verb is awaited for this ticket, then the NEXT bare
   // (unverbed) reply in that ticket's topic is read as the reason/note
@@ -498,6 +559,41 @@ async function deliverOperatorContext(backlogId: string, text: string, updateId:
     await adapters.recordRejectionReply(backlogId, action.reason);
   }
   return posted;
+}
+
+// The three Approvals-topic-reply variants of BotUpdateDecision, narrowed
+// out so deliverApprovalsTopicReply's own internal `decision.action ===
+// 'approvals-topic-unrecognized'` guard actually narrows `decision` down to
+// the two backlogId-carrying variants for the compiler - the FULL
+// BotUpdateDecision union (its other branches carry no backlogId at all)
+// cannot narrow that way.
+type ApprovalsTopicReplyDecision = Extract<BotUpdateDecision, { action: 'approvals-topic-approve' | 'approvals-topic-reject' | 'approvals-topic-unrecognized' }>;
+
+// BL-434: the Approvals-topic reply's own delivery - reuses the EXISTING
+// recordApprovalReply/recordRejectionReply adapters (never a second
+// approval-recording path, per the ticket's own instruction) and their own
+// boolean `changed` result to distinguish "this id really was pending, now
+// recorded" from "this id was not pending" - never a separate pending-check
+// adapter, since both already refuse to write a non-pending (or unknown)
+// ticket and report that refusal via their return value. An unrecognized
+// reply (no verb+id at all) and a not-currently-pending id are both
+// DELIBERATE DROPS, never delivery FAILURES (the engineering article's own
+// "a deliberate drop is terminal, never a retryable failure" rule) - the
+// offset must advance past either, so neither one ever blocks re-polling.
+async function deliverApprovalsTopicReply(decision: ApprovalsTopicReplyDecision, topicId: number | undefined, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
+  if (decision.action === 'approvals-topic-unrecognized') {
+    return 'dropped';
+  }
+  const { backlogId } = decision;
+  const changed =
+    decision.action === 'approvals-topic-approve'
+      ? await adapters.recordApprovalReply(backlogId)
+      : await adapters.recordRejectionReply(backlogId, decision.reason);
+  if (!changed) {
+    await adapters.notifyApprovalsTopic?.(topicId, `${backlogId} isn't awaiting approval.`);
+    return 'dropped';
+  }
+  return 'posted';
 }
 
 // BL-410: the callback-query twin of decideUpdateAction above - given a
@@ -726,6 +822,9 @@ async function processMessageUpdate(update: TelegramUpdate, principalUserId: str
   if (decision.action === 'operator-context') {
     const ok = await deliverOperatorContext(decision.backlogId, decision.text, update.update_id, adapters);
     return deliveryOutcome(ok);
+  }
+  if (decision.action === 'approvals-topic-approve' || decision.action === 'approvals-topic-reject' || decision.action === 'approvals-topic-unrecognized') {
+    return deliverApprovalsTopicReply(decision, topicIdOf(update), adapters);
   }
   if (decision.action === 'open-default' || decision.action === 'open-for-topic') {
     await adapters.openSubjectAndRecord(openTopicIdFor(decision), decision.text, update.update_id);

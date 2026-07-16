@@ -53,18 +53,29 @@ test('BL-358: decideTopicAction refuses an untagged event - routeEvent must rout
   assert.throws(() => decideTopicAction(untaggedEvent(), {}, 'irrelevant'), /requires a tagged event/);
 });
 
-// ── BL-357: ApprovalRequested ──────────────────────────────────────────────
+// ── BL-357/BL-434: ApprovalRequested ────────────────────────────────────────
 
 test('BL-357: messageTextForEvent renders ApprovalRequested as a plain-language ask, not a bare label', () => {
   const text = messageTextForEvent(event({ type: 'ApprovalRequested' }));
   assert.match(text, /needs your approval/i);
-  assert.match(text, /"approve"/);
+  assert.match(text, /"approve BL-123"/);
 });
 
 test('BL-357: the ApprovalRequested ask text matches the exact keyword isApprovalReplyText recognizes', () => {
   const { isApprovalReplyText } = require('../out/concierge/pendingApprovalReply');
   const text = messageTextForEvent(event({ type: 'ApprovalRequested' }));
   assert.equal(isApprovalReplyText(text), true, 'the instruction itself must satisfy its own recognizer');
+});
+
+// BL-434: the standing Approvals topic carries many tickets at once, so the
+// ask must NAME the ticket it targets - not just satisfy the bare "approve"
+// substring match above, but also classify correctly through the id-aware
+// Approvals-topic reply grammar.
+test('BL-434: the ApprovalRequested ask names the ticket id so a reply can target it', () => {
+  const { classifyApprovalsTopicReply } = require('../out/concierge/pendingApprovalReply');
+  const text = messageTextForEvent(event({ type: 'ApprovalRequested', backlogId: 'BL-123' }));
+  assert.match(text, /BL-123/);
+  assert.deepEqual(classifyApprovalsTopicReply('approve BL-123'), { kind: 'approve', backlogId: 'BL-123' });
 });
 
 // ── BL-410: ApprovalRequested carries Approve/Amend/Reject buttons ───────
@@ -218,7 +229,9 @@ function fakeAdapters(initialMap = {}) {
   const closed = [];
   const recorded = [];
   let operatorTopicId = 700;
+  let approvalsTopicId = 800;
   const ensureOperatorTopicCalls = [];
+  const ensureApprovalsTopicCalls = [];
   return {
     map,
     created,
@@ -226,8 +239,12 @@ function fakeAdapters(initialMap = {}) {
     closed,
     recorded,
     ensureOperatorTopicCalls,
+    ensureApprovalsTopicCalls,
     setOperatorTopicId: (id) => {
       operatorTopicId = id;
+    },
+    setApprovalsTopicId: (id) => {
+      approvalsTopicId = id;
     },
     adapters: {
       getTopicMap: () => map,
@@ -257,6 +274,10 @@ function fakeAdapters(initialMap = {}) {
       ensureOperatorTopic: async () => {
         ensureOperatorTopicCalls.push(true);
         return operatorTopicId;
+      },
+      ensureApprovalsTopic: async () => {
+        ensureApprovalsTopicCalls.push(true);
+        return approvalsTopicId;
       },
     },
   };
@@ -408,6 +429,80 @@ test('BL-358: a tagged event still routes through the ordinary per-ticket path, 
   await routeEvent(event(), 'a fine feature', adapters);
   assert.deepEqual(created, ['BL-123 - a fine feature']);
   assert.equal(ensureOperatorTopicCalls.length, 0, 'a tagged event must never touch the Operator topic');
+});
+
+// ── routeEvent ApprovalRequested path (BL-434) ────────────────────────────
+
+test('BL-434: an ApprovalRequested ask posts ONLY into the standing Approvals topic - never a message into the per-ticket topic', async () => {
+  const { adapters, sent, ensureApprovalsTopicCalls } = fakeAdapters();
+  const result = await routeEvent(event({ type: 'ApprovalRequested' }), 'a fine feature', adapters);
+  assert.equal(sent.length, 1, 'expected exactly one message posted, into the Approvals topic only');
+  assert.equal(sent[0].topicId, 800);
+  assert.equal(ensureApprovalsTopicCalls.length, 1);
+  assert.deepEqual(result, { posted: true, skipped: false });
+});
+
+// BL-424 regression guard: without a per-ticket topic to set an icon ON,
+// BL-424's awaiting-approval icon sync silently no-ops (topicId-undefined
+// guard) - a ticket that has NEVER been active (paused awaiting approval
+// before its first promotion) must still get its own per-ticket topic
+// created, even though the ask itself never posts into it.
+test('BL-434/BL-424: an ApprovalRequested ask for a ticket with NO per-ticket topic yet creates one (for the icon sync), but posts nothing into it', async () => {
+  const { adapters, created, sent, map } = fakeAdapters();
+  await routeEvent(event({ type: 'ApprovalRequested' }), 'a fine feature', adapters);
+  assert.deepEqual(created, ['BL-123 - a fine feature'], 'expected the per-ticket topic created once, for the icon sync');
+  assert.equal(map['BL-123'], 501, 'expected the new per-ticket topic id recorded into the BacklogTopicMap');
+  assert.deepEqual(
+    sent.map((m) => m.topicId),
+    [800],
+    'expected no message ever sent into the newly-created per-ticket topic (801 is never in this list)'
+  );
+});
+
+test('BL-434: an ApprovalRequested ask for a ticket that ALREADY has a per-ticket topic never creates a second one', async () => {
+  const { adapters, created, map } = fakeAdapters({ 'BL-123': 42 });
+  await routeEvent(event({ type: 'ApprovalRequested' }), 'a fine feature', adapters);
+  assert.deepEqual(created, [], 'expected no new per-ticket topic when one is already mapped');
+  assert.equal(map['BL-123'], 42, 'expected the existing mapping left untouched');
+});
+
+test('BL-434: a failed per-ticket topic creation (for the icon) never blocks the ask itself from posting to the Approvals topic', async () => {
+  const { adapters, sent } = fakeAdapters();
+  adapters.createTopic = async () => ({ success: false });
+  const result = await routeEvent(event({ type: 'ApprovalRequested' }), 'a fine feature', adapters);
+  assert.deepEqual(result, { posted: true, skipped: false });
+  assert.deepEqual(
+    sent.map((m) => m.topicId),
+    [800]
+  );
+});
+
+test('BL-434: an ApprovalRequested ask IS recorded into the ticket\'s own durable record (unlike an untagged NeedsApproval - this event is always tagged)', async () => {
+  const { adapters, recorded } = fakeAdapters();
+  await routeEvent(event({ type: 'ApprovalRequested' }), 'a fine feature', adapters);
+  assert.deepEqual(recorded, [{ backlogId: 'BL-123', text: messageTextForEvent(event({ type: 'ApprovalRequested' })) }]);
+});
+
+test('BL-434: a failed Approvals-topic creation skips the event, never falls back anywhere else', async () => {
+  const { adapters, sent } = fakeAdapters();
+  adapters.ensureApprovalsTopic = async () => undefined;
+  const result = await routeEvent(event({ type: 'ApprovalRequested' }), 'a fine feature', adapters);
+  assert.deepEqual(result, { posted: false, skipped: true });
+  assert.deepEqual(sent, []);
+});
+
+test('BL-434: a failed send to the Approvals topic reports posted:false but is not a skip', async () => {
+  const { adapters } = fakeAdapters();
+  adapters.sendMessage = async () => false;
+  const result = await routeEvent(event({ type: 'ApprovalRequested' }), 'a fine feature', adapters);
+  assert.deepEqual(result, { posted: false, skipped: false });
+});
+
+test('BL-434: a non-ApprovalRequested tagged event still routes through the ordinary per-ticket path, never touching the Approvals topic', async () => {
+  const { adapters, created, ensureApprovalsTopicCalls } = fakeAdapters();
+  await routeEvent(event(), 'a fine feature', adapters);
+  assert.deepEqual(created, ['BL-123 - a fine feature']);
+  assert.equal(ensureApprovalsTopicCalls.length, 0, 'a non-ApprovalRequested event must never touch the Approvals topic');
 });
 
 // ── recordMessage (BL-329: outbound serialisation) ─────────────────────────

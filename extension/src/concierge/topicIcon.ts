@@ -79,11 +79,17 @@ export function resolveIconStickerId(stickers: IconStickerLookup[], emoji: strin
 // members. support/intake is the box office (🎟); the Operator standing
 // topic is the opera house (🏛) - both human-decided 2026-07-15, within
 // Telegram's free sticker set (docs/branding/icon-system.md).
-export type StandingTopicKey = 'support/intake' | 'operator';
+// BL-434: 'approvals' extends the standing-topic icon set for the new
+// standing Approvals topic - a clipboard (📋) reads as "items awaiting
+// sign-off", distinct from the Operator's opera house and support/intake's
+// ticket stub, within Telegram's free sticker set (same constraint the
+// header comment above already documents for the other two).
+export type StandingTopicKey = 'support/intake' | 'operator' | 'approvals';
 
 export const STANDING_TOPIC_ICON: Record<StandingTopicKey, string> = {
   'support/intake': '🎟',
   operator: '🏛',
+  approvals: '📋',
 };
 
 // A single standing topic the concierge tick's icon sync targets - either

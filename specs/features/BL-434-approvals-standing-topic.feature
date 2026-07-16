@@ -33,7 +33,7 @@ Background:
 # BL-434 approvals-standing-topic-01
 Scenario: A newly pending ticket's approval ask is posted into the Approvals topic and names the ticket
   Given a ticket transitions to awaiting human approval
-  When the concierge tick runs
+  When the concierge tick runs for the Approvals topic
   Then the ticket's approval ask is posted in the Approvals topic
   And the ask is not posted in the ticket's own BL topic
   And the ask names the ticket id so a reply can target it
@@ -60,7 +60,7 @@ Scenario: A reply naming a ticket that is not currently pending is surfaced, not
 Scenario: The Approvals topic maintains a live roster of every currently-pending ticket
   Given ticket "BL-440" is pending approval in the Approvals topic
   And ticket "BL-433" is pending approval in the Approvals topic
-  When the concierge tick runs
+  When the concierge tick runs for the Approvals topic
   Then the Approvals topic roster lists both pending tickets
 
 # BL-434 approvals-standing-topic-05

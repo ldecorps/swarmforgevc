@@ -22,6 +22,7 @@ const BACKLOG_ID = 'BL-357-approval-fixture';
 const TITLE = 'a fine feature';
 const SECOND_BACKLOG_ID = 'BL-358-approval-fixture';
 const APPROVAL_TEXT_PATTERN = /needs your approval/;
+const APPROVALS_TOPIC_ID = 750;
 
 function buildAdapters(ctx) {
   return {
@@ -51,6 +52,10 @@ function buildAdapters(ctx) {
       closeTopic: async () => true,
       recordMessage: () => {},
       ensureOperatorTopic: async () => 700,
+      // BL-434: the ask now posts into the standing Approvals topic, never
+      // the ticket's own per-ticket topic - scenarios below that check
+      // WHERE the ask landed now check this destination instead.
+      ensureApprovalsTopic: async () => APPROVALS_TOPIC_ID,
     },
     iconAdapters: {
       // BL-342: a safe default for fixtures that predate topic icons and
@@ -95,9 +100,14 @@ function registerSteps(registry) {
   });
 
   // ── pending-approval-asks-in-its-topic-01 ───────────────────────────────
-  registry.define(/^the ticket's own topic carries a request for the human's approval$/, (ctx) => {
-    if (!ctx.sent.some((m) => APPROVAL_TEXT_PATTERN.test(m.text) && m.topicId === ctx.topicMap[BACKLOG_ID])) {
-      throw new Error(`expected an approval request posted into ${BACKLOG_ID}'s topic, got ${JSON.stringify(ctx.sent)}`);
+  // BL-434: the ask now posts into the ONE standing Approvals topic, never
+  // the ticket's own per-ticket topic - superseded by BL-434's own
+  // approvals-standing-topic-01 scenario, which additionally asserts the
+  // negative (never posted into the ticket's own topic); this check just
+  // moves to the new destination so this pre-existing scenario stays true.
+  registry.define(/^the ticket's approval request is posted in the Approvals topic$/, (ctx) => {
+    if (!ctx.sent.some((m) => APPROVAL_TEXT_PATTERN.test(m.text) && m.topicId === APPROVALS_TOPIC_ID)) {
+      throw new Error(`expected an approval request posted into the Approvals topic, got ${JSON.stringify(ctx.sent)}`);
     }
   });
 
@@ -138,7 +148,10 @@ function registerSteps(registry) {
 
   registry.define(/^no approval is requested for the second ticket$/, (ctx) => {
     const approvalMessages = ctx.sent.filter((m) => APPROVAL_TEXT_PATTERN.test(m.text));
-    if (approvalMessages.length !== 1 || approvalMessages[0].topicId !== ctx.topicMap[BACKLOG_ID]) {
+    // BL-434: both tickets' asks would land in the SAME standing Approvals
+    // topic, so "for the first ticket only" is now proven by the ask's own
+    // TEXT (it names the ticket id) rather than by a distinct topicId.
+    if (approvalMessages.length !== 1 || approvalMessages[0].topicId !== APPROVALS_TOPIC_ID || !approvalMessages[0].text.includes(BACKLOG_ID)) {
       throw new Error(`expected exactly one approval request, for the first ticket only, got ${JSON.stringify(approvalMessages)}`);
     }
   });
