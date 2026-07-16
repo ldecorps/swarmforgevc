@@ -143,5 +143,5 @@ qa_e2e: |
      epic topic; confirm a manually-recustomised epic icon is left alone by the live
      tick.
 
-human_approval: pending
+human_approval: approved
 mutation_cost: medium
