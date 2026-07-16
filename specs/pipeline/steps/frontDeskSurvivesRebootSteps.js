@@ -24,6 +24,13 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { spawnSync, execFileSync } = require('node:child_process');
+// BL-458: this file's own process.on('exit', ...) handler (below) does NOT
+// fire on SIGTERM/SIGINT/timeout/OOM - one of the ticket's own 3 named
+// "exit-only" offenders. onAbnormalExit gives it the SAME exit/SIGINT/
+// SIGTERM coverage frontDeskHeadlessLauncherSteps.js's track()/reap() use,
+// without adopting that pidfile shape - this file's own killFixtureTree
+// (pkill -f, tailored to what it spawns) stays exactly as it was.
+const { onAbnormalExit } = require('./lib/fixtureReaper');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARMFORGE_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -72,9 +79,9 @@ function copyRealCompiledExtension(root) {
 }
 
 // Safety net mirroring mergedCodeReachesDaemonsSteps.js's own identical
-// one: if a scenario throws before its own cleanup, this still tears
-// down whatever real processes it spawned when the test process itself
-// exits.
+// one: if a scenario throws before its own cleanup, or the runner itself
+// is killed (SIGTERM/SIGINT), this still tears down whatever real
+// processes it spawned (onAbnormalExit below, BL-458).
 function opDir(root) {
   return path.join(root, '.swarmforge', 'operator');
 }
@@ -98,7 +105,7 @@ function killFixtureTree(root) {
 }
 
 const liveFixtureRoots = new Set();
-process.on('exit', () => {
+onAbnormalExit(() => {
   for (const root of liveFixtureRoots) {
     try {
       killFixtureTree(root);

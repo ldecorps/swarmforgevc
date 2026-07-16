@@ -12,6 +12,13 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { execFileSync, spawnSync, spawn } = require('node:child_process');
+// BL-458: this file's own process.on('exit', ...) handler (below) does NOT
+// fire on SIGTERM/SIGINT/timeout/OOM - one of the ticket's own 3 named
+// "exit-only" offenders. onAbnormalExit gives it the SAME exit/SIGINT/
+// SIGTERM coverage frontDeskHeadlessLauncherSteps.js's track()/reap() use,
+// without adopting that pidfile shape - this file's own tmux-socket kill +
+// fixture-root removal (cleanupRoot, below) stays exactly as it was.
+const { onAbnormalExit } = require('./lib/fixtureReaper');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARMFORGE_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -24,9 +31,11 @@ const STANDARD_CHAIN = ['specifier', 'coder', 'cleaner', 'architect', 'hardender
 const REAL_LAUNCH_ROLES = ['coder', 'cleaner', 'architect', 'QA'];
 
 // Safety net: every fixture root this file creates a REAL isolated tmux
-// session for is tracked here and torn down on process exit - never left
-// as an orphaned (if isolated) tmux server if an assertion throws mid-
-// scenario, mirroring test_role_lifecycle_cli.sh's own trap-based cleanup.
+// session for is tracked here and torn down on process exit OR SIGTERM/
+// SIGINT (onAbnormalExit below, BL-458) - never left as an orphaned (if
+// isolated) tmux server if an assertion throws mid-scenario or the runner
+// itself is killed, mirroring test_role_lifecycle_cli.sh's own trap-based
+// cleanup.
 const liveFixtureRoots = new Set();
 
 function cleanupRoot(root) {
@@ -38,7 +47,7 @@ function cleanupRoot(root) {
   liveFixtureRoots.delete(root);
 }
 
-process.on('exit', () => {
+onAbnormalExit(() => {
   for (const root of liveFixtureRoots) {
     try {
       cleanupRoot(root);

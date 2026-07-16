@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=96f15d2f41cfacfae750d0f53be247ba2c8d6da44bb4cc224532c828c93c3543
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-16T17:00:07.789762007Z","feature_name":"acceptance-test fixtures always reap the process trees they spawn, and orphans self-heal","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-458-acceptance-fixture-process-leak.feature","background_hash":"8b20915b0c85714b7125140316d4ed22fb4348f60503b5569ef0ff69c3eac59a","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the orphan reaper reaps a fixture root only when it is a known fixture, stale, and not the live swarm socket root","scenario_hash":"644c2c446ec6031fd4599e0d61b3430f79eaad76c2c251a1d7304d43b2bd736a","mutation_count":16,"result":{"Total":16,"Killed":16,"Survived":0,"Errors":0},"tested_at":"2026-07-16T17:00:02.730000766Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: acceptance-test fixtures always reap the process trees they spawn, and orphans self-heal
 
   # Acceptance step files under specs/pipeline/steps/ launch DETACHED process
