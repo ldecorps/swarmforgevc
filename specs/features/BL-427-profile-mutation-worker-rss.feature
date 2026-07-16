@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-15T22:41:51.403948065Z","feature_name":"recommend a mutation-run worker concurrency from free-RAM headroom","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-427-profile-mutation-worker-rss.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: recommend a mutation-run worker concurrency from free-RAM headroom
 
   # BL-427 profile-mutation-worker-rss-01
