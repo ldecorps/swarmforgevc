@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 16, 2026 (BL-446 — mutation gate zero-kill health verdict, ratcheting against a silently-clean zero-kill mutation run)
+**Last Updated:** July 16, 2026 (BL-445 — disabling per-file Vitest isolation to clear the unit suite's 10s wall-clock budget)
 
 ## Overview
 
@@ -660,6 +660,25 @@ runaway agent, was the OOM source.
   `6`/`1280` — worst-case footprint stays inside the unchanged
   `SAFE_HOST_RAM_FRACTION` ceiling (7680MB on the 15360MB reference host);
   only the worker-pool shape changed, not `test_count` or coverage.
+- **Per-file isolation disabled, the real pole (BL-445, QA bounce fix).**
+  The widened worker cap above still left the suite at 16.8-24.9s — QA
+  bounced it. Further profiling found the actual cost wasn't test-execution
+  parallelism at all: Vitest's default per-file isolation resets the module
+  registry/environment before each of the 290+ files regardless of worker
+  count, dominating the reporter's own `prepare`/`collect` phases (~35s
+  combined on a ~25s run). `poolOptions.forks.isolate: false` in
+  `extension/vitest.config.mjs` cuts that combined cost to under 1s, with
+  no change to `MAX_WORKERS`/`PER_WORKER_HEAP_MB` — the RAM budget above is
+  untouched. Safe because the suite already restores every stub/global it
+  touches (see the fake-cwd/HOME rule) rather than relying on Vitest's
+  per-file reset, and the two module-level test caches that keep
+  deliberate cross-test state already ship explicit reset-for-test
+  exports. Stryker's own vitest-runner hardcodes `pool: 'threads'` and
+  reads `poolOptions.threads` instead, so mutation runs are unaffected.
+  `mermaidRender.test.js` separately memoized one canonical fixture render
+  for its two read-only assertions (well-formed PNG, render width),
+  keeping the determinism test's own independent second render — same
+  assertions, half the redundant real elkjs-layout + resvg work.
 
 ### Whole-suite duration budget verdict (BL-445)
 
