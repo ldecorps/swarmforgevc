@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 16, 2026 (BL-444 — channel provisioning follows a supergroup migration)
+**Last Updated:** July 16, 2026 (BL-427 — mutation-worker RSS sampler now walks the full descendant process tree so npm/npx-wrapped Stryker invocations are measured correctly)
 
 ## Overview
 
@@ -638,6 +638,12 @@ named follow-up will size concurrency from live free RAM.
   interval (default 5000ms) until it exits, and prints each worker's peak
   RSS plus a concurrency recommendation sized from current free RAM
   (default reserve: 2048MB).
+- The sampler walks the wrapped command's FULL descendant process tree
+  (`collectDescendantPids`, a BFS over children/grandchildren/...), not just
+  its direct children — this project invokes Stryker through `npm exec` /
+  `npx`, which interpose a shell between the spawned process and the real
+  worker processes underneath it, so a direct-children-only sampler measures
+  the wrapper shell instead of the workers it wraps (QA bounce, BL-427).
 - `extension/src/metrics/mutationWorkerRss.ts` holds the two pure pieces:
   `computePeakRssPerWorker` reduces raw RSS samples to each worker's peak
   (max, never last/average) over its lifetime, and
