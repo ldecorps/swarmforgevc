@@ -23,8 +23,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { readReworkSignalEntry } from '../metrics/reworkObservatoryStore';
-import { ReworkSignal } from '../metrics/reworkObservatory';
+import { readReworkSignal } from '../metrics/reworkObservatoryStore';
 import { diagnoseReworkSignal, classifyThrottleSeverity, recommendedCapForSeverity, ThrottleSeverity } from '../metrics/reworkDiagnosis';
 import { atomicWrite, atomicAppend } from '../util/atomicWrite';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
@@ -58,23 +57,12 @@ export interface ThrottleRecommendation {
   updated_at: string;
 }
 
-// Reads the entry's nested `signal` field directly rather than trusting its
-// shape blindly - mirrors suboptimality-verdict-line.ts's own extractSignal:
-// a missing/malformed entry degrades to "no signal", never a crash reading
-// `.signal` off null/undefined.
-function extractSignal(entry: Record<string, unknown> | null): ReworkSignal | null {
-  if (!entry || typeof entry.signal !== 'object' || entry.signal === null) {
-    return null;
-  }
-  return entry.signal as ReworkSignal;
-}
-
 // Pure given the signal - the SAME diagnose -> classify -> map pipeline
 // reworkDiagnosis.ts's own exports already establish, composed here once
 // rather than re-derived at each call site (this CLI's main() and its own
 // tests both need the identical composition).
 export function computeThrottleRecommendation(targetRepoPath: string, nowMs: number = Date.now()): ThrottleRecommendation {
-  const signal = extractSignal(readReworkSignalEntry(targetRepoPath));
+  const signal = readReworkSignal(targetRepoPath);
   const verdict = signal ? diagnoseReworkSignal(signal) : null;
   const severity = classifyThrottleSeverity(verdict);
   return {
