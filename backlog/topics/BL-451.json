@@ -1,0 +1,1 @@
+{"id":"BL-451","messages":[{"seq":0,"ts":1784236282577,"author":"swarm","type":"outbound","text":"What it is: Retire the PWA recert view and BL-339's now-dead deep-link notify (the RETIRE half of the full move to Telegram)\nHow it works: The phone PWA no longer presents a recert view or its verbs"}]}
