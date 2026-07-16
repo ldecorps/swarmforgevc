@@ -42,6 +42,7 @@ function buildAdapters(ctx) {
       closeTopic: async () => true,
       recordMessage: () => {},
       ensureOperatorTopic: async () => 700,
+      ensureApprovalsTopic: async () => 750,
     },
     iconAdapters: {
       getIconStickers: async () => [],
@@ -124,10 +125,15 @@ function registerSteps(registry) {
     ctx.tickResult = await runConciergeTick(ctx.adapters);
   });
 
-  registry.define(/^an ApprovalRequested event is posted into that ticket's topic$/, (ctx) => {
-    const approvalMessage = ctx.sent.find((m) => APPROVAL_TEXT_PATTERN.test(m.text) && m.topicId === ctx.topicMap[ctx.testBacklogId]);
+  // BL-434: the ask now posts into the ONE standing Approvals topic
+  // (ensureApprovalsTopic => 750 above), never the ticket's own per-ticket
+  // topic - this scenario's own substance ("a paused ticket ALSO gets
+  // asked, not just an active one") is unaffected by that relocation, so
+  // the check just moves to the new destination.
+  registry.define(/^an ApprovalRequested event is posted for that ticket$/, (ctx) => {
+    const approvalMessage = ctx.sent.find((m) => APPROVAL_TEXT_PATTERN.test(m.text) && m.text.includes(ctx.testBacklogId) && m.topicId === 750);
     if (!approvalMessage) {
-      throw new Error(`expected an approval request for ${ctx.testBacklogId}, got ${JSON.stringify(ctx.sent)}`);
+      throw new Error(`expected an approval request for ${ctx.testBacklogId} in the Approvals topic, got ${JSON.stringify(ctx.sent)}`);
     }
   });
 

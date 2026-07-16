@@ -11,6 +11,7 @@ const {
   rejectHumanApprovalText,
   recordRejectionReply,
   isTicketPendingApproval,
+  classifyApprovalsTopicReply,
 } = require('../out/concierge/pendingApprovalReply');
 
 // BL-357: the human's reply in a ticket's own topic RECORDS the approval
@@ -189,6 +190,44 @@ test('classification trims surrounding whitespace before matching and after capt
 test('"reject" or "amend" with no payload text does not match the verb form (falls through)', () => {
   assert.deepEqual(classifyApprovalReplyAction('reject'), { kind: 'none' });
   assert.deepEqual(classifyApprovalReplyAction('amend'), { kind: 'none' });
+});
+
+// ── classifyApprovalsTopicReply (pure) - BL-434 ────────────────────────────
+// The standing Approvals topic's own reply grammar: a reply must NAME the
+// ticket it acts on, since one topic now carries many tickets.
+
+test('BL-434: "approve <id>" is classified as approve for that exact ticket id', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('approve BL-433'), { kind: 'approve', backlogId: 'BL-433' });
+});
+
+test('BL-434: "reject <id> <reason>" is classified as reject for that exact ticket id, capturing the reason', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('reject BL-433 no good'), { kind: 'reject', backlogId: 'BL-433', reason: 'no good' });
+});
+
+test('BL-434: a bare "approve" with no id classifies as none - the Approvals topic grammar requires an id', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('approve'), { kind: 'none' });
+});
+
+test('BL-434: a bare "reject <id>" with no reason still classifies as reject, with an empty reason', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('reject BL-433'), { kind: 'reject', backlogId: 'BL-433', reason: '' });
+});
+
+test('BL-434: an ordinary reply naming neither verb classifies as none', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('still working on it'), { kind: 'none' });
+  assert.deepEqual(classifyApprovalsTopicReply(''), { kind: 'none' });
+});
+
+test('BL-434: reject wins over an "approve" substring appearing inside its own reason (priority-order regression guard)', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('reject BL-433 needs a second approve from ops'), {
+    kind: 'reject',
+    backlogId: 'BL-433',
+    reason: 'needs a second approve from ops',
+  });
+});
+
+test('BL-434: classification trims surrounding whitespace before matching and after capturing', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('  reject   BL-433   no good  '), { kind: 'reject', backlogId: 'BL-433', reason: 'no good' });
+  assert.deepEqual(classifyApprovalsTopicReply('  approve   BL-433  '), { kind: 'approve', backlogId: 'BL-433' });
 });
 
 // ── rejectHumanApprovalText (pure) - BL-409 ────────────────────────────────
