@@ -28,6 +28,8 @@ const {
   shouldEscalateStuckDelivery,
   isPollCycleStale,
   decideCallbackQueryAction,
+  decideSteeringAction,
+  decideEnsureRoleTopicAction,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
 const PRINCIPAL_ID = 111;
@@ -173,6 +175,17 @@ test('BL-346: decideEnsureOperatorTopicAction is reserved-subject-specific - an 
   assert.deepEqual(decideEnsureOperatorTopicAction({ '7': 'SUP-1', '8': 'SUP-2' }), { kind: 'create' });
 });
 
+// ── decideEnsureRoleTopicAction (pure) — BL-425 provision-role-topics-01 ──
+
+test('BL-425: decideEnsureRoleTopicAction creates when the role has no topic bound yet', () => {
+  assert.deepEqual(decideEnsureRoleTopicAction({}, 'coder'), { kind: 'create' });
+  assert.deepEqual(decideEnsureRoleTopicAction({ QA: 55 }, 'coder'), { kind: 'create' });
+});
+
+test('BL-425: decideEnsureRoleTopicAction reuses the topic already bound to that role', () => {
+  assert.deepEqual(decideEnsureRoleTopicAction({ coder: 42, QA: 55 }, 'coder'), { kind: 'reuse', topicId: 42 });
+});
+
 // ── decideUpdateAction (pure) — BL-281 telegram-topic-01/05, BL-294 auto-open-01..04 ──
 
 test('BL-281 telegram-topic-01: a principal message on a MAPPED topic posts under the resolved subjectId', () => {
@@ -280,6 +293,50 @@ test('decideUpdateAction called with only 3 args (no backlogForTopic) behaves ex
   assert.deepEqual(decision, { action: 'open-for-topic', topicId: 99, text: 'brand new' });
 });
 
+// ── decideSteeringAction (pure) — BL-425 slice 1 (REDIRECT mode) ─────────
+
+test('BL-425 redirect-interrupts-addressed-pane-02: an authorised message in a role\'s topic redirects to that role', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, chatId: 1, topicId: 42, text: 'focus on the edge case first' });
+  const decision = decideSteeringAction(update, PRINCIPAL_ID, '1', { coder: 42 });
+  assert.deepEqual(decision, { kind: 'redirect', role: 'coder', text: 'focus on the edge case first' });
+});
+
+test('BL-425 redirect-routing-is-exact-03: each role\'s topic resolves to ITS OWN role, not another role\'s, when several are mapped', () => {
+  const roleTopicMap = { coder: 42, cleaner: 43 };
+  const toCoder = mkUpdate({ fromId: PRINCIPAL_ID, chatId: 1, topicId: 42, text: 'hello coder' });
+  const toCleaner = mkUpdate({ fromId: PRINCIPAL_ID, chatId: 1, topicId: 43, text: 'hello cleaner' });
+  assert.deepEqual(decideSteeringAction(toCoder, PRINCIPAL_ID, '1', roleTopicMap), { kind: 'redirect', role: 'coder', text: 'hello coder' });
+  assert.deepEqual(decideSteeringAction(toCleaner, PRINCIPAL_ID, '1', roleTopicMap), { kind: 'redirect', role: 'cleaner', text: 'hello cleaner' });
+});
+
+test('BL-425 guard-unauthorised-sender-04: an unauthorised sender in a role\'s topic is refused, never redirected', () => {
+  const update = mkUpdate({ fromId: 999, chatId: 1, topicId: 42, text: 'let me steer this' });
+  const decision = decideSteeringAction(update, PRINCIPAL_ID, '1', { coder: 42 });
+  assert.deepEqual(decision, { kind: 'refuse' });
+});
+
+test('BL-425: an unauthorised sender in a role\'s topic is refused even from a foreign chat (not-my-chat also fails auth)', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, chatId: 2, topicId: 42, text: 'let me steer this' });
+  const decision = decideSteeringAction(update, PRINCIPAL_ID, '1', { coder: 42 });
+  assert.deepEqual(decision, { kind: 'refuse' });
+});
+
+test('BL-425 guard-non-role-topic-05: an authorised message in a non-role topic (BL-ticket/Operator/unmapped) is ignored, never refused or redirected', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, chatId: 1, topicId: 999, text: 'anything' });
+  assert.deepEqual(decideSteeringAction(update, PRINCIPAL_ID, '1', {}), { kind: 'ignore' });
+  assert.deepEqual(decideSteeringAction(update, PRINCIPAL_ID, '1', { coder: 42 }), { kind: 'ignore' });
+});
+
+test('BL-425: an authorised message in a non-role topic is ignored even from an unauthorised sender - topic-scope is checked before auth', () => {
+  const update = mkUpdate({ fromId: 999, chatId: 1, topicId: 999, text: 'anything' });
+  assert.deepEqual(decideSteeringAction(update, PRINCIPAL_ID, '1', { coder: 42 }), { kind: 'ignore' });
+});
+
+test('BL-425: a textless update (sticker/photo) in a role\'s topic is ignored, never redirected with undefined text', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, chatId: 1, topicId: 42 });
+  assert.deepEqual(decideSteeringAction(update, PRINCIPAL_ID, '1', { coder: 42 }), { kind: 'ignore' });
+});
+
 // ── pollAndForward (adapter-injected) ────────────────────────────────────
 
 function stubOpenSubjectAndRecord() {
@@ -325,6 +382,81 @@ test('pollAndForward leaves the offset unchanged when the poll itself fails', as
   });
   assert.equal(result.nextOffset, 5);
   assert.equal(result.posted, 0);
+});
+
+// ── pollAndForward wiring — BL-425 slice 1 role steering ─────────────────
+
+function stubRedirectToRole() {
+  return async () => {
+    throw new Error('redirectToRole should not be called for this test');
+  };
+}
+
+test('BL-425: a role-topic message redirects via redirectToRole, never reaching postToBridge/openSubjectAndRecord', async () => {
+  const redirected = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'focus on the edge case' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a role-topic redirect');
+    },
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ coder: 42 }),
+    redirectToRole: async (role, text) => {
+      redirected.push({ role, text });
+    },
+  });
+  assert.deepEqual(redirected, [{ role: 'coder', text: 'focus on the edge case' }]);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-425: a message in a non-role topic falls through unaffected to the existing routing when readRoleTopicMap/redirectToRole are wired', async () => {
+  const posted = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'an ordinary reply' })] }),
+    postToBridge: async (subjectId, text) => {
+      posted.push({ subjectId, text });
+      return true;
+    },
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ coder: 42 }),
+    redirectToRole: stubRedirectToRole(),
+  });
+  assert.deepEqual(posted, [{ subjectId: 'SUP-1', text: 'an ordinary reply' }]);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-425: an unauthorised sender in a role topic is dropped, never redirected, when steering is wired', async () => {
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: 999, topicId: 42, text: 'let me steer this' })] }),
+    postToBridge: async () => true,
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ coder: 42 }),
+    redirectToRole: stubRedirectToRole(),
+  });
+  assert.equal(result.posted, 0);
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-425: pollAndForward behaves exactly as before when readRoleTopicMap/redirectToRole are absent (pre-BL-425 fixtures keep working)', async () => {
+  const posted = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'no steering wired' })] }),
+    postToBridge: async (subjectId, text) => {
+      posted.push({ subjectId, text });
+      return true;
+    },
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: async () => 'SUP-99',
+  });
+  assert.equal(result.posted, 1);
+  assert.equal(posted.length, 0, 'expected the open-for-topic path (no subject mapped), not postToBridge');
 });
 
 test('BL-389: pollAndForward counts a failed bridge POST as failed, never dropped or posted', async () => {

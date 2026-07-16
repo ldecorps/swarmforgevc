@@ -9,6 +9,7 @@
 import { TelegramUpdate, TelegramCallbackQuery, GetUpdatesResult } from '../notify/telegramClient';
 import { computeTelegramRetryBackoffMs } from '../notify/telegramRetry';
 import { classifyApprovalReplyAction } from '../concierge/pendingApprovalReply';
+import { roleForTopic } from '../concierge/roleTopicMapStore';
 
 // BL-353: moved from the retired notify/telegramInboundRelay.ts (which
 // also carried the legacy single-chat TelegramInboundRelay class, now
@@ -164,6 +165,17 @@ export function decideEnsureOperatorTopicAction(topicMap: Record<string, string>
   return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
 }
 
+export type EnsureRoleTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
+
+// BL-425 slice 1: the per-role twin of decideEnsureOperatorTopicAction
+// above - no reserved-subject indirection needed, since the role->topic map
+// (roleTopicMapStore.ts) is already keyed by role name directly, unlike the
+// Operator's shared {topicId: subjectId} map.
+export function decideEnsureRoleTopicAction(roleTopicMap: Record<string, number>, role: string): EnsureRoleTopicAction {
+  const existingTopicId = roleTopicMap[role];
+  return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
+}
+
 export type BotUpdateDecision =
   | { action: 'post-existing'; subjectId: string; text: string }
   | { action: 'operator-context'; backlogId: string; text: string }
@@ -244,6 +256,45 @@ export function decideUpdateAction(
   return topicId === undefined ? { action: 'open-default', text } : { action: 'open-for-topic', topicId, text };
 }
 
+// BL-425 slice 1: per-agent Telegram steering topics - REDIRECT mode only
+// (an explicit, DISRUPTIVE message that interrupts the addressed role's
+// live pane). Slice 2 (the non-disruptive QUESTION mode + a mode-marker
+// selector) is parked in the .feature.draft until built, so this function
+// has no mode-marker parameter yet: every steering message slice 1 handles
+// is a redirect.
+//
+// Topic-scope (guard #2) is checked FIRST - a topic that is not one of the
+// eight role topics is 'ignore' regardless of sender, so the existing
+// BL-ticket/Operator/SUP routing in decideUpdateAction below is reached
+// completely untouched for it, never even evaluating auth (the ticket's own
+// "the same text in a BL-ticket topic, the Operator topic, or any other
+// topic does nothing and those topics keep their existing behavior").
+// Only once a message is confirmed to be IN a role topic does the
+// principal guard (BL-239/240's isFromMyChat/isFromPrincipal, reused
+// verbatim) apply, distinguishing an unauthorised sender ('refuse') from
+// the authorised human ('redirect').
+export type SteeringDecision = { kind: 'ignore' } | { kind: 'refuse' } | { kind: 'redirect'; role: string; text: string };
+
+export function decideSteeringAction(
+  update: TelegramUpdate,
+  principalUserId: string,
+  chatId: string,
+  roleTopicMap: Record<string, number>
+): SteeringDecision {
+  const role = roleForTopic(roleTopicMap, topicIdOf(update));
+  if (!role) {
+    return { kind: 'ignore' };
+  }
+  if (!isFromMyChat(update, chatId) || !isFromPrincipal(update, principalUserId)) {
+    return { kind: 'refuse' };
+  }
+  const text = messageTextOf(update);
+  if (!text) {
+    return { kind: 'ignore' };
+  }
+  return { kind: 'redirect', role, text };
+}
+
 export interface PollAdapters {
   // BL-379: the bot's own configured chat id - decideUpdateAction's new
   // guard against getUpdates' bot-wide (not chat-scoped) result set. Lives
@@ -318,6 +369,15 @@ export interface PollAdapters {
   // BL-410: clears the tapped button's Telegram loading spinner - called for
   // every recognized callback_query, even a no-op (stale/unknown data).
   answerCallbackQuery: (callbackQueryId: string) => Promise<void>;
+  // BL-425 slice 1: role->topic steering (REDIRECT mode). Both optional so
+  // every PollAdapters fixture written before BL-425 keeps working
+  // unchanged - either missing means "no role steering wired", the exact
+  // pre-BL-425 behavior (mirrors this file's own established BL-410
+  // optional-adapter convention above). Read fresh on every update (no
+  // caching), same "a mapping just written is visible to the very next
+  // poll" posture as subjectForTopic/backlogForTopic.
+  readRoleTopicMap?: () => Record<string, number>;
+  redirectToRole?: (role: string, text: string) => Promise<void>;
 }
 
 // BL-389: the keystone fix. A DROP is a DECISION (the code looked at the
@@ -481,7 +541,45 @@ async function processUpdate(update: TelegramUpdate, principalUserId: string, ad
   return processMessageUpdate(update, principalUserId, adapters);
 }
 
+// BL-425 slice 1: the role-steering twin of deliverOperatorContext above -
+// split out so processMessageUpdate's own branch count stays at its
+// pre-BL-425 baseline (the same "extract so branch count stays at or below
+// the CRAP threshold" reasoning this file already applies throughout).
+// Returns undefined for an 'ignore' decision (not a role topic at all) so
+// the caller falls through to the existing decideUpdateAction routing
+// completely unaffected - only a message confirmed to be IN a role topic
+// ever short-circuits here.
+async function processSteeringUpdate(
+  update: TelegramUpdate,
+  principalUserId: string,
+  chatId: string,
+  roleTopicMap: Record<string, number>,
+  redirectToRole: (role: string, text: string) => Promise<void>
+): Promise<UpdateDeliveryOutcome | undefined> {
+  const decision = decideSteeringAction(update, principalUserId, chatId, roleTopicMap);
+  if (decision.kind === 'ignore') {
+    return undefined;
+  }
+  if (decision.kind === 'refuse') {
+    return 'dropped';
+  }
+  await redirectToRole(decision.role, decision.text);
+  return 'posted';
+}
+
 async function processMessageUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
+  if (adapters.readRoleTopicMap && adapters.redirectToRole) {
+    const steeringOutcome = await processSteeringUpdate(
+      update,
+      principalUserId,
+      adapters.chatId,
+      adapters.readRoleTopicMap(),
+      adapters.redirectToRole
+    );
+    if (steeringOutcome) {
+      return steeringOutcome;
+    }
+  }
   const decision = decideUpdateAction(update, principalUserId, adapters.chatId, adapters.subjectForTopic, adapters.backlogForTopic);
   if (decision.action === 'post-existing') {
     const ok = await adapters.postToBridge(decision.subjectId, decision.text, update.update_id);
