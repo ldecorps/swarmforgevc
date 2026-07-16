@@ -13,9 +13,10 @@ RESET='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # BL-145: `./swarm ensure <path>` checks/repairs the extension host, every
-# configured agent pane, and the daemon in one idempotent command, then
-# exits - it never falls into the full (destructive, always-relaunch) launch
-# flow below.
+# configured agent pane, the handoff daemon, the operator runtime, and (when
+# Telegram is configured) the front-desk bridge+bot in one idempotent
+# command, then exits - it never falls into the full (destructive,
+# always-relaunch) launch flow below.
 if [[ "${1:-}" == "ensure" ]]; then
   shift
   ENSURE_WORKING_DIR="${1:-$PWD}"
@@ -32,14 +33,18 @@ WORKING_DIR="${1:-$PWD}"
 WORKING_DIR="$(cd "$WORKING_DIR" && pwd)"
 SWARM_FORGE_DIR="$WORKING_DIR/swarmforge"
 CONFIG_FILE="${SWARMFORGE_CONFIG:-$SWARM_FORGE_DIR/swarmforge.conf}"
-for (( idx = 2; idx <= $#; idx++ )); do
-  if [[ "${!idx}" == "--pack" ]]; then
-    next=$((idx + 1))
-    if [[ $next -le $# ]]; then
-      CONFIG_FILE="$SWARM_FORGE_DIR/packs/${!next}.conf"
-    fi
+# BL: the shebang is zsh, but bash indirect expansion (${!idx}) is a "bad
+# substitution" under zsh, so `--pack` parsing died on every invocation that
+# passed it (only the no-pack default path ever ran). Scan "$@" with a prev-arg
+# tracker instead - portable across zsh and bash, no indirect expansion. The
+# working-dir arg can never equal "--pack", so we still only pick up its value.
+prev_arg=""
+for arg in "$@"; do
+  if [[ "$prev_arg" == "--pack" ]]; then
+    CONFIG_FILE="$SWARM_FORGE_DIR/packs/${arg}.conf"
     break
   fi
+  prev_arg="$arg"
 done
 WORKTREES_DIR="$WORKING_DIR/.worktrees"
 ROLES_DIR="$SWARM_FORGE_DIR/roles"
@@ -1267,6 +1272,35 @@ start_handoff_daemon() {
   SWARMFORGE_DAEMON_START_CALLER=swarmforge.sh bash "$SCRIPT_DIR/start_handoff_daemon.sh" "$WORKING_DIR"
 }
 
+# Operator runtime + Telegram front desk. Best-effort: a missing secret or
+# a failed ancillary start must never abort an otherwise successful swarm
+# launch. `./swarm ensure` is the idempotent repair path for these same
+# components after launch.
+start_ancillary_services() {
+  if [[ "${SWARMFORGE_SKIP_OPERATOR:-}" == "1" ]]; then
+    echo -e "${YELLOW}Skipping operator runtime (SWARMFORGE_SKIP_OPERATOR=1).${RESET}"
+  else
+    echo -e "${CYAN}Starting operator runtime...${RESET}"
+    if ! bash "$SCRIPT_DIR/start_operator_runtime.sh" "$WORKING_DIR"; then
+      echo -e "${YELLOW}Operator runtime failed to start; run './swarm ensure' after fixing the cause.${RESET}"
+    fi
+  fi
+
+  if [[ "${SWARMFORGE_SKIP_FRONT_DESK:-}" == "1" ]]; then
+    echo -e "${YELLOW}Skipping Telegram front desk (SWARMFORGE_SKIP_FRONT_DESK=1).${RESET}"
+    return 0
+  fi
+  if [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_CHAT_ID:-}" && -n "${TELEGRAM_PRINCIPAL_USER_ID:-}" ]]; then
+    echo -e "${CYAN}Starting Telegram front desk (bridge + bot)...${RESET}"
+    if ! bash "$SCRIPT_DIR/launch_front_desk.sh" "$WORKING_DIR"; then
+      echo -e "${YELLOW}Front desk failed to start; run './swarm ensure' after fixing the cause.${RESET}"
+    fi
+  else
+    echo -e "${YELLOW}Telegram front desk skipped (set TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_PRINCIPAL_USER_ID to enable).${RESET}"
+    echo -e "${YELLOW}Then run: bash swarmforge/scripts/launch_front_desk.sh \"$WORKING_DIR\"  (or './swarm ensure').${RESET}"
+  fi
+}
+
 # BL-089: guarded so a test can `source` this file (e.g. to exercise
 # parse_config/write_roles_file against a fixture conf) without launching a
 # real swarm. Direct execution (the normal `./swarmforge.sh` launch path)
@@ -1331,6 +1365,7 @@ done
 write_tmux_env_file
 sync_worktree_scripts
 start_handoff_daemon
+start_ancillary_services
 
 copilot_trust_swarm_paths
 
@@ -1342,6 +1377,7 @@ done
 
 echo ""
 echo -e "${GREEN}${BOLD}SwarmForge is ready.${RESET}"
+echo -e "${CYAN}Tip: './swarm ensure' repairs agents, handoffd, operator, and Telegram front desk.${RESET}"
 
 # BL-352 (BL-336 finding H5): record this launch into the SAME run history
 # runLog.ts's appendRun already defines (~/.swarmforge/runs.jsonl, the

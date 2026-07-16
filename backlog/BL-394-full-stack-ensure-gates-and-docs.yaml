@@ -1,0 +1,84 @@
+id: BL-394
+title: "Full-stack `./swarm` / `./swarm ensure` (handoffd + operator + Telegram front desk) must pass swarm gates, and the documenter must write it up"
+milestone: M8
+type: chore
+status: todo
+severity: medium
+priority: 4
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+superseded_by: BL-461
+source: "human (ldecorps) via Cursor chat 2026-07-16 — after extending `./swarm` / `./swarm ensure` to also start/repair operator runtime and Telegram front desk (bridge + bot): 'file a ticket to make sure this script pass the swarm gates, and that the documenter writes about it'."
+
+description: |
+  SUPERSEDED by BL-461 on the live WSL backlog (/home/carillon/swarmforgevc).
+  This file lived only on the /mnt/c checkout the swarm does not read.
+  Specifier: drain BL-461; ignore or close this duplicate.
+
+  Raw human intake — specifier drains first into paused/ with a proper APS
+  feature + notes. Do not treat the Cursor-side patch as done.
+
+  Context (already on the working tree, not yet swarm-gated):
+  - `./swarm` (swarmforge.sh) cold-starts agents + handoffd, and now also
+    best-effort starts operator runtime (`start_operator_runtime.sh`) and,
+    when TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID / TELEGRAM_PRINCIPAL_USER_ID
+    are set, the Telegram front desk (`launch_front_desk.sh` → bridge + bot).
+  - `./swarm ensure` (swarm_ensure.bb) already repaired extension / agent
+    panes / handoffd (BL-145). It now also ensures operator runtime, and
+    front desk when Telegram is configured or a prior front-desk pid file
+    exists. Skip via SWARMFORGE_SKIP_OPERATOR / SWARMFORGE_SKIP_FRONT_DESK.
+  - Unit coverage extended in swarmforge/scripts/test/test_swarm_ensure.sh
+    (scenarios 05a/05b/05c/06). Cursor-run: ALL PASS. That is NOT a swarm
+    gate pass.
+
+  What this ticket must force through the swarm:
+  1. Specifier: turn this intake into a paused APS feature that pins the
+     full-stack launch + ensure contracts (including skip/env behaviour and
+     "front desk omitted when Telegram unset"), extending BL-145 rather than
+     inventing a parallel ensure story.
+  2. Coder/cleaner/architect/hardener/QA: land (or re-land) the behaviour so
+     it passes the normal swarm hard gates for this repo — feature acceptance,
+     suite, CRAP/DRY, dependency rules, Gherkin mutation, Stryker/mutation
+     cooldown as applicable to the touched scripts. A Cursor green local
+     shell test is insufficient.
+  3. Documenter: update operator-facing docs so a human can find the one
+     command path. At minimum cover:
+       - Cold start: `./swarm` (what it starts; when front desk is skipped)
+       - Repair: `./swarm ensure` (component list + HEALTHY/FIXED/FAILED)
+       - Required Telegram env vars for front desk
+       - Skip flags
+     Likely homes: docs/GettingStarted.md (documenter-owned) and/or
+     README.md "How It Works" / handoff section; deep detail may link into
+     docs/Specification.MD. No invented commands — verify against the
+     scripts that actually exist.
+
+  Why: BL-145 promised one idempotent health command; ancillaries (operator +
+  Telegram bridge/front desk) were still separate (BL-336 finding G1/G2). The
+  human asked for one startup that ensures everything — the code path exists
+  in the working tree, but until it clears swarm gates and the documenter
+  writes it, operators will still not discover or trust it.
+
+acceptance: |
+  Feature: full-stack swarm start/ensure is gated and documented
+
+  Scenario: the full-stack ensure contract is specified and acceptance-tested
+    Given BL-145's ensure behaviour
+    When this ticket's feature is implemented
+    Then ./swarm ensure also covers operator runtime and Telegram front desk
+      (when configured), with HEALTHY/FIXED/FAILED reporting
+    And the swarm hard gates for the touched scripts all pass
+
+  Scenario: cold start starts ancillaries when configured
+    When ./swarm launches a swarm with Telegram env set
+    Then handoffd, operator runtime, and front desk are started
+      (or clearly reported failed without aborting agent launch)
+
+  Scenario: documenter writes the operator-facing path
+    When the documenter pass for this ticket completes
+    Then Getting Started and/or README name ./swarm and ./swarm ensure
+      as the one-command start and repair paths
+    And they document Telegram env requirements and skip flags
+    And every named command/script exists in the repo
+
+mutation_cost: medium
