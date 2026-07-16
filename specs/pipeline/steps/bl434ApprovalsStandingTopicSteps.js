@@ -212,15 +212,37 @@ function registerSteps(registry) {
 
   // ── approvals-standing-topic-02/03 (shared When) ────────────────────────
   registry.define(/^the human replies "([^"]*)" in the Approvals topic$/, async (ctx, reply) => {
+    ctx.lastReplyText = reply;
     ctx.replyResult = await deliverApprovalsTopicReply(ctx, reply);
   });
 
   // ── approvals-standing-topic-02 ──────────────────────────────────────────
+  // KNOWN_VALUES lookup, not a binary approve/else ternary (engineering
+  // article's Acceptance Pipeline rule) - a mutated <verb> outside
+  // {approve, reject} must fail here rather than silently falling into the
+  // reject branch (BL-234 gherkin-mutation pass: a bare `=== 'approve'`
+  // ternary let a "rejecT" mutant survive because both "reject" and
+  // "rejecT" took the same else branch). The reject case also verifies the
+  // exact reason text from the reply itself (classifyApprovalsTopicReply),
+  // not merely that SOME reason comment exists, so a mutated reason value
+  // in the Examples table is load-bearing too.
   registry.define(/^the "([^"]*)" is recorded against ticket "([^"]*)"$/, (ctx, verb, id) => {
     const content = fs.readFileSync(path.join(ctx.targetPath, 'backlog', 'paused', `${id}.yaml`), 'utf8');
-    const expected = verb === 'approve' ? /^human_approval: approved$/m : /^human_approval: rejected\s{2}#/m;
-    if (!expected.test(content)) {
-      throw new Error(`expected "${verb}" recorded against ${id}, got:\n${content}`);
+    if (verb === 'approve') {
+      if (!/^human_approval: approved$/m.test(content)) {
+        throw new Error(`expected "approve" recorded against ${id}, got:\n${content}`);
+      }
+      return;
+    }
+    if (verb !== 'reject') {
+      throw new Error(`unrecognized verb "${verb}" in scenario outline - expected "approve" or "reject"`);
+    }
+    const parsed = classifyApprovalsTopicReply(ctx.lastReplyText);
+    if (parsed.kind !== 'reject') {
+      throw new Error(`expected the stored reply "${ctx.lastReplyText}" to parse as a reject, got ${JSON.stringify(parsed)}`);
+    }
+    if (!content.includes(`human_approval: rejected  # ${parsed.reason}`)) {
+      throw new Error(`expected "reject" with reason "${parsed.reason}" recorded against ${id}, got:\n${content}`);
     }
   });
 
