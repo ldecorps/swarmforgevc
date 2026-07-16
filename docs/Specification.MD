@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 15, 2026 (BL-427 — mutation-run worker RSS profiling harness + concurrency recommendation)
+**Last Updated:** July 15, 2026 (BL-430 — rework observatory: rolling QA-bounce/rework rate CLI)
 
 ## Overview
 
@@ -375,6 +375,18 @@ bb swarmforge/scripts/standing_rule_violations_cli.bb <project-root> for-ticket 
 `report` scans every top-level rule (a `- ` bullet or `N. ` numbered item, with its wrapped continuation lines) in every `swarmforge/constitution/articles/*.prompt` and `swarmforge/roles/*.prompt` file, and prints each rule's cited `BL-NNN` ticket ids alongside a total citation count across all rules. `for-ticket <BL-NNN>` answers "how many times was this specific ticket cited as a violation" directly. Both derive purely from the committed text of the constitution/role files — no new bookkeeping, no git history walk — so a rule added tomorrow, anywhere in those files, is counted with no code change. A rule's numerically-smallest citation is treated as that rule's own origin (the incident that prompted writing it), never counted as a violation of it; every other citation is a real recorded violation since the rule landed. A `(source: ..., BL-NNN)` citation credits authorship, not a violation, and is excluded. A rule with zero violations is still reported, with a count of zero, never omitted — an all-zero result is a claim to verify, not the assumed answer.
 
 The daily briefing email's `:standing-rule-violations-line` section (`swarmforge/scripts/handoffd.bb`, composed the same way as every other optional briefing line) surfaces the `report` total on every send, e.g. `Standing-rule violations: 38 cited recurrence(s) across 458 rule(s) since they landed (top: "..." x3, "..." x3, "..." x3)`.
+
+#### Rework observatory CLI (BL-430, epic BL-429 slice 1 — OBSERVE)
+
+A read-only CLI computes the swarm's first self-observed health signal: how much of the pipeline's work is rework. It composes ingredients the pipeline already records — backward-handoff bounces, each ticket's own `mutation_cost`, QA bounce evidence committed to `main` — into one rolling rework rate, without moving any knob or changing promotion behaviour.
+
+```sh
+node extension/out/tools/rework-observatory.js
+```
+
+Runnable from the repo root or any `.worktrees/<role>/` checkout, same project-root resolution as `swarm-metrics.js`. It reports the QA-bounce/rework rate over a trailing 14-day window against a trailing 14-day baseline, attributed to the role and ticket-class where rework concentrates most, and persists the signal (versioned, additive schema) for the diagnosis slice (BL-431) to read. An empty window reports `NO_SAMPLE` rather than a divide-by-zero or a fabricated rate; a baseline period with no completed tickets independently reports a null baseline without blocking the main window's own rate. Bounce evidence is read from the `main` ref (BL-340), never a role's own worktree checkout, since evidence files committed by QA are absent from any parcel's ancestry.
+
+This is the concrete signal source for Article 3.5's health-based intake throttling circuit breaker: "QA-bounce rate ... rising meaningfully above their trend baseline" is exactly what this CLI's `reworkRate` vs `baselineRate` comparison measures.
 
 ---
 
