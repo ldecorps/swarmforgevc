@@ -13,10 +13,15 @@ source: "human (ldecorps) via the Operator front desk 2026-07-16 — INTAKE-oper
 description: |
   Rendering refinements to the pipeline board, from the human's clarifications (he reads it mainly in
   LANDSCAPE, so more horizontal width is acceptable):
-    1. Show MORE of each ticket's description in the grid AND in the below-grid lists — wider than
-       BL-462's widened slug; landscape gives the room.
+    1. Each ticket's slug LEADS with a short kebab slug (2-3 words, derived from the ticket's backlog
+       filename slug, e.g. BL-467-pipeline-board-only-pin -> "pipeline-board-only-pin"), THEN fills the
+       remaining landscape width with more of the truncated title — in the grid AND the below-grid
+       lists. Human's decision 2026-07-16 (Q: kebab slug vs truncated title -> "both: slug + wider
+       title"), refining the earlier "show more of the description" ask. Exact kebab word-count and
+       column width are build-time cosmetic details, not a promotion gate.
     2. Drop the redundant per-line "PK" label in the parked list (the section header already says it is
-       parked); keep the awaiting-approval distinction.
+       parked); keep the awaiting-approval distinction by giving it its OWN "AWAITING APPROVAL:" section
+       (drop the per-line "AA" label too) — human's decision 2026-07-16.
     3. Add the PAUSED backlog items and the ROOT-INTAKE items (raw backlog/ root asks) as their OWN
        sections alongside the parked area.
     4. Add a RECENTLY-CLOSED section.
@@ -51,8 +56,9 @@ description: |
   scaffolding is on main at build time. Best sequenced AFTER BL-464 so the richer sections render over
   the authoritative data source, but the render changes are otherwise independent.
 
-  E2E QA PROCEDURE: on the real Telegram board, assert grid rows and below-grid entries show MORE title
-  than before on a single line; assert the parked list no longer repeats "PK" while awaiting-approval is
+  E2E QA PROCEDURE: on the real Telegram board, assert grid rows and below-grid entries LEAD with a
+  short kebab slug and then show MORE title than before on a single line; assert the parked list no
+  longer repeats "PK" while awaiting-approval is
   still distinguished; assert separate PAUSED, ROOT-INTAKE, and RECENTLY-CLOSED sections appear with the
   right items; tap a link in the below-grid list and confirm it opens the ticket's backlog file on
   GitHub (active/paused/done path correct); confirm the grid itself remains an aligned monospace block
@@ -61,18 +67,21 @@ description: |
 acceptance:
   feature: specs/features/BL-465-pipeline-board-render-round2.feature
   steps:
-    - "A ticket's description is shown wider in both the grid and the below-grid lists"
+    - "Each ticket's entry leads with a short kebab slug, then fills the remaining width with more of its title"
     - "The parked list drops the redundant PK label"
-    - "The board lists parked, paused, root-intake, and recently-closed items in their own sections"
+    - "The board lists parked, awaiting-approval, paused, root-intake, and recently-closed items in their own sections"
     - "A tappable link list below the grid links each ticket id to its GitHub backlog item"
     - "The aligned monospace grid is preserved"
 
 human_approval: >
   Human-requested via the Operator front desk 2026-07-16 with a follow-up clarification round; links
   ride a below-grid list per his Q1 choice (Telegram cannot render links inside the <pre> grid). Firm
-  contract: wider descriptions in grid + lists; no redundant PK label; distinct parked / paused /
-  root-intake / recently-closed sections; a tappable GitHub link list below the grid; aligned grid
-  preserved. Build-time details NOT gating: exact width, headers, link-line format, and the precise
+  contract: each ticket entry LEADS with a short 2-3 word kebab slug then fills the remaining landscape
+  width with more of the truncated title, in grid + lists (human's decision 2026-07-16: "both: slug +
+  wider title"); no redundant PK label; distinct parked /
+  awaiting-approval / paused / root-intake / recently-closed sections (awaiting-approval is its OWN
+  section, no per-line "AA" label — human's decision 2026-07-16); a tappable GitHub link list below the
+  grid; aligned grid preserved. Build-time details NOT gating: exact width, headers, link-line format, and the precise
   "recently-closed" window. Serialize on the board files after in-flight BL-462 and ideally after
   BL-464 (authoritative data source).
 

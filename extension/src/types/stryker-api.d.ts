@@ -10,6 +10,8 @@
 declare module '@stryker-mutator/api/plugin' {
   export enum PluginKind {
     Reporter = 'Reporter',
+    // BL-447: entrypointBoilerplateIgnorer.ts's own Ignorer plugin.
+    Ignore = 'Ignore',
   }
   export function declareClassPlugin(
     kind: PluginKind,

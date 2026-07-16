@@ -137,9 +137,9 @@ notes: |
       same env seam the file already uses for its other tunables" rule) so a test
       drives it small and deterministic. Auto-resume is evaluated against the same
       injected clock, never a real elapsed 15 minutes. The default drain timeout is
-      the specifier's to pick a sane value for (order ~10 min so a mid-run hardener
-      mutation pass can finish); confirm the final value with the human if it
-      matters operationally.
+      10 MINUTES (human-decided 2026-07-16, so a mid-run hardener mutation pass can
+      finish before a Drain & stop forces teardown); env-overridable per the seam
+      rule above, and tests drive it small.
     - PAUSE WIRING PROOF (engineering "a wiring test that adds a NEW on-disk input
       must PLACE that file and prove the read is load-bearing" rule): the test that
       wires the effective-depth freeze must place a live pause marker in its fixture
@@ -224,10 +224,11 @@ qa_e2e: |
      a half-launch and confirm the topic reports `failed`, not `done`.
 
 human_approval: >
-  Base ticket approved 2026-07-15 (AskUserQuestion: atomic stop+restart, headless-OK
-  executor reuse, explicit confirm). Amendment design approved 2026-07-15 by the human
-  via AskUserQuestion (pause = freeze intake / one /stop verb with drain+emergency
+  approved. Base ticket approved 2026-07-15 (AskUserQuestion: atomic stop+restart,
+  headless-OK executor reuse, explicit confirm). Amendment design approved 2026-07-15 by
+  the human via AskUserQuestion (pause = freeze intake / one /stop verb with drain+emergency
   confirm buttons / bounded-then-force drain / duration-pick-is-the-action with
-  15m-1h-4h-until-resume). Amended feature file + spec written by the specifier from
-  those answers; flagged for the human's final read before promotion.
+  15m-1h-4h-until-resume). Amended feature file + spec written by the specifier from those
+  answers. FINAL READ 2026-07-16: human approved for promotion as-specced and set the default
+  drain timeout to 10 minutes. Ready to promote.
 mutation_cost: high
