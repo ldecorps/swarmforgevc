@@ -321,6 +321,26 @@
   hardener proposed a rule to RETRY it, which was rejected in favour of this one. The
   same `touch stop; wait; rm -rf "$ROOT"` teardown is copy-pasted across at least five
   handoffd wiring tests, so the window is latent in all of them, not local to BL-349.)
+- **Disabling Vitest per-file isolation (`isolate: false`) is safe ONLY if EVERY module-level
+  mutable cache has an explicit test-reset export — and that is a claim you must `grep`-verify
+  across the tree, never assert in prose.** Per-file isolation resets the module registry between
+  files; turning it off is a real suite-speed win (it dominated BL-445's reporter prepare/collect
+  phases, ~35s of a ~25s run), but it also means every module-level singleton, memo, Map/Set, or
+  counter now PERSISTS across each test file sharing a worker — so a value one test writes leaks
+  into an unrelated later file and the suite starts passing or failing on file ORDER, the exact
+  cross-file contamination isolation existed to prevent. "Safe because the suite restores its stubs
+  and the known caches reset" is a claim about your MEMORY, not the tree — the same blind spot the
+  call-site-sweep and green-suite-is-not-proof rules above name: the one cache you forgot is
+  precisely the one with no reset export, and nothing re-checks a remembered count. Before
+  disabling isolation, ENUMERATE module-level mutable state with `grep` (module-scope `let`, and
+  mutable `const` maps/sets/objects/singletons across `src`) and confirm EACH has a
+  reset-for-test export the suite actually calls; keep isolation off only once that set is closed.
+  This fork-pool setting is orthogonal to mutation: Stryker's vitest-runner hardcodes
+  `pool:'threads'` and reads `poolOptions.threads`, so mutation runs are unaffected either way — a
+  green mutation run is not proof the fork-pool suite is contamination-free. (BL-445: `44f60fee` set
+  `isolate:false` suite-wide justified only by an asserted safety claim; the architect had to
+  hand-spot-check 8 stateful modules to confirm it held. Proposed by the architect 2026-07-16 scoped
+  `engineering`.)
 
 ## Acceptance Pipeline
 - Use github.com/unclebob/Acceptance-Pipeline-Specification (pinned, see above)
