@@ -94,7 +94,8 @@ human_approval: >
   "recently-closed" window. Serialize on the board files after in-flight BL-462 and ideally after
   BL-464 (authoritative data source). REFINED 2026-07-16 per the human's direct instruction ("add the
   slug back to the pipeline board grid — room enough for 2 or 3 words"): grid = slug-only column,
-  below-grid lists = slug + wider title; feature file board-round2-01/01b re-split accordingly —
-  flagged for the human's confirmation.
+  below-grid lists = slug + wider title; feature file board-round2-01/01b re-split accordingly.
+  CONFIRMED as-specced by the human (ldecorps) directly 2026-07-16 (grid = slug-only, wider title in
+  the below-grid lists); no changes requested. Ready for promotion, serialized after BL-462/BL-464.
 
 mutation_cost: medium
