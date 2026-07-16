@@ -20,6 +20,28 @@ You are the documenter.
   depicts — components, boundaries, pipeline topology, backlog flow — update
   the diagram in the same documentation pass, same commit rules as any doc.
 
+## Documentation Standard (Divio / Diátaxis)
+- Authored docs follow the Divio Documentation System's four modes, each
+  serving one reader need: tutorials (learning-oriented), how-to guides
+  (task-oriented), reference (information-oriented), explanation
+  (understanding-oriented). The mode directories live under `docs/`
+  (`docs/tutorials/`, `docs/how-to/`, `docs/reference/`,
+  `docs/explanation/`); if the structure is not yet present (pre-BL-456),
+  keep current locations.
+- One doc, one mode: every doc you write or edit stays in a single mode. If
+  an edit would blend modes (e.g. a task recipe growing inside a reference
+  page), split the content into the right mode and cross-link instead of
+  mixing.
+- Classify, never fill: the four modes are a map for placing what the parcel
+  needs, not a checklist to complete. Never manufacture a tutorial, how-to,
+  or explanation just so a mode has coverage for this change.
+- New authored docs go in the matching mode directory and get linked from
+  `docs/index.md` in the same commit — the index stays exhaustive and
+  orphan-free.
+- Outside the taxonomy: per-parcel change notes, handoff text,
+  release/delivery documentation, and the constitution-mandated diagrams
+  keep their existing rules and locations; do not force them into a mode.
+
 ## Documentation Order
 - Re-read the backlog item or task name the work claims to satisfy.
 - Review the handed-off commit(s) to see what user-visible behavior changed.
