@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 15, 2026 (BL-410 — Approve/Amend/Reject inline-keyboard buttons on the ApprovalRequested Telegram message)
+**Last Updated:** July 15, 2026 (BL-427 — mutation-run worker RSS profiling harness + concurrency recommendation)
 
 ## Overview
 
@@ -611,6 +611,33 @@ runaway agent, was the OOM source.
 - Stryker's own vitest-runner hardcodes `pool: 'threads'` + `maxThreads: 1`
   (the worker-thread rule below) and overrides these caps entirely, so
   mutation runs are unaffected by this cap.
+
+### Mutation-run worker RSS profiling (BL-427, measure-first)
+
+`extension/stryker.config.json`'s `"concurrency": 4` is a fixed, RAM-blind
+number — the mutation-run equivalent of the gap BL-422 closed for the unit
+suite, but BL-422 explicitly does not touch mutation runs (previous
+section). This ticket measures rather than wires an adaptive default; a
+named follow-up will size concurrency from live free RAM.
+
+- `node extension/out/tools/profile-mutation-workers.js [--interval-ms N]
+  [--reserve-mb N] -- <command> [args...]` wraps an already-configured
+  mutation command, samples its child worker processes' RSS at a fixed
+  interval (default 5000ms) until it exits, and prints each worker's peak
+  RSS plus a concurrency recommendation sized from current free RAM
+  (default reserve: 2048MB).
+- `extension/src/metrics/mutationWorkerRss.ts` holds the two pure pieces:
+  `computePeakRssPerWorker` reduces raw RSS samples to each worker's peak
+  (max, never last/average) over its lifetime, and
+  `recommendMutationConcurrency({freeRamBytes, peakRssPerWorkerBytes,
+  coreCount, reserveBytes})` recommends
+  `clamp(floor((freeRamBytes - reserveBytes) / peakRssPerWorkerBytes), 1,
+  coreCount)` — floored at 1 (never zero workers), capped at the core count
+  (RAM headroom can't buy more parallelism than the host has cores).
+- Actually changing `stryker.config.json`'s concurrency to this
+  recommendation is a named follow-up ticket, not this one — until it
+  lands, the mutation run still uses the fixed `4` and this module is a
+  correct-but-dark measurement tool run on demand.
 
 ## Per-Agent Lifecycle Control
 

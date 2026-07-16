@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=c22ae26348cb6e9be8c21fcf4b437cc3f21f10d958b57bcaf985889f13f24b42
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-15T22:42:49.262270113Z","feature_name":"The swarm can observe its own rework rate","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-430-rework-observatory.feature","background_hash":"af33b97857f4ba80568e43a5cb699356c3097b62bc6af18e5729676adcecf391","implementation_hash":"unknown","scenarios":[{"index":1,"name":"Rework is attributed to the <dimension> it concentrates in","scenario_hash":"602d630271ad188a65f80a67fed627db79a679a672b6f4721479878d3cc9d2ac","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-15T22:42:49.262270113Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The swarm can observe its own rework rate
 
 # BL-430 (epic BL-429, slice 1 — OBSERVE): the swarm already records per-ticket bounce counts, chaser

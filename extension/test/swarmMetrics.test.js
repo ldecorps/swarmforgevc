@@ -389,6 +389,40 @@ test('computeBusyness skips an in_process handoff it cannot read', () => {
   assert.doesNotThrow(() => computeBusyness([{ role: 'coder', worktreePath: coderWt }], runStart, now));
 });
 
+test('computeBusyness skips an unreadable handoff INSIDE a batch dir without throwing', () => {
+  const target = mkTmp();
+  const coderWt = path.join(target, 'coder-wt');
+  const batchDir = path.join(
+    coderWt,
+    '.swarmforge',
+    'handoffs',
+    'inbox',
+    'in_process',
+    'batch_20260702T000000Z_000001'
+  );
+  mkdirp(batchDir);
+
+  // Unlike the flat in_process broken-symlink cases above (caught one layer
+  // up, by collectHandoffFilesAt's own stat on the individual entry), a
+  // batch directory is stat'd ONCE as a whole and its members are only
+  // readdir-listed, never individually statted - so a broken symlink placed
+  // INSIDE it reaches findEarliestDequeueInFile's own readFileSync, which
+  // must fail closed (skip it, keep the running earliest) rather than throw.
+  fs.symlinkSync(path.join(batchDir, 'does-not-exist'), path.join(batchDir, '00_broken.handoff'));
+  writeHandoff(batchDir, '01_real.handoff', {
+    dequeued_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+  });
+
+  const now = Date.now();
+  const runStart = now - 60 * 60 * 1000;
+
+  let busyness;
+  assert.doesNotThrow(() => {
+    busyness = computeBusyness([{ role: 'coder', worktreePath: coderWt }], runStart, now);
+  });
+  assert.ok(busyness.coder > 0, 'the readable sibling in the same batch dir must still count');
+});
+
 test('computeBusyness takes the earliest dequeued_at across multiple open in_process entries', () => {
   const target = mkTmp();
   const coderWt = path.join(target, 'coder-wt');
