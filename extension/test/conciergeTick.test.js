@@ -134,7 +134,7 @@ function fakeAdapters(overrides = {}) {
       boardAdapters: {
         ensureBoardTopic: async () => undefined,
         postMessage: async () => undefined,
-        editMessage: async () => true,
+        deleteMessage: async () => true,
       },
       // BL-434: a safe no-op default (ensureApprovalsTopic resolves to
       // undefined -> 'failed-no-topic', harmless) mirroring boardAdapters'
@@ -1593,13 +1593,15 @@ test('BL-414 hardener bounce: a first-tick mass fan-out over many tickets honour
   }
 });
 
-// ── BL-452: pipeline board wiring ────────────────────────────────────────
+// ── BL-452/BL-462: pipeline board wiring ──────────────────────────────────
 
-test('BL-452: the pipeline board is posted once, then edited in place on a stage change, and skipped when unchanged', async () => {
+test('BL-462: the pipeline board reposts at the bottom (delete + post) on a stage change, and is a complete no-op - including the footer time - when unchanged', async () => {
   const { adapters, state } = fakeAdapters();
   const ensured = [];
   const posted = [];
-  const edited = [];
+  const deleted = [];
+  const T1 = Date.UTC(2026, 6, 16, 20, 5);
+  const T2 = Date.UTC(2026, 6, 16, 20, 6);
   adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
   adapters.boardAdapters = {
     ensureBoardTopic: async () => {
@@ -1610,34 +1612,47 @@ test('BL-452: the pipeline board is posted once, then edited in place on a stage
       posted.push({ topicId, text });
       return 42;
     },
-    editMessage: async (topicId, messageId, text) => {
-      edited.push({ topicId, messageId, text });
+    deleteMessage: async (topicId, messageId) => {
+      deleted.push({ topicId, messageId });
       return true;
     },
   };
 
-  await runConciergeTick(adapters);
+  await runConciergeTick(adapters, T1);
 
   assert.equal(ensured.length, 1);
   assert.equal(posted.length, 1);
+  assert.equal(deleted.length, 0, 'expected no delete - nothing was posted before');
   assert.equal(posted[0].topicId, 900);
   assert.ok(posted[0].text.includes('BL-1'));
+  assert.ok(posted[0].text.endsWith('updated at Jul 16 20:05'), `expected a footer stamped with T1, got:\n${posted[0].text}`);
   assert.equal(state.pipelineBoard.topicId, 900);
   assert.equal(state.pipelineBoard.messageId, 42);
+  assert.equal(state.pipelineBoard.lastChangeMs, T1);
 
-  // The ticket moves from coder to QA - same topic/message, edited in place.
+  // The ticket moves from coder to QA - a content change: the old message is
+  // deleted and a fresh one posted at the bottom, footer bumped to T2.
   adapters.readRoleHeldTickets = () => ({ QA: ['BL-1'] });
-  await runConciergeTick(adapters);
+  await runConciergeTick(adapters, T2);
 
   assert.equal(ensured.length, 1, 'expected the topic to be created only once');
-  assert.equal(posted.length, 1, 'expected no second message ever posted');
-  assert.equal(edited.length, 1);
-  assert.equal(edited[0].topicId, 900);
-  assert.equal(edited[0].messageId, 42);
+  assert.equal(deleted.length, 1);
+  assert.equal(deleted[0].topicId, 900);
+  assert.equal(deleted[0].messageId, 42);
+  assert.equal(posted.length, 2, 'expected the fresh message posted as a new message, never an edit');
+  assert.equal(posted[1].topicId, 900);
+  assert.ok(posted[1].text.endsWith('updated at Jul 16 20:06'), `expected the footer bumped to T2, got:\n${posted[1].text}`);
+  assert.equal(state.pipelineBoard.messageId, 42, 'expected the new messageId returned by postMessage, never edited in place');
+  assert.equal(state.pipelineBoard.lastChangeMs, T2);
 
-  // No stage change this tick - the message is not re-edited.
-  await runConciergeTick(adapters);
-  assert.equal(edited.length, 1, 'expected no re-edit when no ticket stage changed');
+  // No stage change this tick, even though the clock advances further - a
+  // complete no-op: no delete, no post, and the footer keeps showing T2.
+  const postedCountBefore = posted.length;
+  const deletedCountBefore = deleted.length;
+  await runConciergeTick(adapters, Date.UTC(2026, 6, 16, 21, 0));
+  assert.equal(posted.length, postedCountBefore, 'expected no re-post when no ticket stage changed');
+  assert.equal(deleted.length, deletedCountBefore, 'expected no delete either');
+  assert.equal(state.pipelineBoard.lastChangeMs, T2, 'expected the footer to stay at the last REAL content change');
 });
 
 test('BL-455: role-held tickets are joined to their backlog item epic/title - grouped by epic, and shown with a derived slug', async () => {

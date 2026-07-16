@@ -65,6 +65,7 @@ import {
   getForumTopicIconStickers,
   answerCallbackQuery,
   editMessageText,
+  deleteMessage,
   getFile,
   downloadTelegramFile,
   sendVoiceNote,
@@ -1221,7 +1222,10 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
         sendTelegramMessage(botToken, chatId, wrapPipelineBoardHtml(text), undefined, undefined, topicId, undefined, 'HTML').then((r) =>
           r.success ? r.messageId : undefined
         ),
-      editMessage: (topicId, messageId, text) => editMessageText(botToken, chatId, messageId, wrapPipelineBoardHtml(text), 'HTML').then((r) => r.success),
+      // BL-462: the board reposts at the bottom on a content change rather
+      // than editing in place - deletes the previous message (best-effort;
+      // see pipelineBoardSync.ts) before the fresh one is posted above.
+      deleteMessage: (topicId, messageId) => deleteMessage(botToken, chatId, messageId).then((r) => r.success),
     },
     // BL-434: the standing "Approvals" topic's own roster sync - shares the
     // SAME ensureApprovalsTopic the ask-routing RouteAdapters above uses
