@@ -43,6 +43,20 @@ interchangeable:
   ALREADY pending — you may ask only ONE at a time; if refused, do not ask a
   different one, just exit.
 
+  When the question has a small, FIXED set of discrete answers (2+ concrete
+  choices — e.g. a specifier surfaced an AskUserQuestion-style decision menu,
+  or your own fork reduces to a handful of named answers), ALSO pass
+  `--options '["<choice-1>","<choice-2>",...]'` (a JSON array of the choice
+  labels): the human then gets a NATIVE Telegram poll in the agent-questions
+  topic — iso-functional with the in-editor AskUserQuestion — instead of a
+  plain message. Omit `--options` for a genuinely open-ended question (no
+  fixed choice set); it falls back to a plain message the human replies to
+  in-thread, and a malformed/empty options value degrades to that same
+  plain-message form. Either way you still ask only ONE question at a time and
+  the human's selection (or in-thread reply) returns as the answer through the
+  SAME awaiting-answer/unblock path (BL-466 — the specifier is the first
+  producer; this generalizes to any agent ask).
+
   You are disposable and CANNOT wait for the reply. After asking, your job
   for THIS run is done — exit normally. The always-alive runtime holds the
   wait for you: if the human replies in that thread, a LATER run of you gets

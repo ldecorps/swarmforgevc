@@ -681,3 +681,19 @@
   title-age sync: its own spec is change-gated "do NOT rename every tick" exactly like BL-342's icon
   change-gate, which protects steady state but leaves the first-tick mass transition over all existing
   topics unthrottled — the precedent to copy is `backfill-topic-icons.ts`'s `retry_after` honoring, BL-342.)
+- **An optional CLI flag whose value is JSON-parsed must CATCH the parse failure and degrade to that
+  flag's own documented fallback — never let a malformed value throw out of the whole invocation and lose
+  the rest of the operation.** A flag that is optional BY DESIGN already has a defined behavior when it is
+  absent (a fallback path the code fully supports); a malformed value is closer to "absent" than to "fatal"
+  — so the correct response is to log the bad input and take that same fallback, not to abort. Letting the
+  JSON exception propagate collapses the ENTIRE command, including the part that had nothing to do with the
+  optional flag: the operation the flag was merely decorating is lost along with it. The malformed value is
+  external/agent-influenceable (a hand-built flag string, another tool's output), so treat a bad parse as
+  when-not-if, and cover it: a non-array/non-object, a bare number, an array whose elements are the wrong
+  type, and outright invalid JSON must EACH land on the documented fallback, proven by test. This is the
+  flag-parsing sibling of the "degrade to the flag's fallback, don't crash" postures above (the sweep
+  failure-contract and corrupt-handoff-quarantine rules): a boundary that accepts external text must fail
+  soft to a defined behavior, never hard. (BL-466: `operator_ask.bb`'s new `--options` flag — discrete
+  poll options, JSON-parsed — crashed the whole CLI on invalid JSON / a bare number / a non-string array,
+  losing the AGENT'S ENTIRE QUESTION instead of falling back to the ticket's own plain-message ask.
+  Proposed by the hardender 2026-07-16 scoped `engineering`.)

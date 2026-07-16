@@ -4,10 +4,18 @@ Feature: The pipeline board shows wider descriptions, distinct sections for park
   # INTAKE-operator-question-1784230021148). Follow-on rendering refinements to the BL-452/BL-455/BL-462
   # pipeline board, from the human's clarifications (he reads it mainly in LANDSCAPE, so more horizontal
   # width is fine):
-  #   1. Show MORE of each ticket's description in the grid AND in the below-grid lists (wider than
-  #      BL-462's widened slug — landscape gives the room).
+  #   1. Each ticket entry LEADS with a short kebab slug (2-3 words, derived from the ticket's backlog
+  #      filename slug, e.g. BL-467-pipeline-board-only-pin -> "pipeline-board-only-pin"). In the aligned
+  #      stage GRID this fills the dedicated SLUG column and the grid carries the slug ONLY (human's
+  #      instruction 2026-07-16: "add the slug back to the grid — room enough for 2 or 3 words"; the grid
+  #      has no title column, its width is spent on the 8 stage columns). In the BELOW-GRID lists the
+  #      entry leads with the same slug THEN fills the remaining landscape width with more of the
+  #      truncated title (human's decision 2026-07-16: "both: slug + wider title"), refining the earlier
+  #      "show more of the description" ask. Exact kebab word-count and column width are build-time
+  #      cosmetic details, not a promotion gate.
   #   2. Drop the redundant per-line "PK" label in the parked list (the section already says it is
-  #      parked); keep the awaiting-approval distinction.
+  #      parked); keep the awaiting-approval distinction by giving it its OWN "AWAITING APPROVAL:"
+  #      section (no per-line "AA" label either) — human's decision 2026-07-16.
   #   3. Add the PAUSED backlog items and the ROOT-INTAKE items (raw backlog/ root asks) as their own
   #      sections alongside the parked area.
   #   4. Add a RECENTLY-CLOSED section.
@@ -33,36 +41,45 @@ Feature: The pipeline board shows wider descriptions, distinct sections for park
   # are build-time cosmetic details, not a promotion gate.
 
   # BL-465 board-round2-01
-  Scenario Outline: A ticket's description is shown wider in both the grid and the below-grid lists
-    Given a ticket with a long title in the "<area>"
+  Scenario: The stage grid's slug column shows a short kebab slug
+    Given a long-titled ticket occupies a stage-grid row
     When the pipeline board is rendered
-    Then the "<area>" shows more of the title than the previous limit allowed
-    And the text is still a single line
+    Then the grid row's slug column shows the ticket's short kebab slug
+    And the grid row remains a single aligned line
+
+  # BL-465 board-round2-01b
+  Scenario Outline: A below-grid list entry leads with the kebab slug then shows more of its title
+    Given a long-titled ticket appears under the "<list>" section
+    When the pipeline board is rendered
+    Then the "<list>" entry leads with a short kebab slug for the ticket
+    And it then shows more of the title than the previous limit allowed
+    And the whole entry is still a single line
 
     Examples:
-      | area       |
-      | stage grid |
-      | parked list|
+      | list            |
+      | parked list     |
+      | recently-closed |
 
   # BL-465 board-round2-02
   Scenario: The parked list drops the redundant PK label
     Given a parked ticket in the parked section
     When the pipeline board is rendered
     Then the parked entry does not repeat a per-line "PK" label
-    And an awaiting-approval ticket is still distinguished from a plain parked one
+    And an awaiting-approval ticket is distinguished by its own section, not a per-line label
 
   # BL-465 board-round2-03
-  Scenario Outline: The board lists parked, paused, root-intake, and recently-closed items in their own sections
+  Scenario Outline: The board lists parked, awaiting-approval, paused, root-intake, and recently-closed items in their own sections
     Given a "<kind>" item exists
     When the pipeline board is rendered
     Then the board shows it under the "<kind>" section
 
     Examples:
-      | kind            |
-      | parked          |
-      | paused          |
-      | root-intake     |
-      | recently-closed |
+      | kind              |
+      | parked            |
+      | awaiting-approval |
+      | paused            |
+      | root-intake       |
+      | recently-closed   |
 
   # BL-465 board-round2-04
   Scenario: A tappable link list below the grid links each ticket id to its GitHub backlog item
