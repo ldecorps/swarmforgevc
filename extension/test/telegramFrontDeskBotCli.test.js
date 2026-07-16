@@ -1,4 +1,5 @@
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { installInProcessTmux } = require('./helpers/fakeTmux');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -10,6 +11,9 @@ const {
   readRoleTicket,
   toFoldersSnapshot,
   ensureOperatorTopic,
+  ensureRoleTopics,
+  resolveRolePaneTarget,
+  redirectToRole,
   postOperatorContext,
   openSubjectAndRecord,
   standingTopicTargets,
@@ -18,6 +22,7 @@ const {
   main,
 } = require('../out/tools/telegram-front-desk-bot');
 const { readRecord: readTopicRecord } = require('../out/concierge/blTopicStore');
+const { readRoleTopicMap } = require('../out/concierge/roleTopicMapStore');
 
 // parseNextSseRecord's own tests live in telegramFrontDeskBotCore.test.js -
 // its implementation moved there (the testable core); this file re-exports
@@ -359,6 +364,132 @@ test('BL-358: a failed create returns undefined, never a fabricated topicId', as
   const postFn = async () => ({ ok: false, status: 500, json: { description: 'simulated failure' } });
   const topicId = await ensureOperatorTopic(root, 'fake-token', 'fake-chat', postFn);
   assert.equal(topicId, undefined);
+});
+
+// ── ensureRoleTopics (BL-425 slice 1 provision-role-topics-01) ───────────
+
+function fakeCreateSequential(startId = 100) {
+  const calls = [];
+  let nextId = startId;
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    const id = nextId;
+    nextId += 1;
+    return { ok: true, status: 200, json: { ok: true, result: { message_thread_id: id, name: JSON.parse(body).name } } };
+  };
+  return { postFn, calls };
+}
+
+test('BL-425 provision-role-topics-01: creates a topic for every role and records each id, named for the role', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeCreateSequential();
+  await ensureRoleTopics(root, 'fake-token', 'fake-chat', ['coder', 'QA', 'coordinator'], postFn);
+  assert.equal(calls.length, 3);
+  assert.deepEqual(
+    calls.map((c) => JSON.parse(c.body).name),
+    ['coder', 'QA', 'coordinator']
+  );
+  const map = readRoleTopicMap(root);
+  assert.equal(typeof map.coder, 'number');
+  assert.equal(typeof map.QA, 'number');
+  assert.equal(typeof map.coordinator, 'number');
+});
+
+test('BL-425: a role already bound in the map is reused, never creating a second topic for it', async () => {
+  const root = mkTmpRoot();
+  fs.mkdirSync(path.join(root, '.swarmforge', 'operator'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.swarmforge', 'operator', 'role-topic-map.json'), JSON.stringify({ coder: 42 }));
+  const { postFn, calls } = fakeCreateSequential();
+  await ensureRoleTopics(root, 'fake-token', 'fake-chat', ['coder', 'QA'], postFn);
+  assert.equal(calls.length, 1);
+  assert.equal(JSON.parse(calls[0].body).name, 'QA');
+  const map = readRoleTopicMap(root);
+  assert.equal(map.coder, 42);
+});
+
+test('BL-425: a failed create for one role is logged and skipped, never blocking the remaining roles', async () => {
+  const root = mkTmpRoot();
+  let call = 0;
+  const postFn = async (url, body) => {
+    call += 1;
+    if (call === 1) {
+      return { ok: false, status: 500, json: { description: 'simulated failure' } };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: { message_thread_id: 200 + call, name: JSON.parse(body).name } } };
+  };
+  await ensureRoleTopics(root, 'fake-token', 'fake-chat', ['coder', 'QA'], postFn);
+  const map = readRoleTopicMap(root);
+  assert.equal(map.coder, undefined);
+  assert.equal(typeof map.QA, 'number');
+});
+
+test('BL-425: ensureRoleTopics defaults to provisioning all 8 swarm roles when no role list is given', async () => {
+  const root = mkTmpRoot();
+  const { calls, postFn } = fakeCreateSequential();
+  await ensureRoleTopics(root, 'fake-token', 'fake-chat', undefined, postFn);
+  assert.equal(calls.length, 8);
+});
+
+// ── resolveRolePaneTarget / redirectToRole (BL-425 REDIRECT execution) ───
+
+function writeSwarmRoleFixture(root, role) {
+  const stateDir = path.join(root, '.swarmforge');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'tmux-socket'), '/tmp/fake.sock');
+  fs.writeFileSync(path.join(stateDir, 'sessions.tsv'), `1\t${role}\tswarmforge-${role}\t${role}\tclaude\n`);
+}
+
+test('BL-425: resolveRolePaneTarget resolves the role\'s own session:window.pane target on the swarm socket', () => {
+  const root = mkTmpRoot();
+  writeSwarmRoleFixture(root, 'coder');
+  const fake = installInProcessTmux([{ subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' }]);
+  try {
+    const resolved = resolveRolePaneTarget(root, 'coder');
+    assert.deepEqual(resolved, { socketPath: '/tmp/fake.sock', target: 'swarmforge-coder:coder.1' });
+  } finally {
+    fake.restore();
+  }
+});
+
+test('BL-425: resolveRolePaneTarget returns undefined when the swarm has no tmux socket recorded', () => {
+  const root = mkTmpRoot();
+  assert.equal(resolveRolePaneTarget(root, 'coder'), undefined);
+});
+
+test('BL-425: resolveRolePaneTarget returns undefined for a role absent from sessions.tsv', () => {
+  const root = mkTmpRoot();
+  writeSwarmRoleFixture(root, 'coder');
+  assert.equal(resolveRolePaneTarget(root, 'cleaner'), undefined);
+});
+
+test('BL-425: redirectToRole injects the text into the addressed role\'s pane as a verified nudge, targeting only that role', async () => {
+  const root = mkTmpRoot();
+  writeSwarmRoleFixture(root, 'coder');
+  const fake = installInProcessTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: '$ ' },
+    { subcommand: 'send-keys', exitCode: 0, stdout: '' },
+  ]);
+  try {
+    await redirectToRole(root, 'coder', 'focus on the edge case first');
+    const sendCalls = fake.calls().filter((args) => args.includes('send-keys'));
+    assert.ok(sendCalls.length > 0, 'expected at least one send-keys call');
+    assert.ok(
+      sendCalls.some((args) => args.includes('focus on the edge case first')),
+      'expected the redirect text to be typed into the pane'
+    );
+    assert.ok(
+      sendCalls.every((args) => args[args.indexOf('-t') + 1] === 'swarmforge-coder:coder.1'),
+      "must target only the addressed role's pane"
+    );
+  } finally {
+    fake.restore();
+  }
+});
+
+test('BL-425: redirectToRole degrades quietly (no throw) when the role has no live pane to resolve', async () => {
+  const root = mkTmpRoot();
+  await assert.doesNotReject(() => redirectToRole(root, 'coder', 'anything'));
 });
 
 // ── toFoldersSnapshot (thin fs adapter) ───────────────────────────────────

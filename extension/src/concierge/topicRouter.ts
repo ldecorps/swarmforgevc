@@ -11,6 +11,7 @@
 // is its own layer, never folded into either.
 import { SwarmEvent } from '../events/swarmEventStream';
 import { InlineKeyboardButton } from '../notify/telegramClient';
+import { keyForId } from '../util/inverseLookup';
 
 // backlogId -> Telegram forum topic id (message_thread_id) - the reverse
 // key direction of the Front Desk Bot's own {topicId: subjectId} map
@@ -25,13 +26,12 @@ export function topicNameForItem(backlogId: string, title: string): string {
 // BL-298: the inverse of the forward backlogId->topicId map - given a
 // topic id (from an inbound reply's message_thread_id), which backlog item
 // (if any) owns that topic. Mirrors telegramFrontDeskBotCore.ts's own
-// topicForSubject reverse-lookup shape.
+// topicForSubject reverse-lookup shape. Delegates to the shared keyForId
+// (util/inverseLookup.ts) rather than carrying its own copy of the same
+// 4-line body - jscpd flagged this and roleTopicMapStore.ts's roleForTopic
+// as an exact clone (BL-425 cleaner pass).
 export function backlogForTopic(topicMap: BacklogTopicMap, topicId: number | undefined): string | undefined {
-  if (topicId === undefined) {
-    return undefined;
-  }
-  const found = Object.entries(topicMap).find(([, tid]) => tid === topicId);
-  return found ? found[0] : undefined;
+  return keyForId(topicMap, topicId);
 }
 
 // BL-322: a topic opener is a HEADER, not a spec dump - each derived field
