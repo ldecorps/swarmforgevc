@@ -6,7 +6,9 @@ const { execFileSync } = require('node:child_process');
 const { main, parseArgs } = require('../out/tools/record-qa-bounce');
 const { readQaBounceRecords } = require('../out/quality/qaBounceStore');
 
-// BL-454: the go-forward writer CLI QA runs at bounce time.
+// BL-454: the go-forward writer CLI QA runs at bounce time. Flag contract
+// (--ticket/--role/--type/--class/--commit) matches swarmforge/roles/
+// QA.prompt's own caller exactly (specifier commit dc056df79c).
 
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'record-qa-bounce.js');
 
@@ -42,6 +44,10 @@ function mkRepo() {
   return root;
 }
 
+function flagArgs({ ticket = 'BL-340', role = 'coder', type = 'feature', cls = 'behavior', commit = 'abc1234567' } = {}) {
+  return ['--ticket', ticket, '--role', role, '--type', type, '--class', cls, '--commit', commit];
+}
+
 // Runs the REAL main() in-process against a real fixture repo (the CLI
 // main()-thin-wrapper rule) - stubs process.cwd (resolveCliMainWorktreeContext
 // reads it) and process.argv, restoring both in a `finally` so a later test
@@ -74,8 +80,18 @@ function runCliSubprocess(root, args) {
 
 // ── parseArgs (in-process validation) ────────────────────────────────────
 
-test('parseArgs accepts a fully valid invocation', () => {
-  assert.deepEqual(parseArgs(['BL-340', 'coder', 'feature', 'behavior', 'abc1234567']), {
+test('parseArgs accepts a fully valid invocation, flags in the QA.prompt order', () => {
+  assert.deepEqual(parseArgs(flagArgs()), {
+    ticket: 'BL-340',
+    producingRole: 'coder',
+    ticketType: 'feature',
+    failureClass: 'behavior',
+    commit: 'abc1234567',
+  });
+});
+
+test('parseArgs accepts flags in any order', () => {
+  assert.deepEqual(parseArgs(['--commit', 'abc1234567', '--class', 'behavior', '--ticket', 'BL-340', '--type', 'feature', '--role', 'coder']), {
     ticket: 'BL-340',
     producingRole: 'coder',
     ticketType: 'feature',
@@ -85,34 +101,42 @@ test('parseArgs accepts a fully valid invocation', () => {
 });
 
 test('parseArgs upcases a lowercase ticket id', () => {
-  assert.equal(parseArgs(['bl-340', 'coder', 'feature', 'behavior', 'abc1234567']).ticket, 'BL-340');
+  assert.equal(parseArgs(flagArgs({ ticket: 'bl-340' })).ticket, 'BL-340');
 });
 
 test('parseArgs rejects a ticket id with no BL- prefix', () => {
-  assert.equal(parseArgs(['340', 'coder', 'feature', 'behavior', 'abc1234567']), null);
+  assert.equal(parseArgs(flagArgs({ ticket: '340' })), null);
 });
 
 test('parseArgs rejects a producingRole outside the closed set', () => {
-  assert.equal(parseArgs(['BL-340', 'QA', 'feature', 'behavior', 'abc1234567']), null);
+  assert.equal(parseArgs(flagArgs({ role: 'QA' })), null);
 });
 
 test('parseArgs rejects a ticketType outside the closed set', () => {
-  assert.equal(parseArgs(['BL-340', 'coder', 'spike', 'behavior', 'abc1234567']), null);
+  assert.equal(parseArgs(flagArgs({ type: 'spike' })), null);
 });
 
 test('parseArgs rejects a failureClass outside the closed set', () => {
-  assert.equal(parseArgs(['BL-340', 'coder', 'feature', 'scope', 'abc1234567']), null);
+  assert.equal(parseArgs(flagArgs({ cls: 'scope' })), null);
 });
 
 test('parseArgs rejects a missing commit', () => {
-  assert.equal(parseArgs(['BL-340', 'coder', 'feature', 'behavior']), null);
+  assert.equal(parseArgs(['--ticket', 'BL-340', '--role', 'coder', '--type', 'feature', '--class', 'behavior']), null);
+});
+
+test('parseArgs rejects an unrecognized flag', () => {
+  assert.equal(parseArgs(['--bogus', 'x', '--role', 'coder', '--type', 'feature', '--class', 'behavior', '--commit', 'abc1234567']), null);
+});
+
+test('parseArgs rejects a flag with no following value', () => {
+  assert.equal(parseArgs(['--ticket', 'BL-340', '--role']), null);
 });
 
 // ── end-to-end: recording a bounce (qa-bounce-01) ────────────────────────
 
 test('BL-454: recording a bounce captures its producing role, ticket type, and failure class', async () => {
   const root = mkRepo();
-  const result = await runCli(root, ['BL-340', 'coder', 'feature', 'behavior', 'abc1234567']);
+  const result = await runCli(root, flagArgs());
   assert.equal(result.recorded, true);
   const records = readQaBounceRecords(root);
   assert.equal(records.length, 1);
@@ -127,8 +151,8 @@ test('BL-454: recording a bounce captures its producing role, ticket type, and f
 
 test('BL-454: recording the same bounce twice does not double-count it', async () => {
   const root = mkRepo();
-  await runCli(root, ['BL-340', 'coder', 'feature', 'behavior', 'abc1234567']);
-  const second = await runCli(root, ['BL-340', 'coder', 'feature', 'behavior', 'deadbeef00']);
+  await runCli(root, flagArgs());
+  const second = await runCli(root, flagArgs({ commit: 'deadbeef00' }));
   assert.equal(second.recorded, false);
   assert.equal(readQaBounceRecords(root).length, 1);
 });
@@ -140,7 +164,7 @@ test('an invalid invocation exits non-zero with a usage message, never a raw cra
   const previousExitCode = process.exitCode;
   try {
     process.exitCode = undefined;
-    const result = await runCli(root, ['not-a-ticket']);
+    const result = await runCli(root, ['--ticket', 'not-a-ticket']);
     assert.equal(result, null);
     assert.equal(process.exitCode, 1);
   } finally {
@@ -153,7 +177,7 @@ test('an invalid invocation exits non-zero with a usage message, never a raw cra
 // logic.
 test('the compiled CLI runs standalone as a subprocess and produces the same result', () => {
   const root = mkRepo();
-  const result = runCliSubprocess(root, ['BL-340', 'coder', 'feature', 'behavior', 'abc1234567']);
+  const result = runCliSubprocess(root, flagArgs());
   assert.equal(result.recorded, true);
   assert.equal(readQaBounceRecords(root).length, 1);
 });
