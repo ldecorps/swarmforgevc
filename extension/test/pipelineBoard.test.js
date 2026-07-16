@@ -43,6 +43,26 @@ test('computePipelineBoard: no role-held tickets renders no grid rows', () => {
   assert.deepEqual(computePipelineBoard({}, [], {}).rows, []);
 });
 
+// ── BL-464 board-authoritative-stage-02/03: a ticket observed at two roles
+// at once (a mid-transition scrape's own double-row defect) collapses to
+// exactly one row, at the MORE DOWNSTREAM role - never two rows, never the
+// stale/upstream one. ──────────────────────────────────────────────────
+
+test('BL-464: a ticket held under two roles at once collapses to exactly one row, at the more downstream role', () => {
+  const { rows } = computePipelineBoard({ coder: ['BL-460'], cleaner: ['BL-460'] }, [], {});
+  assert.deepEqual(rows, [{ id: 'BL-460', column: 'cleaner', epic: undefined, slug: '' }]);
+});
+
+test('BL-464: the double-role collapse is independent of which role the input map lists first', () => {
+  const { rows } = computePipelineBoard({ cleaner: ['BL-460'], coder: ['BL-460'] }, [], {});
+  assert.deepEqual(rows, [{ id: 'BL-460', column: 'cleaner', epic: undefined, slug: '' }]);
+});
+
+test('BL-464: a ticket held under two roles alongside other distinct tickets still yields one row per distinct id', () => {
+  const { rows } = computePipelineBoard({ coder: ['BL-1', 'BL-460'], cleaner: ['BL-460', 'BL-2'] }, [], {});
+  assert.deepEqual(rows.map((r) => `${r.id}:${r.column}`).sort(), ['BL-1:coder', 'BL-2:cleaner', 'BL-460:cleaner']);
+});
+
 // BL-455 pipeline-board-epic-01: rows sharing an epic sort together, and
 // no-epic rows sort together too (as one bucket) - always LAST, deterministic
 // regardless of iteration order.

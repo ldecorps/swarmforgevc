@@ -142,6 +142,41 @@ export function readPipelineStages(targetPath: string): PipelineStage[] {
   }));
 }
 
+// BL-464: the pipeline board's AUTHORITATIVE ticket->stage source, replacing
+// readInProcessTicketIds/readPipelineStages's own heldTicketIds as the
+// board's data source (readPipelineStages itself stays unchanged - the VS
+// Code panel's own currentStageLabel/findLiveHolder still use it). This is a
+// bot-owned, machine-local file (gitignored under .swarmforge/, same
+// posture as every other file in that directory) written EXCLUSIVELY by the
+// coordinator's own `bb swarmforge/scripts/pipeline_stage_cli.bb
+// <project-root> sync` (swarmforge/roles/coordinator.prompt) - a real
+// production writer, never a fixture-only/dark store. Tolerant of a
+// missing/corrupt file (no sync has ever run yet, or a torn write mid-
+// rewrite) - an empty map degrades to "no active ticket known", never a
+// crash or a fabricated location.
+export function readTicketStageMap(targetPath: string): Record<string, string> {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(targetPath, SWARMFORGE_DIR, 'board', 'ticket-stage-map.json'), 'utf8')) as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+// Pure: inverts the authoritative {ticketId: role} map into the
+// {role: ticketId[]} shape computePipelineBoard already expects
+// (pipelineBoard.ts) - trivially one role per ticket id by construction
+// (a plain object key can only ever hold one value), which is what
+// structurally closes the double-row defect at its source; computePipeline
+// Board's own dedup (BL-464) is the belt-and-braces guarantee for whatever
+// reaches it regardless of the source.
+export function invertTicketStageToRoleHeldTickets(stageMap: Record<string, string>): Record<string, string[]> {
+  const byRole: Record<string, string[]> = {};
+  for (const [ticketId, role] of Object.entries(stageMap)) {
+    (byRole[role] ??= []).push(ticketId);
+  }
+  return byRole;
+}
+
 export function currentStageLabel(stages: PipelineStage[]): string {
   const active = stages.filter((s) => s.status === 'active');
   if (active.length === 0) {

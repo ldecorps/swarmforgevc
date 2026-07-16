@@ -16,6 +16,15 @@ const path = require('node:path');
 const EXT_OUT = path.join(__dirname, '..', '..', '..', 'extension', 'out');
 const { runConciergeTick } = require(path.join(EXT_OUT, 'concierge', 'conciergeTick'));
 const { renderPipelineBoard, renderPipelineBoardBody } = require(path.join(EXT_OUT, 'concierge', 'pipelineBoard'));
+// BL-464: "the pipeline board is rendered" is VERBATIM identical to this
+// file's own step text below - since this file registers FIRST (index.js
+// order), the registry's first-match-wins resolve() means this handler
+// owns the text for BOTH tickets' scenarios. ctx.fixture (set only by THIS
+// file's own Given steps) distinguishes the two - a BL-464 scenario's ctx
+// never has it, so it delegates rather than crashing on
+// ctx.fixture.adapters of undefined (mirrors
+// aDroppedMessageMustNotParkTheOffsetSteps.js's own identical-collision fix).
+const { renderPipelineBoardForFixtureRoot } = require('./bl464PipelineBoardAuthoritativeStageSourceSteps');
 
 // BL-462: every scenario below drives runConciergeTick with nowMs=0 (see the
 // "the pipeline board is rendered"/"the concierge tick runs again" steps),
@@ -166,6 +175,12 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the pipeline board is rendered$/, async (ctx) => {
+    if (ctx.fixture === undefined) {
+      // BL-464's own ctx shape (its Given steps never set ctx.fixture) -
+      // see this file's own top-of-file comment.
+      renderPipelineBoardForFixtureRoot(ctx);
+      return;
+    }
     await runConciergeTick(ctx.fixture.adapters, 0);
   });
 
