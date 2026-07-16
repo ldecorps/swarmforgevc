@@ -38,6 +38,23 @@ export default defineConfig({
       forks: {
         maxForks: MAX_WORKERS,
         execArgv: [`--max-old-space-size=${PER_WORKER_HEAP_MB}`],
+        // BL-445: profiling (not guessing) found the suite's real pole wasn't
+        // test-execution parallelism (MAX_WORKERS above) - it was Vitest's
+        // default per-FILE isolation, which resets the module registry and
+        // environment before every one of the 290+ files even though only 6
+        // workers run them. That reset dominated the "prepare"/"collect"
+        // phases (~35s combined of a ~25s run's own reporter breakdown);
+        // disabling it cut those phases to under 1s combined with no change
+        // to worker count. Safe here because the suite already restores every
+        // stub/global it touches (see engineering.prompt's fake-cwd/HOME
+        // rule) rather than relying on Vitest's per-file reset for cleanup;
+        // any module that keeps deliberate cross-test cache state already
+        // ships its own explicit test-reset export (e.g.
+        // resetLoginShellPathCacheForTests, __resetIconStickersCacheForTest).
+        // Stryker's vitest-runner hardcodes pool:'threads' and reads
+        // poolOptions.threads instead, so mutation runs are unaffected, same
+        // as MAX_WORKERS/PER_WORKER_HEAP_MB above.
+        isolate: false,
       },
     },
     // Keep Vitest's DEFAULT include: an explicit include gets mangled to [] by
