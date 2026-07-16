@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 16, 2026 (BL-438 QA bounce — needs_human now sources the coordinator's own awaiting-answer.json, and the fleet console actually reads the published field)
+**Last Updated:** July 16, 2026 (BL-432 — auto-tuned intake throttle closes the observe/diagnose/act loop on the coordinator's active_backlog_max_depth)
 
 ## Overview
 
@@ -401,6 +401,22 @@ node extension/out/tools/suboptimality-verdict-line.js
 ```
 
 `briefing_email_lib.bb`'s `:suboptimality-verdict-line` optional section (`swarmforge/scripts/handoffd.bb`) wires this CLI into the daily briefing the same way every other optional section works — a blank block (no verdict) leaves the briefing untouched rather than appending a fabricated "all clear" line.
+
+#### Auto-tuned intake throttle (BL-432, epic BL-429 slice 3 — ACT, the mandatory wiring slice)
+
+BL-430 (observe) and BL-431 (diagnose) can both land fully green while the coordinator still promotes at full depth into a pipeline BL-431 has just diagnosed as thrashing — observe + diagnose with no act is a report, not a loop. This slice closes it, automating the ONE knob Article 3.5's circuit breaker already sanctioned by rule but that nothing previously moved in code: the coordinator's `active_backlog_max_depth`.
+
+`reworkDiagnosis.ts` classifies an `auto-tunable` verdict into a two-level `ThrottleSeverity`: `degraded` once the rework rate crosses 2x baseline (BL-431's own trigger), escalating to `severe` if it keeps climbing to 4x baseline. `emit-throttle-recommendation.ts` (`node extension/out/tools/emit-throttle-recommendation.js <target-repo-path>`) maps that severity to a recommended cap — `1` for degraded, `0` for severe, `null` (no recommendation) once the diagnosis clears or the verdict is escalate-only — and persists it to `.swarmforge/coordinator/throttle-recommendation.json`, appending a line to `.swarmforge/coordinator/throttle-changes.jsonl` only when the recommended cap actually changes (a steady-state refresh writes no log spam).
+
+The coordinator's promotion path no longer reads `active_backlog_max_depth` from `swarmforge.conf` directly. It now resolves the **effective** cap via:
+
+```sh
+bb swarmforge/scripts/effective_backlog_depth_cli.bb <project-root>
+```
+
+which refreshes the throttle recommendation fresh on every call (never trusts a periodic sweep that might be stale between coordinator wake-ups), then prints `min(configured cap, recommended cap)` — `backlog_depth_lib.bb`'s `effective-max-depth`. The recommendation only ever *lowers* the effective cap, never raises it above the human-configured value; a configured cap of `-1` (no ceiling) is not run through a bare `min` (a negative sentinel would otherwise always "win") — it resolves straight to the recommendation instead, so an unlimited cap can still be temporarily throttled during a severe diagnosis. When the diagnosis clears, the recommendation lifts and the effective cap returns to the configured value on the very next call — the swarm is never permanently stuck throttled. A failed refresh (CLI not yet compiled, `node` missing) degrades to a logged skip and falls through to whatever recommendation is already on disk, the same shell-and-degrade posture `handoffd.bb`'s other `emit-*.js` callers already use.
+
+This slice moves only this one knob — it does not self-generate tickets, respawn a role, reroute work, or touch code; those stay BL-431's escalate-only recommendations for a human, exactly the epic's safety contract (BL-429).
 
 ---
 
