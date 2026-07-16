@@ -12,6 +12,11 @@ const {
   computeRecertBatch,
   parseRecertEmailTo,
   readRecertEmailTo,
+  currentRecertScenarioId,
+  isScenarioUpForRecert,
+  recordRecertValidate,
+  queueRecertAmendProposal,
+  queueRecertDeleteProposal,
 } = require('../out/docs/recertificationStore');
 const { main } = require('../out/tools/generate-recert-batch');
 
@@ -242,4 +247,116 @@ test('the compiled CLI runs standalone as a subprocess and produces the same res
   assert.equal(typeof data.schemaVersion, 'number');
   assert.equal(data.batch.length, 1);
   assert.equal(data.batch[0].id, 'BL-901/scen-01');
+});
+
+// ── BL-450: the standing Recert topic's own first live writers ───────────
+// Reuses mkGenerateRecertBatchFixture's own shape: one ticket, one tagged
+// scenario "BL-901/scen-01", never reviewed - the current oldest (and only)
+// scenario up for recertification.
+
+const NOW_MS = Date.parse('2026-07-16T12:00:00Z');
+
+test('currentRecertScenarioId returns the oldest-unreviewed scenario id', () => {
+  const root = mkGenerateRecertBatchFixture();
+  assert.equal(currentRecertScenarioId(root, NOW_MS), 'BL-901/scen-01');
+});
+
+test('currentRecertScenarioId returns undefined when nothing needs recertification', () => {
+  const root = mkTmp();
+  assert.equal(currentRecertScenarioId(root, NOW_MS), undefined);
+});
+
+test('isScenarioUpForRecert is true for the current oldest scenario and false for any other id', () => {
+  const root = mkGenerateRecertBatchFixture();
+  assert.equal(isScenarioUpForRecert(root, 'BL-901/scen-01', NOW_MS), true);
+  assert.equal(isScenarioUpForRecert(root, 'BL-999-ghost-01', NOW_MS), false);
+});
+
+test('recordRecertValidate advances the scenario\'s last-reviewed timestamp when it is up for recert', () => {
+  const root = mkGenerateRecertBatchFixture();
+  const applied = recordRecertValidate(root, 'BL-901/scen-01', NOW_MS);
+  assert.equal(applied, true);
+  const store = readRecertStore(root);
+  assert.equal(store.scenarios['BL-901/scen-01'].lastReviewedIso, new Date(NOW_MS).toISOString());
+});
+
+// Break-then-fix (engineering BL-383 disk-input rule): confirms the write
+// really lands on disk, not merely that the pure confirmScenario logic ran.
+test('recordRecertValidate\'s write is load-bearing - the store on disk actually changes', () => {
+  const root = mkGenerateRecertBatchFixture();
+  const before = readRecertStore(root);
+  assert.equal(before.scenarios['BL-901/scen-01'], undefined);
+
+  recordRecertValidate(root, 'BL-901/scen-01', NOW_MS);
+
+  const after = readRecertStore(root);
+  assert.notEqual(after.scenarios['BL-901/scen-01'], undefined);
+  assert.equal(after.scenarios['BL-901/scen-01'].lastReviewedIso, new Date(NOW_MS).toISOString());
+});
+
+test('recordRecertValidate applies nothing and returns false for a scenario not currently up for recert', () => {
+  const root = mkGenerateRecertBatchFixture();
+  const applied = recordRecertValidate(root, 'BL-999-ghost-01', NOW_MS);
+  assert.equal(applied, false);
+  assert.deepEqual(readRecertStore(root).scenarios, {});
+});
+
+test('queueRecertAmendProposal queues an "update" proposal carrying the new text, and returns true', () => {
+  const root = mkGenerateRecertBatchFixture();
+  const queued = queueRecertAmendProposal(root, 'BL-901/scen-01', 'Given a revised precondition', NOW_MS);
+  assert.equal(queued, true);
+
+  const file = path.join(root, '.swarmforge', 'recert_proposals', '2026-07.jsonl');
+  const lines = fs.readFileSync(file, 'utf-8').trim().split('\n');
+  assert.equal(lines.length, 1);
+  const proposal = JSON.parse(lines[0]);
+  assert.equal(proposal.scenarioId, 'BL-901/scen-01');
+  assert.equal(proposal.outcome, 'update');
+  assert.equal(proposal.newText, 'Given a revised precondition');
+});
+
+test('queueRecertAmendProposal queues nothing and returns false for a scenario not currently up for recert', () => {
+  const root = mkGenerateRecertBatchFixture();
+  const queued = queueRecertAmendProposal(root, 'BL-999-ghost-01', 'anything', NOW_MS);
+  assert.equal(queued, false);
+  assert.ok(!fs.existsSync(path.join(root, '.swarmforge', 'recert_proposals', '2026-07.jsonl')));
+});
+
+test('queueRecertDeleteProposal queues a "delete" proposal with no newText, and returns true', () => {
+  const root = mkGenerateRecertBatchFixture();
+  const queued = queueRecertDeleteProposal(root, 'BL-901/scen-01', NOW_MS);
+  assert.equal(queued, true);
+
+  const file = path.join(root, '.swarmforge', 'recert_proposals', '2026-07.jsonl');
+  const proposal = JSON.parse(fs.readFileSync(file, 'utf-8').trim());
+  assert.equal(proposal.scenarioId, 'BL-901/scen-01');
+  assert.equal(proposal.outcome, 'delete');
+  assert.equal(proposal.newText, undefined);
+});
+
+test('queueRecertDeleteProposal queues nothing and returns false for a scenario not currently up for recert', () => {
+  const root = mkGenerateRecertBatchFixture();
+  const queued = queueRecertDeleteProposal(root, 'BL-999-ghost-01', NOW_MS);
+  assert.equal(queued, false);
+  assert.ok(!fs.existsSync(path.join(root, '.swarmforge', 'recert_proposals', '2026-07.jsonl')));
+});
+
+test('after validating the current oldest scenario, the queue advances to the next-oldest scenario', () => {
+  const root = mkTmp();
+  git(root, ['init', '-q']);
+  git(root, ['config', 'user.email', 't@t']);
+  git(root, ['config', 'user.name', 't']);
+  mkdirp(path.join(root, 'backlog', 'active'));
+  fs.writeFileSync(
+    path.join(root, 'backlog', 'active', 'BL-902.yaml'),
+    'id: BL-902\ntitle: t\nstatus: active\nmilestone: M1\nacceptance: |\n  # BL-902 scen-01\n  Scenario: first\n    Given a\n\n  # BL-902 scen-02\n  Scenario: second\n    Given b\n'
+  );
+  git(root, ['add', '-A']);
+  git(root, ['commit', '-q', '-m', 'init']);
+  mkdirp(path.join(root, '.swarmforge'));
+  fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), `specifier\tmaster\t${root}\tswarmforge-specifier\tSpecifier\tclaude\ttask\n`);
+
+  assert.equal(currentRecertScenarioId(root, NOW_MS), 'BL-902/scen-01');
+  recordRecertValidate(root, 'BL-902/scen-01', NOW_MS);
+  assert.equal(currentRecertScenarioId(root, NOW_MS), 'BL-902/scen-02', 'expected the just-validated scenario to leave the front of the queue');
 });

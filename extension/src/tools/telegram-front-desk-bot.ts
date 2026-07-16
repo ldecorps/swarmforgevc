@@ -93,12 +93,22 @@ import {
   decideEnsureApprovalsTopicAction,
   APPROVALS_TOPIC_NAME,
   APPROVALS_SUBJECT_ID,
+  decideEnsureRecertTopicAction,
+  RECERT_TOPIC_NAME,
+  RECERT_SUBJECT_ID,
   SttResult,
   TtsResult,
   ReplyRelayAdapters,
 } from './telegramFrontDeskBotCore';
 import { backlogForTopic } from '../concierge/topicRouter';
 import { recordApprovalReply, recordRejectionReply } from '../concierge/pendingApprovalReply';
+import {
+  computeRecertBatch,
+  isScenarioUpForRecert,
+  recordRecertValidate,
+  queueRecertAmendProposal,
+  queueRecertDeleteProposal,
+} from '../docs/recertificationStore';
 import { readBacklogTopicMap, writeBacklogTopicMap, dropBacklogTopicMapping } from '../concierge/backlogTopicMapStore';
 import { ALL_SWARM_ROLES, readRoleTopicMap, writeRoleTopicMap } from '../concierge/roleTopicMapStore';
 import { runConciergeTick, ConciergeTickAdapters, BacklogFoldersSnapshot, TickState } from '../concierge/conciergeTick';
@@ -189,6 +199,30 @@ function readPendingButtonActions(targetPath: string): Record<string, 'reject' |
 function writePendingButtonActions(targetPath: string, actions: Record<string, 'reject' | 'amend'>): void {
   fs.mkdirSync(path.dirname(pendingButtonActionsPath(targetPath)), { recursive: true });
   fs.writeFileSync(pendingButtonActionsPath(targetPath), JSON.stringify(actions));
+}
+
+// BL-450: {scenarioId} | {} - which scenario's delete is currently awaiting
+// an explicit in-chat confirmation (BL-150 recert-04), if any. Bot-owned,
+// machine-local, gitignored, same "no durability promise beyond one process
+// lifetime" posture as telegram-pending-button-actions.json above - a
+// restart mid-confirmation simply forgets it and the human just replies
+// "delete <id>" again.
+function pendingRecertDeletePath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'telegram-pending-recert-delete.json');
+}
+
+function readPendingRecertDelete(targetPath: string): string | undefined {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(pendingRecertDeletePath(targetPath), 'utf8')) as { scenarioId?: string };
+    return parsed.scenarioId;
+  } catch {
+    return undefined;
+  }
+}
+
+function writePendingRecertDelete(targetPath: string, scenarioId: string | undefined): void {
+  fs.mkdirSync(path.dirname(pendingRecertDeletePath(targetPath)), { recursive: true });
+  fs.writeFileSync(pendingRecertDeletePath(targetPath), JSON.stringify(scenarioId ? { scenarioId } : {}));
 }
 
 // BL-426 slice 1: {subjectId: true} - which subject's NEXT reply should be
@@ -380,6 +414,29 @@ export async function ensureApprovalsTopic(targetPath: string, botToken: string,
     return undefined;
   }
   topicMap[topicMapKey(created.messageThreadId)] = APPROVALS_SUBJECT_ID;
+  writeTopicMap(targetPath, topicMap);
+  return created.messageThreadId;
+}
+
+// BL-450: the Recert-topic twin of ensureApprovalsTopic above - identical
+// reuse-or-create/idempotent-across-restarts shape, sharing the SAME
+// {topicId: subjectId} map, just keyed by its own reserved subject id.
+// Called once BEFORE the poll loop starts (same ordering rationale as
+// ensureOperatorTopic) and wired straight into recertPostingSync.ts's
+// RecertPostingAdapters.ensureRecertTopic - the ONE standing topic every
+// posted scenario and every reply routes through, never a second notion.
+export async function ensureRecertTopic(targetPath: string, botToken: string, chatId: string, postFn?: TelegramPostFn): Promise<number | undefined> {
+  const topicMap = readTopicMap(targetPath);
+  const decision = decideEnsureRecertTopicAction(topicMap);
+  if (decision.kind === 'reuse') {
+    return decision.topicId;
+  }
+  const created = await createForumTopic(botToken, chatId, RECERT_TOPIC_NAME, postFn);
+  if (!created.success || created.messageThreadId === undefined) {
+    process.stderr.write(`ensureRecertTopic: failed to create the Recert topic: ${created.error ?? 'no messageThreadId returned'}\n`);
+    return undefined;
+  }
+  topicMap[topicMapKey(created.messageThreadId)] = RECERT_SUBJECT_ID;
   writeTopicMap(targetPath, topicMap);
   return created.messageThreadId;
 }
@@ -643,6 +700,24 @@ function buildPollAdapters(
     recordApprovalReply: (backlogId) => Promise.resolve(recordApprovalReply(targetPath, backlogId)),
     recordRejectionReply: (backlogId, reason) => Promise.resolve(recordRejectionReply(targetPath, backlogId, reason)),
     notifyApprovalsTopic: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then((r) => r.success),
+    // BL-450: recertificationStore.ts's own read-check-write functions -
+    // the FIRST live callers of confirmScenario/writeRecertStore/
+    // appendRecertProposal (recertification.ts had zero production callers
+    // before this ticket).
+    isScenarioUpForRecert: (scenarioId) => Promise.resolve(isScenarioUpForRecert(targetPath, scenarioId)),
+    recordRecertValidate: (scenarioId) => Promise.resolve(recordRecertValidate(targetPath, scenarioId)),
+    queueRecertAmendProposal: (scenarioId, newText) => Promise.resolve(queueRecertAmendProposal(targetPath, scenarioId, newText)),
+    queueRecertDeleteProposal: (scenarioId) => Promise.resolve(queueRecertDeleteProposal(targetPath, scenarioId)),
+    getPendingRecertDelete: () => Promise.resolve(readPendingRecertDelete(targetPath)),
+    setPendingRecertDelete: (scenarioId) => {
+      writePendingRecertDelete(targetPath, scenarioId);
+      return Promise.resolve();
+    },
+    clearPendingRecertDelete: () => {
+      writePendingRecertDelete(targetPath, undefined);
+      return Promise.resolve();
+    },
+    notifyRecertTopic: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then((r) => r.success),
     getPendingButtonAction: (backlogId) => Promise.resolve(readPendingButtonActions(targetPath)[backlogId]),
     // BL-426 slice 1: absent (openaiApiKey unset) means "voice not wired" -
     // the exact pre-BL-426 behavior, same optional-adapter convention as
@@ -1043,6 +1118,9 @@ function standingTopicIconKeyFor(subjectId: string): StandingTopicTarget['iconKe
   if (subjectId === APPROVALS_SUBJECT_ID) {
     return 'approvals';
   }
+  if (subjectId === RECERT_SUBJECT_ID) {
+    return 'recert';
+  }
   return 'support/intake';
 }
 
@@ -1057,6 +1135,20 @@ export function standingTopicTargets(targetPath: string): StandingTopicTarget[] 
     targets.push({ id: subjectId, topicId, iconKey: standingTopicIconKeyFor(subjectId) });
   }
   return targets;
+}
+
+// Shared postMessage/editMessage pair for a plain-text edit-in-place standing
+// topic (ApprovalsRosterAdapters, RecertPostingAdapters) - both boil down to
+// the same sendTelegramMessage/editMessageText calls, only the topic-specific
+// ensure* differs.
+function plainTextEditInPlaceAdapters(
+  botToken: string,
+  chatId: string
+): { postMessage: (topicId: number, text: string) => Promise<number | undefined>; editMessage: (topicId: number, messageId: number, text: string) => Promise<boolean> } {
+  return {
+    postMessage: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then((r) => (r.success ? r.messageId : undefined)),
+    editMessage: (topicId, messageId, text) => editMessageText(botToken, chatId, messageId, text).then((r) => r.success),
+  };
 }
 
 function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId: string): ConciergeTickAdapters {
@@ -1137,8 +1229,19 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
     // ticket's ask always land in the one topic.
     rosterAdapters: {
       ensureApprovalsTopic: () => ensureApprovalsTopic(targetPath, botToken, chatId),
-      postMessage: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then((r) => (r.success ? r.messageId : undefined)),
-      editMessage: (topicId, messageId, text) => editMessageText(botToken, chatId, messageId, text).then((r) => r.success),
+      ...plainTextEditInPlaceAdapters(botToken, chatId),
+    },
+    // BL-450: the current oldest-unreviewed recert scenario, straight off
+    // computeRecertBatch(targetPath, 1) - never a second selection computed
+    // here.
+    readRecertScenario: () => computeRecertBatch(targetPath, 1).batch[0],
+    // BL-450: the standing "Recert" topic's own posting sync - shares the
+    // SAME ensureRecertTopic the reply-routing binding above uses (never a
+    // second Recert-topic notion), so the posted scenario and every reply
+    // always land in the one topic.
+    recertPostingAdapters: {
+      ensureRecertTopic: () => ensureRecertTopic(targetPath, botToken, chatId),
+      ...plainTextEditInPlaceAdapters(botToken, chatId),
     },
   };
 }
@@ -1293,6 +1396,12 @@ export async function main(): Promise<void> {
   // above (an inbound reply must never reach an unbound Approvals topic
   // and be misrouted as an ordinary support-thread post).
   await ensureApprovalsTopic(targetPath, botToken, chatId);
+
+  // BL-450: bind the standing Recert topic BEFORE any loop starts polling
+  // too - same ordering rationale as ensureOperatorTopic/ensureApprovalsTopic
+  // just above (an inbound reply must never reach an unbound Recert topic
+  // and be misrouted as an ordinary support-thread post).
+  await ensureRecertTopic(targetPath, botToken, chatId);
 
   // BL-425 slice 1: bind each swarm role's own standing steering topic
   // BEFORE any loop starts polling too - same ordering rationale as

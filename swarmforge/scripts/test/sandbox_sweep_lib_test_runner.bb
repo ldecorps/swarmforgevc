@@ -21,6 +21,16 @@
 (assert= "known-sandbox-prefix?: a substring match in the middle of a name does not count as a prefix" false
          (sandbox-sweep-lib/known-sandbox-prefix? "not-sfvc-prefixed"))
 
+;; ── known-sandbox-prefix?: BL-460 tmp-sweep-bounded-deletes-06 - the newly
+;;    observed, at-volume Vitest-fixture prefixes ───────────────────────────
+(doseq [prefix ["atomic-test-" "render-briefing-diagrams-test-"
+                "propose-onboarding-prompts-target-" "propose-onboarding-prompts-test-"
+                "live-ticket-files-" "chase-trend-test-"
+                "negotiate-onboarding-contract-target-" "relay-onboarding-negotiation-"
+                "provision-onboarding-telegram-channel-test-"]]
+  (assert= (str "known-sandbox-prefix?: " prefix " is recognised") true
+           (sandbox-sweep-lib/known-sandbox-prefix? (str prefix "abc123"))))
+
 ;; ── removable?: stale-sandbox-sweep-01 (Scenario Outline) - the four
 ;;    prefix-match x stale x live-process combinations ─────────────────────
 (assert= "removable?: known prefix, stale, no live process -> removable" true
