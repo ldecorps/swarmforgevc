@@ -1,0 +1,15 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Generators dump working renders into this dir (cwd); the canonical,
+# committed copies live under assets/. Ignore the root-level duplicates.
+/concept-e-orchestra*.svg
+/concept-e-orchestra*.png
+/concept-e-small-96.png
+/glyph-sheet*.svg
+/glyph-sheet*.png
+/mono-test*.svg
+/mono-test*.png
+/spec-sheet*.svg
+/spec-sheet*.png

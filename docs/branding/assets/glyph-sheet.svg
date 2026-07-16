@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1560" height="1220" viewBox="0 0 1560 1220">
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#1c2233"/><stop offset="1" stop-color="#0b0f18"/></linearGradient></defs>
+  <rect width="1560" height="1220" fill="#eef0f3"/>
+<text x="90" y="54" font-family="Helvetica,Arial" font-size="26" font-weight="800" fill="#1b2230">AGENTS / ROLES</text><text x="90" y="80" font-family="Helvetica,Arial" font-size="16" fill="#6b7480">each player&#8217;s instrument or mark, coloured by section-family</text>
+
+  <rect x="70.0" y="86.0" width="128" height="128" rx="28.16" fill="url(#bg)"/>
+  <path d="M134.0 174.832 a13.9776 13.9776 0 0 0 -11.3152 5.324800000000001 h22.6304 a13.9776 13.9776 0 0 0 -11.3152 -5.324800000000001z" fill="#ffd36b"/><g transform="rotate(20 134.0 174.832)"><rect x="132.0032" y="141.552" width="3.9936" height="33.28" rx="1.9968" fill="#f4f7fa"/></g><path d="M142.32 133.232 l4.6592 13.312000000000001 13.312000000000001 4.6592 -13.312000000000001 4.6592 -4.6592 13.312000000000001 -4.6592 -13.312000000000001 -13.312000000000001 -4.6592 13.312000000000001 -4.6592z" fill="#ffd36b"/>
+  <text x="134.0" y="240.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="19" font-weight="700" fill="#1b2230">Coordinator</text>
+  <text x="134.0" y="262.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="15" fill="#6b7480">conductor</text>
+  <rect x="222.0" y="86.0" width="128" height="128" rx="28.16" fill="url(#bg)"/>
+  <path d="M286.0 111.6 C315.952 121.584 302.64 151.536 286.0 151.536 C262.704 151.536 266.032 128.24 289.328 126.576 C304.304 126.576 302.64 141.552 287.664 141.552" fill="none" stroke="#a68cff" stroke-width="5.324800000000001" stroke-linecap="round"/><rect x="285.0016" y="111.6" width="3.9936" height="63.232" rx="1.9968" fill="#a68cff"/><circle cx="286.0" cy="176.49599999999998" r="5.324800000000001" fill="#a68cff"/>
+  <text x="286.0" y="240.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="19" font-weight="700" fill="#1b2230">Specifier</text>
+  <text x="286.0" y="262.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="15" fill="#6b7480">sets the key</text>
+  <rect x="374.0" y="86.0" width="128" height="128" rx="28.16" fill="url(#bg)"/>
+  <line x1="409.712" y1="111.6" x2="466.288" y2="111.6" stroke="#a68cff" stroke-width="1.9968"/><line x1="409.712" y1="116.92479999999999" x2="466.288" y2="116.92479999999999" stroke="#a68cff" stroke-width="1.9968"/><line x1="409.712" y1="122.2496" x2="466.288" y2="122.2496" stroke="#a68cff" stroke-width="1.9968"/><line x1="409.712" y1="139.888" x2="466.288" y2="139.888" stroke="#a68cff" stroke-width="1.9968"/><line x1="409.712" y1="145.21280000000002" x2="466.288" y2="145.21280000000002" stroke="#a68cff" stroke-width="1.9968"/><line x1="409.712" y1="150.5376" x2="466.288" y2="150.5376" stroke="#a68cff" stroke-width="1.9968"/><line x1="409.712" y1="168.176" x2="466.288" y2="168.176" stroke="#a68cff" stroke-width="1.9968"/><line x1="409.712" y1="173.5008" x2="466.288" y2="173.5008" stroke="#a68cff" stroke-width="1.9968"/><line x1="409.712" y1="178.82559999999998" x2="466.288" y2="178.82559999999998" stroke="#a68cff" stroke-width="1.9968"/>
+  <text x="438.0" y="240.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="19" font-weight="700" fill="#1b2230">Architect</text>
+  <text x="438.0" y="262.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="15" fill="#6b7480">the score</text>
+  <rect x="526.0" y="86.0" width="128" height="128" rx="28.16" fill="url(#bg)"/>
+  <ellipse cx="571.696" cy="164.84799999999998" rx="10.649600000000001" ry="7.9872" fill="#3ea6ff" transform="rotate(-22 571.696 164.84799999999998)"/><ellipse cx="608.304" cy="164.84799999999998" rx="10.649600000000001" ry="7.9872" fill="#3ea6ff" transform="rotate(-22 608.304 164.84799999999998)"/><rect x="580.016" y="118.256" width="3.3280000000000003" height="46.592" fill="#3ea6ff"/><rect x="616.624" y="118.256" width="3.3280000000000003" height="46.592" fill="#3ea6ff"/><rect x="580.016" y="116.592" width="39.936" height="7.3216" fill="#3ea6ff"/>
+  <text x="590.0" y="240.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="19" font-weight="700" fill="#1b2230">Coder</text>
+  <text x="590.0" y="262.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="15" fill="#6b7480">the voices</text>
+  <rect x="678.0" y="86.0" width="128" height="128" rx="28.16" fill="url(#bg)"/>
+  <path d="M728.688 111.6 v36.608000000000004 a13.312000000000001 13.312000000000001 0 0 0 26.624000000000002 0 v-36.608000000000004" fill="none" stroke="#3ec9b0" stroke-width="5.324800000000001" stroke-linecap="round"/><rect x="740.0032" y="151.536" width="3.9936" height="29.952" rx="1.9968" fill="#3ec9b0"/>
+  <text x="742.0" y="240.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="19" font-weight="700" fill="#1b2230">QA</text>
+  <text x="742.0" y="262.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="15" fill="#6b7480">in tune?</text>
+  <rect x="830.0" y="86.0" width="128" height="128" rx="28.16" fill="url(#bg)"/>
+  <path d="M867.376 134.896 a26.624000000000002 18.304000000000002 0 0 0 53.248000000000005 0 v1.6640000000000001 a26.624000000000002 16.64 0 0 1 -53.248000000000005 0z" fill="#3ec9b0"/><ellipse cx="894.0" cy="134.896" rx="26.624000000000002" ry="9.984" fill="none" stroke="#3ec9b0" stroke-width="3.9936"/><line x1="877.36" y1="156.528" x2="874.032" y2="174.832" stroke="#3ec9b0" stroke-width="3.3280000000000003" stroke-linecap="round"/><line x1="910.64" y1="156.528" x2="913.968" y2="174.832" stroke="#3ec9b0" stroke-width="3.3280000000000003" stroke-linecap="round"/>
+  <text x="894.0" y="240.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="19" font-weight="700" fill="#1b2230">Hardener</text>
+  <text x="894.0" y="262.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="15" fill="#6b7480">percussion</text>
+  <rect x="982.0" y="86.0" width="128" height="128" rx="28.16" fill="url(#bg)"/>
+  <path d="M1041.008 111.6 l14.976 16.64 -14.976 14.976 16.64 16.64 q-19.968 -6.656000000000001 -4.992 18.304000000000002 q-16.64 -11.648 0 -24.96z" fill="#9aa4b2" stroke="#9aa4b2" stroke-width="1.6640000000000001" stroke-linejoin="round"/>
+  <text x="1046.0" y="240.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="19" font-weight="700" fill="#1b2230">Cleaner</text>
+  <text x="1046.0" y="262.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="15" fill="#6b7480">silences</text>
+  <rect x="1134.0" y="86.0" width="128" height="128" rx="28.16" fill="url(#bg)"/>
+  <path d="M1198.0 128.24 C1184.688 119.91999999999999 1168.048 124.91199999999999 1168.048 126.576 v39.936 C1168.048 163.184 1184.688 159.856 1198.0 168.176 C1211.312 159.856 1227.952 163.184 1227.952 166.512 v-39.936 C1227.952 124.91199999999999 1211.312 119.91999999999999 1198.0 128.24z" fill="none" stroke="#ffd36b" stroke-width="3.6608" stroke-linejoin="round"/><line x1="1198.0" y1="128.24" x2="1198.0" y2="168.176" stroke="#ffd36b" stroke-width="2.9952"/>
+  <text x="1198.0" y="240.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="19" font-weight="700" fill="#1b2230">Documenter</text>
+  <text x="1198.0" y="262.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="15" fill="#6b7480">programme</text>
+  <rect x="1286.0" y="86.0" width="128" height="128" rx="28.16" fill="url(#bg)"/>
+  <rect x="1333.36" y="114.928" width="33.28" height="18.304000000000002" rx="3.9936" fill="none" stroke="#3ea6ff" stroke-width="3.9936"/><rect x="1333.36" y="138.224" width="33.28" height="9.3184" rx="3.3280000000000003" fill="#3ea6ff"/><line x1="1336.0224" y1="147.5424" x2="1336.0224" y2="174.832" stroke="#3ea6ff" stroke-width="3.6608" stroke-linecap="round"/><line x1="1363.9776" y1="147.5424" x2="1363.9776" y2="174.832" stroke="#3ea6ff" stroke-width="3.6608" stroke-linecap="round"/>
+  <text x="1350.0" y="240.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="19" font-weight="700" fill="#1b2230">Recruiter</text>
+  <text x="1350.0" y="262.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="15" fill="#6b7480">fill a seat</text>
+  <rect x="1438.0" y="86.0" width="128" height="128" rx="28.16" fill="url(#bg)"/>
+  <path d="M1477.04 161.51999999999998 a24.96 24.96 0 0 1 49.92 0z" fill="#ff9a6b"/><rect x="1473.712" y="161.51999999999998" width="56.576" height="5.9904" rx="2.9952" fill="#ff9a6b"/><circle cx="1502.0" cy="133.232" r="5.324800000000001" fill="#ff9a6b"/>
+  <text x="1502.0" y="240.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="19" font-weight="700" fill="#1b2230">Support</text>
+  <text x="1502.0" y="262.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="15" fill="#6b7480">call bell</text>
+<text x="90" y="440" font-family="Helvetica,Arial" font-size="26" font-weight="800" fill="#1b2230">BL ITEMS</text><text x="90" y="466" font-family="Helvetica,Arial" font-size="16" fill="#6b7480">a passage to be played + a state mark</text>
+
+  <rect x="70.0" y="476.0" width="128" height="128" rx="28.16" fill="url(#bg)"/>
+  <line x1="105.712" y1="501.6" x2="162.288" y2="501.6" stroke="#ffd36b" stroke-width="1.9968"/><line x1="105.712" y1="506.9248" x2="162.288" y2="506.9248" stroke="#ffd36b" stroke-width="1.9968"/><line x1="105.712" y1="512.2496" x2="162.288" y2="512.2496" stroke="#ffd36b" stroke-width="1.9968"/><line x1="105.712" y1="529.888" x2="162.288" y2="529.888" stroke="#ffd36b" stroke-width="1.9968"/><line x1="105.712" y1="535.2128" x2="162.288" y2="535.2128" stroke="#ffd36b" stroke-width="1.9968"/><line x1="105.712" y1="540.5376" x2="162.288" y2="540.5376" stroke="#ffd36b" stroke-width="1.9968"/><line x1="105.712" y1="558.176" x2="162.288" y2="558.176" stroke="#ffd36b" stroke-width="1.9968"/><line x1="105.712" y1="563.5008" x2="162.288" y2="563.5008" stroke="#ffd36b" stroke-width="1.9968"/><line x1="105.712" y1="568.8256" x2="162.288" y2="568.8256" stroke="#ffd36b" stroke-width="1.9968"/>
+  <text x="134.0" y="630.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="19" font-weight="700" fill="#1b2230">Epic</text>
+  <text x="134.0" y="652.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="15" fill="#6b7480">symphony</text>
+  <rect x="222.0" y="476.0" width="128" height="128" rx="28.16" fill="url(#bg)"/>
+  <line x1="257.712" y1="520.2368" x2="314.288" y2="520.2368" stroke="#3ea6ff" stroke-width="2.3296"/><line x1="257.712" y1="527.5584" x2="314.288" y2="527.5584" stroke="#3ea6ff" stroke-width="2.3296"/><line x1="257.712" y1="534.88" x2="314.288" y2="534.88" stroke="#3ea6ff" stroke-width="2.3296"/><line x1="257.712" y1="542.2016" x2="314.288" y2="542.2016" stroke="#3ea6ff" stroke-width="2.3296"/><line x1="257.712" y1="549.5232" x2="314.288" y2="549.5232" stroke="#3ea6ff" stroke-width="2.3296"/>
+  <text x="286.0" y="630.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="19" font-weight="700" fill="#1b2230">Ticket</text>
+  <text x="286.0" y="652.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="15" fill="#6b7480">a movement</text>
+  <rect x="374.0" y="476.0" width="128" height="128" rx="28.16" fill="url(#bg)"/>
+  <path d="M433.008 501.6 l14.976 16.64 -14.976 14.976 16.64 16.64 q-19.968 -6.656000000000001 -4.992 18.304000000000002 q-16.64 -11.648 0 -24.96z" fill="#9aa4b2" stroke="#9aa4b2" stroke-width="1.6640000000000001" stroke-linejoin="round"/>
+  <text x="438.0" y="630.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="19" font-weight="700" fill="#1b2230">Todo</text>
+  <text x="438.0" y="652.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="15" fill="#6b7480">unplayed</text>
+  <rect x="526.0" y="476.0" width="128" height="128" rx="28.16" fill="url(#bg)"/>
+  <ellipse cx="577.1872" cy="543.8656000000001" rx="7.45472" ry="5.59104" fill="#3ec9b0" transform="rotate(-22 577.1872 543.8656000000001)"/><ellipse cx="602.8128" cy="543.8656000000001" rx="7.45472" ry="5.59104" fill="#3ec9b0" transform="rotate(-22 602.8128 543.8656000000001)"/><rect x="583.0112" y="511.25120000000004" width="2.3296" height="32.614399999999996" fill="#3ec9b0"/><rect x="608.6368" y="511.25120000000004" width="2.3296" height="32.614399999999996" fill="#3ec9b0"/><rect x="583.0112" y="510.0864" width="27.955199999999998" height="5.12512" fill="#3ec9b0"/><path d="M619.952 554.848 L566.704 566.496 L619.952 578.144" fill="none" stroke="#3ec9b0" stroke-width="2.6624000000000003" stroke-linecap="round"/>
+  <text x="590.0" y="630.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="19" font-weight="700" fill="#1b2230">In progress</text>
+  <text x="590.0" y="652.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="15" fill="#6b7480">playing</text>
+  <rect x="678.0" y="476.0" width="128" height="128" rx="28.16" fill="url(#bg)"/>
+  <line x1="730.352" y1="558.176" x2="740.336" y2="511.584" stroke="#ff9a6b" stroke-width="3.9936" stroke-linecap="round"/><line x1="746.992" y1="558.176" x2="756.976" y2="511.584" stroke="#ff9a6b" stroke-width="3.9936" stroke-linecap="round"/>
+  <text x="742.0" y="630.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="19" font-weight="700" fill="#1b2230">Blocked</text>
+  <text x="742.0" y="652.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="15" fill="#6b7480">caesura</text>
+  <rect x="830.0" y="476.0" width="128" height="128" rx="28.16" fill="url(#bg)"/>
+  <rect x="897.328" y="501.6" width="9.3184" height="66.56" fill="#6fd08a"/><rect x="889.008" y="501.6" width="2.9952" height="66.56" fill="#6fd08a"/>
+  <text x="894.0" y="630.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="19" font-weight="700" fill="#1b2230">Done</text>
+  <text x="894.0" y="652.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="15" fill="#6b7480">final barline</text>
+  <rect x="982.0" y="476.0" width="128" height="128" rx="28.16" fill="url(#bg)"/>
+  <rect x="1034.352" y="501.6" width="7.9872" height="66.56" fill="#f0b84c"/><rect x="1044.336" y="501.6" width="2.9952" height="66.56" fill="#f0b84c"/><circle cx="1057.648" cy="523.232" r="4.6592" fill="#f0b84c"/><circle cx="1057.648" cy="546.528" r="4.6592" fill="#f0b84c"/>
+  <text x="1046.0" y="630.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="19" font-weight="700" fill="#1b2230">Bounced</text>
+  <text x="1046.0" y="652.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="15" fill="#6b7480">da capo</text>
+  <rect x="1134.0" y="476.0" width="128" height="128" rx="28.16" fill="url(#bg)"/>
+  <path d="M1186.1856 514.9119999999999 l10.4832 11.648 -10.4832 10.4832 11.648 11.648 q-13.977599999999999 -4.6592 -3.4943999999999997 12.812800000000001 q-11.648 -8.153599999999999 0 -17.472z" fill="#a68cff" stroke="#a68cff" stroke-width="1.1648" stroke-linejoin="round"/><text x="1214.64" y="528.224" font-family="Georgia,serif" font-size="49.92" fill="#a68cff" text-anchor="middle">?</text>
+  <text x="1198.0" y="630.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="19" font-weight="700" fill="#1b2230">Needs design</text>
+  <text x="1198.0" y="652.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="15" fill="#6b7480">unresolved</text>
+<text x="90" y="830" font-family="Helvetica,Arial" font-size="26" font-weight="800" fill="#1b2230">SUPPORT / FRONT-DESK</text><text x="90" y="856" font-family="Helvetica,Arial" font-size="16" fill="#6b7480">the box office &#8212; inbound from humans</text>
+
+  <rect x="70.0" y="866.0" width="128" height="128" rx="28.16" fill="url(#bg)"/>
+  <path d="M109.03999999999999 941.52 a24.96 24.96 0 0 1 49.92 0z" fill="#ff9a6b"/><rect x="105.712" y="941.52" width="56.576" height="5.9904" rx="2.9952" fill="#ff9a6b"/><circle cx="134.0" cy="913.232" r="5.324800000000001" fill="#ff9a6b"/>
+  <text x="134.0" y="1020.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="19" font-weight="700" fill="#1b2230">New request</text>
+  <text x="134.0" y="1042.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="15" fill="#6b7480">call bell</text>
+  <rect x="222.0" y="866.0" width="128" height="128" rx="28.16" fill="url(#bg)"/>
+  <rect x="257.712" y="906.576" width="56.576" height="36.608000000000004" rx="3.3280000000000003" fill="none" stroke="#ff9a6b" stroke-width="3.3280000000000003"/><path d="M257.712 908.24 L286.0 929.872 L314.288 908.24" fill="none" stroke="#ff9a6b" stroke-width="3.3280000000000003"/>
+  <text x="286.0" y="1020.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="19" font-weight="700" fill="#1b2230">Message</text>
+  <text x="286.0" y="1042.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="15" fill="#6b7480">inbound note</text>
+  <rect x="374.0" y="866.0" width="128" height="128" rx="28.16" fill="url(#bg)"/>
+  <rect x="408.048" y="909.904" width="59.904" height="29.952" rx="3.9936" fill="none" stroke="#ffd36b" stroke-width="3.3280000000000003"/><line x1="444.656" y1="909.904" x2="444.656" y2="939.856" stroke="#ffd36b" stroke-width="2.3296" stroke-dasharray="3.3280000000000003,3.3280000000000003"/><circle cx="426.352" cy="924.88" r="4.6592" fill="#ffd36b"/>
+  <text x="438.0" y="1020.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="19" font-weight="700" fill="#1b2230">Ticket stub</text>
+  <text x="438.0" y="1042.0" text-anchor="middle" font-family="Helvetica,Arial" font-size="15" fill="#6b7480">box office</text>
+</svg>
