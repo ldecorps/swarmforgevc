@@ -171,6 +171,33 @@ export type BotUpdateDecision =
   | { action: 'open-for-topic'; topicId: number; text: string }
   | { action: 'drop'; reason: 'not-principal' | 'no-text' | 'not-my-chat' };
 
+type UpdateEligibility = { ok: true; text: string } | { ok: false; reason: 'not-my-chat' | 'not-principal' | 'no-text' };
+
+// Pure: the guard ahead of decideUpdateAction's routing below - split out
+// so each function's own decision complexity stays under the project's
+// CRAP threshold, never a behavior change (decideUpdateAction was pulling
+// double duty on eligibility AND routing).
+//
+// BL-379: checked FIRST - getUpdates is scoped to the BOT, not the chat, so
+// a message from a foreign chat is refused regardless of who sent it (a
+// stranger in a foreign chat is "not-my-chat", never "not-principal" - the
+// chat guard wins). Both conditions can hold at once (an unauthorized
+// sender posting in a foreign chat is an ordinary state, not a contrived
+// one), so this ORDER is load-bearing, not incidental.
+function checkUpdateEligibility(update: TelegramUpdate, principalUserId: string, chatId: string): UpdateEligibility {
+  if (!isFromMyChat(update, chatId)) {
+    return { ok: false, reason: 'not-my-chat' };
+  }
+  if (!isFromPrincipal(update, principalUserId)) {
+    return { ok: false, reason: 'not-principal' };
+  }
+  const text = messageTextOf(update);
+  if (!text) {
+    return { ok: false, reason: 'no-text' };
+  }
+  return { ok: true, text };
+}
+
 // Pure: the bot's whole per-update decision - given the update, the
 // principal's user id, the bot's own configured chat id, a lookup from
 // topic id -> already-mapped SUP-### subject id (the bot's own persisted
@@ -200,22 +227,11 @@ export function decideUpdateAction(
   subjectForTopic: (topicId: number | undefined) => string | undefined,
   backlogForTopic: (topicId: number | undefined) => string | undefined = () => undefined
 ): BotUpdateDecision {
-  // BL-379: checked FIRST - getUpdates is scoped to the BOT, not the chat,
-  // so a message from a foreign chat is refused regardless of who sent it
-  // (a stranger in a foreign chat is "not-my-chat", never "not-principal" -
-  // the chat guard wins). Both conditions can hold at once (an
-  // unauthorized sender posting in a foreign chat is an ordinary state,
-  // not a contrived one), so this ORDER is load-bearing, not incidental.
-  if (!isFromMyChat(update, chatId)) {
-    return { action: 'drop', reason: 'not-my-chat' };
+  const eligibility = checkUpdateEligibility(update, principalUserId, chatId);
+  if (!eligibility.ok) {
+    return { action: 'drop', reason: eligibility.reason };
   }
-  if (!isFromPrincipal(update, principalUserId)) {
-    return { action: 'drop', reason: 'not-principal' };
-  }
-  const text = messageTextOf(update);
-  if (!text) {
-    return { action: 'drop', reason: 'no-text' };
-  }
+  const { text } = eligibility;
   const topicId = topicIdOf(update);
   const subjectId = subjectForTopic(topicId);
   if (subjectId) {

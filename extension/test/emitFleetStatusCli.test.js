@@ -248,6 +248,30 @@ test('buildFleetStatusDoc reports needs_human false when no awaiting-answer.json
   assert.equal(doc.needs_human, false);
 });
 
+// A present-but-malformed chase-escalations.json (corrupt syntax, or valid
+// JSON that isn't a role->bool record) must be REJECTED back to "nobody
+// escalated", never crash and never be misread as an escalation - the same
+// absent-vs-malformed distinction the engineering article requires of every
+// optional on-disk input reader. chase-escalations.json only ever feeds the
+// PACK-role `isBlocked` rollup (never needs_human - see the architect-bounce
+// comment above), so the observable here is status, not needs_human.
+test('buildFleetStatusDoc treats a malformed chase-escalations.json as nobody escalated (never crashes)', () => {
+  const targetPath = mkTmp();
+  writeRolesTsv(targetPath, [
+    ['coordinator', 'master', targetPath, 'session', 'Coordinator', 'claude'],
+    ['coder', 'coder', targetPath, 'session', 'Coder', 'claude'],
+  ]);
+  writeHeartbeat(targetPath, 'coordinator', new Date().toISOString());
+  writeHeartbeat(targetPath, 'coder', new Date().toISOString());
+  const dir = path.join(targetPath, '.swarmforge', 'daemon');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'chase-escalations.json'), '{not valid json');
+
+  const doc = buildFleetStatusDoc(targetPath);
+
+  assert.notEqual(doc.children[0].status, 'blocked');
+});
+
 // The signal must CLEAR on resolution (BL-306's own await-pairing/
 // escalate-and-drop, operator_runtime.bb) - break-then-fix on the real
 // on-disk input per the engineering article's own wiring-test rule: proves
@@ -264,6 +288,23 @@ test('buildFleetStatusDoc reflects the human answering (awaiting-answer.json rem
 
   const clearedDoc = buildFleetStatusDoc(targetPath);
   assert.equal(clearedDoc.needs_human, false);
+});
+
+test('buildFleetStatusDoc treats a chase-escalations.json that parses to a JSON array (not a role record) as nobody escalated', () => {
+  const targetPath = mkTmp();
+  writeRolesTsv(targetPath, [
+    ['coordinator', 'master', targetPath, 'session', 'Coordinator', 'claude'],
+    ['coder', 'coder', targetPath, 'session', 'Coder', 'claude'],
+  ]);
+  writeHeartbeat(targetPath, 'coordinator', new Date().toISOString());
+  writeHeartbeat(targetPath, 'coder', new Date().toISOString());
+  const dir = path.join(targetPath, '.swarmforge', 'daemon');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'chase-escalations.json'), '["coordinator"]');
+
+  const doc = buildFleetStatusDoc(targetPath);
+
+  assert.notEqual(doc.children[0].status, 'blocked');
 });
 
 test('buildFleetStatusDoc defaults the swarm name to "primary" when no swarm_name is configured', () => {
