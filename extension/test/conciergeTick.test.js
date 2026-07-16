@@ -67,6 +67,7 @@ function fakeAdapters(overrides = {}) {
         state.titleAgeBuckets = next.titleAgeBuckets;
         state.pipelineBoard = next.pipelineBoard;
         state.approvalsRoster = next.approvalsRoster;
+        state.recertPosted = next.recertPosted;
       },
       routeAdapters: {
         getTopicMap: () => topicMap,
@@ -142,6 +143,17 @@ function fakeAdapters(overrides = {}) {
       // override rosterAdapters.
       rosterAdapters: {
         ensureApprovalsTopic: async () => undefined,
+        postMessage: async () => undefined,
+        editMessage: async () => true,
+      },
+      // BL-450: no scenario currently up for recert by default - a safe
+      // no-op posture mirroring rosterAdapters above, so every existing
+      // test that never touches recert posting is completely unaffected.
+      // Tests that DO exercise it override readRecertScenario/
+      // recertPostingAdapters.
+      readRecertScenario: () => undefined,
+      recertPostingAdapters: {
+        ensureRecertTopic: async () => undefined,
         postMessage: async () => undefined,
         editMessage: async () => true,
       },
@@ -1792,4 +1804,131 @@ test('BL-434: omitting rosterAdapters entirely leaves the tick unaffected - exis
   await runConciergeTick(adapters);
 
   assert.equal(state.approvalsRoster, undefined);
+});
+
+// ── BL-450: Recert topic posting wiring ───────────────────────────────────
+
+function scenario(overrides = {}) {
+  return { id: 'BL-207-thing-01', ticketId: 'BL-207', ticketTitle: 'a fine ticket', name: 'thing', text: 'Given a', ...overrides };
+}
+
+test('recert-telegram-01: the oldest un-reviewed scenario is posted into the Recert topic, one at a time', async () => {
+  const { adapters, state } = fakeAdapters();
+  const created = [];
+  const posted = [];
+  let current = scenario();
+  adapters.readRecertScenario = () => current;
+  adapters.recertPostingAdapters = {
+    ensureRecertTopic: async () => {
+      created.push(true);
+      return 900;
+    },
+    postMessage: async (topicId, text) => {
+      posted.push({ topicId, text });
+      return 42;
+    },
+    editMessage: async () => true,
+  };
+
+  await runConciergeTick(adapters);
+
+  assert.equal(created.length, 1);
+  assert.equal(posted.length, 1);
+  assert.equal(posted[0].topicId, 900);
+  assert.ok(posted[0].text.includes('BL-207-thing-01'));
+  assert.equal(state.recertPosted.topicId, 900);
+  assert.equal(state.recertPosted.messageId, 42);
+});
+
+test('recert-telegram-02: an already-posted scenario is not re-posted on the next tick', async () => {
+  const { adapters } = fakeAdapters();
+  const posted = [];
+  const edited = [];
+  adapters.readRecertScenario = () => scenario();
+  adapters.recertPostingAdapters = {
+    ensureRecertTopic: async () => 900,
+    postMessage: async (topicId, text) => {
+      posted.push({ topicId, text });
+      return 42;
+    },
+    editMessage: async (topicId, messageId, text) => {
+      edited.push({ topicId, messageId, text });
+      return true;
+    },
+  };
+
+  await runConciergeTick(adapters);
+  assert.equal(posted.length, 1);
+
+  await runConciergeTick(adapters);
+  assert.equal(posted.length, 1, 'expected no second post for the same still-oldest scenario');
+  assert.equal(edited.length, 0, 'expected no edit either - the rendered text is unchanged');
+});
+
+test('once the posted scenario changes (e.g. it was validated away), the SAME message is edited in place', async () => {
+  const { adapters } = fakeAdapters();
+  const posted = [];
+  const edited = [];
+  let current = scenario();
+  adapters.readRecertScenario = () => current;
+  adapters.recertPostingAdapters = {
+    ensureRecertTopic: async () => 900,
+    postMessage: async (topicId, text) => {
+      posted.push({ topicId, text });
+      return 42;
+    },
+    editMessage: async (topicId, messageId, text) => {
+      edited.push({ topicId, messageId, text });
+      return true;
+    },
+  };
+
+  await runConciergeTick(adapters);
+  current = scenario({ id: 'BL-300-other-01', ticketTitle: 'a different ticket', text: 'Given x' });
+  await runConciergeTick(adapters);
+
+  assert.equal(posted.length, 1, 'expected no second NEW message ever posted');
+  assert.equal(edited.length, 1);
+  assert.equal(edited[0].topicId, 900);
+  assert.equal(edited[0].messageId, 42);
+  assert.ok(edited[0].text.includes('BL-300-other-01'));
+});
+
+test('recert-telegram-08: nothing is posted when no scenario needs recertification', async () => {
+  const { adapters, state } = fakeAdapters();
+  const created = [];
+  const posted = [];
+  adapters.readRecertScenario = () => undefined;
+  adapters.recertPostingAdapters = {
+    ensureRecertTopic: async () => {
+      created.push(true);
+      return 900;
+    },
+    postMessage: async (topicId, text) => {
+      posted.push({ topicId, text });
+      return 42;
+    },
+    editMessage: async () => true,
+  };
+
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(created, []);
+  assert.deepEqual(posted, []);
+  // syncRecertPosting's own no-scenario short-circuit returns `prevState ??
+  // {}` (the same "empty but touched" idiom syncEditInPlaceMessage's other
+  // no-op branches already use) - distinct from recertPostingAdapters being
+  // OMITTED ENTIRELY (the next test below), where the prior state is left
+  // completely untouched (stays undefined).
+  assert.deepEqual(state.recertPosted, {});
+});
+
+test('BL-450: omitting recertPostingAdapters entirely leaves the tick unaffected - existing adapters fixtures built before this field existed keep working unchanged', async () => {
+  const { adapters, state } = fakeAdapters();
+  delete adapters.recertPostingAdapters;
+  adapters.readRecertScenario = () => scenario();
+
+  await runConciergeTick(adapters);
+
+  assert.equal(state.recertPosted, undefined);
 });

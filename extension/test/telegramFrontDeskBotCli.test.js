@@ -12,6 +12,7 @@ const {
   toFoldersSnapshot,
   ensureOperatorTopic,
   ensureApprovalsTopic,
+  ensureRecertTopic,
   ensureRoleTopics,
   resolveRolePaneTarget,
   redirectToRole,
@@ -422,6 +423,63 @@ test('BL-434: an already-bound Approvals topic returns its existing topicId, wit
   writeTopicMapFixture(root, { '42': 'APPROVALS' });
   const { postFn, calls } = fakeCreateOk(999);
   const topicId = await ensureApprovalsTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, 42);
+  assert.equal(calls.length, 0);
+});
+
+// ── ensureRecertTopic (BL-450, mirrors ensureApprovalsTopic above) ───────
+
+test('BL-450: creates the Recert topic and binds it to the reserved subject when the map has no binding yet', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeCreateOk(42);
+  await ensureRecertTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 1);
+  const map = readTopicMapFixture(root);
+  assert.equal(map['42'], 'RECERT');
+});
+
+test('BL-450: the create call names the topic "Recert"', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeCreateOk(7);
+  await ensureRecertTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.match(calls[0].url, /createForumTopic$/);
+  assert.match(calls[0].body, /"name":"Recert"/);
+});
+
+test('BL-450: a map that already binds the reserved Recert subject never creates a second topic', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'RECERT' });
+  const { postFn, calls } = fakeCreateOk(999);
+  await ensureRecertTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 0);
+  assert.deepEqual(readTopicMapFixture(root), { '42': 'RECERT' });
+});
+
+test('BL-450: the Recert topic and the Approvals topic bind independently in the SAME map, never colliding', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'APPROVALS' });
+  const { postFn, calls } = fakeCreateOk(55);
+  const topicId = await ensureRecertTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 1);
+  assert.equal(topicId, 55);
+  const map = readTopicMapFixture(root);
+  assert.equal(map['55'], 'RECERT');
+  assert.equal(map['42'], 'APPROVALS');
+});
+
+test('BL-450: a failed create degrades quietly - never throws, never writes a partial binding', async () => {
+  const root = mkTmpRoot();
+  const postFn = async () => ({ ok: false, status: 500, json: { description: 'simulated failure' } });
+  const topicId = await ensureRecertTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, undefined);
+  assert.equal(fs.existsSync(topicMapPath(root)), false);
+});
+
+test('BL-450: an already-bound Recert topic returns its existing topicId, without calling create', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'RECERT' });
+  const { postFn, calls } = fakeCreateOk(999);
+  const topicId = await ensureRecertTopic(root, 'fake-token', 'fake-chat', postFn);
   assert.equal(topicId, 42);
   assert.equal(calls.length, 0);
 });

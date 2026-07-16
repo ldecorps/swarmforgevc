@@ -25,6 +25,8 @@ const {
   OPERATOR_SUBJECT_ID,
   decideEnsureApprovalsTopicAction,
   APPROVALS_SUBJECT_ID,
+  decideEnsureRecertTopicAction,
+  RECERT_SUBJECT_ID,
   nextUpdateOffset,
   offsetAfterDelivery,
   shouldEscalateStuckDelivery,
@@ -331,6 +333,64 @@ test('BL-434: a reply in the Approvals topic naming no recognizable verb+id is n
   const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: 'what is happening here' });
   const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined));
   assert.deepEqual(decision, { action: 'approvals-topic-unrecognized', text: 'what is happening here' });
+});
+
+// ── decideEnsureRecertTopicAction (pure) — BL-450 ─────────────────────────
+
+test('BL-450: decideEnsureRecertTopicAction creates when no topic is bound to the reserved subject yet', () => {
+  assert.deepEqual(decideEnsureRecertTopicAction({}), { kind: 'create' });
+  assert.deepEqual(decideEnsureRecertTopicAction({ '7': 'SUP-1' }), { kind: 'create' });
+});
+
+test('BL-450: decideEnsureRecertTopicAction reuses the topic already bound to RECERT_SUBJECT_ID', () => {
+  assert.deepEqual(decideEnsureRecertTopicAction({ '7': 'SUP-1', '42': RECERT_SUBJECT_ID }), { kind: 'reuse', topicId: 42 });
+});
+
+test('BL-450: decideEnsureRecertTopicAction is reserved-subject-specific - the Approvals topic\'s own binding never counts as the Recert topic', () => {
+  assert.deepEqual(decideEnsureRecertTopicAction({ '42': APPROVALS_SUBJECT_ID }), { kind: 'create' });
+});
+
+// ── BL-450 recert-telegram-03/04/05/06/07: Recert-topic replies (pure) ────
+
+test('BL-450: a reply "validate <id>" in the Recert topic is parsed into a recert-validate decision naming that exact id', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 900, text: 'validate BL-207-thing-01' });
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', (topicId) => (topicId === 900 ? RECERT_SUBJECT_ID : undefined));
+  assert.deepEqual(decision, { action: 'recert-validate', scenarioId: 'BL-207-thing-01', text: 'validate BL-207-thing-01' });
+});
+
+test('BL-450: a reply to amend a scenario is parsed into a recert-amend decision carrying the new text', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 900, text: 'amend BL-207-thing-01 Given a revised precondition' });
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', (topicId) => (topicId === 900 ? RECERT_SUBJECT_ID : undefined));
+  assert.deepEqual(decision, {
+    action: 'recert-amend',
+    scenarioId: 'BL-207-thing-01',
+    newText: 'Given a revised precondition',
+    text: 'amend BL-207-thing-01 Given a revised precondition',
+  });
+});
+
+test('BL-450: a reply "delete <id>" in the Recert topic is parsed into a recert-delete decision', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 900, text: 'delete BL-207-thing-01' });
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', (topicId) => (topicId === 900 ? RECERT_SUBJECT_ID : undefined));
+  assert.deepEqual(decision, { action: 'recert-delete', scenarioId: 'BL-207-thing-01', text: 'delete BL-207-thing-01' });
+});
+
+test('BL-450: a bare "confirm" in the Recert topic is parsed into a recert-confirm-delete decision', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 900, text: 'confirm' });
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', (topicId) => (topicId === 900 ? RECERT_SUBJECT_ID : undefined));
+  assert.deepEqual(decision, { action: 'recert-confirm-delete', text: 'confirm' });
+});
+
+test('BL-450: a reply in the Recert topic naming no recognizable verb+id is neither post-existing nor operator-context, but a distinct unrecognized decision', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 900, text: 'looks fine to me' });
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', (topicId) => (topicId === 900 ? RECERT_SUBJECT_ID : undefined));
+  assert.deepEqual(decision, { action: 'recert-unrecognized', text: 'looks fine to me' });
+});
+
+test('BL-450: a reply on an ORDINARY SUP-### topic (not the Recert topic) still posts as an ordinary subject post - no regression', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'validate BL-207-thing-01' });
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', (topicId) => (topicId === 7 ? 'SUP-1' : undefined));
+  assert.deepEqual(decision, { action: 'post-existing', subjectId: 'SUP-1', text: 'validate BL-207-thing-01' });
 });
 
 test('BL-434: a reply on an ORDINARY SUP-### topic (not the Approvals topic) still posts as an ordinary subject post - no regression', () => {
@@ -1152,6 +1212,193 @@ test('BL-434: an Approvals-topic reply degrades to a silent drop when notifyAppr
     recordApprovalReply: async () => false,
     // notifyApprovalsTopic deliberately omitted.
   });
+  assert.equal(result.dropped, 1);
+});
+
+// ── BL-450 recert-telegram-03..08: Recert-topic reply delivery ───────────
+
+function recertPollAdapters(overrides = {}) {
+  return {
+    chatId: '1',
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a Recert-topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for a Recert-topic reply');
+    },
+    subjectForTopic: (topicId) => (topicId === 900 ? RECERT_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    postOperatorContext: async () => {
+      throw new Error('postOperatorContext should not be called for a Recert-topic reply');
+    },
+    ...overrides,
+  };
+}
+
+test('recert-telegram-03: "validate <id>" for the scenario currently up for recert records the validation', async () => {
+  const validated = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    recertPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 900, text: 'validate BL-207-thing-01' })] }),
+      recordRecertValidate: async (scenarioId) => {
+        validated.push(scenarioId);
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(validated, ['BL-207-thing-01']);
+  assert.equal(result.posted, 1);
+  assert.equal(result.dropped, 0);
+});
+
+test('recert-telegram-04: a reply to amend a scenario queues an update proposal carrying the new text, never records a validation', async () => {
+  const amends = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    recertPollAdapters({
+      getUpdates: async () => ({
+        success: true,
+        updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 900, text: 'amend BL-207-thing-01 Given a revised precondition' })],
+      }),
+      recordRecertValidate: async () => {
+        throw new Error('recordRecertValidate should not be called for an amend reply');
+      },
+      queueRecertAmendProposal: async (scenarioId, newText) => {
+        amends.push({ scenarioId, newText });
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(amends, [{ scenarioId: 'BL-207-thing-01', newText: 'Given a revised precondition' }]);
+  assert.equal(result.posted, 1);
+});
+
+test('recert-telegram-05: "delete <id>" for a scenario up for recert arms the confirmation gate but queues nothing yet', async () => {
+  const notified = [];
+  const queued = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    recertPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 900, text: 'delete BL-207-thing-01' })] }),
+      isScenarioUpForRecert: async () => true,
+      queueRecertDeleteProposal: async (scenarioId) => {
+        queued.push(scenarioId);
+        return true;
+      },
+      setPendingRecertDelete: async (scenarioId) => {
+        notified.push({ armed: scenarioId });
+      },
+      notifyRecertTopic: async (topicId, text) => {
+        notified.push({ topicId, text });
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(queued, [], 'expected no delete proposal queued yet - only the confirmation gate is armed');
+  assert.ok(notified.some((n) => n.armed === 'BL-207-thing-01'), 'expected the pending-delete marker armed for BL-207-thing-01');
+  assert.ok(notified.some((n) => n.topicId === 900 && /confirm/i.test(n.text)), 'expected a confirmation request posted into the Recert topic');
+  assert.equal(result.posted, 1);
+});
+
+test('recert-telegram-06: confirming a pending delete queues a delete proposal for that scenario', async () => {
+  let pending = 'BL-207-thing-01';
+  const cleared = [];
+  const queued = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    recertPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 900, text: 'confirm' })] }),
+      getPendingRecertDelete: async () => pending,
+      clearPendingRecertDelete: async () => {
+        cleared.push(pending);
+        pending = undefined;
+      },
+      queueRecertDeleteProposal: async (scenarioId) => {
+        queued.push(scenarioId);
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(queued, ['BL-207-thing-01']);
+  assert.deepEqual(cleared, ['BL-207-thing-01'], 'expected the pending marker cleared before/at confirmation, never left armed');
+  assert.equal(result.posted, 1);
+});
+
+test('a bare "confirm" with no pending delete is a silent drop - nothing to confirm', async () => {
+  const queued = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    recertPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 900, text: 'confirm' })] }),
+      getPendingRecertDelete: async () => undefined,
+      queueRecertDeleteProposal: async (scenarioId) => {
+        queued.push(scenarioId);
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(queued, []);
+  assert.equal(result.dropped, 1);
+});
+
+test('recert-telegram-07: "validate <id>" for a scenario not currently up for recert is surfaced, never applied', async () => {
+  const validated = [];
+  const notified = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    recertPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 900, text: 'validate BL-999-ghost-01' })] }),
+      recordRecertValidate: async (scenarioId) => {
+        validated.push(scenarioId);
+        return false;
+      },
+      notifyRecertTopic: async (topicId, text) => {
+        notified.push({ topicId, text });
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(validated, ['BL-999-ghost-01'], 'recordRecertValidate IS called - it is the one that determines up-for-recert-ness, but its write is a no-op');
+  assert.equal(notified.length, 1);
+  assert.equal(notified[0].topicId, 900);
+  assert.match(notified[0].text, /BL-999-ghost-01/);
+  assert.match(notified[0].text, /isn't awaiting recertification/);
+  assert.equal(result.posted, 0);
+  assert.equal(result.dropped, 1, 'a not-currently-up-for-recert id is a deliberate drop, never a retryable failure');
+  assert.equal(result.failed, 0);
+});
+
+test('a reply in the Recert topic naming no recognizable verb+id is dropped, never crashes, never calls a writer', async () => {
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    recertPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 900, text: 'looks fine to me' })] }),
+      recordRecertValidate: async () => {
+        throw new Error('recordRecertValidate should not be called for an unrecognized reply');
+      },
+    })
+  );
+  assert.equal(result.dropped, 1);
+});
+
+test('a Recert-topic reply degrades to a silent drop when notifyRecertTopic is not wired (optional-adapter convention)', async () => {
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    recertPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 900, text: 'validate BL-999-ghost-01' })] }),
+      recordRecertValidate: async () => false,
+      // notifyRecertTopic deliberately omitted.
+    })
+  );
   assert.equal(result.dropped, 1);
 });
 

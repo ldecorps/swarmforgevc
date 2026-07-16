@@ -84,12 +84,17 @@ export function resolveIconStickerId(stickers: IconStickerLookup[], emoji: strin
 // sign-off", distinct from the Operator's opera house and support/intake's
 // ticket stub, within Telegram's free sticker set (same constraint the
 // header comment above already documents for the other two).
-export type StandingTopicKey = 'support/intake' | 'operator' | 'approvals';
+// BL-450: 'recert' extends the set again for the standing Recert topic - a
+// scroll (📜) reads as "a durable scenario contract under review", distinct
+// from every icon above, within Telegram's free sticker set (same
+// constraint).
+export type StandingTopicKey = 'support/intake' | 'operator' | 'approvals' | 'recert';
 
 export const STANDING_TOPIC_ICON: Record<StandingTopicKey, string> = {
   'support/intake': '🎟',
   operator: '🏛',
   approvals: '📋',
+  recert: '📜',
 };
 
 // A single standing topic the concierge tick's icon sync targets - either
