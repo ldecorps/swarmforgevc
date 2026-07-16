@@ -29,7 +29,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { CompositeNode, NodeHealth, NodeIdentity, NodeStatus } from '../swarm/compositeNode';
+import { CompositeNode, NodeHealth, NodeIdentity, NodeStatus, rollupStatus } from '../swarm/compositeNode';
 import { createFleetNode } from '../swarm/fleetNode';
 import { PublishedNode, PublishedSwarmStatus, fleetRendezvousDir } from './emit-fleet-status';
 import { printJsonToStdout, runCliMain } from './swarm-metrics';
@@ -90,11 +90,20 @@ function leafNode(node: PublishedNode): CompositeNode {
 
 // BL-437 scenario 04: every rendered value here is read from a field of
 // the published doc - nothing calls back into the swarm's own internal
-// role files. The only DERIVED value is the staleness override itself,
-// computed purely from the doc's own updated_at field.
+// role files. Two DERIVED values, both computed purely from the doc's own
+// fields: the staleness override (updated_at) and, BL-438, the needs_human
+// override (architect bounce 2026-07-16: previously computed and published
+// by emit-fleet-status.ts but never actually READ here, so the field was
+// dead output). needs_human folds in via rollupStatus - the SAME
+// worst-status-wins priority compositeNode.ts already uses to roll up a
+// swarm's own pack agents - so a swarm already 'degraded' (worse than
+// merely blocked) is never downgraded to 'blocked' just because the
+// coordinator is also awaiting a human; 'stopped (coordinator lost)' still
+// outranks both.
 export function publishedSwarmToNode(doc: PublishedSwarmStatus, nowMs: number): CompositeNode {
   const stale = isStaleUpdatedAt(doc.updated_at, nowMs);
-  const status: NodeStatus = stale ? 'stopped (coordinator lost)' : doc.status;
+  const statuses: NodeStatus[] = doc.needs_human ? [doc.status, 'blocked'] : [doc.status];
+  const status: NodeStatus = stale ? 'stopped (coordinator lost)' : rollupStatus(statuses);
   return {
     identity: () => doc.identity,
     status: () => status,
