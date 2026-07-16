@@ -1,0 +1,1 @@
+{"id":"BL-434","messages":[{"seq":0,"ts":1784206551627,"author":"swarm","type":"outbound","text":"What it is: One standing 'Approvals' Telegram topic aggregates every pending approval and is where the human approves/rejects\nHow it works: A newly pending ticket's approval ask is posted into the standing Approvals topic (not its BL topic) and names the ticket id"}]}
