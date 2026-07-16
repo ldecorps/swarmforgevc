@@ -365,6 +365,11 @@ test('BL-426: a text message is not-applicable to the voice decision (no voice f
   assert.deepEqual(decideVoiceUpdateAction(update, PRINCIPAL_ID, '1', operatorSubjectForTopic), { kind: 'not-applicable' });
 });
 
+test('BL-426: an update with no message field at all (e.g. a callback-query-only update) is not-applicable, never throws', () => {
+  const update = { update_id: 1 };
+  assert.deepEqual(decideVoiceUpdateAction(update, PRINCIPAL_ID, '1', operatorSubjectForTopic), { kind: 'not-applicable' });
+});
+
 test('BL-426: a voice note in a non-Operator topic is not-applicable (out of scope for slice 1)', () => {
   const update = mkVoiceUpdate({ fromId: PRINCIPAL_ID, chatId: 1, topicId: 99 });
   assert.deepEqual(decideVoiceUpdateAction(update, PRINCIPAL_ID, '1', operatorSubjectForTopic), { kind: 'not-applicable' });
@@ -526,6 +531,41 @@ test('BL-426 audio-voice-note-coordinator-01: a principal voice note in the Oper
   });
   assert.deepEqual(posted, [{ subjectId: OPERATOR_SUBJECT_ID, text: 'what is the status of BL-400' }]);
   assert.deepEqual(marked, [OPERATOR_SUBJECT_ID]);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-426: a failed bridge post for a transcribed voice note never marks the turn voice-originated', async () => {
+  const marked = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkVoiceUpdate({ fromId: PRINCIPAL_ID, topicId: 7, fileId: 'file-abc' })] }),
+    postToBridge: async () => false,
+    subjectForTopic: operatorSubjectForTopic,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    transcribeVoice: async () => ({ kind: 'ok', transcript: 'what is the status of BL-400' }),
+    markVoiceOriginatedTurn: async (subjectId) => {
+      marked.push(subjectId);
+    },
+  });
+  assert.deepEqual(marked, []);
+  assert.equal(result.failed, 1);
+  assert.equal(result.posted, 0);
+});
+
+test('BL-426: a successfully delivered transcribed voice note never throws when markVoiceOriginatedTurn is not wired', async () => {
+  const posted = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkVoiceUpdate({ fromId: PRINCIPAL_ID, topicId: 7, fileId: 'file-abc' })] }),
+    postToBridge: async (subjectId, text) => {
+      posted.push({ subjectId, text });
+      return true;
+    },
+    subjectForTopic: operatorSubjectForTopic,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    transcribeVoice: async () => ({ kind: 'ok', transcript: 'what is the status of BL-400' }),
+  });
+  assert.equal(posted.length, 1);
   assert.equal(result.posted, 1);
 });
 
@@ -1653,6 +1693,30 @@ test('BL-426: a TTS failure degrades to the text reply already sent, never block
   );
   assert.deepEqual(sent, [{ topicId: 7, text: 'BL-400 is in QA' }]);
   assert.deepEqual(voiceSent, [], 'sendVoice must never be called when synthesis failed');
+});
+
+test('BL-426: a voice-originated reply synthesizes and sends voice even when clearVoiceOriginatedTurn is not wired', async () => {
+  const sent = [];
+  const voiceSent = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"OPERATOR","text":"BL-400 is in QA"}\n\n']),
+      sendReply: async (topicId, text) => {
+        sent.push({ topicId, text });
+      },
+      resolveDelivery: () => topicDelivery(7),
+      ackReply: async () => {},
+      isVoiceOriginatedTurn: async () => true,
+      synthesizeVoice: async () => ({ kind: 'ok', audio: Buffer.from('synth-audio') }),
+      sendVoice: async (topicId, audio) => {
+        voiceSent.push({ topicId, audio });
+      },
+    },
+    new Set()
+  );
+  assert.deepEqual(sent, [{ topicId: 7, text: 'BL-400 is in QA' }]);
+  assert.deepEqual(voiceSent, [{ topicId: 7, audio: Buffer.from('synth-audio') }]);
 });
 
 test('BL-426: relaySseReplies behaves exactly as before when the voice adapters are absent (pre-BL-426 fixtures keep working)', async () => {
