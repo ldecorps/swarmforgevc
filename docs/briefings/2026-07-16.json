@@ -539,7 +539,7 @@
     {
       "role": "QA",
       "tokens": {
-        "value": 255414,
+        "value": 255871,
         "trend": {
           "series": [
             {
@@ -572,17 +572,17 @@
             },
             {
               "periodStart": "2026-07-16T00:00:00.000Z",
-              "value": 255414
+              "value": 255871
             }
           ],
-          "currentValue": 255414,
+          "currentValue": 255871,
           "priorValue": 591971,
-          "delta": -336557,
+          "delta": -336100,
           "direction": "down"
         }
       },
       "costUsd": {
-        "value": 50.463428400000005,
+        "value": 50.551478550000006,
         "trend": {
           "series": [
             {
@@ -615,12 +615,12 @@
             },
             {
               "periodStart": "2026-07-16T00:00:00.000Z",
-              "value": 50.463428400000005
+              "value": 50.551478550000006
             }
           ],
-          "currentValue": 50.463428400000005,
+          "currentValue": 50.551478550000006,
           "priorValue": 83.74883245000005,
-          "delta": -33.28540405000005,
+          "delta": -33.197353900000046,
           "direction": "down"
         }
       }
