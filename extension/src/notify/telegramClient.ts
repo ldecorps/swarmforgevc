@@ -76,6 +76,23 @@ function extractMigrateToChatId(json: unknown): number | undefined {
   return typeof parameters?.migrate_to_chat_id === 'number' ? parameters.migrate_to_chat_id : undefined;
 }
 
+// Shared by callTelegramApi/downloadTelegramFile/sendVoiceNote below - a
+// non-ok response becomes this same "status[: description]" text, redacted.
+// Split out so the multipart sendVoice/download paths (which cannot go
+// through callTelegramApi's JSON-body request) still format identically to
+// it, rather than re-deriving the same template.
+function formatApiFailureError(status: number, json: unknown, token: string): string {
+  const description = extractDescription(json);
+  return redactToken(`Telegram API responded with status ${status}${description ? `: ${description}` : ''}`, token);
+}
+
+// Shared by the same three callers as formatApiFailureError above - a
+// thrown request becomes this same redacted "<prefix>: <detail>" text.
+function formatNetworkError(prefix: string, err: unknown, token: string): string {
+  const detail = err instanceof Error ? err.message : 'unknown error';
+  return redactToken(`${prefix}: ${detail}`, token);
+}
+
 // Shared by sendTelegramMessage/getTelegramUpdates/createForumTopic below -
 // each POSTs a different method + body but interprets the response/error
 // identically (a non-ok status becomes a description-carrying error, a
@@ -85,18 +102,16 @@ async function callTelegramApi(token: string, method: string, body: string, post
   try {
     const res = await postFn(apiUrl(token, method), body);
     if (!res.ok) {
-      const description = extractDescription(res.json);
       return {
         success: false,
-        error: redactToken(`Telegram API responded with status ${res.status}${description ? `: ${description}` : ''}`, token),
+        error: formatApiFailureError(res.status, res.json, token),
         retryAfterSeconds: extractRetryAfterSeconds(res.json),
         migrateToChatId: extractMigrateToChatId(res.json),
       };
     }
     return { success: true, json: res.json };
   } catch (err) {
-    const detail = err instanceof Error ? err.message : 'unknown error';
-    return { success: false, error: redactToken(`Telegram request failed: ${detail}`, token) };
+    return { success: false, error: formatNetworkError('Telegram request failed', err, token) };
   }
 }
 
@@ -241,6 +256,10 @@ export interface TelegramMessage {
   // BL-444: the mirror service message posted in the NEW (post-migration)
   // supergroup, carrying the id it migrated FROM.
   migrate_from_chat_id?: number;
+  // BL-426: present when the message is a voice note (mutually exclusive
+  // with `text` above) - file_id is what getFile below resolves to a
+  // downloadable path.
+  voice?: { file_id: string; duration: number; mime_type?: string };
 }
 
 // BL-410: the update shape a tapped inline-keyboard button generates -
@@ -542,4 +561,112 @@ export async function getForumTopicIconStickers(
     return { success: false, stickers: [], error: result.error };
   }
   return { success: true, stickers: extractIconStickers(result.json) };
+}
+
+// ── BL-426: voice note download (STT) + upload (TTS) ─────────────────────
+
+export interface GetFileResult {
+  success: boolean;
+  filePath?: string;
+  error?: string;
+}
+
+function extractFilePath(json: unknown): string | undefined {
+  const result = json && typeof json === 'object' ? (json as Record<string, unknown>).result : undefined;
+  const filePath = result && typeof result === 'object' ? (result as Record<string, unknown>).file_path : undefined;
+  return typeof filePath === 'string' ? filePath : undefined;
+}
+
+// Resolves a voice message's file_id to a downloadable file_path - the
+// FIRST of Telegram's two-step file download (getFile, then a plain GET
+// against api.telegram.org/file/bot<token>/<file_path> - downloadTelegramFile
+// below - never a second Bot API method call).
+export async function getFile(token: string, fileId: string, postFn: TelegramPostFn = defaultPost): Promise<GetFileResult> {
+  const result = await callTelegramApi(token, 'getFile', JSON.stringify({ file_id: fileId }), postFn);
+  if (!result.success) {
+    return { success: false, error: result.error };
+  }
+  const filePath = extractFilePath(result.json);
+  return filePath ? { success: true, filePath } : { success: false, error: 'getFile response missing file_path' };
+}
+
+export type DownloadFn = (url: string) => Promise<{ ok: boolean; status: number; bytes: Buffer }>;
+
+async function defaultDownload(url: string): Promise<{ ok: boolean; status: number; bytes: Buffer }> {
+  const res = await fetch(url);
+  return { ok: res.ok, status: res.status, bytes: Buffer.from(await res.arrayBuffer()) };
+}
+
+export interface DownloadFileResult {
+  success: boolean;
+  bytes?: Buffer;
+  error?: string;
+}
+
+// Downloads an already-resolved file_path's bytes - the actual voice OGG
+// STT reads. A separate call from getFile above by Telegram's own two-step
+// contract: getFile resolves file_path, a plain GET (not another Bot API
+// method) fetches the bytes.
+export async function downloadTelegramFile(
+  token: string,
+  filePath: string,
+  download: DownloadFn = defaultDownload
+): Promise<DownloadFileResult> {
+  try {
+    const res = await download(`https://api.telegram.org/file/bot${token}/${filePath}`);
+    if (!res.ok) {
+      return { success: false, error: redactToken(`Telegram file download responded with status ${res.status}`, token) };
+    }
+    return { success: true, bytes: res.bytes };
+  } catch (err) {
+    return { success: false, error: formatNetworkError('Telegram file download failed', err, token) };
+  }
+}
+
+export type SendVoicePostFn = (url: string, form: FormData) => Promise<TelegramPostResponse>;
+
+async function defaultPostVoice(url: string, form: FormData): Promise<TelegramPostResponse> {
+  const res = await fetch(url, { method: 'POST', body: form });
+  let json: unknown;
+  try {
+    json = await res.json();
+  } catch {
+    json = undefined;
+  }
+  return { ok: res.ok, status: res.status, json };
+}
+
+export interface SendVoiceResult {
+  success: boolean;
+  error?: string;
+}
+
+// Uploads synthesized TTS audio as a Telegram voice note. Bot API's
+// sendVoice, unlike every other call in this file, requires a multipart
+// upload (an audio file, not a JSON field) so it cannot go through
+// callTelegramApi's JSON-body path - the error-shape handling below
+// deliberately mirrors it anyway (redacted token, description-carrying
+// non-ok status) for the same diagnostics every other call here gives.
+export async function sendVoiceNote(
+  token: string,
+  chatId: string,
+  audio: Buffer,
+  messageThreadId?: number,
+  postVoiceFn: SendVoicePostFn = defaultPostVoice
+): Promise<SendVoiceResult> {
+  const form = new FormData();
+  form.append('chat_id', chatId);
+  if (messageThreadId !== undefined) {
+    form.append('message_thread_id', String(messageThreadId));
+  }
+  form.append('voice', new Blob([audio]), 'voice.ogg');
+  try {
+    const res = await postVoiceFn(apiUrl(token, 'sendVoice'), form);
+    if (!res.ok) {
+      return { success: false, error: formatApiFailureError(res.status, res.json, token) };
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: formatNetworkError('Telegram request failed', err, token) };
+  }
 }

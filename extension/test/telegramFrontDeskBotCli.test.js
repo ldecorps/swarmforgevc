@@ -19,6 +19,8 @@ const {
   standingTopicTargets,
   iconStickersOnce,
   __resetIconStickersCacheForTest,
+  transcribeVoiceNote,
+  synthesizeVoiceReply,
   main,
 } = require('../out/tools/telegram-front-desk-bot');
 const { readRecord: readTopicRecord } = require('../out/concierge/blTopicStore');
@@ -681,4 +683,182 @@ test('iconStickersOnce caches an empty list (not undefined) when the fetch fails
   assert.deepEqual(first, []);
   assert.deepEqual(second, []);
   assert.equal(calls, 1);
+});
+
+// ── transcribeVoiceNote / synthesizeVoiceReply (BL-426 slice 1) ─────────
+// Both call the real network seam (global fetch) - stubbed the same way
+// relayOnboardingNegotiationTelegramCli.test.js / recertWebhookVercelHandler
+// .test.js already do, to keep this in-process test network-free.
+
+const OPENAI_KEY = 'sk-test-key';
+const BOT_TOKEN = '123456:test-bot-token';
+
+// Buffer.from(str).buffer returns Node's SHARED POOLED ArrayBuffer for a
+// small string, not one scoped to just this string - Buffer.from(arrayBuffer)
+// on the production side then wraps the WHOLE pool (leftover bytes from
+// unrelated allocations included). slice() to the exact byte range first.
+function toArrayBuffer(text) {
+  const buf = Buffer.from(text);
+  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+}
+
+function withFetch(handler, run) {
+  const originalFetch = global.fetch;
+  global.fetch = handler;
+  return run().finally(() => {
+    global.fetch = originalFetch;
+  });
+}
+
+test('BL-426: transcribeVoiceNote resolves file_id -> file_path -> audio bytes -> transcript on the happy path', async () => {
+  const calls = [];
+  await withFetch(async (url, opts) => {
+    calls.push(String(url));
+    if (String(url).includes('/getFile')) {
+      return { ok: true, status: 200, json: async () => ({ ok: true, result: { file_path: 'voice/file_1.oga' } }) };
+    }
+    if (String(url).includes('/file/bot')) {
+      return { ok: true, status: 200, arrayBuffer: async () => toArrayBuffer('audio-bytes'), json: async () => { throw new Error('not json'); } };
+    }
+    if (String(url) === 'https://api.openai.com/v1/audio/transcriptions') {
+      assert.equal(opts.headers.authorization, `Bearer ${OPENAI_KEY}`);
+      return { ok: true, status: 200, json: async () => ({ text: 'what is the status of BL-400' }) };
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  }, async () => {
+    const result = await transcribeVoiceNote(BOT_TOKEN, OPENAI_KEY, 'file-abc');
+    assert.deepEqual(result, { kind: 'ok', transcript: 'what is the status of BL-400' });
+  });
+  assert.ok(calls.some((c) => c.includes('/getFile')));
+  assert.ok(calls.some((c) => c.includes('/file/bot')));
+  assert.ok(calls.some((c) => c === 'https://api.openai.com/v1/audio/transcriptions'));
+});
+
+test('BL-426: transcribeVoiceNote reports unprocessable on OpenAI\'s 4xx (undecodable audio), never a transient failure', async () => {
+  await withFetch(async (url) => {
+    if (String(url).includes('/getFile')) {
+      return { ok: true, status: 200, json: async () => ({ ok: true, result: { file_path: 'voice/file_1.oga' } }) };
+    }
+    if (String(url).includes('/file/bot')) {
+      return { ok: true, status: 200, arrayBuffer: async () => toArrayBuffer('audio-bytes'), json: async () => { throw new Error('not json'); } };
+    }
+    return { ok: false, status: 400, json: async () => ({ error: 'invalid audio' }) };
+  }, async () => {
+    const result = await transcribeVoiceNote(BOT_TOKEN, OPENAI_KEY, 'file-abc');
+    assert.deepEqual(result, { kind: 'unprocessable' });
+  });
+});
+
+test('BL-426: transcribeVoiceNote reports a transient failure on OpenAI\'s 5xx, never unprocessable', async () => {
+  await withFetch(async (url) => {
+    if (String(url).includes('/getFile')) {
+      return { ok: true, status: 200, json: async () => ({ ok: true, result: { file_path: 'voice/file_1.oga' } }) };
+    }
+    if (String(url).includes('/file/bot')) {
+      return { ok: true, status: 200, arrayBuffer: async () => toArrayBuffer('audio-bytes'), json: async () => { throw new Error('not json'); } };
+    }
+    return { ok: false, status: 503, json: async () => ({ error: 'service unavailable' }) };
+  }, async () => {
+    const result = await transcribeVoiceNote(BOT_TOKEN, OPENAI_KEY, 'file-abc');
+    assert.deepEqual(result, { kind: 'transient-failure' });
+  });
+});
+
+test('BL-426: transcribeVoiceNote reports unprocessable for an empty downloaded file, never calling OpenAI', async () => {
+  await withFetch(async (url) => {
+    if (String(url).includes('/getFile')) {
+      return { ok: true, status: 200, json: async () => ({ ok: true, result: { file_path: 'voice/empty.oga' } }) };
+    }
+    if (String(url).includes('/file/bot')) {
+      return { ok: true, status: 200, arrayBuffer: async () => toArrayBuffer(''), json: async () => { throw new Error('not json'); } };
+    }
+    throw new Error('OpenAI should not be called for an empty file');
+  }, async () => {
+    const result = await transcribeVoiceNote(BOT_TOKEN, OPENAI_KEY, 'file-abc');
+    assert.deepEqual(result, { kind: 'unprocessable' });
+  });
+});
+
+test('BL-426: transcribeVoiceNote reports a transient failure when Telegram\'s own getFile fails', async () => {
+  await withFetch(async (url) => {
+    if (String(url).includes('/getFile')) {
+      return { ok: false, status: 500, json: async () => ({ ok: false, description: 'boom' }) };
+    }
+    throw new Error('no further fetch should happen once getFile fails');
+  }, async () => {
+    const result = await transcribeVoiceNote(BOT_TOKEN, OPENAI_KEY, 'file-abc');
+    assert.deepEqual(result, { kind: 'transient-failure' });
+  });
+});
+
+test('BL-426: transcribeVoiceNote reports a transient failure when the file download itself fails (getFile succeeded)', async () => {
+  await withFetch(async (url) => {
+    if (String(url).includes('/getFile')) {
+      return { ok: true, status: 200, json: async () => ({ ok: true, result: { file_path: 'voice/file_1.oga' } }) };
+    }
+    if (String(url).includes('/file/bot')) {
+      return { ok: false, status: 500, json: async () => ({}) };
+    }
+    throw new Error('OpenAI should not be called once the download fails');
+  }, async () => {
+    const result = await transcribeVoiceNote(BOT_TOKEN, OPENAI_KEY, 'file-abc');
+    assert.deepEqual(result, { kind: 'transient-failure' });
+  });
+});
+
+test('BL-426: transcribeVoiceNote reports unprocessable when OpenAI returns 2xx with no transcript text', async () => {
+  await withFetch(async (url) => {
+    if (String(url).includes('/getFile')) {
+      return { ok: true, status: 200, json: async () => ({ ok: true, result: { file_path: 'voice/file_1.oga' } }) };
+    }
+    if (String(url).includes('/file/bot')) {
+      return { ok: true, status: 200, arrayBuffer: async () => toArrayBuffer('audio-bytes'), json: async () => { throw new Error('not json'); } };
+    }
+    return { ok: true, status: 200, json: async () => ({}) };
+  }, async () => {
+    const result = await transcribeVoiceNote(BOT_TOKEN, OPENAI_KEY, 'file-abc');
+    assert.deepEqual(result, { kind: 'unprocessable' });
+  });
+});
+
+test('BL-426: transcribeVoiceNote reports a transient failure on a thrown network error', async () => {
+  await withFetch(async (url) => {
+    if (String(url).includes('/getFile')) {
+      return { ok: true, status: 200, json: async () => ({ ok: true, result: { file_path: 'voice/file_1.oga' } }) };
+    }
+    if (String(url).includes('/file/bot')) {
+      return { ok: true, status: 200, arrayBuffer: async () => toArrayBuffer('audio-bytes'), json: async () => { throw new Error('not json'); } };
+    }
+    throw new Error('network down');
+  }, async () => {
+    const result = await transcribeVoiceNote(BOT_TOKEN, OPENAI_KEY, 'file-abc');
+    assert.deepEqual(result, { kind: 'transient-failure' });
+  });
+});
+
+test('BL-426: synthesizeVoiceReply returns the synthesized audio bytes on the happy path', async () => {
+  await withFetch(async (url, opts) => {
+    assert.equal(url, 'https://api.openai.com/v1/audio/speech');
+    assert.equal(opts.headers.authorization, `Bearer ${OPENAI_KEY}`);
+    return { ok: true, status: 200, arrayBuffer: async () => toArrayBuffer('synth-audio') };
+  }, async () => {
+    const result = await synthesizeVoiceReply(OPENAI_KEY, 'BL-400 is in QA');
+    assert.deepEqual(result, { kind: 'ok', audio: Buffer.from('synth-audio') });
+  });
+});
+
+test('BL-426: synthesizeVoiceReply reports failure on a non-2xx response', async () => {
+  await withFetch(async () => ({ ok: false, status: 500, json: async () => ({ error: 'boom' }) }), async () => {
+    const result = await synthesizeVoiceReply(OPENAI_KEY, 'text');
+    assert.deepEqual(result, { kind: 'failure' });
+  });
+});
+
+test('BL-426: synthesizeVoiceReply reports failure on a thrown network error', async () => {
+  await withFetch(async () => {
+    throw new Error('network down');
+  }, async () => {
+    const result = await synthesizeVoiceReply(OPENAI_KEY, 'text');
+    assert.deepEqual(result, { kind: 'failure' });
+  });
 });
