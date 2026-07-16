@@ -2,6 +2,7 @@
 # Claude agents get --remote-control on launch by default (claude.ai/code sessions).
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SWARMFORGE_SH="$SCRIPT_DIR/../swarmforge.sh"
@@ -20,6 +21,7 @@ index_of_role() {
 
 mk_root() {
   local root; root="$(cd "$(mktemp -d)" && pwd -P)"
+  register_tmp_dir "$root"
   mkdir -p "$root/swarmforge/roles" "$root/.swarmforge/launch" "$root/.swarmforge/prompts"
   printf 'constitution\n' > "$root/swarmforge/constitution.prompt"
   printf 'role prompt\n' > "$root/swarmforge/roles/coder.prompt"

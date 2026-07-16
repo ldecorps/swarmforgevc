@@ -10,6 +10,10 @@ function fakeAdapters(overrides = {}) {
   };
 }
 
+function board(rows, parked = []) {
+  return { rows, parked };
+}
+
 // BL-452 pipeline-board-03: the board is posted once, then edited in place
 // on a stage change - never re-posted as a new message.
 
@@ -17,7 +21,7 @@ test('syncPipelineBoard: first call with no prior state creates the topic and po
   const created = [];
   const posted = [];
   const result = await syncPipelineBoard(
-    [{ id: 'BL-1', column: 'coder' }],
+    board([{ id: 'BL-1', column: 'coder', slug: '' }]),
     undefined,
     fakeAdapters({
       ensureBoardTopic: async () => {
@@ -42,7 +46,7 @@ test('syncPipelineBoard: a stage change edits the existing message in place, nev
   const edited = [];
   const prevState = { topicId: 900, messageId: 42, renderedText: 'stale grid' };
   const result = await syncPipelineBoard(
-    [{ id: 'BL-1', column: 'QA' }],
+    board([{ id: 'BL-1', column: 'QA', slug: '' }]),
     prevState,
     fakeAdapters({
       postMessage: async (topicId, text) => {
@@ -71,11 +75,11 @@ test('syncPipelineBoard: a stage change edits the existing message in place, nev
 test('syncPipelineBoard: unchanged rendered text is a no-op - no post, no edit', async () => {
   const posted = [];
   const edited = [];
-  const rows = [{ id: 'BL-1', column: 'coder' }];
-  const first = await syncPipelineBoard(rows, undefined, fakeAdapters({ postMessage: async () => 42 }));
+  const data = board([{ id: 'BL-1', column: 'coder', slug: '' }]);
+  const first = await syncPipelineBoard(data, undefined, fakeAdapters({ postMessage: async () => 42 }));
 
   const result = await syncPipelineBoard(
-    rows,
+    data,
     first.state,
     fakeAdapters({
       postMessage: async (topicId, text) => {
@@ -97,7 +101,7 @@ test('syncPipelineBoard: unchanged rendered text is a no-op - no post, no edit',
 
 test('syncPipelineBoard: a failed topic creation is a no-op, retried next tick', async () => {
   const result = await syncPipelineBoard(
-    [{ id: 'BL-1', column: 'coder' }],
+    board([{ id: 'BL-1', column: 'coder', slug: '' }]),
     undefined,
     fakeAdapters({ ensureBoardTopic: async () => undefined })
   );
@@ -108,7 +112,7 @@ test('syncPipelineBoard: a failed topic creation is a no-op, retried next tick',
 
 test('syncPipelineBoard: a failed post leaves the topic id persisted but no message id, retried next tick', async () => {
   const result = await syncPipelineBoard(
-    [{ id: 'BL-1', column: 'coder' }],
+    board([{ id: 'BL-1', column: 'coder', slug: '' }]),
     undefined,
     fakeAdapters({ postMessage: async () => undefined })
   );
@@ -120,11 +124,7 @@ test('syncPipelineBoard: a failed post leaves the topic id persisted but no mess
 
 test('syncPipelineBoard: a failed edit leaves prior state untouched, retried next tick', async () => {
   const prevState = { topicId: 900, messageId: 42, renderedText: 'stale grid' };
-  const result = await syncPipelineBoard(
-    [{ id: 'BL-1', column: 'QA' }],
-    prevState,
-    fakeAdapters({ editMessage: async () => false })
-  );
+  const result = await syncPipelineBoard(board([{ id: 'BL-1', column: 'QA', slug: '' }]), prevState, fakeAdapters({ editMessage: async () => false }));
 
   assert.equal(result.outcome, 'failed-edit');
   assert.deepEqual(result.state, prevState);
@@ -134,7 +134,7 @@ test('syncPipelineBoard: a topic already created (topicId persisted) is reused, 
   const created = [];
   const prevState = { topicId: 900, messageId: 42, renderedText: 'stale grid' };
   await syncPipelineBoard(
-    [{ id: 'BL-1', column: 'QA' }],
+    board([{ id: 'BL-1', column: 'QA', slug: '' }]),
     prevState,
     fakeAdapters({
       ensureBoardTopic: async () => {

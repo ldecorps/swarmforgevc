@@ -12,6 +12,7 @@
 # path is a separate directory, passed explicitly as an argument, matching
 # production (a target is a different filesystem path from the swarm repo).
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$SCRIPT_DIR/.."
@@ -22,6 +23,7 @@ check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi
 
 make_swarm_fixture() {
   local d; d="$(mktemp -d)"
+  register_tmp_dir "$d"
   mkdir -p "$d/swarmforge/scripts" "$d/extension/out/tools"
   cp "$SRC/launch_negotiation_relay.sh" "$SRC/negotiation_relay_supervisor.bb" \
      "$SRC/front_desk_supervisor_lib.bb" "$SRC/operator_lib.bb" "$SRC/daemon_alarm_lib.bb" \
@@ -36,6 +38,7 @@ LAUNCHER_IN() { echo "$1/swarmforge/scripts/launch_negotiation_relay.sh"; }
 #      referenced entrypoint is a real file on disk (-f, not string match) ──
 SWARM="$(make_swarm_fixture)"
 TARGET="$(mktemp -d)"
+register_tmp_dir "$TARGET"
 DRY="$(NEGOTIATION_RELAY_LAUNCH_DRYRUN=1 bash "$(LAUNCHER_IN "$SWARM")" "$TARGET" "$TARGET/secrets.json" 2>&1)"
 check "dry-run prints a supervisor command"                 '[[ "$DRY" == *"DRYRUN supervisor cmd:"* ]]'
 check "dry-run prints a relay command"                      '[[ "$DRY" == *"DRYRUN relay cmd:"* ]]'
@@ -52,6 +55,7 @@ rm -rf "$SWARM" "$TARGET"
 # ── 2. missing compiled entrypoint fails loudly (real launch, not dry-run) ──
 SWARM="$(make_swarm_fixture)"
 TARGET="$(mktemp -d)"
+register_tmp_dir "$TARGET"
 rm -f "$SWARM/extension/out/tools/relay-onboarding-negotiation-telegram.js"
 OUT="$(TELEGRAM_PRINCIPAL_USER_ID=1 bash "$(LAUNCHER_IN "$SWARM")" "$TARGET" "$TARGET/secrets.json" 2>&1)" && rc=0 || rc=$?
 check "a missing compiled relay entrypoint fails the real launch, not silently" \
@@ -64,6 +68,7 @@ rm -rf "$SWARM" "$TARGET"
 #      so it must be explicitly unset for the launch to see it as missing ──
 SWARM="$(make_swarm_fixture)"
 TARGET="$(mktemp -d)"
+register_tmp_dir "$TARGET"
 OUT="$(env -u TELEGRAM_PRINCIPAL_USER_ID bash "$(LAUNCHER_IN "$SWARM")" "$TARGET" "$TARGET/secrets.json" 2>&1)" && rc=0 || rc=$?
 check "a missing TELEGRAM_PRINCIPAL_USER_ID fails the real launch with a clear message" \
   '[[ "$rc" -ne 0 && "$OUT" == *"TELEGRAM_PRINCIPAL_USER_ID"* ]]'
@@ -72,6 +77,7 @@ rm -rf "$SWARM" "$TARGET"
 # ── 4. idempotent: an already-running supervisor is never double-launched ───
 SWARM="$(make_swarm_fixture)"
 TARGET="$(mktemp -d)"
+register_tmp_dir "$TARGET"
 mkdir -p "$TARGET/.swarmforge/operator"
 sleep 300 &
 FAKE_PID=$!

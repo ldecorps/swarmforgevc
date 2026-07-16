@@ -7,6 +7,7 @@
 # and a role's session is genuinely gone (the ticket's own "do not break the
 # real path" requirement).
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$SCRIPT_DIR/.."
@@ -16,16 +17,24 @@ check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi
 
 make_fixture() {
   local d; d="$(mktemp -d)"
+  register_tmp_dir "$d"
   mkdir -p "$d/.swarmforge/operator" "$d/swarmforge/scripts" "$d/swarmforge/roles"
   cp "$SRC/operator_lib.bb" "$SRC/operator_runtime.bb" "$SRC/telegram_topic_lib.bb" \
      "$SRC/support_lib.bb" "$SRC/support_thread_store.bb" \
      "$SRC/operator_memory_lib.bb" "$SRC/operator_memory_store.bb" \
      "$SRC/ticket_status_lib.bb" "$SRC/operator_ask.bb" "$SRC/handoff_lib.bb" \
-     "$SRC/daemon_alarm_lib.bb" "$SRC/disk_space_lib.bb" \
+     "$SRC/daemon_alarm_lib.bb" "$SRC/disk_space_lib.bb" "$SRC/sandbox_sweep_lib.bb" "$SRC/fixture_reaper_lib.bb" "$SRC/fixture_reaper_sweep_lib.bb" \
      "$d/swarmforge/scripts/"
   printf '%s' "$d"
 }
-tick() { OPERATOR_SKIP_LAUNCH=1 bb "$1/swarmforge/scripts/operator_runtime.bb" "$1" --tick-once; }
+# Isolates this generic tick from BL-413/BL-458's own real-/tmp sweeps -
+# neither var's path is ever created under this test's own fixture root, so
+# both sweeps see a missing root and no-op (fs/exists? false), never touching
+# the real /tmp as a side effect of a test that is not ABOUT sweeping.
+tick() {
+  OPERATOR_SKIP_LAUNCH=1 SWARMFORGE_SANDBOX_SWEEP_ROOT="$1/.no-sandbox-sweep" SWARMFORGE_FIXTURE_REAP_ROOT="$1/.no-fixture-reap" \
+    bb "$1/swarmforge/scripts/operator_runtime.bb" "$1" --tick-once
+}
 
 write_roles_tsv() {
   local d="$1"
@@ -79,6 +88,7 @@ rm -rf "$F2"
 F3="$(make_fixture)"
 write_roles_tsv "$F3"
 SOCK_DIR="$(mktemp -d)"
+register_tmp_dir "$SOCK_DIR"
 SOCK="$SOCK_DIR/bl368.sock"
 tmux -S "$SOCK" new-session -d -s swarmforge-coder -n agent 2>/dev/null
 tmux -S "$SOCK" new-session -d -s swarmforge-QA -n agent 2>/dev/null
