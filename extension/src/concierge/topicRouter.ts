@@ -111,14 +111,25 @@ function taskStartedText(event: SwarmEvent): string {
 // is reading this directly and needs to know what to reply. "approve" is
 // the exact keyword pendingApprovalReply.ts's isApprovalReplyText matches,
 // stated here so the instruction and the recognizer never drift apart.
-const APPROVAL_REQUESTED_TEXT = 'This ticket needs your approval before it can proceed. Reply here with "approve" to approve it.';
+//
+// BL-434: now NAMES the ticket id ("approve BL-123", not bare "approve") -
+// the ask posts into the ONE standing Approvals topic (routeEvent below),
+// which carries every ticket's ask at once, so a reply must name which
+// ticket it targets; pendingApprovalReply.ts's classifyApprovalsTopicReply
+// is the exact recognizer for this id-qualified grammar (the Approvals
+// topic's own sibling of isApprovalReplyText above, which still governs the
+// per-ticket-topic reply grammar unchanged elsewhere).
+function approvalRequestedText(backlogId: string | null): string {
+  const id = backlogId ?? 'unknown';
+  return `${id} needs your approval before it can proceed. Reply here with "approve ${id}" (or "reject ${id} <reason>") to act.`;
+}
 
 export function messageTextForEvent(event: SwarmEvent): string {
   if (event.type === 'TaskStarted') {
     return taskStartedText(event);
   }
   if (event.type === 'ApprovalRequested') {
-    return APPROVAL_REQUESTED_TEXT;
+    return approvalRequestedText(event.backlogId);
   }
   const identity = event.backlogId ?? event.role ?? 'unknown';
   const base = `${event.type}: ${identity}`;
@@ -228,6 +239,14 @@ export interface RouteAdapters {
   // failed (degrades to a skipped route, same as a failed createTopic
   // above - never a fallback post anywhere else).
   ensureOperatorTopic: () => Promise<number | undefined>;
+  // BL-434: resolves (creating on first use) the ONE standing Approvals
+  // topic's id - the destination for EVERY ApprovalRequested ask, replacing
+  // the old per-ticket-topic post (a single topic now carries every
+  // ticket's ask, plus the live pending-approval roster). Mirrors
+  // ensureOperatorTopic's own reuse-or-create shape immediately above;
+  // undefined only when creation itself failed (degrades to a skipped
+  // route, same posture as a failed createTopic/ensureOperatorTopic).
+  ensureApprovalsTopic: () => Promise<number | undefined>;
 }
 
 export interface RouteResult {
@@ -299,19 +318,60 @@ async function sendAndRecord(
   return ok;
 }
 
-// Adapter-injected: routes one event end to end. NEVER-MAIN-CHAT is a
-// structural guarantee, not a runtime check - sendMessage's own signature
-// requires a concrete topicId, so there is no code path in this function
-// that can call it without one. When topic creation fails (no supergroup,
-// rate-limited, etc.) the event is skipped - never a fallback post to a
-// main chat that does not exist in this function's adapter surface at all.
-export async function routeEvent(event: SwarmEvent, title: string, adapters: RouteAdapters): Promise<RouteResult> {
-  if (event.type === 'TaskCompleted') {
-    return routeCompletionEvent(event, title, adapters);
+// BL-424 regression guard: a ticket that has NEVER been active (a paused
+// ticket awaiting approval before its first promotion) previously got its
+// FIRST-EVER per-ticket topic created as a side effect of the old
+// ApprovalRequested-through-decideTopicAction path (routeApprovalRequestedEvent
+// below no longer touches that path at all). Without a per-ticket topic, BL-424's
+// awaiting-approval icon sync (syncIconForBacklogId, conciergeTick.ts) has
+// nothing to set an icon ON (its own topicId-undefined guard silently no-ops) -
+// exactly the "keep the per-ticket topic-icon awaiting-approval state working"
+// constraint this ticket's own spec calls out. So: ensure the per-ticket topic
+// EXISTS (create-if-missing, mirroring decideTopicAction's own reuse-or-create),
+// but never post a message into it - the ask itself still only ever goes to the
+// standing Approvals topic. A creation failure here is best-effort and never
+// blocks the ask from posting (the icon simply stays unset until a later tick
+// retries, the same degrade-gracefully posture syncIconForBacklogId already has).
+async function ensurePerTicketTopicForIcon(backlogId: string, title: string, adapters: RouteAdapters): Promise<void> {
+  if (adapters.getTopicMap()[backlogId] !== undefined) {
+    return;
   }
-  // BL-358: an untagged NeedsApproval has no ticket to reuse/create a topic
-  // for at all - routed to the standing Operator topic instead, before
-  // decideTopicAction (which requires a tagged event) is ever reached.
+  const created = await adapters.createTopic(topicNameForItem(backlogId, title));
+  if (created.success && created.topicId !== undefined) {
+    adapters.recordTopicId(backlogId, created.topicId);
+  }
+}
+
+// BL-434: ApprovalRequested's own routing path - replaces the old per-
+// ticket-topic reuse/create (decideTopicAction) now that ONE standing
+// Approvals topic carries every ticket's ask. Still a TAGGED event
+// (backlogId non-null - pendingApprovalFor, swarmEventStream.ts, only ever
+// emits it for a real ticket id), so sendAndRecord still serialises the ask
+// into the ticket's own durable record (blTopicStore) exactly as before -
+// only the DESTINATION topic changes.
+async function routeApprovalRequestedEvent(event: SwarmEvent, title: string, adapters: RouteAdapters): Promise<RouteResult> {
+  if (event.backlogId === null) {
+    return { posted: false, skipped: true };
+  }
+  await ensurePerTicketTopicForIcon(event.backlogId, title, adapters);
+  const topicId = await adapters.ensureApprovalsTopic();
+  if (topicId === undefined) {
+    return { posted: false, skipped: true };
+  }
+  const text = messageTextForEvent(event);
+  const buttons = messageButtonsForEvent(event);
+  const ok = await sendAndRecord(topicId, text, event.backlogId, adapters, buttons);
+  return { posted: ok, skipped: false };
+}
+
+// BL-358/BL-434 (cleaner review): the remaining default path - an
+// ordinary tagged event, or an untagged NeedsApproval - split out of
+// routeEvent so that dispatcher's own branch count (one per event kind)
+// stays flat as new kinds (BL-358's untagged gate, BL-434's Approvals
+// topic) keep getting their own routing path; this is the SAME
+// decideTopicAction-driven reuse-or-create logic routeEvent always ran for
+// the non-TaskCompleted case, unchanged in behavior.
+async function routeTaggedOrUntaggedEvent(event: SwarmEvent, title: string, adapters: RouteAdapters): Promise<RouteResult> {
   const { backlogId } = event;
   if (backlogId === null) {
     return routeUntaggedGateEvent(event, adapters);
@@ -328,4 +388,24 @@ export async function routeEvent(event: SwarmEvent, title: string, adapters: Rou
   adapters.recordTopicId(backlogId, created.topicId);
   const ok = await sendAndRecord(created.topicId, action.text, backlogId, adapters, action.buttons);
   return { posted: ok, skipped: false };
+}
+
+// Adapter-injected: routes one event end to end. NEVER-MAIN-CHAT is a
+// structural guarantee, not a runtime check - sendMessage's own signature
+// requires a concrete topicId, so there is no code path in this function
+// that can call it without one. When topic creation fails (no supergroup,
+// rate-limited, etc.) the event is skipped - never a fallback post to a
+// main chat that does not exist in this function's adapter surface at all.
+export async function routeEvent(event: SwarmEvent, title: string, adapters: RouteAdapters): Promise<RouteResult> {
+  if (event.type === 'TaskCompleted') {
+    return routeCompletionEvent(event, title, adapters);
+  }
+  // BL-434: routed to the standing Approvals topic - checked before the
+  // untagged-gate branch below too, though ApprovalRequested is always
+  // tagged in practice; this keeps the dispatch order explicit rather than
+  // relying on that invariant holding silently.
+  if (event.type === 'ApprovalRequested') {
+    return routeApprovalRequestedEvent(event, title, adapters);
+  }
+  return routeTaggedOrUntaggedEvent(event, title, adapters);
 }

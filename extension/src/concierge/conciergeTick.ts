@@ -16,6 +16,7 @@ import { StalenessBucket } from './topicTitleAge';
 import { TopicTitleAdapters, syncTopicTitle } from './topicTitleSync';
 import { PipelineBoardTicketMeta, computePipelineBoard } from './pipelineBoard';
 import { PipelineBoardAdapters, PipelineBoardState, syncPipelineBoard } from './pipelineBoardSync';
+import { ApprovalsRosterAdapters, ApprovalsRosterState, syncApprovalsRoster } from './approvalsRosterSync';
 
 export interface BacklogFolderItem {
   id: string;
@@ -87,6 +88,11 @@ export interface TickState {
   // tick after this ships creates the standing topic and posts the first
   // message).
   pipelineBoard?: PipelineBoardState;
+  // BL-434: the Approvals topic's own durable "last rendered/posted" roster
+  // marker - same posture as pipelineBoard above. Absent on an old/fresh
+  // TickState file, treated as "no roster posted yet" (the first tick after
+  // this ships creates the standing topic and posts the first roster).
+  approvalsRoster?: ApprovalsRosterState;
 }
 
 export interface ConciergeTickAdapters {
@@ -139,6 +145,12 @@ export interface ConciergeTickAdapters {
   // across this codebase's own acceptance step handlers was built before
   // this field existed.
   boardAdapters?: PipelineBoardAdapters;
+  // BL-434: the standing Approvals topic's own roster-sync adapters -
+  // optional (defaults to no roster sync), same posture as boardAdapters
+  // above, for the identical reason: every existing adapters fixture across
+  // this codebase's own acceptance step handlers was built before this
+  // field existed.
+  rosterAdapters?: ApprovalsRosterAdapters;
 }
 
 export interface TickResult {
@@ -336,6 +348,28 @@ async function syncBoardIfWired(
   }
   const data = computePipelineBoard(readRoleHeldTickets(), folders.paused, buildTicketMetaLookup(folders));
   const result = await syncPipelineBoard(data, prevBoard, boardAdapters);
+  return result.state;
+}
+
+// BL-434: the Approvals topic's own roster sync - runs on EVERY tick (never
+// gated on a pending-set transition, same posture as the pipeline-board sync
+// above), because the change-gate that matters is the rendered TEXT, not any
+// one ticket's transition; syncApprovalsRoster owns that gate. Fed straight
+// off the SAME pendingApproval set toEventStreamSnapshot already computed
+// this tick (pendingApprovalFor) - never a second derivation - joined to
+// each ticket's title via the folders snapshot. Absent rosterAdapters leaves
+// the prior tick's roster state untouched, same posture as boardAdapters.
+async function syncApprovalsRosterIfWired(
+  folders: BacklogFoldersSnapshot,
+  pendingApproval: string[],
+  prevRoster: ApprovalsRosterState | undefined,
+  rosterAdapters: ApprovalsRosterAdapters | undefined
+): Promise<ApprovalsRosterState | undefined> {
+  if (!rosterAdapters) {
+    return prevRoster;
+  }
+  const tickets = pendingApproval.map((id) => ({ id, title: titleForBacklogId(folders, id) }));
+  const result = await syncApprovalsRoster(tickets, prevRoster, rosterAdapters);
   return result.state;
 }
 
@@ -759,7 +793,19 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
   // not any one ticket's transition; syncPipelineBoard owns that gate.
   const pipelineBoard = await syncBoardIfWired(folders, state.pipelineBoard, adapters.boardAdapters, adapters.readRoleHeldTickets);
 
+  // BL-434: the Approvals topic's own live roster - fed off curr.pendingApproval
+  // (the SAME set this tick already derived ApprovalRequested events from),
+  // never a second pending-approval computation.
+  const approvalsRoster = await syncApprovalsRosterIfWired(folders, curr.pendingApproval, state.approvalsRoster, adapters.rosterAdapters);
+
   const persistedSnapshot = withRetryableTransitionsHeldBack(curr, unrouted);
-  adapters.writeTickState({ snapshot: persistedSnapshot, emittedKeys: [...alreadyEmitted], standingIconSeenIds, titleAgeBuckets, pipelineBoard });
+  adapters.writeTickState({
+    snapshot: persistedSnapshot,
+    emittedKeys: [...alreadyEmitted],
+    standingIconSeenIds,
+    titleAgeBuckets,
+    pipelineBoard,
+    approvalsRoster,
+  });
   return { routed };
 }

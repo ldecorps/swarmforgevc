@@ -74,6 +74,7 @@ function fakeConciergeAdapters(stickers) {
         closeTopic: async () => true,
         recordMessage: () => {},
         ensureOperatorTopic: async () => 700,
+        ensureApprovalsTopic: async () => 750,
       },
       iconAdapters: {
         getIconStickers: async () => stickers,

@@ -25,6 +25,7 @@ function fakeAdapters(overrides = {}) {
   let currentGates = [];
   let currentRoleTicket = {};
   let operatorTopicId = 700;
+  let approvalsTopicId = 750;
   return {
     state,
     topicMap,
@@ -41,6 +42,9 @@ function fakeAdapters(overrides = {}) {
     },
     setOperatorTopicId: (id) => {
       operatorTopicId = id;
+    },
+    setApprovalsTopicId: (id) => {
+      approvalsTopicId = id;
     },
     setFolders: (f) => {
       currentFolders = f;
@@ -62,6 +66,7 @@ function fakeAdapters(overrides = {}) {
         state.standingIconSeenIds = next.standingIconSeenIds;
         state.titleAgeBuckets = next.titleAgeBuckets;
         state.pipelineBoard = next.pipelineBoard;
+        state.approvalsRoster = next.approvalsRoster;
       },
       routeAdapters: {
         getTopicMap: () => topicMap,
@@ -84,6 +89,7 @@ function fakeAdapters(overrides = {}) {
           recorded.push({ backlogId, text });
         },
         ensureOperatorTopic: async () => operatorTopicId,
+        ensureApprovalsTopic: async () => approvalsTopicId,
       },
       // BL-342: an EMPTY sticker list by default - resolveIconStickerId
       // then never finds a match, so syncTopicIcon safely no-ops
@@ -126,6 +132,16 @@ function fakeAdapters(overrides = {}) {
       readRoleHeldTickets: () => ({}),
       boardAdapters: {
         ensureBoardTopic: async () => undefined,
+        postMessage: async () => undefined,
+        editMessage: async () => true,
+      },
+      // BL-434: a safe no-op default (ensureApprovalsTopic resolves to
+      // undefined -> 'failed-no-topic', harmless) mirroring boardAdapters'
+      // own posture above, so every existing test that never touches the
+      // roster is completely unaffected. Tests that DO exercise the roster
+      // override rosterAdapters.
+      rosterAdapters: {
+        ensureApprovalsTopic: async () => undefined,
         postMessage: async () => undefined,
         editMessage: async () => true,
       },
@@ -370,17 +386,19 @@ test('needs-approval-01: a gate that stays captured across two polls only posts 
 
 // ── pending-approval-asks (BL-357) ────────────────────────────────────────
 
-test('BL-357: an active ticket newly pending approval asks for it in its own topic', async () => {
+test('BL-434: an active ticket newly pending approval asks for it in the standing Approvals topic, not its own topic', async () => {
   const { adapters, setFolders, created, sent, topicMap } = fakeAdapters();
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', humanApproval: 'pending' }] }));
 
   const result = await runConciergeTick(adapters);
 
-  // TaskStarted (newly active) and ApprovalRequested (newly pending) both
-  // derive on this same first tick and route into BL-1's ONE topic.
+  // TaskStarted (newly active) creates BL-1's own topic; ApprovalRequested
+  // (newly pending) routes to the standing Approvals topic instead - no
+  // second per-ticket topic is created for it.
   assert.equal(created.length, 1);
   assert.equal(topicMap['BL-1'], 801);
-  assert.ok(sent.some((m) => m.text === 'This ticket needs your approval before it can proceed. Reply here with "approve" to approve it.' && m.topicId === 801));
+  assert.ok(sent.some((m) => m.text.includes('BL-1 needs your approval') && m.topicId === 750));
+  assert.ok(!sent.some((m) => m.text.includes('needs your approval') && m.topicId === 801), "the ask must not be posted into the ticket's own topic");
   assert.equal(result.routed, 2);
 });
 
@@ -407,30 +425,32 @@ test('BL-357: an active ticket whose approval is not pending is never asked abou
 
 // BL-408: paused tickets awaiting approval are now asked too - they sit in
 // paused/ until promotion. Only done/ tickets are out of scope.
-test('BL-408: a paused ticket pending approval IS asked in its own topic', async () => {
-  const { adapters, setFolders, created, sent, topicMap } = fakeAdapters();
+test('BL-434: a paused ticket pending approval IS asked in the standing Approvals topic, not its own topic', async () => {
+  const { adapters, setFolders, sent, topicMap } = fakeAdapters();
   setFolders(folders({ paused: [{ id: 'BL-2', title: 'awaiting promotion', humanApproval: 'pending' }] }));
 
   const result = await runConciergeTick(adapters);
 
-  // Approval request for paused ticket fires (no TaskStarted since not yet
-  // active), so only ApprovalRequested routes - creates the topic on demand.
-  assert.equal(created.length, 1);
+  // Approval request for the paused ticket fires (no TaskStarted since not
+  // yet active) and routes to the standing Approvals topic. A per-ticket
+  // topic IS created as a side effect (BL-424: the icon sync needs one to
+  // set the awaiting-approval icon on), but never receives the ask itself.
   assert.equal(topicMap['BL-2'], 801);
-  assert.ok(sent.some((m) => m.text === 'This ticket needs your approval before it can proceed. Reply here with "approve" to approve it.' && m.topicId === 801));
+  assert.ok(!sent.some((m) => m.topicId === 801), "the ask must never post into the ticket's own topic");
+  assert.ok(sent.some((m) => m.text.includes('BL-2 needs your approval') && m.topicId === 750));
   assert.equal(result.routed, 1);
 });
 
-test('BL-357: an ApprovalRequested that fails to post is retried on a later tick', async () => {
+test('BL-434: an ApprovalRequested that fails to post is retried on a later tick', async () => {
   const { adapters, setFolders, state } = fakeAdapters();
-  // Isolate to ONLY the ApprovalRequested transition: the item already has
-  // a topic and is not newly active this tick, mirroring needs-approval-02.
+  // Isolate to ONLY the ApprovalRequested transition: not newly active this
+  // tick, mirroring needs-approval-02. The ask routes to the standing
+  // Approvals topic regardless of any per-ticket topic mapping.
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', humanApproval: 'pending' }] }));
   adapters.writeTickState({
     snapshot: { backlog: { active: ['BL-1'], paused: [], done: [] }, gates: [], roleTicket: {}, ticketSummaries: {}, pendingApproval: [] },
     emittedKeys: ['TaskStarted:BL-1'],
   });
-  adapters.routeAdapters.getTopicMap = () => ({ 'BL-1': 42 });
   let shouldFail = true;
   const sent = [];
   adapters.routeAdapters.sendMessage = async (topicId, text) => {
@@ -451,7 +471,9 @@ test('BL-357: an ApprovalRequested that fails to post is retried on a later tick
   shouldFail = false;
   const second = await runConciergeTick(adapters); // still pending, unchanged live state
   assert.equal(second.routed, 1);
-  assert.deepEqual(sent, [{ topicId: 42, text: 'This ticket needs your approval before it can proceed. Reply here with "approve" to approve it.' }]);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].topicId, 750);
+  assert.match(sent[0].text, /BL-1 needs your approval/);
   assert.ok(state.emittedKeys.includes('ApprovalRequested:BL-1'));
 });
 
@@ -1681,4 +1703,93 @@ test('BL-452: omitting readRoleHeldTickets/boardAdapters entirely leaves the tic
   await runConciergeTick(adapters);
 
   assert.equal(state.pipelineBoard, undefined);
+});
+
+// ── BL-434: Approvals topic roster wiring ─────────────────────────────────
+
+test('BL-434 approvals-standing-topic-04: the Approvals roster is posted once, then edited in place as the pending set grows', async () => {
+  const { adapters, state, setFolders } = fakeAdapters();
+  const ensured = [];
+  const posted = [];
+  const edited = [];
+  adapters.rosterAdapters = {
+    ensureApprovalsTopic: async () => {
+      ensured.push(true);
+      return 750;
+    },
+    postMessage: async (topicId, text) => {
+      posted.push({ topicId, text });
+      return 42;
+    },
+    editMessage: async (topicId, messageId, text) => {
+      edited.push({ topicId, messageId, text });
+      return true;
+    },
+  };
+  setFolders(folders({ paused: [{ id: 'BL-433', title: 'first', humanApproval: 'pending' }] }));
+
+  await runConciergeTick(adapters);
+
+  assert.equal(ensured.length, 1);
+  assert.equal(posted.length, 1);
+  assert.equal(posted[0].topicId, 750);
+  assert.ok(posted[0].text.includes('BL-433'));
+  assert.equal(state.approvalsRoster.topicId, 750);
+  assert.equal(state.approvalsRoster.messageId, 42);
+
+  // A second ticket enters the pending set - same topic/message, edited in place.
+  setFolders(
+    folders({
+      paused: [
+        { id: 'BL-433', title: 'first', humanApproval: 'pending' },
+        { id: 'BL-440', title: 'second', humanApproval: 'pending' },
+      ],
+    })
+  );
+  await runConciergeTick(adapters);
+
+  assert.equal(ensured.length, 1, 'expected the topic to be created only once');
+  assert.equal(posted.length, 1, 'expected no second message ever posted');
+  assert.equal(edited.length, 1);
+  assert.equal(edited[0].topicId, 750);
+  assert.equal(edited[0].messageId, 42);
+  assert.ok(edited[0].text.includes('BL-433'));
+  assert.ok(edited[0].text.includes('BL-440'), 'BL-434 approvals-standing-topic-04: the roster lists BOTH pending tickets');
+
+  // No pending-set change this tick - the message is not re-edited.
+  await runConciergeTick(adapters);
+  assert.equal(edited.length, 1, 'expected no re-edit when the pending set did not change');
+});
+
+test('BL-434 approvals-standing-topic-05: once acted on, a ticket is removed from the Approvals topic roster', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  const edited = [];
+  adapters.rosterAdapters = {
+    ensureApprovalsTopic: async () => 750,
+    postMessage: async () => 42,
+    editMessage: async (topicId, messageId, text) => {
+      edited.push({ topicId, messageId, text });
+      return true;
+    },
+  };
+  setFolders(folders({ paused: [{ id: 'BL-433', title: 'first', humanApproval: 'pending' }] }));
+  await runConciergeTick(adapters);
+
+  // The ticket is acted on (approved) - its humanApproval leaves 'pending',
+  // the same live-state transition recordApprovalReply itself performs.
+  setFolders(folders({ active: [{ id: 'BL-433', title: 'first', humanApproval: 'approved' }] }));
+  await runConciergeTick(adapters);
+
+  assert.equal(edited.length, 1);
+  assert.ok(!edited[0].text.includes('BL-433'), 'expected BL-433 removed from the roster once no longer pending');
+});
+
+test('BL-434: omitting rosterAdapters entirely leaves the tick unaffected - existing adapters fixtures built before this field existed keep working unchanged', async () => {
+  const { adapters, state, setFolders } = fakeAdapters();
+  delete adapters.rosterAdapters;
+  setFolders(folders({ paused: [{ id: 'BL-433', title: 'first', humanApproval: 'pending' }] }));
+
+  await runConciergeTick(adapters);
+
+  assert.equal(state.approvalsRoster, undefined);
 });

@@ -11,6 +11,7 @@ const {
   readRoleTicket,
   toFoldersSnapshot,
   ensureOperatorTopic,
+  ensureApprovalsTopic,
   ensureRoleTopics,
   resolveRolePaneTarget,
   redirectToRole,
@@ -368,6 +369,63 @@ test('BL-358: a failed create returns undefined, never a fabricated topicId', as
   assert.equal(topicId, undefined);
 });
 
+// ── ensureApprovalsTopic (BL-434, mirrors ensureOperatorTopic above) ─────
+
+test('BL-434: creates the Approvals topic and binds it to the reserved subject when the map has no binding yet', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeCreateOk(42);
+  await ensureApprovalsTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 1);
+  const map = readTopicMapFixture(root);
+  assert.equal(map['42'], 'APPROVALS');
+});
+
+test('BL-434: the create call names the topic "Approvals"', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeCreateOk(7);
+  await ensureApprovalsTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.match(calls[0].url, /createForumTopic$/);
+  assert.match(calls[0].body, /"name":"Approvals"/);
+});
+
+test('BL-434: a map that already binds the reserved Approvals subject never creates a second topic', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'APPROVALS' });
+  const { postFn, calls } = fakeCreateOk(999);
+  await ensureApprovalsTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 0);
+  assert.deepEqual(readTopicMapFixture(root), { '42': 'APPROVALS' });
+});
+
+test('BL-434: the Approvals topic and the Operator topic bind independently in the SAME map, never colliding', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'OPERATOR' });
+  const { postFn, calls } = fakeCreateOk(55);
+  const topicId = await ensureApprovalsTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 1);
+  assert.equal(topicId, 55);
+  const map = readTopicMapFixture(root);
+  assert.equal(map['55'], 'APPROVALS');
+  assert.equal(map['42'], 'OPERATOR');
+});
+
+test('BL-434: a failed create degrades quietly - never throws, never writes a partial binding', async () => {
+  const root = mkTmpRoot();
+  const postFn = async () => ({ ok: false, status: 500, json: { description: 'simulated failure' } });
+  const topicId = await ensureApprovalsTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, undefined);
+  assert.equal(fs.existsSync(topicMapPath(root)), false);
+});
+
+test('BL-434: an already-bound Approvals topic returns its existing topicId, without calling create', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'APPROVALS' });
+  const { postFn, calls } = fakeCreateOk(999);
+  const topicId = await ensureApprovalsTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, 42);
+  assert.equal(calls.length, 0);
+});
+
 // ── ensureRoleTopics (BL-425 slice 1 provision-role-topics-01) ───────────
 
 function fakeCreateSequential(startId = 100) {
@@ -616,6 +674,24 @@ test('standingTopicTargets classifies the Operator subject as "operator" and eve
       { id: 'OPERATOR', topicId: 701, iconKey: 'operator' },
       { id: 'SUP-001', topicId: 801, iconKey: 'support/intake' },
       { id: 'SUP-002', topicId: 802, iconKey: 'support/intake' },
+    ]
+  );
+});
+
+// BL-434: the Approvals subject gets its own iconKey too, checked before the
+// support/intake fallback - same posture as OPERATOR's own check above.
+test('BL-434: standingTopicTargets classifies the Approvals subject as "approvals", distinct from the Operator and support/intake', () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { 701: 'OPERATOR', 750: 'APPROVALS', 801: 'SUP-001' });
+
+  const targets = standingTopicTargets(root);
+
+  assert.deepEqual(
+    targets.sort((a, b) => a.topicId - b.topicId),
+    [
+      { id: 'OPERATOR', topicId: 701, iconKey: 'operator' },
+      { id: 'APPROVALS', topicId: 750, iconKey: 'approvals' },
+      { id: 'SUP-001', topicId: 801, iconKey: 'support/intake' },
     ]
   );
 });
