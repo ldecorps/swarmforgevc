@@ -160,3 +160,22 @@ test('readNewReplyOutboxEntries synthesizes a stable id for a pre-BL-320 entry w
   const fromSecond = readNewReplyOutboxEntries(targetPath, 1);
   assert.deepEqual(fromSecond.entries, [{ id: 'legacy-1', threadId: 'SUP-2', text: 'second' }]);
 });
+
+// BL-440: operator-decide.ts's runApprove marks a successful gate answer's
+// own confirmation reply with retractsPendingQuestion so it rides through
+// to blTopicStore.ts as the real production writer of that field - this
+// is the wire format that carries the flag from the outbox file.
+test('readNewReplyOutboxEntries passes through a true retractsPendingQuestion flag', () => {
+  const targetPath = mkTmp();
+  writeOutbox(targetPath, [{ id: 'reply-1', threadId: 'BL-100', text: 'Answered coder\'s gate: y.', retractsPendingQuestion: true }]);
+  const result = readNewReplyOutboxEntries(targetPath, 0);
+  assert.deepEqual(result.entries, [{ id: 'reply-1', threadId: 'BL-100', text: 'Answered coder\'s gate: y.', retractsPendingQuestion: true }]);
+});
+
+test('readNewReplyOutboxEntries omits the retractsPendingQuestion key for an ordinary reply, never defaulting it to false', () => {
+  const targetPath = mkTmp();
+  writeOutbox(targetPath, [{ id: 'reply-2', threadId: 'SUP-1', text: 'ordinary reply' }]);
+  const result = readNewReplyOutboxEntries(targetPath, 0);
+  assert.deepEqual(result.entries, [{ id: 'reply-2', threadId: 'SUP-1', text: 'ordinary reply' }]);
+  assert.ok(!('retractsPendingQuestion' in result.entries[0]));
+});
