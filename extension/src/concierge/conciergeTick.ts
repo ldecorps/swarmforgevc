@@ -357,13 +357,14 @@ async function syncBoardIfWired(
   folders: BacklogFoldersSnapshot,
   prevBoard: PipelineBoardState | undefined,
   boardAdapters: PipelineBoardAdapters | undefined,
-  readRoleHeldTickets: (() => Record<string, string[]>) | undefined
+  readRoleHeldTickets: (() => Record<string, string[]>) | undefined,
+  nowMs: number
 ): Promise<PipelineBoardState | undefined> {
   if (!boardAdapters || !readRoleHeldTickets) {
     return prevBoard;
   }
   const data = computePipelineBoard(readRoleHeldTickets(), folders.paused, buildTicketMetaLookup(folders));
-  const result = await syncPipelineBoard(data, prevBoard, boardAdapters);
+  const result = await syncPipelineBoard(data, prevBoard, boardAdapters, nowMs);
   return result.state;
 }
 
@@ -827,7 +828,7 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
   // gated on a folder-membership transition, same posture as the title-age
   // sync above), because the change-gate that matters is the rendered TEXT,
   // not any one ticket's transition; syncPipelineBoard owns that gate.
-  const pipelineBoard = await syncBoardIfWired(folders, state.pipelineBoard, adapters.boardAdapters, adapters.readRoleHeldTickets);
+  const pipelineBoard = await syncBoardIfWired(folders, state.pipelineBoard, adapters.boardAdapters, adapters.readRoleHeldTickets, nowMs);
 
   // BL-434: the Approvals topic's own live roster - fed off curr.pendingApproval
   // (the SAME set this tick already derived ApprovalRequested events from),
