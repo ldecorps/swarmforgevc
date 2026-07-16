@@ -477,13 +477,19 @@ export async function ensureAgentQuestionsTopic(targetPath: string, botToken: st
 // file in this directory - and the SOLE writer/reader pair for this mapping
 // (operator_runtime.bb never touches it), so there is no cross-process write
 // race the way a shared Babashka/TS file would risk.
-function pollMapPath(targetPath: string): string {
+export function pollMapPath(targetPath: string): string {
   return path.join(targetPath, '.swarmforge', 'operator', 'telegram-poll-map.json');
 }
 
-type PollMap = Record<string, { threadId: string; options: string[] }>;
+export type PollMap = Record<string, { threadId: string; options: string[] }>;
 
-function readPollMap(targetPath: string): PollMap {
+// Hardener (BL-466): exported so a wiring test can prove this NEW on-disk
+// read/write is load-bearing with a real fixture file, rather than only
+// being exercised indirectly through buildPollAdapters/connectAndRelayReplies
+// (both module-private) - the same "a new on-disk input needs a fixture
+// proving the read is load-bearing" discipline this file's own engineering
+// article names.
+export function readPollMap(targetPath: string): PollMap {
   try {
     return JSON.parse(fs.readFileSync(pollMapPath(targetPath), 'utf8')) as PollMap;
   } catch {
@@ -491,7 +497,7 @@ function readPollMap(targetPath: string): PollMap {
   }
 }
 
-function writePollMap(targetPath: string, map: PollMap): void {
+export function writePollMap(targetPath: string, map: PollMap): void {
   atomicWrite(pollMapPath(targetPath), JSON.stringify(map));
 }
 
@@ -501,7 +507,8 @@ function writePollMap(targetPath: string, map: PollMap): void {
 // Used only to resolve "which SUP-### thread is the CURRENTLY pending agent
 // question on" for an in-topic plain-message reply (BL-306's own "one
 // pending question at a time" MVP constraint means this is never ambiguous).
-function readAwaitingAnswer(targetPath: string): { threadId?: string } | undefined {
+// Hardener: exported for the same fixture-proof reason as readPollMap above.
+export function readAwaitingAnswer(targetPath: string): { threadId?: string } | undefined {
   try {
     const parsed = JSON.parse(fs.readFileSync(path.join(targetPath, '.swarmforge', 'operator', 'awaiting-answer.json'), 'utf8')) as {
       thread_id?: string;
