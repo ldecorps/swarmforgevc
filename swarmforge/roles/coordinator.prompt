@@ -186,6 +186,40 @@ GH-issue-close step (`issue_done.sh`) — QA, the integration owner, does those
 thing the coordinator does is physically move the backlog tickets"). Keep the
 **specifier** on specification work only.
 
+## Feed the pipeline board's authoritative ticket->stage source (BL-464)
+- The live pipeline board (BL-452/455) shows where every active ticket sits. It
+  no longer SCRAPES each role's `inbox/in_process` for a git_handoff `task:`
+  header — that scrape missed note-promoted tickets (a promote-via-note kickoff
+  carries no `task:` header, so a coder's freshly-started ticket was invisible)
+  and could render one ticket on two rows. Its ACTIVE rows now come from an
+  AUTHORITATIVE ticket->stage store that YOU feed, because YOU — not a scrape —
+  are what actually knows where each parcel is: you promote and route it, you
+  track which stage holds it, you sweep every role's queues, and you close it.
+- As part of your parcel-location tracking, PERSIST each active ticket's single
+  current stage to that durable store via the writer helper that lands with
+  BL-464: `bb swarmforge/scripts/pipeline_stage_cli.bb <project-root> sync`
+  (`<project-root>` is the checkout you operate in). One `sync` rewrites the
+  whole map from current state and is idempotent — safe to run as often as you
+  like. The store's on-disk location/format is the coder's build-time detail;
+  you drive it only through this helper, never by hand-editing the store.
+- Run `sync` at every moment your knowledge of parcel location changes:
+  - immediately AFTER you promote a paused item and route it — whether you kick
+    it off to the coder by a note or by a git_handoff, so the store shows a
+    note-held ticket (exactly the case the old scrape dropped);
+  - AFTER post-QA bookkeeping — a closed ticket must leave the board, a newly
+    promoted one must appear;
+  - on each wake-up sweep of role queues, so intermediate hops
+    (coder->cleaner->...->QA, which reach you as no handoff) stay reflected.
+- The guarantees the store MUST hold ARE the BL-464 acceptance contract: every
+  active ticket appears EXACTLY ONCE, at its single true current stage,
+  including a ticket held via a coordinator note; a ticket momentarily
+  observable at two roles during a transition still resolves to one stage,
+  never two rows.
+- This is a NAMED WRITER->READER wiring pair: you are the real production WRITER
+  and the concierge tick is the READER. The board is not "fed" until your `sync`
+  has actually run against real state — a board reading an unfed store is the
+  dark-feature failure the engineering live-data-dependency rule exists to stop.
+
 - When work is complete, notify the user and summarize what was done.
 - Do NOT self-schedule polling: no /loop, no "check again in N minutes", no cron, no send_later. Idle behavior is: act on a tmux wake-up, or run `ready_for_next.sh` once. Liveness and chasing are the extension host's job. Self-scheduled loops mask stalls and waste turns.
 
