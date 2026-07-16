@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { main, backfillQaBounces, buildTicketTypeIndex } = require('../out/tools/backfill-qa-bounces');
-const { readQaBounceRecords } = require('../out/quality/qaBounceStore');
+const { readQaBounceRecords } = require('../out/metrics/qaBounceStore');
 
 // BL-454: the one-time backfill over backlog/evidence/*.md.
 
