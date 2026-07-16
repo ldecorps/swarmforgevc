@@ -65,6 +65,8 @@ test('onMutationTestReportReady writes a final record with status done', () => {
   assert.equal(writes.length, 3);
   assert.equal(writes[2].record.status, 'done');
   assert.equal(writes[2].record.tested, 1);
+  assert.equal(writes[2].record.killed, 1);
+  assert.equal(writes[2].record.health, 'healthy');
 });
 
 test('onMutationTestReportReady before any plan is ready is a no-op', () => {
@@ -72,6 +74,41 @@ test('onMutationTestReportReady before any plan is ready is a no-op', () => {
   const reporter = new MutationProgressReporter(deps);
   assert.doesNotThrow(() => reporter.onMutationTestReportReady());
   assert.equal(writes.length, 0);
+});
+
+// ── BL-446: mutation-gate health surfacing ──────────────────────────────────
+
+test('onMutationTestReportReady surfaces a zero-kill run with its counts', () => {
+  const surfaced = [];
+  const { deps } = fakeDeps({ surface: (message) => surfaced.push(message) });
+  const reporter = new MutationProgressReporter(deps);
+  reporter.onMutationTestingPlanReady(planReadyEvent(1));
+  reporter.onMutantTested({ status: 'Survived' });
+  reporter.onMutationTestReportReady();
+  assert.equal(surfaced.length, 1);
+  assert.match(surfaced[0], /suspect/i);
+  assert.match(surfaced[0], /0 killed/);
+  assert.match(surfaced[0], /1 survived/);
+});
+
+test('onMutationTestReportReady stays quiet (no surfacing) for a healthy run', () => {
+  const surfaced = [];
+  const { deps } = fakeDeps({ surface: (message) => surfaced.push(message) });
+  const reporter = new MutationProgressReporter(deps);
+  reporter.onMutationTestingPlanReady(planReadyEvent(1));
+  reporter.onMutantTested({ status: 'Killed' });
+  reporter.onMutationTestReportReady();
+  assert.equal(surfaced.length, 0);
+});
+
+test('onMutationTestReportReady surfaces a no-mutants run (nothing tested)', () => {
+  const surfaced = [];
+  const { deps } = fakeDeps({ surface: (message) => surfaced.push(message) });
+  const reporter = new MutationProgressReporter(deps);
+  reporter.onMutationTestingPlanReady(planReadyEvent(0));
+  reporter.onMutationTestReportReady();
+  assert.equal(surfaced.length, 1);
+  assert.match(surfaced[0], /no mutants/i);
 });
 
 test('defaults role from SWARMFORGE_ROLE and resolves the standard path when not overridden', () => {
@@ -127,4 +164,13 @@ test('resolveReporterConfig defaults now to Date.now and write to writeProgressR
   const config = resolveReporterConfig({}, {}, '/repo');
   assert.equal(config.now, Date.now);
   assert.equal(typeof config.write, 'function');
+});
+
+test('resolveReporterConfig defaults surface to a function when omitted, and uses an explicit override as-is', () => {
+  const defaultConfig = resolveReporterConfig({}, {}, '/repo');
+  assert.equal(typeof defaultConfig.surface, 'function');
+
+  const surface = () => {};
+  const overriddenConfig = resolveReporterConfig({ surface }, {}, '/repo');
+  assert.equal(overriddenConfig.surface, surface);
 });

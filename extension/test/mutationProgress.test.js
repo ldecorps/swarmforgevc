@@ -7,15 +7,16 @@ const {
 
 const START = new Date('2026-07-09T12:00:00Z').getTime();
 
-test('initMutationProgressState starts at zero tested/survived/timedOut', () => {
+test('initMutationProgressState starts at zero tested/killed/survived/timedOut', () => {
   const state = initMutationProgressState(10, START);
-  assert.deepEqual(state, { total: 10, tested: 0, survived: 0, timedOut: 0, startedAtMs: START });
+  assert.deepEqual(state, { total: 10, tested: 0, killed: 0, survived: 0, timedOut: 0, startedAtMs: START });
 });
 
 test('recordMutantTested increments tested and survived for a Survived result', () => {
   const state = initMutationProgressState(10, START);
   const next = recordMutantTested(state, 'Survived');
   assert.equal(next.tested, 1);
+  assert.equal(next.killed, 0);
   assert.equal(next.survived, 1);
   assert.equal(next.timedOut, 0);
 });
@@ -24,14 +25,18 @@ test('recordMutantTested increments tested and timedOut for a Timeout result', (
   const state = initMutationProgressState(10, START);
   const next = recordMutantTested(state, 'Timeout');
   assert.equal(next.tested, 1);
+  assert.equal(next.killed, 0);
   assert.equal(next.survived, 0);
   assert.equal(next.timedOut, 1);
 });
 
-test('recordMutantTested increments only tested for a Killed result', () => {
+// BL-446: killed is the mutation gate's own health signal (mutationGateHealth.ts) - a Killed
+// result must actually increment it, not just leave survived/timedOut at zero.
+test('recordMutantTested increments tested and killed for a Killed result', () => {
   const state = initMutationProgressState(10, START);
   const next = recordMutantTested(state, 'Killed');
   assert.equal(next.tested, 1);
+  assert.equal(next.killed, 1);
   assert.equal(next.survived, 0);
   assert.equal(next.timedOut, 0);
 });
@@ -98,4 +103,36 @@ test('buildProgressRecord leaves file undefined when not given', () => {
   const state = initMutationProgressState(1, START);
   const record = buildProgressRecord(state, START);
   assert.equal(record.file, undefined);
+});
+
+// ── BL-446: health is only classified once the run is done ─────────────────
+
+test('buildProgressRecord leaves health undefined while the run is still running', () => {
+  let state = initMutationProgressState(4, START);
+  state = recordMutantTested(state, 'Survived');
+  const record = buildProgressRecord(state, START + 1000);
+  assert.equal(record.status, 'running');
+  assert.equal(record.health, undefined);
+});
+
+test('buildProgressRecord classifies a done run with kills as healthy', () => {
+  let state = initMutationProgressState(2, START);
+  state = recordMutantTested(state, 'Killed');
+  state = recordMutantTested(state, 'Survived');
+  const record = buildProgressRecord(state, START + 1000, { status: 'done' });
+  assert.equal(record.health, 'healthy');
+  assert.equal(record.killed, 1);
+});
+
+test('buildProgressRecord classifies a done run with zero kills and survivors as zero-kill-suspect', () => {
+  let state = initMutationProgressState(1, START);
+  state = recordMutantTested(state, 'Survived');
+  const record = buildProgressRecord(state, START + 1000, { status: 'done' });
+  assert.equal(record.health, 'zero-kill-suspect');
+});
+
+test('buildProgressRecord classifies a done run with nothing tested as no-mutants', () => {
+  const state = initMutationProgressState(0, START);
+  const record = buildProgressRecord(state, START, { status: 'done' });
+  assert.equal(record.health, 'no-mutants');
 });
