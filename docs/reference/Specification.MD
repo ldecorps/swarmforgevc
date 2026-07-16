@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 16, 2026 (BL-450 standing Recert Telegram topic)
+**Last Updated:** July 16, 2026 (BL-460 bounded-delete /tmp sweep fix)
 
 ## Overview
 
