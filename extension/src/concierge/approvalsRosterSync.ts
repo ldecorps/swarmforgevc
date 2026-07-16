@@ -4,8 +4,11 @@
 // rendered marker" posture pipelineBoardSync.ts already models for the
 // Pipeline Board. Mirrors that module's split almost exactly: a small named
 // adapters interface, a thin apply step, a topic id created ONCE then
-// reused.
+// reused. The create-once/post-or-edit control flow itself lives in
+// editInPlaceMessageSync.ts, shared with pipelineBoardSync.ts (cleaner,
+// BL-434 pass: the two were duplicating it byte-for-byte).
 import { ApprovalsRosterTicket, renderApprovalsRoster } from './approvalsRoster';
+import { EditInPlaceMessageResult, EditInPlaceMessageState, syncEditInPlaceMessage } from './editInPlaceMessageSync';
 
 export interface ApprovalsRosterAdapters {
   ensureApprovalsTopic: () => Promise<number | undefined>;
@@ -13,50 +16,8 @@ export interface ApprovalsRosterAdapters {
   editMessage: (topicId: number, messageId: number, text: string) => Promise<boolean>;
 }
 
-export interface ApprovalsRosterState {
-  topicId?: number;
-  messageId?: number;
-  renderedText?: string;
-}
-
-export type ApprovalsRosterSyncOutcome = 'posted' | 'edited' | 'skipped-unchanged' | 'failed-no-topic' | 'failed-post' | 'failed-edit';
-
-export interface ApprovalsRosterSyncResult {
-  // Only a SUCCESSFUL post/edit may advance renderedText/messageId - a
-  // failure is naturally retried against the same stale text next tick
-  // rather than silently marked caught-up (mirrors PipelineBoardSyncResult's
-  // own contract).
-  state: ApprovalsRosterState;
-  outcome: ApprovalsRosterSyncOutcome;
-}
-
-// The topic id is created ONCE then reused - split out purely to keep
-// syncApprovalsRoster's own CRAP under threshold (same reasoning as
-// pipelineBoardSync.ts's resolveBoardTopicId).
-function resolveApprovalsTopicId(prevState: ApprovalsRosterState | undefined, adapters: ApprovalsRosterAdapters): Promise<number | undefined> {
-  return Promise.resolve(prevState?.topicId ?? adapters.ensureApprovalsTopic());
-}
-
-async function postOrEditRoster(
-  topicId: number,
-  text: string,
-  prevState: ApprovalsRosterState | undefined,
-  adapters: ApprovalsRosterAdapters
-): Promise<ApprovalsRosterSyncResult> {
-  if (prevState?.messageId === undefined) {
-    const messageId = await adapters.postMessage(topicId, text);
-    if (messageId === undefined) {
-      return { state: { ...prevState, topicId }, outcome: 'failed-post' };
-    }
-    return { state: { topicId, messageId, renderedText: text }, outcome: 'posted' };
-  }
-
-  const ok = await adapters.editMessage(topicId, prevState.messageId, text);
-  if (!ok) {
-    return { state: prevState, outcome: 'failed-edit' };
-  }
-  return { state: { topicId, messageId: prevState.messageId, renderedText: text }, outcome: 'edited' };
-}
+export type ApprovalsRosterState = EditInPlaceMessageState;
+export type ApprovalsRosterSyncResult = EditInPlaceMessageResult;
 
 export async function syncApprovalsRoster(
   tickets: ApprovalsRosterTicket[],
@@ -64,14 +25,5 @@ export async function syncApprovalsRoster(
   adapters: ApprovalsRosterAdapters
 ): Promise<ApprovalsRosterSyncResult> {
   const text = renderApprovalsRoster(tickets);
-  if (text === prevState?.renderedText) {
-    return { state: prevState ?? {}, outcome: 'skipped-unchanged' };
-  }
-
-  const topicId = await resolveApprovalsTopicId(prevState, adapters);
-  if (topicId === undefined) {
-    return { state: prevState ?? {}, outcome: 'failed-no-topic' };
-  }
-
-  return postOrEditRoster(topicId, text, prevState, adapters);
+  return syncEditInPlaceMessage(text, prevState, { ensureTopic: adapters.ensureApprovalsTopic, postMessage: adapters.postMessage, editMessage: adapters.editMessage });
 }
