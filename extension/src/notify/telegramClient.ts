@@ -138,20 +138,24 @@ function extractDescription(json: unknown): string | undefined {
   return undefined;
 }
 
-// Shared by extractMessageId/extractMessageThreadId below - both pull a
-// single numeric field off the same {result: {...}} envelope shape,
-// differing only in which field.
-function extractResultNumberField(json: unknown, field: string): number | undefined {
+// Shared by extractMessageId/extractMessageThreadId/extractPollId below -
+// all three pull a field off the same {result: {...}} envelope shape,
+// differing only in which field and its expected type.
+function extractResultObject(json: unknown): Record<string, unknown> | undefined {
   if (
     json &&
     typeof json === 'object' &&
     (json as Record<string, unknown>).result &&
     typeof (json as Record<string, unknown>).result === 'object'
   ) {
-    const value = ((json as Record<string, unknown>).result as Record<string, unknown>)[field];
-    return typeof value === 'number' ? value : undefined;
+    return (json as Record<string, unknown>).result as Record<string, unknown>;
   }
   return undefined;
+}
+
+function extractResultNumberField(json: unknown, field: string): number | undefined {
+  const value = extractResultObject(json)?.[field];
+  return typeof value === 'number' ? value : undefined;
 }
 
 function extractMessageId(json: unknown): number | undefined {
@@ -218,16 +222,9 @@ export interface SendPollResult {
 }
 
 function extractPollId(json: unknown): string | undefined {
-  if (
-    json &&
-    typeof json === 'object' &&
-    (json as Record<string, unknown>).result &&
-    typeof (json as Record<string, unknown>).result === 'object'
-  ) {
-    const poll = ((json as Record<string, unknown>).result as Record<string, unknown>).poll;
-    if (poll && typeof poll === 'object' && typeof (poll as Record<string, unknown>).id === 'string') {
-      return (poll as Record<string, unknown>).id as string;
-    }
+  const poll = extractResultObject(json)?.poll;
+  if (poll && typeof poll === 'object' && typeof (poll as Record<string, unknown>).id === 'string') {
+    return (poll as Record<string, unknown>).id as string;
   }
   return undefined;
 }

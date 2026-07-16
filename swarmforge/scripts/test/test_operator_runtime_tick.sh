@@ -360,6 +360,36 @@ check "BL-466 re-home: awaiting-answer.json now homes the SAME options on the ne
   '[[ "$(jget "$F/.swarmforge/operator/awaiting-answer.json" ":thread_id")" == SUP-2 ]] && [[ "$(jget_in "$F/.swarmforge/operator/awaiting-answer.json" "[:options 0]")" == staging ]]'
 rm -rf "$F"
 
+# ── 13e. Hardener hardening: a malformed --options must degrade to the
+#        ticket's own plain-message fallback (options: nil), NEVER crash the
+#        ask CLI - a crash here would silently lose the agent's question
+#        entirely, worse than the no-options case the ticket already
+#        specifies. Covers invalid JSON, valid-JSON-non-array, and a
+#        valid-JSON array of non-strings. ────────────────────────────────────
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/support/threads"
+ASK_OUT="$(bb "$F/swarmforge/scripts/operator_ask.bb" "$F" --thread SUP-1 --question "which environment?" --options 'not-json' 2>/dev/null)"
+check "hardener: invalid-JSON --options still reports asked:true (never crashes)" '[[ "$ASK_OUT" == *"\"asked\":true"* ]]'
+check "hardener: invalid-JSON --options falls back to no options (plain message)" \
+  '[[ "$(jget "$F/.swarmforge/operator/awaiting-answer.json" ":options")" == nil ]]'
+rm -rf "$F"
+
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/support/threads"
+ASK_OUT="$(bb "$F/swarmforge/scripts/operator_ask.bb" "$F" --thread SUP-1 --question "which environment?" --options '5' 2>/dev/null)"
+check "hardener: valid-JSON-but-not-an-array --options still reports asked:true (never crashes)" '[[ "$ASK_OUT" == *"\"asked\":true"* ]]'
+check "hardener: valid-JSON-but-not-an-array --options falls back to no options" \
+  '[[ "$(jget "$F/.swarmforge/operator/awaiting-answer.json" ":options")" == nil ]]'
+rm -rf "$F"
+
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/support/threads"
+ASK_OUT="$(bb "$F/swarmforge/scripts/operator_ask.bb" "$F" --thread SUP-1 --question "which environment?" --options '[1,2]' 2>/dev/null)"
+check "hardener: an options array of non-strings still reports asked:true (never crashes)" '[[ "$ASK_OUT" == *"\"asked\":true"* ]]'
+check "hardener: an options array of non-strings falls back to no options" \
+  '[[ "$(jget "$F/.swarmforge/operator/awaiting-answer.json" ":options")" == nil ]]'
+rm -rf "$F"
+
 # ── 14-20. BL-307: auto-hibernate on drain + mandatory closing pass. Every
 #          scenario gives the roster one REAL role ("coder", its own
 #          worktree) so closing-pass-sweep!'s eligible? guard (never
