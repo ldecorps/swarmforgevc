@@ -667,12 +667,20 @@ export function readRoleTicket(targetPath: string): Record<string, string> {
 // refreshes it; no TTL needed for a set this stable.
 let cachedIconStickers: IconStickerLookup[] | undefined;
 
-async function iconStickersOnce(botToken: string): Promise<IconStickerLookup[]> {
+export async function iconStickersOnce(botToken: string, postFn?: TelegramPostFn): Promise<IconStickerLookup[]> {
   if (cachedIconStickers === undefined) {
-    const result = await getForumTopicIconStickers(botToken);
+    const result = await getForumTopicIconStickers(botToken, postFn);
     cachedIconStickers = result.success ? result.stickers : [];
   }
   return cachedIconStickers;
+}
+
+// Test-only: the module-level cache above is deliberate (BL-342 comment
+// above) but means a unit test exercising both the miss and hit branches
+// must be able to reset it between cases, rather than depending on test
+// file load order to observe an unset cache.
+export function __resetIconStickersCacheForTest(): void {
+  cachedIconStickers = undefined;
 }
 
 // BL-418: classifies the front-desk bot's OWN {topicId: subjectId} map
