@@ -22,6 +22,13 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
 make_fixture() {
+  # BL-461: scrub ambient Telegram creds so every scenario starts from a
+  # clean slate regardless of the calling shell's own exported vars (a dev
+  # box routinely has real TELEGRAM_BOT_TOKEN/CHAT_ID/PRINCIPAL_USER_ID set,
+  # per the engineering guard-fires rule) - scenarios that need Telegram
+  # configured (05b) export it explicitly AFTER calling make_fixture.
+  unset TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_PRINCIPAL_USER_ID || true
+
   ROOT="$(cd "$(mktemp -d)" && pwd -P)"
   mkdir -p "$ROOT/.swarmforge/daemon" "$ROOT/.swarmforge/operator" \
            "$ROOT/.swarmforge/launch" "$ROOT/.worktrees/coder"
@@ -263,6 +270,37 @@ echo "$OUT" | grep -q "^front-desk: FIXED" \
   || fail "05c: stale front-desk pid file did not trigger repair; got: $OUT"
 cleanup_daemon
 pass "05c: a prior front-desk pid file enables repair even without Telegram env in this shell"
+
+# ── 05d: a blank (but SET) Telegram env var does not count as configured ───
+# env-set? guards against both unset AND blank (`and (some? v) (not (blank? v))`);
+# every other scenario only ever exercises the fully-unset case, so a mutant
+# collapsing that guard to just `(some? v)` (blank counts as configured) would
+# survive undetected without this.
+make_fixture
+unset TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_PRINCIPAL_USER_ID || true
+export TELEGRAM_BOT_TOKEN=""
+export TELEGRAM_CHAT_ID="1"
+export TELEGRAM_PRINCIPAL_USER_ID="2"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "front-desk:" \
+  && fail "05d: blank TELEGRAM_BOT_TOKEN was treated as configured; got: $OUT"
+unset TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_PRINCIPAL_USER_ID
+cleanup_daemon
+pass "05d: a blank (but set) TELEGRAM_BOT_TOKEN does not count as Telegram configured"
+
+# ── 05e: partial Telegram env (only one of three vars set) is not configured ─
+# telegram-configured? ANDs all three env-set? checks; every other scenario
+# sets all three together or none, so an AND->OR mutant would survive
+# undetected without a partial-set case.
+make_fixture
+unset TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_PRINCIPAL_USER_ID || true
+export TELEGRAM_BOT_TOKEN="only-one-set"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "front-desk:" \
+  && fail "05e: partial Telegram env (bot token only) was treated as configured; got: $OUT"
+unset TELEGRAM_BOT_TOKEN
+cleanup_daemon
+pass "05e: partial Telegram env (only one of three vars set) does not count as configured"
 
 # ── 06: SWARMFORGE_SKIP_OPERATOR omits the operator check entirely ─────────
 make_fixture
