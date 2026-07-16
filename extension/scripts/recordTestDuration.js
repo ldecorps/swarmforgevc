@@ -27,6 +27,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { listTestFiles, buildRecord, appendRecord, computeFinalExitCode } = require('./testDurationRecorderLib');
+const { buildSuiteBudgetVerdict, formatSuiteBudgetVerdict } = require('../out/tools/check-suite-duration-budget');
 
 const ROOT_DIR = path.join(__dirname, '..');
 const TEST_DIR = path.join(ROOT_DIR, 'test');
@@ -57,6 +58,13 @@ function main() {
       durationMs,
     })
   );
+
+  // BL-445: the whole-suite sibling of the per-file guard below - surfaces
+  // an over-budget run against the operator's 10s target (never hard-fails;
+  // see check-suite-duration-budget.ts). Computed in-process from the
+  // durationMs already measured above, not spawned, since the value already
+  // lives in this process and this run is itself trying to cut overhead.
+  console.log(formatSuiteBudgetVerdict(buildSuiteBudgetVerdict(durationMs)));
 
   const guardResult = fs.existsSync(REPORT_PATH) ? spawnSync('node', [BUDGET_GUARD_CLI, REPORT_PATH], { stdio: 'inherit', cwd: ROOT_DIR }) : null;
   const guardExitCode = guardResult && guardResult.status !== null ? guardResult.status : 0;
