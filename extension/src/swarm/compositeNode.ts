@@ -6,12 +6,11 @@
 // authoritative store.
 //
 // isSessionAlive/isBlocked are injectable: pane liveness (a live tmux
-// query) and "needs human" (today only tracked live, by
-// PaneTailer/needsHumanReconciler reading pane text - no on-disk
-// representation exists) cannot be derived from files alone. Production
-// wiring supplies both from that same live state the webview already
-// tracks; tests supply fakes directly, matching acquire.ts's/qualify.ts's
-// own posture in BL-233 for signals nothing on disk can answer.
+// query, for the webview's own live tile rendering) and "needs human" -
+// which, for the HEADLESS fleet-status publisher (emit-fleet-status.ts,
+// BL-438), is now sourced from the daemon's own durable
+// chase-escalations.json instead of any pane read. Tests supply fakes
+// directly, matching acquire.ts's/qualify.ts's own posture in BL-233.
 
 import * as fs from 'fs';
 import * as path from 'path';

@@ -129,6 +129,30 @@ test('publishedSwarmToNode reads identity/status/health/children purely from the
   assert.equal(node.children()[0].identity().name, 'coder');
 });
 
+// BL-438: fleet-console.ts must read a blocked swarm's status PURELY from
+// the published field emit-fleet-status.ts now derives from
+// chase-escalations.json - never by reaching into pane text itself (the
+// isBlocked-always-false gap this ticket closes lived entirely in the
+// PUBLISHER; the console's own merge already only reads fields, proven
+// here as a regression guard).
+test('publishedSwarmToNode surfaces a "blocked" status straight from the published doc, with no pane access', () => {
+  const doc = fixtureDoc({ status: 'blocked', needs_human: true });
+
+  const node = publishedSwarmToNode(doc, Date.parse(doc.updated_at) + 1000);
+
+  assert.equal(node.status(), 'blocked');
+});
+
+test('renderFleet surfaces a blocked swarm rolled up from a published doc, unchanged by the merge', () => {
+  const rendezvousDir = mkTmp();
+  const doc = fixtureDoc({ status: 'blocked', needs_human: true });
+  publishStatus(rendezvousDir, 'fes', doc);
+
+  const rendered = renderFleet(rendezvousDir, Date.parse(doc.updated_at) + 1000);
+
+  assert.equal(rendered.swarms[0].status, 'blocked');
+});
+
 test('publishedSwarmToNode overrides status to "stopped (coordinator lost)" once updated_at is stale', () => {
   const doc = fixtureDoc({ updated_at: new Date(Date.now() - STALE_AFTER_MS - 60_000).toISOString(), status: 'active' });
 
