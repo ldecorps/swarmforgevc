@@ -68,6 +68,11 @@
 ;; BL-413: pure stale-sandbox-sweep decision logic, wired below by
 ;; sandbox-sweep!.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "sandbox_sweep_lib.bb")))
+;; BL-460: the shared bounded-DELETE windowing sandbox-sweep! below uses -
+;; ONE real implementation, also load-file'd by fixture_reaper_sweep_lib.bb
+;; below (idempotent, same "whichever caller gets there first" posture as
+;; proc_fd_scan_lib.bb's own load immediately below).
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "bounded_delete_sweep_lib.bb")))
 ;; BL-413/BL-458: shared /proc cwd+fd scan, the ONE real implementation of
 ;; "is any live process rooted in this directory" that both sandbox-sweep!
 ;; below and fixture_reaper_sweep_lib.bb's sweep! load - never reimplement.
@@ -685,16 +690,34 @@
 (defn- sandbox-sweep-remove-entry! [entry-path]
   (try
     (fs/delete-tree entry-path {:force true})
-    (log! "sandbox-sweep" (str "removed stale sandbox: " entry-path))
+    true
     (catch Exception e
-      (log! "sandbox-sweep-error" (str "failed to remove " entry-path ": " (.getMessage e))))))
+      (log! "sandbox-sweep-error" (str "failed to remove " entry-path ": " (.getMessage e)))
+      false)))
+
+;; BL-460: the persisted bounded-delete cursor/streak - op-dir already
+;; provides project-scoped, test-isolated cross-tick state (the SAME
+;; directory disk-space-state.json etc. already live in), so unlike
+;; fixture_reaper_sweep_lib.bb's standalone lib (no project-root of its
+;; own) these need no separate env seam - a test root is already isolated
+;; via project-root/op-dir.
+(def sandbox-sweep-cursor-file (fs/path op-dir "sandbox-sweep-cursor"))
+(def sandbox-sweep-nothing-streak-file (fs/path op-dir "sandbox-sweep-nothing-streak"))
+
+;; How many consecutive nothing-reaped ticks between "scanned, found
+;; nothing" log lines - periodic, never per-tick-spammy (BL-460
+;; tmp-sweep-bounded-deletes-05). Small enough to drive from a test.
+(defn sandbox-sweep-nothing-log-period []
+  (or (some-> (System/getenv "SWARMFORGE_SANDBOX_SWEEP_NOTHING_LOG_PERIOD") (parse-long)) 20))
 
 (defn sandbox-sweep!
   "adapters is {:list-entries! fn :entry-age-ms! fn :live-process-rooted-in?
    fn :remove-entry! fn}, defaulting to the real /tmp reads/deletes above. A
    listing failure (root missing/unreadable) is simply zero entries this
-   tick, never a crash. Bounded to sandbox-sweep-max-per-tick entries per
-   call."
+   tick, never a crash. BL-460: bounds DELETES per tick via
+   bounded-delete-sweep-lib's persisted cursor, not the scan - a reapable
+   entry ordered after sandbox-sweep-max-per-tick is still reaped within a
+   bounded number of ticks, never re-scanning the same dead window forever."
   ([]
    (let [paths (live-process-paths!)]
      (sandbox-sweep!
@@ -706,19 +729,32 @@
    (let [root (sandbox-sweep-root)
          legacy-socket-dir (sandbox-legacy-socket-dir)
          threshold-ms (sandbox-stale-threshold-ms)
-         max-per-tick (sandbox-sweep-max-per-tick)]
+         cap (sandbox-sweep-max-per-tick)]
      (when (fs/exists? root)
-       (doseq [name (take max-per-tick ((:list-entries! adapters) root))]
-         (let [entry-path (fs/path root name)
-               socket-dir? (= (str entry-path) legacy-socket-dir)
-               age-ms ((:entry-age-ms! adapters) entry-path)
-               live? (boolean (when-not socket-dir? ((:live-process-rooted-in? adapters) entry-path)))]
-           (when (sandbox-sweep-lib/removable?
-                  {:known-sandbox-prefix? (sandbox-sweep-lib/known-sandbox-prefix? name)
-                   :stale? (>= age-ms threshold-ms)
-                   :has-live-process? live?
-                   :socket-dir? socket-dir?})
-             ((:remove-entry! adapters) entry-path))))))))
+       (let [names ((:list-entries! adapters) root)
+             cursor (bounded-delete-sweep-lib/read-cursor (str sandbox-sweep-cursor-file))
+             {:keys [window next-cursor]} (bounded-delete-sweep-lib/next-window names cursor cap)
+             reaped (atom 0)]
+         (doseq [name window]
+           (let [entry-path (fs/path root name)
+                 socket-dir? (= (str entry-path) legacy-socket-dir)
+                 age-ms ((:entry-age-ms! adapters) entry-path)
+                 live? (boolean (when-not socket-dir? ((:live-process-rooted-in? adapters) entry-path)))]
+             (when (sandbox-sweep-lib/removable?
+                    {:known-sandbox-prefix? (sandbox-sweep-lib/known-sandbox-prefix? name)
+                     :stale? (>= age-ms threshold-ms)
+                     :has-live-process? live?
+                     :socket-dir? socket-dir?})
+               (when ((:remove-entry! adapters) entry-path)
+                 (swap! reaped inc)))))
+         (bounded-delete-sweep-lib/write-cursor! (str sandbox-sweep-cursor-file) next-cursor)
+         (if (pos? @reaped)
+           (do (log! "sandbox-sweep" (str "reaped " @reaped " of " (count window) " scanned"))
+               (bounded-delete-sweep-lib/write-count! (str sandbox-sweep-nothing-streak-file) 0))
+           (let [streak (inc (bounded-delete-sweep-lib/read-count (str sandbox-sweep-nothing-streak-file)))]
+             (bounded-delete-sweep-lib/write-count! (str sandbox-sweep-nothing-streak-file) streak)
+             (when (or (= streak 1) (zero? (mod streak (sandbox-sweep-nothing-log-period))))
+               (log! "sandbox-sweep" (str "scanned " (count window) ", nothing reaped (streak " streak ")"))))))))))
 
 ;; ── cooldown / provider state ─────────────────────────────────────────────────
 
@@ -1442,7 +1478,14 @@
     ;; remove the now-empty root (sandbox-sweep! itself already skips any
     ;; dir with a live process rooted in it) - same "best-effort side
     ;; action every tick" posture, never gates the launch decision below.
-    (fixture-reaper-sweep-lib/sweep!)
+    ;; BL-460: overrides just :log! onto the lib's own real default adapters
+    ;; so its reap-summary/nothing-found lines land in THIS runtime's own
+    ;; log! (runtime.log), the same destination sandbox-sweep!'s lines use,
+    ;; rather than the lib's bare stdout default (reap_stale_test_fixtures.bb's
+    ;; own standalone-CLI posture, not this always-alive daemon's).
+    (fixture-reaper-sweep-lib/sweep!
+     (assoc (fixture-reaper-sweep-lib/default-adapters)
+            :log! (fn [msg] (log! "fixture-reaper-sweep" msg))))
 
     ;; BL-306: bounded escalate-once-then-drop on an unanswered clarifying
     ;; question - same "best-effort side action every tick" posture as the

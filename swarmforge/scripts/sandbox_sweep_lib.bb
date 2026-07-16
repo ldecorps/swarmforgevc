@@ -28,7 +28,24 @@
 ;; An ALLOWLIST, never a denylist (the ticket's own explicit instruction) -
 ;; extend this list explicitly as new sandbox creators are discovered, never
 ;; widen it to a broad glob.
-(def known-sandbox-prefixes ["sfvc-" "aps-"])
+;;
+;; BL-460: nine prefixes observed at volume in production (+21/min /tmp
+;; growth) - each traced to a plain `mkTmpDir(...)` call in an
+;; extension/test/*.test.js Vitest fixture (atomicWrite.test.js,
+;; renderBriefingDiagramsCli.test.js, proposeOnboardingPromptsCli.test.js x2,
+;; liveTicketFiles.test.js, chaseTrendLineCli.test.js,
+;; negotiateOnboardingContractCli.test.js,
+;; relayOnboardingNegotiationTelegramCli.test.js,
+;; provisionOnboardingTelegramChannelCli.test.js) - pure file-based test
+;; scratch dirs, never a spawned process, so they belong HERE (the dir
+;; sweep) and not fixture_reaper_lib.bb's process-spawning allowlist.
+(def known-sandbox-prefixes
+  ["sfvc-" "aps-"
+   "atomic-test-" "render-briefing-diagrams-test-"
+   "propose-onboarding-prompts-target-" "propose-onboarding-prompts-test-"
+   "live-ticket-files-" "chase-trend-test-"
+   "negotiate-onboarding-contract-target-" "relay-onboarding-negotiation-"
+   "provision-onboarding-telegram-channel-test-"])
 
 (defn known-sandbox-prefix?
   [name]
