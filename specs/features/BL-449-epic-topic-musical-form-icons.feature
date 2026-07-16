@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=ad771f4d1e4e6c553d3d24e46725f7bfe3cb2ae630916ab14ac240253294f538
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-16T11:36:44.231644403Z","feature_name":"epic topics carry distinct musical-form icons","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-449-epic-topic-musical-form-icons.feature","background_hash":"96f76ada8618522ed58d60c826719762f189bc14c620e160ce4df606157f675c","implementation_hash":"unknown","scenarios":[{"index":0,"name":"each seeded epic topic maps to its finalised musical-form icon","scenario_hash":"796e1df5279b8f9df4cf32f959020be436138ab2d2c8573d28d9e748ea6fb024","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-07-16T11:36:44.231644403Z"},{"index":4,"name":"ownership governs whether the epic-icon path may set an icon","scenario_hash":"ac00695739c22e42cffd7a97598edf07cb3c891a0426b08a01562b4edfba318c","mutation_count":9,"result":{"Total":9,"Killed":9,"Survived":0,"Errors":0},"tested_at":"2026-07-16T11:36:44.231644403Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: epic topics carry distinct musical-form icons
 
   # An epic is a large-scale musical FORM, so each epic topic gets its own
