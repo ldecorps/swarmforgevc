@@ -66,3 +66,23 @@ test('a line with a producingRole outside the closed set is skipped, never trust
   fs.writeFileSync(path.join(qaBouncesDir(target), '2026-07.jsonl'), badRecord + '\n');
   assert.deepEqual(readQaBounceRecords(target), []);
 });
+
+for (const field of ['ticket', 'producingRole', 'ticketType', 'failureClass', 'commit', 'at']) {
+  test(`a line whose "${field}" field is the wrong type is skipped, never trusted raw`, () => {
+    const target = mkTmp();
+    fs.mkdirSync(qaBouncesDir(target), { recursive: true });
+    const badRecord = JSON.stringify(record({ [field]: 42 }));
+    fs.writeFileSync(path.join(qaBouncesDir(target), '2026-07.jsonl'), badRecord + '\n');
+    assert.deepEqual(readQaBounceRecords(target), []);
+  });
+}
+
+for (const field of ['ticketType', 'failureClass']) {
+  test(`a line whose "${field}" field is a string outside its closed set is skipped, never trusted raw`, () => {
+    const target = mkTmp();
+    fs.mkdirSync(qaBouncesDir(target), { recursive: true });
+    const badRecord = JSON.stringify(record({ [field]: 'not-a-real-value' }));
+    fs.writeFileSync(path.join(qaBouncesDir(target), '2026-07.jsonl'), badRecord + '\n');
+    assert.deepEqual(readQaBounceRecords(target), []);
+  });
+}

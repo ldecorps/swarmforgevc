@@ -38,28 +38,41 @@ function parseFlags(argv: string[]): Partial<Record<FlagName, string>> | null {
   return flags;
 }
 
-export function parseArgs(argv: string[]): Omit<QaBounceRecord, 'at'> | null {
-  const flags = parseFlags(argv);
-  if (!flags) {
-    return null;
-  }
+// Present AND passes the closed-set predicate - split out (as a genuine type
+// predicate, so callers keep TS's narrowing) so validatedFields below doesn't
+// repeat the same "!value || !predicate(value)" clause five times, keeping
+// its own branch count at or below the project's CRAP threshold.
+function isValid<T extends string>(value: string | undefined, predicate: (v: string) => v is T): value is T {
+  return !!value && predicate(value);
+}
+
+function isValidTicket(value: string | undefined): value is string {
+  return !!value && TICKET_PATTERN.test(value);
+}
+
+function validatedFields(flags: Partial<Record<FlagName, string>>): Omit<QaBounceRecord, 'at'> | null {
   const { '--ticket': ticket, '--role': producingRole, '--type': ticketType, '--class': failureClass, '--commit': commit } = flags;
-  if (!ticket || !TICKET_PATTERN.test(ticket)) {
+  if (!isValidTicket(ticket)) {
     return null;
   }
-  if (!producingRole || !isKnownProducingRole(producingRole)) {
+  if (!isValid(producingRole, isKnownProducingRole)) {
     return null;
   }
-  if (!ticketType || !isKnownTicketType(ticketType)) {
+  if (!isValid(ticketType, isKnownTicketType)) {
     return null;
   }
-  if (!failureClass || !isKnownFailureClass(failureClass)) {
+  if (!isValid(failureClass, isKnownFailureClass)) {
     return null;
   }
   if (!commit) {
     return null;
   }
   return { ticket: ticket.toUpperCase(), producingRole, ticketType, failureClass, commit };
+}
+
+export function parseArgs(argv: string[]): Omit<QaBounceRecord, 'at'> | null {
+  const flags = parseFlags(argv);
+  return flags ? validatedFields(flags) : null;
 }
 
 const USAGE =

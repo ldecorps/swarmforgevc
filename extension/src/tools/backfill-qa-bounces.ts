@@ -50,6 +50,35 @@ export interface BackfillQaBouncesResult {
   skipped: Array<{ file: string; reason: string }>;
 }
 
+// One file's worth of backfill work, split out of backfillQaBounces below
+// for the same CRAP-budget reason the other BL-454 modules document -
+// mutates `result` in place so the caller's loop body stays a single call.
+function processEvidenceFile(
+  targetPath: string,
+  dir: string,
+  file: string,
+  ticketTypes: Map<string, string | undefined>,
+  result: BackfillQaBouncesResult
+): void {
+  const content = fs.readFileSync(path.join(dir, file), 'utf8');
+  const parsed = parseBounceEvidenceFile(file, content);
+  if (!parsed) {
+    result.skipped.push({ file, reason: 'not a genuine, attributable bounce record' });
+    return;
+  }
+  const ticketType = ticketTypes.get(parsed.ticket);
+  if (!ticketType || !isKnownTicketType(ticketType)) {
+    result.skipped.push({ file, reason: `ticket type for ${parsed.ticket} is unknown or not in the closed set` });
+    return;
+  }
+  const record: QaBounceRecord = { ...parsed, ticketType };
+  if (appendQaBounceRecordIfNew(targetPath, record)) {
+    result.recorded++;
+  } else {
+    result.skipped.push({ file, reason: 'already recorded (idempotent re-run)' });
+  }
+}
+
 export function backfillQaBounces(targetPath: string): BackfillQaBouncesResult {
   const dir = evidenceDir(targetPath);
   const ticketTypes = buildTicketTypeIndex(targetPath);
@@ -64,23 +93,7 @@ export function backfillQaBounces(targetPath: string): BackfillQaBouncesResult {
 
   for (const file of files.sort()) {
     result.scanned++;
-    const content = fs.readFileSync(path.join(dir, file), 'utf8');
-    const parsed = parseBounceEvidenceFile(file, content);
-    if (!parsed) {
-      result.skipped.push({ file, reason: 'not a genuine, attributable bounce record' });
-      continue;
-    }
-    const ticketType = ticketTypes.get(parsed.ticket);
-    if (!ticketType || !isKnownTicketType(ticketType)) {
-      result.skipped.push({ file, reason: `ticket type for ${parsed.ticket} is unknown or not in the closed set` });
-      continue;
-    }
-    const record: QaBounceRecord = { ...parsed, ticketType };
-    if (appendQaBounceRecordIfNew(targetPath, record)) {
-      result.recorded++;
-    } else {
-      result.skipped.push({ file, reason: 'already recorded (idempotent re-run)' });
-    }
+    processEvidenceFile(targetPath, dir, file, ticketTypes, result);
   }
 
   return result;

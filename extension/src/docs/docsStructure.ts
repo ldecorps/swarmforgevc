@@ -120,19 +120,29 @@ export function computeDocsStructureReport(input: DocsStructureInput): DocsStruc
   return { missingModeDirs, emptyModeDirs, modesWithoutOrientation, orphanedDocs, indexMissing };
 }
 
+// Split out of listMarkdownFilesRecursive below for the same CRAP-budget
+// reason the qaBounce modules document above - never a crash on a directory
+// that vanishes or becomes unreadable mid-walk, same forgiving-reader
+// posture as readModeState's own statSync catch below.
+function safeReaddir(dir: string): fs.Dirent[] {
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+}
+
+function childPath(prefix: string, name: string): string {
+  return prefix ? `${prefix}/${name}` : name;
+}
+
 // Recursively lists markdown files under `dir`, returned as posix-separator
 // paths relative to `dir` - reference/specs/*.md must be seen as
 // "specs/BL-007-spec.md", not skipped for being nested one level deeper.
 function listMarkdownFilesRecursive(dir: string, prefix = ''): string[] {
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
   const files: string[] = [];
-  for (const entry of entries) {
-    const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+  for (const entry of safeReaddir(dir)) {
+    const relativePath = childPath(prefix, entry.name);
     if (entry.isDirectory()) {
       files.push(...listMarkdownFilesRecursive(path.join(dir, entry.name), relativePath));
     } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
