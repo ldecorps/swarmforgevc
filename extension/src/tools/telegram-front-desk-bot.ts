@@ -476,11 +476,16 @@ async function connectAndRelayReplies(
       // SUP-### thread reply has no backlogForTopic mapping and is
       // deliberately skipped (that channel has its own store, BL-329 is
       // BL-topics only).
-      sendReply: (topicId, text) =>
+      // BL-440: retractsPendingQuestion (set by operator-decide.ts's
+      // runApprove on a successful gate answer, threaded here through the
+      // reply-outbox/SSE relay) rides straight onto this SAME append - the
+      // real production write of that field, never a second synthetic
+      // message unconnected to an actual send.
+      sendReply: (topicId, text, retractsPendingQuestion) =>
         sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then(() => {
           const backlogId = backlogForTopic(readBacklogTopicMap(targetPath), topicId);
           if (backlogId) {
-            appendMessage(targetPath, backlogId, { author: 'swarm', type: 'outbound', text });
+            appendMessage(targetPath, backlogId, { author: 'swarm', type: 'outbound', text, retractsPendingQuestion });
           }
           return undefined;
         }),

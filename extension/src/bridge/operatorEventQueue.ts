@@ -109,6 +109,15 @@ export interface ReplyOutboxEntry {
   id: string;
   threadId: string;
   text: string;
+  // BL-440: set true when this reply resolved a ticket's own pending
+  // question (operator-decide.ts's runApprove, on a successful gate
+  // answer) - rides through to the front-desk bot's sendReply so the
+  // resulting outbound message can be recorded in blTopicStore.ts with
+  // retractsPendingQuestion: true, the real production writer BL-440's own
+  // premise-live gate needs. Absent for every ordinary reply (status
+  // answers, the idle-nudge/awaiting-answer escalation operator_runtime.bb
+  // writes directly) - absent is the safe default, never a retraction.
+  retractsPendingQuestion?: boolean;
 }
 
 // Reads reply-outbox lines strictly AFTER sinceIndex (the count of lines
@@ -131,7 +140,11 @@ export function readNewReplyOutboxEntries(targetPath: string, sinceIndex: number
       const parsed = JSON.parse(line) as Record<string, unknown>;
       if (typeof parsed.threadId === 'string' && typeof parsed.text === 'string') {
         const id = typeof parsed.id === 'string' ? parsed.id : `legacy-${sinceIndex + offset}`;
-        entries.push({ id, threadId: parsed.threadId, text: parsed.text });
+        const entry: ReplyOutboxEntry = { id, threadId: parsed.threadId, text: parsed.text };
+        if (parsed.retractsPendingQuestion === true) {
+          entry.retractsPendingQuestion = true;
+        }
+        entries.push(entry);
       }
     } catch {
       // skip a malformed line rather than crash the whole poll
