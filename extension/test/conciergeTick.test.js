@@ -1606,7 +1606,42 @@ test('BL-452: the pipeline board is posted once, then edited in place on a stage
   assert.equal(edited.length, 1, 'expected no re-edit when no ticket stage changed');
 });
 
-test('BL-452: a paused ticket awaiting human approval renders in the awaiting-approval column, a plain paused ticket in parked', async () => {
+test('BL-455: role-held tickets are joined to their backlog item epic/title - grouped by epic, and shown with a derived slug', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  const posted = [];
+  adapters.boardAdapters.postMessage = async (topicId, text) => {
+    posted.push(text);
+    return 1;
+  };
+  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'], QA: ['BL-2'] });
+  setFolders(
+    folders({
+      active: [
+        { id: 'BL-1', title: 'fix the pipeline board', epic: 'Concerto' },
+        { id: 'BL-2', title: 'unrelated ticket' },
+      ],
+    })
+  );
+
+  await runConciergeTick(adapters);
+
+  const lines = posted[0].split('\n');
+  // Break-then-fix would show this line missing/empty if the join were
+  // dropped - the epic heading and slug only appear when folders.active's
+  // epic/title actually reach computePipelineBoard, proving the wiring load-
+  // bearing rather than the pure function's own (separately unit-tested)
+  // grouping logic.
+  const concertoIndex = lines.findIndex((l) => l.includes('Concerto'));
+  assert.ok(concertoIndex >= 0, `expected a Concerto epic heading, got:\n${posted[0]}`);
+  assert.ok(lines[concertoIndex + 1].startsWith('BL-1'), 'expected BL-1 grouped directly under its epic heading');
+  assert.ok(posted[0].includes('fix the pipeline board'), 'expected BL-1 row to carry its derived slug');
+  assert.ok(posted[0].includes('unrelated ticket'), 'expected BL-2 (no epic) to still carry its own slug');
+  const noEpicIndex = lines.findIndex((l) => l.trim() === '-- (no epic) --');
+  assert.ok(noEpicIndex > concertoIndex, 'expected the no-epic group to sort after the named epic group');
+});
+
+test('BL-455: a paused ticket awaiting human approval and a plain paused ticket both render in the below-grid parked list, not as grid rows', async () => {
   const { adapters, setFolders } = fakeAdapters();
   const posted = [];
   adapters.boardAdapters.postMessage = async (topicId, text) => {
@@ -1626,13 +1661,16 @@ test('BL-452: a paused ticket awaiting human approval renders in the awaiting-ap
   await runConciergeTick(adapters);
 
   const lines = posted[0].split('\n');
-  const header = lines[0].trim().split(/\s+/);
-  const pkIndex = header.indexOf('PK');
-  const aaIndex = header.indexOf('AA');
-  const bl2Row = lines.find((l) => l.startsWith('BL-2')).trim().split(/\s+/);
-  const bl3Row = lines.find((l) => l.startsWith('BL-3')).trim().split(/\s+/);
-  assert.equal(bl2Row[aaIndex], 'X');
-  assert.equal(bl3Row[pkIndex], 'X');
+  const parkedHeaderIndex = lines.findIndex((l) => l.trim() === 'PARKED:');
+  assert.ok(parkedHeaderIndex > 0, `expected a PARKED: section, got:\n${posted[0]}`);
+  const gridLines = lines.slice(0, parkedHeaderIndex);
+  const belowLines = lines.slice(parkedHeaderIndex);
+  assert.ok(!gridLines.some((l) => l.trim().split(/\s+/)[0] === 'BL-2'), 'expected BL-2 absent from the grid');
+  assert.ok(!gridLines.some((l) => l.trim().split(/\s+/)[0] === 'BL-3'), 'expected BL-3 absent from the grid');
+  const bl2Line = belowLines.find((l) => l.includes('BL-2'));
+  const bl3Line = belowLines.find((l) => l.includes('BL-3'));
+  assert.ok(bl2Line && bl2Line.trim().startsWith('AA'), `expected BL-2 marked AA (awaiting-approval), got: ${bl2Line}`);
+  assert.ok(bl3Line && bl3Line.trim().startsWith('PK'), `expected BL-3 marked PK (parked), got: ${bl3Line}`);
 });
 
 test('BL-452: omitting readRoleHeldTickets/boardAdapters entirely leaves the tick unaffected - existing adapters fixtures built before this field existed keep working unchanged', async () => {

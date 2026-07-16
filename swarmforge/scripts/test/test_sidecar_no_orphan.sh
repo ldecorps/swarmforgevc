@@ -11,6 +11,7 @@
 # A non-sidecar file is never touched by either path.
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SWEEP_RUNNER="$SCRIPT_DIR/chase_sweep_test_runner.bb"
@@ -30,6 +31,7 @@ write_handoff() {
 # test_ready_for_next_no_promotion.sh's own convention ──────────────────
 make_dequeue_fixture() {
   ROOT="$(cd "$(mktemp -d)" && pwd -P)"
+  register_tmp_dir "$ROOT"
   git -C "$ROOT" init -q
   git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q --allow-empty -m init
 
@@ -100,6 +102,7 @@ cleanup_dequeue_fixture
 # layout (mirrors test_chase_sweep.sh's make_fixture) ────────────────────
 make_sweep_fixture() {
   SROOT="$(mktemp -d)"
+  register_tmp_dir "$SROOT"
   mkdir -p "$SROOT/inbox/new" "$SROOT/inbox/in_process"
 }
 

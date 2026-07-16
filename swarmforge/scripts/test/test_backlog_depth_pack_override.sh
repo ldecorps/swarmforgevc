@@ -14,6 +14,7 @@
 # to run inside.
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SWARMFORGE_SH="$SCRIPT_DIR/../swarmforge.sh"
@@ -23,6 +24,7 @@ pass() { echo "PASS: $*"; }
 
 mk_root() {
   local root; root="$(cd "$(mktemp -d)" && pwd -P)"
+  register_tmp_dir "$root"
   mkdir -p "$root/swarmforge/roles" "$root/.swarmforge"
   touch "$root/swarmforge/constitution.prompt"
   for role in coordinator specifier; do

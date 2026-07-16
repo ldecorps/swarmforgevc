@@ -5,6 +5,7 @@
 # the disabled / missing-cli / needs-auth / running / auth-lost / stop gating
 # and that tunnel.status.json carries the published URL.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TUNNEL="$SCRIPT_DIR/../operator_tunnel.sh"
@@ -15,6 +16,7 @@ check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi
 # A fake project root with a fake CLI whose behaviour is scripted per test.
 make_fixture() {
   local d; d="$(mktemp -d)"
+  register_tmp_dir "$d"
   mkdir -p "$d/.swarmforge/operator/vscode-cli"
   printf '%s' "$d"
 }

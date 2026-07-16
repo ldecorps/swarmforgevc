@@ -62,7 +62,21 @@
 ;; ── read-rate-limit-cooldown-* / mark-rate-limit-cooldown-woken!
 ;;    (fixture-based fs I/O, no live swarm) ─────────────────────────────
 
-(defn mk-tmp [] (str (fs/create-temp-dir {:prefix "rate-limit-cooldown-test-"})))
+(def created-temp-dirs (atom []))
+;; BL-459: every temp dir this runner creates is tracked here and removed by
+;; a JVM shutdown hook, registered ONCE below - fires on both a clean run
+;; and an uncaught assertion/exception propagating out of this script
+;; (verified empirically: Runtime/addShutdownHook runs on System/exit and on
+;; an uncaught throwable unwinding to the top level), never on SIGKILL/OOM
+;; (BL-413's periodic /tmp sweep is the backstop for that - out of scope
+;; here).
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
+(defn mk-tmp []
+  (let [d (str (fs/create-temp-dir {:prefix "rate-limit-cooldown-test-"}))]
+    (swap! created-temp-dirs conj d)
+    d))
 
 (let [dir (mk-tmp)]
   (spit (str (fs/path dir "rate-limit-cooldown.json")) "{\"coder\":{\"untilMs\":5000}}")

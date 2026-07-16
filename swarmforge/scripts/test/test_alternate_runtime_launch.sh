@@ -14,6 +14,7 @@
 # configuration.
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SWARMFORGE_SH="$SCRIPT_DIR/../swarmforge.sh"
@@ -32,6 +33,7 @@ index_of_role() {
 
 mk_root() {
   local root; root="$(cd "$(mktemp -d)" && pwd -P)"
+  register_tmp_dir "$root"
   mkdir -p "$root/swarmforge/roles" "$root/.swarmforge/launch" "$root/.swarmforge/prompts"
   touch "$root/swarmforge/constitution.prompt"
   for role in specifier coder documenter; do
@@ -92,6 +94,7 @@ window documenter aider master --model mistral/mistral-large-latest
 CONF
 
 FAKE_BIN="$(mktemp -d)"
+register_tmp_dir "$FAKE_BIN"
 TMUX_LOG="$FAKE_BIN/tmux-calls.log"
 cat > "$FAKE_BIN/tmux" <<'FAKETMUX'
 #!/usr/bin/env bash
@@ -131,6 +134,7 @@ window documenter claude master
 CONF
 
 FAKE_BIN5="$(mktemp -d)"
+register_tmp_dir "$FAKE_BIN5"
 TMUX_LOG5="$FAKE_BIN5/tmux-calls.log"
 cat > "$FAKE_BIN5/tmux" <<'FAKETMUX'
 #!/usr/bin/env bash

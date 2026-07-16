@@ -5,6 +5,7 @@
 # entrypoint referenced by the dry-run output is verified with a REAL `-f`
 # check against the filesystem, not just a grep on the printed command.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$SCRIPT_DIR/.."
@@ -16,6 +17,7 @@ check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi
 
 make_fixture() {
   local d; d="$(mktemp -d)"
+  register_tmp_dir "$d"
   mkdir -p "$d/extension/out/tools" "$d/.swarmforge/operator"
   printf '' > "$d/extension/out/tools/start-bridge-headless.js"
   printf '' > "$d/extension/out/tools/telegram-front-desk-bot.js"
