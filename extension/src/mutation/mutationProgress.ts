@@ -2,10 +2,18 @@
 // logic only - no fs, no Date.now() - so it is testable without a real
 // Stryker run or a real clock. The IO/Stryker-lifecycle adapters that call
 // this live in mutationProgressFile.ts and mutationProgressReporter.ts.
+//
+// BL-446: also tracks `killed`, alongside the existing survived/timedOut
+// counters, so a completed run's kill count is available for
+// mutationGateHealth.ts's health verdict without a second pass over
+// Stryker's mutant results.
+
+import { classifyMutationGateHealth, MutationGateHealth } from './mutationGateHealth';
 
 export interface MutationProgressState {
   total: number;
   tested: number;
+  killed: number;
   survived: number;
   timedOut: number;
   startedAtMs: number;
@@ -16,22 +24,28 @@ export interface MutationProgressRecord {
   tested: number;
   total: number;
   percent: number;
+  killed: number;
   survived: number;
   timedOut: number;
   elapsed_s: number;
   eta_s: number | null;
   updated_at: string;
   status: 'running' | 'done';
+  // BL-446: only meaningful once the run is complete - undefined while
+  // 'running', since a mid-run zero-kill count is expected (most mutants
+  // haven't been tested yet) and would misreport as suspect.
+  health?: MutationGateHealth;
 }
 
 export function initMutationProgressState(total: number, startedAtMs: number): MutationProgressState {
-  return { total, tested: 0, survived: 0, timedOut: 0, startedAtMs };
+  return { total, tested: 0, killed: 0, survived: 0, timedOut: 0, startedAtMs };
 }
 
 export function recordMutantTested(state: MutationProgressState, status: string): MutationProgressState {
   return {
     ...state,
     tested: state.tested + 1,
+    killed: state.killed + (status === 'Killed' ? 1 : 0),
     survived: state.survived + (status === 'Survived' ? 1 : 0),
     timedOut: state.timedOut + (status === 'Timeout' ? 1 : 0),
   };
@@ -62,16 +76,19 @@ export function buildProgressRecord(
     etaSeconds = Math.round((elapsedSeconds / state.tested) * (state.total - state.tested));
   }
 
+  const status = options.status ?? 'running';
   return {
     file: options.file,
     tested: state.tested,
     total: state.total,
     percent,
+    killed: state.killed,
     survived: state.survived,
     timedOut: state.timedOut,
     elapsed_s: Math.round(elapsedSeconds),
     eta_s: etaSeconds,
     updated_at: new Date(nowMs).toISOString(),
-    status: options.status ?? 'running',
+    status,
+    health: status === 'done' ? classifyMutationGateHealth(state.killed, state.survived) : undefined,
   };
 }
