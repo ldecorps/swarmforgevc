@@ -1,0 +1,1 @@
+{"id":"BL-470","messages":[{"seq":0,"ts":1784242474616,"author":"swarm","type":"outbound","text":"What it is: Remove the dead BL-452 edit-in-place acceptance step handlers left behind when their scenarios were retired (superseded by BL-462 repost)\nHow it works: Each active ticket is a row marked only at its current stage"}]}
