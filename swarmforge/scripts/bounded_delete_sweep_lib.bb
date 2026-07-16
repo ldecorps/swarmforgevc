@@ -50,12 +50,18 @@
             window (vec (take cap (drop start-idx (cycle sorted))))]
         {:window window :next-cursor (last window)}))))
 
-;; A small, redirectable, atomically-written cursor file - the SAME
-;; "write -> atomic rename" posture operator_runtime.bb's own atomic-spit!
-;; already uses for every other piece of cross-tick state, applied here so
-;; a crash mid-write never leaves a corrupt cursor that could mis-resume
-;; the window. Absent/unreadable/empty all resolve to nil (start-of-listing),
-;; never a crash.
+;; Shared "write -> atomic rename" posture operator_runtime.bb's own
+;; atomic-spit! already uses for every other piece of cross-tick state,
+;; applied here so a crash mid-write never leaves a corrupt cursor/count
+;; that could mis-resume the window.
+(defn- atomic-write-string! [path s]
+  (fs/create-dirs (fs/parent path))
+  (let [tmp (fs/path (fs/parent path) (str "." (fs/file-name path) ".tmp"))]
+    (spit (str tmp) s)
+    (fs/move tmp path {:replace-existing true :atomic-move true})))
+
+;; A small, redirectable, atomically-written cursor file. Absent/unreadable/
+;; empty all resolve to nil (start-of-listing), never a crash.
 (defn read-cursor [path]
   (try
     (when (fs/exists? path)
@@ -64,10 +70,7 @@
     (catch Exception _ nil)))
 
 (defn write-cursor! [path cursor]
-  (fs/create-dirs (fs/parent path))
-  (let [tmp (fs/path (fs/parent path) (str "." (fs/file-name path) ".tmp"))]
-    (spit (str tmp) (or cursor ""))
-    (fs/move tmp path {:replace-existing true :atomic-move true})))
+  (atomic-write-string! path (or cursor "")))
 
 ;; The sibling counter used for the "periodic, not per-tick" nothing-found
 ;; log line - same atomic-write posture, same "unreadable -> 0" safe default.
@@ -75,7 +78,21 @@
   (try (if (fs/exists? path) (or (parse-long (str/trim (slurp (str path)))) 0) 0) (catch Exception _ 0)))
 
 (defn write-count! [path n]
-  (fs/create-dirs (fs/parent path))
-  (let [tmp (fs/path (fs/parent path) (str "." (fs/file-name path) ".tmp"))]
-    (spit (str tmp) (str n))
-    (fs/move tmp path {:replace-existing true :atomic-move true})))
+  (atomic-write-string! path (str n)))
+
+;; The "persist cursor, then report reaped vs periodic nothing-found"
+;; bookkeeping both sweep callers need after computing their tick's window -
+;; centralized so a change to the periodic-log cadence or wording has one
+;; call site, not one per sweep. log! takes a single message string; a
+;; caller whose own log! needs a category tag (e.g. operator_runtime.bb's
+;; two-arg log!) passes a one-arg wrapper.
+(defn record-tick! [{:keys [cursor-file next-cursor nothing-streak-file
+                             nothing-log-period reaped window log!]}]
+  (write-cursor! cursor-file next-cursor)
+  (if (pos? reaped)
+    (do (log! (str "reaped " reaped " of " (count window) " scanned"))
+        (write-count! nothing-streak-file 0))
+    (let [streak (inc (read-count nothing-streak-file))]
+      (write-count! nothing-streak-file streak)
+      (when (or (= streak 1) (zero? (mod streak nothing-log-period)))
+        (log! (str "scanned " (count window) ", nothing reaped (streak " streak ")"))))))
