@@ -4,6 +4,7 @@
 # decision, so lifting it must be an explicit action, never an implicit
 # side effect of relaunching.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$SCRIPT_DIR/.."
@@ -15,6 +16,7 @@ check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi
 
 # ── 1. removes an existing park flag ────────────────────────────────────────
 F="$(mktemp -d)"
+register_tmp_dir "$F"
 mkdir -p "$F/.swarmforge/operator"
 printf 'DO NOT RESTART\n' > "$F/.swarmforge/operator/front-desk-PARKED.md"
 OUT="$(bash "$UNPARK" "$F" 2>&1)" && rc=0 || rc=$?
@@ -24,6 +26,7 @@ rm -rf "$F"
 
 # ── 2. idempotent: no park flag present -> still exits 0, no error ──────────
 F="$(mktemp -d)"
+register_tmp_dir "$F"
 mkdir -p "$F/.swarmforge/operator"
 OUT="$(bash "$UNPARK" "$F" 2>&1)" && rc=0 || rc=$?
 check "unpark with no park flag present exits 0"     '[[ "$rc" -eq 0 ]]'

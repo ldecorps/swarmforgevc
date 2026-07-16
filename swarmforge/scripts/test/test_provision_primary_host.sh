@@ -11,6 +11,7 @@
 # root needed) via the REAL generate_systemd_units.sh - never a
 # hand-rolled substitute for it.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALLER="$SCRIPT_DIR/../../deploy/provision_primary_host.sh"
@@ -20,6 +21,7 @@ pass() { echo "PASS: $*"; }
 
 mk_fixture() {
   local d; d="$(mktemp -d)"
+  register_tmp_dir "$d"
   mkdir -p "$d/swarmforge"
   printf '%s' "$d"
 }
@@ -35,6 +37,7 @@ mk_fixture() {
 #    defaults to "primary" (swarmforge.sh's own single-swarm default) ────
 F="$(mk_fixture)"
 UNIT_TMP="$(mktemp -d)"
+register_tmp_dir "$UNIT_TMP"
 OUT="$(PROVISION_PRIMARY_UNIT_TMP_DIR="$UNIT_TMP" PROVISION_PRIMARY_DRYRUN=1 bash "$INSTALLER" "$F" 2>&1)"
 
 echo "$OUT" | grep -q "DRYRUN: sudo mv .* /etc/systemd/system/swarmforge-operator-primary.service" \
@@ -57,6 +60,7 @@ rm -rf "$F" "$UNIT_TMP"
 #    reuses generate_systemd_units.sh's own rendering, never re-derives it ──
 F="$(mk_fixture)"
 UNIT_TMP="$(mktemp -d)"
+register_tmp_dir "$UNIT_TMP"
 PROVISION_PRIMARY_UNIT_TMP_DIR="$UNIT_TMP" PROVISION_PRIMARY_DRYRUN=1 bash "$INSTALLER" "$F" >/dev/null
 [[ -f "$UNIT_TMP/swarmforge-operator-primary.service" ]] || fail "expected the operator unit to actually be generated (even in dry-run mode - only install/enable are skipped)"
 grep -q "^Restart=always$" "$UNIT_TMP/swarmforge-operator-primary.service" || fail "expected the generated operator unit to carry Restart=always"
@@ -69,6 +73,7 @@ rm -rf "$F" "$UNIT_TMP"
 # ── a configured swarm_name overrides the "primary" default ──────────────
 F="$(mk_fixture)"
 UNIT_TMP="$(mktemp -d)"
+register_tmp_dir "$UNIT_TMP"
 cat > "$F/swarmforge/swarmforge.conf" <<'EOF'
 config swarm_name dogfood
 EOF
@@ -82,6 +87,7 @@ rm -rf "$F" "$UNIT_TMP"
 #    THIS script does not error or duplicate work on a re-run) ───────────
 F="$(mk_fixture)"
 UNIT_TMP="$(mktemp -d)"
+register_tmp_dir "$UNIT_TMP"
 PROVISION_PRIMARY_UNIT_TMP_DIR="$UNIT_TMP" PROVISION_PRIMARY_DRYRUN=1 bash "$INSTALLER" "$F" >/dev/null
 PROVISION_PRIMARY_UNIT_TMP_DIR="$UNIT_TMP" PROVISION_PRIMARY_DRYRUN=1 bash "$INSTALLER" "$F" >/dev/null
 pass "always-on-operator-presence-04: re-running the installer is safe (no error on a second, idempotent run)"

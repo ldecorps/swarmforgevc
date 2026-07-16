@@ -6,6 +6,7 @@
 # real (real child processes, real liveness checks) without any live
 # credential or real HTTP server.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$SCRIPT_DIR/.."
@@ -15,6 +16,7 @@ check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi
 
 make_fixture() {
   local d; d="$(mktemp -d)"
+  register_tmp_dir "$d"
   mkdir -p "$d/.swarmforge/operator" "$d/extension/out/tools"
   # BL-370: front_desk_supervisor.bb now also load-files operator_lib.bb
   # (reused BL-345 delivery-based alarm arming) and daemon_alarm_lib.bb
