@@ -2,7 +2,7 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { qaBouncesDir, readQaBounceRecords, appendQaBounceRecordIfNew } = require('../out/quality/qaBounceStore');
+const { qaBouncesDir, readQaBounceRecords, appendQaBounceRecordIfNew } = require('../out/metrics/qaBounceStore');
 
 // BL-454: the impure read/write layer over .swarmforge/qa_bounces/<YYYY-MM>.jsonl.
 

@@ -22,7 +22,7 @@ import * as path from 'path';
 import { readBacklogFolders } from '../panel/backlogReader';
 import { isKnownTicketType, QaBounceRecord } from '../quality/qaBounce';
 import { parseBounceEvidenceFile } from '../quality/qaBounceEvidenceParser';
-import { appendQaBounceRecordIfNew } from '../quality/qaBounceStore';
+import { appendQaBounceRecordIfNew } from '../metrics/qaBounceStore';
 import { printJsonToStdout, resolveCliMainWorktreeContext, runCliMain } from './swarm-metrics';
 
 function evidenceDir(targetPath: string): string {
