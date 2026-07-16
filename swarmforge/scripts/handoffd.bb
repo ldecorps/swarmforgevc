@@ -896,6 +896,21 @@
 ;; sweep, never fabricates a count. File discovery itself is shared with
 ;; standing_rule_violations_cli.bb via standing_rule_violations_files.bb -
 ;; both used to carry their own copy of this filter, with the same bug.
+;; BL-431: shells to the compiled suboptimality-verdict-line.js CLI (same
+;; shell-out pattern as the *-briefing-line fns above) - reuses BL-430's
+;; persisted rework-rate signal and reworkDiagnosis.ts's pure verdict logic
+;; unchanged. The CLI itself already prints nothing (empty stdout) when
+;; there is no signal yet or the rate is at/below baseline, so `str/trim
+;; out` naturally degrades to a blank block (no briefing noise) in that
+;; case, same as every sibling section here; any other failure (CLI not
+;; yet compiled, etc.) degrades identically - never crashes the sweep.
+(defn suboptimality-verdict-briefing-line []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "suboptimality-verdict-line.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
 (defn standing-rule-violations-briefing-line []
   (try
     (let [files (for [f (standing-rule-violations-files/rule-source-files project-root)]
@@ -943,6 +958,7 @@
     :chase-trend-section chase-trend-briefing-section
     :not-done-count-line not-done-count-briefing-line
     :standing-rule-violations-line standing-rule-violations-briefing-line
+    :suboptimality-verdict-line suboptimality-verdict-briefing-line
     :log! (fn [& parts] (apply log! parts))}))
 
 ;; BL-339: shells to the compiled notify-recert-batch.js CLI (Babashka has
