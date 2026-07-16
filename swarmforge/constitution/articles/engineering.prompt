@@ -112,6 +112,30 @@
   shared article instead — the coder writes the tests, so this binds every test author, not just the
   role that happens to catch it late.)
 
+- **A wiring test that shells a sweep/adapter out to a CLI or subprocess must drive the
+  CLI-FAILURE path — a non-zero exit WITH stderr, and a spawn failure — not only the exit-0
+  happy path, and assert the sweep's DOCUMENTED failure contract holds.** Stubbing only a
+  succeeding CLI proves the invocation reaches the tool and its stdout is surfaced, and nothing
+  else: the `(if (zero? exit) … else …)` and `(catch Exception e …)` branches — where the sweep
+  decides whether to surface the failure, swallow it, or degrade — run for the first time only in
+  production, i.e. the moment a tool goes missing, un-compiled, or starts throwing, which is
+  exactly when you most need the sweep to behave. This failure contract is NOT uniform across
+  siblings, so READ the sweep, never assume: some SURFACE the failure (BL-440's
+  `answer-file-drain-sweep!` logs `exit=<code>` + the CLI's own stderr and keeps sweeping), others
+  deliberately SWALLOW a non-zero exit as a silent no-op (`recert-notify-sweep!` /
+  `dead-letter-notify-sweep!` / `resource-sample-sweep!` only `(when (zero? exit) (log! …))`, so a
+  CLI that runs and exits non-zero is invisible by design — a not-yet-compiled CLI would otherwise
+  spam the log every cycle), and the `*-briefing-line`/`-section` helpers DEGRADE to `nil`/omit.
+  Whichever it is, the failing-CLI phase must assert exactly that documented behavior AND that the
+  daemon survives to sweep again on the next cycle — never crashes, never fabricates or emits
+  partial output. This is the subprocess sibling of the in-process-`main()` and missing-seam rules
+  above: a green happy-path wiring test is not proof the failure branch works. (BL-440: the
+  hardener's own wiring test proved only the happy path and left `answer-file-drain-sweep!`'s
+  catch/nonzero-exit branches dark; the same untested-error-path gap sits in its sibling `*-sweep!`
+  wiring tests in `handoffd.bb` — 11 by the hardener's count. Proposed by the hardender 2026-07-16
+  scoped `engineering`; the coder writes these tests, so this binds every test author, not only the
+  role that caught it late.)
+
 ## Test Speed And Isolation
 - Strive to keep the unit suite running in seconds. Speed is a correctness
   property, not a nicety: a slow suite gets skipped, and a test that waits on
