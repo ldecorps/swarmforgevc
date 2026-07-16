@@ -91,6 +91,23 @@ OUT="$(bb "$CLI" "$ROOT" 2>/dev/null)"
 pass "effective_backlog_depth_cli.bb restores the configured cap once the recommendation clears"
 rm -rf "$ROOT"
 
+# ── genuine spawn failure (not just a non-zero exit): "node" itself
+#    unresolvable on PATH, so babashka.process/sh throws synchronously
+#    instead of returning a nonzero :exit - drives the (catch Exception e ...)
+#    branch in refresh-recommendation!, distinct from the "node runs but the
+#    script is missing" nonzero-exit branch every fixture above exercises.
+#    Without this, a mutant deleting the try/catch entirely would survive:
+#    both branches degrade identically (log to stderr, fall through to
+#    whatever is on disk), so only an actual spawn failure tells them apart.
+BB_DIR="$(dirname "$(command -v bb)")"
+ROOT="$(mk_fixture 3)"
+OUT="$(env PATH="$BB_DIR" bb "$CLI" "$ROOT" 2>/dev/null)"
+[[ "$OUT" == "3" ]] || fail "expected the configured cap (3) to survive a genuine node spawn failure, got: $OUT"
+ERR="$(env PATH="$BB_DIR" bb "$CLI" "$ROOT" 2>&1 >/dev/null)"
+[[ "$ERR" == *"refresh error"* ]] || fail "expected a 'refresh error' diagnostic on stderr for a genuine spawn failure, got: $ERR"
+pass "effective_backlog_depth_cli.bb degrades gracefully on a genuine node spawn failure, not just a nonzero exit"
+rm -rf "$ROOT"
+
 # ── live wiring: the REAL compiled emit-throttle-recommendation.js, shelled
 #    end to end (never a hand-written recommendation fixture) - symlinks the
 #    fixture's extension/ to this checkout's real one (mirrors the Stryker

@@ -9,6 +9,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { ReworkSignal } from './reworkObservatory';
 
 export function observatorySignalsPath(targetPath: string): string {
   return path.join(targetPath, '.swarmforge', 'telemetry', 'observatory-signals.json');
@@ -49,4 +50,17 @@ export function persistReworkSignal(targetPath: string, entry: Record<string, un
 export function readReworkSignalEntry(targetPath: string): Record<string, unknown> | null {
   const file = readSignalsFile(targetPath);
   return file.signals.find((s) => s.kind === 'rework-rate') ?? null;
+}
+
+// BL-432 DRY cleanup: the entry's nested `signal` field, read the same way by
+// every consumer (suboptimality-verdict-line.ts, emit-throttle-recommendation.ts)
+// - both previously carried an identical copy of this extraction. A missing or
+// malformed entry (no producer has run yet, or a hand-edited file) degrades to
+// "no signal", never a crash reading `.signal` off null/undefined.
+export function readReworkSignal(targetPath: string): ReworkSignal | null {
+  const entry = readReworkSignalEntry(targetPath);
+  if (!entry || typeof entry.signal !== 'object' || entry.signal === null) {
+    return null;
+  }
+  return entry.signal as ReworkSignal;
 }

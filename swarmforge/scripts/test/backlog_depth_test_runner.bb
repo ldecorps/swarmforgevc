@@ -208,6 +208,20 @@
            nil
            (backlog-depth-lib/read-recommended-cap root)))
 
+;; Present-but-malformed, distinct from absent/unparseable above: valid JSON,
+;; present recommendedCap field, but the WRONG TYPE (a future field-shape
+;; drift on the writer side) - must degrade to nil like every other
+;; malformed case, never propagate a non-numeric value into the promotion
+;; gate's min() arithmetic. (int? cap) is the guard this proves is
+;; load-bearing.
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root ".swarmforge" "coordinator"))
+  (spit (str (backlog-depth-lib/throttle-recommendation-path root))
+        (json/generate-string {:recommendedCap "one"}))
+  (assert= "read-recommended-cap degrades to nil for a present-but-wrong-type recommendedCap (string, not int)"
+           nil
+           (backlog-depth-lib/read-recommended-cap root)))
+
 ;; Break-then-fix (the wiring-test-with-a-new-on-disk-input rule): prove the
 ;; end-to-end read is genuinely load-bearing, not just a default that
 ;; happens to match with no fixture at all.

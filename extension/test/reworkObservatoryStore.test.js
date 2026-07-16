@@ -2,7 +2,7 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { observatorySignalsPath, persistReworkSignal, readReworkSignalEntry } = require('../out/metrics/reworkObservatoryStore');
+const { observatorySignalsPath, persistReworkSignal, readReworkSignalEntry, readReworkSignal } = require('../out/metrics/reworkObservatoryStore');
 
 function mkTmp() {
   return mkTmpDir('sfvc-observatory-store-');
@@ -91,4 +91,40 @@ test('readReworkSignalEntry returns null rather than crashing on a corrupt file'
   fs.mkdirSync(path.dirname(observatorySignalsPath(target)), { recursive: true });
   fs.writeFileSync(observatorySignalsPath(target), 'not json');
   assert.equal(readReworkSignalEntry(target), null);
+});
+
+// ── readReworkSignal (BL-432 DRY cleanup: the shared entry->signal extraction
+// previously duplicated verbatim in suboptimality-verdict-line.ts and
+// emit-throttle-recommendation.ts) ──────────────────────────────────────────
+
+test('readReworkSignal returns the nested signal field of the persisted entry', () => {
+  const target = mkTmp();
+  persistReworkSignal(target, { kind: 'rework-rate', version: 1, computedAtIso: '2026-07-15T00:00:00Z', signal: { reworkRate: 0.4 } });
+  assert.deepEqual(readReworkSignal(target), { reworkRate: 0.4 });
+});
+
+test('readReworkSignal returns null when no entry exists at all', () => {
+  const target = mkTmp();
+  assert.equal(readReworkSignal(target), null);
+});
+
+// Present-but-malformed: the entry exists but its `signal` field is not an
+// object (a hand-edited file, or a future producer bug) - must be REJECTED
+// (null), not passed through as if it were a real signal.
+test('readReworkSignal returns null when the entry exists but its signal field is not an object', () => {
+  const target = mkTmp();
+  persistReworkSignal(target, { kind: 'rework-rate', version: 1, computedAtIso: '2026-07-15T00:00:00Z', signal: 'not-an-object' });
+  assert.equal(readReworkSignal(target), null);
+});
+
+test('readReworkSignal returns null when the entry exists but has no signal field at all', () => {
+  const target = mkTmp();
+  persistReworkSignal(target, { kind: 'rework-rate', version: 1, computedAtIso: '2026-07-15T00:00:00Z' });
+  assert.equal(readReworkSignal(target), null);
+});
+
+test('readReworkSignal returns null when the entry\'s signal field is explicitly null', () => {
+  const target = mkTmp();
+  persistReworkSignal(target, { kind: 'rework-rate', version: 1, computedAtIso: '2026-07-15T00:00:00Z', signal: null });
+  assert.equal(readReworkSignal(target), null);
 });
