@@ -231,10 +231,13 @@ interface VisionDocSpec {
   relativePath: string;
 }
 
+// BL-456: paths updated for the Divio four-mode reorg (docs/reference/,
+// docs/explanation/, docs/tutorials/) - the diagrams stay under
+// docs/diagrams/, out of the mode split (local-engineering diagrams rule).
 const VISION_DOCS: VisionDocSpec[] = [
-  { id: 'specification', title: 'Specification', kind: 'markdown', relativePath: 'docs/Specification.MD' },
-  { id: 'roadmap', title: 'Milestone Roadmap', kind: 'markdown', relativePath: 'docs/Milestone Roadmap.MD' },
-  { id: 'gettingStarted', title: 'Getting Started', kind: 'markdown', relativePath: 'docs/GettingStarted.md' },
+  { id: 'specification', title: 'Specification', kind: 'markdown', relativePath: 'docs/reference/Specification.MD' },
+  { id: 'roadmap', title: 'Milestone Roadmap', kind: 'markdown', relativePath: 'docs/explanation/Milestone Roadmap.MD' },
+  { id: 'gettingStarted', title: 'Getting Started', kind: 'markdown', relativePath: 'docs/tutorials/GettingStarted.md' },
   { id: 'architectureDiagram', title: 'Architecture', kind: 'mermaid', relativePath: 'docs/diagrams/architecture.mmd' },
   { id: 'swarmFlowDiagram', title: 'Swarm Flow', kind: 'mermaid', relativePath: 'docs/diagrams/swarm-flow.mmd' },
 ];

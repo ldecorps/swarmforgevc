@@ -48,7 +48,7 @@
 - **Every** `swarm_handoff.sh` still tries sync tmux inject first.
 - On sync success: outbox → `sent/`; daemon sees nothing (silent backup).
 - On sync failure: outbox stays queued; daemon delivers to `inbox/new/` + wake.
-- See `docs/specs/handoff-dual-path.md` for pane narration rules (mail silent on
+- See `docs/explanation/handoff-dual-path.md` for pane narration rules (mail silent on
   happy path; mention mailbox only on backup-only discovery).
 - Extension observes daemon status (BL-144/146); BL-128 resumes after phase 2 green.
 

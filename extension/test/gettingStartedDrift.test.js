@@ -7,7 +7,7 @@ const path = require('node:path');
 // contributed command in package.json, so this fails loudly the moment a
 // command is renamed or removed without updating the guide.
 
-const GUIDE_PATH = path.join(__dirname, '..', '..', 'docs', 'GettingStarted.md');
+const GUIDE_PATH = path.join(__dirname, '..', '..', 'docs', 'tutorials', 'GettingStarted.md');
 const PACKAGE_JSON_PATH = path.join(__dirname, '..', 'package.json');
 
 // Stryker (extension/stryker.config.json) sandboxes only the extension/
@@ -32,7 +32,7 @@ function contributedCommandIds() {
 
 test('every swarmforge.* command mentioned in GettingStarted.md is a contributed command', (t) => {
   if (!guideAvailable) {
-    t.skip('docs/GettingStarted.md not present outside extension/ in this sandbox');
+    t.skip('docs/tutorials/GettingStarted.md not present outside extension/ in this sandbox');
     return;
   }
   const guide = fs.readFileSync(GUIDE_PATH, 'utf8');
@@ -47,7 +47,7 @@ test('every swarmforge.* command mentioned in GettingStarted.md is a contributed
 
 test('GettingStarted.md declares its documenter ownership', (t) => {
   if (!guideAvailable) {
-    t.skip('docs/GettingStarted.md not present outside extension/ in this sandbox');
+    t.skip('docs/tutorials/GettingStarted.md not present outside extension/ in this sandbox');
     return;
   }
   const guide = fs.readFileSync(GUIDE_PATH, 'utf8');
@@ -60,7 +60,7 @@ test('GettingStarted.md declares its documenter ownership', (t) => {
 // at all, not left with a flat "unsupported" dead end.
 test('GettingStarted.md documents Windows via a real section naming the Remote-WSL extension', (t) => {
   if (!guideAvailable) {
-    t.skip('docs/GettingStarted.md not present outside extension/ in this sandbox');
+    t.skip('docs/tutorials/GettingStarted.md not present outside extension/ in this sandbox');
     return;
   }
   const guide = fs.readFileSync(GUIDE_PATH, 'utf8');

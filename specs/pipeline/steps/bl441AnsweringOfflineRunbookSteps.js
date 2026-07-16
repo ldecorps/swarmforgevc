@@ -1,7 +1,7 @@
 'use strict';
 
 // BL-441: step handlers for the "answering offline" runbook feature. Reads
-// the REAL docs/runbooks/BL-441-answering-offline-runbook.md straight off
+// the REAL docs/how-to/BL-441-answering-offline-runbook.md straight off
 // disk (repo-relative to this file) - a plain content check, no compiled
 // module involved (this is a documentation-only ticket, mirrors
 // docsWindowsClaimSteps's convention for docs-only features).
@@ -10,7 +10,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
-const RUNBOOK_PATH = path.join(REPO_ROOT, 'docs', 'runbooks', 'BL-441-answering-offline-runbook.md');
+const RUNBOOK_PATH = path.join(REPO_ROOT, 'docs', 'how-to', 'BL-441-answering-offline-runbook.md');
 
 function registerSteps(registry) {
   // ── Background (shared across all 3 scenarios) ──────────────────────

@@ -31,7 +31,7 @@ const KNOWN_SIBLING_CHECK_FILES = {
   pwa: 'index.html',
   swarmforge: path.join('scripts', 'compliance_battery.bb'),
   '.github': path.join('workflows', 'backlog-dashboard.yml'),
-  docs: 'GettingStarted.md',
+  docs: path.join('tutorials', 'GettingStarted.md'),
 };
 
 const ALL_SIBLING_NAMES = Object.keys(KNOWN_SIBLING_CHECK_FILES);
