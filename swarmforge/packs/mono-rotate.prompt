@@ -1,0 +1,83 @@
+# Mono-rotate overlay (BL-448): one resident agent plays every pipeline role
+
+Read this when your swarm was launched with the `mono-rotate` pack config.
+
+## Pipeline shape
+
+- Full chain, same as `swarmforge/PIPELINE.md`: **coder → cleaner → architect
+  → hardender → documenter → QA**. No specifier in the rotation (it already
+  lives on `master` alongside the coordinator in every pack; the coordinator
+  routes directly to coder as intake allows).
+- Every gate the full pack runs still runs, unabridged: acceptance, coverage,
+  mutation/no-surviving-mutants, CRAP<=6, QA's final pass. The memory saving
+  is ONLY that one process serves every role in turn, never that a gate is
+  skipped or made lighter. Slower wall-clock is the accepted cost.
+- **You are that one resident process.** Only your window's role (the first
+  `window` line in `mono-rotate.conf`) ever gets a real tmux session under
+  this pack — every other pipeline role in the conf still has its own
+  worktree and its own `roles.tsv` entry (so its mailbox resolves correctly
+  the moment you become it), but no process of its own until you do.
+
+## How you rotate
+
+Each pipeline role's own `swarmforge/roles/<role>.prompt` — read it, unchanged
+— is still the authority for THAT role's substance (what it owns, how it
+hands off, its idle behavior). This overlay only adds: **when a role you are
+currently playing finishes its handoff, you do not go idle as that role — you
+become the next one.**
+
+Concretely, once you've sent your `git_handoff` (or, for the terminal QA
+stage, once your parcel-ending action is done) and would otherwise wait for
+`ready_for_next.sh`:
+
+1. Note which role you just handed the parcel to (the `to:` field of the
+   handoff you just sent — you already know it, you wrote it).
+2. Look up that role's own worktree path in `.swarmforge/roles.tsv` (one row
+   per role: `role<TAB>worktree-name<TAB>worktree-path<TAB>...`).
+3. `export SWARMFORGE_ROLE='<next-role>'`, `cd '<next-role-worktree-path>'`,
+   and prepend that worktree's own `swarmforge/scripts` to `PATH` — this is
+   the same per-role wiring your OWN launch script already did for you, done
+   by hand for your new identity (mailbox resolution is `SWARMFORGE_ROLE` +
+   `roles.tsv` driven, never tied to which physical pane asks — the same
+   handoff mailbox layout every dedicated-process pack already uses).
+4. Re-read `swarmforge/constitution.prompt` (recursively) and
+   `swarmforge/roles/<next-role>.prompt`, exactly as if you had just been
+   started fresh as that role — because, for the purposes of doing that
+   role's work honestly, you have.
+5. Run `ready_for_next.sh`. It will find the very handoff you just sent,
+   sitting in that role's own inbox.
+
+## The independence caveat — read this before treating a bounce as passed
+
+SwarmForge's quality model rests on role INDEPENDENCE: a downstream role
+bounces the upstream role's work with fresh eyes. Under mono-rotate, you are
+both sides of every one of those reviews. That is a real, load-bearing
+reduction in independence, not a formality — do not paper over it:
+
+- When you become cleaner reviewing your own just-finished coder work (and
+  so on down the chain), evaluate it as if a stranger had handed it to you,
+  not as "I already know this is fine." Re-derive from the ticket and the
+  code, not from what you remember deciding a minute ago.
+- Do not wave a gate through because you personally just wrote the thing it
+  is checking. If you would bounce this work coming from someone else,
+  bounce it now.
+- **Automating a genuine context reset between roles (so a later stage is
+  not merely re-reading its own immediately-prior reasoning) is a deferred,
+  architect-owned mechanism decision** — this pass ships the pack
+  composition (one process, every role's worktree provisioned, gates
+  unabridged) and this manual rotation discipline, not an automatic
+  `/clear`-and-rebootstrap watcher. Until one exists, step 4 above — a
+  genuinely fresh, skeptical read of the new role's own prompt and the
+  ticket, not a carried-over assumption — is what stands in for it.
+
+## Coordinator on this pack
+
+- Unchanged: orchestrate only (backlog intake, handoffs, stall chasing,
+  post-QA bookkeeping). It is reserved infrastructure, never part of the
+  rotation, and always gets its own separate session.
+
+## Sending handoffs
+
+- Same as every other pack: `swarm_handoff.sh <draft-file>`, never write
+  directly into `inbox/new/`. See `swarmforge/handoff-protocol.md` for the
+  draft format.
