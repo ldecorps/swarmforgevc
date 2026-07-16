@@ -46,14 +46,39 @@ export interface ProfilingSessionResult {
   exitCode: number | null;
 }
 
+// Pure BFS over an injected direct-children lookup: walks the FULL
+// descendant subtree (children, grandchildren, ...), not just the immediate
+// children of rootPid. An npm/npx-wrapped command interposes a shell (or
+// npm/npx itself) between the spawned process and the real worker
+// processes underneath it, so listing only direct children finds the
+// wrapper instead of the real workers (BL-427 QA bounce). `visited` both
+// dedupes a pid reachable through more than one path and guards against a
+// process listing that reports a pid as its own descendant.
+export function collectDescendantPids(rootPid: number, listChildPids: (pid: number) => number[]): number[] {
+  const visited = new Set<number>();
+  const result: number[] = [];
+  const queue: number[] = [rootPid];
+  while (queue.length > 0) {
+    const current = queue.shift() as number;
+    for (const child of listChildPids(current)) {
+      if (!visited.has(child)) {
+        visited.add(child);
+        result.push(child);
+        queue.push(child);
+      }
+    }
+  }
+  return result;
+}
+
 // Pure given its adapters: one sampling pass over a parent's CURRENT
-// children. A child whose stats could not be read (already exited between
-// the pid listing and the stats read - an inherent race in any
-// point-in-time process sample) is skipped, never fabricated as a
-// zero-RSS sample.
+// descendants (direct children and every process below them). A descendant
+// whose stats could not be read (already exited between the pid listing and
+// the stats read - an inherent race in any point-in-time process sample) is
+// skipped, never fabricated as a zero-RSS sample.
 export function sampleWorkerChildrenOnce(parentPid: number, atMs: number, adapters: SampleAdapters): RssSample[] {
   const samples: RssSample[] = [];
-  for (const pid of adapters.listChildPids(parentPid)) {
+  for (const pid of collectDescendantPids(parentPid, adapters.listChildPids)) {
     const stats = adapters.getStats(pid);
     if (stats) {
       samples.push({ workerId: String(pid), rssBytes: stats.rssBytes, atMs });
