@@ -295,6 +295,50 @@ export function decideSteeringAction(
   return { kind: 'redirect', role, text };
 }
 
+// BL-426 slice 1: coordinator-Operator-topic voice-note round trip. STT/TTS
+// results are a discriminated union, never a bare boolean - a TRANSIENT
+// provider failure (retryable) and a STRUCTURALLY un-processable file
+// (terminal, a deliberate drop) are different outcomes with opposite
+// offset/retry treatment (the engineering article's own
+// deliberate-drop-vs-failure rule), so this never collapses them the way
+// BL-389 had to fix for ordinary drops.
+export type SttResult = { kind: 'ok'; transcript: string } | { kind: 'transient-failure' } | { kind: 'unprocessable' };
+export type TtsResult = { kind: 'ok'; audio: Buffer } | { kind: 'failure' };
+
+export type VoiceUpdateDecision = { kind: 'transcribe'; fileId: string } | { kind: 'refuse' } | { kind: 'not-applicable' };
+
+// Pure: is this update a voice note addressed to the coordinator's Operator
+// topic, and if so is the sender authorised? Checked ahead of
+// decideUpdateAction (which reads messageTextOf and would otherwise see a
+// voice note as a text-less 'no-text' drop) - mirrors decideSteeringAction's
+// own "decide first, fall through on not-applicable" shape. Scoped to the
+// Operator topic ONLY (slice 1): that topic is the one already bound to the
+// reserved OPERATOR_SUBJECT_ID (decideEnsureOperatorTopicAction), so
+// subjectForTopic resolving to it is the same "is this the coordinator's
+// topic" signal the rest of this file already trusts - no new topic-identity
+// mechanism needed. A voice note in any OTHER topic returns 'not-applicable'
+// and falls through completely unaffected to the pre-BL-426 no-text drop
+// (audio for any other role is explicitly out of scope for slice 1, never a
+// regression).
+export function decideVoiceUpdateAction(
+  update: TelegramUpdate,
+  principalUserId: string,
+  chatId: string,
+  subjectForTopic: (topicId: number | undefined) => string | undefined
+): VoiceUpdateDecision {
+  const voice = update.message?.voice;
+  if (!voice) {
+    return { kind: 'not-applicable' };
+  }
+  if (subjectForTopic(topicIdOf(update)) !== OPERATOR_SUBJECT_ID) {
+    return { kind: 'not-applicable' };
+  }
+  if (!isFromMyChat(update, chatId) || !isFromPrincipal(update, principalUserId)) {
+    return { kind: 'refuse' };
+  }
+  return { kind: 'transcribe', fileId: voice.file_id };
+}
+
 export interface PollAdapters {
   // BL-379: the bot's own configured chat id - decideUpdateAction's new
   // guard against getUpdates' bot-wide (not chat-scoped) result set. Lives
@@ -378,6 +422,17 @@ export interface PollAdapters {
   // poll" posture as subjectForTopic/backlogForTopic.
   readRoleTopicMap?: () => Record<string, number>;
   redirectToRole?: (role: string, text: string) => Promise<void>;
+  // BL-426 slice 1: transcribes a coordinator Operator-topic voice note's
+  // audio (already-resolved fileId) to text. Optional so every PollAdapters
+  // fixture written before BL-426 keeps working unchanged - missing means
+  // "voice I/O not wired", the exact pre-BL-426 behavior (mirrors this
+  // file's own BL-410/BL-425 optional-adapter convention).
+  transcribeVoice?: (fileId: string) => Promise<SttResult>;
+  // BL-426 slice 1: marks the coordinator's NEXT reply on this subject as
+  // voice-originated, so the reply-relay side (ReplyRelayAdapters below)
+  // knows to synthesize it back to a voice note instead of staying
+  // text-only. One-shot - consumed and cleared by the reply-relay path.
+  markVoiceOriginatedTurn?: (subjectId: string) => Promise<void>;
 }
 
 // BL-389: the keystone fix. A DROP is a DECISION (the code looked at the
@@ -593,10 +648,56 @@ function openTopicIdFor(decision: BotUpdateDecision): number | undefined {
   return decision.action === 'open-for-topic' ? decision.topicId : undefined;
 }
 
+// BL-426 slice 1: the voice-note twin of attemptSteeringDelivery above -
+// optional adapter, defaults to "voice not wired" so every PollAdapters
+// fixture written before BL-426 keeps working unchanged (same convention as
+// readRoleTopicMap/redirectToRole).
+//
+// A transient STT failure returns 'failed', deliberately reusing
+// pollAndForward/offsetAfterDelivery's EXISTING bounded-retry machinery
+// (offsetAfterDelivery stops advancing the offset at the first 'failed'
+// outcome, and runPollCycle's stuckAttempts/shouldEscalateStuckDelivery
+// already escalate a sustained one) rather than inventing a second retry
+// mechanism - the same voice note is simply redelivered by Telegram on the
+// next poll cycle since the offset never advanced past it, and each such
+// redelivery IS the bounded retry.
+async function attemptVoiceDelivery(
+  update: TelegramUpdate,
+  principalUserId: string,
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome | undefined> {
+  if (!adapters.transcribeVoice) {
+    return undefined;
+  }
+  const decision = decideVoiceUpdateAction(update, principalUserId, adapters.chatId, adapters.subjectForTopic);
+  if (decision.kind === 'not-applicable') {
+    return undefined;
+  }
+  if (decision.kind === 'refuse') {
+    return 'dropped';
+  }
+  const stt = await adapters.transcribeVoice(decision.fileId);
+  if (stt.kind === 'transient-failure') {
+    return 'failed';
+  }
+  if (stt.kind === 'unprocessable') {
+    return 'dropped';
+  }
+  const posted = await adapters.postToBridge(OPERATOR_SUBJECT_ID, stt.transcript, update.update_id);
+  if (posted) {
+    await adapters.markVoiceOriginatedTurn?.(OPERATOR_SUBJECT_ID);
+  }
+  return deliveryOutcome(posted);
+}
+
 async function processMessageUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
   const steeringOutcome = await attemptSteeringDelivery(update, principalUserId, adapters);
   if (steeringOutcome) {
     return steeringOutcome;
+  }
+  const voiceOutcome = await attemptVoiceDelivery(update, principalUserId, adapters);
+  if (voiceOutcome) {
+    return voiceOutcome;
   }
   const decision = decideUpdateAction(update, principalUserId, adapters.chatId, adapters.subjectForTopic, adapters.backlogForTopic);
   if (decision.action === 'post-existing') {
@@ -965,6 +1066,52 @@ export interface ReplyRelayAdapters {
   // this, so a dropped connection between relay and ack replays the SAME
   // entry on reconnect rather than silently losing it.
   ackReply: (id: string) => Promise<void>;
+  // BL-426 slice 1: true when the turn this reply answers was opened by a
+  // voice note (markVoiceOriginatedTurn, PollAdapters above) - the signal
+  // deliverReply below uses to ALSO synthesize a voice note alongside the
+  // ordinary text reply. All four optional and default to "voice not
+  // wired", the exact pre-BL-426 text-only behavior (mirrors this file's
+  // own BL-410/BL-425 optional-adapter convention) - every ReplyRelayAdapters
+  // fixture written before BL-426 keeps working unchanged.
+  isVoiceOriginatedTurn?: (threadId: string) => Promise<boolean>;
+  // Clears the one-shot marker - called whenever it was consulted, whether
+  // or not synthesis actually happens this turn, so a marker never survives
+  // to a LATER, unrelated reply.
+  clearVoiceOriginatedTurn?: (threadId: string) => Promise<void>;
+  synthesizeVoice?: (text: string) => Promise<TtsResult>;
+  sendVoice?: (topicId: number | undefined, audio: Buffer) => Promise<void>;
+}
+
+// BL-426 slice 1: when the delivery's threadId is marked voice-originated,
+// ALSO sends a synthesized voice note alongside the text reply already sent
+// by the caller (human decision: voice note + transcript, never
+// voice-only) before clearing the one-shot marker. A TTS failure - or
+// voice simply not being wired - degrades silently to the text-only reply
+// already sent, rather than blocking or crashing the relay: mirrors this
+// codebase's own "*-briefing-line helpers DEGRADE to nil/omit" posture for
+// a non-critical enrichment failure (the engineering article's CLI-failure
+// wiring rule, applied to an adapter instead of a subprocess). Never called
+// for the alsoPointerToDefault pointer notice - that message is not itself
+// an answer to anything, the same carve-out BL-440's retractsPendingQuestion
+// already uses.
+async function synthesizeVoiceReplyIfNeeded(
+  threadId: string,
+  text: string,
+  topicId: number | undefined,
+  adapters: ReplyRelayAdapters
+): Promise<void> {
+  if (!adapters.isVoiceOriginatedTurn || !adapters.synthesizeVoice || !adapters.sendVoice) {
+    return;
+  }
+  const isVoiceTurn = await adapters.isVoiceOriginatedTurn(threadId);
+  if (!isVoiceTurn) {
+    return;
+  }
+  await adapters.clearVoiceOriginatedTurn?.(threadId);
+  const tts = await adapters.synthesizeVoice(text);
+  if (tts.kind === 'ok') {
+    await adapters.sendVoice(topicId, tts.audio);
+  }
 }
 
 // BL-355: executes one resolved delivery decision. A 'topic' delivery keeps
@@ -979,9 +1126,16 @@ export interface ReplyRelayAdapters {
 // deliveries that carry the real reply text) - never the pointer notice
 // (a distinct, unrelated message pointing at the real topic, not itself an
 // answer to anything).
-async function deliverReply(delivery: ReplyDelivery, text: string, adapters: ReplyRelayAdapters, retractsPendingQuestion?: boolean): Promise<void> {
+async function deliverReply(
+  threadId: string,
+  delivery: ReplyDelivery,
+  text: string,
+  adapters: ReplyRelayAdapters,
+  retractsPendingQuestion?: boolean
+): Promise<void> {
   if (delivery.kind === 'topic') {
     await adapters.sendReply(delivery.topicId, text, retractsPendingQuestion);
+    await synthesizeVoiceReplyIfNeeded(threadId, text, delivery.topicId, adapters);
     if (delivery.alsoPointerToDefault) {
       await adapters.sendReply(undefined, REPLY_POINTER_TEXT);
     }
@@ -989,6 +1143,7 @@ async function deliverReply(delivery: ReplyDelivery, text: string, adapters: Rep
   }
   if (delivery.kind === 'default') {
     await adapters.sendReply(undefined, text, retractsPendingQuestion);
+    await synthesizeVoiceReplyIfNeeded(threadId, text, undefined, adapters);
   }
 }
 
@@ -1015,7 +1170,7 @@ async function relayOneRecord(record: SseRecord, adapters: ReplyRelayAdapters, s
     retractsPendingQuestion?: boolean;
   };
   if (!seenIds.has(id)) {
-    await deliverReply(adapters.resolveDelivery(threadId), text, adapters, retractsPendingQuestion);
+    await deliverReply(threadId, adapters.resolveDelivery(threadId), text, adapters, retractsPendingQuestion);
     seenIds.add(id);
   }
   await adapters.ackReply(id);
