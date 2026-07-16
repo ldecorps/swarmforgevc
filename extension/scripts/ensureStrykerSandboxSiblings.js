@@ -16,7 +16,7 @@ const TEMP_DIR_NAME = '.stryker-tmp'; // must match stryker.config.json's tempDi
 // shelling compliance_battery.bb), .github/ (BL-267,
 // backlogDashboardWorkflowCacheStamp.test.js reading
 // .github/workflows/backlog-dashboard.yml), and docs/ (BL-267,
-// gettingStartedDrift.test.js reading docs/GettingStarted.md). Adding
+// gettingStartedDrift.test.js reading docs/tutorials/GettingStarted.md). Adding
 // coverage for a new sibling is adding its name here.
 const SIBLING_NAMES = ['pwa', 'swarmforge', '.github', 'docs'];
 

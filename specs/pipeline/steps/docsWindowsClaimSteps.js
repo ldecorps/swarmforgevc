@@ -1,7 +1,7 @@
 'use strict';
 
 // BL-237: step handlers for the docs-Windows-claim-fix feature. Reads the
-// REAL docs/Milestone Roadmap.MD and docs/Specification.MD and
+// REAL docs/explanation/Milestone Roadmap.MD and docs/reference/Specification.MD and
 // swarmforge/constitution/articles/local-engineering.prompt straight off
 // disk (repo-relative to this file) - a plain content/grep check, no
 // compiled module involved (this is a documentation-only ticket).
@@ -9,8 +9,8 @@ const path = require('node:path');
 const fs = require('node:fs');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
-const ROADMAP_PATH = path.join(REPO_ROOT, 'docs', 'Milestone Roadmap.MD');
-const SPEC_PATH = path.join(REPO_ROOT, 'docs', 'Specification.MD');
+const ROADMAP_PATH = path.join(REPO_ROOT, 'docs', 'explanation', 'Milestone Roadmap.MD');
+const SPEC_PATH = path.join(REPO_ROOT, 'docs', 'reference', 'Specification.MD');
 const LOCAL_ENGINEERING_PATH = path.join(
   REPO_ROOT, 'swarmforge', 'constitution', 'articles', 'local-engineering.prompt'
 );

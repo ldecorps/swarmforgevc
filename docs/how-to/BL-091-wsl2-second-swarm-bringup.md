@@ -93,8 +93,7 @@ On a successful launch:
   e.g. `swarm_mode secondary` naming no primary, or a `window coordinator`
   line present at all (BL-243: the coordinator is always auto-provisioned,
   never conf-declared, in every mode — not only under secondary mode as
-  before). Fix the conf and relaunch; nothing
-  partially starts.
+  before). Fix the conf and relaunch; nothing partially starts.
 
 BL-215: this headless daemon reads `RESEND_API_KEY` from its own process
 environment (never VS Code SecretStorage, which a headless launch has no
@@ -172,7 +171,7 @@ crontab -e
 ```
 
 Kill the swarm the same way as any other SwarmForge instance — see
-`docs/GettingStarted.md`'s troubleshooting section for the general recovery
+`docs/tutorials/GettingStarted.md`'s troubleshooting section for the general recovery
 command; there is nothing WSL2-specific about stopping a swarm once it's up.
 
 ## If something breaks specifically under WSL2

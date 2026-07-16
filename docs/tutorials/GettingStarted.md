@@ -10,7 +10,7 @@ against any target project, shows every agent working in live terminal tiles
 inside the editor, and ends with a pull request to review — without leaving
 VS Code. It does not replace SwarmForge; think of it as a window onto what
 SwarmForge already does. For the full product vision and roadmap, see
-[Specification.MD](Specification.MD).
+[Specification.MD](../reference/Specification.MD).
 
 ## 1. Install
 
@@ -100,7 +100,7 @@ In the Extension Development Host window:
 
 **Persistence across restarts:** If you reload or close VS Code while the swarm is running, the agents keep working in tmux. When you relaunch, the extension automatically reconnects to the live swarm without restarting agents — no work is lost. F5 / Extension Development Host does **not** cold-launch a swarm; use **Launch Swarm** explicitly for a new run. If the swarm is no longer running but you have prior state on disk, the extension offers to resume from the last checkpoint.
 
-See `docs/specs/headless-reattach-doctrine.md` for the full reattach vs launch decision table.
+See [headless-reattach-doctrine.md](../explanation/headless-reattach-doctrine.md) for the full reattach vs launch decision table.
 
 To stop the swarm cleanly at any point, run **SwarmForge: Stop Swarm**
 (`swarmforge.stopSwarm`).
@@ -142,7 +142,7 @@ not be brought to health.
 
 For pipeline stages, watchdogs, hardening tooling, the full command and
 settings reference, and the roadmap beyond this MVP, see
-[Specification.MD](Specification.MD). Plugging the swarm into a
+[Specification.MD](../reference/Specification.MD). Plugging the swarm into a
 **new/greenfield** project? See
 [Onboarding a New Project](Onboarding-New-Project.md), which covers the
 acceptance contract that drives what the swarm builds.

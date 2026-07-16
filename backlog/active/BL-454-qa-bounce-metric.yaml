@@ -1,0 +1,109 @@
+id: BL-454
+title: "Make 'which agent bounces most from QA' answerable: a structured QA bounce-verdict record (written at bounce time), a one-time backfill from the evidence corpus, and a per-role / per-ticket-type tally on a host-side surface"
+milestone: M8
+type: feature
+severity: low
+status: todo
+epic: ""
+priority: 10
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-operator-question-1784205516219.md — a Telegram question the Operator could not answer ('which agent causes the most bounce-back from QA?'), relayed 2026-07-16. Operator finding: there is NO per-agent QA-bounce counter today. Data-source fork settled with the human via AskUserQuestion 2026-07-16: BOTH a structured go-forward writer AND a one-time backfill from the existing evidence corpus."
+
+description: |
+  WHAT / WHY: Today 'which agent bounces most from QA?' is unanswerable — there is no per-agent QA-bounce
+  counter. When QA fails a parcel it hand-writes an evidence markdown file (backlog/evidence/<task>-bounce-
+  <YYYYMMDD>.md, committed to main; fields include a failure class in {compile, unit, integration,
+  acceptance, behavior}) and sends a git_handoff back to the coder; the COORDINATOR re-dispatches to the
+  producing role. Attribution to a producing role + ticket type exists only as prose + filename across ~83
+  evidence files — nothing structured tallies it. This ticket makes the question answerable. Sibling of the
+  BL-452 pipeline board (observability, not control).
+
+  DATA-SOURCE DECISION (the intake's real fork, settled with the human via AskUserQuestion 2026-07-16):
+  BOTH — a structured go-forward writer AND a one-time backfill from the existing evidence corpus. So the
+  metric has clean attribution from every future bounce AND full history from day one.
+
+  Design:
+    - STRUCTURED BOUNCE-VERDICT RECORD (machine-local, durable, append-only): each recorded bounce is one
+      JSON line — { ticket, producing_role, ticket_type, failure_class, commit, at } — appended to a
+      gitignored runtime log under .swarmforge/ (e.g. .swarmforge/qa_bounces/<YYYY-MM>.jsonl), the same
+      machine-local runtime posture as recert-notify-state.json / rule_proposals/*.jsonl. This is
+      machine-local live data, so it surfaces host-side, NEVER on the static backlog PWA (local-engineering
+      surface rule 5).
+    - GO-FORWARD WRITER + its LIVE production caller: a new thin CLI (extension/src/tools/record-qa-bounce.ts
+      -> out/.../record-qa-bounce.js) that appends one verdict record. Follow the codebase's canonical CLI
+      skeleton — parseArgs / computeX / formatX + makeArgsGuardedMain + runCliMain, imported from
+      extension/src/tools/swarm-metrics.ts exactly as extension/src/tools/co-change-report.ts does; keep
+      main() a THIN wrapper over exported pure helpers, and cover main() IN-PROCESS by stubbing accessors,
+      never chdir/HOME (engineering thin-wrapper + worker-thread rules). The LIVE production trigger is QA
+      at bounce time: the specifier adds an instruction to swarmforge/roles/QA.prompt to run
+      record-qa-bounce right after it writes the evidence file (with the producing role, ticket id, ticket
+      type, failure class it already has in hand) — landed in the SAME parcel as the CLI, so the writer has
+      a real caller and is not a dark feature (engineering live-writer rule). Until that call lands the
+      go-forward path is dark; the backfill still provides history.
+    - ONE-TIME BACKFILL: a tool (a --backfill mode of the same CLI, or extension/src/tools/
+      backfill-qa-bounces.ts) that scans the git-tracked backlog/evidence/*-bounce-*.md corpus and seeds the
+      same log — producing role from the filename/handoff/heading, ticket id from the filename, ticket type
+      by joining the backlog YAML (BacklogItem.type via extension/src/panel/backlogReader.ts), failure class
+      from the file's 'failure class' field. It is IDEMPOTENT (dedup on the record's natural key — ticket +
+      date + class — so a re-run adds nothing) and MUST NOT count a non-bounce evidence file (e.g. an
+      '-already-shipped-' record) as a bounce.
+    - AGGREGATOR (the pure, testable seam): computeQaBounceTally(records) -> roles ranked by bounce count
+      (answers 'which agent bounces most') plus a per-ticket-type breakdown. This is the unit/acceptance
+      seam; the Telegram/UI/email surfaces are the untested boundary.
+    - HOST-SIDE SURFACE: add a QA-bounce line/section to the daily briefing via the optional-section-adapter
+      mechanism in swarmforge/scripts/briefing_email_lib.bb (a new key in optional-section-adapter-keys +
+      its section-fn, the posture the existing :suite-duration-line / :stage-dwell-section use). A holistic-
+      UI metric card (a /qa-bounces read route in bridgeServer.ts + a buildQaBounceState in bridgeState.ts +
+      a section in holisticUiHtml.ts) is a reasonable SECOND surface but is OPTIONAL for this slice — flag
+      it for the human; the briefing line is the primary host-side surface.
+
+  Constraints:
+    - The metric surface is machine-local live data — host-side ONLY (briefing / holistic UI), never the
+      static PWA / backlog.json git projection (local-engineering rule 5).
+    - Idempotent backfill AND idempotent writer on the record's natural key: recording the same bounce twice
+      (a re-run, a redelivery) must not double-count (engineering deliberate-drop / idempotency rule).
+    - Attribution is a closed set: producing_role in {coder, cleaner, architect, hardender, documenter},
+      ticket_type in {feature, bug, defect, chore, docs, enhancement, epic}, failure_class in {compile,
+      unit, integration, acceptance, behavior}. Validate against these explicit sets — the acceptance
+      Scenario Outline handlers must make each Examples column LOAD-BEARING via a KNOWN_VALUES lookup, never
+      a passthrough (engineering Gherkin load-bearing-column rule).
+    - Keep the aggregator + record parser pure/testable; reach any fixture cwd/HOME by STUBBING accessors,
+      never chdir/HOME overlay. If a test adds a new on-disk input, place it in the fixture and prove the
+      read is load-bearing by break-then-fix (engineering BL-383 rule).
+
+  Sequencing (repo file-overlap-via-notes convention): the new CLI + aggregator are largely NEW files and
+  orthogonal to the standing-topic cluster; the ONLY shared touch-points are the briefing lib
+  (briefing_email_lib.bb) and, if the optional holistic-UI card is built, bridgeServer.ts / bridgeState.ts /
+  holisticUiHtml.ts — sequence behind any in-flight ticket editing those. The QA.prompt edit is
+  specifier-owned and lands with the parcel.
+
+  E2E QA PROCEDURE: run the backfill against the real backlog/evidence corpus and assert the JSONL log gains
+  one structured record per genuine bounce file (and none for a non-bounce evidence file), attributed to the
+  right producing role + ticket type; re-run the backfill and assert no duplicate records appear; record a
+  fresh bounce via record-qa-bounce and assert it appends one record; compute the tally and assert the roles
+  are ranked by bounce count and the per-ticket-type breakdown is present; assert the QA-bounce line appears
+  in a generated daily briefing; assert nothing writes to the static PWA / backlog.json. Confirm QA.prompt
+  now instructs QA to run record-qa-bounce at bounce time (the live writer wiring). Verify against real
+  surfaces, not a fixture (BL-335).
+
+acceptance:
+  feature: specs/features/BL-454-qa-bounce-metric.feature
+  steps:
+    - "Recording a bounce captures its producing role, ticket type, and failure class"
+    - "The one-time backfill seeds one record per genuine bounce file and is idempotent"
+    - "A non-bounce evidence file is not counted as a bounce"
+    - "The tally ranks roles by how often they bounce from QA"
+    - "The tally breaks bounces down by ticket type"
+
+human_approval: >
+  Human asked the question via Telegram; the data-source fork was surfaced by the specifier (there is no
+  per-agent QA-bounce counter today; attribution across ~83 evidence files is prose/filename only) and
+  settled by the human via AskUserQuestion 2026-07-16: BOTH a structured go-forward writer AND a one-time
+  backfill from the evidence corpus. The pure aggregator + writer + backfill is the firm contract. Open for
+  the human at review: (a) the SURFACE — the daily-briefing line is the proposed primary; the holistic-UI
+  metric card is an optional second surface, not built in this slice unless the human wants it; (b) whether
+  to slice the go-forward writer + QA.prompt wiring separately from the backfill. Record shape / exact glyphs
+  are build-time details.
+
+mutation_cost: medium

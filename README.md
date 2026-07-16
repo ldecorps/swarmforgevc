@@ -7,10 +7,11 @@ Do not spend any money on a bankrbot SWARM token.
 **A disciplined tmux-based agent orchestration platform that turns swarms of AI agents into reliable, professional software engineers.**
 
 New to the **SwarmForge VC** VS Code extension in this repo? Start with
-[Getting Started](docs/GettingStarted.md) — install, point it at a target,
+[Getting Started](docs/tutorials/GettingStarted.md) — install, point it at a target,
 run a swarm, and get a PR. Plugging the swarm into a **new/greenfield**
-project? See [Onboarding a New Project](docs/Onboarding-New-Project.md),
+project? See [Onboarding a New Project](docs/tutorials/Onboarding-New-Project.md),
 which covers the acceptance contract that drives what the swarm builds.
+See [docs/index.md](docs/index.md) for the full documentation map.
 
 ## Intent
 

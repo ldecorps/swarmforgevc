@@ -152,7 +152,7 @@ when no live swarm exists — *not* on extension reload/reattach):
 This keeps the live messages directory small and ensures the panel only shows
 messages from the current run. Extension reattach to a live tmux swarm does
 **not** trigger run-start archival and does **not** restart agent processes.
-See `docs/specs/headless-reattach-doctrine.md`.
+See `docs/explanation/headless-reattach-doctrine.md`.
 
 ---
 
