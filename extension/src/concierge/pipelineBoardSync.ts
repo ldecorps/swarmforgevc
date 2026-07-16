@@ -42,24 +42,23 @@ export interface PipelineBoardSyncResult {
   outcome: PipelineBoardSyncOutcome;
 }
 
-export async function syncPipelineBoard(
-  data: PipelineBoardData,
+// The topic id is created ONCE then reused - split out purely to keep
+// syncPipelineBoard's own CRAP under threshold (mirrors
+// editInPlaceMessageSync.ts's own resolveTopicId split).
+function resolveBoardTopicId(prevState: PipelineBoardState | undefined, adapters: PipelineBoardAdapters): Promise<number | undefined> {
+  return Promise.resolve(prevState?.topicId ?? adapters.ensureBoardTopic());
+}
+
+// Deletes the prior message (best-effort) then posts the fresh one - split
+// out purely to keep syncPipelineBoard's own CRAP under threshold.
+async function postBoardMessage(
+  topicId: number,
+  text: string,
+  contentSignature: string,
+  lastChangeMs: number,
   prevState: PipelineBoardState | undefined,
-  adapters: PipelineBoardAdapters,
-  nowMs: number
+  adapters: PipelineBoardAdapters
 ): Promise<PipelineBoardSyncResult> {
-  const contentSignature = renderPipelineBoardBody(data);
-  if (contentSignature === prevState?.contentSignature) {
-    return { state: prevState ?? {}, outcome: 'skipped-unchanged' };
-  }
-
-  const lastChangeMs = nowMs;
-  const text = renderPipelineBoard(data, lastChangeMs);
-  const topicId = prevState?.topicId ?? (await adapters.ensureBoardTopic());
-  if (topicId === undefined) {
-    return { state: prevState ?? {}, outcome: 'failed-no-topic' };
-  }
-
   const hadPriorMessage = prevState?.messageId !== undefined;
   if (hadPriorMessage) {
     // Best-effort: an already-gone or failed delete never blocks posting the
@@ -73,4 +72,25 @@ export async function syncPipelineBoard(
   }
 
   return { state: { topicId, messageId, contentSignature, lastChangeMs }, outcome: hadPriorMessage ? 'reposted' : 'posted' };
+}
+
+export async function syncPipelineBoard(
+  data: PipelineBoardData,
+  prevState: PipelineBoardState | undefined,
+  adapters: PipelineBoardAdapters,
+  nowMs: number
+): Promise<PipelineBoardSyncResult> {
+  const contentSignature = renderPipelineBoardBody(data);
+  if (contentSignature === prevState?.contentSignature) {
+    return { state: prevState ?? {}, outcome: 'skipped-unchanged' };
+  }
+
+  const topicId = await resolveBoardTopicId(prevState, adapters);
+  if (topicId === undefined) {
+    return { state: prevState ?? {}, outcome: 'failed-no-topic' };
+  }
+
+  const lastChangeMs = nowMs;
+  const text = renderPipelineBoard(data, lastChangeMs);
+  return postBoardMessage(topicId, text, contentSignature, lastChangeMs, prevState, adapters);
 }
