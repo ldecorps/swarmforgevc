@@ -3,6 +3,15 @@ const {
   classifyMutantLocation,
   isRequireMainGuardNode,
   isEsModuleBoilerplateNode,
+  isIdentifierNamed,
+  isAstNode,
+  isNodeOfType,
+  isRequireMainMemberExpression,
+  isEqualityOperator,
+  isRequireModuleEquality,
+  isObjectDefinePropertyCallee,
+  isEsModuleStringLiteralArg,
+  isEsModuleCallArguments,
   EntrypointBoilerplateIgnorer,
 } = require('../out/mutation/entrypointBoilerplateIgnorer');
 
@@ -26,6 +35,177 @@ test('BL-447 entrypoint-boilerplate-excluded-02: exported business logic that no
   // key off of, so an untested real-logic mutant can never be misclassified
   // as boilerplate.
   assert.equal(classifyMutantLocation({ isRequireMainGuard: false, isEsModuleBoilerplate: false }), 'kept');
+});
+
+// ── shared AST-shape fixture builders ──────────────────────────────────────
+
+function identifierNode(name) {
+  return { type: 'Identifier', name };
+}
+
+function memberExpr(objectName, propertyName) {
+  return { type: 'MemberExpression', object: identifierNode(objectName), property: identifierNode(propertyName) };
+}
+
+// A value whose `typeof` is 'function', never 'object' - so isAstNode's own
+// first clause is false and short-circuits safely - but which still carries
+// a real, readable `.type` string property, unlike a primitive (whose
+// property reads are always undefined). This is the only way to make an
+// AND-clause mutant that turns isAstNode's guard into `||` (or replaces its
+// first clause with `true`) observably diverge from the real function
+// without tripping over a thrown exception first.
+function nonObjectWithType(type) {
+  const fn = function nonObjectWithTypeFixture() {};
+  fn.type = type;
+  return fn;
+}
+
+// ── isAstNode / isNodeOfType / isIdentifierNamed (pure AST-shape predicates) ──
+// Cleaner note: these were extracted from isRequireMainGuardNode /
+// isEsModuleBoilerplateNode to bring each function's own cyclomatic
+// complexity under the CRAP <= 6 gate (10.60 and 13.40 before the split).
+// Each is a short guard-clause chain (isAstNode/isNodeOfType/isIdentifierNamed
+// all read as `A && B && C`), and Stryker mutates every clause and every
+// operator independently - reaching a specific inner clause mutant through 2-3
+// layers of composed callers needs an AST shape engineered to hold every OTHER
+// clause fixed while isolating the one under test, which gets combinatorially
+// unreadable fast. Testing each predicate directly, once, is the same
+// "small pure function, unit-tested directly" shape the project already uses
+// for classifyMutantLocation itself.
+
+test('BL-447: isAstNode recognizes a plain object carrying a string .type', () => {
+  assert.equal(isAstNode({ type: 'Identifier' }), true);
+});
+
+test('BL-447: isAstNode rejects a primitive (not an object at all)', () => {
+  assert.equal(isAstNode(42), false);
+});
+
+test('BL-447: isAstNode rejects null without dereferencing it', () => {
+  assert.equal(isAstNode(null), false);
+});
+
+test('BL-447: isAstNode rejects an object whose .type is not a string', () => {
+  assert.equal(isAstNode({ type: 123 }), false);
+});
+
+test('BL-447: isAstNode rejects a non-object value even when it carries a string .type property', () => {
+  // Pins each clause independently: typeof-is-object is false here, so the
+  // real function must stop there - it must never fall through and let a
+  // borrowed .type property (or a weakened `||` in place of `&&`) sneak this
+  // past as a real AST node.
+  assert.equal(isAstNode(nonObjectWithType('Identifier')), false);
+});
+
+test('BL-447: isNodeOfType matches only the exact requested type', () => {
+  assert.equal(isNodeOfType({ type: 'Foo' }, 'Foo'), true);
+  assert.equal(isNodeOfType({ type: 'Foo' }, 'Bar'), false);
+});
+
+test('BL-447: isNodeOfType rejects a non-AstNode even if a `type` property happens to match', () => {
+  assert.equal(isNodeOfType(nonObjectWithType('Bar'), 'Bar'), false);
+});
+
+test('BL-447: isIdentifierNamed matches only an Identifier node with the exact name', () => {
+  assert.equal(isIdentifierNamed(identifierNode('main'), 'main'), true);
+});
+
+test('BL-447: isIdentifierNamed rejects a matching name on the wrong node type', () => {
+  assert.equal(isIdentifierNamed({ type: 'NotIdentifier', name: 'main' }, 'main'), false);
+});
+
+test('BL-447: isIdentifierNamed rejects an Identifier node with the wrong name', () => {
+  assert.equal(isIdentifierNamed(identifierNode('notMain'), 'main'), false);
+});
+
+test('BL-447: isIdentifierNamed rejects null without dereferencing it', () => {
+  assert.equal(isIdentifierNamed(null, 'main'), false);
+});
+
+// ── isRequireMainMemberExpression / isRequireModuleEquality ───────────────
+
+test('BL-447: isRequireMainMemberExpression recognizes require.main', () => {
+  assert.equal(isRequireMainMemberExpression(memberExpr('require', 'main')), true);
+});
+
+test('BL-447: isRequireMainMemberExpression rejects the right shape on the wrong node type', () => {
+  assert.equal(isRequireMainMemberExpression({ type: 'NotMemberExpr', object: identifierNode('require'), property: identifierNode('main') }), false);
+});
+
+test('BL-447: isRequireMainMemberExpression rejects a member expression naming something other than require', () => {
+  assert.equal(isRequireMainMemberExpression(memberExpr('notRequire', 'main')), false);
+});
+
+test('BL-447: isEqualityOperator accepts only === and !==', () => {
+  assert.equal(isEqualityOperator('==='), true);
+  assert.equal(isEqualityOperator('!=='), true);
+  assert.equal(isEqualityOperator('=='), false);
+});
+
+test('BL-447: isRequireModuleEquality recognizes require.main paired with module', () => {
+  assert.equal(isRequireModuleEquality(memberExpr('require', 'main'), identifierNode('module')), true);
+});
+
+test('BL-447: isRequireModuleEquality rejects a non-require.main left operand even when right is module', () => {
+  assert.equal(isRequireModuleEquality(identifierNode('notRequireMain'), identifierNode('module')), false);
+});
+
+test('BL-447: isRequireModuleEquality rejects a right operand that is not the module identifier', () => {
+  assert.equal(isRequireModuleEquality(memberExpr('require', 'main'), identifierNode('notModule')), false);
+});
+
+// ── isObjectDefinePropertyCallee / isEsModuleStringLiteralArg / isEsModuleCallArguments ──
+
+test('BL-447: isObjectDefinePropertyCallee recognizes Object.defineProperty', () => {
+  assert.equal(isObjectDefinePropertyCallee(memberExpr('Object', 'defineProperty')), true);
+});
+
+test('BL-447: isObjectDefinePropertyCallee rejects the right shape on the wrong node type', () => {
+  assert.equal(isObjectDefinePropertyCallee({ type: 'NotMemberExpr', object: identifierNode('Object'), property: identifierNode('defineProperty') }), false);
+});
+
+test('BL-447: isObjectDefinePropertyCallee rejects a member expression naming something other than Object', () => {
+  assert.equal(isObjectDefinePropertyCallee(memberExpr('NotObject', 'defineProperty')), false);
+});
+
+test('BL-447: isEsModuleStringLiteralArg recognizes the "__esModule" string literal', () => {
+  assert.equal(isEsModuleStringLiteralArg({ type: 'StringLiteral', value: '__esModule' }), true);
+});
+
+test('BL-447: isEsModuleStringLiteralArg rejects the right value on the wrong node type', () => {
+  assert.equal(isEsModuleStringLiteralArg({ type: 'NotStringLiteral', value: '__esModule' }), false);
+});
+
+test('BL-447: isEsModuleStringLiteralArg rejects a string literal with a different value', () => {
+  assert.equal(isEsModuleStringLiteralArg({ type: 'StringLiteral', value: 'notEsModule' }), false);
+});
+
+test('BL-447: isEsModuleCallArguments requires a real array, never an array-like object', () => {
+  assert.equal(isEsModuleCallArguments({ 0: 'x', 1: { type: 'StringLiteral', value: '__esModule' }, length: 2 }), false);
+});
+
+test('BL-447: isEsModuleCallArguments rejects a real array whose second argument is not the __esModule literal', () => {
+  assert.equal(isEsModuleCallArguments(['x', { type: 'StringLiteral', value: 'notEsModule' }]), false);
+});
+
+test('BL-447: isEsModuleCallArguments accepts exactly 2 arguments (the >= 2 boundary, not only >2)', () => {
+  assert.equal(isEsModuleCallArguments(['x', { type: 'StringLiteral', value: '__esModule' }]), true);
+});
+
+test('BL-447: isEsModuleCallArguments requires length >= 2, not just a valid element sitting at index 1', () => {
+  // A Proxy is needed here, not a plain array: assigning past a real array's
+  // .length auto-extends it, so there is no way to hold a real array's
+  // reported .length below 2 while index 1 still carries a real element -
+  // lying about .length through a Proxy is the only way to decouple the two
+  // and pin this exact boundary (Array.isArray sees through a Proxy to its
+  // target, so this still passes the Array.isArray check for real).
+  const target = ['x', { type: 'StringLiteral', value: '__esModule' }];
+  const shortLengthProxy = new Proxy(target, {
+    get(obj, prop) {
+      return prop === 'length' ? 1 : obj[prop];
+    },
+  });
+  assert.equal(isEsModuleCallArguments(shortLengthProxy), false);
 });
 
 // ── isRequireMainGuardNode (pure, plain-object AST shape) ─────────────────
@@ -68,6 +248,24 @@ test('BL-447: a non-IfStatement node is never mistaken for the entrypoint guard'
   assert.equal(isRequireMainGuardNode({ type: 'ExpressionStatement', expression: { type: 'CallExpression' } }), false);
 });
 
+test('BL-447: an operator other than === or !== is never mistaken for the entrypoint guard', () => {
+  assert.equal(isRequireMainGuardNode(requireMainGuardIf({ operator: '==' })), false);
+});
+
+test('BL-447: a non-IfStatement node is rejected on its own type even when its nested .test looks like the guard', () => {
+  // Pins that the outer `node.type === 'IfStatement'` check is load-bearing on
+  // its own: a node carrying a fully guard-shaped `.test` must still be
+  // rejected if the node itself is not an IfStatement - proves this isn't
+  // rejected only incidentally by a later check finding nothing to work with.
+  assert.equal(
+    isRequireMainGuardNode({
+      type: 'NotAnIfStatement',
+      test: { type: 'BinaryExpression', operator: '===', left: memberExpr('require', 'main'), right: identifierNode('module') },
+    }),
+    false
+  );
+});
+
 // ── isEsModuleBoilerplateNode (pure, plain-object AST shape) ──────────────
 
 function esModuleDeclarationStatement() {
@@ -107,6 +305,18 @@ test('BL-447: an unrelated call expression is never mistaken for the __esModule 
 
 test('BL-447: a non-ExpressionStatement node is never mistaken for the __esModule boilerplate', () => {
   assert.equal(isEsModuleBoilerplateNode({ type: 'IfStatement' }), false);
+});
+
+test('BL-447: a non-ExpressionStatement node is rejected on its own type even when its nested .expression looks like the boilerplate call', () => {
+  const node = esModuleDeclarationStatement();
+  node.type = 'NotExpressionStatement';
+  assert.equal(isEsModuleBoilerplateNode(node), false);
+});
+
+test('BL-447: a non-CallExpression is rejected on its own type even when its .callee looks like Object.defineProperty', () => {
+  const node = esModuleDeclarationStatement();
+  node.expression.type = 'NotCallExpression';
+  assert.equal(isEsModuleBoilerplateNode(node), false);
 });
 
 // ── EntrypointBoilerplateIgnorer (thin Stryker Ignorer wiring) ────────────

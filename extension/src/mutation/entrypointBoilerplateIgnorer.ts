@@ -49,16 +49,33 @@ interface AstNode {
   [key: string]: unknown;
 }
 
-function isIdentifierNamed(node: unknown, name: string): boolean {
+// Exported (beyond the two AST-shape recognizers below) so each small
+// structural predicate can be unit-tested directly - the composed guard
+// checks below chain 2-3 of these together, and a fixture reaching one
+// specific mutated clause several calls deep gets combinatorially awkward
+// fast, whereas each predicate here is trivial to pin on its own.
+export function isIdentifierNamed(node: unknown, name: string): boolean {
   return isAstNode(node) && node.type === 'Identifier' && node.name === name;
 }
 
-function isAstNode(value: unknown): value is AstNode {
+export function isAstNode(value: unknown): value is AstNode {
   return typeof value === 'object' && value !== null && typeof (value as { type?: unknown }).type === 'string';
 }
 
-function isRequireMainMemberExpression(node: unknown): boolean {
-  return isAstNode(node) && node.type === 'MemberExpression' && isIdentifierNamed(node.object, 'require') && isIdentifierNamed(node.property, 'main');
+export function isNodeOfType(value: unknown, type: string): value is AstNode {
+  return isAstNode(value) && value.type === type;
+}
+
+export function isRequireMainMemberExpression(node: unknown): boolean {
+  return isNodeOfType(node, 'MemberExpression') && isIdentifierNamed(node.object, 'require') && isIdentifierNamed(node.property, 'main');
+}
+
+export function isEqualityOperator(operator: unknown): boolean {
+  return operator === '===' || operator === '!==';
+}
+
+export function isRequireModuleEquality(left: unknown, right: unknown): boolean {
+  return isRequireMainMemberExpression(left) && isIdentifierNamed(right, 'module');
 }
 
 // Matches `require.main === module` in either operand order, and either
@@ -66,15 +83,27 @@ function isRequireMainMemberExpression(node: unknown): boolean {
 // emits today (confirmed: `if (require.main === module)`), never a reason
 // to broaden what counts as "boilerplate" beyond this one guard shape.
 export function isRequireMainGuardNode(node: unknown): boolean {
-  if (!isAstNode(node) || node.type !== 'IfStatement') {
+  if (!isNodeOfType(node, 'IfStatement')) {
     return false;
   }
   const test = node.test;
-  if (!isAstNode(test) || test.type !== 'BinaryExpression' || (test.operator !== '===' && test.operator !== '!==')) {
+  if (!isNodeOfType(test, 'BinaryExpression') || !isEqualityOperator(test.operator)) {
     return false;
   }
   const { left, right } = test;
-  return (isRequireMainMemberExpression(left) && isIdentifierNamed(right, 'module')) || (isIdentifierNamed(left, 'module') && isRequireMainMemberExpression(right));
+  return isRequireModuleEquality(left, right) || isRequireModuleEquality(right, left);
+}
+
+export function isObjectDefinePropertyCallee(callee: unknown): boolean {
+  return isNodeOfType(callee, 'MemberExpression') && isIdentifierNamed(callee.object, 'Object') && isIdentifierNamed(callee.property, 'defineProperty');
+}
+
+export function isEsModuleStringLiteralArg(arg: unknown): boolean {
+  return isNodeOfType(arg, 'StringLiteral') && arg.value === '__esModule';
+}
+
+export function isEsModuleCallArguments(args: unknown): boolean {
+  return Array.isArray(args) && args.length >= 2 && isEsModuleStringLiteralArg(args[1]);
 }
 
 // Matches tsc's generated `Object.defineProperty(exports, "__esModule", {
@@ -83,19 +112,14 @@ export function isRequireMainGuardNode(node: unknown): boolean {
 // property name; an ordinary Object.defineProperty call naming any other
 // property is real code, never excluded.
 export function isEsModuleBoilerplateNode(node: unknown): boolean {
-  if (!isAstNode(node) || node.type !== 'ExpressionStatement') {
+  if (!isNodeOfType(node, 'ExpressionStatement')) {
     return false;
   }
   const expr = node.expression;
-  if (!isAstNode(expr) || expr.type !== 'CallExpression') {
+  if (!isNodeOfType(expr, 'CallExpression') || !isObjectDefinePropertyCallee(expr.callee)) {
     return false;
   }
-  const callee = expr.callee;
-  if (!isAstNode(callee) || callee.type !== 'MemberExpression' || !isIdentifierNamed(callee.object, 'Object') || !isIdentifierNamed(callee.property, 'defineProperty')) {
-    return false;
-  }
-  const args = expr.arguments;
-  return Array.isArray(args) && args.length >= 2 && isAstNode(args[1]) && (args[1] as AstNode).type === 'StringLiteral' && (args[1] as AstNode).value === '__esModule';
+  return isEsModuleCallArguments(expr.arguments);
 }
 
 // ── Stryker Ignorer wiring ────────────────────────────────────────────────
