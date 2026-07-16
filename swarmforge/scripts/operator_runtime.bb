@@ -68,6 +68,10 @@
 ;; BL-413: pure stale-sandbox-sweep decision logic, wired below by
 ;; sandbox-sweep!.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "sandbox_sweep_lib.bb")))
+;; BL-413/BL-458: shared /proc cwd+fd scan, the ONE real implementation of
+;; "is any live process rooted in this directory" that both sandbox-sweep!
+;; below and fixture_reaper_sweep_lib.bb's sweep! load - never reimplement.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "proc_fd_scan_lib.bb")))
 ;; BL-458: the orphaned acceptance-test-fixture process reaper (kills stale
 ;; supervisor/bridge/bot/tmux trees a crashed acceptance run left behind) -
 ;; loads its own pure decision lib via load-file internally.
@@ -653,37 +657,23 @@
 ;; that cd'd there, and removing the root out from under an open fd is the
 ;; same class of danger this whole ticket exists to prevent. The set below
 ;; is every REAL absolute path any live process's cwd OR any of its open
-;; file descriptors currently resolves to, read via /proc/<pid>/cwd and
-;; /proc/<pid>/fd/* (Linux/WSL - this whole ticket exists because of a
-;; WSL2/VHDX-on-C: host). Read ONCE per sweep pass, not once per candidate
-;; entry - iterating /proc is the only non-trivial cost here; membership
-;; testing afterward is a cheap set lookup per entry. A non-file fd (a
-;; socket/pipe - /proc's own "socket:[12345]"/"pipe:[12345]" pseudo-target)
-;; never matches a real directory prefix, so it is harmless noise, not a
-;; false positive. Returns an empty set (never throws) when /proc is
-;; unavailable (e.g. macOS) - paired with live-process-rooted-in?'s own
-;; "cannot determine -> not live" default, which is the SAFE direction only
-;; because the allowlist/staleness checks still gate removal independently;
-;; liveness alone is never the only guard.
-(defn- process-open-paths [pid-dir]
-  (try
-    (let [fd-dir (fs/path pid-dir "fd")]
-      (if (fs/exists? fd-dir)
-        (keep (fn [fd] (try (str (fs/real-path fd)) (catch Exception _ nil))) (fs/list-dir fd-dir))
-        []))
-    (catch Exception _ [])))
-
-(defn- process-cwd-path [pid-dir]
-  (try
-    (let [cwd-link (fs/path pid-dir "cwd")]
-      (when (fs/exists? cwd-link)
-        (str (fs/real-path cwd-link))))
-    (catch Exception _ nil)))
-
+;; file descriptors currently resolves to, read via proc-fd-scan-lib (Linux/
+;; WSL - this whole ticket exists because of a WSL2/VHDX-on-C: host). Read
+;; ONCE per sweep pass, not once per candidate entry - iterating /proc is
+;; the only non-trivial cost here; membership testing afterward is a cheap
+;; set lookup per entry. A non-file fd (a socket/pipe - /proc's own
+;; "socket:[12345]"/"pipe:[12345]" pseudo-target) never matches a real
+;; directory prefix, so it is harmless noise, not a false positive. Returns
+;; an empty set (never throws) when /proc is unavailable (e.g. macOS) -
+;; paired with live-process-rooted-in?'s own "cannot determine -> not live"
+;; default, which is the SAFE direction only because the allowlist/
+;; staleness checks still gate removal independently; liveness alone is
+;; never the only guard.
 (defn- live-process-paths! []
   (try
     (->> (fs/list-dir "/proc")
-         (mapcat (fn [pid-dir] (cons (process-cwd-path pid-dir) (process-open-paths pid-dir))))
+         (mapcat (fn [pid-dir] (cons (proc-fd-scan-lib/process-cwd-path pid-dir)
+                                     (proc-fd-scan-lib/process-open-paths pid-dir))))
          (remove nil?)
          set)
     (catch Exception _ #{})))
