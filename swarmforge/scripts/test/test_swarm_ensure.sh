@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # BL-145: `./swarm ensure` brings the swarm (extension host, every configured
-# agent pane, the daemon) to a known-good state in one idempotent command.
+# agent pane, the daemon, operator runtime, and Telegram front desk when
+# configured) to a known-good state in one idempotent command.
 # Each component reports HEALTHY / FIXED (naming the repair) / FAILED, never
 # silently; a failed repair must not abort the remaining checks.
 #
@@ -21,8 +22,16 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
 make_fixture() {
+  # BL-461: scrub ambient Telegram creds so every scenario starts from a
+  # clean slate regardless of the calling shell's own exported vars (a dev
+  # box routinely has real TELEGRAM_BOT_TOKEN/CHAT_ID/PRINCIPAL_USER_ID set,
+  # per the engineering guard-fires rule) - scenarios that need Telegram
+  # configured (05b) export it explicitly AFTER calling make_fixture.
+  unset TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_PRINCIPAL_USER_ID || true
+
   ROOT="$(cd "$(mktemp -d)" && pwd -P)"
-  mkdir -p "$ROOT/.swarmforge/daemon" "$ROOT/.swarmforge/launch" "$ROOT/.worktrees/coder"
+  mkdir -p "$ROOT/.swarmforge/daemon" "$ROOT/.swarmforge/operator" \
+           "$ROOT/.swarmforge/launch" "$ROOT/.worktrees/coder"
   echo "$ROOT/fake.sock" > "$ROOT/.swarmforge/tmux-socket"
   printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" \
     > "$ROOT/.swarmforge/roles.tsv"
@@ -76,24 +85,51 @@ EOF
 (spit "$ROOT/.swarmforge/daemon/handoffd.pid" (str (.pid (:proc p))))
 EOF
   chmod +x "$FAKE_BIN/fake_supervisor.bb"
+
+  # Operator healthy by default (this test script's pid as a live stand-in).
+  # Front desk is omitted unless a fixture sets TELEGRAM_* or a pid file.
+  echo "$$" > "$ROOT/.swarmforge/operator/runtime.pid"
+
+  # Use a real background sleep so the repair leaves a live pid - same
+  # survival rule as the fake daemon supervisor above.
+  cat > "$FAKE_BIN/fake_operator_start.sh" <<EOF
+#!/usr/bin/env bash
+sleep 100 >"$ROOT/fake-operator.log" 2>&1 &
+echo \$! > "$ROOT/.swarmforge/operator/runtime.pid"
+EOF
+  chmod +x "$FAKE_BIN/fake_operator_start.sh"
+
+  cat > "$FAKE_BIN/fake_front_desk_start.sh" <<EOF
+#!/usr/bin/env bash
+sleep 100 >"$ROOT/fake-front-desk.log" 2>&1 &
+echo \$! > "$ROOT/.swarmforge/operator/front-desk-supervisor.pid"
+EOF
+  chmod +x "$FAKE_BIN/fake_front_desk_start.sh"
 }
 
 run_ensure() {
   SWARM_ENSURE_EXTENSION_CHECK_CMD="$FAKE_BIN/fake_ext_check.sh" \
   SWARM_ENSURE_EXTENSION_BOUNCE_CMD="$FAKE_BIN/fake_ext_bounce.sh" \
   SWARM_ENSURE_SUPERVISOR_CMD="bb $FAKE_BIN/fake_supervisor.bb" \
+  SWARM_ENSURE_OPERATOR_CMD="$FAKE_BIN/fake_operator_start.sh" \
+  SWARM_ENSURE_FRONT_DESK_CMD="$FAKE_BIN/fake_front_desk_start.sh" \
   PATH="$FAKE_BIN:$PATH" bb "$ENSURE" "$ROOT"
 }
 
 cleanup_daemon() {
   local pid
-  pid="$(cat "$ROOT/.swarmforge/daemon/handoffd.pid" 2>/dev/null || true)"
   # The "already healthy" fixture records this test script's OWN pid as a
-  # stand-in tracked daemon (it just needs to be alive, not a real daemon) -
+  # stand-in tracked process (it just needs to be alive, not a real daemon) -
   # never kill it.
-  if [[ -n "$pid" && "$pid" != "$$" ]]; then
-    kill -9 "$pid" 2>/dev/null || true
-  fi
+  for pid_file in \
+      "$ROOT/.swarmforge/daemon/handoffd.pid" \
+      "$ROOT/.swarmforge/operator/runtime.pid" \
+      "$ROOT/.swarmforge/operator/front-desk-supervisor.pid"; do
+    pid="$(cat "$pid_file" 2>/dev/null || true)"
+    if [[ -n "$pid" && "$pid" != "$$" ]]; then
+      kill -9 "$pid" 2>/dev/null || true
+    fi
+  done
 }
 
 trap 'cleanup_daemon; rm -rf "${ROOT:-}"' EXIT
@@ -104,6 +140,8 @@ if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
 echo "$OUT" | grep -q "^extension: HEALTHY$" || fail "01: extension not reported HEALTHY"
 echo "$OUT" | grep -q "^agent:coder: HEALTHY$" || fail "01: agent pane not reported HEALTHY"
 echo "$OUT" | grep -q "^daemon: HEALTHY$" || fail "01: daemon not reported HEALTHY"
+echo "$OUT" | grep -q "^operator: HEALTHY$" || fail "01: operator not reported HEALTHY"
+echo "$OUT" | grep -q "front-desk:" && fail "01: front-desk was checked without Telegram config"
 [[ "$RC" -eq 0 ]] || fail "01: exit status was $RC, expected 0"
 [[ "$(cat "$ROOT/ext_state")" == "healthy" ]] || fail "01: healthy extension state was changed"
 [[ "$(cat "$ROOT/pane_dead")" == "0" ]] || fail "01: healthy pane state was changed"
@@ -196,5 +234,51 @@ echo "$OUT" | grep -q "^daemon: HEALTHY$" || fail "04: daemon check did not stil
 [[ "$RC" -ne 0 ]] || fail "04: exit status was 0, expected non-zero when an agent pane could not be checked"
 cleanup_daemon
 pass "04: no tmux socket found reports every configured agent pane as FAILED naming the category and reason, other checks still run"
+
+# ── 05a: operator runtime not running is repaired and reported FIXED ───────
+make_fixture
+echo "999999" > "$ROOT/.swarmforge/operator/runtime.pid"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^operator: FIXED (restarted the operator runtime)$" \
+  || fail "05a: operator repair not reported as FIXED naming the action; got: $OUT"
+NEW_OP_PID="$(cat "$ROOT/.swarmforge/operator/runtime.pid")"
+kill -0 "$NEW_OP_PID" 2>/dev/null || fail "05a: operator repair did not leave a live process behind"
+cleanup_daemon
+pass "05a: operator runtime not running is repaired and reported FIXED"
+
+# ── 05b: front desk is repaired when Telegram is configured ────────────────
+make_fixture
+export TELEGRAM_BOT_TOKEN="test-token"
+export TELEGRAM_CHAT_ID="1"
+export TELEGRAM_PRINCIPAL_USER_ID="2"
+echo "999999" > "$ROOT/.swarmforge/operator/front-desk-supervisor.pid"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^front-desk: FIXED (restarted the Telegram front desk (bridge + bot))$" \
+  || fail "05b: front-desk repair not reported as FIXED naming the action; got: $OUT"
+NEW_FD_PID="$(cat "$ROOT/.swarmforge/operator/front-desk-supervisor.pid")"
+kill -0 "$NEW_FD_PID" 2>/dev/null || fail "05b: front-desk repair did not leave a live process behind"
+unset TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_PRINCIPAL_USER_ID
+cleanup_daemon
+pass "05b: front desk not running (Telegram configured) is repaired and reported FIXED"
+
+# ── 05c: prior front-desk pid file alone is enough to enable repair ────────
+make_fixture
+unset TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_PRINCIPAL_USER_ID || true
+echo "999999" > "$ROOT/.swarmforge/operator/front-desk-supervisor.pid"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^front-desk: FIXED" \
+  || fail "05c: stale front-desk pid file did not trigger repair; got: $OUT"
+cleanup_daemon
+pass "05c: a prior front-desk pid file enables repair even without Telegram env in this shell"
+
+# ── 06: SWARMFORGE_SKIP_OPERATOR omits the operator check entirely ─────────
+make_fixture
+echo "999999" > "$ROOT/.swarmforge/operator/runtime.pid"
+if OUT="$(SWARMFORGE_SKIP_OPERATOR=1 run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "operator:" && fail "06: operator was checked despite SWARMFORGE_SKIP_OPERATOR=1"
+echo "$OUT" | grep -q "^daemon: HEALTHY$" || fail "06: daemon check did not still run"
+[[ "$RC" -eq 0 ]] || fail "06: exit status was $RC, expected 0"
+cleanup_daemon
+pass "06: SWARMFORGE_SKIP_OPERATOR=1 omits the operator component"
 
 echo "ALL PASS"
