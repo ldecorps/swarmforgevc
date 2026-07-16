@@ -1,0 +1,110 @@
+id: BL-458
+title: "Acceptance step files must reap their detached process trees, plus an orphan-fixture reaper"
+milestone: M8
+type: bug
+status: todo
+severity: high
+priority: 1
+direction: human-requested
+expedite: true  # Operator directive (ldecorps relay) 2026-07-16 — spec ahead of root queue, promote ahead of paused queue
+depends_on: []
+source: ".swarmforge/operator/INTAKE-acceptance-test-fixture-process-leak.md — URGENT Operator directive relayed by ldecorps 2026-07-16. Verified: four orphaned test mini-swarms (12 stray claude agents, 4 front_desk_supervisor.bb trees w/ live bridge+bot children) survived ~17.8h after a Jul-15 run, reparented to init, ~1.45 GB RAM, bots 404-hammering api.telegram.org."
+
+notes: |
+  EXPEDITE (Operator directive, 2026-07-16): a real, tracked bug — spec ahead of
+  the backlog-root queue, promote ahead of the paused queue. Do NOT "fix" it by
+  a silent manual kill of today's orphans; the cleanup of today's orphans falls
+  out of the reaper this ticket delivers.
+
+  WHY: acceptance/integration step files under specs/pipeline/steps/ launch
+  DETACHED process trees that reparent to init and outlive the runner, and never
+  reliably tear them down on abnormal exit. The runner (specs/pipeline/
+  runnerAdapter.js -> spawnSync(node, ['--test', ...])) provides NO global
+  setup/teardown, so each step file must reap what it spawns — and each does it
+  in a way that fails on abnormal exit (SIGTERM/SIGINT/timeout/OOM).
+
+  DETACHED-SURVIVAL MECHANISM (teardown cannot rely on child death):
+    - launch_front_desk.sh ends with `nohup bb <supervisor> ... &` -> supervisor
+      detaches, reparents to init, spawns bridge+bot as its OWN children.
+    - role_lifecycle.sh -> swarmforge.sh create_role_session starts a detached
+      `tmux -S <socket> new-session` server that persists independently.
+    So teardown MUST hunt+kill by pidfile / root-path / socket, never by child
+    process death. The launcher already writes front-desk-supervisor.pid under
+    the root — a usable reap handle.
+
+  TWO REQUIRED HALVES:
+    A. PREVENTION — tests reliably tear down what they spawn, INCLUDING on
+       abnormal exit. frontDeskHeadlessLauncherSteps.js is worst (no safety net
+       at all — only inline stopFrontDesk in terminal Then steps, after launch()
+       has already nohup'd the tree; any earlier throw leaks it permanently).
+       frontDeskSurvivesRebootSteps.js / mergedCodeReachesDaemonsSteps.js /
+       roleLifecycleParkUnneededSteps.js have ONLY a process.on('exit') handler,
+       which does NOT fire on SIGTERM/SIGINT/OOM/timeout. Suggested shape: a
+       shared specs/pipeline/steps/helpers/fixtureReaper.js exposing
+       track(root)/reap(root) (kill supervisor tree by root path + pidfile,
+       `tmux -S <sock> kill-server`, then rm -rf) with handlers for 'exit' AND
+       'SIGINT'/'SIGTERM'. Strongest: have specs/pipeline/generate.js inject a
+       framework-enforced global teardown (test.after(reapAllTracked)) into every
+       generated entry point, so teardown is not per-file discipline.
+    B. AUTO-CLEAN — an orphan reaper that kills stale (older than N hours)
+       orphaned test-fixture process trees a crashed run left behind, running
+       even when the test that created them is gone. Suggested:
+       swarmforge/scripts/reap_stale_test_fixtures.sh over stale /tmp fixture
+       roots (aps-*, sfvc-*-acceptance-*, bl404-front-desk-*); pre-run reap wired
+       into runnerAdapter.js AND the same script on the existing always-alive
+       janitor loop (mirror BL-412 disk-space-sweep! / the BL-413 host loop).
+
+  GUARDRAIL (same as BL-413): the reaper must NEVER signal a process rooted in
+  /tmp/swarmforge-${UID} — the live swarm's socket root; unlinking it decapitates
+  a running swarm. Allowlist known fixture prefixes only; the temp/fixture root
+  must be reachable through a redirectable ${SWARMFORGE_...:-<default>} env seam
+  so tests exercise the real logic against a test-owned dir, never the real /tmp
+  or a live swarm. "Couldn't test it safely" = a MISSING SEAM to add in-parcel,
+  not a reason to ship untested.
+
+  TESTABILITY: the reaper decision is a PURE predicate — given (name matches
+  known fixture prefix, age past threshold, is-live-socket-root) -> reapable? —
+  unit-tested with fixtures and no real /tmp. The kill+teardown action is a thin
+  wiring slice over the redirectable root + an injected 'list roots / stat age /
+  process-rooted? / kill / tmux kill-server' seam. For the abnormal-exit
+  scenario, drive a real fixture launch, SIGTERM the runner before inline
+  teardown, and assert zero surviving supervisor/bridge/bot and zero leftover
+  tmux servers on the real surfaces (not a mock).
+
+  SEQUENCING / DEPENDENCY vs BL-413 (process-reaper -> BL-413): BL-413's stale
+  /tmp DIR sweep deliberately SKIPS any dir with a live process rooted in it, so
+  it CANNOT reap today's four live orphan roots until THIS ticket's reaper kills
+  those processes first; then BL-413's dir-sweep removes the emptied roots. The
+  two touch different files and may build in parallel, but the RUNTIME cleanup of
+  live orphans is ordered BL-458 (kill) -> BL-413 (sweep dirs). Coordinate.
+
+  PRECEDENT to read: BL-108 (extension orphans child-process trees on stop —
+  same class), BL-413 (the /tmp DIR companion), BL-420 (shared self-cleaning
+  tmp-dir helper — the prevention pattern to mirror).
+
+acceptance:
+  feature: specs/features/BL-458-acceptance-fixture-process-leak.feature
+  steps:
+    - "The orphan reaper reaps a fixture root only when it matches a known fixture prefix AND is stale AND is not the live swarm socket root"
+    - "A step file interrupted by SIGTERM before its inline teardown still leaves zero orphaned supervisor/bridge/bot processes and zero leftover tmux servers"
+    - "The reaper never signals a process rooted in the live swarm socket directory /tmp/swarmforge-<uid>, regardless of age"
+
+qa_e2e: |
+  1. Unit: drive the reapable? predicate over (prefix match x stale x
+     is-socket-root); add an explicit case proving the socket-root exclusion
+     wins over age.
+  2. Prevention (real surface): launch a real fixture front-desk supervisor+
+     bridge+bot+tmux tree via the step helper, SIGTERM the runner BEFORE the
+     inline teardown runs, and assert ZERO front_desk_supervisor.bb / bridge /
+     bot rooted in that fixture survive and ZERO tmux servers for its socket
+     survive. Scope every ps/pgrep assertion to the test's OWN fixture root, not
+     a broad pattern a sibling worktree can satisfy.
+  3. Auto-clean (real surface): plant a stale fixture root with a disposable
+     live child process rooted in it plus a mock /tmp/swarmforge-<uid> socket
+     root; run one reaper pass and assert the stale fixture tree is killed and
+     its dir removed while the socket root and its process are untouched. Never
+     run against the real /tmp or a live swarm.
+
+human_approval: pending  # new feature file — needs human review of the Gherkin (BL-251). Work is Operator-authorized URGENT; approval gates the acceptance contract, not the go-ahead.
+
+mutation_cost: medium
