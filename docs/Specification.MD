@@ -848,11 +848,11 @@ Before the user launches a run, the extension analyzes the target to recommend a
 3. Apply heuristic (all packs preserve pipeline order; smaller packs omit middle stages):
    - Trivial / single-file fix → **2-pack** (coder, cleaner) — Uncle Bob's quick backend flow
    - Moderate, needs specs → **4-pack** (specifier, coder, cleaner, architect)
-   - Major work, full quality gates → **7-pack** (specifier, coder, cleaner, architect, documenter, QA + coordinator) — this extension's default
+   - Major work, full quality gates → **7-pack** (specifier, coder, cleaner, architect, hardener, documenter, QA + coordinator) — this extension's default
 4. Present recommendation with one-line rationale in the UI
 5. User accepts or manually selects a different pack from the dropdown
 
-The pack shapes echo SwarmForge's well-known configurations (two-/four-/six-pack); the 7-pack is this extension's own variant (six-pack minus hardener, plus documenter). All packs are defined by this repo's role prompts and pack config — they are not fetched runnable branches.
+The pack shapes echo SwarmForge's well-known configurations (two-/four-/six-pack); the 7-pack is this extension's own variant (six-pack plus a documenter — the hardener is retained). All packs are defined by this repo's role prompts and pack config — they are not fetched runnable branches.
 
 ---
 
@@ -862,7 +862,7 @@ The swarm is a **sequential pipeline**: a work item visits each role in a fixed 
 
 ### The 7-pack (this extension's default)
 
-Built on Uncle Bob's six-pack, with two deviations: **hardener is dropped**, and a **documenter** is added (placed just before QA, so docs are verified too). Canonical six-pack is specifier → coder → cleaner → architect → hardener → QA → completion; this extension uses:
+Built on Uncle Bob's six-pack, with one addition: a **documenter** is added (placed just before QA, so docs are verified too — the hardener is retained, not dropped). Canonical six-pack is specifier → coder → cleaner → architect → hardener → QA → completion; this extension uses:
 
 | # | Role | Responsibility |
 |---|---|---|
@@ -870,15 +870,16 @@ Built on Uncle Bob's six-pack, with two deviations: **hardener is dropped**, and
 | 2 | **coder** | Implements approved behavior slices with TDD, unit tests, generated acceptance tests. |
 | 3 | **cleaner** | Behavior-preserving cleanup, coverage improvement, CRAP & DRY review, mutation-site scans. |
 | 4 | **architect** | Reviews module structure, boundaries, dependency direction, property-test coverage. |
-| 5 | **documenter** | Updates docs for humans: high-level docs plus a doc for the piece just developed. |
-| 6 | **QA** | Converts the specifier's QA procedures into executable scripts, runs final UI verification, checks handoff consistency. As the last stage, it's the convergence point: broadcasts merge-up to worktree roles, then lands the approved commit on `main` itself and pushes origin (BL-247 — QA is the integration point) before notifying the **coordinator**. |
+| 5 | **hardener** | Mutation hardening: improves test coverage, kills surviving mutants, reduces CRAP. Owns the no-surviving-mutants quality gate — its exclusive stage, run before the documenter. |
+| 6 | **documenter** | Updates docs for humans: high-level docs plus a doc for the piece just developed. |
+| 7 | **QA** | Converts the specifier's QA procedures into executable scripts, runs final UI verification, checks handoff consistency. As the last stage, it's the convergence point: broadcasts merge-up to worktree roles, then lands the approved commit on `main` itself and pushes origin (BL-247 — QA is the integration point) before notifying the **coordinator**. |
 
-(The coordinator is the 7th role — it owns orchestration on `main` but performs no git merge or push after QA; its post-approval job is backlog bookkeeping only: move the ticket to `done/`, promote the next item (BL-247).)
+(The coordinator is the +1 infrastructure role, not one of the seven — it owns orchestration on `main` but performs no git merge or push after QA; its post-approval job is backlog bookkeeping only: move the ticket to `done/`, promote the next item (BL-247).)
 
 ### The pipeline flow
 
 ```
-specifier ──► coder ──► cleaner ──► architect ──► documenter ──► QA (integrate) ──► coordinator (bookkeep)
+specifier ──► coder ──► cleaner ──► architect ──► hardener ──► documenter ──► QA (integrate) ──► coordinator (bookkeep)
 ```
 
 Stage by stage:
@@ -886,9 +887,10 @@ Stage by stage:
 1. **Specifier** writes the Gherkin and hands the parcel to the coder.
 2. **Coder** merges the dev branch ("main" of the swarm) into its own branch, does TDD-style development, then hands to the cleaner when done.
 3. **Cleaner** cleans up, then hands to the architect.
-4. **Architect** reviews structure, then hands to the documenter.
-5. **Documenter** updates the human-facing docs (high-level + the just-developed piece), then hands to QA.
-6. **QA**, when done, **forces every pipeline worktree role to merge its own branch up to QA's verified commit** — this is the integration convergence point (see below) — then **lands that approved commit on `main` itself and pushes origin** (closing the GitHub issue for a `GH-`-seeded ticket), and notifies the **coordinator** with the approved commit so the coordinator can move the ticket to `done/` and promote the next backlog item (BL-247: the coordinator runs no git merge or push).
+4. **Architect** reviews structure, then hands to the hardener.
+5. **Hardener** hardens the parcel — improves coverage, kills surviving mutants, reduces CRAP (its exclusive mutation gate) — then hands to the documenter.
+6. **Documenter** updates the human-facing docs (high-level + the just-developed piece), then hands to QA.
+7. **QA**, when done, **forces every pipeline worktree role to merge its own branch up to QA's verified commit** — this is the integration convergence point (see below) — then **lands that approved commit on `main` itself and pushes origin** (closing the GitHub issue for a `GH-`-seeded ticket), and notifies the **coordinator** with the approved commit so the coordinator can move the ticket to `done/` and promote the next backlog item (BL-247: the coordinator runs no git merge or push).
 
 Putting the documenter **before** QA means the docs are covered by QA's final verification pass, rather than landing after the swarm has already converged.
 
