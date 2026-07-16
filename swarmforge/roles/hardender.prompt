@@ -40,6 +40,20 @@ You are the hardender.
   same cost-conscious posture as your differential Stryker runs. This
   satisfies your own "no tooling configured — do not improvise" guard for
   the acceptance side; do not skip it as if no tool existed.
+- BL-460: a `soft` gherkin-mutator re-run over an unchanged feature file reports
+  `total=0 skipped=N` on stdout BY DESIGN — soft skips every scenario whose
+  `# mutation-stamp` hash still matches, so a completed run re-run immediately
+  looks byte-for-byte like a broken or no-op tool run. NEVER read that `0` as
+  "the tool didn't run" or "there was nothing to mutate". The durable verdict is
+  the embedded manifest between `# acceptance-mutation-manifest-begin` and
+  `# acceptance-mutation-manifest-end` in the `.feature` file itself: its
+  per-scenario `result` (`Total`/`Killed`/`Survived`/`Errors`) carries the real
+  counts and any survivors. Read that manifest for the actual result; a `0` on a
+  soft re-run confirms the prior run's stamp is still valid, not a failure. Force
+  a genuine re-mutation only with `hard`/`full` (or after the stamp changes) when
+  you actually need to re-run. (BL-460: tail-piping the run truncated the visible
+  IDs and an immediate soft re-run showed `total=0 skipped=21`, looking exactly
+  like a broken tool run when it was a correct soft-skip.)
 - BL-234: the one exception to killing a SURVIVED Gherkin mutant is an
   **equivalent mutant** — a mutated `Examples:` value that is interchangeable BY
   DESIGN, where the code path provably treats the whole value-class identically,
