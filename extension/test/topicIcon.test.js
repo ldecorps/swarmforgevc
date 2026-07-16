@@ -92,14 +92,16 @@ test('resolveIconStickerId returns undefined for an empty sticker list', () => {
 // ── STANDING_TOPIC_ICON (BL-418 standing-topic-icons-01) ─────────────────
 // The orchestra remap's harder half: the standing NON-ticket topics get
 // their own icons, human-decided 2026-07-15 - support/intake is the box
-// office, the Operator topic is the opera house.
+// office, the Operator/Concierge topic is the bell (BL-453 rebrand).
 
 test('STANDING_TOPIC_ICON: support/intake resolves to the box-office ticket emoji', () => {
   assert.equal(STANDING_TOPIC_ICON['support/intake'], '🎟');
 });
 
-test('STANDING_TOPIC_ICON: operator resolves to the opera-house emoji', () => {
-  assert.equal(STANDING_TOPIC_ICON.operator, '🏛');
+// BL-453: supersedes the BL-418 opera-house choice for the Operator/Concierge
+// standing topic with the human-chosen bell (🛎, "The bell is fine").
+test('STANDING_TOPIC_ICON: operator resolves to the bell emoji (BL-453 Concierge rebrand)', () => {
+  assert.equal(STANDING_TOPIC_ICON.operator, '🛎');
 });
 
 // BL-434: the standing Approvals topic's own icon.
