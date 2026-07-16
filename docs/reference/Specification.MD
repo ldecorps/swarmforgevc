@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 16, 2026 (BL-456 — Divio docs reorg: this file moved to docs/reference/, links updated)
+**Last Updated:** July 16, 2026 (BL-454 — QA-bounce metric: structured record, backfill, tally, briefing line)
 
 ## Overview
 
@@ -375,6 +375,29 @@ bb swarmforge/scripts/standing_rule_violations_cli.bb <project-root> for-ticket 
 `report` scans every top-level rule (a `- ` bullet or `N. ` numbered item, with its wrapped continuation lines) in every `swarmforge/constitution/articles/*.prompt` and `swarmforge/roles/*.prompt` file, and prints each rule's cited `BL-NNN` ticket ids alongside a total citation count across all rules. `for-ticket <BL-NNN>` answers "how many times was this specific ticket cited as a violation" directly. Both derive purely from the committed text of the constitution/role files — no new bookkeeping, no git history walk — so a rule added tomorrow, anywhere in those files, is counted with no code change. A rule's numerically-smallest citation is treated as that rule's own origin (the incident that prompted writing it), never counted as a violation of it; every other citation is a real recorded violation since the rule landed. A `(source: ..., BL-NNN)` citation credits authorship, not a violation, and is excluded. A rule with zero violations is still reported, with a count of zero, never omitted — an all-zero result is a claim to verify, not the assumed answer.
 
 The daily briefing email's `:standing-rule-violations-line` section (`swarmforge/scripts/handoffd.bb`, composed the same way as every other optional briefing line) surfaces the `report` total on every send, e.g. `Standing-rule violations: 38 cited recurrence(s) across 458 rule(s) since they landed (top: "..." x3, "..." x3, "..." x3)`.
+
+#### QA-bounce metric: which role bounces most from QA (BL-454)
+
+Attribution for "which agent bounces most from QA?" previously existed only as prose and filenames across the `backlog/evidence/*-bounce-*.md` corpus. This adds a structured, durable record and a host-side surface for it.
+
+A go-forward writer appends one JSON-line record (`{ ticket, producing_role, ticket_type, failure_class, commit, at }`) to a gitignored, machine-local log (`.swarmforge/qa_bounces/<YYYY-MM>.jsonl`):
+
+```sh
+node extension/out/tools/record-qa-bounce.js --ticket <id> --role <producingRole> \
+  --type <ticketType> --class <failureClass> --commit <hex>
+```
+
+`swarmforge/roles/QA.prompt` calls this right after QA hand-writes its own bounce evidence file, with the same fields already in hand — the live production trigger, so the writer is not a dark feature. Every field is validated against a closed set (`producing_role` in `{coder, cleaner, architect, hardender, documenter}`, `ticket_type` in `{feature, bug, defect, chore, docs, enhancement, epic}`, `failure_class` in `{compile, unit, integration, acceptance, behavior}`) before anything is written; an unrecognized value is a usage error, never recorded raw.
+
+A one-time backfill seeds the same log from history:
+
+```sh
+node extension/out/tools/backfill-qa-bounces.js
+```
+
+It scans the git-tracked `backlog/evidence/*-bounce-*.md` corpus, attributing producing role + failure class from each file's own prose/filename and ticket type by joining the backlog YAML — never guessing from the evidence file alone — and skips any file it cannot attribute cleanly (a non-bounce evidence file, e.g. an "already-shipped" record, is never counted). It is idempotent on the record's natural key (ticket + date + class), so re-running it seeds nothing twice.
+
+`computeQaBounceTally` (the pure, testable seam) ranks roles by bounce count and breaks the total down by ticket type. The daily briefing's `:qa-bounce-line` optional section (`briefing_email_lib.bb`, wired the same way as every other optional section) shells out to a small CLI over this tally and appends one line summarizing it — an empty log means no line is appended, never a fabricated all-clear. This is machine-local, host-side data only; per the local-engineering surface rule it never rides the static backlog PWA / `backlog.json` projection. A holistic-UI metric card is a reasonable second surface but was left for a later slice.
 
 #### Rework observatory CLI (BL-430, epic BL-429 slice 1 — OBSERVE)
 
