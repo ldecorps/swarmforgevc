@@ -109,4 +109,39 @@ pass "the answer-file-drain sweep shares the daemon's chase-sweep cadence, not a
 grep -q "answer-file-drain-sweep-error" "$LOG_FILE" && fail "the answer-file-drain sweep threw an exception; got: $(cat "$LOG_FILE")"
 pass "the answer-file-drain sweep ran without throwing"
 
+# ── phase 2: a failing CLI is logged as an error, not swallowed, and the
+# sweep keeps firing on the next cycle rather than taking the daemon down
+# with it (the (catch Exception e ...) / nonzero-exit branch in
+# answer-file-drain-sweep! is otherwise never exercised by any test) ──────
+mkdir -p "$ROOT/.swarmforge/daemon"
+touch "$ROOT/.swarmforge/daemon/stop"
+wait "$DAEMON_PID" 2>/dev/null || true
+DAEMON_PID=""
+
+rm -f "$LOG_FILE" "$ROOT/drain-answer-files-calls.log"
+cat > "$ROOT/extension/out/tools/drain-answer-files.js" <<'EOF'
+const fs = require('fs');
+const path = require('path');
+fs.appendFileSync(path.join(process.cwd(), 'drain-answer-files-calls.log'), process.cwd() + '\n');
+console.error('boom: cannot resolve backlog root');
+process.exit(1);
+EOF
+
+env -u TELEGRAM_BOT_TOKEN -u TELEGRAM_CHAT_ID -u RESEND_API_KEY \
+  PATH="$FAKE_BIN:$PATH" setsid bb "$HANDOFFD" "$ROOT" &
+DAEMON_PID=$!
+
+wait_for_log "answer-file-drain-sweep-error" 30 \
+  || fail "expected a failing CLI to log answer-file-drain-sweep-error; log: $(cat "$LOG_FILE" 2>/dev/null)"
+grep -q "answer-file-drain-sweep-error.*exit=1" "$LOG_FILE" \
+  || fail "expected the logged error to name the nonzero exit code; got: $(cat "$LOG_FILE")"
+grep -q "boom: cannot resolve backlog root" "$LOG_FILE" \
+  || fail "expected the CLI's own stderr surfaced in the logged error; got: $(cat "$LOG_FILE")"
+pass "a failing CLI's exit code and stderr are surfaced via answer-file-drain-sweep-error, not swallowed"
+
+sleep 6
+FAIL_CALL_COUNT="$(wc -l < "$ROOT/drain-answer-files-calls.log")"
+[[ "$FAIL_CALL_COUNT" -ge 2 ]] || fail "expected the sweep to keep firing on later cycles after a failure, got $FAIL_CALL_COUNT calls"
+pass "the daemon survives a failing sweep and keeps firing it on the shared cadence"
+
 echo "ALL PASS"
