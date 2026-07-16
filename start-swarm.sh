@@ -139,3 +139,11 @@ fi
 if ! wait_for_ready "$WANT"; then
   exit 1
 fi
+
+# Full-stack ensure: repair/start handoffd, operator runtime, and Telegram
+# front desk (when configured / previously used) after sessions are up.
+# Idempotent; safe if ./swarm already started them during launch.
+echo "Ensuring ancillaries (daemon, operator, front desk) ..."
+if ! "$TARGET/swarm" ensure "$TARGET"; then
+  echo "WARNING: ./swarm ensure reported failures — check output above" >&2
+fi
