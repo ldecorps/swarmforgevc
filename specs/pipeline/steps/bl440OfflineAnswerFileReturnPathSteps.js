@@ -14,7 +14,7 @@ const { execFileSync } = require('node:child_process');
 
 const EXT_DIR = path.join(__dirname, '..', '..', '..', 'extension');
 const { drainAnswerFiles } = require(path.join(EXT_DIR, 'out', 'tools', 'drain-answer-files'));
-const { readRecord } = require(path.join(EXT_DIR, 'out', 'concierge', 'blTopicStore'));
+const { readRecord, appendMessage } = require(path.join(EXT_DIR, 'out', 'concierge', 'blTopicStore'));
 
 function mkTmp(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -46,12 +46,52 @@ function writeAnswerFile(repoRoot, content) {
 // which the production checkPremiseLive gate correctly reports as
 // not-live, rather than a bare passthrough/ternary a mutated example value
 // could slip through undetected.
+//
+// QA bounce (2026-07-16): "its question retracted" and "its decision
+// superseded" previously reused the SAME ticket-status/folder signal as
+// "already shipped" (one via no ticket file at all - really scenario 05's
+// unresolved shape, not retraction; the other via an active-folder ticket
+// whose YAML status was already "done" - a second "already shipped"
+// variant). Neither drove the literal case this ticket's own text names
+// twice: a ticket that stays active/todo throughout while the swarm's
+// topic record shows the SPECIFIC pending question retracted or
+// superseded. Both rows now write that real fixture via the real compiled
+// appendMessage/retractsPendingQuestion (blTopicStore.ts), each with its
+// own distinct wording, and both correctly exercise checkPremiseLive's
+// hasRetractedPendingQuestion branch rather than the shipped/unresolved
+// ones.
 const DRIFT_FIXTURES = new Map([
   ['already shipped', (ctx) => writeTicket(ctx.repoRoot, 'done', TICKET_ID, 'done')],
-  ['its question retracted', () => {
-    /* no ticket file written anywhere - a withdrawn/never-materialized reference */
+  ['its question retracted', (ctx) => {
+    writeTicket(ctx.repoRoot, 'active', TICKET_ID, 'todo');
+    appendMessage(ctx.repoRoot, TICKET_ID, { author: 'swarm', type: 'outbound', text: 'Q1: approach A or B?' }, () => {});
+    appendMessage(
+      ctx.repoRoot,
+      TICKET_ID,
+      { author: 'swarm', type: 'outbound', text: 'RETRACTED Q1 - no need to answer, going with approach C instead.', retractsPendingQuestion: true },
+      () => {}
+    );
   }],
-  ['its decision superseded', (ctx) => writeTicket(ctx.repoRoot, 'active', TICKET_ID, 'done')],
+  ['its decision superseded', (ctx) => {
+    writeTicket(ctx.repoRoot, 'active', TICKET_ID, 'todo');
+    appendMessage(
+      ctx.repoRoot,
+      TICKET_ID,
+      { author: 'swarm', type: 'outbound', text: 'SUPERSEDED - already decided to skip this and go with plan D.', retractsPendingQuestion: true },
+      () => {}
+    );
+  }],
+]);
+
+// The expected REASON substring for each drift - proves each example row's
+// fixture actually reaches its OWN distinct branch in checkPremiseLive
+// (never merely "some not-live reason or other"), which is exactly the
+// assertion gap the QA bounce found: two of these three used to reach the
+// wrong branch while still passing a generic "not acted on" check.
+const DRIFT_EXPECTED_REASON = new Map([
+  ['already shipped', /already shipped/],
+  ['its question retracted', /retracted or superseded/],
+  ['its decision superseded', /retracted or superseded/],
 ]);
 
 function knownDriftFixture(drift) {
@@ -59,6 +99,13 @@ function knownDriftFixture(drift) {
     throw new Error(`bl440-offline-answer-file-return-path: unrecognized <drift> example value "${drift}"`);
   }
   return DRIFT_FIXTURES.get(drift);
+}
+
+function knownExpectedReason(drift) {
+  if (!DRIFT_EXPECTED_REASON.has(drift)) {
+    throw new Error(`bl440-offline-answer-file-return-path: unrecognized <drift> example value "${drift}"`);
+  }
+  return DRIFT_EXPECTED_REASON.get(drift);
 }
 
 function registerSteps(registry) {
@@ -112,6 +159,11 @@ function registerSteps(registry) {
     assert.equal(ctx.result.disposition, 'arrived-late');
     assert.match(ctx.result.report, /arrived late, not executed/);
     assert.ok(ctx.result.report.length > 'arrived late, not executed - '.length, `expected the report to name what changed, got: ${ctx.result.report}`);
+    assert.match(
+      ctx.result.report,
+      knownExpectedReason(ctx.expectedDrift),
+      `expected the report to name the "${ctx.expectedDrift}" drift specifically, got: ${ctx.result.report}`
+    );
   });
 
   // ── offline-answer-file-return-path-03 ──────────────────────────────

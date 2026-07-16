@@ -17,15 +17,20 @@ const {
 function fakeApprovalDeps(overrides = {}) {
   const answerCalls = [];
   const replies = [];
+  const retractFlags = [];
   return {
     answerCalls,
     replies,
+    retractFlags,
     deps: {
       answerGate: (role, answer) => {
         answerCalls.push({ role, answer });
         return overrides.answerResult ?? { success: true };
       },
-      reply: (text) => replies.push(text),
+      reply: (text, retractsPendingQuestion) => {
+        replies.push(text);
+        retractFlags.push(retractsPendingQuestion);
+      },
     },
   };
 }
@@ -94,6 +99,32 @@ test('a failed gate-answer write still confirms honestly, never claiming success
   handleApprovalDecision([{ role: 'coder', gated: true }], 'y', deps);
   assert.equal(replies.length, 1);
   assert.doesNotMatch(replies[0], /Answered/);
+});
+
+// BL-440: a successful gate answer is the real production decision point
+// where a ticket's pending question stops being live - the confirmation
+// reply must carry retractsPendingQuestion so it reaches blTopicStore.ts
+// as true, never left for only a hand-built test fixture to set.
+test('BL-440: a successful gate answer marks its confirmation reply as retracting the pending question', () => {
+  const { deps, retractFlags } = fakeApprovalDeps();
+  handleApprovalDecision([{ role: 'coder', gated: true }], 'y', deps);
+  assert.deepEqual(retractFlags, [true]);
+});
+
+test('BL-440: a failed gate answer never marks retraction - the question is still live', () => {
+  const { deps, retractFlags } = fakeApprovalDeps({ answerResult: { success: false, reason: 'gone' } });
+  handleApprovalDecision([{ role: 'coder', gated: true }], 'y', deps);
+  assert.deepEqual(retractFlags, [false]);
+});
+
+test('BL-440: "nothing to approve" and "which gate" replies never claim a retraction', () => {
+  const nothing = fakeApprovalDeps();
+  handleApprovalDecision([], 'y', nothing.deps);
+  assert.deepEqual(nothing.retractFlags, [undefined]);
+
+  const askWhich = fakeApprovalDeps();
+  handleApprovalDecision([{ role: 'coder', gated: true }, { role: 'cleaner', gated: true }], 'y', askWhich.deps);
+  assert.deepEqual(askWhich.retractFlags, [undefined]);
 });
 
 // ── selectGateDecisionForTicket / handleApprovalDecisionForTicket (pure +

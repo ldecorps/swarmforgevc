@@ -1206,6 +1206,69 @@ test('relaySseReplies sends the full reply to the real topic plus a pointer to G
   ]);
 });
 
+// BL-440: a reply record's own retractsPendingQuestion flag (written by
+// operator-decide.ts's runApprove on a successful gate answer) must ride
+// through relayOneRecord/deliverReply to the real sendReply call so the
+// live wiring can record it in blTopicStore.ts - the real production
+// writer BL-440's own premise-live gate needs.
+test('relaySseReplies threads a record\'s own retractsPendingQuestion flag through to sendReply', async () => {
+  const sent = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"BL-100","text":"Answered coder\'s gate: y.","retractsPendingQuestion":true}\n\n']),
+      sendReply: async (topicId, text, retractsPendingQuestion) => {
+        sent.push({ topicId, text, retractsPendingQuestion });
+      },
+      resolveDelivery: () => topicDelivery(42),
+      ackReply: async () => {},
+    },
+    new Set()
+  );
+  assert.deepEqual(sent, [{ topicId: 42, text: "Answered coder's gate: y.", retractsPendingQuestion: true }]);
+});
+
+test('relaySseReplies never sets retractsPendingQuestion on an ordinary reply record', async () => {
+  const sent = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-1","text":"hello"}\n\n']),
+      sendReply: async (topicId, text, retractsPendingQuestion) => {
+        sent.push({ topicId, text, retractsPendingQuestion });
+      },
+      resolveDelivery: () => topicDelivery(42),
+      ackReply: async () => {},
+    },
+    new Set()
+  );
+  assert.deepEqual(sent, [{ topicId: 42, text: 'hello', retractsPendingQuestion: undefined }]);
+});
+
+// BL-440: the pointer-to-General notice is a distinct message, not itself
+// an answer - it must never inherit the primary reply's own retraction flag.
+test('relaySseReplies never marks the pointer-to-General notice as a retraction', async () => {
+  const sent = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader([
+        'event: telegram-reply\ndata: {"id":"r1","threadId":"BL-100","text":"the real answer","retractsPendingQuestion":true}\n\n',
+      ]),
+      sendReply: async (topicId, text, retractsPendingQuestion) => {
+        sent.push({ topicId, text, retractsPendingQuestion });
+      },
+      resolveDelivery: () => topicDelivery(42, true),
+      ackReply: async () => {},
+    },
+    new Set()
+  );
+  assert.deepEqual(sent, [
+    { topicId: 42, text: 'the real answer', retractsPendingQuestion: true },
+    { topicId: undefined, text: "This was answered — see the reply in this conversation's other topic.", retractsPendingQuestion: undefined },
+  ]);
+});
+
 test('relaySseReplies sends only the real topic, no pointer, when no default binding exists', async () => {
   const sent = [];
   await relaySseReplies(

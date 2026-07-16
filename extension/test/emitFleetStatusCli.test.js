@@ -8,6 +8,8 @@ const {
   fleetRendezvousDir,
   fleetStatusPath,
   heartbeatIsSessionAlive,
+  isRoleEscalated,
+  needsHumanFromEscalations,
   buildFleetStatusDoc,
   emitFleetStatus,
   main,
@@ -39,6 +41,17 @@ function writeHeartbeat(targetPath, role, lastBeatIso, inFlight = false) {
 function writeSwarmName(targetPath, name) {
   fs.mkdirSync(path.join(targetPath, 'swarmforge'), { recursive: true });
   fs.writeFileSync(path.join(targetPath, 'swarmforge', 'swarmforge.conf'), `config swarm_name ${name}\n`);
+}
+
+// BL-438: chase_sweep_lib.bb's own durable per-role escalation file
+// (`.swarmforge/daemon/chase-escalations.json`) - a role key present with
+// value `true` means currently stuck-escalated; the daemon DISSOC's the
+// key on recovery (never sets it false), so an absent key/file means
+// nobody is escalated.
+function writeChaseEscalations(targetPath, escalations) {
+  const dir = path.join(targetPath, '.swarmforge', 'daemon');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'chase-escalations.json'), JSON.stringify(escalations));
 }
 
 // ── parseArgs ────────────────────────────────────────────────────────────
@@ -102,6 +115,30 @@ test('heartbeatIsSessionAlive reports alive for a stuck (in-flight past the in-f
   assert.equal(isAlive({ role: 'coder' }), true);
 });
 
+// ── isRoleEscalated / needsHumanFromEscalations (pure, BL-438) ───────────
+
+test('isRoleEscalated is true only for a role whose value is exactly true', () => {
+  const escalations = { coder: true, architect: false };
+  assert.equal(isRoleEscalated(escalations, 'coder'), true);
+  assert.equal(isRoleEscalated(escalations, 'architect'), false);
+});
+
+test('isRoleEscalated is false for a role absent from the record', () => {
+  assert.equal(isRoleEscalated({}, 'coder'), false);
+});
+
+test('needsHumanFromEscalations is true when at least one role is escalated', () => {
+  assert.equal(needsHumanFromEscalations({ coder: true }), true);
+});
+
+test('needsHumanFromEscalations is false for an empty record (nobody escalated)', () => {
+  assert.equal(needsHumanFromEscalations({}), false);
+});
+
+test('needsHumanFromEscalations is false when every present value is falsy, never a fabricated true', () => {
+  assert.equal(needsHumanFromEscalations({ coder: false }), false);
+});
+
 // ── buildFleetStatusDoc / emitFleetStatus ────────────────────────────────
 
 test('buildFleetStatusDoc carries identity, status, health, children, needs_human, and updated_at', () => {
@@ -126,6 +163,68 @@ test('buildFleetStatusDoc carries identity, status, health, children, needs_huma
   assert.equal(doc.children[0].identity.name, 'coder');
   assert.equal(doc.needs_human, false);
   assert.equal(doc.updated_at, '2026-07-15T20:00:00.000Z');
+});
+
+// BL-438: the isBlocked-always-false gap - a role the daemon has marked
+// stuck-escalated in chase-escalations.json must roll up to a 'blocked'
+// AGENT status, and the swarm-level needs_human field must reflect it.
+test('buildFleetStatusDoc reports needs_human true and rolls the escalated role up to blocked, when chase-escalations.json marks it', () => {
+  const targetPath = mkTmp();
+  writeRolesTsv(targetPath, [
+    ['coordinator', 'master', targetPath, 'session', 'Coordinator', 'claude'],
+    ['coder', 'coder', targetPath, 'session', 'Coder', 'claude'],
+  ]);
+  writeHeartbeat(targetPath, 'coordinator', new Date().toISOString());
+  writeHeartbeat(targetPath, 'coder', new Date().toISOString());
+  writeChaseEscalations(targetPath, { coder: true });
+
+  const doc = buildFleetStatusDoc(targetPath);
+
+  assert.equal(doc.needs_human, true);
+  assert.equal(doc.children[0].identity.name, 'coder');
+  assert.equal(doc.children[0].status, 'blocked');
+});
+
+test('buildFleetStatusDoc reports needs_human false when chase-escalations.json has no entries (nobody escalated)', () => {
+  const targetPath = mkTmp();
+  writeRolesTsv(targetPath, [['coordinator', 'master', targetPath, 'session', 'Coordinator', 'claude']]);
+  writeChaseEscalations(targetPath, {});
+
+  const doc = buildFleetStatusDoc(targetPath);
+
+  assert.equal(doc.needs_human, false);
+});
+
+test('buildFleetStatusDoc reports needs_human false when chase-escalations.json does not exist at all (never a crash)', () => {
+  const targetPath = mkTmp();
+  writeRolesTsv(targetPath, [['coordinator', 'master', targetPath, 'session', 'Coordinator', 'claude']]);
+
+  const doc = buildFleetStatusDoc(targetPath);
+
+  assert.equal(doc.needs_human, false);
+});
+
+// The signal must CLEAR on resolution: chase_sweep_lib.bb dissoc's a
+// role's key the moment it recovers, so re-reading after that happens (a
+// later emit-fleet-status run, on the daemon's own next chase-sweep tick)
+// must stop reporting it blocked - never a stale, permanently-pinned block.
+test('buildFleetStatusDoc reflects a recovered role (its key removed from chase-escalations.json) as not blocked', () => {
+  const targetPath = mkTmp();
+  writeRolesTsv(targetPath, [
+    ['coordinator', 'master', targetPath, 'session', 'Coordinator', 'claude'],
+    ['coder', 'coder', targetPath, 'session', 'Coder', 'claude'],
+  ]);
+  writeHeartbeat(targetPath, 'coordinator', new Date().toISOString());
+  writeHeartbeat(targetPath, 'coder', new Date().toISOString());
+  writeChaseEscalations(targetPath, { coder: true });
+  const blockedDoc = buildFleetStatusDoc(targetPath);
+  assert.equal(blockedDoc.needs_human, true);
+
+  writeChaseEscalations(targetPath, {}); // recovered - daemon dissoc'd the key
+
+  const recoveredDoc = buildFleetStatusDoc(targetPath);
+  assert.equal(recoveredDoc.needs_human, false);
+  assert.notEqual(recoveredDoc.children[0].status, 'blocked');
 });
 
 test('buildFleetStatusDoc defaults the swarm name to "primary" when no swarm_name is configured', () => {

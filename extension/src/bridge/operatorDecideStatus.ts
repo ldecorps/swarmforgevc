@@ -59,7 +59,15 @@ export interface ApprovalDeps {
   // Mirrors gateAnswerPath.ts's own GateAnswerResult shape - the real
   // wiring passes answerCapturedGateLive here, tests a fake.
   answerGate: (role: string, answer: string) => { success: boolean; reason?: string };
-  reply: (text: string) => void;
+  // BL-440: the optional second param is set true ONLY on the confirmation
+  // reply for a SUCCESSFUL gate answer below - the real production signal
+  // that this ticket's pending question (the NeedsApproval question that
+  // put the role in pendingGates in the first place) is no longer live.
+  // The real wiring (operator-decide.ts) threads it through to blTopicStore
+  // via the reply-outbox/SSE relay, the same path this confirmation text
+  // already rides to reach the ticket's own topic - never a second,
+  // unsent synthetic message.
+  reply: (text: string, retractsPendingQuestion?: boolean) => void;
 }
 
 // The orchestration shared by both entry points below: answer the DECIDED
@@ -70,10 +78,13 @@ export interface ApprovalDeps {
 function applyGateDecision(decision: GateDecision, answerText: string, deps: ApprovalDeps): GateDecision {
   if (decision.action === 'answer') {
     const result = deps.answerGate(decision.role, answerText);
+    // BL-440: retraction rides ONLY the success path - a failed gate-answer
+    // write never voided anything, so the pending question is still live.
     deps.reply(
       result.success
         ? `Answered ${decision.role}'s gate: ${answerText}.`
-        : `Could not answer ${decision.role}'s gate: ${result.reason ?? 'unknown error'}.`
+        : `Could not answer ${decision.role}'s gate: ${result.reason ?? 'unknown error'}.`,
+      result.success
     );
   } else if (decision.action === 'nothing') {
     deps.reply('Nothing to approve right now.');

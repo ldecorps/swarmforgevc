@@ -12,7 +12,7 @@ const {
   drainAnswerFiles,
   main,
 } = require('../out/tools/drain-answer-files');
-const { readRecord } = require('../out/concierge/blTopicStore');
+const { readRecord, appendMessage } = require('../out/concierge/blTopicStore');
 
 // BL-440: the human->swarm offline return path. Drives the REAL compiled
 // module against a real git repo fixture - the archive move is a real git
@@ -154,6 +154,42 @@ test('checkPremiseLive reports not-live when the ticket\'s own status is already
   assert.match(result.reason, /status is already "done"/);
 });
 
+// BL-440 QA bounce: a ticket can stay active/todo throughout while the
+// SPECIFIC question the answer responds to has since been retracted or
+// superseded by a later swarm message - ticket-level status/folder alone
+// cannot tell this apart from "still awaiting this exact question".
+test('checkPremiseLive reports not-live when the ticket is still active/todo but its pending question has since been retracted', () => {
+  const repoRoot = mkRepo();
+  writeTicket(repoRoot, 'active', 'BL-100', 'todo');
+  appendMessage(repoRoot, 'BL-100', { author: 'swarm', type: 'outbound', text: 'Q1: approach A or B?' }, () => {});
+  appendMessage(
+    repoRoot,
+    'BL-100',
+    { author: 'swarm', type: 'outbound', text: 'RETRACTED Q1 - decided to go with approach C instead, no need to answer.', retractsPendingQuestion: true },
+    () => {}
+  );
+
+  const result = checkPremiseLive(repoRoot, 'BL-100');
+
+  assert.equal(result.live, false);
+  assert.match(result.reason, /retracted or superseded/);
+});
+
+test('checkPremiseLive reports live when a retraction exists but the swarm has since asked again (not the latest message)', () => {
+  const repoRoot = mkRepo();
+  writeTicket(repoRoot, 'active', 'BL-100', 'todo');
+  appendMessage(repoRoot, 'BL-100', { author: 'swarm', type: 'outbound', text: 'Q1: approach A or B?' }, () => {});
+  appendMessage(
+    repoRoot,
+    'BL-100',
+    { author: 'swarm', type: 'outbound', text: 'never mind Q1, going with C', retractsPendingQuestion: true },
+    () => {}
+  );
+  appendMessage(repoRoot, 'BL-100', { author: 'swarm', type: 'outbound', text: 'actually, one more thing: D or E?' }, () => {});
+
+  assert.deepEqual(checkPremiseLive(repoRoot, 'BL-100'), { live: true });
+});
+
 // ── drainAnswerFiles (the full gate + route + archive orchestration) ────
 
 test('BL-440-01: an answer to a still-open ticket is routed to that ticket (as an inbound topic message) and acted on', () => {
@@ -209,6 +245,33 @@ test('BL-440-02: an answer whose ticket already carries status "done" (supersede
 
   assert.equal(results[0].disposition, 'arrived-late');
   assert.match(results[0].report, /status is already "done"/);
+});
+
+// BL-440 QA bounce repro: an ANSWER file answering an already-retracted
+// question must be reported arrived-late, never appended as an accepted
+// answer, even though the ticket itself stays active/todo throughout.
+test('BL-440-02 (QA bounce): an answer to a retracted question is not acted on, even though the ticket is still active/todo', () => {
+  const repoRoot = mkRepo();
+  writeTicket(repoRoot, 'active', 'BL-100', 'todo');
+  appendMessage(repoRoot, 'BL-100', { author: 'swarm', type: 'outbound', text: 'Q1: should we use approach A or B?' }, () => {});
+  appendMessage(
+    repoRoot,
+    'BL-100',
+    { author: 'swarm', type: 'outbound', text: 'RETRACTED Q1 - we decided to go with approach C instead, no need to answer.', retractsPendingQuestion: true },
+    () => {}
+  );
+  writeAnswerFile(repoRoot, 'ANSWER-stale.md', 'Re BL-100: go with approach A.\n');
+
+  const results = drainAnswerFiles(repoRoot);
+
+  assert.equal(results[0].disposition, 'arrived-late');
+  assert.match(results[0].report, /retracted or superseded/);
+
+  const record = readRecord(repoRoot, 'BL-100');
+  assert.ok(
+    !record.messages.some((m) => m.type === 'inbound'),
+    `expected the stale answer never appended as an accepted inbound message, got: ${JSON.stringify(record.messages)}`
+  );
 });
 
 test('BL-440-03: a drained (acted-on) answer file is moved to the archive, not deleted', () => {
