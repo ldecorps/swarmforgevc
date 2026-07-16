@@ -20,6 +20,7 @@ const { recordApprovalReply, recordRejectionReply } = require(path.join(EXT_DIR,
 const APPROVAL_TEXT_PATTERN = /needs your approval/;
 const PRINCIPAL_ID = 111;
 const TOPIC_ID = 42;
+const APPROVALS_TOPIC_ID = 750;
 const BACKLOG_ID = 'BL-409-fixture';
 
 function mkTmp() {
@@ -70,6 +71,13 @@ function buildConciergeAdapters(ctx) {
       closeTopic: async () => true,
       recordMessage: () => {},
       ensureOperatorTopic: async () => 700,
+      // BL-434: the ask itself now posts into the standing Approvals topic,
+      // never the ticket's own per-ticket topic (topicMap[BACKLOG_ID] above
+      // is pre-seeded, so ensurePerTicketTopicForIcon reuses it rather than
+      // creating a second one - it stays a real, existing topic the human
+      // could still reply IN directly, which is exactly what this file's
+      // own reply-dispatch scenarios below exercise).
+      ensureApprovalsTopic: async () => APPROVALS_TOPIC_ID,
     },
     iconAdapters: {
       getIconStickers: async () => [],
@@ -124,9 +132,20 @@ function registerSteps(registry) {
     // First tick posts the ApprovalRequested this Background describes as
     // "outstanding" - mirrors bl408PendingReviewApprovalsSteps.js's own
     // BL-408-04 fixture shape.
+    //
+    // BL-434: the ask itself now posts into the standing Approvals topic
+    // (APPROVALS_TOPIC_ID), never TOPIC_ID (the ticket's OWN per-ticket
+    // topic, pre-seeded above and left untouched by the ask) - this
+    // Background's own "outstanding" claim is about the ask existing at
+    // all, not about which topic it landed in, so the check just moves to
+    // the new destination. TOPIC_ID still matters below: it is where this
+    // file's own reply-dispatch scenarios simulate the human's typed reply
+    // landing, exercising the UNCHANGED per-ticket-topic reply path
+    // (classifyApprovalReplyAction/deliverOperatorContext) - a genuinely
+    // separate mechanism from the Approvals-topic reply grammar BL-434 adds.
     await runConciergeTick(ctx.adapters);
     ctx.sentAfterInitialAsk = ctx.sent.length;
-    if (!ctx.sent.some((m) => APPROVAL_TEXT_PATTERN.test(m.text) && m.topicId === TOPIC_ID)) {
+    if (!ctx.sent.some((m) => APPROVAL_TEXT_PATTERN.test(m.text) && m.topicId === APPROVALS_TOPIC_ID)) {
       throw new Error(`setup: expected the initial ApprovalRequested post; got ${JSON.stringify(ctx.sent)}`);
     }
   });
@@ -155,7 +174,11 @@ function registerSteps(registry) {
 
   registry.define(/^no further ApprovalRequested event is posted for that ticket$/, async (ctx) => {
     await runConciergeTick(ctx.adapters);
-    const newApprovalPosts = ctx.sent.slice(ctx.sentAfterInitialAsk).filter((m) => APPROVAL_TEXT_PATTERN.test(m.text) && m.topicId === TOPIC_ID);
+    // BL-434: a real retry/repost would land in the Approvals topic now,
+    // never TOPIC_ID - checking the ACTUAL destination keeps this a
+    // meaningful assertion rather than one that vacuously passes because it
+    // is still looking at the old (now-unused-for-asks) topic id.
+    const newApprovalPosts = ctx.sent.slice(ctx.sentAfterInitialAsk).filter((m) => APPROVAL_TEXT_PATTERN.test(m.text) && m.topicId === APPROVALS_TOPIC_ID);
     if (newApprovalPosts.length > 0) {
       throw new Error(`expected no additional ApprovalRequested post for a rejected ticket, got ${JSON.stringify(newApprovalPosts)}`);
     }
