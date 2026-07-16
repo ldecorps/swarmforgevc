@@ -135,13 +135,17 @@
 
 (defn daemon-pid-file [] (fs/path state-dir "daemon" "handoffd.pid"))
 
-(defn daemon-pid []
-  (when (fs/exists? (daemon-pid-file))
-    (parse-long (str/trim (slurp (str (daemon-pid-file)))))))
-
 (defn pid-alive? [pid]
   (when pid
     (some-> (java.lang.ProcessHandle/of pid) (.orElse nil) (.isAlive))))
+
+(defn pid-from-file
+  "Reads and parses a pid persisted at pid-file, or nil if it doesn't exist."
+  [pid-file]
+  (when (fs/exists? pid-file)
+    (parse-long (str/trim (slurp (str pid-file))))))
+
+(defn daemon-pid [] (pid-from-file (daemon-pid-file)))
 
 (defn daemon-healthy? []
   (pid-alive? (daemon-pid)))
@@ -155,13 +159,9 @@
 
 (defn front-desk-pid-file [] (fs/path state-dir "operator" "front-desk-supervisor.pid"))
 
-(defn operator-pid []
-  (when (fs/exists? (operator-pid-file))
-    (parse-long (str/trim (slurp (str (operator-pid-file)))))))
+(defn operator-pid [] (pid-from-file (operator-pid-file)))
 
-(defn front-desk-pid []
-  (when (fs/exists? (front-desk-pid-file))
-    (parse-long (str/trim (slurp (str (front-desk-pid-file)))))))
+(defn front-desk-pid [] (pid-from-file (front-desk-pid-file)))
 
 (defn operator-healthy? []
   (pid-alive? (operator-pid)))
@@ -256,10 +256,10 @@
         daemon-result (ensure-component! "daemon" daemon-healthy? ensure-daemon!
                                           "restarted the handoff daemon")
         operator-result (when (operator-enabled?)
-                          (ensure-component! "operator" operator-healthy? ensure-operator!
+                           (ensure-component! "operator" operator-healthy? ensure-operator!
                                               "restarted the operator runtime"))
         front-desk-result (when (front-desk-enabled?)
-                            (ensure-component! "front-desk" front-desk-healthy? ensure-front-desk!
+                             (ensure-component! "front-desk" front-desk-healthy? ensure-front-desk!
                                                 "restarted the Telegram front desk (bridge + bot)"))
         results (concat [extension-result] role-results [daemon-result]
                         (remove nil? [operator-result front-desk-result]))]

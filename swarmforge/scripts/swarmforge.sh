@@ -1304,7 +1304,6 @@ start_handoff_daemon() {
   SWARMFORGE_DAEMON_START_CALLER=swarmforge.sh bash "$SCRIPT_DIR/start_handoff_daemon.sh" "$WORKING_DIR"
 }
 
-
 # Operator runtime + Telegram front desk. Best-effort: a missing secret or
 # a failed ancillary start must never abort an otherwise successful swarm
 # launch. `./swarm ensure` is the idempotent repair path for these same
