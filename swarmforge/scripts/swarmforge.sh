@@ -94,6 +94,16 @@ SWARM_NAME="primary"
 SWARM_MODE="autonomous"
 SWARM_MODE_PRIMARY=""
 REMOTE_CONTROL_DEFAULT=1
+# BL-448: "" (default, every existing pack) means one tmux session per
+# window line, unchanged. "sequential" means only the FIRST declared
+# window line's role gets a real session/process - every other pipeline
+# role in the conf still gets its own worktree + roles.tsv entry
+# (mailbox resolution is SWARMFORGE_ROLE + roles.tsv driven, never
+# tied to which physical pane asks - see handoff_lib.bb's
+# my-mailbox-base-dir), but no session/pane/claude process of its own.
+# The coordinator (always provisioned separately, BL-243) is never
+# affected by this - see is_sequential_dormant.
+ROTATION_MODE=""
 if [[ "${SWARMFORGE_REMOTE_CONTROL:-}" == "0" ]]; then
   REMOTE_CONTROL_DEFAULT=0
 fi
@@ -378,6 +388,17 @@ parse_config() {
               ;;
           esac
           ;;
+        rotation)
+          case "${fields[3]:-}" in
+            sequential)
+              ROTATION_MODE="sequential"
+              ;;
+            *)
+              echo -e "${RED}Error:${RESET} Invalid config line $line_no: rotation must be 'sequential'"
+              exit 1
+              ;;
+          esac
+          ;;
       esac
       continue
     fi
@@ -565,6 +586,21 @@ pack_size() {
     [[ "$role" == "coordinator" ]] || count=$((count + 1))
   done
   echo "$count"
+}
+
+# BL-448: true (0) for a pipeline role index that must NOT get its own
+# session/pane/claude process under `config rotation sequential` - every
+# such role still has a worktree + roles.tsv entry (write_roles_file/
+# prepare_worktrees never gate on this), so its own mailbox resolves
+# correctly the moment the ONE resident agent (index 1, the conf's first
+# window line) exports SWARMFORGE_ROLE and cds into that role's worktree.
+# The coordinator (always the LAST-registered role - provision_coordinator
+# runs after every window line's register_role) is never dormant: it is
+# reserved infrastructure, provisioned exactly as in every other pack.
+is_sequential_dormant() {
+  local i="$1"
+  [[ "$ROTATION_MODE" == "sequential" ]] || return 1
+  (( i > 1 && i < ${#ROLES[@]} ))
 }
 
 # BL-090: single-triage invariant. The committed primacy marker
@@ -1324,6 +1360,7 @@ echo -e "${CYAN}active_backlog_max_depth: ${EFFECTIVE_MAX_DEPTH} (from ${CONFIG_
 # that session name.
 typeset -A REFUSED_ROLE_INDICES
 for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
+  is_sequential_dormant "$i" && continue
   if ! create_role_session "${SESSIONS[$i]}" "${DISPLAY_NAMES[$i]}" "${ROLES[$i]}"; then
     REFUSED_ROLE_INDICES[$i]=1
   fi
@@ -1337,6 +1374,7 @@ copilot_trust_swarm_paths
 echo -e "${GREEN}Starting agents...${RESET}"
 for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
   [[ -n "${REFUSED_ROLE_INDICES[$i]:-}" ]] && continue
+  is_sequential_dormant "$i" && continue
   launch_role "$i"
 done
 
@@ -1379,6 +1417,7 @@ if terminal_backend_can_open_sessions; then
   fi
   previous_window_id=""
   for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
+    is_sequential_dormant "$i" && continue
     window_id="$(terminal_open_session "${SESSIONS[$i]}" "SwarmForge ${DISPLAY_NAMES[$i]}" "$previous_window_id")"
     if terminal_backend_tracks_windows; then
       echo "$window_id" >> "$WINDOW_IDS_FILE"

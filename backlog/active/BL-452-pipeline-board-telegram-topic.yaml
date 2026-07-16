@@ -37,6 +37,27 @@ description: |
       columns so every active ticket lands in exactly one cell. Honors "use the pipeline state", stays
       realtime-cheap on the concierge tick.
 
+  ADDENDUM — DATA-SOURCE DECISION REAFFIRMED (human design-refinement 2026-07-16, from
+  INTAKE-operator-question-1784203923583; specifier + architect): the human asked whether the coordinator
+  could PUSH each ticket's stage into a durable data structure the board OBSERVES (event-driven) instead of
+  the tick READING it (poll). Weighed and decided: KEEP tick-poll — do NOT build the coordinator-push /
+  event-driven variant. Acceptance contract and chosen enrich-and-poll design are UNCHANGED. Rationale:
+    - The coordinator sits OUTSIDE the forward chain (PIPELINE.md): it observes intake + post-QA
+      bookkeeping only, NOT the coder->cleaner->architect->hardender->documenter->QA hops. So it cannot
+      author every stage transition. The only component that sees every hop is the delivering daemon
+      (handoffd), so an event-driven writer would be a DAEMON-WIDE writer — a far larger change to shared
+      daemon code than a board UI warrants (architect).
+    - Duplicate state / drift: which role holds a ticket is ALREADY the durable source of truth in the
+      handoff mailbox (that role's inbox/in_process). A pushed stage-map is a SECOND copy of the same fact
+      that can drift from it; tick-poll reads the single source directly (architect: "dup state"). It would
+      also be a new store that is dark until a writer is wired (specifier live-data-dependency rule).
+    - No polling is actually eliminated: the concierge tick already runs every cycle for the sibling
+      standing topics, so "event-driven instead of polling" removes NO loop — it only ADDS a writer + store
+      + sync surface. The board render piggybacks on the tick that already runs; edge-triggered edit means
+      an unchanged grid costs one cheap in_process read and no Telegram edit.
+    Net: the push variant adds a synchronization surface and a dark-until-wired store for no realtime gain
+    on a low-frequency, read-only glance. (The human may override; the swarm's take is being relayed back.)
+
   ANTI-STORM (engineering editForumTopic 429 rule; memory: backfill-vs-stale-tick-icon-revert): the board
   is ONE message edited in place in ONE topic — a single-message edit, not a per-topic fan-out — so it
   does not trigger the first-tick mass-edit storm. Keep it EDGE-TRIGGERED anyway: only re-render+edit when
