@@ -111,10 +111,28 @@ export NEGOTIATION_RELAY_MAX_ATTEMPTS=3 NEGOTIATION_RELAY_BACKOFF_BASE_MS=10 NEG
 check_once "$F" > /dev/null
 check "setup: the relay starts running with no heartbeat yet" \
   '[[ "$(jget "$(STATUS "$F")" "[:relay :status]")" == running ]]'
+OLD_PID="$(jget "$(STATUS "$F")" "[:relay :pid]")"
+check "setup: the old relay pid is alive right after it starts" \
+  'kill -0 "$OLD_PID" 2>/dev/null'
 sleep 0.3
 check_once "$F" > /dev/null
 check "a live pid with a stale/missing heartbeat is reported as stalled, not left running" \
   '[[ "$(jget "$(STATUS "$F")" "[:relay :status]")" == stalled ]] || [[ "$(jget "$(STATUS "$F")" "[:relay :attempts]")" -gt 1 ]]'
+# BL-411: let the (10ms) backoff window elapse, then let the supervisor act
+# on the restart decision - this is the tick that must terminate OLD_PID
+# (SIGTERM -> bounded grace -> SIGKILL) before spawning the replacement. A
+# revert of the kill-pid! wiring (back to check-one!'s pre-fix 7-arg call)
+# would leave OLD_PID an orphaned, still-alive second poller here - exactly
+# the two-getUpdates-pollers-on-one-token exposure this ticket closes.
+sleep 0.2
+check_once "$F" > /dev/null
+NEW_PID="$(jget "$(STATUS "$F")" "[:relay :pid]")"
+check "BL-411: the restart spawns a genuinely different relay pid" \
+  '[[ "$NEW_PID" != "$OLD_PID" ]]'
+check "BL-411: the prior relay pid is confirmed dead, not left as an orphaned second poller" \
+  '! kill -0 "$OLD_PID" 2>/dev/null'
+check "BL-411: the replacement relay pid is alive" \
+  'kill -0 "$NEW_PID" 2>/dev/null'
 unset NEGOTIATION_RELAY_MAX_ATTEMPTS NEGOTIATION_RELAY_BACKOFF_BASE_MS NEGOTIATION_RELAY_BACKOFF_MAX_MS NEGOTIATION_RELAY_STALL_MS
 cleanup_children "$F"
 rm -rf "$F"
