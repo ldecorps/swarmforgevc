@@ -378,4 +378,4 @@ ticket after it.
 ---
 
 For the full pipeline stage-by-stage breakdown, the handoff protocol, and the
-product roadmap beyond onboarding, see [Specification.MD](Specification.MD).
+product roadmap beyond onboarding, see [Specification.MD](../reference/Specification.MD).
