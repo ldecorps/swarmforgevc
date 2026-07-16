@@ -3,6 +3,7 @@ const childProcess = require('node:child_process');
 const path = require('node:path');
 const {
   sampleWorkerChildrenOnce,
+  collectDescendantPids,
   runProfilingSession,
   buildProfilingReport,
   listChildPidsReal,
@@ -39,6 +40,42 @@ test('sampleWorkerChildrenOnce skips a child whose stats could not be read, neve
 test('sampleWorkerChildrenOnce with no children returns no samples', () => {
   const adapters = { listChildPids: () => [], getStats: () => ({ rssBytes: 1, cpuPercent: 1 }) };
   assert.deepEqual(sampleWorkerChildrenOnce(999, 1, adapters), []);
+});
+
+// BL-427 QA bounce: an npm/npx-wrapped Stryker invocation puts the real
+// workers below an intermediate shell, so sampling only DIRECT children of
+// the spawned process finds the wrapper (~1MB RSS) instead of the real
+// workers underneath it. The sampler must walk the full descendant subtree.
+test('sampleWorkerChildrenOnce samples grandchildren reached through an intermediate wrapper process, not just direct children', () => {
+  const tree = { 999: [50], 50: [11, 22], 11: [], 22: [] };
+  const adapters = {
+    listChildPids: (pid) => tree[pid] || [],
+    getStats: (pid) => ({ rssBytes: pid * 100, cpuPercent: 1 }),
+  };
+  const workerIds = sampleWorkerChildrenOnce(999, 5000, adapters)
+    .map((s) => s.workerId)
+    .sort();
+  assert.deepEqual(workerIds, ['11', '22', '50']);
+});
+
+// ── collectDescendantPids (pure BFS over an injected direct-children lookup) ──
+
+test('collectDescendantPids walks every depth of the process tree, not just direct children', () => {
+  const tree = { 100: [200, 201], 200: [300], 201: [], 300: [] };
+  const pids = collectDescendantPids(100, (pid) => tree[pid] || []).sort((a, b) => a - b);
+  assert.deepEqual(pids, [200, 201, 300]);
+});
+
+test('collectDescendantPids with no children returns an empty list', () => {
+  assert.deepEqual(collectDescendantPids(999, () => []), []);
+});
+
+test('collectDescendantPids terminates and does not double-collect when the process listing reports a pid as its own descendant', () => {
+  // A defensive case, not a real process-tree shape: guards the walk against
+  // a `ps` listing that (re-)reports an already-seen pid, so a fake/real
+  // adapter quirk can never turn the walk into an infinite loop.
+  const pids = collectDescendantPids(999, (pid) => (pid === 999 ? [11] : [11]));
+  assert.deepEqual(pids, [11]);
 });
 
 // ── runProfilingSession (fake spawn + fake scheduler, no real process/timer) ──
