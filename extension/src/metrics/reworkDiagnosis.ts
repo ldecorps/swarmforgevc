@@ -63,6 +63,45 @@ function recommendAction(likelyCause: string | null): string {
   return likelyCause ? `investigate ${likelyCause}` : 'lower the intake throttle';
 }
 
+// BL-432 (epic BL-429 slice 3 - ACT): the ONE sanctioned auto-tunable knob
+// (Article 3.5's intake throttle) needs a two-level severity, not just the
+// binary verdict/no-verdict this module produced for BL-431 - "degraded"
+// (drop the effective cap to one) vs "severe" (drop it to zero). Reuses the
+// SAME 2x-baseline relative-creep idiom diagnoseReworkSignal already
+// established for "meaningfully above baseline" rather than inventing a
+// second one, extended with a second, harder threshold: severe means the
+// rate has crossed baseline*4 (degraded crossed it once at baseline*2;
+// severe means it kept climbing to double that again), never a fixed
+// absolute rate (baselines drift, Article 3.5's own reasoning).
+export type ThrottleSeverity = 'degraded' | 'severe';
+
+export const SEVERE_BASELINE_MULTIPLIER = ABOVE_BASELINE_MULTIPLIER * 2;
+
+// null whenever there is no verdict at all, OR the verdict's own
+// recommendation is escalate-only - a concentrated, attributable cause
+// (classifyRemediationDisposition's own allowlist) is NEVER auto-throttled,
+// exactly the epic's safety contract (BL-429): only the generic
+// no-concentration circuit-breaker response may ever move without a human.
+export function classifyThrottleSeverity(verdict: SuboptimalityVerdict | null): ThrottleSeverity | null {
+  if (!verdict || verdict.disposition !== 'auto-tunable') {
+    return null;
+  }
+  return verdict.reworkRate > verdict.baselineRate * SEVERE_BASELINE_MULTIPLIER ? 'severe' : 'degraded';
+}
+
+// Pure mapping from severity to Article 3.5's own two named caps - never
+// invents a third value, never raises: null (no throttle recommended) means
+// the caller applies the human-configured cap unchanged.
+export function recommendedCapForSeverity(severity: ThrottleSeverity | null): number | null {
+  if (severity === 'severe') {
+    return 0;
+  }
+  if (severity === 'degraded') {
+    return 1;
+  }
+  return null;
+}
+
 export function diagnoseReworkSignal(signal: ReworkSignal): SuboptimalityVerdict | null {
   if (!signal.hasSample || signal.reworkRate === null || signal.baselineRate === null) {
     return null;
