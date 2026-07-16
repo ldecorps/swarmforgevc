@@ -85,7 +85,8 @@ human_approval: >
   (skipped-unresolved-icon), never silently applied. Build-time details NOT gating: the exact table
   name/location, log wording, exact call structure. Icon-only (no BL-425 routing change, no board file
   change). Serialize on topicIcon.ts + conciergeTick.ts against BL-453 and the standing-topic cluster.
-  NEW feature file specs/features/BL-469-per-agent-steering-topic-icons.feature — FLAGGED for human
-  review before build.
+  NEW feature file specs/features/BL-469-per-agent-steering-topic-icons.feature — APPROVED as-specced
+  by the human (ldecorps) directly 2026-07-16; feature file reviewed, no changes requested. Ready for
+  promotion.
 
 mutation_cost: low
