@@ -13,12 +13,17 @@ source: "human (ldecorps) via the Operator front desk 2026-07-16 — INTAKE-oper
 description: |
   Rendering refinements to the pipeline board, from the human's clarifications (he reads it mainly in
   LANDSCAPE, so more horizontal width is acceptable):
-    1. Each ticket's slug LEADS with a short kebab slug (2-3 words, derived from the ticket's backlog
-       filename slug, e.g. BL-467-pipeline-board-only-pin -> "pipeline-board-only-pin"), THEN fills the
-       remaining landscape width with more of the truncated title — in the grid AND the below-grid
-       lists. Human's decision 2026-07-16 (Q: kebab slug vs truncated title -> "both: slug + wider
-       title"), refining the earlier "show more of the description" ask. Exact kebab word-count and
-       column width are build-time cosmetic details, not a promotion gate.
+    1. Each ticket entry LEADS with a short kebab slug (2-3 words, derived from the ticket's backlog
+       filename slug, e.g. BL-467-pipeline-board-only-pin -> "pipeline-board-only-pin"). Two placements:
+         - In the aligned stage GRID: fill the dedicated SLUG column with the 2-3 word kebab slug.
+           Human's instruction 2026-07-16: "add the slug back to the pipeline board grid — there will be
+           room enough for 2 or 3 words." The grid carries the slug ONLY (no title): its width is spent
+           on the 8 stage columns, so there is no title column to widen.
+         - In the BELOW-GRID lists (parked / awaiting-approval / paused / root-intake / recently-closed):
+           the entry leads with the same kebab slug THEN fills the remaining landscape width with more of
+           the truncated title. Human's decision 2026-07-16 (Q: kebab slug vs truncated title -> "both:
+           slug + wider title"), refining the earlier "show more of the description" ask.
+       Exact kebab word-count and column width are build-time cosmetic details, not a promotion gate.
     2. Drop the redundant per-line "PK" label in the parked list (the section header already says it is
        parked); keep the awaiting-approval distinction by giving it its OWN "AWAITING APPROVAL:" section
        (drop the per-line "AA" label too) — human's decision 2026-07-16.
@@ -67,7 +72,8 @@ description: |
 acceptance:
   feature: specs/features/BL-465-pipeline-board-render-round2.feature
   steps:
-    - "Each ticket's entry leads with a short kebab slug, then fills the remaining width with more of its title"
+    - "The stage grid's slug column shows a short kebab slug (2-3 words)"
+    - "A below-grid list entry leads with the kebab slug then fills the remaining width with more of its title"
     - "The parked list drops the redundant PK label"
     - "The board lists parked, awaiting-approval, paused, root-intake, and recently-closed items in their own sections"
     - "A tappable link list below the grid links each ticket id to its GitHub backlog item"
@@ -76,13 +82,19 @@ acceptance:
 human_approval: >
   Human-requested via the Operator front desk 2026-07-16 with a follow-up clarification round; links
   ride a below-grid list per his Q1 choice (Telegram cannot render links inside the <pre> grid). Firm
-  contract: each ticket entry LEADS with a short 2-3 word kebab slug then fills the remaining landscape
-  width with more of the truncated title, in grid + lists (human's decision 2026-07-16: "both: slug +
-  wider title"); no redundant PK label; distinct parked /
+  contract: each ticket entry LEADS with a short 2-3 word kebab slug; in the aligned stage GRID the
+  slug fills the dedicated slug column and the grid carries the slug ONLY (human's instruction
+  2026-07-16: "add the slug back to the grid — room enough for 2 or 3 words"; the grid has no title
+  column to widen), while the BELOW-GRID lists lead with that slug then fill the remaining landscape
+  width with more of the truncated title (human's decision 2026-07-16: "both: slug + wider title").
+  No redundant PK label; distinct parked /
   awaiting-approval / paused / root-intake / recently-closed sections (awaiting-approval is its OWN
   section, no per-line "AA" label — human's decision 2026-07-16); a tappable GitHub link list below the
   grid; aligned grid preserved. Build-time details NOT gating: exact width, headers, link-line format, and the precise
   "recently-closed" window. Serialize on the board files after in-flight BL-462 and ideally after
-  BL-464 (authoritative data source).
+  BL-464 (authoritative data source). REFINED 2026-07-16 per the human's direct instruction ("add the
+  slug back to the pipeline board grid — room enough for 2 or 3 words"): grid = slug-only column,
+  below-grid lists = slug + wider title; feature file board-round2-01/01b re-split accordingly —
+  flagged for the human's confirmation.
 
 mutation_cost: medium
