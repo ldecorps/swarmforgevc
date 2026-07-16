@@ -1,0 +1,66 @@
+id: BL-470
+title: "Remove the dead BL-452 edit-in-place acceptance step handlers left behind when their scenarios were retired (superseded by BL-462 repost)"
+milestone: M8
+type: chore
+severity: low
+epic: ""
+priority: 6
+direction: swarm-proposed
+depends_on: []
+source: "QA note to the specifier 2026-07-16 (BL-452 feature regression: 'edited in place on stage change' scenario fails). The specifier retired BL-452 pipeline-board-03/04 from the feature file (commit a78202dc) because BL-462 replaced edit-in-place with delete-old + post-fresh-at-bottom and re-specced the behaviour in its own feature file. Removing the scenarios left their step handlers dead but harmless; this ticket clears the dead test glue."
+
+description: |
+  Pure test-code cleanup — NO behaviour change, NO production-source change. When the specifier retired
+  BL-452's pipeline-board-03 ("edited in place on a stage change") and pipeline-board-04 ("not re-edited
+  when no stage change") scenarios (commit a78202dc — their edit-in-place premise was superseded by
+  BL-462's delete-old + post-fresh-at-bottom repost, now owned by
+  specs/features/BL-462-pipeline-board-wider-slug-updated-at-repost.feature refine-04/-05/-06), the
+  matching step handlers in specs/pipeline/steps/bl452PipelineBoardSteps.js were left registered but
+  UNUSED (no scenario text matches them anymore). Nothing invokes them and the BL-452 acceptance run is
+  already green (4/4), so this is untidy, not broken — but the dead handlers falsely imply edit-in-place
+  is still under test, so remove them.
+
+  Scope (grep-confirm at build — bl452PipelineBoardSteps.js only; do NOT touch pipelineBoard.ts,
+  pipelineBoardSync.ts, or any other production source):
+    - Remove the now-unused step handlers for the retired scenarios: "the board has already been posted
+      in the Pipeline Board topic", "a ticket moves to the next stage and the board is rendered again",
+      "the existing board message is edited in place to show the ticket's new stage", "no new board
+      message is posted", "the board has been posted and no ticket's stage has changed", "the concierge
+      tick runs again", and "the board message is not edited".
+    - Drop the now-unused `renderPipelineBoardBody` import (used ONLY by those handlers, lines 253/290 at
+      retirement) — keep `renderPipelineBoard`, still used by the surviving scenarios.
+    - The `edited` fixture array is now permanently empty and unread once those handlers are gone (its
+      own comment already says no adapter populates it): drop the `edited` array from
+      fakeConciergeAdapters and simplify `lastRendered` to the posted-only path. Leave the `deleted`
+      array as-is unless it too proves unreferenced at build.
+    - Do NOT touch the shared "/^the pipeline board is rendered$/" handler or the bl464 delegation — the
+      surviving scenarios (pipeline-board-01/02) and BL-464 still depend on them.
+
+  Constraints:
+    - No new scenarios, no new feature file — this removes dead glue only. The BL-452 feature file and its
+      acceptance run must stay green (still 4/4) and the extension unit suite must stay green.
+    - If the mutation-stamp/acceptance-mutation-manifest header on the BL-452 feature file needs
+      regenerating, that is the hardener's normal pass — do not hand-edit the manifest.
+
+  E2E QA PROCEDURE: run specs/pipeline/scripts/run_acceptance.sh
+  specs/features/BL-452-pipeline-board-telegram-topic.feature and confirm it still reports 4/4 pass with
+  no "scenario lacking a step handler" throw; grep bl452PipelineBoardSteps.js and confirm no handler for
+  any of the seven retired step texts remains and no unused `renderPipelineBoardBody` / `edited`
+  reference lingers; run the extension unit suite and confirm it stays green.
+
+acceptance:
+  feature: specs/features/BL-452-pipeline-board-telegram-topic.feature
+  steps:
+    - "Each active ticket is a row marked only at its current stage"
+    - "A ticket is marked in exactly the column for its current state"
+    - "Rendering and posting the board modifies no swarm state"
+
+human_approval: >
+  Swarm-proposed cleanup, not a human-requested feature — no human sign-off required to promote. It
+  removes only dead acceptance step glue left by the specifier's BL-452 scenario retirement (commit
+  a78202dc); no production source and no observable behaviour change. Acceptance is the EXISTING BL-452
+  feature file staying green (4/4) plus a green unit suite — a regression guard, not a new contract.
+  Serialize against any in-flight ticket touching bl452PipelineBoardSteps.js or the BL-452 feature file;
+  otherwise freely schedulable as a light chore.
+
+mutation_cost: low
