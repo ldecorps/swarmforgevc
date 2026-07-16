@@ -37,9 +37,20 @@ description: |
   the timeout, sync must fail loudly (non-zero exit, as it already does for a failed restart step) rather
   than falsely reporting fresh or hanging indefinitely (engineering article: every wait is bounded).
 
+  HUMAN DECISIONS (2026-07-16, resolving the two open items below):
+    - Settle-timeout is 10s. The single sync pass waits up to 10s for the new operator_runtime to
+      publish a fresh status.json (`:build_sha` == HEAD); fresh in time -> report settled, exit 0;
+      still stale at 10s -> exit non-zero (loud fail). 10s is the human-approved bound (a normal
+      first-tick — spawn + Babashka load + status write — is ~1-5s), not a build-time free choice.
+    - On restart, DELETE operator_runtime's status.json first — mirroring `restart-front-desk-group!`,
+      which already deletes its status.json — so no consumer can read a stale `:build_sha` during the
+      restart window. The settle-wait then blocks until status.json REAPPEARS with `:build_sha` == HEAD.
+
   Constraints:
     - Do not introduce a second parallel restart mechanism — reuse operator_runtime.bb's own
-      stop-file/pid-file/status.json convention (the CLI's single-owner header rule).
+      stop-file/pid-file/status.json convention (the CLI's single-owner header rule). The status.json
+      deletion + reappear-wait reuses that same convention (as the front-desk path does); it is not a
+      new mechanism.
     - The bounded-wait must tolerate operator_runtime's first-tick delay; OPERATOR_INTERVAL_MS only
       governs the sleep AFTER the first tick, which already writes status.json, so a few seconds of
       settle headroom is the right order — confirm against the live startup path at build time.
@@ -67,9 +78,11 @@ acceptance:
     - "Front-desk and handoffd sync behaviour is unchanged"
 
 human_approval: >
-  PENDING. Reported by the coordinator (agent-reported defect, 3x this session). The root cause is
-  confirmed in code, but the exact settle-timeout value and whether to also clear operator status.json
-  on restart (mirroring the front-desk path) have NOT been human-reviewed. Flag the feature file for
-  review before promotion.
+  approved. Reported by the coordinator (agent-reported defect, 3x this session); root cause confirmed
+  in code. The two previously-open items are now human-decided (2026-07-16): settle-timeout = 10s, and
+  YES delete operator status.json on restart (mirroring the front-desk path) then wait for it to
+  reappear fresh. Contract firm; ready for promotion. The exact scenario wording stays behavioral —
+  10s and the deletion are pinned in the description, and are build-verified against the live startup
+  path, not re-litigated.
 
 mutation_cost: low
