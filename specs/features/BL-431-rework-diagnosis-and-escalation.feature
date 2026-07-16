@@ -1,13 +1,10 @@
 Feature: The swarm diagnoses where it is suboptimal and escalates what it cannot safely fix
 
-# BL-431 (epic BL-429, slice 2 — DIAGNOSE + ESCALATE). DRAFT: parked until BL-430 lands, because these
-# scenarios read the rework signal BL-430 produces. Not picked up by any *.feature glob or the acceptance
-# runner while it carries the .draft suffix (slice-scoping rule, BL-233). Promote to a live .feature when
-# this slice is promoted.
-#
-# The verdict is emitted only when the rate is meaningfully above the trailing baseline — scenario 02 is
+# BL-431 (epic swarm-self-optimization, slice 2 of BL-429 — DIAGNOSE + ESCALATE). Reads the rework
+# signal BL-430 persists and, only when the current rate is meaningfully above the trailing baseline,
+# emits a ranked verdict (where it is most suboptimal, likely cause, recommended action). Scenario 02 is
 # the no-false-alarm guard. Scenario 04 pins the epic's safety contract: only the sanctioned knob may be
-# marked for auto-tuning; every other recommendation is escalate-only.
+# marked auto-tunable; every other recommendation is escalate-only.
 
 Background:
   Given a persisted rework signal with a current rate and a trailing baseline
@@ -38,10 +35,10 @@ Scenario Outline: A safe-knob remediation is auto-tunable; any other remediation
   Then the action is marked <disposition>
 
   Examples:
-    | remediation                  | disposition   |
-    | lower the intake throttle    | auto-tunable  |
+    | remediation                     | disposition   |
+    | lower the intake throttle       | auto-tunable  |
     | respawn a chronically-slow role | escalate-only |
-    | change a routing rule        | escalate-only |
+    | change a routing rule           | escalate-only |
 
 # BL-431 rework-diagnosis-and-escalation-05
 Scenario: The verdict reaches the human through the existing surface

@@ -1,0 +1,56 @@
+id: BL-445
+title: "Bring the extension unit suite below the 10-second wall-clock target (it records 10.3-13.0s)"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+epic: ""
+priority: 1
+direction: human-requested
+depends_on: []
+source: "backlog root intake INTAKE-operator-question-1784161548234.md (Telegram, 2026-07-16): 'Next absolute priority: bring the unit test suite below 10s'. Priority 1 encodes the operator's 'next absolute priority' framing - above the current priority-2 top tier."
+
+notes: |
+  OPERATOR ASK. "Next absolute priority: bring the unit test suite below 10s." The recorded whole-suite
+  wall-clock (extension/.test-durations.jsonl duration_ms) is 10.3-13.0s across recent passing runs, over
+  the 10s target. Suite speed is a correctness property (engineering.prompt Test Speed And Isolation): a
+  slow suite gets skipped, and real-time waits are how runs hang.
+
+  TWO things must hold, verified DIFFERENTLY:
+    1. OPERATIONAL (QA e2e, not a Gherkin scenario): the suite is ACTUALLY under 10s - run `npm test` in
+       extension/ and confirm the recorded duration_ms is < 10000 with headroom.
+    2. DURABLE RATCHET (the .feature scenarios): a whole-suite budget verdict classifies a recorded run
+       against the 10s target and SURFACES an over-budget run, so a future regression cannot creep back
+       silently (BL-078/BL-252's soft trend reports "slower", never a hard line at the target).
+
+  PROFILE BEFORE CUTTING. A per-FILE 7s hard budget already exists and runs after every suite
+  (extension/src/tools/check-suite-file-budget.ts, PER_FILE_DURATION_BUDGET_MS = 7000, wired via
+  extension/scripts/recordTestDuration.js). Slowest file ~4.8s, so isolated wall (~slowest-file + 1s
+  across the parallel pool) is ~6s - yet the recorded whole-suite number is 10-13s and jitters. The excess
+  is NOT one obvious pole the per-file guard would already catch; profile to locate the real cost (fixed
+  overhead like coverage instrumentation / worker-pool spin-up, a residual sub-7s pole, or machine-load
+  contention from concurrent worktree runs) BEFORE changing anything. NEVER hit the number by deleting
+  tests or dropping coverage: passing test_count must not fall and coverage must not regress. No real
+  timers (already banned) - if a real-clock wait is the cost, remove it.
+
+  Scope (verify at build time): the recorder/measurement path (extension/scripts/recordTestDuration.js +
+  extension/.test-durations.jsonl); the existing budget-guard family (check-suite-file-budget.ts and its
+  swarm-metrics helpers) extended to a whole-suite verdict; whichever profiled poles/overhead the
+  reduction touches. Whether the whole-suite verdict HARD-FAILS or only warns is an architect call -
+  prefer surfacing over a hard 10000ms fail, which would flake under the recorded jitter; the per-file 7s
+  guard stays the hard gate.
+
+  E2E QA PROCEDURE: run `npm test` in extension/ on an otherwise-idle host; confirm the recorded
+  duration_ms in extension/.test-durations.jsonl for the passing run is < 10000 with headroom, test_count
+  is not below its current 273, and coverage did not regress. Then feed a synthetic over-budget recorded
+  duration to the whole-suite verdict and confirm it is reported over-budget and surfaced as an offender.
+
+acceptance:
+  feature: specs/features/BL-445-unit-suite-below-10s.feature
+  steps:
+    - "A recorded suite run is classified within-budget or over-budget against the 10-second target"
+    - "An over-budget run is surfaced with its measured duration, not silently accepted"
+
+human_approval: pending
+
+mutation_cost: low
