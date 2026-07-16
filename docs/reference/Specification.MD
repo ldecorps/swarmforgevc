@@ -1,15 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 16, 2026 (BL-426 slice 1 — coordinator voice-note conversation over Telegram, STT in / TTS out)
+**Last Updated:** July 16, 2026 (BL-456 — Divio docs reorg: this file moved to docs/reference/, links updated)
 
 ## Overview
 
 A VS Code extension that runs a multi-agent coding swarm and brings the work back as a PR. It is a **standalone orchestrator** — inspired by Uncle Bob's SwarmForge agent-orchestration model, but it spawns and manages the agent processes itself rather than driving SwarmForge or tmux. The extension lives entirely in the forge codebase. It points at any target project, runs the swarm on it, and brings the work back as a PR. The target project carries only two swarm bootstrap files and otherwise has no knowledge of the swarm machinery.
 
-**Getting started?** See [Getting Started with SwarmForge VC](GettingStarted.md) for install, setup, and first run. This specification is the detailed reference.
+**Getting started?** See [Getting Started with SwarmForge VC](../tutorials/GettingStarted.md) for install, setup, and first run. This specification is the detailed reference.
 
-**Diagrams:** [Architecture diagram](diagrams/architecture.mmd) and
-[Swarm workflow flow diagram](diagrams/swarm-flow.mmd) (Mermaid sources)
+**Diagrams:** [Architecture diagram](../diagrams/architecture.mmd) and
+[Swarm workflow flow diagram](../diagrams/swarm-flow.mmd) (Mermaid sources)
 depict the system as actually built. Flagging a doc/code disagreement here
 per BL-095: the Overview paragraph above describes a "standalone
 orchestrator" that spawns and manages agent processes itself — the code
