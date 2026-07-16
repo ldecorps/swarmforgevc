@@ -4,12 +4,15 @@ Feature: The pipeline board shows wider descriptions, distinct sections for park
   # INTAKE-operator-question-1784230021148). Follow-on rendering refinements to the BL-452/BL-455/BL-462
   # pipeline board, from the human's clarifications (he reads it mainly in LANDSCAPE, so more horizontal
   # width is fine):
-  #   1. Each ticket's slug LEADS with a short kebab slug (2-3 words, derived from the ticket's backlog
-  #      filename slug, e.g. BL-467-pipeline-board-only-pin -> "pipeline-board-only-pin"), THEN fills the
-  #      remaining landscape width with more of the truncated title. Human's decision 2026-07-16 (Q:
-  #      kebab slug vs truncated title -> "both: slug + wider title"), refining the earlier "show more of
-  #      the description" ask. Applies in the grid AND the below-grid lists. Landscape gives the room; the
-  #      exact kebab word-count and column width are build-time cosmetic details, not a promotion gate.
+  #   1. Each ticket entry LEADS with a short kebab slug (2-3 words, derived from the ticket's backlog
+  #      filename slug, e.g. BL-467-pipeline-board-only-pin -> "pipeline-board-only-pin"). In the aligned
+  #      stage GRID this fills the dedicated SLUG column and the grid carries the slug ONLY (human's
+  #      instruction 2026-07-16: "add the slug back to the grid — room enough for 2 or 3 words"; the grid
+  #      has no title column, its width is spent on the 8 stage columns). In the BELOW-GRID lists the
+  #      entry leads with the same slug THEN fills the remaining landscape width with more of the
+  #      truncated title (human's decision 2026-07-16: "both: slug + wider title"), refining the earlier
+  #      "show more of the description" ask. Exact kebab word-count and column width are build-time
+  #      cosmetic details, not a promotion gate.
   #   2. Drop the redundant per-line "PK" label in the parked list (the section already says it is
   #      parked); keep the awaiting-approval distinction by giving it its OWN "AWAITING APPROVAL:"
   #      section (no per-line "AA" label either) — human's decision 2026-07-16.
@@ -38,17 +41,24 @@ Feature: The pipeline board shows wider descriptions, distinct sections for park
   # are build-time cosmetic details, not a promotion gate.
 
   # BL-465 board-round2-01
-  Scenario Outline: Each ticket's entry leads with a short kebab slug, then fills the remaining width with more of its title
-    Given a ticket with a long title in the "<area>"
+  Scenario: The stage grid's slug column shows a short kebab slug
+    Given a long-titled ticket occupies a stage-grid row
     When the pipeline board is rendered
-    Then the "<area>" entry leads with a short kebab slug for the ticket
+    Then the grid row's slug column shows the ticket's short kebab slug
+    And the grid row remains a single aligned line
+
+  # BL-465 board-round2-01b
+  Scenario Outline: A below-grid list entry leads with the kebab slug then shows more of its title
+    Given a long-titled ticket appears under the "<list>" section
+    When the pipeline board is rendered
+    Then the "<list>" entry leads with a short kebab slug for the ticket
     And it then shows more of the title than the previous limit allowed
     And the whole entry is still a single line
 
     Examples:
-      | area        |
-      | stage grid  |
-      | parked list |
+      | list            |
+      | parked list     |
+      | recently-closed |
 
   # BL-465 board-round2-02
   Scenario: The parked list drops the redundant PK label
