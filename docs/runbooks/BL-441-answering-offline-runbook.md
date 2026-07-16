@@ -13,10 +13,13 @@ bot running to see what's waiting:
   pushed like any other file. `git pull` and read the file for the ticket
   you care about; the swarm's own outbound question is the latest message in
   it.
-- **The PWA dashboard** (`pwa/index.html` → `pwa/app.js`) — a static,
-  git-SHA-reproducible projection of the same backlog state, viewable from a
-  phone or any browser without a live bridge connection. It surfaces which
-  tickets are waiting on a human at a glance.
+
+The PWA dashboard (`pwa/index.html` → `pwa/app.js`) does **not** surface this
+state today — it fetches only `backlog.json`, `docs-tree.json`, and
+`recert-batch.json`, none of which carry a pending-question signal. Its one
+human-facing flag (`needsApproval`) is a different, unrelated mechanism for
+reviewing a swarm proposal, not for answering a pending question. Do not rely
+on the PWA for this; use the BL topic files above.
 
 ## 2. Composing an answer
 
