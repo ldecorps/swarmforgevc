@@ -329,6 +329,23 @@ function decideRecertTopicReplyAction(text: string): BotUpdateDecision {
   return { action: 'recert-unrecognized', text };
 }
 
+// Which reserved standing-topic subject id (Approvals, Recert, ...) a reply
+// landed in, if any - collapsed into one lookup so decideUpdateAction's own
+// branch count does not grow one-for-one with every new reserved subject
+// (the same CRAP-budget reason decideApprovalsTopicReplyAction/
+// decideRecertTopicReplyAction above were split out in the first place).
+// undefined means the subject is not a reserved one - the caller falls
+// through to its own ordinary post-existing/open handling.
+function decideReservedSubjectReplyAction(subjectId: string | undefined, text: string): BotUpdateDecision | undefined {
+  if (subjectId === APPROVALS_SUBJECT_ID) {
+    return decideApprovalsTopicReplyAction(text);
+  }
+  if (subjectId === RECERT_SUBJECT_ID) {
+    return decideRecertTopicReplyAction(text);
+  }
+  return undefined;
+}
+
 export function decideUpdateAction(
   update: TelegramUpdate,
   principalUserId: string,
@@ -343,18 +360,13 @@ export function decideUpdateAction(
   const { text } = eligibility;
   const topicId = topicIdOf(update);
   const subjectId = subjectForTopic(topicId);
-  // BL-434: checked BEFORE the ordinary post-existing branch below - a reply
-  // in the Approvals topic must be PARSED for the ticket id it names, never
-  // forwarded as a plain subject post the way every other bound subject is.
-  if (subjectId === APPROVALS_SUBJECT_ID) {
-    return decideApprovalsTopicReplyAction(text);
-  }
-  // BL-450: checked BEFORE the ordinary post-existing branch below, same
-  // reason as the Approvals-topic check just above - a reply in the Recert
-  // topic must be PARSED for the verb+scenario id it names, never forwarded
-  // as a plain subject post.
-  if (subjectId === RECERT_SUBJECT_ID) {
-    return decideRecertTopicReplyAction(text);
+  // BL-434/BL-450: checked BEFORE the ordinary post-existing branch below -
+  // a reply in a reserved standing topic (Approvals, Recert) must be PARSED
+  // for the ticket/scenario id it names, never forwarded as a plain subject
+  // post the way every other bound subject is.
+  const reserved = decideReservedSubjectReplyAction(subjectId, text);
+  if (reserved) {
+    return reserved;
   }
   if (subjectId) {
     return { action: 'post-existing', subjectId, text };
@@ -789,6 +801,26 @@ async function deliverRecertTopicReply(decision: RecertTopicReplyDecision, topic
   return 'posted';
 }
 
+// Which reserved standing-topic's own delivery a decision resolves to, if
+// any - collapsed into one dispatch so processMessageUpdate's own branch
+// count does not grow one-for-one with every new reserved subject (the
+// same CRAP-budget reason the decide* split above exists). undefined means
+// the decision is not a reserved-subject reply at all - the caller falls
+// through to its own ordinary post-existing/open handling.
+async function deliverReservedSubjectReply(
+  decision: BotUpdateDecision,
+  topicId: number | undefined,
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome | undefined> {
+  if (isApprovalsTopicReplyDecision(decision)) {
+    return deliverApprovalsTopicReply(decision, topicId, adapters);
+  }
+  if (isRecertTopicReplyDecision(decision)) {
+    return deliverRecertTopicReply(decision, topicId, adapters);
+  }
+  return undefined;
+}
+
 // BL-410: the callback-query twin of decideUpdateAction above - given a
 // tapped inline-keyboard button, decides whether to act on it at all (the
 // SAME my-chat-then-principal guard order as decideUpdateAction, and for
@@ -1024,11 +1056,9 @@ async function processMessageUpdate(update: TelegramUpdate, principalUserId: str
     const ok = await deliverOperatorContext(decision.backlogId, decision.text, update.update_id, adapters);
     return deliveryOutcome(ok);
   }
-  if (isApprovalsTopicReplyDecision(decision)) {
-    return deliverApprovalsTopicReply(decision, topicIdOf(update), adapters);
-  }
-  if (isRecertTopicReplyDecision(decision)) {
-    return deliverRecertTopicReply(decision, topicIdOf(update), adapters);
+  const reserved = await deliverReservedSubjectReply(decision, topicIdOf(update), adapters);
+  if (reserved) {
+    return reserved;
   }
   if (isOpenDecision(decision)) {
     await adapters.openSubjectAndRecord(openTopicIdFor(decision), decision.text, update.update_id);

@@ -1137,6 +1137,20 @@ export function standingTopicTargets(targetPath: string): StandingTopicTarget[] 
   return targets;
 }
 
+// Shared postMessage/editMessage pair for a plain-text edit-in-place standing
+// topic (ApprovalsRosterAdapters, RecertPostingAdapters) - both boil down to
+// the same sendTelegramMessage/editMessageText calls, only the topic-specific
+// ensure* differs.
+function plainTextEditInPlaceAdapters(
+  botToken: string,
+  chatId: string
+): { postMessage: (topicId: number, text: string) => Promise<number | undefined>; editMessage: (topicId: number, messageId: number, text: string) => Promise<boolean> } {
+  return {
+    postMessage: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then((r) => (r.success ? r.messageId : undefined)),
+    editMessage: (topicId, messageId, text) => editMessageText(botToken, chatId, messageId, text).then((r) => r.success),
+  };
+}
+
 function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId: string): ConciergeTickAdapters {
   return {
     readFolders: () => toFoldersSnapshot(targetPath),
@@ -1215,8 +1229,7 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
     // ticket's ask always land in the one topic.
     rosterAdapters: {
       ensureApprovalsTopic: () => ensureApprovalsTopic(targetPath, botToken, chatId),
-      postMessage: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then((r) => (r.success ? r.messageId : undefined)),
-      editMessage: (topicId, messageId, text) => editMessageText(botToken, chatId, messageId, text).then((r) => r.success),
+      ...plainTextEditInPlaceAdapters(botToken, chatId),
     },
     // BL-450: the current oldest-unreviewed recert scenario, straight off
     // computeRecertBatch(targetPath, 1) - never a second selection computed
@@ -1228,8 +1241,7 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
     // always land in the one topic.
     recertPostingAdapters: {
       ensureRecertTopic: () => ensureRecertTopic(targetPath, botToken, chatId),
-      postMessage: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then((r) => (r.success ? r.messageId : undefined)),
-      editMessage: (topicId, messageId, text) => editMessageText(botToken, chatId, messageId, text).then((r) => r.success),
+      ...plainTextEditInPlaceAdapters(botToken, chatId),
     },
   };
 }
