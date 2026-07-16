@@ -291,6 +291,8 @@ check "operator-ask-03: the escalation names the original question" \
   'grep -q "which environment?" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl"'
 check "operator-ask-03: the escalation is appended to the thread transcript too" \
   'grep -q "still needed" "$F/.swarmforge/support/threads/SUP-1.json"'
+check "BL-466: the escalation is marked agentQuestion so it still routes to the dedicated topic" \
+  'grep -q "\"agentQuestion\":true" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl"'
 check "operator-ask-03: awaiting-answer.json clears - never a permanent wait" \
   '[[ ! -f "$F/.swarmforge/operator/awaiting-answer.json" ]]'
 # a further tick must never re-escalate the same (now-cleared) question.
@@ -311,6 +313,81 @@ check "operator-ask-04: the emergency event still dispatches while a question is
   '[[ "$OUT13" == *"\"launched?\":true"* ]]'
 check "operator-ask-04: the still-unanswered (not yet due) question is left untouched" \
   '[[ -f "$F/.swarmforge/operator/awaiting-answer.json" ]] && [[ "$(jget "$F/.swarmforge/operator/awaiting-answer.json" ":thread_id")" == SUP-1 ]]'
+rm -rf "$F"
+
+# ── 13b. BL-466 agent-question-poll-01: a discrete-option ask carries its
+#        options through the CLI to both awaiting-answer.json and the reply
+#        outbox, marked agentQuestion so the Front Desk Bot routes it (and
+#        renders it as a poll) instead of an ordinary reply ─────────────────
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/support/threads"
+ASK_OUT="$(bb "$F/swarmforge/scripts/operator_ask.bb" "$F" --thread SUP-1 --question "which environment?" --options '["staging","prod"]')"
+check "agent-question-poll-01: the ask CLI reports success" '[[ "$ASK_OUT" == *"\"asked\":true"* ]]'
+check "agent-question-poll-01: awaiting-answer.json records the options" \
+  '[[ "$(jget_in "$F/.swarmforge/operator/awaiting-answer.json" "[:options 0]")" == staging ]] && [[ "$(jget_in "$F/.swarmforge/operator/awaiting-answer.json" "[:options 1]")" == prod ]]'
+check "agent-question-poll-01: the reply-outbox entry is marked agentQuestion with its options" \
+  'grep -q "\"agentQuestion\":true" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl" && grep -q "\"options\":\[\"staging\",\"prod\"\]" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl"'
+rm -rf "$F"
+
+# ── 13c. BL-466 agent-question-poll-03: an ask with fewer than 2 discrete
+#        options (here, none at all) falls back to a plain message - still
+#        marked agentQuestion (so it still routes to the dedicated topic),
+#        but carries no "options" key at all ─────────────────────────────────
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/support/threads"
+bb "$F/swarmforge/scripts/operator_ask.bb" "$F" --thread SUP-1 --question "anything else I should know?" > /dev/null
+check "agent-question-poll-03: awaiting-answer.json carries no options for an open-ended ask" \
+  '[[ "$(jget "$F/.swarmforge/operator/awaiting-answer.json" ":options")" == nil ]]'
+check "agent-question-poll-03: the reply-outbox entry is marked agentQuestion but carries no options key" \
+  'grep -q "\"agentQuestion\":true" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl" && ! grep -q "options" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl"'
+rm -rf "$F"
+
+# ── 13d. BL-466: re-homing a pending poll question (the human replied in a
+#        DIFFERENT thread than the one it's awaited on) carries its options
+#        and agentQuestion marker into the re-posted reply-outbox entry too ──
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/support/threads"
+printf '{"question":"which environment?","thread_id":"SUP-1","asked_at_ms":%s,"options":["staging","prod"]}' "$(( $(date +%s) * 1000 ))" \
+  > "$F/.swarmforge/operator/awaiting-answer.json"
+printf '{"id":"SUP-2","status":"open","messages":[{"channel":"telegram","timestamp":"2026-07-16T09:05:00Z","text":"hi"}]}' \
+  > "$F/.swarmforge/support/threads/SUP-2.json"
+printf '{"type":"TELEGRAM_TOPIC_MESSAGE","subject":"SUP-2"}\n' > "$F/.swarmforge/operator/events.jsonl"
+echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
+tick "$F" > /dev/null
+check "BL-466 re-home: the re-posted question keeps its agentQuestion marker and options" \
+  'grep -q "\"agentQuestion\":true" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl" && grep -q "\"options\":\[\"staging\",\"prod\"\]" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl"'
+check "BL-466 re-home: awaiting-answer.json now homes the SAME options on the new thread" \
+  '[[ "$(jget "$F/.swarmforge/operator/awaiting-answer.json" ":thread_id")" == SUP-2 ]] && [[ "$(jget_in "$F/.swarmforge/operator/awaiting-answer.json" "[:options 0]")" == staging ]]'
+rm -rf "$F"
+
+# ── 13e. Hardener hardening: a malformed --options must degrade to the
+#        ticket's own plain-message fallback (options: nil), NEVER crash the
+#        ask CLI - a crash here would silently lose the agent's question
+#        entirely, worse than the no-options case the ticket already
+#        specifies. Covers invalid JSON, valid-JSON-non-array, and a
+#        valid-JSON array of non-strings. ────────────────────────────────────
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/support/threads"
+ASK_OUT="$(bb "$F/swarmforge/scripts/operator_ask.bb" "$F" --thread SUP-1 --question "which environment?" --options 'not-json' 2>/dev/null)"
+check "hardener: invalid-JSON --options still reports asked:true (never crashes)" '[[ "$ASK_OUT" == *"\"asked\":true"* ]]'
+check "hardener: invalid-JSON --options falls back to no options (plain message)" \
+  '[[ "$(jget "$F/.swarmforge/operator/awaiting-answer.json" ":options")" == nil ]]'
+rm -rf "$F"
+
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/support/threads"
+ASK_OUT="$(bb "$F/swarmforge/scripts/operator_ask.bb" "$F" --thread SUP-1 --question "which environment?" --options '5' 2>/dev/null)"
+check "hardener: valid-JSON-but-not-an-array --options still reports asked:true (never crashes)" '[[ "$ASK_OUT" == *"\"asked\":true"* ]]'
+check "hardener: valid-JSON-but-not-an-array --options falls back to no options" \
+  '[[ "$(jget "$F/.swarmforge/operator/awaiting-answer.json" ":options")" == nil ]]'
+rm -rf "$F"
+
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/support/threads"
+ASK_OUT="$(bb "$F/swarmforge/scripts/operator_ask.bb" "$F" --thread SUP-1 --question "which environment?" --options '[1,2]' 2>/dev/null)"
+check "hardener: an options array of non-strings still reports asked:true (never crashes)" '[[ "$ASK_OUT" == *"\"asked\":true"* ]]'
+check "hardener: an options array of non-strings falls back to no options" \
+  '[[ "$(jget "$F/.swarmforge/operator/awaiting-answer.json" ":options")" == nil ]]'
 rm -rf "$F"
 
 # ── 14-20. BL-307: auto-hibernate on drain + mandatory closing pass. Every
