@@ -14,6 +14,8 @@ import { resolveIconState, ICON_EMOJI, STANDING_TOPIC_ICON, StandingTopicTarget 
 import { TopicIconAdapters, syncTopicIcon } from './topicIconSync';
 import { StalenessBucket } from './topicTitleAge';
 import { TopicTitleAdapters, syncTopicTitle } from './topicTitleSync';
+import { computePipelineBoardRows } from './pipelineBoard';
+import { PipelineBoardAdapters, PipelineBoardState, syncPipelineBoard } from './pipelineBoardSync';
 
 export interface BacklogFolderItem {
   id: string;
@@ -79,6 +81,12 @@ export interface TickState {
   // bucket announced yet for this ticket", so its very first tick always
   // counts as a transition and edits once.
   titleAgeBuckets?: Record<string, StalenessBucket>;
+  // BL-452: the pipeline board's own durable "last rendered/posted" marker -
+  // same posture as standingIconSeenIds/titleAgeBuckets above. Absent on an
+  // old/fresh TickState file, treated as "no board posted yet" (the first
+  // tick after this ships creates the standing topic and posts the first
+  // message).
+  pipelineBoard?: PipelineBoardState;
 }
 
 export interface ConciergeTickAdapters {
@@ -118,6 +126,19 @@ export interface ConciergeTickAdapters {
   // needing an update just to satisfy a capability its own ticket never
   // touches.
   titleAdapters?: TopicTitleAdapters;
+  // BL-452: each role's CURRENTLY held ticket id(s) - live-wired from the
+  // enriched PipelineStage.heldTicketIds (swarmState.ts), never from
+  // readRoleTicket above (that one derives "current holder" from
+  // completed+in_process holding WINDOWS, the hop-log-shaped mechanism this
+  // ticket's own human decision explicitly rejected as its data source).
+  // Optional (defaults to no board sync), same posture as
+  // readStandingTopics/titleAdapters above.
+  readRoleHeldTickets?: () => Record<string, string[]>;
+  // BL-452: optional (defaults to no board sync) for the same reason
+  // titleAdapters above is optional - every existing adapters fixture
+  // across this codebase's own acceptance step handlers was built before
+  // this field existed.
+  boardAdapters?: PipelineBoardAdapters;
 }
 
 export interface TickResult {
@@ -279,6 +300,28 @@ async function syncAllTitleAgeBuckets(
     }
   }
   return titleAgeBuckets;
+}
+
+// BL-452: the pipeline board's own sync - runs on EVERY tick (never gated on
+// a folder-membership transition, same posture as the title-age sync above),
+// because the change-gate that matters is the rendered TEXT, not any one
+// ticket's transition; syncPipelineBoard owns that gate. Extracted out of
+// runConciergeTick so THAT function's own branch count stays at or below the
+// CRAP threshold, the same reasoning as syncAllTitleAgeBuckets above. Absent
+// adapters (boardAdapters/readRoleHeldTickets both optional, same posture as
+// titleAdapters) leaves the prior tick's board state untouched.
+async function syncBoardIfWired(
+  folders: BacklogFoldersSnapshot,
+  prevBoard: PipelineBoardState | undefined,
+  boardAdapters: PipelineBoardAdapters | undefined,
+  readRoleHeldTickets: (() => Record<string, string[]>) | undefined
+): Promise<PipelineBoardState | undefined> {
+  if (!boardAdapters || !readRoleHeldTickets) {
+    return prevBoard;
+  }
+  const rows = computePipelineBoardRows(readRoleHeldTickets(), folders.paused);
+  const result = await syncPipelineBoard(rows, prevBoard, boardAdapters);
+  return result.state;
 }
 
 // BL-418: the standing-topic sibling of syncIconForBacklogId above. Only
@@ -685,7 +728,13 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
   // a skip/failure leaves an untouched entry rather than dropping it.
   const titleAgeBuckets = await syncAllTitleAgeBuckets(folders, adapters.routeAdapters.getTopicMap(), nowMs, state.titleAgeBuckets, adapters.titleAdapters);
 
+  // BL-452: the pipeline board's own sync - runs on EVERY tick (never
+  // gated on a folder-membership transition, same posture as the title-age
+  // sync above), because the change-gate that matters is the rendered TEXT,
+  // not any one ticket's transition; syncPipelineBoard owns that gate.
+  const pipelineBoard = await syncBoardIfWired(folders, state.pipelineBoard, adapters.boardAdapters, adapters.readRoleHeldTickets);
+
   const persistedSnapshot = withRetryableTransitionsHeldBack(curr, unrouted);
-  adapters.writeTickState({ snapshot: persistedSnapshot, emittedKeys: [...alreadyEmitted], standingIconSeenIds, titleAgeBuckets });
+  adapters.writeTickState({ snapshot: persistedSnapshot, emittedKeys: [...alreadyEmitted], standingIconSeenIds, titleAgeBuckets, pipelineBoard });
   return { routed };
 }

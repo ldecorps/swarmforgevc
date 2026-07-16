@@ -56,8 +56,8 @@ test('buildBridgeState projects pipeline stage per role from on-disk handoff inb
   const state = buildBridgeState(target, path.join(target, 'runs.jsonl'));
 
   assert.deepEqual(state.pipeline, [
-    { role: 'coder', displayName: 'Coder', status: 'active' },
-    { role: 'cleaner', displayName: 'Cleaner', status: 'idle' },
+    { role: 'coder', displayName: 'Coder', status: 'active', heldTicketIds: [] },
+    { role: 'cleaner', displayName: 'Cleaner', status: 'idle', heldTicketIds: [] },
   ]);
 });
 

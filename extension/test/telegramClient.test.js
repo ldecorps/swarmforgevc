@@ -10,6 +10,7 @@ const {
   editForumTopicWithRateLimitRetry,
   getForumTopicIconStickers,
   answerCallbackQuery,
+  editMessageText,
 } = require('../out/notify/telegramClient');
 
 const TOKEN = '123456:test-bot-token';
@@ -526,5 +527,80 @@ test('BL-342: getForumTopicIconStickers reports failure on a non-2xx response wi
 
   assert.equal(result.success, false);
   assert.deepEqual(result.stickers, []);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+// ── BL-452: parse_mode + editMessageText (the pipeline board's own edit-in-
+// place mechanism - the first feature in this codebase to edit a MESSAGE's
+// text by message_id, rather than a forum topic's name/icon) ────────────
+
+test('sendTelegramMessage includes parse_mode when given (the pipeline board posts as HTML)', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 48 } } };
+  };
+
+  await sendTelegramMessage(TOKEN, CHAT_ID, '<pre>grid</pre>', undefined, postFn, 7, undefined, 'HTML');
+
+  assert.deepEqual(JSON.parse(capturedBody), {
+    chat_id: CHAT_ID,
+    text: '<pre>grid</pre>',
+    message_thread_id: 7,
+    parse_mode: 'HTML',
+  });
+});
+
+test('sendTelegramMessage omits parse_mode entirely when not given (existing callers unaffected)', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 49 } } };
+  };
+
+  await sendTelegramMessage(TOKEN, CHAT_ID, 'plain', undefined, postFn);
+
+  assert.equal(Object.prototype.hasOwnProperty.call(JSON.parse(capturedBody), 'parse_mode'), false);
+});
+
+test('editMessageText posts message_id + text to the Telegram API and reports success', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 42 } } };
+  };
+
+  const result = await editMessageText(TOKEN, CHAT_ID, 42, '<pre>grid v2</pre>', 'HTML', postFn);
+
+  assert.deepEqual(result, { success: true });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/editMessageText`);
+  assert.deepEqual(JSON.parse(calls[0].body), {
+    chat_id: CHAT_ID,
+    message_id: 42,
+    text: '<pre>grid v2</pre>',
+    parse_mode: 'HTML',
+  });
+});
+
+test('editMessageText omits parse_mode entirely when not given', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 42 } } };
+  };
+
+  await editMessageText(TOKEN, CHAT_ID, 42, 'plain text', undefined, postFn);
+
+  assert.equal(Object.prototype.hasOwnProperty.call(JSON.parse(capturedBody), 'parse_mode'), false);
+});
+
+test('editMessageText reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'message to edit not found' } });
+
+  const result = await editMessageText(TOKEN, CHAT_ID, 42, 'text', undefined, postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /message to edit not found/);
   assert.doesNotMatch(result.error, new RegExp(TOKEN));
 });
