@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-16T12:23:53.922376324Z","feature_name":"A live pipeline-board grid in a dedicated Telegram topic shows where each ticket is","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-452-pipeline-board-telegram-topic.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: A live pipeline-board grid in a dedicated Telegram topic shows where each ticket is
 
   # BL-452 (feature, human/Operator directive relayed 2026-07-16, PRIORITY - jumps the queue on
@@ -48,6 +52,20 @@ Feature: A live pipeline-board grid in a dedicated Telegram topic shows where ea
     And each ticket's row has a single mark in the column for its current stage
     And a role holding no ticket shows no mark in that ticket's row
 
+  # Hardener (BL-234 equivalent-mutant note): a soft Gherkin mutation pass over this
+  # outline's <id> examples mangles one character of each value (BL-387 -> BLx387,
+  # BL-413 -> Bl-413, BL-436 -> BL-43x, BL-449 -> BL-4x9) and every one of those 4
+  # mutants SURVIVES - by design, not a gap. The SAME <id> substitution value drives
+  # BOTH the Given step (ticket "<id>" is "<state>") and the Then step (ticket "<id>"
+  # is marked only in the "<column>" column), so the step handlers always assert a
+  # mutated id round-trips to itself - a self-consistency check that no id mutation
+  # could ever fail. renderPipelineBoard (pipelineBoard.ts) treats a ticket id as an
+  # opaque passthrough string (row.id.padEnd(idWidth)), never validated against a
+  # closed set the way <state>/<column> are (KNOWN_STATES/KNOWN_COLUMNS in
+  # bl452PipelineBoardSteps.js, which is exactly why every <state>/<column> mutant in
+  # this same outline IS killed). The id-rendering behavior itself (padding, column
+  # alignment, widening to the longest id) is already exhaustively covered by
+  # pipelineBoard.test.js. No artificial assertion was added to force these 4 to die.
   # BL-452 pipeline-board-02
   Scenario Outline: A ticket is marked in exactly the column for its current state
     Given ticket "<id>" is "<state>"
