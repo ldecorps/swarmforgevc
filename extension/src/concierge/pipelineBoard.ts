@@ -113,19 +113,27 @@ function epicSortKey(epic: string | undefined): string {
 // 'awaiting-approval'; every other paused ticket (absent, or 'approved') is
 // plain 'parked' - unchanged from BL-452's own column-assignment rule, just
 // relocated off the grid.
+// BL-464: a ticket id is kept in a Map (never a plain array push) so that a
+// SAME id observed under more than one role - the exact double-row defect a
+// mid-transition in_process scrape used to produce - collapses to exactly
+// one row, never two. ALL_SWARM_ROLES is iterated in pipeline order, so a
+// LATER occurrence (a more downstream role) overwrites an earlier one,
+// mirroring pipeline_stage_lib.bb's own reconcile-stage-map "most downstream
+// wins" rule - the same guarantee, belt-and-braces at the renderer, whatever
+// the authoritative source's own shape already structurally prevents.
 export function computePipelineBoard(
   roleHeldTickets: Record<string, string[]>,
   paused: PipelineBoardPausedItem[],
   ticketMeta: Record<string, PipelineBoardTicketMeta>
 ): PipelineBoardData {
-  const rawRows: PipelineBoardRow[] = [];
+  const rowsById = new Map<string, PipelineBoardRow>();
   for (const role of ALL_SWARM_ROLES) {
     for (const id of roleHeldTickets[role] ?? []) {
       const meta = ticketMeta[id];
-      rawRows.push({ id, column: role, epic: meta?.epic, slug: deriveTicketSlug(meta?.title) });
+      rowsById.set(id, { id, column: role, epic: meta?.epic, slug: deriveTicketSlug(meta?.title) });
     }
   }
-  const rows = [...rawRows].sort((a, b) => epicSortKey(a.epic).localeCompare(epicSortKey(b.epic)));
+  const rows = [...rowsById.values()].sort((a, b) => epicSortKey(a.epic).localeCompare(epicSortKey(b.epic)));
 
   const parked = [...paused]
     .map(
