@@ -1117,6 +1117,31 @@
     (catch Exception e
       (log! "fleet-status-sweep-error" (.getMessage e)))))
 
+;; BL-440: shells to the compiled drain-answer-files.js CLI (Babashka has no
+;; way to import compiled TS) - reuses drainAnswerFiles unchanged, the exact
+;; gate+route+archive orchestration drainAnswerFilesCli.test.js already
+;; proves. This is the runtime-wiring slice the architect bounced back for:
+;; a grep of the whole tree found nothing calling drainAnswerFiles but its
+;; own CLI entry point and its own tests, so a human's committed
+;; ANSWER-*.md never got drained unless someone ran the CLI by hand - the
+;; same "pure module, zero production callers, dark feature" gap the
+;; epic-runtime-wiring-slice rule in the engineering article exists to
+;; close. Shares the chase-sweep cadence (no separate timeout), same
+;; rationale as every other *-sweep! sharing it above. The CLI already
+;; commits both of its own side effects (the BL-topic record append and the
+;; archive move), so there is nothing left for this sweep to commit - it
+;; only needs to fire the CLI and surface its result. Any failure (CLI not
+;; yet compiled, etc.) degrades to a logged error - never crashes the sweep.
+(defn answer-file-drain-sweep! []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "drain-answer-files.js"))
+          {:keys [exit out err]} (process/sh ["node" cli-path (str project-root)] {:dir (str project-root)})]
+      (if (zero? exit)
+        (log! "answer-file-drain" (str/trim out))
+        (log! "answer-file-drain-sweep-error" (str "exit=" exit " " (str/trim (or err ""))))))
+    (catch Exception e
+      (log! "answer-file-drain-sweep-error" (.getMessage e)))))
+
 ;; BL-258: headless, host-independent morning trigger for briefing
 ;; GENERATION (complements briefing-email-sweep! above, which only handles
 ;; the SEND of an already-committed file). Reads the configured morning
@@ -1482,7 +1507,15 @@
                     (try
                       (fleet-status-sweep!)
                       (catch Exception e
-                        (log! "fleet-status-sweep-error" (.getMessage e)))))
+                        (log! "fleet-status-sweep-error" (.getMessage e))))
+                    ;; BL-440: answer-file-drain sweep shares the same
+                    ;; cadence - no separate timeout, same rationale as
+                    ;; BL-222/BL-214/BL-258/BL-309/BL-316/BL-339/BL-353/
+                    ;; BL-350/BL-356/BL-437 above.
+                    (try
+                      (answer-file-drain-sweep!)
+                      (catch Exception e
+                        (log! "answer-file-drain-sweep-error" (.getMessage e)))))
                   (spit (str heartbeat-file) (str (now) "\n"))
                   (when (zero? (mod cycle heartbeat-log-every-cycles))
                     (log! "heartbeat" (str "cycle=" cycle)))
