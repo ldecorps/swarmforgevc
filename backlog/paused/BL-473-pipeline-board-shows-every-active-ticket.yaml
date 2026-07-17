@@ -4,7 +4,7 @@ milestone: M8
 type: bug
 severity: medium
 epic: ""
-priority: 2
+priority: 1
 direction: human-requested
 depends_on: []
 source: "human (ldecorps) directly 2026-07-16: 'pipeline board — show as active the BL ticket physically sitting in the active backlog folder. that's easy to do. if their position in the swarm is not known, it's a bug to fix. but at a minimum, the pipeline board should be as good as the PWA for displaying active tickets.' Residual gap after BL-464; pipeline-board cluster (BL-462/464/465/467/468/471)."
