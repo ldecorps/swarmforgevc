@@ -42,6 +42,15 @@ test('findFileCollision: one shared path is enough, not a majority/fuzzy match',
   assert.equal(findFileCollision(['x.ts', 'y.ts', 'shared.ts'], inFlight), 'BL-100');
 });
 
+test('findFileCollision: with 2+ in-flight candidates, a non-colliding first candidate does not short-circuit the search for a colliding second one', () => {
+  const inFlight = [
+    { id: 'BL-100', paths: ['a.ts', 'b.ts'] },
+    { id: 'BL-200', paths: ['extension/src/panel/backlogWriter.ts'] },
+  ];
+  const collision = findFileCollision(['extension/src/panel/backlogWriter.ts'], inFlight);
+  assert.equal(collision, 'BL-200');
+});
+
 test('unsafeDispatchToastText: names the colliding in-flight ticket id', () => {
   assert.match(unsafeDispatchToastText('BL-100'), /BL-100/);
   assert.match(unsafeDispatchToastText('BL-100'), /unsafe/i);
