@@ -10,6 +10,7 @@ const {
   deriveTicketSlug,
   deriveKebabSlug,
   deriveListEntryText,
+  deriveDisplayTicketId,
   PIPELINE_BOARD_COLUMN_ORDER,
   PIPELINE_BOARD_SLUG_MAX_LENGTH,
   PIPELINE_BOARD_RECENTLY_CLOSED_MAX,
@@ -184,7 +185,7 @@ test('computePipelineBoard: every activeIds entry is a row exactly once, even wi
 
 test('computePipelineBoard: a not-started row carries its ticket meta (epic/slug) same as a held row would', () => {
   const { rows } = computePipelineBoard({}, [], { 'BL-1': { epic: 'Alpha', title: 'fix the widget' } }, { activeIds: ['BL-1'] });
-  assert.deepEqual(rows, [{ id: 'BL-1', column: PIPELINE_BOARD_NOT_STARTED_COLUMN, epic: 'Alpha', slug: 'fix-the-widget' }]);
+  assert.deepEqual(rows, [{ id: 'BL-1', column: PIPELINE_BOARD_NOT_STARTED_COLUMN, epic: 'Alpha', slug: 'fix-the' }]);
 });
 
 test('renderPipelineBoardBody: a not-started row marks only the not-started column, no pipeline role column', () => {
@@ -239,19 +240,19 @@ test('deriveTicketSlug: a title longer than the previous slug limit but within t
 
 test('computePipelineBoard: a role-held ticket with a title gets its derived (grid) kebab slug', () => {
   const { rows } = computePipelineBoard({ coder: ['BL-1'] }, [], { 'BL-1': { title: 'fix the widget' } });
-  assert.equal(rows[0].slug, 'fix-the-widget');
+  assert.equal(rows[0].slug, 'fix-the');
 });
 
-test('computePipelineBoard: a paused ticket with a title gets its derived (list) kebab-slug-plus-wider-title', () => {
+test('computePipelineBoard: a paused ticket with a title gets its derived (list) kebab-only slug', () => {
   const { parked } = computePipelineBoard({}, [{ id: 'BL-2' }], { 'BL-2': { title: 'clean up docs' } });
-  assert.equal(parked[0].slug, 'clean-up-docs clean up docs');
+  assert.equal(parked[0].slug, 'clean-up');
 });
 
 // BL-452/BL-455 pipeline-board-01: the header names every pipeline role
 // column (parked/awaiting-approval are no longer grid columns); each data
 // row marks exactly one role column, every other role column stays blank.
 
-test('renderPipelineBoardBody: header lists every pipeline role column, plus TICKET and SLUG', () => {
+test('renderPipelineBoardBody: header lists every pipeline role column, plus ID and SLUG', () => {
   const header = renderPipelineBoardBody({ rows: [], parked: [] });
   for (const column of PIPELINE_BOARD_COLUMN_ORDER) {
     assert.ok(header.length > 0, `expected the header to render for role ${column}`);
@@ -274,7 +275,7 @@ test('renderPipelineBoardBody: a row is marked only in its own column', () => {
   assert.equal(lines.length, 3);
   const header = lines[0].trim().split(/\s+/);
   const row = lines[2].trim().split(/\s+/);
-  const headerRoleCols = header.slice(2); // drop TICKET, SLUG
+  const headerRoleCols = header.slice(2); // drop ID, SLUG
   const rowRoleCols = row.slice(2); // drop id, slug
   assert.equal(rowRoleCols.length, headerRoleCols.length);
   const coderIndex = headerRoleCols.indexOf('CO');
@@ -292,11 +293,12 @@ test('renderPipelineBoardBody: two tickets in different columns each mark only t
     parked: [],
   });
   const lines = text.split('\n');
-  assert.ok(lines.some((l) => l.startsWith('BL-387')));
-  assert.ok(lines.some((l) => l.startsWith('BL-413')));
+  // BL-505: the grid TICKET column shows the ticket NUMBER only.
+  assert.ok(lines.some((l) => l.startsWith('387')));
+  assert.ok(lines.some((l) => l.startsWith('413')));
 });
 
-test('renderPipelineBoardBody: ticket-id column widens to fit the longest id without breaking alignment', () => {
+test('renderPipelineBoardBody: ticket-id column widens to fit the longest DISPLAYED id without breaking alignment', () => {
   const text = renderPipelineBoardBody({
     rows: [
       { id: 'BL-9', column: 'coder', slug: '' },
@@ -304,8 +306,11 @@ test('renderPipelineBoardBody: ticket-id column widens to fit the longest id wit
     ],
     parked: [],
   });
-  const idWidth = 'BL-123456'.length;
-  const dataLines = text.split('\n').filter((l) => l.startsWith('BL-'));
+  // BL-505: the column width is driven by the NUMBER-only display ids
+  // ("9", "123456"), not the raw "BL-"-prefixed ids.
+  const idWidth = '123456'.length;
+  const dataLines = text.split('\n').filter((l) => /^\d/.test(l));
+  assert.equal(dataLines.length, 2);
   for (const line of dataLines) {
     assert.equal(line[idWidth], ' ', `expected a column boundary at ${idWidth} in "${line}"`);
   }
@@ -330,8 +335,9 @@ test('renderPipelineBoardBody: rows sharing an epic render under one heading', (
   const lines = text.split('\n');
   assert.equal(lines.filter((l) => l.includes('Alpha')).length, 1, 'expected exactly one Alpha heading');
   const headingIndex = lines.findIndex((l) => l.includes('Alpha'));
-  assert.ok(lines[headingIndex + 1].startsWith('BL-1'));
-  assert.ok(lines[headingIndex + 2].startsWith('BL-2'));
+  // BL-505: the grid TICKET column shows the ticket NUMBER only.
+  assert.ok(lines[headingIndex + 1].startsWith('1'));
+  assert.ok(lines[headingIndex + 2].startsWith('2'));
 });
 
 test('renderPipelineBoardBody: a no-epic row renders under its own heading, distinct from a named epic', () => {
@@ -346,7 +352,8 @@ test('renderPipelineBoardBody: a no-epic row renders under its own heading, dist
   const alphaIndex = lines.findIndex((l) => l.includes('Alpha'));
   const noEpicIndex = lines.findIndex((l) => l.startsWith('--') && !l.includes('Alpha'));
   assert.ok(alphaIndex >= 0 && noEpicIndex > alphaIndex);
-  assert.ok(lines[noEpicIndex + 1].startsWith('BL-2'));
+  // BL-505: the grid TICKET column shows the ticket NUMBER only.
+  assert.ok(lines[noEpicIndex + 1].startsWith('2'));
 });
 
 // BL-455 pipeline-board-epic-02/03: parked/awaiting-approval tickets render
@@ -367,8 +374,9 @@ test('renderPipelineBoardBody: parked entries render below the grid, not as grid
   assert.ok(parkedHeaderIndex > 0);
   const gridLines = lines.slice(0, parkedHeaderIndex);
   const belowLines = lines.slice(parkedHeaderIndex);
-  assert.ok(!gridLines.some((l) => l.trim().split(/\s+/)[0] === 'BL-436'), 'expected BL-436 to be absent from the grid');
-  assert.ok(belowLines.some((l) => l.includes('BL-436') && l.includes('stalled work')));
+  // BL-505: below-grid list lines show the ticket NUMBER only.
+  assert.ok(!gridLines.some((l) => l.trim().split(/\s+/)[0] === '436'), 'expected 436 to be absent from the grid');
+  assert.ok(belowLines.some((l) => l.includes('436') && l.includes('stalled work')));
 });
 
 test('renderPipelineBoardBody: an awaiting-approval entry is distinguishable from a plain parked one below the grid', () => {
@@ -380,8 +388,9 @@ test('renderPipelineBoardBody: an awaiting-approval entry is distinguishable fro
     ],
   });
   const lines = text.split('\n');
-  const parkedLine = lines.find((l) => l.includes('BL-436'));
-  const awaitingLine = lines.find((l) => l.includes('BL-449'));
+  // BL-505: below-grid list lines show the ticket NUMBER only.
+  const parkedLine = lines.find((l) => l.includes('436'));
+  const awaitingLine = lines.find((l) => l.includes('449'));
   assert.notEqual(parkedLine.trim().split(/\s+/)[0], awaitingLine.trim().split(/\s+/)[0]);
 });
 
@@ -443,15 +452,19 @@ test('renderPipelineBoard: two different lastChangeMs values a minute apart prod
 
 // ── BL-465: deriveKebabSlug / deriveListEntryText (pure) ──────────────────
 
-test('deriveKebabSlug: takes the first 3 significant words, lowercased and hyphenated', () => {
-  assert.equal(deriveKebabSlug('Pipeline Board: Post The New Message'), 'pipeline-board-post');
+test('deriveKebabSlug: takes the first 2 significant words, lowercased and hyphenated', () => {
+  assert.equal(deriveKebabSlug('Pipeline Board: Post The New Message'), 'pipeline-board');
 });
 
 test('deriveKebabSlug: strips punctuation rather than treating it as a word boundary only', () => {
-  assert.equal(deriveKebabSlug("BL-467: Pipeline board's own pin"), 'bl-467-pipeline');
+  assert.equal(deriveKebabSlug("BL-467: Pipeline board's own pin"), 'bl-467');
 });
 
-test('deriveKebabSlug: a short title (fewer than 3 words) uses every word it has', () => {
+test('deriveKebabSlug: a short title (fewer than 2 words) uses every word it has', () => {
+  assert.equal(deriveKebabSlug('fix'), 'fix');
+});
+
+test('deriveKebabSlug: a title with exactly maxWords words uses every word it has', () => {
   assert.equal(deriveKebabSlug('fix widget'), 'fix-widget');
 });
 
@@ -460,15 +473,103 @@ test('deriveKebabSlug: no title is an empty slug', () => {
 });
 
 test('deriveKebabSlug: a custom maxWords bound is honoured', () => {
-  assert.equal(deriveKebabSlug('one two three four five', 2), 'one-two');
+  assert.equal(deriveKebabSlug('one two three four five', 3), 'one-two-three');
 });
 
-test('deriveListEntryText: leads with the kebab slug then the wider truncated title', () => {
-  assert.equal(deriveListEntryText('clean up docs'), 'clean-up-docs clean up docs');
+test('deriveListEntryText: is the short kebab slug only, no wider title tail', () => {
+  assert.equal(deriveListEntryText('clean up docs'), 'clean-up');
 });
 
 test('deriveListEntryText: no title is an empty string (never throws)', () => {
   assert.equal(deriveListEntryText(undefined), '');
+});
+
+// ── BL-505: deriveDisplayTicketId / narrower grid+list rendering / NS-first ──
+// BL-505 pipeline-board-narrower-grid-and-lists-01/03/04/05/06
+
+test('deriveDisplayTicketId: strips a recognised BL- prefix, leaving the number only', () => {
+  assert.equal(deriveDisplayTicketId('BL-493'), '493');
+});
+
+test('deriveDisplayTicketId: strips a recognised GH- prefix, leaving the number only', () => {
+  assert.equal(deriveDisplayTicketId('GH-42'), '42');
+});
+
+test('deriveDisplayTicketId: an id with no recognised ticket prefix is left unchanged', () => {
+  assert.equal(deriveDisplayTicketId('INTAKE-pipeline-board-grid'), 'INTAKE-pipeline-board-grid');
+});
+
+test('renderPipelineBoardBody: the grid ticket column shows the ticket number without its BL-/GH- prefix', () => {
+  const text = renderPipelineBoardBody({
+    rows: [
+      { id: 'BL-493', column: 'coder', slug: '' },
+      { id: 'GH-42', column: 'QA', slug: '' },
+    ],
+    parked: [],
+  });
+  const lines = text.split('\n');
+  assert.ok(lines.some((l) => l.trim().split(/\s+/)[0] === '493'));
+  assert.ok(lines.some((l) => l.trim().split(/\s+/)[0] === '42'));
+});
+
+test('renderPipelineBoardBody: the ticket column is no wider than the ticket numbers it contains', () => {
+  const text = renderPipelineBoardBody({
+    rows: [
+      { id: 'BL-493', column: 'coder', slug: '' },
+      { id: 'BL-504', column: 'QA', slug: '' },
+    ],
+    parked: [],
+  });
+  const dataLines = text.split('\n').filter((l) => /^\d/.test(l));
+  assert.equal(dataLines.length, 2);
+  for (const line of dataLines) {
+    assert.equal(line[3], ' ', `expected a 3-char-wide ticket column boundary in "${line}"`);
+  }
+});
+
+test('renderPipelineBoardBody: a below-grid list line shows the short kebab slug only and a number-only id', () => {
+  const text = renderPipelineBoardBody({
+    rows: [],
+    parked: [{ id: 'BL-472', slug: deriveListEntryText('Pipeline board shows a lot more of the title now'), status: 'parked' }],
+  });
+  const lines = text.split('\n');
+  const entryLine = lines.find((l) => l.trim().split(/\s+/)[0] === '472');
+  assert.ok(entryLine, `expected a "472" parked entry, got:\n${text}`);
+  assert.equal(entryLine.trim(), '472 pipeline-board', 'expected the kebab slug only, no further title words');
+});
+
+test('renderPipelineBoardBody: a root-intake list entry keeps its non-ticket id unchanged', () => {
+  const text = renderPipelineBoardBody({
+    rows: [],
+    parked: [],
+    rootIntake: [{ id: 'INTAKE-pipeline-board-grid', slug: deriveListEntryText('grid too wide') }],
+    recentlyClosed: [],
+    links: [],
+  });
+  const lines = text.split('\n');
+  assert.ok(lines.some((l) => l.trim().split(/\s+/)[0] === 'INTAKE-pipeline-board-grid'));
+});
+
+test('PIPELINE_BOARD_COLUMN_ORDER: the not-started column leads the stage columns instead of trailing them', () => {
+  assert.equal(PIPELINE_BOARD_COLUMN_ORDER[0], PIPELINE_BOARD_NOT_STARTED_COLUMN);
+  assert.ok(PIPELINE_BOARD_COLUMN_ORDER.indexOf('coder') > 0, 'expected every pipeline role column after the not-started column');
+});
+
+test('renderPipelineBoardBody: the not-started ticket mark falls in the first stage column, before specifier', () => {
+  // A non-empty slug ('x') guarantees the slug cell survives whitespace-split
+  // parsing below as its own token - an empty slug collapses into the
+  // surrounding padding and would silently misalign the column index check.
+  const text = renderPipelineBoardBody({
+    rows: [{ id: 'BL-503', column: PIPELINE_BOARD_NOT_STARTED_COLUMN, slug: 'x' }],
+    parked: [],
+  });
+  const lines = text.split('\n');
+  const header = lines[0].trim().split(/\s+/);
+  const row = lines.find((l) => l.trim().split(/\s+/)[0] === '503').trim().split(/\s+/);
+  const nsIndex = header.indexOf('NS');
+  const spIndex = header.indexOf('SP');
+  assert.ok(nsIndex >= 0 && spIndex >= 0 && nsIndex < spIndex, `expected NS before SP in the header, got: ${header.join(' ')}`);
+  assert.equal(row[nsIndex], 'X', `expected the not-started ticket marked in the NS column, got: ${row.join(' ')}`);
 });
 
 // ── BL-465: computePipelineBoard's new rootIntake/recentlyClosed/links ───
@@ -616,8 +717,10 @@ test('renderPipelineBoardBody: root-intake and recently-closed entries render un
   const lines = text.split('\n');
   const rootIntakeHeaderIndex = lines.findIndex((l) => l.trim() === 'ROOT INTAKE:');
   const closedHeaderIndex = lines.findIndex((l) => l.trim() === 'RECENTLY CLOSED:');
+  // BL-505: a non-ticket root-intake id renders unchanged; a real ticket id
+  // (BL-9) renders number-only ("9").
   assert.ok(rootIntakeHeaderIndex > 0 && lines[rootIntakeHeaderIndex + 1].includes('INTAKE-1'));
-  assert.ok(closedHeaderIndex > 0 && lines[closedHeaderIndex + 1].includes('BL-9'));
+  assert.ok(closedHeaderIndex > 0 && lines[closedHeaderIndex + 1].trim().startsWith('9 '));
 });
 
 test('renderPipelineBoardBody: awaiting-approval renders under its own section, distinct from PARKED - no per-line label', () => {
@@ -635,8 +738,9 @@ test('renderPipelineBoardBody: awaiting-approval renders under its own section, 
   const parkedIndex = lines.findIndex((l) => l.trim() === 'PARKED:');
   const awaitingIndex = lines.findIndex((l) => l.trim() === 'AWAITING APPROVAL:');
   assert.ok(parkedIndex > 0 && awaitingIndex > 0 && parkedIndex !== awaitingIndex);
-  assert.ok(lines[parkedIndex + 1].includes('BL-436') && !lines[parkedIndex + 1].trim().startsWith('PK'));
-  assert.ok(lines[awaitingIndex + 1].includes('BL-449') && !lines[awaitingIndex + 1].trim().startsWith('AA'));
+  // BL-505: below-grid list lines show the ticket NUMBER only.
+  assert.ok(lines[parkedIndex + 1].includes('436') && !lines[parkedIndex + 1].trim().startsWith('PK'));
+  assert.ok(lines[awaitingIndex + 1].includes('449') && !lines[awaitingIndex + 1].trim().startsWith('AA'));
 });
 
 test('renderPipelineBoardBody: a fixture missing the new sections entirely (pre-BL-465 shape) still renders - defaults to empty', () => {
