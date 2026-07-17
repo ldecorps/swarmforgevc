@@ -1,0 +1,1 @@
+{"id":"BL-300","messages":[{"seq":0,"ts":1784302241002,"author":"swarm","type":"outbound","text":"BL-300 ✅ done — Concierge slice 5 (RUNTIME WIRING) — an outbound tick in the front-desk bot derives TaskStarted/TaskCompleted from the live backlog and routes each via routeEvent, WRITING backlog-topic-map.json (the missing writer); durable, restart-safe dedup"}]}
