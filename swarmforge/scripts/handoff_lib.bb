@@ -290,6 +290,18 @@
   (boolean (or (contains? (set completed-basenames) basename)
                (contains? (set abandoned-basenames) basename))))
 
+;; BL-499 (cleaner, DRY): the `(map fs/file-name (handoff-files dir))` step
+;; every already-terminal? caller repeats to turn a completed/ or
+;; abandoned/ directory into a comparable basename set - lifted out of
+;; ready_for_next_task.bb/ready_for_next_batch.bb's own dequeue-time dedup
+;; (BL-218) and chase_sweep_lib.bb's sweep-time reap (BL-499) into ONE
+;; shared reader so a future caller of already-terminal?/dedup-new-
+;; candidates never re-derives it a fourth way. A non-existent directory (a
+;; role whose completed/abandoned has never been created yet) already
+;; degrades to [] via handoff-files.
+(defn terminal-basenames [dir]
+  (set (map fs/file-name (handoff-files dir))))
+
 (defn dedup-new-candidates
   "Splits new-dir candidate file paths (already sorted; mine? already
    applied by the caller for task mode) into :skipped (basename already
@@ -299,8 +311,8 @@
    per candidate - O(n+m) instead of O(n*m) for n candidates and m
    completed/abandoned basenames."
   [new-files completed-basenames abandoned-basenames]
-  (let [terminal-basenames (into (set completed-basenames) abandoned-basenames)
-        terminal? (fn [f] (contains? terminal-basenames (fs/file-name f)))]
+  (let [merged-terminal-basenames (into (set completed-basenames) abandoned-basenames)
+        terminal? (fn [f] (contains? merged-terminal-basenames (fs/file-name f)))]
     {:skipped (vec (filter terminal? new-files))
      :dequeueable (vec (remove terminal? new-files))}))
 
