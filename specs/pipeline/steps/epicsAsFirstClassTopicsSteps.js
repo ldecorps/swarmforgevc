@@ -47,6 +47,30 @@ function buildAdapters(ctx) {
       closeTopic: async () => true,
       recordMessage: () => {},
       ensureOperatorTopic: async () => 700,
+      ensureApprovalsTopic: async () => 750,
+      // BL-493: the standing Backlog topic + edit-in-place post/edit pair -
+      // this feature's own scenarios assert on the SEPARATE epic-progress
+      // mechanism (postEpicUpdateIfApplicable, still sendMessage-based,
+      // unchanged), but runConciergeTick's own TaskStarted/TaskCompleted
+      // derivation now ALSO reaches the ticket's own status-line routing
+      // unconditionally.
+      ensureBacklogTopic: async () => 760,
+      postMessage: async (topicId, text) => {
+        ctx.posted = ctx.posted || [];
+        const messageId = 9000 + ctx.posted.length;
+        ctx.posted.push({ topicId, text, messageId });
+        return messageId;
+      },
+      editMessage: async (topicId, messageId, text) => {
+        ctx.edited = ctx.edited || [];
+        ctx.edited.push({ topicId, messageId, text });
+        return true;
+      },
+      getTicketMessageState: (backlogId) => (ctx.messageStates || {})[backlogId],
+      setTicketMessageState: (backlogId, state) => {
+        ctx.messageStates = ctx.messageStates || {};
+        ctx.messageStates[backlogId] = state;
+      },
     },
     iconAdapters: {
       // BL-342: a safe default for fixtures that predate topic icons and
@@ -215,9 +239,18 @@ function registerSteps(registry) {
     await runConciergeTick(buildAdapters(ctx));
   });
 
+  // BL-493: an epic-less ticket no longer gets its OWN per-ticket topic -
+  // its status message now targets the standing Backlog topic instead,
+  // edited in place to 'done' on completion. This step's own Gherkin
+  // wording ("its own topic") is now stale prose the specifier should
+  // retire/reword; the invariant it protects (an epic-less ticket's
+  // completion is still reported through the ordinary ticket mechanism,
+  // never through the epic-progress one) still holds and is what this
+  // asserts.
   registry.define(/^it is routed to its own topic as before$/, (ctx) => {
-    if (!ctx.sent.some((m) => m.text === 'BL-9 - an ordinary ticket is complete.')) {
-      throw new Error(`expected the ordinary completion summary, got ${JSON.stringify(ctx.sent)}`);
+    const edited = ctx.edited || [];
+    if (!edited.some((m) => m.topicId === 760 && m.text === 'BL-9 ✅ done — an ordinary ticket')) {
+      throw new Error(`expected the ordinary ticket-status message edited to 'done' in the standing Backlog topic, got ${JSON.stringify(edited)}`);
     }
   });
 

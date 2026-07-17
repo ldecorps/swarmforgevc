@@ -271,7 +271,8 @@ const DOMAINS = [
   require('./bl498MutationGateExcludesTscImportHelpersSteps'),
   require('./bl497PipelineBoardPostFailureRecoverySteps'),
   require('./bl489ActiveIdJoinIsCaseSymmetricSteps'),
-  require('./bl496DecidedAskCloseSurvivesRateLimitSteps')
+  require('./bl496DecidedAskCloseSurvivesRateLimitSteps'),
+  require('./bl493FoldTicketEventsIntoEpicBacklogTopicSteps')
 ];
 
 function registerSteps(registry) {
