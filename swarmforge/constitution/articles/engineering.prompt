@@ -9,9 +9,18 @@
     package.json); DRY `jscpd` (pinned in package.json); CRAP computed as
     coverage x cyclomatic complexity from the coverage reporter + complexity
     scripts in `scripts/quality/`.
-  - Babashka/Clojure (swarm scripts): mutation `github.com/unclebob/clj-mutate`,
-    CRAP `github.com/unclebob/crap4clj`, DRY `github.com/unclebob/dry4clj` — each
-    at the SHA recorded in `swarmforge.lock.json`.
+  - Babashka/Clojure (swarm scripts): mutation/CRAP/DRY tooling is NOT currently
+    wired. The Babashka tools this table used to name (`clj-mutate`, `crap4clj`,
+    `dry4clj`) are not pinned in `swarmforge.lock.json`, not installed by any
+    script, and invoked nowhere — so a `.bb` hardening pass has no real
+    mutation/CRAP/DRY gate and silently runs the degraded unit-test-gap fallback.
+    Today `.bb` swarm scripts are covered by their own unit-test suite
+    (`swarmforge/scripts/test/`) ONLY; treat that as the actual gate for swarm
+    scripts, not a toolchain that does not exist. Pinning + installing + wiring
+    these three tools into the hardener's `.bb` pass is a tracked future item
+    (BL-472), deliberately deferred — not an active gate. (BL-433 hardening
+    surfaced this; the tool table previously implied real `.bb` coverage that
+    never existed.)
 - APS tools (`gherkin-parser`, `gherkin-mutator`, IR-DRY checker) come from
   `github.com/unclebob/Acceptance-Pipeline-Specification` pinned at
   `accaa33d503340c56513ef387258f8da929ba902`. Prefer the Babashka APS tools;

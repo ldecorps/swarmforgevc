@@ -1,0 +1,82 @@
+id: BL-475
+title: "Retire the BL-462 grid-slug scenario(s) superseded by BL-465 (grid now shows a short kebab slug, not a truncated title) + remove the dead step handler"
+milestone: M8
+type: chore
+severity: low
+epic: ""
+priority: 6
+direction: swarm-proposed
+depends_on: [BL-465]
+source: "coder note to the specifier 2026-07-17 ('BL-465 supersedes 1 BL-462 scenario', evidence backlog/evidence/bl465-bl462-grid-slug-scenario-superseded-20260717.md on the coder branch, commit dad5e11b). Mirrors the BL-452-vs-BL-462 precedent (BL-470): a later human-approved refinement supersedes an earlier ticket's own scenario; the specifier retires the stale scenario + its step handler as a dedicated follow-up."
+
+description: |
+  Pure test-contract cleanup, NO production-source change. BL-465 (pipeline board render round 2 — active
+  on the coder branch, pending review) changes the stage GRID's slug column to a short 2-3 word KEBAB
+  slug derived from the ticket's filename, and MOVES the wider truncated-title behaviour to the below-grid
+  lists (now covered by BL-465's own board-round2-01b scenario). That supersedes the premise of BL-462's
+  grid-slug scenarios in specs/features/BL-462-pipeline-board-wider-slug-updated-at-repost.feature, whose
+  step handlers assert the RENDERED grid row contains deriveTicketSlug(title) — a title-derived slug the
+  grid no longer shows.
+
+  CONFIRMED-STALE scenario (the coder ran the suite against BL-465's code — refine-02 fails, 7/8 others
+  pass):
+    - # BL-462 pipeline-board-refine-02  "A title longer than the wider limit is truncated to one line"
+      Its premise (the GRID's slug column shows a wide TRUNCATED TITLE) no longer holds — the grid shows
+      the short kebab slug; the truncated-title behaviour it asserted moved to the below-grid lists
+      (BL-465 board-round2-01b). Retire it.
+
+  BUILD-TIME RE-CHECK (do not guess — verify against LANDED BL-465, which is not on main at spec time):
+    - # BL-462 pipeline-board-refine-01  "A longer title fills the wider slug on the same row"
+      Structurally identical (its handler also asserts the rendered grid row contains
+      deriveTicketSlug(title)); the coder observed it still passing, likely because its short,
+      within-limit title incidentally matches BL-465's kebab derivation. Run the BL-462 acceptance suite
+      against the landed BL-465 board: if refine-01 also fails (its title-in-grid premise is gone), retire
+      it too; if it genuinely still passes, leave it and say so in a comment. Retire exactly the
+      scenario(s) that go stale — no more, no less.
+
+  Scope (grep-confirm at build; BL-462 feature file + its steps ONLY — do NOT touch pipelineBoard.ts,
+  pipelineBoardSync.ts, conciergeTick.ts, or any production source):
+    - specs/features/BL-462-pipeline-board-wider-slug-updated-at-repost.feature: remove the retired
+      scenario(s) (refine-02, and refine-01 iff it also fails against landed BL-465). Do NOT reword them
+      to match BL-465's contract — BL-465 already owns the new grid-slug + below-grid-title behaviour
+      (board-round2-01/01b); a reworded duplicate would double-specify it (superseded-scenario rule:
+      retire, don't reword).
+    - specs/pipeline/steps/bl462PipelineBoardRefinementsSteps.js: remove the now-unused step handlers for
+      each retired scenario (refine-02: "an active ticket whose title is longer than the wider slug
+      limit" + "the ticket's row shows a truncated single-line slug no wider than the board"; refine-01's
+      pair likewise IF refine-01 is retired). Drop any import/fixture left unreferenced once they are gone
+      (grep-confirm; keep everything the surviving scenarios still use).
+
+  Constraints:
+    - No new scenarios, no new feature file. The BL-462 acceptance run must stay green after retirement
+      (no "scenario lacking a step handler" throw — BL-233), and the extension unit suite must stay green.
+    - Do NOT hand-edit any mutation/acceptance-mutation manifest — the hardener's normal pass regenerates
+      a stamp if needed.
+
+  Sequencing: MUST land together with or immediately AFTER BL-465 so there is never a window on main with
+  a failing BL-462 scenario (BL-465's grid change is what makes it stale; retiring it before BL-465 lands
+  would drop a still-valid test of current main behaviour). Touches the BL-462 feature file / its steps —
+  serialize against any in-flight ticket touching them; do NOT run concurrently with BL-465 itself.
+
+  E2E QA PROCEDURE: after BL-465 has landed, run specs/pipeline/scripts/run_acceptance.sh
+  specs/features/BL-462-pipeline-board-wider-slug-updated-at-repost.feature and confirm it passes with the
+  retired scenario(s) gone and no unhandled-scenario throw; grep bl462PipelineBoardRefinementsSteps.js and
+  confirm no handler for any retired step text (and no now-unused import/fixture) lingers; run the
+  extension unit suite and confirm it stays green.
+
+acceptance:
+  feature: specs/features/BL-462-pipeline-board-wider-slug-updated-at-repost.feature
+  steps:
+    - "The board carries an updated-at footer showing the last content-change time"
+    - "The board reposts at the bottom and bumps its footer only when its content changes"
+    - "Rendering and syncing the board modifies no swarm state"
+
+human_approval: >
+  Swarm-proposed test-contract cleanup, not a human-requested feature — no human sign-off required to
+  promote. It retires the BL-462 grid-slug scenario(s) that BL-465's human-approved grid=kebab-slug
+  change supersedes, and removes the dead step handler, mirroring the BL-452/BL-470 precedent (retire,
+  don't reword). refine-02 is confirmed stale by the coder's own suite run against BL-465; refine-01 is a
+  build-time re-check against the landed board. depends_on BL-465 — promote only once BL-465 has landed on
+  main, and land this together with / immediately after it so main never carries a failing scenario.
+
+mutation_cost: low

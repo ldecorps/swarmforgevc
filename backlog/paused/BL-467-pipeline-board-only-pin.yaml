@@ -5,7 +5,7 @@ type: feature
 severity: low
 status: todo
 epic: ""
-priority: 3
+priority: 1
 direction: human-requested
 depends_on: []
 source: "human (ldecorps) via the Operator front desk 2026-07-16 — INTAKE-operator-question-1784236267242 (follow-up to the pinned-messages thread), plus the specifier's clarifying answer (enforcement posture, 2026-07-16). Pipeline-board cluster (BL-462/464/465)."
