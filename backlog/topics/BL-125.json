@@ -1,0 +1,1 @@
+{"id":"BL-125","messages":[{"seq":0,"ts":1784302867310,"author":"swarm","type":"outbound","text":"BL-125 ✅ done — BUG: paneTailerScrollback.test.js can run 30s+ per test and appear hung — load-sensitive, blocks hardening runs"}]}
