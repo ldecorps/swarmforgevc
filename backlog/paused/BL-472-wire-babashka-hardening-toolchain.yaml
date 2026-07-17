@@ -76,8 +76,7 @@ qa_e2e: |
   clean .bb change passes; confirm engineering.prompt no longer claims the tooling
   is unwired. Verify against the real hardening path, not a fixture.
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Not required to FILE — this is a deferred, low-priority swarm-proposed tracker
   created so engineering.prompt's honest 'not currently wired / tracked future

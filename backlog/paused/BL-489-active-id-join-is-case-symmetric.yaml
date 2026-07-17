@@ -49,7 +49,7 @@ acceptance:
   # fix — break-then-fix per engineering.prompt).
   feature: specs/features/BL-489-active-id-join-is-case-symmetric.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Clear latent tracking-defect fix mandated by BL-474; new feature file, so flagging for review. FIRM: the
   active-set id side of the filter-active join is upper-cased to match the stage-map key side, so a

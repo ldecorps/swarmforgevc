@@ -68,8 +68,7 @@ acceptance:
   # authoritative-now runtime injection is built, that half carries a real unit test.
   outcome: "swarmforge/roles/operator.prompt instructs the Operator to source 'now' only as UTC (never bare local `date`/an unconverted +01:00 author date) for all operator.log narration and every freshness/age comparison — human-approved wording; now-iso and the heartbeat write are left unchanged (verified already-correct UTC); a spot-check of consecutive operator.log narrated timestamps against real wall-clock UTC shows no ~60-minute local-offset entry; if the optional authoritative-now event-context injection is built, a unit test pins it to the runtime's correct clock."
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Renumbered from BL-480 (then BL-481, twice collided with the live specifier's own numbering) (id collision with the approvals-ask-content ticket filed the same night;
   that ticket keeps BL-480 because the Telegram ask/approval/dedup artifacts already carry that id).

@@ -48,7 +48,7 @@ acceptance:
   # NONE} per the Scenario-Outline load-bearing rule).
   feature: specs/features/BL-488-held-ticket-id-resolves-without-leading-token.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Clear latent tracking-defect fix mandated by BL-474; new feature file, so flagging for review. FIRM: the
   extractor resolves the first ticket-id-shaped token in a handoff header regardless of leading position
