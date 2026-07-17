@@ -7,7 +7,7 @@
 // RouteAdapters, which is where Telegram-specific adapters actually get
 // wired, in the live wrapper - telegram-front-desk-bot.ts).
 import { EventStreamSnapshot, GateSignal, SwarmEvent, SwarmEventType, TicketSummary, deriveSwarmEvents, swarmEventKey } from '../events/swarmEventStream';
-import { BacklogTopicMap, RouteAdapters, TopicAction, decideEpicTopicAction, routeEvent } from './topicRouter';
+import { BacklogTopicMap, RouteAdapters, TicketRouteContext, TopicAction, decideEpicTopicAction, routeEvent } from './topicRouter';
 import { EpicDefinition, computeEpicProgress, epicAnnouncementKey, epicOpeningText, epicProgressText } from './epicProgress';
 import { resolveEpicIcon, isKnownEpic } from './epicIcon';
 import { resolveIconState, ICON_EMOJI, STANDING_TOPIC_ICON, StandingTopicTarget, ROLE_TOPIC_ICON, RoleTopicTarget } from './topicIcon';
@@ -938,6 +938,36 @@ function withRetryableTransitionsHeldBack(curr: EventStreamSnapshot, unrouted: R
 // mirrors postEpicUpdateIfApplicable's own contract on the same set -
 // and returns whether the event's OWN post succeeded, for the caller's
 // routed/unrouted bookkeeping.
+// BL-493: the per-ticket context ONLY conciergeTick.ts's folder snapshot can
+// resolve - the ticket's epic membership (epicForBacklogId, same lookup
+// postEpicUpdateIfApplicable's own applicableEpicId uses) and its CURRENT
+// folder/type/humanApproval-derived lifecycle icon state (the SAME
+// resolveIconState call syncIconForBacklogId already makes, reused rather
+// than re-derived). undefined for ApprovalRequested/untagged events (routeEvent
+// never consults it on those branches) or the "should not happen within one
+// tick" case of a ticket absent from every folder (mirrors
+// syncIconForBacklogId's own folder-undefined guard).
+function ticketRouteContextFor(event: SwarmEvent, folders: BacklogFoldersSnapshot, epicDefinitions: Record<string, EpicDefinition>): TicketRouteContext | undefined {
+  // BL-493/BL-358: only a ticket lifecycle transition (TaskStarted/
+  // TaskCompleted) ever collapses into the ticket's status line -
+  // ApprovalRequested keeps its own Approvals-topic routing, and
+  // NeedsApproval (tagged or not) always goes to the standing Operator
+  // topic instead (routeGateEvent, topicRouter.ts) since it carries a
+  // free-text question, not a lifecycle state.
+  if ((event.type !== 'TaskStarted' && event.type !== 'TaskCompleted') || event.backlogId === null) {
+    return undefined;
+  }
+  const folder = folderForBacklogId(folders, event.backlogId);
+  if (folder === undefined) {
+    return undefined;
+  }
+  const type = typeForBacklogId(folders, event.backlogId);
+  const humanApproval = humanApprovalForBacklogId(folders, event.backlogId);
+  const epic = epicForBacklogId(folders, event.backlogId);
+  const epicTitle = epic ? (epicDefinitions[epic]?.title ?? epic) : undefined;
+  return { epic, epicTitle, iconState: resolveIconState(folder, type, humanApproval) };
+}
+
 async function processConciergeEvent(
   event: SwarmEvent,
   folders: BacklogFoldersSnapshot,
@@ -947,16 +977,24 @@ async function processConciergeEvent(
   epicIcons: Record<string, string>,
   alreadyEmitted: Set<string>
 ): Promise<boolean> {
+  // BL-493: runs BEFORE the ticket's own status routing below so that, for
+  // an epic-bound ticket, the epic topic's FIRST creation always goes
+  // through postEpicAction (which sets its icon on create) rather than
+  // through routeTicketStatusEvent's own ensureEpicTopicId (which
+  // deliberately never touches the icon) - see ensureEpicTopicId's own
+  // comment in topicRouter.ts for why this ordering is what makes the two
+  // mechanisms safe to share one topic without a competing icon-setter.
+  await postEpicUpdateIfApplicable(event, folders, epicDefinitions, routeAdapters, iconAdapters, epicIcons, alreadyEmitted);
   // BL-358: an untagged event has no ticket to look a title up for -
   // routeEvent never uses `title` on that branch (routeUntaggedGateEvent
   // takes no title at all), so the role name is passed through purely for
   // a harmless, honest value rather than a lookup that could never match.
   const title = event.backlogId ? titleForBacklogId(folders, event.backlogId) : (event.role ?? 'unknown');
-  const result = await routeEvent(event, title, routeAdapters);
+  const ticketContext = ticketRouteContextFor(event, folders, epicDefinitions);
+  const result = await routeEvent(event, title, routeAdapters, ticketContext);
   if (result.posted) {
     alreadyEmitted.add(swarmEventKey(event));
   }
-  await postEpicUpdateIfApplicable(event, folders, epicDefinitions, routeAdapters, iconAdapters, epicIcons, alreadyEmitted);
   return result.posted;
 }
 
