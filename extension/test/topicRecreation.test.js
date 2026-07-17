@@ -16,6 +16,12 @@ test('recreate-topic-02: the reconstruction header names the rebuild date and ex
   assert.match(text, /not the original/i);
 });
 
+test('reconstructionHeaderText names the date only, never the time-of-day', () => {
+  const text = reconstructionHeaderText(Date.parse('2026-07-14T09:00:00Z'));
+  assert.doesNotMatch(text, /09:00/);
+  assert.doesNotMatch(text, /T\d{2}:\d{2}/);
+});
+
 // ── decideTopicRestore (pure) ─────────────────────────────────────────────
 
 test('topic-recreation-epic-aware-01: a fold target still mapped (closed, never deleted) prefers the cheap, high-fidelity reopen path', () => {

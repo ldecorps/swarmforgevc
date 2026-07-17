@@ -109,6 +109,11 @@ export async function recreateBlTopic(targetPath: string, ticketId: string, nowM
   }
 
   const { epicId } = target;
+  // `?? epicId` satisfies epicTitleFor's general `string | undefined` return type (it only
+  // returns undefined for a falsy `epic` argument) - unreachable here since `target.kind ===
+  // 'epic'` guarantees epicId is a defined, non-empty string, so epicTitleFor's OWN internal
+  // `?? epic` fallback already resolves to a defined string before this one could ever apply.
+  // Kept for type-safety against epicTitleFor's broader contract, not a live branch to test.
   const epicTitle = epicTitleFor(epicId, epicDefinitionsFor(folders)) ?? epicId;
   const topicMap = readBacklogTopicMap(targetPath);
   return reopenOrRecreateFoldTopic(
