@@ -1,0 +1,94 @@
+id: BL-510
+title: "Fix two pre-existing defects in bl455PipelineBoardSteps.js so BL-455's acceptance feature passes 8/8: (1) lastRendered() must not depend on a vestigial `edited` array the shared bl452 Given no longer builds, and (2) splitBoardSections() must split the grid at the FIRST below-grid list header, not only 'PARKED:', so an awaiting-approval-only board is not misclassified as all-grid"
+milestone: M8
+type: defect
+severity: medium
+epic: ""
+priority: 9
+depends_on: []
+source: "The cleaner surfaced two PRE-EXISTING defects in specs/pipeline/steps/bl455PipelineBoardSteps.js while cleaning up BL-505 (commit f93d025288, read-only find — maintaining acceptance tests is out of the cleaner's remit), routed to the specifier via a coordinator note 2026-07-17. Confirmed byte-identical against 9058cecada^ — they predate BL-505 and are unrelated to its own change; they fail 4 of 8 scenario instances in the BL-455 feature. Specifier independently reproduced both against the current tree before speccing."
+
+notes: |
+  Two defects in the ACCEPTANCE STEP HANDLERS (specs/pipeline/steps/bl455PipelineBoardSteps.js) make the
+  already-shipped, already-approved BL-455 acceptance feature go RED — 4 of its 8 scenario instances fail.
+  The FEATURE FILE (the durable Gherkin contract) is CORRECT and UNCHANGED; only the glue that drives it is
+  broken. This is a coder fix to the step handlers, not a change to product behaviour and not a change to
+  the contract. Because the acceptance runner executes every feature, a red BL-455 can fail the full
+  acceptance run and block the hardener's Gherkin-acceptance gate for UNRELATED parcels — hence bugs-first
+  priority above the BL-505.. board-tweak cluster.
+
+  DEFECT 1 — lastRendered() assumes a `fixture.edited` array that the shared Given no longer provides.
+    - bl455's local lastRendered(fixture) (currently ~L123) reads `fixture.edited.length` UNCONDITIONALLY
+      before falling back to `fixture.posted`. bl455's OWN fixture still carries a permanently-empty
+      `edited: []` (a BL-462 vestige), but the BL-455 epic-02 Scenario Outline seeds its fixture through
+      the SHARED `ticket "<id>" is "<state>"` Given owned by bl452PipelineBoardSteps.js (~L222), and BL-470
+      removed `edited` from that file's fixture entirely when it retired the edit-in-place model. So for
+      every epic-02 example (BL-387 stage-grid, BL-436 parked, BL-449 awaiting-approval) lastRendered reads
+      `undefined.length` and throws "Cannot read properties of undefined (reading 'length')".
+    - WANTED: lastRendered must return the last rendered board text given ANY fixture the BL-455 scenarios
+      seed, including bl452's shared no-`edited` fixture. PREFERRED fix: since edit-in-place was retired
+      (BL-462/BL-470) nothing ever populates `edited`, so the `edited` branch is dead everywhere — drop it
+      and read only `fixture.posted` (and the coder/cleaner may then remove bl455's now-pointless
+      `edited: []` seed). A defensive `(fixture.edited ?? []).length` guard also satisfies the contract, but
+      leaving a live read of a field the shared fixture omits is the fragility that caused this — prefer
+      removing the dead dependency. Do NOT "fix" this by re-adding `edited` to bl452's fixture: that field
+      is intentionally gone (BL-470), and BL-455 rows must render through the post-only path.
+
+  DEFECT 2 — splitBoardSections() only recognizes the literal 'PARKED:' header.
+    - pipelineBoard.ts renders SEVERAL below-grid list sections, each under its own header
+      (PARKED_SECTION_HEADER 'PARKED:', AWAITING_APPROVAL_SECTION_HEADER 'AWAITING APPROVAL:', plus the
+      root-intake and recently-closed headers). bl455's splitBoardSections(text) (~L142) finds ONLY the
+      'PARKED:' line and treats everything above it as grid and everything below as parked. When a scenario
+      seeds an awaiting-approval ticket but NO plain-parked ticket, no 'PARKED:' line exists, so the split
+      point is not found and the WHOLE text — including the AWAITING APPROVAL section — is classified as
+      grid. The BL-455 epic-02 "BL-449 awaiting approval -> below-grid parked list" example then fails
+      (idInGrid finds it in the mis-split grid; idInParkedList finds nothing).
+    - WANTED: the grid is everything ABOVE the first below-grid list section, whichever section that is. Fix
+      splitBoardSections to locate the FIRST line matching ANY of pipelineBoard.ts's below-grid list-section
+      headers (not only 'PARKED:') and split there, so idInGrid / idInParkedList (and the awaiting-approval
+      placement assertion) evaluate against the correct halves regardless of which sections are present.
+      Keep the split robust to a board that has an awaiting-approval section but no parked one, and vice
+      versa. Source the header set from pipelineBoard.ts's exported header constants rather than re-hardcoding
+      the literals if a clean seam exists, so a future header rename cannot silently re-break this split.
+
+  CONSTRAINTS:
+    - Do NOT weaken any BL-455 assertion. The scenarios must still genuinely verify epic grouping, the
+      stage-grid vs below-grid placement, the per-ticket slug, and the read-only guarantee — the fix makes
+      the true behaviour observable again, it does not paper over a failure.
+    - Touch ONLY the acceptance glue: specs/pipeline/steps/bl455PipelineBoardSteps.js (and, if the preferred
+      defect-1 fix is taken, its now-dead `edited: []` seed). Do NOT edit the BL-455 feature file, and do NOT
+      change production pipelineBoard.ts behaviour — this ticket fixes broken test glue against an existing,
+      correct, human-approved contract.
+    - No shared-step-registry regressions: bl455's steps live in the one global step registry (engineering
+      article — a handler outlives its file). After the fix, run the FULL acceptance suite, not just
+      BL-455's feature, to confirm no other feature that reuses these step patterns regressed.
+
+  SEQUENCING (orthogonal by file): this ticket edits only bl455PipelineBoardSteps.js; the BL-505..BL-509
+  board cluster edits pipelineBoard.ts, bl452PipelineBoardSteps.js, and pipelineBoard.test.js — different
+  files, so no hard depends_on. One coupling to watch: defect 2's split mirrors pipelineBoard.ts's
+  below-grid section headers, so if a concurrent board ticket RENAMES or REORDERS those headers, land this
+  after it and match the new header set. Sourcing the header set from pipelineBoard.ts's constants (above)
+  removes that coupling.
+
+acceptance:
+  # Observable contract: the EXISTING, UNCHANGED BL-455 acceptance feature passes ALL 8 of its scenario
+  # instances (epic-01, the three epic-02 Scenario Outline examples, epic-03, epic-04, epic-05, epic-06),
+  # including "BL-449 awaiting approval -> below-grid parked list" on a board that has an awaiting-approval
+  # section but no plain-parked section. The feature file is the durable contract and is not modified by
+  # this ticket.
+  feature: specs/features/BL-455-pipeline-board-epic-grouping-parked-slug.feature
+
+# QA end-to-end procedure (verify the scenarios hold in the live swarm):
+#   1. Build the extension (npm run compile in extension/, or npm test which compiles first).
+#   2. Run the FULL acceptance suite (not just BL-455's feature) and confirm it is green — in particular that
+#      BL-455-pipeline-board-epic-grouping-parked-slug.feature passes 8/8, where before this parcel 4/8 fail.
+#   3. Targeted check for defect 1: confirm the epic-02 Scenario Outline (BL-387/BL-436/BL-449) no longer
+#      throws "Cannot read properties of undefined (reading 'length')" — i.e. lastRendered works over the
+#      shared bl452 no-`edited` fixture.
+#   4. Targeted check for defect 2: render a synthetic board whose only below-grid section is AWAITING
+#      APPROVAL (no PARKED entries) and confirm an awaiting-approval ticket is classified into the
+#      below-grid list, NOT the stage grid.
+#   5. Confirm no other feature regressed (shared step registry) and no production pipelineBoard.ts behaviour
+#      or the BL-455 feature file itself was changed by the parcel.
+
+mutation_cost: low
