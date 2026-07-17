@@ -279,7 +279,8 @@ const DOMAINS = [
   require('./bl490ExpediteApprovalButtonSteps'),
   require('./bl494CloseLegacyPerTicketTopicsSteps'),
   require('./bl495TopicRecreationEpicAwareSteps'),
-  require('./bl505PipelineBoardNarrowerGridAndListsSteps')
+  require('./bl505PipelineBoardNarrowerGridAndListsSteps'),
+  require('./bl509AmendButtonSteersTicketSteps')
 ];
 
 function registerSteps(registry) {

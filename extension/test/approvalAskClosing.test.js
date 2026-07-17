@@ -63,3 +63,20 @@ test('composeDecidedAskText: an expedited verdict appends the Expedited line bel
   const text = composeDecidedAskText(original, { kind: 'expedited' }, nowMs);
   assert.equal(text, `${original}\n-- Expedited 2026-07-17 03:07 UTC`);
 });
+
+// BL-509: an Amend reply is a decision too - unlike approve/reject/expedite
+// it is NOT terminal (the specifier flips it back to pending on re-present,
+// slice 3), but it still closes the posted ask through the SAME routine,
+// with its own "-- Amending <UTC>" line.
+
+test('decisionLineFor: an amending verdict records the Amending verb and the UTC decision time', () => {
+  const nowMs = Date.UTC(2026, 6, 17, 3, 7);
+  assert.equal(decisionLineFor({ kind: 'amending' }, nowMs), '-- Amending 2026-07-17 03:07 UTC');
+});
+
+test('composeDecidedAskText: an amending verdict appends the Amending line below the original text', () => {
+  const original = 'BL-509 needs your approval...';
+  const nowMs = Date.UTC(2026, 6, 17, 3, 7);
+  const text = composeDecidedAskText(original, { kind: 'amending' }, nowMs);
+  assert.equal(text, `${original}\n-- Amending 2026-07-17 03:07 UTC`);
+});
