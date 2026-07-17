@@ -155,7 +155,6 @@ const DOMAINS = [
   require('./routingBreakEvenSteps'),
   require('./standingRuleViolationsSteps'),
   require('./onboardingNegotiationSteps'),
-  require('./recertNotifySteps'),
   require('./standingOperatorTopicSteps'),
   require('./stuckEscalationEmailSteps'),
   require('./frontDeskSurvivesRebootSteps'),
