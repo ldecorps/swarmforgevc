@@ -21,16 +21,21 @@
 // STRUCTURAL LOCATION only - classifyMutantLocation below takes no
 // coverage/kill signal at all, so it structurally cannot classify an
 // untested real-logic mutant as boilerplate. Never broaden this beyond the
-// two named shapes.
+// named shapes below.
 export interface MutantLocationFacts {
   isRequireMainGuard: boolean;
   isEsModuleBoilerplate: boolean;
+  // BL-498: tsc's import-helper preamble (__importStar/__importDefault/
+  // __createBinding/__setModuleDefault) - the third structurally-unkillable
+  // boilerplate shape, emitted at the head of every compiled `import * as x`
+  // file (123 src files use that convention).
+  isTscImportHelper: boolean;
 }
 
 export type MutantDisposition = 'excluded' | 'kept';
 
 export function classifyMutantLocation(facts: MutantLocationFacts): MutantDisposition {
-  return facts.isRequireMainGuard || facts.isEsModuleBoilerplate ? 'excluded' : 'kept';
+  return facts.isRequireMainGuard || facts.isEsModuleBoilerplate || facts.isTscImportHelper ? 'excluded' : 'kept';
 }
 
 // ── AST-shape recognition (the thin wiring's own extraction step) ────────
@@ -122,6 +127,62 @@ export function isEsModuleBoilerplateNode(node: unknown): boolean {
   return isEsModuleCallArguments(expr.arguments);
 }
 
+// ── BL-498: tsc import-helper preamble (__importStar/__importDefault/
+// __createBinding/__setModuleDefault) ─────────────────────────────────────
+// A CLOSED, extensible set (mirroring the Stryker-sandbox SIBLING_NAMES
+// pattern) - covering a future tsc helper (e.g. __exportStar/__rest) is
+// adding its name here, never a new mechanism.
+export const TSC_IMPORT_HELPER_NAMES = ['__importStar', '__importDefault', '__createBinding', '__setModuleDefault'] as const;
+
+export function isThisMemberNamed(node: unknown, name: string): boolean {
+  return isNodeOfType(node, 'MemberExpression') && isNodeOfType(node.object, 'ThisExpression') && isIdentifierNamed(node.property, name);
+}
+
+// Matches the `this && this.<name>` guard tsc emits on the left of every
+// import-helper's `||` fallback - deliberately narrow to a `&&`
+// LogicalExpression whose left operand is a bare `this` and whose right
+// operand is `this.<name>`.
+export function isThisGuardedHelperReference(node: unknown, name: string): boolean {
+  return isNodeOfType(node, 'LogicalExpression') && node.operator === '&&' && isNodeOfType(node.left, 'ThisExpression') && isThisMemberNamed(node.right, name);
+}
+
+// Matches `(this && this.<name>) || (…)` - the right-hand `(…)` is
+// deliberately UNCHECKED: tsc emits a different helper BODY shape per name
+// (a conditional for __createBinding/__setModuleDefault, an IIFE for
+// __importStar, a plain function for __importDefault), so pinning a
+// specific body shape would be brittle across compiler versions and is not
+// needed for anti-vacuousness - the `(this && this.<name>) ||` guard prefix
+// plus the closed helper-name list already rule out a same-named ordinary
+// variable (scenario 02: no such prefix at all).
+export function isTscImportHelperInit(node: unknown, name: string): boolean {
+  return isNodeOfType(node, 'LogicalExpression') && node.operator === '||' && isThisGuardedHelperReference(node.left, name);
+}
+
+function isTscImportHelperName(name: unknown): name is (typeof TSC_IMPORT_HELPER_NAMES)[number] {
+  return typeof name === 'string' && (TSC_IMPORT_HELPER_NAMES as readonly string[]).includes(name);
+}
+
+export function isTscImportHelperDeclarator(node: unknown): boolean {
+  if (!isNodeOfType(node, 'VariableDeclarator') || !isNodeOfType(node.id, 'Identifier')) {
+    return false;
+  }
+  const name = node.id.name;
+  return isTscImportHelperName(name) && isTscImportHelperInit(node.init, name);
+}
+
+// Matches the enclosing `var __name = (this && this.__name) || (…);`
+// statement tsc emits one of, per helper, at the head of every compiled
+// `import * as x` file - flagging this Statement-level node (mirroring
+// isRequireMainGuardNode/isEsModuleBoilerplateNode's own posture) covers
+// every mutant inside its init expression in one shot.
+export function isTscImportHelperVariableDeclaration(node: unknown): boolean {
+  if (!isNodeOfType(node, 'VariableDeclaration')) {
+    return false;
+  }
+  const declarations = node.declarations;
+  return Array.isArray(declarations) && declarations.length === 1 && isTscImportHelperDeclarator(declarations[0]);
+}
+
 // ── Stryker Ignorer wiring ────────────────────────────────────────────────
 // Registered as a PluginKind.Ignore plugin (stryker-plugin.ts) alongside the
 // existing Reporter - mirrors @stryker-mutator/instrumenter's own
@@ -132,13 +193,15 @@ export function isEsModuleBoilerplateNode(node: unknown): boolean {
 // ExpressionStatement covers everything inside it (the guard's own `===`
 // comparison, the runCliMain call, the boilerplate's `true` literal) in one
 // shot, never a per-mutant special case.
-const IGNORE_REASON = 'BL-447: structurally-unkillable CLI-entrypoint guard / generated module boilerplate - never covered in-process (NoCoverage) nor killable via a subprocess smoke test (no Stryker coverage globals there)';
+const IGNORE_REASON =
+  'BL-447/BL-498: structurally-unkillable CLI-entrypoint guard / generated module boilerplate (require.main guard, __esModule flag, tsc import-helper preamble) - never covered in-process (NoCoverage) nor killable via a subprocess smoke test (no Stryker coverage globals there)';
 
 export class EntrypointBoilerplateIgnorer {
   shouldIgnore(path: { node: unknown }): string | undefined {
     const disposition = classifyMutantLocation({
       isRequireMainGuard: isRequireMainGuardNode(path.node),
       isEsModuleBoilerplate: isEsModuleBoilerplateNode(path.node),
+      isTscImportHelper: isTscImportHelperVariableDeclaration(path.node),
     });
     return disposition === 'excluded' ? IGNORE_REASON : undefined;
   }
