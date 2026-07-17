@@ -186,7 +186,6 @@ const DOMAINS = [
   require('./operatorPassesAQuestionDownSteps'),
   require('./frontDeskLivenessMeansListeningSteps'),
   require('./alwaysOnOperatorPresenceSteps'),
-  require('./topicRecreationSteps'),
   require('./aDroppedMessageMustNotParkTheOffsetSteps'),
   require('./aChurnRewriteDoesNotMintACommitSteps'),
   require('./theHumanIsNeverSentTerminalChromeSteps'),
@@ -278,7 +277,8 @@ const DOMAINS = [
   require('./bl504TsMetricsTicketIdSteps'),
   require('./bl503TicketIdExtractorHyphenOptionalSteps'),
   require('./bl490ExpediteApprovalButtonSteps'),
-  require('./bl494CloseLegacyPerTicketTopicsSteps')
+  require('./bl494CloseLegacyPerTicketTopicsSteps'),
+  require('./bl495TopicRecreationEpicAwareSteps')
 ];
 
 function registerSteps(registry) {

@@ -1,33 +1,30 @@
 const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { recreateBlTopic, main } = require('../out/tools/recreate-bl-topic');
-const { appendMessage, recordPath } = require('../out/concierge/blTopicStore');
 
-// BL-332: recreate-bl-topic.js's own main() thin wrapper, exercised
-// IN-PROCESS (the CLI main()-thin-wrapper rule: main() itself must be
-// called in-process by a test, not only spawned as a subprocess, or its
-// own argv-dispatch/error-path branches sit uncovered even though the
-// underlying recreateBlTopic is thoroughly tested). No real network call
-// ever happens here: TELEGRAM_RECREATE_FORCE_RESULT is the same
-// established E2E test seam notify-dead-letters.ts's own
+// BL-332/BL-495: recreate-bl-topic.js's own main() thin wrapper, exercised
+// IN-PROCESS (the CLI main()-thin-wrapper rule). BL-495 (topic-
+// consolidation epic): post-BL-493 there is no per-ticket topic anymore -
+// the repair path targets a ticket's FOLD target (its epic's topic, or the
+// standing Backlog topic), never resurrecting the retired per-ticket
+// model. No real network call ever happens here: TELEGRAM_RECREATE_FORCE_RESULT
+// is the same established E2E test seam notify-dead-letters.ts's own
 // TELEGRAM_NOTIFY_FORCE_RESULT already uses.
 
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'recreate-bl-topic.js');
 
 function mkFixture() {
-  const root = mkTmpDir('sfvc-bl332-');
+  const root = mkTmpDir('sfvc-bl495-');
   fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'backlog', 'topics'), { recursive: true });
   fs.mkdirSync(path.join(root, '.swarmforge', 'operator'), { recursive: true });
   return root;
 }
 
-function writeTicketYaml(root, id, title) {
-  fs.writeFileSync(path.join(root, 'backlog', 'active', `${id}-fixture.yaml`), `id: ${id}\ntitle: "${title}"\nstatus: todo\n`);
+function writeTicketYaml(root, id, title, extra = '') {
+  fs.writeFileSync(path.join(root, 'backlog', 'active', `${id}-fixture.yaml`), `id: ${id}\ntitle: "${title}"\nstatus: todo\n${extra}`);
 }
 
 function writeBacklogTopicMap(root, map) {
@@ -38,24 +35,40 @@ function readBacklogTopicMap(root) {
   return JSON.parse(fs.readFileSync(path.join(root, '.swarmforge', 'operator', 'backlog-topic-map.json'), 'utf8'));
 }
 
+function writeOperatorTopicMap(root, map) {
+  fs.writeFileSync(path.join(root, '.swarmforge', 'operator', 'telegram-topic-map.json'), JSON.stringify(map));
+}
+
+function readOperatorTopicMap(root) {
+  return JSON.parse(fs.readFileSync(path.join(root, '.swarmforge', 'operator', 'telegram-topic-map.json'), 'utf8'));
+}
+
 // An explicit ALLOWLIST of the env keys this CLI actually reads, never
 // {...process.env, ...overrides} - this box's own shell exports a REAL
 // Telegram bot token globally (a live dogfooding swarm host).
 const CLI_ENV_KEYS = ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'TELEGRAM_RECREATE_FORCE_RESULT'];
 
-// Runs the REAL main() in-process against real argv/env, so in-process
-// coverage and mutation tooling can see the branches a subprocess-only
-// smoke test cannot (mirrors notifyDeadLettersCli.test.js's own identical
-// seam). main() reads its two positional args from process.argv[2]/[3]
-// (never process.cwd()), so no cwd stub is needed here - only argv/env
-// and the stdout capture.
 async function runCli(args, overrides = {}) {
+  const { stdout } = await runCliCapturingBoth(args, overrides);
+  return stdout;
+}
+
+// BL-495 hardening: the usage-error tests need the actual stderr TEXT (not
+// just the empty stdout + exit code), or a mutated/blanked usage message
+// would still pass them - a survived mutant confirmed exactly this gap.
+async function runCliCapturingBoth(args, overrides = {}) {
   const previousArgv = process.argv;
   const previousEnv = Object.fromEntries(CLI_ENV_KEYS.map((k) => [k, process.env[k]]));
-  const writes = [];
-  const originalWrite = process.stdout.write.bind(process.stdout);
+  const stdoutWrites = [];
+  const stderrWrites = [];
+  const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+  const originalStderrWrite = process.stderr.write.bind(process.stderr);
   process.stdout.write = (chunk) => {
-    writes.push(chunk);
+    stdoutWrites.push(chunk);
+    return true;
+  };
+  process.stderr.write = (chunk) => {
+    stderrWrites.push(chunk);
     return true;
   };
   try {
@@ -66,22 +79,24 @@ async function runCli(args, overrides = {}) {
     }
     await main();
   } finally {
-    process.stdout.write = originalWrite;
+    process.stdout.write = originalStdoutWrite;
+    process.stderr.write = originalStderrWrite;
     process.argv = previousArgv;
     for (const key of CLI_ENV_KEYS) {
       if (previousEnv[key] === undefined) delete process.env[key];
       else process.env[key] = previousEnv[key];
     }
   }
-  return writes.join('');
+  return { stdout: stdoutWrites.join(''), stderr: stderrWrites.join('') };
 }
 
 test('main() prints usage and exits nonzero when the ticket id is missing', async () => {
   const originalExitCode = process.exitCode;
   process.exitCode = undefined;
   try {
-    const output = await runCli(['/some/root']); // no ticket id
-    assert.equal(output, '');
+    const { stdout, stderr } = await runCliCapturingBoth(['/some/root']); // no ticket id
+    assert.equal(stdout, '');
+    assert.match(stderr, /Usage: recreate-bl-topic\.js <project-root> <ticket-id>/);
     assert.equal(process.exitCode, 1);
   } finally {
     process.exitCode = originalExitCode;
@@ -92,18 +107,21 @@ test('main() prints usage and exits nonzero when the project root is missing', a
   const originalExitCode = process.exitCode;
   process.exitCode = undefined;
   try {
-    const output = await runCli([]); // no args at all
-    assert.equal(output, '');
+    const { stdout, stderr } = await runCliCapturingBoth([]); // no args at all
+    assert.equal(stdout, '');
+    assert.match(stderr, /Usage: recreate-bl-topic\.js <project-root> <ticket-id>/);
     assert.equal(process.exitCode, 1);
   } finally {
     process.exitCode = originalExitCode;
   }
 });
 
-test('recreate-bl-topic-01: main() reopens a still-mapped (closed, not deleted) topic, never recreates', async () => {
+// ── topic-recreation-epic-aware-01: epic-bound ticket targets its epic's topic ──
+
+test('topic-recreation-epic-aware-01: an epic-bound ticket reopens its epic topic when already mapped', async () => {
   const root = mkFixture();
-  writeTicketYaml(root, 'BL-900', 'a fine feature');
-  writeBacklogTopicMap(root, { 'BL-900': 42 });
+  writeTicketYaml(root, 'BL-900', 'a fine feature', 'epic: topic-consolidation\n');
+  writeBacklogTopicMap(root, { 'topic-consolidation': 42 });
 
   const output = await runCli([root, 'BL-900'], {
     TELEGRAM_BOT_TOKEN: 'x',
@@ -115,64 +133,48 @@ test('recreate-bl-topic-01: main() reopens a still-mapped (closed, not deleted) 
   assert.equal(result.action, 'reopen');
   assert.equal(result.success, true);
   assert.equal(result.topicId, 42);
-  assert.deepEqual(readBacklogTopicMap(root), { 'BL-900': 42 }); // reopen never touches the mapping
+  assert.deepEqual(readBacklogTopicMap(root), { 'topic-consolidation': 42 }, 'reopen never touches the mapping');
 });
 
-test('recreate-bl-topic-04: main() recreates a genuinely deleted topic and maps the ticket to the NEW topic id', async () => {
+// Exercises the ticket lookup with 2+ candidates whose epics genuinely
+// differ (the hardener's own "a selector must be proven with 2+ candidates"
+// rule) - a decoy ticket sorted FIRST (lower priority number) with a
+// DIFFERENT epic than the requested ticket id. If the lookup ever degraded
+// from "match by id" to "take whichever is first", this would resolve to
+// the decoy's epic instead, which the assertion below would catch.
+test('topic-recreation-epic-aware-01: with 2+ candidate tickets on disk, the ticket is matched by ID, never merely the first one read', async () => {
   const root = mkFixture();
-  writeTicketYaml(root, 'BL-900', 'a fine feature');
-  writeBacklogTopicMap(root, {}); // no mapping at all - the topic is gone
-  appendMessage(root, 'BL-900', { author: 'human', type: 'inbound', text: 'the original question' });
+  writeTicketYaml(root, 'BL-001-decoy', 'a decoy from a different epic', 'epic: decoy-epic\npriority: 1\n');
+  writeTicketYaml(root, 'BL-900', 'a fine feature', 'epic: topic-consolidation\npriority: 50\n');
+  writeBacklogTopicMap(root, { 'topic-consolidation': 42, 'decoy-epic': 999 });
 
   const output = await runCli([root, 'BL-900'], {
     TELEGRAM_BOT_TOKEN: 'x',
     TELEGRAM_CHAT_ID: 'y',
-    TELEGRAM_RECREATE_FORCE_RESULT: JSON.stringify({ success: true, messageThreadId: 777 }),
+    TELEGRAM_RECREATE_FORCE_RESULT: JSON.stringify({ success: true }),
   });
 
   const result = JSON.parse(output);
-  assert.equal(result.action, 'recreate');
-  assert.equal(result.success, true);
-  assert.equal(result.topicId, 777);
-  assert.deepEqual(readBacklogTopicMap(root), { 'BL-900': 777 });
-});
-
-// A single subprocess smoke test locks the compiled CLI's own wiring
-// (require.main === module, real argv/env boundary) - an ADDITION to the
-// in-process main() tests above, never the only cover for the real logic.
-test('the compiled CLI runs standalone as a subprocess and produces the same result', () => {
-  const root = mkFixture();
-  writeTicketYaml(root, 'BL-900', 'a fine feature');
-  writeBacklogTopicMap(root, { 'BL-900': 42 });
-
-  const env = { PATH: process.env.PATH, TELEGRAM_BOT_TOKEN: 'x', TELEGRAM_CHAT_ID: 'y', TELEGRAM_RECREATE_FORCE_RESULT: JSON.stringify({ success: true }) };
-  const output = execFileSync('node', [CLI, root, 'BL-900'], { encoding: 'utf8', env });
-
-  const result = JSON.parse(output);
   assert.equal(result.action, 'reopen');
-  assert.equal(result.success, true);
-  assert.equal(result.topicId, 42);
+  assert.equal(result.topicId, 42, "expected BL-900's OWN epic topic, never the decoy's");
 });
 
-// ── recreateBlTopic (the underlying, exported function) ───────────────────
-// Complements the main()-level tests above with the finer-grained content
-// assertions (never mutates the record) that don't need to go through
-// argv/stdout at all.
-
-test('recreate-bl-topic-05: recreating never mutates the repo record file itself', async () => {
+test('topic-recreation-epic-aware-01: an epic-bound ticket recreates its epic topic when it is gone, named after the epic', async () => {
   const root = mkFixture();
-  writeTicketYaml(root, 'BL-900', 'a fine feature');
-  writeBacklogTopicMap(root, {});
-  appendMessage(root, 'BL-900', { author: 'human', type: 'inbound', text: 'do not touch me' });
-  const before = fs.readFileSync(recordPath(root, 'BL-900'), 'utf8');
+  writeTicketYaml(root, 'BL-900', 'a fine feature', 'epic: topic-consolidation\n');
+  writeTicketYaml(root, 'BL-491', 'Topic Consolidation', 'epic: topic-consolidation\ntype: epic\n');
+  writeBacklogTopicMap(root, {}); // no mapping at all - the epic topic is gone
+
   const previousEnv = Object.fromEntries(CLI_ENV_KEYS.map((k) => [k, process.env[k]]));
   try {
     process.env.TELEGRAM_BOT_TOKEN = 'x';
     process.env.TELEGRAM_CHAT_ID = 'y';
     process.env.TELEGRAM_RECREATE_FORCE_RESULT = JSON.stringify({ success: true, messageThreadId: 777 });
-    await recreateBlTopic(root, 'BL-900');
-    const after = fs.readFileSync(recordPath(root, 'BL-900'), 'utf8');
-    assert.equal(after, before, 'the record must be left byte-identical so it can be rebuilt again');
+    const result = await recreateBlTopic(root, 'BL-900');
+    assert.equal(result.action, 'recreate');
+    assert.equal(result.success, true);
+    assert.equal(result.topicId, 777);
+    assert.deepEqual(readBacklogTopicMap(root), { 'topic-consolidation': 777 }, 'expected the epic id mapped to the new topic, never a per-ticket id');
   } finally {
     for (const key of CLI_ENV_KEYS) {
       if (previousEnv[key] === undefined) delete process.env[key];
@@ -181,16 +183,89 @@ test('recreate-bl-topic-05: recreating never mutates the repo record file itself
   }
 });
 
-test('a ticket with no matching backlog entry at all still recreates, using its own id as the title fallback', async () => {
+// ── topic-recreation-epic-aware-02: epic-less ticket targets the standing Backlog topic ──
+
+test('topic-recreation-epic-aware-02: an epic-less ticket reopens the standing Backlog topic when already mapped', async () => {
   const root = mkFixture();
-  // deliberately no writeTicketYaml call
-  writeBacklogTopicMap(root, {});
+  writeTicketYaml(root, 'BL-901', 'an epic-less feature');
+  writeOperatorTopicMap(root, { 55: 'BACKLOG' });
+
+  const output = await runCli([root, 'BL-901'], {
+    TELEGRAM_BOT_TOKEN: 'x',
+    TELEGRAM_CHAT_ID: 'y',
+    TELEGRAM_RECREATE_FORCE_RESULT: JSON.stringify({ success: true }),
+  });
+
+  const result = JSON.parse(output);
+  assert.equal(result.action, 'reopen');
+  assert.equal(result.success, true);
+  assert.equal(result.topicId, 55);
+});
+
+test('topic-recreation-epic-aware-02: an epic-less ticket recreates the standing Backlog topic when it is gone', async () => {
+  const root = mkFixture();
+  writeTicketYaml(root, 'BL-901', 'an epic-less feature');
+  writeOperatorTopicMap(root, {}); // no Backlog mapping at all
+
   const previousEnv = Object.fromEntries(CLI_ENV_KEYS.map((k) => [k, process.env[k]]));
   try {
     process.env.TELEGRAM_BOT_TOKEN = 'x';
     process.env.TELEGRAM_CHAT_ID = 'y';
     process.env.TELEGRAM_RECREATE_FORCE_RESULT = JSON.stringify({ success: true, messageThreadId: 888 });
     const result = await recreateBlTopic(root, 'BL-901');
+    assert.equal(result.action, 'recreate');
+    assert.equal(result.success, true);
+    assert.equal(result.topicId, 888);
+    assert.deepEqual(readOperatorTopicMap(root), { 888: 'BACKLOG' }, 'expected the new topic mapped to the reserved BACKLOG subject');
+  } finally {
+    for (const key of CLI_ENV_KEYS) {
+      if (previousEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = previousEnv[key];
+    }
+  }
+});
+
+// ── topic-recreation-epic-aware-03: never resurrects a per-ticket topic ──
+
+test('topic-recreation-epic-aware-03: a ticket that formerly owned a per-ticket topic mapping is unaffected by it - no per-ticket topic is reopened or recreated', async () => {
+  const root = mkFixture();
+  writeTicketYaml(root, 'BL-900', 'a fine feature', 'epic: topic-consolidation\n');
+  // Legacy per-ticket mapping still present (as BL-494 would leave one
+  // undropped on a genuine close failure) - the fold-aware repair path
+  // must never consult this key at all.
+  writeBacklogTopicMap(root, { 'BL-900': 999 });
+
+  const previousEnv = Object.fromEntries(CLI_ENV_KEYS.map((k) => [k, process.env[k]]));
+  try {
+    process.env.TELEGRAM_BOT_TOKEN = 'x';
+    process.env.TELEGRAM_CHAT_ID = 'y';
+    process.env.TELEGRAM_RECREATE_FORCE_RESULT = JSON.stringify({ success: true, messageThreadId: 777 });
+    const result = await recreateBlTopic(root, 'BL-900');
+    // The epic id (topic-consolidation) is not mapped, so this recreates
+    // the EPIC topic - never reopens topic 999, the stale per-ticket id.
+    assert.equal(result.action, 'recreate');
+    assert.notEqual(result.topicId, 999);
+    const map = readBacklogTopicMap(root);
+    assert.equal(map['BL-900'], 999, 'the stale per-ticket key is left untouched, never read or reused');
+    assert.equal(map['topic-consolidation'], 777);
+  } finally {
+    for (const key of CLI_ENV_KEYS) {
+      if (previousEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = previousEnv[key];
+    }
+  }
+});
+
+test('a ticket with no matching backlog entry at all falls back to the standing Backlog topic (epic-less default)', async () => {
+  const root = mkFixture();
+  // deliberately no writeTicketYaml call
+  writeOperatorTopicMap(root, {});
+  const previousEnv = Object.fromEntries(CLI_ENV_KEYS.map((k) => [k, process.env[k]]));
+  try {
+    process.env.TELEGRAM_BOT_TOKEN = 'x';
+    process.env.TELEGRAM_CHAT_ID = 'y';
+    process.env.TELEGRAM_RECREATE_FORCE_RESULT = JSON.stringify({ success: true, messageThreadId: 888 });
+    const result = await recreateBlTopic(root, 'BL-999');
     assert.equal(result.success, true);
     assert.equal(result.topicId, 888);
   } finally {
@@ -199,4 +274,21 @@ test('a ticket with no matching backlog entry at all still recreates, using its 
       else process.env[key] = previousEnv[key];
     }
   }
+});
+
+// A single subprocess smoke test locks the compiled CLI's own wiring
+// (require.main === module, real argv/env boundary) - an ADDITION to the
+// in-process main() tests above, never the only cover for the real logic.
+test('the compiled CLI runs standalone as a subprocess and produces the same result', () => {
+  const root = mkFixture();
+  writeTicketYaml(root, 'BL-900', 'a fine feature', 'epic: topic-consolidation\n');
+  writeBacklogTopicMap(root, { 'topic-consolidation': 42 });
+
+  const env = { PATH: process.env.PATH, TELEGRAM_BOT_TOKEN: 'x', TELEGRAM_CHAT_ID: 'y', TELEGRAM_RECREATE_FORCE_RESULT: JSON.stringify({ success: true }) };
+  const output = execFileSync('node', [CLI, root, 'BL-900'], { encoding: 'utf8', env });
+
+  const result = JSON.parse(output);
+  assert.equal(result.action, 'reopen');
+  assert.equal(result.success, true);
+  assert.equal(result.topicId, 42);
 });
