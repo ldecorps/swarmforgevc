@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
-const { budgetPipelineBoardLinks, deriveKebabSlug, deriveDisplayTicketId } = require('../out/concierge/pipelineBoard');
+const { budgetPipelineBoardLinks } = require('../out/concierge/pipelineBoard');
 
 // BL-502 (architect, property-testing support): budgetPipelineBoardLinks is
 // the pure trim function this ticket introduced to keep the pipeline board's
@@ -80,33 +80,6 @@ test('property: a larger budget never includes fewer links than a smaller one, f
         includedLarger >= includedSmaller,
         `budget ${smaller}->${includedSmaller} included, ${larger}->${includedLarger} included: expected non-decreasing`
       );
-    })
-  );
-});
-
-// BL-505 (architect, property-testing support): deriveKebabSlug and
-// deriveDisplayTicketId are pure and were introduced/narrowed by this
-// ticket. pipelineBoard.test.js pins each with a handful of hand-picked
-// titles/ids; the invariants below hold for any title/maxWords or any id,
-// not just those examples - the "ordering/counting" and "idempotence"
-// shapes architect.prompt's Property Testing section names.
-
-test('property: deriveKebabSlug never returns more than maxWords hyphenated words, for any title', () => {
-  fc.assert(
-    fc.property(fc.string(), fc.integer({ min: 1, max: 10 }), (title, maxWords) => {
-      const slug = deriveKebabSlug(title, maxWords);
-      const wordCount = slug === '' ? 0 : slug.split('-').length;
-      assert.ok(wordCount <= maxWords, `title=${JSON.stringify(title)} maxWords=${maxWords} slug=${JSON.stringify(slug)} wordCount=${wordCount}`);
-    })
-  );
-});
-
-test('property: deriveDisplayTicketId is idempotent - re-stripping an already-displayed id is a no-op', () => {
-  fc.assert(
-    fc.property(fc.string(), (id) => {
-      const once = deriveDisplayTicketId(id);
-      const twice = deriveDisplayTicketId(once);
-      assert.equal(twice, once, `id=${JSON.stringify(id)} once=${JSON.stringify(once)} twice=${JSON.stringify(twice)}`);
     })
   );
 });

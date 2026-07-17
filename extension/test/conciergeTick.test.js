@@ -12,23 +12,6 @@ function folders(overrides = {}) {
   return { active: [], paused: [], done: [], ...overrides };
 }
 
-// BL-505: the pipeline board's grid/list rows now display a ticket's bare
-// NUMBER (a recognised BL-/GH- prefix stripped, e.g. BL-1 -> "1") - mirrors
-// pipelineBoard.ts's own deriveDisplayTicketId so fixtures below stay
-// readable with the ticket's real id.
-function displayId(id) {
-  const match = /^(?:BL|GH)-(\d+)$/.exec(id);
-  return match ? match[1] : id;
-}
-
-// A plain substring search for a display id can false-positive against
-// unrelated digits elsewhere in the board (the footer's own timestamp) or
-// false-negative against the id's own now-absent prefix - find the actual
-// row/list line instead, whose first whitespace token is the display id.
-function hasRowFor(text, id) {
-  return text.split('\n').some((l) => l.trim().split(/\s+/)[0] === displayId(id));
-}
-
 function fakeAdapters(overrides = {}) {
   const state = { snapshot: null, emittedKeys: [] };
   const topicMap = {};
@@ -1972,7 +1955,7 @@ test('BL-462: the pipeline board reposts at the bottom (delete + post) on a stag
   assert.equal(posted.length, 1);
   assert.equal(deleted.length, 0, 'expected no delete - nothing was posted before');
   assert.equal(posted[0].topicId, 900);
-  assert.ok(hasRowFor(posted[0].text, 'BL-1'));
+  assert.ok(posted[0].text.includes('BL-1'));
   assert.ok(posted[0].text.endsWith('updated at Jul 16 20:05'), `expected a footer stamped with T1, got:\n${posted[0].text}`);
   assert.equal(state.pipelineBoard.topicId, 900);
   assert.equal(state.pipelineBoard.messageId, 42);
@@ -2031,10 +2014,10 @@ test('BL-455: role-held tickets are joined to their backlog item epic/title - gr
   // grouping logic.
   const concertoIndex = lines.findIndex((l) => l.includes('Concerto'));
   assert.ok(concertoIndex >= 0, `expected a Concerto epic heading, got:\n${posted[0]}`);
-  assert.ok(lines[concertoIndex + 1].startsWith(displayId('BL-1')), 'expected BL-1 grouped directly under its epic heading');
-  // BL-465/BL-505: the grid's own slug column now shows a SHORT (2-word)
-  // kebab slug, not the full title - "fix the pipeline board" -> "fix-the".
-  assert.ok(posted[0].includes('fix-the'), 'expected BL-1 row to carry its derived kebab slug');
+  assert.ok(lines[concertoIndex + 1].startsWith('BL-1'), 'expected BL-1 grouped directly under its epic heading');
+  // BL-465: the grid's own slug column now shows a SHORT (2-3 word) kebab
+  // slug, not the full title - "fix the pipeline board" -> "fix-the-pipeline".
+  assert.ok(posted[0].includes('fix-the-pipeline'), 'expected BL-1 row to carry its derived kebab slug');
   assert.ok(posted[0].includes('unrelated-ticket'), 'expected BL-2 (no epic) to still carry its own kebab slug');
   const noEpicIndex = lines.findIndex((l) => l.trim() === '-- (no epic) --');
   assert.ok(noEpicIndex > concertoIndex, 'expected the no-epic group to sort after the named epic group');
@@ -2067,8 +2050,8 @@ test('BL-455: a paused ticket awaiting human approval and a plain paused ticket 
   assert.ok(parkedHeaderIndex > 0, `expected a PARKED: section, got:\n${posted[0]}`);
   assert.ok(awaitingHeaderIndex > 0, `expected an AWAITING APPROVAL: section, got:\n${posted[0]}`);
   const gridLines = lines.slice(0, Math.min(parkedHeaderIndex, awaitingHeaderIndex));
-  assert.ok(!gridLines.some((l) => l.trim().split(/\s+/)[0] === displayId('BL-2')), 'expected BL-2 absent from the grid');
-  assert.ok(!gridLines.some((l) => l.trim().split(/\s+/)[0] === displayId('BL-3')), 'expected BL-3 absent from the grid');
+  assert.ok(!gridLines.some((l) => l.trim().split(/\s+/)[0] === 'BL-2'), 'expected BL-2 absent from the grid');
+  assert.ok(!gridLines.some((l) => l.trim().split(/\s+/)[0] === 'BL-3'), 'expected BL-3 absent from the grid');
   // The nearest SECTION HEADER preceding a given line is that line's own
   // section - the label BL-455's old per-line PK/AA glyphs used to carry.
   const sectionFor = (lineIndex) => {
@@ -2079,8 +2062,8 @@ test('BL-455: a paused ticket awaiting human approval and a plain paused ticket 
     }
     return undefined;
   };
-  const bl2Index = lines.findIndex((l) => l.trim().split(/\s+/)[0] === displayId('BL-2'));
-  const bl3Index = lines.findIndex((l) => l.trim().split(/\s+/)[0] === displayId('BL-3'));
+  const bl2Index = lines.findIndex((l) => l.includes('BL-2'));
+  const bl3Index = lines.findIndex((l) => l.includes('BL-3'));
   assert.ok(!lines[bl2Index].trim().startsWith('AA') && !lines[bl2Index].trim().startsWith('PK'), `expected no per-line AA/PK label, got: ${lines[bl2Index]}`);
   assert.equal(sectionFor(bl2Index), 'AWAITING APPROVAL:', 'expected BL-2 under its own AWAITING APPROVAL: section');
   assert.equal(sectionFor(bl3Index), 'PARKED:', 'expected BL-3 under the PARKED: section');
@@ -2304,7 +2287,7 @@ test('BL-473: a ticket physically in backlog/active/ that no role holds still re
   assert.equal(posted.length, 1, 'expected the not-started ticket to still post a board, never silently skipped');
   const lines = posted[0].split('\n');
   const header = lines[0].trim().split(/\s+/);
-  const row = lines.find((l) => l.trim().split(/\s+/)[0] === displayId('BL-1'));
+  const row = lines.find((l) => l.trim().split(/\s+/)[0] === 'BL-1');
   assert.ok(row, `expected BL-1 to be a board row, got:\n${posted[0]}`);
   const nsIndex = header.indexOf('NS');
   assert.ok(nsIndex >= 0, `expected a not-started (NS) column in the header, got: ${header.join(' ')}`);
@@ -2335,7 +2318,7 @@ test('BL-473 bounce: a role-held ticket absent from folders.active gets no row a
   await runConciergeTick(adapters);
 
   assert.equal(posted.length, 1);
-  const row = posted[0].split('\n').find((l) => l.trim().split(/\s+/)[0] === displayId('BL-1'));
+  const row = posted[0].split('\n').find((l) => l.trim().split(/\s+/)[0] === 'BL-1');
   assert.ok(!row, `expected no board row for BL-1 (absent from folders.active), got:\n${posted[0]}`);
 });
 
@@ -2358,7 +2341,7 @@ test('BL-487: an ASYNC readRoleHeldTickets (a Promise-returning adapter) is prop
   await runConciergeTick(adapters);
 
   assert.equal(posted.length, 1);
-  const row = posted[0].split('\n').find((l) => l.trim().split(/\s+/)[0] === displayId('BL-1'));
+  const row = posted[0].split('\n').find((l) => l.trim().split(/\s+/)[0] === 'BL-1');
   assert.ok(row, `expected BL-1 to be a board row from the awaited async adapter, got:\n${posted[0]}`);
 });
 
@@ -2413,7 +2396,7 @@ test('BL-465: folders.done feeds the board\'s own RECENTLY CLOSED: section direc
   await runConciergeTick(adapters);
 
   assert.ok(posted[0].includes('RECENTLY CLOSED:'), `expected a RECENTLY CLOSED: section, got:\n${posted[0]}`);
-  assert.ok(hasRowFor(posted[0], 'BL-9'));
+  assert.ok(posted[0].includes('BL-9'));
 });
 
 // BL-465 bounce (architect review): folders.done carries NO ordering
@@ -2453,9 +2436,8 @@ test('BL-465 bounce: RECENTLY CLOSED sorts by actual closure recency, never by f
   await runConciergeTick(adapters, 2000);
 
   const last = posted[posted.length - 1];
-  const lastLines = last.split('\n');
-  const idxBL1 = lastLines.findIndex((l) => l.trim().split(/\s+/)[0] === displayId('BL-1'));
-  const idxBL9 = lastLines.findIndex((l) => l.trim().split(/\s+/)[0] === displayId('BL-9'));
+  const idxBL1 = last.indexOf('BL-1');
+  const idxBL9 = last.indexOf('BL-9');
   assert.ok(idxBL1 !== -1 && idxBL9 !== -1, `expected both tickets in the recently-closed section, got:\n${last}`);
   assert.ok(idxBL1 < idxBL9, `expected the MORE RECENTLY closed BL-1 (t=2000) listed before BL-9 (t=1000); got:\n${last}`);
 });
@@ -2495,9 +2477,8 @@ test('BL-465 bounce: a ticket newly closing on a LATER tick still outranks one a
   await runConciergeTick(adapters, 9000);
 
   const last = posted[posted.length - 1];
-  const lastLines = last.split('\n');
-  const idxBL2 = lastLines.findIndex((l) => l.trim().split(/\s+/)[0] === displayId('BL-2'));
-  const idxBL3 = lastLines.findIndex((l) => l.trim().split(/\s+/)[0] === displayId('BL-3'));
+  const idxBL2 = last.indexOf('BL-2');
+  const idxBL3 = last.indexOf('BL-3');
   assert.ok(idxBL2 !== -1 && idxBL3 !== -1, `expected both tickets in the recently-closed section, got:\n${last}`);
   assert.ok(idxBL3 < idxBL2, `expected the later-closing BL-3 (t=9000) listed before the first-tick BL-2 (t=500); got:\n${last}`);
 });
