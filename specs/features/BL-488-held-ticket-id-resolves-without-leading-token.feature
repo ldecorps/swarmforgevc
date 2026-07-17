@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-17T11:37:34.649834998Z","feature_name":"a role-held ticket resolves to its stage even when its handoff header does not lead with the id","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-488-held-ticket-id-resolves-without-leading-token.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: a role-held ticket resolves to its stage even when its handoff header does not lead with the id
 
   # BL-474 audit finding #3 (real, latent). extract-ticket-id anchors on
