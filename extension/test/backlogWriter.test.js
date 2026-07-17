@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { setAssignedTo, markDone, promoteToActive } = require('../out/panel/backlogWriter');
+const { setAssignedTo, markDone, promoteToActive, findBacklogFilePath } = require('../out/panel/backlogWriter');
 const { readBacklog } = require('../out/panel/backlogReader');
 
 function mkTmp() {
@@ -228,4 +228,42 @@ test('promoteToActive skips promotion when the item is already active (scenario 
 
   assert.equal(result.moved, false);
   assert.equal(fs.existsSync(path.join(target, 'backlog', 'active', 'BL-203-already-active.yaml')), true);
+});
+
+// --- findBacklogFilePath (BL-490-VIOLATION: locates a ticket's CURRENT file
+// regardless of which live folder it sits in, so a durable-commit caller can
+// resolve the right repo-relative path after a promote/approve write) ---
+
+test('findBacklogFilePath finds an item in backlog/active', () => {
+  const target = mkTmp();
+  const filePath = writeActiveItem(target, 'BL-300-active.yaml', 'id: BL-300\ntitle: t\n');
+
+  assert.equal(findBacklogFilePath(target, 'BL-300'), filePath);
+});
+
+test('findBacklogFilePath finds an item in backlog/paused when not in active', () => {
+  const target = mkTmp();
+  const dir = path.join(target, 'backlog', 'paused');
+  mkdirp(dir);
+  const filePath = path.join(dir, 'BL-301-paused.yaml');
+  fs.writeFileSync(filePath, 'id: BL-301\ntitle: t\n');
+
+  assert.equal(findBacklogFilePath(target, 'BL-301'), filePath);
+});
+
+test('findBacklogFilePath prefers active over paused when (implausibly) both exist', () => {
+  const target = mkTmp();
+  const activePath = writeActiveItem(target, 'BL-302-both.yaml', 'id: BL-302\ntitle: active copy\n');
+  const pausedDir = path.join(target, 'backlog', 'paused');
+  mkdirp(pausedDir);
+  fs.writeFileSync(path.join(pausedDir, 'BL-302-both.yaml'), 'id: BL-302\ntitle: paused copy\n');
+
+  assert.equal(findBacklogFilePath(target, 'BL-302'), activePath);
+});
+
+test('findBacklogFilePath returns null when the item exists in neither folder', () => {
+  const target = mkTmp();
+  mkdirp(path.join(target, 'backlog', 'active'));
+
+  assert.equal(findBacklogFilePath(target, 'BL-404'), null);
 });

@@ -658,6 +658,24 @@ export interface PollAdapters {
   // ticket is already active, satisfying "no redundant promotion" (scenario
   // 05) with no separate active/paused check of its own.
   promoteTicketIfPaused?: (backlogId: string) => Promise<boolean>;
+  // BL-490-VIOLATION (architect bounce, 2026-07-17): the approve+promote
+  // writes above are plain fs.writeFileSync/fs.renameSync against the
+  // shared master checkout's OWN working tree - uncommitted, exactly the
+  // "dangling working-tree edit" the ticket's own DURABILITY HAZARD note
+  // flagged and deferred. Left uncommitted, the mutation is one git
+  // operation away from silent loss (a reset/checkout/re-sync touching
+  // backlog/ would revert it with no error anywhere), and a dispatched
+  // build could start against a promotion that never durably landed.
+  // Commits the ticket's CURRENT file (post-promote path) through the
+  // shared, LOCKED commit-integrity helper (commit_integrity_cli.bb,
+  // BL-419) - never a hand-typed git add/commit, which is exactly the
+  // unmitigated path that produced BL-419's own documented incidents.
+  // Consulted AFTER promote (the file is at its FINAL location by then)
+  // and BEFORE dispatch, so a build never starts against an uncommitted
+  // promotion. Optional: absent degrades to the pre-fix uncommitted
+  // behavior, the same "new capability defaults to a no-op" posture every
+  // other optional adapter in this file already has - never a crash.
+  commitExpediteWrites?: (backlogId: string) => Promise<boolean>;
   // FILE-LEVEL SAFETY CHECK: reads whether an in-flight build touches the
   // same file(s) this ticket's own scope names (expediteSafety.ts's pure
   // findFileCollision, driven by real active-ticket/in-flight-handoff reads
@@ -1067,6 +1085,10 @@ export async function recordExpediteDecisionAndClose(
     return { changed: false };
   }
   await adapters.promoteTicketIfPaused?.(backlogId);
+  // BL-490-VIOLATION: durably commits the approve+promote writes BEFORE any
+  // dispatch can fire - see this adapter's own doc comment (PollAdapters)
+  // for why an uncommitted mutation here is unsafe.
+  await adapters.commitExpediteWrites?.(backlogId);
   const collision = await adapters.checkExpediteFileCollision?.(backlogId);
   if (!collision) {
     await adapters.dispatchExpediteBuild?.(backlogId);
@@ -1326,6 +1348,15 @@ export function decideCallbackQueryAction(
     return { action: 'drop', reason: 'unrecognized-data' };
   }
   const [, kind, backlogId] = match;
+  return decisionForApprovalCallbackKind(kind, backlogId);
+}
+
+// Hardener 2026-07-17: split out of decideCallbackQueryAction above so ITS
+// OWN branch count stays at or below the CRAP threshold - the same
+// "extract the kind->decision mapping into a named helper" split this file
+// already applies throughout - reapplied here because BL-490's 'expedite'
+// branch pushed decideCallbackQueryAction's own complexity to 7.
+function decisionForApprovalCallbackKind(kind: string, backlogId: string): CallbackButtonDecision {
   if (kind === 'approve') {
     return { action: 'approve', backlogId };
   }
@@ -1487,6 +1518,34 @@ async function dispatchExpediteCallback(
   return 'posted';
 }
 
+// The remaining decision shapes once 'answer-ask' and 'expedite' have both
+// already been dispatched by the caller - narrowed via Exclude (rather than
+// re-checked with an `as`) so dispatchApproveOrFollowup below stays
+// type-safe over exactly the variants it can actually receive.
+type RecognizedApprovalDecision = Exclude<CallbackButtonDecision, { action: 'answer-ask' } | { action: 'expedite' }>;
+
+// Hardener 2026-07-17: split out of dispatchRecognizedCallbackDecision below
+// so ITS OWN branch count stays at or below the CRAP threshold - the same
+// "extract to keep the caller's branch count down" pattern this file already
+// uses throughout - reapplied here because BL-490's 'expedite' branch pushed
+// dispatchRecognizedCallbackDecision's own complexity to 7.
+async function dispatchApproveOrFollowup(
+  callbackQuery: TelegramCallbackQuery,
+  decision: RecognizedApprovalDecision,
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome> {
+  await adapters.answerCallbackQuery(callbackQuery.id);
+  if (decision.action === 'drop') {
+    return 'dropped';
+  }
+  if (decision.action === 'approve') {
+    await recordApprovalDecisionAndClose(adapters, decision.backlogId, { kind: 'approved' });
+  } else {
+    await adapters.setPendingButtonAction(decision.backlogId, decision.kind);
+  }
+  return 'posted';
+}
+
 async function dispatchRecognizedCallbackDecision(
   callbackQuery: TelegramCallbackQuery,
   decision: CallbackButtonDecision,
@@ -1505,16 +1564,7 @@ async function dispatchRecognizedCallbackDecision(
   if (decision.action === 'expedite') {
     return dispatchExpediteCallback(callbackQuery, decision, adapters);
   }
-  await adapters.answerCallbackQuery(callbackQuery.id);
-  if (decision.action === 'drop') {
-    return 'dropped';
-  }
-  if (decision.action === 'approve') {
-    await recordApprovalDecisionAndClose(adapters, decision.backlogId, { kind: 'approved' });
-  } else {
-    await adapters.setPendingButtonAction(decision.backlogId, decision.kind);
-  }
-  return 'posted';
+  return dispatchApproveOrFollowup(callbackQuery, decision, adapters);
 }
 
 async function processCallbackQuery(
