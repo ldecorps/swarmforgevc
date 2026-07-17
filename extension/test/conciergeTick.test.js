@@ -1470,14 +1470,14 @@ test('BL-418 wiring: standingIconSeenIds persists and grows across ticks rather 
 // see syncPerAgentTopicIcons' own docstring in conciergeTick.ts.
 
 const ROLE_ICON_STICKERS = [
-  { emoji: '🎬', customEmojiId: 'id-clapper' },
+  { emoji: '📣', customEmojiId: 'id-megaphone' },
   { emoji: '📝', customEmojiId: 'id-note' },
   { emoji: '🏛', customEmojiId: 'id-building' },
   { emoji: '💻', customEmojiId: 'id-laptop' },
   { emoji: '🧼', customEmojiId: 'id-soap' },
   { emoji: '🧪', customEmojiId: 'id-tube' },
   { emoji: '🔎', customEmojiId: 'id-magnifier-tilted' },
-  { emoji: '📚', customEmojiId: 'id-books' },
+  { emoji: '📰', customEmojiId: 'id-newspaper' },
 ];
 
 const ALL_ROLE_TOPIC_TARGETS = [
@@ -1503,17 +1503,17 @@ test('BL-469 per-agent-steering-topic-icon-01: each of the 8 role topics gets it
   assert.deepEqual(
     iconsSet.sort((a, b) => a.topicId - b.topicId),
     [
-      { topicId: 901, iconId: 'id-clapper' },
+      { topicId: 901, iconId: 'id-megaphone' },
       { topicId: 902, iconId: 'id-note' },
       { topicId: 903, iconId: 'id-building' },
       { topicId: 904, iconId: 'id-laptop' },
       { topicId: 905, iconId: 'id-soap' },
       { topicId: 906, iconId: 'id-tube' },
       { topicId: 907, iconId: 'id-magnifier-tilted' },
-      { topicId: 908, iconId: 'id-books' },
+      { topicId: 908, iconId: 'id-newspaper' },
     ]
   );
-  assert.equal(iconOwnership.coordinator, 'id-clapper');
+  assert.equal(iconOwnership.coordinator, 'id-megaphone');
   assert.equal(iconOwnership.coder, 'id-laptop');
   assert.equal(iconOwnership.QA, 'id-magnifier-tilted');
 });
@@ -1538,7 +1538,7 @@ test('BL-469 per-agent-steering-topic-icon-02: an icon Telegram does not offer i
   // Every other role still resolved and got its own mapped icon.
   assert.equal(iconsSet.length, 7);
   assert.equal(iconOwnership.QA, 'id-magnifier-tilted');
-  assert.equal(iconOwnership.documenter, 'id-books');
+  assert.equal(iconOwnership.documenter, 'id-newspaper');
 });
 
 // BL-469 per-agent-steering-topic-icon-03

@@ -63,7 +63,7 @@ acceptance:
     - "The bridge port is read from the creds file for a non-primary swarm"
     - "Channel provisioning writes the creds file (botToken/chatId/bridgePort) on successful group detection"
 
-human_approval: >
+approval_context: >
   approved 2026-07-15 (coordinator session, full-batch confirmation via Operator relay). The creds-file
   design (per-swarm telegram.json keyed by swarm_name, env fallback for primary) was settled with the
   human 2026-07-15 (recorded in the intake); the human then approved promotion as-is, accepting the live

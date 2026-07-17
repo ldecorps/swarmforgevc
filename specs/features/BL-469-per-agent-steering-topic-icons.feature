@@ -1,6 +1,6 @@
-# mutation-stamp: sha256=baab7e378ad6e2f42da83fc82bd9a76cb7127dd6887b55e67490dc7570e75d34
+# mutation-stamp: sha256=bd71102f7a219795b8ad3f3082c596f3f651cc51c3b1263102a70fbe3bf28de3
 # acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-07-17T00:59:28.093194478Z","feature_name":"Per-agent Telegram steering-topic icons","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-469-per-agent-steering-topic-icons.feature","background_hash":"f8f229d28c1b0ca5925e5df0389298aa680fe25f5e6d8f380987268dc953441e","implementation_hash":"unknown","scenarios":[{"index":0,"name":"<role> steering topic shows its mapped icon","scenario_hash":"9ff746429f0386e039a06a59b87a334e457dfe9fe1f92b61439c834738ed65d9","mutation_count":16,"result":{"Total":16,"Killed":16,"Survived":0,"Errors":0},"tested_at":"2026-07-17T00:59:28.093194478Z"}]}
+# {"version":1,"tested_at":"2026-07-17T01:50:03.109973308Z","feature_name":"Per-agent Telegram steering-topic icons","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-469-per-agent-steering-topic-icons.feature","background_hash":"f8f229d28c1b0ca5925e5df0389298aa680fe25f5e6d8f380987268dc953441e","implementation_hash":"unknown","scenarios":[{"index":0,"name":"<role> steering topic shows its mapped icon","scenario_hash":"c463353d05ad356c92412174215bfefb1314b7023246d1a4c3a901984d74b121","mutation_count":16,"result":{"Total":16,"Killed":16,"Survived":0,"Errors":0},"tested_at":"2026-07-17T01:50:03.109973308Z"}]}
 # acceptance-mutation-manifest-end
 
 Feature: Per-agent Telegram steering-topic icons
@@ -22,14 +22,14 @@ Feature: Per-agent Telegram steering-topic icons
 
     Examples:
       | role        | icon |
-      | coordinator | 🎬   |
+      | coordinator | 📣   |
       | specifier   | 📝   |
       | architect   | 🏛   |
       | coder       | 💻   |
       | cleaner     | 🧼   |
       | hardender   | 🧪   |
       | QA          | 🔎   |
-      | documenter  | 📚   |
+      | documenter  | 📰   |
 
   # BL-469 per-agent-steering-topic-icon-02
   Scenario: an icon Telegram does not offer is surfaced, not applied, and does not block the other roles
