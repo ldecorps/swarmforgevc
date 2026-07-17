@@ -69,8 +69,7 @@ acceptance:
     - "A tap on a retracted or already-answered ask produces no side effect"
     - "An ask without options renders byte-identically to the pre-change contract"
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Human asked for exactly this (2026-07-17 screenshot + 'can these surface back on telegram with a poll
   to capture answer'). Open for the human at approval: (a) buttons vs native poll - the spec recommends
