@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-17T00:45:16.085299056Z","feature_name":"guarded Telegram control verbs stop, restart, and timed-pause the swarm from the phone","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-423-telegram-swarm-control-verbs.feature","background_hash":"8e5734ad99560bfc2436e566ebe8ae23d3358489626949bbf8af2cb299d4ecd2","implementation_hash":"unknown","scenarios":[{"index":12,"name":"choosing a timed pause duration freezes intake now and schedules auto-resume","scenario_hash":"17ff66deaefaaa4efcbb88650838e77afde4a9dad5d676a06a34397b672f5d7a","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-07-17T00:44:36.625260398Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: guarded Telegram control verbs stop, restart, and timed-pause the swarm from the phone
 
   # The authorised human drives the swarm from a dedicated Telegram control topic

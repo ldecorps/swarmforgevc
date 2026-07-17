@@ -25,6 +25,12 @@ const { renderPipelineBoard } = require(path.join(EXT_OUT, 'concierge', 'pipelin
 // ctx.fixture.adapters of undefined (mirrors
 // aDroppedMessageMustNotParkTheOffsetSteps.js's own identical-collision fix).
 const { renderPipelineBoardForFixtureRoot } = require('./bl464PipelineBoardAuthoritativeStageSourceSteps');
+// BL-465: a THIRD ctx shape shares this exact step text - its own Given
+// steps never set ctx.fixture OR ctx.root (unlike BL-464's, which always
+// sets ctx.root = mkTmp() for its real-fs fixture), so ctx.root's absence
+// is what tells a BL-465 scenario apart from a BL-464 one, both otherwise
+// looking like "no ctx.fixture" to this file.
+const { render: renderForBl465 } = require('./bl465PipelineBoardRenderRound2Steps');
 
 // BL-462: every scenario below drives runConciergeTick with nowMs=0 (see the
 // "the pipeline board is rendered" step), so every expected-text
@@ -165,6 +171,11 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the pipeline board is rendered$/, async (ctx) => {
+    if (ctx.fixture === undefined && ctx.root === undefined) {
+      // BL-465's own ctx shape - see this file's own top-of-file comment.
+      renderForBl465(ctx);
+      return;
+    }
     if (ctx.fixture === undefined) {
       // BL-464's own ctx shape (its Given steps never set ctx.fixture) -
       // see this file's own top-of-file comment.

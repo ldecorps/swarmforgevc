@@ -47,6 +47,11 @@ export interface BacklogFolderItem {
   // (type: 'epic'). Nothing in the backlog can derive an unticketed
   // slice's existence on its own; a human/specifier authors this list.
   remainingSlices?: string[];
+  // BL-465: the backlog yaml's own basename - read straight off the SAME
+  // BacklogItem.filename field backlogReader.ts populates, never a second
+  // filename derivation (which could 404-link a ticket whose title-derived
+  // guess drifts from its real on-disk slug).
+  filename?: string;
 }
 
 export interface BacklogFoldersSnapshot {
@@ -151,6 +156,17 @@ export interface ConciergeTickAdapters {
   // across this codebase's own acceptance step handlers was built before
   // this field existed.
   boardAdapters?: PipelineBoardAdapters;
+  // BL-465: raw backlog/ root asks (e.g. "INTAKE-...md" files) - a live
+  // fs read, never limited to the git-SHA static PWA projection (this is
+  // the LIVE Telegram surface). Optional (defaults to no root-intake
+  // section), same posture as boardAdapters above.
+  readRootIntakeFiles?: () => { id: string; title?: string; filename: string }[];
+  // BL-465: the repo's GitHub base URL (e.g.
+  // "https://github.com/ldecorps/swarmforgevc"), derived from the origin
+  // remote - undefined when unresolvable (e.g. no git remote), in which
+  // case the board's link list is simply omitted this tick. Optional, same
+  // posture as boardAdapters above.
+  readRepoBaseUrl?: () => string | undefined;
   // BL-434: the standing Approvals topic's own roster-sync adapters -
   // optional (defaults to no roster sync), same posture as boardAdapters
   // above, for the identical reason: every existing adapters fixture across
@@ -338,8 +354,11 @@ async function syncAllTitleAgeBuckets(
 // inputs (roleHeldTickets, paused) without a second read.
 function buildTicketMetaLookup(folders: BacklogFoldersSnapshot): Record<string, PipelineBoardTicketMeta> {
   const lookup: Record<string, PipelineBoardTicketMeta> = {};
-  for (const item of [...folders.active, ...folders.paused]) {
-    lookup[item.id] = { epic: item.epic, title: item.title };
+  for (const item of folders.active) {
+    lookup[item.id] = { epic: item.epic, title: item.title, filename: item.filename, location: 'active' };
+  }
+  for (const item of folders.paused) {
+    lookup[item.id] = { epic: item.epic, title: item.title, filename: item.filename, location: 'paused' };
   }
   return lookup;
 }
@@ -353,18 +372,34 @@ function buildTicketMetaLookup(folders: BacklogFoldersSnapshot): Record<string, 
 // syncAllTitleAgeBuckets above. Absent adapters (boardAdapters/
 // readRoleHeldTickets both optional, same posture as titleAdapters) leaves
 // the prior tick's board state untouched.
+// BL-465: folders.done is ALREADY loaded every tick (BacklogFoldersSnapshot)
+// - recently-closed needs no second read, just a projection into the shape
+// computePipelineBoard's rootIntake/recentlyClosed extras expect. Items
+// with no filename (should not happen post-BL-465, but degrades safely)
+// are skipped rather than emitting a link-less/broken entry.
+function recentlyClosedItems(folders: BacklogFoldersSnapshot): { id: string; title?: string; filename: string }[] {
+  return folders.done.filter((item): item is BacklogFolderItem & { filename: string } => item.filename !== undefined);
+}
+
 async function syncBoardIfWired(
   folders: BacklogFoldersSnapshot,
   prevBoard: PipelineBoardState | undefined,
   boardAdapters: PipelineBoardAdapters | undefined,
   readRoleHeldTickets: (() => Record<string, string[]>) | undefined,
+  readRootIntakeFiles: (() => { id: string; title?: string; filename: string }[]) | undefined,
+  readRepoBaseUrl: (() => string | undefined) | undefined,
   nowMs: number
 ): Promise<PipelineBoardState | undefined> {
   if (!boardAdapters || !readRoleHeldTickets) {
     return prevBoard;
   }
-  const data = computePipelineBoard(readRoleHeldTickets(), folders.paused, buildTicketMetaLookup(folders));
-  const result = await syncPipelineBoard(data, prevBoard, boardAdapters, nowMs);
+  const repoBaseUrl = readRepoBaseUrl?.();
+  const data = computePipelineBoard(readRoleHeldTickets(), folders.paused, buildTicketMetaLookup(folders), {
+    rootIntake: readRootIntakeFiles?.() ?? [],
+    recentlyClosed: recentlyClosedItems(folders),
+    repoBaseUrl,
+  });
+  const result = await syncPipelineBoard(data, prevBoard, boardAdapters, nowMs, repoBaseUrl);
   return result.state;
 }
 
@@ -828,7 +863,15 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
   // gated on a folder-membership transition, same posture as the title-age
   // sync above), because the change-gate that matters is the rendered TEXT,
   // not any one ticket's transition; syncPipelineBoard owns that gate.
-  const pipelineBoard = await syncBoardIfWired(folders, state.pipelineBoard, adapters.boardAdapters, adapters.readRoleHeldTickets, nowMs);
+  const pipelineBoard = await syncBoardIfWired(
+    folders,
+    state.pipelineBoard,
+    adapters.boardAdapters,
+    adapters.readRoleHeldTickets,
+    adapters.readRootIntakeFiles,
+    adapters.readRepoBaseUrl,
+    nowMs
+  );
 
   // BL-434: the Approvals topic's own live roster - fed off curr.pendingApproval
   // (the SAME set this tick already derived ApprovalRequested events from),
