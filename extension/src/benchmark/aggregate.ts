@@ -20,6 +20,18 @@ function tokenTotal(outcome: TrialOutcome): number | null {
   return outcome.tokens ? outcome.tokens.inputTokens + outcome.tokens.outputTokens : null;
 }
 
+// The "no data at all" fallback (null, not 0 - an empty sample is not a
+// sample of zero) shared by every mean/stdDev field below that can go
+// unpriced (meanCostUsd, meanTokens, meanReworkAdjustedCostUsd, and their
+// stdDev siblings).
+function meanOrNull(values: number[]): number | null {
+  return values.length > 0 ? computeMean(values) : null;
+}
+
+function stdDevOrNull(values: number[]): number | null {
+  return values.length > 0 ? computeStdDev(values) : null;
+}
+
 // BL-388: one run's cost, priced to include the rework it caused - a run
 // that bounced through N rounds of review effectively cost N+1 passes,
 // not just its first-pass invocation cost. null only when the run itself
@@ -71,13 +83,13 @@ export function aggregateModelTrials(model: BenchmarkModelConfig, runs: TrialOut
     repetitions: runs.length,
     meanQuality: computeMean(qualities),
     qualityStdDev: computeStdDev(qualities),
-    meanCostUsd: costs.length > 0 ? computeMean(costs) : null,
-    costStdDev: costs.length > 0 ? computeStdDev(costs) : null,
+    meanCostUsd: meanOrNull(costs),
+    costStdDev: stdDevOrNull(costs),
     meanDurationMs: computeMean(durations),
-    meanTokens: tokens.length > 0 ? computeMean(tokens) : null,
+    meanTokens: meanOrNull(tokens),
     survivalRate: runs.length > 0 ? survivedCount / runs.length : 0,
     meanReworkRounds: computeMean(runs.map((r) => r.reworkRounds)),
-    meanReworkAdjustedCostUsd: reworkAdjustedCosts.length > 0 ? computeMean(reworkAdjustedCosts) : null,
+    meanReworkAdjustedCostUsd: meanOrNull(reworkAdjustedCosts),
     taskScores: taskScoresFrom(runs),
     runs,
   };
