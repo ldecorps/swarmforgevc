@@ -516,6 +516,16 @@ async function syncBoardIfWired(
     activeIds: activeMembershipIds(folders),
   });
   const result = await syncPipelineBoard(data, prevBoard, boardAdapters, nowMs, repoBaseUrl);
+  // BL-497: the live-outage root cause was exactly this - a failed outcome
+  // silently discarded, so nothing ever logged or reacted to it. One line
+  // is enough to see the real Telegram rejection reason on the next tick.
+  // Gated on a real `error` string: a fixture/harness whose board adapters
+  // are never genuinely wired (no error ever set) is a harmless no-op, not
+  // a failure worth logging - every REAL Telegram rejection always carries
+  // one (callTelegramApi's own `.error`), so this never hides a real gap.
+  if ((result.outcome === 'failed-no-topic' || result.outcome === 'failed-post') && result.error) {
+    process.stderr.write(`syncBoardIfWired: ${result.outcome} (${result.failureClass ?? 'unknown'}): ${result.error}\n`);
+  }
   return result.state;
 }
 
