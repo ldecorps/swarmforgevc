@@ -9,6 +9,9 @@ const {
   parseCliArgs,
   conciergeTickIntervalMs,
   readRoleTicket,
+  findExpediteFileCollision,
+  routeBacklogToCoderScriptPath,
+  runExpediteDispatch,
   toFoldersSnapshot,
   ensureOperatorTopic,
   ensureApprovalsTopic,
@@ -177,6 +180,101 @@ test('readRoleTicket maps multiple roles to their own held tickets independently
 test('readRoleTicket returns an empty map when roles.tsv is missing (never a crash)', () => {
   const target = mkTmp();
   assert.deepEqual(readRoleTicket(target), {});
+});
+
+// ── findExpediteFileCollision (thin fs adapter, BL-490) ──────────────────
+// A real backlog/active/ fixture + a real roles.tsv/in_process handoff -
+// composes readBacklogFolders + readRoleTicket + expediteSafety.ts's pure
+// extractScopePaths/findFileCollision, all themselves tested elsewhere.
+
+function writeActiveTicket(targetPath, filename, yaml) {
+  const dir = path.join(targetPath, 'backlog', 'active');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, filename), yaml);
+}
+
+test('findExpediteFileCollision returns undefined when no other ticket is in flight', () => {
+  const target = mkTmp();
+  writeActiveTicket(target, 'BL-490-x.yaml', 'id: BL-490\ntitle: t\ndescription: |\n  touches extension/src/panel/backlogWriter.ts\n');
+
+  assert.equal(findExpediteFileCollision(target, 'BL-490'), undefined);
+});
+
+test('findExpediteFileCollision returns the colliding in-flight ticket id when the coder is mid-flight on a same-file ticket', () => {
+  const target = mkTmp();
+  const coderWorktree = mkTmp();
+  writeActiveTicket(target, 'BL-490-x.yaml', 'id: BL-490\ntitle: t\ndescription: |\n  touches extension/src/panel/backlogWriter.ts\n');
+  writeActiveTicket(target, 'BL-100-y.yaml', 'id: BL-100\ntitle: t\ndescription: |\n  edits extension/src/panel/backlogWriter.ts too\n');
+  writeRolesTsv(target, [{ role: 'coder', worktreePath: coderWorktree }]);
+  writeHandoff(coderWorktree, 'in_process', '00_test.handoff', { task: 'BL-100-y', dequeued_at: '2026-07-09T08:00:00Z' });
+
+  assert.equal(findExpediteFileCollision(target, 'BL-490'), 'BL-100');
+});
+
+test('findExpediteFileCollision returns undefined when the in-flight ticket touches different files', () => {
+  const target = mkTmp();
+  const coderWorktree = mkTmp();
+  writeActiveTicket(target, 'BL-490-x.yaml', 'id: BL-490\ntitle: t\ndescription: |\n  touches extension/src/panel/backlogWriter.ts\n');
+  writeActiveTicket(target, 'BL-100-y.yaml', 'id: BL-100\ntitle: t\ndescription: |\n  edits extension/src/concierge/topicRouter.ts instead\n');
+  writeRolesTsv(target, [{ role: 'coder', worktreePath: coderWorktree }]);
+  writeHandoff(coderWorktree, 'in_process', '00_test.handoff', { task: 'BL-100-y', dequeued_at: '2026-07-09T08:00:00Z' });
+
+  assert.equal(findExpediteFileCollision(target, 'BL-490'), undefined);
+});
+
+test('findExpediteFileCollision returns undefined when the expedited ticket itself is (already) in flight - never collides with itself', () => {
+  const target = mkTmp();
+  const coderWorktree = mkTmp();
+  writeActiveTicket(target, 'BL-490-x.yaml', 'id: BL-490\ntitle: t\ndescription: |\n  touches extension/src/panel/backlogWriter.ts\n');
+  writeRolesTsv(target, [{ role: 'coder', worktreePath: coderWorktree }]);
+  writeHandoff(coderWorktree, 'in_process', '00_test.handoff', { task: 'BL-490-x', dequeued_at: '2026-07-09T08:00:00Z' });
+
+  assert.equal(findExpediteFileCollision(target, 'BL-490'), undefined);
+});
+
+test('findExpediteFileCollision returns undefined when the expedited ticket names no file paths at all', () => {
+  const target = mkTmp();
+  writeActiveTicket(target, 'BL-490-x.yaml', 'id: BL-490\ntitle: t\ndescription: |\n  a plain description with no paths\n');
+
+  assert.equal(findExpediteFileCollision(target, 'BL-490'), undefined);
+});
+
+// ── runExpediteDispatch (BL-490 DISPATCH step) ───────────────────────────
+
+function writeFakeRouteScript(root, body) {
+  const scriptPath = routeBacklogToCoderScriptPath(root);
+  fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
+  fs.writeFileSync(scriptPath, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+}
+
+test('runExpediteDispatch reports true on a successful routing invocation', async () => {
+  const root = mkTmp();
+  writeFakeRouteScript(root, 'exit 0');
+
+  assert.equal(await runExpediteDispatch(root, 'BL-490'), true);
+});
+
+test('runExpediteDispatch degrades to false, never throws, when the routing script fails', async () => {
+  const root = mkTmp();
+  writeFakeRouteScript(root, 'echo "no active ticket found" >&2; exit 1');
+
+  assert.equal(await runExpediteDispatch(root, 'BL-490'), false);
+});
+
+test('runExpediteDispatch degrades to false, never throws, when the routing script is missing entirely', async () => {
+  const root = mkTmp();
+
+  assert.equal(await runExpediteDispatch(root, 'BL-490'), false);
+});
+
+test('runExpediteDispatch passes the ticket id and target path as positional args to the injector', async () => {
+  const root = mkTmp();
+  const capturedArgsPath = path.join(root, 'captured-args.txt');
+  writeFakeRouteScript(root, `echo "$@" > "${capturedArgsPath}"`);
+
+  await runExpediteDispatch(root, 'BL-490');
+
+  assert.equal(fs.readFileSync(capturedArgsPath, 'utf8').trim(), `BL-490 ${root}`);
 });
 
 // ── main() wiring (no real network - every case below fails before any
