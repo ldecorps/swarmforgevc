@@ -52,6 +52,8 @@ const {
   __resetIconStickersCacheForTest,
   transcribeVoiceNote,
   synthesizeVoiceReply,
+  readRootIntakeFiles,
+  readRepoBaseUrl,
   main,
 } = require('../out/tools/telegram-front-desk-bot');
 const { readRecord: readTopicRecord } = require('../out/concierge/blTopicStore');
@@ -1682,4 +1684,58 @@ test('BL-426: synthesizeVoiceReply reports failure on a thrown network error', a
     const result = await synthesizeVoiceReply(OPENAI_KEY, 'text');
     assert.deepEqual(result, { kind: 'failure' });
   });
+});
+
+// ── readRootIntakeFiles / readRepoBaseUrl (BL-465) ────────────────────────
+
+test('readRootIntakeFiles returns an empty list when backlog/ has no root .md files at all', () => {
+  const root = mkTmpRoot();
+  fs.mkdirSync(path.join(root, 'backlog'), { recursive: true });
+  assert.deepEqual(readRootIntakeFiles(root), []);
+});
+
+test('readRootIntakeFiles degrades to an empty list when backlog/ does not exist, never a crash', () => {
+  const root = mkTmpRoot();
+  assert.deepEqual(readRootIntakeFiles(root), []);
+});
+
+test('readRootIntakeFiles excludes README.md and STEERING.md - never real intake', () => {
+  const root = mkTmpRoot();
+  fs.mkdirSync(path.join(root, 'backlog'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'backlog', 'README.md'), '# readme');
+  fs.writeFileSync(path.join(root, 'backlog', 'STEERING.md'), '# steering');
+  assert.deepEqual(readRootIntakeFiles(root), []);
+});
+
+test('readRootIntakeFiles lists a real root intake file, id from the filename and title from its first non-empty line', () => {
+  const root = mkTmpRoot();
+  fs.mkdirSync(path.join(root, 'backlog'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'backlog', 'INTAKE-operator-question-123.md'), '\n\n# A raw human ask\nmore detail here\n');
+  const result = readRootIntakeFiles(root);
+  assert.deepEqual(result, [{ id: 'INTAKE-operator-question-123', title: 'A raw human ask', filename: 'INTAKE-operator-question-123.md' }]);
+});
+
+test('readRepoBaseUrl resolves an HTTPS github.com origin remote to its base URL', () => {
+  const root = mkTmpRoot();
+  execFileSync('git', ['init', '-q'], { cwd: root });
+  execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/ldecorps/swarmforgevc.git'], { cwd: root });
+  assert.equal(readRepoBaseUrl(root), 'https://github.com/ldecorps/swarmforgevc');
+});
+
+test('readRepoBaseUrl resolves an SSH github.com origin remote to its HTTPS base URL', () => {
+  const root = mkTmpRoot();
+  execFileSync('git', ['init', '-q'], { cwd: root });
+  execFileSync('git', ['remote', 'add', 'origin', 'git@github.com:ldecorps/swarmforgevc.git'], { cwd: root });
+  assert.equal(readRepoBaseUrl(root), 'https://github.com/ldecorps/swarmforgevc');
+});
+
+test('readRepoBaseUrl degrades to undefined (never throws) when there is no git remote at all', () => {
+  const root = mkTmpRoot();
+  execFileSync('git', ['init', '-q'], { cwd: root });
+  assert.equal(readRepoBaseUrl(root), undefined);
+});
+
+test('readRepoBaseUrl degrades to undefined (never throws) when the directory is not even a git repo', () => {
+  const root = mkTmpRoot();
+  assert.equal(readRepoBaseUrl(root), undefined);
 });

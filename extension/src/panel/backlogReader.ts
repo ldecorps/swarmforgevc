@@ -62,6 +62,13 @@ export interface BacklogItem {
   // itself (type: epic). Nothing in the backlog can derive an unticketed
   // slice's existence on its own; a human/specifier authors this list.
   remainingSlices?: string[];
+  // BL-465: the backlog yaml's own basename (e.g.
+  // "BL-467-pipeline-board-only-pin.yaml") - the join key the pipeline
+  // board's GitHub link list needs to resolve an id to its real backlog
+  // file path (active/paused/done), rather than reconstructing a filename
+  // by convention (which could 404 if a title-derived guess ever drifts
+  // from the real slug on disk).
+  filename?: string;
 }
 
 const VALID_STATUSES = new Set(['todo', 'active', 'done']);
@@ -346,6 +353,9 @@ function readYamlFiles(dir: string, overrideStatus?: BacklogItem['status']): Bac
       const item = parseBacklogYaml(content);
       if (item && overrideStatus !== undefined) {
         item.status = overrideStatus;
+      }
+      if (item) {
+        item.filename = f;
       }
       return item ? [item] : [];
     } catch {

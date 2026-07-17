@@ -106,9 +106,9 @@ test('buildBridgeState projects backlog active/paused/done folders', () => {
 
   const state = buildBridgeState(target, path.join(target, 'runs.jsonl'));
 
-  assert.deepEqual(state.backlog.active, [{ id: 'BL-001', title: 'active one', status: 'todo' }]);
-  assert.deepEqual(state.backlog.paused, [{ id: 'BL-002', title: 'paused one', status: 'todo' }]);
-  assert.deepEqual(state.backlog.done, [{ id: 'BL-003', title: 'done one', status: 'done' }]);
+  assert.deepEqual(state.backlog.active, [{ id: 'BL-001', title: 'active one', status: 'todo', filename: 'BL-001.yaml' }]);
+  assert.deepEqual(state.backlog.paused, [{ id: 'BL-002', title: 'paused one', status: 'todo', filename: 'BL-002.yaml' }]);
+  assert.deepEqual(state.backlog.done, [{ id: 'BL-003', title: 'done one', status: 'done', filename: 'BL-003.yaml' }]);
 });
 
 test('buildBridgeState projects the run log', () => {
