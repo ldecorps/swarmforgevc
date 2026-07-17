@@ -122,7 +122,7 @@ acceptance:
 #   5. Confirm classifyBoardFailure('Bad Request: text is too long') === 'too-long' and that the
 #      tracked topic id is RETAINED (not cleared) on that failure.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   LIVE, USER-FACING OUTAGE — the Telegram Pipeline Board has been frozen since ~00:44 UTC today.
   BL-497 (shipped) made the failure visible; this ticket fixes the actual cause it exposed: the
