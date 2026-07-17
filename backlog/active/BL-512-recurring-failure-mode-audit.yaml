@@ -1,0 +1,92 @@
+id: BL-512
+title: "Recurring failure-mode audit: inventory what agents keep tripping on and emit a prioritized root-cause fix-ticket slate"
+milestone: M8
+type: feature
+epic: ""
+priority: 4
+direction: human-requested
+depends_on: []
+source: "Root intake backlog/INTAKE-operator-question-1784328071807.md (Operator relayed a Telegram question, 2026-07-17): can we run a ticket to fix the recurring loose ends / errors the swarm agents keep tripping on. Specifier asked the human 2026-07-17 and CONFIRMED the approach: AUDIT-FIRST -> a bounded ticket that inventories the recurring failure modes from durable evidence and emits a PRIORITIZED SLATE of root-cause fix tickets; the fixes themselves are separate follow-on tickets. (Alternatives offered and NOT chosen: fix this week's top open cluster directly; do both.)"
+
+notes: |
+  WHAT / WHY: agents keep re-hitting a set of failure modes (merge/phantom-revert races, stale-build
+  gotchas, dropped handoff notes, blocked-menu stalls, bounce-hygiene / inherited-stale-state
+  crashes). The human wants those errors reduced. But the modes are HETEROGENEOUS: many canonical
+  ones are already root-caused and fixed (phantom-revert BL-373 DONE, socket-glob BL-367 CLOSED,
+  corrupt-handoff BL-365), while this week's live pain (backlog/evidence: BL-490/BL-509 incidents)
+  clusters on branch/bounce hygiene and inherited stale state. So step one is to SEPARATE
+  genuinely-open defects from already-fixed noise, not to re-fix. This ticket is that step; each
+  open-code fix it surfaces becomes its own later parcel (the specifier files them from the findings).
+
+  DELIVERABLES:
+    1. A REPRODUCIBLE, PURE inventory scan (the testable gate). Put the countable logic in
+       TypeScript for the real mutation/CRAP gate (a new pure module, e.g.
+       extension/src/metrics/failureModeInventory.ts, + a thin CLI extension/src/tools/
+       failure-mode-inventory.ts -> out/tools/failure-mode-inventory.js). It reads the STRUCTURED,
+       countable evidence and groups records by failure signature with an occurrence count,
+       deterministically. main() is a THIN wrapper; the evidence input PATHS are INJECTED args so the
+       scan is tested against fixtures, never the repo-root .swarmforge/ sibling (Stryker sandbox
+       rule) and never the live evidence tree; no network, no wall-clock read.
+    2. A committed AUDIT DOCUMENT (the judgment layer) under docs/ (suggest
+       docs/reference/recurring-failure-mode-audit.md) that takes the scan's grouped inventory and
+       adds, per mode: classification (already-fixed | open-code | operational), a real evidence
+       citation, the root cause, and the disposition (fixed -> its ticket/commit; open-code -> root
+       cause + a proposed fix ticket; operational -> a guardrail/procedure change). The open-code
+       modes are listed as distinct proposed fix tickets, RANKED by occurrence frequency x impact.
+
+  VERIFIED EVIDENCE SOURCES (durable, on this host; the audit reads these, cross-checks MEMORY.md,
+  and never cites memory alone):
+    - .swarmforge/rule_proposals/<month>.jsonl  (structured: scope/body/rationale/proposer).
+    - .swarmforge/qa_bounces/<month>.jsonl        (structured QA-bounce telemetry).
+    - backlog/evidence/*.md (111 files) + commit subjects (git log main -- backlog/evidence/).
+    - git revert / "BOUNCE" evidence commit subjects on main.
+    - .swarmforge/telemetry/chaser-*.jsonl (chase/nudge/stall telemetry).
+  The MARKDOWN evidence (backlog/evidence, MEMORY.md) is cited by the judgment layer but is too
+  free-form to machine-group reliably; scope the automated scan to the structured jsonl + commit
+  subjects, and keep the markdown as human-cited context. Do NOT attempt NLP clustering of the prose.
+
+  SCOPE BOUNDARY: this ticket does NOT perform any of the fixes. Its output is the inventory + the
+  ranked proposed-fix-ticket list; the specifier files those as separate paused tickets afterward.
+  Keep it that way or it balloons past shippable.
+
+  ORTHOGONALITY: creates NEW files only (a new inventory module + CLI + a new docs audit file) and
+  READS evidence; it edits no shared hot file (operator_runtime.bb, handoffd.bb, pipelineBoard.ts),
+  so it is orthogonal to the current in-flight work (BL-505/506/507/508 board, BL-511 briefing).
+  Safe to run concurrently.
+
+acceptance:
+  # Observable contract: the audit inventory is built from durable evidence (each listed mode cites a
+  # real record; none is invented), repeated occurrences of one signature are grouped into a single
+  # counted mode, every mode is classified with the disposition its class requires, the open-code
+  # modes are emitted as distinct proposed fix tickets ranked by frequency x impact, and the
+  # structured-evidence scan is deterministic and pure (same inputs -> same counts; no network/clock).
+  feature: specs/features/BL-512-recurring-failure-mode-audit.feature
+
+# QA end-to-end procedure (verify the scenarios hold in the live swarm):
+#   1. Build the extension (npm run compile in extension/, or npm test which compiles first).
+#   2. Run the inventory scan in-process against a FIXTURE evidence set (a few rule_proposals + a few
+#      qa_bounces lines repeating one signature, plus one unique signature); assert repeated records
+#      collapse to one counted mode, the unique one counts 1, and a signature with no records yields
+#      no mode. Run it twice and assert identical grouped counts (determinism).
+#   3. Open the committed audit doc and confirm every listed mode carries an evidence citation and a
+#      classification, that already-fixed modes name their fixing ticket/commit, and that each
+#      open-code mode is listed as a ranked proposed fix ticket. Spot-check two citations resolve to
+#      real records (e.g. a rule_proposals line, an evidence commit).
+#   4. Confirm this ticket landed NO fix to the underlying failure modes (it is inventory-only); the
+#      proposed fix tickets exist as a list, not as applied changes.
+
+human_approval: approved
+approval_context: >
+  Draining your question "can we run a ticket to fix the recurring loose ends agents keep tripping
+  on." You chose AUDIT-FIRST, so this ticket does the inventory, not the fixes: it produces (1) a
+  reproducible scan that groups the structured failure evidence (rule proposals, QA bounces, bounce
+  evidence) by signature with counts, and (2) a committed audit document that classifies every mode
+  as already-fixed / open-code / operational, cites real evidence, and lists the still-open ones as
+  a RANKED slate of proposed fix tickets. I want your sign-off on two things: (a) the audit is
+  deliberately inventory-ONLY (the actual fixes become separate follow-on tickets you can then
+  prioritize) rather than trying to fix everything in one unbounded parcel; and (b) the automated
+  scan covers the STRUCTURED evidence (jsonl + commit subjects) while the free-form markdown
+  evidence and the memory catalog are human-cited context, not machine-clustered. Say the word if
+  you'd rather I also spec the top open-cluster fixes now instead of waiting for the audit's slate.
+
+mutation_cost: medium

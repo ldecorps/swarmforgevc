@@ -1,0 +1,77 @@
+id: BL-513
+title: "Pipeline board LINKS section: list only the grid tickets, in plain alphabetical order (supersedes BL-506's most-recent-first)"
+milestone: M8
+type: feature
+epic: ""
+priority: 10
+direction: human-requested
+depends_on: [BL-506]
+source: "Human directive relayed in-session 2026-07-18: 'in the LINKS section, put only the YAMLs for the tickets shown on the message, in alphabetical order.' Specifier asked and the human chose 'Supersede: grid-only, alphabetical' over keeping BL-506's most-recent-first ordering. BL-506 was ALREADY QA-approved (bcbae0426f) and integrating when the directive arrived, so it could not be amended in-flight; this new ticket carries out the supersession."
+
+notes: |
+  WHY A NEW TICKET, not a BL-506 amendment: the human's supersede decision arrived while BL-506
+  (LINKS most-recent-first, numeric-aware, all four sources) was ALREADY past the final QA gate and
+  integrating (QA-approved bcbae0426f, merge-up broadcast sent). An approved, integrating parcel
+  cannot be amended in-flight, so BL-506 ships as-is and THIS ticket supersedes its ordering. Land
+  order therefore matters: depends_on BL-506 (both edit the SAME buildLinks function — never run
+  concurrently).
+
+  THE CHANGE (behaviour pinned in the feature):
+    1. LINKS include ONLY the tickets shown on the board GRID (the active pipeline rows rendered in
+       the board message). The parked, recently-closed, and root-intake link sources that buildLinks
+       currently merges in (and that BL-506 just ordered) are DROPPED from LINKS entirely.
+    2. Order the remaining grid links ALPHABETICALLY (lexicographic, A->Z) by id — plain string
+       order, replacing BL-506's most-recent-first numeric comparator. [Flagged for human sign-off:
+       literal alphabetical is NOT numeric-aware, so "BL-1000" sorts ABOVE "BL-999" lexicographically;
+       the active grid is small/same-width today so this only bites past the 4-digit boundary — easy
+       to flip to numeric if the human prefers. See approval_context.]
+
+  Everything else unchanged: the grid, the below-grid lists, the link TEXT/format, and BL-502's
+  link-budget/overflow behaviour (budgetPipelineBoardLinks / "+N more"). Note the budget now trims
+  from the END of an alphabetical list, so the highest-id grid tickets are dropped first under budget
+  pressure — acceptable since LINKS is now grid-only (a small set that rarely hits the budget).
+
+  SCOPE (verify the live path at build):
+    - extension/src/concierge/pipelineBoard.ts buildLinks (~L357-364): (a) narrow the link SET to the
+      grid tickets only — drop the parked / recently-closed / root-intake sources from LINKS; confirm
+      which of the four merged sources correspond to the rendered GRID rows before cutting (grep the
+      board render to see exactly which set is "shown on the message"); (b) replace BL-506's
+      most-recent-first comparator with a plain a.id.localeCompare(b.id) ascending sort. A small pure
+      helper, unit + acceptance testable without booting VS Code.
+    - Update the pipelineBoard.test.js and acceptance fixtures that BL-506 set to pin most-recent-first
+      LINKS order, and any that assert the now-dropped non-grid link sources, so this fix does not just
+      move the defect into a stale expectation (grep pipelineBoard.test.js + the BL-506 feature/steps).
+
+  ORTHOGONALITY: shares extension/src/concierge/pipelineBoard.ts (buildLinks) with BL-506 — NOT
+  orthogonal; depends_on BL-506 and must land after it, never concurrently. Also check BL-507/BL-508
+  (board tickets) for buildLinks overlap before promoting.
+
+acceptance:
+  # Observable contract: the LINKS section lists ONLY the tickets shown on the board grid (non-grid
+  # sources — parked / recently-closed / root-intake — get no link), ordered in plain alphabetical
+  # (lexicographic) id order A->Z (so "BL-1000" sorts above "BL-999"). Grid, below-grid lists, link
+  # text/format, and BL-502's link budget are unchanged.
+  feature: specs/features/BL-513-pipeline-board-links-grid-only-alphabetical.feature
+
+# QA end-to-end procedure (verify the scenarios hold in the live swarm):
+#   1. Build the extension (npm run compile in extension/, or npm test which compiles first).
+#   2. In-process, compute the board over a synthetic backlog whose GRID shows a few active tickets
+#      plus parked / recently-closed / root-intake entries NOT on the grid, with a real repoBaseUrl;
+#      assert the rendered LINKS contain only the grid tickets (no link for the non-grid entries) and
+#      are ordered alphabetically A->Z, with "BL-1000" appearing before "BL-999".
+#   3. Render over the CURRENT live backlog and confirm the LINKS section now lists only the grid
+#      tickets in alphabetical order (not BL-506's most-recent-first, and no parked/closed/intake links).
+
+human_approval: pending
+approval_context: >
+  Carrying out your instruction to make the pipeline-board LINKS section list only the tickets shown
+  on the board, in alphabetical order — superseding BL-506 (which had just shipped LINKS most-recent
+  first across all link sources, so this reverses that ordering and drops the non-grid link sources).
+  Two things for your sign-off: (a) "alphabetical" is spec'd as LITERAL lexicographic order, which is
+  NOT numeric-aware — so once any id reaches four digits, "BL-1000" sorts ABOVE "BL-999". The active
+  grid is small and same-width today so it won't bite yet, but say the word if you'd actually prefer
+  numeric order (BL-999 then BL-1000). (b) "tickets shown on the message" is read as the active
+  pipeline GRID rows — so parked, recently-closed, and root-intake links are removed from the LINKS
+  section entirely. Tell me if you meant a different set.
+
+mutation_cost: low
