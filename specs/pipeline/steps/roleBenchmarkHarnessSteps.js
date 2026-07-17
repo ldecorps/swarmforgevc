@@ -140,6 +140,10 @@ function registerSteps(registry) {
     ctx.deps = {
       executor: defaultExecutor(ctx),
       evaluator: createNodeTestQualityEvaluator(),
+      // BL-387: this ticket predates the pipeline-review oracle - a
+      // survives-with-no-rework fake keeps every scenario here scoring the
+      // diff exactly where it lands, its own pre-BL-387 behavior.
+      oracle: { async review() { return { survived: true, bounces: 0 }; } },
       scratchRoot: ctx.scratchRoot,
     };
   });

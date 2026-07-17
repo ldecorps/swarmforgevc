@@ -19,10 +19,11 @@ import * as os from 'os';
 import * as path from 'path';
 import { createClaudeCliExecutor } from '../benchmark/claudeCliExecutor';
 import { createNodeTestQualityEvaluator } from '../benchmark/nodeTestQualityEvaluator';
+import { createPipelineReviewOracle } from '../benchmark/pipelineReviewOracle';
 import { loadTaskBattery } from '../benchmark/taskFixture';
 import { runBenchmark } from '../benchmark/runBenchmark';
 import { writeBenchmarkReport, commitBenchmarkReport } from '../benchmark/reportArtifact';
-import { BenchmarkModelConfig, BenchmarkReport, ModelExecutor, QualityEvaluator, TaskSpec } from '../benchmark/types';
+import { BenchmarkModelConfig, BenchmarkReport, ModelExecutor, PipelineOracle, QualityEvaluator, TaskSpec } from '../benchmark/types';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 
 export interface RunRoleBenchmarkArgs {
@@ -89,6 +90,9 @@ export interface RunRoleBenchmarkDeps {
   nowIso: () => string;
   executor: ModelExecutor;
   evaluator: QualityEvaluator;
+  // BL-387: the pipeline review chain (cleaner -> architect -> hardener ->
+  // QA) a model's diff is judged by before it is ever scored.
+  oracle: PipelineOracle;
   writeReport: typeof writeBenchmarkReport;
   commitReport: typeof commitBenchmarkReport;
   print: (data: unknown) => void;
@@ -108,6 +112,7 @@ export async function runRoleBenchmarkCli(args: RunRoleBenchmarkArgs, deps: RunR
     deps: {
       executor: deps.executor,
       evaluator: deps.evaluator,
+      oracle: deps.oracle,
       scratchRoot,
     },
   });
@@ -118,15 +123,27 @@ export async function runRoleBenchmarkCli(args: RunRoleBenchmarkArgs, deps: RunR
   deps.print(report);
 }
 
+// BL-387: the review roles' own prompt files travel with the TARGET repo
+// being benchmarked (the same repo this CLI's own --target-repo-path
+// writes/commits the report into), not with the extension's own build
+// location - a benchmark measures a model against THIS target's actual
+// pipeline, so the review must be grounded in that target's own role
+// contracts. `sonnet` matches this project's own default swarm-role model
+// (memory: "Sonnet 5 is the deliberate default profile model"); tunable
+// later without changing this ticket's contract.
+const DEFAULT_REVIEW_MODEL = 'sonnet';
+
 // createClaudeCliExecutor() itself checks RUN_ROLE_BENCHMARK_EXECUTOR_FORCE_RESULT
 // (claudeCliExecutor.ts's own claudeCliForceResultFromEnv, mirroring
-// notify-dead-letters.ts's TELEGRAM_NOTIFY_FORCE_RESULT convention) before
-// ever spawning a real `claude` subprocess - so no separate seam is needed
-// here. The real evaluator/write/commit stay real (a real node:test run
-// against real fixture code, a real git commit against a real repo); only
-// that one genuinely external boundary (an LLM actually performing the
-// task) is fakeable, and only via that explicit env seam.
-function defaultDeps(): RunRoleBenchmarkDeps {
+// notify-dead-letters.ts's TELEGRAM_NOTIFY_FORCE_RESULT convention), and
+// createPipelineReviewOracle() checks RUN_ROLE_BENCHMARK_ORACLE_FORCE_RESULT
+// the same way, before ever spawning a real `claude` subprocess - so no
+// separate seam is needed here. The real evaluator/write/commit stay real
+// (a real node:test run against real fixture code, a real git commit
+// against a real repo); only those two genuinely external boundaries (an
+// LLM actually performing the task, and an LLM actually reviewing it) are
+// fakeable, and only via their explicit env seams.
+function defaultDeps(targetPath: string): RunRoleBenchmarkDeps {
   return {
     loadBattery: loadTaskBattery,
     readModels: (modelsFile) => JSON.parse(fs.readFileSync(modelsFile, 'utf8')) as BenchmarkModelConfig[],
@@ -134,13 +151,14 @@ function defaultDeps(): RunRoleBenchmarkDeps {
     nowIso: () => new Date().toISOString(),
     executor: createClaudeCliExecutor(),
     evaluator: createNodeTestQualityEvaluator(),
+    oracle: createPipelineReviewOracle(targetPath, DEFAULT_REVIEW_MODEL),
     writeReport: writeBenchmarkReport,
     commitReport: commitBenchmarkReport,
     print: printJsonToStdout,
   };
 }
 
-export const main = makeArgsGuardedMain(parseArgs, USAGE, (args) => runRoleBenchmarkCli(args, defaultDeps()));
+export const main = makeArgsGuardedMain(parseArgs, USAGE, (args) => runRoleBenchmarkCli(args, defaultDeps(args.targetPath)));
 
 if (require.main === module) {
   runCliMain(main);

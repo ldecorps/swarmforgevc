@@ -51,7 +51,10 @@ function registerSteps(registry) {
       repetitions: 1,
       qualityThreshold: 0.5,
       generatedAtIso: '2026-07-14T00:00:00Z',
-      deps: { executor: ctx.executor, evaluator: ctx.evaluator, scratchRoot: mkTmp() },
+      // BL-387: this ticket predates the pipeline-review oracle - a
+      // survives-with-no-rework fake keeps this scenario scoring the diff
+      // exactly where it lands, its own pre-BL-387 behavior.
+      deps: { executor: ctx.executor, evaluator: ctx.evaluator, oracle: { async review() { return { survived: true, bounces: 0 }; } }, scratchRoot: mkTmp() },
     });
   });
 

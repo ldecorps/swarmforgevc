@@ -15,6 +15,15 @@ function mkScratchRoot(name) {
   return mkTmpDir(`sfvc-runbenchmark-${name}-`);
 }
 
+// BL-387: every pre-existing test below constructs a `deps` object that
+// predates the oracle - a survives-with-no-rework fake keeps their
+// pre-BL-387 behavior/assertions unchanged (the diff always "survives",
+// so evaluate() still runs against whatever the fake executor left in the
+// scratch dir, exactly as before oracle review existed).
+function surviveOracle() {
+  return { async review() { return { survived: true, bounces: 0 }; } };
+}
+
 test('runs every configured model from the same starting task and records quality/latency/cost/tokens', async () => {
   const task = loadTask();
   const calls = [];
@@ -32,7 +41,7 @@ test('runs every configured model from the same starting task and records qualit
     repetitions: 1,
     qualityThreshold: 0.5,
     generatedAtIso: '2026-07-13T00:00:00Z',
-    deps: { executor, evaluator, scratchRoot: mkScratchRoot('basic') },
+    deps: { executor, evaluator, oracle: surviveOracle(), scratchRoot: mkScratchRoot('basic') },
   });
 
   assert.equal(calls.length, 1);
@@ -65,7 +74,7 @@ test('repeated runs of the same model report real variance, not just a single av
     repetitions: 3,
     qualityThreshold: 0.5,
     generatedAtIso: '2026-07-13T00:00:00Z',
-    deps: { executor, evaluator, scratchRoot: mkScratchRoot('variance') },
+    deps: { executor, evaluator, oracle: surviveOracle(), scratchRoot: mkScratchRoot('variance') },
   });
 
   const [modelReport] = report.models;
@@ -94,7 +103,7 @@ test('a provider that cannot act autonomously is excluded, not ranked as though 
     repetitions: 1,
     qualityThreshold: 0.5,
     generatedAtIso: '2026-07-13T00:00:00Z',
-    deps: { executor, evaluator, scratchRoot: mkScratchRoot('excluded') },
+    deps: { executor, evaluator, oracle: surviveOracle(), scratchRoot: mkScratchRoot('excluded') },
   });
 
   const excluded = report.models.find((m) => m.modelId === 'aider-mistral');
@@ -122,7 +131,7 @@ test('the quality threshold is stated on the report, and "no model met it" is ex
     repetitions: 1,
     qualityThreshold: 0.9,
     generatedAtIso: '2026-07-13T00:00:00Z',
-    deps: { executor, evaluator, scratchRoot: mkScratchRoot('threshold') },
+    deps: { executor, evaluator, oracle: surviveOracle(), scratchRoot: mkScratchRoot('threshold') },
   });
 
   assert.equal(report.qualityThreshold, 0.9);
@@ -151,7 +160,7 @@ test('each model starts from the same pinned state', async () => {
     repetitions: 1,
     qualityThreshold: 0.5,
     generatedAtIso: '2026-07-13T00:00:00Z',
-    deps: { executor, evaluator, scratchRoot: mkScratchRoot('samestate') },
+    deps: { executor, evaluator, oracle: surviveOracle(), scratchRoot: mkScratchRoot('samestate') },
   });
 
   assert.equal(seenStubs.length, 2);
@@ -170,7 +179,7 @@ test('a run that fails to execute scores 0 and carries its error, rather than be
     repetitions: 1,
     qualityThreshold: 0.5,
     generatedAtIso: '2026-07-13T00:00:00Z',
-    deps: { executor, evaluator, scratchRoot: mkScratchRoot('failed') },
+    deps: { executor, evaluator, oracle: surviveOracle(), scratchRoot: mkScratchRoot('failed') },
   });
 
   const [modelReport] = report.models;
@@ -194,7 +203,7 @@ test('an executed run whose fixture has zero tests scores quality 0, not NaN', a
     repetitions: 1,
     qualityThreshold: 0.5,
     generatedAtIso: '2026-07-13T00:00:00Z',
-    deps: { executor, evaluator, scratchRoot: mkScratchRoot('zero-total') },
+    deps: { executor, evaluator, oracle: surviveOracle(), scratchRoot: mkScratchRoot('zero-total') },
   });
 
   const [modelReport] = report.models;
@@ -237,7 +246,7 @@ test('a-tie-is-reported-as-a-tie-battery-01: every task in the battery is attemp
     repetitions: 1,
     qualityThreshold: 0.5,
     generatedAtIso: '2026-07-13T00:00:00Z',
-    deps: { executor, evaluator, scratchRoot: mkScratchRoot('battery-every-task') },
+    deps: { executor, evaluator, oracle: surviveOracle(), scratchRoot: mkScratchRoot('battery-every-task') },
   });
 
   assert.deepEqual(seenTaskIds, ['task-a', 'task-b']);
@@ -256,7 +265,7 @@ test('the-battery-can-actually-separate-models-02: the report carries the model\
     repetitions: 1,
     qualityThreshold: 0.5,
     generatedAtIso: '2026-07-13T00:00:00Z',
-    deps: { executor, evaluator, scratchRoot: mkScratchRoot('battery-per-task') },
+    deps: { executor, evaluator, oracle: surviveOracle(), scratchRoot: mkScratchRoot('battery-per-task') },
   });
 
   const [modelReport] = report.models;
@@ -278,7 +287,7 @@ test('the-battery-can-actually-separate-models-03: a model\'s overall quality re
     repetitions: 1,
     qualityThreshold: 0.5,
     generatedAtIso: '2026-07-13T00:00:00Z',
-    deps: { executor, evaluator, scratchRoot: mkScratchRoot('battery-overall') },
+    deps: { executor, evaluator, oracle: surviveOracle(), scratchRoot: mkScratchRoot('battery-overall') },
   });
 
   const [modelReport] = report.models;
@@ -320,7 +329,7 @@ test('the-battery-can-actually-separate-models-05: a task whose own reference so
     repetitions: 1,
     qualityThreshold: 0.5,
     generatedAtIso: '2026-07-13T00:00:00Z',
-    deps: { executor, evaluator, scratchRoot: mkScratchRoot('battery-refused') },
+    deps: { executor, evaluator, oracle: surviveOracle(), scratchRoot: mkScratchRoot('battery-refused') },
   });
 
   assert.deepEqual(report.taskIds, ['task-a']);
@@ -329,4 +338,143 @@ test('the-battery-can-actually-separate-models-05: a task whose own reference so
   // no further evaluate() call for it - it was never run as a real trial.
   assert.equal(trialCallsByTask.filter((id) => id === 'task-unsound').length, 1);
   assert.equal(report.models[0].taskScores.some((s) => s.taskId === 'task-unsound'), false);
+});
+
+// ── BL-387: the oracle scores what survives the pipeline, not the diff's
+//    first landing spot. The pipeline itself must never be stood up for
+//    real here (no real swarm/tmux/agents) - every scenario drives a fake
+//    PipelineOracle, per the ticket's own testability note. ─────────────
+
+function fakeExecutorWritingStub() {
+  return {
+    async execute(prompt, cwd) {
+      // Writes something distinguishable so a test can tell whether the
+      // evaluator later reads the model's ORIGINAL output or the oracle's
+      // revised one.
+      fs.writeFileSync(path.join(cwd, 'model-output.txt'), 'model-output');
+      return { success: true, costUsd: 0.01, tokens: { inputTokens: 1, outputTokens: 1 }, durationMs: 10 };
+    },
+  };
+}
+
+test('the-oracle-scores-what-survives-the-pipeline-01: the diff is put through the pipeline review stages, not scored where it lands', async () => {
+  const task = loadTask();
+  const reviewCalls = [];
+  const oracle = {
+    async review(diffDir, reviewedTask) {
+      reviewCalls.push({ diffDir, taskId: reviewedTask.id });
+      return { survived: true, bounces: 0 };
+    },
+  };
+  const evaluator = { async evaluate() { return { passed: 6, total: 6 }; } };
+
+  await runBenchmark({
+    tasks: [task],
+    models: [{ id: 'a', provider: 'claude', model: 'sonnet' }],
+    repetitions: 1,
+    qualityThreshold: 0.5,
+    generatedAtIso: '2026-07-13T00:00:00Z',
+    deps: { executor: fakeExecutorWritingStub(), evaluator, oracle, scratchRoot: mkScratchRoot('oracle-review-called') },
+  });
+
+  assert.equal(reviewCalls.length, 1, 'expected the diff to be put through the pipeline exactly once');
+  assert.equal(reviewCalls[0].taskId, task.id);
+});
+
+test('the-oracle-scores-what-survives-the-pipeline-02: the model is scored on what the pipeline accepted, not the diff it first produced', async () => {
+  const task = loadTask();
+  const evaluateCalls = [];
+  // The oracle REVISES the diff in place, mirroring a real review stage
+  // fixing something before accepting it - this is the mechanism by which
+  // "scored on what survived, not what was first produced" holds: the
+  // evaluator below reads from the SAME scratch dir, unconditionally,
+  // AFTER review() has already mutated it.
+  const oracle = {
+    async review(diffDir) {
+      fs.writeFileSync(path.join(diffDir, 'model-output.txt'), 'pipeline-revised-output');
+      return { survived: true, bounces: 1 };
+    },
+  };
+  const evaluator = {
+    async evaluate(cwd) {
+      evaluateCalls.push(fs.readFileSync(path.join(cwd, 'model-output.txt'), 'utf8'));
+      return { passed: 6, total: 6 };
+    },
+  };
+
+  await runBenchmark({
+    tasks: [task],
+    models: [{ id: 'a', provider: 'claude', model: 'sonnet' }],
+    repetitions: 1,
+    qualityThreshold: 0.5,
+    generatedAtIso: '2026-07-13T00:00:00Z',
+    deps: { executor: fakeExecutorWritingStub(), evaluator, oracle, scratchRoot: mkScratchRoot('oracle-scores-accepted') },
+  });
+
+  assert.equal(evaluateCalls.length, 1);
+  assert.equal(evaluateCalls[0], 'pipeline-revised-output', 'expected the evaluator to see the PIPELINE-ACCEPTED content, not the model\'s original output');
+});
+
+// BL-387 the-oracle-scores-what-survives-the-pipeline-03 (Scenario Outline)
+for (const bounces of [0, 1, 3]) {
+  test(`the-oracle-scores-what-survives-the-pipeline-03: every bounce is counted as rework (bounces=${bounces})`, async () => {
+    const task = loadTask();
+    const oracle = { async review() { return { survived: true, bounces }; } };
+    const evaluator = { async evaluate() { return { passed: 6, total: 6 }; } };
+
+    const report = await runBenchmark({
+      tasks: [task],
+      models: [{ id: 'a', provider: 'claude', model: 'sonnet' }],
+      repetitions: 1,
+      qualityThreshold: 0.5,
+      generatedAtIso: '2026-07-13T00:00:00Z',
+      deps: { executor: fakeExecutorWritingStub(), evaluator, oracle, scratchRoot: mkScratchRoot(`oracle-bounces-${bounces}`) },
+    });
+
+    assert.equal(report.models[0].runs[0].reworkRounds, bounces, `expected the trial to record ${bounces} rounds of rework`);
+  });
+}
+
+test('the-oracle-scores-what-survives-the-pipeline-04: a diff the pipeline never accepts is recorded as not surviving, and is not credited', async () => {
+  const task = loadTask();
+  const oracle = { async review() { return { survived: false, bounces: 2 }; } };
+  const evaluator = { async evaluate() { throw new Error('must not be called - the diff never survived the pipeline, so there is nothing to score'); } };
+
+  const report = await runBenchmark({
+    tasks: [task],
+    models: [{ id: 'a', provider: 'claude', model: 'sonnet' }],
+    repetitions: 1,
+    qualityThreshold: 0.5,
+    generatedAtIso: '2026-07-13T00:00:00Z',
+    deps: { executor: fakeExecutorWritingStub(), evaluator, oracle, scratchRoot: mkScratchRoot('oracle-never-survived') },
+  });
+
+  const [run] = report.models[0].runs;
+  assert.equal(run.ran, true, 'the model DID execute - it is the pipeline review that never accepted the result');
+  assert.equal(run.survived, false);
+  assert.equal(run.reworkRounds, 2, 'expected the bounces attempted before giving up to still be recorded');
+  assert.equal(run.qualityScore, 0, 'expected no credit for a diff the pipeline never accepted');
+  assert.equal(run.testsPassed, 0);
+  assert.equal(run.testsTotal, 0);
+});
+
+test('a run that fails to execute never reaches the oracle, and records survived:false with zero rework', async () => {
+  const task = loadTask();
+  const executor = { async execute() { return { success: false, costUsd: null, tokens: null, durationMs: 50, error: 'boom' }; } };
+  const oracle = { async review() { throw new Error('must not be called - the model never produced a diff to review'); } };
+  const evaluator = { async evaluate() { throw new Error('must not be called when the executor failed'); } };
+
+  const report = await runBenchmark({
+    tasks: [task],
+    models: [{ id: 'a', provider: 'claude', model: 'sonnet' }],
+    repetitions: 1,
+    qualityThreshold: 0.5,
+    generatedAtIso: '2026-07-13T00:00:00Z',
+    deps: { executor, evaluator, oracle, scratchRoot: mkScratchRoot('oracle-skipped-on-exec-failure') },
+  });
+
+  const [run] = report.models[0].runs;
+  assert.equal(run.ran, false);
+  assert.equal(run.survived, false);
+  assert.equal(run.reworkRounds, 0);
 });
