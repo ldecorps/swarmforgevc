@@ -2,8 +2,47 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
-const { parseArgs, realAdapters } = require('../out/tools/mutation-site-count');
+const { parseArgs, realAdapters, main } = require('../out/tools/mutation-site-count');
 const { countMutationSites } = require('../out/quality/mutationSiteCount');
+
+const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'mutation-site-count.js');
+
+// Runs the REAL main() in-process, so in-process coverage and mutation
+// tooling can see its own branches (the empty-files usage/exit-1 guard, the
+// report-and-print path) - the engineering article's CLI main()-thin-
+// wrapper rule; mirrors queueStatusCli.test.js's own identical seam. main()
+// takes no parameters - it reads process.argv and writes via
+// process.stdout.write/process.stderr.write (printJsonToStdout, and main's
+// own usage line) - so all three are stubbed and restored in finally.
+async function runCli(args) {
+  const previousArgv = process.argv;
+  const previousExitCode = process.exitCode;
+  const originalStdoutWrite = process.stdout.write;
+  const originalStderrWrite = process.stderr.write;
+  const stdout = [];
+  const stderr = [];
+  process.stdout.write = (chunk) => {
+    stdout.push(chunk);
+    return true;
+  };
+  process.stderr.write = (chunk) => {
+    stderr.push(chunk);
+    return true;
+  };
+  process.argv = ['node', CLI_PATH, ...args];
+  process.exitCode = undefined;
+  let exitCode;
+  try {
+    await main();
+    exitCode = process.exitCode;
+  } finally {
+    process.stdout.write = originalStdoutWrite;
+    process.stderr.write = originalStderrWrite;
+    process.argv = previousArgv;
+    process.exitCode = previousExitCode;
+  }
+  return { stdout: stdout.join(''), stderr: stderr.join(''), exitCode };
+}
 
 // BL-485: the REAL @stryker-mutator/instrumenter wiring - never mocked,
 // stubbed, or faked, per this codebase's own dependencyGateCli*.test.js
@@ -65,4 +104,29 @@ test('the REAL instrumenter excludes entrypoint-boilerplate mutants, matching wh
     bareResult.siteCount,
     'expected the __esModule/require.main boilerplate to contribute zero extra sites over the bare equivalent'
   );
+});
+
+// ── main() in-process (CLI wiring) ──────────────────────────────────────
+
+test('main() with no file args prints usage to stderr and sets a non-zero exit code, without printing a report', async () => {
+  const { stdout, stderr, exitCode } = await runCli([]);
+
+  assert.equal(stdout, '');
+  assert.match(stderr, /Usage: mutation-site-count\.js/);
+  assert.equal(exitCode, 1);
+});
+
+test('main() with a real file arg prints the JSON report (threshold + per-file verdict) to stdout', async () => {
+  const file = mkFixtureFile('function add(a, b) { return a + b; }\nmodule.exports = { add };\n');
+
+  const { stdout, stderr, exitCode } = await runCli(['--threshold', '1', file]);
+
+  assert.equal(stderr, '');
+  assert.equal(exitCode, undefined);
+  const report = JSON.parse(stdout);
+  assert.equal(report.threshold, 1);
+  assert.equal(report.files.length, 1);
+  assert.equal(report.files[0].file, file);
+  assert.ok(report.files[0].siteCount >= 1);
+  assert.equal(report.files[0].verdict, report.files[0].siteCount > 1 ? 'over' : 'within');
 });
