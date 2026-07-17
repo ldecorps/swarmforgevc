@@ -935,6 +935,22 @@ async function editApprovalAskWithBoundedRateLimitRetry(
   return lastResult;
 }
 
+// BL-496: logs the real reason a decided ask's close never landed - split
+// out of closeApprovalAskIfPossible below for the same CRAP-budget reason
+// this file already applies throughout. A rate-limited exhaustion (a
+// retryAfterSeconds survived every retry) gets its own loud, named line so
+// it reads distinctly from an ordinary rejection (message deleted, bot
+// kicked, etc.), which logs its real Telegram error instead.
+function logAskCloseFailure(backlogId: string, result: EditMessageTextResult): void {
+  if (result.retryAfterSeconds !== undefined) {
+    process.stderr.write(
+      `front-desk bot: failed to close the approval ask for ${backlogId} - rate-limited, retry budget exhausted, close not delivered (last retry_after=${result.retryAfterSeconds}s)\n`
+    );
+  } else {
+    process.stderr.write(`front-desk bot: failed to close the approval ask for ${backlogId}: ${result.error ?? 'message edit failed or not wired'}\n`);
+  }
+}
+
 // BL-484: performs the actual Telegram edit that closes a decided ask -
 // split out of recordApprovalDecisionAndClose below for the same CRAP-
 // budget reason this file already applies throughout (e.g.
@@ -963,13 +979,7 @@ async function closeApprovalAskIfPossible(adapters: PollAdapters, backlogId: str
       )
     : { success: false };
   if (!result.success) {
-    if (result.retryAfterSeconds !== undefined) {
-      process.stderr.write(
-        `front-desk bot: failed to close the approval ask for ${backlogId} - rate-limited, retry budget exhausted, close not delivered (last retry_after=${result.retryAfterSeconds}s)\n`
-      );
-    } else {
-      process.stderr.write(`front-desk bot: failed to close the approval ask for ${backlogId}: ${result.error ?? 'message edit failed or not wired'}\n`);
-    }
+    logAskCloseFailure(backlogId, result);
   }
 }
 

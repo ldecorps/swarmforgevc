@@ -2136,6 +2136,56 @@ test('recordApprovalDecisionAndClose: an approved decision with a stored ask edi
   ]);
 });
 
+test('BL-496: a successful ask-close edit never writes anything to stderr', async () => {
+  const adapters = closingFixtureAdapters({
+    readApprovalAskMessage: async (backlogId) => ({ topicId: 800, messageId: 999, text: `${backlogId} needs your approval...` }),
+  });
+  const originalErrorWrite = process.stderr.write;
+  const errors = [];
+  process.stderr.write = (chunk) => {
+    errors.push(chunk);
+    return true;
+  };
+  try {
+    await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+  } finally {
+    process.stderr.write = originalErrorWrite;
+  }
+
+  assert.equal(errors.length, 0, `expected no stderr output on a successful ask-close edit, got: ${JSON.stringify(errors)}`);
+});
+
+test('BL-496: a stored ask message with no editApprovalAskMessage adapter wired at all logs the "not wired" fallback, never crashes', async () => {
+  // closingFixtureAdapters' own `??` default always substitutes a
+  // succeeding stub for an explicitly-undefined override, so this scenario
+  // - the adapter genuinely absent from PollAdapters, a real production
+  // possibility (see the pre-BL-484 PollAdapters test above) - is built by
+  // hand rather than through that helper.
+  const adapters = {
+    recordApprovalReply: async () => true,
+    recordRejectionReply: async () => true,
+    readApprovalAskMessage: async (backlogId) => ({ topicId: 800, messageId: 999, text: `${backlogId} needs your approval...` }),
+  };
+  const originalErrorWrite = process.stderr.write;
+  const errors = [];
+  process.stderr.write = (chunk) => {
+    errors.push(chunk);
+    return true;
+  };
+  let changed;
+  try {
+    changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+  } finally {
+    process.stderr.write = originalErrorWrite;
+  }
+
+  assert.equal(changed, true, 'expected the decision recording to still succeed with no edit adapter wired');
+  assert.ok(
+    errors.some((e) => e.includes('BL-484') && e.includes('message edit failed or not wired')),
+    `expected the "not wired" fallback logged, got: ${JSON.stringify(errors)}`
+  );
+});
+
 test('recordApprovalDecisionAndClose: a rejected decision appends the reason', async () => {
   const adapters = closingFixtureAdapters({
     readApprovalAskMessage: async (backlogId) => ({ topicId: 800, messageId: 999, text: `${backlogId} needs your approval...` }),
@@ -2295,6 +2345,34 @@ test('BL-496 ask-close-rate-limit-03: a persistently rate-limited edit stops at 
     errors.some((e) => e.includes('BL-484') && /rate.?limit/i.test(e)),
     `expected a loud undelivered-close warning naming the rate limit, got: ${JSON.stringify(errors)}`
   );
+});
+
+test('BL-496: an askCloseRetryBudget of 0 (misconfigured) attempts no edit at all and still logs the undelivered close, never throws', async () => {
+  let attempts = 0;
+  const adapters = closingFixtureAdapters({
+    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 999, text: 'BL-484 needs your approval...' }),
+    askCloseRetryBudget: 0,
+    editApprovalAskMessage: async () => {
+      attempts += 1;
+      return { success: true };
+    },
+  });
+  const originalErrorWrite = process.stderr.write;
+  const errors = [];
+  process.stderr.write = (chunk) => {
+    errors.push(chunk);
+    return true;
+  };
+  let changed;
+  try {
+    changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+  } finally {
+    process.stderr.write = originalErrorWrite;
+  }
+
+  assert.equal(changed, true, 'expected the decision recording to still succeed despite the zero retry budget');
+  assert.equal(attempts, 0, 'expected zero edit attempts with a zero budget - the loop must never run');
+  assert.ok(errors.some((e) => e.includes('BL-484')), `expected the undelivered close logged, got: ${JSON.stringify(errors)}`);
 });
 
 test('BL-496 ask-close-rate-limit-04: three decided asks each rate-limited once then succeeding all close in one burst', async () => {
