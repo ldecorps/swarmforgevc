@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const {
@@ -148,4 +149,21 @@ test('createPipelineReviewOracle short-circuits to the forced result and never s
   // genuinely bypasses the real path, not merely that the real path
   // happens to also produce this value.
   assert.deepEqual(result, { survived: true, bounces: 1 });
+});
+
+// ── BL-387 QA bounce: a setup failure (missing/unreadable role-prompt
+//    file) must degrade to REJECT exactly like a bad CLI response does,
+//    never propagate as an uncaught exception - drives the REAL
+//    createPipelineReviewOracle closure (no FORCE_RESULT short-circuit,
+//    no scripted runReviewChain verdicts) against a repo root that has NO
+//    swarmforge/roles/*.prompt files at all, mirroring QA's own repro. ──
+
+test('createPipelineReviewOracle degrades to survived:false rather than throwing when a role-prompt file is missing', async () => {
+  const repoRootWithNoRolePrompts = mkTmpDir('sfvc-oracle-no-roles-');
+  const diffDir = mkTmpDir('sfvc-oracle-diffdir-');
+  const oracle = createPipelineReviewOracle(repoRootWithNoRolePrompts, 'sonnet');
+
+  const result = await withEnv(ENV_KEY, undefined, () => oracle.review(diffDir, { id: 'task-x' }));
+
+  assert.deepEqual(result, { survived: false, bounces: 0 }, `expected a degraded REJECT result, not a thrown exception, got: ${JSON.stringify(result)}`);
 });
