@@ -257,6 +257,32 @@ test('answerCallbackQuery reports failure on a non-2xx response without leaking 
   assert.doesNotMatch(result.error, new RegExp(TOKEN));
 });
 
+// BL-484: an optional toast text - a stale/already-decided tap needs to tell
+// the human something ("already decided: approved") without any other side
+// effect. Added LAST (after postFn), same "new param never disturbs an
+// existing positional call site" posture as sendTelegramMessage/
+// editMessageText's own trailing additions.
+test('answerCallbackQuery includes an optional toast text when given', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  await answerCallbackQuery(TOKEN, 'cbq-3', postFn, 'Already decided: approved');
+
+  assert.deepEqual(JSON.parse(calls[0].body), { callback_query_id: 'cbq-3', text: 'Already decided: approved' });
+});
+
+test('answerCallbackQuery omits text entirely when not given', async () => {
+  const postFn = async (url, body) => {
+    assert.equal(Object.prototype.hasOwnProperty.call(JSON.parse(body), 'text'), false);
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  await answerCallbackQuery(TOKEN, 'cbq-4', postFn);
+});
+
 test('createForumTopic posts to the Telegram API and reports the new topic\'s message_thread_id', async () => {
   const calls = [];
   const postFn = async (url, body) => {
@@ -665,6 +691,45 @@ test('editMessageText reports failure on a non-2xx response without leaking the 
   assert.equal(result.success, false);
   assert.match(result.error, /message to edit not found/);
   assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+// BL-484: a decided approval ask must STRIP its inline keyboard - Telegram's
+// editMessageText leaves an existing reply_markup untouched when the field
+// is omitted, so removing buttons requires explicitly sending an EMPTY
+// inline_keyboard, not just leaving the field out. `buttons: null` is that
+// explicit strip; `buttons` omitted (undefined) keeps the pre-BL-484
+// behavior (no reply_markup field at all) for every existing call site.
+test('editMessageText with buttons: null explicitly strips the inline keyboard', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 42 } } };
+  };
+
+  await editMessageText(TOKEN, CHAT_ID, 42, 'decided text', undefined, postFn, null);
+
+  assert.deepEqual(JSON.parse(calls[0].body).reply_markup, { inline_keyboard: [] });
+});
+
+test('editMessageText omits reply_markup entirely when buttons is not given', async () => {
+  const postFn = async (url, body) => {
+    assert.equal(Object.prototype.hasOwnProperty.call(JSON.parse(body), 'reply_markup'), false);
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 42 } } };
+  };
+
+  await editMessageText(TOKEN, CHAT_ID, 42, 'text', undefined, postFn);
+});
+
+test('editMessageText with a real buttons array sends it as the new inline keyboard', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 42 } } };
+  };
+
+  await editMessageText(TOKEN, CHAT_ID, 42, 'text', undefined, postFn, [[{ text: 'Approve', callbackData: 'approve:BL-1' }]]);
+
+  assert.deepEqual(JSON.parse(calls[0].body).reply_markup, { inline_keyboard: [[{ text: 'Approve', callback_data: 'approve:BL-1' }]] });
 });
 
 // ── BL-462: deleteMessage - the pipeline board's own repost-at-bottom ────

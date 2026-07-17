@@ -55,6 +55,9 @@ const {
   synthesizeVoiceReply,
   readRootIntakeFiles,
   readRepoBaseUrl,
+  readApprovalAskMessages,
+  recordApprovalAskMessage,
+  approvalAskMessagesPath,
   main,
 } = require('../out/tools/telegram-front-desk-bot');
 const { readRecord: readTopicRecord } = require('../out/concierge/blTopicStore');
@@ -1145,6 +1148,43 @@ test('BL-466: writePollMap persists to disk and readPollMap reads back the SAME 
   writePollMap(root, map);
   assert.deepEqual(JSON.parse(fs.readFileSync(pollMapPath(root), 'utf8')), map);
   assert.deepEqual(readPollMap(root), map);
+});
+
+// ── readApprovalAskMessages / recordApprovalAskMessage (BL-484, the
+//    sendApprovalAsk/closing-routine on-disk backing) — same reasoning as
+//    readPollMap/writePollMap above: a NEW on-disk input this ticket
+//    introduces, proven load-bearing with a real fixture file (never only
+//    exercised through module-private buildConciergeTickAdapters/
+//    buildPollAdapters, which no test reaches) ─────────────────────────────
+
+test('BL-484: readApprovalAskMessages returns {} when the file does not exist yet', () => {
+  const root = mkTmpRoot();
+  assert.deepEqual(readApprovalAskMessages(root), {});
+});
+
+test('BL-484: readApprovalAskMessages returns {} when the file is present but not valid JSON (present-but-malformed degrades, never crashes)', () => {
+  const root = mkTmpRoot();
+  fs.mkdirSync(path.dirname(approvalAskMessagesPath(root)), { recursive: true });
+  fs.writeFileSync(approvalAskMessagesPath(root), 'not json');
+  assert.deepEqual(readApprovalAskMessages(root), {});
+});
+
+test('BL-484: recordApprovalAskMessage persists to disk and readApprovalAskMessages reads back the SAME content - proves the read is load-bearing, not a hardcoded default', () => {
+  const root = mkTmpRoot();
+  recordApprovalAskMessage(root, 'BL-484', 800, 42, 'BL-484 needs your approval...');
+  const expected = { 'BL-484': { topicId: 800, messageId: 42, text: 'BL-484 needs your approval...' } };
+  assert.deepEqual(JSON.parse(fs.readFileSync(approvalAskMessagesPath(root), 'utf8')), expected);
+  assert.deepEqual(readApprovalAskMessages(root), expected);
+});
+
+test('BL-484: recordApprovalAskMessage adds a new entry alongside an existing one, never clobbering it', () => {
+  const root = mkTmpRoot();
+  recordApprovalAskMessage(root, 'BL-1', 800, 1, 'BL-1 needs your approval...');
+  recordApprovalAskMessage(root, 'BL-2', 800, 2, 'BL-2 needs your approval...');
+  assert.deepEqual(readApprovalAskMessages(root), {
+    'BL-1': { topicId: 800, messageId: 1, text: 'BL-1 needs your approval...' },
+    'BL-2': { topicId: 800, messageId: 2, text: 'BL-2 needs your approval...' },
+  });
 });
 
 test('BL-466: writePollMap overwrites a prior mapping in place - readPollMap sees only the latest write, never a stale one', () => {

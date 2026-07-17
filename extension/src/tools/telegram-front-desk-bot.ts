@@ -117,7 +117,7 @@ import {
   decideDrainOutcome,
 } from './telegramControlCore';
 import { backlogForTopic } from '../concierge/topicRouter';
-import { recordApprovalReply, recordRejectionReply } from '../concierge/pendingApprovalReply';
+import { recordApprovalReply, recordRejectionReply, readRecordedVerdict } from '../concierge/pendingApprovalReply';
 import {
   computeRecertBatch,
   isScenarioUpForRecert,
@@ -219,6 +219,42 @@ function readPendingButtonActions(targetPath: string): Record<string, 'reject' |
 function writePendingButtonActions(targetPath: string, actions: Record<string, 'reject' | 'amend'>): void {
   fs.mkdirSync(path.dirname(pendingButtonActionsPath(targetPath)), { recursive: true });
   fs.writeFileSync(pendingButtonActionsPath(targetPath), JSON.stringify(actions));
+}
+
+// BL-484: {backlogId: {topicId, messageId, text}} - the Telegram message
+// each posted approval ask lives at (plus its exact ask TEXT, so the
+// closing routine can compose "original text + decision line" without a
+// second lookup) - so a later decision (a button tap or typed reply, a
+// SEPARATE poll-loop event from the concierge tick that posted the ask)
+// can edit that exact message. Bot-owned, machine-local, gitignored, same
+// "no durability promise beyond one process lifetime" posture as the other
+// operator/ sidecars above - a restart before a decision simply means the
+// closing edit can't happen for whatever was posted before the restart
+// (the same degrade-gracefully posture this file already accepts for its
+// own machine-local trackers).
+export interface StoredApprovalAskMessage {
+  topicId: number;
+  messageId: number;
+  text: string;
+}
+
+export function approvalAskMessagesPath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'telegram-approval-ask-messages.json');
+}
+
+export function readApprovalAskMessages(targetPath: string): Record<string, StoredApprovalAskMessage> {
+  try {
+    return JSON.parse(fs.readFileSync(approvalAskMessagesPath(targetPath), 'utf8')) as Record<string, StoredApprovalAskMessage>;
+  } catch {
+    return {};
+  }
+}
+
+export function recordApprovalAskMessage(targetPath: string, backlogId: string, topicId: number, messageId: number, text: string): void {
+  const messages = readApprovalAskMessages(targetPath);
+  messages[backlogId] = { topicId, messageId, text };
+  fs.mkdirSync(path.dirname(approvalAskMessagesPath(targetPath)), { recursive: true });
+  fs.writeFileSync(approvalAskMessagesPath(targetPath), JSON.stringify(messages));
 }
 
 // BL-450: {scenarioId} | {} - which scenario's delete is currently awaiting
@@ -808,9 +844,12 @@ export async function openSubjectAndRecord(targetPath: string, topicId: number |
 // failure must never abort the rest of the poll cycle) - a failed answer
 // just leaves the human's spinner spinning a little longer; the next tap
 // (or this same one, on a future retry path) can still succeed.
-async function answerCallbackQueryQuietly(botToken: string, callbackQueryId: string): Promise<void> {
+// BL-484: an optional toast `text` - added last, same never-throw posture,
+// so a stale-tap "already decided" toast degrades to a swallowed failure
+// exactly like every other callback answer, never a crash.
+async function answerCallbackQueryQuietly(botToken: string, callbackQueryId: string, text?: string): Promise<void> {
   try {
-    await answerCallbackQuery(botToken, callbackQueryId);
+    await answerCallbackQuery(botToken, callbackQueryId, undefined, text);
   } catch {
     // swallowed - see comment above.
   }
@@ -1219,6 +1258,11 @@ function buildPollAdapters(
     postOperatorContext: (backlogId, text, updateId) => postOperatorContext(targetPath, backlogId, text, updateId),
     recordApprovalReply: (backlogId) => Promise.resolve(recordApprovalReply(targetPath, backlogId)),
     recordRejectionReply: (backlogId, reason) => Promise.resolve(recordRejectionReply(targetPath, backlogId, reason)),
+    // BL-484: the closing routine's own three adapters - a decided ask
+    // strips its buttons and shows the verdict.
+    readRecordedApprovalVerdict: (backlogId) => Promise.resolve(readRecordedVerdict(targetPath, backlogId)),
+    readApprovalAskMessage: (backlogId) => Promise.resolve(readApprovalAskMessages(targetPath)[backlogId]),
+    editApprovalAskMessage: (topicId, messageId, text) => editMessageText(botToken, chatId, messageId, text, undefined, undefined, null).then((r) => r.success),
     notifyApprovalsTopic: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then((r) => r.success),
     // BL-450: recertificationStore.ts's own read-check-write functions -
     // the FIRST live callers of confirmScenario/writeRecertStore/
@@ -1265,7 +1309,7 @@ function buildPollAdapters(
       writePendingButtonActions(targetPath, actions);
       return Promise.resolve();
     },
-    answerCallbackQuery: (callbackQueryId) => answerCallbackQueryQuietly(botToken, callbackQueryId),
+    answerCallbackQuery: (callbackQueryId, text) => answerCallbackQueryQuietly(botToken, callbackQueryId, text),
     readRoleTopicMap: () => readRoleTopicMap(targetPath),
     redirectToRole: (role, text) => redirectToRole(targetPath, role, text),
     agentQuestionsTopicId: () => ensureAgentQuestionsTopic(targetPath, botToken, chatId),
@@ -1815,6 +1859,14 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
       },
       ensureOperatorTopic: () => ensureOperatorTopic(targetPath, botToken, chatId),
       ensureApprovalsTopic: () => ensureApprovalsTopic(targetPath, botToken, chatId),
+      // BL-484: posts the approval ask via the SAME sendTelegramMessage call
+      // as the ordinary sendMessage above, but also reports the message_id -
+      // the poll loop's closing routine (telegramFrontDeskBotCore.ts's
+      // recordApprovalDecisionAndClose) needs it later to edit this exact
+      // message in place.
+      sendApprovalAsk: (topicId, text, buttons) =>
+        sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId, buttons).then((r) => ({ success: r.success, messageId: r.messageId })),
+      recordApprovalAskMessageId: (backlogId, topicId, messageId, text) => recordApprovalAskMessage(targetPath, backlogId, topicId, messageId, text),
     },
     iconAdapters: {
       getIconStickers: () => iconStickersOnce(botToken),
