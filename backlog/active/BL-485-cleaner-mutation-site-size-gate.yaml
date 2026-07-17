@@ -63,7 +63,7 @@ acceptance:
   # grows externally-observable CLI behavior worth pinning.
   outcome: "A count-only Stryker helper reports mutation-site count per changed file against out/-mapped sources without running the mutation loop; cleaner.prompt (human-approved wording) owns a mutation-site size gate that splits over-threshold changed files behavior-preservingly before handoff while preserving manifests; the ADOPT decision is recorded in docs/upstream-deviations.md's review log."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   TWO things need the human's call before/while this builds: (a) the cleaner.prompt "## Mutation-Site
   Size" wording (a role-prompt edit is global — same posture as BL-479's amendment), drafted for review

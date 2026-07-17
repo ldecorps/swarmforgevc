@@ -61,8 +61,7 @@ notes: |
 
 acceptance: specs/features/BL-481-operator-out-of-cycle-wake.feature
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   DIRECTION approved by the human 2026-07-17 (chose 'Faster real reply' — out-of-cycle tick on fresh
   inbound and/or shorten OPERATOR_INTERVAL_MS — over an immediate-ack reply or documentation-only).

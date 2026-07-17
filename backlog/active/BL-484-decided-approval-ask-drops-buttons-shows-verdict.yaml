@@ -62,8 +62,7 @@ acceptance:
     - "A tap on an already-decided ask yields an informative callback answer and no side effect"
     - "A failed message edit is logged and does not break the decision recording"
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Human asked for exactly this behaviour (2026-07-17, screenshot of two decided asks still showing live
   buttons). Approving approves the close-on-decision contract above; exact verdict-line wording is the
