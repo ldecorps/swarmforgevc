@@ -404,8 +404,28 @@ test('syncPipelineBoard: repeated transient failures raise exactly one operator 
 
   assert.equal(result.state.consecutiveFailures, PIPELINE_BOARD_ALERT_FAILURE_CAP);
   assert.equal(alertsSent.length, 1, `expected exactly one alert emitted at the cap, got: ${JSON.stringify(alertsSent)}`);
+  assert.equal(
+    alertsSent[0],
+    `Pipeline Board frozen: ${PIPELINE_BOARD_ALERT_FAILURE_CAP} consecutive failed post attempts (last error: Too Many Requests: retry after 26).`,
+    'expected the alert text to name the failure count and the last Telegram error'
+  );
   assert.equal(result.state.topicId, 900, 'expected the same topic id retained, no new topic created');
   assert.equal(result.state.alertArmed, true);
+});
+
+test('syncPipelineBoard: an alert raised for a failure with no error string omits the "last error" clause', async () => {
+  const first = await syncPipelineBoard(board([{ id: 'BL-1', column: 'coder', slug: '' }]), undefined, fakeAdapters(), T1);
+
+  const { alertsSent } = await driveTransientFailures(PIPELINE_BOARD_ALERT_FAILURE_CAP, first.state, {
+    postMessage: async () => ({}),
+  });
+
+  assert.equal(alertsSent.length, 1);
+  assert.equal(
+    alertsSent[0],
+    `Pipeline Board frozen: ${PIPELINE_BOARD_ALERT_FAILURE_CAP} consecutive failed post attempts.`,
+    'expected no "(last error: ...)" clause when the failure carried no error string'
+  );
 });
 
 test('syncPipelineBoard: a further transient failure past the cap emits no additional alert', async () => {
