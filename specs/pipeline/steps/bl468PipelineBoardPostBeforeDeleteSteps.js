@@ -23,10 +23,10 @@ function board(rows) {
 
 function fakeAdapters(ctx, overrides = {}) {
   return {
-    ensureBoardTopic: async () => TOPIC_ID,
+    ensureBoardTopic: async () => ({ topicId: TOPIC_ID }),
     postMessage: async (topicId, text) => {
       ctx.calls.push({ fn: 'post', topicId, text });
-      return ctx.nextMessageId ?? 1;
+      return { messageId: ctx.nextMessageId ?? 1 };
     },
     deleteMessage: async (topicId, messageId) => {
       ctx.calls.push({ fn: 'delete', topicId, messageId });
@@ -68,7 +68,7 @@ function registerSteps(registry) {
       ? fakeAdapters(ctx, {
           postMessage: async (topicId, text) => {
             ctx.calls.push({ fn: 'post', topicId, text });
-            return undefined;
+            return {};
           },
         })
       : fakeAdapters(ctx);
