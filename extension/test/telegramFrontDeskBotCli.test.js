@@ -14,6 +14,7 @@ const {
   ensureApprovalsTopic,
   ensureRecertTopic,
   ensureAgentQuestionsTopic,
+  ensureBacklogTopic,
   ensureControlTopic,
   controlDrainTimeoutMs,
   controlRestartAckTimeoutMs,
@@ -58,6 +59,10 @@ const {
   readApprovalAskMessages,
   recordApprovalAskMessage,
   approvalAskMessagesPath,
+  resolveAskOptions,
+  readAskMessages,
+  recordAskMessage,
+  askMessagesPath,
   main,
 } = require('../out/tools/telegram-front-desk-bot');
 const { readRecord: readTopicRecord } = require('../out/concierge/blTopicStore');
@@ -655,6 +660,75 @@ test('BL-466: an already-bound Agent Questions topic returns its existing topicI
   assert.equal(calls.length, 0);
 });
 
+// ── ensureBacklogTopic (BL-492, mirrors ensureAgentQuestionsTopic above) ──
+
+test('BL-492: creates the Backlog topic and binds it to the reserved subject when the map has no binding yet', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeCreateOk(42);
+  await ensureBacklogTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 1);
+  const map = readTopicMapFixture(root);
+  assert.equal(map['42'], 'BACKLOG');
+});
+
+test('BL-492: the create call names the topic "Backlog"', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeCreateOk(7);
+  await ensureBacklogTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.match(calls[0].url, /createForumTopic$/);
+  assert.match(calls[0].body, /"name":"Backlog"/);
+});
+
+test('BL-492: a map that already binds the reserved Backlog subject never creates a second topic', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'BACKLOG' });
+  const { postFn, calls } = fakeCreateOk(999);
+  await ensureBacklogTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 0);
+  assert.deepEqual(readTopicMapFixture(root), { '42': 'BACKLOG' });
+});
+
+test('BL-492: the Backlog topic and the STEERING/other standing topics bind independently in the SAME map, never colliding or disturbing them', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, {
+    '10': 'OPERATOR',
+    '11': 'APPROVALS',
+    '12': 'RECERT',
+    '13': 'AGENT_QUESTIONS',
+    '14': 'CONTROL',
+    '15': 'STEERING:coder',
+  });
+  const { postFn, calls } = fakeCreateOk(55);
+  const topicId = await ensureBacklogTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 1);
+  assert.equal(topicId, 55);
+  const map = readTopicMapFixture(root);
+  assert.equal(map['55'], 'BACKLOG');
+  assert.equal(map['10'], 'OPERATOR');
+  assert.equal(map['11'], 'APPROVALS');
+  assert.equal(map['12'], 'RECERT');
+  assert.equal(map['13'], 'AGENT_QUESTIONS');
+  assert.equal(map['14'], 'CONTROL');
+  assert.equal(map['15'], 'STEERING:coder');
+});
+
+test('BL-492: a failed create degrades quietly - never throws, never writes a partial binding', async () => {
+  const root = mkTmpRoot();
+  const postFn = async () => ({ ok: false, status: 500, json: { description: 'simulated failure' } });
+  const topicId = await ensureBacklogTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, undefined);
+  assert.equal(fs.existsSync(topicMapPath(root)), false);
+});
+
+test('BL-492: an already-bound Backlog topic returns its existing topicId, without calling create', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'BACKLOG' });
+  const { postFn, calls } = fakeCreateOk(999);
+  const topicId = await ensureBacklogTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, 42);
+  assert.equal(calls.length, 0);
+});
+
 // ── ensureControlTopic (BL-423, mirrors ensureAgentQuestionsTopic above) ──
 
 test('BL-423: creates the Control topic and binds it to the reserved subject when the map has no binding yet', async () => {
@@ -1187,6 +1261,41 @@ test('BL-484: recordApprovalAskMessage adds a new entry alongside an existing on
   });
 });
 
+// ── readAskMessages / recordAskMessage (BL-483, the sendAskButtons/
+//    closing-routine on-disk backing) — same reasoning as
+//    readApprovalAskMessages/recordApprovalAskMessage above, keyed by
+//    threadId instead of backlogId ────────────────────────────────────────
+
+test('BL-483: readAskMessages returns {} when the file does not exist yet', () => {
+  const root = mkTmpRoot();
+  assert.deepEqual(readAskMessages(root), {});
+});
+
+test('BL-483: readAskMessages returns {} when the file is present but not valid JSON (present-but-malformed degrades, never crashes)', () => {
+  const root = mkTmpRoot();
+  fs.mkdirSync(path.dirname(askMessagesPath(root)), { recursive: true });
+  fs.writeFileSync(askMessagesPath(root), 'not json');
+  assert.deepEqual(readAskMessages(root), {});
+});
+
+test('BL-483: recordAskMessage persists to disk and readAskMessages reads back the SAME content - proves the read is load-bearing, not a hardcoded default', () => {
+  const root = mkTmpRoot();
+  recordAskMessage(root, 'SUP-1', 800, 555, 'Which environment?\n\n1. staging\n2. prod');
+  const expected = { 'SUP-1': { topicId: 800, messageId: 555, text: 'Which environment?\n\n1. staging\n2. prod' } };
+  assert.deepEqual(JSON.parse(fs.readFileSync(askMessagesPath(root), 'utf8')), expected);
+  assert.deepEqual(readAskMessages(root), expected);
+});
+
+test('BL-483: recordAskMessage adds a new entry alongside an existing one, never clobbering it', () => {
+  const root = mkTmpRoot();
+  recordAskMessage(root, 'SUP-1', 800, 1, 'q1');
+  recordAskMessage(root, 'SUP-2', 800, 2, 'q2');
+  assert.deepEqual(readAskMessages(root), {
+    'SUP-1': { topicId: 800, messageId: 1, text: 'q1' },
+    'SUP-2': { topicId: 800, messageId: 2, text: 'q2' },
+  });
+});
+
 test('BL-466: writePollMap overwrites a prior mapping in place - readPollMap sees only the latest write, never a stale one', () => {
   const root = mkTmpRoot();
   writePollMap(root, { 'poll-1': { threadId: 'SUP-1', options: ['a', 'b'] } });
@@ -1219,15 +1328,50 @@ test('BL-466: readAwaitingAnswer returns undefined when no question is pending (
 test('BL-466: readAwaitingAnswer resolves the pending question\'s thread id from a real fixture file - proves the read is load-bearing', () => {
   const root = mkTmpRoot();
   writeAwaitingAnswerFixture(root, JSON.stringify({ question: 'which env?', thread_id: 'SUP-1', asked_at_ms: 1000 }));
-  assert.deepEqual(readAwaitingAnswer(root), { threadId: 'SUP-1' });
+  assert.deepEqual(readAwaitingAnswer(root), { threadId: 'SUP-1', options: undefined });
 });
 
 test('BL-466: readAwaitingAnswer break-then-fix - removing the fixture file flips the result from a thread id back to undefined', () => {
   const root = mkTmpRoot();
   writeAwaitingAnswerFixture(root, JSON.stringify({ question: 'which env?', thread_id: 'SUP-1', asked_at_ms: 1000 }));
-  assert.deepEqual(readAwaitingAnswer(root), { threadId: 'SUP-1' }, 'sanity: the fixture is read while present');
+  assert.deepEqual(readAwaitingAnswer(root), { threadId: 'SUP-1', options: undefined }, 'sanity: the fixture is read while present');
   fs.rmSync(awaitingAnswerPath(root));
   assert.equal(readAwaitingAnswer(root), undefined, 'once removed, the read must no longer resolve a thread id');
+});
+
+// ── BL-483: readAwaitingAnswer also carries the pending question's own
+// options through, and resolveAskOptions builds on it. ───────────────────
+
+test('BL-483: readAwaitingAnswer also resolves the pending question\'s own options from the fixture', () => {
+  const root = mkTmpRoot();
+  writeAwaitingAnswerFixture(
+    root,
+    JSON.stringify({ question: 'which env?', thread_id: 'SUP-1', asked_at_ms: 1000, options: [{ label: 'staging' }, { label: 'prod' }] })
+  );
+  assert.deepEqual(readAwaitingAnswer(root), { threadId: 'SUP-1', options: [{ label: 'staging' }, { label: 'prod' }] });
+});
+
+test('BL-483: resolveAskOptions resolves options for the CURRENTLY pending thread only', () => {
+  const root = mkTmpRoot();
+  writeAwaitingAnswerFixture(
+    root,
+    JSON.stringify({ question: 'which env?', thread_id: 'SUP-1', asked_at_ms: 1000, options: [{ label: 'staging' }, { label: 'prod' }] })
+  );
+  assert.deepEqual(resolveAskOptions(root, 'SUP-1'), [{ label: 'staging' }, { label: 'prod' }]);
+});
+
+test('BL-483: resolveAskOptions resolves undefined for a DIFFERENT thread id (answered/retracted/superseded)', () => {
+  const root = mkTmpRoot();
+  writeAwaitingAnswerFixture(
+    root,
+    JSON.stringify({ question: 'which env?', thread_id: 'SUP-1', asked_at_ms: 1000, options: [{ label: 'staging' }, { label: 'prod' }] })
+  );
+  assert.equal(resolveAskOptions(root, 'SUP-2'), undefined);
+});
+
+test('BL-483: resolveAskOptions resolves undefined when no question is pending at all', () => {
+  const root = mkTmpRoot();
+  assert.equal(resolveAskOptions(root, 'SUP-1'), undefined);
 });
 
 test('BL-466: readAwaitingAnswer degrades to undefined on a malformed fixture file, never crashes (present-but-malformed)', () => {

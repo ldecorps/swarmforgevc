@@ -82,6 +82,9 @@ function runTick(fixture) {
       // Never touch the SIBLING sweep's real default root as a side effect
       // of a scenario that is only about THIS sweep.
       [fixture.cfg.otherRootDisableEnv]: path.join(fixture.projectRoot, '.no-other-sweep'),
+      // BL-486: never touch the real /proc table as a side effect of a
+      // scenario that is only about the sandbox/fixture-reaper sweeps.
+      SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS: '',
     },
   });
 }
@@ -276,6 +279,7 @@ function registerSteps(registry) {
           [f.cfg.maxPerTickEnv]: '2',
           [f.cfg.nothingPeriodEnv]: String(ctx.periodicPeriod),
           [f.cfg.otherRootDisableEnv]: path.join(f.projectRoot, '.no-other-sweep'),
+          SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS: '',
         },
       });
     }

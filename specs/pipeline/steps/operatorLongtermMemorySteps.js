@@ -47,7 +47,10 @@ function enqueueWakeEvent(root, subjectId) {
 }
 
 function tickOnce(root) {
-  execFileSync('bb', [OPERATOR_RUNTIME, root, '--tick-once'], { encoding: 'utf8', env: { ...process.env, OPERATOR_SKIP_LAUNCH: '1' } });
+  execFileSync('bb', [OPERATOR_RUNTIME, root, '--tick-once'], {
+    encoding: 'utf8',
+    env: { ...process.env, OPERATOR_SKIP_LAUNCH: '1', SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS: '' },
+  });
 }
 
 function readReplyContext(root) {

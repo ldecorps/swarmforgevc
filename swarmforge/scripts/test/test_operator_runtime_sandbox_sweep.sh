@@ -20,7 +20,7 @@ make_project_fixture() {
      "$SRC/support_lib.bb" "$SRC/support_thread_store.bb" \
      "$SRC/operator_memory_lib.bb" "$SRC/operator_memory_store.bb" \
      "$SRC/ticket_status_lib.bb" "$SRC/operator_ask.bb" "$SRC/handoff_lib.bb" \
-     "$SRC/daemon_alarm_lib.bb" "$SRC/disk_space_lib.bb" "$SRC/sandbox_sweep_lib.bb" "$SRC/bounded_delete_sweep_lib.bb" "$SRC/proc_fd_scan_lib.bb" "$SRC/fixture_reaper_lib.bb" "$SRC/fixture_reaper_sweep_lib.bb" \
+     "$SRC/daemon_alarm_lib.bb" "$SRC/disk_space_lib.bb" "$SRC/sandbox_sweep_lib.bb" "$SRC/bounded_delete_sweep_lib.bb" "$SRC/proc_fd_scan_lib.bb" "$SRC/fixture_reaper_lib.bb" "$SRC/fixture_reaper_sweep_lib.bb" "$SRC/orphan_agent_reaper_lib.bb" "$SRC/orphan_agent_reaper_sweep_lib.bb" \
      "$d/swarmforge/scripts/"
   printf '%s' "$d"
 }
@@ -85,7 +85,7 @@ done
 SWARMFORGE_SANDBOX_SWEEP_ROOT="$SANDBOX_ROOT" \
   SWARMFORGE_LEGACY_SOCKET_DIR="$SOCKET_DIR" \
   SWARMFORGE_SANDBOX_STALE_HOURS=1 \
-  SWARMFORGE_FIXTURE_REAP_ROOT="$PROJECT/.no-fixture-reap" \
+  SWARMFORGE_FIXTURE_REAP_ROOT="$PROJECT/.no-fixture-reap" SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS="" \
   OPERATOR_SKIP_LAUNCH=1 \
   bb "$PROJECT/swarmforge/scripts/operator_runtime.bb" "$PROJECT" --tick-once > /dev/null
 

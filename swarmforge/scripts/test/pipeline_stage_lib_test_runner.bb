@@ -36,6 +36,52 @@
          "BL-447"
          (pipeline-stage-lib/extract-ticket-id "BL-447-some-task-name"))
 
+;; BL-488: a held ticket's id resolves from the first id-shaped token in the
+;; header regardless of leading position - a "Re: ..." or "continuing ..."
+;; prefix before the id must not make it resolve to nothing (the durable
+;; false not-started this ticket fixes). Byte-identical on the already-
+;; leading case (asserted above) since the first id-shaped token IS the
+;; leading one there.
+(assert= "BL-488: leading id still resolves (unchanged behaviour)"
+         "BL-476"
+         (pipeline-stage-lib/extract-ticket-id "BL-476 do the thing"))
+(assert= "BL-488: id preceded by a 'Re: ' prefix resolves to the id, not nil"
+         "BL-476"
+         (pipeline-stage-lib/extract-ticket-id "Re: BL-476 do the thing"))
+(assert= "BL-488: id preceded by free-text ('continuing ... next slice') resolves to the id"
+         "BL-476"
+         (pipeline-stage-lib/extract-ticket-id "continuing BL-476 next slice"))
+(assert= "BL-488: a header with no id-shaped token anywhere still resolves to nil"
+         nil
+         (pipeline-stage-lib/extract-ticket-id "no id-shaped token here"))
+(assert= "BL-488: a non-leading id still canonicalizes to upper-case"
+         "BL-447"
+         (pipeline-stage-lib/extract-ticket-id "continuing bl-447 next slice"))
+;; The word-boundary guard's real effect: without it, the greedy letter-run
+;; would still land a match starting mid-token whenever the id is preceded
+;; by a digit (no \w boundary between a digit and a letter) - a mutant that
+;; drops the \b guards is not caught by any case above, since none of them
+;; place a digit directly before the id-shaped token.
+(assert= "BL-488: an id-shaped token directly preceded by a digit does not resolve (word-boundary guard)"
+         nil
+         (pipeline-stage-lib/extract-ticket-id "v2BL-476 do the thing"))
+
+;; BL-488-VIOLATION: a LETTER directly glued in front of a real ticket id
+;; must not be swallowed into the extracted prefix. `\b` alone cannot guard
+;; this - a run of letters has no internal `\b` to reject at, so greedy
+;; [A-Za-z]+ starting at a valid boundary (here, string-start) absorbs the
+;; WHOLE run "ABL" as if it were the ticket's own prefix. Only a known,
+;; finite prefix allowlist (this project mints exactly "BL-" and "GH-"
+;; tickets) can disambiguate a glued stray letter from a real multi-letter
+;; prefix - the same allowlist-never-a-denylist posture
+;; fixture_reaper_lib.bb's own known-fixture-prefixes already establishes.
+(assert= "BL-488-VIOLATION: a letter glued directly in front of a real id resolves to nil, not the glued prefix"
+         nil
+         (pipeline-stage-lib/extract-ticket-id "ABL-476 do the thing"))
+(assert= "BL-488-VIOLATION: the known-prefix allowlist still recognizes a real GH- ticket id"
+         "GH-42"
+         (pipeline-stage-lib/extract-ticket-id "continuing GH-42 next slice"))
+
 ;; ── ticket-id-from-headers: task (git_handoff) OR message (note) ─────────
 (assert= "a git_handoff's task header wins when present"
          "BL-217"

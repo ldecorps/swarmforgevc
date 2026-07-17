@@ -150,6 +150,11 @@ function registerSteps(registry) {
           // root, so it no-ops rather than touching the real /tmp as a
           // side effect of a scenario that is only about sandbox-sweep!.
           SWARMFORGE_FIXTURE_REAP_ROOT: path.join(ctx.projectRoot, '.no-fixture-reap'),
+          // BL-486: isolates the orphan-agent-process reaper, also wired
+          // into the SAME tick - an empty candidate list means it never
+          // scans the real /proc table for SwarmForge-* processes as a
+          // side effect of a scenario that is only about sandbox-sweep!.
+          SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS: '',
         },
       });
     };

@@ -14,27 +14,59 @@
 (ns pipeline-stage-lib
   (:require [clojure.string :as str]))
 
-;; The SAME "<PREFIX>-<digits> leading token" convention chase_sweep_lib.bb's
+;; BL-488-VIOLATION: an ALLOWLIST, never a denylist - the same posture
+;; fixture_reaper_lib.bb's own known-fixture-prefixes already establishes.
+;; The only ticket-id prefixes this project actually mints: "BL-" for
+;; swarm-numbered tickets, "GH-" for a GitHub-issue-seeded ticket (Article
+;; 1.8 / handoff-protocol.md's "close the GH issue for a GH-seeded ticket").
+;; An unbounded [A-Za-z]+ prefix cannot be safely disambiguated from a
+;; GLUED prefix: `\b` only guards a DIGIT-adjacent embedding (no `\w`
+;; boundary exists between a digit and a letter) - it does NOT guard a
+;; LETTER-adjacent one, because a run of letters has no `\b` anywhere
+;; INSIDE it, so greedy [A-Za-z]+ starting at a valid boundary (e.g.
+;; string-start) absorbs the WHOLE run: "ABL-476" would extract "ABL-476"
+;; as if "ABL" were the ticket's own prefix, silently swallowing the real
+;; "BL-476" reference instead of resolving it - the exact "durable false
+;; not-started" failure mode this ticket exists to close, just reached a
+;; different way. Extend this list explicitly as new prefixes are minted,
+;; never widen it to a broad `[A-Za-z]+` glob.
+(def known-ticket-prefixes ["BL" "GH"])
+
+;; The SAME "<PREFIX>-<digits> id-shaped token" convention chase_sweep_lib.bb's
 ;; own extract-ticket-id/dispatch-ticket-ref already establish for the
-;; dispatch-gap sweep - every routing note and task name in this swarm
-;; conventionally leads with the ticket id. Duplicated here rather than
-;; cross-namespace-coupled to chase_sweep_lib.bb's private (defn-) helpers -
-;; this codebase's own established "small live-glue duplicated across
-;; independent pure libs" posture (see operator_lib.bb's yaml-field comment).
+;; dispatch-gap sweep. Duplicated here rather than cross-namespace-coupled to
+;; chase_sweep_lib.bb's private (defn-) helpers - this codebase's own
+;; established "small live-glue duplicated across independent pure libs"
+;; posture (see operator_lib.bb's yaml-field comment).
+;;
+;; BL-488: resolves the FIRST id-shaped token ANYWHERE in the text, not only
+;; a leading one - a held ticket's task/message header carrying a textual
+;; prefix before the id ("Re: BL-476 …", "continuing BL-476 next slice") used
+;; to match nothing and resolve to nil, reading as a durable false
+;; not-started on the board. `\b` on both sides guards a DIGIT-adjacent
+;; embedding (e.g. "v2BL-476" resolves to nil: no boundary exists between
+;; the "2" and "B"); the known-prefix allowlist above guards the
+;; LETTER-adjacent case `\b` cannot (see its own comment). Byte-identical on
+;; an already-leading id, since the first id-shaped token IS the leading one
+;; there.
 ;;
 ;; BL-471: canonicalized to upper-case here, at the ONE point every header-
 ;; extracted id passes through - active-ticket-ids (pipeline_stage_cli.bb)
 ;; reads backlog/active/*.yaml's own canonical (always upper-case) `id:`
 ;; field verbatim, so filter-active's case-SENSITIVE membership test only
 ;; ever agrees with a header id if both sides already share that same
-;; upper-case form. Without this, a note/task header leading with a
+;; upper-case form. Without this, a note/task header carrying a
 ;; differently-cased id (freeform text is exactly the "when-not-if"
 ;; external-influence surface, not a hypothetical) would extract, reconcile,
 ;; and then silently fail the active-set join - the ticket vanishes from the
 ;; board with no error.
+(def ^:private ticket-id-pattern
+  (re-pattern (str "(?i)\\b(" (str/join "|" known-ticket-prefixes) ")-(\\d+)\\b")))
+
 (defn extract-ticket-id [text]
   (when text
-    (some-> (re-find #"^([A-Za-z]+-\d+)" text) second str/upper-case)))
+    (when-let [[_ prefix digits] (re-find ticket-id-pattern text)]
+      (str/upper-case (str prefix "-" digits)))))
 
 ;; A handoff file's own ticket reference for board-tracking purposes: its
 ;; task header (git_handoff) if present, else its message header (note) -
