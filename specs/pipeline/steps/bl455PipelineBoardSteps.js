@@ -39,6 +39,10 @@ function fakeConciergeAdapters() {
   const state = { snapshot: null, emittedKeys: [] };
   const topicMap = {};
   const posted = [];
+  // BL-462: the board no longer edits in place - `edited` stays permanently
+  // empty (nothing populates it), kept only so lastRendered's own fallback
+  // logic below stays unchanged.
+  const edited = [];
   const deleted = [];
   const recordedTopicIds = [];
   const recordedMessages = [];
@@ -48,6 +52,7 @@ function fakeConciergeAdapters() {
     state,
     topicMap,
     posted,
+    edited,
     deleted,
     recordedTopicIds,
     recordedMessages,
@@ -116,43 +121,30 @@ function fakeConciergeAdapters() {
   };
 }
 
-// BL-462/BL-470: edit-in-place was retired and nothing populates an
-// `edited` array any more (bl452's shared Given, the sole source of the
-// epic-02 Scenario Outline's fixture, dropped the field entirely) - the
-// board is always read back from `posted`.
 function lastRendered(fixture) {
+  if (fixture.edited.length > 0) {
+    return fixture.edited[fixture.edited.length - 1].text;
+  }
   if (fixture.posted.length > 0) {
     return fixture.posted[fixture.posted.length - 1].text;
   }
-  throw new Error('expected the board to have been posted at least once, got none');
+  throw new Error('expected the board to have been posted or edited at least once, got neither');
 }
 
-// BL-510: mirrors pipelineBoard.ts's own (non-exported) below-grid
-// list-section header constants - PARKED_SECTION_HEADER,
-// AWAITING_APPROVAL_SECTION_HEADER, ROOT_INTAKE_SECTION_HEADER,
-// RECENTLY_CLOSED_SECTION_HEADER. LINKS_SECTION_HEADER is deliberately
-// excluded: pipelineBoardSync.ts posts renderPipelineBoard's <pre>-block
-// text only (renderBodySections' four sections + the "updated at" footer);
-// the link list is a separate HTML fragment (renderPipelineBoardLinks),
-// never part of the text these scenarios inspect.
-const BELOW_GRID_SECTION_HEADERS = new Set(['PARKED:', 'AWAITING APPROVAL:', 'ROOT INTAKE:', 'RECENTLY CLOSED:']);
-
-// The board text splits into a stage-grid half and a below-grid list half at
-// the FIRST line matching any of pipelineBoard.ts's below-grid section
-// headers (absent entirely when every below-grid section is empty) - not
-// only 'PARKED:', so a board with an awaiting-approval section but no plain
-// parked one (or vice versa) still splits correctly. Grid data rows always
+// The board text splits into a stage-grid half and a below-grid parked half
+// at the 'PARKED:' section header pipelineBoard.ts's own renderParkedSection
+// emits (absent entirely when nothing is parked). Grid data rows always
 // start with the ticket id as their first whitespace-delimited token
-// (id.padEnd(idWidth) is the row's first cell); below-grid list rows also
-// lead with the id ("  436 slug words...", BL-465 dropped the old PK/AA
-// status glyph) - both positions are stable regardless of how many words a
-// multi-word slug contributes after them, so a slug's own content can never
-// shift where the id token lands.
+// (id.padEnd(idWidth) is the row's first cell); parked list rows put the
+// status glyph first and the id second ("  PK BL-436 slug words...") - both
+// positions are stable regardless of how many words a multi-word slug
+// contributes after them, so a slug's own content can never shift where the
+// id token lands.
 function splitBoardSections(text) {
   const lines = text.split('\n');
-  const sectionHeaderIndex = lines.findIndex((l) => BELOW_GRID_SECTION_HEADERS.has(l.trim()));
-  const gridLines = sectionHeaderIndex === -1 ? lines : lines.slice(0, sectionHeaderIndex);
-  const parkedLines = sectionHeaderIndex === -1 ? [] : lines.slice(sectionHeaderIndex + 1);
+  const parkedHeaderIndex = lines.findIndex((l) => l.trim() === 'PARKED:');
+  const gridLines = parkedHeaderIndex === -1 ? lines : lines.slice(0, parkedHeaderIndex);
+  const parkedLines = parkedHeaderIndex === -1 ? [] : lines.slice(parkedHeaderIndex + 1);
   return { gridLines, parkedLines };
 }
 
@@ -163,11 +155,9 @@ function idInGrid(gridLines, id) {
   return gridLines.some((l) => l.trim().split(/\s+/)[0] === displayed);
 }
 
-// BL-510: the id is the FIRST token on a below-grid list line (BL-465
-// dropped the old PK/AA status glyph that used to precede it).
 function idInParkedList(parkedLines, id) {
   const displayed = deriveDisplayTicketId(id);
-  return parkedLines.some((l) => l.trim().split(/\s+/)[0] === displayed);
+  return parkedLines.some((l) => l.trim().split(/\s+/)[1] === displayed);
 }
 
 function registerSteps(registry) {
