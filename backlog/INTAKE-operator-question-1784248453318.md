@@ -1,0 +1,10 @@
+# Intake: a question the Operator could not answer
+
+Filed by the Operator (2026-07-17T00:34:13.318527770Z) - a question came in via Telegram
+that the Operator judged it could not answer itself. This is a RAW
+ask, not a spec: the specifier drains this like any other backlog-root
+item and decides what (if anything) becomes a real ticket.
+
+## The question
+
+Human asked (Concierge thread, 2026-07-17): "check uncle bob's upstream repo and see if there are new elements worth including in our swarm; run it and file a ticket if there is anything worth adding." OPERATOR FINDINGS (manual probe from the desk): (1) No dedicated upstream-drift-check *mechanism/script* exists in this repo -- the only upstream touchpoints are install_aps_tools.sh (vendors APS at the pinned SHA) and the README bootstrap curl of unclebob/swarm-forge. So I ran a manual `git ls-remote` on both Uncle Bob upstreams. (2) APS (unclebob/Acceptance-Pipeline-Specification): our pinned SHA accaa33d503340c56513ef387258f8da929ba902 in swarmforge.lock.json EQUALS upstream refs/heads/main HEAD -> nothing to bump on main; there is one non-main feature branch codex/bb-tools-equivalence (3a1d7b06) not merged to main. (3) swarm-forge (unclebob/swarm-forge, the orchestrator this fork derives from): upstream branches are adversaries (7aa2f3a2), four-pack, main (9acd54d2), six-pack, two-pack. The `adversaries` branch is a genuine candidate "new element" our heavily-diverged fork (ldecorps/swarmforgevc) may not incorporate. ASK FOR THE SWARM: specifier to survey the swarm-forge upstream (especially the `adversaries` branch, and any main-branch drift since our fork point) plus the APS codex/bb-tools-equivalence branch, judge whether anything is genuinely worth folding into our fork, and spec a ticket ONLY if so (otherwise close as "checked, nothing to adopt"). Two possible follow-ups worth noting: (a) an actual reusable upstream-drift-check mechanism/script does not yet exist and the human believes one does -- consider speccing one; (b) bumping any pin is a human commit per engineering.prompt, not an agent action.

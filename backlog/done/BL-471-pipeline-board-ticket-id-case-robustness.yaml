@@ -4,7 +4,7 @@ milestone: M8
 type: bug
 severity: low
 epic: ""
-priority: 5
+priority: 1
 direction: swarm-proposed
 depends_on: []
 source: "coordinator note to the specifier 2026-07-16 ('BL-464 stage map: case-mismatch (task bl-447 vs id BL-447) drops active tickets'). The specific LIVE claim did NOT reproduce (see below); the specifier verified and found a real but LATENT case-sensitivity gap instead."
