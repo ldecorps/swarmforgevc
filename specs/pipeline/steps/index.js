@@ -260,7 +260,8 @@ const DOMAINS = [
   require('./bl473PipelineBoardActiveMembershipSteps'),
   require('./bl484DecidedAskClosesItselfSteps'),
   require('./bl481OperatorOutOfCycleWakeSteps'),
-  require('./bl439FesSecondSwarmBringupSteps')
+  require('./bl439FesSecondSwarmBringupSteps'),
+  require('./bl485CleanerMutationSiteSizeGateSteps')
 ];
 
 function registerSteps(registry) {
