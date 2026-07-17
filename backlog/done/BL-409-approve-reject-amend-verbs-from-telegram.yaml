@@ -57,7 +57,9 @@ acceptance:
   feature: specs/features/BL-409-approve-reject-amend-verbs-from-telegram.feature
   steps:
     - "A reject reply records the rejection reason and stops re-announcing the ticket"
-    - "An amend reply posts the note as operator context without changing the approval state"
+    # "An amend reply posts the note as operator context without changing the approval state"
+    # RETIRED by BL-509 (2026-07-17): amend now flips the ticket to 'amending' and closes the
+    # ask. The durable amend contract lives in specs/features/BL-509-amend-button-steers-ticket.feature.
     - "An approve reply still flips the ticket to approved (regression guard)"
 
 human_approval: approved  # human via Operator relay to coordinator, 2026-07-15: "Human OK'd, promote: BL-403 404 406 409 395 405 407 410"
