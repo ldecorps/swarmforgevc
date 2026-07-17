@@ -64,7 +64,9 @@ notes: |
   extension/src/tools/provision-onboarding-telegram-channel.ts. Tickets: BL-242/243/244/245/246/247,
   BL-090/091, BL-380/381, BL-405, BL-101 (blocked).
 
-human_approval: >
+human_approval: pending
+
+approval_context: >
   approved (umbrella) 2026-07-15 (coordinator session, full-batch confirmation via Operator relay). The
   design decisions were settled with the human 2026-07-15 (recorded in the intake); the human then
   approved the full batch including all children (BL-436..439). This remains a tracking item — not

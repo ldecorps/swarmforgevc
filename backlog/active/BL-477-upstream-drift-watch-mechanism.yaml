@@ -78,7 +78,7 @@ acceptance:
     - "A new upstream branch absent from the watch file is reported as drift"
     - "The drift check is read-only and never rewrites the watch file or bumps a pin"
 
-human_approval: >
+approval_context: >
   NEW feature file specs/features/BL-477-upstream-drift-watch-check.feature — flagged for human review
   (specifier draft, NOT yet human-approved). The human asked to 'check upstream' and believes a mechanism
   exists; local-engineering.prompt rule 2 references upstream-watch.json + docs/upstream-deviations.md but

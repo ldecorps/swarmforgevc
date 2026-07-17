@@ -22,14 +22,14 @@ Feature: Per-agent Telegram steering-topic icons
 
     Examples:
       | role        | icon |
-      | coordinator | 🎬   |
+      | coordinator | 📣   |
       | specifier   | 📝   |
       | architect   | 🏛   |
       | coder       | 💻   |
       | cleaner     | 🧼   |
       | hardender   | 🧪   |
       | QA          | 🔎   |
-      | documenter  | 📚   |
+      | documenter  | 📰   |
 
   # BL-469 per-agent-steering-topic-icon-02
   Scenario: an icon Telegram does not offer is surfaced, not applied, and does not block the other roles

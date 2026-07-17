@@ -58,7 +58,9 @@ acceptance:
     - "Neither swarm's inbound is consumed by the other"
     - "Both swarms appear as distinct identities in the fleet console"
 
-human_approval: >
+human_approval: pending
+
+approval_context: >
   approved 2026-07-15 (coordinator session, full-batch confirmation via Operator relay). The bring-up
   constraints (Windows-side launch, own bot+group, separation-first) were settled with the human
   2026-07-15 (recorded in the intake); the human then approved promotion as-is. AMENDED 2026-07-16: the
