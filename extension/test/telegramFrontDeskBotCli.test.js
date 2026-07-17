@@ -16,6 +16,8 @@ const {
   ensureAgentQuestionsTopic,
   ensureBacklogTopic,
   ensureControlTopic,
+  ensureBoardTopicAdapter,
+  emitPipelineBoardFailureAlert,
   controlDrainTimeoutMs,
   controlRestartAckTimeoutMs,
   controlPauseStatePath,
@@ -784,6 +786,56 @@ test('BL-423: an already-bound Control topic returns its existing topicId, witho
   const topicId = await ensureControlTopic(root, 'fake-token', 'fake-chat', postFn);
   assert.equal(topicId, 42);
   assert.equal(calls.length, 0);
+});
+
+// ── ensureBoardTopicAdapter / emitPipelineBoardFailureAlert (BL-497 hardening:
+//    extracted from buildConciergeTickAdapters's module-private boardAdapters
+//    closures, which no test reaches - see the readPollMap/readApprovalAskMessages
+//    comments above on the on-disk-read sibling of this same gap) ──────────
+
+test('BL-497: ensureBoardTopicAdapter surfaces the created topicId on a successful create', async () => {
+  const { postFn, calls } = fakeCreateOk(2000);
+  const result = await ensureBoardTopicAdapter('fake-token', 'fake-chat', postFn);
+  assert.deepEqual(result, { topicId: 2000 });
+  assert.match(calls[0].body, /"name":"Pipeline Board"/);
+});
+
+test('BL-497: ensureBoardTopicAdapter surfaces the underlying Telegram error on a failed create - never discards it', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'Bad Request: message thread not found' } });
+  const result = await ensureBoardTopicAdapter('fake-token', 'fake-chat', postFn);
+  assert.equal(result.topicId, undefined);
+  assert.match(result.error, /message thread not found/);
+});
+
+test('BL-497: emitPipelineBoardFailureAlert posts into the Operator topic and reports confirmed delivery', async () => {
+  const root = mkTmpRoot();
+  const { postFn: createPostFn } = fakeCreateOk(700);
+  await ensureOperatorTopic(root, 'fake-token', 'fake-chat', createPostFn);
+  const sendCalls = [];
+  const postFn = async (url, body) => {
+    sendCalls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 1 } } };
+  };
+  const delivered = await emitPipelineBoardFailureAlert(root, 'fake-token', 'fake-chat', 'Pipeline Board frozen: 5 consecutive failed post attempts.', postFn);
+  assert.equal(delivered, true);
+  assert.equal(sendCalls.length, 1);
+  assert.match(sendCalls[0].body, /"message_thread_id":700/);
+  assert.match(sendCalls[0].body, /Pipeline Board frozen/);
+});
+
+test('BL-497: emitPipelineBoardFailureAlert reports NOT delivered (never throws) when ensuring the Operator topic itself fails', async () => {
+  const root = mkTmpRoot();
+  const postFn = async () => ({ ok: false, status: 500, json: { description: 'simulated failure' } });
+  const delivered = await emitPipelineBoardFailureAlert(root, 'fake-token', 'fake-chat', 'Pipeline Board frozen', postFn);
+  assert.equal(delivered, false);
+});
+
+test('BL-497: emitPipelineBoardFailureAlert reports NOT delivered when the Operator topic exists but the send itself fails', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '700': 'OPERATOR' });
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'Bad Request: chat not found' } });
+  const delivered = await emitPipelineBoardFailureAlert(root, 'fake-token', 'fake-chat', 'Pipeline Board frozen', postFn);
+  assert.equal(delivered, false);
 });
 
 // ── controlDrainTimeoutMs / controlRestartAckTimeoutMs (BL-423, pure, mirrors conciergeTickIntervalMs) ──
