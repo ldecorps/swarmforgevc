@@ -1296,12 +1296,52 @@ async function deliverAskAnswer(
   return deliveryOutcome(ok);
 }
 
-// BL-410: see isUnauthorizedCallbackDrop above for the answer-spinner
-// rationale. An Approve tap fires recordApprovalReply immediately (nothing
-// else to gather); a Reject/Amend tap has no reason/note in hand yet, so it
-// only ever stashes the pending marker deliverOperatorContext above
-// consults on the next reply - never reimplementing
-// recordRejectionReply/the amend effect here.
+// Hardener 2026-07-17: split out of processCallbackQuery below so ITS OWN
+// branch count stays at or below the CRAP threshold - the same "extract to
+// keep the caller's branch count down" pattern this file already uses
+// throughout (isUnauthorizedCallbackDrop, deliveryOutcome, processUpdate's
+// own callback_query/poll_answer split) - reapplied here because BL-483's
+// answer-ask branch pushed processCallbackQuery's own complexity to 8.
+// Handles every RECOGNIZED (non-drop) decision once the caller has already
+// checked the control: namespace and the unauthorized-drop guard.
+//
+// BL-410/BL-483: an Approve tap fires recordApprovalDecisionAndClose
+// immediately (nothing else to gather); a Reject/Amend tap has no
+// reason/note in hand yet, so it only ever stashes the pending marker
+// deliverOperatorContext above consults on the next reply - never
+// reimplementing recordRejectionReply/the amend effect here. An ask-option
+// tap has its own stale-check/effect/close shape, entirely distinct from
+// the approval-ask dispatch below (readRecordedApprovalVerdict vs
+// resolveAskOptions, postToBridge vs recordApprovalDecisionAndClose) -
+// dispatched before answerIfAlreadyDecided, which only ever reads
+// decision.backlogId (absent on an 'answer-ask' decision).
+async function dispatchRecognizedCallbackDecision(
+  callbackQuery: TelegramCallbackQuery,
+  decision: CallbackButtonDecision,
+  updateId: number,
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome> {
+  if (decision.action === 'answer-ask') {
+    if (await answerIfAskAlreadyClosed(callbackQuery, decision, adapters)) {
+      return 'dropped';
+    }
+    return deliverAskAnswer(callbackQuery, decision, updateId, adapters);
+  }
+  if (await answerIfAlreadyDecided(callbackQuery, decision, adapters)) {
+    return 'dropped';
+  }
+  await adapters.answerCallbackQuery(callbackQuery.id);
+  if (decision.action === 'drop') {
+    return 'dropped';
+  }
+  if (decision.action === 'approve') {
+    await recordApprovalDecisionAndClose(adapters, decision.backlogId, { kind: 'approved' });
+  } else {
+    await adapters.setPendingButtonAction(decision.backlogId, decision.kind);
+  }
+  return 'posted';
+}
+
 async function processCallbackQuery(
   callbackQuery: TelegramCallbackQuery,
   principalUserId: string,
@@ -1322,30 +1362,7 @@ async function processCallbackQuery(
   if (isUnauthorizedCallbackDrop(decision)) {
     return 'dropped';
   }
-  // BL-483: an ask-option tap has its own stale-check/effect/close shape,
-  // entirely distinct from the approval-ask dispatch below (readRecordedApprovalVerdict
-  // vs resolveAskOptions, postToBridge vs recordApprovalDecisionAndClose) -
-  // dispatched before answerIfAlreadyDecided, which only ever reads
-  // decision.backlogId (absent on an 'answer-ask' decision).
-  if (decision.action === 'answer-ask') {
-    if (await answerIfAskAlreadyClosed(callbackQuery, decision, adapters)) {
-      return 'dropped';
-    }
-    return deliverAskAnswer(callbackQuery, decision, updateId, adapters);
-  }
-  if (await answerIfAlreadyDecided(callbackQuery, decision, adapters)) {
-    return 'dropped';
-  }
-  await adapters.answerCallbackQuery(callbackQuery.id);
-  if (decision.action === 'drop') {
-    return 'dropped';
-  }
-  if (decision.action === 'approve') {
-    await recordApprovalDecisionAndClose(adapters, decision.backlogId, { kind: 'approved' });
-  } else {
-    await adapters.setPendingButtonAction(decision.backlogId, decision.kind);
-  }
-  return 'posted';
+  return dispatchRecognizedCallbackDecision(callbackQuery, decision, updateId, adapters);
 }
 
 // Split out of processUpdate below so its own branch count stays at or
