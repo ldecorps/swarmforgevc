@@ -1,0 +1,60 @@
+id: BL-489
+title: "Active-set id join is case-asymmetric: an upper-cased stage-map key vs a verbatim yaml id silently drops a mis-cased held ticket from the board"
+milestone: M8
+type: defect
+severity: low
+epic: ""
+priority: 9
+direction: human-requested
+depends_on: []
+source: "BL-474 unknown-stage root-cause audit (backlog/evidence/BL-474-unknown-stage-root-cause-audit-20260717.md), follow-up F-3 (finding #4, REAL/latent). Filed per BL-474's mandate via coordinator note 'spec follow-ups F-1 F-2 F-3 as tickets'. Root human directive (ldecorps 2026-07-16): 'if their position in the swarm is not known, it's a bug to fix.'"
+
+notes: |
+  ORIGIN — BL-474 audit finding #4. A real, latent tracking-defect: an asymmetric case-normalization across
+  the two sides of the active-set join silently drops a held ticket with no error.
+
+  THE DEFECT (grep-confirmed against live code):
+    - The stage-map KEYS are upper-cased by `extract-ticket-id` (`… second str/upper-case`,
+      pipeline_stage_lib.bb L37), but the ACTIVE-SET side, `active-ticket-ids` in pipeline_stage_cli.bb
+      (L51), reads each backlog/active/*.yaml `id:` VERBATIM: `(keep #(read-yaml-field (slurp …) "id") …)`
+      — no normalization.
+    - `filter-active` then joins with `(contains? active-ids ticket-id)` (pipeline_stage_lib.bb L71), an
+      exact, case-sensitive set membership. A backlog/active yaml whose `id:` is written mis-cased
+      (`bl-490` / `Bl-490`) puts the mixed-case id in `active-ids` while the stage-map key is `BL-490`, so
+      the join fails and the genuinely-held ticket VANISHES from the board with no error.
+    - Today's ids are conventionally upper-case, so this is latent — but it is a silent, total drop when it
+      does occur, exactly the kind of unknown-stage the human called a bug to fix.
+
+  THE FIX (behaviour pinned in the feature):
+    - Normalize the active-set id side to the SAME upper-case the header side already uses, so the
+      `filter-active` join is case-symmetric. Concretely: upper-case each yaml `id:` in `active-ticket-ids`
+      (mirroring `extract-ticket-id`'s `str/upper-case`). Then a mis-cased yaml id can no longer drop a held
+      ticket.
+
+  SCOPE:
+    - swarmforge/scripts/pipeline_stage_cli.bb `active-ticket-ids` (upper-case the read yaml id), and its
+      in-process/unit tests (a lower-cased and a mixed-case yaml id must both still resolve on the board).
+    - Optional belt-and-suspenders: assert `filter-active` is fed an already-upper-cased active set (a
+      comment/invariant), but the real fix is at the read site.
+    - Do NOT change extract-ticket-id (that is BL-488/F-2's file) beyond what is needed; the header side is
+      already correct here.
+
+  ORTHOGONALITY: edits pipeline_stage_cli.bb, and shares the pipeline_stage_* module family with
+  BL-488/F-2. The coordinator must sequence BL-488 and BL-489, never run them concurrently.
+
+acceptance:
+  # The observable behaviour — a held active ticket appears on the board regardless of the letter-case of
+  # its backlog/active yaml id — is pinned as the executable Gherkin feature (Scenario Outline over
+  # {BL-490, bl-490, Bl-490}; the upper-case row already passes today, the lower/mixed rows exercise the
+  # fix — break-then-fix per engineering.prompt).
+  feature: specs/features/BL-489-active-id-join-is-case-symmetric.feature
+
+human_approval: pending
+approval_context: >
+  Clear latent tracking-defect fix mandated by BL-474; new feature file, so flagging for review. FIRM: the
+  active-set id side of the filter-active join is upper-cased to match the stage-map key side, so a
+  mis-cased backlog/active yaml id can no longer silently drop a held ticket from the board. Low priority;
+  latent (ids are conventionally upper-case today) but a silent total drop when it hits. Sequence with
+  BL-488 (both edit the pipeline_stage_* module family).
+
+mutation_cost: low

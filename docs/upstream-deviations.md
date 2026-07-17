@@ -56,3 +56,57 @@ this fork's prompts, reporting only what was genuinely absent here.
 | Property testing has no owner — `engineering.prompt` already legislates property tests as a separate verification category, but no role prompt claims it. Upstream's `six-pack` architect.prompt closes the hole: the architect owns property-test support after architectural review, before the hardener. | **ADOPT** (adapted, not ported). `architect.prompt` gained a "## Property Testing" section (human-approved wording); `hardender.prompt`/`QA.prompt` reference the separate `npm run test:properties` command. `fast-check` is now a pinned devDependency, wired through its own `vitest.properties.config.mjs`, excluded from the normal unit/coverage/mutation run. Seeded with one non-vacuous property suite (`benchmarkAggregate.property.test.js`) — demonstrated to fail when its invariant is deliberately broken, then restored. |
 | Upstream's `six-pack` cleaner has a mutation-site SIZE gate this fork's cleaner lacks: scan/count mutation sites on changed files (without running mutation) and split a file exceeding 100 sites before handoff. | **ADOPT, filed as its own ticket** — BL-485 (paused), per the human's decision, not recorded as a plain adopt/skip here since it is not yet built. |
 | Everything else in the `six-pack` role prompts (differential mutation vs. manifest, soft Gherkin mutation, end-to-end QA suite concept, APS Gherkin-parser discipline) | **Already have it** — verified by grep against this fork's own prompts, not assumed. |
+
+### 2026-07-17 — adversarial-reviewer role (BL-478)
+
+Evaluates the one genuinely novel element the baseline survey found on
+`unclebob/swarm-forge`'s `adversaries` branch (`7aa2f3a2`): a dedicated
+**adversarial-reviewer** role (`swarmforge/roles/reviewer.prompt`, +44) that
+red-teams the coder's work and files sequenced recommendation files into the
+pipeline. Everything else on the branch (daemon-backed handoff protocol,
+constitution-articles refactor, shared engineering/workflow/handoff articles,
+"prefer Babashka APS tools", stable handoff-request procedure) this fork already
+has independently — verified during the 2026-07-17 survey, not assumed.
+
+**Decision: SKIP** — do not add a dedicated adversarial-reviewer role. Its intent
+is already structurally covered, and the cost/benefit is decisively negative under
+this fork's current constraints. A negative result is the recorded outcome; no
+follow-up build ticket is filed (per the ticket contract, SKIP records the
+"already covered" finding and closes).
+
+Reasoning:
+
+1. **Three downstream review stages already cover the intent** — stages upstream's
+   simpler pack lacked when the `adversaries` branch was authored. The reviewer's
+   purpose (independently red-teaming the coder's implementation for correctness,
+   security, and edge cases) is spread across: the **architect**, which issues
+   *correctness* send-backs to the coder, not only design review (see
+   `architect.prompt`'s "a correctness defect you can SEE is a send-back too"
+   rule); the **hardener**, whose mutation/CRAP gate red-teams the *tests*
+   themselves ("does a surviving mutant prove a missing assertion?"); and **QA**,
+   an independent final gate in its own worktree that re-verifies acceptance and
+   runs the live e2e procedure. A fourth reviewing role would overlap all three.
+2. **Adversarial review is already a first-class DISCIPLINE here, not just a role.**
+   `engineering.prompt` is dense with adversarial "a green suite is not proof"
+   rules (missing-seam, call-site-sweep, shared-global, in-process-`main()`,
+   sweep-failure-contract), and the **`rule_proposal` loop** lets any role escalate
+   a newly-observed systemic gap into the constitution — a continuously-hardening
+   adversarial layer no single static upstream role provides.
+3. **Cost/benefit is negative under the current fleet-host constraints.** A new
+   pipeline role means a new resident worktree and a standing agent session. The
+   fleet host is a 15GB box that OOM-crashed holding ONE full swarm — the very
+   evidence that drove the BL-448 mono-rotate decision. Adding a standing role
+   worsens exactly the resource pressure we just spent a ticket relieving; a whole
+   role to fill a seam already substantially covered is not worth the memory + token
+   cost.
+4. **No common git ancestor** with `unclebob/swarm-forge` (`git merge-base HEAD
+   ub/main` = none), so adoption is a full manual reimplementation of a prompt
+   written for a simpler pipeline, then maintained against this fork's diverged
+   constitution — high ongoing maintenance cost for marginal, overlapping value.
+5. **A lighter path exists if a real gap ever appears.** If a future incident shows
+   architect+hardener+QA structurally missing an adversarial-correctness class of
+   defect, the response is a targeted `rule_proposal` sharpening the architect's or
+   QA's remit — or use the existing `/code-review` adversarial tooling on a diff —
+   neither of which requires a standing role. **Revisit trigger:** a concrete
+   escaped-defect that all three existing review stages structurally could not have
+   caught; absent that evidence, adopting a role pre-emptively is unwarranted.
