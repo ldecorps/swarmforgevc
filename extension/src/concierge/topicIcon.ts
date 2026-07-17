@@ -126,23 +126,23 @@ export interface StandingTopicTarget {
 // (ticket state) and STANDING_TOPIC_ICON (standing topics), never
 // overloading either. Keyed on the canonical swarm role tokens
 // (roleTopicMapStore.ALL_SWARM_ROLES) - note the baked-in 'hardender'
-// spelling and uppercase 'QA'. Firm mapping: seven roles are the human's
-// (ldecorps) verbatim 2026-07-16 reply; the coordinator's compass was
-// resolved separately the same day after the originally-proposed 🎼 was
-// flagged as a notation glyph Telegram does not offer as a topic icon.
-// Accepted collision: QA's magnifier equals ICON_EMOJI.paused - different
-// topic classes (a per-agent QA steering topic vs. a paused ticket's own
-// topic), documented rather than avoided.
+// spelling and uppercase 'QA'. The original 2026-07-16 literal picks
+// (compass/crane/keyboard/broom/shield/magnifier) were QA-bounced
+// 2026-07-17: only 2 of 8 (specifier, documenter) resolved against
+// Telegram's live getForumTopicIconStickers set. This is the human-approved
+// 2026-07-17 remap - all 8 re-verified present in the live 112-sticker set
+// (specifier, real token) before adoption. QA's magnifier changed from 🔍
+// to 🔎, which also resolves the prior collision with ICON_EMOJI.paused.
 export type RoleTopicIconRole = 'coordinator' | 'specifier' | 'architect' | 'coder' | 'cleaner' | 'hardender' | 'QA' | 'documenter';
 
 export const ROLE_TOPIC_ICON: Record<RoleTopicIconRole, string> = {
-  coordinator: '🧭',
+  coordinator: '🎬',
   specifier: '📝',
-  architect: '🏗',
-  coder: '⌨️',
-  cleaner: '🧹',
-  hardender: '🛡',
-  QA: '🔍',
+  architect: '🏛',
+  coder: '💻',
+  cleaner: '🧼',
+  hardender: '🧪',
+  QA: '🔎',
   documenter: '📚',
 };
 

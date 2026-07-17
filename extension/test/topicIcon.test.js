@@ -116,20 +116,18 @@ test('STANDING_TOPIC_ICON: approvals resolves to the clipboard emoji', () => {
 // ICON_EMOJI (ticket state) and STANDING_TOPIC_ICON (standing topics).
 
 test('ROLE_TOPIC_ICON: carries the exact human-chosen icon for each of the 8 role topics', () => {
-  assert.equal(ROLE_TOPIC_ICON.coordinator, '🧭');
+  assert.equal(ROLE_TOPIC_ICON.coordinator, '🎬');
   assert.equal(ROLE_TOPIC_ICON.specifier, '📝');
-  assert.equal(ROLE_TOPIC_ICON.architect, '🏗');
-  assert.equal(ROLE_TOPIC_ICON.coder, '⌨️');
-  assert.equal(ROLE_TOPIC_ICON.cleaner, '🧹');
-  assert.equal(ROLE_TOPIC_ICON.hardender, '🛡');
-  assert.equal(ROLE_TOPIC_ICON.QA, '🔍');
+  assert.equal(ROLE_TOPIC_ICON.architect, '🏛');
+  assert.equal(ROLE_TOPIC_ICON.coder, '💻');
+  assert.equal(ROLE_TOPIC_ICON.cleaner, '🧼');
+  assert.equal(ROLE_TOPIC_ICON.hardender, '🧪');
+  assert.equal(ROLE_TOPIC_ICON.QA, '🔎');
   assert.equal(ROLE_TOPIC_ICON.documenter, '📚');
 });
 
-// Documents the accepted collision named in the ticket: QA's magnifier is
-// the SAME glyph as ICON_EMOJI.paused, but these are different topic
-// classes (a per-agent QA steering topic vs. a paused ticket's own topic) -
-// not a defect.
-test('ROLE_TOPIC_ICON: QA intentionally collides with the paused ticket-state icon (different topic classes, documented)', () => {
-  assert.equal(ROLE_TOPIC_ICON.QA, ICON_EMOJI.paused);
+// BL-469 2026-07-17 remap: the prior QA magnifier (🔍) collided with
+// ICON_EMOJI.paused; the approved replacement (🔎) resolves it.
+test('ROLE_TOPIC_ICON: QA no longer collides with the paused ticket-state icon', () => {
+  assert.notEqual(ROLE_TOPIC_ICON.QA, ICON_EMOJI.paused);
 });

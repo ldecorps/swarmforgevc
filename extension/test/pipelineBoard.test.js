@@ -452,6 +452,27 @@ test('computePipelineBoard: recentlyClosed is capped at PIPELINE_BOARD_RECENTLY_
   assert.equal(recentlyClosed.length, PIPELINE_BOARD_RECENTLY_CLOSED_MAX);
 });
 
+// BL-465 bounce (architect review): recently-closed order IS the whole
+// point of the section - the caller (conciergeTick.ts's recentlyClosedItems)
+// is documented as the one deciding order (this function "only bounds the
+// list length"), so computePipelineBoard must never re-sort it. Deliberately
+// fed in NON-alphabetical order (BL-9 before BL-1) - a bug that silently
+// re-sorts by id would flip this to BL-1 first and this test would catch it.
+test('computePipelineBoard: recentlyClosed preserves the caller-supplied order, never re-sorted alphabetically', () => {
+  const { recentlyClosed } = computePipelineBoard(
+    {},
+    [],
+    {},
+    {
+      recentlyClosed: [
+        { id: 'BL-9', title: 'closed most recently', filename: 'BL-9-closed.yaml' },
+        { id: 'BL-1', title: 'closed earlier', filename: 'BL-1-closed.yaml' },
+      ],
+    }
+  );
+  assert.deepEqual(recentlyClosed.map((e) => e.id), ['BL-9', 'BL-1']);
+});
+
 test('computePipelineBoard: links are empty when repoBaseUrl is absent, even with active rows', () => {
   const { links } = computePipelineBoard({ coder: ['BL-1'] }, [], { 'BL-1': { filename: 'BL-1-foo.yaml', location: 'active' } });
   assert.deepEqual(links, []);

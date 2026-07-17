@@ -325,10 +325,15 @@ export function computePipelineBoard(
   const rows = buildGridRows(roleHeldTickets, ticketMeta);
   const parked = buildParkedEntries(paused, ticketMeta);
   const rootIntake = [...(extras.rootIntake ?? [])].map(listEntryFor).sort((a, b) => a.id.localeCompare(b.id));
-  const recentlyClosed = [...(extras.recentlyClosed ?? [])]
-    .slice(0, PIPELINE_BOARD_RECENTLY_CLOSED_MAX)
-    .map(listEntryFor)
-    .sort((a, b) => a.id.localeCompare(b.id));
+  // BL-465 bounce (architect review): unlike rootIntake/parked above,
+  // recently-closed order IS the whole point of the section - re-sorting
+  // it alphabetically here silently discarded whatever recency order the
+  // caller (conciergeTick.ts's recentlyClosedItems) worked out, which is
+  // this function's OWN documented contract just above
+  // (PIPELINE_BOARD_RECENTLY_CLOSED_MAX's comment: "the caller decides
+  // WHICH items count as 'recent'; this only bounds the list length").
+  // Slice-then-map only, preserving the caller's order exactly.
+  const recentlyClosed = [...(extras.recentlyClosed ?? [])].slice(0, PIPELINE_BOARD_RECENTLY_CLOSED_MAX).map(listEntryFor);
   const links = extras.repoBaseUrl ? buildLinks(rows, parked, extras, ticketMeta) : [];
 
   return { rows, parked, rootIntake, recentlyClosed, links };
