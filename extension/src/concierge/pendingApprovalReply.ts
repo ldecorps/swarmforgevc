@@ -175,6 +175,24 @@ export function isTicketPendingApproval(targetPath: string, backlogId: string): 
   return HUMAN_APPROVAL_PENDING_PATTERN.test(fs.readFileSync(filePath, 'utf8'));
 }
 
+const HUMAN_APPROVAL_VERDICT_PATTERN = /^human_approval:\s*(approved|rejected)\b/m;
+
+// BL-484: the stale-tap guard's own read - which verdict, specifically, was
+// already recorded (never just isTicketPendingApproval's plain pending/
+// not-pending) - so a tap on an already-decided ask can name it in an
+// "already decided: <verdict>" toast. undefined for a still-pending ticket,
+// one with no human_approval field at all, or no matching ticket file -
+// every "nothing decided (yet) to report" case collapses to the same
+// absent result, never a crash.
+export function readRecordedVerdict(targetPath: string, backlogId: string): 'approved' | 'rejected' | undefined {
+  const filePath = findTicketFilePath(targetPath, backlogId);
+  if (!filePath) {
+    return undefined;
+  }
+  const match = fs.readFileSync(filePath, 'utf8').match(HUMAN_APPROVAL_VERDICT_PATTERN);
+  return match ? (match[1] as 'approved' | 'rejected') : undefined;
+}
+
 // Impure driver: flips the ticket's human_approval to approved if it is
 // currently pending. Returns whether it actually changed, so the live
 // wiring can tell a real flip from a no-op (already approved, or the

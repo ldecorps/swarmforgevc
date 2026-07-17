@@ -9,6 +9,7 @@
 import { TelegramUpdate, TelegramCallbackQuery, TelegramPollAnswer, GetUpdatesResult } from '../notify/telegramClient';
 import { computeTelegramRetryBackoffMs } from '../notify/telegramRetry';
 import { classifyApprovalReplyAction, classifyApprovalsTopicReply } from '../concierge/pendingApprovalReply';
+import { ApprovalDecisionVerdict, composeDecidedAskText, alreadyDecidedToastText } from '../concierge/approvalAskClosing';
 import { classifyRecertTopicReply } from '../concierge/recertTopicReply';
 import { roleForTopic } from '../concierge/roleTopicMapStore';
 import { ControlEvent, ControlDecision, PendingControlConfirm, PauseState, decideControlEventAction } from './telegramControlCore';
@@ -687,7 +688,34 @@ export interface PollAdapters {
   setPendingButtonAction: (backlogId: string, kind: 'reject' | 'amend') => Promise<void>;
   // BL-410: clears the tapped button's Telegram loading spinner - called for
   // every recognized callback_query, even a no-op (stale/unknown data).
-  answerCallbackQuery: (callbackQueryId: string) => Promise<void>;
+  // BL-484: an optional toast `text` - a stale/already-decided tap answers
+  // with one naming the recorded verdict, instead of the plain silent
+  // spinner-clear. Omitted for every ordinary (non-stale) tap, the exact
+  // pre-BL-484 behavior.
+  answerCallbackQuery: (callbackQueryId: string, text?: string) => Promise<void>;
+  // BL-484: the persisted {topicId, messageId, text} for a ticket's posted
+  // approval ask - topicRouter.ts's routeApprovalRequestedEvent recorded it
+  // (RouteAdapters.recordApprovalAskMessageId), a SEPARATE, concierge-tick-
+  // side subsystem from this poll loop. Optional: absent, or no entry for
+  // this backlogId (the ask was posted before this feature shipped, or its
+  // capture failed), means the closing routine has nothing to edit, so it
+  // simply no-ops rather than crashing - the same "new capability degrades
+  // to a no-op" posture as every other optional adapter in this file.
+  readApprovalAskMessage?: (backlogId: string) => Promise<{ topicId: number; messageId: number; text: string } | undefined>;
+  // BL-484: performs the actual close - strips the ask's inline keyboard
+  // and replaces its text with the decided version (composeDecidedAskText).
+  // Reports whether the edit succeeded; a failure is logged by the caller
+  // and never blocks or unwinds the decision recording that already
+  // happened (the ticket's own "never crashes the tick/bot loop"
+  // constraint).
+  editApprovalAskMessage?: (topicId: number, messageId: number, text: string) => Promise<boolean>;
+  // BL-484: the stale-tap guard's own read - the SPECIFIC verdict already
+  // recorded for this ticket, if any (pendingApprovalReply.ts's
+  // readRecordedVerdict, adapter-injected). Optional: absent means the
+  // guard never fires - every tap proceeds exactly as it did before this
+  // ticket, the same "new capability degrades to prior behavior" posture
+  // as every other optional adapter in this file.
+  readRecordedApprovalVerdict?: (backlogId: string) => Promise<'approved' | 'rejected' | undefined>;
   // BL-425 slice 1: role->topic steering (REDIRECT mode). Both optional so
   // every PollAdapters fixture written before BL-425 keeps working
   // unchanged - either missing means "no role steering wired", the exact
@@ -813,6 +841,52 @@ function classifyWithPendingButton(
   return pending === 'reject' ? { kind: 'reject', reason: trimmed } : { kind: 'amend', note: trimmed };
 }
 
+// BL-484: performs the actual Telegram edit that closes a decided ask -
+// split out of recordApprovalDecisionAndClose below for the same CRAP-
+// budget reason this file already applies throughout (e.g.
+// isApprovalsTopicReplyDecision above). A missing readApprovalAskMessage/
+// editApprovalAskMessage adapter, or no stored message for this backlogId
+// (never captured - posted before this feature shipped, or capture
+// failed), means there is nothing to edit, so this simply no-ops rather
+// than crashing. A failed edit is LOGGED, never thrown - the ticket's own
+// explicit "editing must ... never crash the tick/bot loop" constraint.
+async function closeApprovalAskIfPossible(adapters: PollAdapters, backlogId: string, verdict: ApprovalDecisionVerdict, nowMs: number): Promise<void> {
+  const stored = await adapters.readApprovalAskMessage?.(backlogId);
+  if (!stored) {
+    return;
+  }
+  const newText = composeDecidedAskText(stored.text, verdict, nowMs);
+  const ok = await adapters.editApprovalAskMessage?.(stored.topicId, stored.messageId, newText);
+  if (!ok) {
+    process.stderr.write(`front-desk bot: failed to close the approval ask for ${backlogId} (message edit failed or not wired)\n`);
+  }
+}
+
+// BL-484: the ONE closing routine serving BOTH decision entry points - a
+// button tap (processCallbackQuery below) and a typed reply
+// (deliverOperatorContext/deliverApprovalsTopicReply below) - so the two
+// can never drift into two different edited shapes, per the ticket's own
+// explicit constraint. Records the decision exactly as every caller
+// already did (recordApprovalReply/recordRejectionReply, unchanged
+// contract), then - only on a REAL transition (changed === true, never a
+// no-op on an already-decided or unknown ticket) - closes the posted ask.
+// nowMs defaults to the real clock (mirrors runConciergeTick's own
+// injectable-nowMs convention) so every existing call site needs no clock
+// plumbing of its own, while a test can still pin an exact instant.
+export async function recordApprovalDecisionAndClose(
+  adapters: PollAdapters,
+  backlogId: string,
+  verdict: ApprovalDecisionVerdict,
+  nowMs: number = Date.now()
+): Promise<boolean> {
+  const changed =
+    verdict.kind === 'approved' ? await adapters.recordApprovalReply(backlogId) : await adapters.recordRejectionReply(backlogId, verdict.reason);
+  if (changed) {
+    await closeApprovalAskIfPossible(adapters, backlogId, verdict, nowMs);
+  }
+  return changed;
+}
+
 async function deliverOperatorContext(backlogId: string, text: string, updateId: number, adapters: PollAdapters): Promise<boolean> {
   const pending = await adapters.getPendingButtonAction?.(backlogId);
   const action = classifyWithPendingButton(text, pending);
@@ -824,9 +898,9 @@ async function deliverOperatorContext(backlogId: string, text: string, updateId:
   // BL-357/BL-409: fires alongside the context post above, never instead of
   // it - a reply that resolves a ticket is still ALSO context for it.
   if (action.kind === 'approve') {
-    await adapters.recordApprovalReply(backlogId);
+    await recordApprovalDecisionAndClose(adapters, backlogId, { kind: 'approved' });
   } else if (action.kind === 'reject') {
-    await adapters.recordRejectionReply(backlogId, action.reason);
+    await recordApprovalDecisionAndClose(adapters, backlogId, { kind: 'rejected', reason: action.reason });
   }
   return posted;
 }
@@ -866,8 +940,8 @@ async function deliverApprovalsTopicReply(decision: ApprovalsTopicReplyDecision,
   const { backlogId } = decision;
   const changed =
     decision.action === 'approvals-topic-approve'
-      ? await adapters.recordApprovalReply(backlogId)
-      : await adapters.recordRejectionReply(backlogId, decision.reason);
+      ? await recordApprovalDecisionAndClose(adapters, backlogId, { kind: 'approved' })
+      : await recordApprovalDecisionAndClose(adapters, backlogId, { kind: 'rejected', reason: decision.reason });
   if (!changed) {
     await adapters.notifyApprovalsTopic?.(topicId, `${backlogId} isn't awaiting approval.`);
     return 'dropped';
@@ -1046,6 +1120,31 @@ function isUnauthorizedCallbackDrop(decision: CallbackButtonDecision): boolean {
   return decision.action === 'drop' && (decision.reason === 'not-my-chat' || decision.reason === 'not-principal');
 }
 
+// BL-484: a tap on an ALREADY-DECIDED ask is stale - answered with an
+// informative toast naming the recorded verdict, no decision side effect
+// at all (no recordApprovalReply, no setPendingButtonAction) - the exact
+// "acting on a stale question's answer" class of incident this guard
+// exists to prevent. Checked for every recognized (non-drop) decision -
+// Approve, Reject, and Amend taps alike - since any of the three can be
+// tapped again after the ticket already resolved. readRecordedApprovalVerdict
+// absent (pre-BL-484 fixtures) or reporting undefined (still pending, or no
+// matching ticket) means this returns false - the tap proceeds exactly as
+// it did before this ticket. Split out of processCallbackQuery below so its
+// own branch count stays at or below the CRAP threshold - the same
+// "extract the guard into a named, tested helper" split this file already
+// uses for isUnauthorizedCallbackDrop above.
+async function answerIfAlreadyDecided(callbackQuery: TelegramCallbackQuery, decision: CallbackButtonDecision, adapters: PollAdapters): Promise<boolean> {
+  if (decision.action === 'drop') {
+    return false;
+  }
+  const recordedVerdict = await adapters.readRecordedApprovalVerdict?.(decision.backlogId);
+  if (!recordedVerdict) {
+    return false;
+  }
+  await adapters.answerCallbackQuery(callbackQuery.id, alreadyDecidedToastText(recordedVerdict));
+  return true;
+}
+
 // BL-410: see isUnauthorizedCallbackDrop above for the answer-spinner
 // rationale. An Approve tap fires recordApprovalReply immediately (nothing
 // else to gather); a Reject/Amend tap has no reason/note in hand yet, so it
@@ -1067,12 +1166,15 @@ async function processCallbackQuery(callbackQuery: TelegramCallbackQuery, princi
   if (isUnauthorizedCallbackDrop(decision)) {
     return 'dropped';
   }
+  if (await answerIfAlreadyDecided(callbackQuery, decision, adapters)) {
+    return 'dropped';
+  }
   await adapters.answerCallbackQuery(callbackQuery.id);
   if (decision.action === 'drop') {
     return 'dropped';
   }
   if (decision.action === 'approve') {
-    await adapters.recordApprovalReply(decision.backlogId);
+    await recordApprovalDecisionAndClose(adapters, decision.backlogId, { kind: 'approved' });
   } else {
     await adapters.setPendingButtonAction(decision.backlogId, decision.kind);
   }

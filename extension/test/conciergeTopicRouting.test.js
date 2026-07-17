@@ -620,6 +620,74 @@ test('BL-434: an untagged ApprovalRequested (backlogId null) is skipped, never c
   assert.equal(ensureApprovalsTopicCalls.length, 0);
 });
 
+// ── routeEvent ApprovalRequested: sendApprovalAsk message-id capture (BL-484) ──
+// Optional adapter - absent (every test above never sets it) keeps posting
+// via the ordinary sendMessage/recordMessage path unchanged. Present, it
+// captures the ask's Telegram message_id so a later decision (a separate
+// poll-loop subsystem) can edit that exact message in place.
+
+test('BL-484: when sendApprovalAsk is wired, it is used instead of sendMessage, and its message_id is recorded', async () => {
+  const { adapters, sent, recorded } = fakeAdapters();
+  const askCalls = [];
+  const recordCalls = [];
+  adapters.sendApprovalAsk = async (topicId, text, buttons) => {
+    askCalls.push({ topicId, text, buttons });
+    return { success: true, messageId: 999 };
+  };
+  adapters.recordApprovalAskMessageId = (backlogId, topicId, messageId, text) => {
+    recordCalls.push({ backlogId, topicId, messageId, text });
+  };
+
+  const result = await routeEvent(event({ type: 'ApprovalRequested' }), 'a fine feature', adapters);
+
+  assert.deepEqual(result, { posted: true, skipped: false });
+  assert.equal(sent.length, 0, 'expected the ordinary sendMessage never called when sendApprovalAsk is wired');
+  assert.equal(askCalls.length, 1);
+  assert.equal(askCalls[0].topicId, 800);
+  assert.deepEqual(recordCalls, [
+    { backlogId: 'BL-123', topicId: 800, messageId: 999, text: messageTextForEvent(event({ type: 'ApprovalRequested' })) },
+  ]);
+  assert.deepEqual(recorded, [{ backlogId: 'BL-123', text: messageTextForEvent(event({ type: 'ApprovalRequested' })) }]);
+});
+
+test('BL-484: sendApprovalAsk reporting no messageId still posts/records the text, just never calls recordApprovalAskMessageId', async () => {
+  const { adapters, recorded } = fakeAdapters();
+  const recordCalls = [];
+  adapters.sendApprovalAsk = async () => ({ success: true });
+  adapters.recordApprovalAskMessageId = (backlogId, topicId, messageId, text) => {
+    recordCalls.push({ backlogId, topicId, messageId, text });
+  };
+
+  const result = await routeEvent(event({ type: 'ApprovalRequested' }), 'a fine feature', adapters);
+
+  assert.deepEqual(result, { posted: true, skipped: false });
+  assert.deepEqual(recordCalls, []);
+  assert.equal(recorded.length, 1);
+});
+
+test('BL-484: a failed sendApprovalAsk reports posted:false and records nothing (mirrors a failed sendMessage)', async () => {
+  const { adapters, recorded } = fakeAdapters();
+  const recordCalls = [];
+  adapters.sendApprovalAsk = async () => ({ success: false });
+  adapters.recordApprovalAskMessageId = (backlogId, topicId, messageId, text) => {
+    recordCalls.push({ backlogId, topicId, messageId, text });
+  };
+
+  const result = await routeEvent(event({ type: 'ApprovalRequested' }), 'a fine feature', adapters);
+
+  assert.deepEqual(result, { posted: false, skipped: false });
+  assert.deepEqual(recorded, []);
+  assert.deepEqual(recordCalls, []);
+});
+
+test('BL-484: sendApprovalAsk absent keeps the ordinary sendMessage path fully unaffected (regression)', async () => {
+  const { adapters, sent, recorded } = fakeAdapters();
+  const result = await routeEvent(event({ type: 'ApprovalRequested' }), 'a fine feature', adapters);
+  assert.deepEqual(result, { posted: true, skipped: false });
+  assert.equal(sent.length, 1);
+  assert.equal(recorded.length, 1);
+});
+
 // ── recordMessage (BL-329: outbound serialisation) ─────────────────────────
 // Only ever called after a GENUINELY successful sendMessage - mirrors
 // emittedKeys' own "only record what actually posted" convention (BL-322).
