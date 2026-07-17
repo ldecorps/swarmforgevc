@@ -52,18 +52,15 @@ Feature: The pipeline board shows wider descriptions, distinct sections for park
     Then the grid row's slug column shows the ticket's short kebab slug
     And the grid row remains a single aligned line
 
-  # BL-465 board-round2-01b
-  Scenario Outline: A below-grid list entry leads with the kebab slug then shows more of its title
-    Given a long-titled ticket appears under the "<list>" section
-    When the pipeline board is rendered
-    Then the "<list>" entry leads with a short kebab slug for the ticket
-    And it then shows more of the title than the previous limit allowed
-    And the whole entry is still a single line
-
-    Examples:
-      | list            |
-      | parked list     |
-      | recently-closed |
+  # BL-465 board-round2-01b RETIRED (BL-505, 2026-07-17): superseded - a
+  # below-grid list entry (parked/awaiting-approval/root-intake/recently-
+  # closed) now shows the short kebab slug ONLY, dropping the wide
+  # deriveTicketSlug title tail this scenario asserted ("shows more of the
+  # title than the previous limit allowed", "includes the FULL title").
+  # Covered by BL-505's own "a below-grid list line shows the short kebab
+  # slug only and a number-only id" scenario. Retired per the
+  # superseded-scenario rule (retire, don't reword) rather than rewritten to
+  # assert the opposite of what it originally checked.
 
   # BL-465 board-round2-02
   Scenario: The parked list drops the redundant PK label
