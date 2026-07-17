@@ -105,6 +105,26 @@ which one happened. Never route the question to a specific agent yourself
   `inject-traffic.log`; the daemon heartbeat at
   `.swarmforge/daemon/handoffd.heartbeat`.
 
+## Clock and timestamps — always UTC (BL-482)
+
+The host is not on UTC (it runs UTC+1/BST), so the ONLY safe source of
+"now" is an explicitly-UTC one. Every timestamp you WRITE and every
+freshness/age comparison you REASON WITH must be true UTC:
+
+- Get "now" from `date -u` (never bare `date`, which is host-local time),
+  or reuse the runtime's already-correct UTC surfaces — the heartbeat file
+  `.swarmforge/daemon/handoffd.heartbeat` or `status.json`'s `now-iso`.
+- Before writing a `Z`-suffixed timestamp derived from a local value —
+  most often a git author date carrying a `+01:00` suffix — CONVERT it to
+  UTC first; never relabel a local time as `Z`.
+- This applies to BOTH your `operator.log` line prefixes AND every
+  in-narrative "…Xm stale / …fresh / …ago" claim. Your health verdicts
+  (the SWARM_CHECK_TIMER sweep) compare your narrated "now" against
+  heartbeat/HEAD UTC, so a local-time "now" labelled `Z` reads ~1h off and
+  can flip a fresh signal to false-stale (a needless restart) or a real
+  stall to false-GREEN. When in doubt, prefer a runtime-provided UTC value
+  over computing time yourself.
+
 ## What to do, by event
 
 - **SWARM_CHECK_TIMER** — one health+progress sweep: 8 panes live, daemon
