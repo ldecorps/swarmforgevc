@@ -473,8 +473,13 @@
 ;; reached a different way through this sweep's own leading-token extractor.
 (def known-ticket-prefixes ["BL" "GH"])
 
+;; BL-503: the prefix hyphen is OPTIONAL (`-?`) - ~14 in-flight coder tickets
+;; were minted with a no-hyphen task name ("blNNN", e.g.
+;; "bl493-fold-ticket-events"), which the previously-mandatory hyphen
+;; resolved to nil. Two capture groups (prefix, digits) so the match can be
+;; canonicalized below - mirrors pipeline_stage_lib.bb's own ticket-id-pattern.
 (def ^:private leading-ticket-id-pattern
-  (re-pattern (str "(?i)^((?:" (str/join "|" known-ticket-prefixes) ")-\\d+)")))
+  (re-pattern (str "(?i)^(" (str/join "|" known-ticket-prefixes) ")-?(\\d+)")))
 
 (defn extract-ticket-id
   "The leading <PREFIX>-<digits> token from a task or message field (e.g.
@@ -483,10 +488,17 @@
    routing note in this swarm conventionally leads with the ticket id).
    Matched against known-ticket-prefixes above, never an unbounded
    [A-Za-z]+, so a stray letter glued directly in front of a real id
-   (\"ABL-217 ...\") resolves to nil instead of swallowing it."
+   (\"ABL-217 ...\") resolves to nil instead of swallowing it. The prefix
+   hyphen is optional (BL-503), and every match is canonicalized to
+   upper-case hyphenated form regardless of the input's own case/hyphenation
+   (BL-503: this extractor used to return the raw match un-canonicalized, so
+   a lower-case hyphenated id, e.g. \"bl-493\", silently failed the
+   case-sensitive active-set join downstream - mirrors pipeline_stage_lib.bb's
+   own BL-471 canonicalization)."
   [text]
   (when text
-    (second (re-find leading-ticket-id-pattern text))))
+    (when-let [[_ prefix digits] (re-find leading-ticket-id-pattern text)]
+      (str/upper-case (str prefix "-" digits)))))
 
 (defn- list-handoff-files [dir]
   (if-not (fs/exists? dir)

@@ -1,0 +1,1 @@
+{"id":"BL-389","messages":[{"seq":0,"ts":1784300822088,"author":"swarm","type":"outbound","text":"BL-389 ✅ done — LIVE INCIDENT — a deliberately-dropped Telegram update parks the offset forever, replaying side effects into 209 commits on origin/main"}]}
