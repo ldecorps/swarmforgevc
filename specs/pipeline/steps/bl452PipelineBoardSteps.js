@@ -43,9 +43,18 @@ const FIXED_NOW_MS = 0;
 // BL-421/engineering.prompt Scenario Outline rule: every Examples: column
 // value must be validated against an explicit KNOWN_VALUES lookup, never a
 // bare passthrough - each entry seeds the fixture for that <state>.
+// BL-510: a role-held id also needs an active/ row (BL-473 made grid
+// membership exactly `folders.active`, never role-held alone - a
+// role-held-only fixture now renders no row at all).
 const KNOWN_STATES = {
-  'held by the coder': (id, fixture) => fixture.setRoleHeldTickets({ coder: [id] }),
-  'held by QA': (id, fixture) => fixture.setRoleHeldTickets({ QA: [id] }),
+  'held by the coder': (id, fixture) => {
+    fixture.setRoleHeldTickets({ coder: [id] });
+    fixture.setFolders(folders({ active: [{ id }] }));
+  },
+  'held by QA': (id, fixture) => {
+    fixture.setRoleHeldTickets({ QA: [id] });
+    fixture.setFolders(folders({ active: [{ id }] }));
+  },
   parked: (id, fixture) => fixture.setFolders(folders({ paused: [{ id }] })),
   'awaiting approval': (id, fixture) => fixture.setFolders(folders({ paused: [{ id, humanApproval: 'pending' }] })),
 };
@@ -169,10 +178,38 @@ function lastRendered(fixture) {
 }
 
 function registerSteps(registry) {
-  // ── pipeline-board-01 ─────────────────────────────────────────────────
+  // ── pipeline-board-01 (also seeds pipeline-board-05, the read-only-
+  // guarantee scenario below - same Given, shared by both) ───────────────
+  // BL-510: same folders.active gap as KNOWN_STATES above (BL-473 made grid
+  // membership exactly `folders.active`, never role-held alone) - this
+  // scenario's own dedicated Given calls setRoleHeldTickets directly rather
+  // than going through KNOWN_STATES, so it needed the identical fix.
+  //
+  // Populating folders.active alone would regress pipeline-board-05
+  // ("...modifies no swarm state"): runConciergeTick's TaskStarted
+  // derivation (deriveSwarmEvents, swarmEventStream.ts) diffs the tick's
+  // PRIOR snapshot against the current one, and a fresh `state.snapshot ===
+  // null` baseline makes BL-1/BL-2 look like a brand-new empty->active
+  // transition, firing TaskStarted -> routeTicketStatusEvent ->
+  // recordMessage for both - exactly the per-ticket write pipeline-board-05
+  // asserts never happens. So the Given also pre-seeds state.snapshot as
+  // though BL-1/BL-2 were ALREADY active on a previous tick (the same
+  // {backlog, gates, roleTicket, ticketSummaries, pendingApproval} shape
+  // toEventStreamSnapshot itself builds) - the diff then sees no
+  // transition, TaskStarted never fires, and recordMessage/recordedTopicIds
+  // stay empty, while the board's OWN render (a direct, non-diffed read of
+  // the CURRENT folders.active) still shows both rows correctly.
   registry.define(/^active tickets are at various pipeline stages$/, (ctx) => {
     ctx.fixture = fakeConciergeAdapters();
     ctx.fixture.setRoleHeldTickets({ coder: ['BL-1'], QA: ['BL-2'] });
+    ctx.fixture.setFolders(folders({ active: [{ id: 'BL-1' }, { id: 'BL-2' }] }));
+    ctx.fixture.state.snapshot = {
+      backlog: { active: ['BL-1', 'BL-2'], paused: [], done: [] },
+      gates: [],
+      roleTicket: {},
+      ticketSummaries: {},
+      pendingApproval: [],
+    };
     ctx.expectedBoard = boardData([
       { id: 'BL-1', column: 'coder' },
       { id: 'BL-2', column: 'QA' },
