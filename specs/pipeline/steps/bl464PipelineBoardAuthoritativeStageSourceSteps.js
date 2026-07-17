@@ -169,6 +169,34 @@ function registerSteps(registry) {
     writeGitHandoff(ctx.root, ctx.newStage, ctx.ticketId, ctx.previousStage, '4444444444'); // ...and the new role now holds it.
   });
 
+  // ── board-authoritative-stage-05 (BL-471 case-robustness) ────────────
+  registry.define(/^an active ticket "([^"]+)"$/, (ctx, id) => {
+    ctx.root = mkTmp();
+    fs.mkdirSync(path.join(ctx.root, '.swarmforge'), { recursive: true });
+    writeRolesTsv(ctx.root);
+    ctx.ticketId = id;
+    ctx.role = 'coder';
+    writeBacklogActive(ctx.root, ctx.ticketId);
+  });
+
+  registry.define(/^a role holds a handoff whose header leads with the id "([^"]+)"$/, (ctx, differentlyCasedId) => {
+    writeNoteHandoff(ctx.root, ctx.role, differentlyCasedId);
+  });
+
+  registry.define(/^the ticket appears on the board at that role's stage$/, (ctx) => {
+    const rows = rowFor(ctx, ctx.ticketId);
+    if (rows.length !== 1 || rows[0].column !== ctx.role) {
+      throw new Error(`expected ${ctx.ticketId} on the board at the "${ctx.role}" stage, got: ${JSON.stringify(ctx.board.rows)}`);
+    }
+  });
+
+  registry.define(/^it appears on exactly one row$/, (ctx) => {
+    const rows = rowFor(ctx, ctx.ticketId);
+    if (rows.length !== 1) {
+      throw new Error(`expected ${ctx.ticketId} on exactly one row, got: ${JSON.stringify(rows)}`);
+    }
+  });
+
   // "the pipeline board is rendered" is NOT registered here - see
   // renderPipelineBoardForFixtureRoot's own comment above; bl452's shared
   // handler delegates to it.
