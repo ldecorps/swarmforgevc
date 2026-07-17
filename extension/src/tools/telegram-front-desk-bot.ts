@@ -381,7 +381,7 @@ export async function postOperatorContext(targetPath: string, backlogId: string,
 // postOperatorContext) - a redelivered update's amend reply is a no-op at
 // the recordAmendReply layer (the ticket is no longer 'pending' the second
 // time), so this call site is never reached twice for the same update.
-function queueAmendSteerDirective(targetPath: string, backlogId: string, text: string): Promise<void> {
+export function queueAmendSteerDirective(targetPath: string, backlogId: string, text: string): Promise<void> {
   appendOperatorEvent(targetPath, { type: 'TELEGRAM_BL_AMEND_STEER', backlogId, text });
   return Promise.resolve();
 }
@@ -392,7 +392,7 @@ function queueAmendSteerDirective(targetPath: string, backlogId: string, text: s
 // already-emitted (the emittedKeys/repaint concern). A no-op when the key
 // is not present (never happened, or already reset), same idempotency
 // posture as the record* writers above.
-function resetApprovalAskEmittedState(targetPath: string, backlogId: string): Promise<void> {
+export function resetApprovalAskEmittedState(targetPath: string, backlogId: string): Promise<void> {
   const state = readTickState(targetPath);
   const key = approvalRequestedEventKey(backlogId);
   if (state.emittedKeys.includes(key)) {
