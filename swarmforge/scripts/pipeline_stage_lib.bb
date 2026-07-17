@@ -25,10 +25,15 @@
 ;; a leading one - a held ticket's task/message header carrying a textual
 ;; prefix before the id ("Re: BL-476 …", "continuing BL-476 next slice") used
 ;; to match nothing and resolve to nil, reading as a durable false
-;; not-started on the board. `\b` on both sides keeps this from matching an
-;; id-shaped token embedded inside a larger word (e.g. "ABL-476" has no word
-;; boundary before "BL", so it does not match); byte-identical on an
-;; already-leading id, since the first id-shaped token IS the leading one
+;; not-started on the board. `\b` on both sides guards against a
+;; DIGIT-adjacent embedding, where the greedy `[A-Za-z]+` would otherwise
+;; still land on a match starting mid-token (e.g. "v2BL-476" would extract
+;; "BL-476" without the guard; with it, no boundary exists between the "2"
+;; and "B" so it resolves to nil instead). It does NOT guard against a
+;; LETTER-adjacent prefix - "ABL-476" still matches, greedily capturing the
+;; whole run of letters as "ABL-476", which is harmless here because that
+;; extracted (non-ticket) id never joins the active set. Byte-identical on
+;; an already-leading id, since the first id-shaped token IS the leading one
 ;; there.
 ;;
 ;; BL-471: canonicalized to upper-case here, at the ONE point every header-
