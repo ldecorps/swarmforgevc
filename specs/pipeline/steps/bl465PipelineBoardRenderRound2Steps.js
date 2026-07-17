@@ -24,9 +24,14 @@
 const path = require('node:path');
 
 const EXT_OUT = path.join(__dirname, '..', '..', '..', 'extension', 'out');
-const { computePipelineBoard, renderPipelineBoard, renderPipelineBoardBody, renderPipelineBoardLinks, wrapPipelineBoardHtml } = require(
-  path.join(EXT_OUT, 'concierge', 'pipelineBoard')
-);
+const {
+  computePipelineBoard,
+  renderPipelineBoard,
+  renderPipelineBoardBody,
+  renderPipelineBoardLinks,
+  wrapPipelineBoardHtml,
+  deriveDisplayTicketId,
+} = require(path.join(EXT_OUT, 'concierge', 'pipelineBoard'));
 
 const REPO_BASE_URL = 'https://github.com/ldecorps/swarmforgevc';
 const LONG_TITLE = 'Pipeline board shows a lot more of the title now';
@@ -63,61 +68,24 @@ function registerSteps(registry) {
 
   registry.define(/^the grid row's slug column shows the ticket's short kebab slug$/, (ctx) => {
     const row = ctx.board.rows.find((r) => r.id === 'BL-1');
-    if (!row || row.slug !== 'pipeline-board-shows') {
-      throw new Error(`expected the grid row's slug to be the short kebab slug "pipeline-board-shows", got: ${JSON.stringify(row)}`);
+    // BL-505: the grid's own kebab cap narrowed from 3 words to 2
+    // ("pipeline-board-shows" -> "pipeline-board").
+    if (!row || row.slug !== 'pipeline-board') {
+      throw new Error(`expected the grid row's slug to be the short kebab slug "pipeline-board", got: ${JSON.stringify(row)}`);
     }
   });
 
   registry.define(/^the grid row remains a single aligned line$/, (ctx) => {
-    const line = ctx.gridText.split('\n').find((l) => l.startsWith('BL-1'));
+    const line = ctx.gridText.split('\n').find((l) => l.startsWith('1 '));
     if (!line || line.includes('\n')) {
-      throw new Error(`expected BL-1's row on a single line, got: ${JSON.stringify(line)}`);
+      throw new Error(`expected BL-1's row (displayed as "1") on a single line, got: ${JSON.stringify(line)}`);
     }
   });
 
-  // ── board-round2-01b (Scenario Outline: parked list / recently-closed) ──
-  registry.define(/^a long-titled ticket appears under the "([^"]+)" section$/, (ctx, list) => {
-    if (list === 'parked list') {
-      ctx.paused = [{ id: 'BL-2' }];
-      ctx.ticketMeta = { 'BL-2': { title: LONG_TITLE } };
-      ctx.expectId = 'BL-2';
-    } else if (list === 'recently-closed') {
-      ctx.recentlyClosed = [{ id: 'BL-3', title: LONG_TITLE, filename: 'BL-3-closed.yaml' }];
-      ctx.expectId = 'BL-3';
-    } else {
-      throw new Error(`board-round2-01b: unrecognized <list> example value "${list}"`);
-    }
-    ctx.list = list;
-  });
-
-  registry.define(/^the "([^"]+)" entry leads with a short kebab slug for the ticket$/, (ctx, list) => {
-    const entries = list === 'parked list' ? ctx.board.parked : ctx.board.recentlyClosed;
-    const entry = entries.find((e) => e.id === ctx.expectId);
-    if (!entry || !entry.slug.startsWith('pipeline-board-shows ')) {
-      throw new Error(`expected the "${list}" entry to lead with the kebab slug, got: ${JSON.stringify(entry)}`);
-    }
-  });
-
-  registry.define(/^it then shows more of the title than the previous limit allowed$/, (ctx) => {
-    const entries = ctx.list === 'parked list' ? ctx.board.parked : ctx.board.recentlyClosed;
-    const entry = entries.find((e) => e.id === ctx.expectId);
-    // The previous (BL-462) slug bound was 40 chars - the wider list entry
-    // must carry more of the title than that bound alone would have.
-    if (entry.slug.length <= 40) {
-      throw new Error(`expected the list entry to carry more than the previous 40-char limit, got: "${entry.slug}" (${entry.slug.length} chars)`);
-    }
-    if (!entry.slug.includes(LONG_TITLE)) {
-      throw new Error(`expected the FULL title to fit in the wider list entry, got: "${entry.slug}"`);
-    }
-  });
-
-  registry.define(/^the whole entry is still a single line$/, (ctx) => {
-    const entries = ctx.list === 'parked list' ? ctx.board.parked : ctx.board.recentlyClosed;
-    const entry = entries.find((e) => e.id === ctx.expectId);
-    if (entry.slug.includes('\n')) {
-      throw new Error(`expected a single line, got: "${entry.slug}"`);
-    }
-  });
+  // board-round2-01b RETIRED (BL-505): its step handlers asserted a
+  // below-grid list entry shows more of its title than the previous limit
+  // allowed, a premise BL-505 superseded (list entries now show the short
+  // kebab slug only) - see the feature file's own retirement comment.
 
   // ── board-round2-02 ─────────────────────────────────────────────────────
   registry.define(/^a parked ticket in the parked section$/, (ctx) => {
@@ -129,7 +97,8 @@ function registerSteps(registry) {
 
   registry.define(/^the parked entry does not repeat a per-line "PK" label$/, (ctx) => {
     const lines = renderPipelineBoardBody(ctx.board).split('\n');
-    const bl4Line = lines.find((l) => l.includes('BL-4'));
+    // BL-505: a below-grid list line shows the ticket NUMBER only.
+    const bl4Line = lines.find((l) => l.trim().split(/\s+/)[0] === deriveDisplayTicketId('BL-4'));
     if (!bl4Line || bl4Line.trim().startsWith('PK')) {
       throw new Error(`expected no per-line PK label, got: ${bl4Line}`);
     }
@@ -137,7 +106,7 @@ function registerSteps(registry) {
 
   registry.define(/^an awaiting-approval ticket is distinguished by its own section, not a per-line label$/, (ctx) => {
     const lines = renderPipelineBoardBody(ctx.board).split('\n');
-    const bl5Line = lines.find((l) => l.includes('BL-5'));
+    const bl5Line = lines.find((l) => l.trim().split(/\s+/)[0] === deriveDisplayTicketId('BL-5'));
     if (!bl5Line || bl5Line.trim().startsWith('AA')) {
       throw new Error(`expected no per-line AA label, got: ${bl5Line}`);
     }
@@ -182,9 +151,13 @@ function registerSteps(registry) {
     if (headerIndex < 0) {
       throw new Error(`expected a "${header}" section, got:\n${lines.join('\n')}`);
     }
-    const itemLine = lines.find((l) => l.includes(ctx.expectId));
+    // BL-505: a below-grid list line shows the ticket NUMBER only (a
+    // non-ticket root-intake id is unaffected - deriveDisplayTicketId
+    // returns it unchanged).
+    const expectDisplayed = deriveDisplayTicketId(ctx.expectId);
+    const itemLine = lines.find((l) => l.trim().split(/\s+/)[0] === expectDisplayed);
     if (!itemLine) {
-      throw new Error(`expected ${ctx.expectId} to appear somewhere in the board, got:\n${lines.join('\n')}`);
+      throw new Error(`expected ${ctx.expectId} (displayed "${expectDisplayed}") to appear somewhere in the board, got:\n${lines.join('\n')}`);
     }
     if (lines.indexOf(itemLine) <= headerIndex) {
       throw new Error(`expected ${ctx.expectId} AFTER the "${header}" header, got:\n${lines.join('\n')}`);
