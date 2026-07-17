@@ -12,21 +12,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { execFileSync, spawnSync, spawn } = require('node:child_process');
 
+const { OPERATOR_RUNTIME_BB_FILES } = require('./lib/operatorRuntimeBbFixtureFiles');
+
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARM_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
-const OPERATOR_RUNTIME_BB_FILES = [
-  'operator_lib.bb',
-  'operator_runtime.bb',
-  'telegram_topic_lib.bb',
-  'support_lib.bb',
-  'support_thread_store.bb',
-  'operator_memory_lib.bb',
-  'operator_memory_store.bb',
-  'ticket_status_lib.bb',
-  'operator_ask.bb',
-  'handoff_lib.bb',
-  'daemon_alarm_lib.bb',
-];
 
 function mkTmp(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -58,7 +47,7 @@ function tick(target) {
   // the read even after the immediate bb process exits (discovered via a
   // real hang in alwaysOnOperatorPresenceSteps.js's own tick() helper).
   return execFileSync('bb', [path.join(target, 'swarmforge', 'scripts', 'operator_runtime.bb'), target, '--tick-once'], {
-    env: { ...process.env, OPERATOR_SKIP_LAUNCH: '1', SWARMFORGE_SKIP_TUNNEL: '1' },
+    env: { ...process.env, OPERATOR_SKIP_LAUNCH: '1', SWARMFORGE_SKIP_TUNNEL: '1', SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS: '' },
     encoding: 'utf8',
     timeout: 15000,
   });
