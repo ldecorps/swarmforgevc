@@ -3,11 +3,15 @@ const {
   computePipelineBoard,
   renderPipelineBoard,
   renderPipelineBoardBody,
+  renderPipelineBoardLinks,
   formatUpdatedAtLabel,
   wrapPipelineBoardHtml,
   deriveTicketSlug,
+  deriveKebabSlug,
+  deriveListEntryText,
   PIPELINE_BOARD_COLUMN_ORDER,
   PIPELINE_BOARD_SLUG_MAX_LENGTH,
+  PIPELINE_BOARD_RECENTLY_CLOSED_MAX,
 } = require('../out/concierge/pipelineBoard');
 
 // BL-452/BL-455 pipeline-board-01/02: a ticket held by a role becomes a row
@@ -142,7 +146,7 @@ test('computePipelineBoard: every ticket lands in exactly one place - role-held 
 });
 
 test('computePipelineBoard: no active or paused tickets renders an empty board', () => {
-  assert.deepEqual(computePipelineBoard({}, [], {}), { rows: [], parked: [] });
+  assert.deepEqual(computePipelineBoard({}, [], {}), { rows: [], parked: [], rootIntake: [], recentlyClosed: [], links: [] });
 });
 
 // BL-455 pipeline-board-epic-04: a short, single-line, delimiter-safe slug
@@ -181,14 +185,14 @@ test('deriveTicketSlug: a title longer than the previous slug limit but within t
   assert.ok(!slug.includes('\n'), 'expected a single line');
 });
 
-test('computePipelineBoard: a role-held ticket with a title gets its derived slug', () => {
+test('computePipelineBoard: a role-held ticket with a title gets its derived (grid) kebab slug', () => {
   const { rows } = computePipelineBoard({ coder: ['BL-1'] }, [], { 'BL-1': { title: 'fix the widget' } });
-  assert.equal(rows[0].slug, 'fix the widget');
+  assert.equal(rows[0].slug, 'fix-the-widget');
 });
 
-test('computePipelineBoard: a paused ticket with a title gets its derived slug', () => {
+test('computePipelineBoard: a paused ticket with a title gets its derived (list) kebab-slug-plus-wider-title', () => {
   const { parked } = computePipelineBoard({}, [{ id: 'BL-2' }], { 'BL-2': { title: 'clean up docs' } });
-  assert.equal(parked[0].slug, 'clean up docs');
+  assert.equal(parked[0].slug, 'clean-up-docs clean up docs');
 });
 
 // BL-452/BL-455 pipeline-board-01: the header names every pipeline role
@@ -383,4 +387,216 @@ test('renderPipelineBoard: two different lastChangeMs values a minute apart prod
   const second = renderPipelineBoard(data, Date.UTC(2026, 6, 16, 20, 6));
   assert.notEqual(first, second);
   assert.equal(renderPipelineBoardBody(data), renderPipelineBoardBody(data), 'expected the content-only body to stay identical regardless of the clock');
+});
+
+// ── BL-465: deriveKebabSlug / deriveListEntryText (pure) ──────────────────
+
+test('deriveKebabSlug: takes the first 3 significant words, lowercased and hyphenated', () => {
+  assert.equal(deriveKebabSlug('Pipeline Board: Post The New Message'), 'pipeline-board-post');
+});
+
+test('deriveKebabSlug: strips punctuation rather than treating it as a word boundary only', () => {
+  assert.equal(deriveKebabSlug("BL-467: Pipeline board's own pin"), 'bl-467-pipeline');
+});
+
+test('deriveKebabSlug: a short title (fewer than 3 words) uses every word it has', () => {
+  assert.equal(deriveKebabSlug('fix widget'), 'fix-widget');
+});
+
+test('deriveKebabSlug: no title is an empty slug', () => {
+  assert.equal(deriveKebabSlug(undefined), '');
+});
+
+test('deriveKebabSlug: a custom maxWords bound is honoured', () => {
+  assert.equal(deriveKebabSlug('one two three four five', 2), 'one-two');
+});
+
+test('deriveListEntryText: leads with the kebab slug then the wider truncated title', () => {
+  assert.equal(deriveListEntryText('clean up docs'), 'clean-up-docs clean up docs');
+});
+
+test('deriveListEntryText: no title is an empty string (never throws)', () => {
+  assert.equal(deriveListEntryText(undefined), '');
+});
+
+// ── BL-465: computePipelineBoard's new rootIntake/recentlyClosed/links ───
+
+test('computePipelineBoard: rootIntake defaults to empty when no extras are given', () => {
+  assert.deepEqual(computePipelineBoard({}, [], {}).rootIntake, []);
+});
+
+test('computePipelineBoard: rootIntake items render as list entries, sorted by id', () => {
+  const { rootIntake } = computePipelineBoard(
+    {},
+    [],
+    {},
+    { rootIntake: [
+      { id: 'INTAKE-2', title: 'second ask', filename: 'INTAKE-2.md' },
+      { id: 'INTAKE-1', title: 'first ask', filename: 'INTAKE-1.md' },
+    ] }
+  );
+  assert.deepEqual(
+    rootIntake.map((r) => r.id),
+    ['INTAKE-1', 'INTAKE-2']
+  );
+  assert.equal(rootIntake[0].slug, deriveListEntryText('first ask'));
+});
+
+test('computePipelineBoard: recentlyClosed is capped at PIPELINE_BOARD_RECENTLY_CLOSED_MAX items', () => {
+  const items = Array.from({ length: PIPELINE_BOARD_RECENTLY_CLOSED_MAX + 3 }, (_, i) => ({
+    id: `BL-${i}`,
+    title: `closed ${i}`,
+    filename: `BL-${i}-closed.yaml`,
+  }));
+  const { recentlyClosed } = computePipelineBoard({}, [], {}, { recentlyClosed: items });
+  assert.equal(recentlyClosed.length, PIPELINE_BOARD_RECENTLY_CLOSED_MAX);
+});
+
+test('computePipelineBoard: links are empty when repoBaseUrl is absent, even with active rows', () => {
+  const { links } = computePipelineBoard({ coder: ['BL-1'] }, [], { 'BL-1': { filename: 'BL-1-foo.yaml', location: 'active' } });
+  assert.deepEqual(links, []);
+});
+
+test('computePipelineBoard: links resolve an active row to its backlog/active path when repoBaseUrl is given', () => {
+  const { links } = computePipelineBoard(
+    { coder: ['BL-1'] },
+    [],
+    { 'BL-1': { filename: 'BL-1-foo.yaml', location: 'active' } },
+    { repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc' }
+  );
+  assert.deepEqual(links, [{ id: 'BL-1', path: 'backlog/active/BL-1-foo.yaml' }]);
+});
+
+test('computePipelineBoard: links resolve a parked ticket to its backlog/paused path', () => {
+  const { links } = computePipelineBoard(
+    {},
+    [{ id: 'BL-2' }],
+    { 'BL-2': { filename: 'BL-2-bar.yaml', location: 'paused' } },
+    { repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc' }
+  );
+  assert.deepEqual(links, [{ id: 'BL-2', path: 'backlog/paused/BL-2-bar.yaml' }]);
+});
+
+test('computePipelineBoard: links resolve a recently-closed item to its backlog/done path', () => {
+  const { links } = computePipelineBoard(
+    {},
+    [],
+    {},
+    { recentlyClosed: [{ id: 'BL-3', title: 'done thing', filename: 'BL-3-done.yaml' }], repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc' }
+  );
+  assert.deepEqual(links, [{ id: 'BL-3', path: 'backlog/done/BL-3-done.yaml' }]);
+});
+
+test('computePipelineBoard: links resolve a root-intake item to its raw backlog/ root path', () => {
+  const { links } = computePipelineBoard(
+    {},
+    [],
+    {},
+    { rootIntake: [{ id: 'INTAKE-1', title: 'an ask', filename: 'INTAKE-1.md' }], repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc' }
+  );
+  assert.deepEqual(links, [{ id: 'INTAKE-1', path: 'backlog/INTAKE-1.md' }]);
+});
+
+test('computePipelineBoard: a ticket with no filename/location in its meta gets no link at all, never a broken one', () => {
+  const { links } = computePipelineBoard({ coder: ['BL-1'] }, [], { 'BL-1': {} }, { repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc' });
+  assert.deepEqual(links, []);
+});
+
+test('computePipelineBoard: a parked ticket with no filename/location in its meta gets no link at all, never a broken one', () => {
+  const { links } = computePipelineBoard({}, [{ id: 'BL-2' }], { 'BL-2': {} }, { repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc' });
+  assert.deepEqual(links, []);
+});
+
+test('computePipelineBoard: links combined from every source (row, parked, recently-closed, root-intake) come out sorted by id', () => {
+  const { links } = computePipelineBoard(
+    { coder: ['BL-9'] },
+    [{ id: 'BL-5' }],
+    { 'BL-9': { filename: 'BL-9-foo.yaml', location: 'active' }, 'BL-5': { filename: 'BL-5-bar.yaml', location: 'paused' } },
+    {
+      recentlyClosed: [{ id: 'BL-7', title: 'done thing', filename: 'BL-7-done.yaml' }],
+      rootIntake: [{ id: 'INTAKE-1', title: 'an ask', filename: 'INTAKE-1.md' }],
+      repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc',
+    }
+  );
+  assert.deepEqual(
+    links.map((l) => l.id),
+    ['BL-5', 'BL-7', 'BL-9', 'INTAKE-1']
+  );
+});
+
+// ── BL-465: renderPipelineBoardBody's new below-grid sections ────────────
+
+test('renderPipelineBoardBody: an empty root-intake/recently-closed list renders no section at all', () => {
+  const text = renderPipelineBoardBody({ rows: [], parked: [], rootIntake: [], recentlyClosed: [], links: [] });
+  assert.ok(!text.includes('ROOT INTAKE'));
+  assert.ok(!text.includes('RECENTLY CLOSED'));
+});
+
+test('renderPipelineBoardBody: root-intake and recently-closed entries render under their own sections', () => {
+  const text = renderPipelineBoardBody({
+    rows: [],
+    parked: [],
+    rootIntake: [{ id: 'INTAKE-1', slug: 'an-ask an ask for something' }],
+    recentlyClosed: [{ id: 'BL-9', slug: 'shipped-thing shipped thing' }],
+    links: [],
+  });
+  const lines = text.split('\n');
+  const rootIntakeHeaderIndex = lines.findIndex((l) => l.trim() === 'ROOT INTAKE:');
+  const closedHeaderIndex = lines.findIndex((l) => l.trim() === 'RECENTLY CLOSED:');
+  assert.ok(rootIntakeHeaderIndex > 0 && lines[rootIntakeHeaderIndex + 1].includes('INTAKE-1'));
+  assert.ok(closedHeaderIndex > 0 && lines[closedHeaderIndex + 1].includes('BL-9'));
+});
+
+test('renderPipelineBoardBody: awaiting-approval renders under its own section, distinct from PARKED - no per-line label', () => {
+  const text = renderPipelineBoardBody({
+    rows: [],
+    parked: [
+      { id: 'BL-436', slug: 'stalled-work stalled work', status: 'parked' },
+      { id: 'BL-449', slug: 'needs-a-look needs a look', status: 'awaiting-approval' },
+    ],
+    rootIntake: [],
+    recentlyClosed: [],
+    links: [],
+  });
+  const lines = text.split('\n');
+  const parkedIndex = lines.findIndex((l) => l.trim() === 'PARKED:');
+  const awaitingIndex = lines.findIndex((l) => l.trim() === 'AWAITING APPROVAL:');
+  assert.ok(parkedIndex > 0 && awaitingIndex > 0 && parkedIndex !== awaitingIndex);
+  assert.ok(lines[parkedIndex + 1].includes('BL-436') && !lines[parkedIndex + 1].trim().startsWith('PK'));
+  assert.ok(lines[awaitingIndex + 1].includes('BL-449') && !lines[awaitingIndex + 1].trim().startsWith('AA'));
+});
+
+test('renderPipelineBoardBody: a fixture missing the new sections entirely (pre-BL-465 shape) still renders - defaults to empty', () => {
+  const text = renderPipelineBoardBody({ rows: [{ id: 'BL-1', column: 'coder', slug: 'x' }], parked: [] });
+  assert.ok(!text.includes('ROOT INTAKE'));
+  assert.ok(!text.includes('RECENTLY CLOSED'));
+});
+
+// ── BL-465: renderPipelineBoardLinks / wrapPipelineBoardHtml ──────────────
+
+test('renderPipelineBoardLinks: empty when there are no links at all', () => {
+  assert.equal(renderPipelineBoardLinks([], 'https://github.com/ldecorps/swarmforgevc'), '');
+});
+
+test('renderPipelineBoardLinks: empty when repoBaseUrl is not resolvable, even with links present', () => {
+  assert.equal(renderPipelineBoardLinks([{ id: 'BL-1', path: 'backlog/active/BL-1-foo.yaml' }], undefined), '');
+});
+
+test('renderPipelineBoardLinks: renders a real <a href> tag per link, pointing at the GitHub blob URL', () => {
+  const html = renderPipelineBoardLinks([{ id: 'BL-1', path: 'backlog/active/BL-1-foo.yaml' }], 'https://github.com/ldecorps/swarmforgevc');
+  assert.ok(html.includes('<a href="https://github.com/ldecorps/swarmforgevc/blob/main/backlog/active/BL-1-foo.yaml">'));
+  assert.ok(html.includes('BL-1'));
+});
+
+test('wrapPipelineBoardHtml: with no linksHtml, wraps exactly as before BL-465 (byte-for-byte)', () => {
+  assert.equal(wrapPipelineBoardHtml('TICKET SP\nBL-1    X'), '<pre>TICKET SP\nBL-1    X</pre>');
+});
+
+test('wrapPipelineBoardHtml: with linksHtml, appends it AFTER the closing </pre>, never inside it', () => {
+  const result = wrapPipelineBoardHtml('TICKET SP\nBL-1    X', '<a href="https://x">BL-1</a>');
+  assert.ok(result.startsWith('<pre>TICKET SP\nBL-1    X</pre>'));
+  assert.ok(result.endsWith('<a href="https://x">BL-1</a>'));
+  // The link tag itself must never be HTML-escaped (it would stop being a
+  // real link) - confirmed by its literal '<a href' substring surviving.
+  assert.ok(result.includes('<a href="https://x">BL-1</a>'));
 });
