@@ -151,28 +151,72 @@
     (when-not (zero? exit)
       (throw (ex-info (str "start_handoff_daemon.sh failed: " err) {:step :restart-handoffd})))))
 
+;; BL-433 (human-decided 2026-07-16): the single sync pass's own settle bound
+;; - a normal first tick (spawn + Babashka load + status write) is ~1-5s, so
+;; 10s is generous headroom, not a build-time free choice. Overridable so a
+;; test can drive the "never settles" failure path in milliseconds rather
+;; than really waiting out the full bound (mirrors OPERATOR_AWAIT_TIMEOUT_MS's
+;; own env-override seam elsewhere in this codebase).
+(def operator-settle-timeout-ms (or (some-> (System/getenv "BUILD_FRESHNESS_OPERATOR_SETTLE_TIMEOUT_MS") parse-long) 10000))
+(def operator-settle-poll-ms 100)
+
+;; BL-433: blocks until operator-status reports :build_sha == expected-sha,
+;; or timeout-ms elapses - returns the last-read status (possibly still
+;; stale/nil) either way, so the caller decides whether that counts as
+;; settled. Bounded per the engineering article's "every wait is bounded"
+;; rule - never an unbounded poll.
+(defn- wait-for-fresh-operator-status [project-root expected-sha timeout-ms]
+  (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
+    (loop []
+      (let [status (operator-status project-root)]
+        (cond
+          (= (:build_sha status) expected-sha) status
+          (> (System/currentTimeMillis) deadline) status
+          :else (do (Thread/sleep operator-settle-poll-ms) (recur)))))))
+
 ;; operator_runtime.bb owns a graceful stop-file convention (the SAME one
 ;; handoffd_supervisor.bb's own loop uses) - touched here rather than a
 ;; bare kill, then kill-and-confirm! as the bounded fallback if the running
 ;; tick does not notice in time (OPERATOR_INTERVAL_MS could be long).
-(defn- restart-operator-group! [project-root]
+;;
+;; BL-433: restart-front-desk-group! already deletes its own status.json
+;; before relaunching (so no consumer reads a stale one during the restart
+;; window); this group never did. Fixed here the same way: delete
+;; status.json right after the old process is confirmed dead, THEN launch
+;; the new one, THEN block (bounded) until it reappears fresh. A settle
+;; failure THROWS (the same ex-info convention every other restart step
+;; here already uses), so run-sync!'s existing catch-all reports it as a
+;; loud, non-zero-exit failure instead of a silent/false-fresh report.
+(defn- restart-operator-group! [project-root main-sha]
   (let [op-dir (fs/path project-root ".swarmforge" "operator")
         stop-file (fs/path op-dir "stop")
         pid-file (fs/path op-dir "runtime.pid")
         pid (read-pid pid-file)
-        log-file (fs/path op-dir "runtime.log")]
+        log-file (fs/path op-dir "runtime.log")
+        status-file (fs/path op-dir "status.json")]
     (fs/create-dirs op-dir)
     (spit (str stop-file) "")
     (when-not (wait-until-dead pid 10000)
       (kill-and-confirm! pid))
     (fs/delete-if-exists stop-file)
     (fs/delete-if-exists pid-file)
+    (fs/delete-if-exists status-file)
     (process/process {:out (str log-file) :err (str log-file) :dir project-root}
-                      "bb" (str (fs/path script-dir "operator_runtime.bb")) project-root)))
+                      "bb" (str (fs/path script-dir "operator_runtime.bb")) project-root)
+    (let [settled (wait-for-fresh-operator-status project-root main-sha operator-settle-timeout-ms)]
+      (when-not (= (:build_sha settled) main-sha)
+        (throw (ex-info (str "operator_runtime did not publish fresh status within " operator-settle-timeout-ms "ms")
+                         {:step :restart-operator-settle}))))))
 
+;; BL-433: restart-group!'s values are now uniformly arity-2 (project-root,
+;; main-sha) so run-sync! below can dispatch through ONE call shape - only
+;; the operator restart actually needs main-sha (to know what "fresh" means
+;; for its own settle-wait); front-desk/handoffd simply ignore it, exactly
+;; the same "never a regression for groups that do not have this race"
+;; posture the ticket itself requires.
 (def restart-group!
-  {:front-desk restart-front-desk-group!
-   :handoffd restart-handoffd-group!
+  {:front-desk (fn [project-root _main-sha] (restart-front-desk-group! project-root))
+   :handoffd (fn [project-root _main-sha] (restart-handoffd-group! project-root))
    :operator restart-operator-group!})
 
 (defn- run-sync! [project-root]
@@ -199,8 +243,15 @@
     (when node-stale?
       (recompile-extension! project-root))
     (doseq [group stale-groups]
-      ((get restart-group! group) project-root))
-    {:report report :restarted (mapv name stale-groups)}))
+      ((get restart-group! group) project-root main-sha))
+    ;; BL-433: a restarted operator group has ALREADY settled by this point
+    ;; (restart-operator-group! blocked on it, or threw) - re-gathering here
+    ;; (rather than returning the pre-restart `report` snapshot above) is
+    ;; what makes the returned report reflect reality post-restart, so a
+    ;; second sync/report pass is never needed to see it fresh.
+    (let [settled-processes (gather-processes project-root)
+          settled-report (build-freshness-lib/freshness-report settled-processes main-sha)]
+      {:report settled-report :restarted (mapv name stale-groups)})))
 
 (defn -main [& args]
   (let [[project-root subcommand] args]

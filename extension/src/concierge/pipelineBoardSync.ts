@@ -49,8 +49,11 @@ function resolveBoardTopicId(prevState: PipelineBoardState | undefined, adapters
   return Promise.resolve(prevState?.topicId ?? adapters.ensureBoardTopic());
 }
 
-// Deletes the prior message (best-effort) then posts the fresh one - split
-// out purely to keep syncPipelineBoard's own CRAP under threshold.
+// BL-468: posts the fresh message FIRST, only deleting the prior one
+// (best-effort) AFTER the new one already exists - so there is always at
+// least one board message visible in the topic, and a failed post never
+// leaves the old message already deleted. Split out purely to keep
+// syncPipelineBoard's own CRAP under threshold.
 async function postBoardMessage(
   topicId: number,
   text: string,
@@ -59,16 +62,20 @@ async function postBoardMessage(
   prevState: PipelineBoardState | undefined,
   adapters: PipelineBoardAdapters
 ): Promise<PipelineBoardSyncResult> {
-  const hadPriorMessage = prevState?.messageId !== undefined;
-  if (hadPriorMessage) {
-    // Best-effort: an already-gone or failed delete never blocks posting the
-    // new latest message - see the adapters interface's own comment above.
-    await adapters.deleteMessage(topicId, prevState!.messageId!);
-  }
-
   const messageId = await adapters.postMessage(topicId, text);
   if (messageId === undefined) {
+    // A failed post must never delete the still-good prior message - the
+    // existing board (and its own tracked messageId) is left exactly as it
+    // was, so a board is always visible even when the fresh post fails.
     return { state: { ...prevState, topicId }, outcome: 'failed-post' };
+  }
+
+  const hadPriorMessage = prevState?.messageId !== undefined;
+  if (hadPriorMessage) {
+    // Best-effort, only now that the new latest message already exists: an
+    // already-gone or failed delete never blocks or undoes the post above -
+    // see the adapters interface's own comment above.
+    await adapters.deleteMessage(topicId, prevState!.messageId!);
   }
 
   return { state: { topicId, messageId, contentSignature, lastChangeMs }, outcome: hadPriorMessage ? 'reposted' : 'posted' };

@@ -21,6 +21,10 @@ START_HANDOFF_DAEMON="$SCRIPT_DIR/../start_handoff_daemon.sh"
 # (this box + any other worktree running the same suite concurrently)
 # don't collide with EACH OTHER either.
 export BRIDGE_PORT=$((20000 + ($$ % 10000)))
+# BL-406: handoffd.bb refuses to start against a /tmp fixture root unless
+# this is set - an intentional opt-in this file's own throwaway roots need
+# (mirrors test_handoffd_canary_sweep.sh's own identical export).
+export SWARMFORGE_ALLOW_TMP_DAEMON=1
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "ok   - $*"; }
@@ -383,6 +387,104 @@ if check_recompile_01; then
   pass "build-freshness-npm-recompile-01: sync recompiles extension/ when only handoffd (a Node-shelling Babashka daemon) is stale, even with bridge/bot already fresh"
 else
   fail "build-freshness-npm-recompile-01: expected extension/ to be recompiled when handoffd alone is stale (a Node-shelled tool it calls could be stale too)"
+fi
+final_cleanup
+LIVE_ROOTS=()
+
+# ── build-freshness-operator-restart-race-01/02/03: a single sync settles
+#    operator_runtime in ONE pass - the sync's OWN returned report and an
+#    immediately-following separate report both show it fresh, no second
+#    sync ever needed (BL-433) ───────────────────────────────────────────
+ROOT="$(mk_git_root)"
+LIVE_ROOTS+=("$ROOT")
+mkdir -p "$ROOT/.swarmforge/operator" "$ROOT/extension"
+OPERATOR_INTERVAL_MS=60000 OPERATOR_SKIP_LAUNCH=1 nohup bb "$SCRIPT_DIR/../operator_runtime.bb" "$ROOT" > "$ROOT/.swarmforge/operator/runtime.log" 2>&1 &
+wait_for 10 test -f "$ROOT/.swarmforge/operator/status.json" || fail "operator-restart-race setup: operator_runtime did not publish its first status"
+wait_for 5 test -f "$ROOT/.swarmforge/operator/runtime.pid" || fail "operator-restart-race setup: operator_runtime did not claim its pid file"
+
+git -C "$ROOT" commit -q --allow-empty -m "merge: some fix"
+git -C "$ROOT" branch -f main
+NEW_SHA="$(git -C "$ROOT" rev-parse main)"
+
+# operator_runtime being genuinely stale triggers the (correct) recompile
+# step too - stub npm so it succeeds instantly rather than needing a real
+# extension/ build, mirroring build-freshness-npm-recompile-01's own
+# FAKE_BIN convention.
+FAKE_BIN_OP="$(mktemp -d)"
+cat > "$FAKE_BIN_OP/npm" <<'NPMEOF'
+#!/usr/bin/env bash
+exit 0
+NPMEOF
+chmod +x "$FAKE_BIN_OP/npm"
+SYNC_OUT="$(PATH="$FAKE_BIN_OP:$PATH" OPERATOR_SKIP_LAUNCH=1 bb "$CLI" "$ROOT" sync)"
+SYNC_EXIT=$?
+rm -rf "$FAKE_BIN_OP"
+REPORT_AFTER="$(bb "$CLI" "$ROOT" report)"
+check_operator_restart_race_01_02_03() {
+  [[ "$SYNC_EXIT" -eq 0 ]] || return 1
+  echo "$SYNC_OUT" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+assert 'operator' in d['restarted'], 'expected operator_runtime to have been restarted'
+by_name = {x['name']: x for x in d['report']}
+assert by_name['operator_runtime']['stale'] is False, 'expected the SYNC own report to already reflect the settled post-restart state'
+assert by_name['operator_runtime']['running_sha'] == '$NEW_SHA'
+" || return 1
+  echo "$REPORT_AFTER" | python3 -c "
+import json, sys
+r = json.load(sys.stdin)
+by_name = {x['name']: x for x in r}
+assert by_name['operator_runtime']['stale'] is False, 'a SEPARATE report run immediately after must ALSO show fresh - no second sync pass needed'
+assert by_name['operator_runtime']['running_sha'] == '$NEW_SHA'
+"
+}
+if check_operator_restart_race_01_02_03; then
+  pass "build-freshness-operator-restart-race-01/02/03: a single sync settles operator_runtime - its own report already reflects the post-restart state, and a separate report immediately after needs no second sync pass"
+else
+  fail "operator-restart-race-01/02/03: expected one sync to settle operator_runtime fresh. sync_out=$SYNC_OUT report_after=$REPORT_AFTER"
+fi
+final_cleanup
+LIVE_ROOTS=()
+
+# ── build-freshness-operator-restart-race-04: a restarted process that never
+#    settles within the bound fails the sync loudly, never hangs, never
+#    falsely reports fresh ────────────────────────────────────────────────
+ROOT="$(mk_git_root)"
+LIVE_ROOTS+=("$ROOT")
+mkdir -p "$ROOT/.swarmforge/operator" "$ROOT/extension"
+OPERATOR_INTERVAL_MS=60000 OPERATOR_SKIP_LAUNCH=1 nohup bb "$SCRIPT_DIR/../operator_runtime.bb" "$ROOT" > "$ROOT/.swarmforge/operator/runtime.log" 2>&1 &
+wait_for 10 test -f "$ROOT/.swarmforge/operator/status.json" || fail "operator-restart-race-04 setup: operator_runtime did not publish its first status"
+
+git -C "$ROOT" commit -q --allow-empty -m "merge: another fix"
+git -C "$ROOT" branch -f main
+
+FAKE_BIN_OP4="$(mktemp -d)"
+cat > "$FAKE_BIN_OP4/npm" <<'NPMEOF'
+#!/usr/bin/env bash
+exit 0
+NPMEOF
+chmod +x "$FAKE_BIN_OP4/npm"
+
+# A 1ms settle bound: no real Babashka process (JVM/GraalVM startup alone
+# takes far longer) can publish a fresh status.json within it, forcing the
+# genuine "never settles in time" path deterministically without faking any
+# part of the real restart mechanism (mirrors OPERATOR_AWAIT_TIMEOUT_MS=1's
+# own established use elsewhere for the identical "force the bound to fire
+# now" reason).
+ERR_FILE_04="$(mktemp)"
+PATH="$FAKE_BIN_OP4:$PATH" OPERATOR_SKIP_LAUNCH=1 BUILD_FRESHNESS_OPERATOR_SETTLE_TIMEOUT_MS=1 bb "$CLI" "$ROOT" sync >/dev/null 2>"$ERR_FILE_04"
+SYNC_EXIT_04=$?
+SYNC_ERR_04="$(cat "$ERR_FILE_04")"
+rm -f "$ERR_FILE_04"
+rm -rf "$FAKE_BIN_OP4"
+check_operator_restart_race_04() {
+  [[ "$SYNC_EXIT_04" -ne 0 ]] || return 1
+  [[ "$SYNC_ERR_04" == *"did not publish fresh status"* ]]
+}
+if check_operator_restart_race_04; then
+  pass "build-freshness-operator-restart-race-04: a restarted process that never settles within the bound fails the sync loudly (non-zero exit), never hangs, never falsely reports fresh"
+else
+  fail "operator-restart-race-04: expected a bounded, loud sync failure. exit=$SYNC_EXIT_04 stderr=$SYNC_ERR_04"
 fi
 final_cleanup
 LIVE_ROOTS=()

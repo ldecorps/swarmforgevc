@@ -12,6 +12,7 @@ const {
   getPaneCommand,
   getPanePid,
   getPanePidAndCommand,
+  hasLivePaneChild,
   capturePane,
   sendKeys,
   sessionExists,
@@ -30,6 +31,23 @@ const { installInProcessTmux } = require('./helpers/fakeTmux');
 
 function mkTmp() {
   return mkTmpDir('sfvc-tmuxclient-');
+}
+
+// BL-423: hasLivePaneChild shells to the real `pgrep`, never tmux - the
+// in-process tmux double (installInProcessTmux) only intercepts a `tmux`
+// argv0 and forwards everything else (including pgrep) to the real
+// spawnSync, so a fake `pgrep` executable on PATH is its own small double,
+// mirroring installFakeTmux's own "fake executable on PATH" shape.
+function installFakePgrep(hasChild) {
+  const dir = mkTmpDir('sfvc-fake-pgrep-');
+  installExecutable(path.join(dir, 'pgrep'), `#!/bin/sh\n${hasChild ? 'echo 424242\nexit 0' : 'exit 1'}\n`);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${dir}${path.delimiter}${originalPath}`;
+  return {
+    restore() {
+      process.env.PATH = originalPath;
+    },
+  };
 }
 
 test('paneTarget builds session:window.paneIndex', () => {
@@ -183,6 +201,32 @@ test('getPanePidAndCommand keeps a real pid and defaults command to empty when t
   } finally {
     fake.restore();
   }
+});
+
+// BL-423: the half-launch signal - a pane whose shell has forked at least
+// one live child (the agent process) vs. one that never bootstrapped
+// anything at all. Agent-agnostic on purpose (never asserts the child is
+// specifically `claude`/`aider`/etc.) - see hasLivePaneChild's own comment.
+test('hasLivePaneChild returns true when pgrep finds a live child of the pane pid', () => {
+  const fake = installFakePgrep(true);
+  try {
+    assert.equal(hasLivePaneChild('12345'), true);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('hasLivePaneChild returns false when pgrep finds no child (the half-launch case)', () => {
+  const fake = installFakePgrep(false);
+  try {
+    assert.equal(hasLivePaneChild('12345'), false);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('hasLivePaneChild returns false without shelling out at all when panePid is empty', () => {
+  assert.equal(hasLivePaneChild(''), false);
 });
 
 test('capturePane returns captured stdout on success', () => {

@@ -56,9 +56,8 @@ test('syncPipelineBoard: first call with no prior state creates the topic, posts
   assert.equal(result.state.contentSignature, renderPipelineBoardBody(board([{ id: 'BL-1', column: 'coder', slug: '' }])));
 });
 
-test('syncPipelineBoard: a content change deletes the previously posted message before posting the fresh one', async () => {
-  const posted = [];
-  const deleted = [];
+test('syncPipelineBoard: a content change posts the fresh message BEFORE deleting the previously posted one', async () => {
+  const calls = [];
   const first = await syncPipelineBoard(board([{ id: 'BL-1', column: 'coder', slug: '' }]), undefined, fakeAdapters(), T1);
 
   const result = await syncPipelineBoard(
@@ -66,9 +65,43 @@ test('syncPipelineBoard: a content change deletes the previously posted message 
     first.state,
     fakeAdapters({
       postMessage: async (topicId, text) => {
-        posted.push({ topicId, text });
+        calls.push({ fn: 'post', topicId, text });
         return 99;
       },
+      deleteMessage: async (topicId, messageId) => {
+        calls.push({ fn: 'delete', topicId, messageId });
+        return true;
+      },
+    }),
+    T2
+  );
+
+  assert.equal(result.outcome, 'reposted');
+  // BL-468: post-then-delete, never the reverse - there must be at least
+  // one board message visible at every instant, and a post failure (see
+  // the dedicated test below) must never have already deleted the old one.
+  assert.deepEqual(
+    calls.map((c) => c.fn),
+    ['post', 'delete']
+  );
+  const [postCall, deleteCall] = calls;
+  assert.equal(deleteCall.topicId, 900);
+  assert.equal(deleteCall.messageId, first.state.messageId);
+  assert.equal(postCall.topicId, 900);
+  assert.equal(result.state.messageId, 99);
+  assert.equal(result.state.topicId, 900);
+  assert.equal(result.state.lastChangeMs, T2, 'expected the footer instant bumped to the NEW change');
+});
+
+test('BL-468: a failed repost never deletes the old message, and its messageId stays in state - the board is always visible', async () => {
+  const deleted = [];
+  const first = await syncPipelineBoard(board([{ id: 'BL-1', column: 'coder', slug: '' }]), undefined, fakeAdapters(), T1);
+
+  const result = await syncPipelineBoard(
+    board([{ id: 'BL-1', column: 'QA', slug: '' }]),
+    first.state,
+    fakeAdapters({
+      postMessage: async () => undefined,
       deleteMessage: async (topicId, messageId) => {
         deleted.push({ topicId, messageId });
         return true;
@@ -77,15 +110,11 @@ test('syncPipelineBoard: a content change deletes the previously posted message 
     T2
   );
 
-  assert.equal(result.outcome, 'reposted');
-  assert.equal(deleted.length, 1);
-  assert.equal(deleted[0].topicId, 900);
-  assert.equal(deleted[0].messageId, first.state.messageId);
-  assert.equal(posted.length, 1, 'expected exactly one fresh message posted');
-  assert.equal(posted[0].topicId, 900);
-  assert.equal(result.state.messageId, 99);
+  assert.equal(result.outcome, 'failed-post');
+  assert.deepEqual(deleted, [], 'expected the old message never deleted when the fresh post fails');
+  assert.equal(result.state.messageId, first.state.messageId, "expected the OLD (still-live) message's id to stay in state");
   assert.equal(result.state.topicId, 900);
-  assert.equal(result.state.lastChangeMs, T2, 'expected the footer instant bumped to the NEW change');
+  assert.equal(result.state.contentSignature, first.state.contentSignature, 'expected no signature bump until a post actually succeeds');
 });
 
 // BL-462 pipeline-board-refine-04/06: no content change -> complete no-op,

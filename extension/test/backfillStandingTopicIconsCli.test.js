@@ -49,7 +49,7 @@ const STICKERS_JSON = {
   ok: true,
   result: [
     { emoji: '🎟', custom_emoji_id: 'id-ticket' },
-    { emoji: '🏛', custom_emoji_id: 'id-opera-house' },
+    { emoji: '🛎', custom_emoji_id: 'id-bell' },
   ],
 };
 
@@ -66,7 +66,7 @@ function fakePostFn(edits) {
   };
 }
 
-test('backfillStandingTopicIcons sets the Operator topic to the opera house and every support subject to the box office', async () => {
+test('backfillStandingTopicIcons sets the Operator topic to the bell and every support subject to the box office', async () => {
   const target = mkGitRepo();
   writeTopicMap(target, {
     701: 'OPERATOR',
@@ -82,14 +82,14 @@ test('backfillStandingTopicIcons sets the Operator topic to the opera house and 
     outcomes.map((o) => o.outcome).sort(),
     ['updated', 'updated', 'updated']
   );
-  assert.equal(readSwarmIconId(target, 'OPERATOR'), 'id-opera-house');
+  assert.equal(readSwarmIconId(target, 'OPERATOR'), 'id-bell');
   assert.equal(readSwarmIconId(target, 'SUP-001'), 'id-ticket');
   assert.equal(readSwarmIconId(target, 'SUP-002'), 'id-ticket');
   // SUP-003's only binding is __default__ (a DM/General origin, no real
   // Telegram topic) - never a target, exactly like the DEFAULT_SUBJECT_KEY
   // exclusion the live tick's own standingTopicTargets applies.
   assert.equal(readSwarmIconId(target, 'SUP-003'), undefined);
-  assert.deepEqual(edits.map((e) => e.icon_custom_emoji_id).sort(), ['id-opera-house', 'id-ticket', 'id-ticket']);
+  assert.deepEqual(edits.map((e) => e.icon_custom_emoji_id).sort(), ['id-bell', 'id-ticket', 'id-ticket']);
 });
 
 test('backfillStandingTopicIcons overrides an existing ownership marker - the backfill is always-eligible, unlike the live tick', async () => {
@@ -102,7 +102,7 @@ test('backfillStandingTopicIcons overrides an existing ownership marker - the ba
   const outcomes = await backfillStandingTopicIcons(target, TOKEN, CHAT_ID, async () => {}, fakePostFn(edits));
 
   assert.deepEqual(outcomes, [{ id: 'OPERATOR', outcome: 'updated' }]);
-  assert.equal(readSwarmIconId(target, 'OPERATOR'), 'id-opera-house');
+  assert.equal(readSwarmIconId(target, 'OPERATOR'), 'id-bell');
 });
 
 test('backfillStandingTopicIcons seeds standingIconSeenIds so the live tick never re-treats these as newly entered', async () => {
