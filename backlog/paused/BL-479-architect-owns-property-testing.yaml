@@ -71,7 +71,9 @@ acceptance:
   # end-user-visible product behavior.
   outcome: "architect.prompt owns property testing (human-approved wording); fast-check is a devDependency with a separate property-test command excluded from normal coverage/mutation/CRAP; at least one real property test on a pure module passes via that command and fails when its invariant is deliberately broken (non-vacuity proof); hardender/QA verification sequences reference the property command; the six-pack survey's adopt/skip decisions (this + the cleaner mutation-site gate) are recorded in docs/upstream-deviations.md once BL-477 lands."
 
-human_approval: >
+human_approval: pending
+
+approval_context: >
   Human asked for the six-pack comparison and approved filing this ticket (2026-07-17 'ok do it'). Two
   things still need explicit human sign-off at review time: (a) the exact architect.prompt amendment
   wording — a role/governance change is the human's call, per precedent; (b) whether the secondary
