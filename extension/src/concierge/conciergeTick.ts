@@ -463,6 +463,29 @@ function stampNewlyDoneClosedAtMs(prev: Record<string, number> | undefined, done
   return doneClosedAtMs;
 }
 
+// BL-473: the board's active-row membership - physical backlog/active/
+// membership (folders.active, ground truth: the human's own "at least as
+// good as the PWA" contract) UNION every currently role-held id. The union
+// is defensive rather than folders.active alone: a role only ever holds a
+// ticket the coordinator already promoted into backlog/active/, so in every
+// real swarm state the two sets already coincide - the union only matters
+// if that invariant ever momentarily slips (a stale read, a race), and even
+// then it means "never drop a ticket that is visibly being worked", never
+// "show one wrongly" (an active-but-unheld ticket still correctly renders
+// not-started; this only ever ADDS a row, never marks a role stage that
+// isn't real). folders.active alone still gives every unheld active ticket
+// its not-started row - the union only prevents a role-held ticket from
+// ever vanishing off the board.
+function activeMembershipIds(folders: BacklogFoldersSnapshot, roleHeldTickets: Record<string, string[]>): string[] {
+  const ids = new Set(folders.active.map((item) => item.id));
+  for (const heldIds of Object.values(roleHeldTickets)) {
+    for (const id of heldIds) {
+      ids.add(id);
+    }
+  }
+  return [...ids];
+}
+
 async function syncBoardIfWired(
   folders: BacklogFoldersSnapshot,
   prevBoard: PipelineBoardState | undefined,
@@ -477,10 +500,12 @@ async function syncBoardIfWired(
     return prevBoard;
   }
   const repoBaseUrl = readRepoBaseUrl?.();
-  const data = computePipelineBoard(readRoleHeldTickets(), folders.paused, buildTicketMetaLookup(folders), {
+  const roleHeldTickets = readRoleHeldTickets();
+  const data = computePipelineBoard(roleHeldTickets, folders.paused, buildTicketMetaLookup(folders), {
     rootIntake: readRootIntakeFiles?.() ?? [],
     recentlyClosed: recentlyClosedItems(folders, doneClosedAtMs),
     repoBaseUrl,
+    activeIds: activeMembershipIds(folders, roleHeldTickets),
   });
   const result = await syncPipelineBoard(data, prevBoard, boardAdapters, nowMs, repoBaseUrl);
   return result.state;

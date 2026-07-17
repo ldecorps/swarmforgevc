@@ -12,6 +12,7 @@ const {
   PIPELINE_BOARD_COLUMN_ORDER,
   PIPELINE_BOARD_SLUG_MAX_LENGTH,
   PIPELINE_BOARD_RECENTLY_CLOSED_MAX,
+  PIPELINE_BOARD_NOT_STARTED_COLUMN,
 } = require('../out/concierge/pipelineBoard');
 
 // BL-452/BL-455 pipeline-board-01/02: a ticket held by a role becomes a row
@@ -147,6 +148,55 @@ test('computePipelineBoard: every ticket lands in exactly one place - role-held 
 
 test('computePipelineBoard: no active or paused tickets renders an empty board', () => {
   assert.deepEqual(computePipelineBoard({}, [], {}), { rows: [], parked: [], rootIntake: [], recentlyClosed: [], links: [] });
+});
+
+// ── BL-473: extras.activeIds (physical backlog/active/ membership) is the
+// board's row-membership ground truth - a role-held ticket only decorates a
+// row's stage once membership already includes it. Omitting activeIds
+// defaults to the ids already implied by roleHeldTickets, so every
+// pre-BL-473 call site above (none of which pass activeIds) keeps rendering
+// identically. ──────────────────────────────────────────────────────────
+
+test('computePipelineBoard: an active id no role holds renders as a not-started row', () => {
+  const { rows } = computePipelineBoard({}, [], {}, { activeIds: ['BL-1'] });
+  assert.deepEqual(rows, [{ id: 'BL-1', column: PIPELINE_BOARD_NOT_STARTED_COLUMN, epic: undefined, slug: '' }]);
+});
+
+test('computePipelineBoard: an active id a role holds still renders at that role\'s stage, not not-started', () => {
+  const { rows } = computePipelineBoard({ coder: ['BL-1'] }, [], {}, { activeIds: ['BL-1'] });
+  assert.deepEqual(rows, [{ id: 'BL-1', column: 'coder', epic: undefined, slug: '' }]);
+});
+
+test('computePipelineBoard: activeIds is the sole membership source - a role-held ticket absent from it gets no row at all', () => {
+  const { rows } = computePipelineBoard({ coder: ['BL-2'] }, [], {}, { activeIds: ['BL-1'] });
+  assert.deepEqual(rows, [{ id: 'BL-1', column: PIPELINE_BOARD_NOT_STARTED_COLUMN, epic: undefined, slug: '' }]);
+});
+
+test('computePipelineBoard: every activeIds entry is a row exactly once, even with duplicates in the input', () => {
+  const { rows } = computePipelineBoard({ coder: ['BL-1'] }, [], {}, { activeIds: ['BL-1', 'BL-2', 'BL-1'] });
+  assert.deepEqual(
+    rows.map((r) => r.id).sort(),
+    ['BL-1', 'BL-2']
+  );
+});
+
+test('computePipelineBoard: a not-started row carries its ticket meta (epic/slug) same as a held row would', () => {
+  const { rows } = computePipelineBoard({}, [], { 'BL-1': { epic: 'Alpha', title: 'fix the widget' } }, { activeIds: ['BL-1'] });
+  assert.deepEqual(rows, [{ id: 'BL-1', column: PIPELINE_BOARD_NOT_STARTED_COLUMN, epic: 'Alpha', slug: 'fix-the-widget' }]);
+});
+
+test('renderPipelineBoardBody: a not-started row marks only the not-started column, no pipeline role column', () => {
+  const text = renderPipelineBoardBody({ rows: [{ id: 'BL-1', column: PIPELINE_BOARD_NOT_STARTED_COLUMN, slug: 'x' }], parked: [] });
+  const lines = text.split('\n');
+  const header = lines[0].trim().split(/\s+/);
+  const row = lines[2].trim().split(/\s+/);
+  const headerCols = header.slice(2);
+  const rowCols = row.slice(2);
+  const nsIndex = headerCols.indexOf('NS');
+  assert.ok(nsIndex >= 0, `expected a not-started (NS) column in the header, got: ${header.join(' ')}`);
+  rowCols.forEach((cell, i) => {
+    assert.equal(cell, i === nsIndex ? 'X' : '.');
+  });
 });
 
 // BL-455 pipeline-board-epic-04: a short, single-line, delimiter-safe slug
