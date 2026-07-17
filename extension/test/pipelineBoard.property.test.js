@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
-const { budgetPipelineBoardLinks, deriveKebabSlug, deriveDisplayTicketId } = require('../out/concierge/pipelineBoard');
+const { budgetPipelineBoardLinks, deriveKebabSlug, deriveDisplayTicketId, compareLinksMostRecentFirst } = require('../out/concierge/pipelineBoard');
 
 // BL-502 (architect, property-testing support): budgetPipelineBoardLinks is
 // the pure trim function this ticket introduced to keep the pipeline board's
@@ -107,6 +107,48 @@ test('property: deriveDisplayTicketId is idempotent - re-stripping an already-di
       const once = deriveDisplayTicketId(id);
       const twice = deriveDisplayTicketId(once);
       assert.equal(twice, once, `id=${JSON.stringify(id)} once=${JSON.stringify(once)} twice=${JSON.stringify(twice)}`);
+    })
+  );
+});
+
+// BL-506 (architect, property-testing support): compareLinksMostRecentFirst is
+// the pure comparator this ticket introduced for the LINKS section's order.
+// pipelineBoard.test.js and the feature's Gherkin scenarios pin it with a
+// handful of hand-picked id lists; the "every numbered link outranks every
+// unnumbered one, and numbered links never increase" ordering contract holds
+// for any list of ids, not just those examples - the "ordering/monotonicity"
+// shape architect.prompt's Property Testing section names.
+
+const TICKET_ID_PATTERN = /^(?:BL|GH)-(\d+)$/;
+function ticketNumberOf(id) {
+  const match = TICKET_ID_PATTERN.exec(id);
+  return match ? Number(match[1]) : undefined;
+}
+
+const numberedIdArb = fc
+  .tuple(fc.constantFrom('BL', 'GH'), fc.nat({ max: 10000 }))
+  .map(([prefix, n]) => `${prefix}-${n}`);
+const unnumberedIdArb = fc.string().map((s) => `INTAKE-${s}`);
+const linkEntryArb = fc.oneof(numberedIdArb, unnumberedIdArb).map((id) => ({ id, path: `backlog/${id}.yaml` }));
+
+test('property: sorting with compareLinksMostRecentFirst puts every numbered link before every unnumbered one, and numbered links are non-increasing by ticket number', () => {
+  fc.assert(
+    fc.property(fc.array(linkEntryArb, { maxLength: 50 }), (entries) => {
+      const sorted = [...entries].sort(compareLinksMostRecentFirst);
+      const numbers = sorted.map((e) => ticketNumberOf(e.id));
+      let sawUnnumbered = false;
+      let previousNumber;
+      for (const n of numbers) {
+        if (n === undefined) {
+          sawUnnumbered = true;
+          continue;
+        }
+        assert.ok(!sawUnnumbered, `numbered id found after an unnumbered one: ${JSON.stringify(numbers)}`);
+        if (previousNumber !== undefined) {
+          assert.ok(n <= previousNumber, `ticket numbers not non-increasing: ${JSON.stringify(numbers)}`);
+        }
+        previousNumber = n;
+      }
     })
   );
 });
