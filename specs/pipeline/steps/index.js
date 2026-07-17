@@ -263,6 +263,7 @@ const DOMAINS = [
   require('./bl439FesSecondSwarmBringupSteps'),
   require('./bl485CleanerMutationSiteSizeGateSteps'),
   require('./bl486ReapOrphanedAgentProcessesSteps'),
+  require('./bl483MultiOptionAskButtonsSteps'),
   require('./bl487BoardFreshnessWithoutCoordinatorSyncSteps'),
   require('./bl488HeldTicketIdResolvesWithoutLeadingTokenSteps')
 ];

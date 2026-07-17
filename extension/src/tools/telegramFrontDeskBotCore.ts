@@ -6,7 +6,7 @@
 // untested-boundary process that injects the real adapters (real
 // getUpdates, a real fetch POST to the bridge, the real persisted topic
 // map) into pollAndForward below.
-import { TelegramUpdate, TelegramCallbackQuery, TelegramPollAnswer, GetUpdatesResult } from '../notify/telegramClient';
+import { TelegramUpdate, TelegramCallbackQuery, TelegramPollAnswer, GetUpdatesResult, InlineKeyboardButton } from '../notify/telegramClient';
 import { computeTelegramRetryBackoffMs } from '../notify/telegramRetry';
 import { classifyApprovalReplyAction, classifyApprovalsTopicReply } from '../concierge/pendingApprovalReply';
 import { ApprovalDecisionVerdict, composeDecidedAskText, alreadyDecidedToastText } from '../concierge/approvalAskClosing';
@@ -754,6 +754,27 @@ export interface PollAdapters {
   // so a poll_answer - which carries no thread/topic info at all - can
   // still map its selected option INDEX to the option's actual TEXT.
   resolvePollThread?: (pollId: string) => Promise<{ threadId: string; options: string[] } | undefined>;
+  // BL-483: resolves an options-carrying ask's own options - undefined
+  // means this thread's ask is no longer the pending one (answered,
+  // retracted, or superseded by a later question - "ONE pending question
+  // at a time" is the awaiting-answer store's own contract), the SAME
+  // "undefined collapses every closed case" posture resolvePollThread
+  // above already established for an unknown/stale poll id. Doubles as the
+  // stale-tap guard: a tap whose threadId this resolves to undefined gets
+  // the "no longer open" edit + toast, never a second/spurious answer.
+  resolveAskOptions?: (threadId: string) => Promise<AskOption[] | undefined>;
+  // BL-483: the posted ask message's own {topicId, messageId, text} -
+  // recordAskMessage (ReplyRelayAdapters below) wrote it at send time.
+  // Consulted both on a successful answer (edit to "answered: <label>")
+  // and a stale tap (edit to "no longer open") - mirrors BL-484's
+  // readApprovalAskMessage exactly, keyed by threadId instead of backlogId.
+  readAskMessage?: (threadId: string) => Promise<{ topicId: number | undefined; messageId: number; text: string } | undefined>;
+  // BL-483: edits the posted ask message in place - reused directly for
+  // BOTH the answered-close and the stale-tap edit (a plain text edit, the
+  // same shape editApprovalAskMessage already provides for the approval
+  // ask's own close, so this is that same general-purpose "edit a message"
+  // adapter, named for this call site).
+  editAskMessage?: (topicId: number | undefined, messageId: number, text: string) => Promise<boolean>;
   // BL-423: the standing Control topic's own id - every stop/restart/pause
   // verb (text or button tap) only ever acts when sent/tapped here
   // (decideControlEventAction's own topic guard). Optional so every
@@ -1068,12 +1089,30 @@ async function deliverReservedSubjectReply(
 // the identical reason: a foreign chat is refused before who-sent-it is
 // even considered) and, if so, which of the three buttons was tapped.
 // Pure: no I/O, directly testable with a plain fixture callback_query.
+// BL-483: an options-carrying ask's own tappable-button shape. label is what
+// the button reads AND what rides the answer effect path (postToBridge)
+// exactly as if the human had typed it; description is optional message-body
+// context, never carried on the button itself (Telegram inline-keyboard
+// buttons have no subtitle).
+export interface AskOption {
+  label: string;
+  description?: string;
+}
+
 export type CallbackButtonDecision =
   | { action: 'approve'; backlogId: string }
   | { action: 'await-followup'; backlogId: string; kind: 'reject' | 'amend' }
+  | { action: 'answer-ask'; threadId: string; optionIndex: number }
   | { action: 'drop'; reason: 'not-my-chat' | 'not-principal' | 'unrecognized-data' };
 
 const CALLBACK_DATA_PATTERN = /^(approve|reject|amend):(.+)$/;
+// BL-483: an ask option's own callback_data - an option INDEX + the ask's
+// threadId, never the label text (the ticket's own "callback_data <= 64
+// bytes" constraint - a label is unbounded, an index plus a short SUP-###
+// id comfortably is not). threadId itself is `[^:]+` (never contains a
+// colon - support_lib.bb's own SUP-<n> id shape), so the trailing `:<digits>`
+// unambiguously anchors the option index even if a future id shape changed.
+const ASK_CALLBACK_DATA_PATTERN = /^ask:([^:]+):(\d+)$/;
 
 // The callback_query twins of isFromMyChat/isFromPrincipal above - same
 // checks, read off TelegramCallbackQuery's own from/message.chat fields
@@ -1101,6 +1140,15 @@ export function decideCallbackQueryAction(
   }
   if (!isCallbackFromPrincipal(callbackQuery, principalUserId)) {
     return { action: 'drop', reason: 'not-principal' };
+  }
+  // BL-483: checked ahead of the approve/reject/amend pattern - a distinct
+  // literal callback_data namespace ("ask:" vs "approve:"/"reject:"/
+  // "amend:"), so the two can never collide; order between them is
+  // otherwise inconsequential.
+  const askMatch = callbackQuery.data?.match(ASK_CALLBACK_DATA_PATTERN);
+  if (askMatch) {
+    const [, threadId, optionIndexText] = askMatch;
+    return { action: 'answer-ask', threadId, optionIndex: Number(optionIndexText) };
   }
   const match = callbackQuery.data?.match(CALLBACK_DATA_PATTERN);
   if (!match) {
@@ -1134,7 +1182,7 @@ function isUnauthorizedCallbackDrop(decision: CallbackButtonDecision): boolean {
 // "extract the guard into a named, tested helper" split this file already
 // uses for isUnauthorizedCallbackDrop above.
 async function answerIfAlreadyDecided(callbackQuery: TelegramCallbackQuery, decision: CallbackButtonDecision, adapters: PollAdapters): Promise<boolean> {
-  if (decision.action === 'drop') {
+  if (decision.action === 'drop' || decision.action === 'answer-ask') {
     return false;
   }
   const recordedVerdict = await adapters.readRecordedApprovalVerdict?.(decision.backlogId);
@@ -1145,13 +1193,101 @@ async function answerIfAlreadyDecided(callbackQuery: TelegramCallbackQuery, deci
   return true;
 }
 
+const ASK_CLOSED_TOAST_TEXT = 'This question is no longer open.';
+const ASK_CLOSED_MESSAGE_SUFFIX = '\n\n-- No longer open.';
+
+// BL-483: mirrors composeDecidedAskText/editApprovalAskMessage's own
+// "strip the original message down to a closed-state notice" shape, kept
+// local (rather than imported from approvalAskClosing.ts) since that
+// module's own domain is a BACKLOG TICKET's human_approval verdict, not an
+// ask's answer - a different concept that happens to need a similar edit.
+function composeAskAnsweredText(originalText: string, answerLabel: string): string {
+  return `${originalText}\n\n-- Answered: ${answerLabel}`;
+}
+
+function composeAskClosedText(originalText: string): string {
+  return `${originalText}${ASK_CLOSED_MESSAGE_SUFFIX}`;
+}
+
+// BL-483: edits the posted ask message to a closed-state notice, if this
+// codebase's wiring recorded one (readAskMessage/editAskMessage both
+// optional - absent means "no message to edit", never a crash, same
+// "new capability degrades to a no-op" posture as every other optional
+// adapter pair in this file).
+async function editAskMessageIfKnown(threadId: string, composeText: (originalText: string) => string, adapters: PollAdapters): Promise<void> {
+  const message = await adapters.readAskMessage?.(threadId);
+  if (!message) {
+    return;
+  }
+  await adapters.editAskMessage?.(message.topicId, message.messageId, composeText(message.text));
+}
+
+// BL-483: a tap on a RETRACTED or ALREADY-ANSWERED ask is stale - answered
+// with a toast, its message edited to a "no longer open" notice, NO answer
+// side effect at all (no postToBridge) - the exact "acting on a stale
+// question's answer" class of incident BL-484's own answerIfAlreadyDecided
+// above exists to prevent, applied to an ask instead of an approval.
+// resolveAskOptions doubles as the openness check (see its own PollAdapters
+// comment): undefined means this thread's ask is not (or no longer) the
+// one pending. Absent adapter means "cannot confirm either way" - proceeds
+// exactly as before this ticket, the same "missing adapter never invents a
+// staleness verdict" posture answerIfAlreadyDecided already established.
+async function answerIfAskAlreadyClosed(callbackQuery: TelegramCallbackQuery, decision: CallbackButtonDecision, adapters: PollAdapters): Promise<boolean> {
+  if (decision.action !== 'answer-ask' || !adapters.resolveAskOptions) {
+    return false;
+  }
+  const options = await adapters.resolveAskOptions(decision.threadId);
+  if (options) {
+    return false;
+  }
+  await adapters.answerCallbackQuery(callbackQuery.id, ASK_CLOSED_TOAST_TEXT);
+  await editAskMessageIfKnown(decision.threadId, composeAskClosedText, adapters);
+  return true;
+}
+
+// BL-483: the tapped option's label rides back through postToBridge exactly
+// as if the human had typed it - the SAME shared answer effect path
+// processPollAnswer above already established for BL-466's poll answer
+// (this ticket's own "one effect path, never a second one" constraint).
+// An option index the resolved options no longer has (a stale/malformed
+// tap) is a deliberate DROP, never a delivery failure - it can never
+// succeed on retry, the same posture processPollAnswer's own "recorded
+// options no longer has" branch already uses.
+async function deliverAskAnswer(
+  callbackQuery: TelegramCallbackQuery,
+  decision: { threadId: string; optionIndex: number },
+  updateId: number,
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome> {
+  // Every recognized-chat/principal tap clears its own spinner, even a
+  // no-op one (an index the resolved options no longer has) - the same
+  // "never hangs" requirement isUnauthorizedCallbackDrop's own comment
+  // states for the approve/reject/amend taps above.
+  await adapters.answerCallbackQuery(callbackQuery.id);
+  const options = adapters.resolveAskOptions ? await adapters.resolveAskOptions(decision.threadId) : undefined;
+  const answerLabel = options?.[decision.optionIndex]?.label;
+  if (answerLabel === undefined) {
+    return 'dropped';
+  }
+  const ok = await adapters.postToBridge(decision.threadId, answerLabel, updateId);
+  if (ok) {
+    await editAskMessageIfKnown(decision.threadId, (originalText) => composeAskAnsweredText(originalText, answerLabel), adapters);
+  }
+  return deliveryOutcome(ok);
+}
+
 // BL-410: see isUnauthorizedCallbackDrop above for the answer-spinner
 // rationale. An Approve tap fires recordApprovalReply immediately (nothing
 // else to gather); a Reject/Amend tap has no reason/note in hand yet, so it
 // only ever stashes the pending marker deliverOperatorContext above
 // consults on the next reply - never reimplementing
 // recordRejectionReply/the amend effect here.
-async function processCallbackQuery(callbackQuery: TelegramCallbackQuery, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
+async function processCallbackQuery(
+  callbackQuery: TelegramCallbackQuery,
+  principalUserId: string,
+  updateId: number,
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome> {
   // BL-423: the control: callback_data namespace is checked FIRST and
   // completely separately from the approve/reject/amend dispatch below -
   // decideCallbackQueryAction's own CALLBACK_DATA_PATTERN would otherwise
@@ -1165,6 +1301,17 @@ async function processCallbackQuery(callbackQuery: TelegramCallbackQuery, princi
   const decision = decideCallbackQueryAction(callbackQuery, principalUserId, adapters.chatId);
   if (isUnauthorizedCallbackDrop(decision)) {
     return 'dropped';
+  }
+  // BL-483: an ask-option tap has its own stale-check/effect/close shape,
+  // entirely distinct from the approval-ask dispatch below (readRecordedApprovalVerdict
+  // vs resolveAskOptions, postToBridge vs recordApprovalDecisionAndClose) -
+  // dispatched before answerIfAlreadyDecided, which only ever reads
+  // decision.backlogId (absent on an 'answer-ask' decision).
+  if (decision.action === 'answer-ask') {
+    if (await answerIfAskAlreadyClosed(callbackQuery, decision, adapters)) {
+      return 'dropped';
+    }
+    return deliverAskAnswer(callbackQuery, decision, updateId, adapters);
   }
   if (await answerIfAlreadyDecided(callbackQuery, decision, adapters)) {
     return 'dropped';
@@ -1234,7 +1381,7 @@ async function processPollAnswer(
 // ordinary message path, for the same structural reason as callback_query.
 async function processUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
   if (update.callback_query) {
-    return processCallbackQuery(update.callback_query, principalUserId, adapters);
+    return processCallbackQuery(update.callback_query, principalUserId, update.update_id, adapters);
   }
   if (update.poll_answer) {
     return processPollAnswer(update.poll_answer, principalUserId, update.update_id, adapters);
@@ -1969,11 +2116,31 @@ export interface ReplyRelayAdapters {
   // below) - returns the poll's own id (undefined on a failed send) so the
   // caller can record the poll->thread mapping a later poll_answer needs to
   // resolve back to this SUP-### thread (PollAdapters.resolvePollThread).
+  // BL-483: superseded as deliverAgentQuestion's own options-carrying-ask
+  // rendering (sendAskButtons below) - kept only because decidePollAnswerAction/
+  // processPollAnswer (still-correct, generically reusable poll-answer
+  // handling) reference the same PollAdapters.resolvePollThread shape;
+  // deliverAgentQuestion itself no longer calls this.
   sendPoll?: (topicId: number | undefined, question: string, options: string[]) => Promise<{ pollId?: string }>;
   // BL-466: persists the poll id -> {threadId, options} mapping at send
   // time - the ONLY place this mapping is ever written; resolvePollThread
-  // (PollAdapters above) only ever reads it.
+  // (PollAdapters above) only ever reads it. BL-483: see sendPoll's own
+  // comment above - superseded, kept for the still-valid poll-answer sibling.
   recordPollMapping?: (pollId: string, threadId: string, options: string[]) => Promise<void>;
+  // BL-483: sends an options-carrying ask as tappable inline-keyboard
+  // buttons (see deliverAgentQuestion below) - returns the sent message's
+  // own id (undefined on a failed send) so the caller can record the
+  // {threadId -> message} mapping a later tap (PollAdapters.resolveAskOptions/
+  // readAskMessage) and a stale-tap edit both need.
+  sendAskButtons?: (
+    topicId: number | undefined,
+    text: string,
+    buttons: InlineKeyboardButton[][]
+  ) => Promise<{ success: boolean; messageId?: number }>;
+  // BL-483: persists the {threadId -> topicId, messageId, text} mapping at
+  // send time - the ONLY place this mapping is ever written; readAskMessage/
+  // resolveAskOptions (PollAdapters above) only ever read it.
+  recordAskMessage?: (threadId: string, topicId: number | undefined, messageId: number, text: string) => Promise<void>;
   // BL-466: the standing Agent Questions topic's own id - every agentQuestion
   // record (poll or plain fallback) routes HERE, never through resolveDelivery
   // (see deliverAgentQuestion's own comment for why the ordinary per-subject
@@ -2046,24 +2213,48 @@ async function deliverReply(
   }
 }
 
-// BL-466: an agent's clarifying question is delivered to the dedicated
-// Agent Questions topic instead of adapters.resolveDelivery's own
+// BL-483: an options-carrying ask's message body - the question, then each
+// option numbered with its optional description, then the standing
+// free-text hint (Telegram's own reply box IS the "type something else"
+// affordance - this line just states that in words, per the ticket's own
+// acceptance criterion). Pure/testable: no Telegram I/O.
+export function composeAskMessageBody(question: string, options: AskOption[]): string {
+  const lines = [question, ''];
+  options.forEach((option, index) => {
+    const suffix = option.description ? ` — ${option.description}` : '';
+    lines.push(`${index + 1}. ${option.label}${suffix}`);
+  });
+  lines.push('', 'Or reply with your own answer.');
+  return lines.join('\n');
+}
+
+// BL-483: one tappable button per option, one option per row (the ticket's
+// own Telegram-limit constraint), callback_data carrying the ask's threadId
+// + the option's own INDEX - never the label text, which is unbounded and
+// could overrun callback_data's 64-byte cap. Pure/testable: no Telegram I/O.
+export function composeAskButtons(threadId: string, options: AskOption[]): InlineKeyboardButton[][] {
+  return options.map((option, index) => [{ text: option.label, callbackData: `ask:${threadId}:${index}` }]);
+}
+
+// BL-466/BL-483: an agent's clarifying question is delivered to the
+// dedicated Agent Questions topic instead of adapters.resolveDelivery's own
 // per-subject resolution - the routing exception the ticket calls for
 // (every agent question lands in ONE standing topic regardless of which
-// topic its SUP-### thread would otherwise resolve to). 2+ options renders
-// a native poll (its own id recorded so a later poll_answer can resolve
-// back to threadId); anything else - no options, or sendPoll not wired -
-// falls back to an ordinary message in that same topic, matching the
-// ticket's own "a poll needs 2+ discrete options; anything else falls back
-// to a plain message" contract (operator-lib/poll-options already enforces
-// this on the SENDING side too - this is the belt-and-braces receiving
-// side of the same rule).
-async function deliverAgentQuestion(threadId: string, text: string, options: string[] | undefined, adapters: ReplyRelayAdapters): Promise<void> {
+// topic its SUP-### thread would otherwise resolve to). BL-483 supersedes
+// BL-466's native-poll rendering for an options-carrying ask with tappable
+// buttons (per-option description, a "type something else" hint, and an
+// editable-after-answer message - none of which a native poll can do); a
+// bare question - no options, or sendAskButtons not wired - falls back to
+// an ordinary message in that same topic, unchanged from before this
+// ticket (scenario 5's own byte-identical contract).
+async function deliverAgentQuestion(threadId: string, text: string, options: AskOption[] | undefined, adapters: ReplyRelayAdapters): Promise<void> {
   const topicId = await adapters.agentQuestionsTopicId?.();
-  if (options && options.length >= 2 && adapters.sendPoll) {
-    const { pollId } = await adapters.sendPoll(topicId, text, options);
-    if (pollId) {
-      await adapters.recordPollMapping?.(pollId, threadId, options);
+  if (options && options.length > 0 && adapters.sendAskButtons) {
+    const body = composeAskMessageBody(text, options);
+    const buttons = composeAskButtons(threadId, options);
+    const sent = await adapters.sendAskButtons(topicId, body, buttons);
+    if (sent.messageId !== undefined) {
+      await adapters.recordAskMessage?.(threadId, topicId, sent.messageId, body);
     }
     return;
   }
@@ -2095,7 +2286,9 @@ async function relayOneRecord(record: SseRecord, adapters: ReplyRelayAdapters, s
     // deliverAgentQuestion's own comment) - every other, ordinary reply
     // record omits it and is completely unaffected.
     agentQuestion?: boolean;
-    options?: string[];
+    // BL-483: {label, description?}[] - operator_ask.bb's own --options
+    // normalizer (operator-lib/ask-options) emits this exact shape.
+    options?: AskOption[];
   };
   if (!seenIds.has(id)) {
     if (agentQuestion) {
