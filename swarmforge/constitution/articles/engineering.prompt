@@ -540,6 +540,25 @@
   with backoff. (BL-115: the bounceWatcher re-establish-on-error had no
   cap/backoff, so a persistent `fs.watch` error — e.g. inotify ENOSPC — would
   restart immediately, forever.)
+- **A lock/mutex/flock ACQUISITION spin-loop is a retry loop too — give it a max-wait
+  deadline and fail LOUDLY on timeout, never spin forever waiting for the holder to
+  release.** The bounded-retry rule above reads naturally as being about retrying a failed
+  *operation*; a loop that sleeps-and-recurs waiting to ACQUIRE a lock is the same shape in
+  different clothes, and it is the easy one to leave unbounded because "the holder will
+  release it any moment" feels safe. It is not: a holder that crashes, is killed, or
+  deadlocks ORPHANS the lock, and every future caller then blocks on it forever — one stuck
+  process silently becomes a whole-swarm hang with no error anywhere, which is strictly worse
+  than a failed operation because nothing ever surfaces. So every acquisition loop carries a
+  deadline (a max-wait budget) and, on exhausting it, throws / exits non-zero NAMING the lock
+  so a human can clear a stale one — exactly as `acquire-events-lock!` in `operator_runtime.bb`
+  already does (an `events-lock-max-wait-ms` deadline, then an `ex-info` that says the stale
+  lock dir may need manual cleanup). This is the lock-acquisition sibling of the bounded-retry
+  rule: an orphaned lock turns waiting into an unbounded retry of something that can never
+  happen. (BL-419: the shared master-checkout commit-integrity helper serializes its
+  stage->commit window behind an flock; that acquisition must carry the same cap-and-fail-loud
+  discipline, or a crashed committer orphans the lock and hangs every writer to `main`.
+  Proposed by the hardender 2026-07-17 scoped `engineering`; the convention to copy is the
+  already-bounded `acquire-events-lock!`.)
 - A whole-repo history-analysis tool must scope its git query to the repo
   independent of the invoker's cwd — resolve the repo top-level (or use a
   top-of-tree `:/` pathspec), never a cwd-relative pathspec like `.`. `git log
