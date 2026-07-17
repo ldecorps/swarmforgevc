@@ -252,7 +252,8 @@ const DOMAINS = [
   require('./bl465PipelineBoardRenderRound2Steps'),
   require('./bl469PerAgentSteeringTopicIconsSteps'),
   require('./bl477UpstreamDriftWatchSteps'),
-  require('./bl480ApprovalAskContentSteps')
+  require('./bl480ApprovalAskContentSteps'),
+  require('./bl419SharedCheckoutCommitIntegritySteps')
 ];
 
 function registerSteps(registry) {
