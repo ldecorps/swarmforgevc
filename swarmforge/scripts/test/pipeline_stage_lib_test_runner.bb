@@ -36,6 +36,28 @@
          "BL-447"
          (pipeline-stage-lib/extract-ticket-id "BL-447-some-task-name"))
 
+;; BL-488: a held ticket's id resolves from the first id-shaped token in the
+;; header regardless of leading position - a "Re: ..." or "continuing ..."
+;; prefix before the id must not make it resolve to nothing (the durable
+;; false not-started this ticket fixes). Byte-identical on the already-
+;; leading case (asserted above) since the first id-shaped token IS the
+;; leading one there.
+(assert= "BL-488: leading id still resolves (unchanged behaviour)"
+         "BL-476"
+         (pipeline-stage-lib/extract-ticket-id "BL-476 do the thing"))
+(assert= "BL-488: id preceded by a 'Re: ' prefix resolves to the id, not nil"
+         "BL-476"
+         (pipeline-stage-lib/extract-ticket-id "Re: BL-476 do the thing"))
+(assert= "BL-488: id preceded by free-text ('continuing ... next slice') resolves to the id"
+         "BL-476"
+         (pipeline-stage-lib/extract-ticket-id "continuing BL-476 next slice"))
+(assert= "BL-488: a header with no id-shaped token anywhere still resolves to nil"
+         nil
+         (pipeline-stage-lib/extract-ticket-id "no id-shaped token here"))
+(assert= "BL-488: a non-leading id still canonicalizes to upper-case"
+         "BL-447"
+         (pipeline-stage-lib/extract-ticket-id "continuing bl-447 next slice"))
+
 ;; ── ticket-id-from-headers: task (git_handoff) OR message (note) ─────────
 (assert= "a git_handoff's task header wins when present"
          "BL-217"
