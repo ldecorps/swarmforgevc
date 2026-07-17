@@ -4,7 +4,7 @@ milestone: M8
 type: chore
 severity: low
 epic: ""
-priority: 6
+priority: 1
 direction: swarm-proposed
 depends_on: []
 source: "QA note to the specifier 2026-07-16 (BL-452 feature regression: 'edited in place on stage change' scenario fails). The specifier retired BL-452 pipeline-board-03/04 from the feature file (commit a78202dc) because BL-462 replaced edit-in-place with delete-old + post-fresh-at-bottom and re-specced the behaviour in its own feature file. Removing the scenarios left their step handlers dead but harmless; this ticket clears the dead test glue."

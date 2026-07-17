@@ -249,7 +249,8 @@ const DOMAINS = [
   require('./bl433BuildFreshnessOperatorRestartRaceSteps'),
   require('./bl423TelegramSwarmControlVerbsSteps'),
   require('./bl468PipelineBoardPostBeforeDeleteSteps'),
-  require('./bl465PipelineBoardRenderRound2Steps')
+  require('./bl465PipelineBoardRenderRound2Steps'),
+  require('./bl469PerAgentSteeringTopicIconsSteps')
 ];
 
 function registerSteps(registry) {
