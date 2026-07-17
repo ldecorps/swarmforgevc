@@ -305,20 +305,18 @@
       (doseq [orphan (orphaned-sidecar-filenames filenames)]
         (fs/delete (fs/path inbox-new-dir orphan))))))
 
-;; BL-499: reuses handoff-lib/handoff-files - the SAME flat (non-batch-
-;; recursing) completed/abandoned listing ready_for_next_task.bb's own
-;; dequeue-time dedup already builds its terminal-basename set from - never
-;; a second, drifting notion of "what counts as terminal". A non-existent
-;; directory (a role whose completed/abandoned has never been created yet)
-;; already degrades to [] there.
-(defn- terminal-basenames [dir]
-  (set (map fs/file-name (handoff-lib/handoff-files dir))))
-
 (defn sweep-role-inbox! [role inbox-new-dir completed-dir abandoned-dir now-ms config adapters]
   (reap-orphaned-sidecars! inbox-new-dir)
   (let [items (scan-inbox-new inbox-new-dir)
-        completed-basenames (terminal-basenames completed-dir)
-        abandoned-basenames (terminal-basenames abandoned-dir)
+        ;; BL-499 (cleaner, DRY): handoff-lib/terminal-basenames - the SAME
+        ;; flat (non-batch-recursing) completed/abandoned reader
+        ;; ready_for_next_task.bb's own dequeue-time dedup (BL-218) already
+        ;; uses - never a second, drifting notion of "what counts as
+        ;; terminal". A non-existent directory (a role whose
+        ;; completed/abandoned has never been created yet) already
+        ;; degrades to [] there.
+        completed-basenames (handoff-lib/terminal-basenames completed-dir)
+        abandoned-basenames (handoff-lib/terminal-basenames abandoned-dir)
         liveness ((:get-liveness adapters) role)
         last-activity-ms ((:get-last-activity-ms adapters) role)
         respawn-cooldown-until-ms (read-respawn-cooldown-until-ms inbox-new-dir)]
