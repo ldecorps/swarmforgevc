@@ -1,0 +1,124 @@
+id: BL-499
+title: "Chase sweep re-chases forever a new/ handoff already resolved in completed/: the BL-218 already-processed skip is not applied at sweep time, so a stale duplicate wakes an active recipient indefinitely, silently"
+milestone: M8
+type: defect
+severity: medium
+epic: ""
+priority: 4
+direction: expedite   # silent, unbounded, human-invisible daemon defect — bugs-first, eligible regardless of direction
+depends_on: []
+source: >
+  Coordinator rule_proposal (scope engineering), live 2026-07-17, handoff 000544
+  (observed on stale new/ dup 000655, already terminal in the coordinator's completed/).
+  Dispositioned by the specifier as a DEFECT, not a governance rule: a sentence in
+  engineering.prompt cannot change a running daemon's chase logic, and the general
+  principle is already carried by the existing bounded-retry Guardrail and the BL-389
+  "a deliberate DROP/skip is terminal — never feed it into a failure-gate" rule. The
+  fix is code in chase_sweep_lib.bb; this ticket is that fix.
+
+notes: |
+  ROOT CAUSE (traced in code, grep-confirmed against swarmforge/scripts/chase_sweep_lib.bb):
+    - sweep-role-inbox! (L281) -> scan-inbox-new (L80) enumerates EVERY *.handoff in
+      inbox/new/ with NO dedup against completed/ or abandoned/. It does not apply the
+      BL-218 already-processed skip that the DEQUEUE path applies
+      (ready_for_next_task.bb L42-49 via handoff_lib/already-terminal? + dedup-new-candidates,
+      L285-305).
+    - decide-item-action (L129) for a new/ item past chaseTimeout: if the recipient role
+      has RECENT ACTIVITY (has-recent-activity? true) it returns "chased" every cycle
+      (with backoff, NO cap). The only path that can ever dead-letter — decide-stale-item-action
+      (L124) — is reached ONLY when the recipient is IDLE (has-recent-activity? false).
+    - Net: a stale new/ handoff whose id is ALREADY terminal in completed/ (or abandoned/)
+      — a handoff whose work is provably done, which the recipient's own intake will forever
+      SKIP as already-processed (BL-218) and never dequeue — is chased with exponential
+      backoff FOREVER while the recipient stays active. chaseCount hit 12+ in one session
+      on handoff 000655. It is silent (no dead-letter, no alert) and pointlessly wakes a
+      busy agent every cycle. The dequeue path (ready_for_next) SKIPS-but-does-not-REMOVE
+      the stale dup, so it lingers in new/ — which is exactly what the sweep keeps chasing.
+
+  WHY THIS IS THE SWEEP'S JOB (not the dequeue path's): ready_for_next only runs when a
+  role asks for work (idle boundary); the chase sweep runs every ~cycle regardless. The
+  sweep is the reliable place to reap a lingering terminal duplicate.
+
+  THE FIX (observable contract pinned in the feature; mechanism is the architect's call):
+    1. DEDUP AT SWEEP TIME — the chase sweep applies the SAME already-terminal check the
+       dequeue path uses. REUSE the existing shared predicate handoff_lib/already-terminal?
+       (and/or dedup-new-candidates) over the role's completed/ + abandoned/ basenames;
+       do NOT write a second copy (call-site-sweep / DRY posture).
+    2. REAP, DON'T CHASE — a new/ handoff whose id is already terminal is NOT chased
+       (no wake-up sent for it, chaseCount NOT incremented) and NOT dead-lettered; it is
+       removed from new/ to a terminal, non-resurrectable outcome and NEVER promoted to
+       in_process/. This precedence holds regardless of the recipient's liveness — an
+       idle recipient must NOT raise a false dead-letter alarm for already-completed work
+       either. The natural fit is a pure decision (a new "reaped"/already-terminal outcome
+       from the per-item decision, applied by apply-inbox-item-action!), mirroring how
+       reap-orphaned-sidecars! already removes stale sidecars — architect picks the seam.
+    3. RECORD IT (auditable, not a human page) — the reap emits a logged "already-processed"
+       line and a chase telemetry event, matching BL-218's dequeue-side skip idiom, so the
+       event is AUDITABLE without paging a human. A resolved duplicate is a known-benign
+       artifact (BL-128/BL-218 migration/interrupted-delivery residue), not a lost parcel —
+       dead-lettering it would be false-alarm noise. (If the human would rather have a
+       human-visible alert instead of a quiet auditable reap, that is the one open decision —
+       see approval_context.)
+    4. REAP THE SIDECAR TOO — the removed duplicate's .chase.json sidecar is removed with
+       it, leaving no orphan (BL-232 posture).
+    5. NO CHANGE to the genuine-stuck path: a not-yet-terminal new/ handoff to an active
+       role is chased with backoff exactly as today; an idle role's genuine stuck handoff
+       still dead-letters after maxChases exactly as today. Scope is STRICTLY the
+       already-resolved-duplicate case.
+
+  SCOPE (verify the live path at build):
+    - swarmforge/scripts/chase_sweep_lib.bb (scan-inbox-new / decide-item-action /
+      sweep-role-inbox! / apply-inbox-item-action!) — the fix lives here.
+    - swarmforge/scripts/handoff_lib.bb — REUSE already-terminal? / dedup-new-candidates;
+      do not duplicate.
+    - This is a .bb script: per engineering.prompt there is NO mutation/CRAP/DRY gate for
+      .bb — the real gate is the unit-test suite under swarmforge/scripts/test/
+      (chase_sweep_test_runner.bb) PLUS the Gherkin acceptance below. Add unit coverage
+      of the new pure decision and the reap side-effect there.
+
+  QA E2E PROCEDURE (run against a real mailbox, not only fixtures):
+    1. In a scratch role mailbox, place a handoff H in inbox/completed/ and a byte-identical
+       stale copy of H in inbox/new/ with an mtime older than chaseTimeout; give it a
+       .chase.json sidecar with chaseCount >= 1.
+    2. Drive one chase sweep for that role with the recipient reporting RECENT activity.
+    3. Assert: no wake-up was sent for H; H's chaseCount did NOT increment; H is gone from
+       inbox/new/ (reaped, not in in_process/); the .chase.json orphan is gone; a logged
+       "already-processed" line + a chase telemetry reap event were recorded.
+    4. Repeat with the recipient IDLE and chaseCount already at maxChases: assert H is
+       reaped (NOT dead-lettered — no *.handoff.dead created, no dead-letter alarm).
+    5. Control: a genuine new/ handoff whose id is in neither completed/ nor abandoned/,
+       active role, past chaseTimeout — assert it IS chased and its chaseCount increments
+       (no regression).
+
+  ORTHOGONALITY: touches swarmforge/scripts/chase_sweep_lib.bb + handoff_lib.bb (reuse
+  only). Disjoint from the active TS/concierge tickets (BL-485 cleaner gate, BL-496/497
+  Telegram board/approval paths) and the bb pipeline_stage tickets (BL-488/489, different
+  files). Safe to run concurrently with all current in-flight work.
+
+acceptance:
+  # The observable contract: the chase sweep applies the same already-terminal (completed/
+  # or abandoned/) dedup the dequeue path applies, and REAPS a lingering terminal duplicate
+  # instead of chasing it forever (active role) or dead-lettering it (idle role) — never
+  # promoting it to in_process/, removing its sidecar, and recording an auditable
+  # "already-processed" line. A genuinely-stuck, not-yet-terminal handoff is chased exactly
+  # as before. The reap MECHANISM (delete vs move-to-terminal) is deliberately NOT pinned;
+  # the scenarios hold either way.
+  feature: specs/features/BL-499-chase-sweep-rechases-resolved-new-duplicate.feature
+
+human_approval: pending
+approval_context: >
+  New defect fix for a SILENT, live daemon bug: the chase sweep re-chases forever a new/
+  handoff whose work is already completed (it wakes an active agent every cycle, chaseCount
+  hit 12+, never surfaced). FIRM in the scenario contract: the sweep reuses the existing
+  BL-218 already-terminal check and REAPS the resolved duplicate (no chase, no dead-letter,
+  never promoted to in_process/, sidecar removed), regardless of recipient liveness; a
+  genuine stuck handoff is chased exactly as today. The ONE open decision for you: the reap
+  is specced as a QUIET, AUDITABLE removal (a logged "already-processed" line + a chase
+  telemetry event) rather than a human-visible alert, because a resolved duplicate is a
+  known-benign migration/interrupted-delivery artifact, not a lost parcel — paging you for
+  each one would be noise. If you would rather the reap raise a human-visible signal (e.g.
+  a *.handoff.dead dead-letter that notify-dead-letters surfaces), say so and I will re-spec
+  scenario 3's Then. Expedite, priority 4 — a silent correctness/noise defect, below the
+  live-outage tickets (BL-497 pri 1, BL-496 pri 3) but ahead of routine paused work.
+
+mutation_cost: low
