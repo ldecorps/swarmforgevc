@@ -173,8 +173,15 @@ The Bot API has no create-bot or create-group/enable-topics method, so one
 manual step per target is irreducible:
 
 ```
-node extension/out/tools/provision-onboarding-telegram-channel.js <target-repo-path> <bot-token> <bot-username> <host-secrets-file-path>
+node extension/out/tools/provision-onboarding-telegram-channel.js <target-repo-path> <bot-token> <bot-username> <host-secrets-file-path> <swarm-name> [bridge-port]
 ```
+
+`<swarm-name>` is this swarm's own identity (`primary` for the default
+single-swarm setup) - a successful run also writes
+`~/.swarmforge/fleet/<swarm-name>/telegram.json`, which
+`front_desk_supervisor.bb` resolves its bot token/chat id/bridge port from
+at launch, keyed by swarm rather than by whatever shell launched it.
+`[bridge-port]` defaults to `8765` when omitted.
 
 Run it and it prints the exact steps plus a `t.me/<bot>?startgroup=true`
 add-to-group link:
