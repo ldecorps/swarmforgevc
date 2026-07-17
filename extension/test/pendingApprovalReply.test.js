@@ -12,6 +12,7 @@ const {
   recordRejectionReply,
   isTicketPendingApproval,
   classifyApprovalsTopicReply,
+  readRecordedVerdict,
 } = require('../out/concierge/pendingApprovalReply');
 
 // BL-357: the human's reply in a ticket's own topic RECORDS the approval
@@ -373,4 +374,38 @@ test('pending determination is scoped per-ticket - a pending ticket and a non-pe
 
   assert.equal(isTicketPendingApproval(targetPath, 'BL-934'), true);
   assert.equal(isTicketPendingApproval(targetPath, 'BL-935'), false);
+});
+
+// ── readRecordedVerdict (read-only, real fs) - BL-484 ─────────────────────
+// The stale-tap guard needs the SPECIFIC recorded verdict (not just
+// isTicketPendingApproval's plain pending/not-pending) to name it in the
+// "already decided: <verdict>" toast.
+
+test('an approved ticket reports the approved verdict', () => {
+  const targetPath = mkTmp();
+  writeTicket(path.join(targetPath, 'backlog', 'active'), 'BL-940-slug.yaml', 'id: BL-940\ntitle: t\nhuman_approval: approved\n');
+  assert.equal(readRecordedVerdict(targetPath, 'BL-940'), 'approved');
+});
+
+test('a rejected ticket reports the rejected verdict, reason comment and all', () => {
+  const targetPath = mkTmp();
+  writeTicket(path.join(targetPath, 'backlog', 'active'), 'BL-941-slug.yaml', 'id: BL-941\ntitle: t\nhuman_approval: rejected  # bad scope\n');
+  assert.equal(readRecordedVerdict(targetPath, 'BL-941'), 'rejected');
+});
+
+test('a still-pending ticket reports no recorded verdict', () => {
+  const targetPath = mkTmp();
+  writeTicket(path.join(targetPath, 'backlog', 'active'), 'BL-942-slug.yaml', 'id: BL-942\ntitle: t\nhuman_approval: pending\n');
+  assert.equal(readRecordedVerdict(targetPath, 'BL-942'), undefined);
+});
+
+test('a ticket with no human_approval field at all reports no recorded verdict', () => {
+  const targetPath = mkTmp();
+  writeTicket(path.join(targetPath, 'backlog', 'active'), 'BL-943-slug.yaml', 'id: BL-943\ntitle: t\n');
+  assert.equal(readRecordedVerdict(targetPath, 'BL-943'), undefined);
+});
+
+test('a backlog id with no matching ticket file reports no recorded verdict, never a crash', () => {
+  const targetPath = mkTmp();
+  assert.equal(readRecordedVerdict(targetPath, 'BL-999'), undefined);
 });
