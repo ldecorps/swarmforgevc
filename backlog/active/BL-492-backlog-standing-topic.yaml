@@ -1,0 +1,58 @@
+id: BL-492
+title: "Ensure a standing 'Backlog' catch-all Telegram topic once at boot: the routing target for epic-less tickets, reuse-or-create under a reserved subject id"
+milestone: M8
+type: feature
+severity: medium
+epic: topic-consolidation
+priority: 6
+direction: human-requested
+depends_on: []
+source: "Child of BL-491 (topic-consolidation epic), from Operator intake INTAKE-operator-question-1784277729691.md. Foundation slice: epic-less tickets (`epic: \"\"`, the majority) need ONE standing catch-all topic to post into instead of a per-ticket topic each."
+
+acceptance:
+  feature: specs/features/BL-492-backlog-standing-topic.feature
+  steps:
+    - "Booting with no Backlog topic creates one under the reserved Backlog subject"
+    - "Booting with an existing Backlog topic reuses it and creates nothing"
+    - "Ensuring the Backlog topic leaves the STEERING and other standing topics untouched"
+
+notes: |
+  FOUNDATION SLICE of the BL-491 epic. Delivers the standing "Backlog" catch-all topic that BL-493
+  routes epic-less ticket events into. On its own it fires live (the boot ensure runs), so it is a
+  real behavioral slice, not a dark module.
+
+  SCOPE (verified live 2026-07-17):
+    - Add `BACKLOG_SUBJECT_ID` (reserved subject id, e.g. 'BACKLOG') and `BACKLOG_TOPIC_NAME`
+      ('Backlog') constants plus an `ensureBacklogTopic(targetPath, botToken, chatId, postFn?)` helper
+      in extension/src/tools/telegramFrontDeskBotCore.ts — an exact twin of the existing
+      `ensureApprovalsTopic` / `ensureRecertTopic` (same reuse-or-create shape: read
+      `topicForSubject(topicMap, BACKLOG_SUBJECT_ID)`, reuse if present, else `createForumTopic` and
+      record the returned thread id under the reserved subject in telegram-topic-map.json).
+    - Call `ensureBacklogTopic` ONCE at boot in extension/src/tools/telegram-front-desk-bot.ts
+      alongside the other `await ensure*Topic(...)` boot calls (currently ~lines 2094-2125:
+      ensureOperatorTopic / ensureApprovalsTopic / ensureRecertTopic / ensureAgentQuestionsTopic /
+      ensureControlTopic / ensureRoleTopics).
+    - The reuse-or-create DECISION is the directly unit-testable seam (given a topic map, decide
+      create vs reuse and which subject id it records under); the Telegram I/O (`createForumTopic`)
+      stays in the thin client per the engineering.prompt testable-boundary rule. Model the test on
+      the existing ensureApprovalsTopic/ensureRecertTopic tests.
+
+  OUT OF SCOPE: routing ticket events into this topic (that is BL-493); touching any existing
+  standing topic or the 8 per-role STEERING topics (they are ensured by their own helpers and must be
+  left unchanged). Adding a NEW reserved subject id must not collide with or reorder the existing
+  reserved ids (OPERATOR/APPROVALS/RECERT/AGENT_QUESTIONS/CONTROL).
+
+  E2E QA PROCEDURE: with the front desk live and NO Backlog topic yet, boot the bot; a "Backlog" topic
+  appears in the group and its id is recorded under the reserved Backlog subject in
+  telegram-topic-map.json. Re-boot: no second Backlog topic is created (the recorded id is reused).
+  Confirm the STEERING topics and other standing topics are untouched across both boots.
+
+human_approval: approved
+approval_context: >
+  Foundation slice of the BL-491 topic-consolidation epic you already blessed at the plan level. This
+  ticket's contract: a standing "Backlog" catch-all topic ensured once at boot under a new reserved
+  subject id, reuse-or-create exactly like the Approvals/Recert standing topics, with the existing
+  standing and STEERING topics untouched. FIRM: reuse-or-create idempotency and non-disturbance of
+  existing topics. Nothing here routes tickets INTO the topic yet — that is BL-493.
+
+mutation_cost: low

@@ -6,7 +6,7 @@ severity: medium
 epic: ""
 priority: 4
 direction: human-requested
-depends_on: [BL-484, BL-483]
+depends_on: [BL-484, BL-483, BL-496]
 source: "Human (ldecorps) 2026-07-17, via Operator intake backlog/INTAKE-operator-question-1784276630098.md: 'Add a fourth button to the Telegram approval ask: Expedite. It must not only approve the ticket but place it straight onto the swarm to be built immediately, regardless of orthogonality/sequencing triage - approve + jump the queue + dispatch now.' This session the human had to send the coordinator a manual promote + build-next note to achieve by hand exactly what this button would automate."
 
 notes: |

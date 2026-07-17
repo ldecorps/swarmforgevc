@@ -1,0 +1,103 @@
+id: BL-496
+title: "A decided approval ask must close even under Telegram rate-limiting: surface the edit rejection and honour retry_after with a bounded retry"
+milestone: M8
+type: bug
+severity: medium
+epic: ""
+priority: 3
+depends_on: []
+direction: human-requested
+source: "Operator intake backlog/INTAKE-operator-question-1784283108914.md (2026-07-17): the human approved BL-491 (and a BL-491..495 batch) live; some asks kept their Approve/Amend/Reject buttons with no verdict line - the exact behaviour BL-484 shipped to fix. Operator-verified INTERMITTENT, batch-correlated - the strong signature of Telegram per-chat 429 rate-limiting on the burst of editMessageText calls. Disposition (reopen BL-484 vs new fix ticket) was delegated to the specifier; filed as a fresh scoped fix because BL-484 is already shipped/done."
+
+notes: |
+  THE DEFECT (post-ship of BL-484). BL-484's decided-ask close works on disk (human_approval flips,
+  recordApprovalReply fires, the message_id IS persisted) but its Telegram message edit fails
+  INTERMITTENTLY against the LIVE API, leaving decided asks with live, re-tappable buttons and no
+  verdict line. Operator confirmed the pattern is batch-correlated (in one BL-491..495 batch: BL-492
+  and BL-495 repainted; BL-491, BL-493, BL-494 did not - and length is NOT the differentiator), which
+  is the classic per-chat 429 signature. The bot ALSO edits the roster + pipeline-board messages
+  in-place every tick, so approval-ask edits compete for the same per-chat edit budget even outside a
+  human burst (explains an apparent single-approval failure too).
+
+  ROOT CAUSE - retry_after is extracted then thrown away, at TWO layers (verified in the live source):
+    - extension/src/notify/telegramClient.ts callTelegramApi ALREADY extracts retryAfterSeconds on a
+      429, but editMessageText's EditMessageTextResult DROPS it - it returns only {success, error}.
+    - extension/src/tools/telegram-front-desk-bot.ts wires the adapter as
+      editApprovalAskMessage: (...) => editMessageText(...).then((r) => r.success) - discarding BOTH
+      r.error AND any retry-after.
+    - extension/src/tools/telegramFrontDeskBotCore.ts closeApprovalAskIfPossible logs a GENERIC line
+      ("message edit failed or not wired") with no r.error, and never retries. Its adapter type
+      editApprovalAskMessage?: (...) => Promise<boolean> can carry nothing richer than success.
+  So a rate-limited edit is silently dropped and its real rejection reason is invisible in the logs.
+
+  WHY QA MISSED IT - fixture-only-acceptance gap (cf BL-454). BL-484's acceptance stubs
+  editApprovalAskMessage to return a bare boolean, so the real editMessageText 429 response shape was
+  never exercised. The fix must add real-path acceptance that approves MULTIPLE asks in a burst
+  against a rate-limit-SIMULATING Telegram double (returning a 429 with retry_after), not a stub that
+  returns true.
+
+  WHAT TO BUILD (observable contract; mechanism is the coder/architect's call). Build in this order -
+  the operator was explicit that the diagnosability step must land and the 429 be provable in a log
+  before the retry is trusted:
+    1. SURFACE THE REJECTION. Stop discarding the edit result. Thread retryAfterSeconds through
+       editMessageText's result (callTelegramApi already extracts it), widen the
+       editApprovalAskMessage adapter's return past a bare boolean so the closing routine can see
+       {success, error, retryAfterSeconds}, and make closeApprovalAskIfPossible LOG r.error (the real
+       Telegram rejection reason) on failure - not the current generic line.
+    2. HONOUR retry_after WITH A BOUNDED RETRY. When the edit is rejected with a retry-after, wait
+       exactly that told-you-so interval and retry, up to a bounded budget (the bounded-retry rule and
+       the rate-limited-surface backfill rule both apply - the retry_after honouring is the same
+       posture backfill-topic-icons.ts already uses). On exhausting the budget, log the undelivered
+       close LOUDLY (naming the ticket + the rate limit) and leave the decision recorded - never crash
+       the tick/bot loop (BL-484's own never-crash constraint stands). A non-429 rejection is logged
+       once with its reason and NOT retried.
+    3. REAL-PATH ACCEPTANCE. Approve a burst of asks against a rate-limit-simulating Telegram double;
+       assert every ask finally closes (buttons stripped, verdict appended). See the feature file.
+
+  CONSTRAINTS:
+    - NO REAL TIMERS in the retry (engineering "never use real timers" + subprocess-timer rules). The
+      wait must be an INJECTED sleep/clock seam the acceptance drives to zero real wall-clock; the
+      test asserts the routine REQUESTED a wait of retry_after seconds, never that time passed. The
+      retry budget must likewise be an injectable tunable (env-override seam, cf handoffd env-ms),
+      defaulting to a sane production value, so the acceptance can pin a small budget deterministically.
+    - CALL-SITE FAN-OUT (engineering call-site-sweep rule). Widening the editApprovalAskMessage adapter
+      return type past boolean fans out: grep every implementer/caller before handoff. Known sites to
+      reconcile: the bot wiring at telegram-front-desk-bot.ts ~line 1265, the adapter type at
+      telegramFrontDeskBotCore.ts ~line 711, closeApprovalAskIfPossible ~line 853, AND the existing
+      BL-484 acceptance step handlers specs/pipeline/steps/bl484DecidedAskClosesItselfSteps.js, which
+      stub editApprovalAskMessage to return a boolean and MUST be updated in the same parcel or the
+      BL-484 acceptance breaks (BL-233: a scenario is a call site of the shared step registry).
+    - editMessageText's OTHER callers (roster/pipeline-board plainTextEditInPlaceAdapters ~line 1785)
+      only read .success today; keep them working - the retry_after addition is additive.
+    - The roster edit-in-place uses the SAME editMessageText+chatId and WORKS; the ask-close call
+      differs only by passing buttons=null (reply_markup {inline_keyboard: []}) as the 7th arg. Confirm
+      the real r.error rather than assuming that is the cause.
+
+  BLAST RADIUS / DEPENDENCY: every decided approval ask that hit a 429 stays open with live,
+  re-tappable buttons - the stale-tap hazard BL-484 was meant to close. BL-490 (Expedite button)
+  reuses this SAME closing routine and inherits the broken edit; BL-490's depends_on now includes
+  BL-496 so it is not built on the broken foundation.
+
+  E2E QA PROCEDURE (live swarm): with the bot on the new build, flip 3-5 test tickets to
+  human_approval: pending so their asks post with buttons, then approve them in a rapid BURST in the
+  Approvals topic (the burst is what triggers the per-chat 429). Verify EVERY ask loses its buttons
+  and gains its verdict line within a few ticks - none left with live buttons. Then inspect
+  .swarmforge/operator/front-desk-supervisor.log: on any transient edit rejection the log must now
+  carry the REAL Telegram rejection reason (r.error / the 429 + retry_after), not the old generic
+  "message edit failed or not wired" line. Confirm the retry actually fired (a delayed-then-succeeded
+  close) and that a genuinely undeliverable close is surfaced loudly rather than silently dropped.
+
+acceptance: specs/features/BL-496-decided-ask-close-survives-rate-limit.feature
+
+human_approval: pending
+approval_context: >
+  Approving approves the fix contract above: (1) surface the real edit-rejection reason in the log,
+  (2) honour Telegram's retry_after with a bounded, injected-clock retry and a loud give-up, (3)
+  real-path burst acceptance against a rate-limiting Telegram double. FIRM per the operator: the
+  diagnosability step (1) must land and the 429 be provable in a log before the retry (2) is trusted -
+  do not ship the retry on the rate-limit hypothesis alone. FIRM: no real timers (injected wait seam);
+  reuse the single BL-484 closing routine, never a second edit path; the disk human_approval flip
+  stays the single source of decision truth. OPEN for the pipeline to decide: the exact retry budget
+  default and the verdict-line wording (already set by BL-484).
+
+mutation_cost: low
