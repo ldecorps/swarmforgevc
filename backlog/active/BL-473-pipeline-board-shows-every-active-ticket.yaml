@@ -70,8 +70,7 @@ acceptance:
     - "Every file in backlog/active/ is a board row exactly once, and only those"
     - "A not-started ticket a role then picks up moves to that role's stage"
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Human-requested directly 2026-07-16 (ldecorps): "show as active the BL ticket physically sitting in the
   active backlog folder ... at a minimum, the pipeline board should be as good as the PWA for displaying

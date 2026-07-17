@@ -32,10 +32,17 @@ const REPO_BASE_URL = 'https://github.com/ldecorps/swarmforgevc';
 const LONG_TITLE = 'Pipeline board shows a lot more of the title now';
 
 function render(ctx) {
+  // BL-473: ctx.activeIds is a new, optional field (undefined for every
+  // pre-existing scenario in this file) - forwarded as-is so
+  // computePipelineBoard's own default (derive membership from
+  // roleHeldTickets when omitted) keeps every scenario below rendering
+  // identically; only bl473PipelineBoardActiveMembershipSteps.js's Given
+  // steps set it.
   ctx.board = computePipelineBoard(ctx.roleHeldTickets ?? {}, ctx.paused ?? [], ctx.ticketMeta ?? {}, {
     rootIntake: ctx.rootIntake ?? [],
     recentlyClosed: ctx.recentlyClosed ?? [],
     repoBaseUrl: ctx.repoBaseUrl,
+    activeIds: ctx.activeIds,
   });
   ctx.gridText = renderPipelineBoard(ctx.board, 0);
   ctx.linksHtml = renderPipelineBoardLinks(ctx.board.links, ctx.repoBaseUrl);
